@@ -106,7 +106,8 @@ def test_normalize_asset_features_reads_thousands_surfaces_directly() -> None:
         source_name="unit",
         source_url="https://example.test/asset-thousands",
         property_type="house",
-        raw_text="Maison. Surface habitable : 2 464,70 m². Terrain d'environ 3 587,40 m².",
+        # Au-delà de 1 000 m², une surface habitable de maison n'est gardée que si le texte prouve un total bâti.
+        raw_text="Maison. Surface habitable : 2 464,70 m² (surface totale bâtie). Terrain d'environ 3 587,40 m².",
     )
 
     normalize_asset_features(sale)

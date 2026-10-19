@@ -1,4 +1,7 @@
 begin;
+-- L'offre de lancement (active par défaut, 20261028120000) donne l'accès Analyse à tout compte
+-- connecté : ce test vérifie les règles d'un compte gratuit, il la coupe (annulé par le rollback).
+update app_private.launch_offer set active = false where singleton;
 select plan(19);
 insert into auth.users(id,instance_id,aud,role,email,encrypted_password,email_confirmed_at,created_at,updated_at,raw_app_meta_data,raw_user_meta_data)
 select ('c2700000-0000-4000-8000-'||lpad(i::text,12,'0'))::uuid,'00000000-0000-0000-0000-000000000000','authenticated','authenticated','alert-'||i||'@example.test','',now(),now(),now(),'{}','{}' from generate_series(1,2)i;

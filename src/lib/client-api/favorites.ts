@@ -1,4 +1,9 @@
 import { authHeaders, readJson } from "@/lib/client-api-core";
+import type { FavoriteDossierInput, FavoriteDossierResponse } from "@/lib/favorite-dossier-shared";
+import type {
+  FollowedSaleSnapshotDeleteResponse,
+  FollowedSaleSnapshotsResponse,
+} from "@/lib/followed-sale-snapshots-shared";
 import type {
   FavoriteSaleDeleteResponse,
   FavoriteSaleInput,
@@ -39,4 +44,50 @@ export async function removeFavoriteSale(args: {
   });
 
   return readJson<FavoriteSaleDeleteResponse>(response);
+}
+
+/** « Mon dossier » gratuit (point 68) : statut et enchère plafond enregistrés sur une vente suivie. */
+export async function fetchFavoriteDossier(saleId: string): Promise<FavoriteDossierResponse> {
+  const search = new URLSearchParams({ saleId });
+  const response = await fetch(`/api/favorites/dossier?${search.toString()}`, {
+    headers: await authHeaders(),
+  });
+
+  return readJson<FavoriteDossierResponse>(response);
+}
+
+export async function saveFavoriteDossier(args: {
+  data: FavoriteDossierInput;
+}): Promise<FavoriteDossierResponse> {
+  const response = await fetch("/api/favorites/dossier", {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      ...(await authHeaders()),
+    },
+    body: JSON.stringify(args.data),
+  });
+
+  return readJson<FavoriteDossierResponse>(response);
+}
+
+/** Après l'audience (point 70) : instantanés des ventes suivies, gardés 6 mois au plus. */
+export async function fetchFollowedSaleSnapshots(): Promise<FollowedSaleSnapshotsResponse> {
+  const response = await fetch("/api/favorites/snapshots", {
+    headers: await authHeaders(),
+  });
+
+  return readJson<FollowedSaleSnapshotsResponse>(response);
+}
+
+export async function deleteFollowedSaleSnapshot(args: {
+  id: string;
+}): Promise<FollowedSaleSnapshotDeleteResponse> {
+  const search = new URLSearchParams({ id: args.id });
+  const response = await fetch(`/api/favorites/snapshots?${search.toString()}`, {
+    method: "DELETE",
+    headers: await authHeaders(),
+  });
+
+  return readJson<FollowedSaleSnapshotDeleteResponse>(response);
 }

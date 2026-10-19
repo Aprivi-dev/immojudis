@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { createHash } from "node:crypto";
 import { serverEnv } from "@/lib/env";
+import { emailClickUrl, isEmailClickSaleId } from "@/lib/email-click-token";
 import { createUnsubscribeToken } from "@/lib/email-unsubscribe-token";
 import { canCreateEmailAlertNotification } from "@/lib/notification-preferences";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
@@ -215,6 +216,30 @@ export async function revokeEmailAlertConsent({
   return { userId, revokedAt };
 }
 
+/**
+ * Retire le consentement aux rappels d'audience et avertissements graves (désinscription par le
+ * lien signé de chaque email). Le consentement aux alertes email n'est pas touché.
+ */
+export async function revokeSaleReminderConsent({
+  userId,
+  now = new Date(),
+}: {
+  userId: string;
+  now?: Date;
+}): Promise<{ userId: string; revokedAt: string }> {
+  const revokedAt = now.toISOString();
+  const { error } = await supabaseAdmin.from("user_notification_preferences").upsert(
+    {
+      user_id: userId,
+      sale_reminders_enabled: false,
+      sale_reminders_revoked_at: revokedAt,
+    },
+    { onConflict: "user_id" },
+  );
+  if (error) throw error;
+  return { userId, revokedAt };
+}
+
 /** Pause a single alert (per-alert unsubscribe); other alerts keep running. */
 export async function deactivateAlertForUser({
   userId,
@@ -366,7 +391,20 @@ export function buildAlertDigestMessage({
         }`
       : `Alerte Immojudis — ${allItems.length} ventes correspondent à vos alertes`;
 
-  const saleUrl = (item: DigestItem) => `${appUrl}/sales/${encodeURIComponent(item.saleId ?? "")}`;
+  // Lien suivi (point 65) : redirection signée qui mesure le clic pour ce compte, puis mène à la
+  // fiche de la vente. Sans identifiant de vente valide, le lien reste direct.
+  const saleUrl = (item: DigestItem) =>
+    isEmailClickSaleId(item.saleId)
+      ? emailClickUrl({
+          appUrl,
+          userId,
+          kind: "alert",
+          target: "sale",
+          saleId: item.saleId,
+          now,
+          env,
+        })
+      : `${appUrl}/sales/${encodeURIComponent(item.saleId ?? "")}`;
   const disclaimer =
     "Les données et estimations Immojudis sont indicatives. Elles ne constituent ni une expertise, ni un conseil juridique ou financier, ni une promesse de gain.";
 
@@ -647,7 +685,7 @@ export async function sendResendEmail({
   return { id: body.id ?? null };
 }
 
-async function readUserEmail(userId: string): Promise<string | null> {
+export async function readUserEmail(userId: string): Promise<string | null> {
   const { data, error } = await supabaseAdmin.auth.admin.getUserById(userId);
   if (error) throw error;
   const email = data.user?.email?.trim();
@@ -822,6 +860,6 @@ function arrayOfStrings(value: unknown): string[] {
     : [];
 }
 
-function escapeAttribute(value: string): string {
+export function escapeAttribute(value: string): string {
   return escapeHtml(value).replace(/`/g, "&#96;");
 }

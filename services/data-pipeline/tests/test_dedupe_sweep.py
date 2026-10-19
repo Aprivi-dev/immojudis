@@ -1,6 +1,10 @@
-"""Le balayage des lignes déjà publiées ne fusionne que sur preuve, jamais par la clé de repli stricte."""
+"""Le balayage des lignes déjà publiées fusionne sur preuve ; la clé de repli stricte y est limitée.
 
-from src.dedupe import merge_duplicate_sales
+La clé stricte ne s'y applique qu'hors Vench / Petites Affiches et hors d'un (jour, prix) partagé par
+plus de 5 annonces ; un groupe de plus de 5 lignes n'est jamais fusionné automatiquement.
+"""
+
+from src.dedupe import SWEEP_STRICT_EXCLUDED_SOURCES, SWEEP_STRICT_MAX_GROUP, merge_duplicate_sales
 from src.normalize import normalize_sale
 from src.storage import supabase_client
 
@@ -89,13 +93,68 @@ def _run_sweep(monkeypatch, sales):
     return supabase_client.reconcile_duplicate_sales_in_supabase(limit=20), captured
 
 
-def test_reconcile_sweep_leaves_a_strict_key_pair_untouched(monkeypatch) -> None:
+def test_reconcile_sweep_merges_a_strict_key_pair_outside_vench_and_petites_affiches(monkeypatch) -> None:
     _, by_key = _pairs()
 
     deleted, captured = _run_sweep(monkeypatch, by_key)
 
-    assert deleted == 0
-    assert "payload" not in captured
+    assert deleted == 1
+    assert len(captured["payload"]) == 1
+    assert captured["payload"][0]["dedupe_confidence"] == "strict_key"
+
+
+def test_the_sweep_strict_key_ignores_vench_and_petites_affiches() -> None:
+    # Même tribunal, jour, mise à prix, surface : la clé stricte rapprocherait ces paires, pas le balayage.
+    for source_name, url in (
+        ("vench", "https://www.vench.fr/vente-880001-une-maison-ondres.html"),
+        (
+            "petites_affiches",
+            "https://www.petitesaffiches.fr/encheres-immobilieres/vente/immobiliere/j/une-maison-a-ondres-880002.html",
+        ),
+    ):
+        pair = [_sale("licitor", "https://www.licitor.com/annonce/30.html"), _sale(source_name, url)]
+
+        assert len(merge_duplicate_sales(pair)) == 1
+        assert len(merge_duplicate_sales(pair, strict_excluded_sources=SWEEP_STRICT_EXCLUDED_SOURCES)) == 2
+
+
+def test_the_sweep_strict_key_skips_a_day_and_price_shared_by_more_than_five_sales() -> None:
+    def lots(count: int):
+        pair = [_sale("licitor", "https://www.licitor.com/annonce/40.html"), _sale("avoventes", "https://avoventes.fr/enchere/40")]
+        # Autres lots du même jour au même prix, d'un autre tribunal : ils n'ont aucun partenaire.
+        others = []
+        for index in range(count):
+            other = _sale("notaires", f"https://www.notaires.test/lot-{index}", surface_m2=str(200 + index * 40))
+            other.tribunal_code = f"autre-{index}"
+            others.append(other)
+        return [*pair, *others]
+
+    options = {"strict_max_group": SWEEP_STRICT_MAX_GROUP}
+    assert SWEEP_STRICT_MAX_GROUP == 5
+    assert len(merge_duplicate_sales(lots(3), **options)) == 4  # 5 annonces au (jour, prix) : paire fusionnée
+    assert len(merge_duplicate_sales(lots(4), **options)) == 6  # 6 annonces : aucune fusion
+    assert len(merge_duplicate_sales(lots(5), **options)) == 7
+    assert len(merge_duplicate_sales(lots(5))) == 6  # sans plafond (collecte), la paire fusionne
+
+
+def test_the_sweep_skips_a_group_of_more_than_five_rows(monkeypatch) -> None:
+    from src.storage import duplicate_sweep
+
+    assert duplicate_sweep.MAX_GROUP_ROWS == 5
+
+    def plan_for(secondary_count: int):
+        rows = [_sale("licitor", f"https://www.licitor.com/annonce/6{index}.html") for index in range(secondary_count + 1)]
+        survivor = rows[0]
+        survivor.source_urls = [row.source_url for row in rows]
+        monkeypatch.setattr(duplicate_sweep, "merge_duplicate_sales", lambda sales, **kwargs: [survivor])
+        # Les lignes secondaires ne sont plus des survivantes : seules leurs URL restent dans la fiche.
+        return duplicate_sweep.build_plan(rows, _EmptyRegistry(), max_merges=None)
+
+    kept = plan_for(4)  # 5 lignes : encore fusionné
+    assert len(kept.groups) == 1 and kept.groups[0].secondaries and kept.oversized_groups == 0
+    skipped = plan_for(5)  # 6 lignes : à relire à la main
+    assert skipped.groups == [] and skipped.impacted_sales == [] and skipped.oversized_groups == 1
+    assert "plus de 5 lignes" in duplicate_sweep.markdown_summary(skipped)
 
 
 def test_reconcile_sweep_repairs_a_listing_id_pair(monkeypatch) -> None:

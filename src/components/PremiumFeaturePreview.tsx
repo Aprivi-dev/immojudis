@@ -16,6 +16,7 @@ export function PremiumFeaturePreview({
   description,
   labels,
   unlockOffer = false,
+  compact = false,
 }: {
   title: string;
   description: string;
@@ -25,8 +26,35 @@ export function PremiumFeaturePreview({
    * débloquant cette vente »): the main link then unlocks it, when the page has the unlock card.
    */
   unlockOffer?: boolean;
+  /**
+   * Une ligne au lieu de l'aperçu flouté : pour une fonction annoncée sous le contenu principal
+   * (ex. le suivi des changements sous les favoris), sans lui voler la place.
+   */
+  compact?: boolean;
 }) {
   const checkoutOpen = useAnalysisCheckoutOpen();
+  if (compact) {
+    return (
+      <section
+        className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-gold/25 bg-white px-4 py-3"
+        aria-label={title}
+      >
+        <LockKeyhole aria-hidden className="h-4 w-4 shrink-0 text-gold-text" />
+        <div className="min-w-0 flex-1 basis-64">
+          <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+          <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{description}</p>
+          {checkoutOpen === false ? (
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+              L’offre Analyse n’est pas encore ouverte à la souscription.
+            </p>
+          ) : null}
+        </div>
+        <Link href="/offres" className={SECONDARY_LINK_CLASS}>
+          Découvrir l’offre Analyse
+        </Link>
+      </section>
+    );
+  }
   return (
     <section
       className="overflow-hidden rounded-xl border border-gold/25 bg-white p-5 sm:p-6"
@@ -69,7 +97,12 @@ export function PremiumFeaturePreview({
             withOpeningRequest
           />
         ) : (
-          <Link href="/offres" className={PRIMARY_LINK_CLASS}>
+          // Souscription fermée (ou état pas encore connu) : un lien discret, pas le bouton or d'un
+          // achat qui n'existe pas encore. Le bouton or revient quand l'offre est vraiment ouverte.
+          <Link
+            href="/offres"
+            className={checkoutOpen === true ? PRIMARY_LINK_CLASS : SECONDARY_LINK_CLASS}
+          >
             Découvrir l’offre Analyse
           </Link>
         )}

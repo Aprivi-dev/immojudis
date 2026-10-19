@@ -62,6 +62,48 @@ describe("favorite sales workspace", () => {
     });
   });
 
+  it("carries the saved status and bid ceiling (Mon dossier), and shows absent values as absent", () => {
+    const favorites = joinFavoriteRowsToSales(
+      [
+        {
+          id: "fav-1",
+          sale_id: "sale-1",
+          created_at: "2026-07-06T12:00:00.000Z",
+          personal_status: "bidding",
+          bid_ceiling_eur: 185_000,
+          bid_ceiling_saved_at: "2026-07-07T08:00:00.000Z",
+        },
+        {
+          id: "fav-2",
+          sale_id: "sale-2",
+          created_at: "2026-07-06T11:00:00.000Z",
+          personal_status: "not-a-status",
+          bid_ceiling_eur: null,
+          bid_ceiling_saved_at: null,
+        },
+        { id: "fav-3", sale_id: "sale-3", created_at: "2026-07-06T10:00:00.000Z" },
+      ],
+      [
+        { ...EXAMPLE_SALE, id: "sale-1" },
+        { ...EXAMPLE_SALE, id: "sale-2" },
+        { ...EXAMPLE_SALE, id: "sale-3" },
+      ],
+    );
+
+    expect(favorites[0]).toMatchObject({
+      personalStatus: "bidding",
+      bidCeilingEur: 185_000,
+      bidCeilingSavedAt: "2026-07-07T08:00:00.000Z",
+    });
+    for (const absent of [favorites[1], favorites[2]]) {
+      expect(absent).toMatchObject({
+        personalStatus: null,
+        bidCeilingEur: null,
+        bidCeilingSavedAt: null,
+      });
+    }
+  });
+
   it("builds a portfolio summary for followed judicial sales", () => {
     const favorites = joinFavoriteRowsToSales(
       [

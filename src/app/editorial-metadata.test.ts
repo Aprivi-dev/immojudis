@@ -21,14 +21,30 @@ function titleText(metadata: Metadata): { text: string; absolute: boolean } {
 
 describe("titles with the site suffix fit in 60 characters", () => {
   it.each([
-    ["/sales", () => import("./sales/page")],
+    // `/sales` calcule ses métadonnées d'après l'adresse (voir `generateMetadata`) : ici la première
+    // page, sans paramètre. Les pages 2 et suivantes sont contrôlées dans `sales/page.test.tsx`.
+    [
+      "/sales",
+      async () => ({
+        metadata: await (
+          await import("./sales/page")
+        ).generateMetadata({
+          searchParams: Promise.resolve({}),
+        }),
+      }),
+    ],
     ["/comment-ca-marche", () => import("./comment-ca-marche/page")],
     ["/annonce-exemple", () => import("./annonce-exemple/page")],
-  ])("%s", async (_path, importPage) => {
-    const { text, absolute } = titleText((await importPage()).metadata as Metadata);
-    expect(absolute).toBe(false);
-    expect(text.length + TITLE_SUFFIX.length).toBeLessThanOrEqual(MAX_TITLE_LENGTH);
-  });
+  ])(
+    "%s",
+    async (_path, importPage) => {
+      const { text, absolute } = titleText((await importPage()).metadata as Metadata);
+      expect(absolute).toBe(false);
+      expect(text.length + TITLE_SUFFIX.length).toBeLessThanOrEqual(MAX_TITLE_LENGTH);
+    },
+    // Le premier import d'une page charge tout son graphe : large marge sur une machine chargée.
+    30_000,
+  );
 });
 
 describe("pillar page /ventes-immobilieres-judiciaires", () => {

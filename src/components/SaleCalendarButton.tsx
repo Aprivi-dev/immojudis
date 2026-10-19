@@ -3,6 +3,7 @@
 import { useState } from "react";
 import CalendarPlus from "lucide-react/dist/esm/icons/calendar-plus.js";
 import { Button } from "@/components/ui/primitives";
+import { authHeaders } from "@/lib/client-api-core";
 import { userMessage } from "@/lib/user-messages";
 
 const FALLBACK_FILENAME = "immojudis-audience.ics";
@@ -14,9 +15,27 @@ function filenameFrom(response: Response): string {
 }
 
 /**
+ * Mesure par compte de l'export (point 65). Le fichier est public et mis en cache : seul le
+ * navigateur d'une personne connectée peut dire qui l'a téléchargé. Sans session, `authHeaders`
+ * répond « Connexion requise. » sans rien charger ni envoyer. La mesure ne gêne jamais le
+ * téléchargement.
+ */
+async function reportExport(saleId: string): Promise<void> {
+  try {
+    await fetch(`/api/sales/${encodeURIComponent(saleId)}/calendar/exported`, {
+      method: "POST",
+      headers: await authHeaders(),
+    });
+  } catch {
+    // Sans compte ou hors ligne : rien à mesurer.
+  }
+}
+
+/**
  * « Ajouter à mon agenda » : downloads the `.ics` file of the hearing. No account needed: the
  * route answers the same way for everyone. The server alone decides whether the date is reliable
- * enough to be exported; a refusal is shown here in words, not as a broken download.
+ * enough to be exported; a refusal is shown here in words, not as a broken download. A signed-in
+ * account also reports the download, so that it is measured per account (`reportExport`).
  */
 export function SaleCalendarButton({ saleId }: { saleId: string }) {
   const [pending, setPending] = useState(false);
@@ -39,6 +58,7 @@ export function SaleCalendarButton({ saleId }: { saleId: string }) {
       link.click();
       link.remove();
       URL.revokeObjectURL(url);
+      void reportExport(saleId);
     } catch (error) {
       setMessage(userMessage(error, "L’export vers l’agenda est indisponible pour le moment."));
     } finally {
@@ -50,7 +70,6 @@ export function SaleCalendarButton({ saleId }: { saleId: string }) {
     <div className="mt-2">
       <Button
         variant="secondary"
-        size="sm"
         onClick={() => void download()}
         disabled={pending}
         aria-busy={pending}

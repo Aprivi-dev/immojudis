@@ -8147,6 +8147,14 @@ export type Database = {
           notify_enabled: boolean;
           offer_code: string;
           revoked_at: string | null;
+          survey_answered_at: string | null;
+          survey_interview_accepted: boolean;
+          survey_interview_consented_at: string | null;
+          survey_price_cheap_eur: number | null;
+          survey_price_too_expensive_eur: number | null;
+          survey_profile: string | null;
+          survey_sales_per_month: number | null;
+          survey_text_version: string | null;
           updated_at: string;
           user_id: string;
         };
@@ -8159,6 +8167,14 @@ export type Database = {
           notify_enabled?: boolean;
           offer_code?: string;
           revoked_at?: string | null;
+          survey_answered_at?: string | null;
+          survey_interview_accepted?: boolean;
+          survey_interview_consented_at?: string | null;
+          survey_price_cheap_eur?: number | null;
+          survey_price_too_expensive_eur?: number | null;
+          survey_profile?: string | null;
+          survey_sales_per_month?: number | null;
+          survey_text_version?: string | null;
           updated_at?: string;
           user_id: string;
         };
@@ -8171,6 +8187,14 @@ export type Database = {
           notify_enabled?: boolean;
           offer_code?: string;
           revoked_at?: string | null;
+          survey_answered_at?: string | null;
+          survey_interview_accepted?: boolean;
+          survey_interview_consented_at?: string | null;
+          survey_price_cheap_eur?: number | null;
+          survey_price_too_expensive_eur?: number | null;
+          survey_profile?: string | null;
+          survey_sales_per_month?: number | null;
+          survey_text_version?: string | null;
           updated_at?: string;
           user_id?: string;
         };
@@ -9058,6 +9082,58 @@ export type Database = {
           id?: string;
           row_count?: number;
           search_snapshot?: Json;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
+      // À régénérer par `npm run db:types` (migration 20261028130100).
+      sale_reminder_dispatches: {
+        Row: {
+          attempts: number;
+          created_at: string;
+          dedupe_key: string;
+          error: string | null;
+          id: string;
+          message_id: string | null;
+          mode: string;
+          payload: Json;
+          reminder_kind: string;
+          sale_id: string;
+          sent_at: string | null;
+          status: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          attempts?: number;
+          created_at?: string;
+          dedupe_key: string;
+          error?: string | null;
+          id?: string;
+          message_id?: string | null;
+          mode: string;
+          payload?: Json;
+          reminder_kind: string;
+          sale_id: string;
+          sent_at?: string | null;
+          status?: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          attempts?: number;
+          created_at?: string;
+          dedupe_key?: string;
+          error?: string | null;
+          id?: string;
+          message_id?: string | null;
+          mode?: string;
+          payload?: Json;
+          reminder_kind?: string;
+          sale_id?: string;
+          sent_at?: string | null;
+          status?: string;
+          updated_at?: string;
           user_id?: string;
         };
         Relationships: [];
@@ -10631,20 +10707,32 @@ export type Database = {
       };
       user_favorites: {
         Row: {
+          bid_ceiling_eur: number | null;
+          bid_ceiling_saved_at: string | null;
           created_at: string;
           id: string;
+          personal_status: string | null;
+          personal_status_updated_at: string | null;
           sale_id: string;
           user_id: string;
         };
         Insert: {
+          bid_ceiling_eur?: number | null;
+          bid_ceiling_saved_at?: string | null;
           created_at?: string;
           id?: string;
+          personal_status?: string | null;
+          personal_status_updated_at?: string | null;
           sale_id: string;
           user_id: string;
         };
         Update: {
+          bid_ceiling_eur?: number | null;
+          bid_ceiling_saved_at?: string | null;
           created_at?: string;
           id?: string;
+          personal_status?: string | null;
+          personal_status_updated_at?: string | null;
           sale_id?: string;
           user_id?: string;
         };
@@ -10707,6 +10795,85 @@ export type Database = {
           },
         ];
       };
+      // À régénérer par db:types (ajout minimal, point 70).
+      user_followed_sale_snapshots: {
+        Row: {
+          adjudication_price_eur: number | null;
+          adjudication_price_source: string | null;
+          adjudication_price_withheld: boolean;
+          bid_ceiling_eur: number | null;
+          captured_at: string;
+          city: string | null;
+          department: string | null;
+          expires_at: string;
+          id: string;
+          lawyer_name: string | null;
+          personal_status: string | null;
+          postal_code: string | null;
+          property_type: string | null;
+          result_status: string;
+          sale_date: string | null;
+          sale_id: string;
+          sale_legal_framework: string | null;
+          sale_venue_type: string | null;
+          source_name: string | null;
+          starting_price_eur: number | null;
+          title: string | null;
+          tribunal_name: string | null;
+          user_id: string;
+        };
+        Insert: {
+          adjudication_price_eur?: number | null;
+          adjudication_price_source?: string | null;
+          adjudication_price_withheld?: boolean;
+          bid_ceiling_eur?: number | null;
+          captured_at?: string;
+          city?: string | null;
+          department?: string | null;
+          expires_at: string;
+          id?: string;
+          lawyer_name?: string | null;
+          personal_status?: string | null;
+          postal_code?: string | null;
+          property_type?: string | null;
+          result_status: string;
+          sale_date?: string | null;
+          sale_id: string;
+          sale_legal_framework?: string | null;
+          sale_venue_type?: string | null;
+          source_name?: string | null;
+          starting_price_eur?: number | null;
+          title?: string | null;
+          tribunal_name?: string | null;
+          user_id: string;
+        };
+        Update: {
+          adjudication_price_eur?: number | null;
+          adjudication_price_source?: string | null;
+          adjudication_price_withheld?: boolean;
+          bid_ceiling_eur?: number | null;
+          captured_at?: string;
+          city?: string | null;
+          department?: string | null;
+          expires_at?: string;
+          id?: string;
+          lawyer_name?: string | null;
+          personal_status?: string | null;
+          postal_code?: string | null;
+          property_type?: string | null;
+          result_status?: string;
+          sale_date?: string | null;
+          sale_id?: string;
+          sale_legal_framework?: string | null;
+          sale_venue_type?: string | null;
+          source_name?: string | null;
+          starting_price_eur?: number | null;
+          title?: string | null;
+          tribunal_name?: string | null;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       user_notification_preferences: {
         Row: {
           alert_email_consented_at: string | null;
@@ -10714,6 +10881,9 @@ export type Database = {
           alert_email_revoked_at: string | null;
           consent_source: string;
           created_at: string;
+          sale_reminders_consented_at: string | null;
+          sale_reminders_enabled: boolean;
+          sale_reminders_revoked_at: string | null;
           updated_at: string;
           user_id: string;
         };
@@ -10723,6 +10893,9 @@ export type Database = {
           alert_email_revoked_at?: string | null;
           consent_source?: string;
           created_at?: string;
+          sale_reminders_consented_at?: string | null;
+          sale_reminders_enabled?: boolean;
+          sale_reminders_revoked_at?: string | null;
           updated_at?: string;
           user_id: string;
         };
@@ -10732,6 +10905,9 @@ export type Database = {
           alert_email_revoked_at?: string | null;
           consent_source?: string;
           created_at?: string;
+          sale_reminders_consented_at?: string | null;
+          sale_reminders_enabled?: boolean;
+          sale_reminders_revoked_at?: string | null;
           updated_at?: string;
           user_id?: string;
         };
@@ -13081,6 +13257,8 @@ export type Database = {
         Returns: unknown;
       };
       _st_within: { Args: { geom1: unknown; geom2: unknown }; Returns: boolean };
+      // Ajouts manuels minimaux (point 65), à régénérer par db:types.
+      admin_pilotage_summary: { Args: { p_now?: string }; Returns: Json };
       abort_information_agent_evidence_publication: {
         Args: { p_fact_id: string; p_public_path: string };
         Returns: boolean;
@@ -13491,6 +13669,22 @@ export type Database = {
           severity: string;
         }[];
       };
+      // À régénérer par `npm run db:types` (migration 20261028130100).
+      claim_sale_reminder: {
+        Args: {
+          p_key: string;
+          p_kind: string;
+          p_mode: string;
+          p_payload?: Json;
+          p_sale_id: string;
+          p_user_id: string;
+        };
+        Returns: string;
+      };
+      purge_sale_reminder_dispatches: {
+        Args: { p_older_than?: string };
+        Returns: number;
+      };
       claim_trial_card: {
         Args: { p_fingerprint_hash: string; p_user_id: string };
         Returns: boolean;
@@ -13895,6 +14089,7 @@ export type Database = {
         Returns: Json;
       };
       get_court_auction_summaries: { Args: never; Returns: Json };
+      get_launch_offer_status: { Args: never; Returns: boolean };
       get_withdrawn_catalogue_sources: { Args: never; Returns: string[] };
       get_public_sale_calendar_event: {
         Args: { p_sale_id: string };
@@ -13930,6 +14125,11 @@ export type Database = {
       get_public_sale_indexability: {
         Args: { p_sale_id: string };
         Returns: boolean;
+      };
+      // Ajout minimal, à régénérer par db:types.
+      get_public_sale_market_gap_band: {
+        Args: { p_sale_id: string };
+        Returns: string;
       };
       get_public_sale_summary: {
         Args: { p_sale_id: string };
@@ -14130,6 +14330,11 @@ export type Database = {
           scanned_count: number;
           unresolved_count: number;
         }[];
+      };
+      // Ajout manuel minimal (point 65), à régénérer par db:types.
+      record_account_product_event: {
+        Args: { p_detail?: string; p_event_type: string; p_sale_id?: string; p_user_id: string };
+        Returns: boolean;
       };
       record_autonomous_pipeline_dispatch: {
         Args: {
@@ -14631,6 +14836,7 @@ export type Database = {
         Args: { p_reason?: string; p_source: string; p_withdrawn: boolean };
         Returns: Json;
       };
+      set_launch_offer: { Args: { p_active: boolean }; Returns: boolean };
       set_catalogue_readiness_enforcement: {
         Args: { p_enabled: boolean };
         Returns: {

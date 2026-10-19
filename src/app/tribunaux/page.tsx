@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { BreadcrumbJsonLd } from "@/components/BreadcrumbJsonLd";
 import { PublicTribunalActivitySection } from "@/components/PublicTribunalActivity";
 import { TribunalJudicialActivityExplorer } from "@/components/TribunalJudicialActivityExplorer";
+import { TribunalSectorAlert } from "@/components/TribunalSectorAlert";
 import { pageMetadata } from "@/lib/page-metadata";
 import { loadPublicTribunalActivity } from "@/lib/public-tribunal-activity.server";
 
@@ -50,10 +51,13 @@ export default async function Page() {
       <TribunalJudicialActivityExplorer
         adjudicationStatisticsEnabled={adjudication}
         publicActivity={
-          <PublicTribunalActivitySection
-            items={publicActivity}
-            adjudicationStatisticsEnabled={adjudication}
-          />
+          <>
+            <PublicTribunalActivitySection
+              items={publicActivity}
+              adjudicationStatisticsEnabled={adjudication}
+            />
+            <TribunalSectorAlert />
+          </>
         }
       />
     </>

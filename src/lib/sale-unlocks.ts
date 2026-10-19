@@ -1,3 +1,4 @@
+import { launchOfferText } from "@/lib/launch-offer";
 import { parisDayMonthLabel, parisMonthName } from "@/lib/paris-month";
 import { PLAN_LIMITS } from "@/lib/plans";
 
@@ -15,6 +16,19 @@ export const MONTHLY_SALE_UNLOCKS = PLAN_LIMITS.decouverte.monthlyUnlocks;
  * écrit en dur. Les offres expliquent ce que chaque déblocage ouvre.
  */
 export const FREE_ACCESS_LINE = `Gratuit, sans carte bancaire · ${MONTHLY_SALE_UNLOCKS} fiches détaillées par mois`;
+
+/**
+ * `FREE_ACCESS_LINE`, ou la mention de l'offre de lancement quand elle est active : un compte
+ * gratuit a alors les avantages de l'offre Analyse, et la ligne qui présente le compte gratuit ne
+ * promet plus « 3 fiches détaillées par mois ». Texte pour un compte connecté ou pour un visiteur
+ * (`src/lib/launch-offer.ts`). Les appels à l'inscription et l'accueil passent par ici.
+ */
+export function freeAccessLine({
+  launchOffer = false,
+  signedIn = false,
+}: { launchOffer?: boolean; signedIn?: boolean } = {}): string {
+  return launchOffer ? launchOfferText(signedIn ? "account" : "visitor") : FREE_ACCESS_LINE;
+}
 
 export type SaleUnlockStatus = {
   saleId: string | null;

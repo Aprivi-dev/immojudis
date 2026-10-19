@@ -2,7 +2,7 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EXAMPLE_SALE } from "@/lib/example-sale";
 import type { FavoriteSalesResponse } from "@/lib/favorites";
 import type { AiReviewProjectionReadModel } from "@/lib/ai-review-guard";
@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   fetchSaleChangeEvents: vi.fn(),
   checkoutOpen: vi.fn(),
   fetchSalesAiReviewProjections: vi.fn(),
+  fetchFollowedSaleSnapshots: vi.fn(),
+  deleteFollowedSaleSnapshot: vi.fn(),
   addFavoriteSale: vi.fn(),
   removeFavoriteSale: vi.fn(),
   toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }),
@@ -26,13 +28,15 @@ vi.mock("@/lib/client-api", () => ({
   fetchFavoriteSales: mocks.fetchFavoriteSales,
   fetchSaleChangeEvents: mocks.fetchSaleChangeEvents,
   fetchSalesAiReviewProjections: mocks.fetchSalesAiReviewProjections,
+  fetchFollowedSaleSnapshots: mocks.fetchFollowedSaleSnapshots,
+  deleteFollowedSaleSnapshot: mocks.deleteFollowedSaleSnapshot,
   addFavoriteSale: mocks.addFavoriteSale,
   removeFavoriteSale: mocks.removeFavoriteSale,
 }));
 vi.mock("@/hooks/use-analysis-checkout-open", () => ({
   useAnalysisCheckoutOpen: () => mocks.checkoutOpen(),
 }));
-vi.mock("sonner", () => ({ toast: mocks.toast }));
+vi.mock("@/lib/toast", () => ({ toast: mocks.toast }));
 vi.mock("@/hooks/use-viewed-sales", () => ({ useViewedSales: () => ({ isViewed: () => false }) }));
 vi.mock("@/integrations/supabase/client", () => ({ supabase: { from: vi.fn() } }));
 vi.mock("next/navigation", () => ({
@@ -42,6 +46,10 @@ vi.mock("next/navigation", () => ({
 vi.mock("./FavoriteButton", () => ({
   FavoriteButton: ({ saleId }: { saleId: string }) => <button>Retirer {saleId}</button>,
 }));
+
+beforeEach(() => {
+  mocks.fetchFollowedSaleSnapshots.mockResolvedValue({ snapshots: [] });
+});
 
 afterEach(() => {
   cleanup();
@@ -57,6 +65,9 @@ function favoritesResponse(): FavoriteSalesResponse {
         saleId: "sale-1",
         favoritedAt: "2026-09-01T10:00:00.000Z",
         sale: { ...EXAMPLE_SALE, id: "sale-1" },
+        personalStatus: null,
+        bidCeilingEur: null,
+        bidCeilingSavedAt: null,
       },
     ],
     unavailableSaleIds: [],
@@ -163,6 +174,50 @@ describe("FavoriteSales", () => {
     expect(screen.getByRole("link", { name: "Voir les ventes" }).getAttribute("href")).toBe(
       "/sales",
     );
+  });
+});
+
+describe("FavoriteSales : Mon dossier (point 68)", () => {
+  function renderPage() {
+    return render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <FavoriteSales />
+      </QueryClientProvider>,
+    );
+  }
+
+  it("affiche le statut et le plafond enregistrés sous la carte du favori", async () => {
+    const response = favoritesResponse();
+    response.favorites[0] = {
+      ...response.favorites[0],
+      personalStatus: "bidding",
+      bidCeilingEur: 185_000,
+      bidCeilingSavedAt: "2026-10-10T08:00:00.000Z",
+    };
+    mocks.fetchFavoriteSales.mockResolvedValue(response);
+    mocks.fetchSalesAiReviewProjections.mockResolvedValue({ projections: [] });
+    mocks.fetchSaleChangeEvents.mockResolvedValue({ events: [] });
+    renderPage();
+
+    await screen.findByRole("heading", { name: "Appartement · Bordeaux" });
+    expect(screen.getByText("Prêt à enchérir")).toBeTruthy();
+    expect(screen.getByText(/185\s000\s€/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Modifier sur la fiche" }).getAttribute("href")).toBe(
+      "/sales/sale-1",
+    );
+  });
+
+  it("affiche une valeur absente comme absente, jamais comme un statut ou un montant", async () => {
+    mocks.fetchFavoriteSales.mockResolvedValue(favoritesResponse());
+    mocks.fetchSalesAiReviewProjections.mockResolvedValue({ projections: [] });
+    mocks.fetchSaleChangeEvents.mockResolvedValue({ events: [] });
+    renderPage();
+
+    await screen.findByRole("heading", { name: "Appartement · Bordeaux" });
+    expect(screen.getByText("aucun")).toBeTruthy();
+    expect(screen.getByText("aucun enregistré")).toBeTruthy();
   });
 });
 
@@ -305,6 +360,35 @@ describe("FavoriteSales : changements des ventes suivies", () => {
     expect(screen.queryByText("Changements récents")).toBeNull();
     expect(screen.queryByText("Mise à prix abaissée")).toBeNull();
     expect(mocks.fetchSaleChangeEvents).not.toHaveBeenCalled();
+  });
+
+  it("affiche les favoris d'abord, puis une ligne compacte pour le suivi non inclus", async () => {
+    setup();
+    mocks.fetchFavoriteSales.mockResolvedValue({
+      ...favoritesResponse(),
+      plan: { code: "decouverte", label: "Découverte", feature: "limited", limit: 3 },
+    });
+    renderPage();
+
+    const line = await screen.findByRole("region", {
+      name: "Suivez les changements de vos ventes",
+    });
+    const card = screen.getByRole("heading", { name: "Appartement · Bordeaux" });
+    // La carte du favori précède la ligne d'offre dans la page.
+    expect(card.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Une ligne : ni aperçu flouté, ni libellés de substitution.
+    expect(line.querySelector(".blur-\\[5px\\]")).toBeNull();
+    expect(screen.queryByText("Date modifiée")).toBeNull();
+    expect(line.querySelectorAll("a")).toHaveLength(1);
+  });
+
+  it("affiche aussi les favoris avant les changements récents d'un compte Analyse", async () => {
+    setup([changeEvent()]);
+    renderPage();
+
+    const changes = await screen.findByRole("heading", { name: "Changements récents" });
+    const card = screen.getByRole("heading", { name: "Appartement · Bordeaux" });
+    expect(card.compareDocumentPosition(changes) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("ne promet ni essai ni souscription quand l'offre Analyse n'est pas ouverte", async () => {

@@ -12,9 +12,16 @@ export type SupabaseAuthContext = {
   supabase: ReturnType<typeof createClient<Database>>;
   userId: string;
   claims: Claims;
+  /** Niveau enregistré sur le profil (`premium` : accordé à la main). Ne dit rien de l'offre de lancement. */
   accountTier: AccountTier;
   userRole: UserRole;
   isAdmin: boolean;
+  /**
+   * Le compte a une ligne `user_profiles` (toujours le cas après l'inscription). Faux : le compte
+   * ne bénéficie pas de l'offre de lancement, comme dans `app_private.has_active_analysis_access`.
+   * Absent : traité comme vrai (contextes construits par les jobs et les tests).
+   */
+  hasProfile?: boolean;
 };
 
 function supabasePublicEnv() {
@@ -103,6 +110,7 @@ export async function requireSupabaseAuthContext(token: string): Promise<Supabas
     claims,
     accountTier,
     userRole,
+    hasProfile: profile != null,
     // With ADMIN_MFA_REQUIRED=true an administrator only keeps admin rights on an aal2 session
     // (TOTP verified); an aal1 session is treated like a regular account.
     isAdmin:

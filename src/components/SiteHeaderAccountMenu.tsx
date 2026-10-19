@@ -6,13 +6,17 @@ import { useState } from "react";
 import LogOut from "lucide-react/dist/esm/icons/log-out.js";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
 import { buttonBase, darkGhost, lightGhost } from "@/components/site-header-shared";
+import { useAuth } from "@/hooks/use-auth";
+import { useHasAnalysisAccess } from "@/hooks/use-has-analysis-access";
 import { getSupabase } from "@/integrations/supabase/lazy";
-import type { SiteLink } from "@/lib/navigation";
+import { visibleAccountLinks, type AccountLink } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 
 /** Menu « Mon compte » (personnes connectées) : Radix Popover n'est chargé que pour elles. */
-export function AccountMenu({ links, dark }: { links: SiteLink[]; dark: boolean }) {
+export function AccountMenu({ links, dark }: { links: AccountLink[]; dark: boolean }) {
   const [open, setOpen] = useState(false);
+  const { user } = useAuth();
+  const shownLinks = visibleAccountLinks(links, useHasAnalysisAccess(user?.id));
   return (
     <PopoverPrimitive.Root open={open} onOpenChange={setOpen}>
       <PopoverPrimitive.Trigger asChild>
@@ -28,7 +32,7 @@ export function AccountMenu({ links, dark }: { links: SiteLink[]; dark: boolean 
           className="z-[70] w-60 rounded-lg border border-border bg-white p-1.5 text-sm text-foreground shadow-xl outline-none"
         >
           <ul>
-            {links.map((link) => (
+            {shownLinks.map((link) => (
               <li key={link.href}>
                 <Link
                   href={link.href}

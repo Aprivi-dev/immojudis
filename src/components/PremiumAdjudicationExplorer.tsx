@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import BadgeEuro from "lucide-react/dist/esm/icons/badge-euro.js";
 import { BillingActions } from "@/components/BillingActions";
 import { useAuth } from "@/hooks/use-auth";
+import { useHasHydrated } from "@/hooks/use-has-hydrated";
 import { fetchAccessPlan } from "@/lib/client-api";
 import { fetchAdjudicationPriceStatisticsDirectory } from "@/lib/adjudication-price-statistics-client";
 import { AdjudicationBarometer } from "@/components/AdjudicationBarometer";
@@ -16,6 +17,7 @@ export function PremiumAdjudicationExplorer({
   selectedCourtCode?: string | null;
 } = {}) {
   const { session, loading: authLoading } = useAuth();
+  const hydrated = useHasHydrated();
   const planQuery = useQuery({
     queryKey: queryKeys.adjudicationStatisticsPlan(session?.user.id),
     queryFn: fetchAccessPlan,
@@ -54,9 +56,14 @@ export function PremiumAdjudicationExplorer({
       </p>
 
       {authLoading || (session && planQuery.isLoading) ? (
-        <p className="mt-6 text-sm text-brand-navy/65" role="status">
-          Vérification de votre accès Analyse…
-        </p>
+        // Message de navigateur seulement : absent du HTML du serveur (voir `useHasHydrated`).
+        hydrated ? (
+          <p className="mt-6 text-sm text-brand-navy/65" role="status">
+            Vérification de votre accès Analyse…
+          </p>
+        ) : (
+          <div className="mt-6 h-5" aria-hidden />
+        )
       ) : planQuery.isError ? (
         <div
           className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm"

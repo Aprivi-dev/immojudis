@@ -69,6 +69,7 @@ const SERVER_KEYS = [
   "RESEND_API_KEY",
   "ALERT_EMAIL_FROM",
   "RESEND_FROM_EMAIL",
+  "SALE_REMINDERS_MODE",
   "GITHUB_SCROLL_TOKEN",
   "IMMOJUDIS_GITHUB_ACTIONS_TOKEN",
   "GITHUB_ACTIONS_DISPATCH_TOKEN",
@@ -84,6 +85,7 @@ const SERVER_KEYS = [
   "OPERATIONS_ALERT_GITHUB_REPOSITORY",
   "OPERATIONS_ALERT_GITHUB_WORKFLOW",
   "OPERATIONS_ALERT_GITHUB_REF",
+  "OPERATIONS_ALERT_EMAIL_TO",
   "VERCEL_ENV",
   "NODE_ENV",
 ] as const;
@@ -180,6 +182,10 @@ export function serverEnv(source?: EnvSource) {
       resendApiKey: env.RESEND_API_KEY,
       from: firstFilled(env.ALERT_EMAIL_FROM, env.RESEND_FROM_EMAIL),
     },
+    saleReminders: {
+      /** Valeur brute de `SALE_REMINDERS_MODE` ; `saleRemindersMode()` la ramène à off, internal ou on. */
+      mode: env.SALE_REMINDERS_MODE,
+    },
     pipeline: {
       githubToken: firstFilled(
         env.GITHUB_SCROLL_TOKEN,
@@ -202,6 +208,8 @@ export function serverEnv(source?: EnvSource) {
         firstFilled(env.OPERATIONS_ALERT_GITHUB_WORKFLOW) ?? DEFAULT_OPERATIONAL_ALERT_WORKFLOW,
       githubRef:
         firstFilled(env.OPERATIONS_ALERT_GITHUB_REF, env.GITHUB_SCROLL_REF) ?? DEFAULT_PIPELINE_REF,
+      /** Second channel: the owner's address(es), comma separated. Unset: no incident email at all. */
+      emailTo: env.OPERATIONS_ALERT_EMAIL_TO,
       /** Deployment label attached to alert payloads. */
       environment: firstFilled(env.VERCEL_ENV, env.NODE_ENV) ?? "unknown",
     },

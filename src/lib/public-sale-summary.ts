@@ -1,3 +1,4 @@
+import { isPublicMarketGapBand, type PublicMarketGapBand } from "@/lib/market-gap-band";
 import { isLikelyPropertyImageUrl } from "@/lib/sale-media";
 import type { AuctionSale } from "@/lib/types";
 
@@ -12,7 +13,11 @@ type ErrorLike = { code?: string; message?: string } | null;
 
 export type PublicSaleSummaryClient = {
   rpc: (
-    fn: "get_public_sale_summary" | "get_public_sale_details" | "get_public_sale_indexability",
+    fn:
+      | "get_public_sale_summary"
+      | "get_public_sale_details"
+      | "get_public_sale_indexability"
+      | "get_public_sale_market_gap_band",
     args: { p_sale_id: string },
   ) => PromiseLike<{ data: unknown; error: unknown }>;
 };
@@ -50,7 +55,8 @@ type SummaryRow = {
   tribunal_name: string | null;
   tribunal_city: string | null;
   thumbnail_url: string | null;
-  updated_at: string | null;
+  /** Date of the last visible change; absent while the database function is not migrated yet. */
+  content_changed_at?: string | null;
 };
 
 /**
@@ -125,6 +131,25 @@ async function fetchPublicSaleIndexability(
   return typeof data === "boolean" ? data : undefined;
 }
 
+/**
+ * Écart de la mise à prix au marché local, en trois bandes (`get_public_sale_market_gap_band`), ou
+ * `undefined` : fonction pas encore déployée, erreur, ou réponse hors contrat. C'est un
+ * enrichissement : sa panne ne change ni la fiche ni son statut, elle supprime seulement la bande
+ * (jamais un chiffre à la place). Une base qui n'a rien à dire répond `null`.
+ */
+async function fetchPublicSaleMarketGapBand(
+  client: PublicSaleSummaryClient,
+  id: string,
+): Promise<PublicMarketGapBand | undefined> {
+  try {
+    const { data, error } = await client.rpc("get_public_sale_market_gap_band", { p_sale_id: id });
+    if (error) return undefined;
+    return isPublicMarketGapBand(data) ? data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function mapPublicSaleSummary(row: SummaryRow): AuctionSale {
   return {
     id: row.id,
@@ -142,7 +167,7 @@ export function mapPublicSaleSummary(row: SummaryRow): AuctionSale {
     bathrooms_count: row.bathrooms_count,
     tribunal_name: row.tribunal_name,
     tribunal_city: row.tribunal_city,
-    updated_at: row.updated_at,
+    content_changed_at: row.content_changed_at ?? null,
     media: isLikelyPropertyImageUrl(row.thumbnail_url)
       ? [{ type: "image", url: row.thumbnail_url }]
       : [],
@@ -155,10 +180,11 @@ export async function fetchPublicSaleSummary(
   options: { withIndexability?: boolean } = {},
 ): Promise<PublicSaleSummaryResult> {
   if (!SALE_ID_PATTERN.test(id)) return { kind: "missing" };
-  const [{ data, error }, details, indexable] = await Promise.all([
+  const [{ data, error }, details, indexable, marketGapBand] = await Promise.all([
     client.rpc("get_public_sale_summary", { p_sale_id: id }),
     fetchPublicSaleDetails(client, id),
     options.withIndexability ? fetchPublicSaleIndexability(client, id) : undefined,
+    fetchPublicSaleMarketGapBand(client, id),
   ]);
   if (error) {
     if (isMissingFunction(error as ErrorLike)) return { kind: "unsupported" };
@@ -168,7 +194,11 @@ export async function fetchPublicSaleSummary(
   return row
     ? {
         kind: "found",
-        sale: { ...mapPublicSaleSummary(row), ...details },
+        sale: {
+          ...mapPublicSaleSummary(row),
+          ...details,
+          ...(marketGapBand === undefined ? {} : { market_gap_band: marketGapBand }),
+        },
         ...(indexable === undefined ? {} : { indexable }),
       }
     : { kind: "missing" };

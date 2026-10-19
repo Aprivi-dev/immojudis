@@ -3,13 +3,27 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 from collections.abc import Iterable, Mapping
+from datetime import UTC, datetime
 from pathlib import Path
 
 from src.config import load_settings
 from src.enrichment.display_fallback import ABSENCE_SENTENCE_PATTERN
 from src.storage.supabase_client import connect
+
+LOGGER = logging.getLogger(__name__)
+
+# Projection de la visibilité du catalogue (docs/runbooks/catalogue-visibility-projection.md).
+QUARANTINE_RULE_FUNCTION = "app_private.catalogue_quarantine_from_payload(jsonb)"
+QUARANTINE_RULE = "app_private.catalogue_quarantine_from_payload(raw_payload)"
+# Avant la migration 20261028110200, la colonne ne lisait que publication_quarantine.
+LEGACY_QUARANTINE_RULE = "(coalesce(raw_payload ->> 'publication_quarantine', '') <> '')"
+#: Une fiche de l'État sort du catalogue 14 jours après son observation (sale_catalogue_projection_is_live).
+STATE_LISTING_LIFETIME_DAYS = 14
+STATE_LISTING_WARNING_DAYS = 7
+FULL_DRIFT_WEEKDAY = 0  # lundi (UTC) : la version complète de la requête de dérive, une fois par semaine
 
 
 def main(*, report_only: bool = False) -> int:
@@ -119,6 +133,9 @@ def main(*, report_only: bool = False) -> int:
             group by s.id
         """).fetchall()
         report["display_invalidations_today"] = summarize_display_invalidations(row[0] for row in invalidations)
+        report["catalogue_projection"] = catalogue_projection_report(
+            connection, full_scan=full_drift_due(datetime.now(UTC))
+        )
     failed = health_failed(report)
     report["global_health_status"] = "degraded" if failed else "healthy"
     output = json.dumps(report, ensure_ascii=False, indent=2, default=str)
@@ -129,6 +146,77 @@ def main(*, report_only: bool = False) -> int:
     if failed and report_only:
         print("::warning::Global pipeline health is degraded; see the backlog report and operational incidents. Collection status is reported separately.")
     return int(failed and not report_only)
+
+
+def full_drift_due(now: datetime) -> bool:
+    """La requête de dérive complète (toutes les lignes) tourne le lundi (UTC) ; ``PIPELINE_HEALTH_FULL_DRIFT``
+    la force (``true``) ou l'empêche (``false``)."""
+    forced = (os.getenv("PIPELINE_HEALTH_FULL_DRIFT") or "").strip().lower()
+    if forced in {"1", "true", "yes", "on"}:
+        return True
+    if forced in {"0", "false", "no", "off"}:
+        return False
+    return now.astimezone(UTC).weekday() == FULL_DRIFT_WEEKDAY
+
+
+def catalogue_projection_report(connection: object, *, full_scan: bool) -> dict[str, object]:
+    """Contrôles en lecture seule de la visibilité matérialisée du catalogue (des comptes, rien d'autre).
+
+    * ``quarantine_drift_48h`` : lignes modifiées depuis 48 h dont ``catalogue_quarantined`` diffère de la
+      quarantaine de ``raw_payload`` (requête du runbook, limitée aux lignes récentes) ;
+    * ``quarantine_drift_full`` : la même sur toutes les lignes, une fois par semaine (``None`` sinon) ;
+    * ``status_quarantined_without_flag`` : ventes ``status = 'quarantined'`` dont la colonne vaut faux
+      (masquées par leur statut seul) ;
+    * ``state_listings_leaving_7d`` : fiches de l'État visibles qui sortiront du catalogue sous 7 jours
+      (observées il y a plus de 7 jours et moins de 14).
+
+    Une base où les colonnes n'existent pas encore (migrations 20261027100000 et suivantes non appliquées)
+    ne fait pas échouer le rapport : ``available`` vaut faux.
+    """
+    try:
+        with connection.transaction():  # type: ignore[attr-defined]  # point de reprise : une erreur ne casse pas la suite
+            has_rule = bool(
+                connection.execute(  # type: ignore[attr-defined]
+                    "select to_regprocedure(%s) is not null", (QUARANTINE_RULE_FUNCTION,)
+                ).fetchone()[0]
+            )
+            rule = QUARANTINE_RULE if has_rule else LEGACY_QUARANTINE_RULE
+
+            def count(sql: str) -> int:
+                return _count(connection.execute(sql).fetchone()[0])  # type: ignore[attr-defined]
+
+            return {
+                "available": True,
+                "quarantine_rule": "payload_keys" if has_rule else "publication_quarantine_only",
+                "quarantine_drift_48h": count(
+                    f"""select count(*) from public.auction_sales
+                        where updated_at >= now() - interval '48 hours'
+                          and catalogue_quarantined is distinct from {rule}"""
+                ),
+                "quarantine_drift_full": (
+                    count(
+                        f"""select count(*) from public.auction_sales
+                            where catalogue_quarantined is distinct from {rule}"""
+                    )
+                    if full_scan
+                    else None
+                ),
+                "status_quarantined_without_flag": count(
+                    """select count(*) from public.auction_sales
+                       where status = 'quarantined' and not catalogue_quarantined"""
+                ),
+                "state_listings_leaving_7d": count(
+                    f"""select count(*) from public.auction_sales
+                        where catalogue_state_observed_at is not null
+                          and catalogue_state_observed_at > now() - interval '{STATE_LISTING_LIFETIME_DAYS} days'
+                          and catalogue_state_observed_at <= now() - interval '{STATE_LISTING_WARNING_DAYS} days'
+                          and coalesce(status, 'unknown') in ('upcoming', 'unknown', 'postponed')
+                          and not catalogue_quarantined"""
+                ),
+            }
+    except Exception as exc:  # colonne ou fonction absente : migration non appliquée
+        LOGGER.warning("Catalogue projection report unavailable: %s", type(exc).__name__)
+        return {"available": False, "error": type(exc).__name__}
 
 
 def summarize_display_invalidations(per_sale_counts: Iterable[object]) -> dict[str, object]:
@@ -276,8 +364,12 @@ def _timestamp_key(value: object) -> tuple[int, object]:
 
 def health_failed(report: dict) -> bool:
     latest = report.get("latest_collection") or {}
+    projection = report.get("catalogue_projection") or {}
     return bool(
         report.get("stalled_runs")
+        # Une annonce en quarantaine peut être publique, ou l'inverse : à corriger tout de suite.
+        or _count(projection.get("quarantine_drift_48h"))
+        or _count(projection.get("quarantine_drift_full"))
         or any(row["exhausted"] or row["overdue"] for row in report["queue"])
         or any(row["stale"] for row in report.get("sources", []))
         or latest.get("status") == "failed"

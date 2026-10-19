@@ -1,4 +1,4 @@
-import { supabase } from "@/integrations/supabase/client";
+import { authHeaders } from "@/lib/client-api-core";
 import {
   adjudicationPriceStatisticsResponseSchema,
   adjudicationPriceStatisticsDirectoryResponseSchema,
@@ -9,17 +9,14 @@ import {
 export async function fetchAdjudicationPriceStatistics(
   saleId: string,
 ): Promise<AdjudicationPriceStatisticsResponse> {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (!session?.access_token) throw new Error("Connexion requise.");
+  // Chargement différé de supabase-js, et seulement s'il y a une session stockée : un visiteur
+  // anonyme de /tribunaux ne télécharge pas le client d'authentification pour apprendre qu'il
+  // doit se connecter.
+  const headers = await authHeaders();
 
   const response = await fetch(
     `/api/v1/sales/${encodeURIComponent(saleId)}/adjudication-statistics`,
-    {
-      headers: { Authorization: `Bearer ${session.access_token}` },
-      cache: "no-store",
-    },
+    { headers, cache: "no-store" },
   );
   const payload = (await response.json().catch(() => null)) as
     | (unknown & { error?: string })
@@ -31,13 +28,10 @@ export async function fetchAdjudicationPriceStatistics(
 }
 
 export async function fetchAdjudicationPriceStatisticsDirectory(): Promise<AdjudicationPriceStatisticsDirectoryResponse> {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (!session?.access_token) throw new Error("Connexion requise.");
+  const headers = await authHeaders();
 
   const response = await fetch("/api/v1/tribunals/adjudication-statistics", {
-    headers: { Authorization: `Bearer ${session.access_token}` },
+    headers,
     cache: "no-store",
   });
   const payload = (await response.json().catch(() => null)) as

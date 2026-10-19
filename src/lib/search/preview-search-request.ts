@@ -55,6 +55,38 @@ export type PreviewSearchApiResponse = {
 const MAX_ROOMS_FILTER = 20;
 
 /**
+ * Tailles de page acceptées par la route : une réponse est mise en cache par adresse, et chaque
+ * taille ouvre une entrée par page et par filtre (`limit=1`, `2`, `3`… faisaient autant d'entrées,
+ * donc autant de lectures de la base pour qui voulait la contourner). Les trois valeurs sont celles
+ * que la page propose (24 par défaut).
+ */
+export const PREVIEW_PAGE_SIZES = [24, 50, 100] as const;
+
+/**
+ * Plafond des prix de la route, en euros : 100 millions. Aucune mise à prix n'en approche, et une
+ * valeur plus grande (`1e30`, `99999999999999`) ne sert qu'à ouvrir une entrée de cache de plus.
+ */
+export const MAX_PRICE_FILTER_EUR = 100_000_000;
+
+function isPageSize(value: number): boolean {
+  return (PREVIEW_PAGE_SIZES as readonly number[]).includes(value);
+}
+
+/**
+ * Prix envoyé à la route : entier d'euros dans [0, 100 000 000]. Le champ de saisie accepte « 150 000,5 »
+ * ou « 1e30 » : on envoie la valeur entière équivalente (« au moins 1 234,5 € » = au moins 1 235 €,
+ * « au plus 1 234,5 € » = au plus 1 234 €), jamais une valeur que la route refuserait.
+ */
+function canonicalPriceFilter(
+  value: string | number | boolean,
+  bound: "min" | "max",
+): string | number | boolean {
+  if (typeof value !== "number" || !Number.isFinite(value)) return value;
+  const rounded = bound === "min" ? Math.ceil(value) : Math.floor(value);
+  return Math.min(MAX_PRICE_FILTER_EUR, Math.max(0, rounded));
+}
+
+/**
  * Valeur envoyée à la route pour un critère de pièces. Le champ de saisie accepte « 2,5 » ou « 30 » :
  * on envoie l'entier équivalent (« au moins 2,5 chambres » = au moins 3), jamais une valeur que la
  * route refuserait.
@@ -72,10 +104,13 @@ export function previewSearchQueryString(search: SalesSearchParams): string {
   for (const key of PREVIEW_SEARCH_URL_KEYS) {
     const value = record[key];
     if (value == null || value === "") continue;
-    params.set(
-      key,
-      String(key === "minBeds" || key === "minBaths" ? canonicalRoomsFilter(value) : value),
-    );
+    // Une taille de page que la route refuse n'est pas envoyée : la route répond avec la taille par défaut.
+    if (key === "limit" && !(typeof value === "number" && isPageSize(value))) continue;
+    let sent: string | number | boolean = value;
+    if (key === "minBeds" || key === "minBaths") sent = canonicalRoomsFilter(value);
+    else if (key === "minPrice") sent = canonicalPriceFilter(value, "min");
+    else if (key === "maxPrice") sent = canonicalPriceFilter(value, "max");
+    params.set(key, String(sent));
   }
   return params.toString();
 }
@@ -87,8 +122,8 @@ export function previewSearchApiUrl(search: SalesSearchParams): string {
 
 /**
  * Critères numériques, dates et listes fermées : une valeur fournie mais illisible est refusée.
- * `page` et `limit` (entiers stricts) et `minBeds` / `minBaths` (entiers de 0 à 20) sont contrôlés
- * avant : voir `INTEGER_FIELDS`.
+ * `page` et `limit` (entiers stricts), `minPrice` / `maxPrice` (entiers d'euros plafonnés) et
+ * `minBeds` / `minBaths` (entiers de 0 à 20) sont contrôlés avant : voir `INTEGER_FIELDS`.
  */
 const STRICT_FIELDS: Record<string, keyof SalesSearchParams> = {
   limit: "limit",
@@ -115,6 +150,8 @@ const INTEGER_FIELDS: Record<string, { min: number; max: number }> = {
   limit: { min: 1, max: Number.MAX_SAFE_INTEGER },
   minBeds: { min: 0, max: 20 },
   minBaths: { min: 0, max: 20 },
+  minPrice: { min: 0, max: MAX_PRICE_FILTER_EUR },
+  maxPrice: { min: 0, max: MAX_PRICE_FILTER_EUR },
 };
 const STRICT_INTEGER = /^(?:0|[1-9][0-9]{0,15})$/;
 
@@ -204,7 +241,7 @@ export function parsePreviewSearchRequest(params: URLSearchParams): PreviewSearc
     if (!(key in raw)) continue;
     const value = params.get(key)!;
     const number = STRICT_INTEGER.test(value) ? Number(value) : Number.NaN;
-    if (!(number >= min && number <= max)) {
+    if (!(number >= min && number <= max) || (key === "limit" && !isPageSize(number))) {
       return { ok: false, message: `Paramètre « ${key} » invalide.` };
     }
   }

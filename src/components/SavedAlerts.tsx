@@ -15,15 +15,17 @@ import {
 import {
   ALERT_FREQUENCY_LABELS,
   alertCriteriaSummary,
+  alertSalesPath,
   normalizeAlertFrequency,
   type AlertFrequency,
 } from "@/lib/alert-criteria-labels";
 import { formatDate } from "@/lib/format";
 import type { UserAlert, UserWatchedZone } from "@/lib/types";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { userMessage } from "@/lib/user-messages";
 import { Badge, Button, Card, PageShell, buttonClasses } from "@/components/ui/primitives";
 import { queryKeys } from "@/lib/query-keys";
+import { requestOpenNotifications } from "@/lib/notification-center-events";
 
 export function SavedAlerts() {
   const { user, loading } = useAuth();
@@ -182,8 +184,13 @@ function AccountAlerts({ userId }: { userId: string }) {
         result.matchCount === 0
           ? "Aucune vente ne correspond à vos alertes pour le moment."
           : `${result.matchCount} vente${result.matchCount > 1 ? "s correspondent" : " correspond"} à vos alertes. Elles apparaissent dans vos alertes, et dans votre prochain email récapitulatif si vous l’avez activé.`,
+        // « Voir » ouvre la cloche des notifications, où arrivent les nouvelles ventes.
+        { action: { label: "Voir", onClick: requestOpenNotifications } },
       );
-      await client.invalidateQueries({ queryKey: alertsKey });
+      await Promise.all([
+        client.invalidateQueries({ queryKey: alertsKey }),
+        client.invalidateQueries({ queryKey: queryKeys.alertNotifications(userId) }),
+      ]);
     },
     onError: (error) => toast.error(userMessage(error, "La recherche n’a pas abouti. Réessayez.")),
   });
@@ -396,6 +403,10 @@ function AlertCard({
         />
       ) : (
         <div className="mt-4 flex flex-wrap gap-2">
+          <Link href={alertSalesPath(alert)} className={buttonClasses({ variant: "primary" })}>
+            Voir les ventes de cette alerte
+            <span className="sr-only"> : {alert.name}</span>
+          </Link>
           <Button disabled={busy} onClick={onEdit}>
             Modifier
           </Button>

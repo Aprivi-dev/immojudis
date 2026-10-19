@@ -33,7 +33,9 @@ export const RANKING_EXPLANATION_STEPS = [
 
 export const RANKING_EXPLANATION_NOTES = [
   "Une annonce nouvellement publiée est évaluée dans les heures qui suivent.",
-  "Ce classement ne juge ni l’intérêt, ni la valeur, ni l’état du bien. Il ne dépend d’aucune rémunération : personne ne peut payer pour améliorer le rang d’une annonce. Un encart d’un cabinet d’avocats, signalé comme mise en avant payante, peut s’intercaler entre deux annonces ; il ne modifie pas leur ordre. Le repère « Annonce bien renseignée » signale une annonce qui réunit une part importante des informations que nous recherchons ; il ne garantit ni l’exactitude des informations ni l’état du bien. Vous pouvez à tout moment trier par date, prix ou surface.",
+  "Ce classement ne juge ni l’intérêt, ni la valeur, ni l’état du bien.",
+  "L’ordre des annonces ne dépend d’aucune rémunération. Un encart de cabinet d’avocats, signalé comme publicité, peut s’intercaler entre deux annonces sans modifier leur ordre.",
+  "Le repère « Annonce bien renseignée » signale une fiche qui réunit une part importante des informations que nous relevons (score d’au moins 40 sur 100) ; il ne garantit ni leur exactitude ni l’état du bien. Vous pouvez à tout moment trier par date, prix ou surface.",
 ] as const;
 
 /** Ajouté pour l'offre Analyse seulement, la seule qui voit le tri « Score d’investissement ». */

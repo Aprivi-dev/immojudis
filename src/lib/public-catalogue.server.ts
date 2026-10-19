@@ -10,6 +10,11 @@ import { cachedPhotoMirrorFetcher } from "@/lib/photo-mirror.server";
 import { salesSearchSignature, type SalesSearchParams } from "@/lib/search/search-url-state";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
 import type { AuctionSale, SaleMediaMirror } from "@/lib/types";
+import {
+  loadWithdrawnSources,
+  stripWithdrawnSourceContent,
+  type WithdrawnSourcesClient,
+} from "@/lib/withdrawn-sources";
 
 /** First page of the catalogue as seen by a signed-out visitor. */
 export type InitialCatalogue = {
@@ -42,6 +47,8 @@ export const DEGRADED_MIRRORS_REVALIDATE_SECONDS = 10;
 export const PUBLIC_CATALOGUE_CACHE_TAG = "public-catalogue";
 /** Maximum time the server waits for the database before the browser takes over. */
 const SERVER_SEARCH_TIMEOUT_MS = 6_000;
+/** Longest wait for the withdrawn-sources switch once the search is done (see `withdrawnSourcesApplier`). */
+const WITHDRAWN_SOURCES_TIMEOUT_MS = 1_500;
 /** The public RPC refuses larger pages: such URLs are left to the browser path. */
 const MAX_SERVER_PAGE_SIZE = 100;
 
@@ -62,6 +69,18 @@ export type CatalogueDependencies = {
    * seulement si `NEXT_PUBLIC_PHOTO_MIRROR=on`.
    */
   photoMirrorClient?: PhotoMirrorClient | null;
+  /**
+   * Délai de lecture des copies de photos ; par défaut `PHOTO_MIRROR_TIMEOUT_MS` (300 ms : le rendu à
+   * la demande n'attend personne). La régénération de la page statique `/sales` (ISR) peut en
+   * accepter davantage (`PHOTO_MIRROR_ISR_TIMEOUT_MS`) : personne n'attend la page, et elle reste
+   * cinq minutes dans le CDN avec ses photos.
+   */
+  photoMirrorTimeoutMs?: number;
+  /**
+   * Client de la fonction `get_withdrawn_catalogue_sources` ; par défaut le client anonyme du
+   * serveur. `null` : aucune lecture de l'interrupteur (la dernière liste connue s'applique).
+   */
+  withdrawnSourcesClient?: WithdrawnSourcesClient | null;
 };
 
 function defaultSearch(search: SalesSearchParams): Promise<PreviewSearchResponse> {
@@ -84,6 +103,36 @@ const cachedFirstPage = unstable_cache(() => defaultSearch({}), [...FIRST_PAGE_C
   revalidate: FIRST_PAGE_REVALIDATE_SECONDS,
   tags: [PUBLIC_CATALOGUE_CACHE_TAG],
 });
+
+/**
+ * Retire de chaque annonce le contenu propre à une source retirée du catalogue (photo, liens, pièces),
+ * comme le fait la fiche (`readPublicSale`). La base ne masque que les ventes dont TOUTES les sources
+ * sont retirées : une vente fusionnée reste dans la liste, sans la vignette hébergée par la source
+ * retirée. La lecture de l'interrupteur (au plus une fois par minute, jamais bloquante ni levée :
+ * erreur = aucune source retirée) part avec la recherche. On l'attend au plus
+ * `WITHDRAWN_SOURCES_TIMEOUT_MS` après la recherche : au-delà, la dernière liste connue s'applique (la
+ * lecture continue en arrière-plan et sera prise en compte à la page suivante).
+ */
+function withdrawnSourcesApplier(client: WithdrawnSourcesClient | null | undefined) {
+  const loading: Promise<unknown> = client ? loadWithdrawnSources(client) : Promise.resolve([]);
+  return async (items: AuctionSale[]): Promise<AuctionSale[]> => {
+    await withTimeout(loading, WITHDRAWN_SOURCES_TIMEOUT_MS).catch((error: unknown) => {
+      console.warn(
+        "[catalogue] Sources retirées: dernière liste connue appliquée:",
+        error instanceof Error ? error.message : error,
+      );
+    });
+    return items.map((sale) => stripWithdrawnSourceContent(sale));
+  };
+}
+
+function withdrawnSourcesClient(
+  dependencies: CatalogueDependencies,
+): WithdrawnSourcesClient | null {
+  return dependencies.withdrawnSourcesClient !== undefined
+    ? dependencies.withdrawnSourcesClient
+    : (createPublicSupabaseClient() as unknown as WithdrawnSourcesClient | null);
+}
 
 /** Le client n'est créé que si l'interrupteur est ouvert. */
 function photoMirrorClient(): PhotoMirrorClient | null {
@@ -116,6 +165,7 @@ export async function loadInitialCatalogue(
   if (search.limit && search.limit > MAX_SERVER_PAGE_SIZE) return null;
 
   try {
+    const withoutWithdrawn = withdrawnSourcesApplier(withdrawnSourcesClient(dependencies));
     const response = await withTimeout(
       isDefaultCatalogueSearch(search) ? firstPage() : run(search),
       dependencies.timeoutMs ?? SERVER_SEARCH_TIMEOUT_MS,
@@ -128,10 +178,12 @@ export async function loadInitialCatalogue(
         ? dependencies.photoMirrorClient
         : photoMirrorClient();
     const items = await withPhotoMirrors(
-      excludeHomepageExampleSales(response.items),
+      await withoutWithdrawn(excludeHomepageExampleSales(response.items)),
       mirrorClient,
       {
-        fetchMirrors: cachedPhotoMirrorFetcher(mirrorClient),
+        fetchMirrors: cachedPhotoMirrorFetcher(mirrorClient, {
+          timeoutMs: dependencies.photoMirrorTimeoutMs,
+        }),
       },
     );
     return {
@@ -177,11 +229,13 @@ export async function loadPreviewCataloguePage(
 ): Promise<PreviewCataloguePage> {
   const run = dependencies.search ?? defaultSearch;
   const firstPage = dependencies.firstPage ?? cachedFirstPage;
+  const withoutWithdrawn = withdrawnSourcesApplier(withdrawnSourcesClient(dependencies));
   const response = await withTimeout(
     isDefaultCatalogueSearch(search) ? firstPage() : run(search),
     dependencies.timeoutMs ?? SERVER_SEARCH_TIMEOUT_MS,
   );
-  const items = excludeHomepageExampleSales(response.items);
+  // Avant la lecture des copies : la photo d'une source retirée n'est même pas cherchée.
+  const items = await withoutWithdrawn(excludeHomepageExampleSales(response.items));
   const mirrorClient =
     dependencies.photoMirrorClient !== undefined
       ? dependencies.photoMirrorClient
