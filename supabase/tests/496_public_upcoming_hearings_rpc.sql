@@ -6,11 +6,12 @@
 --   * aucun champ privé (adresse, coordonnées, contacts, documents) ne sort ;
 --   * seules les audiences exportables de la fenêtre sont rendues : ni vente reportée, ni date
 --     rejetée ou en conflit, ni vente chez un notaire, ni date hors fenêtre ;
---   * la fenêtre est bornée à 1..60 jours ; le prix et le code du tribunal sortent pour que la page
---     ne montre qu'une fois la même vente publiée par deux sources.
+--   * la fenêtre est bornée à 1..60 jours ; l'identifiant, source_url et source_urls (publics) sortent
+--     pour que la page ne fusionne que sur une identité certaine (20261028160100) : le prix et le
+--     tribunal ne suffisent plus.
 begin;
 
-select plan(17);
+select plan(18);
 
 -- Fixtures -------------------------------------------------------------------------------------
 insert into public.tribunals (code, canonical_name, department, city)
@@ -20,8 +21,8 @@ values
 
 -- n : numéro de la vente ; day : jours à partir d'aujourd'hui (heure de Paris) ; hour : heure de
 -- l'audience, null pour minuit (heure inconnue : événement sur la journée).
---   1, 2 : mêmes tribunal, jour et mise à prix, deux fiches (deux sources) : toutes deux rendues,
---          l'appelant n'en montre qu'une ;
+--   1, 2 : mêmes tribunal, jour et mise à prix, deux fiches (deux sources) : toutes deux rendues (sources distinctes),
+--          l'appelant ne les fusionne que s'ils partagent une source ;
 --   3    : tribunal Y, dans 20 jours ; 5 : minuit, dans 5 jours (heure inconnue) ;
 --   4    : reportée ; 6 : chez un notaire ; 7 : date rejetée ; 8 : dans 90 jours ;
 --   9    : en conflit entre sources.
@@ -77,8 +78,8 @@ select ok(
 );
 select is(
   pg_get_function_result('public.get_public_upcoming_hearings(integer)'::regprocedure),
-  'TABLE(id uuid, sale_date timestamp with time zone, date_only boolean, property_type text, city text, department text, tribunal_code text, tribunal_name text, tribunal_city text, starting_price_eur numeric, total_count bigint)',
-  'the contract is the public card of a sale: commune, type, court, date, price'
+  'TABLE(id uuid, sale_date timestamp with time zone, date_only boolean, property_type text, city text, department text, tribunal_code text, tribunal_name text, tribunal_city text, starting_price_eur numeric, source_url text, source_urls jsonb, total_count bigint)',
+  'the contract is the public card of a sale: commune, type, court, date, price, source links'
 );
 
 -- Le contrat -----------------------------------------------------------------------------------
@@ -144,7 +145,13 @@ select is(
      from public.get_public_upcoming_hearings(30)
     where id = 'c4960000-1000-4000-8000-000000000001'),
   '(100000,c496-tj-x,Xenonville)',
-  'the price and the court code come out, so the page can show a sale published twice only once'
+  'the price, the court code and the commune come out'
+);
+select is(
+  (select source_url from public.get_public_upcoming_hearings(30)
+    where id = 'c4960000-1000-4000-8000-000000000001'),
+  'https://example.test/c496/1',
+  'the source link comes out, so the page merges two lines only on a shared source'
 );
 select is(
   (select count(*) from public.get_public_upcoming_hearings(60)
