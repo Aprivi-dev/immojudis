@@ -207,6 +207,19 @@ def test_dedupe_candidates_reads_production_through_the_production_environment()
     assert "workflow_dispatch" in text and "pull_request" not in text and "schedule" not in text
 
 
+def test_photo_copy_step_runs_after_a_failed_collection_and_fails_visibly() -> None:
+    text = (WORKFLOWS / "data-pipeline.yml").read_text(encoding="utf-8")
+    steps = {step.name: step for step in parse_jobs(text)[0].steps}
+    step = steps["Copie des photos principales"]
+
+    # Même après une collecte en échec, mais seulement pour une exécution planifiée.
+    assert re.search(r"^        if: always\(\) && inputs\.automatic == true$", step.text, re.M)
+    # Jamais masquée : les échecs de photos sortent en code 0 (src/photo_mirror.py), une sélection qui
+    # lève sort en 1 et doit rendre le travail rouge.
+    assert "continue-on-error" not in step.text
+    assert "python -m src.photo_mirror --automatic" in step.run
+
+
 def test_dedupe_sweep_is_manual_serialised_with_the_pipeline_and_gives_secrets_to_one_step() -> None:
     text = (WORKFLOWS / "dedupe-sweep.yml").read_text(encoding="utf-8")
     jobs = parse_jobs(text)

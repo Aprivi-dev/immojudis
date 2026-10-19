@@ -14,6 +14,10 @@ que ``auction_sales`` et n'y écrit jamais (une écriture déclencherait une qui
   ``sale_photos``, ou dont la ligne est ``failed`` (moins de 3 essais, dernier essai de plus de 12 h). Les
   ventes les plus proches de leur date passent en premier. Les ventes Enchères Publiques sont exclues tant
   que l'accès n'est pas autorisé.
+* **Code de sortie** : 0 tant que le passage a pu s'exécuter, quels que soient les échecs de photos
+  (réseau, robots.txt, format : comptés dans le résumé). 1 si le passage lui-même n'a pas pu tourner (la
+  requête de sélection lève, base injoignable, identifiant manquant) : l'étape de data-pipeline.yml n'a pas
+  de ``continue-on-error``, le travail devient rouge et l'annotation ``::error`` le dit.
 * **Plafonds** : ``PHOTO_MIRROR_BUDGET_MINUTES`` (15) et ``PHOTO_MIRROR_MAX_PHOTOS`` (400). Avec
   ``--automatic`` (étape planifiée de data-pipeline.yml), le budget est plafonné à 20 minutes quel que soit
   le réglage, pour que le ``timeout-minutes`` de l'étape ne coupe jamais un envoi en cours.
@@ -1367,7 +1371,18 @@ def main(argv: list[str] | None = None) -> int:
         # No copy, but withdrawals still run (the summary says `disabled`).
         LOGGER.info("%s is not true: no photo is copied, only withdrawals are applied", ENABLED_ENV)
     limits = limits_from_inputs(args.max_photos, args.budget_minutes, automatic=args.automatic)
-    summary = run_photo_mirror(limits).as_dict()
+    try:
+        summary = run_photo_mirror(limits).as_dict()
+    except Exception as exc:  # noqa: BLE001 - the pass itself could not run: that must be seen, never swallowed
+        # Photo failures (network, robots, format) are counted in the summary and exit 0. What reaches here is
+        # the database or the configuration: the selection query raised, the store could not be opened, a
+        # credential is missing. The workflow step has no `continue-on-error`, so this turns the job red.
+        LOGGER.exception("Photo mirror pass failed")
+        print(
+            f"::error title=Copie des photos::the pass could not run ({type(exc).__name__}); "
+            "no photo was selected or copied. See the job log."
+        )
+        return 1
     _emit(summary)
     _write_step_summary(summary)
     return 0
