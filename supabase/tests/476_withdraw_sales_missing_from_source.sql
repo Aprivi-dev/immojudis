@@ -2,7 +2,7 @@
 -- jamais sans inventaire complet récent, et rien si plus de 15 % des ventes visibles seraient retirées.
 begin;
 
-select plan(28);
+select plan(30);
 
 -- Fixtures -------------------------------------------------------------------------------------
 -- Source « pgtap-476-main » : 27 ventes (ids 1 à 27), dont 26 visibles.
@@ -206,10 +206,27 @@ select is(
   1,
   'once under the limit (1 of 10) the remaining sale is withdrawn'
 );
+-- L'alerte ne se ferme pas aussitôt : sync_operational_alert (20261009184000) attend que la condition soit
+-- éteinte depuis deux heures (hystérésis), pour qu'un incident qui clignote reste un seul incident.
+select is(
+  (select status || ':' || (inactive_since is not null)::text from public.operational_alerts
+    where alert_key = 'catalogue.source_absence.pgtap-476-mass'),
+  'open:true',
+  'the alert stays open right after the problem clears (two-hour hysteresis of the incident table)'
+);
+
+update public.auction_source_state
+   set last_inventory_complete_at = statement_timestamp() + interval '3 hours'
+ where source_name = 'pgtap-476-mass';
+select is(
+  (app_private.withdraw_missing_source_sales('pgtap-476-mass', true, statement_timestamp() + interval '3 hours') ->> 'action'),
+  'none',
+  'three hours later nothing is left to withdraw'
+);
 select is(
   (select status from public.operational_alerts where alert_key = 'catalogue.source_absence.pgtap-476-mass'),
   'resolved',
-  'and the alert closes'
+  'and the alert closes once the condition has been clear for more than two hours'
 );
 
 select * from finish();
