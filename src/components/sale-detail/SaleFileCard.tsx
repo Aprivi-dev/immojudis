@@ -28,10 +28,13 @@ import { userMessage } from "@/lib/user-messages";
 export function SaleFileCard({
   saleId,
   calculatedCeiling,
+  calculationPending = false,
 }: {
   saleId: string;
   /** Enchère plafond calculée par le calculateur de la fiche, en euros ; null si elle n'est pas disponible. */
   calculatedCeiling: number | null;
+  /** Le calcul est ouvert à ce compte mais l'estimation de marché n'est pas encore arrivée. */
+  calculationPending?: boolean;
 }) {
   const { user, loading } = useAuth();
   const queryClient = useQueryClient();
@@ -136,7 +139,11 @@ export function SaleFileCard({
                 "Aucune enchère plafond enregistrée."
               )}
             </p>
-            {ceiling == null ? (
+            {ceiling == null && calculationPending ? (
+              <p role="status" className="mt-2 text-xs leading-relaxed text-ink-soft">
+                Calcul de l’enchère plafond en cours…
+              </p>
+            ) : ceiling == null ? (
               <p className="mt-2 text-xs leading-relaxed text-ink-soft">
                 Aucun calcul d’enchère plafond n’est disponible pour cette vente avec votre accès
                 actuel : il n’y a donc rien à enregistrer pour l’instant.
