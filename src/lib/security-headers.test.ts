@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import nextConfig from "../../next.config";
 import {
   buildCspResponseHeaders,
   buildSecurityHeaders,
@@ -6,6 +7,7 @@ import {
   cspRequiresDynamicRendering,
   generateCspNonce,
   resolveCspMode,
+  strictCspEnabled,
 } from "./security-headers";
 
 function headerMap(headers: { key: string; value: string }[]) {
@@ -157,6 +159,19 @@ describe("CSP delivery mode", () => {
     expect(cspRequiresDynamicRendering({ CSP_REPORT_ONLY: "false" })).toBe(true);
   });
 
+  it("delivers the strict policy only when enforcing or previewing it, never by default", () => {
+    // Default: static pages carry no nonce, so a report-only policy would flag every script.
+    expect(strictCspEnabled({})).toBe(false);
+    expect(strictCspEnabled({ CSP_REPORT_ONLY: "true" })).toBe(false);
+    expect(strictCspEnabled({ CSP_NONCE_DYNAMIC: "false" })).toBe(false);
+    expect(strictCspEnabled({ CSP_NONCE_DYNAMIC: " TRUE " })).toBe(true);
+    expect(strictCspEnabled({ CSP_REPORT_ONLY: "false" })).toBe(true);
+    // Delivering the policy and rendering at request time (nonces) are one and the same decision.
+    for (const env of [{}, { CSP_NONCE_DYNAMIC: "true" }, { CSP_REPORT_ONLY: "false" }]) {
+      expect(cspRequiresDynamicRendering(env)).toBe(strictCspEnabled(env));
+    }
+  });
+
   it("lets the browser load the hosted copies of sale photos from Supabase Storage", () => {
     // Copies des photos (bucket public `sale-photos`) : <img> https vers le projet Supabase.
     const supabaseUrl = "https://project.supabase.co";
@@ -176,5 +191,44 @@ describe("CSP delivery mode", () => {
     // Aucun en-tête d'isolation ne bloque une image d'un autre hôte.
     expect(legacy["Cross-Origin-Embedder-Policy"]).toBeUndefined();
     expect(legacy["Cross-Origin-Resource-Policy"]).toBeUndefined();
+  });
+});
+
+describe("next.config headers() on the static variant of /sales", () => {
+  // Next.js lit `source` comme un motif de chemin ; `/(.*)` (le groupe `(.*)` capture tout le
+  // chemin) équivaut à cette expression.
+  const matches = (source: string, path: string) => new RegExp("^" + source + "$").test(path);
+
+  it("covers /sales/defaut, where the proxy rewrites /sales to, with every security header", async () => {
+    const rules = await nextConfig.headers!();
+    const securityRule = rules.find((rule) => rule.source === "/(.*)");
+    expect(securityRule).toBeDefined();
+
+    for (const path of [
+      "/",
+      "/sales",
+      "/sales/defaut",
+      "/sales/defaut.rsc",
+      "/sales/defaut.segments/_tree.segment.rsc",
+    ]) {
+      expect(matches(securityRule!.source, path), path).toBe(true);
+    }
+    expect(securityRule!.headers.map((header) => header.key)).toEqual(
+      expect.arrayContaining([
+        "Content-Security-Policy",
+        "X-Frame-Options",
+        "Permissions-Policy",
+        "Referrer-Policy",
+        "X-Content-Type-Options",
+        "Cross-Origin-Opener-Policy",
+      ]),
+    );
+  });
+
+  it("lets no other rule override a security header (the others carry Cache-Control only)", async () => {
+    const rules = await nextConfig.headers!();
+    for (const rule of rules.filter((candidate) => candidate.source !== "/(.*)")) {
+      expect(rule.headers.map((header) => header.key)).toEqual(["Cache-Control"]);
+    }
   });
 });

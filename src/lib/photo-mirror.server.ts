@@ -34,7 +34,15 @@ class NothingToCache extends Error {}
  */
 export function cachedPhotoMirrorFetcher(
   client: PhotoMirrorClient | null | undefined,
-  options: { timeoutMs?: number } = {},
+  options: {
+    timeoutMs?: number;
+    /**
+     * Appelée quand la lecture a ÉCHOUÉ (erreur, réponse inattendue, délai dépassé) et que la table
+     * rendue est vide pour cette raison. Pas appelée quand la base répond qu'aucune copie n'existe
+     * : cette réponse-là est exacte. Permet à une réponse publique de ne pas figer l'échec dans le CDN.
+     */
+    onUnavailable?: () => void;
+  } = {},
 ): (urls: string[]) => Promise<Map<string, SaleMediaMirror>> {
   return async (urls) => {
     const lookupUrls = photoMirrorLookupUrls(urls).sort();
@@ -55,6 +63,7 @@ export function cachedPhotoMirrorFetcher(
       return new Map(entries);
     } catch (error) {
       if (!(error instanceof NothingToCache)) {
+        options.onUnavailable?.();
         console.warn(
           "[photos] Copies indisponibles, photos des sources affichées:",
           error instanceof Error ? error.message : String(error),

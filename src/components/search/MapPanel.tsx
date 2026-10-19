@@ -380,6 +380,11 @@ export function MapPanel({
           pitchWithRotate: false,
           dragRotate: false,
           cooperativeGestures: false,
+          // Moins de travail de rendu, même rendu à l'arrêt : pas de fondu des étiquettes
+          // (300 ms de repeints après chaque déplacement) ni de copies du monde, que le zoom
+          // minimal (4, France) ne laisse de toute façon jamais apparaître.
+          fadeDuration: 0,
+          renderWorldCopies: false,
         });
       } catch {
         setMapError("La carte n’a pas pu démarrer sur cet appareil.");

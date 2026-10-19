@@ -96,7 +96,13 @@ MAX_PHOTOS_LIMIT = 10_000
 BUCKET = "sale-photos"
 WIDTHS = (640, 1600)
 WEBP_QUALITY = 75
-CACHE_CONTROL_SECONDS = 86_400
+# One year. The file name carries the fingerprint of the original photo (``photo_paths``), so a new
+# image always has a new name and a file is never overwritten (``upsert`` is false): nothing
+# needs to be revalidated. The price: a withdrawal deletes the file (and Supabase invalidates its
+# CDN), but a browser that already holds the image keeps showing it until it expires, one year at
+# the latest (see docs/runbooks/retrait-photos.md). storage3 turns this number into
+# ``cache-control: max-age=<seconds>``; it has no way to add ``immutable``.
+CACHE_CONTROL_SECONDS = 31_536_000
 # Same ceiling as the bucket (file_size_limit of the migration).
 BUCKET_FILE_LIMIT_BYTES = 2 * 1024 * 1024
 
@@ -720,14 +726,9 @@ select s.id, s.source_name, s.observations, s.catalogue_thumbnail_url, coalesce(
  where s.catalogue_thumbnail_url is not null
    and coalesce(s.status, 'unknown') in ('upcoming', 'unknown', 'postponed')
    and not s.catalogue_quarantined
-   and (
-         case
-           when s.catalogue_expiry_materialized and s.catalogue_expiry_deadline is not null
-             then s.catalogue_expiry_deadline > now()
-           else app_private.sale_catalogue_entry_is_live_materialized(
-                  false, null, s.sale_date, s.raw_payload, s.sale_procedure)
-         end
-       )
+   and app_private.sale_catalogue_projection_is_live(
+         s.catalogue_expiry_materialized, s.catalogue_expiry_deadline, s.sale_date,
+         s.catalogue_expiry_fallback, s.catalogue_state_observed_at, s.catalogue_state_end_estimate)
    and (
          p.id is null
          or (

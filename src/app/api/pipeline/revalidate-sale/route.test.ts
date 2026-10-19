@@ -24,6 +24,7 @@ vi.mock("react", async () => {
   return { ...actual, cache: <T extends (...args: never[]) => unknown>(fn: T) => fn };
 });
 
+import { PUBLIC_CATALOGUE_CACHE_TAG } from "@/lib/public-catalogue.server";
 import { maxDuration, POST } from "./route";
 
 const SECRET = "cron-secret-for-tests";
@@ -83,8 +84,36 @@ describe("POST /api/pipeline/revalidate-sale", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(await response.json()).toMatchObject({ ok: true, revalidated: [`sale-${ID}`] });
-    expect(mocks.revalidateTag).toHaveBeenCalledExactlyOnceWith(`sale-${ID}`, { expire: 0 });
-    expect(mocks.revalidatePath).toHaveBeenCalledExactlyOnceWith(`/sales/${ID}`);
+    expect(mocks.revalidateTag).toHaveBeenCalledWith(`sale-${ID}`, { expire: 0 });
+    expect(mocks.revalidatePath).toHaveBeenCalledWith(`/sales/${ID}`);
+  });
+
+  it("also expires the catalogue: its data-cache tag and the page behind the rewrite of /sales", async () => {
+    const response = await POST(request({ saleId: ID }, `Bearer ${SECRET}`));
+    expect(response.status).toBe(200);
+    expect(mocks.revalidateTag).toHaveBeenCalledWith(PUBLIC_CATALOGUE_CACHE_TAG, { expire: 0 });
+    // The destination of the rewrite: the proxy does not run for revalidations, and a path that
+    // matches no route file would expire nothing.
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/sales/defaut");
+    expect(mocks.revalidatePath).not.toHaveBeenCalledWith("/sales");
+    expect(mocks.revalidateTag).toHaveBeenCalledTimes(2);
+    expect(mocks.revalidatePath).toHaveBeenCalledTimes(2);
+  });
+
+  it("expires the catalogue once per call, however many sales are withdrawn or changed", async () => {
+    const response = await POST(request({ saleIds: [ID, OTHER_ID, ID] }, `Bearer ${SECRET}`));
+    expect(response.status).toBe(200);
+    const catalogueTags = mocks.revalidateTag.mock.calls.filter(
+      ([tag]) => tag === PUBLIC_CATALOGUE_CACHE_TAG,
+    );
+    expect(catalogueTags).toEqual([[PUBLIC_CATALOGUE_CACHE_TAG, { expire: 0 }]]);
+    const defaultPages = mocks.revalidatePath.mock.calls.filter(
+      ([path]) => path === "/sales/defaut",
+    );
+    expect(defaultPages).toHaveLength(1);
+    // Two sales: two tags and two pages for them, plus the catalogue.
+    expect(mocks.revalidateTag).toHaveBeenCalledTimes(3);
+    expect(mocks.revalidatePath).toHaveBeenCalledTimes(3);
   });
 
   it("expires several sales once each", async () => {
@@ -93,7 +122,10 @@ describe("POST /api/pipeline/revalidate-sale", () => {
     expect(await response.json()).toMatchObject({
       revalidated: [`sale-${ID}`, `sale-${OTHER_ID}`],
     });
-    expect(mocks.revalidateTag).toHaveBeenCalledTimes(2);
+    // Two sales, plus the catalogue (see below).
+    expect(mocks.revalidateTag).toHaveBeenCalledWith(`sale-${ID}`, { expire: 0 });
+    expect(mocks.revalidateTag).toHaveBeenCalledWith(`sale-${OTHER_ID}`, { expire: 0 });
+    expect(mocks.revalidateTag).toHaveBeenCalledTimes(3);
     expect(mocks.revalidatePath).toHaveBeenCalledWith(`/sales/${OTHER_ID}`);
   });
 
