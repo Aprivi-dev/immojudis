@@ -97,7 +97,7 @@ export function CeilingPlanner({
             <div className="min-w-0">
               <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-text">
                 <Target className="h-4 w-4" />
-                Enchère plafond · {profileLabel(hypotheses)}
+                Enchère plafond (simulation) · {profileLabel(hypotheses)}
               </div>
               {gap == null || marketLoading ? (
                 <div className="mt-3 text-4xl font-semibold leading-none tabular-nums text-foreground sm:text-5xl">

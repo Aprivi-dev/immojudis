@@ -35,7 +35,7 @@ export function buildPaymentFailedMessage({
   appUrl: string;
   /** Unix seconds of the next automatic retry announced by Stripe, if any. */
   nextAttemptAt?: number | null;
-  /** Public price of the subscription, e.g. « 29 € TTC / mois ». */
+  /** Public price of the subscription, e.g. « 59 € TTC / mois ». */
   priceLabel?: string;
 }): ResendEmailMessage {
   const accountUrl = `${appUrl}/compte`;
@@ -122,7 +122,7 @@ export function buildTrialEndingMessage({
   appUrl: string;
   /** Unix seconds of the end of the free trial. */
   trialEnd: number;
-  /** Public price of the subscription, e.g. « 29 € TTC / mois ». */
+  /** Public price of the subscription, e.g. « 59 € TTC / mois ». */
   priceLabel?: string;
 }): ResendEmailMessage {
   const accountUrl = `${appUrl}/compte`;

@@ -16,7 +16,7 @@ export async function POST(request: Request) {
     await assertFeatureEntitlement(
       auth,
       "lawyers.directory",
-      "Avocats référencés réservés au plan Analyse.",
+      "Annuaire des avocats indisponible pour ce compte.",
     );
     const input = lawyerPlacementEventInputSchema.parse(await request.json());
     return NextResponse.json(await recordLawyerPlacementEvent({ input, userId: auth.userId }));

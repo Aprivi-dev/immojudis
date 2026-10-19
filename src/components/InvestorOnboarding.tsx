@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useLaunchOffer } from "@/hooks/use-launch-offer";
+import { LAUNCH_OFFER_ACCOUNT_TEXT } from "@/lib/launch-offer";
 import { pathWithSearch } from "@/lib/navigation";
 import { firstSearchToUrl, type FirstSearch } from "@/lib/onboarding";
 import { HOME_TYPE_OPTIONS } from "@/lib/search/search-filters";
@@ -15,6 +17,7 @@ const inputClass =
 
 export function InvestorOnboarding() {
   const router = useRouter();
+  const launchOffer = useLaunchOffer().active;
   const [step, setStep] = useState(0);
   const [search, setSearch] = useState<FirstSearch>({ area: "", maxPrice: "", homeType: "" });
   const heading = useRef<HTMLHeadingElement>(null);
@@ -42,6 +45,14 @@ export function InvestorOnboarding() {
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-text">
           Bienvenue dans votre compte Découverte
         </p>
+        {launchOffer ? (
+          <p
+            data-testid="onboarding-launch-offer"
+            className="mt-4 rounded-lg border border-gold/25 bg-gold/10 px-4 py-3 text-sm font-medium leading-relaxed text-foreground"
+          >
+            {LAUNCH_OFFER_ACCOUNT_TEXT}
+          </p>
+        ) : null}
         <ol aria-label="Étapes de démarrage" className="mt-6 flex gap-2">
           {steps.map((label, index) => (
             <li
@@ -164,8 +175,18 @@ export function InvestorOnboarding() {
               </dl>
               <p className="text-sm leading-relaxed text-muted-foreground">
                 Ouvrez une fiche pour vérifier la date, la localisation et les caractéristiques du
-                bien. Chaque mois, vous pouvez débloquer {MONTHLY_SALE_UNLOCKS} ventes en détail (
-                {UNLOCK_HIGHLIGHTS_INLINE_TEXT}). L’offre Analyse les ouvre toutes.
+                bien.{" "}
+                {launchOffer ? (
+                  <>
+                    Pendant l’offre de lancement, votre compte gratuit ouvre toutes les ventes avec
+                    les outils de l’offre Analyse.
+                  </>
+                ) : (
+                  <>
+                    Chaque mois, vous pouvez débloquer {MONTHLY_SALE_UNLOCKS} ventes en détail (
+                    {UNLOCK_HIGHLIGHTS_INLINE_TEXT}). L’offre Analyse les ouvre toutes.
+                  </>
+                )}
               </p>
               <Link
                 href="/annonce-exemple"

@@ -19,9 +19,11 @@ vi.mock("@/integrations/supabase/lazy", async (importOriginal) => ({
 import {
   fetchAccessPlan,
   fetchBillingOffer,
+  fetchLaunchOffer,
   openBillingPortal,
   openSubscriptionCancellation,
   startAnalyseCheckout,
+  updateOfferOpeningSurvey,
 } from "./client-billing";
 
 describe("client billing API", () => {
@@ -43,13 +45,55 @@ describe("client billing API", () => {
 
   it("lit l'offre publique même sans session (le visiteur voit si la souscription est ouverte)", async () => {
     mocks.fetch.mockResolvedValueOnce(
-      jsonResponse({ configured: true, trialAvailable: true, label: "29 € TTC / mois" }),
+      jsonResponse({ configured: true, trialAvailable: true, label: "59 € TTC / mois" }),
     );
     await expect(fetchBillingOffer()).resolves.toMatchObject({ configured: true });
     expect(mocks.fetch).toHaveBeenCalledWith("/api/billing/offer", {
       headers: {},
       cache: "no-store",
     });
+  });
+
+  it("lit l'état de l'offre de lancement sans session ni jeton, et jamais autre chose qu'un booléen", async () => {
+    mocks.fetch.mockResolvedValueOnce(jsonResponse({ active: true }));
+    await expect(fetchLaunchOffer()).resolves.toBe(true);
+    expect(mocks.fetch).toHaveBeenCalledWith("/api/launch-offer");
+    expect(mocks.getSession).not.toHaveBeenCalled();
+
+    mocks.fetch.mockResolvedValueOnce(jsonResponse({ active: "oui" }));
+    await expect(fetchLaunchOffer()).resolves.toBeNull();
+
+    mocks.fetch.mockResolvedValueOnce(jsonResponse({ error: "Offre indisponible." }, 503));
+    await expect(fetchLaunchOffer()).rejects.toThrow("Offre indisponible.");
+  });
+
+  it("envoie les réponses facultatives de la liste d'attente avec la version du texte", async () => {
+    mocks.getSession.mockResolvedValue({
+      data: { session: { access_token: "test-access-token" } },
+      error: null,
+    });
+    mocks.fetch.mockResolvedValueOnce(
+      jsonResponse({ notification: { requested: true, consentedAt: null } }),
+    );
+    await updateOfferOpeningSurvey({
+      profile: "avocat",
+      salesPerMonth: 4,
+      priceTooExpensiveEur: null,
+      priceCheapEur: 15,
+      interviewAccepted: false,
+    });
+    const [url, init] = mocks.fetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/api/billing/opening-notification");
+    expect(init.method).toBe("PATCH");
+    expect(JSON.parse(String(init.body))).toEqual({
+      profile: "avocat",
+      salesPerMonth: 4,
+      priceTooExpensiveEur: null,
+      priceCheapEur: 15,
+      interviewAccepted: false,
+      surveyTextVersion: "2026-10-28",
+    });
+    expect(init.headers).toMatchObject({ Authorization: "Bearer test-access-token" });
   });
 
   it("transmet le token au endpoint du plan", async () => {

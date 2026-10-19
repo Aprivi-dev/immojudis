@@ -132,7 +132,7 @@ describe("favorite vocabulary and onboarding", () => {
     setup();
     const button = screen.getByRole("button", { name: "Ajouter aux favoris" });
     expect(button.getAttribute("title")).toBe(
-      "Créer un compte gratuit pour garder cette vente (3 favoris)",
+      "Créer un compte gratuit pour garder cette vente (10 favoris)",
     );
   });
 

@@ -5,9 +5,14 @@ import { notaryAndStatePilotsEnabled } from "@/lib/sale-types";
 import Link from "next/link";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import Check from "lucide-react/dist/esm/icons/check.js";
+import { OfferOpeningRequest } from "@/components/OfferOpeningRequest";
 import { useAnalysisCheckoutOpen } from "@/hooks/use-analysis-checkout-open";
+import { useAuth } from "@/hooks/use-auth";
+import { useLaunchOffer } from "@/hooks/use-launch-offer";
 import { resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
+import { launchOfferText } from "@/lib/launch-offer";
 import { loginPathWithRedirect } from "@/lib/navigation";
+import { PLAN_LIMITS } from "@/lib/plans";
 import { MONTHLY_SALE_UNLOCKS, UNLOCK_HIGHLIGHTS_TEXT } from "@/lib/sale-unlocks";
 import { DOSSIER_APARTMENT_QUALITY, DOSSIER_APARTMENT_SIZES } from "./home-images";
 import styles from "./HomeDiscovery.module.css";
@@ -43,7 +48,7 @@ const discoveryFeatures = [
   "Accès aux annonces",
   "Informations essentielles",
   `${MONTHLY_SALE_UNLOCKS} ventes débloquées par mois : ${UNLOCK_HIGHLIGHTS_TEXT}`,
-  "Jusqu’à trois favoris",
+  `Jusqu’à ${PLAN_LIMITS.decouverte.favoriteSales} favoris`,
 ] as const;
 
 const analysisFeatures = [
@@ -56,6 +61,8 @@ const analysisFeatures = [
 export function HomeDiscovery() {
   const analysisPrice = resolveAnalysisOfferLabel();
   const checkoutOpen = useAnalysisCheckoutOpen();
+  const { user } = useAuth();
+  const launchOffer = useLaunchOffer().active;
 
   return (
     <div className={styles.root}>
@@ -167,6 +174,11 @@ export function HomeDiscovery() {
                 <Link href={loginPathWithRedirect(undefined)} className={styles.secondaryLink}>
                   Créer mon compte gratuit <ArrowRight aria-hidden="true" size={17} />
                 </Link>
+                {launchOffer ? (
+                  <p className={styles.planFinePrint} data-testid="home-launch-offer">
+                    {launchOfferText(user ? "account" : "visitor")}
+                  </p>
+                ) : null}
               </article>
               <article className={styles.plan}>
                 <h3>Analyse</h3>
@@ -179,17 +191,27 @@ export function HomeDiscovery() {
                     </li>
                   ))}
                 </ul>
-                <Link href="/offres" className={styles.primaryLink}>
-                  Découvrir Analyse <ArrowRight aria-hidden="true" size={17} />
-                </Link>
-                {checkoutOpen === true ? (
+                {!launchOffer && checkoutOpen === false ? (
+                  // Offre fermée : le bouton principal est la demande d'information.
+                  <OfferOpeningRequest primary className="mt-2" />
+                ) : (
+                  <Link href="/offres" className={styles.primaryLink}>
+                    Découvrir Analyse <ArrowRight aria-hidden="true" size={17} />
+                  </Link>
+                )}
+                {launchOffer ? (
+                  <p className={styles.planFinePrint}>
+                    Inclus avec un compte gratuit pendant l’offre de lancement. Tarif prévu :{" "}
+                    {analysisPrice}. Pas encore souscriptible.
+                  </p>
+                ) : checkoutOpen === true ? (
                   <p className={styles.planFinePrint}>
                     Essai de 7 jours avec carte bancaire, puis abonnement récurrent. Résiliable
                     depuis votre compte.
                   </p>
                 ) : checkoutOpen === false ? (
                   <p className={styles.planFinePrint}>
-                    Offre bientôt disponible : la souscription n’est pas encore ouverte.
+                    Tarif prévu : {analysisPrice}. Pas encore souscriptible.
                   </p>
                 ) : null}
               </article>

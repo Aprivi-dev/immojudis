@@ -6,8 +6,8 @@
  * commercial contract.
  */
 export const ANALYSIS_TRIAL_DAYS = 7 as const;
-/** Approved local commercial contract: 29 EUR TTC billed every month. */
-export const ANALYSIS_RECURRING_PRICE_CENTS = 2_900 as const;
+/** Approved local commercial contract: 59 EUR TTC billed every month. */
+export const ANALYSIS_RECURRING_PRICE_CENTS = 5_900 as const;
 export const ANALYSIS_RECURRING_CURRENCY = "eur" as const;
 export const ANALYSIS_RECURRING_INTERVAL = "month" as const;
 export const ANALYSIS_RECURRING_INTERVAL_COUNT = 1 as const;
@@ -19,7 +19,7 @@ export const ANALYSIS_BILLING_MODEL = "subscription_trial_7_days" as const;
 export const ANALYSIS_SUBSCRIPTION_OFFER_CODE = "analyse_subscription_recurring" as const;
 export const ANALYSIS_SUBSCRIPTION_BILLING_MODEL = "subscription_recurring" as const;
 
-export const DEFAULT_ANALYSIS_OFFER_LABEL = "29 € TTC / mois";
+export const DEFAULT_ANALYSIS_OFFER_LABEL = "59 € TTC / mois";
 
 export function resolveAnalysisOfferLabel(
   value: string | undefined | null = process.env.NEXT_PUBLIC_ANALYSIS_OFFER_LABEL,
@@ -33,7 +33,7 @@ export const OFFERS_DESCRIPTION_MAX_LENGTH = 160;
 
 /**
  * Meta description of /offres. While the subscription cannot be bought (Stripe price or legal
- * identity missing) it states no price: a snippet that quotes "29 € par mois" for an offer that
+ * identity missing) it states no price: a snippet that quotes "59 € par mois" for an offer that
  * is closed would be an advertisement for something that cannot be bought. Once open, it quotes
  * the public label (`resolveAnalysisOfferLabel`) when the sentence still fits in 160 characters.
  */
@@ -61,8 +61,8 @@ const LABEL_AMOUNT = String.raw`\d+(?:[ \u00a0\u202f]\d{3})*(?:[.,]\d{1,2})?`;
 const LABEL_CURRENCY = String.raw`(?:€|eur(?:os?)?)`;
 
 /**
- * Every amount in euros written in a public price label ("29 € TTC / mois", "29,00 EUR",
- * "€29"), in cents. Keep in sync with `analysisOfferLabelAmountsCents` in
+ * Every amount in euros written in a public price label ("59 € TTC / mois", "59,00 EUR",
+ * "€59"), in cents. Keep in sync with `analysisOfferLabelAmountsCents` in
  * scripts/lib/launch-config.mjs (plain .mjs, tested against this module).
  */
 export function analysisOfferLabelAmountsCents(label: string): number[] {

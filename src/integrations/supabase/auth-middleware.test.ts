@@ -35,6 +35,16 @@ it("uses the verified subject to read the account's current rights", async () =>
   const result = await requireSupabaseAuthContext("valid-fixture");
   expect(eq).toHaveBeenCalledWith("user_id", "verified-user");
   expect(result).toMatchObject({ userId: "verified-user", accountTier: "premium", isAdmin: false });
+  expect(result.hasProfile).toBe(true);
+});
+it("tells the plan resolution that an account has no profile, so the launch offer skips it", async () => {
+  mocks.getClaims.mockResolvedValue({ data: { claims: { sub: "orphan-user" } }, error: null });
+  const eq = vi.fn().mockReturnValue({
+    maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+  });
+  mocks.from.mockReturnValue({ select: vi.fn().mockReturnValue({ eq }) });
+  const result = await requireSupabaseAuthContext("valid-fixture");
+  expect(result).toMatchObject({ accountTier: "free", hasProfile: false });
 });
 it("does not leak the database detail when the access profile cannot be read", async () => {
   const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
