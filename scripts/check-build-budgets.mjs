@@ -66,7 +66,10 @@ const MAX_CLIENT_CHUNK_BYTES = 1_875_000;
 // The account, alerts and reminders batch (/alertes/creer, sector alerts, /compte toggles,
 // mostly on-demand chunks) then measured 5,788,672 bytes; the owner approved (19/10/2026)
 // a second raise, to 5,850,000. The home page still loads 714,554 of its 735,000 bytes.
-const MAX_TOTAL_CLIENT_JS_BYTES = 5_850_000;
+// The second wave (account events and /admin/pilotage, free sale dossier, past followed sales,
+// public market-gap band, financing page, points-to-verify badge) then measured 5,879,382
+// bytes, mostly on-demand chunks; the owner approved (19/10/2026) a third raise, to 5,950,000.
+const MAX_TOTAL_CLIENT_JS_BYTES = 5_950_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 // New homepage: lossless panorama for large screens plus editorial photography.
 const MAX_PUBLIC_MEDIA_BYTES = 5_000_000;
