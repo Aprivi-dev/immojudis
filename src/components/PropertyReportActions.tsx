@@ -6,7 +6,7 @@ import Link2Off from "lucide-react/dist/esm/icons/link-2-off.js";
 import Pencil from "lucide-react/dist/esm/icons/pencil.js";
 import Save from "lucide-react/dist/esm/icons/save.js";
 import Share2 from "lucide-react/dist/esm/icons/share-2.js";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { useRouter } from "next/navigation";
 import { loginPathWithRedirect } from "@/lib/navigation";
 import {

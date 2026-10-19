@@ -24,7 +24,7 @@ vi.mock("@/lib/client-api", () => ({
   publishAdminInformationAgentEmailTemplateDraft: state.publish,
 }));
 
-vi.mock("sonner", () => ({
+vi.mock("@/lib/toast", () => ({
   toast: { error: vi.fn(), success: vi.fn() },
 }));
 

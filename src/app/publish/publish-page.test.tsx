@@ -23,7 +23,7 @@ vi.mock("@/lib/publication-requests-client", () => ({
   fetchPublicationRequestsClient: vi.fn().mockResolvedValue({ requests: [] }),
   submitPublicationRequestClient: vi.fn(),
 }));
-vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
+vi.mock("@/lib/toast", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
 import { PublishPage } from "./publish-page";
 

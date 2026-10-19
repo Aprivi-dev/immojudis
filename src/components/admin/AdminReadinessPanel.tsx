@@ -4,7 +4,7 @@ import CheckCircle from "lucide-react/dist/esm/icons/check-circle.js";
 import Clipboard from "lucide-react/dist/esm/icons/clipboard.js";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import XCircle from "lucide-react/dist/esm/icons/x-circle.js";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { fetchAdminReadiness } from "@/lib/client-api";
 import type { ReadinessItem, ReadinessStatus } from "@/lib/admin-readiness";
 

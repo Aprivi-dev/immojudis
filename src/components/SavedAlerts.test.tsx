@@ -28,7 +28,7 @@ vi.mock("@/lib/client-api", () => ({
   evaluateAlertMatches: vi.fn(),
   fetchAccessPlan: async () => ({ plan: state.plan }),
 }));
-vi.mock("sonner", () => ({ toast: state.toast }));
+vi.mock("@/lib/toast", () => ({ toast: state.toast }));
 afterEach(cleanup);
 beforeEach(() => {
   state.userId = "first";
