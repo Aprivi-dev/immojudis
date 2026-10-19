@@ -27,7 +27,10 @@ que ``auction_sales`` et n'y écrit jamais (une écriture déclencherait une qui
   429 (``Retry-After`` respecté), jamais sur 401/403/404/410. Lecture en flux coupée à 8 Mo. Le type est
   contrôlé sur les premiers octets (jpeg, png, webp ; gif et svg refusés), jamais sur l'en-tête
   ``Content-Type`` (info-encheres renvoie ``application/x-httpd-php`` pour de vrais JPEG).
-* **Image** : Pillow, pixels bornés (un JPEG multi-images est lu comme ``MPO``), rotation EXIF appliquée,
+* **Image** : décodée et ré-encodée par Pillow dans un **sous-processus sans secret** (``src/photo_image.py`` :
+  environnement en liste blanche, sans ``SUPABASE_SERVICE_ROLE_KEY`` ni ``SUPABASE_DB_URL``, répertoire de
+  travail vide, délai de 60 s, plafonds de processeur et de mémoire ; ce processus-ci n'ouvre jamais l'image).
+  Pixels bornés (un JPEG multi-images est lu comme ``MPO``), rotation EXIF appliquée,
   profil ICC converti en sRGB puis supprimé, ré-encodage complet sans métadonnée en WebP qualité 75, 640 px et 1600 px de large au plus, sans jamais agrandir (original de 640 px ou moins :
   un seul fichier, ``path_1600 = path_640``). Images trop petites ou allongées refusées comme sur le site
   (``shouldRejectRenderedPropertyImage`` de ``src/lib/sale-media.ts``).
@@ -46,28 +49,27 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import io
 import json
 import logging
 import os
+import subprocess
 import sys
+import tempfile
 import time
 import uuid
-import warnings
 from collections import Counter
-from collections.abc import Callable, Iterable, Iterator, Mapping
-from contextlib import contextmanager
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Protocol
 from urllib.parse import urljoin, urlsplit
 
 import httpx
-from PIL import Image, ImageCms, ImageOps
 
-from src import source_withdrawal
+from src import photo_image, source_withdrawal
 from src.config import EncheresPubliquesAccessNotAuthorized, load_settings
 from src.document_politeness import (
     DocumentPoliteness,
@@ -98,8 +100,10 @@ DEFAULT_MAX_PHOTOS = 400
 MAX_PHOTOS_LIMIT = 10_000
 
 BUCKET = "sale-photos"
-WIDTHS = (640, 1600)
-WEBP_QUALITY = 75
+# Image bounds live in src/photo_image.py (the decoder runs there, in a process without secrets); re-exported
+# because the rest of the pass, the tests and the runbooks read them here.
+WIDTHS = photo_image.WIDTHS
+WEBP_QUALITY = photo_image.WEBP_QUALITY
 # One year. The file name carries the fingerprint of the original photo (``photo_paths``), so a new
 # image always has a new name and a file is never overwritten (``upsert`` is false): nothing
 # needs to be revalidated. The price: a withdrawal deletes the file (and Supabase invalidates its
@@ -108,13 +112,20 @@ WEBP_QUALITY = 75
 # ``cache-control: max-age=<seconds>``; it has no way to add ``immutable``.
 CACHE_CONTROL_SECONDS = 31_536_000
 # Same ceiling as the bucket (file_size_limit of the migration).
-BUCKET_FILE_LIMIT_BYTES = 2 * 1024 * 1024
+BUCKET_FILE_LIMIT_BYTES = photo_image.BUCKET_FILE_LIMIT_BYTES
 
 MAX_DOWNLOAD_BYTES = 8 * 1024 * 1024
 MAX_ROBOTS_BYTES = 512 * 1024
-PREFIX_BYTES = 64
-# Decompression bomb guard: 40 megapixels is about 120 MB once decoded to RGB.
-MAX_PIXELS = 40_000_000
+PREFIX_BYTES = photo_image.PREFIX_BYTES
+# Decompression bomb guard: 40 megapixels is about 120 MB once decoded to RGB. Passed to the decoder process,
+# which never accepts more than photo_image.MAX_PIXELS.
+MAX_PIXELS = photo_image.MAX_PIXELS
+# The decoder process (src/photo_image.py): at most this long per photo, started without any secret.
+IMAGE_DECODER_TIMEOUT_SECONDS = 60.0
+IMAGE_DECODER_SCRIPT = Path(photo_image.__file__ or "").resolve()
+#: The only variables handed to the decoder process. Nothing else: no key, no database URL, no token, whatever
+#: the parent holds. (PATH and the locale let the interpreter start; none of them is a secret.)
+IMAGE_DECODER_ENV_ALLOWLIST = ("PATH", "LANG", "LC_ALL", "LC_CTYPE", "SYSTEMROOT")
 # One request, connection included.
 REQUEST_TIMEOUT_SECONDS = 15.0
 MAX_RETRIES = 2
@@ -134,9 +145,9 @@ WITHDRAWAL_BATCH = 500
 STALE_BATCH = 300
 
 # Same rules as shouldRejectRenderedPropertyImage (src/lib/sale-media.ts).
-MIN_SHORT_SIDE = 300
-MIN_LONG_SIDE = 480
-MAX_ASPECT_RATIO = 3.2
+MIN_SHORT_SIDE = photo_image.MIN_SHORT_SIDE
+MIN_LONG_SIDE = photo_image.MIN_LONG_SIDE
+MAX_ASPECT_RATIO = photo_image.MAX_ASPECT_RATIO
 
 #: Hosts known to refuse automated downloads (Cloudflare challenge): no request is sent, the status is
 #: ``blocked``. Matches the host and its subdomains.
@@ -202,18 +213,10 @@ class ImageRejected(MirrorFailure):
 
 def sniff_image_type(head: bytes) -> str:
     """Type from the first bytes: ``jpeg``, ``png`` or ``webp``. GIF, SVG and the rest are refused."""
-    if head.startswith(b"\xff\xd8\xff"):
-        return "jpeg"
-    if head.startswith(b"\x89PNG\r\n\x1a\n"):
-        return "png"
-    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
-        return "webp"
-    if head[:6] in (b"GIF87a", b"GIF89a"):
-        raise ImageRejected("gif_refused")
-    stripped = head.lstrip(b"\xef\xbb\xbf \t\r\n").lower()
-    if stripped.startswith((b"<svg", b"<?xml", b"<!doctype svg")):
-        raise ImageRejected("svg_refused")
-    raise ImageRejected("unsupported_type")
+    try:
+        return photo_image.sniff_image_type(head)
+    except photo_image.ImageProblem as problem:
+        raise ImageRejected(problem.reason) from problem
 
 
 def _check_prefix(head: bytes) -> None:
@@ -230,124 +233,86 @@ class ProcessedImage:
     single: bool
 
 
-@contextmanager
-def _pixel_limit() -> Iterator[None]:
-    previous = Image.MAX_IMAGE_PIXELS
-    Image.MAX_IMAGE_PIXELS = MAX_PIXELS
-    try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", Image.DecompressionBombWarning)
-            yield
-    finally:
-        Image.MAX_IMAGE_PIXELS = previous
-
-
 def rejection_reason(width: int, height: int) -> str | None:
     """Same rule as ``shouldRejectRenderedPropertyImage`` (src/lib/sale-media.ts)."""
-    if not width or not height:
-        return None
-    shortest, longest = min(width, height), max(width, height)
-    if shortest < MIN_SHORT_SIDE or longest < MIN_LONG_SIDE:
-        return "too_small"
-    if longest / shortest > MAX_ASPECT_RATIO:
-        return "too_elongated"
-    return None
+    return photo_image.rejection_reason(width, height)
 
 
-def _encode_webp(image: Image.Image, width: int) -> bytes:
-    """Re-encode ``image`` at ``width`` px at most (never enlarged), with no metadata at all."""
-    if width < image.width:
-        height = max(1, round(image.height * width / image.width))
-        output = image.resize((width, height), Image.Resampling.LANCZOS, reducing_gap=3.0)
-    else:
-        output = image.copy()
-    # Nothing from the source (EXIF, XMP, ICC profile, comments) is handed to the encoder.
-    output.info = {}
-    buffer = io.BytesIO()
-    output.save(buffer, "WEBP", quality=WEBP_QUALITY, method=4)
-    data = buffer.getvalue()
-    if len(data) > BUCKET_FILE_LIMIT_BYTES:
-        raise ImageRejected("output_too_large")
-    return data
+def image_decoder_environment(parent: Mapping[str, str] | None = None) -> dict[str, str]:
+    """The environment of the decoder process: an allowlist, so no secret can be in it by construction."""
+    source = os.environ if parent is None else parent
+    environment = {name: source[name] for name in IMAGE_DECODER_ENV_ALLOWLIST if name in source}
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    return environment
 
 
-#: Pillow formats accepted for each signature. A multi-picture JPEG (some cameras and phones) is opened as
-#: ``MPO``: same bytes signature, first frame is the photo.
-EXPECTED_FORMATS: Mapping[str, frozenset[str]] = {
-    "jpeg": frozenset({"JPEG", "MPO"}),
-    "png": frozenset({"PNG"}),
-    "webp": frozenset({"WEBP"}),
-}
-
-
-def _to_srgb(image: Image.Image) -> Image.Image:
-    """Convert to sRGB when the image carries an ICC profile; the result carries no profile.
-
-    The browser would otherwise show the re-encoded WebP (stripped of its profile, so read as sRGB) with
-    shifted colours for a Display P3, Adobe RGB or CMYK original. An unreadable profile is dropped and the
-    pixels are taken as they are.
-    """
-    icc = image.info.get("icc_profile")
-    if not icc:
-        return image
-    has_alpha = image.mode in ("RGBA", "LA", "PA") or (image.mode == "P" and "transparency" in image.info)
-    alpha = image.convert("RGBA").getchannel("A") if has_alpha else None
-    base = image if image.mode in ("RGB", "L", "CMYK") else image.convert("RGB")
-    try:
-        source = ImageCms.ImageCmsProfile(io.BytesIO(icc))
-        converted = ImageCms.profileToProfile(
-            base,
-            source,
-            ImageCms.createProfile("sRGB"),
-            renderingIntent=ImageCms.Intent.PERCEPTUAL,
-            outputMode="RGB",
-        )
-    except (ImageCms.PyCMSError, OSError, ValueError, TypeError):
-        converted = base.convert("RGB")
-    if converted is None:  # pragma: no cover - only when inPlace is requested
-        converted = base.convert("RGB")
-    if alpha is not None:
-        converted.putalpha(alpha)
-    converted.info = {}
-    return converted
+def image_decoder_command() -> list[str]:
+    """``python -I src/photo_image.py``: isolated mode (no PYTHONPATH, no user site, no working directory)."""
+    return [sys.executable, "-I", str(IMAGE_DECODER_SCRIPT), "--max-pixels", str(int(MAX_PIXELS))]
 
 
 def process_image(data: bytes) -> ProcessedImage:
-    """Check, orient and re-encode a downloaded original into the files to host."""
-    kind = sniff_image_type(data[:PREFIX_BYTES])
-    expected = EXPECTED_FORMATS[kind]
+    """Check, orient and re-encode a downloaded original into the files to host.
+
+    The decoding happens in a child process (``src/photo_image.py``) that has none of this process's
+    environment (no ``SUPABASE_SERVICE_ROLE_KEY``, no ``SUPABASE_DB_URL``, no token), an empty working
+    directory, a deadline and CPU and memory ceilings. The bounds of the original processing stay: pixels,
+    output size, minimum sizes and aspect ratio. This process never opens the bytes with Pillow.
+    """
+    sniff_image_type(data[:PREFIX_BYTES])  # a cheap refusal before any process is started
+    with tempfile.TemporaryDirectory(prefix="photo-decoder-") as workdir:
+        try:
+            completed = subprocess.run(
+                image_decoder_command(),
+                input=data,
+                capture_output=True,
+                env=image_decoder_environment(),
+                cwd=workdir,
+                timeout=IMAGE_DECODER_TIMEOUT_SECONDS,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise ImageRejected("decode_timeout") from exc
+    if completed.returncode != 0:
+        # Killed by a limit or crashed in the decoder: this photo only, never retried.
+        LOGGER.warning("Photo mirror: the decoder process ended with code %s", completed.returncode)
+        raise ImageRejected("decoder_crashed")
+    return _decoder_result(completed.stdout)
+
+
+def _decoder_result(output: bytes) -> ProcessedImage:
+    header_line, _, body = output.partition(b"\n")
     try:
-        with _pixel_limit():
-            source = Image.open(io.BytesIO(data))
-            if source.format not in expected:
-                raise ImageRejected("unsupported_type")
-            if source.width * source.height > MAX_PIXELS:
-                raise ImageRejected("decompression_bomb", width=source.width, height=source.height)
-            source.load()
-            oriented = ImageOps.exif_transpose(source)
-            if oriented is None:  # pragma: no cover - in_place is never requested
-                oriented = source
-            width, height = oriented.size
-            reason = rejection_reason(width, height)
-            if reason is not None:
-                raise ImageRejected(reason, width=width, height=height)
-            oriented = _to_srgb(oriented)
-            if oriented.mode in ("RGBA", "LA") or (oriented.mode == "P" and "transparency" in oriented.info):
-                prepared = oriented.convert("RGBA")
-            elif oriented.mode != "RGB":
-                prepared = oriented.convert("RGB")
-            else:
-                prepared = oriented
-            data_640 = _encode_webp(prepared, WIDTHS[0])
-            single = width <= WIDTHS[0]
-            data_1600 = data_640 if single else _encode_webp(prepared, WIDTHS[1])
+        header = json.loads(header_line)
+        if not isinstance(header, dict):
+            raise ValueError("header is not an object")
+        if header.get("ok") is not True:
+            width, height = header.get("width"), header.get("height")
+            raise ImageRejected(
+                str(header.get("reason") or "decode_error"),
+                width=width if isinstance(width, int) else None,
+                height=height if isinstance(height, int) else None,
+            )
+        width, height = int(header["width"]), int(header["height"])
+        single = bool(header["single"])
+        length_640, length_1600 = int(header["len640"]), int(header["len1600"])
     except ImageRejected:
         raise
-    except (Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:
-        raise ImageRejected("decompression_bomb") from exc
-    except (OSError, ValueError, SyntaxError, EOFError, MemoryError) as exc:
+    except (ValueError, KeyError, TypeError) as exc:
         raise ImageRejected("decode_error") from exc
-    return ProcessedImage(width=width, height=height, data_640=data_640, data_1600=data_1600, single=single)
+    if length_640 <= 0 or length_640 + length_1600 != len(body) or (single and length_1600 != 0):
+        raise ImageRejected("decode_error")
+    data_640, data_1600 = body[:length_640], body[length_640:]
+    for payload in (data_640, data_1600):
+        if len(payload) > BUCKET_FILE_LIMIT_BYTES or (payload and not (payload[:4] == b"RIFF" and payload[8:12] == b"WEBP")):
+            raise ImageRejected("decode_error")
+    return ProcessedImage(
+        width=width,
+        height=height,
+        data_640=data_640,
+        data_1600=data_640 if single else data_1600,
+        single=single,
+    )
 
 
 def photo_paths(sale_id: str, sha256: str, *, single: bool) -> tuple[str, str]:
