@@ -370,3 +370,64 @@ Première vague, en parallèle, un worktree par chantier :
 | Contenus | redacteur-contenu | 25 (article), 28, 29, 30                                              |
 
 Seconde vague, après fusion, parce qu'elle touche les mêmes fichiers : 65, 68, 69, 70, 72, 73.
+
+## Bilan de l'exécution (19/10/2026)
+
+Tout a été fusionné dans la PR #275. La CI est entièrement verte sur `9c684342` : typage, lint, tests
+unitaires et invariants de sécurité, build et budgets, pgTAP, pipeline Python 3.11 et 3.12, parcours
+Playwright sur 5 navigateurs et CodeQL.
+
+### Fait
+
+| Vague               | Points                                                                                                                                                                                                              |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Première            | P1a, P1b, W1 à W6, contenus. Toutes les propositions validées, sauf 71 (pas de Stripe ni de société).                                                                                                               |
+| Offre de lancement  | Avantages Analyse pour tout compte dont l'email est confirmé, interrupteur admin, mention « retirable sans préavis », tarif Analyse à 59 €.                                                                         |
+| Relecture de code   | R1 à R13, puis décisions du propriétaire D1 (audiences dédoublonnées sur une identité certaine), D2 (`/tribunaux/<code>` stables, redirection 308) et plafonds quotidiens contre l'abus de l'offre.                 |
+| Relecture juridique | Corrections A1 à E7 des articles de `/ressources`, validées par le propriétaire (voir `2026-10-19-relecture-juridique-articles.md`).                                                                                |
+| Seconde             | 65 (mesure par compte, `/admin/pilotage`), 68 (« Mon dossier » gratuit), 69 (écart au marché en trois bandes), 70 (instantanés après l'audience), 72 (dossier de financement du PDF), 73 (« N points à vérifier »). |
+
+Le budget JS client total a été relevé trois fois, avec l'accord du propriétaire : 5 750 000, puis
+5 850 000, puis 5 950 000. La mesure est de 5 879 382 octets. Les budgets par page sont inchangés.
+
+### Hors de la PR #275
+
+- **PR #236** (OCR des pages de photos) : mise à jour sur `main`, un test de cas limite ajouté, sortie
+  du brouillon. CI verte.
+- **PR #257** (dépendances Python) : verrous régénérés, imports `pymupdf` (l'avertissement `fitz`
+  cassait en silence l'OCR de l'agent d'information), en-tête `cache-control` des photos, audit de
+  `requirements-docling.txt` en CI. docling 2.138.0 corrige 8 avis de sécurité. CI verte.
+- **PR #254 et #251** : vertes, laissées en l'état sur décision du propriétaire.
+
+### Actions du propriétaire
+
+1. **Migrations.** Appliquer, dans l'ordre, `20261028100000` à `20261028200000`. `20261028160200` doit
+   l'être au plus tard avec le déploiement.
+2. **Supabase Auth.**
+   - Vérifier que « Confirm email » est activé en production.
+   - Recommandé : CAPTCHA à l'inscription et limites d'inscription par IP.
+3. **Rappels.** Garder `SALE_REMINDERS_MODE=off` jusqu'à la mesure des fausses alertes.
+4. **Types.** Lancer `npm run db:types` sur une base locale, puis committer.
+5. **Durées à valider.**
+   - 90 jours pour les événements produit par compte.
+   - 6 mois pour les instantanés des ventes suivies.
+   - Surenchère : la date limite est indicative (10 jours calendaires, sans report pour un week-end ou
+     un jour férié).
+6. **Textes juridiques à intégrer** (non modifiés par l'équipe).
+   - **CGV** : « trois favoris » devient 10, et ajouter la clause de l'offre de lancement.
+   - **Politique de confidentialité et registre des traitements** : ajouter la liste d'attente, les
+     rappels d'audience, la mesure par compte (et ses liens d'email suivis), « Mon dossier » et les
+     instantanés des ventes suivies. Le développeur du point 65 a rédigé une proposition de fiche de
+     registre et de paragraphe de politique.
+7. **Fusionner** #236 et #257 si le propriétaire le décide.
+
+### Limites connues
+
+- **Instantanés après l'audience.** La vente est purgée dès l'audience : la plupart des instantanés
+  diront « résultat non connu ».
+- **Points à vérifier.** La pastille ne couvre pas la vue tableau de `/sales`. Elle ne compte ni les
+  pièces manquantes ni la complétude, que les cartes ne portent pas.
+- **Audiences à venir.** Elles ne sont pas fusionnées sur l'adresse, que la fonction publique n'expose
+  pas.
+- **Espace de travail Analyse.** Son statut et son plafond ne sont pas synchronisés avec « Mon
+  dossier ».
