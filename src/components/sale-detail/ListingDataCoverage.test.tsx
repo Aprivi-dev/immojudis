@@ -315,7 +315,7 @@ describe("getListingDataCoverage", () => {
   it("opens source details for keyboard users and restores focus after closing", async () => {
     render(<ListingDataCoverage sale={sale()} publicInformation={publicInformation()} />);
 
-    const sourceButton = screen.getByRole("button", { name: "Voir la source de Chambres" });
+    const sourceButton = screen.getByRole("button", { name: /: voir la source de Chambres$/ });
     sourceButton.focus();
     expect(document.activeElement).toBe(sourceButton);
     fireEvent.click(sourceButton);
