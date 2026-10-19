@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
+import { recordAccountProductEvent } from "@/lib/account-product-events.server";
 import type { Database } from "@/integrations/supabase/types";
 import { featureAccess, featureIncluded, type FeatureAccess, type PlanCode } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
@@ -98,7 +99,17 @@ export async function addFavoriteSale({
   input: FavoriteSalePayload;
 }): Promise<FavoriteSaleMutationResponse> {
   const plan = await assertSaleFavoritesAvailable(auth);
-  const { row, created } = await insertFavoriteRow(auth, input.saleId);
+  let inserted: Awaited<ReturnType<typeof insertFavoriteRow>>;
+  try {
+    inserted = await insertFavoriteRow(auth, input.saleId);
+  } catch (error) {
+    // Mesure par compte : le quota de favoris gratuits est atteint (déclencheur de la base).
+    if (isFavoriteQuotaError(error)) {
+      await recordAccountProductEvent(auth.userId, { type: "quota_reached", quota: "favorites" });
+    }
+    throw error;
+  }
+  const { row, created } = inserted;
   const sales = await loadSalesByIds(auth, [row.sale_id], plan.plan);
   const [favorite] = joinFavoriteRowsToSales([row], sales);
 
@@ -321,6 +332,13 @@ function average(values: number[]): number | null {
 
 function sum(values: number[]): number {
   return values.reduce((total, value) => total + value, 0);
+}
+
+/** Erreur du déclencheur `enforce_favorite_quota` : « Quota de N favoris gratuits atteint… ». */
+export function isFavoriteQuotaError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const { code, message } = error as { code?: unknown; message?: unknown };
+  return code === "P0001" && typeof message === "string" && /^Quota de \d+ favoris/.test(message);
 }
 
 function isDuplicateFavoriteError(error: { code?: string; message?: string }): boolean {

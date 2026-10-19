@@ -4,6 +4,9 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SaleCalendarButton } from "./SaleCalendarButton";
 
+const mocks = vi.hoisted(() => ({ authHeaders: vi.fn() }));
+vi.mock("@/lib/client-api-core", () => ({ authHeaders: mocks.authHeaders }));
+
 const saleId = "11111111-1111-4111-8111-111111111111";
 
 describe("SaleCalendarButton", () => {
@@ -13,6 +16,9 @@ describe("SaleCalendarButton", () => {
 
   beforeEach(() => {
     clicked = [];
+    // Sans session : même erreur que `authHeaders` pour un visiteur anonyme.
+    mocks.authHeaders.mockReset();
+    mocks.authHeaders.mockRejectedValue(new Error("Connexion requise."));
     Object.assign(URL, { createObjectURL, revokeObjectURL });
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
       this: HTMLAnchorElement,
@@ -52,6 +58,48 @@ describe("SaleCalendarButton", () => {
     expect(createObjectURL).toHaveBeenCalledTimes(1);
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:ics");
     expect(screen.queryByRole("alert")).toBeNull();
+    // Visiteur sans compte : le téléchargement n'envoie aucune mesure.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports the download of a signed-in account, once the file is saved", async () => {
+    mocks.authHeaders.mockResolvedValue({ Authorization: "Bearer token" });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response("BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n", {
+          status: 200,
+          headers: { "content-disposition": 'attachment; filename="immojudis-audience-1.ics"' },
+        }),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ recorded: true }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<SaleCalendarButton saleId={saleId} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Ajouter à mon agenda" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(clicked).toHaveLength(1);
+    expect(fetchMock).toHaveBeenLastCalledWith(`/api/sales/${saleId}/calendar/exported`, {
+      method: "POST",
+      headers: { Authorization: "Bearer token" },
+    });
+  });
+
+  it("keeps the download working when the measure fails", async () => {
+    mocks.authHeaders.mockResolvedValue({ Authorization: "Bearer token" });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n", { status: 200 }))
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<SaleCalendarButton saleId={saleId} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Ajouter à mon agenda" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(clicked).toHaveLength(1);
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("explains a refusal instead of downloading a broken file", async () => {
@@ -76,6 +124,8 @@ describe("SaleCalendarButton", () => {
     expect(clicked).toHaveLength(0);
     expect(createObjectURL).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "Ajouter à mon agenda" })).toBeTruthy();
+    // Un export refusé n'est pas un export : rien n'est mesuré.
+    expect(mocks.authHeaders).not.toHaveBeenCalled();
   });
 
   it("shows a neutral message when the network fails", async () => {
