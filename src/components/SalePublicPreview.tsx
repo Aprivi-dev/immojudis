@@ -14,6 +14,13 @@ import { photoMirrorForDetail } from "@/lib/photo-mirror";
 import { SaleCalendarButton } from "@/components/SaleCalendarButton";
 import { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
 import { formatPrice } from "@/lib/format";
+import {
+  MARKET_GAP_BAND_CAUTION,
+  MARKET_GAP_BAND_LABELS,
+  MARKET_GAP_BAND_METHOD_LABEL,
+  MARKET_GAP_BAND_METHOD_PATH,
+  type PublicMarketGapBand,
+} from "@/lib/market-gap-band";
 import { publicSaleDescription } from "@/lib/public-sale-description";
 import { loginPathWithRedirect, saleDetailPath, salesReturnHref } from "@/lib/navigation";
 import Link from "next/link";
@@ -110,6 +117,25 @@ function withAdjudicationTerm(text: string) {
   );
 }
 
+/**
+ * Écart de la mise à prix au marché local, en trois bandes et sans chiffre (le pourcentage et la
+ * fourchette restent au compte). Affichée seulement quand la base a jugé l'estimation fiable (ou
+ * dit qu'elle ne l'est pas) ; neutre, indicative, jamais une recommandation.
+ */
+function MarketGapBandNote({ band }: { band: PublicMarketGapBand }) {
+  return (
+    <div className={styles.marketBand} data-testid="market-gap-band" data-band={band}>
+      <p className={styles.marketBandLabel}>{MARKET_GAP_BAND_LABELS[band]}</p>
+      <p className={styles.marketBandNote}>
+        {band === "insufficient" ? null : <>{MARKET_GAP_BAND_CAUTION} </>}
+        <Link href={MARKET_GAP_BAND_METHOD_PATH} className={styles.marketBandLink}>
+          {MARKET_GAP_BAND_METHOD_LABEL}
+        </Link>
+      </p>
+    </div>
+  );
+}
+
 export function SalePublicPreview({
   saleId,
   preview,
@@ -189,7 +215,7 @@ export function SalePublicPreview({
   const analysisTeaser = [
     { label: "Valeur estimée", placeholder: "000 000 € – 000 000 €", tier: "Compte gratuit" },
     price
-      ? { label: "Écart avec la mise à prix", placeholder: "00 %", tier: "Compte gratuit" }
+      ? { label: "Écart chiffré avec la mise à prix", placeholder: "00 %", tier: "Compte gratuit" }
       : null,
     procedure.venueType === "tribunal"
       ? {
@@ -214,6 +240,9 @@ export function SalePublicPreview({
             ? "Vérifiez les conditions et frais dans l'annonce officielle"
             : "Prix de départ, hors frais"}
         </p>
+        {price && preview.market_gap_band ? (
+          <MarketGapBandNote band={preview.market_gap_band} />
+        ) : null}
       </div>
     ) : (
       <p className={styles.priceUnavailable}>

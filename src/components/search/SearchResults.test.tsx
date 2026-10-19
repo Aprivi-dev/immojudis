@@ -376,6 +376,75 @@ describe("useful public discovery", () => {
     }
   });
 
+  describe("pastille « N points à vérifier »", () => {
+    const cardSale = (overrides: Record<string, unknown> = {}) =>
+      ({
+        ...sale("verify-card"),
+        sale_date: "2099-01-20T09:00:00Z",
+        app_surface_m2: 50,
+        app_surface_kind: "habitable",
+        occupancy_status: "libre",
+        status: "upcoming",
+        ...overrides,
+      }) as unknown as AuctionSale;
+    const renderCard = (
+      cardOverrides: Record<string, unknown>,
+      access: { locked: boolean; analysisLocked: boolean } = {
+        locked: false,
+        analysisLocked: false,
+      },
+    ) =>
+      render(
+        <QueryClientProvider client={new QueryClient()}>
+          <ListingCard
+            sale={cardSale(cardOverrides)}
+            returnTo="/sales"
+            {...access}
+            active={false}
+            onHover={vi.fn()}
+            onSelect={vi.fn()}
+          />
+        </QueryClientProvider>,
+      );
+
+    it("compte les points déjà visibles sur la carte et mène à la fiche", () => {
+      renderCard({ app_surface_m2: null, occupancy_status: null });
+      expect(screen.getByText("Surface n.c.")).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "2 points à vérifier" }));
+      const note = screen.getByRole("note");
+      expect(note.textContent).toContain("Surface non communiquée dans l’annonce");
+      expect(note.textContent).toContain("Occupation du bien à confirmer");
+      expect(screen.getByRole("link", { name: "Voir la fiche" }).getAttribute("href")).toBe(
+        "/sales/verify-card",
+      );
+    });
+
+    it("n'affiche rien pour une carte complète", () => {
+      renderCard({});
+      expect(screen.queryByRole("button", { name: /à vérifier/ })).toBeNull();
+    });
+
+    it("ne compte pas l'occupation quand la carte ne la montre pas (liste publique, compte gratuit)", () => {
+      renderCard({ occupancy_status: null }, { locked: true, analysisLocked: false });
+      expect(screen.queryByRole("button", { name: /à vérifier/ })).toBeNull();
+      cleanup();
+      renderCard({ occupancy_status: null }, { locked: false, analysisLocked: true });
+      expect(screen.queryByRole("button", { name: /à vérifier/ })).toBeNull();
+      cleanup();
+      renderCard(
+        { occupancy_status: null, app_surface_m2: null },
+        { locked: true, analysisLocked: false },
+      );
+      expect(screen.getByRole("button", { name: "1 point à vérifier" })).toBeTruthy();
+    });
+
+    it("garde la pastille « Annonce bien renseignée » à côté, sans la remplacer", () => {
+      renderCard({ completeness_tier: 1, app_surface_m2: null });
+      expect(screen.getByText("Annonce bien renseignée")).toBeTruthy();
+      expect(screen.getByRole("button", { name: "1 point à vérifier" })).toBeTruthy();
+    });
+  });
+
   it("shows a starting price of 0 as not communicated on the listing card", () => {
     const sale = {
       id: "sale-zero",

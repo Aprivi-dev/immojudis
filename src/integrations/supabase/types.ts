@@ -14035,6 +14035,11 @@ export type Database = {
         Args: { p_sale_id: string };
         Returns: boolean;
       };
+      // Ajout minimal, à régénérer par db:types.
+      get_public_sale_market_gap_band: {
+        Args: { p_sale_id: string };
+        Returns: string;
+      };
       get_public_sale_summary: {
         Args: { p_sale_id: string };
         Returns: {
