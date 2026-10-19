@@ -10,10 +10,11 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
 
-import fitz
+import pymupdf as fitz
 
 from src.normalize import clean_text
 
+OCR_NO_TEXT_METHOD = "ocr_tesseract_no_text"
 LOGGER = logging.getLogger(__name__)
 DOCUMENT_LOGGER = logging.getLogger("src.pdf_enrichment")
 
@@ -371,6 +372,19 @@ def _extract_page_text_with_tesseract_result(
                     "method": "ocr_tesseract",
                     "confidence": page_text_confidence(result.stdout, method="ocr_tesseract"),
                     "status": "extracted",
+                    "retryable": False,
+                }
+            if result.returncode == 0:
+                # Tesseract read the whole page and found no text: photographs
+                # or a plan. Another attempt gives the same answer, so the page
+                # is settled instead of keeping the document "incomplete". Any
+                # native text of the page is kept, with the confidence of a
+                # native read since OCR added nothing to it.
+                return {
+                    "text": fallback,
+                    "method": OCR_NO_TEXT_METHOD,
+                    "confidence": page_text_confidence(fallback, method="pymupdf_text"),
+                    "status": "extracted" if clean_text(fallback) else "no_text",
                     "retryable": False,
                 }
             LOGGER.debug("Tesseract OCR returned %s: %s", result.returncode, result.stderr)

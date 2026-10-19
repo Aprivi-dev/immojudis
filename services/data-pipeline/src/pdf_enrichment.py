@@ -18,7 +18,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import quote, unquote, urljoin, urlparse, urlsplit, urlunsplit
 
-import fitz
+import pymupdf as fitz
 import httpx
 
 from src.config import DOCLING_TEXTS_DIR, DOCUMENTS_DIR, PDF_DOCUMENT_TEXTS_DIR, PDF_TEXTS_DIR, load_settings
@@ -67,6 +67,7 @@ from src.pdf_document_types import (
 from src.pdf_failure_diagnostics import format_pdf_failure_diagnostics, pdf_extraction_exception_marker
 from src.pdf_partial_tolerance import is_tolerated_partial, previous_reads_by_url
 from src.pdf_ocr import (
+    OCR_NO_TEXT_METHOD,
     PdfDeadlineExceeded,
     PdfDocumentOcrBudgetExceeded,
     PdfExtractionDeferred,
@@ -1165,6 +1166,8 @@ def extract_pdf_pages(file: str | Path) -> list[dict[str, object]]:
             if method == "fallback_text":
                 status = "failed"
                 failure_reason = "ocr_failed"
+            elif method == OCR_NO_TEXT_METHOD and not cleaned:
+                status, failure_reason = "visual_blank_excluded", "image_without_text_after_ocr"
             elif cleaned:
                 status = "extracted"
                 failure_reason = None

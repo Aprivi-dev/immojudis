@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import fitz
 import pandas as pd
+import pymupdf as fitz
 
 from src.config import DOCUMENTS_DIR, PROCESSED_DIR, load_settings
 from src.pdf_enrichment import _docling_cache_path, classify_document_type
