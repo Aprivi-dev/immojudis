@@ -334,3 +334,39 @@ Priorités : Critique / Haute / Moyenne / Basse. Effort : S < 1 h, M < 1 jour, L
    - Relecture par un avocat : CGV, confidentialité, traceurs, mise en balance de l'agent, contrat des avocats.
    - Courrier à Licitor (adresse décodée, statistiques et photos).
    - DPA et mécanismes de transfert de chaque prestataire.
+
+## Décision du propriétaire (19/10/2026)
+
+« Je valide absolument tous les points, sauf tous les points juridiques. »
+
+- **Validés :** tous les numéros, « discutables » compris, sauf la partie D (16 à 24) et les points dont l'objet est
+  juridique.
+- **Écartés :**
+  - 15 : liste des sources autorisées pour les photos ;
+  - 27 : mention « non validés par un juriste » ;
+  - la phrase de la politique de confidentialité du n° 5. Le filtre des noms, lui, est fait.
+- **Non faisable pour l'instant :** 71, la formule annuelle, faute de Stripe et de société.
+
+**Nouvelle demande : offre de lancement.**
+
+- Jusqu'à nouvel ordre, tout compte inscrit reçoit gratuitement les avantages de l'offre Analyse.
+- La mention doit dire qu'il s'agit d'une offre de lancement et que ces avantages pourront être retirés sans préavis au
+  lancement officiel.
+
+### Organisation de l'exécution
+
+Première vague, en parallèle, un worktree par chantier :
+
+| Chantier | Agent             | Points                                                                |
+| -------- | ----------------- | --------------------------------------------------------------------- |
+| P1a      | developpeur       | 1, 2, 9, 10, 11, 12                                                   |
+| P1b      | developpeur       | 3, 6, 7, 8, 13, 14, 50, 51                                            |
+| W1       | developpeur       | 4, 5 (filtre), 46, 47, 48, 49, 57                                     |
+| W2       | developpeur       | 32, 36, 37, 38, 39, 40 (recherche), 45 (recherche), 54, 56, 58, 62    |
+| W3       | developpeur       | 31, 33, 34, 35, 40 (fiche), 45 (fiche), 59 (fil d'Ariane de la fiche) |
+| W4       | developpeur       | offre de lancement, 25, 26, 44, 64, 74                                |
+| W5       | developpeur       | 40 (cloche), 41, 42, 43, 63, 67                                       |
+| W6       | developpeur       | 52, 53, 55, 59, 60, 61, 66                                            |
+| Contenus | redacteur-contenu | 25 (article), 28, 29, 30                                              |
+
+Seconde vague, après fusion, parce qu'elle touche les mêmes fichiers : 65, 68, 69, 70, 72, 73.
