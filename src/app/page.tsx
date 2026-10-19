@@ -5,6 +5,7 @@ import { CinematicHero } from "@/components/CinematicHome";
 import { HomeDiscovery } from "@/components/HomeDiscovery";
 import { loadHomeCatalogueSummary } from "@/lib/home-catalogue-summary.server";
 import { jsonLdString } from "@/lib/json-ld";
+import { PreloadCormorantItalic } from "@/components/PreloadCormorantItalic";
 
 export const metadata: Metadata = {
   title: { absolute: "Immojudis - Les enchères immobilières en toute clarté" },
@@ -31,6 +32,8 @@ export default async function Page() {
           __html: jsonLdString(structuredData),
         }}
       />
+      {/* L'italique du h1 (accent « clarté. ») est préchargée par cette page seule. */}
+      <PreloadCormorantItalic />
       <main id="contenu" className="ij-page ij-cinematic-page">
         <CinematicHero summary={summary} />
         <HomeDiscovery />

@@ -199,19 +199,46 @@ export async function withPhotoMirrors<T extends { media?: AuctionSale["media"] 
 ): Promise<T[]> {
   if (!client || !sales.length || !isPhotoMirrorEnabled()) return sales;
 
-  const count = Math.max(1, options.photos ?? 1);
-  const mediaOf = (sale: T): SaleMedia[] => propertyImages(sale?.media).slice(0, count);
+  const mirrors = await photoMirrorsFor(sales, client, options);
+  return applyPhotoMirrors(sales, mirrors, options);
+}
+
+/** Photos dont on cherche la copie, dans l'ordre où l'écran les montre. */
+function mirrorTargets<T extends { media?: AuctionSale["media"] }>(
+  sale: T,
+  photos: number | undefined,
+): SaleMedia[] {
+  return propertyImages(sale?.media).slice(0, Math.max(1, photos ?? 1));
+}
+
+async function photoMirrorsFor<T extends { media?: AuctionSale["media"] }>(
+  sales: T[],
+  client: PhotoMirrorClient,
+  options: PhotoMirrorOptions,
+): Promise<ReadonlyMap<string, SaleMediaMirror>> {
   const urls: string[] = [];
   for (const sale of sales) {
-    for (const item of mediaOf(sale)) urls.push(item.url);
+    for (const item of mirrorTargets(sale, options.photos)) urls.push(item.url);
   }
   const lookupUrls = photoMirrorLookupUrls(urls);
+  if (!lookupUrls.length) return new Map<string, SaleMediaMirror>();
+  return options.fetchMirrors
+    ? await options.fetchMirrors(lookupUrls)
+    : await fetchPhotoMirrors(client, lookupUrls, { timeoutMs: options.timeoutMs });
+}
 
-  const mirrors = !lookupUrls.length
-    ? new Map<string, SaleMediaMirror>()
-    : options.fetchMirrors
-      ? await options.fetchMirrors(lookupUrls)
-      : await fetchPhotoMirrors(client, lookupUrls, { timeoutMs: options.timeoutMs });
+/**
+ * Pose les copies déjà connues (URL d'origine vers copie) sur les photos que l'écran montre, sans
+ * appel réseau. C'est la seconde moitié de `withPhotoMirrors`, pour une réponse qui apporte déjà
+ * les copies (route `/api/catalogue/preview`). Ne modifie rien : renvoie la même liste si aucune
+ * copie ne s'applique.
+ */
+export function applyPhotoMirrors<T extends { media?: AuctionSale["media"] }>(
+  sales: T[],
+  mirrors: ReadonlyMap<string, SaleMediaMirror>,
+  options: Pick<PhotoMirrorOptions, "photos" | "remember"> = {},
+): T[] {
+  const mediaOf = (sale: T): SaleMedia[] => mirrorTargets(sale, options.photos);
   // Jamais sur le serveur, même si l'appelant le demande : la mémoire y serait commune à tous.
   const keepKnown = Boolean(options.remember) && typeof window !== "undefined";
   if (keepKnown) {
@@ -239,6 +266,24 @@ export async function withPhotoMirrors<T extends { media?: AuctionSale["media"] 
 }
 
 /**
+ * Table URL d'origine vers copie des photos qui en portent une (`media[].mirror`). Sert à garder les
+ * copies d'une liste déjà rendue (liste publique du serveur) quand une autre liste, qui arrive sans
+ * copie, la remplace : voir `applyPhotoMirrors` avec `remember`.
+ */
+export function mirrorsFromSales(
+  sales: ReadonlyArray<{ media?: AuctionSale["media"] }>,
+): Map<string, SaleMediaMirror> {
+  const mirrors = new Map<string, SaleMediaMirror>();
+  for (const sale of sales) {
+    if (!Array.isArray(sale?.media)) continue;
+    for (const item of sale.media) {
+      if (item?.mirror && typeof item.url === "string") mirrors.set(item.url, item.mirror);
+    }
+  }
+  return mirrors;
+}
+
+/**
  * Même chose pour une seule vente (fiche) : les 3 premières photos affichées sont cherchées (seule
  * la photo principale est copiée aujourd'hui ; les autres ne coûtent qu'une URL de plus).
  */
@@ -262,6 +307,21 @@ function storageBase(): string | null {
   return base && /^https?:\/\//i.test(base)
     ? `${base}/storage/v1/object/public/${PHOTO_MIRROR_BUCKET}/`
     : null;
+}
+
+/**
+ * Origine du stockage des copies (`https://<projet>.supabase.co`), pour `preconnect` ; `null` si
+ * l'interrupteur est éteint ou si Supabase n'est pas configuré (aucune connexion à préparer).
+ */
+export function photoMirrorOrigin(): string | null {
+  if (!isPhotoMirrorEnabled()) return null;
+  const base = storageBase();
+  if (!base) return null;
+  try {
+    return new URL(base).origin;
+  } catch {
+    return null;
+  }
 }
 
 /** URL publique d'un fichier du bucket, ou `null` si le chemin ou la configuration est invalide. */

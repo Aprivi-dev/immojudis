@@ -448,26 +448,49 @@ if (
 ) {
   failures.push("auction_sales keeps a table-wide SELECT grant for authenticated");
 }
-const columnGrant =
-  /grant\s+select\s*\(([\s\S]*?)\)\s+on\s+table\s+public\.auction_sales\s+to\s+authenticated/i.exec(
-    columnGrantMigration,
-  )?.[1];
-if (!columnGrant) {
-  failures.push("auction_sales has no column-level grant for authenticated");
-} else {
-  for (const internal of [
-    "raw_text",
-    "content_hash",
-    "last_run_id",
-    "external_id",
-    "premium_readiness_status",
-    "premium_readiness_override_reason",
-    "retention_deadline",
-  ]) {
-    if (new RegExp(`\\b${internal}\\b`).test(columnGrant)) {
-      failures.push(`auction_sales column grant exposes internal column ${internal}`);
+// Every `grant select (columns) on public.auction_sales to ... authenticated` of every migration is
+// checked against the internal columns, not only the first one: a later migration that adds a column
+// to the grant (the catalogue visibility columns, 20261027100200) must not open an internal one.
+// The columns granted for the catalogue visibility (catalogue_quarantined, catalogue_expiry_fallback,
+// catalogue_state_observed_at, catalogue_state_end_estimate) are dates and a boolean: allowed.
+// Grants made by dynamic SQL (execute format(...)) are out of reach of this static scan.
+const migrationsUrl = new URL("../supabase/migrations/", import.meta.url);
+const migrationSources = new Map(
+  await Promise.all(
+    (await readdir(migrationsUrl))
+      .filter((file) => file.endsWith(".sql"))
+      .sort()
+      .map(async (file) => [file, await readFile(new URL(file, migrationsUrl), "utf8")]),
+  ),
+);
+const internalAuctionSalesColumns = [
+  /^raw_text$/,
+  /^content_hash$/,
+  /^last_run_id$/,
+  /^external_id$/,
+  /^location$/,
+  /^premium_readiness_\w+$/,
+  /^retention_\w+$/,
+];
+let authenticatedColumnGrants = 0;
+for (const [name, source] of migrationSources) {
+  const sql = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--[^\n]*/g, "");
+  for (const grant of sql.matchAll(
+    /grant\s+select\s*\(([^)]*)\)\s+on\s+(?:table\s+)?(?:public\.)?auction_sales\s+to\s+([^;]+);/gi,
+  )) {
+    if (!/\b(?:authenticated|public)\b/i.test(grant[2] ?? "")) continue;
+    authenticatedColumnGrants += 1;
+    for (const column of (grant[1] ?? "")
+      .split(",")
+      .map((entry) => entry.trim().replace(/"/g, "").toLowerCase())) {
+      if (internalAuctionSalesColumns.some((internal) => internal.test(column))) {
+        failures.push(`${name}: auction_sales column grant exposes internal column ${column}`);
+      }
     }
   }
+}
+if (authenticatedColumnGrants === 0) {
+  failures.push("auction_sales has no column-level grant for authenticated");
 }
 const defaultPrivilegeMigration = await readFile(
   new URL("../supabase/migrations/20261010004000_default_function_privileges.sql", import.meta.url),
@@ -504,9 +527,7 @@ if (
 // raw_payload / observations / lawyer_contact feed v_auction_sales_app (security_invoker) and the
 // fiche displays the lawyer line: revoking them from `authenticated` without turning that view into
 // a definer view (stage 2 of 20261010003000) breaks the whole catalogue for connected users.
-const migrationsUrl = new URL("../supabase/migrations/", import.meta.url);
-for (const name of (await readdir(migrationsUrl)).filter((file) => file.endsWith(".sql"))) {
-  const migration = await readFile(new URL(name, migrationsUrl), "utf8");
+for (const [name, migration] of migrationSources) {
   const rawColumnRevoke =
     /revoke\s+select\s*\([^)]*\b(?:raw_payload|observations|lawyer_contact)\b[^)]*\)\s+on\s+(?:table\s+)?(?:public\.)?auction_sales\s+from\s+[^;]*\bauthenticated\b/i;
   if (rawColumnRevoke.test(migration) && !/security_invoker\s*=\s*false/i.test(migration)) {

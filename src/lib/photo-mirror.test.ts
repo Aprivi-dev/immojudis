@@ -8,9 +8,11 @@ import {
   forgetRememberedPhotoMirrors,
   isPhotoMirrorEnabled,
   isPhotoMirrorUrl,
+  applyPhotoMirrors,
   mirrorFromRow,
   photoMirrorForCard,
   photoMirrorForDetail,
+  photoMirrorOrigin,
   photoMirrorUrl,
   withPhotoMirror,
   withPhotoMirrors,
@@ -239,6 +241,30 @@ describe("photo mirrors", () => {
       expect(again!.media[0]!.mirror?.path640).toBe("sale-1/abc-640.webp");
     });
 
+    it("applyPhotoMirrors : pose les copies d'une réponse déjà reçue, sans appel, et les retient", () => {
+      const copy = mirrorFromRow(row(LICITOR))!;
+
+      const [first] = applyPhotoMirrors([sale("a", LICITOR)], new Map([[LICITOR, copy]]), {
+        remember: true,
+      });
+      expect(first!.media[0]!.mirror?.path640).toBe("sale-1/abc-640.webp");
+
+      // Réponse suivante sans copie : la copie connue est conservée.
+      const [again] = applyPhotoMirrors([sale("a", LICITOR)], new Map(), { remember: true });
+      expect(again!.media[0]!.mirror?.path640).toBe("sale-1/abc-640.webp");
+    });
+
+    it("applyPhotoMirrors : ne touche que la photo affichée et renvoie la même liste sans copie", () => {
+      const copy = mirrorFromRow(row(LICITOR))!;
+      const sales = [sale("a", VENCH, LICITOR)];
+
+      const [result] = applyPhotoMirrors(sales, new Map([[LICITOR, copy]]));
+      expect(result!.media[1]).not.toHaveProperty("mirror");
+
+      const untouched = [sale("b", VENCH)];
+      expect(applyPhotoMirrors(untouched, new Map([[LICITOR, copy]]))).toBe(untouched);
+    });
+
     it("ne vaut que pour la même URL d'origine", async () => {
       const first = clientReturning([row(LICITOR)]);
       await withPhotoMirrors([sale("a", LICITOR)], first.client, { remember: true });
@@ -419,6 +445,24 @@ describe("photo mirrors", () => {
       expect(isPhotoMirrorUrl(`${BASE}sale-1/abc-640.webp`)).toBe(true);
       expect(isPhotoMirrorUrl(LICITOR)).toBe(false);
       expect(isPhotoMirrorUrl(undefined)).toBe(false);
+    });
+  });
+
+  describe("préconnexion", () => {
+    it("donne l'origine du stockage, sans chemin ni barre finale", () => {
+      expect(photoMirrorOrigin()).toBe("https://ci.supabase.co");
+      vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://ci.supabase.co/");
+      expect(photoMirrorOrigin()).toBe("https://ci.supabase.co");
+    });
+
+    it("n'en donne aucune si l'interrupteur est éteint ou Supabase non configuré", () => {
+      vi.stubEnv("NEXT_PUBLIC_PHOTO_MIRROR", "off");
+      expect(photoMirrorOrigin()).toBeNull();
+      vi.stubEnv("NEXT_PUBLIC_PHOTO_MIRROR", "on");
+      vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");
+      expect(photoMirrorOrigin()).toBeNull();
+      vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "pas-une-url");
+      expect(photoMirrorOrigin()).toBeNull();
     });
   });
 });

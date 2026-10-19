@@ -959,10 +959,40 @@ def test_the_storage_upload_tolerates_a_duplicate_and_sends_the_documented_optio
     storage.upload("a/b-640.webp", b"data")  # the same photo again: no error
     assert len(sent) == 2
     assert sent[0]["file_options"] == {
-        "cache-control": "86400",
+        "cache-control": "31536000",
         "content-type": "image/webp",
         "upsert": "false",
     }
+
+
+def test_the_cache_lifetime_is_one_year_and_reaches_the_storage_request_as_max_age() -> None:
+    """Checked with the real storage3 client (the version pinned in requirements.txt), not a stand-in.
+
+    ``immutable`` cannot be added through storage3: the header is built from the number alone.
+    """
+    import httpx
+    from storage3 import SyncStorageClient
+
+    assert photo_mirror.CACHE_CONTROL_SECONDS == 365 * 24 * 3600
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"Key": "sale-photos/a/b-640.webp", "Id": "id"})
+
+    client = SyncStorageClient(
+        "https://project.supabase.co/storage/v1/",
+        {"apikey": "service-key", "authorization": "Bearer service-key"},
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    SupabasePhotoStorage(SimpleNamespace(storage=client)).upload("a/b-640.webp", b"webp-bytes")
+
+    assert len(requests) == 1
+    request = requests[0]
+    assert request.url.path == "/storage/v1/object/sale-photos/a/b-640.webp"
+    assert request.headers["cache-control"] == "max-age=31536000"
+    assert b'name="cacheControl"' in request.content and b"31536000" in request.content
+    assert "immutable" not in request.headers["cache-control"]
 
 
 def test_other_storage_errors_are_not_mistaken_for_duplicates() -> None:
@@ -1405,6 +1435,14 @@ def test_the_selection_picks_new_photos_and_old_failures_nearest_sale_first() ->
     assert "p.status = 'failed' and p.attempts < %s" in normalized
     assert "p.last_attempt_at < now() - make_interval(hours => %s::int)" in normalized
     assert "not s.catalogue_quarantined" in normalized
+    # The visibility is read on columns only, like public.sale_photo_mirrors: raw_payload is never touched.
+    assert (
+        "app_private.sale_catalogue_projection_is_live( s.catalogue_expiry_materialized, "
+        "s.catalogue_expiry_deadline, s.sale_date, s.catalogue_expiry_fallback, "
+        "s.catalogue_state_observed_at, s.catalogue_state_end_estimate)"
+    ) in normalized
+    assert "sale_catalogue_entry_is_live" not in normalized
+    assert "raw_payload" not in normalized
     assert "order by (s.sale_date is null), s.sale_date, s.id" in normalized
     # Encheres Publiques: by the photo host AND by the sale's source, both switched by the access flag.
     assert "s.catalogue_thumbnail_url !~* %s" in normalized
