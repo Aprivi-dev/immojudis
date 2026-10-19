@@ -27,7 +27,8 @@ from unnest(array[
   'sale-retention',
   'information-agent-inbound',
   'listing-completeness',
-  'cnb-lawyer-directory'
+  'cnb-lawyer-directory',
+  'sale-reminders'
 ]) as job_name;
 
 insert into public.dvf_import_batches (

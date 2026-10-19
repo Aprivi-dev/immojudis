@@ -125,18 +125,13 @@ select is(
   'une personne connectée ne lit que sa propre ligne de préférences'
 );
 
-select is(
-  (
-    with changed as (
-      update public.user_notification_preferences
-      set sale_reminders_enabled = false, sale_reminders_revoked_at = now()
-      where user_id = '48500000-0000-4000-8000-000000000002'
-      returning 1
-    )
-    select count(*)::integer from changed
-  ),
-  0,
-  'elle ne peut pas retirer le consentement d''une autre personne'
+-- Un UPDATE ne peut pas vivre dans une sous-requête : la RLS le rend sans effet, et la
+-- dernière vérification (« le consentement de l'autre personne est intact ») le prouve.
+select lives_ok(
+  $$update public.user_notification_preferences
+    set sale_reminders_enabled = false, sale_reminders_revoked_at = now()
+    where user_id = '48500000-0000-4000-8000-000000000002'$$,
+  'elle ne peut pas retirer le consentement d''une autre personne (aucune ligne visible)'
 );
 
 select lives_ok(
