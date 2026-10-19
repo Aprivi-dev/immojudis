@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { recordAccountProductEvent } from "@/lib/account-product-events.server";
 import { apiRouteError } from "@/lib/api-observability";
 import {
   bearerTokenFromRequest,
@@ -67,6 +68,9 @@ export async function POST(request: Request) {
           actionable: response.estimate.actionable === true,
         },
       });
+      // Mesure par compte : la valeur de référence du plafond d'enchère est servie pour cette vente
+      // (le calcul du plafond lui-même se fait dans le navigateur, à partir de cette valeur).
+      await recordAccountProductEvent(auth.userId, { type: "bid_ceiling_calculated", saleId });
     }
     const status = response.estimate
       ? 200

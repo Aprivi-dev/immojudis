@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { emailClickPath, readEmailClickToken } from "@/lib/email-click-token";
 import { verifyUnsubscribeToken } from "@/lib/email-unsubscribe-token";
 import {
   buildAlertDigestMessage,
@@ -142,6 +143,39 @@ describe("email alerts", () => {
     expect(message.subject).toBe("Alerte Immojudis — Maison judiciaire (Bordeaux · 33)");
     expect(message.text).not.toContain("Audience :");
     expect(message.text).not.toContain("Mise à prix :");
+  });
+
+  it("sends the sale links through the signed click redirect (measure per account)", () => {
+    const saleId = "A1B2C3D4-0000-4000-8000-000000000001";
+    const message = buildAlertDigestMessage({
+      userId,
+      from: "Immojudis <alertes@immojudis.fr>",
+      recipientEmail: "client@example.test",
+      appUrl: "https://immojudis.example",
+      now: new Date("2026-10-09T10:00:00Z"),
+      env,
+      notifications: [
+        notification("6b6b42a1-b719-48cc-9c9f-f0c9f707e17d", saleId, "Maison judiciaire"),
+        notification("6b6b42a1-b719-48cc-9c9f-f0c9f707e17e", "sale-2", "Studio"),
+      ],
+    });
+
+    const links = [
+      ...message.text.matchAll(/https:\/\/immojudis\.example\/api\/email\/click\?token=\S+/g),
+    ].map(([url]) => url);
+    // Seul l'identifiant qui est un UUID est suivi ; l'autre garde son lien direct.
+    expect(links).toHaveLength(1);
+    expect(message.text).toContain("https://immojudis.example/sales/sale-2");
+    const url = new URL(links[0]);
+    expect([...url.searchParams.keys()]).toEqual(["token"]);
+    const read = readEmailClickToken(url.searchParams.get("token"), {
+      now: new Date("2026-10-09T10:00:00Z"),
+      env,
+    });
+    expect(read?.expired).toBe(false);
+    expect(read?.claims).toMatchObject({ userId, kind: "alert", target: "sale" });
+    expect(emailClickPath(read!.claims)).toBe("/sales/a1b2c3d4-0000-4000-8000-000000000001");
+    expect(message.html).toContain(links[0]);
   });
 
   it("caps the list and points to the alerts page for the rest", () => {

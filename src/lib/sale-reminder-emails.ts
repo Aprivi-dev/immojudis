@@ -1,5 +1,6 @@
 import "server-only";
 import { escapeAttribute, type ResendEmailMessage } from "@/lib/email-alerts";
+import { emailClickUrl, isEmailClickSaleId } from "@/lib/email-click-token";
 import { createUnsubscribeToken } from "@/lib/email-unsubscribe-token";
 import { escapeHtml } from "@/lib/guards";
 import { SALE_CALENDAR_DISCLAIMER } from "@/lib/sale-calendar";
@@ -69,10 +70,20 @@ export function buildSaleReminderMessage({
     createUnsubscribeToken({ userId, scope: { kind: "reminders" }, now, env }),
   )}`;
   const settingsUrl = `${appUrl}/compte`;
+  // Liens suivis (point 65) : redirection signée qui mesure le clic pour ce compte, puis mène à la
+  // même page. Un identifiant de vente qui n'est pas un UUID garde le lien direct.
+  const trackedUrl = (item: SaleReminderItem, target: "sale" | "calendar", directPath: string) =>
+    isEmailClickSaleId(item.saleId)
+      ? emailClickUrl({ appUrl, userId, kind: "reminder", target, saleId: item.saleId, now, env })
+      : `${appUrl}${directPath}`;
   const saleUrl = (item: SaleReminderItem) =>
-    `${appUrl}/sales/${encodeURIComponent(item.saleId.toLowerCase())}`;
+    trackedUrl(item, "sale", `/sales/${encodeURIComponent(item.saleId.toLowerCase())}`);
   const calendarUrl = (item: SaleReminderItem) =>
-    `${appUrl}/api/sales/${encodeURIComponent(item.saleId.toLowerCase())}/calendar`;
+    trackedUrl(
+      item,
+      "calendar",
+      `/api/sales/${encodeURIComponent(item.saleId.toLowerCase())}/calendar`,
+    );
   const intro =
     items.length === 1
       ? "Une vente que vous suivez sur Immojudis demande votre attention :"

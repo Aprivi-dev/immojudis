@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { createHash } from "node:crypto";
 import { serverEnv } from "@/lib/env";
+import { emailClickUrl, isEmailClickSaleId } from "@/lib/email-click-token";
 import { createUnsubscribeToken } from "@/lib/email-unsubscribe-token";
 import { canCreateEmailAlertNotification } from "@/lib/notification-preferences";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
@@ -390,7 +391,20 @@ export function buildAlertDigestMessage({
         }`
       : `Alerte Immojudis — ${allItems.length} ventes correspondent à vos alertes`;
 
-  const saleUrl = (item: DigestItem) => `${appUrl}/sales/${encodeURIComponent(item.saleId ?? "")}`;
+  // Lien suivi (point 65) : redirection signée qui mesure le clic pour ce compte, puis mène à la
+  // fiche de la vente. Sans identifiant de vente valide, le lien reste direct.
+  const saleUrl = (item: DigestItem) =>
+    isEmailClickSaleId(item.saleId)
+      ? emailClickUrl({
+          appUrl,
+          userId,
+          kind: "alert",
+          target: "sale",
+          saleId: item.saleId,
+          now,
+          env,
+        })
+      : `${appUrl}/sales/${encodeURIComponent(item.saleId ?? "")}`;
   const disclaimer =
     "Les données et estimations Immojudis sont indicatives. Elles ne constituent ni une expertise, ni un conseil juridique ou financier, ni une promesse de gain.";
 

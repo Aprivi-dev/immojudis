@@ -3,9 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RateLimitError } from "@/lib/api-errors";
 import { classifyApiError, rateLimitResponse } from "@/lib/api-observability";
 
-const mocks = vi.hoisted(() => ({ rpc: vi.fn() }));
+const mocks = vi.hoisted(() => ({ rpc: vi.fn(), record: vi.fn() }));
 vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: { rpc: mocks.rpc },
+}));
+vi.mock("@/lib/account-product-events.server", () => ({
+  recordAccountProductEvent: mocks.record,
 }));
 
 import { enforceDailyOperationLimits, enforceGlobalRateLimit } from "./rate-limit";
@@ -42,6 +45,7 @@ describe("plafonds journaliers des opérations coûteuses", () => {
     vi.resetAllMocks();
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    mocks.record.mockResolvedValue(true);
   });
 
   it("arrête un compte à son plafond journalier, avec le message quotidien et un 429", async () => {
@@ -62,6 +66,9 @@ describe("plafonds journaliers des opérations coûteuses", () => {
     }).catch((error: unknown) => error);
 
     expect(failure).toBeInstanceOf(RateLimitError);
+    // Mesure par compte : un seul événement, au moment où le plafond est atteint.
+    expect(mocks.record).toHaveBeenCalledTimes(1);
+    expect(mocks.record).toHaveBeenCalledWith("user-1", { type: "quota_reached", quota: "daily" });
     const error = failure as RateLimitError;
     expect(error.publicMessage).toBe("Limite quotidienne atteinte, réessayez demain.");
     expect(error.retryAfterSeconds).toBeGreaterThanOrEqual(1);
