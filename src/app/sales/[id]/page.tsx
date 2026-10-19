@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import { lookupPublicSale } from "@/lib/public-sale.server";
 import {
   GENERIC_SALE_SEO_TITLE,
@@ -30,8 +30,9 @@ function salePath(saleId: string): string {
 // the tag and this page through `POST /api/pipeline/revalidate-sale` (P6-06). The value below
 // must equal PUBLIC_SALE_REVALIDATE_SECONDS (a test checks it): Next.js wants a literal.
 // An unknown sale calls notFound(): the response carries the 404 page, a real 404 status and
-// `noindex`. The status is fixed by the first streamed chunk. It stays right here because the
-// page is generated as a whole (static generation, then ISR) even though `loading.tsx` files
+// `noindex`. An identifier removed by a duplicate merge calls permanentRedirect() to the kept sale
+// (308), under the same condition. The status is fixed by the first streamed chunk. It stays right
+// here because the page is generated as a whole (static generation, then ISR) even though `loading.tsx` files
 // (./loading.tsx, ../loading.tsx) wrap it in Suspense: they only show during client navigation.
 // A dynamic render (`connection()` in the layout, see `cspRequiresDynamicRendering`) would send
 // the fallback first and turn the status into a 200: those `loading.tsx` files would then have
@@ -46,6 +47,11 @@ export async function generateStaticParams() {
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { id } = await params;
   const lookup = await lookupPublicSale(id);
+
+  // A merged duplicate only redirects (see Page): nothing to announce, nothing to index.
+  if (lookup.status === "merged") {
+    return { title: GENERIC_SALE_SEO_TITLE, robots: NOT_INDEXED };
+  }
 
   // A sale that is not in the public catalogue must never be indexed, and the
   // generic title is kept when the server could not read the sale at all.
@@ -93,6 +99,9 @@ export default async function Page({ params }: PageProps) {
   // Answered while the page is generated as a whole, before anything is streamed: crawlers get
   // a real 404 status (see the note on `revalidate`).
   if (lookup.status === "missing") notFound();
+  // A duplicate merged into another sale: permanent redirect (308) to the sale that was kept, which
+  // is in the public catalogue. Same moment as the 404 above, before anything is streamed.
+  if (lookup.status === "merged") permanentRedirect(salePath(lookup.targetId));
 
   const sale = lookup.status === "found" ? lookup.sale : null;
   const siteOrigin = resolveSiteOrigin(process.env, "http://localhost:3000")!;
