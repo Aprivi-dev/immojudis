@@ -2,7 +2,7 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EXAMPLE_SALE } from "@/lib/example-sale";
 import type { FavoriteSalesResponse } from "@/lib/favorites";
 import type { AiReviewProjectionReadModel } from "@/lib/ai-review-guard";
@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   fetchSaleChangeEvents: vi.fn(),
   checkoutOpen: vi.fn(),
   fetchSalesAiReviewProjections: vi.fn(),
+  fetchFollowedSaleSnapshots: vi.fn(),
+  deleteFollowedSaleSnapshot: vi.fn(),
   addFavoriteSale: vi.fn(),
   removeFavoriteSale: vi.fn(),
   toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }),
@@ -26,6 +28,8 @@ vi.mock("@/lib/client-api", () => ({
   fetchFavoriteSales: mocks.fetchFavoriteSales,
   fetchSaleChangeEvents: mocks.fetchSaleChangeEvents,
   fetchSalesAiReviewProjections: mocks.fetchSalesAiReviewProjections,
+  fetchFollowedSaleSnapshots: mocks.fetchFollowedSaleSnapshots,
+  deleteFollowedSaleSnapshot: mocks.deleteFollowedSaleSnapshot,
   addFavoriteSale: mocks.addFavoriteSale,
   removeFavoriteSale: mocks.removeFavoriteSale,
 }));
@@ -43,6 +47,10 @@ vi.mock("./FavoriteButton", () => ({
   FavoriteButton: ({ saleId }: { saleId: string }) => <button>Retirer {saleId}</button>,
 }));
 
+beforeEach(() => {
+  mocks.fetchFollowedSaleSnapshots.mockResolvedValue({ snapshots: [] });
+});
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -57,6 +65,9 @@ function favoritesResponse(): FavoriteSalesResponse {
         saleId: "sale-1",
         favoritedAt: "2026-09-01T10:00:00.000Z",
         sale: { ...EXAMPLE_SALE, id: "sale-1" },
+        personalStatus: null,
+        bidCeilingEur: null,
+        bidCeilingSavedAt: null,
       },
     ],
     unavailableSaleIds: [],
@@ -163,6 +174,50 @@ describe("FavoriteSales", () => {
     expect(screen.getByRole("link", { name: "Voir les ventes" }).getAttribute("href")).toBe(
       "/sales",
     );
+  });
+});
+
+describe("FavoriteSales : Mon dossier (point 68)", () => {
+  function renderPage() {
+    return render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <FavoriteSales />
+      </QueryClientProvider>,
+    );
+  }
+
+  it("affiche le statut et le plafond enregistrés sous la carte du favori", async () => {
+    const response = favoritesResponse();
+    response.favorites[0] = {
+      ...response.favorites[0],
+      personalStatus: "bidding",
+      bidCeilingEur: 185_000,
+      bidCeilingSavedAt: "2026-10-10T08:00:00.000Z",
+    };
+    mocks.fetchFavoriteSales.mockResolvedValue(response);
+    mocks.fetchSalesAiReviewProjections.mockResolvedValue({ projections: [] });
+    mocks.fetchSaleChangeEvents.mockResolvedValue({ events: [] });
+    renderPage();
+
+    await screen.findByRole("heading", { name: "Appartement · Bordeaux" });
+    expect(screen.getByText("Prêt à enchérir")).toBeTruthy();
+    expect(screen.getByText(/185\s000\s€/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Modifier sur la fiche" }).getAttribute("href")).toBe(
+      "/sales/sale-1",
+    );
+  });
+
+  it("affiche une valeur absente comme absente, jamais comme un statut ou un montant", async () => {
+    mocks.fetchFavoriteSales.mockResolvedValue(favoritesResponse());
+    mocks.fetchSalesAiReviewProjections.mockResolvedValue({ projections: [] });
+    mocks.fetchSaleChangeEvents.mockResolvedValue({ events: [] });
+    renderPage();
+
+    await screen.findByRole("heading", { name: "Appartement · Bordeaux" });
+    expect(screen.getByText("aucun")).toBeTruthy();
+    expect(screen.getByText("aucun enregistré")).toBeTruthy();
   });
 });
 

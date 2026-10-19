@@ -118,6 +118,10 @@ const PropertyReportActions = dynamic(
     ),
   },
 );
+// « Mon dossier » gratuit (point 68) : chargé à la demande, hors du JavaScript initial de la fiche.
+const SaleFileCard = dynamic(() =>
+  import("@/components/sale-detail/SaleFileCard").then((module) => module.SaleFileCard),
+);
 const ListingWorks = dynamic(
   () => import("@/components/sale-detail/ListingWorks").then((module) => module.ListingWorks),
   {
@@ -590,6 +594,13 @@ function SaleDetailWorkspace({
               opens={{ ceiling: isTribunalSale, statistics: statisticsAvailable }}
               announce={justUnlocked}
               onUnlocked={(result) => onSaleUnlocked?.(result)}
+            />
+          ) : null}
+          {!publicDemo && user ? (
+            <SaleFileCard
+              saleId={sale.id}
+              calculatedCeiling={heroCeiling}
+              calculationPending={ceilingEnabled && marketPending}
             />
           ) : null}
         </div>
