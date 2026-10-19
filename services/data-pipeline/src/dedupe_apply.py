@@ -9,10 +9,12 @@ Pourquoi un point d'entrée dédié : la collecte planifiée lance toujours une 
 * ``DEDUPE_RECONCILE_MODE=candidates`` (ou ``--candidates``) : lecture seule, même rapport que
   ``python -m src.dedupe_candidates`` ; rien n'est écrit ;
 * sinon, tant que ``DEDUPE_RECONCILE_ENABLED`` n'est pas vrai : rien n'est écrit non plus ;
-* sinon : passerelle du catalogue vers le graphe des issues (préalable que la base exige avant toute
-  suppression de fiche), puis fusion et suppression des lignes secondaires, au plus
-  ``MAX_MERGES_PER_PASS`` lignes par passage (relancer pour la suite). Les données des comptes des
-  lignes supprimées passent à la fiche conservée côté base (déclencheurs de fusion).
+* sinon : vérification que la migration 20261028110000 est appliquée (sans elle, la suppression d'une ligne
+  effacerait favoris, notes, alertes et rapports des comptes : le balayage refuse), passerelle du catalogue
+  vers le graphe des issues (préalable que la base exige avant toute suppression de fiche), puis fusion et
+  suppression des lignes secondaires, au plus ``MAX_MERGES_PER_PASS`` lignes par passage (relancer pour la
+  suite). Les données des comptes des lignes supprimées passent à la fiche conservée côté base (déclencheur
+  ``auction_sales_carry_sale_user_data``).
 """
 
 from __future__ import annotations
@@ -37,6 +39,32 @@ def _write_summary(lines: list[str]) -> None:
         return
     with Path(summary_path).open("a", encoding="utf-8") as handle:
         handle.write("\n".join(lines) + "\n")
+
+
+MERGE_TRIGGER = "auction_sales_carry_sale_user_data"
+
+
+def merge_trigger_deployed(db_url: str | None) -> bool:
+    """Vrai si le déclencheur qui transfère les données des comptes avant une suppression est en place.
+
+    Faux au moindre doute (pas d'URL de base, base injoignable, déclencheur absent) : mieux vaut ne rien
+    supprimer que d'effacer les favoris et les notes de comptes.
+    """
+    if not db_url:
+        return False
+    try:
+        from src.storage.supabase_client import connect
+
+        with connect(db_url) as db:
+            row = db.execute(
+                "select exists(select 1 from pg_catalog.pg_trigger where tgname = %s"
+                " and tgrelid = 'public.auction_sales'::regclass and not tgisinternal and tgenabled <> 'D')",
+                (MERGE_TRIGGER,),
+            ).fetchone()
+        return bool(row and row[0])
+    except Exception as exc:  # noqa: BLE001 - fail closed
+        LOGGER.error("Dedupe sweep: could not check the merge trigger (%s)", type(exc).__name__)
+        return False
 
 
 def merges_cap(settings: dict[str, object]) -> int:
@@ -71,6 +99,17 @@ def apply_duplicate_sweep(*, candidates_only: bool = False, output: Path | None 
     if cap <= 0:
         LOGGER.warning("Dedupe sweep: DEDUPE_RECONCILE_MAX_MERGES is 0; nothing to do.")
         return 0
+
+    if not merge_trigger_deployed(str(settings.get("supabase_db_url") or "")):
+        message = (
+            f"Le déclencheur {MERGE_TRIGGER} (migration 20261028110000) est absent ou illisible : une suppression "
+            "effacerait les favoris, notes, alertes et rapports des comptes. Appliquer la migration (et vérifier "
+            "SUPABASE_DB_URL), puis relancer."
+        )
+        LOGGER.error("Dedupe sweep: %s", message)
+        print(f"::error title=Dedupe sweep refusé::{message}")
+        _write_summary(["### Balayage des doublons", f"- Refusé : {message}"])
+        return 1
 
     # Imports tardifs : le mode sans écriture ci-dessus ne dépend ni de la passerelle ni du client complet.
     from src.outcome_ingestion.catalogue_bridge import (

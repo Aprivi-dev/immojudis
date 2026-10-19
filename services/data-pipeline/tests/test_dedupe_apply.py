@@ -47,6 +47,7 @@ def calls(monkeypatch):
     monkeypatch.setattr(catalogue_bridge, "bridge_auction_sales_before_cleanup", bridge)
     monkeypatch.setattr(supabase_client, "reconcile_duplicate_sales_in_supabase", reconcile)
     monkeypatch.setattr(dedupe_apply, "report_duplicate_candidates", report)
+    monkeypatch.setattr(dedupe_apply, "merge_trigger_deployed", lambda db_url: True)
     monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
     recorded.configure()
     return recorded
@@ -103,6 +104,45 @@ def test_missing_credentials_fail_without_touching_anything(calls) -> None:
 
     assert dedupe_apply.apply_duplicate_sweep() == 1
     assert calls == []
+
+
+def test_the_sweep_refuses_to_delete_without_the_account_data_trigger(calls, monkeypatch, capsys) -> None:
+    monkeypatch.setattr(dedupe_apply, "merge_trigger_deployed", lambda db_url: False)
+
+    assert dedupe_apply.apply_duplicate_sweep() == 1
+
+    assert calls == []  # ni passerelle ni suppression
+    assert "::error" in capsys.readouterr().out
+
+
+def test_the_trigger_check_fails_closed(monkeypatch) -> None:
+    from contextlib import nullcontext
+
+    class Db:
+        def __init__(self, present):
+            self.present = present
+            self.sql = ""
+
+        def execute(self, sql, params=None):
+            self.sql = sql
+            return self
+
+        def fetchone(self):
+            return (self.present,)
+
+    for present in (True, False):
+        db = Db(present)
+        monkeypatch.setattr(supabase_client, "connect", lambda url, db=db: nullcontext(db))
+        assert dedupe_apply.merge_trigger_deployed("postgresql://db") is present
+        assert "pg_trigger" in db.sql
+    assert dedupe_apply.merge_trigger_deployed(None) is False
+    assert dedupe_apply.merge_trigger_deployed("") is False
+
+    def unreachable(url):
+        raise OSError("down")
+
+    monkeypatch.setattr(supabase_client, "connect", unreachable)
+    assert dedupe_apply.merge_trigger_deployed("postgresql://db") is False
 
 
 def test_a_zero_cap_does_nothing(calls) -> None:
