@@ -78,7 +78,7 @@ const FAQ: Array<{ q: string; a: string }> = [
   },
   {
     q: "Que se passe-t-il en cas de surenchère ?",
-    a: "En saisie immobilière, toute personne peut former une surenchère d’au moins un dixième du prix principal, par acte d’avocat déposé au greffe du juge de l’exécution dans les dix jours qui suivent l’adjudication (art. R. 322-50 et R. 322-51). Une nouvelle audience a alors lieu deux à quatre mois plus tard, et l’adjudication initiale n’est pas définitive. La surenchère du dixième dans les dix jours est une règle légale en saisie immobilière (art. R. 322-50 et R. 322-51 du CPCE) et en licitation judiciaire (art. 1377 et 1279 du CPC ; devant notaire, elle se forme par requête au greffe, art. 1280). Dans une vente notariale volontaire, elle n’est pas prévue par la loi : seul le cahier des charges peut la prévoir (Notaires de France décrit 10\u00a0% dans les 10 jours pour la vente « à la bougie »). Dans une vente domaniale, tout dépend du cahier des charges. Lisez-le avant d’enchérir.",
+    a: "En saisie immobilière, toute personne peut former une surenchère d’au moins un dixième du prix principal, par acte d’avocat déposé au greffe du juge de l’exécution dans les dix jours qui suivent l’adjudication (art. R. 322-50 et R. 322-51). Une nouvelle audience a alors lieu deux à quatre mois plus tard, et l’adjudication initiale n’est pas définitive. La surenchère du dixième dans les dix jours est une règle légale en saisie immobilière (art. R. 322-50 et R. 322-51 du CPCE). En licitation, la surenchère du dixième se forme dans les dix jours de l’adjudication définitive (art. 1279, qui renvoie aux art. R. 322-50 à R. 322-55 du CPCE). Devant notaire, la forme exacte est à confirmer avec l’avocat ou le notaire. Dans une vente notariale volontaire, elle n’est pas prévue par la loi : seul le cahier des charges peut la prévoir (Notaires de France décrit 10\u00a0% dans les 10 jours pour la vente « à la bougie »). Dans une vente domaniale, tout dépend du cahier des charges. Lisez-le avant d’enchérir.",
   },
   {
     q: "Quels frais s’ajoutent au prix d’adjudication ?",
@@ -873,12 +873,14 @@ export function ResourcesPage() {
               jours. Elle doit respecter les conditions prévues par les textes, notamment être
               déposée par acte d’avocat au greffe du juge de l’exécution et porter sur au moins un
               dixième du prix principal (art. R. 322-50 et R. 322-51). La surenchère du dixième dans
-              les dix jours est une règle légale en saisie immobilière et en licitation judiciaire
-              (art. 1377 et 1279 du CPC ; devant notaire, elle se forme par requête au greffe, art.
-              1280). Dans une vente notariale volontaire, elle n’est pas prévue par la loi : seul le
-              cahier des charges peut la prévoir (Notaires de France décrit 10&nbsp;% dans les 10
-              jours pour la vente « à la bougie »). Dans une vente domaniale, tout dépend du cahier
-              des charges. Lisez-le avant d’enchérir.
+              les dix jours est une règle légale en saisie immobilière (art. R. 322-50 et R. 322-51
+              du CPCE). En licitation, la surenchère du dixième se forme dans les dix jours de
+              l’adjudication définitive (art. 1279, qui renvoie aux art. R. 322-50 à R. 322-55 du
+              CPCE). Devant notaire, la forme exacte est à confirmer avec l’avocat ou le notaire.
+              Dans une vente notariale volontaire, elle n’est pas prévue par la loi : seul le cahier
+              des charges peut la prévoir (Notaires de France décrit 10&nbsp;% dans les 10 jours
+              pour la vente « à la bougie »). Dans une vente domaniale, tout dépend du cahier des
+              charges. Lisez-le avant d’enchérir.
             </P>
             <P>
               Vous pouvez consulter le texte officiel sur Légifrance :{" "}

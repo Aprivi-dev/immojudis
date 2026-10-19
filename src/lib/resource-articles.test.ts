@@ -155,16 +155,21 @@ describe("article sur les ventes notariales", () => {
     expect(bougie.paragraphs.join(" ")).toMatch(/adjudication/);
     const text = interactive.paragraphs.join(" ");
     expect(text).toContain("avant-contrat");
-    expect(text).toContain("n’est pas tenu de retenir l’offre la plus élevée");
+    expect(text).toContain(
+      "les CGU de 36h immo prévoient que le vendeur peut refuser l’offre la plus élevée",
+    );
     expect(text).toMatch(/pas une adjudication|n’est pas une séance d’enchères/);
     expect(interactive.table).toBeDefined();
     expect(visibleText(article)).toContain("conditions suspensives");
   });
 
-  it("présente comme commerciale (à vérifier) toute règle qui ne repose que sur une présentation promotionnelle", () => {
+  it("attribue à 36h immo les clauses de ses CGU et ne reprend pas sa page commerciale", () => {
     const interactive = article.sections.find((section) => section.id === "vente-interactive")!;
-    expect(interactive.paragraphs.join(" ")).toContain("présentation commerciale");
-    expect(interactive.paragraphs.join(" ")).toContain("vérifiez-la");
+    const text = interactive.paragraphs.join(" ");
+    expect(text).toContain("À titre d’exemple");
+    expect(text).toContain("36h immo");
+    expect(visibleText(article)).not.toMatch(/présentation commerciale|honoraires de négociation/);
+    expect(article.sources.some((source) => /36h immo/.test(source.label))).toBe(true);
   });
 });
 
@@ -183,5 +188,34 @@ describe("article sur l'enchère plafond", () => {
       /\d{1,2} (janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre)/,
     );
     expect(text).not.toMatch(/gratuit(ement)? pour toujours|à vie/i);
+  });
+});
+
+describe("relecture juridique du 19/10/2026", () => {
+  it("ne décrit plus la surenchère en licitation devant notaire comme une requête au greffe (art. 1280)", () => {
+    for (const article of RESOURCE_ARTICLES) {
+      expect(visibleText(article), article.slug).not.toMatch(/requête au greffe|art\. 1280/);
+      expect(
+        article.sources.some((source) => /article 1280/.test(source.label)),
+        article.slug,
+      ).toBe(false);
+    }
+  });
+
+  it("date de la relecture les articles dont le texte a été corrigé", () => {
+    for (const slug of [
+      "apres-adjudication-surenchere-paiement-titre-vente",
+      "licitation-vente-bien-indivis-encheres-acheteur",
+    ]) {
+      expect(getResourceArticle(slug)!.updatedAt, slug).toBe("2026-10-19");
+    }
+  });
+
+  it("garde les prudences de la préemption (affichage d'un mois, indivision volontaire dans le texte)", () => {
+    const text = visibleText(getResourceArticle("droit-de-preemption-encheres-commune-acheteur")!);
+    expect(text).toContain("R. 211-2");
+    expect(text).toContain("pendant un mois");
+    expect(text).not.toMatch(/pendant deux mois/);
+    expect(text).toContain("créée volontairement");
   });
 });
