@@ -1,11 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ rpc: vi.fn() }));
+const mocks = vi.hoisted(() => ({ rpc: vi.fn(), getUserById: vi.fn() }));
 vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: { rpc: mocks.rpc },
+  supabaseAdmin: { rpc: mocks.rpc, auth: { admin: { getUserById: mocks.getUserById } } },
 }));
 
-import { isLaunchOfferActive, resetLaunchOfferCache } from "@/lib/launch-offer.server";
+import {
+  hasConfirmedEmail,
+  isLaunchOfferActive,
+  resetLaunchOfferCache,
+} from "@/lib/launch-offer.server";
 
 describe("état de l'offre de lancement côté serveur", () => {
   beforeEach(() => {
@@ -60,5 +64,54 @@ describe("état de l'offre de lancement côté serveur", () => {
     resetLaunchOfferCache();
     mocks.rpc.mockResolvedValueOnce({ data: false, error: null });
     await expect(isLaunchOfferActive()).resolves.toBe(false);
+  });
+});
+
+describe("email confirmé exigé par l'offre de lancement", () => {
+  const confirmedUser = {
+    data: { user: { email_confirmed_at: "2026-10-19T08:00:00Z" } },
+    error: null,
+  };
+  const unconfirmedUser = { data: { user: { email_confirmed_at: null } }, error: null };
+
+  beforeEach(() => {
+    resetLaunchOfferCache();
+    mocks.getUserById.mockReset();
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+  });
+
+  it("lit email_confirmed_at du compte dans Auth", async () => {
+    mocks.getUserById.mockResolvedValue(confirmedUser);
+    await expect(hasConfirmedEmail("user-1")).resolves.toBe(true);
+    expect(mocks.getUserById).toHaveBeenCalledWith("user-1");
+  });
+
+  it("refuse un compte dont l'email n'est pas confirmé, et le relit à chaque fois", async () => {
+    mocks.getUserById.mockResolvedValue(unconfirmedUser);
+    await expect(hasConfirmedEmail("user-1")).resolves.toBe(false);
+    await expect(hasConfirmedEmail("user-1")).resolves.toBe(false);
+    expect(mocks.getUserById).toHaveBeenCalledTimes(2);
+    // Le compte confirme : l'offre s'ouvre à la lecture suivante.
+    mocks.getUserById.mockResolvedValue(confirmedUser);
+    await expect(hasConfirmedEmail("user-1")).resolves.toBe(true);
+  });
+
+  it("garde une confirmation 10 minutes, puis la relit", async () => {
+    mocks.getUserById.mockResolvedValue(confirmedUser);
+    const start = Date.now();
+    await hasConfirmedEmail("user-1", start);
+    await expect(hasConfirmedEmail("user-1", start + 9 * 60_000)).resolves.toBe(true);
+    expect(mocks.getUserById).toHaveBeenCalledTimes(1);
+    await hasConfirmedEmail("user-1", start + 11 * 60_000);
+    expect(mocks.getUserById).toHaveBeenCalledTimes(2);
+  });
+
+  it("reste fermé si Auth ne répond pas, sans mémoriser l'échec", async () => {
+    mocks.getUserById.mockResolvedValueOnce({ data: null, error: new Error("auth indisponible") });
+    await expect(hasConfirmedEmail("user-1")).resolves.toBe(false);
+    mocks.getUserById.mockRejectedValueOnce(new Error("réseau"));
+    await expect(hasConfirmedEmail("user-1")).resolves.toBe(false);
+    mocks.getUserById.mockResolvedValue(confirmedUser);
+    await expect(hasConfirmedEmail("user-1")).resolves.toBe(true);
   });
 });

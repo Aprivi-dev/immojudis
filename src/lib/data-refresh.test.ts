@@ -6,7 +6,13 @@ import {
   normalizeDataRefreshKindList,
   requestDataRefresh,
 } from "@/lib/data-refresh";
-import { enforceUserRateLimit } from "@/lib/rate-limit";
+import { RateLimitError } from "@/lib/api-errors";
+import { enforceIpRateLimit, enforceUserRateLimit } from "@/lib/rate-limit";
+import {
+  DAILY_LIMIT_MESSAGE,
+  DAILY_WINDOW_SECONDS,
+  DATA_REFRESH_IP_DAILY_LIMIT,
+} from "@/lib/rate-limit-policies";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 
 const { serverFrom, serverRpc } = vi.hoisted(() => ({
@@ -33,6 +39,8 @@ vi.mock("@/lib/usage", () => ({
 
 vi.mock("@/lib/rate-limit", () => ({
   enforceUserRateLimit: vi.fn(async () => 1),
+  enforceIpRateLimit: vi.fn(async () => undefined),
+  secondsUntilWindowEnds: () => 3600,
 }));
 
 describe("data refresh requests", () => {
@@ -67,6 +75,7 @@ describe("data refresh requests", () => {
 
     const response = await requestDataRefresh({
       auth,
+      request: refreshRequest(),
       input: {
         saleId: SALE_ID,
         kinds: ["cadastre", "dpe"],
@@ -125,11 +134,68 @@ describe("data refresh requests", () => {
     await expect(
       requestDataRefresh({
         auth,
+        request: refreshRequest(),
         input: { saleId: SALE_ID, kinds: ["full"], force: false },
       }),
     ).rejects.toThrow("Trop de demandes de rafraîchissement");
   });
+
+  it("limits the requests of one address per day, after the access check", async () => {
+    const auth = fakeRefreshAuth();
+    serverFrom.mockImplementation((table: string) =>
+      (auth.supabase as unknown as { from: (name: string) => unknown }).from(table),
+    );
+    const request = refreshRequest();
+    await requestDataRefresh({
+      auth,
+      request,
+      input: { saleId: SALE_ID, kinds: ["cadastre"], force: false },
+    });
+    expect(enforceIpRateLimit).toHaveBeenCalledWith({
+      request,
+      bucketKey: "daily.dataRefresh",
+      limit: DATA_REFRESH_IP_DAILY_LIMIT,
+      windowSeconds: DAILY_WINDOW_SECONDS,
+    });
+
+    vi.mocked(enforceIpRateLimit).mockRejectedValueOnce(new RateLimitError(undefined, 120));
+    const refused = await requestDataRefresh({
+      auth,
+      request,
+      input: { saleId: SALE_ID, kinds: ["cadastre"], force: false },
+    }).catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(RateLimitError);
+    expect((refused as RateLimitError).publicMessage).toBe(DAILY_LIMIT_MESSAGE);
+    expect((refused as RateLimitError).retryAfterSeconds).toBe(120);
+    // Refusé avant toute admission en base.
+    expect(serverRpc).toHaveBeenCalledTimes(1);
+  });
+
+  it("maps the global daily cap of the database to the daily limit message", async () => {
+    const auth = fakeRefreshAuth();
+    serverFrom.mockImplementation((table: string) =>
+      (auth.supabase as unknown as { from: (name: string) => unknown }).from(table),
+    );
+    serverRpc.mockResolvedValueOnce({
+      data: null,
+      error: { message: "DATA_REFRESH_GLOBAL_DAILY_LIMIT" },
+    });
+    const refused = await requestDataRefresh({
+      auth,
+      request: refreshRequest(),
+      input: { saleId: SALE_ID, kinds: ["full"], force: false },
+    }).catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(RateLimitError);
+    expect((refused as RateLimitError).publicMessage).toBe(
+      "Limite quotidienne atteinte, réessayez demain.",
+    );
+    expect((refused as RateLimitError).retryAfterSeconds).toBe(3600);
+  });
 });
+
+function refreshRequest(): Request {
+  return new Request("https://immojudis.com/api/data-refresh", { method: "POST" });
+}
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const SALE_ID = "22222222-2222-4222-8222-222222222222";
