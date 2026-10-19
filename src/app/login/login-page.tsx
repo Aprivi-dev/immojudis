@@ -384,18 +384,11 @@ export function LoginPage() {
               >
                 Vous ne recevez rien ? Vérifiez vos courriers indésirables. Si vous avez déjà un
                 compte avec cette adresse,{" "}
-                <button
-                  type="button"
-                  onClick={goToLogin}
-                  className="inline-flex min-h-11 items-center text-foreground underline"
-                >
+                <button type="button" onClick={goToLogin} className="text-foreground underline">
                   connectez-vous
                 </button>{" "}
                 ou{" "}
-                <Link
-                  href="/mot-de-passe-oublie"
-                  className="inline-flex min-h-11 items-center text-foreground underline"
-                >
+                <Link href="/mot-de-passe-oublie" className="text-foreground underline">
                   réinitialisez votre mot de passe
                 </Link>
                 .
