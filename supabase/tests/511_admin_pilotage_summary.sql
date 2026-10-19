@@ -30,6 +30,9 @@ select throws_ok(
   $$select public.admin_pilotage_summary()$$, '42501', null, 'a signed-in account cannot read the summary'
 );
 reset role;
+-- Sans compte connecté pour la suite : sinon auth.uid() reste ce compte et les déclencheurs des
+-- tables de test (alertes) refusent d'écrire pour un autre.
+set local "request.jwt.claims" = '';
 
 -- Reading before the fixtures ----------------------------------------------------------------------
 update app_private.account_product_events_measure set started_at = '2026-10-20T00:00:00Z';
