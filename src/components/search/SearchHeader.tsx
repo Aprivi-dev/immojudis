@@ -21,7 +21,8 @@ import {
 import { resolveFrenchGeoSearch } from "@/lib/search/french-geo-search";
 import type { ResultsView } from "@/lib/search/results-view";
 import type { SalesSearchParams, SearchSortKey } from "@/lib/search/search-url-state";
-import type { SearchDraft } from "./search-page-state";
+import { MobileFilterChips } from "./MobileFilterChips";
+import { priceRangeError, type SearchDraft } from "./search-page-state";
 
 const LazyDateFilter = dynamic(() => import("./DateFilter").then((module) => module.DateFilter), {
   // Same box as the real trigger (label, icons, padding): the toolbar must not
@@ -97,7 +98,9 @@ export function SearchHeader({
       theme="light"
       placement="sticky"
       headerRef={headerRef}
-      className="sales-header"
+      // L'en-tête ne reste collé en haut de l'écran qu'à partir de `lg` : sur mobile il défile avec la
+      // page et rend sa place à la liste (`static` l'emporte sur le `sticky` de `SiteHeader`).
+      className="sales-header static lg:sticky"
       center={isDesktop ? <GeographicSearch draft={draft} setDraft={setDraft} /> : undefined}
       belowBar={
         <div className="border-t border-border px-4 py-2.5 lg:px-5">
@@ -117,6 +120,7 @@ export function SearchHeader({
                 onClick={onSaveSearch}
               />
             ) : null}
+            <MobileFilterChips draft={draft} setDraft={setDraft} />
             <div className="hidden lg:flex flex-wrap items-center gap-2">
               <HomeTypeFilter draft={draft} setDraft={setDraft} />
               <PriceFilter draft={draft} setDraft={setDraft} />
@@ -262,54 +266,76 @@ export function PriceFilter({
   /** Dans le panneau de filtres : un libellé visible au-dessus de chaque champ. */
   stacked?: boolean;
 }) {
+  // Minimum au-dessus du maximum : la recherche ne trouverait rien, on le dit à côté des champs.
+  const rangeError = priceRangeError(draft);
+  const invalid = rangeError ? true : undefined;
+  const rangeMessage = rangeError ? (
+    <p role="alert" className="text-sm font-semibold text-danger">
+      {rangeError}
+    </p>
+  ) : null;
   if (stacked) {
     return (
-      <div className="grid grid-cols-2 gap-3">
-        <StackedField label="Minimum (€)">
-          <input
-            inputMode="numeric"
-            value={draft.minPrice}
-            onChange={(event) =>
-              setDraft((current) => ({ ...current, minPrice: event.target.value }))
-            }
-            placeholder="Aucun"
-            className="form-input h-11"
-          />
-        </StackedField>
-        <StackedField label="Maximum (€)">
-          <input
-            inputMode="numeric"
-            value={draft.maxPrice}
-            onChange={(event) =>
-              setDraft((current) => ({ ...current, maxPrice: event.target.value }))
-            }
-            placeholder="Aucun"
-            className="form-input h-11"
-          />
-        </StackedField>
+      <div className="grid gap-2">
+        <div className="grid grid-cols-2 gap-3">
+          <StackedField label="Minimum (€)">
+            <input
+              inputMode="numeric"
+              value={draft.minPrice}
+              aria-invalid={invalid}
+              onChange={(event) =>
+                setDraft((current) => ({ ...current, minPrice: event.target.value }))
+              }
+              placeholder="Aucun"
+              className="form-input h-11"
+            />
+          </StackedField>
+          <StackedField label="Maximum (€)">
+            <input
+              inputMode="numeric"
+              value={draft.maxPrice}
+              aria-invalid={invalid}
+              onChange={(event) =>
+                setDraft((current) => ({ ...current, maxPrice: event.target.value }))
+              }
+              placeholder="Aucun"
+              className="form-input h-11"
+            />
+          </StackedField>
+        </div>
+        {rangeMessage}
       </div>
     );
   }
   return (
-    <div className="inline-flex h-10 shrink-0 items-center overflow-hidden rounded-md border border-line bg-white shadow-sm">
-      <span className="px-3 text-sm font-bold text-brand-navy">Mise à prix</span>
-      <input
-        aria-label="Prix minimum"
-        inputMode="numeric"
-        value={draft.minPrice}
-        onChange={(event) => setDraft((current) => ({ ...current, minPrice: event.target.value }))}
-        placeholder="min"
-        className="h-full w-20 border-l border-line-soft bg-transparent px-2 text-sm font-semibold outline-none"
-      />
-      <input
-        aria-label="Prix maximum"
-        inputMode="numeric"
-        value={draft.maxPrice}
-        onChange={(event) => setDraft((current) => ({ ...current, maxPrice: event.target.value }))}
-        placeholder="max"
-        className="h-full w-20 border-l border-line-soft bg-transparent px-2 text-sm font-semibold outline-none"
-      />
-    </div>
+    <>
+      <div className="inline-flex h-10 shrink-0 items-center overflow-hidden rounded-md border border-line bg-white shadow-sm">
+        <span className="px-3 text-sm font-bold text-brand-navy">Mise à prix</span>
+        <input
+          aria-label="Prix minimum"
+          inputMode="numeric"
+          value={draft.minPrice}
+          aria-invalid={invalid}
+          onChange={(event) =>
+            setDraft((current) => ({ ...current, minPrice: event.target.value }))
+          }
+          placeholder="min"
+          className="h-full w-20 border-l border-line-soft bg-transparent px-2 text-sm font-semibold outline-none"
+        />
+        <input
+          aria-label="Prix maximum"
+          inputMode="numeric"
+          value={draft.maxPrice}
+          aria-invalid={invalid}
+          onChange={(event) =>
+            setDraft((current) => ({ ...current, maxPrice: event.target.value }))
+          }
+          placeholder="max"
+          className="h-full w-20 border-l border-line-soft bg-transparent px-2 text-sm font-semibold outline-none"
+        />
+      </div>
+      {rangeMessage}
+    </>
   );
 }
 
@@ -705,10 +731,11 @@ export function LayoutToggle({ wideMap, onToggle }: { wideMap: boolean; onToggle
  * Quand la police arrive après le premier affichage (4G), la ligne en trop disparaissait : tout
  * ce qui suit remontait de 33 px (CLS 0,03) et la photo de la première carte, déjà peinte, gardait
  * pour le LCP une surface rognée par le bas de l'écran (puis un second LCP quand elle était
- * recréée à l'hydratation). Valeur : py-4 (2 rem) + surtitre (0,9375) + marge (0,25) + h1 de
- * 2 × 2,0625 (1,65 rem, interligne 1,25) + marge (0,25) + compteur (1,25) = 8,8125 rem.
+ * recréée à l'hydratation). Valeur : py-4 (2 rem) + h1 de 2 × 2,0625 (1,65 rem, interligne 1,25)
+ * + marge (0,25) + compteur (1,25) = 7,625 rem. Le surtitre n'est affiché qu'à partir de `sm`
+ * (il prenait 1,1875 rem sur mobile : 0,9375 + marge 0,25) : la hauteur réservée ne le compte plus.
  */
-const RESULTS_SUMMARY_MOBILE_MIN_HEIGHT = "min-h-[8.8125rem] sm:min-h-0";
+const RESULTS_SUMMARY_MOBILE_MIN_HEIGHT = "min-h-[7.625rem] sm:min-h-0";
 
 export function ResultsSummary({
   search,
@@ -717,6 +744,7 @@ export function ResultsSummary({
   isLoading,
   hasError = false,
   geocoding,
+  refreshing = false,
 }: {
   search: SalesSearchParams;
   displayCount: number;
@@ -724,11 +752,13 @@ export function ResultsSummary({
   isLoading: boolean;
   hasError?: boolean;
   geocoding: boolean;
+  /** La liste se met à jour (page, filtre) : un petit indicateur dans la ligne du compteur. */
+  refreshing?: boolean;
 }) {
   const location = search.city || search.department || search.query || "France entière";
   return (
     <div className={`min-w-0 px-4 py-4 sm:px-5 ${RESULTS_SUMMARY_MOBILE_MIN_HEIGHT}`}>
-      <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.16em] text-gold-text">
+      <p className="mb-1 hidden text-[10px] font-bold uppercase tracking-[0.16em] text-gold-text sm:block">
         Le catalogue des enchères
       </p>
       <h1 className="font-display text-[1.65rem] font-semibold leading-tight">
@@ -745,6 +775,15 @@ export function ResultsSummary({
               ? "Catalogue momentanément indisponible"
               : `${displayCount.toLocaleString("fr-FR")} annonce${displayCount === 1 ? "" : "s"}`}
         </span>
+        {/* Indicateur visuel seul (l'annonce « Mise à jour des résultats » existe pour les
+            lecteurs d'écran) : plus petit que la ligne, il ne change pas sa hauteur. */}
+        {refreshing ? (
+          <span
+            aria-hidden="true"
+            data-testid="results-refreshing"
+            className="ml-1.5 inline-block size-3 animate-spin rounded-full border-2 border-current border-t-transparent align-[-1px] motion-reduce:animate-none"
+          />
+        ) : null}
         {" · "}
         {search.viewport ? "Zone sélectionnée" : location}
         {hasLocalFilters ? " · filtres sur la page affichée" : ""}

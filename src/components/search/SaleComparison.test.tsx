@@ -92,7 +92,7 @@ describe("SaleComparisonTable", () => {
 });
 
 describe("SaleComparisonBar", () => {
-  it("sticks under the search header at every width", () => {
+  const renderBar = (props: Partial<React.ComponentProps<typeof SaleComparisonBar>> = {}) =>
     render(
       <SaleComparisonBar
         items={[compared("a")]}
@@ -101,11 +101,54 @@ describe("SaleComparisonBar", () => {
         onRemove={vi.fn()}
         onClear={vi.fn()}
         onRestore={vi.fn()}
+        {...props}
       />,
     );
-    const bar = screen.getByRole("region", { name: "Sélection à comparer" });
-    expect(bar.className).toContain("top-[var(--sales-header-height)]");
-    expect(bar.className).not.toMatch(/(^|\s)top-0(\s|$)/);
+
+  it("sticks under the search header from lg, and is hidden below (the bottom bar pill replaces it)", () => {
+    renderBar();
+    const bar = screen.getByRole("region", { name: "Sélection à comparer", hidden: true });
+    const classes = bar.className.split(/\s+/);
+    expect(classes).toContain("lg:top-[var(--sales-header-height)]");
+    expect(classes).toContain("lg:sticky");
+    expect(classes).not.toContain("sticky");
+    expect(classes).toContain("hidden");
+    expect(classes).toContain("lg:block");
+  });
+
+  it("reports the opening to the page that drives it (the dialog is opened from the bottom bar pill too)", () => {
+    const onOpenChange = vi.fn();
+    renderBar({ open: false, onOpenChange });
+    fireEvent.click(screen.getByRole("button", { name: "Comparer (1)", hidden: true }));
+    expect(onOpenChange).toHaveBeenCalledWith(true);
+  });
+
+  it("stays mounted while the dialog is open from outside, even when the selection is emptied", () => {
+    // The bar is hidden without a selection (`hideWhenEmpty`), except while its dialog is open:
+    // the dialog (saved comparisons) must not vanish under the person's hands.
+    const { rerender } = renderBar({ items: [], hideWhenEmpty: true, open: false });
+    expect(screen.queryByRole("region", { name: "Sélection à comparer", hidden: true })).toBeNull();
+    rerender(
+      <SaleComparisonBar
+        items={[]}
+        returnTo="/sales"
+        userId="user-1"
+        onRemove={vi.fn()}
+        onClear={vi.fn()}
+        onRestore={vi.fn()}
+        hideWhenEmpty
+        open
+        onOpenChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("region", { name: "Sélection à comparer", hidden: true })).toBeTruthy();
+  });
+
+  it("keeps its own state when nothing drives it", () => {
+    renderBar();
+    fireEvent.click(screen.getByRole("button", { name: "Comparer (1)", hidden: true }));
+    // Rien ne casse sans `open` ni `onOpenChange` : la barre reste là.
+    expect(screen.getByRole("region", { name: "Sélection à comparer", hidden: true })).toBeTruthy();
   });
 });
 

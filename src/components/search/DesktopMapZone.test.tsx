@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useCallback, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DesktopMapZone } from "./DesktopMapZone";
+import { DESKTOP_MAP_ZONE_ID, DesktopMapZone } from "./DesktopMapZone";
 import { useFirstGestureStart } from "./use-first-gesture-start";
 
 afterEach(() => {
@@ -115,6 +115,13 @@ describe("DesktopMapZone au clavier", () => {
     expect(screen.getByTestId("map-panel")).toBeTruthy();
     expect(document.activeElement).toBe(before);
     expect(screen.getByRole("status").textContent).toBe("");
+  });
+
+  it("porte l'identifiant visé par le lien d'évitement « Aller à la carte »", () => {
+    render(<Harness />);
+    expect(DESKTOP_MAP_ZONE_ID).toBe("sales-map");
+    expect(mapZone().id).toBe(DESKTOP_MAP_ZONE_ID);
+    expect(document.querySelector(`#${DESKTOP_MAP_ZONE_ID}`)).toBe(mapZone());
   });
 
   it("la région d'annonce existe avant le démarrage, vide, pour que l'annonce soit lue", () => {

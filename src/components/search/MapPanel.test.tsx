@@ -251,6 +251,8 @@ describe("public map resilience", () => {
   it("replaces a stalled loading state after 12 seconds and recovers on a late load", async () => {
     await showMap();
     expect(screen.getByText("Chargement de la carte")).toBeTruthy();
+    // Annoncé aux lecteurs d'écran : un état de chargement, pas du décor.
+    expect(screen.getByRole("status").textContent).toBe("Chargement de la carte");
     act(() => vi.advanceTimersByTime(12000));
     expect(screen.queryByText("Chargement de la carte")).toBeNull();
     expect(screen.getByText(/annonces restent accessibles dans la liste/)).toBeTruthy();

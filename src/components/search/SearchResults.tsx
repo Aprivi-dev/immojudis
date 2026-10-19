@@ -21,7 +21,7 @@ import { useViewedSales } from "@/hooks/use-viewed-sales";
 import { getSupabase } from "@/integrations/supabase/lazy";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { loginPathWithRedirect, saleDetailPath } from "@/lib/navigation";
+import { loginPathWithRedirect } from "@/lib/navigation";
 import {
   FAVORITE_ADD_LABEL,
   FAVORITE_ANONYMOUS_TITLE,
@@ -34,7 +34,7 @@ import {
   fetchSaleUnlocksOverview,
   removeFavoriteSale as removeFavoriteSaleRequest,
 } from "@/lib/client-api";
-import { formatDate, formatStartingPrice, occupancyLabel } from "@/lib/format";
+import { formatStartingPrice, occupancyLabel } from "@/lib/format";
 import { trackProductEvent } from "@/lib/product-events";
 import { stateListingStatus } from "@/lib/property-characteristics";
 import type { AuctionSale } from "@/lib/types";
@@ -43,7 +43,14 @@ import type { ActiveFilterChip } from "./active-filter-chips";
 import { ErrorState, NoResultsState } from "./SearchFilters";
 import { SearchResultsSkeleton } from "./SearchResultsSkeleton";
 import { SearchResultsTable } from "./SearchResultsTable";
-import { cardTypeLabel, departmentLabel, listingAccessLine, listingTitle } from "./listing-text";
+import {
+  cardTypeLabel,
+  departmentLabel,
+  listingAccessLine,
+  listingDateLabel,
+  listingTitle,
+} from "./listing-text";
+import { useSaleDetailLink } from "./use-sale-detail-link";
 import styles from "./SearchResults.module.css";
 import { AiReviewField } from "@/components/sale-detail/AiReviewField";
 import { Terme } from "@/components/ceiling/Terme";
@@ -61,9 +68,11 @@ import type { ResultsView } from "@/lib/search/results-view";
 /**
  * Vignette cartographique d'une carte de résultats (ratio 4:3, comme le cadre `aspect-[4/3]`).
  * `framingWidth` est la largeur de l'ancien visuel (512 px @2x) : le zoom est reculé en
- * conséquence pour que la zone visible reste identique avec moins de pixels.
+ * conséquence pour que la zone visible reste identique avec moins de pixels. 320 × 240 (400 × 300
+ * avant) : la vignette de la première carte est l'élément principal (LCP) de /sales sur mobile ; en
+ * 1x elle compte 36 % de pixels en moins, en @2x (640 × 480 au lieu de 800 × 600) autant.
  */
-const LIST_MAP_THUMBNAIL = { width: 400, height: 300, framingWidth: 512 } as const;
+const LIST_MAP_THUMBNAIL = { width: 320, height: 240, framingWidth: 512 } as const;
 
 /**
  * Nombre de cartes dont l'image est chargée en priorité haute (`fetchpriority="high"`, hors
@@ -157,6 +166,9 @@ export function SearchResultsList({
     [unlocksQuery.data],
   );
   const favoriteScope = user?.id ?? null;
+  // Compte reconnu sur la liste publique conservée pendant la vérification de ses droits : les
+  // cartes ne lui promettent pas un « compte gratuit » qu'il a déjà.
+  const verifying = Boolean(user) && locked;
 
   return (
     <div className="px-3 pb-24 pt-3 sm:px-5 lg:pb-6">
@@ -178,6 +190,7 @@ export function SearchResultsList({
             returnTo={returnTo}
             locked={locked}
             analysisLocked={analysisLocked}
+            verifying={verifying}
             isLoading={isLoading}
             selectedSaleId={selectedSaleId}
             hoveredSaleId={hoveredSaleId}
@@ -190,9 +203,6 @@ export function SearchResultsList({
             favoriteScope={favoriteScope}
             FavoriteButton={CompactFavoriteButton}
           />
-          {!isLoading && sales.length >= 4 && sponsoredPlacement ? (
-            <div className="mt-4">{sponsoredPlacement}</div>
-          ) : null}
         </>
       ) : (
         <div className="grid grid-cols-1 gap-4 min-[600px]:grid-cols-2">
@@ -200,14 +210,12 @@ export function SearchResultsList({
             ? Array.from({ length: 8 }).map((_, index) => <SearchResultsSkeleton key={index} />)
             : sales.map((sale, index) => (
                 <Fragment key={sale.id}>
-                  {index === 4 && sponsoredPlacement ? (
-                    <div className="min-[600px]:col-span-2">{sponsoredPlacement}</div>
-                  ) : null}
                   <ListingCard
                     sale={sale}
                     returnTo={returnTo}
                     eagerImage={index < EAGER_IMAGE_COUNT}
                     locked={locked}
+                    verifying={verifying}
                     analysisLocked={analysisLocked}
                     active={selectedSaleId === sale.id || hoveredSaleId === sale.id}
                     onHover={onHover}
@@ -227,11 +235,13 @@ export function SearchResultsList({
                   />
                 </Fragment>
               ))}
-          {sales.length === 4 && sponsoredPlacement ? (
-            <div className="min-[600px]:col-span-2">{sponsoredPlacement}</div>
-          ) : null}
         </div>
       )}
+      {/* Encart sponsorisé en fin de liste, jamais entre deux annonces ; l'appelant ne le fournit
+          que pour la première page. */}
+      {!isLoading && sales.length >= 4 && sponsoredPlacement ? (
+        <div className="mt-4">{sponsoredPlacement}</div>
+      ) : null}
     </div>
   );
 }
@@ -251,6 +261,7 @@ export const ListingCard = memo(function ListingCard({
   returnTo,
   eagerImage = false,
   locked,
+  verifying = false,
   analysisLocked,
   active,
   onHover,
@@ -269,6 +280,8 @@ export const ListingCard = memo(function ListingCard({
   returnTo: string;
   eagerImage?: boolean;
   locked: boolean;
+  /** Compte reconnu, liste publique gardée le temps de la vérification : ligne d'accès neutre. */
+  verifying?: boolean;
   analysisLocked: boolean;
   active: boolean;
   onHover: (saleId: string | null) => void;
@@ -287,6 +300,7 @@ export const ListingCard = memo(function ListingCard({
 }) {
   const displaySurface = getDisplaySurface(sale);
   const { isViewed } = useViewedSales();
+  const detailLink = useSaleDetailLink(sale.id, returnTo);
   const launchOffer = useLaunchOffer().active;
   const premiumLocked = locked || analysisLocked;
   const viewed = !locked && isViewed(sale.id);
@@ -325,7 +339,8 @@ export const ListingCard = memo(function ListingCard({
     >
       <Link
         id={`sale-card-${sale.id}`}
-        href={saleDetailPath(sale.id, returnTo)}
+        href={detailLink.href}
+        {...detailLink.armProps}
         prefetch={false}
         onClick={() => onSelect(sale.id)}
         aria-label={`Voir ${title}`}
@@ -451,7 +466,7 @@ export const ListingCard = memo(function ListingCard({
               sourceUrl={sale.source_url}
               showSourceLink={false}
             >
-              {stateListing ? stateListing.label : formatDate(sale.sale_date)}
+              {stateListing ? stateListing.label : listingDateLabel(sale)}
             </AiReviewField>
           </span>
           <SaleCountdown sale={sale} precisionUnknown={locked} variant="chip" />
@@ -474,7 +489,7 @@ export const ListingCard = memo(function ListingCard({
         </div>
         <div className="mt-3 flex flex-wrap items-center justify-between gap-1 border-t border-surface-tint pt-3">
           <span className="text-sm text-ink-soft">
-            {listingAccessLine(sale, { locked, analysisLocked, unlocked, launchOffer })}
+            {listingAccessLine(sale, { locked, analysisLocked, unlocked, verifying, launchOffer })}
           </span>
           <div className="flex items-center">
             <ShareButton sale={sale} title={title} />
@@ -558,6 +573,7 @@ export function ListingMediaCarousel({
   const [failedPhotoUrls, setFailedPhotoUrls] = useState<Set<string>>(() => new Set());
   const gestureRef = useRef<PointerGesture | null>(null);
   const suppressLinkClickRef = useRef(false);
+  const detailLink = useSaleDetailLink(sale.id, returnTo ?? "/sales");
   const photos = useMemo(
     () => propertyImages(sale.media).filter(({ url }) => !failedPhotoUrls.has(url)),
     [failedPhotoUrls, sale.media],
@@ -658,7 +674,6 @@ export function ListingMediaCarousel({
       aria-label={`Photos de ${title}`}
       aria-roledescription="carrousel"
       role="region"
-      tabIndex={0}
       onKeyDown={handleKeyDown}
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
@@ -666,10 +681,14 @@ export function ListingMediaCarousel({
         gestureRef.current = null;
       }}
     >
+      {/* Même destination que le lien qui couvre la carte : hors de l'ordre de tabulation et masqué
+          aux lecteurs d'écran, il n'ajoute ni arrêt de Tab ni doublon au clavier. */}
       <Link
-        href={saleDetailPath(sale.id, returnTo)}
+        href={detailLink.href}
+        {...detailLink.armProps}
         prefetch={false}
-        aria-label={`Voir ${title}`}
+        tabIndex={-1}
+        aria-hidden="true"
         onClick={(event) => {
           const wasSuppressed = suppressLinkClickRef.current;
           handleLinkClick(event);

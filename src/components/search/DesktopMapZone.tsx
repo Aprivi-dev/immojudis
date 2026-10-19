@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { MapPreview } from "./MapPreview";
 
+/** Identifiant du cadre de la carte : cible du lien d'évitement « Aller à la carte ». */
+export const DESKTOP_MAP_ZONE_ID = "sales-map";
+
 /**
  * Cadre de la carte du bureau : l'aperçu (`MapPreview`) tant que la carte n'est pas demandée, puis
  * la carte (`children`).
@@ -40,6 +43,7 @@ export function DesktopMapZone({
   return (
     <div
       ref={zone}
+      id={DESKTOP_MAP_ZONE_ID}
       tabIndex={-1}
       role="region"
       aria-label="Carte des ventes"

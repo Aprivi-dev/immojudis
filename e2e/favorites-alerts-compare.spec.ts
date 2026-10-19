@@ -148,14 +148,20 @@ test.describe("visiteur sans compte", () => {
         await expect(toggle).toHaveAttribute("aria-pressed", "true", { timeout: 1000 });
       }).toPass();
     }
-    const bar = page.getByRole("region", { name: "Sélection à comparer" });
-    await expect(bar).toContainText("2/3 biens sélectionnés");
+    if (testInfo.project.name.startsWith("mobile-")) {
+      // Sous lg la barre est masquée : la pastille « Comparer (N) » de la barre basse la remplace.
+      await expect(page.getByRole("region", { name: "Sélection à comparer" })).toBeHidden();
+      await page.getByRole("button", { name: "Comparer (2)" }).click();
+    } else {
+      const bar = page.getByRole("region", { name: "Sélection à comparer" });
+      await expect(bar).toContainText("2/3 biens sélectionnés");
 
-    // La barre reste collée sous l'en-tête de recherche, quelle que soit la largeur.
-    const barTop = await bar.evaluate((node) => getComputedStyle(node).top);
-    expect(barTop).not.toBe("0px");
+      // Sur grand écran, la barre reste collée sous l'en-tête de recherche.
+      const barTop = await bar.evaluate((node) => getComputedStyle(node).top);
+      expect(barTop).not.toBe("0px");
 
-    await bar.getByRole("button", { name: "Comparer (2)" }).click();
+      await bar.getByRole("button", { name: "Comparer (2)" }).click();
+    }
     const dialog = page.getByRole("dialog", { name: "Comparer les biens" });
     await expect(dialog).toBeVisible();
     for (const label of ["Département", "Occupation", "Mise à prix / m²"]) {

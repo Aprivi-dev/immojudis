@@ -22,6 +22,7 @@ export function MoreFiltersModal({
   draft,
   setDraft,
   activeFiltersCount,
+  resultCount,
   onClose,
   onReset,
 }: {
@@ -31,6 +32,8 @@ export function MoreFiltersModal({
   draft: SearchDraft;
   setDraft: React.Dispatch<React.SetStateAction<SearchDraft>>;
   activeFiltersCount: number;
+  /** Total des annonces pour les critères saisis ; `null` tant qu'il n'est pas connu. */
+  resultCount?: number | null;
   onClose: () => void;
   onReset: () => void;
 }) {
@@ -62,6 +65,7 @@ export function MoreFiltersModal({
             draft={draft}
             setDraft={setDraft}
             activeFiltersCount={activeFiltersCount}
+            resultCount={resultCount}
             onClose={onClose}
             onReset={onReset}
           />
@@ -76,6 +80,7 @@ export function MobileFilterDrawer({
   draft,
   setDraft,
   activeFiltersCount,
+  resultCount,
   onClose,
   onReset,
 }: {
@@ -84,6 +89,7 @@ export function MobileFilterDrawer({
   draft: SearchDraft;
   setDraft: React.Dispatch<React.SetStateAction<SearchDraft>>;
   activeFiltersCount: number;
+  resultCount?: number | null;
   onClose: () => void;
   onReset: () => void;
 }) {
@@ -102,7 +108,7 @@ export function MobileFilterDrawer({
         <button
           type="button"
           onClick={onClose}
-          className="grid h-10 w-10 cursor-pointer place-items-center rounded-md border border-line-soft bg-white transition-colors hover:bg-surface-muted"
+          className="grid min-h-11 min-w-11 cursor-pointer place-items-center rounded-md border border-line-soft bg-white transition-colors hover:bg-surface-muted"
           aria-label="Fermer"
         >
           <X className="h-5 w-5" />
@@ -253,7 +259,7 @@ export function MobileFilterDrawer({
                   <option value="rented">Loué</option>
                 </select>
               </FilterField>
-              <FilterField label="Score min">
+              <FilterField label="Note minimale (classement Immojudis)">
                 <Input
                   inputMode="numeric"
                   value={draft.minScore}
@@ -381,7 +387,7 @@ export function MobileFilterDrawer({
         <button
           type="button"
           onClick={onReset}
-          className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-md border border-sand bg-surface px-4 text-sm font-bold text-gold-text transition-colors hover:border-gold"
+          className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-md border border-sand bg-surface px-4 text-sm font-bold text-gold-text transition-colors hover:border-gold"
         >
           <RotateCcw className="h-4 w-4" />
           Réinitialiser
@@ -389,13 +395,24 @@ export function MobileFilterDrawer({
         <button
           type="button"
           onClick={onClose}
-          className="inline-flex h-10 cursor-pointer items-center justify-center rounded-md bg-brand-navy px-4 text-sm font-bold text-white transition-colors hover:bg-brand-navy-soft"
+          className="inline-flex min-h-11 cursor-pointer items-center justify-center rounded-md bg-brand-navy px-4 text-sm font-bold text-white transition-colors hover:bg-brand-navy-soft"
         >
-          Afficher les résultats
+          {showResultsLabel(resultCount)}
         </button>
       </div>
     </aside>
   );
+}
+
+/**
+ * Libellé du bouton qui referme la fenêtre : il annonce le total quand il est connu, pour savoir
+ * avant de refermer si les critères trouvent quelque chose.
+ */
+export function showResultsLabel(count: number | null | undefined): string {
+  if (count == null) return "Afficher les résultats";
+  if (count <= 0) return "Aucune annonce : élargir";
+  if (count === 1) return "Afficher l'annonce";
+  return `Afficher ${count.toLocaleString("fr-FR")} annonces`;
 }
 
 export function AdvancedGroup({
@@ -438,7 +455,7 @@ export function ChipToggle({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`inline-flex h-9 cursor-pointer items-center rounded-md border px-3 text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold ${
+      className={`inline-flex min-h-11 cursor-pointer items-center rounded-md border px-3 text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold ${
         active
           ? "border-brand-navy bg-brand-navy text-white"
           : "border-line-soft bg-white text-brand-navy hover:border-brand-navy"
@@ -465,7 +482,7 @@ export function DpeChipToggle({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className="inline-flex h-9 min-w-9 cursor-pointer items-center justify-center rounded-md border px-2 text-sm font-extrabold transition-transform hover:scale-[1.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+      className="inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-md border px-2 text-sm font-extrabold transition-transform hover:scale-[1.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
       style={{
         backgroundColor: active ? color?.background : "#ffffff",
         borderColor: color?.border,

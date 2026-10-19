@@ -73,7 +73,21 @@ function optionalText(value: unknown): string | undefined {
 
 function nonNegativeNumber(value: unknown): number | undefined {
   const parsed = asFiniteNumber(value);
-  return parsed != null && parsed >= 0 ? parsed : undefined;
+  // Plafonné aux entiers sûrs : `1e30` donnerait `1e+30` dans l'adresse.
+  return parsed != null && parsed >= 0 ? Math.min(parsed, Number.MAX_SAFE_INTEGER) : undefined;
+}
+
+/**
+ * Plafond d'un montant en euros (mise à prix, prix au m²). Aucune annonce n'approche cette somme :
+ * au-delà, la saisie est ramenée au plafond. L'adresse ne porte ainsi jamais de notation
+ * scientifique (`1e+30`) ni de nombre que la base ne saurait lire.
+ */
+export const MAX_PRICE_EUR = 100_000_000;
+
+/** Montant en euros entier, de 0 au plafond ; une valeur négative ou illisible est ignorée. */
+export function boundedPrice(value: unknown): number | undefined {
+  const parsed = nonNegativeNumber(value);
+  return parsed == null ? undefined : Math.min(Math.round(parsed), MAX_PRICE_EUR);
 }
 
 function positiveInteger(value: unknown): number | undefined {
@@ -175,8 +189,8 @@ export function validateSalesSearch(search: Record<string, unknown>): SalesSearc
     query: optionalText(search.query) ?? optionalText(search.q),
     viewport: parseViewport(search.viewport) ?? parseBbox(search.bbox),
     sort: parseSort(search.sort),
-    minPrice: nonNegativeNumber(search.minPrice ?? search.min_price),
-    maxPrice: nonNegativeNumber(search.maxPrice ?? search.max_price),
+    minPrice: boundedPrice(search.minPrice ?? search.min_price),
+    maxPrice: boundedPrice(search.maxPrice ?? search.max_price),
     minBeds: nonNegativeNumber(search.minBeds ?? search.beds),
     minBaths: nonNegativeNumber(search.minBaths ?? search.baths),
     minSqft: nonNegativeNumber(search.minSqft ?? search.min_surface),
@@ -190,7 +204,7 @@ export function validateSalesSearch(search: Record<string, unknown>): SalesSearc
     occupancy: optionalText(search.occupancy),
     dpeClasses: listValue(search.dpe ?? search.dpeClasses),
     minScore: nonNegativeNumber(search.minScore ?? search.min_score),
-    maxPricePerM2: nonNegativeNumber(search.maxPricePerM2 ?? search.max_price_per_m2),
+    maxPricePerM2: boundedPrice(search.maxPricePerM2 ?? search.max_price_per_m2),
     minYield: nonNegativeNumber(search.minYield ?? search.min_yield),
     minMarketDiscount: nonNegativeNumber(search.minMarketDiscount ?? search.min_market_discount),
     houseWithLand: booleanValue(search.houseWithLand ?? search.house_with_land),
@@ -268,4 +282,56 @@ export function mergeSalesSearch(
   const next: SalesSearchParams = { ...current, ...patch };
   if (!("page" in patch)) next.page = undefined;
   return next;
+}
+
+/**
+ * Critères numériques de l'adresse, avec leurs anciens noms : c'est là qu'une saisie peut être
+ * ignorée (`minPrice=-5`), arrondie ou ramenée à une borne (`maxPrice=1e30`).
+ */
+const NUMERIC_URL_KEYS: ReadonlyArray<readonly [canonical: string, ...aliases: string[]]> = [
+  ["minPrice", "min_price"],
+  ["maxPrice", "max_price"],
+  ["minBeds", "beds"],
+  ["minBaths", "baths"],
+  ["minSqft", "min_surface"],
+  ["maxSqft"],
+  ["minScore", "min_score"],
+  ["maxPricePerM2", "max_price_per_m2"],
+  ["minYield", "min_yield"],
+  ["minMarketDiscount", "min_market_discount"],
+  ["aroundRadius", "around_radius"],
+  ["yearBuilt"],
+  ["page"],
+  ["limit"],
+];
+
+/**
+ * Adresse canonique d'une adresse dont un critère numérique n'est pas pris tel quel : valeur
+ * négative ou illisible (retirée), notation scientifique ou montant au-dessus du plafond (ramené à
+ * la valeur retenue), `page=1` (retiré). Renvoie `null` quand rien ne change. Les autres paramètres
+ * (`view`, `utm_*`, critères textuels) sont conservés tels quels : l'adresse ne garde jamais une
+ * valeur que la recherche ignore.
+ */
+export function canonicalSalesQuery(params: URLSearchParams): URLSearchParams | null {
+  const record: Record<string, string> = {};
+  params.forEach((value, key) => {
+    record[key] = value;
+  });
+  const canonicalRecord = salesSearchToUrlRecord(validateSalesSearch(record));
+
+  let changed = false;
+  const next = new URLSearchParams(params);
+  for (const [canonical, ...aliases] of NUMERIC_URL_KEYS) {
+    const names = [canonical, ...aliases];
+    const raw = names.map((name) => record[name]).find((value) => value !== undefined);
+    if (raw === undefined) continue;
+    const wanted = canonicalRecord[canonical];
+    const wantedText = wanted === undefined ? undefined : String(wanted);
+    const onlyCanonicalName = names.every((name) => name === canonical || !(name in record));
+    if (wantedText === raw && onlyCanonicalName) continue;
+    changed = true;
+    for (const name of names) next.delete(name);
+    if (wantedText !== undefined) next.set(canonical, wantedText);
+  }
+  return changed ? next : null;
 }
