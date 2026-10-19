@@ -1,5 +1,7 @@
 import { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
 import { WellInformedBadge } from "@/components/WellInformedBadge";
+import { PointsToVerifyBadge } from "@/components/PointsToVerifyBadge";
+import { pointsToVerify } from "@/lib/search/points-to-verify";
 import { SaleCountdown } from "@/components/SaleCountdown";
 import type * as React from "react";
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
@@ -303,6 +305,12 @@ export const ListingCard = memo(function ListingCard({
   const detailLink = useSaleDetailLink(sale.id, returnTo);
   const launchOffer = useLaunchOffer().active;
   const premiumLocked = locked || analysisLocked;
+  // « N points à vérifier » : seulement des faits déjà sur la carte ; l'occupation n'est comptée
+  // que si la carte la montre.
+  const verifyPoints = useMemo(
+    () => pointsToVerify(sale, { occupancyVisible: !premiumLocked }),
+    [sale, premiumLocked],
+  );
   const viewed = !locked && isViewed(sale.id);
   const cityReview = getAiReviewFieldResult(aiReviewProjections, "property.city", aiReviewStatus);
   const roomsReview = getAiReviewFieldResult(
@@ -472,6 +480,12 @@ export const ListingCard = memo(function ListingCard({
           <SaleCountdown sale={sale} precisionUnknown={locked} variant="chip" />
           <SaleProcedureBadge sale={sale} />
           <WellInformedBadge sale={sale} />
+          <PointsToVerifyBadge
+            points={verifyPoints}
+            detailHref={detailLink.href}
+            detailLinkProps={detailLink.armProps}
+            onNavigate={() => onSelect(sale.id)}
+          />
           {!premiumLocked && sale.occupancy_status && (
             <span className="rounded bg-success-tint px-2 py-1">
               <AiReviewField
