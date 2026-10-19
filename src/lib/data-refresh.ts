@@ -5,7 +5,13 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { featureIncluded, type PlanCode } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
-import { enforceUserRateLimit } from "@/lib/rate-limit";
+import { RateLimitError } from "@/lib/api-errors";
+import { enforceIpRateLimit, enforceUserRateLimit, secondsUntilWindowEnds } from "@/lib/rate-limit";
+import {
+  DAILY_LIMIT_MESSAGE,
+  DAILY_WINDOW_SECONDS,
+  DATA_REFRESH_IP_DAILY_LIMIT,
+} from "@/lib/rate-limit-policies";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 
 type AuctionSaleRow = Database["public"]["Tables"]["auction_sales"]["Row"];
@@ -76,9 +82,12 @@ export type DataRefreshListResponse = {
 export async function requestDataRefresh({
   auth,
   input,
+  request,
 }: {
   auth: SupabaseAuthContext;
   input: DataRefreshRequestPayload;
+  /** Requête HTTP d'origine : sert au plafond journalier par adresse. */
+  request: Request;
 }): Promise<DataRefreshRequestResponse> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "data.onDemandRefresh")) {
@@ -91,6 +100,22 @@ export async function requestDataRefresh({
     limit: DATA_REFRESH_REQUESTS_PER_MINUTE,
     windowSeconds: 60,
   });
+  // Plafond par adresse : 50 comptes créés depuis une même adresse ne multiplient pas les 6
+  // actualisations quotidiennes d'un compte. Après le droit d'accès, pour qu'un compte sans droit
+  // n'use pas le compteur de son adresse. Le plafond global est dans la fonction SQL d'admission.
+  try {
+    await enforceIpRateLimit({
+      request,
+      bucketKey: "daily.dataRefresh",
+      limit: DATA_REFRESH_IP_DAILY_LIMIT,
+      windowSeconds: DAILY_WINDOW_SECONDS,
+    });
+  } catch (error) {
+    if (error instanceof RateLimitError) {
+      throw new RateLimitError(error.message, error.retryAfterSeconds, DAILY_LIMIT_MESSAGE);
+    }
+    throw error;
+  }
 
   const sale = await loadRefreshSale(auth, input.saleId);
   const kinds = normalizeRequestedKinds(input.kinds);
@@ -211,6 +236,13 @@ async function admitRefreshRequest({
   });
 
   if (error) {
+    if (error.message?.includes("DATA_REFRESH_GLOBAL_DAILY_LIMIT")) {
+      throw new RateLimitError(
+        undefined,
+        secondsUntilWindowEnds(DAILY_WINDOW_SECONDS),
+        DAILY_LIMIT_MESSAGE,
+      );
+    }
     if (error.message?.includes("DATA_REFRESH_")) {
       throw new Error("Trop de demandes de rafraîchissement. Réessayez dans une minute.");
     }

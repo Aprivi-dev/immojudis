@@ -49,4 +49,46 @@ async function readLaunchOfferStatus(): Promise<boolean> {
 export function resetLaunchOfferCache(): void {
   cached = null;
   inflight = null;
+  confirmedEmails.clear();
+}
+
+/**
+ * Durée pendant laquelle une adresse email confirmée reste en mémoire. Une confirmation ne se défait
+ * pas : seule une lecture « confirmée » est gardée, une lecture « non confirmée » est toujours relue
+ * (le compte peut confirmer à tout moment), et une erreur n'est jamais gardée.
+ */
+const CONFIRMED_EMAIL_CACHE_MS = 10 * 60_000;
+const CONFIRMED_EMAIL_CACHE_MAX = 1_000;
+const confirmedEmails = new Map<string, number>();
+
+/**
+ * Le compte a confirmé son adresse email (`auth.users.email_confirmed_at`). L'offre de lancement
+ * l'exige, comme `app_private.launch_offer_account_eligible` côté base : sans cela, un compte créé avec une
+ * adresse jetable ou inventée aurait les avantages Analyse. Fermé en cas d'erreur, comme la lecture
+ * de l'état de l'offre : l'accès normal (abonnement, premium, administrateur) n'en dépend pas.
+ */
+export async function hasConfirmedEmail(
+  userId: string,
+  now: number = Date.now(),
+): Promise<boolean> {
+  const cachedUntil = confirmedEmails.get(userId);
+  if (cachedUntil && cachedUntil > now) return true;
+  try {
+    const { data, error } = await supabaseAdmin.auth.admin.getUserById(userId);
+    if (error) throw error;
+    const confirmed = Boolean(data?.user?.email_confirmed_at);
+    if (confirmed) {
+      if (confirmedEmails.size >= CONFIRMED_EMAIL_CACHE_MAX) confirmedEmails.clear();
+      confirmedEmails.set(userId, now + CONFIRMED_EMAIL_CACHE_MS);
+    }
+    return confirmed;
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        scope: "launch-offer.email-confirmation",
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
+    return false;
+  }
 }

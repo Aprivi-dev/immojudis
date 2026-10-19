@@ -110,7 +110,12 @@ export function apiError(error: unknown, context: ApiRequestContext, options: Ap
  */
 export function rateLimitResponse(error: RateLimitError, body: Record<string, unknown> = {}) {
   return NextResponse.json(
-    { ...body, ok: false, error: "Trop de demandes.", code: "RATE_LIMITED" satisfies ApiErrorCode },
+    {
+      ...body,
+      ok: false,
+      error: error.publicMessage ?? "Trop de demandes.",
+      code: "RATE_LIMITED" satisfies ApiErrorCode,
+    },
     {
       status: 429,
       headers: {
@@ -156,7 +161,7 @@ export function classifyApiError(
     return {
       code: "RATE_LIMITED",
       status: 429,
-      message: "Trop de demandes.",
+      message: error.publicMessage ?? "Trop de demandes.",
       retryAfterSeconds: error.retryAfterSeconds,
     };
   }
