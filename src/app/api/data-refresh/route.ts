@@ -36,7 +36,7 @@ export async function POST(request: Request) {
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const input = dataRefreshRequestSchema.parse(await request.json());
-    const response = await requestDataRefresh({ auth, input });
+    const response = await requestDataRefresh({ auth, input, request });
 
     return apiJson(response, context, {
       status: 202,

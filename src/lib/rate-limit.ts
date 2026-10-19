@@ -2,6 +2,12 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { RateLimitError } from "@/lib/api-errors";
+import {
+  DAILY_LIMIT_MESSAGE,
+  DAILY_OPERATION_LIMITS,
+  DAILY_WINDOW_SECONDS,
+  type DailyOperation,
+} from "@/lib/rate-limit-policies";
 
 type RpcResult = { data: number | null; error: { message?: string } | null };
 
@@ -214,5 +220,66 @@ export async function enforceIpRateLimit({
       throw new RateLimitError(undefined, secondsUntilWindowEnds(windowSeconds));
     }
     logLimiterFailure(bucketKey, "rpc_error", result.error.message);
+  }
+}
+
+/** Empreinte fixe du compteur global : `consume_ip_rate_limit` exige 64 caractères hexadécimaux. */
+const GLOBAL_BUCKET_HASH = createHash("sha256").update("immojudis|global-rate-limit").digest("hex");
+
+/**
+ * Compteur à fenêtre fixe commun à tout le site (disjoncteur), tenu en base par la même fonction
+ * atomique que le limiteur par adresse (`consume_ip_rate_limit`), avec une empreinte fixe à la place de
+ * celle d'une adresse. Contrairement au limiteur par adresse, il échoue fermé : un plafond de coût qui
+ * se désactive en silence ne protège de rien, et la base est de toute façon nécessaire à l'opération.
+ */
+export async function enforceGlobalRateLimit({
+  bucketKey,
+  limit,
+  windowSeconds,
+}: {
+  bucketKey: string;
+  limit: number;
+  windowSeconds: number;
+}): Promise<void> {
+  const { error } = await supabaseAdmin.rpc("consume_ip_rate_limit", {
+    p_bucket_key: `global.${bucketKey}`,
+    p_ip_hash: GLOBAL_BUCKET_HASH,
+    p_limit: limit,
+    p_window_seconds: windowSeconds,
+  });
+  if (!error) return;
+  if (error.message?.includes("Rate limit exceeded")) {
+    throw new RateLimitError(undefined, secondsUntilWindowEnds(windowSeconds));
+  }
+  throw new Error(error.message || "Contrôle de débit indisponible.");
+}
+
+/**
+ * Plafonds journaliers d'une opération coûteuse (voir `DAILY_OPERATION_LIMITS`) : par compte, puis par
+ * adresse, puis global. Dans cet ordre, pour qu'un compte déjà au plafond n'use ni le compteur de son
+ * adresse ni le disjoncteur global. Dépassement : `RateLimitError` (429) dont le message public est
+ * « Limite quotidienne atteinte, réessayez demain. », avec `Retry-After` jusqu'à minuit UTC.
+ */
+export async function enforceDailyOperationLimits({
+  request,
+  userId,
+  operation,
+}: {
+  request: Request;
+  userId: string;
+  operation: DailyOperation;
+}): Promise<void> {
+  const limits = DAILY_OPERATION_LIMITS[operation];
+  const bucketKey = `daily.${operation}`;
+  const windowSeconds = DAILY_WINDOW_SECONDS;
+  try {
+    await enforceUserRateLimit({ userId, bucketKey, limit: limits.perUser, windowSeconds });
+    await enforceIpRateLimit({ request, bucketKey, limit: limits.perIp, windowSeconds });
+    await enforceGlobalRateLimit({ bucketKey, limit: limits.global, windowSeconds });
+  } catch (error) {
+    if (error instanceof RateLimitError) {
+      throw new RateLimitError(error.message, error.retryAfterSeconds, DAILY_LIMIT_MESSAGE);
+    }
+    throw error;
   }
 }

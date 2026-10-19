@@ -30,7 +30,7 @@ export async function POST(request: Request) {
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const input = propertyReportRequestSchema.parse(await request.json());
-    const response = await savePropertyReport({ auth, input });
+    const response = await savePropertyReport({ auth, input, request });
     return apiJson(response, context, { status: 201 });
   } catch (error) {
     return apiError(error, context, {

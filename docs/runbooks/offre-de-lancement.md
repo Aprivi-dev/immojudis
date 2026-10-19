@@ -103,3 +103,59 @@ chaque appel de `/api/feature-entitlements`.
 - **Registre des traitements** (`docs/rgpd-processing-register.md`) : mettre à jour la fiche « liste d'attente
   d'ouverture de l'offre Analyse » (nouvelles données, finalité d'étude de marché, base légale = consentement,
   conservation identique à la demande, effacement avec le compte). Non modifié ici.
+
+## Protection contre l'abus par comptes multiples (chantier du 19/10/2026)
+
+Pendant l'offre, créer N comptes donnerait N fois les quotas d'Analyse. Trois protections s'ajoutent ;
+aucune ne gêne un usage normal.
+
+### 1. Email confirmé exigé (base et application)
+
+- L'offre n'ouvre les avantages qu'aux comptes dont `auth.users.email_confirmed_at` n'est pas nul
+  (migration `20261028170000_launch_offer_requires_confirmed_email.sql`, fonction
+  `app_private.launch_offer_account_eligible(uuid)` ; côté application, `hasConfirmedEmail` dans
+  `src/lib/launch-offer.server.ts`). Avant cela, le profil étant créé à l'INSERT dans `auth.users`
+  (déclencheur `handle_new_user_profile`), un compte non confirmé était surclassé.
+- Un compte qui confirme son adresse reçoit l'accès à la lecture suivante (cache serveur de 10 minutes sur
+  une confirmation déjà lue, pas sur un refus). Abonnés, comptes premium et administrateurs ne dépendent pas
+  de cette règle.
+- **À vérifier en production (Supabase > Authentication > Providers > Email)** : « Confirm email » doit être
+  **activé** (`enable_confirmations = true` dans `supabase/config.toml`, mais ce fichier n'est pas appliqué
+  automatiquement). Vérifier aussi qu'aucun autre fournisseur de connexion ne crée de comptes sans adresse
+  vérifiée. Contrôle SQL : `select count(*) from auth.users where email_confirmed_at is null;` (ces comptes
+  n'ont pas l'offre).
+- Recommandé (non fait ici, demande des clés) : activer un CAPTCHA à l'inscription (Authentication >
+  Attack Protection) et régler les limites de débit d'Auth (Authentication > Rate Limits : inscriptions et
+  connexions par adresse IP, emails envoyés par heure). C'est la seule protection qui agit avant la création
+  du compte.
+
+### 2. Plafonds journaliers des opérations coûteuses
+
+Constantes documentées dans `src/lib/rate-limit-policies.ts` (`DAILY_OPERATION_LIMITS`). Jour UTC, message
+« Limite quotidienne atteinte, réessayez demain. » (HTTP 429, `Retry-After` jusqu'à minuit UTC). Les
+compteurs vivent en base (`api_rate_limit_buckets`, `api_ip_rate_limit_buckets`), le compteur global avec une
+empreinte fixe. Ils ne se consomment qu'après vérification du droit d'accès.
+
+| Opération                                      | Par compte | Par adresse | Global (tout le site) |
+| ---------------------------------------------- | ---------- | ----------- | --------------------- |
+| Création / mise à jour d'un rapport enregistré | 40 / jour  | 100 / jour  | 1 000 / jour          |
+| Export PDF d'un rapport                        | 60 / jour  | 150 / jour  | 2 000 / jour          |
+| Dossier PLU et risques (JSON ou PDF)           | 60 / jour  | 150 / jour  | 1 500 / jour          |
+| Contexte environnemental                       | 300 / jour | 600 / jour  | 4 000 / jour          |
+| Actualisation de données à la demande          | 6 / 24 h   | 30 / jour   | 150 / 24 h (en base)  |
+
+Pour relever un seuil : modifier la constante (et, pour les actualisations, la constante SQL
+`global_daily_limit` de `enqueue_data_refresh_bounded` ; un test compare les deux).
+
+Le plafond global est un disjoncteur : s'il est atteint, tous les comptes sont bloqués jusqu'à minuit UTC.
+Surveiller les réponses 429 `RATE_LIMITED` dans les journaux Vercel ; si le plafond d'une opération est atteint
+sans abus, le relever.
+
+### 3. Ce qui n'a pas besoin de plafond de plus
+
+- **Appels LLM (Replicate)** : aucune route utilisateur n'en déclenche. Les appels viennent du pipeline
+  (`services/data-pipeline`), borné par `REPLICATE_MAX_CALLS_PER_HOUR` (60 par défaut, compteur en base
+  `llm_request_budget`), et de l'agent d'information, réservé à l'administration.
+- **Emails** : les alertes partent du cron (`ALERT_NOTIFICATION_CRON_LIMIT`, 200 par exécution par défaut,
+  1 000 au plus), au plus un email par compte et par exécution, vers l'adresse (confirmée) du compte.
+  Les emails d'authentification (confirmation, mot de passe) dépendent des limites d'Auth ci-dessus.

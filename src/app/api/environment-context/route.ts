@@ -8,7 +8,7 @@ import {
   environmentalContextCacheControl,
   getEnvironmentalContext,
 } from "@/lib/environmental-context";
-import { enforceUserRateLimit } from "@/lib/rate-limit";
+import { enforceDailyOperationLimits, enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import { assertFeatureEntitlement } from "@/lib/property-reports";
 
@@ -25,6 +25,13 @@ export async function POST(request: Request) {
       "property.neighborhoodAnalysis",
       "Contexte environnemental réservé au plan Analyse.",
     );
+    // Après le droit d'accès : seul un compte qui y a droit use les compteurs de son adresse et le
+    // disjoncteur global.
+    await enforceDailyOperationLimits({
+      request,
+      userId: auth.userId,
+      operation: "environmentContext",
+    });
     const response = await getEnvironmentalContext(await request.json());
     return NextResponse.json(response, {
       headers: {

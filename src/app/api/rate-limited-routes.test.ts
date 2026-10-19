@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
   enforceUser: vi.fn(),
   enforceIp: vi.fn(),
+  enforceDaily: vi.fn(),
   entitlement: vi.fn(),
   refreshValuation: vi.fn(),
   listDirectory: vi.fn(),
@@ -24,6 +25,7 @@ vi.mock("@/integrations/supabase/auth-middleware", () => ({
 vi.mock("@/lib/rate-limit", () => ({
   enforceUserRateLimit: mocks.enforceUser,
   enforceIpRateLimit: mocks.enforceIp,
+  enforceDailyOperationLimits: mocks.enforceDaily,
 }));
 vi.mock("@/lib/property-reports", () => ({
   assertFeatureEntitlement: mocks.entitlement,
@@ -100,6 +102,7 @@ beforeEach(() => {
   mocks.auth.mockResolvedValue({ userId: "user-1", supabase: { from: () => visibleSale } });
   mocks.enforceUser.mockResolvedValue(1);
   mocks.enforceIp.mockResolvedValue(undefined);
+  mocks.enforceDaily.mockResolvedValue(undefined);
   mocks.entitlement.mockResolvedValue({ plan: "analyse" });
 });
 
@@ -217,6 +220,35 @@ describe("P4-02 rate limits on costly and public routes", () => {
         windowSeconds: 60,
       });
     }
+  });
+
+  it("caps environment-context per day, only for an entitled account, with the daily message", async () => {
+    mocks.environment.mockResolvedValue({});
+    await environmentPost(json({}));
+    expect(mocks.enforceDaily).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "user-1", operation: "environmentContext" }),
+    );
+
+    mocks.enforceDaily.mockRejectedValue(
+      new RateLimitError(undefined, 3600, "Limite quotidienne atteinte, réessayez demain."),
+    );
+    mocks.environment.mockClear();
+    const blocked = await environmentPost(json({}));
+    expect(blocked.status).toBe(429);
+    expect(blocked.headers.get("retry-after")).toBe("3600");
+    expect(await blocked.json()).toMatchObject({
+      error: "Limite quotidienne atteinte, réessayez demain.",
+      code: "RATE_LIMITED",
+    });
+    expect(mocks.environment).not.toHaveBeenCalled();
+
+    // Sans droit d'accès : refusé avant le plafond, qui n'est pas consommé.
+    mocks.enforceDaily.mockClear();
+    mocks.entitlement.mockRejectedValue(
+      new Error("Contexte environnemental réservé au plan Analyse."),
+    );
+    expect((await environmentPost(json({}))).status).toBe(403);
+    expect(mocks.enforceDaily).not.toHaveBeenCalled();
   });
 
   it("answers billing/offer failures with a generic 503 and caches anonymous answers for 5 minutes", async () => {
