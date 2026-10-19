@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import fitz
+import pymupdf as fitz
 
 sys.dont_write_bytecode = True
 
