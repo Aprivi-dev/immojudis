@@ -24,7 +24,7 @@ vi.mock("@/hooks/use-auth", () => ({
   useAuth: () => ({ ...state.auth, session: null, authError: null }),
 }));
 vi.mock("./MapPanel", () => ({ MapPanel: () => <div data-testid="map-panel" /> }));
-vi.mock("sonner", () => ({ toast: state.toast }));
+vi.mock("@/lib/toast", () => ({ toast: state.toast }));
 vi.mock("@/integrations/supabase/lazy", () => ({
   getSupabase: async () => {
     throw new Error("Aucun appel Supabase attendu dans ce test");
