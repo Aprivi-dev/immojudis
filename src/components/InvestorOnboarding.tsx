@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { buildAlertName } from "@/components/search/search-page-state";
 import { useAuth } from "@/hooks/use-auth";
 import { useCreateAlert } from "@/hooks/use-create-alert";
 import { useHasAnalysisAccess } from "@/hooks/use-has-analysis-access";
@@ -60,9 +59,8 @@ export function InvestorOnboarding() {
       const result = await createAlertFromSearch(alertSearch, {
         frequency: "weekly",
         emailRecap: true,
-        name: buildAlertName(
-          alertSearch.query ? { ...alertSearch, city: alertSearch.query } : alertSearch,
-        ),
+        // Sans département, le secteur saisi sert de nom à l'alerte.
+        nameSearch: alertSearch.query ? { ...alertSearch, city: alertSearch.query } : alertSearch,
       });
       if (result.status !== "created") return;
     }
