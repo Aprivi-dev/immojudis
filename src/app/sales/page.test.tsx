@@ -23,7 +23,7 @@ vi.mock("@tanstack/react-query", async () => {
   };
 });
 
-import Page, { metadata } from "./page";
+import Page, { generateMetadata } from "./page";
 import { salesSearchCountQueryKey, salesSearchQueryKey } from "@/lib/search/catalog-placeholder";
 
 function hydratedQueries(html: string) {
@@ -97,10 +97,65 @@ describe("/sales server page", () => {
     }
   });
 
-  it("has an accented title and description, without the site name", () => {
-    expect(metadata.title).toBe("Ventes immobilières aux enchères en France");
-    expect(String(metadata.description)).toMatch(/^Consultez les ventes immobilières aux enchères/);
-    expect(String(metadata.title)).not.toMatch(/immojudis/i);
-    expect(metadata.alternates).toEqual({ canonical: "/sales" });
+  describe("metadata", () => {
+    const metadataFor = (params: Record<string, string | string[] | undefined> = {}) =>
+      generateMetadata({ searchParams: Promise.resolve(params) });
+
+    it("has an accented title and description, without the site name", async () => {
+      const metadata = await metadataFor();
+      expect(metadata.title).toBe("Ventes immobilières aux enchères en France");
+      expect(String(metadata.description)).toMatch(
+        /^Consultez les ventes immobilières aux enchères/,
+      );
+      expect(String(metadata.title)).not.toMatch(/immojudis/i);
+      expect(metadata.alternates).toEqual({ canonical: "/sales" });
+    });
+
+    it("keeps the canonical /sales for the first page and for every filtered address", async () => {
+      for (const params of [
+        {},
+        { page: "1" },
+        { city: "Pau" },
+        { city: "Pau", page: "2" },
+        { sort: "price_asc", page: "3" },
+        { minPrice: "50000", page: "2" },
+        { limit: "50", page: "2" },
+      ]) {
+        const metadata = await metadataFor(params);
+        expect(metadata.alternates, JSON.stringify(params)).toEqual({ canonical: "/sales" });
+        expect(metadata.title).toBe("Ventes immobilières aux enchères en France");
+      }
+    });
+
+    it("gives page 2 and beyond of the unfiltered catalogue their own canonical and title", async () => {
+      for (const page of ["2", "3", "10", "417"]) {
+        const metadata = await metadataFor({ page });
+        expect(metadata.alternates).toEqual({ canonical: `/sales?page=${page}` });
+        expect(metadata.title).toEqual({
+          absolute: `Ventes immobilières aux enchères en France - page ${page}`,
+        });
+        expect(metadata.openGraph).toMatchObject({ url: `/sales?page=${page}` });
+        expect(String(metadata.description)).toContain(`Page ${page}.`);
+      }
+    });
+
+    it("keeps the title within 60 characters, as the other pages", async () => {
+      const metadata = await metadataFor({ page: "417" });
+      expect((metadata.title as { absolute: string }).absolute.length).toBeLessThanOrEqual(60);
+    });
+
+    it("ignores a page the search cannot serve, a view choice and tracking parameters", async () => {
+      // Beyond the last reachable page (offset above 10 000): nothing to index under that address.
+      expect((await metadataFor({ page: "418" })).alternates).toEqual({ canonical: "/sales" });
+      expect((await metadataFor({ page: "0" })).alternates).toEqual({ canonical: "/sales" });
+      expect((await metadataFor({ page: "abc" })).alternates).toEqual({ canonical: "/sales" });
+      // The results view and the tracking parameters are not filters of the catalogue.
+      expect((await metadataFor({ page: "2", view: "table" })).alternates).toEqual({
+        canonical: "/sales?page=2",
+      });
+      expect((await metadataFor({ page: "2", utm_source: "x" })).alternates).toEqual({
+        canonical: "/sales?page=2",
+      });
+    });
   });
 });

@@ -12,8 +12,7 @@ import {
   type AiReviewProjectionReadModel,
   type AiReviewRequestStatus,
 } from "@/lib/ai-review-guard";
-import { formatDate, formatStartingPrice } from "@/lib/format";
-import { saleDetailPath } from "@/lib/navigation";
+import { formatStartingPrice } from "@/lib/format";
 import { stateListingStatus } from "@/lib/property-characteristics";
 import { saleIsTribunalVenue } from "@/lib/sale-procedure";
 import { getDisplaySurface } from "@/lib/surface";
@@ -23,8 +22,10 @@ import {
   cardTypeLabel,
   departmentLabel,
   listingAccessLine,
+  listingDateLabel,
   listingTitle,
 } from "./listing-text";
+import { useSaleDetailLink } from "./use-sale-detail-link";
 
 const SKELETON_ROWS = 8;
 
@@ -46,6 +47,7 @@ export function SearchResultsTable({
   returnTo,
   locked,
   analysisLocked,
+  verifying = false,
   isLoading,
   selectedSaleId,
   hoveredSaleId,
@@ -62,6 +64,8 @@ export function SearchResultsTable({
   returnTo: string;
   locked: boolean;
   analysisLocked: boolean;
+  /** Compte reconnu, liste publique gardée le temps de la vérification : ligne d'accès neutre. */
+  verifying?: boolean;
   isLoading: boolean;
   selectedSaleId: string | null;
   hoveredSaleId: string | null;
@@ -132,6 +136,7 @@ export function SearchResultsTable({
                   sale={sale}
                   returnTo={returnTo}
                   locked={locked}
+                  verifying={verifying}
                   analysisLocked={analysisLocked}
                   active={selectedSaleId === sale.id || hoveredSaleId === sale.id}
                   onHover={onHover}
@@ -154,6 +159,7 @@ const ListingRow = memo(function ListingRow({
   sale,
   returnTo,
   locked,
+  verifying = false,
   analysisLocked,
   active,
   onHover,
@@ -168,6 +174,7 @@ const ListingRow = memo(function ListingRow({
   sale: AuctionSale;
   returnTo: string;
   locked: boolean;
+  verifying?: boolean;
   analysisLocked: boolean;
   active: boolean;
   onHover: (saleId: string | null) => void;
@@ -180,6 +187,7 @@ const ListingRow = memo(function ListingRow({
   FavoriteButton: FavoriteButtonComponent;
 }) {
   const { isViewed } = useViewedSales();
+  const detailLink = useSaleDetailLink(sale.id, returnTo);
   const viewed = !locked && isViewed(sale.id);
   const displaySurface = getDisplaySurface(sale);
   const tribunal = saleIsTribunalVenue(sale);
@@ -195,7 +203,13 @@ const ListingRow = memo(function ListingRow({
   const showCity = cityReview.blocked || Boolean(sale.city?.trim());
   const departmentLine = departmentLabel(sale.department);
   const launchOffer = useLaunchOffer().active;
-  const accessLine = listingAccessLine(sale, { locked, analysisLocked, unlocked, launchOffer });
+  const accessLine = listingAccessLine(sale, {
+    locked,
+    analysisLocked,
+    unlocked,
+    verifying,
+    launchOffer,
+  });
   const surfaceText = displaySurface.value != null ? displaySurface.label : "Surface n.c.";
   const review = {
     projections: aiReviewProjections,
@@ -216,7 +230,8 @@ const ListingRow = memo(function ListingRow({
       <th scope="row" className="min-w-0 px-3 py-3 text-left font-normal">
         <Link
           id={`sale-card-${sale.id}`}
-          href={saleDetailPath(sale.id, returnTo)}
+          href={detailLink.href}
+          {...detailLink.armProps}
           prefetch={false}
           onClick={() => onSelect(sale.id)}
           aria-label={`Voir ${title}`}
@@ -268,7 +283,7 @@ const ListingRow = memo(function ListingRow({
       <td className="px-3 py-3">
         {tribunal ? <span className="block text-xs text-ink-soft">Audience</span> : null}
         <AiReviewField fieldKey="sale.sale_date" {...review}>
-          {stateListing ? stateListing.label : formatDate(sale.sale_date)}
+          {stateListing ? stateListing.label : listingDateLabel(sale)}
         </AiReviewField>
       </td>
       <td className="px-3 py-3">

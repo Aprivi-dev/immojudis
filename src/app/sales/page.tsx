@@ -1,13 +1,12 @@
+import type { Metadata } from "next";
 import { validateSalesSearch } from "@/lib/search/search-url-state";
-import { renderSalesCatalogue, salesMetadata } from "./sales-catalogue";
-
-// The canonical stays `/sales` for every filtered or paginated address of the catalogue.
-export const metadata = salesMetadata;
+import { renderSalesCatalogue, salesPageMetadata } from "./sales-catalogue";
 
 // This page is rendered at request time: it reads `searchParams`, so every filtered or paginated
-// address (`/sales?page=2`) gets its own server-rendered HTML for visitors and crawlers. The bare
-// address `/sales` never reaches it: `src/proxy.ts` rewrites it to the static variant
-// `./defaut/page.tsx` (ISR, 5 minutes), see `src/lib/sales-isr.ts`.
+// address (`/sales?city=Pau`, `/sales?page=4`) gets its own server-rendered HTML for visitors and
+// crawlers. The bare address `/sales` and the pages `?page=2` and `?page=3` (with no other
+// parameter) never reach it: `src/proxy.ts` rewrites them to the static variants
+// `./defaut/page.tsx` and `./defaut/[page]/page.tsx` (ISR, 5 minutes), see `src/lib/sales-isr.ts`.
 
 type PageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -21,6 +20,12 @@ function flattenSearchParams(params: Record<string, string | string[] | undefine
     if (last !== undefined) flat[key] = last;
   }
   return flat;
+}
+
+// The canonical is `/sales` for the first page and for every filtered address; page 2 and beyond of
+// the unfiltered catalogue are pages of their own (`/sales?page=N`, title "… - page N").
+export async function generateMetadata({ searchParams }: PageProps): Promise<Metadata> {
+  return salesPageMetadata(validateSalesSearch(flattenSearchParams(await searchParams)));
 }
 
 export default async function Page({ searchParams }: PageProps) {

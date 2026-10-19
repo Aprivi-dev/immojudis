@@ -3,7 +3,190 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
-import { SearchPagination } from "./SearchPagination";
+import { SALES_PAGINATION_ID, SearchPagination, visiblePages } from "./SearchPagination";
+
+describe("visiblePages", () => {
+  it("liste toutes les pages quand il y en a peu", () => {
+    expect(visiblePages(1, 1)).toEqual([1]);
+    expect(visiblePages(2, 5)).toEqual([1, 2, 3, 4, 5]);
+    expect(visiblePages(1, 4)).toEqual([1, 2, 3, 4]);
+  });
+
+  it("garde 1, 2, 3, la dernière, la page courante et ses voisines, avec des trous", () => {
+    expect(visiblePages(1, 69)).toEqual([1, 2, 3, "gap", 69]);
+    expect(visiblePages(30, 69)).toEqual([1, 2, 3, "gap", 29, 30, 31, "gap", 69]);
+    expect(visiblePages(69, 69)).toEqual([1, 2, 3, "gap", 68, 69]);
+    expect(visiblePages(5, 69)).toEqual([1, 2, 3, 4, 5, 6, "gap", 69]);
+  });
+
+  it("comble un trou d'une seule page plutôt que d'y mettre « … »", () => {
+    expect(visiblePages(4, 6)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(visiblePages(1, 5)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("ne sort jamais de 1 à la dernière page", () => {
+    for (const [page, total] of [
+      [1, 2],
+      [2, 2],
+      [7, 8],
+    ] as const) {
+      for (const item of visiblePages(page, total)) {
+        if (item !== "gap") {
+          expect(item).toBeGreaterThanOrEqual(1);
+          expect(item).toBeLessThanOrEqual(total);
+        }
+      }
+    }
+  });
+});
+
+describe("SearchPagination : liens numérotés", () => {
+  afterEach(cleanup);
+
+  const hrefFor = (page: number) =>
+    page === 1 ? "/sales?city=Pau" : `/sales?city=Pau&page=${page}`;
+  const renderNumbered = (props: { page?: number; totalCount?: number } = {}) => {
+    const onGoToPage = vi.fn();
+    render(
+      <SearchPagination
+        hasMore
+        hasPrevious
+        isFetching={false}
+        loadedCount={24}
+        totalCount={props.totalCount ?? 1646}
+        mapListFollowsViewport={false}
+        page={props.page ?? 2}
+        pageSize={24}
+        onNext={() => undefined}
+        onPrevious={() => undefined}
+        pageHref={hrefFor}
+        onGoToPage={onGoToPage}
+      />,
+    );
+    return { onGoToPage };
+  };
+
+  it("rend de vrais liens <a href> pour 1, 2, 3, …, la dernière page", () => {
+    renderNumbered({ page: 1, totalCount: 1646 });
+    const list = screen.getByRole("list");
+    const links = Array.from(list.querySelectorAll("a"));
+    expect(links.map((link) => link.getAttribute("href"))).toEqual([
+      "/sales?city=Pau&page=2",
+      "/sales?city=Pau&page=3",
+      "/sales?city=Pau&page=69",
+    ]);
+    // 1 646 annonces à 24 par page : 69 pages.
+    expect(screen.getByRole("link", { name: "Page 69" }).textContent).toBe("69");
+    // La page courante n'est pas un lien : elle est marquée comme telle.
+    const current = list.querySelector("[aria-current='page']");
+    expect(current?.tagName).toBe("SPAN");
+    expect(current?.textContent).toBe("1");
+    expect(list.textContent).toContain("…");
+  });
+
+  it("garde l'action du navigateur sur un clic simple et laisse le lien aux touches de modification", () => {
+    const { onGoToPage } = renderNumbered({ page: 1 });
+    const three = screen.getByRole("link", { name: "Page 3" });
+    expect(fireEvent.click(three)).toBe(false);
+    expect(onGoToPage).toHaveBeenCalledWith(3);
+    onGoToPage.mockClear();
+    expect(fireEvent.click(three, { ctrlKey: true })).toBe(true);
+    expect(onGoToPage).not.toHaveBeenCalled();
+  });
+
+  it("ne propose pas de numéros au-delà de la dernière page que la recherche sait servir", () => {
+    renderNumbered({ page: 1, totalCount: 5_000_000 });
+    // 10 000 / 24 → 417 pages au plus.
+    expect(screen.getByRole("link", { name: "Page 417" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Page 418" })).toBeNull();
+  });
+
+  it("n'ajoute aucune liste quand tout tient sur une page ou sans adresse de page", () => {
+    const { unmount } = render(
+      <SearchPagination
+        hasMore={false}
+        hasPrevious={false}
+        isFetching={false}
+        loadedCount={10}
+        totalCount={10}
+        mapListFollowsViewport={false}
+        page={1}
+        pageSize={24}
+        onNext={() => undefined}
+        onPrevious={() => undefined}
+        pageHref={hrefFor}
+        onGoToPage={() => undefined}
+      />,
+    );
+    expect(screen.queryByRole("list")).toBeNull();
+    unmount();
+    render(
+      <SearchPagination
+        hasMore
+        hasPrevious={false}
+        isFetching={false}
+        loadedCount={24}
+        totalCount={100}
+        mapListFollowsViewport={false}
+        page={1}
+        pageSize={24}
+        onNext={() => undefined}
+        onPrevious={() => undefined}
+      />,
+    );
+    expect(screen.queryByRole("list")).toBeNull();
+  });
+
+  it("donne à la pagination l'identifiant du lien d'évitement et une taille tactile de 44 px", () => {
+    renderNumbered({ page: 2 });
+    const nav = screen.getByRole("navigation", { name: "Pagination des ventes" });
+    expect(nav.id).toBe(SALES_PAGINATION_ID);
+    expect(nav.getAttribute("tabindex")).toBe("-1");
+    for (const link of screen.getAllByRole("link")) expect(link.className).toContain("h-11");
+  });
+
+  it("n'a aucune violation d'accessibilité détectable", async () => {
+    renderNumbered({ page: 30 });
+    const results = await axe(screen.getByRole("navigation"));
+    expect(results.violations).toEqual([]);
+  });
+});
+
+describe("SearchPagination : page hors bornes", () => {
+  afterEach(cleanup);
+
+  const outOfRange = (props: { firstHref?: string; outOfRange?: boolean } = {}) =>
+    render(
+      <SearchPagination
+        hasMore={false}
+        hasPrevious
+        isFetching={false}
+        loadedCount={0}
+        totalCount={undefined}
+        mapListFollowsViewport={false}
+        page={999}
+        pageSize={24}
+        onNext={() => undefined}
+        onPrevious={() => undefined}
+        onFirstPage={() => undefined}
+        {...props}
+      />,
+    );
+
+  it("dit que la page n'existe pas et renvoie à la page 1 par un vrai lien", () => {
+    outOfRange({ firstHref: "/sales?city=Pau", outOfRange: true });
+    expect(screen.getByRole("status").textContent).toBe(
+      "Cette page n’existe pas pour cette recherche",
+    );
+    const link = screen.getByRole("link", { name: "Revenir à la page 1" });
+    expect(link.getAttribute("href")).toBe("/sales?city=Pau");
+  });
+
+  it("reste un bouton sans adresse de la page 1", () => {
+    outOfRange({ outOfRange: true });
+    expect(screen.getByRole("button", { name: "Revenir à la page 1" })).toBeTruthy();
+  });
+});
 
 describe("SearchPagination", () => {
   afterEach(cleanup);

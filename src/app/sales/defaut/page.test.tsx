@@ -30,7 +30,7 @@ vi.mock("@tanstack/react-query", async () => {
 });
 
 import Page, { dynamic, metadata, revalidate } from "./page";
-import { metadata as dynamicPageMetadata } from "../page";
+import { generateMetadata as dynamicPageMetadata } from "../page";
 import { FIRST_PAGE_REVALIDATE_SECONDS } from "@/lib/public-catalogue.server";
 import { salesSearchSignature } from "@/lib/search/search-url-state";
 
@@ -51,8 +51,8 @@ describe("/sales static variant (ISR)", () => {
     expect(code).not.toMatch(/searchParams|connection\(|headers\(|cookies\(/);
   });
 
-  it("carries exactly the metadata of the page rendered on demand (canonical /sales, no robots)", () => {
-    expect(metadata).toBe(dynamicPageMetadata);
+  it("carries exactly the metadata of the page rendered on demand (canonical /sales, no robots)", async () => {
+    expect(metadata).toEqual(await dynamicPageMetadata({ searchParams: Promise.resolve({}) }));
     expect(metadata.alternates).toEqual({ canonical: "/sales" });
     expect(metadata.robots).toBeUndefined();
   });

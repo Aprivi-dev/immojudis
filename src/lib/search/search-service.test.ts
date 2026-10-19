@@ -20,6 +20,12 @@ vi.mock("@/lib/queries", () => ({
 }));
 
 import { forgetRememberedPhotoMirrors } from "@/lib/photo-mirror";
+import { retryUnlessRefused } from "@/lib/query-retry";
+import {
+  OUT_OF_RANGE_MESSAGE,
+  SearchRejectedError,
+  isOutOfRangeSearchError,
+} from "./search-errors";
 import {
   fetchSearchCount,
   fetchSearchMapResults,
@@ -219,6 +225,52 @@ describe("public preview search service", () => {
         await expect(fetchSearchResults({ search: {}, preview: true })).resolves.toHaveLength(2);
       },
     );
+
+    it("une page hors bornes (400) n'est pas une panne : erreur dédiée, jamais rejouée par la page", async () => {
+      fetchMock.mockImplementation(() =>
+        Promise.resolve(
+          new Response(JSON.stringify({ ok: false, error: "Page hors limites." }), {
+            status: 400,
+            headers: { "content-type": "application/json" },
+          }),
+        ),
+      );
+
+      const failure = await fetchSearchResults({ search: { page: 999 }, preview: true }).catch(
+        (error: unknown) => error,
+      );
+      expect(failure).toBeInstanceOf(SearchRejectedError);
+      expect(isOutOfRangeSearchError(failure)).toBe(true);
+      expect((failure as Error).message).toBe(OUT_OF_RANGE_MESSAGE);
+      // La règle de relance de la page ne rejoue pas cette erreur.
+      expect(retryUnlessRefused(0, failure)).toBe(false);
+      // Le service ne relance rien de lui-même.
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("un autre refus de la route (400) garde son message, sans proposer la page 1", async () => {
+      fetchMock.mockImplementation(() =>
+        Promise.resolve(
+          new Response(JSON.stringify({ ok: false, error: "Zone trop large." }), { status: 400 }),
+        ),
+      );
+
+      const failure = await fetchSearchCount({ search: {}, preview: true }).catch(
+        (error: unknown) => error,
+      );
+      expect(failure).toBeInstanceOf(SearchRejectedError);
+      expect(isOutOfRangeSearchError(failure)).toBe(false);
+      expect((failure as Error).message).toBe("Zone trop large.");
+    });
+
+    it("une panne (503) reste une panne : retentée une fois", async () => {
+      fetchMock.mockImplementation(() => Promise.resolve(previewResponse({}, 503)));
+      const failure = await fetchSearchResults({ search: {}, preview: true }).catch(
+        (error: unknown) => error,
+      );
+      expect(failure).not.toBeInstanceOf(SearchRejectedError);
+      expect(retryUnlessRefused(0, failure)).toBe(true);
+    });
 
     it.each([
       ["une page HTML (proxy, CDN)", () => new Response("<html>502</html>", { status: 200 })],

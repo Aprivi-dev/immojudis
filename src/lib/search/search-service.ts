@@ -15,6 +15,7 @@ import type { AuctionSale, SaleMediaMirror } from "@/lib/types";
 import { excludeHomepageExampleSales } from "@/lib/example-sale-identity";
 import { previewSearchRequestKey, type PreviewSearchResponse } from "./preview-search";
 import { previewSearchApiUrl, type PreviewSearchApiResponse } from "./preview-search-request";
+import { SearchRejectedError } from "./search-errors";
 import type { SalesSearchParams } from "./search-url-state";
 import {
   applyClientSearchFilters,
@@ -177,6 +178,11 @@ async function requestPreviewSearch(search: SalesSearchParams): Promise<PreviewS
   const response = await fetch(previewSearchApiUrl(search), {
     headers: { accept: "application/json" },
   });
+  // 400 : la route refuse la demande (page hors bornes, critère illisible). Ce n'est pas une panne.
+  if (response.status === 400) {
+    const refusal = (await response.json().catch(() => null)) as { error?: unknown } | null;
+    throw new SearchRejectedError(typeof refusal?.error === "string" ? refusal.error : "");
+  }
   const body = await readJson<PreviewSearchApiResponse | null>(response);
   // Une réponse 200 qui n'est pas du JSON (page d'erreur d'un proxy, corps vide) donne `null` : on
   // la refuse ici plutôt que de laisser le rendu lire `undefined.length`.

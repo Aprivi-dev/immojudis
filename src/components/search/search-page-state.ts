@@ -10,7 +10,11 @@ import type { WatchedZoneInput } from "@/lib/watched-zones";
 import type { SalesStatisticsResponse } from "@/lib/sales-statistics";
 import { compactPrice } from "@/lib/search/search-filters";
 import { RESULTS_VIEW_PARAM, parseResultsView, type ResultsView } from "@/lib/search/results-view";
-import { stableUrlRecord, type SalesSearchParams } from "@/lib/search/search-url-state";
+import {
+  boundedPrice,
+  stableUrlRecord,
+  type SalesSearchParams,
+} from "@/lib/search/search-url-state";
 import { parseSaleType, saleTypeFilterLabel, type SaleTypeFilter } from "@/lib/sale-types";
 
 export type SearchDraft = {
@@ -130,8 +134,8 @@ export function draftToSearch(draft: SearchDraft, current: SalesSearchParams): S
     department: cleanString(draft.department),
     tribunal: cleanString(draft.tribunal),
     query: cleanString(draft.query),
-    minPrice: draftNumber(draft.minPrice),
-    maxPrice: draftNumber(draft.maxPrice),
+    minPrice: draftPrice(draft.minPrice),
+    maxPrice: draftPrice(draft.maxPrice),
     minBeds: draftNumber(draft.minBeds),
     minBaths: draftNumber(draft.minBaths),
     minSqft: draftNumber(draft.minSqft),
@@ -142,7 +146,7 @@ export function draftToSearch(draft: SearchDraft, current: SalesSearchParams): S
     occupancy: cleanString(draft.occupancy),
     dpeClasses: draft.dpeClasses.length ? draft.dpeClasses : undefined,
     minScore: draftNumber(draft.minScore),
-    maxPricePerM2: draftNumber(draft.maxPricePerM2),
+    maxPricePerM2: draftPrice(draft.maxPricePerM2),
     minYield: draftNumber(draft.minYield),
     minMarketDiscount: draftNumber(draft.minMarketDiscount),
     houseWithLand: draft.houseWithLand || undefined,
@@ -153,14 +157,66 @@ export function draftToSearch(draft: SearchDraft, current: SalesSearchParams): S
   };
 }
 
+/** Écriture dans l'historique du navigateur : une nouvelle entrée, ou le remplacement de l'actuelle. */
+export type HistoryMode = "push" | "replace";
+
+/**
+ * Critères qui se choisissent d'un geste (bouton, case, liste, date, lieu validé) : changer l'un
+ * d'eux est une étape que « Retour » doit pouvoir défaire. Tous les autres se tapent : chaque frappe
+ * remplace l'adresse sans empiler d'entrée.
+ */
+const CHOSEN_DRAFT_KEYS: ReadonlySet<keyof SearchDraft> = new Set([
+  "saleType",
+  "homeTypes",
+  "status",
+  "dpeClasses",
+  "houseWithLand",
+  "openHouse",
+  "occupancy",
+  "minSaleDate",
+  "maxSaleDate",
+  "city",
+  "query",
+]);
+
+/**
+ * Mode d'écriture de l'adresse pour le passage de `previous` à `next` : « push » quand seuls des
+ * critères choisis ont changé, « replace » dès qu'un critère saisi a changé (ou rien).
+ */
+export function historyModeForDraftChange(previous: SearchDraft, next: SearchDraft): HistoryMode {
+  const changed = (Object.keys(next) as Array<keyof SearchDraft>).filter(
+    (key) => JSON.stringify(previous[key]) !== JSON.stringify(next[key]),
+  );
+  return changed.length > 0 && changed.every((key) => CHOSEN_DRAFT_KEYS.has(key))
+    ? "push"
+    : "replace";
+}
+
 export function stringifyNumber(value: number | undefined) {
   return value == null ? "" : String(value);
 }
 
+/** Nombre saisi ; une valeur illisible ou négative est ignorée (l'adresse ne la garde pas). */
 export function draftNumber(value: string): number | undefined {
   if (!value.trim()) return undefined;
   const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : undefined;
+  return Number.isFinite(parsed) && parsed >= 0
+    ? Math.min(parsed, Number.MAX_SAFE_INTEGER)
+    : undefined;
+}
+
+/** Montant en euros saisi : entier, plafonné à 100 000 000 € (jamais `1e+30` dans l'adresse). */
+export function draftPrice(value: string): number | undefined {
+  return value.trim() ? boundedPrice(value) : undefined;
+}
+
+const MIN_PRICE_ABOVE_MAX_MESSAGE = "La mise à prix minimum dépasse le maximum";
+
+/** Message à afficher quand la mise à prix minimum saisie dépasse le maximum, sinon `null`. */
+export function priceRangeError(draft: Pick<SearchDraft, "minPrice" | "maxPrice">): string | null {
+  const min = draftPrice(draft.minPrice);
+  const max = draftPrice(draft.maxPrice);
+  return min != null && max != null && min > max ? MIN_PRICE_ABOVE_MAX_MESSAGE : null;
 }
 
 export function cleanString(value: string) {

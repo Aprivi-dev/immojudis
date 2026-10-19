@@ -3,7 +3,8 @@ import {
   type AiReviewProjectionReadModel,
   type AiReviewRequestStatus,
 } from "@/lib/ai-review-guard";
-import { propertyTypeLabel } from "@/lib/format";
+import { formatDate, propertyTypeLabel } from "@/lib/format";
+import { parisDateKey } from "@/lib/sale-countdown";
 import { saleDisplayTitle } from "@/lib/sale-title";
 import { saleIsTribunalVenue } from "@/lib/sale-procedure";
 import { FREE_ACCESS_LINE, freeAccessLine } from "@/lib/sale-unlocks";
@@ -66,8 +67,20 @@ export const LISTING_DETAIL_LINE = "Voir le détail";
  */
 export function listingAccessLine(
   sale: AuctionSale,
-  access: { locked: boolean; analysisLocked: boolean; unlocked: boolean; launchOffer?: boolean },
+  access: {
+    locked: boolean;
+    analysisLocked: boolean;
+    unlocked: boolean;
+    launchOffer?: boolean;
+    /**
+     * Compte reconnu dont les droits sont en cours de vérification (la liste publique reste
+     * affichée, donc `locked`) : la ligne reste neutre. « Gratuit, sans carte bancaire » et
+     * « Fiche complète avec un compte gratuit » s'adressent à un visiteur sans compte.
+     */
+    verifying?: boolean;
+  },
 ): string {
+  if (access.verifying) return LISTING_DETAIL_LINE;
   if (access.locked) {
     if (access.launchOffer) return freeAccessLine({ launchOffer: true });
     return saleIsTribunalVenue(sale) ? FREE_ACCESS_LINE : "Fiche complète avec un compte gratuit";
@@ -77,4 +90,20 @@ export function listingAccessLine(
     return FREE_ACCESS_LINE;
   }
   return LISTING_DETAIL_LINE;
+}
+
+/** Libellé d'une vente dont le jour est passé (heure de Paris) : jamais une date de 2020 en clair. */
+export const PAST_SALE_LABEL = "Vente passée";
+
+/**
+ * Date affichée sur une carte : la date de la vente, ou « Vente passée » quand ce jour est derrière
+ * nous. La comparaison se fait au jour près (Paris), comme le compte à rebours : une vente
+ * d'aujourd'hui garde sa date jusqu'à minuit. `now` est injectable pour les tests.
+ */
+export function listingDateLabel(sale: AuctionSale, now: Date = new Date()): string {
+  const date = sale.sale_date ? new Date(sale.sale_date) : null;
+  if (date && Number.isFinite(date.getTime()) && parisDateKey(date) < parisDateKey(now)) {
+    return PAST_SALE_LABEL;
+  }
+  return formatDate(sale.sale_date);
 }

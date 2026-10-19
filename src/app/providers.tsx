@@ -7,6 +7,7 @@ import { AuthProvider } from "@/components/AuthProvider";
 import { LaunchOfferProvider } from "@/components/LaunchOfferProvider";
 import { SiteFooter } from "@/components/SiteFooter";
 import { LazyToaster } from "@/components/LazyToaster";
+import { retryUnlessRefused } from "@/lib/query-retry";
 import { getWithdrawnSources, loadWithdrawnSourcesOncePerSession } from "@/lib/withdrawn-sources";
 import { createWithdrawnSourcesClient } from "@/lib/withdrawn-sources-client";
 
@@ -14,7 +15,8 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
     () =>
       new QueryClient({
-        defaultOptions: { queries: { retry: 1, staleTime: 60_000 } },
+        // Une panne est retentée une fois ; une recherche refusée par la route (400) ne l'est jamais.
+        defaultOptions: { queries: { retry: retryUnlessRefused, staleTime: 60_000 } },
       }),
   );
 
