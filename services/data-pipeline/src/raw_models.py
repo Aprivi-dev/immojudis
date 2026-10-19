@@ -4,6 +4,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
+from src.repeated_surface_guard import drop_repeated_foreign_surfaces
 from src.sources.agrasc_urls import is_allowed_agrasc_source_url
 from src.sources.common import is_allowed_origin_url
 
@@ -141,6 +142,8 @@ def validate_raw_sales(
             errors.append(f"validation {marker}: {_compact_validation_error(exc)}")
             continue
         valid.append(sale)
+    # Même surface décimale sur des ventes de villes différentes : lecture d'une vente voisine, non publiée.
+    drop_repeated_foreign_surfaces(source_name, valid)
     return valid
 
 

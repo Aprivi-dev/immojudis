@@ -213,7 +213,9 @@ def parse_encheres_immobilieres_html(html: str) -> list[dict[str, Any]]:
 
 def parse_encheres_immobilieres_detail_html(html: str, source_url: str) -> dict[str, Any]:
     soup = parse_html(html, "html.parser")
-    lines = _text_lines(soup)
+    # Le bloc « Consultez d'autres ventes » liste des ventes voisines (surface, prix, ville, tribunal) :
+    # rien de ce qui le suit n'appartient à la fiche, il est coupé avant toute extraction.
+    lines = _without_other_sales_block(_text_lines(soup))
     page_text = "\n".join(lines)
     compact_text = clean_text(page_text) or ""
     title = _detail_title(soup, lines) or _title_from_url(source_url)
@@ -473,6 +475,17 @@ def _raw_sale_from_listing_text(text: str | None, source_url: str) -> dict[str, 
 
 def _text_lines(soup: BeautifulSoup) -> list[str]:
     return [line for line in (clean_text(part) for part in soup.get_text("\n", strip=True).splitlines()) if line]
+
+
+_OTHER_SALES_MARKER = re.compile(r"^consultez\s+d['’\u02bc]autres\s+ventes\b", re.I)
+
+
+def _without_other_sales_block(lines: list[str]) -> list[str]:
+    """Coupe les lignes à la première ligne « Consultez d'autres ventes … » (ventes voisines)."""
+    for index, line in enumerate(lines):
+        if _OTHER_SALES_MARKER.match(line):
+            return lines[:index]
+    return lines
 
 
 def _detail_documents(soup: BeautifulSoup, source_url: str) -> list[dict[str, str]]:
