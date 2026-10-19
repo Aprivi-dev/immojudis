@@ -120,11 +120,14 @@ select count(*) filter (where department is null or department = '') as sans_dep
   ligne primaire de façon déterministe (priorité de source, Vench avant Petites Affiches, puis URL)
   au lieu de mettre les trois lignes en quarantaine ; l'autre ligne reste visible jusqu'au balayage.
 - Réparation de l'existant : uniquement par identifiant commun. Le balayage
-  `reconcile_duplicate_sales_in_supabase`, déjà exécuté à chaque collecte
-  (`DEDUPE_RECONCILE_ENABLED`, coupé par défaut ; il lit toutes les pages jusqu'à
-  `DEDUPE_RECONCILE_MAX_ROWS` = 20 000 lignes et supprime au plus `DEDUPE_RECONCILE_MAX_MERGES` = 100
-  lignes par passage), fusionne les deux lignes puis supprime la ligne
-  secondaire ; il n'applique pas la clé de repli stricte (`strict_fallback=False`).
+  `reconcile_duplicate_sales_in_supabase` (`DEDUPE_RECONCILE_ENABLED`, coupé par défaut ; il lit
+  toutes les pages jusqu'à `DEDUPE_RECONCILE_MAX_ROWS` = 20 000 lignes et supprime au plus
+  `DEDUPE_RECONCILE_MAX_MERGES` = 100 lignes par passage), fusionne les deux lignes puis supprime la
+  ligne secondaire. Il ne tournait jamais en collecte planifiée (une seule source par passage) : il se
+  lance à part, avec le workflow manuel « Dedupe sweep » (`python -m src.dedupe_apply`), après la
+  migration `20261028110000` (les favoris, notes, alertes et rapports des lignes supprimées passent à la
+  fiche conservée). La clé de repli stricte y est permise hors Vench / Petites Affiches, et un groupe de
+  plus de 5 lignes n'est jamais fusionné.
   Relecture avant activation, sans écriture : lancer le workflow « Dedupe candidates report »
   (ou `python -m src.dedupe_candidates`) ; le journal et le résumé du job
   listent chaque paire (conservée / supprimée : id, source, commune, date, prix, raison).
