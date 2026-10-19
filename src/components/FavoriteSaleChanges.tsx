@@ -33,10 +33,12 @@ type Props = {
   aiReviewStatus?: AiReviewRequestStatus;
 };
 
+/** Une ligne sous les favoris : le suivi des changements n'est pas inclus dans l'offre. */
 function LockedChanges() {
   return (
-    <section className="mb-8" aria-label="Changements des ventes suivies">
+    <section className="mt-8" aria-label="Changements des ventes suivies">
       <PremiumFeaturePreview
+        compact
         title="Suivez les changements de vos ventes"
         description="Avec l’offre Analyse, les changements détectés sur vos favoris (date, mise à prix, statut de la vente, documents) s’affichent ici."
         labels={["Date modifiée", "Mise à prix modifiée", "Vente retirée ou adjugée"]}
@@ -121,7 +123,7 @@ function AnalysisChanges({
   }
 
   return (
-    <section className="mb-8" aria-labelledby="favorite-changes-title">
+    <section className="mt-8" aria-labelledby="favorite-changes-title">
       <h2 id="favorite-changes-title" className="font-display text-2xl font-semibold">
         Changements récents
       </h2>

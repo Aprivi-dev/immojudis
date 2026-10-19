@@ -9,6 +9,7 @@ const state = vi.hoisted(() => ({
   pathname: "/avocats",
   user: null as null | { id: string },
   profile: null as null | { account_type: string },
+  hasAnalysisAccess: undefined as boolean | undefined,
 }));
 
 vi.mock("next/navigation", () => ({ usePathname: () => state.pathname }));
@@ -19,6 +20,9 @@ const signOut = vi.hoisted(() => vi.fn());
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: { auth: { signOut } },
 }));
+vi.mock("@/hooks/use-has-analysis-access", () => ({
+  useHasAnalysisAccess: () => state.hasAnalysisAccess,
+}));
 vi.mock("next/dynamic", () => ({
   default: () => () => null,
 }));
@@ -27,6 +31,7 @@ beforeEach(() => {
   state.pathname = "/avocats";
   state.user = null;
   state.profile = null;
+  state.hasAnalysisAccess = undefined;
 });
 afterEach(() => {
   cleanup();
@@ -129,6 +134,28 @@ describe("SiteHeader", () => {
     for (const label of ["Mes favoris", "Mes alertes", "Mes comparaisons", "Mon compte"]) {
       expect(menu.getByRole("link", { name: label })).toBeTruthy();
     }
+    // L'offre n'est pas encore connue : aucune entrée propre à un compte sans Analyse.
+    expect(menu.queryByRole("link", { name: "Mes ventes débloquées" })).toBeNull();
+  });
+
+  it("propose « Mes ventes débloquées » aux comptes sans l'offre Analyse seulement", async () => {
+    state.user = { id: "user-1" };
+    state.hasAnalysisAccess = false;
+    const { unmount } = render(<SiteHeader />);
+    fireEvent.click(screen.getByRole("button", { name: "Ouvrir le menu" }));
+    const menu = within(await screen.findByRole("navigation", { name: "Navigation mobile" }));
+    expect(menu.getByRole("link", { name: "Mes ventes débloquées" }).getAttribute("href")).toBe(
+      "/compte/ventes-debloquees",
+    );
+    unmount();
+
+    state.hasAnalysisAccess = true;
+    render(<SiteHeader />);
+    fireEvent.click(screen.getByRole("button", { name: "Ouvrir le menu" }));
+    const analysisMenu = within(
+      await screen.findByRole("navigation", { name: "Navigation mobile" }),
+    );
+    expect(analysisMenu.queryByRole("link", { name: "Mes ventes débloquées" })).toBeNull();
   });
 });
 

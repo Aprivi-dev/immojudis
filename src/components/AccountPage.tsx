@@ -2,10 +2,12 @@
 
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
+import { AlertEmailRecapToggle } from "@/components/AlertEmailRecapToggle";
 import { BillingActions } from "@/components/BillingActions";
 import { useAuth } from "@/hooks/use-auth";
 import { fetchSaleUnlocksOverview } from "@/lib/client-api";
 import { fetchAccessPlan } from "@/lib/client-billing";
+import { accountLinksFor } from "@/lib/navigation";
 import { queryKeys } from "@/lib/query-keys";
 import { unlockUsageLine } from "@/lib/sale-unlocks";
 
@@ -14,6 +16,14 @@ const dateFormat = new Intl.DateTimeFormat("fr-FR", {
   month: "long",
   year: "numeric",
 });
+
+/** Ce que l'on retrouve derrière chaque entrée de « Mon espace ». */
+const SPACE_DESCRIPTIONS: Readonly<Record<string, string>> = {
+  "/favoris": "Les ventes que vous suivez, sur tous vos appareils.",
+  "/alertes": "Vos recherches enregistrées et les nouvelles ventes qui y correspondent.",
+  "/compte/ventes-debloquees": "Les ventes que vous avez ouvertes en détail.",
+  "/comparaisons": "Vos ventes mises côte à côte.",
+};
 
 function formatDate(value: string | null | undefined): string | null {
   if (!value) return null;
@@ -39,6 +49,10 @@ export function AccountPage() {
     retry: false,
   });
   const unlockStatus = unlocksQuery.data?.status;
+  // « Mon espace » : les mêmes entrées que le menu « Mon compte », sans cette page elle-même.
+  const spaceLinks = accountLinksFor(plan?.hasAnalysisAccess).filter(
+    (link) => link.href in SPACE_DESCRIPTIONS,
+  );
   const pastDue = plan?.billing?.status === "past_due";
   const graceEnd = formatDate(plan?.billing?.graceEndsAt);
   const periodEnd = formatDate(plan?.currentPeriodEnd);
@@ -60,6 +74,59 @@ export function AccountPage() {
         <p className="mt-2 text-sm text-muted-foreground">
           Adresse email : <strong className="text-foreground">{user?.email ?? "—"}</strong>
         </p>
+      </section>
+
+      <section
+        className="mt-6 rounded-xl border border-border bg-card p-5"
+        aria-labelledby="acc-space"
+      >
+        <h2 id="acc-space" className="text-lg font-semibold text-foreground">
+          Mon espace
+        </h2>
+        <ul className="mt-3 grid gap-3 sm:grid-cols-2">
+          {spaceLinks.map((link, index) => (
+            <li key={link.href}>
+              <Link
+                href={link.href}
+                aria-labelledby={`space-label-${index}`}
+                aria-describedby={`space-description-${index}`}
+                className="block h-full rounded-lg border border-border px-4 py-3 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+              >
+                <span
+                  id={`space-label-${index}`}
+                  className="block text-sm font-semibold text-foreground"
+                >
+                  {link.label}
+                </span>
+                <span
+                  id={`space-description-${index}`}
+                  className="mt-0.5 block text-xs leading-relaxed text-muted-foreground"
+                >
+                  {SPACE_DESCRIPTIONS[link.href]}
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section
+        className="mt-6 rounded-xl border border-border bg-card p-5"
+        aria-labelledby="acc-notifications"
+      >
+        <h2 id="acc-notifications" className="text-lg font-semibold text-foreground">
+          Notifications
+        </h2>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Les nouvelles ventes de vos alertes s’affichent dans la cloche de l’en-tête. L’email
+          récapitulatif n’est envoyé que si vous l’activez ici ou depuis la cloche.
+        </p>
+        {user ? (
+          <AlertEmailRecapToggle
+            userId={user.id}
+            className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/20 px-4 py-3 text-sm"
+          />
+        ) : null}
       </section>
 
       <section
@@ -102,12 +169,6 @@ export function AccountPage() {
             ) : (
               <p>Chargement de vos déblocages…</p>
             )}
-            <Link
-              href="/compte/ventes-debloquees"
-              className="mt-1 inline-flex min-h-11 items-center font-semibold text-gold-text underline underline-offset-4"
-            >
-              Mes ventes débloquées
-            </Link>
           </div>
         ) : null}
         <BillingActions className="mt-4" hideHelper />

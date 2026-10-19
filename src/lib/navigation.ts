@@ -40,15 +40,43 @@ export const SITE_LEGAL_LINKS: readonly SiteLink[] = [
   { href: "/mes-droits", label: "Mes droits" },
 ];
 
-export const ACCOUNT_LINKS: readonly SiteLink[] = [
+export const UNLOCKED_SALES_PATH = "/compte/ventes-debloquees";
+
+/** `hideForAnalysis` : l'entrée n'a de sens que pour un compte qui débloque ses ventes une à une. */
+export type AccountLink = SiteLink & { readonly hideForAnalysis?: boolean };
+
+export const ACCOUNT_LINKS: readonly AccountLink[] = [
   { href: "/favoris", label: "Mes favoris" },
   { href: "/alertes", label: "Mes alertes" },
+  { href: UNLOCKED_SALES_PATH, label: "Mes ventes débloquées", hideForAnalysis: true },
   { href: "/comparaisons", label: "Mes comparaisons" },
   { href: "/compte", label: "Mon compte" },
 ];
 
-/** Pourquoi la personne arrive sur la page de connexion : sert au bandeau d'explication. */
-export const LOGIN_REASONS = ["alerte", "favori", "export", "offre", "fiche"] as const;
+/**
+ * Les entrées du menu « Mon compte ». « Mes ventes débloquées » n'apparaît que pour un compte
+ * dont l'offre est connue et n'ouvre pas déjà toutes les ventes (`false`, pas `undefined`).
+ */
+export function accountLinksFor(hasAnalysisAccess: boolean | undefined): SiteLink[] {
+  return ACCOUNT_LINKS.filter((link) => !link.hideForAnalysis || hasAnalysisAccess === false).map(
+    ({ href, label }) => ({ href, label }),
+  );
+}
+
+/**
+ * Pourquoi la personne arrive sur la page de connexion : sert au bandeau d'explication.
+ * `mes-favoris` et `mes-alertes` : une page de l'espace personnel demandée sans être connecté
+ * (à la différence de `favori` et `alerte`, qui suivent un clic sur un cœur ou une cloche).
+ */
+export const LOGIN_REASONS = [
+  "alerte",
+  "favori",
+  "export",
+  "offre",
+  "fiche",
+  "mes-favoris",
+  "mes-alertes",
+] as const;
 export type LoginReason = (typeof LOGIN_REASONS)[number];
 
 export function loginReason(value: unknown): LoginReason | undefined {

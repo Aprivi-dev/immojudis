@@ -84,6 +84,14 @@ const reasonCopy: Record<LoginReason, { signup: string; login: string }> = {
     signup: `Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente, et en débloquer ${MONTHLY_SALE_UNLOCKS} en détail chaque mois (contenu selon la vente).`,
     login: "Connectez-vous pour consulter cette vente.",
   },
+  "mes-favoris": {
+    signup: "Créez votre compte gratuit pour garder vos ventes en favori et les retrouver ici.",
+    login: "Connectez-vous pour retrouver vos favoris.",
+  },
+  "mes-alertes": {
+    signup: "Créez votre compte gratuit pour enregistrer vos alertes et les retrouver ici.",
+    login: "Connectez-vous pour retrouver vos alertes.",
+  },
 };
 
 const modeCopy: Record<

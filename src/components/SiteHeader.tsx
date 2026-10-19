@@ -18,7 +18,8 @@ import { MobileMenuDialog } from "@/components/SiteHeaderMobileMenu";
 import { MOBILE_MENU_UNREAD_ID } from "@/components/mobile-menu-unread";
 import { useAuth } from "@/hooks/use-auth";
 import { getAccountType, isAdminAccount } from "@/lib/account";
-import { ACCOUNT_LINKS, linkPrefetch, SITE_NAV_LINKS, type SiteLink } from "@/lib/navigation";
+import { useHasAnalysisAccess } from "@/hooks/use-has-analysis-access";
+import { accountLinksFor, linkPrefetch, SITE_NAV_LINKS, type SiteLink } from "@/lib/navigation";
 import { isDesktopHeader, onOpenNotificationsRequest } from "@/lib/notification-center-events";
 import { cn } from "@/lib/utils";
 
@@ -91,8 +92,10 @@ export function SiteHeader({
     });
   }, [signedIn]);
 
+  const hasAnalysisAccess = useHasAnalysisAccess(signedIn ? user?.id : null);
+
   const accountLinks: SiteLink[] = [
-    ...ACCOUNT_LINKS,
+    ...accountLinksFor(hasAnalysisAccess),
     ...(professional ? [{ href: "/espace-pro", label: "Espace pro" }] : []),
     ...(admin ? [{ href: "/admin", label: "Administration" }] : []),
   ];
