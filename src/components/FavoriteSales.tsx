@@ -142,15 +142,6 @@ export function FavoriteSales() {
         </Card>
       ) : null}
       {data && data.favorites.length > 0 ? (
-        <FavoriteSaleChanges
-          userId={user?.id}
-          favorites={data.favorites}
-          isAnalysis={isAnalysis}
-          aiReviewBySaleId={aiReviewBySaleId}
-          aiReviewStatus={aiReviewStatus}
-        />
-      ) : null}
-      {data && data.favorites.length > 0 ? (
         <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {data.favorites.map(({ saleId, sale }) => (
             <li key={saleId} className="min-w-0">
@@ -171,6 +162,16 @@ export function FavoriteSales() {
             </li>
           ))}
         </ul>
+      ) : null}
+      {/* Les favoris d'abord ; le suivi des changements (ou sa ligne d'offre) vient après. */}
+      {data && data.favorites.length > 0 ? (
+        <FavoriteSaleChanges
+          userId={user?.id}
+          favorites={data.favorites}
+          isAnalysis={isAnalysis}
+          aiReviewBySaleId={aiReviewBySaleId}
+          aiReviewStatus={aiReviewStatus}
+        />
       ) : null}
       {data?.unavailableSaleIds?.length ? (
         <section className="mt-10">

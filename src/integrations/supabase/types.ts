@@ -9086,6 +9086,58 @@ export type Database = {
         };
         Relationships: [];
       };
+      // À régénérer par `npm run db:types` (migration 20261028130100).
+      sale_reminder_dispatches: {
+        Row: {
+          attempts: number;
+          created_at: string;
+          dedupe_key: string;
+          error: string | null;
+          id: string;
+          message_id: string | null;
+          mode: string;
+          payload: Json;
+          reminder_kind: string;
+          sale_id: string;
+          sent_at: string | null;
+          status: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          attempts?: number;
+          created_at?: string;
+          dedupe_key: string;
+          error?: string | null;
+          id?: string;
+          message_id?: string | null;
+          mode: string;
+          payload?: Json;
+          reminder_kind: string;
+          sale_id: string;
+          sent_at?: string | null;
+          status?: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          attempts?: number;
+          created_at?: string;
+          dedupe_key?: string;
+          error?: string | null;
+          id?: string;
+          message_id?: string | null;
+          mode?: string;
+          payload?: Json;
+          reminder_kind?: string;
+          sale_id?: string;
+          sent_at?: string | null;
+          status?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       sale_retention_storage_queue: {
         Row: {
           bucket: string;
@@ -10738,6 +10790,9 @@ export type Database = {
           alert_email_revoked_at: string | null;
           consent_source: string;
           created_at: string;
+          sale_reminders_consented_at: string | null;
+          sale_reminders_enabled: boolean;
+          sale_reminders_revoked_at: string | null;
           updated_at: string;
           user_id: string;
         };
@@ -10747,6 +10802,9 @@ export type Database = {
           alert_email_revoked_at?: string | null;
           consent_source?: string;
           created_at?: string;
+          sale_reminders_consented_at?: string | null;
+          sale_reminders_enabled?: boolean;
+          sale_reminders_revoked_at?: string | null;
           updated_at?: string;
           user_id: string;
         };
@@ -10756,6 +10814,9 @@ export type Database = {
           alert_email_revoked_at?: string | null;
           consent_source?: string;
           created_at?: string;
+          sale_reminders_consented_at?: string | null;
+          sale_reminders_enabled?: boolean;
+          sale_reminders_revoked_at?: string | null;
           updated_at?: string;
           user_id?: string;
         };
@@ -13514,6 +13575,22 @@ export type Database = {
           resolved_at: string;
           severity: string;
         }[];
+      };
+      // À régénérer par `npm run db:types` (migration 20261028130100).
+      claim_sale_reminder: {
+        Args: {
+          p_key: string;
+          p_kind: string;
+          p_mode: string;
+          p_payload?: Json;
+          p_sale_id: string;
+          p_user_id: string;
+        };
+        Returns: string;
+      };
+      purge_sale_reminder_dispatches: {
+        Args: { p_older_than?: string };
+        Returns: number;
       };
       claim_trial_card: {
         Args: { p_fingerprint_hash: string; p_user_id: string };

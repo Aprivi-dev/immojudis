@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SectorAlertCta } from "@/components/SectorAlertCta";
 import { UnderstandBlock } from "@/components/UnderstandBlock";
 import { Card, PageShell, buttonClasses } from "@/components/ui/primitives";
 import {
@@ -145,6 +146,11 @@ export function DepartmentView({
             </Link>
           </div>
         </Card>
+
+        <SectorAlertCta
+          criteria={{ department: department.code }}
+          intro={`Recevez les nouvelles ventes référencées en ${department.name} dès qu’elles sont publiées, dans vos alertes ou, si vous le souhaitez, dans un email récapitulatif.`}
+        />
 
         {stats && stats.types.length > 0 ? (
           <Card as="section" aria-labelledby="types">

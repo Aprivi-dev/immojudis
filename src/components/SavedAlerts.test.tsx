@@ -9,6 +9,7 @@ const state = vi.hoisted(() => ({
   update: vi.fn(),
   remove: vi.fn(),
   create: vi.fn(),
+  evaluate: vi.fn(),
   plan: { hasAnalysisAccess: false },
   toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }),
 }));
@@ -25,10 +26,14 @@ vi.mock("@/lib/client-api", () => ({
   fetchWatchedZones: async () => ({ zones: [] }),
   deleteWatchedZone: vi.fn(),
   createWatchedZone: vi.fn(),
-  evaluateAlertMatches: vi.fn(),
+  evaluateAlertMatches: state.evaluate,
   fetchAccessPlan: async () => ({ plan: state.plan }),
 }));
 vi.mock("@/lib/toast", () => ({ toast: state.toast }));
+const openNotifications = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/notification-center-events", () => ({
+  requestOpenNotifications: openNotifications,
+}));
 afterEach(cleanup);
 beforeEach(() => {
   state.userId = "first";
@@ -182,5 +187,48 @@ describe("saved alert management", () => {
         expect.objectContaining({ name: "Alerte first", city: "Bordeaux", max_price_eur: 150000 }),
       ),
     );
+  });
+
+  it("propose « Voir les ventes de cette alerte » vers /sales avec les critères de l'alerte", async () => {
+    state.list.mockResolvedValue([
+      {
+        id: "alert-1",
+        name: "Bordeaux",
+        is_active: true,
+        alert_frequency: "weekly",
+        city: "Bordeaux",
+        department: "33",
+        property_type: "apartment",
+        max_price_eur: 150000,
+        min_surface_m2: 40,
+        dpe_classes: [],
+        advanced_criteria: { sale_type: "tribunal" },
+      },
+    ]);
+    setup();
+    const link = await screen.findByRole("link", { name: /Voir les ventes de cette alerte/ });
+    const url = new URL(link.getAttribute("href")!, "https://immojudis.test");
+    expect(url.pathname).toBe("/sales");
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      city: "Bordeaux",
+      department: "33",
+      homeTypes: "apartment",
+      maxPrice: "150000",
+      minSqft: "40",
+      saleType: "tribunal",
+    });
+  });
+
+  it("ajoute au message de « Chercher les ventes maintenant » une action « Voir » qui ouvre les notifications", async () => {
+    state.evaluate.mockResolvedValue({ matchCount: 2 });
+    setup();
+    await screen.findByText("Alerte first");
+    fireEvent.click(screen.getByRole("button", { name: "Chercher les ventes maintenant" }));
+    await waitFor(() => expect(state.toast.success).toHaveBeenCalled());
+    const [message, options] = state.toast.success.mock.calls[0];
+    expect(message).toContain("2 ventes correspondent à vos alertes");
+    expect(options.action.label).toBe("Voir");
+    options.action.onClick();
+    expect(openNotifications).toHaveBeenCalledTimes(1);
   });
 });

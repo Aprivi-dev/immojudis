@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import Check from "lucide-react/dist/esm/icons/check.js";
 import Inbox from "lucide-react/dist/esm/icons/inbox.js";
 import Loader2 from "lucide-react/dist/esm/icons/loader-2.js";
@@ -6,12 +6,8 @@ import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import Trash2 from "lucide-react/dist/esm/icons/trash-2.js";
 import { toast } from "@/lib/toast";
 import Link from "next/link";
-import {
-  fetchAccessPlan,
-  fetchNotificationPreferences,
-  updateAlertNotification,
-  updateNotificationPreferences,
-} from "@/lib/client-api";
+import { updateAlertNotification } from "@/lib/client-api";
+import { AlertEmailRecapToggle } from "@/components/AlertEmailRecapToggle";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import type { AlertNotificationSummary } from "@/lib/alert-notifications";
 import { userMessage } from "@/lib/user-messages";
@@ -39,31 +35,31 @@ export default function AlertNotificationPanel({
   const NOTIFICATION_QUERY_KEY = queryKeys.alertNotifications(userId);
   const queryClient = useQueryClient();
   const unreadCount = notifications.filter((notification) => !notification.readAt).length;
-  const entitlements = useQuery({
-    queryKey: queryKeys.featureEntitlementsPlan(userId),
-    queryFn: fetchAccessPlan,
-  });
-  // Free accounts can switch the email on too: they get one weekly digest, Analyse a daily one.
-  const hasAnalysisAccess = entitlements.data?.plan.hasAnalysisAccess === true;
-  const preferencesQuery = useQuery({
-    queryKey: queryKeys.notificationPreferences(userId),
-    queryFn: fetchNotificationPreferences,
-    staleTime: 60_000,
-  });
-  const emailEnabled = preferencesQuery.data?.preferences.alertEmailEnabled ?? false;
+
+  async function restoreNotification(notificationId: string) {
+    try {
+      await updateAlertNotification({ notificationId, action: "restore" });
+      await queryClient.invalidateQueries({ queryKey: NOTIFICATION_QUERY_KEY });
+    } catch (error) {
+      toast.error(userMessage(error, "Impossible de rétablir cette notification."));
+    }
+  }
 
   const updateMutation = useMutation({
     mutationFn: updateAlertNotification,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: NOTIFICATION_QUERY_KEY }),
-    onError: (error) => toast.error(userMessage(error, "Action impossible")),
-  });
-  const preferencesMutation = useMutation({
-    mutationFn: updateNotificationPreferences,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.notificationPreferences(userId) });
-      toast.success("Préférences mises à jour");
+    onSuccess: async (_result, variables) => {
+      await queryClient.invalidateQueries({ queryKey: NOTIFICATION_QUERY_KEY });
+      if (variables.action === "dismiss") {
+        toast("Notification masquée", {
+          duration: 5000,
+          action: {
+            label: "Annuler",
+            onClick: () => void restoreNotification(variables.notificationId),
+          },
+        });
+      }
     },
-    onError: (error) => toast.error(userMessage(error, "Préférences impossibles")),
+    onError: (error) => toast.error(userMessage(error, "Action impossible")),
   });
 
   return (
@@ -85,7 +81,7 @@ export default function AlertNotificationPanel({
           type="button"
           aria-label="Rafraîchir"
           onClick={() => void onRefresh()}
-          className="inline-grid h-8 w-8 place-items-center rounded-md border border-border text-muted-foreground hover:border-gold/50 hover:text-gold-text"
+          className="inline-grid size-11 place-items-center rounded-md border border-border text-muted-foreground hover:border-gold/50 hover:text-gold-text"
         >
           {isFetching ? (
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -95,32 +91,11 @@ export default function AlertNotificationPanel({
         </button>
       </div>
 
-      <label className="flex items-center justify-between gap-3 border-b border-border bg-muted/20 px-4 py-3 text-sm">
-        <span>
-          <span className="block font-semibold text-foreground">Alertes email</span>
-          <span className="block text-xs text-muted-foreground">
-            {emailEnabled
-              ? hasAnalysisAccess
-                ? "Consentement actif"
-                : "Consentement actif : un email récapitulatif par semaine"
-              : hasAnalysisAccess
-                ? "Notifications dans l’application uniquement"
-                : "Cochez pour recevoir un email récapitulatif chaque semaine"}
-          </span>
-        </span>
-        <input
-          type="checkbox"
-          checked={emailEnabled}
-          disabled={preferencesQuery.isLoading || preferencesMutation.isPending}
-          onChange={(event) =>
-            preferencesMutation.mutate({
-              alertEmailEnabled: event.target.checked,
-              consentSource: "settings",
-            })
-          }
-          className="h-4 w-4 accent-[var(--gold)]"
-        />
-      </label>
+      {/* Un compte gratuit reçoit un récapitulatif par semaine, l'offre Analyse un par jour. */}
+      <AlertEmailRecapToggle
+        userId={userId}
+        className="flex items-center justify-between gap-3 border-b border-border bg-muted/20 px-4 py-3 text-sm"
+      />
 
       <div className="max-h-[28rem] overflow-y-auto">
         {isError ? (
@@ -156,7 +131,7 @@ export default function AlertNotificationPanel({
         ) : (
           <div className="px-4 py-8 text-center text-sm text-muted-foreground">
             <Inbox className="mx-auto mb-2 h-5 w-5" />
-            Aucune alerte
+            Aucune nouvelle vente pour vos alertes pour le moment.
           </div>
         )}
       </div>
@@ -213,24 +188,24 @@ function NotificationItem({
           </div>
         </Link>
 
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-2">
           <button
             type="button"
             aria-label={unread ? "Marquer comme lue" : "Marquer comme non lue"}
             disabled={disabled}
             onClick={onRead}
-            className="inline-grid h-8 w-8 place-items-center rounded-md border border-border text-muted-foreground hover:border-gold/50 hover:text-gold-text disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-grid size-11 place-items-center rounded-md border border-border text-muted-foreground hover:border-gold/50 hover:text-gold-text disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Check className="h-3.5 w-3.5" />
+            <Check className="h-4 w-4" />
           </button>
           <button
             type="button"
             aria-label="Masquer"
             disabled={disabled}
             onClick={onDismiss}
-            className="inline-grid h-8 w-8 place-items-center rounded-md border border-border text-muted-foreground hover:border-destructive/40 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-grid size-11 place-items-center rounded-md border border-border text-muted-foreground hover:border-destructive/40 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Trash2 className="h-3.5 w-3.5" />
+            <Trash2 className="h-4 w-4" />
           </button>
         </div>
       </div>

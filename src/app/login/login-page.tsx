@@ -37,7 +37,7 @@ import { postAuthDestination } from "@/lib/onboarding";
 import { PLAN_LIMITS } from "@/lib/plans";
 import { MONTHLY_SALE_UNLOCKS, UNLOCK_HIGHLIGHTS_INLINE_TEXT } from "@/lib/sale-unlocks";
 import { trackProductEvent } from "@/lib/product-events";
-import { userMessage } from "@/lib/user-messages";
+import { ACCOUNT_EXISTS_MESSAGE, userMessage } from "@/lib/user-messages";
 
 type LoginSearch = {
   redirect?: string;
@@ -60,6 +60,9 @@ function parseLoginSearch(search: Record<string, unknown>): LoginSearch {
 type LoginMode = LoginPageMode;
 
 const PASSWORD_RULE_ID = "login-password-rule";
+
+/** Délai avant de pouvoir demander un nouvel email de confirmation. */
+const RESEND_COOLDOWN_SECONDS = 30;
 
 /**
  * Phrase du bandeau : l'action qui a envoyé la personne ici, et ce que le compte gratuit change.
@@ -106,6 +109,16 @@ function reasonCopy(reason: LoginReason, launchOffer: boolean): { signup: string
       return {
         signup: "Créez votre compte gratuit pour être prévenu de l’ouverture de l’offre Analyse.",
         login: "Connectez-vous pour être prévenu de l’ouverture de l’offre Analyse.",
+      };
+    case "mes-favoris":
+      return {
+        signup: "Créez votre compte gratuit pour garder vos ventes en favori et les retrouver ici.",
+        login: "Connectez-vous pour retrouver vos favoris.",
+      };
+    case "mes-alertes":
+      return {
+        signup: "Créez votre compte gratuit pour enregistrer vos alertes et les retrouver ici.",
+        login: "Connectez-vous pour retrouver vos alertes.",
       };
     case "fiche":
       return {
@@ -175,6 +188,13 @@ export function LoginPage() {
   const [pendingEmail, setPendingEmail] = useState<string | null>(null);
   const [resending, setResending] = useState(false);
   const [resendNotice, setResendNotice] = useState<string | null>(null);
+  /**
+   * Supabase répond sans erreur à une inscription avec une adresse déjà confirmée : il renvoie
+   * un utilisateur sans identité (`identities` vide) et n'envoie rien. On le dit à la personne.
+   */
+  const [accountExists, setAccountExists] = useState(false);
+  /** Secondes restantes avant de pouvoir renvoyer l'email (0 = disponible). */
+  const [resendCountdown, setResendCountdown] = useState(0);
 
   const copy = modeCopy[mode];
   const isSignup = mode !== "login";
@@ -192,6 +212,17 @@ export function LoginPage() {
   useEffect(() => {
     if (user && !loading) router.push(postAuthTarget);
   }, [loading, postAuthTarget, router, user]);
+
+  // Compte à rebours du bouton « Renvoyer l'email » : une seconde à la fois, jusqu'à 0.
+  const countingDown = resendCountdown > 0;
+  useEffect(() => {
+    if (!countingDown) return;
+    const timer = setInterval(
+      () => setResendCountdown((seconds) => Math.max(0, seconds - 1)),
+      1000,
+    );
+    return () => clearInterval(timer);
+  }, [countingDown]);
 
   /** Switches the form mode and keeps the rest of the query string (the `redirect`). */
   function switchMode(next: LoginMode) {
@@ -214,7 +245,7 @@ export function LoginPage() {
   }
 
   async function resendConfirmation() {
-    if (!pendingEmail || resending) return;
+    if (!pendingEmail || resending || resendCountdown > 0) return;
     setResending(true);
     setResendNotice(null);
     setFormError(null);
@@ -232,14 +263,23 @@ export function LoginPage() {
       setFormError(userMessage(err, "Impossible de renvoyer l'email pour le moment. Réessayez."));
     } finally {
       setResending(false);
+      setResendCountdown(RESEND_COOLDOWN_SECONDS);
     }
   }
 
   function changeAddress() {
     setPendingEmail(null);
+    setAccountExists(false);
+    setResendCountdown(0);
     setResendNotice(null);
     setFormError(null);
     setPassword("");
+  }
+
+  /** Depuis le panneau « compte existant » : retour au formulaire en mode connexion. */
+  function goToLogin() {
+    changeAddress();
+    switchMode("login");
   }
 
   async function submit(e: FormEvent) {
@@ -288,6 +328,8 @@ export function LoginPage() {
       // laisserait la personne devant le même formulaire, on le remplace donc par un panneau.
       if (data?.session === null) {
         setResendNotice(null);
+        setAccountExists(isExistingAccountResponse(data));
+        setResendCountdown(RESEND_COOLDOWN_SECONDS);
         setPendingEmail(email.trim());
         return;
       }
@@ -357,21 +399,43 @@ export function LoginPage() {
             <div>
               <div className="flex items-center gap-3 text-xs font-semibold text-gold-text">
                 <Mail className="h-4 w-4" />
-                Compte créé
+                {accountExists ? "Adresse déjà inscrite" : "Compte créé"}
               </div>
               <h1 className="mt-4 font-display text-3xl text-foreground">
-                Confirmez votre adresse email
+                {accountExists ? "Un compte existe déjà" : "Confirmez votre adresse email"}
               </h1>
               <div
                 role="status"
                 className="mt-4 rounded-lg border border-gold/25 bg-gold/10 px-4 py-3 text-sm leading-relaxed text-foreground"
               >
-                <p>
-                  Un email de confirmation a été envoyé à <strong>{pendingEmail}</strong>, cliquez
-                  sur le lien pour continuer.
-                </p>
+                {accountExists ? (
+                  <p>
+                    {ACCOUNT_EXISTS_MESSAGE} Aucun email de confirmation n'a été envoyé à{" "}
+                    <strong>{pendingEmail}</strong>.
+                  </p>
+                ) : (
+                  <p>
+                    Un email de confirmation a été envoyé à <strong>{pendingEmail}</strong>, cliquez
+                    sur le lien pour continuer.
+                  </p>
+                )}
                 {resendNotice ? <p className="mt-2 text-muted-foreground">{resendNotice}</p> : null}
               </div>
+              <p
+                data-testid="signup-help"
+                className="mt-3 text-sm leading-relaxed text-muted-foreground"
+              >
+                Vous ne recevez rien ? Vérifiez vos courriers indésirables. Si vous avez déjà un
+                compte avec cette adresse,{" "}
+                <button type="button" onClick={goToLogin} className="text-foreground underline">
+                  connectez-vous
+                </button>{" "}
+                ou{" "}
+                <Link href="/mot-de-passe-oublie" className="text-foreground underline">
+                  réinitialisez votre mot de passe
+                </Link>
+                .
+              </p>
               {formError ? (
                 <p
                   role="alert"
@@ -381,14 +445,20 @@ export function LoginPage() {
                 </p>
               ) : null}
               <div className="mt-5 flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  onClick={() => void resendConfirmation()}
-                  disabled={resending}
-                  className="liquid-button inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {resending ? "Envoi..." : "Renvoyer l'email"}
-                </button>
+                {accountExists ? null : (
+                  <button
+                    type="button"
+                    onClick={() => void resendConfirmation()}
+                    disabled={resending || resendCountdown > 0}
+                    className="liquid-button inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {resending
+                      ? "Envoi..."
+                      : resendCountdown > 0
+                        ? `Renvoyer l'email (${resendCountdown} s)`
+                        : "Renvoyer l'email"}
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={changeAddress}
@@ -638,6 +708,14 @@ export function LoginPage() {
       </div>
     </main>
   );
+}
+
+/** Une inscription « réussie » sans identité créée correspond à une adresse déjà inscrite. */
+function isExistingAccountResponse(
+  data: { user?: { identities?: unknown[] | null } | null } | null | undefined,
+): boolean {
+  const identities = data?.user?.identities;
+  return Array.isArray(identities) && identities.length === 0;
 }
 
 function safeRedirect(value: unknown): string | undefined {

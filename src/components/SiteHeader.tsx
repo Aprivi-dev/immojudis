@@ -15,13 +15,27 @@ import {
   lightGhost,
 } from "@/components/site-header-shared";
 import { MobileMenuDialog } from "@/components/SiteHeaderMobileMenu";
+import { MOBILE_MENU_UNREAD_ID } from "@/components/mobile-menu-unread";
 import { useAuth } from "@/hooks/use-auth";
 import { getAccountType, isAdminAccount } from "@/lib/account";
-import { ACCOUNT_LINKS, linkPrefetch, SITE_NAV_LINKS, type SiteLink } from "@/lib/navigation";
+import {
+  ACCOUNT_LINKS,
+  linkPrefetch,
+  SITE_NAV_LINKS,
+  type AccountLink,
+  type SiteLink,
+} from "@/lib/navigation";
+import { isDesktopHeader, onOpenNotificationsRequest } from "@/lib/notification-center-events";
 import { cn } from "@/lib/utils";
 
 const AlertNotificationCenter = dynamic(() =>
   import("@/components/AlertNotificationCenter").then((module) => module.AlertNotificationCenter),
+);
+
+// Pastille de non-lus du bouton du menu mobile : chargée à part, comme la cloche, pour ne pas
+// alourdir le JavaScript commun avec la requête des notifications.
+const MobileMenuUnreadBadge = dynamic(() =>
+  import("@/components/MobileMenuUnreadBadge").then((module) => module.MobileMenuUnreadBadge),
 );
 
 // Radix Popover (menu « Mon compte ») n'est chargé que pour une personne connectée. Radix Dialog
@@ -57,6 +71,8 @@ export function SiteHeader({
   const pathname = usePublicPathname();
   const { user, profile, loading } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+  /** Le menu mobile a été ouvert pour montrer les notifications (action « Voir » d'un message). */
+  const [notificationsRequested, setNotificationsRequested] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
   const dark = theme === "dark";
   const signedIn = !loading && Boolean(user);
@@ -67,7 +83,24 @@ export function SiteHeader({
     setMenuOpen(false);
   }, [pathname]);
 
-  const accountLinks: SiteLink[] = [
+  useEffect(() => {
+    if (!menuOpen) setNotificationsRequested(false);
+  }, [menuOpen]);
+
+  // Sous « lg », la cloche n'existe que dans le menu mobile : on l'ouvre avec ses notifications.
+  useEffect(() => {
+    if (!signedIn) return;
+    return onOpenNotificationsRequest(() => {
+      if (isDesktopHeader()) return;
+      setNotificationsRequested(true);
+      setMenuOpen(true);
+    });
+  }, [signedIn]);
+
+  // Le menu « Mon compte » et le menu mobile retirent eux-mêmes les entrées qui dépendent de
+  // l'offre du compte (« Mes ventes débloquées ») : la lecture de l'offre n'est faite qu'à leur
+  // ouverture, pas à chaque page.
+  const accountLinks: AccountLink[] = [
     ...ACCOUNT_LINKS,
     ...(professional ? [{ href: "/espace-pro", label: "Espace pro" }] : []),
     ...(admin ? [{ href: "/admin", label: "Administration" }] : []),
@@ -149,15 +182,17 @@ export function SiteHeader({
             aria-haspopup="dialog"
             aria-expanded={menuOpen}
             aria-controls={menuOpen ? "site-mobile-navigation" : undefined}
+            aria-describedby={signedIn ? MOBILE_MENU_UNREAD_ID : undefined}
             onClick={() => setMenuOpen(true)}
             className={cn(
-              "ml-auto inline-grid size-11 shrink-0 cursor-pointer place-items-center rounded-md border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold lg:hidden",
+              "relative ml-auto inline-grid size-11 shrink-0 cursor-pointer place-items-center rounded-md border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold lg:hidden",
               dark
                 ? "border-white/40 bg-brand-navy/50 text-white"
                 : "border-border bg-white text-foreground",
             )}
           >
             <Menu className="size-5" aria-hidden />
+            {signedIn ? <MobileMenuUnreadBadge /> : null}
           </button>
           <MobileMenuDialog
             open={menuOpen}
@@ -166,6 +201,7 @@ export function SiteHeader({
             signedIn={signedIn}
             accountLinks={accountLinks}
             pathname={pathname}
+            openNotifications={notificationsRequested}
           />
         </div>
         {belowBar}

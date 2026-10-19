@@ -9,11 +9,11 @@ import X from "lucide-react/dist/esm/icons/x.js";
 import { toast } from "@/lib/toast";
 import { AuthConnectionBanner } from "@/components/AuthConnectionBanner";
 import { useAuth } from "@/hooks/use-auth";
+import { useCreateAlert } from "@/hooks/use-create-alert";
 import { useSaleComparison } from "@/hooks/use-sale-comparison";
 import { useRouter, useSearchParams } from "next/navigation";
 import { usePublicPathname } from "@/hooks/use-public-pathname";
 import {
-  createWatchedZone as createWatchedZoneRequest,
   fetchAccessPlan,
   fetchDpeExplorer,
   exportSalesCsv,
@@ -21,10 +21,9 @@ import {
   fetchSalesAiReviewProjections,
   fetchSalesStatistics,
 } from "@/lib/client-api";
-import { createAlert, getSaleById } from "@/lib/queries";
+import { getSaleById } from "@/lib/queries";
 import { applyPhotoMirrors, isPhotoMirrorEnabled, mirrorsFromSales } from "@/lib/photo-mirror";
 import type { AuctionSale, SaleMediaMirror } from "@/lib/types";
-import { trackProductEvent } from "@/lib/product-events";
 import { OFFERS_PATH, loginPathWithRedirect, pathWithSearch } from "@/lib/navigation";
 import { geocodeAddress, geocodeAdministrativeArea, type GeoPoint } from "@/lib/geo";
 import { departmentSearchValues, resolveFrenchGeoSearch } from "@/lib/search/french-geo-search";
@@ -84,14 +83,13 @@ import {
   type SaveSearchOptions,
 } from "./SearchHeader";
 import { RankingExplanation } from "./RankingExplanation";
-import { enableAlertEmailRecap } from "./alert-email-consent";
 import { SearchResultsList } from "./SearchResults";
+import { FEW_RESULTS_ALERT_THRESHOLD, SectorAlertPrompt } from "./SectorAlertPrompt";
 import { SaleComparisonBar } from "./SaleComparisonBar";
 import { SaleTypeFilter } from "./SaleTypeFilter";
 import { SearchLawyerPlacement } from "./SearchLawyerPlacement";
 import {
   SearchDraft,
-  buildAlertName,
   buildSearchStatistics,
   downloadBlob,
   draftToSearch,
@@ -103,7 +101,6 @@ import {
   type HistoryMode,
   useMediaQuery,
   useResultsView,
-  watchedZoneInputFromSearch,
 } from "./search-page-state";
 import { userMessage } from "@/lib/user-messages";
 import { queryKeys } from "@/lib/query-keys";
@@ -205,7 +202,6 @@ export function SearchPage({
   const [mobileMapOpen, setMobileMapOpen] = useState(Boolean(search.map));
   // Fenêtre du comparateur : ouverte par la barre (bureau) ou par la pastille de la barre basse.
   const [comparisonOpen, setComparisonOpen] = useState(false);
-  const [savingAlert, setSavingAlert] = useState(false);
   const [exportingCsv, setExportingCsv] = useState(false);
   const [dpeExplorerOpen, setDpeExplorerOpen] = useState(false);
   const [statisticsOpen, setStatisticsOpen] = useState(false);
@@ -625,10 +621,6 @@ export function SearchPage({
   const dpeLocked = isPreview || entitlementsData?.plan.features.dpeExplorer !== "included";
   const csvExportLocked =
     isPreview || entitlementsData?.plan.features.salesCsvExport !== "included";
-  const watchedZonesLocked =
-    !user || !entitlementsData || entitlementsData.plan.features.watchedZones === "locked";
-  const alertsLocked =
-    !user || !entitlementsData || entitlementsData.plan.features.smartAlerts === "locked";
   const { data: notificationPreferences } = useQuery({
     queryKey: queryKeys.notificationPreferences(user?.id ?? "anonymous"),
     queryFn: fetchNotificationPreferences,
@@ -823,6 +815,11 @@ export function SearchPage({
     },
   };
 
+  const { createAlertFromSearch, saving: savingAlert } = useCreateAlert({
+    returnTo: currentHref,
+    center,
+  });
+
   /**
    * A feature reserved to Analyse: send the person to the offers page only when the
    * subscription can really be bought, otherwise explain instead of leading to a dead end.
@@ -837,108 +834,7 @@ export function SearchPage({
   }
 
   async function saveSearch(options?: SaveSearchOptions) {
-    // Session en cours de vérification : `user` est encore vide, sans que la personne soit
-    // déconnectée. L'envoyer se connecter la ferait créer un compte qu'elle a déjà.
-    if (authLoading) {
-      toast.message("Vérification de votre compte en cours. Réessayez dans un instant.");
-      return;
-    }
-    if (!user) {
-      // La première alerte est gratuite : on invite à créer un compte puis on
-      // ramène la personne sur sa recherche.
-      router.push(loginPathWithRedirect(currentHref, { reason: "alerte" }));
-      return;
-    }
-    if (entitlementsLoading || !entitlementsData) {
-      toast.message("Vérification de votre compte en cours. Réessayez dans un instant.");
-      return;
-    }
-    if (alertsLocked) {
-      await explainReservedFeature(
-        "Les alertes de cette recherche sont réservées à l'offre Analyse.",
-      );
-      return;
-    }
-    if (activeFiltersCount === 0) {
-      toast.error("Ajoutez au moins un filtre avant d'enregistrer");
-      return;
-    }
-
-    if (
-      !entitlementsData?.plan.hasAnalysisAccess &&
-      (search.query ||
-        search.occupancy ||
-        search.minScore != null ||
-        search.minYield != null ||
-        search.minMarketDiscount != null ||
-        search.dpeClasses?.length ||
-        search.houseWithLand)
-    ) {
-      toast.error(
-        "L'alerte gratuite accepte les critères publics : zone, type de vente, type de bien, budget et surface.",
-      );
-      return;
-    }
-    setSavingAlert(true);
-    try {
-      const watchedZoneInput = watchedZonesLocked
-        ? null
-        : await watchedZoneInputFromSearch(search, center);
-      const watchedZoneResponse = watchedZoneInput
-        ? await createWatchedZoneRequest({ data: watchedZoneInput })
-        : null;
-
-      await createAlert(user.id, {
-        name: buildAlertName(search),
-        department: search.department || null,
-        city: search.city || null,
-        property_type: search.homeTypes?.length === 1 ? search.homeTypes[0] : null,
-        max_price_eur: search.maxPrice ?? null,
-        min_surface_m2: search.minSqft ?? null,
-        occupancy_status: search.occupancy || null,
-        min_investment_score: search.minScore ?? null,
-        max_price_per_m2: search.maxPricePerM2 ?? null,
-        min_yield_pct: search.minYield ?? null,
-        min_market_discount_pct: search.minMarketDiscount ?? null,
-        dpe_classes: search.dpeClasses ?? [],
-        require_house_with_land: Boolean(search.houseWithLand),
-        alert_frequency:
-          options?.frequency ?? (entitlementsData?.plan.hasAnalysisAccess ? "daily" : "weekly"),
-        watched_zone_id: watchedZoneResponse?.zone.id ?? null,
-        advanced_criteria: {
-          source: "sales_search",
-          min_sale_date: search.minSaleDate ?? null,
-          max_sale_date: search.maxSaleDate ?? null,
-          sale_type: search.saleType ?? null,
-          query: search.query ?? null,
-          around_address: search.aroundAddress ?? null,
-          around_radius_km: search.aroundRadius ?? null,
-          watched_zone_id: watchedZoneResponse?.zone.id ?? null,
-        },
-      });
-      const saved = watchedZoneResponse
-        ? "Zone surveillée et alerte créées"
-        : "Recherche enregistrée";
-      let emailConsent = emailRecapEnabled;
-      if (options?.emailRecap && !emailRecapEnabled) {
-        // Le consentement est explicite (case non pré-cochée) et horodaté côté serveur.
-        if (await enableAlertEmailRecap(queryClient, user.id)) {
-          emailConsent = true;
-          toast.success(`${saved}. Email récapitulatif activé.`);
-        } else {
-          toast.error(
-            `${saved}, mais l'email récapitulatif n'a pas pu être activé. Réessayez depuis la cloche des notifications.`,
-          );
-        }
-      } else {
-        toast.success(saved);
-      }
-      trackProductEvent("alert_created", { email_consent: emailConsent });
-    } catch (saveError) {
-      toast.error(userMessage(saveError));
-    } finally {
-      setSavingAlert(false);
-    }
+    await createAlertFromSearch(search, options);
   }
 
   async function exportCsv() {
@@ -1120,6 +1016,21 @@ export function SearchPage({
               ) : undefined
             }
           />
+
+          {!isInitialLoading &&
+          !error &&
+          page === 1 &&
+          activeFiltersCount > 0 &&
+          displayCount < FEW_RESULTS_ALERT_THRESHOLD ? (
+            <SectorAlertPrompt
+              resultCount={displayCount}
+              saving={savingAlert}
+              signedIn={Boolean(user)}
+              dailyAllowed={entitlementsData?.plan.hasAnalysisAccess === true}
+              emailRecapEnabled={emailRecapEnabled}
+              onSaveSearch={saveSearch}
+            />
+          ) : null}
 
           <SearchPagination
             hasMore={hasMore}

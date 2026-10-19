@@ -5,21 +5,44 @@ import Bell from "lucide-react/dist/esm/icons/bell.js";
 import { fetchAlertNotifications } from "@/lib/client-api";
 import type { AlertNotificationSummary } from "@/lib/alert-notifications";
 import { queryKeys } from "@/lib/query-keys";
+import { isDesktopHeader, onOpenNotificationsRequest } from "@/lib/notification-center-events";
 const AlertNotificationPanel = lazy(() => import("./AlertNotificationPanel"));
 
 const EMPTY_NOTIFICATIONS: AlertNotificationSummary[] = [];
 
-export function AlertNotificationCenter({ mobile = false }: { mobile?: boolean }) {
+export function AlertNotificationCenter({
+  mobile = false,
+  openOnMount = false,
+}: {
+  mobile?: boolean;
+  /** Ouvre le panneau dès l'affichage (menu mobile ouvert par l'action « Voir » d'un message). */
+  openOnMount?: boolean;
+}) {
   const { user, loading } = useAuth();
   if (loading || !user) return null;
-  return <AccountNotificationCenter key={user.id} userId={user.id} mobile={mobile} />;
+  return (
+    <AccountNotificationCenter
+      key={user.id}
+      userId={user.id}
+      mobile={mobile}
+      openOnMount={openOnMount}
+    />
+  );
 }
 
-function AccountNotificationCenter({ mobile, userId }: { mobile: boolean; userId: string }) {
+function AccountNotificationCenter({
+  mobile,
+  userId,
+  openOnMount,
+}: {
+  mobile: boolean;
+  userId: string;
+  openOnMount: boolean;
+}) {
   const NOTIFICATION_QUERY_KEY = queryKeys.alertNotifications(userId);
 
   const panelRef = useRef<HTMLDivElement | null>(null);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(openOnMount);
   const notificationsQuery = useQuery({
     queryKey: NOTIFICATION_QUERY_KEY,
     queryFn: () => fetchAlertNotifications({ limit: 12 }),
@@ -27,6 +50,17 @@ function AccountNotificationCenter({ mobile, userId }: { mobile: boolean; userId
   });
   const notifications = notificationsQuery.data?.notifications ?? EMPTY_NOTIFICATIONS;
   const unreadCount = notifications.filter((notification) => !notification.readAt).length;
+
+  // L'action « Voir » d'un message ouvre la cloche. La cloche de la barre n'est affichée qu'à
+  // partir de « lg » : en dessous, c'est celle du menu mobile (montée seulement menu ouvert).
+  useEffect(
+    () =>
+      onOpenNotificationsRequest(() => {
+        if (!mobile && !isDesktopHeader()) return;
+        setOpen(true);
+      }),
+    [mobile],
+  );
 
   useEffect(() => {
     if (!open) return;

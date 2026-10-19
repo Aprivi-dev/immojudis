@@ -60,6 +60,37 @@ describe("AuthGate", () => {
     expect(screen.queryByText("Contenu protégé")).toBeNull();
   });
 
+  it("explique la connexion demandée par les favoris et par les alertes", () => {
+    for (const [pathname, reason] of [
+      ["/favoris", "mes-favoris"],
+      ["/alertes", "mes-alertes"],
+    ] as const) {
+      mocks.pathname = pathname;
+      window.history.replaceState(null, "", pathname);
+      mocks.replace.mockClear();
+      const { unmount } = render(
+        <AuthGate>
+          <p>Contenu protégé</p>
+        </AuthGate>,
+      );
+      expect(mocks.replace).toHaveBeenCalledWith(
+        `/login?redirect=${encodeURIComponent(pathname)}&reason=${reason}`,
+      );
+      unmount();
+    }
+  });
+
+  it("ne donne pas de motif aux autres pages protégées", () => {
+    mocks.pathname = "/comparaisons";
+    window.history.replaceState(null, "", "/comparaisons");
+    render(
+      <AuthGate>
+        <p>Contenu protégé</p>
+      </AuthGate>,
+    );
+    expect(mocks.replace).toHaveBeenCalledWith("/login?redirect=%2Fcomparaisons");
+  });
+
   it("ne redirige pas tant que la session est en cours de chargement", () => {
     mocks.auth = { user: null, profile: null, loading: true };
     render(
