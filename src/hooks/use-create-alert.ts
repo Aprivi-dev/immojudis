@@ -5,7 +5,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { toast } from "@/lib/toast";
 import { enableAlertEmailRecap } from "@/components/search/alert-email-consent";
-import { buildAlertName, watchedZoneInputFromSearch } from "@/components/search/search-page-state";
 import { useAuth } from "@/hooks/use-auth";
 import {
   createWatchedZone as createWatchedZoneRequest,
@@ -17,8 +16,8 @@ import { OFFERS_PATH, loginPathWithRedirect } from "@/lib/navigation";
 import { trackProductEvent } from "@/lib/product-events";
 import { queryKeys } from "@/lib/query-keys";
 import { createAlert } from "@/lib/queries";
-import { isAnalysisOfferOpen } from "@/lib/search/analysis-offer-open";
 import { countActiveSearchFilters } from "@/lib/search/search-filters";
+import { isAnalysisOfferOpen } from "@/lib/search/analysis-offer-open";
 import type { SalesSearchParams } from "@/lib/search/search-url-state";
 import { userMessage } from "@/lib/user-messages";
 
@@ -28,6 +27,8 @@ export type CreateAlertOptions = {
   emailRecap?: boolean;
   /** Nom de l'alerte quand celui construit à partir des critères ne convient pas. */
   name?: string;
+  /** Critères dont on tire le nom quand `name` n'est pas donné (par défaut, ceux de l'alerte). */
+  nameSearch?: SalesSearchParams;
 };
 
 /**
@@ -118,7 +119,6 @@ export function useCreateAlert({
         );
         return { status: "blocked" };
       }
-      const name = options.name ?? buildAlertName(search);
       if (countActiveSearchFilters(search) === 0) {
         toast.error("Ajoutez au moins un filtre avant d'enregistrer");
         return { status: "blocked" };
@@ -141,6 +141,10 @@ export function useCreateAlert({
       }
       setSaving(true);
       try {
+        // Chargé à la demande : ce module (géocodage, filtres du catalogue) est lourd, et les pages
+        // qui créent une alerte (accueil du compte, départements) n'ont pas à l'embarquer d'office.
+        const { buildAlertName, watchedZoneInputFromSearch } =
+          await import("@/components/search/search-page-state");
         const watchedZonesLocked = entitlements.plan.features.watchedZones === "locked";
         const watchedZoneInput = watchedZonesLocked
           ? null
@@ -150,7 +154,7 @@ export function useCreateAlert({
           : null;
 
         await createAlert(user.id, {
-          name,
+          name: options.name ?? buildAlertName(options.nameSearch ?? search),
           department: search.department || null,
           city: search.city || null,
           property_type: search.homeTypes?.length === 1 ? search.homeTypes[0] : null,

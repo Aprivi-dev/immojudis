@@ -8,7 +8,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useCreateAlert } from "@/hooks/use-create-alert";
 import { useHasAnalysisAccess } from "@/hooks/use-has-analysis-access";
 import { alertCriteriaSummary } from "@/lib/alert-criteria-labels";
-import { departmentFromCode } from "@/lib/department-pages";
+import { FEES_SIMULATOR_DEPARTMENTS } from "@/components/fees-simulator/departments";
 import { alertCreationPath, publicAlertCriteria } from "@/lib/discovery-alerts";
 import type { SalesSearchUrlRecord } from "@/lib/search/search-url-state";
 
@@ -35,7 +35,7 @@ export function SectorAlertForm({
   const hasAnalysisAccess = useHasAnalysisAccess(user?.id);
   const search = useMemo(() => publicAlertCriteria(criteria), [criteria]);
   const summary = useMemo(() => {
-    const department = departmentFromCode(search.department);
+    const department = FEES_SIMULATOR_DEPARTMENTS.find(({ code }) => code === search.department);
     return alertCriteriaSummary({
       department: department
         ? `${department.name} (${department.code})`
