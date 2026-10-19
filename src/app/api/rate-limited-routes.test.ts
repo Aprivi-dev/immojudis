@@ -36,6 +36,7 @@ vi.mock("@/lib/sale-market-estimates", () => ({
   refreshSaleValuationOnDemand: mocks.refreshValuation,
 }));
 vi.mock("@/lib/usage", () => ({ recordFeatureUsageEvent: vi.fn() }));
+vi.mock("@/lib/account-product-events.server", () => ({ recordAccountProductEvent: vi.fn() }));
 vi.mock("@/lib/lawyer-directory", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/lawyer-directory")>()),
   listLawyerDirectory: mocks.listDirectory,

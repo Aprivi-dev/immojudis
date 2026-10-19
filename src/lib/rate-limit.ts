@@ -1,6 +1,7 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { recordAccountProductEvent } from "@/lib/account-product-events.server";
 import { RateLimitError } from "@/lib/api-errors";
 import {
   DAILY_LIMIT_MESSAGE,
@@ -278,6 +279,8 @@ export async function enforceDailyOperationLimits({
     await enforceGlobalRateLimit({ bucketKey, limit: limits.global, windowSeconds });
   } catch (error) {
     if (error instanceof RateLimitError) {
+      // Mesure par compte : le plafond journalier est atteint (par compte, adresse ou global).
+      await recordAccountProductEvent(userId, { type: "quota_reached", quota: "daily" });
       throw new RateLimitError(error.message, error.retryAfterSeconds, DAILY_LIMIT_MESSAGE);
     }
     throw error;
