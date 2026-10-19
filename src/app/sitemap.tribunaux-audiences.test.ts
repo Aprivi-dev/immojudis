@@ -71,7 +71,11 @@ describe("sitemap.xml : pages des tribunaux et des audiences", () => {
     mocks.loadDepartments.mockResolvedValue({ status: "error" });
     mocks.loadTribunalActivity.mockResolvedValue({
       status: "ok",
-      items: [court("TJ Bobigny", 107), court("TJ Nantes", 3), court("TJ Brest", 2)],
+      items: [
+        court("TJ Bobigny", 107, "justice_tj_1_93"),
+        court("TJ Nantes", 3, "justice_tj_1_114"),
+        court("TJ Brest", 2, "justice_tj_1_29"),
+      ],
     });
     mocks.loadHearings.mockResolvedValue(soon(3));
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
@@ -83,9 +87,9 @@ describe("sitemap.xml : pages des tribunaux et des audiences", () => {
 
   it("liste les tribunaux d'au moins trois ventes, pas les autres", async () => {
     const list = await urls();
-    expect(list).toContain("https://immojudis.com/tribunaux/bobigny");
-    expect(list).toContain("https://immojudis.com/tribunaux/nantes");
-    expect(list).not.toContain("https://immojudis.com/tribunaux/brest");
+    expect(list).toContain("https://immojudis.com/tribunaux/justice-tj-1-93");
+    expect(list).toContain("https://immojudis.com/tribunaux/justice-tj-1-114");
+    expect(list).not.toContain("https://immojudis.com/tribunaux/justice-tj-1-29");
   });
 
   it("liste la page des audiences à partir de trois audiences", async () => {
@@ -100,18 +104,30 @@ describe("sitemap.xml : pages des tribunaux et des audiences", () => {
 
   it("ne compte pas deux fois la même vente publiée par deux sources", async () => {
     const duplicated = soon(3);
-    // Deux lignes sur trois sont la même vente (même tribunal, même jour, même mise à prix).
+    // Les trois lignes sont la même vente : la même adresse source. Le prix, le jour et le
+    // tribunal ne suffisent pas à fusionner (voir le test suivant).
     duplicated.hearings = duplicated.hearings.map((hearing) => ({
       ...hearing,
-      startingPriceEur: 50_000,
+      sourceKeys: ["licitor.com/annonce/1"],
     }));
     mocks.loadHearings.mockResolvedValue(duplicated);
     expect(await urls()).not.toContain("https://immojudis.com/audiences-a-venir");
   });
 
+  it("compte deux lots distincts du même tribunal, du même jour et au même prix", async () => {
+    const lots = soon(3);
+    lots.hearings = lots.hearings.map((hearing, index) => ({
+      ...hearing,
+      startingPriceEur: 50_000,
+      sourceKeys: [`licitor.com/annonce/${index + 1}`],
+    }));
+    mocks.loadHearings.mockResolvedValue(lots);
+    expect(await urls()).toContain("https://immojudis.com/audiences-a-venir");
+  });
+
   it("ne donne aucune date de modification à ces pages", async () => {
     const entries = await sitemap();
-    for (const path of ["/tribunaux/bobigny", "/audiences-a-venir"]) {
+    for (const path of ["/tribunaux/justice-tj-1-93", "/audiences-a-venir"]) {
       const entry = entries.find((item) => item.url === `https://immojudis.com${path}`);
       expect(entry, path).toBeDefined();
       expect(entry).not.toHaveProperty("lastModified");
