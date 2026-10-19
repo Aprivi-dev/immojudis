@@ -26,6 +26,15 @@ Le workflow GitHub termine en échec pour une ouverture ou un rappel d’inciden
 signal visible dans Actions et déclenche les notifications GitHub du dépôt. Une résolution produit
 un run vert distinct. Les payloads sont bornés et ne contiennent ni secret ni donnée utilisateur.
 
+**Second canal : email au propriétaire.** Si la variable `OPERATIONS_ALERT_EMAIL_TO` (une à trois adresses
+séparées par des virgules) est posée, chaque ouverture, rappel et résolution d’incident part aussi par
+email (Resend, avec `RESEND_API_KEY` et `ALERT_EMAIL_FROM` déjà utilisés par les alertes de ventes ; aucun
+nouveau secret). Les deux canaux sont tentés indépendamment : un email en échec n’empêche pas l’alerte
+d’être livrée par le premier canal ; un échec du premier canal fait retenter l’incident (l’email porte une
+clé d’idempotence par incident et par version : pas de doublon). Sans la variable, rien n’est envoyé ni
+journalisé. Si la variable est posée mais que Resend n’est pas configuré, le canal reste coupé (avertissement
+dans les journaux).
+
 ## Objectifs de niveau de service
 
 | Signal               | Objectif                                                                            | Alerte warning             | Alerte critical                                                          |
