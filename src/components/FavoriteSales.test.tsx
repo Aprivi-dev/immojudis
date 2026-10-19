@@ -2,7 +2,7 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EXAMPLE_SALE } from "@/lib/example-sale";
 import type { FavoriteSalesResponse } from "@/lib/favorites";
 import type { AiReviewProjectionReadModel } from "@/lib/ai-review-guard";
@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   fetchSaleChangeEvents: vi.fn(),
   checkoutOpen: vi.fn(),
   fetchSalesAiReviewProjections: vi.fn(),
+  fetchFollowedSaleSnapshots: vi.fn(),
+  deleteFollowedSaleSnapshot: vi.fn(),
   addFavoriteSale: vi.fn(),
   removeFavoriteSale: vi.fn(),
   toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }),
@@ -26,6 +28,8 @@ vi.mock("@/lib/client-api", () => ({
   fetchFavoriteSales: mocks.fetchFavoriteSales,
   fetchSaleChangeEvents: mocks.fetchSaleChangeEvents,
   fetchSalesAiReviewProjections: mocks.fetchSalesAiReviewProjections,
+  fetchFollowedSaleSnapshots: mocks.fetchFollowedSaleSnapshots,
+  deleteFollowedSaleSnapshot: mocks.deleteFollowedSaleSnapshot,
   addFavoriteSale: mocks.addFavoriteSale,
   removeFavoriteSale: mocks.removeFavoriteSale,
 }));
@@ -42,6 +46,10 @@ vi.mock("next/navigation", () => ({
 vi.mock("./FavoriteButton", () => ({
   FavoriteButton: ({ saleId }: { saleId: string }) => <button>Retirer {saleId}</button>,
 }));
+
+beforeEach(() => {
+  mocks.fetchFollowedSaleSnapshots.mockResolvedValue({ snapshots: [] });
+});
 
 afterEach(() => {
   cleanup();

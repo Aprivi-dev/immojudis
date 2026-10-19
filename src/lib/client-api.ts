@@ -129,6 +129,8 @@ export {
   removeFavoriteSale,
   fetchFavoriteDossier,
   saveFavoriteDossier,
+  fetchFollowedSaleSnapshots,
+  deleteFollowedSaleSnapshot,
 } from "@/lib/client-api/favorites";
 
 export {

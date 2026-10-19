@@ -1,6 +1,10 @@
 import { authHeaders, readJson } from "@/lib/client-api-core";
 import type { FavoriteDossierInput, FavoriteDossierResponse } from "@/lib/favorite-dossier-shared";
 import type {
+  FollowedSaleSnapshotDeleteResponse,
+  FollowedSaleSnapshotsResponse,
+} from "@/lib/followed-sale-snapshots-shared";
+import type {
   FavoriteSaleDeleteResponse,
   FavoriteSaleInput,
   FavoriteSaleMutationResponse,
@@ -65,4 +69,25 @@ export async function saveFavoriteDossier(args: {
   });
 
   return readJson<FavoriteDossierResponse>(response);
+}
+
+/** Après l'audience (point 70) : instantanés des ventes suivies, gardés 6 mois au plus. */
+export async function fetchFollowedSaleSnapshots(): Promise<FollowedSaleSnapshotsResponse> {
+  const response = await fetch("/api/favorites/snapshots", {
+    headers: await authHeaders(),
+  });
+
+  return readJson<FollowedSaleSnapshotsResponse>(response);
+}
+
+export async function deleteFollowedSaleSnapshot(args: {
+  id: string;
+}): Promise<FollowedSaleSnapshotDeleteResponse> {
+  const search = new URLSearchParams({ id: args.id });
+  const response = await fetch(`/api/favorites/snapshots?${search.toString()}`, {
+    method: "DELETE",
+    headers: await authHeaders(),
+  });
+
+  return readJson<FollowedSaleSnapshotDeleteResponse>(response);
 }
