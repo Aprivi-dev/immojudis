@@ -18,7 +18,7 @@ import Mail from "lucide-react/dist/esm/icons/mail.js";
 import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
 import Phone from "lucide-react/dist/esm/icons/phone.js";
 import Share2 from "lucide-react/dist/esm/icons/share-2.js";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { FavoriteButton } from "@/components/FavoriteButton";
 import { MapThumbnail } from "@/components/MapThumbnail";
 import { MapboxPreviewButton } from "@/components/MapboxPreviewButton";

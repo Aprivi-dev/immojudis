@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Gift from "lucide-react/dist/esm/icons/gift.js";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { AdminPanel } from "@/components/admin/AdminShell";
 import { fetchAdminLaunchOffer, setAdminLaunchOfferClient } from "@/lib/client-api";
 import { LAUNCH_OFFER_ACCOUNT_TEXT } from "@/lib/launch-offer";

@@ -7,7 +7,7 @@ import ExternalLink from "lucide-react/dist/esm/icons/external-link.js";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import XCircle from "lucide-react/dist/esm/icons/x-circle.js";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { AdminPagination } from "@/components/admin/AdminPagination";
 import { ADMIN_PAGE_SIZE, adminClampOffset } from "@/lib/admin-pagination";
 import {

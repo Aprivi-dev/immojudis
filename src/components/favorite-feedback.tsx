@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { QueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { fetchFavoriteSales } from "@/lib/client-api";
 import { PLAN_LIMITS } from "@/lib/plans";
 import { queryKeys } from "@/lib/query-keys";

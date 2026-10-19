@@ -25,7 +25,7 @@ vi.mock("@/hooks/use-auth", () => ({
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: mocks.navigate, replace: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
 }));
-vi.mock("sonner", () => ({ toast: { success: mocks.success, error: mocks.error } }));
+vi.mock("@/lib/toast", () => ({ toast: { success: mocks.success, error: mocks.error } }));
 vi.mock("@/lib/client-api", () => ({
   fetchPropertyReports: mocks.fetchReports,
   savePropertyReport: mocks.save,

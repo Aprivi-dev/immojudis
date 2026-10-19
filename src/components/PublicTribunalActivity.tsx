@@ -2,6 +2,7 @@ import Link from "next/link";
 import { formatPrice } from "@/lib/format";
 import { pathWithSearch } from "@/lib/navigation";
 import { publicTribunalTotals, type PublicTribunalActivity } from "@/lib/public-tribunal-activity";
+import { tribunalPages } from "@/lib/tribunal-pages";
 
 /** Busiest courts shown upfront; the others stay one click away. */
 const FIRST_ROWS = 15;
@@ -31,12 +32,19 @@ function mix(item: PublicTribunalActivity): string {
     .join(" · ");
 }
 
-function Rows({ items }: { items: PublicTribunalActivity[] }) {
+function Rows({
+  items,
+  pagePaths,
+}: {
+  items: PublicTribunalActivity[];
+  /** Adresse de la page de chaque tribunal (`/tribunaux/[slug]`), par code. */
+  pagePaths: ReadonlyMap<string, string>;
+}) {
   return items.map((item) => (
     <tr key={item.code} className="border-t border-brand-navy/10">
       <th scope="row" className="py-3 pr-4 text-left font-semibold">
         <Link
-          href={pathWithSearch("/sales", { tribunal: item.searchName })}
+          href={pagePaths.get(item.code) ?? pathWithSearch("/sales", { tribunal: item.searchName })}
           className="underline-offset-4 hover:underline"
         >
           {item.name}
@@ -48,7 +56,15 @@ function Rows({ items }: { items: PublicTribunalActivity[] }) {
           Audience le {formatShortDate(item.nextSaleDate)} · {mix(item)}
         </span>
       </th>
-      <td className="py-3 pr-4 text-right tabular-nums">{formatCount(item.upcomingCount)}</td>
+      <td className="py-3 pr-4 text-right tabular-nums">
+        <Link
+          href={pathWithSearch("/sales", { tribunal: item.searchName })}
+          aria-label={`Voir dans la recherche ${formatCount(item.upcomingCount)} ${item.upcomingCount > 1 ? "ventes" : "vente"} : ${item.name}`}
+          className="underline-offset-4 hover:underline"
+        >
+          {formatCount(item.upcomingCount)}
+        </Link>
+      </td>
       <td className="hidden whitespace-nowrap py-3 pr-4 text-right sm:table-cell">
         {formatShortDate(item.nextSaleDate)}
       </td>
@@ -60,7 +76,15 @@ function Rows({ items }: { items: PublicTribunalActivity[] }) {
   ));
 }
 
-function Table({ items, caption }: { items: PublicTribunalActivity[]; caption: string }) {
+function Table({
+  items,
+  caption,
+  pagePaths,
+}: {
+  items: PublicTribunalActivity[];
+  caption: string;
+  pagePaths: ReadonlyMap<string, string>;
+}) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -85,7 +109,7 @@ function Table({ items, caption }: { items: PublicTribunalActivity[]; caption: s
           </tr>
         </thead>
         <tbody>
-          <Rows items={items} />
+          <Rows items={items} pagePaths={pagePaths} />
         </tbody>
       </table>
     </div>
@@ -109,6 +133,7 @@ export function PublicTribunalActivitySection({
   const heading = `${formatCount(totals.upcoming)} ${
     totals.upcoming > 1 ? "ventes judiciaires" : "vente judiciaire"
   } à venir dans ${formatCount(totals.tribunals)} ${totals.tribunals > 1 ? "tribunaux" : "tribunal"}`;
+  const pagePaths = new Map(tribunalPages(items).map((page) => [page.activity.code, page.path]));
   const first = items.slice(0, FIRST_ROWS);
   const rest = items.slice(FIRST_ROWS);
   return (
@@ -130,10 +155,19 @@ export function PublicTribunalActivitySection({
         tribunal par tribunal.
         {adjudicationStatisticsEnabled
           ? " Les prix d’adjudication et les résultats des ventes passées sont réservés à l’offre Analyse."
-          : null}
+          : null}{" "}
+        Les audiences des prochains jours sont réunies sur{" "}
+        <Link href="/audiences-a-venir" className="font-semibold underline">
+          la page des audiences à venir
+        </Link>
+        .
       </p>
       <div className="mt-6">
-        <Table items={first} caption="Tribunaux ayant le plus de ventes à venir" />
+        <Table
+          items={first}
+          caption="Tribunaux ayant le plus de ventes à venir"
+          pagePaths={pagePaths}
+        />
       </div>
       {rest.length ? (
         <details className="mt-4">
@@ -141,7 +175,11 @@ export function PublicTribunalActivitySection({
             Voir les {formatCount(rest.length)} autres tribunaux
           </summary>
           <div className="mt-3">
-            <Table items={rest} caption="Autres tribunaux ayant des ventes à venir" />
+            <Table
+              items={rest}
+              caption="Autres tribunaux ayant des ventes à venir"
+              pagePaths={pagePaths}
+            />
           </div>
         </details>
       ) : null}

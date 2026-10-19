@@ -15,7 +15,7 @@ import Megaphone from "lucide-react/dist/esm/icons/megaphone.js";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import UploadCloud from "lucide-react/dist/esm/icons/upload-cloud.js";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { useAuth } from "@/hooks/use-auth";
 import { getProfessionalStatus, isProfessionalAccount } from "@/lib/account";
 import {

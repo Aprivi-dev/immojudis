@@ -53,7 +53,7 @@ vi.mock("@/lib/legal-documents", () => ({
   legalPublisherConfigurationStatus: mocks.legalPublisherConfigurationStatus,
 }));
 
-vi.mock("sonner", () => ({ toast: { error: mocks.toastError } }));
+vi.mock("@/lib/toast", () => ({ toast: { error: mocks.toastError } }));
 
 afterEach(() => {
   cleanup();
