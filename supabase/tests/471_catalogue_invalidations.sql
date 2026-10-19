@@ -88,6 +88,10 @@ values
   ('c4710000-0000-4000-8000-000000000011', 'licitor', 'https://example.test/471/11', 'upcoming',
     current_timestamp + interval '3 days', '{"publication_quarantine": "operator_hold"}'::jsonb, '{}'::jsonb);
 
+-- La base exige le rattachement de chaque fiche au graphe des issues avant sa suppression (comme les
+-- tests 320 et 475) : les suppressions plus bas ne le seraient pas sans lui.
+select count(*) from public.bridge_auction_sales_to_outcome_graph();
+
 select is(
   (select count(*) from app_private.catalogue_invalidations),
   0::bigint,
