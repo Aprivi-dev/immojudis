@@ -9,6 +9,7 @@ import {
 import { loadPublicTribunalActivity } from "@/lib/public-tribunal-activity.server";
 import { GUIDE_LAST_UPDATED } from "@/lib/guide-dates";
 import { resolveSiteOrigin } from "@/lib/site-url";
+import { loadTribunalAndHearingPaths } from "@/lib/sitemap-tribunal-hearing-pages.server";
 
 // `/sitemap.xml` lists the static pages only. The articles have `/ressources/sitemap.xml`
 // (app/ressources/sitemap.ts) and the sales `/sales/sitemap/0.xml`, `1.xml`… (app/sales/sitemap.ts);
@@ -93,9 +94,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     departments.status === "ok" && indexable.length === 0
       ? []
       : [{ url: `${origin}${DEPARTMENT_PAGES_PATH}` }];
+  // Pages des tribunaux (au moins 3 ventes à venir) et page des audiences (au moins 3 audiences) :
+  // mêmes seuils que leur balise robots. Aucune date de modification, comme les départements.
+  const tribunalAndHearingPages = (await loadTribunalAndHearingPaths()).map((path) => ({
+    url: `${origin}${path}`,
+  }));
   return [
     ...pages,
     ...departmentPages,
     ...indexable.map((department) => ({ url: `${origin}${department.path}` })),
+    ...tribunalAndHearingPages,
   ];
 }
