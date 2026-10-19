@@ -13,6 +13,8 @@ const unlockSaleIds = Array.from(
 const admin = postgres(databaseUrl, { max: 1 });
 const first = postgres(authenticatorDatabaseUrl.toString(), { max: 1 });
 const second = postgres(authenticatorDatabaseUrl.toString(), { max: 1 });
+// État de l'offre de lancement avant la vérification des déblocages, pour le rétablir ensuite.
+let launchOfferWasActive = null;
 
 try {
   await admin.begin(async (sql) => {
@@ -72,6 +74,11 @@ try {
 
   console.log(JSON.stringify({ ok: true, fulfilled, rejected, activeAlerts: count, unlocks }));
 } finally {
+  if (launchOfferWasActive !== null) {
+    await admin`update app_private.launch_offer set active = ${launchOfferWasActive} where singleton`.catch(
+      () => undefined,
+    );
+  }
   await admin`delete from auth.users where id = ${userId}`.catch(() => undefined);
   await admin`delete from auth.users where id = ${unlockUserId}`.catch(() => undefined);
   await deleteUnlockFixtureSales(admin).catch(() => undefined);
@@ -84,6 +91,12 @@ try {
  * simultaneous repeat of one already unlocked sale must consume nothing.
  */
 async function verifyConcurrentSaleUnlocks() {
+  // L'offre de lancement (active par défaut) donne l'accès Analyse à tout compte qui a un profil :
+  // cette vérification porte sur le quota d'un compte Découverte, la base locale la coupe pour sa
+  // durée (rétablie dans le `finally` principal).
+  [{ active: launchOfferWasActive }] =
+    await admin`select active from app_private.launch_offer where singleton`;
+  await admin`update app_private.launch_offer set active = false where singleton`;
   await admin.begin(async (sql) => {
     await sql`delete from auth.users where id = ${unlockUserId}`;
     await deleteUnlockFixtureSales(sql);

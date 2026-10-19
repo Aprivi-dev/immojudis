@@ -209,6 +209,7 @@ export async function apiKeyAuthContextFromRequest(
     userId: row.user_id,
     accountTier,
     userRole,
+    hasProfile: profile != null,
     // A key never carries administrator rights, whoever owns it.
     isAdmin: false,
     claims: {

@@ -120,13 +120,13 @@ describe("billing helpers", () => {
   });
 
   it("keeps the historical one-time constants for webhook compatibility", () => {
-    expect(ANALYSIS_PRICE_CENTS).toBe(2_900);
+    expect(ANALYSIS_PRICE_CENTS).toBe(5_900);
     expect(ANALYSIS_ACCESS_DAYS).toBe(30);
   });
 
   it("revokes one-time access only after a full refund", () => {
-    expect(stripeRefundRequiresAccessRevocation(2_900, 1_000)).toBe(false);
-    expect(stripeRefundRequiresAccessRevocation(2_900, 2_900)).toBe(true);
+    expect(stripeRefundRequiresAccessRevocation(5_900, 1_000)).toBe(false);
+    expect(stripeRefundRequiresAccessRevocation(5_900, 5_900)).toBe(true);
   });
 
   it("pauses disputed access and restores only a still-valid won dispute", () => {

@@ -8147,6 +8147,14 @@ export type Database = {
           notify_enabled: boolean;
           offer_code: string;
           revoked_at: string | null;
+          survey_answered_at: string | null;
+          survey_interview_accepted: boolean;
+          survey_interview_consented_at: string | null;
+          survey_price_cheap_eur: number | null;
+          survey_price_too_expensive_eur: number | null;
+          survey_profile: string | null;
+          survey_sales_per_month: number | null;
+          survey_text_version: string | null;
           updated_at: string;
           user_id: string;
         };
@@ -8159,6 +8167,14 @@ export type Database = {
           notify_enabled?: boolean;
           offer_code?: string;
           revoked_at?: string | null;
+          survey_answered_at?: string | null;
+          survey_interview_accepted?: boolean;
+          survey_interview_consented_at?: string | null;
+          survey_price_cheap_eur?: number | null;
+          survey_price_too_expensive_eur?: number | null;
+          survey_profile?: string | null;
+          survey_sales_per_month?: number | null;
+          survey_text_version?: string | null;
           updated_at?: string;
           user_id: string;
         };
@@ -8171,6 +8187,14 @@ export type Database = {
           notify_enabled?: boolean;
           offer_code?: string;
           revoked_at?: string | null;
+          survey_answered_at?: string | null;
+          survey_interview_accepted?: boolean;
+          survey_interview_consented_at?: string | null;
+          survey_price_cheap_eur?: number | null;
+          survey_price_too_expensive_eur?: number | null;
+          survey_profile?: string | null;
+          survey_sales_per_month?: number | null;
+          survey_text_version?: string | null;
           updated_at?: string;
           user_id?: string;
         };
@@ -13895,6 +13919,7 @@ export type Database = {
         Returns: Json;
       };
       get_court_auction_summaries: { Args: never; Returns: Json };
+      get_launch_offer_status: { Args: never; Returns: boolean };
       get_withdrawn_catalogue_sources: { Args: never; Returns: string[] };
       get_public_sale_calendar_event: {
         Args: { p_sale_id: string };
@@ -14631,6 +14656,7 @@ export type Database = {
         Args: { p_reason?: string; p_source: string; p_withdrawn: boolean };
         Returns: Json;
       };
+      set_launch_offer: { Args: { p_active: boolean }; Returns: boolean };
       set_catalogue_readiness_enforcement: {
         Args: { p_enabled: boolean };
         Returns: {

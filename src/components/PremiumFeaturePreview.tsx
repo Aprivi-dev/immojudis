@@ -69,7 +69,12 @@ export function PremiumFeaturePreview({
             withOpeningRequest
           />
         ) : (
-          <Link href="/offres" className={PRIMARY_LINK_CLASS}>
+          // Souscription fermée (ou état pas encore connu) : un lien discret, pas le bouton or d'un
+          // achat qui n'existe pas encore. Le bouton or revient quand l'offre est vraiment ouverte.
+          <Link
+            href="/offres"
+            className={checkoutOpen === true ? PRIMARY_LINK_CLASS : SECONDARY_LINK_CLASS}
+          >
             Découvrir l’offre Analyse
           </Link>
         )}

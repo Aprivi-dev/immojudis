@@ -36,15 +36,24 @@ describe("RankingExplanation", () => {
     expect(items[2]).toContain("la vente la plus proche est affichée en premier");
   });
 
-  it("précise l'absence de rémunération, l'encart d'avocats et la portée du repère", () => {
+  it("précise l'absence de rémunération, l'encart d'avocats et la portée du repère, en trois notes", () => {
     render(<RankingExplanation />);
+    // La première note (évaluation d'une annonce nouvelle) précède les trois notes de portée.
+    expect(RANKING_EXPLANATION_NOTES).toHaveLength(4);
+    expect(RANKING_EXPLANATION_NOTES[1]).toBe(
+      "Ce classement ne juge ni l’intérêt, ni la valeur, ni l’état du bien.",
+    );
+    expect(RANKING_EXPLANATION_NOTES[2]).toBe(
+      "L’ordre des annonces ne dépend d’aucune rémunération. Un encart de cabinet d’avocats, signalé comme publicité, peut s’intercaler entre deux annonces sans modifier leur ordre.",
+    );
     const notes = RANKING_EXPLANATION_NOTES.join(" ");
-    expect(notes).toContain("Il ne dépend d’aucune rémunération");
-    expect(notes).toContain("personne ne peut payer pour améliorer le rang d’une annonce");
-    expect(notes).toContain("mise en avant payante");
-    expect(notes).toContain("ne garantit ni l’exactitude des informations ni l’état du bien");
+    expect(notes).toContain("ne dépend d’aucune rémunération");
+    expect(notes).toContain("signalé comme publicité");
+    expect(notes).toContain("(score d’au moins 40 sur 100)");
+    expect(notes).toContain("ne garantit ni leur exactitude ni l’état du bien");
     expect(notes).toContain("trier par date, prix ou surface");
-    expect(notes).toContain("Le repère « Annonce bien renseignée » signale une annonce");
+    expect(notes).toContain("Le repère « Annonce bien renseignée » signale une fiche");
+    expect(notes).not.toContain("mise en avant payante");
     expect(notes).not.toContain("fiche détaillée");
     expect(notes).not.toContain("Quel que soit le tri");
     for (const note of RANKING_EXPLANATION_NOTES) expect(screen.getByText(note)).toBeTruthy();

@@ -6,7 +6,7 @@ import {
 import { propertyTypeLabel } from "@/lib/format";
 import { saleDisplayTitle } from "@/lib/sale-title";
 import { saleIsTribunalVenue } from "@/lib/sale-procedure";
-import { FREE_ACCESS_LINE } from "@/lib/sale-unlocks";
+import { FREE_ACCESS_LINE, freeAccessLine } from "@/lib/sale-unlocks";
 import type { AuctionSale } from "@/lib/types";
 
 /**
@@ -60,13 +60,16 @@ export const LISTING_DETAIL_LINE = "Voir le détail";
 
 /**
  * Ce que la fiche coûte au visiteur : un compte gratuit, un déblocage mensuel (ventes au tribunal
- * seulement) ou rien (« Voir le détail »).
+ * seulement) ou rien (« Voir le détail »). Offre de lancement active (`launchOffer`) : le visiteur
+ * lit la mention de l'offre (compte gratuit = avantages Analyse, retirables sans préavis) à la place
+ * de « 3 fiches détaillées par mois », pour toutes les ventes.
  */
 export function listingAccessLine(
   sale: AuctionSale,
-  access: { locked: boolean; analysisLocked: boolean; unlocked: boolean },
+  access: { locked: boolean; analysisLocked: boolean; unlocked: boolean; launchOffer?: boolean },
 ): string {
   if (access.locked) {
+    if (access.launchOffer) return freeAccessLine({ launchOffer: true });
     return saleIsTribunalVenue(sale) ? FREE_ACCESS_LINE : "Fiche complète avec un compte gratuit";
   }
   // Le déblocage n'est proposé que pour les ventes tenues au tribunal.
