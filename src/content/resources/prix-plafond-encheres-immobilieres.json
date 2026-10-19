@@ -64,7 +64,7 @@
       "title": "Exemple fictif : calculer l’enchère plafond",
       "paragraphs": [
         "Prenons un appartement fictif de 62 m². Vous retenez 210 000 € comme valeur de marché de travail et choisissez une marge de sécurité de 10 %, soit 21 000 €. Le seuil de coût complet devient 189 000 €. La mise à prix de 95 000 € reste un repère d’audience et n’entre pas directement dans la formule.",
-        "Les frais ne sont pas un montant fixe : ils varient avec le prix d’adjudication, il faut donc les recalculer à chaque enchère testée. Avec les hypothèses par défaut du simulateur Immojudis (barème des émoluments relevé le 09/10/2026, droits de mutation d’environ 6,3 % relevés le 01/06/2026, frais préalables de 3 000 € et honoraires de 1 500 €), ils atteignent environ 17 900 € pour une enchère de 149 600 €, soit environ 12 % du prix. Ces valeurs sont des ordres de grandeur à vérifier sur le cahier des conditions de vente et auprès de l’avocat.",
+        "Les frais ne sont pas un montant fixe : ils varient avec le prix d’adjudication, il faut donc les recalculer à chaque enchère testée. Avec les hypothèses par défaut du simulateur Immojudis (barème des émoluments relevé le 09/10/2026, droits de mutation d’environ 6,3 % relevés le 01/06/2026, frais préalables de 3 000 € et honoraires de 1 500 €), ils atteignent environ 17 900 € pour une enchère de 149 600 €, soit environ 12 % du prix. Ces valeurs sont des ordres de grandeur à vérifier sur le cahier des conditions de vente et auprès de l’avocat. Les droits de mutation varient selon le département : la hausse du taux départemental de 4,5 % à 5 % vaut pour les actes passés du 1er avril 2025 au 31 mars 2028.",
         "Le calcul est : 189 000 € − 17 900 € − 18 000 € − 3 500 € ≈ 149 600 €. À 150 000 €, le coût complet dépasse le seuil d’environ 400 € ; à 140 000 €, il reste environ 10 400 € sous le seuil. Les autres montants (travaux, financement) sont inventés pour l’exemple."
       ],
       "table": {
@@ -132,7 +132,7 @@
       "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939159"
     },
     {
-      "label": "Légifrance — Code de commerce, article A444-191 (émoluments en saisie immobilière)",
+      "label": "Légifrance — Code de commerce, article A444-191 (émoluments en saisie immobilière et licitation)",
       "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000039000802"
     },
     {

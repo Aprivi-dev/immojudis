@@ -5,12 +5,12 @@
   "category": "Les fondamentaux",
   "description": "Droit de préemption et vente aux enchères : qui en est titulaire, quelles ventes sont concernées, calendrier de 30 jours après l’adjudication, prix et conséquences pour l’acheteur.",
   "intro": [
-    "Vous avez emporté les enchères, mais l’adjudication (l’attribution du bien au dernier enchérisseur) peut encore vous échapper. Dans certaines zones, une collectivité dispose d’un droit de préemption : elle peut prendre la place de l’adjudicataire et acquérir le bien à sa place, au prix de la dernière enchère. Ce risque dépend de la localisation du bien, mais il est mal connu des acheteurs.",
+    "Vous avez emporté les enchères : vous avez été déclaré adjudicataire (l’adjudication est l’attribution du bien au dernier enchérisseur), mais le titulaire du droit peut encore se substituer à vous. Dans certaines zones, une collectivité dispose d’un droit de préemption : elle peut prendre la place de l’adjudicataire et acquérir le bien à sa place, au prix de la dernière enchère. Ce risque dépend de la localisation du bien, mais il est mal connu des acheteurs.",
     "Cet article explique à qui appartient ce droit, dans quelles ventes il s’applique, quel est le calendrier à connaître, ce qui change pour vous et comment vérifier si un bien est concerné. Il s’appuie sur le Code de l’urbanisme et sur des fiches de service-public.fr. Il ne remplace pas l’avis de votre avocat, qui connaît le dossier et la commune."
   ],
   "takeaways": [
     "Le droit de préemption permet à une collectivité d’acheter un bien en priorité lors d’une vente. En adjudication, elle se « substitue » à l’adjudicataire, au prix de la dernière enchère ou de la surenchère (art. L. 213-1 et R. 213-15 du Code de l’urbanisme).",
-    "Il joue lorsque l’adjudication est autorisée ou ordonnée par un juge, comme en saisie immobilière ou en licitation, sauf exceptions prévues par la loi.",
+    "Il joue lorsque l’adjudication est autorisée ou ordonnée par un juge, comme en saisie immobilière ou en licitation, sauf exceptions prévues par la loi. En licitation, la règle ne joue pas si l’indivision a été créée volontairement (sauf donation-partage) ; elle joue en principe pour une indivision successorale.",
     "Le greffier ou le notaire déclare la vente au maire au moins 30 jours avant la date fixée ; le titulaire du droit dispose ensuite de 30 jours après l’adjudication pour décider.",
     "Si la collectivité se substitue, vous perdez le bien mais le prix ne change pas : elle ne peut pas payer moins que la dernière enchère.",
     "Pour savoir si un bien est concerné, interrogez l’avocat poursuivant, lisez le cahier des conditions de vente et consultez la mairie ou les documents d’urbanisme de la commune."
@@ -30,7 +30,9 @@
       "title": "Quelles ventes sont concernées, et lesquelles ne le sont pas",
       "paragraphs": [
         "Le Code de l’urbanisme soumet à ce droit tout immeuble, bâti ou non, aliéné à titre onéreux « sous quelque forme que ce soit » dans une zone de préemption (art. L. 213-1). Il prévoit une règle propre à l’adjudication : lorsque cette procédure est autorisée ou ordonnée par un juge, l’acquisition par le titulaire du droit a lieu au prix de la dernière enchère, par substitution à l’adjudicataire.",
-        "Dans une saisie immobilière, c’est le juge de l’exécution qui ordonne la vente forcée (service-public.fr, fiche « Saisie immobilière »). Une licitation, la vente aux enchères d’un bien détenu à plusieurs, est ordonnée par le tribunal (art. 1377 du Code de procédure civile). Ces deux ventes entrent donc, en principe, dans le champ de la règle, dès lors que le bien se trouve dans un périmètre de préemption. Le texte réglementaire vise plus largement toute vente par adjudication d’un bien soumis au droit de préemption lorsque cette procédure est rendue obligatoire par une disposition législative ou réglementaire (art. R. 213-14)."
+        "Dans une saisie immobilière, c’est le juge de l’exécution qui ordonne la vente forcée (service-public.fr, fiche « Saisie immobilière »). Une licitation, la vente aux enchères d’un bien détenu à plusieurs, est ordonnée par le tribunal (art. 1377 du Code de procédure civile). Ces deux ventes entrent donc, en principe, dans le champ de la règle, dès lors que le bien se trouve dans un périmètre de préemption.",
+        "Deux textes sont à distinguer. L’article L. 213-1 vise l’adjudication autorisée ou ordonnée par un juge. La sous-section réglementaire (art. R. 213-14 et suivants) vise, elle, les adjudications rendues obligatoires par un texte. Pour une licitation, demandez à l’avocat si cette procédure s’applique à votre dossier.",
+        "Une exception compte pour la licitation : elle ne joue pas si l’indivision a été créée volontairement (sauf donation-partage). Elle joue en principe pour une indivision successorale. Faites confirmer le point par l’avocat pour le bien qui vous intéresse."
       ],
       "table": {
         "headers": ["Situation", "Droit de préemption", "Source"],
@@ -51,7 +53,7 @@
             "Art. L. 213-1, 1° (renvoi aux art. L. 631-22 et L. 642-1 et suivants du Code de commerce)"
           ],
           [
-            "Lot unique d’habitation ou à usage professionnel (avec ses locaux accessoires) dans un immeuble en copropriété depuis au moins dix ans, ou immeuble bâti dans les quatre ans suivant son achèvement",
+            "Lot unique d’habitation ou à usage professionnel (avec ses locaux accessoires) dans un immeuble en copropriété, selon l’ancienneté de la copropriété (critères de l’art. L. 211-4 a : à vérifier avec la mairie), ou immeuble bâti dans les quatre ans suivant son achèvement",
             "Le droit de préemption urbain ne s’applique pas, sauf délibération motivée de la commune qui l’étend à ces cas",
             "Art. L. 211-4"
           ],
@@ -71,7 +73,7 @@
       "id": "calendrier",
       "title": "Le calendrier : 30 jours avant, 30 jours après",
       "paragraphs": [
-        "Pour une adjudication, le Code de l’urbanisme fixe deux délais de trente jours (art. R. 213-15). Le premier concerne la déclaration de la vente, le second la décision de la collectivité. Cette procédure pèse sur le greffier ou le notaire, pas sur l’acheteur : vous n’avez aucune déclaration à faire, mais vous pouvez demander à l’avocat si elle a bien été envoyée."
+        "Pour une adjudication, le Code de l’urbanisme fixe deux délais de trente jours (art. R. 213-15). Le premier concerne la déclaration de la vente, le second la décision de la collectivité. Cette procédure pèse sur le greffier ou le notaire, pas sur l’acheteur : vous n’avez aucune déclaration à faire, mais vous pouvez demander à l’avocat si elle a bien été envoyée. L’article R. 213-15 ne règle pas le cas du silence du titulaire du droit en adjudication. La règle selon laquelle le silence vaut renonciation est celle de la procédure de droit commun (déclaration d’intention d’aliéner) : demandez à l’avocat comment l’absence de réponse est traitée pour votre vente."
       ],
       "bullets": [
         "Avant la vente : le greffier de la juridiction ou le notaire chargé de la vente déclare au maire la date et les modalités de la vente. La déclaration est adressée au maire au moins trente jours avant la date fixée, par lettre recommandée avec avis de réception ou par voie électronique.",
@@ -92,7 +94,7 @@
       "id": "consequences",
       "title": "Ce que cela change pour vous, acheteur",
       "paragraphs": [
-        "Si la collectivité se substitue, vous n’achetez pas le bien : c’est elle qui prend votre place. Le prix payé est celui de votre dernière enchère, donc vous ne subissez pas de perte sur le prix, mais vous perdez l’opération et le temps passé à la préparer. Quelques points méritent d’être anticipés."
+        "Si la collectivité se substitue, vous n’achetez pas le bien : c’est elle qui prend votre place. Le prix ne change pas : la collectivité paie celui de la dernière enchère. Vous perdez en revanche l’opération et le temps passé à la préparer. Pour les frais et honoraires déjà engagés, demandez à l’avocat. Quelques points méritent d’être anticipés."
       ],
       "bullets": [
         "Une adjudication peut rester incertaine pendant trente jours : tant que le délai n’est pas écoulé, évitez d’engager des dépenses irrécupérables (travaux, revente, promesse à un locataire) sur la seule base de votre enchère.",
@@ -106,7 +108,7 @@
       "title": "Où vérifier si le bien est concerné",
       "paragraphs": [
         "Aucune source unique ne répond à tous les cas. Croisez plusieurs vérifications, de préférence avant d’arrêter votre enchère plafond.",
-        "La délibération qui institue le droit de préemption urbain est affichée en mairie pendant deux mois et publiée dans les journaux locaux (service-public.fr). Les périmètres de préemption urbaine et les ZAD figurent en annexe du plan local d’urbanisme (art. R. 151-52 du Code de l’urbanisme), et le portail national de l’urbanisme, accessible en ligne, donne accès aux documents d’urbanisme des communes (art. L. 133-1)."
+        "La délibération qui institue le droit de préemption urbain est affichée en mairie pendant un mois, et mentionnée dans deux journaux diffusés dans le département (art. R. 211-2 du Code de l’urbanisme). Les périmètres de préemption urbaine et les ZAD figurent en annexe du plan local d’urbanisme (art. R. 151-52 du Code de l’urbanisme), et le portail national de l’urbanisme, accessible en ligne, donne accès aux documents d’urbanisme des communes (art. L. 133-1)."
       ],
       "bullets": [
         "Le cahier des conditions de vente : il peut mentionner la déclaration au maire et le droit de préemption. Lisez-le et interrogez l’avocat poursuivant.",
@@ -192,11 +194,11 @@
       "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/N21886"
     },
     {
-      "label": "Service-public.fr — Vente d’un bien situé dans une zone de préemption (vérifié le 23/12/2025)",
+      "label": "Service-public.fr — Vente dans une zone de préemption (fiche générale, vérifiée le 23/12/2025)",
       "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F16"
     },
     {
-      "label": "Service-public.fr — Saisie immobilière (vérifié le 25/04/2025)",
+      "label": "Service-public.fr — Saisie immobilière (fiche générale, vérifiée le 25/04/2025)",
       "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F16987"
     },
     {

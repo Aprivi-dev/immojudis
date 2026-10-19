@@ -193,8 +193,20 @@ export function LoginPage() {
    * un utilisateur sans identité (`identities` vide) et n'envoie rien. On le dit à la personne.
    */
   const [accountExists, setAccountExists] = useState(false);
+  /**
+   * Instant (ms) à partir duquel l'email peut être renvoyé. Le décompte se recalcule depuis
+   * l'horloge à chaque seconde : un onglet en veille ou une horloge avancée ne le figent pas.
+   */
+  const [resendAvailableAt, setResendAvailableAt] = useState<number | null>(null);
+  const [clockNow, setClockNow] = useState(0);
   /** Secondes restantes avant de pouvoir renvoyer l'email (0 = disponible). */
-  const [resendCountdown, setResendCountdown] = useState(0);
+  const resendCountdown =
+    resendAvailableAt === null ? 0 : Math.max(0, Math.ceil((resendAvailableAt - clockNow) / 1000));
+  function startResendCooldown() {
+    const now = Date.now();
+    setClockNow(now);
+    setResendAvailableAt(now + RESEND_COOLDOWN_SECONDS * 1000);
+  }
 
   const copy = modeCopy[mode];
   const isSignup = mode !== "login";
@@ -213,14 +225,11 @@ export function LoginPage() {
     if (user && !loading) router.push(postAuthTarget);
   }, [loading, postAuthTarget, router, user]);
 
-  // Compte à rebours du bouton « Renvoyer l'email » : une seconde à la fois, jusqu'à 0.
+  // Compte à rebours du bouton « Renvoyer l'email » : relu sur l'horloge chaque seconde, jusqu'à 0.
   const countingDown = resendCountdown > 0;
   useEffect(() => {
     if (!countingDown) return;
-    const timer = setInterval(
-      () => setResendCountdown((seconds) => Math.max(0, seconds - 1)),
-      1000,
-    );
+    const timer = setInterval(() => setClockNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [countingDown]);
 
@@ -263,14 +272,14 @@ export function LoginPage() {
       setFormError(userMessage(err, "Impossible de renvoyer l'email pour le moment. Réessayez."));
     } finally {
       setResending(false);
-      setResendCountdown(RESEND_COOLDOWN_SECONDS);
+      startResendCooldown();
     }
   }
 
   function changeAddress() {
     setPendingEmail(null);
     setAccountExists(false);
-    setResendCountdown(0);
+    setResendAvailableAt(null);
     setResendNotice(null);
     setFormError(null);
     setPassword("");
@@ -329,7 +338,7 @@ export function LoginPage() {
       if (data?.session === null) {
         setResendNotice(null);
         setAccountExists(isExistingAccountResponse(data));
-        setResendCountdown(RESEND_COOLDOWN_SECONDS);
+        startResendCooldown();
         setPendingEmail(email.trim());
         return;
       }

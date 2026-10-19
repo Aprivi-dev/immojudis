@@ -109,7 +109,8 @@ from unnest(array[
   'sale-retention',
   'information-agent-inbound',
   'listing-completeness',
-  'cnb-lawyer-directory'
+  'cnb-lawyer-directory',
+  'sale-reminders'
 ]) as job_name;
 
 -- The inbound worker is checked with a ten-minute freshness window. Keep a

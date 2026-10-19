@@ -27,14 +27,14 @@
         "Organisation de l’immeuble : fiche synthétique de la copropriété, règlement de copropriété et état descriptif de division, procès-verbaux des assemblées générales des trois dernières années.",
         "Informations financières : charges courantes et hors budget payées par le vendeur sur les deux derniers exercices, sommes susceptibles d’être dues au syndicat par l’acquéreur, état global des impayés de charges dans la copropriété et dette vis-à-vis des fournisseurs, part du fonds de travaux rattachée au lot et dernière cotisation versée.",
         "Entretien et travaux : carnet d’entretien, notice d’information sur les droits et obligations des copropriétaires, et, le cas échéant, le diagnostic technique global, le plan pluriannuel de travaux adopté ou le projet de plan.",
-        "Les informations sur la situation de la copropriété peuvent aussi figurer au registre d’immatriculation des copropriétés, dont une partie est portée à la connaissance du public (art. L. 711-1 à L. 711-3 du même code)."
+        "Les informations sur la situation de la copropriété peuvent aussi figurer au registre d’immatriculation des copropriétés, dont une partie est portée à la connaissance du public (art. L. 711-1 et suivants du même code)."
       ]
     },
     {
       "id": "charges-impayees",
       "title": "Les charges impayées du propriétaire saisi",
       "paragraphs": [
-        "Le propriétaire saisi doit souvent des charges à la copropriété. La loi protège le syndicat de deux manières. D’abord, ses créances de toute nature contre un copropriétaire sont garanties par une hypothèque légale sur le lot (art. 19 et 19-1 de la loi de 1965). Selon le Code civil, les créances du syndicat relatives à l’année courante et aux quatre dernières années échues sont garanties sur le lot vendu (art. 2402, 3°). Ensuite, lorsqu’un copropriétaire ne paie pas une provision, le syndic peut, après une mise en demeure restée sans effet pendant trente jours, rendre immédiatement exigibles les autres provisions non encore échues et les sommes dues au titre des exercices précédents (art. 19-2).",
+        "Le propriétaire saisi doit souvent des charges à la copropriété. La loi protège le syndicat de deux manières. D’abord, ses créances de toute nature contre un copropriétaire sont garanties par une hypothèque légale sur le lot (art. 19 et 19-1 de la loi de 1965). Selon le Code civil, les créances du syndicat relatives à l’année courante et aux quatre dernières années échues sont garanties sur le lot vendu (art. 2402, 3°). Le rang de cette hypothèque face aux autres est un point distinct : selon les commentaires, elle prime les autres hypothèques pour l’année courante et les deux dernières années échues (art. 2418 du Code civil). Ce point est à vérifier avec l’avocat. Ensuite, lorsqu’un copropriétaire ne paie pas une provision à sa date d’exigibilité, c’est la mise en demeure du syndic, restée infructueuse pendant trente jours, qui rend immédiatement exigibles les autres provisions non encore échues et les sommes dues au titre des exercices précédents (art. 19-2).",
         "À l’occasion de la vente d’un lot, l’article 20 de la loi organise le paiement de ces dettes sur le prix. L’avis de mutation (le changement de propriétaire) est donné au syndic, et celui-ci peut, dans les quinze jours de la réception de cet avis, faire opposition au versement des fonds pour obtenir le paiement des sommes restant dues par l’ancien propriétaire. Pour une vente sur saisie immobilière ou sur licitation, le décret précise que l’avis est donné par l’avocat du créancier poursuivant ou du demandeur (art. 5-1 du décret de 1967).",
         "Pour vous, acheteur, ce mécanisme vise à faire payer les dettes de l’ancien propriétaire par le prix de vente. Les textes consultés ne détaillent pas comment l’opposition du syndic se combine avec la distribution du prix par le séquestre ou la Caisse des dépôts. Ils ne permettent pas non plus d’affirmer qu’aucune somme ne pourrait être mise à la charge de l’adjudicataire par le cahier des conditions de vente : lisez-le et demandez à l’avocat le montant des impayés connu."
       ]
@@ -45,7 +45,7 @@
       "paragraphs": [
         "Chaque année, l’assemblée générale vote un budget prévisionnel pour les dépenses courantes. Les copropriétaires versent des provisions égales au quart du budget, exigibles le premier jour de chaque trimestre, sauf modalités différentes décidées par l’assemblée (art. 14-1 de la loi de 1965). Les travaux sont à part : leur liste est fixée par décret et les sommes correspondantes sont exigibles selon les modalités votées par l’assemblée.",
         "Un point demande donc de la vigilance : des travaux votés avant l’adjudication peuvent être appelés en plusieurs fois, dont certains après votre achat. Selon l’article 6-2 du décret de 1967, le paiement des provisions des dépenses non comprises dans le budget prévisionnel incombe à celui, vendeur ou acquéreur, qui est copropriétaire au moment de l’exigibilité. Toute convention contraire n’a d’effet qu’entre le vendeur et l’acquéreur (art. 6-3), c’est-à-dire qu’elle ne s’impose pas au syndicat.",
-        "Dans les immeubles d’habitation, un fonds de travaux est constitué après dix ans à compter de la réception des travaux de construction, alimenté par une cotisation annuelle obligatoire qui ne peut être inférieure à 5 % du budget prévisionnel et, si un plan pluriannuel de travaux est adopté, à 2,5 % du montant des travaux qu’il prévoit (art. 14-2-1). Les sommes versées sont attachées aux lots, entrent définitivement dans le patrimoine du syndicat et ne donnent pas lieu à remboursement lors de la cession d’un lot. Le fonds de travaux du lot que vous achetez est donc utile à connaître, mais vous ne recevrez pas ce que le vendeur y a versé."
+        "Dans les immeubles d’habitation, un fonds de travaux est constitué (sauf dispense) après dix ans à compter de la réception des travaux de construction, alimenté par une cotisation annuelle obligatoire qui ne peut être inférieure à 5 % du budget prévisionnel et, si un plan pluriannuel de travaux est adopté, à 2,5 % du montant des travaux qu’il prévoit (art. 14-2-1). Les sommes versées sont attachées aux lots, entrent définitivement dans le patrimoine du syndicat et ne donnent pas lieu à remboursement lors de la cession d’un lot. Le fonds de travaux du lot que vous achetez est donc utile à connaître, mais vous ne recevrez pas ce que le vendeur y a versé."
       ],
       "callout": {
         "title": "Où lire ces informations",
@@ -56,11 +56,11 @@
       "id": "repartition",
       "title": "Qui paie quoi à partir de l’adjudication",
       "paragraphs": [
-        "L’article 6-2 du décret de 1967 fixe la répartition des charges à l’occasion d’une mutation à titre onéreux d’un lot : la provision exigible du budget prévisionnel incombe au vendeur ; les provisions hors budget incombent à celui qui est copropriétaire au moment de l’exigibilité ; le trop-perçu ou le moins-perçu révélé par l’approbation des comptes est porté au crédit ou au débit de celui qui est copropriétaire lors de cette approbation. L’état daté, établi par le syndic, présente en trois parties les sommes dues par le vendeur, celles dues éventuellement au vendeur par le syndicat et celles qui « devraient incomber au nouveau copropriétaire » (art. 5 du décret).",
+        "L’article 6-2 du décret de 1967 fixe la répartition des charges à l’occasion d’une mutation à titre onéreux d’un lot : la provision exigible du budget prévisionnel incombe au vendeur ; les provisions hors budget incombent à celui qui est copropriétaire au moment de l’exigibilité ; le trop-perçu ou le moins-perçu révélé par l’approbation des comptes est porté au crédit ou au débit de celui qui est copropriétaire lors de cette approbation. Dans une vente ordinaire, l’état daté, établi par le syndic, présente en trois parties les sommes dues par le vendeur, celles dues éventuellement au vendeur par le syndicat et celles qui « devraient incomber au nouveau copropriétaire » (art. 5 du décret). En saisie, ce document n’est pas toujours établi ; demandez à l’avocat quel décompte du syndic figure au dossier.",
         "En vente forcée, l’adjudication emporte vente forcée du bien saisi et en transmet la propriété à l’adjudicataire, qui n’acquiert que les droits du saisi (art. L. 322-10 du CPCE). Mais l’adjudication n’est définitive qu’après le délai de surenchère. Les textes consultés ne disent pas à quelle date précise le cahier retient le partage des charges : demandez à l’avocat quelle date sert de repère pour votre vente, puis faites le calcul avec le syndic."
       ],
       "bullets": [
-        "Charges courantes : à partir du moment où vous êtes copropriétaire, vous contribuez au budget prévisionnel selon la quote-part de votre lot, fixée par le règlement de copropriété (art. 10 de la loi de 1965).",
+        "Charges courantes : à partir du moment où vous êtes copropriétaire, vous contribuez au budget prévisionnel selon la quote-part de votre lot, fixée par le règlement de copropriété (art. 10 de la loi de 1965). La répartition entre vendeur et acquéreur se fait par provision exigible (art. 6-2 du décret de 1967), pas au jour près.",
         "Travaux : vérifiez à quelle date chaque appel de fonds devient exigible par rapport à la date de l’adjudication.",
         "Frais de recouvrement et honoraires du syndic liés à un copropriétaire précis : ils sont imputables à ce seul copropriétaire (art. 10-1), pas à l’ensemble de la copropriété."
       ]
@@ -117,6 +117,7 @@
         "Les pièces de l’article L. 721-2 sont-elles annexées au cahier des conditions de vente ? Lesquelles manquent ?",
         "Quel est le montant des impayés du lot saisi, et l’opposition du syndic a-t-elle été formée ou est-elle prévue ?",
         "Le cahier met-il à la charge de l’adjudicataire des sommes dues à la copropriété ?",
+        "Quel décompte du syndic figure au dossier (état daté ou autre document) ?",
         "Quels travaux ont été votés, pour quel montant, et à quelles dates les appels de fonds deviennent-ils exigibles ?",
         "À quelle date sert le partage des charges entre le saisi et l’adjudicataire ?",
         "Un plan pluriannuel de travaux ou un diagnostic technique global existe-t-il, et que prévoit-il ?",
@@ -178,7 +179,7 @@
       "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000043977384"
     },
     {
-      "label": "Légifrance — Code de la construction et de l’habitation, article L. 711-2 (registre d’immatriculation des copropriétés)",
+      "label": "Légifrance — Code de la construction et de l’habitation, article L. 711-2 (registre d’immatriculation des copropriétés, parmi les articles L. 711-1 et suivants)",
       "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000049398053"
     },
     {
