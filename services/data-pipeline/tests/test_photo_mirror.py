@@ -962,6 +962,7 @@ def test_the_storage_upload_tolerates_a_duplicate_and_sends_the_documented_optio
         "cache-control": "31536000",
         "content-type": "image/webp",
         "upsert": "false",
+        "headers": {"cache-control": "max-age=31536000"},
     }
 
 

@@ -109,7 +109,8 @@ WEBP_QUALITY = photo_image.WEBP_QUALITY
 # needs to be revalidated. The price: a withdrawal deletes the file (and Supabase invalidates its
 # CDN), but a browser that already holds the image keeps showing it until it expires, one year at
 # the latest (see docs/runbooks/retrait-photos.md). storage3 turns this number into
-# ``cache-control: max-age=<seconds>``; it has no way to add ``immutable``.
+# ``cache-control: max-age=<seconds>``; it has no way to add ``immutable``. Since storage3 2.32 it
+# only sends the number as the ``cacheControl`` form field, so the header is also set explicitly.
 CACHE_CONTROL_SECONDS = 31_536_000
 # Same ceiling as the bucket (file_size_limit of the migration).
 BUCKET_FILE_LIMIT_BYTES = photo_image.BUCKET_FILE_LIMIT_BYTES
@@ -619,6 +620,7 @@ class SupabasePhotoStorage:
                     "cache-control": str(CACHE_CONTROL_SECONDS),
                     "content-type": "image/webp",
                     "upsert": "false",
+                    "headers": {"cache-control": f"max-age={CACHE_CONTROL_SECONDS}"},
                 },
             )
         except Exception as exc:

@@ -220,7 +220,7 @@ jobs:
           audit_log="$(mktemp)"
           trap 'rm -f "$audit_log"' EXIT
           for attempt in 1 2 3; do
-            if python -m pip_audit -r requirements.txt >"$audit_log" 2>&1; then
+            if python -m pip_audit -r requirements.txt -r requirements-docling.txt >"$audit_log" 2>&1; then
               cat "$audit_log"
               exit 0
             fi
@@ -234,7 +234,7 @@ jobs:
               # OSV is a supported independent advisory source. Keep the
               # security gate active if PyPI's JSON vulnerability API is down.
               echo "::warning::PyPI returned 503 three times; auditing with OSV instead."
-              python -m pip_audit -r requirements.txt --vulnerability-service osv
+              python -m pip_audit -r requirements.txt -r requirements-docling.txt --vulnerability-service osv
               exit 0
             fi
             sleep "$((attempt * 10))"
