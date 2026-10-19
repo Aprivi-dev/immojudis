@@ -323,6 +323,79 @@ describe("SalePublicPreview", () => {
     });
   });
 
+  describe("écart au marché en trois bandes", () => {
+    it.each([
+      ["under", "Mise à prix nettement sous la valeur de marché estimée"],
+      ["near", "Mise à prix proche de la valeur de marché estimée"],
+      ["above", "Mise à prix au-dessus de la valeur de marché estimée"],
+    ] as const)("annonce la bande %s sous la mise à prix, sans chiffre", (band, label) => {
+      renderPreview({
+        sale_venue_type: "tribunal",
+        starting_price_eur: 59_000,
+        market_gap_band: band,
+      });
+      const note = screen.getByTestId("market-gap-band");
+      expect(note.textContent).toContain(label);
+      expect(note.getAttribute("data-band")).toBe(band);
+      // Rien de chiffré : ni pourcentage, ni valeur estimée, ni fourchette.
+      expect(note.textContent).not.toMatch(/\d/);
+      expect(note.textContent).toContain("indicatif");
+      expect(note.textContent).toContain("Ne remplace ni une visite ni l’avis d’un professionnel");
+      expect(note.textContent).toContain("prix d’adjudication peut être très différent");
+      // Sous le prix, dans le même bloc : l'inscription le suit toujours.
+      const priceBlock = screen.getByText("Prix de départ, hors frais").parentElement!;
+      expect(priceBlock.contains(note)).toBe(true);
+      expect(priceBlock.nextElementSibling).toBe(screen.getByTestId("public-signup"));
+    });
+
+    it("renvoie à la page de méthode", () => {
+      renderPreview({ sale_venue_type: "tribunal", market_gap_band: "near" });
+      const link = within(screen.getByTestId("market-gap-band")).getByRole("link", {
+        name: "Comment est calculé ce repère ?",
+      });
+      expect(link.getAttribute("href")).toBe("/methode-ecart-marche");
+    });
+
+    it("dit que l'estimation n'est pas assez fiable plutôt que de deviner", () => {
+      renderPreview({ sale_venue_type: "tribunal", market_gap_band: "insufficient" });
+      const note = screen.getByTestId("market-gap-band");
+      expect(note.textContent).toContain(
+        "Pas assez de ventes comparables fiables pour situer cette mise à prix",
+      );
+      expect(note.textContent).not.toMatch(/nettement|proche|au-dessus/);
+    });
+
+    it("n'affiche rien sans bande, ni sans mise à prix", () => {
+      const absent = renderPreview({ sale_venue_type: "tribunal" });
+      expect(screen.queryByTestId("market-gap-band")).toBeNull();
+      absent.unmount();
+      const noPrice = renderPreview({
+        sale_venue_type: "tribunal",
+        starting_price_eur: null,
+        market_gap_band: "near",
+      });
+      expect(screen.queryByTestId("market-gap-band")).toBeNull();
+      noPrice.unmount();
+      renderPreview({ sale_venue_type: "tribunal", market_gap_band: null });
+      expect(screen.queryByTestId("market-gap-band")).toBeNull();
+    });
+
+    it("garde le chiffre pour le compte : la ligne d'aperçu parle d'écart chiffré", () => {
+      renderPreview({ sale_venue_type: "tribunal", market_gap_band: "near" });
+      const teaser = screen.getByRole("region", { name: "L’analyse de cette vente" });
+      expect(teaser.textContent).toContain("Écart chiffré avec la mise à prix");
+    });
+
+    it("n'a pas de défaut d'accessibilité", async () => {
+      const { container } = renderPreview({
+        sale_venue_type: "tribunal",
+        market_gap_band: "under",
+      });
+      const result = await axe(container, { rules: { "color-contrast": { enabled: false } } });
+      expect(result.violations.map(({ id, help }) => ({ id, help }))).toEqual([]);
+    });
+  });
+
   it("garde le h1 et expose un fil d'Ariane cohérent avec le JSON-LD (Accueil, Ventes, la vente)", () => {
     renderPreview({
       sale_venue_type: "tribunal",

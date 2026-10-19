@@ -7,6 +7,7 @@ import {
   REPORT_RENTAL_EXPENSE_FIELD_LABELS,
 } from "@/lib/report-simulation";
 import { featureUnlocked, sanitizeReportSnapshotForPlan } from "./entitlements";
+import { FINANCING_DOSSIER_HEADINGS, financingDossierLines } from "./financing-dossier";
 import { PlanEntitlements, SavedReportRow } from "../property-reports";
 import {
   formatPercent,
@@ -74,6 +75,7 @@ export const REPORT_PDF_HEADINGS = [
   "Points d'attention",
   "Notes",
   "Avertissement",
+  ...FINANCING_DOSSIER_HEADINGS,
 ] as const;
 
 export function reportToPdfLines(report: SavedReportRow, plan: PlanEntitlements): string[] {
@@ -632,5 +634,18 @@ export function reportToPdfLines(report: SavedReportRow, plan: PlanEntitlements)
     "",
     "Avertissement",
     complianceNotice,
+    // Dernière page, détachable : à montrer à la banque.
+    ...financingDossierLines({
+      title: stringOrNumberValue(
+        cleanSaleTitle(stringOrNumberValue(sale.title, null)),
+        report.title,
+      ),
+      generatedAt: stringOrNumberValue(snapshot.generatedAt, report.updated_at),
+      sale,
+      ceiling,
+      acquisitionCosts,
+      announcedGuarantee: consignation,
+      documentsCount: analysis.documentsCount,
+    }),
   ];
 }

@@ -17,6 +17,7 @@ import { buildNearbyServicesAnalysis } from "@/lib/nearby-services";
 import { buildNeighborhoodAnalysis } from "@/lib/neighborhood-analysis";
 import { buildOccupancyAnalysis } from "@/lib/occupation-analysis";
 import { buildRenovationAnalysis } from "@/lib/renovation-analysis";
+import { getSaleProcedure } from "@/lib/sale-procedure";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import { getPrecomputedMarketEstimate } from "@/lib/sale-market-estimates";
 import { computeRentabilityScore } from "@/lib/profitability";
@@ -283,6 +284,9 @@ export function buildReportSnapshot({
       saleWindow: saleWindow(sale),
       saleSession: saleSession(sale),
       tribunal: sale.tribunal ?? sale.tribunal_name,
+      // Type de vente (tribunal, notaire, État…) : la page « Dossier de financement » du PDF ne
+      // cite la garantie de 10 % et le délai de deux mois que pour une vente au tribunal.
+      venueType: getSaleProcedure(sale).venueType,
       surface: surface.value,
       surfaceLabel: surface.label,
       occupancy: occupancyAnalysis.label,
