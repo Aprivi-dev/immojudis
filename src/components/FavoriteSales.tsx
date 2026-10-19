@@ -19,6 +19,7 @@ import { userMessage } from "@/lib/user-messages";
 import { Badge, Card, PageShell, buttonClasses } from "@/components/ui/primitives";
 import { ListingCard } from "@/components/search/SearchResults";
 import { FavoriteButton } from "./FavoriteButton";
+import { FavoriteDossierLine } from "./FavoriteDossierLine";
 import { FavoriteSaleChanges } from "./FavoriteSaleChanges";
 import { PLAN_LIMITS } from "@/lib/plans";
 import { queryKeys } from "@/lib/query-keys";
@@ -143,24 +144,28 @@ export function FavoriteSales() {
       ) : null}
       {data && data.favorites.length > 0 ? (
         <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {data.favorites.map(({ saleId, sale }) => (
-            <li key={saleId} className="min-w-0">
-              <ListingCard
-                sale={sale}
-                returnTo="/favoris"
-                locked={false}
-                analysisLocked={!isAnalysis}
-                active={false}
-                onHover={NOOP}
-                onSelect={NOOP}
-                aiReviewProjections={aiReviewBySaleId[saleId]}
-                aiReviewStatus={aiReviewStatus}
-                favoriteScope={user?.id ?? null}
-                initialFavorite
-                onFavoriteChange={handleFavoriteChange}
-              />
-            </li>
-          ))}
+          {data.favorites.map((favorite) => {
+            const { saleId, sale } = favorite;
+            return (
+              <li key={saleId} className="min-w-0">
+                <ListingCard
+                  sale={sale}
+                  returnTo="/favoris"
+                  locked={false}
+                  analysisLocked={!isAnalysis}
+                  active={false}
+                  onHover={NOOP}
+                  onSelect={NOOP}
+                  aiReviewProjections={aiReviewBySaleId[saleId]}
+                  aiReviewStatus={aiReviewStatus}
+                  favoriteScope={user?.id ?? null}
+                  initialFavorite
+                  onFavoriteChange={handleFavoriteChange}
+                />
+                <FavoriteDossierLine favorite={favorite} />
+              </li>
+            );
+          })}
         </ul>
       ) : null}
       {/* Les favoris d'abord ; le suivi des changements (ou sa ligne d'offre) vient après. */}
