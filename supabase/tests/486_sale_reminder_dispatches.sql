@@ -3,7 +3,7 @@
 -- fermé au navigateur; la purge garde la fenêtre de conservation.
 begin;
 
-select plan(25);
+select plan(29);
 
 -- Structure et droits -------------------------------------------------------------------------
 
@@ -201,6 +201,59 @@ select is(
   ),
   null,
   'après trois essais échoués, le rappel n''est plus réessayé'
+);
+
+-- 2 bis. Réservation orpheline (20261028160000): une ligne pending de plus d'une heure est reprise ----
+
+select is(
+  public.claim_sale_reminder(
+    '48600000-0000-4000-8000-000000000001', '48600000-1000-4000-8000-000000000002',
+    'audience_j7', '2026-11-10', 'on'
+  ),
+  null,
+  'une ligne pending récente (passage en cours) n''est pas reprise'
+);
+
+update public.sale_reminder_dispatches
+set updated_at = now() - interval '2 hours'
+where user_id = '48600000-0000-4000-8000-000000000001'
+  and sale_id = '48600000-1000-4000-8000-000000000002'
+  and reminder_kind = 'audience_j7';
+
+select isnt(
+  public.claim_sale_reminder(
+    '48600000-0000-4000-8000-000000000001', '48600000-1000-4000-8000-000000000002',
+    'audience_j7', '2026-11-10', 'on'
+  ),
+  null,
+  'une ligne pending orpheline de plus d''une heure est reprise (rattrapage)'
+);
+
+select is(
+  (
+    select attempts::text || ':' || status
+    from public.sale_reminder_dispatches
+    where user_id = '48600000-0000-4000-8000-000000000001'
+      and sale_id = '48600000-1000-4000-8000-000000000002'
+      and reminder_kind = 'audience_j7'
+  ),
+  '2:pending',
+  'la reprise d''une réservation orpheline compte une tentative'
+);
+
+update public.sale_reminder_dispatches
+set updated_at = now() - interval '2 hours', attempts = 3
+where user_id = '48600000-0000-4000-8000-000000000001'
+  and sale_id = '48600000-1000-4000-8000-000000000002'
+  and reminder_kind = 'audience_j7';
+
+select is(
+  public.claim_sale_reminder(
+    '48600000-0000-4000-8000-000000000001', '48600000-1000-4000-8000-000000000002',
+    'audience_j7', '2026-11-10', 'on'
+  ),
+  null,
+  'une réservation orpheline qui a épuisé ses trois essais n''est plus reprise'
 );
 
 reset role;

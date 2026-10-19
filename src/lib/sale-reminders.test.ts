@@ -1,10 +1,13 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SaleCalendarRow } from "@/lib/sale-calendar";
 import type { SaleChangeEventSummary } from "@/lib/sale-change-monitor";
 import {
+  MAX_EMAILS_PER_USER,
   MAX_REMINDER_ITEMS_PER_EMAIL,
+  assertSaleRemindersComplete,
   audienceReminderFor,
   graveWarningFor,
+  rotateRecipients,
   runSaleReminders,
   type FollowedSale,
   type SaleReminderStore,
@@ -344,22 +347,51 @@ describe("runSaleReminders : rappels d'audience", () => {
     expect(summary.claimed).toBe(2);
   });
 
-  it("limite le nombre d'éléments d'un email : le reste attend le passage suivant", async () => {
+  it("au-delà de dix éléments, un second email part : aucun rappel n'est perdu", async () => {
     const sales = Array.from({ length: MAX_REMINDER_ITEMS_PER_EMAIL + 3 }, (_, index) => ({
       id: `22222222-0000-4000-8000-${String(index).padStart(12, "0")}`,
       saleDate: "2026-11-10T13:00:00Z",
     }));
     const first = await run({ followed: { [USER]: sales } });
-    expect(first.summary.claimed).toBe(MAX_REMINDER_ITEMS_PER_EMAIL);
-    const second = resendOk();
+    expect(first.summary.claimed).toBe(MAX_REMINDER_ITEMS_PER_EMAIL + 3);
+    expect(first.summary.emailsSent).toBe(2);
+    expect(first.emails).toHaveLength(2);
+    expect(first.summary.deferred).toBe(0);
+    expect(() => assertSaleRemindersComplete(first.summary)).not.toThrow();
     const again = await runSaleReminders({
       store: first.store,
       now: NOW,
       env,
-      fetchImpl: second,
+      fetchImpl: resendOk(),
       mode: "on",
     });
-    expect(again.claimed).toBe(3);
+    expect(again.claimed).toBe(0);
+  });
+
+  it("au-delà du plafond d'emails par personne, le reste est compté, fait échouer le passage et part au rattrapage", async () => {
+    const total = MAX_REMINDER_ITEMS_PER_EMAIL * MAX_EMAILS_PER_USER + 3;
+    const sales = Array.from({ length: total }, (_, index) => ({
+      id: `22222222-0000-4000-8000-${String(index).padStart(12, "0")}`,
+      saleDate: "2026-11-10T13:00:00Z",
+    }));
+    const first = await run({ followed: { [USER]: sales } });
+    expect(first.summary.emailsSent).toBe(MAX_EMAILS_PER_USER);
+    expect(first.summary.deferred).toBe(3);
+    expect(() => assertSaleRemindersComplete(first.summary)).toThrow(/non réservé/);
+
+    const catchUpFetch = resendOk();
+    const catchUp = await runSaleReminders({
+      store: first.store,
+      now: NOW,
+      env,
+      fetchImpl: catchUpFetch,
+      mode: "on",
+      catchUp: true,
+    });
+    expect(catchUp.claimed).toBe(3);
+    expect(catchUp.emailsSent).toBe(1);
+    expect(catchUp.deferred).toBe(0);
+    expect(() => assertSaleRemindersComplete(catchUp)).not.toThrow();
   });
 });
 
@@ -586,6 +618,87 @@ describe("runSaleReminders : échecs", () => {
       mode: "on",
     });
     expect(summary.purgedJournalRows).toBe(4);
+  });
+});
+
+describe("runSaleReminders : passage incomplet", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("un passage interrompu par le délai est marqué tronqué et fait échouer le passage", async () => {
+    vi.spyOn(Date, "now").mockReturnValueOnce(1_000).mockReturnValue(1_000_000);
+    const { summary, fetchImpl } = await run({});
+    expect(summary.truncated).toBe(true);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(() => assertSaleRemindersComplete(summary)).toThrow(/interrompu/);
+  });
+
+  it("un envoi en échec fait échouer le passage, un passage complet non", async () => {
+    const made = makeStore();
+    const refused = vi.fn(
+      async () => new Response(JSON.stringify({ message: "refusé" }), { status: 500 }),
+    ) as unknown as typeof fetch;
+    const failed = await runSaleReminders({
+      store: made.store,
+      now: NOW,
+      env,
+      fetchImpl: refused,
+      mode: "on",
+    });
+    expect(() => assertSaleRemindersComplete(failed)).toThrow(/1 envoi\(s\) en échec/);
+
+    const retry = await runSaleReminders({
+      store: made.store,
+      now: NOW,
+      env,
+      fetchImpl: resendOk(),
+      mode: "on",
+      catchUp: true,
+    });
+    expect(retry.emailsSent).toBe(1);
+    expect(() => assertSaleRemindersComplete(retry)).not.toThrow();
+  });
+
+  it("les modes off et non configuré ne font jamais échouer le passage", async () => {
+    const { summary } = await run({}, { mode: "off" });
+    expect(() => assertSaleRemindersComplete(summary)).not.toThrow();
+  });
+});
+
+describe("rotateRecipients", () => {
+  const ids = Array.from({ length: 9 }, (_, index) => `user-${index}`);
+  const day = (offset: number) => new Date(Date.UTC(2026, 10, 3 + offset, 6, 0));
+
+  it("garde les mêmes personnes, quel que soit l'ordre reçu", () => {
+    expect([...rotateRecipients([...ids].reverse(), day(0))].sort()).toEqual(ids);
+    expect(rotateRecipients([...ids].reverse(), day(0))).toEqual(rotateRecipients(ids, day(0)));
+  });
+
+  it("ne commence pas par les mêmes personnes d'un jour à l'autre", () => {
+    const firsts = new Set(
+      Array.from({ length: 6 }, (_, offset) => rotateRecipients(ids, day(offset))[0]),
+    );
+    expect(firsts.size).toBeGreaterThan(3);
+  });
+
+  it("le rattrapage part d'ailleurs que le premier passage du même jour", () => {
+    expect(rotateRecipients(ids, day(0), true)[0]).not.toBe(rotateRecipients(ids, day(0))[0]);
+  });
+
+  it("un passage lit les personnes dans l'ordre décalé", async () => {
+    const consenting = ids.map((_id, index) => `0a0a0a0a-0000-4000-8000-00000000000${index}`);
+    const first = await run({
+      consenting,
+      followed: Object.fromEntries(consenting.map((id) => [id, []])),
+    });
+    const later = await run(
+      { consenting, followed: Object.fromEntries(consenting.map((id) => [id, []])) },
+      { now: day(2) },
+    );
+    const order = (made: typeof first) =>
+      made.store.followedSales.mock.calls.map(([userId]) => userId);
+    expect(order(first)).toHaveLength(9);
+    expect([...order(first)].sort()).toEqual([...order(later)].sort());
+    expect(order(first)[0]).not.toBe(order(later)[0]);
   });
 });
 
