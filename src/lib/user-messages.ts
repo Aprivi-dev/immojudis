@@ -1,4 +1,6 @@
 export const GENERIC_ERROR_MESSAGE = "Une erreur est survenue. Réessayez dans un instant.";
+/** Adresse déjà inscrite : erreur Supabase traduite, ou inscription sans erreur sans identité créée. */
+export const ACCOUNT_EXISTS_MESSAGE = "Un compte existe déjà avec cette adresse.";
 
 type ErrorLike = {
   code?: unknown;
@@ -16,7 +18,7 @@ const FRENCH_SENTENCE =
 const KNOWN_MESSAGES: Array<[RegExp, string]> = [
   [/invalid login credentials/i, "Email ou mot de passe incorrect."],
   [/email not confirmed/i, "Confirmez votre adresse email avant de vous connecter."],
-  [/user already registered|already been registered/i, "Un compte existe déjà avec cette adresse."],
+  [/user already registered|already been registered/i, ACCOUNT_EXISTS_MESSAGE],
   [/password should be at least|password is too short/i, "Le mot de passe est trop court."],
   [
     /password.*(weak|pwned|known to be)/i,
