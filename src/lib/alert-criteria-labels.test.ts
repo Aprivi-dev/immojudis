@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { alertCriteriaSummary, normalizeAlertFrequency } from "./alert-criteria-labels";
+import {
+  alertCriteriaSummary,
+  alertSalesPath,
+  normalizeAlertFrequency,
+} from "./alert-criteria-labels";
 
 const base = {
   department: null,
@@ -59,5 +63,52 @@ describe("normalizeAlertFrequency", () => {
     expect(normalizeAlertFrequency("instant")).toBe("daily");
     expect(normalizeAlertFrequency("daily")).toBe("daily");
     expect(normalizeAlertFrequency("weekly")).toBe("weekly");
+  });
+});
+
+describe("alertSalesPath", () => {
+  it("ramène à /sales sans paramètre quand l'alerte n'a aucun critère", () => {
+    expect(alertSalesPath(base)).toBe("/sales");
+  });
+
+  it("reprend les critères publics et avancés de l'alerte", () => {
+    const url = new URL(
+      alertSalesPath({
+        ...base,
+        department: "33",
+        property_type: "house",
+        max_price_eur: 200000,
+        min_yield_pct: 6,
+        dpe_classes: ["D", "E"],
+        require_house_with_land: true,
+        advanced_criteria: {
+          sale_type: "notary",
+          min_sale_date: "2026-11-01",
+          query: "bordeaux",
+          around_address: "Libourne",
+          around_radius_km: 15,
+          source: "sales_search",
+        },
+      }),
+      "https://immojudis.test",
+    );
+    expect(url.pathname).toBe("/sales");
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      department: "33",
+      homeTypes: "house",
+      maxPrice: "200000",
+      minYield: "6",
+      dpe: "D,E",
+      houseWithLand: "true",
+      saleType: "notary",
+      minSaleDate: "2026-11-01",
+      query: "bordeaux",
+      aroundAddress: "Libourne",
+      aroundRadius: "15",
+    });
+  });
+
+  it("ignore un type de vente inconnu", () => {
+    expect(alertSalesPath({ ...base, advanced_criteria: { sale_type: "autre" } })).toBe("/sales");
   });
 });
