@@ -25,7 +25,12 @@
  * - Le statut n'est jamais déduit : « occupé(e)(s) par <nom> » devient toujours « un occupant ». « Un
  *   locataire » n'apparaît que si la formule source le dit (« loué à <nom> », « bail consenti à
  *   <nom> », « locataire <nom> » : on remplace le nom, pas le rôle).
- * - Après « loué à » et « bail consenti à » seulement, un « Prénom Nom » en casse mixte est reconnu.
+ * - Après « loué à » et « bail consenti à », un « Prénom Nom » en casse mixte (deux ou trois mots) est reconnu ;
+ *   après « occupé par », « héritiers de », « propriété de », « appartenant à » et « associé de », il l'est
+ *   aussi, mais seulement s'il contient un prénom de la liste (« Pierre Martin » ; pas « Orange Business »).
+ * - « la famille Martin » et « l'indivision DUPONT » perdent leur nom, le mot reste.
+ * - Après ces formules, « Civilité NOM Prénom » (« Monsieur DUPONT Jean-Claude ») et « M. et Mme NOM » sont
+ *   reconnus. Une civilité sans formule n'est pas touchée (« Madame Rose GAUTIER a été assignée »).
  * - Les contacts professionnels (« Me X, avocat, demeurant … ») ne sont pas touchés.
  * - Idempotent : filtrer un texte déjà filtré ne le change pas.
  *
@@ -88,7 +93,7 @@ const FIRST_NAMES =
   "Bilal Yanis Bertrand Gaétan Géraud Josselin Maël Ronan Tanguy Erwan Gwenaël Hugues " +
   "Ludwig Sacha Ulysse Marius Aurélien Pierrick Johan Steven Teddy Stan Rodrigue Léopold " +
   "Basile";
-const FIRST_NAME_FORMS = (() => {
+const FIRST_NAME_SET: ReadonlySet<string> = (() => {
   const forms = new Set<string>();
   for (const name of FIRST_NAMES.split(" ")) {
     const bare = name.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -97,8 +102,11 @@ const FIRST_NAME_FORMS = (() => {
       forms.add(form.toUpperCase());
     }
   }
-  return [...forms].sort((a, b) => b.length - a.length || (a < b ? -1 : a > b ? 1 : 0)).join("|");
+  return forms;
 })();
+const FIRST_NAME_FORMS = [...FIRST_NAME_SET]
+  .sort((a, b) => b.length - a.length || (a < b ? -1 : a > b ? 1 : 0))
+  .join("|");
 // Un ou plusieurs prénoms de la liste, composés avec un trait d'union : « Jean-Pierre », « MARIE-CLAIRE ».
 const FIRST_NAME = `(?:${FIRST_NAME_FORMS})(?:-(?:${FIRST_NAME_FORMS}))*(?![${L}])`;
 // Prénom(s) puis NOM(S) en capitales : « Jean-Pierre DUPONT ».
@@ -161,7 +169,8 @@ const ORG_RE = new RegExp(
   `(?<![${L}])(?:sci|sarl|sas|sasu|eurl|sa|snc|scp|selarl|selas|scm|sccv|sc|société|societe|banque|caisse` +
     "|crédit|credit|syndicat|association|commune|mairie|ville|département|departement|région|region|état|etat" +
     "|trésor|tresor|fonds|compagnie|mutuelle|cabinet|étude|etude|agence|foncière|fonciere|immobilière" +
-    "|immobiliere|groupe|union|fédération|federation|communauté|communaute|métropole|metropole|office|centre" +
+    "|immobiliere|immobilier|immobiliers|groupe|union|fédération|federation|communauté|communaute|métropole" +
+    "|metropole|office|centre" +
     "|établissement|etablissement|hôpital|hopital|copropriété|copropriete|copropriétaires|syndic|tribunal" +
     "|préfecture|prefecture|ministère|ministere|direction|service|services|administration|domaine|domaines" +
     "|finances|publiques|impôts|impots|urssaf|habitat|logement|logements|patrimoine|gestion|résidence" +
@@ -181,7 +190,7 @@ const QUICK = new RegExp(
   "occup|locataire|bail|requête|requete|appartenant|appartien|propriété|propriete|\\bné|demeur|domicili" +
     "|résida|residan|époux|épouse|epou|divorc|veuf|veuve|\\bnée|consort|héritier|heritier|succession|loué|loue" +
     "|d[ée]biteur|saisi|propri[ée]taire|vendeur|bailleur|cr[ée]ancier|poursuivant|d[ée]fendeur|demandeur" +
-    "|requ[ée]rant|int[ée]ress|indivisaire",
+    "|requ[ée]rant|int[ée]ress|indivis|associ[ée]|famille",
   "i",
 );
 
@@ -207,7 +216,7 @@ const ABBREVIATIONS = "av|bd|bld|bvd|ch|imp|rte|pl|app|apt|esc|fg|bât|bat|st|st
 const ADDRESS_FILLER = sticky(`(?:ensemble|actuellement|également|egalement|toujours|alors)${SP}+`);
 const ADDRESS_CONNECTOR = sticky(`(?:de|du|des|la|le|les|sur|sous|en|aux|au|à)(?![${L}\\d])`);
 const ADDRESS_TOKEN = sticky(
-  `(?:\\d+(?:[-/]\\d+)*(?:er|ère|ème|e|bis|ter|quater|[A-Za-z])?(?![${L}\\d])|[nN]°|[A-Z](?![${L}\\d])` +
+  `(?:\\d+(?:[-/]\\d+)*(?:er|ère|ème|e|bis|ter|quater|[A-Za-z])?(?![${L}\\d])|[nN]°|[A-Z](?![${L}\\d'’])` +
     `|(?:${ABBREVIATIONS})\\.|(?:${STREET_WORDS})(?![${L}])|${TOKEN}|\\([^)\\n]{1,25}\\))`,
 );
 const ADDRESS_SEPARATOR = sticky(`(?:${SP}*,${SP}*|${SP}+|-)`);
@@ -245,6 +254,16 @@ const HEIRS = new RegExp(
   "gi",
 );
 const CONSORTS = new RegExp(`${NO_BEFORE}(consorts?)${SP}+`, "gi");
+// « l'associé de Madame NOM » : le nom part, « de » devient « d'un particulier ».
+const ASSOCIATE = new RegExp(
+  `${NO_BEFORE}(associ[ée](?:e|s|es)?)(${SP}+(?:de|d${APOS}|du)${SP}*)`,
+  "gi",
+);
+// « la famille Martin », « l'indivision DUPONT » : le nom part, le mot reste.
+const FAMILY = new RegExp(
+  `${NO_BEFORE}(famille|indivision)(?![${L}])(${SP}+(?:(?:de|du|des|d${APOS})${SP}*)?)`,
+  "gi",
+);
 const MARITAL = new RegExp(
   `${NO_BEFORE}([ée]pouses?|[ée]poux|veuf|veuve|divorc[ée]e?s?|n[ée]e)(?![${L}])`,
   "gi",
@@ -320,7 +339,21 @@ function acceptable(span: string, kind: PersonKind): boolean {
   return !(kind === "single" ? STOP_FIRST_SINGLE : STOP_FIRST).has(first);
 }
 
-function onePerson(text: string, pos: number, single = false, mixed = false): number | null {
+/** Un mot du nom est un prénom de la liste (« Pierre Martin », « Martin Pierre »). */
+function hasFirstName(span: string): boolean {
+  return span
+    .trim()
+    .split(/[\s'’-]+/)
+    .some((word) => FIRST_NAME_SET.has(word));
+}
+
+function onePerson(
+  text: string,
+  pos: number,
+  single = false,
+  mixed = false,
+  forename = false,
+): number | null {
   let match = matchAt(PERSON_CIV, text, pos);
   if (match && acceptable(match[0], "civ")) return matchEnd(match);
   match = matchAt(PERSON_BARE, text, pos);
@@ -331,14 +364,19 @@ function onePerson(text: string, pos: number, single = false, mixed = false): nu
   }
   if (mixed) {
     match = matchAt(PERSON_MIXED, text, pos);
-    if (match && acceptable(match[0], "bare")) return matchEnd(match);
+    if (match && acceptable(match[0], "bare") && (!forename || hasFirstName(match[0]))) {
+      return matchEnd(match);
+    }
   }
   return null;
 }
 
-/** Fin d'une ou plusieurs personnes (« M. X et Mme Y, née Z ») commençant en `pos`. */
-function personEnd(text: string, pos: number, mixed = false): number | null {
-  let end = onePerson(text, pos, false, mixed);
+/**
+ * Fin d'une ou plusieurs personnes (« M. X et Mme Y, née Z ») commençant en `pos`. `mixed` : un « Prénom
+ * Nom » en casse mixte est reconnu ; `forename` : à condition qu'un prénom de la liste en fasse partie.
+ */
+function personEnd(text: string, pos: number, mixed = false, forename = false): number | null {
+  let end = onePerson(text, pos, false, mixed, forename);
   if (end === null) return null;
   for (;;) {
     let extended = false;
@@ -352,7 +390,7 @@ function personEnd(text: string, pos: number, mixed = false): number | null {
     }
     const separator = matchAt(SEPARATOR, text, end);
     if (separator) {
-      const after = onePerson(text, matchEnd(separator), false, mixed);
+      const after = onePerson(text, matchEnd(separator), false, mixed, forename);
       if (after !== null) {
         end = after;
         extended = true;
@@ -371,7 +409,7 @@ const requete: Handler = (text, match) => {
 
 const occupied: Handler = (text, match) => {
   const start = matchEnd(match);
-  const end = personEnd(text, start);
+  const end = personEnd(text, start, true, true);
   if (end === null) return null;
   // Le statut (locataire, occupant sans titre, ancien locataire…) n'est jamais déduit du voisinage.
   return [start, end, "un occupant"];
@@ -417,21 +455,33 @@ const ownerAt: Handler = (text, match) => {
   const tail = matchAt(OWNER_AT_TAIL, text, matchEnd(match));
   if (!tail) return null;
   const start = matchEnd(tail);
-  const end = personEnd(text, start);
+  const end = personEnd(text, start, true, true);
   if (end === null) return null;
   return [start, end, "un particulier"];
 };
 
 const property: Handler = (text, match) => {
-  const end = personEnd(text, matchEnd(match));
+  const end = personEnd(text, matchEnd(match), true, true);
   if (end === null) return null;
   return [match.index + match[1].length, end, " d'un particulier"];
 };
 
 const heirs: Handler = (text, match) => {
-  const end = personEnd(text, matchEnd(match));
+  const end = personEnd(text, matchEnd(match), true, true);
   if (end === null) return null;
   return [match.index + match[1].length, end, " du défunt"];
+};
+
+const associate: Handler = (text, match) => {
+  const end = personEnd(text, matchEnd(match), true, true);
+  if (end === null) return null;
+  return [match.index + match[1].length, end, " d'un particulier"];
+};
+
+const family: Handler = (text, match) => {
+  const name = matchAt(PERSON_SINGLE, text, matchEnd(match));
+  if (!name || !acceptable(name[0], "single")) return null;
+  return [match.index + match[1].length, matchEnd(name), ""];
 };
 
 const consorts: Handler = (text, match) => {
@@ -531,6 +581,8 @@ const RULES: ReadonlyArray<readonly [RegExp, Handler]> = [
   [PROPERTY, property],
   [HEIRS, heirs],
   [CONSORTS, consorts],
+  [ASSOCIATE, associate],
+  [FAMILY, family],
   [MARITAL, marital],
   [BIRTH, birth],
   [RESIDENCE, residence],
@@ -568,7 +620,19 @@ const SALE_TEXT_FIELDS = [
   "investment_summary",
   "surface_evidence",
 ] as const;
-const SALE_JSON_FIELDS = ["source_blocks", "source_blocks_by_source", "risks"] as const;
+// Mêmes clés que `SALE_TEXT_COLUMNS` et `PAYLOAD_TEXT_KEYS` du miroir Python (plus `observations`, filtrée
+// par `redact_storage_row`) ; un test compare les deux listes. `source_blocks_by_source`, `risks` et
+// `about_description` n'existent que dans le modèle de lecture TypeScript.
+const SALE_JSON_FIELDS = [
+  "source_blocks",
+  "source_blocks_by_source",
+  "risks",
+  "llm_display_source_constraints",
+  "source_conflicts",
+  "llm_extraction",
+  "llm_fact_extraction",
+  "observations",
+] as const;
 
 /**
  * Filtre les textes libres d'une fiche avant qu'elle ne quitte le serveur (rapports partagés,
