@@ -3,7 +3,7 @@
 -- alertes par email, et lecture limitée à sa propre ligne.
 begin;
 
-select plan(14);
+select plan(18);
 
 select has_column('public', 'user_notification_preferences', 'sale_reminders_enabled', 'le consentement aux rappels a sa colonne');
 select has_column('public', 'user_notification_preferences', 'sale_reminders_consented_at', 'la date du consentement est conservée');
@@ -124,20 +124,35 @@ select is(
   'une personne connectée ne lit que sa propre ligne de préférences'
 );
 
--- Un UPDATE ne peut pas vivre dans une sous-requête : la RLS le rend sans effet, et la
--- dernière vérification (« le consentement de l'autre personne est intact ») le prouve.
-select lives_ok(
+-- Depuis 20261031100400 (point 6 de la relecture du 20/10/2026), le navigateur (rôle authenticated)
+-- n'écrit plus les colonnes du consentement aux rappels : le droit manque, quelle que soit la ligne
+-- visée. Les garanties de ce test restent : personne ne touche au consentement d'une autre personne, et
+-- le consentement de la personne ne se donne que par la route serveur (service_role).
+select throws_ok(
   $$update public.user_notification_preferences
     set sale_reminders_enabled = false, sale_reminders_revoked_at = now()
     where user_id = '48500000-0000-4000-8000-000000000002'$$,
-  'elle ne peut pas retirer le consentement d''une autre personne (aucune ligne visible)'
+  '42501',
+  null,
+  'elle ne peut pas retirer le consentement d''une autre personne (droit d''écriture absent)'
 );
 
+-- La RLS garde la ligne d'une autre personne hors de portée même sur une colonne que le navigateur
+-- écrit encore : l'UPDATE ne trouve aucune ligne (le dernier contrôle le prouve).
 select lives_ok(
+  $$update public.user_notification_preferences
+    set alert_email_enabled = true, alert_email_consented_at = now()
+    where user_id = '48500000-0000-4000-8000-000000000002'$$,
+  'elle ne peut pas modifier la ligne d''une autre personne (aucune ligne visible)'
+);
+
+select throws_ok(
   $$update public.user_notification_preferences
     set sale_reminders_enabled = true, sale_reminders_consented_at = now()
     where user_id = '48500000-0000-4000-8000-000000000001'$$,
-  'elle peut donner son propre consentement aux rappels'
+  '42501',
+  null,
+  'elle ne peut plus donner elle-même son consentement aux rappels (route serveur seule)'
 );
 
 reset role;
@@ -146,10 +161,42 @@ select is(
   (
     select sale_reminders_enabled::text
     from public.user_notification_preferences
+    where user_id = '48500000-0000-4000-8000-000000000001'
+  ),
+  'false',
+  'le refus du navigateur laisse les rappels de la personne inactifs'
+);
+
+-- Le chemin serveur (src/lib/notification-preferences.ts) écrit avec le rôle de service : le
+-- consentement s'active et le déclencheur pose la date.
+set local role service_role;
+
+select lives_ok(
+  $$update public.user_notification_preferences
+    set sale_reminders_enabled = true
+    where user_id = '48500000-0000-4000-8000-000000000001'$$,
+  'la route serveur (service_role) donne le consentement aux rappels'
+);
+
+reset role;
+
+select ok(
+  (
+    select sale_reminders_enabled and sale_reminders_consented_at is not null
+    from public.user_notification_preferences
+    where user_id = '48500000-0000-4000-8000-000000000001'
+  ),
+  'le consentement donné par la route serveur est actif et daté par la base'
+);
+
+select is(
+  (
+    select sale_reminders_enabled::text || ':' || alert_email_enabled::text
+    from public.user_notification_preferences
     where user_id = '48500000-0000-4000-8000-000000000002'
   ),
-  'true',
-  'le consentement de l''autre personne est intact'
+  'true:false',
+  'le consentement et la ligne de l''autre personne sont intacts'
 );
 
 select * from finish();
