@@ -8,9 +8,15 @@ import { emptySearchDraft, type SearchDraft } from "./search-page-state";
 
 afterEach(cleanup);
 
-function Harness({ initial = {} }: { initial?: Partial<SearchDraft> }) {
+function Harness({
+  initial = {},
+  preview = false,
+}: {
+  initial?: Partial<SearchDraft>;
+  preview?: boolean;
+}) {
   const [draft, setDraft] = useState<SearchDraft>({ ...emptySearchDraft(), ...initial });
-  return <MobileFilterChips draft={draft} setDraft={setDraft} />;
+  return <MobileFilterChips draft={draft} setDraft={setDraft} preview={preview} />;
 }
 
 describe("MobileFilterChips : noms et liens accessibles", () => {
@@ -65,5 +71,52 @@ describe("MobileFilterChips : noms et liens accessibles", () => {
     });
     expect(result.violations.map(({ id, help }) => ({ id, help }))).toEqual([]);
     expect(container).toBeTruthy();
+  });
+});
+
+describe("MobileFilterChips : « sous la fourchette » et « sans point à vérifier »", () => {
+  it("les propose à un compte, à bascule, avec leur état dit en mot", () => {
+    render(<Harness />);
+    const below = screen.getByRole("button", {
+      name: "Mise à prix sous la fourchette des ventes comparables",
+    });
+    const noPoints = screen.getByRole("button", { name: "Sans point à vérifier" });
+    expect(below.getAttribute("aria-pressed")).toBe("false");
+    expect(below.textContent).toBe("Sous la fourchette");
+
+    fireEvent.click(below);
+    fireEvent.click(noPoints);
+    expect(below.getAttribute("aria-pressed")).toBe("true");
+    expect(noPoints.getAttribute("aria-pressed")).toBe("true");
+
+    fireEvent.click(below);
+    expect(below.getAttribute("aria-pressed")).toBe("false");
+    expect(noPoints.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("reprend l'état du brouillon", () => {
+    render(<Harness initial={{ belowRange: true }} />);
+
+    expect(
+      screen
+        .getByRole("button", { name: "Mise à prix sous la fourchette des ventes comparables" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+  });
+
+  it("ne les propose pas à un visiteur sans compte", () => {
+    render(<Harness preview />);
+
+    expect(screen.queryByRole("button", { name: /Sans point à vérifier/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /sous la fourchette/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /Mise à prix max/ })).toBeTruthy();
+  });
+
+  it("garde chaque pastille à 44 px de haut", () => {
+    render(<Harness />);
+
+    for (const name of ["Sans point à vérifier", /sous la fourchette/]) {
+      expect(screen.getByRole("button", { name }).className).toContain("h-11");
+    }
   });
 });

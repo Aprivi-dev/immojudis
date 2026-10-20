@@ -140,6 +140,10 @@ describe("proxy /sales ISR variant", () => {
       "?city=Pau&sort=price_asc",
       "?view=table",
       "?utm_source=x",
+      "?belowRange=true",
+      "?noPointsToVerify=true",
+      "?page=2&belowRange=true",
+      "?page=3&noPointsToVerify=true",
     ]) {
       const response = request(`https://immojudis.com/sales${search}`);
       expect(rewrittenTo(response), search).toBeNull();
