@@ -53,7 +53,7 @@ function HomeTypeChip({
   const active = draft.homeTypes.length > 0;
   return (
     <label
-      className={`${chipClass(active)} relative pr-9 focus-within:ring-2 focus-within:ring-gold`}
+      className={`${chipClass(active)} relative pr-9 focus-within:outline-2 focus-within:outline-gold-soft`}
     >
       <Building2 className="h-4 w-4" aria-hidden />
       <select

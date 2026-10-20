@@ -103,7 +103,7 @@ function MobileMenu({
           <button
             type="button"
             aria-label="Fermer le menu"
-            className="inline-grid size-11 cursor-pointer place-items-center rounded-md border border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+            className="inline-grid size-11 cursor-pointer place-items-center rounded-md border border-border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
           >
             <X className="size-5" aria-hidden />
           </button>
@@ -208,7 +208,7 @@ function MobileSection({
                 onClick={onNavigate}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex min-h-11 items-center rounded-md px-1 font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold",
+                  "flex min-h-11 items-center rounded-md px-1 font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft",
                   subtle ? "text-sm font-medium text-muted-foreground" : "text-base",
                   active ? "text-gold-text" : "hover:text-gold-text",
                 )}

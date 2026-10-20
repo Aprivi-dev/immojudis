@@ -165,7 +165,7 @@ function AuthenticatedSavedSaleComparisons({
             onChange={(event) => setName(event.target.value.slice(0, 140))}
             disabled={Boolean(existingSingleSet)}
             maxLength={140}
-            className="mt-1 min-h-11 w-full rounded-md border border-line bg-white px-3 font-normal outline-none focus:border-brand-navy focus:ring-2 focus:ring-gold/20 disabled:bg-surface-muted"
+            className="mt-1 min-h-11 w-full rounded-md border border-line bg-white px-3 font-normal focus:border-brand-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft disabled:bg-surface-muted"
           />
         </label>
         <button

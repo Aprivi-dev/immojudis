@@ -529,7 +529,7 @@ function SaleDetailWorkspace({
           <div className={listingStyles.topbar}>
             <Link
               href={salesReturnHref(returnTo, sale.id)}
-              className="inline-flex min-h-11 items-center gap-2 rounded-md text-sm font-semibold text-brand-navy transition-colors hover:text-gold-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+              className="inline-flex min-h-11 items-center gap-2 rounded-md text-sm font-semibold text-brand-navy transition-colors hover:text-gold-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
             >
               <ArrowLeft className="h-4 w-4" aria-hidden />
               {backLabel ?? salesReturnLabel(returnTo)}

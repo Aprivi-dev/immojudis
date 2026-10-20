@@ -363,7 +363,7 @@ export function OffersPage() {
         <div className="mt-6 divide-y divide-line border-y border-line">
           {(launchActive ? [LAUNCH_OFFER_FAQ, ...FAQ] : FAQ).map((item) => (
             <details key={item.question} className="group py-4">
-              <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold">
+              <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft">
                 {item.question}
                 <ChevronDown
                   className="size-5 shrink-0 transition-transform group-open:rotate-180"

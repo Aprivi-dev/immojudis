@@ -6,9 +6,9 @@ import { UnlockCallToAction } from "@/components/sale-detail/UnlockCallToAction"
 import { useAnalysisCheckoutOpen } from "@/hooks/use-analysis-checkout-open";
 
 const PRIMARY_LINK_CLASS =
-  "inline-flex rounded-lg bg-gold px-4 py-3 text-sm font-semibold text-brand-navy hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2";
+  "inline-flex rounded-lg bg-gold px-4 py-3 text-sm font-semibold text-brand-navy hover:brightness-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft";
 const SECONDARY_LINK_CLASS =
-  "inline-flex min-h-11 items-center text-sm font-semibold text-gold-text underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2";
+  "inline-flex min-h-11 items-center text-sm font-semibold text-gold-text underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft";
 
 /** Decorative placeholders only: protected values are never rendered under the blur. */
 export function PremiumFeaturePreview({

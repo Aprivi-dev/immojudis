@@ -393,7 +393,7 @@ function RegionalCoverage({
               type="button"
               aria-pressed={selectedRegion === region.name}
               onClick={() => onRegionChange(selectedRegion === region.name ? "" : region.name)}
-              className={`h-full w-full rounded-lg border p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold ${
+              className={`h-full w-full rounded-lg border p-4 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft ${
                 selectedRegion === region.name
                   ? "border-brand-navy bg-brand-navy text-white"
                   : "border-brand-navy/12 bg-white hover:border-gold/50"
