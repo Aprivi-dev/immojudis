@@ -14,7 +14,7 @@
     },
     {
       "path": "/api/cron/alert-notifications",
-      "schedule": "30 6 * * *"
+      "schedule": "30 7 * * *"
     },
     {
       "path": "/api/cron/sale-change-monitor",
@@ -26,7 +26,7 @@
     },
     {
       "path": "/api/cron/alert-notifications",
-      "schedule": "30 8 * * *"
+      "schedule": "30 9 * * *"
     },
     {
       "path": "/api/cron/sale-change-monitor",

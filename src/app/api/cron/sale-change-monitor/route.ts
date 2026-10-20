@@ -1,6 +1,9 @@
 import { positiveNumberFromEnv, runMonitoredCron } from "@/lib/cron-jobs";
 import { runSaleChangeMonitorBatch } from "@/lib/sale-change-monitor";
 
+// Comme `smart-alerts` : un passage par lots de comptes. Next.js veut un littéral ici.
+export const maxDuration = 300;
+
 export async function GET(request: Request) {
   return runMonitoredCron(
     request,
