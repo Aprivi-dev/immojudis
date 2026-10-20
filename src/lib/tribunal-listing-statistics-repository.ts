@@ -1012,6 +1012,15 @@ async function loadMarketEstimates(
         estimatedValueEur: estimate.estimatedValueEur,
         actionable: true,
         sampleSize: estimate.sampleSize,
+        // De quoi appliquer la porte de la bande publique (market-gap-band.ts) au ratio.
+        effectiveSampleSize: estimate.effectiveSampleSize ?? null,
+        intervalMethod: estimate.predictionInterval?.method ?? null,
+        pricePerM2P10: estimate.p10PricePerM2 ?? null,
+        pricePerM2P50: estimate.medianPricePerM2 ?? null,
+        pricePerM2P90: estimate.p90PricePerM2 ?? null,
+        radiusM: estimate.radiusM ?? null,
+        segment: estimate.segment ?? null,
+        areaKind: estimate.areaKind ?? null,
       });
     }
   }

@@ -14,6 +14,7 @@ import {
   MARKET_GAP_BAND_STARTING_PRICE_NOTE,
   marketGapBand,
   marketGapBandMaxRadiusM,
+  passesPublicMarketGapGate,
 } from "./market-gap-band";
 import { MARKET_GAP_MAX_DISCOUNT_PCT, MARKET_GAP_MIN_DISCOUNT_PCT } from "./market-gap";
 import { normalizeOccupationStatus } from "./tribunal-listing-statistics";
@@ -162,6 +163,59 @@ describe("occupancy", () => {
       expect(isOccupiedOccupancyStatus(value), String(value)).toBe(
         normalized === "occupied" || normalized === "rented",
       );
+    }
+  });
+});
+
+describe("passesPublicMarketGapGate", () => {
+  const passing = {
+    actionable: true,
+    comparableCount: 6,
+    effectiveSampleSize: 5,
+    intervalMethod: "local_jackknife",
+    p10: 2_400,
+    p50: 3_000,
+    p90: 4_200, // largeur de 60 % exactement
+    radiusM: 1_000,
+    segment: "apartment",
+    areaKind: "urban",
+  };
+
+  it("passes at every threshold of the migration, and fails one step beyond", () => {
+    expect(passesPublicMarketGapGate(passing)).toBe(true);
+    expect(passesPublicMarketGapGate({ ...passing, comparableCount: 5 })).toBe(false);
+    expect(passesPublicMarketGapGate({ ...passing, effectiveSampleSize: 4.9 })).toBe(false);
+    expect(passesPublicMarketGapGate({ ...passing, p90: 4_210 })).toBe(false);
+    expect(passesPublicMarketGapGate({ ...passing, radiusM: 1_001 })).toBe(false);
+    expect(passesPublicMarketGapGate({ ...passing, actionable: false })).toBe(false);
+  });
+
+  it("needs 8 comparable sales without the jackknife method", () => {
+    const fallback = { ...passing, intervalMethod: "segment_fallback" };
+    expect(passesPublicMarketGapGate({ ...fallback, comparableCount: 7 })).toBe(false);
+    expect(passesPublicMarketGapGate({ ...fallback, comparableCount: 8 })).toBe(true);
+    expect(
+      passesPublicMarketGapGate({ ...passing, intervalMethod: null, comparableCount: 7 }),
+    ).toBe(false);
+  });
+
+  it("applies the radius of the property type", () => {
+    expect(passesPublicMarketGapGate({ ...passing, segment: "house", radiusM: 2_000 })).toBe(true);
+    expect(passesPublicMarketGapGate({ ...passing, segment: "house", radiusM: 2_001 })).toBe(false);
+    expect(passesPublicMarketGapGate({ ...passing, areaKind: "rural", radiusM: 2_000 })).toBe(true);
+  });
+
+  it("refuses an estimate with a missing or inconsistent field", () => {
+    for (const patch of [
+      { radiusM: null },
+      { p10: null },
+      { effectiveSampleSize: undefined },
+      { comparableCount: Number.NaN },
+      { p10: 0 },
+      { p10: 3_500 },
+      { p90: 2_900 },
+    ]) {
+      expect(passesPublicMarketGapGate({ ...passing, ...patch })).toBe(false);
     }
   });
 });

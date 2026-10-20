@@ -96,6 +96,52 @@ export function marketGapBandMaxRadiusM(
   return MARKET_GAP_BAND_MAX_RADIUS_URBAN_APARTMENT_M;
 }
 
+/** Ce que la porte lit dans une estimation (les mêmes champs que `app_private.get_public_sale_market_gap_band`). */
+export type MarketGapGateInput = {
+  actionable: boolean | null | undefined;
+  /** Nombre de ventes comparables retenues (`comparable_count`). */
+  comparableCount: number | null | undefined;
+  effectiveSampleSize: number | null | undefined;
+  /** `predictionInterval.method` de l'estimation (« local_jackknife », « segment_fallback »…). */
+  intervalMethod: string | null | undefined;
+  /** P10, P50 et P90 dans une même unité (euros ou euros par m²) : seule leur largeur relative compte. */
+  p10: number | null | undefined;
+  p50: number | null | undefined;
+  p90: number | null | undefined;
+  radiusM: number | null | undefined;
+  segment: string | null | undefined;
+  areaKind: string | null | undefined;
+};
+
+/**
+ * Porte publique de la bande, en TypeScript : miroir de la condition `reliable` de la fonction de la
+ * migration 20261029120000, que les statistiques par tribunal appliquent à leur ratio mise à prix /
+ * DVF pour que les deux affichages ne se contredisent pas. Hors de la porte : le statut « ready » de
+ * l'estimation et l'activation du modèle LightGBM, que seule la base connaît.
+ */
+export function passesPublicMarketGapGate(input: MarketGapGateInput): boolean {
+  const { p10, p50, p90, comparableCount, effectiveSampleSize, radiusM } = input;
+  if (input.actionable !== true) return false;
+  if (p10 == null || p50 == null || p90 == null) return false;
+  if (![p10, p50, p90, comparableCount, effectiveSampleSize, radiusM].every(Number.isFinite)) {
+    return false;
+  }
+  const minComparables =
+    input.intervalMethod === "local_jackknife"
+      ? MARKET_GAP_BAND_MIN_COMPARABLES_JACKKNIFE
+      : MARKET_GAP_BAND_MIN_COMPARABLES;
+  return (
+    (comparableCount as number) >= minComparables &&
+    (effectiveSampleSize as number) >= MARKET_GAP_BAND_MIN_EFFECTIVE_SAMPLE &&
+    p10 > 0 &&
+    p50 > 0 &&
+    p10 <= p50 &&
+    p50 <= p90 &&
+    (p90 - p10) / p50 <= MARKET_GAP_BAND_MAX_INTERVAL_WIDTH_PCT / 100 &&
+    (radiusM as number) <= marketGapBandMaxRadiusM(input.segment, input.areaKind)
+  );
+}
+
 /**
  * Vrai pour un bien occupé, loué, occupé par son propriétaire ou squatté. Miroir de
  * `app_private.is_occupied_occupancy_status` et de `normalizeOccupationStatus`
