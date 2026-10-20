@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { hydrateRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderToString } from "react-dom/server";
 import { axe } from "vitest-axe";
@@ -558,6 +559,60 @@ describe("SalePublicPreview", () => {
     expect(screen.getByTestId("past-sale-date").textContent).toBe("Date de vente passée");
     expect(screen.queryByRole("button", { name: "Ajouter à mon agenda" })).toBeNull();
     expect(screen.queryByTestId("market-gap-band")).toBeNull();
+  });
+
+  it("calcule la mention « date passée » après montage : le rendu serveur ne la porte jamais", () => {
+    const html = renderToString(
+      <SalePublicPreview
+        saleId="sale-1"
+        returnTo="/sales"
+        preview={
+          {
+            id: "sale-1",
+            sale_venue_type: "tribunal",
+            sale_date: "2020-03-12T09:00:00+00:00",
+            starting_price_eur: 59_000,
+            market_gap_band: "under",
+          } as AuctionSale
+        }
+      />,
+    );
+    expect(html).not.toContain("Date de vente passée");
+    expect(html).not.toContain("past-sale-date");
+  });
+
+  it("s'hydrate sans différence quand le jour de la vente passe entre le serveur et le navigateur", async () => {
+    vi.useFakeTimers();
+    const recoverable: unknown[] = [];
+    try {
+      const sale = {
+        id: "sale-1",
+        sale_venue_type: "tribunal",
+        // 12 mars 2026, 12 h à Paris.
+        sale_date: "2026-03-12T11:00:00+00:00",
+        starting_price_eur: 59_000,
+      } as AuctionSale;
+      const element = <SalePublicPreview saleId="sale-1" returnTo="/sales" preview={sale} />;
+      // Le serveur rend le soir du 12 mars (23 h 59 à Paris) : la vente n'est pas passée.
+      vi.setSystemTime(new Date("2026-03-12T22:59:00Z"));
+      const container = document.createElement("div");
+      document.body.appendChild(container);
+      container.innerHTML = renderToString(element);
+      expect(container.querySelector("[data-testid=past-sale-date]")).toBeNull();
+      // Le navigateur hydrate le lendemain (minuit passé) : la mention apparaît, sans erreur d'hydratation.
+      vi.setSystemTime(new Date("2026-03-12T23:01:00Z"));
+      await act(async () => {
+        hydrateRoot(container, element, { onRecoverableError: (error) => recoverable.push(error) });
+      });
+      expect(container.querySelector("[data-testid=past-sale-date]")?.textContent).toBe(
+        "Date de vente passée",
+      );
+      // Aucune différence entre le HTML du serveur et le premier rendu du navigateur.
+      expect(recoverable).toEqual([]);
+      container.remove();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("garde l'agenda et la bande d'écart d'une vente à venir, sans signal de date passée", () => {
