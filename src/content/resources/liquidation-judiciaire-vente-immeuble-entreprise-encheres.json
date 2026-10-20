@@ -1,0 +1,364 @@
+{
+  "slug": "liquidation-judiciaire-vente-immeuble-entreprise-encheres",
+  "publishedAt": "2026-10-20",
+  "updatedAt": "2026-10-20",
+  "title": "Liquidation judiciaire : quand l’immeuble d’une entreprise est vendu aux enchères",
+  "seoTitle": "Liquidation judiciaire : l’immeuble aux enchères",
+  "category": "Les fondamentaux",
+  "description": "Immeuble d’entreprise en liquidation judiciaire vendu aux enchères : juge-commissaire, mise à prix, modes de vente, points à vérifier.",
+  "intro": [
+    "Une entreprise qui ne peut plus payer ses dettes et dont le redressement est manifestement impossible peut être placée en liquidation judiciaire. Cette procédure sert à mettre fin à son activité ou à vendre son patrimoine, en bloc ou bien par bien, pour payer les créanciers (art. L. 640-1 du Code de commerce). Si l’entreprise possède un immeuble (local, entrepôt, bureaux, parfois un logement), il peut être vendu aux enchères.",
+    "Pour l’acheteur, le décor ressemble à celui d’une saisie immobilière, mais la vente n’est pas conduite par un créancier : elle l’est par un liquidateur, sous le contrôle d’un juge. Cet article explique qui décide, comment le prix de départ est fixé, quels modes de vente existent, ce qui change pour l’enchérisseur et ce qu’il faut vérifier. Les textes cités sont ceux du Code de commerce et du Code des procédures civiles d’exécution (CPCE). Un avocat les applique à votre dossier."
+  ],
+  "takeaways": [
+    "Dans une liquidation judiciaire, le liquidateur vend l’actif sous le contrôle du juge-commissaire, qui ordonne la vente aux enchères ou autorise une vente de gré à gré (art. L. 642-18 et L. 642-19 du Code de commerce).",
+    "La mise à prix est fixée par le juge-commissaire, avec les conditions essentielles de la vente (art. L. 642-18 et R. 642-22), et non par un créancier.",
+    "Trois voies existent : l’adjudication judiciaire à l’audience du juge de l’exécution, l’adjudication amiable chez un notaire (enchères sans avocat obligatoire) et la vente de gré à gré autorisée par le juge-commissaire.",
+    "Le prix se paie au liquidateur, dans un délai de trois mois pour une adjudication (art. R. 643-3) ; le paiement du prix et des frais purge les hypothèques et privilèges du chef du débiteur (art. L. 642-18).",
+    "Le débiteur, ses dirigeants et certains proches ne peuvent pas acheter (art. L. 642-20 et L. 642-3). L’ordonnance du juge-commissaire et le cahier des conditions de vente sont les documents à lire en premier."
+  ],
+  "sections": [
+    {
+      "id": "cadre",
+      "title": "La liquidation judiciaire et ceux qui y interviennent",
+      "paragraphs": [
+        "Une entreprise est en cessation des paiements lorsqu’elle ne peut pas faire face à ses dettes exigibles avec son actif disponible (art. L. 631-1). Si son redressement est manifestement impossible, la liquidation judiciaire peut être ouverte (art. L. 640-1). Elle vise les sociétés comme les entrepreneurs individuels, y compris les micro-entrepreneurs. Le tribunal compétent est le tribunal de commerce si le débiteur exerce une activité commerciale ou artisanale, le tribunal judiciaire dans les autres cas (art. L. 621-2, applicable par l’art. L. 641-1).",
+        "Dans le jugement d’ouverture, le tribunal désigne un juge-commissaire et un liquidateur (art. L. 641-1). Le débiteur est dessaisi : il perd l’administration et la disposition des biens engagés dans son activité, que le liquidateur exerce à sa place tant que la liquidation n’est pas clôturée (art. L. 641-9)."
+      ],
+      "table": {
+        "headers": ["Acteur", "Rôle dans la vente de l’immeuble"],
+        "rows": [
+          [
+            "Le tribunal",
+            "Ouvre la liquidation et désigne le juge-commissaire et le liquidateur (art. L. 641-1)."
+          ],
+          [
+            "Le juge-commissaire",
+            "Un juge désigné pour suivre la procédure. Il ordonne la vente aux enchères ou autorise la vente de gré à gré, et fixe la mise à prix et les conditions essentielles (art. L. 642-18 et L. 642-19)."
+          ],
+          [
+            "Le liquidateur",
+            "Un mandataire de justice chargé de réaliser les biens. Il répartit le prix entre les créanciers (art. L. 642-18). Il ne peut pas se porter acquéreur des immeubles du débiteur (art. R. 642-26)."
+          ],
+          [
+            "Le juge de l’exécution",
+            "Le juge du tribunal judiciaire qui tient l’audience d’adjudication quand la vente est judiciaire (art. R. 642-27 et R. 642-29-1)."
+          ],
+          [
+            "Le notaire",
+            "Reçoit les enchères dans l’adjudication amiable (art. R. 642-30 et R. 642-32). Remet au liquidateur le prix d’une vente de gré à gré (art. R. 643-3)."
+          ],
+          [
+            "Les créanciers inscrits",
+            "Ceux dont la créance est garantie par une hypothèque sur l’immeuble. L’ordonnance leur est notifiée (art. R. 642-23) et ils sont payés selon leur rang sur le prix."
+          ]
+        ]
+      }
+    },
+    {
+      "id": "mise-a-prix",
+      "title": "La mise à prix est fixée par le juge-commissaire",
+      "paragraphs": [
+        "En liquidation, les ventes d’immeubles suivent les règles de la vente forcée du CPCE, sauf deux articles que le Code de commerce écarte : L. 322-6 et L. 322-9 (art. L. 642-18). L’article L. 322-6 est la règle de la saisie immobilière selon laquelle le créancier fixe la mise à prix et, faute d’enchère, est déclaré adjudicataire d’office. L’article L. 322-9 règle le versement du prix sur un compte séquestre ou à la Caisse des dépôts. Ici, c’est le juge-commissaire qui fixe la mise à prix et les conditions essentielles de la vente.",
+        "Son ordonnance (la décision qui ordonne la vente) détermine la mise à prix de chaque bien, les modalités de publicité et les modalités de visite (art. R. 642-22). Elle peut préciser qu’à défaut d’enchères atteignant cette mise à prix, la vente pourra se faire sur une mise à prix inférieure qu’elle fixe. Avant de statuer, le juge-commissaire recueille les observations des contrôleurs (des créanciers qui l’assistent, art. L. 621-10), entend ou appelle le débiteur, et, dans certains cas, son conjoint, ainsi que le liquidateur (art. R. 642-36-1). L’ordonnance est notifiée au débiteur et aux créanciers inscrits, puis publiée au fichier immobilier (art. R. 642-23).",
+        "Un créancier titulaire d’une hypothèque peut aussi poursuivre lui-même la vente si le liquidateur n’a pas entrepris la liquidation de l’immeuble dans les trois mois du jugement qui ouvre la liquidation (art. L. 643-2). La mise à prix est alors fixée par le juge-commissaire en accord avec ce créancier (art. R. 642-22 et R. 643-1).",
+        "Comme en saisie immobilière, la mise à prix est un prix de départ, pas une estimation de la valeur du bien : les textes cités ne disent pas comment le juge la détermine. Demandez à l’avocat comment elle a été fixée. L’article « Mise à prix et valeur de marché : lire un écart sans se tromper » explique comment la comparer au marché."
+      ]
+    },
+    {
+      "id": "modes-de-vente",
+      "title": "Trois façons de vendre l’immeuble",
+      "paragraphs": [
+        "Le juge-commissaire choisit le mode de vente. Il ordonne la vente aux enchères publiques (adjudication judiciaire). Si la consistance du bien, son emplacement ou les offres reçues permettent une cession amiable dans de meilleures conditions, il peut ordonner une adjudication amiable sur la mise à prix qu’il fixe, ou autoriser une vente de gré à gré aux prix et conditions qu’il détermine (art. L. 642-18 et L. 642-19). « De gré à gré » désigne une vente conclue directement avec un acheteur, sans enchères."
+      ],
+      "table": {
+        "headers": ["Mode", "Qui conduit la vente", "Enchères ?", "Ce qu’il faut savoir"],
+        "rows": [
+          [
+            "Adjudication judiciaire",
+            "Le juge de l’exécution du tribunal judiciaire, à l’audience (art. R. 642-27 et R. 642-29-1).",
+            "Oui, portées par un avocat inscrit au barreau du tribunal (art. R. 322-40, rendu applicable par l’art. R. 642-29-2).",
+            "Le cahier des conditions de vente est déposé au greffe dans les deux mois de la publication de l’ordonnance. L’audience est fixée entre deux et quatre mois après l’avis donné aux créanciers inscrits (art. R. 642-29-1)."
+          ],
+          [
+            "Adjudication amiable",
+            "Un notaire désigné par le juge-commissaire (art. R. 642-30).",
+            "Oui, chez le notaire, sans ministère d’avocat (art. R. 642-32).",
+            "Si aucune enchère n’atteint la mise à prix, le notaire peut adjuger à titre provisoire l’offre la plus élevée. Le juge-commissaire décide ensuite d’adjuger définitivement ou d’ordonner une nouvelle vente (art. R. 642-32). Une surenchère reste possible (art. L. 642-18)."
+          ],
+          [
+            "Vente de gré à gré",
+            "Le liquidateur, avec l’autorisation du juge-commissaire, qui fixe le prix et les conditions essentielles (art. L. 642-18 et R. 642-36).",
+            "Non : la vente est conclue sans enchères.",
+            "Le notaire chargé de la vente remet le prix au liquidateur (art. R. 643-3). Le liquidateur ne peut pas se porter acquéreur (art. R. 642-36)."
+          ]
+        ]
+      }
+    },
+    {
+      "id": "situations-voisines",
+      "title": "Deux situations voisines à ne pas confondre",
+      "paragraphs": [
+        "Une saisie reprise. Si une saisie immobilière était engagée avant l’ouverture de la liquidation, le jugement d’ouverture la suspend. Le liquidateur peut alors être subrogé, c’est-à-dire mis à la place du créancier saisissant, et la saisie reprend là où elle s’était arrêtée. Le juge-commissaire fixe la mise à prix, les modalités de publicité et de visite (art. L. 642-18 et R. 642-24). Une annonce qui ressemble à une saisie peut donc relever d’une liquidation.",
+        "La cession de l’entreprise. Elle consiste à reprendre l’activité, ou une branche d’activité, avec ses emplois et ses biens, y compris l’immeuble éventuel (art. L. 642-1). Elle se fait sur des offres écrites que le tribunal examine (art. L. 642-2), pas à une audience d’enchères."
+      ]
+    },
+    {
+      "id": "ce-qui-change",
+      "title": "Ce qui change pour l’acheteur",
+      "paragraphs": [
+        "Les règles de la vente forcée du CPCE s’appliquent largement, avec des écarts qui comptent pour l’enchérisseur. Le tableau compare les principaux. Le cahier des conditions de vente de votre dossier fait foi : relisez-le avec l’avocat."
+      ],
+      "table": {
+        "headers": ["Point", "Saisie immobilière classique", "Liquidation judiciaire"],
+        "rows": [
+          [
+            "Qui fixe la mise à prix",
+            "Le créancier poursuivant (art. L. 322-6 du CPCE).",
+            "Le juge-commissaire (art. L. 642-18 et R. 642-22)."
+          ],
+          [
+            "Faute d’enchère",
+            "Le créancier poursuivant est déclaré adjudicataire d’office à la mise à prix (art. L. 322-6).",
+            "Cette règle est écartée (art. L. 642-18). Le juge-commissaire peut prévoir une mise à prix inférieure (art. R. 642-22) ; chez le notaire, adjudication provisoire puis décision du juge (art. R. 642-32)."
+          ],
+          [
+            "Qui porte les enchères",
+            "Un avocat inscrit au barreau du tribunal (art. R. 322-40).",
+            "Adjudication judiciaire : même règle. Adjudication amiable chez le notaire : sans ministère d’avocat (art. R. 642-32)."
+          ],
+          [
+            "Garantie avant les enchères",
+            "10 % de la mise à prix, minimum 3 000 € (art. R. 322-41).",
+            "Même règle à l’audience (art. R. 642-29-2) et chez le notaire (art. R. 642-32)."
+          ],
+          [
+            "Surenchère",
+            "Dix jours après l’adjudication, d’au moins un dixième du prix principal, par acte d’avocat (art. R. 322-50 et R. 322-51).",
+            "Adjudication judiciaire : mêmes règles (art. R. 642-29-2). Adjudication amiable : quinze jours, par requête remise au greffe du juge de l’exécution du lieu de résidence du notaire (art. R. 642-33)."
+          ],
+          [
+            "Paiement du prix",
+            "Dans les deux mois de l’adjudication définitive, au séquestre ou à la Caisse des dépôts et consignations (art. R. 322-56).",
+            "Dans les trois mois de l’adjudication, sur le compte ouvert par le liquidateur à la Caisse des dépôts, avec les intérêts au taux légal à compter du jour où la vente est devenue définitive. L’acte ou le jugement est publié au service de la publicité foncière (le fichier immobilier) dans les deux mois. À défaut, les enchères sont réitérées : le bien est remis en vente (art. R. 643-3)."
+          ],
+          [
+            "Hypothèques",
+            "Le versement du prix et le paiement des frais purgent l’immeuble de toute sûreté publiée du chef du débiteur (art. L. 322-14).",
+            "Le paiement du prix au liquidateur et des frais de la vente emporte purge des hypothèques et de tout privilège du chef du débiteur (art. L. 642-18)."
+          ],
+          [
+            "Occupation",
+            "Le jugement d’adjudication est un titre d’expulsion contre le débiteur saisi (art. L. 322-13), exécutable après paiement du prix et des frais, sauf maintien dans les lieux prévu au cahier (art. R. 322-64).",
+            "Adjudication judiciaire : les effets de l’art. R. 322-64 s’appliquent (art. R. 642-29-2). Adjudication amiable : le texte ne les prévoit pas expressément, à faire confirmer. Une personne physique peut obtenir des délais pour quitter sa maison d’habitation principale (art. L. 642-18)."
+          ],
+          [
+            "Qui ne peut pas acheter",
+            "Le débiteur saisi, les auxiliaires de justice intervenus dans la procédure et les magistrats de la juridiction (art. R. 322-39).",
+            "S’y ajoutent notamment les dirigeants, les parents et alliés jusqu’au deuxième degré du débiteur ou des dirigeants, et les contrôleurs, sauf dérogation du juge-commissaire dans des cas limités (art. L. 642-20 et L. 642-3). Le liquidateur ne peut pas être adjudicataire (art. R. 642-26)."
+          ]
+        ]
+      }
+    },
+    {
+      "id": "points-a-verifier",
+      "title": "Les points à vérifier avant d’enchérir",
+      "paragraphs": [
+        "Dans une liquidation, trois documents se lisent ensemble : l’ordonnance du juge-commissaire, le cahier des conditions de vente et l’état des inscriptions sur l’immeuble. Les points ci-dessous sont des pistes de lecture, pas une liste complète. En cas de défaut de paiement, la vente est résolue de plein droit et l’adjudicataire défaillant doit la différence entre son enchère et le prix de la revente si celui-ci est moindre (art. L. 322-12 du CPCE, applicable en liquidation par l’art. L. 642-18)."
+      ],
+      "bullets": [
+        "L’ordonnance du juge-commissaire : mise à prix, conditions essentielles, publicité et visites (art. R. 642-22). Vérifiez qu’elle a été publiée au fichier immobilier (art. R. 642-23) et demandez si un recours est en cours devant la cour d’appel (art. R. 642-37-1).",
+        "Le cahier des conditions de vente : désignation du bien, origine de propriété, servitudes, baux consentis, procès-verbal de description, mise à prix et modalités de paiement (art. R. 642-25). L’article « Lire le cahier des conditions de vente et préparer la visite » donne la méthode.",
+        "L’occupation : un immeuble d’entreprise peut être occupé par l’entreprise elle-même, par des locataires ou par un dirigeant. Les baux figurent au cahier. Voir « Acheter un bien occupé aux enchères : sécuriser son analyse avant de miser ».",
+        "Le mode de vente et la personne qui reçoit les enchères : avocat au tribunal ou notaire sans avocat obligatoire. La garantie à remettre avant les enchères en dépend (art. R. 322-41 et R. 642-32).",
+        "Le calendrier de paiement : trois mois, intérêts au taux légal, remise en vente en cas de retard (art. R. 643-3). Voir « Financer un achat aux enchères : prêt, délais, pas de condition suspensive ».",
+        "Les droits et taxes dus à l’acquisition d’un immeuble professionnel, par exemple la taxe sur la valeur ajoutée (TVA) ou les droits de mutation selon le cas : à faire préciser par l’avocat ou le notaire. Voir aussi « Frais d’une vente aux enchères judiciaire ».",
+        "Les droits de tiers, comme un éventuel droit de préemption (le droit d’une collectivité de se substituer à l’acheteur) : voir « Préemption : la commune peut-elle vous évincer ? ».",
+        "Votre situation : si vous avez un lien avec le débiteur ou ses dirigeants, demandez d’abord à l’avocat si vous pouvez acheter (art. L. 642-20 et L. 642-3).",
+        "La date : les causes de report décrites dans « Vente reportée, retirée ou annulée : pourquoi, et que faire ? » concernent la saisie immobilière. En liquidation, faites confirmer la date auprès de l’avocat poursuivant ou du notaire."
+      ]
+    },
+    {
+      "id": "dans-immojudis",
+      "title": "Le repérer dans Immojudis",
+      "paragraphs": [
+        "Sur la fiche d’une vente, le champ « Cadre juridique » indique « Liquidation ou procédure collective » lorsque la source le précise, et « Cadre juridique à confirmer » sinon. Une procédure collective est une procédure judiciaire ouverte pour une entreprise en difficulté et qui regroupe ses créanciers. Si le cadre n’est pas clair, posez d’abord deux questions : qui a fixé la mise à prix, et qui reçoit les enchères ? Cherchez ensuite l’ordonnance du juge-commissaire dans les pièces du dossier.",
+        "Immojudis reprend la mise à prix publiée par la source. En liquidation, elle a été fixée par le juge-commissaire. Quand un repère d’écart avec le marché est affiché, il se lit comme pour toute mise à prix : voir la page « Comment est calculé l’écart avec le marché »."
+      ],
+      "callout": {
+        "title": "À garder en tête",
+        "text": "Cet article décrit des règles générales : chaque liquidation a son ordonnance et son cahier des conditions de vente. Il ne remplace ni la lecture des pièces ni la consultation d’un avocat."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "label": "Service-public.fr — Liquidation judiciaire d’un entrepreneur individuel (fiche F22330, vérifiée le 20 janvier 2026)",
+      "url": "https://entreprendre.service-public.gouv.fr/vosdroits/F22330"
+    },
+    {
+      "label": "Légifrance — Code de commerce, article L631-1 (cessation des paiements)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000045178110"
+    },
+    {
+      "label": "Légifrance — Code de commerce, article L640-1 (liquidation judiciaire)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000006238437"
+    },
+    {
+      "label": "Légifrance — Code de commerce, article L641-1 (jugement d’ouverture)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000044052950"
+    },
+    {
+      "label": "Légifrance — Code de commerce, article L641-9 (dessaisissement)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000045178146"
+    },
+    {
+      "label": "Légifrance — Code de commerce, article L621-2 (tribunal compétent)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000045178127"
+    },
+    {
+      "label": "Légifrance — Code de commerce, article L621-10 (contrôleurs)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000028723930"
+    },
+    {
+      "label": "Légifrance — Code de commerce, article L642-1 (cession de l’entreprise)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000029594521"
+    },
+    {
+      "label": "Légifrance — Code de commerce, article L642-2 (offres de reprise)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000033462097"
+    },
+    {
+      "label": "Légifrance — Code de commerce, article L642-3 (personnes qui ne peuvent pas acquérir)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000023217242"
+    },
+    {
+      "label": "Légifrance — Code de commerce, article L642-18 (vente des immeubles)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000028724258"
+    },
+    {
+      "label": "Légifrance — Code de commerce, article L642-19 (vente des autres biens)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000033462279"
+    },
+    {
+      "label": "Légifrance — Code de commerce, article L642-20 (interdictions d’acquérir)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000028724261"
+    },
+    {
+      "label": "Légifrance — Code de commerce, article L643-2 (poursuite individuelle des créanciers)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000019984736"
+    },
+    {
+      "label": "Légifrance — Code de commerce, article R642-22 (mise à prix fixée par le juge-commissaire)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000020251358"
+    },
+    {
+      "label": "Légifrance — Code de commerce, article R642-23 (ordonnance et publication)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000026854500"
+    },
+    {
+      "label": "Légifrance — Code de commerce, article R642-24 (reprise de la saisie immobilière)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000026854503"
+    },
+    {
+      "label": "Légifrance — Code de commerce, article R642-25 (cahier des conditions de vente)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000026459020"
+    },
+    {
+      "label": "Légifrance — Code de commerce, article R642-26 (liquidateur adjudicataire)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000020251343"
+    },
+    {
+      "label": "Légifrance — Code de commerce, article R642-27 (adjudication judiciaire)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025945377"
+    },
+    {
+      "label": "Légifrance — Code de commerce, article R642-29-1 (dépôt du cahier et audience)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000039345933"
+    },
+    {
+      "label": "Légifrance — Code de commerce, article R642-29-2 (règles applicables à l’audience)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025945393"
+    },
+    {
+      "label": "Légifrance — Code de commerce, article R642-30 (adjudication amiable)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000026459165"
+    },
+    {
+      "label": "Légifrance — Code de commerce, article R642-32 (enchères chez le notaire)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000026459205"
+    },
+    {
+      "label": "Légifrance — Code de commerce, article R642-33 (surenchère après adjudication amiable)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000039624444"
+    },
+    {
+      "label": "Légifrance — Code de commerce, article R642-36 (vente de gré à gré)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000020251410"
+    },
+    {
+      "label": "Légifrance — Code de commerce, article R642-36-1 (audition avant l’ordonnance)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000020251419"
+    },
+    {
+      "label": "Légifrance — Code de commerce, article R642-37-1 (recours devant la cour d’appel)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000020251424"
+    },
+    {
+      "label": "Légifrance — Code de commerce, article R643-1 (mise à prix en cas de poursuite par un créancier)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000006269735"
+    },
+    {
+      "label": "Légifrance — Code de commerce, article R643-3 (paiement du prix)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000026854507"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article L322-6 (mise à prix en saisie immobilière)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025025977"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article L322-9 (versement du prix, écarté en liquidation)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025025983"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article L322-12 (défaut de paiement)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025025989"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article L322-13 (titre d’expulsion)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025025991"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article L322-14 (purge)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000044072848"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R322-39 (personnes qui ne peuvent pas enchérir)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939151"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R322-40 (avocat porteur des enchères)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000039343491"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R322-41 (garantie pour enchérir)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939157"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R322-50 (surenchère)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939179"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R322-51 (forme et délai de la surenchère)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939181"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R322-56 (paiement du prix en saisie immobilière)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939193"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R322-64 (effets de l’adjudication sur l’occupation)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939222"
+    }
+  ]
+}
