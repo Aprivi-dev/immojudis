@@ -13257,8 +13257,19 @@ export type Database = {
         Returns: unknown;
       };
       _st_within: { Args: { geom1: unknown; geom2: unknown }; Returns: boolean };
-      // Ajouts manuels minimaux (point 65), à régénérer par db:types.
+      // Ajouts manuels minimaux (points 65 et 72), à régénérer par db:types.
       admin_pilotage_summary: { Args: { p_now?: string }; Returns: Json };
+      admin_lawyer_monthly_statement: {
+        Args: { p_month: string };
+        Returns: {
+          lawyer_id: string;
+          display_name: string;
+          firm_name: string | null;
+          impressions: number;
+          cta_clicks: number;
+          referral_requests_sent: number;
+        }[];
+      };
       abort_information_agent_evidence_publication: {
         Args: { p_fact_id: string; p_public_path: string };
         Returns: boolean;
