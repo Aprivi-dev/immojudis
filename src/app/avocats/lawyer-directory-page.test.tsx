@@ -135,6 +135,92 @@ describe("annuaire des avocats", () => {
     ).toEqual(["Un", "Deux", "Trois"]);
   });
 
+  describe("ventes à venir de l'avocat poursuivant", () => {
+    const upcoming = {
+      total: 7,
+      sales: [
+        {
+          id: "0b1f7f3e-9a2c-4c55-8d5e-111111111111",
+          city: "Mérignac",
+          propertyType: "apartment",
+          saleDate: "2026-12-01T09:00:00Z",
+          startingPriceEur: 85_000,
+          tribunalName: "Tribunal judiciaire de Bordeaux",
+        },
+        {
+          id: "0b1f7f3e-9a2c-4c55-8d5e-222222222222",
+          city: null,
+          propertyType: null,
+          saleDate: null,
+          startingPriceEur: 0,
+          tribunalName: null,
+        },
+      ],
+    };
+
+    it("liste ses ventes avec des faits publics seulement, chacune liée à sa fiche", async () => {
+      renderDirectory([
+        profile({
+          id: "a",
+          displayName: "Maître Claire Durand",
+          upcomingProsecutedSales: upcoming,
+        }),
+        profile({ id: "b", displayName: "Maître Sans Vente" }),
+      ]);
+      const card = (await screen.findByText("Maître Claire Durand")).closest("article");
+      const section = within(card as HTMLElement).getByRole("region", {
+        name: "Ventes à venir en tant qu'avocat poursuivant",
+      });
+
+      const links = within(section).getAllByRole("link");
+      expect(links.map((link) => link.getAttribute("href"))).toEqual([
+        "/sales/0b1f7f3e-9a2c-4c55-8d5e-111111111111",
+        "/sales/0b1f7f3e-9a2c-4c55-8d5e-222222222222",
+      ]);
+      expect(links[0].textContent).toContain("Appartement à Mérignac");
+      expect(links[0].textContent).toContain("Tribunal judiciaire de Bordeaux");
+      expect(links[0].textContent).toMatch(/Mise à prix 85\s000\s€/);
+      // A sale with nothing public to say still shows only what it has, never a 0 € price.
+      expect(links[1].textContent).not.toMatch(/Mise à prix/);
+      expect(within(section).getByText("5 autres ventes à venir non affichées.")).toBeTruthy();
+      expect(section.textContent).toContain("Rapprochement automatique");
+      expect(section.textContent).toContain("n'est pas une recommandation");
+      const other = screen.getByText("Maître Sans Vente").closest("article") as HTMLElement;
+      expect(within(other).queryByText(/avocat poursuivant/)).toBeNull();
+    });
+
+    it("garde la mention « Publicité · Sponsorisé » d'un profil mis en avant, sans rien y ajouter", async () => {
+      renderDirectory([
+        profile({
+          id: "a",
+          displayName: "Maître Sponsorisé",
+          isSponsored: true,
+          placement: "active",
+          upcomingProsecutedSales: upcoming,
+        }),
+      ]);
+      const card = (await screen.findByText("Maître Sponsorisé")).closest("article") as HTMLElement;
+
+      expect(within(card).getByText("Publicité · Sponsorisé")).toBeTruthy();
+      expect(within(card).getAllByText(/Publicité · Sponsorisé/)).toHaveLength(1);
+      expect(
+        within(card).getByRole("region", {
+          name: "Ventes à venir en tant qu'avocat poursuivant",
+        }),
+      ).toBeTruthy();
+    });
+
+    it("n'affiche aucune section sans vente rapprochée", async () => {
+      renderDirectory([
+        profile({ id: "a", upcomingProsecutedSales: { total: 0, sales: [] } }),
+        profile({ id: "b", displayName: "Maître Autre" }),
+      ]);
+      await screen.findByText("Maître Autre");
+
+      expect(screen.queryByText(/Ventes à venir en tant qu'avocat poursuivant/)).toBeNull();
+    });
+  });
+
   describe("filtres lus dans l'adresse, côté navigateur", () => {
     it("remplit le formulaire et interroge l'annuaire avec les filtres de l'adresse", async () => {
       renderDirectory([profile({ id: "a" })], "bar=Pau&saleId=abc&city=Tarbes&department=64&x=1");

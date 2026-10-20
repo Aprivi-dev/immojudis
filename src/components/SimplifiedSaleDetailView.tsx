@@ -37,6 +37,7 @@ import { ListingCharacteristics } from "@/components/sale-detail/ListingCharacte
 import { ListingPreparation } from "@/components/sale-detail/ListingPreparation";
 import { SaleKeyFactsBand } from "@/components/sale-detail/SaleKeyFactsBand";
 import type { ListingWorksDraft } from "@/components/sale-detail/ListingWorks";
+import type { WorksBreakdownItem } from "@/lib/works-breakdown";
 import type { FinancingDraft, FinancingResult } from "@/components/sale-detail/FinancingSimulator";
 import type { ListingRentalDraft } from "@/components/sale-detail/ListingRental";
 import { SaleDetailTabNav, type SaleDetailTab } from "@/components/sale-detail/SaleDetailTabNav";
@@ -56,7 +57,11 @@ import { ceilingGap, valueGapReason } from "@/lib/bid-ceiling-gaps";
 import { buildDpeAnalysis } from "@/lib/dpe-analysis";
 import { CeilingPlanner } from "@/components/ceiling/CeilingPlanner";
 import { LaunchOfferIncludedTag } from "@/components/LaunchOfferIncludedTag";
-import { useCeilingChoices, worksChoiceForAmount } from "@/components/ceiling/use-ceiling-choices";
+import {
+  choicesWithoutWorksBreakdown,
+  useCeilingChoices,
+  worksChoiceForAmount,
+} from "@/components/ceiling/use-ceiling-choices";
 import Link from "next/link";
 import { listingCoordinates } from "@/lib/sale-listing";
 import {
@@ -413,7 +418,11 @@ function SaleDetailWorkspace({
     });
     return {
       version: 2 as const,
-      choices: { ...ceilingChoices.choices, works: ceilingHypotheses.works },
+      // Le détail des postes reste dans le navigateur : seul le budget retenu est enregistré.
+      choices: {
+        ...choicesWithoutWorksBreakdown(ceilingChoices.choices),
+        works: ceilingHypotheses.works,
+      },
       expectedMaxBid: ceilingPlan.maxBid,
       ...(rentalScenario ? { rentalScenario } : {}),
     };
@@ -437,6 +446,15 @@ function SaleDetailWorkspace({
         works: worksChoiceForAmount(surface, amount),
       }));
     }
+  };
+  // « Détail de vos travaux » : les postes restent dans le navigateur avec les autres choix, et leur
+  // total (quand il est supérieur à 0) devient le budget travaux. Un détail vidé ne touche pas au
+  // budget : celui-ci a pu être saisi autrement.
+  const changeWorksBreakdown = (items: WorksBreakdownItem[], total: number) => {
+    ceilingChoices.update((choices) =>
+      items.length ? { ...choices, worksBreakdown: items } : choicesWithoutWorksBreakdown(choices),
+    );
+    if (total > 0) selectWorksBudget(total);
   };
   const heroCeiling =
     ceilingEnabled && ceilingPlan.available && ceilingPlan.reachable ? ceilingPlan.maxBid : null;
@@ -580,6 +598,7 @@ function SaleDetailWorkspace({
           <SalePointsToVerify
             className="mt-4"
             points={pointsToVerify(displaySale, { occupancyVisible: true })}
+            saleId={sale.id}
           />
           <ListingPreparation
             key={`${user?.id ?? "guest-demo"}:${sale.id}`}
@@ -895,6 +914,8 @@ function SaleDetailWorkspace({
                     onBudgetChange={ceilingEnabled ? selectWorksBudget : undefined}
                     initialDraft={worksDraft}
                     onDraftChange={setWorksDraft}
+                    worksBreakdown={ceilingChoices.choices.worksBreakdown}
+                    onWorksBreakdownChange={changeWorksBreakdown}
                     surface={surface}
                     onScenarioSelect={retainedWorks != null ? selectWorksBudget : undefined}
                     maxWorks={

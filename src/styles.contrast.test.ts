@@ -81,7 +81,8 @@ describe("indicateur de focus", () => {
   });
 
   it("aucun composant ne marque le focus avec ring-gold (2,85:1) : outline-gold-soft à la place", () => {
-    const forbidden = /(?<![\w-])(?:focus|focus-visible|focus-within):ring-gold(?![-\w])/;
+    const forbidden =
+      /(?<![\w-])(?:has-\[:focus-visible\]|focus|focus-visible|focus-within):ring-gold(?![-\w])/;
     const offenders: string[] = [];
     const walk = (directory: string) => {
       for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -101,13 +102,16 @@ describe("indicateur de focus", () => {
   });
 
   it("le motif interdit attrape les formes connues et laisse ring-gold-soft", () => {
-    const forbidden = /(?<![\w-])(?:focus|focus-visible|focus-within):ring-gold(?![-\w])/;
+    const forbidden =
+      /(?<![\w-])(?:has-\[:focus-visible\]|focus|focus-visible|focus-within):ring-gold(?![-\w])/;
     for (const bad of [
       "focus-visible:ring-gold",
       "focus-visible:ring-gold/40",
       "focus-within:ring-gold",
       "focus:ring-gold/20",
       'class="a focus-visible:ring-2 focus-visible:ring-gold"',
+      "has-[:focus-visible]:ring-gold",
+      "has-[:focus-visible]:ring-gold/60",
     ]) {
       expect(forbidden.test(bad), bad).toBe(true);
     }
