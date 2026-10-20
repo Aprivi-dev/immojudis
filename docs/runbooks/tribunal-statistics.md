@@ -39,9 +39,28 @@ prochains jours, le nombre de jours d’audience, la prochaine date, la mise à 
 avec visite, le délai médian entre première détection et audience, les lots médians par jour et les
 types de biens dominants. Les mises et délais publient également P25, P50 et P75 : la fourchette
 centrale P25–P75 contient la moitié des annonces. Des repères par type de bien sont calculés avec le
-même seuil. Les médianes, fourchettes et taux exigent cinq observations, sauf les lots ou intervalles
-par jour d’audience qui exigent trois observations. Sous le seuil, la valeur est `insufficient_data`
-mais la taille de l’échantillon d’annonces publiques reste visible.
+même seuil. Sur cette route (`tribunal_judicial_activity_v3`), les médianes, fourchettes et taux
+exigent cinq observations, sauf les lots ou intervalles par jour d’audience qui exigent trois
+observations. Sous le seuil, la valeur est `insufficient_data` mais la taille de l’échantillon
+d’annonces publiques reste visible.
+
+La route `GET /api/v1/tribunals/listing-statistics` (`tribunal_listing_statistics_v2`, bloc d’annonce
+de la fiche) applique des seuils plus stricts depuis le 20/10/2026 :
+
+- médianes, taux et parts à partir de 10 observations (`TRIBUNAL_LISTING_STATISTICS_MIN_SAMPLE`), 20
+  pour la répartition par type de bien (`TRIBUNAL_LISTING_STATISTICS_MIN_SUBGROUP_SAMPLE`) ;
+- de 5 à 9 observations, une mesure continue passe au statut `range_only` : `min` et `max`
+  observés, `value` à `null`. Une part ou un taux n’a pas de fourchette : il reste `insufficient_data` ;
+- les parts (`shareLow`, `shareHigh`) et les taux publiés (`interval`) portent l’intervalle de Wilson
+  à 95 % ;
+- le taux de surenchère est `insufficient_data` tant que moins de la moitié des annonces ont une
+  réponse connue (`TRIBUNAL_LISTING_STATISTICS_MIN_OVERBID_COVERAGE`) ;
+- le ratio mise à prix / DVF passe la porte de la bande publique (`passesPublicMarketGapGate`, dans
+  `src/lib/market-gap-band.ts`, identique à la fonction SQL de la migration `20261029120000`) ;
+- `meta` expose `minSampleSize`, `minSubgroupSampleSize`, `minRangeSampleSize` et `minOverbidCoverage`.
+
+Le seuil de `tribunal_judicial_activity_v3` (cinq observations) n’a pas été relevé : la décision reste
+à prendre.
 
 Cette route mesure la couverture Immojudis et non l’activité exhaustive du greffe. Elle est publique,
 ne renvoie aucune adresse, identité, URL source, texte brut ou dossier individuel, et utilise un cache

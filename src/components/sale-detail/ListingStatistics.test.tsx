@@ -24,13 +24,26 @@ vi.mock("@/lib/example-tribunal-statistics", () => ({
   getExampleTribunalStatistics: mocks.getExampleStatistics,
 }));
 
-const metric = (value: number | null, sampleSize = 12) =>
+const metric = (value: number | null, sampleSize = 12, interval: [number, number] | null = null) =>
   value == null
     ? { status: "insufficient_data" as const, value: null, sampleSize }
-    : { status: "published" as const, value, sampleSize };
+    : {
+        status: "published" as const,
+        value,
+        sampleSize,
+        interval: interval ? { low: interval[0], high: interval[1] } : null,
+      };
+
+const rangeMetric = (min: number, max: number, sampleSize = 7) => ({
+  status: "range_only" as const,
+  value: null,
+  min,
+  max,
+  sampleSize,
+});
 
 const activityResponse = {
-  schemaVersion: "tribunal_listing_statistics_v1" as const,
+  schemaVersion: "tribunal_listing_statistics_v2" as const,
   court: {
     code: "tj-bordeaux",
     name: "Tribunal judiciaire de Bordeaux",
@@ -51,13 +64,19 @@ const activityResponse = {
     startingPriceEur: metric(80_000),
     startingPriceToDvfRatio: metric(0.35, 9),
     propertyTypes: [
-      { propertyType: "apartment" as const, count: 7, share: 7 / 12 },
-      { propertyType: "house" as const, count: 3, share: 3 / 12 },
-      { propertyType: "other" as const, count: 2, share: 2 / 12 },
+      {
+        propertyType: "apartment" as const,
+        count: 7,
+        share: 7 / 12,
+        shareLow: 0.32,
+        shareHigh: 0.81,
+      },
+      { propertyType: "house" as const, count: 3, share: 3 / 12, shareLow: 0.09, shareHigh: 0.53 },
+      { propertyType: "other" as const, count: 2, share: 2 / 12, shareLow: 0.05, shareHigh: 0.45 },
     ],
-    visitCoverage: metric(0.75),
-    overbidCoverage: metric(0.25),
-    overbidsKnown: 3,
+    visitCoverage: metric(0.75, 12, [0.47, 0.91]),
+    overbidCoverage: metric(0.25, 12, [0.09, 0.53]),
+    overbidsKnown: 12,
     overbidsUnknown: 0,
     publishedToHearingDays: metric(50),
     discoveryToHearingDays: metric(56),
@@ -65,14 +84,14 @@ const activityResponse = {
       knownSales: 10,
       unknownSales: 2,
       distribution: [
-        { status: "vacant" as const, count: 4, share: 0.4 },
-        { status: "occupied" as const, count: 5, share: 0.5 },
-        { status: "rented" as const, count: 1, share: 0.1 },
+        { status: "vacant" as const, count: 4, share: 0.4, shareLow: 0.17, shareHigh: 0.69 },
+        { status: "occupied" as const, count: 5, share: 0.5, shareLow: 0.24, shareHigh: 0.76 },
+        { status: "rented" as const, count: 1, share: 0.1, shareLow: 0.02, shareHigh: 0.4 },
       ],
     },
     hearingCalendar: [{ date: "2026-10-15", sales: 3 }],
-    communes: [{ city: "Bordeaux", count: 8, share: 0.66 }],
-    lawyers: [{ name: "Cabinet Durand", count: 4, share: 4 / 12 }],
+    communes: [{ city: "Bordeaux", count: 8, share: 0.66, shareLow: 0.39, shareHigh: 0.86 }],
+    lawyers: [{ name: "Cabinet Durand", count: 4, share: 4 / 12, shareLow: 0.14, shareHigh: 0.61 }],
     upcomingListings: [
       {
         id: "upcoming-sale-1",
@@ -88,7 +107,10 @@ const activityResponse = {
   },
   meta: {
     generatedAt: "2026-10-02T10:00:00.000Z",
-    minSampleSize: 5,
+    minSampleSize: 10,
+    minSubgroupSampleSize: 20,
+    minRangeSampleSize: 5,
+    minOverbidCoverage: 0.5,
     sources: ["Annonces Immojudis", "Licitor"],
     publicationDateBasis: "source_publication_date_or_first_seen_at" as const,
     deduplication: "canonical_id_source_url_strong_address" as const,
@@ -243,8 +265,10 @@ describe("ListingStatistics", () => {
       activity: {
         ...activityResponse.activity,
         observedAnnouncements: 6,
-        propertyTypes: [{ propertyType: "apartment" as const, count: 4, share: 1 }],
-        startingPriceToDvfRatio: metric(1.35, 6),
+        propertyTypes: [
+          { propertyType: "apartment" as const, count: 4, share: 1, shareLow: 0.51, shareHigh: 1 },
+        ],
+        startingPriceToDvfRatio: metric(1.35, 12),
         overbidCoverage: metric(null, 0),
         overbidsKnown: 0,
         overbidsUnknown: 6,
@@ -256,6 +280,107 @@ describe("ListingStatistics", () => {
     expect(await screen.findByText("135 %")).toBeTruthy();
     expect(screen.getByText(/4 annonces avec type renseigné/)).toBeTruthy();
     expect(screen.getByText(/0 connues sur 6 annonces · 6 à confirmer/)).toBeTruthy();
+    expect(screen.getByText("Surenchères renseignées").parentElement?.textContent).toContain("—");
+  });
+
+  it("montre la fourchette observée, sans valeur centrale, de 5 à 9 observations", async () => {
+    mocks.fetchActivity.mockResolvedValue({
+      ...activityResponse,
+      activity: {
+        ...activityResponse.activity,
+        startingPriceEur: rangeMetric(12_000, 80_000, 7),
+        startingPriceToDvfRatio: rangeMetric(0.38, 0.9, 6),
+        publishedToHearingDays: rangeMetric(12, 40, 8),
+      },
+    });
+    renderStatistics();
+
+    expect(await screen.findByText(/de 12\s000\s€ à 80\s000\s€/)).toBeTruthy();
+    expect(screen.getByText("de 38 % à 90 %")).toBeTruthy();
+    expect(screen.getByText("de 12 à 40 jours")).toBeTruthy();
+    expect(
+      screen.getByText(/7 mises à prix renseignées : fourchette observée, sans valeur centrale/),
+    ).toBeTruthy();
+  });
+
+  it("affiche l’intervalle de Wilson des parts et des taux, et l’explique", async () => {
+    renderStatistics();
+
+    expect(await screen.findByText(/50 % \(24–76 %\) · 5/)).toBeTruthy();
+    expect(screen.getByText(/intervalle à 95 % : 47–91 %/)).toBeTruthy();
+    expect(
+      screen.getAllByText(/intervalle de confiance à 95 % de la part \(méthode de Wilson\)/).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("masque les parts par type de bien sous 20 observations, effectifs conservés", async () => {
+    renderStatistics();
+
+    expect(await screen.findByText(/Pourcentages masqués sous 20 types renseignés/)).toBeTruthy();
+    expect(screen.getByText("Appartements").parentElement?.textContent).toContain("—");
+    expect(screen.getByText("Appartements").parentElement?.textContent).toContain("7");
+  });
+
+  it("garde les parts par type de bien à partir de 20 observations", async () => {
+    mocks.fetchActivity.mockResolvedValue({
+      ...activityResponse,
+      activity: {
+        ...activityResponse.activity,
+        observedAnnouncements: 24,
+        propertyTypes: [
+          {
+            propertyType: "apartment" as const,
+            count: 14,
+            share: 14 / 24,
+            shareLow: 0.39,
+            shareHigh: 0.76,
+          },
+          {
+            propertyType: "house" as const,
+            count: 10,
+            share: 10 / 24,
+            shareLow: 0.24,
+            shareHigh: 0.61,
+          },
+        ],
+      },
+    });
+    renderStatistics();
+
+    expect(await screen.findByText(/58 % \(39–76 %\) · 14/)).toBeTruthy();
+    expect(screen.queryByText(/Pourcentages masqués sous 20 types/)).toBeNull();
+  });
+
+  it("nomme et définit séparément les deux délais", async () => {
+    renderStatistics();
+
+    expect(await screen.findByText("Délai « publication → audience »")).toBeTruthy();
+    expect(screen.getByText("Délai « première détection → audience »")).toBeTruthy();
+    expect(screen.getAllByText(/date de publication fournie par la source/).length).toBeGreaterThan(
+      0,
+    );
+    expect(
+      screen.getAllByText(/jour où Immojudis a repéré l’annonce pour la première fois/).length,
+    ).toBeGreaterThan(1);
+    expect(screen.getByText("50 jours")).toBeTruthy();
+    expect(screen.getByText("56 jours")).toBeTruthy();
+  });
+
+  it("explique pourquoi le taux de surenchère est masqué sous la moitié d’annonces renseignées", async () => {
+    mocks.fetchActivity.mockResolvedValue({
+      ...activityResponse,
+      activity: {
+        ...activityResponse.activity,
+        overbidCoverage: metric(null, 5),
+        overbidsKnown: 5,
+        overbidsUnknown: 7,
+      },
+    });
+    renderStatistics();
+
+    expect(
+      await screen.findByText(/Taux masqué : moins de 50 % des annonces ont une réponse connue/),
+    ).toBeTruthy();
     expect(screen.getByText("Surenchères renseignées").parentElement?.textContent).toContain("—");
   });
 

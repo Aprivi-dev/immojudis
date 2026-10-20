@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ rpc: vi.fn() }));
@@ -39,6 +40,18 @@ describe("recordAccountProductEvent", () => {
       p_detail: "favorites",
     });
   });
+
+  it.each(["daily_account", "daily_shared"] as const)(
+    "records the %s cap as a quota with its closed detail",
+    async (quota) => {
+      await recordAccountProductEvent(userId, { type: "quota_reached", quota });
+      expect(mocks.rpc).toHaveBeenCalledWith("record_account_product_event", {
+        p_user_id: userId,
+        p_event_type: "quota_reached",
+        p_detail: quota,
+      });
+    },
+  );
 
   it("records an email click with the kind of email and the sale", async () => {
     await recordAccountProductEvent(userId, { type: "email_clicked", email: "reminder", saleId });
@@ -95,6 +108,18 @@ describe("recordAccountProductEvent", () => {
       .join("\n");
     expect(logged).toContain("account-product-events");
     expect(logged).not.toContain(userId);
+  });
+});
+
+describe("closed list of quota details in the database", () => {
+  it("accepts every quota the code can record (migration 20261029120100)", () => {
+    const sql = readFileSync(
+      "supabase/migrations/20261029120100_account_product_events_daily_detail.sql",
+      "utf8",
+    ).replace(/^\s*--.*$/gm, "");
+    for (const quota of ["unlocks", "favorites", "daily", "daily_account", "daily_shared"]) {
+      expect(sql).toContain(`'${quota}'`);
+    }
   });
 });
 

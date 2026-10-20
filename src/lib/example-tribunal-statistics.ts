@@ -310,6 +310,15 @@ function createFixtureSales(court: ExampleCourt): TribunalListingStatisticsSale[
             estimatedValueEur: DVF_ESTIMATES_EUR[index]!,
             actionable: true,
             sampleSize: 9,
+            // Fictifs, mais conformes à la porte de la bande publique (market-gap-band.ts).
+            effectiveSampleSize: 6,
+            intervalMethod: "local_jackknife",
+            pricePerM2P10: 2_400,
+            pricePerM2P50: 3_000,
+            pricePerM2P90: 3_600,
+            radiusM: 600,
+            segment: "apartment",
+            areaKind: "urban",
           }
         : null,
       marketEstimateEligible: hasDvfEstimate,
