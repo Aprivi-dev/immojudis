@@ -1,3 +1,4 @@
+import "server-only";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { after, NextResponse } from "next/server";
 import { z } from "zod";
