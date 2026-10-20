@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { DepartmentSale } from "@/lib/department-pages";
 import {
@@ -7,6 +9,7 @@ import {
 import {
   TRIBUNAL_PAGE_LISTED_SALES,
   atTribunalPhrase,
+  hasReadableTribunalName,
   indexableTribunalPages,
   emptyTribunalActivity,
   isTribunalPageIndexable,
@@ -14,6 +17,7 @@ import {
   legacyTribunalPages,
   legacyTribunalRedirectPath,
   nextAudienceDate,
+  normalizeTribunalSlug,
   tribunalActivityWithoutDuplicates,
   tribunalCodeSlug,
   tribunalLongName,
@@ -212,7 +216,7 @@ describe("noms et textes", () => {
     expect(tribunalLongName(puy)).toBe("Tribunal judiciaire du Puy-en-Velay");
     expect(atTribunalPhrase(puy)).toBe("au tribunal judiciaire du Puy-en-Velay");
     expect(tribunalPlaceName(puy.searchName)).toBe("Le Puy-en-Velay");
-    expect(tribunalPageTitle(puy)).toBe("Enchères judiciaires : Le Puy-en-Velay");
+    expect(tribunalPageTitle(puy)).toBe("Ventes aux enchères au tribunal du Puy-en-Velay");
     expect(tribunalPageDescription(puy)).not.toMatch(/TJ|judiciaire du tribunal/);
   });
 
@@ -383,5 +387,105 @@ describe("tribunalActivityWithoutDuplicates", () => {
         { status: "ok", sales: listOf(19), received: TRIBUNAL_PAGE_LISTED_SALES },
       ).upcomingCount,
     ).toBe(19);
+  });
+});
+
+describe("adresses : normalisation et unicité sur le référentiel", () => {
+  /** Les codes de tribunaux du référentiel, tels que les migrations les enregistrent. */
+  function referenceCodes(): string[] {
+    const migrations = join(process.cwd(), "supabase", "migrations");
+    const codes = new Set<string>();
+    for (const file of readdirSync(migrations)) {
+      if (!file.endsWith(".sql")) continue;
+      const sql = readFileSync(join(migrations, file), "utf8");
+      for (const [, code] of sql.matchAll(/'(justice_tj_\d+_\d+)'/g)) codes.add(code);
+    }
+    return [...codes].sort();
+  }
+
+  it("donne à chaque code du référentiel une adresse propre, que personne d'autre ne porte", () => {
+    const codes = referenceCodes();
+    // Le référentiel compte plus d'une centaine de tribunaux judiciaires : la lecture a bien eu lieu.
+    expect(codes.length).toBeGreaterThan(100);
+    const slugs = codes.map((code) => tribunalCodeSlug(code));
+    expect(new Set(slugs).size).toBe(codes.length);
+    for (const slug of slugs) expect(slug).toMatch(/^justice-tj-\d+-\d+$/);
+    // Chaque adresse retrouve son tribunal, et lui seul.
+    const directory = codes.map((code) => ({
+      code,
+      name: code,
+      searchName: code,
+      city: null,
+      department: null,
+    }));
+    for (const code of codes) {
+      expect(knownTribunalFromSlug(directory, tribunalCodeSlug(code))?.code).toBe(code);
+    }
+  });
+
+  it("ramène une adresse mal écrite à l'adresse publiée", () => {
+    expect(normalizeTribunalSlug("JUSTICE-TJ-1-210")).toBe("justice-tj-1-210");
+    expect(normalizeTribunalSlug("justice_tj_1_210")).toBe("justice-tj-1-210");
+    expect(normalizeTribunalSlug("Justice%5FTJ%5F1%5F210")).toBe("justice-tj-1-210");
+    expect(normalizeTribunalSlug("Bobigny")).toBe("bobigny");
+    expect(normalizeTribunalSlug("Évry-Courcouronnes")).toBe("evry-courcouronnes");
+    // Une séquence % invalide ne lève pas.
+    expect(() => normalizeTribunalSlug("%E0%A4%A")).not.toThrow();
+    // L'adresse publiée est un point fixe : pas de redirection en boucle.
+    expect(normalizeTribunalSlug("justice-tj-1-210")).toBe("justice-tj-1-210");
+  });
+});
+
+describe("tribunal sans nom lisible (canonical_name nul)", () => {
+  const unnamed = court("justice_tj_1_210", { code: "justice_tj_1_210" });
+
+  it("n'écrit jamais le code brut comme nom", () => {
+    expect(hasReadableTribunalName(unnamed)).toBe(false);
+    expect(hasReadableTribunalName(court("TJ Bobigny"))).toBe(true);
+    expect(tribunalPlaceName("justice_tj_1_210")).toBe("Tribunal à confirmer");
+    expect(tribunalLongName(unnamed)).toBe("Tribunal judiciaire (nom à confirmer)");
+    expect(atTribunalPhrase(unnamed)).toBe("au tribunal judiciaire (nom à confirmer)");
+    for (const text of [
+      tribunalPageTitle(unnamed),
+      tribunalPageDescription(unnamed),
+      tribunalLongName(unnamed),
+      unnamed.name,
+    ]) {
+      expect(text).not.toContain("justice_tj");
+    }
+  });
+
+  it("sort de la liste des pages indexables, même au-dessus du seuil", () => {
+    const named = court("TJ Bobigny", { code: "justice_tj_1_93", upcomingCount: 12 });
+    const items = [{ ...unnamed, upcomingCount: 12 }, named];
+    expect(indexableTribunalPages(items).map((page) => page.activity.code)).toEqual([
+      "justice_tj_1_93",
+    ]);
+  });
+});
+
+describe("tribunalPageTitle : « Ventes aux enchères au tribunal de X »", () => {
+  it("nomme le tribunal dans le titre", () => {
+    expect(tribunalPageTitle(court("TJ Bordeaux"))).toBe(
+      "Ventes aux enchères au tribunal de Bordeaux",
+    );
+    expect(tribunalPageTitle(court("TJ Le Mans"))).toBe("Ventes aux enchères au tribunal du Mans");
+  });
+
+  it("se réduit pour un nom long plutôt que de dépasser 48 caractères", () => {
+    expect(tribunalPageTitle(court("TJ Saint-Denis-de-la-Réunion"))).toBe(
+      "Ventes aux enchères : Saint-Denis-de-la-Réunion",
+    );
+    for (const name of [
+      "TJ Saint-Denis-de-la-Réunion",
+      "TJ Villefranche-sur-Saône",
+      "TJ Châlons-en-Champagne",
+      "TJ Évry-Courcouronnes",
+      "Tribunal de première instance de Saint-Pierre-et-Miquelon",
+    ]) {
+      const title = tribunalPageTitle(court(name));
+      expect(title.length, name).toBeLessThanOrEqual(48);
+      expect(title.startsWith("Ventes aux enchères"), name).toBe(true);
+    }
   });
 });

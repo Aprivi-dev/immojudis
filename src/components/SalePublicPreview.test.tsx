@@ -185,6 +185,29 @@ describe("SalePublicPreview", () => {
     expect(screen.queryByText(/Activité publique du tribunal/)).toBeNull();
   });
 
+  it("links the name of the tribunal to its page, and keeps plain text without a code", () => {
+    renderPreview({
+      sale_venue_type: "tribunal",
+      sale_verification_status: "verified",
+      tribunal_code: "justice_tj_1_93",
+      tribunal_name: "TJ Bobigny",
+    });
+    expect(
+      screen.getByRole("link", { name: "Tribunal judiciaire de Bobigny" }).getAttribute("href"),
+    ).toBe("/tribunaux/justice-tj-1-93");
+    cleanup();
+
+    // Base pas encore migrée, ou tribunal inconnu du référentiel : le nom reste un texte simple.
+    renderPreview({
+      sale_venue_type: "tribunal",
+      sale_verification_status: "verified",
+      tribunal_code: null,
+      tribunal_name: "TJ Bobigny",
+    });
+    expect(screen.getByText("Tribunal judiciaire de Bobigny")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Tribunal judiciaire de Bobigny" })).toBeNull();
+  });
+
   it("shows the domanial method before price and avoids promising auctions", () => {
     const { container } = renderPreview({
       sale_venue_type: "state",
