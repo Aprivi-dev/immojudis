@@ -583,10 +583,31 @@ def _parse_complete_date(text: str) -> datetime | None:
     return first
 
 
+# Un libellé dont le nom principal est un box, un garage ou un stationnement : « Un box », « Garage », « Place de
+# stationnement n° 12 ». « Appartement avec box » ou « maison et garage » gardent leur type (le nom principal est
+# le logement) ; un libellé qui parle aussi d'un logement, d'un local ou d'un terrain n'est pas un stationnement.
+_PARKING_HEAD_RE = re.compile(
+    r"^(?:(?:un|une|le|la|l|ce|cette|des|les)\s+)?(?:\d+\s+)?"
+    r"(?:box(?:es)?|garages?|parkings?|stationnements?|(?:places?|emplacements?|lots?)\s+(?:de\s+|d['’]\s*)?"
+    r"(?:parking|stationnement|garage))\b"
+)
+_NOT_PARKING_RE = re.compile(
+    r"\b(?:appartements?|maisons?|villas?|studios?|immeubles?|commerces?|commerciaux?|locaux|local|terrains?|"
+    r"parcelles?|pavillons?|batiments?)\b"
+)
+
+
+def is_parking_label(value: object | None) -> bool:
+    text = strip_accents(clean_text(value) or "").lower()
+    return bool(text and _PARKING_HEAD_RE.match(text) and not _NOT_PARKING_RE.search(text))
+
+
 def normalize_property_type(value: object | None) -> str:
     text = strip_accents(clean_text(value) or "").lower()
     if text in PROPERTY_TYPE_CODE_MAP:
         return PROPERTY_TYPE_CODE_MAP[text]
+    if is_parking_label(text):
+        return "parking"
     if re.search(r"\b(?:batiments?|hangars?|exploitation|stabulation|locaux?)\b", text) and re.search(
         r"\b(?:terrains?|parcelles?|pres?)\b", text
     ):
@@ -630,6 +651,12 @@ def normalize_sale_property_type(raw_sale: dict[str, object]) -> str:
         for key in ("title", "description")
     ):
         return "building"
+    if property_type in {"land", "mixed", "other", "unknown"} and any(
+        is_parking_label(label)
+        for label in (raw_sale.get("title"), _source_block_lookup(raw_sale, "titre_detail", "detail_titre"))
+    ):
+        # Un box ou une place de stationnement classés « Terrain » par la source (le lot partage une parcelle).
+        return "parking"
     if property_type not in {"other", "unknown"}:
         return property_type
 
@@ -961,15 +988,16 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
     carrez_surface_m2 = parse_surface(
         _field_or_source_block(raw_sale, "carrez_surface_m2", "surface_carrez", "carrez_surface_m2")
     ) or _extract_carrez_surface_from_text(source_text)
-    if carrez_is_implausible_against_habitable(carrez_surface_m2, habitable_surface_m2):
-        # Une Carrez sous 20 % de la surface habitable est une partie du bien (cave, surface hors
-        # Carrez), pas sa surface légale : la surface habitable fait foi, la valeur écartée reste tracée.
+    if carrez_basis := carrez_rejection_basis(carrez_surface_m2, habitable_surface_m2):
+        # Une Carrez sous 20 % de la surface habitable est une partie du bien (cave, surface hors Carrez) ; une
+        # Carrez au-dessus de l'habitable est impossible : la surface habitable fait foi, la valeur écartée
+        # reste tracée.
         raw_sale["carrez_surface_reconciliation"] = {
             "status": "removed",
             "rejected_carrez_surface_m2": str(carrez_surface_m2),
             "resolved_carrez_surface_m2": None,
             "habitable_surface_m2": str(habitable_surface_m2),
-            "basis": "carrez_below_20_percent_of_habitable_surface",
+            "basis": carrez_basis,
         }
         raw_sale["quality_flags"] = [
             *dict.fromkeys([*(raw_sale.get("quality_flags") or []), "surface_conflict_resolved"])
@@ -1728,15 +1756,30 @@ def is_outside_carrez_context(text: str, start: int, end: int) -> bool:
     return bool(_OUTSIDE_CARREZ_RE.search(text[max(0, start - 14) : end]))
 
 
+CARREZ_TO_HABITABLE_MAX_RATIO = Decimal("1.02")
+CARREZ_BELOW_BASIS = "carrez_below_20_percent_of_habitable_surface"
+CARREZ_ABOVE_BASIS = "carrez_above_habitable_surface"
+
+
+def carrez_rejection_basis(carrez_surface_m2: Decimal | None, habitable_surface_m2: Decimal | None) -> str | None:
+    """Pourquoi une Carrez est écartée face à la surface habitable, ou ``None`` si elle est vraisemblable.
+
+    Une Carrez sous 20 % de l'habitable est une partie du bien ; une Carrez au-dessus de l'habitable (plus 2 %
+    de tolérance de mesure) est impossible : la Carrez exclut des surfaces que l'habitable compte.
+    """
+    if carrez_surface_m2 is None or habitable_surface_m2 is None or habitable_surface_m2 <= 0:
+        return None
+    if carrez_surface_m2 < habitable_surface_m2 * CARREZ_TO_HABITABLE_MIN_RATIO:
+        return CARREZ_BELOW_BASIS
+    if carrez_surface_m2 > habitable_surface_m2 * CARREZ_TO_HABITABLE_MAX_RATIO:
+        return CARREZ_ABOVE_BASIS
+    return None
+
+
 def carrez_is_implausible_against_habitable(
     carrez_surface_m2: Decimal | None, habitable_surface_m2: Decimal | None
 ) -> bool:
-    return (
-        carrez_surface_m2 is not None
-        and habitable_surface_m2 is not None
-        and habitable_surface_m2 > 0
-        and carrez_surface_m2 < habitable_surface_m2 * CARREZ_TO_HABITABLE_MIN_RATIO
-    )
+    return carrez_rejection_basis(carrez_surface_m2, habitable_surface_m2) is not None
 
 
 def _extract_carrez_surface_from_text(*values: object) -> Decimal | None:
@@ -1988,10 +2031,13 @@ def _is_ambiguous_mixed_lot_surface(property_type: str, text: str) -> bool:
 
     if property_type != "mixed" or not text or _has_explicit_total_surface_evidence(text):
         return False
-    surface_mentions = list(
-        re.finditer(rf"{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b", text, re.I)
-    )
-    if len(surface_mentions) < 2:
+    # Des valeurs DISTINCTES : l'en-tête (« 20,46m² ») et le texte (« De 20,46 m² ») qui répètent la même
+    # surface ne sont pas deux lots (faux conflit « ambiguous_surface », fiche Vench 166573).
+    surface_values = {
+        parse_surface(match.group(1))
+        for match in re.finditer(rf"{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b", text, re.I)
+    }
+    if len(surface_values - {None}) < 2:
         return False
     return bool(
         re.search(

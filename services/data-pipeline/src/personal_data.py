@@ -24,10 +24,12 @@ avec les mêmes cas.
 - Le statut n'est jamais déduit : « occupé(e)(s) par <nom> » devient toujours « un occupant ». « Un
   locataire » n'apparaît que si la formule source le dit (« loué à <nom> », « bail consenti à <nom> »,
   « locataire <nom> » : on remplace le nom, pas le rôle).
-- Après « loué à » et « bail consenti à » seulement, un « Prénom Nom » en casse mixte est reconnu.
-- Les contacts professionnels (« Me X, avocat, demeurant … ») ne sont pas touchés ; ils restent
-  régis par les règles existantes (`scrub_public_text`).
-- Idempotent : filtrer un texte déjà filtré ne le change pas.
+- Après « loué à » et « bail consenti à », un « Prénom Nom » en casse mixte (deux ou trois mots) est reconnu ;
+  après « occupé par », « héritiers de », « propriété de », « appartenant à » et « associé de », il l'est aussi,
+  mais seulement s'il contient un prénom de la liste (« Pierre Martin » ; pas « Orange Business »).
+- « la famille Martin » et « l'indivision DUPONT » perdent leur nom, le mot reste.
+- Après ces formules, « Civilité NOM Prénom » (« Monsieur DUPONT Jean-Claude ») et « M. et Mme NOM » sont
+  reconnus. Une civilité sans formule n'est pas touchée (« Madame Rose GAUTIER a été assignée »).
 """
 
 from __future__ import annotations
@@ -97,17 +99,18 @@ _FIRST_NAMES = (
 )
 
 
-def _first_name_forms() -> str:
+def _first_name_form_set() -> frozenset[str]:
     forms: set[str] = set()
     for name in _FIRST_NAMES.split(" "):
         plain = "".join(c for c in unicodedata.normalize("NFD", name) if not unicodedata.combining(c))
         for form in (name, plain):
             forms.add(form)
             forms.add(form.upper())
-    return "|".join(sorted(forms, key=lambda form: (-len(form), form)))
+    return frozenset(forms)
 
 
-_FIRST_NAME_FORMS = _first_name_forms()
+_FIRST_NAME_SET = _first_name_form_set()
+_FIRST_NAME_FORMS = "|".join(sorted(_FIRST_NAME_SET, key=lambda form: (-len(form), form)))
 # Un ou plusieurs prénoms de la liste, composés avec un trait d'union : « Jean-Pierre », « MARIE-CLAIRE ».
 _FIRST_NAME = rf"(?:{_FIRST_NAME_FORMS})(?:-(?:{_FIRST_NAME_FORMS}))*(?![{_L}])"
 # Prénom(s) puis NOM(S) en capitales : « Jean-Pierre DUPONT ».
@@ -158,7 +161,8 @@ _ORG_RE = re.compile(
     rf"(?<![{_L}])(?:sci|sarl|sas|sasu|eurl|sa|snc|scp|selarl|selas|scm|sccv|sc|société|societe|banque|caisse"
     r"|crédit|credit|syndicat|association|commune|mairie|ville|département|departement|région|region|état|etat"
     r"|trésor|tresor|fonds|compagnie|mutuelle|cabinet|étude|etude|agence|foncière|fonciere|immobilière"
-    r"|immobiliere|groupe|union|fédération|federation|communauté|communaute|métropole|metropole|office|centre"
+    r"|immobiliere|immobilier|immobiliers|groupe|union|fédération|federation|communauté|communaute|métropole"
+    r"|metropole|office|centre"
     r"|établissement|etablissement|hôpital|hopital|copropriété|copropriete|copropriétaires|syndic|tribunal"
     r"|préfecture|prefecture|ministère|ministere|direction|service|services|administration|domaine|domaines"
     r"|finances|publiques|impôts|impots|urssaf|habitat|logement|logements|patrimoine|gestion|résidence"
@@ -178,7 +182,7 @@ _QUICK = re.compile(
     r"occup|locataire|bail|requête|requete|appartenant|appartien|propriété|propriete|\bné|demeur|domicili"
     r"|résida|residan|époux|épouse|epou|divorc|veuf|veuve|\bnée|consort|héritier|heritier|succession|loué|loue"
     r"|d[ée]biteur|saisi|propri[ée]taire|vendeur|bailleur|cr[ée]ancier|poursuivant|d[ée]fendeur|demandeur"
-    r"|requ[ée]rant|int[ée]ress|indivisaire",
+    r"|requ[ée]rant|int[ée]ress|indivis|associ[ée]|famille",
     re.IGNORECASE,
 )
 
@@ -206,7 +210,7 @@ _ABBREVIATIONS = "av|bd|bld|bvd|ch|imp|rte|pl|app|apt|esc|fg|bât|bat|st|ste|dr|
 _ADDRESS_FILLER = re.compile(rf"(?:ensemble|actuellement|également|egalement|toujours|alors){_SP}+")
 _ADDRESS_CONNECTOR = re.compile(rf"(?:de|du|des|la|le|les|sur|sous|en|aux|au|à)(?![{_L}\d])")
 _ADDRESS_TOKEN = re.compile(
-    rf"(?:\d+(?:[-/]\d+)*(?:er|ère|ème|e|bis|ter|quater|[A-Za-z])?(?![{_L}\d])|[nN]°|[A-Z](?![{_L}\d])"
+    rf"(?:\d+(?:[-/]\d+)*(?:er|ère|ème|e|bis|ter|quater|[A-Za-z])?(?![{_L}\d])|[nN]°|[A-Z](?![{_L}\d'’])"
     rf"|(?:{_ABBREVIATIONS})\.|(?:{_STREET_WORDS})(?![{_L}])|{_TOKEN}|\([^)\n]{{1,25}}\))"
 )
 _ADDRESS_SEPARATOR = re.compile(rf"(?:{_SP}*,{_SP}*|{_SP}+|-)")
@@ -242,6 +246,12 @@ _HEIRS = re.compile(
     re.IGNORECASE,
 )
 _CONSORTS = re.compile(rf"{_NO_BEFORE}(consorts?){_SP}+", re.IGNORECASE)
+# « l'associé de Madame NOM » : le nom part, « de » devient « d'un particulier ».
+_ASSOCIATE = re.compile(rf"{_NO_BEFORE}(associ[ée](?:e|s|es)?)({_SP}+(?:de|d{_APOS}|du){_SP}*)", re.IGNORECASE)
+# « la famille Martin », « l'indivision DUPONT » : le nom part, le mot reste.
+_FAMILY = re.compile(
+    rf"{_NO_BEFORE}(famille|indivision)(?![{_L}])({_SP}+(?:(?:de|du|des|d{_APOS}){_SP}*)?)", re.IGNORECASE
+)
 _MARITAL = re.compile(
     rf"{_NO_BEFORE}([ée]pouses?|[ée]poux|veuf|veuve|divorc[ée]e?s?|n[ée]e)(?![{_L}])", re.IGNORECASE
 )
@@ -313,7 +323,14 @@ def _acceptable(span: str, kind: str) -> bool:
     return first not in (_STOP_FIRST_SINGLE if kind == "single" else _STOP_FIRST)
 
 
-def _one_person(text: str, pos: int, *, single: bool = False, mixed: bool = False) -> int | None:
+def _has_first_name(span: str) -> bool:
+    """Un mot du nom est un prénom de la liste (« Pierre Martin », « Martin Pierre »)."""
+    return any(word in _FIRST_NAME_SET for word in re.split(r"[\s'’-]+", span.strip()))
+
+
+def _one_person(
+    text: str, pos: int, *, single: bool = False, mixed: bool = False, forename: bool = False
+) -> int | None:
     match = _PERSON_CIV.match(text, pos)
     if match and _acceptable(match.group(0), "civ"):
         return match.end()
@@ -326,14 +343,18 @@ def _one_person(text: str, pos: int, *, single: bool = False, mixed: bool = Fals
             return match.end()
     if mixed:
         match = _PERSON_MIXED.match(text, pos)
-        if match and _acceptable(match.group(0), "bare"):
+        if match and _acceptable(match.group(0), "bare") and (not forename or _has_first_name(match.group(0))):
             return match.end()
     return None
 
 
-def _person_end(text: str, pos: int, *, mixed: bool = False) -> int | None:
-    """Fin d'une ou plusieurs personnes (« M. X et Mme Y, née Z ») commençant en `pos`."""
-    end = _one_person(text, pos, mixed=mixed)
+def _person_end(text: str, pos: int, *, mixed: bool = False, forename: bool = False) -> int | None:
+    """Fin d'une ou plusieurs personnes (« M. X et Mme Y, née Z ») commençant en `pos`.
+
+    `mixed` : un « Prénom Nom » en casse mixte est reconnu ; `forename` : à condition qu'un prénom de la liste en
+    fasse partie (formules où le texte n'a pas déjà dit qu'il s'agit d'un particulier).
+    """
+    end = _one_person(text, pos, mixed=mixed, forename=forename)
     if end is None:
         return None
     while True:
@@ -345,7 +366,7 @@ def _person_end(text: str, pos: int, *, mixed: bool = False) -> int | None:
                 end, extended = after, True
         separator = _SEPARATOR.match(text, end)
         if separator:
-            after = _one_person(text, separator.end(), mixed=mixed)
+            after = _one_person(text, separator.end(), mixed=mixed, forename=forename)
             if after is not None:
                 end, extended = after, True
         if not extended:
@@ -361,7 +382,7 @@ def _requete(text: str, match: re.Match[str]) -> _Edit | None:
 
 
 def _occupied(text: str, match: re.Match[str]) -> _Edit | None:
-    end = _person_end(text, match.end())
+    end = _person_end(text, match.end(), mixed=True, forename=True)
     if end is None:
         return None
     # Le statut (locataire, occupant sans titre, ancien locataire…) n'est jamais déduit du voisinage.
@@ -413,24 +434,38 @@ def _owner_at(text: str, match: re.Match[str]) -> _Edit | None:
     tail = _OWNER_AT_TAIL.match(text, match.end())
     if not tail:
         return None
-    end = _person_end(text, tail.end())
+    end = _person_end(text, tail.end(), mixed=True, forename=True)
     if end is None:
         return None
     return tail.end(), end, "un particulier"
 
 
 def _property(text: str, match: re.Match[str]) -> _Edit | None:
-    end = _person_end(text, match.end())
+    end = _person_end(text, match.end(), mixed=True, forename=True)
     if end is None:
         return None
     return match.start() + len(match.group(1)), end, " d'un particulier"
 
 
 def _heirs(text: str, match: re.Match[str]) -> _Edit | None:
-    end = _person_end(text, match.end())
+    end = _person_end(text, match.end(), mixed=True, forename=True)
     if end is None:
         return None
     return match.start() + len(match.group(1)), end, " du défunt"
+
+
+def _associate(text: str, match: re.Match[str]) -> _Edit | None:
+    end = _person_end(text, match.end(), mixed=True, forename=True)
+    if end is None:
+        return None
+    return match.start() + len(match.group(1)), end, " d'un particulier"
+
+
+def _family(text: str, match: re.Match[str]) -> _Edit | None:
+    name = _PERSON_SINGLE.match(text, match.end())
+    if not name or not _acceptable(name.group(0), "single"):
+        return None
+    return match.start() + len(match.group(1)), name.end(), ""
 
 
 def _consorts(text: str, match: re.Match[str]) -> _Edit | None:
@@ -530,6 +565,8 @@ _RULES: tuple[tuple[re.Pattern[str], Callable[[str, re.Match[str]], _Edit | None
     (_PROPERTY, _property),
     (_HEIRS, _heirs),
     (_CONSORTS, _consorts),
+    (_ASSOCIATE, _associate),
+    (_FAMILY, _family),
     (_MARITAL, _marital),
     (_BIRTH, _birth),
     (_RESIDENCE, _residence),

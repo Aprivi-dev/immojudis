@@ -2,6 +2,17 @@ from __future__ import annotations
 
 import pytest
 
+from tests.clock_offset import install_from_environment, unavailable_reason
+
+# Job hebdomadaire « horloge +60 jours » : sans la variable IMMOJUDIS_TEST_CLOCK_OFFSET_DAYS, rien ne change.
+_CLOCK_OFFSET_DAYS = install_from_environment()
+
+
+def pytest_report_header(config) -> str | None:
+    if _CLOCK_OFFSET_DAYS is None:
+        return None
+    return unavailable_reason() or f"horloge décalée de {_CLOCK_OFFSET_DAYS:g} jours (time-machine)"
+
 
 @pytest.fixture(autouse=True)
 def _drop_shared_postgres_connections():
@@ -26,6 +37,20 @@ def _no_reference_communes_lookup(monkeypatch):
     commune_department_lookup.reset_cache()
     yield
     commune_department_lookup.reset_cache()
+
+
+@pytest.fixture(autouse=True)
+def _no_reference_communes_centroids(monkeypatch):
+    """Le point au centre de la commune (``src.municipality_location``) lit ``reference_communes`` en base.
+
+    Les tests tournent sans base ; ceux du point communal fournissent eux-mêmes leurs communes.
+    """
+    from src import municipality_location
+
+    monkeypatch.setattr(municipality_location, "load_communes", list)
+    municipality_location.reset_cache()
+    yield
+    municipality_location.reset_cache()
 
 
 @pytest.fixture(autouse=True)
@@ -74,3 +99,15 @@ def _sources_not_withdrawn_by_default(monkeypatch):
 
     source_withdrawal.reset_cache()
     monkeypatch.setattr(source_withdrawal, "withdrawn_sources", lambda db_url=None: frozenset())
+
+
+@pytest.fixture
+def merge_trigger_present(monkeypatch):
+    """Simule la base où le déclencheur de report des données des comptes est déployé.
+
+    Les fonctions de suppression de lignes fusionnées refusent sans lui (``src.merge_guards``) ; les tests
+    du refus ne l'utilisent pas et posent eux-mêmes ``merge_trigger_deployed``.
+    """
+    from src import merge_guards
+
+    monkeypatch.setattr(merge_guards, "merge_trigger_deployed", lambda db_url: True)

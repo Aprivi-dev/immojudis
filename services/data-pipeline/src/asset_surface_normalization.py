@@ -32,7 +32,7 @@ from src.normalize import (
     _preferred_surface_evidence_value,
     _surface_evidence_for_value,
     _surface_evidence_matches_value,
-    carrez_is_implausible_against_habitable,
+    carrez_rejection_basis,
     clean_text,
     is_outside_carrez_context,
     parse_surface,
@@ -134,9 +134,10 @@ def _fill_surfaces(sale: AuctionSale, text: str) -> None:
         if _corroborated_text_built_surface(sale) == text_built_surface:
             _record_surface_conflict_resolution(sale, previous_surface, text_built_surface)
     rejected_equal_to_land = _reject_built_surface_equal_to_land(sale) or rejected_equal_to_land
-    if carrez_is_implausible_against_habitable(sale.carrez_surface_m2, sale.habitable_surface_m2):
-        # Une Carrez à moins de 20 % de la surface habitable est une partie du bien (cave,
-        # surface hors Carrez) : la surface habitable fait foi, la valeur écartée reste tracée.
+    if carrez_basis := carrez_rejection_basis(sale.carrez_surface_m2, sale.habitable_surface_m2):
+        # Une Carrez à moins de 20 % de la surface habitable est une partie du bien (cave, surface hors Carrez),
+        # une Carrez au-dessus de l'habitable (plus 2 %) est impossible : la surface habitable fait foi, la
+        # valeur écartée reste tracée.
         rejected_carrez_surface = sale.carrez_surface_m2
         if sale.surface_m2 == rejected_carrez_surface:
             sale.surface_m2 = None
@@ -146,7 +147,7 @@ def _fill_surfaces(sale: AuctionSale, text: str) -> None:
             "rejected_carrez_surface_m2": str(rejected_carrez_surface),
             "resolved_carrez_surface_m2": None,
             "habitable_surface_m2": str(sale.habitable_surface_m2),
-            "basis": "carrez_below_20_percent_of_habitable_surface",
+            "basis": carrez_basis,
         }
         _add_quality_flag(sale, "surface_conflict_resolved")
     explicit_app_surface = None

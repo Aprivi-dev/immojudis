@@ -1,0 +1,71 @@
+name: Pipeline tests, clock +60 days
+
+# Weekly detector of hard-coded dates in the data-pipeline tests: the whole suite runs with the Python clock moved
+# 60 days ahead (IMMOJUDIS_TEST_CLOCK_OFFSET_DAYS, read by services/data-pipeline/tests/clock_offset.py through
+# tests/conftest.py). A test whose hearing date, freshness window or retention is written as an absolute
+# date instead of relative to "today" fails here weeks before it would break the main CI.
+#
+# Note for the owner: the offset needs the `time-machine` package, which is NOT in the pipeline lockfiles (adding a
+# dependency needs your agreement). Until you add it to requirements-dev.txt and regenerate
+# requirements-dev.lock, the "Check the clock engine" step below emits a ::warning:: and the test step is skipped,
+# so the job stays green but says it did nothing, instead of running the suite with an unmoved clock. A
+# standard-library-only engine was tried and dropped: replacing datetime.datetime makes the pandas import loop, and
+# a partial shift gives dozens of false failures. PostgreSQL's now() and subprocess clocks are not moved.
+#
+# No secret, no database: read-only job, failures are informative (it never blocks a pull request).
+on:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: immojudis-pipeline-clock-offset
+  cancel-in-progress: true
+
+jobs:
+  clock-offset:
+    name: Data pipeline tests with the clock 60 days ahead
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: services/data-pipeline
+    env:
+      PYTHONUNBUFFERED: "1"
+      IMMOJUDIS_TEST_CLOCK_OFFSET_DAYS: "60"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            services/data-pipeline/requirements.lock
+            services/data-pipeline/requirements-dev.lock
+            services/data-pipeline/requirements-valuation.lock
+
+      - name: Install Python dependencies
+        run: python -m pip install --require-hashes -r requirements-dev.lock
+
+      - name: Install the valuation stack for the training tests
+        run: python -m pip install --require-hashes -r requirements-valuation.lock
+
+      - name: Check the clock engine
+        id: engine
+        run: |
+          if python -c "import time_machine" 2>/dev/null; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::time-machine is not installed (not in requirements-dev.lock): the clock-offset run is skipped."
+          fi
+
+      - name: Run the tests with the clock moved 60 days ahead
+        if: steps.engine.outputs.available == 'true'
+        run: python -m pytest -q

@@ -830,6 +830,118 @@
         "ROUSSEL",
         "Éric"
       ]
+    },
+    {
+      "name": "occupé par Prénom Nom en casse mixte",
+      "input": "Appartement occupé par Pierre Martin depuis 2019.",
+      "expected": "Appartement occupé par un occupant depuis 2019.",
+      "absent": [
+        "Martin",
+        "Pierre"
+      ]
+    },
+    {
+      "name": "héritiers de Prénom Nom en casse mixte",
+      "input": "Ses héritiers de Paul Dupont vendent le bien.",
+      "expected": "Ses héritiers du défunt vendent le bien.",
+      "absent": [
+        "Dupont",
+        "Paul"
+      ]
+    },
+    {
+      "name": "propriété de Prénom Nom en casse mixte",
+      "input": "Propriété de Pierre Martin.",
+      "expected": "Propriété d'un particulier.",
+      "absent": [
+        "Martin",
+        "Pierre"
+      ]
+    },
+    {
+      "name": "appartenant à deux personnes en casse mixte",
+      "input": "Bien appartenant à Pierre Martin et Marie Durand.",
+      "expected": "Bien appartenant à un particulier.",
+      "absent": [
+        "Martin",
+        "Durand",
+        "Marie"
+      ]
+    },
+    {
+      "name": "appartenant à Civilité NOM Prénom",
+      "input": "Bien appartenant à Monsieur DUPONT Jean-Claude, retraité.",
+      "expected": "Bien appartenant à un particulier, retraité.",
+      "absent": [
+        "DUPONT",
+        "Jean-Claude"
+      ]
+    },
+    {
+      "name": "propriété de M. et Mme NOM",
+      "input": "Propriété de M. et Mme DUPONT, vendue.",
+      "expected": "Propriété d'un particulier, vendue.",
+      "absent": [
+        "DUPONT"
+      ]
+    },
+    {
+      "name": "occupé par M. et Mme NOM",
+      "input": "Le bien est occupé par M. et Mme DUPONT depuis 2019.",
+      "expected": "Le bien est occupé par un occupant depuis 2019.",
+      "absent": [
+        "DUPONT"
+      ]
+    },
+    {
+      "name": "indivision NOM",
+      "input": "Le bien appartient à l'indivision DUPONT.",
+      "expected": "Le bien appartient à l'indivision.",
+      "absent": [
+        "DUPONT"
+      ]
+    },
+    {
+      "name": "occupé par la famille Nom",
+      "input": "Bien occupé par la famille Martin et ses enfants.",
+      "expected": "Bien occupé par la famille et ses enfants.",
+      "absent": [
+        "Martin"
+      ]
+    },
+    {
+      "name": "associé de Madame NOM",
+      "input": "Le local est exploité par l'associé de Madame NOM.",
+      "expected": "Le local est exploité par l'associé d'un particulier.",
+      "absent": [
+        "NOM"
+      ]
+    },
+    {
+      "name": "associé de Pierre Martin",
+      "input": "L'associé de Pierre Martin exploite le local.",
+      "expected": "L'associé d'un particulier exploite le local.",
+      "absent": [
+        "Martin",
+        "Pierre"
+      ]
+    },
+    {
+      "name": "demeurant suivi d'un nom à apostrophe (texte tronqué)",
+      "input": "Le créancier poursuivant, demeurant L'AIGLE 12 rue des Lilas 69000 Lyon, a assigné.",
+      "expected": "Le créancier poursuivant, a assigné.",
+      "absent": [
+        "AIGLE",
+        "Lilas"
+      ]
+    },
+    {
+      "name": "demeurant suivi de D'ARTAGNAN",
+      "input": "Le vendeur, demeurant D'ARTAGNAN, vend.",
+      "expected": "Le vendeur, vend.",
+      "absent": [
+        "ARTAGNAN"
+      ]
     }
   ],
   "unchanged": [
@@ -1200,6 +1312,34 @@
     {
       "name": "rôle sans nom",
       "input": "Le débiteur saisi occupe le bien. Le vendeur est présent à la visite."
+    },
+    {
+      "name": "avocat poursuivant à nom à apostrophe",
+      "input": "Avocat poursuivant L'AIGLE, Bordeaux."
+    },
+    {
+      "name": "occupé par une société en casse mixte",
+      "input": "Occupé par Orange Business."
+    },
+    {
+      "name": "propriété d'une enseigne en casse mixte",
+      "input": "Propriété de Leroy Merlin."
+    },
+    {
+      "name": "appartenant à une société immobilière",
+      "input": "Bien appartenant à Pierre Martin Immobilier."
+    },
+    {
+      "name": "place et banque",
+      "input": "Local situé Place Jean JAURES, propriété de la Banque Populaire du NORD."
+    },
+    {
+      "name": "associé d'une société",
+      "input": "Le local est exploité par l'associé de la SCI Les Lilas."
+    },
+    {
+      "name": "famille sans nom",
+      "input": "Occupé par une famille de trois personnes."
     }
   ]
 }

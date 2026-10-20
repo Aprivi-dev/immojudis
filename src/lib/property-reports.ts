@@ -4,6 +4,7 @@ import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { getEnvironmentalContext } from "@/lib/environmental-context";
+import { redactPersonalData, redactPersonalText } from "@/lib/personal-data-filter";
 import {
   isPlanPeriodActive,
   normalizePlanCode,
@@ -703,17 +704,18 @@ export function buildPublicSharedPropertyReport(
   );
   const traceability = asRecord(snapshot.sourceTraceability);
 
+  // Lecture publique par lien : un rapport figé avant le durcissement du filtre est refiltré ici.
   return {
     id: report.id,
-    title: report.title,
+    title: redactPersonalText(report.title),
     reportKind: report.report_kind,
     updatedAt: report.updated_at,
     sharedAt: report.shared_at,
     expiresAt: report.share_expires_at,
     viewCount: report.share_view_count,
     plan: typeof snapshot.plan === "string" ? snapshot.plan : null,
-    sale: asRecord(snapshot.sale),
-    analysis: asRecord(snapshot.analysis),
+    sale: redactPersonalData(asRecord(snapshot.sale)),
+    analysis: redactPersonalData(asRecord(snapshot.analysis)),
     market: report.market_snapshot,
     environmental: report.environmental_snapshot,
     ceiling: report.ceiling_snapshot,
