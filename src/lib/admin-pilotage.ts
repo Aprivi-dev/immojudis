@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { asRecord, stringValue } from "@/lib/guards";
+import type { SaleSignalFeedbackSummary } from "@/lib/admin-sale-signal-feedback";
 import { parisDateKey } from "@/lib/sale-countdown";
 
 /**
@@ -100,7 +101,11 @@ export type AdminPilotage = {
 };
 
 /** Réponse de la route : le pilotage et, sous `saleReminders`, le taux de fausses alertes des rappels. */
-export type AdminPilotageResponse = AdminPilotage & { saleReminders?: SaleReminderAccuracy };
+export type AdminPilotageResponse = AdminPilotage & {
+  saleReminders?: SaleReminderAccuracy;
+  /** Retours « Utile » / « Pas pertinent » sur les signaux d'une vente (point 67). */
+  signalFeedback?: SaleSignalFeedbackSummary;
+};
 
 const count = z.number().int().nonnegative().nullish();
 const quotaSchema = z.object({

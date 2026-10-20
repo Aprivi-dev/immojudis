@@ -12,7 +12,12 @@ import type {
   SaleReminderAccuracy,
   SaleReminderAccuracyVerdict,
 } from "@/lib/admin-pilotage";
+import type {
+  SaleSignalFeedbackSummary,
+  SignalFeedbackCounts,
+} from "@/lib/admin-sale-signal-feedback";
 import { fetchAdminPilotage } from "@/lib/client-api/admin";
+import { SALE_SIGNAL_REASON_LABELS, type SaleSignal } from "@/lib/sale-signal-feedback";
 
 export const PILOTAGE_QUERY_KEY = ["admin-pilotage"] as const;
 
@@ -414,6 +419,8 @@ function PilotageTables({ data }: { data: AdminPilotageResponse }) {
 
       <ReminderAccuracyCard accuracy={data.saleReminders ?? null} />
 
+      <SignalFeedbackCard summary={data.signalFeedback ?? null} />
+
       <AdminPanel className="mt-6 p-5">
         <AdminSectionHeading title="Comment lire ces chiffres" />
         <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-6 text-brand-navy/70">
@@ -515,6 +522,88 @@ function ReminderAccuracyCard({ accuracy }: { accuracy: SaleReminderAccuracy | n
         Critère de passage à « on » : moins de {formatInteger(maxPercent)} % de fausses alertes sur
         au moins {formatInteger(minSample)} rappels mesurés.
       </p>
+    </AdminPanel>
+  );
+}
+
+/** Les signaux dont la page lit les retours, avec leur libellé et leurs motifs (dans cet ordre). */
+const FEEDBACK_SIGNALS: Array<{ signal: SaleSignal; label: string; reasons: string[] }> = [
+  {
+    signal: "market_gap_band",
+    label: "Écart au marché (bande)",
+    reasons: ["estimate_too_high", "estimate_too_low"],
+  },
+  {
+    signal: "points_to_verify",
+    label: "Points à vérifier",
+    reasons: ["point_wrong", "point_missing"],
+  },
+];
+
+/** Part d'« Utile » en pourcentage ; masquée sous le seuil d'affichage, « non mesuré » sans mesure. */
+export function formatUsefulShare(counts: SignalFeedbackCounts | null): string {
+  if (!counts || counts.total == null || counts.useful == null) return NOT_MEASURED;
+  if (counts.total < PILOTAGE_MASK_BELOW) return MASKED;
+  return `${Math.round((counts.useful / counts.total) * 100)} %`;
+}
+
+/**
+ * Retours « Utile » / « Pas pertinent » des comptes sur la bande d'écart au marché et sur les points à
+ * vérifier, sur 90 jours. Les « point faux » ont leur ligne ici : la page « Qualité » lit le rapport de
+ * qualité du catalogue, elle n'a pas de file pour des retours de personnes.
+ */
+function SignalFeedbackCard({ summary }: { summary: SaleSignalFeedbackSummary | null }) {
+  const lines = (signal: SaleSignal, reasons: string[]) => {
+    const counts = summary?.signals[signal] ?? null;
+    const share = formatUsefulShare(counts);
+    return [
+      {
+        label: "Retours",
+        text: formatCount(counts?.total ?? null),
+        measured: counts?.total != null,
+      },
+      { label: "Part d’« Utile »", text: share, measured: share !== NOT_MEASURED },
+      {
+        label: "Comptes distincts",
+        text: formatCount(counts?.accounts ?? null),
+        measured: counts?.accounts != null,
+      },
+      ...reasons.map((reason) => ({
+        label: SALE_SIGNAL_REASON_LABELS[reason as keyof typeof SALE_SIGNAL_REASON_LABELS],
+        text: formatCount(counts?.reasons[reason] ?? null),
+        measured: counts?.reasons[reason] != null,
+      })),
+    ];
+  };
+  return (
+    <AdminPanel className="mt-6 p-5">
+      <AdminSectionHeading title="Retours sur les signaux d’une vente" />
+      <p className="mt-1 text-sm text-brand-navy/70">
+        « Utile » ou « Pas pertinent », cliqué par un compte connecté sous la bande d’écart au
+        marché ou sous la liste des points à vérifier, avec un motif choisi dans une liste (aucun
+        texte libre). {summary?.windowDays ?? 90} derniers jours, administrateurs exclus.
+      </p>
+      <div className="mt-4 grid gap-6 sm:grid-cols-2">
+        {FEEDBACK_SIGNALS.map(({ signal, label, reasons }) => (
+          <div key={signal} data-signal={signal}>
+            <h3 className="text-sm font-semibold text-brand-navy">{label}</h3>
+            <dl className="mt-2 grid gap-y-1.5 text-sm">
+              {lines(signal, reasons).map((line) => (
+                <div key={line.label} className="flex items-baseline justify-between gap-3">
+                  <dt className="text-brand-navy/70">{line.label}</dt>
+                  <dd
+                    className={`tabular-nums ${
+                      line.measured ? "font-semibold" : "text-xs italic text-brand-navy/70"
+                    }`}
+                  >
+                    {line.text}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        ))}
+      </div>
     </AdminPanel>
   );
 }

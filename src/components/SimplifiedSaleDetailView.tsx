@@ -580,6 +580,7 @@ function SaleDetailWorkspace({
           <SalePointsToVerify
             className="mt-4"
             points={pointsToVerify(displaySale, { occupancyVisible: true })}
+            saleId={sale.id}
           />
           <ListingPreparation
             key={`${user?.id ?? "guest-demo"}:${sale.id}`}
