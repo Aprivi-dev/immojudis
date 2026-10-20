@@ -83,7 +83,11 @@ const MAX_CLIENT_CHUNK_BYTES = 330_000;
 // The session of 20/10/2026 (waiting-list notifier, pilotage v2, sale dossier entry, launch-offer
 // surfaces) measured 5,964,934 bytes while every page budget passed and the initial JavaScript of
 // public pages went down; the owner approved (20/10/2026) a fourth raise, to 6,000,000.
-const MAX_TOTAL_CLIENT_JS_BYTES = 6_000_000;
+// The second wave of the same day (start checklist, followed-sale planning, signal feedback, search
+// filters, lawyer statement, works breakdown, weekly digest and result emails) measured 6,075,737
+// bytes, mostly on-demand chunks with every page budget passing; the owner approved (20/10/2026) a
+// fifth raise, to 6,125,000.
+const MAX_TOTAL_CLIENT_JS_BYTES = 6_125_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 // New homepage: lossless panorama for large screens plus editorial photography.
 const MAX_PUBLIC_MEDIA_BYTES = 5_000_000;
