@@ -8,7 +8,7 @@ import dynamic from "next/dynamic";
 import ArrowLeft from "lucide-react/dist/esm/icons/arrow-left.js";
 import { listingValuationConflict } from "@/lib/listing-evidence";
 import { useAuth } from "@/hooks/use-auth";
-import { salesReturnHref } from "@/lib/navigation";
+import { salesReturnHref, salesReturnLabel } from "@/lib/navigation";
 import { DocumentReadingSection } from "@/components/sale-detail/DocumentReadingSection";
 import { SalePassagesSection } from "@/components/sale-detail/SalePassagesSection";
 import { SaleUnlockPanel } from "@/components/sale-detail/SaleUnlockPanel";
@@ -152,6 +152,7 @@ type SaleDetailProps = {
   sale: AuctionSale;
   marketEstimateOverride?: MarketEstimate | null;
   returnTo?: string;
+  /** Libellé du lien de retour ; absent : il suit la page d'origine (voir `salesReturnLabel`). */
   backLabel?: string;
   publicDemo?: boolean;
   adjudicationStatisticsEnabled?: boolean;
@@ -167,7 +168,7 @@ export function AnalysisSaleDetailView({
   sale,
   marketEstimateOverride = null,
   returnTo = "/sales",
-  backLabel = "Retour aux ventes",
+  backLabel,
   publicDemo = false,
   adjudicationStatisticsEnabled = false,
   aiReviewProjections = null,
@@ -243,7 +244,7 @@ function SaleDetailWorkspace({
   sale,
   marketEstimateOverride = null,
   returnTo,
-  backLabel = "Retour aux ventes",
+  backLabel,
   publicDemo = false,
   adjudicationStatisticsEnabled = false,
   aiReviewProjections = null,
@@ -529,7 +530,7 @@ function SaleDetailWorkspace({
               className="inline-flex min-h-11 items-center gap-2 rounded-md text-sm font-semibold text-brand-navy transition-colors hover:text-gold-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
             >
               <ArrowLeft className="h-4 w-4" aria-hidden />
-              {backLabel}
+              {backLabel ?? salesReturnLabel(returnTo)}
             </Link>
             <ListingActions sale={displaySale} publicDemo={publicDemo} />
           </div>

@@ -430,6 +430,21 @@ describe("SalePublicPreview", () => {
     );
   });
 
+  it("nomme la page d'origine dans le lien de retour (tribunal, audiences, carte)", () => {
+    const cases = [
+      ["/tribunaux/justice-tj-1-93", "Retour au tribunal", "/tribunaux/justice-tj-1-93"],
+      ["/audiences-a-venir", "Retour aux audiences", "/audiences-a-venir"],
+      ["/sales?city=Lyon&map=true", "Retour à la carte", null],
+    ] as const;
+    for (const [from, label, href] of cases) {
+      const { unmount } = renderPreview({ id: "sale-1" }, "sale-1", false, from);
+      const link = screen.getByRole("link", { name: new RegExp(label) });
+      if (href) expect(link.getAttribute("href")).toBe(href);
+      else expect(link.getAttribute("href")).toContain("/sales?city=Lyon&map=true#sale-card-");
+      unmount();
+    }
+  });
+
   it("donne leur définition à « mise à prix » et à « adjudication »", () => {
     renderPreview({ sale_venue_type: "tribunal" });
     expect(screen.getByRole("button", { name: "Définition : mise à prix" })).toBeTruthy();

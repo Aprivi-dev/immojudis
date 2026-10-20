@@ -52,6 +52,7 @@ import {
   type AiReviewRequestStatus,
 } from "@/lib/ai-review-guard";
 import { escapeHtml } from "@/lib/guards";
+import { safeSalesReturnTo, saleDetailPath } from "@/lib/navigation";
 
 // Chargé à la demande par l'effet de création de la carte (import dynamique).
 let mapboxRuntime: typeof mapboxgl | null = null;
@@ -1080,6 +1081,19 @@ function showSalePopup(
     .addTo(map);
 }
 
+/**
+ * Adresse du « Voir le détail » de la fenêtre : la fiche, avec la recherche en cours (`from`) et
+ * `map=true`, pour que « Retour à la carte » rouvre la carte. La fenêtre n'existe qu'après un clic
+ * dans le navigateur : l'origine n'entre dans aucun HTML rendu par le serveur ni pour les robots.
+ */
+function popupDetailUrl(saleId: string): string {
+  if (typeof window === "undefined") return saleDetailPath(saleId);
+  const search = new URLSearchParams(window.location.search);
+  search.set("map", "true");
+  const from = safeSalesReturnTo(`${window.location.pathname}?${search.toString()}`);
+  return saleDetailPath(saleId, from);
+}
+
 function buildPopupHtml(
   sale: AuctionSale & { latitude: number; longitude: number },
   access: PopupAccess,
@@ -1112,7 +1126,7 @@ function buildPopupHtml(
         width: 420,
         height: 250,
       }) || firstPropertyImage(sale.media);
-  const detailUrl = `/sales/${encodeURIComponent(sale.id)}`;
+  const detailUrl = popupDetailUrl(sale.id);
   const location = [sale.city, sale.tribunal_city ?? sale.tribunal_name]
     .filter(Boolean)
     .join(" · ");
