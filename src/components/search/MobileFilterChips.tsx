@@ -1,4 +1,5 @@
 import * as PopoverPrimitive from "@radix-ui/react-popover";
+import { useId } from "react";
 import type * as React from "react";
 import Building2 from "lucide-react/dist/esm/icons/building-2.js";
 import CalendarDays from "lucide-react/dist/esm/icons/calendar-days.js";
@@ -88,6 +89,7 @@ function MaxPriceChip({
 }) {
   const max = draftPrice(draft.maxPrice);
   const rangeError = priceRangeError(draft);
+  const errorId = useId();
   return (
     <PopoverPrimitive.Root>
       <PopoverPrimitive.Trigger asChild>
@@ -98,13 +100,19 @@ function MaxPriceChip({
         </button>
       </PopoverPrimitive.Trigger>
       <PopoverPrimitive.Portal>
-        <PopoverPrimitive.Content align="start" sideOffset={8} className={POPOVER_CLASSES}>
+        <PopoverPrimitive.Content
+          align="start"
+          sideOffset={8}
+          aria-label="Mise à prix maximum"
+          className={POPOVER_CLASSES}
+        >
           <label className="grid gap-1.5">
             <span className="font-semibold text-brand-navy">Mise à prix maximum (€)</span>
             <input
               inputMode="numeric"
               value={draft.maxPrice}
               aria-invalid={rangeError ? true : undefined}
+              aria-describedby={rangeError ? errorId : undefined}
               onChange={(event) =>
                 setDraft((current) => ({ ...current, maxPrice: event.target.value }))
               }
@@ -113,7 +121,7 @@ function MaxPriceChip({
             />
           </label>
           {rangeError ? (
-            <p role="alert" className="mt-2 text-sm font-semibold text-danger">
+            <p id={errorId} role="alert" className="mt-2 text-sm font-semibold text-danger">
               {rangeError}
             </p>
           ) : null}
@@ -143,12 +151,24 @@ function SaleDateChip({
       <PopoverPrimitive.Trigger asChild>
         <button type="button" className={chipClass(active)}>
           <CalendarDays className="h-4 w-4" aria-hidden />
-          Date de vente{active ? " · 1" : ""}
+          Date de vente
+          {active ? (
+            <>
+              {/* Le « 1 » compte les filtres de date actifs : dit en mot pour un lecteur d'écran. */}
+              <span aria-hidden> · 1</span>
+              <span className="sr-only">, 1 filtre actif</span>
+            </>
+          ) : null}
           <ChevronDown className="h-4 w-4" aria-hidden />
         </button>
       </PopoverPrimitive.Trigger>
       <PopoverPrimitive.Portal>
-        <PopoverPrimitive.Content align="start" sideOffset={8} className={POPOVER_CLASSES}>
+        <PopoverPrimitive.Content
+          align="start"
+          sideOffset={8}
+          aria-label="Date de vente"
+          className={POPOVER_CLASSES}
+        >
           <DateRangeFields draft={draft} setDraft={setDraft} />
         </PopoverPrimitive.Content>
       </PopoverPrimitive.Portal>
