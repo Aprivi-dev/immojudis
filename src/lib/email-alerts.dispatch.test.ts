@@ -7,16 +7,14 @@ const db = vi.hoisted(() => ({
   activeAlerts: [] as Row[],
   updates: [] as Array<{ table: string; patch: Row; filters: Record<string, unknown> }>,
   plan: { hasAnalysisAccess: true },
+  user: { email: "client@example.test", email_confirmed_at: "2026-09-01T09:00:00Z" } as Row,
 }));
 
 vi.mock("@/integrations/supabase/client.server", () => {
   const client = {
     auth: {
       admin: {
-        getUserById: async () => ({
-          data: { user: { email: "client@example.test" } },
-          error: null,
-        }),
+        getUserById: async () => ({ data: { user: db.user }, error: null }),
       },
     },
     from(table: string) {
@@ -51,7 +49,7 @@ vi.mock("@/lib/system-auth", () => ({
   systemAuthForUser: async (userId: string) => ({ userId, supabase: {}, claims: {} }),
 }));
 
-import { dispatchQueuedEmailAlertNotifications } from "./email-alerts";
+import { dispatchQueuedEmailAlertNotifications, readUserEmail } from "./email-alerts";
 
 const env = {
   RESEND_API_KEY: "re_test",
@@ -85,6 +83,25 @@ describe("dispatch des emails d'alerte", () => {
     db.activeAlerts = [{ id: alertId }];
     db.updates = [];
     db.plan = { hasAnalysisAccess: true };
+    db.user = { email: "client@example.test", email_confirmed_at: "2026-09-01T09:00:00Z" };
+  });
+
+  it("n'écrit pas à une adresse non confirmée : rien n'est envoyé, les envois sont marqués en échec", async () => {
+    db.user = { email: "client@example.test", email_confirmed_at: null };
+    const fetchMock = vi.fn(async () => Response.json({ id: "email_1" }));
+
+    const summary = await dispatchQueuedEmailAlertNotifications({
+      notifications: [notification(1)],
+      env,
+      fetchImpl: fetchMock as unknown as typeof fetch,
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(summary.sentCount).toBe(0);
+    expect(summary.failedCount).toBe(1);
+    expect(db.updates.filter((update) => update.patch.delivery_status === "failed")).toHaveLength(
+      1,
+    );
   });
 
   it("envoie un seul email pour N ventes trouvées pour un même utilisateur", async () => {
@@ -165,5 +182,16 @@ describe("dispatch des emails d'alerte", () => {
 
     expect(fetchMock).not.toHaveBeenCalled();
     expect(summary.skippedCount).toBe(1);
+  });
+});
+
+describe("readUserEmail", () => {
+  it("ne rend que l'adresse d'un compte qui l'a confirmée", async () => {
+    db.user = { email: " client@example.test ", email_confirmed_at: "2026-09-01T09:00:00Z" };
+    await expect(readUserEmail(userId)).resolves.toBe("client@example.test");
+    db.user = { email: "client@example.test", email_confirmed_at: null };
+    await expect(readUserEmail(userId)).resolves.toBeNull();
+    db.user = { email: null, email_confirmed_at: "2026-09-01T09:00:00Z" };
+    await expect(readUserEmail(userId)).resolves.toBeNull();
   });
 });

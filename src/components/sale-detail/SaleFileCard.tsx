@@ -4,6 +4,7 @@ import { useId } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import FolderHeart from "lucide-react/dist/esm/icons/folder-heart.js";
 import { FavoriteButton } from "@/components/FavoriteButton";
+import { SaleRemindersToggle } from "@/components/SaleRemindersToggle";
 import { Button, Card, Eyebrow } from "@/components/ui/primitives";
 import { useAuth } from "@/hooks/use-auth";
 import { fetchFavoriteDossier, saveFavoriteDossier } from "@/lib/client-api";
@@ -183,6 +184,13 @@ export function SaleFileCard({
             ) : null}
           </div>
         </div>
+      ) : null}
+
+      {dossier?.followed ? (
+        <SaleRemindersToggle
+          userId={userId}
+          className="mt-4 flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/20 px-4 py-3 text-sm"
+        />
       ) : null}
 
       <p className="mt-4 text-xs leading-relaxed text-ink-soft">

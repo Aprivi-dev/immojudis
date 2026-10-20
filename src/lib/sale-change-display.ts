@@ -53,6 +53,19 @@ const STATUS_LABELS: Record<string, { label: string; detail: string | null }> = 
   upcoming: { label: "Vente à nouveau à venir", detail: null },
 };
 
+/**
+ * Statuts qui justifient un avertissement (vente reportée, retirée, annulée ou adjugée) : le suivi
+ * des changements les signale même quand la vente quitte la vue du catalogue, et les rappels
+ * d'audience (`sale-reminders.ts`) envoient alors un email.
+ */
+export const GRAVE_SALE_STATUSES: ReadonlySet<string> = new Set([
+  "postponed",
+  "withdrawn",
+  "cancelled",
+  "canceled",
+  "adjudicated",
+]);
+
 const DOCUMENT_LABELS = new Set([
   "Nouveau document détecté",
   "Document retiré",

@@ -10881,6 +10881,7 @@ export type Database = {
           alert_email_revoked_at: string | null;
           consent_source: string;
           created_at: string;
+          sale_reminders_consent_text_version: string | null;
           sale_reminders_consented_at: string | null;
           sale_reminders_enabled: boolean;
           sale_reminders_revoked_at: string | null;
@@ -10893,6 +10894,7 @@ export type Database = {
           alert_email_revoked_at?: string | null;
           consent_source?: string;
           created_at?: string;
+          sale_reminders_consent_text_version?: string | null;
           sale_reminders_consented_at?: string | null;
           sale_reminders_enabled?: boolean;
           sale_reminders_revoked_at?: string | null;
@@ -10905,6 +10907,7 @@ export type Database = {
           alert_email_revoked_at?: string | null;
           consent_source?: string;
           created_at?: string;
+          sale_reminders_consent_text_version?: string | null;
           sale_reminders_consented_at?: string | null;
           sale_reminders_enabled?: boolean;
           sale_reminders_revoked_at?: string | null;

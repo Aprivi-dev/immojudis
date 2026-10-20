@@ -42,7 +42,12 @@ interne] », pour mesurer les fausses alertes dans le journal `sale_reminder_dis
 celui des alertes (`/compte`, rubrique Notifications) et la case n'est proposée que dans les modes
 qui envoient. Le journal garantit qu'un même rappel ne part jamais deux fois et se purge au-delà de
 180 jours. La tâche exige les variables d'envoi des alertes (`RESEND_API_KEY`, `ALERT_EMAIL_FROM`,
-`SITE_URL`) : sans elles le passage réussit sans rien envoyer (`skipped: not_configured`).
+`SITE_URL`) : sans elles le passage réussit sans rien envoyer (`skipped: not_configured`). Un J-7 ou
+J-1 n'est envoyé que si la vente a été revérifiée à la source depuis moins de 36 h (`skippedStale` ;
+le passage échoue au-delà de 20 % de rappels écartés), et seules les adresses email confirmées
+reçoivent. Le suivi des changements examine chaque jour tous les comptes ayant consenti, en plus du
+lot de `SALE_CHANGE_CRON_USER_LIMIT` comptes. Critère de passage à `on` :
+`docs/runbooks/activation-rappels-audience.md`.
 
 Les quatre tâches Vercel quotidiennes ont un second passage deux heures plus tard : il ne fait rien
 si la tâche a déjà réussi dans les 20 dernières heures (`catchUpSchedule` de `runMonitoredCron`).

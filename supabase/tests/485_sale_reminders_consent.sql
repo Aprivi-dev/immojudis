@@ -35,14 +35,13 @@ select is(
   'par défaut, aucun consentement (case jamais pré-cochée)'
 );
 
--- 2. Activer les rappels sans date de consentement est refusé.
-select throws_ok(
+-- 2. Activer les rappels sans date de consentement : depuis 20261029130000, le déclencheur pose la
+-- date lui-même (la contrainte de 20261028130000 reste la dernière garde : actif implique une date).
+select lives_ok(
   $$update public.user_notification_preferences
     set sale_reminders_enabled = true
     where user_id = '48500000-0000-4000-8000-000000000001'$$,
-  '23514',
-  null,
-  'les rappels ne peuvent pas être activés sans preuve du consentement'
+  'les rappels activés sans date reçoivent la date de la base (déclencheur de 20261029130000)'
 );
 
 -- 3. Avec la date, c'est accepté, et le consentement aux alertes email n'est pas touché.

@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   auth: { user: { id: "user-1" } as { id: string } | null, loading: false },
   fetchDossier: vi.fn(),
   saveDossier: vi.fn(),
+  preferences: vi.fn(),
+  updatePreferences: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
 }));
@@ -17,6 +19,8 @@ vi.mock("@/hooks/use-auth", () => ({ useAuth: () => mocks.auth }));
 vi.mock("@/lib/client-api", () => ({
   fetchFavoriteDossier: mocks.fetchDossier,
   saveFavoriteDossier: mocks.saveDossier,
+  fetchNotificationPreferences: mocks.preferences,
+  updateNotificationPreferences: mocks.updatePreferences,
 }));
 vi.mock("@/lib/toast", () => ({ toast: { success: mocks.toastSuccess, error: mocks.toastError } }));
 vi.mock("@/components/FavoriteButton", () => ({
@@ -41,9 +45,19 @@ function renderCard(calculatedCeiling: number | null = 185_000) {
   );
 }
 
+/** Préférences de notification : les rappels d'audience sont-ils proposés, et déjà consentis ? */
+function remindersOffer(available: boolean, enabled = false) {
+  mocks.preferences.mockResolvedValue({
+    preferences: { alertEmailEnabled: false, saleRemindersEnabled: enabled },
+    saleRemindersAvailable: available,
+  });
+}
+
 beforeEach(() => {
   mocks.auth.user = { id: "user-1" };
   mocks.auth.loading = false;
+  // Par défaut l'envoi des rappels n'est pas ouvert : la ligne de consentement n'apparaît pas.
+  remindersOffer(false);
 });
 
 afterEach(() => {
@@ -199,6 +213,46 @@ describe("SaleFileCard (Mon dossier)", () => {
     fireEvent.click(await screen.findByRole("button", { name: /Enregistrer mon plafond calculé/ }));
     await waitFor(() => expect(mocks.toastError).toHaveBeenCalled());
     expect(screen.getByText("Aucune enchère plafond enregistrée.")).toBeTruthy();
+  });
+
+  describe("rappels d'audience", () => {
+    it("propose le consentement, décoché, quand l'envoi est ouvert et la vente suivie", async () => {
+      remindersOffer(true);
+      mocks.fetchDossier.mockResolvedValue(followed());
+      mocks.updatePreferences.mockResolvedValue({});
+      renderCard();
+
+      const checkbox = (await screen.findByRole("checkbox")) as HTMLInputElement;
+      expect(checkbox.checked).toBe(false);
+      expect(screen.getByText("Me rappeler l’audience (7 jours avant et la veille)")).toBeTruthy();
+
+      fireEvent.click(checkbox);
+      await waitFor(() =>
+        expect(mocks.updatePreferences.mock.calls[0][0]).toEqual({
+          saleRemindersEnabled: true,
+          consentSource: "settings",
+        }),
+      );
+    });
+
+    it("ne propose rien quand l'envoi n'est pas ouvert", async () => {
+      remindersOffer(false);
+      mocks.fetchDossier.mockResolvedValue(followed());
+      renderCard();
+
+      expect(await screen.findByLabelText("Mon statut")).toBeTruthy();
+      await waitFor(() => expect(mocks.preferences).toHaveBeenCalled());
+      expect(screen.queryByRole("checkbox")).toBeNull();
+    });
+
+    it("ne propose rien tant que la vente n'est pas suivie", async () => {
+      remindersOffer(true);
+      mocks.fetchDossier.mockResolvedValue({ dossier: emptyFavoriteDossier(SALE_ID) });
+      renderCard();
+
+      expect(await screen.findByRole("button", { name: `Suivre ${SALE_ID}` })).toBeTruthy();
+      expect(screen.queryByRole("checkbox")).toBeNull();
+    });
   });
 
   it("propose de réessayer quand le dossier ne se charge pas", async () => {

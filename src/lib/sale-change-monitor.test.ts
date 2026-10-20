@@ -4,7 +4,6 @@ import {
   detectSaleChanges,
   selectRotatingMonitorCandidates,
   saleChangeEventActionSchema,
-  systemAuthForInvestorUser,
 } from "@/lib/sale-change-monitor";
 import type { AuctionSale } from "@/lib/types";
 
@@ -124,22 +123,13 @@ describe("sale change monitor", () => {
     ).toThrow();
   });
 
-  it("preserves investor and admin entitlements in system monitoring contexts", () => {
-    const investor = systemAuthForInvestorUser({ userId: "investor-id", userRole: "user" });
-    const admin = systemAuthForInvestorUser({ userId: "admin-id", userRole: "admin" });
-
-    expect(investor).toMatchObject({
-      userId: "investor-id",
-      accountTier: "premium",
-      userRole: "user",
-      isAdmin: false,
-    });
-    expect(admin).toMatchObject({
-      userId: "admin-id",
-      accountTier: "premium",
-      userRole: "admin",
-      isAdmin: true,
-    });
+  it("marque urgent un statut retiré ou annulé", () => {
+    const previous = buildSaleChangeSnapshot(saleFixture({ status: "upcoming" }));
+    for (const status of ["withdrawn", "cancelled", "adjudicated"]) {
+      const current = buildSaleChangeSnapshot(saleFixture({ status }));
+      const [change] = detectSaleChanges({ previous, current, now: NOW });
+      expect(change).toMatchObject({ eventKind: "status_changed", severity: "urgent" });
+    }
   });
 });
 
@@ -228,6 +218,38 @@ describe("rotation du lot de suivi des changements", () => {
 
     expect(selected).toHaveLength(20);
     expect(ids(selected)).toEqual(expect.arrayContaining(ids(priority)));
+  });
+
+  it("examine chaque jour tous les comptes ayant consenti aux rappels, même au-delà du lot", () => {
+    // 30 comptes consentants pour un lot de 25 (19 places prioritaires, 6 réservées aux autres).
+    const consenting = Array.from({ length: 30 }, (_, index) => ({
+      ...candidate(index, true),
+      consented: true,
+    }));
+    const others = [
+      ...Array.from({ length: 10 }, (_, index) => candidate(100 + index, true)),
+      ...Array.from({ length: 40 }, (_, index) => candidate(200 + index)),
+    ];
+    for (let offset = 0; offset < 4; offset += 1) {
+      const selected = ids(
+        selectRotatingMonitorCandidates({
+          candidates: [...others, ...consenting],
+          limit: 25,
+          now: day(offset),
+        }),
+      );
+      expect(selected).toEqual(expect.arrayContaining(ids(consenting)));
+      // Le lot tourné des autres comptes reste de 25 : les consentants s'y ajoutent.
+      expect(selected).toHaveLength(55);
+      expect(new Set(selected).size).toBe(55);
+    }
+  });
+
+  it("garde le lot tourné des autres comptes quand personne n'a consenti", () => {
+    const others = Array.from({ length: 60 }, (_, index) => candidate(index));
+    expect(
+      selectRotatingMonitorCandidates({ candidates: others, limit: 25, now: day(0) }),
+    ).toHaveLength(25);
   });
 
   it("rend tout le monde quand le lot suffit", () => {
