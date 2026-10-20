@@ -4,6 +4,7 @@ import {
   INFORMATION_AGENT_EMAIL_VARIABLES,
   renderInformationAgentEmailContent,
 } from "@/lib/information-agent-email-template";
+import { toastMessage } from "./support/toast";
 
 const SUPABASE_URL = "https://ci.supabase.co";
 const AUTH_STORAGE_KEY = "encheres-immo-auth";
@@ -83,7 +84,7 @@ test.describe("admin information agent", () => {
     page.on("dialog", (dialog) => dialog.accept());
     await page.getByRole("button", { name: "Valider et envoyer" }).click();
     await expect(page.getByText("Envoyée", { exact: true })).toBeVisible();
-    await expect(page.getByText("Demande envoyée.", { exact: true })).toBeVisible();
+    await expect(toastMessage(page, "Demande envoyée.", { exact: true })).toBeVisible();
 
     const refreshRequest = state.events.find(
       (event) =>
@@ -241,7 +242,7 @@ test.describe("admin information agent", () => {
     await page.getByRole("button", { name: "Prévisualiser", exact: true }).click();
     await expect(page.getByTitle("Prévisualisation sécurisée du template d’email")).toBeVisible();
     await page.getByRole("button", { name: "Enregistrer le brouillon" }).click();
-    await expect(page.getByText("Brouillon enregistré.", { exact: true })).toBeVisible();
+    await expect(toastMessage(page, "Brouillon enregistré.", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Prévisualiser", exact: true }).click();
     await expect(page.getByTitle("Prévisualisation sécurisée du template d’email")).toBeVisible();
     await page
@@ -251,7 +252,9 @@ test.describe("admin information agent", () => {
       .check();
     await expect(page.getByRole("button", { name: "Publier ce template" })).toBeEnabled();
     await page.getByRole("button", { name: "Publier ce template" }).click();
-    await expect(page.getByText("Le nouveau template est publié.", { exact: true })).toBeVisible();
+    await expect(
+      toastMessage(page, "Le nouveau template est publié.", { exact: true }),
+    ).toBeVisible();
     await expect(page.getByText("Publié · v2", { exact: true })).toBeVisible();
 
     const previewRequest = state.events.find(
