@@ -11,10 +11,12 @@ import { resolveSiteOrigin } from "@/lib/site-url";
 import {
   TRIBUNAL_PAGES_PATH,
   emptyTribunalActivity,
+  hasReadableTribunalName,
   isTribunalPageIndexable,
   knownTribunalFromSlug,
   legacyTribunalRedirectPath,
   nextAudienceDate,
+  normalizeTribunalSlug,
   tribunalPageDescription,
   tribunalPageFromSlug,
   tribunalPagePath,
@@ -56,6 +58,20 @@ type Resolved =
  * déduit d'une panne, la réponse n'est alors pas mise en cache.
  */
 async function resolvePage(slug: string): Promise<Resolved> {
+  const resolved = await resolveExactSlug(slug);
+  if (resolved.kind !== "unknown") return resolved;
+  // « Bobigny », « JUSTICE-TJ-1-210 », « justice_tj_1_210 » : une adresse mal écrite se redirige
+  // (308) vers l'adresse publiée, elle ne répond pas 404.
+  const normalized = normalizeTribunalSlug(slug);
+  if (!normalized || normalized === slug) return resolved;
+  const retry = await resolveExactSlug(normalized);
+  if (retry.kind === "active" || retry.kind === "empty") {
+    return { kind: "redirect", path: retry.page.path };
+  }
+  return retry;
+}
+
+async function resolveExactSlug(slug: string): Promise<Resolved> {
   const activity = await loadPublicTribunalActivity();
   if (activity.status === "error") throw new Error("Activité publique des tribunaux indisponible.");
   const page = tribunalPageFromSlug(activity.items, slug);
@@ -94,9 +110,10 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       title: tribunalPageTitle(activity),
       description: tribunalPageDescription(activity),
     }),
-    // Moins de trois ventes à venir (aucune comprise) : page consultable, mais sans intérêt pour
-    // un moteur de recherche. Elle reste hors du sitemap (même seuil) et ses liens sont suivis.
-    ...(isTribunalPageIndexable(activity.upcomingCount)
+    // Moins de trois ventes à venir (aucune comprise), ou un tribunal que le référentiel ne nomme
+    // pas : page consultable, mais sans intérêt pour un moteur de recherche. Elle reste hors du
+    // sitemap (même règle) et ses liens sont suivis.
+    ...(isTribunalPageIndexable(activity.upcomingCount) && hasReadableTribunalName(activity)
       ? {}
       : { robots: { index: false, follow: true } }),
   };

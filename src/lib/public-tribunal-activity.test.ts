@@ -15,6 +15,26 @@ describe("public tribunal activity", () => {
     expect(courtShortName("Tribunal judiciaire d’Évry")).toBe("Évry");
   });
 
+  it("never shows the raw code of a court as its name (missing canonical name)", () => {
+    expect(courtShortName("justice_tj_1_210")).toBe("Tribunal à confirmer");
+    const [item] = mapPublicTribunalActivity([
+      {
+        tribunal_code: "justice_tj_1_210",
+        tribunal_name: null,
+        tribunal_city: null,
+        department: "93",
+        upcoming_count: 4,
+        next_sale_date: null,
+        median_starting_price_eur: null,
+        house_count: 0,
+        apartment_count: 4,
+        other_count: 0,
+      },
+    ]);
+    expect(item.name).toBe("Tribunal à confirmer");
+    expect(item.code).toBe("justice_tj_1_210");
+  });
+
   it("keeps courts with upcoming sales, busiest first, and totals them", () => {
     const items = mapPublicTribunalActivity([
       {

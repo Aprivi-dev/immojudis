@@ -31,8 +31,24 @@ export type PublicTribunalActivityRow = {
   other_count: number | null;
 };
 
-/** "TJ Bobigny" → "Bobigny", "TJ Tribunal judiciaire du Mans" → "Le Mans". */
+/** Nom donné à un tribunal que le référentiel ne nomme pas : jamais son code brut. */
+export const UNKNOWN_TRIBUNAL_NAME = "Tribunal à confirmer";
+
+/**
+ * Vrai pour un « nom » qui est en réalité un code (« justice_tj_1_210 ») : un nom de tribunal ne
+ * contient ni underscore ni mot collé. Le référentiel rend le code à la place d'un nom manquant
+ * (`canonical_name` nul) ; les pages ne l'affichent jamais comme un nom.
+ */
+export function isRawTribunalCode(name: string | null | undefined): boolean {
+  return /^\S*_\S*$/.test((name ?? "").trim());
+}
+
+/**
+ * "TJ Bobigny" → "Bobigny", "TJ Tribunal judiciaire du Mans" → "Le Mans". Un code brut à la place
+ * d'un nom donne `UNKNOWN_TRIBUNAL_NAME`.
+ */
 export function courtShortName(name: string): string {
+  if (isRawTribunalCode(name)) return UNKNOWN_TRIBUNAL_NAME;
   let text = name.trim();
   for (let pass = 0; pass < 2; pass += 1) {
     text = text.replace(/^(?:tribunal judiciaire|tribunal de grande instance|tj|tgi)\b\s*/i, "");

@@ -54,6 +54,8 @@ type SummaryRow = {
   bathrooms_count: number | null;
   tribunal_name: string | null;
   tribunal_city: string | null;
+  /** Code du tribunal (adresse de sa page) ; absent tant que la migration 20261029180100 n'est pas appliquée. */
+  tribunal_code?: string | null;
   thumbnail_url: string | null;
   /** Date of the last visible change; absent while the database function is not migrated yet. */
   content_changed_at?: string | null;
@@ -167,6 +169,7 @@ export function mapPublicSaleSummary(row: SummaryRow): AuctionSale {
     bathrooms_count: row.bathrooms_count,
     tribunal_name: row.tribunal_name,
     tribunal_city: row.tribunal_city,
+    tribunal_code: row.tribunal_code ?? null,
     content_changed_at: row.content_changed_at ?? null,
     media: isLikelyPropertyImageUrl(row.thumbnail_url)
       ? [{ type: "image", url: row.thumbnail_url }]

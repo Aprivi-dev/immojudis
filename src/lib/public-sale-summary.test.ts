@@ -41,6 +41,21 @@ describe("public sale summary", () => {
     expect(result.sale).not.toHaveProperty("address");
   });
 
+  it("carries the code of the tribunal (the address of its page), or none while the function is not migrated", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: [{ ...row, sale_venue_type: "tribunal", tribunal_code: "justice_tj_1_93" }],
+      error: null,
+    });
+    const result = await fetchPublicSaleSummary({ rpc }, ID);
+    if (result.kind !== "found") throw new Error("expected a found sale");
+    expect(result.sale.tribunal_code).toBe("justice_tj_1_93");
+
+    const old = vi.fn().mockResolvedValue({ data: [row], error: null });
+    const legacy = await fetchPublicSaleSummary({ rpc: old }, ID);
+    if (legacy.kind !== "found") throw new Error("expected a found sale");
+    expect(legacy.sale.tribunal_code).toBeNull();
+  });
+
   it("carries the date of the last visible change, and nothing else as a modification date", async () => {
     const rpc = vi.fn().mockResolvedValue({
       data: [{ ...row, updated_at: "2026-10-18T08:00:00Z" }],

@@ -56,15 +56,8 @@ function Rows({
           Audience le {formatShortDate(item.nextSaleDate)} · {mix(item)}
         </span>
       </th>
-      <td className="py-3 pr-4 text-right tabular-nums">
-        <Link
-          href={pathWithSearch("/sales", { tribunal: item.searchName })}
-          aria-label={`Voir dans la recherche ${formatCount(item.upcomingCount)} ${item.upcomingCount > 1 ? "ventes" : "vente"} : ${item.name}`}
-          className="underline-offset-4 hover:underline"
-        >
-          {formatCount(item.upcomingCount)}
-        </Link>
-      </td>
+      {/* Un seul lien par ligne : le nom, vers la page du tribunal (qui renvoie à la recherche). */}
+      <td className="py-3 pr-4 text-right tabular-nums">{formatCount(item.upcomingCount)}</td>
       <td className="hidden whitespace-nowrap py-3 pr-4 text-right sm:table-cell">
         {formatShortDate(item.nextSaleDate)}
       </td>
