@@ -453,6 +453,8 @@ def _run_document_reading(env: dict[str, str]) -> int:
 
 LICITOR_HISTORY_BUDGET_SECONDS = 330
 LICITOR_SOURCE = 'licitor'
+# Temps laissé après la lecture des fiches pour normaliser, publier et clore le run.
+LICITOR_BUDGET_MARGIN_SECONDS = 8 * 60
 
 
 def _run_licitor_history_refresh(env: dict[str, str]) -> int:
@@ -519,6 +521,12 @@ def execute(run_id: str) -> int:
             # Leave time for the main process to flush factual publications and
             # persist the partial run before the scheduler's hard kill.
             env['PETITES_AFFICHES_SOURCE_BUDGET_SECONDS'] = str(budget - 5 * 60)
+        if source == LICITOR_SOURCE:
+            # Same contract: the detail pages (sequential, spaced) of a national
+            # inventory can outlast the scheduler budget, which killed eight runs
+            # in a row. The source stops reading details LICITOR_BUDGET_MARGIN_SECONDS
+            # before the hard kill, publishes the whole list and resumes next run.
+            env['LICITOR_SOURCE_BUDGET_SECONDS'] = str(budget - LICITOR_BUDGET_MARGIN_SECONDS)
     failure = None
     execution_started = datetime.now(UTC)
     try:
