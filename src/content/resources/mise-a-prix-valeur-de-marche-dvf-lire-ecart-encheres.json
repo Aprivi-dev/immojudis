@@ -11,11 +11,11 @@
     "Cet article explique pourquoi la mise à prix est basse, ce que la base de prix DVF mesure et ignore, ce que l’écart ne dit pas et comment lire le repère de la fiche Immojudis. Pour construire une enchère plafond à partir d’une valeur de marché, voir « Fixer son enchère plafond : raisonner par le coût complet avant d’enchérir ». Le calcul exact de l’écart est décrit sur la page « Comment est calculé l’écart avec le marché »."
   ],
   "takeaways": [
-    "En saisie immobilière, la mise à prix est fixée par le créancier poursuivant, qui devient adjudicataire d’office à ce prix faute d’enchère (art. L. 322-6 du Code des procédures civiles d’exécution) : le Code ne la rattache pas à la valeur du bien.",
-    "Un prix de départ bas vise à attirer des enchérisseurs ; aucun texte ne l’impose. L’écart entre mise à prix et valeur de marché est donc habituel et ne mesure pas une aubaine.",
+    "En saisie immobilière, la mise à prix est fixée par le créancier poursuivant, qui devient adjudicataire d’office à ce prix faute d’enchère (art. L. 322-6 du Code des procédures civiles d’exécution) : le Code ne la rattache pas à la valeur du bien, sauf demande du débiteur en cas d’insuffisance manifeste (art. L. 322-6).",
+    "Une mise à prix basse sert d’abord l’intérêt du créancier, qui peut devenir adjudicataire à ce prix ; elle peut aussi inciter à enchérir. Aucun texte ne l’impose. L’écart entre mise à prix et valeur de marché est donc habituel et ne mesure pas une aubaine.",
     "La base DVF recense des prix de vente déclarés dans les actes. Elle ignore l’état du bien, ses travaux et son occupation, et ne dit pas si le bien était libre.",
     "L’écart ne dit ni le prix final, ni les frais, ni les travaux, ni les contraintes d’occupation.",
-    "Sur la fiche, le repère situe la mise à prix par rapport à la fourchette des ventes comparables ; pour un bien occupé ou loué, il n’est pas comparé."
+    "Sur la fiche, le repère situe la mise à prix par rapport à la fourchette des ventes comparables ; pour un bien occupé ou loué, la fiche n’affiche jamais « inférieure à la fourchette » : elle indique que la comparaison n’est pas pertinente."
   ],
   "sections": [
     {
@@ -24,7 +24,7 @@
       "paragraphs": [
         "En saisie immobilière, la mise à prix est fixée par le créancier poursuivant et figure dans le cahier des conditions de vente (art. L. 322-6 et R. 322-10, 5°). Faute d’enchère, ce créancier est déclaré adjudicataire d’office à ce montant (art. L. 322-6). Il peut donc se retrouver propriétaire : il fixe un prix qu’il accepte de payer. Le Conseil constitutionnel l’a relevé en 2011, à propos de la règle alors inscrite dans le Code civil : le créancier ne peut pas être contraint d’acheter à un prix qu’il n’a pas accepté, et le mécanisme évite que la procédure reste bloquée faute d’enchérisseur (décision n° 2011-206 QPC du 16 décembre 2011, considérant 6).",
         "Le Code ne relie donc pas la mise à prix à la valeur du bien. Seul le débiteur peut demander au juge, en cas d’insuffisance manifeste, de fixer une mise à prix en rapport avec la valeur vénale de l’immeuble et les conditions du marché ; même alors, le créancier ne peut être déclaré adjudicataire d’office que pour la mise à prix initiale (art. L. 322-6). Si le juge a modifié la mise à prix et qu’aucune enchère n’est portée, le bien est remis en vente sur baisses successives, jusqu’à la mise à prix initiale (art. R. 322-47).",
-        "Un prix de départ bas a aussi un effet : il peut inciter plusieurs personnes à enchérir, et ce sont les enchères qui forment le prix. Beaucoup de mises à prix sont fixées nettement sous la valeur du bien, sans que le Code l’exige. Retenez l’essentiel : un écart entre la mise à prix et le marché est normal. Il n’annonce ni un prix final bas, ni un gain.",
+        "Un prix de départ bas a aussi un effet : il peut inciter plusieurs personnes à enchérir, et ce sont les enchères qui forment le prix. Dans la pratique, la mise à prix est souvent inférieure à la valeur de marché : le commentaire officiel de la décision n° 2011-206 QPC relève qu’« en pratique, le créancier n’a aucun intérêt à fixer une première enchère élevée ». Aucune statistique officielle ne mesure l’ampleur de l’écart. Retenez l’essentiel : un écart entre la mise à prix et le marché est normal. Il n’annonce ni un prix final bas, ni un gain.",
         "Hors saisie, ce n’est pas toujours le créancier qui fixe la mise à prix. En liquidation judiciaire, c’est le juge-commissaire (voir « Liquidation judiciaire : quand l’immeuble d’une entreprise est vendu aux enchères »). Chez un notaire ou dans une vente de l’État, d’autres règles s’appliquent (voir « Ventes notariales et ventes domaniales : en quoi elles diffèrent d’une vente au tribunal »)."
       ]
     },
@@ -33,7 +33,7 @@
       "title": "Ce que la base DVF mesure",
       "paragraphs": [
         "DVF signifie « demandes de valeurs foncières ». Cette base de l’administration fiscale recense les ventes immobilières à titre onéreux (réalisées contre un prix ou une contrepartie) des cinq dernières années, à partir des actes notariés et des informations cadastrales. Elle est publiée en données ouvertes sur data.gouv.fr et mise à jour deux fois par an, en avril et en octobre. Elle ne couvre ni l’Alsace, ni la Moselle, ni Mayotte.",
-        "Le prix retenu, appelé valeur foncière, est le prix sur lequel les parties se sont mises d’accord. Il inclut la TVA et exclut les frais de notaire et les biens meubles (documentation du Cerema, l’établissement public qui expertise ces données). Quand une vente porte sur plusieurs biens, par exemple un appartement, une cave et un parking, le prix est celui de l’ensemble. Immojudis s’en sert pour établir une fourchette de prix au m² de ventes comparables : même type de bien, même secteur, surface voisine, ventes récentes.",
+        "Le prix retenu, appelé valeur foncière, est le prix sur lequel les parties se sont mises d’accord. Il inclut la TVA et exclut les frais de notaire, les frais d’agence et les biens meubles (documentation du Cerema, l’établissement public qui expertise ces données). Quand une vente porte sur plusieurs biens, par exemple un appartement, une cave et un parking, le prix est celui de l’ensemble. Immojudis s’en sert pour établir une fourchette de prix au m² de ventes comparables : même type de bien, même secteur, surface voisine, ventes récentes.",
         "La base distingue plusieurs natures de ventes : vente, vente en l’état futur d’achèvement (sur plan), adjudication, échange, vente de terrain à bâtir et expropriation. Immojudis ne garde que les ventes de nature « Vente » : les adjudications ne servent donc pas de référence, et une mise à prix d’enchères est comparée à des prix de vente ordinaires."
       ]
     },
@@ -127,13 +127,18 @@
             "Cas rare. Vérifiez d’abord la surface, le type de bien et le secteur retenus."
           ],
           [
-            "Pas assez de ventes comparables fiables",
-            "L’estimation n’est pas jugée assez solide pour situer la mise à prix.",
+            "Bien occupé : la comparaison avec les ventes de biens libres n’est pas pertinente",
+            "La mise à prix serait sous la fourchette, mais le bien est occupé ou loué : la fiche signale l’occupation au lieu de comparer.",
+            "Ne tirez aucune conclusion du prix de départ : lisez le cahier des conditions de vente pour mesurer la contrainte d’occupation."
+          ],
+          [
+            "Pas assez de ventes comparables fiables, surface inconnue ou type de bien non pris en charge",
+            "L’estimation n’est pas jugée assez solide pour situer la mise à prix ; la fiche en donne la raison.",
             "Ce n’est pas un jugement sur la vente : il manque simplement de quoi comparer."
           ],
           [
             "Aucun repère",
-            "Pas d’estimation exploitable, écart hors des seuils de la méthode, vente de l’État ou bien occupé ou loué.",
+            "Pas d’estimation exploitable, écart hors des seuils de la méthode ou vente de l’État.",
             "Raisonnez à partir du dossier et de vos propres références."
           ]
         ]
@@ -141,9 +146,9 @@
     },
     {
       "id": "bien-occupe",
-      "title": "Pourquoi un bien occupé n’est pas comparé",
+      "title": "Pourquoi un bien occupé n’est pas annoncé sous la fourchette",
       "paragraphs": [
-        "Les ventes DVF ne disent pas si le bien était libre, et l’estimation ne corrige pas l’occupation. Comparer la mise à prix d’un bien occupé ou loué à la fourchette de biens vendus sans cette contrainte donnerait une image trompeuse : le prix de départ paraîtrait très bas alors que l’acheteur ne pourra pas disposer du bien tout de suite. Pour un bien occupé ou loué, la fiche ne situe donc pas la mise à prix par rapport à cette fourchette.",
+        "Les ventes DVF ne disent pas si le bien était libre, et l’estimation ne corrige pas l’occupation. Comparer la mise à prix d’un bien occupé ou loué à la fourchette de biens vendus sans cette contrainte donnerait une image trompeuse : le prix de départ paraîtrait très bas alors que l’acheteur ne pourra pas disposer du bien tout de suite. Pour un bien occupé, loué ou occupé par son propriétaire, la fiche n’affiche donc jamais « Mise à prix inférieure à la fourchette des ventes comparables » : elle indique que la comparaison avec les ventes de biens libres n’est pas pertinente.",
         "Dans tous les cas, le repère est indicatif. Une bande ou un pourcentage ne remplacent ni la visite, ni la lecture du cahier des conditions de vente, ni l’avis d’un professionnel."
       ]
     },
@@ -192,6 +197,10 @@
     {
       "label": "Conseil constitutionnel — Décision n° 2011-206 QPC du 16 décembre 2011",
       "url": "https://www.conseil-constitutionnel.fr/decision/2011/2011206QPC.htm"
+    },
+    {
+      "label": "Conseil constitutionnel — Commentaire de la décision n° 2011-206 QPC du 16 décembre 2011",
+      "url": "https://oos.cloudgouv-eu-west-1.outscale.com/ccqpc-drupal-prd/dqpc/commentaire/commentaire_D%C3%A9cision-n%C2%B0-2011-206-QPC-du-16-d%C3%A9cembre-2011.pdf"
     },
     {
       "label": "data.gouv.fr — Demandes de valeurs foncières (DVF), DGFiP",
