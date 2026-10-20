@@ -551,7 +551,7 @@ function ProsecutedSales({
             <li key={sale.id}>
               <Link
                 href={saleDetailPath(sale.id)}
-                className="block min-h-11 rounded-md border border-brand-navy/12 px-3 py-2 text-sm transition-colors hover:border-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2"
+                className="block min-h-11 rounded-md border border-brand-navy/12 px-3 py-2 text-sm transition-colors hover:border-gold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
               >
                 <span className="block font-semibold text-brand-navy">
                   {propertyTypeLabel(sale.propertyType)}

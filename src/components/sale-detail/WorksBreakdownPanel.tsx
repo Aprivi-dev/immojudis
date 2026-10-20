@@ -20,7 +20,7 @@ import {
 type EditableField = "kind" | "label" | "quantity" | "unit" | "unitCost";
 
 const INPUT_CLASS =
-  "min-h-11 w-full rounded-lg border border-border bg-white px-3 text-sm tabular-nums focus-visible:border-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/30";
+  "min-h-11 w-full rounded-lg border border-border bg-white px-3 text-sm tabular-nums focus-visible:border-gold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft";
 
 /**
  * « Détail de vos travaux » (point 74) : panneau facultatif où l'utilisateur chiffre lui-même ses
@@ -69,7 +69,7 @@ export function WorksBreakdownPanel({
         aria-expanded={open}
         aria-controls={panelId}
         onClick={() => setOpen((current) => !current)}
-        className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-border bg-white px-4 text-sm font-semibold text-brand-navy transition-colors hover:border-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2"
+        className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-border bg-white px-4 text-sm font-semibold text-brand-navy transition-colors hover:border-gold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
       >
         Détailler les travaux
         <ChevronDown
@@ -122,7 +122,7 @@ export function WorksBreakdownPanel({
               type="button"
               onClick={addItem}
               disabled={atLimit}
-              className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-border bg-white px-4 text-sm font-semibold text-brand-navy transition-colors hover:border-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-border bg-white px-4 text-sm font-semibold text-brand-navy transition-colors hover:border-gold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Plus className="h-4 w-4" aria-hidden />
               Ajouter un poste
@@ -211,7 +211,7 @@ function WorksBreakdownRow({
           type="button"
           onClick={onRemove}
           aria-label={`Retirer le ${name} du détail`}
-          className="grid h-11 w-11 shrink-0 place-items-center rounded-lg border border-border text-brand-navy transition-colors hover:border-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2"
+          className="grid h-11 w-11 shrink-0 place-items-center rounded-lg border border-border text-brand-navy transition-colors hover:border-gold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
         >
           <Trash2 className="h-4 w-4" aria-hidden />
         </button>
