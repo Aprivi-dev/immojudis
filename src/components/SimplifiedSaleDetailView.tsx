@@ -53,6 +53,7 @@ import { computeCeilingPlan, maxWorksAtBid } from "@/lib/bid-ceiling-engine";
 import { ceilingGap, valueGapReason } from "@/lib/bid-ceiling-gaps";
 import { buildDpeAnalysis } from "@/lib/dpe-analysis";
 import { CeilingPlanner } from "@/components/ceiling/CeilingPlanner";
+import { LaunchOfferIncludedTag } from "@/components/LaunchOfferIncludedTag";
 import { useCeilingChoices, worksChoiceForAmount } from "@/components/ceiling/use-ceiling-choices";
 import Link from "next/link";
 import { listingCoordinates } from "@/lib/sale-listing";
@@ -634,6 +635,7 @@ function SaleDetailWorkspace({
                   />
                 </div>
                 <ListingCharacteristics sale={displaySale} />
+                <LaunchOfferIncludedTag />
                 <DocumentReadingSection
                   saleId={sale.id}
                   enabled={!publicDemo && !authLoading && Boolean(user)}
@@ -766,6 +768,7 @@ function SaleDetailWorkspace({
                 ) : null}
                 {fullData && isTribunalSale && !valuationConflict ? (
                   <div id="calculation" className="scroll-mt-36">
+                    <LaunchOfferIncludedTag className="mb-2" />
                     <CeilingPlanner
                       hypotheses={ceilingHypotheses}
                       plan={ceilingPlan}

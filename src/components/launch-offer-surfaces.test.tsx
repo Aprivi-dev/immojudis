@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LAUNCH_OFFER_ACCOUNT_TEXT, LAUNCH_OFFER_VISITOR_TEXT } from "@/lib/launch-offer";
+import { PLAN_LIMITS } from "@/lib/plans";
 import { FREE_ACCESS_LINE } from "@/lib/sale-unlocks";
 
 /**
@@ -191,6 +192,52 @@ describe("page Mon compte", () => {
     expect(mocks.overview).not.toHaveBeenCalled();
     expect(screen.queryByText(/portail sécurisé Stripe/)).toBeNull();
     expect(screen.queryByText(/accès jusqu’au/)).toBeNull();
+  });
+
+  it("offre de lancement : dit ce qui reste gratuit et ce qui demandera Analyse, sans date ni pression", async () => {
+    mocks.plan.mockResolvedValue({
+      plan: {
+        plan: "analyse",
+        label: "Analyse",
+        hasAnalysisAccess: true,
+        launchOffer: true,
+        currentPeriodEnd: null,
+      },
+    });
+    renderPage();
+
+    const block = await screen.findByTestId("account-offer-end");
+    const text = block.textContent ?? "";
+    expect(text).toContain("Ce qui reste gratuit");
+    expect(text).toContain(`${PLAN_LIMITS.decouverte.favoriteSales} favoris`);
+    expect(text).toContain("1 alerte avec un email récapitulatif par semaine");
+    expect(text).toContain(
+      `${PLAN_LIMITS.decouverte.monthlyUnlocks} déblocages de ventes par mois`,
+    );
+    expect(text).toContain("« Mon dossier »");
+    expect(text).toContain("Ce qui demandera l’offre Analyse");
+    expect(text).toContain("le rapport PDF");
+    expect(text).toContain("ventes comparables");
+    expect(text).toContain("les exports");
+    expect(text).toContain("vos données ne sont pas supprimées");
+    // Ni compte à rebours, ni date, ni incitation à s'abonner.
+    expect(text).not.toMatch(/\d{4}|jours?|dernier|vite|profitez|abonnez/i);
+    expect(block.querySelector("a, button")).toBeNull();
+  });
+
+  it("n'affiche pas ce bloc à un abonné réel ni hors de l'offre de lancement", async () => {
+    mocks.plan.mockResolvedValue({
+      plan: {
+        plan: "analyse",
+        label: "Analyse",
+        hasAnalysisAccess: true,
+        currentPeriodEnd: "2026-12-01T00:00:00.000Z",
+        billing: { status: "active", hasStripeCustomer: true, graceEndsAt: null },
+      },
+    });
+    renderPage();
+    await screen.findByText(/accès jusqu’au 1 décembre 2026/);
+    expect(screen.queryByTestId("account-offer-end")).toBeNull();
   });
 
   it("un abonné réel garde son libellé, sa date de fin et l'explication du portail", async () => {
