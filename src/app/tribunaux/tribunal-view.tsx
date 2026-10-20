@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Terme } from "@/components/ceiling/Terme";
+import { SaleDetailLink } from "@/components/SaleDetailLink";
 import { SectorAlertCta } from "@/components/SectorAlertCta";
 import { UnderstandBlock, type UnderstandLink } from "@/components/UnderstandBlock";
 import { Card, PageShell, buttonClasses } from "@/components/ui/primitives";
@@ -20,6 +21,7 @@ import {
   atTribunalPhrase,
   hasReadableTribunalName,
   tribunalLongName,
+  tribunalPagePath,
   tribunalPlaceName,
 } from "@/lib/tribunal-pages";
 
@@ -205,8 +207,9 @@ export function TribunalView({
                 const surface = seoSurface(sale.surfaceM2);
                 return (
                   <li key={sale.id} className="py-3">
-                    <Link
-                      href={`/sales/${sale.id.toLowerCase()}`}
+                    <SaleDetailLink
+                      saleId={sale.id.toLowerCase()}
+                      returnTo={tribunalPagePath(tribunal.code)}
                       className="grid gap-1 sm:grid-cols-[1fr_auto] sm:items-baseline sm:gap-4"
                     >
                       <span className="min-w-0">
@@ -230,7 +233,7 @@ export function TribunalView({
                           {formatStartingPrice(sale.startingPriceEur)}
                         </span>
                       </span>
-                    </Link>
+                    </SaleDetailLink>
                   </li>
                 );
               })}

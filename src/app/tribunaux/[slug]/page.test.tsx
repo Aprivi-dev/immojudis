@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DepartmentSale } from "@/lib/department-pages";
 
@@ -341,6 +341,20 @@ describe("page d'un tribunal : contenu", () => {
     expect(figures.textContent).toMatch(/40\s500\s€/);
     expect(figures.textContent).toContain("Maisons 2");
     expect(figures.textContent).toContain("Appartements 9");
+  });
+
+  it("transmet l'origine à la fiche dans le navigateur seulement (« Retour au tribunal »)", async () => {
+    mocks.activity.mockResolvedValue({
+      status: "ok",
+      items: [{ ...BOBIGNY, upcomingCount: 3 }],
+    });
+    render(await Page(params("justice-tj-1-93")));
+
+    const list = screen.getByRole("region", { name: "Les ventes à venir" });
+    const link = within(list).getAllByRole("link")[0]!;
+    expect(link.getAttribute("href")).toBe("/sales/a");
+    fireEvent.pointerEnter(link);
+    expect(link.getAttribute("href")).toMatch(/^\/sales\/a\?from=%2Ftribunaux%2F[a-z0-9-]+$/);
   });
 
   it("liste les prochaines ventes avec un lien vers chaque fiche", async () => {
