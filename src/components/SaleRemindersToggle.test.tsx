@@ -41,16 +41,49 @@ beforeEach(() => vi.clearAllMocks());
 afterEach(cleanup);
 
 describe("SaleRemindersToggle", () => {
-  it("propose la case décochée, avec ce qui est envoyé et la mention à vérifier", async () => {
+  it("propose la case décochée, avec un libellé court, la portée et la mention à vérifier", async () => {
     mocks.preferences.mockResolvedValue(preferences());
     setup();
     const checkbox = (await screen.findByRole("checkbox")) as HTMLInputElement;
     expect(checkbox.checked).toBe(false);
     const text = document.body.textContent ?? "";
-    expect(text).toContain("Rappels d’audience et avertissements");
-    expect(text).toContain("7 jours puis la veille");
-    expect(text).toContain("retirée, reportée ou adjugée");
+    expect(text).toContain("Me rappeler l’audience (7 jours avant et la veille)");
+    expect(text).toContain("Me prévenir si la date change ou si la vente est retirée");
+    expect(text).toContain("reportée, annulée ou adjugée");
     expect(text).toContain("à vérifier auprès de l’avocat poursuivant");
+    // Un seul vocabulaire : plus l'ancien libellé long ni le mot « avertissements ».
+    expect(text).not.toContain("Rappels d’audience et avertissements");
+    expect(text).not.toMatch(/avertissement/i);
+  });
+
+  it("emploie « rappels d'audience » dans l'explication et les messages", async () => {
+    mocks.preferences.mockResolvedValue(preferences({ enabled: true }));
+    mocks.update.mockResolvedValue(preferences());
+    setup();
+    const checkbox = await screen.findByRole("checkbox");
+    expect(document.body.textContent).toContain("Rappels d’audience activés.");
+    fireEvent.click(checkbox);
+    await waitFor(() => expect(mocks.success).toHaveBeenCalledWith("Rappels d’audience retirés"));
+  });
+
+  it("marque la case occupée (aria-busy) sans la désactiver pendant l'enregistrement", async () => {
+    mocks.preferences.mockResolvedValue(preferences());
+    let finish: (value: unknown) => void = () => undefined;
+    mocks.update.mockImplementation(() => new Promise((resolve) => (finish = resolve)));
+    setup();
+    const checkbox = (await screen.findByRole("checkbox")) as HTMLInputElement;
+    expect(checkbox.getAttribute("aria-busy")).toBe("false");
+
+    fireEvent.click(checkbox);
+    await waitFor(() => expect(checkbox.getAttribute("aria-busy")).toBe("true"));
+    expect(checkbox.disabled).toBe(false);
+
+    // Un second clic pendant l'envoi n'envoie rien de plus.
+    fireEvent.click(checkbox);
+    expect(mocks.update).toHaveBeenCalledTimes(1);
+
+    finish(preferences({ enabled: true }));
+    await waitFor(() => expect(checkbox.getAttribute("aria-busy")).toBe("false"));
   });
 
   it("enregistre le consentement distinct des alertes, sans toucher aux alertes email", async () => {
