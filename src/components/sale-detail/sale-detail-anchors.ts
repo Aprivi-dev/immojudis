@@ -13,18 +13,13 @@ export type LegacyDetail =
   | "budget"
   | "participation"
   | "documents"
-  | "professional-pilot"
   | "tribunal-perspective";
 
 export function legacyDetailForAnchor(anchor: string, budgetTarget: string): LegacyDetail | null {
   if (["budget", "budget-analysis", "calculation"].includes(anchor)) {
     return budgetTarget === "budget" ? "budget" : null;
   }
-  if (
-    ["market", "participation", "documents", "professional-pilot", "tribunal-perspective"].includes(
-      anchor,
-    )
-  ) {
+  if (["market", "participation", "documents", "tribunal-perspective"].includes(anchor)) {
     return anchor as LegacyDetail;
   }
   return null;
@@ -65,9 +60,7 @@ export function knownTabForAnchor(anchor: string, allowStatistics = true): SaleD
   if (anchor === "tribunal-perspective") return "estimation";
   if (anchor === "works") return "travaux";
   if (anchor === "financing") return "financement";
-  if (
-    ["rendez-vous", "participation", "documents", "lawyer", "professional-pilot"].includes(anchor)
-  ) {
+  if (["rendez-vous", "participation", "documents", "lawyer"].includes(anchor)) {
     return "demarches";
   }
   if (
@@ -81,15 +74,17 @@ export function knownTabForAnchor(anchor: string, allowStatistics = true): SaleD
 export function revealAnchor(anchor: string, budgetTarget: string) {
   const fallback = ["budget", "budget-analysis", "calculation"].includes(anchor)
     ? budgetTarget
-    : ["market", "tribunal-perspective", "why-this-ceiling"].includes(anchor)
-      ? "summary"
-      : tabForAnchor(anchor) === "travaux"
-        ? "sale-detail-panel-travaux"
-        : tabForAnchor(anchor) === "statistiques"
-          ? "sale-detail-panel-statistiques"
-          : tabForAnchor(anchor) === "demarches"
-            ? "sale-detail-panel-demarches"
-            : null;
+    : anchor === "professional-pilot"
+      ? "mon-dossier"
+      : ["market", "tribunal-perspective", "why-this-ceiling"].includes(anchor)
+        ? "summary"
+        : tabForAnchor(anchor) === "travaux"
+          ? "sale-detail-panel-travaux"
+          : tabForAnchor(anchor) === "statistiques"
+            ? "sale-detail-panel-statistiques"
+            : tabForAnchor(anchor) === "demarches"
+              ? "sale-detail-panel-demarches"
+              : null;
   const target = document.getElementById(anchor) ?? (fallback && document.getElementById(fallback));
   if (!target) return;
   let parent = target.closest("details");
