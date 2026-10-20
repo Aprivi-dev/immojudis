@@ -51,7 +51,7 @@ export type AlertEvaluationResponse = {
 /** The user's plan does not include alerts: nothing to evaluate, not a failure. */
 export class AlertsNotIncludedError extends Error {
   constructor() {
-    super("Alertes avancées réservées au plan Analyse.");
+    super("Alertes avancées réservées à l’offre Analyse.");
     this.name = "AlertsNotIncludedError";
   }
 }
@@ -107,7 +107,7 @@ export async function listUserAlertMatches({
 }): Promise<{ matches: AlertMatchSummary[] }> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "alerts.advanced")) {
-    throw new Error("Alertes avancées réservées au plan Analyse.");
+    throw new Error("Alertes avancées réservées à l’offre Analyse.");
   }
 
   let query = auth.supabase

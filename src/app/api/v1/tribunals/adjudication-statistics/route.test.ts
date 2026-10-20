@@ -47,7 +47,7 @@ describe("GET /api/v1/tribunals/adjudication-statistics", () => {
 
   it("refuse le plan Découverte avant de lire les prix", async () => {
     mocks.assertEntitlement.mockRejectedValue(
-      new Error("Statistiques d’adjudication réservées au plan Analyse."),
+      new Error("Statistiques d’adjudication réservées à l’offre Analyse."),
     );
     const response = await request();
     expect(response.status).toBe(403);

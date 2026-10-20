@@ -67,7 +67,7 @@ describe("GET /api/v1/tribunals/judicial-activity/directory", () => {
 
   it("refuse le plan Découverte avant de lire l’annuaire", async () => {
     mocks.assertEntitlement.mockRejectedValue(
-      new Error("Répertoire des tribunaux réservé au plan Analyse."),
+      new Error("Répertoire des tribunaux réservé à l’offre Analyse."),
     );
     const response = await request();
 

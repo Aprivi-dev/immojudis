@@ -1099,9 +1099,9 @@ function buildPopupHtml(
   const riskCount = sale.risks?.length ?? 0;
   const riskLabel =
     riskCount > 1
-      ? `${riskCount} alertes`
+      ? `${riskCount} risques signalés`
       : riskCount === 1
-        ? "1 alerte"
+        ? "1 risque signalé"
         : "à vérifier dans les pièces";
   const imageUrl = access.preview
     ? firstPropertyImage(sale.media)

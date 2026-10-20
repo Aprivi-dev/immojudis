@@ -75,7 +75,7 @@ describe("GET /api/v1/tribunals/statistics", () => {
 
   it("refuse le plan Découverte avant toute lecture de snapshot", async () => {
     mocks.assertEntitlement.mockRejectedValue(
-      new Error("Statistiques par tribunal réservées au plan Analyse."),
+      new Error("Statistiques par tribunal réservées à l’offre Analyse."),
     );
 
     const response = await request();

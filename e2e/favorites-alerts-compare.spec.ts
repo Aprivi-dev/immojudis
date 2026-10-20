@@ -188,7 +188,7 @@ test.describe("recherche sans résultat", () => {
     await mockPublicCatalogue(page, []);
     await page.goto("/sales?city=Lyon&maxPrice=100000");
 
-    const empty = page.getByRole("heading", { name: "Aucun dossier trouvé" });
+    const empty = page.getByRole("heading", { name: "Aucune vente trouvée" });
     await expect(empty).toBeVisible();
     const chips = page.getByRole("list", { name: "Critères actifs" });
     await expect(chips.getByRole("button", { name: "Retirer le critère : Lyon" })).toBeVisible();

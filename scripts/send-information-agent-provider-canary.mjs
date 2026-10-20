@@ -83,15 +83,15 @@ export function buildProviderCanaryMessage({ from, to = RESEND_DELIVERY_TEST_ADD
   return {
     from,
     to,
-    subject: "ImmoJudis — canari fournisseur de messagerie",
+    subject: "Immojudis — canari fournisseur de messagerie",
     text: [
-      "Canari fournisseur ImmoJudis.",
+      "Canari fournisseur Immojudis.",
       "",
       "Ce message vérifie uniquement l'envoi vers l'adresse de test de Resend.",
       "Aucune annonce, mission, donnée de contact ou base Supabase n'est utilisée.",
     ].join("\n"),
     html: [
-      "<p><strong>Canari fournisseur ImmoJudis.</strong></p>",
+      "<p><strong>Canari fournisseur Immojudis.</strong></p>",
       "<p>Ce message vérifie uniquement l'envoi vers l'adresse de test de Resend.</p>",
       "<p>Aucune annonce, mission, donnée de contact ou base Supabase n'est utilisée.</p>",
     ].join(""),

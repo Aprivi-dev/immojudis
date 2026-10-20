@@ -96,7 +96,7 @@ describe("TribunalJudicialActivityExplorer", () => {
     expect(screen.getByText(/ne mesure pas la couverture nationale/i)).toBeTruthy();
     expect(screen.getAllByText("Historique observé").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Pipeline à venir").length).toBeGreaterThan(0);
-    expect(screen.getByText(/présentés séparément aux membres Analyse/i)).toBeTruthy();
+    expect(screen.getByText(/présentés séparément avec l’offre Analyse/i)).toBeTruthy();
   });
 
   it("filtre les tribunaux depuis un ressort sans perdre la vue nationale", () => {

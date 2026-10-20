@@ -98,7 +98,7 @@ export async function getDvfComparables({
 }): Promise<DvfComparablesResponse> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "property.soldComparables")) {
-    throw new Error("Comparables DVF détaillés réservés au plan Analyse.");
+    throw new Error("Comparables DVF détaillés réservés à l’offre Analyse.");
   }
 
   const sale = await getReferenceSale(auth, input.saleId);

@@ -202,7 +202,7 @@ describe("FavoriteSales : Mon dossier (point 68)", () => {
     renderPage();
 
     await screen.findByRole("heading", { name: "Appartement · Bordeaux" });
-    expect(screen.getByText("Prêt à enchérir")).toBeTruthy();
+    expect(screen.getByText("Je prépare mon enchère")).toBeTruthy();
     expect(screen.getByText(/185\s000\s€/)).toBeTruthy();
     expect(screen.getByRole("link", { name: "Modifier sur la fiche" }).getAttribute("href")).toBe(
       "/sales/sale-1",

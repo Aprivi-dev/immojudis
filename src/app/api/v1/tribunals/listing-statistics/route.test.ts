@@ -104,7 +104,7 @@ describe("GET /api/v1/tribunals/listing-statistics", () => {
 
   it("refuse le plan Découverte avant de lire les statistiques", async () => {
     mocks.assertEntitlement.mockRejectedValue(
-      new Error("Statistiques des annonces judiciaires réservées au plan Analyse."),
+      new Error("Statistiques des annonces judiciaires réservées à l’offre Analyse."),
     );
     const response = await request();
 

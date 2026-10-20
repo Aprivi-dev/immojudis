@@ -75,7 +75,7 @@ describe("GET /api/v1/tribunals/judicial-activity", () => {
 
   it("refuse le plan Découverte avant de lire l’activité", async () => {
     mocks.assertEntitlement.mockRejectedValue(
-      new Error("Activité judiciaire réservée au plan Analyse."),
+      new Error("Activité judiciaire réservée à l’offre Analyse."),
     );
     const response = await request();
 
