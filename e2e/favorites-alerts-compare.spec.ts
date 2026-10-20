@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { toastMessage } from "./support/toast";
 import { mapPreviewRows, type PreviewSearchRow } from "@/lib/search/preview-search";
 import { parsePreviewSearchRequest } from "@/lib/search/preview-search-request";
 
@@ -321,7 +322,7 @@ test.describe("compte gratuit connecté", () => {
     await page.goto("/sales?city=Lyon");
 
     await page.getByRole("button", { name: "Ajouter aux favoris" }).first().click();
-    const toast = page.getByText("Vente ajoutée aux favoris : 2 favoris sur 3.");
+    const toast = toastMessage(page, "Vente ajoutée aux favoris : 2 favoris sur 3.");
     await expect(toast).toBeVisible();
     await expect(page.getByRole("link", { name: /créer une alerte/ })).toHaveAttribute(
       "href",
@@ -365,7 +366,7 @@ test.describe("compte gratuit connecté", () => {
 
     // Sans la case : l'alerte est créée, aucun consentement n'est enregistré.
     await page.getByRole("button", { name: "Créer l’alerte" }).click();
-    await expect(page.getByText("Recherche enregistrée", { exact: true })).toBeVisible();
+    await expect(toastMessage(page, "Recherche enregistrée", { exact: true })).toBeVisible();
     expect(consents).toEqual([]);
 
     await page.getByRole("button", { name: "Créer une alerte" }).first().click();
@@ -373,7 +374,7 @@ test.describe("compte gratuit connecté", () => {
       .getByRole("checkbox", { name: /Recevoir un email récapitulatif chaque semaine/ })
       .check();
     await page.getByRole("button", { name: "Créer l’alerte" }).click();
-    await expect(page.getByText(/Email récapitulatif activé/)).toBeVisible();
+    await expect(toastMessage(page, /Email récapitulatif activé/)).toBeVisible();
     expect(consents).toEqual([{ alertEmailEnabled: true, consentSource: "alert_creation" }]);
   });
 });

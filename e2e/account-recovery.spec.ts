@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { pageStatus } from "./support/toast";
 
 const email = "nouveau.compte.e2e@example.test";
 const password = "un-mot-de-passe-solide";
@@ -19,7 +20,7 @@ test("mot de passe oublié : message neutre, sans dire si le compte existe", asy
   await page.getByLabel("Adresse email du compte").fill("quelquun@example.test");
   await page.getByRole("button", { name: "Recevoir le lien de réinitialisation" }).click();
 
-  await expect(page.getByRole("status")).toContainText("Si un compte correspond");
+  await expect(pageStatus(page)).toContainText("Si un compte correspond");
   expect(recoveries).toHaveLength(1);
   expect(recoveries[0]).toContain("quelquun@example.test");
 });
@@ -89,7 +90,7 @@ test.describe("inscription avec confirmation par email", () => {
     await page.getByLabel("Mot de passe", { exact: true }).fill(password);
     await page.getByRole("button", { name: "Créer mon compte gratuit" }).click();
 
-    const panel = page.getByRole("status");
+    const panel = pageStatus(page);
     await expect(panel).toContainText(
       `Un email de confirmation a été envoyé à ${email}, cliquez sur le lien pour continuer.`,
     );
@@ -102,7 +103,7 @@ test.describe("inscription avec confirmation par email", () => {
 
     await page.getByRole("button", { name: "Changer d'adresse" }).click();
     await expect(page.getByLabel("Email")).toHaveValue(email);
-    await expect(page.getByRole("status")).toHaveCount(0);
+    await expect(pageStatus(page)).toHaveCount(0);
   });
 
   test("garde des cibles tactiles d'au moins 44 px sur le formulaire", async ({ page }) => {
