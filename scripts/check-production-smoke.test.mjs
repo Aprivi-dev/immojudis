@@ -12,6 +12,14 @@ function sitemapXml(urls) {
 }
 
 const PAGE_URLS = Array.from({ length: 16 }, (_, index) => `${ORIGIN}/page-${index}`);
+// Pages of courts listed in the pages sitemap (code-based addresses).
+const TRIBUNAL_URLS = Array.from(
+  { length: 12 },
+  (_, index) => `${ORIGIN}/tribunaux/justice-tj-${index + 1}-93`,
+);
+const KNOWN_TRIBUNAL = "/tribunaux/justice-tj-1-93";
+const LEGACY_TRIBUNAL = "/tribunaux/bobigny";
+const UNKNOWN_TRIBUNAL = "/tribunaux/tribunal-inexistant-test-de-fumee";
 const SALE_URLS = [
   `${ORIGIN}${SALE_PATH}`,
   ...Array.from({ length: 149 }, (_, index) => `${ORIGIN}/sales/s-${index}`),
@@ -40,6 +48,18 @@ function page(path, { canonical, robotsMeta, jsonLd, links = "" } = {}) {
   return `<html><head>${head}</head><body>Immojudis ${path}${links}</body></html>`;
 }
 
+/** The body of /api/health, `ok` unless a field is overridden. */
+function healthBody({ operationalMinutes = 7, collectionHours = 5 } = {}) {
+  const operationalOk = operationalMinutes !== null && operationalMinutes <= 45;
+  const collectionOk = collectionHours !== null && collectionHours <= 18;
+  return {
+    status: operationalOk && collectionOk ? "ok" : "degraded",
+    checkedAt: "2026-10-20T12:00:00.000Z",
+    operationalHealth: { ageMinutes: operationalMinutes, maxMinutes: 45, ok: operationalOk },
+    collection: { ageHours: collectionHours, maxHours: 18, ok: collectionOk },
+  };
+}
+
 /**
  * A fake production. `indexing` is the state the site is really in; `overrides` replaces the
  * answer of one path (a function of the header helper), `headers` adds response headers per path.
@@ -51,6 +71,8 @@ function fakeSite({
   // `x-vercel-cache` of the successive requests to /sales (the last one repeats).
   salesCache = ["MISS", "HIT"],
   sitemapExtra = [],
+  // The answer of /api/health: a status code and a body (a healthy site by default).
+  health = { status: 200, body: healthBody() },
 } = {}) {
   const calls = [];
   let salesRequests = 0;
@@ -82,6 +104,27 @@ function fakeSite({
       return {
         status: 404,
         headers: makeHeaders("text/html; charset=utf-8"),
+        body: { cancel: async () => undefined },
+      };
+    }
+    if (path === "/api/health") {
+      return {
+        status: health.status,
+        headers: makeHeaders("application/json", { "cache-control": "no-store" }),
+        json: async () => health.body,
+      };
+    }
+    if (path === UNKNOWN_TRIBUNAL) {
+      return {
+        status: 404,
+        headers: makeHeaders("text/html; charset=utf-8"),
+        body: { cancel: async () => undefined },
+      };
+    }
+    if (path === LEGACY_TRIBUNAL) {
+      return {
+        status: 308,
+        headers: makeHeaders("text/html", { location: KNOWN_TRIBUNAL }),
         body: { cancel: async () => undefined },
       };
     }
@@ -135,7 +178,7 @@ function fakeSite({
       return {
         status: 200,
         headers: makeHeaders("application/xml"),
-        text: async () => sitemapXml([...PAGE_URLS, ...sitemapExtra]),
+        text: async () => sitemapXml([...PAGE_URLS, ...TRIBUNAL_URLS, ...sitemapExtra]),
       };
     }
     if (path === "/ressources/sitemap.xml") {
@@ -234,6 +277,192 @@ describe("production smoke test", () => {
   });
 });
 
+describe("production smoke test, supervision and court pages", () => {
+  it("checks /api/health, a known court, its old address, an unknown court and the hearings page", async () => {
+    const site = fakeSite();
+    const report = await run(site, { indexing: "closed" });
+    expect(site.calls).toEqual(
+      expect.arrayContaining([
+        "/api/health",
+        KNOWN_TRIBUNAL,
+        LEGACY_TRIBUNAL,
+        UNKNOWN_TRIBUNAL,
+        "/audiences-a-venir",
+      ]),
+    );
+    expect(report.checks.find((check) => check.path === "/api/health")?.health).toBe("ok");
+    expect(report.checks.find((check) => check.path === UNKNOWN_TRIBUNAL)?.status).toBe(404);
+    expect(report.checks.find((check) => check.path === LEGACY_TRIBUNAL)).toMatchObject({
+      status: 308,
+      location: KNOWN_TRIBUNAL,
+    });
+  });
+
+  it("tolerates a late operational-health tick up to 60 minutes (degraded, collection fresh)", async () => {
+    const site = fakeSite({
+      health: { status: 503, body: healthBody({ operationalMinutes: 55 }) },
+    });
+    const report = await run(site, { indexing: "closed" });
+    expect(report.checks.find((check) => check.path === "/api/health")).toMatchObject({
+      health: "degraded-tolerated",
+      operationalHealthAgeMinutes: 55,
+    });
+  });
+
+  it("fails when operational-health has not succeeded for more than 60 minutes", async () => {
+    const site = fakeSite({
+      health: { status: 503, body: healthBody({ operationalMinutes: 61 }) },
+    });
+    await expect(run(site, { indexing: "closed" })).rejects.toThrow(
+      "/api/health: état dégradé (operational-health : 61 min, collecte : 5 h).",
+    );
+  });
+
+  it("fails at once when the collection is too old, even with a recent operational-health", async () => {
+    const site = fakeSite({
+      health: { status: 503, body: healthBody({ operationalMinutes: 3, collectionHours: 30 }) },
+    });
+    await expect(run(site, { indexing: "closed" })).rejects.toThrow(
+      "/api/health: état dégradé (operational-health : 3 min, collecte : 30 h).",
+    );
+  });
+
+  it("fails when /api/health has never seen a run (no age)", async () => {
+    const site = fakeSite({
+      health: {
+        status: 503,
+        body: healthBody({ operationalMinutes: null, collectionHours: null }),
+      },
+    });
+    await expect(run(site, { indexing: "closed" })).rejects.toThrow(
+      "/api/health: état dégradé (operational-health : aucun succès min, collecte : aucune h).",
+    );
+  });
+
+  it("fails when /api/health answers 404 (route missing)", async () => {
+    const site = fakeSite({ health: { status: 404, body: {} } });
+    await expect(run(site, { indexing: "closed" })).rejects.toThrow(
+      "/api/health: statut HTTP 404 au lieu de 200.",
+    );
+  });
+
+  it("fails when /api/health can be cached", async () => {
+    const site = fakeSite({
+      overrides: {
+        "/api/health": (headers) => ({
+          status: 200,
+          headers: headers("application/json", { "cache-control": "public, s-maxage=60" }),
+          json: async () => healthBody(),
+        }),
+      },
+    });
+    await expect(run(site, { indexing: "closed" })).rejects.toThrow(
+      "/api/health: cache-control no-store absent.",
+    );
+  });
+
+  it("fails when a known court does not answer 200", async () => {
+    const site = fakeSite({
+      overrides: {
+        [KNOWN_TRIBUNAL]: (headers) => ({
+          status: 500,
+          headers: headers("text/html"),
+          text: async () => "",
+        }),
+      },
+    });
+    await expect(run(site, { indexing: "closed" })).rejects.toThrow(
+      `${KNOWN_TRIBUNAL}: statut HTTP 500 au lieu de 200.`,
+    );
+  });
+
+  it("takes the known court from the option", async () => {
+    const site = fakeSite();
+    await run(site, { indexing: "closed", tribunalPath: "/tribunaux/justice-tj-2-93" });
+    expect(site.calls).toContain("/tribunaux/justice-tj-2-93");
+  });
+
+  it("fails when the old court address is not a 308", async () => {
+    const site = fakeSite({
+      overrides: {
+        [LEGACY_TRIBUNAL]: (headers) => ({
+          status: 307,
+          headers: headers("text/html", { location: KNOWN_TRIBUNAL }),
+          body: { cancel: async () => undefined },
+        }),
+      },
+    });
+    await expect(run(site, { indexing: "closed" })).rejects.toThrow(
+      `${LEGACY_TRIBUNAL}: statut HTTP 307 au lieu de 308 (redirection permanente).`,
+    );
+  });
+
+  it("fails when the old court address does not lead to a code-based address", async () => {
+    const site = fakeSite({
+      overrides: {
+        [LEGACY_TRIBUNAL]: (headers) => ({
+          status: 308,
+          headers: headers("text/html", { location: "/tribunaux/bobigny-2" }),
+          body: { cancel: async () => undefined },
+        }),
+      },
+    });
+    await expect(run(site, { indexing: "closed" })).rejects.toThrow(/redirigée vers/);
+  });
+
+  it("fails when the redirect takes more than one hop", async () => {
+    const intermediate = "/tribunaux/justice-tj-9-93";
+    const site = fakeSite({
+      overrides: {
+        [LEGACY_TRIBUNAL]: (headers) => ({
+          status: 308,
+          headers: headers("text/html", { location: intermediate }),
+          body: { cancel: async () => undefined },
+        }),
+        [intermediate]: (headers) => ({
+          status: 308,
+          headers: headers("text/html", { location: KNOWN_TRIBUNAL }),
+          body: { cancel: async () => undefined },
+        }),
+      },
+    });
+    await expect(run(site, { indexing: "closed" })).rejects.toThrow(
+      `${LEGACY_TRIBUNAL}: la redirection mène à ${intermediate} qui répond 308 au lieu de 200 (un seul saut attendu).`,
+    );
+  });
+
+  it("fails when an unknown court answers 200 (soft 404)", async () => {
+    const site = fakeSite({
+      overrides: {
+        [UNKNOWN_TRIBUNAL]: (headers) => ({
+          status: 200,
+          headers: headers("text/html; charset=utf-8"),
+          text: async () => page(UNKNOWN_TRIBUNAL),
+        }),
+      },
+    });
+    await expect(run(site, { indexing: "closed" })).rejects.toThrow(
+      `${UNKNOWN_TRIBUNAL}: statut HTTP 200 au lieu de 404.`,
+    );
+  });
+
+  it("fails when the hearings page says its data is unavailable", async () => {
+    const site = fakeSite({
+      overrides: {
+        "/audiences-a-venir": (headers) => ({
+          status: 200,
+          headers: headers("text/html; charset=utf-8"),
+          text: async () =>
+            "<html><body>Immojudis <h1>Audiences momentanément indisponibles</h1></body></html>",
+        }),
+      },
+    });
+    await expect(run(site, { indexing: "closed" })).rejects.toThrow(
+      "/audiences-a-venir: la page dit « momentanément indisponibles ».",
+    );
+  });
+});
+
 describe("production smoke test, indexing open", () => {
   it("passes and reports what it checked", async () => {
     const site = fakeSite({ indexing: "open" });
@@ -300,7 +529,22 @@ describe("production smoke test, indexing open", () => {
   it("fails when /sitemap.xml lists too few URLs", async () => {
     const site = fakeSite({ indexing: "open" });
     await expect(run(site, { indexing: "open", minPageUrls: 50 })).rejects.toThrow(
-      "/sitemap.xml: 16 URL au lieu d'au moins 50.",
+      `/sitemap.xml: ${PAGE_URLS.length + TRIBUNAL_URLS.length} URL au lieu d'au moins 50.`,
+    );
+  });
+
+  it("counts the court pages listed in /sitemap.xml", async () => {
+    const site = fakeSite({ indexing: "open" });
+    const report = await run(site, { indexing: "open" });
+    expect(report.checks.find((check) => check.path === "/sitemap.xml")?.tribunalUrls).toBe(
+      TRIBUNAL_URLS.length,
+    );
+  });
+
+  it("fails when /sitemap.xml lists too few court pages", async () => {
+    const site = fakeSite({ indexing: "open" });
+    await expect(run(site, { indexing: "open", minTribunalUrls: 13 })).rejects.toThrow(
+      "/sitemap.xml: 12 page(s) /tribunaux/justice-tj-… au lieu d'au moins 13.",
     );
   });
 
