@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
@@ -76,6 +76,7 @@ vi.mock("next/dynamic", () => ({
       premium,
       showUpcomingListings,
       propertyTypeVerified,
+      onOpenWorkspace,
     }: {
       images?: unknown[];
       onClose?: () => void;
@@ -87,6 +88,7 @@ vi.mock("next/dynamic", () => ({
       premium?: boolean;
       showUpcomingListings?: boolean;
       propertyTypeVerified?: boolean;
+      onOpenWorkspace?: () => void;
     }) {
       if (forecastQuery) return <section>Prévision de l’audience chargée</section>;
       // « Mon dossier » (SaleFileCard) : seul composant chargé à la demande qui reçoit ce plafond.
@@ -94,6 +96,11 @@ vi.mock("next/dynamic", () => ({
         return (
           <section aria-label="Mon dossier" data-ceiling={String(calculatedCeiling)}>
             Mon dossier
+            {onOpenWorkspace ? (
+              <button type="button" onClick={onOpenWorkspace}>
+                Ouvrir le dossier de travail
+              </button>
+            ) : null}
           </section>
         );
       }
@@ -334,13 +341,6 @@ describe("integrated listing", () => {
       tab: "demarches",
       target: "participation",
       summary: "Voir toutes les conditions de la vente",
-    },
-    {
-      anchor: "professional-pilot",
-      tab: "demarches",
-      target: "professional-pilot",
-      summary: "Préparer le dossier de travail",
-      publicDemo: false,
     },
     {
       anchor: "tribunal-perspective",
@@ -1053,6 +1053,31 @@ describe("« 3 déblocages par mois » on the sale page", () => {
 
     const card = await screen.findByRole("region", { name: "Mon dossier" });
     expect(card.getAttribute("data-ceiling")).toBe("null");
+  });
+
+  it("opens the work dossier from « Mon dossier » for an Analyse account, with no « Préparer » disclosure left", async () => {
+    mocks.authUser = { id: "user-1" };
+    renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
+
+    const card = await screen.findByRole("region", { name: "Mon dossier" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(within(card).getByRole("button", { name: "Ouvrir le dossier de travail" }));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+
+    // Plus de seconde porte : le détail « Préparer le dossier de travail » a disparu de Démarches.
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: /Close|Fermer/ }),
+    );
+    selectTab("Démarches");
+    expect(screen.queryByText("Préparer le dossier de travail")).toBeNull();
+  });
+
+  it("does not offer the work dossier to a free account", async () => {
+    mocks.authUser = { id: "user-1" };
+    renderDetail("discovery", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
+
+    const card = await screen.findByRole("region", { name: "Mon dossier" });
+    expect(within(card).queryByRole("button", { name: "Ouvrir le dossier de travail" })).toBeNull();
   });
 
   it("does not show « Mon dossier » to a visitor", () => {

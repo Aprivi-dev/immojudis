@@ -83,6 +83,33 @@ describe("SaleFileCard (Mon dossier)", () => {
     expect(screen.queryByLabelText("Mon statut")).toBeNull();
   });
 
+  it("propose « Ouvrir le dossier de travail » aux comptes Analyse seulement", async () => {
+    mocks.fetchDossier.mockResolvedValue(followed());
+    const onOpenWorkspace = vi.fn();
+    const view = render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <SaleFileCard
+          saleId={SALE_ID}
+          calculatedCeiling={185_000}
+          onOpenWorkspace={onOpenWorkspace}
+        />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Ouvrir le dossier de travail" }));
+    expect(onOpenWorkspace).toHaveBeenCalledOnce();
+    // Ouvrir le dossier de travail n'écrit rien dans « Mon dossier ».
+    expect(mocks.saveDossier).not.toHaveBeenCalled();
+    view.unmount();
+
+    // Sans la prop (compte Découverte, vente débloquée, démonstration) : aucun bouton.
+    renderCard();
+    await screen.findByLabelText("Mon statut");
+    expect(screen.queryByRole("button", { name: "Ouvrir le dossier de travail" })).toBeNull();
+  });
+
   it("dit que retirer la vente des favoris efface le dossier", async () => {
     mocks.fetchDossier.mockResolvedValue(followed());
     renderCard();

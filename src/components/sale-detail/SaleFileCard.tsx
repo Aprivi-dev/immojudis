@@ -32,12 +32,18 @@ export function SaleFileCard({
   saleId,
   calculatedCeiling,
   calculationPending = false,
+  onOpenWorkspace,
 }: {
   saleId: string;
   /** Enchère plafond calculée par le calculateur de la fiche, en euros ; null si elle n'est pas disponible. */
   calculatedCeiling: number | null;
   /** Le calcul est ouvert à ce compte mais l'estimation de marché n'est pas encore arrivée. */
   calculationPending?: boolean;
+  /**
+   * Compte Analyse : ouvre le dialogue du dossier de travail. « Mon dossier » en est l'unique porte
+   * d'entrée ; absent pour les autres comptes (le bouton n'apparaît pas).
+   */
+  onOpenWorkspace?: () => void;
 }) {
   const { user, loading } = useAuth();
   const queryClient = useQueryClient();
@@ -303,6 +309,19 @@ export function SaleFileCard({
               {ceilingMessage}
             </p>
           </div>
+        </div>
+      ) : null}
+
+      {onOpenWorkspace ? (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
+          <p className="max-w-xl text-sm leading-relaxed text-ink-soft">
+            Offre Analyse : pièces, budget, vérifications et prochaine action de cette vente. Votre
+            statut et votre enchère plafond restent ceux de « Mon dossier » : le dossier de travail
+            les reprend sans les modifier.
+          </p>
+          <Button variant="secondary" onClick={onOpenWorkspace}>
+            Ouvrir le dossier de travail
+          </Button>
         </div>
       ) : null}
 
