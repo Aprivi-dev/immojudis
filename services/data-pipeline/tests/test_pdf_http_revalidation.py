@@ -6,8 +6,8 @@ import importlib
 import json
 from pathlib import Path
 
-import fitz
 import httpx
+import pymupdf
 
 import src.config as config
 from src.freshness import documents_are_current, timestamp_is_fresh
@@ -42,7 +42,7 @@ PDF_SETTINGS = {
 
 
 def _make_pdf(path: Path, text: str) -> bytes:
-    with fitz.open() as document:
+    with pymupdf.open() as document:
         page = document.new_page()
         page.insert_text((72, 72), text)
         document.save(path)

@@ -6,8 +6,8 @@ import importlib
 import json
 from pathlib import Path
 
-import fitz
 import httpx
+import pymupdf
 import pytest
 
 from src.asset_normalization import normalize_asset_features
@@ -51,7 +51,7 @@ def test_terminal_piece_revokes_its_facts_with_another_piece_still_readable(
         (removed_url, "Appartement de 50 m², 2 pièces, 1 chambre. Ancien descriptif du logement."),
         (retained_url, "Mise à prix : 30 000 euros. Conditions de vente toujours disponibles."),
     ]:
-        with fitz.open() as document:
+        with pymupdf.open() as document:
             page = document.new_page()
             page.insert_text((72, 72), text)
             documents[url] = document.tobytes()

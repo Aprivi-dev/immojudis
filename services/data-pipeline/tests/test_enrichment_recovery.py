@@ -5,7 +5,7 @@ import time
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
-import fitz
+import pymupdf
 import pytest
 
 from src import main, pdf_enrichment, pipeline_health, queued_runner
@@ -88,13 +88,13 @@ def test_long_digital_pdf_and_resumable_ocr(tmp_path, monkeypatch):
     monkeypatch.setenv('PDF_MAX_EXTRACT_PAGES', '2')
     monkeypatch.setenv('PDF_OCR_ENABLED', 'true')
     path = tmp_path / 'large.pdf'
-    with fitz.open() as document:
+    with pymupdf.open() as document:
         for _ in range(5):
             page = document.new_page()
             # Keep these pages scan-like rather than objectively blank: the
             # test exercises resumable OCR checkpoints and not blank-page
             # exclusion.
-            page.draw_rect(fitz.Rect(72, 72, 200, 200), color=(0, 0, 0), fill=(0, 0, 0))
+            page.draw_rect(pymupdf.Rect(72, 72, 200, 200), color=(0, 0, 0), fill=(0, 0, 0))
         document.save(path)
     processed = []
     monkeypatch.setattr(pdf_enrichment, '_extract_page_text_with_ocr_result', lambda page, **kw: processed.append(page.number) or {'text': 'Texte OCR', 'method': 'ocr_test', 'confidence': .8})
@@ -113,10 +113,10 @@ def test_ocr_budget_checkpoint_is_distinct_and_continues_from_page_cache(tmp_pat
     monkeypatch.setenv('PDF_MAX_EXTRACT_PAGES', '1')
     monkeypatch.setenv('PDF_OCR_ENABLED', 'true')
     path = tmp_path / 'checkpointed.pdf'
-    with fitz.open() as document:
+    with pymupdf.open() as document:
         for _ in range(3):
             page = document.new_page()
-            page.draw_rect(fitz.Rect(72, 72, 200, 200), color=(0, 0, 0), fill=(0, 0, 0))
+            page.draw_rect(pymupdf.Rect(72, 72, 200, 200), color=(0, 0, 0), fill=(0, 0, 0))
         document.save(path)
 
     calls = []
@@ -155,10 +155,10 @@ def test_ocr_document_time_budget_resumes_from_valid_page_checkpoints(tmp_path, 
     monkeypatch.setenv('PDF_OCR_DOCUMENT_BUDGET_SECONDS', '1')
     monkeypatch.setenv('PDF_OCR_ENABLED', 'true')
     path = tmp_path / 'time-budget.pdf'
-    with fitz.open() as document:
+    with pymupdf.open() as document:
         for _ in range(3):
             page = document.new_page()
-            page.draw_rect(fitz.Rect(72, 72, 200, 200), color=(0, 0, 0), fill=(0, 0, 0))
+            page.draw_rect(pymupdf.Rect(72, 72, 200, 200), color=(0, 0, 0), fill=(0, 0, 0))
         document.save(path)
 
     clock = [0.0]
@@ -195,10 +195,10 @@ def test_digital_pdf_does_not_consume_ocr_budget_when_ocr_is_enabled(tmp_path, m
     monkeypatch.setenv('PDF_OCR_ENABLED', 'true')
     monkeypatch.setenv('PDF_OCR_DOCUMENT_BUDGET_SECONDS', '0.001')
     path = tmp_path / 'digital.pdf'
-    with fitz.open() as document:
+    with pymupdf.open() as document:
         page = document.new_page()
         page.insert_textbox(
-            fitz.Rect(72, 72, 520, 720),
+            pymupdf.Rect(72, 72, 520, 720),
             ' '.join(['Texte numérique fiable'] * 20),
         )
         document.save(path)
@@ -224,9 +224,9 @@ def test_ocr_document_budget_is_checked_after_final_page(tmp_path, monkeypatch):
     monkeypatch.setenv('PDF_OCR_ENABLED', 'true')
     monkeypatch.setenv('PDF_OCR_DOCUMENT_BUDGET_SECONDS', '1')
     path = tmp_path / 'final-page-budget.pdf'
-    with fitz.open() as document:
+    with pymupdf.open() as document:
         page = document.new_page()
-        page.draw_rect(fitz.Rect(72, 72, 200, 200), color=(0, 0, 0), fill=(0, 0, 0))
+        page.draw_rect(pymupdf.Rect(72, 72, 200, 200), color=(0, 0, 0), fill=(0, 0, 0))
         document.save(path)
 
     clock = [0.0]
@@ -278,10 +278,10 @@ def test_ocr_budget_without_new_page_progress_is_bounded(tmp_path, monkeypatch):
     monkeypatch.setenv('PDF_MAX_EXTRACT_PAGES', '1')
     monkeypatch.setenv('PDF_OCR_ENABLED', 'true')
     path = tmp_path / 'stalled-checkpoint.pdf'
-    with fitz.open() as document:
+    with pymupdf.open() as document:
         for _ in range(2):
             page = document.new_page()
-            page.draw_rect(fitz.Rect(72, 72, 200, 200), color=(0, 0, 0), fill=(0, 0, 0))
+            page.draw_rect(pymupdf.Rect(72, 72, 200, 200), color=(0, 0, 0), fill=(0, 0, 0))
         document.save(path)
 
     monkeypatch.setattr(
@@ -302,10 +302,10 @@ def test_deadline_checkpoint_is_reused_on_next_pdf_pass(tmp_path, monkeypatch):
     monkeypatch.setenv('PDF_MAX_EXTRACT_PAGES', '2')
     monkeypatch.setenv('PDF_OCR_ENABLED', 'true')
     path = tmp_path / 'deadline-checkpoint.pdf'
-    with fitz.open() as document:
+    with pymupdf.open() as document:
         for _ in range(2):
             page = document.new_page()
-            page.draw_rect(fitz.Rect(72, 72, 200, 200), color=(0, 0, 0), fill=(0, 0, 0))
+            page.draw_rect(pymupdf.Rect(72, 72, 200, 200), color=(0, 0, 0), fill=(0, 0, 0))
         document.save(path)
 
     calls = []
@@ -345,10 +345,10 @@ def test_enrich_sale_materializes_partial_manifest_before_deferred_ocr_and_cold_
     for directory in (pdf_texts_dir, page_cache_dir, documents_dir):
         directory.mkdir()
     pdf_path = documents_dir / "long.pdf"
-    with fitz.open() as document:
+    with pymupdf.open() as document:
         for _ in range(3):
             page = document.new_page()
-            page.draw_rect(fitz.Rect(72, 72, 200, 200), color=(0, 0, 0), fill=(0, 0, 0))
+            page.draw_rect(pymupdf.Rect(72, 72, 200, 200), color=(0, 0, 0), fill=(0, 0, 0))
         document.save(pdf_path)
     url = "https://example.test/partial-checkpoint.pdf"
     document = {
@@ -455,13 +455,13 @@ def test_blank_page_checkpoint_survives_modern_proof_recovery_without_completion
     for directory in (pdf_texts_dir, page_cache_dir, documents_dir):
         directory.mkdir()
     pdf_path = documents_dir / "blank-prefix.pdf"
-    with fitz.open() as document:
+    with pymupdf.open() as document:
         document.new_page()
         page = document.new_page()
-        page.draw_rect(fitz.Rect(72, 72, 200, 200), color=(0, 0, 0), fill=(0, 0, 0))
+        page.draw_rect(pymupdf.Rect(72, 72, 200, 200), color=(0, 0, 0), fill=(0, 0, 0))
         document.save(pdf_path)
 
-    with fitz.open(pdf_path) as document:
+    with pymupdf.open(pdf_path) as document:
         assert pdf_enrichment._is_objectively_blank_page(document[0], "") is True
         assert pdf_enrichment._is_objectively_blank_page(document[1], "") is False
         assert document[1].get_text("text") == ""

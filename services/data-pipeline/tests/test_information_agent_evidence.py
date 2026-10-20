@@ -7,8 +7,8 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-import fitz
 import httpx
+import pymupdf
 import pytest
 
 import src.information_agent_evidence as evidence
@@ -23,7 +23,7 @@ from src.pdf_ocr_child_output import parse_ocr_child_output
 
 
 def _pdf_bytes(text: str) -> bytes:
-    document = fitz.open()
+    document = pymupdf.open()
     page = document.new_page()
     page.insert_text((72, 72), text)
     content = document.tobytes()
@@ -52,7 +52,7 @@ def _heic_dimension_fixture(width: int = 100, height: int = 80) -> bytes:
 
 
 def _pixmap_png(width: int = 64, height: int = 48) -> bytes:
-    pixmap = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, width, height), False)
+    pixmap = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, width, height), False)
     pixmap.clear_with(0xD0D0D0)
     return pixmap.tobytes("png")
 
@@ -224,7 +224,7 @@ def test_rejects_compressed_image_that_would_exceed_decoded_memory_limit() -> No
 
 
 def test_skips_ocr_for_an_oversized_pdf_page_without_decoding_it(monkeypatch) -> None:
-    document = fitz.open()
+    document = pymupdf.open()
     document.new_page(width=6_000, height=6_000)
     content = document.tobytes()
     document.close()
@@ -376,10 +376,10 @@ def test_pdf_ocr_keeps_the_text_when_the_child_prints_a_warning_first(monkeypatc
 
 
 def test_password_protected_pdf_remains_unpublished() -> None:
-    document = fitz.open()
+    document = pymupdf.open()
     document.new_page()
     content = document.tobytes(
-        encryption=fitz.PDF_ENCRYPT_AES_256,
+        encryption=pymupdf.PDF_ENCRYPT_AES_256,
         owner_pw="owner-fixture",
         user_pw="secret-fixture",
     )
@@ -398,7 +398,7 @@ def test_password_protected_pdf_remains_unpublished() -> None:
 
 
 def test_scanned_pdf_requires_ocr_to_extract_facts(monkeypatch) -> None:
-    document = fitz.open()
+    document = pymupdf.open()
     document.new_page()
     content = document.tobytes()
     document.close()
