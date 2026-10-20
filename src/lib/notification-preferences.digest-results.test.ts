@@ -1,4 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+// L'écriture se fait avec le rôle de service (`supabaseAdmin`), la lecture avec le rôle de la personne.
+const mocks = vi.hoisted(() => ({ upsert: vi.fn() }));
+vi.mock("@/integrations/supabase/client.server", () => ({
+  supabaseAdmin: { from: () => ({ upsert: mocks.upsert }) },
+}));
 import {
   getNotificationPreferences,
   notificationPreferenceUpdateSchema,
@@ -14,20 +20,24 @@ describe("récapitulatif hebdomadaire et alerte de résultat : consentements dis
   afterEach(() => vi.unstubAllEnvs());
 
   function fakeAuth(isAdmin: boolean, row: Record<string, unknown> | null = null) {
-    const upsert = vi.fn((patch: Record<string, unknown>) => ({
+    const upsert = mocks.upsert;
+    upsert.mockReset();
+    upsert.mockImplementation((patch: Record<string, unknown>) => ({
       select: () => ({ single: async () => ({ data: { ...patch }, error: null }) }),
     }));
+    // Une écriture avec le rôle de la personne serait refusée par la base : elle ne doit pas avoir lieu.
+    const userUpsert = vi.fn();
     const auth = {
       userId: "user-1",
       isAdmin,
       supabase: {
         from: () => ({
           select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: row, error: null }) }) }),
-          upsert,
+          upsert: userUpsert,
         }),
       },
     };
-    return { auth: auth as never, upsert };
+    return { auth: auth as never, upsert, userUpsert };
   }
 
   const NOW = new Date("2026-10-21T10:00:00.000Z");

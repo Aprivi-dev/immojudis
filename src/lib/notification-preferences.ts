@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
 import { PublicApiError } from "@/lib/api-errors";
 import { saleResultsOfferedTo, weeklyDigestOfferedTo } from "@/lib/email-feature-mode";
@@ -170,7 +171,7 @@ export async function updateNotificationPreferences({
     // Les dates du consentement et du retrait sont posées par la base (déclencheur
     // `immojudis_user_notification_preferences_reminder_consent`) : celles du patch ci-dessus sont
     // ignorées. Seule la version du texte vient d'ici, et la base ne la garde qu'à la bascule vers
-    // « actif ».
+    // « actif » et seulement d'un écrivain `service_role` (ce qu'est cette route, voir plus bas).
     ...(input.saleRemindersEnabled === true
       ? { sale_reminders_consent_text_version: SALE_REMINDERS_CONSENT_TEXT_VERSION }
       : {}),
@@ -194,7 +195,13 @@ export async function updateNotificationPreferences({
       : {}),
   };
 
-  const { data, error } = await auth.supabase
+  // L'écriture se fait avec le rôle de service, après l'authentification de la personne (`user_id` est
+  // celui du jeton) : le rôle `authenticated` n'a plus le droit d'écrire les colonnes des consentements
+  // aux rappels, à « Ma semaine » et à l'alerte de résultat (migration 20261031100400), et la base
+  // n'accepte la version du texte consenti que d'un écrivain `service_role`. Ainsi un compte ne peut pas
+  // activer un consentement en appelant PostgREST directement, ni choisir la version du texte. La
+  // lecture reste faite avec le rôle de la personne (politique de sa propre ligne).
+  const { data, error } = await supabaseAdmin
     .from("user_notification_preferences")
     .upsert(patch, { onConflict: "user_id" })
     .select("*")
