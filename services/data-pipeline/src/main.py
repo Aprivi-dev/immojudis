@@ -48,6 +48,7 @@ from src.geocode import geocode_sale, locate_sale_by_cadastre
 from src.image_validation import filter_raw_image_url, warm_image_validations
 from src.information_sufficiency import load_contact_blocklist, set_active_blocklist
 from src.lifecycle import SaleLifecycleStats, mark_past_sales
+from src.merge_guards import MergeGuardRefused
 from src.models import AuctionSale
 from src.normalize import clean_text, normalize_sale, parse_price
 from src.outcome_ingestion.catalogue_bridge import bridge_auction_sales_before_cleanup
@@ -1031,10 +1032,14 @@ def _publish_run(run: _PipelineRun) -> None:
                 run.outcome_bridge_scanned = outcome_bridge.scanned_count
                 run.outcome_bridge_created = outcome_bridge.created_count
                 run.outcome_bridge_reused = outcome_bridge.reused_count
-                run.supabase_deleted_secondary = delete_secondary_sales_in_supabase(app_ready)
-                # Coupé par défaut ; en mode « candidates » le balayage n'écrit rien et journalise les paires.
-                if settings.get("dedupe_reconcile_enabled", False) or settings.get("dedupe_reconcile_mode") == "candidates":
-                    run.supabase_reconciled_duplicates = reconcile_duplicate_sales_in_supabase()
+                try:
+                    run.supabase_deleted_secondary = delete_secondary_sales_in_supabase(app_ready)
+                    # Coupé par défaut ; en mode « candidates » le balayage n'écrit rien et journalise les paires.
+                    if settings.get("dedupe_reconcile_enabled", False) or settings.get("dedupe_reconcile_mode") == "candidates":
+                        run.supabase_reconciled_duplicates = reconcile_duplicate_sales_in_supabase()
+                except MergeGuardRefused as exc:  # déclencheur de report des comptes absent : aucune fusion
+                    LOGGER.error("Merge cleanup refused: %s", exc)
+                    summary["merge_guard_refused"] = str(exc)
                 run.supabase_cleaned_past = mark_past_sales_in_supabase()
                 run.supabase_deleted_expired = delete_expired_sales_in_supabase()
                 run.supabase_deleted_vench_without_surface = delete_vench_sales_without_surface_in_supabase()
