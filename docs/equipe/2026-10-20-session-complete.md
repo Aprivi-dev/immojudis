@@ -550,3 +550,81 @@ reformuler. Propositions, non appliquées, à valider :
 - **Enchères Immobilières.** La cause du blocage de la publication n'est pas trouvée. Elle est désormais instrumentée
   (`publication_blockers`).
 - **Test de fumée.** Il échouera tant que `/api/health` et la réparation des audiences ne sont pas déployées.
+
+## Seconde décision du propriétaire et corrections (20/10/2026, soir)
+
+> « Je te laisse gérer l'ordre de déploiement pour qu'il n'y ait pas de problème. Concernant le garde-fou SQL, là aussi,
+> je te laisse décider ce qui te semble être le mieux. Concernant les relectures, on va les suivre. […] Pas besoin de
+> garder l'ancien [éditeur de travaux]. Le lien avocat-vente, […] uniquement des comptes payants. »
+
+Cette section remplace, pour ce qu'elle traite, les rubriques « Signalés, non corrigés », « Relecture juridique » et
+« Décisions produit » ci-dessus.
+
+### Chantiers
+
+- **R1 : relecture de code et ordre de déploiement.** Tous les points moyens et bas de la relecture sont corrigés :
+  - n° 1 et 8 : plus de clé SHA-256 dans les listes publiques. Un identifiant de groupe (`source_group`) la remplace,
+    et une adresse source réduite au domaine n'a plus de clé ;
+  - n° 2 : un retrait déduit d'une absence n'est plus annoncé comme un fait ni comme urgent ;
+  - n° 3 : la date « Données vérifiées le » est inconnue si une source n'a jamais de publication complète ;
+  - n° 4 : `/api/health` est gardé 30 s par le CDN et juge les seules sources activées (36 h) ;
+  - n° 5 : liste d'attente, comptes non confirmés écartés en amont, essais comptés ;
+  - n° 6 : la version du texte de consentement n'est plus forgeable (posée par le serveur seul) ;
+  - n° 7 : le Pilotage compte les comptes de l'offre avec la règle canonique ;
+  - n° 9 : « Date de vente passée » calculée après montage.
+  - Le code tolère les deux ordres (code avant ou après les migrations) : replis documentés pour l'éligibilité à
+    l'offre, les détails du plafond quotidien et l'effacement.
+  - Runbook : `docs/runbooks/mise-en-production-2026-10-20.md`. Lot G, 6 migrations `20261031100000` à
+    `20261031100500` ; tests pgTAP 650 à 655.
+- **R2 : garde-fou SQL.** Le crochet de `mcp__Supabase__execute_sql` fonctionne par liste blanche de fonctions et
+  échoue fermé. Un second crochet bloque les 11 outils Supabase d'écriture. `.claude/settings.json` n'autorise plus
+  sans confirmation `actions_run_trigger` ni `merge_pull_request`. 131 tests.
+- **R3 : textes juridiques**, en suivant la relecture :
+  - CGV, nouvel article 13 « Offre de lancement » (versions `2026-10-20.1`) ;
+  - confidentialité et registre : rappels d'audience et ventes passées suivies ;
+  - consentements en un seul libellé, retrait affiché avant l'acceptation (versions `2026-10-20.2`) ;
+  - dossier de financement : délai de paiement selon le cadre juridique (liquidation : 3 mois) ;
+  - surenchère : formule de la relecture et lien vers les avocats du barreau du tribunal.
+- **R3c : articles.** Les corrections juridiques de trois articles de /ressources sont faites : ventes reportées,
+  liquidation, mise à prix.
+- **R4 : décisions produit.**
+  - L'ancien éditeur « Décomposer l'enveloppe » et la grille `WORKS_SCENARIOS` sont retirés de l'onglet Travaux.
+  - Le lien avocat poursuivant ↔ vente est réservé aux comptes payants durables, offre de lancement exclue. Il passe
+    par la route privée `/api/lawyers/prosecuted-sales` (401/403, `no-store`). L'annuaire public ne montre plus de
+    ventes. Une page déjà en cache CDN peut rester visible au plus 1 h après le déploiement.
+
+### Corrections du chef à la fusion
+
+- Garde `server-only` sur `src/lib/notification-preferences.ts` (écriture des consentements par la clé de service).
+- Budget de `/admin/pilotage` porté à 520 000 octets, sous le plafond d'origine de 540 000.
+- Test des articles : un remplacement sans effet est retiré (alerte CodeQL).
+
+### Vérifications
+
+| Vérification                       | Résultat                                           |
+| ---------------------------------- | -------------------------------------------------- |
+| `npx tsc --noEmit`, `npm run lint` | OK                                                 |
+| `npm test` (Vitest)                | 7 577 OK                                           |
+| `npm run test:security-invariants` | OK                                                 |
+| `npm run build` + `build:budgets`  | OK ; JS total 6 079 832 octets (plafond 6 125 000) |
+| pgTAP                              | Exécutés par la CI de la pull request              |
+
+Pull request brouillon : https://github.com/Aprivi-dev/immojudis/pull/283. Rien n'est fusionné dans `main`, aucune
+migration n'est appliquée.
+
+### Reste au propriétaire
+
+- **Mise en production.** Elle suit le runbook, après un accord explicite : fusion, 37 migrations, réparations en
+  comptage puis application. Les trois interrupteurs restent sur `off`.
+- **Serveur MCP Supabase en `read_only`.** C'est le remède le plus sûr. Le crochet n'est qu'une seconde barrière.
+- **À faire relire par un avocat :** les CGV (article 13), la politique de confidentialité et les textes de
+  consentement. Les articles R.322-58 et R.322-41 restent cités aussi en liquidation dans le PDF de financement.
+- **Offre de lancement.**
+  - Le préavis par email reste une procédure manuelle : aucun outil ne l'envoie.
+  - La mention des CGV « souscription pas encore ouverte » sera à changer à l'ouverture.
+- **Emails éteints.** « Ma semaine » et les alertes de résultat ne figurent pas encore dans la politique. Il faut les
+  y ajouter avant de les allumer.
+- **Après le déploiement.**
+  - `/api/health` passera en `degraded` tant que la publication d'Enchères Immobilières reste bloquée. Le test de
+    fumée sera donc rouge : c'est attendu.
+  - Il faut ajouter `time-machine` dans `requirements-dev.txt` pour le job hebdomadaire.
