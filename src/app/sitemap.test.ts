@@ -1,3 +1,5 @@
+import { readdirSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -330,7 +332,13 @@ describe("/ressources/sitemap.xml (articles)", () => {
 
   it("lists every article, and only the articles", () => {
     const entries = resourcesSitemap();
-    expect(entries).toHaveLength(16);
+    // One entry per article file of src/content/resources/ (the README is not an article): the
+    // count follows the content folder instead of a number to bump with every new article.
+    const articleFiles = readdirSync(join(process.cwd(), "src/content/resources")).filter((name) =>
+      name.endsWith(".json"),
+    );
+    expect(articleFiles.length).toBeGreaterThanOrEqual(19);
+    expect(entries).toHaveLength(articleFiles.length);
     for (const entry of entries) {
       expect(entry.url).toMatch(/^https:\/\/immojudis\.com\/ressources\/[a-z0-9-]+$/);
       expect(entry.lastModified).toMatch(/^\d{4}-\d{2}-\d{2}$/);
