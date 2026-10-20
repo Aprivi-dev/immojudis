@@ -1988,10 +1988,13 @@ def _is_ambiguous_mixed_lot_surface(property_type: str, text: str) -> bool:
 
     if property_type != "mixed" or not text or _has_explicit_total_surface_evidence(text):
         return False
-    surface_mentions = list(
-        re.finditer(rf"{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b", text, re.I)
-    )
-    if len(surface_mentions) < 2:
+    # Des valeurs DISTINCTES : l'en-tête (« 20,46m² ») et le texte (« De 20,46 m² ») qui répètent la même
+    # surface ne sont pas deux lots (faux conflit « ambiguous_surface », fiche Vench 166573).
+    surface_values = {
+        parse_surface(match.group(1))
+        for match in re.finditer(rf"{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b", text, re.I)
+    }
+    if len(surface_values - {None}) < 2:
         return False
     return bool(
         re.search(
