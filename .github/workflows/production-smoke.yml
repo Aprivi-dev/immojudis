@@ -25,9 +25,9 @@ jobs:
       - name: Check production availability, request correlation, catalogue caches and search-engine signals
         # Whatever the indexing state, the script also checks the public catalogue and its caches:
         # two successive requests to /sales (the second one `x-vercel-cache: HIT`, no Set-Cookie, no
-        # Vary, sale links in the HTML), /sales/defaut in noindex, at least 20 listings in the HTML of
-        # /sales?page=2, a public cache-control on /api/catalogue/preview, and no sitemap listing
-        # /sales/defaut (when indexing is open).
+        # Vary beyond the Next.js router headers, sale links in the HTML), /sales/defaut in noindex,
+        # at least 20 listings in the HTML of /sales?page=2, a public cache-control on
+        # /api/catalogue/preview, and no sitemap listing /sales/defaut (when indexing is open).
         #
         # The script must know which indexing state to expect: the repository variable
         # SEO_INDEXING_ENABLED (Settings > Secrets and variables > Actions > Variables) mirrors
