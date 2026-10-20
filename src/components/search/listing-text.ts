@@ -60,8 +60,8 @@ export function listingTitle(
 export const LISTING_DETAIL_LINE = "Voir le détail";
 
 /**
- * Ligne courte de chaque carte pendant l'offre de lancement. Le texte complet (avec la réserve
- * « retirables sans préavis ») n'est écrit qu'une fois, dans la bannière repliable au-dessus de la
+ * Ligne courte de chaque carte pendant l'offre de lancement. Le texte complet (avec la durée
+ * temporaire des avantages) n'est écrit qu'une fois, dans la bannière repliable au-dessus de la
  * liste (`LaunchOfferListBanner`) : répété sur 24 cartes, il noyait la liste.
  */
 export const LISTING_LAUNCH_OFFER_LINE = "Compte gratuit : avantages Analyse (offre de lancement)";
