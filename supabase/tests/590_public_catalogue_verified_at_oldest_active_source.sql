@@ -42,6 +42,9 @@ update public.auction_source_state
 -- Une vente par source : n = 1 licitor (à venir), 2 vench (à venir), 3 notaires (passée), 4 agrasc (retirée),
 -- 5 avoventes (à venir, source désactivée), 6 info_encheres (à venir mais en quarantaine de publication),
 -- 7 encheres_publiques (à venir, source sans collecte complète).
+-- Le marqueur de quarantaine de la vente 6 n'est pas « source_withdrawn » : ce marqueur appartient au
+-- déclencheur zzz_auction_sales_source_withdrawal (20261021110000), qui le retire d'une vente que
+-- catalogue_withdrawn ne retire pas. Un marqueur étranger (« c590 ») est laissé tel quel, comme dans 652.
 insert into public.auction_sales (id, source_name, source_url, title, status, sale_date, raw_payload)
 select
   ('c5900000-1000-4000-8000-' || lpad(f.n::text, 12, '0'))::uuid,
@@ -55,7 +58,7 @@ from (
     (4, 'agrasc', 'withdrawn', now() + interval '30 days', '{}'::jsonb),
     (5, 'avoventes', 'upcoming', now() + interval '30 days', '{}'::jsonb),
     (6, 'info_encheres', 'upcoming', now() + interval '30 days',
-      '{"publication_quarantine": "source_withdrawn"}'::jsonb),
+      '{"publication_quarantine": "c590"}'::jsonb),
     (7, 'encheres_publiques', 'upcoming', now() + interval '30 days', '{}'::jsonb)
 ) as f(n, source, status, sale_date, payload);
 
