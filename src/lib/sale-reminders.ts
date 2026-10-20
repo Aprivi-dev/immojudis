@@ -1,5 +1,6 @@
 import "server-only";
 import { createHash } from "node:crypto";
+import { errorDetailForLog } from "@/lib/api-errors";
 import { resolveEmailAlertDeliveryConfig, sendResendEmail } from "@/lib/email-alerts";
 import { describeSaleChange, GRAVE_SALE_STATUSES } from "@/lib/sale-change-display";
 import type { SaleChangeEventSummary } from "@/lib/sale-change-monitor";
@@ -24,6 +25,9 @@ import { saleHearingTime, seoPropertyLabel, tribunalDisplayName } from "@/lib/se
  * - une date n'est annoncée que si la base la juge sourcée (`get_public_sale_calendar_event` :
  *   audience au tribunal, à venir, ni reportée ni contradictoire), avec la mention « à vérifier
  *   auprès de l'avocat poursuivant » ;
+ * - un rappel J-7 ou J-1 n'est envoyé que si la vente a été revérifiée à la source depuis moins de
+ *   36 h (`isSourceCheckStale`) ; ceux qui sont écartés sont comptés (`skippedStale`) et le
+ *   passage échoue quand ils dépassent 20 % des rappels dus ;
  * - les avertissements se limitent aux cas graves lus dans les événements du suivi des changements
  *   (`audience_changed`, `status_changed`) : date modifiée, vente retirée, reportée ou adjugée ;
  * - un rappel n'est jamais envoyé deux fois : il est réservé dans `sale_reminder_dispatches`
@@ -48,8 +52,19 @@ export const MAX_EMAILS_PER_USER = 5;
 const DAY_MS = 86_400_000;
 /** Pas du décalage quotidien de l'ordre de départ (nombre d'or : les points de départ tournent). */
 const START_ROTATION_STEP = 0.6180339887498949;
-/** Au plus ce nombre de ventes suivies examinées par personne. */
+/**
+ * Au plus ce nombre de ventes examinées par personne pour un rappel d'audience. Seules les ventes
+ * dont la date stockée tombe dans la fenêtre utile (aujourd'hui à J+7) sont retenues, les plus
+ * proches d'abord : au-delà, la personne est comptée dans `truncatedUsers`.
+ */
 const MAX_FOLLOWED_SALES_PER_USER = 300;
+/**
+ * Un rappel d'audience (J-7, J-1) n'est envoyé que si la vente a été revue à la source depuis moins
+ * de ce délai : une date que personne n'a revérifiée depuis plus d'un jour et demi peut être périmée.
+ */
+export const MAX_SOURCE_CHECK_AGE_HOURS = 36;
+/** Au-delà de cette part de rappels d'audience écartés faute de vérification récente, le passage échoue. */
+export const MAX_STALE_SKIP_SHARE = 0.2;
 const PROCESSING_BUDGET_MS = 50_000;
 const USER_CONCURRENCY = 4;
 const PARIS_TIME_ZONE = "Europe/Paris";
@@ -57,14 +72,38 @@ const DATE_TO_CONFIRM = "Nouvelle date à confirmer auprès de l’avocat poursu
 
 export type FollowedSale = { id: string; saleDate: string | null };
 
+/**
+ * Raison courte d'un envoi en échec, conservée au journal à la place du texte d'erreur (qui pouvait
+ * reprendre jusqu'à 500 caractères de la réponse du prestataire). Liste fermée, reprise par la
+ * contrainte `sale_reminder_dispatches_error_code_check` (migration 20261029130100).
+ */
+export const SALE_REMINDER_FAILURE_CODES = [
+  /** Aucune adresse email, ou adresse non confirmée. */
+  "email_unavailable",
+  /** La lecture de l'adresse du compte a échoué. */
+  "email_lookup_failed",
+  /** Le message n'a pas pu être construit. */
+  "message_build_failed",
+  /** Le prestataire d'envoi a refusé ou n'a pas répondu. */
+  "send_failed",
+  /** L'envoi est parti mais le journal n'a pas pu être mis à jour. */
+  "journal_failed",
+] as const;
+export type SaleReminderFailureCode = (typeof SALE_REMINDER_FAILURE_CODES)[number];
+
 /** Accès aux données : réel en production (`sale-reminders-store.ts`), simulé dans les tests. */
 export interface SaleReminderStore {
   /** Personnes ayant un consentement actif et daté aux rappels. */
   listConsentingUserIds(): Promise<string[]>;
   /** Parmi ces personnes, les administrateurs (mode `internal`). */
   filterAdminUserIds(userIds: string[]): Promise<Set<string>>;
-  /** Favoris et ventes débloquées, avec leur date d'audience stockée. */
+  /** Tous les favoris et ventes débloquées, avec leur date d'audience stockée. */
   followedSales(userId: string): Promise<FollowedSale[]>;
+  /**
+   * Dernière vérification de chaque vente à la source (`last_seen_at` et `source_checks`), `null`
+   * quand elle est inconnue.
+   */
+  lastVerifiedAt(saleIds: string[]): Promise<Map<string, string | null>>;
   /** Ventes publiquement visibles (hors quarantaine). */
   visibleSaleIds(saleIds: string[]): Promise<Set<string>>;
   /** Faits publics de la date d'audience d'une vente (`get_public_sale_calendar_event`). */
@@ -85,7 +124,7 @@ export interface SaleReminderStore {
     payload: Record<string, unknown>;
   }): Promise<string | null>;
   markSent(ids: string[], args: { messageId: string | null; at: Date }): Promise<void>;
-  markFailed(ids: string[], args: { error: string }): Promise<void>;
+  markFailed(ids: string[], args: { error: SaleReminderFailureCode }): Promise<void>;
   userEmail(userId: string): Promise<string | null>;
   /** Purge les lignes anciennes du journal ; renvoie leur nombre. */
   purgeJournal(): Promise<number>;
@@ -110,6 +149,12 @@ export type SaleReminderRunSummary = {
   truncated: boolean;
   /** Éléments détectés mais non réservés faute de place (plus de 50 pour une personne). */
   deferred: number;
+  /** Rappels d'audience (J-7, J-1) dus aujourd'hui, avant la garde de fraîcheur. */
+  audienceDue: number;
+  /** Rappels d'audience non envoyés faute de vérification récente de la vente à la source. */
+  skippedStale: number;
+  /** Personnes dont plus de 300 ventes tombent dans la fenêtre : les plus lointaines sont ignorées. */
+  truncatedUsers: number;
   skipped: "off" | "not_configured" | null;
 };
 
@@ -127,6 +172,9 @@ function emptySummary(mode: SaleRemindersMode): SaleReminderRunSummary {
     purgedJournalRows: 0,
     truncated: false,
     deferred: 0,
+    audienceDue: 0,
+    skippedStale: 0,
+    truncatedUsers: 0,
     skipped: null,
   };
 }
@@ -243,17 +291,30 @@ export function graveWarningFor(
   return null;
 }
 
+/**
+ * Vrai quand la vente n'a pas été revue à la source depuis plus de MAX_SOURCE_CHECK_AGE_HOURS, ou
+ * que sa dernière vérification est inconnue : sans preuve de fraîcheur, on n'annonce pas la date.
+ */
+export function isSourceCheckStale(lastVerifiedAt: string | null, now: Date): boolean {
+  const verified = parseDate(lastVerifiedAt);
+  if (!verified) return true;
+  return now.getTime() - verified.getTime() > MAX_SOURCE_CHECK_AGE_HOURS * 3_600_000;
+}
+
 /** Ce qui est à rappeler à une personne aujourd'hui (avant le dédoublonnage du journal). */
 export async function detectRemindersForUser({
   store,
   userId,
   now,
+  stats,
 }: {
   store: SaleReminderStore;
   userId: string;
   now: Date;
+  /** Compteurs du passage, incrémentés ici (le résumé du passage convient). */
+  stats?: Pick<SaleReminderRunSummary, "audienceDue" | "skippedStale" | "truncatedUsers">;
 }): Promise<DetectedReminder[]> {
-  const followed = (await store.followedSales(userId)).slice(0, MAX_FOLLOWED_SALES_PER_USER);
+  const followed = await store.followedSales(userId);
   if (!followed.length) return [];
   const visible = await store.visibleSaleIds(followed.map((sale) => sale.id));
   const followedVisible = followed.filter((sale) => visible.has(sale.id));
@@ -275,18 +336,34 @@ export async function detectRemindersForUser({
     return cached;
   };
 
-  // 1. Rappels d'audience : seulement les ventes dont la date stockée tombe dans la fenêtre, puis
-  // la base confirme que la date est sourcée.
+  // 1. Rappels d'audience : seulement les ventes dont la date stockée tombe dans la fenêtre (les plus
+  // proches d'abord, MAX_FOLLOWED_SALES_PER_USER au plus), puis la base confirme que la date est
+  // sourcée et que la vente a été revérifiée à la source récemment.
   const todayKey = parisDateKey(now);
   const maxDays = Math.max(...REMINDER_DAYS.map((reminder) => reminder.days));
+  const inWindow: Array<{ sale: FollowedSale; days: number }> = [];
   for (const sale of followedVisible) {
     const storedDate = parseDate(sale.saleDate);
     if (!storedDate) continue;
     const days = calendarDaysBetween(todayKey, parisDateKey(storedDate));
     if (days == null || days < 0 || days > maxDays) continue;
+    inWindow.push({ sale, days });
+  }
+  inWindow.sort((a, b) => a.days - b.days || a.sale.id.localeCompare(b.sale.id));
+  if (stats && inWindow.length > MAX_FOLLOWED_SALES_PER_USER) stats.truncatedUsers += 1;
+  const examined = inWindow.slice(0, MAX_FOLLOWED_SALES_PER_USER).map(({ sale }) => sale);
+  const verifiedAt = examined.length
+    ? await store.lastVerifiedAt(examined.map((sale) => sale.id))
+    : new Map<string, string | null>();
+  for (const sale of examined) {
     const row = await calendarOf(sale.id);
     const reminder = row ? audienceReminderFor(row, now) : null;
     if (!reminder) continue;
+    if (stats) stats.audienceDue += 1;
+    if (isSourceCheckStale(verifiedAt.get(sale.id) ?? null, now)) {
+      if (stats) stats.skippedStale += 1;
+      continue;
+    }
     add({
       kind: reminder.kind,
       saleId: sale.id,
@@ -368,8 +445,12 @@ export function rotateRecipients(userIds: readonly string[], now: Date, catchUp 
  * `failed` (moins de trois essais) et les `pending` orphelines de plus d'une heure sont reprises.
  */
 export function assertSaleRemindersComplete(summary: SaleReminderRunSummary): void {
+  const staleShare = summary.audienceDue > 0 ? summary.skippedStale / summary.audienceDue : 0;
   const problems = [
     summary.truncated ? "passage interrompu par le délai imparti" : null,
+    staleShare > MAX_STALE_SKIP_SHARE
+      ? `${summary.skippedStale} rappel(s) d'audience sur ${summary.audienceDue} écarté(s) faute de vérification récente à la source`
+      : null,
     summary.emailsFailed > 0 ? `${summary.emailsFailed} envoi(s) en échec` : null,
     summary.deferred > 0 ? `${summary.deferred} rappel(s) non réservé(s) faute de place` : null,
   ].filter((problem): problem is string => problem !== null);
@@ -423,7 +504,7 @@ export async function runSaleReminders({
 
   const deadline = Date.now() + PROCESSING_BUDGET_MS;
   async function processUser(userId: string) {
-    const detected = await detectRemindersForUser({ store, userId, now });
+    const detected = await detectRemindersForUser({ store, userId, now, stats: summary });
     summary.candidates += detected.length;
     if (!detected.length) return;
 
@@ -451,20 +532,30 @@ export async function runSaleReminders({
     if (!claimed.length) return;
     const allIds = claimed.map(({ id }) => id);
 
+    // Un échec ne garde au journal qu'un code court (SALE_REMINDER_FAILURE_CODES) : le détail du
+    // prestataire va aux journaux d'exécution, jamais dans la base.
+    const fail = async (ids: string[], code: SaleReminderFailureCode, error?: unknown) => {
+      console.error(
+        JSON.stringify({
+          scope: "sale-reminders.failure",
+          code,
+          ...(error === undefined ? {} : { detail: errorDetailForLog(error).slice(0, 200) }),
+        }),
+      );
+      await store.markFailed(ids, { error: code });
+      summary.emailsFailed += 1;
+    };
+
     let recipient: string | null;
     try {
       recipient = await store.userEmail(userId);
     } catch (error) {
-      const detail = error instanceof Error ? error.message : "Adresse email illisible.";
-      await store.markFailed(allIds, { error: detail.slice(0, 500) });
-      summary.emailsFailed += 1;
+      await fail(allIds, "email_lookup_failed", error);
       return;
     }
     if (!recipient) {
-      await store.markFailed(allIds, {
-        error: "Aucune adresse email authentifiée disponible pour cet utilisateur.",
-      });
-      summary.emailsFailed += 1;
+      // `readUserEmail` rend aussi `null` pour une adresse non confirmée.
+      await fail(allIds, "email_unavailable");
       return;
     }
 
@@ -472,6 +563,7 @@ export async function runSaleReminders({
     for (let start = 0; start < claimed.length; start += MAX_REMINDER_ITEMS_PER_EMAIL) {
       const group = claimed.slice(start, start + MAX_REMINDER_ITEMS_PER_EMAIL);
       const ids = group.map(({ id }) => id);
+      let stage: SaleReminderFailureCode = "message_build_failed";
       try {
         const message = buildSaleReminderMessage({
           userId,
@@ -487,19 +579,19 @@ export async function runSaleReminders({
           .update([...ids].sort().join(","))
           .digest("hex")
           .slice(0, 24);
+        stage = "send_failed";
         const result = await sendResendEmail({
           apiKey,
           message,
           idempotencyKey: `immojudis-sale-reminders-${userId}-${key}`,
           fetchImpl,
         });
+        stage = "journal_failed";
         await store.markSent(ids, { messageId: result.id, at: new Date() });
         summary.emailsSent += 1;
         for (const { reminder } of group) summary.sentByKind[reminder.kind] += 1;
       } catch (error) {
-        const detail = error instanceof Error ? error.message : "Envoi email impossible.";
-        await store.markFailed(ids, { error: detail.slice(0, 500) });
-        summary.emailsFailed += 1;
+        await fail(ids, stage, error);
       }
     }
   }
