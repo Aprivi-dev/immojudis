@@ -36,7 +36,6 @@ import { ListingBudget } from "@/components/sale-detail/ListingBudget";
 import { ListingCharacteristics } from "@/components/sale-detail/ListingCharacteristics";
 import { ListingPreparation } from "@/components/sale-detail/ListingPreparation";
 import { SaleKeyFactsBand } from "@/components/sale-detail/SaleKeyFactsBand";
-import type { ListingWorksDraft } from "@/components/sale-detail/ListingWorks";
 import type { WorksBreakdownItem } from "@/lib/works-breakdown";
 import type { FinancingDraft, FinancingResult } from "@/components/sale-detail/FinancingSimulator";
 import type { ListingRentalDraft } from "@/components/sale-detail/ListingRental";
@@ -262,7 +261,6 @@ function SaleDetailWorkspace({
   access,
 }: SaleDetailProps & { access: SaleDetailAccess }) {
   const [personalWorksBudget, setPersonalWorksBudget] = useState<number | null>(null);
-  const [worksDraft, setWorksDraft] = useState<ListingWorksDraft | null>(null);
   const [financingDraft, setFinancingDraft] = useState<FinancingDraft | null>(null);
   const [financingResult, setFinancingResult] = useState<FinancingResult | null>(null);
   const [rentalDraft, setRentalDraft] = useState<ListingRentalDraft | null>(null);
@@ -441,7 +439,7 @@ function SaleDetailWorkspace({
     projectCosts,
     rentalDraft,
   ]);
-  // Scenario or quote picked in the Travaux tab. Without a ceiling (non-judicial
+  // Scenario (or « Aucun travaux ») picked in the Travaux tab. Without a ceiling (non-judicial
   // sale), the amount only feeds the displayed budget.
   const selectWorksBudget = (amount: number) => {
     if (access !== "analysis" || !Number.isFinite(amount) || amount < 0) return;
@@ -935,9 +933,6 @@ function SaleDetailWorkspace({
                   <ListingWorks
                     sale={displaySale}
                     estimatedBudget={retainedWorks}
-                    onBudgetChange={ceilingEnabled ? selectWorksBudget : undefined}
-                    initialDraft={worksDraft}
-                    onDraftChange={setWorksDraft}
                     worksBreakdown={ceilingChoices.choices.worksBreakdown}
                     onWorksBreakdownChange={changeWorksBreakdown}
                     surface={surface}

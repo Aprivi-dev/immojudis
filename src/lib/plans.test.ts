@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   featureIncluded,
   hasLiveStripeSubscription,
+  hasStandingAnalysisAccess,
   isPlanPeriodActive,
   pastDueGraceEnd,
   normalizePlanCode,
@@ -150,5 +151,18 @@ describe("plan matrix", () => {
       hasLiveStripeSubscription({ status: "active", hasStripeCustomer: false }, periodEnd),
     ).toBe(false);
     expect(hasLiveStripeSubscription(undefined, periodEnd)).toBe(false);
+  });
+});
+
+describe("hasStandingAnalysisAccess", () => {
+  it("accepts an Analyse plan that does not come from the launch offer", () => {
+    expect(hasStandingAnalysisAccess({ hasAnalysisAccess: true })).toBe(true);
+  });
+
+  it("refuses the launch offer, a free account and a missing plan", () => {
+    expect(hasStandingAnalysisAccess({ hasAnalysisAccess: true, launchOffer: true })).toBe(false);
+    expect(hasStandingAnalysisAccess({ hasAnalysisAccess: false })).toBe(false);
+    expect(hasStandingAnalysisAccess(null)).toBe(false);
+    expect(hasStandingAnalysisAccess(undefined)).toBe(false);
   });
 });
