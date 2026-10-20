@@ -12,9 +12,12 @@ import { loadTribunalAndHearingPaths } from "@/lib/sitemap-tribunal-hearing-page
 
 // `/sitemap.xml` lists the static pages only. The articles have `/ressources/sitemap.xml`
 // (app/ressources/sitemap.ts) and the sales `/sales/sitemap/0.xml`, `1.xml`… (app/sales/sitemap.ts);
-// robots.txt lists the three. Rebuilt on request from the data cache (refreshed every hour), never
-// frozen at build time.
-export const dynamic = "force-dynamic";
+// robots.txt lists the three. Served from the cache and rebuilt at most every hour (the data it
+// reads is itself cached for an hour): a request no longer pays the 3.5 s of the full reading. Next.js
+// wants a literal here; it must stay equal to PUBLIC_TRIBUNAL_ACTIVITY_REVALIDATE_SECONDS (a test
+// checks it). A database that cannot be read leaves the courts and departments out of the file
+// (see below), and the next revalidation brings them back.
+export const revalidate = 3600;
 
 // The departments are read in full when the data cache is empty (up to 100 database calls): same
 // duration as the department pages (DEPARTMENT_PAGES_MAX_DURATION_SECONDS, a test checks it).
@@ -39,7 +42,7 @@ const PUBLIC_ROUTES = [
   ["/offres", "2026-10-14"],
   ["/comment-ca-marche", "2026-10-13"],
   ["/ressources", "2026-10-19"],
-  ["/tribunaux", "2026-10-13"],
+  ["/tribunaux", "2026-10-19"],
   ["/annonce-exemple", "2026-10-15"],
   ["/ventes-immobilieres-judiciaires", GUIDE_LAST_UPDATED], // same date as the guide page
   ["/simulateur-frais-encheres", "2026-10-13"],
@@ -60,9 +63,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // `/tribunaux` then stays listed (only a successful read that finds no court removes it).
   // The departments follow the same rule as the courts: a read error leaves the index listed and
   // adds no department page (a passing outage must not remove them for good, nor invent them).
-  const [tribunals, departments] = await Promise.all([
+  // The three readings are independent: they run together (the courts and hearings paths do not
+  // throw, see `loadTribunalAndHearingPaths`).
+  const [tribunals, departments, tribunalAndHearingPaths] = await Promise.all([
     loadPublicTribunalActivity(),
     tryLoadDepartmentCatalogue(),
+    loadTribunalAndHearingPaths(),
   ]);
   const indexable = departments.status === "ok" ? indexableDepartments(departments.catalogue) : [];
 
@@ -90,7 +96,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       : [{ url: `${origin}${DEPARTMENT_PAGES_PATH}` }];
   // Pages des tribunaux (au moins 3 ventes à venir) et page des audiences (au moins 3 audiences) :
   // mêmes seuils que leur balise robots. Aucune date de modification, comme les départements.
-  const tribunalAndHearingPages = (await loadTribunalAndHearingPaths()).map((path) => ({
+  const tribunalAndHearingPages = tribunalAndHearingPaths.map((path) => ({
     url: `${origin}${path}`,
   }));
   return [
