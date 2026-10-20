@@ -19,6 +19,11 @@ import type {
   AdminLawyerReferralUpdateResponse,
 } from "@/lib/admin-lawyer-referrals";
 import type { AdminLaunchOfferState } from "@/lib/admin-launch-offer";
+import type {
+  OfferOpeningAudience,
+  OfferOpeningSendResult,
+  OfferOpeningTestResult,
+} from "@/lib/admin-offer-opening-notifier";
 import type { AdminPilotage } from "@/lib/admin-pilotage";
 import type {
   AdminSubscriptionGrantInput,
@@ -232,4 +237,36 @@ export async function setAdminLaunchOfferClient(active: boolean): Promise<AdminL
   });
 
   return readJson<AdminLaunchOfferState>(response);
+}
+
+export async function fetchAdminOfferOpeningAudience(): Promise<OfferOpeningAudience> {
+  const response = await fetch("/api/admin/offer-opening-notifier", {
+    signal: AbortSignal.timeout(30_000),
+    headers: await authHeaders(),
+    cache: "no-store",
+  });
+
+  return readJson<OfferOpeningAudience>(response);
+}
+
+/** Envoi d'essai du message d'ouverture à l'adresse de l'administrateur. */
+export async function sendAdminOfferOpeningTest(): Promise<OfferOpeningTestResult> {
+  const response = await fetch("/api/admin/offer-opening-notifier", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({ action: "test" }),
+  });
+
+  return readJson<OfferOpeningTestResult>(response);
+}
+
+/** Envoie un lot (200 au plus) à la liste d'attente ; relancé, il ne reprend que les non prévenus. */
+export async function sendAdminOfferOpeningBatch(): Promise<OfferOpeningSendResult> {
+  const response = await fetch("/api/admin/offer-opening-notifier", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({ action: "send", confirm: true }),
+  });
+
+  return readJson<OfferOpeningSendResult>(response);
 }

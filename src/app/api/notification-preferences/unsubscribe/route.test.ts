@@ -9,6 +9,10 @@ const mocks = vi.hoisted(() => ({
     userId,
     revokedAt: "2026-10-19T10:00:00.000Z",
   })),
+  revokeOfferOpeningRequest: vi.fn(async ({ userId }: { userId: string }) => ({
+    userId,
+    revokedAt: "2026-10-20T10:00:00.000Z",
+  })),
   deactivateAlertForUser: vi.fn(async (_input: { userId: string; alertId: string }) => undefined),
   unsubscribeEmailAlertsByNotificationId: vi.fn(async (_input: { notificationId: string }) => ({
     userId: "u",
@@ -18,6 +22,7 @@ const mocks = vi.hoisted(() => ({
 const {
   revokeEmailAlertConsent,
   revokeSaleReminderConsent,
+  revokeOfferOpeningRequest,
   deactivateAlertForUser,
   unsubscribeEmailAlertsByNotificationId,
 } = mocks;
@@ -35,6 +40,7 @@ describe("unsubscribe route", () => {
     vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "service-role-test-key");
     revokeEmailAlertConsent.mockClear();
     revokeSaleReminderConsent.mockClear();
+    revokeOfferOpeningRequest.mockClear();
     deactivateAlertForUser.mockClear();
     unsubscribeEmailAlertsByNotificationId.mockClear();
   });
@@ -134,5 +140,37 @@ describe("unsubscribe route", () => {
     expect(revokeEmailAlertConsent).not.toHaveBeenCalled();
     expect(html).toContain("Rappels désactivés");
     expect(html).toContain("Vos alertes email ne sont pas modifiées");
+  });
+
+  it("n'écrit rien sur un GET d'un jeton « ouverture de l'offre » et demande confirmation", async () => {
+    const token = createUnsubscribeToken({ userId, scope: { kind: "offer-opening" } });
+    const response = await GET(
+      new Request(`https://immojudis.test/api/notification-preferences/unsubscribe?token=${token}`),
+    );
+    const html = await response.text();
+    expect(response.status).toBe(200);
+    expect(html).toContain("ouverture de l&#39;offre Analyse");
+    expect(html).toContain("Retirer ma demande");
+    expect(revokeOfferOpeningRequest).not.toHaveBeenCalled();
+  });
+
+  it("retire seulement la demande d'ouverture sur le POST d'un jeton « ouverture de l'offre »", async () => {
+    const token = createUnsubscribeToken({ userId, scope: { kind: "offer-opening" } });
+    const response = await POST(
+      new Request(
+        `https://immojudis.test/api/notification-preferences/unsubscribe?token=${token}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/x-www-form-urlencoded" },
+          body: "List-Unsubscribe=One-Click",
+        },
+      ),
+    );
+    const html = await response.text();
+    expect(response.status).toBe(200);
+    expect(revokeOfferOpeningRequest).toHaveBeenCalledWith({ userId });
+    expect(revokeEmailAlertConsent).not.toHaveBeenCalled();
+    expect(revokeSaleReminderConsent).not.toHaveBeenCalled();
+    expect(html).toContain("Demande retirée");
   });
 });

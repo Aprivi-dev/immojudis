@@ -3,6 +3,7 @@ import { errorDetailForLog } from "@/lib/api-errors";
 import {
   deactivateAlertForUser,
   revokeEmailAlertConsent,
+  revokeOfferOpeningRequest,
   revokeSaleReminderConsent,
   unsubscribeEmailAlertsByNotificationId,
 } from "@/lib/email-alerts";
@@ -36,7 +37,9 @@ export async function GET(request: Request) {
         ? "Voulez-vous désactiver cette alerte ?"
         : claims.scope.kind === "reminders"
           ? "Voulez-vous ne plus recevoir les rappels d'audience et les avertissements sur vos ventes suivies ?"
-          : "Voulez-vous ne plus recevoir d'alertes par email ?";
+          : claims.scope.kind === "offer-opening"
+            ? "Voulez-vous retirer votre demande d'être prévenu de l'ouverture de l'offre Analyse ?"
+            : "Voulez-vous ne plus recevoir d'alertes par email ?";
     return htmlResponse("Confirmer la désinscription", scopeLabel, 200, null, {
       field: "token",
       value: token,
@@ -45,7 +48,9 @@ export async function GET(request: Request) {
           ? "Désactiver cette alerte"
           : claims.scope.kind === "reminders"
             ? "Me désinscrire des rappels"
-            : "Me désinscrire des emails",
+            : claims.scope.kind === "offer-opening"
+              ? "Retirer ma demande"
+              : "Me désinscrire des emails",
     });
   }
 
@@ -103,6 +108,15 @@ export async function POST(request: Request) {
           "Vous ne recevrez plus de rappels d'audience ni d'avertissements par email. Vos alertes email ne sont pas modifiées.",
           200,
           { href: "/compte", label: "Gérer mes notifications" },
+        );
+      }
+      if (claims.scope.kind === "offer-opening") {
+        await revokeOfferOpeningRequest({ userId: claims.userId });
+        return htmlResponse(
+          "Demande retirée",
+          "Vous ne serez plus prévenu de l'ouverture de l'offre Analyse. Vos alertes email ne sont pas modifiées.",
+          200,
+          { href: "/offres", label: "Voir les offres" },
         );
       }
       await revokeEmailAlertConsent({ userId: claims.userId });
