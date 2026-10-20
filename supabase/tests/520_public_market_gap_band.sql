@@ -6,9 +6,12 @@
 --     pourcentage, aucun champ privé ne sort ;
 --   * la bande compare la mise à prix à la fourchette de valeur estimée (sous P10, dans la
 --     fourchette, au-dessus de P90) ;
---   * la porte de qualité du code est respectée : estimation « actionable », au moins 4 ventes
---     comparables, échantillon effectif d'au moins 3, intervalle exploitable (largeur d'au plus
---     110 %), modèle toujours actif pour une estimation LightGBM, statut « ready » ;
+--   * la porte de qualité du code est respectée : estimation « actionable », ventes comparables et
+--     échantillon effectif suffisants, intervalle exploitable, modèle toujours actif pour une
+--     estimation LightGBM, statut « ready ». Cette porte a été durcie par la migration
+--     20261029120000 (6 ventes avec la méthode jackknife, 8 sinon, échantillon effectif de 5, largeur
+--     de 60 %, rayon borné) : ses seuils exacts sont dans le test 545 ; les fixtures ci-dessous la
+--     passent (8 ventes, échantillon effectif 5, largeur de 33 %, rayon de 300 m) ;
 --   * le garde-fou d'écart de market-gap.ts (au-delà de 70 % sous la valeur ou de 50 % au-dessus :
 --     aucune bande), arrondi comme Math.round ;
 --   * seules les ventes visibles du catalogue public, au tribunal ou chez le notaire, sont concernées.
@@ -96,7 +99,7 @@ set status = x.status,
     value_p90_eur = x.p90,
     engine_kind = x.engine,
     model_version_id = x.model,
-    estimate = jsonb_build_object('effectiveSampleSize', x.ess),
+    estimate = jsonb_build_object('effectiveSampleSize', x.ess, 'radiusM', 300),
     computed_at = now()
 from (
   values

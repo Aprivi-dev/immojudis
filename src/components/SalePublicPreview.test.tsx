@@ -325,9 +325,9 @@ describe("SalePublicPreview", () => {
 
   describe("écart au marché en trois bandes", () => {
     it.each([
-      ["under", "Mise à prix nettement sous la valeur de marché estimée"],
-      ["near", "Mise à prix proche de la valeur de marché estimée"],
-      ["above", "Mise à prix au-dessus de la valeur de marché estimée"],
+      ["under", "Mise à prix inférieure à la fourchette des ventes comparables"],
+      ["near", "Mise à prix dans la fourchette des ventes comparables"],
+      ["above", "Mise à prix au-dessus de la fourchette des ventes comparables"],
     ] as const)("annonce la bande %s sous la mise à prix, sans chiffre", (band, label) => {
       renderPreview({
         sale_venue_type: "tribunal",
@@ -342,6 +342,14 @@ describe("SalePublicPreview", () => {
       expect(note.textContent).toContain("indicatif");
       expect(note.textContent).toContain("Ne remplace ni une visite ni l’avis d’un professionnel");
       expect(note.textContent).toContain("prix d’adjudication peut être très différent");
+      expect(note.textContent).toContain(
+        "Aux enchères, la mise à prix est volontairement basse : le prix final est souvent bien supérieur.",
+      );
+      expect(note.textContent).toContain(
+        "DVF (base des ventes immobilières déclarées aux notaires)",
+      );
+      // Le libellé est exclu des extraits de recherche.
+      expect(note.querySelector("[data-nosnippet]")?.textContent).toBe(label);
       // Sous le prix, dans le même bloc : l'inscription le suit toujours.
       const priceBlock = screen.getByText("Prix de départ, hors frais").parentElement!;
       expect(priceBlock.contains(note)).toBe(true);
@@ -363,6 +371,36 @@ describe("SalePublicPreview", () => {
         "Pas assez de ventes comparables fiables pour situer cette mise à prix",
       );
       expect(note.textContent).not.toMatch(/nettement|proche|au-dessus/);
+      expect(note.textContent).not.toContain("volontairement basse");
+    });
+
+    it.each([
+      [
+        "insufficient_surface",
+        "Surface du bien inconnue : pas de comparaison possible avec les ventes du secteur",
+      ],
+      [
+        "insufficient_type",
+        "Type de bien non pris en charge par la comparaison avec les ventes du secteur",
+      ],
+    ] as const)("sépare la raison d'insuffisance %s", (band, label) => {
+      renderPreview({ sale_venue_type: "tribunal", market_gap_band: band });
+      const note = screen.getByTestId("market-gap-band");
+      expect(note.textContent).toContain(label);
+      expect(note.textContent).not.toContain("Pas assez de ventes comparables fiables");
+      expect(note.textContent).not.toContain("volontairement basse");
+    });
+
+    it("dit « bien occupé » à la place de « inférieure à la fourchette »", () => {
+      renderPreview({ sale_venue_type: "tribunal", market_gap_band: "occupied" });
+      const note = screen.getByTestId("market-gap-band");
+      expect(note.textContent).toContain(
+        "Bien occupé : la comparaison avec les ventes de biens libres n'est pas pertinente",
+      );
+      expect(note.textContent).not.toMatch(/inférieure|fourchette|volontairement basse/);
+      expect(
+        within(note).getByRole("link", { name: "Comment est calculé ce repère ?" }),
+      ).toBeTruthy();
     });
 
     it("n'affiche rien sans bande, ni sans mise à prix", () => {
