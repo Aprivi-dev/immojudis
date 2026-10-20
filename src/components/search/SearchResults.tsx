@@ -300,7 +300,11 @@ export const ListingCard = memo(function ListingCard({
   /** Le compte a débloqué cette vente (« 3 déblocages par mois ») : pastille « Débloquée ». */
   unlocked?: boolean;
   /** Appelé après l'ajout ou le retrait réussi d'un favori depuis la carte. */
-  onFavoriteChange?: (saleId: string, isFavorite: boolean) => void;
+  onFavoriteChange?: (
+    saleId: string,
+    isFavorite: boolean,
+    removed?: RemovedFavoriteDossier | null,
+  ) => void;
 }) {
   const displaySurface = getDisplaySurface(sale);
   const { isViewed } = useViewedSales();
@@ -481,7 +485,9 @@ export const ListingCard = memo(function ListingCard({
           </span>
           <SaleCountdown sale={sale} precisionUnknown={locked} variant="chip" />
           <SaleProcedureBadge sale={sale} />
-          <WellInformedBadge sale={sale} />
+          {/* « Annonce bien renseignée » et « N points à vérifier » se contredisent côte à côte : un
+              point ouvert l'emporte (la liste des points est celle de la carte). */}
+          {verifyPoints.length === 0 ? <WellInformedBadge sale={sale} /> : null}
           <PointsToVerifyBadge
             points={verifyPoints}
             detailHref={detailLink.href}

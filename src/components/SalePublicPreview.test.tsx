@@ -445,6 +445,24 @@ describe("SalePublicPreview", () => {
     }
   });
 
+  it("reprend les points à vérifier sous l'ancre #points-a-verifier, sans l'occupation", () => {
+    renderPreview({
+      sale_venue_type: "tribunal",
+      sale_date: "2099-01-20T08:30:00+00:00",
+      app_surface_m2: null,
+      occupancy_status: null,
+    });
+    const section = screen.getByRole("region", { name: "1 point à vérifier" });
+    expect(section.id).toBe("points-a-verifier");
+    expect(section.textContent).toContain("Surface non communiquée dans l’annonce");
+    expect(section.textContent).not.toContain("Occupation");
+  });
+
+  it("n'ajoute aucun bloc de points quand l'aperçu n'en laisse aucun ouvert", () => {
+    renderPreview({ sale_venue_type: "tribunal", app_surface_m2: 60 });
+    expect(document.getElementById("points-a-verifier")).toBeNull();
+  });
+
   it("donne leur définition à « mise à prix » et à « adjudication »", () => {
     renderPreview({ sale_venue_type: "tribunal" });
     expect(screen.getByRole("button", { name: "Définition : mise à prix" })).toBeTruthy();

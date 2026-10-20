@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
 import FileText from "lucide-react/dist/esm/icons/file-text.js";
 import Info from "lucide-react/dist/esm/icons/info.js";
+import { escapeBelongsToAnotherLayer } from "@/lib/escape-layer";
 import {
   WELL_INFORMED_BADGE_LABEL,
   WELL_INFORMED_BADGE_LINK_LABEL,
@@ -15,7 +16,8 @@ import {
  * Pastille « Annonce bien renseignée » et sa note. Le libellé est visible et porté par la
  * pastille ; l'icône est décorative. La réserve (ni vérification ni garantie) s'ouvre au toucher
  * comme au clavier avec le bouton « i » : la note apparaît sous la pastille, avec un lien vers la
- * page du classement. Fermeture avec Échap ou en rappuyant sur le bouton.
+ * page du classement. Fermeture avec Échap (sauf si un dialogue ouvert par-dessus l'a déjà pris)
+ * ou en rappuyant sur le bouton.
  */
 export function WellInformedBadgeInfo() {
   const [open, setOpen] = useState(false);
@@ -25,7 +27,8 @@ export function WellInformedBadgeInfo() {
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+      // Un dialogue ouvert par-dessus garde son Échap : la note ne se ferme pas avec lui.
+      if (event.key !== "Escape" || escapeBelongsToAnotherLayer(event, trigger.current)) return;
       setOpen(false);
       trigger.current?.focus();
     };

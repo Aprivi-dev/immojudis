@@ -13,7 +13,9 @@ import { PhotoCredit } from "@/components/PhotoCredit";
 import { photoCredit } from "@/lib/photo-credit";
 import { photoMirrorForDetail } from "@/lib/photo-mirror";
 import { SaleCalendarButton } from "@/components/SaleCalendarButton";
+import { SalePointsToVerify } from "@/components/sale-detail/SalePointsToVerify";
 import { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
+import { pointsToVerify } from "@/lib/search/points-to-verify";
 import { formatPrice } from "@/lib/format";
 import {
   MARKET_GAP_BAND_CAUTION,
@@ -367,6 +369,11 @@ export function SalePublicPreview({
                 </ul>
               ) : null}
             </section>
+            {/* Cible de `#points-a-verifier` ; l'occupation n'est pas lue sur l'aperçu public. */}
+            <SalePointsToVerify
+              className="mt-4"
+              points={pointsToVerify(preview, { occupancyVisible: false })}
+            />
             <section className={styles.teaser} aria-labelledby="public-teaser-title">
               <h2 id="public-teaser-title" className={styles.addsTitle}>
                 L’analyse de cette vente

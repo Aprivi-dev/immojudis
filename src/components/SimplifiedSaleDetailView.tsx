@@ -12,6 +12,8 @@ import { salesReturnHref, salesReturnLabel } from "@/lib/navigation";
 import { DocumentReadingSection } from "@/components/sale-detail/DocumentReadingSection";
 import { SalePassagesSection } from "@/components/sale-detail/SalePassagesSection";
 import { SaleUnlockPanel } from "@/components/sale-detail/SaleUnlockPanel";
+import { SalePointsToVerify } from "@/components/sale-detail/SalePointsToVerify";
+import { pointsToVerify } from "@/lib/search/points-to-verify";
 import { SaleUnlockOfferProvider } from "@/components/sale-detail/UnlockCallToAction";
 import type { SaleUnlockResult, SaleUnlockStatus } from "@/lib/sale-unlocks";
 import { AuctionScenariosSection } from "@/components/sale-detail/AuctionScenariosSection";
@@ -572,6 +574,11 @@ function SaleDetailWorkspace({
             sale={displaySale}
             aiReviewProjections={resolvedAiReviewProjections}
             aiReviewStatus={aiReviewStatus}
+          />
+          {/* Cible de `#points-a-verifier` : les points de la pastille de la liste. */}
+          <SalePointsToVerify
+            className="mt-4"
+            points={pointsToVerify(displaySale, { occupancyVisible: true })}
           />
           <ListingPreparation
             key={`${user?.id ?? "guest-demo"}:${sale.id}`}
