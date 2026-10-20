@@ -55,7 +55,7 @@ beforeEach(() => {
 describe("statuts de « Mon dossier »", () => {
   it("reprend exactement les statuts de l'espace de travail, avec leurs libellés", () => {
     expect(FAVORITE_DOSSIER_STATUSES).toEqual(SALE_WORKSPACE_STATUSES);
-    expect(favoriteDossierStatusLabel("bidding")).toBe("Prêt à enchérir");
+    expect(favoriteDossierStatusLabel("bidding")).toBe("Je prépare mon enchère");
   });
 
   it("traite une valeur inconnue comme absente", () => {

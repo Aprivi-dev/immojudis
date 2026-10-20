@@ -93,8 +93,8 @@ export function TribunalJudicialActivityExplorer({
           </h1>
           <p className="mt-4 max-w-4xl text-sm leading-relaxed text-brand-navy/68 sm:text-base">
             {adjudicationStatisticsEnabled
-              ? "À quel prix les biens sont-ils adjugés ? Comparez les prix d’adjudication publiés par Licitor, les mises à prix et les types de biens, en France et tribunal par tribunal. Un baromètre réservé aux membres Analyse, complété par l’historique des audiences suivies par Immojudis."
-              : "Combien de ventes judiciaires sont à venir, et dans quels tribunaux ? Retrouvez, tribunal par tribunal, le nombre de ventes, la prochaine audience et la mise à prix médiane des biens annoncés, complétés pour les membres Analyse par l’historique des audiences suivies par Immojudis."}
+              ? "À quel prix les biens sont-ils adjugés ? Comparez les prix d’adjudication publiés par Licitor, les mises à prix et les types de biens, en France et tribunal par tribunal. Un baromètre réservé à l’offre Analyse, complété par l’historique des audiences suivies par Immojudis."
+              : "Combien de ventes judiciaires sont à venir, et dans quels tribunaux ? Retrouvez, tribunal par tribunal, le nombre de ventes, la prochaine audience et la mise à prix médiane des biens annoncés, complétés, avec l’offre Analyse, par l’historique des audiences suivies par Immojudis."}
           </p>
         </div>
       </header>
@@ -338,7 +338,7 @@ function NationalOverview({ data }: { data: TribunalJudicialActivityDirectoryDat
 
       <p className="mt-4 text-xs leading-relaxed text-brand-navy/65">
         Ces agrégats décrivent seulement le catalogue suivi par Immojudis. Les prix d’adjudication
-        déclarés par Licitor sont présentés séparément aux membres Analyse ; les taux d’issue
+        déclarés par Licitor sont présentés séparément avec l’offre Analyse ; les taux d’issue
         définitive ne sont pas déduits de ces prix.
       </p>
     </section>

@@ -14,7 +14,7 @@ export async function GET(request: Request) {
     await assertFeatureEntitlement(
       auth,
       "sales.statistics",
-      "Statistiques d’adjudication réservées au plan Analyse.",
+      "Statistiques d’adjudication réservées à l’offre Analyse.",
     );
     const statistics = await getAdjudicationPriceStatisticsDirectory();
     try {

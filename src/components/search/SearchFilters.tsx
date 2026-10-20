@@ -79,7 +79,7 @@ export function NoResultsState({
   return (
     <div className="rounded-md border border-line-soft bg-white p-6 text-center shadow-sm sm:p-10">
       <SearchIcon className="mx-auto h-8 w-8 text-brand-navy" />
-      <h2 className="mt-4 text-xl font-extrabold text-brand-navy">Aucun dossier trouvé</h2>
+      <h2 className="mt-4 text-xl font-extrabold text-brand-navy">Aucune vente trouvée</h2>
       <p className="mt-2 text-sm font-medium text-ink-soft">
         Aucune annonce référencée ne correspond à ces critères pour le moment. Essayez un autre type
         de vente, une autre zone ou élargissez votre budget.

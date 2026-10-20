@@ -100,7 +100,7 @@ describe("GET /api/v1/sales/:id/urbanisme-cadastre", () => {
 
   it("refuse le plan Découverte avant la résolution de la vente", async () => {
     mocks.assertEntitlement.mockRejectedValue(
-      new Error("Les données cadastrales sont réservées au plan Analyse."),
+      new Error("Les données cadastrales sont réservées à l’offre Analyse."),
     );
 
     const response = await request();

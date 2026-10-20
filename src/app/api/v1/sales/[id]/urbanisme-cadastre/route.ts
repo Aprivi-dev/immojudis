@@ -21,12 +21,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     await assertFeatureEntitlement(
       auth,
       "property.cadastralAnalysis",
-      "Les données cadastrales sont réservées au plan Analyse.",
+      "Les données cadastrales sont réservées à l’offre Analyse.",
     );
     await assertFeatureEntitlement(
       auth,
       "property.urbanPlanning",
-      "Les données d’urbanisme sont réservées au plan Analyse.",
+      "Les données d’urbanisme sont réservées à l’offre Analyse.",
     );
 
     const { id: saleId } = paramsSchema.parse(await params);

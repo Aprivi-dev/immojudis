@@ -116,9 +116,9 @@ describe("SaleFileCard (Mon dossier)", () => {
       "Aucun statut",
       "À surveiller",
       "Analyse en cours",
-      "Prêt à enchérir",
+      "Je prépare mon enchère",
       "Remporté",
-      "Non retenu",
+      "Non remporté",
       "Archivé",
     ]);
     fireEvent.change(select, { target: { value: "bidding" } });

@@ -166,7 +166,7 @@ describe("PastFollowedSales (ventes passées)", () => {
 
     await screen.findByRole("heading", { name: "Maison de ville" });
     expect(screen.getByTestId("snapshot-result").textContent).toMatch(/Adjugé à 250\s000\s€/);
-    expect(screen.getByText("Prêt à enchérir")).toBeTruthy();
+    expect(screen.getByText("Je prépare mon enchère")).toBeTruthy();
     expect(screen.getByText(/180\s000\s€/)).toBeTruthy();
     const surenchere = screen.getByTestId("snapshot-surenchere").textContent ?? "";
     expect(surenchere).toContain(

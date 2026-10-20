@@ -208,6 +208,39 @@ describe("public map resilience", () => {
     expect(html).not.toContain("Offre Analyse");
     expect(html).not.toContain("À auditer");
   });
+  it("calls the risks of a sale « risques signalés », never « alertes » (which are saved searches)", async () => {
+    const base = {
+      city: "Lyon",
+      property_type: "apartment",
+      latitude: 45.76,
+      longitude: 4.83,
+      starting_price_eur: 80_000,
+      app_surface_m2: 50,
+      media: [],
+    };
+    const two = { ...base, id: "two-risks", risks: ["Occupation", "Servitude"] };
+    await showMap({
+      sales: [two as unknown as AuctionSale],
+      preview: false,
+      showDpeLegend: true,
+      selectedSaleId: two.id,
+    });
+    act(() => mocks.handlers.get("load")?.());
+    const html = mocks.setHtml.mock.calls.at(-1)?.[0] as string;
+    expect(html).toContain("Risques : 2 risques signalés");
+    expect(html).not.toMatch(/alerte/i);
+    cleanup();
+
+    const one = { ...base, id: "one-risk", risks: ["Occupation"] };
+    await showMap({
+      sales: [one as unknown as AuctionSale],
+      preview: false,
+      showDpeLegend: true,
+      selectedSaleId: one.id,
+    });
+    act(() => mocks.handlers.get("load")?.());
+    expect(mocks.setHtml.mock.calls.at(-1)?.[0]).toContain("Risques : 1 risque signalé");
+  });
   it("masks an authenticated popup value when the review projection is blocked", async () => {
     const sale = {
       id: "guarded",

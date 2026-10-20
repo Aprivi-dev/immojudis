@@ -81,7 +81,7 @@ describe("dossier PLU et risques premium", () => {
   });
   it("refuse un compte sans abonnement Analyse", async () => {
     mocks.entitlement.mockRejectedValue(
-      new Error("Cette fonctionnalité est réservée au plan Analyse."),
+      new Error("Cette fonctionnalité est réservée à l’offre Analyse."),
     );
     expect((await request()).status).toBe(403);
     expect(mocks.sale).not.toHaveBeenCalled();
