@@ -1,6 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { LAUNCH_OFFER_CACHE_SECONDS } from "@/lib/launch-offer";
+import { isMissingRpcError } from "@/lib/postgrest-errors";
 
 /**
  * État de l'offre de lancement, lu dans la base (RPC `get_launch_offer_status`, rôle service_role)
@@ -76,6 +77,7 @@ export function resetLaunchOfferCache(): void {
   cached = null;
   inflight = null;
   eligibilityReads.clear();
+  fallbackWarned = false;
 }
 
 /**
@@ -100,6 +102,13 @@ const eligibilityReads = new Map<string, { eligible: boolean; expiresAt: number 
  * écrans et les droits en base répondent ainsi pareil, sans seconde copie de la règle. Fermé en cas
  * d'erreur, comme la lecture de l'état de l'offre : l'accès normal (abonnement, premium,
  * administrateur) n'en dépend pas.
+ *
+ * Ordre de déploiement : si la fonction n'existe pas encore (code déployé avant la migration
+ * 20261029110000 : `PGRST202` ou `42883`), on revient à l'ancienne règle, celle que la base appliquait
+ * avant cette migration : l'adresse email est confirmée (API Auth d'administration). Le repli n'est
+ * jamais plus large que l'ancienne règle et ne s'applique qu'à l'absence de la fonction, jamais à une
+ * autre erreur (qui reste fermée). Sans lui l'offre se fermerait pour tous tant que la migration n'est
+ * pas appliquée.
  */
 export async function hasConfirmedEmail(
   userId: string,
@@ -108,11 +117,7 @@ export async function hasConfirmedEmail(
   const known = eligibilityReads.get(userId);
   if (known && known.expiresAt > now) return known.eligible;
   try {
-    const { data, error } = await supabaseAdmin.rpc("get_launch_offer_account_eligibility", {
-      p_user_id: userId,
-    });
-    if (error) throw error;
-    const eligible = data === true;
+    const eligible = await readEligibility(userId);
     rememberEligibility(userId, eligible, now);
     return eligible;
   } catch (error) {
@@ -124,6 +129,37 @@ export async function hasConfirmedEmail(
     );
     return false;
   }
+}
+
+async function readEligibility(userId: string): Promise<boolean> {
+  const { data, error } = await supabaseAdmin.rpc("get_launch_offer_account_eligibility", {
+    p_user_id: userId,
+  });
+  if (!error) return data === true;
+  if (!isMissingRpcError(error)) throw error;
+  warnEligibilityFallback();
+  return readConfirmedEmailFromAuth(userId);
+}
+
+/** L'ancienne règle : l'adresse email du compte est confirmée (`auth.users.email_confirmed_at`). */
+async function readConfirmedEmailFromAuth(userId: string): Promise<boolean> {
+  const { data, error } = await supabaseAdmin.auth.admin.getUserById(userId);
+  if (error) throw error;
+  return Boolean(data?.user?.email_confirmed_at);
+}
+
+let fallbackWarned = false;
+function warnEligibilityFallback(): void {
+  if (fallbackWarned) return;
+  fallbackWarned = true;
+  console.warn(
+    JSON.stringify({
+      scope: "launch-offer.eligibility",
+      fallback: "auth-email-confirmed",
+      reason:
+        "get_launch_offer_account_eligibility absente : appliquer la migration 20261029110000",
+    }),
+  );
 }
 
 function rememberEligibility(userId: string, eligible: boolean, now: number): void {
