@@ -5,12 +5,12 @@ set local lock_timeout = '5s';
 -- Rétention : les journaux du récapitulatif hebdomadaire et des alertes de résultat deviennent deux parties
 -- isolées de public.run_data_retention (points 70 et 73 de la session du 20/10/2026).
 --
--- Même corps que 20261029100200 (dernière définition au moment de l'écriture : si une migration plus
--- récente la redéfinit, reprendre SA définition et y ajouter ces deux blocs), plus la purge de
--- public.weekly_digest_dispatches et de public.sale_result_dispatches. Chaque purge reste isolée : un
--- échec est journalisé et signalé sous purge_errors sans arrêter les autres. Les deux journaux sont aussi
--- purgés quand les interrupteurs d'envoi valent « off » : c'est pourquoi la purge est ici et pas dans les
--- crons d'envoi.
+-- Même corps que 20261030110200 (dernière définition au moment de l'écriture, huit parties dont
+-- purge_sale_signal_feedback : si une migration plus récente la redéfinit, reprendre SA définition et y
+-- ajouter ces deux blocs), plus la purge de public.weekly_digest_dispatches et de
+-- public.sale_result_dispatches. Chaque purge reste isolée : un échec est journalisé et signalé sous
+-- purge_errors sans arrêter les autres. Les deux journaux sont aussi purgés quand les interrupteurs d'envoi
+-- valent « off » : c'est pourquoi la purge est ici et pas dans les crons d'envoi.
 
 create or replace function public.run_data_retention(
   p_now timestamptz default statement_timestamp()
@@ -87,6 +87,15 @@ begin
       sqlstate, sqlerrm;
   end;
 
+  -- Retours sur les signaux d'une vente (20261030110100) : 90 jours.
+  begin
+    v_result := v_result || coalesce(app_private.purge_sale_signal_feedback(p_now), '{}'::jsonb);
+  exception when others then
+    v_errors := v_errors || pg_catalog.jsonb_build_object('purge_sale_signal_feedback', sqlstate);
+    raise warning 'run_data_retention: purge_sale_signal_feedback failed (SQLSTATE %): %',
+      sqlstate, sqlerrm;
+  end;
+
   -- Journal du récapitulatif hebdomadaire « Ma semaine » (20261030120100) : 180 jours. Purgé même quand
   -- l'envoi est fermé (WEEKLY_DIGEST_MODE=off).
   begin
@@ -121,7 +130,7 @@ end;
 $$;
 
 comment on function public.run_data_retention(timestamptz) is
-  'Runs the nine retention purges, each isolated: a failing purge is logged and reported under purge_errors while the others still run and commit.';
+  'Runs the ten retention purges, each isolated: a failing purge is logged and reported under purge_errors while the others still run and commit.';
 
 revoke all on function public.run_data_retention(timestamptz)
   from public, anon, authenticated;

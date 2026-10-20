@@ -18,8 +18,9 @@ select ok(
   and position('purge_offer_opening_notifications' in pg_get_functiondef('public.run_data_retention(timestamptz)'::regprocedure)) > 0
   and position('purge_information_agent_data' in pg_get_functiondef('public.run_data_retention(timestamptz)'::regprocedure)) > 0
   and position('purge_expired_operational_data' in pg_get_functiondef('public.run_data_retention(timestamptz)'::regprocedure)) > 0
+  and position('purge_sale_signal_feedback' in pg_get_functiondef('public.run_data_retention(timestamptz)'::regprocedure)) > 0
   and position('purge_errors' in pg_get_functiondef('public.run_data_retention(timestamptz)'::regprocedure)) > 0,
-  'it keeps its seven other purges and purge_errors'
+  'it keeps its eight other purges and purge_errors'
 );
 
 select ok(
