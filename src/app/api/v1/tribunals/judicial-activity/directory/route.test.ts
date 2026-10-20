@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   getDirectory: vi.fn(),
 }));
 
+vi.mock("@/lib/rate-limit", () => ({ enforceUserRateLimit: vi.fn(async () => 1) }));
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
   bearerTokenFromRequest: () => "token",
   requireSupabaseAuthContext: mocks.requireAuth,

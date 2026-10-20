@@ -9,11 +9,16 @@ import {
 import { resolvePlanEntitlements } from "@/lib/property-reports";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 
-const { serverFrom } = vi.hoisted(() => ({ serverFrom: vi.fn() }));
+const { serverFrom, dailyLimits } = vi.hoisted(() => ({
+  serverFrom: vi.fn(),
+  dailyLimits: vi.fn(async () => undefined),
+}));
 
 vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: { from: serverFrom },
 }));
+
+vi.mock("@/lib/rate-limit", () => ({ enforceDailyOperationLimits: dailyLimits }));
 
 vi.mock("@/lib/property-reports", () => ({
   resolvePlanEntitlements: vi.fn(),
@@ -22,6 +27,8 @@ vi.mock("@/lib/property-reports", () => ({
 vi.mock("@/lib/usage", () => ({
   recordFeatureUsageEvent: vi.fn(async () => undefined),
 }));
+
+const request = new Request("https://example.test/api/lawyer-referrals", { method: "POST" });
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const SALE_ID = "22222222-2222-4222-8222-222222222222";
@@ -47,6 +54,7 @@ describe("lawyer referrals", () => {
     await expect(
       createLawyerReferralRequest({
         auth,
+        request,
         input: {
           saleId: SALE_ID,
           preferredContactMethod: "email",
@@ -58,12 +66,58 @@ describe("lawyer referrals", () => {
     expect(recordFeatureUsageEvent).not.toHaveBeenCalled();
   });
 
+  it("applique le plafond journalier après le droit d'accès, avant toute création", async () => {
+    // Sans droit : aucun plafond consommé.
+    vi.mocked(resolvePlanEntitlements).mockResolvedValue(planEntitlements("decouverte"));
+    await expect(
+      createLawyerReferralRequest({ auth: fakeReferralAuth(), input: confirmedInput(), request }),
+    ).rejects.toThrow("réservée au plan Analyse");
+    expect(dailyLimits).not.toHaveBeenCalled();
+
+    // Abonné : plafond du compte, hors part de l'offre de lancement.
+    vi.mocked(resolvePlanEntitlements).mockResolvedValue(planEntitlements("analyse"));
+    await createLawyerReferralRequest({
+      auth: fakeReferralAuth(),
+      input: confirmedInput(),
+      request,
+    });
+    expect(dailyLimits).toHaveBeenLastCalledWith({
+      request,
+      userId: USER_ID,
+      operation: "lawyerReferralCreate",
+      launchOffer: false,
+    });
+
+    // Offre de lancement : le compteur propre à l'offre est aussi consommé.
+    vi.mocked(resolvePlanEntitlements).mockResolvedValue({
+      ...planEntitlements("analyse"),
+      launchOffer: true,
+    });
+    await createLawyerReferralRequest({
+      auth: fakeReferralAuth(),
+      input: confirmedInput(),
+      request,
+    });
+    expect(dailyLimits).toHaveBeenLastCalledWith(
+      expect.objectContaining({ operation: "lawyerReferralCreate", launchOffer: true }),
+    );
+
+    // Plafond atteint : refus avant l'écriture.
+    dailyLimits.mockRejectedValueOnce(new Error("Limite quotidienne atteinte"));
+    const refused = fakeReferralAuth();
+    await expect(
+      createLawyerReferralRequest({ auth: refused, input: confirmedInput(), request }),
+    ).rejects.toThrow("Limite quotidienne atteinte");
+    expect(refused.inserts).toHaveLength(0);
+  });
+
   it("matches only Immojudis referenced lawyers, not source-site lawyer contacts", async () => {
     vi.mocked(resolvePlanEntitlements).mockResolvedValue(planEntitlements("analyse"));
     const auth = fakeReferralAuth();
 
     const response = await createLawyerReferralRequest({
       auth,
+      request,
       input: {
         saleId: SALE_ID,
         preferredContactMethod: "either",
@@ -143,6 +197,7 @@ describe("lawyer referrals", () => {
 
     const response = await createLawyerReferralRequest({
       auth,
+      request,
       input: {
         saleId: SALE_ID,
         preferredContactMethod: "email",
@@ -223,6 +278,7 @@ describe("lawyer referrals", () => {
     });
     const created = await createLawyerReferralRequest({
       auth: fakeReferralAuth(),
+      request,
       input: confirmedInput(),
     });
 
@@ -298,7 +354,7 @@ describe("lawyer referrals", () => {
       ],
     });
 
-    const response = await createLawyerReferralRequest({ auth, input: confirmedInput() });
+    const response = await createLawyerReferralRequest({ auth, input: confirmedInput(), request });
 
     expect(response).toMatchObject({ matchingStatus: "manual_review", matchedLawyer: null });
     expect(auth.inserts[0]).toMatchObject({
@@ -321,7 +377,7 @@ describe("lawyer referrals", () => {
       ],
     });
 
-    const response = await createLawyerReferralRequest({ auth, input: confirmedInput() });
+    const response = await createLawyerReferralRequest({ auth, input: confirmedInput(), request });
 
     expect(response.matchedLawyer?.id).toBe(LAWYER_ID);
     expect(auth.inserts[0]).toMatchObject({ requested_lawyer_id: LAWYER_ID });
@@ -337,6 +393,7 @@ describe("lawyer referrals", () => {
     await expect(
       createLawyerReferralRequest({
         auth: prosecuting,
+        request,
         input: confirmedInput({ lawyerId: LAWYER_ID }),
       }),
     ).rejects.toThrow("n'est pas proposé pour cette vente");
@@ -348,6 +405,7 @@ describe("lawyer referrals", () => {
     await expect(
       createLawyerReferralRequest({
         auth: otherBar,
+        request,
         input: confirmedInput({ lawyerId: LAWYER_ID }),
       }),
     ).rejects.toThrow("n'est pas proposé pour cette vente");
@@ -360,6 +418,7 @@ describe("lawyer referrals", () => {
 
     const response = await createLawyerReferralRequest({
       auth,
+      request,
       input: confirmedInput({ lawyerId: LAWYER_ID }),
     });
 
@@ -377,7 +436,7 @@ describe("lawyer referrals", () => {
       saleRow: { tribunal: "Cour d'appel", tribunal_code: null, city: "BORDEAUX" },
     });
 
-    const response = await createLawyerReferralRequest({ auth, input: confirmedInput() });
+    const response = await createLawyerReferralRequest({ auth, input: confirmedInput(), request });
 
     expect(response.matchingStatus).toBe("manual_review");
     expect(auth.calls.map((call) => call.table)).not.toContain("referenced_lawyer_coverage");

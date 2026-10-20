@@ -65,7 +65,7 @@ describe("dossier PLU et risques premium", () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     mocks.auth.mockResolvedValue(context);
-    mocks.entitlement.mockResolvedValue(undefined);
+    mocks.entitlement.mockResolvedValue({ plan: "analyse" });
     mocks.sale.mockResolvedValue(sale);
     mocks.parcels.mockResolvedValue([]);
     mocks.rate.mockResolvedValue(undefined);

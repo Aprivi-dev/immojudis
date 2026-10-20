@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   recordUsage: vi.fn(),
 }));
 
+vi.mock("@/lib/rate-limit", () => ({ enforceUserRateLimit: vi.fn(async () => 1) }));
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
   bearerTokenFromRequest: vi.fn(() => "token"),
   requireSupabaseAuthContext: mocks.requireAuth,
