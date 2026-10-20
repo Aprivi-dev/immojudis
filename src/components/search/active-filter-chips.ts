@@ -128,6 +128,14 @@ export function activeFilterChips(search: SalesSearchParams): ActiveFilterChip[]
     yearBuilt: undefined,
   });
   add("openHouse", search.openHouse ? "Visites programmées" : null, { openHouse: undefined });
+  add(
+    "belowRange",
+    search.belowRange ? "Mise à prix sous la fourchette des ventes comparables" : null,
+    { belowRange: undefined },
+  );
+  add("noPointsToVerify", search.noPointsToVerify ? "Sans point à vérifier" : null, {
+    noPointsToVerify: undefined,
+  });
   add("viewport", search.viewport ? "Zone de la carte" : null, {
     viewport: undefined,
     searchAsMove: false,

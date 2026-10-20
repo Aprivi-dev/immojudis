@@ -16,7 +16,10 @@ import { OFFERS_PATH, loginPathWithRedirect } from "@/lib/navigation";
 import { trackProductEvent } from "@/lib/product-events";
 import { queryKeys } from "@/lib/query-keys";
 import { createAlert } from "@/lib/queries";
-import { countActiveSearchFilters } from "@/lib/search/search-filters";
+import {
+  countAlertableSearchFilters,
+  hasUnalertableSearchFilters,
+} from "@/lib/search/search-filters";
 import { isAnalysisOfferOpen } from "@/lib/search/analysis-offer-open";
 import type { SalesSearchParams } from "@/lib/search/search-url-state";
 import { userMessage } from "@/lib/user-messages";
@@ -119,8 +122,14 @@ export function useCreateAlert({
         );
         return { status: "blocked" };
       }
-      if (countActiveSearchFilters(search) === 0) {
-        toast.error("Ajoutez au moins un filtre avant d'enregistrer");
+      // « Sous la fourchette » et « Sans point à vérifier » ne sont pas des critères d'alerte : une
+      // recherche qui n'a qu'eux ne donnerait aucun critère, et sinon ils seraient ignorés sans le dire.
+      if (countAlertableSearchFilters(search) === 0) {
+        toast.error(
+          hasUnalertableSearchFilters(search)
+            ? "Les filtres « sous la fourchette » et « sans point à vérifier » ne sont pas encore proposés dans les alertes. Ajoutez un autre filtre avant d'enregistrer."
+            : "Ajoutez au moins un filtre avant d'enregistrer",
+        );
         return { status: "blocked" };
       }
 
@@ -197,6 +206,11 @@ export function useCreateAlert({
           }
         } else {
           toast.success(saved);
+        }
+        if (hasUnalertableSearchFilters(search)) {
+          toast.message(
+            "Les filtres « sous la fourchette » et « sans point à vérifier » ne sont pas enregistrés dans l'alerte.",
+          );
         }
         trackProductEvent("alert_created", { email_consent: emailConsent });
         return { status: "created", emailConsent };
