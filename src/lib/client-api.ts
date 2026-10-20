@@ -123,6 +123,7 @@ export {
   fetchLawyerReferralPreview,
   fetchFeaturedReferencedLawyer,
   fetchLawyerDirectory,
+  fetchLawyerProsecutedSales,
   recordLawyerPlacementEvent,
 } from "@/lib/client-api/lawyers";
 

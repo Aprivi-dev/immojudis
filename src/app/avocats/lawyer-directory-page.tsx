@@ -17,10 +17,14 @@ import Scale from "lucide-react/dist/esm/icons/scale.js";
 import Search from "lucide-react/dist/esm/icons/search.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { LawyerReferralButton } from "@/components/LawyerReferralButton";
-import { fetchLawyerDirectory } from "@/lib/client-api";
+import { useAuth } from "@/hooks/use-auth";
+import { fetchLawyerDirectory, fetchLawyerProsecutedSales } from "@/lib/client-api";
+import { fetchAccessPlan } from "@/lib/client-billing";
 import { sponsoredPlacementLabel } from "@/lib/lawyer-placement-label";
 import type { LawyerDirectoryOfficialSource, LawyerDirectoryProfile } from "@/lib/lawyer-directory";
 import { validateDirectorySearch, type DirectorySearch } from "@/lib/lawyer-directory-search";
+import type { LawyerUpcomingSales } from "@/lib/lawyer-prosecuted-sales";
+import { hasStandingAnalysisAccess } from "@/lib/plans";
 import { formatStartingPrice } from "@/lib/format/numbers";
 import { propertyTypeLabel } from "@/lib/format/property-labels";
 import { saleDetailPath, searchParamsToRecord } from "@/lib/navigation";
@@ -206,6 +210,8 @@ function DirectoryResults({
   isDemo: boolean;
   officialSource: LawyerDirectoryOfficialSource | null;
 }) {
+  const prosecutedSales = useProsecutedSalesForPaidAccount(lawyers);
+
   if (!lawyers.length) {
     return (
       <div className="rounded-lg border border-brand-navy/12 bg-white p-7 text-center shadow-sm sm:p-10">
@@ -273,7 +279,13 @@ function DirectoryResults({
           </div>
           <div className="grid gap-5 lg:grid-cols-2">
             {sponsoredLawyers.map((lawyer) => (
-              <LawyerCard key={lawyer.id} lawyer={lawyer} saleId={saleId} sponsored />
+              <LawyerCard
+                key={lawyer.id}
+                lawyer={lawyer}
+                saleId={saleId}
+                upcomingSales={prosecutedSales[lawyer.id]}
+                sponsored
+              />
             ))}
           </div>
         </section>
@@ -331,7 +343,12 @@ function DirectoryResults({
         {directoryLawyers.length ? (
           <div className="grid gap-3 lg:grid-cols-2">
             {directoryLawyers.map((lawyer) => (
-              <LawyerCard key={lawyer.id} lawyer={lawyer} saleId={saleId} />
+              <LawyerCard
+                key={lawyer.id}
+                lawyer={lawyer}
+                saleId={saleId}
+                upcomingSales={prosecutedSales[lawyer.id]}
+              />
             ))}
           </div>
         ) : (
@@ -357,13 +374,46 @@ function DirectoryResults({
   );
 }
 
+/**
+ * Ventes à venir des avocats de la page, chargées pour un compte PAYANT seulement (abonnement
+ * Analyse, premium, administrateur : jamais l'offre de lancement). Pour un visiteur ou un compte
+ * gratuit, aucune requête n'est envoyée et rien n'est affiché, pas même un teaser : le lien avocat
+ * poursuivant ↔ vente ne leur est pas montré. Une erreur laisse les cartes sans cette liste.
+ */
+function useProsecutedSalesForPaidAccount(
+  lawyers: LawyerDirectoryProfile[],
+): Record<string, LawyerUpcomingSales> {
+  const { user, loading } = useAuth();
+  const userKey = user?.id ?? "anonymous";
+  const planQuery = useQuery({
+    queryKey: queryKeys.featureEntitlementsPlan(userKey),
+    queryFn: fetchAccessPlan,
+    enabled: Boolean(user) && !loading,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const paidAccount = Boolean(user) && hasStandingAnalysisAccess(planQuery.data?.plan);
+  const lawyerIds = lawyers.filter((lawyer) => lawyer.source === "immojudis").map(({ id }) => id);
+  const salesQuery = useQuery({
+    queryKey: queryKeys.lawyerProsecutedSales(userKey, lawyerIds),
+    queryFn: () => fetchLawyerProsecutedSales(lawyerIds),
+    enabled: paidAccount && lawyerIds.length > 0,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  return paidAccount ? (salesQuery.data?.lawyers ?? {}) : {};
+}
+
 function LawyerCard({
   lawyer,
   saleId,
+  upcomingSales,
   sponsored = false,
 }: {
   lawyer: LawyerDirectoryProfile;
   saleId?: string;
+  /** Réservé aux comptes payants : absent pour les autres. */
+  upcomingSales?: LawyerUpcomingSales;
   sponsored?: boolean;
 }) {
   return (
@@ -456,8 +506,8 @@ function LawyerCard({
         ) : null}
       </dl>
 
-      {lawyer.upcomingProsecutedSales?.sales.length ? (
-        <ProsecutedSales lawyerId={lawyer.id} upcoming={lawyer.upcomingProsecutedSales} />
+      {upcomingSales?.sales.length ? (
+        <ProsecutedSales lawyerId={lawyer.id} upcoming={upcomingSales} />
       ) : null}
 
       <div className="mt-auto flex flex-wrap gap-2 pt-5">
@@ -515,8 +565,8 @@ function LawyerCard({
 }
 
 /**
- * Ventes à venir où le nom de l'avocat figure comme avocat poursuivant. Uniquement des faits déjà
- * publics de la vente (type, ville, date, tribunal, mise à prix) et un lien vers sa fiche. Le
+ * Ventes à venir où le nom de l'avocat figure comme avocat poursuivant, pour un compte payant
+ * seulement. Uniquement des faits déjà publics de la vente (type, ville, date, tribunal, mise à prix) et un lien vers sa fiche. Le
  * rapprochement est automatique (nom et barreau) : la mention le dit, sans jamais en faire une
  * recommandation.
  */
@@ -525,7 +575,7 @@ function ProsecutedSales({
   upcoming,
 }: {
   lawyerId: string;
-  upcoming: NonNullable<LawyerDirectoryProfile["upcomingProsecutedSales"]>;
+  upcoming: LawyerUpcomingSales;
 }) {
   const headingId = `prosecuted-sales-${lawyerId}`;
   const hidden = upcoming.total - upcoming.sales.length;
