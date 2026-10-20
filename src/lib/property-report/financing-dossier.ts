@@ -14,7 +14,15 @@ import { PDF_PAGE_BREAK } from "@/lib/simple-pdf";
  * Les règles citées sont celles de l'article de /ressources « Garantie de 10 % : chèque de banque ou
  * caution ? » (CPCE, art. R. 322-41, R. 322-56, R. 322-58). Elles visent les ventes au tribunal
  * (saisie immobilière, licitation) ; pour un autre type de vente, la page renvoie à l'annonce et à
- * l'organisateur au lieu d'appliquer une règle qui n'est pas la leur.
+ * l'organisateur au lieu d'appliquer une règle qui n'est pas la leur. Il en va de même quand le type
+ * de vente est inconnu ou que les sources se contredisent (contrôle « conflict ») : la garantie et
+ * le délai s'affichent « non renseigné » et renvoient à l'annonce.
+ *
+ * Le délai de paiement dépend du cadre juridique de la vente (`legalFramework`, voir
+ * `sale-procedure.ts`) : deux mois en saisie immobilière, trois mois en liquidation judiciaire
+ * (art. R. 643-3 du Code de commerce) ; pour un autre cadre, ou un cadre inconnu, il n'est pas
+ * affiché comme acquis. Textes de la relecture juridique du 20/10/2026, à faire valider par un
+ * avocat. La page tient sur 42 lignes (`paginatePdfLines`) : un test vérifie chaque cadre.
  */
 export const FINANCING_NOT_PROVIDED = "non renseigné";
 
@@ -99,7 +107,15 @@ export function financingDossierLines(input: FinancingDossierInput): string[] {
   const guarantee = financingGuaranteeEur(startingPrice);
   const documents = positive(input.documentsCount);
 
-  const tribunalRules = tribunal || venue == null || venue === "unknown";
+  // Type de vente inconnu ou en conflit entre les sources : aucune règle du tribunal n'est appliquée.
+  const venueUncertain =
+    venue == null || venue === "unknown" || sale.venueVerificationStatus === "conflict";
+  const tribunalRules = tribunal && !venueUncertain;
+  // Cadre juridique de la vente (`sale-procedure.ts`) : le délai de paiement en dépend. Un cadre
+  // absent (rapport antérieur) ou inconnu n'est jamais traité comme une saisie immobilière.
+  const legalFramework = typeof sale.legalFramework === "string" ? sale.legalFramework : null;
+  const insolvency = tribunalRules && legalFramework === "insolvency";
+  const seizure = tribunalRules && legalFramework === "judicial_seizure";
   return [
     PDF_PAGE_BREAK,
     FINANCING_DOSSIER_TITLE,
@@ -113,7 +129,11 @@ export function financingDossierLines(input: FinancingDossierInput): string[] {
     `Type: ${text(sale.propertyType, ["Bien", "Bien à qualifier"])} ; surface: ${
       positive(sale.surface) != null ? text(sale.surfaceLabel) : FINANCING_NOT_PROVIDED
     }`,
-    `Type de vente: ${venueLabel ?? `${FINANCING_NOT_PROVIDED} (règles ci-dessous : vente au tribunal)`} ; tribunal: ${text(sale.tribunal)}`,
+    `Type de vente: ${
+      venueUncertain
+        ? `${FINANCING_NOT_PROVIDED} (inconnu ou sources en désaccord : garantie et délai à lire dans l’annonce)`
+        : (venueLabel ?? FINANCING_NOT_PROVIDED)
+    } ; tribunal: ${text(sale.tribunal)}`,
     ...schedule,
     "",
     "Chiffres du dossier",
@@ -132,11 +152,20 @@ export function financingDossierLines(input: FinancingDossierInput): string[] {
       ? [
           `Garantie de 10 % de la mise à prix, minimum 3 000 € (vente au tribunal): ${euros(guarantee)}`,
           `Montant indiqué dans l’annonce: ${euros(announcedGuarantee.amountEur)}`,
-          "Forme: chèque de banque à l’ordre du séquestre ou de la Caisse des dépôts et consignations (selon le cahier), ou caution bancaire irrévocable (art. R. 322-41 du CPCE).",
-          "Calculée sur la mise à prix, non sur l’enchère. Restituée à l’issue de l’audience si vous n’êtes pas adjudicataire ; acquise aux créanciers si l’adjudicataire est défaillant.",
+          ...(insolvency
+            ? [
+                "Forme: chèque de banque ou caution bancaire irrévocable (art. R. 322-41 du CPCE).",
+                "Bénéficiaire du chèque: à lire dans le cahier des conditions de vente.",
+              ]
+            : [
+                "Forme: chèque de banque à l’ordre du séquestre (tiers qui garde les fonds) ou de la Caisse des dépôts (selon le cahier), ou caution bancaire irrévocable (art. R. 322-41 du CPCE).",
+              ]),
+          "Sur la mise à prix, non sur l’enchère. Restituée à l’issue de l’audience si vous n’êtes pas adjudicataire ; acquise aux créanciers et, le cas échéant, au débiteur si l’adjudicataire est défaillant ; la différence avec le prix de revente peut en plus être due.",
         ]
       : [
-          `Garantie de 10 % de la mise à prix, minimum 3 000 €: ne vise que les ventes au tribunal (${venueLabel ?? FINANCING_NOT_PROVIDED}).`,
+          venueUncertain
+            ? `Garantie de 10 % de la mise à prix, minimum 3 000 €: ${FINANCING_NOT_PROVIDED} (le type de vente n’est pas établi ; cette règle ne vise que les ventes au tribunal).`
+            : `Garantie de 10 % de la mise à prix, minimum 3 000 €: ne vise que les ventes au tribunal (${venueLabel ?? FINANCING_NOT_PROVIDED}).`,
           `Montant indiqué dans l’annonce: ${euros(announcedGuarantee.amountEur)}`,
           "Montant, forme et restitution: à lire dans l’annonce et à demander à l’organisateur de la vente.",
         ]),
@@ -144,22 +173,27 @@ export function financingDossierLines(input: FinancingDossierInput): string[] {
     "Paiement du prix",
     ...(tribunalRules
       ? [
-          "Délai: deux mois après l’adjudication définitive (suite du délai de surenchère) pour verser le prix au séquestre ou le consigner, à peine de réitération des enchères (art. R. 322-56).",
+          insolvency
+            ? "Délai: trois mois après l’adjudication, sur le compte ouvert par le liquidateur à la Caisse des dépôts, avec intérêts au taux légal (art. R. 643-3 du Code de commerce)."
+            : seizure
+              ? "Délai: deux mois après l’adjudication définitive (l’adjudication devient définitive à la fin du délai de surenchère, selon l’analyse usuelle : point de départ à confirmer avec l’avocat) pour verser le prix ou le consigner, à peine de réitération des enchères (art. R. 322-56)."
+              : `Délai: ${FINANCING_NOT_PROVIDED} (cadre juridique de la vente non établi). Deux mois après l’adjudication définitive pour une saisie immobilière (art. R. 322-56) ; autre délai possible dans les autres cas : à lire dans le cahier des conditions de vente.`,
           "Frais de poursuite taxés et droits de mutation en plus du prix (art. R. 322-58).",
           "Imputation de la garantie sur le prix: non précisée par les textes, à demander à l’avocat.",
         ]
       : [
-          `Délai: ${FINANCING_NOT_PROVIDED}. Le délai de deux mois vise les ventes au tribunal ; pour cette vente, il est fixé par l’annonce ou le cahier des conditions de vente.`,
+          venueUncertain
+            ? `Délai: ${FINANCING_NOT_PROVIDED}. Le type de vente n’étant pas établi, le délai de deux mois des ventes au tribunal n’est pas appliqué ; il est fixé par l’annonce ou le cahier des conditions de vente.`
+            : `Délai: ${FINANCING_NOT_PROVIDED}. Le délai de deux mois vise les ventes au tribunal ; pour cette vente, il est fixé par l’annonce ou le cahier des conditions de vente.`,
         ]),
     "",
     "Documents utiles à la banque",
     `- Annonce et cahier des conditions de vente (pièces repérées par Immojudis: ${
       documents == null ? FINANCING_NOT_PROVIDED : String(documents)
     }).`,
-    "- Le présent dossier (mise à prix, enchère plafond simulée, frais estimés).",
     "- Pièces habituelles d’un crédit (identité, revenus, impôts, comptes): selon votre banque.",
     "- Achat par une société ou à plusieurs: prévenir banque et avocat dès le départ.",
-    "- À demander à la banque: accord avant l’audience, chèque de banque ou caution irrévocable (délai, coût, contrepartie), financement du solde sous deux mois.",
+    "- À demander à la banque: accord avant l’audience, chèque de banque ou caution irrévocable (délai, coût, contrepartie), financement du solde dans le délai de paiement du prix (deux mois pour une vente au tribunal en saisie immobilière ; à vérifier dans les autres cas).",
     "",
     "Règles du Code des procédures civiles d’exécution pour les ventes au tribunal ; leur application dépend du cahier des conditions de vente : à vérifier avec votre avocat.",
   ];

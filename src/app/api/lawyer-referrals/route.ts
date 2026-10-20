@@ -39,7 +39,7 @@ export async function POST(request: Request) {
       ...RATE_LIMIT_POLICIES.formSubmit,
     });
     const input = lawyerReferralRequestInputSchema.parse(await request.json());
-    const response = await createLawyerReferralRequest({ auth, input });
+    const response = await createLawyerReferralRequest({ auth, input, request });
     return NextResponse.json(response, { status: response.reusedExisting ? 200 : 201 });
   } catch (error) {
     return apiRouteError(error, request, "lawyer-referrals", {

@@ -87,3 +87,24 @@ describe("historyModeForDraftChange", () => {
     expect(historyModeForDraftChange(base, base)).toBe("replace");
   });
 });
+
+describe("filtres « sous la fourchette » et « sans point à vérifier » dans le formulaire", () => {
+  it("font l'aller-retour entre la recherche et le brouillon", () => {
+    const draft = searchToDraft({ belowRange: true, noPointsToVerify: true });
+    expect(draft).toMatchObject({ belowRange: true, noPointsToVerify: true });
+    expect(draftToSearch(draft, {})).toMatchObject({ belowRange: true, noPointsToVerify: true });
+  });
+
+  it("sont éteints dans un brouillon vide et absents de la recherche", () => {
+    expect(emptySearchDraft()).toMatchObject({ belowRange: false, noPointsToVerify: false });
+    const search = draftToSearch(emptySearchDraft(), {});
+    expect(search.belowRange).toBeUndefined();
+    expect(search.noPointsToVerify).toBeUndefined();
+  });
+
+  it("s'écrivent comme un choix : « Retour » les défait", () => {
+    const before = emptySearchDraft();
+    expect(historyModeForDraftChange(before, { ...before, belowRange: true })).toBe("push");
+    expect(historyModeForDraftChange(before, { ...before, noPointsToVerify: true })).toBe("push");
+  });
+});

@@ -7,6 +7,7 @@ import { serverEnv } from "@/lib/env";
 import { emailClickUrl, isEmailClickSaleId } from "@/lib/email-click-token";
 import { createUnsubscribeToken } from "@/lib/email-unsubscribe-token";
 import { canCreateEmailAlertNotification } from "@/lib/notification-preferences";
+import { setOfferOpeningNotification } from "@/lib/offer-opening-notification";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import { resolveSiteOrigin } from "@/lib/site-url";
@@ -39,6 +40,8 @@ export type EmailAlertDeliveryOutcome = {
 
 export type EmailAlertDispatchSummary = {
   configured: boolean;
+  /** Variables d'environnement manquantes quand l'envoi n'est pas configuré (vide sinon). */
+  missing: string[];
   candidateCount: number;
   sentCount: number;
   failedCount: number;
@@ -148,6 +151,7 @@ export async function dispatchQueuedEmailAlertNotifications({
   if (!config.configured || !config.apiKey || !config.from || !config.appUrl) {
     return {
       configured: false,
+      missing: config.missing,
       candidateCount: notifications.length,
       sentCount: 0,
       failedCount: 0,
@@ -185,6 +189,7 @@ export async function dispatchQueuedEmailAlertNotifications({
 
   return {
     configured: true,
+    missing: [],
     candidateCount: notifications.length,
     sentCount: outcomes.filter((outcome) => outcome.status === "sent").length,
     failedCount: outcomes.filter((outcome) => outcome.status === "failed").length,
@@ -238,6 +243,76 @@ export async function revokeSaleReminderConsent({
   );
   if (error) throw error;
   return { userId, revokedAt };
+}
+
+/**
+ * Retire le consentement au récapitulatif hebdomadaire « Ma semaine » (désinscription par le lien
+ * signé de chaque email, portée « weekly-digest »). Les autres consentements ne sont pas touchés ; la
+ * date du retrait est posée par la base (déclencheur de la migration 20261030120000).
+ */
+export async function revokeWeeklyDigestConsent({
+  userId,
+  now = new Date(),
+}: {
+  userId: string;
+  now?: Date;
+}): Promise<{ userId: string; revokedAt: string }> {
+  const revokedAt = now.toISOString();
+  const { error } = await supabaseAdmin.from("user_notification_preferences").upsert(
+    {
+      user_id: userId,
+      weekly_digest_enabled: false,
+      weekly_digest_revoked_at: revokedAt,
+    },
+    { onConflict: "user_id" },
+  );
+  if (error) throw error;
+  return { userId, revokedAt };
+}
+
+/**
+ * Retire le consentement à l'alerte de résultat ou de remise en vente (désinscription par le lien
+ * signé de chaque email, portée « sale-results »). Les autres consentements ne sont pas touchés.
+ */
+export async function revokeSaleResultsConsent({
+  userId,
+  now = new Date(),
+}: {
+  userId: string;
+  now?: Date;
+}): Promise<{ userId: string; revokedAt: string }> {
+  const revokedAt = now.toISOString();
+  const { error } = await supabaseAdmin.from("user_notification_preferences").upsert(
+    {
+      user_id: userId,
+      sale_results_enabled: false,
+      sale_results_revoked_at: revokedAt,
+    },
+    { onConflict: "user_id" },
+  );
+  if (error) throw error;
+  return { userId, revokedAt };
+}
+
+/**
+ * Retire la demande d'être prévenu de l'ouverture de l'offre Analyse (désinscription par le lien
+ * signé de l'email d'ouverture, portée « offer-opening »). Même écriture que le bouton de /offres :
+ * la demande est retirée avec ses réponses facultatives, la preuve du consentement reste.
+ */
+export async function revokeOfferOpeningRequest({
+  userId,
+  now = new Date(),
+}: {
+  userId: string;
+  now?: Date;
+}): Promise<{ userId: string; revokedAt: string }> {
+  await setOfferOpeningNotification({
+    auth: { userId },
+    admin: supabaseAdmin,
+    input: { enabled: false },
+    now,
+  });
+  return { userId, revokedAt: now.toISOString() };
 }
 
 /** Pause a single alert (per-alert unsubscribe); other alerts keep running. */
@@ -518,7 +593,7 @@ async function deliverEmailAlertDigest({
 
   const recipient = await readUserEmail(userId);
   if (!recipient) {
-    return failAll("Aucune adresse email authentifiée disponible pour cet utilisateur.", null);
+    return failAll("Aucune adresse email confirmée disponible pour cet utilisateur.", null);
   }
 
   const message = buildAlertDigestMessage({
@@ -685,10 +760,16 @@ export async function sendResendEmail({
   return { id: body.id ?? null };
 }
 
+/**
+ * L'adresse email du compte, ou `null` quand il n'en a pas OU qu'elle n'est pas confirmée
+ * (`email_confirmed_at`) : on n'écrit jamais (alertes comme rappels d'audience) à une adresse que
+ * personne n'a prouvé lire.
+ */
 export async function readUserEmail(userId: string): Promise<string | null> {
   const { data, error } = await supabaseAdmin.auth.admin.getUserById(userId);
   if (error) throw error;
-  const email = data.user?.email?.trim();
+  if (!data.user?.email_confirmed_at) return null;
+  const email = data.user.email?.trim();
   return email || null;
 }
 

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mapHearingRows, type UpcomingHearingRow } from "@/lib/upcoming-hearings";
 
@@ -106,10 +107,10 @@ describe("/audiences-a-venir : génération et indexation", () => {
     expect(screen.getByRole("heading", { level: 1 })).toBeTruthy();
   });
 
-  it("compte une vente publiée par deux sources une seule fois (même adresse source)", async () => {
+  it("compte une vente publiée par deux sources une seule fois (même clé d'adresse source)", async () => {
     serve([
-      row({ id: "a", starting_price_eur: 50_000, source_url: "https://www.licitor.com/annonce/1" }),
-      row({ id: "b", starting_price_eur: 50_000, source_url: "https://licitor.com/annonce/1/" }),
+      row({ id: "a", starting_price_eur: 50_000, source_group: "group-1" }),
+      row({ id: "b", starting_price_eur: 50_000, source_group: "group-1" }),
       row({ id: "c", starting_price_eur: 60_000 }),
     ]);
     const metadata = await generateMetadata();
@@ -119,8 +120,8 @@ describe("/audiences-a-venir : génération et indexation", () => {
 
   it("garde deux lots distincts du même tribunal, du même jour et au même prix", async () => {
     serve([
-      row({ id: "a", starting_price_eur: 50_000, source_url: "https://www.licitor.com/annonce/1" }),
-      row({ id: "b", starting_price_eur: 50_000, source_url: "https://www.licitor.com/annonce/2" }),
+      row({ id: "a", starting_price_eur: 50_000, source_group: "group-1" }),
+      row({ id: "b", starting_price_eur: 50_000, source_group: "group-2" }),
       row({ id: "c", starting_price_eur: 50_000 }),
     ]);
     const metadata = await generateMetadata();
@@ -147,6 +148,16 @@ describe("/audiences-a-venir : génération et indexation", () => {
 });
 
 describe("/audiences-a-venir : contenu", () => {
+  it("transmet l'origine à la fiche dans le navigateur seulement (« Retour aux audiences »)", async () => {
+    render(await Page());
+    const link = screen.getAllByRole("link", { name: /Pantin/ })[0]!;
+    expect(link.getAttribute("href")).toBe("/sales/00000000-0000-4000-8000-000000000002");
+    fireEvent.pointerEnter(link);
+    expect(link.getAttribute("href")).toBe(
+      "/sales/00000000-0000-4000-8000-000000000002?from=%2Faudiences-a-venir",
+    );
+  });
+
   it("groupe par fenêtre, par jour puis par tribunal, avec un lien vers chaque fiche", async () => {
     render(await Page());
 
@@ -195,6 +206,54 @@ describe("/audiences-a-venir : contenu", () => {
     expect(document.body.textContent).not.toMatch(/ à 0 h|à 00 h/);
   });
 
+  it("ne met « aujourd'hui » et « demain » que dans le navigateur : le HTML du serveur n'en porte pas", async () => {
+    serve([
+      row({ sale_date: "2026-10-19T22:00:00Z", date_only: true }),
+      row({ sale_date: "2026-10-20T22:00:00Z", date_only: true }),
+    ]);
+    const html = renderToString(await Page());
+    // La page est servie jusqu'à une heure : le jour relatif dépend de l'horloge du lecteur.
+    expect(html).toContain("mardi 20 octobre 2026");
+    expect(html).toContain("mercredi 21 octobre 2026");
+    expect(html).not.toContain("aujourd’hui");
+    expect(html).not.toContain("demain");
+    expect(html).toContain('<time dateTime="2026-10-20">');
+  });
+
+  it("recalcule « aujourd'hui » avec l'horloge du lecteur, pas avec celle de la génération", async () => {
+    serve([
+      row({ sale_date: "2026-10-19T22:00:00Z", date_only: true }),
+      row({ sale_date: "2026-10-20T22:00:00Z", date_only: true }),
+    ]);
+    const view = await Page();
+    // Le lecteur ouvre la page le lendemain : le jour qui était « aujourd'hui » n'a plus de repère.
+    vi.setSystemTime(new Date("2026-10-21T08:00:00Z"));
+    render(view);
+    const first = screen.getByText(/mardi 20 octobre 2026/);
+    expect(first.textContent).toBe("mardi 20 octobre 2026");
+    expect(screen.getByText(/mercredi 21 octobre 2026/).textContent).toBe(
+      "mercredi 21 octobre 2026 (aujourd’hui)",
+    );
+  });
+
+  it("tient l'introduction en une phrase, avec les termes définis, et replie la mise en garde", async () => {
+    const { container } = render(await Page());
+    const header = container.querySelector("header") as HTMLElement;
+    const intro = header.querySelector("details")?.previousElementSibling as HTMLElement;
+    expect(intro.textContent).toBe(
+      "Les audiences d’adjudication des 7 puis des 30 prochains jours, avec la mise à prix de chaque bien, jour par jour et tribunal par tribunal.",
+    );
+    expect(within(intro).getByRole("button", { name: "Définition : adjudication" })).toBeTruthy();
+    expect(within(intro).getByRole("button", { name: "Définition : mise à prix" })).toBeTruthy();
+    // La mise en garde est repliée, et dit qu'une date peut changer sans prétendre qu'aucun report n'y est.
+    const warning = header.querySelector("details") as HTMLDetailsElement;
+    expect(warning.open).toBe(false);
+    expect(warning.textContent).toContain(
+      "Les ventes dont le report est connu n’y figurent pas ; une date peut encore changer.",
+    );
+    expect(warning.textContent).not.toContain("une vente reportée n’y est pas");
+  });
+
   it("n'affiche aucune adresse exacte", async () => {
     mocks.hearings.mockResolvedValue({
       status: "ok",
@@ -226,7 +285,11 @@ describe("/audiences-a-venir : contenu", () => {
     render(await Page());
     expect(screen.getByRole("heading", { name: "Aucune audience à date annoncée" })).toBeTruthy();
     expect(screen.queryByRole("region", { name: /Dans les 7 prochains jours/ })).toBeNull();
-    expect((await generateMetadata()).robots).toEqual({ index: false, follow: true });
+    const metadata = await generateMetadata();
+    expect(metadata.robots).toEqual({ index: false, follow: true });
+    // Le mot des annonces, pas le jargon interne « date sourcée ».
+    expect(String(metadata.description)).toContain("à date annoncée");
+    expect(String(metadata.description)).not.toContain("sourcée");
   });
 
   it("signale une liste tronquée par la limite de lecture", async () => {

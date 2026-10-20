@@ -13,8 +13,15 @@ from datetime import UTC, datetime, timedelta
 import pymupdf as fitz
 
 from src.normalize import clean_text
+from src.pdf_page_analysis import VISUAL_BLANK_INK_RATIO_MAX, VISUAL_BLANK_INK_THRESHOLD
 
 OCR_NO_TEXT_METHOD = "ocr_tesseract_no_text"
+# Tesseract n'a rien lu sur une page qui porte de l'encre : « vide » n'est pas prouvé (page scannée de travers,
+# trop pâle, tampon, plan…). La page reste à reprendre ; le motif et l'indicateur sont dans l'enregistrement.
+OCR_NO_TEXT_UNVERIFIED_METHOD = "ocr_no_text_unverified"
+OCR_ROTATED_METHOD = "ocr_tesseract_rotated"
+OCR_ROTATION_DEGREES = 90
+OCR_INK_SAMPLE_MAX_PIXELS = 200_000
 LOGGER = logging.getLogger(__name__)
 DOCUMENT_LOGGER = logging.getLogger("src.pdf_enrichment")
 
@@ -301,6 +308,34 @@ def extract_page_text_with_ocr_result(
     )
 
 
+def _pixmap_is_uniformly_light(pixmap: object) -> bool | None:
+    """Vrai si l'image rendue est presque uniformément claire ; ``None`` si elle ne peut pas être mesurée.
+
+    Mêmes seuils que ``pdf_page_analysis._visual_page_profile`` (encre sous ``VISUAL_BLANK_INK_THRESHOLD`` sur au
+    plus ``VISUAL_BLANK_INK_RATIO_MAX`` des pixels), sur un échantillon de pixels : l'image de l'OCR est grande.
+    """
+    try:
+        samples = pixmap.samples  # type: ignore[attr-defined]
+        channels = max(int(pixmap.n), 1)  # type: ignore[attr-defined]
+        pixel_count = int(pixmap.width) * int(pixmap.height)  # type: ignore[attr-defined]
+    except (AttributeError, TypeError, ValueError):
+        return None
+    if not samples or pixel_count <= 0:
+        return None
+    step = max(1, pixel_count // OCR_INK_SAMPLE_MAX_PIXELS)
+    inked = measured = 0
+    for pixel in range(0, pixel_count, step):
+        offset = pixel * channels
+        if offset + channels > len(samples):
+            break
+        measured += 1
+        if min(samples[offset : offset + channels]) < VISUAL_BLANK_INK_THRESHOLD:
+            inked += 1
+    if not measured:
+        return None
+    return inked / measured <= VISUAL_BLANK_INK_RATIO_MAX
+
+
 def _extract_page_text_with_tesseract_result(
     page: fitz.Page,
     *,
@@ -375,17 +410,68 @@ def _extract_page_text_with_tesseract_result(
                     "retryable": False,
                 }
             if result.returncode == 0:
-                # Tesseract read the whole page and found no text: photographs
-                # or a plan. Another attempt gives the same answer, so the page
-                # is settled instead of keeping the document "incomplete". Any
-                # native text of the page is kept, with the confidence of a
-                # native read since OCR added nothing to it.
+                # Tesseract found no text. La page n'est déclarée « vide » (réglée, sans nouvelle tentative) que
+                # si l'image rendue est presque uniformément claire ; le texte natif éventuel est gardé, avec la
+                # confiance d'une lecture native puisque l'OCR n'y a rien ajouté. Sinon la page porte de l'encre :
+                # une seconde passe pivotée (page scannée de côté) ; si elle ne lit rien non plus, la page reste à
+                # reprendre (ocr_no_text_unverified) au lieu d'être classée vide sans preuve.
+                if _pixmap_is_uniformly_light(pixmap) is True:
+                    return {
+                        "text": fallback,
+                        "method": OCR_NO_TEXT_METHOD,
+                        "confidence": page_text_confidence(fallback, method="pymupdf_text"),
+                        "status": "extracted" if clean_text(fallback) else "no_text",
+                        "retryable": False,
+                    }
+                rotated_path = os.path.join(tmpdir, "page-rotated.png")
+                ensure_deadline(
+                    operation="rendering rotated OCR page",
+                    checkpointed_pages=checkpointed_pages,
+                    total_pages=total_pages,
+                    new_progress_pages=new_progress_pages,
+                )
+                page.get_pixmap(
+                    matrix=fitz.Matrix(3, 3).prerotate(OCR_ROTATION_DEGREES), alpha=False
+                ).save(rotated_path)
+                timeout, deadline_bounded = deadline_bounded_timeout(
+                    timeout,
+                    operation="starting rotated OCR subprocess",
+                    checkpointed_pages=checkpointed_pages,
+                    total_pages=total_pages,
+                    new_progress_pages=new_progress_pages,
+                )
+                rotated = subprocess.run(
+                    ["tesseract", rotated_path, "stdout", "-l", str(settings["pdf_ocr_language"])],
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                    env=env,
+                    check=False,
+                )
+                ensure_deadline(
+                    operation="finishing rotated OCR subprocess",
+                    checkpointed_pages=checkpointed_pages,
+                    total_pages=total_pages,
+                    new_progress_pages=new_progress_pages,
+                )
+                if rotated.returncode == 0 and clean_text(rotated.stdout):
+                    text = "\n".join(
+                        part for part in (clean_text(fallback), clean_text(rotated.stdout)) if part
+                    )
+                    return {
+                        "text": text,
+                        "method": OCR_ROTATED_METHOD,
+                        "confidence": page_text_confidence(rotated.stdout, method="ocr_tesseract"),
+                        "status": "extracted",
+                        "retryable": False,
+                    }
                 return {
                     "text": fallback,
-                    "method": OCR_NO_TEXT_METHOD,
+                    "method": OCR_NO_TEXT_UNVERIFIED_METHOD,
                     "confidence": page_text_confidence(fallback, method="pymupdf_text"),
-                    "status": "extracted" if clean_text(fallback) else "no_text",
-                    "retryable": False,
+                    "status": "extracted" if clean_text(fallback) else "failed",
+                    "retryable": True,
+                    "failure_reason": "ocr_no_text_unverified",
                 }
             LOGGER.debug("Tesseract OCR returned %s: %s", result.returncode, result.stderr)
     except subprocess.TimeoutExpired as exc:

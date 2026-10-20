@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   buildTribunalListingStatistics,
   hasVisitDate,
+  TRIBUNAL_LISTING_STATISTICS_MIN_SAMPLE,
+  TRIBUNAL_LISTING_STATISTICS_MIN_SUBGROUP_SAMPLE,
   tribunalListingStatisticsPeriod,
   tribunalListingStatisticsQuerySchema,
+  wilsonInterval,
 } from "@/lib/tribunal-listing-statistics";
 
 const AS_OF = new Date("2026-08-20T12:00:00.000Z");
@@ -12,6 +15,12 @@ const COURT = {
   name: "TJ Saint-Etienne",
   judicialRegion: "Lyon",
 };
+
+/** Les champs `shareLow` et `shareHigh` d'une part de `count` sur `total`. */
+function interval(count: number, total: number) {
+  const { low, high } = wilsonInterval(count, total)!;
+  return { shareLow: low, shareHigh: high };
+}
 
 describe("tribunal listing statistics", () => {
   it("uses a calendar sliding window for the recent listing cohort", () => {
@@ -41,7 +50,7 @@ describe("tribunal listing statistics", () => {
       ],
     });
 
-    expect(result.schemaVersion).toBe("tribunal_listing_statistics_v1");
+    expect(result.schemaVersion).toBe("tribunal_listing_statistics_v2");
     expect(result.activity.observedAnnouncements).toBe(7);
     expect(result.activity.publicationDatesKnown).toBe(1);
     expect(result.activity.discoveryDatesUsed).toBe(6);
@@ -49,20 +58,29 @@ describe("tribunal listing statistics", () => {
       knownSales: 5,
       unknownSales: 2,
       distribution: [
-        { status: "vacant", count: 2, share: 0.4 },
-        { status: "occupied", count: 2, share: 0.4 },
-        { status: "rented", count: 1, share: 0.2 },
+        { status: "vacant", count: 2, share: 0.4, ...interval(2, 5) },
+        { status: "occupied", count: 2, share: 0.4, ...interval(2, 5) },
+        { status: "rented", count: 1, share: 0.2, ...interval(1, 5) },
       ],
     });
     expect(result.activity.propertyTypes).toEqual([
-      { propertyType: "house", count: 3, share: 0.5 },
-      { propertyType: "apartment", count: 2, share: 0.333333 },
-      { propertyType: "other", count: 1, share: 0.166667 },
+      { propertyType: "house", count: 3, share: 0.5, ...interval(3, 6) },
+      { propertyType: "apartment", count: 2, share: 0.333333, ...interval(2, 6) },
+      { propertyType: "other", count: 1, share: 0.166667, ...interval(1, 6) },
     ]);
     expect(result.activity.overbidsKnown).toBe(7);
-    expect(result.activity.overbidCoverage).toMatchObject({ status: "published", sampleSize: 7 });
-    expect(result.activity.startingPriceToDvfRatio).toMatchObject({
-      status: "published",
+    // 7 observations : sous le seuil de publication de 10, ni taux ni médiane.
+    expect(result.activity.overbidCoverage).toEqual({
+      status: "insufficient_data",
+      value: null,
+      sampleSize: 7,
+    });
+    // Entre 5 et 9, la fourchette observée seulement : toutes les mises à prix valent la moitié du DVF.
+    expect(result.activity.startingPriceToDvfRatio).toEqual({
+      status: "range_only",
+      value: null,
+      min: 0.5,
+      max: 0.5,
       sampleSize: 7,
     });
     expect(result.activity.upcomingListings.map((item) => item.id)).toEqual(["future"]);
@@ -148,8 +166,12 @@ describe("tribunal listing statistics", () => {
       ],
     });
 
-    expect(result.activity.communes).toEqual([{ city: "Bordeaux", count: 1, share: 1 }]);
-    expect(result.activity.lawyers).toEqual([{ name: "Maître Jeanne Dupont", count: 1, share: 1 }]);
+    expect(result.activity.communes).toEqual([
+      { city: "Bordeaux", count: 1, share: 1, ...interval(1, 1) },
+    ]);
+    expect(result.activity.lawyers).toEqual([
+      { name: "Maître Jeanne Dupont", count: 1, share: 1, ...interval(1, 1) },
+    ]);
     expect(result.activity.upcomingListings[0]?.city).toBeNull();
   });
 
@@ -182,6 +204,169 @@ describe("tribunal listing statistics", () => {
     expect(result.activity.lawyers.map((lawyer) => lawyer.name)).toEqual(
       expect.arrayContaining(lawyerNames),
     );
+  });
+
+  describe("seuils de publication", () => {
+    type Override = Record<string, unknown> | null;
+
+    /** `count` annonces passées, avec la mise à prix `10 000 + 1 000 × index`. */
+    function cohort(
+      count: number,
+      options: {
+        overbidKnown?: (index: number) => boolean;
+        estimate?: (index: number) => Override;
+        visit?: (index: number) => boolean;
+      } = {},
+    ) {
+      return Array.from({ length: count }, (_, index) => {
+        const startingPriceEur = 10_000 + index * 1_000;
+        const base = {
+          ...sale(
+            `cohort-${index}`,
+            `2026-06-${String(index + 1).padStart(2, "0")}T10:00:00.000Z`,
+            "apartment",
+            "vacant",
+            startingPriceEur,
+            options.overbidKnown?.(index) ? "not_filed" : null,
+          ),
+          visitDates: options.visit?.(index) ? ["2026-05-30T10:00:00.000Z"] : [],
+        };
+        if (!options.estimate) return base;
+        const override = options.estimate(index);
+        return {
+          ...base,
+          marketEstimate: {
+            source: "DVF normalisé",
+            estimatedValueEur: startingPriceEur * 2,
+            actionable: true,
+            ...PASSING_ESTIMATE_QUALITY,
+            ...override,
+          },
+        };
+      });
+    }
+
+    function build(sales: ReturnType<typeof cohort>) {
+      return buildTribunalListingStatistics({
+        court: COURT,
+        asOf: AS_OF,
+        historyMonths: 3,
+        sales,
+      });
+    }
+
+    it("publishes from 10 observations, as the response says", () => {
+      const result = build(cohort(10));
+      expect(TRIBUNAL_LISTING_STATISTICS_MIN_SAMPLE).toBe(10);
+      expect(TRIBUNAL_LISTING_STATISTICS_MIN_SUBGROUP_SAMPLE).toBe(20);
+      expect(result.meta).toMatchObject({
+        minSampleSize: 10,
+        minSubgroupSampleSize: 20,
+        minRangeSampleSize: 5,
+        minOverbidCoverage: 0.5,
+      });
+      expect(result.activity.startingPriceEur).toEqual({
+        status: "published",
+        value: 14_500,
+        sampleSize: 10,
+        interval: null,
+      });
+    });
+
+    it("shows only the observed range, never a point, from 5 to 9 observations", () => {
+      for (const count of [5, 9]) {
+        const metric = build(cohort(count)).activity.startingPriceEur;
+        expect(metric).toEqual({
+          status: "range_only",
+          value: null,
+          min: 10_000,
+          max: 10_000 + (count - 1) * 1_000,
+          sampleSize: count,
+        });
+      }
+    });
+
+    it("shows nothing under 5 observations", () => {
+      expect(build(cohort(4)).activity.startingPriceEur).toEqual({
+        status: "insufficient_data",
+        value: null,
+        sampleSize: 4,
+      });
+    });
+
+    it("publishes a share with its Wilson interval, and nothing under 10 observations", () => {
+      const published = build(cohort(12, { visit: (index) => index < 9 })).activity.visitCoverage;
+      expect(published).toEqual({
+        status: "published",
+        value: 0.75,
+        sampleSize: 12,
+        interval: wilsonInterval(9, 12),
+      });
+      expect(build(cohort(9, { visit: () => true })).activity.visitCoverage).toEqual({
+        status: "insufficient_data",
+        value: null,
+        sampleSize: 9,
+      });
+    });
+
+    it("publishes the overbid rate only when at least half of the announcements have an answer", () => {
+      // 10 réponses connues sur 20 annonces : la moitié, publié.
+      const half = build(cohort(20, { overbidKnown: (index) => index < 10 }));
+      expect(half.activity.overbidCoverage).toMatchObject({ status: "published", sampleSize: 10 });
+      // 10 réponses connues sur 21 annonces : moins de la moitié, masqué.
+      const under = build(cohort(21, { overbidKnown: (index) => index < 10 }));
+      expect(under.activity.overbidsKnown).toBe(10);
+      expect(under.activity.overbidCoverage).toEqual({
+        status: "insufficient_data",
+        value: null,
+        sampleSize: 10,
+      });
+    });
+
+    it("keeps the DVF ratio to the estimates that pass the gate of the public band", () => {
+      const ratio = (estimate: (index: number) => Override) =>
+        build(cohort(10, { estimate })).activity.startingPriceToDvfRatio;
+      expect(ratio(() => ({}))).toMatchObject({ status: "published", sampleSize: 10 });
+      // Chacune de ces estimations est refusée par la bande publique : hors de la statistique.
+      const refused: Record<string, Record<string, unknown>> = {
+        "peu de ventes comparables, sans jackknife": {
+          sampleSize: 7,
+          intervalMethod: "segment_fallback",
+        },
+        "5 ventes comparables avec jackknife": { sampleSize: 5 },
+        "échantillon effectif de 4": { effectiveSampleSize: 4 },
+        "fourchette de 70 % de la valeur": { pricePerM2P10: 2_300, pricePerM2P90: 4_400 },
+        "rayon de 1 500 m pour un appartement urbain": { radiusM: 1_500 },
+        "rayon inconnu": { radiusM: null },
+        "champs de qualité absents": {
+          effectiveSampleSize: null,
+          intervalMethod: null,
+          pricePerM2P10: null,
+          pricePerM2P50: null,
+          pricePerM2P90: null,
+          radiusM: null,
+        },
+      };
+      for (const [name, override] of Object.entries(refused)) {
+        const metric = ratio((index) => (index === 0 ? override : {}));
+        expect(metric, name).toMatchObject({ status: "range_only", sampleSize: 9 });
+      }
+      // Une maison accepte 2 000 m, un appartement urbain non.
+      expect(
+        ratio((index) => (index === 0 ? { segment: "house", radiusM: 2_000 } : {})),
+      ).toMatchObject({ status: "published", sampleSize: 10 });
+    });
+
+    it("computes the Wilson interval at 95 %", () => {
+      expect(wilsonInterval(5, 10)).toEqual({ low: 0.236593, high: 0.763407 });
+      expect(wilsonInterval(0, 10)).toEqual({ low: 0, high: 0.277533 });
+      expect(wilsonInterval(10, 10)).toEqual({ low: 0.722467, high: 1 });
+      expect(wilsonInterval(1, 1)).toEqual({ low: 0.206549, high: 1 });
+      expect(wilsonInterval(0, 0)).toBeNull();
+      expect(wilsonInterval(3, 2)).toBeNull();
+      expect(wilsonInterval(-1, 5)).toBeNull();
+      expect(wilsonInterval(1.5, 5)).toBeNull();
+    });
   });
 
   it("keeps the query default at three months while accepting the supported windows", () => {
@@ -222,8 +407,21 @@ function sale(
       source: "DVF normalisé",
       estimatedValueEur: startingPriceEur * 2,
       actionable: true,
-      sampleSize: 12,
+      ...PASSING_ESTIMATE_QUALITY,
     },
     marketEstimateEligible: true,
   };
 }
+
+/** Une estimation qui passe la porte de la bande publique (market-gap-band.ts). */
+const PASSING_ESTIMATE_QUALITY = {
+  sampleSize: 12,
+  effectiveSampleSize: 8,
+  intervalMethod: "local_jackknife",
+  pricePerM2P10: 2_400,
+  pricePerM2P50: 3_000,
+  pricePerM2P90: 3_600,
+  radiusM: 500,
+  segment: "apartment",
+  areaKind: "urban",
+};

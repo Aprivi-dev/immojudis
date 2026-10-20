@@ -40,6 +40,7 @@ from src.court_competence import tribunal_reference_rows
 from src.enrichment.display_quality import has_current_display
 from src.fact_claims import build_fact_claim_candidates, materialize_fact_claim_rows
 from src.freshness import document_fingerprint, documents_are_current, timestamp_is_fresh
+from src.merge_guards import MAX_MERGES_PER_PASS, merges_cap, require_merge_trigger
 from src.models import AuctionSale
 from src.normalize import clean_text, make_sale_signature
 from src.pdf_document_types import document_type_with_content, with_content_document_types
@@ -934,10 +935,18 @@ def delete_secondary_sales_in_supabase(sales: list[AuctionSale]) -> int:
     secondary_urls = [source_url for source_url in secondary_urls if source_url not in protected_urls]
     if not secondary_urls:
         return 0
+    # Garde-fous de fusion : déclencheur de report des données des comptes en place (sinon MergeGuardRefused)
+    # et au plus MAX_MERGES_PER_PASS lignes par passage ; la suite part au passage suivant.
+    require_merge_trigger(settings)
+    cap = merges_cap(settings)
+    if cap <= 0:
+        return 0
+    if len(secondary_urls) > cap:
+        LOGGER.warning("Secondary sale cleanup: %s rows left for a later pass (cap %s).", len(secondary_urls) - cap, cap)
 
     if db_url:
         try:
-            return _delete_secondary_sale_rows_with_postgres(str(db_url), sales)
+            return _delete_secondary_sale_rows_with_postgres(str(db_url), sales, limit=cap)
         except ReviewedAliasRegistryError:
             raise
         except Exception as exc:
@@ -945,7 +954,7 @@ def delete_secondary_sales_in_supabase(sales: list[AuctionSale]) -> int:
                 "Direct Postgres secondary sale cleanup failed; falling back to REST: %s",
                 exc,
             )
-    return _delete_secondary_sale_rows(str(url), str(key), sales, registry=reviewed_aliases)
+    return _delete_secondary_sale_rows(str(url), str(key), sales, registry=reviewed_aliases, limit=cap)
 
 
 def upsert_cadastre_parcels_to_supabase(rows: list[dict[str, object]]) -> int:
@@ -2935,11 +2944,12 @@ def reconcile_duplicate_sales_in_supabase(
         except Exception as exc:  # le rapport ne doit jamais interrompre la collecte
             LOGGER.warning("Duplicate candidate report failed: %s", exc)
         return 0
-    if max_merges is None:
-        configured = settings.get("dedupe_reconcile_max_merges")
-        max_merges = int(configured) if configured is not None else 100
+    # Plafond dur : l'appelant peut le baisser, jamais le dépasser (MAX_MERGES_PER_PASS).
+    max_merges = merges_cap(settings) if max_merges is None else min(max_merges, MAX_MERGES_PER_PASS)
     if max_merges <= 0:
         return 0
+    # Sans le déclencheur de report des données des comptes, une suppression effacerait favoris et notes.
+    require_merge_trigger(settings)
 
     plan = plan_duplicate_reconciliation(statuses=statuses, limit=limit, max_merges=max_merges)
     if plan is None:
@@ -3374,6 +3384,7 @@ def _delete_secondary_sale_rows(
     sales: list[AuctionSale],
     *,
     registry: ReviewedAliasRegistry | None = None,
+    limit: int | None = None,
 ) -> int:
     registry = registry or _fetch_reviewed_alias_registry(supabase_url, api_key)
     protected_urls = registry.protected_source_urls()
@@ -3381,13 +3392,15 @@ def _delete_secondary_sale_rows(
         source_url
         for source_url in _secondary_source_urls(sales)
         if source_url not in protected_urls
-    ]
+    ][:limit]
     if not secondary_urls:
         return 0
     return _postgrest_delete_by_source_urls(supabase_url, api_key, "auction_sales", secondary_urls)
 
 
-def _delete_secondary_sale_rows_with_postgres(db_url: str, sales: list[AuctionSale]) -> int:
+def _delete_secondary_sale_rows_with_postgres(
+    db_url: str, sales: list[AuctionSale], *, limit: int | None = None
+) -> int:
     if psycopg is None:
         raise RuntimeError("psycopg is required for direct Postgres writes")
     secondary_urls = _secondary_source_urls(sales)
@@ -3426,6 +3439,7 @@ def _delete_secondary_sale_rows_with_postgres(db_url: str, sales: list[AuctionSa
                 if str(sale_id) not in protected_ids
                 and source_url not in protected_urls
             ]
+            deletable = deletable[:limit]
             if not deletable:
                 return 0
             deletable_ids = [sale_id for sale_id, _source_url in deletable]

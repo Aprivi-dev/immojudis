@@ -255,6 +255,11 @@ export const ERASURE_TABLES: ReadonlyArray<readonly [table: string, column: stri
   ["user_alert_notifications", "user_id"],
   ["user_favorites", "user_id"],
   ["user_followed_sale_snapshots", "user_id"],
+  ["account_product_events", "user_id"],
+  ["sale_signal_feedback", "user_id"],
+  ["sale_reminder_dispatches", "user_id"],
+  ["weekly_digest_dispatches", "user_id"],
+  ["sale_result_dispatches", "user_id"],
   ["user_watched_zones", "user_id"],
   ["user_sale_change_events", "user_id"],
   ["user_sale_unlocks", "user_id"],
@@ -284,6 +289,23 @@ export const ERASURE_TABLES: ReadonlyArray<readonly [table: string, column: stri
   ["user_profiles", "user_id"],
 ];
 
+/**
+ * Tables créées par les migrations 20261030110100, 20261030120100 et 20261030120200. Tant qu'une
+ * migration n'est pas appliquée (code déployé avant elle), sa table n'existe pas : il n'y a alors aucune
+ * donnée à effacer, et l'effacement ne doit pas échouer pour autant. Pour toute autre table, une table
+ * absente reste une erreur (liste d'effacement fausse ou schéma incomplet).
+ */
+const ERASURE_TABLES_FROM_RECENT_MIGRATIONS: ReadonlySet<string> = new Set([
+  "sale_signal_feedback",
+  "weekly_digest_dispatches",
+  "sale_result_dispatches",
+]);
+
+/** « La table n'existe pas » : `PGRST205` (cache du schéma de PostgREST) ou `42P01` (PostgreSQL). */
+function isMissingTableError(error: { code?: string } | null): boolean {
+  return error?.code === "PGRST205" || error?.code === "42P01";
+}
+
 const ERASURE_STORAGE_BUCKETS = ["listing-request-documents"] as const;
 
 type DeleteBuilder = {
@@ -292,7 +314,7 @@ type DeleteBuilder = {
       eq(
         column: string,
         value: string,
-      ): Promise<{ count: number | null; error: { message?: string } | null }>;
+      ): Promise<{ count: number | null; error: { message?: string; code?: string } | null }>;
     };
   };
 };
@@ -354,7 +376,14 @@ export async function executePrivacyErasure({
       .from(table)
       .delete({ count: "exact" })
       .eq(column, userId);
-    if (error) throw new Error(`Effacement impossible dans ${table}: ${error.message ?? "erreur"}`);
+    if (error) {
+      // Table d'une migration pas encore appliquée : rien à effacer.
+      if (ERASURE_TABLES_FROM_RECENT_MIGRATIONS.has(table) && isMissingTableError(error)) {
+        deletedRows[`${table}.${column}`] = 0;
+        continue;
+      }
+      throw new Error(`Effacement impossible dans ${table}: ${error.message ?? "erreur"}`);
+    }
     deletedRows[`${table}.${column}`] = count ?? 0;
   }
 

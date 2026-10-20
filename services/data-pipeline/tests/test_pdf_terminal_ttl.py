@@ -6,8 +6,8 @@ import importlib
 import json
 from pathlib import Path
 
-import fitz
 import httpx
+import pymupdf
 
 from src.models import AuctionSale
 from src.normalize import normalize_sale
@@ -64,7 +64,7 @@ def _make_metadata_stale(sale: AuctionSale, output_root: Path, timestamp: str) -
 
 def _make_pdf(path: Path, text: str) -> bytes:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with fitz.open() as document:
+    with pymupdf.open() as document:
         page = document.new_page()
         page.insert_text((72, 72), text)
         document.save(path)

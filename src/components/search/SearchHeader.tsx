@@ -120,7 +120,7 @@ export function SearchHeader({
                 onClick={onSaveSearch}
               />
             ) : null}
-            <MobileFilterChips draft={draft} setDraft={setDraft} />
+            <MobileFilterChips draft={draft} setDraft={setDraft} preview={!signedIn} />
             <div className="hidden lg:flex flex-wrap items-center gap-2">
               <HomeTypeFilter draft={draft} setDraft={setDraft} />
               <PriceFilter draft={draft} setDraft={setDraft} />
@@ -213,7 +213,7 @@ export function GeographicSearch({
         event.preventDefault();
         apply();
       }}
-      className="relative flex min-w-0 basis-0 flex-1 items-center gap-1 rounded-md border border-line bg-white focus-within:ring-2 focus-within:ring-gold sm:basis-auto sm:flex-1"
+      className="relative flex min-w-0 basis-0 flex-1 items-center gap-1 rounded-md border border-line bg-white focus-within:outline-2 focus-within:outline-gold-soft sm:basis-auto sm:flex-1"
     >
       <SearchIcon className="ml-3 h-5 w-5 shrink-0" />
       <input
@@ -456,13 +456,13 @@ export function SortDropdown({
   onChange: (sort: SearchSortKey) => void;
 }) {
   return (
-    <label className="relative inline-flex min-h-11 shrink-0 items-center rounded-md border border-line bg-white shadow-sm">
-      <ArrowUpDown className="ml-3 h-4 w-4 text-ink-soft" />
+    <label className="relative inline-flex min-h-11 min-w-0 max-w-full items-center rounded-md border border-line bg-white shadow-sm">
+      <ArrowUpDown className="ml-3 h-4 w-4 shrink-0 text-ink-soft" />
       <span className="sr-only">Tri</span>
       <select
         value={sort}
         onChange={(event) => onChange(event.target.value as SearchSortKey)}
-        className="h-full cursor-pointer appearance-none bg-transparent py-0 pl-2 pr-9 text-sm font-bold text-brand-navy outline-none"
+        className="h-full w-full min-w-0 cursor-pointer appearance-none text-ellipsis bg-transparent py-0 pl-2 pr-9 text-sm font-bold text-brand-navy outline-none"
       >
         {SORT_OPTIONS.filter(
           (option) =>
@@ -598,7 +598,7 @@ export function SaveSearchButton({
       aria-label={compact ? "Créer une alerte" : undefined}
       title="Créer une alerte à partir de cette recherche"
       onClick={signedIn ? undefined : () => onClick()}
-      className={`inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md bg-brand-navy text-sm font-semibold text-white shadow-sm transition-colors hover:bg-brand-navy-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold disabled:cursor-not-allowed disabled:bg-surface-tint disabled:text-ink-soft ${
+      className={`inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md bg-brand-navy text-sm font-semibold text-white shadow-sm transition-colors hover:bg-brand-navy-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft disabled:cursor-not-allowed disabled:bg-surface-tint disabled:text-ink-soft ${
         compact ? "size-11" : "h-10 px-3"
       }`}
     >
@@ -676,7 +676,7 @@ export function SaveSearchButton({
               onClick({ frequency, emailRecap: !emailRecapEnabled && emailRecap });
               setEmailRecap(false);
             }}
-            className="mt-3 inline-flex min-h-11 w-full cursor-pointer items-center justify-center rounded-md bg-gold font-semibold text-brand-navy hover:bg-gold-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+            className="mt-3 inline-flex min-h-11 w-full cursor-pointer items-center justify-center rounded-md bg-gold font-semibold text-brand-navy hover:bg-gold-light focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
           >
             Créer l’alerte
           </button>
@@ -701,7 +701,7 @@ export function CsvExportButton({
       onClick={onClick}
       disabled={exporting}
       title={locked ? "Export CSV réservé à l'offre Analyse" : "Exporter les résultats en CSV"}
-      className="inline-flex h-10 shrink-0 cursor-pointer items-center gap-2 rounded-md border border-line bg-white px-3 text-sm font-semibold text-brand-navy shadow-sm transition-colors hover:border-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold disabled:cursor-not-allowed disabled:bg-surface-tint disabled:text-ink-soft"
+      className="inline-flex h-10 shrink-0 cursor-pointer items-center gap-2 rounded-md border border-line bg-white px-3 text-sm font-semibold text-brand-navy shadow-sm transition-colors hover:border-brand-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft disabled:cursor-not-allowed disabled:bg-surface-tint disabled:text-ink-soft"
     >
       {exporting ? (
         <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -719,7 +719,7 @@ export function LayoutToggle({ wideMap, onToggle }: { wideMap: boolean; onToggle
     <button
       type="button"
       onClick={onToggle}
-      className="hidden h-10 shrink-0 cursor-pointer items-center gap-2 rounded-md border border-line bg-white px-3 text-sm font-semibold text-brand-navy shadow-sm transition-colors hover:border-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold 2xl:inline-flex"
+      className="hidden h-10 shrink-0 cursor-pointer items-center gap-2 rounded-md border border-line bg-white px-3 text-sm font-semibold text-brand-navy shadow-sm transition-colors hover:border-brand-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft 2xl:inline-flex"
     >
       <LayoutPanelLeft className="h-4 w-4" />
       {label}
@@ -761,7 +761,7 @@ export function ResultsSummary({
   const location = search.city || search.department || search.query || "France entière";
   return (
     <div className={`min-w-0 px-4 py-4 sm:px-5 ${RESULTS_SUMMARY_MOBILE_MIN_HEIGHT}`}>
-      <p className="mb-1 hidden text-[10px] font-bold uppercase tracking-[0.16em] text-gold-text sm:block">
+      <p className="mb-1 hidden text-xs font-bold uppercase tracking-[0.12em] text-gold-text sm:block">
         Le catalogue des enchères
       </p>
       <h1 className="font-display text-[1.65rem] font-semibold leading-tight">
@@ -812,7 +812,7 @@ export function InlineTextFilter({
   return (
     <label className="grid min-w-0 gap-1.5 text-sm">
       <span className="font-semibold text-brand-navy">{label}</span>
-      <span className="flex min-h-11 min-w-0 items-center gap-2 rounded-md border border-line px-3 focus-within:ring-2 focus-within:ring-gold">
+      <span className="flex min-h-11 min-w-0 items-center gap-2 rounded-md border border-line px-3 focus-within:outline-2 focus-within:outline-gold-soft">
         <Icon className="h-4 w-4 shrink-0" />
         <input
           value={value}

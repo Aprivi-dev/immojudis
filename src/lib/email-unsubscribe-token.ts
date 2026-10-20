@@ -7,12 +7,41 @@ import { createHmac, timingSafeEqual } from "node:crypto";
  * anyone nor guess another user's link.
  */
 export const UNSUBSCRIBE_TOKEN_TTL_DAYS = 60;
+/**
+ * Les rappels d'audience arrivent toute l'année, parfois des mois après la première inscription : un
+ * lien de désinscription ne doit pas devenir inutilisable pendant que les emails continuent (c'est
+ * aussi le lien d'en-tête List-Unsubscribe).
+ */
+export const REMINDERS_UNSUBSCRIBE_TOKEN_TTL_DAYS = 365;
+
+/**
+ * Récapitulatif hebdomadaire et alerte de résultat : des emails qui reviennent toute l'année, donc
+ * la même durée de validité que les rappels d'audience.
+ */
+const LONG_LIVED_SCOPES: ReadonlySet<UnsubscribeScope["kind"]> = new Set([
+  "reminders",
+  "weekly-digest",
+  "sale-results",
+]);
+
+export function unsubscribeTokenTtlDays(scope: UnsubscribeScope): number {
+  return LONG_LIVED_SCOPES.has(scope.kind)
+    ? REMINDERS_UNSUBSCRIBE_TOKEN_TTL_DAYS
+    : UNSUBSCRIBE_TOKEN_TTL_DAYS;
+}
 
 export type UnsubscribeScope =
   | { kind: "alerts" }
   | { kind: "alert"; alertId: string }
   // Rappels d'audience et avertissements graves: un consentement distinct de celui des alertes.
-  | { kind: "reminders" };
+  | { kind: "reminders" }
+  // Récapitulatif hebdomadaire « Ma semaine » : un consentement distinct, une portée dédiée (un lien
+  // de rappels ou d'alertes ne le retire pas, et inversement).
+  | { kind: "weekly-digest" }
+  // Alerte de résultat ou de remise en vente d'une vente suivie : idem.
+  | { kind: "sale-results" }
+  // Liste d'attente de l'ouverture de l'offre Analyse : l'email d'ouverture (envoi par l'administrateur).
+  | { kind: "offer-opening" };
 
 export type UnsubscribeClaims = {
   userId: string;
@@ -41,12 +70,18 @@ function sign(payload: string, env?: Pick<NodeJS.ProcessEnv, string>): string {
 
 function scopeToString(scope: UnsubscribeScope): string {
   if (scope.kind === "reminders") return "reminders";
+  if (scope.kind === "weekly-digest") return "weekly-digest";
+  if (scope.kind === "sale-results") return "sale-results";
+  if (scope.kind === "offer-opening") return "offer-opening";
   return scope.kind === "alert" ? `alert:${scope.alertId}` : "alerts";
 }
 
 function scopeFromString(value: string): UnsubscribeScope | null {
   if (value === "alerts") return { kind: "alerts" };
   if (value === "reminders") return { kind: "reminders" };
+  if (value === "weekly-digest") return { kind: "weekly-digest" };
+  if (value === "sale-results") return { kind: "sale-results" };
+  if (value === "offer-opening") return { kind: "offer-opening" };
   const match = /^alert:(.+)$/.exec(value);
   return match && UUID_PATTERN.test(match[1]) ? { kind: "alert", alertId: match[1] } : null;
 }
@@ -62,7 +97,7 @@ export function createUnsubscribeToken({
   now?: Date;
   env?: Pick<NodeJS.ProcessEnv, string>;
 }): string {
-  const expiresAt = Math.floor(now.getTime() / 1000) + UNSUBSCRIBE_TOKEN_TTL_DAYS * 86_400;
+  const expiresAt = Math.floor(now.getTime() / 1000) + unsubscribeTokenTtlDays(scope) * 86_400;
   const payload = Buffer.from(
     JSON.stringify({ u: userId, s: scopeToString(scope), e: expiresAt }),
   ).toString("base64url");
@@ -72,6 +107,28 @@ export function createUnsubscribeToken({
 export function verifyUnsubscribeToken(
   token: string | null | undefined,
   { now = new Date(), env }: { now?: Date; env?: Pick<NodeJS.ProcessEnv, string> } = {},
+): UnsubscribeClaims | null {
+  const claims = readSignedClaims(token, env);
+  return claims && claims.expiresAt * 1000 >= now.getTime() ? claims : null;
+}
+
+/**
+ * Le type de portée d'un jeton dont la signature est valide, même expiré : sert à orienter la
+ * personne vers la bonne page quand son lien n'est plus valable (`/compte` pour les rappels,
+ * `/alertes` pour les alertes). Ne donne aucun droit : l'action reste réservée à
+ * `verifyUnsubscribeToken`.
+ */
+export function unsubscribeTokenScopeKind(
+  token: string | null | undefined,
+  { env }: { env?: Pick<NodeJS.ProcessEnv, string> } = {},
+): UnsubscribeScope["kind"] | null {
+  return readSignedClaims(token, env)?.scope.kind ?? null;
+}
+
+/** Décode un jeton dont la signature est valide ; l'expiration est vérifiée par l'appelant. */
+function readSignedClaims(
+  token: string | null | undefined,
+  env?: Pick<NodeJS.ProcessEnv, string>,
 ): UnsubscribeClaims | null {
   if (!token || token.length > 1_000) return null;
   const [payload, signature, extra] = token.split(".");
@@ -95,7 +152,6 @@ export function verifyUnsubscribeToken(
     };
     if (typeof data.u !== "string" || !UUID_PATTERN.test(data.u)) return null;
     if (typeof data.s !== "string" || typeof data.e !== "number") return null;
-    if (data.e * 1000 < now.getTime()) return null;
     const scope = scopeFromString(data.s);
     return scope ? { userId: data.u, scope, expiresAt: data.e } : null;
   } catch {

@@ -919,7 +919,9 @@ if (!launchOfferSql) {
     failures.push("The launch offer writes into user_profiles or user_subscriptions");
   }
 }
-// Every later definition of the two access functions keeps consulting the switch.
+// Every later definition of the two access functions keeps consulting the switch, and, from the
+// migration that requires a confirmed email (20261028170000), the single eligibility function.
+const launchOfferEligibilityName = "20261028170000_launch_offer_requires_confirmed_email.sql";
 for (const [name, source] of migrationSources) {
   if (name <= launchOfferName) continue;
   const sql = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--[^\n]*/g, "");
@@ -930,6 +932,15 @@ for (const [name, source] of migrationSources) {
     ).exec(sql)?.[0];
     if (definition && !/launch_offer_active\(\)/.test(definition)) {
       failures.push(`${name} redefines ${accessFunction} without the launch offer switch`);
+    }
+    if (
+      definition &&
+      name >= launchOfferEligibilityName &&
+      !/launch_offer_account_eligible\(/.test(definition)
+    ) {
+      failures.push(
+        `${name} redefines ${accessFunction} without launch_offer_account_eligible (confirmed email)`,
+      );
     }
   }
 }

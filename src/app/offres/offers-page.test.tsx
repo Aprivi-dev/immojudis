@@ -271,6 +271,73 @@ describe("page Offres", () => {
     expect(screen.queryByTestId("launch-offer-banner")).toBeNull();
   });
 
+  it("ne promet les pièces et l'historique que « quand ils existent »", () => {
+    const { container } = render(<OffersPage />);
+    const text = container.textContent ?? "";
+    expect(text).toContain("Pièces du dossier et leur lecture, pour les ventes qui en comportent");
+    expect(text).toContain("Historique de la vente, quand il existe");
+    expect(text).not.toContain("Pièces du dossier et leur lecture pour toutes les ventes");
+    expect(text).not.toContain("Historique de la vente pour toutes les ventes");
+  });
+
+  it("souscription fermée : « Tarif prévu » sous le prix, résilier et rembourser au futur", async () => {
+    mocks.offer.mockResolvedValue({ configured: false, trialAvailable: true, label: "59 €" });
+    const { container } = render(<OffersPage />);
+    expect((await screen.findByTestId("price-note")).textContent).toBe(
+      "Tarif prévu, pas encore souscriptible",
+    );
+    const answers = Array.from(container.querySelectorAll("details")).map(
+      (node) => node.textContent ?? "",
+    );
+    const resiliation = answers.find((text) => text.startsWith("Comment résilier ?"))!;
+    const refund = answers.find((text) => text.startsWith("Puis-je être remboursé ?"))!;
+    expect(resiliation).toContain("Quand l’abonnement sera ouvert, ");
+    expect(refund).toContain("Quand l’abonnement sera ouvert, ");
+  });
+
+  it("souscription ouverte : ni note de tarif prévu ni préfixe dans la FAQ", async () => {
+    const { container } = render(<OffersPage />);
+    await screen.findByText(/Essai gratuit de 7 jours/);
+    expect(screen.queryByTestId("price-note")).toBeNull();
+    expect(container.textContent).not.toContain("Quand l’abonnement sera ouvert");
+  });
+
+  it("offre de lancement : le tarif prévu est sous le prix et la FAQ des déblocages est nuancée", () => {
+    mocks.launch.mockReturnValue({ active: true, pending: false });
+    const { container } = render(<OffersPage />);
+    expect(screen.getByTestId("price-note").textContent).toBe(
+      "Tarif prévu, pas encore souscriptible",
+    );
+    const unlocks = Array.from(container.querySelectorAll("details")).find((node) =>
+      node.querySelector("summary")?.textContent?.includes("déblocages par mois"),
+    )!.textContent;
+    expect(unlocks).toContain("sont aussi ouverts au compte gratuit");
+    expect(unlocks).toContain("redeviendront réservés à Analyse à la fin de l’offre");
+    expect(unlocks).not.toContain("restent réservés à Analyse");
+    expect(container.textContent).toContain("dont l’adresse email est confirmée");
+    expect(container.textContent).toContain(
+      "prendront fin au plus tard au lancement officiel du site. Nous vous prévenons par email avant leur fin",
+    );
+    expect(container.textContent).toContain("en cas d’abus ou d’impératif technique ou juridique");
+    expect(container.textContent).toContain("restent conservées tant que votre compte existe");
+    expect(container.textContent).not.toContain("à tout moment, notamment au lancement officiel");
+  });
+
+  it("réserve la hauteur du bandeau tant que l'état est inconnu, sans le rendre", () => {
+    mocks.launch.mockReturnValue({ active: false, pending: true });
+    render(<OffersPage />);
+    const placeholder = screen.getByTestId("launch-offer-banner-placeholder");
+    expect(placeholder.className).toContain("min-h-");
+    expect(placeholder.getAttribute("aria-hidden")).toBe("true");
+    expect(placeholder.textContent).toBe("");
+    expect(screen.queryByTestId("launch-offer-banner")).toBeNull();
+    cleanup();
+
+    mocks.launch.mockReturnValue({ active: false, pending: false });
+    render(<OffersPage />);
+    expect(screen.queryByTestId("launch-offer-banner-placeholder")).toBeNull();
+  });
+
   it("comparatif : une liste d'une ligne par fonctionnalité sous 640 px, le tableau au-dessus", () => {
     render(<OffersPage />);
     const list = screen.getByRole("list", { name: /en liste/ });

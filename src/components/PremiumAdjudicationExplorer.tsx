@@ -81,7 +81,7 @@ export function PremiumAdjudicationExplorer({
       ) : !hasAccess ? (
         <div className="mt-6 rounded-lg border border-brand-navy/12 bg-surface-muted p-5">
           <p className="font-semibold text-brand-navy">
-            Les résultats chiffrés sont réservés aux membres Analyse.
+            Les résultats chiffrés sont réservés à l’offre Analyse.
           </p>
           <p className="mt-2 text-sm text-brand-navy/65">
             Accédez aux prix médians, aux répartitions des résultats, aux comparaisons par type de

@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LAUNCH_OFFER_ACCOUNT_TEXT, LAUNCH_OFFER_VISITOR_TEXT } from "@/lib/launch-offer";
+import { PLAN_LIMITS } from "@/lib/plans";
 import { FREE_ACCESS_LINE } from "@/lib/sale-unlocks";
 
 /**
@@ -93,11 +94,14 @@ describe("carte Analyse de l'accueil", () => {
     return screen.getByRole("heading", { name: "Analyse" }).closest("article")!;
   }
 
-  it("souscription fermée : « Me prévenir de l’ouverture » en bouton principal et tarif prévu", () => {
+  it("souscription fermée : « Me prévenir de l’ouverture » en bouton principal et tarif prévu", async () => {
     mocks.checkoutOpen = false;
     render(<HomeDiscovery />);
     const card = analysisCard();
-    expect(card.querySelector("button")?.textContent).toContain("Me prévenir de l’ouverture");
+    // La demande est chargée à la demande (un seul import dynamique partagé).
+    expect(
+      await within(card).findByRole("button", { name: "Me prévenir de l’ouverture" }),
+    ).toBeTruthy();
     expect(card.textContent).toContain("Tarif prévu : 59 € TTC / mois. Pas encore souscriptible.");
     expect(card.textContent).not.toContain("Offre bientôt disponible");
     expect(card.textContent).not.toContain("Découvrir Analyse");
@@ -151,7 +155,7 @@ describe("onboarding /bienvenue", () => {
     fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
     const text = document.body.textContent ?? "";
     expect(text).toContain(
-      "Pendant l’offre de lancement, votre compte gratuit ouvre toutes les ventes avec les outils de l’offre Analyse.",
+      "Pendant l’offre de lancement, votre compte gratuit ouvre les outils de l’offre Analyse sur toutes les ventes (contenu selon la vente).",
     );
     expect(text).not.toContain("Chaque mois, vous pouvez débloquer");
   });
@@ -193,6 +197,58 @@ describe("page Mon compte", () => {
     expect(screen.queryByText(/accès jusqu’au/)).toBeNull();
   });
 
+  it("offre de lancement : dit ce qui reste gratuit et ce qui demandera Analyse, sans date ni pression", async () => {
+    mocks.plan.mockResolvedValue({
+      plan: {
+        plan: "analyse",
+        label: "Analyse",
+        hasAnalysisAccess: true,
+        launchOffer: true,
+        currentPeriodEnd: null,
+      },
+    });
+    renderPage();
+
+    const block = await screen.findByTestId("account-offer-end");
+    const text = block.textContent ?? "";
+    expect(text).toContain("Ce qui reste gratuit");
+    expect(text).toContain(`${PLAN_LIMITS.decouverte.favoriteSales} favoris`);
+    expect(text).toContain("1 alerte avec un email récapitulatif par semaine");
+    expect(text).toContain(
+      `${PLAN_LIMITS.decouverte.monthlyUnlocks} déblocages de ventes par mois`,
+    );
+    expect(text).toContain("« Mon dossier »");
+    expect(text).toContain("Ce qui demandera l’offre Analyse");
+    expect(text).toContain("le rapport PDF");
+    expect(text).toContain("ventes comparables");
+    expect(text).toContain("les exports");
+    expect(text).toContain(
+      "Ces avantages sont temporaires et prendront fin au plus tard au lancement officiel du site",
+    );
+    expect(text).toContain("Nous vous prévenons par email avant leur fin");
+    expect(text).toContain(
+      "Vos données (favoris, alertes, rapports enregistrés) restent conservées tant que votre compte existe et dans les durées de la politique de confidentialité. Elles redeviennent accessibles avec l’offre Analyse.",
+    );
+    // Ni compte à rebours, ni date, ni incitation à s'abonner.
+    expect(text).not.toMatch(/\d{4}|jours?|dernier|vite|profitez|abonnez/i);
+    expect(block.querySelector("a, button")).toBeNull();
+  });
+
+  it("n'affiche pas ce bloc à un abonné réel ni hors de l'offre de lancement", async () => {
+    mocks.plan.mockResolvedValue({
+      plan: {
+        plan: "analyse",
+        label: "Analyse",
+        hasAnalysisAccess: true,
+        currentPeriodEnd: "2026-12-01T00:00:00.000Z",
+        billing: { status: "active", hasStripeCustomer: true, graceEndsAt: null },
+      },
+    });
+    renderPage();
+    await screen.findByText(/accès jusqu’au 1 décembre 2026/);
+    expect(screen.queryByTestId("account-offer-end")).toBeNull();
+  });
+
   it("un abonné réel garde son libellé, sa date de fin et l'explication du portail", async () => {
     mocks.plan.mockResolvedValue({
       plan: {
@@ -219,6 +275,22 @@ describe("mention des pages rendues côté serveur", () => {
     mocks.launch = { active: false, pending: true };
     const pending = render(<LaunchOfferNote />);
     expect(pending.container.textContent).toBe("");
+    expect(screen.queryByTestId("launch-offer-note")).toBeNull();
+  });
+
+  it("réserve la hauteur du bloc tant que l'état est inconnu, sans le rendre ni le lire", () => {
+    mocks.launch = { active: false, pending: true };
+    render(<LaunchOfferNote className="mt-3" />);
+    const placeholder = screen.getByTestId("launch-offer-note-placeholder");
+    expect(placeholder.getAttribute("aria-hidden")).toBe("true");
+    expect(placeholder.className).toContain("mt-3");
+    expect(placeholder.className).toMatch(/min-h-\d+/);
+  });
+
+  it("ne réserve rien une fois l'état connu", () => {
+    mocks.launch = { active: false, pending: false };
+    render(<LaunchOfferNote />);
+    expect(screen.queryByTestId("launch-offer-note-placeholder")).toBeNull();
   });
 
   it("affiche la mention du visiteur, ou celle du compte connecté", () => {

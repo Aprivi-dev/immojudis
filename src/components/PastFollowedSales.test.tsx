@@ -29,7 +29,6 @@ function snapshot(overrides: Partial<FollowedSaleSnapshot> = {}): FollowedSaleSn
     title: "Maison de ville",
     city: "Bordeaux",
     department: "33",
-    postalCode: "33000",
     propertyType: "house",
     tribunalName: "Tribunal judiciaire de Bordeaux",
     startingPriceEur: 100_000,
@@ -45,7 +44,6 @@ function snapshot(overrides: Partial<FollowedSaleSnapshot> = {}): FollowedSaleSn
       deadline: "2026-10-24",
       adjudicationConfirmed: false,
       expired: false,
-      daysLeft: 8,
     },
     ...overrides,
   };
@@ -128,11 +126,24 @@ describe("PastFollowedSales (ventes passées)", () => {
 
     const surenchere = screen.getByTestId("snapshot-surenchere").textContent ?? "";
     expect(surenchere).toContain("Le résultat n’est pas connu");
-    expect(surenchere).toContain("24 octobre 2026");
-    expect(surenchere).toContain("Il reste 8 jours.");
-    expect(surenchere).toContain("par acte d’avocat");
-    expect(surenchere).toContain("Me Dupont");
-    expect(screen.getByRole("link", { name: "l’annuaire" }).getAttribute("href")).toBe("/avocats");
+    expect(surenchere).toContain(
+      "Date indicative : le 24 octobre 2026. Si ce jour tombe un samedi, un dimanche ou un jour férié, le délai peut être prolongé jusqu’au premier jour ouvrable suivant ; ne comptez pas dessus sans l’avis d’un avocat. Elle est calculée à partir de la date d’audience connue d’Immojudis, qui peut avoir changé.",
+    );
+    expect(surenchere).toContain(
+      "par acte d’avocat déposé au greffe du juge de l’exécution, avec une garantie d’un dixième du prix principal (chèque de banque ou caution bancaire irrévocable, art. R. 322-51 du CPCE)",
+    );
+    expect(surenchere).toContain("de préférence inscrit au barreau du tribunal concerné");
+    expect(surenchere).toContain(
+      "le choix vous appartient (l’annuaire d’Immojudis signale les profils mis en avant contre rémunération)",
+    );
+    expect(surenchere).not.toContain("l’avocat de la vente");
+    expect(surenchere).not.toContain("Me Dupont");
+    // Formulation prudente : ni compte à rebours, ni « dernier jour », ni « échue ».
+    expect(surenchere).not.toMatch(/Il reste|dernier jour|échue/);
+    // Le lien de l'annuaire est filtré sur le barreau du tribunal.
+    expect(screen.getByRole("link", { name: "l’annuaire d’Immojudis" }).getAttribute("href")).toBe(
+      "/avocats?bar=Bordeaux",
+    );
     expect(screen.getByText(/Gardé jusqu’au 14 avril 2027/)).toBeTruthy();
   });
 
@@ -154,7 +165,6 @@ describe("PastFollowedSales (ventes passées)", () => {
             deadline: "2026-10-24",
             adjudicationConfirmed: true,
             expired: false,
-            daysLeft: 0,
           },
         }),
       ],
@@ -163,11 +173,14 @@ describe("PastFollowedSales (ventes passées)", () => {
 
     await screen.findByRole("heading", { name: "Maison de ville" });
     expect(screen.getByTestId("snapshot-result").textContent).toMatch(/Adjugé à 250\s000\s€/);
-    expect(screen.getByText("Prêt à enchérir")).toBeTruthy();
+    expect(screen.getByText("Je prépare mon enchère")).toBeTruthy();
     expect(screen.getByText(/180\s000\s€/)).toBeTruthy();
     const surenchere = screen.getByTestId("snapshot-surenchere").textContent ?? "";
-    expect(surenchere).toContain("Date limite indicative : 24 octobre 2026");
-    expect(surenchere).toContain("C’est le dernier jour.");
+    expect(surenchere).toContain(
+      "Date indicative : le 24 octobre 2026. Si ce jour tombe un samedi",
+    );
+    expect(surenchere).not.toMatch(/Il reste|dernier jour|échue/);
+    expect(surenchere).not.toContain("passée");
   });
 
   it("affiche les valeurs absentes comme absentes", async () => {
@@ -211,7 +224,6 @@ describe("PastFollowedSales (ventes passées)", () => {
             deadline: "2026-09-11",
             adjudicationConfirmed: true,
             expired: true,
-            daysLeft: null,
           },
         }),
       ],
@@ -221,7 +233,11 @@ describe("PastFollowedSales (ventes passées)", () => {
     await screen.findByRole("heading", { name: "Vente échue" });
     const blocks = screen.getAllByTestId("snapshot-surenchere").map((node) => node.textContent);
     expect(blocks[0]).toContain("Non déterminée pour ce type de vente");
-    expect(blocks[1]).toContain("Cette fenêtre est échue.");
+    expect(blocks[1]).toContain(
+      "Cette date indicative est passée : le délai a pu expirer, ou être prolongé. Si vous êtes concerné, consultez sans attendre un avocat, seul à pouvoir le confirmer.",
+    );
+    expect(blocks[1]).toContain("Date indicative : le 11 septembre 2026");
+    expect(blocks[1]).not.toMatch(/Il reste|dernier jour|échue/);
   });
 
   it("retire un instantané à la demande de la personne", async () => {
@@ -229,13 +245,35 @@ describe("PastFollowedSales (ventes passées)", () => {
       .mockResolvedValueOnce({ snapshots: [snapshot()] })
       .mockResolvedValueOnce({ snapshots: [] });
     mocks.deleteSnapshot.mockResolvedValue({ ok: true, removed: true });
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     const { container } = renderSection();
 
     fireEvent.click(await screen.findByRole("button", { name: "Retirer de mon espace" }));
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("ne pourra pas être rétabli"));
 
     await waitFor(() => expect(mocks.deleteSnapshot).toHaveBeenCalledWith({ id: "snap-1" }));
     await waitFor(() => expect(container.innerHTML).toBe(""));
     expect(mocks.toastSuccess).toHaveBeenCalled();
+  });
+
+  it("ne retire rien quand la personne refuse la confirmation", async () => {
+    mocks.fetchSnapshots.mockResolvedValue({ snapshots: [snapshot()] });
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    renderSection();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Retirer de mon espace" }));
+
+    expect(mocks.deleteSnapshot).not.toHaveBeenCalled();
+    expect(screen.getByRole("heading", { name: "Maison de ville" })).toBeTruthy();
+  });
+
+  it("définit la surenchère et l'adjudication avec le composant Terme", async () => {
+    mocks.fetchSnapshots.mockResolvedValue({ snapshots: [snapshot()] });
+    renderSection();
+
+    await screen.findByRole("heading", { name: "Maison de ville" });
+    expect(screen.getByRole("button", { name: "Définition : surenchère" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Définition : adjudication" })).toBeTruthy();
   });
 
   it("annonce une indisponibilité sans afficher d'erreur technique", async () => {

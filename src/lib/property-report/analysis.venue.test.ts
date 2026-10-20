@@ -40,6 +40,29 @@ describe("type de vente du rapport", () => {
     },
   );
 
+  it("garde le contrôle du type de vente, dont « conflict », pour la page « Dossier de financement »", () => {
+    expect(
+      snapshotOf({ sale_venue_type: "tribunal", sale_verification_status: "conflict" }).sale
+        .venueVerificationStatus,
+    ).toBe("conflict");
+    expect(
+      snapshotOf({ sale_venue_type: "tribunal", sale_verification_status: "verified" }).sale
+        .venueVerificationStatus,
+    ).toBe("verified");
+  });
+
+  it("garde le cadre juridique, dont « insolvency », pour le délai de paiement du dossier de financement", () => {
+    expect(
+      snapshotOf({ sale_venue_type: "tribunal", sale_legal_framework: "insolvency" }).sale
+        .legalFramework,
+    ).toBe("insolvency");
+    expect(
+      snapshotOf({ sale_venue_type: "tribunal", sale_legal_framework: "judicial_seizure" }).sale
+        .legalFramework,
+    ).toBe("judicial_seizure");
+    expect(snapshotOf({ sale_venue_type: "tribunal" }).sale.legalFramework).toBe("unknown");
+  });
+
   it("garde « unknown » quand le type n'est pas qualifié", () => {
     expect(snapshotOf({ sale_venue_type: undefined }).sale.venueType).toBe("unknown");
   });

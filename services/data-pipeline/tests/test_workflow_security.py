@@ -243,8 +243,17 @@ def test_dedupe_sweep_is_manual_serialised_with_the_pipeline_and_gives_secrets_t
     assert re.search(r"^  cancel-in-progress: false$", text, re.M)
     assert [job.name for job in jobs if SECRET.search(job.env)] == []
     assert [step.name for step in jobs[0].steps if SECRET.search(step.env)] == [
-        "Merge and delete duplicate sales"
+        "Merge and delete duplicate sales",
+        "Invalidate public cache",
     ]
+    # Les ventes supprimées par le balayage quittent le catalogue : le cache public en est informé, comme après
+    # la collecte, même quand le balayage échoue et sans jamais faire échouer le job.
+    invalidation = next(step for step in jobs[0].steps if step.name == "Invalidate public cache")
+    assert "python -m src.cache_invalidation --flush" in invalidation.text
+    assert re.search(r"^\s+if: always\(\)$", invalidation.text, re.M)
+    assert re.search(r"^\s+continue-on-error: true$", invalidation.text, re.M)
+    assert "CRON_SECRET: ${{ secrets.CRON_SECRET }}" in invalidation.text
+    assert "SITE_URL: ${{ vars.SITE_URL }}" in invalidation.text
     assert "--require-hashes" in text
     # Chaque action est épinglée par SHA de commit (40 hexadécimaux), jamais par étiquette.
     assert all(re.search(r"@[0-9a-f]{40}( |$)", step.uses) for step in jobs[0].steps if step.uses)

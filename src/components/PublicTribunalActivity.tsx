@@ -50,21 +50,14 @@ function Rows({
           {item.name}
         </Link>
         {item.department ? (
-          <span className="ml-1 font-normal text-brand-navy/60">({item.department})</span>
+          <span className="ml-1 font-normal text-ink-soft">({item.department})</span>
         ) : null}
-        <span className="block text-xs font-normal text-brand-navy/60 sm:hidden">
+        <span className="block text-xs font-normal text-ink-soft sm:hidden">
           Audience le {formatShortDate(item.nextSaleDate)} · {mix(item)}
         </span>
       </th>
-      <td className="py-3 pr-4 text-right tabular-nums">
-        <Link
-          href={pathWithSearch("/sales", { tribunal: item.searchName })}
-          aria-label={`Voir dans la recherche ${formatCount(item.upcomingCount)} ${item.upcomingCount > 1 ? "ventes" : "vente"} : ${item.name}`}
-          className="underline-offset-4 hover:underline"
-        >
-          {formatCount(item.upcomingCount)}
-        </Link>
-      </td>
+      {/* Un seul lien par ligne : le nom, vers la page du tribunal (qui renvoie à la recherche). */}
+      <td className="py-3 pr-4 text-right tabular-nums">{formatCount(item.upcomingCount)}</td>
       <td className="hidden whitespace-nowrap py-3 pr-4 text-right sm:table-cell">
         {formatShortDate(item.nextSaleDate)}
       </td>
@@ -90,7 +83,7 @@ function Table({
       <table className="w-full text-sm">
         <caption className="sr-only">{caption}</caption>
         <thead>
-          <tr className="text-xs uppercase tracking-[0.08em] text-brand-navy/60">
+          <tr className="text-xs uppercase tracking-[0.08em] text-ink-soft">
             <th scope="col" className="pb-2 pr-4 text-left font-semibold">
               Tribunal judiciaire
             </th>

@@ -19,6 +19,10 @@ import type { AuctionSale } from "@/lib/types";
  * - une cession de l'État sans date n'a pas de « date à confirmer » : c'est son fonctionnement ;
  * - une vente passée, retirée ou annulée n'a plus rien à vérifier avant l'audience.
  */
+/**
+ * Un seul verbe, « à vérifier », partout (pastille, bulle, fiche) : « à confirmer » désigne ce que
+ * les cartes affichent à la place d'une valeur absente, pas ce que la personne a à faire.
+ */
 export type PointToVerify = {
   key: "surface" | "occupancy" | "date" | "procedure";
   label: string;
@@ -55,17 +59,17 @@ export function pointsToVerify(
     sale.occupancy_status !== undefined &&
     occupancyUnknown(sale.occupancy_status)
   ) {
-    points.push({ key: "occupancy", label: "Occupation du bien à confirmer" });
+    points.push({ key: "occupancy", label: "Occupation du bien à vérifier" });
   }
   if (
     sale.sale_date !== undefined &&
     !(sale.sale_date && Number.isFinite(new Date(sale.sale_date).getTime())) &&
     !stateListingStatus(sale)
   ) {
-    points.push({ key: "date", label: "Date de la vente à confirmer" });
+    points.push({ key: "date", label: "Date de la vente à vérifier" });
   }
   if (sale.sale_verification_status === "conflict") {
-    points.push({ key: "procedure", label: "Type de vente à confirmer (sources en désaccord)" });
+    points.push({ key: "procedure", label: "Type de vente à vérifier (sources en désaccord)" });
   }
   return points;
 }
@@ -74,3 +78,10 @@ export function pointsToVerify(
 export function pointsToVerifyLabel(count: number): string {
   return `${count} point${count > 1 ? "s" : ""} à vérifier`;
 }
+
+/** Ancre de la fiche qui reprend les points de la pastille (`/sales/<id>#points-a-verifier`). */
+export const POINTS_TO_VERIFY_ANCHOR = "points-a-verifier";
+
+/** Réserve montrée avec les points : la liste dit ce que l'annonce laisse ouvert, pas tout ce qui reste à contrôler. */
+export const POINTS_TO_VERIFY_NOTE =
+  "Ces points sont ceux que l’annonce laisse ouverts. La liste n’est pas exhaustive : l’absence de pastille ne signifie pas qu’il n’y a rien à vérifier.";

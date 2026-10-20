@@ -31,6 +31,7 @@ from src.sources.notaires_extraction import (
 from src.sources.notaires_extraction import (
     legacy_source_evidence as _notaires_source_evidence,
 )
+from src.sources.notaires_price_nature import starting_price_nature
 from src.sources.source_features import extract_parking_count
 
 BASE_URL = "https://www.immobilier.notaires.fr"
@@ -602,6 +603,7 @@ def parse_notaires_json(payload: str) -> list[dict[str, Any]]:
                 "rooms_count": item.get("nbPieces"),
                 "bedrooms_count": item.get("nbChambres"),
                 "starting_price_eur": item.get("prixAffiche") or item.get("premiereOffrePossible"),
+                **starting_price_nature(item.get("prixAffiche"), item.get("premiereOffrePossible"), primary_nature="displayed_price"),
                 "sale_date": _sale_date(item, item.get("typeTransaction")),
                 "source_sale_schedule": _sale_schedule(item, item.get("typeTransaction")),
                 "lawyer_contact": clean_text(item.get("telephone")),
@@ -935,9 +937,8 @@ def parse_notaires_detail_json(
         "has_air_conditioning": _first_known(
             _yes_no(property_block.get("climatisation")), description_features.get("has_air_conditioning")
         ),
-        "starting_price_eur": transaction.get("miseAPrix")
-        or transaction.get("premierPrix")
-        or transaction.get("prixMin"),
+        "starting_price_eur": transaction.get("miseAPrix") or transaction.get("premierPrix") or transaction.get("prixMin"),
+        **starting_price_nature(transaction.get("miseAPrix"), transaction.get("premierPrix"), transaction.get("prixMin")),
         "sale_date": _sale_date(transaction, transaction_type),
         "source_sale_schedule": _sale_schedule(transaction, transaction_type),
         "visit_dates": visit_dates,

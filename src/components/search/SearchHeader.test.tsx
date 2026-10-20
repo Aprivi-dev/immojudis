@@ -110,6 +110,18 @@ describe("SortDropdown", () => {
       false,
     );
   });
+
+  it("peut rétrécir à 320 px : le libellé ne force pas la largeur, le select tronque", () => {
+    render(<SortDropdown sort="relevance" onChange={vi.fn()} />);
+    const select = screen.getByRole("combobox");
+    const label = select.closest("label");
+    expect(label?.className).toContain("min-w-0");
+    expect(label?.className).toContain("max-w-full");
+    expect(label?.className).not.toContain("shrink-0");
+    expect(select.className).toContain("min-w-0");
+    expect(select.className).toContain("w-full");
+    expect(select.className).toContain("text-ellipsis");
+  });
 });
 
 describe("SortDropdown : options selon l'offre", () => {

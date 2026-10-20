@@ -1,17 +1,20 @@
--- Page /audiences-a-venir (migration 20261028150100) : les audiences des prochains jours.
---   * la fonction publique est accessible sans compte, la fonction privée est SECURITY DEFINER à
---     search_path fixé, l'enveloppe publique est SECURITY INVOKER ;
---   * la règle de « date sourcée » est celle de l'export agenda (get_public_sale_calendar_event),
---     appelée par la fonction et non recopiée ;
---   * aucun champ privé (adresse, coordonnées, contacts, documents) ne sort ;
+-- Page /audiences-a-venir (migrations 20261028150100, 20261028160100, réécrite par 20261029100100) :
+-- les audiences des prochains jours.
+--   * la fonction n'est plus ouverte à anon ni à authenticated : la page la lit côté serveur
+--     (service_role) ; la fonction privée est SECURITY DEFINER à search_path fixé, l'enveloppe publique
+--     est SECURITY INVOKER ;
+--   * elle rend un document { total_count, hearings } (pas de limite de lignes de PostgREST) ;
+--   * la règle de « date sourcée » est celle de l'export agenda (get_public_sale_calendar_event) :
+--     recalculée en SQL ensembliste, comparée à la fonction d'origine par le test 531 ;
+--   * aucun champ privé (adresse, coordonnées, contacts, documents) ni adresse source ne sort, ni clé
+--     dérivée d'une adresse : un identifiant de groupe (source_group, migration 20261031100100) permet
+--     à la page de ne fusionner que sur une identité certaine ;
 --   * seules les audiences exportables de la fenêtre sont rendues : ni vente reportée, ni date
 --     rejetée ou en conflit, ni vente chez un notaire, ni date hors fenêtre ;
---   * la fenêtre est bornée à 1..60 jours ; l'identifiant, source_url et source_urls (publics) sortent
---     pour que la page ne fusionne que sur une identité certaine (20261028160100) : le prix et le
---     tribunal ne suffisent plus.
+--   * la fenêtre est bornée à 1..60 jours.
 begin;
 
-select plan(18);
+select plan(23);
 
 -- Fixtures -------------------------------------------------------------------------------------
 insert into public.tribunals (code, canonical_name, department, city)
@@ -57,14 +60,55 @@ from (
 ) as f(n, city, court, status, venue, day, hour, price, verification, payload);
 
 -- Les fonctions -------------------------------------------------------------------------------
+-- Lecture du document comme un tableau de lignes, pour les assertions.
+create function pg_temp.hearings(p_days integer)
+returns table (
+  id uuid,
+  sale_date timestamptz,
+  date_only boolean,
+  property_type text,
+  city text,
+  department text,
+  tribunal_code text,
+  tribunal_name text,
+  tribunal_city text,
+  starting_price_eur numeric,
+  source_group uuid
+)
+language sql
+stable
+as $$
+  select h.*
+  from jsonb_to_recordset(public.get_public_upcoming_hearings(p_days) -> 'hearings') as h(
+    id uuid,
+    sale_date timestamptz,
+    date_only boolean,
+    property_type text,
+    city text,
+    department text,
+    tribunal_code text,
+    tribunal_name text,
+    tribunal_city text,
+    starting_price_eur numeric,
+    source_group uuid
+  );
+$$;
+
 select has_function(
   'public', 'get_public_upcoming_hearings', array['integer'],
-  'the public upcoming hearings RPC exists'
+  'the upcoming hearings RPC exists'
 );
 select ok(
-  has_function_privilege('anon', 'public.get_public_upcoming_hearings(integer)', 'execute')
-  and has_function_privilege('authenticated', 'public.get_public_upcoming_hearings(integer)', 'execute'),
-  'signed-out visitors and accounts may read the upcoming hearings'
+  not has_function_privilege('anon', 'public.get_public_upcoming_hearings(integer)', 'execute')
+  and not has_function_privilege('authenticated', 'public.get_public_upcoming_hearings(integer)', 'execute')
+  and has_function_privilege('service_role', 'public.get_public_upcoming_hearings(integer)', 'execute'),
+  'only the server (service role) reads the upcoming hearings: no execute for anon or authenticated'
+);
+select ok(
+  not has_function_privilege('anon', 'app_private.get_public_upcoming_hearings(integer)', 'execute')
+  and not has_function_privilege('authenticated', 'app_private.get_public_upcoming_hearings(integer)', 'execute')
+  and has_function_privilege('service_role', 'app_private.get_public_upcoming_hearings(integer)', 'execute'),
+  'the private function is closed to the browser roles too'
 );
 select ok(
   (select prosecdef from pg_proc where oid = 'app_private.get_public_upcoming_hearings(integer)'::regprocedure)
@@ -78,29 +122,40 @@ select ok(
 );
 select is(
   pg_get_function_result('public.get_public_upcoming_hearings(integer)'::regprocedure),
-  'TABLE(id uuid, sale_date timestamp with time zone, date_only boolean, property_type text, city text, department text, tribunal_code text, tribunal_name text, tribunal_city text, starting_price_eur numeric, source_url text, source_urls jsonb, total_count bigint)',
-  'the contract is the public card of a sale: commune, type, court, date, price, source links'
+  'jsonb',
+  'the contract is one document, so no row limit applies'
 );
 
 -- Le contrat -----------------------------------------------------------------------------------
 select is(
-  (select pg_get_functiondef('app_private.get_public_upcoming_hearings(integer)'::regprocedure)
-          ~ 's\.(address|latitude|longitude|lawyer_contact|documents|visit_dates|raw_payload|description|raw_text)\b'),
-  false,
-  'address, coordinates, contacts, documents, visit text and the raw announcement stay out'
+  (select array_agg(k.name order by k.name)
+     from jsonb_object_keys(public.get_public_upcoming_hearings(30) -> 'hearings' -> 0) as k(name)),
+  array[
+    'city', 'date_only', 'department', 'id', 'property_type', 'sale_date', 'source_group',
+    'starting_price_eur', 'tribunal_city', 'tribunal_code', 'tribunal_name'
+  ]::text[],
+  'a hearing carries the public card of a sale and a source group id: no address, no source link, no key'
 );
 select is(
   (select pg_get_functiondef('app_private.get_public_upcoming_hearings(integer)'::regprocedure)
-          ~ 'get_public_sale_calendar_event\(s\.id\)'
-      and pg_get_functiondef('app_private.get_public_upcoming_hearings(integer)'::regprocedure)
-          ~ 'e\.exportable'),
-  true,
-  'a hearing is listed only when the calendar export rule declares it exportable'
+          ~ '\.(address|latitude|longitude|lawyer_contact|documents|visit_dates|description|raw_text)\b'),
+  false,
+  'address, coordinates, contacts, documents, visit text and the announcement text stay out'
+);
+select is(
+  (select position('source_url' in public.get_public_upcoming_hearings(60)::text)),
+  0,
+  'neither source_url nor source_urls comes out'
+);
+select is(
+  (select position('example.test' in public.get_public_upcoming_hearings(60)::text)),
+  0,
+  'and no source address comes out'
 );
 
 -- Le comportement ------------------------------------------------------------------------------
 select is(
-  (select array_agg(id order by sale_date, id) from public.get_public_upcoming_hearings(30)),
+  (select array_agg(id order by sale_date, id) from pg_temp.hearings(30)),
   array[
     'c4960000-1000-4000-8000-000000000001',
     'c4960000-1000-4000-8000-000000000002',
@@ -110,7 +165,7 @@ select is(
   'the exportable tribunal hearings of the next 30 days come out, the nearest first'
 );
 select is(
-  (select array_agg(id order by sale_date, id) from public.get_public_upcoming_hearings(7)),
+  (select array_agg(id order by sale_date, id) from pg_temp.hearings(7)),
   array[
     'c4960000-1000-4000-8000-000000000001',
     'c4960000-1000-4000-8000-000000000002',
@@ -119,42 +174,42 @@ select is(
   'the 7-day window leaves the hearing of day 20 out'
 );
 select is(
-  (select count(*) from public.get_public_upcoming_hearings(null)),
+  (select count(*) from pg_temp.hearings(null)),
   4::bigint,
   'a null window falls back to 30 days'
 );
 select is(
-  (select count(*) from public.get_public_upcoming_hearings(0)),
+  (select count(*) from pg_temp.hearings(0)),
   0::bigint,
   'a window below 1 day is raised to 1 day (nothing falls in today or tomorrow)'
 );
 select is(
-  (select count(*) from public.get_public_upcoming_hearings(1000)),
+  (select count(*) from pg_temp.hearings(1000)),
   4::bigint,
   'a window above 60 days is cut to 60 days (the hearing of day 90 stays out)'
 );
 select is(
   (select array_agg(date_only order by id)
-     from public.get_public_upcoming_hearings(30)
+     from pg_temp.hearings(30)
     where id in ('c4960000-1000-4000-8000-000000000001', 'c4960000-1000-4000-8000-000000000005')),
   array[false, true],
   'a timed hearing is not day-only; a midnight date (hour unknown) is day-only'
 );
 select is(
   (select row(starting_price_eur, tribunal_code, city)::text
-     from public.get_public_upcoming_hearings(30)
+     from pg_temp.hearings(30)
     where id = 'c4960000-1000-4000-8000-000000000001'),
   '(100000,c496-tj-x,Xenonville)',
   'the price, the court code and the commune come out'
 );
 select is(
-  (select source_url from public.get_public_upcoming_hearings(30)
-    where id = 'c4960000-1000-4000-8000-000000000001'),
-  'https://example.test/c496/1',
-  'the source link comes out, so the page merges two lines only on a shared source'
+  (select array_agg(source_group order by id) from pg_temp.hearings(30)
+    where id in ('c4960000-1000-4000-8000-000000000001', 'c4960000-1000-4000-8000-000000000002')),
+  array['c4960000-1000-4000-8000-000000000001', 'c4960000-1000-4000-8000-000000000002']::uuid[],
+  'two sales without a source address in common are each their own group'
 );
 select is(
-  (select count(*) from public.get_public_upcoming_hearings(60)
+  (select count(*) from pg_temp.hearings(60)
     where id in (
       'c4960000-1000-4000-8000-000000000004',
       'c4960000-1000-4000-8000-000000000006',
@@ -166,17 +221,29 @@ select is(
   'a postponed, notary, rejected-date, out-of-window or conflicting sale is never listed'
 );
 select is(
-  (select min(total_count) || '/' || max(total_count) from public.get_public_upcoming_hearings(30)),
-  '4/4',
+  (public.get_public_upcoming_hearings(30) ->> 'total_count')::bigint,
+  4::bigint,
   'total_count is the number of hearings of the window'
 );
 
--- Un visiteur sans compte ----------------------------------------------------------------------
+-- Un visiteur sans compte, un compte connecté : plus d'accès --------------------------------------------
 set local role anon;
+select throws_ok(
+  $$select public.get_public_upcoming_hearings(30)$$,
+  '42501', null, 'a signed-out visitor can no longer call the function (the page reads it server-side)'
+);
+reset role;
+set local role authenticated;
+select throws_ok(
+  $$select public.get_public_upcoming_hearings(30)$$,
+  '42501', null, 'a signed-in account cannot call it either'
+);
+reset role;
+set local role service_role;
 select is(
-  (select count(*) from public.get_public_upcoming_hearings(30)),
-  4::bigint,
-  'a signed-out visitor reads the upcoming hearings'
+  jsonb_array_length(public.get_public_upcoming_hearings(30) -> 'hearings'),
+  4,
+  'the server (service role) reads the upcoming hearings'
 );
 reset role;
 

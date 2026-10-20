@@ -8,10 +8,12 @@ import dynamic from "next/dynamic";
 import ArrowLeft from "lucide-react/dist/esm/icons/arrow-left.js";
 import { listingValuationConflict } from "@/lib/listing-evidence";
 import { useAuth } from "@/hooks/use-auth";
-import { salesReturnHref } from "@/lib/navigation";
+import { salesReturnHref, salesReturnLabel } from "@/lib/navigation";
 import { DocumentReadingSection } from "@/components/sale-detail/DocumentReadingSection";
 import { SalePassagesSection } from "@/components/sale-detail/SalePassagesSection";
 import { SaleUnlockPanel } from "@/components/sale-detail/SaleUnlockPanel";
+import { SalePointsToVerify } from "@/components/sale-detail/SalePointsToVerify";
+import { pointsToVerify } from "@/lib/search/points-to-verify";
 import { SaleUnlockOfferProvider } from "@/components/sale-detail/UnlockCallToAction";
 import type { SaleUnlockResult, SaleUnlockStatus } from "@/lib/sale-unlocks";
 import { AuctionScenariosSection } from "@/components/sale-detail/AuctionScenariosSection";
@@ -34,7 +36,7 @@ import { ListingBudget } from "@/components/sale-detail/ListingBudget";
 import { ListingCharacteristics } from "@/components/sale-detail/ListingCharacteristics";
 import { ListingPreparation } from "@/components/sale-detail/ListingPreparation";
 import { SaleKeyFactsBand } from "@/components/sale-detail/SaleKeyFactsBand";
-import type { ListingWorksDraft } from "@/components/sale-detail/ListingWorks";
+import type { WorksBreakdownItem } from "@/lib/works-breakdown";
 import type { FinancingDraft, FinancingResult } from "@/components/sale-detail/FinancingSimulator";
 import type { ListingRentalDraft } from "@/components/sale-detail/ListingRental";
 import { SaleDetailTabNav, type SaleDetailTab } from "@/components/sale-detail/SaleDetailTabNav";
@@ -53,7 +55,12 @@ import { computeCeilingPlan, maxWorksAtBid } from "@/lib/bid-ceiling-engine";
 import { ceilingGap, valueGapReason } from "@/lib/bid-ceiling-gaps";
 import { buildDpeAnalysis } from "@/lib/dpe-analysis";
 import { CeilingPlanner } from "@/components/ceiling/CeilingPlanner";
-import { useCeilingChoices, worksChoiceForAmount } from "@/components/ceiling/use-ceiling-choices";
+import { LaunchOfferIncludedTag } from "@/components/LaunchOfferIncludedTag";
+import {
+  choicesWithoutWorksBreakdown,
+  useCeilingChoices,
+  worksChoiceForAmount,
+} from "@/components/ceiling/use-ceiling-choices";
 import Link from "next/link";
 import { listingCoordinates } from "@/lib/sale-listing";
 import {
@@ -152,6 +159,7 @@ type SaleDetailProps = {
   sale: AuctionSale;
   marketEstimateOverride?: MarketEstimate | null;
   returnTo?: string;
+  /** Libellé du lien de retour ; absent : il suit la page d'origine (voir `salesReturnLabel`). */
   backLabel?: string;
   publicDemo?: boolean;
   adjudicationStatisticsEnabled?: boolean;
@@ -167,7 +175,7 @@ export function AnalysisSaleDetailView({
   sale,
   marketEstimateOverride = null,
   returnTo = "/sales",
-  backLabel = "Retour aux ventes",
+  backLabel,
   publicDemo = false,
   adjudicationStatisticsEnabled = false,
   aiReviewProjections = null,
@@ -243,7 +251,7 @@ function SaleDetailWorkspace({
   sale,
   marketEstimateOverride = null,
   returnTo,
-  backLabel = "Retour aux ventes",
+  backLabel,
   publicDemo = false,
   adjudicationStatisticsEnabled = false,
   aiReviewProjections = null,
@@ -253,7 +261,6 @@ function SaleDetailWorkspace({
   access,
 }: SaleDetailProps & { access: SaleDetailAccess }) {
   const [personalWorksBudget, setPersonalWorksBudget] = useState<number | null>(null);
-  const [worksDraft, setWorksDraft] = useState<ListingWorksDraft | null>(null);
   const [financingDraft, setFinancingDraft] = useState<FinancingDraft | null>(null);
   const [financingResult, setFinancingResult] = useState<FinancingResult | null>(null);
   const [rentalDraft, setRentalDraft] = useState<ListingRentalDraft | null>(null);
@@ -334,6 +341,12 @@ function SaleDetailWorkspace({
         : "summary";
   const hasVerifiedTribunal = saleHasVerifiedTribunal(sale);
   const venueType = getSaleProcedure(sale).venueType;
+  // Le dossier de travail (offre Analyse) existe pour les ventes au tribunal, chez le notaire et
+  // domaniales ; « Mon dossier » en est l'unique porte.
+  const workspaceAvailable =
+    access === "analysis" &&
+    !publicDemo &&
+    (venueType === "tribunal" || venueType === "notary" || venueType === "state");
   const marketSurfaces = getMarketValuationSurfaces(displaySale);
   const surface = criticalAnalysisInputsBlocked ? null : marketSurfaces.builtSurfaceM2;
   // The market estimate feeds the bid ceiling (judicial sales) and, for Analyse, the market blocks.
@@ -409,7 +422,11 @@ function SaleDetailWorkspace({
     });
     return {
       version: 2 as const,
-      choices: { ...ceilingChoices.choices, works: ceilingHypotheses.works },
+      // Le détail des postes reste dans le navigateur : seul le budget retenu est enregistré.
+      choices: {
+        ...choicesWithoutWorksBreakdown(ceilingChoices.choices),
+        works: ceilingHypotheses.works,
+      },
       expectedMaxBid: ceilingPlan.maxBid,
       ...(rentalScenario ? { rentalScenario } : {}),
     };
@@ -422,7 +439,7 @@ function SaleDetailWorkspace({
     projectCosts,
     rentalDraft,
   ]);
-  // Scenario or quote picked in the Travaux tab. Without a ceiling (non-judicial
+  // Scenario (or « Aucun travaux ») picked in the Travaux tab. Without a ceiling (non-judicial
   // sale), the amount only feeds the displayed budget.
   const selectWorksBudget = (amount: number) => {
     if (access !== "analysis" || !Number.isFinite(amount) || amount < 0) return;
@@ -433,6 +450,15 @@ function SaleDetailWorkspace({
         works: worksChoiceForAmount(surface, amount),
       }));
     }
+  };
+  // « Détail de vos travaux » : les postes restent dans le navigateur avec les autres choix, et leur
+  // total (quand il est supérieur à 0) devient le budget travaux. Un détail vidé ne touche pas au
+  // budget : celui-ci a pu être saisi autrement.
+  const changeWorksBreakdown = (items: WorksBreakdownItem[], total: number) => {
+    ceilingChoices.update((choices) =>
+      items.length ? { ...choices, worksBreakdown: items } : choicesWithoutWorksBreakdown(choices),
+    );
+    if (total > 0) selectWorksBudget(total);
   };
   const heroCeiling =
     ceilingEnabled && ceilingPlan.available && ceilingPlan.reachable ? ceilingPlan.maxBid : null;
@@ -456,6 +482,7 @@ function SaleDetailWorkspace({
 
   const [activeTab, setActiveTab] = useState<SaleDetailTab>("apercu");
   const [anchorVisit, setAnchorVisit] = useState(0);
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [expandedDetails, setExpandedDetails] = useState<Partial<Record<LegacyDetail, boolean>>>(
     {},
   );
@@ -526,10 +553,10 @@ function SaleDetailWorkspace({
           <div className={listingStyles.topbar}>
             <Link
               href={salesReturnHref(returnTo, sale.id)}
-              className="inline-flex min-h-11 items-center gap-2 rounded-md text-sm font-semibold text-brand-navy transition-colors hover:text-gold-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+              className="inline-flex min-h-11 items-center gap-2 rounded-md text-sm font-semibold text-brand-navy transition-colors hover:text-gold-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
             >
               <ArrowLeft className="h-4 w-4" aria-hidden />
-              {backLabel}
+              {backLabel ?? salesReturnLabel(returnTo)}
             </Link>
             <ListingActions sale={displaySale} publicDemo={publicDemo} />
           </div>
@@ -572,6 +599,12 @@ function SaleDetailWorkspace({
             aiReviewProjections={resolvedAiReviewProjections}
             aiReviewStatus={aiReviewStatus}
           />
+          {/* Cible de `#points-a-verifier` : les points de la pastille de la liste. */}
+          <SalePointsToVerify
+            className="mt-4"
+            points={pointsToVerify(displaySale, { occupancyVisible: true })}
+            saleId={sale.id}
+          />
           <ListingPreparation
             key={`${user?.id ?? "guest-demo"}:${sale.id}`}
             sale={displaySale}
@@ -601,6 +634,23 @@ function SaleDetailWorkspace({
               saleId={sale.id}
               calculatedCeiling={heroCeiling}
               calculationPending={ceilingEnabled && marketPending}
+              // « Mon dossier » est l'unique porte du dossier de travail (offre Analyse).
+              onOpenWorkspace={workspaceAvailable ? () => setWorkspaceOpen(true) : undefined}
+            />
+          ) : null}
+          {workspaceAvailable && workspaceOpen ? (
+            <ProfessionalPilotLauncher
+              sale={displaySale}
+              definition={
+                venueType === "tribunal"
+                  ? buildTribunalPilot(displaySale)
+                  : venueType === "notary"
+                    ? buildNotaryPilot(displaySale)
+                    : buildStatePilot(displaySale)
+              }
+              publicDemo={publicDemo}
+              open
+              onOpenChange={setWorkspaceOpen}
             />
           ) : null}
         </div>
@@ -634,6 +684,7 @@ function SaleDetailWorkspace({
                   />
                 </div>
                 <ListingCharacteristics sale={displaySale} />
+                <LaunchOfferIncludedTag />
                 <DocumentReadingSection
                   saleId={sale.id}
                   enabled={!publicDemo && !authLoading && Boolean(user)}
@@ -766,6 +817,7 @@ function SaleDetailWorkspace({
                 ) : null}
                 {fullData && isTribunalSale && !valuationConflict ? (
                   <div id="calculation" className="scroll-mt-36">
+                    <LaunchOfferIncludedTag className="mb-2" />
                     <CeilingPlanner
                       hypotheses={ceilingHypotheses}
                       plan={ceilingPlan}
@@ -881,9 +933,8 @@ function SaleDetailWorkspace({
                   <ListingWorks
                     sale={displaySale}
                     estimatedBudget={retainedWorks}
-                    onBudgetChange={ceilingEnabled ? selectWorksBudget : undefined}
-                    initialDraft={worksDraft}
-                    onDraftChange={setWorksDraft}
+                    worksBreakdown={ceilingChoices.choices.worksBreakdown}
+                    onWorksBreakdownChange={changeWorksBreakdown}
                     surface={surface}
                     onScenarioSelect={retainedWorks != null ? selectWorksBudget : undefined}
                     maxWorks={
@@ -989,32 +1040,6 @@ function SaleDetailWorkspace({
                       requireSimulation
                     />
                   </section>
-                ) : null}
-                {access === "analysis" && !publicDemo ? (
-                  <details
-                    className={panelStyles.disclosure}
-                    open={Boolean(expandedDetails["professional-pilot"])}
-                  >
-                    <summary
-                      onClick={(event) => {
-                        event.preventDefault();
-                        setDetailOpen("professional-pilot", !expandedDetails["professional-pilot"]);
-                      }}
-                    >
-                      Préparer le dossier de travail
-                    </summary>
-                    <ProfessionalPilotLauncher
-                      sale={displaySale}
-                      definition={
-                        isTribunalSale
-                          ? buildTribunalPilot(displaySale)
-                          : venueType === "notary"
-                            ? buildNotaryPilot(displaySale)
-                            : buildStatePilot(displaySale)
-                      }
-                      publicDemo={publicDemo}
-                    />
-                  </details>
                 ) : null}
                 {access === "analysis" ? <InformationAvailabilityNotice /> : null}
               </>

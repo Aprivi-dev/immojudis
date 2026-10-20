@@ -4792,6 +4792,18 @@
   padding: 0.38rem 0.48rem;
 }
 
+.immo-mapbox-popup-metrics .immo-mapbox-popup-help {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.1rem;
+  margin-left: 0.15rem;
+  border-radius: 999px;
+  background: var(--brand-navy);
+  color: #fff;
+  font-weight: 800;
+  text-decoration: none;
+}
+
 .immo-mapbox-popup-tags {
   display: flex;
   flex-wrap: wrap;

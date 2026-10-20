@@ -91,7 +91,7 @@ describe("POST /api/market-estimate sale readiness", () => {
     authWithVisibleSale(true);
     mocks.included.mockResolvedValue(false);
     mocks.entitlement.mockRejectedValue(
-      Object.assign(new Error("Estimation de marché réservée au plan Analyse."), { status: 403 }),
+      Object.assign(new Error("Estimation de marché réservée à l’offre Analyse."), { status: 403 }),
     );
 
     const response = await POST(request());

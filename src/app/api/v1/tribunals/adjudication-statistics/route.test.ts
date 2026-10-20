@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   getDirectory: vi.fn(),
   recordUsage: vi.fn(),
 }));
+vi.mock("@/lib/rate-limit", () => ({ enforceUserRateLimit: vi.fn(async () => 1) }));
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
   bearerTokenFromRequest: () => "token",
   requireSupabaseAuthContext: mocks.requireAuth,
@@ -47,7 +48,7 @@ describe("GET /api/v1/tribunals/adjudication-statistics", () => {
 
   it("refuse le plan Découverte avant de lire les prix", async () => {
     mocks.assertEntitlement.mockRejectedValue(
-      new Error("Statistiques d’adjudication réservées au plan Analyse."),
+      new Error("Statistiques d’adjudication réservées à l’offre Analyse."),
     );
     const response = await request();
     expect(response.status).toBe(403);

@@ -5,7 +5,10 @@ import {
   linkPrefetch,
   loginReason,
   pathWithSearch,
+  safeSalesReturnTo,
+  saleDetailPath,
   salesReturnHref,
+  salesReturnLabel,
   searchParamsToRecord,
   SITE_NAV_LINKS,
 } from "./navigation";
@@ -20,9 +23,110 @@ describe("salesReturnHref", () => {
     expect(salesReturnHref(null, "abc-123")).toBe("/sales#sale-card-abc-123");
   });
 
+  it("ramène à la page d'origine acceptée hors catalogue, sans ancre de carte", () => {
+    expect(salesReturnHref("/favoris", "abc")).toBe("/favoris");
+    expect(salesReturnHref("/tribunaux/justice-tj-1-93", "abc")).toBe("/tribunaux/justice-tj-1-93");
+    expect(salesReturnHref("/audiences-a-venir", "abc")).toBe("/audiences-a-venir");
+  });
+
   it("n'ajoute pas d'ancre à une origine qui n'est pas le catalogue", () => {
     expect(salesReturnHref("/annonce-exemple", "abc")).toBe("/annonce-exemple");
     expect(salesReturnHref("https://example.test/sales", "abc")).toBe("https://example.test/sales");
+  });
+});
+
+describe("safeSalesReturnTo", () => {
+  it("garde la recherche du catalogue telle quelle", () => {
+    expect(safeSalesReturnTo("/sales")).toBe("/sales");
+    expect(safeSalesReturnTo("/sales?city=Lyon&page=2&map=true")).toBe(
+      "/sales?city=Lyon&page=2&map=true",
+    );
+  });
+
+  it("accepte les pages d'où l'on ouvre une fiche, sans paramètre", () => {
+    for (const path of [
+      "/favoris",
+      "/alertes",
+      "/comparaisons",
+      "/audiences-a-venir",
+      "/tribunaux/justice-tj-1-93",
+      "/tribunaux/bobigny",
+    ]) {
+      expect(safeSalesReturnTo(path), path).toBe(path);
+    }
+  });
+
+  it("refuse tout le reste : autre page, autre origine, ancre, paramètre hors catalogue", () => {
+    for (const value of [
+      undefined,
+      null,
+      42,
+      "",
+      "favoris",
+      "/",
+      "/offres",
+      "/compte",
+      "/login",
+      "/sales/abc",
+      "/salesx",
+      "/favoris/",
+      "/favoris?x=1",
+      "/favoris#haut",
+      "/sales#sale-card-abc",
+      "/tribunaux",
+      "/tribunaux/",
+      "/tribunaux/Bobigny",
+      "/tribunaux/a/b",
+      "/tribunaux/%2e%2e",
+      "/tribunaux/x?utm=1",
+      "//evil.test/favoris",
+      "///evil.test/sales",
+      "/\\evil.test/sales",
+      "https://evil.test/favoris",
+      "javascript:alert(1)",
+    ]) {
+      expect(safeSalesReturnTo(value), String(value)).toBeUndefined();
+    }
+  });
+
+  it("rend une adresse reconstruite, jamais la chaîne reçue", () => {
+    // Les points de chemin sont résolus : « /tribunaux/../favoris » devient « /favoris ».
+    expect(safeSalesReturnTo("/tribunaux/../favoris")).toBe("/favoris");
+    expect(safeSalesReturnTo("/tribunaux/../offres")).toBeUndefined();
+  });
+});
+
+describe("saleDetailPath", () => {
+  it("n'ajoute l'origine qu'une fois validée, et pas pour le catalogue seul", () => {
+    expect(saleDetailPath("abc")).toBe("/sales/abc");
+    expect(saleDetailPath("abc", "/sales")).toBe("/sales/abc");
+    expect(saleDetailPath("abc", "/favoris")).toBe("/sales/abc?from=%2Ffavoris");
+    expect(saleDetailPath("abc", "/tribunaux/justice-tj-1-93")).toBe(
+      "/sales/abc?from=%2Ftribunaux%2Fjustice-tj-1-93",
+    );
+    expect(saleDetailPath("abc", "/offres")).toBe("/sales/abc");
+    expect(saleDetailPath("abc", "https://evil.test")).toBe("/sales/abc");
+  });
+});
+
+describe("salesReturnLabel", () => {
+  it("nomme la page d'origine", () => {
+    expect(salesReturnLabel("/favoris")).toBe("Retour à mes favoris");
+    expect(salesReturnLabel("/alertes")).toBe("Retour à mes alertes");
+    expect(salesReturnLabel("/comparaisons")).toBe("Retour à mes comparaisons");
+    expect(salesReturnLabel("/tribunaux/justice-tj-1-93")).toBe("Retour au tribunal");
+    expect(salesReturnLabel("/audiences-a-venir")).toBe("Retour aux audiences");
+    expect(salesReturnLabel("/sales?city=Lyon&map=true")).toBe("Retour à la carte");
+    expect(salesReturnLabel("/sales?map=1")).toBe("Retour à la carte");
+  });
+
+  it("garde « Retour aux ventes » pour le catalogue, une origine absente ou refusée", () => {
+    expect(salesReturnLabel("/sales")).toBe("Retour aux ventes");
+    expect(salesReturnLabel("/sales?city=Lyon&map=false")).toBe("Retour aux ventes");
+    expect(salesReturnLabel(undefined)).toBe("Retour aux ventes");
+    expect(salesReturnLabel(null)).toBe("Retour aux ventes");
+    expect(salesReturnLabel("/offres")).toBe("Retour aux ventes");
+    expect(salesReturnLabel("https://evil.test/favoris")).toBe("Retour aux ventes");
   });
 });
 

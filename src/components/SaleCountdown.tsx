@@ -46,10 +46,16 @@ export function SaleCountdown({
   sale,
   precisionUnknown = false,
   variant = "chip",
+  omitPast = false,
 }: {
   sale: AuctionSale;
   precisionUnknown?: boolean;
   variant?: "chip" | "block";
+  /**
+   * Pastille seule : ne rien dire d'une vente passée. Quand la date affichée à côté dit déjà
+   * « Vente passée » (`listingDateLabel`), la répéter serait du bruit.
+   */
+  omitPast?: boolean;
 }) {
   const resolved = resolveSaleCountdownTarget(sale, { precisionUnknown });
   const targetMs = resolved?.target?.getTime() ?? null;
@@ -96,7 +102,7 @@ export function SaleCountdown({
     if (dayRemaining < 0 || !parts) {
       return resolved.deadlineKnown === false ? (
         <Confirmation variant={variant} />
-      ) : (
+      ) : omitPast && variant === "chip" ? null : (
         <PastSale variant={variant} />
       );
     }
@@ -130,7 +136,7 @@ export function SaleCountdown({
   const t = tone(parts ? parts.days : null);
 
   if (!parts) {
-    return <PastSale variant={variant} />;
+    return omitPast && variant === "chip" ? null : <PastSale variant={variant} />;
   }
 
   if (variant === "chip") {

@@ -82,6 +82,7 @@ describe("plafonds journaliers des rapports enregistrés et de leur export PDF",
       request,
       userId: "user-1",
       operation: "propertyReportCreate",
+      launchOffer: false,
     });
     expect(supabaseFrom).not.toHaveBeenCalled();
     expect(mocks.from).not.toHaveBeenCalled();
@@ -100,8 +101,36 @@ describe("plafonds journaliers des rapports enregistrés et de leur export PDF",
       request,
       userId: "user-1",
       operation: "propertyReportPdf",
+      launchOffer: false,
     });
     expect(mocks.usageLimit).not.toHaveBeenCalled();
     expect(supabaseFrom).not.toHaveBeenCalled();
+  });
+
+  it("signale les comptes de l'offre de lancement, pour qu'ils aient leur propre part du plafond global", async () => {
+    mocks.launchOffer.mockResolvedValue(true);
+    const { auth } = account({ isAdmin: false });
+    mocks.daily.mockRejectedValue(
+      new RateLimitError(undefined, 600, "Limite quotidienne atteinte."),
+    );
+
+    await expect(savePropertyReport({ auth, input, request })).rejects.toBeInstanceOf(
+      RateLimitError,
+    );
+    await expect(exportPropertyReportPdf({ auth, reportId: "r", request })).rejects.toBeInstanceOf(
+      RateLimitError,
+    );
+    expect(mocks.daily).toHaveBeenCalledWith({
+      request,
+      userId: "user-1",
+      operation: "propertyReportCreate",
+      launchOffer: true,
+    });
+    expect(mocks.daily).toHaveBeenCalledWith({
+      request,
+      userId: "user-1",
+      operation: "propertyReportPdf",
+      launchOffer: true,
+    });
   });
 });

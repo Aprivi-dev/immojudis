@@ -5,11 +5,11 @@ import { notaryAndStatePilotsEnabled } from "@/lib/sale-types";
 import Link from "next/link";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import Check from "lucide-react/dist/esm/icons/check.js";
-import { OfferOpeningRequest } from "@/components/OfferOpeningRequest";
+import { OfferOpeningRequest } from "@/components/OfferOpeningRequestLazy";
 import { useAnalysisCheckoutOpen } from "@/hooks/use-analysis-checkout-open";
 import { useAuth } from "@/hooks/use-auth";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
-import { resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
+import { ANALYSIS_TRIAL_DAYS, resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
 import { launchOfferText } from "@/lib/launch-offer";
 import { loginPathWithRedirect } from "@/lib/navigation";
 import { PLAN_LIMITS } from "@/lib/plans";
@@ -206,8 +206,8 @@ export function HomeDiscovery() {
                   </p>
                 ) : checkoutOpen === true ? (
                   <p className={styles.planFinePrint}>
-                    Essai de 7 jours avec carte bancaire, puis abonnement récurrent. Résiliable
-                    depuis votre compte.
+                    Essai de {ANALYSIS_TRIAL_DAYS} jours avec carte bancaire, puis abonnement
+                    récurrent. Résiliable depuis votre compte.
                   </p>
                 ) : checkoutOpen === false ? (
                   <p className={styles.planFinePrint}>

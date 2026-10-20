@@ -17,7 +17,8 @@ it("focuses the first date input and restores the trigger on Escape", () => {
 
   const trigger = screen.getByRole("button", { name: /Date de vente/ });
   expect(trigger.getAttribute("aria-expanded")).toBe("false");
-  expect(trigger.getAttribute("aria-controls")).toBeTruthy();
+  // Fermée, la fenêtre n'existe pas : aria-controls ne pointe vers rien (référence invalide).
+  expect(trigger.hasAttribute("aria-controls")).toBe(false);
 
   fireEvent.click(trigger);
 

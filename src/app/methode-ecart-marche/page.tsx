@@ -11,6 +11,11 @@ import {
 import {
   MARKET_GAP_BAND_LABELS,
   MARKET_GAP_BAND_MAX_INTERVAL_WIDTH_PCT,
+  MARKET_GAP_BAND_MAX_RADIUS_OTHER_M,
+  MARKET_GAP_BAND_MAX_RADIUS_URBAN_APARTMENT_M,
+  MARKET_GAP_BAND_MIN_COMPARABLES,
+  MARKET_GAP_BAND_MIN_COMPARABLES_JACKKNIFE,
+  MARKET_GAP_BAND_MIN_EFFECTIVE_SAMPLE,
 } from "@/lib/market-gap-band";
 import { pageMetadata } from "@/lib/page-metadata";
 
@@ -45,7 +50,7 @@ const COMPARABLE_STEPS = [
   "On garde les ventes de surface voisine (à plus ou moins 35 % pour un appartement, 40 % pour une maison, 50 % pour un immeuble ou un local, 60 % pour un terrain). Il en faut au moins 4 ; sinon l’estimation reste « indicative ».",
   "On écarte les prix au m² invraisemblables (hors de 300 à 50 000 € le m² pour le bâti), puis, à partir de 7 ventes, les valeurs extrêmes.",
   "Chaque vente reçoit un poids qui dépend de sa distance au bien, de son ancienneté (ce critère est divisé par deux tous les 24 mois), de sa surface et de sa proximité dans le quartier. Le prix au m² est ajusté de l’évolution locale des prix quand elle est mesurable (au moins 6 ventes sur 12 mois ou plus, plafonnée à 12 % par an).",
-  "La valeur estimée est la médiane pondérée de ces prix au m², multipliée par la surface du bien. La fourchette affichée (arrondie au millier d’euros) va du 10e au 90e centile.",
+  "La valeur estimée est la médiane pondérée de ces prix au m², multipliée par la surface du bien. La fourchette affichée (arrondie au millier d’euros) se lit ainsi : on écarte les 10 % de ventes comparables les moins chères et les 10 % les plus chères ; elle est élargie quand les ventes comparables se ressemblent peu. Avec moins de 6 ventes comparables, cette mesure n’est pas possible : la fourchette reprend alors une marge fixe autour de la valeur, qui dépend du type de bien.",
 ] as const;
 
 const RELIABLE_CRITERIA = [
@@ -174,7 +179,9 @@ function PageContent() {
           </p>
           <p>
             Cette valeur de repli est présentée comme <strong>indicative et fragile</strong>, avec
-            une fourchette volontairement large. Elle n’est pas jugée fiable :{" "}
+            une fourchette volontairement large. Cette fourchette n’est pas celle des ventes
+            comparables : c’est une marge fixe autour de la valeur (au moins 28 %, davantage si la
+            surface est incertaine). Elle n’est pas jugée fiable :{" "}
             <strong>aucun écart en pourcentage n’en est tiré</strong>, ni dans l’aperçu d’un compte
             gratuit ni dans les alertes sur la décote.
           </p>
@@ -216,28 +223,49 @@ function PageContent() {
           <p>
             Sans compte, la fiche d’une vente au tribunal ou chez le notaire peut afficher un repère
             en trois bandes, <strong>sans aucun chiffre</strong>. Il situe la mise à prix par
-            rapport à la fourchette de la valeur estimée (du 10e au 90e centile), et non par rapport
-            à la seule valeur centrale :
+            rapport à la fourchette des ventes comparables (on écarte les 10 % de ventes comparables
+            les moins chères et les 10 % les plus chères), et non par rapport à la seule valeur
+            centrale. La DVF est la base des ventes immobilières déclarées aux notaires :
           </p>
           <ul className="list-disc space-y-1 pl-5">
             <li>
-              « nettement sous la valeur estimée » : la mise à prix est sous le bas de la fourchette
-              ;
+              « {MARKET_GAP_BAND_LABELS.under} » : la mise à prix est sous le bas de la fourchette ;
             </li>
-            <li>« proche de la valeur estimée » : elle est dans la fourchette ;</li>
+            <li>« {MARKET_GAP_BAND_LABELS.near} » : elle est dans la fourchette ;</li>
             <li>
-              « au-dessus de la valeur estimée » : elle est au-dessus du haut de la fourchette.
+              « {MARKET_GAP_BAND_LABELS.above} » : elle est au-dessus du haut de la fourchette.
             </li>
           </ul>
           <p>
-            Le repère n’apparaît que si l’estimation est jugée fiable (critères ci-dessus), si la
-            fourchette n’est pas plus large que {MARKET_GAP_BAND_MAX_INTERVAL_WIDTH_PCT} % de la
-            valeur estimée et, lorsque l’estimation est combinée à un modèle statistique, si ce
-            modèle est toujours actif. Les seuils de la section précédente s’appliquent aussi :
-            au-delà, aucun repère n’est donné. Quand l’estimation n’est pas assez fiable, la fiche
-            l’indique (« {MARKET_GAP_BAND_LABELS.insufficient} ») ; tant qu’elle n’est pas calculée,
-            elle ne dit rien. Une cession de l’État, dont le prix est un prix publié, n’a pas de
-            repère.
+            Aux enchères, la mise à prix est volontairement basse : le prix final est souvent bien
+            supérieur. La fiche le rappelle à côté du repère.
+          </p>
+          <p>
+            Le repère n’apparaît que si l’estimation est jugée fiable (critères ci-dessus) et passe
+            une porte plus stricte : au moins {MARKET_GAP_BAND_MIN_COMPARABLES_JACKKNIFE} ventes
+            comparables ({MARKET_GAP_BAND_MIN_COMPARABLES} quand la fourchette vient d’un modèle
+            statistique plutôt que des ventes elles-mêmes), un échantillon effectif d’au moins{" "}
+            {MARKET_GAP_BAND_MIN_EFFECTIVE_SAMPLE}, une fourchette dont la largeur (écart entre ses
+            deux bornes, rapporté à la valeur centrale) ne dépasse pas{" "}
+            {MARKET_GAP_BAND_MAX_INTERVAL_WIDTH_PCT} % de la valeur estimée, et des ventes
+            comparables cherchées dans un rayon d’au plus{" "}
+            {MARKET_GAP_BAND_MAX_RADIUS_URBAN_APARTMENT_M.toLocaleString("fr-FR")} m pour un
+            appartement en ville, {MARKET_GAP_BAND_MAX_RADIUS_OTHER_M.toLocaleString("fr-FR")} m
+            pour les autres biens. Lorsque l’estimation est combinée à un modèle statistique, ce
+            modèle doit toujours être actif. Les seuils de la section précédente s’appliquent aussi
+            : au-delà, aucun repère n’est donné. Une cession de l’État, dont le prix est un prix
+            publié, n’a pas de repère.
+          </p>
+          <p>
+            Pour un bien occupé, loué ou occupé par son propriétaire, la fiche n’affiche jamais «{" "}
+            {MARKET_GAP_BAND_LABELS.under} » : les ventes comparables sont surtout des biens libres,
+            et la comparaison n’est pas pertinente. Elle dit « {MARKET_GAP_BAND_LABELS.occupied} ».
+          </p>
+          <p>
+            Quand l’estimation n’est pas assez fiable, la fiche en donne la raison : « surface du
+            bien inconnue », « type de bien non pris en charge » ou «{" "}
+            {MARKET_GAP_BAND_LABELS.insufficient} » ; tant que l’estimation n’est pas calculée, elle
+            ne dit rien.
           </p>
           <p>
             Le pourcentage, la valeur estimée et la fourchette restent réservés aux comptes. Ce

@@ -2,9 +2,12 @@
 
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
+import { AccountLaunchOfferEnd } from "@/components/AccountLaunchOfferEnd";
 import { AlertEmailRecapToggle } from "@/components/AlertEmailRecapToggle";
 import { BillingActions } from "@/components/BillingActions";
 import { SaleRemindersToggle } from "@/components/SaleRemindersToggle";
+import { SaleResultsToggle } from "@/components/SaleResultsToggle";
+import { WeeklyDigestToggle } from "@/components/WeeklyDigestToggle";
 import { useAuth } from "@/hooks/use-auth";
 import { fetchSaleUnlocksOverview } from "@/lib/client-api";
 import { fetchAccessPlan } from "@/lib/client-billing";
@@ -100,7 +103,7 @@ export function AccountPage() {
                 href={link.href}
                 aria-labelledby={`space-label-${index}`}
                 aria-describedby={`space-description-${index}`}
-                className="block h-full rounded-lg border border-border px-4 py-3 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                className="block h-full rounded-lg border border-border px-4 py-3 hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
               >
                 <span
                   id={`space-label-${index}`}
@@ -135,6 +138,8 @@ export function AccountPage() {
           <>
             <AlertEmailRecapToggle userId={user.id} className={TOGGLE_CLASS} />
             <SaleRemindersToggle userId={user.id} className={TOGGLE_CLASS} />
+            <SaleResultsToggle userId={user.id} className={TOGGLE_CLASS} />
+            <WeeklyDigestToggle userId={user.id} className={TOGGLE_CLASS} />
           </>
         ) : null}
       </section>
@@ -207,6 +212,8 @@ export function AccountPage() {
           </p>
         ) : null}
       </section>
+
+      {launchOffer && !manageableSubscription ? <AccountLaunchOfferEnd /> : null}
 
       <section
         className="mt-6 rounded-xl border border-border bg-card p-5"

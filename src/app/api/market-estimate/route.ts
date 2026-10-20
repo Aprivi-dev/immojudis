@@ -37,7 +37,7 @@ export async function POST(request: Request) {
       await assertFeatureEntitlementVia(
         auth,
         "property.bidCeiling",
-        "Estimation de marché réservée au plan Analyse.",
+        "Estimation de marché réservée à l’offre Analyse.",
         { saleId },
       );
     }

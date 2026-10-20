@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { Terme } from "@/components/ceiling/Terme";
+import { SaleDetailLink } from "@/components/SaleDetailLink";
 import { Card, PageShell, buttonClasses } from "@/components/ui/primitives";
 import { formatStartingPrice, propertyTypeLabel } from "@/lib/format";
 import { SALE_CALENDAR_DISCLAIMER } from "@/lib/sale-calendar";
@@ -9,6 +11,7 @@ import {
   type HearingDay,
   type HearingWindows,
 } from "@/lib/upcoming-hearings";
+import { RelativeDay } from "./relative-day";
 
 const count = new Intl.NumberFormat("fr-FR");
 
@@ -16,27 +19,22 @@ function hearingWord(total: number): string {
   return total > 1 ? "audiences" : "audience";
 }
 
-function dayLabel(dayKey: string, today: string): string {
-  const label = new Intl.DateTimeFormat("fr-FR", {
+/** Le jour en toutes lettres ; « (aujourd’hui) » et « (demain) » s'ajoutent dans le navigateur (`RelativeDay`). */
+function dayLabel(dayKey: string): string {
+  return new Intl.DateTimeFormat("fr-FR", {
     weekday: "long",
     day: "numeric",
     month: "long",
     year: "numeric",
     timeZone: "UTC",
   }).format(new Date(`${dayKey}T12:00:00Z`));
-  if (dayKey === today) return `${label} (aujourd’hui)`;
-  const tomorrow = new Date(`${today}T12:00:00Z`);
-  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
-  return dayKey === tomorrow.toISOString().slice(0, 10) ? `${label} (demain)` : label;
 }
 
 function Days({
   days,
-  today,
   tribunalPaths,
 }: {
   days: readonly HearingDay[];
-  today: string;
   tribunalPaths: ReadonlyMap<string, string>;
 }) {
   return (
@@ -44,7 +42,7 @@ function Days({
       {days.map((day) => (
         <section key={day.dayKey} aria-labelledby={`jour-${day.dayKey}`}>
           <h3 id={`jour-${day.dayKey}`} className="font-display text-xl font-semibold">
-            {dayLabel(day.dayKey, today)}{" "}
+            <RelativeDay dayKey={day.dayKey} label={dayLabel(day.dayKey)} />{" "}
             <span className="text-base font-normal text-ink-soft">
               · {count.format(day.count)} {hearingWord(day.count)}
             </span>
@@ -68,8 +66,9 @@ function Days({
                   <ul className="mt-1 divide-y divide-line">
                     {group.hearings.map((hearing) => (
                       <li key={hearing.id} className="py-2">
-                        <Link
-                          href={`/sales/${hearing.id.toLowerCase()}`}
+                        <SaleDetailLink
+                          saleId={hearing.id.toLowerCase()}
+                          returnTo="/audiences-a-venir"
                           className="grid gap-1 sm:grid-cols-[1fr_auto] sm:items-baseline sm:gap-4"
                         >
                           <span className="min-w-0">
@@ -88,7 +87,7 @@ function Days({
                               {formatStartingPrice(hearing.startingPriceEur)}
                             </span>
                           </span>
-                        </Link>
+                        </SaleDetailLink>
                       </li>
                     ))}
                   </ul>
@@ -108,15 +107,12 @@ function Days({
  */
 export function HearingsView({
   windows,
-  today,
   tribunalPaths,
   truncated,
   unavailable = false,
   generatedAt,
 }: {
   windows: HearingWindows;
-  /** Jour courant à Paris (`AAAA-MM-JJ`). */
-  today: string;
   /** Adresse de la page de chaque tribunal, par code (vide si l'activité des tribunaux est indisponible). */
   tribunalPaths: ReadonlyMap<string, string>;
   /** Vrai quand la base a plus d'audiences que la limite de lecture : la liste est incomplète. */
@@ -134,11 +130,28 @@ export function HearingsView({
       title="Audiences de ventes judiciaires à venir"
       description={
         <>
-          Les audiences d’adjudication des {HEARINGS_WEEK_DAYS} puis des {HEARINGS_WINDOW_DAYS}{" "}
-          prochains jours, jour par jour et tribunal par tribunal. Seules figurent les ventes au
-          tribunal dont la date est annoncée et n’est contredite par aucune source : une vente
-          reportée n’y est pas. {SALE_CALENDAR_DISCLAIMER} Liste établie sur le catalogue public
-          {updated ? ` au ${updated}` : ""} ; elle ne constitue pas un conseil juridique.
+          <p>
+            Les <Terme terme="adjudication">audiences d’adjudication</Terme> des{" "}
+            {HEARINGS_WEEK_DAYS} puis des {HEARINGS_WINDOW_DAYS} prochains jours, avec la{" "}
+            <Terme terme="mise-a-prix">mise à prix</Terme> de chaque bien, jour par jour et tribunal
+            par tribunal.
+          </p>
+          <details className="mt-3 text-sm">
+            <summary className="cursor-pointer font-semibold text-brand-navy underline underline-offset-2">
+              À savoir avant de lire la liste
+            </summary>
+            <div className="mt-2 grid gap-2">
+              <p>
+                Seules figurent les ventes au tribunal dont la date est annoncée et n’est contredite
+                par aucune source. Les ventes dont le report est connu n’y figurent pas ; une date
+                peut encore changer.
+              </p>
+              <p>
+                {SALE_CALENDAR_DISCLAIMER} Liste établie sur le catalogue public
+                {updated ? ` au ${updated}` : ""} ; elle ne constitue pas un conseil juridique.
+              </p>
+            </div>
+          </details>
         </>
       }
     >
@@ -194,7 +207,7 @@ export function HearingsView({
                 · {count.format(windows.weekCount)} {hearingWord(windows.weekCount)}
               </span>
             </h2>
-            <Days days={windows.week} today={today} tribunalPaths={tribunalPaths} />
+            <Days days={windows.week} tribunalPaths={tribunalPaths} />
           </Card>
         ) : null}
 
@@ -207,7 +220,7 @@ export function HearingsView({
                 · {count.format(windows.laterCount)} {hearingWord(windows.laterCount)}
               </span>
             </h2>
-            <Days days={windows.later} today={today} tribunalPaths={tribunalPaths} />
+            <Days days={windows.later} tribunalPaths={tribunalPaths} />
           </Card>
         ) : null}
 

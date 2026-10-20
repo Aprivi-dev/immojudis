@@ -17,9 +17,31 @@ describe("saleDetailPath", () => {
     );
   });
 
-  it("ignores a way back that is not the catalogue", () => {
-    expect(saleDetailPath(ID, "/favoris")).toBe(`/sales/${ID}`);
-    expect(saleDetailPath(ID, "https://evil.example/sales")).toBe(`/sales/${ID}`);
-    expect(saleDetailPath(ID, "//evil.example/sales")).toBe(`/sales/${ID}`);
+  it("keeps the listed pages a sale is opened from, as a way back", () => {
+    expect(saleDetailPath(ID, "/favoris")).toBe(`/sales/${ID}?from=%2Ffavoris`);
+    expect(saleDetailPath(ID, "/alertes")).toBe(`/sales/${ID}?from=%2Falertes`);
+    expect(saleDetailPath(ID, "/comparaisons")).toBe(`/sales/${ID}?from=%2Fcomparaisons`);
+    expect(saleDetailPath(ID, "/audiences-a-venir")).toBe(`/sales/${ID}?from=%2Faudiences-a-venir`);
+    expect(saleDetailPath(ID, "/tribunaux/bordeaux")).toBe(
+      `/sales/${ID}?from=%2Ftribunaux%2Fbordeaux`,
+    );
+  });
+
+  it("ignores a way back that is neither the catalogue nor one of the listed pages", () => {
+    for (const origin of [
+      "https://evil.example/sales",
+      "//evil.example/sales",
+      "/favoris?x=1", // no parameter on the pages outside the catalogue
+      "/favoris#section",
+      "/favoris/autre",
+      "/tribunaux", // the index is not a court page
+      "/tribunaux/Bordeaux", // a court code is lowercase
+      "/tribunaux/bordeaux/autre",
+      "/admin",
+      "/profil",
+      "/login",
+    ]) {
+      expect(saleDetailPath(ID, origin), origin).toBe(`/sales/${ID}`);
+    }
   });
 });

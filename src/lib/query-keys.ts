@@ -36,6 +36,8 @@ export const queryKeys = {
   /** « Mon dossier » d'une vente suivie ; sous le préfixe `favorites`, donc rafraîchi avec la liste. */
   favoriteDossier: (userId: Id, saleId: string) =>
     ["favorites", userId, "dossier", saleId] as const,
+  /** « Mon démarrage » : favoris du compte et dossiers remplis ; sous le préfixe `favorites`. */
+  accountStart: (userId: Id) => ["favorites", userId, "start"] as const,
   /** Ventes suivies dont l'audience est passée (instantanés gardés 6 mois au plus). */
   followedSaleSnapshots: (userId: Id) => ["followed-sale-snapshots", userId] as const,
   searchFavoriteStatus: (userId: Id, saleIds: readonly string[]) =>
@@ -103,6 +105,9 @@ export const queryKeys = {
     city: string | undefined,
     department: string | undefined,
   ) => ["lawyer-directory", saleId, bar, city, department] as const,
+  /** Ventes à venir des avocats d'une page de l'annuaire (comptes payants) : propres au compte. */
+  lawyerProsecutedSales: (userKey: Id, lawyerIds: readonly string[]) =>
+    ["lawyer-prosecuted-sales", userKey, lawyerIds.join(",")] as const,
 
   // Saved comparisons
   saleAnalysisSets: (userId: string) => ["sale-analysis-sets", userId] as const,

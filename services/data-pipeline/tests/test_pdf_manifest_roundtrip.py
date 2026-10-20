@@ -10,8 +10,8 @@ from pathlib import Path
 
 os.environ.setdefault("PYTHON_DOTENV_DISABLED", "1")
 
-import fitz
 import httpx
+import pymupdf
 
 import src.config as config
 
@@ -87,7 +87,7 @@ _PDF_SETTINGS = {
 
 
 def _make_pdf(path: Path, text: str) -> bytes:
-    with fitz.open() as document:
+    with pymupdf.open() as document:
         page = document.new_page()
         page.insert_text((72, 72), text)
         document.save(path)

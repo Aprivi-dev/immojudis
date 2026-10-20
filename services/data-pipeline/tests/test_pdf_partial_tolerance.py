@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import fitz
+import pymupdf
 
 from src.normalize import normalize_sale
 from src.pdf_enrichment import _store_document_analysis_status, extract_pdf_document
@@ -79,11 +79,11 @@ def test_a_tolerated_document_stays_tolerated_while_the_file_is_unchanged() -> N
 
 
 def _ten_page_pdf_with_one_scan(path) -> None:
-    with fitz.open() as document:
+    with pymupdf.open() as document:
         for number in range(10):
             page = document.new_page()
             if number == 6:
-                page.draw_rect(fitz.Rect(72, 72, 200, 200), color=(0, 0, 0), fill=(0, 0, 0))
+                page.draw_rect(pymupdf.Rect(72, 72, 200, 200), color=(0, 0, 0), fill=(0, 0, 0))
             else:
                 page.insert_text((72, 72), f"Page {number + 1}. Surface habitable : 50 m2. " * 3)
         document.save(path)

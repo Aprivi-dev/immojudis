@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { SaleDetailLink } from "@/components/SaleDetailLink";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
@@ -333,12 +334,13 @@ function ComparisonItem({ item }: { item: SaleAnalysisItem }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           {sale ? (
-            <Link
-              href={`/sales/${sale.id}`}
+            <SaleDetailLink
+              saleId={sale.id}
+              returnTo="/comparaisons"
               className="font-semibold text-foreground underline decoration-gold/60 underline-offset-2 hover:text-gold-text"
             >
               {saleLabel}
-            </Link>
+            </SaleDetailLink>
           ) : (
             <p className="font-semibold text-muted-foreground">{saleLabel}</p>
           )}

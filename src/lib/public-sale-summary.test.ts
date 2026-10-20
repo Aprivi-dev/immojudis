@@ -41,6 +41,21 @@ describe("public sale summary", () => {
     expect(result.sale).not.toHaveProperty("address");
   });
 
+  it("carries the code of the tribunal (the address of its page), or none while the function is not migrated", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: [{ ...row, sale_venue_type: "tribunal", tribunal_code: "justice_tj_1_93" }],
+      error: null,
+    });
+    const result = await fetchPublicSaleSummary({ rpc }, ID);
+    if (result.kind !== "found") throw new Error("expected a found sale");
+    expect(result.sale.tribunal_code).toBe("justice_tj_1_93");
+
+    const old = vi.fn().mockResolvedValue({ data: [row], error: null });
+    const legacy = await fetchPublicSaleSummary({ rpc: old }, ID);
+    if (legacy.kind !== "found") throw new Error("expected a found sale");
+    expect(legacy.sale.tribunal_code).toBeNull();
+  });
+
   it("carries the date of the last visible change, and nothing else as a modification date", async () => {
     const rpc = vi.fn().mockResolvedValue({
       data: [{ ...row, updated_at: "2026-10-18T08:00:00Z" }],
@@ -157,7 +172,15 @@ describe("public sale summary", () => {
       );
 
     it("joins the public sale when the database has a band", async () => {
-      for (const band of ["under", "near", "above", "insufficient"]) {
+      for (const band of [
+        "under",
+        "near",
+        "above",
+        "occupied",
+        "insufficient_surface",
+        "insufficient_type",
+        "insufficient",
+      ]) {
         const rpc = answer(band);
         const result = await fetchPublicSaleSummary({ rpc }, ID);
         expect(rpc).toHaveBeenCalledWith("get_public_sale_market_gap_band", { p_sale_id: ID });
@@ -181,20 +204,77 @@ describe("public sale summary", () => {
     });
 
     it("keeps the sale, without band, while the function is missing or fails", async () => {
-      for (const error of [
-        { code: "PGRST202", message: "Could not find the function" },
-        { code: "57014", message: "timeout" },
-      ]) {
-        const result = await fetchPublicSaleSummary({ rpc: answer(null, error) }, ID);
-        expect(result.kind).toBe("found");
-        if (result.kind === "found") expect(result.sale).not.toHaveProperty("market_gap_band");
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        for (const error of [
+          { code: "PGRST202", message: "Could not find the function" },
+          { code: "57014", message: "timeout" },
+        ]) {
+          const result = await fetchPublicSaleSummary({ rpc: answer(null, error) }, ID);
+          expect(result.kind).toBe("found");
+          if (result.kind === "found") expect(result.sale).not.toHaveProperty("market_gap_band");
+        }
+        const rpc = vi.fn((fn: string) =>
+          fn === "get_public_sale_market_gap_band"
+            ? Promise.reject(new Error("network"))
+            : Promise.resolve({ data: [row], error: null }),
+        );
+        expect((await fetchPublicSaleSummary({ rpc }, ID)).kind).toBe("found");
+      } finally {
+        warn.mockRestore();
       }
-      const rpc = vi.fn((fn: string) =>
-        fn === "get_public_sale_market_gap_band"
-          ? Promise.reject(new Error("network"))
-          : Promise.resolve({ data: [row], error: null }),
-      );
-      expect((await fetchPublicSaleSummary({ rpc }, ID)).kind).toBe("found");
+    });
+
+    it("stays silent when the function is not deployed yet", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        for (const code of ["PGRST202", "42883"]) {
+          await fetchPublicSaleSummary({ rpc: answer(null, { code, message: "absent" }) }, ID);
+        }
+        expect(warn).not.toHaveBeenCalled();
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it("logs any other error as one structured warning, even when the message names the function", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        await fetchPublicSaleSummary(
+          {
+            rpc: answer(null, {
+              code: "42501",
+              message: "permission denied for function get_public_sale_market_gap_band",
+            }),
+          },
+          ID,
+        );
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(JSON.parse(String(warn.mock.calls[0][0]))).toEqual({
+          scope: "public-sale-market-gap-band",
+          level: "warn",
+          event: "rpc_failed",
+          saleId: ID,
+          code: "42501",
+          message: "permission denied for function get_public_sale_market_gap_band",
+        });
+
+        warn.mockClear();
+        const rpc = vi.fn((fn: string) =>
+          fn === "get_public_sale_market_gap_band"
+            ? Promise.reject(new Error("network"))
+            : Promise.resolve({ data: [row], error: null }),
+        );
+        await fetchPublicSaleSummary({ rpc }, ID);
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(JSON.parse(String(warn.mock.calls[0][0]))).toMatchObject({
+          scope: "public-sale-market-gap-band",
+          code: null,
+          message: "network",
+        });
+      } finally {
+        warn.mockRestore();
+      }
     });
   });
 

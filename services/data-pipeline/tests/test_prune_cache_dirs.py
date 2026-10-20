@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import time
 from pathlib import Path
 
 import pytest
@@ -83,7 +84,9 @@ def test_command_line_reports_what_it_did(tmp_path, capsys) -> None:
     _file(tmp_path / "d" / "old.bin", 2 * 1024 * 1024, 30)
     os.utime(tmp_path / "d" / "old.bin", (1, 1))
     _file(tmp_path / "d" / "new.bin", 1024, 0)
-    os.utime(tmp_path / "d" / "new.bin")
+    # time.time() et non os.utime(path) : sans argument, l'horloge réelle du système est lue (hors Python), donc
+    # pas celle que le job « horloge +60 jours » décale.
+    os.utime(tmp_path / "d" / "new.bin", (time.time(), time.time()))
 
     assert prune_cache_dirs.main(["--max-age-days", "14", "--max-total-mb", "300", str(tmp_path / "d")]) == 0
 

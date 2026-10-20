@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DepartmentSale } from "@/lib/department-pages";
 
@@ -107,6 +107,15 @@ function sale(id: string, overrides: Partial<DepartmentSale> = {}): DepartmentSa
   };
 }
 
+/** Les ventes lues : `received` (lignes avant dédoublonnage) vaut par défaut le nombre de ventes. */
+function mockSales(
+  result: { status: "ok"; sales: DepartmentSale[]; received?: number } | { status: "error" },
+) {
+  mocks.sales.mockResolvedValue(
+    result.status === "ok" ? { received: result.sales.length, ...result } : result,
+  );
+}
+
 function params(slug: string) {
   return { params: Promise.resolve({ slug }) };
 }
@@ -120,7 +129,7 @@ beforeEach(() => {
   mocks.directory.mockReset();
   mocks.directory.mockResolvedValue({ status: "ok", items: directoryOf(FOIX) });
   mocks.activity.mockResolvedValue({ status: "ok", items: [BOBIGNY, NANTERRE, PUY, BEAUVAIS] });
-  mocks.sales.mockResolvedValue({ status: "ok", sales: [sale("a"), sale("b"), sale("c")] });
+  mockSales({ status: "ok", sales: [sale("a"), sale("b"), sale("c")] });
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -140,10 +149,36 @@ describe("page d'un tribunal : génération", () => {
     await expect(Page(params("atlantide"))).rejects.toMatchObject({
       digest: "NEXT_HTTP_ERROR_FALLBACK;404",
     });
-    await expect(Page(params("Bobigny"))).rejects.toMatchObject({
+    await expect(Page(params("JUSTICE-ATLANTIDE-1"))).rejects.toMatchObject({
       digest: "NEXT_HTTP_ERROR_FALLBACK;404",
     });
     expect(mocks.sales).not.toHaveBeenCalled();
+  });
+
+  it("redirige en 308 les adresses mal écrites : majuscules, soulignés, nom du tribunal", async () => {
+    for (const slug of ["JUSTICE-TJ-1-93", "justice_tj_1_93", "Justice_TJ_1_93", "Bobigny"]) {
+      await expect(Page(params(slug)), slug).rejects.toMatchObject({
+        digest: "NEXT_REDIRECT;replace;/tribunaux/justice-tj-1-93;308;",
+      });
+    }
+    // Un tribunal connu du référentiel sans vente à venir se redirige aussi.
+    await expect(Page(params("JUSTICE_TJ_1_09"))).rejects.toMatchObject({
+      digest: "NEXT_REDIRECT;replace;/tribunaux/justice-tj-1-09;308;",
+    });
+    // Une adresse mal écrite est hors de l'index, comme toute adresse redirigée.
+    const metadata = await generateMetadata(params("justice_tj_1_93"));
+    expect(metadata.robots).toEqual({ index: false, follow: false });
+    expect(mocks.sales).not.toHaveBeenCalled();
+  });
+
+  it("répond 404 à une adresse mal écrite qui ne désigne aucun tribunal", async () => {
+    await expect(Page(params("JUSTICE_TJ_9_99"))).rejects.toMatchObject({
+      digest: "NEXT_HTTP_ERROR_FALLBACK;404",
+    });
+    // Une séquence % invalide ne fait pas échouer la normalisation.
+    await expect(Page(params("%E0%A4%A"))).rejects.toMatchObject({
+      digest: "NEXT_HTTP_ERROR_FALLBACK;404",
+    });
   });
 
   it("redirige définitivement (308) l'ancienne adresse par nom vers l'adresse par code", async () => {
@@ -177,7 +212,7 @@ describe("page d'un tribunal : génération", () => {
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
       "Ventes judiciaires à venir au tribunal judiciaire de Foix",
     );
-    const figures = screen.getByRole("region", { name: "Les chiffres du tribunal" });
+    const figures = screen.getByRole("region", { name: "Dans le catalogue Immojudis" });
     expect(figures.textContent).toContain("Ventes à venir0");
     expect(figures.textContent).toContain("Aucune vente à venir n’est référencée");
     expect(figures.textContent).not.toContain("Avec si peu de ventes");
@@ -208,11 +243,46 @@ describe("page d'un tribunal : génération", () => {
   });
 });
 
+describe("page d'un tribunal : nom manquant au référentiel", () => {
+  // `canonical_name` nul : le référentiel rend le code à la place du nom.
+  const UNNAMED = activity("justice_tj_1_210", {
+    code: "justice_tj_1_210",
+    name: "Tribunal à confirmer",
+    department: "93",
+  });
+
+  beforeEach(() => {
+    mocks.activity.mockResolvedValue({ status: "ok", items: [UNNAMED, BOBIGNY] });
+  });
+
+  it("n'affiche jamais le code brut comme nom : libellé neutre, noindex, ventes toujours listées", async () => {
+    const metadata = await generateMetadata(params("justice-tj-1-210"));
+    expect(metadata.robots).toEqual({ index: false, follow: true });
+    expect(String(metadata.title)).not.toContain("justice_tj");
+    expect(String(metadata.description)).not.toContain("justice_tj");
+    expect(String(metadata.description)).toContain("tribunal judiciaire (nom à confirmer)");
+
+    const { container } = render(await Page(params("justice-tj-1-210")));
+    expect(container.textContent).not.toContain("justice_tj_1_210");
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
+      "Ventes judiciaires à venir au tribunal judiciaire (nom à confirmer)",
+    );
+    // Le « nom » est le code : la recherche par nom ne trouverait rien, le renvoi va à la recherche entière.
+    const figures = screen.getByRole("region", { name: "Dans le catalogue Immojudis" });
+    expect(
+      within(figures)
+        .getAllByRole("link")
+        .map((link) => link.getAttribute("href")),
+    ).toContain("/sales");
+    expect(container.innerHTML).not.toContain("tribunal=justice_tj");
+  });
+});
+
 describe("page d'un tribunal : indexation", () => {
   it("est indexable à partir de 3 ventes à venir, avec canonical et Open Graph", async () => {
     const metadata = await generateMetadata(params("justice-tj-1-93"));
     expect(metadata.robots).toBeUndefined();
-    expect(metadata.title).toBe("Enchères judiciaires : Bobigny");
+    expect(metadata.title).toBe("Ventes aux enchères au tribunal de Bobigny");
     expect(metadata.alternates?.canonical).toBe("/tribunaux/justice-tj-1-93");
     expect(metadata.openGraph).toMatchObject({
       url: "/tribunaux/justice-tj-1-93",
@@ -235,7 +305,7 @@ describe("page d'un tribunal : indexation", () => {
   it("donne une adresse propre au tribunal du nom doublé « TJ Tribunal judiciaire du … »", async () => {
     const metadata = await generateMetadata(params("justice-tj-1-113"));
     expect(metadata.alternates?.canonical).toBe("/tribunaux/justice-tj-1-113");
-    expect(metadata.title).toBe("Enchères judiciaires : Le Puy-en-Velay");
+    expect(metadata.title).toBe("Ventes aux enchères au tribunal du Puy-en-Velay");
     expect(String(metadata.description)).toContain("au tribunal judiciaire du Puy-en-Velay");
     expect(String(metadata.description)).not.toContain("TJ");
     render(await Page(params("justice-tj-1-113")));
@@ -245,7 +315,7 @@ describe("page d'un tribunal : indexation", () => {
   });
 
   it("décrit la prochaine audience de la liste, pas la date d'une vente reportée", async () => {
-    mocks.sales.mockResolvedValue({
+    mockSales({
       status: "ok",
       sales: [
         sale("r", { status: "postponed", saleDate: "2026-10-20T10:00:00Z" }),
@@ -265,12 +335,26 @@ describe("page d'un tribunal : contenu", () => {
     expect(screen.getAllByRole("heading", { level: 1 }).map((h) => h.textContent)).toEqual([
       "Ventes judiciaires à venir au tribunal judiciaire de Bobigny",
     ]);
-    const figures = screen.getByRole("region", { name: "Les chiffres du tribunal" });
+    const figures = screen.getByRole("region", { name: "Dans le catalogue Immojudis" });
     expect(figures.textContent).toContain("Ventes à venir12");
     expect(figures.textContent).toContain("Prochaine audience10 novembre 2026");
     expect(figures.textContent).toMatch(/40\s500\s€/);
     expect(figures.textContent).toContain("Maisons 2");
     expect(figures.textContent).toContain("Appartements 9");
+  });
+
+  it("transmet l'origine à la fiche dans le navigateur seulement (« Retour au tribunal »)", async () => {
+    mocks.activity.mockResolvedValue({
+      status: "ok",
+      items: [{ ...BOBIGNY, upcomingCount: 3 }],
+    });
+    render(await Page(params("justice-tj-1-93")));
+
+    const list = screen.getByRole("region", { name: "Les ventes à venir" });
+    const link = within(list).getAllByRole("link")[0]!;
+    expect(link.getAttribute("href")).toBe("/sales/a");
+    fireEvent.pointerEnter(link);
+    expect(link.getAttribute("href")).toMatch(/^\/sales\/a\?from=%2Ftribunaux%2F[a-z0-9-]+$/);
   });
 
   it("liste les prochaines ventes avec un lien vers chaque fiche", async () => {
@@ -300,8 +384,38 @@ describe("page d'un tribunal : contenu", () => {
     ).toBe("/sales?tribunal=TJ+Bobigny");
   });
 
+  it("compte la liste dédoublonnée quand elle est complète : le compteur et la liste concordent", async () => {
+    // 5 lignes reçues, 3 ventes après dédoublonnage ; l'activité publique en compte 5.
+    mocks.activity.mockResolvedValue({ status: "ok", items: [{ ...BOBIGNY, upcomingCount: 5 }] });
+    mockSales({ status: "ok", sales: [sale("a"), sale("b"), sale("c")], received: 5 });
+    const metadata = await generateMetadata(params("justice-tj-1-93"));
+    expect(String(metadata.description)).toContain("3 ventes judiciaires à venir");
+    render(await Page(params("justice-tj-1-93")));
+    const figures = screen.getByRole("region", { name: "Dans le catalogue Immojudis" });
+    expect(figures.textContent).toContain("Ventes à venir3");
+    expect(figures.textContent).not.toContain("deux sources");
+    expect(screen.getByRole("region", { name: "Les ventes à venir" })).toBeTruthy();
+  });
+
+  it("retire les doublons vus d'une liste tronquée et précise que le total peut en compter d'autres", async () => {
+    // Bobigny en production : 30 lignes lues dont 11 doublons, 41 ventes selon l'activité publique.
+    mocks.activity.mockResolvedValue({ status: "ok", items: [{ ...BOBIGNY, upcomingCount: 41 }] });
+    mockSales({
+      status: "ok",
+      sales: Array.from({ length: 19 }, (_, index) => sale(`s${index}`)),
+      received: 30,
+    });
+    render(await Page(params("justice-tj-1-93")));
+    const figures = screen.getByRole("region", { name: "Dans le catalogue Immojudis" });
+    expect(figures.textContent).toContain("Ventes à venir30");
+    expect(figures.textContent).toContain(
+      "Le total peut compter une même vente publiée par deux sources.",
+    );
+    expect(screen.getByRole("region", { name: "Les 19 prochaines ventes" })).toBeTruthy();
+  });
+
   it("marque une vente reportée et ne l'annonce pas comme prochaine audience", async () => {
-    mocks.sales.mockResolvedValue({
+    mockSales({
       status: "ok",
       sales: [
         sale("r", { status: "postponed", saleDate: "2026-10-20T10:00:00Z" }),
@@ -309,7 +423,7 @@ describe("page d'un tribunal : contenu", () => {
       ],
     });
     render(await Page(params("justice-tj-1-93")));
-    const figures = screen.getByRole("region", { name: "Les chiffres du tribunal" });
+    const figures = screen.getByRole("region", { name: "Dans le catalogue Immojudis" });
     expect(figures.textContent).toContain("1 décembre 2026");
     expect(figures.textContent).not.toContain("20 octobre 2026");
     const list = screen.getByRole("region", { name: "Les 2 prochaines ventes" });
@@ -318,17 +432,17 @@ describe("page d'un tribunal : contenu", () => {
   });
 
   it("écrit « Non connue » quand aucune prochaine audience n'est connue (toutes reportées)", async () => {
-    mocks.sales.mockResolvedValue({
+    mockSales({
       status: "ok",
       sales: [sale("r1", { status: "postponed" }), sale("r2", { status: "postponed" })],
     });
     render(await Page(params("justice-tj-1-93")));
-    const figures = screen.getByRole("region", { name: "Les chiffres du tribunal" });
+    const figures = screen.getByRole("region", { name: "Dans le catalogue Immojudis" });
     expect(figures.textContent).toContain("Prochaine audienceNon connue");
   });
 
   it("n'affiche pas « à venir » pour une vente au statut inconnu : « Statut à confirmer »", async () => {
-    mocks.sales.mockResolvedValue({
+    mockSales({
       status: "ok",
       sales: [sale("u", { status: "unknown" }), sale("a")],
     });
@@ -340,12 +454,12 @@ describe("page d'un tribunal : contenu", () => {
   });
 
   it("garde la page, ses chiffres et un renvoi vers la recherche quand la liste est indisponible", async () => {
-    mocks.sales.mockResolvedValue({ status: "error" });
+    mockSales({ status: "error" });
     render(await Page(params("justice-tj-1-93")));
 
-    expect(screen.getByRole("region", { name: "Les chiffres du tribunal" }).textContent).toContain(
-      "Ventes à venir12",
-    );
+    expect(
+      screen.getByRole("region", { name: "Dans le catalogue Immojudis" }).textContent,
+    ).toContain("Ventes à venir12");
     const list = screen.getByRole("region", { name: "Les ventes à venir" });
     expect(list.textContent).toContain("momentanément indisponible");
     expect(
@@ -369,6 +483,58 @@ describe("page d'un tribunal : contenu", () => {
     expect(hrefs).toContain("/tribunaux/justice-tj-1-92");
     expect(hrefs).not.toContain("/tribunaux/justice-tj-1-60");
     expect(hrefs).not.toContain("/tribunaux/justice-tj-1-93");
+  });
+
+  it("propose l'alerte du département du tribunal et un lien vers l'annuaire des avocats", async () => {
+    render(await Page(params("justice-tj-1-93")));
+    const alert = screen.getByRole("region", { name: "Être prévenu des nouvelles ventes" });
+    expect(alert.textContent).toContain("ventes référencées en Seine-Saint-Denis");
+    expect(alert.textContent).toContain("pas un tribunal");
+    // Visiteur sans compte : la connexion, qui renvoie vers la création de l'alerte du département.
+    const href = within(alert)
+      .getByRole("link", { name: "Recevoir les nouvelles ventes de ce secteur" })
+      .getAttribute("href");
+    expect(decodeURIComponent(href ?? "")).toContain("department=93");
+    expect(screen.getByRole("link", { name: "Avocats" }).getAttribute("href")).toBe(
+      "/avocats?department=93",
+    );
+  });
+
+  it("accorde la préposition du département : « En Gironde », « Dans le Nord », « À Paris »", async () => {
+    mocks.activity.mockResolvedValue({
+      status: "ok",
+      items: [
+        { ...BOBIGNY, department: "33" },
+        { ...NANTERRE, department: "59", code: "justice_tj_1_59" },
+        { ...PUY, department: "75", code: "justice_tj_1_75" },
+      ],
+    });
+    for (const [slug, heading, intro] of [
+      ["justice-tj-1-93", "En Gironde", "ventes référencées en Gironde"],
+      ["justice-tj-1-59", "Dans le Nord", "ventes référencées dans le Nord"],
+      ["justice-tj-1-75", "À Paris", "ventes référencées à Paris"],
+    ] as const) {
+      cleanup();
+      render(await Page(params(slug)));
+      const block = screen.getByRole("region", { name: "Pour comprendre" });
+      expect(block.textContent, slug).toContain(heading);
+      expect(block.textContent, slug).not.toMatch(/Dans (Gironde|Nord|Paris)/);
+      expect(
+        screen.getByRole("region", { name: "Être prévenu des nouvelles ventes" }).textContent,
+      ).toContain(intro);
+    }
+  });
+
+  it("ne dit pas « aucune vente » quand les chiffres en comptent et que la liste est vide", async () => {
+    mockSales({ status: "ok", sales: [] });
+    render(await Page(params("justice-tj-1-93")));
+    expect(
+      screen.getByRole("region", { name: "Dans le catalogue Immojudis" }).textContent,
+    ).toContain("Ventes à venir12");
+    const text = document.body.textContent ?? "";
+    expect(text).not.toContain("Aucune vente à venir n’est référencée");
+    const list = screen.getByRole("region", { name: "Les ventes à venir" });
+    expect(list.textContent).toContain("Le détail des ventes n’est pas disponible pour le moment.");
   });
 
   it("garde un texte d'introduction générique, sans conseil", async () => {
@@ -405,7 +571,7 @@ describe("page d'un tribunal : données structurées", () => {
   });
 
   it("n'émet pas de liste vide quand les ventes ne sont pas lues", async () => {
-    mocks.sales.mockResolvedValue({ status: "error" });
+    mockSales({ status: "error" });
     const { container } = render(await Page(params("justice-tj-1-93")));
     const types = [...container.querySelectorAll('script[type="application/ld+json"]')].map(
       (script) => JSON.parse(script.textContent ?? "{}")["@type"],

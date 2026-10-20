@@ -13,11 +13,13 @@ import {
   type DepartmentStats,
 } from "@/lib/department-pages";
 import { neighboringDepartmentCodes } from "@/lib/department-neighbors";
+import { departmentIn } from "@/lib/department-grammar";
 import { formatStartingPrice, propertyTypeLabel } from "@/lib/format";
 import { pathWithSearch } from "@/lib/navigation";
 import type { PublicTribunalActivity } from "@/lib/public-tribunal-activity";
 import { understandingResources } from "@/lib/resource-related";
 import { saleHearingTime, seoLongDate, seoSurface } from "@/lib/seo";
+import { hasReadableTribunalName, tribunalPagePath } from "@/lib/tribunal-pages";
 
 const count = new Intl.NumberFormat("fr-FR");
 
@@ -48,6 +50,7 @@ export function DepartmentView({
   const nextDate = seoLongDate(stats?.nextSaleDate);
   const updated = seoLongDate(generatedAt);
   const searchHref = departmentSearchPath(department);
+  const where = departmentIn(department);
   const neighbors = neighboringDepartmentCodes(department.code)
     .map((code) => departmentFromCode(code))
     .filter((neighbor): neighbor is DepartmentRef => neighbor != null)
@@ -142,14 +145,14 @@ export function DepartmentView({
           <div className="mt-5">
             <Link href={searchHref} className={buttonClasses({ variant: "primary", size: "md" })}>
               Voir {total > 0 ? `les ${count.format(total)} ${saleWord(total)} ` : "la recherche "}
-              en {department.name}
+              {where}
             </Link>
           </div>
         </Card>
 
         <SectorAlertCta
           criteria={{ department: department.code }}
-          intro={`Recevez les nouvelles ventes référencées en ${department.name} dès qu’elles sont publiées, dans vos alertes ou, si vous le souhaitez, dans un email récapitulatif.`}
+          intro={`Recevez les nouvelles ventes référencées ${where} dès qu’elles sont publiées, dans vos alertes ou, si vous le souhaitez, dans un email récapitulatif.`}
         />
 
         {stats && stats.types.length > 0 ? (
@@ -231,19 +234,32 @@ export function DepartmentView({
           {tribunals.length > 0 ? (
             <>
               <p className="mt-3 text-ink-soft">
-                Tribunaux judiciaires de {department.name} ayant des ventes à venir :
+                Tribunaux judiciaires {where} ayant des ventes à venir :
               </p>
               <ul className="mt-2 list-disc space-y-1 pl-5">
                 {tribunals.map((tribunal) => (
                   <li key={tribunal.code}>
                     <Link
-                      href={pathWithSearch("/sales", { tribunal: tribunal.searchName })}
+                      href={tribunalPagePath(tribunal.code)}
                       className="font-semibold text-gold-text underline"
                     >
                       {tribunal.name}
                     </Link>{" "}
                     <span className="text-ink-soft">
-                      ({count.format(tribunal.upcomingCount)} {saleWord(tribunal.upcomingCount)})
+                      ({count.format(tribunal.upcomingCount)} {saleWord(tribunal.upcomingCount)}
+                      {hasReadableTribunalName(tribunal) ? (
+                        <>
+                          {" "}
+                          ·{" "}
+                          <Link
+                            href={pathWithSearch("/sales", { tribunal: tribunal.searchName })}
+                            className="underline"
+                          >
+                            voir dans la recherche
+                          </Link>
+                        </>
+                      ) : null}
+                      )
                     </span>
                   </li>
                 ))}

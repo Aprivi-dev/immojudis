@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import gc
 import json
+import sys
 import time
 from pathlib import Path
 
@@ -202,36 +204,74 @@ def test_fact_chunk_and_display_keys_do_not_depend_on_personal_names() -> None:
         assert key(stored, "model", "v1") != key(stored, "model", "v2")
 
 
-_LINEAR_BUDGET_SECONDS = 0.2
-
+# Linéarité plutôt qu'un plafond absolu : un temps fixe (0,2 s) dépend de la machine et de sa charge, alors qu'un
+# filtre quadratique se voit au rapport entre deux tailles. Chaque texte est construit pour une taille ``n`` ;
+# doubler ``n`` ne doit pas faire plus que tripler le temps (2 = linéaire, 4 = quadratique), à la meilleure de
+# trois mesures pour chaque taille.
+_LINEARITY_MAX_RATIO = 3.0
+_LINEARITY_MEASURES = 7
+_LINEARITY_TIMER_FLOOR_SECONDS = 0.002
 
 _LONG_WHITESPACE_TEXTS = {
-    "né et 20 000 espaces": "né" + " " * 20000,
-    "née et 20 000 espaces": "Madame X, née" + " " * 20000,
-    "demeurant et 20 000 espaces": "Madame X, demeurant" + " " * 20000,
-    "20 000 espaces avant né": " " * 20000 + "né le 3 mai 1950",
-    "20 000 espaces avant demeurant": "Madame X," + " " * 20000 + "demeurant 3 rue A 75000 Paris",
-    "naissance répétée": ("Madame X, née le 3 mai 1950" + " " * 300) * 200,
-    "résidence répétée": ("Madame X, demeurant 3 rue des Lilas 69000 Lyon" + " " * 300) * 200,
-    "locataire répété": ("Le locataire" + " " * 300) * 200,
-    "bail consenti répété": ("bail consenti" + " " * 300) * 200,
-    "occupé par répété": ("occupé par Madame Eva ROY" + " " * 300) * 200,
-    "à la requête de répété": ("à la requête de" + " " * 300) * 200,
-    "à la requête de : répété": ("à la requête de :" + " " * 300 + "la" + " " * 300) * 100,
-    "rôle répété": ("Le débiteur" + " " * 300) * 200,
-    "rôle suivi d'un nom répété": ("Le saisi, Paul" + " " * 300 + "ROY" + " " * 300) * 100,
-    "NOM Prénom répété": ("occupé par DUPONT" + " " * 300 + "Pierre" + " " * 300) * 100,
-    "longue suite de noms en capitales": "occupé par " + "DUPONT " * 5000,
-    "longue suite de prénoms": "Le saisi, " + "Pierre " * 5000,
-    "longue suite de NOM Prénom": "occupé par " + "DUPONT Pierre " * 3000,
+    "né et espaces": lambda n: "né" + " " * (100 * n),
+    "née et espaces": lambda n: "Madame X, née" + " " * (100 * n),
+    "demeurant et espaces": lambda n: "Madame X, demeurant" + " " * (100 * n),
+    "espaces avant né": lambda n: " " * (100 * n) + "né le 3 mai 1950",
+    "espaces avant demeurant": lambda n: "Madame X," + " " * (100 * n) + "demeurant 3 rue A 75000 Paris",
+    "naissance répétée": lambda n: ("Madame X, née le 3 mai 1950" + " " * 300) * n,
+    "résidence répétée": lambda n: ("Madame X, demeurant 3 rue des Lilas 69000 Lyon" + " " * 300) * n,
+    "locataire répété": lambda n: ("Le locataire" + " " * 300) * n,
+    "bail consenti répété": lambda n: ("bail consenti" + " " * 300) * n,
+    "occupé par répété": lambda n: ("occupé par Madame Eva ROY" + " " * 300) * n,
+    "à la requête de répété": lambda n: ("à la requête de" + " " * 300) * n,
+    "à la requête de : répété": lambda n: ("à la requête de :" + " " * 300 + "la" + " " * 300) * (n // 2),
+    "rôle répété": lambda n: ("Le débiteur" + " " * 300) * n,
+    "rôle suivi d'un nom répété": lambda n: ("Le saisi, Paul" + " " * 300 + "ROY" + " " * 300) * (n // 2),
+    "NOM Prénom répété": lambda n: ("occupé par DUPONT" + " " * 300 + "Pierre" + " " * 300) * (n // 2),
+    "Prénom Nom en casse mixte répété": lambda n: ("occupé par Pierre" + " " * 300 + "Martin" + " " * 300) * (n // 2),
+    "longue suite de noms en capitales": lambda n: "occupé par " + "DUPONT " * (25 * n),
+    "longue suite de prénoms": lambda n: "Le saisi, " + "Pierre " * (25 * n),
+    "longue suite de NOM Prénom": lambda n: "occupé par " + "DUPONT Pierre " * (15 * n),
+    "longue suite de mots en casse mixte": lambda n: "occupé par " + "Pierre Martin " * (15 * n),
+    "famille et indivision répétées": lambda n: ("la famille" + " " * 300 + "indivision" + " " * 300) * (n // 2),
+    "associé répété": lambda n: ("l'associé de" + " " * 300) * n,
 }
+_LINEARITY_BASE_SIZE = 200
+
+
+def _best_time(text: str) -> float:
+    best = float("inf")
+    for _ in range(_LINEARITY_MEASURES):
+        gc.collect()  # une collecte déclenchée en cours de mesure la fausserait
+        started = time.process_time()  # temps CPU : insensible à la charge de la machine et aux horloges décalées
+        redact_personal_text(text)
+        best = min(best, time.process_time() - started)
+    return max(best, _LINEARITY_TIMER_FLOOR_SECONDS)
 
 
 @pytest.mark.parametrize("name", list(_LONG_WHITESPACE_TEXTS))
 def test_redaction_time_is_linear_on_long_whitespace(name: str) -> None:
-    started = time.perf_counter()
-    redact_personal_text(_LONG_WHITESPACE_TEXTS[name])
-    assert time.perf_counter() - started < _LINEAR_BUDGET_SECONDS
+    build = _LONG_WHITESPACE_TEXTS[name]
+
+    single = _best_time(build(_LINEARITY_BASE_SIZE))
+    double = _best_time(build(2 * _LINEARITY_BASE_SIZE))
+
+    assert double <= _LINEARITY_MAX_RATIO * single, f"{name}: {single:.4f}s then {double:.4f}s for twice the size"
+
+
+def test_the_linearity_check_catches_a_superlinear_filter(monkeypatch) -> None:
+    """Le contrôle lui-même : un traitement bien plus que linéaire dépasse le rapport de 3 entre n et 2n."""
+
+    def superlinear(text: str) -> str:
+        size = len(text) // 200
+        return str(sum(1 for _ in range(size**3)))
+
+    monkeypatch.setattr(sys.modules[__name__], "redact_personal_text", superlinear)
+
+    single = _best_time(" " * 20_000)
+    double = _best_time(" " * 40_000)
+
+    assert double > _LINEARITY_MAX_RATIO * single
 
 
 def test_birth_and_residence_are_still_removed_with_their_leading_separator() -> None:

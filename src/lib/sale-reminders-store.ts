@@ -8,6 +8,8 @@ import { getPublicationVisibleSaleIds } from "@/lib/sale-publication-guard";
 import type { SaleReminderStore } from "@/lib/sale-reminders";
 
 const PAGE_SIZE = 1_000;
+/** Pages lues au plus pour les favoris puis pour les ventes débloquées d'une personne. */
+const MAX_FOLLOWED_PAGES = 5;
 /** Garde-fou : au-delà, le passage s'arrête là (les personnes suivantes attendent le suivant). */
 const MAX_CONSENTING_USERS = 10_000;
 const IN_CHUNK = 100;
@@ -18,6 +20,31 @@ function chunks<T>(values: readonly T[], size = IN_CHUNK): T[][] {
     result.push(values.slice(start, start + size));
   }
   return result;
+}
+
+/**
+ * Dernière vérification d'une vente à la source : la plus récente entre `last_seen_at` (vente revue
+ * dans l'inventaire de la source) et les `checked_at` de `raw_payload.source_checks` (contrôles de
+ * source enregistrés par le pipeline). `null` quand aucune date exploitable n'existe.
+ */
+export function latestSourceVerification(row: {
+  last_seen_at?: string | null;
+  source_checks?: unknown;
+}): string | null {
+  const candidates: number[] = [];
+  const add = (value: unknown) => {
+    if (typeof value !== "string") return;
+    const time = Date.parse(value);
+    if (Number.isFinite(time)) candidates.push(time);
+  };
+  add(row.last_seen_at);
+  const checks = row.source_checks;
+  if (checks && typeof checks === "object" && !Array.isArray(checks)) {
+    for (const check of Object.values(checks)) {
+      if (check && typeof check === "object") add((check as { checked_at?: unknown }).checked_at);
+    }
+  }
+  return candidates.length ? new Date(Math.max(...candidates)).toISOString() : null;
 }
 
 /**
@@ -59,24 +86,49 @@ export function createSupabaseSaleReminderStore(): SaleReminderStore {
     },
 
     async followedSales(userId) {
-      const [favorites, unlocks] = await Promise.all([
-        supabaseAdmin.from("user_favorites").select("sale_id").eq("user_id", userId).limit(500),
-        supabaseAdmin
-          .from("user_sale_unlocks")
-          .select("sale_id")
-          .eq("user_id", userId)
-          .not("sale_id", "is", null)
-          .limit(500),
-      ]);
-      if (favorites.error) throw favorites.error;
-      if (unlocks.error) throw unlocks.error;
-      const ids = [
-        ...new Set(
-          [...(favorites.data ?? []), ...(unlocks.data ?? [])]
-            .map((row) => row.sale_id)
-            .filter((id): id is string => typeof id === "string"),
+      // Toutes les ventes suivies, page par page : le tri sur la fenêtre utile (dates proches) se
+      // fait ensuite, un plafond arbitraire de lecture écarterait des ventes au hasard.
+      const readIds = async (
+        page: (
+          from: number,
+          to: number,
+        ) => PromiseLike<{
+          data: Array<{ sale_id: string | null }> | null;
+          error: { message: string } | null;
+        }>,
+      ) => {
+        const found: string[] = [];
+        for (let index = 0; index < MAX_FOLLOWED_PAGES; index += 1) {
+          const from = index * PAGE_SIZE;
+          const { data, error } = await page(from, from + PAGE_SIZE - 1);
+          if (error) throw error;
+          found.push(
+            ...(data ?? []).map((row) => row.sale_id).filter((id) => typeof id === "string"),
+          );
+          if ((data ?? []).length < PAGE_SIZE) break;
+        }
+        return found;
+      };
+      const [favoriteIds, unlockIds] = await Promise.all([
+        readIds((from, to) =>
+          supabaseAdmin
+            .from("user_favorites")
+            .select("sale_id")
+            .eq("user_id", userId)
+            .order("created_at", { ascending: true })
+            .range(from, to),
         ),
-      ];
+        readIds((from, to) =>
+          supabaseAdmin
+            .from("user_sale_unlocks")
+            .select("sale_id")
+            .eq("user_id", userId)
+            .not("sale_id", "is", null)
+            .order("created_at", { ascending: true })
+            .range(from, to),
+        ),
+      ]);
+      const ids = [...new Set([...favoriteIds, ...unlockIds])];
       const sales: Array<{ id: string; saleDate: string | null }> = [];
       for (const chunk of chunks(ids)) {
         const { data, error } = await supabaseAdmin
@@ -87,6 +139,19 @@ export function createSupabaseSaleReminderStore(): SaleReminderStore {
         for (const row of data ?? []) sales.push({ id: row.id, saleDate: row.sale_date });
       }
       return sales;
+    },
+
+    async lastVerifiedAt(saleIds) {
+      const verified = new Map<string, string | null>();
+      for (const chunk of chunks(saleIds)) {
+        const { data, error } = await supabaseAdmin
+          .from("auction_sales")
+          .select("id,last_seen_at,source_checks:raw_payload->source_checks")
+          .in("id", chunk);
+        if (error) throw error;
+        for (const row of data ?? []) verified.set(row.id, latestSourceVerification(row));
+      }
+      return verified;
     },
 
     visibleSaleIds: (saleIds) => getPublicationVisibleSaleIds(saleIds),

@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   recordUsage: vi.fn(),
 }));
 
+vi.mock("@/lib/rate-limit", () => ({ enforceUserRateLimit: vi.fn(async () => 1) }));
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
   bearerTokenFromRequest: vi.fn(() => "token"),
   requireSupabaseAuthContext: mocks.requireAuth,
@@ -97,7 +98,7 @@ describe("GET /api/v1/sales/:id/outcome-graph", () => {
 
   it("refuse Découverte avant toute lecture du registre", async () => {
     mocks.assertEntitlement.mockRejectedValue(
-      new Error("Prévision Outcome Graph réservée au plan Analyse."),
+      new Error("Prévision Outcome Graph réservée à l’offre Analyse."),
     );
 
     const response = await request();

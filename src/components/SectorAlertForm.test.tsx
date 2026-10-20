@@ -72,6 +72,21 @@ describe("SectorAlertForm", () => {
     expect((await screen.findByRole("status")).textContent).toContain("email récapitulatif");
   });
 
+  it("nomme la section par son titre et déplace le focus sur « Alerte créée » à la création", async () => {
+    render(<SectorAlertForm criteria={{ department: "33" }} />);
+    const heading = screen.getByRole("heading", { level: 2 });
+    expect(
+      screen
+        .getByRole("region", { name: heading.textContent ?? "" })
+        .getAttribute("aria-labelledby"),
+    ).toBe(heading.id);
+
+    fireEvent.click(screen.getByRole("button", { name: "Créer l’alerte" }));
+    const created = await screen.findByRole("heading", { name: "Alerte créée." });
+    expect(created.getAttribute("tabindex")).toBe("-1");
+    await waitFor(() => expect(document.activeElement).toBe(created));
+  });
+
   it("annonce un récapitulatif quotidien pour l'offre Analyse", async () => {
     state.analysis = true;
     render(<SectorAlertForm criteria={{ department: "33" }} />);

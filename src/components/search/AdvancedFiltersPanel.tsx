@@ -2,14 +2,21 @@
 
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import type * as React from "react";
-import { useRef } from "react";
+import { useId, useRef } from "react";
 import Landmark from "lucide-react/dist/esm/icons/landmark.js";
 import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
 import RotateCcw from "lucide-react/dist/esm/icons/rotate-ccw.js";
 import X from "lucide-react/dist/esm/icons/x.js";
 import { Input } from "@/components/ui/input";
 import { DPE_CLASSES, dpeColor, type DpeClass } from "@/lib/dpe";
-import { HOME_TYPE_OPTIONS, STATUS_OPTIONS } from "@/lib/search/search-filters";
+import {
+  BELOW_RANGE_FILTER_HINT,
+  BELOW_RANGE_FILTER_LABEL,
+  HOME_TYPE_OPTIONS,
+  NO_POINTS_TO_VERIFY_FILTER_HINT,
+  NO_POINTS_TO_VERIFY_FILTER_LABEL,
+  STATUS_OPTIONS,
+} from "@/lib/search/search-filters";
 import { type SearchDraft, toggleValue } from "./search-page-state";
 import { SaleTypeFilter } from "./SaleTypeFilter";
 import { DateRangeFields } from "./DateRangeFields";
@@ -341,8 +348,46 @@ export function MobileFilterDrawer({
               Visite renseignée
               {analysisLocked && <span className="text-xs">· offre Analyse</span>}
             </label>
+
+            <label className="flex cursor-pointer items-center gap-3 rounded-md border border-line-soft bg-surface-muted px-3 py-2 text-sm font-bold text-brand-navy">
+              <input
+                type="checkbox"
+                disabled={analysisLocked}
+                checked={draft.visitSoon}
+                onChange={(event) =>
+                  setDraft((current) => ({ ...current, visitSoon: event.target.checked }))
+                }
+                className="h-4 w-4 accent-brand-navy"
+              />
+              Visite dans les 7 jours
+              {analysisLocked && <span className="text-xs">· offre Analyse</span>}
+            </label>
+            <p className="-mt-2 text-xs font-normal text-ink-soft">
+              Seules les visites dont la date complète est publiée sont retenues.
+            </p>
           </AdvancedGroup>
         </div>
+
+        <AdvancedGroup title="Repères sur les annonces" className="mt-5">
+          <fieldset disabled={preview} className="grid gap-3 disabled:opacity-60 md:grid-cols-2">
+            <legend className="sr-only">Repères sur les annonces</legend>
+            {preview && <p className="text-xs md:col-span-2">Ces filtres nécessitent un compte.</p>}
+            <CheckboxFilter
+              checked={draft.belowRange}
+              onChange={(belowRange) => setDraft((current) => ({ ...current, belowRange }))}
+              label={BELOW_RANGE_FILTER_LABEL}
+              hint={BELOW_RANGE_FILTER_HINT}
+            />
+            <CheckboxFilter
+              checked={draft.noPointsToVerify}
+              onChange={(noPointsToVerify) =>
+                setDraft((current) => ({ ...current, noPointsToVerify }))
+              }
+              label={NO_POINTS_TO_VERIFY_FILTER_LABEL}
+              hint={NO_POINTS_TO_VERIFY_FILTER_HINT}
+            />
+          </fieldset>
+        </AdvancedGroup>
 
         <AdvancedGroup title="Types de biens" className="mt-5">
           <div className="flex flex-wrap gap-2">
@@ -432,6 +477,41 @@ export function AdvancedGroup({
   );
 }
 
+/**
+ * Case à cocher d'un filtre, avec sous le libellé la phrase qui dit ce qu'il couvre (reliée à la case
+ * par `aria-describedby`).
+ */
+export function CheckboxFilter({
+  checked,
+  onChange,
+  label,
+  hint,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  label: string;
+  hint: string;
+}) {
+  const hintId = useId();
+  return (
+    <label className="flex cursor-pointer items-start gap-3 rounded-md border border-line-soft bg-surface-muted px-3 py-2 text-sm font-bold text-brand-navy">
+      <input
+        type="checkbox"
+        checked={checked}
+        aria-describedby={hintId}
+        onChange={(event) => onChange(event.target.checked)}
+        className="mt-0.5 h-4 w-4 shrink-0 accent-brand-navy"
+      />
+      <span>
+        {label}
+        <span id={hintId} className="mt-0.5 block text-xs font-medium leading-snug text-ink-soft">
+          {hint}
+        </span>
+      </span>
+    </label>
+  );
+}
+
 export function FilterField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="space-y-1">
@@ -455,7 +535,7 @@ export function ChipToggle({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`inline-flex min-h-11 cursor-pointer items-center rounded-md border px-3 text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold ${
+      className={`inline-flex min-h-11 cursor-pointer items-center rounded-md border px-3 text-sm font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft ${
         active
           ? "border-brand-navy bg-brand-navy text-white"
           : "border-line-soft bg-white text-brand-navy hover:border-brand-navy"
@@ -482,7 +562,7 @@ export function DpeChipToggle({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className="inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-md border px-2 text-sm font-extrabold transition-transform hover:scale-[1.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+      className="inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-md border px-2 text-sm font-extrabold transition-transform hover:scale-[1.03] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
       style={{
         backgroundColor: active ? color?.background : "#ffffff",
         borderColor: color?.border,

@@ -2,12 +2,16 @@
 
 import { useState } from "react";
 import { AdminLawyerReferralRequestsPanel } from "@/components/admin/AdminLawyerReferralRequestsPanel";
+import {
+  AdminLawyerStatementPanel,
+  LAWYER_STATEMENT_QUERY_KEY,
+} from "@/components/admin/AdminLawyerStatementPanel";
 import { AdminReferencedLawyersPanel } from "@/components/admin/AdminReferencedLawyersPanel";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { useAdminRefresh } from "@/components/admin/admin-ui";
 import { useAuth } from "@/hooks/use-auth";
 
-type LawyerTab = "referrals" | "directory";
+type LawyerTab = "referrals" | "directory" | "statement";
 
 export function AdminLawyersPage() {
   const { user } = useAuth();
@@ -15,6 +19,7 @@ export function AdminLawyersPage() {
   const { isRefreshing, refresh } = useAdminRefresh([
     "admin-lawyer-referral-requests",
     "admin-referenced-lawyers",
+    LAWYER_STATEMENT_QUERY_KEY,
   ]);
 
   return (
@@ -63,11 +68,24 @@ function AdminLawyers({
         >
           Réseau référencé
         </button>
+        <button
+          type="button"
+          onClick={() => onTabChange("statement")}
+          className={`border-b-2 px-4 py-3 text-sm font-medium ${
+            activeTab === "statement"
+              ? "border-gold-soft text-gold-text"
+              : "border-transparent text-brand-navy/58"
+          }`}
+        >
+          Relevé mensuel
+        </button>
       </div>
       {activeTab === "referrals" ? (
         <AdminLawyerReferralRequestsPanel />
-      ) : (
+      ) : activeTab === "directory" ? (
         <AdminReferencedLawyersPanel />
+      ) : (
+        <AdminLawyerStatementPanel />
       )}
     </div>
   );

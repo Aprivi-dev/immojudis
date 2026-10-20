@@ -259,6 +259,9 @@ export async function listLawyerDirectory(
     query.page,
   );
 
+  // Cette réponse est publique et mise en cache par le CDN : elle ne porte AUCUNE vente liée à un
+  // avocat. Le lien avocat poursuivant ↔ vente n'est rendu qu'aux comptes payants, par
+  // `/api/lawyers/prosecuted-sales` (voir `lawyer-prosecuted-sales.server.ts`).
   return {
     lawyers: directoryPage.items,
     pagination: directoryPage.pagination,

@@ -50,6 +50,9 @@ export {
   grantAdminSubscription,
   fetchAdminLaunchOffer,
   setAdminLaunchOfferClient,
+  fetchAdminOfferOpeningAudience,
+  sendAdminOfferOpeningTest,
+  sendAdminOfferOpeningBatch,
 } from "@/lib/client-api/admin";
 
 export {
@@ -120,6 +123,7 @@ export {
   fetchLawyerReferralPreview,
   fetchFeaturedReferencedLawyer,
   fetchLawyerDirectory,
+  fetchLawyerProsecutedSales,
   recordLawyerPlacementEvent,
 } from "@/lib/client-api/lawyers";
 
@@ -131,6 +135,7 @@ export {
   saveFavoriteDossier,
   fetchFollowedSaleSnapshots,
   deleteFollowedSaleSnapshot,
+  downloadFollowedCalendar,
 } from "@/lib/client-api/favorites";
 
 export {

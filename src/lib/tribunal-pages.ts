@@ -5,7 +5,11 @@ import {
   type DepartmentRef,
   type DepartmentSale,
 } from "@/lib/department-pages";
-import { courtShortName, type PublicTribunalActivity } from "@/lib/public-tribunal-activity";
+import {
+  courtShortName,
+  isRawTribunalCode,
+  type PublicTribunalActivity,
+} from "@/lib/public-tribunal-activity";
 import type { PublicTribunalDirectoryEntry } from "@/lib/public-tribunal-directory";
 import { normalizeFrenchSearchText } from "@/lib/search/french-geo-search";
 
@@ -67,6 +71,21 @@ export type TribunalPage = {
  */
 export function tribunalCodeSlug(code: string): string {
   return normalizeFrenchSearchText(code).replaceAll(" ", "-");
+}
+
+/**
+ * L'adresse reçue ramenée à la forme des adresses publiées : « JUSTICE-TJ-1-210 » et
+ * « justice_tj_1_210 » donnent « justice-tj-1-210 », « Bobigny » donne « bobigny ». Sert à
+ * rediriger (308) une adresse mal écrite vers la bonne, jamais à la servir telle quelle.
+ */
+export function normalizeTribunalSlug(raw: string): string {
+  let text = raw;
+  try {
+    text = decodeURIComponent(raw);
+  } catch {
+    // Une séquence % invalide : on normalise le texte tel qu'il est reçu.
+  }
+  return tribunalCodeSlug(text);
 }
 
 export function tribunalPagePath(code: string): string {
@@ -163,10 +182,15 @@ export function tribunalPageFromSlug(
   return tribunalPages(items).find((page) => page.slug === slug) ?? null;
 }
 
-/** Les tribunaux dont la page est indexable, par nombre de ventes décroissant. */
+/**
+ * Les tribunaux dont la page est indexable, par nombre de ventes décroissant. Un tribunal sans nom
+ * lisible (code brut à la place du nom) n'y est pas : sa page est en `noindex`.
+ */
 export function indexableTribunalPages(items: readonly PublicTribunalActivity[]): TribunalPage[] {
-  return tribunalPages(items).filter((page) =>
-    isTribunalPageIndexable(page.activity.upcomingCount),
+  return tribunalPages(items).filter(
+    (page) =>
+      isTribunalPageIndexable(page.activity.upcomingCount) &&
+      hasReadableTribunalName(page.activity),
   );
 }
 
@@ -183,12 +207,29 @@ function withArticle(place: string): string {
   return `de ${place}`;
 }
 
+/** Nom long d'un tribunal que le référentiel ne nomme pas. */
+const UNKNOWN_TRIBUNAL_LONG_NAME = "Tribunal judiciaire (nom à confirmer)";
+
+/**
+ * Vrai quand la page peut nommer le tribunal : son nom enregistré est un vrai nom, et non son code
+ * brut (un référentiel sans `canonical_name` rend le code à la place). Sans nom lisible, la page
+ * reste servie, avec un libellé neutre, hors de l'index.
+ */
+export function hasReadableTribunalName(
+  activity: Pick<PublicTribunalActivity, "code" | "name" | "searchName">,
+): boolean {
+  const name = (activity.searchName || activity.name || "").trim();
+  return name !== "" && name !== activity.code && !isRawTribunalCode(name);
+}
+
 /**
  * « Tribunal judiciaire de Bobigny », « Tribunal judiciaire du Puy-en-Velay » à partir du nom du
  * référentiel (jamais le nom doublé « Tribunal judiciaire de Tribunal judiciaire du … »).
  */
 export function tribunalLongNameFromRaw(raw: string): string {
   const name = raw.trim();
+  // Un code brut à la place du nom (`canonical_name` nul) : jamais affiché comme un nom.
+  if (isRawTribunalCode(name)) return UNKNOWN_TRIBUNAL_LONG_NAME;
   const kind = /tribunal de premi[èe]re instance/i.test(name)
     ? "Tribunal de première instance"
     : "Tribunal judiciaire";
@@ -208,11 +249,20 @@ export function atTribunalPhrase(
   return `au ${lowerFirst(tribunalLongName(activity))}`;
 }
 
-/** Titre de l'onglet (le gabarit du site ajoute « - Immojudis ») : 48 caractères visés. */
+const TITLE_MAX_LENGTH = 48;
+
+/**
+ * Titre de l'onglet (le gabarit du site ajoute « - Immojudis ») : « Ventes aux enchères au tribunal
+ * de Bordeaux ». Il tient en 48 caractères : pour un nom trop long (« Saint-Denis-de-la-Réunion »),
+ * il se réduit à « Ventes aux enchères : Saint-Denis-de-la-Réunion » plutôt que d'être coupé.
+ */
 export function tribunalPageTitle(
   activity: Pick<PublicTribunalActivity, "name" | "searchName">,
 ): string {
-  return `Enchères judiciaires : ${tribunalPlaceName(activity.searchName || activity.name)}`;
+  const phrase = atTribunalPhrase(activity).replace(/^au tribunal judiciaire\b/, "au tribunal");
+  const title = `Ventes aux enchères ${phrase}`;
+  if (title.length <= TITLE_MAX_LENGTH) return title;
+  return `Ventes aux enchères : ${tribunalPlaceName(activity.searchName || activity.name)}`;
 }
 
 const DESCRIPTION_MAX_LENGTH = 158;
@@ -270,6 +320,39 @@ export function tribunalPageDescription(
     if (sentence.length <= DESCRIPTION_MAX_LENGTH) return sentence;
   }
   return `${head}.`;
+}
+
+/** Les ventes lues d'un tribunal, vues par le calcul du nombre de ventes (voir ci-dessous). */
+type TribunalSalesRead =
+  | { status: "ok"; sales: readonly unknown[]; received: number }
+  | { status: "error" }
+  | null;
+
+/**
+ * Le tribunal avec son nombre de ventes à venir corrigé des doublons que la liste a écartés (une
+ * vente publiée par deux sources, voir `dedupeTribunalSaleRows`), pour que le compteur et la liste
+ * parlent des mêmes ventes. Deux cas :
+ * - liste complète (moins de lignes reçues que la limite) : le compteur est la liste dédoublonnée ;
+ * - liste tronquée : on retire les doublons vus, le reste du total est celui de l'activité, qui
+ *   compte une même vente publiée par deux sources deux fois. `mayCountDuplicates` est alors vrai :
+ *   la page le dit, car d'autres doublons peuvent se trouver au-delà de la liste.
+ * Sans doublon vu, ou sans liste lue, le compteur est celui de l'activité, inchangé.
+ */
+export function tribunalActivityWithoutDuplicates<
+  T extends Pick<PublicTribunalActivity, "upcomingCount">,
+>(activity: T, read: TribunalSalesRead): T & { mayCountDuplicates: boolean } {
+  if (!read || read.status !== "ok") return { ...activity, mayCountDuplicates: false };
+  const listed = read.sales.length;
+  const removed = read.received - listed;
+  if (removed <= 0) return { ...activity, mayCountDuplicates: false };
+  if (read.received < TRIBUNAL_PAGE_LISTED_SALES) {
+    return { ...activity, upcomingCount: listed, mayCountDuplicates: false };
+  }
+  return {
+    ...activity,
+    upcomingCount: Math.max(activity.upcomingCount - removed, listed),
+    mayCountDuplicates: true,
+  };
 }
 
 /** Le département du tribunal, quand son code est reconnu. */

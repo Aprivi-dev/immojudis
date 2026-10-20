@@ -4,6 +4,7 @@ import ArrowLeft from "lucide-react/dist/esm/icons/arrow-left.js";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import ChartNoAxesCombined from "lucide-react/dist/esm/icons/chart-no-axes-combined.js";
 import Eye from "lucide-react/dist/esm/icons/eye.js";
+import FolderHeart from "lucide-react/dist/esm/icons/folder-heart.js";
 import LockKeyholeOpen from "lucide-react/dist/esm/icons/lock-keyhole-open.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { Terme } from "@/components/ceiling/Terme";
@@ -12,19 +13,31 @@ import { PhotoCredit } from "@/components/PhotoCredit";
 import { photoCredit } from "@/lib/photo-credit";
 import { photoMirrorForDetail } from "@/lib/photo-mirror";
 import { SaleCalendarButton } from "@/components/SaleCalendarButton";
+import { SalePointsToVerify } from "@/components/sale-detail/SalePointsToVerify";
 import { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
+import { SaleSignalFeedback } from "@/components/SaleSignalFeedback";
+import { pointsToVerify } from "@/lib/search/points-to-verify";
+import { isPastSaleDay } from "@/lib/sale-countdown";
 import { formatPrice } from "@/lib/format";
 import {
   MARKET_GAP_BAND_CAUTION,
   MARKET_GAP_BAND_LABELS,
   MARKET_GAP_BAND_METHOD_LABEL,
   MARKET_GAP_BAND_METHOD_PATH,
+  MARKET_GAP_BAND_STARTING_PRICE_NOTE,
   type PublicMarketGapBand,
 } from "@/lib/market-gap-band";
 import { publicSaleDescription } from "@/lib/public-sale-description";
-import { loginPathWithRedirect, saleDetailPath, salesReturnHref } from "@/lib/navigation";
+import {
+  loginPathWithRedirect,
+  saleDetailPath,
+  salesReturnHref,
+  salesReturnLabel,
+} from "@/lib/navigation";
 import Link from "next/link";
-import { FREE_ACCESS_LINE, MONTHLY_SALE_UNLOCKS, unlockedItemsText } from "@/lib/sale-unlocks";
+import { useSyncExternalStore } from "react";
+import { useLaunchOffer } from "@/hooks/use-launch-offer";
+import { freeAccessLine, MONTHLY_SALE_UNLOCKS, unlockedItemsText } from "@/lib/sale-unlocks";
 import {
   getSaleProcedure,
   lawyerRequirementLabel,
@@ -41,6 +54,7 @@ import {
   seoSurface,
   tribunalDisplayName,
 } from "@/lib/seo";
+import { tribunalPagePath } from "@/lib/tribunal-pages";
 import type { AuctionSale, SaleVenueType } from "@/lib/types";
 import styles from "./SalePublicPreview.module.css";
 
@@ -99,6 +113,9 @@ const VENUE_COPY: Record<SaleVenueType, { title: string; explanation: string }> 
   },
 };
 
+/** Rien à écouter : la valeur n'est lue qu'une fois le navigateur monté (voir `pastDate`). */
+const subscribeNever = () => () => undefined;
+
 export function publicSaleVenueCopy(venueType: SaleVenueType) {
   return VENUE_COPY[venueType];
 }
@@ -122,17 +139,68 @@ function withAdjudicationTerm(text: string) {
  * fourchette restent au compte). Affichée seulement quand la base a jugé l'estimation fiable (ou
  * dit qu'elle ne l'est pas) ; neutre, indicative, jamais une recommandation.
  */
-function MarketGapBandNote({ band }: { band: PublicMarketGapBand }) {
+function MarketGapBandNote({ band, saleId }: { band: PublicMarketGapBand; saleId: string }) {
+  // Une vraie bande (sous, dans, au-dessus) porte la phrase sur la mise à prix basse et la mise en
+  // garde ; « bien occupé » et les raisons d'insuffisance disent seulement pourquoi il n'y en a pas.
+  const isBand = band === "under" || band === "near" || band === "above";
   return (
     <div className={styles.marketBand} data-testid="market-gap-band" data-band={band}>
-      <p className={styles.marketBandLabel}>{MARKET_GAP_BAND_LABELS[band]}</p>
+      <p className={styles.marketBandLabel}>
+        <span data-nosnippet="">{MARKET_GAP_BAND_LABELS[band]}</span>
+      </p>
+      {isBand ? (
+        <p className={styles.marketBandNote}>{MARKET_GAP_BAND_STARTING_PRICE_NOTE}</p>
+      ) : null}
       <p className={styles.marketBandNote}>
-        {band === "insufficient" ? null : <>{MARKET_GAP_BAND_CAUTION} </>}
+        {isBand ? <>{MARKET_GAP_BAND_CAUTION} </> : null}
         <Link href={MARKET_GAP_BAND_METHOD_PATH} className={styles.marketBandLink}>
           {MARKET_GAP_BAND_METHOD_LABEL}
         </Link>
       </p>
+      {/* Comptes connectés seulement : sans session, le composant ne rend rien. */}
+      {isBand ? <SaleSignalFeedback saleId={saleId} signal="market_gap_band" /> : null}
     </div>
+  );
+}
+
+/**
+ * Ligne d'accès sous le bouton d'inscription. Offre de lancement active : la mention du visiteur
+ * (`launchOfferText("visitor")`) ; sinon la ligne habituelle. Tant que l'état n'est pas lu (rendu
+ * serveur compris), une ligne neutre qui ne promet aucun quota, avec une hauteur réservée pour que
+ * la mention, plus longue, ne décale pas la page en arrivant. Jamais rendue par le serveur dans sa
+ * version « offre » : la coupure de l'offre doit se voir en moins de 60 s.
+ */
+function SignupAccessLine() {
+  const { active, pending } = useLaunchOffer();
+  return (
+    <p
+      className={`${styles.signupLine} ${pending ? styles.signupLinePending : ""}`}
+      data-testid="public-signup-line"
+    >
+      {pending ? "Gratuit, sans carte bancaire" : freeAccessLine({ launchOffer: active })}
+    </p>
+  );
+}
+
+/**
+ * Étiquette d'une ligne de l'aperçu. Pendant l'offre de lancement, ce que l'offre Analyse ouvre
+ * (enchère plafond, comparables) l'est aussi avec le compte gratuit ; tant que l'état n'est pas lu,
+ * une étiquette qui ne promet rien.
+ */
+function TeaserTier({ tier, offerAware }: { tier: string; offerAware?: boolean }) {
+  const { active, pending } = useLaunchOffer();
+  const text = !offerAware
+    ? tier
+    : pending
+      ? "Selon votre compte"
+      : active
+        ? "Compte gratuit (offre de lancement)"
+        : tier;
+  // Décor : le texte masqué de la ligne dit déjà ce qui débloque la valeur.
+  return (
+    <span className={styles.teaserTier} aria-hidden>
+      {text}
+    </span>
   );
 }
 
@@ -165,6 +233,17 @@ export function SalePublicPreview({
   const photo = preview.media?.find((item) => item?.url && (item.type ?? "image") === "image");
   const surface = seoSurface(preview.app_surface_m2);
   const hearingDate = seoLongDate(preview.sale_date);
+  // Vente dont le jour est passé : signal explicite, ni bouton d'agenda ni bande d'écart (le marché
+  // qu'elle comparait à la mise à prix est celui d'un jour qui n'existe plus pour cette vente). Calculé
+  // après l'hydratation : le serveur et le premier rendu du navigateur n'ont pas la même heure (à
+  // minuit, ou avec une page gardée en cache), et un « jour passé » différent d'un côté à l'autre
+  // ferait échouer l'hydratation. Le premier rendu dit « pas passé » des deux côtés, puis le navigateur
+  // lit sa propre date.
+  const pastDate = useSyncExternalStore(
+    subscribeNever,
+    () => isPastSaleDay(preview.sale_date),
+    () => false,
+  );
   const hearingTime = saleHearingTime(preview.sale_date);
   const tribunal = procedure.venueType === "tribunal" ? tribunalDisplayName(preview) : null;
   const location = [preview.city, preview.department].filter(Boolean).join(" · ");
@@ -198,34 +277,79 @@ export function SalePublicPreview({
           <dd>
             {hearingDate}
             {hearingTime ? ` à ${hearingTime}` : ""}
-            {procedure.venueType === "tribunal" ? <SaleCalendarButton saleId={saleId} /> : null}
+            {pastDate ? (
+              <span className={styles.pastDate} data-testid="past-sale-date">
+                Date de vente passée
+              </span>
+            ) : null}
+            {procedure.venueType === "tribunal" && !pastDate ? (
+              <SaleCalendarButton saleId={saleId} />
+            ) : null}
           </dd>
         </div>
       ) : null}
       {tribunal ? (
         <div className={styles.fact}>
           <dt>Tribunal</dt>
-          <dd>{tribunal}</dd>
+          <dd>
+            {preview.tribunal_code ? (
+              // La page du tribunal : ses prochaines ventes, ses chiffres, l'alerte de son département.
+              <Link href={tribunalPagePath(preview.tribunal_code)} className="underline">
+                {tribunal}
+              </Link>
+            ) : (
+              tribunal
+            )}
+          </dd>
         </div>
       ) : null}
     </dl>
   );
   const description = publicSaleDescription(preview);
   // Placeholders only: the real figures are never sent to a signed-out visitor.
+  // `offerAware` : l'étiquette change pendant l'offre de lancement (voir `TeaserTier`).
   const analysisTeaser = [
-    { label: "Valeur estimée", placeholder: "000 000 € – 000 000 €", tier: "Compte gratuit" },
+    {
+      label: "Valeur estimée",
+      placeholder: "000 000 € – 000 000 €",
+      tier: "Compte gratuit",
+      visibleWith: "un compte gratuit",
+    },
     price
-      ? { label: "Écart chiffré avec la mise à prix", placeholder: "00 %", tier: "Compte gratuit" }
+      ? {
+          label: "Écart chiffré avec la mise à prix",
+          placeholder: "00 %",
+          tier: "Compte gratuit",
+          visibleWith: "un compte gratuit",
+        }
       : null,
     procedure.venueType === "tribunal"
       ? {
           label: "Enchère plafond (simulation)",
           placeholder: "000 000 €",
           tier: `Offre Analyse, ou ${MONTHLY_SALE_UNLOCKS} déblocages par mois`,
+          visibleWith: "l’offre Analyse, ou en débloquant la vente",
+          offerAware: true,
         }
       : null,
-    { label: "Ventes comparables du secteur", placeholder: "00 ventes", tier: "Offre Analyse" },
-  ].filter((item): item is { label: string; placeholder: string; tier: string } => item !== null);
+    {
+      label: "Ventes comparables du secteur",
+      placeholder: "00 ventes",
+      tier: "Offre Analyse",
+      visibleWith: "l’offre Analyse",
+      offerAware: true,
+    },
+  ].filter(
+    (
+      item,
+    ): item is {
+      label: string;
+      placeholder: string;
+      tier: string;
+      visibleWith: string;
+      offerAware?: boolean;
+    } => item !== null,
+  );
   const priceBlock =
     price || !state ? (
       <div className={styles.priceBlock}>
@@ -240,8 +364,8 @@ export function SalePublicPreview({
             ? "Vérifiez les conditions et frais dans l'annonce officielle"
             : "Prix de départ, hors frais"}
         </p>
-        {price && preview.market_gap_band ? (
-          <MarketGapBandNote band={preview.market_gap_band} />
+        {price && preview.market_gap_band && !pastDate ? (
+          <MarketGapBandNote band={preview.market_gap_band} saleId={saleId} />
         ) : null}
       </div>
     ) : (
@@ -271,7 +395,7 @@ export function SalePublicPreview({
             Créer mon compte gratuit
             <ArrowRight className="h-4 w-4" aria-hidden />
           </Link>
-          <p className={styles.signupLine}>{FREE_ACCESS_LINE}</p>
+          <SignupAccessLine />
         </>
       )}
     </div>
@@ -316,7 +440,7 @@ export function SalePublicPreview({
         </nav>
         <Link href={salesReturnHref(returnTo, preview.id ?? saleId)} className={styles.back}>
           <ArrowLeft className="h-4 w-4" aria-hidden />
-          Retour aux ventes
+          {salesReturnLabel(returnTo)}
         </Link>
 
         <div
@@ -361,6 +485,12 @@ export function SalePublicPreview({
                 </ul>
               ) : null}
             </section>
+            {/* Cible de `#points-a-verifier` ; l'occupation n'est pas lue sur l'aperçu public. */}
+            <SalePointsToVerify
+              className="mt-4"
+              points={pointsToVerify(preview, { occupancyVisible: false })}
+              saleId={saleId}
+            />
             <section className={styles.teaser} aria-labelledby="public-teaser-title">
               <h2 id="public-teaser-title" className={styles.addsTitle}>
                 L’analyse de cette vente
@@ -370,15 +500,31 @@ export function SalePublicPreview({
                   <div key={item.label} className={styles.teaserRow}>
                     <dt>{item.label}</dt>
                     <dd>
+                      {/* Le chiffre flouté est un décor (aria-hidden) : un lecteur d'écran entend
+                          que la valeur est masquée et ce qui la débloque, pas « 000 000 € ». */}
+                      <span className="sr-only">
+                        Valeur masquée, visible avec {item.visibleWith}
+                      </span>
                       <span className={styles.blurred} aria-hidden data-nosnippet>
                         {item.placeholder}
                       </span>
-                      <span className={styles.teaserTier}>{item.tier}</span>
+                      <TeaserTier tier={item.tier} offerAware={item.offerAware} />
                     </dd>
                   </div>
                 ))}
               </dl>
             </section>
+            {/* « Mon dossier » (statut, enchère plafond) : ce que le compte gratuit ajoute, sans le montrer.
+                Hors du bloc « L'analyse » : le plafond noté est le sien, pas un calcul promis. */}
+            <p className={styles.dossierNote} data-testid="public-dossier-teaser">
+              <FolderHeart aria-hidden />
+              <span>
+                {/* Hors du tribunal, aucune enchère plafond n'est promise sur la page : le statut seul. */}
+                {procedure.venueType === "tribunal"
+                  ? "Compte gratuit : notez votre statut et votre enchère plafond sur chaque vente suivie."
+                  : "Compte gratuit : notez votre statut sur chaque vente suivie."}
+              </span>
+            </p>
 
             {state || notary ? (
               <>

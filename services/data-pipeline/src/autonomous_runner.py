@@ -27,9 +27,15 @@ _postgres_connect = connect
 # Décision du propriétaire (11/10/2026) : chaque source au plus toutes les 12 h.
 INVENTORY_CADENCE = timedelta(hours=12)
 INVENTORY_DISPATCH_MARGIN = timedelta(minutes=45)
+# Un inventaire complet ne compte pour l'absence d'une vente que s'il est distant d'au moins cette durée du
+# précédent compté (deux passages rapprochés de quelques minutes ne valent pas deux inventaires). La migration
+# 20261029150100 applique le même écart au retrait ; tests/test_source_absence.py compare les deux.
+ABSENCE_MIN_INVENTORY_SPACING = INVENTORY_CADENCE
 NEAR_SALE_HORIZON = timedelta(days=7)
 ACTIVE_LISTING_STATUSES = frozenset({'active', 'upcoming', 'postponed', 'unknown'})
 ENRICHMENT_TERMINAL_STATUSES = frozenset({'completed', 'failed'})
+# Décisions d'un item de collecte qui ne sont pas terminales : tant qu'il en reste, la publication n'est pas complète.
+PENDING_PUBLICATION_DECISIONS = ('discovered', 'normalized', 'admitted', 'publication_failed', 'normalization_failed')
 
 
 def _enrichment_completed(counts: dict[object, object]) -> int:
@@ -234,8 +240,7 @@ def finish_source(db_url: str, run_id: str) -> None:
             from public.auction_collection_items where run_id=%s and source_name=%s group by decision""",
             (run_id, source)).fetchall())
         publication_published = int(publication_counts.get('published', 0))
-        publication_pending = sum(int(publication_counts.get(decision, 0)) for decision in (
-            'discovered', 'normalized', 'admitted', 'publication_failed', 'normalization_failed'))
+        publication_pending = sum(int(publication_counts.get(decision, 0)) for decision in PENDING_PUBLICATION_DECISIONS)
         publication_failed = int(publication_counts.get('publication_failed', 0)) + int(publication_counts.get('normalization_failed', 0))
         if publication_failed:
             publication_status = 'failed'
@@ -285,6 +290,20 @@ def finish_source(db_url: str, run_id: str) -> None:
         pending = publication_pending
         complete = global_complete
         publication_complete = complete and not pending and status == 'succeeded'
+        # Pourquoi la publication n'est pas « complète » : sans cela, last_publication_complete_at qui ne bouge plus
+        # (Enchères Immobilières, 08/10) ne dit pas laquelle des trois conditions manque, ni quelles décisions
+        # restent en suspens.
+        coverage['publication_blockers'] = [
+            name for name, blocked in (
+                ('inventory_incomplete', not complete),
+                ('publication_pending', bool(pending)),
+                ('run_not_succeeded', status != 'succeeded'),
+            ) if blocked
+        ]
+        coverage['publication_pending_decisions'] = {
+            decision: int(publication_counts.get(decision, 0)) for decision in PENDING_PUBLICATION_DECISIONS
+            if publication_counts.get(decision)
+        }
         now = datetime.now(UTC)
         if backoff:
             # Retry-After and persistent access refusals retain their existing
@@ -303,8 +322,15 @@ def finish_source(db_url: str, run_id: str) -> None:
             if retry_deadline is not None:
                 deadline = max(deadline, retry_deadline)
         # Un run en échec (budget épuisé, arrêt brutal) ne prouve rien sur l'absence : seul un run
-        # `succeeded` compte comme inventaire complet, sinon le compteur d'absence avancerait.
-        record_source_presence(db, run_id, source, availability, complete and status == 'succeeded')
+        # `succeeded` compte comme inventaire complet, sinon le compteur d'absence avancerait, et
+        # last_inventory_complete_at (qui autorise le retrait) non plus.
+        inventory_complete = complete and status == 'succeeded'
+        record_source_presence(db, run_id, source, availability, inventory_complete)
+        # Agrasc ne certifie jamais l'inventaire public entier (cartes d'archive vendues sans lien : coverage_complete
+        # reste faux). Son inventaire adressable certifié, lui, est complet : il prouve la fraîcheur de la source
+        # (last_inventory_complete_at) sans compter pour l'absence ni pour le retrait de ventes (ci-dessus et
+        # ci-dessous, inventory_complete seul).
+        inventory_fresh = inventory_complete or (scoped_complete and status == 'succeeded')
         db.execute("""update public.auction_source_state set
             availability=%s,coverage=%s,last_error=%s,consecutive_failures=%s,
             next_inventory_at=%s,suspended_until=%s,
@@ -313,12 +339,12 @@ def finish_source(db_url: str, run_id: str) -> None:
             updated_at=now() where source_name=%s and last_run_id=%s""",
             (availability,Jsonb(coverage),json.dumps(problems or errors,ensure_ascii=False)[:2000] if problems or failures else None,
              failures,deadline,deadline if denied or coverage.get('retry_not_before') else None,
-             complete,publication_complete,source,run_id))
+             inventory_fresh,publication_complete,source,run_id))
         db.execute("""update public.auction_runs set summary=coalesce(summary,'{}') || %s
             where id=%s""", (Jsonb({'scrape_coverage': {source: coverage}}), run_id))
     # Après le commit, hors de la transaction qui clôt le run : une panne ici ne doit rien défaire.
     # Seulement après un inventaire complet réussi (jamais sur un inventaire partiel).
-    if complete and status == 'succeeded' and not denied:
+    if inventory_complete and not denied:
         _withdraw_missing_sales(db_url, run_id, source)
 
 
@@ -403,18 +429,29 @@ def count_absent_inventories(db, run_id: str, source: str) -> None:
 
     À appeler seulement après un inventaire complet (``state`` vient d'être posée pour ce run). Une vente revue
     remet son compteur à zéro. Idempotent pour un même run : ``absent_run_id`` empêche de compter deux fois le
-    même inventaire. Les ventes absentes depuis deux inventaires complets sont retirées par
-    ``src.source_absence`` (migration 20261028110100).
+    même inventaire. Une absence n'est comptée que si le dernier inventaire compté pour cette vente (le run
+    ``absent_run_id``, sinon ``absent_since``) date d'au moins ``ABSENCE_MIN_INVENTORY_SPACING`` : deux
+    inventaires rapprochés de quelques minutes ne comptent que pour un. Les ventes absentes depuis deux
+    inventaires complets sont retirées par ``src.source_absence`` (migration 20261028110100).
     """
     db.execute("""update app_private.auction_sale_source_presence as p set
         absent_inventories = case when p.state = 'absent' then p.absent_inventories + 1 else 0 end,
         absent_since = case when p.state = 'absent' then coalesce(p.absent_since, p.checked_at) else null end,
         absent_run_id = case when p.state = 'absent' then %s::text else null end
-      where p.source_name = %s::text and p.run_id = %s::text and p.checked_at is not null
+      from (
+        select q.sale_id, coalesce(r.finished_at, r.started_at, q.absent_since) as last_counted_at
+        from app_private.auction_sale_source_presence q
+        left join public.auction_runs r on r.id::text = q.absent_run_id
+        where q.source_name = %s::text
+      ) as previous
+      where previous.sale_id = p.sale_id
+        and p.source_name = %s::text and p.run_id = %s::text and p.checked_at is not null
         and (
-          (p.state = 'absent' and p.absent_run_id is distinct from %s::text)
+          (p.state = 'absent' and p.absent_run_id is distinct from %s::text
+            and (previous.last_counted_at is null
+              or previous.last_counted_at <= p.checked_at - make_interval(secs => %s)))
           or (p.state = 'present' and (p.absent_inventories > 0 or p.absent_run_id is not null))
-        )""", (run_id, source, run_id, run_id))
+        )""", (run_id, source, source, run_id, run_id, ABSENCE_MIN_INVENTORY_SPACING.total_seconds()))
 
 
 DOCUMENT_READING_BUDGET_SECONDS = 5 * 60
@@ -436,6 +473,8 @@ def _run_document_reading(env: dict[str, str]) -> int:
 
 LICITOR_HISTORY_BUDGET_SECONDS = 330
 LICITOR_SOURCE = 'licitor'
+# Temps laissé après la lecture des fiches pour normaliser, publier et clore le run.
+LICITOR_BUDGET_MARGIN_SECONDS = 8 * 60
 
 
 def _run_licitor_history_refresh(env: dict[str, str]) -> int:
@@ -502,6 +541,12 @@ def execute(run_id: str) -> int:
             # Leave time for the main process to flush factual publications and
             # persist the partial run before the scheduler's hard kill.
             env['PETITES_AFFICHES_SOURCE_BUDGET_SECONDS'] = str(budget - 5 * 60)
+        if source == LICITOR_SOURCE:
+            # Same contract: the detail pages (sequential, spaced) of a national
+            # inventory can outlast the scheduler budget, which killed eight runs
+            # in a row. The source stops reading details LICITOR_BUDGET_MARGIN_SECONDS
+            # before the hard kill, publishes the whole list and resumes next run.
+            env['LICITOR_SOURCE_BUDGET_SECONDS'] = str(budget - LICITOR_BUDGET_MARGIN_SECONDS)
     failure = None
     execution_started = datetime.now(UTC)
     try:

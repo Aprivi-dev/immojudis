@@ -8,7 +8,7 @@ vi.mock("./DateRangeFields", () => ({ DateRangeFields: () => null }));
 
 afterEach(cleanup);
 
-function renderDrawer() {
+function renderDrawer(overrides: Partial<Parameters<typeof MobileFilterDrawer>[0]> = {}) {
   return render(
     <MobileFilterDrawer
       draft={emptySearchDraft()}
@@ -16,9 +16,73 @@ function renderDrawer() {
       activeFiltersCount={0}
       onClose={vi.fn()}
       onReset={vi.fn()}
+      {...overrides}
     />,
   );
 }
+
+describe("filtres « sous la fourchette » et « sans point à vérifier »", () => {
+  it("propose les deux cases, avec ce que chaque filtre couvre", () => {
+    renderDrawer();
+
+    const below = screen.getByRole("checkbox", {
+      name: /Mise à prix sous la fourchette des ventes comparables/,
+    });
+    const hint = document.getElementById(below.getAttribute("aria-describedby")!)!;
+    expect(hint.textContent).toContain(
+      "Ne couvre que les ventes dont l’estimation est assez fiable",
+    );
+    expect(hint.textContent).toContain("jamais un bien occupé");
+
+    const noPoints = screen.getByRole("checkbox", { name: /Sans point à vérifier/ });
+    const noPointsHint = document.getElementById(noPoints.getAttribute("aria-describedby")!)!;
+    expect(noPointsHint.textContent).toContain("ne garantit pas");
+  });
+
+  it("coche et décoche le brouillon", () => {
+    const setDraft = vi.fn();
+    renderDrawer({ setDraft });
+
+    fireEvent.click(screen.getByRole("checkbox", { name: /Sans point à vérifier/ }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /sous la fourchette/ }));
+
+    const apply = (call: number) => setDraft.mock.calls[call][0](emptySearchDraft());
+    expect(apply(0)).toMatchObject({ noPointsToVerify: true, belowRange: false });
+    expect(apply(1)).toMatchObject({ belowRange: true, noPointsToVerify: false });
+  });
+
+  it("reflète le brouillon", () => {
+    renderDrawer({ draft: { ...emptySearchDraft(), belowRange: true } });
+
+    expect(
+      (screen.getByRole("checkbox", { name: /sous la fourchette/ }) as HTMLInputElement).checked,
+    ).toBe(true);
+    expect(
+      (screen.getByRole("checkbox", { name: /Sans point à vérifier/ }) as HTMLInputElement).checked,
+    ).toBe(false);
+  });
+
+  it("les réserve à un compte : désactivées pour un visiteur, qui le lit", () => {
+    renderDrawer({ preview: true });
+
+    // Désactivées par le fieldset qui les contient.
+    expect(screen.getByRole("checkbox", { name: /sous la fourchette/ }).matches(":disabled")).toBe(
+      true,
+    );
+    expect(
+      screen.getByRole("checkbox", { name: /Sans point à vérifier/ }).matches(":disabled"),
+    ).toBe(true);
+    expect(screen.getByText("Ces filtres nécessitent un compte.")).toBeTruthy();
+  });
+
+  it("restent ouvertes à un compte gratuit (la bande est publique)", () => {
+    renderDrawer({ analysisLocked: true });
+
+    expect(screen.getByRole("checkbox", { name: /sous la fourchette/ }).matches(":disabled")).toBe(
+      false,
+    );
+  });
+});
 
 describe("filtres sur mobile", () => {
   it("affiche de vrais libellés au-dessus des champs", () => {
@@ -34,6 +98,13 @@ describe("filtres sur mobile", () => {
     ]) {
       expect(screen.getByText(label)).toBeTruthy();
     }
+  });
+
+  it("propose « Visite dans les 7 jours » et ne retient que les dates publiées en entier", () => {
+    renderDrawer();
+    const box = screen.getByRole("checkbox", { name: /Visite dans les 7 jours/ });
+    expect((box as HTMLInputElement).checked).toBe(false);
+    expect(screen.getByText(/date complète est publiée/)).toBeTruthy();
   });
 
   it("n'affiche « Mise à prix » qu'une seule fois", () => {

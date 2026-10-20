@@ -45,13 +45,14 @@ describe("mapTribunalSaleRows", () => {
   });
 
   it("marque les ventes reportées et celles au statut inconnu, sans les présenter comme à venir", () => {
-    const sales = mapTribunalSaleRows([
-      { ...ROW, status: "postponed" },
-      { ...ROW, status: "unknown" },
-      { ...ROW, status: null },
-      { ...ROW, status: "" },
-      { ...ROW, status: "upcoming" },
-    ]);
+    // Un identifiant par ligne : une même identité ne compte qu'une fois (voir « doublons »).
+    const sales = mapTribunalSaleRows(
+      ["postponed", "unknown", null, "", "upcoming"].map((status, index) => ({
+        ...ROW,
+        id: `00000000-0000-4000-8000-00000000010${index}`,
+        status,
+      })),
+    );
     expect(sales.map((sale) => sale.status)).toEqual([
       "postponed",
       "unknown",
@@ -73,9 +74,16 @@ describe("mapTribunalSaleRows", () => {
     });
   });
 
-  it("ne laisse sortir aucun champ privé", () => {
+  it("ne laisse sortir aucun champ privé, adresses sources comprises", () => {
     const [sale] = mapTribunalSaleRows([
-      { ...ROW, address: "1 rue Privée", latitude: 48.9, longitude: 2.4 } as typeof ROW,
+      {
+        ...ROW,
+        address: "1 rue Privée",
+        latitude: 48.9,
+        longitude: 2.4,
+        source_keys: ["a".repeat(64)],
+        source_url: "https://example.test/annonce/1",
+      } as typeof ROW,
     ]);
     expect(Object.keys(sale).sort()).toEqual([
       "city",
@@ -87,6 +95,61 @@ describe("mapTribunalSaleRows", () => {
       "surfaceM2",
       "venueType",
     ]);
+  });
+});
+
+describe("mapTribunalSaleRows : doublons", () => {
+  const A = { ...ROW, id: "245b5afe-0000-4000-8000-000000000001" };
+  const B = { ...ROW, id: "003d1fe7-0000-4000-8000-000000000002" };
+
+  it("réunit deux lignes qui partagent une clé d'adresse source, et garde la première", () => {
+    // La base normalise et condense les adresses : une même annonce a la même clé.
+    const sales = mapTribunalSaleRows([
+      { ...A, source_group: B.id },
+      { ...B, source_group: B.id },
+    ]);
+    // Même date : la plus petite identité est gardée.
+    expect(sales.map((sale) => sale.id)).toEqual([B.id]);
+  });
+
+  it("réunit aussi deux lignes de même identifiant", () => {
+    expect(mapTribunalSaleRows([A, A]).map((sale) => sale.id)).toEqual([A.id]);
+  });
+
+  it("ne réunit jamais sur la commune, le type, la surface, la date et le prix seuls", () => {
+    // Deux lots distincts peuvent partir au même prix le même jour : mieux vaut deux lignes qu'une.
+    const sales = mapTribunalSaleRows([
+      { ...A, source_group: A.id },
+      { ...B, source_group: B.id },
+    ]);
+    expect(sales).toHaveLength(2);
+  });
+
+  it("suit un groupe de trois : la base rend la fermeture transitive (A et B, puis B et C)", () => {
+    const C = { ...ROW, id: "ffffffff-0000-4000-8000-000000000003" };
+    const sales = mapTribunalSaleRows([
+      { ...A, source_group: B.id },
+      { ...B, source_group: B.id },
+      { ...C, source_group: B.id },
+    ]);
+    expect(sales).toHaveLength(1);
+  });
+
+  it("garde l'ordre reçu, les ventes sans date et celles à la date illisible", () => {
+    const sales = mapTribunalSaleRows([
+      { ...A, sale_date: "2026-12-01T10:00:00Z" },
+      { ...B, sale_date: null },
+      { ...ROW, id: "aaaaaaaa-0000-4000-8000-000000000004", sale_date: "pas une date" },
+    ]);
+    expect(sales.map((sale) => sale.id)).toEqual([
+      A.id,
+      B.id,
+      "aaaaaaaa-0000-4000-8000-000000000004",
+    ]);
+  });
+
+  it("fonctionne sans adresses sources (migration pas encore appliquée) : aucune fusion", () => {
+    expect(mapTribunalSaleRows([A, B])).toHaveLength(2);
   });
 });
 
@@ -114,9 +177,22 @@ describe("tryLoadTribunalSales", () => {
     expect(result.status === "ok" ? result.sales : []).toHaveLength(1);
   });
 
+  it("rend le nombre de lignes reçues, avant dédoublonnage", async () => {
+    const duplicate = { ...ROW, id: "00000000-0000-4000-8000-000000000009" };
+    mocks.rpc.mockResolvedValue({
+      data: [
+        { ...ROW, source_group: ROW.id },
+        { ...duplicate, source_group: ROW.id },
+      ],
+      error: null,
+    });
+    const result = await tryLoadTribunalSales("justice_tj_1_93");
+    expect(result.status === "ok" ? [result.received, result.sales.length] : []).toEqual([2, 1]);
+  });
+
   it("distingue un tribunal sans vente d'une lecture en échec", async () => {
     mocks.rpc.mockResolvedValue({ data: [], error: null });
-    expect(await tryLoadTribunalSales("vide")).toEqual({ status: "ok", sales: [] });
+    expect(await tryLoadTribunalSales("vide")).toEqual({ status: "ok", sales: [], received: 0 });
 
     mocks.rpc.mockResolvedValue({ data: null, error: new Error("function does not exist") });
     expect(await tryLoadTribunalSales("vide")).toEqual({ status: "error" });

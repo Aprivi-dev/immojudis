@@ -5,8 +5,10 @@ import {
   listingCoordinates,
   listingDate,
   listingSurface,
+  listingVisitDays,
   listingVisits,
   parseBudgetAmount,
+  saleHasVisitSoon,
 } from "./sale-listing";
 import { sanitizeAuctionSaleForDisplay } from "./listing-data-cleanup";
 import type { AuctionSale } from "./types";
@@ -197,6 +199,46 @@ describe("listing dates", () => {
       "Sur rendez-vous",
     ]);
     expect(listingVisits(sale({ visit_dates: [{ hidden: "not a slot" }] }))).toEqual([]);
+  });
+});
+
+describe("visites des 7 prochains jours", () => {
+  // Mardi 20 octobre 2026, 10 h à Paris.
+  const NOW = new Date("2026-10-20T08:00:00Z");
+  const visit = (...visit_dates: unknown[]) => sale({ visit_dates: visit_dates as never });
+
+  it("ne retient que les jours publiés en entier (jour, mois et année)", () => {
+    expect(
+      listingVisitDays(
+        visit(
+          "2026-10-22 à 14:00",
+          "jeudi 22 octobre 2026 à 14h",
+          "mardi 27 octobre",
+          "Sur rendez-vous",
+          "2026-10-24T09:00:00+02:00",
+        ),
+      ),
+    ).toEqual(["2026-10-22", "2026-10-24"]);
+  });
+
+  it("couvre aujourd'hui et les six jours suivants, pas le septième ni hier", () => {
+    expect(saleHasVisitSoon(visit("2026-10-20 à 09:00"), NOW)).toBe(true);
+    expect(saleHasVisitSoon(visit("2026-10-26"), NOW)).toBe(true);
+    expect(saleHasVisitSoon(visit("2026-10-27"), NOW)).toBe(false);
+    expect(saleHasVisitSoon(visit("2026-10-19"), NOW)).toBe(false);
+  });
+
+  it("ne devine jamais un jour : texte libre, jour sans année ou aucune visite", () => {
+    expect(saleHasVisitSoon(visit("Sur rendez-vous", "mardi 20 octobre"), NOW)).toBe(false);
+    expect(saleHasVisitSoon(sale({}), NOW)).toBe(false);
+    expect(saleHasVisitSoon(visit(null, { hidden: "x" }), NOW)).toBe(false);
+  });
+
+  it("compte le jour de Paris, pas celui de l'instant en UTC", () => {
+    // 23 h 30 à Paris le 26 octobre : 21 h 30 UTC, toujours dans la fenêtre du 20.
+    expect(saleHasVisitSoon(visit("2026-10-26T23:30:00+01:00"), NOW)).toBe(true);
+    // À 0 h 30 Paris le 27 (23 h 30 UTC le 26), c'est le 27 : hors fenêtre.
+    expect(saleHasVisitSoon(visit("2026-10-27T00:30:00+01:00"), NOW)).toBe(false);
   });
 });
 

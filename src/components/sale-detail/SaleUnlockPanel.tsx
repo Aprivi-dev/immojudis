@@ -5,7 +5,7 @@ import Link from "next/link";
 import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.js";
 import LockKeyholeOpen from "lucide-react/dist/esm/icons/lock-keyhole-open.js";
 import { Button, Card, Eyebrow, buttonClasses } from "@/components/ui/primitives";
-import { OfferOpeningRequest } from "@/components/OfferOpeningRequest";
+import { OfferOpeningRequest } from "@/components/OfferOpeningRequestLazy";
 import { UNLOCK_PANEL_ID } from "@/components/sale-detail/UnlockCallToAction";
 import { useAnalysisCheckoutOpen } from "@/hooks/use-analysis-checkout-open";
 import { SaleUnlockQuotaReachedError, unlockSaleRequest } from "@/lib/client-api";

@@ -1,8 +1,16 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { hydrateRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { renderToString } from "react-dom/server";
 import { axe } from "vitest-axe";
+import {
+  LaunchOfferContext,
+  type LaunchOfferState,
+  type LaunchOfferStore,
+} from "@/hooks/use-launch-offer";
+import { LAUNCH_OFFER_VISITOR_TEXT } from "@/lib/launch-offer";
 import type { AuctionSale, SaleVenueType } from "@/lib/types";
 import { FREE_ACCESS_LINE } from "@/lib/sale-unlocks";
 import { publicSaleVenueCopy, SalePublicPreview } from "./SalePublicPreview";
@@ -185,6 +193,29 @@ describe("SalePublicPreview", () => {
     expect(screen.queryByText(/Activité publique du tribunal/)).toBeNull();
   });
 
+  it("links the name of the tribunal to its page, and keeps plain text without a code", () => {
+    renderPreview({
+      sale_venue_type: "tribunal",
+      sale_verification_status: "verified",
+      tribunal_code: "justice_tj_1_93",
+      tribunal_name: "TJ Bobigny",
+    });
+    expect(
+      screen.getByRole("link", { name: "Tribunal judiciaire de Bobigny" }).getAttribute("href"),
+    ).toBe("/tribunaux/justice-tj-1-93");
+    cleanup();
+
+    // Base pas encore migrée, ou tribunal inconnu du référentiel : le nom reste un texte simple.
+    renderPreview({
+      sale_venue_type: "tribunal",
+      sale_verification_status: "verified",
+      tribunal_code: null,
+      tribunal_name: "TJ Bobigny",
+    });
+    expect(screen.getByText("Tribunal judiciaire de Bobigny")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Tribunal judiciaire de Bobigny" })).toBeNull();
+  });
+
   it("shows the domanial method before price and avoids promising auctions", () => {
     const { container } = renderPreview({
       sale_venue_type: "state",
@@ -325,9 +356,9 @@ describe("SalePublicPreview", () => {
 
   describe("écart au marché en trois bandes", () => {
     it.each([
-      ["under", "Mise à prix nettement sous la valeur de marché estimée"],
-      ["near", "Mise à prix proche de la valeur de marché estimée"],
-      ["above", "Mise à prix au-dessus de la valeur de marché estimée"],
+      ["under", "Mise à prix inférieure à la fourchette des ventes comparables"],
+      ["near", "Mise à prix dans la fourchette des ventes comparables"],
+      ["above", "Mise à prix au-dessus de la fourchette des ventes comparables"],
     ] as const)("annonce la bande %s sous la mise à prix, sans chiffre", (band, label) => {
       renderPreview({
         sale_venue_type: "tribunal",
@@ -342,6 +373,14 @@ describe("SalePublicPreview", () => {
       expect(note.textContent).toContain("indicatif");
       expect(note.textContent).toContain("Ne remplace ni une visite ni l’avis d’un professionnel");
       expect(note.textContent).toContain("prix d’adjudication peut être très différent");
+      expect(note.textContent).toContain(
+        "Aux enchères, la mise à prix est volontairement basse : le prix final est souvent bien supérieur.",
+      );
+      expect(note.textContent).toContain(
+        "DVF (base des ventes immobilières déclarées aux notaires)",
+      );
+      // Le libellé est exclu des extraits de recherche.
+      expect(note.querySelector("[data-nosnippet]")?.textContent).toBe(label);
       // Sous le prix, dans le même bloc : l'inscription le suit toujours.
       const priceBlock = screen.getByText("Prix de départ, hors frais").parentElement!;
       expect(priceBlock.contains(note)).toBe(true);
@@ -363,6 +402,36 @@ describe("SalePublicPreview", () => {
         "Pas assez de ventes comparables fiables pour situer cette mise à prix",
       );
       expect(note.textContent).not.toMatch(/nettement|proche|au-dessus/);
+      expect(note.textContent).not.toContain("volontairement basse");
+    });
+
+    it.each([
+      [
+        "insufficient_surface",
+        "Surface du bien inconnue : pas de comparaison possible avec les ventes du secteur",
+      ],
+      [
+        "insufficient_type",
+        "Type de bien non pris en charge par la comparaison avec les ventes du secteur",
+      ],
+    ] as const)("sépare la raison d'insuffisance %s", (band, label) => {
+      renderPreview({ sale_venue_type: "tribunal", market_gap_band: band });
+      const note = screen.getByTestId("market-gap-band");
+      expect(note.textContent).toContain(label);
+      expect(note.textContent).not.toContain("Pas assez de ventes comparables fiables");
+      expect(note.textContent).not.toContain("volontairement basse");
+    });
+
+    it("dit « bien occupé » à la place de « inférieure à la fourchette »", () => {
+      renderPreview({ sale_venue_type: "tribunal", market_gap_band: "occupied" });
+      const note = screen.getByTestId("market-gap-band");
+      expect(note.textContent).toContain(
+        "Bien occupé : la comparaison avec les ventes de biens libres n'est pas pertinente",
+      );
+      expect(note.textContent).not.toMatch(/inférieure|fourchette|volontairement basse/);
+      expect(
+        within(note).getByRole("link", { name: "Comment est calculé ce repère ?" }),
+      ).toBeTruthy();
     });
 
     it("n'affiche rien sans bande, ni sans mise à prix", () => {
@@ -430,6 +499,133 @@ describe("SalePublicPreview", () => {
     );
   });
 
+  it("nomme la page d'origine dans le lien de retour (tribunal, audiences, carte)", () => {
+    const cases = [
+      ["/tribunaux/justice-tj-1-93", "Retour au tribunal", "/tribunaux/justice-tj-1-93"],
+      ["/audiences-a-venir", "Retour aux audiences", "/audiences-a-venir"],
+      ["/sales?city=Lyon&map=true", "Retour à la carte", null],
+    ] as const;
+    for (const [from, label, href] of cases) {
+      const { unmount } = renderPreview({ id: "sale-1" }, "sale-1", false, from);
+      const link = screen.getByRole("link", { name: new RegExp(label) });
+      if (href) expect(link.getAttribute("href")).toBe(href);
+      else expect(link.getAttribute("href")).toContain("/sales?city=Lyon&map=true#sale-card-");
+      unmount();
+    }
+  });
+
+  it("annonce aux lecteurs d'écran que les valeurs floutées sont masquées, et ce qui les ouvre", () => {
+    renderPreview({ sale_venue_type: "tribunal", starting_price_eur: 80_000 });
+    const teaser = screen.getByRole("region", { name: "L’analyse de cette vente" });
+    const rows = Array.from(teaser.querySelectorAll("dd"));
+    expect(rows).toHaveLength(4);
+    const spoken = rows.map((row) => row.querySelector(".sr-only")?.textContent);
+    expect(spoken[0]).toBe("Valeur masquée, visible avec un compte gratuit");
+    expect(spoken[1]).toBe("Valeur masquée, visible avec un compte gratuit");
+    expect(spoken[2]).toBe(
+      "Valeur masquée, visible avec l’offre Analyse, ou en débloquant la vente",
+    );
+    expect(spoken[3]).toBe("Valeur masquée, visible avec l’offre Analyse");
+    // Le chiffre flouté reste un décor : jamais lu.
+    for (const row of rows) {
+      expect(row.querySelector("[aria-hidden='true'][data-nosnippet]")?.textContent).toMatch(/0/);
+    }
+  });
+
+  it("reprend les points à vérifier sous l'ancre #points-a-verifier, sans l'occupation", () => {
+    renderPreview({
+      sale_venue_type: "tribunal",
+      sale_date: "2099-01-20T08:30:00+00:00",
+      app_surface_m2: null,
+      occupancy_status: null,
+    });
+    const section = screen.getByRole("region", { name: "1 point à vérifier" });
+    expect(section.id).toBe("points-a-verifier");
+    expect(section.textContent).toContain("Surface non communiquée dans l’annonce");
+    expect(section.textContent).not.toContain("Occupation");
+  });
+
+  it("n'ajoute aucun bloc de points quand l'aperçu n'en laisse aucun ouvert", () => {
+    renderPreview({ sale_venue_type: "tribunal", app_surface_m2: 60 });
+    expect(document.getElementById("points-a-verifier")).toBeNull();
+  });
+
+  it("signale une vente à date passée : pas de bouton d'agenda, pas de bande d'écart", () => {
+    renderPreview({
+      sale_venue_type: "tribunal",
+      sale_date: "2020-03-12T09:00:00+00:00",
+      market_gap_band: "under",
+    });
+    expect(screen.getByTestId("past-sale-date").textContent).toBe("Date de vente passée");
+    expect(screen.queryByRole("button", { name: "Ajouter à mon agenda" })).toBeNull();
+    expect(screen.queryByTestId("market-gap-band")).toBeNull();
+  });
+
+  it("calcule la mention « date passée » après montage : le rendu serveur ne la porte jamais", () => {
+    const html = renderToString(
+      <SalePublicPreview
+        saleId="sale-1"
+        returnTo="/sales"
+        preview={
+          {
+            id: "sale-1",
+            sale_venue_type: "tribunal",
+            sale_date: "2020-03-12T09:00:00+00:00",
+            starting_price_eur: 59_000,
+            market_gap_band: "under",
+          } as AuctionSale
+        }
+      />,
+    );
+    expect(html).not.toContain("Date de vente passée");
+    expect(html).not.toContain("past-sale-date");
+  });
+
+  it("s'hydrate sans différence quand le jour de la vente passe entre le serveur et le navigateur", async () => {
+    vi.useFakeTimers();
+    const recoverable: unknown[] = [];
+    try {
+      const sale = {
+        id: "sale-1",
+        sale_venue_type: "tribunal",
+        // 12 mars 2026, 12 h à Paris.
+        sale_date: "2026-03-12T11:00:00+00:00",
+        starting_price_eur: 59_000,
+      } as AuctionSale;
+      const element = <SalePublicPreview saleId="sale-1" returnTo="/sales" preview={sale} />;
+      // Le serveur rend le soir du 12 mars (23 h 59 à Paris) : la vente n'est pas passée.
+      vi.setSystemTime(new Date("2026-03-12T22:59:00Z"));
+      const container = document.createElement("div");
+      document.body.appendChild(container);
+      container.innerHTML = renderToString(element);
+      expect(container.querySelector("[data-testid=past-sale-date]")).toBeNull();
+      // Le navigateur hydrate le lendemain (minuit passé) : la mention apparaît, sans erreur d'hydratation.
+      vi.setSystemTime(new Date("2026-03-12T23:01:00Z"));
+      await act(async () => {
+        hydrateRoot(container, element, { onRecoverableError: (error) => recoverable.push(error) });
+      });
+      expect(container.querySelector("[data-testid=past-sale-date]")?.textContent).toBe(
+        "Date de vente passée",
+      );
+      // Aucune différence entre le HTML du serveur et le premier rendu du navigateur.
+      expect(recoverable).toEqual([]);
+      container.remove();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("garde l'agenda et la bande d'écart d'une vente à venir, sans signal de date passée", () => {
+    renderPreview({
+      sale_venue_type: "tribunal",
+      sale_date: "2099-01-20T08:30:00+00:00",
+      market_gap_band: "under",
+    });
+    expect(screen.queryByTestId("past-sale-date")).toBeNull();
+    expect(screen.getByRole("button", { name: "Ajouter à mon agenda" })).toBeTruthy();
+    expect(screen.getByTestId("market-gap-band")).toBeTruthy();
+  });
+
   it("donne leur définition à « mise à prix » et à « adjudication »", () => {
     renderPreview({ sale_venue_type: "tribunal" });
     expect(screen.getByRole("button", { name: "Définition : mise à prix" })).toBeTruthy();
@@ -475,6 +671,23 @@ describe("SalePublicPreview", () => {
     expect(teaser.textContent).toContain("Enchère plafond (simulation)");
     expect(teaser.textContent).toContain("000 000 €");
     expect(teaser.textContent).not.toMatch(/[1-9]\d* ?\d* €/);
+  });
+
+  it("annonce « Mon dossier » au visiteur d'une vente au tribunal, hors du bloc d'analyse", () => {
+    renderPreview({ sale_venue_type: "tribunal" });
+    const note = screen.getByTestId("public-dossier-teaser");
+    expect(note.textContent).toBe(
+      "Compte gratuit : notez votre statut et votre enchère plafond sur chaque vente suivie.",
+    );
+    const teaser = screen.getByRole("region", { name: "L’analyse de cette vente" });
+    expect(teaser.contains(note)).toBe(false);
+  });
+
+  it("ne cite pas l'enchère plafond sur une vente hors tribunal : le statut seul", () => {
+    renderPreview({ sale_venue_type: "notary" });
+    expect(screen.getByTestId("public-dossier-teaser").textContent).toBe(
+      "Compte gratuit : notez votre statut sur chaque vente suivie.",
+    );
   });
 
   it("does not promise a bid ceiling for a notarial sale", () => {
@@ -537,3 +750,50 @@ function renderPreview(
     />,
   );
 }
+
+describe("offre de lancement sur la fiche publique", () => {
+  const sale = {
+    id: "sale-1",
+    starting_price_eur: 59_000,
+    sale_venue_type: "tribunal",
+    sale_verification_status: "cross_checked",
+  } as AuctionSale;
+
+  function storeWith(state: LaunchOfferState): LaunchOfferStore {
+    return { getSnapshot: () => state, subscribe: () => () => {}, ensure: () => {} };
+  }
+  function withOffer(state: LaunchOfferState) {
+    return (
+      <LaunchOfferContext.Provider value={storeWith(state)}>
+        <SalePublicPreview saleId="sale-1" returnTo="/sales" preview={sale} />
+      </LaunchOfferContext.Provider>
+    );
+  }
+
+  it("offre active : la mention du visiteur sous le bouton, et les étiquettes de l'offre", () => {
+    render(withOffer({ active: true, pending: false }));
+    const block = screen.getByTestId("public-signup");
+    expect(screen.getByTestId("public-signup-line").textContent).toBe(LAUNCH_OFFER_VISITOR_TEXT);
+    expect(block.textContent).not.toContain(FREE_ACCESS_LINE);
+    const teaser = screen.getByRole("region", { name: "L’analyse de cette vente" });
+    expect(teaser.textContent).toContain("Compte gratuit (offre de lancement)");
+    expect(teaser.textContent).not.toContain("3 déblocages par mois");
+    expect(teaser.textContent).not.toContain("Offre Analyse");
+  });
+
+  it("offre coupée : la ligne et les étiquettes habituelles", () => {
+    render(withOffer({ active: false, pending: false }));
+    expect(screen.getByTestId("public-signup-line").textContent).toBe(FREE_ACCESS_LINE);
+    const teaser = screen.getByRole("region", { name: "L’analyse de cette vente" });
+    expect(teaser.textContent).toContain("Offre Analyse, ou 3 déblocages par mois");
+  });
+
+  it("rendu serveur : l'état est inconnu, le HTML ne promet ni quota ni offre", () => {
+    // Le magasin annonce « offre active », mais le serveur ne lit pas l'état : il rend « inconnu ».
+    const html = renderToString(withOffer({ active: true, pending: false }));
+    expect(html).not.toContain("fiches détaillées par mois");
+    expect(html).not.toContain("offre de lancement");
+    expect(html).toContain("Gratuit, sans carte bancaire");
+    expect(html).toContain("Selon votre compte");
+  });
+});

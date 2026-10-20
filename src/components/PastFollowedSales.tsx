@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Terme } from "@/components/ceiling/Terme";
 import { Badge, Button, Card } from "@/components/ui/primitives";
 import { useAuth } from "@/hooks/use-auth";
 import { deleteFollowedSaleSnapshot, fetchFollowedSaleSnapshots } from "@/lib/client-api";
@@ -11,9 +12,9 @@ import type {
   FollowedSaleSnapshot,
   FollowedSaleSnapshotResult,
 } from "@/lib/followed-sale-snapshots-shared";
+import { tribunalBarAssociation } from "@/lib/lawyer-bar";
 import { queryKeys } from "@/lib/query-keys";
 import type { SurenchereWindow } from "@/lib/surenchere-window";
-import { SURENCHERE_WINDOW_DAYS } from "@/lib/surenchere-window";
 import { toast } from "@/lib/toast";
 import { userMessage } from "@/lib/user-messages";
 
@@ -73,7 +74,16 @@ export function PastFollowedSales() {
             <SnapshotCard
               snapshot={snapshot}
               busy={remove.isPending && remove.variables === snapshot.id}
-              onRemove={() => remove.mutate(snapshot.id)}
+              onRemove={() => {
+                // Le résumé est supprimé pour de bon : on demande confirmation avant.
+                if (
+                  window.confirm(
+                    "Retirer cette vente de votre espace ? Le résumé conservé sera supprimé et ne pourra pas être rétabli.",
+                  )
+                ) {
+                  remove.mutate(snapshot.id);
+                }
+              }}
             />
           </li>
         ))}
@@ -133,13 +143,15 @@ function SnapshotCard({
       </dl>
 
       <div className="mt-3 rounded-lg border border-line bg-surface-tint p-3 text-sm">
-        <p className="font-semibold text-brand-navy">Résultat</p>
+        <p className="font-semibold text-brand-navy">
+          Résultat de l’<Terme terme="adjudication">adjudication</Terme>
+        </p>
         <p className="mt-1" data-testid="snapshot-result">
           {resultText(snapshot.result)}
         </p>
       </div>
 
-      <SurenchereBlock info={snapshot.surenchere} lawyerName={snapshot.lawyerName} />
+      <SurenchereBlock info={snapshot.surenchere} tribunalName={snapshot.tribunalName} />
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-ink-soft">
         <span>Gardé jusqu’au {formatDate(snapshot.expiresAt)}</span>
@@ -174,42 +186,63 @@ export function resultText(result: FollowedSaleSnapshotResult): string {
   return "Résultat non connu.";
 }
 
+/**
+ * Surenchère : formulation prudente (texte de la relecture juridique du 20/10/2026, à faire valider
+ * par un avocat). La date est indicative (dix jours après l'audience connue d'Immojudis) ; le report
+ * au premier jour ouvrable n'est pas calculé, le texte le dit et demande de ne pas compter dessus.
+ * Jamais « fenêtre échue », « il reste N jours » ni « dernier jour » : une fois la date passée, le
+ * délai a pu expirer ou être prolongé, et la personne concernée est renvoyée sans attendre à un
+ * avocat. Les mêmes phrases sont dans `surenchereLines` (`sale-result-emails.ts`) ; un test vérifie
+ * qu'elles restent identiques. Le lien de l'annuaire est filtré sur le barreau du tribunal quand
+ * son nom le permet (`?bar=`), sinon il mène à l'annuaire entier.
+ */
 function SurenchereBlock({
   info,
-  lawyerName,
+  tribunalName,
 }: {
   info: SurenchereWindow;
-  lawyerName: string | null;
+  tribunalName: string | null;
 }) {
+  const bar = tribunalBarAssociation(tribunalName);
+  const directoryHref = bar ? `/avocats?bar=${encodeURIComponent(bar)}` : "/avocats";
   return (
     <div className="mt-3 text-sm" data-testid="snapshot-surenchere">
-      <p className="font-semibold text-brand-navy">Fenêtre de surenchère</p>
+      <p className="font-semibold text-brand-navy">
+        Fenêtre de <Terme terme="surenchere">surenchère</Terme>
+      </p>
       {info.kind === "window" ? (
         <>
           <p className="mt-1">
             {info.adjudicationConfirmed
-              ? `Date limite indicative : ${formatDate(info.deadline)} (${SURENCHERE_WINDOW_DAYS} jours après l’audience du ${formatDate(info.hearingDay)}).`
-              : `Le résultat n’est pas connu. Si le bien a été adjugé, la surenchère est possible jusqu’au ${formatDate(info.deadline)} (date indicative : ${SURENCHERE_WINDOW_DAYS} jours après l’audience du ${formatDate(info.hearingDay)}).`}{" "}
-            {info.expired
-              ? "Cette fenêtre est échue."
-              : info.daysLeft === 0
-                ? "C’est le dernier jour."
-                : `Il reste ${info.daysLeft} jour${info.daysLeft === 1 ? "" : "s"}.`}
+              ? null
+              : "Le résultat n’est pas connu : la surenchère n’existe que si le bien a été adjugé. "}
+            Date indicative : le {formatDate(info.deadline)}. Si ce jour tombe un samedi, un
+            dimanche ou un jour férié, le délai peut être prolongé jusqu’au premier jour ouvrable
+            suivant ; ne comptez pas dessus sans l’avis d’un avocat. Elle est calculée à partir de
+            la date d’audience connue d’Immojudis, qui peut avoir changé.
           </p>
+          {info.expired ? (
+            <p className="mt-1 font-semibold text-brand-navy">
+              Cette date indicative est passée : le délai a pu expirer, ou être prolongé. Si vous
+              êtes concerné, consultez sans attendre un avocat, seul à pouvoir le confirmer.
+            </p>
+          ) : null}
           <p className="mt-1 text-ink-soft">
-            La surenchère se forme par acte d’avocat : la date exacte et les conditions se
-            confirment avec l’avocat
-            {lawyerName ? ` de la vente (${lawyerName})` : " de la vente"} ou un avocat de{" "}
-            <Link href="/avocats" className="font-semibold text-gold-text underline">
-              l’annuaire
-            </Link>
-            .
+            La surenchère se forme par acte d’avocat déposé au greffe du juge de l’exécution, avec
+            une garantie d’un dixième du prix principal (chèque de banque ou caution bancaire
+            irrévocable, art. R. 322-51 du CPCE). Faites confirmer la date et les conditions par un
+            avocat, de préférence inscrit au barreau du tribunal concerné ; le choix vous appartient
+            (
+            <Link href={directoryHref} className="font-semibold text-gold-text underline">
+              l’annuaire d’Immojudis
+            </Link>{" "}
+            signale les profils mis en avant contre rémunération).
           </p>
         </>
       ) : info.kind === "no_date" ? (
         <p className="mt-1 text-ink-soft">
-          La date d’audience n’est pas connue : la fenêtre ne peut pas être calculée. Interrogez
-          l’avocat de la vente.
+          La date d’audience n’est pas connue : la date indicative ne peut pas être calculée.
+          Interrogez un avocat de votre choix.
         </p>
       ) : (
         <p className="mt-1 text-ink-soft">

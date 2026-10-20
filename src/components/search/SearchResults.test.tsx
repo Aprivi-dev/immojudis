@@ -413,9 +413,9 @@ describe("useful public discovery", () => {
       fireEvent.click(screen.getByRole("button", { name: "2 points à vérifier" }));
       const note = screen.getByRole("note");
       expect(note.textContent).toContain("Surface non communiquée dans l’annonce");
-      expect(note.textContent).toContain("Occupation du bien à confirmer");
+      expect(note.textContent).toContain("Occupation du bien à vérifier");
       expect(screen.getByRole("link", { name: "Voir la fiche" }).getAttribute("href")).toBe(
-        "/sales/verify-card",
+        "/sales/verify-card#points-a-verifier",
       );
     });
 
@@ -438,10 +438,16 @@ describe("useful public discovery", () => {
       expect(screen.getByRole("button", { name: "1 point à vérifier" })).toBeTruthy();
     });
 
-    it("garde la pastille « Annonce bien renseignée » à côté, sans la remplacer", () => {
+    it("n'affiche pas « Annonce bien renseignée » à côté d'un point à vérifier", () => {
       renderCard({ completeness_tier: 1, app_surface_m2: null });
-      expect(screen.getByText("Annonce bien renseignée")).toBeTruthy();
       expect(screen.getByRole("button", { name: "1 point à vérifier" })).toBeTruthy();
+      expect(screen.queryByText("Annonce bien renseignée")).toBeNull();
+    });
+
+    it("garde « Annonce bien renseignée » quand aucun point n'est à vérifier", () => {
+      renderCard({ completeness_tier: 1 });
+      expect(screen.getByText("Annonce bien renseignée")).toBeTruthy();
+      expect(screen.queryByRole("button", { name: /à vérifier/ })).toBeNull();
     });
   });
 
@@ -767,6 +773,49 @@ describe("listing media gallery", () => {
     expect(visual.getAttribute("data-thumbnail")).toBe("true");
     expect(visual.getAttribute("data-map-size")).toBe("320x240");
     expect(visual.getAttribute("data-map-framing")).toBe("512");
+  });
+});
+
+describe("structure et noms de la liste des résultats", () => {
+  it("place un h2 masqué « Résultats » avant les cartes (h1, h2, puis h3)", () => {
+    const { container } = renderResults([sale("sale-a")]);
+    const h2 = screen.getByRole("heading", { level: 2, name: "Résultats" });
+    expect(h2.className).toContain("sr-only");
+    const h3 = screen.getByRole("heading", { level: 3 });
+    expect(h2.compareDocumentPosition(h3) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(container.querySelectorAll("h2")).toHaveLength(1);
+  });
+
+  it("n'ajoute pas ce h2 à un état vide", () => {
+    renderResults([]);
+    expect(screen.queryByRole("heading", { name: "Résultats" })).toBeNull();
+  });
+
+  it("complète le nom du lien de la carte par le prix, pour ne pas multiplier les homonymes", () => {
+    renderResults([
+      { ...sale("sale-a"), starting_price_eur: 90_000 } as AuctionSale,
+      { ...sale("sale-b"), starting_price_eur: 120_000 } as AuctionSale,
+    ]);
+    const names = Array.from(document.querySelectorAll("[id^='sale-card-']")).map((link) =>
+      link.getAttribute("aria-label"),
+    );
+    expect(names).toHaveLength(2);
+    expect(names[0]).toMatch(/^Voir .+, 90\s000\s€$/);
+    expect(names[1]).toMatch(/^Voir .+, 120\s000\s€$/);
+    expect(new Set(names).size).toBe(2);
+  });
+
+  it("prend la date quand le prix manque, sans jamais nommer une valeur masquée", () => {
+    renderResults([
+      {
+        ...sale("sale-a"),
+        starting_price_eur: null,
+        sale_date: "2099-03-12T09:00:00Z",
+      } as AuctionSale,
+    ]);
+    expect(document.getElementById("sale-card-sale-a")?.getAttribute("aria-label")).toMatch(
+      /^Voir .+, vente le .*mars 2099$/,
+    );
   });
 });
 

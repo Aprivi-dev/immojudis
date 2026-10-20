@@ -51,7 +51,7 @@ export type AlertEvaluationResponse = {
 /** The user's plan does not include alerts: nothing to evaluate, not a failure. */
 export class AlertsNotIncludedError extends Error {
   constructor() {
-    super("Alertes avancées réservées au plan Analyse.");
+    super("Alertes avancées réservées à l’offre Analyse.");
     this.name = "AlertsNotIncludedError";
   }
 }
@@ -107,7 +107,7 @@ export async function listUserAlertMatches({
 }): Promise<{ matches: AlertMatchSummary[] }> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "alerts.advanced")) {
-    throw new Error("Alertes avancées réservées au plan Analyse.");
+    throw new Error("Alertes avancées réservées à l’offre Analyse.");
   }
 
   let query = auth.supabase
@@ -386,6 +386,27 @@ export async function runSmartAlertEvaluationBatch({
     totalNotificationCount: results.reduce((total, result) => total + result.notificationCount, 0),
     results,
   };
+}
+
+/** Part de comptes en échec à partir de laquelle le passage est déclaré en échec. */
+export const SMART_ALERT_FAILURE_RATE_THRESHOLD = 0.2;
+
+/**
+ * Un passage où des comptes ont échoué ne compte pas comme un succès quand l'échec n'est plus
+ * isolé : échoue si `failedUserCount / analysedUserCount` atteint 20 %. Un compte seul en échec
+ * (réseau, donnée) reste dans le rapport sans réveiller la supervision. Les comptes évalués ont déjà
+ * été enregistrés ; le rattrapage reprend les autres (les plus anciennement évalués d'abord).
+ */
+export function assertSmartAlertBatchComplete(
+  result: Pick<SmartAlertBatchRunResult, "analysedUserCount" | "failedUserCount" | "results">,
+): void {
+  if (result.analysedUserCount <= 0 || result.failedUserCount <= 0) return;
+  if (result.failedUserCount / result.analysedUserCount < SMART_ALERT_FAILURE_RATE_THRESHOLD)
+    return;
+  const firstError = result.results.find((entry) => !entry.ok && entry.error)?.error;
+  throw new Error(
+    `Alertes intelligentes : ${result.failedUserCount} compte(s) en échec sur ${result.analysedUserCount} analysé(s) (seuil ${SMART_ALERT_FAILURE_RATE_THRESHOLD * 100} %)${firstError ? ` ; première erreur : ${firstError}` : ""}.`,
+  );
 }
 
 export function buildAlertMatchSummary({

@@ -12,5 +12,9 @@ line-length = 120
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B"]
+select = ["E", "F", "I", "UP", "B", "TID251"]
 ignore = ["E501"]
+
+# Le paquet « fitz » est l'ancien nom de PyMuPDF : son import affiche un avertissement de dépréciation.
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"fitz".msg = "Utiliser « import pymupdf » (« fitz » est déprécié)."

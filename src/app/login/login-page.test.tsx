@@ -108,15 +108,74 @@ describe("login page", () => {
     fireEvent.click(submit!);
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toBe("Email ou mot de passe incorrect.");
-    expect(mocks.toastError).toHaveBeenCalledWith("Email ou mot de passe incorrect.");
+    // Une seule annonce : l'alerte du formulaire, pas l'alerte et un toast.
+    expect(mocks.toastError).not.toHaveBeenCalled();
+  });
+
+  it("relie l'erreur aux champs email et mot de passe (aria-invalid, aria-describedby)", async () => {
+    mocks.signIn.mockResolvedValue({ error: new Error("Invalid login credentials") });
+    render(<LoginPage />);
+    const email = screen.getByPlaceholderText("vous@exemple.fr");
+    const password = screen.getByPlaceholderText("Votre mot de passe");
+    expect(email.getAttribute("aria-invalid")).toBeNull();
+    expect(password.getAttribute("aria-describedby")).toBeNull();
+    fireEvent.change(email, { target: { value: "quelquun@example.test" } });
+    fireEvent.change(password, { target: { value: "mauvais-mot-de-passe" } });
+    const submit = screen
+      .getAllByRole("button", { name: "Se connecter" })
+      .find((button) => button.getAttribute("type") === "submit");
+    fireEvent.click(submit!);
+    const alert = await screen.findByRole("alert");
+    for (const field of [email, password]) {
+      expect(field.getAttribute("aria-invalid")).toBe("true");
+      expect(field.getAttribute("aria-describedby")).toContain(alert.id);
+    }
+  });
+
+  it("garde la règle des 12 caractères ET l'erreur dans la description du mot de passe", async () => {
+    mocks.search = { mode: "investor" };
+    mocks.signUp.mockResolvedValue({ data: null, error: new Error("Password is too short") });
+    render(<LoginPage />);
+    fireEvent.change(screen.getByPlaceholderText("vous@exemple.fr"), {
+      target: { value: "a@example.test" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("12 caractères minimum"), {
+      target: { value: "123456789012" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Créer mon compte gratuit/ }));
+    const alert = await screen.findByRole("alert");
+    const description = screen
+      .getByPlaceholderText("12 caractères minimum")
+      .getAttribute("aria-describedby");
+    expect(description).toContain("login-password-rule");
+    expect(description).toContain(alert.id);
+  });
+
+  it("propose l'autocomplétion du nom et de l'organisation à l'inscription", () => {
+    mocks.search = { mode: "professional" };
+    render(<LoginPage />);
+    expect(screen.getByPlaceholderText("Prénom Nom").getAttribute("autocomplete")).toBe("name");
+    expect(
+      screen
+        .getByPlaceholderText("Cabinet, étude, office, tribunal...")
+        .getAttribute("autocomplete"),
+    ).toBe("organization");
+    expect(screen.getByPlaceholderText("vous@exemple.fr").getAttribute("autocomplete")).toBe(
+      "email",
+    );
   });
 
   it("lets visitors reveal the password they typed", () => {
     render(<LoginPage />);
     const field = screen.getByPlaceholderText("Votre mot de passe") as HTMLInputElement;
     expect(field.type).toBe("password");
-    fireEvent.click(screen.getByRole("button", { name: "Afficher le mot de passe" }));
+    const toggle = screen.getByRole("button", { name: "Afficher le mot de passe" });
+    // Le libellé change avec l'état : pas d'aria-pressed en plus (double signal).
+    expect(toggle.hasAttribute("aria-pressed")).toBe(false);
+    fireEvent.click(toggle);
     expect(field.type).toBe("text");
+    const hide = screen.getByRole("button", { name: "Masquer le mot de passe" });
+    expect(hide.hasAttribute("aria-pressed")).toBe(false);
   });
 
   it("change de mode en gardant l'adresse de retour dans la requête", () => {
@@ -281,6 +340,35 @@ describe("login page", () => {
     );
   });
 
+  it("motif « offre » : n'annonce pas une souscription possible quand l'offre n'est pas ouverte", () => {
+    mocks.search = { mode: "investor", reason: "offre" };
+    render(<LoginPage />);
+    expect(screen.getByTestId("login-reason").textContent).toBe(
+      "Créez votre compte gratuit. L’offre Analyse n’est pas encore ouverte à la souscription : vous pourrez demander à être prévenu de son ouverture.",
+    );
+    expect(screen.getByTestId("login-reason").textContent).not.toContain("quand vous le souhaitez");
+  });
+
+  it("colonne d'accueil : le tarif prévu remplace « sur abonnement résiliable »", () => {
+    mocks.search = { mode: "investor" };
+    const closed = render(<LoginPage />);
+    expect(closed.container.textContent).toContain(
+      "tarif prévu : 59 € TTC / mois, pas encore souscriptible",
+    );
+    expect(closed.container.textContent).not.toContain("sur abonnement résiliable");
+    closed.unmount();
+
+    mocks.launch = { active: true, pending: false };
+    const active = render(<LoginPage />);
+    expect(active.container.textContent).toContain(
+      "Pendant l’offre de lancement, le compte gratuit bénéficie des avantages de l’offre Analyse",
+    );
+    expect(active.container.textContent).toContain(
+      "Tarif prévu de l’offre Analyse : 59 € TTC / mois, pas encore souscriptible.",
+    );
+    expect(active.container.textContent).not.toContain("sur abonnement résiliable");
+  });
+
   it("sans offre de lancement, aucune mention de l'offre n'apparaît", () => {
     mocks.search = { mode: "investor" };
     render(<LoginPage />);
@@ -355,6 +443,19 @@ describe("login page", () => {
       expect(screen.queryByPlaceholderText("vous@exemple.fr")).toBeNull();
       expect(screen.getByRole("button", { name: /Renvoyer l'email/ })).toBeTruthy();
       expect(screen.getByRole("button", { name: "Changer d'adresse" })).toBeTruthy();
+    });
+
+    it("déplace le focus sur le titre du panneau qui remplace le formulaire, puis au retour", async () => {
+      await signUpWithoutSession();
+      const title = screen.getByRole("heading", { level: 1 });
+      expect(title.textContent).toBe("Confirmez votre adresse email");
+      expect(title.getAttribute("tabindex")).toBe("-1");
+      await waitFor(() => expect(document.activeElement).toBe(title));
+
+      fireEvent.click(screen.getByRole("button", { name: "Changer d'adresse" }));
+      const formTitle = screen.getByRole("heading", { level: 1 });
+      expect(formTitle.getAttribute("tabindex")).toBe("-1");
+      await waitFor(() => expect(document.activeElement).toBe(formTitle));
     });
 
     it("aide à retrouver l'email ou le compte existant sous le message", async () => {

@@ -657,7 +657,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                     ) : null}
                     <label
                       htmlFor="contribution-files"
-                      className="mt-3 flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-gold/50 bg-cream/40 px-4 py-5 text-center transition hover:border-gold hover:bg-cream has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-gold has-[:focus-visible]:ring-offset-2"
+                      className="mt-3 flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-gold/50 bg-cream/40 px-4 py-5 text-center transition hover:border-gold hover:bg-cream has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-gold-soft"
                     >
                       <UploadCloud className="size-6 text-gold-text" aria-hidden="true" />
                       <span className="mt-2 text-sm font-semibold text-foreground">
@@ -900,7 +900,7 @@ function StatusCard({
 }
 
 const inputClassName =
-  "block min-h-11 w-full rounded-md border border-input bg-white/75 px-3 py-2.5 text-sm text-foreground outline-none transition placeholder:text-muted-foreground focus:border-gold focus:ring-2 focus:ring-gold/20";
+  "block min-h-11 w-full rounded-md border border-input bg-white/75 px-3 py-2.5 text-sm text-foreground transition placeholder:text-muted-foreground focus:border-gold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft";
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
   const response = await fetch(url, {

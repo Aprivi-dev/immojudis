@@ -185,6 +185,41 @@ describe("AccountPage unlocks", () => {
     });
   });
 
+  it("propose le récapitulatif hebdomadaire et l'alerte de résultat, décochés et distincts, quand chaque envoi est ouvert", async () => {
+    mocks.plan.mockResolvedValue({
+      plan: { plan: "decouverte", label: "Découverte", hasAnalysisAccess: false },
+    });
+    mocks.overview.mockResolvedValue({ status: status(), sales: [] });
+    mocks.preferences.mockResolvedValue({
+      preferences: {
+        alertEmailEnabled: false,
+        saleRemindersEnabled: false,
+        weeklyDigestEnabled: false,
+        weeklyDigestWeekday: 2,
+        saleResultsEnabled: false,
+      },
+      // Les rappels restent fermés : chaque email a son propre interrupteur.
+      saleRemindersAvailable: false,
+      weeklyDigestAvailable: true,
+      saleResultsAvailable: true,
+    });
+    mocks.updatePreferences.mockResolvedValue({});
+    renderPage();
+
+    const notifications = within(await screen.findByRole("region", { name: "Notifications" }));
+    await waitFor(() => expect(notifications.getAllByRole("checkbox")).toHaveLength(3));
+    const boxes = notifications.getAllByRole("checkbox") as HTMLInputElement[];
+    expect(boxes.every((box) => !box.checked)).toBe(true);
+    // Le jour d'envoi n'est proposé qu'une fois le récapitulatif activé.
+    expect(notifications.queryByRole("combobox")).toBeNull();
+    fireEvent.click(notifications.getByLabelText(/Recevoir « Ma semaine »/));
+    await waitFor(() => expect(mocks.updatePreferences).toHaveBeenCalled());
+    expect(mocks.updatePreferences.mock.calls[0][0]).toEqual({
+      weeklyDigestEnabled: true,
+      consentSource: "settings",
+    });
+  });
+
   it("ne montre que la case des alertes tant que les rappels d'audience ne sont pas ouverts", async () => {
     mocks.plan.mockResolvedValue({
       plan: { plan: "decouverte", label: "Découverte", hasAnalysisAccess: false },

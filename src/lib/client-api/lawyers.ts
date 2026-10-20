@@ -1,6 +1,7 @@
 import { authHeaders, readJson } from "@/lib/client-api-core";
 import type { FeaturedReferencedLawyerResponse } from "@/lib/featured-lawyers";
 import type { LawyerDirectoryResponse } from "@/lib/lawyer-directory";
+import type { LawyerProsecutedSalesResponse } from "@/lib/lawyer-prosecuted-sales";
 import type {
   LawyerPlacementEventInput,
   LawyerPlacementEventResponse,
@@ -79,6 +80,21 @@ export async function fetchLawyerDirectory(
   const suffix = search.size ? `?${search.toString()}` : "";
   const response = await fetch(`/api/lawyers/directory${suffix}`);
   return readJson<LawyerDirectoryResponse>(response);
+}
+
+/**
+ * Ventes à venir où les avocats demandés sont avocat poursuivant. Route authentifiée, réservée aux
+ * comptes payants : ne l'appeler que pour eux (les autres reçoivent un 403).
+ */
+export async function fetchLawyerProsecutedSales(
+  lawyerIds: readonly string[],
+): Promise<LawyerProsecutedSalesResponse> {
+  const search = new URLSearchParams({ lawyerIds: lawyerIds.join(",") });
+  const response = await fetch(`/api/lawyers/prosecuted-sales?${search.toString()}`, {
+    headers: await authHeaders(),
+    cache: "no-store",
+  });
+  return readJson<LawyerProsecutedSalesResponse>(response);
 }
 
 export async function recordLawyerPlacementEvent(args: {

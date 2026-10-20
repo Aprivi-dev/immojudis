@@ -20,7 +20,15 @@ export type AuctionSale = {
    * Signed-out page only: the starting price against the local market (DVF) in three bands, never a
    * figure (`get_public_sale_market_gap_band`). Absent when there is nothing reliable to say.
    */
-  market_gap_band?: "under" | "near" | "above" | "insufficient" | null;
+  market_gap_band?:
+    | "under"
+    | "near"
+    | "above"
+    | "occupied"
+    | "insufficient_surface"
+    | "insufficient_type"
+    | "insufficient"
+    | null;
   source_checks?: Record<string, { checked_at?: string }> | null;
   source_conflicts?: Array<{
     field?: string;

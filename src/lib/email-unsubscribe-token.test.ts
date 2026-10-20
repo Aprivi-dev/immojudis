@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createUnsubscribeToken, verifyUnsubscribeToken } from "./email-unsubscribe-token";
+import {
+  REMINDERS_UNSUBSCRIBE_TOKEN_TTL_DAYS,
+  UNSUBSCRIBE_TOKEN_TTL_DAYS,
+  createUnsubscribeToken,
+  unsubscribeTokenScopeKind,
+  verifyUnsubscribeToken,
+} from "./email-unsubscribe-token";
 
 const env = { SUPABASE_SERVICE_ROLE_KEY: "service-role-test-key" };
 const userId = "7d335032-e935-4550-9347-ed22b0f63449";
@@ -44,12 +50,107 @@ describe("unsubscribe tokens", () => {
     expect(verifyUnsubscribeToken(`${forged}.${signature}`, { now, env })).toBeNull();
   });
 
+  it("porte la portée « ouverture de l'offre », signée et distincte des autres", () => {
+    const token = createUnsubscribeToken({ userId, scope: { kind: "offer-opening" }, now, env });
+    expect(verifyUnsubscribeToken(token, { now, env })).toMatchObject({
+      userId,
+      scope: { kind: "offer-opening" },
+    });
+    const reminders = createUnsubscribeToken({ userId, scope: { kind: "reminders" }, now, env });
+    expect(token).not.toBe(reminders);
+    const [payload, signature] = reminders.split(".");
+    const forged = Buffer.from(
+      JSON.stringify({
+        ...JSON.parse(Buffer.from(payload, "base64url").toString()),
+        s: "offer-opening",
+      }),
+    ).toString("base64url");
+    expect(verifyUnsubscribeToken(`${forged}.${signature}`, { now, env })).toBeNull();
+  });
+
+  it("porte les portées « récapitulatif hebdomadaire » et « alerte de résultat », chacune dédiée", () => {
+    const weekly = createUnsubscribeToken({ userId, scope: { kind: "weekly-digest" }, now, env });
+    const results = createUnsubscribeToken({ userId, scope: { kind: "sale-results" }, now, env });
+    const reminders = createUnsubscribeToken({ userId, scope: { kind: "reminders" }, now, env });
+    expect(verifyUnsubscribeToken(weekly, { now, env })).toMatchObject({
+      userId,
+      scope: { kind: "weekly-digest" },
+    });
+    expect(verifyUnsubscribeToken(results, { now, env })).toMatchObject({
+      userId,
+      scope: { kind: "sale-results" },
+    });
+    expect(new Set([weekly, results, reminders]).size).toBe(3);
+    // La signature couvre la portée : un jeton de rappels ne devient pas un jeton de récapitulatif ni
+    // d'alerte de résultat.
+    const [payload, signature] = reminders.split(".");
+    for (const forgedScope of ["weekly-digest", "sale-results"]) {
+      const forged = Buffer.from(
+        JSON.stringify({
+          ...JSON.parse(Buffer.from(payload, "base64url").toString()),
+          s: forgedScope,
+        }),
+      ).toString("base64url");
+      expect(verifyUnsubscribeToken(`${forged}.${signature}`, { now, env })).toBeNull();
+    }
+    expect(unsubscribeTokenScopeKind(weekly, { env })).toBe("weekly-digest");
+    expect(unsubscribeTokenScopeKind(results, { env })).toBe("sale-results");
+  });
+
+  it("garde les liens du récapitulatif et de l'alerte de résultat valables un an", () => {
+    const day = (count: number) => new Date(now.getTime() + count * 86_400_000);
+    for (const kind of ["weekly-digest", "sale-results"] as const) {
+      const token = createUnsubscribeToken({ userId, scope: { kind }, now, env });
+      expect(verifyUnsubscribeToken(token, { now: day(61), env }), kind).not.toBeNull();
+      expect(verifyUnsubscribeToken(token, { now: day(364), env }), kind).not.toBeNull();
+      expect(verifyUnsubscribeToken(token, { now: day(366), env }), kind).toBeNull();
+    }
+  });
+
   it("expire après 60 jours", () => {
     const token = createUnsubscribeToken({ userId, now, env });
     const later = new Date(now.getTime() + 61 * 86_400_000);
     expect(verifyUnsubscribeToken(token, { now: later, env })).toBeNull();
     const almost = new Date(now.getTime() + 59 * 86_400_000);
     expect(verifyUnsubscribeToken(token, { now: almost, env })).not.toBeNull();
+  });
+
+  it("garde un lien « rappels d'audience » valable un an, contre 60 jours pour les alertes", () => {
+    const reminders = createUnsubscribeToken({ userId, scope: { kind: "reminders" }, now, env });
+    const day = (count: number) => new Date(now.getTime() + count * 86_400_000);
+    expect(verifyUnsubscribeToken(reminders, { now: day(61), env })).not.toBeNull();
+    expect(verifyUnsubscribeToken(reminders, { now: day(364), env })).not.toBeNull();
+    expect(verifyUnsubscribeToken(reminders, { now: day(366), env })).toBeNull();
+    // Les autres portées gardent leurs 60 jours.
+    const alerts = createUnsubscribeToken({ userId, now, env });
+    const perAlert = createUnsubscribeToken({
+      userId,
+      scope: { kind: "alert", alertId },
+      now,
+      env,
+    });
+    for (const token of [alerts, perAlert]) {
+      expect(verifyUnsubscribeToken(token, { now: day(59), env })).not.toBeNull();
+      expect(verifyUnsubscribeToken(token, { now: day(61), env })).toBeNull();
+    }
+    expect(REMINDERS_UNSUBSCRIBE_TOKEN_TTL_DAYS).toBe(365);
+    expect(UNSUBSCRIBE_TOKEN_TTL_DAYS).toBe(60);
+  });
+
+  it("reconnaît la portée d'un jeton expiré (signature valide) sans lui donner de droit", () => {
+    const reminders = createUnsubscribeToken({ userId, scope: { kind: "reminders" }, now, env });
+    const alerts = createUnsubscribeToken({ userId, now, env });
+    const much = new Date(now.getTime() + 400 * 86_400_000);
+    expect(verifyUnsubscribeToken(reminders, { now: much, env })).toBeNull();
+    expect(unsubscribeTokenScopeKind(reminders, { env })).toBe("reminders");
+    expect(unsubscribeTokenScopeKind(alerts, { env })).toBe("alerts");
+    // Un jeton falsifié ou signé avec un autre secret n'a pas de portée.
+    expect(unsubscribeTokenScopeKind(`${reminders}x`, { env })).toBeNull();
+    expect(
+      unsubscribeTokenScopeKind(reminders, { env: { SUPABASE_SERVICE_ROLE_KEY: "autre" } }),
+    ).toBeNull();
+    expect(unsubscribeTokenScopeKind(null, { env })).toBeNull();
+    expect(unsubscribeTokenScopeKind("n'importe quoi", { env })).toBeNull();
   });
 
   it("refuse un jeton modifié ou signé avec un autre secret", () => {

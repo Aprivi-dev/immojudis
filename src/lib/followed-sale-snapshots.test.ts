@@ -27,7 +27,6 @@ function row(overrides: Partial<FollowedSaleSnapshotRow> = {}): FollowedSaleSnap
     title: "Maison A",
     city: "Bordeaux",
     department: "33",
-    postal_code: "33000",
     property_type: "house",
     tribunal_name: "Tribunal judiciaire de Bordeaux",
     sale_venue_type: "tribunal",
@@ -107,8 +106,9 @@ describe("toFollowedSaleSnapshot", () => {
       kind: "window",
       deadline: "2026-10-24",
       adjudicationConfirmed: true,
-      daysLeft: 8,
+      expired: false,
     });
+    expect(snapshot.surenchere).not.toHaveProperty("daysLeft");
   });
 
   it("distingue un prix réservé à l'offre Analyse d'un prix non connu", () => {
@@ -148,6 +148,25 @@ describe("toFollowedSaleSnapshot", () => {
   });
 });
 
+describe("toFollowedSaleSnapshot : données personnelles", () => {
+  it("filtre un nom de particulier dans le titre et garde un titre ordinaire tel quel", () => {
+    const now = new Date("2026-10-16T09:00:00.000Z");
+    expect(
+      toFollowedSaleSnapshot(row({ title: "Maison occupée par Pierre Martin" }), now).title,
+    ).toBe("Maison occupée par un occupant");
+    expect(toFollowedSaleSnapshot(row({ title: "Maison A" }), now).title).toBe("Maison A");
+    expect(toFollowedSaleSnapshot(row({ title: null }), now).title).toBeNull();
+  });
+
+  it("ne copie pas le code postal", () => {
+    const snapshot = toFollowedSaleSnapshot(
+      { ...row(), postal_code: "33000" } as FollowedSaleSnapshotRow,
+      new Date("2026-10-16T09:00:00.000Z"),
+    );
+    expect(snapshot).not.toHaveProperty("postalCode");
+  });
+});
+
 describe("listFollowedSaleSnapshots", () => {
   it("lit les instantanés du compte non échus, les plus récents d'abord", async () => {
     mocks.result = { data: [row(), row({ id: "snap-2", sale_id: "sale-2" })], error: null };
@@ -163,6 +182,9 @@ describe("listFollowedSaleSnapshots", () => {
       ["sale_date", { ascending: false, nullsFirst: false }],
     ]);
     expect(response.snapshots.map((snapshot) => snapshot.id)).toEqual(["snap-1", "snap-2"]);
+    // Le code postal n'est ni lu ni copié : l'espace du compte n'en a pas l'usage.
+    const [columns] = mocks.calls.find(([name]) => name === "select")!.slice(1) as [[string]];
+    expect(columns[0]).not.toContain("postal_code");
   });
 
   it("remonte l'erreur de la base", async () => {

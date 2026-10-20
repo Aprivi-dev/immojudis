@@ -229,6 +229,35 @@
   user-select: none;
 }
 
+.pastDate {
+  display: inline-block;
+  margin-left: 8px;
+  border-radius: 6px;
+  background: var(--surface-tint);
+  color: var(--ink-strong);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 8px;
+}
+
+.dossierNote {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 12px;
+  color: var(--ink-soft);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.dossierNote svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 3px;
+  color: var(--gold-text);
+}
+
 .teaserTier {
   color: var(--gold-text);
   font-size: 12px;
@@ -322,6 +351,17 @@
   color: var(--ink-soft);
   font-size: 13px;
   line-height: 1.5;
+}
+
+/* Tant que l'état de l'offre de lancement n'est pas lu : place de la mention (6 lignes sur mobile). */
+.signupLinePending {
+  min-height: 7.5rem;
+}
+
+@media (min-width: 640px) {
+  .signupLinePending {
+    min-height: 5rem;
+  }
 }
 
 .signupStatus {

@@ -26,87 +26,45 @@ describe("ListingWorks", () => {
     fireEvent.click(screen.getByText("Voir les constats et les sources"));
     expect(details?.open).toBe(true);
     expect(screen.getByText(/Ventilation de la salle d'eau à contrôler/)).toBeTruthy();
-    expect(screen.getByText(/ne remplace pas un devis établi après visite/)).toBeTruthy();
+    expect(screen.getByText(/elle reste à confirmer après la visite du bien/)).toBeTruthy();
 
     const result = await axe(container, { rules: { "color-contrast": { enabled: false } } });
     expect(result.violations.map(({ id, help }) => ({ id, help }))).toEqual([]);
   });
 
-  it("keeps the reference estimate until a complete manual detail is explicitly applied", () => {
-    const onBudgetChange = vi.fn();
-    render(
-      <ListingWorks sale={EXAMPLE_SALE} estimatedBudget={12_500} onBudgetChange={onBudgetChange} />,
-    );
-
-    expect(screen.getByText("Montant personnalisé")).toBeTruthy();
-    expect(screen.getByText(/enveloppe de simulation à confirmer par des devis/i)).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Utiliser ce budget" })).toBeNull();
-    expect(onBudgetChange).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByRole("button", { name: "Détailler le budget" }));
-    fireEvent.change(screen.getByLabelText("Libellé du poste 1"), {
-      target: { value: "Peinture" },
-    });
-    fireEvent.change(screen.getByLabelText("Prix unitaire du poste 1"), {
-      target: { value: "2200" },
-    });
-
-    expect(screen.getByLabelText("Total du poste 1").textContent).toContain("2");
-    expect(screen.getByText("Détail saisi")).toBeTruthy();
-    expect(onBudgetChange).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByRole("button", { name: "Utiliser ce budget" }));
-    expect(onBudgetChange).toHaveBeenCalledWith(2_200);
-    expect(screen.getByRole("button", { name: "Budget utilisé" })).toBeTruthy();
-  });
-
   it("does not invent a budget when the analysis has no estimate", () => {
-    const onBudgetChange = vi.fn();
-    render(
-      <ListingWorks sale={EXAMPLE_SALE} estimatedBudget={null} onBudgetChange={onBudgetChange} />,
-    );
+    render(<ListingWorks sale={EXAMPLE_SALE} estimatedBudget={null} />);
 
     expect(screen.getByText("Non estimé")).toBeTruthy();
     expect(screen.getByText("Données insuffisantes")).toBeTruthy();
-    expect(onBudgetChange).not.toHaveBeenCalled();
   });
 
-  it("restores a draft and emits edits without applying them to the simulation", () => {
-    const onDraftChange = vi.fn();
-    render(
+  it("no longer offers the old free editor nor any quote wording", () => {
+    const { container } = render(
       <ListingWorks
         sale={EXAMPLE_SALE}
         estimatedBudget={12_500}
-        initialDraft={{
-          lines: [{ label: "Peinture", quantity: "2", unit: "m²", unitPrice: "100" }],
-        }}
-        onDraftChange={onDraftChange}
+        surface={68}
+        onScenarioSelect={vi.fn()}
+        worksBreakdown={[]}
+        onWorksBreakdownChange={vi.fn()}
       />,
     );
+    fireEvent.click(screen.getByText("Voir les constats et les sources"));
 
-    expect((screen.getByLabelText("Libellé du poste 1") as HTMLInputElement).value).toBe(
-      "Peinture",
-    );
-    expect((screen.getByLabelText("Quantité du poste 1") as HTMLInputElement).value).toBe("2");
-    expect(screen.getByLabelText("Total du poste 1").textContent).toContain("200");
-    expect(onDraftChange).not.toHaveBeenCalled();
-
-    fireEvent.change(screen.getByLabelText("Prix unitaire du poste 1"), {
-      target: { value: "125" },
-    });
-    expect(onDraftChange).toHaveBeenLastCalledWith({
-      lines: [
-        expect.objectContaining({
-          label: "Peinture",
-          quantity: "2",
-          unit: "m²",
-          unitPrice: "125",
-        }),
-      ],
-    });
+    expect(screen.queryByRole("button", { name: "Détailler le budget" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Utiliser ce budget" })).toBeNull();
+    expect(screen.queryByText("Décomposer l’enveloppe")).toBeNull();
+    expect(screen.queryByLabelText(/Montant d’un devis/)).toBeNull();
+    expect(screen.queryByLabelText("Libellé du poste 1")).toBeNull();
+    expect(screen.getByText(/à confirmer lors de la visite/)).toBeTruthy();
+    // « Détail de vos travaux » is the only breakdown left.
+    expect(screen.getByRole("button", { name: "Détailler les travaux" })).toBeTruthy();
+    // The panel's own disclaimer only shows once it is open: nothing else in the tab says it.
+    expect(container.textContent).not.toMatch(/devis/i);
   });
 
-  it("picks a scenario or a quote, suggested by the published condition", () => {
+  it("picks a scenario, suggested by the published condition", () => {
     const onScenarioSelect = vi.fn();
     const { rerender } = render(
       <ListingWorks
@@ -126,10 +84,6 @@ describe("ListingWorks", () => {
 
     fireEvent.click(refresh);
     expect(onScenarioSelect).toHaveBeenLastCalledWith(34_000);
-    fireEvent.change(screen.getByLabelText("Montant d’un devis travaux"), {
-      target: { value: "18000" },
-    });
-    expect(onScenarioSelect).toHaveBeenLastCalledWith(18_000);
 
     rerender(
       <ListingWorks
@@ -145,5 +99,41 @@ describe("ListingWorks", () => {
     ).toBe("true");
     expect(screen.getAllByText("Rafraîchissement locatif").length).toBeGreaterThan(1);
     expect(screen.getByText(/dépasse l’enveloppe travaux maximale/)).toBeTruthy();
+  });
+
+  describe("Détail de vos travaux", () => {
+    it("is absent unless the parent keeps the breakdown", () => {
+      render(<ListingWorks sale={EXAMPLE_SALE} estimatedBudget={12_500} />);
+
+      expect(screen.queryByRole("button", { name: "Détailler les travaux" })).toBeNull();
+    });
+
+    it("hands the postes and their total to the parent, without applying anything else", () => {
+      const onWorksBreakdownChange = vi.fn();
+      const onScenarioSelect = vi.fn();
+      render(
+        <ListingWorks
+          sale={EXAMPLE_SALE}
+          estimatedBudget={12_500}
+          surface={68}
+          onScenarioSelect={onScenarioSelect}
+          worksBreakdown={[
+            { id: "a", kind: "toiture", label: "", quantity: "1", unit: "", unitCost: "8000" },
+          ]}
+          onWorksBreakdownChange={onWorksBreakdownChange}
+        />,
+      );
+
+      fireEvent.change(screen.getByRole("textbox", { name: /^Coût unitaire, poste 1/ }), {
+        target: { value: "9000" },
+      });
+
+      expect(onWorksBreakdownChange).toHaveBeenCalledTimes(1);
+      const [items, total] = onWorksBreakdownChange.mock.calls[0];
+      expect(total).toBe(9_000);
+      expect(items[0]).toMatchObject({ kind: "toiture", unitCost: "9000" });
+      // The parent decides what feeds the budget; the scenario picker is left alone.
+      expect(onScenarioSelect).not.toHaveBeenCalled();
+    });
   });
 });

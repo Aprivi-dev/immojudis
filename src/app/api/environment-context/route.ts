@@ -20,10 +20,10 @@ export async function POST(request: Request) {
       bucketKey: "environment-context",
       ...RATE_LIMIT_POLICIES.compute,
     });
-    await assertFeatureEntitlement(
+    const plan = await assertFeatureEntitlement(
       auth,
       "property.neighborhoodAnalysis",
-      "Contexte environnemental réservé au plan Analyse.",
+      "Contexte environnemental réservé à l’offre Analyse.",
     );
     // Après le droit d'accès : seul un compte qui y a droit use les compteurs de son adresse et le
     // disjoncteur global.
@@ -31,6 +31,7 @@ export async function POST(request: Request) {
       request,
       userId: auth.userId,
       operation: "environmentContext",
+      launchOffer: plan.launchOffer === true,
     });
     const response = await getEnvironmentalContext(await request.json());
     return NextResponse.json(response, {

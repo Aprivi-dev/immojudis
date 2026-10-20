@@ -12,19 +12,39 @@
       "mcp__Supabase__generate_typescript_types",
       "mcp__github__actions_get",
       "mcp__github__actions_list",
-      "mcp__github__actions_run_trigger",
       "mcp__github__get_job_logs",
       "mcp__github__get_check_run",
       "mcp__github__pull_request_read",
       "mcp__github__create_pull_request",
       "mcp__github__update_pull_request",
-      "mcp__github__merge_pull_request",
       "mcp__github__get_file_contents",
       "mcp__Vercel__list_deployments",
       "mcp__Vercel__get_deployment",
       "mcp__Vercel__get_runtime_logs",
       "mcp__Vercel__get_runtime_errors",
       "mcp__Vercel__web_fetch_vercel_url"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "mcp__Supabase__execute_sql",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/supabase-lecture-seule.mjs\" || exit 2"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__Supabase__apply_migration|mcp__Supabase__deploy_edge_function|mcp__Supabase__create_edge_function_secret|mcp__Supabase__create_branch|mcp__Supabase__delete_branch|mcp__Supabase__merge_branch|mcp__Supabase__reset_branch|mcp__Supabase__rebase_branch|mcp__Supabase__create_project|mcp__Supabase__pause_project|mcp__Supabase__restore_project",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/bloquer-ecriture-supabase.mjs\" || exit 2"
+          }
+        ]
+      }
     ]
   }
 }

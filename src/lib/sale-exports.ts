@@ -10,7 +10,18 @@ import { featureIncluded } from "@/lib/plans";
 import { computeRentabilityScore } from "@/lib/profitability";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
 import { getSales } from "@/lib/queries";
-import { enforceUserRateLimit } from "@/lib/rate-limit";
+import { RateLimitError } from "@/lib/api-errors";
+import {
+  enforceDailyOperationLimits,
+  enforceUserRateLimit,
+  secondsUntilWindowEnds,
+} from "@/lib/rate-limit";
+import {
+  DAILY_LIMIT_MESSAGE,
+  DAILY_WINDOW_SECONDS,
+  SALES_API_FEED_DAILY_ROWS,
+  SALES_CSV_EXPORT_DAILY_ROWS,
+} from "@/lib/rate-limit-policies";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import {
   applyClientSearchFilters,
@@ -161,10 +172,13 @@ export async function exportSalesCsv({
   auth,
   search,
   origin,
+  request,
 }: {
   auth: SupabaseAuthContext;
   search: SalesSearchParams;
   origin?: string | null;
+  /** Requête HTTP d'origine : sert au plafond journalier par adresse. */
+  request: Request;
 }): Promise<SalesCsvExport> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "sales.csvExport")) {
@@ -176,9 +190,18 @@ export async function exportSalesCsv({
     limit: 6,
     windowSeconds: 60,
   });
+  // Après le droit d'accès : seul un compte qui y a droit use les compteurs de son adresse et le
+  // disjoncteur global. Puis le plafond de lignes du jour : chaque ligne porte une adresse.
+  await enforceDailyOperationLimits({
+    request,
+    userId: auth.userId,
+    operation: "salesCsvExport",
+    launchOffer: plan.launchOffer === true,
+  });
+  const rowBudget = await remainingDailyExportRows(auth, "sales_csv", SALES_CSV_EXPORT_DAILY_ROWS);
 
   const sales = await resolveFilteredSales({ auth, search, sourceLimit: EXPORT_SOURCE_LIMIT });
-  const rows = sales.slice(0, EXPORT_ROW_LIMIT);
+  const rows = sales.slice(0, Math.min(EXPORT_ROW_LIMIT, rowBudget));
   const content = buildSalesCsv(rows, origin);
 
   await recordSalesDataExport({
@@ -199,10 +222,13 @@ export async function exportSalesApiFeed({
   auth,
   search,
   origin,
+  request,
 }: {
   auth: SupabaseAuthContext;
   search: SalesSearchParams;
   origin?: string | null;
+  /** Requête HTTP d'origine : sert au plafond journalier par adresse. */
+  request: Request;
 }): Promise<SalesApiFeed> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "sales.apiAccess")) {
@@ -214,9 +240,16 @@ export async function exportSalesApiFeed({
     limit: 60,
     windowSeconds: 60,
   });
+  await enforceDailyOperationLimits({
+    request,
+    userId: auth.userId,
+    operation: "salesApiFeed",
+    launchOffer: plan.launchOffer === true,
+  });
+  const rowBudget = await remainingDailyExportRows(auth, "sales_api", SALES_API_FEED_DAILY_ROWS);
 
   const requestedLimit = search.limit ?? API_ROW_LIMIT;
-  const limit = Math.min(Math.max(1, requestedLimit), API_ROW_LIMIT);
+  const limit = Math.min(Math.max(1, requestedLimit), API_ROW_LIMIT, rowBudget);
   const sales = await resolveFilteredSales({ auth, search, sourceLimit: API_SOURCE_LIMIT });
   const rows = sales.slice(0, limit);
 
@@ -248,6 +281,39 @@ export async function exportSalesApiFeed({
       ],
     },
   };
+}
+
+/**
+ * Lignes que le compte peut encore exporter aujourd'hui (jour UTC, comme les plafonds du nombre
+ * d'appels) : le plafond, moins les lignes déjà inscrites dans `sale_data_exports` pour ce type
+ * d'export. À zéro, la demande est refusée (429, message quotidien). Deux exports simultanés peuvent
+ * dépasser le reste de quelques lignes : le nombre d'appels par minute et par jour borne l'écart.
+ */
+async function remainingDailyExportRows(
+  auth: SupabaseAuthContext,
+  exportKind: "sales_csv" | "sales_api",
+  dailyRows: number,
+): Promise<number> {
+  const startOfDay = new Date();
+  startOfDay.setUTCHours(0, 0, 0, 0);
+  const { data, error } = await supabaseAdmin
+    .from("sale_data_exports")
+    .select("row_count")
+    .eq("user_id", auth.userId)
+    .eq("export_kind", exportKind)
+    .gte("created_at", startOfDay.toISOString())
+    .limit(1_000);
+  if (error) throw error;
+  const used = (data ?? []).reduce((sum, row) => sum + Math.max(0, row.row_count ?? 0), 0);
+  const remaining = dailyRows - used;
+  if (remaining <= 0) {
+    throw new RateLimitError(
+      undefined,
+      secondsUntilWindowEnds(DAILY_WINDOW_SECONDS),
+      DAILY_LIMIT_MESSAGE,
+    );
+  }
+  return remaining;
 }
 
 export function buildSalesCsv(sales: AuctionSale[], origin?: string | null): string {
