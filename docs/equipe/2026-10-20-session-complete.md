@@ -383,6 +383,10 @@ Ces points touchent des textes juridiques. Le propriétaire les avait exclus le 
    - Contrats de sous-traitance.
    - Contacts nominatifs des études notariales dans les annonces.
 
-## Décision du propriétaire
+## Décision du propriétaire (20/10/2026)
 
-En attente.
+« Je suis OK avec le bloc A, B, C, D, E, F, G, H, J et K. »
+
+- **Validés :** les n° 1 à 54 et 61 à 75, « discutables » compris.
+- **Non validés :** la partie I (n° 55 à 60, juridique et protection des données). Les parties juridiques des n° 31 et
+  38 se limitent donc à la formulation prudente et à l'alignement sur les articles déjà relus le 19/10.
