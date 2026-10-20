@@ -324,6 +324,17 @@
   line-height: 1.5;
 }
 
+/* Tant que l'état de l'offre de lancement n'est pas lu : place de la mention (6 lignes sur mobile). */
+.signupLinePending {
+  min-height: 7.5rem;
+}
+
+@media (min-width: 640px) {
+  .signupLinePending {
+    min-height: 5rem;
+  }
+}
+
 .signupStatus {
   color: var(--ink-strong);
   font-size: 15px;

@@ -4,11 +4,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AiReviewProjectionReadModel } from "@/lib/ai-review-guard";
 import { formatStartingPrice } from "@/lib/format";
-import { LAUNCH_OFFER_VISITOR_TEXT } from "@/lib/launch-offer";
 import { FREE_ACCESS_LINE } from "@/lib/sale-unlocks";
 import type { AuctionSale } from "@/lib/types";
 import { ListingCard, SearchResultsList } from "./SearchResults";
-import { listingAccessLine } from "./listing-text";
+import { LISTING_LAUNCH_OFFER_LINE, listingAccessLine } from "./listing-text";
 
 const testState = vi.hoisted(() => {
   const favoriteQuery = { select: vi.fn(), eq: vi.fn(), in: vi.fn() };
@@ -281,12 +280,17 @@ describe("vue « tableau » des résultats", () => {
     );
   });
 
-  it("offre de lancement : le visiteur lit la mention de l'offre, pour toutes les ventes", () => {
+  it("offre de lancement : le visiteur lit la ligne courte de l'offre, pour toutes les ventes", () => {
     const tribunal = makeSale("sale-t");
     const notary = makeSale("sale-n", { sale_venue_type: "notary" });
     const visitor = { locked: true, analysisLocked: true, unlocked: false, launchOffer: true };
-    expect(listingAccessLine(tribunal, visitor)).toBe(LAUNCH_OFFER_VISITOR_TEXT);
-    expect(listingAccessLine(notary, visitor)).toBe(LAUNCH_OFFER_VISITOR_TEXT);
+    expect(listingAccessLine(tribunal, visitor)).toBe(LISTING_LAUNCH_OFFER_LINE);
+    expect(listingAccessLine(notary, visitor)).toBe(LISTING_LAUNCH_OFFER_LINE);
+    expect(LISTING_LAUNCH_OFFER_LINE).toBe(
+      "Compte gratuit : avantages Analyse (offre de lancement)",
+    );
+    // Le texte complet n'est pas répété sur chaque carte : il vit dans la bannière de la liste.
+    expect(LISTING_LAUNCH_OFFER_LINE.length).toBeLessThan(70);
     // Hors offre, ou pour un compte connecté, la ligne habituelle ne change pas.
     expect(listingAccessLine(tribunal, { ...visitor, launchOffer: false })).toBe(FREE_ACCESS_LINE);
     expect(

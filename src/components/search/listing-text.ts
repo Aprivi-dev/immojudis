@@ -7,7 +7,7 @@ import { formatDate, propertyTypeLabel } from "@/lib/format";
 import { parisDateKey } from "@/lib/sale-countdown";
 import { saleDisplayTitle } from "@/lib/sale-title";
 import { saleIsTribunalVenue } from "@/lib/sale-procedure";
-import { FREE_ACCESS_LINE, freeAccessLine } from "@/lib/sale-unlocks";
+import { FREE_ACCESS_LINE } from "@/lib/sale-unlocks";
 import type { AuctionSale } from "@/lib/types";
 
 /**
@@ -60,10 +60,18 @@ export function listingTitle(
 export const LISTING_DETAIL_LINE = "Voir le détail";
 
 /**
+ * Ligne courte de chaque carte pendant l'offre de lancement. Le texte complet (avec la réserve
+ * « retirables sans préavis ») n'est écrit qu'une fois, dans la bannière repliable au-dessus de la
+ * liste (`LaunchOfferListBanner`) : répété sur 24 cartes, il noyait la liste.
+ */
+export const LISTING_LAUNCH_OFFER_LINE = "Compte gratuit : avantages Analyse (offre de lancement)";
+
+/**
  * Ce que la fiche coûte au visiteur : un compte gratuit, un déblocage mensuel (ventes au tribunal
- * seulement) ou rien (« Voir le détail »). Offre de lancement active (`launchOffer`) : le visiteur
- * lit la mention de l'offre (compte gratuit = avantages Analyse, retirables sans préavis) à la place
- * de « 3 fiches détaillées par mois », pour toutes les ventes.
+ * seulement) ou rien (« Voir le détail »). Offre de lancement active (`launchOffer`) : la ligne
+ * courte de l'offre (`LISTING_LAUNCH_OFFER_LINE`) à la place de « 3 fiches détaillées par mois »,
+ * pour toutes les ventes. Tant que l'état de l'offre est inconnu (`launchPending`, rendu serveur
+ * compris), la ligne reste neutre : aucune promesse de quota qui serait remplacée à l'hydratation.
  */
 export function listingAccessLine(
   sale: AuctionSale,
@@ -72,6 +80,8 @@ export function listingAccessLine(
     analysisLocked: boolean;
     unlocked: boolean;
     launchOffer?: boolean;
+    /** L'état de l'offre de lancement n'est pas encore lu (`useLaunchOffer().pending`). */
+    launchPending?: boolean;
     /**
      * Compte reconnu dont les droits sont en cours de vérification (la liste publique reste
      * affichée, donc `locked`) : la ligne reste neutre. « Gratuit, sans carte bancaire » et
@@ -80,9 +90,9 @@ export function listingAccessLine(
     verifying?: boolean;
   },
 ): string {
-  if (access.verifying) return LISTING_DETAIL_LINE;
+  if (access.verifying || access.launchPending) return LISTING_DETAIL_LINE;
   if (access.locked) {
-    if (access.launchOffer) return freeAccessLine({ launchOffer: true });
+    if (access.launchOffer) return LISTING_LAUNCH_OFFER_LINE;
     return saleIsTribunalVenue(sale) ? FREE_ACCESS_LINE : "Fiche complète avec un compte gratuit";
   }
   // Le déblocage n'est proposé que pour les ventes tenues au tribunal.
