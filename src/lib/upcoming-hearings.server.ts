@@ -12,9 +12,10 @@ import {
 /**
  * Audiences des 30 prochains jours, lues côté serveur (`service_role`) avec la fonction
  * `get_public_upcoming_hearings` : la règle de « date sourcée » est celle de l'export agenda, la
- * visibilité celle du catalogue public. Aucune adresse exacte n'en sort, ni adresse source (clés
- * opaques). La fonction n'est plus ouverte à `anon` : la limite de 3 s des requêtes anonymes ne
- * s'applique pas, et elle ne rend qu'un document (pas de limite de lignes de PostgREST).
+ * visibilité celle du catalogue public. Aucune adresse exacte n'en sort, ni adresse source (un
+ * identifiant de groupe seulement). La fonction n'est plus ouverte à `anon` : la limite de 3 s des
+ * requêtes anonymes ne s'applique pas, et elle ne rend qu'un document (pas de limite de lignes de
+ * PostgREST).
  *
  * La page est elle-même rafraîchie toutes les heures (ISR) : le cache de données est plus court,
  * pour qu'une audience lue juste avant une régénération ne reste pas affichée deux heures.
@@ -64,7 +65,7 @@ async function readUpcomingHearings(): Promise<UpcomingHearingsRead> {
 
 // Une erreur n'est jamais mise en cache (`unstable_cache` ne garde que les succès). La clé change avec
 // la forme de la réponse : un ancien résultat en cache n'est pas relu.
-const cachedUpcomingHearings = unstable_cache(readUpcomingHearings, ["upcoming-hearings", "v2"], {
+const cachedUpcomingHearings = unstable_cache(readUpcomingHearings, ["upcoming-hearings", "v3"], {
   revalidate: HEARINGS_DATA_REVALIDATE_SECONDS,
   tags: [HEARINGS_CACHE_TAG],
 });

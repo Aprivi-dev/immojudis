@@ -104,11 +104,11 @@ describe("sitemap.xml : pages des tribunaux et des audiences", () => {
 
   it("ne compte pas deux fois la même vente publiée par deux sources", async () => {
     const duplicated = soon(3);
-    // Les trois lignes sont la même vente : la même adresse source. Le prix, le jour et le
+    // Les trois lignes sont la même vente : le même groupe d'adresses sources. Le prix, le jour et le
     // tribunal ne suffisent pas à fusionner (voir le test suivant).
     duplicated.hearings = duplicated.hearings.map((hearing) => ({
       ...hearing,
-      sourceKeys: ["licitor.com/annonce/1"],
+      sourceGroup: "00000000-0000-4000-8000-000000000001",
     }));
     mocks.loadHearings.mockResolvedValue(duplicated);
     expect(await urls()).not.toContain("https://immojudis.com/audiences-a-venir");
@@ -119,7 +119,7 @@ describe("sitemap.xml : pages des tribunaux et des audiences", () => {
     lots.hearings = lots.hearings.map((hearing, index) => ({
       ...hearing,
       startingPriceEur: 50_000,
-      sourceKeys: [`licitor.com/annonce/${index + 1}`],
+      sourceGroup: null,
     }));
     mocks.loadHearings.mockResolvedValue(lots);
     expect(await urls()).toContain("https://immojudis.com/audiences-a-venir");
