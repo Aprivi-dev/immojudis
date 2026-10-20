@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { BreadcrumbJsonLd } from "@/components/BreadcrumbJsonLd";
 import { pageMetadata } from "@/lib/page-metadata";
 import { loadPublicTribunalActivity } from "@/lib/public-tribunal-activity.server";
-import { parisDateKey } from "@/lib/sale-countdown";
 import { tribunalPages } from "@/lib/tribunal-pages";
 import {
   HEARINGS_PATH,
@@ -34,7 +33,6 @@ async function loadWindows() {
   const now = new Date();
   return {
     now,
-    today: parisDateKey(now),
     windows: windowHearings(dedupeHearings(read.hearings), now),
     truncated: read.totalCount > read.hearings.length,
   };
@@ -48,7 +46,11 @@ export async function generateMetadata(): Promise<Metadata> {
     ...pageMetadata({
       path: HEARINGS_PATH,
       title: "Audiences de ventes judiciaires à venir",
-      description: hearingsPageDescription(weekCount, laterCount),
+      // « à date annoncée » : le mot de la page et des annonces, pas « date sourcée » (jargon interne).
+      description: hearingsPageDescription(weekCount, laterCount).replace(
+        "à date sourcée",
+        "à date annoncée",
+      ),
     }),
     // Trop peu d'audiences (ou lecture impossible au build) : page consultable, mais sans intérêt
     // pour un moteur de recherche. Elle reste hors du sitemap (même seuil) et ses liens sont suivis.
@@ -77,7 +79,6 @@ export default async function Page() {
       />
       <HearingsView
         windows={data?.windows ?? { week: [], weekCount: 0, later: [], laterCount: 0 }}
-        today={data?.today ?? parisDateKey(now)}
         tribunalPaths={tribunalPaths}
         truncated={data?.truncated ?? false}
         unavailable={data === null}
