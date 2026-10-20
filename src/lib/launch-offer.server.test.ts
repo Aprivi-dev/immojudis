@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ rpc: vi.fn() }));
+const mocks = vi.hoisted(() => ({ rpc: vi.fn(), getUserById: vi.fn() }));
 vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: { rpc: mocks.rpc },
+  supabaseAdmin: { rpc: mocks.rpc, auth: { admin: { getUserById: mocks.getUserById } } },
 }));
 
 import {
@@ -154,6 +154,74 @@ describe("éligibilité du compte à l'offre de lancement (email confirmé, adre
     await expect(hasConfirmedEmail("user-1")).resolves.toBe(false);
     mocks.rpc.mockResolvedValue(eligible);
     await expect(hasConfirmedEmail("user-1")).resolves.toBe(true);
+  });
+
+  describe("ordre de déploiement : la fonction d'éligibilité n'existe pas encore", () => {
+    const missing = (code: string) => ({
+      data: null,
+      error: { code, message: "Could not find the function get_launch_offer_account_eligibility" },
+    });
+    const authUser = (confirmedAt: string | null) =>
+      mocks.getUserById.mockResolvedValue({
+        data: { user: { id: "user-1", email_confirmed_at: confirmedAt } },
+        error: null,
+      });
+
+    beforeEach(() => {
+      mocks.getUserById.mockReset();
+      vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    });
+
+    it.each(["PGRST202", "42883"])(
+      "revient à l'ancienne règle (email confirmé, API Auth) sur %s : l'offre ne se ferme pas pour tous",
+      async (code) => {
+        mocks.rpc.mockResolvedValue(missing(code));
+        authUser("2026-10-01T00:00:00Z");
+        await expect(hasConfirmedEmail("user-1")).resolves.toBe(true);
+        expect(mocks.getUserById).toHaveBeenCalledWith("user-1");
+      },
+    );
+
+    it("n'ouvre rien à un compte dont l'email n'est pas confirmé", async () => {
+      mocks.rpc.mockResolvedValue(missing("PGRST202"));
+      authUser(null);
+      await expect(hasConfirmedEmail("user-1")).resolves.toBe(false);
+    });
+
+    it("reste fermé quand l'API Auth échoue aussi, sans mémoriser l'échec", async () => {
+      mocks.rpc.mockResolvedValue(missing("PGRST202"));
+      mocks.getUserById.mockResolvedValueOnce({ data: null, error: new Error("auth down") });
+      await expect(hasConfirmedEmail("user-1")).resolves.toBe(false);
+      authUser("2026-10-01T00:00:00Z");
+      await expect(hasConfirmedEmail("user-1")).resolves.toBe(true);
+    });
+
+    it("ne se replie que sur l'absence de la fonction, jamais sur une autre erreur", async () => {
+      mocks.rpc.mockResolvedValue({ data: null, error: { code: "XX000", message: "boom" } });
+      authUser("2026-10-01T00:00:00Z");
+      await expect(hasConfirmedEmail("user-1")).resolves.toBe(false);
+      expect(mocks.getUserById).not.toHaveBeenCalled();
+    });
+
+    it("garde les mêmes durées de cache que la lecture de la base", async () => {
+      mocks.rpc.mockResolvedValue(missing("PGRST202"));
+      authUser("2026-10-01T00:00:00Z");
+      const start = Date.now();
+      await hasConfirmedEmail("user-1", start);
+      await expect(hasConfirmedEmail("user-1", start + 9 * 60_000)).resolves.toBe(true);
+      expect(mocks.getUserById).toHaveBeenCalledTimes(1);
+    });
+
+    it("le signale une fois dans le journal, sans donnée personnelle", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      warn.mockClear();
+      mocks.rpc.mockResolvedValue(missing("PGRST202"));
+      authUser("2026-10-01T00:00:00Z");
+      await hasConfirmedEmail("user-1");
+      await hasConfirmedEmail("user-2");
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0][0])).not.toContain("user-1");
+    });
   });
 
   it("évince la plus ancienne lecture quand la mémoire est pleine, sans tout oublier", async () => {

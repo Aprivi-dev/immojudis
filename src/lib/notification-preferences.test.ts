@@ -1,4 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+// L'écriture se fait avec le rôle de service (`supabaseAdmin`), la lecture avec le rôle de la personne.
+const mocks = vi.hoisted(() => ({ upsert: vi.fn() }));
+vi.mock("@/integrations/supabase/client.server", () => ({
+  supabaseAdmin: { from: () => ({ upsert: mocks.upsert }) },
+}));
 import {
   buildNotificationPreferencePatch,
   buildSaleReminderPreferencePatch,
@@ -226,20 +232,24 @@ describe("rappels d'audience : activation seulement quand l'envoi est proposé",
   afterEach(() => vi.unstubAllEnvs());
 
   function fakeAuth(isAdmin: boolean, row: Record<string, unknown> | null = null) {
-    const upsert = vi.fn((patch: Record<string, unknown>) => ({
+    const upsert = mocks.upsert;
+    upsert.mockReset();
+    upsert.mockImplementation((patch: Record<string, unknown>) => ({
       select: () => ({ single: async () => ({ data: { ...patch }, error: null }) }),
     }));
+    // Une écriture avec le rôle de la personne serait refusée par la base : elle ne doit pas avoir lieu.
+    const userUpsert = vi.fn();
     const auth = {
       userId: "user-1",
       isAdmin,
       supabase: {
         from: () => ({
           select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: row, error: null }) }) }),
-          upsert,
+          upsert: userUpsert,
         }),
       },
     };
-    return { auth: auth as never, upsert };
+    return { auth: auth as never, upsert, userUpsert };
   }
 
   const activate = { saleRemindersEnabled: true, consentSource: "settings" as const };
@@ -277,6 +287,25 @@ describe("rappels d'audience : activation seulement quand l'envoi est proposé",
     const user = fakeAuth(false);
     await updateNotificationPreferences({ auth: user.auth, input: activate, now: NOW });
     expect(user.upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it("écrit avec le rôle de service, jamais avec celui de la personne (consentements, version du texte)", async () => {
+    vi.stubEnv("SALE_REMINDERS_MODE", "on");
+    const { auth, upsert, userUpsert } = fakeAuth(false);
+    await updateNotificationPreferences({ auth, input: activate, now: NOW });
+    expect(upsert).toHaveBeenCalledTimes(1);
+    expect(upsert.mock.calls[0][0]).toMatchObject({ user_id: "user-1" });
+    expect(userUpsert).not.toHaveBeenCalled();
+
+    // Même les alertes par email passent par la route, avec l'identifiant du jeton.
+    const alerts = fakeAuth(false);
+    await updateNotificationPreferences({
+      auth: alerts.auth,
+      input: { alertEmailEnabled: true, consentSource: "settings" },
+      now: NOW,
+    });
+    expect(alerts.upsert.mock.calls[0][0]).toMatchObject({ user_id: "user-1" });
+    expect(alerts.userUpsert).not.toHaveBeenCalled();
   });
 
   it("renseigne côté serveur la version du texte consenti, seulement à l'activation", async () => {

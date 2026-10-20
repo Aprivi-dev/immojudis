@@ -61,6 +61,19 @@ describe("bloc « Prévenir la liste d'attente »", () => {
     expect(screen.getByRole("button", { name: "Envoyer à 12 personnes" })).toBeTruthy();
   });
 
+  it("signale les demandes à vérifier avant relance, et seulement s'il y en a", async () => {
+    mocks.audience.mockResolvedValue({ ...audience, needsReview: 2 });
+    renderPanel();
+    expect((await screen.findByTestId("opening-review")).textContent).toContain(
+      "2 demandes à vérifier",
+    );
+    cleanup();
+    mocks.audience.mockResolvedValue({ ...audience, needsReview: 0 });
+    renderPanel();
+    await screen.findByTestId("opening-count");
+    expect(screen.queryByTestId("opening-review")).toBeNull();
+  });
+
   it("limite le lot affiché à 200 personnes", async () => {
     mocks.audience.mockResolvedValue({ ...audience, recipients: 1_500 });
     renderPanel();

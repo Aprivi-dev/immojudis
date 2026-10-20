@@ -10,7 +10,8 @@ import {
   type ResendEmailMessage,
 } from "@/lib/email-alerts";
 import { createUnsubscribeToken } from "@/lib/email-unsubscribe-token";
-import { escapeHtml } from "@/lib/guards";
+import { asRecord, escapeHtml } from "@/lib/guards";
+import { isMissingRpcError } from "@/lib/postgrest-errors";
 
 /**
  * Envoi de l'email d'ouverture à la liste d'attente (`offer_opening_notifications`), depuis
@@ -20,10 +21,17 @@ import { escapeHtml } from "@/lib/guards";
  * Garanties :
  * - réservé à l'administrateur (`auth.isAdmin`, comme les autres actions admin) ;
  * - destinataires : demande active (`notify_enabled`) et jamais prévenue (`notified_at is null`),
- *   adresse email confirmée ;
+ *   adresse email confirmée. La file est lue en base (`get_offer_opening_queue`, migration
+ *   20261031100300) : les comptes non confirmés en sont écartés EN AMONT (ils ne prennent plus de
+ *   place dans un lot), les demandes jamais essayées passent avant celles qui l'ont déjà été, et une
+ *   demande n'est tentée qu'une fois par passage ;
  * - jamais deux fois : `notified_at` est écrit AVANT l'envoi par une mise à jour conditionnelle
  *   (`notified_at is null`) ; seul celui qui l'obtient envoie. Si l'envoi échoue, la marque est
- *   retirée pour pouvoir réessayer. Au pire, un plantage entre la marque et l'envoi fait perdre un
+ *   retirée pour pouvoir réessayer, mais le compteur d'essais (`notify_attempts`) et l'instant du
+ *   premier essai (`notify_attempted_at`) restent. La clé d'idempotence de Resend (stable par compte)
+ *   ne vaut que 24 h : un nouvel essai n'est donc proposé que dans les 23 h du premier et au plus 3
+ *   fois ; au-delà, la demande attend une vérification du journal d'envoi de Resend (comptée dans
+ *   `needsReview`, voir la migration). Au pire, un plantage entre la marque et l'envoi fait perdre un
  *   email, jamais en envoie deux ;
  * - par lots de 200 au plus, avec un budget de temps (les routes admin coupent à 30 s) : l'envoi
  *   s'arrête proprement et l'administrateur relance pour le reste ;
@@ -58,8 +66,13 @@ export const offerOpeningNotifierActionSchema = z.discriminatedUnion("action", [
 export type OfferOpeningNotifierAction = z.infer<typeof offerOpeningNotifierActionSchema>;
 
 export type OfferOpeningAudience = {
-  /** Demandes actives jamais prévenues : les destinataires d'un envoi. */
+  /** Demandes actives, à adresse confirmée, jamais prévenues et envoyables : les destinataires d'un envoi. */
   recipients: number;
+  /**
+   * Demandes à adresse confirmée dont les essais sont épuisés ou vieux de plus de 23 h : un email a
+   * pu partir sans qu'on le sache, elles ne sont plus relancées sans vérifier le journal de Resend.
+   */
+  needsReview: number;
   /** Demandes déjà prévenues (`notified_at` écrit). */
   alreadyNotified: number;
   batchSize: number;
@@ -174,6 +187,41 @@ async function requireAdmin(authToken: string) {
 
 const REQUESTS = "offer_opening_notifications" as const;
 
+/**
+ * Une demande à envoyer. `attempts` / `attemptedAt` : le suivi des essais de la file en base ; `null`
+ * quand la file vient de l'ancienne sélection (migration 20261031100300 pas encore appliquée).
+ */
+type QueueEntry = { userId: string; attempts: number | null; attemptedAt: string | null };
+type OfferOpeningQueue = { recipients: QueueEntry[]; total: number; needsReview: number };
+
+/**
+ * La file d'envoi lue en base. `null` quand la fonction n'existe pas encore (code déployé avant la
+ * migration) : l'appelant revient alors à l'ancienne sélection, sans suivi des essais.
+ */
+async function readQueue(limit: number): Promise<OfferOpeningQueue | null> {
+  const { data, error } = await supabaseAdmin.rpc("get_offer_opening_queue", { p_limit: limit });
+  if (error) {
+    if (isMissingRpcError(error)) return null;
+    throw error;
+  }
+  const document = asRecord(data);
+  const recipients: QueueEntry[] = [];
+  for (const item of Array.isArray(document.recipients) ? document.recipients : []) {
+    const row = asRecord(item);
+    if (typeof row.user_id !== "string") continue;
+    recipients.push({
+      userId: row.user_id,
+      attempts: typeof row.attempts === "number" ? row.attempts : 0,
+      attemptedAt: typeof row.attempted_at === "string" ? row.attempted_at : null,
+    });
+  }
+  return {
+    recipients,
+    total: Number(document.total ?? 0) || 0,
+    needsReview: Number(document.needs_review ?? 0) || 0,
+  };
+}
+
 async function countRequests(notified: boolean): Promise<number> {
   let query = supabaseAdmin
     .from(REQUESTS)
@@ -197,10 +245,9 @@ export async function getOfferOpeningAudience({
 }): Promise<OfferOpeningAudience> {
   await requireAdmin(authToken);
   const config = resolveEmailAlertDeliveryConfig(env);
-  const [recipients, alreadyNotified] = await Promise.all([
-    countRequests(false),
-    countRequests(true),
-  ]);
+  const [queue, alreadyNotified] = await Promise.all([readQueue(1), countRequests(true)]);
+  // Sans la fonction (migration pas encore appliquée), l'ancien décompte : toutes les demandes actives.
+  const recipients = queue ? queue.total : await countRequests(false);
   const preview = buildOfferOpeningMessage({
     recipientEmail: "destinataire@exemple.fr",
     from: config.from ?? "Immojudis",
@@ -209,6 +256,7 @@ export async function getOfferOpeningAudience({
   });
   return {
     recipients,
+    needsReview: queue?.needsReview ?? 0,
     alreadyNotified,
     batchSize: OFFER_OPENING_BATCH_SIZE,
     configured: config.configured,
@@ -278,8 +326,9 @@ export async function sendOfferOpeningTest({
 }
 
 /**
- * Envoie un lot de 200 destinataires au plus (les plus anciennes demandes d'abord). Idempotent :
- * relancé, il ne reprend que ceux qui n'ont pas été prévenus.
+ * Envoie un lot de 200 destinataires au plus (les demandes jamais essayées d'abord, les plus anciennes
+ * en tête). Idempotent : relancé, il ne reprend que ceux qui n'ont pas été prévenus, et pas au-delà de
+ * la fenêtre de la clé d'idempotence de Resend (voir l'en-tête du module).
  */
 export async function sendOfferOpeningBatch({
   authToken,
@@ -300,28 +349,58 @@ export async function sendOfferOpeningBatch({
   const config = requireDeliveryConfig(env);
   const size = Math.min(Math.max(1, Math.trunc(limit)), OFFER_OPENING_BATCH_SIZE);
 
-  const { data: candidates, error } = await supabaseAdmin
-    .from(REQUESTS)
-    .select("user_id")
-    .eq("offer_code", "analyse")
-    .eq("notify_enabled", true)
-    .is("notified_at", null)
-    .order("consented_at", { ascending: true })
-    .limit(size);
-  if (error) throw error;
+  const readQueued = await readQueue(size);
+  let entries: QueueEntry[];
+  if (readQueued) {
+    entries = readQueued.recipients;
+  } else {
+    // Migration 20261031100300 pas encore appliquée : l'ancienne sélection, sans suivi des essais.
+    const { data: candidates, error } = await supabaseAdmin
+      .from(REQUESTS)
+      .select("user_id")
+      .eq("offer_code", "analyse")
+      .eq("notify_enabled", true)
+      .is("notified_at", null)
+      .order("consented_at", { ascending: true })
+      .limit(size);
+    if (error) throw error;
+    entries = (candidates ?? []).map((row) => ({
+      userId: row.user_id,
+      attempts: null,
+      attemptedAt: null,
+    }));
+  }
 
   const markedAt = now.toISOString();
   const counts = { sent: 0, failed: 0, skipped: 0 };
   const startedAt = clock();
   let stoppedEarly = false;
-  const queue = (candidates ?? []).map((row) => row.user_id);
+  // Une demande n'est tentée qu'une fois par passage : la file n'est lue qu'une fois, et un doublon
+  // éventuel est écarté ici.
+  const seen = new Set<string>();
+  const queue = entries.filter((entry) => {
+    if (seen.has(entry.userId)) return false;
+    seen.add(entry.userId);
+    return true;
+  });
 
-  /** La marque « prévenu » : seul celui dont la mise à jour touche la ligne a le droit d'envoyer. */
-  async function claim(userId: string): Promise<boolean> {
+  /**
+   * La marque « prévenu » : seul celui dont la mise à jour touche la ligne a le droit d'envoyer. Elle
+   * compte l'essai (le premier essai de la série date la clé d'idempotence de Resend).
+   */
+  async function claim(entry: QueueEntry): Promise<boolean> {
+    const patch =
+      entry.attempts === null
+        ? { notified_at: markedAt }
+        : {
+            notified_at: markedAt,
+            notify_attempts: entry.attempts + 1,
+            notify_attempted_at: entry.attemptedAt ?? markedAt,
+          };
     const { data, error: claimError } = await supabaseAdmin
       .from(REQUESTS)
-      .update({ notified_at: markedAt })
-      .eq("user_id", userId)
+      .update(patch)
+      .eq("user_id", entry.userId)
       .eq("offer_code", "analyse")
       .eq("notify_enabled", true)
       .is("notified_at", null)
@@ -330,6 +409,8 @@ export async function sendOfferOpeningBatch({
     return (data ?? []).length === 1;
   }
 
+  // La marque est rendue pour pouvoir réessayer ; le compteur d'essais et la date du premier essai
+  // restent (une demande déjà tentée ne passe plus avant les autres, et sort de la file après 23 h).
   async function release(userId: string) {
     const { error: releaseError } = await supabaseAdmin
       .from(REQUESTS)
@@ -343,8 +424,9 @@ export async function sendOfferOpeningBatch({
     }
   }
 
-  async function deliver(userId: string) {
-    if (!(await claim(userId))) {
+  async function deliver(entry: QueueEntry) {
+    const userId = entry.userId;
+    if (!(await claim(entry))) {
       counts.skipped += 1;
       return;
     }
@@ -394,14 +476,14 @@ export async function sendOfferOpeningBatch({
           stoppedEarly = true;
           return;
         }
-        const userId = queue[next];
+        const entry = queue[next];
         next += 1;
-        await deliver(userId);
+        await deliver(entry);
       }
     }),
   );
 
-  const remaining = await countRequests(false);
+  const remaining = readQueued ? ((await readQueue(1))?.total ?? 0) : await countRequests(false);
   console.info(
     JSON.stringify({
       scope: "admin.offer-opening-notifier",

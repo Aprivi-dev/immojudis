@@ -16,11 +16,16 @@ Il faut donc un regard extérieur à cette chaîne : un service gratuit qui appe
 
 ## La route `GET /api/health`
 
-Publique, sans détail sensible, jamais mise en cache (`cache-control: no-store`). Elle dit seulement
-deux choses :
+Publique, sans détail sensible. Le CDN garde la réponse 30 secondes (`cache-control: public,
+s-maxage=30`) : au plus une lecture de la base toutes les 30 s et par région, quel que soit le nombre
+d'appelants (une erreur n'est jamais gardée ; l'identifiant de requête n'est pas répercuté, la réponse
+gardée serait servie à d'autres appelants). Elle dit seulement deux choses :
 
 - l'âge du dernier succès de `operational-health` (la tâche qui évalue toutes les alertes) ;
-- l'âge de la dernière collecte réussie (la plus récente `last_publication_complete_at` des sources).
+- l'état de la collecte des sources **activées** (`auction_source_state.enabled`) : l'âge de la plus
+  ancienne `last_publication_complete_at`, le nombre de sources activées et celui des sources en retard.
+  Le verdict ne se calcule pas sur la source la plus récente : une source figée n'est pas masquée par
+  les autres. Une source activée qui n'a jamais de publication complète est en retard.
 
 Exemple de réponse :
 
@@ -29,23 +34,30 @@ Exemple de réponse :
   "status": "ok",
   "checkedAt": "2026-10-20T12:00:00.000Z",
   "operationalHealth": { "ageMinutes": 7, "maxMinutes": 45, "ok": true },
-  "collection": { "ageHours": 5.2, "maxHours": 18, "ok": true }
+  "collection": {
+    "ageHours": 5.2,
+    "maxHours": 36,
+    "ok": true,
+    "enabledSources": 7,
+    "lateSources": 0
+  }
 }
 ```
 
-| Cas                                                                                  | Statut HTTP                       | `status`   |
-| ------------------------------------------------------------------------------------ | --------------------------------- | ---------- |
-| `operational-health` a réussi il y a 45 min ou moins ET collecte réussie il y a 18 h | 200                               | `ok`       |
-| dernier succès de `operational-health` de plus de 45 min (ou jamais)                 | 503                               | `degraded` |
-| dernière collecte réussie de plus de 18 h (ou jamais)                                | 503                               | `degraded` |
-| base de données injoignable                                                          | 503                               | `degraded` |
-| site ou route injoignable                                                            | pas de réponse, 5xx (côté Vercel) |            |
+| Cas                                                                                                                       | Statut HTTP                       | `status`   |
+| ------------------------------------------------------------------------------------------------------------------------- | --------------------------------- | ---------- |
+| `operational-health` a réussi il y a 45 min ou moins ET chaque source activée a une publication complète de moins de 36 h | 200                               | `ok`       |
+| dernier succès de `operational-health` de plus de 45 min (ou jamais)                                                      | 503                               | `degraded` |
+| une source activée sans publication complète depuis plus de 36 h (ou jamais), ou aucune source activée                    | 503                               | `degraded` |
+| base de données injoignable                                                                                               | 503                               | `degraded` |
+| site ou route injoignable                                                                                                 | pas de réponse, 5xx (côté Vercel) |            |
 
 Le détail d'une erreur reste dans les journaux Vercel (`scope: "api.health"`), jamais dans la
 réponse.
 
-Les seuils sont dans `src/lib/health-status.ts` (45 min, 18 h). Ils suivent ceux de `cron.stale`
-(`operational-health` : 45 min) et de `pipeline.source.<source>.missed` (18 h).
+Les seuils sont dans `src/lib/health-status.ts` (45 min, 36 h). Le premier suit celui de `cron.stale`
+(`operational-health` : 45 min). Le second est plus large que l'alerte `pipeline.source.<source>.missed`
+(18 h) : la sonde publique ne doit pas osciller sur un cycle de collecte un peu long.
 
 ## Poser la sonde (une fois, par le propriétaire)
 
@@ -77,8 +89,11 @@ Le test de fumée GitHub exige aussi `/api/health` :
 - `status: "ok"` (200) : réussi ;
 - `operational-health` plus ancien que 45 min mais pas plus de **60 min**, collecte fraîche : toléré
   (un tick de 15 min en retard ne doit pas faire échouer le test, qui passe toutes les 30 min) ;
-- tout autre état dégradé (plus de 60 min, collecte de plus de 18 h, base injoignable, route absente
-  ou répondant 404) : échec.
+- tout autre état dégradé (plus de 60 min, une source activée en retard de plus de 36 h, base
+  injoignable, route absente ou répondant 404) : échec ;
+- l'en-tête `cache-control` doit être `no-store` ou ne garder la réponse que 60 s au plus (`s-maxage`) :
+  une garde plus longue masquerait une panne. Le test ne contrôle plus l'écho de `x-request-id` (la
+  réponse gardée ne le répercute pas).
 
 Le même test vérifie `/tribunaux/justice-tj-1-93` (200), l'ancienne adresse `/tribunaux/bobigny`
 (un seul 308 vers une adresse `/tribunaux/justice-tj-…`), un tribunal inconnu (404),
@@ -90,7 +105,9 @@ moins 10 pages `/tribunaux/justice-tj-` dans `/sitemap.xml` (option `--min-tribu
 1. Appeler `curl -s https://immojudis.com/api/health` : lire quel âge dépasse son seuil.
 2. `operationalHealth.ok = false` : la tâche `operational-health` ne réussit plus. Suivre
    `docs/runbooks/operational-health-arret.md`.
-3. `collection.ok = false` : plus de collecte réussie depuis plus de 18 h. Suivre
+3. `collection.ok = false` : une source activée n'a plus de publication complète depuis plus de 36 h
+   (`lateSources` en donne le nombre ; le nom se lit en base : `select source_name,
+last_publication_complete_at from auction_source_state where enabled order by 2 nulls first;`). Suivre
    `docs/runbooks/pipeline-source-missed.md` (et `pipeline-scheduler-disabled.md` si le pilote est
    coupé).
 4. Pas de réponse du tout : état de Vercel (https://www.vercel-status.com) et du déploiement de

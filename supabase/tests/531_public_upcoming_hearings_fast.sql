@@ -4,7 +4,8 @@
 --     sur des ventes qui exercent chacune de ses règles (statut brut, précision de date, date sans heure,
 --     conflit de sources sur la date, calendrier source, drapeau de qualité, fenêtre de vente en ligne,
 --     quarantaine, conflit de vérification, audience déjà passée aujourd'hui) ;
---   * aucune adresse source ne sort, seulement des clés SHA-256 de l'adresse normalisée ;
+--   * aucune adresse source ne sort, ni clé dérivée d'une adresse : seulement un identifiant de groupe
+--     (source_group, migration 20261031100100) ;
 --   * normalize_source_url suit les règles de l'ancien normalizeSourceUrl ;
 --   * plus de troncature à 1 000 audiences : un document de plus de 1 000 lignes sort entier.
 begin;
@@ -83,7 +84,7 @@ returns table (
   id uuid,
   sale_date timestamptz,
   date_only boolean,
-  source_keys jsonb
+  source_group uuid
 )
 language sql
 stable
@@ -93,7 +94,7 @@ as $$
     id uuid,
     sale_date timestamptz,
     date_only boolean,
-    source_keys jsonb
+    source_group uuid
   )
   where h.id::text like 'c5310000-%';
 $$;
@@ -136,20 +137,16 @@ select is(
   'the hour is unknown only for the day precision, the raw date without hour and the midnight date'
 );
 
--- Clés d'adresse source ----------------------------------------------------------------------------
+-- Identifiant de groupe --------------------------------------------------------------------------------
 select is(
-  (select source_keys from pg_temp.hearings(30) where id = 'c5310000-1000-4000-8000-000000000001'),
-  to_jsonb(array[encode(sha256(convert_to('example.test/c531/1', 'utf8')), 'hex')]),
-  'a sale with one source link has one key: the SHA-256 of the normalized address'
+  (select source_group from pg_temp.hearings(30) where id = 'c5310000-1000-4000-8000-000000000001'),
+  'c5310000-1000-4000-8000-000000000001'::uuid,
+  'a sale that shares no source address is its own group'
 );
 select is(
-  (select source_keys from pg_temp.hearings(30) where id = 'c5310000-1000-4000-8000-000000000017'),
-  (select to_jsonb(array_agg(k order by k))
-     from (
-       select encode(sha256(convert_to(u, 'utf8')), 'hex') as k
-       from unnest(array['licitor.com/annonce/9/vente.html', 'licitor.com/annonce/10']) as u
-     ) keys),
-  'two spellings of one address are one key, a second address is a second key, and non-addresses are ignored'
+  (select source_group from pg_temp.hearings(30) where id = 'c5310000-1000-4000-8000-000000000017'),
+  'c5310000-1000-4000-8000-000000000017'::uuid,
+  'a sale with several source addresses, none shared, is its own group'
 );
 
 -- normalize_source_url -----------------------------------------------------------------------------------

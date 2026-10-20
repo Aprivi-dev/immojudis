@@ -12,9 +12,13 @@ const SALE_CANDIDATES = 3;
 // Independent supervision (src/app/api/health/route.ts). The endpoint turns degraded after 45 minutes
 // without a successful `operational-health` run; the smoke test, which runs every 30 minutes, only
 // fails beyond 60 minutes, so that one late 15-minute tick of the scheduler wakes nobody. Any other
-// degradation (a collection older than 18 hours, no answer from the database) fails at once.
+// degradation (an enabled source without a complete publication for 36 hours, no answer from the
+// database) fails at once. The endpoint is public and kept 30 seconds by the CDN
+// (`Cache-Control: public, s-maxage=30`): it does not echo the request id, and the smoke test accepts
+// any cache lifetime up to HEALTH_MAX_CACHE_SECONDS (a longer one would hide an outage).
 const HEALTH_PATH = "/api/health";
 const HEALTH_SMOKE_MAX_AGE_MINUTES = 60;
+const HEALTH_MAX_CACHE_SECONDS = 60;
 
 // Court pages (src/app/tribunaux/[slug]/page.tsx). Addresses are the court code lower-cased
 // (`justice_tj_1_93`, the Bobigny court, gives `justice-tj-1-93`); the old address is the court name.
@@ -218,9 +222,23 @@ async function runCheck({ check, origin, fetchImpl }) {
 }
 
 /**
+ * True when a `cache-control` value keeps the answer at most HEALTH_MAX_CACHE_SECONDS: `no-store`, or
+ * `s-maxage` / `max-age` directives that are all within the limit. Anything else (no lifetime at all,
+ * or a longer one) could serve an old verdict and hide an outage.
+ */
+function isShortLivedCacheControl(value) {
+  if (/no-store/i.test(value)) return true;
+  const lifetimes = [...value.matchAll(/(?:^|[\s,])(s-maxage|max-age)=(\d+)/gi)].map((match) =>
+    Number(match[2]),
+  );
+  return lifetimes.length > 0 && lifetimes.every((seconds) => seconds <= HEALTH_MAX_CACHE_SECONDS);
+}
+
+/**
  * Independent supervision: `/api/health` must be `ok` (200). The only degradation tolerated is a
  * `operational-health` run older than 45 minutes but not older than 60 (HEALTH_SMOKE_MAX_AGE_MINUTES),
- * with a collection that is still fresh. The page only carries ages and thresholds, nothing sensitive.
+ * with every enabled source collected recently. The page only carries ages, counts and thresholds,
+ * nothing sensitive.
  */
 async function runHealthCheck({ origin, fetchImpl }) {
   const requestId = `smoke-${randomUUID()}`;
@@ -241,11 +259,11 @@ async function runHealthCheck({ origin, fetchImpl }) {
   if (!(response.headers.get("content-type") ?? "").includes("application/json")) {
     throw new Error(`${HEALTH_PATH}: réponse JSON attendue.`);
   }
-  if (!/no-store/i.test(response.headers.get("cache-control") ?? "")) {
-    throw new Error(`${HEALTH_PATH}: cache-control no-store absent.`);
-  }
-  if (response.headers.get("x-request-id") !== requestId) {
-    throw new Error(`${HEALTH_PATH}: la corrélation x-request-id n'est pas préservée.`);
+  // A cached answer carries the request id of the first caller: it is not echoed (see the route).
+  if (!isShortLivedCacheControl(response.headers.get("cache-control") ?? "")) {
+    throw new Error(
+      `${HEALTH_PATH}: cache-control sans s-maxage de ${HEALTH_MAX_CACHE_SECONDS} s au plus (ni no-store).`,
+    );
   }
   const body = await response.json();
   if (!body || (body.status !== "ok" && body.status !== "degraded")) {
@@ -263,7 +281,7 @@ async function runHealthCheck({ origin, fetchImpl }) {
     response.status === 503;
   if (!lateTickOnly) {
     throw new Error(
-      `${HEALTH_PATH}: état dégradé (operational-health : ${age ?? "aucun succès"} min, collecte : ${body.collection?.ageHours ?? "aucune"} h).`,
+      `${HEALTH_PATH}: état dégradé (operational-health : ${age ?? "aucun succès"} min, collecte : ${body.collection?.ageHours ?? "aucune"} h, sources activées en retard : ${body.collection?.lateSources ?? "inconnu"}).`,
     );
   }
   return {

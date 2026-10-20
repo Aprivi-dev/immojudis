@@ -3,13 +3,15 @@
 -- venir, et non plus le MAX de toutes les sources.
 --   * une source figée qui alimente des ventes affichées vieillit la date de l'accueil ;
 --   * ne comptent pas : une source désactivée, une source sans vente visible à venir (vente passée,
---     retirée, en quarantaine de publication), une source qui n'a jamais de collecte complète (NULL) ;
+--     retirée, en quarantaine de publication) ;
+--   * une source du périmètre qui n'a jamais de collecte complète (NULL) rend la date inconnue : NULL
+--     (migration 20261031100200, voir aussi le test 652) ;
 --   * aucune date exploitable : NULL ; une date dans le futur est ramenée à l'heure courante ;
 --   * mêmes droits que 20261028100400 : lisible par anon, seule la date sort.
 -- Les écritures sont annulées en fin de test.
 begin;
 
-select plan(16);
+select plan(17);
 
 select has_function('public', 'get_public_catalogue_verified_at', array[]::text[], 'la fonction publique existe');
 select has_function('app_private', 'get_public_catalogue_verified_at', array[]::text[], 'la fonction privée existe');
@@ -113,8 +115,16 @@ update public.auction_source_state set enabled = true, last_publication_complete
   where source_name = 'encheres_publiques';
 select is(
   public.get_public_catalogue_verified_at(),
+  null::timestamptz,
+  'une source du périmètre qui n''a jamais de collecte complète (NULL) rend la date inconnue'
+);
+
+update public.auction_source_state set enabled = false
+  where source_name = 'encheres_publiques';
+select is(
+  public.get_public_catalogue_verified_at(),
   '2026-10-05 06:30:00+00'::timestamptz,
-  'une source active qui n''a jamais de collecte complète (NULL) est ignorée, comme par tout agrégat'
+  'désactivée, cette source ne compte plus'
 );
 
 update public.auction_source_state set last_publication_complete_at = null
@@ -125,6 +135,8 @@ select is(
   'aucune source qui compte n''a de date : pas de date'
 );
 
+update public.auction_source_state set last_publication_complete_at = '2026-10-06 06:30:00+00'
+  where source_name = 'vench';
 update public.auction_source_state set last_publication_complete_at = now() + interval '3 days'
   where source_name = 'licitor';
 select is(

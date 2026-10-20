@@ -765,6 +765,39 @@ describe("audienceReminderFor", () => {
   });
 });
 
+describe("retrait déduit de l'absence de l'annonce à la source", () => {
+  const absence = () =>
+    change({
+      fingerprint: "status_changed:status:upcoming:withdrawn",
+      changeSummary: {
+        field: "status",
+        previousValue: "upcoming",
+        currentValue: "withdrawn",
+        reason: "source_absence",
+      },
+    });
+
+  it("est annoncé comme une annonce disparue de la source, pas comme une vente retirée", () => {
+    expect(graveWarningFor(absence(), NOW)).toEqual({
+      kind: "status_changed",
+      headline: "Annonce disparue de la source",
+      sourceAbsence: true,
+    });
+  });
+
+  it("donne un email qui ne parle pas de vente retirée et renvoie à l'avocat poursuivant", async () => {
+    const { emails } = await run({
+      followed: { [USER]: [{ id: SALE, saleDate: "2026-12-15T13:00:00Z" }] },
+      events: { [USER]: [absence()] },
+    });
+    expect(emails).toHaveLength(1);
+    expect(emails[0].subject).toContain("Annonce disparue de la source");
+    expect(emails[0].subject).not.toMatch(/retir/i);
+    expect(emails[0].text).toContain("À vérifier auprès de l’avocat poursuivant.");
+    expect(emails[0].text).not.toMatch(/retir/i);
+  });
+});
+
 describe("graveWarningFor", () => {
   it("ne retient que la date, et le statut reporté, retiré, annulé ou adjugé", () => {
     expect(graveWarningFor(change(), NOW)?.kind).toBe("status_changed");

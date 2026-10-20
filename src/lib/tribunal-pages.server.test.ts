@@ -17,11 +17,6 @@ import {
 } from "./tribunal-pages.server";
 import { TRIBUNAL_PAGE_LISTED_SALES } from "./tribunal-pages";
 
-/** Clés opaques d'adresses sources, comme la base les rend (SHA-256 hexadécimal). */
-const KEY_1 = "1".repeat(64);
-const KEY_2 = "2".repeat(64);
-const KEY_3 = "3".repeat(64);
-
 const ROW = {
   id: "00000000-0000-4000-8000-000000000001",
   city: "Bobigny",
@@ -87,6 +82,7 @@ describe("mapTribunalSaleRows", () => {
         latitude: 48.9,
         longitude: 2.4,
         source_keys: ["a".repeat(64)],
+        source_url: "https://example.test/annonce/1",
       } as typeof ROW,
     ]);
     expect(Object.keys(sale).sort()).toEqual([
@@ -109,8 +105,8 @@ describe("mapTribunalSaleRows : doublons", () => {
   it("réunit deux lignes qui partagent une clé d'adresse source, et garde la première", () => {
     // La base normalise et condense les adresses : une même annonce a la même clé.
     const sales = mapTribunalSaleRows([
-      { ...A, source_keys: [KEY_1] },
-      { ...B, source_keys: [KEY_2, KEY_1] },
+      { ...A, source_group: B.id },
+      { ...B, source_group: B.id },
     ]);
     // Même date : la plus petite identité est gardée.
     expect(sales.map((sale) => sale.id)).toEqual([B.id]);
@@ -123,18 +119,18 @@ describe("mapTribunalSaleRows : doublons", () => {
   it("ne réunit jamais sur la commune, le type, la surface, la date et le prix seuls", () => {
     // Deux lots distincts peuvent partir au même prix le même jour : mieux vaut deux lignes qu'une.
     const sales = mapTribunalSaleRows([
-      { ...A, source_keys: [KEY_1] },
-      { ...B, source_keys: [KEY_2] },
+      { ...A, source_group: A.id },
+      { ...B, source_group: B.id },
     ]);
     expect(sales).toHaveLength(2);
   });
 
-  it("suit la chaîne d'adresses : A et B, puis B et C, font une seule vente", () => {
+  it("suit un groupe de trois : la base rend la fermeture transitive (A et B, puis B et C)", () => {
     const C = { ...ROW, id: "ffffffff-0000-4000-8000-000000000003" };
     const sales = mapTribunalSaleRows([
-      { ...A, source_keys: [KEY_1] },
-      { ...B, source_keys: [KEY_2, KEY_1] },
-      { ...C, source_keys: [KEY_3, KEY_2] },
+      { ...A, source_group: B.id },
+      { ...B, source_group: B.id },
+      { ...C, source_group: B.id },
     ]);
     expect(sales).toHaveLength(1);
   });
@@ -185,8 +181,8 @@ describe("tryLoadTribunalSales", () => {
     const duplicate = { ...ROW, id: "00000000-0000-4000-8000-000000000009" };
     mocks.rpc.mockResolvedValue({
       data: [
-        { ...ROW, source_keys: [KEY_1] },
-        { ...duplicate, source_keys: [KEY_1] },
+        { ...ROW, source_group: ROW.id },
+        { ...duplicate, source_group: ROW.id },
       ],
       error: null,
     });

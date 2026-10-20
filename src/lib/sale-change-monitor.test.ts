@@ -123,6 +123,25 @@ describe("sale change monitor", () => {
     ).toThrow();
   });
 
+  it("n'annonce pas comme urgent un retrait déduit de l'absence de l'annonce à la source", () => {
+    const previous = buildSaleChangeSnapshot(saleFixture({ status: "upcoming" }));
+    const current = buildSaleChangeSnapshot(saleFixture({ status: "withdrawn" }));
+    const [change] = detectSaleChanges({
+      previous,
+      current,
+      now: NOW,
+      statusReason: "source_absence",
+    });
+    expect(change).toMatchObject({
+      eventKind: "status_changed",
+      severity: "important",
+      summaryLabel: "Annonce disparue de la source",
+      reason: "source_absence",
+      // L'empreinte est celle du statut : le même changement n'est pas signalé deux fois.
+      fingerprint: "status_changed:status:upcoming:withdrawn",
+    });
+  });
+
   it("marque urgent un statut retiré ou annulé", () => {
     const previous = buildSaleChangeSnapshot(saleFixture({ status: "upcoming" }));
     for (const status of ["withdrawn", "cancelled", "adjudicated"]) {

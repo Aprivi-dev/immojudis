@@ -80,6 +80,38 @@ describe("describeSaleChange", () => {
     ).toBe(label);
   });
 
+  it("announces a removal deduced from the source's absence as a missing announcement, not a withdrawal", () => {
+    const change = describeSaleChange(
+      event({
+        eventKind: "status_changed",
+        severity: "important",
+        changeSummary: {
+          field: "status",
+          previousValue: "upcoming",
+          currentValue: "withdrawn",
+          reason: "source_absence",
+        },
+      }),
+    );
+    expect(change).toMatchObject({
+      topic: "status",
+      label: "Annonce disparue de la source",
+      detail: "À vérifier auprès de l’avocat poursuivant.",
+    });
+    expect(`${change?.label} ${change?.detail}`).not.toMatch(/retir/i);
+  });
+
+  it("keeps « Vente retirée » for a withdrawal the source itself published", () => {
+    expect(
+      describeSaleChange(
+        event({
+          eventKind: "status_changed",
+          changeSummary: { field: "status", previousValue: "upcoming", currentValue: "withdrawn" },
+        }),
+      )?.label,
+    ).toBe("Vente retirée");
+  });
+
   it("only accepts the known document labels, never free text", () => {
     const documents = (summaryLabel: string) =>
       describeSaleChange(event({ eventKind: "documents_changed", summaryLabel }))?.label;

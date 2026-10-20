@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   getUserById: vi.fn(),
   resolve: vi.fn(),
   from: vi.fn(),
+  rpc: vi.fn(),
   send: vi.fn(),
 }));
 
@@ -37,6 +38,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
       );
       return builder;
     },
+    rpc: mocks.rpc,
     auth: { admin: { getUserById: mocks.getUserById } },
   },
 }));
@@ -70,20 +72,49 @@ const has = (calls: Call[], name: string) => calls.some(([method]) => method ===
 const args = (calls: Call[], name: string) => calls.find(([method]) => method === name)?.[1] ?? [];
 const adminAuth = () => ({ userId: idOf(999), isAdmin: true });
 
-/** Comportement par défaut de la base simulée : `rows` à notifier, `claims` par utilisateur. */
+const MISSING_FUNCTION = {
+  code: "PGRST202",
+  message: "Could not find the function public.get_offer_opening_queue in the schema cache",
+};
+
+/**
+ * Comportement par défaut de la base simulée : `rows` à notifier, `claims` par utilisateur. La file
+ * (`get_offer_opening_queue`) rend `rows` ; `rpcMissing` simule une base sans la migration
+ * 20261031100300 (ancienne sélection par table). `queue` impose des entrées avec essais.
+ */
 function database({
   rows = [] as string[],
   claimed = (_userId: string) => true,
   recipients = rows.length,
   notified = 0,
+  rpcMissing = false,
+  needsReview = 0,
+  queue,
 }: {
   rows?: string[];
   claimed?: (userId: string) => boolean;
   recipients?: number;
   notified?: number;
+  rpcMissing?: boolean;
+  needsReview?: number;
+  queue?: Array<{ user_id: string; attempts: number; attempted_at: string | null }>;
 } = {}) {
   const updates: Array<{ patch: Record<string, unknown>; userId: string | null }> = [];
   let remaining = recipients;
+  const rpcCalls: Array<{ fn: string; params: Record<string, unknown> }> = [];
+  mocks.rpc.mockImplementation(async (fn: string, params: Record<string, unknown>) => {
+    rpcCalls.push({ fn, params });
+    if (rpcMissing) return { data: null, error: MISSING_FUNCTION };
+    const entries = queue ?? rows.map((user_id) => ({ user_id, attempts: 0, attempted_at: null }));
+    return {
+      data: {
+        total: remaining,
+        needs_review: needsReview,
+        recipients: entries.slice(0, Number(params.p_limit ?? 200)),
+      },
+      error: null,
+    };
+  });
   mocks.resolve.mockImplementation((calls: Call[]) => {
     const selectOptions = args(calls, "select")[1] as { head?: boolean } | undefined;
     if (has(calls, "update")) {
@@ -104,11 +135,13 @@ function database({
     }
     return { data: rows.map((user_id) => ({ user_id })), error: null };
   });
-  return { updates };
+  return { updates, rpcCalls };
 }
 
 beforeEach(() => {
   vi.resetAllMocks();
+  // Sans autre consigne, la base n'a pas la migration 20261031100300 (ancienne sélection).
+  mocks.rpc.mockResolvedValue({ data: null, error: MISSING_FUNCTION });
   vi.spyOn(console, "info").mockImplementation(() => undefined);
   vi.spyOn(console, "error").mockImplementation(() => undefined);
   mocks.auth.mockResolvedValue(adminAuth());
@@ -205,10 +238,11 @@ describe("accès administrateur", () => {
 
 describe("destinataires et aperçu", () => {
   it("compte les demandes actives non prévenues, les prévenues, et montre l'aperçu", async () => {
-    database({ recipients: 42, notified: 7 });
+    database({ recipients: 42, notified: 7, needsReview: 2 });
     const audience = await getOfferOpeningAudience({ authToken: "t", env });
     expect(audience).toMatchObject({
       recipients: 42,
+      needsReview: 2,
       alreadyNotified: 7,
       batchSize: 200,
       configured: true,
@@ -218,6 +252,18 @@ describe("destinataires et aperçu", () => {
     expect(audience.preview.text).toContain("https://immojudis.test/offres");
     // L'aperçu n'expose aucun jeton signé.
     expect(audience.preview.text).not.toMatch(/token=/);
+  });
+
+  it("sans la fonction de file (migration pas appliquée), compte comme avant les demandes actives", async () => {
+    database({ recipients: 9, notified: 1, rpcMissing: true });
+    const audience = await getOfferOpeningAudience({ authToken: "t", env });
+    expect(audience).toMatchObject({ recipients: 9, needsReview: 0, alreadyNotified: 1 });
+  });
+
+  it("n'avale pas une autre erreur de la file", async () => {
+    database({ recipients: 9 });
+    mocks.rpc.mockResolvedValue({ data: null, error: { code: "XX000", message: "boom" } });
+    await expect(getOfferOpeningAudience({ authToken: "t", env })).rejects.toBeTruthy();
   });
 
   it("dit ce qui manque à la configuration d'envoi", async () => {
@@ -281,7 +327,7 @@ describe("envoi d'un lot", () => {
     });
   });
 
-  it("ne cible que les demandes actives non prévenues, les plus anciennes d'abord, 200 au plus", async () => {
+  it("sans la fonction de file (migration pas appliquée), ne cible que les demandes actives non prévenues, les plus anciennes d'abord, 200 au plus", async () => {
     const selects: Call[][] = [];
     mocks.resolve.mockImplementation((calls: Call[]) => {
       selects.push(calls);
@@ -297,6 +343,96 @@ describe("envoi d'un lot", () => {
     expect(list.find(([method]) => method === "is")?.[1]).toEqual(["notified_at", null]);
     expect(args(list, "order")).toEqual(["consented_at", { ascending: true }]);
     expect(mocks.send).not.toHaveBeenCalled();
+  });
+
+  it("lit la file en base : demandes à adresse confirmée seulement, 200 au plus, sans relire la table", async () => {
+    const selects: Call[][] = [];
+    const { rpcCalls } = database({ rows: [idOf(1)], recipients: 1 });
+    const resolve = mocks.resolve.getMockImplementation()!;
+    mocks.resolve.mockImplementation((calls: Call[]) => {
+      selects.push(calls);
+      return resolve(calls);
+    });
+    await sendOfferOpeningBatch({ authToken: "t", limit: 5_000, now: NOW, env });
+    expect(rpcCalls[0]).toEqual({ fn: "get_offer_opening_queue", params: { p_limit: 200 } });
+    // Aucune sélection de candidats dans la table : seule la file en base décide.
+    expect(selects.filter((calls) => has(calls, "order"))).toEqual([]);
+    expect(mocks.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("compte l'essai en posant la marque, et date le premier essai de la série", async () => {
+    const { updates } = database({
+      queue: [
+        { user_id: idOf(1), attempts: 0, attempted_at: null },
+        { user_id: idOf(2), attempts: 1, attempted_at: "2026-10-30T02:00:00.000Z" },
+      ],
+      recipients: 2,
+    });
+    await sendOfferOpeningBatch({ authToken: "t", now: NOW, env });
+    const claims = updates.filter(({ patch }) => patch.notified_at);
+    expect(claims.find(({ userId }) => userId === idOf(1))?.patch).toEqual({
+      notified_at: NOW.toISOString(),
+      notify_attempts: 1,
+      notify_attempted_at: NOW.toISOString(),
+    });
+    // Un second essai garde la date du premier : la clé d'idempotence de Resend court à partir de là.
+    expect(claims.find(({ userId }) => userId === idOf(2))?.patch).toEqual({
+      notified_at: NOW.toISOString(),
+      notify_attempts: 2,
+      notify_attempted_at: "2026-10-30T02:00:00.000Z",
+    });
+  });
+
+  it("garde la même clé d'idempotence à chaque essai d'un compte", async () => {
+    database({
+      queue: [{ user_id: idOf(2), attempts: 1, attempted_at: "2026-10-30T02:00:00.000Z" }],
+      recipients: 1,
+    });
+    await sendOfferOpeningBatch({ authToken: "t", now: NOW, env });
+    expect(mocks.send.mock.calls[0][0].idempotencyKey).toBe(`immojudis-offer-opening-${idOf(2)}`);
+  });
+
+  it("n'essaie qu'une fois par passage une demande que la file rend deux fois", async () => {
+    const { updates } = database({
+      queue: [
+        { user_id: idOf(1), attempts: 0, attempted_at: null },
+        { user_id: idOf(1), attempts: 0, attempted_at: null },
+      ],
+      recipients: 1,
+    });
+    await sendOfferOpeningBatch({ authToken: "t", now: NOW, env });
+    expect(mocks.send).toHaveBeenCalledTimes(1);
+    expect(updates.filter(({ patch }) => patch.notified_at)).toHaveLength(1);
+  });
+
+  it("rend la marque après un échec sans effacer le compteur d'essais", async () => {
+    const { updates } = database({ rows: [idOf(1)], recipients: 1 });
+    mocks.send.mockRejectedValue(new Error("Resend a refusé l'envoi (500)."));
+    await sendOfferOpeningBatch({ authToken: "t", now: NOW, env });
+    const release = updates.find(({ patch }) => patch.notified_at === null);
+    // Seule la marque est rendue : le compteur et la date du premier essai restent.
+    expect(release?.patch).toEqual({ notified_at: null });
+  });
+
+  it("sans la fonction de file (migration pas appliquée), pose seulement la marque", async () => {
+    const { updates } = database({ rows: [idOf(1)], recipients: 1, rpcMissing: true });
+    const result = await sendOfferOpeningBatch({ authToken: "t", now: NOW, env });
+    expect(result.sent).toBe(1);
+    expect(updates[0].patch).toEqual({ notified_at: NOW.toISOString() });
+  });
+
+  it("n'avale pas une autre erreur de la file : aucun envoi", async () => {
+    database({ rows: [idOf(1)], recipients: 1 });
+    mocks.rpc.mockResolvedValue({ data: null, error: { code: "XX000", message: "boom" } });
+    await expect(sendOfferOpeningBatch({ authToken: "t", now: NOW, env })).rejects.toBeTruthy();
+    expect(mocks.send).not.toHaveBeenCalled();
+  });
+
+  it("lot de comptes non confirmés : la file ne les rend pas, le lot est fait des comptes confirmés", async () => {
+    // La base ne rend que les adresses confirmées : 200 comptes non confirmés plus anciens ne bloquent plus.
+    database({ rows: [idOf(201), idOf(202)], recipients: 2 });
+    const result = await sendOfferOpeningBatch({ authToken: "t", now: NOW, env });
+    expect(result).toMatchObject({ sent: 2, skipped: 0 });
   });
 
   it("idempotent : une demande déjà marquée par un autre envoi n'est pas renvoyée", async () => {
