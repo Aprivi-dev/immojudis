@@ -1,10 +1,17 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
 import { pointsToVerify } from "@/lib/search/points-to-verify";
 import type { AuctionSale } from "@/lib/types";
 import { SalePointsToVerify } from "./SalePointsToVerify";
+
+// Le retour en un clic est testé à part (SaleSignalFeedback.test.tsx) : ici, seulement sa place.
+vi.mock("@/components/SaleSignalFeedback", () => ({
+  SaleSignalFeedback: ({ saleId, signal }: { saleId: string; signal: string }) => (
+    <div data-testid="sale-signal-feedback" data-sale={saleId} data-signal={signal} />
+  ),
+}));
 
 afterEach(cleanup);
 
@@ -33,6 +40,29 @@ describe("SalePointsToVerify", () => {
     expect(section.textContent).toContain(
       "La liste n’est pas exhaustive : l’absence de pastille ne signifie pas qu’il n’y a rien à vérifier.",
     );
+  });
+
+  it("propose le retour en un clic sous la liste quand la vente est connue", () => {
+    const points = pointsToVerify(sale(), { occupancyVisible: true });
+    render(<SalePointsToVerify points={points} saleId="sale-1" />);
+
+    const section = screen.getByRole("region", { name: "2 points à vérifier" });
+    const feedback = screen.getByTestId("sale-signal-feedback");
+    expect(section.contains(feedback)).toBe(true);
+    expect(feedback.getAttribute("data-sale")).toBe("sale-1");
+    expect(feedback.getAttribute("data-signal")).toBe("points_to_verify");
+  });
+
+  it("ne propose pas de retour sans identifiant de vente", () => {
+    render(<SalePointsToVerify points={pointsToVerify(sale(), { occupancyVisible: true })} />);
+
+    expect(screen.queryByTestId("sale-signal-feedback")).toBeNull();
+  });
+
+  it("n'affiche rien, retour compris, sans point", () => {
+    const { container } = render(<SalePointsToVerify points={[]} saleId="sale-1" />);
+
+    expect(container.firstChild).toBeNull();
   });
 
   it("n'affiche rien sans point", () => {

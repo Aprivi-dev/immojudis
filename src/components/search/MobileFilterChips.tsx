@@ -4,7 +4,11 @@ import type * as React from "react";
 import Building2 from "lucide-react/dist/esm/icons/building-2.js";
 import CalendarDays from "lucide-react/dist/esm/icons/calendar-days.js";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
-import { HOME_TYPE_OPTIONS, compactPrice } from "@/lib/search/search-filters";
+import {
+  HOME_TYPE_OPTIONS,
+  NO_POINTS_TO_VERIFY_FILTER_LABEL,
+  compactPrice,
+} from "@/lib/search/search-filters";
 import { DateRangeFields } from "./DateRangeFields";
 import { draftPrice, priceRangeError, type SearchDraft } from "./search-page-state";
 
@@ -23,13 +27,20 @@ const POPOVER_CLASSES =
  * « Mise à prix max. » et « Date de vente ». Avant, ils ne se trouvaient que dans « Filtres
  * avancés » sous `lg`. La rangée défile horizontalement ; chaque pastille mesure 44 px de haut.
  * Les fenêtres des pastilles sont rendues hors de la rangée (portail) : le défilement ne les rogne pas.
+ *
+ * Avec un compte (`preview` faux), deux pastilles à bascule s'y ajoutent : « Sous la fourchette » et
+ * « Sans point à vérifier ». Leur texte complet (ce qu'elles couvrent, ce qu'elles ne couvrent pas) est
+ * dans « Filtres avancés » ; ici, le nom court seulement, et `aria-pressed` dit l'état.
  */
 export function MobileFilterChips({
   draft,
   setDraft,
+  preview = false,
 }: {
   draft: SearchDraft;
   setDraft: React.Dispatch<React.SetStateAction<SearchDraft>>;
+  /** Visiteur sans compte : les deux filtres de repères nécessitent un compte, ils ne sont pas proposés. */
+  preview?: boolean;
 }) {
   return (
     <div
@@ -40,7 +51,51 @@ export function MobileFilterChips({
       <HomeTypeChip draft={draft} setDraft={setDraft} />
       <MaxPriceChip draft={draft} setDraft={setDraft} />
       <SaleDateChip draft={draft} setDraft={setDraft} />
+      {preview ? null : (
+        <>
+          <ToggleChip
+            pressed={draft.belowRange}
+            label="Sous la fourchette"
+            title="Mise à prix sous la fourchette des ventes comparables"
+            onToggle={() =>
+              setDraft((current) => ({ ...current, belowRange: !current.belowRange }))
+            }
+          />
+          <ToggleChip
+            pressed={draft.noPointsToVerify}
+            label={NO_POINTS_TO_VERIFY_FILTER_LABEL}
+            onToggle={() =>
+              setDraft((current) => ({ ...current, noPointsToVerify: !current.noPointsToVerify }))
+            }
+          />
+        </>
+      )}
     </div>
+  );
+}
+
+function ToggleChip({
+  pressed,
+  label,
+  title,
+  onToggle,
+}: {
+  pressed: boolean;
+  label: string;
+  /** Nom complet quand le libellé court ne suffit pas à un lecteur d'écran. */
+  title?: string;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={pressed}
+      aria-label={title}
+      onClick={onToggle}
+      className={chipClass(pressed)}
+    >
+      {label}
+    </button>
   );
 }
 

@@ -120,7 +120,7 @@ export function SearchHeader({
                 onClick={onSaveSearch}
               />
             ) : null}
-            <MobileFilterChips draft={draft} setDraft={setDraft} />
+            <MobileFilterChips draft={draft} setDraft={setDraft} preview={!signedIn} />
             <div className="hidden lg:flex flex-wrap items-center gap-2">
               <HomeTypeFilter draft={draft} setDraft={setDraft} />
               <PriceFilter draft={draft} setDraft={setDraft} />

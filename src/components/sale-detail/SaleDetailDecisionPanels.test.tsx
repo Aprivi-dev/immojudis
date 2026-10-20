@@ -116,6 +116,31 @@ describe("DiscoveryDecisionPanel", () => {
     expect(text).toContain("c’est le calcul de l’enchère plafond");
   });
 
+  it("offers the one-click feedback on the gap to a signed-in account, and only with a gap", async () => {
+    mocks.auth = { user: { id: "user-1" }, loading: false };
+    mocks.fetchValuePreview.mockResolvedValue({
+      available: true,
+      lowEur: 80_000,
+      highEur: 100_000,
+      discountPct: 40,
+      discountNotSignificant: false,
+      startingPricePerM2: null,
+    });
+    renderWithQuery(<DiscoveryDecisionPanel sale={sale} />);
+
+    await screen.findByText(/La mise à prix est environ 40 % sous la valeur estimée du bien\./);
+    const feedback = screen.getByTestId("sale-signal-feedback");
+    expect(feedback.getAttribute("data-signal")).toBe("market_gap_band");
+    expect(screen.getByRole("button", { name: "Utile" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Pas pertinent" })).toBeTruthy();
+  });
+
+  it("offers no feedback to a visitor: no account, no anonymous measure", () => {
+    renderWithQuery(<DiscoveryDecisionPanel sale={sale} />);
+
+    expect(screen.queryByTestId("sale-signal-feedback")).toBeNull();
+  });
+
   it("shows no sentence when the preview carries no gap at all", async () => {
     mocks.auth = { user: { id: "user-1" }, loading: false };
     mocks.fetchValuePreview.mockResolvedValue({

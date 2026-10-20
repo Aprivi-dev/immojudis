@@ -147,3 +147,31 @@ describe("sales search URL state", () => {
     expect(record.viewport).toBeUndefined();
   });
 });
+
+describe("filtres « sous la fourchette » et « sans point à vérifier »", () => {
+  it("se lisent dans l'adresse et s'y réécrivent à l'identique", () => {
+    const search = validateSalesSearch({ belowRange: "true", noPointsToVerify: "1" });
+    expect(search.belowRange).toBe(true);
+    expect(search.noPointsToVerify).toBe(true);
+    expect(salesSearchToUrlRecord(search)).toMatchObject({
+      belowRange: true,
+      noPointsToVerify: true,
+    });
+  });
+
+  it("n'écrivent rien quand ils sont éteints ou illisibles", () => {
+    for (const raw of [undefined, "false", "0", "peut-être"]) {
+      const record = salesSearchToUrlRecord(
+        validateSalesSearch({ belowRange: raw, noPointsToVerify: raw }),
+      );
+      expect(record.belowRange, String(raw)).toBeUndefined();
+      expect(record.noPointsToVerify, String(raw)).toBeUndefined();
+    }
+  });
+
+  it("ne changent pas une adresse canonique qui les porte", () => {
+    expect(
+      canonicalSalesQuery(new URLSearchParams("belowRange=true&noPointsToVerify=true")),
+    ).toBeNull();
+  });
+});
