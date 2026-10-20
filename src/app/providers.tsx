@@ -2,7 +2,14 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Suspense, useEffect, useState } from "react";
-import { Navbar } from "@/components/Navbar";
+import { Navbar, navbarTheme } from "@/components/Navbar";
+import { HeaderLogo } from "@/components/site-header-shared";
+import {
+  siteHeaderBarClasses,
+  siteHeaderClasses,
+  siteHeaderReservesHeight,
+} from "@/components/SiteHeader";
+import { usePublicPathname } from "@/hooks/use-public-pathname";
 import { AuthProvider } from "@/components/AuthProvider";
 import { LaunchOfferProvider } from "@/components/LaunchOfferProvider";
 import { SiteFooter } from "@/components/SiteFooter";
@@ -53,17 +60,24 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
   );
 }
 
-function NavigationFallback() {
+/**
+ * En-tête de secours le temps que le vrai se charge. Il prend la place exacte du vrai pour l'adresse
+ * courante (même thème, même position, même hauteur, même espace réservé dans la page) : l'accueil
+ * porte un en-tête sombre posé par-dessus la photo, qui ne réserve aucune place ; le catalogue et
+ * l'administration n'en ont pas (leur propre barre). Un espace de 4 rem laissé là où le vrai en-tête
+ * n'en laisse pas décalait la page à son arrivée (CLS 0,078).
+ */
+export function NavigationFallback() {
+  const theme = navbarTheme(usePublicPathname());
+  if (!theme) return null;
   return (
     <>
-      <header className="fixed inset-x-0 top-0 z-50 border-b border-border bg-white/95">
-        <div className="mx-auto flex min-h-16 max-w-[96rem] items-center gap-4 px-4 sm:px-6 lg:px-8">
-          <a href="/" className="font-display text-2xl font-semibold text-foreground">
-            Immo<span className="text-gold-text">judis</span>
-          </a>
+      <header className={siteHeaderClasses(theme, "fixed")}>
+        <div className={siteHeaderBarClasses(theme)}>
+          <HeaderLogo dark={theme === "dark"} showTagline={theme !== "dark"} />
         </div>
       </header>
-      <div className="h-16" aria-hidden />
+      {siteHeaderReservesHeight(theme, "fixed") ? <div className="h-16" aria-hidden /> : null}
     </>
   );
 }
