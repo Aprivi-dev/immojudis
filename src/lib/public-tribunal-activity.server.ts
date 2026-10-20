@@ -7,6 +7,8 @@ import {
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
 
 export const PUBLIC_TRIBUNAL_ACTIVITY_REVALIDATE_SECONDS = 3_600;
+/** Étiquette du cache de données de l'activité des tribunaux (purgée par `revalidate-sale`). */
+export const PUBLIC_TRIBUNAL_ACTIVITY_CACHE_TAG = "public-tribunal-activity";
 
 async function readPublicTribunalActivity(): Promise<PublicTribunalActivity[]> {
   const client = createPublicSupabaseClient();
@@ -19,7 +21,10 @@ async function readPublicTribunalActivity(): Promise<PublicTribunalActivity[]> {
 const cachedPublicTribunalActivity = unstable_cache(
   readPublicTribunalActivity,
   ["public-tribunal-activity", "v1"],
-  { revalidate: PUBLIC_TRIBUNAL_ACTIVITY_REVALIDATE_SECONDS, tags: ["public-tribunal-activity"] },
+  {
+    revalidate: PUBLIC_TRIBUNAL_ACTIVITY_REVALIDATE_SECONDS,
+    tags: [PUBLIC_TRIBUNAL_ACTIVITY_CACHE_TAG],
+  },
 );
 
 /** How long a failed read is remembered before the database is asked again. */

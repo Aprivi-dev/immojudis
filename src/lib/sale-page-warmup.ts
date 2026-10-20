@@ -6,11 +6,14 @@ export const WARMUP_TIMEOUT_MS = 5_000;
 export const WARMUP_CONCURRENCY = 4;
 /**
  * Pages warmed per call at most: the warm-up runs in `after()`, inside the function's time
- * budget (`maxDuration = 30` on `revalidate-sale`). 24 pages at 4 at a time make 6 rounds of 5 s
- * at most, that is 30 s in the worst case, which is why the cap is the budget and not 100: the
- * other pages of a larger batch are rendered by their first visitor, as before.
+ * budget (`maxDuration = 60` on `revalidate-sale`). 32 pages at 4 at a time make 8 rounds of 5 s at
+ * most, that is 40 s in the worst case, which leaves 20 s for what runs before (the lookup of the
+ * tribunal pages and the regeneration of the court activity). It was 24 (30 s) before the catalogue
+ * pages 2 and 3, the upcoming hearings and the tribunal pages joined the warm-up; the cap is the
+ * budget, not the number of sales: the other pages of a larger batch are rendered by their first
+ * visitor, as before.
  */
-export const MAX_WARMUP_PAGES = 24;
+export const MAX_WARMUP_PAGES = 32;
 
 export type SalePageWarmupSummary = {
   requested: number;
