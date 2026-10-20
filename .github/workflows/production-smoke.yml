@@ -22,12 +22,20 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
-      - name: Check production availability, request correlation, catalogue caches and search-engine signals
+      - name: Check production availability, supervision, court pages, catalogue caches and search-engine signals
         # Whatever the indexing state, the script also checks the public catalogue and its caches:
         # two successive requests to /sales (the second one `x-vercel-cache: HIT`, no Set-Cookie, no
         # Vary beyond the Next.js router headers, sale links in the HTML), /sales/defaut in noindex,
         # at least 20 listings in the HTML of /sales?page=2, a public cache-control on
         # /api/catalogue/preview, and no sitemap listing /sales/defaut (when indexing is open).
+        #
+        # Supervision and court pages (docs/operations/supervision-externe.md): /api/health must be
+        # `ok` (a late `operational-health` run is only tolerated up to 60 minutes, a collection older
+        # than 18 hours fails at once); a known court (/tribunaux/justice-tj-1-93) answers 200; its old
+        # address (/tribunaux/bobigny) answers a single 308 to a /tribunaux/justice-tj-... address; an
+        # unknown court answers 404; /audiences-a-venir does not say "momentanément indisponibles";
+        # and, when indexing is open, /sitemap.xml lists at least 10 /tribunaux/justice-tj-... pages
+        # (--min-tribunal-urls). An unavailable hearings page fails this job until it is repaired.
         #
         # The script must know which indexing state to expect: the repository variable
         # SEO_INDEXING_ENABLED (Settings > Secrets and variables > Actions > Variables) mirrors
