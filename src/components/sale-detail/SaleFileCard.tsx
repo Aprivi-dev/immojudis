@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import FolderHeart from "lucide-react/dist/esm/icons/folder-heart.js";
 import { FavoriteButton } from "@/components/FavoriteButton";
@@ -92,6 +92,14 @@ export function SaleFileCard({
     onError: (error: unknown) =>
       toast.error(userMessage(error, "Impossible d’enregistrer votre dossier.")),
   });
+
+  // `/sales/<id>#mon-dossier` (« Mon démarrage ») : la carte se charge à la demande, après la
+  // navigation ; le navigateur n'a donc pas trouvé l'ancre. On y défile une fois la carte affichée.
+  const showsCard = Boolean(userId) && !loading;
+  useEffect(() => {
+    if (!showsCard || window.location.hash !== "#mon-dossier") return;
+    document.getElementById("mon-dossier")?.scrollIntoView?.({ block: "start" });
+  }, [showsCard]);
 
   if (!userId || loading) return null;
 

@@ -110,6 +110,18 @@ describe("SaleFileCard (Mon dossier)", () => {
     expect(screen.queryByRole("button", { name: "Ouvrir le dossier de travail" })).toBeNull();
   });
 
+  it("défile jusqu'à « Mon dossier » quand la fiche est ouverte sur #mon-dossier", async () => {
+    const scrollIntoView = vi.fn();
+    window.HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    window.history.replaceState(null, "", "/sales/sale-1#mon-dossier");
+    mocks.fetchDossier.mockResolvedValue(followed());
+    renderCard();
+
+    await screen.findByLabelText("Mon statut");
+    expect(scrollIntoView).toHaveBeenCalled();
+    window.history.replaceState(null, "", "/");
+  });
+
   it("dit que retirer la vente des favoris efface le dossier", async () => {
     mocks.fetchDossier.mockResolvedValue(followed());
     renderCard();
