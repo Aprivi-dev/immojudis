@@ -50,6 +50,24 @@ describe("unsubscribe tokens", () => {
     expect(verifyUnsubscribeToken(`${forged}.${signature}`, { now, env })).toBeNull();
   });
 
+  it("porte la portée « ouverture de l'offre », signée et distincte des autres", () => {
+    const token = createUnsubscribeToken({ userId, scope: { kind: "offer-opening" }, now, env });
+    expect(verifyUnsubscribeToken(token, { now, env })).toMatchObject({
+      userId,
+      scope: { kind: "offer-opening" },
+    });
+    const reminders = createUnsubscribeToken({ userId, scope: { kind: "reminders" }, now, env });
+    expect(token).not.toBe(reminders);
+    const [payload, signature] = reminders.split(".");
+    const forged = Buffer.from(
+      JSON.stringify({
+        ...JSON.parse(Buffer.from(payload, "base64url").toString()),
+        s: "offer-opening",
+      }),
+    ).toString("base64url");
+    expect(verifyUnsubscribeToken(`${forged}.${signature}`, { now, env })).toBeNull();
+  });
+
   it("expire après 60 jours", () => {
     const token = createUnsubscribeToken({ userId, now, env });
     const later = new Date(now.getTime() + 61 * 86_400_000);

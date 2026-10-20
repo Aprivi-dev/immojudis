@@ -91,7 +91,7 @@ describe("GET /api/v1/sales/:id/adjudication-statistics", () => {
 
   it("refuse le plan Découverte avant toute lecture des statistiques", async () => {
     mocks.assertEntitlement.mockRejectedValue(
-      new Error("Statistiques d’adjudication réservées au plan Analyse."),
+      new Error("Statistiques d’adjudication réservées à l’offre Analyse."),
     );
 
     const response = await request();

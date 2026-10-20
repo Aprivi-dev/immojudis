@@ -24,7 +24,7 @@ export async function GET(request: Request) {
     await assertFeatureEntitlement(
       auth,
       "sales.statistics",
-      "Statistiques par tribunal réservées au plan Analyse.",
+      "Statistiques par tribunal réservées à l’offre Analyse.",
     );
 
     const url = new URL(request.url);

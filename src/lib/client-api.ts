@@ -50,6 +50,9 @@ export {
   grantAdminSubscription,
   fetchAdminLaunchOffer,
   setAdminLaunchOfferClient,
+  fetchAdminOfferOpeningAudience,
+  sendAdminOfferOpeningTest,
+  sendAdminOfferOpeningBatch,
 } from "@/lib/client-api/admin";
 
 export {

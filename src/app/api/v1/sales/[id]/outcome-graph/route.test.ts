@@ -98,7 +98,7 @@ describe("GET /api/v1/sales/:id/outcome-graph", () => {
 
   it("refuse Découverte avant toute lecture du registre", async () => {
     mocks.assertEntitlement.mockRejectedValue(
-      new Error("Prévision Outcome Graph réservée au plan Analyse."),
+      new Error("Prévision Outcome Graph réservée à l’offre Analyse."),
     );
 
     const response = await request();

@@ -40,6 +40,17 @@ describe("type de vente du rapport", () => {
     },
   );
 
+  it("garde le contrôle du type de vente, dont « conflict », pour la page « Dossier de financement »", () => {
+    expect(
+      snapshotOf({ sale_venue_type: "tribunal", sale_verification_status: "conflict" }).sale
+        .venueVerificationStatus,
+    ).toBe("conflict");
+    expect(
+      snapshotOf({ sale_venue_type: "tribunal", sale_verification_status: "verified" }).sale
+        .venueVerificationStatus,
+    ).toBe("verified");
+  });
+
   it("garde « unknown » quand le type n'est pas qualifié", () => {
     expect(snapshotOf({ sale_venue_type: undefined }).sale.venueType).toBe("unknown");
   });

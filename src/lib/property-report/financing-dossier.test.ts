@@ -137,6 +137,17 @@ describe("page « Dossier de financement » d'un rapport complet", () => {
     expect(text).toContain("droits de mutation en plus du prix (art. R. 322-58)");
   });
 
+  it("aligne la défaillance de l'adjudicataire sur l'article relu : créanciers, débiteur, différence de revente", () => {
+    expect(lines.join("\n")).toContain(
+      "acquise aux créanciers et, le cas échéant, au débiteur si l’adjudicataire est défaillant ; la différence avec le prix de revente peut en plus être due",
+    );
+    expect(lines.join("\n")).not.toContain("acquise aux créanciers si l’adjudicataire");
+  });
+
+  it("explique « séquestre » au premier emploi", () => {
+    expect(lines.join("\n")).toContain("séquestre (tiers qui garde les fonds)");
+  });
+
   it("dit ce que les textes ne disent pas plutôt que de le deviner", () => {
     expect(lines.join("\n")).toContain("Imputation de la garantie sur le prix: non précisée");
   });
@@ -263,11 +274,44 @@ describe("autres types de vente", () => {
     expect(valueOf(notary, "Mise à prix")).toBe(formatPrice(92_000));
   });
 
-  it("signale un type de vente inconnu (rapport antérieur) et applique les règles du tribunal avec cette réserve", () => {
-    const old = dossierLines({ sale: { venueType: undefined } });
-    expect(valueOf(old, "Type de vente")).toContain(FINANCING_NOT_PROVIDED);
-    expect(valueOf(old, "Type de vente")).toContain("vente au tribunal");
-    expect(old.join("\n")).toContain("R. 322-41");
+  it.each([
+    ["inconnu (rapport antérieur)", { venueType: undefined }],
+    ["« unknown »", { venueType: "unknown" }],
+    [
+      "en conflit entre les sources",
+      { venueType: "tribunal", venueVerificationStatus: "conflict" },
+    ],
+  ])(
+    "type de vente %s : aucune règle du tribunal, garantie et délai « non renseigné », renvoi à l'annonce",
+    (_label, sale) => {
+      const uncertain = dossierLines({ sale });
+      const text = uncertain.join("\n");
+      expect(valueOf(uncertain, "Type de vente")).toContain(FINANCING_NOT_PROVIDED);
+      expect(valueOf(uncertain, "Type de vente")).toContain("à lire dans l’annonce");
+      expect(valueOf(uncertain, "Type de vente")).not.toContain("vente au tribunal ;");
+      expect(valueOf(uncertain, "Garantie de 10 % de la mise à prix, minimum 3 000 €")).toContain(
+        FINANCING_NOT_PROVIDED,
+      );
+      expect(text).toContain("à lire dans l’annonce et à demander à l’organisateur");
+      expect(valueOf(uncertain, "Délai")).toContain(FINANCING_NOT_PROVIDED);
+      expect(valueOf(uncertain, "Délai")).toContain("fixé par l’annonce ou le cahier");
+      // Rien du tribunal : ni montant calculé, ni article, ni délai de deux mois.
+      expect(text).not.toContain("R. 322-41");
+      expect(text).not.toContain("R. 322-56");
+      expect(text).not.toContain("à peine de réitération des enchères");
+      expect(text).not.toContain(formatPrice(9_200));
+      // Les chiffres du dossier restent ceux du rapport.
+      expect(valueOf(uncertain, "Mise à prix")).toBe(formatPrice(92_000));
+    },
+  );
+
+  it("un type de vente « tribunal » confirmé ou en attente garde les règles du tribunal", () => {
+    for (const status of ["verified", "cross_checked", "pending", undefined]) {
+      const confirmed = dossierLines({
+        sale: { venueType: "tribunal", venueVerificationStatus: status },
+      });
+      expect(confirmed.join("\n")).toContain("R. 322-41");
+    }
   });
 });
 

@@ -31,12 +31,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const plan = await assertFeatureEntitlement(
       auth,
       "property.urbanPlanning",
-      "L’analyse du PLU et des risques est réservée au plan Analyse.",
+      "L’analyse du PLU et des risques est réservée à l’offre Analyse.",
     );
     await assertFeatureEntitlement(
       auth,
       "property.cadastralAnalysis",
-      "L’analyse cadastrale est réservée au plan Analyse.",
+      "L’analyse cadastrale est réservée à l’offre Analyse.",
     );
     const { id } = paramsSchema.parse(await params);
     const query = querySchema.parse(Object.fromEntries(new URL(request.url).searchParams));
@@ -44,7 +44,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       await assertFeatureEntitlement(
         auth,
         "property.pdfExport",
-        "L’export PDF est réservé au plan Analyse.",
+        "L’export PDF est réservé à l’offre Analyse.",
       );
     const sale = await getSale(auth.supabase, id);
     await enforceUserRateLimit({

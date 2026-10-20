@@ -24,7 +24,9 @@ export type UnsubscribeScope =
   | { kind: "alerts" }
   | { kind: "alert"; alertId: string }
   // Rappels d'audience et avertissements graves: un consentement distinct de celui des alertes.
-  | { kind: "reminders" };
+  | { kind: "reminders" }
+  // Liste d'attente de l'ouverture de l'offre Analyse : l'email d'ouverture (envoi par l'administrateur).
+  | { kind: "offer-opening" };
 
 export type UnsubscribeClaims = {
   userId: string;
@@ -53,12 +55,14 @@ function sign(payload: string, env?: Pick<NodeJS.ProcessEnv, string>): string {
 
 function scopeToString(scope: UnsubscribeScope): string {
   if (scope.kind === "reminders") return "reminders";
+  if (scope.kind === "offer-opening") return "offer-opening";
   return scope.kind === "alert" ? `alert:${scope.alertId}` : "alerts";
 }
 
 function scopeFromString(value: string): UnsubscribeScope | null {
   if (value === "alerts") return { kind: "alerts" };
   if (value === "reminders") return { kind: "reminders" };
+  if (value === "offer-opening") return { kind: "offer-opening" };
   const match = /^alert:(.+)$/.exec(value);
   return match && UUID_PATTERN.test(match[1]) ? { kind: "alert", alertId: match[1] } : null;
 }

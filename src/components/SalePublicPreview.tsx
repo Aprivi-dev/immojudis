@@ -25,7 +25,8 @@ import {
 import { publicSaleDescription } from "@/lib/public-sale-description";
 import { loginPathWithRedirect, saleDetailPath, salesReturnHref } from "@/lib/navigation";
 import Link from "next/link";
-import { FREE_ACCESS_LINE, MONTHLY_SALE_UNLOCKS, unlockedItemsText } from "@/lib/sale-unlocks";
+import { useLaunchOffer } from "@/hooks/use-launch-offer";
+import { freeAccessLine, MONTHLY_SALE_UNLOCKS, unlockedItemsText } from "@/lib/sale-unlocks";
 import {
   getSaleProcedure,
   lawyerRequirementLabel,
@@ -145,6 +146,42 @@ function MarketGapBandNote({ band }: { band: PublicMarketGapBand }) {
   );
 }
 
+/**
+ * Ligne d'accès sous le bouton d'inscription. Offre de lancement active : la mention du visiteur
+ * (`launchOfferText("visitor")`) ; sinon la ligne habituelle. Tant que l'état n'est pas lu (rendu
+ * serveur compris), une ligne neutre qui ne promet aucun quota, avec une hauteur réservée pour que
+ * la mention, plus longue, ne décale pas la page en arrivant. Jamais rendue par le serveur dans sa
+ * version « offre » : la coupure de l'offre doit se voir en moins de 60 s.
+ */
+function SignupAccessLine() {
+  const { active, pending } = useLaunchOffer();
+  return (
+    <p
+      className={`${styles.signupLine} ${pending ? styles.signupLinePending : ""}`}
+      data-testid="public-signup-line"
+    >
+      {pending ? "Gratuit, sans carte bancaire" : freeAccessLine({ launchOffer: active })}
+    </p>
+  );
+}
+
+/**
+ * Étiquette d'une ligne de l'aperçu. Pendant l'offre de lancement, ce que l'offre Analyse ouvre
+ * (enchère plafond, comparables) l'est aussi avec le compte gratuit ; tant que l'état n'est pas lu,
+ * une étiquette qui ne promet rien.
+ */
+function TeaserTier({ tier, offerAware }: { tier: string; offerAware?: boolean }) {
+  const { active, pending } = useLaunchOffer();
+  const text = !offerAware
+    ? tier
+    : pending
+      ? "Selon votre compte"
+      : active
+        ? "Compte gratuit (offre de lancement)"
+        : tier;
+  return <span className={styles.teaserTier}>{text}</span>;
+}
+
 export function SalePublicPreview({
   saleId,
   preview,
@@ -221,6 +258,7 @@ export function SalePublicPreview({
   );
   const description = publicSaleDescription(preview);
   // Placeholders only: the real figures are never sent to a signed-out visitor.
+  // `offerAware` : l'étiquette change pendant l'offre de lancement (voir `TeaserTier`).
   const analysisTeaser = [
     { label: "Valeur estimée", placeholder: "000 000 € – 000 000 €", tier: "Compte gratuit" },
     price
@@ -231,10 +269,19 @@ export function SalePublicPreview({
           label: "Enchère plafond (simulation)",
           placeholder: "000 000 €",
           tier: `Offre Analyse, ou ${MONTHLY_SALE_UNLOCKS} déblocages par mois`,
+          offerAware: true,
         }
       : null,
-    { label: "Ventes comparables du secteur", placeholder: "00 ventes", tier: "Offre Analyse" },
-  ].filter((item): item is { label: string; placeholder: string; tier: string } => item !== null);
+    {
+      label: "Ventes comparables du secteur",
+      placeholder: "00 ventes",
+      tier: "Offre Analyse",
+      offerAware: true,
+    },
+  ].filter(
+    (item): item is { label: string; placeholder: string; tier: string; offerAware?: boolean } =>
+      item !== null,
+  );
   const priceBlock =
     price || !state ? (
       <div className={styles.priceBlock}>
@@ -280,7 +327,7 @@ export function SalePublicPreview({
             Créer mon compte gratuit
             <ArrowRight className="h-4 w-4" aria-hidden />
           </Link>
-          <p className={styles.signupLine}>{FREE_ACCESS_LINE}</p>
+          <SignupAccessLine />
         </>
       )}
     </div>
@@ -382,7 +429,7 @@ export function SalePublicPreview({
                       <span className={styles.blurred} aria-hidden data-nosnippet>
                         {item.placeholder}
                       </span>
-                      <span className={styles.teaserTier}>{item.tier}</span>
+                      <TeaserTier tier={item.tier} offerAware={item.offerAware} />
                     </dd>
                   </div>
                 ))}

@@ -210,7 +210,7 @@ describe("SearchPagination", () => {
     );
 
     expect(screen.getByRole("navigation", { name: "Pagination des ventes" })).toBeTruthy();
-    expect(screen.getByRole("status").textContent).toContain("25–48 / 73 dossiers");
+    expect(screen.getByRole("status").textContent).toContain("25–48 / 73 ventes");
     fireEvent.click(screen.getByRole("button", { name: "Page précédente" }));
     fireEvent.click(screen.getByRole("button", { name: "Page suivante" }));
     expect(onPrevious).toHaveBeenCalledOnce();
@@ -299,7 +299,7 @@ describe("SearchPagination", () => {
     );
 
     expect(screen.getByRole("status").textContent).toBe("Aucun résultat sur cette page");
-    expect(screen.queryByText(/dossiers/)).toBeNull();
+    expect(screen.queryByText(/ventes/)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Revenir à la page 1" }));
     expect(onFirstPage).toHaveBeenCalledOnce();
   });

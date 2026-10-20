@@ -14,9 +14,9 @@ export type SaleWorkspaceStatus = (typeof SALE_WORKSPACE_STATUSES)[number];
 export const SALE_WORKSPACE_STATUS_LABELS: Record<SaleWorkspaceStatus, string> = {
   watching: "À surveiller",
   reviewing: "Analyse en cours",
-  bidding: "Prêt à enchérir",
+  bidding: "Je prépare mon enchère",
   won: "Remporté",
-  lost: "Non retenu",
+  lost: "Non remporté",
   archived: "Archivé",
 };
 
