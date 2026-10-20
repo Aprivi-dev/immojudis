@@ -125,6 +125,16 @@ def _validate_app_surface_scope(sale: AuctionSale) -> None:
         sale.property_type in {"house", "building"} and sale.app_surface_m2 < Decimal("20")
     ) or (sale.property_type == "apartment" and sale.app_surface_m2 < MIN_DWELLING_SURFACE_M2):
         # Moins de 9 m² n'est pas un logement : c'est une cave, un parking ou une annexe.
+        if sale.property_type == "apartment":
+            # Le type suit la surface : un « appartement » de 5 m² est une annexe, et le titre affiché le dit
+            # (build_display_title). La trace garde le type d'origine et la surface écartée.
+            sale.raw_payload["annex_reclassification"] = {
+                "from_property_type": "apartment",
+                "surface_m2": str(sale.app_surface_m2),
+                "minimum_dwelling_m2": str(MIN_DWELLING_SURFACE_M2),
+            }
+            sale.property_type = "other"
+            _add_quality_flag(sale, "annex_lot")
         sale.surface_scope = "room_or_annex"
         sale.app_surface_m2 = None
         sale.app_surface_kind = None

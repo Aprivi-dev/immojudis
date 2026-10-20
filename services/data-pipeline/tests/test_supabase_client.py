@@ -1422,6 +1422,7 @@ def test_upsert_sales_registers_verified_competent_court_before_sale(monkeypatch
     assert calls[1] == ("auction_sales", None)
 
 
+@pytest.mark.usefixtures("merge_trigger_present")
 def test_secondary_sale_cleanup_is_explicit_and_uses_postgres(monkeypatch) -> None:
     sale = normalize_sale(
         {
@@ -1447,7 +1448,7 @@ def test_secondary_sale_cleanup_is_explicit_and_uses_postgres(monkeypatch) -> No
     monkeypatch.setattr(
         supabase_client,
         "_delete_secondary_sale_rows_with_postgres",
-        lambda db_url, sales: calls.append("delete_secondary") or 1,
+        lambda db_url, sales, **kwargs: calls.append("delete_secondary") or 1,
     )
     monkeypatch.setattr(
         supabase_client,
@@ -1505,6 +1506,7 @@ def test_secondary_sale_cleanup_skips_reviewed_alias_before_any_delete(monkeypat
     assert deleted == []
 
 
+@pytest.mark.usefixtures("merge_trigger_present")
 def test_secondary_cleanup_does_not_fallback_after_registry_failure(monkeypatch) -> None:
     sale = normalize_sale(
         {
@@ -1525,7 +1527,7 @@ def test_secondary_cleanup_does_not_fallback_after_registry_failure(monkeypatch)
     monkeypatch.setattr(
         supabase_client,
         "_delete_secondary_sale_rows_with_postgres",
-        lambda *_args: (_ for _ in ()).throw(
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
             supabase_client.ReviewedAliasRegistryError("registry unavailable under lock")
         ),
     )
@@ -1642,6 +1644,7 @@ def test_upsert_sales_can_preserve_last_seen_during_recompute(monkeypatch) -> No
     assert captured["refresh_last_seen"] is False
 
 
+@pytest.mark.usefixtures("merge_trigger_present")
 def test_reconcile_duplicate_sales_in_supabase_merges_historical_rows(monkeypatch) -> None:
     notaires = normalize_sale(
         {

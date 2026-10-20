@@ -29,7 +29,6 @@ function snapshot(overrides: Partial<FollowedSaleSnapshot> = {}): FollowedSaleSn
     title: "Maison de ville",
     city: "Bordeaux",
     department: "33",
-    postalCode: "33000",
     propertyType: "house",
     tribunalName: "Tribunal judiciaire de Bordeaux",
     startingPriceEur: 100_000,

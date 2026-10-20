@@ -177,6 +177,8 @@ def build_display_title(sale: AuctionSale) -> str:
     if sale.property_type in {"commercial", "mixed"} and source_title:
         return source_title
     label = _PROPERTY_TYPE_LABELS.get(sale.property_type or "", "Bien immobilier")
+    if isinstance(sale.raw_payload, dict) and sale.raw_payload.get("annex_reclassification"):
+        label = "Annexe"  # « appartement » de moins de 9 m² reclassé : le titre suit le type
     if sale.property_type == "land":
         surface = _format_surface_m2(sale.land_surface_m2)
     elif sale.surface_scope in {"partial", "room_or_annex", "unknown"}:

@@ -12,6 +12,11 @@ from src.cadastre_references import PROVIDER as CADASTRE_PROVIDER
 from src.cadastre_references import resolve_sale_cadastre
 from src.config import load_settings
 from src.models import AuctionSale
+from src.municipality_location import (
+    locate_sale_by_municipality,
+    restore_municipality_placeholder,
+    take_municipality_placeholder,
+)
 from src.normalize import clean_text, extract_department, strip_accents
 
 LOGGER = logging.getLogger(__name__)
@@ -88,6 +93,17 @@ def restore_accepted_geocode(sale: AuctionSale) -> bool:
 
 def geocode_sale(sale: AuctionSale) -> AuctionSale:
     """Fill latitude/longitude: cadastral parcels first, then the BAN geocoding service."""
+    # Le centre de commune posé sans réseau (src.municipality_location) n'est pas une coordonnée de la source :
+    # la BAN le remplace si elle trouve mieux, et la vente le garde si elle ne trouve rien.
+    placeholder = take_municipality_placeholder(sale)
+    try:
+        return _geocode_sale(sale)
+    finally:
+        if placeholder is not None:
+            restore_municipality_placeholder(sale, placeholder)
+
+
+def _geocode_sale(sale: AuctionSale) -> AuctionSale:
     settings = load_settings()
     # A parcel named by the source (cessions de l'État) is more precise than any
     # commune centroid; a stored resolution is reused without a request.
@@ -165,7 +181,9 @@ def locate_sale_by_cadastre(sale: AuctionSale) -> AuctionSale:
     """Parcel location only (runs without BAN geocoding, e.g. in autonomous runs)."""
     settings = load_settings()
     if not resolve_sale_cadastre(sale, settings=settings, network=bool(settings["geocode_enabled"])):
-        restore_accepted_geocode(sale)
+        if not restore_accepted_geocode(sale):
+            # Sans parcelle ni résultat BAN déjà accepté : au moins le centre de la commune, sans réseau.
+            locate_sale_by_municipality(sale)
     return sale
 
 

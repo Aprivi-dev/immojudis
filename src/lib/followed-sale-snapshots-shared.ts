@@ -3,6 +3,7 @@ import {
   normalizeFavoriteDossierStatus,
   type FavoriteDossierStatus,
 } from "@/lib/favorite-dossier-shared";
+import { redactPersonalText } from "@/lib/personal-data-filter";
 import { surenchereWindow, type SurenchereWindow } from "@/lib/surenchere-window";
 
 /**
@@ -30,7 +31,6 @@ export type FollowedSaleSnapshot = {
   title: string | null;
   city: string | null;
   department: string | null;
-  postalCode: string | null;
   propertyType: string | null;
   tribunalName: string | null;
   startingPriceEur: number | null;
@@ -58,7 +58,6 @@ export type FollowedSaleSnapshotRow = {
   title: string | null;
   city: string | null;
   department: string | null;
-  postal_code: string | null;
   property_type: string | null;
   tribunal_name: string | null;
   sale_venue_type: string | null;
@@ -88,10 +87,10 @@ export function toFollowedSaleSnapshot(
     saleId: row.sale_id,
     capturedAt: row.captured_at,
     expiresAt: row.expires_at,
-    title: row.title,
+    // Le titre vient de la fiche : un nom de particulier qui y figurerait n'a rien à faire dans l'espace du compte.
+    title: redactPersonalText(row.title) ?? null,
     city: row.city,
     department: row.department,
-    postalCode: row.postal_code,
     propertyType: row.property_type,
     tribunalName: row.tribunal_name,
     startingPriceEur: row.starting_price_eur,
