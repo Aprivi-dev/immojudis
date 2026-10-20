@@ -21,7 +21,9 @@ import { fetchLawyerDirectory } from "@/lib/client-api";
 import { sponsoredPlacementLabel } from "@/lib/lawyer-placement-label";
 import type { LawyerDirectoryOfficialSource, LawyerDirectoryProfile } from "@/lib/lawyer-directory";
 import { validateDirectorySearch, type DirectorySearch } from "@/lib/lawyer-directory-search";
-import { searchParamsToRecord } from "@/lib/navigation";
+import { formatStartingPrice } from "@/lib/format/numbers";
+import { propertyTypeLabel } from "@/lib/format/property-labels";
+import { saleDetailPath, searchParamsToRecord } from "@/lib/navigation";
 import Link from "next/link";
 import { userMessage } from "@/lib/user-messages";
 import { queryKeys } from "@/lib/query-keys";
@@ -454,6 +456,10 @@ function LawyerCard({
         ) : null}
       </dl>
 
+      {lawyer.upcomingProsecutedSales?.sales.length ? (
+        <ProsecutedSales lawyerId={lawyer.id} upcoming={lawyer.upcomingProsecutedSales} />
+      ) : null}
+
       <div className="mt-auto flex flex-wrap gap-2 pt-5">
         {sponsored && saleId ? (
           <LawyerReferralButton
@@ -505,6 +511,73 @@ function LawyerCard({
         ) : null}
       </div>
     </article>
+  );
+}
+
+/**
+ * Ventes à venir où le nom de l'avocat figure comme avocat poursuivant. Uniquement des faits déjà
+ * publics de la vente (type, ville, date, tribunal, mise à prix) et un lien vers sa fiche. Le
+ * rapprochement est automatique (nom et barreau) : la mention le dit, sans jamais en faire une
+ * recommandation.
+ */
+function ProsecutedSales({
+  lawyerId,
+  upcoming,
+}: {
+  lawyerId: string;
+  upcoming: NonNullable<LawyerDirectoryProfile["upcomingProsecutedSales"]>;
+}) {
+  const headingId = `prosecuted-sales-${lawyerId}`;
+  const hidden = upcoming.total - upcoming.sales.length;
+
+  return (
+    <section aria-labelledby={headingId} className="mt-4">
+      <h4
+        id={headingId}
+        className="text-xs font-bold uppercase tracking-[0.12em] text-brand-navy/70"
+      >
+        Ventes à venir en tant qu'avocat poursuivant
+      </h4>
+      <ul className="mt-2 grid gap-2">
+        {upcoming.sales.map((sale) => {
+          const details = [
+            sale.saleDate ? formatFrenchDate(sale.saleDate) : null,
+            sale.tribunalName,
+            sale.startingPriceEur && sale.startingPriceEur > 0
+              ? `Mise à prix ${formatStartingPrice(sale.startingPriceEur)}`
+              : null,
+          ].filter(Boolean);
+          return (
+            <li key={sale.id}>
+              <Link
+                href={saleDetailPath(sale.id)}
+                className="block min-h-11 rounded-md border border-brand-navy/12 px-3 py-2 text-sm transition-colors hover:border-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2"
+              >
+                <span className="block font-semibold text-brand-navy">
+                  {propertyTypeLabel(sale.propertyType)}
+                  {sale.city ? ` à ${sale.city}` : ""}
+                </span>
+                {details.length ? (
+                  <span className="block break-words text-xs text-brand-navy/65">
+                    {details.join(" · ")}
+                  </span>
+                ) : null}
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+      {hidden > 0 ? (
+        <p className="mt-2 text-xs text-brand-navy/65">
+          {hidden} autre{hidden > 1 ? "s" : ""} vente{hidden > 1 ? "s" : ""} à venir non affichée
+          {hidden > 1 ? "s" : ""}.
+        </p>
+      ) : null}
+      <p className="mt-2 text-xs leading-relaxed text-brand-navy/60">
+        Rapprochement automatique d'après le nom indiqué dans les annonces et le barreau du tribunal
+        : vérifiez-le sur l'annonce. Cette liste n'est pas une recommandation.
+      </p>
+    </section>
   );
 }
 

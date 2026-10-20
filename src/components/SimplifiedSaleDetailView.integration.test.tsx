@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EXAMPLE_SALE_RECORDS } from "@/lib/example-sale";
 import { buildCeilingHypotheses } from "@/lib/bid-ceiling-defaults";
 import { computeAcquisitionCosts } from "@/lib/profitability";
+import { ceilingStorageKey } from "@/components/ceiling/use-ceiling-choices";
 import { AnalysisSaleDetailView, FreeSaleDetailView } from "./SimplifiedSaleDetailView";
 import type { AuctionSale } from "@/lib/types";
 
@@ -242,6 +243,66 @@ describe("integrated scenario workspace", () => {
       expect(row.textContent?.replace(/\s/g, "")).toContain("2200€");
       expect(screen.getByText("Travaux (votre montant)")).toBeTruthy();
     });
+  });
+
+  it("feeds the budget travaux from « Détail de vos travaux », keeps it in the browser and restores it", async () => {
+    const view = renderDetail();
+    await openTab("Travaux");
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "Travaux et état du bien" })).toBeTruthy(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Détailler les travaux" }));
+    fireEvent.click(screen.getByRole("button", { name: "Ajouter un poste" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Type, poste 1" }), {
+      target: { value: "toiture" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: /^Quantité, poste 1/ }), {
+      target: { value: "2" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: /^Coût unitaire, poste 1/ }), {
+      target: { value: "4100" },
+    });
+
+    // The total of the postes is the budget travaux of the bid ceiling.
+    await openTab("Prix et plafond");
+    await waitFor(() => {
+      const row = screen.getByText("Votre montant").closest("tr")!;
+      expect(row.getAttribute("aria-current")).toBe("true");
+      expect(row.textContent?.replace(/\s/g, "")).toContain("8200€");
+    });
+
+    // Saved with the calculator's other hypotheses: the postes and the budget they produced.
+    const stored = JSON.parse(
+      window.localStorage.getItem(ceilingStorageKey("account-a", sale.id)) ?? "null",
+    );
+    expect(stored.works.amount).toBe(8_200);
+    expect(stored.worksBreakdown).toHaveLength(1);
+    expect(stored.worksBreakdown[0]).toMatchObject({
+      kind: "toiture",
+      quantity: "2",
+      unitCost: "4100",
+    });
+
+    // A reload restores the panel, open, with the same postes.
+    view.unmount();
+    renderDetail();
+    await openTab("Travaux");
+    await waitFor(() =>
+      expect(screen.getByRole("group", { name: "Détail de vos travaux" })).toBeTruthy(),
+    );
+    expect(
+      (screen.getByRole("textbox", { name: /^Coût unitaire, poste 1/ }) as HTMLInputElement).value,
+    ).toBe("4100");
+    expect(
+      screen.getByRole("status", { name: "Total de vos postes" }).textContent?.replace(/\s/g, ""),
+    ).toBe("8200€");
+  });
+
+  it("does not offer « Détailler les travaux » without the Analyse offer", async () => {
+    renderDetail("discovery");
+    await openTab("Travaux");
+
+    expect(screen.queryByRole("button", { name: "Détailler les travaux" })).toBeNull();
   });
 
   it("restores works, financing and rental drafts after switching announcement tabs", async () => {
