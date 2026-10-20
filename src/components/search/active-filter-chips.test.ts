@@ -71,3 +71,18 @@ describe("whole-France escape", () => {
     });
   });
 });
+
+describe("filtres « sous la fourchette » et « sans point à vérifier »", () => {
+  it("ont chacun leur puce retirable, qui n'éteint qu'eux", () => {
+    const chips = activeFilterChips({ belowRange: true, noPointsToVerify: true, city: "Pau" });
+    expect(chips.map((chip) => chip.label)).toEqual([
+      "Pau",
+      "Mise à prix sous la fourchette des ventes comparables",
+      "Sans point à vérifier",
+    ]);
+    const below = chips.find((chip) => chip.key === "belowRange")!;
+    expect(
+      mergeSalesSearch({ belowRange: true, noPointsToVerify: true }, below.clear),
+    ).toMatchObject({ belowRange: undefined, noPointsToVerify: true });
+  });
+});

@@ -37,7 +37,7 @@ export function ModeSelector({
             key={item.value}
             className={cn(
               "flex min-h-11 cursor-pointer flex-col justify-center rounded-lg border bg-white px-3 py-2 text-sm",
-              "has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-gold/60 has-[:focus-visible]:ring-offset-2",
+              "has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-gold-soft",
               mode === item.value
                 ? "border-gold bg-gold/10 shadow-sm"
                 : "border-line hover:border-brand-navy",

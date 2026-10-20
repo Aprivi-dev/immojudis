@@ -9,10 +9,12 @@ import {
   worksScenarioForAmount,
   WorksScenarioSelector,
 } from "@/components/bid-ceiling/BidCeilingWorks";
+import { WorksBreakdownPanel } from "@/components/sale-detail/WorksBreakdownPanel";
 import { buildDpeAnalysis } from "@/lib/dpe-analysis";
 import { formatPrice } from "@/lib/format";
 import { estimateWorksBudget, WORKS_SCENARIOS } from "@/lib/profitability";
 import { riskEvidence } from "@/lib/risk-evidence";
+import { summarizeWorksBreakdown, type WorksBreakdownItem } from "@/lib/works-breakdown";
 import { dpeRentalNote, saleCondition, suggestWorksScenario } from "@/lib/works-guidance";
 import type { AuctionSale, SaleRisk } from "@/lib/types";
 import styles from "./ListingWorks.module.css";
@@ -56,6 +58,10 @@ export type ListingWorksProps = {
   onScenarioSelect?: (budget: number) => void;
   /** Works envelope still compatible with the ceiling at the simulated bid. */
   maxWorks?: number | null;
+  /** Postes saisis dans « Détail de vos travaux » (conservés avec les hypothèses du calcul). */
+  worksBreakdown?: readonly WorksBreakdownItem[];
+  /** Reçoit les postes et leur total ; sans lui, le panneau « Détailler les travaux » est absent. */
+  onWorksBreakdownChange?: (items: WorksBreakdownItem[], total: number) => void;
 };
 
 function normalizeBudget(value: number | null): number | null {
@@ -123,6 +129,8 @@ export function ListingWorks({
   surface = null,
   onScenarioSelect,
   maxWorks = null,
+  worksBreakdown = [],
+  onWorksBreakdownChange,
 }: ListingWorksProps) {
   const componentId = `listing-works-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const initialLines = useMemo(
@@ -351,6 +359,15 @@ export function ListingWorks({
             </p>
           </article>
         </div>
+
+        {onWorksBreakdownChange ? (
+          <WorksBreakdownPanel
+            items={worksBreakdown}
+            onChange={(items) =>
+              onWorksBreakdownChange(items, summarizeWorksBreakdown(items).total)
+            }
+          />
+        ) : null}
 
         {lines.length > 0 ? (
           <section className={styles.editor} aria-labelledby={`${componentId}-editor-title`}>

@@ -146,4 +146,43 @@ describe("ListingWorks", () => {
     expect(screen.getAllByText("Rafraîchissement locatif").length).toBeGreaterThan(1);
     expect(screen.getByText(/dépasse l’enveloppe travaux maximale/)).toBeTruthy();
   });
+
+  describe("Détail de vos travaux", () => {
+    it("is absent unless the parent keeps the breakdown", () => {
+      render(<ListingWorks sale={EXAMPLE_SALE} estimatedBudget={12_500} />);
+
+      expect(screen.queryByRole("button", { name: "Détailler les travaux" })).toBeNull();
+    });
+
+    it("hands the postes and their total to the parent, without applying anything else", () => {
+      const onWorksBreakdownChange = vi.fn();
+      const onBudgetChange = vi.fn();
+      const onScenarioSelect = vi.fn();
+      render(
+        <ListingWorks
+          sale={EXAMPLE_SALE}
+          estimatedBudget={12_500}
+          surface={68}
+          onBudgetChange={onBudgetChange}
+          onScenarioSelect={onScenarioSelect}
+          worksBreakdown={[
+            { id: "a", kind: "toiture", label: "", quantity: "1", unit: "", unitCost: "8000" },
+          ]}
+          onWorksBreakdownChange={onWorksBreakdownChange}
+        />,
+      );
+
+      fireEvent.change(screen.getByRole("textbox", { name: /^Coût unitaire, poste 1/ }), {
+        target: { value: "9000" },
+      });
+
+      expect(onWorksBreakdownChange).toHaveBeenCalledTimes(1);
+      const [items, total] = onWorksBreakdownChange.mock.calls[0];
+      expect(total).toBe(9_000);
+      expect(items[0]).toMatchObject({ kind: "toiture", unitCost: "9000" });
+      // The parent decides what feeds the budget; the generic editor is left alone.
+      expect(onBudgetChange).not.toHaveBeenCalled();
+      expect(onScenarioSelect).not.toHaveBeenCalled();
+    });
+  });
 });

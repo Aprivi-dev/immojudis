@@ -12,6 +12,7 @@ import {
   type ValueReliability,
 } from "@/lib/bid-ceiling-engine";
 import type { CeilingMarketEstimate } from "@/lib/market-estimate-ceiling";
+import type { WorksBreakdownItem } from "@/lib/works-breakdown";
 import { DEFAULTS, registrationRateForDepartment } from "@/lib/profitability";
 import { defaultRentPerM2 } from "@/lib/rent-reference";
 import { getMarketValuationSurfaces } from "@/lib/surface";
@@ -38,6 +39,11 @@ export type CeilingUserChoices = {
   customMarginPct?: number | null;
   manualPricePerM2?: number | null;
   works?: { key: CeilingWorksKey; amount: number; months?: number | null } | null;
+  /**
+   * Postes saisis dans « Détail de vos travaux » (point 74). Gardés dans le navigateur avec les autres
+   * choix, jamais envoyés au serveur ; seul leur total alimente `works.amount`.
+   */
+  worksBreakdown?: WorksBreakdownItem[];
   occupation?: OccupationCase | null;
   releaseMonths?: number | null;
   releaseCost?: number | null;

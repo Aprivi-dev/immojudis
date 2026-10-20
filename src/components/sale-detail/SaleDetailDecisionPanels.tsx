@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { Terme } from "@/components/ceiling/Terme";
 import { PremiumFeaturePreview } from "@/components/PremiumFeaturePreview";
+import { SaleSignalFeedback } from "@/components/SaleSignalFeedback";
 import { UnlockCallToAction } from "@/components/sale-detail/UnlockCallToAction";
 import panelStyles from "@/components/sale-detail/SaleDetailPanels.module.css";
 import { useAuth } from "@/hooks/use-auth";
@@ -226,10 +227,13 @@ export function DiscoveryDecisionPanel({ sale }: { sale: AuctionSale }) {
         </div>
       </dl>
       {gapSentence ? (
-        <p className={panelStyles.surfaceCaution} role="status">
-          {gapSentence} Reste à savoir jusqu’où enchérir une fois les frais, les travaux et la
-          libération du bien comptés : c’est le calcul de l’enchère plafond.
-        </p>
+        <>
+          <p className={panelStyles.surfaceCaution} role="status">
+            {gapSentence} Reste à savoir jusqu’où enchérir une fois les frais, les travaux et la
+            libération du bien comptés : c’est le calcul de l’enchère plafond.
+          </p>
+          <SaleSignalFeedback saleId={sale.id} signal="market_gap_band" />
+        </>
       ) : null}
       <PremiumFeaturePreview
         title={

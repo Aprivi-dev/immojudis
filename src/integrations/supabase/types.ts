@@ -13382,8 +13382,20 @@ export type Database = {
         Returns: unknown;
       };
       _st_within: { Args: { geom1: unknown; geom2: unknown }; Returns: boolean };
-      // Ajouts manuels minimaux (point 65), à régénérer par db:types.
+      // Ajouts manuels minimaux (points 65 et 72), à régénérer par db:types.
       admin_pilotage_summary: { Args: { p_now?: string }; Returns: Json };
+      admin_lawyer_monthly_statement: {
+        Args: { p_month: string };
+        Returns: {
+          lawyer_id: string;
+          display_name: string;
+          firm_name: string | null;
+          impressions: number;
+          cta_clicks: number;
+          referral_requests_sent: number;
+        }[];
+      };
+      admin_sale_signal_feedback_summary: { Args: { p_now?: string }; Returns: Json };
       abort_information_agent_evidence_publication: {
         Args: { p_fact_id: string; p_public_path: string };
         Returns: boolean;
@@ -14356,6 +14368,8 @@ export type Database = {
       };
       has_analysis_access: { Args: never; Returns: boolean };
       is_admin: { Args: never; Returns: boolean };
+      // Ajout manuel minimal (point 71), à régénérer par db:types.
+      list_public_sale_ids_under_market_range: { Args: never; Returns: string[] };
       list_public_sale_sitemap_entries: {
         Args: { p_limit?: number; p_offset?: number };
         Returns: {
@@ -14484,6 +14498,17 @@ export type Database = {
       // Ajout manuel minimal (point 65), à régénérer par db:types.
       record_account_product_event: {
         Args: { p_detail?: string; p_event_type: string; p_sale_id?: string; p_user_id: string };
+        Returns: boolean;
+      };
+      // Ajout manuel minimal (point 67), à régénérer par db:types.
+      record_sale_signal_feedback: {
+        Args: {
+          p_reason?: string;
+          p_sale_id: string;
+          p_signal: string;
+          p_user_id: string;
+          p_value: string;
+        };
         Returns: boolean;
       };
       record_autonomous_pipeline_dispatch: {

@@ -15,6 +15,7 @@ import { photoMirrorForDetail } from "@/lib/photo-mirror";
 import { SaleCalendarButton } from "@/components/SaleCalendarButton";
 import { SalePointsToVerify } from "@/components/sale-detail/SalePointsToVerify";
 import { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
+import { SaleSignalFeedback } from "@/components/SaleSignalFeedback";
 import { pointsToVerify } from "@/lib/search/points-to-verify";
 import { isPastSaleDay } from "@/lib/sale-countdown";
 import { formatPrice } from "@/lib/format";
@@ -134,7 +135,7 @@ function withAdjudicationTerm(text: string) {
  * fourchette restent au compte). Affichée seulement quand la base a jugé l'estimation fiable (ou
  * dit qu'elle ne l'est pas) ; neutre, indicative, jamais une recommandation.
  */
-function MarketGapBandNote({ band }: { band: PublicMarketGapBand }) {
+function MarketGapBandNote({ band, saleId }: { band: PublicMarketGapBand; saleId: string }) {
   // Une vraie bande (sous, dans, au-dessus) porte la phrase sur la mise à prix basse et la mise en
   // garde ; « bien occupé » et les raisons d'insuffisance disent seulement pourquoi il n'y en a pas.
   const isBand = band === "under" || band === "near" || band === "above";
@@ -152,6 +153,8 @@ function MarketGapBandNote({ band }: { band: PublicMarketGapBand }) {
           {MARKET_GAP_BAND_METHOD_LABEL}
         </Link>
       </p>
+      {/* Comptes connectés seulement : sans session, le composant ne rend rien. */}
+      {isBand ? <SaleSignalFeedback saleId={saleId} signal="market_gap_band" /> : null}
     </div>
   );
 }
@@ -350,7 +353,7 @@ export function SalePublicPreview({
             : "Prix de départ, hors frais"}
         </p>
         {price && preview.market_gap_band && !pastDate ? (
-          <MarketGapBandNote band={preview.market_gap_band} />
+          <MarketGapBandNote band={preview.market_gap_band} saleId={saleId} />
         ) : null}
       </div>
     ) : (
@@ -474,6 +477,7 @@ export function SalePublicPreview({
             <SalePointsToVerify
               className="mt-4"
               points={pointsToVerify(preview, { occupancyVisible: false })}
+              saleId={saleId}
             />
             <section className={styles.teaser} aria-labelledby="public-teaser-title">
               <h2 id="public-teaser-title" className={styles.addsTitle}>

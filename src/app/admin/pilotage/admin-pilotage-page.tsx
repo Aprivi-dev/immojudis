@@ -5,8 +5,19 @@ import { AdminPanel, AdminSectionHeading, AdminShell } from "@/components/admin/
 import { formatDateTime, formatInteger, queryErrorMessage } from "@/components/admin/admin-format";
 import { AdminPanelLoading, useAdminRefresh } from "@/components/admin/admin-ui";
 import { useAuth } from "@/hooks/use-auth";
-import type { AdminPilotage, PilotageCount, PilotagePeriod } from "@/lib/admin-pilotage";
+import type {
+  AdminPilotageResponse,
+  PilotageCount,
+  PilotagePeriod,
+  SaleReminderAccuracy,
+  SaleReminderAccuracyVerdict,
+} from "@/lib/admin-pilotage";
+import type {
+  SaleSignalFeedbackSummary,
+  SignalFeedbackCounts,
+} from "@/lib/admin-sale-signal-feedback";
 import { fetchAdminPilotage } from "@/lib/client-api/admin";
+import { SALE_SIGNAL_REASON_LABELS, type SaleSignal } from "@/lib/sale-signal-feedback";
 
 export const PILOTAGE_QUERY_KEY = ["admin-pilotage"] as const;
 
@@ -184,6 +195,29 @@ export function formatCount(value: PilotageCount): string {
   return value < PILOTAGE_MASK_BELOW ? MASKED : formatInteger(value);
 }
 
+/** Critère écrit de passage des rappels à `on` (voir `docs/runbooks/activation-rappels-audience.md`). */
+const REMINDER_FALSE_ALERT_MAX_PERCENT = 2;
+const REMINDER_FALSE_ALERT_MIN_SAMPLE = 100;
+
+export const REMINDER_VERDICT_LABELS: Record<SaleReminderAccuracyVerdict, string> = {
+  met: "Critère atteint : le passage à « on » est justifié",
+  not_met: "Critère non atteint : les rappels restent en « internal »",
+  insufficient_sample: "Échantillon insuffisant : on ne conclut pas",
+  unavailable: "Mesure indisponible",
+};
+
+/** Un taux entre 0 et 1 en pourcentage (« 1,5 % ») ; masqué sous le seuil d'affichage de la page. */
+export function formatReminderRate(accuracy: SaleReminderAccuracy | null): string {
+  if (!accuracy || accuracy.contradictionRate == null) return NOT_MEASURED;
+  if (accuracy.measuredReminders != null && accuracy.measuredReminders < PILOTAGE_MASK_BELOW) {
+    return MASKED;
+  }
+  const percent = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(
+    accuracy.contradictionRate * 100,
+  );
+  return `${percent} %`;
+}
+
 function formatDay(value: string): string {
   return new Intl.DateTimeFormat("fr-FR", { dateStyle: "long" }).format(new Date(value));
 }
@@ -231,7 +265,7 @@ export function AdminPilotagePage() {
 
 type Column = { key: string; label: string; period: PilotagePeriod | null };
 
-function PilotageTables({ data }: { data: AdminPilotage }) {
+function PilotageTables({ data }: { data: AdminPilotageResponse }) {
   const week = data.windows.find((window) => window.days === 7);
   const month = data.windows.find((window) => window.days === 30);
   const columns: Column[] = [
@@ -383,6 +417,10 @@ function PilotageTables({ data }: { data: AdminPilotage }) {
         </dl>
       </AdminPanel>
 
+      <ReminderAccuracyCard accuracy={data.saleReminders ?? null} />
+
+      <SignalFeedbackCard summary={data.signalFeedback ?? null} />
+
       <AdminPanel className="mt-6 p-5">
         <AdminSectionHeading title="Comment lire ces chiffres" />
         <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-6 text-brand-navy/70">
@@ -434,5 +472,138 @@ function PilotageTables({ data }: { data: AdminPilotage }) {
         </ul>
       </AdminPanel>
     </>
+  );
+}
+
+/** Fausses alertes des rappels d'audience : un rappel contredit par un changement de jour d'audience. */
+function ReminderAccuracyCard({ accuracy }: { accuracy: SaleReminderAccuracy | null }) {
+  const maxPercent = accuracy ? accuracy.maxRate * 100 : REMINDER_FALSE_ALERT_MAX_PERCENT;
+  const minSample = accuracy ? accuracy.minimumSample : REMINDER_FALSE_ALERT_MIN_SAMPLE;
+  const rate = formatReminderRate(accuracy);
+  const measured = accuracy?.measuredReminders ?? null;
+  const verdict = REMINDER_VERDICT_LABELS[accuracy?.verdict ?? "unavailable"];
+
+  return (
+    <AdminPanel className="mt-6 p-5">
+      <AdminSectionHeading title="Fausses alertes des rappels" />
+      <p className="mt-1 text-sm text-brand-navy/70">
+        Un rappel d’audience (J-7 ou J-1) est une fausse alerte quand la date d’audience de la vente
+        change vers un autre jour dans les 72 heures qui suivent son envoi. Mesure sur{" "}
+        {accuracy?.windowDays ?? 30} jours glissants, parmi les rappels dont ces 72 heures sont
+        écoulées.
+      </p>
+      <dl className="mt-3 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
+        <div className="flex items-baseline justify-between gap-3">
+          <dt className="text-brand-navy/70">Taux de fausses alertes</dt>
+          <dd
+            className={`tabular-nums ${
+              rate === NOT_MEASURED ? "text-xs italic text-brand-navy/70" : "font-semibold"
+            }`}
+          >
+            {rate}
+          </dd>
+        </div>
+        <div className="flex items-baseline justify-between gap-3">
+          <dt className="text-brand-navy/70">Rappels mesurés</dt>
+          <dd
+            className={`tabular-nums ${
+              measured == null ? "text-xs italic text-brand-navy/70" : "font-semibold"
+            }`}
+          >
+            {formatCount(measured)}
+          </dd>
+        </div>
+        <div className="flex items-baseline justify-between gap-3 sm:col-span-2">
+          <dt className="text-brand-navy/70">Verdict</dt>
+          <dd className="text-right font-semibold">{verdict}</dd>
+        </div>
+      </dl>
+      <p className="mt-3 text-sm leading-6 text-brand-navy/70">
+        Critère de passage à « on » : moins de {formatInteger(maxPercent)} % de fausses alertes sur
+        au moins {formatInteger(minSample)} rappels mesurés.
+      </p>
+    </AdminPanel>
+  );
+}
+
+/** Les signaux dont la page lit les retours, avec leur libellé et leurs motifs (dans cet ordre). */
+const FEEDBACK_SIGNALS: Array<{ signal: SaleSignal; label: string; reasons: string[] }> = [
+  {
+    signal: "market_gap_band",
+    label: "Écart au marché (bande)",
+    reasons: ["estimate_too_high", "estimate_too_low"],
+  },
+  {
+    signal: "points_to_verify",
+    label: "Points à vérifier",
+    reasons: ["point_wrong", "point_missing"],
+  },
+];
+
+/** Part d'« Utile » en pourcentage ; masquée sous le seuil d'affichage, « non mesuré » sans mesure. */
+export function formatUsefulShare(counts: SignalFeedbackCounts | null): string {
+  if (!counts || counts.total == null || counts.useful == null) return NOT_MEASURED;
+  if (counts.total < PILOTAGE_MASK_BELOW) return MASKED;
+  return `${Math.round((counts.useful / counts.total) * 100)} %`;
+}
+
+/**
+ * Retours « Utile » / « Pas pertinent » des comptes sur la bande d'écart au marché et sur les points à
+ * vérifier, sur 90 jours. Les « point faux » ont leur ligne ici : la page « Qualité » lit le rapport de
+ * qualité du catalogue, elle n'a pas de file pour des retours de personnes.
+ */
+function SignalFeedbackCard({ summary }: { summary: SaleSignalFeedbackSummary | null }) {
+  const lines = (signal: SaleSignal, reasons: string[]) => {
+    const counts = summary?.signals[signal] ?? null;
+    const share = formatUsefulShare(counts);
+    return [
+      {
+        label: "Retours",
+        text: formatCount(counts?.total ?? null),
+        measured: counts?.total != null,
+      },
+      { label: "Part d’« Utile »", text: share, measured: share !== NOT_MEASURED },
+      {
+        label: "Comptes distincts",
+        text: formatCount(counts?.accounts ?? null),
+        measured: counts?.accounts != null,
+      },
+      ...reasons.map((reason) => ({
+        label: SALE_SIGNAL_REASON_LABELS[reason as keyof typeof SALE_SIGNAL_REASON_LABELS],
+        text: formatCount(counts?.reasons[reason] ?? null),
+        measured: counts?.reasons[reason] != null,
+      })),
+    ];
+  };
+  return (
+    <AdminPanel className="mt-6 p-5">
+      <AdminSectionHeading title="Retours sur les signaux d’une vente" />
+      <p className="mt-1 text-sm text-brand-navy/70">
+        « Utile » ou « Pas pertinent », cliqué par un compte connecté sous la bande d’écart au
+        marché ou sous la liste des points à vérifier, avec un motif choisi dans une liste (aucun
+        texte libre). {summary?.windowDays ?? 90} derniers jours, administrateurs exclus.
+      </p>
+      <div className="mt-4 grid gap-6 sm:grid-cols-2">
+        {FEEDBACK_SIGNALS.map(({ signal, label, reasons }) => (
+          <div key={signal} data-signal={signal}>
+            <h3 className="text-sm font-semibold text-brand-navy">{label}</h3>
+            <dl className="mt-2 grid gap-y-1.5 text-sm">
+              {lines(signal, reasons).map((line) => (
+                <div key={line.label} className="flex items-baseline justify-between gap-3">
+                  <dt className="text-brand-navy/70">{line.label}</dt>
+                  <dd
+                    className={`tabular-nums ${
+                      line.measured ? "font-semibold" : "text-xs italic text-brand-navy/70"
+                    }`}
+                  >
+                    {line.text}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        ))}
+      </div>
+    </AdminPanel>
   );
 }
