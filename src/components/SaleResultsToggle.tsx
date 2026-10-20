@@ -14,7 +14,9 @@ import { userMessage } from "@/lib/user-messages";
  * `saleResultsAvailable`) : on ne recueille pas de consentement pour un envoi qui n'a pas lieu. Une
  * personne qui a déjà consenti la voit toujours, pour pouvoir la retirer. Affichée dans `/compte`
  * (Notifications). Le texte qu'elle présente est celui dont la version est
- * `SALE_RESULTS_CONSENT_TEXT_VERSION` (`notification-preferences.ts`) : à changer avec lui.
+ * `SALE_RESULTS_CONSENT_TEXT_VERSION` (`notification-preferences.ts`) : à changer avec lui. Comme
+ * pour les rappels d'audience (relecture juridique du 20/10/2026) : le retrait est annoncé avant la
+ * case et aucun envoi n'est garanti.
  */
 export function SaleResultsToggle({ userId, className }: { userId: string; className: string }) {
   const queryClient = useQueryClient();
@@ -50,12 +52,17 @@ export function SaleResultsToggle({ userId, className }: { userId: string; class
         <span className="block text-foreground">
           Quand une vente que je suis a eu lieu, est retirée ou est remise en vente
         </span>
+        <span className="mt-1 block text-foreground">
+          Retirable à tout moment, ici ou par le lien de désinscription de chaque email.
+        </span>
         <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
           {enabled
             ? data.saleResultsAvailable
-              ? "Alertes de résultat activées. Vous pouvez les retirer à tout moment, ici ou par le lien de désinscription de chaque email."
-              : "Alertes de résultat activées ; les envois sont suspendus pour le moment. Vous pouvez les retirer ici."
-            : "Pour vos favoris et vos ventes débloquées. L’email ne donne aucun prix : il renvoie vers la fiche ou vers « Mes favoris ». Statut à vérifier auprès de l’avocat poursuivant."}
+              ? "Alertes de résultat activées. "
+              : "Alertes de résultat activées ; les envois sont suspendus pour le moment. "
+            : "Pour vos favoris et vos ventes débloquées. L’email ne donne aucun prix : il renvoie vers la fiche ou vers « Mes favoris ». "}
+          Les envois dépendent des informations publiées par les sources ; aucun envoi n’est
+          garanti. Statut à vérifier auprès de l’avocat poursuivant.
         </span>
       </span>
       <input
