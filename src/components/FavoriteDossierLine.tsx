@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { SaleDetailLink } from "@/components/SaleDetailLink";
 import { favoriteDossierStatusLabel } from "@/lib/favorite-dossier-shared";
 import { formatPrice } from "@/lib/format";
 import type { FavoriteSale } from "@/lib/favorites";
@@ -25,9 +25,13 @@ export function FavoriteDossierLine({
           ? formatPrice(favorite.bidCeilingEur)
           : "aucun enregistré"}
       </span>
-      <Link href={`/sales/${favorite.saleId}`} className="font-semibold text-gold-text underline">
+      <SaleDetailLink
+        saleId={favorite.saleId}
+        returnTo="/favoris"
+        className="font-semibold text-gold-text underline"
+      >
         Modifier sur la fiche
-      </Link>
+      </SaleDetailLink>
     </p>
   );
 }
