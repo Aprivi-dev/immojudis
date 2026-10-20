@@ -96,11 +96,12 @@ describe("UnlockCallToAction in a paid preview", () => {
     expect(screen.queryByRole("button", { name: "Me prévenir de l’ouverture" })).toBeNull();
   });
 
-  it("offers the opening request instead of a dead end when the offer is closed", () => {
+  it("offers the opening request instead of a dead end when the offer is closed", async () => {
     mocks.checkoutOpen.mockReturnValue(false);
     renderPreview(status({ used: 3, remaining: 0 }));
 
-    expect(screen.getByRole("button", { name: "Me prévenir de l’ouverture" })).toBeTruthy();
+    // The request is loaded on demand.
+    expect(await screen.findByRole("button", { name: "Me prévenir de l’ouverture" })).toBeTruthy();
     expect(screen.queryByRole("link", { name: "Voir l’offre Analyse" })).toBeNull();
   });
 

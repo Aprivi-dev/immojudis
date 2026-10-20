@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LAUNCH_OFFER_ACCOUNT_TEXT, LAUNCH_OFFER_VISITOR_TEXT } from "@/lib/launch-offer";
 import { FREE_ACCESS_LINE } from "@/lib/sale-unlocks";
@@ -93,11 +93,14 @@ describe("carte Analyse de l'accueil", () => {
     return screen.getByRole("heading", { name: "Analyse" }).closest("article")!;
   }
 
-  it("souscription fermée : « Me prévenir de l’ouverture » en bouton principal et tarif prévu", () => {
+  it("souscription fermée : « Me prévenir de l’ouverture » en bouton principal et tarif prévu", async () => {
     mocks.checkoutOpen = false;
     render(<HomeDiscovery />);
     const card = analysisCard();
-    expect(card.querySelector("button")?.textContent).toContain("Me prévenir de l’ouverture");
+    // La demande est chargée à la demande (un seul import dynamique partagé).
+    expect(
+      await within(card).findByRole("button", { name: "Me prévenir de l’ouverture" }),
+    ).toBeTruthy();
     expect(card.textContent).toContain("Tarif prévu : 59 € TTC / mois. Pas encore souscriptible.");
     expect(card.textContent).not.toContain("Offre bientôt disponible");
     expect(card.textContent).not.toContain("Découvrir Analyse");

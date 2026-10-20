@@ -1,19 +1,16 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import Link from "next/link";
 import Bell from "lucide-react/dist/esm/icons/bell.js";
+import { SectorAlertForm } from "@/components/SectorAlertFormLazy";
 import { Card, buttonClasses } from "@/components/ui/primitives";
 import { useAuth } from "@/hooks/use-auth";
 import { alertCreationLoginPath } from "@/lib/discovery-alerts";
 import type { SalesSearchUrlRecord } from "@/lib/search/search-url-state";
 
 // La création elle-même (droits, zone, consentement) n'est chargée que pour une personne
-// connectée : une page publique n'en paie pas le JavaScript pour ses visiteurs.
-const SectorAlertForm = dynamic(
-  () => import("@/components/SectorAlertForm").then((module) => module.SectorAlertForm),
-  { ssr: false, loading: () => null },
-);
+// connectée : une page publique n'en paie pas le JavaScript pour ses visiteurs (import dynamique
+// partagé : `SectorAlertFormLazy`).
 
 export const SECTOR_ALERT_LABEL = "Recevoir les nouvelles ventes de ce secteur";
 
