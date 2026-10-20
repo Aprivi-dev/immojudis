@@ -1,4 +1,6 @@
+import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { errorDetailForLog } from "@/lib/api-errors";
 import { apiJson, createApiRequestContext } from "@/lib/api-observability";
 import { buildHealthReport, unavailableHealthReport } from "@/lib/health-status";
 
@@ -48,7 +50,7 @@ export async function GET(request: Request) {
       JSON.stringify({
         scope: "api.health",
         requestId: context.requestId,
-        error: error instanceof Error ? error.message : String(error),
+        error: errorDetailForLog(error),
       }),
     );
     return apiJson(unavailableHealthReport(now), context, { status: 503 });
