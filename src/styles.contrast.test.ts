@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -61,6 +61,64 @@ describe("contraste des jetons dorés (WCAG AA)", () => {
   it("les boutons dorés n'utilisent plus un texte blanc ou ciel sur l'or clair", () => {
     expect(css).toMatch(/\.liquid-button \{[^}]*color: (#132238|var\(--brand-navy\))/);
     expect(css).toMatch(/\.ij-signup-button \{[^}]*color: (#132238|var\(--brand-navy\))/);
+  });
+});
+
+describe("indicateur de focus", () => {
+  it("le contour doré foncé tient 3:1 sur le blanc, le fond du site, la crème et le sable (WCAG 1.4.11)", () => {
+    for (const background of [
+      "#ffffff",
+      token("background"),
+      token("surface"),
+      token("secondary"),
+    ]) {
+      expect(contrastRatio(token("gold-soft"), background), background).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it("l'or clair de l'anneau (ring-gold) ne tient pas 3:1 sur le blanc : il ne peut pas servir de focus", () => {
+    expect(contrastRatio(token("gold"), "#ffffff")).toBeLessThan(3);
+  });
+
+  it("aucun composant ne marque le focus avec ring-gold (2,85:1) : outline-gold-soft à la place", () => {
+    const forbidden = /(?<![\w-])(?:focus|focus-visible|focus-within):ring-gold(?![-\w])/;
+    const offenders: string[] = [];
+    const walk = (directory: string) => {
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        const path = join(directory, entry.name);
+        if (entry.isDirectory()) walk(path);
+        else if (/\.(tsx?|css)$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) {
+          readFileSync(path, "utf8")
+            .split("\n")
+            .forEach((line, index) => {
+              if (forbidden.test(line)) offenders.push(`${path}:${index + 1}`);
+            });
+        }
+      }
+    };
+    walk(join(process.cwd(), "src"));
+    expect(offenders).toEqual([]);
+  });
+
+  it("le motif interdit attrape les formes connues et laisse ring-gold-soft", () => {
+    const forbidden = /(?<![\w-])(?:focus|focus-visible|focus-within):ring-gold(?![-\w])/;
+    for (const bad of [
+      "focus-visible:ring-gold",
+      "focus-visible:ring-gold/40",
+      "focus-within:ring-gold",
+      "focus:ring-gold/20",
+      'class="a focus-visible:ring-2 focus-visible:ring-gold"',
+    ]) {
+      expect(forbidden.test(bad), bad).toBe(true);
+    }
+    for (const good of [
+      "focus:ring-gold-soft",
+      "focus-visible:outline-gold-soft",
+      "ring-gold",
+      "hover:ring-gold",
+    ]) {
+      expect(forbidden.test(good), good).toBe(false);
+    }
   });
 });
 

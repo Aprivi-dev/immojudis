@@ -159,7 +159,7 @@ function DirectoryLayout({
                 Rechercher un barreau
               </label>
               <div className="mt-2 flex gap-2">
-                <div className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md border border-brand-navy/16 px-3 focus-within:border-gold-soft focus-within:ring-2 focus-within:ring-gold/15">
+                <div className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md border border-brand-navy/16 px-3 focus-within:border-gold-soft focus-within:outline-2 focus-within:outline-gold-soft">
                   <Search className="h-4 w-4 shrink-0 text-brand-navy/65" aria-hidden />
                   <input
                     id="lawyer-bar"
@@ -172,7 +172,7 @@ function DirectoryLayout({
                 </div>
                 <button
                   type="submit"
-                  className="min-h-11 rounded-md bg-brand-navy px-4 text-sm font-semibold text-white transition-colors hover:bg-gold-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2"
+                  className="min-h-11 rounded-md bg-brand-navy px-4 text-sm font-semibold text-white transition-colors hover:bg-gold-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
                 >
                   Rechercher
                 </button>
@@ -516,7 +516,7 @@ function CnbDirectoryLink({ barAssociation }: { barAssociation: string | null })
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-md border border-brand-navy/16 px-4 text-sm font-semibold text-brand-navy transition-colors hover:border-gold hover:text-gold-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2"
+      className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-md border border-brand-navy/16 px-4 text-sm font-semibold text-brand-navy transition-colors hover:border-gold hover:text-gold-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
     >
       Résultats officiels du CNB
       <ExternalLink className="h-4 w-4" aria-hidden />

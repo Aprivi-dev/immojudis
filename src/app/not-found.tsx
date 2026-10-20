@@ -19,7 +19,7 @@ export default function NotFound() {
           <label htmlFor="not-found-search" className="sr-only">
             Rechercher une vente par ville, département ou région
           </label>
-          <div className="flex min-w-0 flex-1 items-center gap-2 rounded-md border border-line bg-white px-3 focus-within:ring-2 focus-within:ring-gold">
+          <div className="flex min-w-0 flex-1 items-center gap-2 rounded-md border border-line bg-white px-3 focus-within:outline-2 focus-within:outline-gold-soft">
             <Search className="size-4 shrink-0 text-ink-soft" aria-hidden />
             <input
               id="not-found-search"

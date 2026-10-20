@@ -115,7 +115,7 @@ function SponsoredLawyerCard({
       ) : null}
       <a
         href={directoryHref(lawyer)}
-        className="mt-auto inline-flex min-h-10 items-center justify-center rounded-md border border-gold/45 bg-white px-3 py-2 text-xs font-bold text-gold-text transition-colors hover:border-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2"
+        className="mt-auto inline-flex min-h-10 items-center justify-center rounded-md border border-gold/45 bg-white px-3 py-2 text-xs font-bold text-gold-text transition-colors hover:border-gold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
       >
         Voir l’annuaire du secteur
       </a>
@@ -123,7 +123,7 @@ function SponsoredLawyerCard({
         {sponsoredPlacementDisclosure(lawyer.placement)}{" "}
         <a
           href={LAWYER_RANKING_HREF}
-          className="font-semibold text-gold-text underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2"
+          className="font-semibold text-gold-text underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
         >
           {LAWYER_RANKING_LINK_LABEL}
         </a>
@@ -157,7 +157,7 @@ function OpenLawyerPlacement({ loading, className }: { loading: boolean; classNa
       </p>
       <a
         href="/contact"
-        className="mt-auto inline-flex min-h-10 items-center justify-center rounded-md bg-brand-navy px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-brand-navy-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2"
+        className="mt-auto inline-flex min-h-10 items-center justify-center rounded-md bg-brand-navy px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-brand-navy-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
       >
         Présenter mon cabinet
       </a>

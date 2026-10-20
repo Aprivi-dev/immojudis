@@ -37,7 +37,7 @@ export function AccountMenu({ links, dark }: { links: AccountLink[]; dark: boole
                 <Link
                   href={link.href}
                   onClick={() => setOpen(false)}
-                  className="block rounded-md px-3 py-2.5 font-medium hover:bg-gold/10 hover:text-gold-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  className="block rounded-md px-3 py-2.5 font-medium hover:bg-gold/10 hover:text-gold-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
                 >
                   {link.label}
                 </Link>
@@ -50,7 +50,7 @@ export function AccountMenu({ links, dark }: { links: AccountLink[]; dark: boole
               setOpen(false);
               void getSupabase().then((supabase) => supabase.auth.signOut());
             }}
-            className="mt-1 flex w-full cursor-pointer items-center gap-2 rounded-md border-t border-border px-3 py-2.5 text-left font-medium hover:bg-gold/10 hover:text-gold-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+            className="mt-1 flex w-full cursor-pointer items-center gap-2 rounded-md border-t border-border px-3 py-2.5 text-left font-medium hover:bg-gold/10 hover:text-gold-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
           >
             <LogOut className="size-4" aria-hidden />
             Déconnexion

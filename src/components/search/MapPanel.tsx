@@ -1227,7 +1227,7 @@ function MapFallback({ message, onShowList }: { message: string; onShowList?: ()
         <a
           href="#sales-results"
           onClick={onShowList}
-          className="mt-4 inline-flex min-h-11 items-center justify-center rounded-md bg-brand-navy px-4 text-sm font-semibold text-white hover:bg-brand-navy-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+          className="mt-4 inline-flex min-h-11 items-center justify-center rounded-md bg-brand-navy px-4 text-sm font-semibold text-white hover:bg-brand-navy-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
         >
           Voir la liste
         </a>
@@ -1251,7 +1251,7 @@ function MapIconButton({
     <button
       type="button"
       onClick={onClick}
-      className={`grid h-11 w-11 cursor-pointer place-items-center text-brand-navy transition-colors hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold ${
+      className={`grid h-11 w-11 cursor-pointer place-items-center text-brand-navy transition-colors hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft ${
         separated ? "border-t border-line-soft" : ""
       }`}
       aria-label={label}
@@ -1275,7 +1275,7 @@ function MapControlButton({
     <button
       type="button"
       onClick={onClick}
-      className="grid h-11 w-11 cursor-pointer place-items-center rounded-md border border-line-soft bg-white text-brand-navy shadow-lg transition-colors hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+      className="grid h-11 w-11 cursor-pointer place-items-center rounded-md border border-line-soft bg-white text-brand-navy shadow-lg transition-colors hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
       aria-label={label}
       title={label}
     >

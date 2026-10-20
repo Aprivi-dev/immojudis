@@ -185,7 +185,7 @@ export function SiteHeader({
             aria-describedby={signedIn ? MOBILE_MENU_UNREAD_ID : undefined}
             onClick={() => setMenuOpen(true)}
             className={cn(
-              "relative ml-auto inline-grid size-11 shrink-0 cursor-pointer place-items-center rounded-md border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold lg:hidden",
+              "relative ml-auto inline-grid size-11 shrink-0 cursor-pointer place-items-center rounded-md border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft lg:hidden",
               dark
                 ? "border-white/40 bg-brand-navy/50 text-white"
                 : "border-border bg-white text-foreground",
@@ -218,7 +218,7 @@ function HeaderNavLink({ link, active, dark }: { link: SiteLink; active: boolean
       prefetch={linkPrefetch(link.href)}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "rounded-md px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold",
+        "rounded-md px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft",
         dark
           ? "px-0 font-display text-xl font-medium text-white/95 hover:text-gold-light"
           : active
