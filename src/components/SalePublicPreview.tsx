@@ -16,6 +16,7 @@ import { SaleCalendarButton } from "@/components/SaleCalendarButton";
 import { SalePointsToVerify } from "@/components/sale-detail/SalePointsToVerify";
 import { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
 import { pointsToVerify } from "@/lib/search/points-to-verify";
+import { isPastSaleDay } from "@/lib/sale-countdown";
 import { formatPrice } from "@/lib/format";
 import {
   MARKET_GAP_BAND_CAUTION,
@@ -173,6 +174,9 @@ export function SalePublicPreview({
   const photo = preview.media?.find((item) => item?.url && (item.type ?? "image") === "image");
   const surface = seoSurface(preview.app_surface_m2);
   const hearingDate = seoLongDate(preview.sale_date);
+  // Vente dont le jour est passé : signal explicite, ni bouton d'agenda ni bande d'écart (le marché
+  // qu'elle comparait à la mise à prix est celui d'un jour qui n'existe plus pour cette vente).
+  const pastDate = isPastSaleDay(preview.sale_date);
   const hearingTime = saleHearingTime(preview.sale_date);
   const tribunal = procedure.venueType === "tribunal" ? tribunalDisplayName(preview) : null;
   const location = [preview.city, preview.department].filter(Boolean).join(" · ");
@@ -206,7 +210,14 @@ export function SalePublicPreview({
           <dd>
             {hearingDate}
             {hearingTime ? ` à ${hearingTime}` : ""}
-            {procedure.venueType === "tribunal" ? <SaleCalendarButton saleId={saleId} /> : null}
+            {pastDate ? (
+              <span className={styles.pastDate} data-testid="past-sale-date">
+                Date de vente passée
+              </span>
+            ) : null}
+            {procedure.venueType === "tribunal" && !pastDate ? (
+              <SaleCalendarButton saleId={saleId} />
+            ) : null}
           </dd>
         </div>
       ) : null}
@@ -248,7 +259,7 @@ export function SalePublicPreview({
             ? "Vérifiez les conditions et frais dans l'annonce officielle"
             : "Prix de départ, hors frais"}
         </p>
-        {price && preview.market_gap_band ? (
+        {price && preview.market_gap_band && !pastDate ? (
           <MarketGapBandNote band={preview.market_gap_band} />
         ) : null}
       </div>

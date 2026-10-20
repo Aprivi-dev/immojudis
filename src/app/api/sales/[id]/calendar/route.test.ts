@@ -132,7 +132,7 @@ describe("GET /api/sales/[id]/calendar", () => {
     await expect(response.json()).resolves.toMatchObject({
       ok: false,
       code: "CONFLICT",
-      error: expect.stringContaining("n’est pas confirmée"),
+      error: expect.stringMatching(/sa date est passée, reportée ou n’est pas confirmée/),
     });
   });
 

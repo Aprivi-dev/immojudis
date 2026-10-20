@@ -463,6 +463,28 @@ describe("SalePublicPreview", () => {
     expect(document.getElementById("points-a-verifier")).toBeNull();
   });
 
+  it("signale une vente à date passée : pas de bouton d'agenda, pas de bande d'écart", () => {
+    renderPreview({
+      sale_venue_type: "tribunal",
+      sale_date: "2020-03-12T09:00:00+00:00",
+      market_gap_band: "under",
+    });
+    expect(screen.getByTestId("past-sale-date").textContent).toBe("Date de vente passée");
+    expect(screen.queryByRole("button", { name: "Ajouter à mon agenda" })).toBeNull();
+    expect(screen.queryByTestId("market-gap-band")).toBeNull();
+  });
+
+  it("garde l'agenda et la bande d'écart d'une vente à venir, sans signal de date passée", () => {
+    renderPreview({
+      sale_venue_type: "tribunal",
+      sale_date: "2099-01-20T08:30:00+00:00",
+      market_gap_band: "under",
+    });
+    expect(screen.queryByTestId("past-sale-date")).toBeNull();
+    expect(screen.getByRole("button", { name: "Ajouter à mon agenda" })).toBeTruthy();
+    expect(screen.getByTestId("market-gap-band")).toBeTruthy();
+  });
+
   it("donne leur définition à « mise à prix » et à « adjudication »", () => {
     renderPreview({ sale_venue_type: "tribunal" });
     expect(screen.getByRole("button", { name: "Définition : mise à prix" })).toBeTruthy();

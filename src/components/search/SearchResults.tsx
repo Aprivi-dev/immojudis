@@ -50,6 +50,7 @@ import {
   departmentLabel,
   listingAccessLine,
   listingDateLabel,
+  PAST_SALE_LABEL,
   listingTitle,
 } from "./listing-text";
 import { useSaleDetailLink } from "./use-sale-detail-link";
@@ -483,7 +484,12 @@ export const ListingCard = memo(function ListingCard({
               {stateListing ? stateListing.label : listingDateLabel(sale)}
             </AiReviewField>
           </span>
-          <SaleCountdown sale={sale} precisionUnknown={locked} variant="chip" />
+          <SaleCountdown
+            sale={sale}
+            precisionUnknown={locked}
+            variant="chip"
+            omitPast={!stateListing && listingDateLabel(sale) === PAST_SALE_LABEL}
+          />
           <SaleProcedureBadge sale={sale} />
           {/* « Annonce bien renseignée » et « N points à vérifier » se contredisent côte à côte : un
               point ouvert l'emporte (la liste des points est celle de la carte). */}
