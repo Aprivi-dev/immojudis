@@ -20,6 +20,7 @@ import { dossierHasContent, restoreRemovedFavorite } from "./favorite-removal";
 import { FavoriteDossierLine } from "./FavoriteDossierLine";
 import { PastFollowedSales } from "./PastFollowedSales";
 import { FavoriteSaleChanges } from "./FavoriteSaleChanges";
+import { MonDemarrage } from "./MonDemarrage";
 import { PLAN_LIMITS } from "@/lib/plans";
 import { queryKeys } from "@/lib/query-keys";
 
@@ -116,6 +117,7 @@ export function FavoriteSales() {
         </Link>
       }
     >
+      <MonDemarrage className="mb-6" />
       {query.isPending || loading ? (
         <p role="status" className="text-ink-soft">
           Chargement de vos favoris…

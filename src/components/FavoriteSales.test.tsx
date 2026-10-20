@@ -47,6 +47,9 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
 }));
 
+// « Mon démarrage » a son propre test (MonDemarrage.test.tsx) ; ici on vérifie seulement sa place.
+vi.mock("./MonDemarrage", () => ({ MonDemarrage: () => <div data-testid="mon-demarrage-stub" /> }));
+
 vi.mock("./FavoriteButton", () => ({
   FavoriteButton: ({ saleId }: { saleId: string }) => <button>Retirer {saleId}</button>,
 }));
@@ -583,6 +586,15 @@ describe("FavoriteSales : changements des ventes suivies", () => {
       name: "Annonces retirées du catalogue",
     });
     expect(past.compareDocumentPosition(removed) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("propose « Mon démarrage » sur la page, avec ou sans favori", async () => {
+    setup();
+    mocks.fetchFavoriteSales.mockResolvedValue({ ...favoritesResponse(), favorites: [] });
+    renderPage();
+
+    await screen.findByText("Aucun favori pour le moment");
+    expect(screen.getByTestId("mon-demarrage-stub")).toBeTruthy();
   });
 
   it("n'affiche rien quand il n'y a aucun favori", async () => {
