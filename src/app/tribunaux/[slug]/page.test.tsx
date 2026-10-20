@@ -107,6 +107,15 @@ function sale(id: string, overrides: Partial<DepartmentSale> = {}): DepartmentSa
   };
 }
 
+/** Les ventes lues : `received` (lignes avant dédoublonnage) vaut par défaut le nombre de ventes. */
+function mockSales(
+  result: { status: "ok"; sales: DepartmentSale[]; received?: number } | { status: "error" },
+) {
+  mocks.sales.mockResolvedValue(
+    result.status === "ok" ? { received: result.sales.length, ...result } : result,
+  );
+}
+
 function params(slug: string) {
   return { params: Promise.resolve({ slug }) };
 }
@@ -120,7 +129,7 @@ beforeEach(() => {
   mocks.directory.mockReset();
   mocks.directory.mockResolvedValue({ status: "ok", items: directoryOf(FOIX) });
   mocks.activity.mockResolvedValue({ status: "ok", items: [BOBIGNY, NANTERRE, PUY, BEAUVAIS] });
-  mocks.sales.mockResolvedValue({ status: "ok", sales: [sale("a"), sale("b"), sale("c")] });
+  mockSales({ status: "ok", sales: [sale("a"), sale("b"), sale("c")] });
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -245,7 +254,7 @@ describe("page d'un tribunal : indexation", () => {
   });
 
   it("décrit la prochaine audience de la liste, pas la date d'une vente reportée", async () => {
-    mocks.sales.mockResolvedValue({
+    mockSales({
       status: "ok",
       sales: [
         sale("r", { status: "postponed", saleDate: "2026-10-20T10:00:00Z" }),
@@ -300,8 +309,38 @@ describe("page d'un tribunal : contenu", () => {
     ).toBe("/sales?tribunal=TJ+Bobigny");
   });
 
+  it("compte la liste dédoublonnée quand elle est complète : le compteur et la liste concordent", async () => {
+    // 5 lignes reçues, 3 ventes après dédoublonnage ; l'activité publique en compte 5.
+    mocks.activity.mockResolvedValue({ status: "ok", items: [{ ...BOBIGNY, upcomingCount: 5 }] });
+    mockSales({ status: "ok", sales: [sale("a"), sale("b"), sale("c")], received: 5 });
+    const metadata = await generateMetadata(params("justice-tj-1-93"));
+    expect(String(metadata.description)).toContain("3 ventes judiciaires à venir");
+    render(await Page(params("justice-tj-1-93")));
+    const figures = screen.getByRole("region", { name: "Les chiffres du tribunal" });
+    expect(figures.textContent).toContain("Ventes à venir3");
+    expect(figures.textContent).not.toContain("deux sources");
+    expect(screen.getByRole("region", { name: "Les ventes à venir" })).toBeTruthy();
+  });
+
+  it("retire les doublons vus d'une liste tronquée et précise que le total peut en compter d'autres", async () => {
+    // Bobigny en production : 30 lignes lues dont 11 doublons, 41 ventes selon l'activité publique.
+    mocks.activity.mockResolvedValue({ status: "ok", items: [{ ...BOBIGNY, upcomingCount: 41 }] });
+    mockSales({
+      status: "ok",
+      sales: Array.from({ length: 19 }, (_, index) => sale(`s${index}`)),
+      received: 30,
+    });
+    render(await Page(params("justice-tj-1-93")));
+    const figures = screen.getByRole("region", { name: "Les chiffres du tribunal" });
+    expect(figures.textContent).toContain("Ventes à venir30");
+    expect(figures.textContent).toContain(
+      "Le total peut compter une même vente publiée par deux sources.",
+    );
+    expect(screen.getByRole("region", { name: "Les 19 prochaines ventes" })).toBeTruthy();
+  });
+
   it("marque une vente reportée et ne l'annonce pas comme prochaine audience", async () => {
-    mocks.sales.mockResolvedValue({
+    mockSales({
       status: "ok",
       sales: [
         sale("r", { status: "postponed", saleDate: "2026-10-20T10:00:00Z" }),
@@ -318,7 +357,7 @@ describe("page d'un tribunal : contenu", () => {
   });
 
   it("écrit « Non connue » quand aucune prochaine audience n'est connue (toutes reportées)", async () => {
-    mocks.sales.mockResolvedValue({
+    mockSales({
       status: "ok",
       sales: [sale("r1", { status: "postponed" }), sale("r2", { status: "postponed" })],
     });
@@ -328,7 +367,7 @@ describe("page d'un tribunal : contenu", () => {
   });
 
   it("n'affiche pas « à venir » pour une vente au statut inconnu : « Statut à confirmer »", async () => {
-    mocks.sales.mockResolvedValue({
+    mockSales({
       status: "ok",
       sales: [sale("u", { status: "unknown" }), sale("a")],
     });
@@ -340,7 +379,7 @@ describe("page d'un tribunal : contenu", () => {
   });
 
   it("garde la page, ses chiffres et un renvoi vers la recherche quand la liste est indisponible", async () => {
-    mocks.sales.mockResolvedValue({ status: "error" });
+    mockSales({ status: "error" });
     render(await Page(params("justice-tj-1-93")));
 
     expect(screen.getByRole("region", { name: "Les chiffres du tribunal" }).textContent).toContain(
@@ -405,7 +444,7 @@ describe("page d'un tribunal : données structurées", () => {
   });
 
   it("n'émet pas de liste vide quand les ventes ne sont pas lues", async () => {
-    mocks.sales.mockResolvedValue({ status: "error" });
+    mockSales({ status: "error" });
     const { container } = render(await Page(params("justice-tj-1-93")));
     const types = [...container.querySelectorAll('script[type="application/ld+json"]')].map(
       (script) => JSON.parse(script.textContent ?? "{}")["@type"],

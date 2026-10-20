@@ -272,6 +272,39 @@ export function tribunalPageDescription(
   return `${head}.`;
 }
 
+/** Les ventes lues d'un tribunal, vues par le calcul du nombre de ventes (voir ci-dessous). */
+type TribunalSalesRead =
+  | { status: "ok"; sales: readonly unknown[]; received: number }
+  | { status: "error" }
+  | null;
+
+/**
+ * Le tribunal avec son nombre de ventes à venir corrigé des doublons que la liste a écartés (une
+ * vente publiée par deux sources, voir `dedupeTribunalSaleRows`), pour que le compteur et la liste
+ * parlent des mêmes ventes. Deux cas :
+ * - liste complète (moins de lignes reçues que la limite) : le compteur est la liste dédoublonnée ;
+ * - liste tronquée : on retire les doublons vus, le reste du total est celui de l'activité, qui
+ *   compte une même vente publiée par deux sources deux fois. `mayCountDuplicates` est alors vrai :
+ *   la page le dit, car d'autres doublons peuvent se trouver au-delà de la liste.
+ * Sans doublon vu, ou sans liste lue, le compteur est celui de l'activité, inchangé.
+ */
+export function tribunalActivityWithoutDuplicates<
+  T extends Pick<PublicTribunalActivity, "upcomingCount">,
+>(activity: T, read: TribunalSalesRead): T & { mayCountDuplicates: boolean } {
+  if (!read || read.status !== "ok") return { ...activity, mayCountDuplicates: false };
+  const listed = read.sales.length;
+  const removed = read.received - listed;
+  if (removed <= 0) return { ...activity, mayCountDuplicates: false };
+  if (read.received < TRIBUNAL_PAGE_LISTED_SALES) {
+    return { ...activity, upcomingCount: listed, mayCountDuplicates: false };
+  }
+  return {
+    ...activity,
+    upcomingCount: Math.max(activity.upcomingCount - removed, listed),
+    mayCountDuplicates: true,
+  };
+}
+
 /** Le département du tribunal, quand son code est reconnu. */
 export function tribunalDepartment(
   activity: Pick<PublicTribunalActivity, "department">,
