@@ -5,11 +5,12 @@ name: Pipeline tests, clock +60 days
 # tests/conftest.py). A test whose hearing date, freshness window or retention is written as an absolute
 # date instead of relative to "today" fails here weeks before it would break the main CI.
 #
-# Note for the owner: the offset is implemented with the standard library (datetime.now/utcnow/today, date.today,
-# time.time), because the `time-machine` dependency is not in the pipeline lockfiles and was not added without
-# your agreement. If you want the full-strength version (C-level clocks, PostgreSQL excluded anyway), add
-# `time-machine` to requirements-dev.txt, regenerate requirements-dev.lock, and replace install_clock_offset()
-# in tests/clock_offset.py by `time_machine.travel(..., tick=True).start()`; this workflow needs no change.
+# Note for the owner: the offset needs the `time-machine` package, which is NOT in the pipeline lockfiles (adding a
+# dependency needs your agreement). Until you add it to requirements-dev.txt and regenerate
+# requirements-dev.lock, the "Check the clock engine" step below emits a ::warning:: and the test step is skipped,
+# so the job stays green but says it did nothing, instead of running the suite with an unmoved clock. A
+# standard-library-only engine was tried and dropped: replacing datetime.datetime makes the pandas import loop, and
+# a partial shift gives dozens of false failures. PostgreSQL's now() and subprocess clocks are not moved.
 #
 # No secret, no database: read-only job, failures are informative (it never blocks a pull request).
 on:
@@ -55,5 +56,16 @@ jobs:
       - name: Install the valuation stack for the training tests
         run: python -m pip install --require-hashes -r requirements-valuation.lock
 
+      - name: Check the clock engine
+        id: engine
+        run: |
+          if python -c "import time_machine" 2>/dev/null; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::time-machine is not installed (not in requirements-dev.lock): the clock-offset run is skipped."
+          fi
+
       - name: Run the tests with the clock moved 60 days ahead
+        if: steps.engine.outputs.available == 'true'
         run: python -m pytest -q

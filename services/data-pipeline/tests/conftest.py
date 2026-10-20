@@ -2,10 +2,16 @@ from __future__ import annotations
 
 import pytest
 
-from tests.clock_offset import install_from_environment
+from tests.clock_offset import install_from_environment, unavailable_reason
 
 # Job hebdomadaire « horloge +60 jours » : sans la variable IMMOJUDIS_TEST_CLOCK_OFFSET_DAYS, rien ne change.
-install_from_environment()
+_CLOCK_OFFSET_DAYS = install_from_environment()
+
+
+def pytest_report_header(config) -> str | None:
+    if _CLOCK_OFFSET_DAYS is None:
+        return None
+    return unavailable_reason() or f"horloge décalée de {_CLOCK_OFFSET_DAYS:g} jours (time-machine)"
 
 
 @pytest.fixture(autouse=True)
