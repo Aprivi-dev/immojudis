@@ -1,7 +1,7 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import { resolveEmailAlertDeliveryConfig, sendResendEmail } from "@/lib/email-alerts";
-import { describeSaleChange } from "@/lib/sale-change-display";
+import { describeSaleChange, GRAVE_SALE_STATUSES } from "@/lib/sale-change-display";
 import type { SaleChangeEventSummary } from "@/lib/sale-change-monitor";
 import { SALE_CALENDAR_DISCLAIMER, type SaleCalendarRow } from "@/lib/sale-calendar";
 import { calendarDaysBetween, parisDateKey } from "@/lib/sale-countdown";
@@ -50,8 +50,6 @@ const DAY_MS = 86_400_000;
 const START_ROTATION_STEP = 0.6180339887498949;
 /** Au plus ce nombre de ventes suivies examinées par personne. */
 const MAX_FOLLOWED_SALES_PER_USER = 300;
-/** Statuts qui justifient un avertissement (vente retirée, reportée, annulée ou adjugée). */
-const GRAVE_STATUSES = new Set(["postponed", "withdrawn", "cancelled", "canceled", "adjudicated"]);
 const PROCESSING_BUDGET_MS = 50_000;
 const USER_CONCURRENCY = 4;
 const PARIS_TIME_ZONE = "Europe/Paris";
@@ -239,7 +237,7 @@ export function graveWarningFor(
   }
   if (event.eventKind === "status_changed") {
     const current = event.changeSummary.currentValue;
-    if (typeof current !== "string" || !GRAVE_STATUSES.has(current.toLowerCase())) return null;
+    if (typeof current !== "string" || !GRAVE_SALE_STATUSES.has(current.toLowerCase())) return null;
     return { kind: "status_changed", headline: described.label };
   }
   return null;

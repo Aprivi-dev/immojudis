@@ -10,8 +10,12 @@ import { DETAIL_VIEW, SALE_LIST_COLUMNS } from "@/lib/sale-views";
 import { saleRows } from "@/lib/sale-rows";
 import {
   getPublicationVisibleSaleIds,
+  isPublicationQuarantinedGuardRow,
+  PUBLICATION_QUARANTINE_SELECT,
   SalePublicationUnavailableError,
 } from "@/lib/sale-publication-guard";
+import { GRAVE_SALE_STATUSES } from "@/lib/sale-change-display";
+import { systemAuthForUser } from "@/lib/system-auth";
 import type { AuctionSale } from "@/lib/types";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import { asRecord, numberValue, stringValue } from "@/lib/guards";
@@ -113,6 +117,8 @@ export type SaleChangeMonitorResponse = {
 export type SaleChangeMonitorBatchUserResult = {
   userId: string;
   ok: boolean;
+  /** Compte sans droit au suivi (offre de lancement sans email confirmé, plan Découverte) : écarté, pas en échec. */
+  skipped: boolean;
   watchCount: number;
   saleCount: number;
   changeCount: number;
@@ -126,6 +132,7 @@ export type SaleChangeMonitorBatchResult = {
   finishedAt: string;
   candidateUserCount: number;
   monitoredUserCount: number;
+  skippedUserCount: number;
   failedUserCount: number;
   totalChangeCount: number;
   totalInsertedEventCount: number;
@@ -144,6 +151,8 @@ export const saleChangeEventActionSchema = z.object({
 
 const DEFAULT_SALE_CHANGE_EVENT_LIMIT = 80;
 const MAX_SALE_CHANGE_EVENT_LIMIT = 250;
+// Taille du lot des comptes SANS consentement aux rappels : ceux qui ont consenti sont tous examinés
+// chaque jour, en plus de ce lot (voir `selectRotatingMonitorCandidates`).
 const DEFAULT_SALE_CHANGE_MONITOR_USER_LIMIT = 25;
 const MAX_SALE_CHANGE_MONITOR_USER_LIMIT = 100;
 // Lecture des candidats par pages (identifiants seulement) pour pouvoir faire tourner le lot :
@@ -154,6 +163,8 @@ const MONITOR_CANDIDATE_MAX_PAGES = 10;
 // remplir (un quart), afin qu'ils ne soient jamais affamés.
 const MONITOR_REST_RESERVE_RATIO = 0.25;
 const DAY_MS = 86_400_000;
+// Ventes lues par requête quand on cherche celles qui ont quitté le catalogue.
+const LEFT_CATALOGUE_BATCH_SIZE = 100;
 
 export async function listSaleChangeEvents({
   auth,
@@ -251,6 +262,11 @@ export async function monitorUserSaleChanges({
     loadExistingSnapshots(auth, saleIds),
   ]);
   const salesById = new Map(sales.map((sale) => [sale.id, sale]));
+  // Une vente suivie qui n'est plus dans la vue du catalogue (retirée, annulée, adjugée) ne doit pas
+  // disparaître en silence : c'est justement le changement que le consentement promet de signaler.
+  const leftCatalogue = await loadGraveSalesOutsideCatalogue(
+    saleIds.filter((saleId) => !salesById.has(saleId)),
+  );
   const snapshotsByWatch = new Map(
     existingSnapshots.map((row) => [snapshotKey(row), normalizeSnapshot(row.snapshot)]),
   );
@@ -260,11 +276,32 @@ export async function monitorUserSaleChanges({
 
   for (const watch of watches) {
     const sale = salesById.get(watch.saleId);
-    if (!sale) continue;
-
-    const current = buildSaleChangeSnapshot(sale);
     const key = watchKey(watch);
     const previous = snapshotsByWatch.get(key) ?? watch.baselineSnapshot;
+    if (!sale) {
+      // Sans instantané précédent on ne sait pas ce qui a changé : rien à signaler, rien à écrire.
+      const left = leftCatalogue.get(watch.saleId);
+      if (!left || !previous) continue;
+      const current: SaleChangeSnapshot = { ...previous, status: left.status };
+      eventRows.push(
+        ...detectSaleChanges({ previous, current, now })
+          .filter((change) => change.eventKind === "status_changed")
+          .map((change) =>
+            buildSaleChangeEventInsert({
+              userId: auth.userId,
+              watch,
+              change,
+              previous,
+              current,
+              detectedAt: monitoredAt,
+            }),
+          ),
+      );
+      snapshotRows.push(buildSnapshotRow({ userId: auth.userId, watch, current, monitoredAt }));
+      continue;
+    }
+
+    const current = buildSaleChangeSnapshot(sale);
 
     if (previous) {
       const changes = detectSaleChanges({ previous, current, now });
@@ -284,16 +321,7 @@ export async function monitorUserSaleChanges({
       baselineCount += 1;
     }
 
-    snapshotRows.push({
-      user_id: auth.userId,
-      sale_id: watch.saleId,
-      watch_kind: watch.watchKind,
-      watch_id: watch.watchId,
-      snapshot: asJson(current),
-      fingerprint: snapshotFingerprint(current),
-      last_checked_at: monitoredAt,
-      updated_at: monitoredAt,
-    });
+    snapshotRows.push(buildSnapshotRow({ userId: auth.userId, watch, current, monitoredAt }));
   }
 
   await upsertWatchSnapshots(snapshotRows);
@@ -342,12 +370,29 @@ export async function runSaleChangeMonitorBatch({
   for (const candidate of candidates) {
     const userId = candidate.userId;
     try {
-      const response = await monitorUserSaleChanges({
-        auth: systemAuthForInvestorUser(candidate),
-      });
+      // Le vrai profil du compte (niveau et rôle), pas un niveau premium supposé : pendant l'offre de
+      // lancement, le droit au suivi suit la même règle que partout ailleurs (profil ET email
+      // confirmé, voir `resolvePlanEntitlements`). Un compte sans droit est écarté, pas en échec.
+      const auth = await systemAuthForUser(userId);
+      const plan = await resolvePlanEntitlements(auth);
+      if (!featureIncluded(plan.plan, "alerts.realtimeChanges")) {
+        results.push({
+          userId,
+          ok: true,
+          skipped: true,
+          watchCount: 0,
+          saleCount: 0,
+          changeCount: 0,
+          insertedEventCount: 0,
+          error: null,
+        });
+        continue;
+      }
+      const response = await monitorUserSaleChanges({ auth });
       results.push({
         userId,
         ok: true,
+        skipped: false,
         watchCount: response.watchCount,
         saleCount: response.saleCount,
         changeCount: response.changeCount,
@@ -358,6 +403,7 @@ export async function runSaleChangeMonitorBatch({
       results.push({
         userId,
         ok: false,
+        skipped: false,
         watchCount: 0,
         saleCount: 0,
         changeCount: 0,
@@ -372,7 +418,8 @@ export async function runSaleChangeMonitorBatch({
     startedAt,
     finishedAt: new Date().toISOString(),
     candidateUserCount: candidates.length,
-    monitoredUserCount: results.filter((result) => result.ok).length,
+    monitoredUserCount: results.filter((result) => result.ok && !result.skipped).length,
+    skippedUserCount: results.filter((result) => result.skipped).length,
     failedUserCount: results.filter((result) => !result.ok).length,
     totalChangeCount: results.reduce((total, result) => total + result.changeCount, 0),
     totalInsertedEventCount: results.reduce(
@@ -671,6 +718,56 @@ async function loadSalesByIds(
   return rows.filter((sale) => visibleSaleIds.has(sale.id));
 }
 
+/**
+ * Parmi les ventes suivies absentes de la vue du catalogue (`v_auction_sales_app` ne garde que les
+ * statuts à venir), celles dont le statut est grave : retirée, annulée, adjugée (ou reportée). La
+ * lecture est faite sur la table avec le rôle de service : elle applique donc elle-même la garde de
+ * quarantaine, une vente en quarantaine ne produit jamais d'événement. Les autres ventes absentes
+ * (fin de validité au catalogue, par exemple) restent muettes.
+ */
+async function loadGraveSalesOutsideCatalogue(
+  saleIds: string[],
+): Promise<Map<string, { status: string }>> {
+  const result = new Map<string, { status: string }>();
+  const ids = [...new Set(saleIds)].filter(Boolean);
+  for (let start = 0; start < ids.length; start += LEFT_CATALOGUE_BATCH_SIZE) {
+    const { data, error } = await supabaseAdmin
+      .from("auction_sales")
+      .select(`id,sale_date,${PUBLICATION_QUARANTINE_SELECT}` as const)
+      .in("id", ids.slice(start, start + LEFT_CATALOGUE_BATCH_SIZE));
+    if (error) throw error;
+    for (const row of data ?? []) {
+      if (typeof row.id !== "string" || isPublicationQuarantinedGuardRow(row)) continue;
+      const status = cleanString(row.status)?.toLowerCase();
+      if (status && GRAVE_SALE_STATUSES.has(status)) result.set(row.id, { status });
+    }
+  }
+  return result;
+}
+
+function buildSnapshotRow({
+  userId,
+  watch,
+  current,
+  monitoredAt,
+}: {
+  userId: string;
+  watch: SaleWatchSource;
+  current: SaleChangeSnapshot;
+  monitoredAt: string;
+}): SaleWatchSnapshotInsert {
+  return {
+    user_id: userId,
+    sale_id: watch.saleId,
+    watch_kind: watch.watchKind,
+    watch_id: watch.watchId,
+    snapshot: asJson(current),
+    fingerprint: snapshotFingerprint(current),
+    last_checked_at: monitoredAt,
+    updated_at: monitoredAt,
+  };
+}
+
 async function upsertWatchSnapshots(rows: SaleWatchSnapshotInsert[]) {
   if (!rows.length) return;
 
@@ -696,7 +793,12 @@ async function insertChangeEvents(rows: SaleChangeEventInsert[]): Promise<SaleCh
   return data ?? [];
 }
 
-type MonitorCandidate = InvestorMonitorCandidate & { priority: boolean };
+type MonitorCandidate = InvestorMonitorCandidate & {
+  /** Administrateur, premium ou abonné Analyse. */
+  priority: boolean;
+  /** A consenti aux rappels d'audience : examiné chaque jour, sans passer par la rotation. */
+  consented?: boolean;
+};
 
 /** Lit toutes les pages d'une requête d'identifiants, dans la limite de `MONITOR_CANDIDATE_MAX_PAGES`. */
 async function readCandidatePages<T>(
@@ -730,9 +832,11 @@ function rotatingWindow<T>(ring: T[], quota: number, now: Date): T[] {
 }
 
 /**
- * Choisit les comptes du passage. Les prioritaires (consentement aux rappels, abonnés, premium,
- * administrateurs) passent d'abord ; un quart du lot reste réservé aux autres. Dans chaque
- * groupe, la fenêtre tourne chaque jour.
+ * Choisit les comptes du passage. Les comptes qui ont consenti aux rappels d'audience sont TOUS pris,
+ * chaque jour : leur avertissement (vente retirée, date modifiée) ne doit dépendre d'aucune rotation.
+ * Ils s'ajoutent au lot de `limit` comptes tourné pour les autres : les prioritaires (abonnés,
+ * premium, administrateurs) passent d'abord, un quart du lot reste réservé aux autres, et dans
+ * chaque groupe la fenêtre tourne chaque jour.
  */
 export function selectRotatingMonitorCandidates({
   candidates,
@@ -744,12 +848,15 @@ export function selectRotatingMonitorCandidates({
   now: Date;
 }): InvestorMonitorCandidate[] {
   const byUserId = (a: MonitorCandidate, b: MonitorCandidate) => a.userId.localeCompare(b.userId);
-  const priority = candidates.filter((candidate) => candidate.priority).sort(byUserId);
-  const rest = candidates.filter((candidate) => !candidate.priority).sort(byUserId);
+  const consented = candidates.filter((candidate) => candidate.consented).sort(byUserId);
+  const others = candidates.filter((candidate) => !candidate.consented);
+  const priority = others.filter((candidate) => candidate.priority).sort(byUserId);
+  const rest = others.filter((candidate) => !candidate.priority).sort(byUserId);
   const reserve = rest.length ? Math.floor(limit * MONITOR_REST_RESERVE_RATIO) : 0;
   const priorityQuota = Math.min(priority.length, limit - reserve);
   const restQuota = Math.min(rest.length, limit - priorityQuota);
   return [
+    ...consented,
     ...rotatingWindow(priority, priorityQuota, now),
     ...rotatingWindow(rest, restQuota, now),
   ].map(({ userId, userRole }) => ({ userId, userRole }));
@@ -795,10 +902,8 @@ async function getInvestorUsers(limit: number, now: Date): Promise<InvestorMonit
     candidates.set(profile.user_id, {
       userId: profile.user_id,
       userRole,
-      priority:
-        userRole === "admin" ||
-        profile.account_tier === "premium" ||
-        consented.has(profile.user_id),
+      priority: userRole === "admin" || profile.account_tier === "premium",
+      consented: consented.has(profile.user_id),
     });
   }
   for (const subscription of subscriptions.filter((row) =>
@@ -814,19 +919,6 @@ async function getInvestorUsers(limit: number, now: Date): Promise<InvestorMonit
       });
   }
   return selectRotatingMonitorCandidates({ candidates: [...candidates.values()], limit, now });
-}
-
-export function systemAuthForInvestorUser(
-  candidate: InvestorMonitorCandidate,
-): SupabaseAuthContext {
-  return {
-    supabase: supabaseAdmin,
-    userId: candidate.userId,
-    claims: {},
-    accountTier: "premium",
-    userRole: candidate.userRole,
-    isAdmin: candidate.userRole === "admin",
-  };
 }
 
 function snapshotFromAlertMatch(row: AlertMatchWatchRow): SaleChangeSnapshot | null {
@@ -917,7 +1009,7 @@ function saleDateSeverity(value: string | null, now: Date): SaleChangeSeverity {
 
 function statusSeverity(value: string | null): SaleChangeSeverity {
   if (!value) return "important";
-  return /annul|adjud|vend|report|cancel|sold/i.test(value) ? "urgent" : "important";
+  return /annul|adjud|vend|report|cancel|sold|retir|withdraw/i.test(value) ? "urgent" : "important";
 }
 
 function snapshotFingerprint(snapshot: SaleChangeSnapshot): string {
