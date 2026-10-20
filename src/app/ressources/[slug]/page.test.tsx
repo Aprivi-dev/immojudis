@@ -107,7 +107,7 @@ describe("article page", () => {
     expect(metadata.twitter).toMatchObject({ description: metadata.description });
     // The page keeps the full description under its headline.
     const html = renderToStaticMarkup(await Page({ params }));
-    expect(html).toContain(String(description).replaceAll("’", "’"));
+    expect(html).toContain(String(description));
   });
 
   it("gives the publisher a logo and keeps the breadcrumb", async () => {
