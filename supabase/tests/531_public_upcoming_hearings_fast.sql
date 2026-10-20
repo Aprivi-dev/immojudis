@@ -30,7 +30,11 @@ values ('c531-tj', 'TJ C531 Argon', '33', 'Argon');
 --   9  : drapeau de qualité date_conflict (écartée)
 --   10 : fenêtre de vente en ligne (écartée)
 --   11 : mise en quarantaine de publication (écartée)
---   13 : minuit à Paris aujourd'hui (exportable, jour entier)
+--   13 : minuit à Paris aujourd'hui, précision « day » (exportable, jour entier). Sans précision dans
+--        raw_payload, une date à minuit est un instant passé : l'échéance du catalogue (matérialisée par
+--        sale_catalogue_expiry, 20261003130000) la fait sortir dès minuit, pour la règle d'origine comme
+--        pour la réécriture. Seule une date de jour (précision, ou date brute sans heure) reste visible
+--        toute la journée.
 --   14 : audience d'il y a trois heures (écartée : passée)
 --   15 : conflit de vérification (écartée)
 --   17 : plusieurs adresses sources (clés)
@@ -68,7 +72,7 @@ from (
     (9, 10, 10, '{}'::jsonb, '["date_conflict"]'::jsonb, '{}'::jsonb, 'pending', null, null),
     (10, 11, 10, '{}'::jsonb, '[]'::jsonb, '{"sale_window": {"opens_at": "2099-01-01T09:00:00Z", "closes_at": "2099-01-02T09:00:00Z"}}'::jsonb, 'pending', null, null),
     (11, 12, 10, '{"publication_quarantine": "c531"}'::jsonb, '[]'::jsonb, '{}'::jsonb, 'pending', null, null),
-    (13, 0, null, '{}'::jsonb, '[]'::jsonb, '{}'::jsonb, 'pending', null, null),
+    (13, 0, null, '{"date_precision": "day"}'::jsonb, '[]'::jsonb, '{}'::jsonb, 'pending', null, null),
     (14, 0, 0, '{}'::jsonb, '[]'::jsonb, '{}'::jsonb, 'pending', null, null),
     (15, 13, 10, '{}'::jsonb, '[]'::jsonb, '{}'::jsonb, 'conflict', null, null),
     (
