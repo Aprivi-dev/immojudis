@@ -7,8 +7,19 @@ import {
   notificationPreferenceUpdateSchema,
   SALE_REMINDERS_CONSENT_TEXT_VERSION,
   SALE_REMINDERS_NOT_OFFERED_MESSAGE,
+  SALE_RESULTS_CONSENT_TEXT_VERSION,
+  WEEKLY_DIGEST_CONSENT_TEXT_VERSION,
   updateNotificationPreferences,
 } from "@/lib/notification-preferences";
+
+describe("versions des textes de consentement", () => {
+  it("ont changé avec les libellés de la relecture juridique du 20/10/2026 (retrait avant la case, aucun envoi garanti)", () => {
+    // Chaque libellé a sa version : un consentement donné avant n'est pas réputé donné à ce texte.
+    expect(SALE_REMINDERS_CONSENT_TEXT_VERSION).toBe("2026-10-20.2");
+    expect(WEEKLY_DIGEST_CONSENT_TEXT_VERSION).toBe("2026-10-20.2");
+    expect(SALE_RESULTS_CONSENT_TEXT_VERSION).toBe("2026-10-20.2");
+  });
+});
 
 describe("notification preferences", () => {
   it("validates preference updates", () => {

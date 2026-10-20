@@ -9,7 +9,7 @@ import {
   type LegalPublisher,
 } from "@/lib/legal-documents";
 import { ANALYSIS_TRIAL_DAYS, resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
-import { PAST_DUE_GRACE_DAYS } from "@/lib/plans";
+import { PAST_DUE_GRACE_DAYS, PLAN_LIMITS } from "@/lib/plans";
 import { MONTHLY_SALE_UNLOCKS } from "@/lib/sale-unlocks";
 
 /** Notice given before the free-offer benefits are changed or withdrawn for the future. */
@@ -69,24 +69,24 @@ export function TermsPage() {
             <p>
               Découverte est gratuite, sans limite de durée et sans carte bancaire. Elle fournit les
               informations essentielles accessibles après création d’un compte : l’accès aux fiches
-              des ventes, trois favoris au maximum, une alerte avec un email hebdomadaire et, chaque
-              mois civil, {MONTHLY_SALE_UNLOCKS} déblocages. Un déblocage ouvre, pour une vente de
-              votre choix, les éléments suivants de l’offre Analyse lorsque cette vente les comporte
-              : l’enchère plafond chiffrée, la lecture des pièces, l’historique de la vente, les
-              statistiques du tribunal compétent pour cette vente et les pièces du dossier. Les
-              autres fonctions de l’offre Analyse, notamment l’export PDF ou CSV, les rapports
-              enregistrés, le budget travaux, l’estimation détaillée et les ventes comparables, les
-              alertes avancées et la mise en relation avec un avocat référencé, restent réservées à
-              cette offre. Le déblocage est consommé quand vous le confirmez, après affichage du
-              nombre restant ; il n’est pas consommé en cas d’erreur technique, ni si la vente est
-              déjà débloquée. Il n’est pas restitué si la vente est ensuite reportée ou adjugée, ni
-              si elle est retirée par la juridiction ou la source. Si Immojudis retire elle-même la
-              vente ou en suspend la publication pour une raison qui lui est imputable (par exemple
-              une erreur de publication ou la suspension d’une source décidée par Immojudis), le
-              déblocage est restitué sur simple demande adressée à{" "}
-              {legalValue(publisher.contactEmail)}, qui reçoit une réponse sous un mois. Le
-              déblocage restitué est rendu sur le mois du déblocage : une demande reçue après la fin
-              de ce mois ne rend pas de déblocage, car les déblocages ne sont pas reportés. Les
+              des ventes, {PLAN_LIMITS.decouverte.favoriteSales} favoris au maximum, une alerte avec
+              un email hebdomadaire et, chaque mois civil, {MONTHLY_SALE_UNLOCKS} déblocages. Un
+              déblocage ouvre, pour une vente de votre choix, les éléments suivants de l’offre
+              Analyse lorsque cette vente les comporte : l’enchère plafond chiffrée, la lecture des
+              pièces, l’historique de la vente, les statistiques du tribunal compétent pour cette
+              vente et les pièces du dossier. Les autres fonctions de l’offre Analyse, notamment
+              l’export PDF ou CSV, les rapports enregistrés, le budget travaux, l’estimation
+              détaillée et les ventes comparables, les alertes avancées et la mise en relation avec
+              un avocat référencé, restent réservées à cette offre. Le déblocage est consommé quand
+              vous le confirmez, après affichage du nombre restant ; il n’est pas consommé en cas
+              d’erreur technique, ni si la vente est déjà débloquée. Il n’est pas restitué si la
+              vente est ensuite reportée ou adjugée, ni si elle est retirée par la juridiction ou la
+              source. Si Immojudis retire elle-même la vente ou en suspend la publication pour une
+              raison qui lui est imputable (par exemple une erreur de publication ou la suspension
+              d’une source décidée par Immojudis), le déblocage est restitué sur simple demande
+              adressée à {legalValue(publisher.contactEmail)}, qui reçoit une réponse sous un mois.
+              Le déblocage restitué est rendu sur le mois du déblocage : une demande reçue après la
+              fin de ce mois ne rend pas de déblocage, car les déblocages ne sont pas reportés. Les
               déblocages non utilisés ne sont pas reportés. Le compteur est remis à{" "}
               {MONTHLY_SALE_UNLOCKS} le 1er de chaque mois à 00 h 00, heure de Paris. Une vente
               débloquée reste consultable avec ces éléments tant qu’elle est en ligne sur Immojudis,
@@ -106,7 +106,7 @@ export function TermsPage() {
               <Link to="/mes-droits" className="text-gold underline">
                 Mes droits
               </Link>
-              .
+              . Ce délai ne s’applique pas à l’offre de lancement, régie par l’article 13.
             </p>
             <p className="mt-3">
               Analyse est un abonnement aux outils d’analyse : statistiques des tribunaux et
@@ -154,10 +154,11 @@ export function TermsPage() {
           <TermsSection title="4. Prix et paiement">
             <p>
               Prix de l’abonnement Analyse : {resolveAnalysisOfferLabel()}, précédé d’un essai
-              gratuit de {ANALYSIS_TRIAL_DAYS} jours lorsque celui-ci est proposé. Le montant TTC et
-              la périodicité sont précisés dans le récapitulatif avant toute souscription. Après
-              l’essai, Stripe prélève ce montant à chaque échéance tant que l’abonnement n’est pas
-              résilié. Immojudis ne reçoit ni ne conserve le numéro complet de la carte.
+              gratuit de {ANALYSIS_TRIAL_DAYS} jours lorsque celui-ci est proposé. La souscription
+              n’est pas encore ouverte. Le montant TTC et la périodicité sont précisés dans le
+              récapitulatif avant toute souscription. Après l’essai, Stripe prélève ce montant à
+              chaque échéance tant que l’abonnement n’est pas résilié. Immojudis ne reçoit ni ne
+              conserve le numéro complet de la carte.
             </p>
             <p className="mt-3">
               En cas d’échec de paiement, Stripe retente le prélèvement. Votre accès Analyse reste
@@ -192,8 +193,8 @@ export function TermsPage() {
 
           <TermsSection title="6. Droit de rétractation">
             <p className="mb-3">
-              L’essai commercial de sept jours ne remplace pas le droit légal de rétractation.
-              Pendant l’essai gratuit, aucun montant n’est dû en cas de rétractation.
+              L’essai commercial de {ANALYSIS_TRIAL_DAYS} jours ne remplace pas le droit légal de
+              rétractation. Pendant l’essai gratuit, aucun montant n’est dû en cas de rétractation.
             </p>
             <p>
               Le consommateur dispose en principe de 14 jours à compter de la conclusion du contrat
@@ -229,7 +230,9 @@ export function TermsPage() {
               patrimonial individualisé. Le client doit vérifier les pièces officielles, faire la
               visite et solliciter les professionnels compétents avant toute enchère. Immojudis ne
               garantit ni l’exhaustivité d’une source externe, ni une adjudication, une rentabilité,
-              un financement ou un prix de revente.
+              un financement ou un prix de revente. Les rappels et avertissements sont indicatifs.
+              Ils ne dispensent pas de vérifier la date et le statut de la vente auprès de l’avocat
+              poursuivant.
             </p>
           </TermsSection>
 
@@ -302,6 +305,28 @@ export function TermsPage() {
               ) : null}
               . Les présentes conditions sont soumises au droit français, sans priver le
               consommateur des règles impératives ni de ses juridictions légalement compétentes.
+            </p>
+          </TermsSection>
+
+          <TermsSection title="13. Offre de lancement">
+            <p>
+              Pendant l’offre de lancement, tout compte gratuit dont l’adresse email est confirmée
+              bénéficie, à titre exceptionnel et sans paiement, des avantages de l’offre Analyse.
+              Ces avantages sont temporaires et prendront fin au plus tard au lancement officiel du
+              site. Nous vous prévenons par email avant leur fin ; ils peuvent toutefois être
+              retirés plus tôt, sans préavis, en cas d’abus ou d’impératif technique ou juridique.
+            </p>
+            <p className="mt-3">
+              Cet article est spécial à l’offre de lancement : il s’applique à la place du délai de
+              prévenance de {FREE_BENEFIT_NOTICE_DAYS} jours de l’article 2, qui continue de
+              s’appliquer aux déblocages mensuels de l’offre Découverte.
+            </p>
+            <p className="mt-3">
+              À la fin de l’offre, le compte revient à l’offre Découverte, sans frais, sans paiement
+              automatique et sans suppression des données. Vos données (favoris, alertes, rapports
+              enregistrés) restent conservées tant que votre compte existe et dans les durées de la
+              politique de confidentialité ; elles redeviennent accessibles avec l’offre Analyse.
+              Aucun abonnement ne commence sans confirmation dans Stripe.
             </p>
           </TermsSection>
         </div>

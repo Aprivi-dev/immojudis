@@ -55,17 +55,21 @@ const window = (overrides: { adjudicationConfirmed?: boolean; now?: Date } = {})
   });
 
 describe("surenchereLines", () => {
-  it("reprend la formulation prudente : date indicative, report possible, avocat de son choix", () => {
+  it("reprend la formulation prudente : date indicative, report possible, avocat, garantie", () => {
     const text = (surenchereLines(window()) ?? []).join(" ");
-    expect(text).toContain("date indicative : le 13 novembre 2026");
+    expect(text).toContain("date indicative : le 13 novembre 2026. Si ce jour tombe");
     expect(text).toContain(
-      "ou le premier jour ouvrable suivant si ce jour tombe un samedi, un dimanche ou un jour férié",
+      "Si ce jour tombe un samedi, un dimanche ou un jour férié, le délai peut être prolongé jusqu’au premier jour ouvrable suivant ; ne comptez pas dessus sans l’avis d’un avocat.",
     );
     expect(text).toContain(
       "calculée à partir de la date d’audience connue d’Immojudis, qui peut avoir changé",
     );
-    expect(text).toContain("par acte d’avocat");
-    expect(text).toContain("avec un avocat de votre choix");
+    expect(text).toContain(
+      "par acte d’avocat déposé au greffe du juge de l’exécution, avec une garantie d’un dixième du prix principal (chèque de banque ou caution bancaire irrévocable, art. R. 322-51 du CPCE)",
+    );
+    expect(text).toContain(
+      "de préférence inscrit au barreau du tribunal concerné ; le choix vous appartient (l’annuaire d’Immojudis signale les profils mis en avant contre rémunération)",
+    );
     expect(text).not.toContain("Le résultat n’est pas connu");
   });
 
@@ -89,7 +93,7 @@ describe("surenchereLines", () => {
     }
     const expired = (surenchereLines(window({ now: later })) ?? []).join(" ");
     expect(expired).toContain(
-      "Cette date indicative est passée : si vous êtes concerné, consultez sans attendre un avocat.",
+      "Cette date indicative est passée : le délai a pu expirer, ou être prolongé. Si vous êtes concerné, consultez sans attendre un avocat, seul à pouvoir le confirmer.",
     );
   });
 
@@ -117,11 +121,13 @@ describe("surenchereLines", () => {
       .replace(/\s+/g, " ")
       .replace(/\{" "\}/g, " ");
     for (const phrase of [
-      "ou le premier jour ouvrable suivant si ce jour tombe un samedi, un dimanche ou un jour férié",
+      "Si ce jour tombe un samedi, un dimanche ou un jour férié, le délai peut être prolongé jusqu’au premier jour ouvrable suivant ; ne comptez pas dessus sans l’avis d’un avocat.",
       "Elle est calculée à partir de la date d’audience connue d’Immojudis, qui peut avoir changé.",
-      "Cette date indicative est passée : si vous êtes concerné, consultez sans attendre un avocat.",
+      "Cette date indicative est passée : le délai a pu expirer, ou être prolongé. Si vous êtes concerné, consultez sans attendre un avocat, seul à pouvoir le confirmer.",
       "la surenchère n’existe que si le bien a été adjugé",
-      "avec un avocat de votre choix",
+      "La surenchère se forme par acte d’avocat déposé au greffe du juge de l’exécution, avec une garantie d’un dixième du prix principal (chèque de banque ou caution bancaire irrévocable, art. R. 322-51 du CPCE).",
+      "Faites confirmer la date et les conditions par un avocat, de préférence inscrit au barreau du tribunal concerné ; le choix vous appartient (",
+      "signale les profils mis en avant contre rémunération).",
     ]) {
       expect(screen, phrase).toContain(phrase);
     }
@@ -134,9 +140,13 @@ describe("email de l'alerte de résultat", () => {
       (kind) => item(kind, { surenchere: window() }),
     );
     const message = build(items);
-    expect(`${message.subject}\n${message.text}\n${message.html}`).not.toMatch(
-      /€|euros?\b|prix|mise à prix|adjugé à/i,
+    // Seule exception : la garantie de la surenchère est dite « un dixième du prix principal » (texte
+    // de la relecture juridique), sans aucun montant ; tout autre « prix » reste interdit.
+    const content = `${message.subject}\n${message.text}\n${message.html}`.replaceAll(
+      "d’un dixième du prix principal",
+      "",
     );
+    expect(content).not.toMatch(/€|euros?\b|prix|mise à prix|adjugé à/i);
   });
 
   it("n'emploie aucun libellé « non adjugée »", () => {
@@ -160,7 +170,7 @@ describe("email de l'alerte de résultat", () => {
       "La vente que vous suivez a eu lieu : un résultat est connu — Maison à Bordeaux (Tribunal judiciaire de Bordeaux)",
     );
     expect(message.text).toContain("Surenchère, date indicative : le 13 novembre 2026");
-    expect(message.html).toContain("avocat de votre choix");
+    expect(message.html).toContain("le choix vous appartient");
     expect(message.text).toContain("Voir mes favoris : https://immojudis.com/favoris");
     expect(message.html).toContain(">Voir mes favoris</a>");
     expect(message.text).toContain("auprès de l’avocat poursuivant");

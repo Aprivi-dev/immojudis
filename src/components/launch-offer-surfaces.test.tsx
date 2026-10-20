@@ -222,7 +222,13 @@ describe("page Mon compte", () => {
     expect(text).toContain("le rapport PDF");
     expect(text).toContain("ventes comparables");
     expect(text).toContain("les exports");
-    expect(text).toContain("vos données ne sont pas supprimées");
+    expect(text).toContain(
+      "Ces avantages sont temporaires et prendront fin au plus tard au lancement officiel du site",
+    );
+    expect(text).toContain("Nous vous prévenons par email avant leur fin");
+    expect(text).toContain(
+      "Vos données (favoris, alertes, rapports enregistrés) restent conservées tant que votre compte existe et dans les durées de la politique de confidentialité. Elles redeviennent accessibles avec l’offre Analyse.",
+    );
     // Ni compte à rebours, ni date, ni incitation à s'abonner.
     expect(text).not.toMatch(/\d{4}|jours?|dernier|vite|profitez|abonnez/i);
     expect(block.querySelector("a, button")).toBeNull();

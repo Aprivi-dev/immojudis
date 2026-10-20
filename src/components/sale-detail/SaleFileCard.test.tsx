@@ -384,7 +384,11 @@ describe("SaleFileCard (Mon dossier)", () => {
 
       const checkbox = (await screen.findByRole("checkbox")) as HTMLInputElement;
       expect(checkbox.checked).toBe(false);
-      expect(screen.getByText("Me rappeler l’audience (7 jours avant et la veille)")).toBeTruthy();
+      expect(
+        screen.getByText(
+          "Me prévenir par email : rappel 7 jours avant puis la veille de l’audience, et si la date change ou si la vente est retirée, reportée, annulée ou adjugée",
+        ),
+      ).toBeTruthy();
 
       fireEvent.click(checkbox);
       await waitFor(() =>

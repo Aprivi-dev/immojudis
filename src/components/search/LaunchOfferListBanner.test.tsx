@@ -25,7 +25,8 @@ describe("bannière de l'offre de lancement au-dessus de la liste", () => {
     expect(banner.tagName).toBe("DETAILS");
     expect(banner.hasAttribute("open")).toBe(false);
     expect(banner.textContent).toContain(LAUNCH_OFFER_VISITOR_TEXT);
-    expect(banner.textContent).toContain("retirables sans préavis");
+    expect(banner.textContent).toContain("les avantages Analyse, temporaires");
+    expect(banner.textContent).not.toContain("retirables sans préavis");
     expect(screen.getByRole("link", { name: "Voir les offres" }).getAttribute("href")).toBe(
       "/offres",
     );
