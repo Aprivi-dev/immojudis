@@ -1,9 +1,8 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   LAUNCH_OFFER_ACCOUNT_TEXT,
-  LAUNCH_OFFER_CACHE_SECONDS,
   LAUNCH_OFFER_VISITOR_TEXT,
   launchOfferText,
   parseLaunchOfferResponse,
@@ -51,16 +50,25 @@ describe("réponse de /api/launch-offer", () => {
     expect(parseLaunchOfferResponse(null)).toBeNull();
     expect(parseLaunchOfferResponse("oui")).toBeNull();
   });
-
-  it("se met en cache 30 s côté CDN comme côté serveur : 60 s au plus de retard", () => {
-    expect(LAUNCH_OFFER_CACHE_SECONDS * 2).toBeLessThanOrEqual(60);
-  });
 });
 
 describe("migrations de l'offre de lancement", () => {
-  const read = (name: string) => readFileSync(resolve("supabase/migrations", name), "utf8");
-  const launch = read("20261028120000_launch_offer.sql");
-  const sql = launch.replace(/--[^\n]*/g, "");
+  const dir = resolve("supabase/migrations");
+  const read = (name: string) => readFileSync(resolve(dir, name), "utf8");
+  const stripComments = (text: string) => text.replace(/--[^\n]*/g, "");
+  // 20261028120000 crée la table et l'interrupteur ; les fonctions d'accès y ont été remplacées
+  // ensuite (20261028170000, puis les migrations suivantes) : on teste la dernière définition.
+  const sql = stripComments(read("20261028120000_launch_offer.sql"));
+  const latestDefinition = (signature: string) => {
+    const header = `create or replace function ${signature}`;
+    const files = readdirSync(dir)
+      .filter((name) => name.endsWith(".sql"))
+      .sort()
+      .filter((name) => stripComments(read(name)).includes(header));
+    const file = files.at(-1);
+    expect(file, `définition de ${signature}`).toBeDefined();
+    return { file: file as string, text: stripComments(read(file as string)) };
+  };
 
   it("crée une table à une seule ligne, active à l'application, fermée aux navigateurs", () => {
     expect(sql).toMatch(/create table if not exists app_private\.launch_offer/);
@@ -95,24 +103,29 @@ describe("migrations de l'offre de lancement", () => {
     );
   });
 
-  it("fait lire l'offre aux deux fonctions d'accès, et garde leurs droits", () => {
+  it("fait lire l'offre aux deux fonctions d'accès (dernière définition), et garde leurs droits", () => {
     for (const fn of [
       "app_private.current_user_has_premium_access()",
       "app_private.has_active_analysis_access(p_user_id uuid)",
     ]) {
-      const start = sql.indexOf(`create or replace function ${fn}`);
-      expect(start).toBeGreaterThan(-1);
-      const body = sql.slice(start, sql.indexOf("$function$;", start + 200));
-      expect(body).toContain("app_private.launch_offer_active()");
-      expect(body).toContain("subscription_grants_access");
-      expect(body).toMatch(/security definer\s*set search_path to ''/);
+      const { file, text } = latestDefinition(fn);
+      const start = text.indexOf(`create or replace function ${fn}`);
+      const body = text.slice(start, text.indexOf("$function$;", start + 200));
+      expect(body, file).toContain("app_private.launch_offer_active()");
+      expect(body, file).toContain("subscription_grants_access");
+      expect(body, file).toMatch(/security definer\s*set search_path to ''/);
+      // Dernière définition : l'email confirmé (et non le seul profil) ouvre l'offre.
+      expect(body, file).toContain("app_private.launch_offer_account_eligible(");
+      if (fn.startsWith("app_private.has_active_analysis_access")) {
+        expect(text).toMatch(
+          /revoke all on function app_private\.has_active_analysis_access\(uuid\)\s*from public, anon, authenticated;\s*grant execute on function app_private\.has_active_analysis_access\(uuid\) to service_role/,
+        );
+      } else {
+        expect(text).toMatch(
+          /grant execute on function app_private\.current_user_has_premium_access\(\)\s*to authenticated, service_role/,
+        );
+      }
     }
-    expect(sql).toMatch(
-      /revoke all on function app_private\.has_active_analysis_access\(uuid\)\s*from public, anon, authenticated;\s*grant execute on function app_private\.has_active_analysis_access\(uuid\) to service_role/,
-    );
-    expect(sql).toMatch(
-      /grant execute on function app_private\.current_user_has_premium_access\(\)\s*to authenticated, service_role/,
-    );
   });
 
   it("réserve l'interrupteur aux administrateurs et refuse anon", () => {

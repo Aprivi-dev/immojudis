@@ -6,6 +6,8 @@ import {
 import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
 import { getOutcomeGraphForecastForSale } from "@/lib/outcome-graph-repository";
 import { assertFeatureEntitlement } from "@/lib/property-reports";
+import { enforceUserRateLimit } from "@/lib/rate-limit";
+import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 
 const paramsSchema = z.object({ id: z.string().uuid() });
@@ -14,6 +16,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const context = createApiRequestContext(request, "outcome-graph.forecast");
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
+    await enforceUserRateLimit({
+      userId: auth.userId,
+      bucketKey: "v1.sale-outcome-graph",
+      ...RATE_LIMIT_POLICIES.compute,
+    });
     await assertFeatureEntitlement(
       auth,
       "property.outcomeGraph",

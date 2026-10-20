@@ -297,6 +297,7 @@ export async function savePropertyReport({
     request,
     userId: auth.userId,
     operation: "propertyReportCreate",
+    launchOffer: plan.launchOffer === true,
   });
   const existingReportId = await getExistingReportId(
     auth.supabase,
@@ -479,6 +480,7 @@ export async function exportPropertyReportPdf({
     request,
     userId: auth.userId,
     operation: "propertyReportPdf",
+    launchOffer: plan.launchOffer === true,
   });
   await assertPdfExportAvailable(auth, plan);
   const report = await getReport(auth.supabase, auth.userId, reportId);
@@ -755,7 +757,8 @@ export async function resolvePlanEntitlements(
     plan === "decouverte" &&
     auth.hasProfile !== false &&
     (await isLaunchOfferActive()) &&
-    // Adresse email confirmée exigée, comme `app_private.launch_offer_account_eligible` côté base.
+    // Éligibilité lue dans la base (`app_private.launch_offer_account_eligible`) : email confirmé,
+    // non jetable, plus ancien compte confirmé de son adresse canonique.
     (await hasConfirmedEmail(auth.userId))
   ) {
     return buildPlanEntitlements(
