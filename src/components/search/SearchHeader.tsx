@@ -456,13 +456,13 @@ export function SortDropdown({
   onChange: (sort: SearchSortKey) => void;
 }) {
   return (
-    <label className="relative inline-flex min-h-11 shrink-0 items-center rounded-md border border-line bg-white shadow-sm">
-      <ArrowUpDown className="ml-3 h-4 w-4 text-ink-soft" />
+    <label className="relative inline-flex min-h-11 min-w-0 max-w-full items-center rounded-md border border-line bg-white shadow-sm">
+      <ArrowUpDown className="ml-3 h-4 w-4 shrink-0 text-ink-soft" />
       <span className="sr-only">Tri</span>
       <select
         value={sort}
         onChange={(event) => onChange(event.target.value as SearchSortKey)}
-        className="h-full cursor-pointer appearance-none bg-transparent py-0 pl-2 pr-9 text-sm font-bold text-brand-navy outline-none"
+        className="h-full w-full min-w-0 cursor-pointer appearance-none text-ellipsis bg-transparent py-0 pl-2 pr-9 text-sm font-bold text-brand-navy outline-none"
       >
         {SORT_OPTIONS.filter(
           (option) =>

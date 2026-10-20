@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
+import { mapPreviewRows, type PreviewSearchRow } from "@/lib/search/preview-search";
 
 const PUBLIC_ROUTES = [
   "/",
@@ -39,6 +40,60 @@ for (const route of PUBLIC_ROUTES) {
     }
   });
 }
+
+/** Une vente du catalogue public, au format de la route `/api/catalogue/preview`. */
+function previewRow(id: string, city: string, price: number, surface: number) {
+  return {
+    id,
+    starting_price_eur: price,
+    sale_venue_type: "tribunal",
+    sale_verification_status: "verified",
+    city,
+    department: "69",
+    property_type: "apartment",
+    sale_date: "2036-12-12T09:00:00.000Z",
+    app_surface_m2: surface,
+    app_surface_kind: "habitable",
+    rooms_count: 3,
+    bedrooms_count: 2,
+    bathrooms_count: 1,
+    latitude: 45.76,
+    longitude: 4.83,
+    thumbnail_url: null,
+    total_count: 2,
+  };
+}
+
+test("/sales avec des résultats : cartes, pagination et tri sans violation Axe sérieuse", async ({
+  page,
+}, testInfo) => {
+  const rows = [
+    previewRow("77000000-0000-4000-8000-0000000000b1", "Lyon", 60_000, 40),
+    previewRow("77000000-0000-4000-8000-0000000000b2", "Villeurbanne", 96_000, 60),
+  ];
+  await page.route("**/api/catalogue/preview*", (route) =>
+    route.fulfill({
+      status: 200,
+      json: { items: mapPreviewRows(rows as PreviewSearchRow[]), count: rows.length, mirrors: [] },
+    }),
+  );
+  await page.route("https://ci.supabase.co/**", (route) =>
+    route.fulfill({ status: 200, json: [] }),
+  );
+
+  await page.goto("/sales?city=Lyon");
+  await expect(page.locator("h1:visible").first()).toBeVisible();
+  await expect(page.getByText("Lyon", { exact: false }).first()).toBeVisible();
+
+  if (testInfo.project.name.includes("chromium")) {
+    const results = await new AxeBuilder({ page }).analyze();
+    expect(
+      results.violations.filter((violation) =>
+        ["critical", "serious"].includes(violation.impact ?? ""),
+      ),
+    ).toEqual([]);
+  }
+});
 
 test("la navigation mobile s’ouvre, reçoit le focus et se referme", async ({ page }, testInfo) => {
   test.skip(!testInfo.project.name.startsWith("mobile-"), "Contrôle réservé aux profils mobiles");
