@@ -38,6 +38,11 @@ interface ResourceContent {
   seoTitle?: string;
   category: string;
   description: string;
+  /**
+   * Meta description and share description when `description` is too long for a search result
+   * (158 characters at most). The page keeps `description` under its headline.
+   */
+  seoDescription?: string;
   intro: string[];
   takeaways: string[];
   sections: ResourceSection[];
@@ -133,6 +138,16 @@ export function resourceDocumentTitle(
   article: Pick<ResourceArticle, "title" | "seoTitle">,
 ): string {
   return article.seoTitle?.trim() || article.title;
+}
+
+/** Longest `seoDescription`: what a search result shows of a meta description. */
+export const RESOURCE_SEO_DESCRIPTION_MAX_LENGTH = 158;
+
+/** Meta description and share description: `seoDescription` when set, `description` otherwise. */
+export function resourceDocumentDescription(
+  article: Pick<ResourceArticle, "description" | "seoDescription">,
+): string {
+  return article.seoDescription?.trim() || article.description;
 }
 
 /** Last modification date of an article: `updatedAt`, or the publication date. */

@@ -1,10 +1,14 @@
 export default function SaleLoading() {
   return (
     <main id="contenu" className="min-h-screen bg-white px-4 py-8 sm:px-6" aria-busy="true">
-      {/* Texte provisoire : ni lu comme contenu, ni repris comme extrait par les moteurs. */}
-      <p className="sr-only" aria-hidden="true" data-nosnippet>
+      {/*
+        Texte provisoire : ni lu comme contenu (aria-hidden), ni repris comme extrait par les
+        moteurs. `data-nosnippet` n'est reconnu que sur span, div et section : sur un <p> il était
+        ignoré et « Chargement de l'annonce… » pouvait devenir l'extrait de la fiche.
+      */}
+      <span className="sr-only" aria-hidden="true" data-nosnippet>
         Chargement de l’annonce…
-      </p>
+      </span>
       <div className="mx-auto max-w-7xl" aria-hidden="true">
         <div className="h-4 w-20 animate-pulse rounded-md bg-muted" />
         <div className="mt-4 h-8 w-2/3 animate-pulse rounded-md bg-muted" />

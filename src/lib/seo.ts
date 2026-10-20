@@ -375,18 +375,17 @@ function thumbnail(sale: SaleFacts): string | null {
  * JSON-LD for a public sale page. Absolute URLs; only facts the page shows.
  * - The starting price is described as a price specification named "Mise à prix":
  *   it is the auction's opening bid, not an asking price.
- * - Availability becomes SoldOut once the hearing is over.
+ * - No `availability`: nothing verifies that a sale is sold out after its hearing (it may be
+ *   postponed or unsold), and a limited availability does not describe an auction.
  * - The hearing is a separate Event, emitted only when its date and venue are known.
  */
 export function saleStructuredData(
   sale: SaleFacts,
-  { origin, now = new Date() }: StructuredDataContext,
+  { origin }: StructuredDataContext,
 ): Record<string, unknown> {
   const url = `${origin}/sales/${encodeURIComponent(sale.id)}`;
   const image = thumbnail(sale);
   const type = venueType(sale);
-  const hearing = parseDate(sale.sale_date);
-  const hearingOver = hearing != null && hearing.getTime() < now.getTime();
   const city = cleanText(sale.city);
   const headline = saleHeadline(sale);
   const description = saleSeoDescription(sale);
@@ -429,9 +428,9 @@ export function saleStructuredData(
               price: sale.starting_price_eur,
               priceCurrency: "EUR",
             },
-            availability: hearingOver
-              ? "https://schema.org/SoldOut"
-              : "https://schema.org/LimitedAvailability",
+            // Pas d'`availability` : « SoldOut » après l'audience serait une affirmation que rien
+            // ne vérifie (le bien peut être reporté, ou resté sans adjudicataire), et
+            // « LimitedAvailability » ne décrit pas une vente aux enchères.
           },
         }
       : {}),
