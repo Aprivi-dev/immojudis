@@ -39,6 +39,8 @@ export type EmailAlertDeliveryOutcome = {
 
 export type EmailAlertDispatchSummary = {
   configured: boolean;
+  /** Variables d'environnement manquantes quand l'envoi n'est pas configuré (vide sinon). */
+  missing: string[];
   candidateCount: number;
   sentCount: number;
   failedCount: number;
@@ -148,6 +150,7 @@ export async function dispatchQueuedEmailAlertNotifications({
   if (!config.configured || !config.apiKey || !config.from || !config.appUrl) {
     return {
       configured: false,
+      missing: config.missing,
       candidateCount: notifications.length,
       sentCount: 0,
       failedCount: 0,
@@ -185,6 +188,7 @@ export async function dispatchQueuedEmailAlertNotifications({
 
   return {
     configured: true,
+    missing: [],
     candidateCount: notifications.length,
     sentCount: outcomes.filter((outcome) => outcome.status === "sent").length,
     failedCount: outcomes.filter((outcome) => outcome.status === "failed").length,

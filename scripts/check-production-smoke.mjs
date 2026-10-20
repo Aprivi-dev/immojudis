@@ -9,6 +9,25 @@ const DEFAULT_MIN_SALE_URLS = 100;
 // Sales tried, in the order of the sitemap, before concluding that the listed sales do not answer.
 const SALE_CANDIDATES = 3;
 
+// Independent supervision (src/app/api/health/route.ts). The endpoint turns degraded after 45 minutes
+// without a successful `operational-health` run; the smoke test, which runs every 30 minutes, only
+// fails beyond 60 minutes, so that one late 15-minute tick of the scheduler wakes nobody. Any other
+// degradation (a collection older than 18 hours, no answer from the database) fails at once.
+const HEALTH_PATH = "/api/health";
+const HEALTH_SMOKE_MAX_AGE_MINUTES = 60;
+
+// Court pages (src/app/tribunaux/[slug]/page.tsx). Addresses are the court code lower-cased
+// (`justice_tj_1_93`, the Bobigny court, gives `justice-tj-1-93`); the old address is the court name.
+const TRIBUNAL_PREFIX = "/tribunaux/";
+const TRIBUNAL_CODE_PREFIX = `${TRIBUNAL_PREFIX}justice-tj-`;
+const DEFAULT_TRIBUNAL_PATH = `${TRIBUNAL_PREFIX}justice-tj-1-93`;
+const LEGACY_TRIBUNAL_PATH = `${TRIBUNAL_PREFIX}bobigny`;
+const UNKNOWN_TRIBUNAL_PATH = `${TRIBUNAL_PREFIX}tribunal-inexistant-test-de-fumee`;
+// Pages of courts listed in the pages sitemap (those with at least three upcoming sales).
+const DEFAULT_MIN_TRIBUNAL_URLS = 10;
+// Said by the page when the hearings cannot be read (src/app/audiences-a-venir/hearings-view.tsx).
+const HEARINGS_UNAVAILABLE_TEXT = "momentanément indisponibles";
+
 // Request headers on which Next.js varies every App Router response (RSC payload, prefetch, router
 // state). The CDN keys them itself (and Next.js adds `_rsc` to those requests): a plain page load
 // sends none of them, so they do not split the cache of /sales between visitors.
@@ -43,6 +62,10 @@ const checks = [
   // A sale that does not exist must answer a real 404, not a 200 page that says "not found"
   // (a soft 404 that search engines index).
   { path: UNKNOWN_SALE_PATH, kind: "html", expectedStatus: 404 },
+  // The hearings page answers 200 even when its data cannot be read: it then says so in the page.
+  { path: "/audiences-a-venir", kind: "html", forbiddenText: HEARINGS_UNAVAILABLE_TEXT },
+  // A court that does not exist must answer a real 404 as well.
+  { path: UNKNOWN_TRIBUNAL_PATH, kind: "html", expectedStatus: 404 },
 ];
 
 /**
@@ -60,6 +83,8 @@ export async function checkProductionSmoke({
   indexing = expectedIndexingState(process.env.SEO_INDEXING_ENABLED),
   minPageUrls = DEFAULT_MIN_PAGE_URLS,
   minSaleUrls = DEFAULT_MIN_SALE_URLS,
+  minTribunalUrls = DEFAULT_MIN_TRIBUNAL_URLS,
+  tribunalPath = DEFAULT_TRIBUNAL_PATH,
 } = {}) {
   if (indexing !== "open" && indexing !== "closed") {
     throw new Error(`État d'indexation attendu invalide : ${indexing} (open ou closed).`);
@@ -75,6 +100,12 @@ export async function checkProductionSmoke({
       }),
     ),
   );
+  const healthResult = await runHealthCheck({ origin: normalizedOrigin, fetchImpl });
+  const tribunalResults = await runTribunalChecks({
+    origin: normalizedOrigin,
+    fetchImpl,
+    tribunalPath,
+  });
   const catalogueResults = await runCatalogueChecks({ origin: normalizedOrigin, fetchImpl });
   const seoResults = await runSeoChecks({
     origin: normalizedOrigin,
@@ -82,6 +113,7 @@ export async function checkProductionSmoke({
     indexing,
     minPageUrls,
     minSaleUrls,
+    minTribunalUrls,
   });
 
   return {
@@ -90,7 +122,7 @@ export async function checkProductionSmoke({
     indexing,
     checkedAt: new Date().toISOString(),
     durationMs: Date.now() - startedAt,
-    checks: [...results, ...catalogueResults, ...seoResults],
+    checks: [healthResult, ...results, ...tribunalResults, ...catalogueResults, ...seoResults],
   };
 }
 
@@ -172,6 +204,9 @@ async function runCheck({ check, origin, fetchImpl }) {
     if (check.robotsMeta === "noindex" && !/noindex/i.test(robotsMetaOf(body) ?? "")) {
       throw new Error(`${check.path}: balise robots noindex absente.`);
     }
+    if (check.forbiddenText && body.toLowerCase().includes(check.forbiddenText.toLowerCase())) {
+      throw new Error(`${check.path}: la page dit « ${check.forbiddenText} ».`);
+    }
   }
 
   return {
@@ -180,6 +215,111 @@ async function runCheck({ check, origin, fetchImpl }) {
     requestId: responseRequestId,
     durationMs: Date.now() - startedAt,
   };
+}
+
+/**
+ * Independent supervision: `/api/health` must be `ok` (200). The only degradation tolerated is a
+ * `operational-health` run older than 45 minutes but not older than 60 (HEALTH_SMOKE_MAX_AGE_MINUTES),
+ * with a collection that is still fresh. The page only carries ages and thresholds, nothing sensitive.
+ */
+async function runHealthCheck({ origin, fetchImpl }) {
+  const requestId = `smoke-${randomUUID()}`;
+  const startedAt = Date.now();
+  const response = await fetchImpl(new URL(HEALTH_PATH, origin), {
+    headers: {
+      accept: "application/json",
+      "user-agent": "immojudis-production-smoke/1.0",
+      "x-request-id": requestId,
+    },
+    redirect: "follow",
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  });
+  if (response.status !== 200 && response.status !== 503) {
+    await response.body?.cancel?.();
+    throw new Error(`${HEALTH_PATH}: statut HTTP ${response.status} au lieu de 200.`);
+  }
+  if (!(response.headers.get("content-type") ?? "").includes("application/json")) {
+    throw new Error(`${HEALTH_PATH}: réponse JSON attendue.`);
+  }
+  if (!/no-store/i.test(response.headers.get("cache-control") ?? "")) {
+    throw new Error(`${HEALTH_PATH}: cache-control no-store absent.`);
+  }
+  if (response.headers.get("x-request-id") !== requestId) {
+    throw new Error(`${HEALTH_PATH}: la corrélation x-request-id n'est pas préservée.`);
+  }
+  const body = await response.json();
+  if (!body || (body.status !== "ok" && body.status !== "degraded")) {
+    throw new Error(`${HEALTH_PATH}: contrat de la réponse invalide.`);
+  }
+  if (body.status === "ok" && response.status === 200) {
+    return { path: HEALTH_PATH, status: 200, health: "ok", durationMs: Date.now() - startedAt };
+  }
+
+  const age = body.operationalHealth?.ageMinutes;
+  const lateTickOnly =
+    typeof age === "number" &&
+    age <= HEALTH_SMOKE_MAX_AGE_MINUTES &&
+    body.collection?.ok === true &&
+    response.status === 503;
+  if (!lateTickOnly) {
+    throw new Error(
+      `${HEALTH_PATH}: état dégradé (operational-health : ${age ?? "aucun succès"} min, collecte : ${body.collection?.ageHours ?? "aucune"} h).`,
+    );
+  }
+  return {
+    path: HEALTH_PATH,
+    status: response.status,
+    health: "degraded-tolerated",
+    operationalHealthAgeMinutes: age,
+    durationMs: Date.now() - startedAt,
+  };
+}
+
+/**
+ * Court pages: a known court answers 200, and its old name-based address answers one single 308 to
+ * the code-based address (which then answers 200 at once, no second hop). The 404 of an unknown
+ * court is part of `checks`.
+ */
+async function runTribunalChecks({ origin, fetchImpl, tribunalPath }) {
+  const results = [];
+  results.push(await runCheck({ check: { path: tribunalPath, kind: "html" }, origin, fetchImpl }));
+
+  const first = await fetchCatalogue(LEGACY_TRIBUNAL_PATH, {
+    origin,
+    fetchImpl,
+    redirect: "manual",
+  });
+  await first.response.body?.cancel?.();
+  if (first.response.status !== 308) {
+    throw new Error(
+      `${LEGACY_TRIBUNAL_PATH}: statut HTTP ${first.response.status} au lieu de 308 (redirection permanente).`,
+    );
+  }
+  const location = first.response.headers.get("location");
+  const target = location ? new URL(location, origin) : null;
+  if (!target || target.origin !== origin || !target.pathname.startsWith(TRIBUNAL_CODE_PREFIX)) {
+    throw new Error(
+      `${LEGACY_TRIBUNAL_PATH}: redirigée vers « ${location ?? "aucune adresse"} » au lieu d'une adresse ${TRIBUNAL_CODE_PREFIX}…`,
+    );
+  }
+  const second = await fetchCatalogue(`${target.pathname}${target.search}`, {
+    origin,
+    fetchImpl,
+    redirect: "manual",
+  });
+  await second.response.body?.cancel?.();
+  if (second.response.status !== 200) {
+    throw new Error(
+      `${LEGACY_TRIBUNAL_PATH}: la redirection mène à ${target.pathname} qui répond ${second.response.status} au lieu de 200 (un seul saut attendu).`,
+    );
+  }
+  results.push({
+    path: LEGACY_TRIBUNAL_PATH,
+    status: 308,
+    location: target.pathname,
+    durationMs: Date.now() - first.startedAt,
+  });
+  return results;
 }
 
 /** `href` of the canonical link of an HTML document, or null. */
@@ -387,7 +527,14 @@ function jsonLdBlocks(body) {
  * Search-engine checks: robots.txt, the sitemaps, a real sale taken from the sitemap. What is
  * checked depends on the expected indexing state (SEO_INDEXING_ENABLED of the deployed site).
  */
-async function runSeoChecks({ origin, fetchImpl, indexing, minPageUrls, minSaleUrls }) {
+async function runSeoChecks({
+  origin,
+  fetchImpl,
+  indexing,
+  minPageUrls,
+  minSaleUrls,
+  minTribunalUrls,
+}) {
   const results = [];
   const robots = await fetchText("/robots.txt", { origin, fetchImpl });
   const sitemapLines = robots.body.match(/^\s*sitemap:\s*\S+/gim) ?? [];
@@ -424,10 +571,24 @@ async function runSeoChecks({ origin, fetchImpl, indexing, minPageUrls, minSaleU
   if (pageUrls.length < minPageUrls) {
     throw new Error(`/sitemap.xml: ${pageUrls.length} URL au lieu d'au moins ${minPageUrls}.`);
   }
+  // The pages of the courts that have upcoming sales are listed there (src/app/sitemap.ts).
+  const tribunalUrls = pageUrls.filter((url) => {
+    try {
+      return new URL(url).pathname.startsWith(TRIBUNAL_CODE_PREFIX);
+    } catch {
+      return false;
+    }
+  });
+  if (tribunalUrls.length < minTribunalUrls) {
+    throw new Error(
+      `/sitemap.xml: ${tribunalUrls.length} page(s) ${TRIBUNAL_CODE_PREFIX}… au lieu d'au moins ${minTribunalUrls}.`,
+    );
+  }
   results.push({
     path: "/sitemap.xml",
     status: 200,
     urls: pageUrls.length,
+    tribunalUrls: tribunalUrls.length,
     durationMs: pages.durationMs,
   });
 
@@ -562,12 +723,14 @@ if (import.meta.url === new URL(process.argv[1], "file:").href) {
   // (exactly "true" = open; absent or anything else = closed, like the site itself).
   const indexing = option("--indexing") ?? expectedIndexingState(process.env.SEO_INDEXING_ENABLED);
   const minSaleUrls = Number(option("--min-sale-urls") ?? DEFAULT_MIN_SALE_URLS);
+  const minTribunalUrls = Number(option("--min-tribunal-urls") ?? DEFAULT_MIN_TRIBUNAL_URLS);
 
   try {
     const report = await checkProductionSmoke({
       origin: origin || DEFAULT_ORIGIN,
       indexing,
       minSaleUrls,
+      minTribunalUrls,
     });
     console.info(JSON.stringify(report));
   } catch (error) {

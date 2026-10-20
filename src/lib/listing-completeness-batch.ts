@@ -31,6 +31,8 @@ const MAX_ONLINE_SALES = 20_000;
 /** Lignes complètes lues par requête (une ligne pèse plusieurs dizaines de ko). */
 const READ_CHUNK_SIZE = 25;
 const MAX_REPORTED_ERRORS = 5;
+/** Part d'évaluations tentées en échec à partir de laquelle la passe est déclarée en échec. */
+export const COMPLETENESS_FAILURE_RATE_THRESHOLD = 0.2;
 /**
  * Une évaluation plus ancienne est refaite: la fiche lit aussi des tables liées (documents,
  * présence des sources…) dont un changement ne modifie pas `auction_sales.updated_at`.
@@ -265,6 +267,15 @@ export async function runListingCompletenessBatch({
   // Aucune évaluation alors qu'il y en avait à faire : la tâche est en panne, on la signale.
   if (result.evaluated === 0 && result.failed > 0) {
     throw new Error(`Évaluation de complétude impossible : ${result.errors.join(" ; ")}`);
+  }
+  // Un échec partiel n'est pas un succès quand il cesse d'être isolé : 20 % ou plus des évaluations
+  // tentées en échec. Les lignes évaluées sont enregistrées ; la passe suivante (toutes les heures)
+  // reprend le reste.
+  const attempted = result.evaluated + result.failed;
+  if (result.failed > 0 && result.failed / attempted >= COMPLETENESS_FAILURE_RATE_THRESHOLD) {
+    throw new Error(
+      `Évaluation de complétude partielle : ${result.failed} échec(s) sur ${attempted} évaluation(s) tentée(s) (seuil ${COMPLETENESS_FAILURE_RATE_THRESHOLD * 100} %) : ${result.errors.join(" ; ")}`,
+    );
   }
   return result;
 }

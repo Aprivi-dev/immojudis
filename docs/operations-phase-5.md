@@ -26,13 +26,21 @@ réponses de l'agent utilise un autre job Supabase toutes les deux minutes. Les 
 La fonction `public.evaluate_operational_health` est exécutable uniquement par `service_role` et
 maintient des alertes dédupliquées dans `public.operational_alerts`.
 
-| Clé                         | Condition                                                                                                     |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `cron.stale`                | aucun succès récent pour un cron attendu                                                                      |
-| `stripe.webhook.unhealthy`  | webhook échoué depuis moins d'une heure ou bloqué plus de 15 min                                              |
-| `pipeline.import.unhealthy` | import échoué, actif depuis plus de 3 h ou file âgée de plus de 30 min                                        |
-| `refresh_queue.stale`       | requête de rafraîchissement en attente depuis plus de 30 min                                                  |
-| `dvf.freshness`             | données absentes, import DVF bloqué, vieux de plus de 220 j ou échec plus récent que le dernier import réussi |
+| Clé                              | Condition                                                                                                                               |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `cron.stale`                     | aucun succès récent pour un cron attendu                                                                                                |
+| `stripe.webhook.unhealthy`       | webhook échoué depuis moins d'une heure ou bloqué plus de 15 min                                                                        |
+| `pipeline.import.unhealthy`      | 3 imports échoués dans l'heure (ou 1 avec une file qui attend), import actif depuis plus de 3 h ou file âgée de plus de 30 min          |
+| `refresh_queue.stale`            | requête de rafraîchissement en attente depuis plus de 30 min                                                                            |
+| `dvf.freshness`                  | données absentes, import DVF bloqué, vieux de plus de 220 j ou échec plus récent que le dernier import réussi                           |
+| `retention.sale.overdue`         | vente échue depuis plus de 2 h non purgée, ou 6 passages de purge avec des ventes restantes (`docs/runbooks/retention-sale-overdue.md`) |
+| `catalogue.invalidation.backlog` | boîte d'invalidation du cache public : ligne de plus de 2 h ou plus de 1 000 lignes (`docs/runbooks/catalogue-invalidation-backlog.md`) |
+| `alerts.delivery.late`           | notification d'alerte en file dont la date prévue a plus de 26 h (`docs/runbooks/alerts-delivery-late.md`)                              |
+
+`cron.stale` attend les tâches quotidiennes de Vercel toutes les 27 h (`docs/operations/planification.md`).
+L'observateur du pipeline ajoute `pipeline.scheduler.disabled`, `pipeline.inventory.stale`,
+`pipeline.source.<source>.publication_stale` et `.stale_listings` (un runbook par alerte dans
+`docs/runbooks/`). Pour un regard extérieur à cette chaîne : `docs/operations/supervision-externe.md`.
 
 Une file âgée de plus de deux heures ou un import bloqué produit une sévérité `critical`. Pour
 inspecter l'état courant avec un rôle opérateur :

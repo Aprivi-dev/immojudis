@@ -84,7 +84,71 @@ describe("scheduled jobs inventory", () => {
   it("supervise les rappels d'audience comme les autres tâches quotidiennes", () => {
     const document = readFileSync(join(root, "docs/operations/planification.md"), "utf8");
     expect(document).toMatch(/`\/api\/cron\/sale-reminders`.*\| oui /);
-    // Dans la migration, les apostrophes de la liste attendue de cron.stale sont doublées.
+    // Dans la migration d'origine, les apostrophes de la liste attendue de cron.stale sont doublées.
     expect(migrationText()).toContain("(''sale-reminders'', interval ''30 hours'')");
+  });
+
+  it("lance l'envoi des alertes dans l'heure qui suit leur évaluation (plan Hobby : ±59 min)", () => {
+    const vercel = JSON.parse(readFileSync(join(root, "vercel.json"), "utf8")) as {
+      crons: Array<{ path: string; schedule: string }>;
+    };
+    const hours = (route: string) =>
+      vercel.crons
+        .filter((cron) => cron.path === `/api/cron/${route}`)
+        .map((cron) => Number(cron.schedule.split(" ")[1]))
+        .sort((a, b) => a - b);
+    const evaluation = hours("smart-alerts");
+    const sending = hours("alert-notifications");
+    expect(sending).toHaveLength(2);
+    // Sur le plan Hobby un cron tombe n'importe quand dans son heure : deux tâches de la même heure
+    // n'ont aucun ordre garanti. L'envoi passe donc une heure entière après l'évaluation.
+    expect(sending[0]).toBeGreaterThan(evaluation[0]);
+    expect(sending[1]).toBeGreaterThan(evaluation[1]);
+    // Et après l'heure à laquelle les notifications créées par l'évaluation sont prévues (07:00 UTC).
+    expect(sending[0]).toBeGreaterThanOrEqual(7);
+  });
+
+  it("garde le rattrapage de l'envoi des alertes en phase avec vercel.json", () => {
+    const vercel = JSON.parse(readFileSync(join(root, "vercel.json"), "utf8")) as {
+      crons: Array<{ path: string; schedule: string }>;
+    };
+    const schedules = vercel.crons
+      .filter((cron) => cron.path === "/api/cron/alert-notifications")
+      .map((cron) => cron.schedule);
+    const route = readFileSync(join(root, "src/app/api/cron/alert-notifications/route.ts"), "utf8");
+    const catchUp = /CATCH_UP_SCHEDULE = "([^"]+)"/.exec(route)?.[1];
+    expect(catchUp).toBeDefined();
+    // Le rattrapage est le second passage du jour, jamais le premier.
+    expect(schedules).toContain(catchUp);
+    expect(schedules.sort()[0]).not.toBe(catchUp);
+  });
+
+  it("déclare maxDuration sur les routes de longue durée (un littéral : Next.js le lit à la compilation)", () => {
+    for (const route of [
+      "sale-change-monitor",
+      "alert-notifications",
+      "data-retention",
+      "smart-alerts",
+    ]) {
+      const source = readFileSync(join(root, `src/app/api/cron/${route}/route.ts`), "utf8");
+      expect(source, route).toMatch(/^export const maxDuration = \d+;$/m);
+    }
+  });
+
+  it("attend les tâches quotidiennes toutes les 27 heures (un passage de rattrapage compris)", () => {
+    // La dernière migration qui redéfinit la liste attendue de cron.stale.
+    const definition = readFileSync(
+      join(root, "supabase/migrations/20261029170000_operational_health_alerts.sql"),
+      "utf8",
+    );
+    for (const job of [
+      "smart-alerts",
+      "alert-notifications",
+      "sale-change-monitor",
+      "sale-reminders",
+    ]) {
+      expect(definition, job).toContain(`('${job}', interval '27 hours')`);
+    }
+    expect(definition).not.toContain("interval '30 hours'");
   });
 });
