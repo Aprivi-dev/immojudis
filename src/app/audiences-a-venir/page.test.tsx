@@ -106,10 +106,10 @@ describe("/audiences-a-venir : génération et indexation", () => {
     expect(screen.getByRole("heading", { level: 1 })).toBeTruthy();
   });
 
-  it("compte une vente publiée par deux sources une seule fois (même adresse source)", async () => {
+  it("compte une vente publiée par deux sources une seule fois (même clé d'adresse source)", async () => {
     serve([
-      row({ id: "a", starting_price_eur: 50_000, source_url: "https://www.licitor.com/annonce/1" }),
-      row({ id: "b", starting_price_eur: 50_000, source_url: "https://licitor.com/annonce/1/" }),
+      row({ id: "a", starting_price_eur: 50_000, source_keys: ["key-annonce-1"] }),
+      row({ id: "b", starting_price_eur: 50_000, source_keys: ["key-annonce-1"] }),
       row({ id: "c", starting_price_eur: 60_000 }),
     ]);
     const metadata = await generateMetadata();
@@ -119,8 +119,8 @@ describe("/audiences-a-venir : génération et indexation", () => {
 
   it("garde deux lots distincts du même tribunal, du même jour et au même prix", async () => {
     serve([
-      row({ id: "a", starting_price_eur: 50_000, source_url: "https://www.licitor.com/annonce/1" }),
-      row({ id: "b", starting_price_eur: 50_000, source_url: "https://www.licitor.com/annonce/2" }),
+      row({ id: "a", starting_price_eur: 50_000, source_keys: ["key-annonce-1"] }),
+      row({ id: "b", starting_price_eur: 50_000, source_keys: ["key-annonce-2"] }),
       row({ id: "c", starting_price_eur: 50_000 }),
     ]);
     const metadata = await generateMetadata();
