@@ -15,6 +15,7 @@ import type { AuctionSale, SaleMediaMirror } from "@/lib/types";
 import { excludeHomepageExampleSales } from "@/lib/example-sale-identity";
 import { previewSearchRequestKey, type PreviewSearchResponse } from "./preview-search";
 import { previewSearchApiUrl, type PreviewSearchApiResponse } from "./preview-search-request";
+import { fetchUnderRangeSaleIds } from "./market-range-filter";
 import { SearchRejectedError } from "./search-errors";
 import type { SalesSearchParams } from "./search-url-state";
 import {
@@ -213,6 +214,9 @@ async function fetchCompleteFilteredSearch(search: SalesSearchParams, discovery:
     const center = search.aroundAddress ? await geocodeAddress(search.aroundAddress) : null;
     if (search.aroundAddress && !center)
       throw new Error("Localisation introuvable. Précisez la ville ou l’adresse.");
+    // Ventes sous la fourchette : la liste vient de la base (elle calcule la bande vente par vente), et
+    // une lecture impossible fait échouer la recherche au lieu d'afficher toutes les ventes.
+    const underRangeSaleIds = search.belowRange ? await fetchUnderRangeSaleIds() : null;
     const batchSize = 100;
     const dataFilters = dataFiltersFromSearch(criteria);
     const dataSort = dataSortFromSearch(search.sort, { allowInvestmentScore: !discovery });
@@ -232,7 +236,11 @@ async function fetchCompleteFilteredSearch(search: SalesSearchParams, discovery:
         "Cette recherche est trop large. Choisissez une région ou un département pour appliquer les filtres avancés.",
       );
     return sortClientSearchResults(
-      applyClientSearchFilters(excludeHomepageExampleSales(rows), search, center),
+      applyClientSearchFilters(excludeHomepageExampleSales(rows), search, center, {
+        underRangeSaleIds,
+        // Comme sur les cartes : l'occupation ne compte parmi les points que si le compte la lit.
+        occupancyVisible: !discovery,
+      }),
       search,
       center,
     );

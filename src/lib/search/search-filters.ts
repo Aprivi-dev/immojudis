@@ -5,12 +5,14 @@ import { isHouseWithLand } from "@/lib/alerts";
 import { dpeMatches, extractDpe } from "@/lib/dpe";
 import { listingVisits } from "@/lib/sale-listing";
 import { getSaleSurface } from "@/lib/surface";
+import { isOccupiedOccupancyStatus } from "@/lib/market-gap-band";
 import { estimateGrossYieldPct, haversineKm, pricePerM2, type GeoPoint } from "@/lib/geo";
 import {
   matchesFrenchGeoSearch,
   matchesFrenchSearchText,
   resolveFrenchGeoSearch,
 } from "./french-geo-search";
+import { pointsToVerify } from "./points-to-verify";
 import type { SalesSearchParams, SearchSortKey, ViewportBounds } from "./search-url-state";
 
 export const DEFAULT_SEARCH_LIMIT = 24;
@@ -28,6 +30,19 @@ export const HOME_TYPE_OPTIONS = [
 ] as const;
 
 export const STATUS_OPTIONS = [{ label: "À venir", value: "upcoming" }] as const;
+
+/**
+ * Filtres « Mise à prix sous la fourchette » et « Sans point à vérifier » (point 71). Le texte du premier
+ * dit ce qu'il ne couvre pas : seulement les ventes dont l'estimation est assez fiable (la porte de la bande
+ * publique), et jamais un bien occupé. Celui du second ne promet pas plus que la pastille : la liste est
+ * celle que l'annonce laisse ouverte, pas tout ce qui reste à contrôler (`POINTS_TO_VERIFY_NOTE`).
+ */
+export const BELOW_RANGE_FILTER_LABEL = "Mise à prix sous la fourchette des ventes comparables";
+export const BELOW_RANGE_FILTER_HINT =
+  "Ne couvre que les ventes dont l’estimation est assez fiable, et jamais un bien occupé. Une vente absente de cette liste n’est pas forcément au-dessus de la fourchette.";
+export const NO_POINTS_TO_VERIFY_FILTER_LABEL = "Sans point à vérifier";
+export const NO_POINTS_TO_VERIFY_FILTER_HINT =
+  "Annonces qui ne laissent aucun point ouvert (surface, occupation, date, type de vente). Cela ne garantit pas qu’il n’y a rien à vérifier.";
 
 export const SORT_OPTIONS: Array<{ label: string; value: SearchSortKey }> = [
   { label: "Mieux renseignées d’abord", value: "relevance" },
@@ -172,7 +187,28 @@ export function countActiveSearchFilters(search: SalesSearchParams): number {
     search.aroundAddress,
     search.yearBuilt,
     search.openHouse,
+    search.belowRange,
+    search.noPointsToVerify,
   ].filter(Boolean).length;
+}
+
+/**
+ * Critères actifs qu'une alerte sait enregistrer. « Sous la fourchette » et « Sans point à vérifier »
+ * n'en font pas partie : une alerte filtre sur la décote en pourcentage (`min_market_discount_pct`), pas sur
+ * la bande publique, et ne regarde pas les points à vérifier. Une recherche qui n'a que ces critères
+ * donnerait une alerte sans aucun critère.
+ */
+export function countAlertableSearchFilters(search: SalesSearchParams): number {
+  return countActiveSearchFilters({
+    ...search,
+    belowRange: undefined,
+    noPointsToVerify: undefined,
+  });
+}
+
+/** Vrai si la recherche porte un critère que les alertes ne savent pas enregistrer. */
+export function hasUnalertableSearchFilters(search: SalesSearchParams): boolean {
+  return Boolean(search.belowRange || search.noPointsToVerify);
 }
 
 export function hasClientOnlyFilters(search: SalesSearchParams): boolean {
@@ -184,6 +220,10 @@ export function hasClientOnlyFilters(search: SalesSearchParams): boolean {
     search.aroundRadius ||
     search.dpeClasses?.length ||
     search.openHouse ||
+    // Lus sur les lignes déjà chargées (points à vérifier) ou croisés avec la liste des ventes sous la
+    // fourchette (`market-range-filter.ts`) : ni l'un ni l'autre n'est une colonne du catalogue.
+    search.belowRange ||
+    search.noPointsToVerify ||
     search.yearBuilt ||
     // « Distance » n'a pas besoin de balayage sans adresse (rien à mesurer) : elle suit déjà
     // `aroundAddress` ci-dessus. « Chambres » se trie côté serveur (`beds_desc`).
@@ -191,10 +231,22 @@ export function hasClientOnlyFilters(search: SalesSearchParams): boolean {
   );
 }
 
+export type ClientSearchFilterContext = {
+  /**
+   * Identifiants des ventes dont la bande est « sous la fourchette » (`under`), pour le filtre
+   * `belowRange`. Absent : le filtre ne passe aucune vente plutôt que toutes.
+   */
+  underRangeSaleIds?: ReadonlySet<string> | null;
+  /** L'occupation est lue pour ce compte (offre Analyse) : comme sur la carte, elle compte parmi les points à vérifier. */
+  occupancyVisible?: boolean;
+  now?: Date;
+};
+
 export function applyClientSearchFilters(
   sales: AuctionSale[],
   search: SalesSearchParams,
   center: GeoPoint | null,
+  context: ClientSearchFilterContext = {},
 ): AuctionSale[] {
   return sales.filter((sale) => {
     if (
@@ -242,6 +294,21 @@ export function applyClientSearchFilters(
     }
     if (search.viewport && !saleIsInViewport(sale, search.viewport)) return false;
     if (search.openHouse && listingVisits(sale).length === 0) return false;
+    if (search.belowRange) {
+      // Jamais un bien occupé : la base ne rend déjà pas « under » pour eux (elle dit « occupied »), et
+      // la ligne le confirme quand l'occupation est lue.
+      if (!context.underRangeSaleIds?.has(sale.id)) return false;
+      if (isOccupiedOccupancyStatus(sale.occupancy_status)) return false;
+    }
+    if (
+      search.noPointsToVerify &&
+      pointsToVerify(sale, {
+        occupancyVisible: context.occupancyVisible ?? false,
+        now: context.now,
+      }).length > 0
+    ) {
+      return false;
+    }
 
     return true;
   });

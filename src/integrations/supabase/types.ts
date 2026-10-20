@@ -14212,6 +14212,8 @@ export type Database = {
       };
       has_analysis_access: { Args: never; Returns: boolean };
       is_admin: { Args: never; Returns: boolean };
+      // Ajout manuel minimal (point 71), à régénérer par db:types.
+      list_public_sale_ids_under_market_range: { Args: never; Returns: string[] };
       list_public_sale_sitemap_entries: {
         Args: { p_limit?: number; p_offset?: number };
         Returns: {
