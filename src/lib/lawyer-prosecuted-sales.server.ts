@@ -1,14 +1,18 @@
 import "server-only";
+import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { PublicApiError } from "@/lib/api-errors";
 import {
   MAX_PROSECUTED_SALES_PER_LAWYER,
   matchProsecutedSales,
   type LawyerDirectorySale,
+  type LawyerProsecutedSalesResponse,
   type LawyerUpcomingSales,
   type ProsecutionLawyer,
   type ProsecutionSaleCandidate,
 } from "@/lib/lawyer-prosecuted-sales";
 import { readPagedRows } from "@/lib/paged-read";
+import { LAWYER_DIRECTORY_PAGE_SIZE } from "@/lib/rate-limit-policies";
 import {
   isPublicationQuarantinedGuardRow,
   PUBLICATION_QUARANTINE_SELECT,
@@ -157,4 +161,56 @@ export async function loadUpcomingProsecutedSales(
     }),
   );
   return result;
+}
+
+const lawyerIdSchema = z.string().uuid();
+
+/**
+ * Identifiants d'avocats demandés (`lawyerIds=a,b,c`, ceux d'une page de l'annuaire : au plus
+ * `LAWYER_DIRECTORY_PAGE_SIZE`). Une liste vide, trop longue ou mal formée est refusée (400).
+ */
+export function parseLawyerIdsParam(raw: string | null): string[] {
+  const ids = [
+    ...new Set(
+      (raw ?? "")
+        .split(",")
+        .map((id) => id.trim())
+        .filter(Boolean),
+    ),
+  ];
+  if (
+    ids.length === 0 ||
+    ids.length > LAWYER_DIRECTORY_PAGE_SIZE ||
+    !ids.every((id) => lawyerIdSchema.safeParse(id).success)
+  ) {
+    throw new PublicApiError("Requête invalide : liste d'avocats incorrecte.", 400);
+  }
+  return ids;
+}
+
+/**
+ * Ventes à venir des avocats demandés, rendues à un compte payant par la route authentifiée
+ * `/api/lawyers/prosecuted-sales`. Le rapprochement connaît TOUS les avocats référencés actifs
+ * (même lecture que l'annuaire) pour écarter les homonymes d'un même barreau.
+ */
+export async function loadProsecutedSalesForLawyerIds(
+  lawyerIds: readonly string[],
+  now = new Date(),
+): Promise<LawyerProsecutedSalesResponse> {
+  const { data, error } = await supabaseAdmin
+    .from("referenced_lawyers")
+    .select("id,display_name,bar_association")
+    .eq("status", "active")
+    .eq("accepts_judicial_auctions", true);
+  if (error) throw error;
+
+  const lawyers = (data ?? []).map(
+    (lawyer): ProsecutionLawyer => ({
+      id: lawyer.id,
+      displayName: lawyer.display_name,
+      barAssociation: lawyer.bar_association,
+    }),
+  );
+  const upcoming = await loadUpcomingProsecutedSales(lawyers, new Set(lawyerIds), now);
+  return { lawyers: Object.fromEntries(upcoming) };
 }

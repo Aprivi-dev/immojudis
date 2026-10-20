@@ -28,6 +28,10 @@ import {
  *  5. aucun autre avocat référencé du même barreau n'a le même nom (homonymes : aucun des deux
  *     n'est rapproché).
  *
+ * Ce lien avocat ↔ vente n'est visible que des comptes payants (abonnement Analyse, premium,
+ * administrateur ; jamais l'offre de lancement) : il est rendu par `/api/lawyers/prosecuted-sales`,
+ * jamais par l'annuaire public et mis en cache.
+ *
  * Limite connue : un homonyme exact du même barreau qui ne figure pas parmi les avocats référencés
  * ne peut pas être écarté. La fiche le dit : rapprochement automatique, à vérifier sur l'annonce.
  */
@@ -56,6 +60,12 @@ export type LawyerUpcomingSales = {
   sales: LawyerDirectorySale[];
   /** Nombre de ventes publiques rapprochées, avant ce plafond. */
   total: number;
+};
+
+/** Réponse de `/api/lawyers/prosecuted-sales` : ventes à venir par identifiant d'avocat référencé. */
+export type LawyerProsecutedSalesResponse = {
+  /** Un avocat sans vente rapprochée n'a pas d'entrée. */
+  lawyers: Record<string, LawyerUpcomingSales>;
 };
 
 export type ProsecutionLawyer = {

@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ range: vi.fn(), rpc: vi.fn(), calls: [] as string[][] }));
+const mocks = vi.hoisted(() => ({
+  range: vi.fn(),
+  rpc: vi.fn(),
+  lawyerRows: vi.fn(),
+  calls: [] as string[][],
+}));
 
 vi.mock("@/integrations/supabase/client.server", () => {
   const chain: Record<string, unknown> = {};
@@ -11,12 +16,16 @@ vi.mock("@/integrations/supabase/client.server", () => {
     };
   }
   chain.range = mocks.range;
+  // Lecture des avocats référencés (sans pagination) : la chaîne se résout d'elle-même.
+  chain.then = (resolve: (value: unknown) => unknown) => resolve(mocks.lawyerRows());
   return { supabaseAdmin: { from: () => chain, rpc: mocks.rpc } };
 });
 
 import {
   clearUpcomingProsecutionCache,
+  loadProsecutedSalesForLawyerIds,
   loadUpcomingProsecutedSales,
+  parseLawyerIdsParam,
 } from "./lawyer-prosecuted-sales.server";
 
 const NOW = new Date("2026-11-20T10:00:00Z");
@@ -192,11 +201,79 @@ describe("loadUpcomingProsecutedSales", () => {
     expect(mocks.range).not.toHaveBeenCalled();
   });
 
-  it("lets a database error through, for the caller to ignore", async () => {
+  it("lets a database error through, for the caller to answer with a generic error", async () => {
     mocks.range.mockResolvedValue({ data: null, error: new Error("boom") });
 
     await expect(loadUpcomingProsecutedSales([durand], new Set([durand.id]), NOW)).rejects.toThrow(
       "boom",
     );
+  });
+});
+
+describe("loadProsecutedSalesForLawyerIds", () => {
+  const rows = [
+    { id: durand.id, display_name: durand.displayName, bar_association: durand.barAssociation },
+    { id: lefevre.id, display_name: lefevre.displayName, bar_association: lefevre.barAssociation },
+  ];
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mocks.calls.length = 0;
+    clearUpcomingProsecutionCache();
+    mocks.lawyerRows.mockReturnValue({ data: rows, error: null });
+    mocks.rpc.mockImplementation(async (_name: string, args: { p_sale_id: string }) => ({
+      data: [publicSummary(args.p_sale_id)],
+      error: null,
+    }));
+  });
+
+  it("rend les ventes par identifiant d'avocat demandé, depuis les avocats référencés actifs", async () => {
+    mocks.range.mockResolvedValue({
+      data: [candidate("sale-1", "Claire Durand"), candidate("sale-2", "Marc Lefèvre")],
+      error: null,
+    });
+
+    const result = await loadProsecutedSalesForLawyerIds([durand.id], NOW);
+
+    expect(mocks.calls).toContainEqual(["eq", "status", "active"]);
+    expect(mocks.calls).toContainEqual(["eq", "accepts_judicial_auctions", "true"]);
+    expect(Object.keys(result.lawyers)).toEqual([durand.id]);
+    expect(result.lawyers[durand.id].sales.map((sale) => sale.id)).toEqual(["sale-1"]);
+  });
+
+  it("ignore un identifiant qui n'est pas un avocat référencé actif", async () => {
+    mocks.range.mockResolvedValue({ data: [candidate("sale-1", "Claire Durand")], error: null });
+
+    const result = await loadProsecutedSalesForLawyerIds(["lawyer-inconnu"], NOW);
+
+    expect(result).toEqual({ lawyers: {} });
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it("laisse passer une erreur de lecture des avocats", async () => {
+    mocks.lawyerRows.mockReturnValue({ data: null, error: new Error("boom") });
+
+    await expect(loadProsecutedSalesForLawyerIds([durand.id], NOW)).rejects.toThrow("boom");
+  });
+});
+
+describe("parseLawyerIdsParam", () => {
+  const first = "10000000-0000-4000-8000-000000000001";
+  const second = "10000000-0000-4000-8000-000000000002";
+
+  it("lit une liste d'identifiants séparés par des virgules, sans doublon", () => {
+    expect(parseLawyerIdsParam(`${first}, ${second},${first}`)).toEqual([first, second]);
+  });
+
+  it("refuse une liste absente, vide, mal formée ou plus longue qu'une page de l'annuaire", () => {
+    expect(() => parseLawyerIdsParam(null)).toThrow("Requête invalide");
+    expect(() => parseLawyerIdsParam(" , ")).toThrow("Requête invalide");
+    expect(() => parseLawyerIdsParam(`${first},cnb:123`)).toThrow("Requête invalide");
+    const tooMany = Array.from(
+      { length: 51 },
+      (_, index) => `10000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+    );
+    expect(() => parseLawyerIdsParam(tooMany.join(","))).toThrow("Requête invalide");
+    expect(parseLawyerIdsParam(tooMany.slice(0, 50).join(","))).toHaveLength(50);
   });
 });
