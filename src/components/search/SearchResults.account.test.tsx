@@ -210,7 +210,7 @@ describe("clavier : un seul lien et un seul arrêt par carte pour la fiche", () 
         />,
       ),
     );
-    const region = screen.getByRole("region", { name: "Photos de Appartement à Bordeaux" });
+    const region = screen.getByRole("group", { name: "Photos de Appartement à Bordeaux" });
     expect(region.hasAttribute("tabindex")).toBe(false);
     const photoLink = screen.getByRole("link", { hidden: true });
     expect(photoLink.getAttribute("tabindex")).toBe("-1");

@@ -776,6 +776,49 @@ describe("listing media gallery", () => {
   });
 });
 
+describe("structure et noms de la liste des résultats", () => {
+  it("place un h2 masqué « Résultats » avant les cartes (h1, h2, puis h3)", () => {
+    const { container } = renderResults([sale("sale-a")]);
+    const h2 = screen.getByRole("heading", { level: 2, name: "Résultats" });
+    expect(h2.className).toContain("sr-only");
+    const h3 = screen.getByRole("heading", { level: 3 });
+    expect(h2.compareDocumentPosition(h3) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(container.querySelectorAll("h2")).toHaveLength(1);
+  });
+
+  it("n'ajoute pas ce h2 à un état vide", () => {
+    renderResults([]);
+    expect(screen.queryByRole("heading", { name: "Résultats" })).toBeNull();
+  });
+
+  it("complète le nom du lien de la carte par le prix, pour ne pas multiplier les homonymes", () => {
+    renderResults([
+      { ...sale("sale-a"), starting_price_eur: 90_000 } as AuctionSale,
+      { ...sale("sale-b"), starting_price_eur: 120_000 } as AuctionSale,
+    ]);
+    const names = Array.from(document.querySelectorAll("[id^='sale-card-']")).map((link) =>
+      link.getAttribute("aria-label"),
+    );
+    expect(names).toHaveLength(2);
+    expect(names[0]).toMatch(/^Voir .+, 90\s000\s€$/);
+    expect(names[1]).toMatch(/^Voir .+, 120\s000\s€$/);
+    expect(new Set(names).size).toBe(2);
+  });
+
+  it("prend la date quand le prix manque, sans jamais nommer une valeur masquée", () => {
+    renderResults([
+      {
+        ...sale("sale-a"),
+        starting_price_eur: null,
+        sale_date: "2099-03-12T09:00:00Z",
+      } as AuctionSale,
+    ]);
+    expect(document.getElementById("sale-card-sale-a")?.getAttribute("aria-label")).toMatch(
+      /^Voir .+, vente le .*mars 2099$/,
+    );
+  });
+});
+
 describe("result cards off screen", () => {
   it("skips the rendering of cards off screen but keeps the id the map scrolls to", () => {
     renderResults([sale("sale-a"), sale("sale-b")]);

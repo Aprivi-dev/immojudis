@@ -26,6 +26,7 @@ import {
   departmentLabel,
   listingAccessLine,
   listingDateLabel,
+  listingLinkLabel,
   listingTitle,
 } from "./listing-text";
 import { useSaleDetailLink } from "./use-sale-detail-link";
@@ -243,7 +244,15 @@ const ListingRow = memo(function ListingRow({
           {...detailLink.armProps}
           prefetch={false}
           onClick={() => onSelect(sale.id)}
-          aria-label={`Voir ${title}`}
+          aria-label={listingLinkLabel(sale, title, {
+            price: getAiReviewFieldResult(
+              aiReviewProjections,
+              "sale.starting_price_eur",
+              aiReviewStatus,
+            ).blocked,
+            date: getAiReviewFieldResult(aiReviewProjections, "sale.sale_date", aiReviewStatus)
+              .blocked,
+          })}
           className="font-semibold text-brand-navy underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
         >
           {showCity ? (

@@ -5,6 +5,7 @@ import {
   PAST_SALE_LABEL,
   listingAccessLine,
   listingDateLabel,
+  listingLinkLabel,
 } from "./listing-text";
 
 const tribunal = { id: "a", sale_venue_type: "tribunal" } as unknown as AuctionSale;
@@ -59,5 +60,41 @@ describe("listingDateLabel", () => {
   it("garde « Date à confirmer » quand la date manque ou est illisible", () => {
     expect(listingDateLabel(on(null), now)).toBe("Date à confirmer");
     expect(listingDateLabel(on("pas une date"), now)).toBe("Date à confirmer");
+  });
+});
+
+describe("listingLinkLabel", () => {
+  const base = { id: "a" } as unknown as AuctionSale;
+
+  it("ajoute le prix publié au titre", () => {
+    expect(listingLinkLabel({ ...base, starting_price_eur: 90_000 }, "Maison · Pau")).toMatch(
+      /^Voir Maison · Pau, 90\s000\s€$/,
+    );
+  });
+
+  it("prend la date quand il n'y a pas de prix (ou un prix de 0 €, jamais écrit)", () => {
+    const dated = { ...base, sale_date: "2099-03-12T09:00:00Z" };
+    expect(listingLinkLabel({ ...dated, starting_price_eur: null }, "Maison")).toMatch(
+      /^Voir Maison, vente le .*mars 2099$/,
+    );
+    expect(listingLinkLabel({ ...dated, starting_price_eur: 0 }, "Maison")).toMatch(
+      /vente le .*mars 2099$/,
+    );
+  });
+
+  it("dit « vente passée » plutôt qu'une date ancienne", () => {
+    expect(
+      listingLinkLabel({ ...base, sale_date: "2020-03-12T09:00:00Z" } as AuctionSale, "Maison"),
+    ).toBe("Voir Maison, vente passée");
+  });
+
+  it("n'écrit pas une valeur masquée par la relecture", () => {
+    const sale = { ...base, starting_price_eur: 90_000, sale_date: "2099-03-12T09:00:00Z" };
+    expect(listingLinkLabel(sale, "Maison", { price: true })).toMatch(/vente le /);
+    expect(listingLinkLabel(sale, "Maison", { price: true, date: true })).toBe("Voir Maison");
+  });
+
+  it("garde « Voir <titre> » sans prix ni date", () => {
+    expect(listingLinkLabel(base, "Maison")).toBe("Voir Maison");
   });
 });
