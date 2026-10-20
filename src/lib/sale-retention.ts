@@ -3,6 +3,8 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 type Result<T> = { data: T | null; error: { message?: string } | null };
 type StorageItem = { id: string; bucket: string; object_path: string };
+/** `lock_busy` : un autre passage tenait le verrou, la purge des ventes n'a pas (ou pas tout) tourné. */
+type SalePurgeStatus = "completed" | "lock_busy";
 type SalePurgeResult = { deleted: number; remaining: number | null; busy: boolean };
 type RetentionClient = {
   rpc(
@@ -83,5 +85,20 @@ export async function runSaleRetention(
   }
   if (removalFailure) throw removalFailure;
   const filesDeleted = removedIds.length;
-  return { deleted, remaining, busy, orphanUploadsQueued: orphanQueue.data, filesDeleted };
+  // Un verrou tenu par un autre passage n'est pas un succès : la purge n'a pas (ou pas tout) tourné. Le
+  // champ `purgeStatus` le dit explicitement dans le résumé du job, et une ligne de journal l'avertit.
+  const purgeStatus: SalePurgeStatus = busy ? "lock_busy" : "completed";
+  if (busy) {
+    console.warn(
+      JSON.stringify({ scope: "sale-retention", event: "purge_lock_busy", deleted, remaining }),
+    );
+  }
+  return {
+    deleted,
+    remaining,
+    busy,
+    purgeStatus,
+    orphanUploadsQueued: orphanQueue.data,
+    filesDeleted,
+  };
 }

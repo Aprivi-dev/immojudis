@@ -55,6 +55,10 @@ const ANCHORS = [
   ["stats-methode", "Méthode"],
 ] as const;
 
+/** Les parts affichent leur intervalle de Wilson : il faut dire ce que les bornes veulent dire. */
+const SHARE_INTERVAL_CAPTION =
+  "Entre parenthèses : l’intervalle de confiance à 95 % de la part (méthode de Wilson). Plus l’échantillon est petit, plus il est large.";
+
 const OCCUPATION_LABELS: Record<OccupationStatus, string> = {
   vacant: "Libre",
   occupied: "Occupé",
@@ -109,19 +113,69 @@ function metricValue(metric: ListingMetric | undefined, minimumSampleSize = 0): 
     : null;
 }
 
+/** De 5 observations au seuil de publication : la fourchette observée, jamais un point. */
+function metricRange(metric: ListingMetric | undefined): { min: number; max: number } | null {
+  return metric?.status === "range_only" ? { min: metric.min, max: metric.max } : null;
+}
+
+/** Intervalle de Wilson à 95 % d'une part publiée, en pourcentages entiers (« 22–55 % »). */
+function formatShareInterval(low: number | null | undefined, high: number | null | undefined) {
+  if (low == null || high == null || !Number.isFinite(low) || !Number.isFinite(high)) return null;
+  return `${Math.round(low * 100)}–${Math.round(high * 100)} %`;
+}
+
+function metricInterval(metric: ListingMetric | undefined): string | null {
+  return metric?.status === "published" && metric.interval
+    ? formatShareInterval(metric.interval.low, metric.interval.high)
+    : null;
+}
+
 function metricSample(metric: ListingMetric | undefined): number | null {
   return metric?.sampleSize ?? null;
 }
 
-function metricFootnote(metric: ListingMetric | undefined, label = "observations") {
+function metricFootnote(
+  metric: ListingMetric | undefined,
+  label = "observations",
+  minimumSampleSize = 0,
+) {
   const sampleSize = metricSample(metric);
-  return sampleSize == null ? null : `${formatNumber(sampleSize)} ${label}`;
+  if (sampleSize == null) return null;
+  const count = `${formatNumber(sampleSize)} ${label}`;
+  return metric?.status === "range_only"
+    ? `${count} : fourchette observée, sans valeur centrale (moins de ${formatNumber(minimumSampleSize)} observations)`
+    : count;
+}
+
+/** La valeur publiée, ou « de X à Y » quand seule la fourchette observée l'est, sinon « — ». */
+function formatMetricOrRange(
+  metric: ListingMetric | undefined,
+  format: (value: number) => string,
+  minimumSampleSize = 0,
+): string {
+  const value = metricValue(metric, minimumSampleSize);
+  if (value != null) return format(value);
+  const range = metricRange(metric);
+  return range ? `de ${format(range.min)} à ${format(range.max)}` : "—";
 }
 
 function formatMetricPrice(metric: ListingMetric | undefined, minimumSampleSize = 0): string {
-  const value = metricValue(metric, minimumSampleSize);
-  return value == null ? "—" : formatPrice(value);
+  return formatMetricOrRange(metric, formatPrice, minimumSampleSize);
 }
+
+/** Un délai en jours : la médiane, ou « de X à Y jours » de 5 à 9 observations, sinon « — ». */
+function leadDaysLabel(metric: ListingMetric | undefined, minimumSampleSize: number): string {
+  const value = metricValue(metric, minimumSampleSize);
+  if (value != null) return `${formatNumber(value)} jours`;
+  const range = metricRange(metric);
+  return range ? `de ${formatNumber(range.min)} à ${formatNumber(range.max)} jours` : "—";
+}
+
+/** Les deux délais ne mesurent pas la même chose : chacun dit d'où il part. */
+const PUBLISHED_LEAD_DEFINITION =
+  "médiane des jours entre la date de publication fournie par la source et l’audience (annonces dont cette date est connue).";
+const DISCOVERY_LEAD_DEFINITION =
+  "médiane des jours entre le jour où Immojudis a repéré l’annonce pour la première fois et l’audience ; plus court que le précédent quand l’annonce existait avant d’être repérée.";
 
 function formatRatio(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return "Données insuffisantes";
@@ -192,20 +246,27 @@ function ProgressBar({
   value,
   count,
   showShare = true,
+  low,
+  high,
 }: {
   label: string;
   value: number | null | undefined;
   count?: number | null;
   showShare?: boolean;
+  /** Bornes de l'intervalle de Wilson à 95 % de la part, affichées entre parenthèses. */
+  low?: number | null;
+  high?: number | null;
 }) {
   const percentage = showShare ? normalizeShare(value) : null;
   const width = percentage == null ? 0 : Math.max(0, Math.min(100, percentage));
+  const interval = showShare ? formatShareInterval(low, high) : null;
   return (
     <li className={styles.progressItem}>
       <div className={styles.progressHeader}>
         <span>{label}</span>
         <span className={styles.progressValue}>
           {showShare ? formatPercent(value) : "—"}
+          {interval ? ` (${interval})` : ""}
           {count != null ? ` · ${formatNumber(count)}` : ""}
         </span>
       </div>
@@ -474,27 +535,20 @@ export function ListingStatistics({
       ? "Tribunal judiciaire à confirmer"
       : (sale.tribunal_name ?? sale.tribunal ?? "Tribunal judiciaire"));
   const periodLabel = `${historyMonths} mois`;
-  const minimumSampleSize = activityResponse?.meta.minSampleSize ?? 5;
-  const publishedLeadValue = metricValue(activity?.publishedToHearingDays, minimumSampleSize);
-  const discoveryLeadValue = metricValue(activity?.discoveryToHearingDays, minimumSampleSize);
-  const leadUsesDiscovery = publishedLeadValue == null && discoveryLeadValue != null;
-  const leadMetric = activity
-    ? leadUsesDiscovery
-      ? activity.discoveryToHearingDays
-      : activity.publishedToHearingDays
-    : undefined;
-  const overbidDisplayValue =
-    activity &&
-    countValue(activity.overbidsKnown) === 0 &&
-    (countValue(activity.overbidsUnknown) ?? 0) > 0
-      ? null
-      : metricValue(activity?.overbidCoverage, minimumSampleSize);
+  const minimumSampleSize = activityResponse?.meta.minSampleSize ?? 10;
+  // Les parts par type de bien sont un sous-groupe : elles exigent davantage d'observations.
+  const minimumSubgroupSampleSize = activityResponse?.meta.minSubgroupSampleSize ?? 20;
+  const minimumOverbidCoverage = activityResponse?.meta.minOverbidCoverage ?? 0.5;
+  const overbidCoverageKnown =
+    activity && activity.observedAnnouncements > 0
+      ? activity.overbidsKnown / activity.observedAnnouncements
+      : 0;
   const knownPropertyTypeCount =
     activity?.propertyTypes.reduce((total, item) => total + item.count, 0) ?? 0;
   const unknownPropertyTypeCount = activity
     ? Math.max(0, activity.observedAnnouncements - knownPropertyTypeCount)
     : 0;
-  const propertyTypeSharesAvailable = knownPropertyTypeCount >= minimumSampleSize;
+  const propertyTypeSharesAvailable = knownPropertyTypeCount >= minimumSubgroupSampleSize;
   const knownCommuneCount =
     activity?.communes.reduce((total, commune) => total + commune.count, 0) ?? 0;
   const communeSharesAvailable = knownCommuneCount >= minimumSampleSize;
@@ -659,20 +713,28 @@ export function ListingStatistics({
                   {formatMetricPrice(activity.startingPriceEur, minimumSampleSize)}
                 </strong>
                 <span className={styles.kpiNote}>
-                  {metricFootnote(activity.startingPriceEur, "mises à prix renseignées") ??
-                    "Échantillon insuffisant"}
+                  {metricFootnote(
+                    activity.startingPriceEur,
+                    "mises à prix renseignées",
+                    minimumSampleSize,
+                  ) ?? "Échantillon insuffisant"}
                 </span>
               </article>
               <article className={styles.kpiCard}>
                 <span className={styles.kpiLabel}>Mise à prix / valeur DVF</span>
                 <strong className={styles.kpiValueSmall}>
-                  {formatUnclampedPercent(
-                    metricValue(activity.startingPriceToDvfRatio, minimumSampleSize),
+                  {formatMetricOrRange(
+                    activity.startingPriceToDvfRatio,
+                    formatUnclampedPercent,
+                    minimumSampleSize,
                   )}
                 </strong>
                 <span className={styles.kpiNote}>
-                  {metricFootnote(activity.startingPriceToDvfRatio, "estimations DVF") ??
-                    "Échantillon insuffisant"}
+                  {metricFootnote(
+                    activity.startingPriceToDvfRatio,
+                    "estimations DVF fiables",
+                    minimumSampleSize,
+                  ) ?? "Échantillon insuffisant"}
                 </span>
               </article>
             </div>
@@ -793,16 +855,20 @@ export function ListingStatistics({
                           label={PROPERTY_TYPE_LABELS[item.propertyType]}
                           value={item.share}
                           count={item.count}
+                          low={item.shareLow}
+                          high={item.shareHigh}
                           showShare={propertyTypeSharesAvailable}
                         />
                       ))}
                     </ul>
-                    {!propertyTypeSharesAvailable ? (
+                    {propertyTypeSharesAvailable ? (
+                      <p className={styles.progressCaption}>{SHARE_INTERVAL_CAPTION}</p>
+                    ) : (
                       <p className={styles.progressCaption}>
-                        Pourcentages masqués sous {minimumSampleSize} types renseignés ; les
-                        effectifs restent visibles.
+                        Pourcentages masqués sous {minimumSubgroupSampleSize} types renseignés (une
+                        répartition par type est un sous-groupe) ; les effectifs restent visibles.
                       </p>
-                    ) : null}
+                    )}
                   </>
                 ) : (
                   <EmptyData>
@@ -829,6 +895,8 @@ export function ListingStatistics({
                             label={OCCUPATION_LABELS[item.status]}
                             value={item.share}
                             count={item.count}
+                            low={item.shareLow}
+                            high={item.shareHigh}
                             showShare={activity.occupation.knownSales >= minimumSampleSize}
                           />
                         ))}
@@ -836,11 +904,11 @@ export function ListingStatistics({
                     ) : (
                       <EmptyData>Aucun statut d’occupation n’est renseigné.</EmptyData>
                     )}
-                    {activity.occupation.knownSales < minimumSampleSize &&
-                    activity.occupation.distribution.length > 0 ? (
+                    {activity.occupation.distribution.length > 0 ? (
                       <p className={styles.progressCaption}>
-                        Moins de {minimumSampleSize} occupations renseignées : effectifs affichés,
-                        pourcentages masqués.
+                        {activity.occupation.knownSales < minimumSampleSize
+                          ? `Moins de ${minimumSampleSize} occupations renseignées : effectifs affichés, pourcentages masqués.`
+                          : SHARE_INTERVAL_CAPTION}
                       </p>
                     ) : null}
                   </>
@@ -862,32 +930,66 @@ export function ListingStatistics({
                       {formatPercent(metricValue(activity.visitCoverage, minimumSampleSize))}
                     </strong>
                     <small>
-                      {metricFootnote(activity.visitCoverage, "annonces") ?? "Donnée indisponible"}
+                      {[
+                        metricFootnote(activity.visitCoverage, "annonces", minimumSampleSize) ??
+                          "Donnée indisponible",
+                        metricInterval(activity.visitCoverage)
+                          ? `intervalle à 95 % : ${metricInterval(activity.visitCoverage)}`
+                          : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
                     </small>
                   </div>
                   <div>
                     <span>Surenchères renseignées</span>
-                    <strong>{formatPercent(overbidDisplayValue)}</strong>
+                    <strong>
+                      {formatPercent(metricValue(activity.overbidCoverage, minimumSampleSize))}
+                    </strong>
                     <small>
                       {formatNumber(activity.overbidsKnown)} connues sur{" "}
                       {formatNumber(activity.overbidsKnown + activity.overbidsUnknown)} annonces ·{" "}
                       {formatNumber(activity.overbidsUnknown)} à confirmer
+                      {metricInterval(activity.overbidCoverage)
+                        ? ` · intervalle à 95 % : ${metricInterval(activity.overbidCoverage)}`
+                        : ""}
                     </small>
+                    {activity.overbidCoverage.status !== "published" &&
+                    overbidCoverageKnown < minimumOverbidCoverage ? (
+                      <small>
+                        Taux masqué : moins de {Math.round(minimumOverbidCoverage * 100)} % des
+                        annonces ont une réponse connue sur la surenchère.
+                      </small>
+                    ) : null}
                   </div>
                   <div>
-                    <span>
-                      {leadUsesDiscovery ? "Premier repérage → audience" : "Publication → audience"}
-                    </span>
+                    <span>Délai « publication → audience »</span>
                     <strong>
-                      {metricValue(leadMetric, minimumSampleSize) == null
-                        ? "—"
-                        : `${formatNumber(metricValue(leadMetric, minimumSampleSize))} jours`}
+                      {leadDaysLabel(activity.publishedToHearingDays, minimumSampleSize)}
                     </strong>
                     <small>
                       {metricFootnote(
-                        leadMetric,
-                        leadUsesDiscovery ? "dates de première détection" : "dates de publication",
+                        activity.publishedToHearingDays,
+                        "dates de publication",
+                        minimumSampleSize,
                       ) ?? "Échantillon insuffisant"}
+                      {" · "}
+                      {PUBLISHED_LEAD_DEFINITION}
+                    </small>
+                  </div>
+                  <div>
+                    <span>Délai « première détection → audience »</span>
+                    <strong>
+                      {leadDaysLabel(activity.discoveryToHearingDays, minimumSampleSize)}
+                    </strong>
+                    <small>
+                      {metricFootnote(
+                        activity.discoveryToHearingDays,
+                        "dates de première détection",
+                        minimumSampleSize,
+                      ) ?? "Échantillon insuffisant"}
+                      {" · "}
+                      {DISCOVERY_LEAD_DEFINITION}
                     </small>
                   </div>
                 </div>
@@ -972,6 +1074,9 @@ export function ListingStatistics({
                         <span className={styles.progressValue}>
                           {formatNumber(commune.count)} ·{" "}
                           {communeSharesAvailable ? formatPercent(commune.share) : "—"}
+                          {communeSharesAvailable
+                            ? ` (${formatShareInterval(commune.shareLow, commune.shareHigh)})`
+                            : ""}
                         </span>
                       </div>
                       {communeSharesAvailable ? (
@@ -995,10 +1100,11 @@ export function ListingStatistics({
             ) : (
               <EmptyData>Aucune commune n’est renseignée sur cette période.</EmptyData>
             )}
-            {activity.communes?.length > 0 && !communeSharesAvailable ? (
+            {activity.communes?.length > 0 ? (
               <p className={styles.progressCaption}>
-                Pourcentages masqués sous {minimumSampleSize} communes renseignées ; les effectifs
-                restent visibles.
+                {communeSharesAvailable
+                  ? SHARE_INTERVAL_CAPTION
+                  : `Pourcentages masqués sous ${minimumSampleSize} communes renseignées ; les effectifs restent visibles.`}
               </p>
             ) : null}
           </section>
@@ -1033,13 +1139,16 @@ export function ListingStatistics({
                       </span>
                       <span role="cell">{formatNumber(lawyer.count)}</span>
                       <span role="cell">
-                        {lawyerSharesAvailable ? formatPercent(lawyer.share) : "—"}
+                        {lawyerSharesAvailable
+                          ? `${formatPercent(lawyer.share)} (${formatShareInterval(lawyer.shareLow, lawyer.shareHigh)})`
+                          : "—"}
                       </span>
                     </div>
                   ))}
                 </div>
                 <p className={styles.progressCaption}>
                   Part des annonces où l’avocat est renseigné.
+                  {lawyerSharesAvailable ? ` ${SHARE_INTERVAL_CAPTION}` : null}
                   {!lawyerSharesAvailable
                     ? " Pourcentages masqués sous le seuil minimal ; les effectifs restent visibles."
                     : null}
@@ -1083,11 +1192,18 @@ export function ListingStatistics({
                   utilisée pour compléter le périmètre local.
                 </p>
                 <p>
-                  Le délai « publication → audience » utilise uniquement les annonces dont la date
-                  de publication est connue. Lorsqu’elle manque, le délai « premier repérage →
-                  audience » est affiché avec son libellé propre. Les répartitions d’activité sont
-                  masquées sous {minimumSampleSize} observations, et les prix d’adjudication sous
-                  dix résultats.
+                  Deux délais sont affichés séparément : « publication → audience » part de la date
+                  de publication fournie par la source et n’utilise que les annonces dont cette date
+                  est connue ; « première détection → audience » part du jour où Immojudis a repéré
+                  l’annonce pour la première fois. Les médianes, les taux et les parts sont masqués
+                  sous {minimumSampleSize} observations ({minimumSubgroupSampleSize} pour la
+                  répartition par type de bien) ; de {activityResponse.meta.minRangeSampleSize} à{" "}
+                  {minimumSampleSize - 1} observations, seule la fourchette observée (minimum et
+                  maximum) est montrée. Les parts portent leur intervalle de confiance de Wilson à
+                  95 %. Le taux de surenchère n’est publié que si au moins la moitié des annonces
+                  ont une réponse connue. Le ratio mise à prix / valeur DVF ne retient que les
+                  estimations qui passent la même porte de qualité que le repère de la fiche
+                  publique. Les prix d’adjudication sont masqués sous dix résultats.
                 </p>
                 <p>
                   La répartition des types de biens utilise les{" "}

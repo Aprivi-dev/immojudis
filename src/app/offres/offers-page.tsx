@@ -21,7 +21,11 @@ import { ANALYSIS_TRIAL_DAYS, resolveAnalysisOfferLabel } from "@/lib/analysis-o
 import { useAuth } from "@/hooks/use-auth";
 import { useBillingOffer, type BillingOfferState } from "@/hooks/use-billing-offer";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
-import { launchOfferText } from "@/lib/launch-offer";
+import {
+  LAUNCH_OFFER_DATA_TEXT,
+  LAUNCH_OFFER_DURATION_TEXT,
+  launchOfferText,
+} from "@/lib/launch-offer";
 import { offerComparisonRows, type OfferCell } from "@/lib/offer-comparison";
 import { PLAN_LIMITS } from "@/lib/plans";
 import { MONTHLY_SALE_UNLOCKS, unlockedItemsText } from "@/lib/sale-unlocks";
@@ -66,43 +70,53 @@ const DISCOVERY_FEATURES = [
 
 const ANALYSIS_FEATURES = [
   "Enchère plafond chiffrée pour toutes les ventes au tribunal : travaux, libération, portage et tous les frais",
-  "Pièces du dossier et leur lecture pour toutes les ventes : points clés cités avec la page",
-  "Historique de la vente pour toutes les ventes : passages précédents, baisses de mise à prix, reports",
+  "Pièces du dossier et leur lecture, pour les ventes qui en comportent : points clés cités avec la page",
+  "Historique de la vente, quand il existe : passages précédents, baisses de mise à prix, reports",
   "Estimation détaillée et ventes comparables",
   "Jusqu’à 25 alertes avec email quotidien, favoris illimités",
   "Suivi des changements de vos favoris (date, mise à prix, statut, documents), consultable dans Mes favoris",
   "Statistiques des tribunaux : prix d’adjudication et scénarios d’enchères, quand l’historique du tribunal est suffisant ; rapport PDF et export des résultats",
 ] as const;
 
-const LAUNCH_OFFER_FAQ: { question: string; answer: (offer: BillingOfferState) => ReactNode } = {
+/**
+ * `subscriptionOpen` : la souscription est ouverte pour de bon (état lu, offre de lancement
+ * coupée). Faux dans tous les autres cas, y compris tant que l'état n'est pas lu : une réponse sur
+ * la résiliation ou le remboursement ne doit pas laisser croire qu'un abonnement existe déjà.
+ */
+type FaqContext = { offer: BillingOfferState; launchActive: boolean; subscriptionOpen: boolean };
+
+/** Aucun abonnement n'existe tant que la souscription est fermée : la réponse décrit l'à-venir. */
+const NOT_OPEN_PREFIX = "Quand l’abonnement sera ouvert, les règles prévues sont les suivantes. ";
+
+const LAUNCH_OFFER_FAQ: { question: string; answer: (context: FaqContext) => ReactNode } = {
   question: "Qu’est-ce que l’offre de lancement ?",
   answer: () => (
     <>
-      Tant que le site n’est pas officiellement lancé, tout compte gratuit bénéficie, à titre
-      exceptionnel, des avantages de l’offre Analyse, sans carte bancaire et sans paiement. Ces
-      avantages pourront être retirés sans préavis dès le lancement officiel : le compte gratuit
-      reviendra alors à l’offre Découverte, sans que vos données soient supprimées. Aucun
-      prélèvement n’est possible aujourd’hui.
+      Tant que le site n’est pas officiellement lancé, tout compte gratuit dont l’adresse email est
+      confirmée bénéficie, à titre exceptionnel, des avantages de l’offre Analyse, sans carte
+      bancaire et sans paiement. {LAUNCH_OFFER_DURATION_TEXT} À la fin de l’offre, le compte gratuit
+      revient à l’offre Découverte. {LAUNCH_OFFER_DATA_TEXT} Aucun prélèvement n’est possible
+      aujourd’hui.
     </>
   ),
 };
 
-const FAQ: { question: string; answer: (offer: BillingOfferState) => ReactNode }[] = [
+const FAQ: { question: string; answer: (context: FaqContext) => ReactNode }[] = [
   {
     question: "Comment résilier ?",
-    answer: () => (
+    answer: ({ subscriptionOpen }) => (
       <>
-        Depuis la page « Mon compte », le bouton « Résilier mon abonnement » ouvre directement le
-        formulaire de résiliation du portail de paiement : vous résiliez à tout moment, la date de
-        fin d’accès est affichée avant confirmation. La résiliation prend effet à la fin de la
-        période payée. Le bouton « Gérer mon abonnement » donne accès à vos factures et à votre
-        moyen de paiement.
+        {subscriptionOpen ? null : NOT_OPEN_PREFIX}Depuis la page « Mon compte », le bouton «
+        Résilier mon abonnement » ouvre directement le formulaire de résiliation du portail de
+        paiement : vous résiliez à tout moment, la date de fin d’accès est affichée avant
+        confirmation. La résiliation prend effet à la fin de la période payée. Le bouton « Gérer mon
+        abonnement » donne accès à vos factures et à votre moyen de paiement.
       </>
     ),
   },
   {
     question: "Y a-t-il un essai gratuit ?",
-    answer: (offer) =>
+    answer: ({ offer }) =>
       offer.status === "loading" ? (
         <>Les conditions de l’essai s’affichent dès que l’offre est chargée.</>
       ) : offer.status === "error" ? (
@@ -130,7 +144,7 @@ const FAQ: { question: string; answer: (offer: BillingOfferState) => ReactNode }
   },
   {
     question: `Comment fonctionnent les ${MONTHLY_SALE_UNLOCKS} déblocages par mois ?`,
-    answer: () => (
+    answer: ({ launchActive }) => (
       <>
         Chaque mois, vous pouvez débloquer {MONTHLY_SALE_UNLOCKS} ventes avec votre compte
         Découverte. Pour chacune, vous voyez, lorsque la vente les comporte, l’enchère plafond, la
@@ -138,19 +152,20 @@ const FAQ: { question: string; answer: (offer: BillingOfferState) => ReactNode }
         les pièces du dossier. Le compteur repart à {MONTHLY_SALE_UNLOCKS} le 1er du mois à 00 h 00,
         heure de Paris ; les déblocages non utilisés ne sont pas reportés. Une vente débloquée reste
         accessible tant qu’elle est en ligne sur Immojudis, dans la limite de 24 mois après le
-        déblocage. Aucune carte bancaire n’est demandée et rien ne devient payant automatiquement.
-        L’export PDF ou CSV, les rapports enregistrés, les alertes avancées, l’estimation détaillée
-        et les ventes comparables restent réservés à Analyse.
+        déblocage. Aucune carte bancaire n’est demandée et rien ne devient payant automatiquement.{" "}
+        {launchActive
+          ? "Pendant l’offre de lancement, l’export PDF ou CSV, les rapports enregistrés, les alertes avancées, l’estimation détaillée et les ventes comparables sont aussi ouverts au compte gratuit ; ils redeviendront réservés à Analyse à la fin de l’offre."
+          : "L’export PDF ou CSV, les rapports enregistrés, les alertes avancées, l’estimation détaillée et les ventes comparables restent réservés à Analyse."}
       </>
     ),
   },
   {
     question: "Puis-je être remboursé ?",
-    answer: () => (
+    answer: ({ subscriptionOpen }) => (
       <>
-        Vous disposez d’un délai de rétractation de 14 jours. Si vous demandez l’exécution immédiate
-        du service, un montant proportionnel au service déjà fourni peut rester dû. Les règles
-        complètes figurent dans les{" "}
+        {subscriptionOpen ? null : NOT_OPEN_PREFIX}Vous disposez d’un délai de rétractation de 14
+        jours. Si vous demandez l’exécution immédiate du service, un montant proportionnel au
+        service déjà fourni peut rester dû. Les règles complètes figurent dans les{" "}
         <Link href="/conditions-generales" className="font-semibold text-gold-text underline">
           conditions générales
         </Link>
@@ -199,6 +214,12 @@ export function OffersPage() {
   const price = resolveAnalysisOfferLabel();
   // Offre de lancement : le compte gratuit a les avantages Analyse, le paiement reste fermé.
   const launchActive = launch.active;
+  const subscriptionOpen = !launchActive && offer.status === "ready" && offer.open;
+  // Sous le prix : le 59 € n'est qu'un tarif prévu tant que rien ne se souscrit.
+  const priceNote =
+    launchActive || (offer.status === "ready" && !offer.open)
+      ? "Tarif prévu, pas encore souscriptible"
+      : undefined;
   const trialLine =
     launchActive || offer.status !== "ready"
       ? null
@@ -210,6 +231,7 @@ export function OffersPage() {
 
   return (
     <main id="contenu" className="min-h-screen bg-white text-brand-navy">
+      {launch.pending ? <LaunchOfferBannerPlaceholder /> : null}
       {launchActive ? <LaunchOfferBanner signedIn={Boolean(user)} /> : null}
       <section className="border-b border-brand-navy/10 bg-background">
         <div className="mx-auto grid max-w-[1460px] gap-10 px-4 py-10 sm:px-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(500px,0.85fr)] lg:items-center lg:px-8 lg:py-12">
@@ -306,6 +328,7 @@ export function OffersPage() {
             price={price}
             description="Pour décider, chiffrer et préparer l’enchère."
             features={ANALYSIS_FEATURES}
+            priceNote={priceNote}
             highlighted
             recommended={!launchActive && offer.status === "ready" && offer.open}
           >
@@ -363,14 +386,16 @@ export function OffersPage() {
         <div className="mt-6 divide-y divide-line border-y border-line">
           {(launchActive ? [LAUNCH_OFFER_FAQ, ...FAQ] : FAQ).map((item) => (
             <details key={item.question} className="group py-4">
-              <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold">
+              <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft">
                 {item.question}
                 <ChevronDown
                   className="size-5 shrink-0 transition-transform group-open:rotate-180"
                   aria-hidden
                 />
               </summary>
-              <div className="mt-2 text-sm leading-relaxed text-ink-soft">{item.answer(offer)}</div>
+              <div className="mt-2 text-sm leading-relaxed text-ink-soft">
+                {item.answer({ offer, launchActive, subscriptionOpen })}
+              </div>
             </details>
           ))}
         </div>
@@ -510,6 +535,23 @@ function LaunchOfferBanner({ signedIn }: { signedIn: boolean }) {
   );
 }
 
+/**
+ * Tant que l'état de l'offre n'est pas lu : une hauteur réservée à la place du bandeau, pour que le
+ * titre ne descende pas quand il apparaît (décalage de mise en page mesuré à 0,19). Hauteurs
+ * approximatives du bandeau selon la largeur (texte sur 5 à 6 lignes sur mobile, 2 à 3 sur grand
+ * écran) : le bandeau n'est jamais rendu côté serveur, la coupure de l'offre doit se voir en moins
+ * de 60 s.
+ */
+function LaunchOfferBannerPlaceholder() {
+  return (
+    <div
+      aria-hidden
+      data-testid="launch-offer-banner-placeholder"
+      className="min-h-[15.5rem] border-b border-gold/40 bg-gold/10 sm:min-h-[13rem] lg:min-h-[7.5rem]"
+    />
+  );
+}
+
 /** Dans la carte Analyse tant que l'offre de lancement dure : aucun bouton de paiement. */
 function LaunchOfferPanel({ signedIn }: { signedIn: boolean }) {
   return (
@@ -595,6 +637,7 @@ function PlanPanel({
   price,
   description,
   features,
+  priceNote,
   children,
   highlighted = false,
   recommended = false,
@@ -603,6 +646,8 @@ function PlanPanel({
   price: string;
   description: string;
   features: readonly string[];
+  /** Précision sous le prix (« Tarif prévu, pas encore souscriptible »). */
+  priceNote?: string;
   children: ReactNode;
   highlighted?: boolean;
   /** The « Recommandée » badge only appears once the plan can really be bought. */
@@ -636,6 +681,11 @@ function PlanPanel({
           <strong className="font-display text-5xl font-medium leading-none sm:text-6xl">
             {price}
           </strong>
+          {priceNote ? (
+            <p data-testid="price-note" className="mt-2 text-sm font-medium text-ink-soft">
+              {priceNote}
+            </p>
+          ) : null}
           <p className="mt-3 text-sm text-ink-soft">{description}</p>
         </div>
         <ul className="my-6 grid gap-3">

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  assertAlertNotificationDispatchComplete,
   buildAlertNotificationDispatchPatch,
   buildAlertNotificationRows,
   notificationKindForFrequency,
@@ -227,5 +228,66 @@ describe("Discovery notifications", () => {
       });
     }
     expect(JSON.stringify(rows)).not.toContain("Private");
+  });
+});
+
+describe("passage d'envoi des alertes : échecs partiels", () => {
+  const base = {
+    emailCandidateCount: 10,
+    emailFailedCount: 0,
+    emailProviderConfigured: true,
+    emailMissingConfig: [] as string[],
+  };
+
+  it("réussit quand aucun e-mail n'est dû, même sans configuration d'envoi", () => {
+    expect(() =>
+      assertAlertNotificationDispatchComplete({
+        ...base,
+        emailCandidateCount: 0,
+        emailProviderConfigured: false,
+      }),
+    ).not.toThrow();
+  });
+
+  it("échoue quand au moins un e-mail est dû et que l'envoi n'est pas configuré", () => {
+    expect(() =>
+      assertAlertNotificationDispatchComplete({
+        ...base,
+        emailCandidateCount: 1,
+        emailProviderConfigured: false,
+        emailMissingConfig: ["RESEND_API_KEY", "ALERT_EMAIL_FROM"],
+      }),
+    ).toThrow(
+      "Alertes e-mail : 1 envoi(s) dû(s) mais l'envoi d'e-mails n'est pas configuré (variable(s) manquante(s) : RESEND_API_KEY, ALERT_EMAIL_FROM).",
+    );
+  });
+
+  it("échoue sans liste de variables quand elle est vide", () => {
+    expect(() =>
+      assertAlertNotificationDispatchComplete({ ...base, emailProviderConfigured: false }),
+    ).toThrow("n'est pas configuré.");
+  });
+
+  it("réussit sous 20 % d'e-mails en échec", () => {
+    expect(() =>
+      assertAlertNotificationDispatchComplete({ ...base, emailFailedCount: 1 }),
+    ).not.toThrow();
+  });
+
+  it("échoue à 20 % d'e-mails en échec ou plus", () => {
+    expect(() => assertAlertNotificationDispatchComplete({ ...base, emailFailedCount: 2 })).toThrow(
+      "Alertes e-mail : 2 envoi(s) en échec sur 10 dû(s) (seuil 20 %).",
+    );
+    expect(() =>
+      assertAlertNotificationDispatchComplete({
+        ...base,
+        emailCandidateCount: 1,
+        emailFailedCount: 1,
+      }),
+    ).toThrow();
+  });
+
+  it("réussit quand tous les e-mails sont partis", () => {
+    expect(() => assertAlertNotificationDispatchComplete(base)).not.toThrow();
   });
 });

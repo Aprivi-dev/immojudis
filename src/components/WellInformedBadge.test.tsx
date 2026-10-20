@@ -46,6 +46,27 @@ describe("WellInformedBadge", () => {
     expect(document.activeElement).toBe(button);
   });
 
+  it("ne se ferme pas avec l'Échap d'un dialogue ouvert par-dessus", () => {
+    render(<WellInformedBadge sale={{ completeness_tier: 1 }} />);
+    fireEvent.click(screen.getByRole("button", { name: /À propos du repère/ }));
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("data-state", "open");
+    document.body.appendChild(dialog);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.getByRole("note")).toBeTruthy();
+    dialog.remove();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("note")).toBeNull();
+  });
+
+  it("garde un bouton « i » d'au moins 24 px (size-6)", () => {
+    render(<WellInformedBadge sale={{ completeness_tier: 1 }} />);
+    const button = screen.getByRole("button", { name: /À propos du repère/ });
+    expect(button.className).toContain("size-6");
+    expect(button.className).not.toMatch(/(^|\s)(h-5|w-5)(\s|$)/);
+  });
+
   it("n'utilise pas d'attribut title, inaccessible au clavier et au tactile", () => {
     const { container } = render(<WellInformedBadge sale={{ completeness_tier: 1 }} />);
     expect(container.querySelector("[title]")).toBeNull();

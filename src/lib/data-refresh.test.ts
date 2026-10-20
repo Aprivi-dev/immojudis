@@ -191,6 +191,26 @@ describe("data refresh requests", () => {
     );
     expect((refused as RateLimitError).retryAfterSeconds).toBe(3600);
   });
+
+  it("maps the launch-offer share of the global daily cap to the same daily limit message", async () => {
+    const auth = fakeRefreshAuth();
+    serverFrom.mockImplementation((table: string) =>
+      (auth.supabase as unknown as { from: (name: string) => unknown }).from(table),
+    );
+    serverRpc.mockResolvedValueOnce({
+      data: null,
+      error: { message: "DATA_REFRESH_LAUNCH_OFFER_DAILY_LIMIT" },
+    });
+    const refused = await requestDataRefresh({
+      auth,
+      request: refreshRequest(),
+      input: { saleId: SALE_ID, kinds: ["full"], force: false },
+    }).catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(RateLimitError);
+    expect((refused as RateLimitError).publicMessage).toBe(
+      "Limite quotidienne atteinte, réessayez demain.",
+    );
+  });
 });
 
 function refreshRequest(): Request {

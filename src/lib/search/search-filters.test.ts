@@ -1,18 +1,49 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ANALYSIS_ONLY_SORT_KEYS,
   SORT_OPTIONS,
   applyClientSearchFilters,
   dataFiltersFromSearch,
   countActiveSearchFilters,
+  countAlertableSearchFilters,
   dataSortFromSearch,
   hasClientOnlyFilters,
+  hasUnalertableSearchFilters,
   saleIsInViewport,
   sortClientSearchResults,
   visibleSearchSort,
 } from "./search-filters";
 import type { ViewportBounds } from "./search-url-state";
 import type { AuctionSale } from "@/lib/types";
+
+describe("filtre « visite dans les 7 jours »", () => {
+  afterEach(() => vi.useRealTimers());
+
+  const withVisit = (id: string, ...visit_dates: string[]) =>
+    ({ id, visit_dates, source_blocks: null }) as unknown as AuctionSale;
+
+  it("est un filtre du navigateur, compté parmi les filtres actifs", () => {
+    expect(hasClientOnlyFilters({ visitSoon: true })).toBe(true);
+    expect(countActiveSearchFilters({ visitSoon: true })).toBe(1);
+    expect(hasClientOnlyFilters({})).toBe(false);
+  });
+
+  it("ne garde que les ventes dont une visite à date publiée tombe dans les 7 jours", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-20T08:00:00Z"));
+    const items = [
+      withVisit("bientot", "2026-10-22 à 14:00"),
+      withVisit("lointaine", "2026-11-12 à 14:00"),
+      withVisit("sans-annee", "mardi 27 octobre"),
+      withVisit("libre", "Sur rendez-vous"),
+      withVisit("aucune"),
+    ];
+    expect(
+      applyClientSearchFilters(items, { visitSoon: true }, null).map((item) => item.id),
+    ).toEqual(["bientot"]);
+    expect(applyClientSearchFilters(items, {}, null)).toHaveLength(5);
+  });
+});
 
 describe("sales search filters", () => {
   it("filters the family on the server and consistently in derived local results", () => {
@@ -174,6 +205,176 @@ describe("sales search filters", () => {
         (item) => item.id,
       ),
     ).toEqual(["nimes"]);
+  });
+});
+
+describe("filtres « sous la fourchette » et « sans point à vérifier »", () => {
+  const NOW = new Date("2026-11-10T12:00:00Z");
+  /** Vente à venir dont rien ne reste ouvert : surface, date, occupation connues. */
+  const complete = (id: string, extra: Record<string, unknown> = {}) =>
+    ({
+      id,
+      status: "upcoming",
+      sale_date: "2026-12-10T09:00:00Z",
+      app_surface_m2: 60,
+      app_surface_kind: "habitable",
+      occupancy_status: "vacant",
+      sale_verification_status: "cross_checked",
+      ...extra,
+    }) as unknown as AuctionSale;
+  const ids = (sales: AuctionSale[]) => sales.map((item) => item.id);
+
+  it("se lisent sur les lignes déjà chargées : balayage complet, jamais côté catalogue", () => {
+    expect(hasClientOnlyFilters({ belowRange: true })).toBe(true);
+    expect(hasClientOnlyFilters({ noPointsToVerify: true })).toBe(true);
+    expect(dataFiltersFromSearch({ belowRange: true, noPointsToVerify: true })).toEqual(
+      dataFiltersFromSearch({}),
+    );
+  });
+
+  it("comptent parmi les filtres actifs, mais pas parmi ceux d'une alerte", () => {
+    expect(countActiveSearchFilters({ belowRange: true })).toBe(1);
+    expect(countActiveSearchFilters({ belowRange: true, noPointsToVerify: true })).toBe(2);
+    expect(countAlertableSearchFilters({ belowRange: true, noPointsToVerify: true })).toBe(0);
+    expect(countAlertableSearchFilters({ city: "Pau", belowRange: true })).toBe(1);
+    expect(hasUnalertableSearchFilters({ noPointsToVerify: true })).toBe(true);
+    expect(hasUnalertableSearchFilters({ city: "Pau" })).toBe(false);
+  });
+
+  describe("sous la fourchette", () => {
+    const sales = [complete("under"), complete("near"), complete("occupied-under")];
+
+    it("ne garde que les ventes que la base range sous la fourchette", () => {
+      const underRangeSaleIds = new Set(["under"]);
+      expect(
+        ids(applyClientSearchFilters(sales, { belowRange: true }, null, { underRangeSaleIds })),
+      ).toEqual(["under"]);
+    });
+
+    it("ne passe aucune vente quand la liste n'a pas été lue, jamais toutes", () => {
+      expect(ids(applyClientSearchFilters(sales, { belowRange: true }, null))).toEqual([]);
+      expect(
+        ids(
+          applyClientSearchFilters(sales, { belowRange: true }, null, { underRangeSaleIds: null }),
+        ),
+      ).toEqual([]);
+    });
+
+    it("écarte un bien occupé, loué ou occupé par son propriétaire, même listé", () => {
+      const occupied = ["occupied", "rented", "owner_occupied", "Occupé par le propriétaire"].map(
+        (status, index) => complete(`occ-${index}`, { occupancy_status: status }),
+      );
+      const underRangeSaleIds = new Set([...occupied.map((item) => item.id), "free"]);
+      expect(
+        ids(
+          applyClientSearchFilters([...occupied, complete("free")], { belowRange: true }, null, {
+            underRangeSaleIds,
+          }),
+        ),
+      ).toEqual(["free"]);
+    });
+
+    it("garde un bien libre ou d'occupation inconnue ou non lue", () => {
+      const underRangeSaleIds = new Set(["a", "b", "c"]);
+      const candidates = [
+        complete("a", { occupancy_status: "vacant" }),
+        complete("b", { occupancy_status: "unknown" }),
+        complete("c", { occupancy_status: undefined }),
+      ];
+      expect(
+        ids(
+          applyClientSearchFilters(candidates, { belowRange: true }, null, { underRangeSaleIds }),
+        ),
+      ).toEqual(["a", "b", "c"]);
+    });
+
+    it("se combine avec les autres filtres", () => {
+      const underRangeSaleIds = new Set(["under", "near"]);
+      const priced = [
+        complete("under", { starting_price_eur: 50_000 }),
+        complete("near", { starting_price_eur: 150_000 }),
+      ];
+      expect(
+        ids(
+          applyClientSearchFilters(priced, { belowRange: true, maxPrice: 100_000 }, null, {
+            underRangeSaleIds,
+          }),
+        ),
+      ).toEqual(["under"]);
+    });
+  });
+
+  describe("sans point à vérifier", () => {
+    const search = { noPointsToVerify: true };
+
+    it("écarte une vente qui laisse un point ouvert, garde celle qui n'en laisse aucun", () => {
+      const candidates = [
+        complete("complete"),
+        complete("no-surface", { app_surface_m2: null }),
+        complete("no-date", { sale_date: null }),
+        complete("conflict", { sale_verification_status: "conflict" }),
+      ];
+      expect(
+        ids(
+          applyClientSearchFilters(candidates, search, null, { occupancyVisible: true, now: NOW }),
+        ),
+      ).toEqual(["complete"]);
+    });
+
+    it("compte l'occupation inconnue seulement si le compte la lit, comme la carte", () => {
+      const unknownOccupancy = complete("unknown-occupancy", { occupancy_status: null });
+      expect(
+        ids(
+          applyClientSearchFilters([unknownOccupancy], search, null, {
+            occupancyVisible: true,
+            now: NOW,
+          }),
+        ),
+      ).toEqual([]);
+      expect(
+        ids(
+          applyClientSearchFilters([unknownOccupancy], search, null, {
+            occupancyVisible: false,
+            now: NOW,
+          }),
+        ),
+      ).toEqual(["unknown-occupancy"]);
+    });
+
+    it("garde une vente passée ou retirée : rien n'y est à vérifier avant l'audience", () => {
+      const closed = [
+        complete("past", { status: "past", app_surface_m2: null }),
+        complete("withdrawn", { status: "withdrawn", sale_date: null }),
+      ];
+      expect(ids(applyClientSearchFilters(closed, search, null, { now: NOW }))).toEqual([
+        "past",
+        "withdrawn",
+      ]);
+    });
+
+    it("ne compte jamais comme manquant un champ absent de la ligne", () => {
+      const bare = { id: "bare" } as AuctionSale;
+      expect(
+        ids(applyClientSearchFilters([bare], search, null, { occupancyVisible: true, now: NOW })),
+      ).toEqual(["bare"]);
+    });
+  });
+
+  it("les deux filtres se cumulent", () => {
+    const candidates = [
+      complete("both"),
+      complete("under-only", { app_surface_m2: null }),
+      complete("clean-only"),
+    ];
+    expect(
+      ids(
+        applyClientSearchFilters(candidates, { belowRange: true, noPointsToVerify: true }, null, {
+          underRangeSaleIds: new Set(["both", "under-only"]),
+          occupancyVisible: true,
+          now: NOW,
+        }),
+      ),
+    ).toEqual(["both"]);
   });
 });
 

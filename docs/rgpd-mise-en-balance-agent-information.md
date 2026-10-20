@@ -76,8 +76,8 @@ avant que la personne ait été contactée. Mesures prévues, à faire valider :
 - **Information individuelle** : au premier message envoyé à la personne (art. 14.3.b RGPD, au plus
   tard lors de la première communication), par le pied du message (source typée, lien de l’annonce,
   date de relevé, durées, droits, opposition en un clic).
-- **Information publique** : politique de confidentialité (version 2026-10-14.2, qui mentionne le
-  relevé des adresses des annonces Licitor et la durée) ; future page `/agent-information` nommant
+- **Information publique** : politique de confidentialité (version 2026-10-20.1, qui mentionne le
+  relevé des adresses des annonces Licitor et la durée, comme la 2026-10-14.2) ; future page `/agent-information` nommant
   Licitor (brouillon `docs/agent-information-brouillon.md`, non publiée).
 - **Conservation bornée** : Adresse relevée à la collecte de l’annonce et non utilisée pour un envoi : conservée tant que le détail de l’annonce est relu, jamais rafraîchie après la date de la vente, et supprimée au plus tard 28 jours après la dernière consultation de l’annonce (purge hebdomadaire, seuil de 21 jours).
 - **Opposition** : par adresse à la collecte (une adresse opposée n’est ni écrite ni rafraîchie), par

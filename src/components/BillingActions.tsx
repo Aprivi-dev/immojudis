@@ -38,7 +38,7 @@ import {
   ANALYSIS_TRIAL_LABEL,
   resolveAnalysisOfferLabel,
 } from "@/lib/analysis-offer";
-import { OfferOpeningRequest } from "@/components/OfferOpeningRequest";
+import { OfferOpeningRequest } from "@/components/OfferOpeningRequestLazy";
 import { userMessage } from "@/lib/user-messages";
 import { trackProductEvent } from "@/lib/product-events";
 

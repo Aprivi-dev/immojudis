@@ -127,13 +127,13 @@ export async function getDpeExplorer({
 }): Promise<DpeExplorerResponse> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "dpe.latest")) {
-    throw new Error("Explorateur DPE réservé au plan Analyse.");
+    throw new Error("Explorateur DPE réservé à l’offre Analyse.");
   }
   if (input.dpeClasses.length && !featureIncluded(plan.plan, "dpe.filters")) {
-    throw new Error("Filtres DPE réservés au plan Analyse.");
+    throw new Error("Filtres DPE réservés à l’offre Analyse.");
   }
   if (input.includeMap && !featureIncluded(plan.plan, "dpe.map")) {
-    throw new Error("Carte DPE réservée au plan Analyse.");
+    throw new Error("Carte DPE réservée à l’offre Analyse.");
   }
 
   const rows = await queryDpeSales({ auth, input });

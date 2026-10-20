@@ -17,11 +17,17 @@ import Scale from "lucide-react/dist/esm/icons/scale.js";
 import Search from "lucide-react/dist/esm/icons/search.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { LawyerReferralButton } from "@/components/LawyerReferralButton";
-import { fetchLawyerDirectory } from "@/lib/client-api";
+import { useAuth } from "@/hooks/use-auth";
+import { fetchLawyerDirectory, fetchLawyerProsecutedSales } from "@/lib/client-api";
+import { fetchAccessPlan } from "@/lib/client-billing";
 import { sponsoredPlacementLabel } from "@/lib/lawyer-placement-label";
 import type { LawyerDirectoryOfficialSource, LawyerDirectoryProfile } from "@/lib/lawyer-directory";
 import { validateDirectorySearch, type DirectorySearch } from "@/lib/lawyer-directory-search";
-import { searchParamsToRecord } from "@/lib/navigation";
+import type { LawyerUpcomingSales } from "@/lib/lawyer-prosecuted-sales";
+import { hasStandingAnalysisAccess } from "@/lib/plans";
+import { formatStartingPrice } from "@/lib/format/numbers";
+import { propertyTypeLabel } from "@/lib/format/property-labels";
+import { saleDetailPath, searchParamsToRecord } from "@/lib/navigation";
 import Link from "next/link";
 import { userMessage } from "@/lib/user-messages";
 import { queryKeys } from "@/lib/query-keys";
@@ -159,7 +165,7 @@ function DirectoryLayout({
                 Rechercher un barreau
               </label>
               <div className="mt-2 flex gap-2">
-                <div className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md border border-brand-navy/16 px-3 focus-within:border-gold-soft focus-within:ring-2 focus-within:ring-gold/15">
+                <div className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md border border-brand-navy/16 px-3 focus-within:border-gold-soft focus-within:outline-2 focus-within:outline-gold-soft">
                   <Search className="h-4 w-4 shrink-0 text-brand-navy/65" aria-hidden />
                   <input
                     id="lawyer-bar"
@@ -172,7 +178,7 @@ function DirectoryLayout({
                 </div>
                 <button
                   type="submit"
-                  className="min-h-11 rounded-md bg-brand-navy px-4 text-sm font-semibold text-white transition-colors hover:bg-gold-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2"
+                  className="min-h-11 rounded-md bg-brand-navy px-4 text-sm font-semibold text-white transition-colors hover:bg-gold-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
                 >
                   Rechercher
                 </button>
@@ -204,6 +210,8 @@ function DirectoryResults({
   isDemo: boolean;
   officialSource: LawyerDirectoryOfficialSource | null;
 }) {
+  const prosecutedSales = useProsecutedSalesForPaidAccount(lawyers);
+
   if (!lawyers.length) {
     return (
       <div className="rounded-lg border border-brand-navy/12 bg-white p-7 text-center shadow-sm sm:p-10">
@@ -271,7 +279,13 @@ function DirectoryResults({
           </div>
           <div className="grid gap-5 lg:grid-cols-2">
             {sponsoredLawyers.map((lawyer) => (
-              <LawyerCard key={lawyer.id} lawyer={lawyer} saleId={saleId} sponsored />
+              <LawyerCard
+                key={lawyer.id}
+                lawyer={lawyer}
+                saleId={saleId}
+                upcomingSales={prosecutedSales[lawyer.id]}
+                sponsored
+              />
             ))}
           </div>
         </section>
@@ -329,7 +343,12 @@ function DirectoryResults({
         {directoryLawyers.length ? (
           <div className="grid gap-3 lg:grid-cols-2">
             {directoryLawyers.map((lawyer) => (
-              <LawyerCard key={lawyer.id} lawyer={lawyer} saleId={saleId} />
+              <LawyerCard
+                key={lawyer.id}
+                lawyer={lawyer}
+                saleId={saleId}
+                upcomingSales={prosecutedSales[lawyer.id]}
+              />
             ))}
           </div>
         ) : (
@@ -355,13 +374,46 @@ function DirectoryResults({
   );
 }
 
+/**
+ * Ventes à venir des avocats de la page, chargées pour un compte PAYANT seulement (abonnement
+ * Analyse, premium, administrateur : jamais l'offre de lancement). Pour un visiteur ou un compte
+ * gratuit, aucune requête n'est envoyée et rien n'est affiché, pas même un teaser : le lien avocat
+ * poursuivant ↔ vente ne leur est pas montré. Une erreur laisse les cartes sans cette liste.
+ */
+function useProsecutedSalesForPaidAccount(
+  lawyers: LawyerDirectoryProfile[],
+): Record<string, LawyerUpcomingSales> {
+  const { user, loading } = useAuth();
+  const userKey = user?.id ?? "anonymous";
+  const planQuery = useQuery({
+    queryKey: queryKeys.featureEntitlementsPlan(userKey),
+    queryFn: fetchAccessPlan,
+    enabled: Boolean(user) && !loading,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const paidAccount = Boolean(user) && hasStandingAnalysisAccess(planQuery.data?.plan);
+  const lawyerIds = lawyers.filter((lawyer) => lawyer.source === "immojudis").map(({ id }) => id);
+  const salesQuery = useQuery({
+    queryKey: queryKeys.lawyerProsecutedSales(userKey, lawyerIds),
+    queryFn: () => fetchLawyerProsecutedSales(lawyerIds),
+    enabled: paidAccount && lawyerIds.length > 0,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  return paidAccount ? (salesQuery.data?.lawyers ?? {}) : {};
+}
+
 function LawyerCard({
   lawyer,
   saleId,
+  upcomingSales,
   sponsored = false,
 }: {
   lawyer: LawyerDirectoryProfile;
   saleId?: string;
+  /** Réservé aux comptes payants : absent pour les autres. */
+  upcomingSales?: LawyerUpcomingSales;
   sponsored?: boolean;
 }) {
   return (
@@ -454,6 +506,10 @@ function LawyerCard({
         ) : null}
       </dl>
 
+      {upcomingSales?.sales.length ? (
+        <ProsecutedSales lawyerId={lawyer.id} upcoming={upcomingSales} />
+      ) : null}
+
       <div className="mt-auto flex flex-wrap gap-2 pt-5">
         {sponsored && saleId ? (
           <LawyerReferralButton
@@ -508,6 +564,73 @@ function LawyerCard({
   );
 }
 
+/**
+ * Ventes à venir où le nom de l'avocat figure comme avocat poursuivant, pour un compte payant
+ * seulement. Uniquement des faits déjà publics de la vente (type, ville, date, tribunal, mise à prix) et un lien vers sa fiche. Le
+ * rapprochement est automatique (nom et barreau) : la mention le dit, sans jamais en faire une
+ * recommandation.
+ */
+function ProsecutedSales({
+  lawyerId,
+  upcoming,
+}: {
+  lawyerId: string;
+  upcoming: LawyerUpcomingSales;
+}) {
+  const headingId = `prosecuted-sales-${lawyerId}`;
+  const hidden = upcoming.total - upcoming.sales.length;
+
+  return (
+    <section aria-labelledby={headingId} className="mt-4">
+      <h4
+        id={headingId}
+        className="text-xs font-bold uppercase tracking-[0.12em] text-brand-navy/70"
+      >
+        Ventes à venir en tant qu'avocat poursuivant
+      </h4>
+      <ul className="mt-2 grid gap-2">
+        {upcoming.sales.map((sale) => {
+          const details = [
+            sale.saleDate ? formatFrenchDate(sale.saleDate) : null,
+            sale.tribunalName,
+            sale.startingPriceEur && sale.startingPriceEur > 0
+              ? `Mise à prix ${formatStartingPrice(sale.startingPriceEur)}`
+              : null,
+          ].filter(Boolean);
+          return (
+            <li key={sale.id}>
+              <Link
+                href={saleDetailPath(sale.id)}
+                className="block min-h-11 rounded-md border border-brand-navy/12 px-3 py-2 text-sm transition-colors hover:border-gold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
+              >
+                <span className="block font-semibold text-brand-navy">
+                  {propertyTypeLabel(sale.propertyType)}
+                  {sale.city ? ` à ${sale.city}` : ""}
+                </span>
+                {details.length ? (
+                  <span className="block break-words text-xs text-brand-navy/65">
+                    {details.join(" · ")}
+                  </span>
+                ) : null}
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+      {hidden > 0 ? (
+        <p className="mt-2 text-xs text-brand-navy/65">
+          {hidden} autre{hidden > 1 ? "s" : ""} vente{hidden > 1 ? "s" : ""} à venir non affichée
+          {hidden > 1 ? "s" : ""}.
+        </p>
+      ) : null}
+      <p className="mt-2 text-xs leading-relaxed text-brand-navy/60">
+        Rapprochement automatique d'après le nom indiqué dans les annonces et le barreau du tribunal
+        : vérifiez-le sur l'annonce. Cette liste n'est pas une recommandation.
+      </p>
+    </section>
+  );
+}
+
 function CnbDirectoryLink({ barAssociation }: { barAssociation: string | null }) {
   const href = cnbDirectoryHref(barAssociation);
 
@@ -516,7 +639,7 @@ function CnbDirectoryLink({ barAssociation }: { barAssociation: string | null })
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-md border border-brand-navy/16 px-4 text-sm font-semibold text-brand-navy transition-colors hover:border-gold hover:text-gold-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2"
+      className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-md border border-brand-navy/16 px-4 text-sm font-semibold text-brand-navy transition-colors hover:border-gold hover:text-gold-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
     >
       Résultats officiels du CNB
       <ExternalLink className="h-4 w-4" aria-hidden />

@@ -7,6 +7,15 @@ import {
   validateSalesSearch,
 } from "./search-url-state";
 
+describe("filtre « visite dans les 7 jours » dans l'adresse", () => {
+  it("se lit et s'écrit sous visitSoon, et reste absent quand il n'est pas choisi", () => {
+    expect(validateSalesSearch({ visitSoon: "true" }).visitSoon).toBe(true);
+    expect(validateSalesSearch({}).visitSoon).toBeUndefined();
+    expect(salesSearchToUrlRecord({ visitSoon: true }).visitSoon).toBe(true);
+    expect(salesSearchToUrlRecord({ visitSoon: false }).visitSoon).toBeUndefined();
+  });
+});
+
 describe("montants et valeurs ignorées dans l'adresse", () => {
   it("plafonne les montants à 100 000 000 € et les arrondit à l'euro", () => {
     expect(MAX_PRICE_EUR).toBe(100_000_000);
@@ -145,5 +154,33 @@ describe("sales search URL state", () => {
       bbox: "-1.75948,43.96151,1.28262,45.43672",
     });
     expect(record.viewport).toBeUndefined();
+  });
+});
+
+describe("filtres « sous la fourchette » et « sans point à vérifier »", () => {
+  it("se lisent dans l'adresse et s'y réécrivent à l'identique", () => {
+    const search = validateSalesSearch({ belowRange: "true", noPointsToVerify: "1" });
+    expect(search.belowRange).toBe(true);
+    expect(search.noPointsToVerify).toBe(true);
+    expect(salesSearchToUrlRecord(search)).toMatchObject({
+      belowRange: true,
+      noPointsToVerify: true,
+    });
+  });
+
+  it("n'écrivent rien quand ils sont éteints ou illisibles", () => {
+    for (const raw of [undefined, "false", "0", "peut-être"]) {
+      const record = salesSearchToUrlRecord(
+        validateSalesSearch({ belowRange: raw, noPointsToVerify: raw }),
+      );
+      expect(record.belowRange, String(raw)).toBeUndefined();
+      expect(record.noPointsToVerify, String(raw)).toBeUndefined();
+    }
+  });
+
+  it("ne changent pas une adresse canonique qui les porte", () => {
+    expect(
+      canonicalSalesQuery(new URLSearchParams("belowRange=true&noPointsToVerify=true")),
+    ).toBeNull();
   });
 });

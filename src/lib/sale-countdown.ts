@@ -113,3 +113,16 @@ function parisOffsetMinutes(value: Date): number {
   const minutes = Number(match[2]) * 60 + Number(match[3]);
   return match[1] === "+" ? minutes : -minutes;
 }
+
+/**
+ * Le jour de la vente (heure de Paris) est derrière nous : même règle que « Vente passée » des
+ * cartes et du compte à rebours, au jour près (une vente d'aujourd'hui n'est pas passée).
+ */
+export function isPastSaleDay(
+  saleDate: string | null | undefined,
+  now: Date = new Date(),
+): boolean {
+  if (!saleDate) return false;
+  const date = new Date(saleDate);
+  return Number.isFinite(date.getTime()) && parisDateKey(date) < parisDateKey(now);
+}

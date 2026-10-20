@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { toastMessage } from "./support/toast";
 
 const SUPABASE_URL = "https://ci.supabase.co";
 const AUTH_STORAGE_KEY = "encheres-immo-auth";
@@ -102,7 +103,7 @@ test.describe("admin configuration", () => {
     await page.getByRole("button", { name: "Lancer", exact: true }).click();
     await expect.poll(() => state.scrollPayloads.length).toBe(1);
     expect(state.scrollPayloads[0]).toEqual({ source: "avoventes", mode: "collect" });
-    await expect(page.getByText("Traitement demandé", { exact: true })).toBeVisible();
+    await expect(toastMessage(page, "Traitement demandé", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Relancer", exact: true })).toBeEnabled();
     await page.getByRole("button", { name: "Relancer", exact: true }).click();
     await expect.poll(() => state.scrollPayloads.length).toBe(2);

@@ -6,6 +6,8 @@ import {
 import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
 import { getAdjudicationPriceStatisticsForSale } from "@/lib/adjudication-price-statistics-repository";
 import { assertFeatureEntitlement } from "@/lib/property-reports";
+import { enforceUserRateLimit } from "@/lib/rate-limit";
+import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 
 const paramsSchema = z.object({ id: z.string().uuid() });
@@ -14,6 +16,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const context = createApiRequestContext(request, "adjudication-price-statistics.sale");
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
+    await enforceUserRateLimit({
+      userId: auth.userId,
+      bucketKey: "v1.sale-adjudication-statistics",
+      ...RATE_LIMIT_POLICIES.compute,
+    });
     const rawParams = await params;
     // Analyse, or a Découverte account that unlocked this very sale (« 3 déblocages par mois »):
     // the statistics of the tribunal of this sale only. The identifier is validated after the
@@ -21,7 +28,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     await assertFeatureEntitlement(
       auth,
       "sales.statistics",
-      "Statistiques d’adjudication réservées au plan Analyse.",
+      "Statistiques d’adjudication réservées à l’offre Analyse.",
       { saleId: paramsSchema.safeParse(rawParams).data?.id },
     );
     const { id: saleId } = paramsSchema.parse(rawParams);

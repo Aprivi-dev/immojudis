@@ -4,6 +4,8 @@ import {
 } from "@/integrations/supabase/auth-middleware";
 import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
 import { assertFeatureEntitlement } from "@/lib/property-reports";
+import { enforceUserRateLimit } from "@/lib/rate-limit";
+import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import {
   tribunalJudicialActivityDirectoryQuerySchema,
   tribunalJudicialActivityDirectoryResponseSchema,
@@ -14,10 +16,15 @@ export async function GET(request: Request) {
   const context = createApiRequestContext(request, "tribunal.judicial_activity.directory");
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
+    await enforceUserRateLimit({
+      userId: auth.userId,
+      bucketKey: "v1.tribunal-judicial-activity-directory",
+      ...RATE_LIMIT_POLICIES.compute,
+    });
     await assertFeatureEntitlement(
       auth,
       "sales.statistics",
-      "Répertoire des tribunaux réservé au plan Analyse.",
+      "Répertoire des tribunaux réservé à l’offre Analyse.",
     );
     const url = new URL(request.url);
     const input = tribunalJudicialActivityDirectoryQuerySchema.parse(

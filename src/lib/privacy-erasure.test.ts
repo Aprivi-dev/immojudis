@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
   role: "user",
   customerId: "cus_123" as string | null,
   deletes: [] as Array<{ table: string; column: string; value: string }>,
+  deleteErrors: {} as Record<string, { code?: string; message?: string }>,
   updates: [] as Array<Record<string, unknown>>,
   order: [] as string[],
   deleteUser: vi.fn(),
@@ -42,6 +43,8 @@ vi.mock("@/integrations/supabase/client.server", () => ({
           if (mode === "delete") {
             state.deletes.push({ table, column, value });
             state.order.push(`delete:${table}`);
+            const failure = state.deleteErrors[table];
+            if (failure) return Promise.resolve({ count: null, error: failure });
             return Promise.resolve({ count: 1, error: null });
           }
           return builder;
@@ -101,6 +104,7 @@ describe("erasure execution (P4-10)", () => {
     state.role = "user";
     state.customerId = "cus_123";
     state.deletes = [];
+    state.deleteErrors = {};
     state.updates = [];
     state.order = [];
     state.stripeDel.mockImplementation(async () => {
@@ -128,6 +132,8 @@ describe("erasure execution (P4-10)", () => {
       "user_alerts",
       "user_favorites",
       "user_followed_sale_snapshots",
+      "account_product_events",
+      "sale_reminder_dispatches",
       "saved_property_reports",
       "sale_workspaces",
       "user_subscriptions",
@@ -143,6 +149,41 @@ describe("erasure execution (P4-10)", () => {
     });
     expect(report).toMatchObject({ stripeCustomerDeleted: true, authUserDeleted: true });
     expect(report.request.status).toBe("completed");
+  });
+
+  describe("deployment order: tables of migrations not applied yet", () => {
+    const missing = { code: "PGRST205", message: "Could not find the table in the schema cache" };
+
+    it.each(["sale_signal_feedback", "weekly_digest_dispatches", "sale_result_dispatches"])(
+      "does not fail the erasure when %s does not exist yet (nothing to erase there)",
+      async (table) => {
+        state.deleteErrors[table] = missing;
+        const report = await executePrivacyErasure({ auth: admin, input });
+        expect(report.authUserDeleted).toBe(true);
+        expect(report.deletedRows[`${table}.user_id`]).toBe(0);
+        expect(state.deleteUser).toHaveBeenCalled();
+      },
+    );
+
+    it("accepts the PostgreSQL undefined_table code too", async () => {
+      state.deleteErrors.sale_result_dispatches = { code: "42P01", message: "does not exist" };
+      const report = await executePrivacyErasure({ auth: admin, input });
+      expect(report.deletedRows["sale_result_dispatches.user_id"]).toBe(0);
+    });
+
+    it("still fails for any other missing table, or any other error", async () => {
+      state.deleteErrors.user_alerts = missing;
+      await expect(executePrivacyErasure({ auth: admin, input })).rejects.toThrow(
+        "Effacement impossible dans user_alerts",
+      );
+      expect(state.deleteUser).not.toHaveBeenCalled();
+
+      state.deleteErrors = { sale_signal_feedback: { code: "XX000", message: "boom" } };
+      await expect(executePrivacyErasure({ auth: admin, input })).rejects.toThrow(
+        "Effacement impossible dans sale_signal_feedback",
+      );
+      expect(state.deleteUser).not.toHaveBeenCalled();
+    });
   });
 
   it("keeps the account intact when Stripe fails, so the operation can be retried", async () => {

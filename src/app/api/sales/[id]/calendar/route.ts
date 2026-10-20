@@ -75,7 +75,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     const file = buildSaleCalendarFile(row, { origin });
     if (!file) {
       throw new PublicApiError(
-        "La date de cette audience n’est pas confirmée (report, information contradictoire ou source unique) : nous ne l’ajoutons pas à votre agenda. Vérifiez-la auprès de l’avocat poursuivant ou du greffe.",
+        "Nous n’ajoutons pas cette audience à votre agenda : sa date est passée, reportée ou n’est pas confirmée (information contradictoire ou source unique). Vérifiez-la auprès de l’avocat poursuivant ou du greffe.",
         409,
       );
     }

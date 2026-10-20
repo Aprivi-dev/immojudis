@@ -14,6 +14,7 @@ import type {
   MapMouseEvent,
   SymbolLayerSpecification,
 } from "mapbox-gl";
+import Check from "lucide-react/dist/esm/icons/check.js";
 import LoaderCircle from "lucide-react/dist/esm/icons/loader-circle.js";
 import LocateFixed from "lucide-react/dist/esm/icons/locate-fixed.js";
 import MapIcon from "lucide-react/dist/esm/icons/map.js";
@@ -52,6 +53,7 @@ import {
   type AiReviewRequestStatus,
 } from "@/lib/ai-review-guard";
 import { escapeHtml } from "@/lib/guards";
+import { safeSalesReturnTo, saleDetailPath } from "@/lib/navigation";
 
 // Chargé à la demande par l'effet de création de la carte (import dynamique).
 let mapboxRuntime: typeof mapboxgl | null = null;
@@ -372,6 +374,7 @@ export function MapPanel({
           container: containerRef.current,
           style: mapStyle,
           language: "fr",
+          locale: MAP_LOCALE_FR,
           center: DEFAULT_MAP_CENTER,
           zoom: defaultMapZoomForViewport(containerRef.current),
           minZoom: MIN_MAP_ZOOM,
@@ -698,7 +701,7 @@ export function MapPanel({
       <div
         ref={containerRef}
         role="region"
-        aria-label="Carte Mapbox des biens Immojudis"
+        aria-label="Carte des annonces"
         data-testid="mapbox-map-panel"
         className="!absolute !inset-0 !h-full !w-full"
       />
@@ -770,16 +773,20 @@ export function MapPanel({
               }}
               disabled={!canToggleSearchAsMove}
               aria-pressed={searchAsMove}
-              className={`inline-flex h-10 items-center gap-2 rounded-md border px-3 text-sm font-extrabold shadow-lg backdrop-blur transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold disabled:cursor-not-allowed disabled:opacity-60 ${
+              className={`inline-flex min-h-11 items-center gap-2 rounded-md border px-3 py-1.5 text-left text-sm font-extrabold leading-tight shadow-lg backdrop-blur transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft disabled:cursor-not-allowed disabled:opacity-60 ${
                 searchAsMove
                   ? "border-brand-navy bg-brand-navy text-white"
                   : "border-line-soft bg-white/95 text-brand-navy hover:border-gold disabled:hover:border-line-soft"
               }`}
             >
-              <LocateFixed className="h-4 w-4" />
-              {searchAsMove
-                ? "Recherche en déplaçant la carte : activée"
-                : "Chercher en déplaçant la carte"}
+              {/* Libellé fixe, court, qui peut passer à la ligne ; l'état est porté par aria-pressed
+                  (et par la couleur et l'icône), pas par un second libellé. */}
+              {searchAsMove ? (
+                <Check className="h-4 w-4 shrink-0" aria-hidden="true" />
+              ) : (
+                <LocateFixed className="h-4 w-4 shrink-0" aria-hidden="true" />
+              )}
+              <span>Chercher en déplaçant la carte</span>
             </button>
             {onSearchViewport && !searchAsMove && viewportDirty ? (
               <button
@@ -789,7 +796,7 @@ export function MapPanel({
                   onSearchViewport();
                   setViewportDirty(false);
                 }}
-                className="inline-flex h-10 items-center gap-2 rounded-md border border-brand-navy bg-brand-navy px-3 text-sm font-extrabold text-white shadow-lg transition-colors hover:bg-brand-navy-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                className="inline-flex min-h-11 items-center gap-2 rounded-md border border-brand-navy bg-brand-navy px-3 py-1.5 text-left text-sm font-extrabold leading-tight text-white shadow-lg transition-colors hover:bg-brand-navy-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
               >
                 <MapIcon className="h-4 w-4" />
                 Rechercher dans cette zone
@@ -1080,6 +1087,19 @@ function showSalePopup(
     .addTo(map);
 }
 
+/**
+ * Adresse du « Voir le détail » de la fenêtre : la fiche, avec la recherche en cours (`from`) et
+ * `map=true`, pour que « Retour à la carte » rouvre la carte. La fenêtre n'existe qu'après un clic
+ * dans le navigateur : l'origine n'entre dans aucun HTML rendu par le serveur ni pour les robots.
+ */
+function popupDetailUrl(saleId: string): string {
+  if (typeof window === "undefined") return saleDetailPath(saleId);
+  const search = new URLSearchParams(window.location.search);
+  search.set("map", "true");
+  const from = safeSalesReturnTo(`${window.location.pathname}?${search.toString()}`);
+  return saleDetailPath(saleId, from);
+}
+
 function buildPopupHtml(
   sale: AuctionSale & { latitude: number; longitude: number },
   access: PopupAccess,
@@ -1099,9 +1119,9 @@ function buildPopupHtml(
   const riskCount = sale.risks?.length ?? 0;
   const riskLabel =
     riskCount > 1
-      ? `${riskCount} alertes`
+      ? `${riskCount} risques signalés`
       : riskCount === 1
-        ? "1 alerte"
+        ? "1 risque signalé"
         : "à vérifier dans les pièces";
   const imageUrl = access.preview
     ? firstPropertyImage(sale.media)
@@ -1112,7 +1132,7 @@ function buildPopupHtml(
         width: 420,
         height: 250,
       }) || firstPropertyImage(sale.media);
-  const detailUrl = `/sales/${encodeURIComponent(sale.id)}`;
+  const detailUrl = popupDetailUrl(sale.id);
   const location = [sale.city, sale.tribunal_city ?? sale.tribunal_name]
     .filter(Boolean)
     .join(" · ");
@@ -1137,7 +1157,7 @@ function buildPopupHtml(
         <div class="immo-mapbox-popup-metrics">
           <span>${escapeHtml(displaySurface.label)}</span>
           <span>${escapeHtml(formatPricePerM2(pricePerSquareMeter))}</span>
-          <span>Score : ${access.analysisLocked ? ANALYSIS_LOCK_HTML : escapeHtml(score)}</span>
+          <span>Indice Immojudis : ${access.analysisLocked ? ANALYSIS_LOCK_HTML : escapeHtml(score)} <a class="immo-mapbox-popup-help" href="/classement-des-annonces" aria-label="Comment est calculé l’indice Immojudis (score d’investissement) ?">?</a></span>
           <span>Risques : ${access.analysisLocked ? ANALYSIS_LOCK_HTML : escapeHtml(riskLabel)}</span>
         </div>
         <div class="immo-mapbox-popup-tags">
@@ -1167,6 +1187,27 @@ function buildPopupHtml(
   `;
 }
 
+/**
+ * Textes de la carte que Mapbox écrit lui-même (nom du canevas, bouton des crédits, zoom…) : sans
+ * cette table, `language: "fr"` ne traduit que les étiquettes du fond de carte et le reste reste en
+ * anglais. Clés de `defaultLocale` de mapbox-gl.
+ */
+const MAP_LOCALE_FR = {
+  "AttributionControl.ToggleAttribution": "Afficher ou masquer les crédits de la carte",
+  "FullscreenControl.Enter": "Passer en plein écran",
+  "FullscreenControl.Exit": "Quitter le plein écran",
+  "GeolocateControl.FindMyLocation": "Trouver ma position",
+  "GeolocateControl.LocationNotAvailable": "Position indisponible",
+  "LogoControl.Title": "Page d’accueil de Mapbox",
+  "Map.Title": "Carte interactive des annonces",
+  "NavigationControl.ResetBearing": "Réorienter la carte vers le nord",
+  "NavigationControl.ZoomIn": "Zoomer",
+  "NavigationControl.ZoomOut": "Dézoomer",
+  "ScrollZoomBlocker.CtrlMessage": "Utilisez Ctrl + molette pour zoomer la carte",
+  "ScrollZoomBlocker.CmdMessage": "Utilisez ⌘ + molette pour zoomer la carte",
+  "TouchPanBlocker.Message": "Utilisez deux doigts pour déplacer la carte",
+} as const;
+
 function defaultMapZoomForViewport(node: HTMLDivElement) {
   if (node.clientWidth > 0 && node.clientWidth < 640) return DEFAULT_MOBILE_MAP_ZOOM;
   return DEFAULT_MAP_ZOOM;
@@ -1186,7 +1227,7 @@ function MapFallback({ message, onShowList }: { message: string; onShowList?: ()
         <a
           href="#sales-results"
           onClick={onShowList}
-          className="mt-4 inline-flex min-h-11 items-center justify-center rounded-md bg-brand-navy px-4 text-sm font-semibold text-white hover:bg-brand-navy-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+          className="mt-4 inline-flex min-h-11 items-center justify-center rounded-md bg-brand-navy px-4 text-sm font-semibold text-white hover:bg-brand-navy-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
         >
           Voir la liste
         </a>
@@ -1210,7 +1251,7 @@ function MapIconButton({
     <button
       type="button"
       onClick={onClick}
-      className={`grid h-11 w-11 cursor-pointer place-items-center text-brand-navy transition-colors hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold ${
+      className={`grid h-11 w-11 cursor-pointer place-items-center text-brand-navy transition-colors hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft ${
         separated ? "border-t border-line-soft" : ""
       }`}
       aria-label={label}
@@ -1234,7 +1275,7 @@ function MapControlButton({
     <button
       type="button"
       onClick={onClick}
-      className="grid h-11 w-11 cursor-pointer place-items-center rounded-md border border-line-soft bg-white text-brand-navy shadow-lg transition-colors hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+      className="grid h-11 w-11 cursor-pointer place-items-center rounded-md border border-line-soft bg-white text-brand-navy shadow-lg transition-colors hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
       aria-label={label}
       title={label}
     >

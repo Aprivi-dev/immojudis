@@ -14,6 +14,20 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+describe("sale countdown, vente passée", () => {
+  it("dit « Vente passée » par défaut, et se tait avec omitPast (pastille seule)", () => {
+    const past = sale({ sale_date: "2020-03-12T09:00:00Z" });
+    const { container, rerender } = render(<SaleCountdown sale={past} variant="chip" />);
+    expect(screen.getAllByText("Vente passée")).toHaveLength(1);
+    rerender(<SaleCountdown sale={past} variant="chip" omitPast />);
+    expect(screen.queryByText("Vente passée")).toBeNull();
+    expect(container.textContent).toBe("");
+    // Le bloc de la fiche garde son message : omitPast ne concerne que la pastille.
+    rerender(<SaleCountdown sale={past} variant="block" omitPast />);
+    expect(screen.getByText("Vente passée")).toBeTruthy();
+  });
+});
+
 describe("sale countdown deadline", () => {
   it("uses Paris midnight across both daylight-saving transitions", () => {
     expect(nextParisMidnight("2026-03-29").toISOString()).toBe("2026-03-29T22:00:00.000Z");

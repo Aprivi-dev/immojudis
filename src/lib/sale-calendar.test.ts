@@ -4,6 +4,7 @@ import {
   SALE_CALENDAR_DISCLAIMER,
   SALE_HEARING_DEFAULT_DURATION_HOURS,
   buildSaleCalendarFile,
+  buildSalesCalendarFile,
   saleCalendarSequence,
   saleCalendarUid,
   type SaleCalendarRow,
@@ -191,5 +192,55 @@ describe("buildSaleCalendarFile", () => {
     expect(after).toBeGreaterThan(before);
     expect(unfolded()).toContain(`SEQUENCE:${before}\r\n`);
     expect(unfolded({ updated_at: null })).toContain("SEQUENCE:0\r\n");
+  });
+});
+
+describe("buildSalesCalendarFile (toutes les audiences suivies)", () => {
+  const other = "b2c3d4e5-0000-4000-8000-1234567890ab";
+
+  it("réunit les audiences exportables en un fichier, dans l'ordre des dates", () => {
+    const file = buildSalesCalendarFile(
+      [
+        row({ id: saleId, sale_date: "2026-11-20T07:30:00+00:00" }),
+        row({ id: other, sale_date: "2026-10-20T07:30:00+00:00", city: "Lyon" }),
+      ],
+      { origin, now },
+    );
+    expect(file).not.toBeNull();
+    expect(file!.filename).toBe("immojudis-audiences-suivies.ics");
+    expect(file!.exportedIds).toEqual([other, lowerId]);
+    const ics = file!.body.replace(/\r\n /g, "");
+    expect(ics.match(/BEGIN:VCALENDAR/g)).toHaveLength(1);
+    expect(ics.match(/BEGIN:VEVENT/g)).toHaveLength(2);
+    expect(ics.indexOf("à Lyon")).toBeLessThan(ics.indexOf("à Bordeaux"));
+    expect(ics).toContain(`UID:sale-${other}@www.immojudis.example`);
+    expect(ics).toContain(`UID:sale-${lowerId}@www.immojudis.example`);
+  });
+
+  it("laisse de côté une audience non exportable, sans jamais l'écrire « à confirmer »", () => {
+    const file = buildSalesCalendarFile(
+      [
+        row(),
+        row({ id: other, exportable: false, sale_date: null, city: null }),
+        row({ id: "c3d4e5f6-0000-4000-8000-1234567890ab", sale_date: "pas une date" }),
+      ],
+      { origin, now },
+    );
+    expect(file!.exportedIds).toEqual([lowerId]);
+    expect(file!.body).not.toMatch(/à confirmer/i);
+    expect(file!.body.match(/BEGIN:VEVENT/g)).toHaveLength(1);
+  });
+
+  it("rend null quand aucune audience n'est exportable", () => {
+    expect(
+      buildSalesCalendarFile([row({ exportable: false, sale_date: null })], { origin, now }),
+    ).toBeNull();
+    expect(buildSalesCalendarFile([], { origin, now })).toBeNull();
+  });
+
+  it("garde, pour une audience seule, le même événement que le fichier unitaire", () => {
+    const single = buildSaleCalendarFile(row(), { origin, now })!;
+    const many = buildSalesCalendarFile([row()], { origin, now })!;
+    expect(many.body).toBe(single.body);
   });
 });

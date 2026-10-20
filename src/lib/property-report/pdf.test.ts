@@ -100,6 +100,31 @@ describe("property report rental PDF", () => {
     expect(lines.some((line) => line.includes("Cashflow mensuel estime:"))).toBe(false);
   });
 
+  it("refiltre à la lecture les noms de particuliers d'un rapport enregistré", () => {
+    const report = reportWithRentalScenario();
+    const snapshot = report.report_snapshot as { sale: Record<string, unknown> };
+    const lines = reportToPdfLines(
+      {
+        ...report,
+        title: "Maison occupée par Pierre Martin",
+        report_snapshot: {
+          ...snapshot,
+          sale: {
+            ...snapshot.sale,
+            title: null,
+            description: "Bien appartenant à Monsieur DUPONT Jean-Claude, retraité.",
+          },
+        } as Json,
+      },
+      buildPlanEntitlements("analyse"),
+    );
+
+    const text = lines.join("\n");
+    expect(text).not.toContain("DUPONT");
+    expect(text).not.toContain("Martin");
+    expect(text).toContain("Maison occupée par un occupant");
+  });
+
   it("prints a starting price of 0 as not communicated, never as 0 €", () => {
     const report = reportWithRentalScenario();
     const snapshot = report.report_snapshot as { sale: Record<string, unknown> };

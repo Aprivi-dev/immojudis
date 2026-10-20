@@ -118,8 +118,8 @@ describe("date d'une vente passée", () => {
 
   it("dit « Vente passée » au lieu d'une date de 2020", () => {
     renderCard(sale("sale-dated", { sale_date: "2020-03-12T09:00:00Z" }));
-    // La date est remplacée (le compte à rebours peut aussi dire « Vente passée » : au moins un).
-    expect(screen.getAllByText("Vente passée").length).toBeGreaterThan(0);
+    // La date est remplacée, et la pastille du compte à rebours ne le répète pas : une seule fois.
+    expect(screen.getAllByText("Vente passée")).toHaveLength(1);
     expect(document.body.textContent).not.toContain("2020");
   });
 
@@ -210,7 +210,7 @@ describe("clavier : un seul lien et un seul arrêt par carte pour la fiche", () 
         />,
       ),
     );
-    const region = screen.getByRole("region", { name: "Photos de Appartement à Bordeaux" });
+    const region = screen.getByRole("group", { name: "Photos de Appartement à Bordeaux" });
     expect(region.hasAttribute("tabindex")).toBe(false);
     const photoLink = screen.getByRole("link", { hidden: true });
     expect(photoLink.getAttribute("tabindex")).toBe("-1");

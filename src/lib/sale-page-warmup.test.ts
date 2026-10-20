@@ -190,7 +190,7 @@ describe("warmSalePages", () => {
 
   it("never has more than four pages in flight", async () => {
     const ids = Array.from(
-      { length: 30 },
+      { length: MAX_WARMUP_PAGES + 6 },
       (_, index) => `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
     );
     let inFlight = 0;

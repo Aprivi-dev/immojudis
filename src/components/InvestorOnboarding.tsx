@@ -209,8 +209,8 @@ export function InvestorOnboarding() {
                 bien.{" "}
                 {launchOffer ? (
                   <>
-                    Pendant l’offre de lancement, votre compte gratuit ouvre toutes les ventes avec
-                    les outils de l’offre Analyse.
+                    Pendant l’offre de lancement, votre compte gratuit ouvre les outils de l’offre
+                    Analyse sur toutes les ventes (contenu selon la vente).
                   </>
                 ) : (
                   <>

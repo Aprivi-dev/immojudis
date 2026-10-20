@@ -43,6 +43,7 @@ import type { AuctionSale } from "@/lib/types";
 import { MAX_COMPARED_SALES } from "@/lib/search/sale-comparison";
 import type { ActiveFilterChip } from "./active-filter-chips";
 import { ErrorState, NoResultsState } from "./SearchFilters";
+import { LaunchOfferListBanner } from "./LaunchOfferListBanner";
 import { SearchResultsSkeleton } from "./SearchResultsSkeleton";
 import { SearchResultsTable } from "./SearchResultsTable";
 import {
@@ -50,6 +51,8 @@ import {
   departmentLabel,
   listingAccessLine,
   listingDateLabel,
+  listingLinkLabel,
+  PAST_SALE_LABEL,
   listingTitle,
 } from "./listing-text";
 import { useSaleDetailLink } from "./use-sale-detail-link";
@@ -65,6 +68,8 @@ import {
 } from "@/lib/ai-review-guard";
 import { userMessage } from "@/lib/user-messages";
 import { queryKeys } from "@/lib/query-keys";
+import { useFavoriteRemovalConfirmation } from "@/components/favorite-removal";
+import type { RemovedFavoriteDossier } from "@/lib/favorites";
 import type { ResultsView } from "@/lib/search/results-view";
 
 /**
@@ -174,7 +179,11 @@ export function SearchResultsList({
 
   return (
     <div className="px-3 pb-24 pt-3 sm:px-5 lg:pb-6">
+      <LaunchOfferListBanner />
       {error ? <ErrorState error={error} onRetry={onRetry} /> : null}
+
+      {/* Les titres des cartes sont des h3 : sans h2 devant eux, la page saute du h1 au h3. */}
+      {isLoading || sales.length > 0 ? <h2 className="sr-only">Résultats</h2> : null}
 
       {!isLoading && sales.length === 0 && !error && !hideEmptyState ? (
         <NoResultsState
@@ -298,12 +307,16 @@ export const ListingCard = memo(function ListingCard({
   /** Le compte a débloqué cette vente (« 3 déblocages par mois ») : pastille « Débloquée ». */
   unlocked?: boolean;
   /** Appelé après l'ajout ou le retrait réussi d'un favori depuis la carte. */
-  onFavoriteChange?: (saleId: string, isFavorite: boolean) => void;
+  onFavoriteChange?: (
+    saleId: string,
+    isFavorite: boolean,
+    removed?: RemovedFavoriteDossier | null,
+  ) => void;
 }) {
   const displaySurface = getDisplaySurface(sale);
   const { isViewed } = useViewedSales();
   const detailLink = useSaleDetailLink(sale.id, returnTo);
-  const launchOffer = useLaunchOffer().active;
+  const { active: launchOffer, pending: launchPending } = useLaunchOffer();
   const premiumLocked = locked || analysisLocked;
   // « N points à vérifier » : seulement des faits déjà sur la carte ; l'occupation n'est comptée
   // que si la carte la montre.
@@ -351,7 +364,15 @@ export const ListingCard = memo(function ListingCard({
         {...detailLink.armProps}
         prefetch={false}
         onClick={() => onSelect(sale.id)}
-        aria-label={`Voir ${title}`}
+        aria-label={listingLinkLabel(sale, title, {
+          price: getAiReviewFieldResult(
+            aiReviewProjections,
+            "sale.starting_price_eur",
+            aiReviewStatus,
+          ).blocked,
+          date: getAiReviewFieldResult(aiReviewProjections, "sale.sale_date", aiReviewStatus)
+            .blocked,
+        })}
         className="absolute inset-0 z-10 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
       />
       <div className="relative aspect-[4/3] overflow-hidden bg-surface-tint">
@@ -477,9 +498,16 @@ export const ListingCard = memo(function ListingCard({
               {stateListing ? stateListing.label : listingDateLabel(sale)}
             </AiReviewField>
           </span>
-          <SaleCountdown sale={sale} precisionUnknown={locked} variant="chip" />
+          <SaleCountdown
+            sale={sale}
+            precisionUnknown={locked}
+            variant="chip"
+            omitPast={!stateListing && listingDateLabel(sale) === PAST_SALE_LABEL}
+          />
           <SaleProcedureBadge sale={sale} />
-          <WellInformedBadge sale={sale} />
+          {/* « Annonce bien renseignée » et « N points à vérifier » se contredisent côte à côte : un
+              point ouvert l'emporte (la liste des points est celle de la carte). */}
+          {verifyPoints.length === 0 ? <WellInformedBadge sale={sale} /> : null}
           <PointsToVerifyBadge
             points={verifyPoints}
             detailHref={detailLink.href}
@@ -503,7 +531,14 @@ export const ListingCard = memo(function ListingCard({
         </div>
         <div className="mt-3 flex flex-wrap items-center justify-between gap-1 border-t border-surface-tint pt-3">
           <span className="text-sm text-ink-soft">
-            {listingAccessLine(sale, { locked, analysisLocked, unlocked, verifying, launchOffer })}
+            {listingAccessLine(sale, {
+              locked,
+              analysisLocked,
+              unlocked,
+              verifying,
+              launchOffer,
+              launchPending,
+            })}
           </span>
           <div className="flex items-center">
             <ShareButton sale={sale} title={title} />
@@ -687,7 +722,7 @@ export function ListingMediaCarousel({
       data-testid={`sale-media-carousel-${sale.id}`}
       aria-label={`Photos de ${title}`}
       aria-roledescription="carrousel"
-      role="region"
+      role="group"
       onKeyDown={handleKeyDown}
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
@@ -865,7 +900,7 @@ export function ShareButton({ sale, title }: { sale: AuctionSale; title: string 
     <button
       type="button"
       onClick={share}
-      className="relative z-20 grid h-11 w-11 cursor-pointer place-items-center rounded-full text-brand-navy transition-colors hover:bg-surface-tint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+      className="relative z-20 grid h-11 w-11 cursor-pointer place-items-center rounded-full text-brand-navy transition-colors hover:bg-surface-tint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
       aria-label="Partager cette vente"
     >
       <Share2 className="h-5 w-5" />
@@ -884,13 +919,14 @@ export function CompactFavoriteButton({
   locked: boolean;
   favoriteScope?: string | null;
   initialFavorite?: boolean;
-  onChange?: (saleId: string, isFavorite: boolean) => void;
+  onChange?: (saleId: string, isFavorite: boolean, removed?: RemovedFavoriteDossier | null) => void;
 }) {
   const { user, loading } = useAuth();
   const router = useRouter();
   const queryClient = useQueryClient();
   const [isFavorite, setIsFavorite] = useState(initialFavorite);
   const [busy, setBusy] = useState(false);
+  const { confirmRemoval, dialog: removalDialog } = useFavoriteRemovalConfirmation();
   // `locked` pour un compte reconnu = liste publique gardée pendant la vérification de ses droits.
   const verifying = Boolean(user) && locked;
 
@@ -915,10 +951,13 @@ export function CompactFavoriteButton({
 
     setBusy(true);
     const searchFavoriteQueryKey = queryKeys.searchFavoriteStatusForUser(user.id);
+    let removed: RemovedFavoriteDossier | null = null;
     try {
       await queryClient.cancelQueries({ queryKey: searchFavoriteQueryKey });
       if (isFavorite) {
-        await removeFavoriteSaleRequest({ saleId });
+        // « Mon dossier » (statut, plafond) part avec la ligne : confirmation s'il n'est pas vide.
+        if (!(await confirmRemoval(saleId))) return;
+        removed = (await removeFavoriteSaleRequest({ saleId }))?.dossier ?? null;
         setIsFavorite(false);
       } else {
         const added = await addFavoriteSaleRequest({ data: { saleId } });
@@ -936,7 +975,7 @@ export function CompactFavoriteButton({
         },
       );
       queryClient.invalidateQueries({ queryKey: queryKeys.favorites(user.id) });
-      onChange?.(saleId, !isFavorite);
+      onChange?.(saleId, !isFavorite, removed);
       await queryClient.invalidateQueries({ queryKey: searchFavoriteQueryKey });
     } catch (error) {
       void queryClient.invalidateQueries({ queryKey: searchFavoriteQueryKey });
@@ -947,19 +986,22 @@ export function CompactFavoriteButton({
   }
 
   return (
-    <button
-      type="button"
-      onClick={toggle}
-      disabled={busy}
-      aria-pressed={locked ? undefined : isFavorite}
-      aria-label={isFavorite && !locked ? FAVORITE_REMOVE_LABEL : FAVORITE_ADD_LABEL}
-      // Compte reconnu sur la liste publique conservée : `aria-disabled` (le cœur reste focalisable et
-      // annoncé) plutôt qu'un clic sans effet.
-      aria-disabled={verifying ? true : undefined}
-      title={verifying ? FAVORITE_VERIFYING_TITLE : locked ? FAVORITE_ANONYMOUS_TITLE : undefined}
-      className="relative z-20 grid h-11 w-11 cursor-pointer place-items-center rounded-full text-brand-navy transition-colors hover:bg-surface-tint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold disabled:cursor-not-allowed disabled:opacity-60 aria-disabled:cursor-wait aria-disabled:opacity-60"
-    >
-      <Heart className={`h-5 w-5 ${isFavorite && !locked ? "fill-danger text-danger" : ""}`} />
-    </button>
+    <>
+      {removalDialog}
+      <button
+        type="button"
+        onClick={toggle}
+        disabled={busy}
+        aria-pressed={locked ? undefined : isFavorite}
+        aria-label={isFavorite && !locked ? FAVORITE_REMOVE_LABEL : FAVORITE_ADD_LABEL}
+        // Compte reconnu sur la liste publique conservée : `aria-disabled` (le cœur reste focalisable et
+        // annoncé) plutôt qu'un clic sans effet.
+        aria-disabled={verifying ? true : undefined}
+        title={verifying ? FAVORITE_VERIFYING_TITLE : locked ? FAVORITE_ANONYMOUS_TITLE : undefined}
+        className="relative z-20 grid h-11 w-11 cursor-pointer place-items-center rounded-full text-brand-navy transition-colors hover:bg-surface-tint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft disabled:cursor-not-allowed disabled:opacity-60 aria-disabled:cursor-wait aria-disabled:opacity-60"
+      >
+        <Heart className={`h-5 w-5 ${isFavorite && !locked ? "fill-danger text-danger" : ""}`} />
+      </button>
+    </>
   );
 }

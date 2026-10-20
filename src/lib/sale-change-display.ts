@@ -43,6 +43,23 @@ function finiteNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+/**
+ * Motif d'un changement de statut quand le retrait vient de l'ABSENCE de l'annonce aux derniers
+ * inventaires complets de sa source (`raw_payload.source_absence`, posé par
+ * `withdraw_missing_source_sales`), et non d'un statut publié par la source. Une absence n'est pas un
+ * fait de retrait : elle s'annonce comme telle, sans « retirée » ni sévérité « urgent ».
+ */
+export const SALE_CHANGE_REASON_SOURCE_ABSENCE = "source_absence";
+export const SOURCE_ABSENCE_LABEL = "Annonce disparue de la source";
+export const SOURCE_ABSENCE_DETAIL = "À vérifier auprès de l’avocat poursuivant.";
+
+/** Vrai pour un changement de statut déduit de l'absence de l'annonce à la source. */
+export function isSourceAbsenceChange(
+  event: Pick<SaleChangeEventSummary, "changeSummary">,
+): boolean {
+  return event.changeSummary.reason === SALE_CHANGE_REASON_SOURCE_ABSENCE;
+}
+
 const STATUS_LABELS: Record<string, { label: string; detail: string | null }> = {
   postponed: { label: "Vente reportée", detail: "Nouvelle date à confirmer." },
   cancelled: { label: "Vente annulée", detail: null },
@@ -52,6 +69,19 @@ const STATUS_LABELS: Record<string, { label: string; detail: string | null }> = 
   past: { label: "Date de la vente passée", detail: null },
   upcoming: { label: "Vente à nouveau à venir", detail: null },
 };
+
+/**
+ * Statuts qui justifient un avertissement (vente reportée, retirée, annulée ou adjugée) : le suivi
+ * des changements les signale même quand la vente quitte la vue du catalogue, et les rappels
+ * d'audience (`sale-reminders.ts`) envoient alors un email.
+ */
+export const GRAVE_SALE_STATUSES: ReadonlySet<string> = new Set([
+  "postponed",
+  "withdrawn",
+  "cancelled",
+  "canceled",
+  "adjudicated",
+]);
 
 const DOCUMENT_LABELS = new Set([
   "Nouveau document détecté",
@@ -103,6 +133,14 @@ export function describeSaleChange(
       return { event, topic: "date", label: "Date de la vente modifiée", detail };
     }
     case "status_changed": {
+      if (isSourceAbsenceChange(event)) {
+        return {
+          event,
+          topic: "status",
+          label: SOURCE_ABSENCE_LABEL,
+          detail: SOURCE_ABSENCE_DETAIL,
+        };
+      }
       const known = typeof current === "string" ? STATUS_LABELS[current.toLowerCase()] : undefined;
       return {
         event,

@@ -6,7 +6,6 @@ import {
   hearingsPageDescription,
   isHearingsPageIndexable,
   mapHearingRows,
-  normalizeSourceUrl,
   windowHearings,
   type PublicHearing,
   type UpcomingHearingRow,
@@ -88,18 +87,17 @@ describe("mapHearingRows", () => {
 
 describe("dedupeHearings", () => {
   const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
-  const url = (n: number) => `https://www.licitor.com/annonce/${n}/vente.html`;
 
-  it("fusionne un vrai doublon : la même adresse source, quels que soient prix et heure", () => {
+  it("fusionne un vrai doublon : le même groupe d'adresses sources, quels que soient prix et heure", () => {
     const kept = dedupeHearings(
       mapHearingRows([
-        row({ id: id(2), sale_date: "2026-10-22T12:00:00Z", source_url: url(1) }),
-        row({ id: id(1), sale_date: "2026-10-22T12:00:00Z", source_url: url(1) }),
+        row({ id: id(2), sale_date: "2026-10-22T12:00:00Z", source_group: id(1) }),
+        row({ id: id(1), sale_date: "2026-10-22T12:00:00Z", source_group: id(1) }),
         row({
           id: id(3),
           sale_date: "2026-10-22T07:00:00Z",
           starting_price_eur: 41_000,
-          source_url: "http://licitor.com/annonce/1/vente.html/?utm=x#haut",
+          source_group: id(1),
         }),
       ]),
     );
@@ -107,25 +105,24 @@ describe("dedupeHearings", () => {
     expect(kept.map((item) => item.id)).toEqual([id(3)]);
   });
 
-  it("fusionne quand une adresse source est partagée dans source_urls", () => {
+  it("fusionne une ligne et le groupe qui porte son identifiant", () => {
     const kept = dedupeHearings(
       mapHearingRows([
-        row({ id: id(1), source_url: url(1), source_urls: [url(1), url(9)] }),
-        row({ id: id(2), source_url: url(2), source_urls: [url(2), url(9)] }),
+        row({ id: id(1), source_group: id(1) }),
+        row({ id: id(2), source_group: id(1) }),
       ]),
     );
     expect(kept.map((item) => item.id)).toEqual([id(1)]);
   });
 
-  it("enchaîne les identités : A et B partagent une adresse, B et C une autre", () => {
+  it("fusionne un groupe dont le représentant n'est pas dans la liste", () => {
     const kept = dedupeHearings(
       mapHearingRows([
-        row({ id: id(1), source_url: url(1), source_urls: [url(1), url(5)] }),
-        row({ id: id(2), source_url: url(2), source_urls: [url(2), url(5), url(6)] }),
-        row({ id: id(3), source_url: url(3), source_urls: [url(3), url(6)] }),
+        row({ id: id(2), source_group: id(1) }),
+        row({ id: id(3), source_group: id(1) }),
       ]),
     );
-    expect(kept.map((item) => item.id)).toEqual([id(1)]);
+    expect(kept.map((item) => item.id)).toEqual([id(2)]);
   });
 
   it("fusionne un même identifiant d'annonce rendu deux fois", () => {
@@ -136,8 +133,8 @@ describe("dedupeHearings", () => {
   it("à égalité d'heure, garde la plus petite identité", () => {
     const kept = dedupeHearings(
       mapHearingRows([
-        row({ id: id(2), source_url: url(1) }),
-        row({ id: id(1), source_url: url(1) }),
+        row({ id: id(2), source_group: id(1) }),
+        row({ id: id(1), source_group: id(1) }),
       ]),
     );
     expect(kept.map((item) => item.id)).toEqual([id(1)]);
@@ -146,8 +143,8 @@ describe("dedupeHearings", () => {
   it("garde deux lots distincts du même tribunal, du même jour et au même prix", () => {
     const kept = dedupeHearings(
       mapHearingRows([
-        row({ id: id(1), source_url: url(1) }),
-        row({ id: id(2), source_url: url(2) }),
+        row({ id: id(1), source_group: id(1) }),
+        row({ id: id(2), source_group: id(2) }),
         row({ id: id(3) }),
         row({ id: id(4) }),
       ]),
@@ -155,46 +152,40 @@ describe("dedupeHearings", () => {
     expect(kept.map((item) => item.id)).toEqual([id(1), id(2), id(3), id(4)]);
   });
 
-  it("garde toutes les lignes quand la base ne rend pas encore les adresses sources", () => {
+  it("garde toutes les lignes quand la base ne rend pas encore le groupe", () => {
     const kept = dedupeHearings(
       mapHearingRows([
         row({ id: id(1) }),
         row({ id: id(2) }),
-        row({ id: id(3), source_urls: null }),
+        row({ id: id(3), source_group: null }),
       ]),
     );
     expect(kept).toHaveLength(3);
   });
 
-  it("ignore les valeurs de source_urls qui ne sont pas des adresses", () => {
+  it("ignore un source_group qui n'est pas une chaîne non vide", () => {
     const kept = dedupeHearings(
       mapHearingRows([
-        row({ id: id(1), source_urls: [null, 3, "", "pas une adresse", { url: url(1) }] }),
-        row({ id: id(2), source_urls: ["pas une adresse"] }),
+        row({ id: id(1), source_group: 3 }),
+        row({ id: id(2), source_group: "  " }),
+        row({ id: id(3), source_group: { id: id(1) } }),
       ]),
     );
-    expect(kept).toHaveLength(2);
-  });
-});
-
-describe("normalizeSourceUrl", () => {
-  it("donne la même clé aux écritures d'une même annonce", () => {
-    const keys = [
-      "https://www.licitor.com/annonce/1/2/vente.html",
-      "http://licitor.com/annonce/1/2/vente.html/",
-      "LICITOR.com/annonce/1/2/vente.html?x=1#y",
-    ].map(normalizeSourceUrl);
-    expect(new Set(keys).size).toBe(1);
-    expect(keys[0]).toBe("licitor.com/annonce/1/2/vente.html");
+    expect(kept).toHaveLength(3);
   });
 
-  it("distingue deux annonces et refuse ce qui n'est pas une adresse", () => {
-    expect(normalizeSourceUrl("https://licitor.com/annonce/1")).not.toBe(
-      normalizeSourceUrl("https://licitor.com/annonce/2"),
-    );
-    expect(normalizeSourceUrl(null)).toBeNull();
-    expect(normalizeSourceUrl("   ")).toBeNull();
-    expect(normalizeSourceUrl("pas une adresse")).toBeNull();
+  it("ne lit ni adresse source ni ancienne clé : une ancienne forme de ligne ne fusionne rien", () => {
+    const legacy = {
+      ...row({ id: id(1) }),
+      source_url: "https://example.test/annonce/1",
+      source_urls: ["https://example.test/annonce/1"],
+      source_keys: ["a".repeat(64)],
+    } as UpcomingHearingRow;
+    const mapped = mapHearingRows([legacy, { ...legacy, id: id(2) }]);
+    expect(mapped.every((item) => item.sourceGroup === null)).toBe(true);
+    expect(dedupeHearings(mapped)).toHaveLength(2);
+    expect(JSON.stringify(mapped)).not.toContain("example.test");
+    expect(JSON.stringify(mapped)).not.toContain("aaaaaaaa");
   });
 });
 

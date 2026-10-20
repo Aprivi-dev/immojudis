@@ -43,6 +43,7 @@ function report({ sale = {}, analysis = {}, ceiling = null }: Overrides = {}): S
         saleDate: "2026-12-10T09:00:00.000Z",
         startingPrice: 92_000,
         venueType: "tribunal",
+        legalFramework: "judicial_seizure",
         ...sale,
       },
       analysis: {
@@ -130,11 +131,37 @@ describe("page « Dossier de financement » d'un rapport complet", () => {
     ).toBe(formatPrice(3_000));
   });
 
-  it("donne le délai de paiement, sous peine de réitération des enchères", () => {
+  it("donne le délai de paiement d'une saisie immobilière, sous peine de réitération des enchères", () => {
     const text = lines.join("\n");
     expect(text).toContain("deux mois après l’adjudication définitive");
     expect(text).toContain("à peine de réitération des enchères (art. R. 322-56)");
     expect(text).toContain("droits de mutation en plus du prix (art. R. 322-58)");
+  });
+
+  it("dit que la définitivité de l'adjudication et son point de départ sont à confirmer avec l'avocat", () => {
+    expect(lines.join("\n")).toContain(
+      "(l’adjudication devient définitive à la fin du délai de surenchère, selon l’analyse usuelle : point de départ à confirmer avec l’avocat)",
+    );
+    expect(lines.join("\n")).not.toContain("(suite du délai de surenchère)");
+  });
+
+  it("ne présente pas le financement du solde comme dû « sous deux mois » dans tous les cas", () => {
+    const text = lines.join("\n");
+    expect(text).toContain(
+      "financement du solde dans le délai de paiement du prix (deux mois pour une vente au tribunal en saisie immobilière ; à vérifier dans les autres cas)",
+    );
+    expect(text).not.toContain("financement du solde sous deux mois");
+  });
+
+  it("aligne la défaillance de l'adjudicataire sur l'article relu : créanciers, débiteur, différence de revente", () => {
+    expect(lines.join("\n")).toContain(
+      "acquise aux créanciers et, le cas échéant, au débiteur si l’adjudicataire est défaillant ; la différence avec le prix de revente peut en plus être due",
+    );
+    expect(lines.join("\n")).not.toContain("acquise aux créanciers si l’adjudicataire");
+  });
+
+  it("explique « séquestre » au premier emploi", () => {
+    expect(lines.join("\n")).toContain("séquestre (tiers qui garde les fonds)");
   });
 
   it("dit ce que les textes ne disent pas plutôt que de le deviner", () => {
@@ -249,6 +276,56 @@ describe("valeurs absentes", () => {
   });
 });
 
+describe("cadre juridique de la vente au tribunal", () => {
+  it("liquidation judiciaire : trois mois, compte du liquidateur, bénéficiaire du chèque à lire dans le cahier", () => {
+    const insolvency = dossierLines({ sale: { legalFramework: "insolvency" } });
+    const text = insolvency.join("\n");
+    expect(valueOf(insolvency, "Délai")).toContain(
+      "trois mois après l’adjudication, sur le compte ouvert par le liquidateur à la Caisse des dépôts, avec intérêts au taux légal (art. R. 643-3 du Code de commerce)",
+    );
+    expect(valueOf(insolvency, "Bénéficiaire du chèque")).toBe(
+      "à lire dans le cahier des conditions de vente.",
+    );
+    // Ni le délai de deux mois ni la réitération de la saisie immobilière.
+    expect(text).not.toContain("deux mois après l’adjudication définitive");
+    expect(text).not.toContain("R. 322-56");
+    expect(text).not.toContain("à l’ordre du séquestre");
+  });
+
+  it.each([
+    ["inconnu", { legalFramework: "unknown" }],
+    ["absent (rapport antérieur)", { legalFramework: undefined }],
+    ["partage judiciaire", { legalFramework: "judicial_partition" }],
+  ])("cadre %s : le délai de deux mois n'est pas présenté comme acquis", (_label, sale) => {
+    const other = dossierLines({ sale });
+    const text = other.join("\n");
+    expect(valueOf(other, "Délai")).toContain(FINANCING_NOT_PROVIDED);
+    expect(valueOf(other, "Délai")).toContain("cadre juridique de la vente non établi");
+    expect(valueOf(other, "Délai")).toContain("à lire dans le cahier des conditions de vente");
+    expect(text).not.toContain("deux mois après l’adjudication définitive (l’adjudication");
+    expect(text).not.toContain("à peine de réitération des enchères");
+    expect(text).not.toContain("trois mois");
+  });
+
+  it.each(["judicial_seizure", "insolvency", "judicial_partition", "unknown", undefined])(
+    "la page tient sur 42 lignes pour le cadre %s",
+    (legalFramework) => {
+      const pages = paginatePdfLines(
+        reportToPdfLines(report({ sale: { legalFramework } }), plan),
+        REPORT_PDF_HEADINGS,
+      );
+      const last = pages[pages.length - 1];
+      expect(last[0]).toEqual({ text: FINANCING_DOSSIER_TITLE, heading: true });
+      expect(last.length).toBeLessThanOrEqual(42);
+      expect(
+        pages
+          .slice(0, -1)
+          .some((page) => page.some((line) => line.text === FINANCING_DOSSIER_TITLE)),
+      ).toBe(false);
+    },
+  );
+});
+
 describe("autres types de vente", () => {
   it("ne cite pas la garantie de 10 % ni le délai de deux mois comme règle d'une vente chez le notaire", () => {
     const notary = dossierLines({ sale: { venueType: "notary", tribunal: null } });
@@ -263,11 +340,44 @@ describe("autres types de vente", () => {
     expect(valueOf(notary, "Mise à prix")).toBe(formatPrice(92_000));
   });
 
-  it("signale un type de vente inconnu (rapport antérieur) et applique les règles du tribunal avec cette réserve", () => {
-    const old = dossierLines({ sale: { venueType: undefined } });
-    expect(valueOf(old, "Type de vente")).toContain(FINANCING_NOT_PROVIDED);
-    expect(valueOf(old, "Type de vente")).toContain("vente au tribunal");
-    expect(old.join("\n")).toContain("R. 322-41");
+  it.each([
+    ["inconnu (rapport antérieur)", { venueType: undefined }],
+    ["« unknown »", { venueType: "unknown" }],
+    [
+      "en conflit entre les sources",
+      { venueType: "tribunal", venueVerificationStatus: "conflict" },
+    ],
+  ])(
+    "type de vente %s : aucune règle du tribunal, garantie et délai « non renseigné », renvoi à l'annonce",
+    (_label, sale) => {
+      const uncertain = dossierLines({ sale });
+      const text = uncertain.join("\n");
+      expect(valueOf(uncertain, "Type de vente")).toContain(FINANCING_NOT_PROVIDED);
+      expect(valueOf(uncertain, "Type de vente")).toContain("à lire dans l’annonce");
+      expect(valueOf(uncertain, "Type de vente")).not.toContain("vente au tribunal ;");
+      expect(valueOf(uncertain, "Garantie de 10 % de la mise à prix, minimum 3 000 €")).toContain(
+        FINANCING_NOT_PROVIDED,
+      );
+      expect(text).toContain("à lire dans l’annonce et à demander à l’organisateur");
+      expect(valueOf(uncertain, "Délai")).toContain(FINANCING_NOT_PROVIDED);
+      expect(valueOf(uncertain, "Délai")).toContain("fixé par l’annonce ou le cahier");
+      // Rien du tribunal : ni montant calculé, ni article, ni délai de deux mois.
+      expect(text).not.toContain("R. 322-41");
+      expect(text).not.toContain("R. 322-56");
+      expect(text).not.toContain("à peine de réitération des enchères");
+      expect(text).not.toContain(formatPrice(9_200));
+      // Les chiffres du dossier restent ceux du rapport.
+      expect(valueOf(uncertain, "Mise à prix")).toBe(formatPrice(92_000));
+    },
+  );
+
+  it("un type de vente « tribunal » confirmé ou en attente garde les règles du tribunal", () => {
+    for (const status of ["verified", "cross_checked", "pending", undefined]) {
+      const confirmed = dossierLines({
+        sale: { venueType: "tribunal", venueVerificationStatus: status },
+      });
+      expect(confirmed.join("\n")).toContain("R. 322-41");
+    }
   });
 });
 

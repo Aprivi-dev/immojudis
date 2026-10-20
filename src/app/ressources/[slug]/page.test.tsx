@@ -67,6 +67,49 @@ describe("article page", () => {
     });
   });
 
+  it("shows « Mis à jour le » only when updatedAt differs from the publication date", async () => {
+    const plain = renderToStaticMarkup(await Page({ params }));
+    expect(plain).not.toContain("Mis à jour le");
+
+    mocks.override = { updatedAt: "2026-10-13" };
+    expect(renderToStaticMarkup(await Page({ params }))).not.toContain("Mis à jour le");
+
+    mocks.override = { updatedAt: "2026-11-02" };
+    const updated = renderToStaticMarkup(await Page({ params }));
+    expect(updated).toContain("Mis à jour le");
+    expect(updated).toContain('<time dateTime="2026-11-02">2 novembre 2026</time>');
+    // The publication date stays.
+    expect(updated).toContain('<time dateTime="2026-10-13">');
+  });
+
+  it("ends the visible breadcrumb with the title, like the BreadcrumbList", async () => {
+    const html = renderToStaticMarkup(await Page({ params }));
+    const nav = /<nav[^>]*aria-label="Fil d’Ariane">(.*?)<\/nav>/.exec(html)![1];
+    const visible = [...nav.matchAll(/<(?:a|span)\b[^>]*>([^<]+)<\/(?:a|span)>/g)]
+      .map((match) => match[1])
+      .filter((text) => text !== "/");
+    const listed = structuredData(html)["@graph"][1].itemListElement.map(
+      (item: { name: string }) => item.name,
+    );
+    expect(visible).toEqual(listed);
+    expect(visible.at(-1)).toBe("Frais d’une vente aux enchères judiciaire");
+  });
+
+  it("uses seoDescription for the meta description and the shares, description otherwise", async () => {
+    const plain = await generateMetadata({ params });
+    expect(String(plain.description).length).toBeGreaterThan(0);
+    const description = plain.description;
+
+    mocks.override = { seoDescription: "Une description courte pour les résultats de recherche." };
+    const metadata = await generateMetadata({ params });
+    expect(metadata.description).toBe("Une description courte pour les résultats de recherche.");
+    expect(metadata.openGraph).toMatchObject({ description: metadata.description });
+    expect(metadata.twitter).toMatchObject({ description: metadata.description });
+    // The page keeps the full description under its headline.
+    const html = renderToStaticMarkup(await Page({ params }));
+    expect(html).toContain(String(description));
+  });
+
   it("gives the publisher a logo and keeps the breadcrumb", async () => {
     const graph = structuredData(renderToStaticMarkup(await Page({ params })))["@graph"];
     expect(graph[0].publisher).toMatchObject({

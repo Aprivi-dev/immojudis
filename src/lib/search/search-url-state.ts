@@ -61,6 +61,15 @@ export type SalesSearchParams = {
   aroundRadius?: number;
   yearBuilt?: number;
   openHouse?: boolean;
+  /**
+   * Mise à prix sous la fourchette des ventes comparables : la bande `under` de la fiche publique
+   * (jamais pour un bien occupé), qui ne couvre que les ventes dont l'estimation est assez fiable.
+   */
+  belowRange?: boolean;
+  /** Sans point à vérifier (`points-to-verify.ts`) : l'annonce ne laisse rien d'ouvert. */
+  noPointsToVerify?: boolean;
+  /** Une visite à date publiée dans les 7 jours (voir `saleHasVisitSoon`). */
+  visitSoon?: boolean;
   map?: boolean;
   searchAsMove?: boolean;
 };
@@ -212,6 +221,9 @@ export function validateSalesSearch(search: Record<string, unknown>): SalesSearc
     aroundRadius: nonNegativeNumber(search.aroundRadius ?? search.around_radius),
     yearBuilt: positiveInteger(search.yearBuilt),
     openHouse: booleanValue(search.openHouse),
+    belowRange: booleanValue(search.belowRange),
+    noPointsToVerify: booleanValue(search.noPointsToVerify),
+    visitSoon: booleanValue(search.visitSoon),
     map: booleanValue(search.map),
     searchAsMove: booleanValue(search.searchAsMove),
   };
@@ -254,6 +266,9 @@ export function salesSearchToUrlRecord(search: SalesSearchParams): SalesSearchUr
     aroundRadius: search.aroundRadius,
     yearBuilt: search.yearBuilt,
     openHouse: search.openHouse ? true : undefined,
+    belowRange: search.belowRange ? true : undefined,
+    noPointsToVerify: search.noPointsToVerify ? true : undefined,
+    visitSoon: search.visitSoon ? true : undefined,
     map: search.map ? true : undefined,
     searchAsMove: search.searchAsMove ? true : undefined,
   };

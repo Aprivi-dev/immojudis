@@ -85,8 +85,11 @@ class _FinishDb:
 
         self.row = ("vench", status, {"scrape_coverage": {"vench": coverage}}, errors or {}, datetime.now(UTC))
         self.summaries: list[object] = []
+        self.state_updates: list[tuple] = []
 
     def execute(self, sql, params=None):
+        if "update public.auction_source_state set" in sql:
+            self.state_updates.append(params)
         if "select source,status,summary,errors,started_at" in sql:
             return _Result(self.row)
         if "select consecutive_failures" in sql:
@@ -148,6 +151,33 @@ def test_finish_source_never_withdraws_on_a_partial_failed_or_refused_inventory(
     assert calls == []
 
 
+@pytest.mark.parametrize(
+    ("status", "coverage", "inventory_complete"),
+    [
+        ("succeeded", {"coverage_complete": True, "listings_emitted": 5}, True),
+        # Un run en échec dont la couverture se dit complète ne fait avancer ni le compteur d'absence ni la
+        # date du dernier inventaire complet (qui autorise le retrait).
+        ("failed", {"coverage_complete": True, "listings_emitted": 5}, False),
+        ("succeeded", {"coverage_complete": False, "listings_emitted": 5}, False),
+    ],
+)
+def test_finish_source_records_a_complete_inventory_only_for_a_succeeded_run(
+    monkeypatch, status, coverage, inventory_complete
+) -> None:
+    presence: list[tuple] = []
+    db = _FinishDb(status=status, coverage=coverage)
+    monkeypatch.setattr(autonomous_runner, "_postgres_connect", lambda url: nullcontext(db))
+    monkeypatch.setattr(autonomous_runner, "record_source_presence", lambda *args: presence.append(args[1:]))
+    monkeypatch.setattr(autonomous_runner, "withdraw_missing_sales", lambda *args, **kwargs: None)
+
+    autonomous_runner.finish_source("db", "run-1")
+
+    assert [args[-1] for args in presence] == [inventory_complete]
+    # Paramètres de la mise à jour de l'état : ..., inventaire complet, publication complète, source, run.
+    (params,) = db.state_updates
+    assert params[-4] is inventory_complete
+
+
 # --- compteur d'inventaires complets (PostgreSQL jetable) -------------------------------------------
 
 
@@ -159,6 +189,7 @@ def _presence_schema(db) -> None:
             observations jsonb not null default '[]'::jsonb)"""
     )
     db.execute("create table public.auction_collection_items(run_id text, source_url text, canonical_source_url text)")
+    db.execute("create table public.auction_runs(id text primary key, started_at timestamptz, finished_at timestamptz)")
     db.execute(
         """create table app_private.auction_sale_source_presence(
             sale_id uuid not null, source_name text not null,
@@ -184,6 +215,15 @@ def _counter(db, sale_id):
     ).fetchone()
 
 
+def _finished(db, run_id, ago):
+    """Run clos il y a ``ago`` (intervalle SQL) : date du dernier inventaire compté pour l'écart minimal."""
+    db.execute(
+        "insert into public.auction_runs(id, started_at, finished_at) values (%s, now() - %s::interval, now() - %s::interval)"
+        " on conflict (id) do update set started_at = excluded.started_at, finished_at = excluded.finished_at",
+        (run_id, ago, ago),
+    )
+
+
 def test_absent_inventories_count_complete_inventories_only_and_reset_when_the_sale_returns() -> None:
     url = os.getenv("PIPELINE_TEST_DB_URL")
     if not url:
@@ -204,6 +244,7 @@ def test_absent_inventories_count_complete_inventories_only_and_reset_when_the_s
             assert _counter(db, sale_id) == ("present", 0, False, None)
 
             # Absente de l'inventaire complet 2 : un.
+            _finished(db, "run-2", "30 minutes")
             record(db, "run-2", "vench", "available", True)
             assert _counter(db, sale_id) == ("absent", 1, True, "run-2")
             # Le même inventaire clos deux fois n'est compté qu'une fois.
@@ -214,13 +255,53 @@ def test_absent_inventories_count_complete_inventories_only_and_reset_when_the_s
             record(db, "run-3", "vench", "unavailable", False)
             assert _counter(db, sale_id)[0:2] == ("absent", 1)
 
-            # Absente d'un deuxième inventaire complet : deux, la vente peut être retirée.
+            # Un deuxième inventaire complet 30 minutes après le précédent compté ne compte pas : il faut 12 h.
+            record(db, "run-3b", "vench", "available", True)
+            assert _counter(db, sale_id) == ("absent", 1, True, "run-2")
+
+            # Le dernier inventaire compté date de 13 h : le suivant compte, deux, la vente peut être retirée.
+            _finished(db, "run-2", "13 hours")
             record(db, "run-4", "vench", "available", True)
+            assert _counter(db, sale_id) == ("absent", 2, True, "run-4")
+
+            # Un inventaire de plus, trop proche du précédent compté, ne le fait pas avancer.
+            _finished(db, "run-4", "2 hours")
+            record(db, "run-4b", "vench", "available", True)
             assert _counter(db, sale_id)[0:2] == ("absent", 2)
 
-            # Elle réapparaît : le compteur repart de zéro.
+            # Elle réapparaît : le compteur repart de zéro, sans attendre 12 h.
             db.execute("insert into public.auction_collection_items(run_id, source_url) values ('run-5', %s)", ("https://example.test/absence",))
             record(db, "run-5", "vench", "available", True)
             assert _counter(db, sale_id) == ("present", 0, False, None)
+        finally:
+            db.rollback()
+
+
+def test_a_counter_set_before_the_run_column_waits_twelve_hours_from_absent_since() -> None:
+    """Ligne reprise de la migration 20261028110100 (absent_inventories = 1, absent_since posé, pas de run)."""
+    url = os.getenv("PIPELINE_TEST_DB_URL")
+    if not url:
+        pytest.skip("Requires disposable PostgreSQL")
+    recent, old = "42800000-0000-4000-8000-000000000002", "42800000-0000-4000-8000-000000000003"
+    with _postgres_connect(url) as db:
+        try:
+            _presence_schema(db)
+            for sale_id, source_url in ((recent, "https://example.test/recent"), (old, "https://example.test/old")):
+                db.execute(
+                    "insert into public.auction_sales(id, source_url, source_name) values (%s, %s, %s)",
+                    (sale_id, source_url, "vench"),
+                )
+            db.execute(
+                """insert into app_private.auction_sale_source_presence
+                     (sale_id, source_name, availability, state, checked_at, run_id, absent_inventories, absent_since)
+                   values (%s, 'vench', 'available', 'absent', now(), 'run-0', 1, now() - interval '30 minutes'),
+                          (%s, 'vench', 'available', 'absent', now(), 'run-0', 1, now() - interval '13 hours')""",
+                (recent, old),
+            )
+
+            autonomous_runner.record_source_presence(db, "run-1", "vench", "available", True)
+
+            assert _counter(db, recent)[0:2] == ("absent", 1)
+            assert _counter(db, old)[0:2] == ("absent", 2)
         finally:
             db.rollback()

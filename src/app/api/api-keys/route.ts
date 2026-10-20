@@ -22,7 +22,7 @@ export async function POST(request: Request) {
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const input = apiKeyCreateInputSchema.parse(await request.json());
-    const response = await createUserApiKey({ auth, input });
+    const response = await createUserApiKey({ auth, input, request });
     return NextResponse.json(response, {
       status: 201,
       headers: { "cache-control": "private, no-store" },

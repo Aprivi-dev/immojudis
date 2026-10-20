@@ -272,7 +272,7 @@ export function SaleVisual({
         }`}
       />
       {candidateIsReady ? (
-        <span className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md border border-white/65 bg-night/78 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-white shadow-sm backdrop-blur">
+        <span className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md border border-white/65 bg-night/78 px-2 py-1 text-xs font-bold uppercase tracking-[0.04em] text-white shadow-sm backdrop-blur">
           {candidate.label}
         </span>
       ) : null}

@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EXAMPLE_SALE_RECORDS } from "@/lib/example-sale";
 import { buildCeilingHypotheses } from "@/lib/bid-ceiling-defaults";
 import { computeAcquisitionCosts } from "@/lib/profitability";
+import { ceilingStorageKey } from "@/components/ceiling/use-ceiling-choices";
 import { AnalysisSaleDetailView, FreeSaleDetailView } from "./SimplifiedSaleDetailView";
 import type { AuctionSale } from "@/lib/types";
 
@@ -131,12 +132,23 @@ async function openTab(name: string) {
   );
 }
 
-async function openWorksEditor() {
+// Ouvre « Détail de vos travaux » (l'unique détail de l'onglet Travaux) et y saisit un poste.
+async function addWorksPoste(poste: { kind: string; quantity: string; unitCost: string }) {
   await openTab("Travaux");
   await waitFor(() =>
     expect(screen.getByRole("heading", { name: "Travaux et état du bien" })).toBeTruthy(),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Détailler le budget" }));
+  fireEvent.click(screen.getByRole("button", { name: "Détailler les travaux" }));
+  fireEvent.click(screen.getByRole("button", { name: "Ajouter un poste" }));
+  fireEvent.change(screen.getByRole("combobox", { name: "Type, poste 1" }), {
+    target: { value: poste.kind },
+  });
+  fireEvent.change(screen.getByRole("textbox", { name: /^Quantité, poste 1/ }), {
+    target: { value: poste.quantity },
+  });
+  fireEvent.change(screen.getByRole("textbox", { name: /^Coût unitaire, poste 1/ }), {
+    target: { value: poste.unitCost },
+  });
 }
 
 beforeEach(() => {
@@ -168,15 +180,10 @@ describe("integrated scenario workspace", () => {
             }
           : sale,
       );
-      await openWorksEditor();
-      fireEvent.change(screen.getByLabelText("Libellé du poste 1"), {
-        target: { value: "Peinture" },
-      });
-      fireEvent.change(screen.getByLabelText("Prix unitaire du poste 1"), {
-        target: { value: "1200" },
-      });
-      expect(screen.getByText("Détail saisi")).toBeTruthy();
-      expect(screen.queryByRole("button", { name: "Utiliser ce budget" })).toBeNull();
+      await addWorksPoste({ kind: "peinture", quantity: "1", unitCost: "1200" });
+      expect(
+        screen.getByRole("status", { name: "Total de vos postes" }).textContent?.replace(/\s/g, ""),
+      ).toBe("1200€");
       expect(screen.queryByText("Votre scénario")).toBeNull();
     },
   );
@@ -187,8 +194,8 @@ describe("integrated scenario workspace", () => {
     expect(
       screen.getByRole("heading", { name: "Estimez vos travaux avec l’offre Analyse" }),
     ).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Détailler le budget" })).toBeNull();
-    expect(screen.queryByLabelText("Libellé du poste 1")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Détailler les travaux" })).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Type, poste 1" })).toBeNull();
     expect(
       screen.getByRole("link", { name: "Découvrir l’offre Analyse" }).getAttribute("href"),
     ).toBe("/offres");
@@ -202,23 +209,9 @@ describe("integrated scenario workspace", () => {
     expect(screen.queryByRole("button", { name: /Copier le message/i })).toBeNull();
   });
 
-  it("propagates an explicitly applied works total to the hero, financing and the bid ceiling", async () => {
+  it("propagates the works total of « Détail de vos travaux » to the hero, financing and the bid ceiling", async () => {
     renderDetail();
-    await openWorksEditor();
-
-    fireEvent.change(screen.getByLabelText("Libellé du poste 1"), {
-      target: { value: "Peinture" },
-    });
-    fireEvent.change(screen.getByLabelText("Quantité du poste 1"), {
-      target: { value: "2" },
-    });
-    fireEvent.change(screen.getByLabelText("Unité du poste 1"), {
-      target: { value: "m²" },
-    });
-    fireEvent.change(screen.getByLabelText("Prix unitaire du poste 1"), {
-      target: { value: "1100" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Utiliser ce budget" }));
+    await addWorksPoste({ kind: "peinture", quantity: "2", unitCost: "1100" });
 
     await waitFor(() => expect(screen.getByText("Votre scénario")).toBeTruthy());
     const expectedProjectCost = computeAcquisitionCosts({
@@ -244,15 +237,69 @@ describe("integrated scenario workspace", () => {
     });
   });
 
+  it("feeds the budget travaux from « Détail de vos travaux », keeps it in the browser and restores it", async () => {
+    const view = renderDetail();
+    await openTab("Travaux");
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "Travaux et état du bien" })).toBeTruthy(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Détailler les travaux" }));
+    fireEvent.click(screen.getByRole("button", { name: "Ajouter un poste" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Type, poste 1" }), {
+      target: { value: "toiture" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: /^Quantité, poste 1/ }), {
+      target: { value: "2" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: /^Coût unitaire, poste 1/ }), {
+      target: { value: "4100" },
+    });
+
+    // The total of the postes is the budget travaux of the bid ceiling.
+    await openTab("Prix et plafond");
+    await waitFor(() => {
+      const row = screen.getByText("Votre montant").closest("tr")!;
+      expect(row.getAttribute("aria-current")).toBe("true");
+      expect(row.textContent?.replace(/\s/g, "")).toContain("8200€");
+    });
+
+    // Saved with the calculator's other hypotheses: the postes and the budget they produced.
+    const stored = JSON.parse(
+      window.localStorage.getItem(ceilingStorageKey("account-a", sale.id)) ?? "null",
+    );
+    expect(stored.works.amount).toBe(8_200);
+    expect(stored.worksBreakdown).toHaveLength(1);
+    expect(stored.worksBreakdown[0]).toMatchObject({
+      kind: "toiture",
+      quantity: "2",
+      unitCost: "4100",
+    });
+
+    // A reload restores the panel, open, with the same postes.
+    view.unmount();
+    renderDetail();
+    await openTab("Travaux");
+    await waitFor(() =>
+      expect(screen.getByRole("group", { name: "Détail de vos travaux" })).toBeTruthy(),
+    );
+    expect(
+      (screen.getByRole("textbox", { name: /^Coût unitaire, poste 1/ }) as HTMLInputElement).value,
+    ).toBe("4100");
+    expect(
+      screen.getByRole("status", { name: "Total de vos postes" }).textContent?.replace(/\s/g, ""),
+    ).toBe("8200€");
+  });
+
+  it("does not offer « Détailler les travaux » without the Analyse offer", async () => {
+    renderDetail("discovery");
+    await openTab("Travaux");
+
+    expect(screen.queryByRole("button", { name: "Détailler les travaux" })).toBeNull();
+  });
+
   it("restores works, financing and rental drafts after switching announcement tabs", async () => {
     renderDetail();
-    await openWorksEditor();
-    fireEvent.change(screen.getByLabelText("Libellé du poste 1"), {
-      target: { value: "Peinture" },
-    });
-    fireEvent.change(screen.getByLabelText("Prix unitaire du poste 1"), {
-      target: { value: "900" },
-    });
+    await addWorksPoste({ kind: "peinture", quantity: "1", unitCost: "900" });
 
     await openTab("Financement");
     await waitFor(() =>
@@ -271,12 +318,13 @@ describe("integrated scenario workspace", () => {
     await openTab("Aperçu");
     await openTab("Travaux");
     await waitFor(() => {
-      expect((screen.getByLabelText("Libellé du poste 1") as HTMLInputElement).value).toBe(
-        "Peinture",
-      );
-      expect((screen.getByLabelText("Prix unitaire du poste 1") as HTMLInputElement).value).toBe(
-        "900",
-      );
+      expect(
+        (screen.getByRole("combobox", { name: /^Type, poste 1/ }) as HTMLSelectElement).value,
+      ).toBe("peinture");
+      expect(
+        (screen.getByRole("textbox", { name: /^Coût unitaire, poste 1/ }) as HTMLInputElement)
+          .value,
+      ).toBe("900");
     });
 
     await openTab("Financement");
@@ -291,10 +339,7 @@ describe("integrated scenario workspace", () => {
 
   it("resets every scenario draft when the authenticated account changes", async () => {
     const view = renderDetail();
-    await openWorksEditor();
-    fireEvent.change(screen.getByLabelText("Libellé du poste 1"), {
-      target: { value: "Compte A" },
-    });
+    await addWorksPoste({ kind: "peinture", quantity: "1", unitCost: "4321" });
 
     await openTab("Financement");
     await waitFor(() =>
@@ -324,6 +369,6 @@ describe("integrated scenario workspace", () => {
     });
 
     await openTab("Travaux");
-    await waitFor(() => expect(screen.queryByDisplayValue("Compte A")).toBeNull());
+    await waitFor(() => expect(screen.queryByDisplayValue("4321")).toBeNull());
   });
 });

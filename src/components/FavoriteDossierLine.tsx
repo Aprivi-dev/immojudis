@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { SaleDetailLink } from "@/components/SaleDetailLink";
 import { favoriteDossierStatusLabel } from "@/lib/favorite-dossier-shared";
 import { formatPrice } from "@/lib/format";
 import type { FavoriteSale } from "@/lib/favorites";
@@ -20,11 +20,18 @@ export function FavoriteDossierLine({
       </span>
       <span>
         <span className="font-semibold text-brand-navy">Mon plafond :</span>{" "}
-        {favorite.bidCeilingEur != null ? formatPrice(favorite.bidCeilingEur) : "aucun enregistré"}
+        {/* Jamais « 0 € » : un plafond nul (ancienne saisie) s'affiche comme absent. */}
+        {favorite.bidCeilingEur != null && favorite.bidCeilingEur > 0
+          ? formatPrice(favorite.bidCeilingEur)
+          : "aucun enregistré"}
       </span>
-      <Link href={`/sales/${favorite.saleId}`} className="font-semibold text-gold-text underline">
+      <SaleDetailLink
+        saleId={favorite.saleId}
+        returnTo="/favoris"
+        className="font-semibold text-gold-text underline"
+      >
         Modifier sur la fiche
-      </Link>
+      </SaleDetailLink>
     </p>
   );
 }

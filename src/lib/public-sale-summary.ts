@@ -54,6 +54,8 @@ type SummaryRow = {
   bathrooms_count: number | null;
   tribunal_name: string | null;
   tribunal_city: string | null;
+  /** Code du tribunal (adresse de sa page) ; absent tant que la migration 20261029180100 n'est pas appliquée. */
+  tribunal_code?: string | null;
   thumbnail_url: string | null;
   /** Date of the last visible change; absent while the database function is not migrated yet. */
   content_changed_at?: string | null;
@@ -136,6 +138,9 @@ async function fetchPublicSaleIndexability(
  * `undefined` : fonction pas encore déployée, erreur, ou réponse hors contrat. C'est un
  * enrichissement : sa panne ne change ni la fiche ni son statut, elle supprime seulement la bande
  * (jamais un chiffre à la place). Une base qui n'a rien à dire répond `null`.
+ *
+ * Seule une fonction absente (base pas encore migrée) reste silencieuse ; toute autre erreur est
+ * journalisée (`console.warn`, une ligne JSON) pour qu'une bande qui disparaît ne passe pas inaperçue.
  */
 async function fetchPublicSaleMarketGapBand(
   client: PublicSaleSummaryClient,
@@ -143,11 +148,31 @@ async function fetchPublicSaleMarketGapBand(
 ): Promise<PublicMarketGapBand | undefined> {
   try {
     const { data, error } = await client.rpc("get_public_sale_market_gap_band", { p_sale_id: id });
-    if (error) return undefined;
+    if (error) {
+      const { code, message } = error as NonNullable<ErrorLike>;
+      // Fonction absente : le code PostgREST ou PostgreSQL, pas le nom dans le message (une erreur de
+      // droits ou de délai le cite aussi).
+      if (code !== "PGRST202" && code !== "42883") warnMarketGapBand(id, code, message);
+      return undefined;
+    }
     return isPublicMarketGapBand(data) ? data : undefined;
-  } catch {
+  } catch (error) {
+    warnMarketGapBand(id, undefined, error instanceof Error ? error.message : String(error));
     return undefined;
   }
+}
+
+function warnMarketGapBand(saleId: string, code?: string, message?: string) {
+  console.warn(
+    JSON.stringify({
+      scope: "public-sale-market-gap-band",
+      level: "warn",
+      event: "rpc_failed",
+      saleId,
+      code: code ?? null,
+      message: message ?? null,
+    }),
+  );
 }
 
 export function mapPublicSaleSummary(row: SummaryRow): AuctionSale {
@@ -167,6 +192,7 @@ export function mapPublicSaleSummary(row: SummaryRow): AuctionSale {
     bathrooms_count: row.bathrooms_count,
     tribunal_name: row.tribunal_name,
     tribunal_city: row.tribunal_city,
+    tribunal_code: row.tribunal_code ?? null,
     content_changed_at: row.content_changed_at ?? null,
     media: isLikelyPropertyImageUrl(row.thumbnail_url)
       ? [{ type: "image", url: row.thumbnail_url }]

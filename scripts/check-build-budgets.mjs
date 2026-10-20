@@ -2,9 +2,20 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { runInNewContext } from "node:vm";
 
-// Relevé de 1 850 000 le 12/10/2026 (accord du propriétaire) : la mise à jour des
-// dépendances #196 (next 16.4, mapbox-gl 3.32) a grossi le plus gros chunk de 11 ko.
-const MAX_CLIENT_CHUNK_BYTES = 1_875_000;
+// Le chunk de mapbox-gl a son budget propre. Relevé de 1 850 000 le 12/10/2026 (accord du
+// propriétaire) : la mise à jour des dépendances #196 (next 16.4, mapbox-gl 3.32) l'avait grossi
+// de 11 ko ; plafond de 1 875 000 (marge de 1,35 %).
+// Mesuré le 20/10/2026 : 1 869 846 octets, soit 99,72 % du plafond (5 154 octets de marge, effet de
+// la mise à jour #279). Garder la même marge relative sur la mesure d'aujourd'hui donnerait environ
+// 1 895 000 : ce serait RELEVER le plafond, ce que seul le propriétaire peut décider. Le plafond est
+// donc inchangé ; la prochaine mise à jour de mapbox-gl le fera échouer tant qu'il n'est pas relevé
+// avec son accord. Le chunk est reconnu à la bannière de licence de la bibliothèque (voir
+// `isMapboxChunk`) ; sans bannière trouvée, il retombe sous le budget des autres chunks et fait
+// échouer le contrôle (jamais de plafond large par défaut).
+const MAX_MAPBOX_CHUNK_BYTES = 1_875_000;
+// Tous les autres chunks : le plus gros mesure 284 721 octets le 20/10/2026 ; plafond à la mesure
+// + 15 % (resserré : l'ancien plafond unique, 1 875 000, couvrait tout).
+const MAX_CLIENT_CHUNK_BYTES = 330_000;
 // The protected admin editor adds an isolated client route; keep a small global
 // allowance for it while enforcing a dedicated initial-load budget below.
 // Separate favorites and alerts routes add independently loaded client chunks.
@@ -69,7 +80,14 @@ const MAX_CLIENT_CHUNK_BYTES = 1_875_000;
 // The second wave (account events and /admin/pilotage, free sale dossier, past followed sales,
 // public market-gap band, financing page, points-to-verify badge) then measured 5,879,382
 // bytes, mostly on-demand chunks; the owner approved (19/10/2026) a third raise, to 5,950,000.
-const MAX_TOTAL_CLIENT_JS_BYTES = 5_950_000;
+// The session of 20/10/2026 (waiting-list notifier, pilotage v2, sale dossier entry, launch-offer
+// surfaces) measured 5,964,934 bytes while every page budget passed and the initial JavaScript of
+// public pages went down; the owner approved (20/10/2026) a fourth raise, to 6,000,000.
+// The second wave of the same day (start checklist, followed-sale planning, signal feedback, search
+// filters, lawyer statement, works breakdown, weekly digest and result emails) measured 6,075,737
+// bytes, mostly on-demand chunks with every page budget passing; the owner approved (20/10/2026) a
+// fifth raise, to 6,125,000.
+const MAX_TOTAL_CLIENT_JS_BYTES = 6_125_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 // New homepage: lossless panorama for large screens plus editorial photography.
 const MAX_PUBLIC_MEDIA_BYTES = 5_000_000;
@@ -124,6 +142,13 @@ const businessModules = [
   "services/data-pipeline/src/llm_task_deadline.py",
 ];
 
+// Budgets de route resserrés le 20/10/2026 à la mesure + 15 % (+ 10 % pour les deux pages ajoutées),
+// arrondie aux 5 000 octets au-dessus : les anciens plafonds, posés avant l'allègement du
+// JavaScript commun, laissaient jusqu'à 55 % de marge (accueil mesuré 242 685 pour 555 000).
+// Mesures : alertes 440 145, accueil 242 685, catalogue 485 970, fiche 318 622, tribunaux 331 468,
+// exemple 160 428, offres 216 453, pages /admin 419 893 à 457 472 ; favoris (612 016) garde son
+// plafond de 670 000, dont la mesure + 15 % donnerait plus. Aucun plafond n'est relevé : tout
+// relèvement demande l'accord du propriétaire.
 const routeBudgets = [
   {
     name: "favorites",
@@ -137,49 +162,65 @@ const routeBudgets = [
     manifest: ".next/server/app/alertes/page_client-reference-manifest.js",
     routeKey: "/alertes/page",
     entryKey: "[project]/src/app/alertes/page",
-    maxBytes: 570_000,
+    maxBytes: 510_000,
   },
   {
     name: "home",
     manifest: ".next/server/app/page_client-reference-manifest.js",
     routeKey: "/page",
     entryKey: "[project]/src/app/page",
-    maxBytes: 555_000,
+    maxBytes: 280_000,
   },
   {
     name: "sales",
     manifest: ".next/server/app/sales/page_client-reference-manifest.js",
     routeKey: "/sales/page",
     entryKey: "[project]/src/app/sales/page",
-    maxBytes: 750_000,
+    maxBytes: 560_000,
   },
   {
     name: "sale-detail",
     manifest: ".next/server/app/sales/[id]/page_client-reference-manifest.js",
     routeKey: "/sales/[id]/page",
     entryKey: "[project]/src/app/sales/[id]/page",
-    maxBytes: 630_000,
+    maxBytes: 370_000,
   },
   {
     name: "tribunals",
     manifest: ".next/server/app/tribunaux/page_client-reference-manifest.js",
     routeKey: "/tribunaux/page",
     entryKey: "[project]/src/app/tribunaux/page",
-    maxBytes: 640_000,
+    maxBytes: 385_000,
+  },
+  // Pages ajoutées par la session du 18/10 : budget à la mesure du 20/10/2026 + 10 %
+  // (171 731 et 164 138 octets).
+  {
+    name: "tribunal-page",
+    manifest: ".next/server/app/tribunaux/[slug]/page_client-reference-manifest.js",
+    routeKey: "/tribunaux/[slug]/page",
+    entryKey: "[project]/src/app/tribunaux/[slug]/page",
+    maxBytes: 189_000,
+  },
+  {
+    name: "hearings",
+    manifest: ".next/server/app/audiences-a-venir/page_client-reference-manifest.js",
+    routeKey: "/audiences-a-venir/page",
+    entryKey: "[project]/src/app/audiences-a-venir/page",
+    maxBytes: 181_000,
   },
   {
     name: "example",
     manifest: ".next/server/app/annonce-exemple/page_client-reference-manifest.js",
     routeKey: "/annonce-exemple/page",
     entryKey: "[project]/src/app/annonce-exemple/page",
-    maxBytes: 650_000,
+    maxBytes: 185_000,
   },
   {
     name: "pricing",
     manifest: ".next/server/app/offres/page_client-reference-manifest.js",
     routeKey: "/offres/page",
     entryKey: "[project]/src/app/offres/page",
-    maxBytes: 525_000,
+    maxBytes: 250_000,
   },
   // Administration: one page per view (P3-11). Measured 470-538 KB each, against
   // 566,921 bytes for every view before the split.
@@ -188,56 +229,58 @@ const routeBudgets = [
     manifest: ".next/server/app/admin/page_client-reference-manifest.js",
     routeKey: "/admin/page",
     entryKey: "[project]/src/app/admin/page",
-    maxBytes: 540_000,
+    maxBytes: 505_000,
   },
   {
     name: "admin-operations",
     manifest: ".next/server/app/admin/operations/page_client-reference-manifest.js",
     routeKey: "/admin/operations/page",
     entryKey: "[project]/src/app/admin/operations/page",
-    maxBytes: 565_000,
+    maxBytes: 530_000,
   },
   {
     name: "admin-agent",
     manifest: ".next/server/app/admin/agent-ia/page_client-reference-manifest.js",
     routeKey: "/admin/agent-ia/page",
     entryKey: "[project]/src/app/admin/agent-ia/page",
-    maxBytes: 500_000,
+    maxBytes: 485_000,
   },
   {
     name: "admin-publications",
     manifest: ".next/server/app/admin/publications/page_client-reference-manifest.js",
     routeKey: "/admin/publications/page",
     entryKey: "[project]/src/app/admin/publications/page",
-    maxBytes: 545_000,
+    maxBytes: 505_000,
   },
   {
     name: "admin-clients",
     manifest: ".next/server/app/admin/clients/page_client-reference-manifest.js",
     routeKey: "/admin/clients/page",
     entryKey: "[project]/src/app/admin/clients/page",
-    maxBytes: 545_000,
+    maxBytes: 515_000,
   },
   {
     name: "admin-pilotage",
     manifest: ".next/server/app/admin/pilotage/page_client-reference-manifest.js",
     routeKey: "/admin/pilotage/page",
     entryKey: "[project]/src/app/admin/pilotage/page",
-    maxBytes: 540_000,
+    // 20/10/2026 : resserré de 540 000 à 500 000 par W8, puis porté à 520 000 (sous le plafond d'origine)
+    // par les cartes de la seconde vague (rappels, retours sur les signaux).
+    maxBytes: 520_000,
   },
   {
     name: "admin-lawyers",
     manifest: ".next/server/app/admin/lawyers/page_client-reference-manifest.js",
     routeKey: "/admin/lawyers/page",
     entryKey: "[project]/src/app/admin/lawyers/page",
-    maxBytes: 565_000,
+    maxBytes: 530_000,
   },
   {
     name: "admin-compliance",
     manifest: ".next/server/app/admin/compliance/page_client-reference-manifest.js",
     routeKey: "/admin/compliance/page",
     entryKey: "[project]/src/app/admin/compliance/page",
-    maxBytes: 555_000,
+    maxBytes: 520_000,
   },
 ];
 
@@ -299,15 +342,29 @@ const businessModuleLines = Object.fromEntries(
 );
 
 const chunks = await filesUnder(".next/static/chunks", (path) => path.endsWith(".js"));
-const chunkSizes = await Promise.all(chunks.map(async (path) => [path, (await stat(path)).size]));
+const chunkSizes = await Promise.all(
+  chunks.map(async (path) => [path, (await stat(path)).size, await isMapboxChunk(path)]),
+);
 const totalClientBytes = chunkSizes.reduce((sum, [, size]) => sum + size, 0);
-const [largestChunk, largestChunkBytes] = chunkSizes.sort(
+const [largestChunk, largestChunkBytes] = [...chunkSizes].sort(
   (left, right) => right[1] - left[1],
 )[0] ?? ["none", 0];
+const mapboxChunks = chunkSizes.filter(([, , mapbox]) => mapbox);
+const [mapboxChunk, mapboxChunkBytes] = [...mapboxChunks].sort(
+  (left, right) => right[1] - left[1],
+)[0] ?? ["none", 0];
+const [largestOtherChunk, largestOtherChunkBytes] = [
+  ...chunkSizes.filter(([, , mapbox]) => !mapbox),
+].sort((left, right) => right[1] - left[1])[0] ?? ["none", 0];
 
-if (largestChunkBytes > MAX_CLIENT_CHUNK_BYTES) {
+if (mapboxChunkBytes > MAX_MAPBOX_CHUNK_BYTES) {
   throw new Error(
-    `Chunk client trop lourd: ${largestChunk} (${largestChunkBytes} octets > ${MAX_CLIENT_CHUNK_BYTES}).`,
+    `Chunk mapbox-gl trop lourd: ${mapboxChunk} (${mapboxChunkBytes} octets > ${MAX_MAPBOX_CHUNK_BYTES}). Relever ce plafond demande l'accord du propriétaire.`,
+  );
+}
+if (largestOtherChunkBytes > MAX_CLIENT_CHUNK_BYTES) {
+  throw new Error(
+    `Chunk client trop lourd: ${largestOtherChunk} (${largestOtherChunkBytes} octets > ${MAX_CLIENT_CHUNK_BYTES}).`,
   );
 }
 const routeClientBytes = {};
@@ -365,6 +422,10 @@ console.info(
   JSON.stringify({
     largestChunk,
     largestChunkBytes,
+    mapboxChunk,
+    mapboxChunkBytes,
+    largestOtherChunk,
+    largestOtherChunkBytes,
     landingWebpCount: landingImages.length,
     largestBusinessModuleLines: Math.max(...Object.values(businessModuleLines)),
     htmlScriptBytesByPage,
@@ -506,6 +567,14 @@ async function htmlReferencedJavaScriptBytes(htmlPath) {
     [...files].map(async (file) => (await stat(join(".next", file))).size),
   );
   return sizes.reduce((sum, bytes) => sum + bytes, 0);
+}
+
+/**
+ * Vrai pour le chunk qui embarque mapbox-gl : celui qui porte la bannière de licence de la
+ * bibliothèque (« Mapbox GL JS »), jamais un chunk qui cite seulement le mot « mapbox ».
+ */
+async function isMapboxChunk(path) {
+  return (await readFile(path, "utf8")).includes("Mapbox GL JS");
 }
 
 async function filesUnder(directory, predicate) {

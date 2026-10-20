@@ -135,15 +135,14 @@ describe("/tribunaux", () => {
     const section = screen.getByRole("region", {
       name: "107 ventes judiciaires à venir dans 1 tribunal",
     });
-    // Le nom mène à la page du tribunal ; le nombre de ventes, à la recherche filtrée.
+    // Un seul lien par ligne : le nom, vers la page du tribunal (qui renvoie à la recherche filtrée).
     expect(screen.getByRole("link", { name: "Bobigny" }).getAttribute("href")).toBe(
       "/tribunaux/bobigny",
     );
-    expect(
-      screen
-        .getByRole("link", { name: "Voir dans la recherche 107 ventes : Bobigny" })
-        .getAttribute("href"),
-    ).toBe("/sales?tribunal=TJ+Bobigny");
+    const row = screen.getByRole("link", { name: "Bobigny" }).closest("tr");
+    expect(row?.querySelectorAll("a")).toHaveLength(1);
+    expect(row?.textContent).toContain("107");
+    expect(screen.queryByRole("link", { name: /Voir dans la recherche/ })).toBeNull();
     expect(
       screen.getByRole("link", { name: "la page des audiences à venir" }).getAttribute("href"),
     ).toBe("/audiences-a-venir");

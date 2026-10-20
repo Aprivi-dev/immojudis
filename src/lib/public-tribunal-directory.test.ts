@@ -42,6 +42,8 @@ describe("mapPublicTribunalDirectory", () => {
     ]);
     expect(entries.map((entry) => entry.code)).toEqual(["justice_tj_1_1"]);
     expect(entries[0].searchName).toBe("justice_tj_1_1");
+    // Le code reste l'identité du tribunal, jamais son nom affiché.
+    expect(entries[0].name).toBe("Tribunal à confirmer");
   });
 });
 

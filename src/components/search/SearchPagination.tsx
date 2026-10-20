@@ -2,11 +2,20 @@ import type { MouseEvent, ReactNode } from "react";
 import Link from "next/link";
 import LoaderCircle from "lucide-react/dist/esm/icons/loader-circle.js";
 
-const PAGE_CONTROL_CLASSES =
-  "inline-flex h-11 cursor-pointer items-center justify-center gap-2 rounded-md border border-line bg-white px-4 text-sm font-bold text-brand-navy transition-colors hover:border-brand-navy hover:text-brand-navy aria-disabled:cursor-not-allowed aria-disabled:opacity-60";
+/** Gabarit commun des contrôles de pagination, sans couleur : chaque liste garde la sienne. */
+const PAGE_CONTROL_BASE_CLASSES =
+  "inline-flex h-11 items-center justify-center gap-2 rounded-md border px-4 text-sm font-bold transition-colors";
+
+const PAGE_CONTROL_CLASSES = `${PAGE_CONTROL_BASE_CLASSES} cursor-pointer border-line bg-white text-brand-navy hover:border-brand-navy hover:text-brand-navy aria-disabled:cursor-not-allowed aria-disabled:opacity-60`;
 
 /** Pastille d'un numéro de page : même hauteur de 44 px, largeur minimale d'un doigt. */
 const PAGE_NUMBER_CLASSES = `${PAGE_CONTROL_CLASSES} min-w-11 px-2`;
+
+/**
+ * Page courante : fond marine, texte blanc. Liste distincte de `PAGE_CONTROL_CLASSES` : mêlées,
+ * `bg-white` l'emportait sur `bg-brand-navy` et le numéro blanc restait invisible.
+ */
+const CURRENT_PAGE_CLASSES = `${PAGE_CONTROL_BASE_CLASSES} min-w-11 border-brand-navy bg-brand-navy px-2 text-white`;
 
 /** Identifiant de la pagination : cible du lien d'évitement « Aller à la pagination ». */
 export const SALES_PAGINATION_ID = "sales-pagination";
@@ -153,7 +162,7 @@ export function SearchPagination({
   if (!hasMore && !hasPrevious && loadedCount === 0) return null;
 
   // Page au-delà de la dernière (lien ancien, résultats qui ont diminué) : on le dit et on
-  // propose le retour au début plutôt qu'un compteur « 0–48 / 40 dossiers ».
+  // propose le retour au début plutôt qu'un compteur « 0–48 / 40 ventes ».
   if (page > 1 && loadedCount === 0 && !isFetching) {
     return (
       <nav
@@ -214,7 +223,7 @@ export function SearchPagination({
           : totalCount != null
             ? `${firstResult.toLocaleString("fr-FR")}–${lastResult.toLocaleString(
                 "fr-FR",
-              )} / ${totalCount.toLocaleString("fr-FR")} dossiers`
+              )} / ${totalCount.toLocaleString("fr-FR")} ventes`
             : `Page ${page.toLocaleString("fr-FR")}`}
       </span>
       {hasMore ? (
@@ -233,12 +242,11 @@ export function SearchPagination({
             ) : (
               <li key={item}>
                 {item === page ? (
-                  <span
-                    aria-current="page"
-                    aria-label={`Page ${item}, page actuelle`}
-                    className={`${PAGE_NUMBER_CLASSES} border-brand-navy bg-brand-navy text-white`}
-                  >
+                  // Pas d'`aria-label` sur un `span` (rôle générique) : le contexte est du texte masqué.
+                  <span aria-current="page" className={CURRENT_PAGE_CLASSES}>
+                    <span className="sr-only">Page </span>
                     {item.toLocaleString("fr-FR")}
+                    <span className="sr-only">, page actuelle</span>
                   </span>
                 ) : (
                   <PageControl

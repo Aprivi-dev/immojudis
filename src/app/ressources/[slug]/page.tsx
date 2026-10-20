@@ -8,6 +8,7 @@ import {
   RESOURCE_ARTICLES,
   getResourceArticle,
   formatResourceDate,
+  resourceDocumentDescription,
   resourceDocumentTitle,
   resourceLastModified,
 } from "@/lib/resource-articles";
@@ -33,14 +34,16 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   // `seoTitle` (when the editor set one) is the title of the tab, of the search result and of the
   // shares; the h1 of the page keeps `title`.
   const title = resourceDocumentTitle(article);
+  // Same for the description: `seoDescription` (158 characters at most) when the editor set one.
+  const description = resourceDocumentDescription(article);
   return {
     title,
-    description: article.description,
+    description,
     alternates: { canonical: article.href },
     openGraph: {
       type: "article",
       title,
-      description: article.description,
+      description,
       url: article.href,
       publishedTime: article.publishedAt,
       ...(article.updatedAt ? { modifiedTime: article.updatedAt } : {}),
@@ -50,7 +53,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     twitter: {
       card: "summary_large_image",
       title,
-      description: article.description,
+      description,
       images: [article.image],
     },
   };
@@ -115,7 +118,8 @@ export default async function Page({ params }: Props) {
           <span aria-hidden="true">/</span>
           <Link href="/ressources">Ressources</Link>
           <span aria-hidden="true">/</span>
-          <span aria-current="page">{article.category}</span>
+          {/* Même fil que le JSON-LD (BreadcrumbList) : Accueil, Ressources, titre de l'article. */}
+          <span aria-current="page">{article.title}</span>
         </nav>
         <article>
           <header className={styles.articleHeader}>
@@ -131,6 +135,18 @@ export default async function Page({ params }: Props) {
                   <time dateTime={article.publishedAt}>
                     {formatResourceDate(article.publishedAt)}
                   </time>
+                </>
+              )}
+              {article.updatedAt && article.updatedAt !== article.publishedAt && (
+                <>
+                  {" "}
+                  ·{" "}
+                  <span>
+                    Mis à jour le{" "}
+                    <time dateTime={article.updatedAt}>
+                      {formatResourceDate(article.updatedAt)}
+                    </time>
+                  </span>
                 </>
               )}{" "}
               · {article.readingMinutes} min de lecture

@@ -7,7 +7,9 @@ import {
   emptyFavoriteDossier,
   favoriteDossierInputSchema,
   favoriteDossierStatusLabel,
+  formatBidCeilingInput,
   normalizeFavoriteDossierStatus,
+  parseBidCeilingInput,
   toFavoriteDossier,
 } from "@/lib/favorite-dossier-shared";
 import { SALE_WORKSPACE_STATUSES } from "@/lib/sale-workspace-shared";
@@ -55,7 +57,7 @@ beforeEach(() => {
 describe("statuts de « Mon dossier »", () => {
   it("reprend exactement les statuts de l'espace de travail, avec leurs libellés", () => {
     expect(FAVORITE_DOSSIER_STATUSES).toEqual(SALE_WORKSPACE_STATUSES);
-    expect(favoriteDossierStatusLabel("bidding")).toBe("Prêt à enchérir");
+    expect(favoriteDossierStatusLabel("bidding")).toBe("Je prépare mon enchère");
   });
 
   it("traite une valeur inconnue comme absente", () => {
@@ -95,12 +97,43 @@ describe("favoriteDossierInputSchema", () => {
     expect(() =>
       favoriteDossierInputSchema.parse({ saleId: SALE_ID, bidCeilingEur: 10_000_000_001 }),
     ).toThrow();
+    // Un plafond de 0 € n'est pas une enchère : on l'efface avec `null`.
+    expect(() => favoriteDossierInputSchema.parse({ saleId: SALE_ID, bidCeilingEur: 0 })).toThrow(
+      /supérieure à 0/,
+    );
+    expect(() =>
+      favoriteDossierInputSchema.parse({ saleId: SALE_ID, bidCeilingEur: 0.4 }),
+    ).toThrow();
     expect(() =>
       favoriteDossierInputSchema.parse({ saleId: SALE_ID, bidCeilingEur: Number.NaN }),
     ).toThrow();
     expect(() =>
       favoriteDossierInputSchema.parse({ saleId: "x", personalStatus: "won" }),
     ).toThrow();
+  });
+});
+
+describe("parseBidCeilingInput", () => {
+  it("lit les saisies françaises : espaces (insécables compris), « € », virgule", () => {
+    expect(parseBidCeilingInput("185000")).toEqual({ ok: true, value: 185_000 });
+    expect(parseBidCeilingInput("185 000")).toEqual({ ok: true, value: 185_000 });
+    expect(parseBidCeilingInput("185\u202f000 €")).toEqual({ ok: true, value: 185_000 });
+    expect(parseBidCeilingInput("185\u00a0000,6")).toEqual({ ok: true, value: 185_001 });
+    expect(formatBidCeilingInput(185_000)).toMatch(/^185\s000$/);
+  });
+
+  it("refuse 0 €, le vide, le texte et un point de milliers (185.000)", () => {
+    expect(parseBidCeilingInput("0")).toMatchObject({ ok: false });
+    expect(parseBidCeilingInput("0,4")).toMatchObject({ ok: false });
+    expect(parseBidCeilingInput("  ")).toMatchObject({ ok: false });
+    expect(parseBidCeilingInput("abc")).toMatchObject({ ok: false });
+    expect(parseBidCeilingInput("-5")).toMatchObject({ ok: false });
+    expect(parseBidCeilingInput("185.000")).toMatchObject({ ok: false });
+  });
+
+  it("refuse un montant au-delà de la borne du serveur", () => {
+    expect(parseBidCeilingInput("10000000001")).toMatchObject({ ok: false });
+    expect(parseBidCeilingInput("10000000000")).toEqual({ ok: true, value: 10_000_000_000 });
   });
 });
 

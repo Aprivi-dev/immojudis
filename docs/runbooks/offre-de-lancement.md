@@ -30,10 +30,18 @@ couper et ce que voient ensuite les utilisateurs.
   Analyse de `/offres`, `/compte` et l'accueil affichent la mention de l'offre et « Tarif prévu : 59 € TTC /
   mois. Pas encore souscriptible. ».
 - **Textes** (une seule source, `src/lib/launch-offer.ts`) :
-  - compte connecté : « Offre de lancement : votre compte gratuit bénéficie des avantages de l'offre
-    Analyse. Ces avantages pourront vous être retirés, sans préavis, dès le lancement officiel du site. » ;
-  - visiteur : « Offre de lancement : créez un compte gratuit et accédez aux avantages de l'offre Analyse
-    (avantages retirables sans préavis au lancement officiel). »
+  - compte connecté : « Offre de lancement : votre compte gratuit, une fois votre adresse email confirmée,
+    bénéficie des avantages de l'offre Analyse. Ces avantages sont temporaires et prendront fin au plus tard
+    au lancement officiel du site. Nous vous prévenons par email avant leur fin ; ils peuvent toutefois être
+    retirés plus tôt, sans préavis, en cas d'abus ou d'impératif technique ou juridique. » ;
+  - visiteur : « Offre de lancement : créez un compte gratuit, confirmez votre adresse email et accédez aux
+    avantages de l'offre Analyse. » suivi de la même formule de durée ;
+  - données (`/compte`, FAQ de `/offres`) : « Vos données (favoris, alertes, rapports enregistrés) restent
+    conservées tant que votre compte existe et dans les durées de la politique de confidentialité. Elles
+    redeviennent accessibles avec l'offre Analyse. »
+  - Formules de la relecture juridique du 20/10/2026, à faire valider par un avocat. **Le site s'engage donc à
+    prévenir par email avant la fin** : voir « Avant de couper » ; couper sans avoir envoyé ce préavis n'est
+    permis que pour abus ou impératif technique ou juridique.
 
 ## Couper l'offre
 
@@ -69,8 +77,8 @@ chaque appel de `/api/feature-entitlements`.
 - Le compte gratuit **redevient Découverte** : 10 favoris, 1 alerte avec email hebdomadaire, 3 déblocages
   de ventes par mois, pas d'export, de rapport PDF, d'estimation détaillée ni de comparables. Les bandeaux et
   mentions de l'offre de lancement disparaissent.
-- **Aucune notification** n'est envoyée (l'offre est retirable « sans préavis »). Aucun message n'explique
-  la fin de l'offre : si le propriétaire veut en annoncer la fin, c'est un envoi à décider à part.
+- **Aucune notification** n'est envoyée par la coupure elle-même. Le préavis par email (engagement des
+  textes publics) se fait avant, par la procédure « Avant de couper » ci-dessous.
 - `/offres` et l'accueil présentent l'offre payante fermée : bouton principal « Me prévenir de
   l'ouverture » (avec les trois questions facultatives de la liste d'attente) et « Tarif prévu : 59 € TTC /
   mois. Pas encore souscriptible. ». Si Stripe et la société sont prêts, la souscription s'ouvre comme avant.
@@ -87,15 +95,101 @@ chaque appel de `/api/feature-entitlements`.
 - Les déblocages de ventes pris pendant l'offre ne comptent pas : un compte Analyse n'en consomme pas.
   Après la coupure, le compteur du mois repart de zéro pour ces comptes.
 
-## À ajouter aux textes juridiques (non modifiés par ce chantier)
+## Avant de couper : annoncer la fin (procédure décidée le 20/10/2026)
 
-À faire valider par un juriste, par le propriétaire :
+Les textes publics disent : « Nous vous prévenons par email avant leur fin ; ils peuvent toutefois être retirés
+plus tôt, sans préavis, en cas d'abus ou d'impératif technique ou juridique. » Le préavis par email est donc un
+engagement, pas une simple pratique (en plus de ne pas surprendre les comptes qui ont créé des contenus). Avant
+de cliquer sur « Couper l'offre de lancement » :
 
-- **Conditions générales** (`src/routes/conditions-generales.tsx`) : une clause « offre de lancement »
-  (avantages Analyse accordés à titre gracieux aux comptes gratuits, sans engagement de durée, retirables à tout
-  moment et sans préavis, sans contrepartie financière ni droit acquis) ; le nombre de favoris du compte
-  gratuit est cité à l'article 2 (« trois favoris au maximum », ligne 72) et doit passer à dix ; la
-  description de l'offre Découverte doit rester celle du compte une fois l'offre coupée.
+1. **Fixer la date de coupure** et l'écrire dans le calendrier du propriétaire. Elle se situe **au moins
+   30 jours après l'annonce**.
+2. **Annoncer dans l'application, puis par email** à tous les comptes qui bénéficient de l'offre (compte
+   gratuit à adresse email confirmée, hors abonnés, comptes premium et administrateurs), et pas seulement à
+   ceux qui ont créé des contenus. Le message dit : la date, ce qui se ferme (voir la liste ci-dessus), que les
+   données sont conservées tant que le compte existe et redeviennent accessibles avec l'offre Analyse, que
+   `/compte` détaille « Ce qui reste gratuit » et « Ce qui demandera l'offre Analyse », et comment exporter.
+   Aucun compte à rebours, aucune pression pour s'abonner.
+   **Outil d'envoi : à ce jour, le seul outil d'envoi existant dans l'application est « Prévenir la liste
+   d'attente » (voir plus bas), qui ne vise que les personnes inscrites à `offer_opening_notifications`
+   (demande « Me prévenir de l'ouverture »). Il ne couvre pas les comptes qui ont l'offre de lancement.**
+   Procédure, tant qu'aucun envoi dédié n'existe :
+   1. établir la liste des destinataires dans l'éditeur SQL (propriétaire) : comptes à adresse confirmée,
+      `account_tier` gratuit, sans abonnement réel (`user_subscriptions`) ; compter, ne rien modifier ;
+   2. envoyer le message depuis le fournisseur d'email de l'application (Resend, même domaine d'expédition
+      que `ALERT_EMAIL_FROM`), par lots, en gardant la liste des adresses prévenues et la date d'envoi (la
+      preuve du préavis) ; relire le texte (ton sobre, sans prix ni pression) avant l'envoi réel ;
+   3. si la liste d'attente et les comptes de l'offre se recoupent, ne pas écrire à la même personne deux
+      fois.
+      Si le volume ou la fréquence justifie un envoi dans l'application (par exemple une marque `notified_at`
+      comme `offer_opening_notifications`, un essai administrateur et un lien de désinscription), c'est un
+      chantier à part : il demande une migration (non appliquée par les agents).
+3. **30 jours d'accès en lecture et d'export aux contenus créés** : l'offre reste active pendant ces 30 jours,
+   les comptes lisent et exportent ce qu'ils ont créé (rapports PDF, exports CSV, comparaisons). Ne pas couper
+   avant la fin du délai.
+   **Attention : le code et la base n'ont aucun mode « lecture et export seulement » après la coupure.** La
+   coupure ferme immédiatement les rapports enregistrés, les exports et les clés d'API (voir ci-dessus). Les
+   30 jours doivent donc se passer **avant** la coupure, offre active. Si le propriétaire veut un délai de
+   grâce **après** la coupure, c'est un chantier à part (migration et règles d'accès).
+4. **Vérifier l'état** (`select active, updated_at from app_private.launch_offer;`), puis couper (bouton de
+   `/admin/clients`), puis vérifier `/offres` et `/compte` d'un compte de test.
+5. **Prévenir la liste d'attente seulement quand la souscription est réellement ouverte** (voir ci-dessous) :
+   le message renvoie vers `/offres`, où figurent les conditions en vigueur.
+
+### Prévenir la liste d'attente (`/admin/clients`, bloc « Prévenir la liste d'attente »)
+
+Les personnes qui ont cliqué sur « Me prévenir de l'ouverture » sont dans `offer_opening_notifications`. Le
+bloc de `/admin/clients` :
+
+- affiche le nombre de **destinataires actifs** (demande active, `notified_at` vide) et le nombre de personnes
+  déjà prévenues ;
+- montre l'**aperçu** du message ; **« M'envoyer un essai »** l'envoie à l'adresse de l'administrateur (objet
+  « [Test] … », aucune écriture en base) ;
+- **« Envoyer à N personnes »** envoie un lot de **200 au plus**, après confirmation : les plus anciennes
+  demandes d'abord, uniquement vers des adresses confirmées, chacune avec son **lien de désinscription signé**
+  (désinscription en un clic dans l'en-tête de l'email ; le lien retire la demande). Si la liste dépasse 200
+  ou si le délai de 20 s est atteint, le bloc le dit : relancer pour la suite.
+- Un **même destinataire n'est jamais prévenu deux fois** : `notified_at` est écrit avant l'envoi par une mise
+  à jour conditionnelle ; un envoi refusé par le fournisseur retire la marque et peut être relancé. Au pire, un
+  plantage entre la marque et l'envoi fait perdre un message, jamais en envoie deux.
+- Prérequis : `RESEND_API_KEY`, `ALERT_EMAIL_FROM` et `SITE_URL` (les mêmes que les alertes). Sans eux, les
+  boutons sont désactivés et le bloc dit ce qui manque.
+- **Le texte du message (`buildOfferOpeningMessage`, `src/lib/admin-offer-opening-notifier.ts`) est à faire
+  relire par le propriétaire avant le premier envoi réel.** Il est volontairement sobre : il rappelle la
+  demande, renvoie vers `/offres` pour les conditions en vigueur, n'annonce aucun prix et dit qu'aucun
+  abonnement n'est créé sans accord. Il dit que l'offre est ouverte : à n'envoyer que si c'est vrai.
+
+### Bandeau d'annonce de fin configurable par l'administrateur (non implémenté)
+
+Pas fait ici : ce n'est pas simple, car il faut une nouvelle donnée en base lue par une route publique en cache.
+Conception proposée, à faire dans un chantier à part :
+
+1. Migration : deux colonnes sur `app_private.launch_offer` (`end_announcement_text text` borné à 300 caractères,
+   `ends_on date`) et une fonction `public.set_launch_offer_announcement(text, date)` réservée à
+   `public.is_admin()` (mêmes règles que `set_launch_offer`), avec son test pgTAP.
+2. `GET /api/launch-offer` (`src/app/api/launch-offer/route.ts`) renvoie en plus `endsOn` et le texte ;
+   `parseLaunchOfferResponse` (`src/lib/launch-offer.ts`) et le magasin `use-launch-offer.ts` les lisent
+   (même cache de 30 s : l'annonce apparaît en une minute au plus).
+3. Un composant de bandeau, monté dans l'en-tête, visible seulement tant que l'offre est active et qu'un texte
+   est configuré, avec une hauteur réservée pendant `pending` (comme `LaunchOfferNote`), sans compte à
+   rebours.
+4. Un formulaire dans `AdminLaunchOfferPanel` (texte, date, aperçu) et `docs/` mis à jour.
+
+En attendant, le message dans l'application se fait par un bandeau posé à la main dans une livraison, ou par le
+seul email.
+
+## Textes juridiques (état au 20/10/2026)
+
+À faire valider par un avocat (par le propriétaire) :
+
+- **Conditions générales** (`src/routes/conditions-generales.tsx`, version 2026-10-20.1) : l'article 13
+  « Offre de lancement » reprend la formule du site (avantages temporaires, fin au plus tard au lancement
+  officiel, préavis par email, retrait anticipé sans préavis pour abus ou impératif technique ou juridique,
+  retour à Découverte sans frais ni paiement automatique ni suppression des données, aucun abonnement sans
+  confirmation dans Stripe) ; il est spécial à l'offre et prévaut sur le préavis de 30 jours de l'article 2,
+  qui reste celui des déblocages mensuels. Le nombre de favoris est tiré de `PLAN_LIMITS`. **Toute
+  modification des textes de `src/lib/launch-offer.ts` demande de reporter la formule dans cet article
+  (le texte juridique est ancré par empreinte : nouvelle version).**
 - **Politique de confidentialité** (`src/routes/privacy.tsx`) : l'état de l'offre est global et ne traite
   aucune donnée personnelle ; en revanche la liste d'attente qualifiée (questions facultatives, entretien de
   20 minutes) ajoute des finalités et des données (profil, volume de ventes, repères de prix, accord à un

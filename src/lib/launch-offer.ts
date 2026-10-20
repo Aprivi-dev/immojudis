@@ -17,15 +17,28 @@
 export const LAUNCH_OFFER_LABEL = "Offre de lancement";
 
 /**
- * Mention à un compte connecté : ses avantages Analyse sont ceux de l'offre de lancement, et ils
- * peuvent lui être retirés sans préavis au lancement officiel du site.
+ * Durée de l'offre, formule de la relecture juridique du 20/10/2026 (à faire valider par un avocat,
+ * comme tout ce fichier) : les avantages sont temporaires, finissent au plus tard au lancement
+ * officiel, la fin est annoncée par email, et ils ne sont retirés plus tôt, sans préavis, que pour
+ * abus ou impératif technique ou juridique. Reprise dans l'article « Offre de lancement » des CGV
+ * (`src/routes/conditions-generales.tsx`, qui l'écrit en toutes lettres : le texte juridique est
+ * ancré par empreinte).
  */
-export const LAUNCH_OFFER_ACCOUNT_TEXT =
-  "Offre de lancement : votre compte gratuit bénéficie des avantages de l’offre Analyse. Ces avantages pourront vous être retirés, sans préavis, dès le lancement officiel du site.";
+export const LAUNCH_OFFER_DURATION_TEXT =
+  "Ces avantages sont temporaires et prendront fin au plus tard au lancement officiel du site. Nous vous prévenons par email avant leur fin ; ils peuvent toutefois être retirés plus tôt, sans préavis, en cas d’abus ou d’impératif technique ou juridique.";
+
+/** Ce que deviennent les données à la fin de l'offre (même relecture). */
+export const LAUNCH_OFFER_DATA_TEXT =
+  "Vos données (favoris, alertes, rapports enregistrés) restent conservées tant que votre compte existe et dans les durées de la politique de confidentialité. Elles redeviennent accessibles avec l’offre Analyse.";
+
+/**
+ * Mention à un compte connecté : ses avantages Analyse sont ceux de l'offre de lancement (à condition
+ * que son adresse email soit confirmée), temporaires, avec la durée dite par `LAUNCH_OFFER_DURATION_TEXT`.
+ */
+export const LAUNCH_OFFER_ACCOUNT_TEXT = `Offre de lancement : votre compte gratuit, une fois votre adresse email confirmée, bénéficie des avantages de l’offre Analyse. ${LAUNCH_OFFER_DURATION_TEXT}`;
 
 /** Mention à un visiteur non connecté (appels à l'inscription). */
-export const LAUNCH_OFFER_VISITOR_TEXT =
-  "Offre de lancement : créez un compte gratuit et accédez aux avantages de l’offre Analyse (avantages retirables sans préavis au lancement officiel).";
+export const LAUNCH_OFFER_VISITOR_TEXT = `Offre de lancement : créez un compte gratuit, confirmez votre adresse email et accédez aux avantages de l’offre Analyse. ${LAUNCH_OFFER_DURATION_TEXT}`;
 
 export type LaunchOfferAudience = "account" | "visitor";
 

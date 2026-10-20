@@ -27,6 +27,14 @@ describe("activeFilterChips", () => {
     ]);
   });
 
+  it("shows and removes the « visite dans les 7 jours » criterion", () => {
+    const search = { visitSoon: true, city: "Lyon" };
+    const chip = activeFilterChips(search).find((item) => item.key === "visitSoon")!;
+    expect(chip.label).toBe("Visite dans les 7 jours");
+    expect(mergeSalesSearch(search, chip.clear)).toMatchObject({ city: "Lyon" });
+    expect(mergeSalesSearch(search, chip.clear).visitSoon).toBeUndefined();
+  });
+
   it("groups a min and a max under one removable chip", () => {
     const chips = activeFilterChips({ minPrice: 50_000, maxPrice: 100_000 });
     expect(chips).toHaveLength(1);
@@ -69,5 +77,20 @@ describe("whole-France escape", () => {
       maxPrice: 100_000,
       homeTypes: ["house"],
     });
+  });
+});
+
+describe("filtres « sous la fourchette » et « sans point à vérifier »", () => {
+  it("ont chacun leur puce retirable, qui n'éteint qu'eux", () => {
+    const chips = activeFilterChips({ belowRange: true, noPointsToVerify: true, city: "Pau" });
+    expect(chips.map((chip) => chip.label)).toEqual([
+      "Pau",
+      "Mise à prix sous la fourchette des ventes comparables",
+      "Sans point à vérifier",
+    ]);
+    const below = chips.find((chip) => chip.key === "belowRange")!;
+    expect(
+      mergeSalesSearch({ belowRange: true, noPointsToVerify: true }, below.clear),
+    ).toMatchObject({ belowRange: undefined, noPointsToVerify: true });
   });
 });

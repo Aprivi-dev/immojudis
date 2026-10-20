@@ -4,12 +4,15 @@ import type { SaleChangeEventSummary } from "@/lib/sale-change-monitor";
 import {
   MAX_EMAILS_PER_USER,
   MAX_REMINDER_ITEMS_PER_EMAIL,
+  SALE_REMINDER_FAILURE_CODES,
   assertSaleRemindersComplete,
   audienceReminderFor,
   graveWarningFor,
+  isSourceCheckStale,
   rotateRecipients,
   runSaleReminders,
   type FollowedSale,
+  type SaleReminderFailureCode,
   type SaleReminderStore,
 } from "@/lib/sale-reminders";
 
@@ -59,7 +62,12 @@ function change(overrides: Partial<SaleChangeEventSummary> = {}): SaleChangeEven
   };
 }
 
+// Vérification à la source « récente » pour tous les tests qui ne précisent rien (quel que soit `now`).
+const FRESH_CHECK = "2099-01-01T00:00:00Z";
+
 type Setup = {
+  /** Dernière vérification à la source par vente ; absent : récente. `null` : inconnue. */
+  verified?: Record<string, string | null>;
   consenting?: string[];
   admins?: string[];
   followed?: Record<string, FollowedSale[]>;
@@ -84,6 +92,12 @@ function makeStore(setup: Setup = {}) {
     followedSales: vi.fn(
       async (userId: string) =>
         setup.followed?.[userId] ?? [{ id: SALE, saleDate: "2026-11-10T13:00:00Z" }],
+    ),
+    lastVerifiedAt: vi.fn(
+      async (ids: string[]) =>
+        new Map(
+          ids.map((id) => [id, id in (setup.verified ?? {}) ? setup.verified![id] : FRESH_CHECK]),
+        ),
     ),
     visibleSaleIds: vi.fn(
       async (ids: string[]) => new Set(ids.filter((id) => !(setup.hidden ?? []).includes(id))),
@@ -119,7 +133,7 @@ function makeStore(setup: Setup = {}) {
     markSent: vi.fn(async (ids: string[]) => {
       for (const row of journal.values()) if (ids.includes(row.id)) row.status = "sent";
     }),
-    markFailed: vi.fn(async (ids: string[]) => {
+    markFailed: vi.fn(async (ids: string[], _args: { error: SaleReminderFailureCode }) => {
       for (const row of journal.values()) if (ids.includes(row.id)) row.status = "failed";
     }),
     userEmail: vi.fn(async () =>
@@ -577,6 +591,9 @@ describe("runSaleReminders : échecs", () => {
     });
     expect(first).toMatchObject({ emailsSent: 0, emailsFailed: 1 });
     expect(made.store.markFailed).toHaveBeenCalledTimes(1);
+    // Le journal ne garde qu'un code court, jamais la réponse du prestataire.
+    expect(made.store.markFailed).toHaveBeenCalledWith(expect.any(Array), { error: "send_failed" });
+    expect(JSON.stringify(made.store.markFailed.mock.calls)).not.toContain("refusé");
     expect([...made.journal.values()][0].status).toBe("failed");
 
     const ok = resendOk();
@@ -592,11 +609,43 @@ describe("runSaleReminders : échecs", () => {
     expect([...made.journal.values()][0].attempts).toBe(2);
   });
 
-  it("marque l'échec quand la personne n'a pas d'adresse email", async () => {
+  it("marque l'échec quand la personne n'a pas d'adresse email confirmée, avec une raison explicite", async () => {
+    // `readUserEmail` rend `null` pour une adresse absente comme pour une adresse non confirmée.
     const { summary, store, fetchImpl } = await run({ email: null });
     expect(summary.emailsFailed).toBe(1);
     expect(store.markFailed).toHaveBeenCalledTimes(1);
+    expect(store.markFailed).toHaveBeenCalledWith(expect.any(Array), {
+      error: "email_unavailable",
+    });
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("marque une lecture d'adresse impossible d'un code court, sans recopier le message d'erreur", async () => {
+    const made = makeStore();
+    made.store.userEmail.mockRejectedValueOnce(new Error("secret interne de la base"));
+    const summary = await runSaleReminders({
+      store: made.store,
+      now: NOW,
+      env,
+      fetchImpl: resendOk(),
+      mode: "on",
+    });
+    expect(summary.emailsFailed).toBe(1);
+    expect(made.store.markFailed).toHaveBeenCalledWith(expect.any(Array), {
+      error: "email_lookup_failed",
+    });
+  });
+
+  it("n'écrit au journal que des codes de la liste fermée, même quand le prestataire est bavard", async () => {
+    const made = makeStore();
+    const verbose = vi.fn(
+      async () => new Response(JSON.stringify({ message: "x".repeat(2_000) }), { status: 422 }),
+    ) as unknown as typeof fetch;
+    await runSaleReminders({ store: made.store, now: NOW, env, fetchImpl: verbose, mode: "on" });
+    expect(made.store.markFailed).toHaveBeenCalled();
+    for (const [, { error }] of made.store.markFailed.mock.calls) {
+      expect(SALE_REMINDER_FAILURE_CODES).toContain(error);
+    }
   });
 
   it("fait échouer le passage quand une lecture est impossible, au lieu de conclure qu'il n'y a rien", async () => {
@@ -716,6 +765,39 @@ describe("audienceReminderFor", () => {
   });
 });
 
+describe("retrait déduit de l'absence de l'annonce à la source", () => {
+  const absence = () =>
+    change({
+      fingerprint: "status_changed:status:upcoming:withdrawn",
+      changeSummary: {
+        field: "status",
+        previousValue: "upcoming",
+        currentValue: "withdrawn",
+        reason: "source_absence",
+      },
+    });
+
+  it("est annoncé comme une annonce disparue de la source, pas comme une vente retirée", () => {
+    expect(graveWarningFor(absence(), NOW)).toEqual({
+      kind: "status_changed",
+      headline: "Annonce disparue de la source",
+      sourceAbsence: true,
+    });
+  });
+
+  it("donne un email qui ne parle pas de vente retirée et renvoie à l'avocat poursuivant", async () => {
+    const { emails } = await run({
+      followed: { [USER]: [{ id: SALE, saleDate: "2026-12-15T13:00:00Z" }] },
+      events: { [USER]: [absence()] },
+    });
+    expect(emails).toHaveLength(1);
+    expect(emails[0].subject).toContain("Annonce disparue de la source");
+    expect(emails[0].subject).not.toMatch(/retir/i);
+    expect(emails[0].text).toContain("À vérifier auprès de l’avocat poursuivant.");
+    expect(emails[0].text).not.toMatch(/retir/i);
+  });
+});
+
 describe("graveWarningFor", () => {
   it("ne retient que la date, et le statut reporté, retiré, annulé ou adjugé", () => {
     expect(graveWarningFor(change(), NOW)?.kind).toBe("status_changed");
@@ -735,5 +817,149 @@ describe("graveWarningFor", () => {
         NOW,
       )?.headline,
     ).toBe("Vente annulée");
+  });
+});
+
+describe("runSaleReminders : fraîcheur de la vérification à la source", () => {
+  const FRESH = new Date(NOW.getTime() - 35 * 3_600_000).toISOString();
+  const STALE = new Date(NOW.getTime() - 37 * 3_600_000).toISOString();
+
+  it("envoie le rappel quand la vente a été revérifiée depuis moins de 36 h", async () => {
+    const { emails, summary } = await run({ verified: { [SALE]: FRESH } });
+    expect(emails).toHaveLength(1);
+    expect(summary).toMatchObject({ audienceDue: 1, skippedStale: 0 });
+  });
+
+  it("n'envoie ni J-7 ni J-1 quand la dernière vérification date de plus de 36 h", async () => {
+    const seven = await run({ verified: { [SALE]: STALE } });
+    expect(seven.emails).toHaveLength(0);
+    expect(seven.store.claim).not.toHaveBeenCalled();
+    expect(seven.summary).toMatchObject({ audienceDue: 1, skippedStale: 1, candidates: 0 });
+
+    const eve = new Date("2026-11-09T06:00:00Z");
+    const one = await run(
+      { verified: { [SALE]: new Date(eve.getTime() - 40 * 3_600_000).toISOString() } },
+      { now: eve },
+    );
+    expect(one.emails).toHaveLength(0);
+    expect(one.summary).toMatchObject({ audienceDue: 1, skippedStale: 1 });
+  });
+
+  it("traite une vérification inconnue comme périmée", async () => {
+    const { emails, summary } = await run({ verified: { [SALE]: null } });
+    expect(emails).toHaveLength(0);
+    expect(summary.skippedStale).toBe(1);
+  });
+
+  it("ne retient pas une vente écartée : elle est rappelée dès que la vérification est fraîche", async () => {
+    const made = makeStore({ verified: { [SALE]: STALE } });
+    const first = await runSaleReminders({
+      store: made.store,
+      now: NOW,
+      env,
+      fetchImpl: resendOk(),
+      mode: "on",
+    });
+    expect(first.emailsSent).toBe(0);
+    made.store.lastVerifiedAt.mockResolvedValueOnce(new Map([[SALE, FRESH]]));
+    const catchUp = await runSaleReminders({
+      store: made.store,
+      now: NOW,
+      env,
+      fetchImpl: resendOk(),
+      mode: "on",
+      catchUp: true,
+    });
+    expect(catchUp.emailsSent).toBe(1);
+  });
+
+  it("ne touche pas aux avertissements graves (ils viennent des événements, pas de la date stockée)", async () => {
+    const { emails } = await run({
+      followed: { [USER]: [{ id: SALE, saleDate: "2026-12-15T13:00:00Z" }] },
+      events: { [USER]: [change()] },
+      verified: { [SALE]: STALE },
+    });
+    expect(emails).toHaveLength(1);
+    expect(emails[0].subject).toContain("Vente reportée");
+  });
+
+  it("n'interroge la vérification que pour les ventes de la fenêtre utile", async () => {
+    const { store } = await run({
+      followed: {
+        [USER]: [
+          { id: SALE, saleDate: "2026-11-10T13:00:00Z" },
+          { id: SALE_2, saleDate: "2027-03-01T13:00:00Z" },
+        ],
+      },
+    });
+    expect(store.lastVerifiedAt).toHaveBeenCalledTimes(1);
+    expect(store.lastVerifiedAt).toHaveBeenCalledWith([SALE]);
+  });
+
+  it("fait échouer le passage quand plus de 20 % des rappels dus sont écartés", async () => {
+    const sales = Array.from({ length: 10 }, (_, index) => ({
+      id: `22222222-0000-4000-8000-${String(index).padStart(12, "0")}`,
+      saleDate: "2026-11-10T13:00:00Z",
+    }));
+    const stale = (count: number) =>
+      Object.fromEntries(sales.slice(0, count).map(({ id }) => [id, STALE]));
+
+    const twoOfTen = await run({ followed: { [USER]: sales }, verified: stale(2) });
+    expect(twoOfTen.summary).toMatchObject({ audienceDue: 10, skippedStale: 2 });
+    expect(twoOfTen.summary.claimed).toBe(8);
+    expect(() => assertSaleRemindersComplete(twoOfTen.summary)).not.toThrow();
+
+    const threeOfTen = await run({ followed: { [USER]: sales }, verified: stale(3) });
+    expect(threeOfTen.summary.skippedStale).toBe(3);
+    // Les rappels frais sont partis ; le passage échoue pour que la supervision le voie.
+    expect(threeOfTen.summary.emailsSent).toBe(1);
+    expect(() => assertSaleRemindersComplete(threeOfTen.summary)).toThrow(/3 rappel\(s\).*10/);
+  });
+
+  it("isSourceCheckStale : seuil de 36 h, inconnu ou illisible = périmé", () => {
+    expect(isSourceCheckStale(FRESH, NOW)).toBe(false);
+    expect(isSourceCheckStale(STALE, NOW)).toBe(true);
+    expect(isSourceCheckStale(null, NOW)).toBe(true);
+    expect(isSourceCheckStale("n'importe quoi", NOW)).toBe(true);
+    expect(isSourceCheckStale(new Date(NOW.getTime() - 36 * 3_600_000).toISOString(), NOW)).toBe(
+      false,
+    );
+  });
+});
+
+describe("runSaleReminders : ventes suivies nombreuses", () => {
+  const sale = (index: number, date: string) => ({
+    id: `33333333-0000-4000-8000-${String(index).padStart(12, "0")}`,
+    saleDate: date,
+  });
+
+  it("ne retient que les ventes de la fenêtre utile : 400 ventes lointaines ne masquent pas celle de J-7", async () => {
+    const far = Array.from({ length: 400 }, (_, index) => sale(index, "2027-02-01T13:00:00Z"));
+    const near = sale(999, "2026-11-10T13:00:00Z");
+    const { emails, summary } = await run({ followed: { [USER]: [...far, near] } });
+    expect(emails).toHaveLength(1);
+    expect(summary.claimed).toBe(1);
+    expect(summary.truncatedUsers).toBe(0);
+  });
+
+  it("compte les personnes dont plus de 300 ventes tombent dans la fenêtre, les plus proches d'abord", async () => {
+    const sevenDays = Array.from({ length: 300 }, (_, index) =>
+      sale(index, "2026-11-10T13:00:00Z"),
+    );
+    const tomorrow = sale(900, "2026-11-04T13:00:00Z");
+    const other = sale(901, "2026-11-10T13:00:00Z");
+    const { store, summary } = await run({
+      followed: {
+        [USER]: [...sevenDays, other, tomorrow],
+        [OTHER]: [sale(1, "2026-11-10T13:00:00Z")],
+      },
+      consenting: [USER, OTHER],
+    });
+    expect(summary.truncatedUsers).toBe(1);
+    const examined = store.lastVerifiedAt.mock.calls.find(([ids]) => ids.length === 300)?.[0] ?? [];
+    expect(examined).toHaveLength(300);
+    // La vente de demain est examinée avant celles de dans une semaine.
+    expect(examined[0]).toBe(tomorrow.id);
+    expect(examined).not.toContain(other.id);
   });
 });

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ rpc: vi.fn() }));
@@ -37,6 +38,66 @@ describe("recordAccountProductEvent", () => {
       p_user_id: userId,
       p_event_type: "quota_reached",
       p_detail: "favorites",
+    });
+  });
+
+  it.each(["daily_account", "daily_shared"] as const)(
+    "records the %s cap as a quota with its closed detail",
+    async (quota) => {
+      await recordAccountProductEvent(userId, { type: "quota_reached", quota });
+      expect(mocks.rpc).toHaveBeenCalledWith("record_account_product_event", {
+        p_user_id: userId,
+        p_event_type: "quota_reached",
+        p_detail: quota,
+      });
+    },
+  );
+
+  describe("deployment order: the database does not have migration 20261029120100 yet", () => {
+    const refused = { data: null, error: { code: "23514", message: "check constraint" } };
+
+    it.each(["daily_account", "daily_shared"] as const)(
+      "retries the %s cap with the former `daily` detail, so the cap is still counted",
+      async (quota) => {
+        mocks.rpc.mockResolvedValueOnce(refused).mockResolvedValueOnce({ data: true, error: null });
+        await expect(
+          recordAccountProductEvent(userId, { type: "quota_reached", quota }),
+        ).resolves.toBe(true);
+        expect(mocks.rpc).toHaveBeenCalledTimes(2);
+        expect(mocks.rpc).toHaveBeenNthCalledWith(1, "record_account_product_event", {
+          p_user_id: userId,
+          p_event_type: "quota_reached",
+          p_detail: quota,
+        });
+        expect(mocks.rpc).toHaveBeenNthCalledWith(2, "record_account_product_event", {
+          p_user_id: userId,
+          p_event_type: "quota_reached",
+          p_detail: "daily",
+        });
+      },
+    );
+
+    it("does not retry on another error, nor for another detail", async () => {
+      mocks.rpc.mockResolvedValue({ data: null, error: { code: "XX000", message: "boom" } });
+      await expect(
+        recordAccountProductEvent(userId, { type: "quota_reached", quota: "daily_account" }),
+      ).resolves.toBe(false);
+      expect(mocks.rpc).toHaveBeenCalledTimes(1);
+
+      mocks.rpc.mockReset();
+      mocks.rpc.mockResolvedValue(refused);
+      await expect(
+        recordAccountProductEvent(userId, { type: "quota_reached", quota: "favorites" }),
+      ).resolves.toBe(false);
+      expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    });
+
+    it("never fails the journey when the retry is refused too", async () => {
+      mocks.rpc.mockResolvedValue(refused);
+      await expect(
+        recordAccountProductEvent(userId, { type: "quota_reached", quota: "daily_shared" }),
+      ).resolves.toBe(false);
+      expect(mocks.rpc).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -98,6 +159,18 @@ describe("recordAccountProductEvent", () => {
   });
 });
 
+describe("closed list of quota details in the database", () => {
+  it("accepts every quota the code can record (migration 20261029120100)", () => {
+    const sql = readFileSync(
+      "supabase/migrations/20261029120100_account_product_events_daily_detail.sql",
+      "utf8",
+    ).replace(/^\s*--.*$/gm, "");
+    for (const quota of ["unlocks", "favorites", "daily", "daily_account", "daily_shared"]) {
+      expect(sql).toContain(`'${quota}'`);
+    }
+  });
+});
+
 describe("accountProductEventRow", () => {
   it("maps every event to the columns of the table, with no free field", () => {
     expect(accountProductEventRow({ type: "sale_unlocked", saleId })).toEqual({
@@ -115,6 +188,15 @@ describe("accountProductEventRow", () => {
         accountProductEventRow({ type: "email_clicked", email: "alert", saleId })!,
       ).sort(),
     ).toEqual(["detail", "eventType", "saleId"]);
+  });
+
+  it("records the weekly digest and sale result clicks under their own detail", () => {
+    for (const email of ["weekly", "result"] as const) {
+      expect(accountProductEventRow({ type: "email_clicked", email, saleId })).toMatchObject({
+        eventType: "email_clicked",
+        detail: email,
+      });
+    }
   });
 
   it("refuses an event type outside the closed list", () => {

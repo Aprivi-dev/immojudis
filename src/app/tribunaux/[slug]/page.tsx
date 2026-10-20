@@ -11,15 +11,18 @@ import { resolveSiteOrigin } from "@/lib/site-url";
 import {
   TRIBUNAL_PAGES_PATH,
   emptyTribunalActivity,
+  hasReadableTribunalName,
   isTribunalPageIndexable,
   knownTribunalFromSlug,
   legacyTribunalRedirectPath,
   nextAudienceDate,
+  normalizeTribunalSlug,
   tribunalPageDescription,
   tribunalPageFromSlug,
   tribunalPagePath,
   tribunalPages,
   type TribunalPage,
+  tribunalActivityWithoutDuplicates,
   tribunalPageTitle,
   tribunalPlaceName,
 } from "@/lib/tribunal-pages";
@@ -55,6 +58,20 @@ type Resolved =
  * déduit d'une panne, la réponse n'est alors pas mise en cache.
  */
 async function resolvePage(slug: string): Promise<Resolved> {
+  const resolved = await resolveExactSlug(slug);
+  if (resolved.kind !== "unknown") return resolved;
+  // « Bobigny », « JUSTICE-TJ-1-210 », « justice_tj_1_210 » : une adresse mal écrite se redirige
+  // (308) vers l'adresse publiée, elle ne répond pas 404.
+  const normalized = normalizeTribunalSlug(slug);
+  if (!normalized || normalized === slug) return resolved;
+  const retry = await resolveExactSlug(normalized);
+  if (retry.kind === "active" || retry.kind === "empty") {
+    return { kind: "redirect", path: retry.page.path };
+  }
+  return retry;
+}
+
+async function resolveExactSlug(slug: string): Promise<Resolved> {
   const activity = await loadPublicTribunalActivity();
   if (activity.status === "error") throw new Error("Activité publique des tribunaux indisponible.");
   const page = tribunalPageFromSlug(activity.items, slug);
@@ -82,8 +99,9 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   }
   const { page } = resolved;
   const sales = resolved.kind === "active" ? await tryLoadTribunalSales(page.activity.code) : null;
+  // Le nombre annoncé est celui de la liste dédoublonnée (même règle que la page).
   const activity = {
-    ...page.activity,
+    ...tribunalActivityWithoutDuplicates(page.activity, sales),
     nextSaleDate: nextAudienceDate(page.activity, sales?.status === "ok" ? sales.sales : null),
   };
   return {
@@ -92,9 +110,10 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       title: tribunalPageTitle(activity),
       description: tribunalPageDescription(activity),
     }),
-    // Moins de trois ventes à venir (aucune comprise) : page consultable, mais sans intérêt pour
-    // un moteur de recherche. Elle reste hors du sitemap (même seuil) et ses liens sont suivis.
-    ...(isTribunalPageIndexable(activity.upcomingCount)
+    // Moins de trois ventes à venir (aucune comprise), ou un tribunal que le référentiel ne nomme
+    // pas : page consultable, mais sans intérêt pour un moteur de recherche. Elle reste hors du
+    // sitemap (même règle) et ses liens sont suivis.
+    ...(isTribunalPageIndexable(activity.upcomingCount) && hasReadableTribunalName(activity)
       ? {}
       : { robots: { index: false, follow: true } }),
   };
@@ -111,7 +130,7 @@ export default async function Page({ params }: PageProps) {
   const sales =
     resolved.kind === "active"
       ? await tryLoadTribunalSales(page.activity.code)
-      : ({ status: "ok", sales: [] } as const);
+      : ({ status: "ok", sales: [], received: 0 } as const);
   const department = departmentFromCode(page.activity.department);
   const siblings = department
     ? tribunalPages(items).filter(
@@ -122,6 +141,11 @@ export default async function Page({ params }: PageProps) {
     : [];
   const now = new Date();
   const listed = sales.status === "ok" ? sales.sales : [];
+  // Compteur et liste parlent des mêmes ventes : les doublons écartés de la liste le sont aussi du total.
+  const { mayCountDuplicates, ...tribunal } = tribunalActivityWithoutDuplicates(
+    page.activity,
+    sales,
+  );
   const origin = resolveSiteOrigin(process.env, "http://localhost:3000")!;
   const itemList = departmentItemListStructuredData(origin, listed);
 
@@ -143,10 +167,11 @@ export default async function Page({ params }: PageProps) {
         />
       ) : null}
       <TribunalView
-        tribunal={page.activity}
+        tribunal={tribunal}
         nextAudience={nextAudienceDate(page.activity, sales.status === "ok" ? listed : null, now)}
         sales={listed}
         salesAvailable={sales.status === "ok"}
+        countMayIncludeDuplicates={mayCountDuplicates}
         department={department}
         siblings={siblings}
         generatedAt={now}

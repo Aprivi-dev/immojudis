@@ -13,6 +13,7 @@ import { toast } from "@/lib/toast";
 import { userMessage } from "@/lib/user-messages";
 import { trackProductEvent } from "@/lib/product-events";
 import { queryKeys } from "@/lib/query-keys";
+import { useFavoriteRemovalConfirmation } from "./favorite-removal";
 import {
   FAVORITE_ADD_LABEL,
   FAVORITE_ANONYMOUS_TITLE,
@@ -33,6 +34,7 @@ export function FavoriteButton({
   const router = useRouter();
   const qc = useQueryClient();
   const [busy, setBusy] = useState(false);
+  const { confirmRemoval, dialog: removalDialog } = useFavoriteRemovalConfirmation();
 
   const favoriteKey = queryKeys.favoriteStatus(user?.id ?? null, saleId);
   const favorite = useQuery({
@@ -70,6 +72,8 @@ export function FavoriteButton({
     try {
       await qc.cancelQueries({ queryKey: searchFavoriteQueryKey });
       if (isFav) {
+        // « Mon dossier » (statut, plafond) part avec la ligne : confirmation s'il n'est pas vide.
+        if (!(await confirmRemoval(saleId))) return;
         await removeFavoriteSaleRequest({ saleId });
         qc.setQueryData(favoriteKey, false);
       } else {
@@ -101,24 +105,27 @@ export function FavoriteButton({
   const title = !user && !loading ? FAVORITE_ANONYMOUS_TITLE : label;
 
   return (
-    <button
-      type="button"
-      onClick={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        void toggle();
-      }}
-      disabled={busy || loading || (Boolean(user) && favorite.isPending)}
-      aria-pressed={isFav}
-      aria-label={label}
-      title={title}
-      className={`${compact ? "inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-brand-navy" : "liquid-panel-soft inline-flex min-h-11 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-foreground"} transition hover:border-gold hover:text-gold-text disabled:opacity-50 ${className}`}
-    >
-      <Heart
-        aria-hidden
-        className={`${compact ? "h-5 w-5" : "h-3.5 w-3.5"} ${isFav ? "fill-red-500 text-red-500" : ""}`}
-      />
-      {!compact ? label : null}
-    </button>
+    <>
+      {removalDialog}
+      <button
+        type="button"
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          void toggle();
+        }}
+        disabled={busy || loading || (Boolean(user) && favorite.isPending)}
+        aria-pressed={isFav}
+        aria-label={label}
+        title={title}
+        className={`${compact ? "inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-brand-navy" : "liquid-panel-soft inline-flex min-h-11 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-foreground"} transition hover:border-gold hover:text-gold-text disabled:opacity-50 ${className}`}
+      >
+        <Heart
+          aria-hidden
+          className={`${compact ? "h-5 w-5" : "h-3.5 w-3.5"} ${isFav ? "fill-red-500 text-red-500" : ""}`}
+        />
+        {!compact ? label : null}
+      </button>
+    </>
   );
 }

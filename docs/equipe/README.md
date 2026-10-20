@@ -52,8 +52,27 @@ comme le reste de l'équipe, ils ne modifient aucun fichier et n'écrivent jamai
 | Croissance             | `croissance`, `offres-acquisition`, `strategie-email`, `linkedin`, `relations-presse`, `publicite-search`, `aeo-fondations`, `visibilite-ia` |
 | Entreprise et clients  | `strategie-entreprise`, `prospection-avocats`, `support-client`                                                                              |
 
-Le garde-fou `.claude/hooks/supabase-lecture-seule.mjs` bloque toute requête SQL autre
-qu'une lecture lancée par `qualite-donnees`.
+## Garde-fou base de données
+
+Aucun agent n'écrit dans la base de production. Trois protections dans `.claude/settings.json`
+(détail et limites dans `.claude/hooks/README.md`) :
+
+- `.claude/hooks/supabase-lecture-seule.mjs` (aussi dans l'en-tête de `qualite-donnees`) : sur
+  `mcp__Supabase__execute_sql`, n'autorise que SELECT / WITH / EXPLAIN, sans mot-clé d'écriture, et
+  seulement des appels de fonctions d'une liste blanche de fonctions de lecture pure. Toute
+  erreur du script ou entrée illisible bloque ;
+- `.claude/hooks/bloquer-ecriture-supabase.mjs` : bloque pour tous les agents les outils MCP
+  Supabase qui écrivent (`apply_migration`, `deploy_edge_function`, branches, projets…) : passer
+  par une migration et la CI ;
+- `mcp__github__actions_run_trigger` et `mcp__github__merge_pull_request` ne sont plus
+  pré-autorisés : ils demandent une confirmation.
+
+**Recommandation au propriétaire (réglage hors dépôt) :** passer le connecteur MCP Supabase en
+mode `read_only` (réglage du connecteur ou de l'URL du serveur MCP ; à vérifier dans la
+documentation Supabase MCP). Les écritures sont alors refusées côté serveur, ce qui ne dépend plus
+d'une analyse du texte SQL. À défaut, un rôle Postgres en lecture seule dédié aux agents donne la
+même garantie. Le garde-fou du dépôt reste utile en défense en profondeur, mais un filtre sur du
+texte n'est jamais exhaustif.
 
 Un spécialiste peut aussi être sollicité directement dans une session :
 « Demande au seo-expert de vérifier la page /tribunaux. »

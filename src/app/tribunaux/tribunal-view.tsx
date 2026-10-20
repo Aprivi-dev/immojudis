@@ -1,4 +1,7 @@
 import Link from "next/link";
+import { Terme } from "@/components/ceiling/Terme";
+import { SaleDetailLink } from "@/components/SaleDetailLink";
+import { SectorAlertCta } from "@/components/SectorAlertCta";
 import { UnderstandBlock, type UnderstandLink } from "@/components/UnderstandBlock";
 import { Card, PageShell, buttonClasses } from "@/components/ui/primitives";
 import {
@@ -7,6 +10,7 @@ import {
   type DepartmentRef,
   type DepartmentSale,
 } from "@/lib/department-pages";
+import { departmentIn } from "@/lib/department-grammar";
 import { formatStartingPrice, propertyTypeLabel } from "@/lib/format";
 import { pathWithSearch } from "@/lib/navigation";
 import type { PublicTribunalActivity } from "@/lib/public-tribunal-activity";
@@ -15,7 +19,9 @@ import { saleHearingTime, seoLongDate, seoSurface } from "@/lib/seo";
 import {
   TRIBUNAL_PAGES_PATH,
   atTribunalPhrase,
+  hasReadableTribunalName,
   tribunalLongName,
+  tribunalPagePath,
   tribunalPlaceName,
 } from "@/lib/tribunal-pages";
 
@@ -35,6 +41,7 @@ export function TribunalView({
   nextAudience,
   sales,
   salesAvailable,
+  countMayIncludeDuplicates = false,
   department,
   siblings,
   generatedAt,
@@ -45,6 +52,8 @@ export function TribunalView({
   sales: readonly DepartmentSale[];
   /** Faux quand la liste n'a pas pu être lue : la page garde ses chiffres et renvoie vers la recherche. */
   salesAvailable: boolean;
+  /** Vrai quand le total vient de l'activité publique, qui peut compter deux fois une vente à deux sources. */
+  countMayIncludeDuplicates?: boolean;
   department: DepartmentRef | null;
   /** Autres tribunaux du département, avec l'adresse de leur page. */
   siblings: readonly { activity: PublicTribunalActivity; path: string }[];
@@ -55,12 +64,17 @@ export function TribunalView({
   const longName = tribunalLongName(tribunal);
   const updated = seoLongDate(generatedAt.toISOString());
   const nextDate = seoLongDate(nextAudience);
-  const searchHref = pathWithSearch("/sales", { tribunal: tribunal.searchName });
+  // Un tribunal sans nom lisible : la recherche par nom ne le trouverait pas (le « nom » est son code).
+  const searchHref = hasReadableTribunalName(tribunal)
+    ? pathWithSearch("/sales", { tribunal: tribunal.searchName })
+    : "/sales";
   const listed = sales.length;
+  const lawyersHref = pathWithSearch("/avocats", { department: department?.code });
+  const where = department ? departmentIn(department) : null;
 
   const nearby: UnderstandLink[] = [
-    ...(department
-      ? [{ href: department.path, label: `Ventes aux enchères en ${department.name}` }]
+    ...(department && where
+      ? [{ href: department.path, label: `Ventes aux enchères ${where}` }]
       : []),
     ...siblings.map(({ activity, path }) => ({
       href: path,
@@ -109,7 +123,7 @@ export function TribunalView({
       <div className="grid gap-5">
         <Card as="section" aria-labelledby="chiffres">
           <h2 id="chiffres" className="font-display text-2xl font-semibold">
-            Les chiffres du tribunal
+            Dans le catalogue Immojudis
           </h2>
           <dl className="mt-4 grid gap-4 sm:grid-cols-3">
             <div>
@@ -121,7 +135,9 @@ export function TribunalView({
               <dd className="mt-1 text-lg font-semibold">{nextDate ?? "Non connue"}</dd>
             </div>
             <div>
-              <dt className="text-sm text-ink-soft">Mise à prix médiane</dt>
+              <dt className="text-sm text-ink-soft">
+                <Terme terme="mise-a-prix">Mise à prix médiane</Terme>
+              </dt>
               <dd className="mt-1 text-lg font-semibold tabular-nums">
                 {tribunal.medianStartingPriceEur != null
                   ? formatStartingPrice(tribunal.medianStartingPriceEur)
@@ -141,10 +157,15 @@ export function TribunalView({
               ))}
             </ul>
           ) : null}
-          {total === 0 ? (
+          {total === 0 && listed === 0 ? (
             <p className="mt-3 text-sm text-ink-soft">
               Aucune vente à venir n’est référencée pour ce tribunal pour le moment. Cette page
               reste disponible : elle se remplit dès qu’une vente est annoncée.
+            </p>
+          ) : null}
+          {countMayIncludeDuplicates ? (
+            <p className="mt-3 text-sm text-ink-soft">
+              Le total peut compter une même vente publiée par deux sources.
             </p>
           ) : null}
           {total > 0 && total < 3 ? (
@@ -186,8 +207,9 @@ export function TribunalView({
                 const surface = seoSurface(sale.surfaceM2);
                 return (
                   <li key={sale.id} className="py-3">
-                    <Link
-                      href={`/sales/${sale.id.toLowerCase()}`}
+                    <SaleDetailLink
+                      saleId={sale.id.toLowerCase()}
+                      returnTo={tribunalPagePath(tribunal.code)}
                       className="grid gap-1 sm:grid-cols-[1fr_auto] sm:items-baseline sm:gap-4"
                     >
                       <span className="min-w-0">
@@ -211,16 +233,19 @@ export function TribunalView({
                           {formatStartingPrice(sale.startingPriceEur)}
                         </span>
                       </span>
-                    </Link>
+                    </SaleDetailLink>
                   </li>
                 );
               })}
             </ul>
           ) : (
             <p className="mt-3 text-ink-soft">
-              {salesAvailable
-                ? "Aucune vente à venir n’est référencée pour ce tribunal pour le moment."
-                : "La liste des ventes est momentanément indisponible."}{" "}
+              {!salesAvailable
+                ? "La liste des ventes est momentanément indisponible."
+                : total === 0
+                  ? "Aucune vente à venir n’est référencée pour ce tribunal pour le moment."
+                  : // Les chiffres et la liste viennent de deux lectures, mises à jour séparément : ne pas affirmer qu'il n'y a rien.
+                    "Le détail des ventes n’est pas disponible pour le moment."}{" "}
               <Link href={searchHref} className="font-semibold text-gold-text underline">
                 Voir les ventes du tribunal dans la recherche
               </Link>
@@ -238,15 +263,27 @@ export function TribunalView({
           ) : null}
         </Card>
 
+        {department && where ? (
+          <SectorAlertCta
+            criteria={{ department: department.code }}
+            intro={`Les alertes suivent un département, pas un tribunal : celle-ci porte sur les nouvelles ventes référencées ${where}, tous tribunaux confondus.`}
+          />
+        ) : null}
+
         <UnderstandBlock
           articles={understandingResources(tribunal.code)}
-          nearbyTitle={department ? `Dans ${department.name}` : "Autres tribunaux"}
+          nearbyTitle={
+            where ? `${where.charAt(0).toUpperCase()}${where.slice(1)}` : "Autres tribunaux"
+          }
           nearby={nearby}
         />
 
-        <p className="text-sm text-ink-soft">
+        <p className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-ink-soft">
           <Link href={TRIBUNAL_PAGES_PATH} className="font-semibold text-gold-text underline">
             Tous les tribunaux
+          </Link>
+          <Link href={lawyersHref} className="font-semibold text-gold-text underline">
+            Avocats
           </Link>
         </p>
       </div>

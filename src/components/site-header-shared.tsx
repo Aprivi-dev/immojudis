@@ -10,7 +10,7 @@ export function isActive(pathname: string | null, href: string): boolean {
 }
 
 export const buttonBase =
-  "inline-flex min-h-10 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold";
+  "inline-flex min-h-10 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft";
 export const lightGhost =
   "border border-border bg-white text-foreground hover:border-gold hover:bg-gold/10";
 export const darkGhost = "border border-gold-light text-gold-light hover:bg-white/10";
@@ -29,7 +29,7 @@ export function HeaderLogo({
     <Link
       href="/"
       onClick={onClick}
-      className="inline-flex shrink-0 items-center gap-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+      className="inline-flex shrink-0 items-center gap-2 rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
     >
       {dark ? null : (
         <span aria-hidden className="inline-flex">

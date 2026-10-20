@@ -124,6 +124,11 @@ describe("ComparisonsPage", () => {
     expect(screen.getByRole("link", { name: /Maison judiciaire/ }).getAttribute("href")).toBe(
       "/sales/0d335032-e935-4550-9347-ed22b0f63440",
     );
+    // L'origine (« Retour à mes comparaisons ») s'ajoute dès que le lien est approché.
+    fireEvent.pointerEnter(screen.getByRole("link", { name: /Maison judiciaire/ }));
+    expect(screen.getByRole("link", { name: /Maison judiciaire/ }).getAttribute("href")).toBe(
+      "/sales/0d335032-e935-4550-9347-ed22b0f63440?from=%2Fcomparaisons",
+    );
     expect(screen.getByText(/Plafonds saisis/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Créer un lien de partage" }));

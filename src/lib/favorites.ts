@@ -69,9 +69,17 @@ export type FavoriteSaleMutationResponse = {
   plan: FavoritePlanAccess;
 };
 
+/** Ce que portait la ligne supprimée : de quoi rétablir « Mon dossier » si la personne annule. */
+export type RemovedFavoriteDossier = {
+  personalStatus: FavoriteDossierStatus | null;
+  bidCeilingEur: number | null;
+};
+
 export type FavoriteSaleDeleteResponse = {
   ok: true;
   removed: boolean;
+  /** Statut et plafond de la ligne supprimée ; `null` quand il n'y avait rien à supprimer. */
+  dossier: RemovedFavoriteDossier | null;
   plan: FavoritePlanAccess;
 };
 
@@ -173,6 +181,14 @@ export async function removeFavoriteSale({
   return {
     ok: true,
     removed: Boolean(data),
+    // La suppression emporte « Mon dossier » (statut, plafond) : on le renvoie pour que « Annuler »
+    // puisse le rétablir (route `favorites/dossier`) au lieu de recréer une ligne vide.
+    dossier: data
+      ? {
+          personalStatus: normalizeFavoriteDossierStatus(data.personal_status),
+          bidCeilingEur: typeof data.bid_ceiling_eur === "number" ? data.bid_ceiling_eur : null,
+        }
+      : null,
     plan: favoritePlanAccess(plan),
   };
 }

@@ -3,13 +3,59 @@ import { errorDetailForLog } from "@/lib/api-errors";
 import {
   deactivateAlertForUser,
   revokeEmailAlertConsent,
+  revokeOfferOpeningRequest,
   revokeSaleReminderConsent,
+  revokeSaleResultsConsent,
+  revokeWeeklyDigestConsent,
   unsubscribeEmailAlertsByNotificationId,
 } from "@/lib/email-alerts";
-import { verifyUnsubscribeToken } from "@/lib/email-unsubscribe-token";
+import {
+  unsubscribeTokenScopeKind,
+  verifyUnsubscribeToken,
+  type UnsubscribeScope,
+} from "@/lib/email-unsubscribe-token";
 import { escapeHtml } from "@/lib/guards";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** La question et le bouton de la page de confirmation, selon ce que le lien désactive. */
+function confirmationCopy(kind: UnsubscribeScope["kind"]): { question: string; button: string } {
+  switch (kind) {
+    case "alert":
+      return {
+        question: "Voulez-vous désactiver cette alerte ?",
+        button: "Désactiver cette alerte",
+      };
+    case "reminders":
+      return {
+        question:
+          "Voulez-vous ne plus recevoir les rappels d'audience et les avertissements sur vos ventes suivies ?",
+        button: "Me désinscrire des rappels",
+      };
+    case "weekly-digest":
+      return {
+        question: "Voulez-vous ne plus recevoir le récapitulatif hebdomadaire « Ma semaine » ?",
+        button: "Me désinscrire du récapitulatif",
+      };
+    case "sale-results":
+      return {
+        question:
+          "Voulez-vous ne plus recevoir les alertes de résultat ou de remise en vente de vos ventes suivies ?",
+        button: "Me désinscrire des alertes de résultat",
+      };
+    case "offer-opening":
+      return {
+        question:
+          "Voulez-vous retirer votre demande d'être prévenu de l'ouverture de l'offre Analyse ?",
+        button: "Retirer ma demande",
+      };
+    default:
+      return {
+        question: "Voulez-vous ne plus recevoir d'alertes par email ?",
+        button: "Me désinscrire des emails",
+      };
+  }
+}
 
 /**
  * A GET only shows a confirmation page: mail scanners and link previews open
@@ -23,29 +69,12 @@ export async function GET(request: Request) {
 
   if (token) {
     const claims = verifyUnsubscribeToken(token);
-    if (!claims) {
-      return htmlResponse(
-        "Lien expiré",
-        "Ce lien de désinscription n'est plus valide. Ouvrez la page Mes alertes pour gérer vos emails.",
-        400,
-        { href: "/alertes", label: "Gérer mes alertes" },
-      );
-    }
-    const scopeLabel =
-      claims.scope.kind === "alert"
-        ? "Voulez-vous désactiver cette alerte ?"
-        : claims.scope.kind === "reminders"
-          ? "Voulez-vous ne plus recevoir les rappels d'audience et les avertissements sur vos ventes suivies ?"
-          : "Voulez-vous ne plus recevoir d'alertes par email ?";
-    return htmlResponse("Confirmer la désinscription", scopeLabel, 200, null, {
+    if (!claims) return expiredLinkResponse(token);
+    const { question, button } = confirmationCopy(claims.scope.kind);
+    return htmlResponse("Confirmer la désinscription", question, 200, null, {
       field: "token",
       value: token,
-      button:
-        claims.scope.kind === "alert"
-          ? "Désactiver cette alerte"
-          : claims.scope.kind === "reminders"
-            ? "Me désinscrire des rappels"
-            : "Me désinscrire des emails",
+      button,
     });
   }
 
@@ -79,14 +108,7 @@ export async function POST(request: Request) {
   try {
     if (token) {
       const claims = verifyUnsubscribeToken(token);
-      if (!claims) {
-        return htmlResponse(
-          "Lien expiré",
-          "Ce lien de désinscription n'est plus valide. Ouvrez la page Mes alertes pour gérer vos emails.",
-          400,
-          { href: "/alertes", label: "Gérer mes alertes" },
-        );
-      }
+      if (!claims) return expiredLinkResponse(token);
       if (claims.scope.kind === "alert") {
         await deactivateAlertForUser({ userId: claims.userId, alertId: claims.scope.alertId });
         return htmlResponse(
@@ -105,6 +127,33 @@ export async function POST(request: Request) {
           { href: "/compte", label: "Gérer mes notifications" },
         );
       }
+      if (claims.scope.kind === "weekly-digest") {
+        await revokeWeeklyDigestConsent({ userId: claims.userId });
+        return htmlResponse(
+          "Récapitulatif désactivé",
+          "Vous ne recevrez plus le récapitulatif hebdomadaire « Ma semaine ». Vos alertes email et vos autres emails ne sont pas modifiés.",
+          200,
+          { href: "/compte", label: "Gérer mes notifications" },
+        );
+      }
+      if (claims.scope.kind === "sale-results") {
+        await revokeSaleResultsConsent({ userId: claims.userId });
+        return htmlResponse(
+          "Alertes de résultat désactivées",
+          "Vous ne recevrez plus d'alerte de résultat ni de remise en vente sur vos ventes suivies. Vos alertes email et vos autres emails ne sont pas modifiés.",
+          200,
+          { href: "/compte", label: "Gérer mes notifications" },
+        );
+      }
+      if (claims.scope.kind === "offer-opening") {
+        await revokeOfferOpeningRequest({ userId: claims.userId });
+        return htmlResponse(
+          "Demande retirée",
+          "Vous ne serez plus prévenu de l'ouverture de l'offre Analyse. Vos alertes email ne sont pas modifiées.",
+          200,
+          { href: "/offres", label: "Voir les offres" },
+        );
+      }
       await revokeEmailAlertConsent({ userId: claims.userId });
     } else if (legacyNotificationId && UUID_PATTERN.test(legacyNotificationId)) {
       await unsubscribeEmailAlertsByNotificationId({ notificationId: legacyNotificationId });
@@ -113,7 +162,7 @@ export async function POST(request: Request) {
     }
     return htmlResponse(
       "Désinscription confirmée",
-      "Vous ne recevrez plus d'alertes email ImmoJudis. Les notifications dans l'application restent disponibles.",
+      "Vous ne recevrez plus d'alertes email Immojudis. Les notifications dans l'application restent disponibles.",
       200,
       { href: "/alertes", label: "Gérer mes alertes" },
     );
@@ -133,6 +182,36 @@ export async function POST(request: Request) {
   }
 }
 
+/**
+ * Lien invalide ou expiré. Un jeton « rappels » (signature valide, même expiré) renvoie vers le
+ * compte, où se règlent les rappels d'audience ; les autres vers la page des alertes.
+ */
+function expiredLinkResponse(token: string) {
+  const kind = unsubscribeTokenScopeKind(token);
+  if (kind === "reminders") {
+    return htmlResponse(
+      "Lien expiré",
+      "Ce lien de désinscription n'est plus valide. Ouvrez votre compte pour gérer vos rappels d'audience.",
+      400,
+      { href: "/compte", label: "Gérer mes notifications" },
+    );
+  }
+  if (kind === "weekly-digest" || kind === "sale-results") {
+    return htmlResponse(
+      "Lien expiré",
+      "Ce lien de désinscription n'est plus valide. Ouvrez votre compte pour gérer vos notifications.",
+      400,
+      { href: "/compte", label: "Gérer mes notifications" },
+    );
+  }
+  return htmlResponse(
+    "Lien expiré",
+    "Ce lien de désinscription n'est plus valide. Ouvrez la page Mes alertes pour gérer vos emails.",
+    400,
+    { href: "/alertes", label: "Gérer mes alertes" },
+  );
+}
+
 function htmlResponse(
   title: string,
   message: string,
@@ -147,12 +226,12 @@ function htmlResponse(
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex" />
-    <title>${escapeHtml(title)} - ImmoJudis</title>
+    <title>${escapeHtml(title)} - Immojudis</title>
   </head>
   <body style="margin:0;background:#f6f4ef;color:#182033;font-family:Arial,sans-serif;">
     <main style="min-height:100vh;display:grid;place-items:center;padding:24px;">
       <section style="max-width:520px;background:#fff;border:1px solid #e8e1d4;border-radius:10px;padding:28px;">
-        <p style="margin:0 0 10px;color:#7a5f1f;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;">ImmoJudis</p>
+        <p style="margin:0 0 10px;color:#7a5f1f;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;">Immojudis</p>
         <h1 style="margin:0 0 10px;font-size:24px;line-height:1.25;">${escapeHtml(title)}</h1>
         <p style="margin:0 0 18px;color:#4b5563;line-height:1.55;">${escapeHtml(message)}</p>
         ${

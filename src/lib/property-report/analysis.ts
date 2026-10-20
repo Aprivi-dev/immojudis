@@ -287,6 +287,12 @@ export function buildReportSnapshot({
       // Type de vente (tribunal, notaire, État…) : la page « Dossier de financement » du PDF ne
       // cite la garantie de 10 % et le délai de deux mois que pour une vente au tribunal.
       venueType: getSaleProcedure(sale).venueType,
+      // Contrôle du type de vente (« conflict » : les sources se contredisent) : la même page ne
+      // applique alors aucune règle du tribunal.
+      venueVerificationStatus: getSaleProcedure(sale).verificationStatus,
+      // Cadre juridique (saisie immobilière, liquidation judiciaire…) : le délai de paiement du prix
+      // de la même page en dépend ; absent ou « unknown », aucun délai n'y est présenté comme acquis.
+      legalFramework: getSaleProcedure(sale).legalFramework,
       surface: surface.value,
       surfaceLabel: surface.label,
       occupancy: occupancyAnalysis.label,

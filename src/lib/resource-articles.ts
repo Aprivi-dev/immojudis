@@ -14,6 +14,9 @@ import lawyerArticle from "@/content/resources/avocat-obligatoire-encherir-tribu
 import preemptionArticle from "@/content/resources/droit-de-preemption-encheres-commune-acheteur.json";
 import guaranteeArticle from "@/content/resources/garantie-10-pourcent-cheque-banque-caution-encheres.json";
 import condominiumArticle from "@/content/resources/copropriete-encheres-charges-assemblees.json";
+import postponedSaleArticle from "@/content/resources/vente-encheres-immobiliere-reportee-retiree-annulee.json";
+import liquidationArticle from "@/content/resources/liquidation-judiciaire-vente-immeuble-entreprise-encheres.json";
+import marketGapArticle from "@/content/resources/mise-a-prix-valeur-de-marche-dvf-lire-ecart-encheres.json";
 import { GUIDE_READING_MINUTES } from "@/lib/guide-dates";
 
 export interface ResourceSection {
@@ -38,6 +41,11 @@ interface ResourceContent {
   seoTitle?: string;
   category: string;
   description: string;
+  /**
+   * Meta description and share description when `description` is too long for a search result
+   * (158 characters at most). The page keeps `description` under its headline.
+   */
+  seoDescription?: string;
   intro: string[];
   takeaways: string[];
   sections: ResourceSection[];
@@ -98,6 +106,9 @@ export const RESOURCE_ARTICLES: ResourceArticle[] = [
   defineArticle(preemptionArticle, "/media/landing/auction-nantes.webp"),
   defineArticle(guaranteeArticle, "/media/landing/dossier-apartment.webp"),
   defineArticle(condominiumArticle, "/media/landing/auction-lyon.webp"),
+  defineArticle(postponedSaleArticle, "/media/landing/auction-bordeaux.webp"),
+  defineArticle(liquidationArticle, "/media/landing/gallery-townhouse.webp"),
+  defineArticle(marketGapArticle, "/media/landing/home-favorites.webp"),
 ];
 
 export const EXISTING_GUIDE: ResourceSummary = {
@@ -133,6 +144,16 @@ export function resourceDocumentTitle(
   article: Pick<ResourceArticle, "title" | "seoTitle">,
 ): string {
   return article.seoTitle?.trim() || article.title;
+}
+
+/** Longest `seoDescription`: what a search result shows of a meta description. */
+export const RESOURCE_SEO_DESCRIPTION_MAX_LENGTH = 158;
+
+/** Meta description and share description: `seoDescription` when set, `description` otherwise. */
+export function resourceDocumentDescription(
+  article: Pick<ResourceArticle, "description" | "seoDescription">,
+): string {
+  return article.seoDescription?.trim() || article.description;
 }
 
 /** Last modification date of an article: `updatedAt`, or the publication date. */

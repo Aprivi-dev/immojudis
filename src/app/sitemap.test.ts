@@ -1,3 +1,5 @@
+import { readdirSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -5,6 +7,11 @@ const mocks = vi.hoisted(() => ({
   loadSitemapSaleTotal: vi.fn(),
   loadTribunalActivity: vi.fn(),
   loadDepartments: vi.fn(),
+  loadHearings: vi.fn(),
+}));
+
+vi.mock("@/lib/upcoming-hearings.server", () => ({
+  tryLoadUpcomingHearings: mocks.loadHearings,
 }));
 
 vi.mock("@/lib/department-pages.server", () => ({
@@ -67,6 +74,8 @@ describe("sitemap.xml (static pages)", () => {
     mocks.loadTribunalActivity.mockResolvedValue({ status: "ok", items: [{ code: "pau" }] });
     mocks.loadDepartments.mockReset();
     mocks.loadDepartments.mockResolvedValue({ status: "error" });
+    mocks.loadHearings.mockReset();
+    mocks.loadHearings.mockResolvedValue({ status: "error" });
   });
   afterEach(() => {
     delete process.env.SITE_URL;
@@ -76,6 +85,41 @@ describe("sitemap.xml (static pages)", () => {
   it("allows the render the duration of a full catalogue read", () => {
     expect(maxDuration).toBe(60);
     expect(maxDuration).toBe(DEPARTMENT_PAGES_MAX_DURATION_SECONDS);
+  });
+
+  it("is served from the cache and rebuilt every hour, never on every request", async () => {
+    const module = await import("./sitemap");
+    const { PUBLIC_TRIBUNAL_ACTIVITY_REVALIDATE_SECONDS } = await vi.importActual<
+      typeof import("@/lib/public-tribunal-activity.server")
+    >("@/lib/public-tribunal-activity.server");
+    expect(module.revalidate).toBe(3600);
+    expect(module.revalidate).toBe(PUBLIC_TRIBUNAL_ACTIVITY_REVALIDATE_SECONDS);
+    // `force-dynamic` would rebuild the file (3.5 s of readings) on every request.
+    expect(module).not.toHaveProperty("dynamic");
+  });
+
+  it("reads the courts, the departments and the hearings together, not one after the other", async () => {
+    const order: string[] = [];
+    const slow = <T>(label: string, value: T) =>
+      new Promise<T>((resolve) => {
+        order.push(`start ${label}`);
+        setTimeout(() => {
+          order.push(`end ${label}`);
+          resolve(value);
+        }, 0);
+      });
+    mocks.loadTribunalActivity.mockImplementation(() =>
+      slow("courts", { status: "ok", items: [{ code: "pau" }] }),
+    );
+    mocks.loadDepartments.mockImplementation(() => slow("departments", { status: "error" }));
+    mocks.loadHearings.mockImplementation(() => slow("hearings", { status: "error" }));
+    await sitemap();
+    // The three readings have all started before the first one ends.
+    const firstEnd = order.findIndex((step) => step.startsWith("end"));
+    // (The courts are asked twice: by the page list and by the courts-and-hearings paths.)
+    expect(new Set(order.slice(0, firstEnd))).toEqual(
+      new Set(["start courts", "start departments", "start hearings"]),
+    );
   });
 
   it("lists the pages only: no sale and no article", async () => {
@@ -128,9 +172,9 @@ describe("sitemap.xml (static pages)", () => {
   it("dates the pages that changed after 8 October by their real last change", async () => {
     mocks.loadSitemapSales.mockResolvedValue([]);
     const byUrl = new Map((await sitemap()).map((entry) => [entry.url, entry.lastModified]));
-    expect(byUrl.get("https://immojudis.com/offres")).toBe("2026-10-14");
+    expect(byUrl.get("https://immojudis.com/offres")).toBe("2026-10-20");
     expect(byUrl.get("https://immojudis.com/ressources")).toBe("2026-10-19");
-    expect(byUrl.get("https://immojudis.com/tribunaux")).toBe("2026-10-13");
+    expect(byUrl.get("https://immojudis.com/tribunaux")).toBe("2026-10-19");
     expect(byUrl.get("https://immojudis.com/annonce-exemple")).toBe("2026-10-15");
   });
 
@@ -288,7 +332,13 @@ describe("/ressources/sitemap.xml (articles)", () => {
 
   it("lists every article, and only the articles", () => {
     const entries = resourcesSitemap();
-    expect(entries).toHaveLength(16);
+    // One entry per article file of src/content/resources/ (the README is not an article): the
+    // count follows the content folder instead of a number to bump with every new article.
+    const articleFiles = readdirSync(join(process.cwd(), "src/content/resources")).filter((name) =>
+      name.endsWith(".json"),
+    );
+    expect(articleFiles.length).toBeGreaterThanOrEqual(19);
+    expect(entries).toHaveLength(articleFiles.length);
     for (const entry of entries) {
       expect(entry.url).toMatch(/^https:\/\/immojudis\.com\/ressources\/[a-z0-9-]+$/);
       expect(entry.lastModified).toMatch(/^\d{4}-\d{2}-\d{2}$/);

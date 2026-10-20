@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ rpc: vi.fn(), client: vi.fn() }));
+const mocks = vi.hoisted(() => ({ rpc: vi.fn() }));
 
 vi.mock("next/cache", () => ({
   // Pas de cache de données hors Next.js : chaque appel atteint la base simulée.
   unstable_cache: <T extends (...args: never[]) => unknown>(fn: T) => fn,
 }));
-vi.mock("@/lib/supabase-public.server", () => ({
-  createPublicSupabaseClient: mocks.client,
+vi.mock("@/integrations/supabase/client.server", () => ({
+  supabaseAdmin: { rpc: mocks.rpc },
 }));
 
 import { HEARINGS_RPC_DAYS } from "./upcoming-hearings";
@@ -37,16 +37,17 @@ function row(index: number, overrides: Record<string, unknown> = {}) {
 describe("tryLoadUpcomingHearings", () => {
   beforeEach(() => {
     mocks.rpc.mockReset();
-    mocks.client.mockReset();
-    mocks.client.mockReturnValue({ rpc: mocks.rpc });
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
   });
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it("lit les 30 prochains jours (aujourd'hui + 29) et rend des audiences", async () => {
-    mocks.rpc.mockResolvedValue({ data: [row(1), row(2)], error: null });
+  it("lit les 30 prochains jours (aujourd'hui + 29) avec le client serveur et rend des audiences", async () => {
+    mocks.rpc.mockResolvedValue({
+      data: { total_count: 2, hearings: [row(1), row(2)] },
+      error: null,
+    });
 
     const result = await tryLoadUpcomingHearings();
 
@@ -60,14 +61,45 @@ describe("tryLoadUpcomingHearings", () => {
     expect(result.totalCount).toBe(2);
   });
 
-  it("garde le total de la base quand la liste est tronquée", async () => {
+  it("rend toutes les audiences d'un document de plus de 1 000 lignes, sans troncature", async () => {
+    const hearings = Array.from({ length: 1_014 }, (_, index) => row(index + 1));
+    mocks.rpc.mockResolvedValue({ data: { total_count: 1_014, hearings }, error: null });
+    const result = await tryLoadUpcomingHearings();
+    expect(result.status === "ok" ? result.hearings.length : 0).toBe(1_014);
+    expect(result.status === "ok" ? result.totalCount : 0).toBe(1_014);
+  });
+
+  it("garde le total de la base quand la liste est plafonnée", async () => {
+    mocks.rpc.mockResolvedValue({
+      data: { total_count: "6000", hearings: [row(1)] },
+      error: null,
+    });
+    const result = await tryLoadUpcomingHearings();
+    expect(result.status === "ok" ? result.totalCount : 0).toBe(6000);
+  });
+
+  it("lit l'identifiant de groupe des adresses sources, jamais une adresse", async () => {
+    const group = "00000000-0000-4000-8000-000000000001";
+    mocks.rpc.mockResolvedValue({
+      data: {
+        total_count: 1,
+        hearings: [row(1, { source_group: group, source_url: "https://example.test/annonce/1" })],
+      },
+      error: null,
+    });
+    const result = await tryLoadUpcomingHearings();
+    expect(result.status === "ok" ? result.hearings[0].sourceGroup : null).toEqual(group);
+    expect(JSON.stringify(result)).not.toContain("example.test");
+  });
+
+  it("lit encore l'ancienne forme (tableau de lignes) tant que la migration n'est pas appliquée", async () => {
     mocks.rpc.mockResolvedValue({ data: [row(1, { total_count: "1500" })], error: null });
     const result = await tryLoadUpcomingHearings();
     expect(result.status === "ok" ? result.totalCount : 0).toBe(1500);
   });
 
   it("distingue l'absence d'audience d'une lecture en échec", async () => {
-    mocks.rpc.mockResolvedValue({ data: [], error: null });
+    mocks.rpc.mockResolvedValue({ data: { total_count: 0, hearings: [] }, error: null });
     expect(await tryLoadUpcomingHearings()).toEqual({
       status: "ok",
       hearings: [],
@@ -78,8 +110,11 @@ describe("tryLoadUpcomingHearings", () => {
     expect(await tryLoadUpcomingHearings()).toEqual({ status: "error" });
   });
 
-  it("ne lève pas quand Supabase n'est pas configuré", async () => {
-    mocks.client.mockReturnValue(null);
+  it("ne lève pas sur une réponse inattendue ni quand le client serveur échoue", async () => {
+    mocks.rpc.mockResolvedValue({ data: { hearings: "oups" }, error: null });
+    expect(await tryLoadUpcomingHearings()).toEqual({ status: "error" });
+
+    mocks.rpc.mockRejectedValue(new Error("Missing Supabase environment variable(s)"));
     expect(await tryLoadUpcomingHearings()).toEqual({ status: "error" });
   });
 

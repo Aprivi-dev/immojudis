@@ -5,7 +5,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import X from "lucide-react/dist/esm/icons/x.js";
+import List from "lucide-react/dist/esm/icons/list.js";
 import { toast } from "@/lib/toast";
 import { AuthConnectionBanner } from "@/components/AuthConnectionBanner";
 import { useAuth } from "@/hooks/use-auth";
@@ -82,6 +82,7 @@ import {
   SortDropdown,
   type SaveSearchOptions,
 } from "./SearchHeader";
+import { HearingsWeekBanner } from "./HearingsWeekBanner";
 import { RankingExplanation } from "./RankingExplanation";
 import { SearchResultsList } from "./SearchResults";
 import { FEW_RESULTS_ALERT_THRESHOLD, SectorAlertPrompt } from "./SectorAlertPrompt";
@@ -136,6 +137,14 @@ function SearchStatisticsLoading() {
 const LazyMoreFiltersModal = dynamic(
   () => import("./AdvancedFiltersPanel").then((mod) => mod.MoreFiltersModal),
   { loading: () => <FiltersLoadingFallback /> },
+);
+
+// « Mon démarrage » : chargée pour un compte connecté seulement (aucun octet de plus pour un visiteur).
+const LazyMonDemarrage = dynamic(
+  () => import("@/components/MonDemarrage").then((mod) => mod.MonDemarrage),
+  {
+    ssr: false,
+  },
 );
 
 const LazySearchStatisticsPanel = dynamic(
@@ -909,6 +918,7 @@ export function SearchPage({
       />
 
       <AuthConnectionBanner className="my-3" />
+      {user ? <LazyMonDemarrage className="mx-auto my-3 max-w-[1260px]" /> : null}
 
       <div
         className={`grid min-h-[calc(100svh_-_var(--sales-header-height))] grid-cols-1 ${splitClass}`}
@@ -954,6 +964,7 @@ export function SearchPage({
             </div>
           </div>
           <RankingExplanation investmentScore={investmentSortAllowed} />
+          <HearingsWeekBanner />
           <div className="border-b border-line-soft bg-white px-4 py-3 sm:px-5">
             <SaleTypeFilter
               compact
@@ -1141,7 +1152,7 @@ export function SearchPage({
                 onClick={closeMobileMap}
                 className="inline-flex h-11 cursor-pointer items-center gap-2 rounded-md border border-line-soft bg-white px-3 text-sm font-bold text-brand-navy shadow-sm"
               >
-                <X className="h-4 w-4" />
+                <List className="h-4 w-4" aria-hidden="true" />
                 Liste
               </button>
               {/* Titre court : la phrase qui explique la limite est dans la légende de la carte. */}

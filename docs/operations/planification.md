@@ -1,16 +1,18 @@
 # Inventaire des tâches planifiées
 
-Mis à jour le 19 octobre 2026. Toute route `src/app/api/cron/*` doit figurer ici, dans `vercel.json`
+Mis à jour le 20 octobre 2026. Toute route `src/app/api/cron/*` doit figurer ici, dans `vercel.json`
 ou dans une migration `pg_cron` ; le test `src/lib/scheduled-jobs.test.ts` le vérifie.
 
 ## Tâches applicatives (routes `/api/cron/*`)
 
 | Tâche                                                      | Système            | Horaire (UTC)           | Route / script                        | Supervisée                                           | Seuil d'alerte (`cron.stale`) |
 | ---------------------------------------------------------- | ------------------ | ----------------------- | ------------------------------------- | ---------------------------------------------------- | ----------------------------- |
-| Évaluation des alertes                                     | Vercel Cron        | 06:15, rattrapage 08:15 | `/api/cron/smart-alerts`              | oui                                                  | pas de succès depuis 30 h     |
-| Envoi des alertes                                          | Vercel Cron        | 06:30, rattrapage 08:30 | `/api/cron/alert-notifications`       | oui                                                  | 30 h                          |
-| Suivi des changements                                      | Vercel Cron        | 06:45, rattrapage 08:45 | `/api/cron/sale-change-monitor`       | oui                                                  | 30 h                          |
-| Rappels d'audience et avertissements graves                | Vercel Cron        | 07:15, rattrapage 09:15 | `/api/cron/sale-reminders`            | oui                                                  | 30 h                          |
+| Évaluation des alertes                                     | Vercel Cron        | 06:15, rattrapage 08:15 | `/api/cron/smart-alerts`              | oui                                                  | pas de succès depuis 27 h     |
+| Envoi des alertes                                          | Vercel Cron        | 07:30, rattrapage 09:30 | `/api/cron/alert-notifications`       | oui                                                  | 27 h                          |
+| Suivi des changements                                      | Vercel Cron        | 06:45, rattrapage 08:45 | `/api/cron/sale-change-monitor`       | oui                                                  | 27 h                          |
+| Rappels d'audience et avertissements graves                | Vercel Cron        | 07:15, rattrapage 09:15 | `/api/cron/sale-reminders`            | oui                                                  | 27 h                          |
+| Alertes de résultat ou de remise en vente                  | Vercel Cron        | 10:15                   | `/api/cron/sale-results`              | journal d'exécution seulement                        | pas encore                    |
+| Récapitulatif hebdomadaire « Ma semaine »                  | Vercel Cron        | 11:30                   | `/api/cron/weekly-digest`             | journal d'exécution seulement                        | pas encore                    |
 | Rétention des données                                      | Vercel Cron        | dimanche 04:15          | `/api/cron/data-retention`            | oui                                                  | 8 jours                       |
 | Complétude des annonces (palier de classement de /sales)   | Supabase `pg_cron` | toutes les heures à :20 | `/api/cron/listing-completeness`      | oui                                                  | 3 h                           |
 | Complétude des annonces (filet quotidien)                  | Vercel Cron        | 05:50 tous les jours    | `/api/cron/listing-completeness`      | oui (même tâche, même seuil)                         | 3 h                           |
@@ -42,11 +44,82 @@ interne] », pour mesurer les fausses alertes dans le journal `sale_reminder_dis
 celui des alertes (`/compte`, rubrique Notifications) et la case n'est proposée que dans les modes
 qui envoient. Le journal garantit qu'un même rappel ne part jamais deux fois et se purge au-delà de
 180 jours. La tâche exige les variables d'envoi des alertes (`RESEND_API_KEY`, `ALERT_EMAIL_FROM`,
-`SITE_URL`) : sans elles le passage réussit sans rien envoyer (`skipped: not_configured`).
+`SITE_URL`) : sans elles le passage réussit sans rien envoyer (`skipped: not_configured`). Un J-7 ou
+J-1 n'est envoyé que si la vente a été revérifiée à la source depuis moins de 36 h (`skippedStale` ;
+le passage échoue au-delà de 20 % de rappels écartés), et seules les adresses email confirmées
+reçoivent. Le suivi des changements examine chaque jour tous les comptes ayant consenti, en plus du
+lot de `SALE_CHANGE_CRON_USER_LIMIT` comptes. Critère de passage à `on` :
+`docs/runbooks/activation-rappels-audience.md`.
+
+Deux emails s'ajoutent aux rappels, chacun avec son consentement distinct (jamais pré-coché, daté et
+versionné par la base), son lien de désinscription signé (portée dédiée, valable un an) et son
+interrupteur d'envoi, **fermé par défaut** : le propriétaire ne les ouvre qu'après la mise à jour de la
+politique de confidentialité et du registre des traitements.
+
+- **Alerte de résultat ou de remise en vente** (`SALE_RESULTS_MODE`, `/api/cron/sale-results`, 10:15) :
+  quand une vente suivie a eu lieu (instantané après l'audience : « résultat connu » ou « résultat non
+  connu », avec la mention de surenchère indicative) ou change de statut grave (adjugée, retirée ou
+  annulée, remise en vente), un email renvoie vers la fiche ou « Mes favoris ». **Jamais de prix** (les
+  instantanés sont lus sans leurs colonnes de prix). Pas de type « non adjugée » : aucune source ne le
+  prouve. Elle passe après le suivi des changements et les rappels d'audience, et ne répète pas un
+  avertissement (adjugée, retirée, annulée) que les rappels ont déjà journalisé. Journal
+  `sale_result_dispatches` : un email par compte, vente et type. Valeurs : `off` (défaut), `internal`
+  (administrateurs, objet « [Test interne] »), `on`.
+- **Récapitulatif hebdomadaire « Ma semaine »** (`WEEKLY_DIGEST_MODE`, `/api/cron/weekly-digest`, 11:30) :
+  un email par semaine, au jour choisi dans `/compte` (mardi par défaut) : audiences des 14 prochains
+  jours (dates sourcées, revérifiées depuis moins de 36 h), changements des 7 derniers jours sur les
+  ventes suivies, nouvelles ventes du département des alertes (sans alerte : bouton « Créer une alerte »).
+  Rien à annoncer, pas d'email. **Au plus un email par compte et par jour** : le cron passe après les
+  alertes, les rappels et les alertes de résultat ; si l'un d'eux est déjà parti ce jour-là au compte,
+  le récapitulatif n'est pas fusionné avec lui, il est reporté au lendemain, puis au surlendemain, et
+  la semaine est sautée au-delà. Journal `weekly_digest_dispatches` (unique par compte et semaine ISO).
+  Le passage échoue quand un envoi est dû et que Resend n'est pas configuré.
+
+Les journaux des deux emails sont purgés à 180 jours par `run_data_retention` (cron hebdomadaire),
+même quand l'envoi est fermé. Les deux tâches ne sont pas encore dans la liste attendue de
+`cron.stale` (`app_private.evaluate_operational_health`) : tant que les interrupteurs sont à `off`
+elles réussissent sans rien faire ; les ajouter à la liste est une décision à prendre à l'ouverture
+(procédure plus bas).
 
 Les quatre tâches Vercel quotidiennes ont un second passage deux heures plus tard : il ne fait rien
 si la tâche a déjà réussi dans les 20 dernières heures (`catchUpSchedule` de `runMonitoredCron`).
 Chaque passage réessaie 3 fois (5 s, 20 s, 60 s) sur une erreur réseau ou 5xx.
+
+## Plan Vercel Hobby : ordre des tâches et seuil de `cron.stale`
+
+Sur le plan Hobby, un cron tombe à n'importe quel moment de l'heure demandée (jusqu'à 59 minutes de
+décalage) : deux tâches de la même heure n'ont aucun ordre garanti. D'où :
+
+- `alert-notifications` passe une heure entière après `smart-alerts` (06:15 puis 07:30 ; rattrapage 08:15
+  puis 09:30), car elle envoie ce que `smart-alerts` prépare. Les notifications sont prévues à 07:00 UTC
+  (`scheduledForFrequency`) : à 06:30 elles n'étaient pas encore échues et partaient le lendemain, avec
+  près de 24 h de retard ; à 07:30 elles sont échues. `sale-reminders` (07:15) passe après
+  `sale-change-monitor` (06:45) dont il lit les événements ;
+- le seuil de `cron.stale` des quatre tâches quotidiennes est de **27 h** (il était de 30 h). Deux succès
+  consécutifs d'une tâche quotidienne sont espacés de 24 h au plus ; si le passage de 06:xx échoue et que
+  seul le rattrapage (2 h plus tard) réussit, l'écart monte à 27 h dans le pire cas de décalage Hobby
+  (24 h + 3 h). 27 h signale donc un jour manqué 3 h plus tôt qu'avant, et n'est atteint sur un cycle sain
+  qu'à la limite du pire cas (dans ce cas l'alerte se referme d'elle-même au succès suivant) ;
+- les routes longues déclarent `maxDuration` (300 s : `smart-alerts`, `alert-notifications`,
+  `sale-change-monitor`, `data-retention`, `listing-completeness`, `sale-retention`…).
+
+## Ajouter une tâche supervisée : remise à zéro de `cron.stale`
+
+Ajouter une tâche à la liste attendue de `cron.stale` (fonction `app_private.evaluate_operational_health`,
+migration) ouvre aussitôt une alerte **critique** : la tâche n'a encore aucun succès enregistré. Le cas de
+`sale-reminders` (liste modifiée par `20261028130200`, première exécution le 20/10/2026) a laissé l'alerte
+ouverte jusqu'au premier passage de Vercel. Procédure :
+
+1. Déployer le code qui porte la route **avant** (ou en même temps que) la migration, jamais après.
+2. Juste après la migration, appeler la route une fois avec `Authorization: Bearer $CRON_SECRET` : le succès
+   enregistré referme la détection au passage suivant de `operational-health` (15 min).
+3. Il n'y a rien à remettre à zéro à la main : l'alerte reste ouverte tant que la détection est active, devient
+   inactive (`inactive_since`) quand la tâche a réussi, et se ferme deux heures plus tard
+   (`app_private.sync_operational_alert`). Ne pas supprimer la ligne d'`operational_alerts` : l'historique
+   (`occurrence_count`, `first_seen_at`) et la notification de fermeture en dépendent.
+4. Le test pgTAP 599 vérifie cette fermeture spontanée pour `sale-reminders`.
+
+Pour une tâche réellement arrêtée, voir `docs/operations-phase-3.md` (`cron.stale`).
 
 ## Tâches volontairement manuelles
 
@@ -75,12 +148,14 @@ relus) est créée au premier tick du mois. Son code de sortie est noté dans `a
 
 ## Workflows GitHub Actions
 
-| Workflow                                  | Déclencheur                              | Supervision                                                          |
-| ----------------------------------------- | ---------------------------------------- | -------------------------------------------------------------------- |
-| Immojudis Data Pipeline (`data-pipeline`) | planifié + répartition par l'application | alertes `pipeline.source.*`, `pipeline.import.unhealthy`             |
-| Recompute des ventes existantes           | manuel                                   | verrou `immojudis-recompute` + verrou en base                        |
-| DVF import                                | planifié (annuel/semestriel)             | alerte `dvf.freshness`                                               |
-| Immojudis Operational Alert               | déclenché par l'application              | échec = incident ouvert ; avertissement = rappel ; vert = résolution |
-| Entraînement du modèle de valorisation    | manuel                                   | rapport JSON + tableau de synthèse                                   |
-| Apply Supabase Migrations                 | manuel depuis `main`                     | contrôle de dérive du schéma                                         |
-| Check Pending Supabase Migrations         | planifié (tous les jours 07:10 UTC)      | échec = migrations de `main` non appliquées en production            |
+| Workflow                                  | Déclencheur                                      | Supervision                                                          |
+| ----------------------------------------- | ------------------------------------------------ | -------------------------------------------------------------------- |
+| Immojudis Data Pipeline (`data-pipeline`) | planifié + répartition par l'application         | alertes `pipeline.source.*`, `pipeline.import.unhealthy`             |
+| Recompute des ventes existantes           | manuel                                           | verrou `immojudis-recompute` + verrou en base                        |
+| DVF import                                | **manuel** (`workflow_dispatch`, aucun planning) | alerte `dvf.freshness` (donnée de plus de 220 jours)                 |
+| Information Agent Evidence                | planifié toutes les 30 min + manuel              | analyse des pièces jointes privées de l'agent (OCR), lecture seule   |
+| Production smoke                          | planifié toutes les 30 min + manuel              | échec du workflow ; voir `docs/operations/supervision-externe.md`    |
+| Immojudis Operational Alert               | déclenché par l'application                      | échec = incident ouvert ; avertissement = rappel ; vert = résolution |
+| Entraînement du modèle de valorisation    | manuel                                           | rapport JSON + tableau de synthèse                                   |
+| Apply Supabase Migrations                 | manuel depuis `main`                             | contrôle de dérive du schéma                                         |
+| Check Pending Supabase Migrations         | planifié (tous les jours 07:10 UTC)              | échec = migrations de `main` non appliquées en production            |

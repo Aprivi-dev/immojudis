@@ -6,6 +6,8 @@ import {
 import { PublicApiError } from "@/lib/api-errors";
 import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
 import { assertFeatureEntitlementVia } from "@/lib/property-reports";
+import { enforceUserRateLimit } from "@/lib/rate-limit";
+import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import {
   TribunalCourtUnresolvedError,
   tribunalListingStatisticsQuerySchema,
@@ -17,6 +19,11 @@ export async function GET(request: Request) {
   const context = createApiRequestContext(request, "tribunal.listing_statistics");
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
+    await enforceUserRateLimit({
+      userId: auth.userId,
+      bucketKey: "v1.tribunal-listing-statistics",
+      ...RATE_LIMIT_POLICIES.compute,
+    });
     const url = new URL(request.url);
     // One reading of the query serves both the entitlement and the data. A repeated parameter
     // (`?saleId=U&saleId=V`) would be read as the first value by one and the last by the other, so
@@ -34,7 +41,7 @@ export async function GET(request: Request) {
     const { door } = await assertFeatureEntitlementVia(
       auth,
       "sales.statistics",
-      "Statistiques des annonces judiciaires réservées au plan Analyse.",
+      "Statistiques des annonces judiciaires réservées à l’offre Analyse.",
       { saleId: z.string().uuid().safeParse(query.saleId).data },
     );
     const input = tribunalListingStatisticsQuerySchema.parse(query);

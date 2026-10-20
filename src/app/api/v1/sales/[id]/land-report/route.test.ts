@@ -65,7 +65,7 @@ describe("dossier PLU et risques premium", () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     mocks.auth.mockResolvedValue(context);
-    mocks.entitlement.mockResolvedValue(undefined);
+    mocks.entitlement.mockResolvedValue({ plan: "analyse" });
     mocks.sale.mockResolvedValue(sale);
     mocks.parcels.mockResolvedValue([]);
     mocks.rate.mockResolvedValue(undefined);
@@ -81,7 +81,7 @@ describe("dossier PLU et risques premium", () => {
   });
   it("refuse un compte sans abonnement Analyse", async () => {
     mocks.entitlement.mockRejectedValue(
-      new Error("Cette fonctionnalité est réservée au plan Analyse."),
+      new Error("Cette fonctionnalité est réservée à l’offre Analyse."),
     );
     expect((await request()).status).toBe(403);
     expect(mocks.sale).not.toHaveBeenCalled();

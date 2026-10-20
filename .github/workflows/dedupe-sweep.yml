@@ -58,6 +58,22 @@ jobs:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: python -m src.dedupe_apply --output data/audits/dedupe-sweep-candidates.json
 
+      # Invalidation du cache public après les suppressions : un déclencheur de auction_sales note dans
+      # app_private.catalogue_invalidations les ventes qui quittent le catalogue (une ligne secondaire supprimée
+      # redirige vers la fiche conservée) ; cette étape les envoie à POST /api/pipeline/revalidate-sale, comme
+      # celle de data-pipeline.yml. Elle tourne même quand le balayage échoue (une suppression déjà faite doit
+      # partir), ne fait jamais échouer le job, et c'est la seule étape qui reçoit CRON_SECRET (variable de
+      # dépôt SITE_URL : l'origine publique).
+      - name: Invalidate public cache
+        if: always()
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          SITE_URL: ${{ vars.SITE_URL }}
+        run: python -m src.cache_invalidation --flush
+
       - name: Save the candidate list
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

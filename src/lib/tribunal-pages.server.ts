@@ -3,6 +3,7 @@ import { unstable_cache } from "next/cache";
 import type { DepartmentSale } from "@/lib/department-pages";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
 import { TRIBUNAL_PAGE_LISTED_SALES } from "@/lib/tribunal-pages";
+import { dedupeHearings, mapHearingRows, type UpcomingHearingRow } from "@/lib/upcoming-hearings";
 
 /**
  * Prochaines ventes d'un tribunal, lues comme un visiteur anonyme avec la fonction publique
@@ -23,6 +24,13 @@ export type TribunalSaleRow = {
   starting_price_eur: number | string | null;
   surface_m2: number | string | null;
   status: string | null;
+  /**
+   * Identifiant de groupe : le plus petit identifiant des lignes de la liste qui partagent une adresse
+   * source normalisée (de proche en proche). Il reconnaît la même vente publiée deux fois sans rien
+   * révéler de l'adresse. Absent tant que la migration 20261031100100 n'est pas appliquée : la liste
+   * fonctionne alors sans dédoublonnage.
+   */
+  source_group?: unknown;
 };
 
 type TribunalRpcClient = {
@@ -43,13 +51,57 @@ function tribunalSaleStatus(status: string | null): DepartmentSale["status"] {
   return status == null || status.trim() === "" || status === "unknown" ? "unknown" : "scheduled";
 }
 
+/** Date de repli d'une vente sans date, pour l'ordre seulement : elle passe après les datées. */
+const UNDATED_SORT_DATE = "9999-12-31T00:00:00Z";
+
+/**
+ * Écarte les ventes publiées deux fois, avec la règle de la page « Audiences à venir »
+ * (`dedupeHearings`) : seule une identité certaine réunit deux lignes (même identifiant, ou même
+ * groupe d'adresses sources). La commune, le type, la surface, la date et le prix ne suffisent pas :
+ * deux lots distincts peuvent les partager, et mieux vaut une vente affichée deux fois qu'une vente
+ * qui manque. La première ligne (la plus proche, puis la plus petite identité) est gardée ; l'ordre
+ * de la liste reçue est conservé.
+ */
+function dedupeTribunalSaleRows(rows: readonly TribunalSaleRow[]): TribunalSaleRow[] {
+  const identities = mapHearingRows(
+    rows.map(
+      (row): UpcomingHearingRow => ({
+        id: row.id,
+        // Seul l'ordre de choix du doublon à garder s'en sert ; la date affichée reste celle de la ligne.
+        sale_date: row.sale_date ?? UNDATED_SORT_DATE,
+        date_only: true,
+        property_type: row.property_type,
+        city: row.city,
+        department: row.department,
+        tribunal_code: "tribunal",
+        tribunal_name: null,
+        tribunal_city: null,
+        starting_price_eur: null,
+        source_group: row.source_group,
+        total_count: null,
+      }),
+    ),
+  );
+  // Une ligne à la date illisible n'est pas une identité : elle reste, comme une audience inconnue.
+  const kept = new Set(dedupeHearings(identities).map((hearing) => hearing.id));
+  const known = new Set(identities.map((hearing) => hearing.id));
+  const emitted = new Set<string>();
+  return rows.filter((row) => {
+    // Deux lignes de même identifiant : la première seulement.
+    if (known.has(row.id) && (!kept.has(row.id) || emitted.has(row.id))) return false;
+    emitted.add(row.id);
+    return true;
+  });
+}
+
 /**
  * Une vente reportée n'a plus de date valable : la page ne l'annonce pas comme prochaine audience.
  * Un statut que la base ne connaît pas (`unknown`, ou absent) reste `unknown` : il n'est pas
- * présenté comme une vente à venir confirmée.
+ * présenté comme une vente à venir confirmée. Une vente publiée par deux sources n'y figure qu'une
+ * fois (voir `dedupeTribunalSaleRows`).
  */
 export function mapTribunalSaleRows(rows: readonly TribunalSaleRow[]): DepartmentSale[] {
-  return rows.map((row) => ({
+  return dedupeTribunalSaleRows(rows).map((row) => ({
     id: row.id,
     city: row.city,
     propertyType: row.property_type,
@@ -62,7 +114,13 @@ export function mapTribunalSaleRows(rows: readonly TribunalSaleRow[]): Departmen
   }));
 }
 
-async function readTribunalSales(tribunalCode: string): Promise<DepartmentSale[]> {
+type ReadTribunalSales = {
+  sales: DepartmentSale[];
+  /** Lignes reçues de la base, avant dédoublonnage : à comparer à la limite de lecture. */
+  received: number;
+};
+
+async function readTribunalSales(tribunalCode: string): Promise<ReadTribunalSales> {
   const client = createPublicSupabaseClient();
   if (!client) throw new Error("Supabase n'est pas configuré côté serveur.");
   const { data, error } = await (client as unknown as TribunalRpcClient).rpc(
@@ -70,16 +128,17 @@ async function readTribunalSales(tribunalCode: string): Promise<DepartmentSale[]
     { p_tribunal_code: tribunalCode, p_limit: TRIBUNAL_PAGE_LISTED_SALES },
   );
   if (error) throw error;
-  return mapTribunalSaleRows((data ?? []) as TribunalSaleRow[]);
+  const rows = (data ?? []) as TribunalSaleRow[];
+  return { sales: mapTribunalSaleRows(rows), received: rows.length };
 }
 
 // Une lecture par heure, tribunal par tribunal. Une erreur n'est jamais mise en cache.
-const cachedTribunalSales = unstable_cache(readTribunalSales, ["tribunal-pages", "sales", "v1"], {
+const cachedTribunalSales = unstable_cache(readTribunalSales, ["tribunal-pages", "sales", "v2"], {
   revalidate: TRIBUNAL_SALES_REVALIDATE_SECONDS,
   tags: [TRIBUNAL_SALES_CACHE_TAG],
 });
 
-export type TribunalSalesResult = { status: "ok"; sales: DepartmentSale[] } | { status: "error" };
+export type TribunalSalesResult = ({ status: "ok" } & ReadTribunalSales) | { status: "error" };
 
 /**
  * Les prochaines ventes d'un tribunal. Ne lève pas : la fonction peut manquer (migration pas
@@ -88,7 +147,7 @@ export type TribunalSalesResult = { status: "ok"; sales: DepartmentSale[] } | { 
  */
 export async function tryLoadTribunalSales(tribunalCode: string): Promise<TribunalSalesResult> {
   try {
-    return { status: "ok", sales: await cachedTribunalSales(tribunalCode) };
+    return { status: "ok", ...(await cachedTribunalSales(tribunalCode)) };
   } catch (error) {
     console.warn("[tribunaux] Ventes du tribunal indisponibles:", tribunalCode, error);
     return { status: "error" };

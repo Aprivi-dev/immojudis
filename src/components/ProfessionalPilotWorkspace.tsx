@@ -1,11 +1,18 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
-import { fetchSaleWorkspace, saveProfessionalPilotDossier } from "@/lib/client-api";
+import {
+  fetchFavoriteDossier,
+  fetchSaleWorkspace,
+  saveFavoriteDossier,
+  saveProfessionalPilotDossier,
+} from "@/lib/client-api";
 import { safeDocumentUrl } from "@/lib/documents";
 import { formatPrice } from "@/lib/format";
+import { MAX_SIMULATOR_AMOUNT_EUR } from "@/lib/simulator-limits";
+import { toast } from "@/lib/toast";
 import {
   buildPilotPacket,
   emptyPilotDraft,
@@ -67,6 +74,35 @@ export function ProfessionalPilotWorkspace({
     enabled: canSync,
     staleTime: 30_000,
   });
+  // « Mon dossier » (statut et enchère plafond) reste la source : le dossier de travail le lit, et
+  // ne l'écrit que sur un geste explicite (« Mettre à jour »).
+  const dossierKey = queryKeys.favoriteDossier(user?.id ?? null, sale.id);
+  const dossierQuery = useQuery({
+    queryKey: dossierKey,
+    queryFn: () => fetchFavoriteDossier(sale.id),
+    enabled: canSync,
+    staleTime: 30_000,
+  });
+  const [ceilingMessage, setCeilingMessage] = useState("");
+  const saveCeiling = useMutation({
+    mutationFn: (bidCeilingEur: number) =>
+      saveFavoriteDossier({ data: { saleId: sale.id, bidCeilingEur } }),
+    onMutate: () => setCeilingMessage(""),
+    onSuccess: (response) => {
+      queryClient.setQueryData(dossierKey, response);
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.favorites(user?.id ?? null),
+        exact: true,
+      });
+      setCeilingMessage("Enchère plafond de « Mon dossier » mise à jour.");
+    },
+    onError: (error: unknown) =>
+      toast.error(userMessage(error, "Impossible d’enregistrer l’enchère plafond.")),
+  });
+  const dossier = dossierQuery.data?.dossier;
+  // Un plafond de 0 € n'existe pas : une ancienne valeur nulle compte comme absente.
+  const savedCeiling =
+    dossier?.bidCeilingEur != null && dossier.bidCeilingEur > 0 ? dossier.bidCeilingEur : null;
   const documents = useMemo(() => collectSaleDocuments(sale), [sale]);
   const knownFacts = definition.facts.filter((fact) => Boolean(fact.value?.trim()));
   const missingFacts = definition.facts.filter((fact) => !fact.value?.trim());
@@ -76,6 +112,14 @@ export function ProfessionalPilotWorkspace({
   const remoteDraft = workspace?.private_notes.professionalDossier;
   const editable = hydrated && !saving && (!canSync || !workspaceQuery.isPending);
   const economics = pilotEconomics(draft);
+  // Prix saisi, en euros entiers : le seul qu'on puisse proposer comme enchère plafond de « Mon dossier ».
+  const draftPrice =
+    draft.priceEur != null &&
+    Number.isFinite(draft.priceEur) &&
+    Math.round(draft.priceEur) >= 1 &&
+    Math.round(draft.priceEur) <= MAX_SIMULATOR_AMOUNT_EUR
+      ? Math.round(draft.priceEur)
+      : null;
   const sourceChanged = Boolean(
     sale.updated_at && draft.updatedAt && Date.parse(sale.updated_at) > Date.parse(draft.updatedAt),
   );
@@ -145,6 +189,25 @@ export function ProfessionalPilotWorkspace({
     draft,
     hydrated,
     remoteDraft,
+    workspace?.updated_at,
+    workspaceQuery.isSuccess,
+  ]);
+
+  // Dossier jamais saisi : « Prix envisagé » part de l'enchère plafond de « Mon dossier ». Rien n'est
+  // écrit dans « Mon dossier » (sens unique), et une saisie ou un dossier du compte l'emporte.
+  useEffect(() => {
+    if (!canSync || !hydrated || !workspaceQuery.isSuccess || savedCeiling == null) return;
+    if (draft.updatedAt || draft.priceEur != null || remoteDraft?.kind === definition.kind) return;
+    // La synchronisation avec la version du compte n'est pas terminée.
+    if (draft.workspaceRevision !== (workspace?.updated_at ?? null)) return;
+    setDraft({ ...draft, priceEur: savedCeiling });
+  }, [
+    canSync,
+    definition.kind,
+    draft,
+    hydrated,
+    remoteDraft,
+    savedCeiling,
     workspace?.updated_at,
     workspaceQuery.isSuccess,
   ]);
@@ -301,7 +364,7 @@ export function ProfessionalPilotWorkspace({
               type="button"
               onClick={() => setActiveStep(step)}
               aria-current={activeStep === step ? "step" : undefined}
-              className={`min-h-10 shrink-0 rounded-md px-3 py-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold ${
+              className={`min-h-10 shrink-0 rounded-md px-3 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft ${
                 activeStep === step
                   ? "bg-brand-navy text-white"
                   : "text-brand-navy/70 hover:bg-slate-100"
@@ -465,7 +528,7 @@ export function ProfessionalPilotWorkspace({
               {AMOUNT_FIELDS.map(({ key, label }) => (
                 <label key={key} className="block text-xs font-semibold text-brand-navy">
                   {key === "priceEur" ? definition.priceLabel : label}
-                  <span className="mt-1 flex items-center rounded-md border border-slate-300 bg-white focus-within:ring-2 focus-within:ring-gold">
+                  <span className="mt-1 flex items-center rounded-md border border-slate-300 bg-white focus-within:outline-2 focus-within:outline-gold-soft">
                     <input
                       type="number"
                       min="0"
@@ -485,6 +548,50 @@ export function ProfessionalPilotWorkspace({
                 </label>
               ))}
             </div>
+            {canSync && dossier ? (
+              <div className="mt-3 text-xs text-slate-700" data-testid="saved-ceiling-line">
+                {!dossier.followed ? (
+                  <p>
+                    Aucune enchère plafond enregistrée : suivez la vente (le cœur) pour en noter une
+                    dans « Mon dossier ».
+                  </p>
+                ) : (
+                  <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    {savedCeiling != null ? (
+                      <span>
+                        Enchère plafond enregistrée :{" "}
+                        <strong className="tabular-nums">{formatPrice(savedCeiling)}</strong>
+                      </span>
+                    ) : (
+                      <span>Aucune enchère plafond enregistrée dans « Mon dossier ».</span>
+                    )}
+                    {draftPrice != null && draftPrice !== savedCeiling ? (
+                      <button
+                        type="button"
+                        aria-describedby="saved-ceiling-hint"
+                        aria-disabled={saveCeiling.isPending || undefined}
+                        onClick={() => {
+                          if (saveCeiling.isPending) return;
+                          saveCeiling.mutate(draftPrice);
+                        }}
+                        className="min-h-9 rounded-md border border-brand-navy px-3 font-semibold text-brand-navy aria-disabled:cursor-wait aria-disabled:opacity-60"
+                      >
+                        {savedCeiling != null ? "Mettre à jour" : "Enregistrer"}
+                      </button>
+                    ) : null}
+                  </p>
+                )}
+                {dossier.followed && draftPrice != null && draftPrice !== savedCeiling ? (
+                  <p id="saved-ceiling-hint" className="mt-1 text-slate-600">
+                    Ce bouton remplace l’enchère plafond de « Mon dossier » par le prix saisi (
+                    {formatPrice(draftPrice)}). Sans ce geste, « Mon dossier » ne change pas.
+                  </p>
+                ) : null}
+                <p role="status" className="min-h-4 font-semibold">
+                  {ceilingMessage}
+                </p>
+              </div>
+            ) : null}
             <dl className="mt-4 grid gap-2 rounded-lg bg-background p-4 text-sm sm:grid-cols-2">
               <div>
                 <dt>Investissement total</dt>

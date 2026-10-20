@@ -8,7 +8,7 @@ describe("surenchereWindow", () => {
     expect(SURENCHERE_WINDOW_DAYS).toBe(10);
   });
 
-  it("calcule la date limite à dix jours du jour d'audience, avec les jours restants", () => {
+  it("calcule la date indicative à dix jours du jour d'audience, sans compter de jours restants", () => {
     expect(
       surenchereWindow({
         ...judicial,
@@ -21,7 +21,6 @@ describe("surenchereWindow", () => {
       deadline: "2026-10-24",
       adjudicationConfirmed: true,
       expired: false,
-      daysLeft: 8,
     });
   });
 
@@ -51,18 +50,18 @@ describe("surenchereWindow", () => {
     ).toMatchObject({ deadline: "2027-01-07" });
   });
 
-  it("compte le dernier jour comme ouvert, puis déclare la fenêtre échue le lendemain", () => {
+  it("marque la date indicative comme passée le lendemain, sans jamais exposer de jours restants", () => {
     const base = { ...judicial, saleDate: "2026-10-14T12:00:00.000Z" };
-    // 23 h à Paris le 24 octobre : dernier jour.
-    expect(surenchereWindow({ ...base, now: new Date("2026-10-24T21:00:00.000Z") })).toMatchObject({
-      expired: false,
-      daysLeft: 0,
-    });
-    // 00 h 30 à Paris le 25 octobre : échue.
-    expect(surenchereWindow({ ...base, now: new Date("2026-10-24T22:30:00.000Z") })).toMatchObject({
-      expired: true,
-      daysLeft: null,
-    });
+    // 23 h à Paris le 24 octobre : la date indicative n'est pas passée.
+    const onTheDay = surenchereWindow({ ...base, now: new Date("2026-10-24T21:00:00.000Z") });
+    expect(onTheDay).toMatchObject({ expired: false });
+    // 00 h 30 à Paris le 25 octobre : passée.
+    const after = surenchereWindow({ ...base, now: new Date("2026-10-24T22:30:00.000Z") });
+    expect(after).toMatchObject({ expired: true });
+    // Le report éventuel au premier jour ouvrable n'est pas calculé : aucune valeur ne le suggère.
+    for (const result of [onTheDay, after]) {
+      expect(result).not.toHaveProperty("daysLeft");
+    }
   });
 
   it("garde la fenêtre quand le résultat n'est pas connu, sans le présenter comme confirmé", () => {

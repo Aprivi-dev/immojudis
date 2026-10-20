@@ -4,11 +4,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AiReviewProjectionReadModel } from "@/lib/ai-review-guard";
 import { formatStartingPrice } from "@/lib/format";
-import { LAUNCH_OFFER_VISITOR_TEXT } from "@/lib/launch-offer";
 import { FREE_ACCESS_LINE } from "@/lib/sale-unlocks";
 import type { AuctionSale } from "@/lib/types";
 import { ListingCard, SearchResultsList } from "./SearchResults";
-import { listingAccessLine } from "./listing-text";
+import { LISTING_LAUNCH_OFFER_LINE, listingAccessLine } from "./listing-text";
 
 const testState = vi.hoisted(() => {
   const favoriteQuery = { select: vi.fn(), eq: vi.fn(), in: vi.fn() };
@@ -219,9 +218,9 @@ describe("vue « tableau » des résultats", () => {
     const row = screen.getAllByRole("row")[1];
     expect(within(row).getByText("Type de bien à confirmer")).toBeTruthy();
     expect(row.textContent).not.toContain("Appartement");
-    // Le nom accessible du lien suit la règle du titre de carte.
-    expect(within(row).getByRole("link").getAttribute("aria-label")).toBe(
-      "Voir À confirmer à Bordeaux",
+    // Le nom accessible du lien suit la règle du titre de carte, complété par le prix affiché.
+    expect(within(row).getByRole("link").getAttribute("aria-label")).toMatch(
+      /^Voir À confirmer à Bordeaux, 90\s000\s€$/,
     );
   });
 
@@ -281,12 +280,17 @@ describe("vue « tableau » des résultats", () => {
     );
   });
 
-  it("offre de lancement : le visiteur lit la mention de l'offre, pour toutes les ventes", () => {
+  it("offre de lancement : le visiteur lit la ligne courte de l'offre, pour toutes les ventes", () => {
     const tribunal = makeSale("sale-t");
     const notary = makeSale("sale-n", { sale_venue_type: "notary" });
     const visitor = { locked: true, analysisLocked: true, unlocked: false, launchOffer: true };
-    expect(listingAccessLine(tribunal, visitor)).toBe(LAUNCH_OFFER_VISITOR_TEXT);
-    expect(listingAccessLine(notary, visitor)).toBe(LAUNCH_OFFER_VISITOR_TEXT);
+    expect(listingAccessLine(tribunal, visitor)).toBe(LISTING_LAUNCH_OFFER_LINE);
+    expect(listingAccessLine(notary, visitor)).toBe(LISTING_LAUNCH_OFFER_LINE);
+    expect(LISTING_LAUNCH_OFFER_LINE).toBe(
+      "Compte gratuit : avantages Analyse (offre de lancement)",
+    );
+    // Le texte complet n'est pas répété sur chaque carte : il vit dans la bannière de la liste.
+    expect(LISTING_LAUNCH_OFFER_LINE.length).toBeLessThan(70);
     // Hors offre, ou pour un compte connecté, la ligne habituelle ne change pas.
     expect(listingAccessLine(tribunal, { ...visitor, launchOffer: false })).toBe(FREE_ACCESS_LINE);
     expect(
@@ -375,7 +379,8 @@ describe("vue « tableau » des résultats", () => {
 
     renderTable([]);
     expect(screen.queryByRole("table")).toBeNull();
-    expect(screen.getByText(/Aucune|aucune/)).toBeTruthy();
+    // The empty state has a heading and a sentence that both say "aucune": target the heading.
+    expect(screen.getByRole("heading", { name: "Aucune vente trouvée" })).toBeTruthy();
   });
 
   it("place l'encart partenaire après le tableau, une seule fois", () => {
@@ -388,6 +393,31 @@ describe("vue « tableau » des résultats", () => {
       table.compareDocumentPosition(placement) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(within(table).queryByTestId("sponsored")).toBeNull();
+  });
+
+  it("montre les points à vérifier en tableau : une icône au nom accessible, comme la pastille de la carte", () => {
+    renderTable([
+      makeSale("sale-gap", { app_surface_m2: null, occupancy_status: null }),
+      makeSale("sale-ok", { occupancy_status: "libre" }),
+    ]);
+
+    const rows = within(screen.getAllByRole("rowgroup")[1]).getAllByRole("row");
+    const flagged = within(rows[0]).getByRole("button", { name: "2 points à vérifier" });
+    expect(flagged.textContent).toBe("");
+    expect(within(rows[1]).queryByRole("button", { name: /à vérifier/ })).toBeNull();
+
+    fireEvent.click(flagged);
+    const note = within(rows[0]).getByRole("note");
+    expect(note.textContent).toContain("Surface non communiquée dans l’annonce");
+    expect(note.textContent).toContain("Occupation du bien à vérifier");
+    expect(within(note).getByRole("link", { name: "Voir la fiche" }).getAttribute("href")).toBe(
+      "/sales/sale-gap#points-a-verifier",
+    );
+  });
+
+  it("ne compte pas l'occupation en tableau quand la ligne ne la montre pas", () => {
+    renderTable([makeSale("sale-a", { occupancy_status: null })], { analysisLocked: true });
+    expect(screen.queryByRole("button", { name: /à vérifier/ })).toBeNull();
   });
 
   it("garde les cartes quand la vue n'est pas « table »", () => {

@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   getUrbanPlanningSignals: vi.fn(),
 }));
 
+vi.mock("@/lib/rate-limit", () => ({ enforceUserRateLimit: vi.fn(async () => 1) }));
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
   bearerTokenFromRequest: vi.fn(() => "token"),
   requireSupabaseAuthContext: mocks.requireAuth,
@@ -100,7 +101,7 @@ describe("GET /api/v1/sales/:id/urbanisme-cadastre", () => {
 
   it("refuse le plan Découverte avant la résolution de la vente", async () => {
     mocks.assertEntitlement.mockRejectedValue(
-      new Error("Les données cadastrales sont réservées au plan Analyse."),
+      new Error("Les données cadastrales sont réservées à l’offre Analyse."),
     );
 
     const response = await request();

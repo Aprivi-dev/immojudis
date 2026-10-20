@@ -1,6 +1,7 @@
 import "server-only";
 import postgres from "postgres";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
+import { ANALYSIS_TRIAL_DAYS } from "@/lib/analysis-offer";
 import { resolveEmailAlertDeliveryConfig } from "@/lib/email-alerts";
 import { firstFilled, serverEnv } from "@/lib/env";
 import { resolveSiteOrigin } from "@/lib/site-url";
@@ -94,6 +95,8 @@ const EXPECTED_CRONS = [
   "/api/cron/alert-notifications",
   "/api/cron/sale-change-monitor",
   "/api/cron/sale-reminders",
+  "/api/cron/sale-results",
+  "/api/cron/weekly-digest",
   "/api/cron/precompute-valuations",
   "/api/cron/data-retention",
   "/api/cron/operational-health",
@@ -180,7 +183,7 @@ export function buildEnvironmentReadiness(env: Pick<NodeJS.ProcessEnv, string>):
         appUrl &&
         legalStatus.ready &&
         emailConfig.configured
-          ? "Le checkout Analyse peut ouvrir l’essai gratuit de 7 jours avec carte bancaire, puis l’abonnement récurrent, tout en conservant la preuve contractuelle."
+          ? `Le checkout Analyse peut ouvrir l’essai gratuit de ${ANALYSIS_TRIAL_DAYS} jours avec carte bancaire, puis l’abonnement récurrent, tout en conservant la preuve contractuelle.`
           : "Le checkout Analyse attend Stripe, un Price récurrent Analyse valide, son URL canonique, ses mentions juridiques ou le canal de confirmation contractuelle.",
       action:
         stripeSecret &&

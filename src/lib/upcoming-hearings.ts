@@ -41,12 +41,14 @@ export type UpcomingHearingRow = {
   tribunal_city: string | null;
   starting_price_eur: number | string | null;
   /**
-   * Adresse source de l'annonce et adresses sources réunies (`source_urls`, tableau JSON) : publiques,
-   * elles servent à reconnaître la même vente publiée deux fois. Absentes tant que la migration
-   * 20261028160100 n'est pas appliquée : la page fonctionne alors sans fusion.
+   * Identifiant de groupe : le plus petit identifiant des lignes de la liste qui partagent, de proche en
+   * proche, une adresse source normalisée avec celle-ci (migration 20261031100100). Deux lignes du même
+   * groupe sont la même vente publiée deux fois. Ce n'est qu'un identifiant de ligne déjà publique :
+   * il ne révèle rien de l'adresse (l'ancienne clé, un SHA-256 sans sel, pouvait être retrouvée en
+   * essayant des adresses). Absent d'une base qui n'a pas cette migration : la page fonctionne alors
+   * sans fusion.
    */
-  source_url?: string | null;
-  source_urls?: unknown;
+  source_group?: unknown;
   total_count: number | string | null;
 };
 
@@ -66,8 +68,8 @@ export type PublicHearing = {
   tribunalKey: string;
   tribunalLabel: string;
   startingPriceEur: number | null;
-  /** Adresses sources normalisées de l'annonce : servent seulement à reconnaître un doublon. */
-  sourceKeys: string[];
+  /** Identifiant de groupe des annonces qui partagent une adresse source ; sert à reconnaître un doublon. */
+  sourceGroup: string | null;
 };
 
 function finite(value: number | string | null | undefined): number | null {
@@ -77,27 +79,13 @@ function finite(value: number | string | null | undefined): number | null {
 }
 
 /**
- * Adresse source réduite à ce qui l'identifie : sans protocole, `www.`, paramètres, ancre ni barre
- * finale, en minuscules. Deux écritures d'une même annonce ont la même clé. `null` pour une valeur
- * qui n'est pas une adresse lisible.
+ * Identifiant de groupe d'une ligne, calculé par la base (`source_group`). Une valeur qui n'est pas une
+ * chaîne non vide est ignorée : la ligne n'est alors fusionnée avec aucune autre.
  */
-export function normalizeSourceUrl(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const text = value.trim();
-  if (!text) return null;
-  try {
-    const url = new URL(/^[a-z][a-z\d+.-]*:\/\//i.test(text) ? text : `https://${text}`);
-    if (!url.hostname.includes(".")) return null;
-    const path = url.pathname.replace(/\/+$/, "");
-    return `${url.hostname.replace(/^www\./i, "").toLowerCase()}${path}`.toLowerCase();
-  } catch {
-    return null;
-  }
-}
-
-function sourceKeysOf(row: Pick<UpcomingHearingRow, "source_url" | "source_urls">): string[] {
-  const urls = [row.source_url, ...(Array.isArray(row.source_urls) ? row.source_urls : [])];
-  return [...new Set(urls.map(normalizeSourceUrl).filter((key): key is string => key !== null))];
+function sourceGroupOf(row: Pick<UpcomingHearingRow, "source_group">): string | null {
+  if (typeof row.source_group !== "string") return null;
+  const group = row.source_group.trim();
+  return group === "" ? null : group;
 }
 
 /** Les lignes de la base en audiences ; une ligne sans date lisible n'est pas une audience. */
@@ -122,7 +110,7 @@ export function mapHearingRows(rows: readonly UpcomingHearingRow[]): PublicHeari
       tribunalKey,
       tribunalLabel: name ? tribunalLongNameFromRaw(name) : "Tribunal à confirmer",
       startingPriceEur: finite(row.starting_price_eur),
-      sourceKeys: sourceKeysOf(row),
+      sourceGroup: sourceGroupOf(row),
     });
   }
   return hearings;
@@ -130,15 +118,15 @@ export function mapHearingRows(rows: readonly UpcomingHearingRow[]): PublicHeari
 
 /**
  * Une vente publiée par deux sources n'est pas encore fusionnée dans toutes les fiches. Deux lignes
- * ne sont réunies que sur une identité certaine : le même identifiant d'annonce, ou une adresse
- * source en commun (`source_url` ou `source_urls`, normalisées). Seule la première est gardée (la
- * plus tôt dans la journée, puis la plus petite identité). Le tribunal, le jour et la mise à prix ne
+ * ne sont réunies que sur une identité certaine : le même identifiant d'annonce, ou le même groupe
+ * d'adresses sources (`source_group`, calculé par la base). Seule la première est gardée (la plus
+ * tôt dans la journée, puis la plus petite identité). Le tribunal, le jour et la mise à prix ne
  * suffisent jamais : deux lots distincts d'un même tribunal peuvent partir au même prix le même
  * jour, et les confondre ferait disparaître une audience. Mieux vaut une audience affichée deux
  * fois qu'une audience qui manque.
  *
- * Les clés d'une ligne écartée comptent aussi : A et B qui partagent une adresse, puis B et C, font
- * une seule vente.
+ * La base rend déjà la fermeture transitive : A et B qui partagent une adresse, puis B et C, ont le même
+ * groupe, même si B n'est pas gardée.
  */
 export function dedupeHearings(hearings: readonly PublicHearing[]): PublicHearing[] {
   const ordered = [...hearings].sort(
@@ -147,7 +135,7 @@ export function dedupeHearings(hearings: readonly PublicHearing[]): PublicHearin
   const seen = new Set<string>();
   const kept: PublicHearing[] = [];
   for (const hearing of ordered) {
-    const keys = [`id:${hearing.id}`, ...hearing.sourceKeys.map((key) => `url:${key}`)];
+    const keys = [`id:${hearing.id}`, `group:${hearing.sourceGroup ?? hearing.id}`];
     const duplicate = keys.some((key) => seen.has(key));
     for (const key of keys) seen.add(key);
     if (!duplicate) kept.push(hearing);

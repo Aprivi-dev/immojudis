@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
@@ -76,6 +76,7 @@ vi.mock("next/dynamic", () => ({
       premium,
       showUpcomingListings,
       propertyTypeVerified,
+      onOpenWorkspace,
     }: {
       images?: unknown[];
       onClose?: () => void;
@@ -87,6 +88,7 @@ vi.mock("next/dynamic", () => ({
       premium?: boolean;
       showUpcomingListings?: boolean;
       propertyTypeVerified?: boolean;
+      onOpenWorkspace?: () => void;
     }) {
       if (forecastQuery) return <section>Prévision de l’audience chargée</section>;
       // « Mon dossier » (SaleFileCard) : seul composant chargé à la demande qui reçoit ce plafond.
@@ -94,6 +96,11 @@ vi.mock("next/dynamic", () => ({
         return (
           <section aria-label="Mon dossier" data-ceiling={String(calculatedCeiling)}>
             Mon dossier
+            {onOpenWorkspace ? (
+              <button type="button" onClick={onOpenWorkspace}>
+                Ouvrir le dossier de travail
+              </button>
+            ) : null}
           </section>
         );
       }
@@ -177,6 +184,48 @@ describe("integrated listing", () => {
     const back = screen.getByRole("link", { name: /Retour aux ventes/ });
     expect(back.getAttribute("href")).toBe(`/sales#sale-card-${encodeURIComponent(sale.id)}`);
     expect(back.className).toContain("min-h-11");
+  });
+
+  it("names the page the visitor came from in the back link, and keeps an explicit label", () => {
+    const sale = EXAMPLE_SALE_RECORDS.bordeaux.sale;
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const view = (returnTo: string, backLabel?: string) => (
+      <QueryClientProvider client={client}>
+        <AnalysisSaleDetailView
+          sale={sale}
+          marketEstimateOverride={EXAMPLE_SALE_RECORDS.bordeaux.marketEstimate}
+          publicDemo
+          returnTo={returnTo}
+          backLabel={backLabel}
+        />
+      </QueryClientProvider>
+    );
+    mocks.fetchAiReviewProjections.mockResolvedValue({ projections: [] });
+    const { rerender } = render(view("/favoris"));
+    expect(screen.getByRole("link", { name: /Retour à mes favoris/ }).getAttribute("href")).toBe(
+      "/favoris",
+    );
+    rerender(view("/sales?city=Lyon&map=true"));
+    expect(screen.getByRole("link", { name: /Retour à la carte/ }).getAttribute("href")).toBe(
+      `/sales?city=Lyon&map=true#sale-card-${encodeURIComponent(sale.id)}`,
+    );
+    rerender(view("/annonce-exemple", "Retour aux exemples"));
+    expect(screen.getByRole("link", { name: /Retour aux exemples/ })).toBeTruthy();
+  });
+
+  it("reprend sur la fiche les points à vérifier de la pastille, sous #points-a-verifier", () => {
+    const sale = {
+      ...EXAMPLE_SALE_RECORDS.bordeaux.sale,
+      status: "upcoming",
+      sale_date: "2099-01-20T09:00:00Z",
+      app_surface_m2: null,
+      occupancy_status: null,
+    } as AuctionSale;
+    renderDetail("analysis", sale, true);
+    const section = document.getElementById("points-a-verifier");
+    expect(section?.tagName).toBe("SECTION");
+    expect(section?.textContent).toContain("Occupation du bien à vérifier");
+    expect(section?.textContent).toContain("La liste n’est pas exhaustive");
   });
 
   it("mounts one panel at a time and supports keyboard tab navigation", () => {
@@ -292,13 +341,6 @@ describe("integrated listing", () => {
       tab: "demarches",
       target: "participation",
       summary: "Voir toutes les conditions de la vente",
-    },
-    {
-      anchor: "professional-pilot",
-      tab: "demarches",
-      target: "professional-pilot",
-      summary: "Préparer le dossier de travail",
-      publicDemo: false,
     },
     {
       anchor: "tribunal-perspective",
@@ -1011,6 +1053,31 @@ describe("« 3 déblocages par mois » on the sale page", () => {
 
     const card = await screen.findByRole("region", { name: "Mon dossier" });
     expect(card.getAttribute("data-ceiling")).toBe("null");
+  });
+
+  it("opens the work dossier from « Mon dossier » for an Analyse account, with no « Préparer » disclosure left", async () => {
+    mocks.authUser = { id: "user-1" };
+    renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
+
+    const card = await screen.findByRole("region", { name: "Mon dossier" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(within(card).getByRole("button", { name: "Ouvrir le dossier de travail" }));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+
+    // Plus de seconde porte : le détail « Préparer le dossier de travail » a disparu de Démarches.
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: /Close|Fermer/ }),
+    );
+    selectTab("Démarches");
+    expect(screen.queryByText("Préparer le dossier de travail")).toBeNull();
+  });
+
+  it("does not offer the work dossier to a free account", async () => {
+    mocks.authUser = { id: "user-1" };
+    renderDetail("discovery", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
+
+    const card = await screen.findByRole("region", { name: "Mon dossier" });
+    expect(within(card).queryByRole("button", { name: "Ouvrir le dossier de travail" })).toBeNull();
   });
 
   it("does not show « Mon dossier » to a visitor", () => {

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
 import FileText from "lucide-react/dist/esm/icons/file-text.js";
 import Info from "lucide-react/dist/esm/icons/info.js";
+import { escapeBelongsToAnotherLayer } from "@/lib/escape-layer";
 import {
   WELL_INFORMED_BADGE_LABEL,
   WELL_INFORMED_BADGE_LINK_LABEL,
@@ -15,7 +16,8 @@ import {
  * Pastille « Annonce bien renseignée » et sa note. Le libellé est visible et porté par la
  * pastille ; l'icône est décorative. La réserve (ni vérification ni garantie) s'ouvre au toucher
  * comme au clavier avec le bouton « i » : la note apparaît sous la pastille, avec un lien vers la
- * page du classement. Fermeture avec Échap ou en rappuyant sur le bouton.
+ * page du classement. Fermeture avec Échap (sauf si un dialogue ouvert par-dessus l'a déjà pris)
+ * ou en rappuyant sur le bouton.
  */
 export function WellInformedBadgeInfo() {
   const [open, setOpen] = useState(false);
@@ -25,7 +27,8 @@ export function WellInformedBadgeInfo() {
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+      // Un dialogue ouvert par-dessus garde son Échap : la note ne se ferme pas avec lui.
+      if (event.key !== "Escape" || escapeBelongsToAnotherLayer(event, trigger.current)) return;
       setOpen(false);
       trigger.current?.focus();
     };
@@ -45,7 +48,7 @@ export function WellInformedBadgeInfo() {
           aria-controls={open ? id : undefined}
           aria-label={`À propos du repère « ${WELL_INFORMED_BADGE_LABEL} »`}
           onClick={() => setOpen((current) => !current)}
-          className="relative z-20 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full hover:bg-gold/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold after:absolute after:-inset-3 after:content-['']"
+          className="relative z-20 inline-flex size-6 shrink-0 items-center justify-center rounded-full hover:bg-gold/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft after:absolute after:-inset-3 after:content-['']"
         >
           <Info className="h-3.5 w-3.5" aria-hidden />
         </button>

@@ -38,7 +38,7 @@ describe("NoResultsState", () => {
 
   it("has no action to offer when nothing is filtered", () => {
     render(<NoResultsState onReset={vi.fn()} />);
-    expect(screen.getByRole("heading", { name: "Aucun dossier trouvé" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Aucune vente trouvée" })).toBeTruthy();
     expect(screen.queryByRole("button")).toBeNull();
   });
 });
