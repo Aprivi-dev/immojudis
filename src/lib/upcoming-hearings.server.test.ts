@@ -78,17 +78,17 @@ describe("tryLoadUpcomingHearings", () => {
     expect(result.status === "ok" ? result.totalCount : 0).toBe(6000);
   });
 
-  it("lit les clés opaques d'adresse source, jamais une adresse", async () => {
-    const key = "b".repeat(64);
+  it("lit l'identifiant de groupe des adresses sources, jamais une adresse", async () => {
+    const group = "00000000-0000-4000-8000-000000000001";
     mocks.rpc.mockResolvedValue({
       data: {
         total_count: 1,
-        hearings: [row(1, { source_keys: [key], source_url: "https://example.test/annonce/1" })],
+        hearings: [row(1, { source_group: group, source_url: "https://example.test/annonce/1" })],
       },
       error: null,
     });
     const result = await tryLoadUpcomingHearings();
-    expect(result.status === "ok" ? result.hearings[0].sourceKeys : null).toEqual([key]);
+    expect(result.status === "ok" ? result.hearings[0].sourceGroup : null).toEqual(group);
     expect(JSON.stringify(result)).not.toContain("example.test");
   });
 

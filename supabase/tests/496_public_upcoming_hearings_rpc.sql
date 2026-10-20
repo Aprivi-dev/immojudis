@@ -6,9 +6,9 @@
 --   * elle rend un document { total_count, hearings } (pas de limite de lignes de PostgREST) ;
 --   * la règle de « date sourcée » est celle de l'export agenda (get_public_sale_calendar_event) :
 --     recalculée en SQL ensembliste, comparée à la fonction d'origine par le test 531 ;
---   * aucun champ privé (adresse, coordonnées, contacts, documents) ni adresse source ne sort : des
---     clés opaques (SHA-256 de l'adresse normalisée) permettent à la page de ne fusionner que sur une
---     identité certaine ;
+--   * aucun champ privé (adresse, coordonnées, contacts, documents) ni adresse source ne sort, ni clé
+--     dérivée d'une adresse : un identifiant de groupe (source_group, migration 20261031100100) permet
+--     à la page de ne fusionner que sur une identité certaine ;
 --   * seules les audiences exportables de la fenêtre sont rendues : ni vente reportée, ni date
 --     rejetée ou en conflit, ni vente chez un notaire, ni date hors fenêtre ;
 --   * la fenêtre est bornée à 1..60 jours.
@@ -73,7 +73,7 @@ returns table (
   tribunal_name text,
   tribunal_city text,
   starting_price_eur numeric,
-  source_keys jsonb
+  source_group uuid
 )
 language sql
 stable
@@ -90,7 +90,7 @@ as $$
     tribunal_name text,
     tribunal_city text,
     starting_price_eur numeric,
-    source_keys jsonb
+    source_group uuid
   );
 $$;
 
@@ -131,10 +131,10 @@ select is(
   (select array_agg(k.name order by k.name)
      from jsonb_object_keys(public.get_public_upcoming_hearings(30) -> 'hearings' -> 0) as k(name)),
   array[
-    'city', 'date_only', 'department', 'id', 'property_type', 'sale_date', 'source_keys',
+    'city', 'date_only', 'department', 'id', 'property_type', 'sale_date', 'source_group',
     'starting_price_eur', 'tribunal_city', 'tribunal_code', 'tribunal_name'
   ]::text[],
-  'a hearing carries the public card of a sale and opaque source keys: no address, no source link'
+  'a hearing carries the public card of a sale and a source group id: no address, no source link, no key'
 );
 select is(
   (select pg_get_functiondef('app_private.get_public_upcoming_hearings(integer)'::regprocedure)
@@ -203,10 +203,10 @@ select is(
   'the price, the court code and the commune come out'
 );
 select is(
-  (select source_keys from pg_temp.hearings(30)
-    where id = 'c4960000-1000-4000-8000-000000000001'),
-  to_jsonb(array[encode(sha256(convert_to('example.test/c496/1', 'utf8')), 'hex')]),
-  'the source link comes out only as the SHA-256 key of its normalized form'
+  (select array_agg(source_group order by id) from pg_temp.hearings(30)
+    where id in ('c4960000-1000-4000-8000-000000000001', 'c4960000-1000-4000-8000-000000000002')),
+  array['c4960000-1000-4000-8000-000000000001', 'c4960000-1000-4000-8000-000000000002']::uuid[],
+  'two sales without a source address in common are each their own group'
 );
 select is(
   (select count(*) from pg_temp.hearings(60)

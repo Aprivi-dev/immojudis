@@ -1,9 +1,11 @@
--- Pages /tribunaux/[slug] (migration 20261029180000) : la liste d'un tribunal rend des clés opaques des
--- adresses sources de chaque vente (source_keys), de quoi ne dédoublonner que sur une identité certaine
--- sans exposer d'adresse.
+-- Pages /tribunaux/[slug] (migration 20261029180000, remplacée par 20261031100100) : la liste d'un
+-- tribunal rend, pour chaque vente, un identifiant de groupe (source_group : le plus petit identifiant
+-- des ventes de la liste qui partagent une adresse source), de quoi ne dédoublonner que sur une identité
+-- certaine sans exposer d'adresse ni clé dérivée d'une adresse (l'ancien SHA-256 sans sel était
+-- réversible).
 --   * le contrat ajoute exactement cette colonne, la fonction privée et l'enveloppe publique ont les
 --     mêmes colonnes ;
---   * deux ventes qui partagent une adresse source partagent une clé ; aucune adresse ne sort ;
+--   * deux ventes qui partagent une adresse source partagent un groupe ; aucune adresse ni clé ne sort ;
 --   * aucun champ privé ne sort, la règle de visibilité et le critère « code du tribunal » sont ceux
 --     de 20261028150000 ;
 --   * les droits d'avant sont conservés (visiteur sans compte compris).
@@ -41,8 +43,8 @@ from (
 -- Les fonctions -------------------------------------------------------------------------------
 select is(
   pg_get_function_result('public.get_public_tribunal_sales(text, integer)'::regprocedure),
-  'TABLE(id uuid, city text, department text, property_type text, sale_date timestamp with time zone, starting_price_eur numeric, surface_m2 numeric, status text, source_keys jsonb)',
-  'the contract adds opaque source keys, never the source links'
+  'TABLE(id uuid, city text, department text, property_type text, sale_date timestamp with time zone, starting_price_eur numeric, surface_m2 numeric, status text, source_group uuid)',
+  'the contract adds a source group id, never the source links nor a key derived from them'
 );
 select is(
   pg_get_function_result('app_private.get_public_tribunal_sales(text, integer)'::regprocedure)
@@ -79,21 +81,20 @@ select is(
 );
 
 -- Le comportement ------------------------------------------------------------------------------
-select ok(
-  (select source_keys from public.get_public_tribunal_sales('c596-tj-a')
-    where id = 'c5960000-1000-4000-8000-000000000001')
-  ?| array(
-    select jsonb_array_elements_text(source_keys) from public.get_public_tribunal_sales('c596-tj-a')
-    where id = 'c5960000-1000-4000-8000-000000000002'
-  ),
-  'two sales that share a source address share a source key'
+select is(
+  (select array_agg(source_group order by id) from public.get_public_tribunal_sales('c596-tj-a')),
+  array[
+    'c5960000-1000-4000-8000-000000000001',
+    'c5960000-1000-4000-8000-000000000001',
+    'c5960000-1000-4000-8000-000000000003'
+  ]::uuid[],
+  'two sales that share a source address share a group (the smallest id), an unrelated sale is its own group'
 );
 select is(
-  (select count(*) from public.get_public_tribunal_sales('c596-tj-a') r,
-     jsonb_array_elements_text(r.source_keys) k
-   where k.value !~ '^[0-9a-f]{64}$' or k.value like '%example.test%'),
+  (select count(*) from public.get_public_tribunal_sales('c596-tj-a') r
+    where r::text ~ 'example\.test|[0-9a-f]{64}'),
   0::bigint,
-  'only sha-256 keys come out, never a source address'
+  'neither a source address nor a hash of one comes out'
 );
 
 -- Un visiteur sans compte ----------------------------------------------------------------------
@@ -101,7 +102,7 @@ set local role anon;
 select is(
   (select count(*) from public.get_public_tribunal_sales('c596-tj-a')),
   3::bigint,
-  'a signed-out visitor reads the sales of a court, with opaque keys only'
+  'a signed-out visitor reads the sales of a court, with group ids only'
 );
 reset role;
 
