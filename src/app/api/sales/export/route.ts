@@ -17,6 +17,7 @@ export async function GET(request: Request) {
       auth,
       search,
       origin: url.origin,
+      request,
     });
 
     return withApiHeaders(

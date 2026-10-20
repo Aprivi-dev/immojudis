@@ -4,6 +4,8 @@ import {
 } from "@/integrations/supabase/auth-middleware";
 import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
 import { assertFeatureEntitlement } from "@/lib/property-reports";
+import { enforceUserRateLimit } from "@/lib/rate-limit";
+import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import {
   getTribunalStatistics,
   tribunalStatisticsQuerySchema,
@@ -14,6 +16,11 @@ export async function GET(request: Request) {
   const context = createApiRequestContext(request, "tribunal.statistics");
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
+    await enforceUserRateLimit({
+      userId: auth.userId,
+      bucketKey: "v1.tribunal-statistics",
+      ...RATE_LIMIT_POLICIES.compute,
+    });
     await assertFeatureEntitlement(
       auth,
       "sales.statistics",

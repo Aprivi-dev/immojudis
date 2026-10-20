@@ -236,7 +236,10 @@ async function admitRefreshRequest({
   });
 
   if (error) {
-    if (error.message?.includes("DATA_REFRESH_GLOBAL_DAILY_LIMIT")) {
+    if (
+      error.message?.includes("DATA_REFRESH_GLOBAL_DAILY_LIMIT") ||
+      error.message?.includes("DATA_REFRESH_LAUNCH_OFFER_DAILY_LIMIT")
+    ) {
       throw new RateLimitError(
         undefined,
         secondsUntilWindowEnds(DAILY_WINDOW_SECONDS),

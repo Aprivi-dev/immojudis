@@ -28,7 +28,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const context = createApiRequestContext(request, "land-report.sale");
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
-    await assertFeatureEntitlement(
+    const plan = await assertFeatureEntitlement(
       auth,
       "property.urbanPlanning",
       "L’analyse du PLU et des risques est réservée au plan Analyse.",
@@ -59,6 +59,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       request,
       userId: auth.userId,
       operation: "landReport",
+      launchOffer: plan.launchOffer === true,
     });
     const parcels = await getCadastralParcels(sale.source_url);
     const report = await getCachedLandReport(landLocationInputFromSale(sale, parcels), {

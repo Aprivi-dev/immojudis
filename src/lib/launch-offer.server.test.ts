@@ -1,13 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ rpc: vi.fn(), getUserById: vi.fn() }));
+const mocks = vi.hoisted(() => ({ rpc: vi.fn() }));
 vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: { rpc: mocks.rpc, auth: { admin: { getUserById: mocks.getUserById } } },
+  supabaseAdmin: { rpc: mocks.rpc },
 }));
 
 import {
   hasConfirmedEmail,
   isLaunchOfferActive,
+  readLaunchOfferState,
   resetLaunchOfferCache,
 } from "@/lib/launch-offer.server";
 
@@ -53,6 +54,38 @@ describe("état de l'offre de lancement côté serveur", () => {
     await expect(isLaunchOfferActive(start + 6_000)).resolves.toBe(true);
   });
 
+  it("signale une valeur issue d'une erreur, et pas une valeur lue dans la base", async () => {
+    mocks.rpc.mockResolvedValueOnce({ data: null, error: new Error("base indisponible") });
+    const start = Date.now();
+    await expect(readLaunchOfferState(start)).resolves.toEqual({ active: false, degraded: true });
+    // Pendant les 5 s de retente, la valeur d'erreur reste signalée.
+    await expect(readLaunchOfferState(start + 1_000)).resolves.toEqual({
+      active: false,
+      degraded: true,
+    });
+    mocks.rpc.mockResolvedValue({ data: false, error: null });
+    await expect(readLaunchOfferState(start + 6_000)).resolves.toEqual({
+      active: false,
+      degraded: false,
+    });
+  });
+
+  it("une lecture déjà en vol n'écrase pas la valeur qui suit un reset", async () => {
+    let releaseOld: (value: { data: boolean; error: null }) => void = () => undefined;
+    mocks.rpc.mockReturnValueOnce(new Promise((resolve) => (releaseOld = resolve)));
+    const oldRead = isLaunchOfferActive();
+    // L'administrateur coupe l'offre : la lecture suivante voit la nouvelle valeur.
+    resetLaunchOfferCache();
+    mocks.rpc.mockResolvedValueOnce({ data: false, error: null });
+    await expect(isLaunchOfferActive()).resolves.toBe(false);
+    // La vieille lecture se termine après coup, avec l'ancienne valeur.
+    releaseOld({ data: true, error: null });
+    await expect(oldRead).resolves.toBe(true);
+    // Elle n'a rien écrit dans le cache : pas de nouvel appel, et la valeur reste `false`.
+    await expect(isLaunchOfferActive()).resolves.toBe(false);
+    expect(mocks.rpc).toHaveBeenCalledTimes(2);
+  });
+
   it("ne traite que `true` comme une offre active", async () => {
     mocks.rpc.mockResolvedValue({ data: "true", error: null });
     await expect(isLaunchOfferActive()).resolves.toBe(false);
@@ -67,51 +100,76 @@ describe("état de l'offre de lancement côté serveur", () => {
   });
 });
 
-describe("email confirmé exigé par l'offre de lancement", () => {
-  const confirmedUser = {
-    data: { user: { email_confirmed_at: "2026-10-19T08:00:00Z" } },
-    error: null,
-  };
-  const unconfirmedUser = { data: { user: { email_confirmed_at: null } }, error: null };
+describe("éligibilité du compte à l'offre de lancement (email confirmé, adresse canonique)", () => {
+  const eligible = { data: true, error: null };
+  const notEligible = { data: false, error: null };
 
   beforeEach(() => {
     resetLaunchOfferCache();
-    mocks.getUserById.mockReset();
+    mocks.rpc.mockReset();
     vi.spyOn(console, "error").mockImplementation(() => undefined);
   });
 
-  it("lit email_confirmed_at du compte dans Auth", async () => {
-    mocks.getUserById.mockResolvedValue(confirmedUser);
+  it("lit la règle de la base (RPC), sans interroger l'API Auth d'administration", async () => {
+    mocks.rpc.mockResolvedValue(eligible);
     await expect(hasConfirmedEmail("user-1")).resolves.toBe(true);
-    expect(mocks.getUserById).toHaveBeenCalledWith("user-1");
+    expect(mocks.rpc).toHaveBeenCalledWith("get_launch_offer_account_eligibility", {
+      p_user_id: "user-1",
+    });
   });
 
-  it("refuse un compte dont l'email n'est pas confirmé, et le relit à chaque fois", async () => {
-    mocks.getUserById.mockResolvedValue(unconfirmedUser);
+  it("ne traite que `true` comme une éligibilité", async () => {
+    mocks.rpc.mockResolvedValue({ data: "true", error: null });
     await expect(hasConfirmedEmail("user-1")).resolves.toBe(false);
-    await expect(hasConfirmedEmail("user-1")).resolves.toBe(false);
-    expect(mocks.getUserById).toHaveBeenCalledTimes(2);
-    // Le compte confirme : l'offre s'ouvre à la lecture suivante.
-    mocks.getUserById.mockResolvedValue(confirmedUser);
-    await expect(hasConfirmedEmail("user-1")).resolves.toBe(true);
+    mocks.rpc.mockResolvedValue({ data: null, error: null });
+    await expect(hasConfirmedEmail("user-2")).resolves.toBe(false);
   });
 
-  it("garde une confirmation 10 minutes, puis la relit", async () => {
-    mocks.getUserById.mockResolvedValue(confirmedUser);
+  it("garde un refus 30 s (cache négatif), puis relit : le compte peut confirmer à tout moment", async () => {
+    mocks.rpc.mockResolvedValue(notEligible);
+    const start = Date.now();
+    await expect(hasConfirmedEmail("user-1", start)).resolves.toBe(false);
+    await expect(hasConfirmedEmail("user-1", start + 29_000)).resolves.toBe(false);
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    // Le compte confirme : l'offre s'ouvre à la lecture qui suit l'expiration du cache négatif.
+    mocks.rpc.mockResolvedValue(eligible);
+    await expect(hasConfirmedEmail("user-1", start + 31_000)).resolves.toBe(true);
+    expect(mocks.rpc).toHaveBeenCalledTimes(2);
+  });
+
+  it("garde une éligibilité 10 minutes, puis la relit", async () => {
+    mocks.rpc.mockResolvedValue(eligible);
     const start = Date.now();
     await hasConfirmedEmail("user-1", start);
     await expect(hasConfirmedEmail("user-1", start + 9 * 60_000)).resolves.toBe(true);
-    expect(mocks.getUserById).toHaveBeenCalledTimes(1);
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
     await hasConfirmedEmail("user-1", start + 11 * 60_000);
-    expect(mocks.getUserById).toHaveBeenCalledTimes(2);
+    expect(mocks.rpc).toHaveBeenCalledTimes(2);
   });
 
-  it("reste fermé si Auth ne répond pas, sans mémoriser l'échec", async () => {
-    mocks.getUserById.mockResolvedValueOnce({ data: null, error: new Error("auth indisponible") });
+  it("reste fermé si la base ne répond pas, sans mémoriser l'échec", async () => {
+    mocks.rpc.mockResolvedValueOnce({ data: null, error: new Error("base indisponible") });
     await expect(hasConfirmedEmail("user-1")).resolves.toBe(false);
-    mocks.getUserById.mockRejectedValueOnce(new Error("réseau"));
+    mocks.rpc.mockRejectedValueOnce(new Error("réseau"));
     await expect(hasConfirmedEmail("user-1")).resolves.toBe(false);
-    mocks.getUserById.mockResolvedValue(confirmedUser);
+    mocks.rpc.mockResolvedValue(eligible);
     await expect(hasConfirmedEmail("user-1")).resolves.toBe(true);
+  });
+
+  it("évince la plus ancienne lecture quand la mémoire est pleine, sans tout oublier", async () => {
+    mocks.rpc.mockResolvedValue(eligible);
+    const start = Date.now();
+    for (let index = 0; index < 1_000; index += 1) {
+      await hasConfirmedEmail(`user-${index}`, start);
+    }
+    expect(mocks.rpc).toHaveBeenCalledTimes(1_000);
+    // Une 1 001e entrée chasse la plus ancienne (user-0), pas les autres.
+    await hasConfirmedEmail("user-new", start);
+    expect(mocks.rpc).toHaveBeenCalledTimes(1_001);
+    await hasConfirmedEmail("user-999", start);
+    await hasConfirmedEmail("user-1", start);
+    expect(mocks.rpc).toHaveBeenCalledTimes(1_001);
+    await hasConfirmedEmail("user-0", start);
+    expect(mocks.rpc).toHaveBeenCalledTimes(1_002);
   });
 });

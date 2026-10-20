@@ -5,12 +5,19 @@ import {
 import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
 import { getAdjudicationPriceStatisticsDirectory } from "@/lib/adjudication-price-statistics-repository";
 import { assertFeatureEntitlement } from "@/lib/property-reports";
+import { enforceUserRateLimit } from "@/lib/rate-limit";
+import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 
 export async function GET(request: Request) {
   const context = createApiRequestContext(request, "adjudication-price-statistics.directory");
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
+    await enforceUserRateLimit({
+      userId: auth.userId,
+      bucketKey: "v1.tribunal-adjudication-statistics",
+      ...RATE_LIMIT_POLICIES.compute,
+    });
     await assertFeatureEntitlement(
       auth,
       "sales.statistics",

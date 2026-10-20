@@ -20,7 +20,7 @@ export async function POST(request: Request) {
       bucketKey: "environment-context",
       ...RATE_LIMIT_POLICIES.compute,
     });
-    await assertFeatureEntitlement(
+    const plan = await assertFeatureEntitlement(
       auth,
       "property.neighborhoodAnalysis",
       "Contexte environnemental réservé au plan Analyse.",
@@ -31,6 +31,7 @@ export async function POST(request: Request) {
       request,
       userId: auth.userId,
       operation: "environmentContext",
+      launchOffer: plan.launchOffer === true,
     });
     const response = await getEnvironmentalContext(await request.json());
     return NextResponse.json(response, {
