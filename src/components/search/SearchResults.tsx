@@ -50,6 +50,7 @@ import {
   departmentLabel,
   listingAccessLine,
   listingDateLabel,
+  listingLinkLabel,
   PAST_SALE_LABEL,
   listingTitle,
 } from "./listing-text";
@@ -178,6 +179,9 @@ export function SearchResultsList({
   return (
     <div className="px-3 pb-24 pt-3 sm:px-5 lg:pb-6">
       {error ? <ErrorState error={error} onRetry={onRetry} /> : null}
+
+      {/* Les titres des cartes sont des h3 : sans h2 devant eux, la page saute du h1 au h3. */}
+      {isLoading || sales.length > 0 ? <h2 className="sr-only">Résultats</h2> : null}
 
       {!isLoading && sales.length === 0 && !error && !hideEmptyState ? (
         <NoResultsState
@@ -358,7 +362,15 @@ export const ListingCard = memo(function ListingCard({
         {...detailLink.armProps}
         prefetch={false}
         onClick={() => onSelect(sale.id)}
-        aria-label={`Voir ${title}`}
+        aria-label={listingLinkLabel(sale, title, {
+          price: getAiReviewFieldResult(
+            aiReviewProjections,
+            "sale.starting_price_eur",
+            aiReviewStatus,
+          ).blocked,
+          date: getAiReviewFieldResult(aiReviewProjections, "sale.sale_date", aiReviewStatus)
+            .blocked,
+        })}
         className="absolute inset-0 z-10 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
       />
       <div className="relative aspect-[4/3] overflow-hidden bg-surface-tint">
@@ -701,7 +713,7 @@ export function ListingMediaCarousel({
       data-testid={`sale-media-carousel-${sale.id}`}
       aria-label={`Photos de ${title}`}
       aria-roledescription="carrousel"
-      role="region"
+      role="group"
       onKeyDown={handleKeyDown}
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}

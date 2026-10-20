@@ -3,7 +3,7 @@ import {
   type AiReviewProjectionReadModel,
   type AiReviewRequestStatus,
 } from "@/lib/ai-review-guard";
-import { formatDate, propertyTypeLabel } from "@/lib/format";
+import { formatDate, formatStartingPrice, propertyTypeLabel } from "@/lib/format";
 import { parisDateKey } from "@/lib/sale-countdown";
 import { saleDisplayTitle } from "@/lib/sale-title";
 import { saleIsTribunalVenue } from "@/lib/sale-procedure";
@@ -106,4 +106,25 @@ export function listingDateLabel(sale: AuctionSale, now: Date = new Date()): str
     return PAST_SALE_LABEL;
   }
   return formatDate(sale.sale_date);
+}
+
+/**
+ * Nom accessible du lien qui couvre une carte (ou une ligne de tableau) : « Voir <titre> » ne
+ * distingue pas deux annonces de la même ville, la liste de liens du lecteur d'écran en serait
+ * pleine d'homonymes. Le prix, ou à défaut la date, les sépare. Une valeur masquée par la relecture
+ * (`blocked`) n'entre jamais dans le nom : il ne dit que ce que la carte montre.
+ */
+export function listingLinkLabel(
+  sale: AuctionSale,
+  title: string,
+  blocked: { price?: boolean; date?: boolean } = {},
+): string {
+  if (!blocked.price && sale.starting_price_eur != null && sale.starting_price_eur > 0) {
+    return `Voir ${title}, ${formatStartingPrice(sale.starting_price_eur)}`;
+  }
+  if (!blocked.date && sale.sale_date) {
+    const date = listingDateLabel(sale);
+    return `Voir ${title}, ${date === PAST_SALE_LABEL ? "vente passée" : `vente le ${date}`}`;
+  }
+  return `Voir ${title}`;
 }

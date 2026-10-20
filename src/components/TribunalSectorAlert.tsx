@@ -11,16 +11,20 @@ import { FEES_SIMULATOR_DEPARTMENTS } from "@/components/fees-simulator/departme
  */
 export function TribunalSectorAlert() {
   const selectId = useId();
+  const titleId = useId();
   const [code, setCode] = useState("");
   return (
     <div className="mb-10 grid gap-4">
-      <Card as="section" aria-labelledby={selectId} className="grid gap-3">
-        <label htmlFor={selectId} className="font-display text-2xl font-semibold">
+      <Card as="section" aria-labelledby={titleId} className="grid gap-3">
+        <h2 id={titleId} className="font-display text-2xl font-semibold">
           Être prévenu des nouvelles ventes d’un département
-        </label>
+        </h2>
         <p className="text-sm text-ink-soft">
           Les alertes suivent un département, pas un tribunal : choisissez celui qui vous intéresse.
         </p>
+        <label htmlFor={selectId} className="text-sm font-semibold">
+          Département
+        </label>
         <select
           id={selectId}
           value={code}

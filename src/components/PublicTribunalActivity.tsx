@@ -50,9 +50,9 @@ function Rows({
           {item.name}
         </Link>
         {item.department ? (
-          <span className="ml-1 font-normal text-brand-navy/60">({item.department})</span>
+          <span className="ml-1 font-normal text-ink-soft">({item.department})</span>
         ) : null}
-        <span className="block text-xs font-normal text-brand-navy/60 sm:hidden">
+        <span className="block text-xs font-normal text-ink-soft sm:hidden">
           Audience le {formatShortDate(item.nextSaleDate)} · {mix(item)}
         </span>
       </th>
@@ -90,7 +90,7 @@ function Table({
       <table className="w-full text-sm">
         <caption className="sr-only">{caption}</caption>
         <thead>
-          <tr className="text-xs uppercase tracking-[0.08em] text-brand-navy/60">
+          <tr className="text-xs uppercase tracking-[0.08em] text-ink-soft">
             <th scope="col" className="pb-2 pr-4 text-left font-semibold">
               Tribunal judiciaire
             </th>

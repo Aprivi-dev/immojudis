@@ -219,9 +219,9 @@ describe("vue « tableau » des résultats", () => {
     const row = screen.getAllByRole("row")[1];
     expect(within(row).getByText("Type de bien à confirmer")).toBeTruthy();
     expect(row.textContent).not.toContain("Appartement");
-    // Le nom accessible du lien suit la règle du titre de carte.
-    expect(within(row).getByRole("link").getAttribute("aria-label")).toBe(
-      "Voir À confirmer à Bordeaux",
+    // Le nom accessible du lien suit la règle du titre de carte, complété par le prix affiché.
+    expect(within(row).getByRole("link").getAttribute("aria-label")).toMatch(
+      /^Voir À confirmer à Bordeaux, 90\s000\s€$/,
     );
   });
 
