@@ -169,6 +169,44 @@ describe("suivi des ventes sorties du catalogue", () => {
     },
   );
 
+  it("annonce une vente retirée par absence à la source comme une annonce disparue, sans urgence", async () => {
+    followedSaleOutsideCatalogue({
+      status: "withdrawn",
+      source_absence: { source: "licitor", status_before: "upcoming", absent_inventories: 2 },
+    });
+    const response = await monitorUserSaleChanges({ auth: auth(), now: NOW });
+    expect(response.events).toHaveLength(1);
+    expect(response.events[0]).toMatchObject({
+      eventKind: "status_changed",
+      severity: "important",
+      summaryLabel: "Annonce disparue de la source",
+      fingerprint: "status_changed:status:upcoming:withdrawn",
+      changeSummary: {
+        field: "status",
+        previousValue: "upcoming",
+        currentValue: "withdrawn",
+        reason: "source_absence",
+      },
+    });
+    const eventWrite = mocks.writes.find((write) => write.table === "user_sale_change_events");
+    expect(JSON.stringify(eventWrite?.rows)).not.toMatch(/retir/i);
+  });
+
+  it("garde « urgent » pour un statut grave publié par la source, même si une absence est notée", async () => {
+    // Un statut autre que « withdrawn » ne vient pas du retrait par absence : aucun motif d'absence.
+    followedSaleOutsideCatalogue({ status: "cancelled", source_absence: { source: "licitor" } });
+    const response = await monitorUserSaleChanges({ auth: auth(), now: NOW });
+    expect(response.events[0]).toMatchObject({ severity: "urgent" });
+    expect(response.events[0].changeSummary).not.toHaveProperty("reason");
+  });
+
+  it("garde « urgent » pour un retrait sans trace d'absence à la source", async () => {
+    followedSaleOutsideCatalogue({ status: "withdrawn", source_absence: null });
+    const response = await monitorUserSaleChanges({ auth: auth(), now: NOW });
+    expect(response.events[0]).toMatchObject({ severity: "urgent" });
+    expect(response.events[0].changeSummary).not.toHaveProperty("reason");
+  });
+
   it("ne signale que le statut : la date et les autres champs gardent leur valeur précédente", async () => {
     followedSaleOutsideCatalogue({ status: "withdrawn", sale_date: "2027-01-01T09:00:00Z" });
     const response = await monitorUserSaleChanges({ auth: auth(), now: NOW });

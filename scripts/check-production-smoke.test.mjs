@@ -49,14 +49,21 @@ function page(path, { canonical, robotsMeta, jsonLd, links = "" } = {}) {
 }
 
 /** The body of /api/health, `ok` unless a field is overridden. */
-function healthBody({ operationalMinutes = 7, collectionHours = 5 } = {}) {
+function healthBody({ operationalMinutes = 7, collectionHours = 5, lateSources } = {}) {
   const operationalOk = operationalMinutes !== null && operationalMinutes <= 45;
-  const collectionOk = collectionHours !== null && collectionHours <= 18;
+  const late = lateSources ?? (collectionHours === null || collectionHours > 36 ? 1 : 0);
+  const collectionOk = late === 0;
   return {
     status: operationalOk && collectionOk ? "ok" : "degraded",
     checkedAt: "2026-10-20T12:00:00.000Z",
     operationalHealth: { ageMinutes: operationalMinutes, maxMinutes: 45, ok: operationalOk },
-    collection: { ageHours: collectionHours, maxHours: 18, ok: collectionOk },
+    collection: {
+      ageHours: collectionHours,
+      maxHours: 36,
+      ok: collectionOk,
+      enabledSources: 7,
+      lateSources: late,
+    },
   };
 }
 
@@ -110,7 +117,11 @@ function fakeSite({
     if (path === "/api/health") {
       return {
         status: health.status,
-        headers: makeHeaders("application/json", { "cache-control": "no-store" }),
+        // As the route answers: kept 30 s by the CDN, request id not echoed.
+        headers: makeHeaders("application/json", {
+          "cache-control": "public, s-maxage=30",
+          "x-request-id": null,
+        }),
         json: async () => health.body,
       };
     }
@@ -314,16 +325,28 @@ describe("production smoke test, supervision and court pages", () => {
       health: { status: 503, body: healthBody({ operationalMinutes: 61 }) },
     });
     await expect(run(site, { indexing: "closed" })).rejects.toThrow(
-      "/api/health: état dégradé (operational-health : 61 min, collecte : 5 h).",
+      "/api/health: état dégradé (operational-health : 61 min, collecte : 5 h, sources activées en retard : 0).",
     );
   });
 
-  it("fails at once when the collection is too old, even with a recent operational-health", async () => {
+  it("fails at once when an enabled source is late, even with a recent operational-health", async () => {
     const site = fakeSite({
-      health: { status: 503, body: healthBody({ operationalMinutes: 3, collectionHours: 30 }) },
+      health: { status: 503, body: healthBody({ operationalMinutes: 3, collectionHours: 40 }) },
     });
     await expect(run(site, { indexing: "closed" })).rejects.toThrow(
-      "/api/health: état dégradé (operational-health : 3 min, collecte : 30 h).",
+      "/api/health: état dégradé (operational-health : 3 min, collecte : 40 h, sources activées en retard : 1).",
+    );
+  });
+
+  it("fails when one enabled source is late while the others are fresh (the oldest decides)", async () => {
+    const site = fakeSite({
+      health: {
+        status: 503,
+        body: healthBody({ operationalMinutes: 3, collectionHours: 50, lateSources: 1 }),
+      },
+    });
+    await expect(run(site, { indexing: "closed" })).rejects.toThrow(
+      "sources activées en retard : 1",
     );
   });
 
@@ -335,7 +358,7 @@ describe("production smoke test, supervision and court pages", () => {
       },
     });
     await expect(run(site, { indexing: "closed" })).rejects.toThrow(
-      "/api/health: état dégradé (operational-health : aucun succès min, collecte : aucune h).",
+      "/api/health: état dégradé (operational-health : aucun succès min, collecte : aucune h, sources activées en retard : 1).",
     );
   });
 
@@ -346,20 +369,43 @@ describe("production smoke test, supervision and court pages", () => {
     );
   });
 
-  it("fails when /api/health can be cached", async () => {
-    const site = fakeSite({
-      overrides: {
-        "/api/health": (headers) => ({
-          status: 200,
-          headers: headers("application/json", { "cache-control": "public, s-maxage=60" }),
-          json: async () => healthBody(),
-        }),
-      },
-    });
-    await expect(run(site, { indexing: "closed" })).rejects.toThrow(
-      "/api/health: cache-control no-store absent.",
-    );
-  });
+  it.each(["public, s-maxage=3600", "public, max-age=600", "public", ""])(
+    "fails when /api/health can be kept longer than a minute (%j)",
+    async (cacheControl) => {
+      const site = fakeSite({
+        overrides: {
+          "/api/health": (headers) => ({
+            status: 200,
+            headers: headers("application/json", { "cache-control": cacheControl }),
+            json: async () => healthBody(),
+          }),
+        },
+      });
+      await expect(run(site, { indexing: "closed" })).rejects.toThrow(
+        "/api/health: cache-control sans s-maxage de 60 s au plus (ni no-store).",
+      );
+    },
+  );
+
+  it.each(["no-store", "public, s-maxage=30", "public, s-maxage=60"])(
+    "accepts a short-lived /api/health (%s) that does not echo the request id",
+    async (cacheControl) => {
+      const site = fakeSite({
+        overrides: {
+          "/api/health": (headers) => ({
+            status: 200,
+            headers: headers("application/json", {
+              "cache-control": cacheControl,
+              "x-request-id": null,
+            }),
+            json: async () => healthBody(),
+          }),
+        },
+      });
+      const report = await run(site, { indexing: "closed" });
+      expect(report.checks.find((check) => check.path === "/api/health")?.health).toBe("ok");
+    },
+  );
 
   it("fails when a known court does not answer 200", async () => {
     const site = fakeSite({

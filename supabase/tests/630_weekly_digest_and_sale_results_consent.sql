@@ -1,10 +1,13 @@
 -- 20261030120000 : consentements distincts du récapitulatif hebdomadaire « Ma semaine » et de l'alerte
--- de résultat, prouvés par la base. Le navigateur (rôle authenticated, qui a insert et update sur sa
--- ligne) ne peut ni choisir la date de son consentement ou de son retrait, ni réécrire la version du
--- texte consenti ; les deux consentements sont indépendants l'un de l'autre et de ceux des rappels.
+-- de résultat, prouvés par la base. Un écrivain ne peut ni choisir la date de son consentement ou de son
+-- retrait, ni réécrire la version du texte consenti ; les deux consentements sont indépendants l'un de
+-- l'autre et de ceux des rappels.
+-- 20261031100400 : la version du texte n'est prise que d'un écrivain au rôle service_role (la route
+-- serveur). Les sections 1 à 10 jouent donc le rôle de la route (service_role) ; la section 11 vérifie
+-- qu'un autre rôle ne peut pas poser la version.
 begin;
 
-select plan(22);
+select plan(25);
 
 -- Structure -------------------------------------------------------------------------------------------
 select has_column('public', 'user_notification_preferences', 'weekly_digest_enabled', 'la case du récapitulatif existe');
@@ -72,7 +75,13 @@ insert into auth.users (
    '{}'::jsonb, '{}'::jsonb),
   ('63000000-0000-4000-8000-000000000002', '00000000-0000-0000-0000-000000000000',
    'authenticated', 'authenticated', 'feature-b@example.test', '', now(), now(), now(),
+   '{}'::jsonb, '{}'::jsonb),
+  ('63000000-0000-4000-8000-000000000003', '00000000-0000-0000-0000-000000000000',
+   'authenticated', 'authenticated', 'feature-c@example.test', '', now(), now(), now(),
    '{}'::jsonb, '{}'::jsonb);
+
+-- La route serveur écrit avec le rôle de service : c'est le seul écrivain dont la version du texte est gardée.
+set local role service_role;
 
 -- 1. Insertion avec les deux fonctions actives et des dates forgées : dates posées par la base.
 insert into public.user_notification_preferences (
@@ -327,6 +336,69 @@ select throws_ok(
     where user_id = '63000000-0000-4000-8000-000000000002'$$,
   '23514', null, 'la version du texte de l''alerte de résultat est bornée à 80 caractères'
 );
+
+-- 11. Un écrivain qui n'est pas le rôle de service (ici le rôle de la session de test, comme une
+-- maintenance en SQL) ne peut pas poser la version du texte consenti : elle reste celle d'avant.
+reset role;
+
+update public.user_notification_preferences
+set weekly_digest_enabled = true, weekly_digest_consent_text_version = 'forgee',
+    sale_results_enabled = true, sale_results_consent_text_version = 'forgee'
+where user_id = '63000000-0000-4000-8000-000000000002';
+
+select is(
+  (
+    select concat_ws(
+      ':',
+      coalesce(weekly_digest_consent_text_version, 'null'),
+      coalesce(sale_results_consent_text_version, 'null')
+    )
+    from public.user_notification_preferences
+    where user_id = '63000000-0000-4000-8000-000000000002'
+  ),
+  'null:null',
+  'à l''activation, la version envoyée par un écrivain qui n''est pas le rôle de service est ignorée'
+);
+
+insert into public.user_notification_preferences (
+  user_id, weekly_digest_enabled, weekly_digest_consent_text_version,
+  sale_results_enabled, sale_results_consent_text_version
+) values ('63000000-0000-4000-8000-000000000003', true, 'forgee', true, 'forgee');
+
+select is(
+  (
+    select concat_ws(
+      ':',
+      coalesce(weekly_digest_consent_text_version, 'null'),
+      coalesce(sale_results_consent_text_version, 'null')
+    )
+    from public.user_notification_preferences
+    where user_id = '63000000-0000-4000-8000-000000000003'
+  ),
+  'null:null',
+  'à l''insertion, la version envoyée par un écrivain qui n''est pas le rôle de service est ignorée aussi'
+);
+
+-- Le rôle de service, lui, pose la version à l'activation (la route serveur).
+set local role service_role;
+update public.user_notification_preferences
+set weekly_digest_enabled = false, sale_results_enabled = false
+where user_id = '63000000-0000-4000-8000-000000000002';
+update public.user_notification_preferences
+set weekly_digest_enabled = true, weekly_digest_consent_text_version = '2026-10-30',
+    sale_results_enabled = true, sale_results_consent_text_version = '2026-10-31'
+where user_id = '63000000-0000-4000-8000-000000000002';
+
+select is(
+  (
+    select concat_ws(':', weekly_digest_consent_text_version, sale_results_consent_text_version)
+    from public.user_notification_preferences
+    where user_id = '63000000-0000-4000-8000-000000000002'
+  ),
+  '2026-10-30:2026-10-31',
+  'le rôle de service (la route serveur) pose la version du texte à l''activation'
+);
+reset role;
 
 select * from finish();
 rollback;

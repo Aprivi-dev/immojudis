@@ -25,11 +25,12 @@ export type TribunalSaleRow = {
   surface_m2: number | string | null;
   status: string | null;
   /**
-   * Clés opaques des adresses sources (SHA-256 de l'adresse normalisée) : elles servent à reconnaître
-   * la même vente publiée deux fois, sans exposer d'adresse. Absentes tant que la migration
-   * 20261029180000 n'est pas appliquée : la liste fonctionne alors sans dédoublonnage.
+   * Identifiant de groupe : le plus petit identifiant des lignes de la liste qui partagent une adresse
+   * source normalisée (de proche en proche). Il reconnaît la même vente publiée deux fois sans rien
+   * révéler de l'adresse. Absent tant que la migration 20261031100100 n'est pas appliquée : la liste
+   * fonctionne alors sans dédoublonnage.
    */
-  source_keys?: unknown;
+  source_group?: unknown;
 };
 
 type TribunalRpcClient = {
@@ -55,8 +56,8 @@ const UNDATED_SORT_DATE = "9999-12-31T00:00:00Z";
 
 /**
  * Écarte les ventes publiées deux fois, avec la règle de la page « Audiences à venir »
- * (`dedupeHearings`) : seule une identité certaine réunit deux lignes (même identifiant, ou une
- * adresse source en commun). La commune, le type, la surface, la date et le prix ne suffisent pas :
+ * (`dedupeHearings`) : seule une identité certaine réunit deux lignes (même identifiant, ou même
+ * groupe d'adresses sources). La commune, le type, la surface, la date et le prix ne suffisent pas :
  * deux lots distincts peuvent les partager, et mieux vaut une vente affichée deux fois qu'une vente
  * qui manque. La première ligne (la plus proche, puis la plus petite identité) est gardée ; l'ordre
  * de la liste reçue est conservé.
@@ -76,7 +77,7 @@ function dedupeTribunalSaleRows(rows: readonly TribunalSaleRow[]): TribunalSaleR
         tribunal_name: null,
         tribunal_city: null,
         starting_price_eur: null,
-        source_keys: row.source_keys,
+        source_group: row.source_group,
         total_count: null,
       }),
     ),

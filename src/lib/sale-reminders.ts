@@ -2,7 +2,12 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { errorDetailForLog } from "@/lib/api-errors";
 import { resolveEmailAlertDeliveryConfig, sendResendEmail } from "@/lib/email-alerts";
-import { describeSaleChange, GRAVE_SALE_STATUSES } from "@/lib/sale-change-display";
+import {
+  describeSaleChange,
+  GRAVE_SALE_STATUSES,
+  isSourceAbsenceChange,
+  SOURCE_ABSENCE_DETAIL,
+} from "@/lib/sale-change-display";
 import type { SaleChangeEventSummary } from "@/lib/sale-change-monitor";
 import { SALE_CALENDAR_DISCLAIMER, type SaleCalendarRow } from "@/lib/sale-calendar";
 import { calendarDaysBetween, parisDateKey } from "@/lib/sale-countdown";
@@ -272,7 +277,12 @@ export function audienceReminderFor(
 export function graveWarningFor(
   event: SaleChangeEventSummary,
   now: Date,
-): { kind: "date_changed" | "status_changed"; headline: string } | null {
+): {
+  kind: "date_changed" | "status_changed";
+  headline: string;
+  /** Vrai quand le « retrait » est déduit de l'absence de l'annonce à sa source, pas annoncé par elle. */
+  sourceAbsence?: true;
+} | null {
   const described = describeSaleChange(event);
   if (!described) return null;
   if (event.eventKind === "audience_changed") {
@@ -286,7 +296,11 @@ export function graveWarningFor(
   if (event.eventKind === "status_changed") {
     const current = event.changeSummary.currentValue;
     if (typeof current !== "string" || !GRAVE_SALE_STATUSES.has(current.toLowerCase())) return null;
-    return { kind: "status_changed", headline: described.label };
+    // Une annonce retirée par le pipeline parce qu'elle manque à sa source n'est pas « retirée » : on
+    // dit seulement qu'elle a disparu de la source, à vérifier (`described.label` porte ce texte).
+    return isSourceAbsenceChange(event)
+      ? { kind: "status_changed", headline: described.label, sourceAbsence: true }
+      : { kind: "status_changed", headline: described.label };
   }
   return null;
 }
@@ -395,9 +409,11 @@ export async function detectRemindersForUser({
         ? newDate
           ? `Nouvelle date : ${newDate}. ${SALE_CALENDAR_DISCLAIMER}`
           : DATE_TO_CONFIRM
-        : warning.headline === "Vente reportée"
-          ? DATE_TO_CONFIRM
-          : "Statut à vérifier auprès de l’avocat poursuivant.";
+        : warning.sourceAbsence
+          ? SOURCE_ABSENCE_DETAIL
+          : warning.headline === "Vente reportée"
+            ? DATE_TO_CONFIRM
+            : "Statut à vérifier auprès de l’avocat poursuivant.";
     add({
       kind: warning.kind,
       saleId: event.saleId,

@@ -35,6 +35,7 @@ import {
   salesReturnLabel,
 } from "@/lib/navigation";
 import Link from "next/link";
+import { useSyncExternalStore } from "react";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
 import { freeAccessLine, MONTHLY_SALE_UNLOCKS, unlockedItemsText } from "@/lib/sale-unlocks";
 import {
@@ -111,6 +112,9 @@ const VENUE_COPY: Record<SaleVenueType, { title: string; explanation: string }> 
       "Le type de vente doit encore être confirmé. Le dossier officiel précisera l’organisateur, le mode de participation et les conditions pour enchérir.",
   },
 };
+
+/** Rien à écouter : la valeur n'est lue qu'une fois le navigateur monté (voir `pastDate`). */
+const subscribeNever = () => () => undefined;
 
 export function publicSaleVenueCopy(venueType: SaleVenueType) {
   return VENUE_COPY[venueType];
@@ -230,8 +234,16 @@ export function SalePublicPreview({
   const surface = seoSurface(preview.app_surface_m2);
   const hearingDate = seoLongDate(preview.sale_date);
   // Vente dont le jour est passé : signal explicite, ni bouton d'agenda ni bande d'écart (le marché
-  // qu'elle comparait à la mise à prix est celui d'un jour qui n'existe plus pour cette vente).
-  const pastDate = isPastSaleDay(preview.sale_date);
+  // qu'elle comparait à la mise à prix est celui d'un jour qui n'existe plus pour cette vente). Calculé
+  // après l'hydratation : le serveur et le premier rendu du navigateur n'ont pas la même heure (à
+  // minuit, ou avec une page gardée en cache), et un « jour passé » différent d'un côté à l'autre
+  // ferait échouer l'hydratation. Le premier rendu dit « pas passé » des deux côtés, puis le navigateur
+  // lit sa propre date.
+  const pastDate = useSyncExternalStore(
+    subscribeNever,
+    () => isPastSaleDay(preview.sale_date),
+    () => false,
+  );
   const hearingTime = saleHearingTime(preview.sale_date);
   const tribunal = procedure.venueType === "tribunal" ? tribunalDisplayName(preview) : null;
   const location = [preview.city, preview.department].filter(Boolean).join(" · ");

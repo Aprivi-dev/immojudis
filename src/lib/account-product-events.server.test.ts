@@ -53,6 +53,54 @@ describe("recordAccountProductEvent", () => {
     },
   );
 
+  describe("deployment order: the database does not have migration 20261029120100 yet", () => {
+    const refused = { data: null, error: { code: "23514", message: "check constraint" } };
+
+    it.each(["daily_account", "daily_shared"] as const)(
+      "retries the %s cap with the former `daily` detail, so the cap is still counted",
+      async (quota) => {
+        mocks.rpc.mockResolvedValueOnce(refused).mockResolvedValueOnce({ data: true, error: null });
+        await expect(
+          recordAccountProductEvent(userId, { type: "quota_reached", quota }),
+        ).resolves.toBe(true);
+        expect(mocks.rpc).toHaveBeenCalledTimes(2);
+        expect(mocks.rpc).toHaveBeenNthCalledWith(1, "record_account_product_event", {
+          p_user_id: userId,
+          p_event_type: "quota_reached",
+          p_detail: quota,
+        });
+        expect(mocks.rpc).toHaveBeenNthCalledWith(2, "record_account_product_event", {
+          p_user_id: userId,
+          p_event_type: "quota_reached",
+          p_detail: "daily",
+        });
+      },
+    );
+
+    it("does not retry on another error, nor for another detail", async () => {
+      mocks.rpc.mockResolvedValue({ data: null, error: { code: "XX000", message: "boom" } });
+      await expect(
+        recordAccountProductEvent(userId, { type: "quota_reached", quota: "daily_account" }),
+      ).resolves.toBe(false);
+      expect(mocks.rpc).toHaveBeenCalledTimes(1);
+
+      mocks.rpc.mockReset();
+      mocks.rpc.mockResolvedValue(refused);
+      await expect(
+        recordAccountProductEvent(userId, { type: "quota_reached", quota: "favorites" }),
+      ).resolves.toBe(false);
+      expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    });
+
+    it("never fails the journey when the retry is refused too", async () => {
+      mocks.rpc.mockResolvedValue(refused);
+      await expect(
+        recordAccountProductEvent(userId, { type: "quota_reached", quota: "daily_shared" }),
+      ).resolves.toBe(false);
+      expect(mocks.rpc).toHaveBeenCalledTimes(2);
+    });
+  });
+
   it("records an email click with the kind of email and the sale", async () => {
     await recordAccountProductEvent(userId, { type: "email_clicked", email: "reminder", saleId });
 

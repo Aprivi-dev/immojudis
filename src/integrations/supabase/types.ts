@@ -8144,6 +8144,8 @@ export type Database = {
           consented_at: string;
           created_at: string;
           notified_at: string | null;
+          notify_attempted_at: string | null;
+          notify_attempts: number;
           notify_enabled: boolean;
           offer_code: string;
           revoked_at: string | null;
@@ -8164,6 +8166,8 @@ export type Database = {
           consented_at?: string;
           created_at?: string;
           notified_at?: string | null;
+          notify_attempted_at?: string | null;
+          notify_attempts?: number;
           notify_enabled?: boolean;
           offer_code?: string;
           revoked_at?: string | null;
@@ -8184,6 +8188,8 @@ export type Database = {
           consented_at?: string;
           created_at?: string;
           notified_at?: string | null;
+          notify_attempted_at?: string | null;
+          notify_attempts?: number;
           notify_enabled?: boolean;
           offer_code?: string;
           revoked_at?: string | null;
@@ -14251,6 +14257,7 @@ export type Database = {
       get_court_auction_summaries: { Args: never; Returns: Json };
       get_launch_offer_account_eligibility: { Args: { p_user_id: string }; Returns: boolean };
       get_launch_offer_status: { Args: never; Returns: boolean };
+      get_offer_opening_queue: { Args: { p_limit?: number; p_now?: string }; Returns: Json };
       get_withdrawn_catalogue_sources: { Args: never; Returns: string[] };
       get_public_sale_calendar_event: {
         Args: { p_sale_id: string };
