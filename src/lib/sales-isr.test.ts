@@ -27,7 +27,18 @@ describe("isUnfilteredSalesRequest", () => {
   });
 
   it("refuses any parameter: filters, pages, and tracking parameters stay dynamic", () => {
-    for (const search of ["?page=2", "?city=Pau", "?view=table", "?utm_source=x", "?map=1", "?a"]) {
+    for (const search of [
+      "?page=2",
+      "?city=Pau",
+      "?view=table",
+      "?utm_source=x",
+      "?map=1",
+      "?a",
+      // Filtres « sous la fourchette » et « sans point à vérifier » : hors du cache partagé.
+      "?belowRange=true",
+      "?noPointsToVerify=true",
+      "?belowRange=true&noPointsToVerify=true",
+    ]) {
       expect(isUnfilteredSalesRequest(request({ search })), search).toBe(false);
     }
   });
@@ -132,5 +143,22 @@ describe("mustSeedStaticCatalogue", () => {
     expect(mustSeedStaticCatalogue({ NODE_ENV: "development" })).toBe(false);
     expect(mustSeedStaticCatalogue({ NODE_ENV: "test" })).toBe(false);
     expect(mustSeedStaticCatalogue({})).toBe(false);
+  });
+});
+
+describe("filtres « sous la fourchette » et « sans point à vérifier » et le cache partagé", () => {
+  const request = (search: string) => ({ method: "GET", pathname: "/sales", search });
+
+  it("ne sont servis ni par la variante de /sales, ni par celle d'une page du catalogue", () => {
+    for (const search of [
+      "?belowRange=true",
+      "?noPointsToVerify=true",
+      "?page=2&belowRange=true",
+      "?page=3&noPointsToVerify=true",
+      "?belowRange=true&page=2",
+    ]) {
+      expect(isUnfilteredSalesRequest(request(search)), search).toBe(false);
+      expect(salesPageVariantFor(request(search)), search).toBeNull();
+    }
   });
 });
