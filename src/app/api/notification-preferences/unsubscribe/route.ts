@@ -6,7 +6,7 @@ import {
   revokeSaleReminderConsent,
   unsubscribeEmailAlertsByNotificationId,
 } from "@/lib/email-alerts";
-import { verifyUnsubscribeToken } from "@/lib/email-unsubscribe-token";
+import { unsubscribeTokenScopeKind, verifyUnsubscribeToken } from "@/lib/email-unsubscribe-token";
 import { escapeHtml } from "@/lib/guards";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -23,14 +23,7 @@ export async function GET(request: Request) {
 
   if (token) {
     const claims = verifyUnsubscribeToken(token);
-    if (!claims) {
-      return htmlResponse(
-        "Lien expiré",
-        "Ce lien de désinscription n'est plus valide. Ouvrez la page Mes alertes pour gérer vos emails.",
-        400,
-        { href: "/alertes", label: "Gérer mes alertes" },
-      );
-    }
+    if (!claims) return expiredLinkResponse(token);
     const scopeLabel =
       claims.scope.kind === "alert"
         ? "Voulez-vous désactiver cette alerte ?"
@@ -79,14 +72,7 @@ export async function POST(request: Request) {
   try {
     if (token) {
       const claims = verifyUnsubscribeToken(token);
-      if (!claims) {
-        return htmlResponse(
-          "Lien expiré",
-          "Ce lien de désinscription n'est plus valide. Ouvrez la page Mes alertes pour gérer vos emails.",
-          400,
-          { href: "/alertes", label: "Gérer mes alertes" },
-        );
-      }
+      if (!claims) return expiredLinkResponse(token);
       if (claims.scope.kind === "alert") {
         await deactivateAlertForUser({ userId: claims.userId, alertId: claims.scope.alertId });
         return htmlResponse(
@@ -131,6 +117,27 @@ export async function POST(request: Request) {
       { href: "/alertes", label: "Gérer mes alertes" },
     );
   }
+}
+
+/**
+ * Lien invalide ou expiré. Un jeton « rappels » (signature valide, même expiré) renvoie vers le
+ * compte, où se règlent les rappels d'audience ; les autres vers la page des alertes.
+ */
+function expiredLinkResponse(token: string) {
+  if (unsubscribeTokenScopeKind(token) === "reminders") {
+    return htmlResponse(
+      "Lien expiré",
+      "Ce lien de désinscription n'est plus valide. Ouvrez votre compte pour gérer vos rappels d'audience.",
+      400,
+      { href: "/compte", label: "Gérer mes notifications" },
+    );
+  }
+  return htmlResponse(
+    "Lien expiré",
+    "Ce lien de désinscription n'est plus valide. Ouvrez la page Mes alertes pour gérer vos emails.",
+    400,
+    { href: "/alertes", label: "Gérer mes alertes" },
+  );
 }
 
 function htmlResponse(

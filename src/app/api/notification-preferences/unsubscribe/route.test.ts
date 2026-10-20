@@ -115,6 +115,55 @@ describe("unsubscribe route", () => {
     expect(revokeEmailAlertConsent).not.toHaveBeenCalled();
   });
 
+  describe("lien expiré", () => {
+    const longAgo = new Date("2024-01-01T00:00:00Z");
+    const url = (token: string) =>
+      `https://immojudis.test/api/notification-preferences/unsubscribe?token=${token}`;
+
+    it("renvoie un jeton « rappels » expiré vers /compte, sur GET comme sur POST", async () => {
+      const token = createUnsubscribeToken({ userId, scope: { kind: "reminders" }, now: longAgo });
+      for (const response of [
+        await GET(new Request(url(token))),
+        await POST(new Request(url(token), { method: "POST" })),
+      ]) {
+        const html = await response.text();
+        expect(response.status).toBe(400);
+        expect(html).toContain('href="/compte"');
+        expect(html).not.toContain('href="/alertes"');
+        expect(html).toContain("rappels d&#39;audience");
+      }
+      expect(revokeSaleReminderConsent).not.toHaveBeenCalled();
+    });
+
+    it("renvoie un jeton d'alertes expiré vers /alertes", async () => {
+      const token = createUnsubscribeToken({ userId, now: longAgo });
+      const response = await GET(new Request(url(token)));
+      const html = await response.text();
+      expect(response.status).toBe(400);
+      expect(html).toContain('href="/alertes"');
+      expect(html).not.toContain('href="/compte"');
+    });
+
+    it("renvoie vers /alertes un jeton falsifié, dont la portée n'est pas fiable", async () => {
+      const token = createUnsubscribeToken({ userId, scope: { kind: "reminders" } });
+      const response = await GET(new Request(url(`${token}x`)));
+      const html = await response.text();
+      expect(response.status).toBe(400);
+      expect(html).toContain('href="/alertes"');
+    });
+
+    it("accepte encore, après quatre mois, un jeton « rappels »", async () => {
+      const token = createUnsubscribeToken({
+        userId,
+        scope: { kind: "reminders" },
+        now: new Date(Date.now() - 120 * 86_400_000),
+      });
+      const response = await POST(new Request(url(token), { method: "POST" }));
+      expect(response.status).toBe(200);
+      expect(revokeSaleReminderConsent).toHaveBeenCalledWith({ userId });
+    });
+  });
+
   it("retire seulement le consentement aux rappels sur le POST one-click d'un jeton « rappels »", async () => {
     const token = createUnsubscribeToken({ userId, scope: { kind: "reminders" } });
     const response = await POST(

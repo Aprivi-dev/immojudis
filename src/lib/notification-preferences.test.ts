@@ -5,6 +5,7 @@ import {
   canCreateEmailAlertNotification,
   canSendSaleReminder,
   notificationPreferenceUpdateSchema,
+  SALE_REMINDERS_CONSENT_TEXT_VERSION,
   SALE_REMINDERS_NOT_OFFERED_MESSAGE,
   updateNotificationPreferences,
 } from "@/lib/notification-preferences";
@@ -265,6 +266,43 @@ describe("rappels d'audience : activation seulement quand l'envoi est proposé",
     const user = fakeAuth(false);
     await updateNotificationPreferences({ auth: user.auth, input: activate, now: NOW });
     expect(user.upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it("renseigne côté serveur la version du texte consenti, seulement à l'activation", async () => {
+    vi.stubEnv("SALE_REMINDERS_MODE", "on");
+    const enabling = fakeAuth(false);
+    await updateNotificationPreferences({ auth: enabling.auth, input: activate, now: NOW });
+    expect(enabling.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sale_reminders_consent_text_version: SALE_REMINDERS_CONSENT_TEXT_VERSION,
+      }),
+      { onConflict: "user_id" },
+    );
+
+    const revoking = fakeAuth(false, {
+      sale_reminders_enabled: true,
+      sale_reminders_consented_at: "2026-10-19T10:00:00.000Z",
+      sale_reminders_revoked_at: null,
+    });
+    await updateNotificationPreferences({
+      auth: revoking.auth,
+      input: { saleRemindersEnabled: false, consentSource: "settings" },
+      now: NOW,
+    });
+    expect(revoking.upsert.mock.calls[0][0]).not.toHaveProperty(
+      "sale_reminders_consent_text_version",
+    );
+
+    // Une mise à jour des seules alertes ne touche pas à la version du texte des rappels.
+    const alertsOnly = fakeAuth(false);
+    await updateNotificationPreferences({
+      auth: alertsOnly.auth,
+      input: { alertEmailEnabled: true, consentSource: "settings" },
+      now: NOW,
+    });
+    expect(alertsOnly.upsert.mock.calls[0][0]).not.toHaveProperty(
+      "sale_reminders_consent_text_version",
+    );
   });
 
   it("permet toujours de retirer le consentement, même quand l'envoi est fermé", async () => {
