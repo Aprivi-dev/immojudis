@@ -14,6 +14,9 @@ import lawyerArticle from "@/content/resources/avocat-obligatoire-encherir-tribu
 import preemptionArticle from "@/content/resources/droit-de-preemption-encheres-commune-acheteur.json";
 import guaranteeArticle from "@/content/resources/garantie-10-pourcent-cheque-banque-caution-encheres.json";
 import condominiumArticle from "@/content/resources/copropriete-encheres-charges-assemblees.json";
+import postponedSaleArticle from "@/content/resources/vente-encheres-immobiliere-reportee-retiree-annulee.json";
+import liquidationArticle from "@/content/resources/liquidation-judiciaire-vente-immeuble-entreprise-encheres.json";
+import marketGapArticle from "@/content/resources/mise-a-prix-valeur-de-marche-dvf-lire-ecart-encheres.json";
 import { GUIDE_READING_MINUTES } from "@/lib/guide-dates";
 
 export interface ResourceSection {
@@ -98,6 +101,9 @@ export const RESOURCE_ARTICLES: ResourceArticle[] = [
   defineArticle(preemptionArticle, "/media/landing/auction-nantes.webp"),
   defineArticle(guaranteeArticle, "/media/landing/dossier-apartment.webp"),
   defineArticle(condominiumArticle, "/media/landing/auction-lyon.webp"),
+  defineArticle(postponedSaleArticle, "/media/landing/auction-bordeaux.webp"),
+  defineArticle(liquidationArticle, "/media/landing/gallery-townhouse.webp"),
+  defineArticle(marketGapArticle, "/media/landing/home-favorites.webp"),
 ];
 
 export const EXISTING_GUIDE: ResourceSummary = {
