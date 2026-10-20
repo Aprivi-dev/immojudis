@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   EXISTING_GUIDE,
   RESOURCE_ARTICLES,
+  RESOURCE_SEO_DESCRIPTION_MAX_LENGTH,
   getResourceArticle,
+  resourceDocumentDescription,
   resourceLastModified,
   type ResourceArticle,
 } from "./resource-articles";
@@ -80,6 +82,24 @@ describe("registre des articles de /ressources", () => {
         MAX_TITLE_LENGTH,
       );
     }
+  });
+
+  it("garde seoDescription, quand elle existe, sous 158 caractères (la description de la page reste libre)", () => {
+    for (const article of RESOURCE_ARTICLES) {
+      if (article.seoDescription === undefined) continue;
+      expect(article.seoDescription.trim(), article.slug).not.toBe("");
+      expect(article.seoDescription.length, article.slug).toBeLessThanOrEqual(
+        RESOURCE_SEO_DESCRIPTION_MAX_LENGTH,
+      );
+    }
+    expect(RESOURCE_SEO_DESCRIPTION_MAX_LENGTH).toBe(158);
+  });
+
+  it("utilise seoDescription pour les métadonnées quand elle existe, description sinon", () => {
+    const base = { description: "Une description longue de la page." };
+    expect(resourceDocumentDescription(base)).toBe("Une description longue de la page.");
+    expect(resourceDocumentDescription({ ...base, seoDescription: "  Courte.  " })).toBe("Courte.");
+    expect(resourceDocumentDescription({ ...base, seoDescription: "   " })).toBe(base.description);
   });
 
   it("annonce pour le guide le même temps de lecture que sa page", () => {

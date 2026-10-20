@@ -20,11 +20,12 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("CreateAlertPage", () => {
-  it("retrouve les critères du visiteur et n'écrit rien en arrivant", () => {
+  it("retrouve les critères du visiteur et n'écrit rien en arrivant", async () => {
     state.search = "department=33&maxPrice=150000";
     render(<CreateAlertPage />);
     expect(screen.getByRole("heading", { level: 1, name: "Créer une alerte" })).toBeTruthy();
-    expect(JSON.parse(screen.getByTestId("form").textContent!)).toEqual({
+    // Le formulaire est chargé à la demande (import dynamique partagé).
+    expect(JSON.parse((await screen.findByTestId("form")).textContent!)).toEqual({
       department: "33",
       maxPrice: "150000",
     });

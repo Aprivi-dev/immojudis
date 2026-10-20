@@ -231,15 +231,18 @@ describe("sale structured data", () => {
     const offers = data["@graph"][0].offers!;
     expect(offers).not.toHaveProperty("price");
     expect(offers.priceSpecification).toMatchObject({ name: "Mise à prix", price: 85_000 });
-    expect(offers.availability).toBe("https://schema.org/LimitedAvailability");
+    // Nothing verifies that the sale is available (or not): the offer carries no availability.
+    expect(offers).not.toHaveProperty("availability");
   });
 
-  it("switches availability to SoldOut once the hearing is over", () => {
+  it("never claims SoldOut once the hearing is over: the offer has no availability at all", () => {
     const data = saleStructuredData(sale({ sale_date: "2026-10-01T09:00:00+02:00" }), {
       origin,
       now: NOW,
-    }) as { "@graph": Array<{ offers?: { availability: string } }> };
-    expect(data["@graph"][0].offers?.availability).toBe("https://schema.org/SoldOut");
+    }) as { "@graph": Array<{ offers?: Record<string, unknown> }> };
+    expect(data["@graph"][0].offers).toBeDefined();
+    expect(data["@graph"][0].offers).not.toHaveProperty("availability");
+    expect(JSON.stringify(data)).not.toMatch(/SoldOut|LimitedAvailability/);
   });
 
   it("adds the hearing as an event only when date and court are known", () => {

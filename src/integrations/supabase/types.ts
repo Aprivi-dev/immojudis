@@ -14153,6 +14153,7 @@ export type Database = {
           starting_price_eur: number;
           thumbnail_url: string;
           tribunal_city: string;
+          tribunal_code: string;
           tribunal_name: string;
           updated_at: string;
         }[];
