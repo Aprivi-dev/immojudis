@@ -19,6 +19,7 @@ import {
   MARKET_GAP_BAND_LABELS,
   MARKET_GAP_BAND_METHOD_LABEL,
   MARKET_GAP_BAND_METHOD_PATH,
+  MARKET_GAP_BAND_STARTING_PRICE_NOTE,
   type PublicMarketGapBand,
 } from "@/lib/market-gap-band";
 import { publicSaleDescription } from "@/lib/public-sale-description";
@@ -123,11 +124,19 @@ function withAdjudicationTerm(text: string) {
  * dit qu'elle ne l'est pas) ; neutre, indicative, jamais une recommandation.
  */
 function MarketGapBandNote({ band }: { band: PublicMarketGapBand }) {
+  // Une vraie bande (sous, dans, au-dessus) porte la phrase sur la mise à prix basse et la mise en
+  // garde ; « bien occupé » et les raisons d'insuffisance disent seulement pourquoi il n'y en a pas.
+  const isBand = band === "under" || band === "near" || band === "above";
   return (
     <div className={styles.marketBand} data-testid="market-gap-band" data-band={band}>
-      <p className={styles.marketBandLabel}>{MARKET_GAP_BAND_LABELS[band]}</p>
+      <p className={styles.marketBandLabel}>
+        <span data-nosnippet="">{MARKET_GAP_BAND_LABELS[band]}</span>
+      </p>
+      {isBand ? (
+        <p className={styles.marketBandNote}>{MARKET_GAP_BAND_STARTING_PRICE_NOTE}</p>
+      ) : null}
       <p className={styles.marketBandNote}>
-        {band === "insufficient" ? null : <>{MARKET_GAP_BAND_CAUTION} </>}
+        {isBand ? <>{MARKET_GAP_BAND_CAUTION} </> : null}
         <Link href={MARKET_GAP_BAND_METHOD_PATH} className={styles.marketBandLink}>
           {MARKET_GAP_BAND_METHOD_LABEL}
         </Link>
