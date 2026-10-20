@@ -126,9 +126,13 @@ def merge_duplicate_sales(
         else:
             _merge_into(existing, sale, confidence="source_url")
 
+    # Un identifiant d'annonce commun (Vench / Petites Affiches) prouve l'identité : il passe AVANT le hash de
+    # contenu et l'adresse. Sinon, pour les lots d'un même immeuble (même adresse, même jour, même mise à prix),
+    # ces clés rapprochent n'importe quelle ligne de l'autre source, pas celle du même numéro d'annonce, et
+    # un groupe entier de lots finit en une seule fusion trop grosse pour être appliquée.
     by_hash: dict[str, AuctionSale] = {}
     passthrough: list[AuctionSale] = []
-    for sale in by_source_url.values():
+    for sale in _merge_by_shared_listing_id(list(by_source_url.values())):
         key = sale.content_hash or compute_content_hash(sale)
         if not _has_strong_dedupe_signal(sale):
             sale.dedupe_confidence = sale.dedupe_confidence or "source_url_only"
@@ -152,10 +156,8 @@ def merge_duplicate_sales(
     # (numéro + voie + commune) même si la date ou le prix diffèrent légèrement —
     # cas typique de deux sources référençant le même bien. Le hash de contenu
     # ci-dessus ne les rapproche pas car il inclut date et prix.
-    survivors = [*by_hash.values(), *passthrough]
-    # Un identifiant d'annonce commun (Vench / Petites Affiches) prouve l'identité ; la clé de repli
-    # stricte (tribunal, jour, prix, signal fort) ne passe qu'en dernier.
-    survivors = _merge_by_address(_merge_by_shared_listing_id(survivors))
+    # La clé de repli stricte (tribunal, jour, prix, signal fort) ne passe qu'en dernier.
+    survivors = _merge_by_address([*by_hash.values(), *passthrough])
     if not strict_fallback:
         return survivors
     return _merge_by_strict_key(
@@ -421,6 +423,8 @@ def _same_property(first: AuctionSale, second: AuctionSale) -> bool:
     if first.source_name == second.source_name and first.source_url != second.source_url:
         # Separate listings from one publisher can be separate lots in the same building.
         return False
+    if _distinct_shared_listings(first, second):
+        return False
     for key in ("lot_number", "lot_id"):
         first_lot, second_lot = first.raw_payload.get(key), second.raw_payload.get(key)
         if first_lot and second_lot and str(first_lot) != str(second_lot):
@@ -490,7 +494,31 @@ _LISTING_ID_PATTERNS = {
     # https://www.petitesaffiches.fr/encheres-immobilieres/vente/immobiliere/j/une-maison-a-x-166526.html
     "petites_affiches": re.compile(r"-(\d+)\.html(?:$|[?#])"),
 }
+_LISTING_ID_HOSTS = {"vench": "vench.fr/", "petites_affiches": "petitesaffiches.fr/"}
 _LISTING_ID_SOURCES = frozenset(_LISTING_ID_PATTERNS)
+
+
+def _listing_ids(sale: AuctionSale) -> frozenset[str]:
+    """Identifiants d'annonce Vench / Petites Affiches de toutes les URL d'une ligne, fusionnées comprises.
+
+    Le motif d'une source ne s'applique qu'aux URL de son site : « -123.html » est courant ailleurs.
+    """
+    ids: set[str] = set()
+    for url in {sale.source_url, *sale.source_urls}:
+        for source, pattern in _LISTING_ID_PATTERNS.items():
+            if url and _LISTING_ID_HOSTS[source] in url and (match := pattern.search(url)):
+                ids.add(match.group(1))
+    return frozenset(ids)
+
+
+def _distinct_shared_listings(first: AuctionSale, second: AuctionSale) -> bool:
+    """Vrai si chaque ligne porte des numéros d'annonce Vench / Petites Affiches, sans aucun numéro commun.
+
+    Ce sont alors deux annonces, donc deux lots : même adresse, même jour et même mise à prix (lots d'un même
+    immeuble) ne suffisent pas à les fusionner.
+    """
+    first_ids, second_ids = _listing_ids(first), _listing_ids(second)
+    return bool(first_ids and second_ids and first_ids.isdisjoint(second_ids))
 
 
 def shared_listing_id(sale: AuctionSale) -> str | None:
@@ -529,7 +557,7 @@ def same_shared_listing(first: AuctionSale, second: AuctionSale) -> bool:
     - même code postal ou même commune normalisée, connus des deux côtés ;
     - au moins un fait corroborant connu des deux côtés et identique : même jour civil à Paris, ou
       même mise à prix à l'euro près ;
-    - aucun fait connu des deux côtés (jour, mise à prix) qui se contredise.
+    - aucun fait connu des deux côtés (numéro de lot, jour, mise à prix) qui se contredise.
     Un lieu ou un fait inconnu d'un côté ne prouve rien : la paire est refusée, jamais devinée.
     """
     if first.source_name == second.source_name or {first.source_name, second.source_name} != _LISTING_ID_SOURCES:
@@ -539,6 +567,10 @@ def same_shared_listing(first: AuctionSale, second: AuctionSale) -> bool:
         return False
     if not _same_locality_known_on_both_sides(first, second):
         return False
+    for key in ("lot_number", "lot_id"):
+        first_lot, second_lot = first.raw_payload.get(key), second.raw_payload.get(key)
+        if first_lot and second_lot and str(first_lot) != str(second_lot):
+            return False
     first_day, second_day = _civil_day(first.sale_date), _civil_day(second.sale_date)
     if first_day and second_day and first_day != second_day:
         return False
@@ -551,23 +583,37 @@ def same_shared_listing(first: AuctionSale, second: AuctionSale) -> bool:
 
 
 def _merge_by_shared_listing_id(sales: list[AuctionSale]) -> list[AuctionSale]:
-    by_id: dict[str, AuctionSale] = {}
-    survivors: list[AuctionSale] = []
+    """Fusionne les paires Vench / Petites Affiches de même numéro d'annonce, lot par lot.
+
+    Chaque lot d'une vente à plusieurs lots est une annonce à part, avec son numéro : les paires se font DANS
+    un numéro, jamais d'un numéro à l'autre, quelle que soit l'adresse, le jour ou la mise à prix partagés.
+    Si plusieurs lignes d'une même source portent le même numéro (variantes d'URL, lots que rien ne distingue),
+    la paire n'est faite que si les deux côtés n'ont qu'un seul partenaire possible : on ne devine pas quel lot
+    est lequel.
+    """
+    by_id: dict[str, list[AuctionSale]] = {}
     for sale in sales:
-        listing_id = shared_listing_id(sale)
-        existing = by_id.get(listing_id) if listing_id else None
-        if existing is None or not same_shared_listing(existing, sale):
-            survivors.append(sale)
-            if listing_id and listing_id not in by_id:
-                by_id[listing_id] = sale
+        if listing_id := shared_listing_id(sale):
+            by_id.setdefault(listing_id, []).append(sale)
+    merged_away: set[int] = set()
+    replacements: dict[int, AuctionSale] = {}
+    for bucket in by_id.values():
+        if len(bucket) < 2:
             continue
-        preferred = _choose_primary(existing, sale)
-        secondary = sale if preferred is existing else existing
-        _merge_into(preferred, secondary, confidence="listing_id")
-        if preferred is sale:
-            _replace_identity(survivors, existing, sale)
-            by_id[listing_id] = sale
-    return survivors
+        partners = {id(sale): [other for other in bucket if same_shared_listing(sale, other)] for sale in bucket}
+        for sale in bucket:
+            matches = partners[id(sale)]
+            if id(sale) in merged_away or len(matches) != 1:
+                continue
+            other = matches[0]
+            if id(other) in merged_away or len(partners[id(other)]) != 1:
+                continue
+            preferred = _choose_primary(sale, other)
+            secondary = other if preferred is sale else sale
+            _merge_into(preferred, secondary, confidence="listing_id")
+            merged_away.add(id(secondary))
+            replacements[id(sale)] = replacements[id(other)] = preferred
+    return [replacements.get(id(sale), sale) for sale in sales if id(sale) not in merged_away]
 
 
 _STRICT_SURFACE_TOLERANCE = 0.05
@@ -619,6 +665,8 @@ def strict_duplicate_key_match(first: AuctionSale, second: AuctionSale) -> bool:
       connues qui divergent de plus de 5 % ou deux adresses numérotées différentes écartent la paire.
     """
     if first.source_name == second.source_name:
+        return False
+    if _distinct_shared_listings(first, second):
         return False
     if _is_multi_lot(first) or _is_multi_lot(second):
         return False
