@@ -62,7 +62,7 @@ export function DateFilter({
         type="button"
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-controls={contentId}
+        aria-controls={open ? contentId : undefined}
         onClick={() => setOpen((current) => !current)}
         className="inline-flex h-10 items-center gap-2 rounded-md border border-line px-3 text-sm font-medium"
       >

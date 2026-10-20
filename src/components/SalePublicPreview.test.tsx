@@ -445,6 +445,24 @@ describe("SalePublicPreview", () => {
     }
   });
 
+  it("annonce aux lecteurs d'écran que les valeurs floutées sont masquées, et ce qui les ouvre", () => {
+    renderPreview({ sale_venue_type: "tribunal", starting_price_eur: 80_000 });
+    const teaser = screen.getByRole("region", { name: "L’analyse de cette vente" });
+    const rows = Array.from(teaser.querySelectorAll("dd"));
+    expect(rows).toHaveLength(4);
+    const spoken = rows.map((row) => row.querySelector(".sr-only")?.textContent);
+    expect(spoken[0]).toBe("Valeur masquée, visible avec un compte gratuit");
+    expect(spoken[1]).toBe("Valeur masquée, visible avec un compte gratuit");
+    expect(spoken[2]).toBe(
+      "Valeur masquée, visible avec l’offre Analyse, ou en débloquant la vente",
+    );
+    expect(spoken[3]).toBe("Valeur masquée, visible avec l’offre Analyse");
+    // Le chiffre flouté reste un décor : jamais lu.
+    for (const row of rows) {
+      expect(row.querySelector("[aria-hidden='true'][data-nosnippet]")?.textContent).toMatch(/0/);
+    }
+  });
+
   it("reprend les points à vérifier sous l'ancre #points-a-verifier, sans l'occupation", () => {
     renderPreview({
       sale_venue_type: "tribunal",

@@ -761,7 +761,7 @@ export function ResultsSummary({
   const location = search.city || search.department || search.query || "France entière";
   return (
     <div className={`min-w-0 px-4 py-4 sm:px-5 ${RESULTS_SUMMARY_MOBILE_MIN_HEIGHT}`}>
-      <p className="mb-1 hidden text-[10px] font-bold uppercase tracking-[0.16em] text-gold-text sm:block">
+      <p className="mb-1 hidden text-xs font-bold uppercase tracking-[0.12em] text-gold-text sm:block">
         Le catalogue des enchères
       </p>
       <h1 className="font-display text-[1.65rem] font-semibold leading-tight">

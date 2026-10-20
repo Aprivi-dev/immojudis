@@ -60,6 +60,13 @@ describe("WellInformedBadge", () => {
     expect(screen.queryByRole("note")).toBeNull();
   });
 
+  it("garde un bouton « i » d'au moins 24 px (size-6)", () => {
+    render(<WellInformedBadge sale={{ completeness_tier: 1 }} />);
+    const button = screen.getByRole("button", { name: /À propos du repère/ });
+    expect(button.className).toContain("size-6");
+    expect(button.className).not.toMatch(/(^|\s)(h-5|w-5)(\s|$)/);
+  });
+
   it("n'utilise pas d'attribut title, inaccessible au clavier et au tactile", () => {
     const { container } = render(<WellInformedBadge sale={{ completeness_tier: 1 }} />);
     expect(container.querySelector("[title]")).toBeNull();

@@ -169,8 +169,13 @@ describe("login page", () => {
     render(<LoginPage />);
     const field = screen.getByPlaceholderText("Votre mot de passe") as HTMLInputElement;
     expect(field.type).toBe("password");
-    fireEvent.click(screen.getByRole("button", { name: "Afficher le mot de passe" }));
+    const toggle = screen.getByRole("button", { name: "Afficher le mot de passe" });
+    // Le libellé change avec l'état : pas d'aria-pressed en plus (double signal).
+    expect(toggle.hasAttribute("aria-pressed")).toBe(false);
+    fireEvent.click(toggle);
     expect(field.type).toBe("text");
+    const hide = screen.getByRole("button", { name: "Masquer le mot de passe" });
+    expect(hide.hasAttribute("aria-pressed")).toBe(false);
   });
 
   it("change de mode en gardant l'adresse de retour dans la requête", () => {

@@ -680,7 +680,6 @@ export function LoginPage() {
                         aria-label={
                           showPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"
                         }
-                        aria-pressed={showPassword}
                         className="absolute right-0 top-1/2 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
                       >
                         {showPassword ? (

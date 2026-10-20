@@ -232,19 +232,38 @@ export function SalePublicPreview({
   const description = publicSaleDescription(preview);
   // Placeholders only: the real figures are never sent to a signed-out visitor.
   const analysisTeaser = [
-    { label: "Valeur estimée", placeholder: "000 000 € – 000 000 €", tier: "Compte gratuit" },
+    {
+      label: "Valeur estimée",
+      placeholder: "000 000 € – 000 000 €",
+      tier: "Compte gratuit",
+      visibleWith: "un compte gratuit",
+    },
     price
-      ? { label: "Écart chiffré avec la mise à prix", placeholder: "00 %", tier: "Compte gratuit" }
+      ? {
+          label: "Écart chiffré avec la mise à prix",
+          placeholder: "00 %",
+          tier: "Compte gratuit",
+          visibleWith: "un compte gratuit",
+        }
       : null,
     procedure.venueType === "tribunal"
       ? {
           label: "Enchère plafond (simulation)",
           placeholder: "000 000 €",
           tier: `Offre Analyse, ou ${MONTHLY_SALE_UNLOCKS} déblocages par mois`,
+          visibleWith: "l’offre Analyse, ou en débloquant la vente",
         }
       : null,
-    { label: "Ventes comparables du secteur", placeholder: "00 ventes", tier: "Offre Analyse" },
-  ].filter((item): item is { label: string; placeholder: string; tier: string } => item !== null);
+    {
+      label: "Ventes comparables du secteur",
+      placeholder: "00 ventes",
+      tier: "Offre Analyse",
+      visibleWith: "l’offre Analyse",
+    },
+  ].filter(
+    (item): item is { label: string; placeholder: string; tier: string; visibleWith: string } =>
+      item !== null,
+  );
   const priceBlock =
     price || !state ? (
       <div className={styles.priceBlock}>
@@ -394,10 +413,17 @@ export function SalePublicPreview({
                   <div key={item.label} className={styles.teaserRow}>
                     <dt>{item.label}</dt>
                     <dd>
+                      {/* Le chiffre flouté est un décor (aria-hidden) : un lecteur d'écran entend
+                          que la valeur est masquée et ce qui la débloque, pas « 000 000 € ». */}
+                      <span className="sr-only">
+                        Valeur masquée, visible avec {item.visibleWith}
+                      </span>
                       <span className={styles.blurred} aria-hidden data-nosnippet>
                         {item.placeholder}
                       </span>
-                      <span className={styles.teaserTier}>{item.tier}</span>
+                      <span className={styles.teaserTier} aria-hidden>
+                        {item.tier}
+                      </span>
                     </dd>
                   </div>
                 ))}
