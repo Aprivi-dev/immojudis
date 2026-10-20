@@ -22,7 +22,7 @@
       "id": "cadre",
       "title": "La liquidation judiciaire et ceux qui y interviennent",
       "paragraphs": [
-        "Une entreprise est en cessation des paiements lorsqu’elle ne peut pas faire face à ses dettes exigibles avec son actif disponible (art. L. 631-1). Si son redressement est manifestement impossible, la liquidation judiciaire peut être ouverte (art. L. 640-1). Elle vise les sociétés comme les entrepreneurs individuels, y compris les micro-entrepreneurs. Le tribunal compétent est le tribunal de commerce si le débiteur exerce une activité commerciale ou artisanale, le tribunal judiciaire dans les autres cas (art. L. 621-2, applicable par l’art. L. 641-1).",
+        "Une entreprise est en cessation des paiements lorsqu’elle ne peut pas faire face à ses dettes exigibles avec son actif disponible (art. L. 631-1). Si son redressement est manifestement impossible, la liquidation judiciaire peut être ouverte (art. L. 640-1). Elle vise les sociétés comme les entrepreneurs individuels, y compris les micro-entrepreneurs. Le tribunal compétent est le tribunal de commerce si le débiteur exerce une activité commerciale ou artisanale, le tribunal judiciaire dans les autres cas (art. L. 621-2, applicable par l’art. L. 641-1), sauf dans les ressorts où siège un tribunal des activités économiques. Ce tribunal, expérimenté depuis le 1er janvier 2025 dans douze villes (Paris, Marseille, Lyon, Nanterre, Versailles, Limoges, Avignon, Auxerre, Saint-Brieuc, Le Havre, Nancy et Le Mans), traite les procédures collectives quels que soient le statut et l’activité du débiteur, à l’exception des professions juridiques réglementées.",
         "Dans le jugement d’ouverture, le tribunal désigne un juge-commissaire et un liquidateur (art. L. 641-1). Le débiteur est dessaisi : il perd l’administration et la disposition des biens engagés dans son activité, que le liquidateur exerce à sa place tant que la liquidation n’est pas clôturée (art. L. 641-9)."
       ],
       "table": {
@@ -59,7 +59,7 @@
       "id": "mise-a-prix",
       "title": "La mise à prix est fixée par le juge-commissaire",
       "paragraphs": [
-        "En liquidation, les ventes d’immeubles suivent les règles de la vente forcée du CPCE, sauf deux articles que le Code de commerce écarte : L. 322-6 et L. 322-9 (art. L. 642-18). L’article L. 322-6 est la règle de la saisie immobilière selon laquelle le créancier fixe la mise à prix et, faute d’enchère, est déclaré adjudicataire d’office. L’article L. 322-9 règle le versement du prix sur un compte séquestre ou à la Caisse des dépôts. Ici, c’est le juge-commissaire qui fixe la mise à prix et les conditions essentielles de la vente.",
+        "En liquidation, les ventes d’immeubles suivent les règles de la vente forcée du CPCE (articles L. 322-5 à L. 322-12), dans la mesure où elles ne sont pas contraires au Code de commerce, sauf L. 322-6 et L. 322-9 (art. L. 642-18). L’article L. 322-6 est la règle de la saisie immobilière selon laquelle le créancier fixe la mise à prix et, faute d’enchère, est déclaré adjudicataire d’office. L’article L. 322-9 règle le versement du prix sur un compte séquestre ou à la Caisse des dépôts. Ici, c’est le juge-commissaire qui fixe la mise à prix et les conditions essentielles de la vente.",
         "Son ordonnance (la décision qui ordonne la vente) détermine la mise à prix de chaque bien, les modalités de publicité et les modalités de visite (art. R. 642-22). Elle peut préciser qu’à défaut d’enchères atteignant cette mise à prix, la vente pourra se faire sur une mise à prix inférieure qu’elle fixe. Avant de statuer, le juge-commissaire recueille les observations des contrôleurs (des créanciers qui l’assistent, art. L. 621-10), entend ou appelle le débiteur, et, dans certains cas, son conjoint, ainsi que le liquidateur (art. R. 642-36-1). L’ordonnance est notifiée au débiteur et aux créanciers inscrits, puis publiée au fichier immobilier (art. R. 642-23).",
         "Un créancier titulaire d’une hypothèque peut aussi poursuivre lui-même la vente si le liquidateur n’a pas entrepris la liquidation de l’immeuble dans les trois mois du jugement qui ouvre la liquidation (art. L. 643-2). La mise à prix est alors fixée par le juge-commissaire en accord avec ce créancier (art. R. 642-22 et R. 643-1).",
         "Comme en saisie immobilière, la mise à prix est un prix de départ, pas une estimation de la valeur du bien : les textes cités ne disent pas comment le juge la détermine. Demandez à l’avocat comment elle a été fixée. L’article « Mise à prix et valeur de marché : lire un écart sans se tromper » explique comment la comparer au marché."
@@ -130,7 +130,7 @@
           [
             "Garantie avant les enchères",
             "10 % de la mise à prix, minimum 3 000 € (art. R. 322-41).",
-            "Même règle à l’audience (art. R. 642-29-2) et chez le notaire (art. R. 642-32)."
+            "Même règle à l’audience (art. R. 642-29-2, qui renvoie aux règles sur les enchères, R. 322-39 à R. 322-49-2, dont R. 322-41) et chez le notaire (art. R. 642-32). Le bénéficiaire du chèque est indiqué dans le cahier des conditions de vente : à confirmer avec l’avocat ou le notaire."
           ],
           [
             "Surenchère",
@@ -140,7 +140,7 @@
           [
             "Paiement du prix",
             "Dans les deux mois de l’adjudication définitive, au séquestre ou à la Caisse des dépôts et consignations (art. R. 322-56).",
-            "Dans les trois mois de l’adjudication, sur le compte ouvert par le liquidateur à la Caisse des dépôts, avec les intérêts au taux légal à compter du jour où la vente est devenue définitive. L’acte ou le jugement est publié au service de la publicité foncière (le fichier immobilier) dans les deux mois. À défaut, les enchères sont réitérées : le bien est remis en vente (art. R. 643-3)."
+            "Dans les trois mois de l’adjudication, sur le compte ouvert par le liquidateur à la Caisse des dépôts, avec les intérêts au taux légal à compter du jour où la vente est devenue définitive. Passé ce délai, le liquidateur met l’adjudicataire en demeure par lettre recommandée, à peine de réitération des enchères. L’acte ou le jugement est publié au service de la publicité foncière (le fichier immobilier) dans les deux mois, sous la même sanction (art. R. 643-3)."
           ],
           [
             "Hypothèques",
@@ -155,7 +155,7 @@
           [
             "Qui ne peut pas acheter",
             "Le débiteur saisi, les auxiliaires de justice intervenus dans la procédure et les magistrats de la juridiction (art. R. 322-39).",
-            "S’y ajoutent notamment les dirigeants, les parents et alliés jusqu’au deuxième degré du débiteur ou des dirigeants, et les contrôleurs, sauf dérogation du juge-commissaire dans des cas limités (art. L. 642-20 et L. 642-3). Le liquidateur ne peut pas être adjudicataire (art. R. 642-26)."
+            "S’y ajoutent notamment les dirigeants, les parents et alliés jusqu’au deuxième degré du débiteur ou des dirigeants, et les contrôleurs, sauf dérogation du juge-commissaire dans des cas limités : elle n’est possible que sur requête du ministère public, jamais pour le débiteur ni pour les contrôleurs (art. L. 642-20 et L. 642-3). Le liquidateur ne peut pas être adjudicataire (art. R. 642-26)."
           ]
         ]
       }
@@ -171,7 +171,7 @@
         "Le cahier des conditions de vente : désignation du bien, origine de propriété, servitudes, baux consentis, procès-verbal de description, mise à prix et modalités de paiement (art. R. 642-25). L’article « Lire le cahier des conditions de vente et préparer la visite » donne la méthode.",
         "L’occupation : un immeuble d’entreprise peut être occupé par l’entreprise elle-même, par des locataires ou par un dirigeant. Les baux figurent au cahier. Voir « Acheter un bien occupé aux enchères : sécuriser son analyse avant de miser ».",
         "Le mode de vente et la personne qui reçoit les enchères : avocat au tribunal ou notaire sans avocat obligatoire. La garantie à remettre avant les enchères en dépend (art. R. 322-41 et R. 642-32).",
-        "Le calendrier de paiement : trois mois, intérêts au taux légal, remise en vente en cas de retard (art. R. 643-3). Voir « Financer un achat aux enchères : prêt, délais, pas de condition suspensive ».",
+        "Le calendrier de paiement : trois mois, intérêts au taux légal, puis mise en demeure par lettre recommandée à peine de réitération des enchères (art. R. 643-3). Voir « Financer un achat aux enchères : prêt, délais, pas de condition suspensive ».",
         "Les droits et taxes dus à l’acquisition d’un immeuble professionnel, par exemple la taxe sur la valeur ajoutée (TVA) ou les droits de mutation selon le cas : à faire préciser par l’avocat ou le notaire. Voir aussi « Frais d’une vente aux enchères judiciaire ».",
         "Les droits de tiers, comme un éventuel droit de préemption (le droit d’une collectivité de se substituer à l’acheteur) : voir « Préemption : la commune peut-elle vous évincer ? ».",
         "Votre situation : si vous avez un lien avec le débiteur ou ses dirigeants, demandez d’abord à l’avocat si vous pouvez acheter (art. L. 642-20 et L. 642-3).",
@@ -215,6 +215,10 @@
     {
       "label": "Légifrance — Code de commerce, article L621-2 (tribunal compétent)",
       "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000045178127"
+    },
+    {
+      "label": "Service-public.fr (Entreprendre) — Entreprises en difficulté : désignation et instauration des tribunaux des activités économiques (actualité A17504, mise à jour le 9 janvier 2025)",
+      "url": "https://entreprendre.service-public.gouv.fr/actualites/A17504"
     },
     {
       "label": "Légifrance — Code de commerce, article L621-10 (contrôleurs)",
