@@ -128,6 +128,8 @@ describe("erasure execution (P4-10)", () => {
       "user_alerts",
       "user_favorites",
       "user_followed_sale_snapshots",
+      "account_product_events",
+      "sale_reminder_dispatches",
       "saved_property_reports",
       "sale_workspaces",
       "user_subscriptions",

@@ -41,6 +41,8 @@ describe("sale retention", () => {
     const { client, rpc, ack, remove } = clientFor();
     expect(await runSaleRetention(new Date("2026-09-11T12:00:00Z"), client)).toMatchObject({
       deleted: 1,
+      busy: false,
+      purgeStatus: "completed",
       orphanUploadsQueued: 1,
       filesDeleted: 1,
     });
@@ -114,10 +116,14 @@ describe("sale retention", () => {
   it("stops on concurrent purge and still drains committed file removals", async () => {
     const { client, rpc } = clientFor();
     rpc.mockResolvedValueOnce({ data: { deleted: 0, remaining: null, busy: true }, error: null });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     expect(await runSaleRetention(new Date(), client)).toMatchObject({
       busy: true,
+      purgeStatus: "lock_busy",
       filesDeleted: 1,
     });
     expect(rpc).toHaveBeenCalledTimes(2);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("purge_lock_busy"));
+    warn.mockRestore();
   });
 });

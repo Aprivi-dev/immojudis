@@ -249,7 +249,7 @@ select throws_ok(
   '22004', null, 'no account, no event'
 );
 select throws_ok(
-  $$select public.record_account_product_event('c5100000-0000-4000-8000-0000000000ff', 'sale_unlocked')$$,
+  $$select public.record_account_product_event('c5100000-0000-4000-8000-0000000000ff', 'sale_unlocked', null, 'c5100000-1000-4000-8000-000000000001')$$,
   '23503', null, 'an unknown account is refused by the foreign key'
 );
 
