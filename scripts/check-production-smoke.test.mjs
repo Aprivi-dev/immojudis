@@ -529,18 +529,34 @@ describe("production smoke test, public catalogue and its caches", () => {
     );
   });
 
-  it("fails when the cached /sales carries a Vary header", async () => {
+  it("accepts the router Vary that Next.js sets on every App Router page", async () => {
     const site = fakeSite({
       overrides: {
         "/sales": (headers) =>
           response(headers, {
             body: salesPage(),
-            extra: { "x-vercel-cache": "HIT", vary: "rsc, next-router-state-tree" },
+            extra: {
+              "x-vercel-cache": "HIT",
+              vary: "rsc, next-router-state-tree, next-router-prefetch, next-router-segment-prefetch",
+            },
+          }),
+      },
+    });
+    await expect(run(site, { indexing: "closed" })).resolves.toMatchObject({ ok: true });
+  });
+
+  it("fails when the cached /sales varies on another header", async () => {
+    const site = fakeSite({
+      overrides: {
+        "/sales": (headers) =>
+          response(headers, {
+            body: salesPage(),
+            extra: { "x-vercel-cache": "HIT", vary: "rsc, cookie" },
           }),
       },
     });
     await expect(run(site, { indexing: "closed" })).rejects.toThrow(
-      "/sales: en-tête Vary « rsc, next-router-state-tree »",
+      "/sales: en-tête Vary « rsc, cookie »",
     );
   });
 

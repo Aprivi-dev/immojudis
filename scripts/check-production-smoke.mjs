@@ -9,6 +9,17 @@ const DEFAULT_MIN_SALE_URLS = 100;
 // Sales tried, in the order of the sitemap, before concluding that the listed sales do not answer.
 const SALE_CANDIDATES = 3;
 
+// Request headers on which Next.js varies every App Router response (RSC payload, prefetch, router
+// state). The CDN keys them itself (and Next.js adds `_rsc` to those requests): a plain page load
+// sends none of them, so they do not split the cache of /sales between visitors.
+const NEXT_ROUTER_VARY = new Set([
+  "rsc",
+  "next-router-state-tree",
+  "next-router-prefetch",
+  "next-router-segment-prefetch",
+  "next-url",
+]);
+
 // A well-formed identifier that no sale carries. Searching it never matches a real record.
 const UNKNOWN_SALE_PATH = "/sales/00000000-0000-4000-8000-000000000000";
 
@@ -235,8 +246,9 @@ async function fetchCatalogue(
 /**
  * The public catalogue and its caches (docs/runbooks/catalogue-visibility-projection.md):
  *  - `/sales` is served from the CDN: the second of two successive requests is `x-vercel-cache: HIT`,
- *    and neither carries `set-cookie` (a cookie makes a response uncacheable) nor `Vary` on the cached
- *    one; its HTML lists sales (`/sales/<uuid>`);
+ *    and neither carries `set-cookie` (a cookie makes a response uncacheable) nor, on the cached one,
+ *    a `Vary` beyond the router headers Next.js always sets (`NEXT_ROUTER_VARY`); its HTML lists
+ *    sales (`/sales/<uuid>`);
  *  - the static variant `/sales/defaut` is `noindex`;
  *  - `/sales?page=2` is rendered on the server: at least 20 listings in the HTML;
  *  - `/api/catalogue/preview` answers with a public `cache-control`.
@@ -264,7 +276,11 @@ async function runCatalogueChecks({ origin, fetchImpl }) {
   }
   assertNoCookie("/sales", second.response);
   const vary = second.response.headers.get("vary");
-  if (vary) {
+  const foreignVary = (vary ?? "")
+    .split(",")
+    .map((name) => name.trim().toLowerCase())
+    .filter((name) => name && !NEXT_ROUTER_VARY.has(name));
+  if (foreignVary.length > 0) {
     throw new Error(`/sales: en-tête Vary « ${vary} » sur la réponse servie par le cache.`);
   }
   const listed = saleLinkIds(firstBody).size;
