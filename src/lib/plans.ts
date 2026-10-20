@@ -271,6 +271,18 @@ export function hasLiveStripeSubscription(
   );
 }
 
+/**
+ * Le compte a-t-il un droit Analyse DURABLE : abonnement actif, compte premium ou administrateur,
+ * jamais le seul avantage de l'offre de lancement (`launchOffer`, retirable sans préavis) ? C'est
+ * la règle TypeScript de `app_private.has_standing_analysis_access`. Réservée aux données qu'un
+ * compte gratuit ne doit jamais voir, même pendant l'offre (lien avocat poursuivant ↔ vente).
+ */
+export function hasStandingAnalysisAccess(
+  plan: { hasAnalysisAccess: boolean; launchOffer?: true } | null | undefined,
+): boolean {
+  return plan?.hasAnalysisAccess === true && plan.launchOffer !== true;
+}
+
 export function pastDueGraceEnd(currentPeriodEnd: unknown): string | null {
   if (typeof currentPeriodEnd !== "string") return null;
   const end = new Date(currentPeriodEnd).getTime();

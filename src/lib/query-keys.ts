@@ -105,6 +105,9 @@ export const queryKeys = {
     city: string | undefined,
     department: string | undefined,
   ) => ["lawyer-directory", saleId, bar, city, department] as const,
+  /** Ventes à venir des avocats d'une page de l'annuaire (comptes payants) : propres au compte. */
+  lawyerProsecutedSales: (userKey: Id, lawyerIds: readonly string[]) =>
+    ["lawyer-prosecuted-sales", userKey, lawyerIds.join(",")] as const,
 
   // Saved comparisons
   saleAnalysisSets: (userId: string) => ["sale-analysis-sets", userId] as const,
