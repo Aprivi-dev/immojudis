@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { PublicApiError } from "@/lib/api-errors";
+import { saveFavoriteDossier } from "@/lib/favorite-dossier";
 import { pilotDraftSchema } from "@/lib/professional-pilots";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import type { Database, Json } from "@/integrations/supabase/types";
@@ -118,6 +119,17 @@ export async function upsertSaleWorkspace({
   auth: SupabaseAuthContext;
   input: SaleWorkspacePayload;
 }): Promise<SaleWorkspaceResponse> {
+  // « Mon dossier » (`user_favorites.personal_status`) est la source unique du statut : le PUT
+  // l'écrit d'abord là. La vente doit être suivie, sinon la réponse (404) le dit et rien n'est
+  // écrit. `tracking_status` n'en est plus qu'une copie, gardée pour les lectures existantes
+  // (suivi des audiences, suivi des changements) ; aucun écran ne s'appuie dessus.
+  if (hasInput(input, "trackingStatus") && input.trackingStatus !== undefined) {
+    await saveFavoriteDossier({
+      auth,
+      input: { saleId: input.saleId, personalStatus: input.trackingStatus },
+    });
+  }
+
   const insertPayload: SaleWorkspaceInsert = {
     user_id: auth.userId,
     sale_id: input.saleId,

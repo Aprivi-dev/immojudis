@@ -7,6 +7,15 @@ import {
   validateSalesSearch,
 } from "./search-url-state";
 
+describe("filtre « visite dans les 7 jours » dans l'adresse", () => {
+  it("se lit et s'écrit sous visitSoon, et reste absent quand il n'est pas choisi", () => {
+    expect(validateSalesSearch({ visitSoon: "true" }).visitSoon).toBe(true);
+    expect(validateSalesSearch({}).visitSoon).toBeUndefined();
+    expect(salesSearchToUrlRecord({ visitSoon: true }).visitSoon).toBe(true);
+    expect(salesSearchToUrlRecord({ visitSoon: false }).visitSoon).toBeUndefined();
+  });
+});
+
 describe("montants et valeurs ignorées dans l'adresse", () => {
   it("plafonne les montants à 100 000 000 € et les arrondit à l'euro", () => {
     expect(MAX_PRICE_EUR).toBe(100_000_000);

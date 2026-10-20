@@ -106,13 +106,9 @@ export type IcsEvent = {
   alarms?: ReadonlyArray<{ trigger: string; description: string }>;
 };
 
-export function buildIcsCalendar(event: IcsEvent, prodId: string): string {
+/** The `BEGIN:VEVENT` … `END:VEVENT` lines of one event (not folded yet). */
+function eventLines(event: IcsEvent): string[] {
   const lines: string[] = [
-    "BEGIN:VCALENDAR",
-    "VERSION:2.0",
-    `PRODID:${escapeIcsText(prodId)}`,
-    "CALSCALE:GREGORIAN",
-    "METHOD:PUBLISH",
     "BEGIN:VEVENT",
     `UID:${escapeIcsText(event.uid)}`,
     `DTSTAMP:${formatIcsUtc(event.stamp)}`,
@@ -151,6 +147,24 @@ export function buildIcsCalendar(event: IcsEvent, prodId: string): string {
       "END:VALARM",
     );
   }
-  lines.push("END:VEVENT", "END:VCALENDAR");
+  lines.push("END:VEVENT");
+  return lines;
+}
+
+/** A calendar holding several events (e.g. every followed hearing) in one file. */
+export function buildIcsCalendarMany(events: readonly IcsEvent[], prodId: string): string {
+  const lines = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    `PRODID:${escapeIcsText(prodId)}`,
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    ...events.flatMap(eventLines),
+    "END:VCALENDAR",
+  ];
   return lines.map(foldIcsLine).join(CRLF) + CRLF;
+}
+
+export function buildIcsCalendar(event: IcsEvent, prodId: string): string {
+  return buildIcsCalendarMany([event], prodId);
 }

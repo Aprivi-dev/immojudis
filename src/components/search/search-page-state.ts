@@ -47,6 +47,7 @@ export type SearchDraft = {
   openHouse: boolean;
   belowRange: boolean;
   noPointsToVerify: boolean;
+  visitSoon: boolean;
 };
 
 export type SearchStatistics = {
@@ -89,6 +90,7 @@ export function searchToDraft(search: SalesSearchParams): SearchDraft {
     openHouse: Boolean(search.openHouse),
     belowRange: Boolean(search.belowRange),
     noPointsToVerify: Boolean(search.noPointsToVerify),
+    visitSoon: Boolean(search.visitSoon),
   };
 }
 
@@ -123,6 +125,7 @@ export function emptySearchDraft(): SearchDraft {
     openHouse: false,
     belowRange: false,
     noPointsToVerify: false,
+    visitSoon: false,
   };
 }
 
@@ -162,6 +165,7 @@ export function draftToSearch(draft: SearchDraft, current: SalesSearchParams): S
     openHouse: draft.openHouse || undefined,
     belowRange: draft.belowRange || undefined,
     noPointsToVerify: draft.noPointsToVerify || undefined,
+    visitSoon: draft.visitSoon || undefined,
   };
 }
 
@@ -182,6 +186,7 @@ const CHOSEN_DRAFT_KEYS: ReadonlySet<keyof SearchDraft> = new Set([
   "openHouse",
   "belowRange",
   "noPointsToVerify",
+  "visitSoon",
   "occupancy",
   "minSaleDate",
   "maxSaleDate",

@@ -41,6 +41,7 @@ en production seulement après avoir relu le comptage.
 | 3 | `20261020130003_quarantine_licitor_multi_lot_annonces.sql` | 16 | Met 9 annonces Licitor multi-lots en quarantaine durable. |
 | 4 | `20261025100001_repair_doubled_tribunal_names.sql` | 26 | Corrige les noms canoniques de `public.tribunals` au préfixe double (« TJ Tribunal judiciaire du Mans » -> « TJ Le Mans »), avec le texte tribunal des ventes et les preuves de rattachement qui doivent leur rester égaux. |
 | 5 | `20261029100200_recompute_past_quarantined_deadlines.sql` | 6 (W1) | Recalcule `retention_deadline` et `catalogue_expiry_deadline` des ventes `past` et `quarantined` avec les fonctions corrigées par la migration `20261029100200_retention_past_quarantined_sales.sql` (à appliquer d'abord). Comptage par défaut ; les déclencheurs sont suspendus le temps de l'écriture. Sauvegarde : `app_private.retention_deadline_repair_backup_20261029`. |
+| 6 | `20261030100001_count_workspace_status_not_in_dossier.sql` | 36 (V2a) | **Comptage seulement, sans mode application** : statuts et plafonds saisis dans l'ancien dossier de travail Analyse qui n'ont pas leur pendant dans « Mon dossier » (`user_favorites`). Aucun rattrapage n'est décidé. |
 
 Les quatre premières sont indépendantes les unes des autres, mais l'ordre 1, 2, 3, 4 est conseillé : le point 15
 retire le point fantôme avant que le recalcul ne géocode de nouveau les ventes concernées, et le

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mapHearingRows, type UpcomingHearingRow } from "@/lib/upcoming-hearings";
@@ -148,6 +148,16 @@ describe("/audiences-a-venir : génération et indexation", () => {
 });
 
 describe("/audiences-a-venir : contenu", () => {
+  it("transmet l'origine à la fiche dans le navigateur seulement (« Retour aux audiences »)", async () => {
+    render(await Page());
+    const link = screen.getAllByRole("link", { name: /Pantin/ })[0]!;
+    expect(link.getAttribute("href")).toBe("/sales/00000000-0000-4000-8000-000000000002");
+    fireEvent.pointerEnter(link);
+    expect(link.getAttribute("href")).toBe(
+      "/sales/00000000-0000-4000-8000-000000000002?from=%2Faudiences-a-venir",
+    );
+  });
+
   it("groupe par fenêtre, par jour puis par tribunal, avec un lien vers chaque fiche", async () => {
     render(await Page());
 

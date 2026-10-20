@@ -27,6 +27,14 @@ describe("activeFilterChips", () => {
     ]);
   });
 
+  it("shows and removes the « visite dans les 7 jours » criterion", () => {
+    const search = { visitSoon: true, city: "Lyon" };
+    const chip = activeFilterChips(search).find((item) => item.key === "visitSoon")!;
+    expect(chip.label).toBe("Visite dans les 7 jours");
+    expect(mergeSalesSearch(search, chip.clear)).toMatchObject({ city: "Lyon" });
+    expect(mergeSalesSearch(search, chip.clear).visitSoon).toBeUndefined();
+  });
+
   it("groups a min and a max under one removable chip", () => {
     const chips = activeFilterChips({ minPrice: 50_000, maxPrice: 100_000 });
     expect(chips).toHaveLength(1);

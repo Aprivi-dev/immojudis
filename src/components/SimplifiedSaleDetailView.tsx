@@ -343,6 +343,12 @@ function SaleDetailWorkspace({
         : "summary";
   const hasVerifiedTribunal = saleHasVerifiedTribunal(sale);
   const venueType = getSaleProcedure(sale).venueType;
+  // Le dossier de travail (offre Analyse) existe pour les ventes au tribunal, chez le notaire et
+  // domaniales ; « Mon dossier » en est l'unique porte.
+  const workspaceAvailable =
+    access === "analysis" &&
+    !publicDemo &&
+    (venueType === "tribunal" || venueType === "notary" || venueType === "state");
   const marketSurfaces = getMarketValuationSurfaces(displaySale);
   const surface = criticalAnalysisInputsBlocked ? null : marketSurfaces.builtSurfaceM2;
   // The market estimate feeds the bid ceiling (judicial sales) and, for Analyse, the market blocks.
@@ -478,6 +484,7 @@ function SaleDetailWorkspace({
 
   const [activeTab, setActiveTab] = useState<SaleDetailTab>("apercu");
   const [anchorVisit, setAnchorVisit] = useState(0);
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [expandedDetails, setExpandedDetails] = useState<Partial<Record<LegacyDetail, boolean>>>(
     {},
   );
@@ -629,6 +636,23 @@ function SaleDetailWorkspace({
               saleId={sale.id}
               calculatedCeiling={heroCeiling}
               calculationPending={ceilingEnabled && marketPending}
+              // « Mon dossier » est l'unique porte du dossier de travail (offre Analyse).
+              onOpenWorkspace={workspaceAvailable ? () => setWorkspaceOpen(true) : undefined}
+            />
+          ) : null}
+          {workspaceAvailable && workspaceOpen ? (
+            <ProfessionalPilotLauncher
+              sale={displaySale}
+              definition={
+                venueType === "tribunal"
+                  ? buildTribunalPilot(displaySale)
+                  : venueType === "notary"
+                    ? buildNotaryPilot(displaySale)
+                    : buildStatePilot(displaySale)
+              }
+              publicDemo={publicDemo}
+              open
+              onOpenChange={setWorkspaceOpen}
             />
           ) : null}
         </div>
@@ -1021,32 +1045,6 @@ function SaleDetailWorkspace({
                       requireSimulation
                     />
                   </section>
-                ) : null}
-                {access === "analysis" && !publicDemo ? (
-                  <details
-                    className={panelStyles.disclosure}
-                    open={Boolean(expandedDetails["professional-pilot"])}
-                  >
-                    <summary
-                      onClick={(event) => {
-                        event.preventDefault();
-                        setDetailOpen("professional-pilot", !expandedDetails["professional-pilot"]);
-                      }}
-                    >
-                      Préparer le dossier de travail
-                    </summary>
-                    <ProfessionalPilotLauncher
-                      sale={displaySale}
-                      definition={
-                        isTribunalSale
-                          ? buildTribunalPilot(displaySale)
-                          : venueType === "notary"
-                            ? buildNotaryPilot(displaySale)
-                            : buildStatePilot(displaySale)
-                      }
-                      publicDemo={publicDemo}
-                    />
-                  </details>
                 ) : null}
                 {access === "analysis" ? <InformationAvailabilityNotice /> : null}
               </>

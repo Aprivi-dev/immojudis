@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Terme } from "@/components/ceiling/Terme";
+import { SaleDetailLink } from "@/components/SaleDetailLink";
 import { Card, PageShell, buttonClasses } from "@/components/ui/primitives";
 import { formatStartingPrice, propertyTypeLabel } from "@/lib/format";
 import { SALE_CALENDAR_DISCLAIMER } from "@/lib/sale-calendar";
@@ -65,8 +66,9 @@ function Days({
                   <ul className="mt-1 divide-y divide-line">
                     {group.hearings.map((hearing) => (
                       <li key={hearing.id} className="py-2">
-                        <Link
-                          href={`/sales/${hearing.id.toLowerCase()}`}
+                        <SaleDetailLink
+                          saleId={hearing.id.toLowerCase()}
+                          returnTo="/audiences-a-venir"
                           className="grid gap-1 sm:grid-cols-[1fr_auto] sm:items-baseline sm:gap-4"
                         >
                           <span className="min-w-0">
@@ -85,7 +87,7 @@ function Days({
                               {formatStartingPrice(hearing.startingPriceEur)}
                             </span>
                           </span>
-                        </Link>
+                        </SaleDetailLink>
                       </li>
                     ))}
                   </ul>

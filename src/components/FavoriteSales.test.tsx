@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   removeFavoriteSale: vi.fn(),
   fetchFavoriteDossier: vi.fn(),
   saveFavoriteDossier: vi.fn(),
+  downloadCalendar: vi.fn(),
   toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }),
 }));
 
@@ -36,6 +37,7 @@ vi.mock("@/lib/client-api", () => ({
   removeFavoriteSale: mocks.removeFavoriteSale,
   fetchFavoriteDossier: mocks.fetchFavoriteDossier,
   saveFavoriteDossier: mocks.saveFavoriteDossier,
+  downloadFollowedCalendar: mocks.downloadCalendar,
 }));
 vi.mock("@/hooks/use-analysis-checkout-open", () => ({
   useAnalysisCheckoutOpen: () => mocks.checkoutOpen(),
@@ -46,6 +48,9 @@ vi.mock("@/integrations/supabase/client", () => ({ supabase: { from: vi.fn() } }
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
 }));
+
+// « Mon démarrage » a son propre test (MonDemarrage.test.tsx) ; ici on vérifie seulement sa place.
+vi.mock("./MonDemarrage", () => ({ MonDemarrage: () => <div data-testid="mon-demarrage-stub" /> }));
 
 vi.mock("./FavoriteButton", () => ({
   FavoriteButton: ({ saleId }: { saleId: string }) => <button>Retirer {saleId}</button>,
@@ -75,6 +80,7 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   vi.useRealTimers();
+  window.history.replaceState(null, "", "/");
 });
 
 function favoritesResponse(): FavoriteSalesResponse {
@@ -585,6 +591,15 @@ describe("FavoriteSales : changements des ventes suivies", () => {
     expect(past.compareDocumentPosition(removed) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  it("propose « Mon démarrage » sur la page, avec ou sans favori", async () => {
+    setup();
+    mocks.fetchFavoriteSales.mockResolvedValue({ ...favoritesResponse(), favorites: [] });
+    renderPage();
+
+    await screen.findByText("Aucun favori pour le moment");
+    expect(screen.getByTestId("mon-demarrage-stub")).toBeTruthy();
+  });
+
   it("n'affiche rien quand il n'y a aucun favori", async () => {
     setup();
     mocks.fetchFavoriteSales.mockResolvedValue({ ...favoritesResponse(), favorites: [] });
@@ -593,5 +608,162 @@ describe("FavoriteSales : changements des ventes suivies", () => {
     await screen.findByText("Aucun favori pour le moment");
     expect(screen.queryByText("Changements récents")).toBeNull();
     expect(mocks.fetchSaleChangeEvents).not.toHaveBeenCalled();
+  });
+});
+
+describe("FavoriteSales : « Mon planning »", () => {
+  const DAY = 86_400_000;
+  const inDays = (days: number, hour = 13) => {
+    const date = new Date(Date.now() + days * DAY);
+    date.setUTCHours(hour, 0, 0, 0);
+    return date.toISOString();
+  };
+
+  function favorite(
+    id: string,
+    sale: Record<string, unknown>,
+    dossier: Record<string, unknown> = {},
+  ) {
+    return {
+      id: `favorite-${id}`,
+      saleId: id,
+      favoritedAt: "2026-09-01T10:00:00.000Z",
+      sale: {
+        ...EXAMPLE_SALE,
+        id,
+        title: `Vente ${id}`,
+        status: "upcoming",
+        sale_venue_type: "tribunal",
+        ...sale,
+      },
+      personalStatus: null,
+      bidCeilingEur: null,
+      bidCeilingSavedAt: null,
+      ...dossier,
+    };
+  }
+
+  function serve(favorites: unknown[]) {
+    mocks.fetchFavoriteSales.mockResolvedValue({
+      ...favoritesResponse(),
+      favorites,
+    });
+    mocks.fetchSalesAiReviewProjections.mockResolvedValue({ projections: [] });
+    mocks.fetchSaleChangeEvents.mockResolvedValue({ events: [] });
+  }
+
+  function renderPage() {
+    return render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <FavoriteSales />
+      </QueryClientProvider>,
+    );
+  }
+
+  async function openPlanning() {
+    fireEvent.click(await screen.findByRole("tab", { name: "Mon planning" }));
+    return screen.findByRole("heading", { name: "Mon planning" });
+  }
+
+  it("range les ventes suivies par audience avec « J-x », statut et plafond de « Mon dossier »", async () => {
+    mocks.checkoutOpen.mockReturnValue(true);
+    serve([
+      favorite("loin", { sale_date: inDays(30) }),
+      favorite(
+        "proche",
+        { sale_date: inDays(3) },
+        { personalStatus: "bidding", bidCeilingEur: 185_000 },
+      ),
+      favorite("reportee", { sale_date: inDays(10), status: "postponed" }),
+    ]);
+    renderPage();
+    await openPlanning();
+
+    const rows = screen.getAllByRole("article");
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.textContent).toContain("J-3");
+    expect(rows[0]?.textContent).toContain("Vente proche");
+    expect(rows[0]?.textContent).toContain("Je prépare mon enchère");
+    expect(rows[0]?.textContent).toMatch(/185\s000\s€/);
+    expect(rows[1]?.textContent).toContain("J-30");
+    // Chaque audience au tribunal a son bouton agenda.
+    expect(screen.getAllByRole("button", { name: "Ajouter à mon agenda" })).toHaveLength(2);
+    // La vente reportée n'est pas datée : mise à part, jamais « à confirmer ».
+    const undated = screen.getByRole("heading", { name: "Sans audience datée" }).parentElement!;
+    expect(undated.textContent).toContain("Vente reportee");
+    expect(screen.queryByText(/à confirmer/i)).toBeNull();
+    // Les changements récents et les ventes passées sont dans la vue.
+    expect(await screen.findByText("Aucun changement détecté")).toBeTruthy();
+  });
+
+  it("exporte toutes les audiences suivies en un fichier, dans l'ordre des dates", async () => {
+    mocks.checkoutOpen.mockReturnValue(true);
+    serve([
+      favorite("loin", { sale_date: inDays(30) }),
+      favorite("proche", { sale_date: inDays(3) }),
+      favorite("notaire", {
+        sale_date: inDays(5),
+        sale_venue_type: "notary",
+        sale_procedure: null,
+        source_blocks: null,
+      }),
+    ]);
+    mocks.downloadCalendar.mockResolvedValue({
+      blob: new Blob(["BEGIN:VCALENDAR"]),
+      filename: "immojudis-audiences-suivies.ics",
+      exported: 1,
+      skipped: 1,
+    });
+    URL.createObjectURL = vi.fn(() => "blob:test");
+    URL.revokeObjectURL = vi.fn();
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => undefined);
+    renderPage();
+    await openPlanning();
+
+    fireEvent.click(screen.getByRole("button", { name: /Exporter toutes mes audiences/ }));
+
+    // Seules les audiences au tribunal partent à l'export, la plus proche d'abord.
+    await waitFor(() =>
+      expect(mocks.downloadCalendar).toHaveBeenCalledWith({ saleIds: ["proche", "loin"] }),
+    );
+    await waitFor(() => expect(click).toHaveBeenCalled());
+    expect((await screen.findByText(/1 audience dans le fichier/)).textContent).toContain(
+      "1 laissée de côté",
+    );
+    click.mockRestore();
+  });
+
+  it("montre le refus du serveur avec ses mots", async () => {
+    mocks.checkoutOpen.mockReturnValue(true);
+    serve([favorite("proche", { sale_date: inDays(3) })]);
+    mocks.downloadCalendar.mockRejectedValue(
+      Object.assign(new Error("Nous n’ajoutons aucune de ces audiences à votre agenda."), {
+        status: 409,
+      }),
+    );
+    renderPage();
+    await openPlanning();
+
+    fireEvent.click(screen.getByRole("button", { name: /Exporter toutes mes audiences/ }));
+    expect((await screen.findByRole("alert")).textContent).toContain("Nous n’ajoutons aucune");
+  });
+
+  it("garde « Mes favoris » par défaut et revient aux cartes", async () => {
+    mocks.checkoutOpen.mockReturnValue(true);
+    serve([favorite("proche", { sale_date: inDays(3) })]);
+    renderPage();
+
+    expect(
+      (await screen.findByRole("tab", { name: "Mes favoris" })).getAttribute("aria-selected"),
+    ).toBe("true");
+    expect(screen.queryByRole("heading", { name: "Mon planning" })).toBeNull();
+    await openPlanning();
+    fireEvent.click(screen.getByRole("tab", { name: "Mes favoris" }));
+    expect(screen.queryByRole("heading", { name: "Mon planning" })).toBeNull();
+    expect(screen.getByRole("tabpanel").tagName).toBe("UL");
   });
 });

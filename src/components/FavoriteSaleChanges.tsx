@@ -1,9 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { PremiumFeaturePreview } from "@/components/PremiumFeaturePreview";
+import { SaleDetailLink } from "@/components/SaleDetailLink";
 import { Card, buttonClasses } from "@/components/ui/primitives";
 import {
   getAiReviewFieldResult,
@@ -13,7 +13,6 @@ import {
 import { fetchSaleChangeEvents } from "@/lib/client-api";
 import type { FavoriteSale } from "@/lib/favorites";
 import { propertyTypeLabel } from "@/lib/format";
-import { saleDetailPath } from "@/lib/navigation";
 import { queryKeys } from "@/lib/query-keys";
 import {
   MAX_DISPLAYED_SALE_CHANGES,
@@ -182,12 +181,13 @@ function AnalysisChanges({
                     </div>
                     {detail ? <p className="mt-1 text-sm">{detail}</p> : null}
                     <p className="mt-1 text-sm">
-                      <Link
-                        href={saleDetailPath(event.saleId)}
+                      <SaleDetailLink
+                        saleId={event.saleId}
+                        returnTo="/favoris"
                         className="font-semibold text-gold-text underline underline-offset-4"
                       >
                         {saleLabel(event.saleId)}
-                      </Link>
+                      </SaleDetailLink>
                     </p>
                   </Card>
                 </li>

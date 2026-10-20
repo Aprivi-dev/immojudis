@@ -3,7 +3,7 @@ import { getSaleProcedure } from "@/lib/sale-procedure";
 import { saleVenueMatchesType } from "@/lib/sale-types";
 import { isHouseWithLand } from "@/lib/alerts";
 import { dpeMatches, extractDpe } from "@/lib/dpe";
-import { listingVisits } from "@/lib/sale-listing";
+import { listingVisits, saleHasVisitSoon } from "@/lib/sale-listing";
 import { getSaleSurface } from "@/lib/surface";
 import { isOccupiedOccupancyStatus } from "@/lib/market-gap-band";
 import { estimateGrossYieldPct, haversineKm, pricePerM2, type GeoPoint } from "@/lib/geo";
@@ -189,6 +189,7 @@ export function countActiveSearchFilters(search: SalesSearchParams): number {
     search.openHouse,
     search.belowRange,
     search.noPointsToVerify,
+    search.visitSoon,
   ].filter(Boolean).length;
 }
 
@@ -224,6 +225,7 @@ export function hasClientOnlyFilters(search: SalesSearchParams): boolean {
     // fourchette (`market-range-filter.ts`) : ni l'un ni l'autre n'est une colonne du catalogue.
     search.belowRange ||
     search.noPointsToVerify ||
+    search.visitSoon ||
     search.yearBuilt ||
     // « Distance » n'a pas besoin de balayage sans adresse (rien à mesurer) : elle suit déjà
     // `aroundAddress` ci-dessus. « Chambres » se trie côté serveur (`beds_desc`).
@@ -309,6 +311,7 @@ export function applyClientSearchFilters(
     ) {
       return false;
     }
+    if (search.visitSoon && !saleHasVisitSoon(sale)) return false;
 
     return true;
   });
