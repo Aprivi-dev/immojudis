@@ -25,6 +25,7 @@ import type {
   OfferOpeningTestResult,
 } from "@/lib/admin-offer-opening-notifier";
 import type { AdminPilotage } from "@/lib/admin-pilotage";
+import type { LawyerStatement } from "@/lib/lawyer-statement";
 import type {
   AdminSubscriptionGrantInput,
   AdminSubscriptionGrantResponse,
@@ -217,6 +218,17 @@ export async function fetchAdminPilotage(): Promise<AdminPilotage> {
   });
 
   return readJson<AdminPilotage>(response);
+}
+
+/** Relevé mensuel des avocats référencés (`month` : AAAA-MM), administrateur seulement. */
+export async function fetchAdminLawyerStatement(month: string): Promise<LawyerStatement> {
+  const response = await fetch(`/api/admin/lawyers/statement?month=${encodeURIComponent(month)}`, {
+    signal: AbortSignal.timeout(30_000),
+    headers: await authHeaders(),
+    cache: "no-store",
+  });
+
+  return readJson<LawyerStatement>(response);
 }
 
 export async function fetchAdminLaunchOffer(): Promise<AdminLaunchOfferState> {
