@@ -83,10 +83,23 @@ export function AdminOfferOpeningPanel() {
               <p className="mt-2 text-sm leading-6 text-brand-navy/65" data-testid="opening-count">
                 <strong className="text-brand-navy">{audience.recipients}</strong> destinataire
                 {audience.recipients > 1 ? "s" : ""} actif{audience.recipients > 1 ? "s" : ""}{" "}
-                (demande active, jamais prévenu). {audience.alreadyNotified} déjà prévenu
+                (demande active, adresse confirmée, jamais prévenu). {audience.alreadyNotified} déjà
+                prévenu
                 {audience.alreadyNotified > 1 ? "s" : ""}. Envoi par lots de {audience.batchSize} au
                 plus ; une personne n’est jamais prévenue deux fois.
               </p>
+              {audience.needsReview > 0 ? (
+                <p
+                  role="status"
+                  className="mt-2 text-sm text-amber-800"
+                  data-testid="opening-review"
+                >
+                  {audience.needsReview} demande{audience.needsReview > 1 ? "s" : ""} à vérifier :
+                  des essais d’envoi ont eu lieu sans confirmation, il y a plus de 23 h ou 3 fois.
+                  Avant de les relancer, consulter le journal d’envoi de Resend
+                  (docs/runbooks/mise-en-production-2026-10-20.md).
+                </p>
+              ) : null}
               {audience.configured ? null : (
                 <p role="status" className="mt-2 text-sm text-amber-800">
                   Envoi d’emails non configuré sur ce serveur (manque :{" "}
