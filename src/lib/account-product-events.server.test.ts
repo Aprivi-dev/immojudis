@@ -142,6 +142,15 @@ describe("accountProductEventRow", () => {
     ).toEqual(["detail", "eventType", "saleId"]);
   });
 
+  it("records the weekly digest and sale result clicks under their own detail", () => {
+    for (const email of ["weekly", "result"] as const) {
+      expect(accountProductEventRow({ type: "email_clicked", email, saleId })).toMatchObject({
+        eventType: "email_clicked",
+        detail: email,
+      });
+    }
+  });
+
   it("refuses an event type outside the closed list", () => {
     expect(accountProductEventRow({ type: "page_viewed" } as never)).toBeNull();
   });

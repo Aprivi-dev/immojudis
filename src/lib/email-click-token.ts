@@ -2,7 +2,7 @@ import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 /**
- * Lien suivi d'un email (alertes, rappels d'audience) : redirection de suivi signée (point 65).
+ * Lien suivi d'un email (alertes, rappels d'audience, récapitulatif hebdomadaire, alerte de résultat) : redirection de suivi signée (point 65).
  *
  * Le lien de l'email est `/api/email/click?token=…`. Le jeton, signé et daté, porte quatre choses :
  * le compte, le type d'email, la vente et la destination (`sale` : fiche de la vente, `calendar` :
@@ -16,7 +16,13 @@ import { createHmac, timingSafeEqual } from "node:crypto";
  */
 export const EMAIL_CLICK_TOKEN_TTL_DAYS = 90;
 
-export type EmailClickKind = "alert" | "reminder";
+/**
+ * Liste fermée des emails dont les liens sont suivis : `alert` (récapitulatif d'alertes), `reminder`
+ * (rappels d'audience et avertissements), `weekly` (récapitulatif hebdomadaire « Ma semaine ») et
+ * `result` (alerte de résultat ou de remise en vente). La contrainte `account_product_events_type_detail_check`
+ * (migration 20261030120400) reprend la même liste.
+ */
+export type EmailClickKind = "alert" | "reminder" | "weekly" | "result";
 export type EmailClickTarget = "sale" | "calendar";
 
 export type EmailClickClaims = {
@@ -28,7 +34,12 @@ export type EmailClickClaims = {
 };
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const KINDS: ReadonlySet<string> = new Set<EmailClickKind>(["alert", "reminder"]);
+const KINDS: ReadonlySet<string> = new Set<EmailClickKind>([
+  "alert",
+  "reminder",
+  "weekly",
+  "result",
+]);
 const TARGETS: ReadonlySet<string> = new Set<EmailClickTarget>(["sale", "calendar"]);
 
 function signingKey(env: Pick<NodeJS.ProcessEnv, string> = process.env): string {

@@ -30,7 +30,7 @@ export type AccountProductEvent =
     }
   | { type: "bid_ceiling_calculated"; saleId: string }
   | { type: "calendar_exported"; saleId: string }
-  | { type: "email_clicked"; email: "alert" | "reminder"; saleId: string };
+  | { type: "email_clicked"; email: "alert" | "reminder" | "weekly" | "result"; saleId: string };
 
 const uuidSchema = z.string().uuid();
 

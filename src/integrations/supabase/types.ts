@@ -9138,6 +9138,55 @@ export type Database = {
         };
         Relationships: [];
       };
+      // À régénérer par `npm run db:types` (migration 20261030120200).
+      sale_result_dispatches: {
+        Row: {
+          attempts: number;
+          created_at: string;
+          error: string | null;
+          id: string;
+          message_id: string | null;
+          mode: string;
+          payload: Json;
+          result_kind: string;
+          sale_id: string;
+          sent_at: string | null;
+          status: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          attempts?: number;
+          created_at?: string;
+          error?: string | null;
+          id?: string;
+          message_id?: string | null;
+          mode: string;
+          payload?: Json;
+          result_kind: string;
+          sale_id: string;
+          sent_at?: string | null;
+          status?: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          attempts?: number;
+          created_at?: string;
+          error?: string | null;
+          id?: string;
+          message_id?: string | null;
+          mode?: string;
+          payload?: Json;
+          result_kind?: string;
+          sale_id?: string;
+          sent_at?: string | null;
+          status?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       sale_retention_storage_queue: {
         Row: {
           bucket: string;
@@ -10885,8 +10934,17 @@ export type Database = {
           sale_reminders_consented_at: string | null;
           sale_reminders_enabled: boolean;
           sale_reminders_revoked_at: string | null;
+          sale_results_consent_text_version: string | null;
+          sale_results_consented_at: string | null;
+          sale_results_enabled: boolean;
+          sale_results_revoked_at: string | null;
           updated_at: string;
           user_id: string;
+          weekly_digest_consent_text_version: string | null;
+          weekly_digest_consented_at: string | null;
+          weekly_digest_enabled: boolean;
+          weekly_digest_revoked_at: string | null;
+          weekly_digest_weekday: number;
         };
         Insert: {
           alert_email_consented_at?: string | null;
@@ -10898,8 +10956,17 @@ export type Database = {
           sale_reminders_consented_at?: string | null;
           sale_reminders_enabled?: boolean;
           sale_reminders_revoked_at?: string | null;
+          sale_results_consent_text_version?: string | null;
+          sale_results_consented_at?: string | null;
+          sale_results_enabled?: boolean;
+          sale_results_revoked_at?: string | null;
           updated_at?: string;
           user_id: string;
+          weekly_digest_consent_text_version?: string | null;
+          weekly_digest_consented_at?: string | null;
+          weekly_digest_enabled?: boolean;
+          weekly_digest_revoked_at?: string | null;
+          weekly_digest_weekday?: number;
         };
         Update: {
           alert_email_consented_at?: string | null;
@@ -10911,8 +10978,17 @@ export type Database = {
           sale_reminders_consented_at?: string | null;
           sale_reminders_enabled?: boolean;
           sale_reminders_revoked_at?: string | null;
+          sale_results_consent_text_version?: string | null;
+          sale_results_consented_at?: string | null;
+          sale_results_enabled?: boolean;
+          sale_results_revoked_at?: string | null;
           updated_at?: string;
           user_id?: string;
+          weekly_digest_consent_text_version?: string | null;
+          weekly_digest_consented_at?: string | null;
+          weekly_digest_enabled?: boolean;
+          weekly_digest_revoked_at?: string | null;
+          weekly_digest_weekday?: number;
         };
         Relationships: [];
       };
@@ -11442,6 +11518,52 @@ export type Database = {
           stripe_subscription_id?: string | null;
           updated_at?: string;
           user_id?: string;
+        };
+        Relationships: [];
+      };
+      // À régénérer par `npm run db:types` (migration 20261030120100).
+      weekly_digest_dispatches: {
+        Row: {
+          attempts: number;
+          created_at: string;
+          error: string | null;
+          id: string;
+          message_id: string | null;
+          mode: string;
+          payload: Json;
+          sent_at: string | null;
+          status: string;
+          updated_at: string;
+          user_id: string;
+          week_key: string;
+        };
+        Insert: {
+          attempts?: number;
+          created_at?: string;
+          error?: string | null;
+          id?: string;
+          message_id?: string | null;
+          mode: string;
+          payload?: Json;
+          sent_at?: string | null;
+          status?: string;
+          updated_at?: string;
+          user_id: string;
+          week_key: string;
+        };
+        Update: {
+          attempts?: number;
+          created_at?: string;
+          error?: string | null;
+          id?: string;
+          message_id?: string | null;
+          mode?: string;
+          payload?: Json;
+          sent_at?: string | null;
+          status?: string;
+          updated_at?: string;
+          user_id?: string;
+          week_key?: string;
         };
         Relationships: [];
       };
@@ -13685,6 +13807,29 @@ export type Database = {
         Returns: string;
       };
       purge_sale_reminder_dispatches: {
+        Args: { p_older_than?: string };
+        Returns: number;
+      };
+      // À régénérer par `npm run db:types` (migrations 20261030120100 et 20261030120200).
+      claim_weekly_digest: {
+        Args: { p_mode: string; p_payload?: Json; p_user_id: string; p_week_key: string };
+        Returns: string;
+      };
+      purge_weekly_digest_dispatches: {
+        Args: { p_older_than?: string };
+        Returns: number;
+      };
+      claim_sale_result: {
+        Args: {
+          p_kind: string;
+          p_mode: string;
+          p_payload?: Json;
+          p_sale_id: string;
+          p_user_id: string;
+        };
+        Returns: string;
+      };
+      purge_sale_result_dispatches: {
         Args: { p_older_than?: string };
         Returns: number;
       };
