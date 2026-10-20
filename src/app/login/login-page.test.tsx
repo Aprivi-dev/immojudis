@@ -281,6 +281,35 @@ describe("login page", () => {
     );
   });
 
+  it("motif « offre » : n'annonce pas une souscription possible quand l'offre n'est pas ouverte", () => {
+    mocks.search = { mode: "investor", reason: "offre" };
+    render(<LoginPage />);
+    expect(screen.getByTestId("login-reason").textContent).toBe(
+      "Créez votre compte gratuit. L’offre Analyse n’est pas encore ouverte à la souscription : vous pourrez demander à être prévenu de son ouverture.",
+    );
+    expect(screen.getByTestId("login-reason").textContent).not.toContain("quand vous le souhaitez");
+  });
+
+  it("colonne d'accueil : le tarif prévu remplace « sur abonnement résiliable »", () => {
+    mocks.search = { mode: "investor" };
+    const closed = render(<LoginPage />);
+    expect(closed.container.textContent).toContain(
+      "tarif prévu : 59 € TTC / mois, pas encore souscriptible",
+    );
+    expect(closed.container.textContent).not.toContain("sur abonnement résiliable");
+    closed.unmount();
+
+    mocks.launch = { active: true, pending: false };
+    const active = render(<LoginPage />);
+    expect(active.container.textContent).toContain(
+      "Pendant l’offre de lancement, le compte gratuit bénéficie des avantages de l’offre Analyse",
+    );
+    expect(active.container.textContent).toContain(
+      "Tarif prévu de l’offre Analyse : 59 € TTC / mois, pas encore souscriptible.",
+    );
+    expect(active.container.textContent).not.toContain("sur abonnement résiliable");
+  });
+
   it("sans offre de lancement, aucune mention de l'offre n'apparaît", () => {
     mocks.search = { mode: "investor" };
     render(<LoginPage />);

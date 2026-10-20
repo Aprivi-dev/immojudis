@@ -613,7 +613,7 @@ function addChangeIfDifferent(
 async function assertRealtimeChangesAvailable(auth: SupabaseAuthContext) {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "alerts.realtimeChanges")) {
-    throw new Error("Suivi temps réel des changements réservé au plan Analyse.");
+    throw new Error("Suivi temps réel des changements réservé à l’offre Analyse.");
   }
 }
 

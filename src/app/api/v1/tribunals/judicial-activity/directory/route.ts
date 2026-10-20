@@ -24,7 +24,7 @@ export async function GET(request: Request) {
     await assertFeatureEntitlement(
       auth,
       "sales.statistics",
-      "Répertoire des tribunaux réservé au plan Analyse.",
+      "Répertoire des tribunaux réservé à l’offre Analyse.",
     );
     const url = new URL(request.url);
     const input = tribunalJudicialActivityDirectoryQuerySchema.parse(

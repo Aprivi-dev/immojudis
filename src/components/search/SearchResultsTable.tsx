@@ -202,13 +202,14 @@ const ListingRow = memo(function ListingRow({
   const stateListing = stateListingStatus(sale);
   const showCity = cityReview.blocked || Boolean(sale.city?.trim());
   const departmentLine = departmentLabel(sale.department);
-  const launchOffer = useLaunchOffer().active;
+  const { active: launchOffer, pending: launchPending } = useLaunchOffer();
   const accessLine = listingAccessLine(sale, {
     locked,
     analysisLocked,
     unlocked,
     verifying,
     launchOffer,
+    launchPending,
   });
   const surfaceText = displaySurface.value != null ? displaySurface.label : "Surface n.c.";
   const review = {

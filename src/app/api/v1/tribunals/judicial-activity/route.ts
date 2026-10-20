@@ -25,7 +25,7 @@ export async function GET(request: Request) {
     await assertFeatureEntitlement(
       auth,
       "sales.statistics",
-      "Activité judiciaire réservée au plan Analyse.",
+      "Activité judiciaire réservée à l’offre Analyse.",
     );
     const url = new URL(request.url);
     const input = tribunalJudicialActivityQuerySchema.parse(

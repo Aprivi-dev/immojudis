@@ -20,7 +20,7 @@ export async function GET(request: Request) {
     await assertFeatureEntitlement(
       auth,
       "workspace.audienceTracking",
-      "Espace de suivi réservé au plan Analyse.",
+      "Espace de suivi réservé à l’offre Analyse.",
     );
     const url = new URL(request.url);
     const saleId = saleIdSchema.parse(url.searchParams.get("saleId"));
@@ -40,7 +40,7 @@ export async function PUT(request: Request) {
     await assertFeatureEntitlement(
       auth,
       "workspace.audienceTracking",
-      "Espace de suivi réservé au plan Analyse.",
+      "Espace de suivi réservé à l’offre Analyse.",
     );
     const input = saleWorkspaceInputSchema.parse(await request.json());
     const response = await upsertSaleWorkspace({ auth, input });

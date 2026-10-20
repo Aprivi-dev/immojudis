@@ -153,7 +153,7 @@ export function SearchPagination({
   if (!hasMore && !hasPrevious && loadedCount === 0) return null;
 
   // Page au-delà de la dernière (lien ancien, résultats qui ont diminué) : on le dit et on
-  // propose le retour au début plutôt qu'un compteur « 0–48 / 40 dossiers ».
+  // propose le retour au début plutôt qu'un compteur « 0–48 / 40 ventes ».
   if (page > 1 && loadedCount === 0 && !isFetching) {
     return (
       <nav
@@ -214,7 +214,7 @@ export function SearchPagination({
           : totalCount != null
             ? `${firstResult.toLocaleString("fr-FR")}–${lastResult.toLocaleString(
                 "fr-FR",
-              )} / ${totalCount.toLocaleString("fr-FR")} dossiers`
+              )} / ${totalCount.toLocaleString("fr-FR")} ventes`
             : `Page ${page.toLocaleString("fr-FR")}`}
       </span>
       {hasMore ? (

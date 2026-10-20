@@ -24,7 +24,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     await assertFeatureEntitlement(
       auth,
       "property.outcomeGraph",
-      "Prévision Outcome Graph réservée au plan Analyse.",
+      "Prévision Outcome Graph réservée à l’offre Analyse.",
     );
     const { id: saleId } = paramsSchema.parse(await params);
     const forecast = await getOutcomeGraphForecastForSale(saleId);

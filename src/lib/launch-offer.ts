@@ -17,15 +17,16 @@
 export const LAUNCH_OFFER_LABEL = "Offre de lancement";
 
 /**
- * Mention à un compte connecté : ses avantages Analyse sont ceux de l'offre de lancement, et ils
- * peuvent lui être retirés sans préavis au lancement officiel du site.
+ * Mention à un compte connecté : ses avantages Analyse sont ceux de l'offre de lancement (à condition
+ * que son adresse email soit confirmée), et ils peuvent lui être retirés sans préavis, à tout moment,
+ * notamment au lancement officiel du site.
  */
 export const LAUNCH_OFFER_ACCOUNT_TEXT =
-  "Offre de lancement : votre compte gratuit bénéficie des avantages de l’offre Analyse. Ces avantages pourront vous être retirés, sans préavis, dès le lancement officiel du site.";
+  "Offre de lancement : votre compte gratuit, une fois votre adresse email confirmée, bénéficie des avantages de l’offre Analyse. Ces avantages pourront vous être retirés, sans préavis, à tout moment, notamment au lancement officiel du site.";
 
 /** Mention à un visiteur non connecté (appels à l'inscription). */
 export const LAUNCH_OFFER_VISITOR_TEXT =
-  "Offre de lancement : créez un compte gratuit et accédez aux avantages de l’offre Analyse (avantages retirables sans préavis au lancement officiel).";
+  "Offre de lancement : créez un compte gratuit, confirmez votre adresse email et accédez aux avantages de l’offre Analyse (avantages retirables sans préavis, à tout moment, notamment au lancement officiel).";
 
 export type LaunchOfferAudience = "account" | "visitor";
 

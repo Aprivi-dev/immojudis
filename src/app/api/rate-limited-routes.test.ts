@@ -269,7 +269,7 @@ describe("P4-02 rate limits on costly and public routes", () => {
     // Sans droit d'accès : refusé avant le plafond, qui n'est pas consommé.
     mocks.enforceDaily.mockClear();
     mocks.entitlement.mockRejectedValue(
-      new Error("Contexte environnemental réservé au plan Analyse."),
+      new Error("Contexte environnemental réservé à l’offre Analyse."),
     );
     expect((await environmentPost(json({}))).status).toBe(403);
     expect(mocks.enforceDaily).not.toHaveBeenCalled();

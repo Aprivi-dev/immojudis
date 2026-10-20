@@ -28,7 +28,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     await assertFeatureEntitlement(
       auth,
       "sales.statistics",
-      "Statistiques d’adjudication réservées au plan Analyse.",
+      "Statistiques d’adjudication réservées à l’offre Analyse.",
       { saleId: paramsSchema.safeParse(rawParams).data?.id },
     );
     const { id: saleId } = paramsSchema.parse(rawParams);

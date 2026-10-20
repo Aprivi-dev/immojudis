@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
+import { AccountLaunchOfferEnd } from "@/components/AccountLaunchOfferEnd";
 import { AlertEmailRecapToggle } from "@/components/AlertEmailRecapToggle";
 import { BillingActions } from "@/components/BillingActions";
 import { SaleRemindersToggle } from "@/components/SaleRemindersToggle";
@@ -207,6 +208,8 @@ export function AccountPage() {
           </p>
         ) : null}
       </section>
+
+      {launchOffer && !manageableSubscription ? <AccountLaunchOfferEnd /> : null}
 
       <section
         className="mt-6 rounded-xl border border-border bg-card p-5"

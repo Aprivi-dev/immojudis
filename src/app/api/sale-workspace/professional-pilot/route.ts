@@ -13,7 +13,7 @@ export async function PUT(request: Request) {
     await assertFeatureEntitlement(
       auth,
       "workspace.audienceTracking",
-      "Espace de suivi réservé au plan Analyse.",
+      "Espace de suivi réservé à l’offre Analyse.",
     );
     const input = professionalPilotSaveSchema.parse(await request.json());
     return NextResponse.json(await saveProfessionalPilot({ auth, input }));

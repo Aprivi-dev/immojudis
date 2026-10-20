@@ -41,7 +41,7 @@ export async function GET(request: Request) {
     const { door } = await assertFeatureEntitlementVia(
       auth,
       "sales.statistics",
-      "Statistiques des annonces judiciaires réservées au plan Analyse.",
+      "Statistiques des annonces judiciaires réservées à l’offre Analyse.",
       { saleId: z.string().uuid().safeParse(query.saleId).data },
     );
     const input = tribunalListingStatisticsQuerySchema.parse(query);

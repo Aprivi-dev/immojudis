@@ -23,7 +23,7 @@ export async function POST(request: Request) {
     const plan = await assertFeatureEntitlement(
       auth,
       "property.neighborhoodAnalysis",
-      "Contexte environnemental réservé au plan Analyse.",
+      "Contexte environnemental réservé à l’offre Analyse.",
     );
     // Après le droit d'accès : seul un compte qui y a droit use les compteurs de son adresse et le
     // disjoncteur global.

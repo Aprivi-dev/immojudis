@@ -7,6 +7,7 @@ import { serverEnv } from "@/lib/env";
 import { emailClickUrl, isEmailClickSaleId } from "@/lib/email-click-token";
 import { createUnsubscribeToken } from "@/lib/email-unsubscribe-token";
 import { canCreateEmailAlertNotification } from "@/lib/notification-preferences";
+import { setOfferOpeningNotification } from "@/lib/offer-opening-notification";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import { resolveSiteOrigin } from "@/lib/site-url";
@@ -242,6 +243,27 @@ export async function revokeSaleReminderConsent({
   );
   if (error) throw error;
   return { userId, revokedAt };
+}
+
+/**
+ * Retire la demande d'être prévenu de l'ouverture de l'offre Analyse (désinscription par le lien
+ * signé de l'email d'ouverture, portée « offer-opening »). Même écriture que le bouton de /offres :
+ * la demande est retirée avec ses réponses facultatives, la preuve du consentement reste.
+ */
+export async function revokeOfferOpeningRequest({
+  userId,
+  now = new Date(),
+}: {
+  userId: string;
+  now?: Date;
+}): Promise<{ userId: string; revokedAt: string }> {
+  await setOfferOpeningNotification({
+    auth: { userId },
+    admin: supabaseAdmin,
+    input: { enabled: false },
+    now,
+  });
+  return { userId, revokedAt: now.toISOString() };
 }
 
 /** Pause a single alert (per-alert unsubscribe); other alerts keep running. */

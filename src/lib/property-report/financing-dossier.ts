@@ -14,7 +14,9 @@ import { PDF_PAGE_BREAK } from "@/lib/simple-pdf";
  * Les règles citées sont celles de l'article de /ressources « Garantie de 10 % : chèque de banque ou
  * caution ? » (CPCE, art. R. 322-41, R. 322-56, R. 322-58). Elles visent les ventes au tribunal
  * (saisie immobilière, licitation) ; pour un autre type de vente, la page renvoie à l'annonce et à
- * l'organisateur au lieu d'appliquer une règle qui n'est pas la leur.
+ * l'organisateur au lieu d'appliquer une règle qui n'est pas la leur. Il en va de même quand le type
+ * de vente est inconnu ou que les sources se contredisent (contrôle « conflict ») : la garantie et
+ * le délai s'affichent « non renseigné » et renvoient à l'annonce.
  */
 export const FINANCING_NOT_PROVIDED = "non renseigné";
 
@@ -99,7 +101,10 @@ export function financingDossierLines(input: FinancingDossierInput): string[] {
   const guarantee = financingGuaranteeEur(startingPrice);
   const documents = positive(input.documentsCount);
 
-  const tribunalRules = tribunal || venue == null || venue === "unknown";
+  // Type de vente inconnu ou en conflit entre les sources : aucune règle du tribunal n'est appliquée.
+  const venueUncertain =
+    venue == null || venue === "unknown" || sale.venueVerificationStatus === "conflict";
+  const tribunalRules = tribunal && !venueUncertain;
   return [
     PDF_PAGE_BREAK,
     FINANCING_DOSSIER_TITLE,
@@ -113,7 +118,11 @@ export function financingDossierLines(input: FinancingDossierInput): string[] {
     `Type: ${text(sale.propertyType, ["Bien", "Bien à qualifier"])} ; surface: ${
       positive(sale.surface) != null ? text(sale.surfaceLabel) : FINANCING_NOT_PROVIDED
     }`,
-    `Type de vente: ${venueLabel ?? `${FINANCING_NOT_PROVIDED} (règles ci-dessous : vente au tribunal)`} ; tribunal: ${text(sale.tribunal)}`,
+    `Type de vente: ${
+      venueUncertain
+        ? `${FINANCING_NOT_PROVIDED} (inconnu ou sources en désaccord : garantie et délai à lire dans l’annonce)`
+        : (venueLabel ?? FINANCING_NOT_PROVIDED)
+    } ; tribunal: ${text(sale.tribunal)}`,
     ...schedule,
     "",
     "Chiffres du dossier",
@@ -132,11 +141,13 @@ export function financingDossierLines(input: FinancingDossierInput): string[] {
       ? [
           `Garantie de 10 % de la mise à prix, minimum 3 000 € (vente au tribunal): ${euros(guarantee)}`,
           `Montant indiqué dans l’annonce: ${euros(announcedGuarantee.amountEur)}`,
-          "Forme: chèque de banque à l’ordre du séquestre ou de la Caisse des dépôts et consignations (selon le cahier), ou caution bancaire irrévocable (art. R. 322-41 du CPCE).",
-          "Calculée sur la mise à prix, non sur l’enchère. Restituée à l’issue de l’audience si vous n’êtes pas adjudicataire ; acquise aux créanciers si l’adjudicataire est défaillant.",
+          "Forme: chèque de banque à l’ordre du séquestre (tiers qui garde les fonds) ou de la Caisse des dépôts (selon le cahier), ou caution bancaire irrévocable (art. R. 322-41 du CPCE).",
+          "Calculée sur la mise à prix, non sur l’enchère. Restituée à l’issue de l’audience si vous n’êtes pas adjudicataire ; acquise aux créanciers et, le cas échéant, au débiteur si l’adjudicataire est défaillant ; la différence avec le prix de revente peut en plus être due.",
         ]
       : [
-          `Garantie de 10 % de la mise à prix, minimum 3 000 €: ne vise que les ventes au tribunal (${venueLabel ?? FINANCING_NOT_PROVIDED}).`,
+          venueUncertain
+            ? `Garantie de 10 % de la mise à prix, minimum 3 000 €: ${FINANCING_NOT_PROVIDED} (le type de vente n’est pas établi ; cette règle ne vise que les ventes au tribunal).`
+            : `Garantie de 10 % de la mise à prix, minimum 3 000 €: ne vise que les ventes au tribunal (${venueLabel ?? FINANCING_NOT_PROVIDED}).`,
           `Montant indiqué dans l’annonce: ${euros(announcedGuarantee.amountEur)}`,
           "Montant, forme et restitution: à lire dans l’annonce et à demander à l’organisateur de la vente.",
         ]),
@@ -149,7 +160,9 @@ export function financingDossierLines(input: FinancingDossierInput): string[] {
           "Imputation de la garantie sur le prix: non précisée par les textes, à demander à l’avocat.",
         ]
       : [
-          `Délai: ${FINANCING_NOT_PROVIDED}. Le délai de deux mois vise les ventes au tribunal ; pour cette vente, il est fixé par l’annonce ou le cahier des conditions de vente.`,
+          venueUncertain
+            ? `Délai: ${FINANCING_NOT_PROVIDED}. Le type de vente n’étant pas établi, le délai de deux mois des ventes au tribunal n’est pas appliqué ; il est fixé par l’annonce ou le cahier des conditions de vente.`
+            : `Délai: ${FINANCING_NOT_PROVIDED}. Le délai de deux mois vise les ventes au tribunal ; pour cette vente, il est fixé par l’annonce ou le cahier des conditions de vente.`,
         ]),
     "",
     "Documents utiles à la banque",
