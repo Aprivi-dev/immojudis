@@ -628,3 +628,70 @@ migration n'est appliquée.
   - `/api/health` passera en `degraded` tant que la publication d'Enchères Immobilières reste bloquée. Le test de
     fumée sera donc rouge : c'est attendu.
   - Il faut ajouter `time-machine` dans `requirements-dev.txt` pour le job hebdomadaire.
+
+## Mise en production (20/10/2026, soir)
+
+Décision du propriétaire : « Quand tu auras terminé, tu pourras lancer la production. »
+
+### Avant la fusion
+
+La CI a d'abord été rouge. C'était la première exécution des tests pgTAP sur une vraie base. Toutes les corrections
+portent sur des tests ; aucune migration n'était fautive.
+
+- **pgTAP, 8 fichiers.**
+  - 5 tests figeaient un comportement changé volontairement (474, 485, 486, 495, 516). Ils vérifient désormais la
+    nouvelle règle, sans être affaiblis (485 passe de 14 à 18 assertions).
+  - 3 tests avaient un jeu de données faux (531, 590, 621).
+  - Suite locale sur un Supabase jetable du conteneur : 183 fichiers, 3 451 tests, 0 échec.
+- **Playwright, 4 tests × 5 navigateurs, plus 6 instables.**
+  - L'annonceur pour lecteurs d'écran des notifications doublait le texte de la page.
+  - La vue admin Clients appelait une route que les mocks ne simulaient pas.
+  - Helpers communs dans `e2e/support/toast.ts`. Le code du produit n'a pas changé.
+
+### Déroulé
+
+1. **Fusion.** PR https://github.com/Aprivi-dev/immojudis/pull/283 fusionnée dans `main` (`8dfc4ee`), CI entièrement
+   verte, Playwright et pgTAP compris.
+2. **Migrations.** Workflow « Apply Supabase Migrations », exécution 87, réussie en 3 min 30. Les 37 migrations sont
+   appliquées ; la dernière est `20261031100500`.
+3. **Déploiement.** Vercel a déployé `main` en production (`dpl_Doa1jRU8BXBheQ4MNTwataoT49wd`, état READY).
+
+### Contrôles (lecture seule)
+
+- **Lots A à G :**
+  - fonctions présentes ;
+  - les 2 index « once per day » ;
+  - contrainte validée ;
+  - colonnes et déclencheur du consentement ;
+  - 3 nouvelles tables ;
+  - 7 tâches `pg_cron` ;
+  - contrat `get_public_tribunal_sales` avec `source_group` ;
+  - le navigateur ne peut plus écrire `sale_reminders_enabled` ;
+  - colonnes `notify_*` présentes.
+- **Pages** (HTTP 200) :
+  - `/`, `/sales` ;
+  - `/tribunaux/justice-tj-1-93` ;
+  - `/audiences-a-venir` : 855 audiences, en 0,7 s, contre plus de 20 s avant ;
+  - `/sitemap.xml` : 82 pages de tribunaux.
+- **Erreurs Vercel** depuis le déploiement : aucune, hors les réponses 503 attendues de `/api/health`.
+- **Effets attendus, décrits avant la mise en production :**
+  - `/api/health` est en `degraded` (503) avec 2 sources en retard : AGRASC, jamais publiée en entier, et Enchères
+    Immobilières, figée depuis le 08/10. Le test de fumée échoue donc sur ce seul point.
+  - L'accueil n'affiche plus de date « Données vérifiées le », pour la même raison (AGRASC).
+
+### Reste au propriétaire
+
+- **Réparations** (`psql` et l'adresse de la base, que cette session n'a pas) :
+  - `20261029110000_backfill_account_email_identity.sql`, d'abord en comptage puis avec `-v apply=1`. Tant
+    qu'elle n'est pas lancée, les comptes existants gardent tous l'offre de lancement : personne ne la perd, mais
+    deux adresses `a+1` / `a+2` d'une même boîte la gardent toutes les deux ;
+  - `20261029100200_recompute_past_quarantined_deadlines.sql`, hors collecte. Une alerte
+    `retention.sale.overdue` est attendue pendant le rattrapage ;
+  - `20261030100001_count_workspace_status_not_in_dossier.sql`, comptage seul, facultatif.
+- **AGRASC et Enchères Immobilières** : corriger la collecte, ou désactiver ces sources (votre décision). C'est ce qui
+  rendra la date de l'accueil et l'état `ok` de `/api/health`.
+- **Types** : `npm run db:types`.
+- **Inchangés :**
+  - les trois interrupteurs restent sur `off` ;
+  - aucun envoi réel à la liste d'attente ;
+  - textes juridiques à faire valider par un avocat.
