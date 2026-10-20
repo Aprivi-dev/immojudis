@@ -16,7 +16,7 @@ type NotificationPreferenceInsert =
  * (`sale_reminders_consent_text_version`) : à changer à chaque modification de ce texte, pour savoir
  * à quel libellé chaque personne a consenti. Elle est posée ici, côté serveur, jamais par le client.
  */
-export const SALE_REMINDERS_CONSENT_TEXT_VERSION = "2026-10-20";
+export const SALE_REMINDERS_CONSENT_TEXT_VERSION = "2026-10-20.2";
 
 /**
  * Versions des textes de consentement du récapitulatif hebdomadaire « Ma semaine »
@@ -24,8 +24,8 @@ export const SALE_REMINDERS_CONSENT_TEXT_VERSION = "2026-10-20";
  * consentement. À changer à chaque modification du texte de la case ; posées ici, côté serveur,
  * jamais par le client.
  */
-export const WEEKLY_DIGEST_CONSENT_TEXT_VERSION = "2026-10-20";
-export const SALE_RESULTS_CONSENT_TEXT_VERSION = "2026-10-20";
+export const WEEKLY_DIGEST_CONSENT_TEXT_VERSION = "2026-10-20.2";
+export const SALE_RESULTS_CONSENT_TEXT_VERSION = "2026-10-20.2";
 
 /** Jour d'envoi du récapitulatif tant que la personne n'a rien choisi : le mardi (ISO 8601 : 2). */
 export const DEFAULT_WEEKLY_DIGEST_WEEKDAY = 2;

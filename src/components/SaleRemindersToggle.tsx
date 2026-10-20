@@ -14,7 +14,9 @@ import { userMessage } from "@/lib/user-messages";
  *
  * Affichée dans `/compte` (Notifications) et dans « Mon dossier » d'une vente suivie. Le texte qu'elle
  * présente est celui dont la version est `SALE_REMINDERS_CONSENT_TEXT_VERSION` : à changer avec lui.
- * Un seul vocabulaire, « rappels d'audience », pour la case, ses explications et les messages.
+ * Un seul libellé (relecture juridique du 20/10/2026, à faire valider par un avocat), le retrait
+ * annoncé AVANT la case, et la mention qu'aucun envoi n'est garanti. Un seul vocabulaire, « rappels
+ * d'audience », pour les explications et les messages.
  */
 export function SaleRemindersToggle({ userId, className }: { userId: string; className: string }) {
   const queryClient = useQueryClient();
@@ -45,17 +47,20 @@ export function SaleRemindersToggle({ userId, className }: { userId: string; cla
     <label className={className}>
       <span>
         <span className="block font-semibold text-foreground">
-          Me rappeler l’audience (7 jours avant et la veille)
+          Me prévenir par email : rappel 7 jours avant puis la veille de l’audience, et si la date
+          change ou si la vente est retirée, reportée, annulée ou adjugée
         </span>
-        <span className="block text-foreground">
-          Me prévenir si la date change ou si la vente est retirée
+        <span className="mt-1 block text-foreground">
+          Retirable à tout moment, ici ou par le lien de désinscription de chaque email.
         </span>
         <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
           {enabled
             ? data.saleRemindersAvailable
-              ? "Rappels d’audience activés. Vous pouvez les retirer à tout moment, ici ou par le lien de désinscription de chaque email."
-              : "Rappels d’audience activés ; les envois sont suspendus pour le moment. Vous pouvez les retirer ici."
-            : "Pour vos favoris et vos ventes débloquées. Vous êtes aussi prévenu si la vente est reportée, annulée ou adjugée. Dates à vérifier auprès de l’avocat poursuivant."}
+              ? "Rappels d’audience activés. "
+              : "Rappels d’audience activés ; les envois sont suspendus pour le moment. "
+            : "Pour vos favoris et vos ventes débloquées. "}
+          Les envois dépendent des informations publiées par les sources ; aucun envoi n’est
+          garanti. Dates à vérifier auprès de l’avocat poursuivant.
         </span>
       </span>
       <input

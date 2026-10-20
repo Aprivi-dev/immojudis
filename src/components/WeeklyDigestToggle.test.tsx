@@ -58,6 +58,21 @@ describe("WeeklyDigestToggle", () => {
     expect(screen.queryByRole("combobox")).toBeNull();
   });
 
+  it("annonce le retrait avant la case et dit qu'aucun envoi n'est garanti", async () => {
+    mocks.preferences.mockResolvedValue(preferences());
+    setup();
+    const checkbox = await screen.findByRole("checkbox");
+    const retrait = screen.getByText(
+      "Retirable à tout moment, ici ou par le lien de désinscription de chaque email.",
+    );
+    expect(
+      retrait.compareDocumentPosition(checkbox) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(document.body.textContent).toContain(
+      "Les envois dépendent des informations publiées par les sources ; aucun envoi n’est garanti.",
+    );
+  });
+
   it("enregistre le consentement distinct, sans toucher aux alertes ni aux rappels", async () => {
     mocks.preferences.mockResolvedValue(preferences());
     mocks.update.mockResolvedValue(preferences({ enabled: true }));
