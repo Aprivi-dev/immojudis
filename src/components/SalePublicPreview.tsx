@@ -43,6 +43,7 @@ import {
   seoSurface,
   tribunalDisplayName,
 } from "@/lib/seo";
+import { tribunalPagePath } from "@/lib/tribunal-pages";
 import type { AuctionSale, SaleVenueType } from "@/lib/types";
 import styles from "./SalePublicPreview.module.css";
 
@@ -251,7 +252,16 @@ export function SalePublicPreview({
       {tribunal ? (
         <div className={styles.fact}>
           <dt>Tribunal</dt>
-          <dd>{tribunal}</dd>
+          <dd>
+            {preview.tribunal_code ? (
+              // La page du tribunal : ses prochaines ventes, ses chiffres, l'alerte de son département.
+              <Link href={tribunalPagePath(preview.tribunal_code)} className="underline">
+                {tribunal}
+              </Link>
+            ) : (
+              tribunal
+            )}
+          </dd>
         </div>
       ) : null}
     </dl>

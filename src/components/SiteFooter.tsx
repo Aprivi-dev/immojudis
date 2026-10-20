@@ -8,6 +8,7 @@ import { linkPrefetch } from "@/lib/navigation";
 const MAIN_LINKS = [
   { href: "/sales", label: "Ventes" },
   { href: "/tribunaux", label: "Tribunaux" },
+  { href: "/audiences-a-venir", label: "Audiences à venir" },
   { href: "/ventes-encheres-immobilieres", label: "Par département" },
   { href: "/avocats", label: "Avocats" },
   { href: "/ressources", label: "Ressources" },

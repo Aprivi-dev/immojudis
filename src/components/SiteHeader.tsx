@@ -47,6 +47,47 @@ const AccountMenu = lazy(() =>
 
 export type SiteHeaderTheme = "dark" | "light";
 
+type SiteHeaderPlacement = "fixed" | "sticky";
+
+/**
+ * Position et habillage de la barre (élément `<header>`), partagés avec l'en-tête de secours
+ * (`NavigationFallback` de `providers.tsx`) : tant que le vrai en-tête n'est pas là, la barre de
+ * secours doit occuper exactement la même place, sinon la page bouge quand il arrive.
+ */
+export function siteHeaderClasses(theme: SiteHeaderTheme, placement: SiteHeaderPlacement): string {
+  const dark = theme === "dark";
+  const positioning = dark
+    ? "absolute inset-x-0 top-0 z-50"
+    : placement === "fixed"
+      ? "fixed inset-x-0 top-0 z-50"
+      : "sticky top-0 z-40";
+  return cn(
+    positioning,
+    dark
+      ? "text-white"
+      : "border-b border-border bg-white/95 text-foreground backdrop-blur supports-[backdrop-filter]:bg-white/90",
+  );
+}
+
+/** Rangée de la barre (logo, navigation) : même largeur et même hauteur que l'en-tête réel. */
+export function siteHeaderBarClasses(theme: SiteHeaderTheme): string {
+  return cn(
+    "mx-auto flex items-center gap-3 px-4 sm:px-6",
+    theme === "dark" ? "h-[4.25rem] max-w-[90rem] lg:px-16" : "min-h-16 max-w-[96rem] lg:px-8",
+  );
+}
+
+/**
+ * Vrai quand l'en-tête, fixé en haut de l'écran, laisse dans la page un espace de sa hauteur (h-16).
+ * Le thème sombre, posé par-dessus la photo de l'accueil, n'en laisse pas.
+ */
+export function siteHeaderReservesHeight(
+  theme: SiteHeaderTheme,
+  placement: SiteHeaderPlacement,
+): boolean {
+  return placement === "fixed" && theme !== "dark";
+}
+
 type SiteHeaderProps = {
   /** « dark » pour l'accueil (par-dessus la photo), « light » partout ailleurs. */
   theme?: SiteHeaderTheme;
@@ -106,32 +147,15 @@ export function SiteHeader({
     ...(admin ? [{ href: "/admin", label: "Administration" }] : []),
   ];
 
-  const positioning = dark
-    ? "absolute inset-x-0 top-0 z-50"
-    : placement === "fixed"
-      ? "fixed inset-x-0 top-0 z-50"
-      : "sticky top-0 z-40";
-
   return (
     <>
       <header
         ref={headerRef}
         data-site-header
         data-theme={theme}
-        className={cn(
-          positioning,
-          dark
-            ? "text-white"
-            : "border-b border-border bg-white/95 text-foreground backdrop-blur supports-[backdrop-filter]:bg-white/90",
-          className,
-        )}
+        className={cn(siteHeaderClasses(theme, placement), className)}
       >
-        <div
-          className={cn(
-            "mx-auto flex items-center gap-3 px-4 sm:px-6",
-            dark ? "h-[4.25rem] max-w-[90rem] lg:px-16" : "min-h-16 max-w-[96rem] lg:px-8",
-          )}
-        >
+        <div className={siteHeaderBarClasses(theme)}>
           <HeaderLogo dark={dark} showTagline={!dark && !center} />
           {center ? <div className="hidden min-w-0 max-w-md flex-1 lg:flex">{center}</div> : null}
 
@@ -206,7 +230,7 @@ export function SiteHeader({
         </div>
         {belowBar}
       </header>
-      {placement === "fixed" && !dark ? <div className="h-16" aria-hidden /> : null}
+      {siteHeaderReservesHeight(theme, placement) ? <div className="h-16" aria-hidden /> : null}
     </>
   );
 }

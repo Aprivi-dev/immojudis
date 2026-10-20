@@ -123,7 +123,7 @@ describe("public sale page", () => {
     const json = /<script type="application\/ld\+json">(.*?)<\/script>/.exec(html)![1];
     const data = JSON.parse(json.replaceAll("\\u003c", "<"));
     expect(data["@graph"][0].url).toBe(`https://immojudis.com/sales/${ID}`);
-    expect(data["@graph"][0].offers.availability).toBe("https://schema.org/LimitedAvailability");
+    expect(data["@graph"][0].offers).not.toHaveProperty("availability");
     expect(data["@graph"][1]["@type"]).toBe("Event");
     expect(html).toContain('data-testid="detail"');
   });

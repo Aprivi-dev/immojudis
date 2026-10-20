@@ -2,7 +2,7 @@
 
 import { createContext, useContext, type MouseEvent, type ReactNode } from "react";
 import Link from "next/link";
-import { OfferOpeningRequest } from "@/components/OfferOpeningRequest";
+import { OfferOpeningRequest } from "@/components/OfferOpeningRequestLazy";
 import { useAnalysisCheckoutOpen } from "@/hooks/use-analysis-checkout-open";
 import {
   type SaleUnlockStatus,

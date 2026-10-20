@@ -232,7 +232,7 @@ describe("SaleUnlockPanel", () => {
     expect(screen.queryByRole("button", { name: "Débloquer cette vente" })).toBeNull();
   });
 
-  it("never suggests subscribing while the subscription is closed", () => {
+  it("never suggests subscribing while the subscription is closed", async () => {
     mocks.checkoutOpen.mockReturnValue(false);
     const { container } = render(
       <SaleUnlockPanel
@@ -246,8 +246,9 @@ describe("SaleUnlockPanel", () => {
     expect(text).toContain("L’offre Analyse n’est pas encore ouverte à la souscription.");
     expect(text).not.toMatch(/souscrire|59 €|résiliable/);
     expect(text).toContain("Ils reviennent le 1er novembre.");
-    // The primary action is the opening request, not a link to a page that cannot sell it yet.
-    expect(screen.getByRole("button", { name: "Me prévenir de l’ouverture" })).toBeTruthy();
+    // The primary action is the opening request (loaded on demand), not a link to a page that
+    // cannot sell it yet.
+    expect(await screen.findByRole("button", { name: "Me prévenir de l’ouverture" })).toBeTruthy();
     expect(screen.queryByRole("link", { name: /offre Analyse/ })).toBeNull();
   });
 

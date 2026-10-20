@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useMemo } from "react";
-import { SectorAlertForm } from "@/components/SectorAlertForm";
+import { SectorAlertForm } from "@/components/SectorAlertFormLazy";
 import { PageShell, buttonClasses } from "@/components/ui/primitives";
 import { publicAlertCriteria } from "@/lib/discovery-alerts";
 import { searchParamsToRecord } from "@/lib/navigation";

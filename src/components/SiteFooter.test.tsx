@@ -43,6 +43,14 @@ it("renvoie vers l'index des ventes par département, et non vers chaque départ
   );
 });
 
+it("renvoie vers les audiences à venir", () => {
+  render(<SiteFooter />);
+  const main = within(screen.getByRole("navigation", { name: "Navigation pied de page" }));
+  expect(main.getByRole("link", { name: "Audiences à venir" }).getAttribute("href")).toBe(
+    "/audiences-a-venir",
+  );
+});
+
 it("stays out of the admin console", () => {
   expect(showsSiteFooter("/admin")).toBe(false);
   expect(showsSiteFooter("/admin/operations")).toBe(false);
