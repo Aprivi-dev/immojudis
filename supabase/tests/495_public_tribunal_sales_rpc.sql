@@ -63,8 +63,8 @@ select ok(
 );
 select is(
   pg_get_function_result('public.get_public_tribunal_sales(text, integer)'::regprocedure),
-  'TABLE(id uuid, city text, department text, property_type text, sale_date timestamp with time zone, starting_price_eur numeric, surface_m2 numeric, status text)',
-  'the contract is the public card of a sale: commune, type, date, price, surface, status'
+  'TABLE(id uuid, city text, department text, property_type text, sale_date timestamp with time zone, starting_price_eur numeric, surface_m2 numeric, status text, source_url text, source_urls jsonb)',
+  'the contract is the public card of a sale: commune, type, date, price, surface, status, source links'
 );
 
 -- Le contrat -----------------------------------------------------------------------------------

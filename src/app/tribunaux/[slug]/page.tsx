@@ -20,6 +20,7 @@ import {
   tribunalPagePath,
   tribunalPages,
   type TribunalPage,
+  tribunalActivityWithoutDuplicates,
   tribunalPageTitle,
   tribunalPlaceName,
 } from "@/lib/tribunal-pages";
@@ -82,8 +83,9 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   }
   const { page } = resolved;
   const sales = resolved.kind === "active" ? await tryLoadTribunalSales(page.activity.code) : null;
+  // Le nombre annoncé est celui de la liste dédoublonnée (même règle que la page).
   const activity = {
-    ...page.activity,
+    ...tribunalActivityWithoutDuplicates(page.activity, sales),
     nextSaleDate: nextAudienceDate(page.activity, sales?.status === "ok" ? sales.sales : null),
   };
   return {
@@ -111,7 +113,7 @@ export default async function Page({ params }: PageProps) {
   const sales =
     resolved.kind === "active"
       ? await tryLoadTribunalSales(page.activity.code)
-      : ({ status: "ok", sales: [] } as const);
+      : ({ status: "ok", sales: [], received: 0 } as const);
   const department = departmentFromCode(page.activity.department);
   const siblings = department
     ? tribunalPages(items).filter(
@@ -122,6 +124,11 @@ export default async function Page({ params }: PageProps) {
     : [];
   const now = new Date();
   const listed = sales.status === "ok" ? sales.sales : [];
+  // Compteur et liste parlent des mêmes ventes : les doublons écartés de la liste le sont aussi du total.
+  const { mayCountDuplicates, ...tribunal } = tribunalActivityWithoutDuplicates(
+    page.activity,
+    sales,
+  );
   const origin = resolveSiteOrigin(process.env, "http://localhost:3000")!;
   const itemList = departmentItemListStructuredData(origin, listed);
 
@@ -143,10 +150,11 @@ export default async function Page({ params }: PageProps) {
         />
       ) : null}
       <TribunalView
-        tribunal={page.activity}
+        tribunal={tribunal}
         nextAudience={nextAudienceDate(page.activity, sales.status === "ok" ? listed : null, now)}
         sales={listed}
         salesAvailable={sales.status === "ok"}
+        countMayIncludeDuplicates={mayCountDuplicates}
         department={department}
         siblings={siblings}
         generatedAt={now}

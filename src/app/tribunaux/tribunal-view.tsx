@@ -35,6 +35,7 @@ export function TribunalView({
   nextAudience,
   sales,
   salesAvailable,
+  countMayIncludeDuplicates = false,
   department,
   siblings,
   generatedAt,
@@ -45,6 +46,8 @@ export function TribunalView({
   sales: readonly DepartmentSale[];
   /** Faux quand la liste n'a pas pu être lue : la page garde ses chiffres et renvoie vers la recherche. */
   salesAvailable: boolean;
+  /** Vrai quand le total vient de l'activité publique, qui peut compter deux fois une vente à deux sources. */
+  countMayIncludeDuplicates?: boolean;
   department: DepartmentRef | null;
   /** Autres tribunaux du département, avec l'adresse de leur page. */
   siblings: readonly { activity: PublicTribunalActivity; path: string }[];
@@ -145,6 +148,11 @@ export function TribunalView({
             <p className="mt-3 text-sm text-ink-soft">
               Aucune vente à venir n’est référencée pour ce tribunal pour le moment. Cette page
               reste disponible : elle se remplit dès qu’une vente est annoncée.
+            </p>
+          ) : null}
+          {countMayIncludeDuplicates ? (
+            <p className="mt-3 text-sm text-ink-soft">
+              Le total peut compter une même vente publiée par deux sources.
             </p>
           ) : null}
           {total > 0 && total < 3 ? (

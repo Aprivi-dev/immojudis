@@ -5,6 +5,7 @@ import {
   type PublicTribunalActivity,
 } from "@/lib/public-tribunal-activity";
 import {
+  TRIBUNAL_PAGE_LISTED_SALES,
   atTribunalPhrase,
   indexableTribunalPages,
   emptyTribunalActivity,
@@ -13,6 +14,7 @@ import {
   legacyTribunalPages,
   legacyTribunalRedirectPath,
   nextAudienceDate,
+  tribunalActivityWithoutDuplicates,
   tribunalCodeSlug,
   tribunalLongName,
   tribunalPageDescription,
@@ -329,5 +331,57 @@ describe("nextAudienceDate", () => {
     expect(nextAudienceDate({ nextSaleDate: "2026-11-02T10:00:00Z" }, null, now)).toBe(
       "2026-11-02T10:00:00Z",
     );
+  });
+});
+
+describe("tribunalActivityWithoutDuplicates", () => {
+  const listOf = (length: number) => Array.from({ length }, (_, index) => ({ index }));
+
+  it("garde le compteur de l'activité quand la liste n'a pas été lue ou n'a aucun doublon", () => {
+    const activity = { upcomingCount: 12 };
+    expect(tribunalActivityWithoutDuplicates(activity, null)).toEqual({
+      upcomingCount: 12,
+      mayCountDuplicates: false,
+    });
+    expect(tribunalActivityWithoutDuplicates(activity, { status: "error" })).toMatchObject({
+      upcomingCount: 12,
+      mayCountDuplicates: false,
+    });
+    expect(
+      tribunalActivityWithoutDuplicates(activity, {
+        status: "ok",
+        sales: listOf(12),
+        received: 12,
+      }),
+    ).toMatchObject({ upcomingCount: 12, mayCountDuplicates: false });
+  });
+
+  it("compte la liste dédoublonnée quand elle est complète", () => {
+    // 19 lignes reçues (moins que la limite de lecture) dont 4 doublons : 15 ventes.
+    expect(
+      tribunalActivityWithoutDuplicates(
+        { upcomingCount: 19 },
+        { status: "ok", sales: listOf(15), received: 19 },
+      ),
+    ).toEqual({ upcomingCount: 15, mayCountDuplicates: false });
+  });
+
+  it("retire les doublons vus d'une liste tronquée et prévient que le total peut en compter d'autres", () => {
+    // Bobigny : 30 lignes lues (la limite) dont 11 doublons ; l'activité en compte 41.
+    expect(
+      tribunalActivityWithoutDuplicates(
+        { upcomingCount: 41 },
+        { status: "ok", sales: listOf(19), received: TRIBUNAL_PAGE_LISTED_SALES },
+      ),
+    ).toEqual({ upcomingCount: 30, mayCountDuplicates: true });
+  });
+
+  it("ne descend jamais sous le nombre de ventes listées", () => {
+    expect(
+      tribunalActivityWithoutDuplicates(
+        { upcomingCount: 20 },
+        { status: "ok", sales: listOf(19), received: TRIBUNAL_PAGE_LISTED_SALES },
+      ).upcomingCount,
+    ).toBe(19);
   });
 });
