@@ -26,7 +26,9 @@ const WEEKDAYS = [
  * `weeklyDigestAvailable`) : on ne recueille pas de consentement pour un envoi qui n'a pas lieu. Une
  * personne qui a déjà consenti la voit toujours, pour pouvoir la retirer. Affichée dans `/compte`
  * (Notifications). Le texte qu'elle présente est celui dont la version est
- * `WEEKLY_DIGEST_CONSENT_TEXT_VERSION` (`notification-preferences.ts`) : à changer avec lui.
+ * `WEEKLY_DIGEST_CONSENT_TEXT_VERSION` (`notification-preferences.ts`) : à changer avec lui. Comme
+ * pour les rappels d'audience (relecture juridique du 20/10/2026) : le retrait est annoncé avant la
+ * case et aucun envoi n'est garanti.
  */
 export function WeeklyDigestToggle({ userId, className }: { userId: string; className: string }) {
   const queryClient = useQueryClient();
@@ -70,12 +72,17 @@ export function WeeklyDigestToggle({ userId, className }: { userId: string; clas
             Mes audiences des 14 prochains jours, ce qui a changé sur mes ventes suivies et les
             nouvelles ventes de mon département
           </span>
+          <span className="mt-1 block text-foreground">
+            Retirable à tout moment, ici ou par le lien de désinscription de chaque email.
+          </span>
           <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
             {enabled
               ? data.weeklyDigestAvailable
-                ? "Récapitulatif activé. Vous pouvez le retirer à tout moment, ici ou par le lien de désinscription de chaque email."
-                : "Récapitulatif activé ; les envois sont suspendus pour le moment. Vous pouvez le retirer ici."
-              : "Un seul email par semaine, jamais le jour où un autre email d’Immojudis vous est déjà parvenu. Dates à vérifier auprès de l’avocat poursuivant."}
+                ? "Récapitulatif activé. "
+                : "Récapitulatif activé ; les envois sont suspendus pour le moment. "
+              : "Un seul email par semaine, jamais le jour où un autre email d’Immojudis vous est déjà parvenu. "}
+            Les envois dépendent des informations publiées par les sources ; aucun envoi n’est
+            garanti. Dates à vérifier auprès de l’avocat poursuivant.
           </span>
         </span>
         <input

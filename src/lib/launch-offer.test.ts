@@ -3,6 +3,8 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   LAUNCH_OFFER_ACCOUNT_TEXT,
+  LAUNCH_OFFER_DATA_TEXT,
+  LAUNCH_OFFER_DURATION_TEXT,
   LAUNCH_OFFER_VISITOR_TEXT,
   launchOfferText,
   parseLaunchOfferResponse,
@@ -11,16 +13,33 @@ import { FREE_ACCESS_LINE, freeAccessLine } from "@/lib/sale-unlocks";
 import { PLAN_LIMITS } from "@/lib/plans";
 
 describe("textes de l'offre de lancement", () => {
-  it("dit au compte connecté que l’email confirmé est requis et que les avantages sont retirables sans préavis", () => {
-    expect(LAUNCH_OFFER_ACCOUNT_TEXT).toBe(
-      "Offre de lancement : votre compte gratuit, une fois votre adresse email confirmée, bénéficie des avantages de l’offre Analyse. Ces avantages pourront vous être retirés, sans préavis, à tout moment, notamment au lancement officiel du site.",
+  it("dit la durée de l'offre avec la formule de la relecture juridique : temporaire, fin annoncée par email, retrait anticipé limité", () => {
+    expect(LAUNCH_OFFER_DURATION_TEXT).toBe(
+      "Ces avantages sont temporaires et prendront fin au plus tard au lancement officiel du site. Nous vous prévenons par email avant leur fin ; ils peuvent toutefois être retirés plus tôt, sans préavis, en cas d’abus ou d’impératif technique ou juridique.",
+    );
+    expect(LAUNCH_OFFER_DATA_TEXT).toBe(
+      "Vos données (favoris, alertes, rapports enregistrés) restent conservées tant que votre compte existe et dans les durées de la politique de confidentialité. Elles redeviennent accessibles avec l’offre Analyse.",
     );
   });
 
-  it("dit au visiteur de créer un compte gratuit et de confirmer son email, avec la même réserve", () => {
-    expect(LAUNCH_OFFER_VISITOR_TEXT).toBe(
-      "Offre de lancement : créez un compte gratuit, confirmez votre adresse email et accédez aux avantages de l’offre Analyse (avantages retirables sans préavis, à tout moment, notamment au lancement officiel).",
+  it("dit au compte connecté que l’email confirmé est requis, puis la durée de l'offre", () => {
+    expect(LAUNCH_OFFER_ACCOUNT_TEXT).toBe(
+      `Offre de lancement : votre compte gratuit, une fois votre adresse email confirmée, bénéficie des avantages de l’offre Analyse. ${LAUNCH_OFFER_DURATION_TEXT}`,
     );
+  });
+
+  it("dit au visiteur de créer un compte gratuit et de confirmer son email, avec la même durée", () => {
+    expect(LAUNCH_OFFER_VISITOR_TEXT).toBe(
+      `Offre de lancement : créez un compte gratuit, confirmez votre adresse email et accédez aux avantages de l’offre Analyse. ${LAUNCH_OFFER_DURATION_TEXT}`,
+    );
+  });
+
+  it("n'annonce plus un retrait « sans préavis, à tout moment » sans condition", () => {
+    for (const text of [LAUNCH_OFFER_ACCOUNT_TEXT, LAUNCH_OFFER_VISITOR_TEXT]) {
+      expect(text).not.toContain("à tout moment");
+      expect(text).not.toContain("pourront");
+      expect(text).toContain("adresse email");
+    }
   });
 
   it("choisit la mention selon le public", () => {

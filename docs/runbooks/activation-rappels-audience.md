@@ -25,7 +25,7 @@ mode.
    (codes d'échec courts). Sans la première, la route de consentement écrit une colonne qui n'existe pas.
 2. Vérifier `RESEND_API_KEY`, `ALERT_EMAIL_FROM` et `SITE_URL` (sinon le passage réussit avec
    `skipped: not_configured`).
-3. Au moins un administrateur coche « Me rappeler l'audience » dans `/compte` ou dans « Mon dossier » d'une
+3. Au moins un administrateur coche « Me prévenir par email : rappel 7 jours avant puis la veille de l'audience… » dans `/compte` ou dans « Mon dossier » d'une
    vente suivie dont l'audience tombe dans les 7 prochains jours.
 
 ## Ce que l'on mesure en `internal`

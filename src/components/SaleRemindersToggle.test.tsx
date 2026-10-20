@@ -47,13 +47,40 @@ describe("SaleRemindersToggle", () => {
     const checkbox = (await screen.findByRole("checkbox")) as HTMLInputElement;
     expect(checkbox.checked).toBe(false);
     const text = document.body.textContent ?? "";
-    expect(text).toContain("Me rappeler l’audience (7 jours avant et la veille)");
-    expect(text).toContain("Me prévenir si la date change ou si la vente est retirée");
-    expect(text).toContain("reportée, annulée ou adjugée");
-    expect(text).toContain("à vérifier auprès de l’avocat poursuivant");
+    expect(text).toContain(
+      "Me prévenir par email : rappel 7 jours avant puis la veille de l’audience, et si la date change ou si la vente est retirée, reportée, annulée ou adjugée",
+    );
+    expect(text).toContain(
+      "Les envois dépendent des informations publiées par les sources ; aucun envoi n’est garanti. Dates à vérifier auprès de l’avocat poursuivant.",
+    );
+    // L'ancien libellé en deux lignes a disparu.
+    expect(text).not.toContain("Me rappeler l’audience");
     // Un seul vocabulaire : plus l'ancien libellé long ni le mot « avertissements ».
     expect(text).not.toContain("Rappels d’audience et avertissements");
     expect(text).not.toMatch(/avertissement/i);
+  });
+
+  it("annonce le retrait AVANT la case, et le dit encore quand les rappels sont activés", async () => {
+    mocks.preferences.mockResolvedValue(preferences());
+    setup();
+    const checkbox = await screen.findByRole("checkbox");
+    const retrait = screen.getByText(
+      "Retirable à tout moment, ici ou par le lien de désinscription de chaque email.",
+    );
+    // Dans l'ordre du document, la phrase précède la case (lecteur d'écran compris).
+    expect(
+      retrait.compareDocumentPosition(checkbox) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    cleanup();
+    mocks.preferences.mockResolvedValue(preferences({ enabled: true }));
+    setup();
+    await screen.findByRole("checkbox");
+    expect(
+      screen.getByText(
+        "Retirable à tout moment, ici ou par le lien de désinscription de chaque email.",
+      ),
+    ).toBeTruthy();
+    expect(document.body.textContent).toContain("aucun envoi n’est garanti");
   });
 
   it("emploie « rappels d'audience » dans l'explication et les messages", async () => {

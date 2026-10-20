@@ -12,6 +12,7 @@ import type {
   FollowedSaleSnapshot,
   FollowedSaleSnapshotResult,
 } from "@/lib/followed-sale-snapshots-shared";
+import { tribunalBarAssociation } from "@/lib/lawyer-bar";
 import { queryKeys } from "@/lib/query-keys";
 import type { SurenchereWindow } from "@/lib/surenchere-window";
 import { toast } from "@/lib/toast";
@@ -150,7 +151,7 @@ function SnapshotCard({
         </p>
       </div>
 
-      <SurenchereBlock info={snapshot.surenchere} />
+      <SurenchereBlock info={snapshot.surenchere} tribunalName={snapshot.tribunalName} />
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-ink-soft">
         <span>Gardé jusqu’au {formatDate(snapshot.expiresAt)}</span>
@@ -186,12 +187,24 @@ export function resultText(result: FollowedSaleSnapshotResult): string {
 }
 
 /**
- * Surenchère : formulation prudente. La date est indicative (dix jours après l'audience connue
- * d'Immojudis) ; le report au premier jour ouvrable n'est pas calculé, le texte le dit. Jamais
- * « fenêtre échue », « il reste N jours » ni « dernier jour » : une fois la date passée, la personne
- * concernée est renvoyée sans attendre à un avocat de son choix.
+ * Surenchère : formulation prudente (texte de la relecture juridique du 20/10/2026, à faire valider
+ * par un avocat). La date est indicative (dix jours après l'audience connue d'Immojudis) ; le report
+ * au premier jour ouvrable n'est pas calculé, le texte le dit et demande de ne pas compter dessus.
+ * Jamais « fenêtre échue », « il reste N jours » ni « dernier jour » : une fois la date passée, le
+ * délai a pu expirer ou être prolongé, et la personne concernée est renvoyée sans attendre à un
+ * avocat. Les mêmes phrases sont dans `surenchereLines` (`sale-result-emails.ts`) ; un test vérifie
+ * qu'elles restent identiques. Le lien de l'annuaire est filtré sur le barreau du tribunal quand
+ * son nom le permet (`?bar=`), sinon il mène à l'annuaire entier.
  */
-function SurenchereBlock({ info }: { info: SurenchereWindow }) {
+function SurenchereBlock({
+  info,
+  tribunalName,
+}: {
+  info: SurenchereWindow;
+  tribunalName: string | null;
+}) {
+  const bar = tribunalBarAssociation(tribunalName);
+  const directoryHref = bar ? `/avocats?bar=${encodeURIComponent(bar)}` : "/avocats";
   return (
     <div className="mt-3 text-sm" data-testid="snapshot-surenchere">
       <p className="font-semibold text-brand-navy">
@@ -203,23 +216,27 @@ function SurenchereBlock({ info }: { info: SurenchereWindow }) {
             {info.adjudicationConfirmed
               ? null
               : "Le résultat n’est pas connu : la surenchère n’existe que si le bien a été adjugé. "}
-            Date indicative : le {formatDate(info.deadline)}, ou le premier jour ouvrable suivant si
-            ce jour tombe un samedi, un dimanche ou un jour férié. Elle est calculée à partir de la
-            date d’audience connue d’Immojudis, qui peut avoir changé.
+            Date indicative : le {formatDate(info.deadline)}. Si ce jour tombe un samedi, un
+            dimanche ou un jour férié, le délai peut être prolongé jusqu’au premier jour ouvrable
+            suivant ; ne comptez pas dessus sans l’avis d’un avocat. Elle est calculée à partir de
+            la date d’audience connue d’Immojudis, qui peut avoir changé.
           </p>
           {info.expired ? (
             <p className="mt-1 font-semibold text-brand-navy">
-              Cette date indicative est passée : si vous êtes concerné, consultez sans attendre un
-              avocat.
+              Cette date indicative est passée : le délai a pu expirer, ou être prolongé. Si vous
+              êtes concerné, consultez sans attendre un avocat, seul à pouvoir le confirmer.
             </p>
           ) : null}
           <p className="mt-1 text-ink-soft">
-            La surenchère se forme par acte d’avocat : la date exacte et les conditions se
-            confirment avec un avocat de votre choix, par exemple dans{" "}
-            <Link href="/avocats" className="font-semibold text-gold-text underline">
-              l’annuaire
-            </Link>
-            .
+            La surenchère se forme par acte d’avocat déposé au greffe du juge de l’exécution, avec
+            une garantie d’un dixième du prix principal (chèque de banque ou caution bancaire
+            irrévocable, art. R. 322-51 du CPCE). Faites confirmer la date et les conditions par un
+            avocat, de préférence inscrit au barreau du tribunal concerné ; le choix vous appartient
+            (
+            <Link href={directoryHref} className="font-semibold text-gold-text underline">
+              l’annuaire d’Immojudis
+            </Link>{" "}
+            signale les profils mis en avant contre rémunération).
           </p>
         </>
       ) : info.kind === "no_date" ? (

@@ -315,7 +315,12 @@ describe("page Offres", () => {
     expect(unlocks).toContain("redeviendront réservés à Analyse à la fin de l’offre");
     expect(unlocks).not.toContain("restent réservés à Analyse");
     expect(container.textContent).toContain("dont l’adresse email est confirmée");
-    expect(container.textContent).toContain("à tout moment, notamment au lancement officiel");
+    expect(container.textContent).toContain(
+      "prendront fin au plus tard au lancement officiel du site. Nous vous prévenons par email avant leur fin",
+    );
+    expect(container.textContent).toContain("en cas d’abus ou d’impératif technique ou juridique");
+    expect(container.textContent).toContain("restent conservées tant que votre compte existe");
+    expect(container.textContent).not.toContain("à tout moment, notamment au lancement officiel");
   });
 
   it("réserve la hauteur du bandeau tant que l'état est inconnu, sans le rendre", () => {

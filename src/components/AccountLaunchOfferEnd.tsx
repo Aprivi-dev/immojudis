@@ -1,3 +1,4 @@
+import { LAUNCH_OFFER_DATA_TEXT, LAUNCH_OFFER_DURATION_TEXT } from "@/lib/launch-offer";
 import { PLAN_LIMITS } from "@/lib/plans";
 import { MONTHLY_SALE_UNLOCKS } from "@/lib/sale-unlocks";
 
@@ -30,9 +31,11 @@ export function AccountLaunchOfferEnd() {
         Si l’offre de lancement se terminait
       </h2>
       <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-        Aucune date n’est annoncée sur cette page. Si l’offre se termine, vos données ne sont pas
-        supprimées (favoris, alertes, rapports enregistrés) : certaines fonctions se ferment, et ce
-        que vous avez créé se rouvre avec l’offre Analyse.
+        {LAUNCH_OFFER_DURATION_TEXT}
+      </p>
+      <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+        {LAUNCH_OFFER_DATA_TEXT} Les fonctions qui se ferment à la fin de l’offre sont listées
+        ci-dessous.
       </p>
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <div>

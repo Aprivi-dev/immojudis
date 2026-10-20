@@ -52,6 +52,22 @@ const processingRows = [
     retention: "Jusqu’au retrait du consentement ; notifications clôturées purgées après 6 mois",
   },
   {
+    purpose: "Rappels d’audience",
+    data: "Consentement daté et versionné (date, version du texte, date de retrait) ; journal d’envoi (vente, type de rappel, date, état). L’email du compte sert à l’envoi, par Resend",
+    basis:
+      "Consentement (case non pré-cochée), retirable à tout moment en un clic, dans les réglages ou par le lien de désinscription de chaque email",
+    retention:
+      "Consentement et date de retrait : tant que le compte existe ; journal d’envoi : 180 jours après sa création, puis suppression à la purge hebdomadaire (au plus 187 jours environ), selon la matrice de conservation",
+  },
+  {
+    purpose: "Ventes passées suivies",
+    data: "Résumé d’une vente suivie dont l’audience est passée : titre, commune (avec département et code postal), tribunal, type de bien, mise à prix, date d’audience, nom de l’avocat tel qu’il est publié, résultat connu, et votre statut et votre enchère plafond enregistrés",
+    basis:
+      "Exécution du contrat : garder la trace d’une vente suivie après le retrait de sa fiche du catalogue",
+    retention:
+      "6 mois après la constitution du résumé, puis suppression à la purge hebdomadaire (jusqu’à 7 jours de plus) ; suppression à tout moment par la personne, depuis « Mes favoris » ; suppression avec le compte",
+  },
+  {
     purpose: "Prévenir de l’ouverture de l’offre Analyse",
     data: "Identifiant de compte (l’email du compte sert à l’envoi), date et version du texte de consentement, date de retrait",
     basis:

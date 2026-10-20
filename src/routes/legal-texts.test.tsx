@@ -122,12 +122,66 @@ describe("conditions générales : classement, référencement et mise en avant"
     expect(text).toContain("12. Réclamations, médiation et droit applicable");
   });
 
-  it("portent la version 2026-10-14.1, ancrée par l'empreinte de leur source", () => {
-    expect(LEGAL_DOCUMENTS.terms.version).toBe("2026-10-14.1");
+  it("portent la version 2026-10-20.1 (offre de lancement), ancrée par l'empreinte de leur source", () => {
+    expect(LEGAL_DOCUMENTS.terms.version).toBe("2026-10-20.1");
+    expect(LEGAL_DOCUMENTS.terms.effectiveDate).toBe("20 octobre 2026");
   });
 
-  it("la politique de confidentialité est en version 2026-10-14.2 (relevé des adresses Licitor)", () => {
-    expect(LEGAL_DOCUMENTS.privacy.version).toBe("2026-10-14.2");
+  it("la politique de confidentialité est en version 2026-10-20.1 (rappels d'audience, ventes passées suivies)", () => {
+    expect(LEGAL_DOCUMENTS.privacy.version).toBe("2026-10-20.1");
+    expect(LEGAL_DOCUMENTS.privacy.effectiveDate).toBe("20 octobre 2026");
+  });
+});
+
+describe("conditions générales : offre de lancement (relecture juridique du 20/10/2026)", () => {
+  it("ajoutent l'article 13 : avantages temporaires, fin annoncée par email, retrait anticipé limité", () => {
+    const text = pageText(<TermsPage />);
+    expect(text).toContain("13. Offre de lancement");
+    expect(text).toContain(
+      "Ces avantages sont temporaires et prendront fin au plus tard au lancement officiel du site. Nous vous prévenons par email avant leur fin ; ils peuvent toutefois être retirés plus tôt, sans préavis, en cas d’abus ou d’impératif technique ou juridique.",
+    );
+    expect(text).toContain("dont l’adresse email est confirmée");
+    expect(text).toContain(
+      "le compte revient à l’offre Découverte, sans frais, sans paiement automatique et sans suppression des données",
+    );
+    expect(text).toContain("Aucun abonnement ne commence sans confirmation dans Stripe.");
+    expect(text).toContain(
+      "restent conservées tant que votre compte existe et dans les durées de la politique de confidentialité ; elles redeviennent accessibles avec l’offre Analyse",
+    );
+    // Aucun retrait « à tout moment, sans préavis » sans condition.
+    expect(text).not.toContain("retirables sans préavis");
+  });
+
+  it("résolvent la contradiction avec le préavis de 30 jours : l'article est spécial à l'offre de lancement", () => {
+    const text = pageText(<TermsPage />);
+    expect(text).toContain(
+      "Cet article est spécial à l’offre de lancement : il s’applique à la place du délai de prévenance de 30 jours de l’article 2, qui continue de s’appliquer aux déblocages mensuels de l’offre Découverte.",
+    );
+    expect(text).toContain(
+      "Ce délai ne s’applique pas à l’offre de lancement, régie par l’article 13.",
+    );
+  });
+
+  it("tirent le nombre de favoris et la durée de l'essai du code, pas du texte", () => {
+    const text = pageText(<TermsPage />);
+    expect(text).toContain(`${PLAN_LIMITS.decouverte.favoriteSales} favoris au maximum`);
+    expect(text).not.toContain("trois favoris");
+    expect(text).toContain(
+      `L’essai commercial de ${ANALYSIS_TRIAL_DAYS} jours ne remplace pas le droit légal de rétractation.`,
+    );
+    expect(text).not.toContain("sept jours");
+  });
+
+  it("disent que la souscription n'est pas encore ouverte, à côté du prix", () => {
+    expect(pageText(<TermsPage />)).toContain(
+      `Prix de l’abonnement Analyse : ${DEFAULT_ANALYSIS_OFFER_LABEL}, précédé d’un essai gratuit de ${ANALYSIS_TRIAL_DAYS} jours lorsque celui-ci est proposé. La souscription n’est pas encore ouverte.`,
+    );
+  });
+
+  it("disent que les rappels et avertissements sont indicatifs (article 8)", () => {
+    expect(pageText(<TermsPage />)).toContain(
+      "Les rappels et avertissements sont indicatifs. Ils ne dispensent pas de vérifier la date et le statut de la vente auprès de l’avocat poursuivant.",
+    );
   });
 });
 
@@ -252,6 +306,31 @@ describe("politique de confidentialité", () => {
     expect(text).toContain("Événements de parcours agrégés, sans identifiant de personne");
     expect(text).not.toContain("Événements d’usage et de parcours agrégés");
     expect(text).toContain("Événements d’usage et journaux applicatifs : 24 mois au plus");
+  });
+
+  it("décrit les rappels d'audience : consentement, retrait en un clic, journal, Resend, durée du journal", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).toContain("Rappels d’audience");
+    expect(text).toContain(
+      "Consentement daté et versionné (date, version du texte, date de retrait)",
+    );
+    expect(text).toContain("journal d’envoi (vente, type de rappel, date, état)");
+    expect(text).toContain("par Resend");
+    expect(text).toContain("retirable à tout moment en un clic");
+    // Durée réelle des migrations : 180 jours, purge hebdomadaire (au plus 187 jours).
+    expect(text).toContain("180 jours après sa création");
+    expect(text).toContain("au plus 187 jours environ");
+  });
+
+  it("décrit les ventes passées suivies : instantané, base contractuelle, 6 mois, suppression par la personne", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).toContain("Ventes passées suivies");
+    expect(text).toContain(
+      "nom de l’avocat tel qu’il est publié, résultat connu, et votre statut et votre enchère plafond enregistrés",
+    );
+    expect(text).toContain("Exécution du contrat");
+    expect(text).toContain("6 mois après la constitution du résumé");
+    expect(text).toContain("suppression à tout moment par la personne");
   });
 
   it("annonce sa version et écrit Immojudis", () => {

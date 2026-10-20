@@ -21,7 +21,11 @@ import { ANALYSIS_TRIAL_DAYS, resolveAnalysisOfferLabel } from "@/lib/analysis-o
 import { useAuth } from "@/hooks/use-auth";
 import { useBillingOffer, type BillingOfferState } from "@/hooks/use-billing-offer";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
-import { launchOfferText } from "@/lib/launch-offer";
+import {
+  LAUNCH_OFFER_DATA_TEXT,
+  LAUNCH_OFFER_DURATION_TEXT,
+  launchOfferText,
+} from "@/lib/launch-offer";
 import { offerComparisonRows, type OfferCell } from "@/lib/offer-comparison";
 import { PLAN_LIMITS } from "@/lib/plans";
 import { MONTHLY_SALE_UNLOCKS, unlockedItemsText } from "@/lib/sale-unlocks";
@@ -90,9 +94,9 @@ const LAUNCH_OFFER_FAQ: { question: string; answer: (context: FaqContext) => Rea
     <>
       Tant que le site n’est pas officiellement lancé, tout compte gratuit dont l’adresse email est
       confirmée bénéficie, à titre exceptionnel, des avantages de l’offre Analyse, sans carte
-      bancaire et sans paiement. Ces avantages pourront être retirés sans préavis, à tout moment,
-      notamment au lancement officiel : le compte gratuit reviendra alors à l’offre Découverte, sans
-      que vos données soient supprimées. Aucun prélèvement n’est possible aujourd’hui.
+      bancaire et sans paiement. {LAUNCH_OFFER_DURATION_TEXT} À la fin de l’offre, le compte gratuit
+      revient à l’offre Découverte. {LAUNCH_OFFER_DATA_TEXT} Aucun prélèvement n’est possible
+      aujourd’hui.
     </>
   ),
 };
