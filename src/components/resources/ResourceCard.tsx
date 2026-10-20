@@ -14,11 +14,9 @@ export function ResourceCard({
 }) {
   return (
     <article className={styles.card}>
-      <Link
-        href={article.href}
-        className={styles.cardLink}
-        aria-labelledby={`title-${article.slug}`}
-      >
+      {/* Pas d'aria-labelledby : le nom du lien est son contenu (catégorie, titre, description et
+          « Lire l'article »), jamais le titre seul, qui ne dit pas où mène la carte. */}
+      <Link href={article.href} className={styles.cardLink}>
         <div className={styles.cardImage}>
           <Image
             src={article.image}
@@ -31,7 +29,7 @@ export function ResourceCard({
         </div>
         <div className={styles.cardBody}>
           <p className={styles.meta}>{article.readingMinutes} min de lecture</p>
-          <h3 id={`title-${article.slug}`}>{article.title}</h3>
+          <h3>{article.title}</h3>
           <p className={styles.cardDescription}>{article.description}</p>
           <span className={styles.textLink}>
             Lire l’article <ArrowUpRight size={18} aria-hidden="true" />

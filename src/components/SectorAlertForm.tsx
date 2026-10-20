@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import Bell from "lucide-react/dist/esm/icons/bell.js";
 import { Badge, Button, Card, buttonClasses } from "@/components/ui/primitives";
 import { useAuth } from "@/hooks/use-auth";
@@ -31,6 +31,8 @@ export function SectorAlertForm({
   actionLabel?: string;
 }) {
   const checkboxId = useId();
+  const titleId = useId();
+  const createdTitleRef = useRef<HTMLHeadingElement>(null);
   const { user } = useAuth();
   const hasAnalysisAccess = useHasAnalysisAccess(user?.id);
   const search = useMemo(() => publicAlertCriteria(criteria), [criteria]);
@@ -61,10 +63,18 @@ export function SectorAlertForm({
   const [emailRecap, setEmailRecap] = useState(false);
   const [created, setCreated] = useState(false);
 
+  // Le panneau « Alerte créée » remplace le formulaire dont le bouton vient de disparaître : le
+  // focus va à son titre, sinon il se perd sur la page.
+  useEffect(() => {
+    if (created) createdTitleRef.current?.focus();
+  }, [created]);
+
   if (created) {
     return (
       <Card role="status" className="grid gap-3">
-        <p className="font-semibold">Alerte créée.</p>
+        <h2 ref={createdTitleRef} tabIndex={-1} className="font-semibold outline-none">
+          Alerte créée.
+        </h2>
         <p className="text-sm text-ink-soft">
           {emailRecap
             ? "Les nouvelles ventes de ce secteur arriveront aussi dans votre email récapitulatif."
@@ -90,8 +100,8 @@ export function SectorAlertForm({
   }
 
   return (
-    <Card as="section" aria-label={title} className="grid gap-3">
-      <h2 className="flex items-center gap-2 font-display text-2xl font-semibold">
+    <Card as="section" aria-labelledby={titleId} className="grid gap-3">
+      <h2 id={titleId} className="flex items-center gap-2 font-display text-2xl font-semibold">
         <Bell className="size-5 text-gold-text" aria-hidden />
         {title}
       </h2>

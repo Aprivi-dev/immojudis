@@ -80,8 +80,22 @@ describe("SearchPagination : liens numérotés", () => {
     // La page courante n'est pas un lien : elle est marquée comme telle.
     const current = list.querySelector("[aria-current='page']");
     expect(current?.tagName).toBe("SPAN");
-    expect(current?.textContent).toBe("1");
+    // Pas d'aria-label sur le span : le contexte est du texte masqué autour du numéro.
+    expect(current?.hasAttribute("aria-label")).toBe(false);
+    expect(current?.textContent).toBe("Page 1, page actuelle");
+    expect(current?.querySelectorAll(".sr-only")).toHaveLength(2);
     expect(list.textContent).toContain("…");
+  });
+
+  it("la page courante garde un fond marine : la liste de classes des autres contrôles ne s'y mêle pas", () => {
+    renderNumbered({ page: 1, totalCount: 1646 });
+    const current = screen.getByRole("list").querySelector("[aria-current='page']");
+    const classes = (current?.getAttribute("class") ?? "").split(/\s+/);
+    expect(classes).toContain("bg-brand-navy");
+    expect(classes).toContain("text-white");
+    // `bg-white` l'emportait sur `bg-brand-navy` : le numéro blanc était invisible.
+    expect(classes).not.toContain("bg-white");
+    expect(classes).not.toContain("text-brand-navy");
   });
 
   it("garde l'action du navigateur sur un clic simple et laisse le lien aux touches de modification", () => {

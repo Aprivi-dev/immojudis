@@ -64,6 +64,14 @@ const SPECS: RowSpec[] = [
     },
   },
   {
+    // « Mon dossier » : le stockage est gratuit, sur chaque vente suivie ; le calcul de l'enchère
+    // plafond garde ses droits (ligne « Enchère plafond chiffrée »).
+    id: "dossier",
+    label: "Statut et enchère plafond enregistrés",
+    hint: "Sur chaque vente suivie, dans « Mon dossier » ; le calcul de l’enchère plafond reste soumis à ses droits",
+    features: ["sales.favorites"],
+  },
+  {
     id: "unlocks",
     label: "Déblocage d’une vente : enchère plafond, pièces, historique, statistiques du tribunal",
     hint: "Ouvre ces éléments pour la vente choisie, tant qu’elle est en ligne (24 mois au plus) ; exports et rapports restent avec Analyse",

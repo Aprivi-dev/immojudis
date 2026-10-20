@@ -20,7 +20,10 @@ export function FavoriteDossierLine({
       </span>
       <span>
         <span className="font-semibold text-brand-navy">Mon plafond :</span>{" "}
-        {favorite.bidCeilingEur != null ? formatPrice(favorite.bidCeilingEur) : "aucun enregistré"}
+        {/* Jamais « 0 € » : un plafond nul (ancienne saisie) s'affiche comme absent. */}
+        {favorite.bidCeilingEur != null && favorite.bidCeilingEur > 0
+          ? formatPrice(favorite.bidCeilingEur)
+          : "aucun enregistré"}
       </span>
       <Link href={`/sales/${favorite.saleId}`} className="font-semibold text-gold-text underline">
         Modifier sur la fiche

@@ -158,7 +158,7 @@ function OutcomeForecastReady({
                   step={5_000}
                   value={ceilingDraft || String(Math.round(initialCeilingCents / 100))}
                   onChange={(event) => onCeilingDraftChange(event.target.value)}
-                  className="h-14 w-full rounded-md border border-brand-navy/20 bg-white px-4 pr-12 font-display text-2xl font-semibold text-brand-navy outline-none transition focus:border-gold focus:ring-2 focus:ring-gold/20"
+                  className="h-14 w-full rounded-md border border-brand-navy/20 bg-white px-4 pr-12 font-display text-2xl font-semibold text-brand-navy transition focus:border-gold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
                   aria-describedby="outcome-ceiling-help"
                 />
                 <span

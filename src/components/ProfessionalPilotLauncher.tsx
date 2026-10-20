@@ -77,7 +77,7 @@ export function ProfessionalPilotLauncher({
           <DialogTrigger asChild>
             <button
               type="button"
-              className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-md border border-brand-navy px-4 py-2 text-sm font-semibold text-brand-navy transition-colors hover:bg-brand-navy hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+              className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-md border border-brand-navy px-4 py-2 text-sm font-semibold text-brand-navy transition-colors hover:bg-brand-navy hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
             >
               Ouvrir le dossier
               <ArrowRight className="h-4 w-4" aria-hidden />

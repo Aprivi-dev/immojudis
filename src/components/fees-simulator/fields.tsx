@@ -26,7 +26,7 @@ const percent = new Intl.NumberFormat("fr-FR", {
 });
 
 export const FIELD_CLASSES =
-  "min-h-11 w-full min-w-0 rounded-lg border border-line bg-white px-3 text-base tabular-nums focus-visible:border-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/40";
+  "min-h-11 w-full min-w-0 rounded-lg border border-line bg-white px-3 text-base tabular-nums focus-visible:border-gold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft";
 
 /** Un champ vide vaut 0 dans le calcul, mais reste vide à l'écran. */
 export function toAmount(raw: string): number {

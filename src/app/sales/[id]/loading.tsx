@@ -2,11 +2,11 @@ export default function SaleLoading() {
   return (
     <main id="contenu" className="min-h-screen bg-white px-4 py-8 sm:px-6" aria-busy="true">
       {/*
-        Texte provisoire : ni lu comme contenu (aria-hidden), ni repris comme extrait par les
-        moteurs. `data-nosnippet` n'est reconnu que sur span, div et section : sur un <p> il était
-        ignoré et « Chargement de l'annonce… » pouvait devenir l'extrait de la fiche.
+        Annoncé par le lecteur d'écran (role=status), jamais repris comme extrait par les moteurs
+        (data-nosnippet). `data-nosnippet` n'est reconnu que sur span, div et section : pas sur un <p>.
+        Pas d'aria-hidden : il neutraliserait le rôle.
       */}
-      <span className="sr-only" aria-hidden="true" data-nosnippet>
+      <span role="status" className="sr-only" data-nosnippet>
         Chargement de l’annonce…
       </span>
       <div className="mx-auto max-w-7xl" aria-hidden="true">

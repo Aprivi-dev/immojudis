@@ -301,7 +301,7 @@ export function ProfessionalPilotWorkspace({
               type="button"
               onClick={() => setActiveStep(step)}
               aria-current={activeStep === step ? "step" : undefined}
-              className={`min-h-10 shrink-0 rounded-md px-3 py-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold ${
+              className={`min-h-10 shrink-0 rounded-md px-3 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft ${
                 activeStep === step
                   ? "bg-brand-navy text-white"
                   : "text-brand-navy/70 hover:bg-slate-100"
@@ -465,7 +465,7 @@ export function ProfessionalPilotWorkspace({
               {AMOUNT_FIELDS.map(({ key, label }) => (
                 <label key={key} className="block text-xs font-semibold text-brand-navy">
                   {key === "priceEur" ? definition.priceLabel : label}
-                  <span className="mt-1 flex items-center rounded-md border border-slate-300 bg-white focus-within:ring-2 focus-within:ring-gold">
+                  <span className="mt-1 flex items-center rounded-md border border-slate-300 bg-white focus-within:outline-2 focus-within:outline-gold-soft">
                     <input
                       type="number"
                       min="0"

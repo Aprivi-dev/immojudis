@@ -900,7 +900,7 @@ function StatusCard({
 }
 
 const inputClassName =
-  "block min-h-11 w-full rounded-md border border-input bg-white/75 px-3 py-2.5 text-sm text-foreground outline-none transition placeholder:text-muted-foreground focus:border-gold focus:ring-2 focus:ring-gold/20";
+  "block min-h-11 w-full rounded-md border border-input bg-white/75 px-3 py-2.5 text-sm text-foreground transition placeholder:text-muted-foreground focus:border-gold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft";
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
   const response = await fetch(url, {

@@ -101,7 +101,7 @@ export function AccountPage() {
                 href={link.href}
                 aria-labelledby={`space-label-${index}`}
                 aria-describedby={`space-description-${index}`}
-                className="block h-full rounded-lg border border-border px-4 py-3 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                className="block h-full rounded-lg border border-border px-4 py-3 hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
               >
                 <span
                   id={`space-label-${index}`}
