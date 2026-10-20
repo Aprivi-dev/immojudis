@@ -122,8 +122,15 @@ test.describe("admin management", () => {
   test("loads only its own data on every management view", async ({ page }) => {
     const state = await prepareAdminManagementPage(page);
     const own: Array<[string, string[]]> = [
-      // /admin/clients porte aussi l'interrupteur de l'offre de lancement.
-      ["/admin/clients", ["/api/admin/launch-offer", "/api/admin/subscriptions"]],
+      // /admin/clients porte aussi l'interrupteur de l'offre de lancement et la liste d'attente.
+      [
+        "/admin/clients",
+        [
+          "/api/admin/launch-offer",
+          "/api/admin/offer-opening-notifier",
+          "/api/admin/subscriptions",
+        ],
+      ],
       ["/admin/lawyers", ["/api/admin/lawyer-referrals"]],
       ["/admin/compliance", ["/api/admin/privacy-requests", "/api/admin/readiness"]],
       ["/admin/publications", ["/api/admin/publications"]],
@@ -281,6 +288,11 @@ async function prepareAdminManagementPage(page: Page): Promise<ManagementState> 
 
     if (path === "/api/admin/launch-offer" && method === "GET") {
       await route.fulfill({ status: 200, json: { active: true } });
+      return;
+    }
+
+    if (path === "/api/admin/offer-opening-notifier" && method === "GET") {
+      await route.fulfill({ status: 200, json: offerOpeningAudiencePayload() });
       return;
     }
 
@@ -492,6 +504,18 @@ function publicationRequest(state: ManagementState) {
     updated_at: "2026-09-19T10:00:00.000Z",
     reviewed_at: state.publicationStatus === "approved" ? "2026-09-19T10:00:00.000Z" : null,
     reviewed_by: state.publicationStatus === "approved" ? adminId : null,
+  };
+}
+
+function offerOpeningAudiencePayload() {
+  return {
+    recipients: 2,
+    needsReview: 0,
+    alreadyNotified: 1,
+    batchSize: 200,
+    configured: true,
+    missing: [],
+    preview: { subject: "L'offre Analyse est ouverte", text: "Aperçu du message E2E." },
   };
 }
 
