@@ -45,6 +45,7 @@ export type SearchDraft = {
   aroundRadius: string;
   yearBuilt: string;
   openHouse: boolean;
+  visitSoon: boolean;
 };
 
 export type SearchStatistics = {
@@ -85,6 +86,7 @@ export function searchToDraft(search: SalesSearchParams): SearchDraft {
     aroundRadius: stringifyNumber(search.aroundRadius),
     yearBuilt: stringifyNumber(search.yearBuilt),
     openHouse: Boolean(search.openHouse),
+    visitSoon: Boolean(search.visitSoon),
   };
 }
 
@@ -117,6 +119,7 @@ export function emptySearchDraft(): SearchDraft {
     aroundRadius: "",
     yearBuilt: "",
     openHouse: false,
+    visitSoon: false,
   };
 }
 
@@ -154,6 +157,7 @@ export function draftToSearch(draft: SearchDraft, current: SalesSearchParams): S
     aroundRadius: draftNumber(draft.aroundRadius),
     yearBuilt: draftNumber(draft.yearBuilt),
     openHouse: draft.openHouse || undefined,
+    visitSoon: draft.visitSoon || undefined,
   };
 }
 
@@ -172,6 +176,7 @@ const CHOSEN_DRAFT_KEYS: ReadonlySet<keyof SearchDraft> = new Set([
   "dpeClasses",
   "houseWithLand",
   "openHouse",
+  "visitSoon",
   "occupancy",
   "minSaleDate",
   "maxSaleDate",

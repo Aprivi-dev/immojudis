@@ -3,7 +3,7 @@ import { getSaleProcedure } from "@/lib/sale-procedure";
 import { saleVenueMatchesType } from "@/lib/sale-types";
 import { isHouseWithLand } from "@/lib/alerts";
 import { dpeMatches, extractDpe } from "@/lib/dpe";
-import { listingVisits } from "@/lib/sale-listing";
+import { listingVisits, saleHasVisitSoon } from "@/lib/sale-listing";
 import { getSaleSurface } from "@/lib/surface";
 import { estimateGrossYieldPct, haversineKm, pricePerM2, type GeoPoint } from "@/lib/geo";
 import {
@@ -172,6 +172,7 @@ export function countActiveSearchFilters(search: SalesSearchParams): number {
     search.aroundAddress,
     search.yearBuilt,
     search.openHouse,
+    search.visitSoon,
   ].filter(Boolean).length;
 }
 
@@ -184,6 +185,7 @@ export function hasClientOnlyFilters(search: SalesSearchParams): boolean {
     search.aroundRadius ||
     search.dpeClasses?.length ||
     search.openHouse ||
+    search.visitSoon ||
     search.yearBuilt ||
     // « Distance » n'a pas besoin de balayage sans adresse (rien à mesurer) : elle suit déjà
     // `aroundAddress` ci-dessus. « Chambres » se trie côté serveur (`beds_desc`).
@@ -242,6 +244,7 @@ export function applyClientSearchFilters(
     }
     if (search.viewport && !saleIsInViewport(sale, search.viewport)) return false;
     if (search.openHouse && listingVisits(sale).length === 0) return false;
+    if (search.visitSoon && !saleHasVisitSoon(sale)) return false;
 
     return true;
   });

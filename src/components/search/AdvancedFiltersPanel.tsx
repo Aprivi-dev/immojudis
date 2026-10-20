@@ -341,6 +341,23 @@ export function MobileFilterDrawer({
               Visite renseignée
               {analysisLocked && <span className="text-xs">· offre Analyse</span>}
             </label>
+
+            <label className="flex cursor-pointer items-center gap-3 rounded-md border border-line-soft bg-surface-muted px-3 py-2 text-sm font-bold text-brand-navy">
+              <input
+                type="checkbox"
+                disabled={analysisLocked}
+                checked={draft.visitSoon}
+                onChange={(event) =>
+                  setDraft((current) => ({ ...current, visitSoon: event.target.checked }))
+                }
+                className="h-4 w-4 accent-brand-navy"
+              />
+              Visite dans les 7 jours
+              {analysisLocked && <span className="text-xs">· offre Analyse</span>}
+            </label>
+            <p className="-mt-2 text-xs font-normal text-ink-soft">
+              Seules les visites dont la date complète est publiée sont retenues.
+            </p>
           </AdvancedGroup>
         </div>
 

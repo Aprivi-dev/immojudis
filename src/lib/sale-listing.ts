@@ -3,6 +3,7 @@ import { formatDateTime } from "@/lib/format";
 import { getDisplaySurface, getMarketValuationSurfaces } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
 import { publishedDay, sourceVisitExcerpt } from "./listing-evidence";
+import { calendarDaysBetween, parisDateKey } from "./sale-countdown";
 import { cleanDateForListing, cleanListingAddress, cleanVisitText } from "./listing-data-cleanup";
 
 export function listingAddress(sale: AuctionSale): string {
@@ -101,7 +102,8 @@ export function listingDate(value: string | null | undefined): string {
   return text;
 }
 
-export function listingVisits(sale: AuctionSale): string[] {
+/** Visites publiées d'une vente : `visit_dates`, à défaut les blocs de la source. */
+function retainedVisits(sale: AuctionSale): string[] {
   const values = Array.isArray(sale.visit_dates)
     ? sale.visit_dates.filter((value): value is string => Boolean(cleanVisitText(value)))
     : cleanVisitText(sale.visit_dates)
@@ -111,7 +113,11 @@ export function listingVisits(sale: AuctionSale): string[] {
     .map((key) => sale.source_blocks?.[key])
     .map((value) => cleanVisitText(value))
     .filter((value): value is string => Boolean(value));
-  const retained = values.length ? values : fallback;
+  return values.length ? values : fallback;
+}
+
+export function listingVisits(sale: AuctionSale): string[] {
+  const retained = retainedVisits(sale);
   const sourceVisit = retained.some((value) => publishedDay(value))
     ? null
     : sourceVisitExcerpt(sale);
@@ -123,6 +129,36 @@ export function listingVisits(sale: AuctionSale): string[] {
         .map(listingDate),
     ),
   ];
+}
+
+/** « Visite dans les 7 jours » : aujourd'hui et les six jours suivants (comme la page des audiences). */
+export const VISIT_SOON_DAYS = 7;
+
+/**
+ * Jours (Europe/Paris, `AAAA-MM-JJ`) des visites publiées avec une date complète (jour, mois et
+ * année, ou instant daté). Un créneau sans année (« mardi 20 octobre »), « sur rendez-vous » ou un
+ * texte libre n'a pas de jour sourcé : il n'en donne aucun, on ne le devine jamais.
+ */
+export function listingVisitDays(sale: AuctionSale): string[] {
+  const days = retainedVisits(sale)
+    .map(cleanVisitText)
+    .filter((value): value is string => Boolean(value))
+    .map(publishedDay)
+    .filter((day): day is string => Boolean(day));
+  return [...new Set(days)].sort();
+}
+
+/** Vrai si une visite à date publiée tombe aujourd'hui ou dans les six jours suivants. */
+export function saleHasVisitSoon(
+  sale: AuctionSale,
+  now: Date = new Date(),
+  windowDays: number = VISIT_SOON_DAYS,
+): boolean {
+  const today = parisDateKey(now);
+  return listingVisitDays(sale).some((day) => {
+    const offset = calendarDaysBetween(today, day);
+    return offset != null && offset >= 0 && offset < windowDays;
+  });
 }
 
 export type ListingContactLink = {
