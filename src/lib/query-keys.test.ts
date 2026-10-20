@@ -15,6 +15,8 @@ describe("queryKeys", () => {
     expect(queryKeys.favorites("u1")).toEqual(["favorites", "u1"]);
     expect(queryKeys.favoritesAiReview("u1", ["a"])).toEqual(["favorites-ai-review", "u1", ["a"]]);
     expect(queryKeys.favoriteStatus(null, "s1")).toEqual(["favorite-status", null, "s1"]);
+    // « Mon démarrage » vit sous le préfixe `favorites` : rafraîchi avec la liste des favoris.
+    expect(queryKeys.accountStart("u1")).toEqual(["favorites", "u1", "start"]);
     expect(queryKeys.searchFavoriteStatus("u1", ["a", "b"])).toEqual([
       "search-favorite-status",
       "u1",

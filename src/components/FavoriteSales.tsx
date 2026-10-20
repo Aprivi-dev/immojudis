@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Heart from "lucide-react/dist/esm/icons/heart.js";
 import { toast } from "@/lib/toast";
@@ -20,6 +20,8 @@ import { dossierHasContent, restoreRemovedFavorite } from "./favorite-removal";
 import { FavoriteDossierLine } from "./FavoriteDossierLine";
 import { PastFollowedSales } from "./PastFollowedSales";
 import { FavoriteSaleChanges } from "./FavoriteSaleChanges";
+import { FavoritePlanning } from "./FavoritePlanning";
+import { MonDemarrage } from "./MonDemarrage";
 import { PLAN_LIMITS } from "@/lib/plans";
 import { queryKeys } from "@/lib/query-keys";
 
@@ -65,6 +67,19 @@ export function FavoriteSales() {
           ? "ready"
           : "loading";
   const queryClient = useQueryClient();
+  // « Mes favoris » (cartes) ou « Mon planning » (par audience). `#planning` ouvre directement le planning.
+  const [view, setView] = useState<"favoris" | "planning">("favoris");
+  useEffect(() => {
+    if (window.location.hash === "#planning") setView("planning");
+  }, []);
+  const chooseView = (next: "favoris" | "planning") => {
+    setView(next);
+    window.history.replaceState(
+      null,
+      "",
+      `${window.location.pathname}${window.location.search}${next === "planning" ? "#planning" : ""}`,
+    );
+  };
   const handleFavoriteChange = useCallback(
     (saleId: string, isFavorite: boolean, removed?: RemovedFavoriteDossier | null) => {
       if (isFavorite) return;
@@ -116,6 +131,7 @@ export function FavoriteSales() {
         </Link>
       }
     >
+      <MonDemarrage className="mb-6" />
       {query.isPending || loading ? (
         <p role="status" className="text-ink-soft">
           Chargement de vos favoris…
@@ -147,7 +163,48 @@ export function FavoriteSales() {
         </Card>
       ) : null}
       {data && data.favorites.length > 0 ? (
-        <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div role="tablist" aria-label="Affichage des favoris" className="mb-5 flex gap-2">
+          {(
+            [
+              ["favoris", "Mes favoris", "favorites-tab", "favorites-panel"],
+              ["planning", "Mon planning", "planning-tab", "planning-panel"],
+            ] as const
+          ).map(([id, label, tabId, panelId]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              id={tabId}
+              aria-selected={view === id}
+              aria-controls={panelId}
+              onClick={() => chooseView(id)}
+              className={`min-h-11 rounded-md px-4 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft ${
+                view === id
+                  ? "bg-brand-navy text-white"
+                  : "border border-line bg-white text-brand-navy hover:bg-surface-tint"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {data && data.favorites.length > 0 && view === "planning" ? (
+        <FavoritePlanning
+          userId={user?.id}
+          favorites={data.favorites}
+          isAnalysis={isAnalysis}
+          aiReviewBySaleId={aiReviewBySaleId}
+          aiReviewStatus={aiReviewStatus}
+        />
+      ) : null}
+      {data && data.favorites.length > 0 && view === "favoris" ? (
+        <ul
+          id="favorites-panel"
+          role="tabpanel"
+          aria-labelledby="favorites-tab"
+          className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+        >
           {data.favorites.map((favorite) => {
             const { saleId, sale } = favorite;
             return (
@@ -173,7 +230,7 @@ export function FavoriteSales() {
         </ul>
       ) : null}
       {/* Les favoris d'abord ; le suivi des changements (ou sa ligne d'offre) vient après. */}
-      {data && data.favorites.length > 0 ? (
+      {data && data.favorites.length > 0 && view === "favoris" ? (
         <FavoriteSaleChanges
           userId={user?.id}
           favorites={data.favorites}
@@ -183,7 +240,7 @@ export function FavoriteSales() {
         />
       ) : null}
       {/* Ventes suivies dont l'audience est passée : instantané gardé 6 mois au plus (point 70). */}
-      <PastFollowedSales />
+      {view === "favoris" || !data || data.favorites.length === 0 ? <PastFollowedSales /> : null}
       {data?.unavailableSaleIds?.length ? (
         <section className="mt-10">
           <h2 className="font-display text-2xl font-semibold">Annonces retirées du catalogue</h2>

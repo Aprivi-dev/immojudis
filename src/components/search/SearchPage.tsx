@@ -139,6 +139,14 @@ const LazyMoreFiltersModal = dynamic(
   { loading: () => <FiltersLoadingFallback /> },
 );
 
+// « Mon démarrage » : chargée pour un compte connecté seulement (aucun octet de plus pour un visiteur).
+const LazyMonDemarrage = dynamic(
+  () => import("@/components/MonDemarrage").then((mod) => mod.MonDemarrage),
+  {
+    ssr: false,
+  },
+);
+
 const LazySearchStatisticsPanel = dynamic(
   () => import("./SearchStatisticsPanel").then((mod) => mod.SearchStatisticsPanel),
   { loading: () => <SearchStatisticsLoading /> },
@@ -910,6 +918,7 @@ export function SearchPage({
       />
 
       <AuthConnectionBanner className="my-3" />
+      {user ? <LazyMonDemarrage className="mx-auto my-3 max-w-[1260px]" /> : null}
 
       <div
         className={`grid min-h-[calc(100svh_-_var(--sales-header-height))] grid-cols-1 ${splitClass}`}

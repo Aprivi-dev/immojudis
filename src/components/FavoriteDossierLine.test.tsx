@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { FavoriteDossierLine } from "./FavoriteDossierLine";
 
@@ -34,5 +34,17 @@ describe("FavoriteDossierLine", () => {
     );
     expect(container.textContent).not.toMatch(/(^|\s)0\s€/);
     expect(container.textContent).toContain("aucun enregistré");
+  });
+
+  it("renvoie vers la fiche avec « Retour à mes favoris » dès que le lien est approché", () => {
+    render(
+      <FavoriteDossierLine
+        favorite={{ saleId: "sale-1", personalStatus: null, bidCeilingEur: null }}
+      />,
+    );
+    const link = screen.getByRole("link", { name: "Modifier sur la fiche" });
+    expect(link.getAttribute("href")).toBe("/sales/sale-1");
+    fireEvent.pointerEnter(link);
+    expect(link.getAttribute("href")).toBe("/sales/sale-1?from=%2Ffavoris");
   });
 });

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ANALYSIS_ONLY_SORT_KEYS,
   SORT_OPTIONS,
@@ -15,6 +15,35 @@ import {
 } from "./search-filters";
 import type { ViewportBounds } from "./search-url-state";
 import type { AuctionSale } from "@/lib/types";
+
+describe("filtre « visite dans les 7 jours »", () => {
+  afterEach(() => vi.useRealTimers());
+
+  const withVisit = (id: string, ...visit_dates: string[]) =>
+    ({ id, visit_dates, source_blocks: null }) as unknown as AuctionSale;
+
+  it("est un filtre du navigateur, compté parmi les filtres actifs", () => {
+    expect(hasClientOnlyFilters({ visitSoon: true })).toBe(true);
+    expect(countActiveSearchFilters({ visitSoon: true })).toBe(1);
+    expect(hasClientOnlyFilters({})).toBe(false);
+  });
+
+  it("ne garde que les ventes dont une visite à date publiée tombe dans les 7 jours", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-20T08:00:00Z"));
+    const items = [
+      withVisit("bientot", "2026-10-22 à 14:00"),
+      withVisit("lointaine", "2026-11-12 à 14:00"),
+      withVisit("sans-annee", "mardi 27 octobre"),
+      withVisit("libre", "Sur rendez-vous"),
+      withVisit("aucune"),
+    ];
+    expect(
+      applyClientSearchFilters(items, { visitSoon: true }, null).map((item) => item.id),
+    ).toEqual(["bientot"]);
+    expect(applyClientSearchFilters(items, {}, null)).toHaveLength(5);
+  });
+});
 
 describe("sales search filters", () => {
   it("filters the family on the server and consistently in derived local results", () => {

@@ -100,6 +100,13 @@ describe("filtres sur mobile", () => {
     }
   });
 
+  it("propose « Visite dans les 7 jours » et ne retient que les dates publiées en entier", () => {
+    renderDrawer();
+    const box = screen.getByRole("checkbox", { name: /Visite dans les 7 jours/ });
+    expect((box as HTMLInputElement).checked).toBe(false);
+    expect(screen.getByText(/date complète est publiée/)).toBeTruthy();
+  });
+
   it("n'affiche « Mise à prix » qu'une seule fois", () => {
     renderDrawer();
     expect(screen.getAllByText("Mise à prix")).toHaveLength(1);

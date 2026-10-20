@@ -1,4 +1,4 @@
-import { buildIcsCalendar } from "@/lib/ical";
+import { buildIcsCalendar, buildIcsCalendarMany, type IcsEvent } from "@/lib/ical";
 import { parisDateKey } from "@/lib/sale-countdown";
 import { saleHearingTime, saleReference, seoPropertyLabel, tribunalDisplayName } from "@/lib/seo";
 
@@ -76,7 +76,7 @@ function validDate(value: string | null | undefined): Date | null {
 }
 
 /**
- * The calendar file of one hearing, or `null` when the row must not be exported.
+ * The calendar event of one hearing, or `null` when the row must not be exported.
  *
  * - A hearing whose hour is unknown (`date_only`, or a stored midnight) becomes an all-day event
  *   on its Paris civil day: no hour is ever invented.
@@ -85,10 +85,10 @@ function validDate(value: string | null | undefined): Date | null {
  * - The location is the court only (its public name). The property address is never written: it
  *   is reserved to signed-in accounts.
  */
-export function buildSaleCalendarFile(
+function saleCalendarEvent(
   row: SaleCalendarRow,
   { origin, now = new Date() }: { origin: string; now?: Date },
-): SaleCalendarFile | null {
+): IcsEvent | null {
   if (!row.exportable) return null;
   const date = validDate(row.sale_date);
   if (!date) return null;
@@ -116,28 +116,69 @@ export function buildSaleCalendarFile(
     .filter((line) => line !== null)
     .join("\n");
 
-  const body = buildIcsCalendar(
-    {
-      uid: saleCalendarUid(saleId, origin),
-      stamp: now,
-      lastModified,
-      sequence: saleCalendarSequence(lastModified),
-      start: timed ? { kind: "instant", at: date } : { kind: "day", isoDay: parisDateKey(date) },
-      end: timed
-        ? new Date(date.getTime() + SALE_HEARING_DEFAULT_DURATION_HOURS * 3_600_000)
-        : null,
-      summary,
-      description,
-      location,
-      url,
-      // The date comes from the announcement: the calendar shows it as to be confirmed.
-      status: "TENTATIVE",
-      alarms: (timed ? REMINDERS_TIMED : REMINDERS_ALL_DAY).map((reminder) => ({
-        trigger: reminder.trigger,
-        description: `${summary} (${reminder.when})`,
-      })),
-    },
-    PROD_ID,
+  return {
+    uid: saleCalendarUid(saleId, origin),
+    stamp: now,
+    lastModified,
+    sequence: saleCalendarSequence(lastModified),
+    start: timed ? { kind: "instant", at: date } : { kind: "day", isoDay: parisDateKey(date) },
+    end: timed ? new Date(date.getTime() + SALE_HEARING_DEFAULT_DURATION_HOURS * 3_600_000) : null,
+    summary,
+    description,
+    location,
+    url,
+    // The date comes from the announcement: the calendar shows it as to be confirmed.
+    status: "TENTATIVE",
+    alarms: (timed ? REMINDERS_TIMED : REMINDERS_ALL_DAY).map((reminder) => ({
+      trigger: reminder.trigger,
+      description: `${summary} (${reminder.when})`,
+    })),
+  };
+}
+
+/** The calendar file of one hearing, or `null` when the row must not be exported. */
+export function buildSaleCalendarFile(
+  row: SaleCalendarRow,
+  options: { origin: string; now?: Date },
+): SaleCalendarFile | null {
+  const event = saleCalendarEvent(row, options);
+  if (!event) return null;
+  return {
+    filename: `immojudis-audience-${saleReference(row.id.toLowerCase())}.ics`,
+    body: buildIcsCalendar(event, PROD_ID),
+  };
+}
+
+/** Nom du fichier qui réunit toutes les audiences suivies. */
+const FOLLOWED_CALENDAR_FILENAME = "immojudis-audiences-suivies.ics";
+
+/**
+ * One file for several hearings (the sales a signed-in account follows). The same rule as the
+ * single file applies to each row: a row that is not exportable (postponed, in conflict, source
+ * date unverified, past, not a tribunal hearing) is left out, never written « à confirmer ». Events
+ * come in date order. `null` when no row can be exported. `exportedIds` lists the sales written.
+ */
+export function buildSalesCalendarFile(
+  rows: readonly SaleCalendarRow[],
+  { origin, now = new Date() }: { origin: string; now?: Date },
+): (SaleCalendarFile & { exportedIds: string[] }) | null {
+  const entries = rows
+    .map((row) => ({ row, event: saleCalendarEvent(row, { origin, now }) }))
+    .filter((entry): entry is { row: SaleCalendarRow; event: IcsEvent } => entry.event !== null);
+  if (entries.length === 0) return null;
+  const startOf = (event: IcsEvent) =>
+    event.start.kind === "instant"
+      ? event.start.at.getTime()
+      : Date.parse(`${event.start.isoDay}T00:00:00Z`);
+  entries.sort(
+    (a, b) => startOf(a.event) - startOf(b.event) || a.event.uid.localeCompare(b.event.uid),
   );
-  return { filename: `immojudis-audience-${saleReference(saleId)}.ics`, body };
+  return {
+    filename: FOLLOWED_CALENDAR_FILENAME,
+    body: buildIcsCalendarMany(
+      entries.map((entry) => entry.event),
+      PROD_ID,
+    ),
+    exportedIds: entries.map((entry) => entry.row.id.toLowerCase()),
+  };
 }
