@@ -43,6 +43,7 @@ function report({ sale = {}, analysis = {}, ceiling = null }: Overrides = {}): S
         saleDate: "2026-12-10T09:00:00.000Z",
         startingPrice: 92_000,
         venueType: "tribunal",
+        legalFramework: "judicial_seizure",
         ...sale,
       },
       analysis: {
@@ -130,11 +131,26 @@ describe("page « Dossier de financement » d'un rapport complet", () => {
     ).toBe(formatPrice(3_000));
   });
 
-  it("donne le délai de paiement, sous peine de réitération des enchères", () => {
+  it("donne le délai de paiement d'une saisie immobilière, sous peine de réitération des enchères", () => {
     const text = lines.join("\n");
     expect(text).toContain("deux mois après l’adjudication définitive");
     expect(text).toContain("à peine de réitération des enchères (art. R. 322-56)");
     expect(text).toContain("droits de mutation en plus du prix (art. R. 322-58)");
+  });
+
+  it("dit que la définitivité de l'adjudication et son point de départ sont à confirmer avec l'avocat", () => {
+    expect(lines.join("\n")).toContain(
+      "(l’adjudication devient définitive à la fin du délai de surenchère, selon l’analyse usuelle : point de départ à confirmer avec l’avocat)",
+    );
+    expect(lines.join("\n")).not.toContain("(suite du délai de surenchère)");
+  });
+
+  it("ne présente pas le financement du solde comme dû « sous deux mois » dans tous les cas", () => {
+    const text = lines.join("\n");
+    expect(text).toContain(
+      "financement du solde dans le délai de paiement du prix (deux mois pour une vente au tribunal en saisie immobilière ; à vérifier dans les autres cas)",
+    );
+    expect(text).not.toContain("financement du solde sous deux mois");
   });
 
   it("aligne la défaillance de l'adjudicataire sur l'article relu : créanciers, débiteur, différence de revente", () => {
@@ -258,6 +274,56 @@ describe("valeurs absentes", () => {
     );
     expect(pages).toHaveLength(1);
   });
+});
+
+describe("cadre juridique de la vente au tribunal", () => {
+  it("liquidation judiciaire : trois mois, compte du liquidateur, bénéficiaire du chèque à lire dans le cahier", () => {
+    const insolvency = dossierLines({ sale: { legalFramework: "insolvency" } });
+    const text = insolvency.join("\n");
+    expect(valueOf(insolvency, "Délai")).toContain(
+      "trois mois après l’adjudication, sur le compte ouvert par le liquidateur à la Caisse des dépôts, avec intérêts au taux légal (art. R. 643-3 du Code de commerce)",
+    );
+    expect(valueOf(insolvency, "Bénéficiaire du chèque")).toBe(
+      "à lire dans le cahier des conditions de vente.",
+    );
+    // Ni le délai de deux mois ni la réitération de la saisie immobilière.
+    expect(text).not.toContain("deux mois après l’adjudication définitive");
+    expect(text).not.toContain("R. 322-56");
+    expect(text).not.toContain("à l’ordre du séquestre");
+  });
+
+  it.each([
+    ["inconnu", { legalFramework: "unknown" }],
+    ["absent (rapport antérieur)", { legalFramework: undefined }],
+    ["partage judiciaire", { legalFramework: "judicial_partition" }],
+  ])("cadre %s : le délai de deux mois n'est pas présenté comme acquis", (_label, sale) => {
+    const other = dossierLines({ sale });
+    const text = other.join("\n");
+    expect(valueOf(other, "Délai")).toContain(FINANCING_NOT_PROVIDED);
+    expect(valueOf(other, "Délai")).toContain("cadre juridique de la vente non établi");
+    expect(valueOf(other, "Délai")).toContain("à lire dans le cahier des conditions de vente");
+    expect(text).not.toContain("deux mois après l’adjudication définitive (l’adjudication");
+    expect(text).not.toContain("à peine de réitération des enchères");
+    expect(text).not.toContain("trois mois");
+  });
+
+  it.each(["judicial_seizure", "insolvency", "judicial_partition", "unknown", undefined])(
+    "la page tient sur 42 lignes pour le cadre %s",
+    (legalFramework) => {
+      const pages = paginatePdfLines(
+        reportToPdfLines(report({ sale: { legalFramework } }), plan),
+        REPORT_PDF_HEADINGS,
+      );
+      const last = pages[pages.length - 1];
+      expect(last[0]).toEqual({ text: FINANCING_DOSSIER_TITLE, heading: true });
+      expect(last.length).toBeLessThanOrEqual(42);
+      expect(
+        pages
+          .slice(0, -1)
+          .some((page) => page.some((line) => line.text === FINANCING_DOSSIER_TITLE)),
+      ).toBe(false);
+    },
+  );
 });
 
 describe("autres types de vente", () => {
