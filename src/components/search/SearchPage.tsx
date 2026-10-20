@@ -82,6 +82,7 @@ import {
   SortDropdown,
   type SaveSearchOptions,
 } from "./SearchHeader";
+import { HearingsWeekBanner } from "./HearingsWeekBanner";
 import { RankingExplanation } from "./RankingExplanation";
 import { SearchResultsList } from "./SearchResults";
 import { FEW_RESULTS_ALERT_THRESHOLD, SectorAlertPrompt } from "./SectorAlertPrompt";
@@ -954,6 +955,7 @@ export function SearchPage({
             </div>
           </div>
           <RankingExplanation investmentScore={investmentSortAllowed} />
+          <HearingsWeekBanner />
           <div className="border-b border-line-soft bg-white px-4 py-3 sm:px-5">
             <SaleTypeFilter
               compact
