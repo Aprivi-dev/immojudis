@@ -80,7 +80,10 @@ const MAX_CLIENT_CHUNK_BYTES = 330_000;
 // The second wave (account events and /admin/pilotage, free sale dossier, past followed sales,
 // public market-gap band, financing page, points-to-verify badge) then measured 5,879,382
 // bytes, mostly on-demand chunks; the owner approved (19/10/2026) a third raise, to 5,950,000.
-const MAX_TOTAL_CLIENT_JS_BYTES = 5_950_000;
+// The session of 20/10/2026 (waiting-list notifier, pilotage v2, sale dossier entry, launch-offer
+// surfaces) measured 5,964,934 bytes while every page budget passed and the initial JavaScript of
+// public pages went down; the owner approved (20/10/2026) a fourth raise, to 6,000,000.
+const MAX_TOTAL_CLIENT_JS_BYTES = 6_000_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 // New homepage: lossless panorama for large screens plus editorial photography.
 const MAX_PUBLIC_MEDIA_BYTES = 5_000_000;
