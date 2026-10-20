@@ -24,6 +24,9 @@ export const TOAST_QUEUE_LIMIT = 50;
 
 let real: SonnerToast | null = null;
 let requested = false;
+/** Dernier texte mis en file faute d'affichage prêt ; relayé par la région vivante de `LazyToaster`. */
+let lastQueuedText: string | null = null;
+const announcers = new Set<(text: string) => void>();
 let queue: Queued[] = [];
 let counter = 0;
 const listeners = new Set<() => void>();
@@ -46,6 +49,28 @@ export function isToastRequested(): boolean {
   return requested;
 }
 
+/**
+ * Pour la région vivante de `LazyToaster`. La région de sonner n'existe qu'à la première
+ * notification : un lecteur d'écran n'annonce pas un contenu qui arrive avec elle. Tant que
+ * l'affichage n'est pas prêt, le texte des notifications en file est donc relayé ici, dans une
+ * région montée dès le premier rendu. Une fois sonner affiché, il annonce lui-même : rien n'est
+ * relayé (pas de double annonce). Un texte déjà en file est remis dès l'abonnement.
+ */
+export function subscribeToastAnnouncements(listener: (text: string) => void): () => void {
+  announcers.add(listener);
+  if (lastQueuedText !== null) listener(lastQueuedText);
+  return () => {
+    announcers.delete(listener);
+  };
+}
+
+function announceableText(message: Message, options: ExternalToast): string | null {
+  const parts = [message, options.description].filter(
+    (part): part is string => typeof part === "string" && part.trim() !== "",
+  );
+  return parts.length ? parts.join(". ") : null;
+}
+
 function callReal(target: SonnerToast, method: Method, message: Message, options: ExternalToast) {
   return method === "default" ? target(message, options) : target[method](message, options);
 }
@@ -59,6 +84,7 @@ export function registerToaster(target: SonnerToast | null): void {
   if (!target) return;
   const waiting = queue;
   queue = [];
+  lastQueuedText = null;
   for (const item of waiting) {
     try {
       callReal(target, item.method, item.message, { ...item.options, id: item.id });
@@ -80,6 +106,11 @@ function emit(method: Method, message: Message, options: ExternalToast = {}): Id
   const id = options.id ?? `toast-${counter}`;
   queue.push({ method, message, options, id });
   if (queue.length > TOAST_QUEUE_LIMIT) queue = queue.slice(-TOAST_QUEUE_LIMIT);
+  const text = announceableText(message, options);
+  if (text !== null) {
+    lastQueuedText = text;
+    for (const announce of [...announcers]) announce(text);
+  }
   notifyRequested();
   return id;
 }
@@ -109,5 +140,7 @@ export function resetToastForTests(): void {
   requested = false;
   queue = [];
   counter = 0;
+  lastQueuedText = null;
+  announcers.clear();
   listeners.clear();
 }

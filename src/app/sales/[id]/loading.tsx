@@ -1,8 +1,9 @@
 export default function SaleLoading() {
   return (
     <main id="contenu" className="min-h-screen bg-white px-4 py-8 sm:px-6" aria-busy="true">
-      {/* Texte provisoire : ni lu comme contenu, ni repris comme extrait par les moteurs. */}
-      <p className="sr-only" aria-hidden="true" data-nosnippet>
+      {/* Annoncé par le lecteur d'écran (role=status), jamais repris comme extrait par les moteurs
+          (data-nosnippet). Pas d'aria-hidden : il neutraliserait le rôle. */}
+      <p role="status" className="sr-only" data-nosnippet>
         Chargement de l’annonce…
       </p>
       <div className="mx-auto max-w-7xl" aria-hidden="true">
