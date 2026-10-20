@@ -317,8 +317,12 @@ export async function enforceDailyOperationLimits({
   const limits = DAILY_OPERATION_LIMITS[operation];
   const bucketKey = `daily.${operation}`;
   const windowSeconds = DAILY_WINDOW_SECONDS;
+  // Quel plafond arrête l'appel : celui du compte, ou (adresse, puis global) un plafond partagé. Les
+  // deux ne se lisent pas pareil : le premier dit qu'un compte a épuisé son quota.
+  let stage: "daily_account" | "daily_shared" = "daily_account";
   try {
     await enforceUserRateLimit({ userId, bucketKey, limit: limits.perUser, windowSeconds });
+    stage = "daily_shared";
     await enforceIpRateLimit({ request, bucketKey, limit: limits.perIp, windowSeconds });
     if (launchOffer) {
       await enforceGlobalRateLimit({
@@ -330,8 +334,8 @@ export async function enforceDailyOperationLimits({
     await enforceGlobalRateLimit({ bucketKey, limit: limits.global, windowSeconds });
   } catch (error) {
     if (error instanceof RateLimitError) {
-      // Mesure par compte : le plafond journalier est atteint (par compte, adresse ou global).
-      await recordAccountProductEvent(userId, { type: "quota_reached", quota: "daily" });
+      // Mesure par compte : le plafond journalier est atteint, par compte ou par adresse / global.
+      await recordAccountProductEvent(userId, { type: "quota_reached", quota: stage });
       throw new RateLimitError(error.message, error.retryAfterSeconds, DAILY_LIMIT_MESSAGE);
     }
     throw error;

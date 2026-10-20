@@ -10,6 +10,11 @@ import {
 import {
   MARKET_GAP_BAND_LABELS,
   MARKET_GAP_BAND_MAX_INTERVAL_WIDTH_PCT,
+  MARKET_GAP_BAND_MAX_RADIUS_OTHER_M,
+  MARKET_GAP_BAND_MAX_RADIUS_URBAN_APARTMENT_M,
+  MARKET_GAP_BAND_MIN_COMPARABLES,
+  MARKET_GAP_BAND_MIN_COMPARABLES_JACKKNIFE,
+  MARKET_GAP_BAND_MIN_EFFECTIVE_SAMPLE,
 } from "@/lib/market-gap-band";
 import { selectStatisticScope } from "@/lib/dvf-market-statistics";
 import { URBAN_POPULATION_THRESHOLD } from "@/lib/market-server/constants";
@@ -107,7 +112,7 @@ describe("page « Comment est calculé l’écart avec le marché ? »", () => {
       "300 à 50 000 € le m²",
       "divisé par deux tous les 24 mois",
       "médiane pondérée",
-      "du 10e au 90e centile",
+      "on écarte les 10 % de ventes comparables les moins chères et les 10 % les plus chères",
     ]) {
       expect(comparables).toContain(fact);
     }
@@ -167,11 +172,67 @@ describe("page « Comment est calculé l’écart avec le marché ? »", () => {
     const text = (bands.textContent ?? "").replace(/\s/g, " ");
     expect(within(bands).getAllByRole("listitem")).toHaveLength(3);
     expect(text).toContain("sans aucun chiffre");
-    expect(text).toContain("du 10e au 90e centile");
+    expect(text).toContain(
+      "on écarte les 10 % de ventes comparables les moins chères et les 10 % les plus chères",
+    );
+    expect(text).not.toMatch(/P10|P90|centile/);
     expect(text).toContain(`${MARKET_GAP_BAND_MAX_INTERVAL_WIDTH_PCT} % de la valeur estimée`);
     expect(text).toContain(MARKET_GAP_BAND_LABELS.insufficient);
     expect(text).toContain("ne remplace ni une visite ni l’avis d’un professionnel");
     expect(text).not.toMatch(/bonne affaire|achetez/i);
+  });
+
+  it("nomme les trois libellés descriptifs, la mise à prix basse et la base DVF", () => {
+    render(<Page />);
+    const text = (
+      section("Le repère en trois bandes de la fiche publique").textContent ?? ""
+    ).replace(/\s/g, " ");
+    for (const band of ["under", "near", "above", "occupied"] as const) {
+      expect(text).toContain(MARKET_GAP_BAND_LABELS[band]);
+    }
+    expect(text).not.toMatch(/nettement|proche de la valeur/);
+    expect(text).toContain("la mise à prix est volontairement basse");
+    expect(text).toContain("la base des ventes immobilières déclarées aux notaires");
+  });
+
+  it("donne la porte publique à partir des constantes du code", () => {
+    render(<Page />);
+    const text = (
+      section("Le repère en trois bandes de la fiche publique").textContent ?? ""
+    ).replace(/\s/g, " ");
+    expect(text).toContain(
+      `au moins ${MARKET_GAP_BAND_MIN_COMPARABLES_JACKKNIFE} ventes comparables`,
+    );
+    expect(text).toContain(
+      `(${MARKET_GAP_BAND_MIN_COMPARABLES} quand la fourchette vient d’un modèle`,
+    );
+    expect(text).toContain(
+      `échantillon effectif d’au moins ${MARKET_GAP_BAND_MIN_EFFECTIVE_SAMPLE}`,
+    );
+    expect(text).toContain(
+      `${MARKET_GAP_BAND_MAX_RADIUS_URBAN_APARTMENT_M.toLocaleString("fr-FR")} m`.replace(
+        /\s/g,
+        " ",
+      ),
+    );
+    expect(text).toContain(
+      `${MARKET_GAP_BAND_MAX_RADIUS_OTHER_M.toLocaleString("fr-FR")} m`.replace(/\s/g, " "),
+    );
+  });
+
+  it("ne présente pas le repli fixe comme une fourchette de ventes comparables", () => {
+    render(<Page />);
+    const repli = (section("Quand il y a trop peu de ventes").textContent ?? "").replace(
+      /\s/g,
+      " ",
+    );
+    expect(repli).toContain("Cette fourchette n’est pas celle des ventes comparables");
+    expect(repli).toContain("marge fixe");
+    expect(repli).not.toMatch(/P10|P90|centile/);
+    const comparables = (
+      section("Les ventes comparables : périmètre et période").textContent ?? ""
+    ).replace(/\s/g, " ");
+    expect(comparables).toContain("marge fixe autour de la valeur");
   });
 
   it("énonce les limites sans promettre de conseil", () => {

@@ -14,35 +14,79 @@ import { parisDateKey } from "@/lib/sale-countdown";
  * le rôle n'obtient rien.
  *
  * Un nombre absent vaut `null` et s'affiche « non mesuré » : migration pas encore appliquée, début de
- * la mesure inconnu. Il n'est jamais remplacé par zéro.
+ * la mesure inconnu. Il n'est jamais remplacé par zéro. La règle « moins de 5 » est une règle
+ * d'affichage : la page masque les petits nombres (voir `admin-pilotage-page.tsx`).
+ *
+ * Depuis la migration 20261029120200 : administrateurs exclus, semaine précédente (fenêtre
+ * disjointe), comptes distincts à côté des occurrences, état à cet instant (`snapshot`).
  */
 
 export type PilotageCount = number | null;
 
-export type PilotageEvents = {
+/** Les compteurs d'événements : des occurrences, ou des comptes distincts (même forme). */
+export type PilotageEventCounts = {
   unlocks: PilotageCount;
   quotaReached: {
     total: PilotageCount;
     unlocks: PilotageCount;
     favorites: PilotageCount;
+    /** Les trois détails du plafond quotidien : par compte, par adresse ou global, et l'ancien. */
     daily: PilotageCount;
+    /** Plafond journalier du compte. */
+    dailyAccount: PilotageCount;
+    /** Plafond journalier de l'adresse ou du site entier. */
+    dailyShared: PilotageCount;
   };
   bidCeilings: PilotageCount;
   calendarExports: PilotageCount;
   emailClicks: { total: PilotageCount; alert: PilotageCount; reminder: PilotageCount };
 };
 
-export type PilotageWindow = {
-  days: 7 | 30;
-  /** Début de la fenêtre glissante (ISO). */
+/** Occurrences, et à côté les comptes distincts (`count(distinct user_id)`). */
+export type PilotageEvents = PilotageEventCounts & { accounts: PilotageEventCounts };
+
+/** Les chiffres d'une période (hors administrateurs). */
+export type PilotagePeriod = {
+  /** Début (exclu) et fin (incluse) de la période (ISO). */
   since: string | null;
+  until: string | null;
+  /** Comptes créés, et parmi eux ceux dont l'adresse email est confirmée. */
   signups: PilotageCount;
+  signupsConfirmed: PilotageCount;
+  /** Comptes dont la dernière connexion tombe dans la période : nouveaux (créés dans la période) ou revenus. */
   activeAccounts: PilotageCount;
+  activeNew: PilotageCount;
+  activeReturning: PilotageCount;
   alertsCreated: PilotageCount;
   waitlistRequests: PilotageCount;
-  /** Faux quand la mesure des événements a commencé après le début de la fenêtre. */
+  /** Dossiers enregistrés (statut personnel ou enchère plafond sur un favori), et comptes distincts. */
+  dossiers: PilotageCount;
+  dossierAccounts: PilotageCount;
+  /** Rappels d'audience envoyés, et comptes distincts atteints. */
+  remindersSent: PilotageCount;
+  reminderAccounts: PilotageCount;
+  /** Faux quand la mesure des événements a commencé après le début de la période. */
   eventsComplete: boolean;
   events: PilotageEvents;
+};
+
+export type PilotageWindow = PilotagePeriod & {
+  days: 7 | 30;
+  /** La période disjointe qui précède (les 7 jours d'avant la semaine) ; `null` pour les 30 jours. */
+  previous: PilotagePeriod | null;
+};
+
+/** État à cet instant, sans fenêtre. */
+export type PilotageSnapshot = {
+  /** Comptes hors administrateurs, et parmi eux les confirmés. */
+  accountsTotal: PilotageCount;
+  accountsConfirmed: PilotageCount;
+  launchOfferActive: boolean | null;
+  /** Comptes qui n'ont l'accès Analyse que grâce à l'offre de lancement. */
+  launchOfferAccounts: PilotageCount;
+  reminderConsentsActive: PilotageCount;
+  dossiersTotal: PilotageCount;
+  dossierAccountsTotal: PilotageCount;
 };
 
 export type AdminPilotage = {
@@ -51,6 +95,7 @@ export type AdminPilotage = {
   eventsMeasuredSince: string | null;
   /** Demandes de liste d'attente actives à cet instant. */
   waitlistActive: PilotageCount;
+  snapshot: PilotageSnapshot;
   windows: PilotageWindow[];
 };
 
@@ -60,41 +105,107 @@ const quotaSchema = z.object({
   unlocks: count,
   favorites: count,
   daily: count,
+  daily_account: count,
+  daily_shared: count,
 });
 const clicksSchema = z.object({ total: count, alert: count, reminder: count });
-const eventsSchema = z.object({
+const eventCountsShape = {
   unlocks: count,
   quota_reached: quotaSchema.nullish(),
   bid_ceilings: count,
   calendar_exports: count,
   email_clicks: clicksSchema.nullish(),
-});
-const windowSchema = z.object({
-  days: z.union([z.literal(7), z.literal(30)]),
+};
+const eventCountsSchema = z.object(eventCountsShape);
+const eventsSchema = z.object({ ...eventCountsShape, accounts: eventCountsSchema.nullish() });
+const periodShape = {
   since: z.string().nullish(),
+  until: z.string().nullish(),
   signups: count,
+  signups_confirmed: count,
   active_accounts: count,
+  active_new: count,
+  active_returning: count,
   alerts_created: count,
   waitlist_requests: count,
+  dossiers: count,
+  dossier_accounts: count,
+  reminders_sent: count,
+  reminder_accounts: count,
   events_complete: z.boolean().nullish(),
   events: eventsSchema.nullish(),
+};
+const periodSchema = z.object(periodShape);
+const windowSchema = z.object({
+  ...periodShape,
+  days: z.union([z.literal(7), z.literal(30)]),
+  previous: periodSchema.nullish(),
+});
+const snapshotSchema = z.object({
+  accounts_total: count,
+  accounts_confirmed: count,
+  launch_offer_active: z.boolean().nullish(),
+  launch_offer_accounts: count,
+  reminder_consents_active: count,
+  dossiers_total: count,
+  dossier_accounts_total: count,
 });
 const summarySchema = z.object({
   generated_at: z.string().nullish(),
   events_measured_since: z.string().nullish(),
   waitlist_active: count,
+  snapshot: snapshotSchema.nullish(),
   windows: z.array(windowSchema),
 });
 
 const orNull = (value: number | null | undefined): PilotageCount => value ?? null;
 
-function unmeasuredEvents(): PilotageEvents {
+function unmeasuredEventCounts(): PilotageEventCounts {
   return {
     unlocks: null,
-    quotaReached: { total: null, unlocks: null, favorites: null, daily: null },
+    quotaReached: {
+      total: null,
+      unlocks: null,
+      favorites: null,
+      daily: null,
+      dailyAccount: null,
+      dailyShared: null,
+    },
     bidCeilings: null,
     calendarExports: null,
     emailClicks: { total: null, alert: null, reminder: null },
+  };
+}
+
+function unmeasuredPeriod(): PilotagePeriod {
+  return {
+    since: null,
+    until: null,
+    signups: null,
+    signupsConfirmed: null,
+    activeAccounts: null,
+    activeNew: null,
+    activeReturning: null,
+    alertsCreated: null,
+    waitlistRequests: null,
+    dossiers: null,
+    dossierAccounts: null,
+    remindersSent: null,
+    reminderAccounts: null,
+    eventsComplete: false,
+    events: { ...unmeasuredEventCounts(), accounts: unmeasuredEventCounts() },
+  };
+}
+
+function unmeasuredSnapshot(): PilotageSnapshot {
+  return {
+    accountsTotal: null,
+    accountsConfirmed: null,
+    launchOfferActive: null,
+    launchOfferAccounts: null,
+    reminderConsentsActive: null,
+    dossiersTotal: null,
+    dossierAccountsTotal: null,
   };
 }
 
@@ -104,16 +215,60 @@ export function unavailablePilotage(): AdminPilotage {
     generatedAt: null,
     eventsMeasuredSince: null,
     waitlistActive: null,
+    snapshot: unmeasuredSnapshot(),
     windows: ([7, 30] as const).map((days) => ({
+      ...unmeasuredPeriod(),
       days,
-      since: null,
-      signups: null,
-      activeAccounts: null,
-      alertsCreated: null,
-      waitlistRequests: null,
-      eventsComplete: false,
-      events: unmeasuredEvents(),
+      previous: days === 7 ? unmeasuredPeriod() : null,
     })),
+  };
+}
+
+function parseEventCounts(
+  events: z.infer<typeof eventCountsSchema> | null | undefined,
+): PilotageEventCounts {
+  if (!events) return unmeasuredEventCounts();
+  return {
+    unlocks: orNull(events.unlocks),
+    quotaReached: {
+      total: orNull(events.quota_reached?.total),
+      unlocks: orNull(events.quota_reached?.unlocks),
+      favorites: orNull(events.quota_reached?.favorites),
+      daily: orNull(events.quota_reached?.daily),
+      dailyAccount: orNull(events.quota_reached?.daily_account),
+      dailyShared: orNull(events.quota_reached?.daily_shared),
+    },
+    bidCeilings: orNull(events.bid_ceilings),
+    calendarExports: orNull(events.calendar_exports),
+    emailClicks: {
+      total: orNull(events.email_clicks?.total),
+      alert: orNull(events.email_clicks?.alert),
+      reminder: orNull(events.email_clicks?.reminder),
+    },
+  };
+}
+
+function parsePeriod(period: z.infer<typeof periodSchema>): PilotagePeriod {
+  const events = period.events;
+  return {
+    since: period.since ?? null,
+    until: period.until ?? null,
+    signups: orNull(period.signups),
+    signupsConfirmed: orNull(period.signups_confirmed),
+    activeAccounts: orNull(period.active_accounts),
+    activeNew: orNull(period.active_new),
+    activeReturning: orNull(period.active_returning),
+    alertsCreated: orNull(period.alerts_created),
+    waitlistRequests: orNull(period.waitlist_requests),
+    dossiers: orNull(period.dossiers),
+    dossierAccounts: orNull(period.dossier_accounts),
+    remindersSent: orNull(period.reminders_sent),
+    reminderAccounts: orNull(period.reminder_accounts),
+    eventsComplete: period.events_complete === true,
+    events: {
+      ...parseEventCounts(events),
+      accounts: parseEventCounts(events?.accounts),
+    },
   };
 }
 
@@ -121,40 +276,33 @@ export function unavailablePilotage(): AdminPilotage {
 export function parseAdminPilotage(raw: unknown): AdminPilotage {
   const summary = summarySchema.parse(raw);
   const byDays = new Map(summary.windows.map((window) => [window.days, window]));
+  const snapshot = summary.snapshot;
   return {
     generatedAt: summary.generated_at ?? null,
     eventsMeasuredSince: summary.events_measured_since ?? null,
     waitlistActive: orNull(summary.waitlist_active),
+    snapshot: snapshot
+      ? {
+          accountsTotal: orNull(snapshot.accounts_total),
+          accountsConfirmed: orNull(snapshot.accounts_confirmed),
+          launchOfferActive: snapshot.launch_offer_active ?? null,
+          launchOfferAccounts: orNull(snapshot.launch_offer_accounts),
+          reminderConsentsActive: orNull(snapshot.reminder_consents_active),
+          dossiersTotal: orNull(snapshot.dossiers_total),
+          dossierAccountsTotal: orNull(snapshot.dossier_accounts_total),
+        }
+      : unmeasuredSnapshot(),
     windows: ([7, 30] as const).map((days): PilotageWindow => {
       const window = byDays.get(days);
       if (!window) return unavailablePilotage().windows[days === 7 ? 0 : 1];
-      const events = window.events;
       return {
+        ...parsePeriod(window),
         days,
-        since: window.since ?? null,
-        signups: orNull(window.signups),
-        activeAccounts: orNull(window.active_accounts),
-        alertsCreated: orNull(window.alerts_created),
-        waitlistRequests: orNull(window.waitlist_requests),
-        eventsComplete: window.events_complete === true,
-        events: events
-          ? {
-              unlocks: orNull(events.unlocks),
-              quotaReached: {
-                total: orNull(events.quota_reached?.total),
-                unlocks: orNull(events.quota_reached?.unlocks),
-                favorites: orNull(events.quota_reached?.favorites),
-                daily: orNull(events.quota_reached?.daily),
-              },
-              bidCeilings: orNull(events.bid_ceilings),
-              calendarExports: orNull(events.calendar_exports),
-              emailClicks: {
-                total: orNull(events.email_clicks?.total),
-                alert: orNull(events.email_clicks?.alert),
-                reminder: orNull(events.email_clicks?.reminder),
-              },
-            }
-          : unmeasuredEvents(),
+        previous: window.previous
+          ? parsePeriod(window.previous)
+          : days === 7
+            ? unmeasuredPeriod()
+            : null,
       };
     }),
   };

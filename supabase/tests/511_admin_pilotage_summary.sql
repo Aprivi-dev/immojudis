@@ -1,5 +1,7 @@
 -- Page admin « Pilotage » (point 65) : agrégats exacts sur 7 et 30 jours glissants, nombres seulement,
--- lus par le serveur (service_role) et fermés aux rôles du navigateur. Les chiffres sont comparés à un
+-- lus par le serveur (service_role) et fermés aux rôles du navigateur. La fonction a été remplacée par
+-- la migration 20261029120200 (semaine précédente, comptes distincts, administrateurs exclus : voir le
+-- test 547) ; les chiffres d'origine ci-dessous restent vrais. Les chiffres sont comparés à un
 -- relevé pris avant les données de test (écarts), pour ne pas dépendre de ce que la base contient déjà.
 begin;
 
@@ -217,8 +219,8 @@ select ok(
 select is(
   (select array_agg(key order by key) from jsonb_object_keys(
      (select summary from pgtap_511_summary where case_name = 'after')) as key),
-  array['events_measured_since', 'generated_at', 'waitlist_active', 'windows'],
-  'the summary has only its four top-level fields'
+  array['events_measured_since', 'generated_at', 'snapshot', 'waitlist_active', 'windows'],
+  'the summary has only its top-level fields (the snapshot was added by 20261029120200)'
 );
 
 select * from finish();
