@@ -7,8 +7,10 @@ begin;
 select plan(49);
 
 -- Fixtures -------------------------------------------------------------------------------------
--- L'offre de lancement est active (posée explicitement) : le compte 1, dont l'adresse est confirmée,
--- a l'accès Analyse. Le compte 2, adresse non confirmée, est un compte Découverte.
+-- L'offre de lancement est active (posée explicitement). Depuis 20261029110200 / 20261029190000, le prix
+-- d'adjudication n'est copié que pour un droit Analyse DURABLE (abonnement, premium, administrateur), jamais
+-- pour la seule offre de lancement. Le compte 1, dont l'adresse est confirmée, a donc un abonnement Analyse
+-- actif ; le compte 2, adresse non confirmée, est un compte Découverte (ni droit durable ni offre).
 update app_private.launch_offer set active = true where singleton;
 
 insert into auth.users (
@@ -24,6 +26,9 @@ insert into auth.users (
   ('c5160000-0000-4000-8000-000000000003', '00000000-0000-0000-0000-000000000000',
    'authenticated', 'authenticated', 'snapshot-other@example.test', '', now(), now(), now(),
    '{}'::jsonb, '{}'::jsonb);
+
+insert into public.user_subscriptions (user_id, plan_code, status, current_period_end)
+values ('c5160000-0000-4000-8000-000000000001', 'analyse', 'active', now() + interval '30 days');
 
 -- Ventes dont l'audience est passée (purgées à l'instant de l'audience : 2000-01-02 12:00 UTC).
 --   a : adjugée, prix publié par une source autre que Licitor, avocat connu
