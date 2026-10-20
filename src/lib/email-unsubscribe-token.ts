@@ -14,8 +14,18 @@ export const UNSUBSCRIBE_TOKEN_TTL_DAYS = 60;
  */
 export const REMINDERS_UNSUBSCRIBE_TOKEN_TTL_DAYS = 365;
 
+/**
+ * Récapitulatif hebdomadaire et alerte de résultat : des emails qui reviennent toute l'année, donc
+ * la même durée de validité que les rappels d'audience.
+ */
+const LONG_LIVED_SCOPES: ReadonlySet<UnsubscribeScope["kind"]> = new Set([
+  "reminders",
+  "weekly-digest",
+  "sale-results",
+]);
+
 export function unsubscribeTokenTtlDays(scope: UnsubscribeScope): number {
-  return scope.kind === "reminders"
+  return LONG_LIVED_SCOPES.has(scope.kind)
     ? REMINDERS_UNSUBSCRIBE_TOKEN_TTL_DAYS
     : UNSUBSCRIBE_TOKEN_TTL_DAYS;
 }
@@ -25,6 +35,11 @@ export type UnsubscribeScope =
   | { kind: "alert"; alertId: string }
   // Rappels d'audience et avertissements graves: un consentement distinct de celui des alertes.
   | { kind: "reminders" }
+  // Récapitulatif hebdomadaire « Ma semaine » : un consentement distinct, une portée dédiée (un lien
+  // de rappels ou d'alertes ne le retire pas, et inversement).
+  | { kind: "weekly-digest" }
+  // Alerte de résultat ou de remise en vente d'une vente suivie : idem.
+  | { kind: "sale-results" }
   // Liste d'attente de l'ouverture de l'offre Analyse : l'email d'ouverture (envoi par l'administrateur).
   | { kind: "offer-opening" };
 
@@ -55,6 +70,8 @@ function sign(payload: string, env?: Pick<NodeJS.ProcessEnv, string>): string {
 
 function scopeToString(scope: UnsubscribeScope): string {
   if (scope.kind === "reminders") return "reminders";
+  if (scope.kind === "weekly-digest") return "weekly-digest";
+  if (scope.kind === "sale-results") return "sale-results";
   if (scope.kind === "offer-opening") return "offer-opening";
   return scope.kind === "alert" ? `alert:${scope.alertId}` : "alerts";
 }
@@ -62,6 +79,8 @@ function scopeToString(scope: UnsubscribeScope): string {
 function scopeFromString(value: string): UnsubscribeScope | null {
   if (value === "alerts") return { kind: "alerts" };
   if (value === "reminders") return { kind: "reminders" };
+  if (value === "weekly-digest") return { kind: "weekly-digest" };
+  if (value === "sale-results") return { kind: "sale-results" };
   if (value === "offer-opening") return { kind: "offer-opening" };
   const match = /^alert:(.+)$/.exec(value);
   return match && UUID_PATTERN.test(match[1]) ? { kind: "alert", alertId: match[1] } : null;

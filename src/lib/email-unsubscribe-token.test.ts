@@ -68,6 +68,45 @@ describe("unsubscribe tokens", () => {
     expect(verifyUnsubscribeToken(`${forged}.${signature}`, { now, env })).toBeNull();
   });
 
+  it("porte les portées « récapitulatif hebdomadaire » et « alerte de résultat », chacune dédiée", () => {
+    const weekly = createUnsubscribeToken({ userId, scope: { kind: "weekly-digest" }, now, env });
+    const results = createUnsubscribeToken({ userId, scope: { kind: "sale-results" }, now, env });
+    const reminders = createUnsubscribeToken({ userId, scope: { kind: "reminders" }, now, env });
+    expect(verifyUnsubscribeToken(weekly, { now, env })).toMatchObject({
+      userId,
+      scope: { kind: "weekly-digest" },
+    });
+    expect(verifyUnsubscribeToken(results, { now, env })).toMatchObject({
+      userId,
+      scope: { kind: "sale-results" },
+    });
+    expect(new Set([weekly, results, reminders]).size).toBe(3);
+    // La signature couvre la portée : un jeton de rappels ne devient pas un jeton de récapitulatif ni
+    // d'alerte de résultat.
+    const [payload, signature] = reminders.split(".");
+    for (const forgedScope of ["weekly-digest", "sale-results"]) {
+      const forged = Buffer.from(
+        JSON.stringify({
+          ...JSON.parse(Buffer.from(payload, "base64url").toString()),
+          s: forgedScope,
+        }),
+      ).toString("base64url");
+      expect(verifyUnsubscribeToken(`${forged}.${signature}`, { now, env })).toBeNull();
+    }
+    expect(unsubscribeTokenScopeKind(weekly, { env })).toBe("weekly-digest");
+    expect(unsubscribeTokenScopeKind(results, { env })).toBe("sale-results");
+  });
+
+  it("garde les liens du récapitulatif et de l'alerte de résultat valables un an", () => {
+    const day = (count: number) => new Date(now.getTime() + count * 86_400_000);
+    for (const kind of ["weekly-digest", "sale-results"] as const) {
+      const token = createUnsubscribeToken({ userId, scope: { kind }, now, env });
+      expect(verifyUnsubscribeToken(token, { now: day(61), env }), kind).not.toBeNull();
+      expect(verifyUnsubscribeToken(token, { now: day(364), env }), kind).not.toBeNull();
+      expect(verifyUnsubscribeToken(token, { now: day(366), env }), kind).toBeNull();
+    }
+  });
+
   it("expire après 60 jours", () => {
     const token = createUnsubscribeToken({ userId, now, env });
     const later = new Date(now.getTime() + 61 * 86_400_000);

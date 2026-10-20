@@ -201,7 +201,7 @@ function parseDate(value: unknown): Date | null {
   return Number.isFinite(date.getTime()) ? date : null;
 }
 
-function weekdayLongDate(value: string): string | null {
+export function weekdayLongDate(value: string): string | null {
   const date = parseDate(value);
   if (!date) return null;
   return new Intl.DateTimeFormat("fr-FR", {
@@ -214,13 +214,13 @@ function weekdayLongDate(value: string): string | null {
 }
 
 /** « Maison à Bordeaux » : le type de bien et la commune publics, jamais l'adresse. */
-function publicTitle(row: Pick<SaleCalendarRow, "property_type" | "city"> | null): string {
+export function publicTitle(row: Pick<SaleCalendarRow, "property_type" | "city"> | null): string {
   if (!row) return "Vente suivie";
   const city = row.city?.replace(/\s+/g, " ").trim();
   return `${seoPropertyLabel(row.property_type)}${city ? ` à ${city}` : ""}`;
 }
 
-function publicLocation(
+export function publicLocation(
   row: Pick<SaleCalendarRow, "tribunal_name" | "tribunal_city"> | null,
 ): string {
   if (!row) return "";

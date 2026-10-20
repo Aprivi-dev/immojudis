@@ -161,6 +161,8 @@ describe("ERASURE_TABLES face au schéma", () => {
     expect(ERASURE_TABLES).toContainEqual(["account_product_events", "user_id"]);
     expect(ERASURE_TABLES).toContainEqual(["sale_signal_feedback", "user_id"]);
     expect(ERASURE_TABLES).toContainEqual(["sale_reminder_dispatches", "user_id"]);
+    expect(ERASURE_TABLES).toContainEqual(["weekly_digest_dispatches", "user_id"]);
+    expect(ERASURE_TABLES).toContainEqual(["sale_result_dispatches", "user_id"]);
   });
 
   it("n'efface pas les traces que la loi oblige à garder", () => {

@@ -11,6 +11,8 @@ ou dans une migration `pg_cron` ; le test `src/lib/scheduled-jobs.test.ts` le v�
 | Envoi des alertes                                          | Vercel Cron        | 07:30, rattrapage 09:30 | `/api/cron/alert-notifications`       | oui                                                  | 27 h                          |
 | Suivi des changements                                      | Vercel Cron        | 06:45, rattrapage 08:45 | `/api/cron/sale-change-monitor`       | oui                                                  | 27 h                          |
 | Rappels d'audience et avertissements graves                | Vercel Cron        | 07:15, rattrapage 09:15 | `/api/cron/sale-reminders`            | oui                                                  | 27 h                          |
+| Alertes de résultat ou de remise en vente                  | Vercel Cron        | 10:15                   | `/api/cron/sale-results`              | journal d'exécution seulement                        | pas encore                    |
+| Récapitulatif hebdomadaire « Ma semaine »                  | Vercel Cron        | 11:30                   | `/api/cron/weekly-digest`             | journal d'exécution seulement                        | pas encore                    |
 | Rétention des données                                      | Vercel Cron        | dimanche 04:15          | `/api/cron/data-retention`            | oui                                                  | 8 jours                       |
 | Complétude des annonces (palier de classement de /sales)   | Supabase `pg_cron` | toutes les heures à :20 | `/api/cron/listing-completeness`      | oui                                                  | 3 h                           |
 | Complétude des annonces (filet quotidien)                  | Vercel Cron        | 05:50 tous les jours    | `/api/cron/listing-completeness`      | oui (même tâche, même seuil)                         | 3 h                           |
@@ -48,6 +50,36 @@ le passage échoue au-delà de 20 % de rappels écartés), et seules les adresse
 reçoivent. Le suivi des changements examine chaque jour tous les comptes ayant consenti, en plus du
 lot de `SALE_CHANGE_CRON_USER_LIMIT` comptes. Critère de passage à `on` :
 `docs/runbooks/activation-rappels-audience.md`.
+
+Deux emails s'ajoutent aux rappels, chacun avec son consentement distinct (jamais pré-coché, daté et
+versionné par la base), son lien de désinscription signé (portée dédiée, valable un an) et son
+interrupteur d'envoi, **fermé par défaut** : le propriétaire ne les ouvre qu'après la mise à jour de la
+politique de confidentialité et du registre des traitements.
+
+- **Alerte de résultat ou de remise en vente** (`SALE_RESULTS_MODE`, `/api/cron/sale-results`, 10:15) :
+  quand une vente suivie a eu lieu (instantané après l'audience : « résultat connu » ou « résultat non
+  connu », avec la mention de surenchère indicative) ou change de statut grave (adjugée, retirée ou
+  annulée, remise en vente), un email renvoie vers la fiche ou « Mes favoris ». **Jamais de prix** (les
+  instantanés sont lus sans leurs colonnes de prix). Pas de type « non adjugée » : aucune source ne le
+  prouve. Elle passe après le suivi des changements et les rappels d'audience, et ne répète pas un
+  avertissement (adjugée, retirée, annulée) que les rappels ont déjà journalisé. Journal
+  `sale_result_dispatches` : un email par compte, vente et type. Valeurs : `off` (défaut), `internal`
+  (administrateurs, objet « [Test interne] »), `on`.
+- **Récapitulatif hebdomadaire « Ma semaine »** (`WEEKLY_DIGEST_MODE`, `/api/cron/weekly-digest`, 11:30) :
+  un email par semaine, au jour choisi dans `/compte` (mardi par défaut) : audiences des 14 prochains
+  jours (dates sourcées, revérifiées depuis moins de 36 h), changements des 7 derniers jours sur les
+  ventes suivies, nouvelles ventes du département des alertes (sans alerte : bouton « Créer une alerte »).
+  Rien à annoncer, pas d'email. **Au plus un email par compte et par jour** : le cron passe après les
+  alertes, les rappels et les alertes de résultat ; si l'un d'eux est déjà parti ce jour-là au compte,
+  le récapitulatif n'est pas fusionné avec lui, il est reporté au lendemain, puis au surlendemain, et
+  la semaine est sautée au-delà. Journal `weekly_digest_dispatches` (unique par compte et semaine ISO).
+  Le passage échoue quand un envoi est dû et que Resend n'est pas configuré.
+
+Les journaux des deux emails sont purgés à 180 jours par `run_data_retention` (cron hebdomadaire),
+même quand l'envoi est fermé. Les deux tâches ne sont pas encore dans la liste attendue de
+`cron.stale` (`app_private.evaluate_operational_health`) : tant que les interrupteurs sont à `off`
+elles réussissent sans rien faire ; les ajouter à la liste est une décision à prendre à l'ouverture
+(procédure plus bas).
 
 Les quatre tâches Vercel quotidiennes ont un second passage deux heures plus tard : il ne fait rien
 si la tâche a déjà réussi dans les 20 dernières heures (`catchUpSchedule` de `runMonitoredCron`).

@@ -22,8 +22,8 @@ describe("admin readiness", () => {
     });
     expect(items.find((item) => item.key === "cron.smart_alerts")).toMatchObject({
       status: "ready",
-      // Les onze routes cron, `/api/cron/sale-retention` (purge de rétention) et `/api/cron/sale-reminders` (rappels d'audience) comprises.
-      detail: "11 routes cron sont protégées par CRON_SECRET.",
+      // Les treize routes cron, dont `/api/cron/sale-retention` (purge de rétention), `/api/cron/sale-reminders` (rappels d'audience), `/api/cron/sale-results` (alertes de résultat) et `/api/cron/weekly-digest` (récapitulatif hebdomadaire).
+      detail: "13 routes cron sont protégées par CRON_SECRET.",
     });
     expect(items.find((item) => item.key === "email.alert_delivery")).toMatchObject({
       status: "blocked",
