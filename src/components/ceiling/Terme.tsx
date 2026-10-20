@@ -181,7 +181,7 @@ export function Terme({
         aria-controls={id}
         aria-label={`Définition : ${entry.label}`}
         onClick={() => setOpen((current) => !current)}
-        className="relative z-20 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted-foreground after:absolute after:-inset-2.5 after:content-[''] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+        className="relative z-20 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted-foreground after:absolute after:-inset-2.5 after:content-[''] hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
       >
         <CircleHelp aria-hidden className="h-4 w-4" />
       </button>

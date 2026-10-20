@@ -498,6 +498,79 @@ describe("SalePublicPreview", () => {
     );
   });
 
+  it("nomme la page d'origine dans le lien de retour (tribunal, audiences, carte)", () => {
+    const cases = [
+      ["/tribunaux/justice-tj-1-93", "Retour au tribunal", "/tribunaux/justice-tj-1-93"],
+      ["/audiences-a-venir", "Retour aux audiences", "/audiences-a-venir"],
+      ["/sales?city=Lyon&map=true", "Retour à la carte", null],
+    ] as const;
+    for (const [from, label, href] of cases) {
+      const { unmount } = renderPreview({ id: "sale-1" }, "sale-1", false, from);
+      const link = screen.getByRole("link", { name: new RegExp(label) });
+      if (href) expect(link.getAttribute("href")).toBe(href);
+      else expect(link.getAttribute("href")).toContain("/sales?city=Lyon&map=true#sale-card-");
+      unmount();
+    }
+  });
+
+  it("annonce aux lecteurs d'écran que les valeurs floutées sont masquées, et ce qui les ouvre", () => {
+    renderPreview({ sale_venue_type: "tribunal", starting_price_eur: 80_000 });
+    const teaser = screen.getByRole("region", { name: "L’analyse de cette vente" });
+    const rows = Array.from(teaser.querySelectorAll("dd"));
+    expect(rows).toHaveLength(4);
+    const spoken = rows.map((row) => row.querySelector(".sr-only")?.textContent);
+    expect(spoken[0]).toBe("Valeur masquée, visible avec un compte gratuit");
+    expect(spoken[1]).toBe("Valeur masquée, visible avec un compte gratuit");
+    expect(spoken[2]).toBe(
+      "Valeur masquée, visible avec l’offre Analyse, ou en débloquant la vente",
+    );
+    expect(spoken[3]).toBe("Valeur masquée, visible avec l’offre Analyse");
+    // Le chiffre flouté reste un décor : jamais lu.
+    for (const row of rows) {
+      expect(row.querySelector("[aria-hidden='true'][data-nosnippet]")?.textContent).toMatch(/0/);
+    }
+  });
+
+  it("reprend les points à vérifier sous l'ancre #points-a-verifier, sans l'occupation", () => {
+    renderPreview({
+      sale_venue_type: "tribunal",
+      sale_date: "2099-01-20T08:30:00+00:00",
+      app_surface_m2: null,
+      occupancy_status: null,
+    });
+    const section = screen.getByRole("region", { name: "1 point à vérifier" });
+    expect(section.id).toBe("points-a-verifier");
+    expect(section.textContent).toContain("Surface non communiquée dans l’annonce");
+    expect(section.textContent).not.toContain("Occupation");
+  });
+
+  it("n'ajoute aucun bloc de points quand l'aperçu n'en laisse aucun ouvert", () => {
+    renderPreview({ sale_venue_type: "tribunal", app_surface_m2: 60 });
+    expect(document.getElementById("points-a-verifier")).toBeNull();
+  });
+
+  it("signale une vente à date passée : pas de bouton d'agenda, pas de bande d'écart", () => {
+    renderPreview({
+      sale_venue_type: "tribunal",
+      sale_date: "2020-03-12T09:00:00+00:00",
+      market_gap_band: "under",
+    });
+    expect(screen.getByTestId("past-sale-date").textContent).toBe("Date de vente passée");
+    expect(screen.queryByRole("button", { name: "Ajouter à mon agenda" })).toBeNull();
+    expect(screen.queryByTestId("market-gap-band")).toBeNull();
+  });
+
+  it("garde l'agenda et la bande d'écart d'une vente à venir, sans signal de date passée", () => {
+    renderPreview({
+      sale_venue_type: "tribunal",
+      sale_date: "2099-01-20T08:30:00+00:00",
+      market_gap_band: "under",
+    });
+    expect(screen.queryByTestId("past-sale-date")).toBeNull();
+    expect(screen.getByRole("button", { name: "Ajouter à mon agenda" })).toBeTruthy();
+    expect(screen.getByTestId("market-gap-band")).toBeTruthy();
+  });
+
   it("donne leur définition à « mise à prix » et à « adjudication »", () => {
     renderPreview({ sale_venue_type: "tribunal" });
     expect(screen.getByRole("button", { name: "Définition : mise à prix" })).toBeTruthy();
@@ -543,6 +616,23 @@ describe("SalePublicPreview", () => {
     expect(teaser.textContent).toContain("Enchère plafond (simulation)");
     expect(teaser.textContent).toContain("000 000 €");
     expect(teaser.textContent).not.toMatch(/[1-9]\d* ?\d* €/);
+  });
+
+  it("annonce « Mon dossier » au visiteur d'une vente au tribunal, hors du bloc d'analyse", () => {
+    renderPreview({ sale_venue_type: "tribunal" });
+    const note = screen.getByTestId("public-dossier-teaser");
+    expect(note.textContent).toBe(
+      "Compte gratuit : notez votre statut et votre enchère plafond sur chaque vente suivie.",
+    );
+    const teaser = screen.getByRole("region", { name: "L’analyse de cette vente" });
+    expect(teaser.contains(note)).toBe(false);
+  });
+
+  it("ne cite pas l'enchère plafond sur une vente hors tribunal : le statut seul", () => {
+    renderPreview({ sale_venue_type: "notary" });
+    expect(screen.getByTestId("public-dossier-teaser").textContent).toBe(
+      "Compte gratuit : notez votre statut sur chaque vente suivie.",
+    );
   });
 
   it("does not promise a bid ceiling for a notarial sale", () => {

@@ -5,7 +5,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import X from "lucide-react/dist/esm/icons/x.js";
+import List from "lucide-react/dist/esm/icons/list.js";
 import { toast } from "@/lib/toast";
 import { AuthConnectionBanner } from "@/components/AuthConnectionBanner";
 import { useAuth } from "@/hooks/use-auth";
@@ -1143,7 +1143,7 @@ export function SearchPage({
                 onClick={closeMobileMap}
                 className="inline-flex h-11 cursor-pointer items-center gap-2 rounded-md border border-line-soft bg-white px-3 text-sm font-bold text-brand-navy shadow-sm"
               >
-                <X className="h-4 w-4" />
+                <List className="h-4 w-4" aria-hidden="true" />
                 Liste
               </button>
               {/* Titre court : la phrase qui explique la limite est dans la légende de la carte. */}

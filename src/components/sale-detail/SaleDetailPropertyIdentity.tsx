@@ -94,7 +94,7 @@ export function PropertyIdentity({
                   key={`${image.url}-${index}`}
                   type="button"
                   onClick={() => setGalleryIndex(index)}
-                  className="group relative block h-full w-full max-w-full flex-none snap-start snap-always overflow-hidden bg-muted text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gold"
+                  className="group relative block h-full w-full max-w-full flex-none snap-start snap-always overflow-hidden bg-muted text-left focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-gold-soft"
                   aria-label={`Ouvrir la photo ${index + 1} sur ${images.length}`}
                 >
                   <ListingPhoto
@@ -121,7 +121,7 @@ export function PropertyIdentity({
                   type="button"
                   onClick={() => goToMobilePhoto(mobilePhotoIndex - 1)}
                   disabled={mobilePhotoIndex === 0}
-                  className="absolute left-3 top-1/2 z-20 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-full border border-white/70 bg-white/92 text-brand-navy shadow-lg backdrop-blur transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold disabled:pointer-events-none disabled:opacity-35 md:hidden"
+                  className="absolute left-3 top-1/2 z-20 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-full border border-white/70 bg-white/92 text-brand-navy shadow-lg backdrop-blur transition hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft disabled:pointer-events-none disabled:opacity-35 md:hidden"
                   aria-label="Photo précédente"
                 >
                   <ArrowLeft className="h-5 w-5" aria-hidden />
@@ -130,7 +130,7 @@ export function PropertyIdentity({
                   type="button"
                   onClick={() => goToMobilePhoto(mobilePhotoIndex + 1)}
                   disabled={mobilePhotoIndex === images.length - 1}
-                  className="absolute right-3 top-1/2 z-20 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-full border border-white/70 bg-white/92 text-brand-navy shadow-lg backdrop-blur transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold disabled:pointer-events-none disabled:opacity-35 md:hidden"
+                  className="absolute right-3 top-1/2 z-20 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-full border border-white/70 bg-white/92 text-brand-navy shadow-lg backdrop-blur transition hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft disabled:pointer-events-none disabled:opacity-35 md:hidden"
                   aria-label="Photo suivante"
                 >
                   <ArrowRight className="h-5 w-5" aria-hidden />
@@ -140,7 +140,7 @@ export function PropertyIdentity({
             <button
               type="button"
               onClick={() => setGalleryIndex(0)}
-              className={`${listingStyles.galleryMain} group relative hidden w-full overflow-hidden bg-muted text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gold md:block`}
+              className={`${listingStyles.galleryMain} group relative hidden w-full overflow-hidden bg-muted text-left focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-gold-soft md:block`}
               aria-label="Ouvrir la galerie photos"
             >
               <ListingPhoto
@@ -167,14 +167,14 @@ export function PropertyIdentity({
                   description={address || "Adresse de l'annonce"}
                   ariaLabel="Afficher la vue 3D Mapbox du quartier"
                   icon={MapPin}
-                  className="inline-flex min-h-10 items-center gap-2 rounded-md border border-white/70 bg-white/95 px-3 py-2 text-xs font-semibold text-brand-navy shadow-lg backdrop-blur transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  className="inline-flex min-h-10 items-center gap-2 rounded-md border border-white/70 bg-white/95 px-3 py-2 text-xs font-semibold text-brand-navy shadow-lg backdrop-blur transition-colors hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
                 />
               </div>
             ) : null}
             <button
               type="button"
               onClick={() => setGalleryIndex(mobilePhotoIndex)}
-              className="absolute bottom-8 right-3 z-10 inline-flex min-h-10 items-center gap-2 rounded-md border border-white/70 bg-white/95 px-3 py-2 text-xs font-semibold text-brand-navy shadow-lg backdrop-blur transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold md:bottom-4 md:right-4"
+              className="absolute bottom-8 right-3 z-10 inline-flex min-h-10 items-center gap-2 rounded-md border border-white/70 bg-white/95 px-3 py-2 text-xs font-semibold text-brand-navy shadow-lg backdrop-blur transition-colors hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft md:bottom-4 md:right-4"
               // The name contains the visible text at every breakpoint (WCAG 2.5.3).
               aria-label={`Ouvrir la galerie de ${images.length} photo${images.length > 1 ? "s" : ""}, photo ${mobilePhotoIndex + 1} / ${images.length}`}
             >
@@ -213,7 +213,7 @@ export function PropertyIdentity({
               key={image.url}
               type="button"
               onClick={() => setGalleryIndex(index + 1)}
-              className="h-20 overflow-hidden rounded-xl border border-brand-navy/10 bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+              className="h-20 overflow-hidden rounded-xl border border-brand-navy/10 bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
               aria-label={`Ouvrir la photo ${index + 2}`}
             >
               <ListingPhoto

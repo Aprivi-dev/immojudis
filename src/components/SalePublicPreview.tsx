@@ -4,6 +4,7 @@ import ArrowLeft from "lucide-react/dist/esm/icons/arrow-left.js";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import ChartNoAxesCombined from "lucide-react/dist/esm/icons/chart-no-axes-combined.js";
 import Eye from "lucide-react/dist/esm/icons/eye.js";
+import FolderHeart from "lucide-react/dist/esm/icons/folder-heart.js";
 import LockKeyholeOpen from "lucide-react/dist/esm/icons/lock-keyhole-open.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { Terme } from "@/components/ceiling/Terme";
@@ -12,7 +13,10 @@ import { PhotoCredit } from "@/components/PhotoCredit";
 import { photoCredit } from "@/lib/photo-credit";
 import { photoMirrorForDetail } from "@/lib/photo-mirror";
 import { SaleCalendarButton } from "@/components/SaleCalendarButton";
+import { SalePointsToVerify } from "@/components/sale-detail/SalePointsToVerify";
 import { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
+import { pointsToVerify } from "@/lib/search/points-to-verify";
+import { isPastSaleDay } from "@/lib/sale-countdown";
 import { formatPrice } from "@/lib/format";
 import {
   MARKET_GAP_BAND_CAUTION,
@@ -23,7 +27,12 @@ import {
   type PublicMarketGapBand,
 } from "@/lib/market-gap-band";
 import { publicSaleDescription } from "@/lib/public-sale-description";
-import { loginPathWithRedirect, saleDetailPath, salesReturnHref } from "@/lib/navigation";
+import {
+  loginPathWithRedirect,
+  saleDetailPath,
+  salesReturnHref,
+  salesReturnLabel,
+} from "@/lib/navigation";
 import Link from "next/link";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
 import { freeAccessLine, MONTHLY_SALE_UNLOCKS, unlockedItemsText } from "@/lib/sale-unlocks";
@@ -180,7 +189,12 @@ function TeaserTier({ tier, offerAware }: { tier: string; offerAware?: boolean }
       : active
         ? "Compte gratuit (offre de lancement)"
         : tier;
-  return <span className={styles.teaserTier}>{text}</span>;
+  // Décor : le texte masqué de la ligne dit déjà ce qui débloque la valeur.
+  return (
+    <span className={styles.teaserTier} aria-hidden>
+      {text}
+    </span>
+  );
 }
 
 export function SalePublicPreview({
@@ -212,6 +226,9 @@ export function SalePublicPreview({
   const photo = preview.media?.find((item) => item?.url && (item.type ?? "image") === "image");
   const surface = seoSurface(preview.app_surface_m2);
   const hearingDate = seoLongDate(preview.sale_date);
+  // Vente dont le jour est passé : signal explicite, ni bouton d'agenda ni bande d'écart (le marché
+  // qu'elle comparait à la mise à prix est celui d'un jour qui n'existe plus pour cette vente).
+  const pastDate = isPastSaleDay(preview.sale_date);
   const hearingTime = saleHearingTime(preview.sale_date);
   const tribunal = procedure.venueType === "tribunal" ? tribunalDisplayName(preview) : null;
   const location = [preview.city, preview.department].filter(Boolean).join(" · ");
@@ -245,7 +262,14 @@ export function SalePublicPreview({
           <dd>
             {hearingDate}
             {hearingTime ? ` à ${hearingTime}` : ""}
-            {procedure.venueType === "tribunal" ? <SaleCalendarButton saleId={saleId} /> : null}
+            {pastDate ? (
+              <span className={styles.pastDate} data-testid="past-sale-date">
+                Date de vente passée
+              </span>
+            ) : null}
+            {procedure.venueType === "tribunal" && !pastDate ? (
+              <SaleCalendarButton saleId={saleId} />
+            ) : null}
           </dd>
         </div>
       ) : null}
@@ -270,15 +294,26 @@ export function SalePublicPreview({
   // Placeholders only: the real figures are never sent to a signed-out visitor.
   // `offerAware` : l'étiquette change pendant l'offre de lancement (voir `TeaserTier`).
   const analysisTeaser = [
-    { label: "Valeur estimée", placeholder: "000 000 € – 000 000 €", tier: "Compte gratuit" },
+    {
+      label: "Valeur estimée",
+      placeholder: "000 000 € – 000 000 €",
+      tier: "Compte gratuit",
+      visibleWith: "un compte gratuit",
+    },
     price
-      ? { label: "Écart chiffré avec la mise à prix", placeholder: "00 %", tier: "Compte gratuit" }
+      ? {
+          label: "Écart chiffré avec la mise à prix",
+          placeholder: "00 %",
+          tier: "Compte gratuit",
+          visibleWith: "un compte gratuit",
+        }
       : null,
     procedure.venueType === "tribunal"
       ? {
           label: "Enchère plafond (simulation)",
           placeholder: "000 000 €",
           tier: `Offre Analyse, ou ${MONTHLY_SALE_UNLOCKS} déblocages par mois`,
+          visibleWith: "l’offre Analyse, ou en débloquant la vente",
           offerAware: true,
         }
       : null,
@@ -286,11 +321,19 @@ export function SalePublicPreview({
       label: "Ventes comparables du secteur",
       placeholder: "00 ventes",
       tier: "Offre Analyse",
+      visibleWith: "l’offre Analyse",
       offerAware: true,
     },
   ].filter(
-    (item): item is { label: string; placeholder: string; tier: string; offerAware?: boolean } =>
-      item !== null,
+    (
+      item,
+    ): item is {
+      label: string;
+      placeholder: string;
+      tier: string;
+      visibleWith: string;
+      offerAware?: boolean;
+    } => item !== null,
   );
   const priceBlock =
     price || !state ? (
@@ -306,7 +349,7 @@ export function SalePublicPreview({
             ? "Vérifiez les conditions et frais dans l'annonce officielle"
             : "Prix de départ, hors frais"}
         </p>
-        {price && preview.market_gap_band ? (
+        {price && preview.market_gap_band && !pastDate ? (
           <MarketGapBandNote band={preview.market_gap_band} />
         ) : null}
       </div>
@@ -382,7 +425,7 @@ export function SalePublicPreview({
         </nav>
         <Link href={salesReturnHref(returnTo, preview.id ?? saleId)} className={styles.back}>
           <ArrowLeft className="h-4 w-4" aria-hidden />
-          Retour aux ventes
+          {salesReturnLabel(returnTo)}
         </Link>
 
         <div
@@ -427,6 +470,11 @@ export function SalePublicPreview({
                 </ul>
               ) : null}
             </section>
+            {/* Cible de `#points-a-verifier` ; l'occupation n'est pas lue sur l'aperçu public. */}
+            <SalePointsToVerify
+              className="mt-4"
+              points={pointsToVerify(preview, { occupancyVisible: false })}
+            />
             <section className={styles.teaser} aria-labelledby="public-teaser-title">
               <h2 id="public-teaser-title" className={styles.addsTitle}>
                 L’analyse de cette vente
@@ -436,6 +484,11 @@ export function SalePublicPreview({
                   <div key={item.label} className={styles.teaserRow}>
                     <dt>{item.label}</dt>
                     <dd>
+                      {/* Le chiffre flouté est un décor (aria-hidden) : un lecteur d'écran entend
+                          que la valeur est masquée et ce qui la débloque, pas « 000 000 € ». */}
+                      <span className="sr-only">
+                        Valeur masquée, visible avec {item.visibleWith}
+                      </span>
                       <span className={styles.blurred} aria-hidden data-nosnippet>
                         {item.placeholder}
                       </span>
@@ -445,6 +498,17 @@ export function SalePublicPreview({
                 ))}
               </dl>
             </section>
+            {/* « Mon dossier » (statut, enchère plafond) : ce que le compte gratuit ajoute, sans le montrer.
+                Hors du bloc « L'analyse » : le plafond noté est le sien, pas un calcul promis. */}
+            <p className={styles.dossierNote} data-testid="public-dossier-teaser">
+              <FolderHeart aria-hidden />
+              <span>
+                {/* Hors du tribunal, aucune enchère plafond n'est promise sur la page : le statut seul. */}
+                {procedure.venueType === "tribunal"
+                  ? "Compte gratuit : notez votre statut et votre enchère plafond sur chaque vente suivie."
+                  : "Compte gratuit : notez votre statut sur chaque vente suivie."}
+              </span>
+            </p>
 
             {state || notary ? (
               <>

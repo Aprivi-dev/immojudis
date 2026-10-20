@@ -119,14 +119,57 @@ export function loginPageMode(value: unknown): LoginPageMode {
   return value === "investor" || value === "professional" ? value : "login";
 }
 
+const RETURN_BASE = "http://immojudis.local";
+
+/**
+ * Pages privées ou de liste, sans paramètre, d'où l'on ouvre une fiche et où « Retour » ramène.
+ * La page du tribunal (`/tribunaux/<code>`) est reconnue à part (voir `TRIBUNAL_RETURN_PATH`).
+ */
+const FIXED_RETURN_PATHS: ReadonlySet<string> = new Set([
+  "/favoris",
+  "/alertes",
+  "/comparaisons",
+  "/audiences-a-venir",
+]);
+
+/** Code du tribunal en adresse : minuscules, chiffres et tirets (voir `tribunalCodeSlug`). */
+const TRIBUNAL_RETURN_PATH = /^\/tribunaux\/[a-z0-9][a-z0-9-]*$/;
+
+/**
+ * Origine acceptée pour le « Retour » d'une fiche (`?from=`). Validation stricte : le catalogue
+ * (`/sales`, avec sa recherche) ou l'une des pages listées ci-dessus, rien d'autre (ni autre
+ * origine, ni ancre, ni paramètre sur les pages hors catalogue). Une adresse reconstruite à partir
+ * de l'URL analysée est rendue, jamais la chaîne reçue.
+ */
 export function safeSalesReturnTo(value: unknown): string | undefined {
   if (typeof value !== "string" || !value.startsWith("/")) return undefined;
 
-  const base = "http://immojudis.local";
-  const url = new URL(value, base);
-  if (url.origin !== base || url.pathname !== "/sales" || url.hash) return undefined;
+  const url = new URL(value, RETURN_BASE);
+  if (url.origin !== RETURN_BASE || url.hash) return undefined;
+  if (url.pathname === "/sales") return `${url.pathname}${url.search}`;
+  if (url.search) return undefined;
+  if (FIXED_RETURN_PATHS.has(url.pathname) || TRIBUNAL_RETURN_PATH.test(url.pathname)) {
+    return url.pathname;
+  }
+  return undefined;
+}
 
-  return `${url.pathname}${url.search}`;
+/**
+ * Libellé du lien « Retour » d'une fiche selon la page d'origine : la carte quand la recherche
+ * d'origine l'affichait (`map=true`), sinon la liste. Une origine inconnue ou refusée donne le
+ * libellé par défaut.
+ */
+export function salesReturnLabel(returnTo: string | null | undefined): string {
+  const safe = returnTo ? safeSalesReturnTo(returnTo) : undefined;
+  if (!safe) return "Retour aux ventes";
+  const url = new URL(safe, RETURN_BASE);
+  if (url.pathname === "/favoris") return "Retour à mes favoris";
+  if (url.pathname === "/alertes") return "Retour à mes alertes";
+  if (url.pathname === "/comparaisons") return "Retour à mes comparaisons";
+  if (url.pathname === "/audiences-a-venir") return "Retour aux audiences";
+  if (TRIBUNAL_RETURN_PATH.test(url.pathname)) return "Retour au tribunal";
+  const map = url.searchParams.get("map");
+  return map === "true" || map === "1" ? "Retour à la carte" : "Retour aux ventes";
 }
 
 export function saleDetailPath(saleId: string, returnTo?: string): string {
@@ -148,11 +191,14 @@ export const SALE_CARD_ANCHOR_PREFIX = "sale-card-";
  * de cette vente (ancre `#sale-card-<id>`). Le catalogue y défile une fois la liste affichée (voir
  * `useRestoreSaleCard`). L'identifiant de la fiche est celui de la carte : rien d'autre n'est à
  * transmettre dans l'origine (`?from=`). Une origine qui n'est pas une recherche du catalogue (page
- * d'exemple, par exemple) est rendue telle quelle.
+ * d'exemple, par exemple) est rendue telle quelle ; une page d'origine acceptée hors catalogue
+ * (favoris, tribunal, audiences…) l'est sans ancre.
  */
 export function salesReturnHref(returnTo: string | null | undefined, saleId: string): string {
   const base = returnTo ? safeSalesReturnTo(returnTo) : "/sales";
   if (!base) return returnTo ?? "/sales";
+  // Les autres pages d'origine (favoris, tribunal…) n'ont pas de carte de vente à retrouver.
+  if (base !== "/sales" && !base.startsWith("/sales?")) return base;
   return `${base}#${SALE_CARD_ANCHOR_PREFIX}${encodeURIComponent(saleId)}`;
 }
 

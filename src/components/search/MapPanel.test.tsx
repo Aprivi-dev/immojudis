@@ -162,7 +162,7 @@ describe("public map resilience", () => {
     const html = mocks.setHtml.mock.calls.at(-1)?.[0];
     expect(html).toContain("Appartement à Bordeaux");
     expect(html).toContain("Position approximative");
-    expect(html).toContain("Score : ");
+    expect(html).toContain("Indice Immojudis : ");
     expect(html).toContain("Risques : ");
     expect(html).toContain("Offre Analyse");
     expect(html).toContain("<svg");
@@ -170,6 +170,33 @@ describe("public map resilience", () => {
     expect(html).not.toContain("85");
     expect(html).not.toContain("Private source title");
   });
+  it("sends « Voir le détail » to the sale with the current search and map=true", async () => {
+    window.history.pushState({}, "", "/sales?city=Lyon&page=2#sale-card-x");
+    const sale = {
+      id: "popup-from",
+      city: "Lyon",
+      property_type: "apartment",
+      latitude: 45.76,
+      longitude: 4.83,
+      starting_price_eur: 80_000,
+      media: [],
+    } as unknown as AuctionSale;
+    await showMap({ sales: [sale], selectedSaleId: sale.id });
+    act(() => mocks.handlers.get("load")?.());
+    const html = mocks.setHtml.mock.calls.at(-1)?.[0] as string;
+    const hrefs = [...html.matchAll(/href="([^"]+)"/g)]
+      .map((match) => match[1])
+      .filter((href) => href.startsWith("/sales/"));
+    // Le titre et « Voir le détail » ; le lien d'aide de l'indice va ailleurs.
+    expect(hrefs).toHaveLength(2);
+    for (const href of hrefs) {
+      const url = new URL(href.replaceAll("&amp;", "&"), "http://localhost");
+      expect(url.pathname).toBe("/sales/popup-from");
+      expect(url.searchParams.get("from")).toBe("/sales?city=Lyon&page=2&map=true");
+    }
+    window.history.pushState({}, "", "/");
+  });
+
   it("shows a starting price of 0 as not communicated in the popup", async () => {
     const sale = {
       id: "zero-price",
@@ -203,7 +230,11 @@ describe("public map resilience", () => {
     await showMap({ sales: [sale], preview: false, showDpeLegend: true, selectedSaleId: sale.id });
     act(() => mocks.handlers.get("load")?.());
     const html = mocks.setHtml.mock.calls.at(-1)?.[0] as string;
-    expect(html).toContain("Score : non calculé");
+    expect(html).toContain("Indice Immojudis : non calculé");
+    // L'indice a son lien d'aide, nommé, vers l'explication du classement.
+    expect(html).toContain('href="/classement-des-annonces"');
+    expect(html).toContain("Comment est calculé l’indice Immojudis");
+    expect(html).not.toContain("Score :");
     expect(html).toContain("Risques : à vérifier dans les pièces");
     expect(html).not.toContain("Offre Analyse");
     expect(html).not.toContain("À auditer");
@@ -299,6 +330,22 @@ describe("public map resilience", () => {
     expect(mocks.mapOptions).toHaveLength(1);
     expect(mocks.mapOptions[0]).toMatchObject({ fadeDuration: 0, renderWorldCopies: false });
   });
+  it("passes a French locale for Mapbox's own strings (canvas title, attribution, zoom)", async () => {
+    await showMap();
+    const locale = mocks.mapOptions[0].locale as Record<string, string>;
+    expect(locale["Map.Title"]).toBe("Carte interactive des annonces");
+    expect(locale["AttributionControl.ToggleAttribution"]).toMatch(/crédits/);
+    expect(locale["NavigationControl.ZoomIn"]).toBe("Zoomer");
+    expect(mocks.mapOptions[0].language).toBe("fr");
+  });
+  it("only uses locale keys that mapbox-gl knows", async () => {
+    const { readFileSync } = await import("node:fs");
+    const source = readFileSync("node_modules/mapbox-gl/dist/mapbox-gl-dev.js", "utf8");
+    await showMap();
+    for (const key of Object.keys(mocks.mapOptions[0].locale as object)) {
+      expect(source, key).toContain(`"${key}"`);
+    }
+  });
   it("clears the load timer on unmount", async () => {
     const view = await showMap();
     view.unmount();
@@ -343,9 +390,30 @@ describe("public map resilience", () => {
     cleanup();
     await showMap({ sales: [sale], preview: false, searchAsMove: true });
     act(() => mocks.handlers.get("load")?.());
-    expect(
-      screen.getByRole("button", { name: "Recherche en déplaçant la carte : activée" }),
-    ).toBeTruthy();
+    // Libellé fixe : l'état passe par aria-pressed, pas par un second texte.
+    const active = screen.getByRole("button", { name: "Chercher en déplaçant la carte" });
+    expect(active.getAttribute("aria-pressed")).toBe("true");
+  });
+  it("gives the follow-the-map button a 44 px target that may wrap", async () => {
+    const sale = {
+      id: "follow",
+      city: "Lyon",
+      property_type: "apartment",
+      latitude: 45.76,
+      longitude: 4.83,
+      media: [],
+    } as unknown as AuctionSale;
+    await showMap({ sales: [sale], preview: false });
+    act(() => mocks.handlers.get("load")?.());
+    const toggle = screen.getByRole("button", { name: "Chercher en déplaçant la carte" });
+    expect(toggle.className).toContain("min-h-11");
+    expect(toggle.className).not.toMatch(/(^|\s)h-10(\s|$)/);
+    expect(toggle.className).toContain("leading-tight");
+    expect(toggle.className).not.toContain("whitespace-nowrap");
+  });
+  it("names the map region « Carte des annonces »", async () => {
+    await showMap();
+    expect(screen.getByRole("region", { name: "Carte des annonces" })).toBeTruthy();
   });
   it("says how many points are shown when the display cap hides some", async () => {
     const sale = {

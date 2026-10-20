@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import BriefcaseBusiness from "lucide-react/dist/esm/icons/briefcase-business.js";
 import Building2 from "lucide-react/dist/esm/icons/building-2.js";
@@ -61,6 +61,7 @@ function parseLoginSearch(search: Record<string, unknown>): LoginSearch {
 type LoginMode = LoginPageMode;
 
 const PASSWORD_RULE_ID = "login-password-rule";
+const FORM_ERROR_ID = "login-form-error";
 
 /** Délai avant de pouvoir demander un nouvel email de confirmation. */
 const RESEND_COOLDOWN_SECONDS = 30;
@@ -185,6 +186,13 @@ export function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  /**
+   * Titre du panneau affiché (formulaire ou « confirmez votre adresse ») : quand l'un remplace
+   * l'autre, le focus y va. Sinon il reste sur un bouton disparu et un lecteur d'écran ne sait pas
+   * que la page a changé.
+   */
+  const panelTitleRef = useRef<HTMLHeadingElement>(null);
+  const previousPending = useRef<string | null>(null);
   /** Adresse à laquelle l'email de confirmation vient d'être envoyé (compte sans session). */
   const [pendingEmail, setPendingEmail] = useState<string | null>(null);
   const [resending, setResending] = useState(false);
@@ -292,6 +300,15 @@ export function LoginPage() {
     switchMode("login");
   }
 
+  // Le panneau « confirmez votre adresse » remplace le formulaire (et inversement au retour) : le
+  // focus suit le titre du panneau affiché. Pas au premier rendu : la page garde son focus d'arrivée.
+  useEffect(() => {
+    const was = previousPending.current;
+    previousPending.current = pendingEmail;
+    if ((was === null) === (pendingEmail === null)) return;
+    panelTitleRef.current?.focus();
+  }, [pendingEmail]);
+
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (!isSupabaseConfigured) {
@@ -353,8 +370,8 @@ export function LoginPage() {
         err,
         "Impossible de continuer. Vérifiez vos informations puis réessayez.",
       );
+      // Une seule annonce : l'alerte du formulaire (reliée aux champs), pas l'alerte et un toast.
       setFormError(message);
-      toast.error(message);
     } finally {
       setBusy(false);
     }
@@ -423,7 +440,11 @@ export function LoginPage() {
                 <Mail className="h-4 w-4" />
                 {accountExists ? "Adresse déjà inscrite" : "Compte créé"}
               </div>
-              <h1 className="mt-4 font-display text-3xl text-foreground">
+              <h1
+                ref={panelTitleRef}
+                tabIndex={-1}
+                className="mt-4 font-display text-3xl text-foreground outline-none"
+              >
                 {accountExists ? "Un compte existe déjà" : "Confirmez votre adresse email"}
               </h1>
               <div
@@ -528,7 +549,13 @@ export function LoginPage() {
                 )}
                 {copy.eyebrow}
               </div>
-              <h1 className="mt-4 font-display text-3xl text-foreground">{copy.title}</h1>
+              <h1
+                ref={panelTitleRef}
+                tabIndex={-1}
+                className="mt-4 font-display text-3xl text-foreground outline-none"
+              >
+                {copy.title}
+              </h1>
               <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
                 {copy.description}
               </p>
@@ -567,6 +594,7 @@ export function LoginPage() {
                     </span>
                     <input
                       type="text"
+                      autoComplete="name"
                       placeholder="Prénom Nom"
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
@@ -604,6 +632,7 @@ export function LoginPage() {
                         <input
                           type="text"
                           required
+                          autoComplete="organization"
                           placeholder="Cabinet, étude, office, tribunal..."
                           value={organizationName}
                           onChange={(e) => setOrganizationName(e.target.value)}
@@ -626,6 +655,8 @@ export function LoginPage() {
                       type="email"
                       autoComplete="email"
                       required
+                      aria-invalid={formError ? true : undefined}
+                      aria-describedby={formError ? FORM_ERROR_ID : undefined}
                       placeholder="vous@exemple.fr"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
@@ -646,7 +677,12 @@ export function LoginPage() {
                         required
                         minLength={isSignup ? 12 : 6}
                         placeholder={isSignup ? "12 caractères minimum" : "Votre mot de passe"}
-                        aria-describedby={isSignup ? PASSWORD_RULE_ID : undefined}
+                        aria-invalid={formError ? true : undefined}
+                        aria-describedby={
+                          [isSignup ? PASSWORD_RULE_ID : null, formError ? FORM_ERROR_ID : null]
+                            .filter(Boolean)
+                            .join(" ") || undefined
+                        }
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         className="form-input pl-10 pr-12"
@@ -657,7 +693,6 @@ export function LoginPage() {
                         aria-label={
                           showPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"
                         }
-                        aria-pressed={showPassword}
                         className="absolute right-0 top-1/2 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
                       >
                         {showPassword ? (
@@ -690,6 +725,7 @@ export function LoginPage() {
                 ) : null}
                 {formError ? (
                   <p
+                    id={FORM_ERROR_ID}
                     role="alert"
                     className="rounded-lg border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm leading-relaxed text-red-700"
                   >

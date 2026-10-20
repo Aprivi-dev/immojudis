@@ -243,7 +243,7 @@ function AdminOperations({
               <select
                 value={source}
                 onChange={(event) => setSource(event.target.value as AdminScrollSource)}
-                className="h-11 rounded-lg border border-brand-navy/18 bg-white px-3 text-sm outline-none transition focus:border-gold focus:ring-2 focus:ring-gold/15"
+                className="h-11 rounded-lg border border-brand-navy/18 bg-white px-3 text-sm transition focus:border-gold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
               >
                 {SOURCE_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>

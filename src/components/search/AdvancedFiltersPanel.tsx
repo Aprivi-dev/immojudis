@@ -455,7 +455,7 @@ export function ChipToggle({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`inline-flex min-h-11 cursor-pointer items-center rounded-md border px-3 text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold ${
+      className={`inline-flex min-h-11 cursor-pointer items-center rounded-md border px-3 text-sm font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft ${
         active
           ? "border-brand-navy bg-brand-navy text-white"
           : "border-line-soft bg-white text-brand-navy hover:border-brand-navy"
@@ -482,7 +482,7 @@ export function DpeChipToggle({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className="inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-md border px-2 text-sm font-extrabold transition-transform hover:scale-[1.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+      className="inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-md border px-2 text-sm font-extrabold transition-transform hover:scale-[1.03] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
       style={{
         backgroundColor: active ? color?.background : "#ffffff",
         borderColor: color?.border,

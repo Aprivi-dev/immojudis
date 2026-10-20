@@ -5,6 +5,7 @@ import {
   isToastRequested,
   registerToaster,
   resetToastForTests,
+  subscribeToastAnnouncements,
   subscribeToastRequest,
   toast,
 } from "./toast";
@@ -165,5 +166,52 @@ describe("toast", () => {
     expect(calls.map(([name]) => name)).toEqual(["success"]);
     expect(log).toHaveBeenCalled();
     log.mockRestore();
+  });
+});
+
+describe("toast : texte relayé à la région vivante", () => {
+  it("relaie le texte d'une notification mise en file, avec sa description", () => {
+    const announce = vi.fn();
+    subscribeToastAnnouncements(announce);
+
+    toast.success("Alerte créée", { description: "Voir mes alertes" });
+    toast.error("Échec");
+
+    expect(announce).toHaveBeenNthCalledWith(1, "Alerte créée. Voir mes alertes");
+    expect(announce).toHaveBeenNthCalledWith(2, "Échec");
+  });
+
+  it("remet au nouvel abonné le texte émis avant lui", () => {
+    toast.info("Trop tôt");
+    const announce = vi.fn();
+    subscribeToastAnnouncements(announce);
+    expect(announce).toHaveBeenCalledWith("Trop tôt");
+  });
+
+  it("ne répète pas ce que sonner annonce lui-même une fois affiché", () => {
+    const announce = vi.fn();
+    subscribeToastAnnouncements(announce);
+    registerToaster(fakeSonner().real);
+
+    toast.success("Après l'affichage");
+
+    expect(announce).not.toHaveBeenCalled();
+  });
+
+  it("ignore une description qui n'est pas du texte, et se désabonne", () => {
+    const announce = vi.fn();
+    const stop = subscribeToastAnnouncements(announce);
+    toast("Titre", { description: { toString: () => "objet" } as unknown as string });
+    expect(announce).toHaveBeenLastCalledWith("Titre");
+    stop();
+    toast("Silence");
+    expect(announce).toHaveBeenCalledTimes(1);
+  });
+
+  it("ne relaie rien d'une notification sans texte", () => {
+    const announce = vi.fn();
+    subscribeToastAnnouncements(announce);
+    toast({ not: "text" } as never);
+    expect(announce).not.toHaveBeenCalled();
   });
 });

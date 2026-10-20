@@ -8,10 +8,12 @@ import dynamic from "next/dynamic";
 import ArrowLeft from "lucide-react/dist/esm/icons/arrow-left.js";
 import { listingValuationConflict } from "@/lib/listing-evidence";
 import { useAuth } from "@/hooks/use-auth";
-import { salesReturnHref } from "@/lib/navigation";
+import { salesReturnHref, salesReturnLabel } from "@/lib/navigation";
 import { DocumentReadingSection } from "@/components/sale-detail/DocumentReadingSection";
 import { SalePassagesSection } from "@/components/sale-detail/SalePassagesSection";
 import { SaleUnlockPanel } from "@/components/sale-detail/SaleUnlockPanel";
+import { SalePointsToVerify } from "@/components/sale-detail/SalePointsToVerify";
+import { pointsToVerify } from "@/lib/search/points-to-verify";
 import { SaleUnlockOfferProvider } from "@/components/sale-detail/UnlockCallToAction";
 import type { SaleUnlockResult, SaleUnlockStatus } from "@/lib/sale-unlocks";
 import { AuctionScenariosSection } from "@/components/sale-detail/AuctionScenariosSection";
@@ -153,6 +155,7 @@ type SaleDetailProps = {
   sale: AuctionSale;
   marketEstimateOverride?: MarketEstimate | null;
   returnTo?: string;
+  /** Libellé du lien de retour ; absent : il suit la page d'origine (voir `salesReturnLabel`). */
   backLabel?: string;
   publicDemo?: boolean;
   adjudicationStatisticsEnabled?: boolean;
@@ -168,7 +171,7 @@ export function AnalysisSaleDetailView({
   sale,
   marketEstimateOverride = null,
   returnTo = "/sales",
-  backLabel = "Retour aux ventes",
+  backLabel,
   publicDemo = false,
   adjudicationStatisticsEnabled = false,
   aiReviewProjections = null,
@@ -244,7 +247,7 @@ function SaleDetailWorkspace({
   sale,
   marketEstimateOverride = null,
   returnTo,
-  backLabel = "Retour aux ventes",
+  backLabel,
   publicDemo = false,
   adjudicationStatisticsEnabled = false,
   aiReviewProjections = null,
@@ -527,10 +530,10 @@ function SaleDetailWorkspace({
           <div className={listingStyles.topbar}>
             <Link
               href={salesReturnHref(returnTo, sale.id)}
-              className="inline-flex min-h-11 items-center gap-2 rounded-md text-sm font-semibold text-brand-navy transition-colors hover:text-gold-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+              className="inline-flex min-h-11 items-center gap-2 rounded-md text-sm font-semibold text-brand-navy transition-colors hover:text-gold-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
             >
               <ArrowLeft className="h-4 w-4" aria-hidden />
-              {backLabel}
+              {backLabel ?? salesReturnLabel(returnTo)}
             </Link>
             <ListingActions sale={displaySale} publicDemo={publicDemo} />
           </div>
@@ -572,6 +575,11 @@ function SaleDetailWorkspace({
             sale={displaySale}
             aiReviewProjections={resolvedAiReviewProjections}
             aiReviewStatus={aiReviewStatus}
+          />
+          {/* Cible de `#points-a-verifier` : les points de la pastille de la liste. */}
+          <SalePointsToVerify
+            className="mt-4"
+            points={pointsToVerify(displaySale, { occupancyVisible: true })}
           />
           <ListingPreparation
             key={`${user?.id ?? "guest-demo"}:${sale.id}`}
