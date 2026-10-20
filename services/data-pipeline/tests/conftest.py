@@ -74,3 +74,15 @@ def _sources_not_withdrawn_by_default(monkeypatch):
 
     source_withdrawal.reset_cache()
     monkeypatch.setattr(source_withdrawal, "withdrawn_sources", lambda db_url=None: frozenset())
+
+
+@pytest.fixture
+def merge_trigger_present(monkeypatch):
+    """Simule la base où le déclencheur de report des données des comptes est déployé.
+
+    Les fonctions de suppression de lignes fusionnées refusent sans lui (``src.merge_guards``) ; les tests
+    du refus ne l'utilisent pas et posent eux-mêmes ``merge_trigger_deployed``.
+    """
+    from src import merge_guards
+
+    monkeypatch.setattr(merge_guards, "merge_trigger_deployed", lambda db_url: True)

@@ -4,6 +4,7 @@ La clé stricte ne s'y applique qu'hors Vench / Petites Affiches et hors d'un (j
 plus de 5 annonces ; un groupe de plus de 5 lignes n'est jamais fusionné automatiquement.
 """
 
+from src import merge_guards
 from src.dedupe import SWEEP_STRICT_EXCLUDED_SOURCES, SWEEP_STRICT_MAX_GROUP, merge_duplicate_sales
 from src.normalize import normalize_sale
 from src.storage import supabase_client
@@ -71,6 +72,7 @@ class _Response:
 
 
 def _run_sweep(monkeypatch, sales):
+    monkeypatch.setattr(merge_guards, "merge_trigger_deployed", lambda db_url: True)
     rows = [{**sale.to_storage_dict(exclude_none=False), "status": "upcoming"} for sale in sales]
     captured: dict[str, object] = {}
     monkeypatch.setattr(

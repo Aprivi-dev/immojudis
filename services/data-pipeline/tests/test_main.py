@@ -779,6 +779,83 @@ def test_pipeline_deletes_expired_sales_after_supabase_publication(
         assert not any(name in calls for name in expected_cleanup)
 
 
+@pytest.mark.parametrize("trigger_present", [False, True])
+def test_main_cleanup_refuses_to_merge_without_the_account_data_trigger(monkeypatch, trigger_present) -> None:
+    """Chemin ``src.main`` : les vraies fonctions de suppression refusent sans le déclencheur de report."""
+    from src import merge_guards
+    from src.storage import supabase_client
+
+    summary_capture: dict[str, object] = {}
+    deletions: list[str] = []
+    cleanup: list[str] = []
+    raw = {**_raw_sale(), "source_urls": ["https://example.test/vente", "https://example.test/doublon"]}
+
+    monkeypatch.setattr(main, "load_settings", lambda: {**_settings(), "dedupe_reconcile_enabled": True})
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {
+            "supabase_url": "https://supabase.test",
+            "supabase_service_role_key": "secret",
+            "supabase_db_url": "postgresql://example",
+            "dedupe_reconcile_max_merges": 5000,
+        },
+    )
+    monkeypatch.setattr(merge_guards, "merge_trigger_deployed", lambda db_url: trigger_present)
+    monkeypatch.setattr(supabase_client, "_fetch_reviewed_alias_registry", lambda url, key: _NoReviewedAliases())
+    monkeypatch.setattr(
+        supabase_client,
+        "_delete_secondary_sale_rows_with_postgres",
+        lambda db_url, sales, limit=None: deletions.append(f"delete limit={limit}") or 1,
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "plan_duplicate_reconciliation",
+        lambda **kwargs: deletions.append(f"plan max_merges={kwargs['max_merges']}"),
+    )
+    monkeypatch.setattr(main, "delete_secondary_sales_in_supabase", supabase_client.delete_secondary_sales_in_supabase)
+    monkeypatch.setattr(main, "reconcile_duplicate_sales_in_supabase", supabase_client.reconcile_duplicate_sales_in_supabase)
+    monkeypatch.setattr(main, "create_run_in_supabase", lambda *args, **kwargs: "run-1")
+    monkeypatch.setattr(
+        main, "finish_run_in_supabase", lambda run_id, status, summary, errors: summary_capture.update(summary)
+    )
+    monkeypatch.setattr(main, "fetch_enriched_content_hashes", lambda hashes, **kwargs: set())
+    monkeypatch.setattr(main, "fetch_known_sale_details", lambda: {})
+    monkeypatch.setattr(main, "scrape_avoventes_aquitaine_result", lambda known=None: ScrapeResult([raw], []))
+    monkeypatch.setattr(main, "geocode_sale", lambda sale: sale)
+    monkeypatch.setattr(main, "fill_tribunal", lambda sale: None)
+    monkeypatch.setattr(main, "normalize_asset_features", lambda sale: sale)
+    monkeypatch.setattr(main, "export_sales", lambda sales: ("out.json", "out.csv"))
+    monkeypatch.setattr(main, "build_quality_report", lambda *args, **kwargs: {})
+    monkeypatch.setattr(main, "build_extraction_gap_report", lambda *args, **kwargs: {})
+    monkeypatch.setattr(main, "format_quality_report", lambda report: [])
+    monkeypatch.setattr(main, "format_extraction_gap_report", lambda report: [])
+    monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: cleanup.append("mark_past") or 0)
+    monkeypatch.setattr(main, "delete_vench_sales_without_surface_in_supabase", lambda: 0)
+    monkeypatch.setattr(main, "upsert_sales_to_supabase", lambda sales, **kwargs: len(sales))
+    monkeypatch.setattr(main, "upsert_observations_to_supabase", lambda sales, **kwargs: len(sales))
+
+    assert (
+        main.run_pipeline(main.PipelineOptions(source="all", use_llm=False, heavy_enrichment=False, upsert=True)) == 0
+    )
+
+    if trigger_present:
+        assert deletions == ["delete limit=100", "plan max_merges=100"]  # plafond dur, même avec 5000 configuré
+        assert "merge_guard_refused" not in summary_capture
+    else:
+        assert deletions == []  # ni suppression ni planification
+        assert "auction_sales_carry_sale_user_data" in str(summary_capture["merge_guard_refused"])
+    assert cleanup == ["mark_past"]  # le reste du nettoyage n'est pas bloqué
+
+
+class _NoReviewedAliases:
+    def protected_source_urls(self):
+        return frozenset()
+
+    def protected_sale_ids(self):
+        return frozenset()
+
+
 @pytest.mark.parametrize("collection_failed", [False, True])
 def test_pipeline_skips_every_cleanup_when_outcome_bridge_fails(monkeypatch, collection_failed) -> None:
     finish_calls: list[tuple[str, dict[str, object], dict[str, list[str]]]] = []
