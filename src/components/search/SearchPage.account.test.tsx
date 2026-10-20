@@ -5,6 +5,9 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuctionSale } from "@/lib/types";
 
+// Ce fichier rend toute la page /sales : 5 s (délai par défaut) est trop court sous charge.
+vi.setConfig({ testTimeout: 15_000 });
+
 /**
  * Parcours connecté de /sales : la liste publique servie dans le HTML reste à l'écran pendant la
  * vérification du compte et le chargement de la liste connectée (pas de squelette), puis elle est
