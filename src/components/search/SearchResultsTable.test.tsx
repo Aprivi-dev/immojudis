@@ -390,6 +390,31 @@ describe("vue « tableau » des résultats", () => {
     expect(within(table).queryByTestId("sponsored")).toBeNull();
   });
 
+  it("montre les points à vérifier en tableau : une icône au nom accessible, comme la pastille de la carte", () => {
+    renderTable([
+      makeSale("sale-gap", { app_surface_m2: null, occupancy_status: null }),
+      makeSale("sale-ok", { occupancy_status: "libre" }),
+    ]);
+
+    const rows = within(screen.getAllByRole("rowgroup")[1]).getAllByRole("row");
+    const flagged = within(rows[0]).getByRole("button", { name: "2 points à vérifier" });
+    expect(flagged.textContent).toBe("");
+    expect(within(rows[1]).queryByRole("button", { name: /à vérifier/ })).toBeNull();
+
+    fireEvent.click(flagged);
+    const note = within(rows[0]).getByRole("note");
+    expect(note.textContent).toContain("Surface non communiquée dans l’annonce");
+    expect(note.textContent).toContain("Occupation du bien à vérifier");
+    expect(within(note).getByRole("link", { name: "Voir la fiche" }).getAttribute("href")).toBe(
+      "/sales/sale-gap#points-a-verifier",
+    );
+  });
+
+  it("ne compte pas l'occupation en tableau quand la ligne ne la montre pas", () => {
+    renderTable([makeSale("sale-a", { occupancy_status: null })], { analysisLocked: true });
+    expect(screen.queryByRole("button", { name: /à vérifier/ })).toBeNull();
+  });
+
   it("garde les cartes quand la vue n'est pas « table »", () => {
     renderTable([makeSale("sale-a")], { view: "cards" });
     expect(screen.queryByRole("table")).toBeNull();

@@ -206,6 +206,21 @@ describe("integrated listing", () => {
     expect(screen.getByRole("link", { name: /Retour aux exemples/ })).toBeTruthy();
   });
 
+  it("reprend sur la fiche les points à vérifier de la pastille, sous #points-a-verifier", () => {
+    const sale = {
+      ...EXAMPLE_SALE_RECORDS.bordeaux.sale,
+      status: "upcoming",
+      sale_date: "2099-01-20T09:00:00Z",
+      app_surface_m2: null,
+      occupancy_status: null,
+    } as AuctionSale;
+    renderDetail("analysis", sale, true);
+    const section = document.getElementById("points-a-verifier");
+    expect(section?.tagName).toBe("SECTION");
+    expect(section?.textContent).toContain("Occupation du bien à vérifier");
+    expect(section?.textContent).toContain("La liste n’est pas exhaustive");
+  });
+
   it("mounts one panel at a time and supports keyboard tab navigation", () => {
     const { container } = renderDetail("analysis", undefined, true, true);
 

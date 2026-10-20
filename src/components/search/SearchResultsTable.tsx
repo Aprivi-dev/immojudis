@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { memo, type ComponentType } from "react";
+import { memo, useMemo, type ComponentType } from "react";
 import { AiReviewField } from "@/components/sale-detail/AiReviewField";
+import { PointsToVerifyBadge } from "@/components/PointsToVerifyBadge";
 import { SaleCountdown } from "@/components/SaleCountdown";
 import { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
@@ -13,6 +14,7 @@ import {
   type AiReviewRequestStatus,
 } from "@/lib/ai-review-guard";
 import { formatStartingPrice } from "@/lib/format";
+import { pointsToVerify } from "@/lib/search/points-to-verify";
 import { stateListingStatus } from "@/lib/property-characteristics";
 import { saleIsTribunalVenue } from "@/lib/sale-procedure";
 import { getDisplaySurface } from "@/lib/surface";
@@ -189,6 +191,12 @@ const ListingRow = memo(function ListingRow({
   const { isViewed } = useViewedSales();
   const detailLink = useSaleDetailLink(sale.id, returnTo);
   const viewed = !locked && isViewed(sale.id);
+  // Mêmes points que la carte (l'occupation n'est comptée que si elle est montrée).
+  const premiumLocked = locked || analysisLocked;
+  const verifyPoints = useMemo(
+    () => pointsToVerify(sale, { occupancyVisible: !premiumLocked }),
+    [sale, premiumLocked],
+  );
   const displaySurface = getDisplaySurface(sale);
   const tribunal = saleIsTribunalVenue(sale);
   const title = listingTitle(sale, { locked, aiReviewProjections, aiReviewStatus });
@@ -300,6 +308,14 @@ const ListingRow = memo(function ListingRow({
           ) : null}
           <SaleCountdown sale={sale} precisionUnknown={locked} variant="chip" />
           <SaleProcedureBadge sale={sale} />
+          {/* Pas la place d'un libellé en tableau : une icône, au nom accessible « N points à vérifier ». */}
+          <PointsToVerifyBadge
+            variant="icon"
+            points={verifyPoints}
+            detailHref={detailLink.href}
+            detailLinkProps={detailLink.armProps}
+            onNavigate={() => onSelect(sale.id)}
+          />
         </div>
       </td>
       <td className="px-1 py-1 text-right">

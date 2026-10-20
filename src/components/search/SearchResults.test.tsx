@@ -413,9 +413,9 @@ describe("useful public discovery", () => {
       fireEvent.click(screen.getByRole("button", { name: "2 points à vérifier" }));
       const note = screen.getByRole("note");
       expect(note.textContent).toContain("Surface non communiquée dans l’annonce");
-      expect(note.textContent).toContain("Occupation du bien à confirmer");
+      expect(note.textContent).toContain("Occupation du bien à vérifier");
       expect(screen.getByRole("link", { name: "Voir la fiche" }).getAttribute("href")).toBe(
-        "/sales/verify-card",
+        "/sales/verify-card#points-a-verifier",
       );
     });
 
@@ -438,10 +438,16 @@ describe("useful public discovery", () => {
       expect(screen.getByRole("button", { name: "1 point à vérifier" })).toBeTruthy();
     });
 
-    it("garde la pastille « Annonce bien renseignée » à côté, sans la remplacer", () => {
+    it("n'affiche pas « Annonce bien renseignée » à côté d'un point à vérifier", () => {
       renderCard({ completeness_tier: 1, app_surface_m2: null });
-      expect(screen.getByText("Annonce bien renseignée")).toBeTruthy();
       expect(screen.getByRole("button", { name: "1 point à vérifier" })).toBeTruthy();
+      expect(screen.queryByText("Annonce bien renseignée")).toBeNull();
+    });
+
+    it("garde « Annonce bien renseignée » quand aucun point n'est à vérifier", () => {
+      renderCard({ completeness_tier: 1 });
+      expect(screen.getByText("Annonce bien renseignée")).toBeTruthy();
+      expect(screen.queryByRole("button", { name: /à vérifier/ })).toBeNull();
     });
   });
 
