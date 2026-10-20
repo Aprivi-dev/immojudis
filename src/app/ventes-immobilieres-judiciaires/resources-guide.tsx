@@ -284,6 +284,9 @@ const RELATED_SLUGS = [
   "droit-de-preemption-encheres-commune-acheteur",
   "garantie-10-pourcent-cheque-banque-caution-encheres",
   "copropriete-encheres-charges-assemblees",
+  "vente-encheres-immobiliere-reportee-retiree-annulee",
+  "liquidation-judiciaire-vente-immeuble-entreprise-encheres",
+  "mise-a-prix-valeur-de-marche-dvf-lire-ecart-encheres",
 ] as const;
 
 /**

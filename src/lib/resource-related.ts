@@ -34,6 +34,9 @@ export const RESOURCE_TOPICS: Readonly<Record<string, readonly ResourceTopic[]>>
   "saisie-immobiliere-etapes-vente-forcee-acheteur": ["procedure", "types-de-vente"],
   "licitation-vente-bien-indivis-encheres-acheteur": ["types-de-vente", "procedure"],
   "avocat-obligatoire-encherir-tribunal-choisir-mandat-cout": ["avocat", "audience", "budget"],
+  "vente-encheres-immobiliere-reportee-retiree-annulee": ["procedure", "audience", "avocat"],
+  "liquidation-judiciaire-vente-immeuble-entreprise-encheres": ["types-de-vente", "procedure"],
+  "mise-a-prix-valeur-de-marche-dvf-lire-ecart-encheres": ["analyse", "budget"],
 };
 
 const TOPIC_WEIGHT = 3;

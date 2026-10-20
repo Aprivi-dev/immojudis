@@ -1,0 +1,217 @@
+{
+  "slug": "mise-a-prix-valeur-de-marche-dvf-lire-ecart-encheres",
+  "publishedAt": "2026-10-20",
+  "updatedAt": "2026-10-20",
+  "title": "Mise à prix et valeur de marché : lire un écart sans se tromper",
+  "seoTitle": "Mise à prix et valeur de marché : lire l’écart",
+  "category": "Méthode",
+  "description": "Pourquoi la mise à prix est basse, ce que DVF mesure et ignore, ce que l’écart ne dit pas et comment lire le repère de la fiche.",
+  "intro": [
+    "Une mise à prix très inférieure aux prix du marché fait penser à une bonne affaire. C’est le premier réflexe à mettre à distance. La mise à prix est le prix de départ des enchères : elle ne mesure pas la valeur du bien. Quant à la valeur de marché, personne ne la connaît avec certitude : elle s’estime à partir de ventes passées.",
+    "Cet article explique pourquoi la mise à prix est basse, ce que la base de prix DVF mesure et ignore, ce que l’écart ne dit pas et comment lire le repère de la fiche Immojudis. Pour construire une enchère plafond à partir d’une valeur de marché, voir « Fixer son enchère plafond : raisonner par le coût complet avant d’enchérir ». Le calcul exact de l’écart est décrit sur la page « Comment est calculé l’écart avec le marché »."
+  ],
+  "takeaways": [
+    "En saisie immobilière, la mise à prix est fixée par le créancier poursuivant, qui devient adjudicataire d’office à ce prix faute d’enchère (art. L. 322-6 du Code des procédures civiles d’exécution) : le Code ne la rattache pas à la valeur du bien.",
+    "Un prix de départ bas vise à attirer des enchérisseurs ; aucun texte ne l’impose. L’écart entre mise à prix et valeur de marché est donc habituel et ne mesure pas une aubaine.",
+    "La base DVF recense des prix de vente déclarés dans les actes. Elle ignore l’état du bien, ses travaux et son occupation, et ne dit pas si le bien était libre.",
+    "L’écart ne dit ni le prix final, ni les frais, ni les travaux, ni les contraintes d’occupation.",
+    "Sur la fiche, le repère situe la mise à prix par rapport à la fourchette des ventes comparables ; pour un bien occupé ou loué, il n’est pas comparé."
+  ],
+  "sections": [
+    {
+      "id": "pourquoi-basse",
+      "title": "Pourquoi la mise à prix est basse",
+      "paragraphs": [
+        "En saisie immobilière, la mise à prix est fixée par le créancier poursuivant et figure dans le cahier des conditions de vente (art. L. 322-6 et R. 322-10, 5°). Faute d’enchère, ce créancier est déclaré adjudicataire d’office à ce montant (art. L. 322-6). Il peut donc se retrouver propriétaire : il fixe un prix qu’il accepte de payer. Le Conseil constitutionnel l’a relevé en 2011, à propos de la règle alors inscrite dans le Code civil : le créancier ne peut pas être contraint d’acheter à un prix qu’il n’a pas accepté, et le mécanisme évite que la procédure reste bloquée faute d’enchérisseur (décision n° 2011-206 QPC du 16 décembre 2011, considérant 6).",
+        "Le Code ne relie donc pas la mise à prix à la valeur du bien. Seul le débiteur peut demander au juge, en cas d’insuffisance manifeste, de fixer une mise à prix en rapport avec la valeur vénale de l’immeuble et les conditions du marché ; même alors, le créancier ne peut être déclaré adjudicataire d’office que pour la mise à prix initiale (art. L. 322-6). Si le juge a modifié la mise à prix et qu’aucune enchère n’est portée, le bien est remis en vente sur baisses successives, jusqu’à la mise à prix initiale (art. R. 322-47).",
+        "Un prix de départ bas a aussi un effet : il peut inciter plusieurs personnes à enchérir, et ce sont les enchères qui forment le prix. Beaucoup de mises à prix sont fixées nettement sous la valeur du bien, sans que le Code l’exige. Retenez l’essentiel : un écart entre la mise à prix et le marché est normal. Il n’annonce ni un prix final bas, ni un gain.",
+        "Hors saisie, ce n’est pas toujours le créancier qui fixe la mise à prix. En liquidation judiciaire, c’est le juge-commissaire (voir « Liquidation judiciaire : quand l’immeuble d’une entreprise est vendu aux enchères »). Chez un notaire ou dans une vente de l’État, d’autres règles s’appliquent (voir « Ventes notariales et ventes domaniales : en quoi elles diffèrent d’une vente au tribunal »)."
+      ]
+    },
+    {
+      "id": "ce-que-mesure-dvf",
+      "title": "Ce que la base DVF mesure",
+      "paragraphs": [
+        "DVF signifie « demandes de valeurs foncières ». Cette base de l’administration fiscale recense les ventes immobilières à titre onéreux (réalisées contre un prix ou une contrepartie) des cinq dernières années, à partir des actes notariés et des informations cadastrales. Elle est publiée en données ouvertes sur data.gouv.fr et mise à jour deux fois par an, en avril et en octobre. Elle ne couvre ni l’Alsace, ni la Moselle, ni Mayotte.",
+        "Le prix retenu, appelé valeur foncière, est le prix sur lequel les parties se sont mises d’accord. Il inclut la TVA et exclut les frais de notaire et les biens meubles (documentation du Cerema, l’établissement public qui expertise ces données). Quand une vente porte sur plusieurs biens, par exemple un appartement, une cave et un parking, le prix est celui de l’ensemble. Immojudis s’en sert pour établir une fourchette de prix au m² de ventes comparables : même type de bien, même secteur, surface voisine, ventes récentes.",
+        "La base distingue plusieurs natures de ventes : vente, vente en l’état futur d’achèvement (sur plan), adjudication, échange, vente de terrain à bâtir et expropriation. Immojudis ne garde que les ventes de nature « Vente » : les adjudications ne servent donc pas de référence, et une mise à prix d’enchères est comparée à des prix de vente ordinaires."
+      ]
+    },
+    {
+      "id": "ce-que-dvf-ignore",
+      "title": "Ce que DVF ignore : état, occupation, circonstances",
+      "paragraphs": [
+        "DVF donne un prix, pas l’histoire de ce prix. La méthode d’Immojudis ne corrige pas non plus ce que la base ne décrit pas."
+      ],
+      "bullets": [
+        "L’état et les travaux : un appartement rénové et un appartement à rénover peuvent partager la même ligne de prix au m². DVF ne décrit ni l’état intérieur, ni l’étage, ni l’exposition.",
+        "Le bien libre ou occupé : DVF ne dit pas si le bien a été vendu libre ou occupé. Un bien occupé suppose de composer avec l’occupant : voir « Acheter un bien occupé aux enchères : sécuriser son analyse avant de miser ».",
+        "Le décalage : les ventes les plus récentes ne sont pas encore publiées, et un quartier peu actif a peu de ventes à comparer.",
+        "Les ventes atypiques : certaines ventes ont un prix très faible ou nul (reventes entre sociétés liées, par exemple). Le Cerema conseille de les écarter pour analyser les prix.",
+        "Le contexte : DVF ne dit rien de la négociation menée par l’acheteur ou de l’urgence du vendeur."
+      ],
+      "callout": {
+        "title": "Ce que cela veut dire",
+        "text": "Une valeur estimée à partir de DVF n’est ajustée ni à l’état ni à l’occupation du bien visé. Un bien à rénover, occupé ou mal situé dans l’immeuble peut valoir moins que cette valeur."
+      }
+    },
+    {
+      "id": "ce-que-lecart-ne-dit-pas",
+      "title": "Un écart n’est pas un rabais : un exemple",
+      "paragraphs": [
+        "L’écart se calcule ainsi : (valeur estimée − mise à prix) ÷ valeur estimée. Un écart positif signifie que la mise à prix est sous la valeur estimée. Ce n’est pas un rabais : le prix payé sera celui de la dernière enchère, et il n’est pas connu à l’avance.",
+        "Exemple fictif. Un studio dont la valeur estimée est de 170 000 € est mis à prix 70 000 € : l’écart est de 59 %. Les enchères montent. Le tableau applique la même formule à des prix atteints hypothétiques, pour montrer que l’écart se resserre à mesure que le prix monte. Les montants sont inventés."
+      ],
+      "table": {
+        "headers": [
+          "Prix atteint à l’audience (hypothèse)",
+          "Écart avec la valeur estimée",
+          "Lecture"
+        ],
+        "rows": [
+          [
+            "70 000 € (la mise à prix)",
+            "59 %",
+            "Point de départ : aucune enchère n’a encore eu lieu."
+          ],
+          ["110 000 €", "35 %", "Plusieurs enchérisseurs ont fait monter le prix."],
+          [
+            "140 000 €",
+            "18 %",
+            "Le prix se rapproche de la valeur estimée ; les frais et les travaux restent à ajouter."
+          ],
+          [
+            "170 000 €",
+            "0 %",
+            "L’écart a disparu, alors que frais et travaux restent à payer en plus."
+          ]
+        ]
+      }
+    },
+    {
+      "id": "limites-de-lecart",
+      "title": "Ce que l’écart ne dit pas",
+      "paragraphs": [
+        "Un écart, même important, laisse de côté l’essentiel de ce qui fait le coût et le risque d’un achat aux enchères."
+      ],
+      "bullets": [
+        "Le prix final. Il dépend des enchérisseurs présents et peut s’éloigner beaucoup de la mise à prix. Une surenchère d’au moins un dixième du prix principal reste possible pendant dix jours (art. R. 322-50 et R. 322-51).",
+        "Les frais. Les frais de poursuite taxés par le juge et les droits de mutation sont payés par l’adjudicataire en plus du prix (art. R. 322-58). Voir « Frais d’une vente aux enchères judiciaire ».",
+        "L’état, les travaux et l’occupation, absents de DVF.",
+        "Les droits de tiers et les charges : droit de préemption d’une collectivité, charges de copropriété. Voir « Préemption : la commune peut-elle vous évincer ? » et « Copropriété aux enchères : charges et assemblées ».",
+        "La fiabilité de la valeur estimée. Une surface erronée ou un type de bien mal qualifié fausse l’estimation. Au-delà de seuils fixés par la méthode, Immojudis n’affiche aucun pourcentage : un écart extrême vient plus souvent d’une estimation fausse que d’une affaire exceptionnelle."
+      ]
+    },
+    {
+      "id": "lire-le-repere",
+      "title": "Lire le repère de la fiche Immojudis",
+      "paragraphs": [
+        "Sur la fiche d’une vente, un repère situe la mise à prix par rapport à la fourchette des ventes comparables, sans chiffre. La fourchette va du 10e au 90e centile des prix comparés : elle laisse de côté les prix les plus bas et les plus élevés. Le pourcentage d’écart, la valeur estimée et la fourchette chiffrée sont réservés aux comptes ; la page Offres précise ce qui s’applique au vôtre."
+      ],
+      "table": {
+        "headers": ["Ce que dit la fiche", "Ce que cela signifie", "Comment le lire"],
+        "rows": [
+          [
+            "Mise à prix inférieure à la fourchette des ventes comparables",
+            "Le prix de départ est plus bas que la plupart des ventes comparables.",
+            "C’est le cas habituel d’une mise à prix judiciaire (voir plus haut). Ce n’est pas, en soi, le signe d’une occasion."
+          ],
+          [
+            "Mise à prix dans la fourchette",
+            "Le prix de départ est du même ordre que les ventes comparables.",
+            "Les enchères peuvent le dépasser. Relisez la surface et le type de bien retenus pour la comparaison."
+          ],
+          [
+            "Mise à prix au-dessus de la fourchette",
+            "Le prix de départ dépasse les ventes comparables.",
+            "Cas rare. Vérifiez d’abord la surface, le type de bien et le secteur retenus."
+          ],
+          [
+            "Pas assez de ventes comparables fiables",
+            "L’estimation n’est pas jugée assez solide pour situer la mise à prix.",
+            "Ce n’est pas un jugement sur la vente : il manque simplement de quoi comparer."
+          ],
+          [
+            "Aucun repère",
+            "Pas d’estimation exploitable, écart hors des seuils de la méthode, vente de l’État ou bien occupé ou loué.",
+            "Raisonnez à partir du dossier et de vos propres références."
+          ]
+        ]
+      }
+    },
+    {
+      "id": "bien-occupe",
+      "title": "Pourquoi un bien occupé n’est pas comparé",
+      "paragraphs": [
+        "Les ventes DVF ne disent pas si le bien était libre, et l’estimation ne corrige pas l’occupation. Comparer la mise à prix d’un bien occupé ou loué à la fourchette de biens vendus sans cette contrainte donnerait une image trompeuse : le prix de départ paraîtrait très bas alors que l’acheteur ne pourra pas disposer du bien tout de suite. Pour un bien occupé ou loué, la fiche ne situe donc pas la mise à prix par rapport à cette fourchette.",
+        "Dans tous les cas, le repère est indicatif. Une bande ou un pourcentage ne remplacent ni la visite, ni la lecture du cahier des conditions de vente, ni l’avis d’un professionnel."
+      ]
+    },
+    {
+      "id": "lecture-prudente",
+      "title": "Une lecture prudente en cinq questions",
+      "paragraphs": ["Avant de retenir un écart dans votre analyse, posez-vous ces questions."],
+      "bullets": [
+        "Combien de ventes comparables, de quand et dans quel rayon ? La page de méthode le détaille ; un petit échantillon réduit la confiance.",
+        "La surface et le type de bien sont-ils corrects ? Une erreur fausse toute l’estimation.",
+        "Le bien est-il libre, occupé ou loué ? Si ce n’est pas clair, lisez le procès-verbal de description du cahier des conditions de vente.",
+        "Que coûteront les travaux et les frais ? Voir « Frais d’une vente aux enchères judiciaire ».",
+        "Jusqu’où êtes-vous prêt à enchérir, indépendamment du repère ? Voir « Fixer son enchère plafond : raisonner par le coût complet avant d’enchérir »."
+      ],
+      "callout": {
+        "title": "À garder en tête",
+        "text": "Le repère aide à poser les bonnes questions. Il ne prédit pas le prix d’adjudication, ne promet aucun gain et ne remplace pas l’avis d’un avocat ou d’un professionnel de l’évaluation."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article L322-6 (mise à prix fixée par le créancier)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025025977"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R322-10 (cahier des conditions de vente)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939072"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R322-47 (baisses successives de la mise à prix)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939169"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R322-50 (surenchère)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939179"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R322-51 (forme et délai de la surenchère)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939181"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R322-58 (frais taxés et droits de mutation)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939198"
+    },
+    {
+      "label": "Conseil constitutionnel — Décision n° 2011-206 QPC du 16 décembre 2011",
+      "url": "https://www.conseil-constitutionnel.fr/decision/2011/2011206QPC.htm"
+    },
+    {
+      "label": "data.gouv.fr — Demandes de valeurs foncières (DVF), DGFiP",
+      "url": "https://www.data.gouv.fr/datasets/demandes-de-valeurs-foncieres/"
+    },
+    {
+      "label": "Collectivités locales — Le service Demande de valeurs foncières (DVF)",
+      "url": "https://collectivites-locales.gouv.fr/competences/le-service-demande-de-valeurs-foncieres-dvf"
+    },
+    {
+      "label": "Cerema — Documentation des données foncières : valeur foncière (valeurfonc)",
+      "url": "https://doc-datafoncier.cerema.fr/doc/export/14"
+    },
+    {
+      "label": "Cerema — Documentation des données foncières : nature de mutation (libnatmut)",
+      "url": "https://doc-datafoncier.cerema.fr/doc/export/2"
+    },
+    {
+      "label": "Immojudis — Comment est calculé l’écart avec le marché",
+      "url": "/methode-ecart-marche"
+    }
+  ]
+}
