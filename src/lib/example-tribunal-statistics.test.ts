@@ -5,7 +5,15 @@ import {
   EXAMPLE_TRIBUNAL_STATISTICS_HISTORY_MONTHS,
   getExampleTribunalStatistics,
 } from "@/lib/example-tribunal-statistics";
-import { tribunalListingStatisticsResponseSchema } from "@/lib/tribunal-listing-statistics";
+import {
+  tribunalListingStatisticsResponseSchema,
+  wilsonInterval,
+} from "@/lib/tribunal-listing-statistics";
+
+function interval(count: number, total: number) {
+  const { low, high } = wilsonInterval(count, total)!;
+  return { shareLow: low, shareHigh: high };
+}
 
 describe("example tribunal listing statistics", () => {
   it("publie la cohorte fictive attendue et ses seuils de qualité", () => {
@@ -22,35 +30,40 @@ describe("example tribunal listing statistics", () => {
       status: "published",
       value: 20_000,
       sampleSize: 17,
+      interval: null,
     });
-    expect(activity.startingPriceToDvfRatio).toEqual({
-      status: "published",
-      value: 0.35,
+    // 9 estimations DVF fictives qui passent la porte de la bande publique : sous le seuil de 10,
+    // seule la fourchette observée est publiée.
+    expect(activity.startingPriceToDvfRatio).toMatchObject({
+      status: "range_only",
+      value: null,
       sampleSize: 9,
     });
     expect(activity.propertyTypes).toEqual([
-      { propertyType: "apartment", count: 10, share: 0.588235 },
-      { propertyType: "house", count: 4, share: 0.235294 },
-      { propertyType: "other", count: 3, share: 0.176471 },
+      { propertyType: "apartment", count: 10, share: 0.588235, ...interval(10, 17) },
+      { propertyType: "house", count: 4, share: 0.235294, ...interval(4, 17) },
+      { propertyType: "other", count: 3, share: 0.176471, ...interval(3, 17) },
     ]);
     expect(activity.occupation).toEqual({
       knownSales: 17,
       unknownSales: 0,
       distribution: [
-        { status: "vacant", count: 6, share: 0.352941 },
-        { status: "occupied", count: 10, share: 0.588235 },
-        { status: "rented", count: 1, share: 0.058824 },
+        { status: "vacant", count: 6, share: 0.352941, ...interval(6, 17) },
+        { status: "occupied", count: 10, share: 0.588235, ...interval(10, 17) },
+        { status: "rented", count: 1, share: 0.058824, ...interval(1, 17) },
       ],
     });
     expect(activity.visitCoverage).toEqual({
       status: "published",
       value: 0.9412,
       sampleSize: 17,
+      interval: wilsonInterval(16, 17),
     });
     expect(activity.overbidCoverage).toEqual({
       status: "published",
       value: 0.1765,
       sampleSize: 17,
+      interval: wilsonInterval(3, 17),
     });
     expect(activity.overbidsKnown).toBe(17);
     expect(activity.overbidsUnknown).toBe(0);
@@ -58,12 +71,13 @@ describe("example tribunal listing statistics", () => {
       status: "published",
       value: 50,
       sampleSize: 17,
+      interval: null,
     });
     expect(result!.activity.meta).toMatchObject({
       rawAnnouncements: 20,
       deduplicatedAnnouncements: 17,
       unresolvedStrongAddressDuplicates: 0,
-      minSampleSize: 5,
+      minSampleSize: 10,
       publicationDateBasis: "source_publication_date_or_first_seen_at",
     });
     expect(result!.prices.tribunal?.sampleSize).toBe(10);

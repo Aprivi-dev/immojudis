@@ -1,16 +1,36 @@
 import { z } from "zod";
 import { publishedDay } from "@/lib/listing-evidence";
 import {
+  MARKET_GAP_BAND_MAX_INTERVAL_WIDTH_PCT,
+  MARKET_GAP_BAND_MIN_COMPARABLES,
+  MARKET_GAP_BAND_MIN_COMPARABLES_JACKKNIFE,
+  MARKET_GAP_BAND_MIN_EFFECTIVE_SAMPLE,
+  passesPublicMarketGapGate,
+} from "@/lib/market-gap-band";
+import {
   tribunalJudicialActivityHistoryMonthsSchema,
-  tribunalJudicialActivityMetricSchema,
   type TribunalJudicialActivityHistoryMonths,
-  type TribunalJudicialActivityMetric,
 } from "@/lib/tribunal-judicial-activity";
 
 export { TribunalCourtUnresolvedError } from "@/lib/tribunal-judicial-activity";
 
-export const TRIBUNAL_LISTING_STATISTICS_SCHEMA_VERSION = "tribunal_listing_statistics_v1" as const;
-export const TRIBUNAL_LISTING_STATISTICS_MIN_SAMPLE = 5;
+export const TRIBUNAL_LISTING_STATISTICS_SCHEMA_VERSION = "tribunal_listing_statistics_v2" as const;
+/**
+ * Observations minimales pour publier une médiane, un taux ou une part. Elles étaient 5 : à 5
+ * observations, un taux de 60 % peut aussi bien être 23 % que 88 % (intervalle de Wilson à 95 %).
+ */
+export const TRIBUNAL_LISTING_STATISTICS_MIN_SAMPLE = 10;
+/** Pour un sous-groupe (la répartition par type de bien) : les parts exigent 20 observations. */
+export const TRIBUNAL_LISTING_STATISTICS_MIN_SUBGROUP_SAMPLE = 20;
+/**
+ * De 5 observations jusqu'au seuil de publication, une mesure continue (mise à prix, ratio, délai)
+ * ne montre que la fourchette observée, minimum et maximum : jamais un point.
+ */
+export const TRIBUNAL_LISTING_STATISTICS_RANGE_MIN_SAMPLE = 5;
+/** Le taux de surenchère n'est publié que si au moins la moitié des annonces ont une réponse connue. */
+export const TRIBUNAL_LISTING_STATISTICS_MIN_OVERBID_COVERAGE = 0.5;
+/** Quantile de la loi normale pour l'intervalle de Wilson à 95 %. */
+const WILSON_Z_95 = 1.959964;
 
 const isoDateTimeSchema = z.string().datetime({ offset: true });
 
@@ -37,12 +57,67 @@ export const tribunalListingStatisticsQuerySchema = z
     message: "Fournissez exactement courtCode ou saleId.",
   });
 
+/** Intervalle de Wilson à 95 % d'une part, entre 0 et 1. */
+const wilsonIntervalSchema = z
+  .object({ low: z.number().min(0).max(1), high: z.number().min(0).max(1) })
+  .strict()
+  .refine((interval) => interval.low <= interval.high, {
+    message: "La borne basse de l’intervalle dépasse la borne haute.",
+  });
+
+const shareIntervalFields = {
+  /** Bornes de l'intervalle de Wilson à 95 % de `share`. */
+  shareLow: z.number().min(0).max(1),
+  shareHigh: z.number().min(0).max(1),
+};
+
+/**
+ * Mesure de l'activité des annonces : publiée (avec l'intervalle de Wilson quand c'est une part),
+ * limitée à la fourchette observée (5 à 9 observations, sans valeur centrale) ou masquée.
+ */
+const listingMetricSchema = z
+  .discriminatedUnion("status", [
+    z
+      .object({
+        status: z.literal("published"),
+        value: z.number().nonnegative(),
+        sampleSize: z.number().int().nonnegative(),
+        interval: wilsonIntervalSchema.nullable(),
+      })
+      .strict(),
+    z
+      .object({
+        status: z.literal("range_only"),
+        value: z.null(),
+        min: z.number().nonnegative(),
+        max: z.number().nonnegative(),
+        sampleSize: z.number().int().nonnegative(),
+      })
+      .strict(),
+    z
+      .object({
+        status: z.literal("insufficient_data"),
+        value: z.null(),
+        sampleSize: z.number().int().nonnegative(),
+      })
+      .strict(),
+  ])
+  .superRefine((metric, context) => {
+    if (metric.status === "range_only" && metric.min > metric.max) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Le minimum observé dépasse le maximum observé.",
+      });
+    }
+  });
+
 const occupationStatusSchema = z.enum(["vacant", "occupied", "rented"]);
 const occupationDistributionSchema = z
   .object({
     status: occupationStatusSchema,
     count: z.number().int().nonnegative(),
     share: z.number().min(0).max(1),
+    ...shareIntervalFields,
   })
   .strict();
 
@@ -102,6 +177,7 @@ const propertyTypeShareSchema = z
     propertyType: z.enum(["apartment", "house", "other"]),
     count: z.number().int().positive(),
     share: z.number().min(0).max(1),
+    ...shareIntervalFields,
   })
   .strict();
 
@@ -117,6 +193,7 @@ const shareEntrySchema = z
     city: z.string().min(1),
     count: z.number().int().positive(),
     share: z.number().min(0).max(1),
+    ...shareIntervalFields,
   })
   .strict();
 
@@ -125,6 +202,7 @@ const lawyerShareSchema = z
     name: z.string().min(1),
     count: z.number().int().positive(),
     share: z.number().min(0).max(1),
+    ...shareIntervalFields,
   })
   .strict();
 
@@ -166,16 +244,16 @@ export const tribunalListingStatisticsResponseSchema = z
         discoveryDatesUsed: z.number().int().nonnegative(),
         upcomingSales: z.number().int().nonnegative(),
         nextSaleAt: isoDateTimeSchema.nullable(),
-        startingPriceEur: tribunalJudicialActivityMetricSchema,
-        startingPriceToDvfRatio: tribunalJudicialActivityMetricSchema,
+        startingPriceEur: listingMetricSchema,
+        startingPriceToDvfRatio: listingMetricSchema,
         propertyTypes: z.array(propertyTypeShareSchema).max(3),
         occupation: occupationSchema,
-        visitCoverage: tribunalJudicialActivityMetricSchema,
-        overbidCoverage: tribunalJudicialActivityMetricSchema,
+        visitCoverage: listingMetricSchema,
+        overbidCoverage: listingMetricSchema,
         overbidsKnown: z.number().int().nonnegative(),
         overbidsUnknown: z.number().int().nonnegative(),
-        publishedToHearingDays: tribunalJudicialActivityMetricSchema,
-        discoveryToHearingDays: tribunalJudicialActivityMetricSchema,
+        publishedToHearingDays: listingMetricSchema,
+        discoveryToHearingDays: listingMetricSchema,
         hearingCalendar: z.array(hearingCalendarEntrySchema).max(100),
         communes: z.array(shareEntrySchema).max(20),
         lawyers: z.array(lawyerShareSchema).max(20),
@@ -186,6 +264,9 @@ export const tribunalListingStatisticsResponseSchema = z
       .object({
         generatedAt: isoDateTimeSchema,
         minSampleSize: z.literal(TRIBUNAL_LISTING_STATISTICS_MIN_SAMPLE),
+        minSubgroupSampleSize: z.literal(TRIBUNAL_LISTING_STATISTICS_MIN_SUBGROUP_SAMPLE),
+        minRangeSampleSize: z.literal(TRIBUNAL_LISTING_STATISTICS_RANGE_MIN_SAMPLE),
+        minOverbidCoverage: z.literal(TRIBUNAL_LISTING_STATISTICS_MIN_OVERBID_COVERAGE),
         sources: z.array(z.string().min(1)),
         publicationDateBasis: z.literal("source_publication_date_or_first_seen_at"),
         deduplication: z.literal("canonical_id_source_url_strong_address"),
@@ -234,7 +315,7 @@ export const tribunalListingStatisticsResponseSchema = z
 
 export type TribunalListingStatisticsHistoryMonths = TribunalJudicialActivityHistoryMonths;
 export type TribunalListingStatisticsQuery = z.infer<typeof tribunalListingStatisticsQuerySchema>;
-export type TribunalListingStatisticsMetric = TribunalJudicialActivityMetric;
+export type TribunalListingStatisticsMetric = z.infer<typeof listingMetricSchema>;
 export type TribunalListingStatisticsResponse = z.infer<
   typeof tribunalListingStatisticsResponseSchema
 >;
@@ -249,7 +330,20 @@ export type TribunalListingStatisticsMarketEstimate = {
   source?: string | null;
   estimatedValueEur?: number | null;
   actionable?: boolean;
+  /** Nombre de ventes comparables retenues. */
   sampleSize?: number | null;
+  /**
+   * De quoi appliquer la porte de la bande publique (`passesPublicMarketGapGate`) : sans eux, le
+   * ratio de la vente reste hors de la statistique.
+   */
+  effectiveSampleSize?: number | null;
+  intervalMethod?: string | null;
+  pricePerM2P10?: number | null;
+  pricePerM2P50?: number | null;
+  pricePerM2P90?: number | null;
+  radiusM?: number | null;
+  segment?: string | null;
+  areaKind?: string | null;
 };
 
 export type TribunalListingStatisticsSale = {
@@ -372,7 +466,8 @@ export function buildTribunalListingStatistics(input: {
       estimated == null ||
       sale.marketEstimateEligible !== true ||
       sale.marketEstimate?.actionable !== true ||
-      !isDvfSource(sale.marketEstimate?.source)
+      !isDvfSource(sale.marketEstimate?.source) ||
+      !passesBandGate(sale.marketEstimate)
     ) {
       return [];
     }
@@ -415,22 +510,22 @@ export function buildTribunalListingStatistics(input: {
       discoveryDatesUsed: observed.filter((sale) => !sale.publicationDateKnown).length,
       upcomingSales: upcoming.length,
       nextSaleAt: upcoming[0]?.saleAt.toISOString() ?? null,
-      startingPriceEur: sampleMetric(prices, median(prices)),
-      startingPriceToDvfRatio: sampleMetric(ratioValues, median(ratioValues)),
+      startingPriceEur: continuousMetric(prices),
+      startingPriceToDvfRatio: continuousMetric(ratioValues),
       propertyTypes: propertyTypeShares(knownPropertySales),
       occupation,
-      visitCoverage: sampleMetric(
-        visitObservable,
-        visitObservable.length ? visits / visitObservable.length : null,
-      ),
-      overbidCoverage: sampleMetric(
-        knownOverbids,
-        knownOverbids.length ? overbidTrueCount / knownOverbids.length : null,
-      ),
+      visitCoverage: proportionMetric(visits, visitObservable.length),
+      // Le taux n'a de sens que si au moins la moitié des annonces ont une réponse connue : sinon il
+      // ne décrit que les annonces où la surenchère se voit, pas le tribunal.
+      overbidCoverage:
+        observed.length > 0 &&
+        knownOverbids.length / observed.length >= TRIBUNAL_LISTING_STATISTICS_MIN_OVERBID_COVERAGE
+          ? proportionMetric(overbidTrueCount, knownOverbids.length)
+          : { status: "insufficient_data", value: null, sampleSize: knownOverbids.length },
       overbidsKnown: knownOverbids.length,
       overbidsUnknown: observed.length - knownOverbids.length,
-      publishedToHearingDays: sampleMetric(publicationLeadDays, median(publicationLeadDays)),
-      discoveryToHearingDays: sampleMetric(discoveryLeadDays, median(discoveryLeadDays)),
+      publishedToHearingDays: continuousMetric(publicationLeadDays),
+      discoveryToHearingDays: continuousMetric(discoveryLeadDays),
       hearingCalendar: hearingCalendar(upcoming, upcoming90End),
       communes: shareEntries(observed, (sale) => normalizeCityLabel(sale.city)),
       lawyers: lawyerShares(observed),
@@ -448,6 +543,9 @@ export function buildTribunalListingStatistics(input: {
     meta: {
       generatedAt: generatedAt.toISOString(),
       minSampleSize: TRIBUNAL_LISTING_STATISTICS_MIN_SAMPLE,
+      minSubgroupSampleSize: TRIBUNAL_LISTING_STATISTICS_MIN_SUBGROUP_SAMPLE,
+      minRangeSampleSize: TRIBUNAL_LISTING_STATISTICS_RANGE_MIN_SAMPLE,
+      minOverbidCoverage: TRIBUNAL_LISTING_STATISTICS_MIN_OVERBID_COVERAGE,
       sources: [...new Set(observed.flatMap((sale) => sourceNames(sale)))].sort((a, b) =>
         a.localeCompare(b, "fr"),
       ),
@@ -463,8 +561,10 @@ export function buildTribunalListingStatistics(input: {
       limitations: [
         "La cohorte regroupe les annonces publiées ou découvertes par Immojudis pendant la période demandée; elle ne prétend pas à l’exhaustivité nationale.",
         "Les annonces sans date de publication fiable utilisent first_seen_at et sont comptées séparément.",
-        "Les ratios DVF utilisent uniquement les estimations pré-calculées, fraîches, actionnables et issues de DVF.",
-        "Les taux de surenchère reposent uniquement sur des occurrences factuelles explicites; l’absence de preuve reste inconnue.",
+        `Les ratios DVF utilisent uniquement les estimations pré-calculées, fraîches, actionnables et issues de DVF qui passent la porte de la bande publique de la fiche : au moins ${MARKET_GAP_BAND_MIN_COMPARABLES_JACKKNIFE} ventes comparables avec la méthode jackknife (${MARKET_GAP_BAND_MIN_COMPARABLES} sinon), échantillon effectif d’au moins ${MARKET_GAP_BAND_MIN_EFFECTIVE_SAMPLE}, fourchette d’au plus ${MARKET_GAP_BAND_MAX_INTERVAL_WIDTH_PCT} % de la valeur, rayon borné.`,
+        "Les taux de surenchère reposent uniquement sur des occurrences factuelles explicites; l’absence de preuve reste inconnue. Le taux n’est publié que si au moins la moitié des annonces ont une réponse connue.",
+        `Les médianes et les taux sont publiés à partir de ${TRIBUNAL_LISTING_STATISTICS_MIN_SAMPLE} observations ; de ${TRIBUNAL_LISTING_STATISTICS_RANGE_MIN_SAMPLE} à ${TRIBUNAL_LISTING_STATISTICS_MIN_SAMPLE - 1}, seule la fourchette observée (minimum et maximum) est montrée. Les parts portent leur intervalle de Wilson à 95 % ; la répartition par type de bien exige ${TRIBUNAL_LISTING_STATISTICS_MIN_SUBGROUP_SAMPLE} observations.`,
+        "Deux délais sont distincts : « publication → audience » part de la date de publication fournie par la source ; « première détection → audience » part du jour où Immojudis a repéré l’annonce pour la première fois, et peut donc être plus court.",
         "Les audiences passées dont l’annonce a quitté le catalogue proviennent de l’archive du graphe des résultats : sans statut de vérification ni dates de visite, elles sont exclues du taux de visites.",
       ],
     },
@@ -490,6 +590,7 @@ function buildOccupation(sales: ParsedSale[]) {
         status,
         count: counts.get(status) ?? 0,
         share: knownSales ? round((counts.get(status) ?? 0) / knownSales, 6) : 0,
+        ...shareInterval(counts.get(status) ?? 0, knownSales),
       }))
       .filter((entry) => entry.count > 0),
   };
@@ -560,6 +661,7 @@ function propertyTypeShares(sales: ParsedSale[]) {
       propertyType,
       count: counts.get(propertyType) ?? 0,
       share: denominator ? round((counts.get(propertyType) ?? 0) / denominator, 6) : 0,
+      ...shareInterval(counts.get(propertyType) ?? 0, denominator),
     }))
     .filter((entry) => entry.count > 0)
     .sort(
@@ -587,7 +689,12 @@ function shareEntries(
       (left, right) => right.count - left.count || left.display.localeCompare(right.display, "fr"),
     )
     .slice(0, 20)
-    .map(({ display, count }) => ({ city: display, count, share: round(count / denominator, 6) }));
+    .map(({ display, count }) => ({
+      city: display,
+      count,
+      share: round(count / denominator, 6),
+      ...shareInterval(count, denominator),
+    }));
 }
 
 function normalizeCityLabel(value: string | null | undefined): string | null {
@@ -627,7 +734,12 @@ function lawyerShares(sales: ParsedSale[]) {
   return [...counts.entries()]
     .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0], "fr"))
     .slice(0, 20)
-    .map(([name, count]) => ({ name, count, share: round(count / denominator, 6) }));
+    .map(([name, count]) => ({
+      name,
+      count,
+      share: round(count / denominator, 6),
+      ...shareInterval(count, denominator),
+    }));
 }
 
 function normalizeLawyerName(value: string | null | undefined): string | null {
@@ -736,15 +848,89 @@ function nonNegativeDays(from: Date, to: Date): number[] {
   return Number.isFinite(days) && days >= 0 && days <= 730 ? [days] : [];
 }
 
-function sampleMetric(values: unknown[], value: number | null): TribunalJudicialActivityMetric {
-  if (
-    values.length < TRIBUNAL_LISTING_STATISTICS_MIN_SAMPLE ||
-    value == null ||
-    !Number.isFinite(value)
-  ) {
-    return { status: "insufficient_data", value: null, sampleSize: values.length };
+/**
+ * Mesure continue (mise à prix, ratio, délai) : médiane dès 10 observations ; de 5 à 9, seulement la
+ * fourchette observée (minimum et maximum), jamais un point ; en dessous, rien.
+ */
+function continuousMetric(values: number[]): TribunalListingStatisticsMetric {
+  const finite = values.filter(Number.isFinite);
+  const sampleSize = finite.length;
+  if (sampleSize < TRIBUNAL_LISTING_STATISTICS_RANGE_MIN_SAMPLE) {
+    return { status: "insufficient_data", value: null, sampleSize };
   }
-  return { status: "published", value: round(value, 4), sampleSize: values.length };
+  if (sampleSize < TRIBUNAL_LISTING_STATISTICS_MIN_SAMPLE) {
+    return {
+      status: "range_only",
+      value: null,
+      min: round(Math.min(...finite), 4),
+      max: round(Math.max(...finite), 4),
+      sampleSize,
+    };
+  }
+  return { status: "published", value: round(median(finite)!, 4), sampleSize, interval: null };
+}
+
+/** Part observée (dénominateur connu) : publiée dès 10 observations, avec son intervalle de Wilson. */
+function proportionMetric(successes: number, total: number): TribunalListingStatisticsMetric {
+  if (total < TRIBUNAL_LISTING_STATISTICS_MIN_SAMPLE) {
+    return { status: "insufficient_data", value: null, sampleSize: total };
+  }
+  return {
+    status: "published",
+    value: round(successes / total, 4),
+    sampleSize: total,
+    interval: wilsonInterval(successes, total),
+  };
+}
+
+/**
+ * Intervalle de Wilson à 95 % d'une part (`successes` sur `total`), entre 0 et 1, arrondi au
+ * millionième. Il reste correct pour de petits effectifs et près de 0 ou de 1, contrairement à
+ * l'intervalle normal. `null` sans dénominateur.
+ */
+export function wilsonInterval(
+  successes: number,
+  total: number,
+): { low: number; high: number } | null {
+  if (!Number.isInteger(total) || total <= 0 || !Number.isInteger(successes)) return null;
+  if (successes < 0 || successes > total) return null;
+  const proportion = successes / total;
+  const z2 = WILSON_Z_95 * WILSON_Z_95;
+  const denominator = 1 + z2 / total;
+  const centre = (proportion + z2 / (2 * total)) / denominator;
+  const margin =
+    (WILSON_Z_95 * Math.sqrt((proportion * (1 - proportion)) / total + z2 / (4 * total * total))) /
+    denominator;
+  return {
+    low: round(Math.max(0, centre - margin), 6),
+    high: round(Math.min(1, centre + margin), 6),
+  };
+}
+
+/** Bornes de Wilson d'une part, sous les noms des champs de réponse. */
+function shareInterval(count: number, total: number): { shareLow: number; shareHigh: number } {
+  const interval = wilsonInterval(count, total) ?? { low: 0, high: 1 };
+  return { shareLow: interval.low, shareHigh: interval.high };
+}
+
+/**
+ * Le ratio mise à prix / DVF passe la même porte que la bande publique de la fiche : sans les
+ * champs de qualité de l'estimation, la vente reste hors de la statistique.
+ */
+function passesBandGate(estimate: TribunalListingStatisticsMarketEstimate | null | undefined) {
+  if (!estimate) return false;
+  return passesPublicMarketGapGate({
+    actionable: estimate.actionable,
+    comparableCount: estimate.sampleSize,
+    effectiveSampleSize: estimate.effectiveSampleSize,
+    intervalMethod: estimate.intervalMethod,
+    p10: estimate.pricePerM2P10,
+    p50: estimate.pricePerM2P50,
+    p90: estimate.pricePerM2P90,
+    radiusM: estimate.radiusM,
+    segment: estimate.segment,
+    areaKind: estimate.areaKind,
+  });
 }
 
 function median(values: number[]): number | null {

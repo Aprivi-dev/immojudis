@@ -7,7 +7,7 @@ _Version documentaire 0.8 — 11 octobre 2026. Cette fiche décrit des agrégats
 Immojudis sépare strictement :
 
 1. l’**activité des annonces de ventes judiciaires**, disponible sur chaque annonce et sur
-   `/tribunaux` via `tribunal_judicial_activity_v3` (et `tribunal_listing_statistics_v1` pour le bloc
+   `/tribunaux` via `tribunal_judicial_activity_v3` (et `tribunal_listing_statistics_v2` pour le bloc
    d’annonce) ;
 2. les **résultats historiques canoniques des audiences**, construits par
    `tribunal_statistics_builder_v1` uniquement après preuves et revues A/B ;
@@ -23,6 +23,22 @@ concernée, par type de bien. Ils ne doivent jamais être interprétés comme un
 une mesure exhaustive du greffe. Seules les annonces explicitement judiciaires, confirmées ou
 recoupées, et rattachées exactement à un tribunal actif du référentiel Justice sont retenues. Les
 médianes sont masquées sous cinq observations.
+
+Le bloc d’annonce (`tribunal_listing_statistics_v2`, depuis le 20/10/2026) est plus strict que ce
+seuil de cinq observations, qui reste celui de `tribunal_judicial_activity_v3` :
+
+- médianes, taux et parts à partir de **10** observations (**20** pour la répartition par type de
+  bien, qui est un sous-groupe) ; de 5 à 9 observations, une mesure continue (mise à prix, ratio,
+  délai) n’affiche que sa **fourchette observée** (minimum et maximum), jamais un point ;
+- les parts et les taux publiés portent leur **intervalle de Wilson à 95 %** ;
+- le taux de surenchère n’est publié que si **au moins la moitié** des annonces ont une réponse
+  connue ;
+- le ratio mise à prix / valeur DVF ne retient que les estimations qui passent la porte de la bande
+  publique de la fiche (au moins 6 ventes comparables avec la méthode jackknife, 8 sinon, échantillon
+  effectif d’au moins 5, largeur de fourchette d’au plus 60 %, rayon d’au plus 1 000 m pour un
+  appartement urbain et 2 000 m sinon : `src/lib/market-gap-band.ts`) ;
+- les délais « publication → audience » (date de publication de la source) et « première détection →
+  audience » (premier passage d’Immojudis) sont deux mesures distinctes, nommées comme telles.
 
 ### Origine de l’historique observé (depuis la v0.8)
 
