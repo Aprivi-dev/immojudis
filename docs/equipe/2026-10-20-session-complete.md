@@ -390,3 +390,163 @@ Ces points touchent des textes juridiques. Le propriétaire les avait exclus le 
 - **Validés :** les n° 1 à 54 et 61 à 75, « discutables » compris.
 - **Non validés :** la partie I (n° 55 à 60, juridique et protection des données). Les parties juridiques des n° 31 et
   38 se limitent donc à la formulation prudente et à l'alignement sur les articles déjà relus le 19/10.
+
+## Bilan de l'exécution (20/10/2026)
+
+Tout est sur la branche `claude/laughing-ramanujan-vv6y9w`, poussée (112 commits depuis la décision, 609 fichiers).
+Aucune migration n'a été appliquée, rien n'a été écrit en base, aucune pull request n'a été créée.
+
+### Organisation
+
+- **Première vague, 9 chantiers en parallèle** (un worktree chacun) et le rédacteur :
+  - W1 : n° 1, 2, 6, 54, 61 ;
+  - W2 : n° 7 (pipeline), 8 à 17 ;
+  - W3 : n° 4, 27, 28, 29, 52, 53 ;
+  - W4 : n° 18, 19, 20 ;
+  - W5 : n° 21, 22, 23 ;
+  - W6 : n° 24, 25, 26, 30, 31, 38, 40 ;
+  - W7 : n° 3, 5, 33 à 35, 37, 41 à 46 ;
+  - W8 : n° 7 (site), 32, 39, 62 à 66 ;
+  - W9 : n° 47 à 51 ;
+  - rédacteur : n° 75.
+- **Seconde vague, 4 chantiers** :
+  - V2a : n° 36, 68, 69, complément du 34 ;
+  - V2b : n° 67, 71, compléments des 23 et 43 ;
+  - V2c : n° 70, 73 ;
+  - V2d : n° 72, 74.
+- **Interruption.** Une limite d'utilisation a arrêté tous les chantiers vers 12:00 UTC. Ils ont repris là où ils
+  s'étaient arrêtés.
+
+### Corrections faites à la fusion par le chef d'orchestre
+
+- **n° 28.** Migration `20261029190000` : le déclencheur des instantanés lit `snapshot_price_access`. W3 avait créé la
+  fonction, W1 redéfinissait le déclencheur.
+- **Fuite d'adresses.** W8 faisait rendre `source_url` et `source_urls` à `anon` par `get_public_tribunal_sales`. La
+  fonction rend désormais des clés `source_keys`, comme les audiences. Test pgTAP 597 en double renommé 601.
+- **Conflits textuels.** `maxDuration` du suivi, `loading.tsx` de la fiche, `SaleFileCard` (rappels et mention du
+  dossier), `SalePublicPreview` (offre de lancement et texte masqué), types et client admin, filtres de recherche
+  (V2a et V2b).
+- **Tests en échec après la fusion.** Huit échecs de fond ont été corrigés par le développeur (focus, sitemap,
+  vocabulaire, retour contextuel, `server-only`, message d'erreur de `/api/health`, état vide du tableau). Les contours
+  de focus réintroduits par la seconde vague ont été corrigés aussi.
+- **Base des worktrees.** Ceux de la seconde vague partaient de `main` et non de la branche de session. Les chantiers ont
+  été prévenus et ont fusionné la branche avant de livrer.
+
+### Vérifications finales (machine au calme)
+
+| Vérification                        | Résultat                                                                              |
+| ----------------------------------- | ------------------------------------------------------------------------------------- |
+| `npx tsc --noEmit`                  | OK                                                                                    |
+| `npm run lint`                      | OK                                                                                    |
+| `npm test` (Vitest)                 | 7 381 OK, 8 ignorés, 0 échec (683 fichiers)                                           |
+| `npm run test:security-invariants`  | OK                                                                                    |
+| Pipeline `ruff` + `pytest`          | OK, 4 661 tests, 155 ignorés (après W2 ; la seconde vague ne touche pas au Python)    |
+| `npm run build` + `build:budgets`   | OK ; JS total 6 075 737 octets                                                        |
+| pgTAP (496, 510, 511, 520, 530-640) | **Non exécutés** sur un vrai Supabase : la CI doit les passer avant toute application |
+
+Le budget JS client total a été relevé deux fois, avec l'accord du propriétaire : 6 000 000 après la première vague
+(5 964 934 mesurés), puis 6 125 000 après la seconde (6 075 737 mesurés). Tous les budgets par page passent. Le
+JavaScript initial des pages publiques baisse ; le plafond du chunk Mapbox n'a pas été relevé (5 Ko de marge).
+
+### Relecture de code
+
+- **Défaut critique, corrigé par le chef (`4e97c59`).** `pg_catalog.position(… in …)` dans `20261029100100` était
+  refusé par PostgreSQL et aurait arrêté la chaîne des migrations. Remplacé par `strpos`, puis vérifié sur un
+  PostgreSQL 16 jetable.
+- **Signalés, non corrigés.** Chacun attend une décision :
+  - **Haute.** Le crochet SQL en lecture seule laisse passer les appels de fonctions (`select run_data_retention()`,
+    `set_config`, `pg_terminate_backend`…) et laisse passer la requête s'il plante. `.claude/settings.json` autorise par
+    ailleurs, sans confirmation, `mcp__Supabase__execute_sql`, `mcp__github__actions_run_trigger` et
+    `mcp__github__merge_pull_request`. Remède sûr : passer le serveur MCP Supabase en `read_only` ou utiliser un rôle
+    Postgres en lecture seule. Les permissions relèvent du propriétaire.
+  - **Moyenne.**
+    - Les clés `source_keys` (SHA-256 sans sel) peuvent être retrouvées par énumération des adresses : à passer en HMAC.
+    - « Vente retirée » est annoncée comme un fait alors qu'elle est déduite d'une absence.
+    - La date « vérifiées le » ignore une source jamais complète.
+    - `/api/health` n'a ni cache ni limite, et calcule sur le MAX des sources.
+    - L'envoi à la liste d'attente re-sélectionne en tête les adresses non confirmées.
+    - La version du texte de consentement est forgeable par le client.
+    - Le pilotage compte les comptes de l'offre sans la règle canonique.
+  - **Basse.**
+    - Une alerte de rétention transitoire s'ouvrira pendant la réparation.
+    - Le rattrapage des identités email doit suivre la migration `110000`.
+    - `normalize_source_url` ignore la requête de l'URL.
+    - « Date de vente passée » peut différer à minuit, à l'hydratation.
+    - Les compteurs par IP repartent de zéro.
+
+### Relecture juridique (articles et textes sensibles)
+
+Aucun point critique. Sur les 8 points du rédacteur, 6 sont établis, 1 est à confirmer (mention gardée) et 1 est à
+reformuler. Propositions, non appliquées, à valider :
+
+- **Haute.**
+  - Surenchère : « peut être prolongé au premier jour ouvrable ; ne comptez pas dessus sans un avocat ».
+  - PDF de financement : 3 mois et le compte du liquidateur pour une liquidation (`legalFramework = insolvency`),
+    au lieu de 2 mois.
+  - Offre de lancement : « sans préavis » n'a pas d'appui dans les CGV (juridique, non validé).
+  - Registre et politique de confidentialité : il manque les rappels et les « ventes passées » (non validé).
+- **Moyenne.** Corrections d'articles :
+  - « Seul l'avocat » ;
+  - L. 722-2 rattaché à la recevabilité ;
+  - articulation du surendettement ;
+  - R. 643-3 avec mise en demeure ;
+  - bénéficiaire du chèque en liquidation ;
+  - mise à prix basse sourcée par le commentaire officiel de la QPC 2011-206.
+
+  Autres textes :
+  - consentement aux rappels en un seul libellé, avec le droit de retrait affiché avant l'acceptation ;
+  - « données conservées tant que le compte existe » ;
+  - surenchère : avocat du barreau du tribunal.
+
+### Actions pour le propriétaire
+
+1. **Avant d'appliquer quoi que ce soit.** Faire passer la CI pgTAP sur la branche. Elle aurait arrêté le défaut critique.
+2. **Migrations, dans l'ordre des numéros, hors collecte en cours** (verrous de 5 s) :
+   - `20261029100000` à `20261029190000` : 21 migrations, première vague ;
+   - `20261030110000` à `20261030130000` : 10 migrations, seconde vague.
+   - Contraintes d'ordre avec le déploiement :
+     - `20261029110000` (email canonique) **avant** le déploiement du code, sinon l'offre de lancement se ferme pour
+       tous ;
+     - `20261029120100` (détails `daily_account` et `daily_shared`) avant le code ;
+     - `20261029130000` (preuve du consentement) avant de passer les rappels en `internal`.
+3. **Réparations** (`supabase/repairs/`), en comptage puis `-v apply=1` :
+   - `20261029110000_backfill_account_email_identity.sql`, juste après la migration `110000` ;
+   - `20261029100200_recompute_past_quarantined_deadlines.sql`, hors collecte. Une alerte `retention.sale.overdue` est
+     attendue pendant le rattrapage ;
+   - `20261030100001_count_workspace_status_not_in_dossier.sql`, comptage seul, facultatif.
+4. **Toujours en attente du 18/10.** Balayage des doublons (après les garde-fous du n° 8, désormais en place),
+   réparations de données, purge des noms, `LICITOR_DECODE_PROTECTED_EMAILS=false`, `www` en 308 (vérifier d'abord l'URL
+   des crons `pg_cron` dans Vault), indexation, identité de l'éditeur.
+5. **Interrupteurs à garder sur `off`** jusqu'à la mise à jour de la politique et du registre :
+   - `SALE_REMINDERS_MODE` (passer d'abord en `internal`, critère écrit dans `docs/runbooks/activation-rappels-audience.md`) ;
+   - `WEEKLY_DIGEST_MODE` ;
+   - `SALE_RESULTS_MODE`.
+6. **Réglages.**
+   - Sonde externe sur `/api/health` (`docs/operations/supervision-externe.md`).
+   - `OPERATIONS_ALERT_EMAIL_TO`.
+   - Resend : clés et suivi des clics désactivé.
+   - `time-machine` dans `requirements-dev.txt`, pour le job hebdomadaire à horloge +60 j.
+   - `npm run db:types`.
+7. **Textes à relire avant tout envoi réel.**
+   - Email d'ouverture de l'offre (`src/lib/admin-offer-opening-notifier.ts`).
+   - « Ma semaine » (`src/lib/weekly-digest-emails.ts`).
+   - Alerte de résultat (`src/lib/sale-result-emails.ts`).
+   - Cases de consentement `WeeklyDigestToggle` et `SaleResultsToggle`.
+8. **Décisions produit.**
+   - Retirer ou non l'ancien éditeur « Décomposer l'enveloppe » et la grille de prix `WORKS_SCENARIOS` de l'onglet
+     Travaux, qui coexistent avec le nouveau détail (n° 74).
+   - Le lien avocat ↔ vente est maintenant visible des visiteurs sur l'annuaire (n° 72).
+   - Section « Visites des 7 prochains jours » sur `/audiences-a-venir` : non faite, la date de visite n'est pas publique.
+   - `sale_workspaces.tracking_status` reste écrit en copie.
+   - Seuil de 5 conservé pour `tribunal_judicial_activity_v3`.
+   - Rappels, « Ma semaine » et résultats : hors de la liste `cron.stale` tant qu'ils sont fermés.
+
+### Limites connues
+
+- **Page des audiences.** `/audiences-a-venir` devrait passer de plus de 20 s à environ 2 à 4 s (non mesuré). Elle est
+  lue côté serveur et mise en cache par l'ISR. Descendre sous 0,3 s demanderait des colonnes matérialisées.
+- **Doublons sur les pages tribunal.** Ils ne disparaissent que si les deux annonces partagent une adresse source. Le
+  vrai remède reste le balayage.
+- **Enchères Immobilières.** La cause du blocage de la publication n'est pas trouvée. Elle est désormais instrumentée
+  (`publication_blockers`).
+- **Test de fumée.** Il échouera tant que `/api/health` et la réparation des audiences ne sont pas déployées.
