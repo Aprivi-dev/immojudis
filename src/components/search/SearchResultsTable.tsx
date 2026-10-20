@@ -21,6 +21,7 @@ import { getDisplaySurface } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
 import {
   LISTING_DETAIL_LINE,
+  PAST_SALE_LABEL,
   cardTypeLabel,
   departmentLabel,
   listingAccessLine,
@@ -306,7 +307,12 @@ const ListingRow = memo(function ListingRow({
               Vu
             </span>
           ) : null}
-          <SaleCountdown sale={sale} precisionUnknown={locked} variant="chip" />
+          <SaleCountdown
+            sale={sale}
+            precisionUnknown={locked}
+            variant="chip"
+            omitPast={!stateListing && listingDateLabel(sale) === PAST_SALE_LABEL}
+          />
           <SaleProcedureBadge sale={sale} />
           {/* Pas la place d'un libellé en tableau : une icône, au nom accessible « N points à vérifier ». */}
           <PointsToVerifyBadge
