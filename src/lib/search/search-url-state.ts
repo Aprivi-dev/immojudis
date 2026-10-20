@@ -61,6 +61,8 @@ export type SalesSearchParams = {
   aroundRadius?: number;
   yearBuilt?: number;
   openHouse?: boolean;
+  /** Une visite à date publiée dans les 7 jours (voir `saleHasVisitSoon`). */
+  visitSoon?: boolean;
   map?: boolean;
   searchAsMove?: boolean;
 };
@@ -212,6 +214,7 @@ export function validateSalesSearch(search: Record<string, unknown>): SalesSearc
     aroundRadius: nonNegativeNumber(search.aroundRadius ?? search.around_radius),
     yearBuilt: positiveInteger(search.yearBuilt),
     openHouse: booleanValue(search.openHouse),
+    visitSoon: booleanValue(search.visitSoon),
     map: booleanValue(search.map),
     searchAsMove: booleanValue(search.searchAsMove),
   };
@@ -254,6 +257,7 @@ export function salesSearchToUrlRecord(search: SalesSearchParams): SalesSearchUr
     aroundRadius: search.aroundRadius,
     yearBuilt: search.yearBuilt,
     openHouse: search.openHouse ? true : undefined,
+    visitSoon: search.visitSoon ? true : undefined,
     map: search.map ? true : undefined,
     searchAsMove: search.searchAsMove ? true : undefined,
   };

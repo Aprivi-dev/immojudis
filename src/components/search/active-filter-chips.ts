@@ -128,6 +128,9 @@ export function activeFilterChips(search: SalesSearchParams): ActiveFilterChip[]
     yearBuilt: undefined,
   });
   add("openHouse", search.openHouse ? "Visites programmées" : null, { openHouse: undefined });
+  add("visitSoon", search.visitSoon ? "Visite dans les 7 jours" : null, {
+    visitSoon: undefined,
+  });
   add("viewport", search.viewport ? "Zone de la carte" : null, {
     viewport: undefined,
     searchAsMove: false,
