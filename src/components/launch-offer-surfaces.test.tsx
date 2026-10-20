@@ -219,6 +219,22 @@ describe("mention des pages rendues côté serveur", () => {
     mocks.launch = { active: false, pending: true };
     const pending = render(<LaunchOfferNote />);
     expect(pending.container.textContent).toBe("");
+    expect(screen.queryByTestId("launch-offer-note")).toBeNull();
+  });
+
+  it("réserve la hauteur du bloc tant que l'état est inconnu, sans le rendre ni le lire", () => {
+    mocks.launch = { active: false, pending: true };
+    render(<LaunchOfferNote className="mt-3" />);
+    const placeholder = screen.getByTestId("launch-offer-note-placeholder");
+    expect(placeholder.getAttribute("aria-hidden")).toBe("true");
+    expect(placeholder.className).toContain("mt-3");
+    expect(placeholder.className).toMatch(/min-h-\d+/);
+  });
+
+  it("ne réserve rien une fois l'état connu", () => {
+    mocks.launch = { active: false, pending: false };
+    render(<LaunchOfferNote />);
+    expect(screen.queryByTestId("launch-offer-note-placeholder")).toBeNull();
   });
 
   it("affiche la mention du visiteur, ou celle du compte connecté", () => {

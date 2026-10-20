@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AuctionSale } from "@/lib/types";
 import {
   LISTING_DETAIL_LINE,
+  LISTING_LAUNCH_OFFER_LINE,
   PAST_SALE_LABEL,
   listingAccessLine,
   listingDateLabel,
@@ -22,6 +23,28 @@ describe("listingAccessLine", () => {
     const access = { locked: true, analysisLocked: false, unlocked: false, verifying: true };
     expect(listingAccessLine(tribunal, access)).toBe(LISTING_DETAIL_LINE);
     expect(listingAccessLine(notary, access)).toBe(LISTING_DETAIL_LINE);
+  });
+
+  it("reste neutre tant que l'état de l'offre de lancement est inconnu (rendu serveur compris)", () => {
+    for (const access of [
+      { locked: true, analysisLocked: true, unlocked: false },
+      { locked: false, analysisLocked: true, unlocked: false },
+    ]) {
+      expect(listingAccessLine(tribunal, { ...access, launchPending: true })).toBe(
+        LISTING_DETAIL_LINE,
+      );
+      expect(listingAccessLine(notary, { ...access, launchPending: true })).toBe(
+        LISTING_DETAIL_LINE,
+      );
+    }
+    expect(
+      listingAccessLine(tribunal, {
+        locked: true,
+        analysisLocked: true,
+        unlocked: false,
+        launchOffer: true,
+      }),
+    ).toBe(LISTING_LAUNCH_OFFER_LINE);
   });
 
   it("garde les lignes d'un compte dont les droits sont connus", () => {

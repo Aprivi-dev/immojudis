@@ -2,7 +2,14 @@
 
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { renderToString } from "react-dom/server";
 import { axe } from "vitest-axe";
+import {
+  LaunchOfferContext,
+  type LaunchOfferState,
+  type LaunchOfferStore,
+} from "@/hooks/use-launch-offer";
+import { LAUNCH_OFFER_VISITOR_TEXT } from "@/lib/launch-offer";
 import type { AuctionSale, SaleVenueType } from "@/lib/types";
 import { FREE_ACCESS_LINE } from "@/lib/sale-unlocks";
 import { publicSaleVenueCopy, SalePublicPreview } from "./SalePublicPreview";
@@ -537,3 +544,50 @@ function renderPreview(
     />,
   );
 }
+
+describe("offre de lancement sur la fiche publique", () => {
+  const sale = {
+    id: "sale-1",
+    starting_price_eur: 59_000,
+    sale_venue_type: "tribunal",
+    sale_verification_status: "cross_checked",
+  } as AuctionSale;
+
+  function storeWith(state: LaunchOfferState): LaunchOfferStore {
+    return { getSnapshot: () => state, subscribe: () => () => {}, ensure: () => {} };
+  }
+  function withOffer(state: LaunchOfferState) {
+    return (
+      <LaunchOfferContext.Provider value={storeWith(state)}>
+        <SalePublicPreview saleId="sale-1" returnTo="/sales" preview={sale} />
+      </LaunchOfferContext.Provider>
+    );
+  }
+
+  it("offre active : la mention du visiteur sous le bouton, et les étiquettes de l'offre", () => {
+    render(withOffer({ active: true, pending: false }));
+    const block = screen.getByTestId("public-signup");
+    expect(screen.getByTestId("public-signup-line").textContent).toBe(LAUNCH_OFFER_VISITOR_TEXT);
+    expect(block.textContent).not.toContain(FREE_ACCESS_LINE);
+    const teaser = screen.getByRole("region", { name: "L’analyse de cette vente" });
+    expect(teaser.textContent).toContain("Compte gratuit (offre de lancement)");
+    expect(teaser.textContent).not.toContain("3 déblocages par mois");
+    expect(teaser.textContent).not.toContain("Offre Analyse");
+  });
+
+  it("offre coupée : la ligne et les étiquettes habituelles", () => {
+    render(withOffer({ active: false, pending: false }));
+    expect(screen.getByTestId("public-signup-line").textContent).toBe(FREE_ACCESS_LINE);
+    const teaser = screen.getByRole("region", { name: "L’analyse de cette vente" });
+    expect(teaser.textContent).toContain("Offre Analyse, ou 3 déblocages par mois");
+  });
+
+  it("rendu serveur : l'état est inconnu, le HTML ne promet ni quota ni offre", () => {
+    // Le magasin annonce « offre active », mais le serveur ne lit pas l'état : il rend « inconnu ».
+    const html = renderToString(withOffer({ active: true, pending: false }));
+    expect(html).not.toContain("fiches détaillées par mois");
+    expect(html).not.toContain("offre de lancement");
+    expect(html).toContain("Gratuit, sans carte bancaire");
+    expect(html).toContain("Selon votre compte");
+  });
+});

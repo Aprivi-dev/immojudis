@@ -43,6 +43,7 @@ import type { AuctionSale } from "@/lib/types";
 import { MAX_COMPARED_SALES } from "@/lib/search/sale-comparison";
 import type { ActiveFilterChip } from "./active-filter-chips";
 import { ErrorState, NoResultsState } from "./SearchFilters";
+import { LaunchOfferListBanner } from "./LaunchOfferListBanner";
 import { SearchResultsSkeleton } from "./SearchResultsSkeleton";
 import { SearchResultsTable } from "./SearchResultsTable";
 import {
@@ -174,6 +175,7 @@ export function SearchResultsList({
 
   return (
     <div className="px-3 pb-24 pt-3 sm:px-5 lg:pb-6">
+      <LaunchOfferListBanner />
       {error ? <ErrorState error={error} onRetry={onRetry} /> : null}
 
       {!isLoading && sales.length === 0 && !error && !hideEmptyState ? (
@@ -303,7 +305,7 @@ export const ListingCard = memo(function ListingCard({
   const displaySurface = getDisplaySurface(sale);
   const { isViewed } = useViewedSales();
   const detailLink = useSaleDetailLink(sale.id, returnTo);
-  const launchOffer = useLaunchOffer().active;
+  const { active: launchOffer, pending: launchPending } = useLaunchOffer();
   const premiumLocked = locked || analysisLocked;
   // « N points à vérifier » : seulement des faits déjà sur la carte ; l'occupation n'est comptée
   // que si la carte la montre.
@@ -503,7 +505,14 @@ export const ListingCard = memo(function ListingCard({
         </div>
         <div className="mt-3 flex flex-wrap items-center justify-between gap-1 border-t border-surface-tint pt-3">
           <span className="text-sm text-ink-soft">
-            {listingAccessLine(sale, { locked, analysisLocked, unlocked, verifying, launchOffer })}
+            {listingAccessLine(sale, {
+              locked,
+              analysisLocked,
+              unlocked,
+              verifying,
+              launchOffer,
+              launchPending,
+            })}
           </span>
           <div className="flex items-center">
             <ShareButton sale={sale} title={title} />
