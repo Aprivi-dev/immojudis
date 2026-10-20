@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { CeilingUserChoices } from "@/lib/bid-ceiling-defaults";
 import { WORKS_SCENARIOS } from "@/lib/profitability";
 import type { CeilingWorksKey } from "@/lib/bid-ceiling-engine";
+import { parseWorksBreakdown } from "@/lib/works-breakdown";
 
 const STORAGE_PREFIX = "immojudis:ceiling:v2";
 const PROJECTS = new Set(["habiter", "louer", "revendre"]);
@@ -63,7 +64,16 @@ export function parseCeilingChoices(raw: unknown): CeilingUserChoices {
       months: typeof works.months === "number" && works.months >= 0 ? works.months : null,
     };
   }
+  const worksBreakdown = parseWorksBreakdown(value.worksBreakdown);
+  if (worksBreakdown.length) choices.worksBreakdown = worksBreakdown;
   return choices;
+}
+
+/** Les choix sans le détail des postes : celui-ci reste dans le navigateur (jamais enregistré ailleurs). */
+export function choicesWithoutWorksBreakdown(choices: CeilingUserChoices): CeilingUserChoices {
+  const copy = { ...choices };
+  delete copy.worksBreakdown;
+  return copy;
 }
 
 export function worksChoiceForAmount(
@@ -102,7 +112,17 @@ export function useCeilingChoices(ownerId: string, saleId: string) {
     [],
   );
   const reset = useCallback(
-    () => setState((current) => ({ ...current, choices: { works: current.choices.works } })),
+    () =>
+      setState((current) => ({
+        ...current,
+        // Le budget travaux et son détail sont des saisies de l'utilisateur, pas des hypothèses.
+        choices: {
+          works: current.choices.works,
+          ...(current.choices.worksBreakdown
+            ? { worksBreakdown: current.choices.worksBreakdown }
+            : {}),
+        },
+      })),
     [],
   );
   return { choices: state.choices, update, reset };
