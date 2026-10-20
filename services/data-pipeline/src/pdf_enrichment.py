@@ -68,6 +68,7 @@ from src.pdf_failure_diagnostics import format_pdf_failure_diagnostics, pdf_extr
 from src.pdf_partial_tolerance import is_tolerated_partial, previous_reads_by_url
 from src.pdf_ocr import (
     OCR_NO_TEXT_METHOD,
+    OCR_NO_TEXT_UNVERIFIED_METHOD,
     PdfDeadlineExceeded,
     PdfDocumentOcrBudgetExceeded,
     PdfExtractionDeferred,
@@ -1159,6 +1160,7 @@ def extract_pdf_pages(file: str | Path) -> list[dict[str, object]]:
                 text = str(result["text"])
                 method = str(result["method"])
                 confidence = float(result["confidence"])
+                ocr_failure_reason = str(result["failure_reason"]) if result.get("failure_reason") else None
             cleaned = clean_text(text) or ""
             visual_profile: dict[str, object] = {}
             original_status: str | None = None
@@ -1168,6 +1170,9 @@ def extract_pdf_pages(file: str | Path) -> list[dict[str, object]]:
                 failure_reason = "ocr_failed"
             elif method == OCR_NO_TEXT_METHOD and not cleaned:
                 status, failure_reason = "visual_blank_excluded", "image_without_text_after_ocr"
+            elif method == OCR_NO_TEXT_UNVERIFIED_METHOD and not cleaned:
+                # Page qui porte de l'encre, lue deux fois (droite puis pivotée) sans texte : pas prouvée vide.
+                status, failure_reason = "failed", ocr_failure_reason or "ocr_no_text_unverified"
             elif cleaned:
                 status = "extracted"
                 failure_reason = None
@@ -1195,6 +1200,7 @@ def extract_pdf_pages(file: str | Path) -> list[dict[str, object]]:
                 "status": status,
                 "retryable": status == "failed",
                 **({"failure_reason": failure_reason} if failure_reason else {}),
+                **({"ocr_no_text_unverified": True} if method == OCR_NO_TEXT_UNVERIFIED_METHOD else {}),
             }
             if visual_profile:
                 page_record["visual_analysis"] = visual_profile
