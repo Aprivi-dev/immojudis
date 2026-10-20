@@ -27,6 +27,10 @@ _postgres_connect = connect
 # Décision du propriétaire (11/10/2026) : chaque source au plus toutes les 12 h.
 INVENTORY_CADENCE = timedelta(hours=12)
 INVENTORY_DISPATCH_MARGIN = timedelta(minutes=45)
+# Un inventaire complet ne compte pour l'absence d'une vente que s'il est distant d'au moins cette durée du
+# précédent compté (deux passages rapprochés de quelques minutes ne valent pas deux inventaires). La migration
+# 20261029150100 applique le même écart au retrait ; tests/test_source_absence.py compare les deux.
+ABSENCE_MIN_INVENTORY_SPACING = INVENTORY_CADENCE
 NEAR_SALE_HORIZON = timedelta(days=7)
 ACTIVE_LISTING_STATUSES = frozenset({'active', 'upcoming', 'postponed', 'unknown'})
 ENRICHMENT_TERMINAL_STATUSES = frozenset({'completed', 'failed'})
@@ -303,8 +307,10 @@ def finish_source(db_url: str, run_id: str) -> None:
             if retry_deadline is not None:
                 deadline = max(deadline, retry_deadline)
         # Un run en échec (budget épuisé, arrêt brutal) ne prouve rien sur l'absence : seul un run
-        # `succeeded` compte comme inventaire complet, sinon le compteur d'absence avancerait.
-        record_source_presence(db, run_id, source, availability, complete and status == 'succeeded')
+        # `succeeded` compte comme inventaire complet, sinon le compteur d'absence avancerait, et
+        # last_inventory_complete_at (qui autorise le retrait) non plus.
+        inventory_complete = complete and status == 'succeeded'
+        record_source_presence(db, run_id, source, availability, inventory_complete)
         db.execute("""update public.auction_source_state set
             availability=%s,coverage=%s,last_error=%s,consecutive_failures=%s,
             next_inventory_at=%s,suspended_until=%s,
@@ -313,12 +319,12 @@ def finish_source(db_url: str, run_id: str) -> None:
             updated_at=now() where source_name=%s and last_run_id=%s""",
             (availability,Jsonb(coverage),json.dumps(problems or errors,ensure_ascii=False)[:2000] if problems or failures else None,
              failures,deadline,deadline if denied or coverage.get('retry_not_before') else None,
-             complete,publication_complete,source,run_id))
+             inventory_complete,publication_complete,source,run_id))
         db.execute("""update public.auction_runs set summary=coalesce(summary,'{}') || %s
             where id=%s""", (Jsonb({'scrape_coverage': {source: coverage}}), run_id))
     # Après le commit, hors de la transaction qui clôt le run : une panne ici ne doit rien défaire.
     # Seulement après un inventaire complet réussi (jamais sur un inventaire partiel).
-    if complete and status == 'succeeded' and not denied:
+    if inventory_complete and not denied:
         _withdraw_missing_sales(db_url, run_id, source)
 
 
@@ -403,18 +409,29 @@ def count_absent_inventories(db, run_id: str, source: str) -> None:
 
     À appeler seulement après un inventaire complet (``state`` vient d'être posée pour ce run). Une vente revue
     remet son compteur à zéro. Idempotent pour un même run : ``absent_run_id`` empêche de compter deux fois le
-    même inventaire. Les ventes absentes depuis deux inventaires complets sont retirées par
-    ``src.source_absence`` (migration 20261028110100).
+    même inventaire. Une absence n'est comptée que si le dernier inventaire compté pour cette vente (le run
+    ``absent_run_id``, sinon ``absent_since``) date d'au moins ``ABSENCE_MIN_INVENTORY_SPACING`` : deux
+    inventaires rapprochés de quelques minutes ne comptent que pour un. Les ventes absentes depuis deux
+    inventaires complets sont retirées par ``src.source_absence`` (migration 20261028110100).
     """
     db.execute("""update app_private.auction_sale_source_presence as p set
         absent_inventories = case when p.state = 'absent' then p.absent_inventories + 1 else 0 end,
         absent_since = case when p.state = 'absent' then coalesce(p.absent_since, p.checked_at) else null end,
         absent_run_id = case when p.state = 'absent' then %s::text else null end
-      where p.source_name = %s::text and p.run_id = %s::text and p.checked_at is not null
+      from (
+        select q.sale_id, coalesce(r.finished_at, r.started_at, q.absent_since) as last_counted_at
+        from app_private.auction_sale_source_presence q
+        left join public.auction_runs r on r.id::text = q.absent_run_id
+        where q.source_name = %s::text
+      ) as previous
+      where previous.sale_id = p.sale_id
+        and p.source_name = %s::text and p.run_id = %s::text and p.checked_at is not null
         and (
-          (p.state = 'absent' and p.absent_run_id is distinct from %s::text)
+          (p.state = 'absent' and p.absent_run_id is distinct from %s::text
+            and (previous.last_counted_at is null
+              or previous.last_counted_at <= p.checked_at - make_interval(secs => %s)))
           or (p.state = 'present' and (p.absent_inventories > 0 or p.absent_run_id is not null))
-        )""", (run_id, source, run_id, run_id))
+        )""", (run_id, source, source, run_id, run_id, ABSENCE_MIN_INVENTORY_SPACING.total_seconds()))
 
 
 DOCUMENT_READING_BUDGET_SECONDS = 5 * 60
