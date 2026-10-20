@@ -9,6 +9,14 @@ type NotificationPreferenceRow =
 type NotificationPreferenceInsert =
   Database["public"]["Tables"]["user_notification_preferences"]["Insert"];
 
+/**
+ * Version du texte de consentement aux rappels d'audience présenté à la personne (case de
+ * `SaleRemindersToggle`, ligne « Mon dossier »). Conservée avec la date du consentement
+ * (`sale_reminders_consent_text_version`) : à changer à chaque modification de ce texte, pour savoir
+ * à quel libellé chaque personne a consenti. Elle est posée ici, côté serveur, jamais par le client.
+ */
+export const SALE_REMINDERS_CONSENT_TEXT_VERSION = "2026-10-20";
+
 export const SALE_REMINDERS_NOT_OFFERED_MESSAGE =
   "Les rappels d’audience ne sont pas encore proposés : votre consentement ne peut pas être enregistré pour le moment.";
 
@@ -103,6 +111,13 @@ export async function updateNotificationPreferences({
           enabled: input.saleRemindersEnabled,
           timestamp,
         })
+      : {}),
+    // Les dates du consentement et du retrait sont posées par la base (déclencheur
+    // `immojudis_user_notification_preferences_reminder_consent`) : celles du patch ci-dessus sont
+    // ignorées. Seule la version du texte vient d'ici, et la base ne la garde qu'à la bascule vers
+    // « actif ».
+    ...(input.saleRemindersEnabled === true
+      ? { sale_reminders_consent_text_version: SALE_REMINDERS_CONSENT_TEXT_VERSION }
       : {}),
   };
 
