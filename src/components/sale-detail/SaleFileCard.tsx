@@ -96,8 +96,9 @@ export function SaleFileCard({
       ) : dossier && !dossier.followed ? (
         <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
           <p className="max-w-xl text-sm leading-relaxed text-ink-soft">
-            Suivez cette vente pour y enregistrer votre statut et votre enchère plafond. Vous les
-            retrouverez dans vos favoris, sur tous vos appareils.
+            Le suivi conditionne l’enregistrement : suivez cette vente (le cœur) pour y noter votre
+            statut et votre enchère plafond. Sans suivi, rien n’est conservé. Vous les retrouverez
+            ensuite dans vos favoris, sur tous vos appareils.
           </p>
           <FavoriteButton saleId={saleId} />
         </div>
@@ -183,6 +184,13 @@ export function SaleFileCard({
             ) : null}
           </div>
         </div>
+      ) : null}
+
+      {dossier?.followed ? (
+        <p className="mt-4 text-xs leading-relaxed text-ink-soft">
+          Ce dossier est attaché au suivi de la vente : retirer la vente de vos favoris l’efface.
+          Une confirmation vous est demandée avant.
+        </p>
       ) : null}
 
       <p className="mt-4 text-xs leading-relaxed text-ink-soft">

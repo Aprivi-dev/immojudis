@@ -17,6 +17,8 @@ const mocks = vi.hoisted(() => ({
   deleteFollowedSaleSnapshot: vi.fn(),
   addFavoriteSale: vi.fn(),
   removeFavoriteSale: vi.fn(),
+  fetchFavoriteDossier: vi.fn(),
+  saveFavoriteDossier: vi.fn(),
   toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }),
 }));
 
@@ -32,6 +34,8 @@ vi.mock("@/lib/client-api", () => ({
   deleteFollowedSaleSnapshot: mocks.deleteFollowedSaleSnapshot,
   addFavoriteSale: mocks.addFavoriteSale,
   removeFavoriteSale: mocks.removeFavoriteSale,
+  fetchFavoriteDossier: mocks.fetchFavoriteDossier,
+  saveFavoriteDossier: mocks.saveFavoriteDossier,
 }));
 vi.mock("@/hooks/use-analysis-checkout-open", () => ({
   useAnalysisCheckoutOpen: () => mocks.checkoutOpen(),
@@ -47,8 +51,24 @@ vi.mock("./FavoriteButton", () => ({
   FavoriteButton: ({ saleId }: { saleId: string }) => <button>Retirer {saleId}</button>,
 }));
 
+/** « Mon dossier » lu avant le retrait : vide par défaut. */
+function dossierResponse(overrides: Record<string, unknown> = {}) {
+  return {
+    dossier: {
+      saleId: "sale-1",
+      followed: true,
+      personalStatus: null,
+      personalStatusUpdatedAt: null,
+      bidCeilingEur: null,
+      bidCeilingSavedAt: null,
+      ...overrides,
+    },
+  };
+}
+
 beforeEach(() => {
   mocks.fetchFollowedSaleSnapshots.mockResolvedValue({ snapshots: [] });
+  mocks.fetchFavoriteDossier.mockResolvedValue(dossierResponse());
 });
 
 afterEach(() => {
@@ -133,7 +153,7 @@ describe("FavoriteSales", () => {
   it("réutilise la carte du catalogue et propose Annuler après le retrait d'un favori", async () => {
     mocks.fetchFavoriteSales.mockResolvedValue(favoritesResponse());
     mocks.fetchSalesAiReviewProjections.mockResolvedValue({ projections: [] });
-    mocks.removeFavoriteSale.mockResolvedValue({ ok: true, removed: true });
+    mocks.removeFavoriteSale.mockResolvedValue({ ok: true, removed: true, dossier: null });
     mocks.addFavoriteSale.mockResolvedValue({ favorite: null, created: true });
 
     render(
@@ -156,6 +176,113 @@ describe("FavoriteSales", () => {
     await waitFor(() =>
       expect(mocks.addFavoriteSale).toHaveBeenCalledWith({ data: { saleId: "sale-1" } }),
     );
+  });
+
+  function renderFavorites() {
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <FavoriteSales />
+      </QueryClientProvider>,
+    );
+  }
+
+  it("ne retire pas le favori quand on garde un dossier non vide, et ne touche à rien", async () => {
+    mocks.fetchFavoriteSales.mockResolvedValue(favoritesResponse());
+    mocks.fetchSalesAiReviewProjections.mockResolvedValue({ projections: [] });
+    mocks.fetchFavoriteDossier.mockResolvedValue(
+      dossierResponse({ personalStatus: "bidding", bidCeilingEur: 185_000 }),
+    );
+    renderFavorites();
+
+    await screen.findByRole("heading", { name: "Appartement · Bordeaux" });
+    fireEvent.click(screen.getByRole("button", { name: "Retirer des favoris" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.textContent).toContain("Prêt à enchérir");
+    expect(dialog.textContent).toMatch(/185\s000/);
+    fireEvent.click(screen.getByRole("button", { name: "Garder en favori" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(mocks.removeFavoriteSale).not.toHaveBeenCalled();
+    expect(mocks.toast).not.toHaveBeenCalled();
+  });
+
+  it("confirme le retrait d'un dossier non vide, puis « Annuler » rétablit statut et plafond", async () => {
+    mocks.fetchFavoriteSales.mockResolvedValue(favoritesResponse());
+    mocks.fetchSalesAiReviewProjections.mockResolvedValue({ projections: [] });
+    mocks.fetchFavoriteDossier.mockResolvedValue(
+      dossierResponse({ personalStatus: "bidding", bidCeilingEur: 185_000 }),
+    );
+    mocks.removeFavoriteSale.mockResolvedValue({
+      ok: true,
+      removed: true,
+      dossier: { personalStatus: "bidding", bidCeilingEur: 185_000 },
+    });
+    mocks.addFavoriteSale.mockResolvedValue({ favorite: null, created: true });
+    mocks.saveFavoriteDossier.mockResolvedValue(
+      dossierResponse({ personalStatus: "bidding", bidCeilingEur: 185_000 }),
+    );
+    renderFavorites();
+
+    await screen.findByRole("heading", { name: "Appartement · Bordeaux" });
+    fireEvent.click(screen.getByRole("button", { name: "Retirer des favoris" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Retirer et effacer mon dossier" }));
+
+    await waitFor(() => expect(mocks.toast).toHaveBeenCalled());
+    expect(mocks.removeFavoriteSale).toHaveBeenCalledWith({ saleId: "sale-1" });
+    const [, options] = mocks.toast.mock.calls[0];
+    expect(options.description).toContain("statut");
+    options.action.onClick();
+    await waitFor(() =>
+      expect(mocks.saveFavoriteDossier).toHaveBeenCalledWith({
+        data: { saleId: "sale-1", personalStatus: "bidding", bidCeilingEur: 185_000 },
+      }),
+    );
+    expect(mocks.addFavoriteSale).toHaveBeenCalledWith({ data: { saleId: "sale-1" } });
+  });
+
+  it("n'écrit aucun dossier à l'annulation quand il n'y en avait pas", async () => {
+    mocks.fetchFavoriteSales.mockResolvedValue(favoritesResponse());
+    mocks.fetchSalesAiReviewProjections.mockResolvedValue({ projections: [] });
+    mocks.removeFavoriteSale.mockResolvedValue({
+      ok: true,
+      removed: true,
+      dossier: { personalStatus: null, bidCeilingEur: null },
+    });
+    mocks.addFavoriteSale.mockResolvedValue({ favorite: null, created: true });
+    renderFavorites();
+
+    await screen.findByRole("heading", { name: "Appartement · Bordeaux" });
+    fireEvent.click(screen.getByRole("button", { name: "Retirer des favoris" }));
+    await waitFor(() => expect(mocks.toast).toHaveBeenCalled());
+    expect(screen.queryByRole("dialog")).toBeNull();
+    mocks.toast.mock.calls[0][1].action.onClick();
+    await waitFor(() => expect(mocks.addFavoriteSale).toHaveBeenCalled());
+    expect(mocks.saveFavoriteDossier).not.toHaveBeenCalled();
+  });
+
+  it("dit que le favori est revenu sans son dossier quand le rétablissement échoue", async () => {
+    mocks.fetchFavoriteSales.mockResolvedValue(favoritesResponse());
+    mocks.fetchSalesAiReviewProjections.mockResolvedValue({ projections: [] });
+    mocks.fetchFavoriteDossier.mockResolvedValue(dossierResponse({ bidCeilingEur: 90_000 }));
+    mocks.removeFavoriteSale.mockResolvedValue({
+      ok: true,
+      removed: true,
+      dossier: { personalStatus: null, bidCeilingEur: 90_000 },
+    });
+    mocks.addFavoriteSale.mockResolvedValue({ favorite: null, created: true });
+    mocks.saveFavoriteDossier.mockRejectedValue(new Error("boom"));
+    renderFavorites();
+
+    await screen.findByRole("heading", { name: "Appartement · Bordeaux" });
+    fireEvent.click(screen.getByRole("button", { name: "Retirer des favoris" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Retirer et effacer mon dossier" }));
+    await waitFor(() => expect(mocks.toast).toHaveBeenCalled());
+    mocks.toast.mock.calls[0][1].action.onClick();
+    await waitFor(() => expect(mocks.toast.error).toHaveBeenCalled());
+    expect(mocks.toast.error.mock.calls[0][0]).toContain("favori est rétabli");
   });
 
   it("propose un état vide qui renvoie vers le catalogue", async () => {

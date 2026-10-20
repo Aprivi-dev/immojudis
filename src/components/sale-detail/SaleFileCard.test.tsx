@@ -64,8 +64,16 @@ describe("SaleFileCard (Mon dossier)", () => {
     renderCard();
 
     expect(await screen.findByRole("button", { name: `Suivre ${SALE_ID}` })).toBeTruthy();
-    expect(screen.getByText(/Suivez cette vente pour y enregistrer/)).toBeTruthy();
+    // Le suivi conditionne l'enregistrement : le texte le dit.
+    expect(screen.getByText(/Le suivi conditionne l’enregistrement/)).toBeTruthy();
     expect(screen.queryByLabelText("Mon statut")).toBeNull();
+  });
+
+  it("dit que retirer la vente des favoris efface le dossier", async () => {
+    mocks.fetchDossier.mockResolvedValue(followed());
+    renderCard();
+
+    expect(await screen.findByText(/retirer la vente de vos favoris l’efface/)).toBeTruthy();
   });
 
   it("affiche un dossier vide comme vide, avec le calcul à enregistrer", async () => {
