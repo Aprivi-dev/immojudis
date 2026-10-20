@@ -58,7 +58,7 @@ set search_path = ''
 as $function$
   select
     case
-      when pg_catalog.position('.' in parts.host) > 0 then pg_catalog.lower(parts.host || parts.path)
+      when pg_catalog.strpos(parts.host, '.') > 0 then pg_catalog.lower(parts.host || parts.path)
     end
   from (
     select
