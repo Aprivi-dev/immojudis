@@ -1,3 +1,5 @@
+import { isProductionRuntime } from "@/lib/runtime-phase";
+
 /**
  * `/sales` sans paramètre, servi depuis le cache (ISR) par une réécriture du proxy.
  *
@@ -110,9 +112,6 @@ export function publicPathname(pathname: string): string {
     : pathname;
 }
 
-/** Valeur de `NEXT_PHASE` pendant `next build` (`PHASE_PRODUCTION_BUILD` de `next/constants`). */
-const BUILD_PHASE = "phase-production-build";
-
 /**
  * Vrai quand la variante statique doit REFUSER de se régénérer sans la liste : en production, hors
  * `next build`. Si la base est en panne ou trop lente pendant une régénération ISR, la page rendue
@@ -129,5 +128,5 @@ const BUILD_PHASE = "phase-production-build";
 export function mustSeedStaticCatalogue(
   env: { NODE_ENV?: string; NEXT_PHASE?: string } = process.env,
 ): boolean {
-  return env.NODE_ENV === "production" && env.NEXT_PHASE !== BUILD_PHASE;
+  return isProductionRuntime(env);
 }
