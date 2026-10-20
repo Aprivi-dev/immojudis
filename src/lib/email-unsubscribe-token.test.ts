@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createUnsubscribeToken, verifyUnsubscribeToken } from "./email-unsubscribe-token";
+import {
+  REMINDERS_UNSUBSCRIBE_TOKEN_TTL_DAYS,
+  UNSUBSCRIBE_TOKEN_TTL_DAYS,
+  createUnsubscribeToken,
+  unsubscribeTokenScopeKind,
+  verifyUnsubscribeToken,
+} from "./email-unsubscribe-token";
 
 const env = { SUPABASE_SERVICE_ROLE_KEY: "service-role-test-key" };
 const userId = "7d335032-e935-4550-9347-ed22b0f63449";
@@ -50,6 +56,44 @@ describe("unsubscribe tokens", () => {
     expect(verifyUnsubscribeToken(token, { now: later, env })).toBeNull();
     const almost = new Date(now.getTime() + 59 * 86_400_000);
     expect(verifyUnsubscribeToken(token, { now: almost, env })).not.toBeNull();
+  });
+
+  it("garde un lien « rappels d'audience » valable un an, contre 60 jours pour les alertes", () => {
+    const reminders = createUnsubscribeToken({ userId, scope: { kind: "reminders" }, now, env });
+    const day = (count: number) => new Date(now.getTime() + count * 86_400_000);
+    expect(verifyUnsubscribeToken(reminders, { now: day(61), env })).not.toBeNull();
+    expect(verifyUnsubscribeToken(reminders, { now: day(364), env })).not.toBeNull();
+    expect(verifyUnsubscribeToken(reminders, { now: day(366), env })).toBeNull();
+    // Les autres portées gardent leurs 60 jours.
+    const alerts = createUnsubscribeToken({ userId, now, env });
+    const perAlert = createUnsubscribeToken({
+      userId,
+      scope: { kind: "alert", alertId },
+      now,
+      env,
+    });
+    for (const token of [alerts, perAlert]) {
+      expect(verifyUnsubscribeToken(token, { now: day(59), env })).not.toBeNull();
+      expect(verifyUnsubscribeToken(token, { now: day(61), env })).toBeNull();
+    }
+    expect(REMINDERS_UNSUBSCRIBE_TOKEN_TTL_DAYS).toBe(365);
+    expect(UNSUBSCRIBE_TOKEN_TTL_DAYS).toBe(60);
+  });
+
+  it("reconnaît la portée d'un jeton expiré (signature valide) sans lui donner de droit", () => {
+    const reminders = createUnsubscribeToken({ userId, scope: { kind: "reminders" }, now, env });
+    const alerts = createUnsubscribeToken({ userId, now, env });
+    const much = new Date(now.getTime() + 400 * 86_400_000);
+    expect(verifyUnsubscribeToken(reminders, { now: much, env })).toBeNull();
+    expect(unsubscribeTokenScopeKind(reminders, { env })).toBe("reminders");
+    expect(unsubscribeTokenScopeKind(alerts, { env })).toBe("alerts");
+    // Un jeton falsifié ou signé avec un autre secret n'a pas de portée.
+    expect(unsubscribeTokenScopeKind(`${reminders}x`, { env })).toBeNull();
+    expect(
+      unsubscribeTokenScopeKind(reminders, { env: { SUPABASE_SERVICE_ROLE_KEY: "autre" } }),
+    ).toBeNull();
+    expect(unsubscribeTokenScopeKind(null, { env })).toBeNull();
+    expect(unsubscribeTokenScopeKind("n'importe quoi", { env })).toBeNull();
   });
 
   it("refuse un jeton modifié ou signé avec un autre secret", () => {
