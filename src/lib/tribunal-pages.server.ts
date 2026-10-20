@@ -25,12 +25,11 @@ export type TribunalSaleRow = {
   surface_m2: number | string | null;
   status: string | null;
   /**
-   * Adresse source de l'annonce et adresses sources réunies : publiques, elles servent à reconnaître
-   * la même vente publiée deux fois. Absentes tant que la migration 20261029180000 n'est pas
-   * appliquée : la liste fonctionne alors sans dédoublonnage.
+   * Clés opaques des adresses sources (SHA-256 de l'adresse normalisée) : elles servent à reconnaître
+   * la même vente publiée deux fois, sans exposer d'adresse. Absentes tant que la migration
+   * 20261029180000 n'est pas appliquée : la liste fonctionne alors sans dédoublonnage.
    */
-  source_url?: string | null;
-  source_urls?: unknown;
+  source_keys?: unknown;
 };
 
 type TribunalRpcClient = {
@@ -77,8 +76,7 @@ function dedupeTribunalSaleRows(rows: readonly TribunalSaleRow[]): TribunalSaleR
         tribunal_name: null,
         tribunal_city: null,
         starting_price_eur: null,
-        source_url: row.source_url,
-        source_urls: row.source_urls,
+        source_keys: row.source_keys,
         total_count: null,
       }),
     ),
