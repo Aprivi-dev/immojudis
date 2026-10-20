@@ -75,10 +75,11 @@ export const SALE_RESULT_DETAILS: Record<SaleResultKind, { sale: string; favorit
 };
 
 /**
- * Les lignes de la mention de surenchère, d'après la formulation prudente validée de
- * `src/components/PastFollowedSales.tsx` : date INDICATIVE (dix jours après l'audience connue
- * d'Immojudis, sans report éventuel), jamais « fenêtre échue », « il reste N jours » ni « dernier
- * jour », et renvoi à un avocat de son choix. Aucun montant. `null` quand la vente n'est pas
+ * Les lignes de la mention de surenchère, d'après la formulation prudente de
+ * `src/components/PastFollowedSales.tsx` (texte de la relecture juridique du 20/10/2026, à faire
+ * valider par un avocat) : date INDICATIVE (dix jours après l'audience connue d'Immojudis, sans
+ * report éventuel), jamais « fenêtre échue », « il reste N jours » ni « dernier jour », et renvoi à
+ * un avocat. Aucun montant en euros (la garantie est dite « un dixième du prix principal »). `null` quand la vente n'est pas
  * judiciaire : rien n'est dit.
  */
 export function surenchereLines(info: SurenchereWindow): string[] | null {
@@ -92,13 +93,13 @@ export function surenchereLines(info: SurenchereWindow): string[] | null {
     ...(info.adjudicationConfirmed
       ? []
       : ["Le résultat n’est pas connu : la surenchère n’existe que si le bien a été adjugé."]),
-    `Surenchère, date indicative : le ${formatDate(info.deadline)}, ou le premier jour ouvrable suivant si ce jour tombe un samedi, un dimanche ou un jour férié. Elle est calculée à partir de la date d’audience connue d’Immojudis, qui peut avoir changé.`,
+    `Surenchère, date indicative : le ${formatDate(info.deadline)}. Si ce jour tombe un samedi, un dimanche ou un jour férié, le délai peut être prolongé jusqu’au premier jour ouvrable suivant ; ne comptez pas dessus sans l’avis d’un avocat. Elle est calculée à partir de la date d’audience connue d’Immojudis, qui peut avoir changé.`,
     ...(info.expired
       ? [
-          "Cette date indicative est passée : si vous êtes concerné, consultez sans attendre un avocat.",
+          "Cette date indicative est passée : le délai a pu expirer, ou être prolongé. Si vous êtes concerné, consultez sans attendre un avocat, seul à pouvoir le confirmer.",
         ]
       : []),
-    "La surenchère se forme par acte d’avocat : la date exacte et les conditions se confirment avec un avocat de votre choix.",
+    "La surenchère se forme par acte d’avocat déposé au greffe du juge de l’exécution, avec une garantie d’un dixième du prix principal (chèque de banque ou caution bancaire irrévocable, art. R. 322-51 du CPCE). Faites confirmer la date et les conditions par un avocat, de préférence inscrit au barreau du tribunal concerné ; le choix vous appartient (l’annuaire d’Immojudis signale les profils mis en avant contre rémunération).",
   ];
 }
 
