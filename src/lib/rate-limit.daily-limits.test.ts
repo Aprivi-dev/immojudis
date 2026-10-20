@@ -68,7 +68,10 @@ describe("plafonds journaliers des opérations coûteuses", () => {
     expect(failure).toBeInstanceOf(RateLimitError);
     // Mesure par compte : un seul événement, au moment où le plafond est atteint.
     expect(mocks.record).toHaveBeenCalledTimes(1);
-    expect(mocks.record).toHaveBeenCalledWith("user-1", { type: "quota_reached", quota: "daily" });
+    expect(mocks.record).toHaveBeenCalledWith("user-1", {
+      type: "quota_reached",
+      quota: "daily_account",
+    });
     const error = failure as RateLimitError;
     expect(error.publicMessage).toBe("Limite quotidienne atteinte, réessayez demain.");
     expect(error.retryAfterSeconds).toBeGreaterThanOrEqual(1);
@@ -103,6 +106,12 @@ describe("plafonds journaliers des opérations coûteuses", () => {
     }
     expect(admitted).toBe(perIp);
     expect(refused).toBeInstanceOf(RateLimitError);
+    // Le plafond de l'adresse n'est pas celui du compte : il se mesure à part.
+    expect(mocks.record).toHaveBeenCalledTimes(1);
+    expect(mocks.record).toHaveBeenCalledWith(expect.any(String), {
+      type: "quota_reached",
+      quota: "daily_shared",
+    });
     expect((refused as RateLimitError).publicMessage).toBe(DAILY_LIMIT_MESSAGE);
     // Une autre adresse n'est pas gênée.
     await expect(
@@ -131,6 +140,10 @@ describe("plafonds journaliers des opérations coûteuses", () => {
         operation: "landReport",
       }),
     ).rejects.toMatchObject({ name: "RateLimitError", publicMessage: DAILY_LIMIT_MESSAGE });
+    expect(mocks.record).toHaveBeenLastCalledWith("brand-new-user", {
+      type: "quota_reached",
+      quota: "daily_shared",
+    });
   });
 
   it("garde un compteur global par opération et le tient en base avec une empreinte fixe", async () => {

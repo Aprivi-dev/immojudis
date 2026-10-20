@@ -20,7 +20,14 @@ import { errorDetailForLog } from "@/lib/api-errors";
 
 export type AccountProductEvent =
   | { type: "sale_unlocked"; saleId: string }
-  | { type: "quota_reached"; quota: "unlocks" | "favorites" | "daily" }
+  | {
+      type: "quota_reached";
+      /**
+       * `daily_account` : plafond journalier du compte ; `daily_shared` : plafond de son adresse ou du
+       * site entier. `daily` n'existe que dans les lignes d'avant cette distinction.
+       */
+      quota: "unlocks" | "favorites" | "daily" | "daily_account" | "daily_shared";
+    }
   | { type: "bid_ceiling_calculated"; saleId: string }
   | { type: "calendar_exported"; saleId: string }
   | { type: "email_clicked"; email: "alert" | "reminder"; saleId: string };
