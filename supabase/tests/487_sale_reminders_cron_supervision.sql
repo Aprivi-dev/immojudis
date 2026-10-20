@@ -1,15 +1,16 @@
 -- 20261028130200 : la tâche quotidienne sale-reminders est supervisée par cron.stale, sans retirer
--- aucune des tâches déjà attendues.
+-- aucune des tâches déjà attendues. Le seuil des tâches quotidiennes est passé de 30 à 27 heures par
+-- 20261029170000 (W9, point 50) : ce test suit la dernière définition.
 begin;
 
 select plan(4);
 
 select ok(
   position(
-    '(''sale-reminders'', interval ''30 hours'')'
+    '(''sale-reminders'', interval ''27 hours'')'
     in pg_get_functiondef('app_private.evaluate_operational_health(timestamptz)'::regprocedure)
   ) > 0,
-  'sale-reminders est attendue toutes les 30 heures (un passage de rattrapage compris)'
+  'sale-reminders est attendue toutes les 27 heures (un passage de rattrapage compris)'
 );
 
 select ok(
@@ -18,7 +19,7 @@ select ok(
     in pg_get_functiondef('app_private.evaluate_operational_health(timestamptz)'::regprocedure)
   ) > 0
   and position(
-    '(''sale-change-monitor'', interval ''30 hours'')'
+    '(''sale-change-monitor'', interval ''27 hours'')'
     in pg_get_functiondef('app_private.evaluate_operational_health(timestamptz)'::regprocedure)
   ) > 0,
   'les tâches déjà attendues restent dans la liste'

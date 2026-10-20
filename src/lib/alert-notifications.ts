@@ -72,7 +72,41 @@ export type AlertNotificationDispatchResult = {
   emailFailedCount: number;
   emailSkippedCount: number;
   emailProviderConfigured: boolean;
+  /** Variables d'environnement manquantes quand l'envoi d'e-mails n'est pas configuré. */
+  emailMissingConfig: string[];
 };
+
+/** Part d'e-mails dus en échec à partir de laquelle le passage est déclaré en échec. */
+export const EMAIL_FAILURE_RATE_THRESHOLD = 0.2;
+
+/**
+ * Un passage dont les e-mails ne sont pas partis ne compte pas comme un succès : sinon la
+ * supervision (`cron.stale`) ne voit rien et les alertes e-mail restent en file sans bruit. Échoue
+ * quand au moins un e-mail est dû et que l'envoi n'est pas configuré (Resend, expéditeur, adresse du
+ * site), ou quand 20 % au moins des e-mails dus ont échoué. Les notifications dans l'application ont
+ * déjà été publiées : le rattrapage ne reprend que les e-mails encore en file.
+ */
+export function assertAlertNotificationDispatchComplete(
+  result: Pick<
+    AlertNotificationDispatchResult,
+    "emailCandidateCount" | "emailFailedCount" | "emailProviderConfigured" | "emailMissingConfig"
+  >,
+): void {
+  if (result.emailCandidateCount <= 0) return;
+  if (!result.emailProviderConfigured) {
+    const missing = result.emailMissingConfig.length
+      ? ` (variable(s) manquante(s) : ${result.emailMissingConfig.join(", ")})`
+      : "";
+    throw new Error(
+      `Alertes e-mail : ${result.emailCandidateCount} envoi(s) dû(s) mais l'envoi d'e-mails n'est pas configuré${missing}.`,
+    );
+  }
+  if (result.emailFailedCount / result.emailCandidateCount >= EMAIL_FAILURE_RATE_THRESHOLD) {
+    throw new Error(
+      `Alertes e-mail : ${result.emailFailedCount} envoi(s) en échec sur ${result.emailCandidateCount} dû(s) (seuil ${EMAIL_FAILURE_RATE_THRESHOLD * 100} %).`,
+    );
+  }
+}
 
 export type DispatchableAlertNotification = Pick<
   NotificationRow,
@@ -264,6 +298,7 @@ export async function dispatchDueAlertNotifications({
     emailFailedCount: emailDispatch.failedCount,
     emailSkippedCount: emailDispatch.skippedCount,
     emailProviderConfigured: emailDispatch.configured,
+    emailMissingConfig: emailDispatch.missing,
   };
 }
 

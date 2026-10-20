@@ -170,6 +170,35 @@ describe("dispatch des emails d'alerte", () => {
     expect(summary.skippedCount).toBe(1);
   });
 
+  it("sans configuration d'envoi, ne part rien et nomme les variables manquantes", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ id: "email_1" }));
+    const {
+      RESEND_API_KEY: _key,
+      ALERT_EMAIL_FROM: _from,
+      ...withoutResend
+    } = env as Record<string, string>;
+
+    const summary = await dispatchQueuedEmailAlertNotifications({
+      notifications: [notification(1), notification(2)],
+      env: withoutResend,
+      fetchImpl: fetchMock as unknown as typeof fetch,
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(summary).toMatchObject({ configured: false, candidateCount: 2, skippedCount: 2 });
+    expect(summary.missing).toEqual(expect.arrayContaining(["RESEND_API_KEY", "ALERT_EMAIL_FROM"]));
+  });
+
+  it("une fois configuré, ne signale aucune variable manquante", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ id: "email_1" }));
+    const summary = await dispatchQueuedEmailAlertNotifications({
+      notifications: [notification(1)],
+      env,
+      fetchImpl: fetchMock as unknown as typeof fetch,
+    });
+    expect(summary).toMatchObject({ configured: true, missing: [] });
+  });
+
   it("ne notifie pas pour une alerte supprimée ou en pause", async () => {
     db.activeAlerts = [];
     const fetchMock = vi.fn(async () => Response.json({ id: "email_1" }));
