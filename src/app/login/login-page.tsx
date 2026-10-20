@@ -32,6 +32,7 @@ import {
   type LoginReason,
 } from "@/lib/navigation";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
+import { resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
 import { LAUNCH_OFFER_VISITOR_TEXT } from "@/lib/launch-offer";
 import { postAuthDestination } from "@/lib/onboarding";
 import { PLAN_LIMITS } from "@/lib/plans";
@@ -102,7 +103,7 @@ function reasonCopy(reason: LoginReason, launchOffer: boolean): { signup: string
           }
         : {
             signup:
-              "Créez votre compte gratuit : vous pourrez ensuite passer à l'offre Analyse quand vous le souhaitez.",
+              "Créez votre compte gratuit. L’offre Analyse n’est pas encore ouverte à la souscription : vous pourrez demander à être prévenu de son ouverture.",
             login: "Connectez-vous pour découvrir l'offre Analyse.",
           };
     case "ouverture":
@@ -374,10 +375,22 @@ export function LoginPage() {
               Préparez votre achat aux enchères.
             </p>
             <p className="mt-5 max-w-md text-sm leading-relaxed text-muted-foreground">
-              Découverte ouvre gratuitement le catalogue et, chaque mois, {MONTHLY_SALE_UNLOCKS}{" "}
-              ventes en détail ({UNLOCK_HIGHLIGHTS_INLINE_TEXT}). Analyse ouvre toutes les ventes,
-              avec les comparables, les alertes quotidiennes et les exports, sur abonnement
-              résiliable. Les professionnels déposent et suivent leurs annonces dans leur espace.
+              {launchOffer ? (
+                <>
+                  Découverte ouvre gratuitement le catalogue. Pendant l’offre de lancement, le
+                  compte gratuit bénéficie des avantages de l’offre Analyse : comparables, alertes
+                  quotidiennes et exports (contenu selon la vente). Tarif prévu de l’offre Analyse :{" "}
+                  {resolveAnalysisOfferLabel()}, pas encore souscriptible.
+                </>
+              ) : (
+                <>
+                  Découverte ouvre gratuitement le catalogue et, chaque mois, {MONTHLY_SALE_UNLOCKS}{" "}
+                  ventes en détail ({UNLOCK_HIGHLIGHTS_INLINE_TEXT}). Analyse ouvre toutes les
+                  ventes, avec les comparables, les alertes quotidiennes et les exports (tarif prévu
+                  : {resolveAnalysisOfferLabel()}, pas encore souscriptible).
+                </>
+              )}{" "}
+              Les professionnels déposent et suivent leurs annonces dans leur espace.
             </p>
             {launchOffer ? (
               <p

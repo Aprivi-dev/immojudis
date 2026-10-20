@@ -151,7 +151,7 @@ describe("onboarding /bienvenue", () => {
     fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
     const text = document.body.textContent ?? "";
     expect(text).toContain(
-      "Pendant l’offre de lancement, votre compte gratuit ouvre toutes les ventes avec les outils de l’offre Analyse.",
+      "Pendant l’offre de lancement, votre compte gratuit ouvre les outils de l’offre Analyse sur toutes les ventes (contenu selon la vente).",
     );
     expect(text).not.toContain("Chaque mois, vous pouvez débloquer");
   });

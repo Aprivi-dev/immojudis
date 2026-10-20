@@ -12,15 +12,15 @@ import { FREE_ACCESS_LINE, freeAccessLine } from "@/lib/sale-unlocks";
 import { PLAN_LIMITS } from "@/lib/plans";
 
 describe("textes de l'offre de lancement", () => {
-  it("dit au compte connecté que ses avantages sont retirables sans préavis", () => {
+  it("dit au compte connecté que l’email confirmé est requis et que les avantages sont retirables sans préavis", () => {
     expect(LAUNCH_OFFER_ACCOUNT_TEXT).toBe(
-      "Offre de lancement : votre compte gratuit bénéficie des avantages de l’offre Analyse. Ces avantages pourront vous être retirés, sans préavis, dès le lancement officiel du site.",
+      "Offre de lancement : votre compte gratuit, une fois votre adresse email confirmée, bénéficie des avantages de l’offre Analyse. Ces avantages pourront vous être retirés, sans préavis, à tout moment, notamment au lancement officiel du site.",
     );
   });
 
-  it("dit au visiteur de créer un compte gratuit, avec la même réserve", () => {
+  it("dit au visiteur de créer un compte gratuit et de confirmer son email, avec la même réserve", () => {
     expect(LAUNCH_OFFER_VISITOR_TEXT).toBe(
-      "Offre de lancement : créez un compte gratuit et accédez aux avantages de l’offre Analyse (avantages retirables sans préavis au lancement officiel).",
+      "Offre de lancement : créez un compte gratuit, confirmez votre adresse email et accédez aux avantages de l’offre Analyse (avantages retirables sans préavis, à tout moment, notamment au lancement officiel).",
     );
   });
 
