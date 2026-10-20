@@ -7,9 +7,10 @@ import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
  * sur nos données :
  * - `count` : le total que /sales affiche pour une recherche sans filtre (même fonction, même
  *   cache de 5 minutes que la première page du catalogue) ;
- * - `verifiedAt` : la date de la dernière collecte réussie d'une source (la plus récente
- *   `last_publication_complete_at`, lue par `get_public_catalogue_verified_at` : une ligne agrégée,
- *   sans relire les ventes). Ce n'est PAS la date de modification d'une fiche : la colonne
+ * - `verifiedAt` : la date de la collecte complète la moins récente parmi les sources actives qui
+ *   alimentent des ventes à venir (le plus ancien `last_publication_complete_at`, lu par
+ *   `get_public_catalogue_verified_at` : une ligne agrégée). Une source figée vieillit donc la date
+ *   au lieu d'être couverte par une source récente. Ce n'est PAS la date de modification d'une fiche : la colonne
  *   `updated_at` des ventes bouge à chaque passage de la collecte, même sans changement visible, et la
  *   ligne ne prétend pas qu'une annonce a changé ce jour-là. `null` quand la date manque.
  */
