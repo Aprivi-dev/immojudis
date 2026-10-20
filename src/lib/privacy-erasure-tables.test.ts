@@ -159,6 +159,7 @@ describe("ERASURE_TABLES face au schéma", () => {
 
   it("cite les journaux de mesure et de rappels, liés au compte", () => {
     expect(ERASURE_TABLES).toContainEqual(["account_product_events", "user_id"]);
+    expect(ERASURE_TABLES).toContainEqual(["sale_signal_feedback", "user_id"]);
     expect(ERASURE_TABLES).toContainEqual(["sale_reminder_dispatches", "user_id"]);
   });
 

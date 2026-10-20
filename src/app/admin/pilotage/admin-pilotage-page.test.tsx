@@ -12,6 +12,7 @@ import {
   type PilotageWindow,
   type SaleReminderAccuracy,
 } from "@/lib/admin-pilotage";
+import { unavailableSaleSignalFeedback } from "@/lib/admin-sale-signal-feedback";
 import {
   AdminPilotagePage,
   MASKED,
@@ -350,6 +351,144 @@ describe("page admin Pilotage", () => {
       expect(document.body.textContent).toContain(
         "moins de 2 % de fausses alertes sur au moins 100",
       );
+    });
+  });
+
+  describe("carte « Retours sur les signaux d’une vente »", () => {
+    const feedback = (overrides: Record<string, unknown> = {}) => ({
+      generatedAt: "2026-11-10T12:00:00Z",
+      windowDays: 90,
+      signals: {
+        market_gap_band: {
+          total: 12,
+          useful: 9,
+          notRelevant: 3,
+          accounts: 7,
+          reasons: { estimate_too_high: 2, estimate_too_low: 1 },
+        },
+        points_to_verify: {
+          total: 8,
+          useful: 4,
+          notRelevant: 4,
+          accounts: 5,
+          reasons: { point_wrong: 3, point_missing: 1 },
+        },
+      },
+      ...overrides,
+    });
+    /** Lignes (libellé, valeur) du bloc d'un signal. */
+    const lines = (label: string) => {
+      const block = screen.getByRole("heading", { name: label }).parentElement as HTMLElement;
+      return Object.fromEntries(
+        [...block.querySelectorAll("dt")].map((term) => [
+          term.textContent,
+          term.nextElementSibling?.textContent,
+        ]),
+      );
+    };
+
+    it("shows, per signal, the feedbacks, the share of « Utile » and the distinct accounts", async () => {
+      mocks.fetchPilotage.mockResolvedValue({ ...data, signalFeedback: feedback() });
+      renderPage();
+
+      await screen.findByRole("heading", { name: "Retours sur les signaux d’une vente" });
+      expect(lines("Écart au marché (bande)")).toMatchObject({
+        Retours: "12",
+        "Part d’« Utile »": "75 %",
+        "Comptes distincts": "7",
+      });
+      expect(lines("Points à vérifier")).toMatchObject({
+        Retours: "8",
+        "Part d’« Utile »": "50 %",
+        "Comptes distincts": "5",
+      });
+    });
+
+    it("lists the reasons, the wrong points included, masking what is under 5", async () => {
+      mocks.fetchPilotage.mockResolvedValue({ ...data, signalFeedback: feedback() });
+      renderPage();
+
+      await screen.findByRole("heading", { name: "Retours sur les signaux d’une vente" });
+      expect(lines("Points à vérifier")).toMatchObject({
+        "Un point est faux": MASKED,
+        "Un point manque": MASKED,
+      });
+      expect(lines("Écart au marché (bande)")).toMatchObject({
+        "Estimation trop haute": MASKED,
+        "Estimation trop basse": MASKED,
+      });
+    });
+
+    it("shows a reason count of 5 or more exactly", async () => {
+      mocks.fetchPilotage.mockResolvedValue({
+        ...data,
+        signalFeedback: feedback({
+          signals: {
+            ...feedback().signals,
+            points_to_verify: {
+              total: 20,
+              useful: 8,
+              notRelevant: 12,
+              accounts: 9,
+              reasons: { point_wrong: 7, point_missing: 5 },
+            },
+          },
+        }),
+      });
+      renderPage();
+
+      await screen.findByRole("heading", { name: "Retours sur les signaux d’une vente" });
+      expect(lines("Points à vérifier")).toMatchObject({
+        "Un point est faux": "7",
+        "Un point manque": "5",
+      });
+    });
+
+    it("masks the share when there are fewer than 5 feedbacks", async () => {
+      mocks.fetchPilotage.mockResolvedValue({
+        ...data,
+        signalFeedback: feedback({
+          signals: {
+            ...feedback().signals,
+            market_gap_band: {
+              total: 3,
+              useful: 3,
+              notRelevant: 0,
+              accounts: 2,
+              reasons: { estimate_too_high: 0, estimate_too_low: 0 },
+            },
+          },
+        }),
+      });
+      renderPage();
+
+      await screen.findByRole("heading", { name: "Retours sur les signaux d’une vente" });
+      expect(lines("Écart au marché (bande)")).toMatchObject({
+        Retours: MASKED,
+        "Part d’« Utile »": MASKED,
+        "Comptes distincts": MASKED,
+      });
+    });
+
+    it("says « non mesuré » when nothing could be measured, never a zero", async () => {
+      mocks.fetchPilotage.mockResolvedValue({
+        ...data,
+        signalFeedback: unavailableSaleSignalFeedback(),
+      });
+      renderPage();
+
+      await screen.findByRole("heading", { name: "Retours sur les signaux d’une vente" });
+      for (const label of ["Écart au marché (bande)", "Points à vérifier"]) {
+        expect(new Set(Object.values(lines(label)))).toEqual(new Set([NOT_MEASURED]));
+      }
+    });
+
+    it("says « non mesuré » when the response carries no feedback figure", async () => {
+      mocks.fetchPilotage.mockResolvedValue(data);
+      renderPage();
+
+      await screen.findByRole("heading", { name: "Retours sur les signaux d’une vente" });
+      expect(new Set(Object.values(lines("Points à vérifier")))).toEqual(new Set([NOT_MEASURED]));
     });
   });
 
