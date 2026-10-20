@@ -30,10 +30,12 @@ couper et ce que voient ensuite les utilisateurs.
   Analyse de `/offres`, `/compte` et l'accueil affichent la mention de l'offre et « Tarif prévu : 59 € TTC /
   mois. Pas encore souscriptible. ».
 - **Textes** (une seule source, `src/lib/launch-offer.ts`) :
-  - compte connecté : « Offre de lancement : votre compte gratuit bénéficie des avantages de l'offre
-    Analyse. Ces avantages pourront vous être retirés, sans préavis, dès le lancement officiel du site. » ;
-  - visiteur : « Offre de lancement : créez un compte gratuit et accédez aux avantages de l'offre Analyse
-    (avantages retirables sans préavis au lancement officiel). »
+  - compte connecté : « Offre de lancement : votre compte gratuit, une fois votre adresse email confirmée,
+    bénéficie des avantages de l'offre Analyse. Ces avantages pourront vous être retirés, sans préavis, à
+    tout moment, notamment au lancement officiel du site. » ;
+  - visiteur : « Offre de lancement : créez un compte gratuit, confirmez votre adresse email et accédez aux
+    avantages de l'offre Analyse (avantages retirables sans préavis, à tout moment, notamment au lancement
+    officiel). »
 
 ## Couper l'offre
 
