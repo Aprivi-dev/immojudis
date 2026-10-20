@@ -91,7 +91,7 @@ vi.mock("@/lib/alert-notifications", () => ({
   createAlertNotificationsForMatches: async () => ({ notificationCount: 0 }),
 }));
 
-import { runSmartAlertEvaluationBatch } from "./alert-matches";
+import { assertSmartAlertBatchComplete, runSmartAlertEvaluationBatch } from "./alert-matches";
 
 function alertRow(index: number, overrides: Row = {}): Row {
   return {
@@ -157,5 +157,47 @@ describe("smart alert batch", () => {
     expect(result.deferredUserCount).toBe(6);
     expect(result.evaluatedUserCount).toBe(0);
     expect(state.updates).toHaveLength(0);
+  });
+});
+
+describe("passage des alertes intelligentes : échecs partiels", () => {
+  const result = (analysed: number, failed: number, error: string | null = "boom") => ({
+    analysedUserCount: analysed,
+    failedUserCount: failed,
+    results: Array.from({ length: failed }, (_, index) => ({
+      userId: `user-${index}`,
+      ok: false,
+      alertCount: 0,
+      saleCount: 0,
+      matchCount: 0,
+      notificationCount: 0,
+      error,
+    })),
+  });
+
+  it("réussit quand aucun compte n'a échoué ou qu'aucun n'a été analysé", () => {
+    expect(() => assertSmartAlertBatchComplete(result(50, 0))).not.toThrow();
+    expect(() => assertSmartAlertBatchComplete(result(0, 0))).not.toThrow();
+  });
+
+  it("réussit sous 20 % de comptes en échec", () => {
+    expect(() => assertSmartAlertBatchComplete(result(10, 1))).not.toThrow();
+    expect(() => assertSmartAlertBatchComplete(result(100, 19))).not.toThrow();
+  });
+
+  it("échoue à 20 % de comptes en échec ou plus, avec la première erreur", () => {
+    expect(() => assertSmartAlertBatchComplete(result(10, 2))).toThrow(
+      "Alertes intelligentes : 2 compte(s) en échec sur 10 analysé(s) (seuil 20 %) ; première erreur : boom.",
+    );
+    expect(() => assertSmartAlertBatchComplete(result(100, 20, null))).toThrow(
+      "Alertes intelligentes : 20 compte(s) en échec sur 100 analysé(s) (seuil 20 %).",
+    );
+  });
+
+  it("accepte un vrai passage sans échec", async () => {
+    state.userAlerts = Array.from({ length: 5 }, (_, index) => alertRow(index));
+    const run = await runSmartAlertEvaluationBatch();
+    expect(run.failedUserCount).toBe(0);
+    expect(() => assertSmartAlertBatchComplete(run)).not.toThrow();
   });
 });
