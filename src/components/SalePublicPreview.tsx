@@ -23,7 +23,12 @@ import {
   type PublicMarketGapBand,
 } from "@/lib/market-gap-band";
 import { publicSaleDescription } from "@/lib/public-sale-description";
-import { loginPathWithRedirect, saleDetailPath, salesReturnHref } from "@/lib/navigation";
+import {
+  loginPathWithRedirect,
+  saleDetailPath,
+  salesReturnHref,
+  salesReturnLabel,
+} from "@/lib/navigation";
 import Link from "next/link";
 import { FREE_ACCESS_LINE, MONTHLY_SALE_UNLOCKS, unlockedItemsText } from "@/lib/sale-unlocks";
 import {
@@ -317,7 +322,7 @@ export function SalePublicPreview({
         </nav>
         <Link href={salesReturnHref(returnTo, preview.id ?? saleId)} className={styles.back}>
           <ArrowLeft className="h-4 w-4" aria-hidden />
-          Retour aux ventes
+          {salesReturnLabel(returnTo)}
         </Link>
 
         <div

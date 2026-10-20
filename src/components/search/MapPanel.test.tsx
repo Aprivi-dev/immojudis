@@ -170,6 +170,30 @@ describe("public map resilience", () => {
     expect(html).not.toContain("85");
     expect(html).not.toContain("Private source title");
   });
+  it("sends « Voir le détail » to the sale with the current search and map=true", async () => {
+    window.history.pushState({}, "", "/sales?city=Lyon&page=2#sale-card-x");
+    const sale = {
+      id: "popup-from",
+      city: "Lyon",
+      property_type: "apartment",
+      latitude: 45.76,
+      longitude: 4.83,
+      starting_price_eur: 80_000,
+      media: [],
+    } as unknown as AuctionSale;
+    await showMap({ sales: [sale], selectedSaleId: sale.id });
+    act(() => mocks.handlers.get("load")?.());
+    const html = mocks.setHtml.mock.calls.at(-1)?.[0] as string;
+    const hrefs = [...html.matchAll(/href="([^"]+)"/g)].map((match) => match[1]);
+    expect(hrefs).toHaveLength(2);
+    for (const href of hrefs) {
+      const url = new URL(href.replaceAll("&amp;", "&"), "http://localhost");
+      expect(url.pathname).toBe("/sales/popup-from");
+      expect(url.searchParams.get("from")).toBe("/sales?city=Lyon&page=2&map=true");
+    }
+    window.history.pushState({}, "", "/");
+  });
+
   it("shows a starting price of 0 as not communicated in the popup", async () => {
     const sale = {
       id: "zero-price",
