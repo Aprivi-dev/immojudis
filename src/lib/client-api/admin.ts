@@ -24,7 +24,7 @@ import type {
   OfferOpeningSendResult,
   OfferOpeningTestResult,
 } from "@/lib/admin-offer-opening-notifier";
-import type { AdminPilotage } from "@/lib/admin-pilotage";
+import type { AdminPilotageResponse } from "@/lib/admin-pilotage";
 import type {
   AdminSubscriptionGrantInput,
   AdminSubscriptionGrantResponse,
@@ -209,14 +209,14 @@ export async function grantAdminSubscription(args: {
   return readJson<AdminSubscriptionGrantResponse>(response);
 }
 
-export async function fetchAdminPilotage(): Promise<AdminPilotage> {
+export async function fetchAdminPilotage(): Promise<AdminPilotageResponse> {
   const response = await fetch("/api/admin/pilotage", {
     signal: AbortSignal.timeout(30_000),
     headers: await authHeaders(),
     cache: "no-store",
   });
 
-  return readJson<AdminPilotage>(response);
+  return readJson<AdminPilotageResponse>(response);
 }
 
 export async function fetchAdminLaunchOffer(): Promise<AdminLaunchOfferState> {

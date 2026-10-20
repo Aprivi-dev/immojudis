@@ -10,8 +10,14 @@ import {
   type PilotageEventCounts,
   type PilotagePeriod,
   type PilotageWindow,
+  type SaleReminderAccuracy,
 } from "@/lib/admin-pilotage";
-import { AdminPilotagePage, MASKED, NOT_MEASURED } from "./admin-pilotage-page";
+import {
+  AdminPilotagePage,
+  MASKED,
+  NOT_MEASURED,
+  REMINDER_VERDICT_LABELS,
+} from "./admin-pilotage-page";
 
 const mocks = vi.hoisted(() => ({ fetchPilotage: vi.fn() }));
 vi.mock("@/lib/client-api/admin", () => ({ fetchAdminPilotage: mocks.fetchPilotage }));
@@ -255,6 +261,96 @@ describe("page admin Pilotage", () => {
     await screen.findByRole("rowheader", { name: "Alertes créées" });
     expect(screen.queryAllByRole("link")).toHaveLength(0);
     expect(document.body.textContent).not.toMatch(/@/);
+  });
+
+  describe("carte « Fausses alertes des rappels »", () => {
+    const accuracy = (overrides: Partial<SaleReminderAccuracy> = {}): SaleReminderAccuracy => ({
+      windowDays: 30,
+      since: "2026-10-04T06:00:00Z",
+      generatedAt: "2026-11-03T06:00:00Z",
+      measuredReminders: 240,
+      contradictedReminders: 3,
+      contradictionRate: 0.0125,
+      minimumSample: 100,
+      maxRate: 0.02,
+      verdict: "met",
+      ...overrides,
+    });
+    const term = (label: string) => screen.getByText(label).nextElementSibling?.textContent;
+
+    it("shows the rate, the measured reminders, the verdict and the written criterion", async () => {
+      mocks.fetchPilotage.mockResolvedValue({ ...data, saleReminders: accuracy() });
+      renderPage();
+
+      await screen.findByRole("heading", { name: "Fausses alertes des rappels" });
+      expect(term("Taux de fausses alertes")).toBe("1,3 %");
+      expect(term("Rappels mesurés")).toBe("240");
+      expect(term("Verdict")).toBe(REMINDER_VERDICT_LABELS.met);
+      expect(document.body.textContent).toContain(
+        "Critère de passage à « on » : moins de 2 % de fausses alertes sur au moins 100 rappels mesurés.",
+      );
+    });
+
+    it.each([
+      ["not_met", 0.05],
+      ["insufficient_sample", 0.01],
+      ["unavailable", null],
+    ] as const)("shows the %s verdict", async (verdict, rate) => {
+      mocks.fetchPilotage.mockResolvedValue({
+        ...data,
+        saleReminders: accuracy({ verdict, contradictionRate: rate }),
+      });
+      renderPage();
+
+      await screen.findByRole("heading", { name: "Fausses alertes des rappels" });
+      expect(term("Verdict")).toBe(REMINDER_VERDICT_LABELS[verdict]);
+    });
+
+    it("says « non mesuré » when the rate is null, never a zero", async () => {
+      mocks.fetchPilotage.mockResolvedValue({
+        ...data,
+        saleReminders: accuracy({
+          measuredReminders: null,
+          contradictedReminders: null,
+          contradictionRate: null,
+          verdict: "unavailable",
+        }),
+      });
+      renderPage();
+
+      await screen.findByRole("heading", { name: "Fausses alertes des rappels" });
+      expect(term("Taux de fausses alertes")).toBe(NOT_MEASURED);
+      expect(term("Rappels mesurés")).toBe(NOT_MEASURED);
+    });
+
+    it("masks a rate computed on fewer than 5 reminders", async () => {
+      mocks.fetchPilotage.mockResolvedValue({
+        ...data,
+        saleReminders: accuracy({
+          measuredReminders: 3,
+          contradictedReminders: 1,
+          contradictionRate: 1 / 3,
+          verdict: "insufficient_sample",
+        }),
+      });
+      renderPage();
+
+      await screen.findByRole("heading", { name: "Fausses alertes des rappels" });
+      expect(term("Taux de fausses alertes")).toBe(MASKED);
+      expect(term("Rappels mesurés")).toBe(MASKED);
+    });
+
+    it("shows the card as not measured when the response carries no reminder figure", async () => {
+      mocks.fetchPilotage.mockResolvedValue(data);
+      renderPage();
+
+      await screen.findByRole("heading", { name: "Fausses alertes des rappels" });
+      expect(term("Taux de fausses alertes")).toBe(NOT_MEASURED);
+      expect(term("Verdict")).toBe(REMINDER_VERDICT_LABELS.unavailable);
+      expect(document.body.textContent).toContain(
+        "moins de 2 % de fausses alertes sur au moins 100",
+      );
+    });
   });
 
   it("reports a loading failure and lets the administrator retry", async () => {
