@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import time
 from collections import deque
 from dataclasses import dataclass
 from typing import Any
@@ -58,6 +59,9 @@ LICITOR_ZONE_URLS = (
 )
 AQUITAINE_URL = LICITOR_ZONE_URLS[4]
 LOGGER = logging.getLogger(__name__)
+# Budget de la collecte (secondes), posé par le lanceur planifié sous son propre plafond : la source s'arrête
+# d'elle-même, avec le temps de publier, au lieu d'être tuée (« Execution budget exceeded »).
+SOURCE_BUDGET_ENV = "LICITOR_SOURCE_BUDGET_SECONDS"
 # La ligne qui suit la commune est le bloc de l'avocat ou du tribunal quand la page n'a pas de bloc « rue » :
 # ce n'est pas l'adresse du bien (cabinet, commissaires de justice, tribunal, prix).
 _NOT_A_PROPERTY_ADDRESS = (
@@ -171,6 +175,43 @@ class RobotsRules:
         return len(matched_allow) >= len(matched_disallow)
 
 
+def _source_budget_deadline() -> float | None:
+    raw = os.getenv(SOURCE_BUDGET_ENV)
+    if not raw:
+        return None
+    try:
+        seconds = float(raw)
+    except ValueError:
+        return None
+    return time.monotonic() + seconds if seconds > 0 else None
+
+
+def _source_budget_expired(deadline: float | None) -> bool:
+    return deadline is not None and time.monotonic() >= deadline
+
+
+def _nearest_sales_first(detail_urls: list[str], listing_by_url: dict[str, dict[str, Any]]) -> list[str]:
+    """Fiches à lire dans l'ordre où elles comptent le plus : audiences les plus proches d'abord.
+
+    La lecture des fiches est séquentielle et espacée (délai de politesse, Crawl-delay) : un inventaire de
+    plusieurs centaines de fiches dépasse le budget d'un passage. Les fiches lues d'abord sont celles dont la
+    vente est la plus proche ; une date inconnue passe en dernier, l'ordre de la liste départage les égalités.
+    Les fiches lues deviennent « fraîches » et sont reprises du catalogue au passage suivant, qui avance donc
+    dans la suite (voir ``should_fetch_detail``).
+    """
+    from src.normalize import parse_french_datetime, source_sale_timezone
+
+    def sale_day(url: str) -> tuple[int, float]:
+        sale = listing_by_url[url]
+        try:
+            parsed = parse_french_datetime(sale.get("sale_date"), local_timezone=source_sale_timezone(sale))
+        except Exception:  # noqa: BLE001 - une date illisible ne doit pas empêcher la collecte
+            parsed = None
+        return (0, parsed.timestamp()) if parsed is not None else (1, 0.0)
+
+    return sorted(detail_urls, key=sale_day)
+
+
 def scrape_licitor_aquitaine(max_pages: int | None = None) -> list[dict[str, Any]]:
     return scrape_licitor_aquitaine_result(max_pages=max_pages).sales
 
@@ -178,6 +219,7 @@ def scrape_licitor_aquitaine(max_pages: int | None = None) -> list[dict[str, Any
 def scrape_licitor_aquitaine_result(max_pages: int | None = None, fetch_details: bool = True, known: dict[str, str] | None = None) -> ScrapeResult:
     """Collect Licitor listings as an optional benchmark source."""
     settings = load_settings()
+    deadline = _source_budget_deadline()
     client = LicitorClient(
         user_agent=str(settings["user_agent"]),
         delay_seconds=float(settings["request_delay_seconds"]),
@@ -201,12 +243,27 @@ def scrape_licitor_aquitaine_result(max_pages: int | None = None, fetch_details:
     seen: set[str] = set()
     from src.sources.common import should_fetch_detail
 
+    # Tranches reprenables : les fiches inchangées sont reprises tout de suite ; les autres sont lues par
+    # audience la plus proche, jusqu'au budget de la source. Les fiches restantes sont émises en l'état de la
+    # liste, marquées « à relire » : l'inventaire (la liste) reste complet, et le passage suivant poursuit la
+    # lecture là où celui-ci s'est arrêté (une fiche lue est fraîche, donc reprise du catalogue).
+    to_fetch: list[str] = []
     for detail_url in detail_urls:
         if detail_url in seen:
             continue
         seen.add(detail_url)
         summary = listing_by_url[detail_url]
         if not should_fetch_detail(summary, known):
+            raw_sales.append(summary)
+            continue
+        to_fetch.append(detail_url)
+    deferred = 0
+    for detail_url in _nearest_sales_first(to_fetch, listing_by_url):
+        summary = listing_by_url[detail_url]
+        if _source_budget_expired(deadline):
+            deferred += 1
+            summary["_detail_fetch_failed"] = True
+            summary["source_detail_status"] = "deferred"
             raw_sales.append(summary)
             continue
         try:
@@ -238,11 +295,19 @@ def scrape_licitor_aquitaine_result(max_pages: int | None = None, fetch_details:
         if department and department not in TARGET_DEPARTMENTS:
             continue
         raw_sales.append(sale)
+    budget_metrics: dict[str, Any] = {"details_to_fetch": len(to_fetch), "details_deferred": deferred}
+    if deferred:
+        LOGGER.warning(
+            "Licitor: source budget reached, %s of %s detail pages left for the next run", deferred, len(to_fetch)
+        )
+        # Arrêt borné : les fiches non lues restent à lire, mais la liste complète est émise (inventaire certifié).
+        budget_metrics.update({"budget_exhausted": True, "stop_reason": "source_budget_exhausted"})
     return ScrapeResult(
         validate_raw_sales("licitor", raw_sales, errors),
         errors,
         {**getattr(client, "coverage_metrics", lambda: {})(),
-             **(client.catalogue_evidence.metrics(raw_sales, errors) if hasattr(client, "catalogue_evidence") else {})},
+         **(client.catalogue_evidence.metrics(raw_sales, errors) if hasattr(client, "catalogue_evidence") else {}),
+         **budget_metrics},
     )
 
 
