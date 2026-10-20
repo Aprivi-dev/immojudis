@@ -186,6 +186,15 @@ describe("serverEnv pipeline, alerts and email", () => {
     expect(serverEnv({}).saleReminders.mode).toBeUndefined();
   });
 
+  it("reads WEEKLY_DIGEST_MODE and SALE_RESULTS_MODE through the shared configuration, trimmed and blank as unset", () => {
+    expect(serverEnv({ WEEKLY_DIGEST_MODE: " internal " }).weeklyDigest.mode).toBe("internal");
+    expect(serverEnv({ WEEKLY_DIGEST_MODE: "  " }).weeklyDigest.mode).toBeUndefined();
+    expect(serverEnv({}).weeklyDigest.mode).toBeUndefined();
+    expect(serverEnv({ SALE_RESULTS_MODE: " on " }).saleResults.mode).toBe("on");
+    expect(serverEnv({ SALE_RESULTS_MODE: "" }).saleResults.mode).toBeUndefined();
+    expect(serverEnv({}).saleResults.mode).toBeUndefined();
+  });
+
   it("treats whitespace-only secrets as unset", () => {
     const env = serverEnv({
       STRIPE_SECRET_KEY: "   ",
