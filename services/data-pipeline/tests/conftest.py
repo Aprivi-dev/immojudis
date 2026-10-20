@@ -2,6 +2,11 @@ from __future__ import annotations
 
 import pytest
 
+from tests.clock_offset import install_from_environment
+
+# Job hebdomadaire « horloge +60 jours » : sans la variable IMMOJUDIS_TEST_CLOCK_OFFSET_DAYS, rien ne change.
+install_from_environment()
+
 
 @pytest.fixture(autouse=True)
 def _drop_shared_postgres_connections():
