@@ -348,16 +348,21 @@ describe("runListingCompletenessBatch", () => {
   });
 
   it("signale une annonce dont le calcul échoue sans bloquer les autres", async () => {
+    // Un échec isolé (moins de 20 % des évaluations tentées) ne fait pas échouer la passe.
     setOnline([
-      ["good", BEFORE, 80],
       ["broken", BEFORE, undefined],
+      ...Array.from(
+        { length: 9 },
+        (_, index) => [`good-${index}`, BEFORE, 80] as [string, string, number],
+      ),
     ]);
 
     const result = await runListingCompletenessBatch({ now: NOW });
 
-    expect(result).toMatchObject({ evaluated: 1, failed: 1, remaining: 1 });
+    expect(result).toMatchObject({ evaluated: 9, failed: 1, remaining: 1 });
     expect(result.errors).toEqual(["boom broken"]);
-    expect(db.upserts.flat().map((row) => row.sale_id)).toEqual(["good"]);
+    expect(db.upserts.flat().map((row) => row.sale_id)).not.toContain("broken");
+    expect(db.upserts.flat()).toHaveLength(9);
   });
 
   it("saute une vente au score invalide sans faire échouer les autres de son paquet", async () => {
@@ -366,21 +371,52 @@ describe("runListingCompletenessBatch", () => {
       ["nan", BEFORE, Number.NaN],
       ["too-high", BEFORE, 101],
       ["good-2", BEFORE, 30.04],
+      ...Array.from(
+        { length: 10 },
+        (_, index) => [`more-${index}`, BEFORE, 60] as [string, string, number],
+      ),
     ]);
 
     const result = await runListingCompletenessBatch({ now: NOW });
 
-    expect(result).toMatchObject({ evaluated: 2, failed: 2, remaining: 2 });
+    // Deux échecs sur quatorze tentées (14 %) : sous le seuil de 20 %.
+    expect(result).toMatchObject({ evaluated: 12, failed: 2, remaining: 2 });
     expect(result.errors.join(" ")).toContain("Score de complétude invalide pour");
-    expect(
-      db.upserts
-        .flat()
-        .map((row) => [row.sale_id, row.score])
-        .sort(),
-    ).toEqual([
-      ["good-1", 80],
-      ["good-2", 30],
+    const scores = new Map(db.upserts.flat().map((row) => [row.sale_id, row.score]));
+    expect(scores.get("good-1")).toBe(80);
+    expect(scores.get("good-2")).toBe(30);
+    expect(scores.has("nan")).toBe(false);
+    expect(scores.has("too-high")).toBe(false);
+  });
+
+  it("échoue (tâche en erreur) quand 20 % des évaluations tentées ou plus ont échoué", async () => {
+    // Une sur cinq : exactement le seuil.
+    setOnline([
+      ["broken", BEFORE, undefined],
+      ...Array.from(
+        { length: 4 },
+        (_, index) => [`good-${index}`, BEFORE, 80] as [string, string, number],
+      ),
     ]);
+
+    await expect(runListingCompletenessBatch({ now: NOW })).rejects.toThrow(
+      "Évaluation de complétude partielle : 1 échec(s) sur 5 évaluation(s) tentée(s) (seuil 20 %) : boom broken",
+    );
+    // Les évaluations réussies sont enregistrées malgré l'échec de la tâche.
+    expect(db.upserts.flat()).toHaveLength(4);
+  });
+
+  it("échoue aussi quand la moitié des paquets lus échoue", async () => {
+    setOnline([
+      ["good-1", BEFORE, 80],
+      ["good-2", BEFORE, 80],
+      ["broken", BEFORE, undefined],
+      ["nan", BEFORE, Number.NaN],
+    ]);
+
+    await expect(runListingCompletenessBatch({ now: NOW })).rejects.toThrow(
+      /Évaluation de complétude partielle : 2 échec\(s\) sur 4/,
+    );
   });
 
   it("échoue (tâche en erreur) quand rien ne peut être enregistré", async () => {
