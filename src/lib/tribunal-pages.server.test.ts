@@ -17,6 +17,11 @@ import {
 } from "./tribunal-pages.server";
 import { TRIBUNAL_PAGE_LISTED_SALES } from "./tribunal-pages";
 
+/** Clés opaques d'adresses sources, comme la base les rend (SHA-256 hexadécimal). */
+const KEY_1 = "1".repeat(64);
+const KEY_2 = "2".repeat(64);
+const KEY_3 = "3".repeat(64);
+
 const ROW = {
   id: "00000000-0000-4000-8000-000000000001",
   city: "Bobigny",
@@ -81,8 +86,7 @@ describe("mapTribunalSaleRows", () => {
         address: "1 rue Privée",
         latitude: 48.9,
         longitude: 2.4,
-        source_url: "https://exemple.test/annonce/1",
-        source_urls: ["https://exemple.test/annonce/1"],
+        source_keys: ["a".repeat(64)],
       } as typeof ROW,
     ]);
     expect(Object.keys(sale).sort()).toEqual([
@@ -102,10 +106,11 @@ describe("mapTribunalSaleRows : doublons", () => {
   const A = { ...ROW, id: "245b5afe-0000-4000-8000-000000000001" };
   const B = { ...ROW, id: "003d1fe7-0000-4000-8000-000000000002" };
 
-  it("réunit deux lignes qui partagent une adresse source, et garde la première", () => {
+  it("réunit deux lignes qui partagent une clé d'adresse source, et garde la première", () => {
+    // La base normalise et condense les adresses : une même annonce a la même clé.
     const sales = mapTribunalSaleRows([
-      { ...A, source_url: "https://www.licitor.com/annonce/1/", source_urls: [] },
-      { ...B, source_url: "https://autre.test/x", source_urls: ["http://licitor.com/annonce/1"] },
+      { ...A, source_keys: [KEY_1] },
+      { ...B, source_keys: [KEY_2, KEY_1] },
     ]);
     // Même date : la plus petite identité est gardée.
     expect(sales.map((sale) => sale.id)).toEqual([B.id]);
@@ -118,8 +123,8 @@ describe("mapTribunalSaleRows : doublons", () => {
   it("ne réunit jamais sur la commune, le type, la surface, la date et le prix seuls", () => {
     // Deux lots distincts peuvent partir au même prix le même jour : mieux vaut deux lignes qu'une.
     const sales = mapTribunalSaleRows([
-      { ...A, source_url: "https://un.test/1" },
-      { ...B, source_url: "https://deux.test/2" },
+      { ...A, source_keys: [KEY_1] },
+      { ...B, source_keys: [KEY_2] },
     ]);
     expect(sales).toHaveLength(2);
   });
@@ -127,9 +132,9 @@ describe("mapTribunalSaleRows : doublons", () => {
   it("suit la chaîne d'adresses : A et B, puis B et C, font une seule vente", () => {
     const C = { ...ROW, id: "ffffffff-0000-4000-8000-000000000003" };
     const sales = mapTribunalSaleRows([
-      { ...A, source_url: "https://un.test/1" },
-      { ...B, source_url: "https://deux.test/2", source_urls: ["https://un.test/1"] },
-      { ...C, source_url: "https://trois.test/3", source_urls: ["https://deux.test/2"] },
+      { ...A, source_keys: [KEY_1] },
+      { ...B, source_keys: [KEY_2, KEY_1] },
+      { ...C, source_keys: [KEY_3, KEY_2] },
     ]);
     expect(sales).toHaveLength(1);
   });
@@ -180,8 +185,8 @@ describe("tryLoadTribunalSales", () => {
     const duplicate = { ...ROW, id: "00000000-0000-4000-8000-000000000009" };
     mocks.rpc.mockResolvedValue({
       data: [
-        { ...ROW, source_url: "https://exemple.test/a" },
-        { ...duplicate, source_url: "https://exemple.test/a" },
+        { ...ROW, source_keys: [KEY_1] },
+        { ...duplicate, source_keys: [KEY_1] },
       ],
       error: null,
     });
