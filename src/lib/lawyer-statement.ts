@@ -15,7 +15,7 @@ export const lawyerStatementMonthSchema = z
   .string()
   .regex(/^\d{4}-(?:0[1-9]|1[0-2])$/, "Le mois du relevé doit être au format AAAA-MM.");
 
-export type LawyerStatementRow = {
+type LawyerStatementRow = {
   lawyerId: string;
   displayName: string;
   firmName: string | null;
@@ -98,7 +98,7 @@ export function lawyerStatementMonthLabel(month: string): string {
   }).format(new Date(Date.UTC(year, monthNumber - 1, 1)));
 }
 
-export const LAWYER_STATEMENT_CSV_HEADERS = [
+const LAWYER_STATEMENT_CSV_HEADERS = [
   "mois",
   "avocat",
   "cabinet",
