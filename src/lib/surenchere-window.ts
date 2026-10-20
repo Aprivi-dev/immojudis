@@ -8,8 +8,11 @@
  * La date est INDICATIVE : dix jours calendaires après le jour de l'audience connu d'Immojudis (jour
  * civil à Paris), qui peut avoir changé. Elle ne tient PAS compte du report éventuel au premier jour
  * ouvrable suivant (samedi, dimanche, jour férié) : ce calcul attend l'avis d'un avocat et n'est pas
- * implémenté. L'écran le dit en clair, ne présente jamais cette date comme une échéance ferme (ni
- * « fenêtre échue », ni nombre de jours restants, ni « dernier jour ») et renvoie à un avocat.
+ * implémenté. L'écran (`PastFollowedSales`) et l'email (`surenchereLines`) disent que le délai peut
+ * être prolongé et qu'il ne faut pas compter dessus sans l'avis d'un avocat ; une fois la date
+ * passée, ils disent que le délai a pu expirer ou être prolongé. Ils ne présentent jamais cette date
+ * comme une échéance ferme (ni « fenêtre échue », ni nombre de jours restants, ni « dernier jour »)
+ * et renvoient à un avocat, de préférence du barreau du tribunal, dont le choix reste libre.
  */
 
 /** Délai de la surenchère du dixième après l'adjudication en vente judiciaire (R. 322-50 du CPCE). */
