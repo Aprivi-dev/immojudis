@@ -33,7 +33,7 @@ export function LaunchOfferListBanner() {
       data-testid="launch-offer-list-banner"
       className="group mb-3 rounded-lg border border-gold/30 bg-gold/10 text-sm text-brand-navy"
     >
-      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-lg px-4 py-2 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold">
+      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-lg px-4 py-2 font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft">
         <span>
           {LAUNCH_OFFER_LABEL} : compte gratuit avec les avantages Analyse, retirables sans préavis
         </span>
