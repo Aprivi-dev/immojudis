@@ -419,6 +419,45 @@ describe("FavoriteSales : changements des ventes suivies", () => {
     expect(mocks.fetchSaleChangeEvents).toHaveBeenCalledTimes(1);
   });
 
+  it("place « Ventes passées » au-dessus de « Annonces retirées du catalogue »", async () => {
+    setup();
+    mocks.fetchFavoriteSales.mockResolvedValue({
+      ...favoritesResponse(),
+      unavailableSaleIds: ["gone-1"],
+    });
+    mocks.fetchFollowedSaleSnapshots.mockResolvedValue({
+      snapshots: [
+        {
+          id: "snap-1",
+          saleId: "sale-9",
+          capturedAt: "2026-10-14T12:05:00.000Z",
+          expiresAt: "2027-04-14T12:05:00.000Z",
+          title: "Maison de ville",
+          city: "Bordeaux",
+          department: "33",
+          postalCode: "33000",
+          propertyType: "house",
+          tribunalName: null,
+          startingPriceEur: 100_000,
+          saleDate: "2026-10-14T12:00:00.000Z",
+          lawyerName: null,
+          sourceName: null,
+          result: { status: "unknown", priceEur: null, priceSource: null, priceWithheld: false },
+          personalStatus: null,
+          bidCeilingEur: null,
+          surenchere: { kind: "not_applicable" },
+        },
+      ],
+    });
+    renderPage();
+
+    const past = await screen.findByRole("heading", { name: "Ventes passées" });
+    const removed = await screen.findByRole("heading", {
+      name: "Annonces retirées du catalogue",
+    });
+    expect(past.compareDocumentPosition(removed) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("n'affiche rien quand il n'y a aucun favori", async () => {
     setup();
     mocks.fetchFavoriteSales.mockResolvedValue({ ...favoritesResponse(), favorites: [] });

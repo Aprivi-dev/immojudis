@@ -107,8 +107,9 @@ describe("toFollowedSaleSnapshot", () => {
       kind: "window",
       deadline: "2026-10-24",
       adjudicationConfirmed: true,
-      daysLeft: 8,
+      expired: false,
     });
+    expect(snapshot.surenchere).not.toHaveProperty("daysLeft");
   });
 
   it("distingue un prix réservé à l'offre Analyse d'un prix non connu", () => {

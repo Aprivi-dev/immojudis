@@ -5,9 +5,11 @@
  * surenchérir, par acte d'avocat, dans quels types de vente) est celle de l'article
  * `apres-adjudication-surenchere-paiement-titre-vente` : rien n'est réécrit.
  *
- * La date limite est INDICATIVE : dix jours calendaires après le jour de l'audience (jour civil à
- * Paris). Elle ne tient pas compte d'un prolongement éventuel (samedi, dimanche, jour férié) : la
- * confirmation relève de l'avocat, vers lequel l'écran renvoie toujours.
+ * La date est INDICATIVE : dix jours calendaires après le jour de l'audience connu d'Immojudis (jour
+ * civil à Paris), qui peut avoir changé. Elle ne tient PAS compte du report éventuel au premier jour
+ * ouvrable suivant (samedi, dimanche, jour férié) : ce calcul attend l'avis d'un avocat et n'est pas
+ * implémenté. L'écran le dit en clair, ne présente jamais cette date comme une échéance ferme (ni
+ * « fenêtre échue », ni nombre de jours restants, ni « dernier jour ») et renvoie à un avocat.
  */
 
 /** Délai de la surenchère du dixième après l'adjudication en vente judiciaire (R. 322-50 du CPCE). */
@@ -24,14 +26,12 @@ export type SurenchereWindow =
       kind: "window";
       /** Jour de l'audience à Paris (AAAA-MM-JJ). */
       hearingDay: string;
-      /** Dernier jour de la fenêtre, indicatif (AAAA-MM-JJ). */
+      /** Date indicative, sans report éventuel (AAAA-MM-JJ). */
       deadline: string;
       /** Vrai quand le résultat « adjugé » est connu ; faux : la fenêtre n'existe que si le bien a été adjugé. */
       adjudicationConfirmed: boolean;
-      /** Vrai quand le jour courant (Paris) est après la date limite. */
+      /** Vrai quand le jour courant (Paris) est après la date indicative. */
       expired: boolean;
-      /** Jours restants jusqu'à la date limite, 0 le dernier jour ; null une fois la fenêtre échue. */
-      daysLeft: number | null;
     };
 
 export function surenchereWindow({
@@ -51,16 +51,8 @@ export function surenchereWindow({
 
   const deadline = addDays(hearingDay, SURENCHERE_WINDOW_DAYS);
   const today = parisDay(now.toISOString()) as string;
-  const remaining = daysBetween(today, deadline);
-  const expired = remaining < 0;
-  return {
-    kind: "window",
-    hearingDay,
-    deadline,
-    adjudicationConfirmed,
-    expired,
-    daysLeft: expired ? null : remaining,
-  };
+  const expired = daysBetween(today, deadline) < 0;
+  return { kind: "window", hearingDay, deadline, adjudicationConfirmed, expired };
 }
 
 /** Jour civil à Paris (AAAA-MM-JJ) d'un instant ISO, ou null si la valeur n'est pas une date. */
