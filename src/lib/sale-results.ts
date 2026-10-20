@@ -3,6 +3,11 @@ import { createHash } from "node:crypto";
 import { errorDetailForLog } from "@/lib/api-errors";
 import { resolveEmailAlertDeliveryConfig, sendResendEmail } from "@/lib/email-alerts";
 import { saleResultsMode, type EmailFeatureMode } from "@/lib/email-feature-mode";
+import {
+  isSourceAbsenceChange,
+  SOURCE_ABSENCE_DETAIL,
+  SOURCE_ABSENCE_LABEL,
+} from "@/lib/sale-change-display";
 import type { SaleChangeEventSummary } from "@/lib/sale-change-monitor";
 import type { SaleCalendarRow } from "@/lib/sale-calendar";
 import {
@@ -235,6 +240,7 @@ export async function detectSaleResultsForUser({
         continue;
       }
       const row = await store.calendarEvent(event.saleId);
+      const sourceAbsence = classified.kind === "withdrawn" && isSourceAbsenceChange(event);
       add({
         kind: classified.kind,
         saleId: event.saleId,
@@ -243,12 +249,20 @@ export async function detectSaleResultsForUser({
           saleId: event.saleId,
           title: publicTitle(row),
           location: publicLocation(row),
-          headline: SALE_RESULT_HEADLINES[classified.kind],
-          detail: SALE_RESULT_DETAILS[classified.kind].sale,
+          // Un « retrait » déduit de l'absence de l'annonce à sa source n'est pas annoncé comme un
+          // retrait : l'annonce a disparu de la source, ce que seul l'avocat poursuivant confirme.
+          headline: sourceAbsence
+            ? `La vente que vous suivez : ${SOURCE_ABSENCE_LABEL.toLowerCase()}`
+            : SALE_RESULT_HEADLINES[classified.kind],
+          detail: sourceAbsence ? SOURCE_ABSENCE_DETAIL : SALE_RESULT_DETAILS[classified.kind].sale,
           surenchere: null,
           link: "sale",
         },
-        payload: { origin: "status_event", status: classified.status },
+        payload: {
+          origin: "status_event",
+          status: classified.status,
+          ...(sourceAbsence ? { reason: "source_absence" } : {}),
+        },
       });
     }
   }

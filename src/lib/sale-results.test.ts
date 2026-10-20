@@ -262,6 +262,35 @@ describe("detectSaleResultsForUser", () => {
     expect(results[1].payload).toEqual({ origin: "status_event", status: "withdrawn" });
   });
 
+  it("n'annonce pas comme retirée une vente retirée par absence de l'annonce à la source", async () => {
+    const { store } = makeStore({
+      events: {
+        [USER]: [
+          statusEvent("withdrawn", "upcoming", {
+            severity: "important",
+            changeSummary: {
+              field: "status",
+              previousValue: "upcoming",
+              currentValue: "withdrawn",
+              reason: "source_absence",
+            },
+          }),
+        ],
+      },
+      followed: { [USER]: [{ id: SALE, saleDate: null }] },
+    });
+    const [result] = await detectSaleResultsForUser({ store, userId: USER, now: NOW });
+    expect(result.kind).toBe("withdrawn");
+    expect(result.item.headline).toBe("La vente que vous suivez : annonce disparue de la source");
+    expect(result.item.detail).toBe("À vérifier auprès de l’avocat poursuivant.");
+    expect(`${result.item.headline} ${result.item.detail}`).not.toMatch(/retir|annul/i);
+    expect(result.payload).toEqual({
+      origin: "status_event",
+      status: "withdrawn",
+      reason: "source_absence",
+    });
+  });
+
   it("n'annonce pas deux fois la même vente et le même type, instantané ou changement de statut", async () => {
     const { store } = makeStore({
       snapshots: { [USER]: [snapshot()] },
