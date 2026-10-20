@@ -152,8 +152,11 @@ select is(
   'un rappel envoyé n''est jamais réservé de nouveau'
 );
 
+-- Depuis 20261029130100 (codes d'échec contraints), error ne reçoit qu'un code de la liste fermée ; le
+-- test écrit send_failed là où il écrivait du texte libre (551 couvre la liste et le refus du texte).
+
 update public.sale_reminder_dispatches
-set status = 'failed', error = 'Resend a refusé l''envoi'
+set status = 'failed', error = 'send_failed'
 where user_id = '48600000-0000-4000-8000-000000000001'
   and sale_id = '48600000-1000-4000-8000-000000000001'
   and reminder_kind = 'audience_j1';
@@ -180,7 +183,7 @@ select is(
 );
 
 update public.sale_reminder_dispatches
-set status = 'failed', error = 'encore'
+set status = 'failed', error = 'send_failed'
 where reminder_kind = 'audience_j1'
   and user_id = '48600000-0000-4000-8000-000000000001';
 select lives_ok(
@@ -190,7 +193,7 @@ select lives_ok(
   'le troisième essai est encore accordé'
 );
 update public.sale_reminder_dispatches
-set status = 'failed', error = 'toujours'
+set status = 'failed', error = 'send_failed'
 where reminder_kind = 'audience_j1'
   and user_id = '48600000-0000-4000-8000-000000000001';
 
