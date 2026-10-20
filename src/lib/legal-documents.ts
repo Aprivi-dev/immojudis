@@ -1,8 +1,10 @@
 /**
- * Date d'entrée en vigueur de la version CGV 2026-10-14.1 (section « Classement, référencement et
- * mise en avant »), soit sa date de mise en ligne. Elle n'entre pas dans l'empreinte du texte.
+ * Date d'entrée en vigueur de la version CGV 2026-10-20.1 (article « Offre de lancement », texte de la
+ * relecture juridique du 20/10/2026, à faire valider par un avocat), soit sa date de mise en ligne.
+ * Elle n'entre pas dans l'empreinte du texte. La section « Classement, référencement et mise en
+ * avant » est en vigueur depuis la version 2026-10-14.1 (14 octobre 2026).
  */
-const RANKING_TERMS_EFFECTIVE_DATE = "14 octobre 2026";
+const LAUNCH_OFFER_TERMS_EFFECTIVE_DATE = "20 octobre 2026";
 
 export const LEGAL_DOCUMENTS = {
   legal: {
@@ -12,15 +14,15 @@ export const LEGAL_DOCUMENTS = {
     path: "/legal",
   },
   terms: {
-    version: "2026-10-14.1",
-    sha256: "a3fb38525eabac9d62f0fffb2153a55a92081672d897dbb06fbebbb0c27e2a09",
-    effectiveDate: RANKING_TERMS_EFFECTIVE_DATE,
+    version: "2026-10-20.1",
+    sha256: "3923f2d8ab380f1a2f129048bc933158022e3c0180c9887592b97f3b2b3b5c5a",
+    effectiveDate: LAUNCH_OFFER_TERMS_EFFECTIVE_DATE,
     path: "/conditions-generales",
   },
   privacy: {
-    version: "2026-10-14.2",
-    sha256: "1a915c7252f38e8aaf99520d1e62682fc93cf294454c652540c6dbd8a72d0729",
-    effectiveDate: "14 octobre 2026",
+    version: "2026-10-20.1",
+    sha256: "a52bc695c83125aae1817dd0b9672f6b51f794048505e61b7b8e4245f3f44c14",
+    effectiveDate: "20 octobre 2026",
     path: "/privacy",
   },
 } as const;
