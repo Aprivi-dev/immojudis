@@ -314,6 +314,9 @@ reset role;
 -- La purge des ventes n'est pas bloquée -----------------------------------------------------------------------
 -- Deux retours du même compte, du même signal et du même jour sur deux ventes : avec un index unique qui
 -- contiendrait une colonne passée à null, la seconde suppression échouerait (20261029100000).
+-- Une vente ne se supprime qu'avec son pont Outcome Graph complet (require_outcome_bridge_before_auction_sale_delete) :
+-- le jeu de données le crée d'abord, comme dans 516.
+select count(*) from public.bridge_auction_sales_to_outcome_graph();
 select lives_ok(
   $$delete from public.auction_sales
     where id in ('c6210000-1000-4000-8000-000000000001', 'c6210000-1000-4000-8000-000000000002')$$,
