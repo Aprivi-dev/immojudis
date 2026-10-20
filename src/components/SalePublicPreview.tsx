@@ -4,6 +4,7 @@ import ArrowLeft from "lucide-react/dist/esm/icons/arrow-left.js";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import ChartNoAxesCombined from "lucide-react/dist/esm/icons/chart-no-axes-combined.js";
 import Eye from "lucide-react/dist/esm/icons/eye.js";
+import FolderHeart from "lucide-react/dist/esm/icons/folder-heart.js";
 import LockKeyholeOpen from "lucide-react/dist/esm/icons/lock-keyhole-open.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { Terme } from "@/components/ceiling/Terme";
@@ -379,6 +380,17 @@ export function SalePublicPreview({
                 ))}
               </dl>
             </section>
+            {/* « Mon dossier » (statut, enchère plafond) : ce que le compte gratuit ajoute, sans le montrer.
+                Hors du bloc « L'analyse » : le plafond noté est le sien, pas un calcul promis. */}
+            <p className={styles.dossierNote} data-testid="public-dossier-teaser">
+              <FolderHeart aria-hidden />
+              <span>
+                {/* Hors du tribunal, aucune enchère plafond n'est promise sur la page : le statut seul. */}
+                {procedure.venueType === "tribunal"
+                  ? "Compte gratuit : notez votre statut et votre enchère plafond sur chaque vente suivie."
+                  : "Compte gratuit : notez votre statut sur chaque vente suivie."}
+              </span>
+            </p>
 
             {state || notary ? (
               <>
