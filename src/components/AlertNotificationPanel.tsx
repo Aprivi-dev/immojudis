@@ -51,7 +51,11 @@ export default function AlertNotificationPanel({
       await queryClient.invalidateQueries({ queryKey: NOTIFICATION_QUERY_KEY });
       if (variables.action === "dismiss") {
         toast("Notification masquée", {
-          duration: 5000,
+          // Une action « Annuler » ne s'éteint pas d'elle-même au bout de 5 s (WCAG 2.2.1) : elle
+          // reste jusqu'à ce qu'on la ferme. Un seul message à la fois (même identifiant).
+          id: "alert-notification-dismissed",
+          duration: Infinity,
+          closeButton: true,
           action: {
             label: "Annuler",
             onClick: () => void restoreNotification(variables.notificationId),
