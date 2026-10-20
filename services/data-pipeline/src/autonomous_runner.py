@@ -34,6 +34,8 @@ ABSENCE_MIN_INVENTORY_SPACING = INVENTORY_CADENCE
 NEAR_SALE_HORIZON = timedelta(days=7)
 ACTIVE_LISTING_STATUSES = frozenset({'active', 'upcoming', 'postponed', 'unknown'})
 ENRICHMENT_TERMINAL_STATUSES = frozenset({'completed', 'failed'})
+# Décisions d'un item de collecte qui ne sont pas terminales : tant qu'il en reste, la publication n'est pas complète.
+PENDING_PUBLICATION_DECISIONS = ('discovered', 'normalized', 'admitted', 'publication_failed', 'normalization_failed')
 
 
 def _enrichment_completed(counts: dict[object, object]) -> int:
@@ -238,8 +240,7 @@ def finish_source(db_url: str, run_id: str) -> None:
             from public.auction_collection_items where run_id=%s and source_name=%s group by decision""",
             (run_id, source)).fetchall())
         publication_published = int(publication_counts.get('published', 0))
-        publication_pending = sum(int(publication_counts.get(decision, 0)) for decision in (
-            'discovered', 'normalized', 'admitted', 'publication_failed', 'normalization_failed'))
+        publication_pending = sum(int(publication_counts.get(decision, 0)) for decision in PENDING_PUBLICATION_DECISIONS)
         publication_failed = int(publication_counts.get('publication_failed', 0)) + int(publication_counts.get('normalization_failed', 0))
         if publication_failed:
             publication_status = 'failed'
@@ -289,6 +290,20 @@ def finish_source(db_url: str, run_id: str) -> None:
         pending = publication_pending
         complete = global_complete
         publication_complete = complete and not pending and status == 'succeeded'
+        # Pourquoi la publication n'est pas « complète » : sans cela, last_publication_complete_at qui ne bouge plus
+        # (Enchères Immobilières, 08/10) ne dit pas laquelle des trois conditions manque, ni quelles décisions
+        # restent en suspens.
+        coverage['publication_blockers'] = [
+            name for name, blocked in (
+                ('inventory_incomplete', not complete),
+                ('publication_pending', bool(pending)),
+                ('run_not_succeeded', status != 'succeeded'),
+            ) if blocked
+        ]
+        coverage['publication_pending_decisions'] = {
+            decision: int(publication_counts.get(decision, 0)) for decision in PENDING_PUBLICATION_DECISIONS
+            if publication_counts.get(decision)
+        }
         now = datetime.now(UTC)
         if backoff:
             # Retry-After and persistent access refusals retain their existing
@@ -311,6 +326,11 @@ def finish_source(db_url: str, run_id: str) -> None:
         # last_inventory_complete_at (qui autorise le retrait) non plus.
         inventory_complete = complete and status == 'succeeded'
         record_source_presence(db, run_id, source, availability, inventory_complete)
+        # Agrasc ne certifie jamais l'inventaire public entier (cartes d'archive vendues sans lien : coverage_complete
+        # reste faux). Son inventaire adressable certifié, lui, est complet : il prouve la fraîcheur de la source
+        # (last_inventory_complete_at) sans compter pour l'absence ni pour le retrait de ventes (ci-dessus et
+        # ci-dessous, inventory_complete seul).
+        inventory_fresh = inventory_complete or (scoped_complete and status == 'succeeded')
         db.execute("""update public.auction_source_state set
             availability=%s,coverage=%s,last_error=%s,consecutive_failures=%s,
             next_inventory_at=%s,suspended_until=%s,
@@ -319,7 +339,7 @@ def finish_source(db_url: str, run_id: str) -> None:
             updated_at=now() where source_name=%s and last_run_id=%s""",
             (availability,Jsonb(coverage),json.dumps(problems or errors,ensure_ascii=False)[:2000] if problems or failures else None,
              failures,deadline,deadline if denied or coverage.get('retry_not_before') else None,
-             inventory_complete,publication_complete,source,run_id))
+             inventory_fresh,publication_complete,source,run_id))
         db.execute("""update public.auction_runs set summary=coalesce(summary,'{}') || %s
             where id=%s""", (Jsonb({'scrape_coverage': {source: coverage}}), run_id))
     # Après le commit, hors de la transaction qui clôt le run : une panne ici ne doit rien défaire.
