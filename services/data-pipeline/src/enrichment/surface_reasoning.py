@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from src.models import AuctionSale
 from src.normalize import (
     MIN_DWELLING_SURFACE_M2,
-    carrez_is_implausible_against_habitable,
+    carrez_rejection_basis,
     clean_text,
     is_outside_carrez_context,
 )
@@ -493,12 +493,15 @@ def _drop_implausible_dwelling_candidates(
     if habitable:
         largest = max(habitable)
         for item in list(kept):
-            if item.kind == "explicit_carrez" and carrez_is_implausible_against_habitable(item.value_m2, largest):
+            basis = carrez_rejection_basis(item.value_m2, largest) if item.kind == "explicit_carrez" else None
+            if basis:
                 kept.remove(item)
                 result.contradictions.append(
                     {
                         "asset_id": item.asset_id,
-                        "kind": "carrez_below_20_percent_of_habitable",
+                        "kind": "carrez_below_20_percent_of_habitable"
+                        if basis == "carrez_below_20_percent_of_habitable_surface"
+                        else basis,
                         "carrez_value_m2": str(item.value_m2),
                         "habitable_value_m2": str(largest),
                     }
