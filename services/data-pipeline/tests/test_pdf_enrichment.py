@@ -1733,12 +1733,11 @@ def test_enrich_sale_from_pdf_text_keeps_thousands_surface_with_page_provenance(
 
 
 def test_extract_pdf_document_preserves_page_level_text(tmp_path, monkeypatch) -> None:
-    import fitz
-
+    import pymupdf
     monkeypatch.setenv("PDF_EXTRACTOR", "pymupdf")
     monkeypatch.setenv("PDF_OCR_ENABLED", "false")
     path = tmp_path / "two-pages.pdf"
-    with fitz.open() as document:
+    with pymupdf.open() as document:
         page_1 = document.new_page()
         page_1.insert_text((72, 72), "Surface habitable : 50 m2")
         page_2 = document.new_page()
@@ -1755,14 +1754,13 @@ def test_extract_pdf_document_preserves_page_level_text(tmp_path, monkeypatch) -
 
 
 def test_long_text_pdf_is_complete_with_bounded_500_page_ceiling(tmp_path, monkeypatch) -> None:
-    import fitz
-
+    import pymupdf
     monkeypatch.setattr("src.pdf_enrichment.PDF_DOCUMENT_TEXTS_DIR", tmp_path / "cache")
     monkeypatch.setenv("PDF_EXTRACTOR", "pymupdf")
     monkeypatch.setenv("PDF_OCR_ENABLED", "false")
     monkeypatch.setenv("PDF_MAX_TOTAL_PAGES", "500")
     path = tmp_path / "long-report.pdf"
-    with fitz.open() as document:
+    with pymupdf.open() as document:
         for page_number in range(1, 417):
             page = document.new_page()
             page.insert_text((72, 72), f"Report page {page_number}: property description and evidence.")
@@ -1779,17 +1777,16 @@ def test_long_text_pdf_is_complete_with_bounded_500_page_ceiling(tmp_path, monke
 
 
 def test_failed_ocr_page_is_retried_without_reocring_successful_cached_pages(tmp_path, monkeypatch) -> None:
-    import fitz
-
+    import pymupdf
     monkeypatch.setattr("src.pdf_enrichment.PDF_DOCUMENT_TEXTS_DIR", tmp_path / "cache")
     monkeypatch.setenv("PDF_EXTRACTOR", "pymupdf")
     monkeypatch.setenv("PDF_OCR_ENABLED", "true")
     path = tmp_path / "recoverable.pdf"
-    with fitz.open() as document:
+    with pymupdf.open() as document:
         first = document.new_page()
         first.insert_text((72, 72), "Texte numérique suffisamment long pour ne pas déclencher l'OCR. " * 3)
         second = document.new_page()
-        second.draw_rect(fitz.Rect(72, 72, 200, 200), color=(0, 0, 0), fill=(0, 0, 0))
+        second.draw_rect(pymupdf.Rect(72, 72, 200, 200), color=(0, 0, 0), fill=(0, 0, 0))
         document.save(path)
 
     calls: list[int] = []
@@ -1828,19 +1825,18 @@ def test_failed_ocr_page_is_retried_without_reocring_successful_cached_pages(tmp
 
 
 def test_image_rich_mixed_page_triggers_ocr_even_with_long_native_header(tmp_path, monkeypatch) -> None:
-    import fitz
-
+    import pymupdf
     monkeypatch.setattr("src.pdf_enrichment.PDF_DOCUMENT_TEXTS_DIR", tmp_path / "cache")
     monkeypatch.setenv("PDF_EXTRACTOR", "pymupdf")
     monkeypatch.setenv("PDF_OCR_ENABLED", "true")
     monkeypatch.setenv("PDF_MAX_EXTRACT_PAGES", "1")
     path = tmp_path / "mixed-header-scan.pdf"
 
-    with fitz.open() as scan_document:
+    with pymupdf.open() as scan_document:
         scan_page = scan_document.new_page()
         scan_page.insert_text((72, 72), "DPE CLASSE F GES C 394 kWhEP/m2/an 12 kg CO2/m2/an")
-        scan_pixmap = scan_page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5), alpha=False)
-        with fitz.open() as document:
+        scan_pixmap = scan_page.get_pixmap(matrix=pymupdf.Matrix(1.5, 1.5), alpha=False)
+        with pymupdf.open() as document:
             page = document.new_page()
             page.insert_text(
                 (72, 72),
@@ -1868,16 +1864,15 @@ def test_image_rich_mixed_page_triggers_ocr_even_with_long_native_header(tmp_pat
 
 
 def test_mixed_pdf_with_failed_page_remains_incomplete_in_document_profile(tmp_path, monkeypatch) -> None:
-    import fitz
-
+    import pymupdf
     monkeypatch.setenv("PDF_EXTRACTOR", "pymupdf")
     monkeypatch.setenv("PDF_OCR_ENABLED", "true")
     path = tmp_path / "mixed.pdf"
-    with fitz.open() as document:
+    with pymupdf.open() as document:
         page = document.new_page()
         page.insert_text((72, 72), "Surface habitable : 50 m2. " * 4)
         page = document.new_page()
-        page.draw_rect(fitz.Rect(72, 72, 200, 200), color=(0, 0, 0), fill=(0, 0, 0))
+        page.draw_rect(pymupdf.Rect(72, 72, 200, 200), color=(0, 0, 0), fill=(0, 0, 0))
         document.save(path)
 
     monkeypatch.setattr(
@@ -1912,16 +1907,15 @@ def test_mixed_pdf_with_failed_page_remains_incomplete_in_document_profile(tmp_p
 
 
 def test_objectively_blank_page_is_excluded_but_empty_scan_stays_retryable(tmp_path, monkeypatch) -> None:
-    import fitz
-
+    import pymupdf
     monkeypatch.setattr("src.pdf_enrichment.PDF_DOCUMENT_TEXTS_DIR", tmp_path / "cache")
     monkeypatch.setenv("PDF_EXTRACTOR", "pymupdf")
     monkeypatch.setenv("PDF_OCR_ENABLED", "true")
     path = tmp_path / "blank-and-scan.pdf"
-    with fitz.open() as document:
+    with pymupdf.open() as document:
         document.new_page()
         scan = document.new_page()
-        scan.draw_rect(fitz.Rect(72, 72, 200, 200), color=(0, 0, 0), fill=(0, 0, 0))
+        scan.draw_rect(pymupdf.Rect(72, 72, 200, 200), color=(0, 0, 0), fill=(0, 0, 0))
         document.save(path)
 
     calls: list[int] = []
@@ -1942,15 +1936,14 @@ def test_objectively_blank_page_is_excluded_but_empty_scan_stays_retryable(tmp_p
 
 
 def test_ocr_empty_near_blank_page_is_explicitly_excluded_and_preserved(tmp_path, monkeypatch) -> None:
-    import fitz
-
+    import pymupdf
     monkeypatch.setattr("src.pdf_enrichment.PDF_DOCUMENT_TEXTS_DIR", tmp_path / "cache")
     monkeypatch.setenv("PDF_EXTRACTOR", "pymupdf")
     monkeypatch.setenv("PDF_OCR_ENABLED", "true")
     path = tmp_path / "near-blank-stamp.pdf"
-    with fitz.open() as document:
+    with pymupdf.open() as document:
         page = document.new_page()
-        page.draw_rect(fitz.Rect(72, 72, 112, 112), color=(0, 0, 0), fill=(0, 0, 0))
+        page.draw_rect(pymupdf.Rect(72, 72, 112, 112), color=(0, 0, 0), fill=(0, 0, 0))
         document.save(path)
 
     monkeypatch.setattr(
@@ -1996,22 +1989,21 @@ def test_ocr_empty_near_blank_page_is_explicitly_excluded_and_preserved(tmp_path
 
 
 def test_ocr_empty_decorative_edge_is_excluded_without_discarding_rich_pages(tmp_path, monkeypatch) -> None:
-    import fitz
-
+    import pymupdf
     monkeypatch.setattr("src.pdf_enrichment.PDF_DOCUMENT_TEXTS_DIR", tmp_path / "cache")
     monkeypatch.setenv("PDF_EXTRACTOR", "pymupdf")
     monkeypatch.setenv("PDF_OCR_ENABLED", "true")
     path = tmp_path / "edge-and-content.pdf"
-    with fitz.open() as document:
+    with pymupdf.open() as document:
         edge = document.new_page()
         edge.draw_rect(
-            fitz.Rect(edge.rect.width * 0.89, -15, edge.rect.width + 30, edge.rect.height + 15),
+            pymupdf.Rect(edge.rect.width * 0.89, -15, edge.rect.width + 30, edge.rect.height + 15),
             color=None,
             fill=(0.89, 0.38, 0.05),
         )
         content = document.new_page()
         content.draw_rect(
-            fitz.Rect(72, 72, content.rect.width - 72, content.rect.height - 72),
+            pymupdf.Rect(72, 72, content.rect.width - 72, content.rect.height - 72),
             color=None,
             fill=(0.2, 0.3, 0.4),
         )
@@ -2034,14 +2026,14 @@ def test_ocr_empty_decorative_edge_is_excluded_without_discarding_rich_pages(tmp
 
 
 def test_decorative_edge_classifier_preserves_text_annotations_and_complex_paths() -> None:
-    import fitz
+    import pymupdf
 
     from src.pdf_enrichment import _is_decorative_edge_only_page
 
-    with fitz.open() as document:
+    with pymupdf.open() as document:
         page = document.new_page()
         page.draw_rect(
-            fitz.Rect(page.rect.width * 0.89, -15, page.rect.width + 30, page.rect.height + 15),
+            pymupdf.Rect(page.rect.width * 0.89, -15, page.rect.width + 30, page.rect.height + 15),
             color=None,
             fill=(0.89, 0.38, 0.05),
         )
@@ -2051,17 +2043,17 @@ def test_decorative_edge_classifier_preserves_text_annotations_and_complex_paths
 
         annotated = document.new_page()
         annotated.draw_rect(
-            fitz.Rect(annotated.rect.width * 0.89, -15, annotated.rect.width + 30, annotated.rect.height + 15),
+            pymupdf.Rect(annotated.rect.width * 0.89, -15, annotated.rect.width + 30, annotated.rect.height + 15),
             color=None,
             fill=(0.89, 0.38, 0.05),
         )
-        annotated.add_rect_annot(fitz.Rect(72, 72, 200, 200))
+        annotated.add_rect_annot(pymupdf.Rect(72, 72, 200, 200))
         assert _is_decorative_edge_only_page(annotated) is False
 
         complex_page = document.new_page()
         shape = complex_page.new_shape()
         for index in range(9):
-            shape.draw_rect(fitz.Rect(complex_page.rect.width * 0.89, index * 95, complex_page.rect.width, (index + 1) * 95))
+            shape.draw_rect(pymupdf.Rect(complex_page.rect.width * 0.89, index * 95, complex_page.rect.width, (index + 1) * 95))
         shape.finish(color=None, fill=(0.89, 0.38, 0.05))
         shape.commit()
         assert len(complex_page.get_drawings()) == 1
@@ -2069,15 +2061,14 @@ def test_decorative_edge_classifier_preserves_text_annotations_and_complex_paths
 
 
 def test_ocr_empty_rich_image_remains_incomplete_with_visual_evidence(tmp_path, monkeypatch) -> None:
-    import fitz
-
+    import pymupdf
     monkeypatch.setattr("src.pdf_enrichment.PDF_DOCUMENT_TEXTS_DIR", tmp_path / "cache")
     monkeypatch.setenv("PDF_EXTRACTOR", "pymupdf")
     monkeypatch.setenv("PDF_OCR_ENABLED", "true")
     path = tmp_path / "rich-image.pdf"
-    with fitz.open() as document:
+    with pymupdf.open() as document:
         page = document.new_page()
-        page.draw_rect(fitz.Rect(0, 0, page.rect.width, page.rect.height / 2), color=(0, 0, 0), fill=(0, 0, 0))
+        page.draw_rect(pymupdf.Rect(0, 0, page.rect.width, page.rect.height / 2), color=(0, 0, 0), fill=(0, 0, 0))
         document.save(path)
 
     monkeypatch.setattr(
@@ -2167,12 +2158,11 @@ def test_original_ocr_subprocess_failure_is_isolated_as_retryable_page_failure(m
 
 
 def test_extract_pdf_document_then_enriches_document_only_surface(tmp_path, monkeypatch) -> None:
-    import fitz
-
+    import pymupdf
     monkeypatch.setenv("PDF_EXTRACTOR", "pymupdf")
     monkeypatch.setenv("PDF_OCR_ENABLED", "false")
     path = tmp_path / "pv-document-only-surface.pdf"
-    with fitz.open() as document:
+    with pymupdf.open() as document:
         page_1 = document.new_page()
         page_1.insert_text((72, 72), "Proces-verbal descriptif sans surface sur cette premiere page.")
         page_2 = document.new_page()
@@ -3357,7 +3347,7 @@ def test_a_page_of_photographs_is_no_longer_settled_blank_without_proof(tmp_path
     leaves the document incomplete until the bounded retry budget settles it for review."""
     import time
 
-    import fitz
+    import pymupdf
 
     from src.pdf_enrichment import pdf_deadline_scope
 
@@ -3365,13 +3355,13 @@ def test_a_page_of_photographs_is_no_longer_settled_blank_without_proof(tmp_path
     monkeypatch.setenv("PDF_EXTRACTOR", "pymupdf")
     monkeypatch.setenv("PDF_OCR_ENABLED", "true")
     path = tmp_path / "pv-photos.pdf"
-    photo = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 400, 300), False)
+    photo = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 400, 300), False)
     photo.set_rect(photo.irect, (90, 140, 200))
-    with fitz.open() as document:
+    with pymupdf.open() as document:
         text_page = document.new_page()
         text_page.insert_text((72, 72), "Proces-verbal descriptif. Le bien comprend une entree, un sejour et deux chambres.")
         photo_page = document.new_page()
-        photo_page.insert_image(fitz.Rect(36, 36, 559, 806), pixmap=photo)
+        photo_page.insert_image(pymupdf.Rect(36, 36, 559, 806), pixmap=photo)
         document.save(path)
     monkeypatch.setattr(
         "src.pdf_enrichment.subprocess.run",
@@ -3417,7 +3407,7 @@ def test_a_page_with_native_text_keeps_it_when_ocr_finds_nothing_more(tmp_path, 
     text stays and the page is "extracted", not excluded as an image without text."""
     import time
 
-    import fitz
+    import pymupdf
 
     from src.pdf_enrichment import _page_requires_retry, pdf_deadline_scope
     from src.pdf_ocr import OCR_NO_TEXT_UNVERIFIED_METHOD
@@ -3426,11 +3416,11 @@ def test_a_page_with_native_text_keeps_it_when_ocr_finds_nothing_more(tmp_path, 
     monkeypatch.setenv("PDF_EXTRACTOR", "pymupdf")
     monkeypatch.setenv("PDF_OCR_ENABLED", "true")
     path = tmp_path / "legende-photo.pdf"
-    photo = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 400, 300), False)
+    photo = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 400, 300), False)
     photo.set_rect(photo.irect, (90, 140, 200))
-    with fitz.open() as document:
+    with pymupdf.open() as document:
         page = document.new_page()
-        page.insert_image(fitz.Rect(36, 120, 559, 806), pixmap=photo)
+        page.insert_image(pymupdf.Rect(36, 120, 559, 806), pixmap=photo)
         page.insert_text((72, 72), "Photographie 1 : facade")
         document.save(path)
     monkeypatch.setattr(
