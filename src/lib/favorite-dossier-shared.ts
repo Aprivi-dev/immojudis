@@ -33,11 +33,14 @@ export const favoriteDossierInputSchema = z
     saleId: z.string().uuid(),
     /** `null` efface le statut ; absent : le statut n'est pas modifié. */
     personalStatus: z.enum(FAVORITE_DOSSIER_STATUSES).nullable().optional(),
-    /** `null` efface le plafond ; absent : le plafond n'est pas modifié. En euros entiers. */
+    /**
+     * `null` efface le plafond ; absent : le plafond n'est pas modifié. En euros entiers, au moins
+     * 1 € : un plafond de 0 € n'est pas une enchère (on efface le plafond avec `null`).
+     */
     bidCeilingEur: z
       .number()
       .finite()
-      .min(0)
+      .min(1, { message: "L’enchère plafond doit être supérieure à 0 €." })
       .max(MAX_SIMULATOR_AMOUNT_EUR)
       .transform((value) => Math.round(value))
       .nullable()
@@ -81,6 +84,45 @@ export function toFavoriteDossier(row: FavoriteDossierRow): FavoriteDossier {
     bidCeilingEur: typeof row.bid_ceiling_eur === "number" ? row.bid_ceiling_eur : null,
     bidCeilingSavedAt: row.bid_ceiling_saved_at,
   };
+}
+
+const BID_CEILING_FORMAT = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 });
+
+/** Un montant à l'écran, séparateurs français (« 185 000 »), sans symbole : le « € » est à côté. */
+export function formatBidCeilingInput(amount: number): string {
+  return BID_CEILING_FORMAT.format(amount);
+}
+
+export type BidCeilingInputResult = { ok: true; value: number } | { ok: false; message: string };
+
+/**
+ * Lit le montant saisi dans le champ « Mon enchère plafond » : espaces (dont insécables) et « € »
+ * ignorés, virgule ou point décimal. Un point suivi de trois chiffres (« 185.000 ») est refusé plutôt
+ * que lu 185 € : mieux vaut une erreur qu'un plafond divisé par mille. Mêmes bornes que le schéma
+ * du serveur (au moins 1 €, au plus `MAX_SIMULATOR_AMOUNT_EUR`).
+ */
+export function parseBidCeilingInput(raw: string): BidCeilingInputResult {
+  const cleaned = raw.replace(/[\s\u00a0\u202f€]/g, "").replace(",", ".");
+  if (cleaned === "") {
+    return { ok: false, message: "Saisissez un montant en euros, par exemple 185 000." };
+  }
+  if (!/^\d+(?:\.\d{1,2})?$/.test(cleaned)) {
+    return {
+      ok: false,
+      message: "Saisissez un montant en euros, en chiffres seulement, par exemple 185 000.",
+    };
+  }
+  const value = Math.round(Number(cleaned));
+  if (value < 1) {
+    return { ok: false, message: "L’enchère plafond doit être supérieure à 0 €." };
+  }
+  if (value > MAX_SIMULATOR_AMOUNT_EUR) {
+    return {
+      ok: false,
+      message: `Le montant ne peut pas dépasser ${formatBidCeilingInput(MAX_SIMULATOR_AMOUNT_EUR)} €.`,
+    };
+  }
+  return { ok: true, value };
 }
 
 export function emptyFavoriteDossier(saleId: string): FavoriteDossier {

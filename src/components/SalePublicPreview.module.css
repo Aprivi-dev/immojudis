@@ -229,6 +229,24 @@
   user-select: none;
 }
 
+.dossierNote {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 12px;
+  color: var(--ink-soft);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.dossierNote svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 3px;
+  color: var(--gold-text);
+}
+
 .teaserTier {
   color: var(--gold-text);
   font-size: 12px;

@@ -477,6 +477,23 @@ describe("SalePublicPreview", () => {
     expect(teaser.textContent).not.toMatch(/[1-9]\d* ?\d* €/);
   });
 
+  it("annonce « Mon dossier » au visiteur d'une vente au tribunal, hors du bloc d'analyse", () => {
+    renderPreview({ sale_venue_type: "tribunal" });
+    const note = screen.getByTestId("public-dossier-teaser");
+    expect(note.textContent).toBe(
+      "Compte gratuit : notez votre statut et votre enchère plafond sur chaque vente suivie.",
+    );
+    const teaser = screen.getByRole("region", { name: "L’analyse de cette vente" });
+    expect(teaser.contains(note)).toBe(false);
+  });
+
+  it("ne cite pas l'enchère plafond sur une vente hors tribunal : le statut seul", () => {
+    renderPreview({ sale_venue_type: "notary" });
+    expect(screen.getByTestId("public-dossier-teaser").textContent).toBe(
+      "Compte gratuit : notez votre statut sur chaque vente suivie.",
+    );
+  });
+
   it("does not promise a bid ceiling for a notarial sale", () => {
     renderPreview({ sale_venue_type: "notary" });
     const teaser = screen.getByRole("region", { name: "L’analyse de cette vente" });

@@ -36,6 +36,12 @@ describe("offerComparisonRows", () => {
     expect(row("unlocks").analyse.text).toMatch(/^Illimités/);
   });
 
+  it("annonce le statut et l'enchère plafond enregistrés dans les avantages Découverte", () => {
+    expect(row("dossier").label).toBe("Statut et enchère plafond enregistrés");
+    expect(row("dossier").decouverte).toEqual({ included: true, text: "Inclus" });
+    expect(row("dossier").analyse).toEqual({ included: true, text: "Inclus" });
+  });
+
   it("n'écrit « Non inclus » pour aucune ligne qu'un déblocage ouvre", () => {
     const opened = rows.filter((candidate) =>
       ["documents", "document-reading", "passages", "ceiling", "scenarios", "statistics"].includes(
