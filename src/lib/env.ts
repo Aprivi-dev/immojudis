@@ -70,6 +70,8 @@ const SERVER_KEYS = [
   "ALERT_EMAIL_FROM",
   "RESEND_FROM_EMAIL",
   "SALE_REMINDERS_MODE",
+  "WEEKLY_DIGEST_MODE",
+  "SALE_RESULTS_MODE",
   "GITHUB_SCROLL_TOKEN",
   "IMMOJUDIS_GITHUB_ACTIONS_TOKEN",
   "GITHUB_ACTIONS_DISPATCH_TOKEN",
@@ -185,6 +187,14 @@ export function serverEnv(source?: EnvSource) {
     saleReminders: {
       /** Valeur brute de `SALE_REMINDERS_MODE` ; `saleRemindersMode()` la ramène à off, internal ou on. */
       mode: env.SALE_REMINDERS_MODE,
+    },
+    weeklyDigest: {
+      /** Valeur brute de `WEEKLY_DIGEST_MODE` ; `weeklyDigestMode()` la ramène à off, internal ou on. */
+      mode: env.WEEKLY_DIGEST_MODE,
+    },
+    saleResults: {
+      /** Valeur brute de `SALE_RESULTS_MODE` ; `saleResultsMode()` la ramène à off, internal ou on. */
+      mode: env.SALE_RESULTS_MODE,
     },
     pipeline: {
       githubToken: firstFilled(

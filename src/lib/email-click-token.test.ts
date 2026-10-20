@@ -68,6 +68,15 @@ describe("jeton de lien suivi d'un email", () => {
     }
   });
 
+  it("accepte les types du récapitulatif hebdomadaire et de l'alerte de résultat", () => {
+    for (const kind of ["weekly", "result"] as const) {
+      expect(readEmailClickToken(token({ kind }), { now, env })?.claims.kind).toBe(kind);
+    }
+    // Un type de plus se paie d'un changement de la contrainte SQL (migration 20261030120400) : la
+    // liste fermée ne s'ouvre pas par un jeton forgé.
+    expect(readEmailClickToken(token({ kind: "digest" as never }), { now, env })).toBeNull();
+  });
+
   it("n'accepte ni un type, ni une destination, ni une vente hors liste, même signés", () => {
     // Signés avec la bonne clé mais hors des valeurs fermées : refusés à la lecture.
     const good = token();

@@ -246,6 +246,55 @@ export async function revokeSaleReminderConsent({
 }
 
 /**
+ * Retire le consentement au récapitulatif hebdomadaire « Ma semaine » (désinscription par le lien
+ * signé de chaque email, portée « weekly-digest »). Les autres consentements ne sont pas touchés ; la
+ * date du retrait est posée par la base (déclencheur de la migration 20261030120000).
+ */
+export async function revokeWeeklyDigestConsent({
+  userId,
+  now = new Date(),
+}: {
+  userId: string;
+  now?: Date;
+}): Promise<{ userId: string; revokedAt: string }> {
+  const revokedAt = now.toISOString();
+  const { error } = await supabaseAdmin.from("user_notification_preferences").upsert(
+    {
+      user_id: userId,
+      weekly_digest_enabled: false,
+      weekly_digest_revoked_at: revokedAt,
+    },
+    { onConflict: "user_id" },
+  );
+  if (error) throw error;
+  return { userId, revokedAt };
+}
+
+/**
+ * Retire le consentement à l'alerte de résultat ou de remise en vente (désinscription par le lien
+ * signé de chaque email, portée « sale-results »). Les autres consentements ne sont pas touchés.
+ */
+export async function revokeSaleResultsConsent({
+  userId,
+  now = new Date(),
+}: {
+  userId: string;
+  now?: Date;
+}): Promise<{ userId: string; revokedAt: string }> {
+  const revokedAt = now.toISOString();
+  const { error } = await supabaseAdmin.from("user_notification_preferences").upsert(
+    {
+      user_id: userId,
+      sale_results_enabled: false,
+      sale_results_revoked_at: revokedAt,
+    },
+    { onConflict: "user_id" },
+  );
+  if (error) throw error;
+  return { userId, revokedAt };
+}
+
+/**
  * Retire la demande d'être prévenu de l'ouverture de l'offre Analyse (désinscription par le lien
  * signé de l'email d'ouverture, portée « offer-opening »). Même écriture que le bouton de /offres :
  * la demande est retirée avec ses réponses facultatives, la preuve du consentement reste.

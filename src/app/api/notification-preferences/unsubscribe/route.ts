@@ -5,12 +5,57 @@ import {
   revokeEmailAlertConsent,
   revokeOfferOpeningRequest,
   revokeSaleReminderConsent,
+  revokeSaleResultsConsent,
+  revokeWeeklyDigestConsent,
   unsubscribeEmailAlertsByNotificationId,
 } from "@/lib/email-alerts";
-import { unsubscribeTokenScopeKind, verifyUnsubscribeToken } from "@/lib/email-unsubscribe-token";
+import {
+  unsubscribeTokenScopeKind,
+  verifyUnsubscribeToken,
+  type UnsubscribeScope,
+} from "@/lib/email-unsubscribe-token";
 import { escapeHtml } from "@/lib/guards";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** La question et le bouton de la page de confirmation, selon ce que le lien désactive. */
+function confirmationCopy(kind: UnsubscribeScope["kind"]): { question: string; button: string } {
+  switch (kind) {
+    case "alert":
+      return {
+        question: "Voulez-vous désactiver cette alerte ?",
+        button: "Désactiver cette alerte",
+      };
+    case "reminders":
+      return {
+        question:
+          "Voulez-vous ne plus recevoir les rappels d'audience et les avertissements sur vos ventes suivies ?",
+        button: "Me désinscrire des rappels",
+      };
+    case "weekly-digest":
+      return {
+        question: "Voulez-vous ne plus recevoir le récapitulatif hebdomadaire « Ma semaine » ?",
+        button: "Me désinscrire du récapitulatif",
+      };
+    case "sale-results":
+      return {
+        question:
+          "Voulez-vous ne plus recevoir les alertes de résultat ou de remise en vente de vos ventes suivies ?",
+        button: "Me désinscrire des alertes de résultat",
+      };
+    case "offer-opening":
+      return {
+        question:
+          "Voulez-vous retirer votre demande d'être prévenu de l'ouverture de l'offre Analyse ?",
+        button: "Retirer ma demande",
+      };
+    default:
+      return {
+        question: "Voulez-vous ne plus recevoir d'alertes par email ?",
+        button: "Me désinscrire des emails",
+      };
+  }
+}
 
 /**
  * A GET only shows a confirmation page: mail scanners and link previews open
@@ -25,25 +70,11 @@ export async function GET(request: Request) {
   if (token) {
     const claims = verifyUnsubscribeToken(token);
     if (!claims) return expiredLinkResponse(token);
-    const scopeLabel =
-      claims.scope.kind === "alert"
-        ? "Voulez-vous désactiver cette alerte ?"
-        : claims.scope.kind === "reminders"
-          ? "Voulez-vous ne plus recevoir les rappels d'audience et les avertissements sur vos ventes suivies ?"
-          : claims.scope.kind === "offer-opening"
-            ? "Voulez-vous retirer votre demande d'être prévenu de l'ouverture de l'offre Analyse ?"
-            : "Voulez-vous ne plus recevoir d'alertes par email ?";
-    return htmlResponse("Confirmer la désinscription", scopeLabel, 200, null, {
+    const { question, button } = confirmationCopy(claims.scope.kind);
+    return htmlResponse("Confirmer la désinscription", question, 200, null, {
       field: "token",
       value: token,
-      button:
-        claims.scope.kind === "alert"
-          ? "Désactiver cette alerte"
-          : claims.scope.kind === "reminders"
-            ? "Me désinscrire des rappels"
-            : claims.scope.kind === "offer-opening"
-              ? "Retirer ma demande"
-              : "Me désinscrire des emails",
+      button,
     });
   }
 
@@ -96,6 +127,24 @@ export async function POST(request: Request) {
           { href: "/compte", label: "Gérer mes notifications" },
         );
       }
+      if (claims.scope.kind === "weekly-digest") {
+        await revokeWeeklyDigestConsent({ userId: claims.userId });
+        return htmlResponse(
+          "Récapitulatif désactivé",
+          "Vous ne recevrez plus le récapitulatif hebdomadaire « Ma semaine ». Vos alertes email et vos autres emails ne sont pas modifiés.",
+          200,
+          { href: "/compte", label: "Gérer mes notifications" },
+        );
+      }
+      if (claims.scope.kind === "sale-results") {
+        await revokeSaleResultsConsent({ userId: claims.userId });
+        return htmlResponse(
+          "Alertes de résultat désactivées",
+          "Vous ne recevrez plus d'alerte de résultat ni de remise en vente sur vos ventes suivies. Vos alertes email et vos autres emails ne sont pas modifiés.",
+          200,
+          { href: "/compte", label: "Gérer mes notifications" },
+        );
+      }
       if (claims.scope.kind === "offer-opening") {
         await revokeOfferOpeningRequest({ userId: claims.userId });
         return htmlResponse(
@@ -138,10 +187,19 @@ export async function POST(request: Request) {
  * compte, où se règlent les rappels d'audience ; les autres vers la page des alertes.
  */
 function expiredLinkResponse(token: string) {
-  if (unsubscribeTokenScopeKind(token) === "reminders") {
+  const kind = unsubscribeTokenScopeKind(token);
+  if (kind === "reminders") {
     return htmlResponse(
       "Lien expiré",
       "Ce lien de désinscription n'est plus valide. Ouvrez votre compte pour gérer vos rappels d'audience.",
+      400,
+      { href: "/compte", label: "Gérer mes notifications" },
+    );
+  }
+  if (kind === "weekly-digest" || kind === "sale-results") {
+    return htmlResponse(
+      "Lien expiré",
+      "Ce lien de désinscription n'est plus valide. Ouvrez votre compte pour gérer vos notifications.",
       400,
       { href: "/compte", label: "Gérer mes notifications" },
     );

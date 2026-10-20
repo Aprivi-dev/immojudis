@@ -81,6 +81,28 @@ describe("scheduled jobs inventory", () => {
     expect(reminders[1]).toBeGreaterThan(monitor[1]);
   });
 
+  it("place l'alerte de résultat après les rappels et le récapitulatif hebdomadaire après tous les autres emails (plan Hobby : ±59 min)", () => {
+    const vercel = JSON.parse(readFileSync(join(root, "vercel.json"), "utf8")) as {
+      crons: Array<{ path: string; schedule: string }>;
+    };
+    const hours = (route: string) =>
+      vercel.crons
+        .filter((cron) => cron.path === `/api/cron/${route}`)
+        .map((cron) => Number(cron.schedule.split(" ")[1]))
+        .sort((a, b) => a - b);
+    expect(hours("sale-results")).toHaveLength(1);
+    expect(hours("weekly-digest")).toHaveLength(1);
+    // Un cron tombe n'importe quand dans son heure : « après » veut dire une heure entière après le
+    // dernier passage (rattrapage compris) des tâches dont il dépend.
+    const [results] = hours("sale-results");
+    const [weekly] = hours("weekly-digest");
+    expect(results).toBeGreaterThan(Math.max(...hours("sale-reminders")));
+    expect(results).toBeGreaterThan(Math.max(...hours("sale-change-monitor")));
+    expect(weekly).toBeGreaterThan(Math.max(...hours("alert-notifications")));
+    expect(weekly).toBeGreaterThan(Math.max(...hours("sale-reminders")));
+    expect(weekly).toBeGreaterThan(results);
+  });
+
   it("supervise les rappels d'audience comme les autres tâches quotidiennes", () => {
     const document = readFileSync(join(root, "docs/operations/planification.md"), "utf8");
     expect(document).toMatch(/`\/api\/cron\/sale-reminders`.*\| oui /);
