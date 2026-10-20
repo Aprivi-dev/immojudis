@@ -1,0 +1,249 @@
+{
+  "slug": "vente-encheres-immobiliere-reportee-retiree-annulee",
+  "publishedAt": "2026-10-20",
+  "updatedAt": "2026-10-20",
+  "title": "Vente reportée, retirée ou annulée : pourquoi, et que faire ?",
+  "seoTitle": "Vente reportée, retirée ou annulée : que faire ?",
+  "category": "Les fondamentaux",
+  "description": "Report, renvoi, retrait, suspension : sens des mots, causes possibles, repérage dans Immojudis et contrôles avant de vous déplacer.",
+  "intro": [
+    "Vous avez repéré une vente aux enchères, préparé votre dossier, puis la date change ou la fiche disparaît. Ce n’est pas rare : dans une vente forcée, la date de l’audience n’est jamais acquise d’avance. Cet article explique ce que recouvrent les mots employés, pourquoi une vente peut être arrêtée, comment le voir dans Immojudis et ce qu’il faut vérifier avant de vous déplacer.",
+    "Il porte sur la saisie immobilière, c’est-à-dire la vente forcée d’un bien au tribunal. Le juge de l’exécution (le juge du tribunal judiciaire chargé des saisies) fixe la date de l’audience d’adjudication, celle où le bien est attribué au dernier enchérisseur. Les règles citées viennent du Code des procédures civiles d’exécution (CPCE) et du Code de la consommation. Les ventes chez un notaire, les ventes de l’État et les liquidations judiciaires suivent d’autres règles. Ce texte ne remplace pas l’avis de l’avocat de votre dossier."
+  ],
+  "takeaways": [
+    "« Reportée », « retirée », « suspendue », « annulée » : ces mots ne disent pas la même chose, et le Code ne les définit pas tous. Seul l’avocat du créancier poursuivant peut confirmer la situation d’un dossier.",
+    "La vente forcée ne peut être reportée que pour un cas de force majeure ou à la demande de la commission de surendettement (art. R. 322-28 du CPCE), avec des cas particuliers comme l’appel du jugement d’orientation (art. R. 322-19).",
+    "Une vente peut aussi ne pas avoir lieu parce que la procédure s’arrête ou change de voie : dette payée, vente amiable autorisée par le juge, caducité du commandement de payer.",
+    "Quand la vente est renvoyée à une audience ultérieure, une nouvelle publicité est faite dans les mêmes formes et délais que la première (art. R. 322-29).",
+    "Immojudis affiche le statut connu de la source, avec un délai possible : avant de vous déplacer, faites confirmer la date par l’avocat qui poursuit la vente."
+  ],
+  "sections": [
+    {
+      "id": "vocabulaire",
+      "title": "Report, renvoi, retrait, suspension : quatre mots, quatre situations",
+      "paragraphs": [
+        "Dans le langage courant, on mélange ces mots. Le Code emploie « reportée » (art. R. 322-28) et « renvoyée à une audience ultérieure » (art. R. 322-29). « Retirée » et « annulée » sont des statuts d’annonce : le Code ne les définit pas. Le tableau les distingue par leurs effets pour l’acheteur."
+      ],
+      "table": {
+        "headers": ["Mot", "Ce que cela veut dire", "La vente aura-t-elle lieu ?"],
+        "rows": [
+          [
+            "Report ou renvoi",
+            "La date de l’audience d’adjudication est déplacée. La procédure continue : seule la date change, et l’audience est annoncée de nouveau (art. R. 322-29).",
+            "Oui, à une date ultérieure, une fois la nouvelle date publiée."
+          ],
+          [
+            "Suspension",
+            "La procédure est gelée le temps qu’un événement soit réglé : demande de la commission de surendettement (art. L. 722-2 du Code de la consommation), demande de sursis à exécution en appel (art. R. 121-22), vente amiable autorisée (art. R. 322-20).",
+            "Peut-être : tout dépend de la décision qui suit."
+          ],
+          [
+            "Retrait",
+            "La vente est abandonnée : la dette est payée ou réglée autrement, un accord de vente de gré à gré est trouvé (art. L. 322-1), ou aucun créancier ne demande la vente le jour dit (art. R. 322-27).",
+            "Non, sauf si la procédure reprend, par exemple à la demande d’un autre créancier (art. R. 311-9)."
+          ],
+          [
+            "Annulation",
+            "Le juge constate la caducité du commandement de payer valant saisie (la procédure tombe), ou une décision de justice annule la procédure (art. R. 311-11 et R. 322-27).",
+            "Non, à moins que le créancier ne relance une procédure."
+          ]
+        ]
+      },
+      "callout": {
+        "title": "Le statut affiché n’explique pas la cause",
+        "text": "Une annonce qui passe à « Retirée » ou « Annulée » dit seulement que la source ne maintient plus la vente. Elle ne dit ni pourquoi, ni si la procédure reprendra. Seul l’avocat du créancier poursuivant ou le greffe du juge de l’exécution (le secrétariat du tribunal) peut le confirmer."
+      }
+    },
+    {
+      "id": "paiement-vente-amiable",
+      "title": "Quand la dette est payée ou que la vente se fait autrement",
+      "paragraphs": [
+        "Le débiteur peut payer. Le commandement de payer valant saisie lui laisse huit jours (art. R. 321-3), mais rien ne l’empêche de régler plus tard : si le créancier poursuivant est payé, il n’a plus de raison de demander la vente. Ce n’est pas toujours définitif. Les autres créanciers inscrits sur le bien (ceux qui ont une hypothèque, par exemple) peuvent demander au juge de prendre la place du poursuivant, notamment s’il se désiste (art. R. 311-9). Et dès que l’assignation du débiteur est mentionnée en marge du commandement publié, ce commandement ne peut plus être radié qu’avec l’accord de tous les créanciers inscrits ou par un jugement (art. R. 322-9).",
+        "Le débiteur peut aussi vendre à l’amiable. Il demande au juge l’autorisation de vendre lui-même le bien, y compris oralement à l’audience d’orientation (art. R. 322-15 et R. 322-17). Le juge fixe un prix minimum et rappelle l’affaire à une audience dans un délai de quatre mois au plus. Il ne peut accorder jusqu’à trois mois de plus que sur engagement écrit d’acquisition (art. R. 322-21). Lorsque la demande est jugée avant l’audience d’orientation, la décision qui l’accueille suspend la procédure (art. R. 322-20).",
+        "Si la vente amiable n’aboutit pas, le juge peut ordonner la vente forcée : l’audience d’adjudication se tient alors dans un délai de deux à quatre mois (art. R. 322-22 et R. 322-25). Un bien qui disparaît puis réapparaît avec une nouvelle date peut donc avoir connu cette étape.",
+        "Un accord reste possible plus tard encore. Après l’orientation en vente forcée et jusqu’à l’ouverture des enchères, le bien peut être vendu de gré à gré (directement, sans enchères) si le débiteur, le créancier poursuivant et les créanciers inscrits concernés sont d’accord (art. L. 322-1). Cela peut expliquer un retrait très proche de l’audience.",
+        "Enfin, le jour dit, c’est le créancier poursuivant (ou, à défaut, un créancier inscrit qui prend sa place) qui demande la vente. Si personne ne la demande, le juge constate la caducité du commandement de payer valant saisie, et le créancier poursuivant défaillant garde en principe à sa charge les frais de saisie (art. R. 322-27)."
+      ]
+    },
+    {
+      "id": "appel-surendettement",
+      "title": "Appel, surendettement, force majeure : les causes de procédure",
+      "paragraphs": [
+        "Le Code pose un principe strict : la vente forcée ne peut être reportée que pour un cas de force majeure ou à la demande de la commission de surendettement (art. R. 322-28). La force majeure est une notion que le juge apprécie au cas par cas.",
+        "L’appel est la contestation d’un jugement devant la cour d’appel. Le jugement d’orientation, celui qui ordonne la vente forcée, peut être contesté dans les quinze jours de sa notification (art. R. 311-7). Quand l’appel vise un jugement ordonnant la vente par adjudication, la cour doit statuer au plus tard un mois avant la date prévue ; à défaut, le juge de l’exécution peut, à la demande du créancier poursuivant, reporter l’audience de vente (art. R. 322-19). Une demande de sursis à exécution (la demande faite au premier président de la cour d’appel de geler l’exécution de la décision) suspend aussi les poursuites jusqu’à sa réponse, si la décision attaquée n’a pas remis en cause leur continuation (art. R. 121-22).",
+        "Le surendettement est l’impossibilité manifeste, pour une personne physique de bonne foi, de faire face à l’ensemble de ses dettes (art. L. 711-1 du Code de la consommation). Elle saisit la commission de surendettement (art. L. 721-1). Lorsque la demande est déclarée recevable, les procédures d’exécution contre ses biens sont suspendues et interdites (art. L. 722-2), pour deux ans au plus (art. L. 722-3). Une fois la vente forcée ordonnée, le report de la date d’adjudication ne peut résulter que d’une décision du juge de la saisie immobilière, saisi par la commission pour causes graves et dûment justifiées (art. L. 721-7 et L. 722-4). Service-public.fr précise que cette décision ne peut pas faire l’objet d’un appel.",
+        "Pour l’acheteur, ces causes ont un point commun : elles ne dépendent ni du bien ni de vous, et elles peuvent apparaître tard. Ne les lisez ni comme un signal sur la qualité du dossier, ni comme la promesse d’une meilleure occasion plus tard."
+      ]
+    },
+    {
+      "id": "apres-un-report",
+      "title": "Après un report : nouvelle date, nouvelle publicité",
+      "paragraphs": [
+        "Quand la vente forcée est renvoyée à une audience ultérieure, il est procédé à une nouvelle publicité dans les formes et délais de la première (art. R. 322-29). L’avis de vente est alors affiché au tribunal et publié dans un journal d’annonces légales entre un et deux mois avant l’audience (art. R. 322-31). Un avis simplifié est apposé sur l’immeuble et publié dans la presse locale dans le même délai (art. R. 322-32).",
+        "Une nouvelle date ne peut donc être tenue pour fiable qu’une fois publiée. Demandez aussi si la mise à prix, le cahier des conditions de vente (le document qui décrit le bien et fixe les règles de la vente) ou les dates de visite ont changé : les textes cités ne répondent pas à cette question pour votre dossier.",
+        "La garantie pour enchérir est un chèque de banque ou une caution bancaire irrévocable de 10 % de la mise à prix, avec un minimum de 3 000 €. Elle se remet à l’avocat avant les enchères et est restituée à l’issue de l’audience à l’enchérisseur qui n’est pas adjudicataire (art. R. 322-41). Demandez à votre avocat à quel moment la préparer, pour ne pas immobiliser des fonds en vue d’une date incertaine. L’article « Garantie de 10 % : chèque de banque ou caution ? » détaille ce point."
+      ]
+    },
+    {
+      "id": "dans-immojudis",
+      "title": "Repérer le changement dans Immojudis",
+      "paragraphs": [
+        "Sur la fiche d’une vente, le statut reprend ce que la source publie : « Vente à venir », « Statut à confirmer », « Vente reportée », « Retirée », « Annulée » ou « Adjugée ». Une vente reportée n’a plus de date d’audience valable : elle reste affichée tant que son ancienne date n’est pas dépassée, et sa nouvelle date est mise à jour lorsque la source la publie.",
+        "Ces mises à jour dépendent des publications des sources et des contrôles réguliers d’Immojudis : un délai est possible. Une vente retirée, annulée ou adjugée n’est plus affichée dans les résultats dès que l’information est connue, puis la fiche est supprimée du catalogue en ligne. Si une fiche que vous suiviez n’apparaît plus, ne supposez donc ni qu’elle a été vendue ni qu’elle a été retirée : demandez à l’avocat.",
+        "La fiche peut aussi contenir une section « Historique de la vente » : elle indique si le bien est déjà passé aux enchères et si la vente a déjà été reportée, une ou plusieurs fois. Le détail des dates et des prix dépend de votre offre ; la page Offres précise ce qui s’applique à votre compte.",
+        "Les réglages du compte proposent des « Rappels d’audience et avertissements » : un email 7 jours puis la veille de l’audience d’un favori ou d’une vente débloquée, et un email si sa date change ou si elle est retirée, reportée ou adjugée. Le consentement est distinct, jamais pré-coché et retirable à tout moment. Si les envois sont suspendus, la page de réglages l’indique. Ces messages reposent sur ce que les sources publient : ils aident, ils ne garantissent rien, et les dates sont à vérifier auprès de l’avocat poursuivant."
+      ]
+    },
+    {
+      "id": "avant-de-se-deplacer",
+      "title": "Avant de vous déplacer : la liste de contrôle",
+      "paragraphs": [
+        "Un déplacement inutile coûte du temps, une date manquée coûte une occasion. Le contrôle est simple et ne dépend d’aucun outil."
+      ],
+      "bullets": [
+        "Repérez l’avocat du créancier poursuivant : son nom figure dans l’avis de vente (art. R. 322-31) et dans le cahier des conditions de vente.",
+        "Contactez-le, ou le greffe du juge de l’exécution du tribunal concerné, quelques jours avant l’audience puis la veille. Demandez une confirmation écrite, par courriel.",
+        "Rapprochez sa réponse de l’avis légal : les jour, heure et lieu de la vente y sont indiqués (art. R. 322-31).",
+        "Si un avocat porte vos enchères, laissez-le confirmer la date : lui seul peut enchérir pour vous (art. R. 322-40).",
+        "Gardez vos hypothèses de budget et vos notes de visite : un report ne change pas votre analyse, mais il peut changer votre calendrier de financement ou vos disponibilités."
+      ]
+    },
+    {
+      "id": "questions-avocat",
+      "title": "Questions à poser à l’avocat",
+      "paragraphs": [
+        "Ces questions s’adressent à l’avocat qui poursuit la vente ou à celui que vous avez mandaté. Elles ne remplacent pas un conseil personnalisé."
+      ],
+      "bullets": [
+        "La date de l’audience est-elle maintenue ? Une demande de report, une vente amiable, un appel ou un dossier de surendettement est-il en cours ?",
+        "Si la vente est reportée, quand la nouvelle publicité paraîtra-t-elle et quelle sera la nouvelle date ?",
+        "La mise à prix, le cahier des conditions de vente ou les dates de visite changent-ils ?",
+        "Le créancier poursuivant a-t-il été payé ou s’est-il désisté ? Un autre créancier a-t-il demandé à reprendre la poursuite ?",
+        "Quels frais ou honoraires restent dus si la vente n’a pas lieu, et à quel moment la garantie doit-elle être remise ?",
+        "Comment et par qui serai-je prévenu d’un changement de dernière minute ?"
+      ],
+      "callout": {
+        "title": "À garder en tête",
+        "text": "Cet article décrit des règles générales de la saisie immobilière. Il ne remplace pas la consultation d’un avocat, seul à connaître l’état exact d’un dossier. Pour les étapes qui précèdent l’audience, voir « La saisie immobilière : de la dette à la vente aux enchères, les étapes vues par l’acheteur » ; pour le jour de la vente, « Le jour de l’audience : déroulé et rôle de l’avocat » ; pour les ventes chez un notaire ou de l’État, « Ventes notariales et ventes domaniales : en quoi elles diffèrent d’une vente au tribunal »."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "label": "Service-public.fr — Saisie immobilière (fiche F16987, vérifiée le 25 avril 2025)",
+      "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F16987"
+    },
+    {
+      "label": "Service-public.fr — Peut-on être expulsé de son logement pendant une procédure de surendettement ? (fiche F31604, vérifiée le 3 janvier 2025)",
+      "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F31604"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article L322-1 (vente amiable ou de gré à gré)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000044073306"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R311-7 (appel)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000048869091"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R311-9 (subrogation)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000044929852"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R311-11 (caducité)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000026854739"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R121-22 (sursis à exécution)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000034747684"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R321-3 (commandement de payer valant saisie)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000042941204"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R322-9 (radiation du commandement)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000026854749"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R322-15 (audience d’orientation)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939086"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R322-17 (demande de vente amiable)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939091"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R322-19 (appel contre le jugement d’orientation)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939095"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R322-20 (vente amiable avant l’audience d’orientation)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939099"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R322-21 (vente amiable autorisée)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939101"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R322-22 (carence du débiteur)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939103"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R322-25 (audience de rappel)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000044929813"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R322-27 (défaut de demande de vente)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939117"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R322-28 (report de la vente forcée)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000034747503"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R322-29 (renvoi et nouvelle publicité)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939121"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R322-31 (avis de vente)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000039343494"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R322-32 (avis simplifié)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939131"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R322-40 (avocat porteur des enchères)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000039343491"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R322-41 (garantie pour enchérir)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939157"
+    },
+    {
+      "label": "Légifrance — Code de la consommation, article L711-1 (surendettement)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000045178302"
+    },
+    {
+      "label": "Légifrance — Code de la consommation, article L721-1 (commission de surendettement)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000032224556"
+    },
+    {
+      "label": "Légifrance — Code de la consommation, article L721-7 (report de la date d’adjudication)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000032224544"
+    },
+    {
+      "label": "Légifrance — Code de la consommation, article L722-2 (suspension des procédures)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000032224532"
+    },
+    {
+      "label": "Légifrance — Code de la consommation, article L722-3 (durée de la suspension)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000033461315"
+    },
+    {
+      "label": "Légifrance — Code de la consommation, article L722-4 (report de la date d’adjudication)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000032224528"
+    }
+  ]
+}
