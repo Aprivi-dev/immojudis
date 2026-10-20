@@ -200,7 +200,7 @@ describe("FavoriteSales", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retirer des favoris" }));
 
     const dialog = await screen.findByRole("dialog");
-    expect(dialog.textContent).toContain("Prêt à enchérir");
+    expect(dialog.textContent).toContain("Je prépare mon enchère");
     expect(dialog.textContent).toMatch(/185\s000/);
     fireEvent.click(screen.getByRole("button", { name: "Garder en favori" }));
 

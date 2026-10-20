@@ -12,7 +12,7 @@ describe("FavoriteDossierLine", () => {
         favorite={{ saleId: "sale-1", personalStatus: "bidding", bidCeilingEur: 185_000 }}
       />,
     );
-    expect(container.textContent).toContain("Prêt à enchérir");
+    expect(container.textContent).toContain("Je prépare mon enchère");
     expect(container.textContent).toMatch(/185\s000\s€/);
   });
 

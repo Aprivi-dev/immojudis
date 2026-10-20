@@ -379,7 +379,8 @@ describe("vue « tableau » des résultats", () => {
 
     renderTable([]);
     expect(screen.queryByRole("table")).toBeNull();
-    expect(screen.getByText(/Aucune|aucune/)).toBeTruthy();
+    // The empty state has a heading and a sentence that both say "aucune": target the heading.
+    expect(screen.getByRole("heading", { name: "Aucune vente trouvée" })).toBeTruthy();
   });
 
   it("place l'encart partenaire après le tableau, une seule fois", () => {
