@@ -29,6 +29,20 @@ def _no_reference_communes_lookup(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_reference_communes_centroids(monkeypatch):
+    """Le point au centre de la commune (``src.municipality_location``) lit ``reference_communes`` en base.
+
+    Les tests tournent sans base ; ceux du point communal fournissent eux-mêmes leurs communes.
+    """
+    from src import municipality_location
+
+    monkeypatch.setattr(municipality_location, "load_communes", list)
+    municipality_location.reset_cache()
+    yield
+    municipality_location.reset_cache()
+
+
+@pytest.fixture(autouse=True)
 def _no_network_image_checks(monkeypatch):
     """Listing images are HEAD-checked in production; tests must stay offline.
 
