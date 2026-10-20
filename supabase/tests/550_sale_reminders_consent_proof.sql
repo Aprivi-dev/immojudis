@@ -1,9 +1,13 @@
 -- 20261029130000 : preuve du consentement aux rappels d'audience posée par un déclencheur.
--- Le navigateur (rôle authenticated, qui a insert et update sur sa ligne) ne peut ni choisir la date de
--- son consentement, ni celle de son retrait, ni réécrire la version du texte consenti en cours de route.
+-- Un écrivain ne peut ni choisir la date de son consentement, ni celle de son retrait, ni réécrire la
+-- version du texte consenti en cours de route.
+-- 20261031100400 : la version du texte n'est prise que d'un écrivain au rôle service_role (la route
+-- serveur), et le rôle authenticated n'a plus le droit d'écrire les colonnes de ce consentement. Les
+-- sections 1 à 10 jouent donc le rôle de la route (service_role) ; la section 11 vérifie ce que le
+-- navigateur ne peut plus faire, la section 12 qu'un autre rôle ne peut pas poser la version.
 begin;
 
-select plan(24);
+select plan(27);
 
 select has_column('public', 'user_notification_preferences', 'sale_reminders_consent_text_version', 'la version du texte consenti est conservée');
 
@@ -45,7 +49,13 @@ insert into auth.users (
    '{}'::jsonb, '{}'::jsonb),
   ('55000000-0000-4000-8000-000000000003', '00000000-0000-0000-0000-000000000000',
    'authenticated', 'authenticated', 'proof-c@example.test', '', now(), now(), now(),
+   '{}'::jsonb, '{}'::jsonb),
+  ('55000000-0000-4000-8000-000000000004', '00000000-0000-0000-0000-000000000000',
+   'authenticated', 'authenticated', 'proof-d@example.test', '', now(), now(), now(),
    '{}'::jsonb, '{}'::jsonb);
+
+-- La route serveur écrit avec le rôle de service : c'est le seul écrivain dont la version du texte est gardée.
+set local role service_role;
 
 -- 1. Insertion avec rappels actifs et des dates forgées : la date du consentement est celle de
 -- l'instruction, pas celle envoyée ; aucune date de retrait.
@@ -333,7 +343,8 @@ select throws_ok(
   'la version du texte de consentement ne dépasse pas 80 caractères'
 );
 
--- 11. Depuis le navigateur (rôle authenticated), les dates écrites sont ignorées aussi.
+-- 11. Depuis le navigateur (rôle authenticated) : plus d'écriture des colonnes de ce consentement.
+reset role;
 insert into public.user_notification_preferences (user_id)
 values ('55000000-0000-4000-8000-000000000003');
 
@@ -341,58 +352,110 @@ set local "request.jwt.claim.role" = 'authenticated';
 set local "request.jwt.claim.sub" = '55000000-0000-4000-8000-000000000003';
 set local role authenticated;
 
-select lives_ok(
+select throws_ok(
   $$update public.user_notification_preferences
-    set sale_reminders_enabled = true,
-        sale_reminders_consented_at = '1990-01-01 00:00:00+00',
+    set sale_reminders_enabled = true
+    where user_id = '55000000-0000-4000-8000-000000000003'$$,
+  '42501',
+  null,
+  'une personne connectée ne peut plus activer les rappels en écrivant sa ligne : la route serveur seule le fait'
+);
+
+select throws_ok(
+  $$update public.user_notification_preferences
+    set sale_reminders_consent_text_version = '2026-10-20'
+    where user_id = '55000000-0000-4000-8000-000000000003'$$,
+  '42501',
+  null,
+  'elle ne peut pas écrire la version du texte consenti'
+);
+
+select throws_ok(
+  $$update public.user_notification_preferences
+    set sale_reminders_consented_at = '1990-01-01 00:00:00+00',
         sale_reminders_revoked_at = '1990-01-01 00:00:00+00'
     where user_id = '55000000-0000-4000-8000-000000000003'$$,
-  'une personne connectée peut donner son consentement à sa propre ligne'
+  '42501',
+  null,
+  'ni les dates du consentement et du retrait'
 );
 
-select ok(
-  (
-    select sale_reminders_consented_at > now() - interval '1 minute'
-      and sale_reminders_revoked_at is null
-    from public.user_notification_preferences
-    where user_id = '55000000-0000-4000-8000-000000000003'
-  ),
-  'les dates envoyées par le navigateur sont ignorées : la base pose la date du consentement'
-);
-
-select lives_ok(
-  $$update public.user_notification_preferences
-    set sale_reminders_consented_at = '1990-01-01 00:00:00+00'
-    where user_id = '55000000-0000-4000-8000-000000000003'$$,
-  'elle peut tenter de réécrire la date de son consentement'
-);
-
-select ok(
-  (
-    select sale_reminders_consented_at > now() - interval '1 minute'
-    from public.user_notification_preferences
-    where user_id = '55000000-0000-4000-8000-000000000003'
-  ),
-  'mais la date du consentement ne change pas'
+select throws_ok(
+  $$insert into public.user_notification_preferences (user_id, sale_reminders_enabled, sale_reminders_consent_text_version)
+    values ('55000000-0000-4000-8000-000000000004', true, '2026-10-20')$$,
+  '42501',
+  null,
+  'ni créer sa ligne avec ces colonnes'
 );
 
 select lives_ok(
   $$update public.user_notification_preferences
-    set sale_reminders_enabled = false, sale_reminders_revoked_at = '1990-01-01 00:00:00+00'
+    set alert_email_enabled = true, alert_email_consented_at = now(), weekly_digest_weekday = 4
     where user_id = '55000000-0000-4000-8000-000000000003'$$,
-  'elle peut retirer son consentement'
+  'elle peut toujours écrire le consentement aux alertes par email et le jour du récapitulatif'
 );
 
 select ok(
   (
-    select sale_reminders_revoked_at > now() - interval '1 minute'
-      and sale_reminders_consented_at is not null
+    select not sale_reminders_enabled
+      and sale_reminders_consented_at is null
+      and sale_reminders_consent_text_version is null
+      and alert_email_enabled
     from public.user_notification_preferences
     where user_id = '55000000-0000-4000-8000-000000000003'
   ),
-  'la date du retrait est posée par la base et la preuve du consentement est gardée'
+  'et lire sa ligne : les rappels n''ont pas été activés'
 );
 
+reset role;
+
+-- 12. Un écrivain qui n'est pas le rôle de service (ici le rôle de la session de test, comme une
+-- maintenance en SQL) ne peut pas poser la version du texte consenti : elle reste celle d'avant.
+update public.user_notification_preferences
+set sale_reminders_enabled = true, sale_reminders_consent_text_version = 'forgee'
+where user_id = '55000000-0000-4000-8000-000000000003';
+
+select is(
+  (
+    select sale_reminders_consent_text_version
+    from public.user_notification_preferences
+    where user_id = '55000000-0000-4000-8000-000000000003'
+  ),
+  null,
+  'à l''activation, la version envoyée par un écrivain qui n''est pas le rôle de service est ignorée'
+);
+
+insert into public.user_notification_preferences (
+  user_id, sale_reminders_enabled, sale_reminders_consent_text_version
+) values ('55000000-0000-4000-8000-000000000004', true, 'forgee');
+
+select is(
+  (
+    select sale_reminders_consent_text_version
+    from public.user_notification_preferences
+    where user_id = '55000000-0000-4000-8000-000000000004'
+  ),
+  null,
+  'à l''insertion, la version envoyée par un écrivain qui n''est pas le rôle de service est ignorée aussi'
+);
+
+set local role service_role;
+update public.user_notification_preferences
+set sale_reminders_enabled = false
+where user_id = '55000000-0000-4000-8000-000000000003';
+update public.user_notification_preferences
+set sale_reminders_enabled = true, sale_reminders_consent_text_version = '2026-10-30'
+where user_id = '55000000-0000-4000-8000-000000000003';
+
+select is(
+  (
+    select sale_reminders_consent_text_version
+    from public.user_notification_preferences
+    where user_id = '55000000-0000-4000-8000-000000000003'
+  ),
+  '2026-10-30',
+  'le rôle de service (la route serveur) pose la version du texte à l''activation'
+);
 reset role;
 
 select * from finish();
