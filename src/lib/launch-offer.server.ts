@@ -14,25 +14,49 @@ import { LAUNCH_OFFER_CACHE_SECONDS } from "@/lib/launch-offer";
 const CACHE_MS = LAUNCH_OFFER_CACHE_SECONDS * 1000;
 const FAILURE_RETRY_MS = 5_000;
 
-type Cached = { active: boolean; expiresAt: number };
-let cached: Cached | null = null;
-let inflight: Promise<boolean> | null = null;
+/**
+ * `degraded` : la valeur `false` vient d'une erreur de lecture et non de la base. La route publique
+ * ne la laisse pas mettre en cache par le CDN (une erreur de 5 s y resterait 30 s).
+ */
+export type LaunchOfferState = { active: boolean; degraded: boolean };
 
-export async function isLaunchOfferActive(now: number = Date.now()): Promise<boolean> {
-  if (cached && cached.expiresAt > now) return cached.active;
-  inflight ??= readLaunchOfferStatus().finally(() => {
-    inflight = null;
-  });
+type Cached = LaunchOfferState & { expiresAt: number };
+let cached: Cached | null = null;
+let inflight: Promise<LaunchOfferState> | null = null;
+// Numéro de génération : `resetLaunchOfferCache` l'incrémente, et une lecture commencée avant ne
+// peut plus écrire son résultat (sinon une lecture déjà en vol effacerait la valeur qui suit un
+// changement de l'administrateur).
+let generation = 0;
+
+export async function readLaunchOfferState(now: number = Date.now()): Promise<LaunchOfferState> {
+  if (cached && cached.expiresAt > now) {
+    return { active: cached.active, degraded: cached.degraded };
+  }
+  if (!inflight) {
+    const read = readLaunchOfferStatus().finally(() => {
+      // Une lecture périmée ne doit pas effacer la lecture plus récente qui l'a remplacée.
+      if (inflight === read) inflight = null;
+    });
+    inflight = read;
+  }
   return inflight;
 }
 
-async function readLaunchOfferStatus(): Promise<boolean> {
+export async function isLaunchOfferActive(now: number = Date.now()): Promise<boolean> {
+  return (await readLaunchOfferState(now)).active;
+}
+
+async function readLaunchOfferStatus(): Promise<LaunchOfferState> {
+  const startedIn = generation;
+  const remember = (state: LaunchOfferState, ttlMs: number) => {
+    if (startedIn === generation) cached = { ...state, expiresAt: Date.now() + ttlMs };
+  };
   try {
     const { data, error } = await supabaseAdmin.rpc("get_launch_offer_status");
     if (error) throw error;
-    const active = data === true;
-    cached = { active, expiresAt: Date.now() + CACHE_MS };
-    return active;
+    const state = { active: data === true, degraded: false };
+    remember(state, CACHE_MS);
+    return state;
   } catch (error) {
     console.error(
       JSON.stringify({
@@ -40,13 +64,15 @@ async function readLaunchOfferStatus(): Promise<boolean> {
         error: error instanceof Error ? error.message : String(error),
       }),
     );
-    cached = { active: false, expiresAt: Date.now() + FAILURE_RETRY_MS };
-    return false;
+    const state = { active: false, degraded: true };
+    remember(state, FAILURE_RETRY_MS);
+    return state;
   }
 }
 
 /** Oublie la lecture en mémoire (après un changement par l'administrateur, et dans les tests). */
 export function resetLaunchOfferCache(): void {
+  generation += 1;
   cached = null;
   inflight = null;
   confirmedEmails.clear();

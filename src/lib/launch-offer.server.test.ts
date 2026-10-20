@@ -8,6 +8,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
 import {
   hasConfirmedEmail,
   isLaunchOfferActive,
+  readLaunchOfferState,
   resetLaunchOfferCache,
 } from "@/lib/launch-offer.server";
 
@@ -51,6 +52,38 @@ describe("état de l'offre de lancement côté serveur", () => {
     mocks.rpc.mockResolvedValue({ data: true, error: null });
     await expect(isLaunchOfferActive(start + 1_000)).resolves.toBe(false);
     await expect(isLaunchOfferActive(start + 6_000)).resolves.toBe(true);
+  });
+
+  it("signale une valeur issue d'une erreur, et pas une valeur lue dans la base", async () => {
+    mocks.rpc.mockResolvedValueOnce({ data: null, error: new Error("base indisponible") });
+    const start = Date.now();
+    await expect(readLaunchOfferState(start)).resolves.toEqual({ active: false, degraded: true });
+    // Pendant les 5 s de retente, la valeur d'erreur reste signalée.
+    await expect(readLaunchOfferState(start + 1_000)).resolves.toEqual({
+      active: false,
+      degraded: true,
+    });
+    mocks.rpc.mockResolvedValue({ data: false, error: null });
+    await expect(readLaunchOfferState(start + 6_000)).resolves.toEqual({
+      active: false,
+      degraded: false,
+    });
+  });
+
+  it("une lecture déjà en vol n'écrase pas la valeur qui suit un reset", async () => {
+    let releaseOld: (value: { data: boolean; error: null }) => void = () => undefined;
+    mocks.rpc.mockReturnValueOnce(new Promise((resolve) => (releaseOld = resolve)));
+    const oldRead = isLaunchOfferActive();
+    // L'administrateur coupe l'offre : la lecture suivante voit la nouvelle valeur.
+    resetLaunchOfferCache();
+    mocks.rpc.mockResolvedValueOnce({ data: false, error: null });
+    await expect(isLaunchOfferActive()).resolves.toBe(false);
+    // La vieille lecture se termine après coup, avec l'ancienne valeur.
+    releaseOld({ data: true, error: null });
+    await expect(oldRead).resolves.toBe(true);
+    // Elle n'a rien écrit dans le cache : pas de nouvel appel, et la valeur reste `false`.
+    await expect(isLaunchOfferActive()).resolves.toBe(false);
+    expect(mocks.rpc).toHaveBeenCalledTimes(2);
   });
 
   it("ne traite que `true` comme une offre active", async () => {
