@@ -6,11 +6,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Heart from "lucide-react/dist/esm/icons/heart.js";
 import { toast } from "@/lib/toast";
 import { useAuth } from "@/hooks/use-auth";
-import {
-  addFavoriteSale,
-  fetchFavoriteSales,
-  fetchSalesAiReviewProjections,
-} from "@/lib/client-api";
+import { fetchFavoriteSales, fetchSalesAiReviewProjections } from "@/lib/client-api";
+import type { RemovedFavoriteDossier } from "@/lib/favorites";
 import {
   type AiReviewProjectionReadModel,
   type AiReviewRequestStatus,
@@ -19,6 +16,7 @@ import { userMessage } from "@/lib/user-messages";
 import { Badge, Card, PageShell, buttonClasses } from "@/components/ui/primitives";
 import { ListingCard } from "@/components/search/SearchResults";
 import { FavoriteButton } from "./FavoriteButton";
+import { dossierHasContent, restoreRemovedFavorite } from "./favorite-removal";
 import { FavoriteDossierLine } from "./FavoriteDossierLine";
 import { PastFollowedSales } from "./PastFollowedSales";
 import { FavoriteSaleChanges } from "./FavoriteSaleChanges";
@@ -68,14 +66,19 @@ export function FavoriteSales() {
           : "loading";
   const queryClient = useQueryClient();
   const handleFavoriteChange = useCallback(
-    (saleId: string, isFavorite: boolean) => {
+    (saleId: string, isFavorite: boolean, removed?: RemovedFavoriteDossier | null) => {
       if (isFavorite) return;
       toast("Favori supprimé", {
         duration: 5000,
+        // La suppression a emporté statut et plafond : « Annuler » les rétablit avec le favori.
+        description: dossierHasContent(removed)
+          ? "« Annuler » rétablit aussi votre statut et votre enchère plafond."
+          : undefined,
         action: {
           label: "Annuler",
           onClick: () => {
-            addFavoriteSale({ data: { saleId } })
+            restoreRemovedFavorite(saleId, removed)
+              // La clé de « Mon dossier » est sous le préfixe `favorites` : rafraîchie avec la liste.
               .then(() => queryClient.invalidateQueries({ queryKey: ["favorites", user?.id] }))
               .catch((error: unknown) =>
                 toast.error(userMessage(error, "Impossible de rétablir ce favori.")),

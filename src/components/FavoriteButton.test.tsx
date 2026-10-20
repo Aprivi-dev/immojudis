@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   remove: vi.fn(),
   push: vi.fn(),
   fetchFavorites: vi.fn(),
+  fetchDossier: vi.fn(),
   toastSuccess: vi.fn(),
   track: vi.fn(),
 }));
@@ -24,6 +25,7 @@ vi.mock("@/lib/client-api", () => ({
   addFavoriteSale: mocks.add,
   removeFavoriteSale: mocks.remove,
   fetchFavoriteSales: mocks.fetchFavorites,
+  fetchFavoriteDossier: mocks.fetchDossier,
 }));
 vi.mock("@/lib/toast", () => ({ toast: { success: mocks.toastSuccess, error: vi.fn() } }));
 vi.mock("@/integrations/supabase/client", () => ({
@@ -185,6 +187,61 @@ describe("favorite vocabulary and onboarding", () => {
     expect(mocks.fetchFavorites).not.toHaveBeenCalled();
     expect(mocks.track).toHaveBeenCalledOnce();
     expect(mocks.track).toHaveBeenCalledWith("favorite_added");
+  });
+});
+
+describe("retrait d'un favori qui porte « Mon dossier »", () => {
+  const dossier = (overrides: Record<string, unknown> = {}) => ({
+    dossier: {
+      saleId: "sale",
+      followed: true,
+      personalStatus: null,
+      bidCeilingEur: null,
+      ...overrides,
+    },
+  });
+
+  it("retire sans dialogue quand le dossier est vide", async () => {
+    mocks.read.mockResolvedValue({ data: { sale_id: "sale" }, error: null });
+    mocks.fetchDossier.mockResolvedValue(dossier());
+    mocks.remove.mockResolvedValue({ ok: true, removed: true, dossier: null });
+    setup();
+    fireEvent.click(await screen.findByRole("button", { name: "Retirer des favoris" }));
+    await waitFor(() => expect(mocks.remove).toHaveBeenCalledWith({ saleId: "sale" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("demande confirmation quand le dossier n'est pas vide, et ne retire pas si on garde", async () => {
+    mocks.read.mockResolvedValue({ data: { sale_id: "sale" }, error: null });
+    mocks.fetchDossier.mockResolvedValue(dossier({ bidCeilingEur: 120_000 }));
+    setup();
+    fireEvent.click(await screen.findByRole("button", { name: "Retirer des favoris" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.textContent).toMatch(/120\s000/);
+    fireEvent.click(screen.getByRole("button", { name: "Garder en favori" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(mocks.remove).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Retirer des favoris" })).toBeTruthy();
+  });
+
+  it("retire après confirmation", async () => {
+    mocks.read.mockResolvedValue({ data: { sale_id: "sale" }, error: null });
+    mocks.fetchDossier.mockResolvedValue(dossier({ personalStatus: "reviewing" }));
+    mocks.remove.mockResolvedValue({ ok: true, removed: true, dossier: null });
+    setup();
+    fireEvent.click(await screen.findByRole("button", { name: "Retirer des favoris" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Retirer et effacer mon dossier" }));
+    await waitFor(() => expect(mocks.remove).toHaveBeenCalledWith({ saleId: "sale" }));
+  });
+
+  it("ouvre le dialogue, en termes généraux, quand la lecture du dossier échoue", async () => {
+    mocks.read.mockResolvedValue({ data: { sale_id: "sale" }, error: null });
+    mocks.fetchDossier.mockRejectedValue(new Error("réseau"));
+    setup();
+    fireEvent.click(await screen.findByRole("button", { name: "Retirer des favoris" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.textContent).toContain("Si vous avez enregistré");
+    expect(mocks.remove).not.toHaveBeenCalled();
   });
 });
 

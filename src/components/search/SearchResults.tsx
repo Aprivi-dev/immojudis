@@ -65,6 +65,8 @@ import {
 } from "@/lib/ai-review-guard";
 import { userMessage } from "@/lib/user-messages";
 import { queryKeys } from "@/lib/query-keys";
+import { useFavoriteRemovalConfirmation } from "@/components/favorite-removal";
+import type { RemovedFavoriteDossier } from "@/lib/favorites";
 import type { ResultsView } from "@/lib/search/results-view";
 
 /**
@@ -884,13 +886,14 @@ export function CompactFavoriteButton({
   locked: boolean;
   favoriteScope?: string | null;
   initialFavorite?: boolean;
-  onChange?: (saleId: string, isFavorite: boolean) => void;
+  onChange?: (saleId: string, isFavorite: boolean, removed?: RemovedFavoriteDossier | null) => void;
 }) {
   const { user, loading } = useAuth();
   const router = useRouter();
   const queryClient = useQueryClient();
   const [isFavorite, setIsFavorite] = useState(initialFavorite);
   const [busy, setBusy] = useState(false);
+  const { confirmRemoval, dialog: removalDialog } = useFavoriteRemovalConfirmation();
   // `locked` pour un compte reconnu = liste publique gardée pendant la vérification de ses droits.
   const verifying = Boolean(user) && locked;
 
@@ -915,10 +918,13 @@ export function CompactFavoriteButton({
 
     setBusy(true);
     const searchFavoriteQueryKey = queryKeys.searchFavoriteStatusForUser(user.id);
+    let removed: RemovedFavoriteDossier | null = null;
     try {
       await queryClient.cancelQueries({ queryKey: searchFavoriteQueryKey });
       if (isFavorite) {
-        await removeFavoriteSaleRequest({ saleId });
+        // « Mon dossier » (statut, plafond) part avec la ligne : confirmation s'il n'est pas vide.
+        if (!(await confirmRemoval(saleId))) return;
+        removed = (await removeFavoriteSaleRequest({ saleId }))?.dossier ?? null;
         setIsFavorite(false);
       } else {
         const added = await addFavoriteSaleRequest({ data: { saleId } });
@@ -936,7 +942,7 @@ export function CompactFavoriteButton({
         },
       );
       queryClient.invalidateQueries({ queryKey: queryKeys.favorites(user.id) });
-      onChange?.(saleId, !isFavorite);
+      onChange?.(saleId, !isFavorite, removed);
       await queryClient.invalidateQueries({ queryKey: searchFavoriteQueryKey });
     } catch (error) {
       void queryClient.invalidateQueries({ queryKey: searchFavoriteQueryKey });
@@ -947,19 +953,22 @@ export function CompactFavoriteButton({
   }
 
   return (
-    <button
-      type="button"
-      onClick={toggle}
-      disabled={busy}
-      aria-pressed={locked ? undefined : isFavorite}
-      aria-label={isFavorite && !locked ? FAVORITE_REMOVE_LABEL : FAVORITE_ADD_LABEL}
-      // Compte reconnu sur la liste publique conservée : `aria-disabled` (le cœur reste focalisable et
-      // annoncé) plutôt qu'un clic sans effet.
-      aria-disabled={verifying ? true : undefined}
-      title={verifying ? FAVORITE_VERIFYING_TITLE : locked ? FAVORITE_ANONYMOUS_TITLE : undefined}
-      className="relative z-20 grid h-11 w-11 cursor-pointer place-items-center rounded-full text-brand-navy transition-colors hover:bg-surface-tint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold disabled:cursor-not-allowed disabled:opacity-60 aria-disabled:cursor-wait aria-disabled:opacity-60"
-    >
-      <Heart className={`h-5 w-5 ${isFavorite && !locked ? "fill-danger text-danger" : ""}`} />
-    </button>
+    <>
+      {removalDialog}
+      <button
+        type="button"
+        onClick={toggle}
+        disabled={busy}
+        aria-pressed={locked ? undefined : isFavorite}
+        aria-label={isFavorite && !locked ? FAVORITE_REMOVE_LABEL : FAVORITE_ADD_LABEL}
+        // Compte reconnu sur la liste publique conservée : `aria-disabled` (le cœur reste focalisable et
+        // annoncé) plutôt qu'un clic sans effet.
+        aria-disabled={verifying ? true : undefined}
+        title={verifying ? FAVORITE_VERIFYING_TITLE : locked ? FAVORITE_ANONYMOUS_TITLE : undefined}
+        className="relative z-20 grid h-11 w-11 cursor-pointer place-items-center rounded-full text-brand-navy transition-colors hover:bg-surface-tint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold disabled:cursor-not-allowed disabled:opacity-60 aria-disabled:cursor-wait aria-disabled:opacity-60"
+      >
+        <Heart className={`h-5 w-5 ${isFavorite && !locked ? "fill-danger text-danger" : ""}`} />
+      </button>
+    </>
   );
 }
