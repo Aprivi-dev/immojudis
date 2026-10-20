@@ -75,6 +75,36 @@ describe("property report sharing", () => {
     expect(JSON.stringify(report)).not.toContain("user_notes");
   });
 
+  it("refiltre à la lecture les noms de particuliers d'un rapport figé avant le durcissement du filtre", () => {
+    const report = buildPublicSharedPropertyReport({
+      id: "report-names",
+      title: "Maison occupée par Pierre Martin",
+      report_kind: "opportunity",
+      report_snapshot: {
+        plan: "analyse",
+        sale: { city: "Bordeaux", description: "Bien occupé par la famille Martin." },
+        analysis: { occupancy: { summary: "Propriété de Paul Dupont" } },
+        sourceTraceability: { entries: [], limitations: [], complianceNotice: "Notice" },
+      } as Json,
+      market_snapshot: {} as Json,
+      environmental_snapshot: null,
+      ceiling_snapshot: {} as Json,
+      shared_at: null,
+      share_expires_at: null,
+      share_view_count: 0,
+      updated_at: "2026-07-06T10:00:00.000Z",
+    });
+
+    const serialized = JSON.stringify(report);
+    expect(serialized).not.toContain("Martin");
+    expect(serialized).not.toContain("Dupont");
+    expect(report.title).toBe("Maison occupée par un occupant");
+    expect(report.sale).toMatchObject({
+      city: "Bordeaux",
+      description: "Bien occupé par la famille.",
+    });
+  });
+
   it("strips Analyse-only details from public Decouverte shared reports", () => {
     const report = buildPublicSharedPropertyReport({
       id: "report-locked",

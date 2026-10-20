@@ -1,3 +1,4 @@
+import { redactPersonalData, redactPersonalText } from "@/lib/personal-data-filter";
 import { reportSaleSchedule } from "@/lib/report-sale-schedule";
 import { formatDate, formatPrice, formatPricePerM2, formatStartingPrice } from "@/lib/format";
 import { cleanSaleTitle } from "@/lib/sale-title";
@@ -79,7 +80,11 @@ export const REPORT_PDF_HEADINGS = [
 ] as const;
 
 export function reportToPdfLines(report: SavedReportRow, plan: PlanEntitlements): string[] {
-  const snapshot = sanitizeReportSnapshotForPlan(asRecord(report.report_snapshot), plan);
+  // Un rapport enregistré avant le durcissement du filtre peut encore porter un nom de particulier :
+  // le PDF refiltre à la lecture, comme le lien partagé.
+  const snapshot = redactPersonalData(
+    sanitizeReportSnapshotForPlan(asRecord(report.report_snapshot), plan),
+  );
   const traceability = asRecord(snapshot.sourceTraceability);
   const sourceTrace = normalizeSourceTrace(traceability.entries);
   const limitations = normalizeStringList(traceability.limitations);
@@ -197,7 +202,7 @@ export function reportToPdfLines(report: SavedReportRow, plan: PlanEntitlements)
     `Généré le: ${formatDate(String(snapshot.generatedAt ?? report.updated_at))}`,
     "",
     "Bien",
-    `Titre: ${stringOrNumberValue(cleanSaleTitle(stringOrNumberValue(sale.title, null)), report.title)}`,
+    `Titre: ${stringOrNumberValue(cleanSaleTitle(stringOrNumberValue(sale.title, null)), redactPersonalText(report.title))}`,
     `Localisation: ${stringOrNumberValue(sale.displayAddress, null) || [sale.address, sale.city, sale.department].filter(Boolean).join(", ") || "à confirmer"}`,
     `Type: ${stringOrNumberValue(sale.propertyType, "Bien")}`,
     `Surface retenue: ${stringOrNumberValue(sale.surfaceLabel, "à confirmer")}`,
@@ -638,7 +643,7 @@ export function reportToPdfLines(report: SavedReportRow, plan: PlanEntitlements)
     ...financingDossierLines({
       title: stringOrNumberValue(
         cleanSaleTitle(stringOrNumberValue(sale.title, null)),
-        report.title,
+        redactPersonalText(report.title),
       ),
       generatedAt: stringOrNumberValue(snapshot.generatedAt, report.updated_at),
       sale,

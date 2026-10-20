@@ -7,7 +7,7 @@ import {
 } from "@/lib/followed-sale-snapshots-shared";
 
 const SNAPSHOT_COLUMNS =
-  "id,sale_id,captured_at,expires_at,title,city,department,postal_code,property_type,tribunal_name,sale_venue_type,starting_price_eur,sale_date,lawyer_name,source_name,result_status,adjudication_price_eur,adjudication_price_source,adjudication_price_withheld,personal_status,bid_ceiling_eur";
+  "id,sale_id,captured_at,expires_at,title,city,department,property_type,tribunal_name,sale_venue_type,starting_price_eur,sale_date,lawyer_name,source_name,result_status,adjudication_price_eur,adjudication_price_source,adjudication_price_withheld,personal_status,bid_ceiling_eur";
 
 /** Même plafond que la liste des favoris Analyse : l'instantané est de toute façon borné à 6 mois. */
 const SNAPSHOT_LIST_LIMIT = 200;

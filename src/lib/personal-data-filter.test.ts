@@ -170,3 +170,45 @@ describe("liste des prénoms", () => {
     expect(python).toBe(typescript);
   });
 });
+
+describe("champs filtrés", () => {
+  const names = (source: string, start: RegExp) => {
+    const block = new RegExp(`${start.source}([\\s\\S]*?)(?:\\]|\\n\\))`).exec(source)![1];
+    return [...block.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+  };
+  const read = (file: string) => readFileSync(path.join(process.cwd(), file), "utf8");
+
+  it("couvrent tous les champs du miroir Python (colonnes, clés du payload, observations)", () => {
+    const python = read("services/data-pipeline/src/personal_data.py");
+    const pythonNames = new Set([
+      ...names(python, /SALE_TEXT_COLUMNS = \(/),
+      ...names(python, /PAYLOAD_TEXT_KEYS = \(/),
+      "observations", // `redact_storage_row` filtre aussi la liste des observations
+    ]);
+    const typescript = read("src/lib/personal-data-filter.ts");
+    const typescriptNames = new Set([
+      ...names(typescript, /const SALE_TEXT_FIELDS = \[/),
+      ...names(typescript, /const SALE_JSON_FIELDS = \[/),
+    ]);
+
+    expect(pythonNames.size).toBeGreaterThan(10);
+    expect([...pythonNames].filter((name) => !typescriptNames.has(name))).toEqual([]);
+  });
+
+  it("filtre les champs que Python filtrait déjà", () => {
+    const sale = {
+      source_conflicts: [{ field: "description", alternative: "occupé par Pierre Martin" }],
+      llm_extraction: { occupancy_details: "Locataire Madame Sara LOPEZ" },
+      llm_fact_extraction: { facts: ["bail consenti à Monsieur Olivier MOREAU"] },
+      llm_display_source_constraints: ["occupé par Madame Julie ROBERT"],
+      observations: [{ title: "Bien occupé par la famille Martin", city: "Lyon" }],
+    };
+    expect(redactSaleTexts(sale)).toEqual({
+      source_conflicts: [{ field: "description", alternative: "occupé par un occupant" }],
+      llm_extraction: { occupancy_details: "Locataire" },
+      llm_fact_extraction: { facts: ["bail consenti à un locataire"] },
+      llm_display_source_constraints: ["occupé par un occupant"],
+      observations: [{ title: "Bien occupé par la famille", city: "Lyon" }],
+    });
+  });
+});
