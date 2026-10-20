@@ -5,21 +5,24 @@ défaut. Le job hebdomadaire ``.github/workflows/pipeline-clock-offset.yml`` lan
 test dont la date d'audience, la fenêtre de fraîcheur ou la rétention est écrite en dur (et non relative à
 « aujourd'hui ») y échoue avant de casser la CI le jour venu.
 
-Pourquoi pas ``time-machine`` : cette dépendance n'est pas dans les verrous du pipeline et n'a pas été ajoutée sans
-l'accord du propriétaire (voir la note du workflow). Le décalage se fait donc avec la bibliothèque standard :
-``datetime.datetime.now/utcnow/today``, ``datetime.date.today`` et ``time.time``. ``time.monotonic`` (durées,
-échéances) n'est pas décalée. Les appels qui lisent l'horloge système sans passer par Python (PostgreSQL ``now()``,
-sous-processus) ne sont pas décalés : le job est un détecteur de dates codées en dur, pas une simulation complète.
+Moteur : ``time-machine``, qui décale toutes les horloges Python, y compris celles des extensions C (pandas,
+psycopg). Cette dépendance n'est PAS dans les verrous du pipeline : l'ajouter demande l'accord du propriétaire (voir la
+note du workflow). Sans elle, le décalage n'est pas appliqué et le job le dit (``unavailable_reason``) au lieu de
+tourner à vide. Un essai avec la bibliothèque standard seule (``datetime``, ``time.time`` remplacés) a été écarté :
+remplacer ``datetime.datetime`` fait boucler l'import de pandas, et un décalage partiel donne des dizaines de faux
+échecs (horloges mélangées d'un module à l'autre).
+
+Ce que le décalage ne couvre pas : l'horloge de PostgreSQL (``now()``) et celle des sous-processus ;
+``os.utime(path)`` sans argument lit l'horloge système réelle (un test qui s'en sert doit passer ``time.time()``).
 """
 
 from __future__ import annotations
 
 import datetime as _datetime
 import os
-import time as _time
 
 ENV_VARIABLE = "IMMOJUDIS_TEST_CLOCK_OFFSET_DAYS"
-_installed_offset: _datetime.timedelta | None = None
+_state: dict[str, object] = {}
 
 
 def configured_offset_days(environ: dict[str, str] | None = None) -> float | None:
@@ -34,49 +37,28 @@ def configured_offset_days(environ: dict[str, str] | None = None) -> float | Non
     return days if days != 0 else None
 
 
-def install_clock_offset(days: float) -> None:
-    """Décale l'horloge Python de ``days`` jours, pour le reste du processus (une seule fois)."""
-    global _installed_offset
-    if _installed_offset is not None:
-        return
-    offset = _datetime.timedelta(days=days)
-    real_datetime, real_date, real_time = _datetime.datetime, _datetime.date, _time.time
-
-    class _AcceptsRealInstances(type):
-        """Les valeurs réelles (psycopg, pydantic) restent des instances de la classe décalée."""
-
-        def __instancecheck__(cls, obj):
-            return isinstance(obj, cls.__mro__[1])
-
-        def __subclasscheck__(cls, subclass):
-            return issubclass(subclass, cls.__mro__[1])
-
-    class ShiftedDatetime(real_datetime, metaclass=_AcceptsRealInstances):  # type: ignore[misc, valid-type]
-        @classmethod
-        def now(cls, tz=None):
-            return real_datetime.now(tz) + offset
-
-        @classmethod
-        def utcnow(cls):
-            return real_datetime.utcnow() + offset
-
-        @classmethod
-        def today(cls):
-            return real_datetime.now() + offset
-
-    class ShiftedDate(real_date, metaclass=_AcceptsRealInstances):  # type: ignore[misc, valid-type]
-        @classmethod
-        def today(cls):
-            return (real_datetime.now() + offset).date()
-
-    _datetime.datetime = ShiftedDatetime  # type: ignore[misc]
-    _datetime.date = ShiftedDate  # type: ignore[misc]
-    _time.time = lambda: real_time() + offset.total_seconds()  # type: ignore[assignment]
-    _installed_offset = offset
+def install_clock_offset(days: float) -> bool:
+    """Décale l'horloge de ``days`` jours pour le reste du processus (une seule fois) ; faux sans time-machine."""
+    if "traveller" in _state:
+        return True
+    try:
+        import time_machine
+    except ImportError:
+        _state["unavailable_reason"] = "time-machine n'est pas installé : horloge non décalée"
+        return False
+    traveller = time_machine.travel(_datetime.datetime.now(_datetime.UTC) + _datetime.timedelta(days=days), tick=True)
+    traveller.start()
+    _state["traveller"] = traveller
+    return True
 
 
 def install_from_environment() -> float | None:
+    """Installe le décalage demandé par l'environnement ; renvoie les jours demandés (``None`` si aucun)."""
     days = configured_offset_days()
     if days is not None:
         install_clock_offset(days)
     return days
+
+
+def unavailable_reason() -> str | None:
+    return str(_state["unavailable_reason"]) if "unavailable_reason" in _state else None

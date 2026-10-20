@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gc
 import json
 import sys
 import time
@@ -208,7 +209,7 @@ def test_fact_chunk_and_display_keys_do_not_depend_on_personal_names() -> None:
 # doubler ``n`` ne doit pas faire plus que tripler le temps (2 = linéaire, 4 = quadratique), à la meilleure de
 # trois mesures pour chaque taille.
 _LINEARITY_MAX_RATIO = 3.0
-_LINEARITY_MEASURES = 3
+_LINEARITY_MEASURES = 7
 _LINEARITY_TIMER_FLOOR_SECONDS = 0.002
 
 _LONG_WHITESPACE_TEXTS = {
@@ -241,9 +242,10 @@ _LINEARITY_BASE_SIZE = 200
 def _best_time(text: str) -> float:
     best = float("inf")
     for _ in range(_LINEARITY_MEASURES):
-        started = time.perf_counter()
+        gc.collect()  # une collecte déclenchée en cours de mesure la fausserait
+        started = time.process_time()  # temps CPU : insensible à la charge de la machine et aux horloges décalées
         redact_personal_text(text)
-        best = min(best, time.perf_counter() - started)
+        best = min(best, time.process_time() - started)
     return max(best, _LINEARITY_TIMER_FLOOR_SECONDS)
 
 
