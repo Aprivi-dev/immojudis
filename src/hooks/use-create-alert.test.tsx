@@ -175,6 +175,33 @@ describe("useCreateAlert", () => {
     expect(mocks.createAlert).not.toHaveBeenCalled();
   });
 
+  it("ne crée pas d'alerte sans critère quand la recherche n'a que « sous la fourchette » ou « sans point à vérifier »", async () => {
+    for (const search of [
+      { belowRange: true },
+      { noPointsToVerify: true },
+      { belowRange: true, noPointsToVerify: true },
+    ]) {
+      mocks.toast.error.mockClear();
+      const hook = setup();
+      const outcome = await create(hook, search);
+      expect(outcome).toEqual({ status: "blocked" });
+      expect(mocks.toast.error).toHaveBeenCalledWith(
+        expect.stringContaining("ne sont pas encore proposés dans les alertes"),
+      );
+    }
+    expect(mocks.createAlert).not.toHaveBeenCalled();
+  });
+
+  it("enregistre les autres critères et dit que ces deux filtres n'y sont pas", async () => {
+    const hook = setup();
+    const outcome = await create(hook, { department: "33", belowRange: true });
+    expect(outcome.status).toBe("created");
+    expect(mocks.createAlert).toHaveBeenCalledTimes(1);
+    expect(mocks.toast.message).toHaveBeenCalledWith(
+      expect.stringContaining("ne sont pas enregistrés dans l'alerte"),
+    );
+  });
+
   it("refuse à un compte gratuit les critères réservés à Analyse", async () => {
     const hook = setup();
     const outcome = await create(hook, { query: "Bordeaux" });

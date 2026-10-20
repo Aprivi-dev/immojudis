@@ -572,8 +572,8 @@ describe("InformationAgentContributionForm", () => {
       await screen.findByText("CASE-1234");
 
       const input = screen.getByLabelText("Pièces jointes");
-      expect(input.closest("label")?.className).toContain("has-[:focus-visible]:ring-2");
-      expect(input.closest("label")?.className).toContain("has-[:focus-visible]:ring-gold");
+      expect(input.closest("label")?.className).toContain("has-[:focus-visible]:outline-2");
+      expect(input.closest("label")?.className).toContain("has-[:focus-visible]:outline-gold-soft");
 
       fireEvent.change(input, {
         target: { files: [new File(["%PDF-1.7"], "pv.pdf", { type: "application/pdf" })] },

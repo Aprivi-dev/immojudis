@@ -657,7 +657,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                     ) : null}
                     <label
                       htmlFor="contribution-files"
-                      className="mt-3 flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-gold/50 bg-cream/40 px-4 py-5 text-center transition hover:border-gold hover:bg-cream has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-gold has-[:focus-visible]:ring-offset-2"
+                      className="mt-3 flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-gold/50 bg-cream/40 px-4 py-5 text-center transition hover:border-gold hover:bg-cream has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-gold-soft"
                     >
                       <UploadCloud className="size-6 text-gold-text" aria-hidden="true" />
                       <span className="mt-2 text-sm font-semibold text-foreground">
