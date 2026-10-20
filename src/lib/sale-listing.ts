@@ -132,7 +132,7 @@ export function listingVisits(sale: AuctionSale): string[] {
 }
 
 /** « Visite dans les 7 jours » : aujourd'hui et les six jours suivants (comme la page des audiences). */
-export const VISIT_SOON_DAYS = 7;
+const VISIT_SOON_DAYS = 7;
 
 /**
  * Jours (Europe/Paris, `AAAA-MM-JJ`) des visites publiées avec une date complète (jour, mois et
