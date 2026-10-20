@@ -1,5 +1,6 @@
 import "server-only";
 import { createHash } from "node:crypto";
+import { isIP } from "node:net";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { recordAccountProductEvent } from "@/lib/account-product-events.server";
 import { RateLimitError } from "@/lib/api-errors";
@@ -80,9 +81,44 @@ export function clientIpFromRequest(request: Request): string {
   return forwarded || UNKNOWN_CLIENT_IP;
 }
 
+/** Les huit groupes de 16 bits d'une adresse IPv6 valide (`::` développé, IPv4 finale convertie). */
+function ipv6Groups(address: string): number[] {
+  let text = address.toLowerCase();
+  const v4 = /(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(text);
+  if (v4) {
+    const [a, b, c, d] = v4.slice(1).map(Number);
+    text = `${text.slice(0, v4.index)}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
+  }
+  const [head = "", tail] = text.split("::");
+  const front = head ? head.split(":") : [];
+  const back = tail ? tail.split(":") : [];
+  const fill = tail === undefined ? [] : Array<string>(8 - front.length - back.length).fill("0");
+  return [...front, ...fill, ...back].map((group) => parseInt(group, 16));
+}
+
+/**
+ * Clé du réseau d'une adresse : l'adresse elle-même en IPv4, le préfixe /64 en IPv6. Une personne
+ * qui a une connexion IPv6 reçoit au moins un /64 (le plus souvent un /56 ou un /48) et en change les
+ * 64 bits de poids faible à volonté : compter l'adresse entière lui donnerait 2^64 seaux. Une
+ * adresse IPv4 mappée (`::ffff:203.0.113.7`) redevient l'adresse IPv4 ; une valeur qui n'est pas une
+ * adresse est gardée telle quelle.
+ */
+export function clientNetworkKey(ip: string): string {
+  const address = ip.trim().replace(/%.*$/, "");
+  if (isIP(address) !== 6) return ip;
+  const groups = ipv6Groups(address);
+  if (groups.slice(0, 5).every((group) => group === 0) && groups[5] === 0xffff) {
+    return `${groups[6] >> 8}.${groups[6] & 255}.${groups[7] >> 8}.${groups[7] & 255}`;
+  }
+  return `${groups
+    .slice(0, 4)
+    .map((group) => group.toString(16))
+    .join(":")}::/64`;
+}
+
 export function hashClientIp(ip: string, salt = process.env.RATE_LIMIT_IP_SALT): string {
   return createHash("sha256")
-    .update(`${salt?.trim() || "immojudis-ip-rate-limit"}|${ip}`, "utf8")
+    .update(`${salt?.trim() || "immojudis-ip-rate-limit"}|${clientNetworkKey(ip)}`, "utf8")
     .digest("hex");
 }
 
@@ -257,18 +293,26 @@ export async function enforceGlobalRateLimit({
 
 /**
  * Plafonds journaliers d'une opération coûteuse (voir `DAILY_OPERATION_LIMITS`) : par compte, puis par
- * adresse, puis global. Dans cet ordre, pour qu'un compte déjà au plafond n'use ni le compteur de son
- * adresse ni le disjoncteur global. Dépassement : `RateLimitError` (429) dont le message public est
- * « Limite quotidienne atteinte, réessayez demain. », avec `Retry-After` jusqu'à minuit UTC.
+ * adresse, puis la part de l'offre de lancement (si `launchOffer`), puis global. Dans cet ordre, pour
+ * qu'un compte déjà au plafond n'use ni le compteur de son adresse ni le disjoncteur global, et
+ * qu'un compte de l'offre de lancement qui a épuisé sa part (`launchOfferGlobal`) n'entame pas la
+ * réserve des abonnés et des administrateurs, qui ne passent que par le compteur global.
+ * Dépassement : `RateLimitError` (429) dont le message public est « Limite quotidienne atteinte,
+ * réessayez demain. », avec `Retry-After` jusqu'à minuit UTC.
+ *
+ * À appeler APRÈS le contrôle du droit d'accès, avec `launchOffer: plan.launchOffer === true`.
  */
 export async function enforceDailyOperationLimits({
   request,
   userId,
   operation,
+  launchOffer = false,
 }: {
   request: Request;
   userId: string;
   operation: DailyOperation;
+  /** Le droit vient de l'offre de lancement (`PlanEntitlements.launchOffer`), non d'un abonnement. */
+  launchOffer?: boolean;
 }): Promise<void> {
   const limits = DAILY_OPERATION_LIMITS[operation];
   const bucketKey = `daily.${operation}`;
@@ -276,6 +320,13 @@ export async function enforceDailyOperationLimits({
   try {
     await enforceUserRateLimit({ userId, bucketKey, limit: limits.perUser, windowSeconds });
     await enforceIpRateLimit({ request, bucketKey, limit: limits.perIp, windowSeconds });
+    if (launchOffer) {
+      await enforceGlobalRateLimit({
+        bucketKey: `${bucketKey}.launch-offer`,
+        limit: limits.launchOfferGlobal,
+        windowSeconds,
+      });
+    }
     await enforceGlobalRateLimit({ bucketKey, limit: limits.global, windowSeconds });
   } catch (error) {
     if (error instanceof RateLimitError) {

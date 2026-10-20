@@ -6,6 +6,7 @@ import type { Database, Json } from "@/integrations/supabase/types";
 import { isLawyerEligibleForSale } from "@/lib/lawyer-bar";
 import { featureIncluded } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
+import { enforceDailyOperationLimits } from "@/lib/rate-limit";
 import { resolveSaleBarAssociation } from "@/lib/sale-lawyer-bar";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import { recordFeatureUsageEvent } from "@/lib/usage";
@@ -167,9 +168,12 @@ const REFERENCED_LAWYER_MATCH_COLUMNS =
 export async function createLawyerReferralRequest({
   auth,
   input,
+  request,
 }: {
   auth: SupabaseAuthContext;
   input: LawyerReferralRequestPayload;
+  /** Requête HTTP d'origine : sert au plafond journalier par adresse. */
+  request: Request;
 }): Promise<LawyerReferralResponse> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "lawyers.referrals")) {
@@ -190,6 +194,15 @@ export async function createLawyerReferralRequest({
       reusedExisting: true,
     };
   }
+
+  // Après le droit d'accès et la reprise d'une demande déjà ouverte (qui ne crée rien) : seules les
+  // créations usent les compteurs du compte, de son adresse et le disjoncteur global.
+  await enforceDailyOperationLimits({
+    request,
+    userId: auth.userId,
+    operation: "lawyerReferralCreate",
+    launchOffer: plan.launchOffer === true,
+  });
 
   const saleBar = await resolveSaleBarAssociation(sale);
   const matchedLawyer =

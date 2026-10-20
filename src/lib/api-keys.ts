@@ -6,6 +6,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
 import { featureIncluded } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
+import { enforceDailyOperationLimits } from "@/lib/rate-limit";
 
 type ApiKeyRow = Database["public"]["Tables"]["user_api_keys"]["Row"];
 
@@ -130,9 +131,12 @@ export async function listUserApiKeys({
 export async function createUserApiKey({
   auth,
   input,
+  request,
 }: {
   auth: SupabaseAuthContext;
   input: ApiKeyCreatePayload;
+  /** Requête HTTP d'origine : sert au plafond journalier par adresse. */
+  request: Request;
 }): Promise<ApiKeyCreateResponse> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "sales.apiAccess")) {
@@ -140,6 +144,13 @@ export async function createUserApiKey({
   }
 
   await assertApiKeyLimit(auth, plan.limits.apiKeys);
+  // Après le droit d'accès et le nombre de clés du plan : un refus de ceux-là n'use aucun compteur.
+  await enforceDailyOperationLimits({
+    request,
+    userId: auth.userId,
+    operation: "apiKeyCreate",
+    launchOffer: plan.launchOffer === true,
+  });
 
   const secret = generateApiKeySecret();
   const { data, error } = await supabaseAdmin

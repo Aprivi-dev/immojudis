@@ -8,9 +8,11 @@ vi.mock("@/integrations/supabase/client.server", () => ({
 
 import {
   clientIpFromRequest,
+  clientNetworkKey,
   enforceIpRateLimit,
   enforceUserRateLimit,
   hashClientIp,
+  ipRateLimitTarget,
   ipRateLimiterStats,
   resetIpRateLimiterStats,
   secondsUntilWindowEnds,
@@ -288,6 +290,41 @@ describe("rate limiting", () => {
     expect(clientIpFromRequest(forwarded)).toBe("198.51.100.7");
     expect(clientIpFromRequest(new Request("https://example.test"))).toBe("unknown");
     expect(hashClientIp("198.51.100.4", "a")).not.toBe(hashClientIp("198.51.100.4", "b"));
+  });
+
+  it("hashes an IPv6 address by its /64 prefix: the interface identifier does not make a new bucket", () => {
+    const salt = "s";
+    const hash = (ip: string) => hashClientIp(ip, salt);
+    // Même /64, 64 bits de poids faible différents (adresses « temporaires » de la vie courante).
+    expect(hash("2001:db8:abcd:12::1")).toBe(hash("2001:db8:abcd:12:ffff:eeee:dddd:cccc"));
+    expect(hash("2001:db8:abcd:12::1")).toBe(hash("2001:0db8:ABCD:0012:0:0:0:2"));
+    expect(hash("2001:db8:abcd:12::1")).toBe(hash("2001:db8:abcd:12::1%eth0"));
+    // Un autre /64 (même /48) a son propre seau.
+    expect(hash("2001:db8:abcd:12::1")).not.toBe(hash("2001:db8:abcd:13::1"));
+    expect(hash("2001:db8:abcd:12::1")).not.toBe(hash("2001:db8:abce:12::1"));
+    // Adresses courtes et IPv4 incorporée.
+    expect(clientNetworkKey("::1")).toBe("0:0:0:0::/64");
+    expect(clientNetworkKey("64:ff9b::192.0.2.1")).toBe("64:ff9b:0:0::/64");
+    expect(clientNetworkKey("2001:db8:1:2:3:4:5:6")).toBe("2001:db8:1:2::/64");
+  });
+
+  it("keeps an IPv4 address whole, maps IPv4-in-IPv6 to it, and leaves other values alone", () => {
+    expect(clientNetworkKey("198.51.100.4")).toBe("198.51.100.4");
+    expect(clientNetworkKey("::ffff:198.51.100.4")).toBe("198.51.100.4");
+    expect(clientNetworkKey("unknown")).toBe("unknown");
+    expect(hashClientIp("::ffff:198.51.100.4", "a")).toBe(hashClientIp("198.51.100.4", "a"));
+    expect(hashClientIp("198.51.100.4", "a")).not.toBe(hashClientIp("198.51.100.5", "a"));
+  });
+
+  it("gives every address of an IPv6 /64 the same rate-limit bucket", () => {
+    const target = (ip: string) =>
+      ipRateLimitTarget(
+        new Request("https://example.test", { headers: { "x-real-ip": ip } }),
+        "k",
+        60,
+      );
+    expect(target("2001:db8::1").ipHash).toBe(target("2001:db8::dead:beef").ipHash);
+    expect(target("2001:db8::1").bucketKey).toBe("k");
   });
 
   it("computes Retry-After from the end of the fixed window", () => {

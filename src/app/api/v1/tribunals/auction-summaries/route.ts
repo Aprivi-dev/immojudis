@@ -5,12 +5,19 @@ import {
 import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
 import { getCourtAuctionSummaries } from "@/lib/auction-scenarios.server";
 import { assertFeatureEntitlement } from "@/lib/property-reports";
+import { enforceUserRateLimit } from "@/lib/rate-limit";
+import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 
 /** Three years of adjudications per court (Licitor and DVF), for the Analyse offer. */
 export async function GET(request: Request) {
   const context = createApiRequestContext(request, "tribunals.auction-summaries");
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
+    await enforceUserRateLimit({
+      userId: auth.userId,
+      bucketKey: "v1.tribunal-auction-summaries",
+      ...RATE_LIMIT_POLICIES.compute,
+    });
     await assertFeatureEntitlement(
       auth,
       "sales.statistics",
