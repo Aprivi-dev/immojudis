@@ -14089,6 +14089,7 @@ export type Database = {
         Returns: Json;
       };
       get_court_auction_summaries: { Args: never; Returns: Json };
+      get_launch_offer_account_eligibility: { Args: { p_user_id: string }; Returns: boolean };
       get_launch_offer_status: { Args: never; Returns: boolean };
       get_withdrawn_catalogue_sources: { Args: never; Returns: string[] };
       get_public_sale_calendar_event: {
