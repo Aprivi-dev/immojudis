@@ -518,7 +518,7 @@ async function deliverEmailAlertDigest({
 
   const recipient = await readUserEmail(userId);
   if (!recipient) {
-    return failAll("Aucune adresse email authentifiée disponible pour cet utilisateur.", null);
+    return failAll("Aucune adresse email confirmée disponible pour cet utilisateur.", null);
   }
 
   const message = buildAlertDigestMessage({
@@ -685,10 +685,16 @@ export async function sendResendEmail({
   return { id: body.id ?? null };
 }
 
+/**
+ * L'adresse email du compte, ou `null` quand il n'en a pas OU qu'elle n'est pas confirmée
+ * (`email_confirmed_at`) : on n'écrit jamais (alertes comme rappels d'audience) à une adresse que
+ * personne n'a prouvé lire.
+ */
 export async function readUserEmail(userId: string): Promise<string | null> {
   const { data, error } = await supabaseAdmin.auth.admin.getUserById(userId);
   if (error) throw error;
-  const email = data.user?.email?.trim();
+  if (!data.user?.email_confirmed_at) return null;
+  const email = data.user.email?.trim();
   return email || null;
 }
 
