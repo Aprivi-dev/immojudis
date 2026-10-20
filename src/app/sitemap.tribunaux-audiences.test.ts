@@ -116,7 +116,7 @@ describe("sitemap.xml : pages des tribunaux et des audiences", () => {
 
   it("compte deux lots distincts du même tribunal, du même jour et au même prix", async () => {
     const lots = soon(3);
-    lots.hearings = lots.hearings.map((hearing, index) => ({
+    lots.hearings = lots.hearings.map((hearing) => ({
       ...hearing,
       startingPriceEur: 50_000,
       sourceGroup: null,

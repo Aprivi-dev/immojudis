@@ -14,7 +14,11 @@ import {
   PUBLICATION_QUARANTINE_SELECT,
   SalePublicationUnavailableError,
 } from "@/lib/sale-publication-guard";
-import { GRAVE_SALE_STATUSES } from "@/lib/sale-change-display";
+import {
+  GRAVE_SALE_STATUSES,
+  SALE_CHANGE_REASON_SOURCE_ABSENCE,
+  SOURCE_ABSENCE_LABEL,
+} from "@/lib/sale-change-display";
 import { systemAuthForUser } from "@/lib/system-auth";
 import type { AuctionSale } from "@/lib/types";
 import { recordFeatureUsageEvent } from "@/lib/usage";
@@ -82,6 +86,8 @@ export type SaleChange = {
   previousValue: string | number | null;
   currentValue: string | number | null;
   fingerprint: string;
+  /** Motif connu du changement (retrait déduit de l'absence de l'annonce à la source). */
+  reason?: typeof SALE_CHANGE_REASON_SOURCE_ABSENCE;
 };
 
 export type SaleChangeEventSummary = {
@@ -284,7 +290,7 @@ export async function monitorUserSaleChanges({
       if (!left || !previous) continue;
       const current: SaleChangeSnapshot = { ...previous, status: left.status };
       eventRows.push(
-        ...detectSaleChanges({ previous, current, now })
+        ...detectSaleChanges({ previous, current, now, statusReason: left.reason })
           .filter((change) => change.eventKind === "status_changed")
           .map((change) =>
             buildSaleChangeEventInsert({
@@ -461,10 +467,17 @@ export function detectSaleChanges({
   previous,
   current,
   now = new Date(),
+  statusReason,
 }: {
   previous: SaleChangeSnapshot;
   current: SaleChangeSnapshot;
   now?: Date;
+  /**
+   * Motif du changement de statut quand il est déduit de l'absence de l'annonce à sa source : le
+   * changement est annoncé comme une annonce disparue à vérifier, pas comme un retrait, et n'est pas
+   * « urgent ».
+   */
+  statusReason?: typeof SALE_CHANGE_REASON_SOURCE_ABSENCE | null;
 }): SaleChange[] {
   const changes: SaleChange[] = [];
   addChangeIfDifferent(changes, {
@@ -493,8 +506,9 @@ export function detectSaleChanges({
     field: "status",
     previous,
     current,
-    summaryLabel: "Statut de la vente modifié",
-    severity: statusSeverity(current.status),
+    summaryLabel: statusReason ? SOURCE_ABSENCE_LABEL : "Statut de la vente modifié",
+    severity: statusReason ? "important" : statusSeverity(current.status),
+    reason: statusReason ?? undefined,
   });
   addChangeIfDifferent(changes, {
     eventKind: "documents_changed",
@@ -571,6 +585,7 @@ function buildSaleChangeEventInsert({
       field: change.field,
       previousValue: change.previousValue,
       currentValue: change.currentValue,
+      ...(change.reason ? { reason: change.reason } : {}),
     }),
     detected_at: detectedAt,
   };
@@ -585,6 +600,7 @@ function addChangeIfDifferent(
     current: SaleChangeSnapshot;
     summaryLabel: string;
     severity: SaleChangeSeverity;
+    reason?: typeof SALE_CHANGE_REASON_SOURCE_ABSENCE;
   },
 ) {
   const previousValue = args.previous[args.field];
@@ -607,6 +623,7 @@ function addChangeIfDifferent(
     previousValue,
     currentValue,
     fingerprint,
+    ...(args.reason ? { reason: args.reason } : {}),
   });
 }
 
@@ -727,22 +744,48 @@ async function loadSalesByIds(
  */
 async function loadGraveSalesOutsideCatalogue(
   saleIds: string[],
-): Promise<Map<string, { status: string }>> {
-  const result = new Map<string, { status: string }>();
+): Promise<
+  Map<string, { status: string; reason: typeof SALE_CHANGE_REASON_SOURCE_ABSENCE | null }>
+> {
+  const result = new Map<
+    string,
+    { status: string; reason: typeof SALE_CHANGE_REASON_SOURCE_ABSENCE | null }
+  >();
   const ids = [...new Set(saleIds)].filter(Boolean);
   for (let start = 0; start < ids.length; start += LEFT_CATALOGUE_BATCH_SIZE) {
     const { data, error } = await supabaseAdmin
       .from("auction_sales")
-      .select(`id,sale_date,${PUBLICATION_QUARANTINE_SELECT}` as const)
+      .select(
+        `id,sale_date,${PUBLICATION_QUARANTINE_SELECT},source_absence:raw_payload->source_absence` as const,
+      )
       .in("id", ids.slice(start, start + LEFT_CATALOGUE_BATCH_SIZE));
     if (error) throw error;
     for (const row of data ?? []) {
       if (typeof row.id !== "string" || isPublicationQuarantinedGuardRow(row)) continue;
       const status = cleanString(row.status)?.toLowerCase();
-      if (status && GRAVE_SALE_STATUSES.has(status)) result.set(row.id, { status });
+      if (status && GRAVE_SALE_STATUSES.has(status)) {
+        result.set(row.id, {
+          status,
+          reason: withdrawnBySourceAbsence(status, row.source_absence),
+        });
+      }
     }
   }
   return result;
+}
+
+/**
+ * « Retirée » par `withdraw_missing_source_sales` : la vente a été passée en `withdrawn` parce qu'elle
+ * manquait aux deux derniers inventaires complets de sa source (`raw_payload.source_absence`). C'est
+ * une absence, pas un retrait annoncé par la source.
+ */
+function withdrawnBySourceAbsence(
+  status: string,
+  sourceAbsence: unknown,
+): typeof SALE_CHANGE_REASON_SOURCE_ABSENCE | null {
+  const isObject =
+    sourceAbsence !== null && typeof sourceAbsence === "object" && !Array.isArray(sourceAbsence);
+  return status === "withdrawn" && isObject ? SALE_CHANGE_REASON_SOURCE_ABSENCE : null;
 }
 
 function buildSnapshotRow({
