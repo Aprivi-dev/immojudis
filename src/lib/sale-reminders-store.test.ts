@@ -41,7 +41,10 @@ vi.mock("@/integrations/supabase/client.server", () => ({
 vi.mock("@/lib/sale-publication-guard", () => ({ getPublicationVisibleSaleIds: state.visible }));
 vi.mock("@/lib/email-alerts", () => ({ readUserEmail: state.readUserEmail }));
 
-import { createSupabaseSaleReminderStore } from "@/lib/sale-reminders-store";
+import {
+  createSupabaseSaleReminderStore,
+  latestSourceVerification,
+} from "@/lib/sale-reminders-store";
 
 const USER = "7d335032-e935-4550-9347-ed22b0f63449";
 
@@ -127,6 +130,54 @@ describe("magasin des rappels d'audience", () => {
     expect(callsOf("auction_sales", "in")[0].args).toEqual(["id", ["s1", "s2", "s3"]]);
     // Une vente débloquée dont la fiche a été purgée (sale_id nul) n'est pas suivie.
     expect(callsOf("user_sale_unlocks", "not")[0].args).toEqual(["sale_id", "is", null]);
+  });
+
+  it("lit tous les favoris et toutes les ventes débloquées, page par page, sans plafond de 500", async () => {
+    const page = Array.from({ length: 1_000 }, (_, index) => ({ sale_id: `f${index}` }));
+    state.results.user_favorites = [
+      { data: page, error: null },
+      { data: [{ sale_id: "dernier" }], error: null },
+    ];
+    state.results.user_sale_unlocks = [{ data: [{ sale_id: "f0" }], error: null }];
+    await createSupabaseSaleReminderStore().followedSales(USER);
+    expect(callsOf("user_favorites", "range").map((call) => call.args)).toEqual([
+      [0, 999],
+      [1_000, 1_999],
+    ]);
+    expect(callsOf("user_favorites", "limit")).toEqual([]);
+    expect(callsOf("user_sale_unlocks", "limit")).toEqual([]);
+    const ids = callsOf("auction_sales", "in").flatMap((call) => call.args[1] as string[]);
+    expect(ids).toHaveLength(1_001);
+  });
+
+  it("lit la dernière vérification à la source : last_seen_at et contrôles de source", async () => {
+    state.results.auction_sales = [
+      {
+        data: [
+          {
+            id: "s1",
+            last_seen_at: "2026-11-02T10:00:00Z",
+            source_checks: { a: { checked_at: "2026-11-03T02:00:00Z" } },
+          },
+          { id: "s2", last_seen_at: null, source_checks: null },
+        ],
+        error: null,
+      },
+    ];
+    const verified = await createSupabaseSaleReminderStore().lastVerifiedAt(["s1", "s2"]);
+    expect([...verified]).toEqual([
+      ["s1", "2026-11-03T02:00:00.000Z"],
+      ["s2", null],
+    ]);
+    expect(callsOf("auction_sales", "select")[0].args[0]).toContain("last_seen_at");
+    expect(callsOf("auction_sales", "select")[0].args[0]).toContain("raw_payload->source_checks");
+  });
+
+  it("échoue plutôt que de conclure qu'une vente est fraîche quand la lecture échoue", async () => {
+    state.results.auction_sales = [{ data: null, error: new Error("injoignable") }];
+    await expect(createSupabaseSaleReminderStore().lastVerifiedAt(["s1"])).rejects.toThrow(
+      "injoignable",
+    );
   });
 
   it("ne lit que les événements de date et de statut récents et non masqués de la personne", async () => {
@@ -221,16 +272,16 @@ describe("magasin des rappels d'audience", () => {
     expect(sent).toMatchObject({ status: "sent", message_id: "msg_1", error: null });
     expect(callsOf("sale_reminder_dispatches", "in")[0].args).toEqual(["id", ["j1", "j2"]]);
 
-    await store.markFailed(["j1"], { error: "refusé" });
+    await store.markFailed(["j1"], { error: "send_failed" });
     const failed = callsOf("sale_reminder_dispatches", "update")[1].args[0] as Record<
       string,
       unknown
     >;
-    expect(failed).toMatchObject({ status: "failed", error: "refusé" });
+    expect(failed).toMatchObject({ status: "failed", error: "send_failed" });
 
     state.calls = [];
     await store.markSent([], { messageId: null, at: new Date() });
-    await store.markFailed([], { error: "x" });
+    await store.markFailed([], { error: "send_failed" });
     expect(state.calls).toEqual([]);
   });
 
@@ -246,5 +297,26 @@ describe("magasin des rappels d'audience", () => {
     const store = createSupabaseSaleReminderStore();
     expect([...(await store.visibleSaleIds(["s1", "s2"]))]).toEqual(["s1"]);
     expect(await store.userEmail(USER)).toBe("a@example.test");
+  });
+});
+
+describe("latestSourceVerification", () => {
+  it("garde la date la plus récente, ignore ce qui n'est pas une date", () => {
+    expect(
+      latestSourceVerification({
+        last_seen_at: "2026-11-01T00:00:00Z",
+        source_checks: {
+          a: { checked_at: "2026-11-02T00:00:00Z" },
+          b: { checked_at: "pas une date" },
+          c: null,
+          d: { fingerprint: "x" },
+        },
+      }),
+    ).toBe("2026-11-02T00:00:00.000Z");
+    expect(latestSourceVerification({ last_seen_at: "2026-11-01T00:00:00Z" })).toBe(
+      "2026-11-01T00:00:00.000Z",
+    );
+    expect(latestSourceVerification({ source_checks: [] })).toBeNull();
+    expect(latestSourceVerification({})).toBeNull();
   });
 });
