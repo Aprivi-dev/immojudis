@@ -264,7 +264,9 @@ const routeBudgets = [
     manifest: ".next/server/app/admin/pilotage/page_client-reference-manifest.js",
     routeKey: "/admin/pilotage/page",
     entryKey: "[project]/src/app/admin/pilotage/page",
-    maxBytes: 500_000,
+    // 20/10/2026 : resserré de 540 000 à 500 000 par W8, puis porté à 520 000 (sous le plafond d'origine)
+    // par les cartes de la seconde vague (rappels, retours sur les signaux).
+    maxBytes: 520_000,
   },
   {
     name: "admin-lawyers",
