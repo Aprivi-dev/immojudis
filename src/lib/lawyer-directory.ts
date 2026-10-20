@@ -10,6 +10,8 @@ import {
   tribunalBarAssociation,
 } from "@/lib/lawyer-bar";
 import { LAWYER_DIRECTORY_PAGE_SIZE } from "@/lib/rate-limit-policies";
+import type { LawyerUpcomingSales, ProsecutionLawyer } from "@/lib/lawyer-prosecuted-sales";
+import { loadUpcomingProsecutedSales } from "@/lib/lawyer-prosecuted-sales.server";
 import { resolveSaleBarAssociation } from "@/lib/sale-lawyer-bar";
 import { isPublicationQuarantined } from "@/lib/sale-publication-guard";
 
@@ -96,6 +98,11 @@ export type LawyerDirectoryProfile = {
   source: "immojudis" | "cnb";
   oathDate: string | null;
   languages: string[];
+  /**
+   * Ventes à venir où ce nom figure comme avocat poursuivant (profils Immojudis seulement ; absent
+   * sans rapprochement sûr). Voir `lawyer-prosecuted-sales.ts` pour les règles du rapprochement.
+   */
+  upcomingProsecutedSales?: LawyerUpcomingSales;
 };
 
 export type LawyerDirectoryOfficialSource = {
@@ -260,7 +267,16 @@ export async function listLawyerDirectory(
   );
 
   return {
-    lawyers: directoryPage.items,
+    lawyers: await withUpcomingProsecutedSales(
+      directoryPage.items,
+      activeLawyers.map(
+        (lawyer): ProsecutionLawyer => ({
+          id: lawyer.id,
+          displayName: lawyer.display_name,
+          barAssociation: lawyer.bar_association,
+        }),
+      ),
+    ),
     pagination: directoryPage.pagination,
     sectorLabel: resolvedBarAssociation
       ? `Barreau de ${resolvedBarAssociation}`
@@ -277,6 +293,37 @@ export async function listLawyerDirectory(
         }
       : null,
   };
+}
+
+/**
+ * Ajoute aux profils Immojudis de la page leurs ventes à venir en tant qu'avocat poursuivant. C'est
+ * un complément : s'il échoue, l'annuaire s'affiche sans, jamais en erreur.
+ */
+async function withUpcomingProsecutedSales(
+  profiles: LawyerDirectoryProfile[],
+  allReferencedLawyers: ProsecutionLawyer[],
+): Promise<LawyerDirectoryProfile[]> {
+  const pageLawyerIds = new Set(
+    profiles.filter((profile) => profile.source === "immojudis").map((profile) => profile.id),
+  );
+  if (!pageLawyerIds.size) return profiles;
+
+  try {
+    const upcoming = await loadUpcomingProsecutedSales(allReferencedLawyers, pageLawyerIds);
+    return profiles.map((profile) => {
+      const sales = upcoming.get(profile.id);
+      return sales ? { ...profile, upcomingProsecutedSales: sales } : profile;
+    });
+  } catch (error) {
+    console.warn(
+      JSON.stringify({
+        scope: "lawyers.directory",
+        message: "upcoming prosecuted sales unavailable",
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
+    return profiles;
+  }
 }
 
 function demoLawyerDirectory(
