@@ -99,6 +99,9 @@ export type AdminPilotage = {
   windows: PilotageWindow[];
 };
 
+/** Réponse de la route : le pilotage et, sous `saleReminders`, le taux de fausses alertes des rappels. */
+export type AdminPilotageResponse = AdminPilotage & { saleReminders?: SaleReminderAccuracy };
+
 const count = z.number().int().nonnegative().nullish();
 const quotaSchema = z.object({
   total: count,
