@@ -38,8 +38,8 @@ npm run dev        # http://localhost:3000
 | `SMART_ALERT_CRON_USER_LIMIT`        | ❌       | Nombre max d'utilisateurs Analyse évalués par exécution. Défaut : `25`.                                                                                             |
 | `SMART_ALERT_CRON_SALE_LIMIT`        | ❌       | Nombre max de ventes actives/à venir évaluées par utilisateur. Défaut : `160`.                                                                                      |
 | `ALERT_NOTIFICATION_CRON_LIMIT`      | ❌       | Nombre max de notifications d'alertes planifiées libérées par exécution. Défaut : `200`.                                                                            |
-| `STRIPE_SECRET_KEY`                  | ✅ prod  | Clé serveur Stripe utilisée pour le paiement unique Analyse à 29 €.                                                                                                 |
-| `STRIPE_WEBHOOK_SECRET`              | ✅ prod  | Secret de signature du webhook qui attribue les 30 jours d'accès.                                                                                                   |
+| `STRIPE_SECRET_KEY`                  | ✅ prod  | Clé serveur Stripe : abonnement récurrent Analyse de 59 € TTC / mois, essai de 7 jours. Price récurrent obligatoire (`STRIPE_ANALYSIS_PRICE_ID`).                   |
+| `STRIPE_WEBHOOK_SECRET`              | ✅ prod  | Secret de signature du webhook Stripe qui met à jour l'accès Analyse.                                                                                               |
 | `RESEND_API_KEY`                     | ✅ prod  | Clé serveur Resend pour envoyer les alertes email consenties et les emails aux avocats référencés.                                                                  |
 | `ALERT_EMAIL_FROM`                   | ✅ prod  | Expéditeur vérifié Resend, par exemple `ImmoJudis <alertes@immojudis.fr>`.                                                                                          |
 | `NEXT_PUBLIC_LEGAL_*`                | ✅ vente | Identité publique, contact, directeur de publication et médiateur ; le checkout reste bloqué et le build de production échoue si une valeur requise manque.         |
@@ -91,15 +91,15 @@ n'est envoyé.
 
 ### Offre payante Stripe
 
-Le checkout `/api/billing/checkout` crée un paiement unique de 29 € pour le plan
-`analyse`. Le montant et la durée de 30 jours sont définis côté serveur ; aucun
-Price ID récurrent n'est nécessaire. Le webhook vérifie la signature, traite
-`checkout.session.completed` (et les paiements asynchrones réussis), puis inscrit
-le Checkout Session dans un journal idempotent avant d'étendre l'accès de 30 jours.
-Avant la création de la session, l’interface présente le récapitulatif, recueille les acceptations
+Le checkout `/api/billing/checkout` crée un abonnement récurrent de 59 € TTC / mois pour le plan
+`analyse`, avec un essai de 7 jours (`ANALYSIS_TRIAL_DAYS`, `src/lib/analysis-offer.ts`). Un **Price Stripe
+récurrent est obligatoire** (`STRIPE_ANALYSIS_PRICE_ID`) : la route le valide côté serveur et refuse tout autre
+Price ; sans lui, la souscription reste fermée (« Tarif prévu, pas encore souscriptible »). Le webhook vérifie
+la signature, traite les événements du Checkout et de l'abonnement (création, mise à jour, résiliation,
+échec de paiement, remboursement), puis inscrit chaque événement dans un journal idempotent avant de modifier
+l'accès. Avant la création de la session, l’interface présente le récapitulatif, recueille les acceptations
 contractuelles et la demande d’exécution immédiate. Une preuve versionnée et immuable est liée à la
-session dans `commercial_acceptances`.
-Il n'y a aucun renouvellement automatique.
+session dans `commercial_acceptances`. L'abonnement se renouvelle chaque mois jusqu'à sa résiliation.
 
 ### Accès API léger
 
