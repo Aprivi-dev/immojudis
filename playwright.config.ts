@@ -1,5 +1,26 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const baseURL = "https://127.0.0.1:3100";
+
+// Each test starts as a visitor who has already answered the cookie banner (refusal, so Google
+// Analytics stays off): the fixed banner would otherwise cover the buttons the journeys click.
+// Same key and shape as src/lib/analytics-consent.ts; the date is fresh at every run, so the
+// choice is never older than its 6-month validity.
+const answeredCookieBanner = {
+  cookies: [],
+  origins: [
+    {
+      origin: baseURL,
+      localStorage: [
+        {
+          name: "immojudis:analytics-consent",
+          value: JSON.stringify({ choice: "denied", at: new Date().toISOString() }),
+        },
+      ],
+    },
+  ],
+};
+
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
@@ -7,7 +28,8 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? "github" : "list",
   use: {
-    baseURL: "https://127.0.0.1:3100",
+    baseURL,
+    storageState: answeredCookieBanner,
     // The local test server uses a disposable self-signed loopback certificate.
     ignoreHTTPSErrors: true,
     trace: "on-first-retry",
@@ -22,7 +44,7 @@ export default defineConfig({
   ],
   webServer: {
     command: "npm run build && node scripts/start-e2e-server.mjs",
-    url: "https://127.0.0.1:3100",
+    url: baseURL,
     ignoreHTTPSErrors: true,
     reuseExistingServer: false,
     timeout: 240_000,
