@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useId, useState, useSyncExternalStore } from "react";
+import { useId, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/primitives";
 import { setAnalyticsConsent } from "@/lib/analytics-consent";
 import {
@@ -9,7 +9,6 @@ import {
   getGoogleAnalyticsState,
   subscribeGoogleAnalyticsState,
 } from "@/lib/google-analytics";
-import { whenIdle } from "@/lib/when-idle";
 
 /**
  * Demande d'accord aux cookies de Google Analytics, tant qu'aucun choix n'est en cours de validité.
@@ -17,8 +16,8 @@ import { whenIdle } from "@/lib/when-idle";
  * navigation : sans réponse, rien n'est chargé. Le choix se modifie à tout moment sur la politique
  * de confidentialité (lien « Gérer les cookies » du pied de page).
  *
- * Affiché une fois le navigateur inactif, en surimpression : il ne décale pas la page et ne
- * concurrence pas l'affichage du contenu.
+ * Rendu une fois le navigateur inactif (`DeferredGoogleAnalytics`), en surimpression : il ne
+ * décale pas la page et ne concurrence pas l'affichage du contenu.
  */
 export function CookieConsentBanner() {
   const state = useSyncExternalStore(
@@ -27,10 +26,8 @@ export function CookieConsentBanner() {
     getGoogleAnalyticsServerState,
   );
   const headingId = useId();
-  const [idle, setIdle] = useState(false);
-  useEffect(() => whenIdle(() => setIdle(true)), []);
 
-  if (state !== "unset" || !idle) return null;
+  if (state !== "unset") return null;
   return (
     <section
       aria-labelledby={headingId}

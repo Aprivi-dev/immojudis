@@ -4,8 +4,7 @@ import localFont from "next/font/local";
 import "./../styles.css";
 import { AppProviders } from "./providers";
 import { AudienceMeasurement } from "@/components/AudienceMeasurement";
-import { CookieConsentBanner } from "@/components/CookieConsentBanner";
-import { GoogleAnalytics } from "@/components/GoogleAnalytics";
+import { DeferredGoogleAnalytics } from "@/components/DeferredGoogleAnalytics";
 import { SkipLink } from "@/components/SkipLink";
 import { cspRequiresDynamicRendering } from "@/lib/security-headers";
 import { resolveSiteOrigin } from "@/lib/site-url";
@@ -114,8 +113,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <SkipLink />
         <AppProviders>{children}</AppProviders>
         <AudienceMeasurement />
-        <GoogleAnalytics />
-        <CookieConsentBanner />
+        <DeferredGoogleAnalytics />
       </body>
     </html>
   );

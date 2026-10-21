@@ -32,6 +32,7 @@ import { setAnalyticsConsent } from "@/lib/analytics-consent";
 import { setAudienceOptOut } from "@/lib/audience-opt-out";
 import { GA_SCRIPT_URL } from "@/lib/google-analytics";
 import { CookieConsentBanner } from "./CookieConsentBanner";
+import { DeferredGoogleAnalytics } from "./DeferredGoogleAnalytics";
 import { GoogleAnalytics } from "./GoogleAnalytics";
 
 async function becomeIdle() {
@@ -77,11 +78,9 @@ describe("GoogleAnalytics", () => {
     expect(screen.queryByTestId("gtag-script")).toBeNull();
   });
 
-  it("charge la balise après l'accord, une fois le navigateur inactif, et compte chaque page", async () => {
+  it("charge la balise après l'accord et compte chaque page", async () => {
     setAnalyticsConsent("granted");
     const view = render(<GoogleAnalytics />);
-    expect(screen.queryByTestId("gtag-script")).toBeNull();
-    await becomeIdle();
 
     expect(screen.getByTestId("gtag-script").getAttribute("data-src")).toBe(GA_SCRIPT_URL);
     // La page vue attend à son tour l'inactivité (titre de la page posé).
@@ -111,11 +110,23 @@ describe("GoogleAnalytics", () => {
   });
 });
 
+describe("DeferredGoogleAnalytics", () => {
+  it("ne charge la balise ni le bandeau avant l'inactivité du navigateur", async () => {
+    render(<DeferredGoogleAnalytics />);
+    expect(screen.queryByTestId("cookie-consent-banner")).toBeNull();
+    await becomeIdle();
+    expect(await screen.findByTestId("cookie-consent-banner")).toBeTruthy();
+    expect(screen.queryByTestId("gtag-script")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Accepter" }));
+    expect(await screen.findByTestId("gtag-script")).toBeTruthy();
+    expect(screen.queryByTestId("cookie-consent-banner")).toBeNull();
+  });
+});
+
 describe("CookieConsentBanner", () => {
   it("demande le choix tant qu'il n'y en a pas, avec refus et accord au même niveau", async () => {
     render(<CookieConsentBanner />);
-    expect(screen.queryByTestId("cookie-consent-banner")).toBeNull();
-    await becomeIdle();
 
     const refuse = screen.getByRole("button", { name: "Refuser" });
     const accept = screen.getByRole("button", { name: "Accepter" });

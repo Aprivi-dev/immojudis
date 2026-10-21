@@ -1,7 +1,7 @@
 "use client";
 
 import Script from "next/script";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import { usePublicPathname } from "@/hooks/use-public-pathname";
 import {
   enableGoogleAnalytics,
@@ -20,8 +20,8 @@ import { whenIdle } from "@/lib/when-idle";
  * la politique de confidentialité. Sans accord, aucun script n'est chargé ni aucun cookie déposé ;
  * au retrait de l'accord, les envois cessent et les cookies sont effacés.
  *
- * Comme Vercel Analytics, la balise n'est chargée qu'une fois le navigateur inactif. Une page vue
- * est envoyée à chaque changement de chemin, avec une adresse nettoyée (`sanitizeAnalyticsUrl`).
+ * Rendu une fois le navigateur inactif (`DeferredGoogleAnalytics`). Une page vue est envoyée à
+ * chaque changement de chemin, avec une adresse nettoyée (`sanitizeAnalyticsUrl`).
  */
 export function GoogleAnalytics() {
   const state = useSyncExternalStore(
@@ -30,10 +30,7 @@ export function GoogleAnalytics() {
     getGoogleAnalyticsServerState,
   );
   const pathname = usePublicPathname();
-  const [idle, setIdle] = useState(false);
   const lastLocation = useRef<string | null>(null);
-
-  useEffect(() => whenIdle(() => setIdle(true)), []);
 
   useEffect(() => {
     if (state !== "unset" && state !== "denied") return;
@@ -42,7 +39,7 @@ export function GoogleAnalytics() {
   }, [state]);
 
   useEffect(() => {
-    if (state !== "granted" || !idle) return;
+    if (state !== "granted") return;
     enableGoogleAnalytics();
     // Lors d'une navigation interne, Next.js pose le titre de la nouvelle page après le changement
     // de chemin : la page vue part une fois le navigateur inactif, avec le bon titre.
@@ -56,8 +53,8 @@ export function GoogleAnalytics() {
       trackGooglePageView(location, referrer);
       lastLocation.current = location;
     }, 1_000);
-  }, [state, idle, pathname]);
+  }, [state, pathname]);
 
-  if (state !== "granted" || !idle) return null;
+  if (state !== "granted") return null;
   return <Script id="google-analytics" src={GA_SCRIPT_URL} strategy="afterInteractive" />;
 }
