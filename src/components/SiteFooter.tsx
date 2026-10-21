@@ -21,6 +21,7 @@ const LEGAL_LINKS = [
   { href: "/legal", label: "Mentions légales" },
   { href: "/conditions-generales", label: "Conditions générales" },
   { href: "/privacy", label: "Confidentialité" },
+  { href: "/privacy#cookies", label: "Gérer les cookies" },
   { href: "/classement-des-annonces", label: "Classement des annonces" },
   { href: "/mes-droits", label: "Mes droits" },
 ] as const;

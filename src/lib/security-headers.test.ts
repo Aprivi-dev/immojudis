@@ -38,6 +38,25 @@ describe("browser security headers", () => {
     expect(values["Strict-Transport-Security"]).toBeUndefined();
   });
 
+  it("lets the historical CSP load Google Analytics (gtag.js) and reach its collection hosts", () => {
+    const policy = headerMap(buildSecurityHeaders({ isProduction: true }))[
+      "Content-Security-Policy"
+    ]!;
+    const sources = (name: string) =>
+      policy
+        .split("; ")
+        .find((entry) => entry.startsWith(`${name} `))
+        ?.split(" ") ?? [];
+    expect(sources("script-src")).toContain("https://www.googletagmanager.com");
+    expect(sources("connect-src")).toEqual(
+      expect.arrayContaining([
+        "https://*.google-analytics.com",
+        "https://*.analytics.google.com",
+        "https://*.googletagmanager.com",
+      ]),
+    );
+  });
+
   it("drops the historical CSP once the strict policy is enforced", () => {
     const values = headerMap(buildSecurityHeaders({ isProduction: true, includeLegacyCsp: false }));
     expect(values["Content-Security-Policy"]).toBeUndefined();
@@ -71,6 +90,7 @@ describe("strict nonce-based CSP", () => {
     expect(connect).toContain("https://sgpakxtyvenlpeihuucm.supabase.co");
     expect(connect).toContain("wss://sgpakxtyvenlpeihuucm.supabase.co");
     expect(connect.some((source) => source.includes("*.supabase.co"))).toBe(false);
+    expect(connect).toContain("https://*.google-analytics.com");
   });
 
   it("restricts frame-src to the integrated services instead of https:", () => {

@@ -44,7 +44,7 @@ const CUSTOMER_ID = "cus_shared";
 const consent = {
   termsAccepted: true,
   termsVersion: "2026-10-20.1",
-  privacyVersion: "2026-10-20.1",
+  privacyVersion: "2026-10-21.1",
   paymentObligationAcknowledged: true,
   immediatePerformanceRequested: true,
   withdrawalInformationAcknowledged: true,
