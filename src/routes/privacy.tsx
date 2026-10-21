@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { createFileRoute, Link } from "@/lib/router-compat";
+import { AnalyticsConsentSwitch } from "@/components/AnalyticsConsentSwitch";
 import { AudienceOptOutSwitch } from "@/components/AudienceOptOutSwitch";
 import { LEGAL_DOCUMENTS, legalValue, publicLegalPublisher } from "@/lib/legal-documents";
 
@@ -136,6 +137,14 @@ const processingRows = [
       "Événements d’usage et journaux applicatifs : 24 mois au plus, conformément à la matrice de conservation ; données de mesure conservées par Vercel selon sa propre durée",
   },
   {
+    purpose: "Mesure d’audience par Google Analytics (avec votre accord)",
+    data: "Identifiant aléatoire déposé en cookie, pages consultées (adresse sans jeton ni paramètre de recherche), provenance de la visite, appareil et navigateur, ville approximative ; aucun signal publicitaire ni recoupement avec un compte Google",
+    basis:
+      "Consentement, demandé par le bandeau et retirable à tout moment sur cette page ; sans accord, Google Analytics n’est pas chargé",
+    retention:
+      "Cookies : 13 mois au plus, sans prolongation à chaque visite ; choix d’accord ou de refus : 6 mois dans le navigateur ; données conservées par Google 14 mois au plus",
+  },
+  {
     purpose: "Exercice des droits et rétractation",
     data: "Email, type de demande, message, vérification, décisions et dates de traitement",
     basis: "Obligation légale et défense des droits",
@@ -257,7 +266,8 @@ export function PrivacyPage() {
             <p>
               Les données sont accessibles aux personnes habilitées d’Immojudis et, selon le besoin,
               à Supabase (authentification et base), Vercel (hébergement, journaux et mesure de
-              performance), Stripe (paiement), Resend (envoi et réception des courriels), GitHub
+              performance), Google (mesure d’audience Google Analytics, uniquement avec votre
+              accord), Stripe (paiement), Resend (envoi et réception des courriels), GitHub
               (exécution des traitements automatisés), Mapbox (cartes, vignettes et géocodage),
               l’Institut national de l’information géographique et forestière (IGN : Base Adresse
               Nationale en repli du géocodage, Géoplateforme pour les cartes cadastrales), le
@@ -283,27 +293,43 @@ export function PrivacyPage() {
           <PrivacySection title="Transferts hors de l’Espace économique européen">
             <p>
               Certains prestataires peuvent traiter des données aux États-Unis ou dans d’autres
-              pays, notamment le prestataire d’IA (Replicate) et GitHub. Pour savoir quelle garantie
-              s’applique à chacun, ou en obtenir une copie, écrivez à{" "}
-              {legalValue(publisher.contactEmail)} ; aucun compte n’est nécessaire.
+              pays, notamment le prestataire d’IA (Replicate), GitHub et Google (Google Analytics,
+              uniquement avec votre accord ; Google est certifié au cadre de protection des données
+              UE–États-Unis). Pour savoir quelle garantie s’applique à chacun, ou en obtenir une
+              copie, écrivez à {legalValue(publisher.contactEmail)} ; aucun compte n’est nécessaire.
             </p>
           </PrivacySection>
 
-          <PrivacySection title="Cookies, stockage local et mesure d’audience">
+          <PrivacySection id="cookies" title="Cookies, stockage local et mesure d’audience">
             <p>
               Supabase utilise les éléments strictement nécessaires à la session. Le navigateur peut
               conserver des préférences fonctionnelles, comme des paramètres de simulation ou les
-              annonces consultées, ou votre choix d’opposition à la mesure d’audience. Nous mesurons
-              la fréquentation avec Vercel Analytics et Speed Insights, sans cookie et sans suivi
-              entre sites, et des événements de parcours agrégés, sans identifiant de personne. Les
+              annonces consultées, ou vos choix sur la mesure d’audience. Nous mesurons la
+              fréquentation avec Vercel Analytics et Speed Insights, sans cookie et sans suivi entre
+              sites, et des événements de parcours agrégés, sans identifiant de personne. Les
               données ne servent qu’à des statistiques de notre service. Vous pouvez vous opposer à
               la mesure d’audience depuis cette page (votre choix est mémorisé dans ce navigateur)
-              ou en nous écrivant à {legalValue(publisher.contactEmail)}. Immojudis n’active pas de
-              publicité ciblée ni de traceur publicitaire. Toute future finalité non nécessaire
-              soumise au consentement devra être désactivée par défaut jusqu’au choix de
-              l’utilisateur.
+              ou en nous écrivant à {legalValue(publisher.contactEmail)}.
             </p>
             <AudienceOptOutSwitch />
+            <p className="mt-4">
+              Avec votre accord seulement, nous utilisons aussi Google Analytics, qui dépose des
+              cookies (« _ga » et « _ga_ » suivi de l’identifiant du flux) pour compter les visites
+              et comprendre l’usage du site. Le bandeau affiché à la première visite permet
+              d’accepter ou de refuser aussi simplement ; sans réponse, rien n’est chargé. Les
+              adresses transmises ne contiennent ni jeton de partage ni paramètre de recherche ; les
+              signaux Google et la personnalisation publicitaire sont désactivés. Votre choix est
+              mémorisé 6 mois dans ce navigateur, puis redemandé ; vous pouvez le modifier à tout
+              moment ci-dessous ou par le lien « Gérer les cookies » du pied de page. Retirer votre
+              accord arrête les envois et efface ces cookies. L’opposition à la mesure d’audience
+              ci-dessus coupe aussi Google Analytics.
+            </p>
+            <AnalyticsConsentSwitch />
+            <p className="mt-4">
+              Immojudis n’active pas de publicité ciblée ni de traceur publicitaire. Toute autre
+              finalité non nécessaire soumise au consentement sera désactivée par défaut jusqu’au
+              choix de l’utilisateur.
+            </p>
           </PrivacySection>
 
           <PrivacySection title="Décisions automatisées et enrichissements">
@@ -364,9 +390,17 @@ export function PrivacyPage() {
   );
 }
 
-function PrivacySection({ title, children }: { title: string; children: ReactNode }) {
+function PrivacySection({
+  id,
+  title,
+  children,
+}: {
+  id?: string;
+  title: string;
+  children: ReactNode;
+}) {
   return (
-    <section className="liquid-panel-soft rounded-lg p-5 sm:p-6">
+    <section id={id} className="liquid-panel-soft scroll-mt-24 rounded-lg p-5 sm:p-6">
       <h2 className="text-base font-semibold text-foreground">{title}</h2>
       <div className="mt-3">{children}</div>
     </section>

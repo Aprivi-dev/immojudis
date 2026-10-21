@@ -127,9 +127,9 @@ describe("conditions générales : classement, référencement et mise en avant"
     expect(LEGAL_DOCUMENTS.terms.effectiveDate).toBe("20 octobre 2026");
   });
 
-  it("la politique de confidentialité est en version 2026-10-20.1 (rappels d'audience, ventes passées suivies)", () => {
-    expect(LEGAL_DOCUMENTS.privacy.version).toBe("2026-10-20.1");
-    expect(LEGAL_DOCUMENTS.privacy.effectiveDate).toBe("20 octobre 2026");
+  it("la politique de confidentialité est en version 2026-10-21.1 (Google Analytics avec consentement)", () => {
+    expect(LEGAL_DOCUMENTS.privacy.version).toBe("2026-10-21.1");
+    expect(LEGAL_DOCUMENTS.privacy.effectiveDate).toBe("21 octobre 2026");
   });
 });
 
@@ -492,6 +492,27 @@ describe("politique de confidentialité", () => {
     const toggle = getByRole("switch", {
       name: "Je m’oppose à la mesure d’audience sur ce navigateur",
     }) as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
+  });
+
+  it("soumet Google Analytics au consentement, déclare Google et propose de retirer l'accord", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).toContain("Mesure d’audience par Google Analytics (avec votre accord)");
+    expect(text).toContain("sans accord, Google Analytics n’est pas chargé");
+    expect(text).toContain("Cookies : 13 mois au plus, sans prolongation à chaque visite");
+    expect(text).toContain(
+      "Google (mesure d’audience Google Analytics, uniquement avec votre accord)",
+    );
+    expect(text).toContain("cadre de protection des données UE–États-Unis");
+    expect(text).toContain("Retirer votre accord arrête les envois et efface ces cookies.");
+    cleanup();
+
+    const { getByRole, container } = render(<PrivacyPage />);
+    expect(container.querySelector("section#cookies")).not.toBeNull();
+    const toggle = getByRole("switch", {
+      name: "J’accepte les cookies de Google Analytics sur ce navigateur",
+    }) as HTMLInputElement;
+    // Aucun accord par défaut : la case n'est jamais pré-cochée.
     expect(toggle.checked).toBe(false);
   });
 });

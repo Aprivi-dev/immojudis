@@ -23,15 +23,17 @@ de TVA sont publiés lorsqu’ils sont applicables.
 
 Les versions et empreintes sont centralisées dans `src/lib/legal-documents.ts` :
 
-| Document         | Route                   | Version en vigueur (20/10/2026) |
+| Document         | Route                   | Version en vigueur (21/10/2026) |
 | ---------------- | ----------------------- | ------------------------------- |
 | Mentions légales | `/legal`                | `2026-07-29.1`                  |
 | CGVU             | `/conditions-generales` | `2026-10-20.1`                  |
-| Confidentialité  | `/privacy`              | `2026-10-20.1`                  |
+| Confidentialité  | `/privacy`              | `2026-10-21.1`                  |
 
 Les versions du 20/10/2026 reprennent les textes recommandés par la relecture juridique (article
 « Offre de lancement », rappels d’audience, ventes passées suivies) : **à faire valider par un avocat**
-avant toute ouverture du checkout.
+avant toute ouverture du checkout. La version `2026-10-21.1` de la politique de confidentialité ajoute
+Google Analytics, chargé seulement après consentement (bandeau, interrupteur sur `/privacy`, lien
+« Gérer les cookies » du pied de page ; voir `src/lib/google-analytics.ts`).
 
 Toute modification substantielle crée une nouvelle version, une nouvelle empreinte et une date
 d’effet. Les empreintes correspondent aux sources des pages publiées et sont contrôlées par un test

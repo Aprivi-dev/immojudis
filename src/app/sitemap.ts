@@ -53,7 +53,7 @@ const PUBLIC_ROUTES = [
   ["/methode-ecart-marche", "2026-10-15"],
   ["/legal", "2026-10-08"],
   ["/conditions-generales", "2026-10-20"],
-  ["/privacy", "2026-10-20"],
+  ["/privacy", "2026-10-21"],
 ] as const;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
