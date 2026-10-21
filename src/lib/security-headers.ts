@@ -60,7 +60,17 @@ const BASE_CONNECT_SOURCES = [
   "https://api.mapbox.com",
   "https://events.mapbox.com",
   "https://*.tiles.mapbox.com",
+  // Google Analytics, chargé seulement après l'accord du visiteur (src/lib/google-analytics.ts).
+  // `https://www.google.com` n'y est volontairement pas : gtag.js y double certaines mesures pour
+  // les fonctions publicitaires de Google, désactivées ici ; ces envois sont bloqués (erreur CSP
+  // en console, sans effet sur les rapports Google Analytics).
+  "https://*.google-analytics.com",
+  "https://*.analytics.google.com",
+  "https://*.googletagmanager.com",
 ];
+
+/** Script de la balise Google Analytics (`gtag.js`), voir src/lib/google-analytics.ts. */
+const GOOGLE_TAG_SCRIPT_SOURCE = "https://www.googletagmanager.com";
 
 /** Historical policy: wildcard Supabase hosts and `'unsafe-inline'` scripts. */
 function legacyContentSecurityPolicy(options: SecurityHeaderOptions): string {
@@ -72,7 +82,12 @@ function legacyContentSecurityPolicy(options: SecurityHeaderOptions): string {
   const origin = safeOrigin(options.supabaseUrl);
   if (origin) connectSources.add(origin);
 
-  const scriptSources = ["'self'", "'unsafe-inline'", "https://js.stripe.com"];
+  const scriptSources = [
+    "'self'",
+    "'unsafe-inline'",
+    "https://js.stripe.com",
+    GOOGLE_TAG_SCRIPT_SOURCE,
+  ];
   if (!options.isProduction) scriptSources.push("'unsafe-eval'");
 
   const directives = [
@@ -151,6 +166,7 @@ export function buildStrictContentSecurityPolicy(options: StrictCspOptions): str
     "'strict-dynamic'",
     // Ignored by browsers that support strict-dynamic; kept as the CSP2 fallback.
     "https://js.stripe.com",
+    GOOGLE_TAG_SCRIPT_SOURCE,
   ];
   if (!options.isProduction) scriptSources.push("'unsafe-eval'");
 
