@@ -31,10 +31,11 @@ export function CookieConsentBanner() {
   return (
     <section
       aria-labelledby={headingId}
-      className="fixed inset-x-0 bottom-0 z-50 p-3 sm:p-4"
+      // La bande pleine largeur laisse passer les clics : seule la carte les reçoit.
+      className="pointer-events-none fixed inset-x-0 bottom-0 z-50 p-3 sm:p-4"
       data-testid="cookie-consent-banner"
     >
-      <div className="mx-auto flex max-w-3xl flex-col gap-3 rounded-lg border border-border bg-white p-4 text-sm text-muted-foreground shadow-[0_-12px_32px_rgba(15,23,42,0.14)] sm:flex-row sm:items-center sm:gap-5">
+      <div className="pointer-events-auto mx-auto flex max-w-3xl flex-col gap-3 rounded-lg border border-border bg-white p-4 text-sm text-muted-foreground shadow-[0_-12px_32px_rgba(15,23,42,0.14)] sm:flex-row sm:items-center sm:gap-5">
         <div className="flex-1">
           <h2 id={headingId} className="font-semibold text-foreground">
             Cookies de mesure d’audience
