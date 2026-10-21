@@ -265,7 +265,7 @@ describe("LandPotentialPanel", () => {
     expect(screen.queryByText(/source indisponible/iu)).toBeNull();
     fireEvent.click(screen.getByText("Sources, dates et limites"));
     expect(screen.getByText(/Aucun enregistrement dans cette couche/)).toBeTruthy();
-    expect(screen.getByText(/Aucun article de la zone n’a pu être extrait/)).toBeTruthy();
+    expect(screen.getAllByText(/Aucun article de la zone n’a pu être extrait/).length).toBe(2);
     expect(screen.queryByLabelText("Votre projet")).toBeNull();
   });
 
@@ -280,6 +280,27 @@ describe("LandPotentialPanel", () => {
     expect(select.value).toBe(offered.at(-1));
     fireEvent.click(screen.getByText("Points à vérifier avant ce projet"));
     expect(screen.getAllByRole("listitem").length).toBeGreaterThan(0);
+  });
+
+  it("résume le dossier en quelques lignes et replie le détail", () => {
+    const { container } = renderPanel({ listingZone: "UB" });
+
+    const summary = screen.getByText("Parcelle").closest("dl");
+    expect(summary?.textContent).toContain("Section CT n° 0190 · 698 m² au cadastre");
+    expect(summary?.textContent).toContain("Zone UCa2");
+    expect(summary?.textContent).toContain("L’annonce cite la zone UB : à vérifier");
+    expect(summary?.textContent).toMatch(/\d+ extraits? lus? dans le règlement/);
+    expect(summary?.textContent).toContain("1 servitude ou prescription");
+    expect(summary?.textContent).toContain("Aucun constat retourné");
+    expect(
+      screen.queryByRole("heading", { name: "Quel projet envisager sur ce bien ?" }),
+    ).toBeNull();
+
+    const blocks = [...container.querySelectorAll("details")];
+    expect(blocks.length).toBeGreaterThan(0);
+    expect(blocks.every((block) => !block.open)).toBe(true);
+    expect(screen.getByText(/Servitudes et prescriptions \(1\)/)).toBeTruthy();
+    expect(screen.getAllByText(/sans valeur juridique/)).toHaveLength(1);
   });
 
   it("dit d’abord d’où vient la parcelle", () => {

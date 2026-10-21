@@ -148,11 +148,15 @@ export function LandPotentialPanel({
       <div className={styles.header}>
         <div>
           <p className={styles.eyebrow}>PLU et risques · sources officielles</p>
-          <h3>Quel projet envisager sur ce bien ?</h3>
-          <p className={styles.intro}>
-            Parcelles, règles d’urbanisme, servitudes et risques liés au terrain, avec les documents
-            pour comprendre leurs conséquences.
-          </p>
+          {enabled ? null : (
+            <>
+              <h3>Quel projet envisager sur ce bien ?</h3>
+              <p className={styles.intro}>
+                Parcelles, règles d’urbanisme, servitudes et risques liés au terrain, avec les
+                documents pour comprendre leurs conséquences.
+              </p>
+            </>
+          )}
         </div>
         <ShieldAlert aria-hidden="true" size={23} />
       </div>
@@ -166,39 +170,23 @@ export function LandPotentialPanel({
         </div>
       ) : (
         <>
-          <div className={styles.actions}>
-            {report || error ? (
-              <button
-                className={report ? styles.secondaryButton : styles.primaryButton}
-                type="button"
-                disabled={loading}
-                onClick={() => void load(Boolean(report))}
-              >
-                <RefreshCw size={16} aria-hidden="true" />
-                {loading
-                  ? "Consultation des sources…"
-                  : report
-                    ? "Actualiser les sources"
-                    : "Réessayer"}
-              </button>
-            ) : null}
-            {report ? (
-              <button
-                className={styles.secondaryButton}
-                type="button"
-                disabled={loading || exporting}
-                onClick={() => void exportReport()}
-              >
-                <Download size={16} aria-hidden="true" />{" "}
-                {exporting ? "Préparation du PDF…" : "Exporter le dossier PDF"}
-              </button>
-            ) : null}
-          </div>
           {loading || (!report && !error) ? (
-            <p className={styles.loading} role="status">
-              Recherche de la parcelle, du zonage et des risques, puis lecture du règlement :
-              environ 15 secondes.
-            </p>
+            <div className={styles.loading}>
+              <p role="status">
+                Recherche de la parcelle, du zonage et des risques, puis lecture du règlement :
+                environ 15 secondes.
+              </p>
+              {report ? null : (
+                <dl className={styles.summaryList} aria-hidden="true">
+                  {SUMMARY_LABELS.map((label) => (
+                    <div className={styles.summaryRow} key={label}>
+                      <dt>{label}</dt>
+                      <dd className={styles.skeleton} />
+                    </div>
+                  ))}
+                </dl>
+              )}
+            </div>
           ) : null}
           {error ? (
             <p className={styles.error} role="alert">
@@ -207,244 +195,349 @@ export function LandPotentialPanel({
           ) : null}
           {report ? (
             <div className={styles.report}>
-              {reliability ? (
-                <p className={styles.reliability} data-tone={reliability.tone}>
-                  <strong>{reliability.text}</strong>
-                  <span>
-                    Vérifié le {formatDate(report.generatedAt)}
-                    {unavailableCount > 0
-                      ? ` · ${unavailableCount} source${unavailableCount > 1 ? "s" : ""} indisponible${unavailableCount > 1 ? "s" : ""}`
-                      : ""}
-                  </span>
-                </p>
-              ) : null}
-              <section className={styles.section} aria-label="Parcelles et zonage officiel">
-                <h4>Parcelles et zonage</h4>
+              <div className={styles.summary}>
+                {reliability ? (
+                  <p className={styles.reliability} data-tone={reliability.tone}>
+                    <strong>{reliability.text}</strong>
+                  </p>
+                ) : null}
+                <dl className={styles.summaryList}>
+                  <div className={styles.summaryRow}>
+                    <dt>Parcelle</dt>
+                    <dd>{parcelSummary(report)}</dd>
+                  </div>
+                  <div className={styles.summaryRow}>
+                    <dt>Zonage</dt>
+                    <dd>
+                      {zoneSummary(report)}
+                      {zoneCheck?.matches === true ? " · concorde avec l’annonce" : null}
+                      {zoneCheck?.matches === false ? (
+                        <span className={styles.summaryAlert}>
+                          L’annonce cite la zone {zoneCheck.zone} : à vérifier
+                        </span>
+                      ) : null}
+                    </dd>
+                  </div>
+                  <div className={styles.summaryRow}>
+                    <dt>Règles du PLU</dt>
+                    <dd>
+                      {report.rules.rules.length
+                        ? `${countLabel(report.rules.rules.length, "extrait lu", "extraits lus")} dans le règlement`
+                        : rulesUnavailableReason(report.rules.checks)}
+                    </dd>
+                  </div>
+                  <div className={styles.summaryRow}>
+                    <dt>Servitudes</dt>
+                    <dd>
+                      {report.planning.constraints.length
+                        ? countLabel(
+                            report.planning.constraints.length,
+                            "servitude ou prescription",
+                            "servitudes ou prescriptions",
+                          )
+                        : "Aucune repérée"}
+                    </dd>
+                  </div>
+                  <div className={styles.summaryRow}>
+                    <dt>Risques</dt>
+                    <dd>{riskSummary(report.risks.findings)}</dd>
+                  </div>
+                </dl>
                 {surfaceGap ? <p className={styles.attention}>{surfaceGap}</p> : null}
-                {report.planning.parcels.length ? (
-                  <>
-                    <LandParcelDiagram
-                      parcels={report.planning.parcels}
-                      zones={report.planning.zones}
-                    />
-                    <ul className={styles.cardGrid}>
-                      {report.planning.parcels.map((parcel) => (
-                        <li className={styles.card} key={parcel.id}>
-                          <strong>
-                            Section {parcel.section} n° {parcel.number}
-                          </strong>
-                          <span>
-                            {parcel.city ?? parcel.codeInsee} ·{" "}
-                            {parcel.surfaceM2 != null
-                              ? `${new Intl.NumberFormat("fr-FR").format(parcel.surfaceM2)} m² au cadastre`
-                              : "Surface non fournie"}
-                          </span>
-                          <small>
-                            {parcel.match === "address_point"
-                              ? "Trouvée d’après l’adresse"
-                              : parcel.match === "listing_reference"
-                                ? "Citée dans l’annonce"
-                                : "Citée dans le dossier"}
-                          </small>
-                        </li>
-                      ))}
-                    </ul>
-                  </>
-                ) : null}
-                {report.planning.zones.length ? (
-                  <ul className={styles.cardGrid}>
-                    {report.planning.zones.map((zone) => (
-                      <li className={styles.card} key={zone.id}>
-                        <strong>Zone {zone.label}</strong>
-                        <span>{zone.description}</span>
-                        <small>{zone.documentName}</small>
-                        {zone.regulationUrl ? (
-                          <SourceLink url={zone.regulationUrl} label="Lire le règlement" />
-                        ) : null}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className={styles.notice}>
-                    Aucun zonage n’a été identifié pour cette parcelle.
-                  </p>
-                )}
-                {zoneCheck ? (
-                  <p className={zoneCheck.matches === false ? styles.attention : styles.caption}>
-                    Zone citée dans l’annonce : {zoneCheck.zone}
-                    {zoneCheck.matches === true
-                      ? " · concorde avec le zonage officiel."
-                      : zoneCheck.matches === false
-                        ? " · diffère du zonage officiel ci-dessus : à vérifier dans le cahier des conditions de vente."
-                        : "."}
-                  </p>
-                ) : null}
-                {report.planning.documents.map((document) => (
-                  <details className={styles.document} key={document.id}>
-                    <summary>{document.title || document.name}</summary>
-                    <p>
-                      Statut GPU : {document.legalStatus ?? "non renseigné"} ·{" "}
-                      {document.effectiveStatus ?? "statut effectif non renseigné"}
-                    </p>
-                    <p>
-                      Publié : {document.publicationDate ?? "date non fournie"} · mis à jour :{" "}
-                      {document.updatedAt ?? "date non fournie"}
-                    </p>
-                    <SourceLink
-                      url={document.sourceUrl}
-                      label="Document et procédures sur le Géoportail"
-                    />
-                    <ul>
-                      {document.files.map((file) => (
-                        <li key={file.url}>
-                          <SourceLink url={file.url} label={file.name} />
-                        </li>
-                      ))}
-                    </ul>
-                  </details>
-                ))}
-              </section>
+                <p className={styles.summaryMeta}>
+                  Vérifié le {formatDate(report.generatedAt)}
+                  {unavailableCount > 0
+                    ? ` · ${unavailableCount} source${unavailableCount > 1 ? "s" : ""} indisponible${unavailableCount > 1 ? "s" : ""}`
+                    : ""}
+                </p>
+              </div>
 
-              <section className={styles.section} aria-label="Projet et règles du PLU">
-                <h4>Les règles utiles à votre projet</h4>
-                {selectedProject ? (
-                  <>
-                    <label className={styles.projectLabel} htmlFor={`land-project-${saleId}`}>
-                      Votre projet
-                    </label>
-                    <select
-                      id={`land-project-${saleId}`}
-                      className={styles.select}
-                      value={selectedProject.kind}
-                      onChange={(event) => setProjectKind(event.target.value as LandProjectKind)}
-                    >
-                      {usefulProjects.map((project) => (
-                        <option value={project.kind} key={project.kind}>
-                          {PROJECT_LABELS[project.kind]}
-                        </option>
+              <details className={styles.block}>
+                <summary>Parcelles et zonage</summary>
+                <section className={styles.blockBody} aria-label="Parcelles et zonage officiel">
+                  {report.planning.parcels.length ? (
+                    <>
+                      <LandParcelDiagram
+                        parcels={report.planning.parcels}
+                        zones={report.planning.zones}
+                      />
+                      <ul className={styles.cardGrid}>
+                        {report.planning.parcels.map((parcel) => (
+                          <li className={styles.card} key={parcel.id}>
+                            <strong>
+                              Section {parcel.section} n° {parcel.number}
+                            </strong>
+                            <span>
+                              {parcel.city ?? parcel.codeInsee} ·{" "}
+                              {parcel.surfaceM2 != null
+                                ? `${formatNumber(parcel.surfaceM2)} m² au cadastre`
+                                : "Surface non fournie"}
+                            </span>
+                            <small>
+                              {parcel.match === "address_point"
+                                ? "Trouvée d’après l’adresse"
+                                : parcel.match === "listing_reference"
+                                  ? "Citée dans l’annonce"
+                                  : "Citée dans le dossier"}
+                            </small>
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  ) : null}
+                  {report.planning.zones.length ? (
+                    <ul className={styles.cardGrid}>
+                      {report.planning.zones.map((zone) => (
+                        <li className={styles.card} key={zone.id}>
+                          <strong>Zone {zone.label}</strong>
+                          <span>{zone.description}</span>
+                          <small>{zone.documentName}</small>
+                          {zone.regulationUrl ? (
+                            <SourceLink url={zone.regulationUrl} label="Lire le règlement" />
+                          ) : null}
+                        </li>
                       ))}
-                    </select>
-                    <RuleGroups key={selectedProject.kind} rules={selectedProject.rules} />
-                    <details className={styles.coverage}>
-                      <summary>Points à vérifier avant ce projet</summary>
+                    </ul>
+                  ) : (
+                    <p className={styles.notice}>
+                      Aucun zonage n’a été identifié pour cette parcelle.
+                    </p>
+                  )}
+                  {zoneCheck ? (
+                    <p className={zoneCheck.matches === false ? styles.attention : styles.caption}>
+                      Zone citée dans l’annonce : {zoneCheck.zone}
+                      {zoneCheck.matches === true
+                        ? " · concorde avec le zonage officiel."
+                        : zoneCheck.matches === false
+                          ? " · diffère du zonage officiel ci-dessus : à vérifier dans le cahier des conditions de vente."
+                          : "."}
+                    </p>
+                  ) : null}
+                  {report.planning.documents.map((document) => (
+                    <details className={styles.document} key={document.id}>
+                      <summary>{document.title || document.name}</summary>
+                      <p>
+                        Statut GPU : {document.legalStatus ?? "non renseigné"} ·{" "}
+                        {document.effectiveStatus ?? "statut effectif non renseigné"}
+                      </p>
+                      <p>
+                        Publié : {document.publicationDate ?? "date non fournie"} · mis à jour :{" "}
+                        {document.updatedAt ?? "date non fournie"}
+                      </p>
+                      <SourceLink
+                        url={document.sourceUrl}
+                        label="Document et procédures sur le Géoportail"
+                      />
                       <ul>
-                        {[...selectedProject.checks, ...selectedProject.missingInformation].map(
-                          (item) => (
-                            <li key={item}>{item}</li>
-                          ),
-                        )}
+                        {document.files.map((file) => (
+                          <li key={file.url}>
+                            <SourceLink url={file.url} label={file.name} />
+                          </li>
+                        ))}
                       </ul>
                     </details>
-                  </>
-                ) : (
-                  <p className={styles.notice}>
-                    {report.rules.rules.length
-                      ? "Les articles lus ne portent sur aucun des projets proposés."
-                      : rulesUnavailableReason(report.rules.checks)}{" "}
-                    Les articles applicables se lisent dans le règlement de la zone ci-dessus.
-                  </p>
-                )}
-                <SourceLink
-                  url="https://www.service-public.gouv.fr/particuliers/vosdroits/F1633"
-                  label="Préparer un certificat d’urbanisme opérationnel"
-                />
-              </section>
-
-              <section className={styles.section} aria-label="Servitudes et prescriptions">
-                <h4>Servitudes et prescriptions</h4>
-                {report.planning.constraints.length ? (
-                  <ul className={styles.cardGrid}>
-                    {report.planning.constraints.map((constraint) => (
-                      <li className={styles.card} key={constraint.id}>
-                        <strong>{constraint.label}</strong>
-                        {constraint.detail ? <span>{constraint.detail}</span> : null}
-                        {constraint.isEnvelope ? (
-                          <p className={styles.attention}>
-                            Enveloppe repérée : le zonage réglementaire et les prescriptions à la
-                            parcelle restent à déterminer.
-                          </p>
-                        ) : null}
-                        <small>
-                          {constraint.kind === "servitude"
-                            ? "Servitude d’utilité publique"
-                            : constraint.kind === "prescription"
-                              ? "Prescription graphique"
-                              : "Périmètre d’information"}{" "}
-                          {constraint.typeCode ?? ""}
-                        </small>
-                        {constraint.documentUrl ? (
-                          <SourceLink
-                            url={constraint.documentUrl}
-                            label="Consulter la pièce officielle"
-                          />
-                        ) : null}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className={styles.caption}>Aucune servitude ni prescription repérée.</p>
-                )}
-              </section>
-
-              <section className={styles.section} aria-label="Risques liés à l’emplacement">
-                <h4>Risques liés à l’emplacement</h4>
-                {report.risks.findings.length ? (
-                  <div className={styles.riskGroups}>
-                    {groupRisks(report.risks.findings).map(([category, findings]) => (
-                      <div key={category}>
-                        <h5>{RISK_CATEGORY_LABELS[category]}</h5>
-                        <ul className={styles.riskList}>
-                          {findings.slice(0, 2).map((risk) => (
-                            <RiskCard key={risk.id} risk={risk} />
-                          ))}
-                        </ul>
-                        {findings.length > 2 ? (
-                          <details className={styles.coverage}>
-                            <summary>
-                              Voir {findings.length - 2} autre{findings.length > 3 ? "s" : ""}{" "}
-                              constat{findings.length > 3 ? "s" : ""} et événement
-                              {findings.length > 3 ? "s" : ""}
-                            </summary>
-                            <ul className={styles.riskList}>
-                              {findings.slice(2).map((risk) => (
-                                <RiskCard key={risk.id} risk={risk} />
-                              ))}
-                            </ul>
-                          </details>
-                        ) : null}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className={styles.notice}>
-                    Aucun constat exploitable n’a été retourné. Cela ne permet pas de conclure à
-                    l’absence de risque.
-                  </p>
-                )}
-              </section>
-
-              <details className={styles.coverage}>
-                <summary>Sources, dates et limites</summary>
-                {!report.rules.completeCoverage ? (
-                  <p className={styles.attention}>
-                    Lecture partielle du règlement : les extraits ne couvrent pas toutes les
-                    dispositions, annexes et exceptions applicables. Une règle repérée se lit avec
-                    les dispositions générales, les OAP et les servitudes.
-                  </p>
-                ) : null}
-                <ul className={styles.sourceChecks}>
-                  {checks.map((check, index) => (
-                    <SourceCheck key={`${check.key}-${index}`} check={check} />
                   ))}
-                </ul>
-                {warnings.length ? (
-                  <ul className={styles.warnings}>
-                    {warnings.map((warning) => (
-                      <li key={warning}>{warning}</li>
+                </section>
+              </details>
+
+              <details className={styles.block}>
+                <summary>
+                  Règles utiles à votre projet
+                  {report.rules.rules.length ? ` (${report.rules.rules.length})` : ""}
+                </summary>
+                <section className={styles.blockBody} aria-label="Projet et règles du PLU">
+                  {selectedProject ? (
+                    <>
+                      <label className={styles.projectLabel} htmlFor={`land-project-${saleId}`}>
+                        Votre projet
+                      </label>
+                      <select
+                        id={`land-project-${saleId}`}
+                        className={styles.select}
+                        value={selectedProject.kind}
+                        onChange={(event) => setProjectKind(event.target.value as LandProjectKind)}
+                      >
+                        {usefulProjects.map((project) => (
+                          <option value={project.kind} key={project.kind}>
+                            {PROJECT_LABELS[project.kind]}
+                          </option>
+                        ))}
+                      </select>
+                      <RuleGroups key={selectedProject.kind} rules={selectedProject.rules} />
+                      <details className={styles.coverage}>
+                        <summary>Points à vérifier avant ce projet</summary>
+                        <ul>
+                          {[...selectedProject.checks, ...selectedProject.missingInformation].map(
+                            (item) => (
+                              <li key={item}>{item}</li>
+                            ),
+                          )}
+                        </ul>
+                      </details>
+                    </>
+                  ) : (
+                    <p className={styles.notice}>
+                      {report.rules.rules.length
+                        ? "Les articles lus ne portent sur aucun des projets proposés."
+                        : rulesUnavailableReason(report.rules.checks)}{" "}
+                      Les articles applicables se lisent dans le règlement de la zone.
+                    </p>
+                  )}
+                  <SourceLink
+                    url="https://www.service-public.gouv.fr/particuliers/vosdroits/F1633"
+                    label="Préparer un certificat d’urbanisme opérationnel"
+                  />
+                </section>
+              </details>
+
+              <details className={styles.block}>
+                <summary>
+                  Servitudes et prescriptions
+                  {report.planning.constraints.length
+                    ? ` (${report.planning.constraints.length})`
+                    : ""}
+                </summary>
+                <section className={styles.blockBody} aria-label="Servitudes et prescriptions">
+                  {report.planning.constraints.length ? (
+                    <ul className={styles.cardGrid}>
+                      {report.planning.constraints.map((constraint) => (
+                        <li className={styles.card} key={constraint.id}>
+                          <strong>{constraint.label}</strong>
+                          {constraint.detail ? <span>{constraint.detail}</span> : null}
+                          {constraint.isEnvelope ? (
+                            <p className={styles.attention}>
+                              Enveloppe repérée : le zonage réglementaire et les prescriptions à la
+                              parcelle restent à déterminer.
+                            </p>
+                          ) : null}
+                          <small>
+                            {constraint.kind === "servitude"
+                              ? "Servitude d’utilité publique"
+                              : constraint.kind === "prescription"
+                                ? "Prescription graphique"
+                                : "Périmètre d’information"}{" "}
+                            {constraint.typeCode ?? ""}
+                          </small>
+                          {constraint.documentUrl ? (
+                            <SourceLink
+                              url={constraint.documentUrl}
+                              label="Consulter la pièce officielle"
+                            />
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className={styles.caption}>Aucune servitude ni prescription repérée.</p>
+                  )}
+                </section>
+              </details>
+
+              <details className={styles.block}>
+                <summary>
+                  Risques liés à l’emplacement
+                  {report.risks.findings.length ? ` (${report.risks.findings.length})` : ""}
+                </summary>
+                <section className={styles.blockBody} aria-label="Risques liés à l’emplacement">
+                  {report.risks.findings.length ? (
+                    <div className={styles.riskGroups}>
+                      {groupRisks(report.risks.findings).map(([category, findings]) => (
+                        <div key={category}>
+                          <h5>{RISK_CATEGORY_LABELS[category]}</h5>
+                          <ul className={styles.riskList}>
+                            {findings.slice(0, 2).map((risk) => (
+                              <RiskCard key={risk.id} risk={risk} />
+                            ))}
+                          </ul>
+                          {findings.length > 2 ? (
+                            <details className={styles.coverage}>
+                              <summary>
+                                Voir {findings.length - 2} autre{findings.length > 3 ? "s" : ""}{" "}
+                                constat{findings.length > 3 ? "s" : ""} et événement
+                                {findings.length > 3 ? "s" : ""}
+                              </summary>
+                              <ul className={styles.riskList}>
+                                {findings.slice(2).map((risk) => (
+                                  <RiskCard key={risk.id} risk={risk} />
+                                ))}
+                              </ul>
+                            </details>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className={styles.notice}>
+                      Aucun constat exploitable n’a été retourné. Cela ne permet pas de conclure à
+                      l’absence de risque.
+                    </p>
+                  )}
+                </section>
+              </details>
+
+              <details className={styles.block}>
+                <summary>Sources, dates et limites</summary>
+                <div className={styles.blockBody}>
+                  {!report.rules.completeCoverage ? (
+                    <p className={styles.attention}>
+                      Lecture partielle du règlement : les extraits ne couvrent pas toutes les
+                      dispositions, annexes et exceptions applicables. Une règle repérée se lit avec
+                      les dispositions générales, les OAP et les servitudes.
+                    </p>
+                  ) : null}
+                  <ul className={styles.sourceChecks}>
+                    {checks.map((check, index) => (
+                      <SourceCheck key={`${check.key}-${index}`} check={check} />
                     ))}
                   </ul>
-                ) : null}
+                  {warnings.length ? (
+                    <ul className={styles.warnings}>
+                      {warnings.map((warning) => (
+                        <li key={warning}>{warning}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
               </details>
+
+              <div className={styles.actions}>
+                <button
+                  className={styles.secondaryButton}
+                  type="button"
+                  disabled={loading || exporting}
+                  onClick={() => void exportReport()}
+                >
+                  <Download size={16} aria-hidden="true" />{" "}
+                  {exporting ? "Préparation du PDF…" : "Exporter le dossier PDF"}
+                </button>
+                <button
+                  className={styles.secondaryButton}
+                  type="button"
+                  disabled={loading}
+                  onClick={() => void load(true)}
+                >
+                  <RefreshCw size={16} aria-hidden="true" />
+                  {loading ? "Consultation des sources…" : "Actualiser les sources"}
+                </button>
+              </div>
+
+              <p className={styles.disclaimer}>
+                Lecture automatique des sources officielles, sans valeur juridique : confirmez le
+                zonage, les servitudes et les risques dans le cahier des conditions de vente avant
+                d’enchérir.
+              </p>
+            </div>
+          ) : error ? (
+            <div className={styles.actions}>
+              <button
+                className={styles.primaryButton}
+                type="button"
+                disabled={loading}
+                onClick={() => void load(false)}
+              >
+                <RefreshCw size={16} aria-hidden="true" />
+                {loading ? "Consultation des sources…" : "Réessayer"}
+              </button>
             </div>
           ) : null}
         </>
@@ -453,17 +546,51 @@ export function LandPotentialPanel({
   );
 }
 
+const SUMMARY_LABELS = ["Parcelle", "Zonage", "Règles du PLU", "Servitudes", "Risques"];
+
+function formatNumber(value: number) {
+  return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(value);
+}
+
+function countLabel(count: number, singular: string, plural: string) {
+  return `${count} ${count > 1 ? plural : singular}`;
+}
+
+function parcelSummary(report: LandReport): string {
+  const parcels = report.planning.parcels;
+  if (!parcels.length) return "Non identifiée";
+  const surfaces = parcels.map((parcel) => parcel.surfaceM2);
+  const surface = surfaces.every((value) => value != null)
+    ? ` · ${formatNumber(surfaces.reduce<number>((sum, value) => sum + (value ?? 0), 0))} m² au cadastre`
+    : "";
+  if (parcels.length === 1) {
+    return `Section ${parcels[0].section} n° ${parcels[0].number}${surface}`;
+  }
+  return `${parcels.length} parcelles${surface}`;
+}
+
+function zoneSummary(report: LandReport): string {
+  const labels = [...new Set(report.planning.zones.map((zone) => zone.label))];
+  if (!labels.length) return "Non identifié";
+  return `${labels.length > 1 ? "Zones" : "Zone"} ${labels.join(", ")}`;
+}
+
+function riskSummary(findings: LandRiskFinding[]): string {
+  if (!findings.length) return "Aucun constat retourné, ce qui n’exclut pas un risque";
+  const categories = groupRisks(findings).map(([category]) => RISK_CATEGORY_LABELS[category]);
+  const named = categories.slice(0, 3).join(", ");
+  const rest = categories.length - 3;
+  const others = rest > 0 ? ` et ${rest} autre${rest > 1 ? "s" : ""}` : "";
+  return `${countLabel(findings.length, "constat", "constats")} : ${named}${others}`;
+}
+
 function RuleGroups({ rules }: { rules: LandRuleEvidence[] }) {
   const groups = new Map<string, LandRuleEvidence[]>();
   for (const rule of rules) groups.set(rule.topic, [...(groups.get(rule.topic) ?? []), rule]);
   return (
     <div className={styles.ruleGroups}>
       {[...groups].map(([topic, entries]) => (
-        <details
-          className={styles.document}
-          key={topic}
-          open={topic === "footprint" || topic === "height"}
-        >
+        <details className={styles.document} key={topic}>
           <summary>
             {entries[0].title} · {entries.length} extrait{entries.length > 1 ? "s" : ""}
           </summary>

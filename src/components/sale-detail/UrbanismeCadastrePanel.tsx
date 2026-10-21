@@ -116,8 +116,7 @@ export function UrbanismeCadastrePanel({
             {heading}
           </h2>
           <p className={styles.intro}>
-            Repérage indicatif de la parcelle et des règles applicables, à confirmer dans les
-            sources officielles.
+            Parcelle, zonage, règles du PLU et risques liés au terrain.
           </p>
         </div>
         <div className={styles.headerMark} aria-hidden="true">
@@ -125,23 +124,26 @@ export function UrbanismeCadastrePanel({
         </div>
       </header>
 
-      <div className={styles.compactSummary}>
-        <div className={styles.compactSummaryLead}>
-          <div className={styles.compactSummaryIcon} aria-hidden="true">
-            <SearchCheck size={17} />
+      {/* Once the official report is read, its summary says where the parcel comes from. */}
+      {landReport ? null : (
+        <div className={styles.compactSummary}>
+          <div className={styles.compactSummaryLead}>
+            <div className={styles.compactSummaryIcon} aria-hidden="true">
+              <SearchCheck size={17} />
+            </div>
+            <div>
+              <p className={styles.compactSummaryLabel}>{compactStatusLabel(sale, cadastral)}</p>
+              <p className={styles.compactSummaryText}>{primaryAction}</p>
+            </div>
           </div>
-          <div>
-            <p className={styles.compactSummaryLabel}>{compactStatusLabel(sale, cadastral)}</p>
-            <p className={styles.compactSummaryText}>{primaryAction}</p>
-          </div>
+          {officialLandEnabled ? null : (
+            <p className={styles.compactSummaryCaveat}>
+              L’adresse est un point de départ. Elle ne suffit pas à confirmer une parcelle ni les
+              règles d’urbanisme.
+            </p>
+          )}
         </div>
-        {officialLandEnabled ? null : (
-          <p className={styles.compactSummaryCaveat}>
-            L’adresse est un point de départ. Elle ne suffit pas à confirmer une parcelle ni les
-            règles d’urbanisme.
-          </p>
-        )}
-      </div>
+      )}
 
       <LandPotentialPanel
         key={sale.id}
@@ -167,7 +169,11 @@ export function UrbanismeCadastrePanel({
             <Info size={16} aria-hidden="true" />
             <span>
               <strong>Voir les références et contrôles</strong>
-              <small>Adresse · parcelle · PLU · risques · sources</small>
+              <small>
+                {landReport
+                  ? "Adresse · parcelle · mentions du dossier · sources"
+                  : "Adresse · parcelle · PLU · risques · sources"}
+              </small>
             </span>
           </span>
           <ChevronDown className={styles.detailsChevron} size={18} aria-hidden="true" />
@@ -270,7 +276,7 @@ export function UrbanismeCadastrePanel({
             <SectionHeading
               id="urbanisme-cadastre-plu"
               icon={<LandPlot size={19} aria-hidden="true" />}
-              title="PLU, permis et usages"
+              title={landReport ? "Mentions du dossier de vente" : "PLU, permis et usages"}
               intro="Les éléments sont classés selon leur présence dans une pièce ou leur détection dans les sources collectées."
               badge={
                 <StatusBadge tone={statusTone(urbanPlanning.status)}>
@@ -296,27 +302,30 @@ export function UrbanismeCadastrePanel({
             ) : null}
           </section>
 
-          <section className={styles.section} aria-labelledby="urbanisme-cadastre-risques">
-            <SectionHeading
-              id="urbanisme-cadastre-risques"
-              icon={<ShieldAlert size={19} aria-hidden="true" />}
-              title="Risques et signaux fonciers"
-              intro="Les points ci-dessous viennent des risques déjà rattachés au dossier et restent à qualifier dans les pièces officielles."
-            />
-            {relevantRisks.length > 0 ? (
-              <ul className={styles.riskList} aria-label="Risques fonciers">
-                {relevantRisks.map((risk, index) => (
-                  <RiskCard key={`${risk.risk_type}-${risk.risk_label}-${index}`} risk={risk} />
-                ))}
-              </ul>
-            ) : (
-              <EmptyState>
-                {(sale.risks ?? []).length > 0
-                  ? "Les risques présents dans le dossier ne portent pas explicitement sur l’urbanisme, le cadastre ou l’environnement dans les informations disponibles ici."
-                  : "Aucun risque urbanisme / foncier n’est rattaché aux sources collectées. Cela ne vaut pas absence de risque."}
-              </EmptyState>
-            )}
-          </section>
+          {/* The official report and the page's risk section already list these risks. */}
+          {landReport ? null : (
+            <section className={styles.section} aria-labelledby="urbanisme-cadastre-risques">
+              <SectionHeading
+                id="urbanisme-cadastre-risques"
+                icon={<ShieldAlert size={19} aria-hidden="true" />}
+                title="Risques et signaux fonciers"
+                intro="Les points ci-dessous viennent des risques déjà rattachés au dossier et restent à qualifier dans les pièces officielles."
+              />
+              {relevantRisks.length > 0 ? (
+                <ul className={styles.riskList} aria-label="Risques fonciers">
+                  {relevantRisks.map((risk, index) => (
+                    <RiskCard key={`${risk.risk_type}-${risk.risk_label}-${index}`} risk={risk} />
+                  ))}
+                </ul>
+              ) : (
+                <EmptyState>
+                  {(sale.risks ?? []).length > 0
+                    ? "Les risques présents dans le dossier ne portent pas explicitement sur l’urbanisme, le cadastre ou l’environnement dans les informations disponibles ici."
+                    : "Aucun risque urbanisme / foncier n’est rattaché aux sources collectées. Cela ne vaut pas absence de risque."}
+                </EmptyState>
+              )}
+            </section>
+          )}
 
           <section className={styles.section} aria-labelledby="urbanisme-cadastre-sources">
             <SectionHeading

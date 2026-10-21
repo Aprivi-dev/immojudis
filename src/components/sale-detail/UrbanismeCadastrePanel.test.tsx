@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { EXAMPLE_SALE } from "@/lib/example-sale";
 import type { AuctionSale } from "@/lib/types";
@@ -26,6 +26,31 @@ vi.mock("./CadastralNeighborhoodMap", () => ({
       data-address={address}
     />
   ),
+}));
+
+const landReport = vi.hoisted(() => ({
+  version: "land-report-v1",
+  generatedAt: "2026-10-02T12:00:00.000Z",
+  planning: {
+    locationStatus: "references_matched",
+    coordinates: null,
+    codeInsee: "33063",
+    parcels: [],
+    zones: [],
+    documents: [],
+    constraints: [],
+    checks: [],
+    warnings: [],
+    completeCoverage: true,
+  },
+  risks: { findings: [], checks: [], warnings: [] },
+  rules: { rules: [], checks: [], warnings: [], completeCoverage: true },
+  projects: [],
+}));
+
+vi.mock("@/lib/land-report-client", () => ({
+  fetchSaleLandReport: vi.fn().mockResolvedValue(landReport),
+  downloadSaleLandReport: vi.fn(),
 }));
 
 afterEach(() => cleanup());
@@ -188,5 +213,29 @@ describe("UrbanismeCadastrePanel", () => {
     expect(container.textContent).toContain("À vérifier");
     expect(container.textContent).not.toContain("est constructible");
     expect(container.textContent).not.toContain("autorisation de construire");
+  });
+
+  it("ne répète pas les risques ni le résumé d’adresse une fois le dossier officiel lu", async () => {
+    render(
+      <UrbanismeCadastrePanel
+        sale={sale({
+          risks: [
+            {
+              risk_type: "flood_zone",
+              risk_label: "Zone inondable à vérifier",
+              severity: 3,
+              evidence: "Mention d'une zone inondable dans le dossier source.",
+            },
+          ],
+        })}
+        officialLandEnabled
+      />,
+    );
+
+    expect(await screen.findByText(/^Vérifié le/)).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText(/· parcelle à rattacher$/)).toBeNull());
+    fireEvent.click(screen.getByText("Voir les références et contrôles"));
+    expect(screen.getByRole("heading", { name: "Mentions du dossier de vente" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Risques et signaux fonciers" })).toBeNull();
   });
 });
