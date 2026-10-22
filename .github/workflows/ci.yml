@@ -254,6 +254,12 @@ jobs:
             CVE-2026-112895 CVE-2026-112896 CVE-2026-112897 CVE-2026-112899
             GHSA-462x-pgg6-55fp GHSA-58r4-6rv3-gfh8 GHSA-65qm-jvmh-6pqg GHSA-c6hw-5grf-ff96
             GHSA-p4wg-p73j-c528 GHSA-pchr-8j38-3x4p GHSA-q45j-58j2-45rg GHSA-vx6w-vv9f-6gvg
+            # Reported since 21/10/2026, also fixed only in pillow 13.0.0 (docling-core 2.103.1
+            # still requires pillow<13).
+            CVE-2026-112390 CVE-2026-112391 CVE-2026-112392 CVE-2026-112393
+            CVE-2026-112396 CVE-2026-112399 CVE-2026-112401 CVE-2026-112402
+            CVE-2026-112405 CVE-2026-112406 CVE-2026-112891 CVE-2026-112892
+            CVE-2026-112893 CVE-2026-112894 CVE-2026-112900 CVE-2026-112901
           )
           ignore_args=()
           for advisory in "${pillow_12_advisories[@]}"; do ignore_args+=(--ignore-vuln "$advisory"); done
