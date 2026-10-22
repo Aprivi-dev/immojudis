@@ -18,10 +18,9 @@ envoyé. Le modèle publié en base (révision 4) est ignoré.
    Immojudis. Pour une avocate qui ne connaît pas le site, un email qui demande des pièces sans
    dire qui l’envoie ressemble à de l’hameçonnage. Le lien de dépôt arrivait après la signature,
    et le caractère facultatif de la réponse était noyé au milieu d’un paragraphe de 100 mots.
-2. **Inviter à créer un compte dans l’email : déconseillé, pour deux raisons.** C’est de la
-   prospection au sens de l’article L. 34-5 CPCE, ce qui oblige à refaire le test de mise en
-   balance. Surtout, cela contredit l’engagement prévu envers Licitor (« aucune publicité, aucune
-   offre… ne sert pas à la prospection »). L’invitation est donc placée **sur l’écran qui suit une
+2. **Inviter à créer un compte dans l’email : déconseillé.** C’est de la prospection au sens de
+   l’article L. 34-5 CPCE, ce qui oblige à refaire le test de mise en balance, et l’analyse
+   actuelle exclut ce cas. L’invitation est donc placée **sur l’écran qui suit une
    réponse volontaire** sur `/contribuer`. C’est le moment où le professionnel a déjà fait un pas
    vers nous, et ce n’est pas un message électronique.
 3. **Un défaut de conformité réel : les oppositions courantes n’étaient pas reconnues.**
@@ -75,17 +74,8 @@ votre cabinet ou votre étude… », avec un lien vers `/login?mode=professional
 - elle ferait du message entier une prospection (L. 34-5 CPCE, régime B2B défendable mais avec un
   test de mise en balance dédié, une finalité nouvelle dans le pied et la politique de
   confidentialité) ;
-- elle contredirait la lettre prête pour Licitor et l’accord oral du 14/10 sur le décodage des
-  adresses, ainsi que la lettre aux barreaux : les adresses Licitor (52 % des fiches Licitor) et
-  celles des annuaires deviendraient inutilisables ;
 - le test actuel (`docs/rgpd-mise-en-balance-agent-information.md`, § 1 et § 3) exclut
   expressément ce cas.
-
-**Décision du propriétaire, avant d’envoyer la lettre à Licitor :**
-
-1. tenir « aucune prospection » dans les messages : rien à changer ; ou
-2. mentionner dans la lettre que la page de dépôt, après réponse, présente le dépôt direct des
-   ventes. C’est ce que fait cette branche. Cette option reste prudente, car ce n’est pas un message.
 
 **Prérequis à toute mention « gratuit ».** Publier des conditions professionnelles (publication,
 options payantes, résiliation) et dire sur `/publish` ce qui est gratuit et ce qui est payant.
@@ -134,6 +124,5 @@ Troisième passe (points 7 à 15, traités le 22/10) :
 
 - Faire valider par le juriste le gabarit révision 8, dont la phrase d’identité, et l’invitation
   de l’écran de fin de dépôt.
-- Trancher la formulation de la lettre à Licitor (voir la décision ci-dessus) avant de l’envoyer.
 - Les 15 points de l’audit sont traités, sauf l’empreinte du pied (point 14, risque résiduel décrit).
 - Choisir la signature (`INFORMATION_AGENT_SIGNATURE_NAME`) et la faire valider avec le gabarit.
