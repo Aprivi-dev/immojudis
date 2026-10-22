@@ -24,6 +24,10 @@ export type InformationAgentInboundResult = {
   factCount?: number;
   attachmentCount?: number;
   processingStatus?: "completed" | "review" | "ignored" | "queued";
+  /** Why a message reached no open case (logged, never silent). */
+  ignoredReason?: "no_token" | "unknown_case" | "case_not_open" | "token_mismatch";
+  /** An opposition from an authenticated sender, recorded even without a case. */
+  oppositionRecorded?: boolean;
 };
 
 export type InboundMessageRef = {

@@ -11,7 +11,10 @@ import type { Database, Json } from "@/integrations/supabase/types";
 import { getPublishedInformationAgentEmailTemplate } from "@/lib/admin-information-agent-email-template";
 import { adminPageQueryShape } from "@/lib/admin-page-query";
 import { ADMIN_PAGE_SIZE, adminPageMeta, type AdminPageMeta } from "@/lib/admin-pagination";
-import { loadAdminInformationAgentSale } from "@/lib/admin-information-agent-sale";
+import {
+  isAvailableInformationAgentStatus,
+  loadAdminInformationAgentSale,
+} from "@/lib/admin-information-agent-sale";
 import { readSaleFactClaims } from "@/lib/auction-fact-claims";
 import { sendResendEmail } from "@/lib/email-alerts";
 import {
@@ -443,6 +446,12 @@ export async function createAdminInformationAgentDraft({
     email: recipientEmail,
     identityKeys: recipientIdentityKeys,
   });
+  // Refused now rather than at the preview, after the admin has read the whole draft.
+  await assertNoSentCaseForRecipient(sale.id, recipientEmail);
+  await assertInformationAgentRecipientCooldown({
+    email: recipientEmail,
+    identityKeys: recipientIdentityKeys,
+  });
   const draft = buildInformationRequestDraft({
     sale,
     recipientName,
@@ -637,6 +646,8 @@ async function approveAndSendMission({
   assertInformationAgentPreviewFingerprint({ adminId, input });
   // Aucune mention commerciale : le message reste purement informatif.
   assertNoInformationAgentCommercialMention(`${input.subject}\n${input.bodyText}`);
+  assertInformationAgentHasQuestion(input.bodyText);
+  await assertInformationAgentSaleCurrent(mission);
   // Opposition par adresse et par identité (le nom corrigé à l'aperçu compte), avant l'envoi.
   const identityKeys = missionIdentityKeys(mission, input.recipientName);
   await assertInformationAgentContactAllowed({
@@ -667,6 +678,7 @@ async function approveAndSendMission({
   await assertInformationAgentRecipientCooldown({
     email: input.recipientEmail,
     missionId: mission.id,
+    identityKeys,
   });
 
   // An admin may replace a source-derived address while approving the draft.
@@ -725,7 +737,13 @@ async function approveAndSendMission({
   const messageHash = approvalFingerprint(subscribedMission);
   const approval = await approveInformationAgentMissionForAdmin(subscribedMission, messageHash);
   if (!approval) throw new Error("Approbation de l'enquête impossible.");
-  if (!approval.should_send) return;
+  if (!approval.should_send) {
+    // The shared case already left the draft stage (another mission sent it): saying « updated »
+    // would let the admin believe this email went out.
+    throw new Error(
+      "Aucun email n’est parti : cette demande est rattachée à un dossier déjà envoyé à cette adresse pour cette vente.",
+    );
+  }
 
   const replyTo = `enquete+${approval.inbound_token}@${config.inboundDomain}`;
   const sendingAt = new Date().toISOString();
@@ -744,6 +762,7 @@ async function approveAndSendMission({
     await assertInformationAgentRecipientCooldown({
       email: edited.recipient_email,
       missionId: mission.id,
+      identityKeys: edited.recipient_identity_keys,
       approvedAt: approvedMission.approved_at,
     });
     const legalFooter = buildInformationAgentLegalFooter({
@@ -1038,8 +1057,14 @@ export async function previewAdminInformationAgentMission({
   await collect(() =>
     assertNoInformationAgentCommercialMention(`${input.subject}\n${input.bodyText}`),
   );
+  await collect(() => assertInformationAgentHasQuestion(input.bodyText));
+  await collect(() => assertInformationAgentSaleCurrent(mission));
   await collect(() =>
-    assertInformationAgentRecipientCooldown({ email: recipient, missionId: mission.id }),
+    assertInformationAgentRecipientCooldown({
+      email: recipient,
+      missionId: mission.id,
+      identityKeys: missionIdentityKeys(mission, input.recipientName),
+    }),
   );
   const agentFound = isAgentFoundRecipient(mission, recipient);
   const addressOrigin = await resolveInformationAgentAddressOrigin({
@@ -1347,6 +1372,87 @@ async function listFactsForCases(caseIds: string[]): Promise<InformationAgentFac
 
 function uniqueQuestionKeys(keys: readonly InformationAgentQuestionKey[]) {
   return [...new Set(keys)].slice(0, 8);
+}
+
+/**
+ * Relit la vente à l'aperçu et à l'envoi : un brouillon préparé lundi pour une audience jeudi ne
+ * doit pas partir vendredi en demandant de « confirmer la date de l'audience ». Bloque une vente
+ * retirée, vendue ou supprimée, une date passée, et une date ou une mise à prix qui ont changé
+ * depuis le brouillon (`sale_snapshot`, absent des missions anciennes : pas de comparaison).
+ */
+export async function assertInformationAgentSaleCurrent(
+  mission: Pick<MissionRow, "sale_id" | "sale_snapshot">,
+  now = new Date(),
+): Promise<void> {
+  if (!mission.sale_id) return;
+  const { data, error } = await supabaseAdmin
+    .from("auction_sales")
+    .select("status,sale_date,starting_price_eur")
+    .eq("id", mission.sale_id)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data || !isAvailableInformationAgentStatus(data.status ?? null)) {
+    throw new Error(
+      "La vente n’est plus disponible (retirée, vendue ou supprimée) : la demande n’a plus d’objet.",
+    );
+  }
+  const saleTime = data.sale_date ? Date.parse(data.sale_date) : Number.NaN;
+  if (Number.isFinite(saleTime) && saleTime + 24 * 60 * 60 * 1000 < now.getTime()) {
+    throw new Error("La date annoncée de la vente est passée : la demande n’a plus d’objet.");
+  }
+  const snapshot = asObject(mission.sale_snapshot);
+  const sameDate = (left: unknown, right: unknown) =>
+    (left ?? null) === (right ?? null) ||
+    (typeof left === "string" &&
+      typeof right === "string" &&
+      Date.parse(left) === Date.parse(right));
+  const changed = [
+    "sale_date" in snapshot && !sameDate(snapshot.sale_date, data.sale_date) ? "la date" : null,
+    "starting_price_eur" in snapshot &&
+    Number(snapshot.starting_price_eur ?? Number.NaN) !==
+      Number(data.starting_price_eur ?? Number.NaN) &&
+    !(snapshot.starting_price_eur == null && data.starting_price_eur == null)
+      ? "la mise à prix"
+      : null,
+  ].filter(Boolean);
+  if (changed.length) {
+    throw new Error(
+      `La vente a changé depuis la préparation du brouillon (${changed.join(" et ")}) : régénérez le brouillon pour que le message reste exact.`,
+    );
+  }
+}
+
+export const INFORMATION_AGENT_NO_QUESTION_MESSAGE =
+  "Le message ne contient aucune question : gardez au moins une ligne commençant par « - » (une question par ligne).";
+
+/**
+ * Le message demande des précisions : sans aucune question (bloc vidé à l'édition), il annoncerait
+ * « les points suivants » suivis de rien. Une question est une ligne commençant par « - » ou « • ».
+ */
+export function assertInformationAgentHasQuestion(bodyText: string): void {
+  if (!/^\s*[-•]\s+\S/m.test(bodyText)) throw new Error(INFORMATION_AGENT_NO_QUESTION_MESSAGE);
+}
+
+/**
+ * A case for this sale and address that already left the draft stage: a new mission would only
+ * attach to it as an inert « subscribed » row, and nothing would be sent.
+ */
+async function assertNoSentCaseForRecipient(saleId: string, email: string): Promise<void> {
+  const { data, error } = await supabaseAdmin
+    .from("information_agent_cases")
+    .select("status,sent_at,created_at")
+    .eq("sale_id", saleId)
+    .eq("normalized_recipient_email", normalizedEmail(email) ?? email)
+    .in("status", ["sending", "sent", "replied", "review", "completed"])
+    .limit(1);
+  if (error) throw error;
+  const sent = data?.[0];
+  if (sent) {
+    const on = formatInformationAgentOriginDate(sent.sent_at ?? sent.created_at);
+    throw new Error(
+      `Ce professionnel a déjà été sollicité pour cette vente${on ? ` le ${on}` : ""} : un nouveau brouillon n’enverrait rien. Rouvrez la demande existante dans la liste des missions.`,
+    );
+  }
 }
 
 /**

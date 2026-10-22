@@ -1151,9 +1151,65 @@ describe("information-agent offline inbound scenarios", () => {
       },
     });
 
-    expect(await webhook()).toMatchObject({ accepted: true, ignored: true });
+    expect(await webhook()).toMatchObject({
+      accepted: true,
+      ignored: true,
+      ignoredReason: "no_token",
+      oppositionRecorded: false,
+    });
     expect(state.messages).toHaveLength(0);
-    expect(mocks.get).not.toHaveBeenCalled();
+    expect(state.contacts).toHaveLength(0);
+  });
+
+  it("records a late « STOP » from an authenticated sender after the case disappeared", async () => {
+    const state = fixture();
+    state.cases.splice(0, state.cases.length);
+    receivedEmail({ text: "Veuillez ne plus me contacter." });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    expect(await webhook(vi.fn(), "signed local fixture", {}, true)).toMatchObject({
+      accepted: true,
+      ignored: true,
+      ignoredReason: "unknown_case",
+      oppositionRecorded: true,
+    });
+    expect(state.contacts).toEqual([
+      expect.objectContaining({
+        scope_sale_id: null,
+        email: "contact@example.test",
+        opposition_status: "opposed",
+      }),
+    ]);
+    expect(state.messages).toHaveLength(0);
+    // Logged without the address or the content.
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("contact@example.test");
+    warn.mockRestore();
+  });
+
+  it("does not record an opposition from an unauthenticated sender without a case", async () => {
+    const state = fixture();
+    state.cases.splice(0, state.cases.length);
+    receivedEmail({ text: "STOP", authentication: null });
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    expect(await webhook()).toMatchObject({
+      ignoredReason: "unknown_case",
+      oppositionRecorded: false,
+    });
+    expect(state.contacts).toHaveLength(0);
+  });
+
+  it("records an opposition sent to a closed case", async () => {
+    const state = fixture();
+    state.cases[0]!.status = "completed";
+    receivedEmail({ text: "Ne m'écrivez plus." });
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    expect(await webhook()).toMatchObject({
+      ignoredReason: "case_not_open",
+      oppositionRecorded: true,
+    });
+    expect(state.contacts[0]).toMatchObject({ opposition_status: "opposed" });
   });
 
   it("ignores a provider event whose fetched message names a second case", async () => {

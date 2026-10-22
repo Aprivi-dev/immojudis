@@ -28,12 +28,14 @@ const admin = { isAdmin: true, userId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" } 
 let inserted: Record<string, unknown> | null;
 let observed: Array<Record<string, unknown>>;
 let opposedIdentityKeys: string[];
+let listed: Record<string, Array<Record<string, unknown>>>;
 
 beforeEach(() => {
   vi.resetAllMocks();
   inserted = null;
   observed = [];
   opposedIdentityKeys = [];
+  listed = {};
   mocks.sale.mockResolvedValue({
     id: saleId,
     title: "Appartement Bordeaux",
@@ -74,6 +76,12 @@ beforeEach(() => {
       eq: () => query,
       is: () => query,
       in: () => query,
+      ilike: () => query,
+      gte: () => query,
+      neq: () => query,
+      overlaps: () => query,
+      // Lists (recent solicitations, sent cases): none by default.
+      limit: () => Promise.resolve({ data: listed[table] ?? [], error: null }),
       upsert: (values: unknown) => {
         if (table === "information_agent_contacts") {
           observed = (Array.isArray(values) ? values : [values]) as Array<Record<string, unknown>>;
@@ -189,6 +197,24 @@ describe("manual admin draft preparation", () => {
         createAdminInformationAgentDraft({ auth: admin, input: { saleId, recipientEmail } }),
       ).rejects.toThrow("n’est jamais sollicitée par l’agent");
     }
+    expect(inserted).toBeNull();
+  });
+
+  it("refuse un nouveau brouillon quand la vente a déjà été sollicitée à cette adresse", async () => {
+    listed.information_agent_cases = [
+      { status: "sent", sent_at: "2026-10-02T09:00:00.000Z", created_at: "2026-10-01T09:00:00Z" },
+    ];
+    await expect(
+      createAdminInformationAgentDraft({ auth: admin, input: { saleId } }),
+    ).rejects.toThrow("déjà été sollicité pour cette vente le 02/10/2026");
+    expect(inserted).toBeNull();
+  });
+
+  it("refuse dès le brouillon un destinataire sollicité depuis moins de 30 jours", async () => {
+    listed.information_agent_missions = [{ id: "other", approved_at: new Date().toISOString() }];
+    await expect(
+      createAdminInformationAgentDraft({ auth: admin, input: { saleId } }),
+    ).rejects.toThrow("Prochain envoi possible à partir du");
     expect(inserted).toBeNull();
   });
 });

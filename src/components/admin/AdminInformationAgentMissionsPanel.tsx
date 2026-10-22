@@ -585,13 +585,29 @@ export function AdminInformationAgentMissionsPanel({
                 Brouillon pour {recipientEmail.trim() || "destinataire à vérifier"}
               </h3>
               <p className="mt-1 text-xs text-brand-navy/55">
-                Statut : {missionStatusLabel(activeMission.status)} · annonce {activeMission.saleId}
+                Statut : {missionStatusLabel(activeMission.status)} · annonce {activeMission.saleId}{" "}
+                · préparé le {formatDateTime(activeMission.createdAt)}
               </p>
             </div>
             <span className="rounded-full border bg-white px-2.5 py-1 text-xs">
               {missionStatusLabel(activeMission.status)}
             </span>
           </div>
+          {activeMission.failureReason ? (
+            <p className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-900">
+              <span className="font-semibold">
+                {activeMission.status === "failed" ? "Motif de l’échec" : "À vérifier"} :
+              </span>{" "}
+              {activeMission.failureReason}
+            </p>
+          ) : null}
+          {isMissionEditable(activeMission.status) && isStaleDraft(activeMission.createdAt) ? (
+            <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+              Brouillon préparé il y a plus de {STALE_DRAFT_DAYS} jours : l’aperçu relit la vente et
+              bloque l’envoi si sa date, sa mise à prix ou son statut ont changé. Régénérez-le au
+              besoin.
+            </p>
+          ) : null}
           <div className="mt-4 space-y-3">
             <Field
               label="Nom du destinataire"
@@ -852,6 +868,11 @@ export function AdminInformationAgentMissionsPanel({
                   <p className="mt-0.5 text-xs text-brand-navy/50">
                     {missionStatusLabel(mission.status)} · {formatDateTime(mission.updatedAt)}
                   </p>
+                  {mission.status === "failed" && mission.failureReason ? (
+                    <p className="mt-0.5 line-clamp-2 text-xs text-red-800">
+                      {mission.failureReason}
+                    </p>
+                  ) : null}
                 </div>
                 {/* Un brouillon ou un échec se reprend ; tout autre statut s'ouvre en lecture seule
                     (seul le formulaire de réponse consignée reste actif pour envoyée / répondue). */}
@@ -1090,6 +1111,13 @@ function normalizeEmail(value: string): string {
 
 function isMissionEditable(status: string): boolean {
   return status === "draft" || status === "failed";
+}
+
+const STALE_DRAFT_DAYS = 3;
+
+function isStaleDraft(createdAt: string, now = Date.now()): boolean {
+  const created = Date.parse(createdAt);
+  return Number.isFinite(created) && now - created > STALE_DRAFT_DAYS * 24 * 60 * 60 * 1000;
 }
 
 function looksLikeEmail(value: string): boolean {

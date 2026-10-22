@@ -5,6 +5,7 @@ const db = vi.hoisted(() => ({
   contacts: [] as Array<Record<string, unknown>>,
   identityOppositions: [] as Array<Record<string, unknown>>,
   writes: [] as Array<[string, string, unknown]>,
+  sale: null as Record<string, unknown> | null,
 }));
 
 vi.mock("@/integrations/supabase/client.server", () => {
@@ -26,6 +27,9 @@ vi.mock("@/integrations/supabase/client.server", () => {
       return this;
     }
     ilike() {
+      return this;
+    }
+    overlaps() {
       return this;
     }
     neq() {
@@ -58,6 +62,16 @@ vi.mock("@/integrations/supabase/client.server", () => {
     async single() {
       return { data: { ...db.mission }, error: null };
     }
+    async maybeSingle() {
+      // Relecture de la vente à l'aperçu et à l'envoi : disponible, sans date ni prix.
+      return {
+        data:
+          this.table === "auction_sales"
+            ? (db.sale ?? { status: "active", sale_date: null, starting_price_eur: null })
+            : null,
+        error: null,
+      };
+    }
     then(onFulfilled: (value: { data: unknown; error: null }) => unknown) {
       const data =
         this.table === "information_agent_contacts"
@@ -83,6 +97,7 @@ vi.mock("@/lib/email-alerts", () => ({ sendResendEmail: send }));
 
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
+  INFORMATION_AGENT_NO_QUESTION_MESSAGE,
   INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE,
   previewAdminInformationAgentMission,
   runAdminInformationAgentAction,
@@ -98,11 +113,12 @@ const content = {
   recipientName: "Maître Jean Dupont",
   subject: "Appartement à Bordeaux — précisions pour Immojudis",
   bodyText:
-    "Bonjour Maître Jean Dupont,\n\nPourriez-vous nous transmettre le procès-verbal descriptif ?",
+    "Bonjour Maître Jean Dupont,\n\n- Pourriez-vous nous transmettre le procès-verbal descriptif ?",
 };
 
 beforeEach(() => {
   db.writes.length = 0;
+  db.sale = null;
   db.identityOppositions = [];
   db.contacts = [
     {
@@ -642,6 +658,62 @@ describe("aperçu obligatoire avant tout envoi manuel", () => {
     );
     expect(result.addressOrigin.automated).toBe(false);
     expect(result.preview.text).not.toContain("retrouvée automatiquement");
+  });
+
+  it("relit la vente : bloque un brouillon devenu inexact ou sans objet", async () => {
+    const future = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString();
+    db.mission = {
+      ...db.mission,
+      sale_snapshot: { sale_date: future, starting_price_eur: 85000 },
+    };
+    db.sale = { status: "active", sale_date: future, starting_price_eur: 85000 };
+    expect(
+      (await previewAdminInformationAgentMission({ auth: ADMIN, input: content })).blockers,
+    ).toEqual([]);
+
+    db.sale = { status: "active", sale_date: future, starting_price_eur: 95000 };
+    expect(
+      (await previewAdminInformationAgentMission({ auth: ADMIN, input: content })).blockers,
+    ).toContain(
+      "La vente a changé depuis la préparation du brouillon (la mise à prix) : régénérez le brouillon pour que le message reste exact.",
+    );
+
+    db.sale = { status: "withdrawn", sale_date: future, starting_price_eur: 85000 };
+    expect(
+      (await previewAdminInformationAgentMission({ auth: ADMIN, input: content })).blockers.join(
+        " ",
+      ),
+    ).toContain("n’est plus disponible");
+
+    db.sale = { status: "active", sale_date: "2026-01-10T10:00:00Z", starting_price_eur: 85000 };
+    expect(
+      (await previewAdminInformationAgentMission({ auth: ADMIN, input: content })).blockers.join(
+        " ",
+      ),
+    ).toContain("date annoncée de la vente est passée");
+  });
+
+  it("bloque l'aperçu et l'envoi d'un message dont toutes les questions ont été retirées", async () => {
+    const input = {
+      ...content,
+      bodyText: "Bonjour Maître Jean Dupont,\n\nPourriez-vous nous préciser les points suivants ?",
+    };
+    const { blockers, fingerprint } = await previewAdminInformationAgentMission({
+      auth: ADMIN,
+      input,
+    });
+    expect(blockers).toContain(INFORMATION_AGENT_NO_QUESTION_MESSAGE);
+    await expect(
+      runAdminInformationAgentAction({
+        auth: ADMIN,
+        input: {
+          action: "approve_and_send",
+          approvalConfirmed: true,
+          ...input,
+          previewFingerprint: fingerprint!,
+        },
+      }),
+    ).rejects.toThrow("aucune question");
   });
 
   it("bloque l'aperçu quand le texte contient une mention commerciale", async () => {

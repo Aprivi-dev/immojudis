@@ -60,6 +60,19 @@ describe("AdminInformationAgentMissionsPanel", () => {
     expect(mocks.action.mock.calls[0][0]).not.toHaveProperty("shareRequesterEmail");
   });
 
+  it("shows why a mission failed and warns about an old draft", async () => {
+    const failed = { ...mission("failed"), failureReason: "Resend a refusé l'envoi (422)." };
+    mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
+    mocks.create.mockResolvedValue({ ok: true, mission: failed, gaps: [], facts: [] });
+
+    renderPanel();
+    await screen.findByRole("button", { name: "Valider et envoyer" });
+    expect(screen.getByText("Motif de l’échec :")).toBeTruthy();
+    expect(screen.getByText(/Resend a refusé l'envoi \(422\)\./)).toBeTruthy();
+    // Prepared on 19/09: older than three days, the admin is told the preview rereads the sale.
+    expect(screen.getByText(/Brouillon préparé il y a plus de 3 jours/)).toBeTruthy();
+  });
+
   it("clears the name when the email changes and keeps the edited message explicit", async () => {
     const draft = mission("draft");
     mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });

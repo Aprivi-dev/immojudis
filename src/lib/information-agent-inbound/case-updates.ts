@@ -147,7 +147,7 @@ export async function ignoreIfCaseClosed(
   return currentCase.status;
 }
 
-async function recordInboundContactOptOut(email: string, opposedAt: string): Promise<void> {
+export async function recordInboundContactOptOut(email: string, opposedAt: string): Promise<void> {
   const { error } = await supabaseAdmin.from("information_agent_contacts").upsert(
     {
       sale_id: null,

@@ -134,7 +134,8 @@ describe("supervised information agent", () => {
                 recipientEmail: "contact@example.test",
                 recipientOriginUrl: "https://annuaire.example.test/contact",
                 subject: "Informations complémentaires",
-                bodyText: "Bonjour, merci de nous transmettre les informations du dossier.",
+                bodyText:
+                  "Bonjour,\n\n- Pourriez-vous nous transmettre les informations du dossier ?",
               }),
             },
             fetchImpl: fetchImpl as typeof fetch,
@@ -151,7 +152,7 @@ describe("supervised information agent", () => {
     },
   );
 
-  it.each(["opposition", "sent", "record_fails"] as const)(
+  it.each(["opposition", "sent", "record_fails", "already_sent"] as const)(
     "rechecks the registry and records manual delivery correctly (%s)",
     async (scenario) => {
       const opposition = scenario === "opposition";
@@ -244,6 +245,16 @@ describe("supervised information agent", () => {
           };
         }
 
+        async maybeSingle() {
+          return {
+            data:
+              this.table === "auction_sales"
+                ? { status: "active", sale_date: null, starting_price_eur: null }
+                : null,
+            error: null,
+          };
+        }
+
         then(onFulfilled: (value: { data: unknown; error: null }) => unknown) {
           const blocked =
             this.table === "information_agent_contacts" && contactReads++ >= 6 && opposition;
@@ -289,7 +300,7 @@ describe("supervised information agent", () => {
                 mission_id: missionId,
                 case_id: caseId,
                 approved_at: new Date().toISOString(),
-                should_send: true,
+                should_send: scenario !== "already_sent",
                 inbound_token: "44444444-4444-4444-8444-444444444444",
               },
             ],
@@ -325,7 +336,7 @@ describe("supervised information agent", () => {
               recipientName: "Me Dupont",
               recipientOriginUrl: "https://annuaire.example.test/me-dupont",
               subject: "Demande de pièces",
-              bodyText: "Bonjour, pourriez-vous transmettre les pièces du dossier ?",
+              bodyText: "Bonjour,\n\n- Pourriez-vous transmettre les pièces du dossier ?",
             }),
           },
         });
@@ -333,6 +344,11 @@ describe("supervised information agent", () => {
           await expect(operation).rejects.toThrow("opposé");
           expect(emailMocks.sendResendEmail).not.toHaveBeenCalled();
           expect(mission.status).toBe("failed");
+        } else if (scenario === "already_sent") {
+          // The shared case was already sent by another mission: say so instead of « updated ».
+          await expect(operation).rejects.toThrow("Aucun email n’est parti");
+          expect(emailMocks.sendResendEmail).not.toHaveBeenCalled();
+          return;
         } else if (scenario === "record_fails") {
           // Resend accepted the email: the mission stays sent, so no retry and the cooldown holds.
           await expect(operation).rejects.toThrow("Ne renvoyez pas ce message");
