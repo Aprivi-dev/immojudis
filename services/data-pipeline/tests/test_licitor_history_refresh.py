@@ -14,9 +14,11 @@ SET_LOCAL = f"set local role {refresh_module.COLLECTOR_ROLE}"
 class FakeConnection:
     """Records statements with the transaction they ran in (0 = autocommit)."""
 
-    def __init__(self, *, refuse_role: bool = False) -> None:
+    def __init__(self, *, refuse_role: bool = False, snapshot_error: bool = False) -> None:
         self.statements: list[tuple[int, str]] = []
+        self.params: list[object] = []
         self.refuse_role = refuse_role
+        self.snapshot_error = snapshot_error
         self.row_factory = None
         self.transactions = 0
         self.open: int | None = None
@@ -38,9 +40,17 @@ class FakeConnection:
         if statement.startswith("set") and "role" in statement and self.refuse_role:
             raise psycopg.errors.InsufficientPrivilege("permission denied to set role")
 
+        if "refresh_auction_scenario_observations" in statement and self.snapshot_error:
+            raise psycopg.errors.QueryCanceled("canceling statement due to statement timeout")
+        self.params.append(params)
+
         class Result:
             def fetchone(self):
-                return {"attest_licitor_reported_candidates": 7} if "attest" in statement else None
+                if "attest" in statement:
+                    return {"attest_licitor_reported_candidates": 7}
+                if "refresh_auction_scenario_observations" in statement:
+                    return {"refresh_auction_scenario_observations": 3783 if params == (True,) else None}
+                return None
 
         return Result()
 
@@ -69,6 +79,7 @@ def test_one_tick_under_the_collector_role_then_attestation() -> None:
         "campaign": "already_exists",
         "tick": {"status": "checkpointed", "run_id": "monthly-2026-10", "processed": 42},
         "attested": 7,
+        "scenario_snapshot": {"status": "refreshed", "lots": 3783},
         "status": "ok",
     }
     assert calls == ["start", "tick"]
@@ -77,7 +88,7 @@ def test_one_tick_under_the_collector_role_then_attestation() -> None:
                    for _, statement in connection.statements)
     collector_statements = [
         (tx, statement) for tx, statement in connection.statements
-        if statement != SET_LOCAL and statement != refresh_module.ATTEST_SQL
+        if statement not in {SET_LOCAL, refresh_module.ATTEST_SQL, refresh_module.SCENARIO_SNAPSHOT_SQL}
     ]
     first_statement: dict[int, str] = {}
     for tx, statement in connection.statements:
@@ -91,6 +102,48 @@ def test_one_tick_under_the_collector_role_then_attestation() -> None:
     assert len(tick_transactions) == 1
     # The attestation runs as the main role, outside any collector transaction.
     assert (0, refresh_module.ATTEST_SQL) in connection.statements
+    # New lots were attested: the scenarios' copy is refreshed at once, as the main role.
+    assert (0, refresh_module.SCENARIO_SNAPSHOT_SQL) in connection.statements
+    assert connection.params[-1] == (True,)
+
+
+class NothingAttestedConnection(FakeConnection):
+    def execute(self, statement, params=None):
+        result = super().execute(statement, params)
+        if "attest" not in statement:
+            return result
+
+        class Result:
+            def fetchone(self):
+                return {"attest_licitor_reported_candidates": 0}
+
+        return Result()
+
+
+def test_without_new_lots_the_snapshot_refresh_is_not_forced() -> None:
+    connection = NothingAttestedConnection()
+    report = refresh_module.refresh(
+        "postgresql://test",
+        connect=lambda _url: nullcontext(connection),
+        tick=lambda _store: {"status": "idle"},
+        start=lambda _store: {"status": "already_exists"},
+    )
+    assert report["attested"] == 0
+    assert connection.params[-1] == (False,)
+    assert report["scenario_snapshot"] == {"status": "skipped"}
+    assert report["status"] == "ok"
+
+
+def test_a_failing_snapshot_refresh_keeps_the_collection_ok() -> None:
+    connection = FakeConnection(snapshot_error=True)
+    report = refresh_module.refresh(
+        "postgresql://test",
+        connect=lambda _url: nullcontext(connection),
+        tick=lambda _store: {"status": "idle"},
+        start=lambda _store: {"status": "already_exists"},
+    )
+    assert report["scenario_snapshot"] == {"status": "error", "error": "QueryCanceled"}
+    assert report["status"] == "ok"
 
 
 def test_a_failing_tick_leaves_no_role_behind() -> None:

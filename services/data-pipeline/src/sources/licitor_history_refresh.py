@@ -29,6 +29,10 @@ from src.sources.licitor_cloud_store import CloudStore
 LOGGER = logging.getLogger(__name__)
 COLLECTOR_ROLE = "licitor_collector"
 ATTEST_SQL = "select app_private.attest_licitor_reported_candidates()"
+# Copy of the attested lots read by the « Scénarios d'enchères » (migration 20261031100800): forced
+# when lots were attested, otherwise refreshed at most once a day (the quality flags of known lots and
+# the court mapping can change without a new attestation).
+SCENARIO_SNAPSHOT_SQL = "select app_private.refresh_auction_scenario_observations(%s)"
 
 
 def _connect(db_url: str) -> psycopg.Connection:
@@ -84,6 +88,17 @@ class CollectorRoleConnection:
         return getattr(self._connection, name)
 
 
+def _refresh_scenario_snapshot(connection: Any, *, force: bool) -> object:
+    """Refresh the scenarios' copy of the lots; a failure keeps the previous copy and is reported."""
+    try:
+        row = connection.execute(SCENARIO_SNAPSHOT_SQL, (force,)).fetchone()
+    except psycopg.Error as exc:
+        LOGGER.warning("Scenario snapshot refresh failed: %s", exc)
+        return {"status": "error", "error": type(exc).__name__}
+    copied = next(iter(row.values())) if isinstance(row, dict) else row[0]
+    return {"status": "skipped"} if copied is None else {"status": "refreshed", "lots": int(copied)}
+
+
 def refresh(
     db_url: str,
     *,
@@ -113,6 +128,7 @@ def refresh(
         # The attestation needs the main role: the collector cannot vouch for its own lots.
         attested = connection.execute(ATTEST_SQL).fetchone()
         report["attested"] = int(next(iter(attested.values())) if isinstance(attested, dict) else attested[0])
+        report["scenario_snapshot"] = _refresh_scenario_snapshot(connection, force=report["attested"] > 0)
     report["status"] = "ok"
     return report
 
