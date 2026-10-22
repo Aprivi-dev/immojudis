@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/integrations/supabase/client.server", () => {
   const query: Record<string, unknown> = {};
-  for (const method of ["select", "ilike", "in", "neq", "gte", "lte"]) {
+  for (const method of ["select", "ilike", "in", "neq", "gte", "lte", "overlaps"]) {
     query[method] = (...args: unknown[]) => {
       mocks.calls.push([method, ...args]);
       return query;
@@ -78,6 +78,43 @@ describe("one email per recipient per 30 days (P4-12)", () => {
     // No sale filter: the window is global to the recipient.
     expect(mocks.calls.some(([, column]) => column === "sale_id")).toBe(false);
     expect(filters.in?.[1]).toEqual(["approved", "sending", "sent", "replied", "completed"]);
+  });
+
+  it("dates the last solicitation and the day sending reopens", async () => {
+    mocks.missions.mockResolvedValue({
+      data: [{ id: "other", approved_at: "2026-10-01T10:00:00.000Z" }],
+      error: null,
+    });
+    await expect(
+      assertInformationAgentRecipientCooldown({
+        email: "cabinet@example.test",
+        now: new Date("2026-10-10T10:00:00.000Z"),
+      }),
+    ).rejects.toThrow(
+      "déjà été sollicité le 01/10/2026, toutes ventes confondues : un seul email est autorisé par période de 30 jours. Prochain envoi possible à partir du 31/10/2026.",
+    );
+    // No mission yet (draft being prepared): every mission counts.
+    expect(mocks.calls.some(([name]) => name === "neq")).toBe(false);
+  });
+
+  it("also refuses the same professional under another address", async () => {
+    mocks.missions.mockResolvedValueOnce({ data: [], error: null }).mockResolvedValueOnce({
+      data: [{ id: "other", approved_at: "2026-10-05T10:00:00.000Z" }],
+      error: null,
+    });
+    await expect(
+      assertInformationAgentRecipientCooldown({
+        email: "jean.dupont@cabinet.test",
+        missionId: "m",
+        identityKeys: ["lawyer|bordeaux|dupont jean"],
+        now: new Date("2026-10-10T10:00:00.000Z"),
+      }),
+    ).rejects.toThrow("déjà été sollicité le 05/10/2026");
+    expect(mocks.calls).toContainEqual([
+      "overlaps",
+      "recipient_identity_keys",
+      ["lawyer|bordeaux|dupont jean"],
+    ]);
   });
 
   it("allows a recipient with no recent solicitation", async () => {
@@ -279,13 +316,33 @@ describe("human review of unrecognised replies (P4-12)", () => {
     ).toBe("agreement");
   });
 
+  it("recognises the usual ways of asking to stop contact", () => {
+    for (const reply of [
+      "Veuillez ne plus me contacter.",
+      "Ne plus me contacter svp",
+      "Je vous demande de ne plus nous contacter.",
+      "Ne m'écrivez plus.",
+      "Je me désabonne.",
+      "Je ne souhaite plus recevoir vos messages.",
+      "Je ne veux plus être sollicitée.",
+      "Je m'oppose au traitement de mes données.",
+      "Stop, merci",
+      "Cessez vos envois svp",
+    ]) {
+      expect(classifyInformationAgentReplyIntent(reply, { hasEvidence: false }), reply).toBe(
+        "opposition",
+      );
+    }
+  });
+
   it("sends everything else to a human", () => {
     for (const reply of [
       "Je verrai cela plus tard.",
       "Rappelez-moi demain.",
       "Quelle est l'origine de votre demande ?",
       "Non, je ne peux pas vous aider.",
-      "Cessez vos envois svp",
+      "Je ne souhaite plus organiser de visites pour ce bien.",
+      "Le bien ne se visite plus.",
       "",
     ]) {
       expect(classifyInformationAgentReplyIntent(reply, { hasEvidence: false }), reply).toBe(

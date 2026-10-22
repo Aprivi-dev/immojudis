@@ -28,12 +28,16 @@ const admin = { isAdmin: true, userId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" } 
 let inserted: Record<string, unknown> | null;
 let observed: Array<Record<string, unknown>>;
 let opposedIdentityKeys: string[];
+let listed: Record<string, Array<Record<string, unknown>>>;
+let updates: Array<{ table: string; values: Record<string, unknown> }>;
 
 beforeEach(() => {
   vi.resetAllMocks();
   inserted = null;
   observed = [];
   opposedIdentityKeys = [];
+  listed = {};
+  updates = [];
   mocks.sale.mockResolvedValue({
     id: saleId,
     title: "Appartement Bordeaux",
@@ -74,6 +78,16 @@ beforeEach(() => {
       eq: () => query,
       is: () => query,
       in: () => query,
+      ilike: () => query,
+      gte: () => query,
+      neq: () => query,
+      overlaps: () => query,
+      update: (values: Record<string, unknown>) => {
+        updates.push({ table, values });
+        return query;
+      },
+      // Lists (recent solicitations, sent cases): none by default.
+      limit: () => Promise.resolve({ data: listed[table] ?? [], error: null }),
       upsert: (values: unknown) => {
         if (table === "information_agent_contacts") {
           observed = (Array.isArray(values) ? values : [values]) as Array<Record<string, unknown>>;
@@ -101,7 +115,7 @@ describe("manual admin draft preparation", () => {
       status: "draft",
     });
     expect(result.mission.bodyText).toContain("12 rue du Palais");
-    expect(result.mission.bodyText).toContain("afin de vérifier des informations publiées");
+    expect(result.mission.bodyText).toContain("vérifier avec vous quelques points de la fiche");
     expect(result.mission.bodyText).not.toContain("service indépendant");
     expect(result.mission.bodyText).not.toContain("compte professionnel");
     expect(result.mission.bodyText).not.toContain("mode=professional");
@@ -190,5 +204,31 @@ describe("manual admin draft preparation", () => {
       ).rejects.toThrow("n’est jamais sollicitée par l’agent");
     }
     expect(inserted).toBeNull();
+  });
+
+  it("refuse un nouveau brouillon quand la vente a déjà été sollicitée à cette adresse", async () => {
+    listed.information_agent_cases = [
+      { status: "sent", sent_at: "2026-10-02T09:00:00.000Z", created_at: "2026-10-01T09:00:00Z" },
+    ];
+    await expect(
+      createAdminInformationAgentDraft({ auth: admin, input: { saleId } }),
+    ).rejects.toThrow("déjà été sollicité pour cette vente le 02/10/2026");
+    expect(inserted).toBeNull();
+  });
+
+  it("refuse dès le brouillon un destinataire sollicité depuis moins de 30 jours", async () => {
+    listed.information_agent_missions = [{ id: "other", approved_at: new Date().toISOString() }];
+    await expect(
+      createAdminInformationAgentDraft({ auth: admin, input: { saleId } }),
+    ).rejects.toThrow("Prochain envoi possible à partir du");
+    expect(inserted).toBeNull();
+  });
+
+  it("annule l'ancien brouillon de la même vente et de la même adresse quand il est régénéré", async () => {
+    await createAdminInformationAgentDraft({ auth: admin, input: { saleId } });
+    expect(updates).toContainEqual({
+      table: "information_agent_missions",
+      values: expect.objectContaining({ status: "cancelled" }),
+    });
   });
 });

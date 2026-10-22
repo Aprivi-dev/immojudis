@@ -53,6 +53,9 @@ vi.mock("@/integrations/supabase/client.server", () => {
     ilike() {
       return this;
     }
+    overlaps() {
+      return this;
+    }
     neq() {
       return this;
     }

@@ -57,6 +57,7 @@ import {
   finalizeInboundContactOptOut,
   ignoreIfCaseClosed,
   insertOrLoadInboundMessage,
+  recordInboundContactOptOut,
   loadInitiatorMission,
   updateInboundReplyCase,
   updateOpenInformationAgentCase,
@@ -175,6 +176,58 @@ export async function processInformationAgentInboundWebhook({
   });
 }
 
+type ReceivedInboundEmail = NonNullable<
+  Awaited<ReturnType<Resend["emails"]["receiving"]["get"]>>["data"]
+>;
+
+type UnroutedInboundReason = "no_token" | "unknown_case" | "case_not_open" | "token_mismatch";
+
+/**
+ * A message that reaches the inbound domain without an open case to file it under. It is never
+ * dropped silently: the reason is logged (no address, no content), and an explicit request to
+ * stop contact from an authenticated sender is recorded on that sender's address, since
+ * opposing is harmless for the person and must hold on every channel (art. 21 GDPR).
+ */
+async function settleUnroutedInboundEmail({
+  event,
+  resend,
+  reason,
+  received,
+}: {
+  event: EmailReceivedEvent;
+  resend: Resend;
+  reason: UnroutedInboundReason;
+  received?: ReceivedInboundEmail;
+}): Promise<InformationAgentInboundResult> {
+  let email = received;
+  if (!email) {
+    const { data, error } = await resend.emails.receiving.get(event.data.email_id, {
+      html_format: "cid",
+    });
+    // Throwing makes the provider retry the delivery instead of losing a possible opposition.
+    if (error || !data) throw new Error(error?.message || "Email entrant Resend introuvable.");
+    email = data;
+  }
+  const senderEmail = normalizeEmail(email.from);
+  const authentication = normalizeInboundSenderAuthentication(
+    parseReceivedEmailExtras(email).authentication,
+  );
+  const oppositionRecorded = Boolean(
+    senderEmail &&
+    authentication.status === "pass" &&
+    detectInformationAgentContactOptOut(cleanInboundBody(email.text, email.html)),
+  );
+  if (oppositionRecorded && senderEmail) {
+    await recordInboundContactOptOut(senderEmail, email.created_at || event.created_at);
+  }
+  console.warn("[Information agent] Inbound email without an open case", {
+    reason,
+    providerEmailId: event.data.email_id,
+    oppositionRecorded,
+  });
+  return { accepted: true, ignored: true, ignoredReason: reason, oppositionRecorded };
+}
+
 async function ingestReceivedEmail({
   event,
   resend,
@@ -192,8 +245,10 @@ async function ingestReceivedEmail({
   leaseId?: string;
   deferProcessing?: boolean;
 }): Promise<InformationAgentInboundResult> {
+  const unrouted = (reason: UnroutedInboundReason, received?: ReceivedInboundEmail) =>
+    settleUnroutedInboundEmail({ event, resend, reason, received });
   const token = findInboundToken([...event.data.to, ...event.data.received_for], inboundDomain);
-  if (!token) return { accepted: true, ignored: true };
+  if (!token) return unrouted("no_token");
 
   const { data: sharedCase, error: caseError } = await supabaseAdmin
     .from("information_agent_cases")
@@ -201,9 +256,10 @@ async function ingestReceivedEmail({
     .eq("inbound_token", token)
     .maybeSingle();
   if (caseError) throw caseError;
-  if (!sharedCase) return { accepted: true, ignored: true };
+  // The case disappears with its sale (about a day after the hearing): a late « STOP » still counts.
+  if (!sharedCase) return unrouted("unknown_case");
   if (!["sending", "sent", "replied", "review"].includes(sharedCase.status)) {
-    return { accepted: true, ignored: true };
+    return unrouted("case_not_open");
   }
 
   const mission = await loadInitiatorMission(sharedCase);
@@ -219,7 +275,7 @@ async function ingestReceivedEmail({
   const receivedFor = receivedExtras.received_for;
   const receivedTokens = collectInboundTokens([...receivedTo, ...receivedFor], inboundDomain);
   if (receivedTokens.length > 1 || (receivedTokens.length === 1 && receivedTokens[0] !== token)) {
-    return { accepted: true, ignored: true };
+    return unrouted("token_mismatch", received);
   }
 
   const bodyText = cleanInboundBody(received.text, received.html);
@@ -307,6 +363,8 @@ async function ingestReceivedEmail({
   if (deferProcessing) {
     const initialClosedStatus = await ignoreIfCaseClosed(sharedCase.id, messageId, leaseId);
     if (initialClosedStatus) {
+      // A closed case takes no more facts, but an opposition is honoured on every channel.
+      if (contactOptOut && senderEmail) await recordInboundContactOptOut(senderEmail, receivedAt);
       inboundMetadata = mergeJsonObject(inboundMetadata, {
         processing_ignored_case_status: initialClosedStatus,
       });

@@ -20,6 +20,7 @@ export {
   requestAdminSourceRefresh,
   fetchAdminInformationAgentReview,
   reviewAdminInformationAgentFactClient,
+  runAdminInformationAgentMessageActionClient,
   fetchAdminInformationAgentEvidenceUrlClient,
   updateAdminInformationAgentEvidenceRightsClient,
   previewAdminInformationAgentEmailTemplate,
