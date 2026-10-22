@@ -18,6 +18,8 @@ from (
   union all
   select 'tj_single_scan', 'apartment', 40000, 400000, (current_date - interval '4 years')::date
 ) sample;
+-- Depuis 20261031100800, la fonction publique lit la copie de la vue.
+select app_private.refresh_auction_scenario_observations(true);
 
 select is(
   public.get_court_auction_scenarios('tj_single_scan', 45000)->'scenarios',
