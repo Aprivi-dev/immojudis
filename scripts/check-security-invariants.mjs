@@ -945,6 +945,56 @@ for (const [name, source] of migrationSources) {
   }
 }
 
+// A function that is not SECURITY DEFINER runs the functions it calls with the caller's rights.
+// Since 20261010004000 an app_private function gets no EXECUTE by default: when service_role can
+// call such a function, every app_private function it calls (and created since) must be granted
+// to service_role too, or each call fails with « permission denied » (court_auction_scenarios
+// calling starting_price_band broke the « Scénarios d'enchères » that way).
+{
+  const firstCreated = new Map();
+  const latestDefinition = new Map();
+  const serviceRoleGranted = new Map();
+  const statements =
+    /create\s+(?:or\s+replace\s+)?function\s+(public|app_private)\.(\w+)\s*\(([\s\S]*?)\bas\s+\$(\w*)\$([\s\S]*?)\$\4\$|grant\s+(?:execute|all)\s+on\s+function\s+(public|app_private)\.(\w+)\s*\([^)]*\)\s+to\s+([^;]+);|revoke\s+(?:execute|all)\s+on\s+function\s+(public|app_private)\.(\w+)\s*\([^)]*\)\s+from\s+([^;]+);/gi;
+  for (const [name, source] of migrationSources) {
+    const sql = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--[^\n]*/g, "");
+    for (const match of sql.matchAll(statements)) {
+      if (match[1]) {
+        const key = `${match[1]}.${match[2]}`.toLowerCase();
+        if (!firstCreated.has(key)) firstCreated.set(key, name);
+        latestDefinition.set(key, {
+          definer: /security\s+definer/i.test(match[3]),
+          body: match[5],
+        });
+      } else if (match[6] && /\bservice_role\b/i.test(match[8])) {
+        serviceRoleGranted.set(`${match[6]}.${match[7]}`.toLowerCase(), true);
+      } else if (match[9] && /\bservice_role\b/i.test(match[11])) {
+        serviceRoleGranted.set(`${match[9]}.${match[10]}`.toLowerCase(), false);
+      }
+    }
+  }
+  const defaultPrivilegeName = "20261010004000_default_function_privileges.sql";
+  const missing = new Set();
+  for (const [caller, definition] of latestDefinition) {
+    if (definition.definer) continue;
+    const callableByServiceRole =
+      serviceRoleGranted.get(caller) === true ||
+      (caller.startsWith("public.") &&
+        serviceRoleGranted.get(caller) !== false &&
+        firstCreated.get(caller) >= defaultPrivilegeName);
+    if (!callableByServiceRole) continue;
+    for (const call of definition.body.matchAll(/\bapp_private\.(\w+)\s*\(/gi)) {
+      const callee = `app_private.${call[1]}`.toLowerCase();
+      if (!latestDefinition.has(callee) || firstCreated.get(callee) < defaultPrivilegeName)
+        continue;
+      if (serviceRoleGranted.get(callee) !== true) missing.add(`${caller} -> ${callee}`);
+    }
+  }
+  for (const call of missing) {
+    failures.push(`${call}: the callee is not granted to service_role (permission denied)`);
+  }
+}
+
 if (failures.length) {
   console.error(JSON.stringify({ ok: false, failures }, null, 2));
   process.exit(1);
@@ -984,6 +1034,7 @@ console.log(
       "listing-completeness-score-stays-private",
       "sale-photos-bucket-table-and-purge",
       "launch-offer-switch-and-access-functions",
+      "invoker-functions-callees-granted-to-service-role",
     ],
   }),
 );
