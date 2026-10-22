@@ -163,6 +163,43 @@ describe("renderInformationRequestEmail", () => {
     }
   });
 
+  it("met en forme la vente, annonce les points à vérifier et propose le dépôt avant la signature", async () => {
+    const message = await renderInformationRequestEmail({
+      subject: "Maison à Bordeaux, audience du 12/09/2026 : vérification de l’annonce",
+      bodyText: [
+        "Bonjour Maître Jean Dupont,",
+        "",
+        "Référence de l’annonce : Maison — 33000 Bordeaux",
+        "Audience annoncée, à confirmer : 12 septembre 2026",
+        "Mise à prix annoncée : 85 000 €",
+        "",
+        "- Le cahier des conditions de vente est-il disponible ?",
+        "- Disposez-vous de photographies récentes ?",
+        "",
+        "Répondre est facultatif.",
+        "",
+        "Bien cordialement,",
+        "L’équipe Immojudis",
+      ].join("\n"),
+      replyTo: "enquete+1234@reponses.immojudis.com",
+      caseReference: "IJ-8F31A290",
+      contributionUrl: "https://immojudis.com/contribuer/mission#secret-token",
+    });
+
+    // Bloc « vente » : chaque ligne devient une étiquette et une valeur, pas un paragraphe.
+    expect(message.html).toMatch(/text-transform:uppercase[^>]*>Référence de l’annonce</);
+    expect(message.html).toMatch(/text-transform:uppercase[^>]*>Audience annoncée, à confirmer</);
+    // Aperçu de la messagerie : ce qu'on attend, et que c'est facultatif (pas l'objet répété).
+    expect(message.html).toContain(
+      "2 points à vérifier sur cette vente. Réponse facultative, par simple retour d’email.",
+    );
+    const deposit = message.text.indexOf("Déposer des pièces pour ce dossier");
+    expect(deposit).toBeGreaterThan(message.text.indexOf("Répondre est facultatif."));
+    expect(deposit).toBeLessThan(message.text.indexOf("Bien cordialement"));
+    expect(message.text).toContain("sur immojudis.com");
+    expect(message.text).toContain("Ce lien est propre à ce dossier.");
+  });
+
   it("échappe le contenu éditable fourni par l’utilisateur", async () => {
     const message = await renderInformationRequestEmail({
       subject: "Demande <test>",

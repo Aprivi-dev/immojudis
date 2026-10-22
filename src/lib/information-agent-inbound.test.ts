@@ -294,6 +294,19 @@ describe("information agent inbound parsing", () => {
     expect(extractInformationAgentFacts(reply)).toEqual([]);
   });
 
+  it("does not read attached documents as rooms", () => {
+    for (const text of [
+      "Veuillez trouver 3 pièces jointes.",
+      "Je vous adresse 2 pièces du dossier.",
+      "Voici 4 pièces justificatives.",
+    ]) {
+      expect(
+        extractInformationAgentFacts(text).filter((fact) => fact.factKey === "rooms_count"),
+        text,
+      ).toEqual([]);
+    }
+  });
+
   it("fails closed on a correction marker without an old value to compare", () => {
     expect(
       extractInformationAgentFacts("Correction : la surface habitable est désormais de 84 m²."),

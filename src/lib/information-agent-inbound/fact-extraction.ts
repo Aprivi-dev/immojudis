@@ -55,7 +55,12 @@ export function extractInformationAgentFacts(bodyText: string): ExtractedInforma
     });
   }
 
-  const roomsMatches = [...normalized.matchAll(/(?<!\d)(\d{1,2})(?!\d)\s+pi[eè]ces?\b/gi)];
+  // « 3 pièces jointes », « 2 pièces du dossier » : des documents, pas des pièces du logement.
+  const roomsMatches = [
+    ...normalized.matchAll(
+      /(?<!\d)(\d{1,2})(?!\d)\s+pi[eè]ces?\b(?!\s+(?:jointes?|justificatives?|annexes?|demand[ée]es|compl[ée]mentaires|d['’]identit[ée]|du\s+dossier|de\s+(?:la\s+)?proc[ée]dure))/gi,
+    ),
+  ];
   const roomValues = new Set(roomsMatches.map((match) => Number(match[1])));
   const roomsMatch = roomValues.size === 1 ? roomsMatches[0] : undefined;
   if (roomsMatch) {

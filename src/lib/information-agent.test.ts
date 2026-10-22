@@ -13,6 +13,7 @@ import {
   runAdminInformationAgentAction,
   selectInformationAgentContact,
   selectDefaultInformationAgentQuestionKeys,
+  withoutProfessionSuffix,
 } from "@/lib/information-agent";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { AuctionSale } from "@/lib/types";
@@ -150,9 +151,10 @@ describe("supervised information agent", () => {
     },
   );
 
-  it.each([true, false])(
-    "rechecks the registry and records manual delivery correctly (opposition: %s)",
-    async (opposition) => {
+  it.each(["opposition", "sent", "record_fails"] as const)(
+    "rechecks the registry and records manual delivery correctly (%s)",
+    async (scenario) => {
+      const opposition = scenario === "opposition";
       const missionId = "22222222-2222-4222-8222-222222222222";
       const saleId = "11111111-1111-4111-8111-111111111111";
       const caseId = "33333333-3333-4333-8333-333333333333";
@@ -224,7 +226,10 @@ describe("supervised information agent", () => {
           return this;
         }
 
+        private inserting = false;
+
         insert() {
+          this.inserting = true;
           return this;
         }
 
@@ -242,6 +247,15 @@ describe("supervised information agent", () => {
         then(onFulfilled: (value: { data: unknown; error: null }) => unknown) {
           const blocked =
             this.table === "information_agent_contacts" && contactReads++ >= 6 && opposition;
+          if (
+            scenario === "record_fails" &&
+            this.inserting &&
+            this.table === "information_agent_messages"
+          ) {
+            return Promise.resolve({ data: null, error: new Error("base indisponible") }).then(
+              onFulfilled as never,
+            );
+          }
           const result =
             this.table === "information_agent_contacts"
               ? {
@@ -319,6 +333,13 @@ describe("supervised information agent", () => {
           await expect(operation).rejects.toThrow("opposé");
           expect(emailMocks.sendResendEmail).not.toHaveBeenCalled();
           expect(mission.status).toBe("failed");
+        } else if (scenario === "record_fails") {
+          // Resend accepted the email: the mission stays sent, so no retry and the cooldown holds.
+          await expect(operation).rejects.toThrow("Ne renvoyez pas ce message");
+          expect(emailMocks.sendResendEmail).toHaveBeenCalledOnce();
+          expect(mission.status).toBe("sent");
+          expect(mission.provider_message_id).toBe("provider-message-id");
+          expect(mission.failure_reason).toContain("enregistrement incomplet");
         } else {
           await operation;
           expect(emailMocks.sendResendEmail).toHaveBeenCalledOnce();
@@ -376,13 +397,13 @@ describe("supervised information agent", () => {
       "occupancy",
       "surface",
       "cadastre",
-      "sale_terms",
     ]);
+    // Les modalités se lisent dans le cahier des conditions de vente, déjà demandé.
     expect(selectDefaultInformationAgentQuestionKeys(gaps)).toEqual([
       "documents",
-      "sale_terms",
       "occupancy",
       "visit",
+      "surface",
     ]);
     expect(gaps.find((gap) => gap.key === "documents")).toMatchObject({
       priority: 100,
@@ -411,7 +432,7 @@ describe("supervised information agent", () => {
     });
 
     expect(gaps.map((gap) => gap.key)).toEqual(
-      expect.arrayContaining(["documents", "visit", "composition", "sale_terms"]),
+      expect.arrayContaining(["documents", "visit", "composition"]),
     );
     expect(gaps.find((gap) => gap.key === "documents")?.reason).toContain("diagnostics");
   });
@@ -521,8 +542,11 @@ describe("supervised information agent", () => {
       questionKeys: ["documents", "photos", "visit"],
     });
 
-    expect(draft.subject).toBe("Appartement T3 à Bordeaux — précisions pour Immojudis");
-    expect(draft.bodyText).toContain("afin de vérifier des informations publiées");
+    expect(draft.subject).toBe(
+      "Appartement T3 à Bordeaux, audience du 14/09/2026 : vérification de l’annonce",
+    );
+    expect(draft.bodyText).toContain("vérifier avec vous quelques points de la fiche");
+    expect(draft.bodyText).toContain("n’agit pas au nom d’un tribunal");
     expect(draft.bodyText).not.toContain("service indépendant");
     expect(draft.bodyText).toContain("réponse même partielle");
     expect(draft.bodyText).toContain("Audience annoncée : 14 septembre 2026");
@@ -584,6 +608,27 @@ describe("supervised information agent", () => {
     expect(draft.bodyText).not.toContain("Date à confirmer");
   });
 
+  it("greets the lawyer without the function printed after the name by the listing", () => {
+    const draft = buildInformationRequestDraft({
+      sale: incompleteSale(),
+      recipientName: "Maître Jeanne Exemple, Avocat",
+      questionKeys: ["documents"],
+    });
+    expect(draft.bodyText).toContain("Bonjour Maître Jeanne Exemple,\n");
+    expect(withoutProfessionSuffix("Me Paul Martin - avocat au barreau de Lyon")).toBe(
+      "Me Paul Martin",
+    );
+    expect(withoutProfessionSuffix("Maître Jean-Louis Avocat")).toBe("Maître Jean-Louis Avocat");
+    expect(withoutProfessionSuffix("  ")).toBeNull();
+  });
+
+  it("does not ask for the sale terms while the conditions of sale are requested", () => {
+    const gaps = detectInformationGaps(incompleteSale());
+    const keys = gaps.map((gap) => gap.key);
+    expect(keys).toContain("documents");
+    expect(keys).not.toContain("sale_terms");
+  });
+
   it("keeps a long sale title short in the email subject", () => {
     const draft = buildInformationRequestDraft({
       sale: {
@@ -595,7 +640,9 @@ describe("supervised information agent", () => {
     });
 
     expect(draft.subject.length).toBeLessThanOrEqual(100);
-    expect(draft.subject).toContain("… — précisions pour Immojudis");
+    expect(draft.subject).toMatch(
+      /…, audience du \d{2}\/\d{2}\/\d{4} : vérification de l’annonce$/,
+    );
     expect(draft.bodyText).toContain("plusieurs lots à Bordeaux");
   });
 

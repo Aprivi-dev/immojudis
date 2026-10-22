@@ -101,7 +101,7 @@ describe("manual admin draft preparation", () => {
       status: "draft",
     });
     expect(result.mission.bodyText).toContain("12 rue du Palais");
-    expect(result.mission.bodyText).toContain("afin de vérifier des informations publiées");
+    expect(result.mission.bodyText).toContain("vérifier avec vous quelques points de la fiche");
     expect(result.mission.bodyText).not.toContain("service indépendant");
     expect(result.mission.bodyText).not.toContain("compte professionnel");
     expect(result.mission.bodyText).not.toContain("mode=professional");

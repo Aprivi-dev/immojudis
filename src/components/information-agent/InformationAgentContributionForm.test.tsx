@@ -137,6 +137,48 @@ describe("InformationAgentContributionForm", () => {
       files: [],
     });
     expect(mocks.storageFrom).not.toHaveBeenCalled();
+    // Après une réponse volontaire : ce qui va se passer, puis l'invitation au dépôt direct.
+    expect(screen.getByText(/rien n’est publié sans cette vérification/)).toBeTruthy();
+    const invitation = screen.getByRole("link", { name: "Créer un accès professionnel" });
+    expect(invitation.getAttribute("href")).toBe("/login?mode=professional&redirect=%2Fpublish");
+  });
+
+  it("confirme une opposition sans rien proposer d'autre", async () => {
+    mocks.fetch
+      .mockResolvedValueOnce(referenceResponse())
+      .mockResolvedValueOnce(
+        jsonResponse({ ok: true, messageId: "message-1", assetCount: 0, opposed: true }, 201),
+      );
+    renderContribution();
+    await screen.findByText("CASE-1234");
+    fillRequiredFields();
+    fireEvent.change(screen.getByLabelText("Votre réponse"), {
+      target: { value: "Merci de ne plus me contacter." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Transmettre ma contribution" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toContain("ne vous sollicitera plus"),
+    );
+    expect(screen.queryByRole("link", { name: "Créer un accès professionnel" })).toBeNull();
+  });
+
+  it("n'affiche pas l'invitation quand elle est coupée", async () => {
+    vi.stubEnv("NEXT_PUBLIC_INFORMATION_AGENT_PRO_INVITATION", "false");
+    try {
+      mocks.fetch
+        .mockResolvedValueOnce(referenceResponse())
+        .mockResolvedValueOnce(jsonResponse({ ok: true, messageId: "m", assetCount: 0 }, 201));
+      renderContribution();
+      await screen.findByText("CASE-1234");
+      fillRequiredFields();
+      fireEvent.change(screen.getByLabelText("Votre réponse"), { target: { value: "Oui." } });
+      fireEvent.click(screen.getByRole("button", { name: "Transmettre ma contribution" }));
+      await screen.findByText("Contribution reçue");
+      expect(screen.queryByRole("link", { name: "Créer un accès professionnel" })).toBeNull();
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("prépare chaque fichier, dépose via Supabase puis soumet son ticket", async () => {

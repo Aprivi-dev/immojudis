@@ -483,7 +483,8 @@ export async function submitInformationAgentContribution({
 
   // Le lien de dépôt n'est remis qu'au destinataire de la demande : une note qui demande de ne
   // plus être contacté vaut opposition pour cette adresse (s'opposer est sans risque pour elle).
-  if (input.note && detectInformationAgentContactOptOut(input.note)) {
+  const opposed = Boolean(input.note && detectInformationAgentContactOptOut(input.note));
+  if (opposed) {
     await recordInformationAgentContactOpposition({
       email: informationCase.normalized_recipient_email,
     });
@@ -511,7 +512,7 @@ export async function submitInformationAgentContribution({
     .in("status", ["sending", "sent", "subscribed", "replied"]);
   if (missionUpdateError) throw missionUpdateError;
 
-  return { messageId, assetCount: assets.length, senderMatches, assets };
+  return { messageId, assetCount: assets.length, senderMatches, assets, opposed };
 }
 
 async function discardInvalidUpload(path: string): Promise<void> {

@@ -9,6 +9,7 @@ import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import UploadCloud from "lucide-react/dist/esm/icons/upload-cloud.js";
 import X from "lucide-react/dist/esm/icons/x.js";
 import { legalValue, publicLegalPublisher } from "@/lib/legal-documents";
+import { pathWithSearch } from "@/lib/navigation";
 import { userMessage } from "@/lib/user-messages";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -153,6 +154,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
   const [authorizedToTransmit, setAuthorizedToTransmit] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [opposed, setOpposed] = useState(false);
   const [submissionId, setSubmissionId] = useState<string | null>(null);
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [portalQuota, setPortalQuota] = useState<PortalQuota | null>(null);
@@ -399,7 +401,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
       }
 
       setStatus("Transmission de votre réponse…");
-      await postJson<{ ok: true }>(
+      const result = await postJson<{ ok: true; opposed?: boolean }>(
         `/api/information-agent/contributions/${encodeURIComponent(missionId)}/submit`,
         {
           token,
@@ -419,9 +421,14 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
         },
       );
       clearStoredToken(missionId);
+      setOpposed(result?.opposed === true);
       setSubmitted(true);
       setToken(null);
-      setStatus("Votre contribution a bien été transmise.");
+      setStatus(
+        result?.opposed === true
+          ? "Votre demande est enregistrée : Immojudis ne vous sollicitera plus."
+          : "Votre contribution a bien été transmise.",
+      );
       setFiles([]);
       setSubmissionId(null);
       setUploadedFiles([]);
@@ -495,18 +502,33 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
               Contribution au dossier
             </h2>
             {submitted ? (
-              <div className="rounded-lg border border-emerald-700/20 bg-emerald-50 p-5 text-emerald-950">
-                <h2
-                  ref={successTitleRef}
-                  tabIndex={-1}
-                  className="text-lg font-semibold outline-none"
-                >
-                  Contribution reçue
-                </h2>
-                <p role="status" aria-live="polite" className="mt-2 text-sm leading-relaxed">
-                  {status ?? "Votre réponse a bien été transmise."} Vous pouvez fermer cette page.
-                </p>
-              </div>
+              <>
+                <div className="rounded-lg border border-emerald-700/20 bg-emerald-50 p-5 text-emerald-950">
+                  <h2
+                    ref={successTitleRef}
+                    tabIndex={-1}
+                    className="text-lg font-semibold outline-none"
+                  >
+                    Contribution reçue
+                  </h2>
+                  <p role="status" aria-live="polite" className="mt-2 text-sm leading-relaxed">
+                    {status ?? "Votre réponse a bien été transmise."}
+                  </p>
+                  {opposed ? null : (
+                    <p className="mt-2 text-sm leading-relaxed">
+                      Notre équipe la relit avant toute mise à jour de la fiche : rien n’est publié
+                      sans cette vérification. Pour corriger ou retirer un envoi, répondez
+                      simplement à l’email reçu (référence {session.caseReference}). Vous pouvez
+                      fermer cette page.
+                    </p>
+                  )}
+                </div>
+                {/* Montrée seulement après une réponse volontaire, jamais dans l'email ni après une
+                    opposition : voir docs/audits/2026-10-22-agent-information.md. */}
+                {opposed || !professionalInvitationEnabled() ? null : (
+                  <ProfessionalDepositInvitation />
+                )}
+              </>
             ) : (
               <>
                 <div className="rounded-lg border border-border bg-white/70 p-4">
@@ -835,6 +857,40 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
         </nav>
       </div>
     </main>
+  );
+}
+
+/**
+ * Invitation à déposer ses prochaines ventes, après une contribution volontaire. Coupée par
+ * `NEXT_PUBLIC_INFORMATION_AGENT_PRO_INVITATION=false`. Sans « gratuit » tant que des conditions
+ * professionnelles ne le garantissent pas, sans « mise en avant » ni « visibilité ».
+ */
+function professionalInvitationEnabled(): boolean {
+  return process.env.NEXT_PUBLIC_INFORMATION_AGENT_PRO_INVITATION !== "false";
+}
+
+function ProfessionalDepositInvitation() {
+  return (
+    <aside
+      aria-labelledby="professional-invitation-title"
+      className="mt-5 rounded-lg border border-border bg-white/70 p-5"
+    >
+      <h3 id="professional-invitation-title" className="text-base font-semibold text-foreground">
+        Vous menez régulièrement des ventes aux enchères ?
+      </h3>
+      <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+        Vous pouvez déposer vous-même vos prochaines ventes sur Immojudis, avec leurs pièces. Vous
+        gardez la main sur ce qui est affiché, et les candidats trouvent le cahier des conditions de
+        vente sans avoir à solliciter votre cabinet ou votre étude. Chaque compte professionnel est
+        vérifié, et chaque vente est relue par notre équipe avant publication.
+      </p>
+      <Link
+        href={pathWithSearch("/login", { mode: "professional", redirect: "/publish" })}
+        className="mt-3 inline-flex min-h-11 items-center text-sm font-semibold text-foreground underline underline-offset-2 hover:text-gold-text"
+      >
+        Créer un accès professionnel
+      </Link>
+    </aside>
   );
 }
 

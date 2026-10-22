@@ -49,7 +49,6 @@ const BRAND = {
 };
 
 export function InformationRequestEmail({
-  subject,
   bodyText,
   replyTo,
   caseReference,
@@ -58,10 +57,14 @@ export function InformationRequestEmail({
 }: InformationRequestEmailProps) {
   const blocks = parseBodyBlocks(bodyText);
   const replyHref = `mailto:${replyTo}`;
+  // Après le premier paragraphe qui suit les questions (« Répondre est facultatif… »), sinon à la fin.
+  const lastQuestions = blocks.map((block) => block.kind).lastIndexOf("questions");
+  const depositIndex =
+    lastQuestions >= 0 ? Math.min(lastQuestions + 1, blocks.length - 1) : blocks.length - 1;
   return (
     <Html lang="fr">
       <Head />
-      <Preview>{`Informations sur une vente immobilière — ${subject}`}</Preview>
+      <Preview>{informationRequestPreviewText(blocks)}</Preview>
       <Body style={styles.body}>
         <Container style={styles.container}>
           <Section style={styles.topBar} />
@@ -72,29 +75,28 @@ export function InformationRequestEmail({
           <Section style={styles.content}>
             <Text style={styles.eyebrow}>VÉRIFICATION D’UNE ANNONCE</Text>
             <Heading as="h1" style={styles.heading}>
-              Informations sur une vente immobilière
+              Quelques points à vérifier sur une vente
             </Heading>
             <Text style={styles.reference}>Référence de suivi : {caseReference}</Text>
-            {legalFooter ? <Text style={styles.origin}>{legalFooter.addressOrigin}</Text> : null}
+            {legalFooter ? (
+              <Text style={styles.origin}>
+                <strong>Pourquoi vous ?</strong> {legalFooter.addressOrigin}
+              </Text>
+            ) : null}
 
             <Hr style={styles.hr} />
 
             {blocks.map((block, blockIndex) => (
-              <BodyBlockView key={`${block.kind}-${blockIndex}`} block={block} />
+              <React.Fragment key={`${block.kind}-${blockIndex}`}>
+                <BodyBlockView block={block} />
+                {/* Le dépôt suit les questions : c'est là que le destinataire décide comment répondre. */}
+                {contributionUrl && blockIndex === depositIndex ? (
+                  <DepositPanel contributionUrl={contributionUrl} />
+                ) : null}
+              </React.Fragment>
             ))}
-            {contributionUrl ? (
-              <Section style={styles.salePanel}>
-                <Text style={styles.paragraph}>
-                  Vous pouvez aussi déposer vos pièces dans notre espace privé, sans créer de
-                  compte.
-                </Text>
-                <Text style={styles.paragraph}>
-                  <Link href={contributionUrl}>Ouvrir le dépôt sécurisé du dossier</Link>
-                </Text>
-                <Text style={styles.footerText}>
-                  Le dépôt reste soumis à une vérification avant toute publication.
-                </Text>
-              </Section>
+            {contributionUrl && depositIndex < 0 ? (
+              <DepositPanel contributionUrl={contributionUrl} />
             ) : null}
           </Section>
 
@@ -132,6 +134,31 @@ export async function renderInformationRequestEmail(
   };
 }
 
+function DepositPanel({ contributionUrl }: { contributionUrl: string }) {
+  let host: string;
+  try {
+    host = new URL(contributionUrl).host.replace(/^www\./, "");
+  } catch {
+    host = "";
+  }
+  return (
+    <Section style={styles.salePanel}>
+      <Text style={styles.paragraph}>
+        Des pièces trop lourdes pour un email ? Déposez-les dans l’espace privé de ce dossier
+        {host ? `, sur ${host}` : ""}. Aucun compte ni mot de passe ne vous sera demandé.
+      </Text>
+      <Text style={styles.paragraph}>
+        <Link href={contributionUrl} style={styles.depositLink}>
+          Déposer des pièces pour ce dossier
+        </Link>
+      </Text>
+      <Text style={styles.footerText}>
+        Ce lien est propre à ce dossier. Rien n’est publié sans vérification par notre équipe.
+      </Text>
+    </Section>
+  );
+}
+
 function BodyBlockView({ block }: { block: BodyBlock }) {
   if (block.kind === "questions") {
     return (
@@ -150,7 +177,7 @@ function BodyBlockView({ block }: { block: BodyBlock }) {
       <Section style={styles.salePanel}>
         {block.lines.map((line, index) => {
           const separatorIndex = line.indexOf(":");
-          const label = separatorIndex >= 0 ? line.slice(0, separatorIndex) : "Information";
+          const label = separatorIndex >= 0 ? line.slice(0, separatorIndex).trim() : "Information";
           const value = separatorIndex >= 0 ? line.slice(separatorIndex + 1).trim() : line;
           return (
             <Text key={`${line}-${index}`} style={styles.saleRow}>
@@ -176,6 +203,24 @@ function BodyBlockView({ block }: { block: BodyBlock }) {
   );
 }
 
+/** Lignes du bloc « vente » : « Référence de l’annonce : … », « Audience annoncée, à confirmer : … ». */
+const SALE_LINE =
+  /^(Référence(?: de l[’']annonce)?|Audience annoncée|Date annoncée|Date de vente annoncée|Mise à prix annoncée)(?:, à confirmer)?\s*:/i;
+
+/** Aperçu affiché par la messagerie sous l'objet : ce qu'on attend, et que c'est facultatif. */
+function informationRequestPreviewText(blocks: readonly BodyBlock[]): string {
+  const count = blocks
+    .filter((block) => block.kind === "questions")
+    .reduce((total, block) => total + block.lines.length, 0);
+  const asked =
+    count > 1
+      ? `${count} points à vérifier sur cette vente`
+      : count === 1
+        ? "Un point à vérifier sur cette vente"
+        : "Quelques points à vérifier sur cette vente";
+  return `${asked}. Réponse facultative, par simple retour d’email.`;
+}
+
 function parseBodyBlocks(bodyText: string): BodyBlock[] {
   return (
     bodyText
@@ -194,13 +239,7 @@ function parseBodyBlocks(bodyText: string): BodyBlock[] {
         if (lines.every((line) => /^[-•]\s+/.test(line))) {
           return { kind: "questions" as const, lines };
         }
-        if (
-          lines.every((line) =>
-            /^(Référence|Audience annoncée|Date annoncée|Date de vente annoncée|Mise à prix annoncée)\s*:/i.test(
-              line,
-            ),
-          )
-        ) {
+        if (lines.every((line) => SALE_LINE.test(line))) {
           return { kind: "sale" as const, lines };
         }
         return { kind: "paragraph" as const, lines };
@@ -290,7 +329,8 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
   },
   hr: { margin: "18px 0", borderColor: BRAND.line },
-  origin: { margin: "10px 0 0", color: BRAND.muted, fontSize: "12px", lineHeight: "18px" },
+  origin: { margin: "12px 0 0", color: "#475467", fontSize: "13px", lineHeight: "19px" },
+  depositLink: { color: BRAND.ink, fontWeight: 700, textDecoration: "underline" },
   paragraph: { margin: "0 0 14px", color: "#303A50", fontSize: "15px", lineHeight: "21px" },
   salePanel: {
     margin: "2px 0 16px",

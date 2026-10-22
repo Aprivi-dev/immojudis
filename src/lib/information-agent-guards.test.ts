@@ -279,13 +279,33 @@ describe("human review of unrecognised replies (P4-12)", () => {
     ).toBe("agreement");
   });
 
+  it("recognises the usual ways of asking to stop contact", () => {
+    for (const reply of [
+      "Veuillez ne plus me contacter.",
+      "Ne plus me contacter svp",
+      "Je vous demande de ne plus nous contacter.",
+      "Ne m'écrivez plus.",
+      "Je me désabonne.",
+      "Je ne souhaite plus recevoir vos messages.",
+      "Je ne veux plus être sollicitée.",
+      "Je m'oppose au traitement de mes données.",
+      "Stop, merci",
+      "Cessez vos envois svp",
+    ]) {
+      expect(classifyInformationAgentReplyIntent(reply, { hasEvidence: false }), reply).toBe(
+        "opposition",
+      );
+    }
+  });
+
   it("sends everything else to a human", () => {
     for (const reply of [
       "Je verrai cela plus tard.",
       "Rappelez-moi demain.",
       "Quelle est l'origine de votre demande ?",
       "Non, je ne peux pas vous aider.",
-      "Cessez vos envois svp",
+      "Je ne souhaite plus organiser de visites pour ce bien.",
+      "Le bien ne se visite plus.",
       "",
     ]) {
       expect(classifyInformationAgentReplyIntent(reply, { hasEvidence: false }), reply).toBe(

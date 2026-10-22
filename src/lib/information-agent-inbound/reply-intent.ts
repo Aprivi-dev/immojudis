@@ -20,7 +20,15 @@ export function detectInformationAgentContactOptOut(bodyText: string): boolean {
     .trim();
   if (!text) return false;
   return [
-    /(?:^|\n)\s*(?:stop|unsubscribe|désinscription|desinscription)(?:\s+merci)?\s*[.!…]*\s*$/imu,
+    /(?:^|\n)\s*(?:stop|unsubscribe|désinscription|desinscription)(?:[\s,]+merci)?\s*[.!…]*\s*$/imu,
+    // Formules courantes, quelle que soit la politesse qui les précède (« Veuillez », « Je vous
+    // demande de »…) : une opposition manquée est plus grave qu'une opposition de trop (art. 21 RGPD).
+    /\bne\s+plus\s+(?:me|nous)\s+(?:contacter|[ée]crire|solliciter|relancer|adresser\s+(?:de|vos))\b/iu,
+    /\bne\s+(?:m['’]|nous\s+)[ée]crivez\s+plus\b|\bne\s+(?:me|nous)\s+(?:sollicitez|relancez)\s+plus\b/iu,
+    /\bcessez\s+(?:vos\s+(?:envois|messages|courriels|e-?mails|sollicitations|relances)|de\s+(?:me|nous)\s+(?:contacter|[ée]crire|solliciter|relancer))\b/iu,
+    /\bje\s+(?:me\s+)?d[ée]sabonne\b|\bd[ée]sabonnez[-\s]?(?:moi|nous)\b/iu,
+    /\bje\s+ne\s+(?:souhaite|veux|d[ée]sire)\s+plus\s+(?:être\s+(?:contact|sollicit)[ée]e?s?|recevoir\s+(?:vos|de|ces)\s+(?:e-?mails?|courriels?|messages?|sollicitations?|demandes?))\b/iu,
+    /\bje\s+m['’]oppose\s+au\s+traitement\s+de\s+mes\s+donn[ée]es\b/iu,
     /\b(?:merci\s+de\s+ne\s+plus\s+(?:me|nous)\s+contacter|merci\s+de\s+(?:supprimer|retirer)\s+(?:mon\s+adresse|moi|nous)(?:\s+de\s+vos\s+listes?)?|(?:supprimez|retirez)\s+mon\s+adresse(?:\s+de\s+vos\s+listes?)?|ne\s+(?:me|nous)\s+contact(?:e|ez|er)\s+plus|retirez[-\s]?(?:moi|nous)(?:\s+de\s+vos\s+listes?)?|supprimez[-\s]?(?:moi|nous)(?:\s+de\s+vos\s+listes?)?|désinscrivez[-\s]?(?:moi|nous)|desinscrivez[-\s]?(?:moi|nous)|je\s+ne\s+souhaite\s+plus\s+(?:être\s+contact[ée]|recevoir\s+vos\s+(?:e-?mails?|courriels?))|je\s+ne\s+veux\s+plus\s+(?:être\s+contact[ée]|recevoir\s+vos\s+(?:e-?mails?|courriels?))|je\s+m['’]oppose\s+à\s+(?:tout|ce|votre)\s+contact|please\s+(?:remove|unsubscribe)\s+me|do\s+not\s+contact\s+me\s+again)\b/iu,
   ].some((pattern) => pattern.test(text));
 }

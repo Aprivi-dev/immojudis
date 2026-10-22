@@ -33,6 +33,7 @@ import {
   type InformationAgentEmailTemplateContent,
 } from "@/lib/information-agent-email-template";
 import {
+  formatInformationAgentOriginDate,
   informationAgentControllerIdentity,
   type InformationAgentAddressOrigin,
   type InformationAgentLegalFooter,
@@ -291,15 +292,28 @@ export function buildInformationRequestDraft({
   const hearingStatus = facts?.sale_date.status;
   const priceStatus = facts?.starting_price_eur.status;
   const reference = [title, sale.address, location, sale.tribunal].filter(Boolean).join(" — ");
-  const trimmedRecipientName = recipientName?.replace(/\s+/g, " ").trim();
+  const trimmedRecipientName = withoutProfessionSuffix(recipientName ?? "") ?? undefined;
   const hearingLabel = resolvedInventory.judicial ? "Audience annoncée" : "Date de vente annoncée";
+  const shortHearing =
+    hearing === "Date à confirmer" || hearingStatus === "conflict"
+      ? null
+      : formatInformationAgentOriginDate(sale.sale_date);
+  const startingPrice =
+    priceStatus === "conflict" || sale.starting_price_eur == null || sale.starting_price_eur <= 0
+      ? null
+      : formatStartingPrice(sale.starting_price_eur);
+  const priceToConfirm = Boolean(priceStatus && priceStatus !== "observed");
   return renderInformationAgentEmailContent({
     template,
     values: {
       recipient_name: trimmedRecipientName || "Madame, Monsieur",
       salutation: trimmedRecipientName ? `Bonjour ${trimmedRecipientName},` : "Madame, Monsieur,",
       sale_title: title,
-      sale_subject_title: shortenSubjectTitle(title),
+      sale_subject_title: shortenSubjectTitle(
+        sale.city && !title.toLowerCase().includes(sale.city.toLowerCase())
+          ? `${title} à ${sale.city}`
+          : title,
+      ),
       sale_reference: reference || title,
       location: location || "Localisation non précisée",
       tribunal: sale.tribunal || "Tribunal non précisé",
@@ -315,14 +329,20 @@ export function buildInformationRequestDraft({
           : hearingStatus && hearingStatus !== "observed"
             ? `${hearingLabel}, à confirmer : ${hearing}`
             : `${hearingLabel} : ${hearing}`,
-      starting_price:
-        priceStatus === "conflict" ||
-        sale.starting_price_eur == null ||
-        sale.starting_price_eur <= 0
-          ? "Mise à prix à confirmer"
-          : priceStatus && priceStatus !== "observed"
-            ? `${formatStartingPrice(sale.starting_price_eur)} (à confirmer)`
-            : formatStartingPrice(sale.starting_price_eur),
+      // L'objet nomme la date pour que le professionnel reconnaisse son dossier avant d'ouvrir.
+      subject_date: shortHearing
+        ? `${resolvedInventory.judicial ? "audience" : "vente"} du ${shortHearing}`
+        : "date à confirmer",
+      starting_price: !startingPrice
+        ? "Mise à prix à confirmer"
+        : priceToConfirm
+          ? `${startingPrice} (à confirmer)`
+          : startingPrice,
+      price_line: !startingPrice
+        ? ""
+        : priceToConfirm
+          ? `Mise à prix annoncée, à confirmer : ${startingPrice}`
+          : `Mise à prix annoncée : ${startingPrice}`,
       questions: questionKeys
         .map((key) => `- ${informationAgentQuestionText(key, questionContext)}`)
         .join("\n"),
@@ -410,7 +430,8 @@ export async function createAdminInformationAgentDraft({
   const selectedByEmail = contactCandidates.find((candidate) => candidate.email === recipientEmail);
   // A manual address or another source contact must not inherit the lawyer's
   // name: it can belong to a different professional entirely.
-  const recipientName = input.recipientName ?? selectedByEmail?.name ?? null;
+  const recipientName =
+    input.recipientName ?? withoutProfessionSuffix(selectedByEmail?.name ?? "") ?? null;
   const recipientIdentityRole = selectedByEmail?.role ?? null;
   const recipientIdentityKeys = informationAgentIdentityKeys({
     role: recipientIdentityRole,
@@ -708,6 +729,8 @@ async function approveAndSendMission({
 
   const replyTo = `enquete+${approval.inbound_token}@${config.inboundDomain}`;
   const sendingAt = new Date().toISOString();
+  // Set once Resend has accepted the message: from then on the mission is never downgraded.
+  let delivered: { id: string | null; sentAt: string } | null = null;
 
   try {
     await assertInformationAgentContactAllowed({
@@ -767,6 +790,7 @@ async function approveAndSendMission({
       },
     });
     const sentAt = new Date().toISOString();
+    delivered = { id: delivery.id, sentAt };
     const missionMetadata = asObject(edited.metadata);
     const { error: messageError } = await supabaseAdmin.from("information_agent_messages").insert({
       mission_id: mission.id,
@@ -808,6 +832,27 @@ async function approveAndSendMission({
     });
   } catch (error) {
     const detail = error instanceof Error ? error.message.slice(0, 1000) : "Envoi impossible.";
+    if (delivered) {
+      // The email is out. Marking the mission failed would free the 30-day cooldown and invite a
+      // manual retry that sends a second email: keep it sent and say what is incomplete.
+      const note = `Message accepté par Resend (${delivered.id ?? "identifiant non communiqué"}), enregistrement incomplet : ${detail}`;
+      await Promise.allSettled([
+        updateMissionOrThrow(mission.id, mission.user_id, {
+          status: "sent",
+          reply_to_email: replyTo,
+          sent_at: delivered.sentAt,
+          provider_message_id: delivered.id,
+          failure_reason: note,
+        }),
+        updateCaseOrThrow(approval.case_id, {
+          status: "sent",
+          sent_at: delivered.sentAt,
+          provider_message_id: delivered.id,
+          failure_reason: note,
+        }),
+      ]);
+      throw new Error(`${note}. Ne renvoyez pas ce message.`, { cause: error });
+    }
     await updateMissionOrThrow(mission.id, mission.user_id, {
       status: "failed",
       failure_reason: detail,
@@ -1304,12 +1349,28 @@ function uniqueQuestionKeys(keys: readonly InformationAgentQuestionKey[]) {
   return [...new Set(keys)].slice(0, 8);
 }
 
+/**
+ * « Maître Jeanne Exemple, Avocat » (nom imprimé par l'annonce) → « Maître Jeanne Exemple » : la
+ * fonction après la virgule donnerait « Bonjour Maître Jeanne Exemple, Avocat, ». Null si vide.
+ */
+export function withoutProfessionSuffix(name: string): string | null {
+  const cleaned = name
+    .replace(/\s+/g, " ")
+    .replace(
+      /\s*[,–—-]\s*(?:avocate?s?|notaires?|commissaires?\s+de\s+justice|huissiers?(?:\s+de\s+justice)?|administrateurs?\s+judiciaires?|mandataires?\s+judiciaires?)(?:\s+(?:associ[ée]e?s?|au\s+barreau\s+d[eu']\s*.+|à\s+.+))?\s*$/iu,
+      "",
+    )
+    .trim();
+  return cleaned || null;
+}
+
+/** Titre de l'objet, court : la date qui le suit doit rester visible sur un téléphone. */
 function shortenSubjectTitle(title: string): string {
   const normalized = title.replace(/\s+/g, " ").trim();
-  if (normalized.length <= 70) return normalized;
-  const prefix = normalized.slice(0, 69);
+  if (normalized.length <= 45) return normalized;
+  const prefix = normalized.slice(0, 44);
   const lastSpace = prefix.lastIndexOf(" ");
-  return `${(lastSpace >= 40 ? prefix.slice(0, lastSpace) : prefix).trimEnd()}…`;
+  return `${(lastSpace >= 25 ? prefix.slice(0, lastSpace) : prefix).trimEnd()}…`;
 }
 
 function isQuestionKey(value: string): value is InformationAgentQuestionKey {
