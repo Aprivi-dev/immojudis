@@ -29,6 +29,7 @@ function referenceResponse() {
   return jsonResponse({
     caseReference: "CASE-1234",
     subject: "Informations sur le bien",
+    questions: ["Quelles sont les prochaines dates de visite ?"],
     maxFileBytes: 20 * 1024 * 1024,
     maxSubmissionBytes: 40 * 1024 * 1024,
     maxPortalBytes: 480 * 1024 * 1024,
@@ -111,8 +112,13 @@ describe("InformationAgentContributionForm", () => {
       );
     renderContribution();
     await screen.findByText("CASE-1234");
-    expect(screen.getByText(/à laquelle vous souhaitez être recontacté/)).toBeTruthy();
-    expect(screen.getByText(/Nous la comparons à celle à laquelle nous avons écrit/)).toBeTruthy();
+    expect(
+      screen.getByText(/Pour pouvoir vous répondre si une précision est nécessaire/),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Nous la comparons/)).toBeNull();
+    // The questions of the email are recalled above the form.
+    expect(screen.getByText("Ce que nous vous avons demandé")).toBeTruthy();
+    expect(screen.getByText("Quelles sont les prochaines dates de visite ?")).toBeTruthy();
     fillRequiredFields();
     fireEvent.change(screen.getByLabelText("Votre réponse"), {
       target: { value: "La visite est possible sur rendez-vous." },
@@ -199,7 +205,8 @@ describe("InformationAgentContributionForm", () => {
       );
     renderContribution();
     await screen.findByText("CASE-1234");
-    expect(screen.getByText(/jusqu’à 12 dépôts/)).toBeTruthy();
+    // No capacity jargon while plenty remains.
+    expect(screen.queryByText(/Chaque préparation réserve/)).toBeNull();
     fillRequiredFields();
     const file = new File(["%PDF-1.7"], "pv.pdf", { type: "application/pdf" });
     fireEvent.change(screen.getByLabelText("Pièces jointes"), {
@@ -351,6 +358,27 @@ describe("InformationAgentContributionForm", () => {
     const retry = JSON.parse(String(mocks.fetch.mock.calls[3]?.[1]?.body));
     expect(retry.files).toHaveLength(1);
     expect(retry.note).toBe("Voici le PV, corrigé.");
+  });
+
+  it("dit qu'une contribution est déjà transmise quand la page est rechargée", async () => {
+    mocks.fetch
+      .mockResolvedValueOnce(referenceResponse())
+      .mockResolvedValueOnce(jsonResponse({ ok: true, messageId: "m", assetCount: 0 }, 201));
+    renderContribution();
+    await screen.findByText("CASE-1234");
+    fillRequiredFields();
+    fireEvent.change(screen.getByLabelText("Votre réponse"), { target: { value: "Oui." } });
+    fireEvent.click(screen.getByRole("button", { name: "Transmettre ma contribution" }));
+    await screen.findByText("Contribution reçue");
+
+    // Reload: the fragment and the token are gone, the submission is remembered for this tab.
+    cleanup();
+    window.history.replaceState(null, "", "/contribuer/mission-1");
+    render(<InformationAgentContributionForm missionId="mission-1" />);
+    expect((await screen.findByRole("status")).textContent).toContain(
+      "Votre contribution au dossier CASE-1234 a déjà été transmise.",
+    );
+    expect(screen.queryByText(/Ce lien semble incomplet/)).toBeNull();
   });
 
   describe("jeton de dépôt", () => {

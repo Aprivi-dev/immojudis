@@ -38,6 +38,8 @@ const ACCEPTED_FILE_TYPES =
 type ContributionSession = {
   caseReference: string;
   subject: string;
+  /** Questions de l'email, rappelées pour répondre sans revenir au message. */
+  questions: string[];
   maxFileBytes: number;
   maxSubmissionBytes: number;
   maxPortalBytes: number;
@@ -74,7 +76,7 @@ type UploadedFile = {
   ticket: string;
 };
 
-type ContributionState = "reading" | "loading" | "ready" | "invalid" | "error";
+type ContributionState = "reading" | "loading" | "ready" | "invalid" | "error" | "sent";
 
 type FieldName =
   | "senderName"
@@ -111,6 +113,25 @@ function storeToken(missionId: string, token: string): void {
     window.sessionStorage.setItem(tokenStorageKey(missionId), token);
   } catch {
     // Storage can be unavailable (private mode, blocked cookies): the token stays in memory.
+  }
+}
+
+const submittedStorageKey = (missionId: string) => `immojudis:contribution-sent:${missionId}`;
+
+/** Référence du dossier déjà transmis dans cet onglet : un rechargement le dit au lieu d'alarmer. */
+function readSubmittedReference(missionId: string): string | null {
+  try {
+    return window.sessionStorage.getItem(submittedStorageKey(missionId));
+  } catch {
+    return null;
+  }
+}
+
+function storeSubmittedReference(missionId: string, reference: string): void {
+  try {
+    window.sessionStorage.setItem(submittedStorageKey(missionId), reference);
+  } catch {
+    // Without storage, a reload shows the incomplete-link message as before.
   }
 }
 
@@ -176,6 +197,9 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
           setSession({
             caseReference: data.caseReference,
             subject: data.subject,
+            questions: Array.isArray(data.questions)
+              ? data.questions.filter((item): item is string => typeof item === "string")
+              : [],
             maxFileBytes: data.maxFileBytes || DEFAULT_MAX_FILE_BYTES,
             maxSubmissionBytes: data.maxSubmissionBytes || DEFAULT_MAX_SUBMISSION_BYTES,
             maxPortalBytes: data.maxPortalBytes || DEFAULT_MAX_PORTAL_BYTES,
@@ -232,6 +256,12 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
     // A reload, a back navigation or a reopened tab no longer carries the fragment: fall back to
     // the token kept for this tab.
     const activeToken = TOKEN_PATTERN.test(fragment) ? fragment : readStoredToken(missionId);
+    const sentReference = activeToken ? null : readSubmittedReference(missionId);
+    if (sentReference) {
+      setState("sent");
+      setStatus(`Votre contribution au dossier ${sentReference} a déjà été transmise.`);
+      return;
+    }
     if (!activeToken) {
       setState("invalid");
       setError(INCOMPLETE_LINK_MESSAGE);
@@ -423,6 +453,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
         },
       );
       clearStoredToken(missionId);
+      storeSubmittedReference(missionId, session.caseReference);
       setOpposed(result?.opposed === true);
       setSubmitted(true);
       setToken(null);
@@ -476,6 +507,10 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
         {state === "reading" || state === "loading" ? (
           <StatusCard icon={<LoaderCircle className="size-5 animate-spin" />}>
             Vérification du lien sécurisé…
+          </StatusCard>
+        ) : state === "sent" ? (
+          <StatusCard role="status" icon={<ShieldCheck className="size-5" aria-hidden="true" />}>
+            {status} Pour ajouter ou corriger une information, répondez simplement à l’email reçu.
           </StatusCard>
         ) : state === "invalid" || state === "error" ? (
           <StatusCard
@@ -541,6 +576,22 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                     {session.caseReference}
                   </p>
                   <p className="mt-2 text-sm text-muted-foreground">{session.subject}</p>
+                  {session.questions.length ? (
+                    <div className="mt-4 border-t border-border pt-3">
+                      <p className="text-sm font-semibold text-foreground">
+                        Ce que nous vous avons demandé
+                      </p>
+                      <ul className="mt-2 list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-muted-foreground">
+                        {session.questions.map((question, index) => (
+                          <li key={`${index}-${question.slice(0, 24)}`}>{question}</li>
+                        ))}
+                      </ul>
+                      <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+                        Une réponse partielle suffit. Ce lien est propre à ce dossier : vous pouvez
+                        le transmettre au collaborateur qui le suit.
+                      </p>
+                    </div>
+                  ) : null}
                 </div>
 
                 <form className="mt-7 space-y-6" onSubmit={submit} noValidate>
@@ -585,7 +636,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                       label="Adresse e-mail"
                       htmlFor="sender-email"
                       required
-                      hint="Indiquez l’adresse à laquelle vous souhaitez être recontacté. Nous la comparons à celle à laquelle nous avons écrit."
+                      hint="Pour pouvoir vous répondre si une précision est nécessaire."
                     >
                       <input
                         id="sender-email"
@@ -663,20 +714,17 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                     >
                       PDF, JPEG, PNG, WebP, HEIC, HEIF ou TXT · 20 Mo par fichier · 40 Mo au total.
                     </p>
-                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                      Ce dossier accepte jusqu’à {session.maxPortalFiles} dépôts, dans une capacité
-                      réservée de {formatBytes(session.maxPortalBytes)}. Chaque préparation réserve
-                      40 Mo, même pour une pièce plus petite.
-                    </p>
-                    {portalQuota ? (
+                    {portalQuota && portalQuota.remainingFiles <= 3 ? (
                       <p
                         id="files-quota"
                         role="status"
                         className="mt-1 text-xs leading-relaxed text-muted-foreground"
                       >
-                        Capacité restante après cette préparation :{" "}
-                        {formatBytes(portalQuota.remainingBytes)} et {portalQuota.remainingFiles}{" "}
-                        {portalQuota.remainingFiles > 1 ? "fichiers" : "fichier"}.
+                        {portalQuota.remainingFiles > 0
+                          ? `Ce dossier peut encore recevoir ${portalQuota.remainingFiles} ${
+                              portalQuota.remainingFiles > 1 ? "fichiers" : "fichier"
+                            }. Au-delà, répondez simplement à l’email reçu.`
+                          : "Ce dossier ne peut plus recevoir de fichier : répondez simplement à l’email reçu."}
                       </p>
                     ) : null}
                     <label

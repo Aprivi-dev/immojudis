@@ -28,7 +28,11 @@ beforeEach(() => {
   mocks.load.mockReset();
   mocks.load.mockResolvedValue({
     informationCase: { id: "abcdef12-0000-4000-8000-000000000000", subject: "Informations" },
-    mission: { id: MISSION_ID, recipient_email: "Cabinet@Example.test" },
+    mission: {
+      id: MISSION_ID,
+      recipient_email: "Cabinet@Example.test",
+      body_text: "Bonjour,\n\n- Quelle est la date de visite ?\n- Le bien est-il libre ?\n\nMerci",
+    },
   });
   vi.stubEnv("INFORMATION_AGENT_PORTAL_SECRET", SECRET);
 });
@@ -43,6 +47,7 @@ describe("information agent contribution session", () => {
     expect(response.headers.get("cache-control")).toBe("private, no-store");
     const body = await response.json();
     expect(body.caseReference).toBe("ABCDEF12");
+    expect(body.questions).toEqual(["Quelle est la date de visite ?", "Le bien est-il libre ?"]);
     expect(body.optOutPath).toMatch(/^\/api\/information-agent\/opt-out\?e=[\w-]+&t=[a-f0-9]{64}$/);
     const params = new URL(body.optOutPath, "https://immojudis.test").searchParams;
     const email = Buffer.from(params.get("e") ?? "", "base64url").toString("utf8");
