@@ -12,8 +12,11 @@ import { MapboxPreviewButton } from "@/components/MapboxPreviewButton";
 import { StreetViewDialog } from "@/components/StreetViewDialog";
 import { PhotoCredit } from "@/components/PhotoCredit";
 import { SaleVisual } from "@/components/SaleVisual";
+import { AerialOrbitHero } from "@/components/sale-detail/AerialOrbitHero";
 import listingStyles from "@/components/sale-detail/SaleListing.module.css";
 import { propertyTypeLabel } from "@/lib/format";
+import { getMapboxAccessToken } from "@/lib/mapbox";
+import { aerialOrbitTarget } from "@/lib/sale-aerial-orbit";
 import { listingCoordinates } from "@/lib/sale-listing";
 import { photoCredit } from "@/lib/photo-credit";
 import { photoMirrorForCard, photoMirrorForDetail } from "@/lib/photo-mirror";
@@ -60,6 +63,29 @@ export function PropertyIdentity({
       : saleDisplayTitle(sale, propertyTypeLabel(sale.property_type));
   const address = [sale.address, sale.postal_code, sale.city].filter(Boolean).join(", ");
   const mapLocation = cityReview.blocked ? null : listingCoordinates(sale);
+  // Les photos des annonces sont souvent médiocres : quand la position est sûre, la vue aérienne
+  // passe devant et les photos deviennent des vignettes sous le visuel.
+  const orbitTarget = mapLocation && getMapboxAccessToken() ? aerialOrbitTarget(sale) : null;
+
+  const locationButtons = (location: { lat: number; lng: number }) => (
+    <>
+      <StreetViewDialog
+        target={{ ...location, address }}
+        className="min-h-10 rounded-md border-white/70 bg-white/95 px-3 py-2 text-xs shadow-lg backdrop-blur"
+      />
+      <MapboxPreviewButton
+        mode="streetLevel"
+        lat={location.lat}
+        lng={location.lng}
+        label="Quartier 3D"
+        title="Vue 3D du quartier"
+        description={address || "Adresse de l'annonce"}
+        ariaLabel="Afficher la vue 3D Mapbox du quartier"
+        icon={MapPin}
+        className="inline-flex min-h-10 items-center gap-2 rounded-md border border-white/70 bg-white/95 px-3 py-2 text-xs font-semibold text-brand-navy shadow-lg backdrop-blur transition-colors hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
+      />
+    </>
+  );
 
   const handleMobileCarouselScroll = (event: UIEvent<HTMLDivElement>) => {
     const carousel = event.currentTarget;
@@ -79,7 +105,19 @@ export function PropertyIdentity({
   return (
     <div className={listingStyles.heroGallery}>
       <div className={listingStyles.photo}>
-        {images[0] ? (
+        {orbitTarget && mapLocation ? (
+          <>
+            <AerialOrbitHero
+              target={orbitTarget}
+              title={title}
+              className={listingStyles.orbitMain}
+            />
+            {/* Au-dessus du logo Mapbox, que les conditions d'utilisation imposent visible. */}
+            <div className="absolute bottom-9 left-3 z-10 flex max-w-[calc(100%-1.5rem)] flex-wrap gap-2 md:left-4">
+              {locationButtons(mapLocation)}
+            </div>
+          </>
+        ) : images[0] ? (
           <>
             <div
               ref={mobileCarouselRef}
@@ -154,21 +192,7 @@ export function PropertyIdentity({
             </button>
             {mapLocation ? (
               <div className="absolute bottom-8 left-3 z-10 flex max-w-[calc(100%-6rem)] flex-wrap gap-2 md:bottom-4 md:left-4">
-                <StreetViewDialog
-                  target={{ ...mapLocation, address }}
-                  className="min-h-10 rounded-md border-white/70 bg-white/95 px-3 py-2 text-xs shadow-lg backdrop-blur"
-                />
-                <MapboxPreviewButton
-                  mode="streetLevel"
-                  lat={mapLocation.lat}
-                  lng={mapLocation.lng}
-                  label="Quartier 3D"
-                  title="Vue 3D du quartier"
-                  description={address || "Adresse de l'annonce"}
-                  ariaLabel="Afficher la vue 3D Mapbox du quartier"
-                  icon={MapPin}
-                  className="inline-flex min-h-10 items-center gap-2 rounded-md border border-white/70 bg-white/95 px-3 py-2 text-xs font-semibold text-brand-navy shadow-lg backdrop-blur transition-colors hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
-                />
+                {locationButtons(mapLocation)}
               </div>
             ) : null}
             <button
@@ -197,7 +221,63 @@ export function PropertyIdentity({
         )}
       </div>
 
-      {images[0] ? (
+      {orbitTarget && images[0] ? (
+        <div className="mt-2">
+          <div className="flex items-baseline justify-between gap-3">
+            <p className="text-xs font-semibold text-brand-navy">Photos de l’annonce</p>
+            <button
+              type="button"
+              onClick={() => setGalleryIndex(0)}
+              className="inline-flex min-h-10 items-center gap-1.5 rounded-md text-xs font-semibold text-brand-navy underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
+            >
+              <Camera className="h-4 w-4" aria-hidden />
+              Voir les {images.length} photo{images.length > 1 ? "s" : ""}
+            </button>
+          </div>
+          <div className="mt-1 grid grid-cols-4 gap-2">
+            {images.slice(0, 4).map((image, index) => {
+              const hidden = images.length - 4;
+              const last = index === 3 && hidden > 0;
+              return (
+                <button
+                  key={`${image.url}-${index}`}
+                  type="button"
+                  onClick={() => setGalleryIndex(index)}
+                  className="relative h-16 overflow-hidden rounded-xl border border-brand-navy/10 bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft md:h-20"
+                  aria-label={
+                    last
+                      ? `Ouvrir la photo ${index + 1}, ${hidden} autre${hidden > 1 ? "s" : ""} dans la galerie`
+                      : `Ouvrir la photo ${index + 1}`
+                  }
+                >
+                  <ListingPhoto
+                    src={image.url}
+                    mirror={photoMirrorForCard(image.mirror)}
+                    alt={`Photo ${index + 1} de ${title}`}
+                    compactFallback
+                    className="h-full w-full object-cover transition-transform duration-300 hover:scale-[1.03]"
+                    loading="lazy"
+                    referrerPolicy="strict-origin-when-cross-origin"
+                  />
+                  {last ? (
+                    <span
+                      className="absolute inset-0 grid place-items-center bg-night/55 text-sm font-semibold text-white"
+                      aria-hidden
+                    >
+                      +{hidden}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+          <PhotoCredit
+            credit={creditOf(0)}
+            className="mt-1.5 block text-xs text-muted-foreground"
+            linkClassName="hover:text-foreground"
+          />
+        </div>
+      ) : images[0] ? (
         // Sur grand écran la photo affichée est la principale ; sur mobile, celle du carrousel.
         <PhotoCredit
           credit={creditOf(mobilePhotoIndex)}
@@ -206,7 +286,7 @@ export function PropertyIdentity({
         />
       ) : null}
 
-      {images.length > 1 ? (
+      {!orbitTarget && images.length > 1 ? (
         <div className="mt-2 hidden grid-cols-3 gap-2 md:grid">
           {images.slice(1, 4).map((image, index) => (
             <button
