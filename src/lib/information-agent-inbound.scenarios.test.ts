@@ -828,7 +828,16 @@ describe("information-agent offline inbound scenarios", () => {
       },
       error: null,
     });
-    const fetchImpl = vi.fn(async () => new Response("fixture-bytes", { status: 200 }));
+    // Real file signatures: the declared type is checked against the bytes.
+    const fetchImpl = vi.fn(async (url: string | URL | Request) => {
+      const href = String(url);
+      const body = href.endsWith(".pdf")
+        ? "%PDF-1.7\nfixture"
+        : href.endsWith(".JPG")
+          ? new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0x10])
+          : "col1;col2";
+      return new Response(body, { status: 200 });
+    });
 
     expect(await webhook(fetchImpl)).toMatchObject({
       attachmentCount: 3,
@@ -1313,10 +1322,52 @@ describe("information-agent offline inbound scenarios", () => {
 
     expect(await webhook(fetchImpl)).toMatchObject({ caseId: CASE_A, attachmentCount: 0 });
     expect(state.messages[0]?.metadata).toMatchObject({
-      rejected_attachments: [{ filename: "cahier.docx", reason: "Format non pris en charge" }],
+      rejected_attachments: [
+        {
+          filename: "cahier.docx",
+          reason:
+            "Format non pris en charge (Word, archive…) : demander une version PDF à l’expéditeur",
+        },
+      ],
     });
     expect(state.cases[0]?.status).toBe("review");
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("ignores signature logos but keeps a photo pasted in the body", async () => {
+    const state = fixture();
+    receivedEmail({ text: "Pièces jointes." });
+    mocks.list.mockResolvedValue({
+      data: {
+        data: [
+          {
+            id: "logo",
+            filename: "image001.png",
+            content_type: "image/png",
+            size: 4096,
+            content_id: "image001@cabinet",
+            content_disposition: "inline",
+            download_url: "https://example.test/image001.png",
+          },
+          {
+            id: "pasted-photo",
+            filename: "IMG_0042.jpg",
+            content_type: "image/jpeg",
+            size: 900_000,
+            content_id: "img42@iphone",
+            content_disposition: "inline",
+            download_url: "https://example.test/IMG_0042.jpg",
+          },
+        ],
+      },
+      error: null,
+    });
+    const fetchImpl = vi.fn(async () => new Response(new Uint8Array([0xff, 0xd8, 0xff, 0xe0])));
+
+    expect(await webhook(fetchImpl)).toMatchObject({ attachmentCount: 1 });
+    // The logo is not even downloaded.
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(state.assets.map((asset) => asset.original_filename)).toEqual(["IMG_0042.jpg"]);
   });
 
   it("normalizes a PDF MIME parameter and reports an oversized attachment", async () => {

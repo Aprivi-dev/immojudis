@@ -18,6 +18,8 @@ import {
 const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const MAX_TOTAL_ATTACHMENT_BYTES = 40 * 1024 * 1024;
 const MAX_LISTED_ATTACHMENTS = 500;
+/** Au-dessous, une image citée par le corps du message (cid:) est un logo ou une signature. */
+const MAX_INLINE_SIGNATURE_IMAGE_BYTES = 60 * 1024;
 const ALLOWED_ATTACHMENT_MIME_TYPES = new Set([
   "application/pdf",
   "image/jpeg",
@@ -275,6 +277,17 @@ export async function storeInboundAttachments({
     const mimeType = normalizeAttachmentMimeType(rawMimeType, filename);
     const declaredSize = fields.size;
     const downloadUrl = normalizeAttachmentDownloadUrl(fields.download_url);
+    // Logos and signature images: inline and small. A photo pasted in the body (Apple Mail sends
+    // them inline too) is larger and stays a candidate.
+    if (
+      mimeType.startsWith("image/") &&
+      fields.content_id &&
+      !/^attachment/i.test(fields.content_disposition ?? "") &&
+      declaredSize !== null &&
+      declaredSize <= MAX_INLINE_SIGNATURE_IMAGE_BYTES
+    ) {
+      continue;
+    }
     if (
       !attachmentId ||
       !ALLOWED_ATTACHMENT_MIME_TYPES.has(mimeType) ||
@@ -291,7 +304,7 @@ export async function storeInboundAttachments({
           : !downloadUrl
             ? "Lien de téléchargement absent ou non sécurisé"
             : !ALLOWED_ATTACHMENT_MIME_TYPES.has(mimeType)
-              ? "Format non pris en charge"
+              ? "Format non pris en charge (Word, archive…) : demander une version PDF à l’expéditeur"
               : "Taille hors limite",
       });
       continue;
