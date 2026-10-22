@@ -88,6 +88,7 @@ export function AerialOrbitHero({
     let mapLoaded = false;
     let map: MapboxGL.Map | null = null;
     let marker: MapboxGL.Marker | null = null;
+    let resizeObserver: ResizeObserver | null = null;
     setStatus("loading");
 
     void import("mapbox-gl")
@@ -115,6 +116,13 @@ export function AerialOrbitHero({
           zoom: ORBIT_ZOOM,
         });
         map = instance;
+        // La carte mesure son conteneur à sa création ; le visuel peut encore prendre sa hauteur
+        // finale ensuite (feuilles de style chargées après coup). Sans ce suivi, elle restait à
+        // 300 px de haut dans un cadre de près de 600.
+        if (typeof ResizeObserver !== "undefined") {
+          resizeObserver = new ResizeObserver(() => instance.resize());
+          resizeObserver.observe(container);
+        }
 
         marker = new mapboxgl.Marker({ element: orbitPin(), anchor: "bottom" })
           .setLngLat([lng, lat])
@@ -159,6 +167,7 @@ export function AerialOrbitHero({
     return () => {
       cancelled = true;
       if (frameId) window.cancelAnimationFrame(frameId);
+      resizeObserver?.disconnect();
       marker?.remove();
       map?.remove();
     };
