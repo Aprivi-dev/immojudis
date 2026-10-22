@@ -95,6 +95,15 @@ class Query implements PromiseLike<{ data: Row[] | null; error: Row | null }> {
     return this;
   }
 
+  lt(key: string, value: string) {
+    this.conditions.push((row) => String(row[key]) < value);
+    return this;
+  }
+
+  limit() {
+    return this;
+  }
+
   insert(values: Row | Row[]) {
     this.operation = "insert";
     this.values = values;
@@ -191,8 +200,10 @@ function fixture() {
     information_agent_messages: [],
     information_agent_evidence_assets: [],
     information_agent_contacts: [],
+    information_agent_portal_upload_reservations: [],
   };
   const storage = {
+    remove: vi.fn(async () => ({ data: [], error: null })),
     createSignedUploadUrl: vi.fn(async () => ({
       data: { token: "signed-upload-token" },
       error: null,
@@ -229,6 +240,7 @@ function fixture() {
     assets: tables.information_agent_evidence_assets,
     cases: tables.information_agent_cases,
     contacts: tables.information_agent_contacts,
+    reservations: tables.information_agent_portal_upload_reservations,
     storage,
   };
 }
@@ -389,10 +401,70 @@ describe("information agent contribution integration", () => {
       }),
     ).rejects.toMatchObject({
       status: 413,
-      message:
-        "La capacité de dépôt de ce dossier est atteinte. Contactez-nous pour faire réinitialiser le dépôt.",
+      message: expect.stringContaining("La capacité de dépôt de ce dossier est atteinte"),
     });
     expect(state.storage.createSignedUploadUrl).toHaveBeenCalledTimes(1);
+  });
+
+  it("rend la capacité des envois abandonnés, objet orphelin supprimé d'abord", async () => {
+    const state = fixture();
+    const longAgo = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+    const soon = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    state.reservations.push(
+      {
+        id: "r1",
+        case_id: CASE_ID,
+        storage_path: `${CASE_ID}/portal/a/x.pdf`,
+        status: "reserved",
+        expires_at: longAgo,
+      },
+      {
+        id: "r2",
+        case_id: CASE_ID,
+        storage_path: `${CASE_ID}/portal/b/y.pdf`,
+        status: "reserved",
+        expires_at: soon,
+      },
+      {
+        id: "r3",
+        case_id: CASE_ID,
+        storage_path: `${CASE_ID}/portal/c/z.pdf`,
+        status: "consumed",
+        expires_at: longAgo,
+      },
+    );
+
+    await prepareInformationAgentContributionUpload({
+      missionId: MISSION_ID,
+      input: { token: TOKEN, filename: "cahier.pdf", mimeType: "application/pdf", size: 1024 },
+      env: ENV,
+    });
+
+    expect(state.storage.remove).toHaveBeenCalledWith([`${CASE_ID}/portal/a/x.pdf`]);
+    expect(state.reservations.map((row) => row.status)).toEqual([
+      "released",
+      "reserved",
+      "consumed",
+    ]);
+  });
+
+  it("garde la réservation comptée si l'objet orphelin n'a pas pu être supprimé", async () => {
+    const state = fixture();
+    state.reservations.push({
+      id: "r1",
+      case_id: CASE_ID,
+      storage_path: `${CASE_ID}/portal/a/x.pdf`,
+      status: "reserved",
+      expires_at: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
+    });
+    state.storage.remove.mockResolvedValueOnce({ data: null, error: { message: "down" } } as never);
+
+    await prepareInformationAgentContributionUpload({
+      missionId: MISSION_ID,
+      input: { token: TOKEN, filename: "cahier.pdf", mimeType: "application/pdf", size: 1024 },
+      env: ENV,
+    });
+    expect(state.reservations[0]?.status).toBe("reserved");
   });
 
   it("does not reserve capacity when Storage cannot issue a signed URL", async () => {

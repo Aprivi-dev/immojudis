@@ -270,9 +270,10 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
     setErrorNonce((value) => value + 1);
   };
 
+  // A changed answer is a new submission (new id), but files already sent stay sent: they are
+  // tracked by their own key, and sending them again would reserve capacity a second time.
   const resetSubmissionProgress = () => {
     setSubmissionId(null);
-    setUploadedFiles([]);
   };
 
   const addFiles = (incoming: File[]) => {
@@ -319,6 +320,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
 
   const removeFile = (key: string) => {
     resetSubmissionProgress();
+    setUploadedFiles((current) => current.filter((item) => item.key !== key));
     setFiles((current) => current.filter((item) => item.key !== key));
     setError(null);
   };

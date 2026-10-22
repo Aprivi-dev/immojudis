@@ -315,6 +315,44 @@ describe("InformationAgentContributionForm", () => {
     expect(retrySubmit.files).toEqual(firstSubmit.files);
   });
 
+  it("ne renvoie pas une pièce déjà déposée quand la réponse est corrigée après une erreur", async () => {
+    mocks.fetch
+      .mockResolvedValueOnce(referenceResponse())
+      .mockResolvedValueOnce(
+        jsonResponse({
+          bucket: "information-agent-evidence",
+          path: "case/portal/file/pv.pdf",
+          token: "signed-upload-token",
+          ticket: `1234567890123.${"b".repeat(64)}`,
+          remainingBytes: 440 * 1024 * 1024,
+          remainingFiles: 11,
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ error: "Service indisponible." }, 503))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, messageId: "m", assetCount: 1 }, 201));
+    renderContribution();
+    await screen.findByText("CASE-1234");
+    fillRequiredFields();
+    fireEvent.change(screen.getByLabelText("Pièces jointes"), {
+      target: { files: [new File(["%PDF-1.7"], "pv.pdf", { type: "application/pdf" })] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Transmettre ma contribution" }));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("indisponible"));
+
+    fireEvent.change(screen.getByLabelText("Votre réponse"), {
+      target: { value: "Voici le PV, corrigé." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Transmettre ma contribution" }));
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toContain("bien été transmise"),
+    );
+    // One reservation and one upload only: the edited answer reuses the file already sent.
+    expect(mocks.uploadToSignedUrl).toHaveBeenCalledTimes(1);
+    const retry = JSON.parse(String(mocks.fetch.mock.calls[3]?.[1]?.body));
+    expect(retry.files).toHaveLength(1);
+    expect(retry.note).toBe("Voici le PV, corrigé.");
+  });
+
   describe("jeton de dépôt", () => {
     it("conserve le jeton dans sessionStorage, jamais dans l'URL", async () => {
       mocks.fetch.mockResolvedValueOnce(referenceResponse());

@@ -207,6 +207,7 @@ export async function prepareInformationAgentContributionUpload({
     throw new InformationAgentContributionError("Format de fichier non pris en charge.", 400);
   }
   await enforceContributionRateLimit(informationCase, "prepare", 16, 24 * 60 * 60);
+  await releaseExpiredInformationAgentPortalUploads(informationCase.id);
   const safeName = storageFilename(input.filename);
   const path = `${informationCase.id}/portal/${randomUUID()}/${safeName}`;
   const uploadExpiresAt = new Date(Date.now() + UPLOAD_TICKET_LIFETIME_MS).toISOString();
@@ -244,6 +245,46 @@ export async function prepareInformationAgentContributionUpload({
   };
 }
 
+/** Marge après l'expiration d'un lien signé : un envoi commencé juste avant a le temps de finir. */
+const RELEASE_GRACE_MS = 15 * 60 * 1000;
+
+/**
+ * Rend au dossier la capacité des réservations jamais validées (onglet fermé, envoi abandonné,
+ * nouvel essai après une erreur). Une réservation expirée reste comptée tant que son objet peut
+ * exister : l'objet orphelin est d'abord supprimé du stockage, la réservation n'est libérée
+ * qu'ensuite. Sans cela, douze essais suffisaient à fermer le dépôt d'un dossier pour toujours.
+ */
+export async function releaseExpiredInformationAgentPortalUploads(
+  caseId: string,
+  now = new Date(),
+): Promise<number> {
+  const { data, error } = await supabaseAdmin
+    .from("information_agent_portal_upload_reservations")
+    .select("id,storage_path")
+    .eq("case_id", caseId)
+    .eq("status", "reserved")
+    .lt("expires_at", new Date(now.getTime() - RELEASE_GRACE_MS).toISOString())
+    .limit(50);
+  if (error) throw error;
+  const expired = data ?? [];
+  if (!expired.length) return 0;
+  const { error: removeError } = await supabaseAdmin.storage
+    .from(BUCKET)
+    .remove(expired.map((reservation) => reservation.storage_path));
+  // The objects may still exist: keep counting them rather than reopen capacity blindly.
+  if (removeError) return 0;
+  const { error: releaseError } = await supabaseAdmin
+    .from("information_agent_portal_upload_reservations")
+    .update({ status: "released" })
+    .in(
+      "id",
+      expired.map((reservation) => reservation.id),
+    )
+    .eq("status", "reserved");
+  if (releaseError) throw releaseError;
+  return expired.length;
+}
+
 async function consumeInformationAgentPortalUpload({
   caseId,
   path,
@@ -265,7 +306,11 @@ function throwPortalUploadQuotaError(error: PortalUploadQuotaRpcError): never {
   const message = error.message ?? "";
   if (message.includes("INFORMATION_AGENT_PORTAL_QUOTA_EXCEEDED")) {
     throw new InformationAgentContributionError(
-      "La capacité de dépôt de ce dossier est atteinte. Contactez-nous pour faire réinitialiser le dépôt.",
+      `La capacité de dépôt de ce dossier est atteinte (12 fichiers). Répondez plutôt à l’email reçu${
+        process.env.NEXT_PUBLIC_LEGAL_CONTACT_EMAIL?.trim()
+          ? ` ou écrivez à ${process.env.NEXT_PUBLIC_LEGAL_CONTACT_EMAIL.trim()}`
+          : ""
+      }.`,
       413,
     );
   }
