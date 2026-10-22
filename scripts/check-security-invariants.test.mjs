@@ -86,3 +86,45 @@ describe("invariants de sécurité : offre de lancement", () => {
     expect(result.status).toBe(0);
   });
 });
+
+const invokerCaller = `
+create or replace function app_private.zz_invoker_helper(p numeric)
+returns numeric
+language sql
+immutable
+set search_path = ''
+as $function$
+  select p;
+$function$;
+
+create or replace function public.zz_invoker_caller(p numeric)
+returns numeric
+language sql
+stable
+set search_path = ''
+as $function$
+  select app_private.zz_invoker_helper(p);
+$function$;
+
+grant execute on function public.zz_invoker_caller(numeric) to service_role;
+`;
+
+describe("invariants de sécurité : fonctions appelées par une fonction non definer", () => {
+  it("refuse une fonction app_private appelée par service_role sans droit d'exécution", () => {
+    const result = runInvariants({ "99990101000000_invoker.sql": invokerCaller });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "public.zz_invoker_caller -> app_private.zz_invoker_helper: the callee is not granted to service_role",
+    );
+  });
+
+  it("accepte la même fonction une fois accordée à service_role", () => {
+    const result = runInvariants({
+      "99990101000000_invoker.sql": `${invokerCaller}
+grant execute on function app_private.zz_invoker_helper(numeric) to service_role;
+`,
+    });
+    expect(result.stderr).toBe("");
+    expect(result.status).toBe(0);
+  });
+});
