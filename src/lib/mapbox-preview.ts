@@ -48,7 +48,8 @@ const BUILDINGS_LAYER = "immojudis-building-volumes";
 
 /**
  * Le style satellite de Mapbox n'a pas de bâtiments en 3D : on extrude ceux de Mapbox Streets
- * (hauteur relevée, ou estimée par Mapbox), dans un ton pierre clair qui se détache de l'imagerie.
+ * (hauteur relevée, ou estimée par Mapbox), dans un ton pierre clair à demi transparent : le relief se
+ * lit et la photo satellite des toits reste visible au travers.
  */
 export function addMapboxBuildingVolumes(map: MapboxGL.Map) {
   if (map.getLayer(BUILDINGS_LAYER)) return;
@@ -66,7 +67,7 @@ export function addMapboxBuildingVolumes(map: MapboxGL.Map) {
       "fill-extrusion-color": "#ece6dc",
       "fill-extrusion-height": ["coalesce", ["get", "height"], 6],
       "fill-extrusion-base": ["coalesce", ["get", "min_height"], 0],
-      "fill-extrusion-opacity": 0.92,
+      "fill-extrusion-opacity": 0.55,
       "fill-extrusion-vertical-gradient": true,
     },
   });
