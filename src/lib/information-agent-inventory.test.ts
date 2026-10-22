@@ -176,7 +176,7 @@ describe("inventaire de la fiche pour l'agent d'information", () => {
         missingDocuments: ["pv_descriptif", "diagnostics"],
       }),
     ).toBe(
-      "Pourriez-vous nous transmettre le procès-verbal descriptif et le dossier de diagnostics techniques, en indiquant leur date ou leur version si elle est connue ?",
+      "Pourriez-vous nous transmettre le procès-verbal descriptif et le dossier de diagnostics techniques, ou nous indiquer où les consulter, en précisant leur date ou leur version si elle est connue ?",
     );
     expect(
       informationAgentQuestionText("sale_date", {

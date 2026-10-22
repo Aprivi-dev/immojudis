@@ -9,6 +9,10 @@ import { ADMIN_PAGE_SIZE, adminPageMeta } from "@/lib/admin-pagination";
 import { optimizeInformationAgentPhoto } from "@/lib/information-agent-image";
 import { flattenPdfForPublication } from "@/lib/information-agent-pdf";
 import {
+  normalizedEmail,
+  recordInformationAgentContactOpposition,
+} from "@/lib/information-agent/contacts";
+import {
   createAdminInformationAgentDraft,
   informationAgentAdminActionSchema,
   informationAgentCreateSchema,
@@ -128,6 +132,8 @@ export async function listAdminInformationAgentReview(
         count: "exact",
       })
       .eq("direction", "inbound")
+      // A reply the admin marked as handled (or answered with an opposition) leaves the queue.
+      .is("metadata->>admin_handled_at", null)
       .order("created_at", { ascending: false })
       .order("id", { ascending: false })
       .range(offset, to),
@@ -243,6 +249,78 @@ export function informationAgentFactSource(message: FactSourceMessage): Informat
         ? metadata.sender_matches_recipient
         : null,
   };
+}
+
+export const adminInformationAgentMessageActionSchema = z.object({
+  action: z.enum(["record_opposition", "mark_handled"]),
+  messageId: z.string().uuid(),
+});
+
+export type AdminInformationAgentMessageAction = z.output<
+  typeof adminInformationAgentMessageActionSchema
+>;
+
+/**
+ * Actions de l'administrateur sur une réponse reçue, sans SQL `service_role` :
+ * - `record_opposition` : opposition globale du professionnel sollicité (adresse du dossier) et de
+ *   l'expéditeur s'il est différent, pour une demande d'arrêt que la lecture automatique n'a pas
+ *   reconnue (téléphone, formulation inhabituelle…). Les clés d'identité sont rattachées en base.
+ * - `mark_handled` : la réponse a été traitée et sort de la file de revue.
+ */
+export async function runAdminInformationAgentMessageAction({
+  authToken,
+  input,
+}: {
+  authToken: string;
+  input: AdminInformationAgentMessageAction;
+}): Promise<{ ok: true; opposedEmails: string[] }> {
+  const auth = await requireAdmin(authToken);
+  const { data: message, error } = await supabaseAdmin
+    .from("information_agent_messages")
+    .select("id,case_id,from_email,metadata")
+    .eq("id", input.messageId)
+    .eq("direction", "inbound")
+    .maybeSingle();
+  if (error) throw error;
+  if (!message) throw new Error("Réponse introuvable.");
+
+  const opposedEmails: string[] = [];
+  if (input.action === "record_opposition") {
+    let recipient: string | null = null;
+    if (message.case_id) {
+      const { data: informationCase, error: caseError } = await supabaseAdmin
+        .from("information_agent_cases")
+        .select("normalized_recipient_email")
+        .eq("id", message.case_id)
+        .maybeSingle();
+      if (caseError) throw caseError;
+      recipient = informationCase?.normalized_recipient_email ?? null;
+    }
+    for (const email of new Set(
+      [recipient, message.from_email].flatMap((value) => {
+        const normalized = value ? normalizedEmail(value) : null;
+        return normalized ? [normalized] : [];
+      }),
+    )) {
+      await recordInformationAgentContactOpposition({ email });
+      opposedEmails.push(email);
+    }
+    if (!opposedEmails.length) throw new Error("Aucune adresse à opposer pour cette réponse.");
+  }
+
+  const { error: updateError } = await supabaseAdmin
+    .from("information_agent_messages")
+    .update({
+      metadata: {
+        ...recordOrEmpty(message.metadata),
+        admin_handled_at: new Date().toISOString(),
+        admin_handled_by: auth.userId,
+        admin_handled_action: input.action,
+      },
+    })
+    .eq("id", message.id);
+  if (updateError) throw updateError;
+  return { ok: true, opposedEmails };
 }
 
 export type AdminInformationAgentReviewResponse = Awaited<

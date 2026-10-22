@@ -90,9 +90,10 @@ beforeEach(() => {
 });
 
 describe("modèle de message publié en base", () => {
-  it("la révision minimale est celle du modèle du code", () => {
-    expect(MIN_COMPLIANT_TEMPLATE_REVISION).toBe(INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION);
+  it("la révision minimale reste celle de la mise en conformité", () => {
+    // La révision 8 ne change que la rédaction : un modèle publié en révision 7 reste utilisable.
     expect(MIN_COMPLIANT_TEMPLATE_REVISION).toBe(7);
+    expect(INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION).toBe(8);
   });
 
   it("ignore un modèle publié antérieur à la mise en conformité et retombe sur le modèle du code", async () => {
@@ -118,7 +119,7 @@ describe("modèle de message publié en base", () => {
     const workspace = await getAdminInformationAgentEmailTemplateWorkspace("token");
     expect(workspace.publishedIgnored).toBe(true);
     expect(workspace.minCompliantRevision).toBe(7);
-    expect(workspace.fallback.revision).toBe(7);
+    expect(workspace.fallback.revision).toBe(INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION);
     expect(workspace.fallback.name).toBe(DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE.name);
 
     mocks.rows = [row({ revision: 8 })];

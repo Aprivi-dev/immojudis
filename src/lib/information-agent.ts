@@ -33,6 +33,7 @@ import {
   type InformationAgentEmailTemplateContent,
 } from "@/lib/information-agent-email-template";
 import {
+  formatInformationAgentOriginDate,
   informationAgentControllerIdentity,
   type InformationAgentAddressOrigin,
   type InformationAgentLegalFooter,
@@ -81,6 +82,15 @@ import {
   saleIdentityPlace,
 } from "@/lib/information-agent/mission-identity";
 import { assertInformationAgentRecipientCooldown } from "@/lib/information-agent/recipient-cooldown";
+import {
+  assertInformationAgentHasQuestion,
+  assertInformationAgentSaleCurrent,
+  assertNoSentCaseForRecipient,
+  saleSourceTexts,
+  shortenSubjectTitle,
+  withoutProfessionSuffix,
+  withSignature,
+} from "@/lib/information-agent/draft-checks";
 
 // Ré-exports : ces fonctions vivaient dans ce module (et ses tests les importent d'ici).
 export {
@@ -88,6 +98,13 @@ export {
   resolveInformationAgentAddressOrigin,
 } from "@/lib/information-agent/address-origin";
 export { assertInformationAgentRecipientCooldown } from "@/lib/information-agent/recipient-cooldown";
+export {
+  assertInformationAgentHasQuestion,
+  assertInformationAgentSaleCurrent,
+  INFORMATION_AGENT_NO_QUESTION_MESSAGE,
+  withoutProfessionSuffix,
+  withSignature,
+} from "@/lib/information-agent/draft-checks";
 
 export {
   discoverInformationAgentContacts,
@@ -274,6 +291,7 @@ export function buildInformationRequestDraft({
   facts,
   inventory,
   template = DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE,
+  signatureName = null,
 }: {
   sale: InformationAgentInventorySale;
   recipientName?: string | null;
@@ -281,6 +299,8 @@ export function buildInformationRequestDraft({
   facts?: FactReliabilityMap;
   inventory?: InformationAgentInventory;
   template?: InformationAgentEmailTemplateContent;
+  /** Personne qui signe (`INFORMATION_AGENT_SIGNATURE_NAME`) : un nom rassure plus qu'une équipe. */
+  signatureName?: string | null;
 }): { subject: string; bodyText: string } {
   const resolvedInventory =
     inventory ?? buildInformationAgentInventory(sale, facts ?? getKeyFactReliabilities(sale));
@@ -291,15 +311,28 @@ export function buildInformationRequestDraft({
   const hearingStatus = facts?.sale_date.status;
   const priceStatus = facts?.starting_price_eur.status;
   const reference = [title, sale.address, location, sale.tribunal].filter(Boolean).join(" — ");
-  const trimmedRecipientName = recipientName?.replace(/\s+/g, " ").trim();
+  const trimmedRecipientName = withoutProfessionSuffix(recipientName ?? "") ?? undefined;
   const hearingLabel = resolvedInventory.judicial ? "Audience annoncée" : "Date de vente annoncée";
-  return renderInformationAgentEmailContent({
+  const shortHearing =
+    hearing === "Date à confirmer" || hearingStatus === "conflict"
+      ? null
+      : formatInformationAgentOriginDate(sale.sale_date);
+  const startingPrice =
+    priceStatus === "conflict" || sale.starting_price_eur == null || sale.starting_price_eur <= 0
+      ? null
+      : formatStartingPrice(sale.starting_price_eur);
+  const priceToConfirm = Boolean(priceStatus && priceStatus !== "observed");
+  const rendered = renderInformationAgentEmailContent({
     template,
     values: {
       recipient_name: trimmedRecipientName || "Madame, Monsieur",
       salutation: trimmedRecipientName ? `Bonjour ${trimmedRecipientName},` : "Madame, Monsieur,",
       sale_title: title,
-      sale_subject_title: shortenSubjectTitle(title),
+      sale_subject_title: shortenSubjectTitle(
+        sale.city && !title.toLowerCase().includes(sale.city.toLowerCase())
+          ? `${title} à ${sale.city}`
+          : title,
+      ),
       sale_reference: reference || title,
       location: location || "Localisation non précisée",
       tribunal: sale.tribunal || "Tribunal non précisé",
@@ -315,19 +348,26 @@ export function buildInformationRequestDraft({
           : hearingStatus && hearingStatus !== "observed"
             ? `${hearingLabel}, à confirmer : ${hearing}`
             : `${hearingLabel} : ${hearing}`,
-      starting_price:
-        priceStatus === "conflict" ||
-        sale.starting_price_eur == null ||
-        sale.starting_price_eur <= 0
-          ? "Mise à prix à confirmer"
-          : priceStatus && priceStatus !== "observed"
-            ? `${formatStartingPrice(sale.starting_price_eur)} (à confirmer)`
-            : formatStartingPrice(sale.starting_price_eur),
+      // L'objet nomme la date pour que le professionnel reconnaisse son dossier avant d'ouvrir.
+      subject_date: shortHearing
+        ? `${resolvedInventory.judicial ? "audience" : "vente"} du ${shortHearing}`
+        : "date à confirmer",
+      starting_price: !startingPrice
+        ? "Mise à prix à confirmer"
+        : priceToConfirm
+          ? `${startingPrice} (à confirmer)`
+          : startingPrice,
+      price_line: !startingPrice
+        ? ""
+        : priceToConfirm
+          ? `Mise à prix annoncée, à confirmer : ${startingPrice}`
+          : `Mise à prix annoncée : ${startingPrice}`,
       questions: questionKeys
         .map((key) => `- ${informationAgentQuestionText(key, questionContext)}`)
         .join("\n"),
     },
   });
+  return { ...rendered, bodyText: withSignature(rendered.bodyText, signatureName) };
 }
 
 /**
@@ -410,7 +450,8 @@ export async function createAdminInformationAgentDraft({
   const selectedByEmail = contactCandidates.find((candidate) => candidate.email === recipientEmail);
   // A manual address or another source contact must not inherit the lawyer's
   // name: it can belong to a different professional entirely.
-  const recipientName = input.recipientName ?? selectedByEmail?.name ?? null;
+  const recipientName =
+    input.recipientName ?? withoutProfessionSuffix(selectedByEmail?.name ?? "") ?? null;
   const recipientIdentityRole = selectedByEmail?.role ?? null;
   const recipientIdentityKeys = informationAgentIdentityKeys({
     role: recipientIdentityRole,
@@ -422,6 +463,12 @@ export async function createAdminInformationAgentDraft({
     email: recipientEmail,
     identityKeys: recipientIdentityKeys,
   });
+  // Refused now rather than at the preview, after the admin has read the whole draft.
+  await assertNoSentCaseForRecipient(sale.id, recipientEmail);
+  await assertInformationAgentRecipientCooldown({
+    email: recipientEmail,
+    identityKeys: recipientIdentityKeys,
+  });
   const draft = buildInformationRequestDraft({
     sale,
     recipientName,
@@ -429,6 +476,7 @@ export async function createAdminInformationAgentDraft({
     facts,
     inventory,
     template: emailTemplate.content,
+    signatureName: process.env.INFORMATION_AGENT_SIGNATURE_NAME,
   });
 
   const { data, error } = await supabaseAdmin
@@ -496,6 +544,18 @@ export async function createAdminInformationAgentDraft({
       throw new Error(ADDRESS_NOT_RECORDED_MESSAGE);
     }
   }
+  // « Régénérer » replaces the previous draft for this sale and address: cancel it, so the queue
+  // keeps one editable draft and the admin cannot send the outdated one by mistake. Approval makes
+  // the sent mission the case initiator, so the contribution link stays valid.
+  const { error: supersedeError } = await supabaseAdmin
+    .from("information_agent_missions")
+    .update({ status: "cancelled", completed_at: new Date().toISOString() })
+    .eq("user_id", auth.userId)
+    .eq("sale_id", sale.id)
+    .eq("recipient_email", data.recipient_email)
+    .in("status", ["draft", "failed"])
+    .neq("id", data.id);
+  if (supersedeError) throw supersedeError;
   const subscribedMission = await loadOwnedMission(auth.userId, data.id);
   return {
     ok: true,
@@ -615,7 +675,11 @@ async function approveAndSendMission({
   // Envoi strictement manuel : l'administrateur a affiché l'aperçu de ce contenu exact.
   assertInformationAgentPreviewFingerprint({ adminId, input });
   // Aucune mention commerciale : le message reste purement informatif.
-  assertNoInformationAgentCommercialMention(`${input.subject}\n${input.bodyText}`);
+  assertNoInformationAgentCommercialMention(`${input.subject}\n${input.bodyText}`, {
+    ignore: saleSourceTexts(mission),
+  });
+  assertInformationAgentHasQuestion(input.bodyText);
+  await assertInformationAgentSaleCurrent(mission);
   // Opposition par adresse et par identité (le nom corrigé à l'aperçu compte), avant l'envoi.
   const identityKeys = missionIdentityKeys(mission, input.recipientName);
   await assertInformationAgentContactAllowed({
@@ -646,6 +710,7 @@ async function approveAndSendMission({
   await assertInformationAgentRecipientCooldown({
     email: input.recipientEmail,
     missionId: mission.id,
+    identityKeys,
   });
 
   // An admin may replace a source-derived address while approving the draft.
@@ -704,10 +769,18 @@ async function approveAndSendMission({
   const messageHash = approvalFingerprint(subscribedMission);
   const approval = await approveInformationAgentMissionForAdmin(subscribedMission, messageHash);
   if (!approval) throw new Error("Approbation de l'enquête impossible.");
-  if (!approval.should_send) return;
+  if (!approval.should_send) {
+    // The shared case already left the draft stage (another mission sent it): saying « updated »
+    // would let the admin believe this email went out.
+    throw new Error(
+      "Aucun email n’est parti : cette demande est rattachée à un dossier déjà envoyé à cette adresse pour cette vente.",
+    );
+  }
 
   const replyTo = `enquete+${approval.inbound_token}@${config.inboundDomain}`;
   const sendingAt = new Date().toISOString();
+  // Set once Resend has accepted the message: from then on the mission is never downgraded.
+  let delivered: { id: string | null; sentAt: string } | null = null;
 
   try {
     await assertInformationAgentContactAllowed({
@@ -721,6 +794,7 @@ async function approveAndSendMission({
     await assertInformationAgentRecipientCooldown({
       email: edited.recipient_email,
       missionId: mission.id,
+      identityKeys: edited.recipient_identity_keys,
       approvedAt: approvedMission.approved_at,
     });
     const legalFooter = buildInformationAgentLegalFooter({
@@ -742,7 +816,7 @@ async function approveAndSendMission({
       appOrigin: config.appUrl,
       allowedUrls: [legalFooter.addressOriginUrl],
       // La référence de la vente vient de l'annonce : elle ne peut pas faire échouer l'envoi.
-      ignore: [legalFooter.saleReference],
+      ignore: [legalFooter.saleReference, ...saleSourceTexts(mission)],
     });
     await assertInformationAgentContactAllowed({
       saleId: subscribedMission.sale_id,
@@ -767,6 +841,7 @@ async function approveAndSendMission({
       },
     });
     const sentAt = new Date().toISOString();
+    delivered = { id: delivery.id, sentAt };
     const missionMetadata = asObject(edited.metadata);
     const { error: messageError } = await supabaseAdmin.from("information_agent_messages").insert({
       mission_id: mission.id,
@@ -808,6 +883,27 @@ async function approveAndSendMission({
     });
   } catch (error) {
     const detail = error instanceof Error ? error.message.slice(0, 1000) : "Envoi impossible.";
+    if (delivered) {
+      // The email is out. Marking the mission failed would free the 30-day cooldown and invite a
+      // manual retry that sends a second email: keep it sent and say what is incomplete.
+      const note = `Message accepté par Resend (${delivered.id ?? "identifiant non communiqué"}), enregistrement incomplet : ${detail}`;
+      await Promise.allSettled([
+        updateMissionOrThrow(mission.id, mission.user_id, {
+          status: "sent",
+          reply_to_email: replyTo,
+          sent_at: delivered.sentAt,
+          provider_message_id: delivered.id,
+          failure_reason: note,
+        }),
+        updateCaseOrThrow(approval.case_id, {
+          status: "sent",
+          sent_at: delivered.sentAt,
+          provider_message_id: delivered.id,
+          failure_reason: note,
+        }),
+      ]);
+      throw new Error(`${note}. Ne renvoyez pas ce message.`, { cause: error });
+    }
     await updateMissionOrThrow(mission.id, mission.user_id, {
       status: "failed",
       failure_reason: detail,
@@ -991,10 +1087,18 @@ export async function previewAdminInformationAgentMission({
     }),
   );
   await collect(() =>
-    assertNoInformationAgentCommercialMention(`${input.subject}\n${input.bodyText}`),
+    assertNoInformationAgentCommercialMention(`${input.subject}\n${input.bodyText}`, {
+      ignore: saleSourceTexts(mission),
+    }),
   );
+  await collect(() => assertInformationAgentHasQuestion(input.bodyText));
+  await collect(() => assertInformationAgentSaleCurrent(mission));
   await collect(() =>
-    assertInformationAgentRecipientCooldown({ email: recipient, missionId: mission.id }),
+    assertInformationAgentRecipientCooldown({
+      email: recipient,
+      missionId: mission.id,
+      identityKeys: missionIdentityKeys(mission, input.recipientName),
+    }),
   );
   const agentFound = isAgentFoundRecipient(mission, recipient);
   const addressOrigin = await resolveInformationAgentAddressOrigin({
@@ -1047,7 +1151,7 @@ export async function previewAdminInformationAgentMission({
     assertNoInformationAgentCommercialMention(`${rendered.html}\n${rendered.text}`, {
       appOrigin: appUrl,
       allowedUrls: [addressOrigin.origin.url],
-      ignore: [legalFooter.saleReference],
+      ignore: [legalFooter.saleReference, ...saleSourceTexts(mission)],
     }),
   );
   return {
@@ -1302,14 +1406,6 @@ async function listFactsForCases(caseIds: string[]): Promise<InformationAgentFac
 
 function uniqueQuestionKeys(keys: readonly InformationAgentQuestionKey[]) {
   return [...new Set(keys)].slice(0, 8);
-}
-
-function shortenSubjectTitle(title: string): string {
-  const normalized = title.replace(/\s+/g, " ").trim();
-  if (normalized.length <= 70) return normalized;
-  const prefix = normalized.slice(0, 69);
-  const lastSpace = prefix.lastIndexOf(" ");
-  return `${(lastSpace >= 40 ? prefix.slice(0, lastSpace) : prefix).trimEnd()}…`;
 }
 
 function isQuestionKey(value: string): value is InformationAgentQuestionKey {

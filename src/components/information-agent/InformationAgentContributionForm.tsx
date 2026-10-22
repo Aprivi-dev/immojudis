@@ -9,6 +9,7 @@ import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import UploadCloud from "lucide-react/dist/esm/icons/upload-cloud.js";
 import X from "lucide-react/dist/esm/icons/x.js";
 import { legalValue, publicLegalPublisher } from "@/lib/legal-documents";
+import { pathWithSearch } from "@/lib/navigation";
 import { userMessage } from "@/lib/user-messages";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -37,6 +38,8 @@ const ACCEPTED_FILE_TYPES =
 type ContributionSession = {
   caseReference: string;
   subject: string;
+  /** Questions de l'email, rappelées pour répondre sans revenir au message. */
+  questions: string[];
   maxFileBytes: number;
   maxSubmissionBytes: number;
   maxPortalBytes: number;
@@ -73,7 +76,7 @@ type UploadedFile = {
   ticket: string;
 };
 
-type ContributionState = "reading" | "loading" | "ready" | "invalid" | "error";
+type ContributionState = "reading" | "loading" | "ready" | "invalid" | "error" | "sent";
 
 type FieldName =
   | "senderName"
@@ -110,6 +113,25 @@ function storeToken(missionId: string, token: string): void {
     window.sessionStorage.setItem(tokenStorageKey(missionId), token);
   } catch {
     // Storage can be unavailable (private mode, blocked cookies): the token stays in memory.
+  }
+}
+
+const submittedStorageKey = (missionId: string) => `immojudis:contribution-sent:${missionId}`;
+
+/** Référence du dossier déjà transmis dans cet onglet : un rechargement le dit au lieu d'alarmer. */
+function readSubmittedReference(missionId: string): string | null {
+  try {
+    return window.sessionStorage.getItem(submittedStorageKey(missionId));
+  } catch {
+    return null;
+  }
+}
+
+function storeSubmittedReference(missionId: string, reference: string): void {
+  try {
+    window.sessionStorage.setItem(submittedStorageKey(missionId), reference);
+  } catch {
+    // Without storage, a reload shows the incomplete-link message as before.
   }
 }
 
@@ -153,6 +175,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
   const [authorizedToTransmit, setAuthorizedToTransmit] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [opposed, setOpposed] = useState(false);
   const [submissionId, setSubmissionId] = useState<string | null>(null);
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [portalQuota, setPortalQuota] = useState<PortalQuota | null>(null);
@@ -174,6 +197,9 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
           setSession({
             caseReference: data.caseReference,
             subject: data.subject,
+            questions: Array.isArray(data.questions)
+              ? data.questions.filter((item): item is string => typeof item === "string")
+              : [],
             maxFileBytes: data.maxFileBytes || DEFAULT_MAX_FILE_BYTES,
             maxSubmissionBytes: data.maxSubmissionBytes || DEFAULT_MAX_SUBMISSION_BYTES,
             maxPortalBytes: data.maxPortalBytes || DEFAULT_MAX_PORTAL_BYTES,
@@ -230,6 +256,12 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
     // A reload, a back navigation or a reopened tab no longer carries the fragment: fall back to
     // the token kept for this tab.
     const activeToken = TOKEN_PATTERN.test(fragment) ? fragment : readStoredToken(missionId);
+    const sentReference = activeToken ? null : readSubmittedReference(missionId);
+    if (sentReference) {
+      setState("sent");
+      setStatus(`Votre contribution au dossier ${sentReference} a déjà été transmise.`);
+      return;
+    }
     if (!activeToken) {
       setState("invalid");
       setError(INCOMPLETE_LINK_MESSAGE);
@@ -268,9 +300,10 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
     setErrorNonce((value) => value + 1);
   };
 
+  // A changed answer is a new submission (new id), but files already sent stay sent: they are
+  // tracked by their own key, and sending them again would reserve capacity a second time.
   const resetSubmissionProgress = () => {
     setSubmissionId(null);
-    setUploadedFiles([]);
   };
 
   const addFiles = (incoming: File[]) => {
@@ -317,6 +350,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
 
   const removeFile = (key: string) => {
     resetSubmissionProgress();
+    setUploadedFiles((current) => current.filter((item) => item.key !== key));
     setFiles((current) => current.filter((item) => item.key !== key));
     setError(null);
   };
@@ -399,7 +433,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
       }
 
       setStatus("Transmission de votre réponse…");
-      await postJson<{ ok: true }>(
+      const result = await postJson<{ ok: true; opposed?: boolean }>(
         `/api/information-agent/contributions/${encodeURIComponent(missionId)}/submit`,
         {
           token,
@@ -419,9 +453,15 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
         },
       );
       clearStoredToken(missionId);
+      storeSubmittedReference(missionId, session.caseReference);
+      setOpposed(result?.opposed === true);
       setSubmitted(true);
       setToken(null);
-      setStatus("Votre contribution a bien été transmise.");
+      setStatus(
+        result?.opposed === true
+          ? "Votre demande est enregistrée : Immojudis ne vous sollicitera plus."
+          : "Votre contribution a bien été transmise.",
+      );
       setFiles([]);
       setSubmissionId(null);
       setUploadedFiles([]);
@@ -468,6 +508,10 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
           <StatusCard icon={<LoaderCircle className="size-5 animate-spin" />}>
             Vérification du lien sécurisé…
           </StatusCard>
+        ) : state === "sent" ? (
+          <StatusCard role="status" icon={<ShieldCheck className="size-5" aria-hidden="true" />}>
+            {status} Pour ajouter ou corriger une information, répondez simplement à l’email reçu.
+          </StatusCard>
         ) : state === "invalid" || state === "error" ? (
           <StatusCard
             tone="error"
@@ -495,18 +539,33 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
               Contribution au dossier
             </h2>
             {submitted ? (
-              <div className="rounded-lg border border-emerald-700/20 bg-emerald-50 p-5 text-emerald-950">
-                <h2
-                  ref={successTitleRef}
-                  tabIndex={-1}
-                  className="text-lg font-semibold outline-none"
-                >
-                  Contribution reçue
-                </h2>
-                <p role="status" aria-live="polite" className="mt-2 text-sm leading-relaxed">
-                  {status ?? "Votre réponse a bien été transmise."} Vous pouvez fermer cette page.
-                </p>
-              </div>
+              <>
+                <div className="rounded-lg border border-emerald-700/20 bg-emerald-50 p-5 text-emerald-950">
+                  <h2
+                    ref={successTitleRef}
+                    tabIndex={-1}
+                    className="text-lg font-semibold outline-none"
+                  >
+                    Contribution reçue
+                  </h2>
+                  <p role="status" aria-live="polite" className="mt-2 text-sm leading-relaxed">
+                    {status ?? "Votre réponse a bien été transmise."}
+                  </p>
+                  {opposed ? null : (
+                    <p className="mt-2 text-sm leading-relaxed">
+                      Notre équipe la relit avant toute mise à jour de la fiche : rien n’est publié
+                      sans cette vérification. Pour corriger ou retirer un envoi, répondez
+                      simplement à l’email reçu (référence {session.caseReference}). Vous pouvez
+                      fermer cette page.
+                    </p>
+                  )}
+                </div>
+                {/* Montrée seulement après une réponse volontaire, jamais dans l'email ni après une
+                    opposition : voir docs/audits/2026-10-22-agent-information.md. */}
+                {opposed || !professionalInvitationEnabled() ? null : (
+                  <ProfessionalDepositInvitation />
+                )}
+              </>
             ) : (
               <>
                 <div className="rounded-lg border border-border bg-white/70 p-4">
@@ -517,6 +576,22 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                     {session.caseReference}
                   </p>
                   <p className="mt-2 text-sm text-muted-foreground">{session.subject}</p>
+                  {session.questions.length ? (
+                    <div className="mt-4 border-t border-border pt-3">
+                      <p className="text-sm font-semibold text-foreground">
+                        Ce que nous vous avons demandé
+                      </p>
+                      <ul className="mt-2 list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-muted-foreground">
+                        {session.questions.map((question, index) => (
+                          <li key={`${index}-${question.slice(0, 24)}`}>{question}</li>
+                        ))}
+                      </ul>
+                      <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+                        Une réponse partielle suffit. Ce lien est propre à ce dossier : vous pouvez
+                        le transmettre au collaborateur qui le suit.
+                      </p>
+                    </div>
+                  ) : null}
                 </div>
 
                 <form className="mt-7 space-y-6" onSubmit={submit} noValidate>
@@ -561,7 +636,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                       label="Adresse e-mail"
                       htmlFor="sender-email"
                       required
-                      hint="Indiquez l’adresse à laquelle vous souhaitez être recontacté. Nous la comparons à celle à laquelle nous avons écrit."
+                      hint="Pour pouvoir vous répondre si une précision est nécessaire."
                     >
                       <input
                         id="sender-email"
@@ -639,20 +714,17 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                     >
                       PDF, JPEG, PNG, WebP, HEIC, HEIF ou TXT · 20 Mo par fichier · 40 Mo au total.
                     </p>
-                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                      Ce dossier accepte jusqu’à {session.maxPortalFiles} dépôts, dans une capacité
-                      réservée de {formatBytes(session.maxPortalBytes)}. Chaque préparation réserve
-                      40 Mo, même pour une pièce plus petite.
-                    </p>
-                    {portalQuota ? (
+                    {portalQuota && portalQuota.remainingFiles <= 3 ? (
                       <p
                         id="files-quota"
                         role="status"
                         className="mt-1 text-xs leading-relaxed text-muted-foreground"
                       >
-                        Capacité restante après cette préparation :{" "}
-                        {formatBytes(portalQuota.remainingBytes)} et {portalQuota.remainingFiles}{" "}
-                        {portalQuota.remainingFiles > 1 ? "fichiers" : "fichier"}.
+                        {portalQuota.remainingFiles > 0
+                          ? `Ce dossier peut encore recevoir ${portalQuota.remainingFiles} ${
+                              portalQuota.remainingFiles > 1 ? "fichiers" : "fichier"
+                            }. Au-delà, répondez simplement à l’email reçu.`
+                          : "Ce dossier ne peut plus recevoir de fichier : répondez simplement à l’email reçu."}
                       </p>
                     ) : null}
                     <label
@@ -835,6 +907,40 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
         </nav>
       </div>
     </main>
+  );
+}
+
+/**
+ * Invitation à déposer ses prochaines ventes, après une contribution volontaire. Coupée par
+ * `NEXT_PUBLIC_INFORMATION_AGENT_PRO_INVITATION=false`. Sans « gratuit » tant que des conditions
+ * professionnelles ne le garantissent pas, sans « mise en avant » ni « visibilité ».
+ */
+function professionalInvitationEnabled(): boolean {
+  return process.env.NEXT_PUBLIC_INFORMATION_AGENT_PRO_INVITATION !== "false";
+}
+
+function ProfessionalDepositInvitation() {
+  return (
+    <aside
+      aria-labelledby="professional-invitation-title"
+      className="mt-5 rounded-lg border border-border bg-white/70 p-5"
+    >
+      <h3 id="professional-invitation-title" className="text-base font-semibold text-foreground">
+        Vous menez régulièrement des ventes aux enchères ?
+      </h3>
+      <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+        Vous pouvez déposer vous-même vos prochaines ventes sur Immojudis, avec leurs pièces. Vous
+        gardez la main sur ce qui est affiché, et les candidats trouvent le cahier des conditions de
+        vente sans avoir à solliciter votre cabinet ou votre étude. Chaque compte professionnel est
+        vérifié, et chaque vente est relue par notre équipe avant publication.
+      </p>
+      <Link
+        href={pathWithSearch("/login", { mode: "professional", redirect: "/publish" })}
+        className="mt-3 inline-flex min-h-11 items-center text-sm font-semibold text-foreground underline underline-offset-2 hover:text-gold-text"
+      >
+        Créer un accès professionnel
+      </Link>
+    </aside>
   );
 }
 
