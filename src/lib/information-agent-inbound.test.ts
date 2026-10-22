@@ -294,6 +294,35 @@ describe("information agent inbound parsing", () => {
     expect(extractInformationAgentFacts(reply)).toEqual([]);
   });
 
+  it("never takes an annex, an unlabelled area or a signature for the property", () => {
+    const keys = (text: string) => extractInformationAgentFacts(text).map((fact) => fact.factKey);
+    // Annex surfaces and an area with nothing to tie it to the property.
+    expect(keys("Surface du jardin : 300 m².")).not.toContain("surface_m2");
+    expect(keys("Il y a une cave de 8 m².")).not.toContain("surface_m2");
+    expect(keys("Ci-joint le plan, 8 m² environ pour la pièce.")).not.toContain("surface_m2");
+    expect(
+      extractInformationAgentFacts("Le logement fait 62 m².").find(
+        (fact) => fact.factKey === "surface_m2",
+      )?.proposedValue,
+    ).toEqual({ value: 62, unit: "m2" });
+    // A departed tenant does not make the property rented.
+    expect(
+      extractInformationAgentFacts("Le locataire a quitté les lieux en juin.").map(
+        (fact) => fact.proposedValue.value,
+      ),
+    ).toEqual(["vacant"]);
+    expect(keys("Merci de contacter la location de bureaux voisine.")).not.toContain(
+      "occupancy_status",
+    );
+    // Signature block and email address are not the property's address.
+    expect(
+      keys(
+        "La visite est possible.\n\nBien cordialement,\nMaître Dupont\nAdresse : 3 cours de l'Intendance, 33000 Bordeaux",
+      ),
+    ).not.toContain("address");
+    expect(keys("Mon adresse mail est me.dupont@cabinet.test")).not.toContain("address");
+  });
+
   it("does not read attached documents as rooms", () => {
     for (const text of [
       "Veuillez trouver 3 pièces jointes.",

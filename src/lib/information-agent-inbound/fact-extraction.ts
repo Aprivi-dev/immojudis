@@ -87,7 +87,17 @@ export function extractInformationAgentFacts(bodyText: string): ExtractedInforma
       "Bien occupé par le propriétaire",
     ],
     [/\b(?:libre\s+de\s+toute\s+occupation|vacant|inoccup[ée])\b/iu, "vacant", "Bien libre"],
-    [/\b(?:bail\s+en\s+cours|locataire|location)\b/iu, "rented", "Bien loué"],
+    // « Le locataire a quitté les lieux » : le bien est libre, pas loué.
+    [
+      /\b(?:locataires?|occupants?)\s+(?:a|ont|est|sont)\s+(?:quitt[ée]s?|parti(?:e|s|es)?)(?![\p{L}\p{N}])/iu,
+      "vacant",
+      "Bien libre (occupant parti)",
+    ],
+    [
+      /\b(?:bail\s+(?:en\s+cours|d['’]habitation|commercial)|occup[ée]e?s?\s+par\s+(?:un|une|des|le|la|les|son|ses)\s+locataires?)(?![\p{L}\p{N}])/iu,
+      "rented",
+      "Bien loué",
+    ],
     [
       /\b(?:bien|logement|maison|appartement)\s+(?:(?:est|était|sera|serait)\s+)?libres?(?![\p{L}\p{N}])/iu,
       "vacant",
@@ -230,6 +240,7 @@ function extractSurfaceObservation(text: string): SurfaceObservation | null {
     if (
       !rawValue ||
       isLandSurfaceContext(text, matchIndex) ||
+      ANNEX_SURFACE_PATTERN.test(match[0] ?? "") ||
       /\b(?:terrain|parcelle|contenance)\b/iu.test(match[0] ?? "") ||
       hasExplicitUncertainty(match[0] ?? "") ||
       hasExplicitUncertainty(trailingClause)
@@ -254,6 +265,7 @@ function extractSurfaceObservation(text: string): SurfaceObservation | null {
       value <= 0 ||
       value > 1_000_000 ||
       isLandSurfaceContext(text, index) ||
+      isAnnexSurfaceContext(text, index) ||
       hasExplicitUncertainty(
         text.slice(
           Math.max(0, index - 70),
@@ -266,7 +278,14 @@ function extractSurfaceObservation(text: string): SurfaceObservation | null {
     }
     generic.push({ value, index, label: null });
   }
+  // Every unlabelled value can contradict a labelled one; only those near the property's name are
+  // kept on their own (« cave de 8 m² » is not the surface of the property).
   const genericValues = new Set(generic.map((observation) => observation.value));
+  const standalone = generic.filter((observation) =>
+    PROPERTY_SURFACE_CONTEXT_PATTERN.test(
+      text.slice(Math.max(0, observation.index - 60), observation.index),
+    ),
+  );
   const preferred = labelled.filter((observation) =>
     /habitable|privative|utile|totale|au sol/i.test(observation.label ?? ""),
   );
@@ -279,8 +298,8 @@ function extractSurfaceObservation(text: string): SurfaceObservation | null {
       return candidate;
     }
   }
-  const values = new Set(generic.map((observation) => observation.value));
-  return values.size === 1 ? (generic[0] ?? null) : null;
+  if (genericValues.size !== 1) return null;
+  return standalone[0] ?? null;
 }
 
 function extractLandSurfaceObservation(text: string): { value: number; index: number } | null {
@@ -295,6 +314,23 @@ function extractLandSurfaceObservation(text: string): { value: number; index: nu
   }
   const values = new Set(observations.map((observation) => observation.value));
   return values.size === 1 ? (observations[0] ?? null) : null;
+}
+
+/** Surfaces d'annexes : jamais la surface du bien. */
+const ANNEX_SURFACE_PATTERN =
+  /\b(?:jardin|cave|balcon|terrasse|garage|cour|grenier|cellier|parking|box|d[ée]pendance|annexe|loggia|v[ée]randa|combles?|sous-sol|abri)s?\b/iu;
+
+/** Une surface sans étiquette n'est retenue que si le bien est nommé juste avant. */
+const PROPERTY_SURFACE_CONTEXT_PATTERN =
+  /\b(?:superficie|bien|logement|appartement|maison|studio|local|lot|immeuble|pavillon|villa|duplex)\b[^.!?\n]*$/iu;
+
+function isAnnexSurfaceContext(text: string, index: number): boolean {
+  const before =
+    text
+      .slice(Math.max(0, index - 40), index)
+      .split(/[.!?\n;,]/u)
+      .pop() ?? "";
+  return ANNEX_SURFACE_PATTERN.test(before);
 }
 
 function isLandSurfaceContext(text: string, index: number): boolean {
@@ -466,17 +502,28 @@ function hasExplicitPropertyTypeContext(text: string, index: number, length: num
 function extractAddressObservation(
   text: string,
 ): { value: string; evidenceExcerpt: string } | null {
+  // « Adresse : » seul n'est lu qu'en début de ligne et avant la formule de politesse : après, c'est
+  // le plus souvent la signature du cabinet. Une adresse email n'est jamais une adresse du bien.
+  const body =
+    text.split(
+      /\n\s*(?:--\s*\n|(?:bien\s+)?cordialement|bien\s+[àa]\s+vous|(?:sinc[èe]res\s+)?salutations|respectueusement)/iu,
+    )[0] ?? text;
   const pattern =
-    /\b(?:adresse|sis(?:e)?|situ[ée]?(?:\s+(?:au|à|a))?)\b\s*[:-]?\s*([^\n]{5,180})/giu;
+    /(?:(?:^|\n)\s*adresse\s*(?=:)|\b(?:adresse\s+(?:du\s+bien|de\s+l['’]immeuble|du\s+logement|du\s+lot|de\s+la\s+maison|de\s+l['’]appartement)|(?:le\s+bien\s+(?:est\s+)?)?sis(?:e)?|(?:le\s+bien\s+(?:est\s+)?)situ[ée]e?(?:\s+(?:au|à|a))?)\b)\s*[:-]?\s*([^\n]{5,180})/giu;
   const observations: Array<{ value: string; evidenceExcerpt: string }> = [];
-  for (const match of text.matchAll(pattern)) {
+  for (const match of body.matchAll(pattern)) {
     const value = normalizeWhitespace(match[1] ?? "")
       .replace(/[.,;]+$/, "")
       .trim();
-    if (!value || hasExplicitUncertainty(value)) continue;
+    if (
+      !value ||
+      hasExplicitUncertainty(value) ||
+      /@|\b(?:e-?mail|mail|courriel|t[ée]l(?:[ée]phone)?|fax)\b/iu.test(value)
+    )
+      continue;
     observations.push({
       value: value.slice(0, 180),
-      evidenceExcerpt: excerptAround(text, match.index ?? 0),
+      evidenceExcerpt: excerptAround(body, match.index ?? 0),
     });
   }
   const unique = new Map(
