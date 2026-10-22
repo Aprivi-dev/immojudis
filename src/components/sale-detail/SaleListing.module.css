@@ -847,3 +847,19 @@
 .discoveryBilling > button {
   color: var(--night);
 }
+
+/* Vue aérienne 360° en tête de fiche : mêmes hauteurs que la photo principale. */
+.orbitMain {
+  height: clamp(15rem, 65vw, 22rem);
+}
+@media (min-width: 768px) {
+  .orbitMain {
+    height: 500px;
+  }
+}
+@media (min-width: 1024px) {
+  .orbitMain {
+    height: 100%;
+    min-height: 490px;
+  }
+}

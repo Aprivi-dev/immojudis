@@ -2,6 +2,8 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuctionSale } from "@/lib/types";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactElement } from "react";
 import { PropertyIdentity } from "./SaleDetailPropertyIdentity";
 
 const BASE = "https://ci.supabase.co/storage/v1/object/public/sale-photos/";
@@ -120,5 +122,81 @@ describe("fiche : photo principale", () => {
 
     const dialog = await screen.findByRole("dialog", { name: "Galerie photos" });
     expect(within(dialog).getByTestId("photo-credit").textContent).toBe("Photo : via Licitor");
+  });
+});
+
+// Avec des coordonnées, la fiche monte le bouton Street View, qui interroge via React Query.
+function renderWithClient(ui: ReactElement) {
+  return render(<QueryClientProvider client={new QueryClient()}>{ui}</QueryClientProvider>);
+}
+
+describe("fiche : vue aérienne 360° devant les photos", () => {
+  const located = {
+    latitude: 44.8378,
+    longitude: -0.5792,
+    address: "12 rue Sainte-Catherine",
+    postal_code: "33000",
+    quality_flags: [],
+  } as Partial<AuctionSale>;
+
+  beforeEach(() => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://ci.supabase.co");
+    vi.stubEnv("NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN", "pk.test");
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: vi.fn(),
+    });
+  });
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllEnvs();
+    Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
+  });
+
+  it("met la vue aérienne en tête et les photos en vignettes quand l'adresse est précise", () => {
+    renderWithClient(<PropertyIdentity sale={sale(located)} />);
+
+    expect(
+      screen.getByRole("img", { name: /Vue aérienne autour de l’adresse 12 rue Sainte-Catherine/ }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Ouvrir la galerie photos" })).toBeNull();
+    expect(screen.getByText("Photos de l’annonce")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Ouvrir la photo 1" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Ouvrir la photo 2" })).toBeTruthy();
+    expect(screen.getByTestId("photo-credit").textContent).toBe("Photo : via Licitor");
+    // Sans IntersectionObserver (jsdom), la carte animée n'est pas chargée : l'image fixe reste.
+    expect(screen.getByRole("button", { name: "Lancer la vue 360°" })).toBeTruthy();
+  });
+
+  it("ouvre la galerie depuis le lien « Voir les photos »", async () => {
+    renderWithClient(<PropertyIdentity sale={sale(located)} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Voir les 2 photos" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Galerie photos" });
+    expect(within(dialog).getByTestId("photo-credit").textContent).toBe("Photo : via Licitor");
+  });
+
+  it("garde la photo en tête quand l'adresse n'a pas de numéro", () => {
+    renderWithClient(
+      <PropertyIdentity sale={sale({ ...located, address: "rue Sainte-Catherine" })} />,
+    );
+
+    expect(screen.queryByRole("img", { name: /Vue aérienne autour/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "Ouvrir la galerie photos" })).toBeTruthy();
+  });
+
+  it("garde la photo en tête sans jeton Mapbox", () => {
+    vi.stubEnv("NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN", "");
+    renderWithClient(<PropertyIdentity sale={sale(located)} />);
+
+    expect(screen.queryByRole("img", { name: /Vue aérienne autour/ })).toBeNull();
+  });
+
+  it("montre la vue aérienne même sans photo", () => {
+    renderWithClient(<PropertyIdentity sale={sale({ ...located, media: [] })} />);
+
+    expect(screen.getByRole("img", { name: /Vue aérienne autour/ })).toBeTruthy();
+    expect(screen.queryByText("Photos de l’annonce")).toBeNull();
   });
 });
