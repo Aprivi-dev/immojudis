@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   fetchEvidenceUrl: vi.fn(),
   fetchReview: vi.fn(),
   reviewFact: vi.fn(),
+  messageAction: vi.fn(),
   updateRights: vi.fn(),
 }));
 
@@ -16,6 +17,7 @@ vi.mock("@/lib/client-api", () => ({
   fetchAdminInformationAgentEvidenceUrlClient: mocks.fetchEvidenceUrl,
   fetchAdminInformationAgentReview: mocks.fetchReview,
   reviewAdminInformationAgentFactClient: mocks.reviewFact,
+  runAdminInformationAgentMessageActionClient: mocks.messageAction,
   updateAdminInformationAgentEvidenceRightsClient: mocks.updateRights,
 }));
 
@@ -112,9 +114,94 @@ describe("AdminInformationAgentReviewPanel", () => {
       </QueryClientProvider>,
     );
 
-    const provenance = await screen.findByText(/Provenance : Dépôt du portail privé/);
+    const provenance = await screen.findByText(
+      /Provenance : Dépôt via le lien privé \(identité non vérifiée\)/,
+    );
     expect(provenance.textContent).toContain("secretariat@example.test");
-    expect(provenance.textContent).toContain("expéditeur différent du contact sollicité");
+    expect(provenance.textContent).toContain("adresse déclarée différente du contact sollicité");
+  });
+
+  it("flags unverified senders, failed processing and offers opposition and handling", async () => {
+    mocks.fetchReview.mockResolvedValue({
+      facts: [
+        {
+          id: "44444444-4444-4444-8444-444444444444",
+          case_id: "33333333-3333-4333-8333-333333333333",
+          sale_id: "11111111-1111-4111-8111-111111111111",
+          message_id: "message-1",
+          fact_key: "surface_m2",
+          display_value: "70 m²",
+          confidence: 0.86,
+          extraction_method: "deterministic_v1",
+          evidence_asset_id: null,
+          evidence_excerpt: "Surface habitable : 70 m².",
+        },
+      ],
+      cases: [
+        {
+          id: "33333333-3333-4333-8333-333333333333",
+          recipient_email: "cabinet@example.test",
+          status: "review",
+        },
+      ],
+      assets: [],
+      extractions: [],
+      messages: [
+        {
+          id: "message-1",
+          case_id: "33333333-3333-4333-8333-333333333333",
+          from_email: "cabinet@example.test",
+          subject: "Re: vente",
+          body_text: "Merci de ne pas nous recontacter à ce sujet.",
+          metadata: {
+            sender_matches_recipient: true,
+            sender_authentication: { status: "unverified" },
+            inbound_processing: { status: "failed", last_error: "Resend indisponible" },
+          },
+        },
+        {
+          id: "message-2",
+          case_id: "33333333-3333-4333-8333-333333333333",
+          from_email: "cabinet@example.test",
+          subject: "Dépôt",
+          body_text: "Voici le PV.",
+          metadata: { channel: "portal", sender_name: "Cabinet Dupont" },
+        },
+      ],
+    });
+    mocks.messageAction.mockResolvedValue({ ok: true, opposedEmails: ["cabinet@example.test"] });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <AdminInformationAgentReviewPanel />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText(/n’a pas pu être vérifiée/)).toBeTruthy();
+    expect(
+      screen.getByText(/en échec après plusieurs tentatives — Resend indisponible/),
+    ).toBeTruthy();
+    expect(screen.getByText("Dépôt via le lien privé — identité non vérifiée")).toBeTruthy();
+    // A rule-based value is not shown as a probability.
+    expect(screen.getByText("Extraction automatique par règles")).toBeTruthy();
+    expect(screen.queryByText(/Confiance 86 %/)).toBeNull();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Enregistrer une opposition" })[0]!);
+    await waitFor(() =>
+      expect(mocks.messageAction).toHaveBeenCalledWith(
+        { action: "record_opposition", messageId: "message-1" },
+        expect.anything(),
+      ),
+    );
+    fireEvent.click(screen.getAllByRole("button", { name: "Marquer comme traitée" })[1]!);
+    await waitFor(() =>
+      expect(mocks.messageAction).toHaveBeenCalledWith(
+        { action: "mark_handled", messageId: "message-2" },
+        expect.anything(),
+      ),
+    );
   });
 
   it("shows an unexpected sender without offering a fact to accept", async () => {

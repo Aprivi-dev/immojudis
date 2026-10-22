@@ -15,6 +15,7 @@ import {
   fetchAdminInformationAgentEvidenceUrlClient,
   fetchAdminInformationAgentReview,
   reviewAdminInformationAgentFactClient,
+  runAdminInformationAgentMessageActionClient,
   updateAdminInformationAgentEvidenceRightsClient,
   type AdminInformationAgentEvidenceRightsStatus,
 } from "@/lib/client-api";
@@ -59,6 +60,28 @@ export function AdminInformationAgentReviewPanel() {
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : "Revue impossible"),
   });
+  const messageAction = useMutation({
+    mutationFn: runAdminInformationAgentMessageActionClient,
+    onSuccess: (response, input) => {
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+      toast.success(
+        input.action === "record_opposition"
+          ? `Opposition enregistrée (${response.opposedEmails.join(", ")}) : plus aucune sollicitation.`
+          : "Réponse marquée comme traitée.",
+      );
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Action impossible"),
+  });
+  const recordOpposition = (messageId: string) => {
+    if (
+      !window.confirm(
+        "Enregistrer l’opposition de ce professionnel ? Il ne sera plus jamais sollicité, sur aucun canal.",
+      )
+    ) {
+      return;
+    }
+    messageAction.mutate({ action: "record_opposition", messageId });
+  };
   const rightsReview = useMutation({
     mutationFn: updateAdminInformationAgentEvidenceRightsClient,
     onSuccess: ({ asset }) => {
@@ -160,7 +183,18 @@ export function AdminInformationAgentReviewPanel() {
                 ? metadata
                 : null;
             const importedManually = metadataObject?.imported_manually === true;
+            const viaPortal = metadataObject?.channel === "portal";
+            const portalSenderName =
+              viaPortal && typeof metadataObject?.sender_name === "string"
+                ? metadataObject.sender_name
+                : null;
             const senderMismatch = metadataObject?.sender_matches_recipient === false;
+            const authentication = recordValue(metadataObject?.sender_authentication);
+            const authenticationStatus =
+              !viaPortal && !importedManually && typeof authentication?.status === "string"
+                ? authentication.status
+                : null;
+            const processing = recordValue(metadataObject?.inbound_processing);
             const ignoredCaseStatus =
               typeof metadataObject?.processing_ignored_case_status === "string"
                 ? metadataObject.processing_ignored_case_status
@@ -170,7 +204,11 @@ export function AdminInformationAgentReviewPanel() {
               typeof metadataObject?.rejected_attachment_count === "number"
                 ? metadataObject.rejected_attachment_count
                 : rejectedAttachments.length;
-            const senderUnverified = importedManually || senderMismatch;
+            const senderUnverified =
+              importedManually ||
+              viaPortal ||
+              senderMismatch ||
+              (authenticationStatus !== null && authenticationStatus !== "pass");
             return (
               <article
                 key={message.id}
@@ -183,13 +221,32 @@ export function AdminInformationAgentReviewPanel() {
                 >
                   {importedManually
                     ? "Import manuel — expéditeur non vérifié"
-                    : senderMismatch
-                      ? "Expéditeur à vérifier"
-                      : "Réponse reçue"}
+                    : viaPortal
+                      ? "Dépôt via le lien privé — identité non vérifiée"
+                      : senderMismatch
+                        ? "Expéditeur à vérifier"
+                        : "Réponse reçue par e-mail"}
                 </p>
                 <p className="mt-1 text-brand-navy">
+                  {portalSenderName ? `${portalSenderName} · ` : ""}
                   {message.from_email} · {message.subject}
                 </p>
+                {viaPortal ? (
+                  <p className="mt-1 text-xs text-amber-900/80">
+                    Le nom et l’adresse ont été saisis par la personne qui a utilisé le lien : ils
+                    ne prouvent pas son identité, même s’ils correspondent au contact sollicité.
+                  </p>
+                ) : null}
+                {authenticationStatus && authenticationStatus !== "pass" ? (
+                  <p className="mt-1 text-xs text-amber-900/80">
+                    {authenticationStatus === "fail"
+                      ? "L’authentification de l’expéditeur a échoué"
+                      : "L’authentification de l’expéditeur n’a pas pu être vérifiée"}{" "}
+                    : aucune information n’a été extraite et aucune pièce jointe n’a été conservée.
+                    Vérifiez l’expéditeur et, si besoin, demandez les pièces par un autre canal.
+                  </p>
+                ) : null}
+                <ProcessingStatus processing={processing} />
                 {importedManually ? (
                   <p className="mt-1 text-xs text-amber-900/80">
                     Le message a été saisi par un administrateur ; l’adresse affichée est un
@@ -244,6 +301,26 @@ export function AdminInformationAgentReviewPanel() {
                     n’a été créé.
                   </p>
                 ) : null}
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="admin-button-secondary"
+                    disabled={messageAction.isPending}
+                    onClick={() =>
+                      messageAction.mutate({ action: "mark_handled", messageId: message.id })
+                    }
+                  >
+                    Marquer comme traitée
+                  </button>
+                  <button
+                    type="button"
+                    className="admin-button-secondary text-red-800"
+                    disabled={messageAction.isPending}
+                    onClick={() => recordOpposition(message.id)}
+                  >
+                    Enregistrer une opposition
+                  </button>
+                </div>
               </article>
             );
           })}
@@ -273,7 +350,7 @@ export function AdminInformationAgentReviewPanel() {
                         {factLabel(fact.fact_key)}
                       </span>
                       <span className="text-xs text-brand-navy/50">
-                        Confiance {Math.round(Number(fact.confidence) * 100)} %
+                        {extractionLabel(fact.extraction_method, fact.confidence)}
                       </span>
                     </div>
                     <p className="mt-2 font-medium">{fact.display_value}</p>
@@ -635,11 +712,62 @@ function previewKindForAsset(asset: {
   return null;
 }
 
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+/**
+ * Les règles d'extraction portent une valeur fixe, pas une probabilité : on dit comment le fait a
+ * été lu. Seule l'IA déclare une confiance, présentée comme telle.
+ */
+function extractionLabel(method: string | null | undefined, confidence: unknown): string {
+  if (method?.startsWith("semantic") || method?.startsWith("photo_semantic")) {
+    return `Lu par l’IA · confiance déclarée par le modèle : ${Math.round(Number(confidence) * 100)} %`;
+  }
+  if (method?.startsWith("deterministic")) return "Extraction automatique par règles";
+  return "Extraction automatique";
+}
+
+const PROCESSING_STATUS_LABELS: Record<string, string> = {
+  queued: "en file d’attente",
+  failed: "en échec après plusieurs tentatives",
+  review: "à contrôler",
+  ignored: "ignoré",
+};
+
+const PROCESSING_REASON_LABELS: Record<string, string> = {
+  contact_opposed: "opposition enregistrée automatiquement",
+  sender_mismatch: "expéditeur différent du contact sollicité",
+  sender_authentication_failed: "authentification de l’expéditeur échouée",
+  sender_authentication_unverified: "authentification de l’expéditeur non vérifiée",
+  case_closed: "dossier clos",
+  case_closed_during_processing: "dossier clos pendant le traitement",
+};
+
+/** État du traitement automatique d'une réponse : rien n'est montré quand il s'est terminé normalement. */
+function ProcessingStatus({ processing }: { processing: Record<string, unknown> | null }) {
+  const status = typeof processing?.status === "string" ? processing.status : null;
+  if (!status || status === "completed") return null;
+  const reason = typeof processing?.reason === "string" ? processing.reason : null;
+  const lastError = typeof processing?.last_error === "string" ? processing.last_error : null;
+  return (
+    <p
+      className={`mt-1 text-xs ${status === "failed" ? "font-medium text-red-800" : "text-brand-navy/65"}`}
+    >
+      Traitement automatique : {PROCESSING_STATUS_LABELS[status] ?? status}
+      {reason ? ` (${PROCESSING_REASON_LABELS[reason] ?? reason})` : ""}
+      {status === "failed" && lastError ? ` — ${lastError}` : ""}
+    </p>
+  );
+}
+
 function FactProvenance({ source }: { source: InformationAgentFactSource | undefined }) {
   if (!source) return null;
   const channel =
     source.channel === "portal"
-      ? "Dépôt du portail privé"
+      ? "Dépôt via le lien privé (identité non vérifiée)"
       : source.channel === "admin_manual_reply"
         ? "Réponse consignée par un administrateur (expéditeur non vérifié)"
         : "Réponse par e-mail";
@@ -654,7 +782,9 @@ function FactProvenance({ source }: { source: InformationAgentFactSource | undef
       {source.fromEmail ? ` · ${source.fromEmail}` : ""}
       {received ? ` · reçue le ${received}` : ""}
       {source.senderMatchesRecipient === false
-        ? " · expéditeur différent du contact sollicité"
+        ? source.channel === "portal"
+          ? " · adresse déclarée différente du contact sollicité"
+          : " · expéditeur différent du contact sollicité"
         : ""}
     </p>
   );
