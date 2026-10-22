@@ -9,6 +9,7 @@ import type {
   AdminAuctionFactClaimReviewResponse,
 } from "@/lib/admin-auction-fact-claims-review";
 import type {
+  AdminInformationAgentMessageAction,
   AdminInformationAgentReviewInput,
   AdminInformationAgentReviewResponse,
 } from "@/lib/admin-information-agent";
@@ -201,6 +202,18 @@ export async function reviewAdminInformationAgentFactClient(
     body: JSON.stringify(data),
   });
   return readJson<{ ok: true; result: unknown }>(response);
+}
+
+/** Opposition du professionnel ou réponse traitée, depuis la file de revue. */
+export async function runAdminInformationAgentMessageActionClient(
+  data: AdminInformationAgentMessageAction,
+): Promise<{ ok: true; opposedEmails: string[] }> {
+  const response = await fetch("/api/admin/information-agent", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(data),
+  });
+  return readJson<{ ok: true; opposedEmails: string[] }>(response);
 }
 
 export type AdminInformationAgentEvidenceRightsStatus = "authorized" | "restricted";

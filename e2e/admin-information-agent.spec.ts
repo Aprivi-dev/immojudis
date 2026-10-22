@@ -51,7 +51,7 @@ test.describe("admin information agent", () => {
       "contact@example.test",
     );
     await expect(page.getByRole("textbox", { name: "Message", exact: true })).toContainText(
-      "afin de vérifier des informations publiées",
+      "vérifier avec vous quelques points de la fiche",
     );
     await expect(page.getByRole("textbox", { name: "Message", exact: true })).not.toContainText(
       "compte professionnel",

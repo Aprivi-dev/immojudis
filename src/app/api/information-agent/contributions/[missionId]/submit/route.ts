@@ -21,6 +21,8 @@ export async function POST(
         ok: true,
         messageId: submitted.messageId,
         assetCount: submitted.assetCount,
+        // The page confirms the opposition instead of showing anything else.
+        opposed: submitted.opposed,
       },
       { status: 201, headers: { "cache-control": "private, no-store" } },
     );

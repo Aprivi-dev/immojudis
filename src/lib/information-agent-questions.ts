@@ -27,7 +27,7 @@ export const INFORMATION_AGENT_QUESTIONS = {
   documents: {
     label: "Pièces du dossier",
     question:
-      "Pourriez-vous transmettre le cahier des conditions de vente et les pièces consultables du dossier, en indiquant leur date ou leur version si elle est connue ?",
+      "Pourriez-vous transmettre le cahier des conditions de vente et les pièces consultables du dossier, ou nous indiquer où les consulter, en précisant leur date ou leur version si elle est connue ?",
   },
   photos: {
     label: "Photos complémentaires",
@@ -174,7 +174,9 @@ export function detectInformationGaps(
   if (cadastre) addGap(gaps, "cadastre", cadastre.detail);
   const composition = open("composition");
   if (composition) addGap(gaps, "composition", composition.detail);
-  const terms = open("sale_terms");
+  // Le cahier des conditions de vente, déjà demandé, fixe consignation, frais et délais : la
+  // question des modalités ferait doublon et prendrait la place d'une question utile.
+  const terms = inventory.missingDocuments.includes("sale_conditions") ? null : open("sale_terms");
   if (terms) addGap(gaps, "sale_terms", terms.detail);
 
   return gaps;
@@ -216,7 +218,7 @@ export function informationAgentQuestionText(
       names.length > 1
         ? `${names.slice(0, -1).join(", ")} et ${names[names.length - 1]}`
         : names[0];
-    return `Pourriez-vous nous transmettre ${list}, en indiquant leur date ou leur version si elle est connue ?`;
+    return `Pourriez-vous nous transmettre ${list}, ou nous indiquer où les consulter, en précisant leur date ou leur version si elle est connue ?`;
   }
   if (key === "sale_date" && context) {
     if (context.judicial) {

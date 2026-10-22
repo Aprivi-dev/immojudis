@@ -30,7 +30,9 @@ const values = {
   tribunal: "Tribunal judiciaire de Bordeaux",
   hearing_date: "14 septembre 2026",
   hearing_line: "Audience annoncée : 14 septembre 2026",
+  subject_date: "audience du 14/09/2026",
   starting_price: "85 000 €",
+  price_line: "Mise à prix annoncée : 85 000 €",
   questions: Object.values(INFORMATION_AGENT_QUESTIONS)
     .map((question) => `- ${question.question}`)
     .join("\n"),
@@ -162,6 +164,7 @@ describe("aucune mention commerciale dans le message de l'agent (cadrage juridiq
       "Quelles sont les modalités d'inscription aux visites ?",
       "Ce message ne contient aucune offre commerciale.",
       "Référence de suivi : IJ-ABC123",
+      "Votre adresse professionnelle figure sur votre fiche publique de l’annuaire des avocats du Conseil national des barreaux.",
     ]) {
       expect(findInformationAgentCommercialMentions(text), text).toEqual([]);
     }

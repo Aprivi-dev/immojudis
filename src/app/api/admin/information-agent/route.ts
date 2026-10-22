@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import {
+  adminInformationAgentMessageActionSchema,
   adminInformationAgentReviewQuerySchema,
   adminInformationAgentReviewSchema,
   listAdminInformationAgentReview,
   reviewAdminInformationAgentFact,
+  runAdminInformationAgentMessageAction,
 } from "@/lib/admin-information-agent";
 import { withAdminDeadline } from "@/lib/admin-route-deadline";
 import { adminErrorResponse } from "@/lib/api-route-errors";
@@ -42,5 +44,22 @@ async function handlePATCH(request: Request) {
   }
 }
 
+/** Action sur une réponse reçue : opposition du professionnel ou réponse traitée. */
+async function handlePOST(request: Request) {
+  try {
+    const input = adminInformationAgentMessageActionSchema.parse(await request.json());
+    const response = await runAdminInformationAgentMessageAction({
+      authToken: bearerTokenFromRequest(request),
+      input,
+    });
+    return NextResponse.json(response, {
+      headers: { "cache-control": "private, no-store" },
+    });
+  } catch (error) {
+    return adminErrorResponse(error);
+  }
+}
+
 export const GET = withAdminDeadline(handleGET);
+export const POST = withAdminDeadline(handlePOST);
 export const PATCH = withAdminDeadline(handlePATCH);

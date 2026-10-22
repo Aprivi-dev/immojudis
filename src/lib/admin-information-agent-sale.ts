@@ -192,7 +192,7 @@ export function requireAdminInformationAgentSaleAccess(auth: AdminInformationAge
   if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
 }
 
-function isAvailableInformationAgentStatus(
+export function isAvailableInformationAgentStatus(
   status: string | null,
 ): status is AdminInformationAgentAvailableStatus {
   return (ADMIN_INFORMATION_AGENT_AVAILABLE_STATUSES as readonly string[]).includes(status ?? "");

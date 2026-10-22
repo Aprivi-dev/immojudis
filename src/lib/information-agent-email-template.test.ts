@@ -17,7 +17,9 @@ const values = {
   tribunal: "Tribunal judiciaire de Bordeaux",
   hearing_date: "14 septembre 2026",
   hearing_line: "Audience annoncée : 14 septembre 2026",
+  subject_date: "audience du 14/09/2026",
   starting_price: "85 000 €",
+  price_line: "Mise à prix annoncée : 85 000 €",
   questions: "- Le cahier des conditions de vente est-il disponible ?",
 };
 
@@ -28,27 +30,26 @@ describe("information agent email content template", () => {
       values,
     });
 
-    expect(rendered.subject).toBe("Appartement T3 à Bordeaux — précisions pour Immojudis");
+    expect(rendered.subject).toBe(
+      "Appartement T3 à Bordeaux, audience du 14/09/2026 : vérification de l’annonce",
+    );
     expect(rendered.bodyText).toContain("Bonjour Maître Dupont");
+    // Qui écrit, en une phrase factuelle : sans elle, le message ressemble à de l'hameçonnage.
     expect(rendered.bodyText).toContain(
-      "Nous vous écrivons au sujet de la vente ci-dessous, afin de vérifier des informations publiées sur cette vente",
+      "Immojudis est un site indépendant d’information sur les ventes immobilières aux enchères",
     );
-    expect(rendered.bodyText).toContain(
-      "Une réponse même partielle nous aide à présenter un dossier plus clair et à limiter les demandes répétées.",
-    );
+    expect(rendered.bodyText).toContain("n’agit pas au nom d’un tribunal");
     expect(rendered.bodyText).toContain("Audience annoncée : 14 septembre 2026");
+    expect(rendered.bodyText).toContain("Mise à prix annoncée : 85 000 €");
+    expect(rendered.bodyText).toContain("Une réponse même partielle nous est utile");
     expect(rendered.bodyText).toContain("cahier des conditions de vente");
+    // Le caractère facultatif ouvre les consignes au lieu d'être noyé au milieu.
+    expect(rendered.bodyText).toContain("Répondre est facultatif.");
+    expect(rendered.bodyText).toContain("documents ou photos que vous êtes autorisé à partager");
     expect(rendered.bodyText).toContain("Aucun compte n’est nécessaire.");
+    expect(rendered.bodyText).toContain("votre secret professionnel prime sur notre demande");
     expect(rendered.bodyText).not.toContain(INFORMATION_AGENT_ACCOUNT_INVITATION_HEADING);
     expect(rendered.bodyText).toContain("Bien cordialement");
-    expect(rendered.bodyText).toContain("documents ou photos");
-    expect(rendered.bodyText).toContain(
-      "Un simple retour à cet email suffit, avec les documents ou photos que vous êtes autorisé à partager.",
-    );
-    expect(rendered.bodyText).toContain("Aucun compte n’est nécessaire.");
-    expect(rendered.bodyText).not.toContain("JPG ou PNG");
-    expect(rendered.bodyText).not.toContain("plusieurs emails");
-    expect(rendered.bodyText).not.toContain("vidéo");
     expect(rendered.bodyText).not.toContain("utilisateur intéressé");
     expect(rendered.bodyText).not.toContain("{{");
   });

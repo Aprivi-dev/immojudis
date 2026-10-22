@@ -750,6 +750,9 @@ export async function sendResendEmail({
       "idempotency-key": idempotencyKey,
     },
     body: JSON.stringify(payload),
+    // Without a deadline a stalled call outlives the route and leaves the caller in « sending ».
+    // A retry stays safe: the idempotency key makes Resend return the first delivery.
+    signal: AbortSignal.timeout(15_000),
   });
   const body = await readResendBody(response);
 

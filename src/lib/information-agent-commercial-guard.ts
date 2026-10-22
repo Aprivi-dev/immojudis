@@ -34,6 +34,8 @@ const ALLOWED_PHRASES: RegExp[] = [
   /offres?\s+d[’']achat/gi,
   /d[ée]p[ôo]t\s+des\s+offres/gi,
   /offres?\s+(?:minimale|maximale|recevable|re[çc]ue)s?/gi,
+  // Origine d'une adresse relevée dans un annuaire officiel admis (pied art. 14), pas une promotion.
+  /annuaire\s+des\s+avocats\s+du\s+Conseil\s+national\s+des\s+barreaux/gi,
 ];
 
 const RULES: Array<{ rule: InformationAgentCommercialMention["rule"]; pattern: RegExp }> = [

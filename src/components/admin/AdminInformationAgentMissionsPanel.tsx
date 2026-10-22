@@ -27,6 +27,10 @@ import type {
   InformationAgentPreviewResponse,
 } from "@/lib/information-agent";
 import type { InformationAgentInventoryItem } from "@/lib/information-agent-inventory";
+import {
+  INFORMATION_AGENT_QUESTIONS,
+  type InformationAgentQuestionKey,
+} from "@/lib/information-agent-questions";
 import { saleDetailPath } from "@/lib/navigation";
 
 const QUERY_KEY = ["admin-information-agent-missions"] as const;
@@ -145,7 +149,12 @@ export function AdminInformationAgentMissionsPanel({
   const prepareDraft = useCallback(
     (
       requestSelection: InformationRequestSelection,
-      options: { recipientEmail?: string; recipientName?: string; force?: boolean } = {},
+      options: {
+        recipientEmail?: string;
+        recipientName?: string;
+        force?: boolean;
+        questionKeys?: InformationAgentQuestionKey[];
+      } = {},
     ) => {
       const recipientEmail = options.recipientEmail?.trim() || undefined;
       const recipientName = options.recipientName?.trim() || undefined;
@@ -211,6 +220,7 @@ export function AdminInformationAgentMissionsPanel({
                 recipientName,
               }
             : {}),
+          ...(options.questionKeys?.length ? { questionKeys: options.questionKeys } : {}),
         })
           .then((response) => {
             if (!response?.mission) throw new Error("Le brouillon reçu est incomplet.");
@@ -585,13 +595,29 @@ export function AdminInformationAgentMissionsPanel({
                 Brouillon pour {recipientEmail.trim() || "destinataire à vérifier"}
               </h3>
               <p className="mt-1 text-xs text-brand-navy/55">
-                Statut : {missionStatusLabel(activeMission.status)} · annonce {activeMission.saleId}
+                Statut : {missionStatusLabel(activeMission.status)} · annonce {activeMission.saleId}{" "}
+                · préparé le {formatDateTime(activeMission.createdAt)}
               </p>
             </div>
             <span className="rounded-full border bg-white px-2.5 py-1 text-xs">
               {missionStatusLabel(activeMission.status)}
             </span>
           </div>
+          {activeMission.failureReason ? (
+            <p className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-900">
+              <span className="font-semibold">
+                {activeMission.status === "failed" ? "Motif de l’échec" : "À vérifier"} :
+              </span>{" "}
+              {activeMission.failureReason}
+            </p>
+          ) : null}
+          {isMissionEditable(activeMission.status) && isStaleDraft(activeMission.createdAt) ? (
+            <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+              Brouillon préparé il y a plus de {STALE_DRAFT_DAYS} jours : l’aperçu relit la vente et
+              bloque l’envoi si sa date, sa mise à prix ou son statut ont changé. Régénérez-le au
+              besoin.
+            </p>
+          ) : null}
           <div className="mt-4 space-y-3">
             <Field
               label="Nom du destinataire"
@@ -645,6 +671,22 @@ export function AdminInformationAgentMissionsPanel({
               désinscription.
             </p>
             <InventoryPanel items={activeMission.inventory ?? []} />
+            {selection && isMissionEditable(activeMission.status) ? (
+              <QuestionChoice
+                key={activeMission.id}
+                missing={activeMission.missingInformation}
+                asked={activeMission.questionKeys}
+                disabled={createDraft.isPending}
+                onRegenerate={(questionKeys) =>
+                  prepareDraft(selection, {
+                    recipientEmail,
+                    recipientName,
+                    force: true,
+                    questionKeys,
+                  })
+                }
+              />
+            ) : null}
             {isMissionEditable(activeMission.status) ? (
               <PreviewPanel
                 preview={shownPreview?.response ?? null}
@@ -852,6 +894,11 @@ export function AdminInformationAgentMissionsPanel({
                   <p className="mt-0.5 text-xs text-brand-navy/50">
                     {missionStatusLabel(mission.status)} · {formatDateTime(mission.updatedAt)}
                   </p>
+                  {mission.status === "failed" && mission.failureReason ? (
+                    <p className="mt-0.5 line-clamp-2 text-xs text-red-800">
+                      {mission.failureReason}
+                    </p>
+                  ) : null}
                 </div>
                 {/* Un brouillon ou un échec se reprend ; tout autre statut s'ouvre en lecture seule
                     (seul le formulaire de réponse consignée reste actif pour envoyée / répondue). */}
@@ -970,6 +1017,74 @@ function InventoryList({
   );
 }
 
+const MAX_CHOSEN_QUESTIONS = 6;
+
+/**
+ * Lacunes détectées et questions retenues : l'administrateur voit celles écartées par la limite
+ * de quatre questions et peut régénérer le brouillon avec son propre choix.
+ */
+function QuestionChoice({
+  missing,
+  asked,
+  disabled,
+  onRegenerate,
+}: {
+  missing: readonly string[];
+  asked: readonly InformationAgentQuestionKey[];
+  disabled: boolean;
+  onRegenerate: (questionKeys: InformationAgentQuestionKey[]) => void;
+}) {
+  const keys = [...new Set([...asked, ...missing])].filter(
+    (key): key is InformationAgentQuestionKey => key in INFORMATION_AGENT_QUESTIONS,
+  );
+  const [chosen, setChosen] = useState<InformationAgentQuestionKey[]>([...asked]);
+  if (!keys.length) return null;
+  const unchanged = chosen.length === asked.length && chosen.every((key) => asked.includes(key));
+  return (
+    <fieldset className="rounded-lg border bg-white p-3">
+      <legend className="px-1 text-sm font-semibold">Questions posées</legend>
+      <p className="text-xs text-brand-navy/60">
+        Informations manquantes détectées sur la fiche. Quatre questions au plus restent
+        conseillées.
+      </p>
+      <ul className="mt-2 grid gap-1 sm:grid-cols-2">
+        {keys.map((key) => (
+          <li key={key}>
+            <label className="flex min-h-9 items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={chosen.includes(key)}
+                disabled={
+                  disabled || (!chosen.includes(key) && chosen.length >= MAX_CHOSEN_QUESTIONS)
+                }
+                onChange={(event) =>
+                  setChosen((current) =>
+                    event.target.checked
+                      ? [...current, key]
+                      : current.filter((item) => item !== key),
+                  )
+                }
+              />
+              {INFORMATION_AGENT_QUESTIONS[key].label}
+              {!asked.includes(key) ? (
+                <span className="text-xs text-brand-navy/50">(non posée)</span>
+              ) : null}
+            </label>
+          </li>
+        ))}
+      </ul>
+      <button
+        type="button"
+        className="admin-button-secondary mt-2"
+        disabled={disabled || unchanged || chosen.length === 0}
+        onClick={() => onRegenerate(chosen)}
+      >
+        Régénérer avec ces questions
+      </button>
+    </fieldset>
+  );
+}
+
 function PreviewPanel({
   preview,
   current,
@@ -1066,6 +1181,14 @@ function PreviewPanel({
             sandbox=""
             className="mt-3 h-[640px] w-full rounded-lg border"
           />
+          <details className="mt-2 text-xs text-brand-navy/75">
+            <summary className="cursor-pointer font-medium">
+              Version texte (envoyée avec le HTML, lue par certaines messageries)
+            </summary>
+            <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap rounded-lg border bg-slate-50 p-3 font-sans">
+              {preview.preview.text}
+            </pre>
+          </details>
           <p className="mt-2 text-xs text-brand-navy/55">
             Le jeton de l’adresse de réponse et le lien privé de dépôt sont attribués au moment de
             l’envoi ; tout le reste est identique au message qui partira.
@@ -1090,6 +1213,13 @@ function normalizeEmail(value: string): string {
 
 function isMissionEditable(status: string): boolean {
   return status === "draft" || status === "failed";
+}
+
+const STALE_DRAFT_DAYS = 3;
+
+function isStaleDraft(createdAt: string, now = Date.now()): boolean {
+  const created = Date.parse(createdAt);
+  return Number.isFinite(created) && now - created > STALE_DRAFT_DAYS * 24 * 60 * 60 * 1000;
 }
 
 function looksLikeEmail(value: string): boolean {

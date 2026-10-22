@@ -47,9 +47,19 @@ export const INFORMATION_AGENT_EMAIL_VARIABLES = [
     example: "Audience annoncée : 14 septembre 2026",
   },
   {
+    key: "subject_date",
+    label: "Date courte pour l’objet",
+    example: "audience du 14/09/2026",
+  },
+  {
     key: "starting_price",
     label: "Mise à prix",
     example: "85 000 €",
+  },
+  {
+    key: "price_line",
+    label: "Ligne de mise à prix, omise si le montant manque",
+    example: "Mise à prix annoncée : 85 000 €",
   },
   {
     key: "questions",
@@ -128,15 +138,16 @@ export const INFORMATION_AGENT_ACCOUNT_INVITATION_HEADING =
 export const INFORMATION_AGENT_ACCOUNT_INVITATION_CTA = "Créer un compte professionnel";
 export const INFORMATION_AGENT_ACCOUNT_INVITATION_LEGACY_TEXT = "Vous publiez d’autres ventes ?";
 
-export const INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION = 7;
+export const INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION = 8;
 
 /**
  * Révision minimale d'un modèle publié en base pour qu'il soit utilisé. Un modèle publié avant cette
- * révision (présentation d'Immojudis, invitation à créer un compte…) est ignoré au profit du modèle
- * du code, sans rien écrire en base ; un nouveau modèle publié depuis l'éditeur reprend la
- * numérotation après cette révision (migration `information_agent_legal_safeguards`).
+ * révision (présentation commerciale d'Immojudis, invitation à créer un compte…) est ignoré au profit
+ * du modèle du code, sans rien écrire en base ; un nouveau modèle publié depuis l'éditeur reprend la
+ * numérotation après cette révision (migration `information_agent_legal_safeguards`). La révision 8
+ * ne change que la rédaction : le seuil de conformité reste la révision 7.
  */
-export const MIN_COMPLIANT_TEMPLATE_REVISION = INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION;
+export const MIN_COMPLIANT_TEMPLATE_REVISION = 7;
 
 export type InformationAgentEmailRenderOptions = {
   /** Environment origin of the site (kept for callers that build absolute links). */
@@ -252,8 +263,8 @@ export const informationAgentEmailTemplateContentSchema = z
   });
 
 export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemplateContent = {
-  name: "Demande de précisions sur une vente — version 7",
-  subjectTemplate: "{{sale_subject_title}} — précisions pour Immojudis",
+  name: "Demande de précisions sur une vente — version 8",
+  subjectTemplate: "{{sale_subject_title}}, {{subject_date}} : vérification de l’annonce",
   blocks: [
     {
       id: "greeting",
@@ -266,20 +277,20 @@ export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemp
       kind: "fixed",
       label: "Objet du message",
       content:
-        "Nous vous écrivons au sujet de la vente ci-dessous, afin de vérifier des informations publiées sur cette vente, dans la seule mesure où elles sont communicables à tout candidat acquéreur.",
+        "Immojudis est un site indépendant d’information sur les ventes immobilières aux enchères, destiné aux candidats acquéreurs. Il ne vend aucun bien et n’agit pas au nom d’un tribunal. Nous souhaitons vérifier avec vous quelques points de la fiche de cette vente :",
     },
     {
       id: "sale_details",
       kind: "dynamic",
       label: "Informations de la vente",
-      content: "Référence de l’annonce : {{sale_reference}}\n{{hearing_line}}",
+      content: "Référence de l’annonce : {{sale_reference}}\n{{hearing_line}}\n{{price_line}}",
     },
     {
       id: "request_intro",
       kind: "fixed",
       label: "Introduction de la demande",
       content:
-        "Pourriez-vous nous préciser les points suivants ou nous transmettre les pièces utiles ? Une réponse même partielle nous aide à présenter un dossier plus clair et à limiter les demandes répétées.",
+        "Ces informations manquent à la fiche ou y sont contradictoires. Une réponse même partielle nous est utile ; notre équipe la relit avant toute mise à jour de la fiche.",
     },
     {
       id: "questions",
@@ -292,14 +303,14 @@ export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemp
       kind: "fixed",
       label: "Consignes de réponse",
       content:
-        "Un simple retour à cet email suffit, avec les documents ou photos que vous êtes autorisé à partager. Aucun compte n’est nécessaire. Si ce dossier relève d’un autre interlocuteur, son contact nous serait utile. Vous n’êtes tenu de répondre à aucune de ces questions. Ne communiquez que ce qui est communicable à tout candidat acquéreur (cahier des conditions de vente, procès-verbal descriptif, diagnostics, dates de visite, mise à prix, consignation, audience) : votre secret professionnel prime sur notre demande.",
+        "Répondre est facultatif. Le plus simple : un retour à cet email, avec les documents ou photos que vous êtes autorisé à partager. Aucun compte n’est nécessaire.\n\nNe communiquez que ce qui est communicable à tout candidat acquéreur (cahier des conditions de vente, procès-verbal descriptif, diagnostics, dates de visite, mise à prix, consignation, audience) : votre secret professionnel prime sur notre demande. Si ce dossier est suivi par un collaborateur ou un autre interlocuteur, vous pouvez lui transférer ce message.",
     },
     {
       id: "closing",
       kind: "fixed",
       label: "Conclusion et signature",
       content:
-        "Merci pour votre aide : votre réponse contribuera à rendre cette fiche plus utile aux personnes qui étudient la vente.\n\nBien cordialement,\nL’équipe Immojudis",
+        "Merci par avance : une fiche exacte évite aux candidats de vous interroger sur des points déjà connus.\n\nBien cordialement,\nL’équipe Immojudis",
     },
   ],
 };

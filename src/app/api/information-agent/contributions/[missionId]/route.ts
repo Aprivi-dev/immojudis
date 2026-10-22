@@ -25,6 +25,8 @@ export async function POST(
       {
         caseReference: informationCase.id.slice(0, 8).toUpperCase(),
         subject: informationCase.subject,
+        // The questions as sent, so the contributor can answer without going back to the email.
+        questions: questionsFromBody(mission.body_text),
         maxFileBytes: 20 * 1024 * 1024,
         maxSubmissionBytes: 40 * 1024 * 1024,
         maxPortalBytes: PORTAL_UPLOAD_QUOTA_BYTES,
@@ -38,6 +40,13 @@ export async function POST(
   } catch (error) {
     return contributionErrorResponse(error);
   }
+}
+
+function questionsFromBody(bodyText: string | null | undefined): string[] {
+  return [...(bodyText ?? "").matchAll(/^\s*[-•]\s+(.+)$/gm)]
+    .map((match) => (match[1] ?? "").trim().slice(0, 400))
+    .filter(Boolean)
+    .slice(0, 8);
 }
 
 function optOutPathFor(recipientEmail: string): string | null {

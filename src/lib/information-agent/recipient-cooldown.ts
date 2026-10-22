@@ -1,6 +1,9 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { INFORMATION_AGENT_RECIPIENT_COOLDOWN_DAYS } from "@/lib/information-agent-compliance";
+import {
+  formatInformationAgentOriginDate,
+  INFORMATION_AGENT_RECIPIENT_COOLDOWN_DAYS,
+} from "@/lib/information-agent-compliance";
 import { normalizedEmail } from "@/lib/information-agent/contacts";
 
 const COOLDOWN_BLOCKING_MISSION_STATUSES = [
@@ -11,45 +14,69 @@ const COOLDOWN_BLOCKING_MISSION_STATUSES = [
   "completed",
 ] as const;
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 function escapeIlike(value: string): string {
   return value.replace(/[\\%_]/g, (char) => `\\${char}`);
 }
 
 /**
  * One email per recipient and per 30 days, all sales combined (plan P4-12). Counts every other
- * mission to the same address that was approved in the window and not failed. With `approvedAt`
- * (post-approval check) only strictly older approvals count, which makes concurrent approvals
- * deterministic: the earliest one proceeds, the others stand down.
+ * mission approved in the window and not failed, sent to the same address or to the same
+ * professional under another address (`identityKeys`: `contact@cabinet` then `jean.dupont@cabinet`).
+ * With `approvedAt` (post-approval check) only strictly older approvals count, which makes
+ * concurrent approvals deterministic: the earliest one proceeds, the others stand down. Without
+ * `missionId` (draft not created yet) every mission counts.
  */
 export async function assertInformationAgentRecipientCooldown({
   email,
   missionId,
+  identityKeys = [],
   approvedAt,
   now = new Date(),
 }: {
   email: string;
-  missionId: string;
+  missionId?: string | null;
+  identityKeys?: readonly string[];
   approvedAt?: string | null;
   now?: Date;
 }): Promise<void> {
   const normalized = normalizedEmail(email);
   if (!normalized) throw new Error("Adresse email du contact invalide.");
   const since = new Date(
-    now.getTime() - INFORMATION_AGENT_RECIPIENT_COOLDOWN_DAYS * 24 * 60 * 60 * 1000,
+    now.getTime() - INFORMATION_AGENT_RECIPIENT_COOLDOWN_DAYS * DAY_MS,
   ).toISOString();
-  let query = supabaseAdmin
-    .from("information_agent_missions")
-    .select("id,approved_at")
-    .ilike("recipient_email", escapeIlike(normalized))
-    .in("status", [...COOLDOWN_BLOCKING_MISSION_STATUSES])
-    .neq("id", missionId)
-    .gte("approved_at", since);
-  if (approvedAt) query = query.lte("approved_at", approvedAt);
-  const { data, error } = await query.limit(1);
-  if (error) throw error;
-  if (data?.length) {
+  const recent = (match: "email" | "identity") => {
+    let query = supabaseAdmin
+      .from("information_agent_missions")
+      .select("id,approved_at")
+      .in("status", [...COOLDOWN_BLOCKING_MISSION_STATUSES])
+      .gte("approved_at", since);
+    query =
+      match === "email"
+        ? query.ilike("recipient_email", escapeIlike(normalized))
+        : query.overlaps("recipient_identity_keys", [...identityKeys]);
+    if (missionId) query = query.neq("id", missionId);
+    if (approvedAt) query = query.lte("approved_at", approvedAt);
+    return query.limit(50);
+  };
+  const results = await Promise.all([
+    recent("email"),
+    ...(identityKeys.length ? [recent("identity")] : []),
+  ]);
+  const approvals: number[] = [];
+  for (const { data, error } of results) {
+    if (error) throw error;
+    for (const row of data ?? []) {
+      const time = row.approved_at ? Date.parse(row.approved_at) : Number.NaN;
+      approvals.push(Number.isNaN(time) ? now.getTime() : time);
+    }
+  }
+  if (approvals.length) {
+    const last = new Date(Math.max(...approvals));
+    const reopens = new Date(last.getTime() + INFORMATION_AGENT_RECIPIENT_COOLDOWN_DAYS * DAY_MS);
     throw new Error(
-      `Ce destinataire a déjà été sollicité au cours des ${INFORMATION_AGENT_RECIPIENT_COOLDOWN_DAYS} derniers jours : un seul email est autorisé par période.`,
+      `Ce destinataire a déjà été sollicité le ${formatInformationAgentOriginDate(last)}, toutes ventes confondues : un seul email est autorisé par période de ${INFORMATION_AGENT_RECIPIENT_COOLDOWN_DAYS} jours. Prochain envoi possible à partir du ${formatInformationAgentOriginDate(reopens)}.`,
     );
   }
 }
