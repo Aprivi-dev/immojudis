@@ -40,6 +40,11 @@ export function aerialOrbitTarget(
   if (flags.some((flag) => typeof flag === "string" && DOUBTFUL_LOCATION_FLAGS.has(flag))) {
     return null;
   }
-  const address = [street, sale.postal_code, sale.city].filter(Boolean).join(", ");
+  // L'adresse des sources contient souvent déjà le code postal et la commune.
+  const lower = street.toLowerCase();
+  const extras = [sale.postal_code, sale.city]
+    .map((part) => part?.trim())
+    .filter((part): part is string => !!part && !lower.includes(part.toLowerCase()));
+  const address = [street, ...extras].join(", ");
   return { ...coordinates, address };
 }

@@ -19,6 +19,13 @@ describe("aerialOrbitTarget", () => {
     });
   });
 
+  it("ne répète pas le code postal et la commune déjà présents dans l'adresse", () => {
+    expect(
+      aerialOrbitTarget({ ...base, address: "12 rue Sainte-Catherine, 33000 Bordeaux, France" })
+        ?.address,
+    ).toBe("12 rue Sainte-Catherine, 33000 Bordeaux, France");
+  });
+
   it.each(["3 bis, avenue Thiers", "Résidence Les Pins, 45 allée des Chênes", "7 Bd Gambetta"])(
     "accepte « %s »",
     (address) => {

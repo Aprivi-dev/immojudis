@@ -1,3 +1,5 @@
+import type * as MapboxGL from "mapbox-gl";
+
 export type MapboxPreviewMode = "aerial3d" | "streetLevel";
 
 export type MapboxPreviewCamera = {
@@ -39,4 +41,33 @@ export function mapboxPreviewLoadingLabel(mode: MapboxPreviewMode) {
   return mode === "aerial3d"
     ? "Chargement de la vue aérienne 3D Mapbox..."
     : "Chargement de la vue 3D du quartier...";
+}
+
+const BUILDINGS_SOURCE = "immojudis-streets-buildings";
+const BUILDINGS_LAYER = "immojudis-building-volumes";
+
+/**
+ * Le style satellite de Mapbox n'a pas de bâtiments en 3D : on extrude ceux de Mapbox Streets
+ * (hauteur relevée, ou estimée par Mapbox), dans un ton pierre clair qui se détache de l'imagerie.
+ */
+export function addMapboxBuildingVolumes(map: MapboxGL.Map) {
+  if (map.getLayer(BUILDINGS_LAYER)) return;
+  if (!map.getSource(BUILDINGS_SOURCE)) {
+    map.addSource(BUILDINGS_SOURCE, { type: "vector", url: "mapbox://mapbox.mapbox-streets-v8" });
+  }
+  map.addLayer({
+    id: BUILDINGS_LAYER,
+    type: "fill-extrusion",
+    source: BUILDINGS_SOURCE,
+    "source-layer": "building",
+    filter: ["all", ["==", ["get", "extrude"], "true"], ["!=", ["get", "underground"], "true"]],
+    minzoom: 14,
+    paint: {
+      "fill-extrusion-color": "#ece6dc",
+      "fill-extrusion-height": ["coalesce", ["get", "height"], 6],
+      "fill-extrusion-base": ["coalesce", ["get", "min_height"], 0],
+      "fill-extrusion-opacity": 0.92,
+      "fill-extrusion-vertical-gradient": true,
+    },
+  });
 }

@@ -11,12 +11,15 @@ import {
   getMapboxAccessToken,
   mapboxSatelliteImageUrl,
 } from "@/lib/mapbox";
+import { addMapboxBuildingVolumes } from "@/lib/mapbox-preview";
 import type { AerialOrbitTarget } from "@/lib/sale-aerial-orbit";
 import { cn } from "@/lib/utils";
 
 const ORBIT_STYLE = "mapbox://styles/mapbox/standard-satellite";
-const ORBIT_ZOOM = 17.4;
-const ORBIT_PITCH = 62;
+// Quelques pâtés de maisons autour du repère : assez près pour reconnaître l'immeuble, assez loin
+// pour situer la rue et le voisinage.
+const ORBIT_ZOOM = 16.4;
+const ORBIT_PITCH = 60;
 /** Un tour complet en une minute : assez lent pour lire le voisinage. */
 const ORBIT_DEGREES_PER_SECOND = 6;
 const DEM_SOURCE = "immojudis-orbit-dem";
@@ -57,7 +60,7 @@ export function AerialOrbitHero({
   const token = getMapboxAccessToken();
   const { lat, lng, address } = target;
 
-  const poster = mapboxSatelliteImageUrl({ lat, lng, zoom: 17, width: 1280, height: 720 });
+  const poster = mapboxSatelliteImageUrl({ lat, lng, zoom: 16.5, width: 1280, height: 720 });
 
   useEffect(() => {
     const root = rootRef.current;
@@ -140,6 +143,7 @@ export function AerialOrbitHero({
             });
             instance.setTerrain({ source: DEM_SOURCE, exaggeration: 1.1 });
           }
+          addMapboxBuildingVolumes(instance);
           setStatus("ready");
           frameId = window.requestAnimationFrame(step);
         });
@@ -188,14 +192,16 @@ export function AerialOrbitHero({
             )}
           />
         ) : null}
+        {/* La feuille de style de Mapbox impose `position: relative` au conteneur de la carte : il
+            prend donc la taille de ce cadre (h-full) au lieu d'être positionné lui-même. */}
         <div
-          ref={containerRef}
-          data-testid="aerial-orbit-map"
           className={cn(
             "absolute inset-0 transition-opacity duration-700",
             mapShown ? "opacity-100" : "opacity-0",
           )}
-        />
+        >
+          <div ref={containerRef} data-testid="aerial-orbit-map" className="h-full w-full" />
+        </div>
       </div>
 
       <div className="pointer-events-none absolute left-3 top-3 z-10 flex flex-col gap-1 md:left-4 md:top-4">
