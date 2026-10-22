@@ -60,6 +60,32 @@ describe("AdminInformationAgentMissionsPanel", () => {
     expect(mocks.action.mock.calls[0][0]).not.toHaveProperty("shareRequesterEmail");
   });
 
+  it("lets the admin pick the questions and shows the plain-text version", async () => {
+    const draft = { ...mission("draft"), missingInformation: ["documents", "visit", "cadastre"] };
+    mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
+    mocks.create.mockResolvedValue({ ok: true, mission: draft, gaps: [], facts: [] });
+    mocks.preview.mockResolvedValue(previewResponse());
+
+    renderPanel();
+    await screen.findByRole("button", { name: "Valider et envoyer" });
+    expect(screen.getByRole("checkbox", { name: /Pièces du dossier/ })).toHaveProperty(
+      "checked",
+      true,
+    );
+    const regenerate = screen.getByRole("button", { name: "Régénérer avec ces questions" });
+    expect(regenerate).toHaveProperty("disabled", true);
+    fireEvent.click(screen.getByRole("checkbox", { name: /Visites/ }));
+    fireEvent.click(regenerate);
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(2));
+    expect(mocks.create.mock.calls[1][0]).toMatchObject({
+      saleId: "11111111-1111-4111-8111-111111111111",
+      questionKeys: ["documents", "visit"],
+    });
+
+    await showPreview();
+    expect(screen.getByText(/Version texte/)).toBeTruthy();
+  });
+
   it("shows why a mission failed and warns about an old draft", async () => {
     const failed = { ...mission("failed"), failureReason: "Resend a refusé l'envoi (422)." };
     mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });

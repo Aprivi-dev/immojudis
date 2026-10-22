@@ -29,6 +29,7 @@ let inserted: Record<string, unknown> | null;
 let observed: Array<Record<string, unknown>>;
 let opposedIdentityKeys: string[];
 let listed: Record<string, Array<Record<string, unknown>>>;
+let updates: Array<{ table: string; values: Record<string, unknown> }>;
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -36,6 +37,7 @@ beforeEach(() => {
   observed = [];
   opposedIdentityKeys = [];
   listed = {};
+  updates = [];
   mocks.sale.mockResolvedValue({
     id: saleId,
     title: "Appartement Bordeaux",
@@ -80,6 +82,10 @@ beforeEach(() => {
       gte: () => query,
       neq: () => query,
       overlaps: () => query,
+      update: (values: Record<string, unknown>) => {
+        updates.push({ table, values });
+        return query;
+      },
       // Lists (recent solicitations, sent cases): none by default.
       limit: () => Promise.resolve({ data: listed[table] ?? [], error: null }),
       upsert: (values: unknown) => {
@@ -216,5 +222,13 @@ describe("manual admin draft preparation", () => {
       createAdminInformationAgentDraft({ auth: admin, input: { saleId } }),
     ).rejects.toThrow("Prochain envoi possible à partir du");
     expect(inserted).toBeNull();
+  });
+
+  it("annule l'ancien brouillon de la même vente et de la même adresse quand il est régénéré", async () => {
+    await createAdminInformationAgentDraft({ auth: admin, input: { saleId } });
+    expect(updates).toContainEqual({
+      table: "information_agent_missions",
+      values: expect.objectContaining({ status: "cancelled" }),
+    });
   });
 });

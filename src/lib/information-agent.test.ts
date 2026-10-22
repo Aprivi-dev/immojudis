@@ -14,6 +14,7 @@ import {
   selectInformationAgentContact,
   selectDefaultInformationAgentQuestionKeys,
   withoutProfessionSuffix,
+  withSignature,
 } from "@/lib/information-agent";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { AuctionSale } from "@/lib/types";
@@ -636,6 +637,24 @@ describe("supervised information agent", () => {
     );
     expect(withoutProfessionSuffix("Maître Jean-Louis Avocat")).toBe("Maître Jean-Louis Avocat");
     expect(withoutProfessionSuffix("  ")).toBeNull();
+  });
+
+  it("signs with a person's name when one is configured, the team otherwise", () => {
+    const signed = buildInformationRequestDraft({
+      sale: incompleteSale(),
+      questionKeys: ["documents"],
+      signatureName: "  Antoine Martin,  fondateur ",
+    });
+    expect(signed.bodyText.endsWith("Antoine Martin, fondateur\nPour l’équipe Immojudis")).toBe(
+      true,
+    );
+    const team = buildInformationRequestDraft({
+      sale: incompleteSale(),
+      questionKeys: ["documents"],
+    });
+    expect(team.bodyText.endsWith("Bien cordialement,\nL’équipe Immojudis")).toBe(true);
+    // An edited closing is left alone.
+    expect(withSignature("Merci.\nMaître X", "Antoine")).toBe("Merci.\nMaître X");
   });
 
   it("does not ask for the sale terms while the conditions of sale are requested", () => {

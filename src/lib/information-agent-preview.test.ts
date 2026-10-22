@@ -716,6 +716,26 @@ describe("aperçu obligatoire avant tout envoi manuel", () => {
     ).rejects.toThrow("aucune question");
   });
 
+  it("n'est pas bloqué par un mot du titre de l'annonce, mais l'est par le même mot ajouté au texte", async () => {
+    const title = "Local commercial avec parking partenaire";
+    db.mission = { ...db.mission, sale_snapshot: { title, city: "Bordeaux" } };
+    const input = {
+      ...content,
+      subject: `${title} à Bordeaux, audience du 14/11/2026 : vérification de l’annonce`,
+      bodyText: `Bonjour,\n\nRéférence de l’annonce : ${title} — 33000 Bordeaux\n\n- Le bien est-il libre ?`,
+    };
+    expect(
+      (await previewAdminInformationAgentMission({ auth: ADMIN, input })).blockers.join(" "),
+    ).not.toContain("mention commerciale");
+
+    const promoted = { ...input, bodyText: `${input.bodyText}\n\nDécouvrez nos partenaires.` };
+    expect(
+      (await previewAdminInformationAgentMission({ auth: ADMIN, input: promoted })).blockers.join(
+        " ",
+      ),
+    ).toContain("mention commerciale");
+  });
+
   it("bloque l'aperçu quand le texte contient une mention commerciale", async () => {
     const result = await previewAdminInformationAgentMission({
       auth: ADMIN,

@@ -278,6 +278,7 @@ export function buildInformationRequestDraft({
   facts,
   inventory,
   template = DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE,
+  signatureName = null,
 }: {
   sale: InformationAgentInventorySale;
   recipientName?: string | null;
@@ -285,6 +286,8 @@ export function buildInformationRequestDraft({
   facts?: FactReliabilityMap;
   inventory?: InformationAgentInventory;
   template?: InformationAgentEmailTemplateContent;
+  /** Personne qui signe (`INFORMATION_AGENT_SIGNATURE_NAME`) : un nom rassure plus qu'une équipe. */
+  signatureName?: string | null;
 }): { subject: string; bodyText: string } {
   const resolvedInventory =
     inventory ?? buildInformationAgentInventory(sale, facts ?? getKeyFactReliabilities(sale));
@@ -306,7 +309,7 @@ export function buildInformationRequestDraft({
       ? null
       : formatStartingPrice(sale.starting_price_eur);
   const priceToConfirm = Boolean(priceStatus && priceStatus !== "observed");
-  return renderInformationAgentEmailContent({
+  const rendered = renderInformationAgentEmailContent({
     template,
     values: {
       recipient_name: trimmedRecipientName || "Madame, Monsieur",
@@ -351,6 +354,20 @@ export function buildInformationRequestDraft({
         .join("\n"),
     },
   });
+  return { ...rendered, bodyText: withSignature(rendered.bodyText, signatureName) };
+}
+
+const TEAM_SIGNATURE = "L’équipe Immojudis";
+
+/**
+ * « L’équipe Immojudis » devient « Prénom Nom / Pour l’équipe Immojudis » quand une personne signe.
+ * Le texte reste modifiable dans le brouillon ; sans nom configuré, rien ne change.
+ */
+export function withSignature(bodyText: string, signatureName: string | null | undefined): string {
+  const name = signatureName?.replace(/\s+/g, " ").trim().slice(0, 80);
+  if (!name || !bodyText.trimEnd().endsWith(TEAM_SIGNATURE)) return bodyText;
+  const end = bodyText.trimEnd();
+  return `${end.slice(0, end.length - TEAM_SIGNATURE.length)}${name}\nPour l’équipe Immojudis`;
 }
 
 /**
@@ -459,6 +476,7 @@ export async function createAdminInformationAgentDraft({
     facts,
     inventory,
     template: emailTemplate.content,
+    signatureName: process.env.INFORMATION_AGENT_SIGNATURE_NAME,
   });
 
   const { data, error } = await supabaseAdmin
@@ -526,6 +544,18 @@ export async function createAdminInformationAgentDraft({
       throw new Error(ADDRESS_NOT_RECORDED_MESSAGE);
     }
   }
+  // « Régénérer » replaces the previous draft for this sale and address: cancel it, so the queue
+  // keeps one editable draft and the admin cannot send the outdated one by mistake. Approval makes
+  // the sent mission the case initiator, so the contribution link stays valid.
+  const { error: supersedeError } = await supabaseAdmin
+    .from("information_agent_missions")
+    .update({ status: "cancelled", completed_at: new Date().toISOString() })
+    .eq("user_id", auth.userId)
+    .eq("sale_id", sale.id)
+    .eq("recipient_email", data.recipient_email)
+    .in("status", ["draft", "failed"])
+    .neq("id", data.id);
+  if (supersedeError) throw supersedeError;
   const subscribedMission = await loadOwnedMission(auth.userId, data.id);
   return {
     ok: true,
@@ -645,7 +675,9 @@ async function approveAndSendMission({
   // Envoi strictement manuel : l'administrateur a affiché l'aperçu de ce contenu exact.
   assertInformationAgentPreviewFingerprint({ adminId, input });
   // Aucune mention commerciale : le message reste purement informatif.
-  assertNoInformationAgentCommercialMention(`${input.subject}\n${input.bodyText}`);
+  assertNoInformationAgentCommercialMention(`${input.subject}\n${input.bodyText}`, {
+    ignore: saleSourceTexts(mission),
+  });
   assertInformationAgentHasQuestion(input.bodyText);
   await assertInformationAgentSaleCurrent(mission);
   // Opposition par adresse et par identité (le nom corrigé à l'aperçu compte), avant l'envoi.
@@ -784,7 +816,7 @@ async function approveAndSendMission({
       appOrigin: config.appUrl,
       allowedUrls: [legalFooter.addressOriginUrl],
       // La référence de la vente vient de l'annonce : elle ne peut pas faire échouer l'envoi.
-      ignore: [legalFooter.saleReference],
+      ignore: [legalFooter.saleReference, ...saleSourceTexts(mission)],
     });
     await assertInformationAgentContactAllowed({
       saleId: subscribedMission.sale_id,
@@ -1055,7 +1087,9 @@ export async function previewAdminInformationAgentMission({
     }),
   );
   await collect(() =>
-    assertNoInformationAgentCommercialMention(`${input.subject}\n${input.bodyText}`),
+    assertNoInformationAgentCommercialMention(`${input.subject}\n${input.bodyText}`, {
+      ignore: saleSourceTexts(mission),
+    }),
   );
   await collect(() => assertInformationAgentHasQuestion(input.bodyText));
   await collect(() => assertInformationAgentSaleCurrent(mission));
@@ -1117,7 +1151,7 @@ export async function previewAdminInformationAgentMission({
     assertNoInformationAgentCommercialMention(`${rendered.html}\n${rendered.text}`, {
       appOrigin: appUrl,
       allowedUrls: [addressOrigin.origin.url],
-      ignore: [legalFooter.saleReference],
+      ignore: [legalFooter.saleReference, ...saleSourceTexts(mission)],
     }),
   );
   return {
@@ -1468,6 +1502,27 @@ export function withoutProfessionSuffix(name: string): string | null {
     )
     .trim();
   return cleaned || null;
+}
+
+/**
+ * Textes repris de l'annonce dans l'objet et le corps (titre, titre court de l'objet, ville,
+ * tribunal) : écartés de la garde anti-prospection, pour qu'un « local commercial avec partenaire »
+ * dans le titre d'une annonce ne bloque pas l'envoi. Le reste du message reste contrôlé.
+ */
+function saleSourceTexts(mission: Pick<MissionRow, "sale_snapshot">): string[] {
+  const snapshot = asObject(mission.sale_snapshot);
+  const text = (value: unknown) =>
+    typeof value === "string" && value.trim() ? value.trim() : null;
+  const title = text(snapshot.title);
+  const city = text(snapshot.city);
+  const subjectTitle = title
+    ? shortenSubjectTitle(
+        city && !title.toLowerCase().includes(city.toLowerCase()) ? `${title} à ${city}` : title,
+      )
+    : null;
+  return [subjectTitle, title, city, text(snapshot.tribunal)].filter((value): value is string =>
+    Boolean(value),
+  );
 }
 
 /** Titre de l'objet, court : la date qui le suit doit rester visible sur un téléphone. */
