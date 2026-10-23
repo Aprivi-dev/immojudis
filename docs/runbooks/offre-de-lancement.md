@@ -131,8 +131,8 @@ de cliquer sur « Couper l'offre de lancement » :
    5. **Désinscription** : chaque message porte un lien signé (et `List-Unsubscribe` en un clic). Le compte
       désinscrit entre dans `public.launch_offer_end_notice_optouts` et n'est plus jamais dans la file, pour
       aucune date ; son accès n'est pas modifié.
-   Si la liste d'attente et les comptes de l'offre se recoupent, ce sont deux envois distincts (la liste
-   d'attente n'est prévenue que quand la souscription est ouverte).
+      Si la liste d'attente et les comptes de l'offre se recoupent, ce sont deux envois distincts (la liste
+      d'attente n'est prévenue que quand la souscription est ouverte).
 3. **30 jours d'accès en lecture et d'export aux contenus créés** : l'offre reste active pendant ces 30 jours,
    les comptes lisent et exportent ce qu'ils ont créé (rapports PDF, exports CSV, comparaisons). Ne pas couper
    avant la fin du délai.
@@ -201,8 +201,8 @@ seul email.
   modification des textes de `src/lib/launch-offer.ts` demande de reporter la formule dans cet article
   (le texte juridique est ancré par empreinte : nouvelle version).**
 - **Politique de confidentialité** (`src/routes/privacy.tsx`) : l'état de l'offre est global et ne traite
-  aucune donnée personnelle ; en revanche la liste d'attente qualifiée (questions facultatives, entretien de
-  20 minutes) ajoute des finalités et des données (profil, volume de ventes, repères de prix, accord à un
+  aucune donnée personnelle ; en revanche la liste d'attente qualifiée (questions facultatives, entretien d'environ
+  45 minutes) ajoute des finalités et des données (profil, volume de ventes, repères de prix, accord à un
   entretien) à décrire, avec la durée de conservation de la demande.
 - **Registre des traitements** (`docs/rgpd-processing-register.md`) : mettre à jour la fiche « liste d'attente
   d'ouverture de l'offre Analyse » (nouvelles données, finalité d'étude de marché, base légale = consentement,
