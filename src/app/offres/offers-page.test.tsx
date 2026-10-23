@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LAUNCH_OFFER_ACCOUNT_TEXT, LAUNCH_OFFER_VISITOR_TEXT } from "@/lib/launch-offer";
 import { PLAN_LIMITS } from "@/lib/plans";
+import { renderToStaticMarkup } from "react-dom/server";
 
 const mocks = vi.hoisted(() => ({
   launch: vi.fn(() => ({ active: false, pending: false })),
@@ -98,7 +99,7 @@ describe("page Offres", () => {
     render(<OffersPage />);
     expect(
       screen.getByText(
-        "Statistiques des tribunaux : prix d’adjudication et scénarios d’enchères, quand l’historique du tribunal est suffisant ; rapport PDF et export des résultats",
+        "Statistiques des tribunaux : prix d’adjudication, quand l’historique du tribunal est suffisant ; rapport PDF et export des résultats",
       ),
     ).toBeTruthy();
     // Réserve de couverture sous le comparatif : source tierce, période, passé, seuil de ventes.
@@ -421,5 +422,54 @@ describe("page Offres", () => {
         "Enchère plafond = valeur estimée moins marge de sécurité moins frais et travaux.",
       ),
     ).toBeTruthy();
+  });
+  it("rendu serveur : ne dit pas « Analyse coûte » tant que l'état de l'offre n'est pas lu", () => {
+    // Pas d'effet côté serveur : l'état de l'offre de lancement et de la souscription est inconnu.
+    mocks.launch.mockReturnValue({ active: false, pending: true });
+    const html = renderToStaticMarkup(<OffersPage />);
+    expect(html).not.toMatch(/Analyse coûte/);
+    expect(html).not.toMatch(/résiliable à tout moment/);
+    expect(html).toContain("Les conditions de souscription s’affichent une fois l’offre chargée.");
+    expect(html).not.toContain("launch-offer-free-note");
+  });
+
+  it("annonce « Analyse coûte » seulement quand la souscription est lue ouverte", async () => {
+    render(<OffersPage />);
+    expect(screen.queryByText(/Analyse coûte/)).toBeNull();
+    expect(
+      await screen.findByText(/Analyse coûte 59 € TTC \/ mois, résiliable à tout moment/),
+    ).toBeTruthy();
+  });
+
+  it("offre de lancement : jamais « Analyse coûte », et la carte Découverte et le comparatif disent que le compte gratuit a les avantages Analyse", () => {
+    mocks.launch.mockReturnValue({ active: true, pending: false });
+    const { container } = render(<OffersPage />);
+    expect(container.textContent).not.toMatch(/Analyse coûte/);
+    expect(container.textContent).toContain(
+      "Analyse est prévue à 59 € TTC / mois ; sa souscription n’est pas ouverte",
+    );
+    const discovery = screen.getByTestId("launch-offer-free-note");
+    const comparison = screen.getByTestId("launch-offer-comparison-note");
+    for (const note of [discovery, comparison]) {
+      expect(note.textContent).toContain("bénéficie des avantages de l’offre Analyse");
+      expect(note.textContent).toContain("s’appliqueront à la fin de l’offre");
+    }
+    // La carte Découverte contient sa mention, le comparatif la sienne.
+    expect(discovery.closest("article")?.textContent).toContain("Découverte");
+    expect(comparison.nextElementSibling?.tagName).toBe("UL");
+  });
+
+  it("hors offre de lancement, aucune mention de l'offre de lancement dans la carte ni le comparatif", async () => {
+    render(<OffersPage />);
+    await screen.findByText(/Essai gratuit de 7 jours/);
+    expect(screen.queryByTestId("launch-offer-free-note")).toBeNull();
+    expect(screen.queryByTestId("launch-offer-comparison-note")).toBeNull();
+  });
+
+  it("ne liste plus les « scénarios » parmi les bénéfices de l'offre Analyse", () => {
+    render(<OffersPage />);
+    const analysis = screen.getByRole("article", { name: "Analyse" });
+    expect(analysis.textContent).not.toMatch(/scénarios/i);
+    expect(analysis.textContent).toContain("Statistiques des tribunaux : prix d’adjudication");
   });
 });
