@@ -1,6 +1,7 @@
 import "server-only";
 import { Resend, type EmailReceivedEvent } from "resend";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { enforceGlobalRateLimit } from "@/lib/rate-limit";
 import type { Json } from "@/integrations/supabase/types";
 import { z } from "zod";
 import {
@@ -191,6 +192,34 @@ type ReceivedInboundEmail = NonNullable<
 type UnroutedInboundReason = "no_token" | "unknown_case" | "case_not_open" | "token_mismatch";
 
 /**
+ * Plafond des lectures Resend pour des emails sans dossier ouvert : un envoi massif vers le domaine de
+ * réponse (spam) ne doit pas épuiser le quota de l'API (429) qui sert aux vraies réponses. Au-delà,
+ * la livraison échoue en 500 et le fournisseur la rejoue plus tard.
+ */
+const UNROUTED_FETCH_LIMIT = { limit: 30, windowSeconds: 60 } as const;
+
+/**
+ * L'expéditeur figure-t-il dans nos données (destinataire d'un dossier, ou fiche du registre) ? Seul un
+ * tel expéditeur peut avoir une opposition à enregistrer : un inconnu n'a jamais été sollicité.
+ */
+async function isKnownInboundSender(senderEmail: string): Promise<boolean> {
+  const { data: cases, error: caseError } = await supabaseAdmin
+    .from("information_agent_cases")
+    .select("id")
+    .eq("normalized_recipient_email", senderEmail)
+    .limit(1);
+  if (caseError) throw caseError;
+  if (cases?.length) return true;
+  const { data: contacts, error: contactError } = await supabaseAdmin
+    .from("information_agent_contacts")
+    .select("id")
+    .eq("normalized_email", senderEmail)
+    .limit(1);
+  if (contactError) throw contactError;
+  return Boolean(contacts?.length);
+}
+
+/**
  * A message that reaches the inbound domain without an open case to file it under. It is never
  * dropped silently: the reason is logged (no address, no content), and an explicit request to
  * stop contact from an authenticated sender is recorded on that sender's address, since
@@ -209,6 +238,22 @@ async function settleUnroutedInboundEmail({
 }): Promise<InformationAgentInboundResult> {
   let email = received;
   if (!email) {
+    // L'événement signé porte déjà l'expéditeur : lire le message chez Resend n'est utile que pour un
+    // expéditeur connu. Un inconnu (le plus souvent du spam) ne coûte plus un appel d'API.
+    const eventSender = normalizeEmail(typeof event.data.from === "string" ? event.data.from : "");
+    if (eventSender && !(await isKnownInboundSender(eventSender))) {
+      console.warn("[Information agent] Inbound email without an open case", {
+        reason,
+        providerEmailId: event.data.email_id,
+        oppositionRecorded: false,
+        fetched: false,
+      });
+      return { accepted: true, ignored: true, ignoredReason: reason, oppositionRecorded: false };
+    }
+    await enforceGlobalRateLimit({
+      bucketKey: "information-agent.unrouted-inbound-fetch",
+      ...UNROUTED_FETCH_LIMIT,
+    });
     const { data, error } = await resend.emails.receiving.get(event.data.email_id, {
       html_format: "cid",
     });

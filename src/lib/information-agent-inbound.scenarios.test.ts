@@ -10,7 +10,10 @@ const mocks = vi.hoisted(() => ({
   list: vi.fn(),
   from: vi.fn(),
   storageFrom: vi.fn(),
+  globalLimit: vi.fn(),
 }));
+
+vi.mock("@/lib/rate-limit", () => ({ enforceGlobalRateLimit: mocks.globalLimit }));
 
 vi.mock("resend", () => ({
   Resend: class {
@@ -344,6 +347,7 @@ function receivedEmail({
   authentication = { spf: "pass", dkim: "pass", dmarc: "pass" },
   subject = "Re: Vente A",
   headers,
+  eventFrom,
 }: {
   token?: string;
   from?: string;
@@ -351,11 +355,18 @@ function receivedEmail({
   authentication?: { spf?: string; dkim?: string; dmarc?: string } | null;
   subject?: string;
   headers?: Record<string, string>;
+  /** Expéditeur porté par l'événement signé du webhook (absent des anciens événements de test). */
+  eventFrom?: string;
 } = {}) {
   mocks.verify.mockReturnValue({
     type: "email.received",
     created_at: "2026-09-23T10:00:00.000Z",
-    data: { email_id: "provider-email-1", to: [address(token)], received_for: [address(token)] },
+    data: {
+      email_id: "provider-email-1",
+      to: [address(token)],
+      received_for: [address(token)],
+      ...(eventFrom ? { from: eventFrom } : {}),
+    },
   });
   mocks.get.mockResolvedValue({
     data: {
@@ -1425,6 +1436,62 @@ describe("information-agent offline inbound scenarios", () => {
     expect(await webhook()).toMatchObject({ factCount: 0 });
     expect(state.messages).toHaveLength(1);
     expect(state.facts).toHaveLength(0);
+  });
+
+  describe("emails sans dossier ouvert (n° 48)", () => {
+    it("ne lit pas chez Resend l'email d'un expéditeur inconnu", async () => {
+      const state = fixture();
+      state.cases.splice(0, state.cases.length);
+      receivedEmail({ text: "STOP", eventFrom: "Spam <inconnu@spam.example>" });
+      vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+      expect(await webhook()).toMatchObject({
+        accepted: true,
+        ignored: true,
+        ignoredReason: "unknown_case",
+        oppositionRecorded: false,
+      });
+      expect(mocks.get).not.toHaveBeenCalled();
+      expect(mocks.globalLimit).not.toHaveBeenCalled();
+      expect(state.contacts).toHaveLength(0);
+    });
+
+    it("lit l'email d'un expéditeur connu, dans la limite du plafond global, et enregistre son opposition", async () => {
+      const state = fixture();
+      state.cases[1]!.status = "completed";
+      state.cases.splice(0, 1);
+      receivedEmail({
+        token: TOKEN_B,
+        text: "Ne plus me contacter.",
+        eventFrom: "Contact <contact@example.test>",
+      });
+      vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+      expect(await webhook()).toMatchObject({
+        ignoredReason: "case_not_open",
+        oppositionRecorded: true,
+      });
+      expect(mocks.get).toHaveBeenCalledTimes(1);
+      expect(mocks.globalLimit).toHaveBeenCalledWith(
+        expect.objectContaining({ bucketKey: "information-agent.unrouted-inbound-fetch" }),
+      );
+      expect(state.contacts[0]).toMatchObject({ opposition_status: "opposed" });
+    });
+
+    it("laisse le fournisseur rejouer la livraison quand le plafond de lectures est atteint", async () => {
+      const state = fixture();
+      state.cases.splice(0, state.cases.length);
+      receivedEmail({ eventFrom: "Contact <contact@example.test>", text: "STOP" });
+      state.contacts.push({
+        email: "contact@example.test",
+        normalized_email: "contact@example.test",
+        opposition_status: "unknown",
+      });
+      mocks.globalLimit.mockRejectedValue(new Error("Trop de demandes."));
+
+      await expect(webhook()).rejects.toThrow("Trop de demandes.");
+      expect(mocks.get).not.toHaveBeenCalled();
+    });
   });
 
   describe("lecture des réponses (n° 47)", () => {
