@@ -43,11 +43,14 @@ function fixture({
   closeCaseBeforeFinalUpdate = false,
   moveCaseToReviewBeforeFinalUpdate = false,
   bodyAssetCollisionSha256,
+  multiLotSale = false,
 }: {
   concurrentAssetLookup?: boolean;
   closeCaseBeforeFinalUpdate?: boolean;
   moveCaseToReviewBeforeFinalUpdate?: boolean;
   bodyAssetCollisionSha256?: string;
+  /** La vente A compte plusieurs lots (drapeau `multi_lot_sale` de la collecte). */
+  multiLotSale?: boolean;
 } = {}) {
   const cases: Row[] = [
     {
@@ -109,6 +112,7 @@ function fixture({
         app_surface_m2: null,
         rooms_count: null,
         occupancy_status: null,
+        quality_flags: multiLotSale ? ["multi_lot_sale"] : [],
       },
       {
         id: SALE_B,
@@ -338,11 +342,15 @@ function receivedEmail({
   from = "Contact <contact@example.test>",
   text = "La surface habitable est de 84 m². Il y a 4 pièces.",
   authentication = { spf: "pass", dkim: "pass", dmarc: "pass" },
+  subject = "Re: Vente A",
+  headers,
 }: {
   token?: string;
   from?: string;
   text?: string;
   authentication?: { spf?: string; dkim?: string; dmarc?: string } | null;
+  subject?: string;
+  headers?: Record<string, string>;
 } = {}) {
   mocks.verify.mockReturnValue({
     type: "email.received",
@@ -353,11 +361,12 @@ function receivedEmail({
     data: {
       from,
       to: [address(token)],
-      subject: "Re: Vente A",
+      subject,
       text,
       html: null,
       created_at: "2026-09-23T10:00:00.000Z",
       authentication,
+      headers,
     },
     error: null,
   });
@@ -1416,6 +1425,142 @@ describe("information-agent offline inbound scenarios", () => {
     expect(await webhook()).toMatchObject({ factCount: 0 });
     expect(state.messages).toHaveLength(1);
     expect(state.facts).toHaveLength(0);
+  });
+
+  describe("lecture des réponses (n° 47)", () => {
+    it.each([
+      [
+        "l'en-tête Auto-Submitted",
+        { subject: "Re: Vente A", headers: { "Auto-Submitted": "auto-replied" } },
+      ],
+      ["l'en-tête X-Autoreply", { subject: "Re: Vente A", headers: { "X-Autoreply": "yes" } }],
+      [
+        "l'objet « Absence »",
+        { subject: "Absence du bureau jusqu'au 5 novembre", headers: undefined },
+      ],
+      ["l'objet « Automatic reply: »", { subject: "Automatic reply: Vente A", headers: undefined }],
+    ])(
+      "ignore une réponse automatique repérée par %s : pas de lecture, le dossier reste ouvert",
+      async (_label, extra) => {
+        const state = fixture();
+        receivedEmail({
+          text: "Je suis absent jusqu'au 5 novembre. La surface est de 99 m².",
+          ...extra,
+        });
+        const fetchImpl = vi.fn();
+
+        expect(await webhook(fetchImpl)).toMatchObject({
+          accepted: true,
+          caseId: CASE_A,
+          factCount: 0,
+          attachmentCount: 0,
+          processingStatus: "ignored",
+        });
+        expect(state.facts).toHaveLength(0);
+        expect(state.cases[0]?.status).toBe("sent");
+        expect(state.messages[0]?.metadata).toMatchObject({
+          inbound_processing: { status: "ignored", reason: "auto_reply" },
+        });
+        expect(mocks.list).not.toHaveBeenCalled();
+        expect(fetchImpl).not.toHaveBeenCalled();
+      },
+    );
+
+    it("traite une réponse écrite par une personne même si l'en-tête Auto-Submitted vaut « no »", async () => {
+      const state = fixture();
+      receivedEmail({ headers: { "Auto-Submitted": "no" } });
+
+      expect(await webhook()).toMatchObject({ factCount: 2, processingStatus: "review" });
+      expect(state.facts).toHaveLength(2);
+    });
+
+    it("enregistre l'opposition d'un « Je ne souhaite plus être contacté. » (é final accentué)", async () => {
+      const state = fixture();
+      receivedEmail({ text: "Bonjour,\nJe ne souhaite plus être contacté.\nCordialement" });
+
+      expect(await webhook()).toMatchObject({ caseId: CASE_A, factCount: 0 });
+      expect(state.contacts[0]).toMatchObject({
+        email: "contact@example.test",
+        opposition_status: "opposed",
+      });
+    });
+
+    it("envoie en relecture, sans opposition ni lecture, une réponse qui parle de spam et de CNIL", async () => {
+      const state = fixture();
+      receivedEmail({
+        text: "C'est du spam. Je vais saisir la CNIL. La surface est de 84 m².",
+      });
+      const fetchImpl = vi.fn();
+
+      expect(await webhook(fetchImpl)).toMatchObject({
+        caseId: CASE_A,
+        factCount: 0,
+        attachmentCount: 0,
+        processingStatus: "review",
+      });
+      expect(state.contacts).toHaveLength(0);
+      expect(state.facts).toHaveLength(0);
+      expect(state.cases[0]?.status).toBe("review");
+      expect(state.messages[0]?.metadata).toMatchObject({
+        inbound_processing: { status: "review", reason: "possible_opposition" },
+      });
+      expect(mocks.list).not.toHaveBeenCalled();
+    });
+
+    it("retire l'historique cité d'un message transféré (From:/Sent: ou « De : » sans adresse)", async () => {
+      for (const quoted of [
+        "From: Immojudis\nSent: Monday, 5 October 2026 10:00\nTo: contact\nSubject: Vente A\n\nSurface 84 m² et 4 pièces",
+        "De : Équipe Immojudis\nEnvoyé : lundi 5 octobre 2026 10:00\nÀ : Contact\nObjet : Vente A\n\nSurface 84 m² et 4 pièces",
+      ]) {
+        const state = fixture();
+        receivedEmail({ text: `Je vérifie et reviens vers vous.\n\n${quoted}` });
+
+        expect(await webhook()).toMatchObject({ factCount: 0 });
+        expect(state.facts).toHaveLength(0);
+      }
+    });
+
+    it("lit l'occupation au présent : « était loué mais désormais libre » donne un bien libre", async () => {
+      const state = fixture();
+      receivedEmail({ text: "Le bien était loué mais il est désormais libre." });
+
+      await webhook();
+
+      const occupancy = state.facts.filter((fact) => fact.fact_key === "occupancy_status");
+      expect(occupancy.map((fact) => fact.proposed_value)).toEqual([{ value: "vacant" }]);
+    });
+
+    it("marque « lot non identifié » une réponse sans numéro de lot pour une vente à plusieurs lots", async () => {
+      const state = fixture({ multiLotSale: true });
+      receivedEmail();
+
+      expect(await webhook()).toMatchObject({ caseId: CASE_A, processingStatus: "review" });
+
+      expect(state.facts.length).toBeGreaterThan(0);
+      expect(state.facts.every((fact) => (fact.metadata as Row)?.lot_unidentified === true)).toBe(
+        true,
+      );
+      expect(state.cases[0]?.metadata).toMatchObject({ last_inbound_lot_unidentified: true });
+      expect(state.messages[0]?.metadata).toMatchObject({
+        inbound_processing: { status: "review", reason: "unidentified_lot_review" },
+      });
+    });
+
+    it("ne marque pas le lot quand la réponse le désigne, ni pour une vente à lot unique", async () => {
+      const identified = fixture({ multiLotSale: true });
+      receivedEmail({ text: "Lot 2 : la surface habitable est de 84 m². Il y a 4 pièces." });
+      await webhook();
+      expect(identified.facts.length).toBeGreaterThan(0);
+      expect(identified.facts.some((fact) => (fact.metadata as Row)?.lot_unidentified)).toBe(false);
+
+      vi.resetAllMocks();
+      const single = fixture({ multiLotSale: false });
+      receivedEmail();
+      await webhook();
+      expect(single.facts.length).toBeGreaterThan(0);
+      expect(single.facts.some((fact) => (fact.metadata as Row)?.lot_unidentified)).toBe(false);
+      expect(single.cases[0]?.metadata).toMatchObject({ last_inbound_lot_unidentified: false });
+    });
   });
 
   it("ignores replies to a draft that was never sent", async () => {

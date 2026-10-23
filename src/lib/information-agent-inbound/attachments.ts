@@ -446,6 +446,7 @@ export async function persistFactCandidates({
   assets,
   assertJobLease,
   leaseId,
+  lotUnidentified = false,
 }: {
   sharedCase: SharedCase;
   messageId: string;
@@ -459,6 +460,8 @@ export async function persistFactCandidates({
   }>;
   assertJobLease?: InboundJobLeaseGuard;
   leaseId?: string;
+  /** Vente à plusieurs lots et réponse sans numéro de lot : à rattacher au bon lot à la relecture. */
+  lotUnidentified?: boolean;
 }) {
   await ensureInboundJobLease(assertJobLease);
   const { data: sale, error: saleError } = await supabaseAdmin
@@ -469,6 +472,17 @@ export async function persistFactCandidates({
     .eq("id", sharedCase.sale_id)
     .single();
   if (saleError) throw saleError;
+
+  // Jeton de bail du traitement entrant (retiré par la base) et marque « lot non identifié ».
+  const candidateMetadata = () =>
+    leaseId || lotUnidentified
+      ? {
+          metadata: {
+            ...(leaseId ? { inbound_lease_id: leaseId, inbound_message_id: messageId } : {}),
+            ...(lotUnidentified ? { lot_unidentified: true } : {}),
+          },
+        }
+      : {};
 
   const rows: Database["public"]["Tables"]["information_agent_fact_candidates"]["Insert"][] = [
     ...facts.map((fact) => ({
@@ -481,9 +495,7 @@ export async function persistFactCandidates({
       evidence_excerpt: fact.evidenceExcerpt,
       confidence: fact.confidence,
       status: conflictsWithSale(fact, sale) ? ("conflict" as const) : ("pending" as const),
-      ...(leaseId
-        ? { metadata: { inbound_lease_id: leaseId, inbound_message_id: messageId } }
-        : {}),
+      ...candidateMetadata(),
     })),
     ...assets.map((asset) => ({
       case_id: sharedCase.id,
@@ -496,9 +508,7 @@ export async function persistFactCandidates({
       evidence_excerpt: null,
       confidence: 1,
       status: "pending" as const,
-      ...(leaseId
-        ? { metadata: { inbound_lease_id: leaseId, inbound_message_id: messageId } }
-        : {}),
+      ...candidateMetadata(),
     })),
   ];
   if (!rows.length) return;

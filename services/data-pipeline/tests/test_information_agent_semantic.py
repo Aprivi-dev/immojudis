@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from src.enrichment import llm_client
 from src.information_agent_semantic import (
     MAX_SEMANTIC_INPUT_CHARS,
@@ -79,12 +81,12 @@ def test_semantic_facts_require_supported_key_and_grounded_page_excerpt() -> Non
     assert fact.fact_key == "surface_m2"
     assert fact.source_page == 2
     assert fact.evidence_excerpt == "Surface habitable : 87 m²"
-    assert fact.extraction_method == "semantic_evidence_v1"
+    assert fact.extraction_method == "semantic_evidence_v2"
     assert "MODE EXTRACTION STRICTE" in captured["system"]
     assert "<untrusted-evidence>" in captured["user"]
     assert "not in the source" not in captured["user"]
     assert result.metadata() == {
-        "processor_version": "semantic_evidence_v1",
+        "processor_version": "semantic_evidence_v2",
         "status": "completed",
         "input_truncated": False,
         "review_required": True,
@@ -472,3 +474,129 @@ def test_photo_ocr_text_is_redacted_too() -> None:
     prompt = build_photo_user_prompt("Contact : M. Dupont 06 12 34 56 78 jean@cabinet.fr")
 
     assert "Dupont" not in prompt and "06 12" not in prompt and "@" not in prompt
+
+
+def test_invisible_characters_are_removed_before_the_model_sees_the_text() -> None:
+    hidden = "Su\u200brface\u2060 habitable : 8\u200d7 m²\U000e0041"
+    prompt, _ = build_semantic_user_prompt([{"page": 1, "text": hidden}])
+
+    assert "Surface habitable : 87 m²" in prompt
+    assert "\u200b" not in prompt and "\U000e0041" not in prompt
+
+
+# --- Cohérence de la valeur avec la citation (n° 47) -----------------------------------------------
+
+
+def _single_fact(fact_key: str, value: object, excerpt: str, page_text: str | None = None):
+    text = page_text if page_text is not None else excerpt
+    return validate_semantic_facts(
+        [
+            {
+                "fact_key": fact_key,
+                "proposed_value": {"value": value},
+                "display_value": str(value),
+                "evidence_excerpt": excerpt,
+                "source_page": 1,
+                "confidence": 0.9,
+            }
+        ],
+        [{"page": 1, "text": text}],
+    )
+
+
+def test_starting_price_must_follow_the_auction_starting_price_not_the_deposit() -> None:
+    page = "Mise à prix : 85 000 €. Consignation pour enchérir : 8 500 €. Frais préalables : 3 200 €."
+
+    assert _single_fact("starting_price_eur", 85000, "Mise à prix : 85 000 €", page)
+    assert _single_fact("starting_price_eur", 8500, "Consignation pour enchérir : 8 500 €", page) == []
+    assert _single_fact("starting_price_eur", 3200, "Frais préalables : 3 200 €", page) == []
+    # Une citation qui contient les deux montants : seul celui qui suit « mise à prix » est accepté.
+    both = "Mise à prix 85 000 € ; consignation de 8 500 €"
+    assert _single_fact("starting_price_eur", 85000, both)
+    assert _single_fact("starting_price_eur", 8500, both) == []
+    assert _single_fact("starting_price_eur", 85000, "Montant : 85 000 €") == []
+
+
+@pytest.mark.parametrize(
+    "excerpt",
+    [
+        "Le bien n'est pas loué.",
+        "Le bien n’est plus loué.",
+        "Il n'y a pas de locataire",
+        "Le bien est libre de toute location",
+        "Le bien était loué mais il est désormais libre",
+        "L'ancien locataire est parti",
+        "Bail résilié, locataire sorti",
+        "Le bien était loué",
+    ],
+)
+def test_rented_requires_a_current_positive_statement(excerpt: str) -> None:
+    assert _single_fact("occupancy_status", "rented", excerpt) == [], excerpt
+
+
+def test_occupancy_accepts_the_current_state_and_the_change_of_state() -> None:
+    assert _single_fact("occupancy_status", "rented", "Le bien est loué")
+    assert _single_fact("occupancy_status", "rented", "Occupé par un locataire en vertu d'un bail")
+    assert _single_fact("occupancy_status", "vacant", "Le bien était loué mais il est désormais libre")
+    assert _single_fact("occupancy_status", "vacant", "Le bien est inoccupé")
+    assert _single_fact("occupancy_status", "occupied", "Le logement est occupé")
+
+
+@pytest.mark.parametrize(
+    ("value", "excerpt"),
+    [
+        ("vacant", "Le bien n'est pas libre"),
+        ("vacant", "Le bien sera libre à compter du 1er janvier"),
+        ("vacant", "Le bien pourrait être libérable à la vente"),
+        ("occupied", "Le bien n'est pas occupé"),
+        ("occupied", "Le bien était occupé par la famille"),
+        ("squatted", "Le bien a été squatté il y a deux ans"),
+    ],
+)
+def test_occupancy_refuses_negated_future_and_past_states(value: str, excerpt: str) -> None:
+    assert _single_fact("occupancy_status", value, excerpt) == [], (value, excerpt)
+
+
+def test_surface_must_be_the_dwelling_in_square_metres_not_the_land_or_another_number() -> None:
+    assert _single_fact("surface_m2", 87, "Surface habitable : 87 m²")
+    assert _single_fact("surface_m2", 87, "Appartement de 87 m2")
+    assert _single_fact("surface_m2", 87, "Surface habitable : 87 mètres carrés")
+    assert _single_fact("surface_m2", 87, "Le lot 87 se trouve au troisième étage") == []
+    assert _single_fact("surface_m2", 2500, "Terrain de 2 500 m²") == []
+    assert _single_fact("land_surface_m2", 2500, "Terrain de 2 500 m²")
+    assert _single_fact("land_surface_m2", 87, "Surface habitable : 87 m²") == []
+
+
+def test_rooms_count_counts_rooms_not_bedrooms() -> None:
+    assert _single_fact("rooms_count", 4, "Appartement de 4 pièces")
+    assert _single_fact("rooms_count", 3, "Il comprend 3 chambres") == []
+    assert _single_fact("rooms_count", 4, "Il est situé au 4 rue des Lilas") == []
+
+
+def test_visit_information_refuses_links_and_contacts_and_needs_a_visit_cue() -> None:
+    assert _single_fact("visit_information", "Visite le 12 novembre à 10 h", "Visite le 12 novembre à 10 h")
+    assert _single_fact("visit_information", "Visites sur rendez-vous", "Visites sur rendez-vous")
+    assert (
+        _single_fact(
+            "visit_information",
+            "Visite sur rendez-vous via https://reservation.example.test",
+            "Visite sur rendez-vous via https://reservation.example.test",
+        )
+        == []
+    )
+    assert (
+        _single_fact(
+            "visit_information",
+            "Visite sur rendez-vous : cabinet@example.test",
+            "Visite sur rendez-vous : cabinet@example.test",
+        )
+        == []
+    )
+    assert _single_fact("visit_information", "Cave et grenier", "Cave et grenier") == []
+
+
+def test_system_prompt_defines_the_fields_and_keeps_the_brand_spelling() -> None:
+    assert "Immojudis" in SEMANTIC_SYSTEM_PROMPT and "ImmoJudiz" not in SEMANTIC_SYSTEM_PROMPT
+    assert '{"facts":[]}' in SEMANTIC_SYSTEM_PROMPT
+    assert "mise à prix" in SEMANTIC_SYSTEM_PROMPT and "consignation" in SEMANTIC_SYSTEM_PROMPT
+    assert "désormais libre" in SEMANTIC_SYSTEM_PROMPT and "lot" in SEMANTIC_SYSTEM_PROMPT
