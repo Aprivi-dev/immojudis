@@ -7678,6 +7678,48 @@ export type Database = {
           },
         ];
       };
+      launch_offer_end_notice_optouts: {
+        Row: { unsubscribed_at: string; user_id: string };
+        Insert: { unsubscribed_at?: string; user_id: string };
+        Update: { unsubscribed_at?: string; user_id?: string };
+        Relationships: [];
+      };
+      launch_offer_end_notices: {
+        Row: {
+          attempts: number;
+          created_at: string;
+          ends_on: string;
+          error: string | null;
+          message_id: string | null;
+          sent_at: string | null;
+          status: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          attempts?: number;
+          created_at?: string;
+          ends_on: string;
+          error?: string | null;
+          message_id?: string | null;
+          sent_at?: string | null;
+          status?: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          attempts?: number;
+          created_at?: string;
+          ends_on?: string;
+          error?: string | null;
+          message_id?: string | null;
+          sent_at?: string | null;
+          status?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       lawyer_placement_events: {
         Row: {
           created_at: string;
@@ -14225,6 +14267,10 @@ export type Database = {
           isSetofReturn: true;
         };
       };
+      claim_launch_offer_end_notice: {
+        Args: { p_ends_on: string; p_now?: string; p_user_id: string };
+        Returns: boolean;
+      };
       claim_operational_alert_notifications: {
         Args: { p_limit?: number; p_now?: string };
         Returns: {
@@ -14686,6 +14732,11 @@ export type Database = {
         Args: { p_user_id: string };
         Returns: boolean;
       };
+      get_launch_offer_config: { Args: never; Returns: Json };
+      get_launch_offer_end_queue: {
+        Args: { p_ends_on: string; p_limit?: number; p_now?: string };
+        Returns: Json;
+      };
       get_launch_offer_status: { Args: never; Returns: boolean };
       get_merged_sale_target: { Args: { p_sale_id: string }; Returns: string };
       get_offer_opening_queue: {
@@ -14932,6 +14983,10 @@ export type Database = {
       purge_expired_auction_sales: {
         Args: { p_limit?: number; p_now?: string };
         Returns: Json;
+      };
+      purge_launch_offer_end_notices: {
+        Args: { p_older_than?: string };
+        Returns: number;
       };
       purge_sale_reminder_dispatches: {
         Args: { p_older_than?: string };
@@ -15518,6 +15573,10 @@ export type Database = {
         Returns: Json;
       };
       set_launch_offer: { Args: { p_active: boolean }; Returns: boolean };
+      set_launch_offer_end: {
+        Args: { p_actor?: string; p_ends_on: string | null };
+        Returns: Json;
+      };
       st_3dclosestpoint: {
         Args: { geom1: unknown; geom2: unknown };
         Returns: unknown;

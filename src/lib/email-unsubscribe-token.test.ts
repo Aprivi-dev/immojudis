@@ -124,6 +124,7 @@ describe("unsubscribe tokens", () => {
       { kind: "weekly-digest" },
       { kind: "sale-results" },
       { kind: "offer-opening" },
+      { kind: "launch-offer-end" },
     ] as const;
     for (const scope of scopes) {
       const token = createUnsubscribeToken({ userId, scope, now, env });
