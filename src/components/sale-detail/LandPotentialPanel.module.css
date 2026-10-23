@@ -1,4 +1,6 @@
 .root {
+  /* Fond des cartes : le blanc n'existe pas comme jeton global. */
+  --paper: #ffffff;
   border: 1px solid var(--line-warm);
   border-radius: 16px;
   padding: 22px;
@@ -54,11 +56,11 @@
 }
 .primaryButton {
   background: var(--success);
-  color: white;
+  color: var(--paper);
   border: 1px solid var(--success);
 }
 .secondaryButton {
-  background: white;
+  background: var(--paper);
   color: var(--success);
   border: 1px solid var(--line);
 }
@@ -71,7 +73,7 @@
 .secondaryButton:focus-visible,
 .select:focus-visible,
 .sourceLink:focus-visible {
-  outline: 3px solid var(--gold);
+  outline: 3px solid var(--gold-soft);
   outline-offset: 3px;
 }
 .notice,
@@ -133,7 +135,7 @@
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 9px;
-  background: white;
+  background: var(--paper);
   min-width: 0;
   font-size: 0.83rem;
   line-height: 1.55;
@@ -162,7 +164,7 @@
   flex-shrink: 0;
 }
 .document {
-  background: white;
+  background: var(--paper);
   border: 1px solid var(--line);
   border-radius: 9px;
   padding: 12px 14px;
@@ -192,7 +194,7 @@
   max-width: 100%;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: white;
+  background: var(--paper);
   padding: 8px 12px;
   font-size: 0.85rem;
   color: var(--success);
@@ -214,7 +216,7 @@
   padding: 16px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: white;
+  background: var(--paper);
   font-size: 0.82rem;
   line-height: 1.7;
   overflow-wrap: anywhere;
@@ -265,7 +267,7 @@
   line-height: 1.65;
 }
 .checkGrid h5,
-.consequences h5 {
+.consequences h4 {
   font-size: 0.77rem;
   font-weight: 700;
   margin: 0 0 5px;
@@ -313,7 +315,7 @@
 }
 .sourceChecks li {
   padding: 12px;
-  background: white;
+  background: var(--paper);
   border: 1px solid var(--line);
   border-radius: 8px;
   display: flex;
@@ -367,7 +369,7 @@
   display: grid;
   gap: 22px;
 }
-.riskGroups h5 {
+.riskGroups h3 {
   margin: 0 0 10px;
   font-size: 0.9rem;
   color: var(--success);
@@ -388,8 +390,8 @@
   background: var(--warning-tint);
 }
 .reliability[data-tone="weak"] {
-  border-left-color: var(--line);
-  background: var(--cream);
+  border-left-color: var(--danger);
+  background: var(--danger-tint);
 }
 .reliability span {
   font-size: 0.75rem;
@@ -401,7 +403,7 @@
   padding: 16px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: white;
+  background: var(--paper);
 }
 .summary .reliability {
   margin: 0 0 12px;
@@ -449,8 +451,18 @@
   opacity: 0.6;
   animation: skeleton-pulse 1.4s ease-in-out infinite;
 }
+.loading {
+  min-height: 15rem;
+}
 .loading .summaryList {
   margin-top: 12px;
+}
+.verdict {
+  margin: 0 0 12px;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.45;
+  color: var(--brand-navy);
 }
 @keyframes skeleton-pulse {
   50% {
@@ -466,7 +478,7 @@
   margin-top: 10px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: white;
+  background: var(--paper);
 }
 .block > summary {
   cursor: pointer;
@@ -475,7 +487,7 @@
   font-weight: 650;
 }
 .block > summary:focus-visible {
-  outline: 3px solid var(--gold);
+  outline: 3px solid var(--gold-soft);
   outline-offset: 2px;
 }
 .blockBody {
