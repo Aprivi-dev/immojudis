@@ -19,7 +19,7 @@ export const OFFER_OPENING_REQUESTED_TEXT =
  * version changent ensemble, la version est conservée avec les réponses et la route refuse une
  * requête qui en cite une autre.
  */
-export const OFFER_OPENING_SURVEY_VERSION = "2026-10-28";
+export const OFFER_OPENING_SURVEY_VERSION = "2026-10-28.1";
 
 export const OFFER_OPENING_SURVEY_INTRO =
   "Aidez-nous à préparer l’offre : trois questions, toutes facultatives. Vos réponses n’ont aucun effet sur votre demande et sont effacées avec elle.";
@@ -36,4 +36,27 @@ export type OfferOpeningSurveyProfile = (typeof OFFER_OPENING_SURVEY_PROFILES)[n
 /** Libellé de la case, jamais cochée par défaut. */
 export const OFFER_OPENING_INTERVIEW_TEXT = "J’accepte un entretien de 20 minutes";
 export const OFFER_OPENING_INTERVIEW_HELP =
-  "Nous vous écrirons à l’adresse de votre compte pour convenir d’un créneau. Vous pouvez retirer cet accord à tout moment en décochant la case, ou en retirant votre demande.";
+  "Nous vous écrirons une seule fois, à l’adresse de votre compte, pour convenir d’un créneau. Cette case est facultative : elle n’a aucun effet sur votre demande.";
+
+/** Durées annoncées avec la case « entretien » : à tenir dans l'étude (voir le texte ci-dessous). */
+export const OFFER_OPENING_INTERVIEW_RECORDING_RETENTION_DAYS = 30;
+export const OFFER_OPENING_INTERVIEW_NOTES_RETENTION_MONTHS = 12;
+
+/**
+ * Information donnée avec la case « entretien » (finalité, responsable, enregistrement, retrait).
+ * Le texte et OFFER_OPENING_SURVEY_VERSION changent ensemble. Il renvoie à la politique de
+ * confidentialité sans la répéter : le responsable du traitement et l'adresse de contact viennent
+ * des variables d'identité de l'éditeur (`publicLegalPublisher`, `legalValue`), comme dans la
+ * politique elle-même.
+ */
+export function offerOpeningInterviewNotice(input: {
+  controller: string;
+  contactEmail: string;
+}): string[] {
+  return [
+    "Objectif : comprendre comment vous choisissez les ventes que vous étudiez, pour améliorer l’offre Analyse.",
+    `Responsable du traitement : ${input.controller}. Base : votre accord, donné par cette case.`,
+    `Enregistrement : aucun sans votre accord exprès, demandé au début de l’entretien. Si vous l’acceptez, il ne sert qu’à rédiger les notes et il est supprimé au plus tard ${OFFER_OPENING_INTERVIEW_RECORDING_RETENTION_DAYS} jours après l’entretien. Les notes sont conservées ${OFFER_OPENING_INTERVIEW_NOTES_RETENTION_MONTHS} mois au plus.`,
+    `Retrait : à tout moment, en décochant la case ou en retirant votre demande. Pour faire effacer les notes ou l’enregistrement d’un entretien déjà passé, écrivez à ${input.contactEmail}.`,
+  ];
+}

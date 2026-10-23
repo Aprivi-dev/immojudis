@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LAUNCH_OFFER_ACCOUNT_TEXT, LAUNCH_OFFER_VISITOR_TEXT } from "@/lib/launch-offer";
 import { BillingActions } from "./BillingActions";
@@ -51,6 +51,12 @@ vi.mock("@/lib/legal-documents", () => ({
     privacy: { version: "privacy-v1" },
   },
   legalPublisherConfigurationStatus: mocks.legalPublisherConfigurationStatus,
+  publicLegalPublisher: () => ({
+    entityName: "Éditeur de test SAS",
+    contactEmail: "contact@editeur-test.example",
+  }),
+  legalValue: (value: string | null, fallback = "À renseigner avant commercialisation") =>
+    value ?? fallback,
 }));
 
 vi.mock("@/lib/toast", () => ({ toast: { error: mocks.toastError } }));
@@ -503,6 +509,21 @@ describe("BillingActions : offre en chargement, en erreur ou fermée", () => {
     }) as HTMLInputElement;
     expect(interview.checked).toBe(false);
     expect(screen.getByRole("combobox")).toBeTruthy();
+
+    // L'information donnée avec la case : finalité, responsable, enregistrement, durée, retrait.
+    const notice = screen.getByTestId("offer-opening-interview-notice");
+    expect(notice.textContent).toContain("Objectif : comprendre comment vous choisissez");
+    expect(notice.textContent).toContain("Responsable du traitement : Éditeur de test SAS");
+    expect(notice.textContent).toContain("aucun sans votre accord exprès");
+    expect(notice.textContent).toContain("supprimé au plus tard 30 jours après l’entretien");
+    expect(notice.textContent).toContain("Retrait : à tout moment");
+    expect(notice.textContent).toContain("contact@editeur-test.example");
+    expect(interview.getAttribute("aria-describedby")).toBe("offer-opening-interview-notice");
+    expect(
+      within(notice)
+        .getByRole("link", { name: "Politique de confidentialité" })
+        .getAttribute("href"),
+    ).toBe("/privacy");
 
     // Tout peut rester vide : l'envoi ne bloque sur rien.
     fireEvent.click(screen.getByRole("button", { name: "Enregistrer mes réponses" }));

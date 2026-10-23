@@ -91,7 +91,7 @@ describe("client billing API", () => {
       priceTooExpensiveEur: null,
       priceCheapEur: 15,
       interviewAccepted: false,
-      surveyTextVersion: "2026-10-28",
+      surveyTextVersion: "2026-10-28.1",
     });
     expect(init.headers).toMatchObject({ Authorization: "Bearer test-access-token" });
   });

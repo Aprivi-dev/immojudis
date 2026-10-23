@@ -1,13 +1,16 @@
 "use client";
 
+import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { toast } from "@/lib/toast";
 import { updateOfferOpeningSurvey } from "@/lib/client-billing";
+import { legalValue, publicLegalPublisher } from "@/lib/legal-documents";
 import {
   OFFER_OPENING_INTERVIEW_HELP,
   OFFER_OPENING_INTERVIEW_TEXT,
   OFFER_OPENING_SURVEY_INTRO,
   OFFER_OPENING_SURVEY_PROFILES,
+  offerOpeningInterviewNotice,
   type OfferOpeningSurveyProfile,
 } from "@/lib/offer-opening-consent";
 import type { OfferOpeningSurveyState } from "@/lib/offer-opening-notification";
@@ -41,6 +44,11 @@ export function OfferOpeningSurvey({
   const [interview, setInterview] = useState(initial?.interviewAccepted ?? false);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(Boolean(initial?.answeredAt));
+  const publisher = publicLegalPublisher();
+  const interviewNotice = offerOpeningInterviewNotice({
+    controller: legalValue(publisher.entityName),
+    contactEmail: legalValue(publisher.contactEmail),
+  });
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -149,6 +157,7 @@ export function OfferOpeningSurvey({
             setInterview(event.target.checked);
             setSaved(false);
           }}
+          aria-describedby="offer-opening-interview-notice"
           className="mt-1 h-4 w-4"
         />
         <span>
@@ -158,6 +167,20 @@ export function OfferOpeningSurvey({
           </span>
         </span>
       </label>
+      <div
+        id="offer-opening-interview-notice"
+        data-testid="offer-opening-interview-notice"
+        className="grid gap-1 text-xs leading-relaxed text-muted-foreground"
+      >
+        {interviewNotice.map((line) => (
+          <p key={line}>{line}</p>
+        ))}
+        <p>
+          <Link href="/privacy" className="font-semibold underline underline-offset-2">
+            Politique de confidentialité
+          </Link>
+        </p>
+      </div>
 
       <div className="flex flex-wrap items-center gap-3">
         <button

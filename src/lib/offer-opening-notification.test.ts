@@ -13,6 +13,7 @@ import {
   setOfferOpeningNotification,
   setOfferOpeningSurvey,
 } from "@/lib/offer-opening-notification";
+import { offerOpeningInterviewNotice } from "@/lib/offer-opening-consent";
 import { PublicApiError } from "@/lib/api-errors";
 
 const timestamp = "2026-10-20T10:00:00.000Z";
@@ -201,6 +202,21 @@ describe("liste d'attente qualifiée : questions facultatives", () => {
         priceCheapEur: 20,
       }),
     ).toMatchObject({ profile: null, salesPerMonth: null, priceCheapEur: 20 });
+  });
+
+  it("l'information de la case d'entretien donne finalité, responsable, enregistrement, durée et retrait", () => {
+    const notice = offerOpeningInterviewNotice({
+      controller: "Éditeur SAS",
+      contactEmail: "contact@example.test",
+    }).join(" ");
+    expect(notice).toContain("Objectif");
+    expect(notice).toContain("Responsable du traitement : Éditeur SAS");
+    expect(notice).toContain("Enregistrement : aucun sans votre accord exprès");
+    expect(notice).toContain("supprimé au plus tard 30 jours");
+    expect(notice).toContain("Retrait : à tout moment");
+    expect(notice).toContain("contact@example.test");
+    // Changer le texte impose de changer la version (elle est conservée avec les réponses).
+    expect(OFFER_OPENING_SURVEY_VERSION).toBe("2026-10-28.1");
   });
 
   it("la case d'entretien n'est jamais cochée par défaut", () => {
