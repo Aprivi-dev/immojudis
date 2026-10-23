@@ -59,6 +59,14 @@ export type AlertEvaluationResponse = {
   matches: AlertMatchSummary[];
 };
 
+/**
+ * What the browser receives from `POST /api/alerts/matches`: the failed alerts are identified, but
+ * the raw error (PostgREST message, details, hint) stays in the server logs and the cron summary.
+ */
+export type PublicAlertEvaluationResponse = Omit<AlertEvaluationResponse, "alertFailures"> & {
+  alertFailures: Array<{ alertId: string; code: "alert_evaluation_failed" }>;
+};
+
 /** The user's plan does not include alerts: nothing to evaluate, not a failure. */
 export class AlertsNotIncludedError extends Error {
   constructor() {
