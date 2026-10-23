@@ -911,12 +911,13 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
 }
 
 /**
- * Invitation à déposer ses prochaines ventes, après une contribution volontaire. Coupée par
- * `NEXT_PUBLIC_INFORMATION_AGENT_PRO_INVITATION=false`. Sans « gratuit » tant que des conditions
- * professionnelles ne le garantissent pas, sans « mise en avant » ni « visibilité ».
+ * Invitation à déposer ses prochaines ventes, après une contribution volontaire. Désactivée par
+ * défaut : seule la valeur exacte `NEXT_PUBLIC_INFORMATION_AGENT_PRO_INVITATION=true` l'affiche.
+ * Sans « gratuit » tant que des conditions professionnelles ne le garantissent pas, sans « mise en
+ * avant » ni « visibilité ».
  */
 function professionalInvitationEnabled(): boolean {
-  return process.env.NEXT_PUBLIC_INFORMATION_AGENT_PRO_INVITATION !== "false";
+  return process.env.NEXT_PUBLIC_INFORMATION_AGENT_PRO_INVITATION === "true";
 }
 
 function ProfessionalDepositInvitation() {

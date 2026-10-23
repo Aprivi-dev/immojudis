@@ -70,6 +70,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   window.sessionStorage.clear();
   window.history.replaceState(null, "", "/");
 });
@@ -105,6 +106,7 @@ describe("InformationAgentContributionForm", () => {
   });
 
   it("accepte une réponse texte et des liens sans fichier", async () => {
+    vi.stubEnv("NEXT_PUBLIC_INFORMATION_AGENT_PRO_INVITATION", "true");
     mocks.fetch
       .mockResolvedValueOnce(referenceResponse())
       .mockResolvedValueOnce(
@@ -150,6 +152,7 @@ describe("InformationAgentContributionForm", () => {
   });
 
   it("confirme une opposition sans rien proposer d'autre", async () => {
+    vi.stubEnv("NEXT_PUBLIC_INFORMATION_AGENT_PRO_INVITATION", "true");
     mocks.fetch
       .mockResolvedValueOnce(referenceResponse())
       .mockResolvedValueOnce(
@@ -169,22 +172,23 @@ describe("InformationAgentContributionForm", () => {
     expect(screen.queryByRole("link", { name: "Créer un accès professionnel" })).toBeNull();
   });
 
-  it("n'affiche pas l'invitation quand elle est coupée", async () => {
-    vi.stubEnv("NEXT_PUBLIC_INFORMATION_AGENT_PRO_INVITATION", "false");
-    try {
-      mocks.fetch
-        .mockResolvedValueOnce(referenceResponse())
-        .mockResolvedValueOnce(jsonResponse({ ok: true, messageId: "m", assetCount: 0 }, 201));
-      renderContribution();
-      await screen.findByText("CASE-1234");
-      fillRequiredFields();
-      fireEvent.change(screen.getByLabelText("Votre réponse"), { target: { value: "Oui." } });
-      fireEvent.click(screen.getByRole("button", { name: "Transmettre ma contribution" }));
-      await screen.findByText("Contribution reçue");
-      expect(screen.queryByRole("link", { name: "Créer un accès professionnel" })).toBeNull();
-    } finally {
-      vi.unstubAllEnvs();
-    }
+  it.each([
+    ["absente", undefined],
+    ["vide", ""],
+    ["false", "false"],
+    ["différente de true", "1"],
+  ])("n'affiche pas l'invitation par défaut (variable %s)", async (_label, value) => {
+    vi.stubEnv("NEXT_PUBLIC_INFORMATION_AGENT_PRO_INVITATION", value);
+    mocks.fetch
+      .mockResolvedValueOnce(referenceResponse())
+      .mockResolvedValueOnce(jsonResponse({ ok: true, messageId: "m", assetCount: 0 }, 201));
+    renderContribution();
+    await screen.findByText("CASE-1234");
+    fillRequiredFields();
+    fireEvent.change(screen.getByLabelText("Votre réponse"), { target: { value: "Oui." } });
+    fireEvent.click(screen.getByRole("button", { name: "Transmettre ma contribution" }));
+    await screen.findByText("Contribution reçue");
+    expect(screen.queryByRole("link", { name: "Créer un accès professionnel" })).toBeNull();
   });
 
   it("prépare chaque fichier, dépose via Supabase puis soumet son ticket", async () => {
