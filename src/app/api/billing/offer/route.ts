@@ -4,6 +4,7 @@ import {
 } from "@/integrations/supabase/auth-middleware";
 import { ANALYSIS_TRIAL_DAYS, resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
 import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
+import { analysisCheckoutReadiness } from "@/lib/analysis-checkout-readiness";
 import { resolveAnalysisCheckoutAvailability } from "@/lib/billing";
 import { enforceIpRateLimit } from "@/lib/rate-limit";
 import { BILLING_OFFER_CACHE_SECONDS, RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
@@ -24,7 +25,10 @@ export async function GET(request: Request) {
       bucketKey: "billing.offer",
       ...RATE_LIMIT_POLICIES.publicIp,
     });
-    const configured = Boolean(process.env.STRIPE_ANALYSIS_PRICE_ID?.trim());
+    // Même définition que le checkout (`analysisCheckoutReadiness`). L'offre de lancement n'y entre
+    // pas : cette réponse est mise en cache au CDN, la page lit cet état à part (/api/launch-offer)
+    // et le checkout le contrôle lui-même côté serveur.
+    const configured = analysisCheckoutReadiness().open;
     const personalized = configured && request.headers.has("authorization");
     let trialAvailable = true;
     if (personalized) {

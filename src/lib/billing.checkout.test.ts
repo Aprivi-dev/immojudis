@@ -8,6 +8,10 @@ const mocks = vi.hoisted(() => ({
   customersCreate: vi.fn(),
   pricesRetrieve: vi.fn(),
   subscriptionsList: vi.fn(),
+  sessionsList: vi.fn(),
+  sessionsExpire: vi.fn(),
+  assertOpen: vi.fn(),
+  launchState: vi.fn(),
   events: [] as string[],
 }));
 
@@ -19,7 +23,8 @@ vi.mock("stripe", () => ({
     checkout = {
       sessions: {
         create: mocks.checkoutCreate,
-        expire: vi.fn(),
+        expire: mocks.sessionsExpire,
+        list: mocks.sessionsList,
       },
     };
   },
@@ -28,11 +33,11 @@ vi.mock("stripe", () => ({
 vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: { rpc: mocks.adminRpc },
 }));
-vi.mock("@/lib/legal-documents", () => ({
-  assertPaidOfferLegalReadiness: vi.fn(),
+vi.mock("@/lib/analysis-checkout-readiness", () => ({
+  assertAnalysisCheckoutOpen: mocks.assertOpen,
 }));
+vi.mock("@/lib/launch-offer.server", () => ({ readLaunchOfferState: mocks.launchState }));
 vi.mock("@/lib/commercial-acceptance", () => ({
-  assertCommercialConfirmationReadiness: vi.fn(),
   recordCommercialAcceptance: vi.fn().mockResolvedValue(undefined),
   sendCommercialConfirmation: vi.fn(),
 }));
@@ -57,6 +62,9 @@ describe("createPlanCheckoutSession customer reservation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.events.length = 0;
+    mocks.launchState.mockResolvedValue({ active: false, degraded: false });
+    mocks.sessionsExpire.mockResolvedValue({});
+    mocks.sessionsList.mockResolvedValue({ data: [] });
     previousStripeSecret = process.env.STRIPE_SECRET_KEY;
     previousAnalysisPrice = process.env.STRIPE_ANALYSIS_PRICE_ID;
     process.env.STRIPE_SECRET_KEY = "sk_test_billing";
@@ -145,6 +153,157 @@ describe("createPlanCheckoutSession customer reservation", () => {
     );
   });
 
+  it("refuse le checkout, sans réserver ni appeler Stripe, quand les paiements ne sont pas ouverts", async () => {
+    mocks.assertOpen.mockImplementation(() => {
+      throw new Error("Configuration du paiement incomplète: STRIPE_WEBHOOK_SECRET.");
+    });
+
+    await expect(
+      createPlanCheckoutSession({
+        auth: buildAuthContext(),
+        origin: "https://immojudis.test",
+        plan: "analyse",
+        consent,
+      }),
+    ).rejects.toThrow(/WEBHOOK/);
+    expect(mocks.adminRpc).not.toHaveBeenCalled();
+    expect(mocks.pricesRetrieve).not.toHaveBeenCalled();
+    expect(mocks.checkoutCreate).not.toHaveBeenCalled();
+  });
+
+  it("transmet l'état de l'offre de lancement à la règle d'ouverture et refuse pendant l'offre", async () => {
+    mocks.launchState.mockResolvedValue({ active: true, degraded: false });
+    mocks.assertOpen.mockImplementation(
+      (_env: unknown, options: { launchOfferActive?: boolean }) => {
+        if (options.launchOfferActive) throw new Error("L'offre de lancement est en cours.");
+      },
+    );
+
+    await expect(
+      createPlanCheckoutSession({
+        auth: buildAuthContext(),
+        origin: "https://immojudis.test",
+        plan: "analyse",
+        consent,
+      }),
+    ).rejects.toThrow(/offre de lancement/);
+    expect(mocks.assertOpen).toHaveBeenCalledWith(expect.anything(), { launchOfferActive: true });
+    expect(mocks.checkoutCreate).not.toHaveBeenCalled();
+    expect(mocks.adminRpc).not.toHaveBeenCalled();
+  });
+
+  it("refuse le checkout quand l'état de l'offre de lancement est illisible", async () => {
+    mocks.launchState.mockResolvedValue({ active: false, degraded: true });
+
+    await expect(
+      createPlanCheckoutSession({
+        auth: buildAuthContext(),
+        origin: "https://immojudis.test",
+        plan: "analyse",
+        consent,
+      }),
+    ).rejects.toThrow(/offre de lancement n'a pas pu être vérifié/);
+    expect(mocks.checkoutCreate).not.toHaveBeenCalled();
+  });
+
+  describe("réservation tenue par un checkout abandonné", () => {
+    const abandoned = (overrides: Record<string, unknown> = {}) => ({
+      id: "cs_abandoned",
+      created: Math.floor(Date.now() / 1000) - 600,
+      metadata: { user_id: USER_ID, checkout_reservation_token: "old-reservation-token" },
+      ...overrides,
+    });
+    let reserveCalls = 0;
+
+    beforeEach(() => {
+      reserveCalls = 0;
+      mocks.adminRpc.mockImplementation(async (name: string) => {
+        if (name === "reserve_analyse_checkout") {
+          reserveCalls += 1;
+          // La réservation de l'ancien checkout tient jusqu'à sa libération.
+          return { data: reserveCalls > 1, error: null };
+        }
+        if (name === "attach_analyse_checkout_customer") return { data: CUSTOMER_ID, error: null };
+        if (name === "release_analyse_checkout") return { data: true, error: null };
+        throw new Error(`Unexpected RPC ${name}`);
+      });
+    });
+
+    it("expire le checkout ouvert et abandonné, libère sa réservation et en crée un nouveau", async () => {
+      mocks.sessionsList.mockResolvedValue({ data: [abandoned()] });
+
+      await expect(
+        createPlanCheckoutSession({
+          auth: buildAuthContext(CUSTOMER_ID),
+          origin: "https://immojudis.test",
+          plan: "analyse",
+          consent,
+        }),
+      ).resolves.toEqual({ url: "https://checkout.stripe.test/cs_analysis" });
+
+      expect(mocks.sessionsExpire).toHaveBeenCalledWith("cs_abandoned");
+      expect(mocks.adminRpc).toHaveBeenCalledWith("release_analyse_checkout", {
+        p_checkout_token: "old-reservation-token",
+        p_user_id: USER_ID,
+      });
+      expect(reserveCalls).toBe(2);
+    });
+
+    it("ne touche pas à un checkout récent, qui peut être en cours de création", async () => {
+      mocks.sessionsList.mockResolvedValue({
+        data: [abandoned({ created: Math.floor(Date.now() / 1000) - 5 })],
+      });
+
+      await expect(
+        createPlanCheckoutSession({
+          auth: buildAuthContext(CUSTOMER_ID),
+          origin: "https://immojudis.test",
+          plan: "analyse",
+          consent,
+        }),
+      ).rejects.toThrow(/déjà associé/i);
+      expect(mocks.sessionsExpire).not.toHaveBeenCalled();
+      expect(reserveCalls).toBe(1);
+    });
+
+    it("ne touche pas à la Session d'un autre compte ni à une Session sans réservation", async () => {
+      mocks.sessionsList.mockResolvedValue({
+        data: [
+          abandoned({ metadata: { user_id: "someone-else", checkout_reservation_token: "t" } }),
+          abandoned({ id: "cs_other", metadata: { user_id: USER_ID } }),
+        ],
+      });
+
+      await expect(
+        createPlanCheckoutSession({
+          auth: buildAuthContext(CUSTOMER_ID),
+          origin: "https://immojudis.test",
+          plan: "analyse",
+          consent,
+        }),
+      ).rejects.toThrow(/déjà associé/i);
+      expect(mocks.sessionsExpire).not.toHaveBeenCalled();
+    });
+
+    it("garde le refus quand Stripe ne peut pas expirer la Session (déjà payée)", async () => {
+      mocks.sessionsList.mockResolvedValue({ data: [abandoned()] });
+      mocks.sessionsExpire.mockRejectedValue(new Error("session is complete"));
+
+      await expect(
+        createPlanCheckoutSession({
+          auth: buildAuthContext(CUSTOMER_ID),
+          origin: "https://immojudis.test",
+          plan: "analyse",
+          consent,
+        }),
+      ).rejects.toThrow(/déjà associé/i);
+      expect(mocks.adminRpc).not.toHaveBeenCalledWith(
+        "release_analyse_checkout",
+        expect.anything(),
+      );
+    });
+  });
+
   it("refuse un Price Stripe qui ne correspond pas aux 59 EUR mensuels validés", async () => {
     mocks.pricesRetrieve.mockResolvedValue({
       active: true,
@@ -166,12 +325,12 @@ describe("createPlanCheckoutSession customer reservation", () => {
   });
 });
 
-function buildAuthContext(): SupabaseAuthContext {
+function buildAuthContext(customerId: string | null = null): SupabaseAuthContext {
   const row = {
     user_id: USER_ID,
     plan_code: "decouverte",
     status: "active",
-    stripe_customer_id: null,
+    stripe_customer_id: customerId,
     stripe_subscription_id: null,
     current_period_end: null,
     metadata: {},

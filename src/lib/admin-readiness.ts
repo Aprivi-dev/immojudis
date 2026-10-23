@@ -1,6 +1,7 @@
 import "server-only";
 import postgres from "postgres";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
+import { analysisCheckoutReadiness } from "@/lib/analysis-checkout-readiness";
 import { ANALYSIS_TRIAL_DAYS } from "@/lib/analysis-offer";
 import { resolveEmailAlertDeliveryConfig } from "@/lib/email-alerts";
 import { firstFilled, serverEnv } from "@/lib/env";
@@ -139,11 +140,9 @@ export function buildEnvironmentReadiness(env: Pick<NodeJS.ProcessEnv, string>):
   const appUrl = resolveSiteOrigin(env);
   const config = serverEnv(env);
   const stripeSecret = config.stripe.secretKey;
-  const analysisPriceId = env.STRIPE_ANALYSIS_PRICE_ID?.trim();
-  const analysisPriceConfigured = Boolean(
-    analysisPriceId && /^price_[A-Za-z0-9]+$/.test(analysisPriceId),
-  );
   const webhookSecret = config.stripe.webhookSecret;
+  // Définition unique de « paiements ouverts », partagée avec le checkout et /offres.
+  const checkoutReadiness = analysisCheckoutReadiness(env);
   const cronSecret = config.cronSecret;
   const emailConfig = resolveEmailAlertDeliveryConfig(env);
   const instantPipelineDispatch = firstFilled(
@@ -169,30 +168,13 @@ export function buildEnvironmentReadiness(env: Pick<NodeJS.ProcessEnv, string>):
       key: "billing.checkout.analyse",
       area: "billing",
       label: "Checkout Analyse",
-      status:
-        stripeSecret &&
-        analysisPriceConfigured &&
-        appUrl &&
-        legalStatus.ready &&
-        emailConfig.configured
-          ? "ready"
-          : "blocked",
-      detail:
-        stripeSecret &&
-        analysisPriceConfigured &&
-        appUrl &&
-        legalStatus.ready &&
-        emailConfig.configured
-          ? `Le checkout Analyse peut ouvrir l’essai gratuit de ${ANALYSIS_TRIAL_DAYS} jours avec carte bancaire, puis l’abonnement récurrent, tout en conservant la preuve contractuelle.`
-          : "Le checkout Analyse attend Stripe, un Price récurrent Analyse valide, son URL canonique, ses mentions juridiques ou le canal de confirmation contractuelle.",
-      action:
-        stripeSecret &&
-        analysisPriceConfigured &&
-        appUrl &&
-        legalStatus.ready &&
-        emailConfig.configured
-          ? null
-          : "Configurer STRIPE_SECRET_KEY, STRIPE_ANALYSIS_PRICE_ID (Price récurrent valide), Resend, SITE_URL et les variables NEXT_PUBLIC_LEGAL_*.",
+      status: checkoutReadiness.open ? "ready" : "blocked",
+      detail: checkoutReadiness.open
+        ? `Le checkout Analyse peut ouvrir l’essai gratuit de ${ANALYSIS_TRIAL_DAYS} jours avec carte bancaire, puis l’abonnement récurrent, tout en conservant la preuve contractuelle.`
+        : "Le checkout Analyse attend Stripe, un Price récurrent Analyse valide, le secret du webhook, son URL canonique, ses mentions juridiques ou le canal de confirmation contractuelle.",
+      action: checkoutReadiness.open
+        ? null
+        : `Configurer ${checkoutReadiness.missing.join(", ")} (Price récurrent valide, Resend, SITE_URL et variables NEXT_PUBLIC_LEGAL_*).`,
     },
     {
       key: "billing.webhook",
