@@ -67,7 +67,8 @@ def test_geocode_sale_revalidates_unverified_source_coordinates(monkeypatch) -> 
 
     assert result.latitude == Decimal("44.839")
     assert result.longitude == Decimal("-0.573")
-    assert "unverified_source_coordinates" in result.quality_flags
+    # La position vient d'être confirmée par la BAN : plus aucun drapeau de position.
+    assert "unverified_source_coordinates" not in result.quality_flags
     assert result.raw_payload["geocode"]["accepted"] is True
 
 
@@ -104,7 +105,14 @@ def test_geocode_sale_replaces_coordinates_outside_department(monkeypatch) -> No
 
     assert result.latitude == Decimal("43.308358")
     assert result.longitude == Decimal("-0.37106")
-    assert "implausible_coordinates" in result.quality_flags
+    # Le point corrigé est vérifié : le drapeau de l'ancien point impossible est retiré, sa trace reste.
+    assert "implausible_coordinates" not in result.quality_flags
+    assert result.raw_payload["rejected_source_coordinates"] == {
+        "latitude": 44.40655,
+        "longitude": 6.061187,
+        "reason": "outside_department",
+        "department": "64",
+    }
     geocode = result.raw_payload["geocode"]
     assert isinstance(geocode.get("attempted_at"), str)
     assert geocode == {

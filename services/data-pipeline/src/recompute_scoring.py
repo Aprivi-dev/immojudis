@@ -17,8 +17,9 @@ from src.catalogue_readiness import apply_catalogue_readiness
 from src.config import ROOT_DIR, load_settings, require_encheres_publiques_access
 from src.enrichment.surface_reasoning import extract_and_apply_deterministic_surface_reasoning
 from src.extraction_profiles import attach_source_property_features
-from src.geocode import geocode_sale, restore_accepted_geocode
+from src.geocode import geocode_sale, restore_accepted_geocode, verify_source_coordinates
 from src.normalize import normalize_sale
+from src.position_quality import preserved_position_flags
 from src.sale_procedure import SALE_PROCEDURE_SCHEMA_VERSION, classify_sale_procedure
 from src.sources.agrasc_extraction import refresh_agrasc_raw_sale
 from src.sources.avoventes_extraction import refresh_avoventes_raw_sale
@@ -616,7 +617,9 @@ def _sale_from_storage_row(row: dict[str, Any]):
     sale.last_seen_at = _parse_datetime(row.get("last_seen_at"))
     sale.created_at = _parse_datetime(row.get("created_at"))
     sale.updated_at = _parse_datetime(row.get("updated_at"))
-    sale.quality_flags = []
+    # Les autres drapeaux se recalculent ; ceux de la position ne se déduisent pas du texte de la vente, ils viennent
+    # d'un contrôle ou d'un géocodage passé : on les garde jusqu'à ce qu'une position vérifiée les retire.
+    sale.quality_flags = preserved_position_flags(row.get("quality_flags"))
     sale.raw_payload = raw_sale
     return sale
 
@@ -630,6 +633,8 @@ def _recomputed_sale_from_storage_row(row: dict[str, Any], *, geocode: bool = Fa
         resolve_sale_cadastre(sale, network=False)
         # Et le géocodage déjà accepté (centre de commune compris) qui n'avait pas été recopié.
         restore_accepted_geocode(sale)
+        # Les coordonnées de la source n'ont jamais été vérifiées : contrôle de cohérence, sans réseau.
+        verify_source_coordinates(sale)
     fill_tribunal(sale)
     classify_sale_procedure(sale)
     payload = sale.raw_payload

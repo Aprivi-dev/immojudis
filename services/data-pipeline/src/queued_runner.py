@@ -38,6 +38,7 @@ from src.main import (
     run_llm_description_backfill,
     run_pipeline,
 )
+from src.municipality_location import is_municipality_point
 from src.pdf_enrichment import (
     PDF_FINALIZATION_MARGIN_SECONDS,
     PdfDeadlineExceeded,
@@ -860,7 +861,9 @@ def run_enrichment_queue_batch(
                 sale.raw_payload.pop("source_content_changed", None)
                 sale.raw_payload.pop("source_content_change_reason", None)
                 sale.raw_payload.pop("source_operational_changed", None)
-            if sale.latitude is None or sale.longitude is None:
+            # Un centre de commune (repli sans réseau ou repli BAN) est un point par défaut : l'enrichissement retente
+            # la BAN pour trouver mieux (le cache négatif de 14 jours évite de la rappeler à chaque passage).
+            if sale.latitude is None or sale.longitude is None or is_municipality_point(sale):
                 geocode_sale(sale)
             fill_tribunal(sale)
             classify_sale_procedure(sale)
