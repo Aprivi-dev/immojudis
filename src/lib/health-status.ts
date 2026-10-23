@@ -24,6 +24,12 @@ export const HEALTH_CACHE_SECONDS = 30;
 export type HealthStatus = "ok" | "degraded";
 
 export type HealthReport = {
+  /**
+   * La base répond : la disponibilité du site, séparée de la fraîcheur des données. `false` seulement
+   * quand la route n'a pas pu lire la base (alors HTTP 503).
+   */
+  available: boolean;
+  /** Fraîcheur : `degraded` quand une tâche ou une source est en retard (la route répond tout de même 200). */
   status: HealthStatus;
   checkedAt: string;
   /** Âge du dernier succès de `operational-health`, en minutes ; `null` si aucun ou illisible. */
@@ -73,6 +79,7 @@ export function buildHealthReport({
   const collectionOk = ages.length > 0 && lateSources === 0;
 
   return {
+    available: true,
     status: operationalOk && collectionOk ? "ok" : "degraded",
     checkedAt: now.toISOString(),
     operationalHealth: {
@@ -90,11 +97,14 @@ export function buildHealthReport({
   };
 }
 
-/** Réponse quand la base ne répond pas : dégradé, sans rien d'autre à dire. */
+/** Réponse quand la base ne répond pas : indisponible (HTTP 503), sans rien d'autre à dire. */
 export function unavailableHealthReport(now: Date): HealthReport {
-  return buildHealthReport({
-    now,
-    lastOperationalHealthSuccessAt: null,
-    enabledSourceCompletions: [],
-  });
+  return {
+    ...buildHealthReport({
+      now,
+      lastOperationalHealthSuccessAt: null,
+      enabledSourceCompletions: [],
+    }),
+    available: false,
+  };
 }
