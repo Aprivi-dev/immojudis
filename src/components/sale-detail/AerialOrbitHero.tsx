@@ -13,9 +13,9 @@ import {
   disableMapboxTelemetry,
   getMapboxAccessToken,
   mapboxLocaleFr,
-  mapboxSatelliteImageUrl,
-  uncertaintyCircle,
+  mapboxStaticImageUrl,
 } from "@/lib/mapbox";
+import { uncertaintyCircle, uncertaintyOverlay } from "@/lib/mapbox-accuracy";
 import { addMapboxBuildingVolumes } from "@/lib/mapbox-preview";
 import { mapLoadNeedsGesture, type AerialOrbitTarget } from "@/lib/sale-aerial-orbit";
 import { cn } from "@/lib/utils";
@@ -90,7 +90,7 @@ export function AerialOrbitHero({
   const token = getMapboxAccessToken();
   const { lat, lng, address, accuracyMeters } = target;
 
-  const poster = mapboxSatelliteImageUrl({
+  const poster = mapboxStaticImageUrl({
     lat,
     lng,
     zoom: 16.5,
@@ -100,8 +100,8 @@ export function AerialOrbitHero({
     // au lieu de 900 Ko en JPEG @2x pour un cadre de 400 à 600 px.
     pixelRatio: 1,
     format: "webp",
-    streets: !plainPoster,
-    uncertaintyMeters: accuracyMeters,
+    style: plainPoster ? "mapbox/satellite-v9" : "mapbox/satellite-streets-v12",
+    overlay: uncertaintyOverlay(lat, lng, accuracyMeters),
   });
   const posterAlt = `Vue aérienne autour de l’adresse ${address}, avec la position approximative de « ${title} »`;
 
