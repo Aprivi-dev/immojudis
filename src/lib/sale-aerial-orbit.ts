@@ -20,7 +20,8 @@ const NOT_A_STREET_NUMBER_BEFORE =
 const STREET_ADJECTIVE =
   "(?:(?:grande?|petite?|vieille|vieux|nouvelle|nouveau|haute?|bas(?:se)?|ancienne?)\\s+|grand['’]\\s*)";
 /** « 12 place de parking » est un emplacement de stationnement, pas une rue. */
-const PARKING_AFTER_TYPE = "(?!\\s+(?:de\\s+|du\\s+|des\\s+)?(?:parkings?|stationnements?|garages?|caves?)\\b)";
+const PARKING_AFTER_TYPE =
+  "(?!\\s+(?:de\\s+|du\\s+|des\\s+)?(?:parkings?|stationnements?|garages?|caves?)\\b)";
 
 /**
  * Un numéro (ou une plage « 12-14 ») suivi d'un type de voie (« 12 rue… », « 3 bis, avenue… »).

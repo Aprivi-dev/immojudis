@@ -566,6 +566,7 @@ function SaleDetailWorkspace({
               sale={displaySale}
               aiReviewProjections={resolvedAiReviewProjections}
               aiReviewStatus={aiReviewStatus}
+              publicDemo={publicDemo}
             />
             <div className={listingStyles.heroSummary}>
               <ListingOverview
