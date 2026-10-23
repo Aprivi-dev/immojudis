@@ -128,7 +128,7 @@ describe("InformationAgentContributionForm", () => {
     fireEvent.change(screen.getByLabelText("Liens utiles"), {
       target: { value: "https://example.test/plan" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Transmettre ma contribution" }));
+    fireEvent.click(screen.getByRole("button", { name: "Transmettre ma réponse" }));
 
     await waitFor(() =>
       expect(screen.getByRole("status").textContent).toContain("bien été transmise"),
@@ -164,7 +164,7 @@ describe("InformationAgentContributionForm", () => {
     fireEvent.change(screen.getByLabelText("Votre réponse"), {
       target: { value: "Merci de ne plus me contacter." },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Transmettre ma contribution" }));
+    fireEvent.click(screen.getByRole("button", { name: "Transmettre ma réponse" }));
 
     await waitFor(() =>
       expect(screen.getByRole("status").textContent).toContain("ne vous sollicitera plus"),
@@ -186,8 +186,8 @@ describe("InformationAgentContributionForm", () => {
     await screen.findByText("CASE-1234");
     fillRequiredFields();
     fireEvent.change(screen.getByLabelText("Votre réponse"), { target: { value: "Oui." } });
-    fireEvent.click(screen.getByRole("button", { name: "Transmettre ma contribution" }));
-    await screen.findByText("Contribution reçue");
+    fireEvent.click(screen.getByRole("button", { name: "Transmettre ma réponse" }));
+    await screen.findByText("Réponse reçue");
     expect(screen.queryByRole("link", { name: "Créer un accès professionnel" })).toBeNull();
   });
 
@@ -217,7 +217,7 @@ describe("InformationAgentContributionForm", () => {
       target: { files: [file] },
     });
     expect(await screen.findByText("pv.pdf")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Transmettre ma contribution" }));
+    fireEvent.click(screen.getByRole("button", { name: "Transmettre ma réponse" }));
 
     await waitFor(() =>
       expect(screen.getByRole("status").textContent).toContain("bien été transmise"),
@@ -304,7 +304,7 @@ describe("InformationAgentContributionForm", () => {
     fireEvent.change(screen.getByLabelText("Pièces jointes"), {
       target: { files: [file] },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Transmettre ma contribution" }));
+    fireEvent.click(screen.getByRole("button", { name: "Transmettre ma réponse" }));
 
     await waitFor(() =>
       expect(screen.getByRole("alert").textContent).toContain("temporairement indisponible"),
@@ -313,7 +313,7 @@ describe("InformationAgentContributionForm", () => {
     expect(mocks.uploadToSignedUrl).toHaveBeenCalledTimes(1);
     const firstSubmit = JSON.parse(String(mocks.fetch.mock.calls[2]?.[1]?.body));
 
-    fireEvent.click(screen.getByRole("button", { name: "Transmettre ma contribution" }));
+    fireEvent.click(screen.getByRole("button", { name: "Transmettre ma réponse" }));
 
     await waitFor(() =>
       expect(screen.getByRole("status").textContent).toContain("bien été transmise"),
@@ -347,13 +347,13 @@ describe("InformationAgentContributionForm", () => {
     fireEvent.change(screen.getByLabelText("Pièces jointes"), {
       target: { files: [new File(["%PDF-1.7"], "pv.pdf", { type: "application/pdf" })] },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Transmettre ma contribution" }));
+    fireEvent.click(screen.getByRole("button", { name: "Transmettre ma réponse" }));
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("indisponible"));
 
     fireEvent.change(screen.getByLabelText("Votre réponse"), {
       target: { value: "Voici le PV, corrigé." },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Transmettre ma contribution" }));
+    fireEvent.click(screen.getByRole("button", { name: "Transmettre ma réponse" }));
     await waitFor(() =>
       expect(screen.getByRole("status").textContent).toContain("bien été transmise"),
     );
@@ -372,15 +372,15 @@ describe("InformationAgentContributionForm", () => {
     await screen.findByText("CASE-1234");
     fillRequiredFields();
     fireEvent.change(screen.getByLabelText("Votre réponse"), { target: { value: "Oui." } });
-    fireEvent.click(screen.getByRole("button", { name: "Transmettre ma contribution" }));
-    await screen.findByText("Contribution reçue");
+    fireEvent.click(screen.getByRole("button", { name: "Transmettre ma réponse" }));
+    await screen.findByText("Réponse reçue");
 
     // Reload: the fragment and the token are gone, the submission is remembered for this tab.
     cleanup();
     window.history.replaceState(null, "", "/contribuer/mission-1");
     render(<InformationAgentContributionForm missionId="mission-1" />);
     expect((await screen.findByRole("status")).textContent).toContain(
-      "Votre contribution au dossier CASE-1234 a déjà été transmise.",
+      "Votre réponse au dossier CASE-1234 a déjà été transmise.",
     );
     expect(screen.queryByText(/Ce lien semble incomplet/)).toBeNull();
   });
@@ -478,9 +478,9 @@ describe("InformationAgentContributionForm", () => {
       await screen.findByText("CASE-1234");
       fillRequiredFields();
       fireEvent.change(screen.getByLabelText("Votre réponse"), { target: { value: "Oui." } });
-      fireEvent.click(screen.getByRole("button", { name: "Transmettre ma contribution" }));
+      fireEvent.click(screen.getByRole("button", { name: "Transmettre ma réponse" }));
 
-      await screen.findByText("Contribution reçue");
+      await screen.findByText("Réponse reçue");
       expect(window.sessionStorage.getItem(STORAGE_KEY)).toBeNull();
     });
 
@@ -492,7 +492,7 @@ describe("InformationAgentContributionForm", () => {
       await screen.findByText("CASE-1234");
       fillRequiredFields();
       fireEvent.change(screen.getByLabelText("Votre réponse"), { target: { value: "Oui." } });
-      fireEvent.click(screen.getByRole("button", { name: "Transmettre ma contribution" }));
+      fireEvent.click(screen.getByRole("button", { name: "Transmettre ma réponse" }));
 
       await waitFor(() =>
         expect(screen.getByRole("alert").textContent).toContain("n’accepte plus de dépôt"),
@@ -585,7 +585,7 @@ describe("InformationAgentContributionForm", () => {
       expect(notice?.className).not.toContain("text-xs");
       expect(notice?.className).not.toContain("text-muted-foreground");
 
-      const submit = screen.getByRole("button", { name: "Transmettre ma contribution" });
+      const submit = screen.getByRole("button", { name: "Transmettre ma réponse" });
       expect(
         notice!.compareDocumentPosition(submit) & Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy();
@@ -604,7 +604,7 @@ describe("InformationAgentContributionForm", () => {
       renderContribution();
       await screen.findByText("CASE-1234");
 
-      fireEvent.click(screen.getByRole("button", { name: "Transmettre ma contribution" }));
+      fireEvent.click(screen.getByRole("button", { name: "Transmettre ma réponse" }));
 
       const alert = await screen.findByRole("alert");
       expect(alert.textContent).toContain("Indiquez votre nom ou votre cabinet.");
@@ -627,7 +627,7 @@ describe("InformationAgentContributionForm", () => {
         target: { value: "pas-un-mail" },
       });
 
-      fireEvent.click(screen.getByRole("button", { name: "Transmettre ma contribution" }));
+      fireEvent.click(screen.getByRole("button", { name: "Transmettre ma réponse" }));
       const alert = await screen.findByRole("alert");
       await waitFor(() => expect(document.activeElement).toBe(alert));
       const email = screen.getByLabelText(/Adresse e-mail/);
@@ -635,7 +635,7 @@ describe("InformationAgentContributionForm", () => {
       expect(email.getAttribute("aria-describedby")).toBe(`sender-email-hint ${alert.id}`);
 
       (document.activeElement as HTMLElement).blur();
-      fireEvent.click(screen.getByRole("button", { name: "Transmettre ma contribution" }));
+      fireEvent.click(screen.getByRole("button", { name: "Transmettre ma réponse" }));
       await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("alert")));
     });
 
@@ -644,14 +644,14 @@ describe("InformationAgentContributionForm", () => {
       mocks.fetch.mockResolvedValueOnce(referenceResponse());
       renderContribution();
       await screen.findByText("CASE-1234");
-      fireEvent.click(screen.getByRole("button", { name: "Transmettre ma contribution" }));
+      fireEvent.click(screen.getByRole("button", { name: "Transmettre ma réponse" }));
       await screen.findByRole("alert");
 
       fireEvent.change(screen.getByLabelText(/Nom ou cabinet/), { target: { value: "Cabinet" } });
       fireEvent.change(screen.getByLabelText(/Adresse e-mail/), {
         target: { value: "cabinet@example.test" },
       });
-      fireEvent.click(screen.getByRole("button", { name: "Transmettre ma contribution" }));
+      fireEvent.click(screen.getByRole("button", { name: "Transmettre ma réponse" }));
 
       await waitFor(() =>
         expect(screen.getByRole("alert").textContent).toContain("Ajoutez une réponse"),
@@ -660,7 +660,7 @@ describe("InformationAgentContributionForm", () => {
       expect(screen.getByLabelText("Votre réponse").getAttribute("aria-invalid")).toBe("true");
     });
 
-    it("focalise le titre « Contribution reçue » et remonte en haut après le dépôt", async () => {
+    it("focalise le titre « Réponse reçue » et remonte en haut après le dépôt", async () => {
       const scrollTo = vi.fn();
       vi.stubGlobal("scrollTo", scrollTo);
       mocks.fetch
@@ -670,9 +670,9 @@ describe("InformationAgentContributionForm", () => {
       await screen.findByText("CASE-1234");
       fillRequiredFields();
       fireEvent.change(screen.getByLabelText("Votre réponse"), { target: { value: "Oui." } });
-      fireEvent.click(screen.getByRole("button", { name: "Transmettre ma contribution" }));
+      fireEvent.click(screen.getByRole("button", { name: "Transmettre ma réponse" }));
 
-      const title = await screen.findByRole("heading", { name: "Contribution reçue" });
+      const title = await screen.findByRole("heading", { name: "Réponse reçue" });
       await waitFor(() => expect(document.activeElement).toBe(title));
       expect(title.getAttribute("tabindex")).toBe("-1");
       expect(scrollTo).toHaveBeenCalledWith({ top: 0 });
@@ -714,7 +714,7 @@ describe("InformationAgentContributionForm", () => {
       expect(subject.className).toContain("font-display");
       const reference = screen.getByText("CASE-1234");
       expect(reference.className).not.toContain("text-2xl");
-      expect(reference.parentElement?.textContent).toContain("Référence du dossier");
+      expect(reference.parentElement?.textContent).toContain("Référence de suivi");
     });
 
     it("rappelle, avant le premier champ, ce que deviennent les données", async () => {
@@ -747,7 +747,7 @@ describe("InformationAgentContributionForm", () => {
       const checkbox = screen.getByLabelText(/J’atteste être autorisé/);
       expect(checkbox.className).toContain("accent-brand-navy");
       expect(checkbox.className).not.toContain("accent-gold");
-      const submit = screen.getByRole("button", { name: "Transmettre ma contribution" });
+      const submit = screen.getByRole("button", { name: "Transmettre ma réponse" });
       expect(submit.className).not.toContain("hover:bg-gold-soft");
       expect(submit.className).toContain("hover:bg-gold-light");
     });
@@ -807,7 +807,7 @@ describe("InformationAgentContributionForm", () => {
         await readyWithFile();
         fireEvent.change(screen.getByLabelText(fieldLabel), { target: { value } });
 
-        fireEvent.click(screen.getByRole("button", { name: "Transmettre ma contribution" }));
+        fireEvent.click(screen.getByRole("button", { name: "Transmettre ma réponse" }));
 
         const alert = await screen.findByRole("alert");
         expect(alert.textContent).toContain(message);
@@ -834,7 +834,7 @@ describe("InformationAgentContributionForm", () => {
       await screen.findByText("CASE-1234");
       fillRequiredFields();
       fireEvent.change(screen.getByLabelText("Votre réponse"), { target: { value: "Oui." } });
-      fireEvent.click(screen.getByRole("button", { name: "Transmettre ma contribution" }));
+      fireEvent.click(screen.getByRole("button", { name: "Transmettre ma réponse" }));
 
       const alert = await screen.findByRole("alert");
       expect(alert.textContent).toContain("Chaque lien doit commencer");

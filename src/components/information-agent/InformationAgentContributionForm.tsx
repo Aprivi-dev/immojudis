@@ -261,7 +261,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
     const sentReference = activeToken ? null : readSubmittedReference(missionId);
     if (sentReference) {
       setState("sent");
-      setStatus(`Votre contribution au dossier ${sentReference} a déjà été transmise.`);
+      setStatus(`Votre réponse au dossier ${sentReference} a déjà été transmise.`);
       return;
     }
     if (!activeToken) {
@@ -449,7 +449,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
       setStatus(
         result?.opposed === true
           ? "Votre demande est enregistrée : Immojudis ne vous sollicitera plus."
-          : "Votre contribution a bien été transmise.",
+          : "Votre réponse a bien été transmise.",
       );
       setFiles([]);
       setSubmissionId(null);
@@ -465,7 +465,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
       fail(
         rejected
           ? rejected.message
-          : errorMessage(cause, "Impossible de transmettre votre contribution."),
+          : errorMessage(cause, "Impossible de transmettre votre réponse."),
         rejectedField,
       );
       setStatus(null);
@@ -491,7 +491,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
         <header className="glass-shell rounded-lg p-6 sm:p-9">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-gold-text">
             <ShieldCheck className="size-4" aria-hidden="true" />
-            Contribution sécurisée
+            Dépôt sécurisé
           </div>
           <h1 className="mt-4 max-w-2xl font-display text-4xl leading-tight text-foreground sm:text-5xl">
             Transmettre les informations demandées
@@ -534,7 +534,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
             aria-labelledby="contribution-title"
           >
             <h2 id="contribution-title" className="sr-only">
-              Contribution au dossier
+              Réponse au dossier
             </h2>
             {submitted ? (
               <>
@@ -544,7 +544,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                     tabIndex={-1}
                     className="text-lg font-semibold outline-none"
                   >
-                    Contribution reçue
+                    Réponse reçue
                   </h2>
                   <p role="status" aria-live="polite" className="mt-2 text-sm leading-relaxed">
                     {status ?? "Votre réponse a bien été transmise."}
@@ -572,7 +572,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                   </p>
                   <p className="mt-1 font-display text-2xl text-foreground">{session.subject}</p>
                   <p className="mt-2 text-xs text-muted-foreground">
-                    Référence du dossier :{" "}
+                    Référence de suivi :{" "}
                     <span className="font-semibold text-foreground">{session.caseReference}</span>
                   </p>
                   {session.questions.length ? (
@@ -854,7 +854,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                     {submitting ? (
                       <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
                     ) : null}
-                    {submitting ? "Transmission en cours…" : "Transmettre ma contribution"}
+                    {submitting ? "Transmission en cours…" : "Transmettre ma réponse"}
                   </button>
                 </form>
               </>
@@ -944,10 +944,10 @@ function ProfessionalDepositInvitation() {
         Vous menez régulièrement des ventes aux enchères ?
       </h3>
       <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-        Vous pouvez déposer vous-même vos prochaines ventes sur Immojudis, avec leurs pièces. Vous
-        gardez la main sur ce qui est affiché, et les candidats trouvent le cahier des conditions de
-        vente sans avoir à solliciter votre cabinet ou votre étude. Chaque compte professionnel est
-        vérifié, et chaque vente est relue par notre équipe avant publication.
+        Vous pouvez déposer vous-même vos prochaines ventes sur Immojudis, avec leurs pièces, depuis
+        un compte professionnel. Notre équipe valide chaque compte professionnel et contrôle chaque
+        demande avant sa mise en ligne ; une demande peut être refusée. Le dépôt ne donne aucune
+        priorité de classement.
       </p>
       <Link
         href={pathWithSearch("/login", { mode: "professional", redirect: "/publish" })}

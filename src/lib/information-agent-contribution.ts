@@ -566,7 +566,7 @@ export async function submitInformationAgentContribution({
   if (caseUpdateError) throw caseUpdateError;
   if (!updatedCase) {
     throw new InformationAgentContributionError(
-      "Ce dossier a été fermé pendant le dépôt. Sa contribution reste conservée pour contrôle.",
+      "Ce dossier a été fermé pendant le dépôt. Votre réponse reste conservée pour contrôle.",
       409,
     );
   }
