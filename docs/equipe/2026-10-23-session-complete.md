@@ -398,3 +398,127 @@ Lecture du chef d'orchestre :
   - la réécriture des promesses des emails de l'agent (n° 43 : seuls le chemin d'effacement et la purge sont faits) ;
   - le texte de la case « entretien » (n° 91).
 - **Rien à coder :** n° 91 (plan d'étude) ; réglages et décisions de la partie « À faire par le propriétaire ».
+
+## Bilan de l'exécution (23/10/2026)
+
+Tout est sur la branche `claude/friendly-lamport-rtb97c`, PR #293 (brouillon) : 90 commits depuis la décision,
+368 fichiers. Aucune migration n'a été appliquée en production et rien n'a été écrit en base de production.
+
+### Organisation
+
+- **Dix chantiers en parallèle**, un worktree chacun :
+  - W1 pipeline et CI : n° 1, 2, 4, 9, 10, 12 ;
+  - W2 positions et données : n° 24 (SQL), 64, 65, 66 ;
+  - W3 scénarios d'enchères : n° 6, 14 à 22 ;
+  - W4 vue 360° : n° 24 (application), 25 à 31, 33, 34 ;
+  - W5 bloc PLU : n° 36 à 40, 73 ;
+  - W6 agent d'information : n° 41 à 50 ;
+  - W7 mesure d'audience et consentement : n° 53 à 57, 61 à 63 ;
+  - W8 exploitation : n° 3, 5, 7, 8, 60, 89 ;
+  - W9 paiements, offres, API : n° 59, 70 à 72, 88 ;
+  - W10 parcours, SEO, emails : n° 67, 75 à 81, 85 à 87.
+- **Ensuite :**
+  - `redacteur-contenu` : n° 83, hors juridique ;
+  - relecture par `code-reviewer` ;
+  - deux développeurs pour les corrections de fusion et de relecture.
+- **Interruptions :** deux redémarrages du conteneur et une limite d'utilisation. Les chantiers ont repris là où ils
+  s'étaient arrêtés.
+
+### Ce qui reste partiel ou non fait
+
+- **n° 16 :** les tranches de mise à prix ne sont pas resserrées. Il faut d'abord mesurer les effectifs par tranche.
+- **n° 26 :** les « doublons probables » n'ont aucun signal côté site. Il faudrait un drapeau du pipeline.
+- **n° 61 :** fait pour le bandeau, avec un E2E « premier visiteur ». Les tests unitaires des autres nouveautés ont été
+  ajoutés par chaque chantier.
+- **n° 3, constat de W8 :** le diagnostic du chef était inexact. Le texte libre des alertes n'était jamais évalué, si
+  bien que les six alertes « 26 », « 07 »… couvraient toutes les ventes. Un code de département devient désormais un
+  vrai filtre. Un autre texte libre (« jardin ») reste sans effet : c'est à décider.
+
+### Corrections faites à la fusion par le chef
+
+- **Conflits :**
+  - test d'`autonomous_runner` (W1 et W3) ;
+  - imports d'`example-sale-page` et de `use-create-alert` ;
+  - matrice de rétention et runbook de l'agent (W6 et W8).
+- **Correctifs de fusion :**
+  - `dedupe-sweep.yml` reçoit le même repli `SITE_URL` que la collecte ;
+  - terme du glossaire dans le pilotage ;
+  - message d'erreur du portail ;
+  - test pgTAP 705 : valeurs d'occupation interdites par la contrainte et plan faux ;
+  - types Supabase régénérés avec `npm run db:types` sur un Supabase local.
+- **Constats de la CI :**
+  - journal du géocodage qui contenait le détail d'une position (CodeQL) ;
+  - expression régulière à retour arrière exponentiel dans la détection des réponses automatiques (CodeQL) ;
+  - faux positif gitleaks sur `land_surface_m2`.
+- **Budget JS de `/audiences-a-venir` (n° 86) :** 190 268 octets pour un plafond de 181 000. Les lignes sont désormais
+  rendues par le serveur et seul le filtre reste dans le navigateur : 180 391 octets, plafond inchangé.
+- **Budgets relevés avec l'accord du propriétaire (23/10) :**
+  - `admin-lawyers` : de 530 000 à 535 000, pour 534 843 mesurés (alerte en attente dans les providers, état du
+    consentement) ;
+  - JS client total : de 6 125 000 à 6 165 000, pour 6 164 297 mesurés.
+- **Commits de W6 :** la ligne d'attribution erronée a été corrigée et les commits ont été re-signés.
+
+### Relecture de code (`code-reviewer`)
+
+- **Aucun constat critique.**
+  - RLS, `search_path` et droits sont conformes.
+  - Les redéfinitions SQL successives reprennent tout.
+  - Le webhook Resend vérifie sa signature.
+  - Le partage de rapports fonctionne en liste blanche.
+- **Corrigés :**
+  1. **Haute :** repli « données insuffisantes » si le code est déployé avant la migration des scénarios, et consigne
+     « migrations d'abord » dans le runbook de production.
+  2. La route d'évaluation des alertes répond 503 quand tout échoue, sans message brut de la base.
+  3. Mention « seulement pour les biens déclarés libres » sur la décote minimale des alertes.
+  4. Un visiteur gratuit qui a tapé « 26 » n'est plus refusé.
+  5. L'effacement d'un professionnel supprime ses fiches par vente et vide la ligne globale.
+  6. L'alerte « exécution bloquée » de l'agent s'ouvre à 20 minutes, avant la clôture des exécutions orphelines.
+- **Non corrigés, signalés :**
+  - la reprise d'un dépôt interrompu laisse une pièce rattachée à l'ancien message. Un garde-fou SQL interdit le
+    changement : il faut décider entre assouplir le garde ou supprimer puis réinsérer la pièce ;
+  - le jeton d'opposition sans expiration vaut preuve pour l'accès et l'effacement d'un professionnel ;
+  - les collectivités d'outre-mer hors des boîtes géographiques n'ont plus de carte ;
+  - les liens de désinscription valent désormais 365 jours partout.
+
+### Points signalés par les chantiers, à décider
+
+- **Effacement d'un compte :** `information_agent_cases.created_by` est en `on delete restrict`. L'effacement d'un
+  compte qui a créé un dossier de l'agent échouera. C'est un défaut antérieur : passer en `set null` ou réaffecter les
+  dossiers.
+- **Paiements :** la garde contre la réactivation d’un litige Stripe n'existe que côté TypeScript. Une migration
+  serait plus sûre.
+- **Note sous le comparatif de `/offres` :** elle parle encore des scénarios (Licitor), alors que ce bénéfice est retiré.
+- **Licitor :** la fiche nomme la source « Licitor ». Il faut vérifier l'accord écrit.
+- **Textes nouveaux à relire côté juridique,** si vous le souhaitez :
+  - pages de liens signés de l'agent (« dans un délai d'un mois ») ;
+  - promesses des emails de l'agent, non réécrites.
+- **Mesure dans Vercel Analytics :** l'événement `signup_completed` devient `signup_submitted` et `signup_confirmed`.
+  Il faudra aussi incrémenter `ANALYTICS_CONSENT_TEXT_VERSION` à chaque changement de fond du texte de consentement.
+
+### Actions pour le propriétaire
+
+1. **Ordre de mise en production :** appliquer les 10 migrations `20261101*` avant le déploiement Vercel.
+   - Puis lancer la réparation `supabase/repairs/20261101110100_clear_points_outside_their_department.sql`, en mode
+     comptage d'abord.
+   - Puis un recalcul `source=all`.
+   - Puis `select app_private.refresh_auction_scenario_observations(true)`.
+   - Avant la migration des scénarios : compter les lots que le filtre « ressort » écarte. Le garde-fou ne se déclenche
+     qu'au-delà de 50 %.
+2. **Variables :**
+   - GitHub : `SITE_URL`, désormais facultative grâce au repli ;
+   - Vercel : `INFORMATION_AGENT_EMAIL_FROM`, `CONTACT_EMAIL_FROM` et `EMAIL_REPLY_TO`. Sans les deux premières, plus
+     aucun repli : l'envoi est bloqué ;
+   - Vercel : `STRIPE_ANALYSIS_LEGACY_PRICE_IDS`, avant tout changement de prix.
+3. **Resend :** abonner le webhook existant à `email.bounced` et `email.complained`.
+4. **Modèle d'email de l'agent :** s'il a été publié en base, le republier depuis l'éditeur pour obtenir les nouveaux
+   libellés.
+5. **Sondes externes :** `/api/health` répond 200 quand le site est disponible. Pour suivre la fraîcheur de la
+   collecte, chercher le mot `"status":"ok"` dans la réponse.
+6. **Réglages console GA :** à vérifier avec le runbook `docs/runbooks/reglages-google-analytics.md`.
+7. **Toujours en attente du rapport :**
+   - indexation et Search Console ;
+   - copie des photos ;
+   - DMARC et SPF ;
+   - jeton Mapbox ;
+   - identité de l'éditeur ;
+   - réparations de données.
