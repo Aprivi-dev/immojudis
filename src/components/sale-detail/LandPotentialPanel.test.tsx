@@ -240,7 +240,9 @@ describe("LandPotentialPanel", () => {
   it("ne laisse pas croire que le cahier des conditions de vente contient par la loi le zonage ou les risques", () => {
     const { container } = renderPanel();
     const disclaimer = container.querySelector("p[class*='disclaimer']")?.textContent ?? "";
+    expect(disclaimer).toContain("En saisie immobilière");
     expect(disclaimer).toContain("art. R. 322-10 du Code des procédures civiles d’exécution");
+    expect(disclaimer).toContain("Pour les autres ventes, lisez le cahier des charges");
     expect(disclaimer).toContain("le zonage d’urbanisme ne figure pas dans cette liste");
     expect(disclaimer).toContain("auprès de la mairie (certificat d’urbanisme)");
     expect(disclaimer).not.toMatch(
