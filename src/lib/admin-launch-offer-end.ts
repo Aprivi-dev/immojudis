@@ -117,6 +117,17 @@ export function launchOfferEndUnsubscribeUrl({
   )}`;
 }
 
+/**
+ * Date d'émission du jeton de désinscription d'un préavis : le début du jour de fin annoncé, jamais
+ * l'heure de l'essai. La clé d'idempotence de Resend est stable pour un compte et une date ; si
+ * chaque essai signait un jeton neuf (expiration datée de l'essai), la relance d'un envoi arriverait
+ * avec un message différent sous la même clé, et Resend la refuserait. Le jeton est ainsi le même à
+ * chaque essai et reste valable un an après la fin annoncée.
+ */
+export function launchOfferEndTokenIssuedAt(endsOn: string): Date {
+  return new Date(`${endsOn}T00:00:00.000Z`);
+}
+
 export function launchOfferEndIdempotencyKey(userId: string, endsOn: string): string {
   return `immojudis-launch-offer-end-${userId}-${endsOn}`;
 }
@@ -456,7 +467,7 @@ export async function sendLaunchOfferEndBatch({
         unsubscribeUrl: launchOfferEndUnsubscribeUrl({
           appUrl: delivery.appUrl,
           userId,
-          now,
+          now: launchOfferEndTokenIssuedAt(endsOn),
           env,
         }),
       });

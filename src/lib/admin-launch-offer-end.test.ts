@@ -44,6 +44,7 @@ import {
   getAdminLaunchOfferEnd,
   launchOfferEndActionSchema,
   launchOfferEndIdempotencyKey,
+  launchOfferEndTokenIssuedAt,
   launchOfferEndUnsubscribeUrl,
   sendLaunchOfferEndBatch,
   sendLaunchOfferEndTest,
@@ -278,6 +279,31 @@ describe("sendLaunchOfferEndBatch", () => {
       expect.objectContaining({ status: "sent", message_id: "resend-1" }),
       { user_id: expect.any(String), ends_on: ENDS_ON },
     );
+  });
+
+  it("signe le même jeton de désinscription à chaque essai, sous la même clé d'idempotence", async () => {
+    database({ recipients: [idOf(1)] });
+    await send({ now: NOW });
+    database({ recipients: [idOf(1)] });
+    await send({ now: new Date(NOW.getTime() + 20 * 60_000) });
+
+    const [first, second] = mocks.send.mock.calls.map(([call]) => call);
+    expect(second.idempotencyKey).toBe(first.idempotencyKey);
+    expect(second.message.unsubscribeUrl).toBe(first.message.unsubscribeUrl);
+    expect(second.message.html).toBe(first.message.html);
+    expect(second.message.text).toBe(first.message.text);
+    // Le jeton reste valable un an après la date de fin annoncée, et se vérifie comme avant.
+    expect(launchOfferEndTokenIssuedAt(ENDS_ON).toISOString()).toBe("2026-12-01T00:00:00.000Z");
+    const token = new URL(first.message.unsubscribeUrl).searchParams.get("token");
+    expect(verifyUnsubscribeToken(token, { now: NOW, env })).toMatchObject({
+      userId: idOf(1),
+      scope: { kind: "launch-offer-end" },
+    });
+    const valid = verifyUnsubscribeToken(token, { now: new Date("2027-11-30T00:00:00Z"), env });
+    expect(valid).not.toBeNull();
+    expect(
+      verifyUnsubscribeToken(token, { now: new Date("2027-12-02T00:00:00Z"), env }),
+    ).toBeNull();
   });
 
   it("n'envoie pas deux fois : un préavis déjà réservé est ignoré", async () => {
