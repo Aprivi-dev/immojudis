@@ -27,6 +27,6 @@ export async function POST(
       { status: 201, headers: { "cache-control": "private, no-store" } },
     );
   } catch (error) {
-    return contributionErrorResponse(error);
+    return contributionErrorResponse(error, "contribution.submit");
   }
 }

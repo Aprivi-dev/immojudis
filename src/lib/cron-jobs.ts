@@ -249,6 +249,14 @@ export async function runDataRetention(now = new Date()): Promise<Record<string,
   return { deleted: data ?? {} };
 }
 
+/** Position de `evaluate_information_agent_health` dans la liste des évaluations ci-dessous. */
+const INFORMATION_AGENT_HEALTH_INDEX = 3;
+
+/** « La fonction n'existe pas » : `PGRST202` (cache du schéma de PostgREST) ou `42883` (PostgreSQL). */
+function isMissingFunctionError(error: { code?: string }): boolean {
+  return error.code === "PGRST202" || error.code === "42883";
+}
+
 export async function evaluateOperationalHealth(
   now = new Date(),
 ): Promise<Record<string, unknown>> {
@@ -257,14 +265,21 @@ export async function evaluateOperationalHealth(
     supabaseAdmin.rpc("evaluate_operational_health", args),
     supabaseAdmin.rpc("evaluate_market_valuation_health", args),
     supabaseAdmin.rpc("observe_autonomous_pipeline", args),
+    // Progression de l'agent d'information (mission en envoi, réponse en file, exécution bloquée),
+    // évaluation séparée de evaluate_operational_health.
+    supabaseAdmin.rpc("evaluate_information_agent_health", args),
   ]);
   // Deliver incidents even when an independent evaluator fails.
   const delivery = await deliverOperationalAlertNotifications();
-  const failures = results.flatMap((result) =>
+  const failures = results.flatMap((result, index) =>
     result.status === "rejected"
       ? [operationalErrorMessage(result.reason)]
       : result.value.error
-        ? [result.value.error.message ?? "Health evaluation failed"]
+        ? // Évaluation de l'agent d'information pas encore migrée (code déployé avant la migration) :
+          // elle est absente, pas en échec, et ne doit pas faire échouer la supervision du reste.
+          index === INFORMATION_AGENT_HEALTH_INDEX && isMissingFunctionError(result.value.error)
+          ? []
+          : [result.value.error.message ?? "Health evaluation failed"]
         : [],
   );
   if (!delivery.configured) {
@@ -277,7 +292,13 @@ export async function evaluateOperationalHealth(
   const data = results.map((result) =>
     result.status === "fulfilled" ? (result.value.data ?? {}) : {},
   );
-  return { health: data[0], valuation: data[1], pipeline: data[2], externalAlerts: delivery };
+  return {
+    health: data[0],
+    valuation: data[1],
+    pipeline: data[2],
+    informationAgent: data[3],
+    externalAlerts: delivery,
+  };
 }
 
 export function positiveNumberFromEnv(name: string): number | undefined {

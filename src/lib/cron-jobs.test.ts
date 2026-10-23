@@ -87,6 +87,7 @@ describe("operational cron errors", () => {
       health: { ok: true },
       valuation: { ok: true },
       pipeline: { ok: true },
+      informationAgent: { ok: true },
       externalAlerts: {
         channel: "github_actions",
         configured: true,
@@ -95,7 +96,51 @@ describe("operational cron errors", () => {
         failed: 0,
       },
     });
-    expect(mocks.rpc).toHaveBeenCalledTimes(3);
+    expect(mocks.rpc).toHaveBeenCalledTimes(4);
+    expect(mocks.rpc).toHaveBeenCalledWith("evaluate_information_agent_health", {
+      p_now: "2026-10-09T10:00:00.000Z",
+    });
+  });
+
+  it("ignores a missing information-agent evaluation (migration not applied yet) but not other failures", async () => {
+    mocks.deliverOperationalAlertNotifications.mockResolvedValue({
+      channel: "github_actions",
+      configured: true,
+      claimed: 0,
+      delivered: 0,
+      failed: 0,
+    });
+    mocks.rpc.mockImplementation(async (name: string) =>
+      name === "evaluate_information_agent_health"
+        ? { data: null, error: { code: "PGRST202", message: "Could not find the function" } }
+        : { data: { ok: true }, error: null },
+    );
+
+    await expect(
+      evaluateOperationalHealth(new Date("2026-10-09T10:00:00.000Z")),
+    ).resolves.toMatchObject({
+      health: { ok: true },
+      informationAgent: {},
+    });
+
+    mocks.rpc.mockImplementation(async (name: string) =>
+      name === "evaluate_information_agent_health"
+        ? { data: null, error: { code: "XX000", message: "boom" } }
+        : { data: { ok: true }, error: null },
+    );
+    await expect(evaluateOperationalHealth(new Date("2026-10-09T10:00:00.000Z"))).rejects.toThrow(
+      "boom",
+    );
+
+    // Une autre évaluation absente reste une erreur.
+    mocks.rpc.mockImplementation(async (name: string) =>
+      name === "evaluate_operational_health"
+        ? { data: null, error: { code: "PGRST202", message: "missing health" } }
+        : { data: { ok: true }, error: null },
+    );
+    await expect(evaluateOperationalHealth(new Date("2026-10-09T10:00:00.000Z"))).rejects.toThrow(
+      "missing health",
+    );
   });
 
   it("reports a clean data retention run", async () => {

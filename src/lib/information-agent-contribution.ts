@@ -4,6 +4,12 @@ import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
 import { safeExternalHttpUrl } from "@/lib/external-url";
+import {
+  CONTRIBUTION_FIELD_MESSAGES,
+  CONTRIBUTION_LIMITS,
+  contributionBodyText,
+  type ContributionFieldName,
+} from "@/lib/information-agent-contribution-rules";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { resolveSiteOrigin } from "@/lib/site-url";
 import {
@@ -53,6 +59,8 @@ export class InformationAgentContributionError extends Error {
   constructor(
     message: string,
     public readonly status: number,
+    /** Champ du formulaire en cause : le navigateur le met en évidence. */
+    public readonly field?: ContributionFieldName,
   ) {
     super(message);
     this.name = "InformationAgentContributionError";
@@ -61,14 +69,14 @@ export class InformationAgentContributionError extends Error {
 
 export const prepareContributionUploadSchema = z.object({
   token: z.string().regex(/^[a-f0-9]{64}$/),
-  filename: z.string().trim().min(1).max(180),
+  filename: z.string().trim().min(1).max(CONTRIBUTION_LIMITS.fileNameMax),
   mimeType: z.string().trim().max(100),
   size: z.number().int().min(1).max(MAX_FILE_BYTES),
 });
 
 const submittedFileSchema = z.object({
   path: z.string().min(1).max(500),
-  filename: z.string().trim().min(1).max(180),
+  filename: z.string().trim().min(1).max(CONTRIBUTION_LIMITS.fileNameMax),
   mimeType: z.string().trim().max(100),
   size: z.number().int().min(1).max(MAX_FILE_BYTES),
   ticket: z.string().regex(/^\d{13}\.[a-f0-9]{64}$/),
@@ -77,10 +85,17 @@ const submittedFileSchema = z.object({
 export const submitContributionSchema = z.object({
   token: z.string().regex(/^[a-f0-9]{64}$/),
   submissionId: z.string().uuid(),
-  senderName: z.string().trim().min(2).max(180),
-  senderEmail: z.string().trim().email().max(320),
-  note: z.string().trim().max(10000).default(""),
-  externalLinks: z.array(z.string().trim().max(2048)).max(5).default([]),
+  senderName: z
+    .string()
+    .trim()
+    .min(CONTRIBUTION_LIMITS.senderNameMin)
+    .max(CONTRIBUTION_LIMITS.senderNameMax),
+  senderEmail: z.string().trim().email().max(CONTRIBUTION_LIMITS.senderEmailMax),
+  note: z.string().trim().max(CONTRIBUTION_LIMITS.noteMax).default(""),
+  externalLinks: z
+    .array(z.string().trim().max(CONTRIBUTION_LIMITS.linkMax))
+    .max(CONTRIBUTION_LIMITS.linksMax)
+    .default([]),
   authorizedToTransmit: z.literal(true),
   files: z.array(submittedFileSchema).max(MAX_FILES).default([]),
 });
@@ -348,7 +363,7 @@ export async function submitInformationAgentContribution({
     env,
   );
   if (!input.note && !input.files.length && !input.externalLinks.length) {
-    throw new InformationAgentContributionError("Ajoutez une réponse, un lien ou un fichier.", 400);
+    throw new InformationAgentContributionError(CONTRIBUTION_FIELD_MESSAGES.empty, 400, "note");
   }
   if (input.files.reduce((total, file) => total + file.size, 0) > MAX_SUBMISSION_BYTES) {
     throw new InformationAgentContributionError("Le dépôt dépasse 40 Mo au total.", 400);
@@ -362,17 +377,19 @@ export async function submitInformationAgentContribution({
   const links = input.externalLinks.map((value) => safeExternalHttpUrl(value));
   if (links.some((value) => !value)) {
     throw new InformationAgentContributionError(
-      "Un lien externe n'est pas une URL HTTP valide.",
+      CONTRIBUTION_FIELD_MESSAGES.linkInvalid,
       400,
+      "externalLinks",
     );
   }
   const normalizedLinks = links.filter((value): value is string => Boolean(value));
-  const bodyText = [
-    input.note || "Pièces ou liens déposés pour ce dossier.",
-    ...normalizedLinks.map((value) => `Lien transmis : ${value}`),
-  ].join("\n\n");
-  if (bodyText.length > 16000) {
-    throw new InformationAgentContributionError("La réponse est trop longue.", 400);
+  const bodyText = contributionBodyText(input.note, normalizedLinks);
+  if (bodyText.length > CONTRIBUTION_LIMITS.bodyMax) {
+    throw new InformationAgentContributionError(
+      CONTRIBUTION_FIELD_MESSAGES.bodyTooLong,
+      400,
+      "note",
+    );
   }
   await enforceContributionRateLimit(informationCase, "submit", 8, 24 * 60 * 60);
 
@@ -492,11 +509,14 @@ export async function submitInformationAgentContribution({
         .select("id,case_id,message_id,sha256")
         .eq("storage_path", file.path)
         .maybeSingle();
+      // La pièce est déjà enregistrée pour ce dossier (envoi précédent interrompu, puis repris avec
+      // une réponse corrigée, donc un autre message) : même chemin, même contenu, on la réutilise.
+      // Le conflit n'est une erreur que si la ligne existante est celle d'un autre dossier ou d'un
+      // autre contenu.
       if (
         existingError ||
         !existing ||
         existing.case_id !== informationCase.id ||
-        existing.message_id !== messageId ||
         existing.sha256 !== file.sha256
       ) {
         throw error;

@@ -1,6 +1,8 @@
 import "server-only";
 import { Resend, type EmailReceivedEvent } from "resend";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { enforceGlobalRateLimit } from "@/lib/rate-limit";
+import type { Json } from "@/integrations/supabase/types";
 import { z } from "zod";
 import {
   INBOUND_ATTACHMENT_LINK_TTL_MS,
@@ -73,11 +75,16 @@ export {
 export { extractInformationAgentFacts } from "@/lib/information-agent-inbound/fact-extraction";
 export type { ExtractedInformationAgentFact } from "@/lib/information-agent-inbound/fact-extraction";
 
+import { detectPossibleInformationAgentContactOptOut } from "@/lib/information-agent-inbound/reply-intent";
+import { isAutomaticReply, replyMentionsLot } from "@/lib/information-agent-inbound/reply-signals";
+
 export {
   findInboundToken,
   detectInformationAgentContactOptOut,
+  detectPossibleInformationAgentContactOptOut,
   classifyInformationAgentReplyIntent,
 } from "@/lib/information-agent-inbound/reply-intent";
+export { isAutomaticReply, replyMentionsLot } from "@/lib/information-agent-inbound/reply-signals";
 export type { InformationAgentReplyIntent } from "@/lib/information-agent-inbound/reply-intent";
 
 export {
@@ -99,6 +106,8 @@ const receivedEmailExtrasSchema = z.object({
   received_for: z.unknown().transform((value) => stringArray(value)),
   authentication: z.unknown(),
   message_id: optionalText,
+  /** En-têtes du message reçu (`Auto-Submitted`, `X-Autoreply`…), pour repérer les réponses automatiques. */
+  headers: z.unknown(),
 });
 
 const providerMessageIdSchema = z.object({ message_id: optionalText });
@@ -109,7 +118,7 @@ function parseReceivedEmailExtras(received: unknown): ReceivedEmailExtras {
   const parsed = receivedEmailExtrasSchema.safeParse(received);
   return parsed.success
     ? parsed.data
-    : { to: [], received_for: [], authentication: undefined, message_id: null };
+    : { to: [], received_for: [], authentication: undefined, message_id: null, headers: undefined };
 }
 
 function parseProviderMessageId(data: unknown): string | null {
@@ -188,6 +197,34 @@ type ReceivedInboundEmail = NonNullable<
 type UnroutedInboundReason = "no_token" | "unknown_case" | "case_not_open" | "token_mismatch";
 
 /**
+ * Plafond des lectures Resend pour des emails sans dossier ouvert : un envoi massif vers le domaine de
+ * réponse (spam) ne doit pas épuiser le quota de l'API (429) qui sert aux vraies réponses. Au-delà,
+ * la livraison échoue en 500 et le fournisseur la rejoue plus tard.
+ */
+const UNROUTED_FETCH_LIMIT = { limit: 30, windowSeconds: 60 } as const;
+
+/**
+ * L'expéditeur figure-t-il dans nos données (destinataire d'un dossier, ou fiche du registre) ? Seul un
+ * tel expéditeur peut avoir une opposition à enregistrer : un inconnu n'a jamais été sollicité.
+ */
+async function isKnownInboundSender(senderEmail: string): Promise<boolean> {
+  const { data: cases, error: caseError } = await supabaseAdmin
+    .from("information_agent_cases")
+    .select("id")
+    .eq("normalized_recipient_email", senderEmail)
+    .limit(1);
+  if (caseError) throw caseError;
+  if (cases?.length) return true;
+  const { data: contacts, error: contactError } = await supabaseAdmin
+    .from("information_agent_contacts")
+    .select("id")
+    .eq("normalized_email", senderEmail)
+    .limit(1);
+  if (contactError) throw contactError;
+  return Boolean(contacts?.length);
+}
+
+/**
  * A message that reaches the inbound domain without an open case to file it under. It is never
  * dropped silently: the reason is logged (no address, no content), and an explicit request to
  * stop contact from an authenticated sender is recorded on that sender's address, since
@@ -206,6 +243,22 @@ async function settleUnroutedInboundEmail({
 }): Promise<InformationAgentInboundResult> {
   let email = received;
   if (!email) {
+    // L'événement signé porte déjà l'expéditeur : lire le message chez Resend n'est utile que pour un
+    // expéditeur connu. Un inconnu (le plus souvent du spam) ne coûte plus un appel d'API.
+    const eventSender = normalizeEmail(typeof event.data.from === "string" ? event.data.from : "");
+    if (eventSender && !(await isKnownInboundSender(eventSender))) {
+      console.warn("[Information agent] Inbound email without an open case", {
+        reason,
+        providerEmailId: event.data.email_id,
+        oppositionRecorded: false,
+        fetched: false,
+      });
+      return { accepted: true, ignored: true, ignoredReason: reason, oppositionRecorded: false };
+    }
+    await enforceGlobalRateLimit({
+      bucketKey: "information-agent.unrouted-inbound-fetch",
+      ...UNROUTED_FETCH_LIMIT,
+    });
     const { data, error } = await resend.emails.receiving.get(event.data.email_id, {
       html_format: "cid",
     });
@@ -354,10 +407,18 @@ async function ingestReceivedEmail({
     };
   }
 
-  const reviewReason = inboundReviewReason({
-    senderMatches,
-    senderAuthentication,
+  // Réponse automatique (absence, accusé) : ni lue par le modèle, ni comptée comme une réponse.
+  const automaticReply = isAutomaticReply({
+    headers: receivedExtras.headers,
+    subject: received.subject,
   });
+  // Motif de relecture : l'expéditeur d'abord, puis le contenu (vocabulaire d'une plainte ou d'une
+  // opposition sans demande explicite : aucune opposition n'est enregistrée, un humain lit).
+  const reviewReason =
+    inboundReviewReason({
+      senderMatches,
+      senderAuthentication,
+    }) ?? (detectPossibleInformationAgentContactOptOut(bodyText) ? "possible_opposition" : null);
   const contactOptOut = Boolean(
     senderEmail &&
     senderMatches &&
@@ -393,6 +454,19 @@ async function ingestReceivedEmail({
         attachmentCount: 0,
         processingStatus: "ignored",
       };
+    }
+
+    if (automaticReply) {
+      return ignoreAutomaticInboundReply({
+        sharedCaseId: sharedCase.id,
+        messageId,
+        providerEmailId: event.data.email_id,
+        receivedAt,
+        inboundMetadata,
+        processing: existingProcessing,
+        leaseId,
+        assertJobLease,
+      });
     }
 
     if (contactOptOut && senderEmail) {
@@ -525,6 +599,19 @@ async function ingestReceivedEmail({
       attachmentCount: 0,
       processingStatus: "ignored",
     };
+  }
+
+  if (automaticReply) {
+    return ignoreAutomaticInboundReply({
+      sharedCaseId: sharedCase.id,
+      messageId,
+      providerEmailId: event.data.email_id,
+      receivedAt,
+      inboundMetadata,
+      processing: inboundProcessingState(inboundMetadata),
+      leaseId,
+      assertJobLease,
+    });
   }
 
   if (contactOptOut && senderEmail) {
@@ -666,7 +753,15 @@ async function ingestReceivedEmail({
         processingStatus: "ignored",
       };
     }
-    const extractedFacts = extractInformationAgentFacts(replyTextForExtraction(bodyText));
+    const replyText = replyTextForExtraction(bodyText);
+    const extractedFacts = extractInformationAgentFacts(replyText);
+    // Vente à plusieurs lots et réponse sans numéro de lot : ce qui en est tiré ne peut pas être
+    // rattaché à un lot. Les propositions restent en relecture, marquées « lot non identifié ».
+    await ensureInboundJobLease(assertJobLease);
+    const lotUnidentified =
+      extractedFacts.length + storedAssets.length > 0 &&
+      !replyMentionsLot(replyText) &&
+      (await saleHasSeveralLots(sharedCase.sale_id));
     await ensureInboundJobLease(assertJobLease);
     await persistFactCandidates({
       sharedCase,
@@ -675,6 +770,7 @@ async function ingestReceivedEmail({
       assets: storedAssets,
       assertJobLease,
       leaseId,
+      lotUnidentified,
     });
     // Create the body asset only after deterministic candidates are durable.
     // The storage trigger can start the semantic worker immediately; writing
@@ -709,6 +805,7 @@ async function ingestReceivedEmail({
         last_inbound_sender_matches_recipient: senderMatches,
         last_inbound_sender_authentication_status: senderAuthentication.status,
         last_inbound_reply_intent: replyIntent,
+        last_inbound_lot_unidentified: lotUnidentified,
       }),
       expectedUpdatedAt: sharedCase.updated_at,
       leaseFence,
@@ -774,7 +871,9 @@ async function ingestReceivedEmail({
           processingStatus === "review"
             ? replyIntent === "ambiguous"
               ? "ambiguous_reply_review"
-              : "candidate_or_attachment_review"
+              : lotUnidentified
+                ? "unidentified_lot_review"
+                : "candidate_or_attachment_review"
             : undefined,
       },
       leaseId,
@@ -807,6 +906,60 @@ async function ingestReceivedEmail({
     );
     throw error;
   }
+}
+
+/** Réponse automatique : consignée comme ignorée, le dossier reste ouvert à la vraie réponse. */
+async function ignoreAutomaticInboundReply({
+  sharedCaseId,
+  messageId,
+  providerEmailId,
+  receivedAt,
+  inboundMetadata,
+  processing,
+  leaseId,
+  assertJobLease,
+}: {
+  sharedCaseId: string;
+  messageId: string;
+  providerEmailId: string;
+  receivedAt: string;
+  inboundMetadata: Json;
+  processing: ReturnType<typeof inboundProcessingState>;
+  leaseId?: string;
+  assertJobLease?: InboundJobLeaseGuard;
+}): Promise<InformationAgentInboundResult> {
+  await ensureInboundJobLease(assertJobLease);
+  await updateInboundProcessingState(
+    messageId,
+    inboundMetadata,
+    {
+      status: "ignored",
+      attempts: processing?.attempts ?? 0,
+      providerEmailId,
+      queuedAt: processing?.queuedAt ?? receivedAt,
+      reason: "auto_reply",
+    },
+    leaseId,
+  );
+  return {
+    accepted: true,
+    caseId: sharedCaseId,
+    messageId,
+    factCount: 0,
+    attachmentCount: 0,
+    processingStatus: "ignored",
+  };
+}
+
+/** La vente compte-t-elle plusieurs lots ? (drapeau `multi_lot_sale` posé par la collecte) */
+async function saleHasSeveralLots(saleId: string): Promise<boolean> {
+  const { data, error } = await supabaseAdmin
+    .from("auction_sales")
+    .select("quality_flags")
+    .eq("id", saleId)
+    .maybeSingle();
+  if (error) throw error;
+  return Array.isArray(data?.quality_flags) && data.quality_flags.includes("multi_lot_sale");
 }
 
 type InformationAgentInboundQueueOptions = {

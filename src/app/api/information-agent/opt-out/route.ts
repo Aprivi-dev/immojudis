@@ -1,12 +1,13 @@
 import "server-only";
-import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { errorDetailForLog } from "@/lib/api-errors";
+import { RateLimitError } from "@/lib/api-errors";
 import {
   normalizeOptOutEmail,
   parseOptOutEmail,
   verifyInformationAgentOptOutToken,
 } from "@/lib/information-agent-opt-out";
+import { informationAgentPage } from "@/lib/information-agent-public-page";
+import { logInformationAgentRouteError } from "@/lib/information-agent-route-log";
 import { enforceIpRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 
@@ -18,25 +19,33 @@ import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
  * - `POST` enregistre l'opposition globale (bouton de la page, ou désinscription en un clic de la
  *   messagerie selon la RFC 8058, en-tête `List-Unsubscribe-Post`). L'agent ne contacte plus jamais
  *   une adresse opposée.
+ *
+ * Les seaux de débit de `GET` et de `POST` sont séparés : les analyses de liens par les passerelles
+ * (GET) ne doivent pas épuiser le quota qui permet d'enregistrer une opposition (POST).
  */
 export async function GET(request: Request) {
   try {
     await enforceIpRateLimit({
       request,
-      bucketKey: "information-agent.opt-out",
+      bucketKey: "information-agent.opt-out.get",
       ...RATE_LIMIT_POLICIES.publicIp,
     });
     const verified = verifiedOptOut(request);
     if (!verified) return invalidLink();
     const action = new URL(request.url);
-    return page(
-      "Ne plus être contacté",
-      `Confirmez que l’adresse ${verified.email} ne doit plus recevoir de message d’Immojudis.`,
-      200,
-      `${action.pathname}${action.search}`,
-    );
+    return informationAgentPage({
+      title: "Ne plus être contacté",
+      message: `Confirmez que l’adresse ${verified.email} ne doit plus recevoir de message d’Immojudis.`,
+      status: 200,
+      forms: [
+        {
+          action: `${action.pathname}${action.search}`,
+          buttons: [{ label: "Confirmer : ne plus me contacter" }],
+        },
+      ],
+    });
   } catch (error) {
-    return unavailable(error);
+    return failure(error, "GET");
   }
 }
 
@@ -44,7 +53,7 @@ export async function POST(request: Request) {
   try {
     await enforceIpRateLimit({
       request,
-      bucketKey: "information-agent.opt-out",
+      bucketKey: "information-agent.opt-out.post",
       ...RATE_LIMIT_POLICIES.publicIp,
     });
     const verified = verifiedOptOut(request);
@@ -60,13 +69,21 @@ export async function POST(request: Request) {
       { onConflict: "scope_sale_id,normalized_email" },
     );
     if (error) throw error;
-    return page(
-      "Opposition enregistrée",
-      "Votre adresse et votre identité professionnelle ne seront plus contactées par Immojudis. Vous pouvez exercer vos autres droits depuis la page Confidentialité.",
-      200,
-    );
+    const action = new URL(request.url);
+    return informationAgentPage({
+      title: "Opposition enregistrée",
+      message:
+        "Votre adresse et votre identité professionnelle ne seront plus contactées par Immojudis. Vous pouvez exercer vos autres droits depuis la page Confidentialité.",
+      status: 200,
+      links: [
+        {
+          href: `/api/information-agent/rights${action.search}`,
+          label: "Obtenir une copie de vos données ou demander leur effacement",
+        },
+      ],
+    });
   } catch (error) {
-    return unavailable(error);
+    return failure(error, "POST");
   }
 }
 
@@ -81,37 +98,31 @@ function verifiedOptOut(request: Request): { email: string } | null {
 }
 
 function invalidLink() {
-  return page("Lien invalide", "Ce lien d’opposition est incomplet ou n’est plus valide.", 400);
+  return informationAgentPage({
+    title: "Lien invalide",
+    message: "Ce lien d’opposition est incomplet ou n’est plus valide.",
+    status: 400,
+  });
 }
 
-function unavailable(error: unknown) {
-  console.error(
-    JSON.stringify({ scope: "information-agent.opt-out", error: errorDetailForLog(error) }),
-  );
-  return page(
-    "Service indisponible",
-    "Votre demande n’a pas pu être enregistrée. Répondez simplement à l’email reçu : l’opposition sera traitée par notre équipe.",
-    503,
-  );
-}
-
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
-}
-
-function page(title: string, message: string, status: number, confirmAction?: string) {
-  const form = confirmAction
-    ? `<form method="post" action="${escapeHtml(confirmAction)}" style="margin:20px 0 0"><button type="submit" style="background:#172036;color:#fff;border:0;border-radius:8px;padding:14px 18px;font-size:15px;cursor:pointer">Confirmer : ne plus me contacter</button></form>`
-    : "";
-  return new NextResponse(
-    `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>${escapeHtml(title)} - Immojudis</title></head><body style="margin:0;background:#f6f4ef;color:#182033;font-family:Arial,sans-serif"><main style="min-height:100vh;display:grid;place-items:center;padding:24px"><section style="max-width:520px;background:#fff;border:1px solid #e8e1d4;border-radius:10px;padding:28px"><h1 style="margin:0 0 10px;font-size:24px">${escapeHtml(title)}</h1><p style="margin:0;color:#4b5563;line-height:1.55">${escapeHtml(message)}</p>${form}</section></main></body></html>`,
-    {
-      status,
-      headers: {
-        "content-type": "text/html; charset=utf-8",
-        "cache-control": "no-store",
-        "referrer-policy": "no-referrer",
-      },
-    },
-  );
+/** Limite de débit : 429 avec `Retry-After` ; toute autre erreur : 503, journalisée sans donnée personnelle. */
+function failure(error: unknown, method: "GET" | "POST") {
+  if (error instanceof RateLimitError) {
+    return informationAgentPage({
+      title: "Trop de demandes",
+      message:
+        method === "POST"
+          ? "Trop de demandes en peu de temps : votre opposition n’a pas encore été enregistrée. Réessayez dans quelques instants."
+          : "Trop de demandes en peu de temps. Réessayez dans quelques instants.",
+      status: 429,
+      headers: { "retry-after": String(error.retryAfterSeconds) },
+    });
+  }
+  logInformationAgentRouteError("information-agent.opt-out", error, { method });
+  return informationAgentPage({
+    title: "Service indisponible",
+    message:
+      "Votre demande n’a pas pu être enregistrée. Répondez simplement à l’email reçu : l’opposition sera traitée par notre équipe.",
+    status: 503,
+  });
 }

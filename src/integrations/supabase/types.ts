@@ -14127,6 +14127,7 @@ export type Database = {
         Returns: number;
       };
       equals: { Args: { geom1: unknown; geom2: unknown }; Returns: boolean };
+      evaluate_information_agent_health: { Args: { p_now?: string }; Returns: Json };
       evaluate_market_valuation_health: {
         Args: { p_now?: string };
         Returns: Json;
