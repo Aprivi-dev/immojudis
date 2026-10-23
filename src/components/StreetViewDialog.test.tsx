@@ -28,6 +28,11 @@ function mockPanorama(body: unknown, ok = true) {
 
 const paris = { lat: 48.8566, lng: 2.3522, address: "Paris" };
 
+function openAndLoad() {
+  fireEvent.click(screen.getByRole("button", { name: "Street View" }));
+  fireEvent.click(screen.getByRole("button", { name: "Afficher Street View (Google)" }));
+}
+
 describe("StreetViewDialog", () => {
   it("opens Google's street panorama facing the listing, only once the dialog is open", async () => {
     vi.stubEnv("NEXT_PUBLIC_GOOGLE_MAPS_EMBED_API_KEY", "test-key");
@@ -39,7 +44,7 @@ describe("StreetViewDialog", () => {
 
     expect(document.querySelector("iframe")).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Street View" }));
+    openAndLoad();
 
     const iframe = await screen.findByTitle("Voir le quartier — Paris");
     const src = iframe.getAttribute("src") ?? "";
@@ -55,12 +60,37 @@ describe("StreetViewDialog", () => {
     expect(document.querySelector("iframe")).toBeNull();
   });
 
+  it("loads nothing from Google until the visitor asks, at each opening", async () => {
+    vi.stubEnv("NEXT_PUBLIC_GOOGLE_MAPS_EMBED_API_KEY", "test-key");
+    const fetchMock = mockPanorama({
+      panorama: { status: "ready", pano: "pano-1", heading: 135, distanceM: 18, date: "2024-05" },
+    });
+
+    renderWithQuery(<StreetViewDialog target={paris} />);
+    fireEvent.click(screen.getByRole("button", { name: "Street View" }));
+
+    // The dialog is open but only explains what loading it implies.
+    expect(screen.getByText(/Street View est un service de Google/)).toBeTruthy();
+    expect(document.querySelector("iframe")).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Afficher Street View (Google)" }));
+    expect(await screen.findByTitle("Street View — Paris")).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Closing and reopening asks again.
+    fireEvent.click(screen.getByRole("button", { name: "Fermer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Street View" }));
+    expect(document.querySelector("iframe")).toBeNull();
+    expect(screen.getByRole("button", { name: "Afficher Street View (Google)" })).toBeTruthy();
+  });
+
   it("says so when Google has no street imagery nearby", async () => {
     vi.stubEnv("NEXT_PUBLIC_GOOGLE_MAPS_EMBED_API_KEY", "test-key");
     mockPanorama({ panorama: { status: "unavailable", reason: "no_google_imagery" } });
 
     renderWithQuery(<StreetViewDialog target={paris} />);
-    fireEvent.click(screen.getByRole("button", { name: "Street View" }));
+    openAndLoad();
 
     expect(await screen.findByText(/ne propose pas de vue de la rue/)).toBeTruthy();
     expect(document.querySelector("iframe")).toBeNull();
@@ -76,7 +106,7 @@ describe("StreetViewDialog", () => {
     mockPanorama({ error: "down" }, false);
 
     renderWithQuery(<StreetViewDialog target={paris} title="Voir le quartier" />);
-    fireEvent.click(screen.getByRole("button", { name: "Street View" }));
+    openAndLoad();
 
     // One retry (about a second) before the fallback.
     const iframe = await screen.findByTitle("Voir le quartier — Paris", undefined, {
