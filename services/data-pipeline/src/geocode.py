@@ -274,7 +274,7 @@ def verify_source_coordinates(sale: AuctionSale) -> str | None:
 
     flags = remove_flags(sale.quality_flags, {IMPLAUSIBLE_COORDINATES, UNVERIFIED_SOURCE_COORDINATES})
     if status == "implausible":
-        LOGGER.warning("Ignoring implausible coordinates for %s: %s", sale.source_url, detail)
+        LOGGER.warning("Ignoring implausible coordinates for %s", sale.source_url)
         sale.raw_payload["rejected_source_coordinates"] = {"latitude": latitude, "longitude": longitude, **detail}
         sale.latitude = None
         sale.longitude = None
