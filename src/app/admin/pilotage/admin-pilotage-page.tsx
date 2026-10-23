@@ -541,7 +541,7 @@ function BidCeilingCard({ summary }: { summary: BidCeilingSummary | null }) {
     <AdminPanel className="mt-6 p-5">
       <AdminSectionHeading title="Plafonds calculés" />
       <p className="mt-1 text-sm text-brand-navy/70">
-        Comptes ayant calculé au moins un plafond d’enchère et ventes concernées. Pendant l’offre de
+        Comptes ayant calculé au moins une enchère plafond et ventes concernées. Pendant l’offre de
         lancement, aucun déblocage n’est consommé : les lignes « Déblocages » ci-dessus valent 0 et
         ne disent rien de l’usage ; celle-ci, si. Administrateurs exclus.
       </p>
