@@ -229,7 +229,23 @@ describe("LandPotentialPanel", () => {
     cleanup();
     renderPanel({ listingZone: "UB", landSurfaceM2: 700 });
     expect(screen.getByText(/diffère du zonage officiel/)).toBeTruthy();
+    // Le zonage se vérifie en mairie (certificat d'urbanisme), pas dans le cahier des conditions de vente.
+    expect(
+      screen.getByText(/à vérifier auprès de la mairie \(certificat d’urbanisme\)/),
+    ).toBeTruthy();
+    expect(screen.queryByText(/à vérifier dans le cahier des conditions de vente/)).toBeNull();
     expect(screen.queryByText(/alors que l’annonce indique/)).toBeNull();
+  });
+
+  it("ne laisse pas croire que le cahier des conditions de vente contient par la loi le zonage ou les risques", () => {
+    const { container } = renderPanel();
+    const disclaimer = container.querySelector("p[class*='disclaimer']")?.textContent ?? "";
+    expect(disclaimer).toContain("art. R. 322-10 du Code des procédures civiles d’exécution");
+    expect(disclaimer).toContain("le zonage d’urbanisme ne figure pas dans cette liste");
+    expect(disclaimer).toContain("auprès de la mairie (certificat d’urbanisme)");
+    expect(disclaimer).not.toMatch(
+      /confirmez le\s+zonage, les servitudes et les risques dans le cahier/,
+    );
   });
 
   it("rend la couverture partielle et les limites des sources dans le panneau", () => {
