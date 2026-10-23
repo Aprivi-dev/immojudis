@@ -563,3 +563,82 @@ le 16, le 26. Il faut d'abord traiter les points restants et ensuite on applique
 - **Toujours exclus :** n° 58, le texte de la politique sur Street View (n° 57) et les promesses des emails de l'agent
   (n° 43).
 - **Ordre :** ces points sont traités et fusionnés d'abord, et les migrations sont appliquées ensuite.
+
+### Autorisation de mise en production (23/10/2026)
+
+« Lorsque tu auras terminé la mise en place des différents chantiers, tels que je te l'ai demandé, et que ensuite tu auras
+tout fusionné, je t'autorise à lancer la mise en production. »
+
+- **Compris comme :**
+  - fusion de la PR de la seconde vague, ce qui déclenche le déploiement Vercel ;
+  - comptage en lecture seule des lots écartés par le filtre « ressort », avec arrêt si plus de 50 % ;
+  - application des migrations en attente (`20261101*` et `20261102*`) par le workflow « Apply Supabase Migrations » ;
+  - contrôles en lecture seule.
+- **Non compris, sans accord explicite :**
+  - les réparations de `supabase/repairs/` ;
+  - le recalcul `source=all` ;
+  - `refresh_auction_scenario_observations(true)` ;
+  - les variables d'environnement et le webhook Resend.
+- **n° 17 :** le propriétaire a choisi « commencer à collecter », sans affichage.
+- **Budgets de build :** le propriétaire a choisi de relever les plafonds à la mesure : total 6 200 000,
+  `/audiences-a-venir` 182 000, admin-lawyers 537 000.
+
+## Bilan de la seconde vague (23/10/2026)
+
+| N°          | État                  | Ce qui a été fait                                                                                                                                                                                                                                                                                                                  |
+| ----------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 11, 68      | Fait                  | Contrôle des migrations en attente à chaque fusion ; application refusée si le CI du commit n'est pas vert (`scripts/check-commit-ci-green.mjs`) ; publication d'Agrasc jugée sur son catalogue adressable, blocages de publication détaillés dans l'administration.                                                               |
+| 16          | Fait                  | Sept tranches de mise à prix au lieu de cinq (migration `20261102110000`, pgTAP 715) ; libellé de tranche masqué tant que la base renvoie l'ancienne grille.                                                                                                                                                                       |
+| 17          | Fait (collecte seule) | Instantané privé de l'estimation juste avant sa disparition (purge à l'audience ou sortie de statut), sans adresse ni identifiant de vente en clair ; conservation 36 mois, validée sous réserve ; méthode d'appariement et seuils d'activation dans `docs/runbooks/scenarios-encheres.md`. Migration `20261102110100`, pgTAP 716. |
+| 26          | Fait, à lancer        | Drapeau `probable_duplicate` posé par le pipeline sur les copies, exposé aux vues (migration `20261102120000`, pgTAP 720) ; vue 360° refusée sur ces lignes. Le drapeau n'existe en base qu'après le lancement du workflow manuel `probable-duplicate-flags.yml` en écriture.                                                      |
+| 28 (fiches) | Fait                  | La carte animée attend un geste sur mobile, en mode économie de données et en 2G/3G.                                                                                                                                                                                                                                               |
+| 32          | Fait                  | Photos par défaut dès deux photos, sélecteur Photos / Vue 360°, `?visuel=` ; titre, mise à prix et date avant le visuel sur mobile. À 320 px, la date reste sous la ligne de flottaison.                                                                                                                                           |
+| 35          | Fait                  | Image fixe en `satellite-streets-v12`, repère réduit, disque d'incertitude (30 m adresse, 15 m parcelle : hypothèses à valider), libellé « Position approximative ».                                                                                                                                                               |
+| 38          | Fait                  | Bloc PLU : la liste de R. 322-10 réservée à la saisie immobilière, zonage à confirmer en mairie, risques sur Géorisques.                                                                                                                                                                                                           |
+| 67 (H3-H5)  | Fait                  | Élargissement du rayon jusqu'à l'effectif exigé par la porte publique, variables de marché local lues comme à l'entraînement, couverture hors échantillon et seuil de promotion de 70 %.                                                                                                                                           |
+| 74          | Fait, à utiliser      | Date de fin annoncée et préavis par email sur action de l'administrateur (`/admin/clients`), idempotent, désinscription dédiée, aucune coupure automatique ; refus si la date est à moins de 30 jours. Migration `20261102140000`, pgTAP 730.                                                                                      |
+| 76          | Fait                  | Encart « Vous êtes avocat ? » sur `/avocats` vers le contact prérempli (`/contact?sujet=avocat`) ; le bouton de `/sales` pointe aussi vers ce lien.                                                                                                                                                                                |
+| 82          | Fait                  | Délai de surenchère : jour de l'adjudication non compté, report au premier jour ouvrable (art. 641 et 642 CPC), heure limite à demander à l'avocat ; même précision dans l'article « Après l'adjudication ».                                                                                                                       |
+| 83          | Fait                  | « Garantie exigée pour enchérir » au lieu de « consignation », « site privé » au lieu de « site indépendant » (gabarit version 10).                                                                                                                                                                                                |
+| 84          | Fait                  | Trois articles /ressources : lire le PLU, les risques Géorisques, l'adresse, la parcelle et le cadastre.                                                                                                                                                                                                                           |
+| 90          | Fait                  | Dossier de financement en liquidation judiciaire : R. 642-29-2 renvoyant à R. 322-41, frais « taxés en plus du prix, à confirmer avec l'avocat ».                                                                                                                                                                                  |
+| 91          | Fait, case masquée    | Notice complète sous la case « entretien » (finalité, responsable, base légale, enregistrement, durées, droits, retrait), entretien d'environ 45 minutes ; la case n'apparaît pas tant que l'identité de l'éditeur n'est pas renseignée.                                                                                           |
+| 92          | Fait sauf 92.4        | « Mon plafond face au tribunal », « Mes questions pour l'avocat », « Plafond à vérifier ». 92.4 (provenance « confirmé par l'étude ») non fait : la base ne dit pas qui a répondu (étude, greffe…) et l'envoi de l'agent est coupé ; il faudrait une projection SQL et un libellé à décider.                                       |
+
+### Relectures
+
+- **`juridique-rgpd` :** toutes ses corrections bloquantes et importantes sont appliquées (heure limite de la
+  surenchère, R. 322-10 limité à la saisie immobilière, mention du notaire retirée en liquidation, L. 562-1 III,
+  recours de L. 125-5 V, conseils reformulés, case « entretien » masquée sans identité d'éditeur, 45 minutes, droits et
+  CNIL dans la notice, registre et matrice complétés).
+- **`code-reviewer` :** le constat bloquant (tables du préavis absentes de l'effacement RGPD) et les constats importants
+  sur le code (libellé de tranche, horodatage du consentement, garde de branche des workflows qui écrivent en
+  production, message des questions pour l'avocat) sont corrigés, ainsi que les mineurs M1, M2, M3 et M8.
+- **Corrections du chef à la fusion :** pgTAP 716 (pont Outcome Graph exigé avant la suppression d'une vente), types
+  Supabase régénérés, runbook de l'offre de lancement.
+
+### À faire valider par un avocat (non bloquant)
+
+1. L'application de l'art. 642 CPC au délai de R. 322-51 et l'heure limite de dépôt au greffe.
+2. R. 642-29-2, R. 642-32 et R. 643-3 du Code de commerce pour le dossier de financement en liquidation.
+3. L. 125-5 V après une adjudication et l'état des risques pour un terrain non bâti vendu aux enchères.
+4. Le dispositif de l'entretien (durées, enregistrement, outil de visioconférence).
+5. Le caractère pseudonymisé des instantanés d'estimation (une clé HMAC salée par un secret serveur reste possible).
+
+### Actions pour le propriétaire (seconde vague)
+
+- **Politique de confidentialité :** elle ne décrit pas encore le questionnaire ni l'entretien. La compléter avant de
+  renseigner l'identité de l'éditeur, qui fera apparaître la case.
+- **Doublons probables :** lancer `probable-duplicate-flags.yml` (essai à blanc, puis « write »).
+- **Préavis de fin de l'offre de lancement :** le jour où une date de fin est fixée, l'enregistrer dans
+  `/admin/clients` au moins 30 jours avant, envoyer l'essai à soi-même, puis les lots.
+- **Environnement GitHub « Production » :** s'il exige des relecteurs, l'alerte des migrations en attente attendra une
+  approbation.
+- **Hypothèses à valider :** rayons du disque d'incertitude (n° 35), réordonnancement mobile de la fiche (n° 32),
+  phrase « n'est pas encore vérifiée » de la page méthode (n° 67), « J'ai vérifié, je le garde » mémorisé dans le
+  navigateur (n° 92.3).
+- **Toujours en attente :** `environment: Production` de `data-pipeline.yml`, diagnostic SQL d'Enchères Immobilières,
+  `dvf-comparable-engine` non aligné, variables Vercel (`INFORMATION_AGENT_EMAIL_FROM`, `CONTACT_EMAIL_FROM`,
+  `EMAIL_REPLY_TO`, `STRIPE_ANALYSIS_LEGACY_PRICE_IDS`) et webhook Resend (`email.bounced`, `email.complained`).
+- **llms.txt :** il approche son plafond de 9 Ko ; la prochaine page ajoutée demandera de le relever ou de grouper les
+  entrées.
