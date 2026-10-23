@@ -45,7 +45,8 @@ export function CeilingVsCourt({
   const position = ceilingPosition(figures.scenarios, ceiling, startingPrice);
   if (!position) return null;
 
-  const court = data.courtName ?? "ce tribunal";
+  // « du tribunal judiciaire de Bordeaux », ou « de ce tribunal » quand le nom manque.
+  const ofCourt = data.courtName ? `du ${data.courtName}` : "de ce tribunal";
   const share = position.kind === "share" ? Math.round(position.share * 100) : null;
   return (
     <Card as="section" aria-labelledby="ceiling-vs-court-title" className="mt-4">
@@ -61,9 +62,15 @@ export function CeilingVsCourt({
           </>
         ) : (
           <>
-            {position.atLeast ? "Au moins " : "Environ "}
-            <strong>{share === 0 ? "moins de 1 %" : formatPercent((share ?? 0) / 100)}</strong> des
-            ventes comparables du {court} ont été adjugées à un prix inférieur à votre plafond de{" "}
+            {share === 0 && !position.atLeast ? (
+              <strong>Moins de 1 %</strong>
+            ) : (
+              <>
+                {position.atLeast ? "Au moins " : "Environ "}
+                <strong>{formatPercent((share ?? 0) / 100)}</strong>
+              </>
+            )}{" "}
+            des ventes comparables {ofCourt} ont été adjugées à un prix inférieur à votre plafond de{" "}
             {formatPrice(ceiling)} ({formatRatio(position.ratio)} la mise à prix).
           </>
         )}

@@ -93,6 +93,46 @@ describe("CeilingVsCourt (Mon plafond face au tribunal)", () => {
     expect(text).toMatch(/Au moins\s+90\s%/);
   });
 
+  it("écrit « de ce tribunal » (et non « du ce tribunal ») quand le nom du tribunal manque", async () => {
+    mocks.fetchScenarios.mockResolvedValue(response({ courtName: null }));
+    renderCeiling();
+
+    const text = (await screen.findByTestId("ceiling-vs-court")).textContent ?? "";
+    expect(text).toMatch(/des ventes comparables de ce tribunal ont été adjugées/);
+    expect(text).not.toMatch(/du ce tribunal/);
+  });
+
+  function withProbabilities(probabilities: number[]) {
+    const base = response();
+    return response({
+      scenarios: {
+        ...base.scenarios!,
+        scenarios: base.scenarios!.scenarios.map((scenario, index) => ({
+          ...scenario,
+          probability: probabilities[index],
+        })),
+      },
+    });
+  }
+
+  it("n'écrit pas « Au moins moins de 1 % » : au-delà de 3 fois la mise à prix, part nulle", async () => {
+    mocks.fetchScenarios.mockResolvedValue(withProbabilities([0, 0, 0, 0, 1]));
+    renderCeiling(450_000);
+
+    const text = (await screen.findByTestId("ceiling-vs-court")).textContent ?? "";
+    expect(text).not.toMatch(/moins moins/i);
+    expect(text).toMatch(/^Au moins\s+0\s%\s+des ventes comparables du tribunal judiciaire/);
+  });
+
+  it("écrit « Moins de 1 % » sans « Environ » quand la part arrondie est nulle", async () => {
+    mocks.fetchScenarios.mockResolvedValue(withProbabilities([0.002, 0.3, 0.3, 0.2, 0.198]));
+    renderCeiling(105_000);
+
+    const text = (await screen.findByTestId("ceiling-vs-court")).textContent ?? "";
+    expect(text).toMatch(/^Moins de 1\s%\s+des ventes comparables/);
+    expect(text).not.toMatch(/Environ/);
+  });
+
   it("dit qu'une enchère ne peut pas être sous la mise à prix", async () => {
     mocks.fetchScenarios.mockResolvedValue(response());
     renderCeiling(80_000);
