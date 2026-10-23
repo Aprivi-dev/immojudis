@@ -16,7 +16,8 @@ A/B » : propose alors une méthode plus modeste plutôt qu'une fausse certitude
 - Plateforme française d'exploration des ventes immobilières aux enchères (judiciaires,
   notariales, domaniales) pour investisseurs particuliers, marchands de biens et avocats.
   Site en français : https://immojudis.com. Pas encore officiellement lancé ; la société
-  n'est pas créée.
+  n'est pas créée. L'indexation est ouverte en production depuis le 15/10/2026 : du trafic
+  venu des moteurs de recherche est possible avant tout lancement (à revérifier).
 - Next.js (App Router, React 19, Tailwind v4) sur Vercel ; cette version de Next.js diffère
   de l'habituel (voir `AGENTS.md` et `node_modules/next/dist/docs/`).
 - Supabase (PostgreSQL, RLS, fonctions SQL, pg_cron, Storage), carte Mapbox GL, pipeline
@@ -54,7 +55,11 @@ A/B » : propose alors une méthode plus modeste plutôt qu'une fausse certitude
   ou du code. Toute proposition d'outil d'affectation doit rester sans cookie ni
   identifiant de personne, ou être validée par `juridique-rgpd`.
 - Mesure : `src/lib/product-events.ts` (liste fermée d'événements, sans identifiant),
-  `src/components/AudienceMeasurement.tsx`, `src/lib/audience-opt-out.ts`.
+  `src/components/AudienceMeasurement.tsx` (Vercel Analytics, sans cookie),
+  `src/lib/audience-opt-out.ts`. Google Analytics 4 est aussi chargé, mais seulement après
+  l'accord du visiteur et avec des cookies `_ga` (`src/lib/google-analytics.ts`) : la mesure
+  d'une expérience ne couvre alors que ceux qui ont accepté, et une affectation à une variante
+  ne doit pas s'appuyer sur ces cookies.
 - Comportements et droits : `src/lib/plans.ts`, `src/lib/sale-unlocks.ts`,
   `src/lib/analysis-offer.ts`, `src/lib/offer-opening-notification.ts`,
   `src/lib/usage.ts`, pages `src/app/offres/`, `src/app/sales/`, `src/app/bienvenue/`.
