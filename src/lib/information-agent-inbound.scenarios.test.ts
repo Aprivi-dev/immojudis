@@ -456,6 +456,44 @@ describe("information-agent offline inbound scenarios", () => {
     expect(mocks.get).not.toHaveBeenCalled();
   });
 
+  it("writes a permanent bounce of the agent's email on the contact registry, through the signed webhook", async () => {
+    const upsert = vi.fn().mockResolvedValue({ error: null });
+    mocks.from.mockReturnValue({ upsert });
+    mocks.verify.mockReturnValueOnce({
+      type: "email.bounced",
+      created_at: "2026-10-23T10:00:00.000Z",
+      data: {
+        from: "Assistant Immojudis <agent@immojudis.test>",
+        to: ["Contact@Example.test"],
+        bounce: { type: "Permanent", subType: "General", message: "no such mailbox" },
+      },
+    });
+
+    const result = await webhook(vi.fn(), "signed", {}, false, {
+      INFORMATION_AGENT_EMAIL_FROM: "Assistant Immojudis <agent@immojudis.test>",
+    });
+
+    expect(result).toEqual({ accepted: true });
+    expect(mocks.from).toHaveBeenCalledWith("information_agent_contacts");
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ email: "contact@example.test", bounce_status: "permanent" }),
+      { onConflict: "scope_sale_id,normalized_email" },
+    );
+    expect(mocks.get).not.toHaveBeenCalled();
+  });
+
+  it("does not write a bounce when the signature is invalid", async () => {
+    mocks.verify.mockImplementationOnce(() => {
+      throw new Error("Invalid signature");
+    });
+    await expect(
+      webhook(vi.fn(), "forged", {}, false, {
+        INFORMATION_AGENT_EMAIL_FROM: "agent@immojudis.test",
+      }),
+    ).rejects.toMatchObject({ name: "InvalidInformationAgentWebhookSignatureError" });
+    expect(mocks.from).not.toHaveBeenCalled();
+  });
+
   it("associates a reply and its attachment with only the token's sale, then stays idempotent", async () => {
     const state = fixture();
     receivedEmail();

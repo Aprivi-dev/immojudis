@@ -53,6 +53,7 @@ import {
   replayEventForInboundJob,
   settleInformationAgentInboundJob,
 } from "@/lib/information-agent-inbound/job-queue";
+import { processDeliveryEvent } from "@/lib/information-agent-inbound/delivery-events";
 import {
   finalizeInboundContactOptOut,
   ignoreIfCaseClosed,
@@ -164,6 +165,10 @@ export async function processInformationAgentInboundWebhook({
     });
   } catch {
     throw new InvalidInformationAgentWebhookSignatureError();
+  }
+  // Rebonds et plaintes des emails de l'agent : écrits sur le registre de contacts, qui coupe l'envoi.
+  if (event.type === "email.bounced" || event.type === "email.complained") {
+    return processDeliveryEvent(event, env);
   }
   if (event.type !== "email.received") return { accepted: true, ignored: true };
 
