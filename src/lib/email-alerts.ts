@@ -13,6 +13,7 @@ import { cleanSaleTitle } from "@/lib/sale-title";
 import { resolveSiteOrigin } from "@/lib/site-url";
 import { systemAuthForUser } from "@/lib/system-auth";
 import { asRecord, escapeHtml, numberValue, stringValue } from "@/lib/guards";
+import { EMAIL_COLORS } from "@/lib/email-brand";
 
 type NotificationRow = Database["public"]["Tables"]["user_alert_notifications"]["Row"];
 
@@ -714,6 +715,22 @@ async function markEmailNotificationCancelled({
   if (error) throw error;
 }
 
+const REPLY_TO_PATTERN = /^[^\s@<>,;:"]+@[^\s@<>,;:"]+\.[^\s@<>,;:"]{2,}$/;
+
+/**
+ * Adresse de réponse des emails envoyés aux comptes (alertes, récapitulatifs, rappels, résultats,
+ * mises en relation, ouverture de l'offre) : `EMAIL_REPLY_TO`, à défaut l'adresse de contact publiée
+ * (`NEXT_PUBLIC_LEGAL_CONTACT_EMAIL`). Sans elle, une réponse partait vers l'expéditeur technique
+ * (« alertes@ »), qu'aucune personne ne lit. `null` si aucune adresse valide n'est configurée.
+ */
+export function resolveReplyTo(env: Pick<NodeJS.ProcessEnv, string> = process.env): string | null {
+  for (const value of [env.EMAIL_REPLY_TO, env.NEXT_PUBLIC_LEGAL_CONTACT_EMAIL]) {
+    const address = value?.trim();
+    if (address && REPLY_TO_PATTERN.test(address)) return address;
+  }
+  return null;
+}
+
 export async function sendResendEmail({
   apiKey,
   message,
@@ -732,7 +749,9 @@ export async function sendResendEmail({
     html: message.html,
     text: message.text,
   };
-  if (message.replyTo) payload.reply_to = message.replyTo;
+  // `replyTo` absent : l'adresse de réponse du site ; `null` : volontairement aucune.
+  const replyTo = message.replyTo === undefined ? resolveReplyTo() : message.replyTo;
+  if (replyTo) payload.reply_to = replyTo;
   if (message.unsubscribeUrl) {
     payload.headers = {
       "List-Unsubscribe": `<${message.unsubscribeUrl}>`,
@@ -894,21 +913,21 @@ function buildAlertDigestHtml({
           const reasons = item.reasons
             .map((reason) => `<li style="margin: 0 0 4px;">${escapeHtml(reason)}</li>`)
             .join("");
-          return `<div style="margin:0 0 18px;padding:0 0 16px;border-bottom:1px solid #eee7d8;">
-          <h2 style="margin:0 0 4px;font-size:18px;line-height:1.3;color:#182033;">${escapeHtml(item.title)}</h2>
-          ${item.location ? `<p style="margin:0 0 8px;color:#6c7280;">${escapeHtml(item.location)}</p>` : ""}
-          ${saleFactsLine(item) ? `<p style="margin:0 0 8px;color:#182033;">${escapeHtml(saleFactsLine(item) ?? "")}</p>` : ""}
-          ${item.discountLine ? `<p style="margin:0 0 8px;font-weight:700;color:#182033;">${escapeHtml(item.discountLine)}</p>` : ""}
-          ${reasons ? `<ul style="margin:0 0 12px;padding-left:18px;color:#4b5563;">${reasons}</ul>` : ""}
-          <a href="${escapeAttribute(item.url)}" style="display:inline-block;background:#182033;color:#fff;text-decoration:none;border-radius:8px;padding:10px 14px;font-weight:700;">Voir l'annonce</a>
+          return `<div style="margin:0 0 18px;padding:0 0 16px;border-bottom:1px solid ${EMAIL_COLORS.lineWarm};">
+          <h2 style="margin:0 0 4px;font-size:18px;line-height:1.3;color:${EMAIL_COLORS.navy};">${escapeHtml(item.title)}</h2>
+          ${item.location ? `<p style="margin:0 0 8px;color:${EMAIL_COLORS.inkSoft};">${escapeHtml(item.location)}</p>` : ""}
+          ${saleFactsLine(item) ? `<p style="margin:0 0 8px;color:${EMAIL_COLORS.navy};">${escapeHtml(saleFactsLine(item) ?? "")}</p>` : ""}
+          ${item.discountLine ? `<p style="margin:0 0 8px;font-weight:700;color:${EMAIL_COLORS.navy};">${escapeHtml(item.discountLine)}</p>` : ""}
+          ${reasons ? `<ul style="margin:0 0 12px;padding-left:18px;color:${EMAIL_COLORS.inkStrong};">${reasons}</ul>` : ""}
+          <a href="${escapeAttribute(item.url)}" style="display:inline-block;background:${EMAIL_COLORS.navy};color:#fff;text-decoration:none;border-radius:8px;padding:10px 14px;font-weight:700;">Voir l'annonce</a>
         </div>`;
         })
         .join("");
-      return `<p style="margin:0 0 12px;color:#7a5f1f;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;">${escapeHtml(group.alertName)}</p>
+      return `<p style="margin:0 0 12px;color:${EMAIL_COLORS.goldText};font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;">${escapeHtml(group.alertName)}</p>
       ${items}
       ${
         group.deactivateUrl
-          ? `<p style="margin:0 0 22px;font-size:12px;"><a href="${escapeAttribute(group.deactivateUrl)}" style="color:#6c7280;">Désactiver cette alerte</a></p>`
+          ? `<p style="margin:0 0 22px;font-size:12px;"><a href="${escapeAttribute(group.deactivateUrl)}" style="color:${EMAIL_COLORS.inkSoft};">Désactiver cette alerte</a></p>`
           : ""
       }`;
     })
@@ -916,22 +935,22 @@ function buildAlertDigestHtml({
 
   return `<!doctype html>
 <html lang="fr">
-  <body style="margin:0;background:#f6f4ef;color:#182033;font-family:Arial,sans-serif;">
+  <body style="margin:0;background:${EMAIL_COLORS.surface};color:${EMAIL_COLORS.navy};font-family:Arial,sans-serif;">
     <div style="max-width:620px;margin:0 auto;padding:28px 18px;">
-      <div style="background:#fff;border:1px solid #e8e1d4;border-radius:10px;padding:24px;">
+      <div style="background:#fff;border:1px solid ${EMAIL_COLORS.lineWarm};border-radius:10px;padding:24px;">
         <p style="margin:0 0 8px;font-size:16px;">Bonjour,</p>
-        <p style="margin:0 0 18px;color:#4b5563;">${escapeHtml(intro)}</p>
+        <p style="margin:0 0 18px;color:${EMAIL_COLORS.inkStrong};">${escapeHtml(intro)}</p>
         ${sections}
         ${
           hiddenCount > 0
-            ? `<p style="margin:0 0 16px;"><a href="${escapeAttribute(alertsUrl)}" style="color:#182033;font-weight:700;">… et ${hiddenCount} autre${hiddenCount > 1 ? "s" : ""} vente${hiddenCount > 1 ? "s" : ""} sur Immojudis</a></p>`
+            ? `<p style="margin:0 0 16px;"><a href="${escapeAttribute(alertsUrl)}" style="color:${EMAIL_COLORS.navy};font-weight:700;">… et ${hiddenCount} autre${hiddenCount > 1 ? "s" : ""} vente${hiddenCount > 1 ? "s" : ""} sur Immojudis</a></p>`
             : ""
         }
-        <p style="margin:12px 0 0;color:#6c7280;font-size:12px;line-height:1.5;">${escapeHtml(disclaimer)}</p>
+        <p style="margin:12px 0 0;color:${EMAIL_COLORS.inkSoft};font-size:12px;line-height:1.5;">${escapeHtml(disclaimer)}</p>
       </div>
-      <p style="margin:14px 0 0;text-align:center;color:#6c7280;font-size:12px;">
-        <a href="${escapeAttribute(alertsUrl)}" style="color:#6c7280;">Gérer mes alertes</a> ·
-        <a href="${escapeAttribute(unsubscribeUrl)}" style="color:#6c7280;">Se désinscrire des alertes email</a>
+      <p style="margin:14px 0 0;text-align:center;color:${EMAIL_COLORS.inkSoft};font-size:12px;">
+        <a href="${escapeAttribute(alertsUrl)}" style="color:${EMAIL_COLORS.inkSoft};">Gérer mes alertes</a> ·
+        <a href="${escapeAttribute(unsubscribeUrl)}" style="color:${EMAIL_COLORS.inkSoft};">Se désinscrire des alertes email</a>
       </p>
     </div>
   </body>

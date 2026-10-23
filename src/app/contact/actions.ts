@@ -33,7 +33,8 @@ function sharedLimiter(list: Headers) {
 /**
  * Envoie le message du formulaire de contact à l'équipe via Resend.
  * Destinataire : CONTACT_EMAIL_TO, à défaut l'adresse de contact légale publiée.
- * Expéditeur : CONTACT_EMAIL_FROM, à défaut ALERT_EMAIL_FROM (domaine déjà vérifié chez Resend).
+ * Expéditeur : CONTACT_EMAIL_FROM seulement, sans repli sur l'expéditeur des alertes : sans lui le
+ * formulaire répond qu'il n'est pas disponible et rien n'est envoyé.
  */
 export async function sendContactMessage(
   _previous: ContactState,
@@ -41,7 +42,7 @@ export async function sendContactMessage(
 ): Promise<ContactState> {
   const apiKey = process.env.RESEND_API_KEY?.trim();
   const to = process.env.CONTACT_EMAIL_TO?.trim() || publicLegalPublisher().contactEmail;
-  const from = process.env.CONTACT_EMAIL_FROM?.trim() || process.env.ALERT_EMAIL_FROM?.trim();
+  const from = process.env.CONTACT_EMAIL_FROM?.trim();
   const resend = apiKey ? new Resend(apiKey) : null;
 
   return deliverContact(
