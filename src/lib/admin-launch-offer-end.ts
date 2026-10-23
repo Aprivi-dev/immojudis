@@ -292,7 +292,8 @@ export async function setAdminLaunchOfferEnd({
 }): Promise<void> {
   const auth = await requireAdmin(authToken);
   const { error } = await supabaseAdmin.rpc("set_launch_offer_end", {
-    p_ends_on: endsOn,
+    // Les types générés ne marquent pas les paramètres SQL nullables : null efface la date (voir la migration).
+    p_ends_on: endsOn as string,
     p_actor: auth.userId,
   });
   if (error) {

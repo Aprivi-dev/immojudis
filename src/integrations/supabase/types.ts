@@ -7679,9 +7679,18 @@ export type Database = {
         ];
       };
       launch_offer_end_notice_optouts: {
-        Row: { unsubscribed_at: string; user_id: string };
-        Insert: { unsubscribed_at?: string; user_id: string };
-        Update: { unsubscribed_at?: string; user_id?: string };
+        Row: {
+          unsubscribed_at: string;
+          user_id: string;
+        };
+        Insert: {
+          unsubscribed_at?: string;
+          user_id: string;
+        };
+        Update: {
+          unsubscribed_at?: string;
+          user_id?: string;
+        };
         Relationships: [];
       };
       launch_offer_end_notices: {
@@ -15574,7 +15583,7 @@ export type Database = {
       };
       set_launch_offer: { Args: { p_active: boolean }; Returns: boolean };
       set_launch_offer_end: {
-        Args: { p_actor?: string; p_ends_on: string | null };
+        Args: { p_actor?: string; p_ends_on: string };
         Returns: Json;
       };
       st_3dclosestpoint: {
