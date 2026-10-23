@@ -245,7 +245,7 @@ export type ProfessionalErasureReport = {
  * Efface les données d'un professionnel : fichiers reçus mis en file de suppression Storage (les
  * documents déjà publiés après validation humaine ne sont pas retirés ici), dossiers
  * partagés et demandes dont il est le destinataire (messages, pièces, informations extraites et files
- * d'analyse en cascade). L'adresse est ensuite inscrite à la liste d'opposition (elle seule reste,
+ * d'analyse en cascade), fiches du registre propres à une vente. L'adresse est ensuite inscrite à la liste d'opposition (elle seule reste,
  * normalisée) : sans cela, la prochaine collecte de l'annonce la recréerait et l'agent pourrait de
  * nouveau la solliciter. Idempotent : relancé après un échec partiel, il reprend où il s'est arrêté.
  */
@@ -278,7 +278,10 @@ export async function eraseProfessionalData(rawEmail: string): Promise<Professio
     if (error) throw new Error(`Mise en file des fichiers impossible : ${error.message}`);
   }
 
-  // 2. Opposition d'abord : si la suite échoue, l'adresse n'est de toute façon plus contactée.
+  // 2. Opposition d'abord : si la suite échoue, l'adresse n'est de toute façon plus contactée. La
+  //    ligne globale conservée ne garde que l'adresse et l'opposition : nom, rôle (ramené à sa valeur
+  //    par défaut, la colonne est obligatoire), source et relevé sont vidés, même si une ligne
+  //    préexistante les portait. La base le fait aussi (déclencheur d'opposition), sans qu'on s'y fie.
   const { error: oppositionError } = await supabaseAdmin.from("information_agent_contacts").upsert(
     {
       sale_id: null,
@@ -286,10 +289,36 @@ export async function eraseProfessionalData(rawEmail: string): Promise<Professio
       email,
       opposition_status: "opposed",
       opposed_at: new Date().toISOString(),
+      display_name: null,
+      role: "source_contact",
+      source_name: null,
+      source_url: null,
+      source_kind: null,
+      source_directory_name: null,
+      observed_at: null,
+      observed_by: null,
+      observed_by_user_id: null,
+      provenance: [],
+      metadata: {},
     },
     { onConflict: "scope_sale_id,normalized_email" },
   );
   if (oppositionError) throw new Error(`Opposition impossible : ${oppositionError.message}`);
+
+  // 2 bis. Fiches du registre propres à une vente (`scope_sale_id` non nul) : elles portent le nom
+  //        et la source du professionnel pour cette vente. Seule la ligne globale opposée reste.
+  const { count: contactCount, error: contactsError } = await supabaseAdmin
+    .from("information_agent_contacts")
+    .delete({ count: "exact" })
+    .eq("normalized_email", email)
+    .not("scope_sale_id", "is", null)
+    .neq("opposition_status", "opposed");
+  if (contactsError) {
+    throw new Error(
+      `Effacement impossible dans information_agent_contacts : ${contactsError.message}`,
+    );
+  }
+  deletedRows["information_agent_contacts"] = contactCount ?? 0;
 
   // 3. Dossiers (messages, pièces, informations extraites, tâches d'analyse en cascade), puis demandes.
   deletedRows["information_agent_cases"] = await deleteByIds("information_agent_cases", caseIds);

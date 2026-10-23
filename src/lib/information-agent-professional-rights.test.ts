@@ -39,6 +39,15 @@ vi.mock("@/integrations/supabase/client.server", () => {
         filters.push((row) => row[column] === value);
         return api;
       },
+      neq: (column: string, value: unknown) => {
+        filters.push((row) => row[column] !== value);
+        return api;
+      },
+      not: (column: string, operator: string, value: unknown) => {
+        if (operator !== "is") throw new Error(`Unsupported negated operator: ${operator}`);
+        filters.push((row) => (row[column] ?? null) !== value);
+        return api;
+      },
       is: (column: string, value: unknown) => {
         filters.push((row) => (row[column] ?? null) === value);
         return api;
@@ -101,6 +110,8 @@ const EMAIL = "Maitre_Dupont@Cabinet.example";
 const CASE_ID = "11111111-1111-4111-8111-111111111111";
 const OTHER_CASE_ID = "22222222-2222-4222-8222-222222222222";
 const MISSION_ID = "33333333-3333-4333-8333-333333333333";
+const SALE_ID = "55555555-5555-4555-8555-555555555555";
+const OTHER_SALE_ID = "66666666-6666-4666-8666-666666666666";
 const LOOKALIKE_MISSION_ID = "44444444-4444-4444-8444-444444444444";
 
 function seed() {
@@ -140,7 +151,36 @@ function seed() {
     information_agent_fact_candidates: [],
     information_agent_evidence_extractions: [],
     information_agent_contacts: [
-      { id: "c1", normalized_email: "maitre_dupont@cabinet.example", email: "x" },
+      {
+        id: "c1",
+        normalized_email: "maitre_dupont@cabinet.example",
+        email: "x",
+        scope_sale_id: null,
+        display_name: "Me Dupont",
+        opposition_status: "none",
+      },
+      // Fiches propres à une vente : celle de cette adresse est effacée, l'opposée et l'autre restent.
+      {
+        id: "c2",
+        normalized_email: "maitre_dupont@cabinet.example",
+        scope_sale_id: SALE_ID,
+        display_name: "Me Dupont",
+        opposition_status: "none",
+      },
+      {
+        id: "c3",
+        normalized_email: "maitre_dupont@cabinet.example",
+        scope_sale_id: OTHER_SALE_ID,
+        display_name: null,
+        opposition_status: "opposed",
+      },
+      {
+        id: "c4",
+        normalized_email: "autre@cabinet.example",
+        scope_sale_id: SALE_ID,
+        display_name: "Autre",
+        opposition_status: "none",
+      },
     ],
     data_subject_requests: [],
   };
@@ -196,7 +236,8 @@ describe("collectProfessionalData", () => {
     expect(data.requests[0]).toMatchObject({ id: MISSION_ID });
     expect(data.messages.map((message) => message.id)).toEqual(["m1"]);
     expect(data.files).toHaveLength(1);
-    expect(data.contacts).toHaveLength(1);
+    // Ligne globale et fiches par vente de cette adresse, pas celle d'une autre.
+    expect(data.contacts.map((row) => row.id)).toEqual(["c1", "c2", "c3"]);
   });
 });
 
@@ -205,7 +246,11 @@ describe("eraseProfessionalData", () => {
     const report = await eraseProfessionalData(EMAIL);
 
     expect(report).toEqual({
-      deletedRows: { information_agent_cases: 1, information_agent_missions: 1 },
+      deletedRows: {
+        information_agent_contacts: 1,
+        information_agent_cases: 1,
+        information_agent_missions: 1,
+      },
       storageObjectsQueued: 1,
       oppositionRecorded: true,
     });
@@ -213,10 +258,11 @@ describe("eraseProfessionalData", () => {
     expect(queued?.rows).toEqual([
       { bucket: "information-agent-evidence", object_path: `${CASE_ID}/inbound/m1/pv.pdf` },
     ]);
-    // Ordre : fichiers, opposition, puis suppressions.
+    // Ordre : fichiers, opposition, fiches par vente, puis dossiers et demandes.
     expect(state.log).toEqual([
       "upsert:sale_retention_storage_queue",
       "upsert:information_agent_contacts",
+      "delete:information_agent_contacts:1",
       "delete:information_agent_cases:1",
       "delete:information_agent_missions:1",
     ]);
@@ -226,6 +272,26 @@ describe("eraseProfessionalData", () => {
       opposition_status: "opposed",
       scope_sale_id: null,
     });
+    // La ligne globale opposée ne garde que l'adresse : nom, source et relevé sont vidés.
+    expect(opposition?.rows[0]).toMatchObject({
+      display_name: null,
+      role: "source_contact",
+      source_name: null,
+      source_url: null,
+      source_kind: null,
+      source_directory_name: null,
+      observed_at: null,
+      observed_by: null,
+      observed_by_user_id: null,
+      provenance: [],
+      metadata: {},
+    });
+    // La fiche par vente non opposée de l'adresse est effacée ; l'opposée et celle d'un autre restent.
+    expect((state.tables.information_agent_contacts ?? []).map((row) => row.id)).toEqual([
+      "c1",
+      "c3",
+      "c4",
+    ]);
     // Les données d'un autre professionnel et la demande au nom approchant restent.
     expect((state.tables.information_agent_cases ?? []).map((row) => row.id)).toEqual([
       OTHER_CASE_ID,
@@ -246,6 +312,7 @@ describe("eraseProfessionalData", () => {
     await eraseProfessionalData(EMAIL);
     const second = await eraseProfessionalData(EMAIL);
     expect(second.deletedRows).toEqual({
+      information_agent_contacts: 0,
       information_agent_cases: 0,
       information_agent_missions: 0,
     });
