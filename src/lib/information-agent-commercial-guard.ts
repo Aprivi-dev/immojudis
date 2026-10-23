@@ -8,7 +8,10 @@
  * - la « mise en avant », le partenariat, la mise en relation, la clientèle, la gratuité ;
  * - les prix et tarifs d'Immojudis ;
  * - tout lien, sauf le site d'Immojudis sur ses pages utiles au destinataire (politique de
- *   confidentialité, dépôt privé, opposition), la plainte CNIL et la page source de l'adresse.
+ *   confidentialité, dépôt privé, opposition), la plainte CNIL et la page source de l'adresse ;
+ *   les liens sont contrôlés sur le texte entier, y compris dans les textes repris de l'annonce, et
+ *   un nom de domaine écrit sans « http » (`exemple.fr/offres`) est traité comme un lien ;
+ * - les formules qui invitent à déposer ses ventes (« déposez vos prochaines ventes »).
  *
  * Le vocabulaire de la vente reste permis : « mise à prix », « prix de départ », « prix atteint »,
  * « offre d'achat », « dépôt des offres », « émoluments », « inscription hypothécaire », « publicité
@@ -45,6 +48,13 @@ const RULES: Array<{ rule: InformationAgentCommercialMention["rule"]; pattern: R
       /\b(?:nos|notre|l[’']|une?)?\s*offres?\s+(?:commerciale|payante|gratuite|d[’']abonnement|analyse|d[ée]couverte|pro(?:fessionnelle)?|premium|sp[ée]ciale|promotionnelle)s?\b|\bnos\s+offres\b|\bnotre\s+offre\b|\b(?:abonnements?|abonn(?:er|ez|ons)|souscri(?:re|vez|ption)|essai\s+gratuit|premium)\b|\bgratuit(?:e|es|s|ement)?\b|\bnewsletter\b|\bd[ée]monstration\b|\bpartenaires?\b|\bpartenariats?\b|\bcollaboration\b|\bmise\s+en\s+relation\b|\bplate-?forme\b|\bclient[èe]le\b/gi,
   },
   {
+    // Invitation à déposer ses ventes : « déposez vos ventes », « déposer vous-même vos prochaines
+    // ventes », « publiez vos annonces »… (le dépôt de pièces ou d'offres d'achat reste permis).
+    rule: "offer",
+    pattern:
+      /\b(?:d[ée]pos(?:ez|er)|publi(?:ez|er)|soumett(?:ez|re)|proposez|confiez|transmettez|envoyez|ajoutez|ins[ée]rez)(?:[-\s]+(?:nous|vous-m[êe]mes?|directement|gratuitement|simplement|ici|sur\s+\S+)){0,3}[-\s]+(?:(?:toutes\s+)?(?:vos|ses|leurs)|d[’']autres|de\s+nouvelles)\s+(?:(?:prochaines|futures|autres|nouvelles)\s+)?(?:ventes|annonces|mandats)\b|\b(?:vos|ses|leurs|d[’']autres)\s+(?:prochaines|futures)\s+ventes\b/gi,
+  },
+  {
     rule: "account",
     pattern:
       /\bcr[ée]+(?:er|ez|ation)\s+(?:de\s+|d[’']un\s+|votre\s+|un\s+)?(?:nouveau\s+)?compte\b|\bcompte\s+(?:professionnel|gratuit|pro|avocat)\b|\b(?:inscrivez-vous|s[’']inscrire|inscription\s+(?:gratuite|professionnelle|en\s+ligne|sur\s+immojudis|[àa]\s+immojudis)|espace\s+pro(?:fessionnel)?|connectez-vous|se\s+connecter)\b/gi,
@@ -68,8 +78,26 @@ const ALLOWED_APP_PATHS: RegExp[] = [
   /^\/api\/information-agent\/opt-out\/?$/,
 ];
 
-/** Hôtes tiers admis : la plainte CNIL. */
-const ALLOWED_EXTERNAL_HOSTS = new Set(["www.cnil.fr"]);
+/** Hôtes tiers admis (sans « www. ») : la plainte CNIL. */
+const ALLOWED_EXTERNAL_HOSTS = new Set(["cnil.fr"]);
+
+const EMAIL_ADDRESS = /[\p{L}\p{N}._%+-]+@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)+/gu;
+
+/** Extensions courantes : une phrase sans espace après le point ne doit pas devenir un « domaine ». */
+const COMMON_TLDS =
+  "fr|com|net|org|eu|io|info|biz|immo|pro|app|co|ai|be|ch|de|es|it|uk|lu|nl|online|site|shop|xyz|me|cc|tv";
+const DOMAIN_LABEL = String.raw`[\p{L}\p{N}](?:[\p{L}\p{N}-]*[\p{L}\p{N}])?`;
+/**
+ * Nom de domaine écrit sans « http » : `exemple.fr`, `www.exemple.test/offres`. Les adresses email et
+ * les URL absolues sont retirées avant la recherche.
+ */
+const BARE_DOMAIN = new RegExp(
+  String.raw`(?<![\p{L}\p{N}@./:_-])((?:(?:${DOMAIN_LABEL}\.)+(?:${COMMON_TLDS})|www\.${DOMAIN_LABEL}(?:\.${DOMAIN_LABEL})+))(?![\p{L}\p{N}@-])(\/[^\s"'<>)\]]*)?`,
+  "giu",
+);
+
+/** Texte repris d'une annonce ou d'un registre : en dessous, un mot isolé effacerait le message. */
+const MIN_IGNORED_LENGTH = 4;
 
 const ABSOLUTE_URL = /https?:\/\/[^\s"'<>)\]]+/gi;
 const HREF = /href\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
@@ -81,8 +109,11 @@ export type InformationAgentCommercialGuardOptions = {
   /** URL de la page source de l'adresse, seul lien tiers admis avec la plainte CNIL. */
   allowedUrls?: ReadonlyArray<string | null | undefined>;
   /**
-   * Textes issus d'une annonce ou d'un registre (référence de la vente…) : écartés avant l'analyse,
-   * pour qu'un mot de l'annonce ne fasse pas échouer un message déjà approuvé.
+   * Textes issus d'une annonce ou d'un registre (référence de la vente…) : écartés de l'analyse des
+   * mots, pour qu'un mot de l'annonce ne fasse pas échouer un message déjà approuvé. Les liens, eux,
+   * restent contrôlés dans ces textes. Un texte de moins de 4 caractères est ignoré (il effacerait
+   * des lettres de tout le message) et seules les occurrences isolées (non collées à un mot) sont
+   * écartées.
    */
   ignore?: ReadonlyArray<string | null | undefined>;
 };
@@ -107,6 +138,30 @@ function withoutHostPrefix(host: string): string {
   return host.toLowerCase().replace(/^www\./, "");
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
+}
+
+/** Retire les textes de l'annonce : seulement les occurrences isolées, et jamais un texte trop court. */
+function withoutIgnoredTexts(
+  text: string,
+  ignore: ReadonlyArray<string | null | undefined>,
+): string {
+  const cleaned = ignore
+    .map((value) => (value ? normalizeInformationAgentGuardText(value).trim() : ""))
+    .filter((value) => value.length >= MIN_IGNORED_LENGTH)
+    .sort((left, right) => right.length - left.length);
+  let result = text;
+  for (const value of cleaned) {
+    const pattern = new RegExp(
+      String.raw`(?<![\p{L}\p{N}])${escapeRegExp(value)}(?![\p{L}\p{N}])`,
+      "gu",
+    );
+    result = result.replace(pattern, " ");
+  }
+  return result;
+}
+
 function linkMentions(
   text: string,
   { appOrigin, allowedUrls = [] }: InformationAgentCommercialGuardOptions,
@@ -120,25 +175,40 @@ function linkMentions(
     }
   }
   const allowed = new Set<string>();
+  const allowedHosts = new Set<string>();
   for (const url of allowedUrls) {
     if (!url) continue;
     try {
       const parsed = new URL(url);
       allowed.add(`${withoutHostPrefix(parsed.host)}${parsed.pathname}${parsed.search}`);
+      allowedHosts.add(withoutHostPrefix(parsed.host));
     } catch {
       // URL de source illisible : elle n'autorise rien.
     }
   }
-  const candidates = [...text.matchAll(ABSOLUTE_URL)].map((match) => match[0]);
+  const candidates: Array<{ value: string; bare: boolean }> = [...text.matchAll(ABSOLUTE_URL)].map(
+    (match) => ({ value: match[0], bare: false }),
+  );
   for (const href of text.matchAll(HREF)) {
     const value = href[1] ?? href[2];
-    if (value) candidates.push(value.replace(/&amp;/g, "&"));
+    if (value) candidates.push({ value: value.replace(/&amp;/g, "&"), bare: false });
+  }
+  // Noms de domaine sans « http », cherchés dans le texte visible hors adresses email et URL.
+  const withoutUrls = text
+    .replace(/<[^>]+>/g, " ")
+    .replace(ABSOLUTE_URL, " ")
+    .replace(EMAIL_ADDRESS, " ");
+  for (const match of withoutUrls.matchAll(BARE_DOMAIN)) {
+    candidates.push({ value: match[0], bare: true });
   }
   const found: InformationAgentCommercialMention[] = [];
-  for (const candidate of candidates) {
+  for (const { value: candidate, bare } of candidates) {
     let url: URL;
     try {
-      url = new URL(candidate, appOrigin ?? "https://invalid.invalid");
+      url = new URL(
+        bare ? `https://${candidate}` : candidate,
+        appOrigin ?? "https://invalid.invalid",
+      );
     } catch {
       continue;
     }
@@ -154,8 +224,11 @@ function linkMentions(
       appHost !== null &&
       host === appHost &&
       ALLOWED_APP_PATHS.some((pattern) => pattern.test(url.pathname));
-    const isAllowedExternal = ALLOWED_EXTERNAL_HOSTS.has(url.host.toLowerCase());
-    if (!isAllowedSource && !isAllowedApp && !isAllowedExternal) {
+    const isAllowedExternal = ALLOWED_EXTERNAL_HOSTS.has(host);
+    // Nommer le site (« sur immojudis.com », « sur Licitor ») sans page précise n'est pas un lien.
+    const isBareHostName =
+      bare && url.pathname === "/" && !url.search && (host === appHost || allowedHosts.has(host));
+    if (!isAllowedSource && !isAllowedApp && !isAllowedExternal && !isBareHostName) {
       found.push({ rule: "link", excerpt: candidate });
     }
   }
@@ -171,16 +244,13 @@ export function findInformationAgentCommercialMentions(
   text: string,
   options: InformationAgentCommercialGuardOptions = {},
 ): InformationAgentCommercialMention[] {
-  let normalized = normalizeInformationAgentGuardText(text);
-  for (const ignored of options.ignore ?? []) {
-    const cleaned = ignored ? normalizeInformationAgentGuardText(ignored).trim() : "";
-    if (cleaned) normalized = normalized.split(cleaned).join(" ");
-  }
-  // Les liens sont contrôlés sur le texte entier (attributs compris), les mots sur le texte visible.
+  const normalized = normalizeInformationAgentGuardText(text);
+  // Les liens sont contrôlés sur le texte entier (attributs et textes de l'annonce compris), les
+  // mots sur le texte visible, une fois les textes de l'annonce écartés.
   const links = linkMentions(normalized, options);
   const visible = ALLOWED_PHRASES.reduce(
     (current, pattern) => current.replace(pattern, " "),
-    normalized.replace(/<[^>]+>/g, " "),
+    withoutIgnoredTexts(normalized, options.ignore ?? []).replace(/<[^>]+>/g, " "),
   );
   const found: InformationAgentCommercialMention[] = [...links];
   for (const { rule, pattern } of RULES) {
