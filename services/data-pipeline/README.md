@@ -347,8 +347,22 @@ P10-P90 est inférieure à 72 % ou si la largeur moyenne de l'intervalle dépass
 110 %. `--force` contourne ces seuils absolus pour les essais contrôlés, pas
 pour les runs planifiés. L'activation exige en plus une erreur absolue médiane
 strictement meilleure que celle du modèle actif (évalué sur les mêmes ventes) et
-que celle de la référence naïve la plus forte ; `--force` ne contourne jamais ce
-test, et un modèle qui ne le passe pas est publié en brouillon.
+que celle de la référence naïve la plus forte, et au moins 70 % des ventes de
+validation (les plus récentes, jamais vues par l'apprentissage ni par la
+calibration) dans l'intervalle tel que l'application le sert : les quantiles
+P10 et P90 bruts décalés des corrections exportées dans l'artefact, comme le fait
+`predictLightGbmQuantiles`, et non l'intervalle MAPIE. Le niveau nominal est de
+80 % ; le seuil de 70 % tolère la dérive attendue entre la fenêtre de calibration
+et les ventes les plus récentes, mais pas un intervalle qui manque plus de trois
+ventes sur dix. La couverture est mesurée par segment (un modèle par segment) et
+écrite dans `coverage` du rapport (part dedans, au-dessous et au-dessus), dans
+`served_interval_coverage_pct` des métriques et dans le résumé du run. Elle ne
+mesure que l'intervalle du modèle, avant son mélange avec les comparables locaux.
+`--force` ne contourne jamais ces tests, et un modèle qui ne les passe pas est
+publié en brouillon. Les variables de marché local servies par l'API sont lues
+dans l'export `localMarket` de l'artefact (`src/lib/local-market-features.ts`, port
+de `lookup_exported_local_market`) ; `tests/fixtures/local_market_parity.json` est
+le jeu de référence commun des tests Python et TypeScript.
 L'API mélange le modèle actif avec les comparables locaux et revient
 automatiquement au moteur comparable si l'artefact est absent ou invalide.
 La valeur de marché ainsi produite reste distincte du calcul de mise plafond,

@@ -244,11 +244,12 @@ def test_dump_evaluation_strict_inequality_average_output_and_unsupported_splits
 # --- activation gate ----------------------------------------------------------
 
 
-def _report(candidate: float, naive: float, active: dict | None = None) -> dict:
+def _report(candidate: float, naive: float, active: dict | None = None, coverage: float | None = 80.0) -> dict:
     return {
         "candidate": {"median_ape_pct": candidate},
         "naive": {"gate_median_ape_pct": naive},
         "active": active or {"status": "none"},
+        "coverage": {"served_interval_pct": coverage} if coverage is not None else {},
     }
 
 
@@ -297,6 +298,120 @@ def test_both_failures_are_reported() -> None:
     decision = decide_activation(_report(15.0, 12.0, _evaluated("v1", 10.0)), requested=True)
 
     assert len(decision.reasons) == 2
+
+
+# --- interval coverage gate -------------------------------------------------------
+
+
+@pytest.mark.parametrize("coverage", [70.0, 70.01, 79.9, 92.0])
+def test_a_model_whose_interval_holds_out_of_sample_can_be_activated(coverage: float) -> None:
+    assert decide_activation(_report(9.0, 12.0, coverage=coverage), requested=True).activate is True
+
+
+@pytest.mark.parametrize("coverage", [0.0, 60.0, 69.99])
+def test_a_model_whose_interval_misses_too_many_sales_is_never_activated(coverage: float) -> None:
+    decision = decide_activation(_report(5.0, 12.0, coverage=coverage), requested=True)
+
+    assert decision.activate is False
+    assert len(decision.reasons) == 1
+    assert f"covers {coverage}%" in decision.reasons[0]
+    assert "70.0% floor" in decision.reasons[0]
+    assert "nominal 80.0%" in decision.reasons[0]
+
+
+def test_a_coverage_that_was_not_measured_blocks_activation() -> None:
+    decision = decide_activation(_report(5.0, 12.0, coverage=None), requested=True)
+
+    assert decision.activate is False
+    assert "not measured" in decision.reasons[0]
+    assert decide_activation({k: v for k, v in _report(5.0, 12.0).items() if k != "coverage"}, requested=True).activate is False
+
+
+def test_the_coverage_floor_is_below_nominal_and_not_below_the_absolute_reject_threshold() -> None:
+    assert vt.MIN_PROMOTION_COVERAGE_PCT < vt.CONFIDENCE_LEVEL * 100
+    assert vt.MIN_PROMOTION_COVERAGE_PCT >= 70.0
+
+
+def test_accuracy_and_coverage_failures_are_all_reported_accuracy_first() -> None:
+    decision = decide_activation(_report(15.0, 12.0, _evaluated("v1", 10.0), coverage=55.0), requested=True)
+
+    assert len(decision.reasons) == 3
+    assert "naive local reference" in decision.reasons[0]
+    assert "served interval" in decision.reasons[2]
+
+
+def test_interval_coverage_counts_inside_below_and_above() -> None:
+    result = vt.interval_coverage(
+        actual=np.array([100.0, 90.0, 110.0, 130.0, 70.0, 100.0, 120.0, 80.0]),
+        low=np.full(8, 80.0),
+        high=np.full(8, 120.0),
+    )
+
+    assert result == {"inside_pct": 75.0, "below_pct": 12.5, "above_pct": 12.5, "rows": 8}
+    with pytest.raises(ValueError):
+        vt.interval_coverage(np.array([]), np.array([]), np.array([]))
+
+
+class _Quantile:
+    """Stands in for a fitted LightGBM quantile model: returns a fixed log price per row."""
+
+    def __init__(self, values: list[float]) -> None:
+        self.values = np.array(values, dtype=float)
+
+    def predict(self, x: pd.DataFrame) -> np.ndarray:
+        return self.values[: len(x)]
+
+
+class _Conformal:
+    def __init__(self, low: list[float], high: list[float]) -> None:
+        self.low = np.array(low, dtype=float)
+        self.high = np.array(high, dtype=float)
+
+    def predict_interval(self, x: pd.DataFrame):
+        intervals = np.stack([self.low[: len(x)], self.high[: len(x)]], axis=1)[:, :, None]
+        return np.zeros(len(x)), intervals
+
+
+def test_served_coverage_applies_the_exported_corrections_like_the_typescript_serving_code() -> None:
+    # Calibration rows: the raw p10 sits 0.10 above the MAPIE lower bound, the raw p90 0.20 below the upper one.
+    calibration = pd.DataFrame({"x": range(3)})
+    conformal = _Conformal(low=[7.0, 7.0, 7.0], high=[9.0, 9.0, 9.0])
+    lower = _Quantile([7.10] * 3)
+    upper = _Quantile([8.80] * 3)
+    median = _Quantile([8.0] * 3)
+    test = pd.DataFrame({"x": range(2)})
+
+    # Test rows: lower 7.10, upper 8.80, p50 8.0 -> corrections 0.10 and 0.20 -> [exp(7.0), exp(9.0)].
+    served = vt.served_interval_coverage(
+        (lower, upper, median), conformal, calibration, test, actual=np.array([np.exp(8.99), np.exp(9.01)])
+    )
+
+    assert served == {"inside_pct": 50.0, "below_pct": 0.0, "above_pct": 50.0, "rows": 2}
+
+
+def test_served_coverage_floors_negative_corrections_at_zero_and_clamps_around_the_median() -> None:
+    calibration = pd.DataFrame({"x": range(3)})
+    # MAPIE would tighten both bounds (negative corrections): the served interval does not follow.
+    conformal = _Conformal(low=[7.5] * 3, high=[8.5] * 3)
+    lower = _Quantile([7.0] * 3)
+    upper = _Quantile([9.0] * 3)
+    median = _Quantile([8.0] * 3)
+    test = pd.DataFrame({"x": range(2)})
+
+    served = vt.served_interval_coverage(
+        (lower, upper, median), conformal, calibration, test, actual=np.array([np.exp(7.05), np.exp(8.95)])
+    )
+
+    assert served["inside_pct"] == 100.0
+    # A p10 above the p50 is clamped to the p50, so the interval never inverts.
+    inverted = vt.served_interval_coverage(
+        (_Quantile([8.5] * 3), _Quantile([7.5] * 3), median),
+        _Conformal(low=[8.5] * 3, high=[7.5] * 3),
+        calibration,
+        test,
+        actual=np.array([np.exp(8.0), np.exp(8.1)]),
+    )
+    assert inverted["inside_pct"] == 50.0
 
 
 def _ready_to_train_options(tmp_path: Path, **overrides):
@@ -464,10 +579,11 @@ def test_training_report_and_registry_metrics_carry_the_comparison(tmp_path) -> 
         "active_version": "v1",
         "active_median_ape_pct": 11.0,
         "naive_median_ape_pct": 12.0,
+        "served_interval_coverage_pct": 80.0,
         "activated": True,
     }
     summary = vt.format_step_summary([bundle])
-    assert "| apartment | 9.0% | 11.0% (v1) | 12.0% | 100 | yes | - |" in summary
+    assert "| apartment | 9.0% | 11.0% (v1) | 12.0% | 80.0% | 100 | yes | - |" in summary
 
 
 # --- end to end with the real stack -------------------------------------------
@@ -532,6 +648,15 @@ def test_published_model_is_refit_on_train_and_calibration_and_recalibrated_on_t
     assert set(report["naive"]) == {"local_geometric_mean", "train_cell_median", "gate_median_ape_pct"}
     assert report["active"] == {"status": "none"}
     assert report["candidate"]["median_ape_pct"] < report["naive"]["gate_median_ape_pct"]
+    coverage = report["coverage"]
+    assert coverage["rows"] == split["test_rows"]
+    assert coverage["nominal_pct"] == 80.0
+    assert coverage["promotion_floor_pct"] == vt.MIN_PROMOTION_COVERAGE_PCT
+    assert 0.0 <= coverage["served_interval_pct"] <= 100.0
+    assert coverage["served_interval_pct"] + coverage["below_pct"] + coverage["above_pct"] == pytest.approx(
+        100.0, abs=0.05
+    )
+    assert bundle.metrics.served_interval_coverage_pct == coverage["served_interval_pct"]
 
 
 def test_artifact_carries_the_cell_statistics_needed_to_rebuild_the_features(small_models) -> None:

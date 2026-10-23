@@ -31,6 +31,14 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 
 MODEL_KEY = "immojudis_market_value"
 CONFIDENCE_LEVEL = 0.8
+# Promotion floor on the out-of-sample coverage of the interval the application serves, whose
+# nominal level is CONFIDENCE_LEVEL (80 %). Why 70 %: the interval is calibrated on the previous
+# window and evaluated on the newest sales, so a few points of drift are expected (the absolute
+# reject threshold in validate_promotion is 72 % on the MAPIE interval); below 70 % the displayed
+# range misses more than three sales in ten instead of two, and the public band built on it
+# ("sous / dans / au-dessus de la fourchette") would not mean what the method page says. The floor
+# applies to --activate whatever --force says, like the other relative checks of decide_activation.
+MIN_PROMOTION_COVERAGE_PCT = 70.0
 FEATURE_NAMES = (
     "surface_m2",
     "log_surface_m2",
@@ -98,6 +106,9 @@ class TrainingMetrics:
     interval_coverage_pct: float
     interval_mean_width_pct: float
     confidence_level: float
+    # Share of the newest validation sales inside the interval computed the way the TypeScript
+    # serving code computes it (raw quantiles shifted by the exported corrections), None when absent.
+    served_interval_coverage_pct: float | None = None
 
 
 @dataclass(frozen=True)
@@ -742,6 +753,43 @@ def _predict_intervals(
     return predicted_log, interval_low, interval_high, lower_correction, upper_correction
 
 
+def interval_coverage(actual: np.ndarray, low: np.ndarray, high: np.ndarray) -> dict[str, float]:
+    """Share of sales whose price falls inside, below and above [low, high] (percent)."""
+    actual, low, high = (np.asarray(values, dtype=float) for values in (actual, low, high))
+    if len(actual) == 0:
+        raise ValueError("Cannot measure interval coverage on zero sales.")
+    return {
+        "inside_pct": rounded(np.mean((actual >= low) & (actual <= high)) * 100),
+        "below_pct": rounded(np.mean(actual < low) * 100),
+        "above_pct": rounded(np.mean(actual > high) * 100),
+        "rows": int(len(actual)),
+    }
+
+
+def served_interval_coverage(
+    models: tuple[Any, Any, Any],
+    conformal: Any,
+    x_calibration: pd.DataFrame,
+    x_test: pd.DataFrame,
+    actual: np.ndarray,
+) -> dict[str, float]:
+    """Out-of-sample coverage of the interval as the application serves it.
+
+    ``predictLightGbmQuantiles`` (src/lib/lightgbm-inference.ts) does not call MAPIE: it takes the
+    raw p10 and p90 quantile predictions, shifts them by the two scalar corrections exported in the
+    artifact (their median over the conformalization set, floored at zero), and clamps them around
+    the p50. The MAPIE interval measured by ``interval_coverage_pct`` is therefore not the one that
+    is served. Here the corrections are estimated on the calibration window and applied to the
+    newest sales, which neither the fit nor the corrections have seen.
+    """
+    lower, upper, median = models
+    _, _, _, lower_correction, upper_correction = _predict_intervals(conformal, models, x_calibration)
+    p50 = np.exp(median.predict(x_test))
+    low = np.minimum(np.exp(lower.predict(x_test) - max(0.0, lower_correction)), p50)
+    high = np.maximum(np.exp(upper.predict(x_test) + max(0.0, upper_correction)), p50)
+    return interval_coverage(actual, low, high)
+
+
 def _model_artifact(
     models: tuple[Any, Any, Any], calibration: dict[str, Any], local_market: dict[str, Any]
 ) -> dict[str, Any]:
@@ -812,6 +860,9 @@ def train_segment_model(
     summary = _ape_summary(predicted, actual)
     coverage = np.mean((actual >= predicted_low) & (actual <= predicted_high)) * 100
     width_pct = np.mean((predicted_high - predicted_low) / predicted * 100)
+    served_coverage = served_interval_coverage(
+        validation_models, conformal, x_calibration, x_test, actual
+    )
     metrics = TrainingMetrics(
         train_rows=len(train),
         calibration_rows=len(calibration),
@@ -822,6 +873,7 @@ def train_segment_model(
         interval_coverage_pct=rounded(coverage),
         interval_mean_width_pct=rounded(width_pct),
         confidence_level=CONFIDENCE_LEVEL,
+        served_interval_coverage_pct=served_coverage["inside_pct"],
     )
 
     # -- 2. published model: refit on train + calibration, recalibrate on the newest window
@@ -855,6 +907,19 @@ def train_segment_model(
         h3_resolutions=local_market_resolutions(segment),
         h3_module=h3_module,
     )
+    report["coverage"] = {
+        "nominal_pct": rounded(CONFIDENCE_LEVEL * 100),
+        "served_interval_pct": served_coverage["inside_pct"],
+        "below_pct": served_coverage["below_pct"],
+        "above_pct": served_coverage["above_pct"],
+        "mapie_interval_pct": metrics.interval_coverage_pct,
+        "rows": served_coverage["rows"],
+        "promotion_floor_pct": MIN_PROMOTION_COVERAGE_PCT,
+        "describes": (
+            "validation model on the newest sales, never seen by the fit or the calibration; "
+            "model interval only, before any combination with the comparable sales"
+        ),
+    }
     report["published_model"] = {
         "refit_rows": len(fit_part),
         "recalibration_rows": len(test),
@@ -955,7 +1020,12 @@ def build_comparison_report(
 
 
 def decide_activation(report: dict[str, Any], *, requested: bool) -> PromotionDecision:
-    """Activate only a model whose median APE beats both the active model and the naive reference."""
+    """Activate only a model that beats the active model and the naive reference and whose interval holds.
+
+    Accuracy: the median APE must beat both the active model and the naive local reference.
+    Interval: at least ``MIN_PROMOTION_COVERAGE_PCT`` of the newest validation sales must fall
+    inside the served interval (nominal 80 %). ``--force`` bypasses none of this.
+    """
     if not requested:
         return PromotionDecision(False, ("activation not requested",))
     reasons: list[str] = []
@@ -974,6 +1044,14 @@ def decide_activation(report: dict[str, Any], *, requested: bool) -> PromotionDe
         reasons.append(
             f"the active model {active.get('version')} could not be evaluated "
             f"({active.get('reason', 'unknown reason')}); a regression cannot be ruled out"
+        )
+    coverage = (report.get("coverage") or {}).get("served_interval_pct")
+    if coverage is None:
+        reasons.append("the interval coverage on the validation sales was not measured")
+    elif float(coverage) < MIN_PROMOTION_COVERAGE_PCT:
+        reasons.append(
+            f"the served interval covers {coverage}% of the validation sales, below the "
+            f"{MIN_PROMOTION_COVERAGE_PCT}% floor (nominal {rounded(CONFIDENCE_LEVEL * 100)}%)"
         )
     return PromotionDecision(not reasons, tuple(reasons))
 
@@ -1169,6 +1247,7 @@ def published_training_metrics(bundle: ModelBundle) -> dict[str, Any]:
             "active_version": active.get("version"),
             "active_median_ape_pct": active.get("median_ape_pct"),
             "naive_median_ape_pct": report["naive"]["gate_median_ape_pct"],
+            "served_interval_coverage_pct": (report.get("coverage") or {}).get("served_interval_pct"),
             "activated": bundle_is_activated(bundle),
         }
     return metrics
@@ -1178,8 +1257,8 @@ def format_step_summary(bundles: Sequence[ModelBundle]) -> str:
     lines = [
         "### Valuation models: candidate vs active vs naive (median APE on the newest sales)",
         "",
-        "| Segment | Candidate | Active | Naive local | Test rows | Activated | Reasons |",
-        "| --- | --- | --- | --- | --- | --- | --- |",
+        "| Segment | Candidate | Active | Naive local | Interval coverage (nominal 80%) | Test rows | Activated | Reasons |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for bundle in bundles:
         report = bundle.report
@@ -1190,12 +1269,14 @@ def format_step_summary(bundles: Sequence[ModelBundle]) -> str:
             else "none" if active.get("status") == "none" else f"not evaluable ({active.get('reason', '?')})"
         )
         promotion = report.get("promotion", {})
+        served = (report.get("coverage") or {}).get("served_interval_pct")
         lines.append(
-            "| {segment} | {candidate}% | {active} | {naive}% | {rows} | {activated} | {reasons} |".format(
+            "| {segment} | {candidate}% | {active} | {naive}% | {coverage} | {rows} | {activated} | {reasons} |".format(
                 segment=bundle.segment,
                 candidate=report["candidate"]["median_ape_pct"],
                 active=active_cell,
                 naive=report["naive"]["gate_median_ape_pct"],
+                coverage="not measured" if served is None else f"{served}%",
                 rows=report["split"]["test_rows"],
                 activated="yes" if promotion.get("activate") else "no",
                 reasons="; ".join(promotion.get("reasons", [])) or "-",
