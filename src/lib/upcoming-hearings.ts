@@ -1,4 +1,9 @@
 import { calendarDaysBetween, parisDateKey } from "@/lib/sale-countdown";
+import {
+  HEARINGS_DEPARTMENT_PARAM,
+  validHearingDepartment,
+  type HearingDepartment,
+} from "@/lib/hearings-department";
 import { saleHearingTime } from "@/lib/seo";
 import { tribunalLongNameFromRaw } from "@/lib/tribunal-pages";
 
@@ -223,10 +228,7 @@ export function windowHearings(
   };
 }
 
-/** Paramètre d'adresse du filtre par département de la page « Audiences à venir ». */
-export const HEARINGS_DEPARTMENT_PARAM = "departement";
-
-export type HearingDepartment = { code: string; count: number };
+export { HEARINGS_DEPARTMENT_PARAM, validHearingDepartment, type HearingDepartment };
 
 /** Les départements qui ont au moins une audience dans les fenêtres, par ordre de code, avec leur nombre. */
 export function hearingDepartments(windows: HearingWindows): HearingDepartment[] {
@@ -242,15 +244,6 @@ export function hearingDepartments(windows: HearingWindows): HearingDepartment[]
   return [...counts.entries()]
     .map(([code, count]) => ({ code, count }))
     .sort((a, b) => a.code.localeCompare(b.code, "fr", { numeric: true }));
-}
-
-/** Le code du paramètre d'adresse s'il désigne un département de la liste, sinon `null` (aucun filtre). */
-export function validHearingDepartment(
-  value: string | null | undefined,
-  departments: readonly HearingDepartment[],
-): string | null {
-  const code = value?.trim().toUpperCase() ?? "";
-  return departments.find((department) => department.code.toUpperCase() === code)?.code ?? null;
 }
 
 function filterDays(days: readonly HearingDay[], department: string): HearingDay[] {

@@ -1,20 +1,9 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, lazy, useId } from "react";
-import { SaleDetailLink } from "@/components/SaleDetailLink";
-import { Card } from "@/components/ui/primitives";
-import { formatStartingPrice, propertyTypeLabel } from "@/lib/format";
-import {
-  HEARINGS_DEPARTMENT_PARAM,
-  HEARINGS_WEEK_DAYS,
-  HEARINGS_WINDOW_DAYS,
-  filterWindowsByDepartment,
-  validHearingDepartment,
-  type HearingDay,
-  type HearingWindows,
-} from "@/lib/upcoming-hearings";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, lazy, useId, type ReactNode } from "react";
+import { usePublicPathname } from "@/hooks/use-public-pathname";
+import { HEARINGS_DEPARTMENT_PARAM, validHearingDepartment } from "@/lib/hearings-department";
 import { RelativeDay } from "./relative-day";
 
 // L'invitation à créer une alerte n'apparaît qu'une fois un département choisi : son code (session,
@@ -28,31 +17,63 @@ const count = new Intl.NumberFormat("fr-FR");
 /** Les jours de la première fenêtre ouverts d'emblée sans filtre : les autres se déplient d'un clic. */
 const OPEN_DAYS_WITHOUT_FILTER = 2;
 
+/**
+ * Les classes de `<Card as="section">` : `Card` passe par `cn` (tailwind-merge), qui alourdirait le
+ * JavaScript initial de la page. Un test vérifie que les deux restent identiques.
+ */
+export const CARD_CLASS =
+  "rounded-xl border border-line bg-white text-foreground shadow-sm p-4 sm:p-5";
+
 export type HearingDepartmentOption = { code: string; label: string; count: number };
+
+/**
+ * Les audiences telles que le serveur les a mises en page (voir `hearings-rows.tsx`) : chaque ligne
+ * est un élément déjà rendu, le navigateur ne fait que choisir lesquelles montrer.
+ */
+export type ListedHearing = { id: string; department: string | null; row: ReactNode };
+export type ListedGroup = { key: string; heading: ReactNode; hearings: ListedHearing[] };
+export type ListedDay = { dayKey: string; label: string; groups: ListedGroup[] };
+export type ListedWindows = {
+  weekDays: number;
+  windowDays: number;
+  week: ListedDay[];
+  later: ListedDay[];
+};
+
+type FilteredDay = ListedDay & { count: number };
 
 function hearingWord(total: number): string {
   return total > 1 ? "audiences" : "audience";
 }
 
-/** Le jour en toutes lettres ; « (aujourd’hui) » et « (demain) » s'ajoutent dans le navigateur (`RelativeDay`). */
-function dayLabel(dayKey: string): string {
-  return new Intl.DateTimeFormat("fr-FR", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(`${dayKey}T12:00:00Z`));
+/** Les jours réduits aux audiences d'un département (aucun filtre : tous), jours et tribunaux vides retirés. */
+function filterDays(days: readonly ListedDay[], department: string | null): FilteredDay[] {
+  const result: FilteredDay[] = [];
+  for (const day of days) {
+    const groups = day.groups
+      .map((group) => ({
+        ...group,
+        hearings: department
+          ? group.hearings.filter((hearing) => hearing.department === department)
+          : group.hearings,
+      }))
+      .filter((group) => group.hearings.length > 0);
+    const total = groups.reduce((sum, group) => sum + group.hearings.length, 0);
+    if (total > 0) result.push({ ...day, groups, count: total });
+  }
+  return result;
+}
+
+function totalOf(days: readonly FilteredDay[]): number {
+  return days.reduce((sum, day) => sum + day.count, 0);
 }
 
 function Days({
   days,
-  tribunalPaths,
   openAll,
   openFirst,
 }: {
-  days: readonly HearingDay[];
-  tribunalPaths: Readonly<Record<string, string>>;
+  days: readonly FilteredDay[];
   /** Tous les jours ouverts (liste filtrée, donc courte). */
   openAll: boolean;
   /** Nombre de premiers jours ouverts quand `openAll` est faux. */
@@ -70,7 +91,7 @@ function Days({
           >
             <summary className="cursor-pointer list-none">
               <h3 id={`jour-${day.dayKey}`} className="inline font-display text-xl font-semibold">
-                <RelativeDay dayKey={day.dayKey} label={dayLabel(day.dayKey)} />{" "}
+                <RelativeDay dayKey={day.dayKey} label={day.label} />{" "}
                 <span className="text-base font-normal text-ink-soft">
                   · {count.format(day.count)} {hearingWord(day.count)}
                 </span>
@@ -80,50 +101,18 @@ function Days({
               </span>
             </summary>
             <div className="mt-3 grid gap-3">
-              {day.tribunals.map((group) => {
-                const tribunalPath = group.tribunalCode ? tribunalPaths[group.tribunalCode] : null;
-                return (
-                  <div key={group.key}>
-                    <h4 className="font-semibold">
-                      {tribunalPath ? (
-                        <Link href={tribunalPath} className="text-gold-text underline">
-                          {group.label}
-                        </Link>
-                      ) : (
-                        group.label
-                      )}
-                    </h4>
-                    <ul className="mt-1 divide-y divide-line">
-                      {group.hearings.map((hearing) => (
-                        <li key={hearing.id} className="py-2">
-                          <SaleDetailLink
-                            saleId={hearing.id.toLowerCase()}
-                            returnTo="/audiences-a-venir"
-                            className="grid gap-1 sm:grid-cols-[1fr_auto] sm:items-baseline sm:gap-4"
-                          >
-                            <span className="min-w-0">
-                              <span className="font-semibold underline-offset-4 hover:underline">
-                                {hearing.city || "Commune à confirmer"}
-                                {hearing.department ? ` (${hearing.department})` : ""}
-                              </span>
-                              <span className="block text-sm text-ink-soft">
-                                {propertyTypeLabel(hearing.propertyType)} ·{" "}
-                                {hearing.time ? `à ${hearing.time}` : "heure à confirmer"}
-                              </span>
-                            </span>
-                            <span className="text-sm tabular-nums">
-                              <span className="text-ink-soft">Mise à prix </span>
-                              <span className="font-semibold">
-                                {formatStartingPrice(hearing.startingPriceEur)}
-                              </span>
-                            </span>
-                          </SaleDetailLink>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                );
-              })}
+              {day.groups.map((group) => (
+                <div key={group.key}>
+                  {group.heading}
+                  <ul className="mt-1 divide-y divide-line">
+                    {group.hearings.map((hearing) => (
+                      <li key={hearing.id} className="py-2">
+                        {hearing.row}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
             </div>
           </details>
         </section>
@@ -174,26 +163,27 @@ function DepartmentFilter({
  * moteurs de recherche, la page n'est qu'un peu plus lourde.
  */
 export function HearingsListing({
-  windows,
-  tribunalPaths,
+  listing,
   departments,
   department,
   onDepartmentChange,
 }: {
-  windows: HearingWindows;
-  tribunalPaths: Readonly<Record<string, string>>;
+  listing: ListedWindows;
   departments: readonly HearingDepartmentOption[];
   department: string | null;
   /** Absent avant l'hydratation : le filtre est alors grisé. */
   onDepartmentChange?: (code: string | null) => void;
 }) {
-  const shown = filterWindowsByDepartment(windows, department);
-  const total = shown.weekCount + shown.laterCount;
+  const week = filterDays(listing.week, department);
+  const later = filterDays(listing.later, department);
+  const weekCount = totalOf(week);
+  const laterCount = totalOf(later);
+  const total = weekCount + laterCount;
   const option = departments.find((candidate) => candidate.code === department);
   return (
     <>
       {departments.length > 0 ? (
-        <Card as="section" aria-label="Filtrer par département">
+        <section className={CARD_CLASS} aria-label="Filtrer par département">
           <DepartmentFilter
             departments={departments}
             value={department}
@@ -217,55 +207,45 @@ export function HearingsListing({
               nouvelles ventes.
             </p>
           )}
-        </Card>
+        </section>
       ) : null}
 
-      {shown.weekCount > 0 ? (
-        <Card as="section" aria-labelledby="sept-jours">
+      {weekCount > 0 ? (
+        <section className={CARD_CLASS} aria-labelledby="sept-jours">
           <h2 id="sept-jours" className="font-display text-2xl font-semibold">
-            Dans les {HEARINGS_WEEK_DAYS} prochains jours
+            Dans les {listing.weekDays} prochains jours
             <span className="text-lg font-normal text-ink-soft">
               {" "}
-              · {count.format(shown.weekCount)} {hearingWord(shown.weekCount)}
+              · {count.format(weekCount)} {hearingWord(weekCount)}
             </span>
           </h2>
-          <Days
-            days={shown.week}
-            tribunalPaths={tribunalPaths}
-            openAll={department !== null}
-            openFirst={OPEN_DAYS_WITHOUT_FILTER}
-          />
-        </Card>
+          <Days days={week} openAll={department !== null} openFirst={OPEN_DAYS_WITHOUT_FILTER} />
+        </section>
       ) : null}
 
-      {shown.laterCount > 0 ? (
-        <Card as="section" aria-labelledby="trente-jours">
+      {laterCount > 0 ? (
+        <section className={CARD_CLASS} aria-labelledby="trente-jours">
           <h2 id="trente-jours" className="font-display text-2xl font-semibold">
-            Du {HEARINGS_WEEK_DAYS + 1}e au {HEARINGS_WINDOW_DAYS}e jour
+            Du {listing.weekDays + 1}e au {listing.windowDays}e jour
             <span className="text-lg font-normal text-ink-soft">
               {" "}
-              · {count.format(shown.laterCount)} {hearingWord(shown.laterCount)}
+              · {count.format(laterCount)} {hearingWord(laterCount)}
             </span>
           </h2>
-          <Days
-            days={shown.later}
-            tribunalPaths={tribunalPaths}
-            openAll={department !== null}
-            openFirst={0}
-          />
-        </Card>
+          <Days days={later} openAll={department !== null} openFirst={0} />
+        </section>
       ) : null}
 
       {department && total === 0 ? (
-        <Card as="section" aria-labelledby="aucune-departement">
+        <section className={CARD_CLASS} aria-labelledby="aucune-departement">
           <h2 id="aucune-departement" className="font-display text-2xl font-semibold">
             Aucune audience dans ce département
           </h2>
           <p className="mt-3 text-ink-soft">
             Aucune vente au tribunal n’y a, pour le moment, une date d’audience annoncée dans les{" "}
-            {HEARINGS_WINDOW_DAYS} prochains jours.
+            {listing.windowDays} prochains jours.
           </p>
-        </Card>
+        </section>
       ) : null}
 
       {department ? (
@@ -286,16 +266,14 @@ export function HearingsListing({
  * Suspense de la page garde, en attendant, la liste complète.
  */
 export function HearingsFilteredListing({
-  windows,
-  tribunalPaths,
+  listing,
   departments,
 }: {
-  windows: HearingWindows;
-  tribunalPaths: Readonly<Record<string, string>>;
+  listing: ListedWindows;
   departments: readonly HearingDepartmentOption[];
 }) {
   const router = useRouter();
-  const pathname = usePathname();
+  const pathname = usePublicPathname();
   const searchParams = useSearchParams();
   const department = validHearingDepartment(
     searchParams.get(HEARINGS_DEPARTMENT_PARAM),
@@ -312,8 +290,7 @@ export function HearingsFilteredListing({
 
   return (
     <HearingsListing
-      windows={windows}
-      tribunalPaths={tribunalPaths}
+      listing={listing}
       departments={departments}
       department={department}
       onDepartmentChange={change}

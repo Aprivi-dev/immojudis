@@ -16,6 +16,7 @@ import {
   HearingsListing,
   type HearingDepartmentOption,
 } from "./hearings-list";
+import { listHearings } from "./hearings-rows";
 
 /** Les départements ayant une audience, avec leur nom (« Gironde (33) ») et leur nombre d'audiences. */
 function departmentOptions(windows: HearingWindows): HearingDepartmentOption[] {
@@ -48,7 +49,7 @@ export function HearingsView({
   const total = windows.weekCount + windows.laterCount;
   const updated = seoLongDate(generatedAt.toISOString());
   const departments = departmentOptions(windows);
-  const paths = Object.fromEntries(tribunalPaths);
+  const listing = listHearings(windows, Object.fromEntries(tribunalPaths));
 
   return (
     <PageShell
@@ -129,19 +130,10 @@ export function HearingsView({
           // à l'avance. En attendant (et pour les robots) la frontière montre la liste complète.
           <Suspense
             fallback={
-              <HearingsListing
-                windows={windows}
-                tribunalPaths={paths}
-                departments={departments}
-                department={null}
-              />
+              <HearingsListing listing={listing} departments={departments} department={null} />
             }
           >
-            <HearingsFilteredListing
-              windows={windows}
-              tribunalPaths={paths}
-              departments={departments}
-            />
+            <HearingsFilteredListing listing={listing} departments={departments} />
           </Suspense>
         ) : null}
 

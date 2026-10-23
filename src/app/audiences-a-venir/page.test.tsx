@@ -42,7 +42,9 @@ vi.mock("@/lib/public-tribunal-activity.server", () => ({
 }));
 
 import { PUBLIC_TRIBUNAL_ACTIVITY_REVALIDATE_SECONDS } from "@/lib/public-tribunal-activity.server";
-import { HearingsListing } from "./hearings-list";
+import { Card } from "@/components/ui/primitives";
+import { CARD_CLASS, HearingsListing } from "./hearings-list";
+import { listHearings } from "./hearings-rows";
 import Page, { generateMetadata, revalidate } from "./page";
 
 /** Mardi 20 octobre 2026, 10 h à Paris. */
@@ -455,8 +457,7 @@ describe("/audiences-a-venir : filtre par département et jours repliables", () 
     for (const city of ["Bobigny", "Pantin", "Bordeaux", "Pau"]) expect(html).toContain(city);
     const fallback = renderToString(
       <HearingsListing
-        windows={windowHearings(dedupeHearings(mapHearingRows(MIXED())), NOW)}
-        tribunalPaths={{}}
+        listing={listHearings(windowHearings(dedupeHearings(mapHearingRows(MIXED())), NOW), {})}
         departments={[{ code: "33", label: "Gironde (33)", count: 1 }]}
         department={null}
       />,
@@ -480,5 +481,10 @@ describe("/audiences-a-venir : filtre par département et jours repliables", () 
     expect(details.map((element) => element.open)).toEqual([true, true, false, false]);
     // Fermés, ils restent dans la page, lisibles : le contenu n'est pas retiré.
     expect(details[3].textContent).toContain("Mise à prix");
+  });
+
+  it("garde pour ses cartes les classes de Card (sans charger tailwind-merge dans le navigateur)", () => {
+    const card = render(<Card as="section" />).container.firstElementChild;
+    expect(card?.getAttribute("class")).toBe(CARD_CLASS);
   });
 });
