@@ -1,4 +1,5 @@
 import { gridDistance, latLngToCell } from "h3-js";
+import { MARKET_JACKKNIFE_MIN_COMPARABLES } from "@/lib/market-comparable-minimums";
 
 export type MarketPropertySegment =
   | "apartment"
@@ -410,7 +411,8 @@ function conformalPredictionInterval(input: {
     })
     .filter((value): value is number => value != null && Number.isFinite(value))
     .sort((a, b) => a - b);
-  const method = residuals.length >= 6 ? "local_jackknife" : "segment_fallback";
+  const method =
+    residuals.length >= MARKET_JACKKNIFE_MIN_COMPARABLES ? "local_jackknife" : "segment_fallback";
   const logExpansion =
     method === "local_jackknife"
       ? Math.max(percentile(residuals, TARGET_INTERVAL_COVERAGE), Math.log(1.08))
