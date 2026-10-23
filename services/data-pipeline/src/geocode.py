@@ -11,6 +11,7 @@ import httpx
 from src.cadastre_references import PROVIDER as CADASTRE_PROVIDER
 from src.cadastre_references import resolve_sale_cadastre
 from src.config import load_settings
+from src.department_bounds import coordinates_in_department
 from src.models import AuctionSale
 from src.municipality_location import (
     locate_sale_by_municipality,
@@ -20,14 +21,6 @@ from src.municipality_location import (
 from src.normalize import clean_text, extract_department, strip_accents
 
 LOGGER = logging.getLogger(__name__)
-# ponytail: only departments with known historical false positives need bboxes.
-DEPARTMENT_BOUNDS = {
-    "24": (44.55, 45.75, -0.1, 1.5),
-    "33": (44.15, 45.65, -1.35, 0.05),
-    "40": (43.45, 44.55, -1.55, 0.15),
-    "47": (43.95, 44.85, -0.15, 1.15),
-    "64": (42.75, 43.65, -1.95, 0.15),
-}
 NEGATIVE_GEOCODE_CACHE_TTL = timedelta(days=14)
 # A house number or street match below this score is usually another street of the same name.
 ADDRESS_MIN_SCORE = 0.6
@@ -368,11 +361,7 @@ def _coordinates_match_department(sale: AuctionSale) -> bool:
 
 
 def _coordinates_in_department(latitude: Decimal, longitude: Decimal, department: str) -> bool:
-    bounds = DEPARTMENT_BOUNDS.get(department or "")
-    if not bounds:
-        return True
-    min_lat, max_lat, min_lon, max_lon = bounds
-    return min_lat <= float(latitude) <= max_lat and min_lon <= float(longitude) <= max_lon
+    return coordinates_in_department(latitude, longitude, department)
 
 
 def _store_geocode_evidence(
