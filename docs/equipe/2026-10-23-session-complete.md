@@ -375,3 +375,26 @@ La numérotation saute quelques numéros (13, 23, 51, 52, 69) : des doublons fus
    - « N'importe qui peut surenchérir » (`bid-ceiling-engine.ts:594`).
    - Statut de l'éditeur.
    - Contenu de la déclaration d'accessibilité.
+
+## Décision du propriétaire (23/10/2026)
+
+« Je valide tous les points que tu proposes, sauf les sujets juridiques, tu peux démarrer les chantiers. »
+
+Lecture du chef d'orchestre :
+
+- **Validés :** tous les « garder » du tableau, avec l'arbitrage du chef quand il en donne un :
+  - n° 14 : seuils proposés, aucun chiffre sous 30 ventes nationales, repli annoncé sous 10 ventes du tribunal ;
+  - n° 17 : masquage seulement ;
+  - n° 28 : `/annonce-exemple` seulement ;
+  - n° 67 : les deux premiers points seulement ;
+  - n° 76 : correction du débordement seulement.
+- **Non validés, car « discutables » :** n° 11, 32, 35, 68, 74, 84 et 92 ; la refonte du n° 17 ; le chargement de la
+  carte sur les fiches (n° 28) ; les trois derniers points du n° 67 ; l'entrée « Vous êtes avocat ? » (n° 76).
+- **Exclus, car juridiques :**
+  - n° 58 (« sans identifiant de personne »), 82 (délai de surenchère), 90 (R. 322-41 en liquidation) ;
+  - le texte de la politique sur Street View (n° 57 : seul le chargement au clic est fait) ;
+  - l'avertissement sur le cahier des conditions et la phrase sur le zonage hors du cahier (n° 38) ;
+  - les corrections du n° 83 marquées « juridique » (consignation contre garantie de 10 %, « indépendant ») ;
+  - la réécriture des promesses des emails de l'agent (n° 43 : seuls le chemin d'effacement et la purge sont faits) ;
+  - le texte de la case « entretien » (n° 91).
+- **Rien à coder :** n° 91 (plan d'étude) ; réglages et décisions de la partie « À faire par le propriétaire ».
