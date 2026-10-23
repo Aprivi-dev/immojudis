@@ -47,6 +47,12 @@ describe("ExampleSalePage", () => {
     expect(mocks.track).toHaveBeenCalledWith("sample_report_viewed");
   });
 
+  it("prépare la connexion à Mapbox pour l'image d'attente de la vue aérienne", async () => {
+    const { readFileSync } = await import("node:fs");
+    const source = readFileSync("src/app/annonce-exemple/example-sale-page.tsx", "utf8");
+    expect(source).toContain("<MapboxPreconnect />");
+  });
+
   it("transmet le drapeau des statistiques à la vue, fermé par défaut", async () => {
     const { unmount } = render(<ExampleSalePage example={getExampleSaleRecords().bordeaux} />);
     expect((await screen.findByTestId("example-detail")).dataset.statistics).toBe("closed");

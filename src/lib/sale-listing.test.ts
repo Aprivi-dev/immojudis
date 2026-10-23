@@ -157,11 +157,25 @@ describe("listing facts", () => {
     [40, 181],
     [NaN, 2],
     [40, Infinity],
+    // (0, 0), mer du Nord au large du Royaume-Uni, latitude et longitude échangées.
+    [0, 0],
+    [54.27, -0.4],
+    [6.9, 43.65],
   ])("rejects unusable coordinates %s %s", (latitude, longitude) => {
     expect(listingCoordinates(sale({ latitude, longitude }))).toBeNull();
   });
-  it("accepts valid zero coordinates", () => {
-    expect(listingCoordinates(sale({ latitude: 0, longitude: 0 }))).toEqual({ lat: 0, lng: 0 });
+  it.each([
+    ["Paris", 48.8566, 2.3522],
+    ["Corse", 42.15, 9.1],
+    ["La Réunion", -21.115, 55.536],
+    ["Guadeloupe", 16.24, -61.53],
+    ["Guyane", 4.93, -52.33],
+    ["Mayotte", -12.78, 45.23],
+  ])("accepts a point in France: %s", (_place, latitude, longitude) => {
+    expect(listingCoordinates(sale({ latitude, longitude }))).toEqual({
+      lat: latitude,
+      lng: longitude,
+    });
   });
 });
 

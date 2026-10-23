@@ -12873,6 +12873,7 @@ export type Database = {
           lawyer_contact: string | null;
           lawyer_name: string | null;
           llm_display_description: string | null;
+          location_precision: string | null;
           longitude: number | null;
           media: Json | null;
           occupancy_status: string | null;
@@ -13069,6 +13070,7 @@ export type Database = {
           lawyer_contact: string | null;
           lawyer_name: string | null;
           llm_display_description: string | null;
+          location_precision: string | null;
           longitude: number | null;
           media: Json | null;
           occupancy_status: string | null;
@@ -13244,6 +13246,7 @@ export type Database = {
           lawyer_contact: string | null;
           lawyer_name: string | null;
           llm_display_description: string | null;
+          location_precision: string | null;
           longitude: number | null;
           media: Json | null;
           occupancy_status: string | null;

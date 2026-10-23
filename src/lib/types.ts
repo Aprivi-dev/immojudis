@@ -123,6 +123,12 @@ export type AuctionSale = {
   source_blocks_by_source: Record<string, Record<string, unknown>> | null;
   dedupe_confidence: string | null;
   quality_flags: unknown;
+  /**
+   * Précision du point (`address`, `parcel`, `street`, `municipality`…), exposée par les vues de
+   * ventes (`raw_payload->>'geo_precision'`). Absente ou null : précision inconnue, donc pas de vue
+   * aérienne tournante.
+   */
+  location_precision?: string | null;
   documents: unknown;
   documents_rich: SaleDocumentRich[] | null;
   media: SaleMedia[] | null;

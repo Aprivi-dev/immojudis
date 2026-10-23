@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import dynamic from "next/dynamic";
+import { MapboxPreconnect } from "@/components/MapboxPreconnect";
 import { SaleDetailSkeleton } from "@/components/SaleDetailFallbacks";
 import type { MarketEstimate } from "@/lib/market.server";
 import type { AuctionSale } from "@/lib/types";
@@ -30,6 +31,8 @@ export function ExampleSalePage({
   }, []);
   return (
     <>
+      {/* L'image d'attente de la vue aérienne vient de api.mapbox.com : connexion préparée tôt. */}
+      <MapboxPreconnect />
       <div
         role="note"
         className="border-b border-amber-300 bg-amber-50 px-4 py-3 text-center text-sm font-semibold text-amber-950"

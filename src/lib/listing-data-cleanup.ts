@@ -1,8 +1,13 @@
 import type { AuctionSale } from "./types";
+import { STREET_TYPE_END, streetTypePattern } from "./street-types";
 import { stripWithdrawnSourceContent } from "./withdrawn-sources";
 
-const STREET_TYPES =
-  "rue|avenue|av\\.?|boulevard|bd\\.?|chemin|route|impasse|allée|allee|place|quai|cours|faubourg|passage|square|voie|lotissement|hameau";
+const STREET_TYPES = streetTypePattern();
+// Texte recollé (« rueRoland Garros ») : mots entiers seulement, « av » ou « pl » couperaient « avoir ».
+const GLUED_STREET_TYPE = new RegExp(
+  `(${streetTypePattern({ abbreviations: false })})([A-Za-zÀ-ÿ])`,
+  "gi",
+);
 
 const ADDRESS_CONTAMINATION =
   /\b(?:on\s+ne\s+peut\s+enchérir|on\s+ne\s+peut\s+encherir|afficher\s+le\s+plan|exactitude\s+non\s+garantie|ne\s+peut\s+enchérir|ne\s+peut\s+encherir|adresse\s+du\s+bien|localisation\s+du\s+bien)\b/i;
@@ -22,10 +27,13 @@ export function cleanListingAddress(value: unknown): string | null {
   return (
     match[0]
       .replace(
-        /(\d)(?=(?:bis|ter|quater)?\s*(?:rue|avenue|av\.?|boulevard|bd\.?|chemin|route|impasse|allée|allee|place|quai|cours|faubourg|passage|square|voie|lotissement|hameau)\b)/i,
+        new RegExp(`(\\d)(?=(?:bis|ter|quater)?\\s*(?:${STREET_TYPES})${STREET_TYPE_END})`, "i"),
         "$1 ",
       )
-      .replace(new RegExp(`(${STREET_TYPES})(?=[A-Za-zÀ-ÿ])`, "i"), "$1 ")
+      // La majuscule marque le mot collé : « villageois » n'est pas « villa geois ».
+      .replace(GLUED_STREET_TYPE, (glued, type: string, next: string) =>
+        next === next.toUpperCase() && next !== next.toLowerCase() ? `${type} ${next}` : glued,
+      )
       .trim()
       .replace(/^[,\s|-]+|[,\s|-]+$/g, "") || null
   );

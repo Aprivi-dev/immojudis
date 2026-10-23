@@ -137,6 +137,7 @@ describe("fiche : vue aérienne 360° devant les photos", () => {
     address: "12 rue Sainte-Catherine",
     postal_code: "33000",
     quality_flags: [],
+    location_precision: "address",
   } as Partial<AuctionSale>;
 
   beforeEach(() => {
@@ -163,7 +164,7 @@ describe("fiche : vue aérienne 360° devant les photos", () => {
     expect(screen.getByText("Photos de l’annonce")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Ouvrir la photo 1" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Ouvrir la photo 2" })).toBeTruthy();
-    expect(screen.getByTestId("photo-credit").textContent).toBe("Photo : via Licitor");
+    expect(screen.getByTestId("photo-credit").textContent).toBe("Photos : via Licitor, Vench");
     // Sans IntersectionObserver (jsdom), la carte animée n'est pas chargée : l'image fixe reste.
     expect(screen.getByRole("button", { name: "Lancer la vue 360°" })).toBeTruthy();
   });
@@ -198,5 +199,97 @@ describe("fiche : vue aérienne 360° devant les photos", () => {
 
     expect(screen.getByRole("img", { name: /Vue aérienne autour/ })).toBeTruthy();
     expect(screen.queryByText("Photos de l’annonce")).toBeNull();
+  });
+
+  it.each([null, undefined, "street", "municipality"])(
+    "garde la photo en tête quand la précision du point est %s",
+    (location_precision) => {
+      renderWithClient(<PropertyIdentity sale={sale({ ...located, location_precision })} />);
+
+      expect(screen.queryByRole("img", { name: /Vue aérienne autour/ })).toBeNull();
+    },
+  );
+
+  it("n'affiche pas la vue aérienne d'un parking", () => {
+    renderWithClient(<PropertyIdentity sale={sale({ ...located, property_type: "parking" })} />);
+
+    expect(screen.queryByRole("img", { name: /Vue aérienne autour/ })).toBeNull();
+  });
+
+  it("crédite chaque source des vignettes, sans doublon", () => {
+    renderWithClient(<PropertyIdentity sale={sale(located)} />);
+
+    // Photo 1 : Licitor (copie hébergée), photo 2 : Vench.
+    expect(screen.getByTestId("photo-credit").textContent).toBe("Photos : via Licitor, Vench");
+  });
+
+  it("écrit « Voir la photo » au singulier", () => {
+    renderWithClient(
+      <PropertyIdentity
+        sale={sale({
+          ...located,
+          media: [{ type: "image", url: LICITOR_PHOTO }],
+        } as Partial<AuctionSale>)}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Voir la photo" })).toBeTruthy();
+    expect(screen.queryByText(/Voir les 1 photo/)).toBeNull();
+  });
+
+  it("masque le bloc des photos quand toutes les vignettes échouent", () => {
+    renderWithClient(
+      <PropertyIdentity
+        sale={sale({
+          ...located,
+          media: [
+            { type: "image", url: "https://www.licitor.com/photos/a.jpg" },
+            { type: "image", url: "https://www.licitor.com/photos/b.jpg" },
+          ],
+        } as Partial<AuctionSale>)}
+      />,
+    );
+    expect(screen.getByText("Photos de l’annonce")).toBeTruthy();
+
+    const thumbnails = screen
+      .getAllByRole("img", { name: /^Photo \d de/ })
+      .filter((image) => image.tagName === "IMG");
+    expect(thumbnails).toHaveLength(2);
+    for (const thumbnail of thumbnails) fireEvent.error(thumbnail);
+
+    expect(screen.queryByText("Photos de l’annonce")).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Voir/ })).toBeNull();
+    expect(screen.queryByTestId("photo-credit")).toBeNull();
+  });
+
+  it("ne crédite plus qu'une vignette quand l'autre a échoué", () => {
+    renderWithClient(
+      <PropertyIdentity
+        sale={sale({
+          ...located,
+          media: [
+            { type: "image", url: "https://www.licitor.com/photos/a.jpg" },
+            { type: "image", url: "https://d1x9.cloudfront.net/p/b.jpg" },
+          ],
+        } as Partial<AuctionSale>)}
+      />,
+    );
+    expect(screen.getByTestId("photo-credit").textContent).toBe(
+      "Photos : via Licitor, source de l'annonce",
+    );
+
+    const second = screen
+      .getAllByRole("img", { name: /^Photo 2 de/ })
+      .find((image) => image.tagName === "IMG")!;
+    fireEvent.error(second);
+
+    expect(screen.getByTestId("photo-credit").textContent).toBe("Photo : via Licitor");
+  });
+
+  it("en démonstration publique, la vue aérienne n'est qu'une image fixe sans bouton", () => {
+    renderWithClient(<PropertyIdentity sale={sale(located)} publicDemo />);
+
+    expect(screen.getByRole("img", { name: /Vue aérienne autour/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Lancer la vue 360°" })).toBeNull();
   });
 });
