@@ -100,7 +100,6 @@ import {
   TribunalEstimationEvidence,
 } from "@/components/sale-detail/SaleDetailMarket";
 import {
-  InformationAvailabilityNotice,
   LawyerSection,
   PanelIntro,
   RisksAndDocuments,
@@ -1041,7 +1040,6 @@ function SaleDetailWorkspace({
                     />
                   </section>
                 ) : null}
-                {access === "analysis" ? <InformationAvailabilityNotice /> : null}
               </>
             ) : null}
           </div>
