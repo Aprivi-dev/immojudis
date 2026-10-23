@@ -1,104 +1,28 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { Terme } from "@/components/ceiling/Terme";
-import { SaleDetailLink } from "@/components/SaleDetailLink";
+import { FEES_SIMULATOR_DEPARTMENTS } from "@/components/fees-simulator/departments";
 import { Card, PageShell, buttonClasses } from "@/components/ui/primitives";
-import { formatStartingPrice, propertyTypeLabel } from "@/lib/format";
 import { SALE_CALENDAR_DISCLAIMER } from "@/lib/sale-calendar";
 import { seoLongDate } from "@/lib/seo";
 import {
   HEARINGS_WEEK_DAYS,
   HEARINGS_WINDOW_DAYS,
-  type HearingDay,
+  hearingDepartments,
   type HearingWindows,
 } from "@/lib/upcoming-hearings";
-import { RelativeDay } from "./relative-day";
+import {
+  HearingsFilteredListing,
+  HearingsListing,
+  type HearingDepartmentOption,
+} from "./hearings-list";
 
-const count = new Intl.NumberFormat("fr-FR");
-
-function hearingWord(total: number): string {
-  return total > 1 ? "audiences" : "audience";
-}
-
-/** Le jour en toutes lettres ; « (aujourd’hui) » et « (demain) » s'ajoutent dans le navigateur (`RelativeDay`). */
-function dayLabel(dayKey: string): string {
-  return new Intl.DateTimeFormat("fr-FR", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(`${dayKey}T12:00:00Z`));
-}
-
-function Days({
-  days,
-  tribunalPaths,
-}: {
-  days: readonly HearingDay[];
-  tribunalPaths: ReadonlyMap<string, string>;
-}) {
-  return (
-    <div className="mt-4 grid gap-6">
-      {days.map((day) => (
-        <section key={day.dayKey} aria-labelledby={`jour-${day.dayKey}`}>
-          <h3 id={`jour-${day.dayKey}`} className="font-display text-xl font-semibold">
-            <RelativeDay dayKey={day.dayKey} label={dayLabel(day.dayKey)} />{" "}
-            <span className="text-base font-normal text-ink-soft">
-              · {count.format(day.count)} {hearingWord(day.count)}
-            </span>
-          </h3>
-          <div className="mt-2 grid gap-3">
-            {day.tribunals.map((group) => {
-              const tribunalPath = group.tribunalCode
-                ? tribunalPaths.get(group.tribunalCode)
-                : null;
-              return (
-                <div key={group.key}>
-                  <h4 className="font-semibold">
-                    {tribunalPath ? (
-                      <Link href={tribunalPath} className="text-gold-text underline">
-                        {group.label}
-                      </Link>
-                    ) : (
-                      group.label
-                    )}
-                  </h4>
-                  <ul className="mt-1 divide-y divide-line">
-                    {group.hearings.map((hearing) => (
-                      <li key={hearing.id} className="py-2">
-                        <SaleDetailLink
-                          saleId={hearing.id.toLowerCase()}
-                          returnTo="/audiences-a-venir"
-                          className="grid gap-1 sm:grid-cols-[1fr_auto] sm:items-baseline sm:gap-4"
-                        >
-                          <span className="min-w-0">
-                            <span className="font-semibold underline-offset-4 hover:underline">
-                              {hearing.city || "Commune à confirmer"}
-                              {hearing.department ? ` (${hearing.department})` : ""}
-                            </span>
-                            <span className="block text-sm text-ink-soft">
-                              {propertyTypeLabel(hearing.propertyType)} ·{" "}
-                              {hearing.time ? `à ${hearing.time}` : "heure à confirmer"}
-                            </span>
-                          </span>
-                          <span className="text-sm tabular-nums">
-                            <span className="text-ink-soft">Mise à prix </span>
-                            <span className="font-semibold">
-                              {formatStartingPrice(hearing.startingPriceEur)}
-                            </span>
-                          </span>
-                        </SaleDetailLink>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      ))}
-    </div>
-  );
+/** Les départements ayant une audience, avec leur nom (« Gironde (33) ») et leur nombre d'audiences. */
+function departmentOptions(windows: HearingWindows): HearingDepartmentOption[] {
+  return hearingDepartments(windows).map(({ code, count }) => {
+    const name = FEES_SIMULATOR_DEPARTMENTS.find((department) => department.code === code)?.name;
+    return { code, count, label: name ? `${name} (${code})` : code };
+  });
 }
 
 /**
@@ -123,6 +47,8 @@ export function HearingsView({
 }) {
   const total = windows.weekCount + windows.laterCount;
   const updated = seoLongDate(generatedAt.toISOString());
+  const departments = departmentOptions(windows);
+  const paths = Object.fromEntries(tribunalPaths);
 
   return (
     <PageShell
@@ -198,30 +124,25 @@ export function HearingsView({
           </Card>
         ) : null}
 
-        {windows.weekCount > 0 ? (
-          <Card as="section" aria-labelledby="sept-jours">
-            <h2 id="sept-jours" className="font-display text-2xl font-semibold">
-              Dans les {HEARINGS_WEEK_DAYS} prochains jours
-              <span className="text-lg font-normal text-ink-soft">
-                {" "}
-                · {count.format(windows.weekCount)} {hearingWord(windows.weekCount)}
-              </span>
-            </h2>
-            <Days days={windows.week} tribunalPaths={tribunalPaths} />
-          </Card>
-        ) : null}
-
-        {windows.laterCount > 0 ? (
-          <Card as="section" aria-labelledby="trente-jours">
-            <h2 id="trente-jours" className="font-display text-2xl font-semibold">
-              Du {HEARINGS_WEEK_DAYS + 1}e au {HEARINGS_WINDOW_DAYS}e jour
-              <span className="text-lg font-normal text-ink-soft">
-                {" "}
-                · {count.format(windows.laterCount)} {hearingWord(windows.laterCount)}
-              </span>
-            </h2>
-            <Days days={windows.later} tribunalPaths={tribunalPaths} />
-          </Card>
+        {total > 0 ? (
+          // Le choix du département est dans l'adresse, lu dans le navigateur : la page reste produite
+          // à l'avance. En attendant (et pour les robots) la frontière montre la liste complète.
+          <Suspense
+            fallback={
+              <HearingsListing
+                windows={windows}
+                tribunalPaths={paths}
+                departments={departments}
+                department={null}
+              />
+            }
+          >
+            <HearingsFilteredListing
+              windows={windows}
+              tribunalPaths={paths}
+              departments={departments}
+            />
+          </Suspense>
         ) : null}
 
         {truncated ? (

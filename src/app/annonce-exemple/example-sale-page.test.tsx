@@ -3,8 +3,12 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ track: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  track: vi.fn(),
+  auth: { user: null as null | { id: string }, loading: false },
+}));
 vi.mock("@/lib/product-events", () => ({ trackProductEvent: mocks.track }));
+vi.mock("@/hooks/use-auth", () => ({ useAuth: () => mocks.auth }));
 vi.mock("@/components/SimplifiedSaleDetailView", () => ({
   AnalysisSaleDetailView: ({
     sale,
@@ -39,6 +43,31 @@ describe("ExampleSalePage", () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
+  });
+
+  it("finit sur un compte gratuit et le catalogue, jamais sur /offres (non souscriptible)", () => {
+    mocks.auth = { user: null, loading: false };
+    render(<ExampleSalePage example={getExampleSaleRecords().bordeaux} />);
+    const block = screen.getByTestId("example-next-steps");
+    const hrefs = Array.from(block.querySelectorAll("a")).map((link) => [
+      link.textContent,
+      link.getAttribute("href"),
+    ]);
+    expect(hrefs).toEqual([
+      ["Créer mon compte gratuit", "/login?redirect=%2Fsales&mode=investor&reason=offre"],
+      ["Explorer les ventes", "/sales"],
+    ]);
+    expect(block.innerHTML).not.toContain("/offres");
+    expect(block.textContent).not.toMatch(/offre Analyse|abonn|€/i);
+  });
+
+  it("ne propose plus de créer un compte à une personne connectée", () => {
+    mocks.auth = { user: { id: "user-1" }, loading: false };
+    render(<ExampleSalePage example={getExampleSaleRecords().bordeaux} />);
+    const block = screen.getByTestId("example-next-steps");
+    expect(block.textContent).not.toContain("Créer mon compte gratuit");
+    expect(block.querySelector('a[href="/sales"]')).not.toBeNull();
+    mocks.auth = { user: null, loading: false };
   });
 
   it("mesure la consultation de l'annonce exemple, sans identifiant de vente", () => {
