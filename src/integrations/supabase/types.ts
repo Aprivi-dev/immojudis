@@ -14251,7 +14251,7 @@ export type Database = {
       };
       geomfromewkt: { Args: { "": string }; Returns: unknown };
       get_court_auction_scenarios: {
-        Args: { p_court_code: string; p_starting_price: number };
+        Args: { p_court_code: string; p_property_group?: string; p_starting_price: number };
         Returns: Json;
       };
       get_court_auction_summaries: { Args: never; Returns: Json };
