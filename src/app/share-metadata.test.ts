@@ -10,6 +10,7 @@ vi.mock("@/lib/public-tribunal-activity.server", () => ({
 vi.mock("@/lib/legal-documents", () => ({
   publicLegalPublisher: vi.fn(),
   legalPublisherConfigurationStatus: vi.fn(() => ({ ready: false, missing: [] })),
+  legalConfigurationStatus: vi.fn(() => ({ ready: false, missing: [] })),
 }));
 
 const PAGES: Array<

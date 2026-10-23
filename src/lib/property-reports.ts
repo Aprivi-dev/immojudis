@@ -693,7 +693,7 @@ export function buildPropertyReportShare(
 }
 
 /**
- * Liste blanche du plafond d'enchère exposé par un lien public. Le snapshot complet contient les
+ * Liste blanche de l'enchère plafond exposée par un lien public. Le snapshot complet contient les
  * entrées privées du propriétaire (loyer, mensualité, charges, taxe foncière) : seuls les champs
  * que la page partagée affiche sont recopiés. `market_snapshot` et `environmental_snapshot` ne
  * sont pas rendus par cette page et ne sont donc pas renvoyés.
