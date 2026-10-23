@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/primitives";
 import { fetchSaleChangeEvents } from "@/lib/client-api";
 import { formatDate, formatPrice } from "@/lib/format";
 import { queryKeys } from "@/lib/query-keys";
-import { changesSinceCeiling } from "@/lib/sale-change-display";
+import { changesSinceCeiling } from "@/lib/ceiling-staleness";
 
 const reviewedKey = (userId: string, saleId: string) =>
   `immojudis:ceiling-reviewed:${userId}:${saleId}`;
