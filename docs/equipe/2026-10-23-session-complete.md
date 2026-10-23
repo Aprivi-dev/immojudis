@@ -538,3 +538,28 @@ Tout est sur la branche `claude/friendly-lamport-rtb97c`, PR #293 (brouillon) : 
    - jeton Mapbox ;
    - identité de l'éditeur ;
    - réparations de données.
+
+## Seconde décision du propriétaire (23/10/2026, après la fusion de la PR #293)
+
+« Pour les points 11 à 92, quand tu dis points discutables, ceux-là, il faut que tu les traites. Concernant la partie
+points juridiques exclus, il faut que tu t'occupes du 82, du 90, du 38, du 83 et du 91. Et il faut aussi que tu traites
+le 16, le 26. Il faut d'abord traiter les points restants et ensuite on appliquera la migration. »
+
+- **Discutables, désormais validés :**
+  - n° 11, 32, 35, 68, 74, 84 et 92 ;
+  - la refonte du n° 17 ;
+  - le chargement de la carte sur les fiches (n° 28) ;
+  - les trois derniers points du n° 67 ;
+  - l'entrée « Vous êtes avocat ? » (n° 76).
+- **Juridiques, désormais validés :**
+  - n° 82 (délai de surenchère) et n° 90 (R. 322-41 en liquidation) ;
+  - les parties juridiques du n° 38 (avertissement sur le cahier des conditions, zonage) et du n° 83 (consignation
+    contre garantie, « indépendant ») ;
+  - le n° 91 (texte de la case « entretien »).
+  - Ils restent relus par `juridique-rgpd` avant livraison.
+- **Partiels à terminer :**
+  - n° 16 (tranches de mise à prix) ;
+  - n° 26 (doublons probables exclus de la vue 360°).
+- **Toujours exclus :** n° 58, le texte de la politique sur Street View (n° 57) et les promesses des emails de l'agent
+  (n° 43).
+- **Ordre :** ces points sont traités et fusionnés d'abord, et les migrations sont appliquées ensuite.
