@@ -67,6 +67,9 @@ update public.auction_sale_market_estimates
    'c7160000-1000-4000-8000-000000000010'
  );
 
+-- Pont Outcome Graph exigé avant toute suppression d'une vente (garde de 20260730163756), comme les autres tests.
+select count(*) from public.bridge_auction_sales_to_outcome_graph();
+
 -- Structure, accès ------------------------------------------------------------------------------------
 select has_table('app_private', 'sale_market_estimate_snapshots', 'the snapshot table exists');
 select ok(
@@ -258,6 +261,7 @@ insert into public.auction_sales (
 update public.auction_sale_market_estimates
    set status = 'ready', estimate = '{}'::jsonb, value_p50_eur = 40000, actionable = true
  where auction_sale_id = 'c7160000-1000-4000-8000-000000000011';
+select count(*) from public.bridge_auction_sales_to_outcome_graph();
 select lives_ok(
   $$delete from public.auction_sales where id = 'c7160000-1000-4000-8000-000000000011'$$,
   'a failure of the snapshot never blocks the deletion of the sale'
