@@ -151,4 +151,38 @@ describe("getAuctionScenarios", () => {
     mocks.rpc.mockResolvedValue({ data: null, error: new Error("statement timeout") });
     await expect(getAuctionScenarios(sale)).rejects.toThrow("statement timeout");
   });
+
+  it.each(["PGRST202", "42883"])(
+    "répond « données insuffisantes » si la fonction n'existe pas encore (%s), sans réessayer sans groupe",
+    async (code) => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      mocks.rpc.mockResolvedValue({
+        data: null,
+        error: { code, message: "Could not find the function get_court_auction_scenarios" },
+      });
+      const response = await getAuctionScenarios(sale);
+      expect(response).toMatchObject({
+        scenarios: null,
+        unavailable: "insufficient_data",
+        dataAsOf: null,
+        history: { licitor: null, dvf: null },
+      });
+      // Un seul appel : jamais de second essai sans p_property_group (chiffres de toutes natures).
+      expect(mocks.rpc).toHaveBeenCalledTimes(1);
+      warn.mockRestore();
+    },
+  );
+
+  it("garde la raison précise quand la mise à prix manque, même si la fonction est absente", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    mocks.rpc.mockResolvedValue({ data: null, error: { code: "PGRST202" } });
+    const response = await getAuctionScenarios({ ...sale, starting_price_eur: null });
+    expect(response.unavailable).toBe("no_starting_price");
+    warn.mockRestore();
+  });
+
+  it("laisse remonter les autres erreurs d'appel (code inconnu)", async () => {
+    mocks.rpc.mockResolvedValue({ data: null, error: { code: "57014", message: "timeout" } });
+    await expect(getAuctionScenarios(sale)).rejects.toMatchObject({ code: "57014" });
+  });
 });

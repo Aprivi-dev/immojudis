@@ -209,6 +209,17 @@ Contrôles juste après le déploiement :
 
 Puis configurer la sonde externe sur `/api/health` si ce n'est pas fait : `docs/operations/supervision-externe.md`.
 
+### Lot du 23/10/2026 (migrations `20261101*`) : migrations Supabase avant déploiement Vercel
+
+Pour ce lot, l'ordre n'est plus facultatif : **appliquer les migrations Supabase, puis déployer sur Vercel.**
+Le code déployé avant la migration `20261101120100` (scénarios d'enchères) envoie `p_property_group` à
+`get_court_auction_scenarios`, un paramètre que la base ne connaît pas encore : PostgREST répond `PGRST202`.
+La route `/api/sales/[id]/auction-scenarios` se replie alors sur « données insuffisantes » (jamais de chiffres
+de toutes natures de biens, jamais de réessai sans le groupe), mais les scénarios restent vides tant que la
+migration manque. Si le déploiement automatique de Vercel part avant les migrations (fusion dans `main`),
+vérifier les scénarios d'une vente après l'application de la migration ; ils reviennent sans nouveau
+déploiement (le repli n'est pas mis en cache).
+
 ### Étape 4 : ce qui reste `off`, et ce qui n'est pas lancé
 
 - `SALE_REMINDERS_MODE`, `WEEKLY_DIGEST_MODE`, `SALE_RESULTS_MODE` : **restent `off`** tant que la politique de
