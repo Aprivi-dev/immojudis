@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Suspense } from "react";
 import ArrowUpRight from "lucide-react/dist/esm/icons/arrow-up-right.js";
 import { ContactForm } from "@/components/ContactForm";
+import { ContactPrefilledForm } from "@/components/ContactPrefilledForm";
 import { Card, PageShell } from "@/components/ui/primitives";
 import { publicLegalPublisher } from "@/lib/legal-documents";
 import { BreadcrumbJsonLd } from "@/components/BreadcrumbJsonLd";
@@ -38,7 +40,10 @@ function PageContent() {
             Envoyer un message
           </h2>
           <div className="mt-4">
-            <ContactForm />
+            {/* `useSearchParams` demande une frontière Suspense ; le formulaire habituel sert de repli. */}
+            <Suspense fallback={<ContactForm />}>
+              <ContactPrefilledForm />
+            </Suspense>
           </div>
         </Card>
 

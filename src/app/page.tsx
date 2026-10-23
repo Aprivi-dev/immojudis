@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { COMPANY_DESCRIPTION } from "@/lib/company-description";
 import { organizationStructuredData } from "@/lib/seo";
 import { resolveSiteOrigin } from "@/lib/site-url";
 import { CinematicHero } from "@/components/CinematicHome";
@@ -9,8 +10,7 @@ import { PreloadCormorantItalic } from "@/components/PreloadCormorantItalic";
 
 export const metadata: Metadata = {
   title: { absolute: "Immojudis - Les enchères immobilières en toute clarté" },
-  description:
-    "Ventes au tribunal, notariales et domaniales référencées : distinguez les procédures, trouvez une annonce et préparez votre achat immobilier.",
+  description: COMPANY_DESCRIPTION,
   alternates: { canonical: "/" },
 };
 

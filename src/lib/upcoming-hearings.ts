@@ -223,6 +223,67 @@ export function windowHearings(
   };
 }
 
+/** Paramètre d'adresse du filtre par département de la page « Audiences à venir ». */
+export const HEARINGS_DEPARTMENT_PARAM = "departement";
+
+export type HearingDepartment = { code: string; count: number };
+
+/** Les départements qui ont au moins une audience dans les fenêtres, par ordre de code, avec leur nombre. */
+export function hearingDepartments(windows: HearingWindows): HearingDepartment[] {
+  const counts = new Map<string, number>();
+  for (const day of [...windows.week, ...windows.later]) {
+    for (const group of day.tribunals) {
+      for (const hearing of group.hearings) {
+        const code = hearing.department?.trim();
+        if (code) counts.set(code, (counts.get(code) ?? 0) + 1);
+      }
+    }
+  }
+  return [...counts.entries()]
+    .map(([code, count]) => ({ code, count }))
+    .sort((a, b) => a.code.localeCompare(b.code, "fr", { numeric: true }));
+}
+
+/** Le code du paramètre d'adresse s'il désigne un département de la liste, sinon `null` (aucun filtre). */
+export function validHearingDepartment(
+  value: string | null | undefined,
+  departments: readonly HearingDepartment[],
+): string | null {
+  const code = value?.trim().toUpperCase() ?? "";
+  return departments.find((department) => department.code.toUpperCase() === code)?.code ?? null;
+}
+
+function filterDays(days: readonly HearingDay[], department: string): HearingDay[] {
+  const result: HearingDay[] = [];
+  for (const day of days) {
+    const tribunals = day.tribunals
+      .map((group) => ({
+        ...group,
+        hearings: group.hearings.filter((hearing) => hearing.department?.trim() === department),
+      }))
+      .filter((group) => group.hearings.length > 0);
+    const count = tribunals.reduce((total, group) => total + group.hearings.length, 0);
+    if (count > 0) result.push({ dayKey: day.dayKey, tribunals, count });
+  }
+  return result;
+}
+
+/** Les mêmes fenêtres, réduites aux audiences d'un département (jours et tribunaux vides retirés). */
+export function filterWindowsByDepartment(
+  windows: HearingWindows,
+  department: string | null,
+): HearingWindows {
+  if (!department) return windows;
+  const week = filterDays(windows.week, department);
+  const later = filterDays(windows.later, department);
+  return {
+    week,
+    weekCount: week.reduce((total, day) => total + day.count, 0),
+    later,
+    laterCount: later.reduce((total, day) => total + day.count, 0),
+  };
+}
+
 /** Vrai quand la page peut être indexée et figurer au sitemap. */
 export function isHearingsPageIndexable(hearingCount: number): boolean {
   return hearingCount >= HEARINGS_PAGE_MIN_HEARINGS;

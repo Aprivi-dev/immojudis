@@ -107,34 +107,32 @@ describe("unsubscribe tokens", () => {
     }
   });
 
-  it("expire après 60 jours", () => {
+  it("expire après un an, comme tous les autres flux", () => {
     const token = createUnsubscribeToken({ userId, now, env });
-    const later = new Date(now.getTime() + 61 * 86_400_000);
-    expect(verifyUnsubscribeToken(token, { now: later, env })).toBeNull();
-    const almost = new Date(now.getTime() + 59 * 86_400_000);
-    expect(verifyUnsubscribeToken(token, { now: almost, env })).not.toBeNull();
+    const day = (count: number) => new Date(now.getTime() + count * 86_400_000);
+    expect(verifyUnsubscribeToken(token, { now: day(61), env })).not.toBeNull();
+    expect(verifyUnsubscribeToken(token, { now: day(364), env })).not.toBeNull();
+    expect(verifyUnsubscribeToken(token, { now: day(366), env })).toBeNull();
   });
 
-  it("garde un lien « rappels d'audience » valable un an, contre 60 jours pour les alertes", () => {
-    const reminders = createUnsubscribeToken({ userId, scope: { kind: "reminders" }, now, env });
+  it("garde chaque portée valable un an : alertes, alerte unique, rappels, récapitulatif, résultat, ouverture", () => {
     const day = (count: number) => new Date(now.getTime() + count * 86_400_000);
-    expect(verifyUnsubscribeToken(reminders, { now: day(61), env })).not.toBeNull();
-    expect(verifyUnsubscribeToken(reminders, { now: day(364), env })).not.toBeNull();
-    expect(verifyUnsubscribeToken(reminders, { now: day(366), env })).toBeNull();
-    // Les autres portées gardent leurs 60 jours.
-    const alerts = createUnsubscribeToken({ userId, now, env });
-    const perAlert = createUnsubscribeToken({
-      userId,
-      scope: { kind: "alert", alertId },
-      now,
-      env,
-    });
-    for (const token of [alerts, perAlert]) {
-      expect(verifyUnsubscribeToken(token, { now: day(59), env })).not.toBeNull();
-      expect(verifyUnsubscribeToken(token, { now: day(61), env })).toBeNull();
+    const scopes = [
+      { kind: "alerts" },
+      { kind: "alert", alertId },
+      { kind: "reminders" },
+      { kind: "weekly-digest" },
+      { kind: "sale-results" },
+      { kind: "offer-opening" },
+    ] as const;
+    for (const scope of scopes) {
+      const token = createUnsubscribeToken({ userId, scope, now, env });
+      expect(verifyUnsubscribeToken(token, { now: day(61), env }), scope.kind).not.toBeNull();
+      expect(verifyUnsubscribeToken(token, { now: day(364), env }), scope.kind).not.toBeNull();
+      expect(verifyUnsubscribeToken(token, { now: day(366), env }), scope.kind).toBeNull();
     }
     expect(REMINDERS_UNSUBSCRIBE_TOKEN_TTL_DAYS).toBe(365);
-    expect(UNSUBSCRIBE_TOKEN_TTL_DAYS).toBe(60);
+    expect(UNSUBSCRIBE_TOKEN_TTL_DAYS).toBe(365);
   });
 
   it("reconnaît la portée d'un jeton expiré (signature valide) sans lui donner de droit", () => {

@@ -1157,7 +1157,7 @@ export async function previewAdminInformationAgentMission({
   return {
     ok: true,
     preview: {
-      from: env.INFORMATION_AGENT_EMAIL_FROM?.trim() || env.ALERT_EMAIL_FROM?.trim() || null,
+      from: env.INFORMATION_AGENT_EMAIL_FROM?.trim() || null,
       to: input.recipientName?.trim() ? `${input.recipientName.trim()} <${recipient}>` : recipient,
       replyTo,
       subject: input.subject,
@@ -1345,9 +1345,15 @@ function approvalFingerprint(mission: MissionRow): string {
     .digest("hex");
 }
 
-function resolveInformationAgentEmailConfig(env: NodeJS.ProcessEnv = process.env) {
+/**
+ * Configuration d'envoi de l'agent. L'expéditeur est celui de l'agent, `INFORMATION_AGENT_EMAIL_FROM`,
+ * et rien d'autre : le repli sur `ALERT_EMAIL_FROM` envoyait les emails à des tiers depuis l'adresse
+ * des alertes aux comptes, donc leur réputation d'expéditeur était commune. Sans expéditeur, l'envoi
+ * est bloqué (et l'aperçu le dit).
+ */
+export function resolveInformationAgentEmailConfig(env: NodeJS.ProcessEnv = process.env) {
   const apiKey = env.RESEND_API_KEY?.trim();
-  const from = env.INFORMATION_AGENT_EMAIL_FROM?.trim() || env.ALERT_EMAIL_FROM?.trim();
+  const from = env.INFORMATION_AGENT_EMAIL_FROM?.trim();
   const inboundDomain = env.INFORMATION_AGENT_INBOUND_DOMAIN?.trim().toLowerCase();
   if (!apiKey || !from || !inboundDomain) {
     throw new Error("Configuration d'envoi et de réception de l'agent incomplète.");

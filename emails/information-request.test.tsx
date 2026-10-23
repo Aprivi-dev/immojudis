@@ -39,7 +39,9 @@ describe("renderInformationRequestEmail", () => {
       contributionUrl: "https://immojudis.com/contribuer/mission#secret-token",
     });
 
-    expect(message.html).toContain("IMMOJUDIS");
+    expect(message.html).toContain(">Immojudis<");
+    // Le nom de marque s'écrit « Immojudis », jamais en capitales.
+    expect(message.html).not.toContain("IMMOJUDIS");
     expect(message.html).toContain("IJ-8F31A290");
     expect(message.html).toContain("mailto:enquete+1234@reponses.immojudis.com");
     expect(message.html).toContain("Immojudis n’agit pas au nom d’un tribunal");

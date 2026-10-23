@@ -33,6 +33,7 @@ vi.mock("@/lib/product-events", () => ({ trackProductEvent: mocks.track }));
 vi.mock("@/lib/search/analysis-offer-open", () => ({ isAnalysisOfferOpen: mocks.offerOpen }));
 vi.mock("@/lib/toast", () => ({ toast: mocks.toast }));
 
+import { peekPendingAlert, clearPendingAlert } from "@/lib/pending-alert";
 import { useCreateAlert } from "./use-create-alert";
 
 function freePlan() {
@@ -75,6 +76,7 @@ async function create(
 
 beforeEach(() => {
   vi.clearAllMocks();
+  clearPendingAlert();
   mocks.auth = { user: { id: "user-1" }, loading: false };
   mocks.plan.mockResolvedValue(freePlan());
   mocks.preferences.mockResolvedValue({ preferences: { alertEmailEnabled: false } });
@@ -97,6 +99,39 @@ describe("useCreateAlert", () => {
       "/login?redirect=%2Fsales%3Fdepartment%3D33%26maxPrice%3D150000&mode=investor&reason=alerte",
     );
     expect(mocks.createAlert).not.toHaveBeenCalled();
+  });
+
+  it("garde la demande d'un visiteur pour la créer après sa connexion", async () => {
+    mocks.auth = { user: null, loading: false };
+    const hook = setup("/sales?department=33&maxPrice=150000");
+    await act(async () => {
+      await hook.result.current.createAlertFromSearch(
+        { department: "33", maxPrice: 150000 },
+        { emailRecap: true, frequency: "weekly" },
+      );
+    });
+    expect(peekPendingAlert()).toEqual({
+      search: expect.objectContaining({ department: "33", maxPrice: 150000 }),
+      options: { emailRecap: true, frequency: "weekly" },
+    });
+  });
+
+  it("ne garde rien depuis la page de confirmation d'alerte, où la personne confirme elle-même", async () => {
+    mocks.auth = { user: null, loading: false };
+    const hook = setup("/alertes/creer?department=33");
+    await act(async () => {
+      await hook.result.current.createAlertFromSearch({ department: "33" });
+    });
+    expect(peekPendingAlert()).toBeNull();
+  });
+
+  it("ne garde rien pour une recherche sans critère d'alerte", async () => {
+    mocks.auth = { user: null, loading: false };
+    const hook = setup("/sales?belowRange=true");
+    await act(async () => {
+      await hook.result.current.createAlertFromSearch({ belowRange: true });
+    });
+    expect(peekPendingAlert()).toBeNull();
   });
 
   it("n'envoie pas vers la connexion pendant que le compte se vérifie", async () => {

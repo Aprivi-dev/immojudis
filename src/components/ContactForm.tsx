@@ -8,6 +8,7 @@ import {
   CONTACT_SUBJECTS,
   type ContactFieldErrors,
   type ContactState,
+  type ContactSubject,
 } from "@/lib/contact-message";
 import { Button } from "@/components/ui/primitives";
 import { publicLegalPublisher } from "@/lib/legal-documents";
@@ -16,8 +17,11 @@ const INITIAL: ContactState = { status: "idle" };
 
 export function ContactForm({
   action = sendContactMessage,
+  prefill,
 }: {
   action?: (previous: ContactState, formData: FormData) => Promise<ContactState>;
+  /** Sujet et message de départ (signalement depuis une fiche, voir `contactPrefill`). */
+  prefill?: { subject?: ContactSubject; message?: string };
 }) {
   const [state, formAction, pending] = useActionState(action, INITIAL);
   const errors: ContactFieldErrors = state.fieldErrors ?? {};
@@ -80,7 +84,7 @@ export function ContactForm({
           id="contact-subject"
           name="subject"
           required
-          defaultValue={values.subject ?? ""}
+          defaultValue={values.subject ?? prefill?.subject ?? ""}
           aria-invalid={Boolean(errors.subject)}
           aria-describedby={errors.subject ? "contact-subject-error" : undefined}
           className="form-input h-11 cursor-pointer"
@@ -108,7 +112,7 @@ export function ContactForm({
           required
           rows={6}
           maxLength={CONTACT_LIMITS.message}
-          defaultValue={values.message}
+          defaultValue={values.message ?? prefill?.message}
           aria-invalid={Boolean(errors.message)}
           aria-describedby={[
             errors.message ? "contact-message-error" : null,

@@ -11,18 +11,26 @@ import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { RESOURCES_PATH } from "@/lib/navigation";
 import { BreadcrumbJsonLd } from "@/components/BreadcrumbJsonLd";
 import { CloudBackgroundPreload } from "@/components/CloudBackgroundPreload";
+import { COMPANY_DESCRIPTION } from "@/lib/company-description";
+import { jsonLdString } from "@/lib/json-ld";
 import { pageMetadata } from "@/lib/page-metadata";
+import { aboutPageStructuredData } from "@/lib/seo";
+import { resolveSiteOrigin } from "@/lib/site-url";
 
 export const metadata: Metadata = pageMetadata({
   path: "/a-propos",
   title: "À propos",
-  description:
-    "Immojudis centralise les annonces de ventes aux enchères immobilières, les qualifie et aide à préparer sa décision avant d’enchérir.",
+  description: COMPANY_DESCRIPTION,
 });
 
 export default function Page() {
+  const origin = resolveSiteOrigin(process.env, "http://localhost:3000")!;
   return (
     <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: jsonLdString(aboutPageStructuredData(origin)) }}
+      />
       <BreadcrumbJsonLd trail={[{ name: "À propos", path: "/a-propos" }]} />
       <PageContent />
     </>

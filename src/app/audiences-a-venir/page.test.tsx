@@ -2,9 +2,35 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mapHearingRows, type UpcomingHearingRow } from "@/lib/upcoming-hearings";
+import {
+  dedupeHearings,
+  mapHearingRows,
+  windowHearings,
+  type UpcomingHearingRow,
+} from "@/lib/upcoming-hearings";
 
-const mocks = vi.hoisted(() => ({ hearings: vi.fn(), activity: vi.fn(), mustFail: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  hearings: vi.fn(),
+  activity: vi.fn(),
+  mustFail: vi.fn(),
+  replace: vi.fn(),
+  query: "",
+  auth: { user: null as null | { id: string }, loading: false },
+}));
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ replace: mocks.replace, push: vi.fn() }),
+  usePathname: () => "/audiences-a-venir",
+  useSearchParams: () => new URLSearchParams(mocks.query),
+}));
+vi.mock("@/hooks/use-auth", () => ({ useAuth: () => mocks.auth }));
+// Le formulaire de création d'alerte (chargé à la demande) a ses propres tests.
+vi.mock("next/dynamic", () => ({
+  default: () =>
+    function FormStub(props: { criteria: Record<string, unknown> }) {
+      return <div data-testid="sector-alert-form" data-criteria={JSON.stringify(props.criteria)} />;
+    },
+}));
 
 vi.mock("@/lib/upcoming-hearings.server", () => ({
   tryLoadUpcomingHearings: mocks.hearings,
@@ -16,6 +42,7 @@ vi.mock("@/lib/public-tribunal-activity.server", () => ({
 }));
 
 import { PUBLIC_TRIBUNAL_ACTIVITY_REVALIDATE_SECONDS } from "@/lib/public-tribunal-activity.server";
+import { HearingsListing } from "./hearings-list";
 import Page, { generateMetadata, revalidate } from "./page";
 
 /** Mardi 20 octobre 2026, 10 h à Paris. */
@@ -64,6 +91,9 @@ beforeEach(() => {
   vi.setSystemTime(NOW);
   process.env.SITE_URL = "https://immojudis.com";
   mocks.hearings.mockReset();
+  mocks.replace.mockReset();
+  mocks.query = "";
+  mocks.auth = { user: null, loading: false };
   mocks.mustFail.mockReset();
   mocks.mustFail.mockReturnValue(false);
   mocks.activity.mockReset();
@@ -318,5 +348,137 @@ describe("/audiences-a-venir : contenu", () => {
       "Audiences à venir",
     ]);
     expect(breadcrumb.itemListElement.at(-1).item).toBe("https://immojudis.com/audiences-a-venir");
+  });
+});
+
+describe("/audiences-a-venir : filtre par département et jours repliables", () => {
+  const MIXED = () => [
+    row({ city: "Bobigny", department: "93" }),
+    row({ city: "Pantin", department: "93", sale_date: "2026-10-22T08:00:00Z" }),
+    row({
+      city: "Bordeaux",
+      department: "33",
+      tribunal_code: "bordeaux",
+      tribunal_name: "TJ Bordeaux",
+      sale_date: "2026-10-23T12:00:00Z",
+    }),
+    row({
+      city: "Pau",
+      department: "64",
+      tribunal_code: "pau",
+      tribunal_name: "TJ Pau",
+      sale_date: "2026-11-05T12:00:00Z",
+    }),
+  ];
+
+  it("propose la liste déroulante des seuls départements qui ont une audience, avec leur nombre", async () => {
+    serve(MIXED());
+    render(await Page());
+    const select = screen.getByRole("combobox", { name: "Département" }) as HTMLSelectElement;
+    expect(select.value).toBe("");
+    const options = Array.from(select.options).map((option) => option.textContent);
+    expect(options).toEqual([
+      "Tous les départements",
+      "Gironde (33) · 1 audience",
+      "Pyrénées-Atlantiques (64) · 1 audience",
+      "Seine-Saint-Denis (93) · 2 audiences",
+    ]);
+  });
+
+  it("filtre sur le paramètre d'adresse, affiche le nombre et propose l'alerte du département", async () => {
+    serve(MIXED());
+    mocks.query = "departement=93";
+    render(await Page());
+    const week = screen.getByRole("region", { name: /Dans les 7 prochains jours/ });
+    expect(week.textContent).toContain("2 audiences");
+    expect(week.textContent).toContain("Bobigny (93)");
+    expect(week.textContent).not.toContain("Bordeaux");
+    expect(screen.queryByRole("region", { name: /Du 8e au 30e jour/ })).toBeNull();
+    expect(screen.getByRole("status").textContent).toContain(
+      "2 audiences dans le département Seine-Saint-Denis (93)",
+    );
+    // Alerte du département : un visiteur passe par la connexion et retrouve ses critères.
+    expect(
+      screen
+        .getByRole("link", { name: "Recevoir les nouvelles ventes de ce secteur" })
+        .getAttribute("href"),
+    ).toBe("/login?redirect=%2Falertes%2Fcreer%3Fdepartment%3D93&mode=investor&reason=alerte");
+    // La liste filtrée est courte : tous les jours sont dépliés.
+    for (const details of document.querySelectorAll("details[open]")) {
+      expect(details).toBeTruthy();
+    }
+  });
+
+  it("ignore un département inconnu ou mal écrit : la liste complète", async () => {
+    serve(MIXED());
+    for (const query of ["departement=99", "departement=abc", "departement="]) {
+      mocks.query = query;
+      const { unmount } = render(await Page());
+      expect(
+        screen.getByRole("region", { name: /Dans les 7 prochains jours/ }).textContent,
+      ).toContain("3 audiences");
+      expect(
+        screen.queryByRole("link", { name: "Recevoir les nouvelles ventes de ce secteur" }),
+      ).toBeNull();
+      unmount();
+    }
+  });
+
+  it("dit qu'un département n'a pas d'audience dans la fenêtre au lieu d'une page vide", async () => {
+    serve(MIXED());
+    mocks.query = "departement=64";
+    render(await Page());
+    expect(screen.queryByRole("region", { name: /Dans les 7 prochains jours/ })).toBeNull();
+    expect(screen.getByRole("region", { name: /Du 8e au 30e jour/ }).textContent).toContain(
+      "Pau (64)",
+    );
+  });
+
+  it("met le choix dans l'adresse, sans remonter la page, et le retire pour « Tous »", async () => {
+    serve(MIXED());
+    render(await Page());
+    fireEvent.change(screen.getByRole("combobox", { name: "Département" }), {
+      target: { value: "33" },
+    });
+    expect(mocks.replace).toHaveBeenLastCalledWith("/audiences-a-venir?departement=33", {
+      scroll: false,
+    });
+    fireEvent.change(screen.getByRole("combobox", { name: "Département" }), {
+      target: { value: "" },
+    });
+    expect(mocks.replace).toHaveBeenLastCalledWith("/audiences-a-venir", { scroll: false });
+  });
+
+  it("sans filtre, et pour la frontière Suspense du serveur, toutes les audiences sont dans le HTML, filtre grisé avant l'hydratation", async () => {
+    serve(MIXED());
+    const html = renderToString(await Page());
+    for (const city of ["Bobigny", "Pantin", "Bordeaux", "Pau"]) expect(html).toContain(city);
+    const fallback = renderToString(
+      <HearingsListing
+        windows={windowHearings(dedupeHearings(mapHearingRows(MIXED())), NOW)}
+        tribunalPaths={{}}
+        departments={[{ code: "33", label: "Gironde (33)", count: 1 }]}
+        department={null}
+      />,
+    );
+    for (const city of ["Bobigny", "Pantin", "Bordeaux", "Pau"]) expect(fallback).toContain(city);
+    expect(fallback).toMatch(/<select[^>]*disabled/);
+    expect(fallback).not.toContain("Recevoir les nouvelles ventes de ce secteur");
+  });
+
+  it("replie les jours : seuls les deux premiers de la semaine sont ouverts sans filtre", async () => {
+    serve([
+      row({ sale_date: "2026-10-20T12:00:00Z" }),
+      row({ sale_date: "2026-10-21T12:00:00Z" }),
+      row({ sale_date: "2026-10-22T12:00:00Z" }),
+      row({ sale_date: "2026-11-05T12:00:00Z" }),
+    ]);
+    render(await Page());
+    const details = Array.from(document.querySelectorAll("details")).filter((element) =>
+      element.querySelector("h3"),
+    ) as HTMLDetailsElement[];
+    expect(details.map((element) => element.open)).toEqual([true, true, false, false]);
+    // Fermés, ils restent dans la page, lisibles : le contenu n'est pas retiré.
+    expect(details[3].textContent).toContain("Mise à prix");
   });
 });

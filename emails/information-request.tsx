@@ -12,6 +12,7 @@ import {
   Text,
   render,
 } from "react-email";
+import { EMAIL_BRAND_NAME, EMAIL_COLORS } from "../src/lib/email-brand";
 import { containsInformationAgentAccountInvitation } from "../src/lib/information-agent-email-template";
 import {
   INFORMATION_AGENT_CNIL_COMPLAINT_URL,
@@ -31,21 +32,25 @@ export type InformationRequestEmailProps = {
   legalFooter?: InformationAgentLegalFooter;
 };
 
-export const INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION = "information_request_v8";
+export const INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION = "information_request_v9";
 
 type BodyBlock =
   | { kind: "paragraph"; lines: string[] }
   | { kind: "questions"; lines: string[] }
   | { kind: "sale"; lines: string[] };
 
+// Les jetons de la marque (`src/lib/email-brand.ts`), pas des hexadécimaux propres à ce gabarit.
 const BRAND = {
-  ink: "#172036",
-  muted: "#667085",
-  gold: "#A6792B",
-  goldSoft: "#F6EEDC",
-  line: "#E7E1D6",
-  paper: "#FFFFFF",
-  canvas: "#F5F2EB",
+  ink: EMAIL_COLORS.navy,
+  body: EMAIL_COLORS.inkStrong,
+  muted: EMAIL_COLORS.inkSoft,
+  gold: EMAIL_COLORS.gold,
+  goldText: EMAIL_COLORS.goldText,
+  goldSoft: EMAIL_COLORS.cream,
+  line: EMAIL_COLORS.lineWarm,
+  paper: EMAIL_COLORS.white,
+  canvas: EMAIL_COLORS.surface,
+  panel: EMAIL_COLORS.surfaceMuted,
 };
 
 export function InformationRequestEmail({
@@ -69,7 +74,7 @@ export function InformationRequestEmail({
         <Container style={styles.container}>
           <Section style={styles.topBar} />
           <Section style={styles.header}>
-            <Text style={styles.wordmark}>IMMOJUDIS</Text>
+            <Text style={styles.wordmark}>{EMAIL_BRAND_NAME}</Text>
           </Section>
 
           <Section style={styles.content}>
@@ -101,7 +106,7 @@ export function InformationRequestEmail({
           </Section>
 
           <Section style={styles.footer}>
-            <Text style={styles.footerBrand}>Immojudis</Text>
+            <Text style={styles.footerBrand}>{EMAIL_BRAND_NAME}</Text>
             <Text style={styles.footerText}>Référence {caseReference}</Text>
             <Text style={styles.footerText}>
               Adresse de réponse : <Link href={replyHref}>{replyTo}</Link>
@@ -298,14 +303,14 @@ const styles: Record<string, React.CSSProperties> = {
     margin: 0,
     color: BRAND.ink,
     fontFamily: "Georgia, 'Times New Roman', serif",
-    fontSize: "23px",
+    fontSize: "24px",
     fontWeight: 700,
-    letterSpacing: "0.08em",
+    letterSpacing: "0.01em",
   },
   content: { padding: "22px 28px 24px" },
   eyebrow: {
     margin: "0 0 6px",
-    color: BRAND.gold,
+    color: BRAND.goldText,
     fontSize: "11px",
     fontWeight: 700,
     letterSpacing: "0.1em",
@@ -329,13 +334,13 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
   },
   hr: { margin: "18px 0", borderColor: BRAND.line },
-  origin: { margin: "12px 0 0", color: "#475467", fontSize: "13px", lineHeight: "19px" },
+  origin: { margin: "12px 0 0", color: BRAND.body, fontSize: "13px", lineHeight: "19px" },
   depositLink: { color: BRAND.ink, fontWeight: 700, textDecoration: "underline" },
-  paragraph: { margin: "0 0 14px", color: "#303A50", fontSize: "15px", lineHeight: "21px" },
+  paragraph: { margin: "0 0 14px", color: BRAND.body, fontSize: "15px", lineHeight: "21px" },
   salePanel: {
     margin: "2px 0 16px",
     padding: "12px 14px 1px",
-    backgroundColor: "#F9F8F5",
+    backgroundColor: BRAND.panel,
     border: `1px solid ${BRAND.line}`,
     borderRadius: "10px",
   },
@@ -346,12 +351,12 @@ const styles: Record<string, React.CSSProperties> = {
     margin: "0 0 16px",
     padding: "4px 14px",
     borderLeft: `3px solid ${BRAND.gold}`,
-    backgroundColor: "#FCFBF8",
+    backgroundColor: BRAND.panel,
   },
-  questionItem: { margin: "7px 0", color: "#303A50", fontSize: "14px", lineHeight: "20px" },
+  questionItem: { margin: "7px 0", color: BRAND.body, fontSize: "14px", lineHeight: "20px" },
   footer: {
     padding: "18px 28px 22px",
-    backgroundColor: "#F9F8F5",
+    backgroundColor: BRAND.panel,
     borderTop: `1px solid ${BRAND.line}`,
     textAlign: "center",
   },
@@ -362,11 +367,11 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "16px",
     fontWeight: 700,
   },
-  footerText: { margin: "2px 0", color: "#5B6270", fontSize: "12px", lineHeight: "18px" },
+  footerText: { margin: "2px 0", color: BRAND.muted, fontSize: "12px", lineHeight: "18px" },
   footerLink: { color: BRAND.ink, fontWeight: 700, textDecoration: "none" },
   footerLegal: {
     margin: "14px 0 0",
-    color: "#5B6270",
+    color: BRAND.muted,
     fontSize: "12px",
     lineHeight: "18px",
     textAlign: "left",

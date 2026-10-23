@@ -9,7 +9,7 @@ select plan(10);
 -- Estimation fiable : 8 ventes comparables, échantillon effectif 5, fourchette 100 000 à 140 000 (largeur
 -- 33 %), valeur centrale 120 000, rayon 300 m, appartement urbain, intervalle de repli fixe.
 --   1  mise à prix 60 000, bien libre                -> under      (rendue)
---   2  mise à prix 60 000, occupation inconnue       -> under      (rendue)
+--   2  mise à prix 60 000, occupation inconnue       -> occupancy_unknown (non rendue, migration 20261101190000)
 --   3  mise à prix 60 000, bien occupé               -> occupied   (non rendue)
 --   4  mise à prix 60 000, bien loué                 -> occupied   (non rendue)
 --   5  mise à prix 115 000                           -> near       (non rendue)
@@ -92,20 +92,18 @@ select is(
   (select array_agg(id order by id)
      from public.list_public_sale_ids_under_market_range() as id
     where id::text like 'c6200000-1000-4000-8000-%'),
-  array[
-    'c6200000-1000-4000-8000-000000000001'::uuid,
-    'c6200000-1000-4000-8000-000000000002'::uuid
-  ],
-  'only the vacant and the unknown-occupancy sales under the range are listed'
+  array['c6200000-1000-4000-8000-000000000001'::uuid],
+  'only the vacant sale under the range is listed'
 );
 select is(
   (select count(*)::integer
      from public.list_public_sale_ids_under_market_range() as id
     where id in (
-      'c6200000-1000-4000-8000-000000000003', 'c6200000-1000-4000-8000-000000000004'
+      'c6200000-1000-4000-8000-000000000002', 'c6200000-1000-4000-8000-000000000003',
+      'c6200000-1000-4000-8000-000000000004'
     )),
   0,
-  'an occupied or rented property is never listed, even under the range'
+  'a property of unknown occupancy, an occupied one or a rented one is never listed, even under the range'
 );
 select is(
   (select count(*)::integer
@@ -133,8 +131,8 @@ select is(
   (select count(*)::integer
      from public.list_public_sale_ids_under_market_range() as id
     where id::text like 'c6200000-1000-4000-8000-%'),
-  2,
-  'a visitor without an account gets the same two identifiers'
+  1,
+  'a visitor without an account gets the same identifier'
 );
 reset role;
 

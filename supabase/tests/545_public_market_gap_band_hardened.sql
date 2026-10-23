@@ -35,10 +35,12 @@ select plan(31);
 --   18 sous la fourchette, bien occupé              -> occupied
 --   19 sous la fourchette, bien loué                -> occupied
 --   20 sous la fourchette, occupé par le propriétaire -> occupied
---   21 sous la fourchette, occupation inconnue ('unknown') -> under
---   22 sous la fourchette, occupation non renseignée -> under
---   23 dans la fourchette, bien occupé              -> near
---   24 au-dessus de la fourchette, bien occupé      -> above
+--   21 sous la fourchette, occupation inconnue ('unknown') -> occupancy_unknown (migration 20261101190000)
+--   22 sous la fourchette, occupation non renseignée -> occupancy_unknown
+--   23 dans la fourchette, bien occupé              -> occupied (migration 20261101190000)
+--   24 au-dessus de la fourchette, bien occupé      -> occupied
+-- Les biens 1 à 16, 30 et 31 sont libres : depuis la migration 20261101190000, une bande n'est dite
+-- que pour un bien libre.
 --   25 bien occupé, échantillon effectif 3          -> insufficient
 --   26 estimation échouée : surface manquante       -> insufficient_surface
 --   27 estimation échouée : type non pris en charge -> insufficient_type
@@ -64,15 +66,15 @@ select
   'tribunal', 'pending', f.occupancy, '{}'::jsonb
 from (
   values
-    (1, 115000, null::text), (2, 115000, null), (3, 115000, null), (4, 115000, null),
-    (5, 115000, null), (6, 115000, null), (7, 115000, null), (8, 115000, null),
-    (9, 115000, null), (10, 115000, null), (11, 115000, null), (12, 115000, null),
-    (13, 115000, null), (14, 115000, null), (15, 115000, null), (16, 115000, null),
+    (1, 115000, 'vacant'::text), (2, 115000, 'vacant'), (3, 115000, 'vacant'), (4, 115000, 'vacant'),
+    (5, 115000, 'vacant'), (6, 115000, 'vacant'), (7, 115000, 'vacant'), (8, 115000, 'vacant'),
+    (9, 115000, 'vacant'), (10, 115000, 'vacant'), (11, 115000, 'vacant'), (12, 115000, 'vacant'),
+    (13, 115000, 'vacant'), (14, 115000, 'vacant'), (15, 115000, 'vacant'), (16, 115000, 'vacant'),
     (17, 60000, 'vacant'), (18, 60000, 'occupied'), (19, 60000, 'rented'),
     (20, 60000, 'owner_occupied'), (21, 60000, 'unknown'), (22, 60000, null),
     (23, 115000, 'occupied'), (24, 150000, 'occupied'), (25, 60000, 'occupied'),
     (26, 60000, null), (27, 60000, null), (28, 60000, null), (29, 60000, null),
-    (30, 115000, null), (31, 115000, null)
+    (30, 115000, 'vacant'), (31, 115000, 'vacant')
 ) as f(n, price, occupancy);
 
 -- Les estimations : le déclencheur d'ajout d'une vente a créé une ligne « pending » pour chaque vente
@@ -290,8 +292,8 @@ select is(
   (select array_agg(public.get_public_sale_market_gap_band(
      ('c5450000-1000-4000-8000-' || lpad(n::text, 12, '0'))::uuid) order by ord)
      from unnest(array[17, 21, 22]) with ordinality as t(n, ord)),
-  array['under', 'under', 'under'],
-  'a vacant property, or one of unknown occupancy, stays under'
+  array['under', 'occupancy_unknown', 'occupancy_unknown'],
+  'a vacant property stays under, one of unknown occupancy gets no band'
 );
 select is(
   (select array_agg(public.get_public_sale_market_gap_band(
@@ -304,8 +306,8 @@ select is(
   (select array_agg(public.get_public_sale_market_gap_band(
      ('c5450000-1000-4000-8000-' || lpad(n::text, 12, '0'))::uuid) order by ord)
      from unnest(array[23, 24]) with ordinality as t(n, ord)),
-  array['near', 'above'],
-  'occupancy changes only the under band'
+  array['occupied', 'occupied'],
+  'an occupied property gets no band, whichever it would have been'
 );
 select is(
   (select public.get_public_sale_market_gap_band('c5450000-1000-4000-8000-000000000025')),

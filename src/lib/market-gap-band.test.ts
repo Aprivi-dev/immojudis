@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   isOccupiedOccupancyStatus,
   isPublicMarketGapBand,
+  isVacantOccupancyStatus,
   MARKET_GAP_BAND_CAUTION,
   MARKET_GAP_BAND_LABELS,
   MARKET_GAP_BAND_MAX_INTERVAL_WIDTH_PCT,
@@ -14,6 +15,7 @@ import {
   MARKET_GAP_BAND_STARTING_PRICE_NOTE,
   marketGapBand,
   marketGapBandMaxRadiusM,
+  marketGapWithheldReason,
   passesPublicMarketGapGate,
 } from "./market-gap-band";
 import { MARKET_GAP_MAX_DISCOUNT_PCT, MARKET_GAP_MIN_DISCOUNT_PCT } from "./market-gap";
@@ -27,6 +29,12 @@ const sql = readFileSync(MIGRATION, "utf8");
 const code = sql.replace(/^\s*--.*$/gm, "");
 const HARDENED_MIGRATION = "supabase/migrations/20261029120000_public_market_gap_band_hardened.sql";
 const hardenedCode = readFileSync(HARDENED_MIGRATION, "utf8").replace(/^\s*--.*$/gm, "");
+
+// La bande n'est dite que pour un bien libre : un bien occupé reçoit « occupied » quelle que soit la
+// bande, une occupation inconnue « occupancy_unknown ».
+const VACANT_ONLY_MIGRATION =
+  "supabase/migrations/20261101190000_public_market_gap_band_vacant_only.sql";
+const vacantOnlyCode = readFileSync(VACANT_ONLY_MIGRATION, "utf8").replace(/^\s*--.*$/gm, "");
 
 const range = { valueLowEur: 100_000, valueEur: 120_000, valueHighEur: 140_000 };
 
@@ -97,7 +105,7 @@ describe("band wording", () => {
     expect(MARKET_GAP_BAND_LABELS.insufficient_surface).toContain("Surface du bien inconnue");
     expect(MARKET_GAP_BAND_LABELS.insufficient_type).toContain("Type de bien non pris en charge");
     expect(MARKET_GAP_BAND_LABELS.insufficient).toContain("ventes comparables fiables");
-    expect(new Set(Object.values(MARKET_GAP_BAND_LABELS)).size).toBe(7);
+    expect(new Set(Object.values(MARKET_GAP_BAND_LABELS)).size).toBe(8);
   });
 
   it("states that the starting price is deliberately low at auctions", () => {
@@ -164,6 +172,86 @@ describe("occupancy", () => {
         normalized === "occupied" || normalized === "rented",
       );
     }
+  });
+});
+
+describe("bien libre seulement", () => {
+  const values = [
+    "occupied",
+    "rented",
+    "owner_occupied",
+    "tenant_occupied",
+    "squatted",
+    "vacant",
+    "unknown",
+    "Libre",
+    "Inoccupé",
+    "Loué",
+    "Occupé par le propriétaire",
+    "  VACANT ",
+    "",
+    "n'importe quoi",
+    null,
+    undefined,
+  ];
+
+  it("isVacantOccupancyStatus est d'accord avec normalizeOccupationStatus", () => {
+    for (const value of values) {
+      expect(isVacantOccupancyStatus(value), String(value)).toBe(
+        normalizeOccupationStatus(value) === "vacant",
+      );
+    }
+  });
+
+  it("dit pourquoi l'écart ne se dit pas, ou rien pour un bien libre", () => {
+    for (const value of values) {
+      const normalized = normalizeOccupationStatus(value);
+      const expected =
+        normalized === "vacant"
+          ? null
+          : normalized === "occupied" || normalized === "rented"
+            ? "occupied"
+            : "occupancy_unknown";
+      expect(marketGapWithheldReason(value), String(value)).toBe(expected);
+    }
+  });
+
+  it("nomme la bande « occupation inconnue » sans dire « sous », « proche » ni un chiffre", () => {
+    expect(isPublicMarketGapBand("occupancy_unknown")).toBe(true);
+    expect(MARKET_GAP_BAND_LABELS.occupancy_unknown).toBe(
+      "Occupation du bien non précisée : la comparaison avec les ventes de biens libres ne peut pas être située",
+    );
+    expect(MARKET_GAP_BAND_LABELS.occupancy_unknown).not.toMatch(/inférieure|au-dessus|\d/);
+  });
+
+  it("la migration 20261101190000 neutralise toute bande hors bien libre", () => {
+    expect(vacantOnlyCode).toMatch(
+      /when b\.band is null then null\s+when app_private\.is_occupied_occupancy_status\(g\.occupancy_status\) then 'occupied'\s+when not app_private\.is_vacant_occupancy_status\(g\.occupancy_status\)\s+then 'occupancy_unknown'\s+else b\.band/,
+    );
+    expect(vacantOnlyCode).toContain("x.v = 'vacant' or x.v ~ 'inoccup|libre'");
+  });
+
+  it("la migration garde la porte de qualité et le contrat de la précédente", () => {
+    for (const fragment of [
+      `when c.interval_method = 'local_jackknife' then ${MARKET_GAP_BAND_MIN_COMPARABLES_JACKKNIFE}`,
+      `>= ${MARKET_GAP_BAND_MIN_EFFECTIVE_SAMPLE}`,
+      "c.radius_m <= app_private.public_market_gap_band_max_radius_m(c.segment, c.area_kind)",
+      "app_private.auction_sale_is_publicly_visible(s.id)",
+      "m.status = 'active'",
+      "then 'insufficient_surface'",
+      "then 'insufficient_type'",
+    ]) {
+      expect(vacantOnlyCode).toContain(fragment);
+    }
+    expect(vacantOnlyCode).toMatch(
+      /function app_private\.get_public_sale_market_gap_band\(p_sale_id uuid\)[\s\S]*?security definer\s+set search_path = ''/,
+    );
+    expect(vacantOnlyCode).toMatch(
+      /grant execute on function app_private\.get_public_sale_market_gap_band\(uuid\)\s+to anon, authenticated, service_role;/,
+    );
+    expect(vacantOnlyCode).not.toMatch(
+      /\b(s\.address|s\.latitude|s\.longitude|raw_payload|s\.description)\b/,
+    );
   });
 });
 

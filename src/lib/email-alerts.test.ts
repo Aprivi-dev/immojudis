@@ -4,6 +4,7 @@ import { verifyUnsubscribeToken } from "@/lib/email-unsubscribe-token";
 import {
   buildAlertDigestMessage,
   resolveEmailAlertDeliveryConfig,
+  resolveReplyTo,
   sendResendEmail,
 } from "@/lib/email-alerts";
 
@@ -223,6 +224,66 @@ describe("email alerts", () => {
       "List-Unsubscribe":
         "<https://immojudis.example/api/notification-preferences/unsubscribe?token=t>",
       "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    });
+  });
+
+  describe("reply-to", () => {
+    const send = async (replyTo?: string | null) => {
+      const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        Response.json({ id: "email_3" }),
+      );
+      await sendResendEmail({
+        apiKey: "re_test",
+        idempotencyKey: "reply-to",
+        fetchImpl: fetchMock as unknown as typeof fetch,
+        message: {
+          from: "Immojudis <alertes@immojudis.fr>",
+          to: "client@example.test",
+          ...(replyTo === undefined ? {} : { replyTo }),
+          subject: "Alerte",
+          html: "<p>x</p>",
+          text: "x",
+        },
+      });
+      return JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as Record<string, unknown>;
+    };
+
+    it("resolves EMAIL_REPLY_TO first, then the published contact address, else nothing", () => {
+      expect(
+        resolveReplyTo({
+          EMAIL_REPLY_TO: " contact@immojudis.example ",
+          NEXT_PUBLIC_LEGAL_CONTACT_EMAIL: "autre@immojudis.example",
+        }),
+      ).toBe("contact@immojudis.example");
+      expect(resolveReplyTo({ NEXT_PUBLIC_LEGAL_CONTACT_EMAIL: "autre@immojudis.example" })).toBe(
+        "autre@immojudis.example",
+      );
+      expect(resolveReplyTo({ EMAIL_REPLY_TO: "pas une adresse" })).toBeNull();
+      expect(resolveReplyTo({})).toBeNull();
+    });
+
+    it("adds the site reply address to emails that name none, and keeps an explicit one", async () => {
+      vi.stubEnv("EMAIL_REPLY_TO", "contact@immojudis.example");
+      try {
+        expect(await send()).toMatchObject({ reply_to: "contact@immojudis.example" });
+        expect(await send("agent@reponses.immojudis.example")).toMatchObject({
+          reply_to: "agent@reponses.immojudis.example",
+        });
+        // `null` : volontairement aucune adresse de réponse.
+        expect(await send(null)).not.toHaveProperty("reply_to");
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+
+    it("sends no reply-to when none is configured", async () => {
+      vi.stubEnv("EMAIL_REPLY_TO", "");
+      vi.stubEnv("NEXT_PUBLIC_LEGAL_CONTACT_EMAIL", "");
+      try {
+        expect(await send()).not.toHaveProperty("reply_to");
+      } finally {
+        vi.unstubAllEnvs();
+      }
     });
   });
 

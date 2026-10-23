@@ -229,10 +229,14 @@ export function DiscoveryDecisionPanel({ sale }: { sale: AuctionSale }) {
       {gapSentence ? (
         <>
           <p className={panelStyles.surfaceCaution} role="status">
-            {gapSentence} Reste à savoir jusqu’où enchérir une fois les frais, les travaux et la
-            libération du bien comptés : c’est le calcul de l’enchère plafond.
+            {gapSentence}
+            {value?.gapWithheld
+              ? null
+              : " Reste à savoir jusqu’où enchérir une fois les frais, les travaux et la libération du bien comptés : c’est le calcul de l’enchère plafond."}
           </p>
-          <SaleSignalFeedback saleId={sale.id} signal="market_gap_band" />
+          {value?.gapWithheld ? null : (
+            <SaleSignalFeedback saleId={sale.id} signal="market_gap_band" />
+          )}
         </>
       ) : null}
       <PremiumFeaturePreview

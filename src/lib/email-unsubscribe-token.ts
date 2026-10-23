@@ -6,28 +6,19 @@ import { createHmac, timingSafeEqual } from "node:crypto";
  * switch off, so a link scanner that merely opens it can neither unsubscribe
  * anyone nor guess another user's link.
  */
-export const UNSUBSCRIBE_TOKEN_TTL_DAYS = 60;
+export const UNSUBSCRIBE_TOKEN_TTL_DAYS = 365;
 /**
- * Les rappels d'audience arrivent toute l'année, parfois des mois après la première inscription : un
- * lien de désinscription ne doit pas devenir inutilisable pendant que les emails continuent (c'est
- * aussi le lien d'en-tête List-Unsubscribe).
+ * Même durée, nom d'origine conservé. Tous les emails reviennent pendant des mois (alertes, rappels
+ * d'audience, récapitulatif, alerte de résultat) : un lien de désinscription ne doit pas devenir
+ * inutilisable pendant que les emails continuent (c'est aussi le lien d'en-tête List-Unsubscribe).
+ * Les alertes étaient les seules à 60 jours : un lien d'un ancien email affichait « lien expiré » au
+ * lieu de désinscrire.
  */
-export const REMINDERS_UNSUBSCRIBE_TOKEN_TTL_DAYS = 365;
+export const REMINDERS_UNSUBSCRIBE_TOKEN_TTL_DAYS = UNSUBSCRIBE_TOKEN_TTL_DAYS;
 
-/**
- * Récapitulatif hebdomadaire et alerte de résultat : des emails qui reviennent toute l'année, donc
- * la même durée de validité que les rappels d'audience.
- */
-const LONG_LIVED_SCOPES: ReadonlySet<UnsubscribeScope["kind"]> = new Set([
-  "reminders",
-  "weekly-digest",
-  "sale-results",
-]);
-
-export function unsubscribeTokenTtlDays(scope: UnsubscribeScope): number {
-  return LONG_LIVED_SCOPES.has(scope.kind)
-    ? REMINDERS_UNSUBSCRIBE_TOKEN_TTL_DAYS
-    : UNSUBSCRIBE_TOKEN_TTL_DAYS;
+/** Durée de validité d'un lien de désinscription, la même pour toutes les portées. */
+export function unsubscribeTokenTtlDays(_scope: UnsubscribeScope): number {
+  return UNSUBSCRIBE_TOKEN_TTL_DAYS;
 }
 
 export type UnsubscribeScope =
