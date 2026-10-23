@@ -460,10 +460,11 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
       if (isLinkRejectedByServer(cause)) clearStoredToken(missionId);
       // Un refus de validation du serveur désigne un champ : son message est écrit pour le
       // visiteur (il ne passe pas par le filtre des messages techniques).
-      const rejectedField = cause instanceof ContributionHttpError ? cause.field : null;
+      const rejected = cause instanceof ContributionHttpError && cause.field ? cause : null;
+      const rejectedField = rejected?.field ?? null;
       fail(
-        rejectedField && cause instanceof Error
-          ? cause.message
+        rejected
+          ? rejected.message
           : errorMessage(cause, "Impossible de transmettre votre contribution."),
         rejectedField,
       );
