@@ -159,6 +159,12 @@ describe("inventaire de la fiche pour l'agent d'information", () => {
     expect(documents?.reason).not.toContain("diagnostics");
   });
 
+  it("nomme la garantie pour enchérir (et non la consignation) quand les modalités ne sont pas étayées", () => {
+    const item = inventoryOf(baseSale()).items.find((entry) => entry.key === "sale_terms");
+    expect(item?.status).toBe("missing");
+    expect(item?.detail).toBe("Garantie pour enchérir, frais et délais ne sont pas étayés.");
+  });
+
   it("garde une surface estimée ou contradictoire dans les questions", () => {
     const conflicting = baseSale({
       habitable_surface_m2: 80,

@@ -12,8 +12,11 @@ const mocks = vi.hoisted(() => ({
     canvas: HTMLCanvasElement;
     remove: ReturnType<typeof vi.fn>;
     rotateTo: ReturnType<typeof vi.fn>;
+    addLayer: ReturnType<typeof vi.fn>;
+    addSource: ReturnType<typeof vi.fn>;
     bearing: number;
   }>,
+  pins: [] as HTMLElement[],
 }));
 
 vi.mock("mapbox-gl/dist/mapbox-gl.css", () => ({}));
@@ -27,6 +30,8 @@ vi.mock("mapbox-gl", () => {
     rotateTo = vi.fn((bearing: number) => {
       this.bearing = bearing;
     });
+    addLayer = vi.fn();
+    addSource = vi.fn();
     options: Record<string, unknown>;
     constructor(options: Record<string, unknown>) {
       this.options = options;
@@ -44,11 +49,13 @@ vi.mock("mapbox-gl", () => {
     getSource() {
       return undefined;
     }
-    addSource() {}
     setTerrain() {}
     resize() {}
   }
   class FakeMarker {
+    constructor(options: { element: HTMLElement }) {
+      mocks.pins.push(options.element);
+    }
     setLngLat() {
       return this;
     }
@@ -60,12 +67,19 @@ vi.mock("mapbox-gl", () => {
   return { default: { Map: FakeMap, Marker: FakeMarker, config: {} } };
 });
 
-const target = { lat: 44.8378, lng: -0.5792, address: "12 rue Sainte-Catherine, 33000, Bordeaux" };
+const target = {
+  lat: 44.8378,
+  lng: -0.5792,
+  address: "12 rue Sainte-Catherine, 33000, Bordeaux",
+  accuracyMeters: 30,
+};
 
 let intersection: ((entries: Array<{ isIntersecting: boolean }>) => void) | null = null;
 let frames: Array<{ id: number; callback: FrameRequestCallback }> = [];
 let nextFrame = 1;
 let reduced = false;
+let mobile = false;
+let connection: { saveData?: boolean; effectiveType?: string } | undefined;
 let mediaListeners: Array<(event: { matches: boolean }) => void> = [];
 
 function runFrame(time: number) {
@@ -94,6 +108,10 @@ async function showMap() {
 
 beforeEach(() => {
   mocks.maps.length = 0;
+  mocks.pins.length = 0;
+  mobile = false;
+  connection = undefined;
+  Object.defineProperty(navigator, "connection", { configurable: true, get: () => connection });
   frames = [];
   nextFrame = 1;
   reduced = false;
@@ -120,7 +138,7 @@ beforeEach(() => {
   window.matchMedia = ((query: string) => ({
     media: query,
     get matches() {
-      return reduced;
+      return query.includes("max-width") ? mobile : reduced;
     },
     addEventListener: (_: string, listener: (event: { matches: boolean }) => void) =>
       mediaListeners.push(listener),
@@ -132,6 +150,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  Reflect.deleteProperty(navigator, "connection");
   vi.useRealTimers();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
@@ -154,6 +173,35 @@ describe("AerialOrbitHero", () => {
     expect(credit.contains(poster)).toBe(false);
     expect(screen.getByRole("button", { name: "Lancer la vue 360°" })).toBeTruthy();
     expect(mocks.maps).toHaveLength(0);
+  });
+
+  it("l'image d'attente montre les noms de rues et un cercle d'incertitude sous un petit repère", () => {
+    render(<AerialOrbitHero target={target} title="Appartement" />);
+
+    const src = screen.getByRole("img", { name: /Vue aérienne autour/ }).getAttribute("src") ?? "";
+    expect(src).toContain("/styles/v1/mapbox/satellite-streets-v12/static/");
+    const [, overlays] = /\/static\/(.+?)\/-?\d/.exec(src) ?? [];
+    const [circle, pin] = overlays.split(/,(?=pin-s)/);
+    expect(pin).toMatch(/^pin-s\+0f766e\(/);
+    const feature = JSON.parse(decodeURIComponent(circle.slice("geojson(".length, -1)));
+    const ring = feature.geometry.coordinates[0] as Array<[number, number]>;
+    expect(ring).toHaveLength(25);
+    expect(ring[0]).toEqual(ring[24]);
+    // Rayon de 30 m autour du repère : 30 / 111 320 degrés de latitude, au micro-degré près.
+    const latitudes = ring.map(([, latitude]) => latitude - target.lat);
+    expect(Math.max(...latitudes)).toBeCloseTo(30 / 111_320, 5);
+    expect(screen.getByText("Position approximative")).toBeTruthy();
+    expect(screen.queryByText(/Repère indicatif/)).toBeNull();
+  });
+
+  it("revient à l'imagerie sans noms de rues quand Mapbox refuse le style", () => {
+    render(<AerialOrbitHero target={target} title="Appartement" />);
+
+    fireEvent.error(screen.getByRole("img", { name: /Vue aérienne autour/ }));
+
+    const src = screen.getByRole("img", { name: /Vue aérienne autour/ }).getAttribute("src");
+    expect(src).toContain("/mapbox/satellite-v9/static/");
+    expect(src).toContain("geojson(");
   });
 
   it("n'enveloppe plus la carte et ses liens dans un role=img, et place le bouton avant la carte", () => {
@@ -186,6 +234,63 @@ describe("AerialOrbitHero", () => {
     expect(screen.getByTestId("aerial-orbit-map").parentElement?.hasAttribute("inert")).toBe(false);
     expect(screen.getByText(/3D schématique/)).toBeTruthy();
     expect(screen.queryByTestId("aerial-orbit-attribution")).toBeNull();
+    // Le cercle d'incertitude est tracé sur la carte, et le repère est petit.
+    expect(map.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "fill",
+        paint: expect.objectContaining({ "fill-opacity": 0.2 }),
+      }),
+    );
+    expect(mocks.pins[0]?.innerHTML).toContain('width="24" height="32"');
+  });
+
+  describe("chargement de la carte", () => {
+    async function intersect() {
+      await act(async () => {
+        intersection?.([{ isIntersecting: true }]);
+      });
+    }
+
+    it("sur ordinateur, se fait au premier passage à l'écran", async () => {
+      render(<AerialOrbitHero target={target} title="Appartement" />);
+      await intersect();
+      await waitFor(() => expect(mocks.maps).toHaveLength(1));
+    });
+
+    it.each([
+      ["sur mobile (moins de 768 px)", () => (mobile = true)],
+      [
+        "avec l'économiseur de données",
+        () => (connection = { saveData: true, effectiveType: "4g" }),
+      ],
+      ["sur un réseau 3G", () => (connection = { effectiveType: "3g" })],
+      ["sur un réseau 2G", () => (connection = { effectiveType: "2g" })],
+      ["sur un réseau très lent", () => (connection = { effectiveType: "slow-2g" })],
+    ])("%s, attend le geste « Lancer la vue 360° »", async (_case, setup) => {
+      setup();
+      render(<AerialOrbitHero target={target} title="Appartement" />);
+
+      await intersect();
+      expect(mocks.maps).toHaveLength(0);
+      expect(screen.getByRole("button", { name: "Lancer la vue 360°" })).toBeTruthy();
+
+      fireEvent.click(screen.getByRole("button", { name: "Lancer la vue 360°" }));
+      await waitFor(() => expect(mocks.maps).toHaveLength(1));
+    });
+
+    it("sur un réseau 4G sans économiseur de données, se fait seul", async () => {
+      connection = { saveData: false, effectiveType: "4g" };
+      render(<AerialOrbitHero target={target} title="Appartement" />);
+      await intersect();
+      await waitFor(() => expect(mocks.maps).toHaveLength(1));
+    });
+
+    it("quand le visiteur vient de choisir « Vue 360° », se fait tout de suite, même sur mobile", async () => {
+      mobile = true;
+      render(<AerialOrbitHero target={target} title="Appartement" startImmediately />);
+
+      await waitFor(() => expect(mocks.maps).toHaveLength(1));
+    });
   });
 
   it("plafonne la rotation à 30 images par seconde", async () => {

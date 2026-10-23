@@ -19,6 +19,13 @@ jobs:
   validate:
     name: Validate production migration target
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Read-only. `checks: read` lets the GITHUB_TOKEN list the CI check runs of the commit; this job
+    # has no secret and no environment. A job-level block replaces the workflow-level one, hence
+    # the repeated `contents: read` (checkout).
+    permissions:
+      contents: read
+      checks: read
     steps:
       - name: Check workflow event, ref, and confirmation
         env:
@@ -40,6 +47,24 @@ jobs:
             exit 1
           fi
 
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+
+      # Applying migrations ahead of a red or unfinished CI would ship SQL that the pgTAP suite and
+      # the replay-from-zero job have not accepted. Wait for ci.yml to be green on this exact
+      # commit. The migration itself stays a manual decision: nothing here applies anything.
+      - name: Require every CI check of the commit to be green
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/check-commit-ci-green.mjs
+
   apply:
     name: Apply audited migrations
     needs: validate
@@ -48,15 +73,14 @@ jobs:
     environment: Production
     timeout-minutes: 45
     env:
-      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-      SUPABASE_DB_SSL_CA: ${{ secrets.SUPABASE_DB_SSL_CA }}
+      # Secrets are not part of the job environment: npm ci and the provenance steps must not see
+      # them. Only the steps that talk to the production database receive them.
       SUPABASE_MIGRATION_RUNNER: postgres-js
       POSTGRES_SSL: verify-full
       PGCONNECT_TIMEOUT: "60"
       SUPABASE_MIGRATION_CONNECT_RETRIES: "10"
       SUPABASE_MIGRATION_RETRY_DELAY: "30"
       SUPABASE_MIGRATION_RETRY_BUDGET_SECONDS: "2400"
-      CRON_SECRET: ${{ secrets.CRON_SECRET }}
       OPERATIONS_HEALTH_URL: https://immojudis.com
     steps:
       - name: Check out repository
@@ -105,9 +129,15 @@ jobs:
           retention-days: 90
 
       - name: Apply pending migrations
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_SSL_CA: ${{ secrets.SUPABASE_DB_SSL_CA }}
         run: node scripts/apply-supabase-migrations.mjs
 
       - name: Apply reviewed concurrent index operations
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_SSL_CA: ${{ secrets.SUPABASE_DB_SSL_CA }}
         run: node scripts/apply-supabase-concurrent-index-operations.mjs
 
       - name: Record successful migration application
@@ -132,7 +162,14 @@ jobs:
           retention-days: 90
 
       - name: Configure the 15-minute health scheduler
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_SSL_CA: ${{ secrets.SUPABASE_DB_SSL_CA }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: npm run ops:health-scheduler:configure
 
       - name: Detect production schema drift
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_SSL_CA: ${{ secrets.SUPABASE_DB_SSL_CA }}
         run: npm run check:schema-drift -- --remote

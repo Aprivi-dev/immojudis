@@ -1,13 +1,18 @@
 "use client";
 
+import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { toast } from "@/lib/toast";
 import { updateOfferOpeningSurvey } from "@/lib/client-billing";
+import { legalValue, publicLegalPublisher } from "@/lib/legal-documents";
 import {
   OFFER_OPENING_INTERVIEW_HELP,
   OFFER_OPENING_INTERVIEW_TEXT,
   OFFER_OPENING_SURVEY_INTRO,
   OFFER_OPENING_SURVEY_PROFILES,
+  OFFER_OPENING_SURVEY_SUBMIT_LABEL,
+  offerOpeningInterviewAvailable,
+  offerOpeningInterviewNotice,
   type OfferOpeningSurveyProfile,
 } from "@/lib/offer-opening-consent";
 import type { OfferOpeningSurveyState } from "@/lib/offer-opening-notification";
@@ -23,9 +28,12 @@ function parseCount(value: string): number | null {
 
 /**
  * Liste d'attente qualifiée : trois questions facultatives (profil, ventes étudiées par mois, deux
- * repères de prix) et la case « J'accepte un entretien de 20 minutes », non cochée par défaut. À
- * montrer seulement une fois la demande d'information enregistrée : rien ici ne conditionne
- * l'inscription à la liste, et chaque champ peut rester vide.
+ * repères de prix) et la case « J'accepte d'être contacté une fois par email pour un entretien
+ * d'environ 45 minutes », non cochée par défaut. À montrer seulement une fois la demande
+ * d'information enregistrée : rien ici ne conditionne l'inscription à la liste, et chaque champ peut
+ * rester vide. La case et son information ne sont pas rendues tant que le nom de l'éditeur et son
+ * email de contact ne sont pas renseignés : le questionnaire s'affiche alors sans elle et
+ * n'envoie jamais d'accord à l'entretien.
  */
 export function OfferOpeningSurvey({
   initial,
@@ -41,6 +49,14 @@ export function OfferOpeningSurvey({
   const [interview, setInterview] = useState(initial?.interviewAccepted ?? false);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(Boolean(initial?.answeredAt));
+  const publisher = publicLegalPublisher();
+  const interviewOffered = offerOpeningInterviewAvailable(publisher);
+  const interviewNotice = interviewOffered
+    ? offerOpeningInterviewNotice({
+        controller: legalValue(publisher.entityName),
+        contactEmail: legalValue(publisher.contactEmail),
+      })
+    : [];
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -52,7 +68,7 @@ export function OfferOpeningSurvey({
         salesPerMonth: parseCount(sales),
         priceTooExpensiveEur: parseCount(tooExpensive),
         priceCheapEur: parseCount(cheap),
-        interviewAccepted: interview,
+        interviewAccepted: interviewOffered && interview,
       });
       setSaved(true);
       toast.success("Merci, vos réponses sont enregistrées.");
@@ -141,23 +157,42 @@ export function OfferOpeningSurvey({
         </label>
       </fieldset>
 
-      <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 leading-relaxed">
-        <input
-          type="checkbox"
-          checked={interview}
-          onChange={(event) => {
-            setInterview(event.target.checked);
-            setSaved(false);
-          }}
-          className="mt-1 h-4 w-4"
-        />
-        <span>
-          <span className="font-semibold">{OFFER_OPENING_INTERVIEW_TEXT}</span>
-          <span className="mt-1 block text-xs text-muted-foreground">
-            {OFFER_OPENING_INTERVIEW_HELP}
-          </span>
-        </span>
-      </label>
+      {interviewOffered ? (
+        <>
+          <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 leading-relaxed">
+            <input
+              type="checkbox"
+              checked={interview}
+              onChange={(event) => {
+                setInterview(event.target.checked);
+                setSaved(false);
+              }}
+              aria-describedby="offer-opening-interview-notice"
+              className="mt-1 h-4 w-4"
+            />
+            <span>
+              <span className="font-semibold">{OFFER_OPENING_INTERVIEW_TEXT}</span>
+              <span className="mt-1 block text-xs text-muted-foreground">
+                {OFFER_OPENING_INTERVIEW_HELP}
+              </span>
+            </span>
+          </label>
+          <div
+            id="offer-opening-interview-notice"
+            data-testid="offer-opening-interview-notice"
+            className="grid gap-1 text-xs leading-relaxed text-muted-foreground"
+          >
+            {interviewNotice.map((line) => (
+              <p key={line}>{line}</p>
+            ))}
+            <p>
+              <Link href="/privacy" className="font-semibold underline underline-offset-2">
+                Politique de confidentialité
+              </Link>
+            </p>
+          </div>
+        </>
+      ) : null}
 
       <div className="flex flex-wrap items-center gap-3">
         <button
@@ -165,7 +200,7 @@ export function OfferOpeningSurvey({
           disabled={busy}
           className="ij-login-button inline-flex min-h-11 items-center justify-center px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {busy ? "Enregistrement…" : "Enregistrer mes réponses"}
+          {busy ? "Enregistrement…" : OFFER_OPENING_SURVEY_SUBMIT_LABEL}
         </button>
         {saved ? (
           <span role="status" className="text-xs font-medium text-muted-foreground">

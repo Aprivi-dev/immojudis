@@ -505,7 +505,7 @@ function saleTermsItem(
   if (hasVerifiedSaleTerms(sale)) {
     return item("sale_terms", "present", "Modalités vérifiées.", "Procédure vérifiée");
   }
-  // Le cahier des conditions de vente fixe la consignation, les frais et les délais : s'il est
+  // Le cahier des conditions de vente fixe la garantie à remettre pour enchérir, les frais et les délais : s'il est
   // consultable, ces modalités se lisent dans la pièce plutôt que d'être redemandées.
   const conditions = documents.find((document) =>
     DOCUMENT_PATTERNS.sale_conditions.test(document.label),
@@ -518,7 +518,11 @@ function saleTermsItem(
       conditions.origin,
     );
   }
-  return item("sale_terms", "missing", "Consignation, frais et délais ne sont pas étayés.");
+  return item(
+    "sale_terms",
+    "missing",
+    "Garantie pour enchérir, frais et délais ne sont pas étayés.",
+  );
 }
 
 export function hasVerifiedSaleTerms(sale: AuctionSale): boolean {

@@ -5,18 +5,18 @@ select plan(13);
 create or replace view app_private.auction_scenario_observations as
 select court_code, property_type, starting_price_eur, hammer_price_eur, sale_date
 from (
-  -- TJ test: 24 lots of the 20–50 k€ band, all sold at 2.5×.
+  -- TJ test: 24 lots of the 35–50 k€ band, all sold at 2.5×.
   select 'tj_scenario_test'::text as court_code, 'apartment'::text as property_type,
          40000::numeric as starting_price_eur, 100000::numeric as hammer_price_eur,
          (current_date - (n * 20))::date as sale_date
   from generate_series(1, 24) n
   union all
   -- Elsewhere: 76 lots of the same band, sold at the starting price.
-  select 'tj_other', 'house', 30000, 30000, (current_date - (n * 10))::date
+  select 'tj_other', 'house', 40000, 40000, (current_date - (n * 10))::date
   from generate_series(1, 76) n
   union all
   -- A second court with only 4 comparable lots, sold at 3.5×.
-  select 'tj_small', 'apartment', 25000, 87500, (current_date - 30)::date
+  select 'tj_small', 'apartment', 38000, 133000, (current_date - 30)::date
   from generate_series(1, 4) n
   union all
   -- Too old for the three-year window.
@@ -27,7 +27,7 @@ from (
 ) sample;
 
 select is(app_private.starting_price_band(15000), 1::smallint, 'band: under 20 k€');
-select is(app_private.starting_price_band(200000), 5::smallint, 'band: 200 k€ and more');
+select is(app_private.starting_price_band(200000), 7::smallint, 'band: 200 k€ and more');
 
 select is(
   (app_private.court_auction_scenarios('tj_scenario_test', 45000)->>'court_sample')::int,

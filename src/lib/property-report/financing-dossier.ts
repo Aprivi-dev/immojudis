@@ -13,8 +13,12 @@ import { PDF_PAGE_BREAK } from "@/lib/simple-pdf";
  *
  * Les règles citées sont celles de l'article de /ressources « Garantie de 10 % : chèque de banque ou
  * caution ? » (CPCE, art. R. 322-41, R. 322-56, R. 322-58). Elles visent les ventes au tribunal
- * (saisie immobilière, licitation) ; pour un autre type de vente, la page renvoie à l'annonce et à
- * l'organisateur au lieu d'appliquer une règle qui n'est pas la leur. Il en va de même quand le type
+ * (saisie immobilière, licitation) ; en liquidation judiciaire, ces articles ne s'appliquent pas
+ * tels quels : le Code de commerce renvoie aux seules règles de la vente forcée qu'il énumère
+ * (art. L. 642-18 et R. 642-29-2) et règle lui-même le paiement du prix (art. R. 643-3), donc la
+ * page cite le Code de commerce et n'y reprend ni R. 322-56 ni R. 322-58 ; pour un autre type de
+ * vente, la page renvoie à l'annonce et à l'organisateur au lieu d'appliquer une règle qui n'est
+ * pas la leur. Il en va de même quand le type
  * de vente est inconnu ou que les sources se contredisent (contrôle « conflict ») : la garantie et
  * le délai s'affichent « non renseigné » et renvoient à l'annonce.
  *
@@ -154,7 +158,7 @@ export function financingDossierLines(input: FinancingDossierInput): string[] {
           `Montant indiqué dans l’annonce: ${euros(announcedGuarantee.amountEur)}`,
           ...(insolvency
             ? [
-                "Forme: chèque de banque ou caution bancaire irrévocable (art. R. 322-41 du CPCE).",
+                "Forme: chèque de banque ou caution bancaire irrévocable (art. R. 642-29-2 du Code de commerce, renvoi à R. 322-41 du CPCE).",
                 "Bénéficiaire du chèque: à lire dans le cahier des conditions de vente.",
               ]
             : [
@@ -178,7 +182,9 @@ export function financingDossierLines(input: FinancingDossierInput): string[] {
             : seizure
               ? "Délai: deux mois après l’adjudication définitive (l’adjudication devient définitive à la fin du délai de surenchère, selon l’analyse usuelle : point de départ à confirmer avec l’avocat) pour verser le prix ou le consigner, à peine de réitération des enchères (art. R. 322-56)."
               : `Délai: ${FINANCING_NOT_PROVIDED} (cadre juridique de la vente non établi). Deux mois après l’adjudication définitive pour une saisie immobilière (art. R. 322-56) ; autre délai possible dans les autres cas : à lire dans le cahier des conditions de vente.`,
-          "Frais de poursuite taxés et droits de mutation en plus du prix (art. R. 322-58).",
+          insolvency
+            ? "Frais de poursuite taxés en plus du prix, selon le cahier (à confirmer avec l’avocat)."
+            : "Frais de poursuite taxés et droits de mutation en plus du prix (art. R. 322-58).",
           "Imputation de la garantie sur le prix: non précisée par les textes, à demander à l’avocat.",
         ]
       : [

@@ -316,6 +316,17 @@ export async function revokeOfferOpeningRequest({
   return { userId, revokedAt: now.toISOString() };
 }
 
+/**
+ * Désinscription du préavis de fin de l'offre de lancement (lien du message) : le compte entre dans la
+ * liste d'exclusion et n'est plus jamais dans la file d'envoi, pour aucune date. Rien d'autre ne change.
+ */
+export async function revokeLaunchOfferEndNotice({ userId }: { userId: string }): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from("launch_offer_end_notice_optouts")
+    .upsert({ user_id: userId }, { onConflict: "user_id", ignoreDuplicates: true });
+  if (error) throw error;
+}
+
 /** Pause a single alert (per-alert unsubscribe); other alerts keep running. */
 export async function deactivateAlertForUser({
   userId,

@@ -618,7 +618,8 @@ def _sale_from_storage_row(row: dict[str, Any]):
     sale.created_at = _parse_datetime(row.get("created_at"))
     sale.updated_at = _parse_datetime(row.get("updated_at"))
     # Les autres drapeaux se recalculent ; ceux de la position ne se déduisent pas du texte de la vente, ils viennent
-    # d'un contrôle ou d'un géocodage passé : on les garde jusqu'à ce qu'une position vérifiée les retire.
+    # d'un contrôle ou d'un géocodage passé : on les garde jusqu'à ce qu'une position vérifiée les retire. Même chose pour
+    # « probable_duplicate », qui vient d'un rapprochement entre lignes (src.probable_duplicates).
     sale.quality_flags = preserved_position_flags(row.get("quality_flags"))
     sale.raw_payload = raw_sale
     return sale

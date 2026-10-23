@@ -156,6 +156,8 @@ def test_secrets_are_never_in_the_environment_of_pip_and_apt_steps(path: Path) -
         "reference-data-import.yml",
         "valuation-model-training.yml",
         "photo-mirror-backfill.yml",
+        "apply-supabase-migrations.yml",
+        "check-pending-supabase-migrations.yml",
     ],
 )
 def test_pipeline_workflows_keep_secrets_out_of_the_job_environment(name: str) -> None:
@@ -249,6 +251,17 @@ def test_photo_copy_step_runs_after_a_failed_collection_and_fails_visibly() -> N
     assert "python -m src.photo_mirror --automatic" in step.run
 
 
+def _assert_main_only_without_persisted_credentials(text: str) -> None:
+    # Un workflow qui écrit en production ne part que de main (condition évaluée avant l'environnement),
+    # et le jeton du dépôt n'est pas laissé dans .git/config pour les étapes qui reçoivent les secrets.
+    assert re.search(r"^    if: github\.ref == 'refs/heads/main'$", text, re.M)
+    assert re.search(
+        r"^        uses: actions/checkout@\S+.*\n        with:\n          persist-credentials: false$",
+        text,
+        re.M,
+    )
+
+
 def test_dedupe_sweep_is_manual_serialised_with_the_pipeline_and_gives_secrets_to_one_step() -> None:
     text = (WORKFLOWS / "dedupe-sweep.yml").read_text(encoding="utf-8")
     jobs = parse_jobs(text)
@@ -276,6 +289,27 @@ def test_dedupe_sweep_is_manual_serialised_with_the_pipeline_and_gives_secrets_t
     # Chaque action est épinglée par SHA de commit (40 hexadécimaux), jamais par étiquette.
     assert all(re.search(r"@[0-9a-f]{40}( |$)", step.uses) for step in jobs[0].steps if step.uses)
     assert "python -m src.dedupe_apply" in text
+    _assert_main_only_without_persisted_credentials(text)
+
+
+def test_probable_duplicate_flags_is_manual_serialised_and_dry_by_default() -> None:
+    text = (WORKFLOWS / "probable-duplicate-flags.yml").read_text(encoding="utf-8")
+    jobs = parse_jobs(text)
+
+    assert [job.name for job in jobs] == ["flag"]
+    assert re.search(r"^    environment: Production$", text, re.M)
+    assert "workflow_dispatch" in text and "pull_request" not in text and "schedule" not in text
+    # Même groupe que la collecte : les deux réécrivent les mêmes lignes.
+    assert re.search(r"^  group: immojudis-data-pipeline$", text, re.M)
+    assert re.search(r"^  cancel-in-progress: false$", text, re.M)
+    # Essai à blanc par défaut : la case « write » est décochée tant qu'on ne la coche pas.
+    assert re.search(r"^      write:\n(?:        .*\n)*?        default: false$", text, re.M)
+    assert [job.name for job in jobs if SECRET.search(job.env)] == []
+    assert [step.name for step in jobs[0].steps if SECRET.search(step.env)] == ["Flag probable duplicates"]
+    assert "--require-hashes" in text
+    assert all(re.search(r"@[0-9a-f]{40}( |$)", step.uses) for step in jobs[0].steps if step.uses)
+    assert "python -m src.probable_duplicates --write" in text
+    _assert_main_only_without_persisted_credentials(text)
 
 
 def test_information_agent_always_runs_main_with_secrets_on_its_two_business_steps() -> None:
@@ -321,3 +355,89 @@ def test_document_backlog_is_a_manual_mode_of_the_data_pipeline() -> None:
     assert 'if [ "$REQUESTED_DOCUMENTS_BACKLOG" = "true" ]' in pipeline.run
     assert "REQUESTED_DOCUMENTS_BACKLOG: ${{ github.event.inputs.documents_backlog }}" in pipeline.env
     assert "PDF_HOST_MIN_DELAY_SECONDS: 2" in job.env
+
+
+def test_migration_secrets_reach_only_the_steps_that_use_the_database() -> None:
+    jobs = {
+        job.name: job
+        for job in parse_jobs((WORKFLOWS / "apply-supabase-migrations.yml").read_text(encoding="utf-8"))
+    }
+    assert set(jobs) == {"validate", "apply"}
+    # La validation n'a ni secret ni environnement : seulement le jeton du dépôt.
+    assert [step.name for step in jobs["validate"].steps if SECRET.search(step.env)] == []
+    receiving = {step.name: step for step in jobs["apply"].steps if SECRET.search(step.env)}
+    assert set(receiving) == {
+        "Apply pending migrations",
+        "Apply reviewed concurrent index operations",
+        "Configure the 15-minute health scheduler",
+        "Detect production schema drift",
+    }
+    # CRON_SECRET (qui autorise aussi les routes Vercel Cron) ne part que vers le planificateur de santé.
+    assert [name for name, step in receiving.items() if "CRON_SECRET" in step.env] == [
+        "Configure the 15-minute health scheduler"
+    ]
+    # Les étapes d'installation et de provenance ne voient aucun secret.
+    for step in jobs["apply"].steps:
+        if step.name in {"Install project tooling", "Pin npm"} or "release-manifest" in step.run:
+            assert not SECRET.search(step.env), step.name
+
+
+def test_apply_migrations_stays_manual_and_requires_green_ci_on_the_commit() -> None:
+    text = (WORKFLOWS / "apply-supabase-migrations.yml").read_text(encoding="utf-8")
+    on_block = text.split("\npermissions:", 1)[0]
+    # Le propriétaire garde le déclenchement : aucune application automatique en production.
+    assert re.search(r"^on:\n  workflow_dispatch:\n", on_block, re.M)
+    for trigger in ("push:", "schedule:", "pull_request", "workflow_run", "workflow_call"):
+        assert trigger not in on_block, trigger
+    jobs = {job.name: job for job in parse_jobs(text)}
+    validate = text.split("  validate:\n", 1)[1].split("\n  apply:\n", 1)[0]
+    apply_job = text.split("\n  apply:\n", 1)[1]
+    # Droits minimaux de la validation : lecture du dépôt et des contrôles, rien d'autre.
+    permissions = re.search(r"^    permissions:\n((?:      .+\n)+)", validate, re.M)
+    assert permissions is not None
+    assert permissions.group(1).splitlines() == ["      contents: read", "      checks: read"]
+    assert "environment:" not in validate
+    # Le garde de CI est dans la validation, dont l'application dépend.
+    assert "run: node scripts/check-commit-ci-green.mjs" in validate
+    assert "GITHUB_TOKEN: ${{ github.token }}" in validate
+    assert re.search(r"^    needs: validate\n    if: needs\.validate\.result == 'success'$", apply_job, re.M)
+    assert re.search(r"^    environment: Production$", apply_job, re.M)
+    assert [step.name for step in jobs["validate"].steps][-1] == "Require every CI check of the commit to be green"
+
+
+def test_pending_migrations_check_runs_on_migration_pushes_and_daily_and_stays_read_only() -> None:
+    text = (WORKFLOWS / "check-pending-supabase-migrations.yml").read_text(encoding="utf-8")
+    on_block = text.split("\npermissions:", 1)[0]
+
+    assert re.search(
+        r'^  push:\n    branches: \[main\]\n    paths:\n      - "supabase/migrations/\*\*"\n', on_block, re.M
+    )
+    assert re.search(r'^  schedule:\n    - cron: "10 7 \* \* \*"\n', on_block, re.M)
+    assert "workflow_dispatch:" in on_block and "pull_request" not in on_block
+    assert re.search(r"^    environment: Production$", text, re.M)
+    # Lecture seule : aucune application de migration, et une seule étape qui reçoit les secrets.
+    steps = {step.name: step for step in parse_jobs(text)[0].steps}
+    assert [name for name, step in steps.items() if SECRET.search(step.env)] == [
+        "Compare main migrations with production history (read-only)"
+    ]
+    compare = steps["Compare main migrations with production history (read-only)"]
+    assert compare.run.strip() == "node scripts/apply-supabase-migrations.mjs --dry-run --fail-on-pending"
+    assert [step.name for step in steps.values() if "apply-supabase-migrations.mjs" in step.run] == [compare.name]
+    assert "db:migrate" not in text
+    # Un échec s'explique en annotation et dans le résumé du run ; il ne masque jamais l'échec.
+    explain = steps["Say what to do about the failure"]
+    assert re.search(r"^        if: failure\(\) && steps\.compare\.outcome == 'failure'$", explain.text, re.M)
+    assert "::error" in explain.run and "continue-on-error" not in text
+
+
+def test_every_workflow_that_names_an_environment_names_production() -> None:
+    # data-pipeline.yml n'en nomme pas : il est lancé automatiquement par l'application
+    # (workflow_dispatch par API) ; lui ajouter `environment:` le soumettrait aux protections de
+    # l'environnement (relecteurs requis, délai) et pourrait bloquer la collecte planifiée. Décision du
+    # propriétaire en attente. Les autres workflows qui écrivent en production utilisent tous le même nom.
+    names = {
+        name
+        for path in _workflows()
+        for name in re.findall(r"^    environment: (\S+)$", path.read_text(encoding="utf-8"), re.M)
+    }
+    assert names == {"Production"}

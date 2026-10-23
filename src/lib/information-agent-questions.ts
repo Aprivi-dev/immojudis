@@ -62,7 +62,7 @@ export const INFORMATION_AGENT_QUESTIONS = {
   sale_terms: {
     label: "Modalités de vente",
     question:
-      "Pouvez-vous confirmer les modalités d'enchère, le montant et la forme de la consignation, les frais annoncés et les délais applicables ?",
+      "Pouvez-vous confirmer les modalités d'enchère, le montant et la forme de la garantie à remettre avant d'enchérir (en saisie immobilière : 10 % de la mise à prix, 3 000 € au minimum, par chèque de banque ou caution bancaire), les frais annoncés et les délais applicables, dont celui de paiement du prix ?",
   },
   cadastre: {
     label: "Références cadastrales",
@@ -174,7 +174,7 @@ export function detectInformationGaps(
   if (cadastre) addGap(gaps, "cadastre", cadastre.detail);
   const composition = open("composition");
   if (composition) addGap(gaps, "composition", composition.detail);
-  // Le cahier des conditions de vente, déjà demandé, fixe consignation, frais et délais : la
+  // Le cahier des conditions de vente, déjà demandé, fixe garantie à remettre pour enchérir, frais et délais : la
   // question des modalités ferait doublon et prendrait la place d'une question utile.
   const terms = inventory.missingDocuments.includes("sale_conditions") ? null : open("sale_terms");
   if (terms) addGap(gaps, "sale_terms", terms.detail);

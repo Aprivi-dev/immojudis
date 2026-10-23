@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { apiRouteError } from "@/lib/api-observability";
 import {
   bearerTokenFromRequest,
@@ -19,6 +20,11 @@ export async function GET(request: Request) {
       auth,
       limit: Number(url.searchParams.get("limit") ?? 80),
       includeDismissed: url.searchParams.get("includeDismissed") === "true",
+      saleId: z
+        .string()
+        .uuid()
+        .optional()
+        .parse(url.searchParams.get("saleId") ?? undefined),
     });
 
     return NextResponse.json(response, {

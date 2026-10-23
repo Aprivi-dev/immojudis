@@ -18,7 +18,17 @@ describe("aerialOrbitTarget", () => {
       lat: 44.8378,
       lng: -0.5792,
       address: "12 rue Sainte-Catherine, 33000, Bordeaux",
+      accuracyMeters: 30,
     });
+  });
+
+  it("donne un cercle d'incertitude plus étroit à un point de parcelle qu'à un point d'adresse", () => {
+    const address = aerialOrbitTarget({ ...base, location_precision: "address" });
+    const parcel = aerialOrbitTarget({ ...base, location_precision: "parcel" });
+
+    expect(address?.accuracyMeters).toBe(30);
+    expect(parcel?.accuracyMeters).toBe(15);
+    expect(aerialOrbitTarget({ ...base, location_precision: " Parcel " })?.accuracyMeters).toBe(15);
   });
 
   it("ne répète pas le code postal et la commune déjà présents dans l'adresse", () => {
@@ -101,8 +111,15 @@ describe("aerialOrbitTarget", () => {
     "unverified_source_coordinates",
     "geocode_outside_department",
     "missing_address",
+    "probable_duplicate",
   ])("écarte une position signalée %s", (flag) => {
     expect(aerialOrbitTarget({ ...base, quality_flags: [flag] })).toBeNull();
+  });
+
+  it("écarte un doublon probable même parmi d'autres signalements", () => {
+    expect(
+      aerialOrbitTarget({ ...base, quality_flags: ["multi_lot_sale", "probable_duplicate"] }),
+    ).toBeNull();
   });
 
   it("ignore les autres signalements", () => {

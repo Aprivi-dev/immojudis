@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LAUNCH_OFFER_ACCOUNT_TEXT, LAUNCH_OFFER_VISITOR_TEXT } from "@/lib/launch-offer";
 import { BillingActions } from "./BillingActions";
@@ -21,6 +21,10 @@ const mocks = vi.hoisted(() => ({
   legalPublisherConfigurationStatus: vi.fn(),
   toastError: vi.fn(),
   track: vi.fn(),
+  publisher: { entityName: null, contactEmail: null } as {
+    entityName: string | null;
+    contactEmail: string | null;
+  },
 }));
 vi.mock("@/lib/product-events", () => ({ trackProductEvent: mocks.track }));
 
@@ -51,6 +55,9 @@ vi.mock("@/lib/legal-documents", () => ({
     privacy: { version: "privacy-v1" },
   },
   legalPublisherConfigurationStatus: mocks.legalPublisherConfigurationStatus,
+  publicLegalPublisher: () => mocks.publisher,
+  legalValue: (value: string | null, fallback = "À renseigner avant commercialisation") =>
+    value ?? fallback,
 }));
 
 vi.mock("@/lib/toast", () => ({ toast: { error: mocks.toastError } }));
@@ -87,6 +94,10 @@ beforeEach(() => {
   mocks.openBillingPortal.mockRejectedValue(new Error("test portail arrêté"));
   mocks.openSubscriptionCancellation.mockRejectedValue(new Error("test résiliation arrêtée"));
   mocks.legalPublisherConfigurationStatus.mockReturnValue({ ready: false, missing: ["publisher"] });
+  mocks.publisher = {
+    entityName: "Éditeur de test SAS",
+    contactEmail: "contact@editeur-test.example",
+  };
 });
 
 function renderActions(props: Parameters<typeof BillingActions>[0] = {}) {
@@ -499,10 +510,32 @@ describe("BillingActions : offre en chargement, en erreur ou fermée", () => {
     const form = await screen.findByTestId("offer-opening-survey");
     expect(form.textContent).toContain("toutes facultatives");
     const interview = screen.getByRole("checkbox", {
-      name: /J’accepte un entretien de 20 minutes/,
+      name: /J’accepte d’être contacté une fois par email pour un entretien d’environ 45 minutes/,
     }) as HTMLInputElement;
     expect(interview.checked).toBe(false);
     expect(screen.getByRole("combobox")).toBeTruthy();
+
+    // L'information donnée avec la case : finalité, responsable, enregistrement, durée, retrait.
+    const notice = screen.getByTestId("offer-opening-interview-notice");
+    expect(notice.textContent).toContain("Objectif : comprendre comment vous choisissez");
+    expect(notice.textContent).toContain("Responsable du traitement : Éditeur de test SAS");
+    expect(notice.textContent).toContain("aucun sans votre accord exprès");
+    expect(notice.textContent).toContain("supprimé au plus tard 30 jours après l’entretien");
+    expect(notice.textContent).toContain("Refuser l’enregistrement n’a aucune conséquence.");
+    expect(notice.textContent).toContain("Retrait : à tout moment");
+    expect(notice.textContent).toContain(
+      "le retrait prend effet après un clic sur « Enregistrer mes réponses »",
+    );
+    expect(notice.textContent).toContain(
+      "Vos droits (accès, rectification, effacement, retrait) et la possibilité de saisir la CNIL sont détaillés dans la politique de confidentialité.",
+    );
+    expect(notice.textContent).toContain("contact@editeur-test.example");
+    expect(interview.getAttribute("aria-describedby")).toBe("offer-opening-interview-notice");
+    expect(
+      within(notice)
+        .getByRole("link", { name: "Politique de confidentialité" })
+        .getAttribute("href"),
+    ).toBe("/privacy");
 
     // Tout peut rester vide : l'envoi ne bloque sur rien.
     fireEvent.click(screen.getByRole("button", { name: "Enregistrer mes réponses" }));
@@ -530,7 +563,7 @@ describe("BillingActions : offre en chargement, en erreur ou fermée", () => {
     });
     fireEvent.change(screen.getByLabelText(/trop chère/), { target: { value: "60" } });
     fireEvent.change(screen.getByLabelText(/bon marché/), { target: { value: "15" } });
-    fireEvent.click(screen.getByRole("checkbox", { name: /entretien de 20 minutes/ }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /entretien d’environ 45 minutes/ }));
     fireEvent.click(screen.getByRole("button", { name: "Enregistrer mes réponses" }));
 
     await waitFor(() =>
@@ -544,6 +577,53 @@ describe("BillingActions : offre en chargement, en erreur ou fermée", () => {
     );
     expect(await screen.findByText("Réponses enregistrées.")).toBeTruthy();
   });
+
+  it.each([
+    ["le nom de l'éditeur", { entityName: null, contactEmail: "contact@editeur-test.example" }],
+    ["l'email de contact", { entityName: "Éditeur de test SAS", contactEmail: null }],
+    ["les deux", { entityName: null, contactEmail: null }],
+    ["des valeurs vides", { entityName: "  ", contactEmail: "" }],
+  ])(
+    "sans %s renseigné, le questionnaire s'affiche sans la case d'entretien et n'envoie aucun accord",
+    async (_label, publisher) => {
+      mocks.publisher = publisher;
+      // Un accord enregistré avant que la case ne soit retirée n'est pas renvoyé.
+      mocks.fetchOfferOpeningNotification.mockResolvedValue({
+        notification: {
+          requested: true,
+          consentedAt: "2026-10-20T10:00:00.000Z",
+          survey: {
+            profile: "avocat",
+            salesPerMonth: null,
+            priceTooExpensiveEur: null,
+            priceCheapEur: null,
+            interviewAccepted: true,
+            answeredAt: "2026-10-21T10:00:00.000Z",
+          },
+        },
+      });
+      renderActions();
+
+      const form = await screen.findByTestId("offer-opening-survey");
+      expect(form.textContent).toContain("toutes facultatives");
+      expect(screen.getByRole("combobox")).toBeTruthy();
+      expect(screen.queryByRole("checkbox")).toBeNull();
+      expect(screen.queryByTestId("offer-opening-interview-notice")).toBeNull();
+      expect(form.textContent).not.toContain("entretien");
+      expect(form.textContent).not.toContain("À renseigner avant commercialisation");
+
+      fireEvent.click(screen.getByRole("button", { name: "Enregistrer mes réponses" }));
+      await waitFor(() =>
+        expect(mocks.updateOfferOpeningSurvey).toHaveBeenCalledWith({
+          profile: "avocat",
+          salesPerMonth: null,
+          priceTooExpensiveEur: null,
+          priceCheapEur: null,
+          interviewAccepted: false,
+        }),
+      );
+    },
+  );
 
   it("ne montre pas les questions à qui n'a pas encore demandé à être prévenu", async () => {
     renderActions();

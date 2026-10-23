@@ -6,6 +6,7 @@ import {
   informationAgentEmailTemplateContentSchema,
   renderInformationAgentEmailContent,
 } from "@/lib/information-agent-email-template";
+import { INFORMATION_AGENT_QUESTIONS } from "@/lib/information-agent-questions";
 
 const values = {
   recipient_name: "Maître Dupont",
@@ -24,6 +25,22 @@ const values = {
 };
 
 describe("information agent email content template", () => {
+  it("la question sur les modalités distingue la garantie pour enchérir du paiement du prix (art. R. 322-41)", () => {
+    const question = INFORMATION_AGENT_QUESTIONS.sale_terms.question;
+    expect(question).toContain("la garantie à remettre avant d'enchérir");
+    expect(question).toContain("10 % de la mise à prix, 3 000 € au minimum");
+    expect(question).toContain("chèque de banque ou caution bancaire");
+    expect(question).toContain("dont celui de paiement du prix");
+    // « consignation » désigne le dépôt du prix après la vente, pas la garantie.
+    expect(question).not.toContain("consignation");
+  });
+
+  it("nomme le gabarit par défaut en version 10", () => {
+    expect(DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE.name).toBe(
+      "Demande de précisions sur une vente — version 10",
+    );
+  });
+
   it("renders fixed and dynamic blocks with only whitelisted variables", () => {
     const rendered = renderInformationAgentEmailContent({
       template: DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE,
@@ -36,9 +53,12 @@ describe("information agent email content template", () => {
     expect(rendered.bodyText).toContain("Bonjour Maître Dupont");
     // Qui écrit, en une phrase factuelle : sans elle, le message ressemble à de l'hameçonnage.
     expect(rendered.bodyText).toContain(
-      "Immojudis est un site indépendant d’information sur les ventes immobilières aux enchères",
+      "Immojudis est un site privé d’information sur les ventes immobilières aux enchères",
     );
     expect(rendered.bodyText).toContain("n’agit pas au nom d’un tribunal");
+    // Pas d'adjectif non vérifiable dans la phrase d'identité, ni de « consignation » pour la garantie.
+    expect(rendered.bodyText).not.toContain("indépendant");
+    expect(rendered.bodyText).not.toContain("consignation");
     expect(rendered.bodyText).toContain("Audience annoncée : 14 septembre 2026");
     expect(rendered.bodyText).toContain("Mise à prix annoncée : 85 000 €");
     expect(rendered.bodyText).toContain("Une réponse même partielle nous est utile");

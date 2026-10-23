@@ -120,7 +120,7 @@ describe("guide des ventes immobilières judiciaires", () => {
       expect(structured.dateModified).toBe(GUIDE_LAST_UPDATED);
       expect(time!.getAttribute("datetime")).toBe(structured.dateModified);
       expect(time!.textContent).toBe(formatGuideDate(structured.dateModified!));
-      expect(time!.textContent).toBe("19/10/2026");
+      expect(time!.textContent).toBe("23/10/2026");
     });
 
     it("est une date AAAA-MM-JJ valide, pas postérieure à aujourd'hui", () => {
@@ -247,7 +247,7 @@ describe("guide des ventes immobilières judiciaires", () => {
       );
       for (const phrase of [
         "une garantie de 10 % de la mise à prix, avec un minimum de 3 000 €",
-        "une surenchère d’au moins un dixième du prix principal peut être formée dans les 10 jours qui suivent l’adjudication : l’adjudication n’est définitive qu’à l’expiration de ce délai",
+        "une surenchère d’au moins un dixième du prix principal peut être formée dans les 10 jours qui suivent l’adjudication (délai reporté au premier jour ouvrable suivant s’il expire un samedi, un dimanche ou un jour férié) : l’adjudication n’est définitive qu’à l’expiration de ce délai",
         "acheteur ne porte pas lui-même les enchères",
       ]) {
         expect(note).toContain(phrase);
@@ -286,6 +286,43 @@ describe("guide des ventes immobilières judiciaires", () => {
       const phrase = "l’adjudication n’est définitive qu’à l’expiration de ce délai";
       // Once in the « À retenir » box, once in the checklist « Ce qui vous engage ».
       expect(text.split(phrase)).toHaveLength(3);
+    });
+  });
+
+  describe("délai de surenchère", () => {
+    it("dit que le dixième jour férié ou de week-end est reporté au premier jour ouvrable (art. 641 et 642 CPC)", () => {
+      const { container } = render(<ResourcesPage />);
+      const body = plain(
+        container.querySelector("#apres-adjudication")!.parentElement!.textContent ?? "",
+      );
+      expect(body).toContain(
+        "prorogé jusqu’au premier jour ouvrable suivant (art. 642 du même code)",
+      );
+      expect(body).toContain("Le jour de l’adjudication ne compte pas");
+      expect(body).toContain("(art. 641 du Code de procédure civile)");
+      // L'exemple chiffré : jeudi 8 octobre 2026 + 10 jours = dimanche 18, donc lundi 19.
+      expect(new Date(Date.UTC(2026, 9, 8)).getUTCDay()).toBe(4);
+      expect(new Date(Date.UTC(2026, 9, 18)).getUTCDay()).toBe(0);
+      expect(body).toContain("le délai est prorogé jusqu’au lundi 19 octobre 2026.");
+      expect(body).toContain("votre avocat vous indiquera l’heure limite de dépôt");
+      expect(body).not.toContain("minuit");
+    });
+
+    it("reprend le report dans la FAQ visible et dans le JSON-LD", () => {
+      const { container } = render(<ResourcesPage />);
+      const script = container.querySelector('script[type="application/ld+json"]');
+      const structured = JSON.parse(script!.textContent ?? "{}") as {
+        mainEntity: Array<{ name: string; acceptedAnswer: { text: string } }>;
+      };
+      const question = structured.mainEntity.find((item) => item.name.includes("surenchère"));
+      expect(question).toBeDefined();
+      const answer = plain(question!.acceptedAnswer.text);
+      expect(answer).toContain("dans les dix jours qui suivent l’adjudication");
+      expect(answer).toContain(
+        "le délai est prorogé jusqu’au premier jour ouvrable suivant (art. 641 et 642 du Code de procédure civile)",
+      );
+      const visible = plain(container.textContent ?? "");
+      expect(visible).toContain(answer.slice(0, 200));
     });
   });
 

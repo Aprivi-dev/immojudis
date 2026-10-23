@@ -3,7 +3,7 @@
 begin;
 select plan(24);
 
--- Tranche 20 000 à 50 000 € (40 000 et 30 000 €), trois dernières années.
+-- Tranche 35 000 à 50 000 € (40 000 et 45 000 €), trois dernières années.
 create or replace view app_private.auction_scenario_observations as
 select court_code, property_type, starting_price_eur, hammer_price_eur, sale_date
 from (
@@ -14,7 +14,7 @@ from (
   from generate_series(1, 35) n
   union all
   -- 20 parkings du même tribunal, adjugés à 5 fois la mise à prix.
-  select 'tj_671', 'parking', 30000, 150000, (current_date - (n * 10))::date
+  select 'tj_671', 'parking', 45000, 225000, (current_date - (n * 10))::date
   from generate_series(1, 20) n
   union all
   -- 12 appartements d'un tribunal moyen.

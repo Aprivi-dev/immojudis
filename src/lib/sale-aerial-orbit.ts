@@ -5,12 +5,15 @@ import { STREET_TYPE_END, streetTypePattern } from "@/lib/street-types";
 /**
  * Signalements du pipeline qui rendent le point de la vente douteux : une vue qui tourne autour
  * d'un repère affirme « c'est ce bâtiment-là », on ne l'affiche donc pas sur un point incertain.
+ * `probable_duplicate` : la vente est probablement la copie d'une autre ligne du catalogue, et deux
+ * copies peuvent porter des points différents.
  */
 const DOUBTFUL_LOCATION_FLAGS = new Set([
   "implausible_coordinates",
   "unverified_source_coordinates",
   "geocode_outside_department",
   "missing_address",
+  "probable_duplicate",
 ]);
 
 /** Mots qui, juste avant un nombre, en font un numéro de lot, de local ou de parcelle, pas de rue. */
@@ -47,10 +50,23 @@ export function hasNumberedStreetAddress(address: string): boolean {
  */
 const BUILDING_LOCATION_PRECISIONS = new Set(["address", "parcel"]);
 
+/**
+ * Rayon d'incertitude, en mètres, selon la précision : un point d'adresse (numéro interpolé le long
+ * de la voie) peut être décalé de quelques dizaines de mètres, le centre d'une parcelle cadastrale
+ * désigne le terrain à une quinzaine de mètres près.
+ */
+const ACCURACY_METERS: Record<string, number> = { address: 30, parcel: 15 };
+
 /** Types de bien pour lesquels « le bâtiment » n'a pas de sens : un emplacement ou un terrain nu. */
 const NO_BUILDING_PROPERTY_TYPES = new Set(["parking", "land"]);
 
-export type AerialOrbitTarget = { lat: number; lng: number; address: string };
+export type AerialOrbitTarget = {
+  lat: number;
+  lng: number;
+  address: string;
+  /** Rayon, en mètres, du cercle d'incertitude autour du repère. */
+  accuracyMeters: number;
+};
 
 /**
  * Point autour duquel la fiche peut faire tourner la vue aérienne, ou null si la position n'est pas
@@ -83,5 +99,20 @@ export function aerialOrbitTarget(
     .map((part) => part?.trim())
     .filter((part): part is string => !!part && !lower.includes(part.toLowerCase()));
   const address = [street, ...extras].join(", ");
-  return { ...coordinates, address };
+  return { ...coordinates, address, accuracyMeters: ACCURACY_METERS[precision] };
+}
+
+/**
+ * La carte animée (un chargement facturé et environ 2,6 Mo) attend un geste sur mobile (largeur
+ * inférieure à 768 px), avec l'économiseur de données et sur un réseau 2G ou 3G.
+ */
+export function mapLoadNeedsGesture(): boolean {
+  const connection = (
+    navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }
+  ).connection;
+  return (
+    (typeof window.matchMedia === "function" && window.matchMedia("(max-width: 767px)").matches) ||
+    connection?.saveData === true ||
+    /^(?:slow-)?[23]g$/.test(connection?.effectiveType ?? "")
+  );
 }

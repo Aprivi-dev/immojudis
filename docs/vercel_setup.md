@@ -41,7 +41,7 @@ npm run dev        # http://localhost:3000
 | `STRIPE_SECRET_KEY`                  | ✅ prod  | Clé serveur Stripe : abonnement récurrent Analyse de 59 € TTC / mois, essai de 7 jours. Price récurrent obligatoire (`STRIPE_ANALYSIS_PRICE_ID`).                   |
 | `STRIPE_WEBHOOK_SECRET`              | ✅ prod  | Secret de signature du webhook Stripe qui met à jour l'accès Analyse.                                                                                               |
 | `RESEND_API_KEY`                     | ✅ prod  | Clé serveur Resend pour envoyer les alertes email consenties et les emails aux avocats référencés.                                                                  |
-| `ALERT_EMAIL_FROM`                   | ✅ prod  | Expéditeur vérifié Resend, par exemple `Immojudis <alertes@immojudis.com>`.                                                                                          |
+| `ALERT_EMAIL_FROM`                   | ✅ prod  | Expéditeur vérifié Resend, par exemple `Immojudis <alertes@immojudis.com>`.                                                                                         |
 | `NEXT_PUBLIC_LEGAL_*`                | ✅ vente | Identité publique, contact, directeur de publication et médiateur ; le checkout reste bloqué et le build de production échoue si une valeur requise manque.         |
 | `SITE_URL`                           | ✅ prod  | Origine canonique publique (`https://immojudis.com`). Replis : `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_APP_URL`, `APP_URL`. `VERCEL_URL` ne suffit plus en production. |
 | `SEO_INDEXING_ENABLED`               | ❌       | Interrupteur d'indexation, **fermé par défaut** : seule la valeur `true` ouvre le site aux moteurs de recherche (voir « Indexation et référencement »).             |
@@ -156,6 +156,15 @@ en production. Dès qu'une PR contenant un fichier `supabase/migrations/*.sql` e
 migrations (`20261021120000` à `20261023110000`) sont restées en retard sur `main` alors que le code
 correspondant était en ligne, et la fonction de déblocages de l'offre Découverte était cassée en
 production.
+
+**Garde-fous du workflow.** Le lancement reste manuel (aucune application automatique). Avant
+d'appliquer quoi que ce soit, le travail `validate` lit les contrôles du commit par l'API GitHub
+(`GITHUB_TOKEN`, droit `checks: read` seul, `scripts/check-commit-ci-green.mjs`) et refuse tant que
+l'un des travaux de `ci.yml` n'est pas terminé et vert : attendre la fin du CI (ou le relancer), puis
+relancer le workflow. Les secrets de base ne sont donnés qu'aux étapes qui parlent à la base.
+Le contrôle `Check Pending Supabase Migrations` démarre aussi à chaque `push` sur `main` qui touche
+`supabase/migrations/**` : il est alors rouge jusqu'à l'application des migrations, ce qui prévient
+dès la fusion et non quatre à sept heures plus tard.
 
 **Un échec de l'étape « Detect production schema drift » ne dit pas la même chose selon le message
 du journal** (les migrations, elles, sont déjà appliquées quand cette étape s'exécute) :

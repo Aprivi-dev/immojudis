@@ -17,6 +17,10 @@ import {
   MARKET_GAP_BAND_MIN_COMPARABLES_JACKKNIFE,
   MARKET_GAP_BAND_MIN_EFFECTIVE_SAMPLE,
 } from "@/lib/market-gap-band";
+import {
+  MARKET_WIDEN_UNTIL_COMPARABLES,
+  VALUATION_MODEL_MIN_COVERAGE_PCT,
+} from "@/lib/market-comparable-minimums";
 import { pageMetadata } from "@/lib/page-metadata";
 
 export const metadata: Metadata = pageMetadata({
@@ -50,7 +54,7 @@ const COMPARABLE_STEPS = [
   "On garde les ventes de surface voisine (à plus ou moins 35 % pour un appartement, 40 % pour une maison, 50 % pour un immeuble ou un local, 60 % pour un terrain). Il en faut au moins 4 ; sinon l’estimation reste « indicative ».",
   "On écarte les prix au m² invraisemblables (hors de 300 à 50 000 € le m² pour le bâti), puis, à partir de 7 ventes, les valeurs extrêmes.",
   "Chaque vente reçoit un poids qui dépend de sa distance au bien, de son ancienneté (ce critère est divisé par deux tous les 24 mois), de sa surface et de sa proximité dans le quartier. Le prix au m² est ajusté de l’évolution locale des prix quand elle est mesurable (au moins 6 ventes sur 12 mois ou plus, plafonnée à 12 % par an).",
-  "La valeur estimée est la médiane pondérée de ces prix au m², multipliée par la surface du bien. La fourchette affichée (arrondie au millier d’euros) se lit ainsi : on écarte les 10 % de ventes comparables les moins chères et les 10 % les plus chères ; elle est élargie quand les ventes comparables se ressemblent peu. Avec moins de 6 ventes comparables, cette mesure n’est pas possible : la fourchette reprend alors une marge fixe autour de la valeur, qui dépend du type de bien.",
+  "La valeur estimée est la médiane pondérée de ces prix au m², multipliée par la surface du bien. La fourchette affichée (arrondie au millier d’euros) se lit ainsi : on écarte les 10 % de ventes comparables les moins chères et les 10 % les plus chères, puis on l’élargit si besoin pour qu’elle couvre l’écart observé entre chaque vente comparable et la médiane des autres (dans huit cas sur dix), avec au minimum 8 % de part et d’autre de la valeur. Avec moins de 6 ventes comparables, cette mesure n’est pas possible : la fourchette reprend alors une marge fixe autour de la valeur, qui dépend du type de bien.",
 ] as const;
 
 const RELIABLE_CRITERIA = [
@@ -147,8 +151,17 @@ function PageContent() {
           </ol>
           <p>
             Quand un modèle statistique entraîné sur des ventes passées est actif pour ce type de
-            bien, il est combiné à cette médiane, avec un poids qui dépend de la qualité des
-            comparables.
+            bien, il est combiné à cette médiane et à cette fourchette, avec un poids qui dépend de
+            la qualité des comparables.
+          </p>
+          <p>
+            La fourchette est construite pour contenir environ 8 prix de vente sur 10 : c’est un
+            objectif de construction, pas une garantie. Elle situe des ventes comparables ; elle ne
+            dit pas à quel prix ce bien se vendra. Cette proportion n’est pas encore vérifiée, sur
+            des ventes mises de côté, pour la fourchette tirée des seules ventes comparables. Pour
+            le modèle statistique, elle est mesurée avant sa mise en service sur des ventes récentes
+            que le modèle n’a pas vues, et un modèle dont l’intervalle en contient moins de{" "}
+            {VALUATION_MODEL_MIN_COVERAGE_PCT} % n’est pas mis en service.
           </p>
         </Section>
 
@@ -164,7 +177,11 @@ function PageContent() {
           </ul>
           <p>
             Le rayon est élargi pas à pas (jusqu’à cinq rayons selon le type de bien) tant que
-            l’estimation n’est pas fiable. Quand il a été élargi, l’estimation l’indique.
+            l’estimation n’est pas fiable, puis tant qu’elle repose sur moins de{" "}
+            {MARKET_WIDEN_UNTIL_COMPARABLES} ventes comparables, dans la limite de{" "}
+            {MARKET_GAP_BAND_MAX_RADIUS_URBAN_APARTMENT_M.toLocaleString("fr-FR")} m pour un
+            appartement en ville et de {MARKET_GAP_BAND_MAX_RADIUS_OTHER_M.toLocaleString("fr-FR")}{" "}
+            m pour les autres biens. Quand il a été élargi, l’estimation l’indique.
           </p>
         </Section>
 
@@ -224,8 +241,9 @@ function PageContent() {
             Sans compte, la fiche d’une vente au tribunal ou chez le notaire peut afficher un repère
             en trois bandes, <strong>sans aucun chiffre</strong>. Il situe la mise à prix par
             rapport à la fourchette des ventes comparables (on écarte les 10 % de ventes comparables
-            les moins chères et les 10 % les plus chères), et non par rapport à la seule valeur
-            centrale. La DVF est la base des ventes immobilières déclarées aux notaires :
+            les moins chères et les 10 % les plus chères, puis on l’élargit comme indiqué plus
+            haut), et non par rapport à la seule valeur centrale. La DVF est la base des ventes
+            immobilières déclarées aux notaires :
           </p>
           <ul className="list-disc space-y-1 pl-5">
             <li>
