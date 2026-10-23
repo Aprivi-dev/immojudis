@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { Button, Card } from "@/components/ui/primitives";
-import type { FactReliabilityMap } from "@/lib/fact-reliability";
-import { buildLawyerQuestions, lawyerQuestionsText } from "@/lib/lawyer-questions";
-import type { AuctionSale } from "@/lib/types";
+import { authHeaders, readJson } from "@/lib/client-api-core";
+import { lawyerQuestionsText, type LawyerQuestionsResponse } from "@/lib/lawyer-questions-text";
+import type { SaleAccessMode } from "@/lib/query-keys";
 
 const HEADING = "Mes questions pour l’avocat";
 
@@ -15,24 +16,43 @@ const HEADING = "Mes questions pour l’avocat";
 const PRINT_ONLY_THE_LIST =
   "@media print{body *:not(#questions-avocat):not(#questions-avocat *):not(:has(#questions-avocat)){display:none!important}}";
 
+async function fetchLawyerQuestions(saleId: string): Promise<LawyerQuestionsResponse> {
+  const response = await fetch(`/api/sales/${encodeURIComponent(saleId)}/lawyer-questions`, {
+    headers: await authHeaders(),
+    signal: AbortSignal.timeout(15_000),
+  });
+  return readJson<LawyerQuestionsResponse>(response);
+}
+
 /**
  * « Mes questions pour l'avocat » (n° 92) : les points que la fiche laisse ouverts, formulés comme
- * des questions à poser à son avocat avant d'enchérir (`buildLawyerQuestions`, qui reprend les
- * questions de l'agent d'information). Copiable et imprimable ; aucun envoi, rien n'est enregistré.
+ * des questions à poser à son avocat avant d'enchérir. Le repérage est fait par le serveur
+ * (`/api/sales/[id]/lawyer-questions`, qui reprend les questions de l'agent d'information) : ce
+ * composant ne fait que l'afficher. Copiable et imprimable ; aucun envoi, rien n'est enregistré.
+ * Rien n'est affiché quand la lecture est refusée ou échoue.
  */
 export function LawyerQuestions({
-  sale,
-  facts,
+  saleId,
+  access,
+  userKey,
 }: {
-  sale: AuctionSale;
-  facts?: FactReliabilityMap | null;
+  saleId: string;
+  access: SaleAccessMode;
+  userKey: string;
 }) {
-  const questions = useMemo(() => buildLawyerQuestions(sale, facts ?? undefined), [sale, facts]);
+  const query = useQuery({
+    queryKey: ["lawyer-questions", saleId, access, userKey] as const,
+    queryFn: () => fetchLawyerQuestions(saleId),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
   const [status, setStatus] = useState("");
+  const questions = query.data?.questions;
+  if (!questions) return null;
 
   async function copy() {
     try {
-      await navigator.clipboard.writeText(lawyerQuestionsText(questions, HEADING));
+      await navigator.clipboard.writeText(lawyerQuestionsText(questions ?? [], HEADING));
       setStatus("Liste copiée.");
     } catch {
       setStatus("Copie impossible : sélectionnez le texte de la liste.");

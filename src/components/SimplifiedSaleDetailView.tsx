@@ -1028,9 +1028,13 @@ function SaleDetailWorkspace({
                   locked={!fullData}
                 />
                 <LawyerSection sale={displaySale} />
-                {fullData && isTribunalSale && !publicDemo && !listingSaleStatus(displaySale) ? (
+                {fullData &&
+                isTribunalSale &&
+                user &&
+                !publicDemo &&
+                !listingSaleStatus(displaySale) ? (
                   <div className="mx-auto w-full max-w-[1380px] px-4 sm:px-6 lg:px-8">
-                    <LawyerQuestions sale={displaySale} facts={factReliabilities} />
+                    <LawyerQuestions saleId={sale.id} access={access} userKey={user.id} />
                   </div>
                 ) : null}
                 <details

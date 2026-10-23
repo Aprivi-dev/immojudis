@@ -78,10 +78,10 @@ vi.mock("next/dynamic", () => ({
       propertyTypeVerified,
       onOpenWorkspace,
       ceiling,
-      facts,
+      userKey,
     }: {
       ceiling?: number;
-      facts?: unknown;
+      userKey?: string;
       images?: unknown[];
       onClose?: () => void;
       saleId?: string;
@@ -99,7 +99,7 @@ vi.mock("next/dynamic", () => ({
       if (ceiling !== undefined) {
         return <section aria-label="Mon plafond face au tribunal" data-ceiling={String(ceiling)} />;
       }
-      if (facts !== undefined) return <section aria-label="Mes questions pour l’avocat" />;
+      if (userKey !== undefined) return <section aria-label="Mes questions pour l’avocat" />;
       // « Mon dossier » (SaleFileCard) : seul composant chargé à la demande qui reçoit ce plafond.
       if (calculatedCeiling !== undefined) {
         return (

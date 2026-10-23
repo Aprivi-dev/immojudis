@@ -7,7 +7,7 @@ import {
   fetchAdminLaunchOfferEnd,
   postAdminLaunchOfferEnd,
   type LaunchOfferEndSendResult,
-} from "@/lib/client-api/admin";
+} from "@/lib/client-api/admin-launch-offer-end";
 import { toast } from "@/lib/toast";
 
 export const LAUNCH_OFFER_END_QUERY_KEY = ["admin-launch-offer-end"] as const;

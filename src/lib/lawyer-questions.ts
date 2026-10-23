@@ -4,8 +4,8 @@ import {
   detectInformationGaps,
   informationAgentQuestionContext,
   informationAgentQuestionText,
-  type InformationAgentQuestionKey,
 } from "@/lib/information-agent-questions";
+import type { LawyerQuestion } from "@/lib/lawyer-questions-text";
 import type { AuctionSale } from "@/lib/types";
 
 /**
@@ -15,20 +15,9 @@ import type { AuctionSale } from "@/lib/types";
  * Même source que l'agent d'information : `detectInformationGaps` repère les points manquants ou à
  * confirmer (et les classe), `informationAgentQuestionText` les formule pour un professionnel. Seule la
  * personne qui s'exprime change (« nous » devient « me ») : la liste ne dit rien de plus que la fiche.
- * Module pur : rien n'est envoyé à personne.
+ * Module pur, lu côté serveur seulement (`/api/sales/[id]/lawyer-questions`) : l'inventaire de la fiche n'est
+ * pas envoyé au navigateur. Rien n'est envoyé à personne.
  */
-export type LawyerQuestion = {
-  key: InformationAgentQuestionKey;
-  /** Le point de la fiche : « Mise à prix », « Pièces du dossier »… */
-  label: string;
-  /** La question, à la première personne. */
-  question: string;
-  /** Pourquoi la fiche la pose (« La mise à prix n’est pas renseignée. »). */
-  reason: string;
-  /** Peut changer la faisabilité ou la sûreté d'une enchère. */
-  blocking: boolean;
-};
-
 /** Les questions de l'agent s'adressent au professionnel au nom d'Immojudis : « nous » devient « me ». */
 export function inFirstPersonSingular(question: string): string {
   return question
@@ -54,11 +43,4 @@ export function buildLawyerQuestions(
       reason: gap.reason,
       blocking: gap.blocking,
     }));
-}
-
-/** La liste en texte brut, pour la copier ou l'imprimer. */
-export function lawyerQuestionsText(questions: readonly LawyerQuestion[], heading: string): string {
-  return [heading, "", ...questions.map((entry, index) => `${index + 1}. ${entry.question}`)].join(
-    "\n",
-  );
 }

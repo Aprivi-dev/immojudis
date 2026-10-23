@@ -5,11 +5,8 @@ import {
   type InformationAgentQuestionKey,
 } from "@/lib/information-agent-questions";
 import type { AuctionSale } from "@/lib/types";
-import {
-  buildLawyerQuestions,
-  inFirstPersonSingular,
-  lawyerQuestionsText,
-} from "./lawyer-questions";
+import { buildLawyerQuestions, inFirstPersonSingular } from "./lawyer-questions";
+import { lawyerQuestionsText } from "./lawyer-questions-text";
 
 function incompleteSale(overrides: Partial<AuctionSale> = {}): AuctionSale {
   return {
