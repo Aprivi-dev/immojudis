@@ -1444,12 +1444,31 @@ def _float_or_none(value: Decimal | None) -> float | None:
     return float(value) if value is not None else None
 
 
+# Au-delà, la mise à prix ou la surface est presque sûrement fausse (3,5 M€ pour 23,6 m² : 148 000 €/m²). Le m² le
+# plus cher de France (Paris, quartiers prestigieux) se vend autour de 20 000 à 25 000 € et une mise à prix est
+# inférieure à la valeur du bien.
+MAX_PLAUSIBLE_STARTING_PRICE_PER_M2 = Decimal("30000")
+PRICE_PER_M2_IMPLAUSIBLE_FLAG = "price_per_m2_implausible"
+
+
+def _starting_price_per_m2_is_implausible(sale: AuctionSale) -> bool:
+    """Mise à prix rapportée à la surface affichée, hors annonce multi-lots (prix de l'ensemble, surface d'un lot)."""
+    price, surface = sale.starting_price_eur, sale.app_surface_m2
+    if price is None or surface is None or surface <= 0 or "multi_lot_sale" in sale.quality_flags:
+        return False
+    return price / surface > MAX_PLAUSIBLE_STARTING_PRICE_PER_M2
+
+
 def _fill_quality_flags(sale: AuctionSale) -> None:
     if sale.latitude is None or sale.longitude is None:
         _add_quality_flag(sale, "missing_gps")
     else:
         # Un drapeau hérité d'une lecture sans coordonnées ne survit pas à l'arrivée des coordonnées.
         sale.quality_flags = [flag for flag in sale.quality_flags if flag != "missing_gps"]
+    if _starting_price_per_m2_is_implausible(sale):
+        _add_quality_flag(sale, PRICE_PER_M2_IMPLAUSIBLE_FLAG)
+    else:
+        sale.quality_flags = [flag for flag in sale.quality_flags if flag != PRICE_PER_M2_IMPLAUSIBLE_FLAG]
     if isinstance(sale.raw_payload, dict) and sale.raw_payload.get("sale_date_unverified"):
         _add_quality_flag(sale, "sale_date_implausible")
     if not sale.documents:

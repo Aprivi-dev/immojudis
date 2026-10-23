@@ -167,7 +167,10 @@ class OfficialCourtLabelIndex:
             for label in (court.court_name, court.official_court_name):
                 key = tribunal_label_court_key(label)
                 if key:
-                    codes_by_key.setdefault(key, set()).add(court.court_code)
+                    # Le référentiel écrit « St Gaudens » : « Saint Gaudens » (et « St-Gaudens ») doit le retrouver,
+                    # les libellés de la source étant nettoyés vers la forme « saint » (court_label_variants).
+                    for variant in {key, _expand_saint_abbreviations(key)}:
+                        codes_by_key.setdefault(variant, set()).add(court.court_code)
         # An ambiguous key (two courts) is dropped instead of picking one.
         self._code_by_key = {key: next(iter(codes)) for key, codes in codes_by_key.items() if len(codes) == 1}
 
@@ -179,6 +182,10 @@ class OfficialCourtLabelIndex:
             if code:
                 return self._courts.get(code)
         return None
+
+
+def _expand_saint_abbreviations(key: str) -> str:
+    return " ".join(_ABBREVIATED_SAINT.get(word, word) for word in key.split())
 
 
 def tribunal_label_court_key(label: object) -> str | None:
