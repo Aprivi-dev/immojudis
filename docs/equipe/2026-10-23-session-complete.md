@@ -617,6 +617,16 @@ tout fusionné, je t'autorise à lancer la mise en production. »
 - **Corrections du chef à la fusion :** pgTAP 716 (pont Outcome Graph exigé avant la suppression d'une vente), types
   Supabase régénérés, runbook de l'offre de lancement.
 
+### Vérifications finales (seconde vague, branche complète)
+
+- `npx tsc --noEmit`, `npm run lint`, `npm run test:security-invariants` : OK.
+- Vitest : 742 fichiers, 8 548 tests passés (8 ignorés).
+- pgTAP sur Supabase local après `db reset` : 201 fichiers, 3 751 tests, tous passés ; `npm run db:types` sans écart.
+- Pipeline : ruff OK, pytest 4 886 passés.
+- Build et budgets : OK. Total 6 198 944 octets (plafond 6 200 000), `/audiences-a-venir` 181 952 (182 000),
+  admin-lawyers 536 535 (537 000). La marge est faible.
+- Gitleaks sur les 53 commits de la vague : aucune fuite.
+
 ### À faire valider par un avocat (non bloquant)
 
 1. L'application de l'art. 642 CPC au délai de R. 322-51 et l'heure limite de dépôt au greffe.
