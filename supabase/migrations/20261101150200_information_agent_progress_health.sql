@@ -13,7 +13,10 @@ set local lock_timeout = '5s';
 --   information_agent.mission.stuck    mission en `sending` depuis plus de 30 minutes, sans date d'envoi
 --   information_agent.inbound.stuck    réponse en file (queued, processing ou failed) qui n'avance plus
 --                                      depuis plus de 30 minutes
---   information_agent.cron.blocked     exécution `information-agent-*` restée `running` plus de 30 minutes
+--   information_agent.cron.blocked     exécution `information-agent-*` restée `running` plus de 20 minutes
+--                                      (seuil volontairement SOUS les 30 minutes de closeOrphanedRuns,
+--                                      src/lib/cron-jobs.ts : à 30 minutes, le passage suivant clôture
+--                                      l'exécution en `failed` et l'alerte ne serait jamais vue)
 --   information_agent.send.unverified  envoi dont le résultat est inconnu (délai Resend dépassé), à
 --                                      vérifier dans Resend avant tout renvoi
 -- Elle est appelée par evaluateOperationalHealth (src/lib/cron-jobs.ts), à côté des évaluations de
@@ -57,7 +60,7 @@ begin
   from public.operational_job_runs run
   where run.job_name like 'information-agent-%'
     and run.status = 'running'
-    and run.started_at < p_now - interval '30 minutes';
+    and run.started_at < p_now - interval '20 minutes';
 
   select count(*)::integer, min(mission.updated_at)
   into unverified_send_count, oldest_unverified_send
@@ -72,6 +75,7 @@ begin
     'oldest_stuck_inbound_job_at', oldest_stuck_job,
     'blocked_cron_runs', blocked_run_count,
     'oldest_blocked_cron_run_at', oldest_blocked_run,
+    'blocked_cron_maximum_age_minutes', 20,
     'unverified_sends', unverified_send_count,
     'oldest_unverified_send_at', oldest_unverified_send,
     'maximum_age_minutes', 30
@@ -110,7 +114,7 @@ begin
     jsonb_build_object(
       'count', blocked_run_count,
       'oldest_started_at', oldest_blocked_run,
-      'maximum_age_minutes', 30
+      'maximum_age_minutes', 20
     ),
     blocked_run_count > 0,
     p_now

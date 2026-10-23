@@ -2,7 +2,7 @@
 -- d'evaluate_operational_health, quatre alertes sur des nombres et des dates (aucune donnée personnelle).
 begin;
 
-select plan(13);
+select plan(15);
 
 select has_function(
   'public',
@@ -118,6 +118,10 @@ values
 insert into public.operational_job_runs (job_name, status, started_at)
 values
   ('information-agent-inbound', 'running', now() - interval '1 hour'),
+  -- 25 minutes : sous les 30 minutes de closeOrphanedRuns, mais déjà signalée (seuil de 20 minutes)
+  ('information-agent-send', 'running', now() - interval '25 minutes'),
+  -- 10 minutes : passage en cours normal
+  ('information-agent-inbound', 'running', now() - interval '10 minutes'),
   ('information-agent-inbound', 'success', now() - interval '5 minutes');
 
 -- Évaluation ----------------------------------------------------------------------------------------
@@ -133,8 +137,26 @@ select is(
 );
 select is(
   (public.evaluate_information_agent_health(now()) ->> 'blocked_cron_runs')::integer,
-  1,
-  'an information-agent run left running for more than 30 minutes is blocked'
+  2,
+  'an information-agent run left running for more than 20 minutes is blocked (before closeOrphanedRuns closes it at 30), a recent one is not'
+);
+select is(
+  (
+    select alert.details ->> 'maximum_age_minutes'
+    from public.operational_alerts alert
+    where alert.alert_key = 'information_agent.cron.blocked'
+  ),
+  '20',
+  'the blocked-run alert states its 20-minute threshold'
+);
+select is(
+  (
+    select alert.details ->> 'count'
+    from public.operational_alerts alert
+    where alert.alert_key = 'information_agent.cron.blocked'
+  ),
+  '2',
+  'and counts both runs'
 );
 select is(
   (public.evaluate_information_agent_health(now()) ->> 'unverified_sends')::integer,
@@ -188,6 +210,7 @@ select is(
     'oldest_stuck_inbound_job_at', null,
     'blocked_cron_runs', 0,
     'oldest_blocked_cron_run_at', null,
+    'blocked_cron_maximum_age_minutes', 20,
     'unverified_sends', 0,
     'oldest_unverified_send_at', null,
     'maximum_age_minutes', 30

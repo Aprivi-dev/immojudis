@@ -163,7 +163,11 @@ async function succeededRecently(jobName: string, windowHours: number): Promise<
   }
 }
 
-/** Une fonction planifiée dure au plus 300 s : au-delà, une exécution « running » est orpheline. */
+/**
+ * Une fonction planifiée dure au plus 300 s : au-delà, une exécution « running » est orpheline.
+ * Les alertes SQL « exécution bloquée » (`evaluate_information_agent_health`, 20 minutes) restent
+ * sous ce seuil : sinon la clôture passerait avant elles et l'alerte ne s'ouvrirait jamais.
+ */
 export const ORPHANED_RUN_AFTER_MS = 30 * 60 * 1000;
 
 /**
