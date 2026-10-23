@@ -271,7 +271,7 @@ def test_dedupe_sweep_is_manual_serialised_with_the_pipeline_and_gives_secrets_t
     assert re.search(r"^\s+if: always\(\)$", invalidation.text, re.M)
     assert re.search(r"^\s+continue-on-error: true$", invalidation.text, re.M)
     assert "CRON_SECRET: ${{ secrets.CRON_SECRET }}" in invalidation.text
-    assert "SITE_URL: ${{ vars.SITE_URL }}" in invalidation.text
+    assert "SITE_URL: ${{ vars.SITE_URL || 'https://immojudis.com' }}" in invalidation.text
     assert "--require-hashes" in text
     # Chaque action est épinglée par SHA de commit (40 hexadécimaux), jamais par étiquette.
     assert all(re.search(r"@[0-9a-f]{40}( |$)", step.uses) for step in jobs[0].steps if step.uses)
