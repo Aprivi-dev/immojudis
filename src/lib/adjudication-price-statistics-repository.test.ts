@@ -77,9 +77,9 @@ describe("adjudication price statistics repository", () => {
     const nationalQuery = fakeQuery({ data: null, error: null });
     serverFrom.mockReturnValueOnce(saleQuery.query).mockReturnValueOnce(nationalQuery.query);
 
-    await expect(getAdjudicationPriceStatisticsForSale(SALE_ID)).rejects.toThrow(
-      "No judicial sale is available",
-    );
+    await expect(getAdjudicationPriceStatisticsForSale(SALE_ID)).rejects.toMatchObject({
+      name: "SalePublicationUnavailableError",
+    });
     expect(serverFrom).toHaveBeenCalledTimes(2);
   });
 

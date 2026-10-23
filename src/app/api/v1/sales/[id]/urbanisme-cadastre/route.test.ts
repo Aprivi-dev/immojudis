@@ -153,7 +153,8 @@ describe("GET /api/v1/sales/:id/urbanisme-cadastre", () => {
 
     const response = await request();
 
-    expect(response.status).toBe(503);
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toMatchObject({ code: "NOT_FOUND" });
     expect(mocks.getCadastralParcels).not.toHaveBeenCalled();
     expect(mocks.getUrbanPlanningSignals).not.toHaveBeenCalled();
   });

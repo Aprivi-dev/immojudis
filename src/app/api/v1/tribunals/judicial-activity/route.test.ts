@@ -3,6 +3,7 @@ import {
   buildTribunalJudicialActivity,
   TribunalCourtUnresolvedError,
 } from "@/lib/tribunal-judicial-activity";
+import { TribunalJudicialSaleNotFoundError } from "@/lib/tribunal-judicial-activity-repository";
 
 const mocks = vi.hoisted(() => ({
   requireAuth: vi.fn(),
@@ -116,6 +117,16 @@ describe("GET /api/v1/tribunals/judicial-activity", () => {
 
     expect(response.status).toBe(400);
     expect(mocks.getActivity).not.toHaveBeenCalled();
+  });
+
+  it("répond 404 pour une annonce inconnue, 503 pour une vraie panne", async () => {
+    mocks.getActivity.mockRejectedValue(new TribunalJudicialSaleNotFoundError());
+    const unknown = await request("?saleId=11111111-1111-4111-8111-111111111111");
+    expect(unknown.status).toBe(404);
+    expect(await unknown.json()).toMatchObject({ code: "NOT_FOUND" });
+
+    mocks.getActivity.mockRejectedValue(new Error("database unavailable"));
+    expect((await request()).status).toBe(503);
   });
 
   it("ne met pas durablement en cache une indisponibilité", async () => {

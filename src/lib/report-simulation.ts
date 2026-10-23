@@ -253,6 +253,33 @@ const OCCUPATION_LABELS = {
   inconnu: "Non confirmée",
 } as const;
 
+/**
+ * Part of a saved scenario that a public share link may carry: exactly what
+ * `describeReportSimulation` shows. Rent, monthly charges, property tax, financing
+ * rate and the rental scenario (rent, debt service) stay private to the owner.
+ */
+export function publicReportSimulation(value: unknown): Record<string, unknown> | null {
+  const current = reportSimulationSchema.safeParse(value);
+  if (current.success) {
+    const { choices, expectedMaxBid } = current.data;
+    return {
+      version: 2,
+      expectedMaxBid,
+      choices: {
+        project: choices.project,
+        profile: choices.profile,
+        customMarginPct: choices.customMarginPct,
+        manualPricePerM2: choices.manualPricePerM2,
+        works: choices.works ? { key: choices.works.key, amount: choices.works.amount } : undefined,
+        occupation: choices.occupation,
+        fpt: choices.fpt,
+      },
+    };
+  }
+  const legacy = legacyReportSimulationSchema.safeParse(value);
+  return legacy.success ? legacy.data : null;
+}
+
 /** True for a scenario saved by the « compte à rebours » engine (costs at the starting price). */
 export function isCurrentReportSimulation(value: unknown): boolean {
   return reportSimulationSchema.safeParse(value).success;

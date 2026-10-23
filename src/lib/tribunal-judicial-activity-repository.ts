@@ -108,6 +108,18 @@ export class TribunalJudicialActivityUnavailableError extends Error {
   }
 }
 
+/**
+ * No visible judicial sale for the identifier: a 404 for the API, whereas the other unavailable
+ * cases stay 503. It remains a `TribunalJudicialActivityUnavailableError`, so callers that treat
+ * an unresolved court as optional keep working.
+ */
+export class TribunalJudicialSaleNotFoundError extends TribunalJudicialActivityUnavailableError {
+  constructor() {
+    super("No judicial sale is available.");
+    this.name = "TribunalJudicialSaleNotFoundError";
+  }
+}
+
 export async function getTribunalJudicialActivity(
   input: TribunalJudicialActivityQuery,
   options: { asOf?: Date } = {},
@@ -230,11 +242,11 @@ export async function resolveCourtCodeFromSale(saleId: string): Promise<string> 
     );
   }
   if (!result.data) {
-    throw new TribunalJudicialActivityUnavailableError("No judicial sale is available.");
+    throw new TribunalJudicialSaleNotFoundError();
   }
   const sale = storedSaleCourtSchema.parse(result.data);
   if (isPublicationQuarantinedMarker(sale.publication_quarantine, sale.status)) {
-    throw new TribunalJudicialActivityUnavailableError("No judicial sale is available.");
+    throw new TribunalJudicialSaleNotFoundError();
   }
   if (sale.sale_venue_type !== "tribunal") {
     throw new TribunalJudicialActivityUnavailableError(

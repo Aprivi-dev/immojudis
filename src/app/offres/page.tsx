@@ -1,18 +1,17 @@
 import type { Metadata } from "next";
 import { BreadcrumbJsonLd } from "@/components/BreadcrumbJsonLd";
 import { offersPageDescription } from "@/lib/analysis-offer";
-import { legalPublisherConfigurationStatus } from "@/lib/legal-documents";
+import { analysisCheckoutReadiness } from "@/lib/analysis-checkout-readiness";
 import { pageMetadata } from "@/lib/page-metadata";
 import { OffersPage } from "./offers-page";
 
 /**
- * The subscription is open when the Stripe price is configured on the server and the legal
- * identity is published: the same two conditions as `/api/billing/offer` and `useBillingOffer`.
+ * The subscription is open when `analysisCheckoutReadiness` says so: the same definition as the
+ * checkout and `/api/billing/offer`. L'offre de lancement n'y est pas lue (la page reste statique) ;
+ * elle se coupe avant l'ouverture des paiements.
  */
 export function generateMetadata(): Metadata {
-  const open =
-    Boolean(process.env.STRIPE_ANALYSIS_PRICE_ID?.trim()) &&
-    legalPublisherConfigurationStatus().ready;
+  const open = analysisCheckoutReadiness().open;
   return pageMetadata({
     path: "/offres",
     title: "Offres Découverte et Analyse",
