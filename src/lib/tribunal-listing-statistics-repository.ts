@@ -6,6 +6,7 @@ import {
   marketContextFromStoredRow,
   saleValuationFingerprint,
 } from "@/lib/sale-market-estimates";
+import { STREET_TYPE_END, streetTypePattern } from "@/lib/street-types";
 import { isPublicationQuarantinedMarker } from "@/lib/sale-publication-guard";
 import { extractTribunalListingEvidence } from "@/lib/tribunal-listing-evidence";
 import { resolveCourtCodeFromSale } from "@/lib/tribunal-judicial-activity-repository";
@@ -878,28 +879,31 @@ function extractAddressAfterLabel(text: string, label: RegExp): string | null {
   return null;
 }
 
+// Numéro, puis type de voie (liste partagée), puis le reste de la ligne.
+const NUMBERED_STREET = `\\d{1,5}\\s*(?:bis|ter|quater)?\\s*,?\\s*(?:${streetTypePattern()})${STREET_TYPE_END}[^;\\n]*`;
+const SITUATED_ADDRESS = new RegExp(
+  `\\b(?:situ[ée]e?|sis|sise|se\\s+trouvant)\\s*:?[\\s-]*(${NUMBERED_STREET})`,
+  "i",
+);
+const MUNICIPALITY_ADDRESS = new RegExp(
+  `(?:^|[.;]\\s*)(?:à|a)\\s+[^,\\n]+(?:\\s*\\(\\d{2,3}\\))?\\s*,\\s*(${NUMBERED_STREET})`,
+  "i",
+);
+const IDENTITY_ADDRESS = new RegExp(`\\b(${NUMBERED_STREET})`, "i");
+
 function extractLocatedAddress(value: string | null): string | null {
   if (!value) return null;
   // A location phrase is required for description fallbacks so a lawyer
   // footer containing a numbered office address cannot become an asset key.
-  const situated =
-    /\b(?:situ[ée]e?|sis|sise|se\s+trouvant)\s*:?[\s-]*(\d{1,5}\s*(?:bis|ter|quater)?\s*,?\s*(?:rue|avenue|av\.?|boulevard|bd\.?|chemin|route|place|impasse|allee|all[ée]e|cours|quai|faubourg|voie|sentier|passage)\b[^;\n]*)/i.exec(
-      value,
-    );
+  const situated = SITUATED_ADDRESS.exec(value);
   if (situated) return validIdentityAddress(situated[1] ?? null);
-  const municipality =
-    /(?:^|[.;]\s*)(?:à|a)\s+[^,\n]+(?:\s*\(\d{2,3}\))?\s*,\s*(\d{1,5}\s*(?:bis|ter|quater)?\s*,?\s*(?:rue|avenue|av\.?|boulevard|bd\.?|chemin|route|place|impasse|allee|all[ée]e|cours|quai|faubourg|voie|sentier|passage)\b[^;\n]*)/i.exec(
-      value,
-    );
+  const municipality = MUNICIPALITY_ADDRESS.exec(value);
   return validIdentityAddress(municipality?.[1] ?? null);
 }
 
 function validIdentityAddress(value: string | null): string | null {
   if (!value || /\b\d[\d\s.,]*\s*€\b/i.test(value)) return null;
-  const match =
-    /\b(\d{1,5}\s*(?:bis|ter|quater)?\s*,?\s*(?:rue|avenue|av\.?|boulevard|bd\.?|chemin|route|place|impasse|allee|all[ée]e|cours|quai|faubourg|voie|sentier|passage)\b[^;\n]*)/i.exec(
-      value,
-    );
+  const match = IDENTITY_ADDRESS.exec(value);
   if (!match) return null;
   let address = match[1]!.replace(/\s+/g, " ").trim();
   address = address
