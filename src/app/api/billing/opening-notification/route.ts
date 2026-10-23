@@ -51,7 +51,7 @@ export async function PUT(request: Request) {
 
 /**
  * Optional answers of the qualified waiting list (profile, sales studied per month, two price
- * marks, 20-minute interview). Only for someone whose request is active: nothing here is required
+ * marks, interview of about 45 minutes). Only for someone whose request is active: nothing here is required
  * to join the list.
  */
 export async function PATCH(request: Request) {

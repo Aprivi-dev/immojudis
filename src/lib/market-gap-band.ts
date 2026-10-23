@@ -1,4 +1,8 @@
 import {
+  MARKET_JACKKNIFE_MIN_COMPARABLES,
+  MARKET_NON_JACKKNIFE_MIN_COMPARABLES,
+} from "@/lib/market-comparable-minimums";
+import {
   MARKET_GAP_MAX_DISCOUNT_PCT,
   MARKET_GAP_METHOD_PATH,
   MARKET_GAP_MIN_DISCOUNT_PCT,
@@ -60,9 +64,9 @@ const PUBLIC_MARKET_GAP_BANDS: readonly string[] = [
  * (`predictionInterval.method = "local_jackknife"`, qui suppose au moins 6 résidus dans
  * `conformalPredictionInterval` du moteur d'estimation).
  */
-export const MARKET_GAP_BAND_MIN_COMPARABLES_JACKKNIFE = 6;
+export const MARKET_GAP_BAND_MIN_COMPARABLES_JACKKNIFE = MARKET_JACKKNIFE_MIN_COMPARABLES;
 /** Sans la méthode jackknife (marge fixe du type de bien, ou intervalle du modèle LightGBM). */
-export const MARKET_GAP_BAND_MIN_COMPARABLES = 8;
+export const MARKET_GAP_BAND_MIN_COMPARABLES = MARKET_NON_JACKKNIFE_MIN_COMPARABLES;
 /** Échantillon effectif minimal (le moteur d'estimation se contente de 3). */
 export const MARKET_GAP_BAND_MIN_EFFECTIVE_SAMPLE = 5;
 /**

@@ -5,7 +5,7 @@ import { renderInformationRequestEmail } from "./information-request";
 const bodyText = [
   "Bonjour Maître Jean Dupont,",
   "",
-  "Je vous contacte pour Immojudis, service indépendant d’information sur les ventes immobilières judiciaires. Nous vérifions la fiche de cette vente :",
+  "Je vous contacte pour Immojudis, site privé d’information sur les ventes immobilières judiciaires. Nous vérifions la fiche de cette vente :",
   "",
   "Référence de l’annonce : Maison — 33000 Bordeaux",
   "Audience annoncée : 12 septembre 2026",

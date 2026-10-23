@@ -23,6 +23,7 @@ export default tseslint.config(
       ".vercel",
       ".vinxi",
       "supabase/.temp",
+      ".claude/**",
     ],
   },
   {

@@ -37,6 +37,17 @@ ACTIVE_LISTING_STATUSES = frozenset({'active', 'upcoming', 'postponed', 'unknown
 ENRICHMENT_TERMINAL_STATUSES = frozenset({'completed', 'failed'})
 # Décisions d'un item de collecte qui ne sont pas terminales : tant qu'il en reste, la publication n'est pas complète.
 PENDING_PUBLICATION_DECISIONS = ('discovered', 'normalized', 'admitted', 'publication_failed', 'normalization_failed')
+# Décisions qui ne se résorbent pas d'elles-mêmes au run suivant : une annonce qui échoue à la normalisation ou à
+# la publication échoue de la même façon tant que son contenu ou le code ne change pas.
+STUCK_PUBLICATION_DECISIONS = ('publication_failed', 'normalization_failed')
+STUCK_ITEMS_SAMPLE = 5
+# Sources dont l'inventaire PUBLIC ENTIER ne peut pas être certifié par nature. Agrasc affiche des cartes d'archive
+# vendues sans lien (aucune fiche à publier) : coverage_complete reste faux à chaque run. Sa publication est évaluée
+# sur son catalogue adressable (les seules cartes qui ont une fiche) : certifié, toutes les fiches découvertes émises,
+# aucune décision en suspens, run réussi. Cette règle ne sert QU'À last_publication_complete_at (santé publique,
+# date « vérifié le », alerte publication_stale) : l'absence et le retrait de ventes restent liés à l'inventaire
+# public entier (inventory_complete), jamais à ce périmètre.
+SCOPED_PUBLICATION_SOURCES = frozenset({'agrasc'})
 
 
 def _enrichment_completed(counts: dict[object, object]) -> int:
@@ -225,6 +236,36 @@ def _schedule_evidence_rows(db: Any, run_id: str, source: str) -> list[dict[str,
     ]
 
 
+def _inventory_blocker_details(coverage: dict[str, Any]) -> dict[str, Any]:
+    """Pourquoi l'inventaire n'est pas déclaré complet : les chiffres de la couverture, sans texte libre."""
+    details: dict[str, Any] = {
+        key: coverage[key]
+        for key in ('stop_reason', 'errors', 'pages_fetched', 'advertised_total', 'unique_listings_seen',
+                    'total_changed_during_scan')
+        if isinstance(coverage.get(key), (str, int, bool)) and coverage.get(key) is not None
+    }
+    for key in ('list_fetch_failures', 'detail_failures'):
+        failures = coverage.get(key)
+        if isinstance(failures, list) and failures:
+            details[f'{key}_count'] = len(failures)
+    detail_failures = coverage.get('detail_failures')
+    if isinstance(detail_failures, list):
+        details['detail_failures_sample'] = [
+            {key: str(item[key])[:200] for key in ('source_url', 'kind', 'reason') if item.get(key)}
+            for item in detail_failures[:3] if isinstance(item, dict)
+        ]
+    certificate = coverage.get('certificate')
+    if isinstance(certificate, dict):
+        reasons = sorted({
+            str(reason)
+            for partition in certificate.get('partitions') or [] if isinstance(partition, dict)
+            for reason in partition.get('reasons') or []
+        })
+        if reasons:
+            details['certificate_reasons'] = reasons
+    return details
+
+
 def finish_source(db_url: str, run_id: str) -> None:
     with _postgres_connect(db_url) as db:
         row = db.execute('select source,status,summary,errors,started_at from public.auction_runs where id=%s', (run_id,)).fetchone()
@@ -235,7 +276,8 @@ def finish_source(db_url: str, run_id: str) -> None:
         coverage = (summary.get('scrape_coverage') or {}).get(source) or {}
         coverage = dict(coverage)
         problems = errors.get(source) or []
-        previous = db.execute('select consecutive_failures from public.auction_source_state where source_name=%s for update', (source,)).fetchone()
+        previous = db.execute('select consecutive_failures,last_publication_complete_at from public.auction_source_state where source_name=%s for update', (source,)).fetchone()
+        last_publication_complete_at = previous[1] if len(previous) > 1 else None
         denied = access_denied(coverage, problems)
         publication_counts = dict(db.execute("""select decision,count(*)
             from public.auction_collection_items where run_id=%s and source_name=%s group by decision""",
@@ -290,21 +332,60 @@ def finish_source(db_url: str, run_id: str) -> None:
         failures = previous[0] + 1 if backoff else 0
         pending = publication_pending
         complete = global_complete
-        publication_complete = complete and not pending and status == 'succeeded'
+        # Inventaire à prendre en compte pour la publication : l'inventaire public entier, ou, pour les sources qui ne
+        # peuvent pas le certifier par nature (SCOPED_PUBLICATION_SOURCES), le catalogue adressable certifié.
+        publication_scoped = bool(not complete and source in SCOPED_PUBLICATION_SOURCES and scoped_complete)
+        publication_inventory_complete = complete or publication_scoped
+        publication_complete = publication_inventory_complete and not pending and status == 'succeeded'
+        coverage['publication_scope'] = 'addressable_public_catalogue' if publication_scoped else 'public_catalogue'
         # Pourquoi la publication n'est pas « complète » : sans cela, last_publication_complete_at qui ne bouge plus
         # (Enchères Immobilières, 08/10) ne dit pas laquelle des trois conditions manque, ni quelles décisions
         # restent en suspens.
-        coverage['publication_blockers'] = [
+        blockers = [
             name for name, blocked in (
-                ('inventory_incomplete', not complete),
+                ('inventory_incomplete', not publication_inventory_complete),
                 ('publication_pending', bool(pending)),
                 ('run_not_succeeded', status != 'succeeded'),
             ) if blocked
         ]
+        coverage['publication_blockers'] = blockers
         coverage['publication_pending_decisions'] = {
             decision: int(publication_counts.get(decision, 0)) for decision in PENDING_PUBLICATION_DECISIONS
             if publication_counts.get(decision)
         }
+        blocker_details: dict[str, Any] = {}
+        if 'inventory_incomplete' in blockers:
+            blocker_details['inventory_incomplete'] = _inventory_blocker_details(coverage)
+        if 'publication_pending' in blockers:
+            blocker_details['publication_pending'] = {
+                'decisions': coverage['publication_pending_decisions'],
+                # Seules les décisions de STUCK_PUBLICATION_DECISIONS persistent d'un run à l'autre ; les autres
+                # (découverte, normalisation, admission) se résorbent quand un run va jusqu'au bout.
+                'persistent': sum(int(publication_counts.get(d, 0)) for d in STUCK_PUBLICATION_DECISIONS),
+            }
+            if blocker_details['publication_pending']['persistent']:
+                coverage['publication_stuck_items'] = [
+                    {'source_url': str(item_url)[:300], 'decision': decision, 'reason': str(item_reason or '')[:200]}
+                    for item_url, decision, item_reason in db.execute("""select source_url,decision,reason
+                        from public.auction_collection_items
+                        where run_id=%s and source_name=%s and decision = any(%s)
+                        order by updated_at desc limit %s""",
+                        (run_id, source, list(STUCK_PUBLICATION_DECISIONS), STUCK_ITEMS_SAMPLE)).fetchall()
+                ]
+        if 'run_not_succeeded' in blockers:
+            blocker_details['run_not_succeeded'] = {'run_status': status}
+        coverage['publication_blocker_details'] = blocker_details
+        # Depuis quand : la dernière publication complète connue (None : jamais).
+        coverage['publication_blocked_since'] = (
+            (last_publication_complete_at.isoformat() if isinstance(last_publication_complete_at, datetime)
+             else None) if blockers else None
+        )
+        if blockers:
+            # Une annotation par run : une source figée se voit dans le journal sans ouvrir la base.
+            print(f'::warning title=Publication incomplète ({source})::blockers={",".join(blockers)} '
+                  f'pending={coverage["publication_pending_decisions"]} '
+                  f'last_complete={coverage["publication_blocked_since"]} '
+                  f'stop_reason={coverage.get("stop_reason")}')
         now = datetime.now(UTC)
         if backoff:
             # Retry-After and persistent access refusals retain their existing

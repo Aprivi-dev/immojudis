@@ -68,7 +68,9 @@ async function readCourtScenarios(
   };
 }
 
-const cachedCourtScenarios = unstable_cache(readCourtScenarios, ["auction-scenarios", "v1"], {
+// v2: the bands changed from five to seven (20261102110000); an entry cached under v1 carries a band
+// number of the old grid, which the new labels would misname.
+const cachedCourtScenarios = unstable_cache(readCourtScenarios, ["auction-scenarios", "v2"], {
   revalidate: AUCTION_SCENARIOS_REVALIDATE_SECONDS,
   tags: [AUCTION_SCENARIOS_CACHE_TAG],
 });

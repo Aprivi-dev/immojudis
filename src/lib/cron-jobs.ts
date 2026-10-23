@@ -250,7 +250,18 @@ export async function runDataRetention(now = new Date()): Promise<Record<string,
       .join(", ");
     if (failed) throw new Error(`Data retention: purge failed: ${failed}.`);
   }
-  return { deleted: data ?? {} };
+  // Journal du préavis de fin d'offre (migration 20261102140000) : purge propre, hors run_data_retention.
+  // Une fonction absente (migration pas encore appliquée) n'est pas une panne.
+  const noticePurge = await supabaseAdmin.rpc("purge_launch_offer_end_notices");
+  if (noticePurge.error && !isMissingFunctionError(noticePurge.error)) {
+    throw new Error(`Data retention: purge failed: purge_launch_offer_end_notices.`);
+  }
+  return {
+    deleted: {
+      ...(data && typeof data === "object" && !Array.isArray(data) ? data : {}),
+      ...(noticePurge.error ? {} : { launch_offer_end_notices: noticePurge.data ?? 0 }),
+    },
+  };
 }
 
 /** Position de `evaluate_information_agent_health` dans la liste des évaluations ci-dessous. */

@@ -8,6 +8,7 @@ import { SaleFileCard } from "./SaleFileCard";
 const mocks = vi.hoisted(() => ({
   auth: { user: { id: "user-1" } as { id: string } | null, loading: false },
   fetchDossier: vi.fn(),
+  fetchChanges: vi.fn(),
   saveDossier: vi.fn(),
   preferences: vi.fn(),
   updatePreferences: vi.fn(),
@@ -18,6 +19,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/hooks/use-auth", () => ({ useAuth: () => mocks.auth }));
 vi.mock("@/lib/client-api", () => ({
   fetchFavoriteDossier: mocks.fetchDossier,
+  fetchSaleChangeEvents: mocks.fetchChanges,
   saveFavoriteDossier: mocks.saveDossier,
   fetchNotificationPreferences: mocks.preferences,
   updateNotificationPreferences: mocks.updatePreferences,
@@ -58,6 +60,9 @@ beforeEach(() => {
   mocks.auth.loading = false;
   // Par défaut l'envoi des rappels n'est pas ouvert : la ligne de consentement n'apparaît pas.
   remindersOffer(false);
+  // Par défaut rien n'a changé sur la vente depuis l'enregistrement du plafond.
+  mocks.fetchChanges.mockResolvedValue({ events: [] });
+  window.localStorage.clear();
 });
 
 afterEach(() => {

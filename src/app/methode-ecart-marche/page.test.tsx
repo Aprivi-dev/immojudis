@@ -17,6 +17,10 @@ import {
   MARKET_GAP_BAND_MIN_EFFECTIVE_SAMPLE,
 } from "@/lib/market-gap-band";
 import { selectStatisticScope } from "@/lib/dvf-market-statistics";
+import {
+  MARKET_WIDEN_UNTIL_COMPARABLES,
+  VALUATION_MODEL_MIN_COVERAGE_PCT,
+} from "@/lib/market-comparable-minimums";
 import { URBAN_POPULATION_THRESHOLD } from "@/lib/market-server/constants";
 import type { Database } from "@/integrations/supabase/types";
 import Page, { metadata } from "./page";
@@ -233,6 +237,36 @@ describe("page « Comment est calculé l’écart avec le marché ? »", () => {
       section("Les ventes comparables : périmètre et période").textContent ?? ""
     ).replace(/\s/g, " ");
     expect(comparables).toContain("marge fixe autour de la valeur");
+  });
+
+  it("décrit la fourchette comme un objectif de couverture, pas comme une garantie", () => {
+    render(<Page />);
+    const text = (
+      section("Les ventes comparables : périmètre et période").textContent ?? ""
+    ).replace(/\s/g, " ");
+    expect(text).toContain("au minimum 8 % de part et d’autre");
+    expect(text).toContain("dans huit cas sur dix");
+    expect(text).toContain("environ 8 prix de vente sur 10");
+    expect(text).toContain("un objectif de construction, pas une garantie");
+    expect(text).toContain("n’est pas encore vérifiée");
+    expect(text).toContain(
+      `un modèle dont l’intervalle en contient moins de ${VALUATION_MODEL_MIN_COVERAGE_PCT} % n’est pas mis en service`,
+    );
+  });
+
+  it("dit que le rayon continue de s'élargir jusqu'à l'effectif exigé par la porte publique", () => {
+    render(<Page />);
+    const text = (section("Quand l’estimation est jugée fiable").textContent ?? "").replace(
+      /\s/g,
+      " ",
+    );
+    expect(text).toContain(`moins de ${MARKET_WIDEN_UNTIL_COMPARABLES} ventes comparables`);
+    expect(text).toContain(
+      `${MARKET_GAP_BAND_MAX_RADIUS_URBAN_APARTMENT_M.toLocaleString("fr-FR")} m pour un appartement en ville`.replace(
+        /\s/g,
+        " ",
+      ),
+    );
   });
 
   it("énonce les limites sans promettre de conseil", () => {

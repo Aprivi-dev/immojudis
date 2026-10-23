@@ -1,0 +1,252 @@
+{
+  "description": "Reference set shared by tests/test_local_market_parity.py and src/lib/local-market-features.test.ts. cellIds are the H3 cells (h3 v4, same ids in h3-js) of each named point; expected values are computed by lookup_exported_local_market. Regenerate only when the definition itself changes.",
+  "points": {
+    "paris": [
+      48.8566,
+      2.3522
+    ],
+    "lyon": [
+      45.764,
+      4.8357
+    ],
+    "bordeaux": [
+      44.8378,
+      -0.5792
+    ],
+    "lille": [
+      50.6292,
+      3.0573
+    ],
+    "marseille": [
+      43.2965,
+      5.3698
+    ],
+    "nantes": [
+      47.2184,
+      -1.5536
+    ]
+  },
+  "cellIds": {
+    "paris": {
+      "6": "861fb4667ffffff",
+      "7": "871fb4662ffffff",
+      "8": "881fb46625fffff",
+      "9": "891fb466257ffff"
+    },
+    "lyon": {
+      "6": "861f9020fffffff",
+      "7": "871f90209ffffff",
+      "8": "881f902093fffff",
+      "9": "891f9020933ffff"
+    },
+    "bordeaux": {
+      "6": "86186b6cfffffff",
+      "7": "87186b6caffffff",
+      "8": "88186b6ca9fffff",
+      "9": "89186b6ca83ffff"
+    },
+    "lille": {
+      "6": "86194d29fffffff",
+      "7": "87194d29affffff",
+      "8": "88194d29a9fffff",
+      "9": "89194d29a87ffff"
+    },
+    "marseille": {
+      "6": "863968157ffffff",
+      "7": "873968152ffffff",
+      "8": "883968152bfffff",
+      "9": "893968152bbffff"
+    },
+    "nantes": {
+      "6": "86184584fffffff",
+      "7": "87184584effffff",
+      "8": "88184584e9fffff",
+      "9": "89184584e8bffff"
+    }
+  },
+  "exports": {
+    "apartment": {
+      "formatVersion": 1,
+      "algorithm": {
+        "minSample": 5,
+        "spreadMultiplier": 2.563,
+        "spreadFloor": 0.05,
+        "sampleSizeCap": 100
+      },
+      "resolutions": [
+        9,
+        8,
+        7
+      ],
+      "fallback": {
+        "mean": 8.1,
+        "spread": 0.9
+      },
+      "cells": {
+        "9": {
+          "891fb466257ffff": [
+            40,
+            8.9,
+            0.2
+          ],
+          "891f9020933ffff": [
+            4,
+            8.3,
+            0.2
+          ],
+          "893968152bbffff": [
+            12,
+            7.9,
+            0.3
+          ]
+        },
+        "8": {
+          "881f902093fffff": [
+            5,
+            8.4,
+            0.1
+          ],
+          "883968152bfffff": [
+            80,
+            8.0,
+            0.4
+          ]
+        },
+        "7": {
+          "87186b6caffffff": [
+            150,
+            8.2,
+            0.01
+          ]
+        }
+      },
+      "cellFormat": [
+        "count",
+        "mean",
+        "std"
+      ]
+    },
+    "house": {
+      "formatVersion": 1,
+      "algorithm": {
+        "minSample": 5,
+        "spreadMultiplier": 2.563,
+        "spreadFloor": 0.05,
+        "sampleSizeCap": 100
+      },
+      "resolutions": [
+        8,
+        7,
+        6
+      ],
+      "fallback": {
+        "mean": 7.4,
+        "spread": 0.7
+      },
+      "cells": {
+        "6": {
+          "86184584fffffff": [
+            23,
+            7.6,
+            0.25
+          ]
+        }
+      },
+      "cellFormat": [
+        "count",
+        "mean",
+        "std"
+      ]
+    }
+  },
+  "cases": [
+    {
+      "label": "paris_finest_cell",
+      "export": "apartment",
+      "latitude": 48.8566,
+      "longitude": 2.3522,
+      "expected": {
+        "local_median_log": 8.9,
+        "local_spread_log": 0.5126000000000001,
+        "local_sample_size_log": 3.713572066704308
+      }
+    },
+    {
+      "label": "lyon_below_minimum_then_boundary",
+      "export": "apartment",
+      "latitude": 45.764,
+      "longitude": 4.8357,
+      "expected": {
+        "local_median_log": 8.4,
+        "local_spread_log": 0.25630000000000003,
+        "local_sample_size_log": 1.791759469228055
+      }
+    },
+    {
+      "label": "marseille_finest_qualifying_cell_wins",
+      "export": "apartment",
+      "latitude": 43.2965,
+      "longitude": 5.3698,
+      "expected": {
+        "local_median_log": 7.9,
+        "local_spread_log": 0.7689,
+        "local_sample_size_log": 2.5649493574615367
+      }
+    },
+    {
+      "label": "bordeaux_floor_and_cap",
+      "export": "apartment",
+      "latitude": 44.8378,
+      "longitude": -0.5792,
+      "expected": {
+        "local_median_log": 8.2,
+        "local_spread_log": 0.05,
+        "local_sample_size_log": 4.61512051684126
+      }
+    },
+    {
+      "label": "lille_fallback",
+      "export": "apartment",
+      "latitude": 50.6292,
+      "longitude": 3.0573,
+      "expected": {
+        "local_median_log": 8.1,
+        "local_spread_log": 0.9,
+        "local_sample_size_log": 0.0
+      }
+    },
+    {
+      "label": "nantes_house_coarsest",
+      "export": "house",
+      "latitude": 47.2184,
+      "longitude": -1.5536,
+      "expected": {
+        "local_median_log": 7.6,
+        "local_spread_log": 0.64075,
+        "local_sample_size_log": 3.1780538303479458
+      }
+    },
+    {
+      "label": "paris_as_house_fallback",
+      "export": "house",
+      "latitude": 48.8566,
+      "longitude": 2.3522,
+      "expected": {
+        "local_median_log": 7.4,
+        "local_spread_log": 0.7,
+        "local_sample_size_log": 0.0
+      }
+    },
+    {
+      "label": "no_coordinates_fallback",
+      "export": "apartment",
+      "latitude": null,
+      "longitude": null,
+      "expected": {
+        "local_median_log": 8.1,
+        "local_spread_log": 0.9,
+        "local_sample_size_log": 0.0
+      }
+    }
+  ]
+}

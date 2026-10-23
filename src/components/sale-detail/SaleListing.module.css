@@ -863,3 +863,31 @@
     min-height: 490px;
   }
 }
+
+/* Mobile : le bloc titre, mise à prix et date d'audience passe avant le visuel et les espaces sont
+   resserrés, pour que la mise à prix et la date restent sous les yeux sans défiler (mesuré à 320 et
+   390 px de large). L'ordre du DOM ne change pas : seul l'affichage est réordonné. */
+@media (max-width: 767px) {
+  .heroSummary {
+    order: -1;
+  }
+  .container {
+    padding-top: 8px;
+  }
+  .topbar {
+    margin-bottom: 8px;
+  }
+  .upper {
+    gap: 12px;
+  }
+  .heroSummary {
+    padding: 16px;
+  }
+  .heroPrices {
+    margin-top: 14px;
+  }
+  .heroEvent {
+    margin-top: 12px;
+    padding: 10px 0;
+  }
+}

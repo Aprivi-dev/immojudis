@@ -77,7 +77,11 @@ vi.mock("next/dynamic", () => ({
       showUpcomingListings,
       propertyTypeVerified,
       onOpenWorkspace,
+      ceiling,
+      userKey,
     }: {
+      ceiling?: number;
+      userKey?: string;
       images?: unknown[];
       onClose?: () => void;
       saleId?: string;
@@ -91,6 +95,11 @@ vi.mock("next/dynamic", () => ({
       onOpenWorkspace?: () => void;
     }) {
       if (forecastQuery) return <section>Prévision de l’audience chargée</section>;
+      // n° 92 : « Mon plafond face au tribunal » (reçoit `ceiling`) et « Mes questions pour l'avocat ».
+      if (ceiling !== undefined) {
+        return <section aria-label="Mon plafond face au tribunal" data-ceiling={String(ceiling)} />;
+      }
+      if (userKey !== undefined) return <section aria-label="Mes questions pour l’avocat" />;
       // « Mon dossier » (SaleFileCard) : seul composant chargé à la demande qui reçoit ce plafond.
       if (calculatedCeiling !== undefined) {
         return (
@@ -704,6 +713,45 @@ describe("integrated listing", () => {
     renderDetail("analysis", sale, true);
     selectTab("Démarches");
     expect(screen.queryByRole("button", { name: "Export PDF" })).toBeNull();
+  });
+
+  it("shows « Mon plafond face au tribunal » under the planner only when the statistics are open", () => {
+    mocks.authUser = { id: "user-1" };
+    const sale = EXAMPLE_SALE_RECORDS.bordeaux.sale;
+
+    const open = renderDetail("analysis", sale, false, true);
+    selectTab("Prix et plafond");
+    const section = screen.getByRole("region", { name: "Mon plafond face au tribunal" });
+    expect(Number(section.getAttribute("data-ceiling"))).toBeGreaterThan(0);
+    expect(section.closest("#calculation")).not.toBeNull();
+    open.unmount();
+
+    // Statistiques fermées (drapeau), démonstration publique ou visiteur : aucune requête, aucun bloc.
+    window.history.replaceState(null, "", "/");
+    const closed = renderDetail("analysis", sale, false, false);
+    selectTab("Prix et plafond");
+    expect(screen.queryByRole("region", { name: "Mon plafond face au tribunal" })).toBeNull();
+    closed.unmount();
+
+    window.history.replaceState(null, "", "/");
+    renderDetail("analysis", sale, true, true);
+    selectTab("Prix et plafond");
+    expect(screen.queryByRole("region", { name: "Mon plafond face au tribunal" })).toBeNull();
+  });
+
+  it("shows « Mes questions pour l'avocat » in Démarches of a judicial sale, not in the public demo", () => {
+    mocks.authUser = { id: "user-1" };
+    const sale = EXAMPLE_SALE_RECORDS.bordeaux.sale;
+
+    const live = renderDetail("analysis", sale, false);
+    selectTab("Démarches");
+    expect(screen.getByRole("region", { name: "Mes questions pour l’avocat" })).toBeTruthy();
+    live.unmount();
+
+    window.history.replaceState(null, "", "/");
+    renderDetail("analysis", sale, true);
+    selectTab("Démarches");
+    expect(screen.queryByRole("region", { name: "Mes questions pour l’avocat" })).toBeNull();
   });
 
   it("points the Estimation actions to the planner and its calculation", () => {

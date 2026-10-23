@@ -3,7 +3,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AuctionScenariosResponse } from "@/lib/auction-scenarios";
+import {
+  representativeStartingPrice,
+  type AuctionScenariosResponse,
+} from "@/lib/auction-scenarios";
 
 const fetchAuctionScenarios = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/client-api", () => ({ fetchAuctionScenarios }));
@@ -18,7 +21,7 @@ const RESPONSE: AuctionScenariosResponse = {
   dataAsOf: "2026-10-22T14:03:00+00:00",
   scenarios: {
     status: "ok",
-    band: 2,
+    band: 3,
     courtSample: 165,
     nationalSample: 1098,
     basis: "court",
@@ -125,6 +128,62 @@ describe("AuctionScenariosSection", () => {
     expect(screen.queryByText(/moyen/i)).toBeNull();
     expect(screen.getByText(/2024 : 160 · 2025 : 170/)).toBeTruthy();
     expect(fetchAuctionScenarios).toHaveBeenCalledWith("sale-1");
+  });
+
+  it("cite la tranche de mise à prix de la vente (sept tranches)", async () => {
+    fetchAuctionScenarios.mockResolvedValue(RESPONSE);
+    renderSection();
+    const lead = await screen.findByText(/D’après 165 adjudications du TJ Bobigny/);
+    expect(lead.textContent).toMatch(
+      /sur les trois dernières années, pour des mises à prix de 35\s000 à 50\s000 €, en ne comparant que des logements\.$/,
+    );
+  });
+
+  it.each([
+    [1, "inférieures à 20 000 €"],
+    [2, "de 20 000 à 35 000 €"],
+    [3, "de 35 000 à 50 000 €"],
+    [4, "de 50 000 à 75 000 €"],
+    [5, "de 75 000 à 100 000 €"],
+    [6, "de 100 000 à 200 000 €"],
+    [7, "de 200 000 € et plus"],
+  ])("tranche %i : « pour des mises à prix %s »", async (band, label) => {
+    fetchAuctionScenarios.mockResolvedValue({
+      ...RESPONSE,
+      startingPrice: representativeStartingPrice(band),
+      scenarios: { ...RESPONSE.scenarios, band },
+    });
+    renderSection();
+    const lead = await screen.findByText(/D’après 165 adjudications du TJ Bobigny/);
+    expect(lead.textContent).toContain(`pour des mises à prix ${label}`);
+  });
+
+  it("n'affiche pas de fourchette de mises à prix quand la tranche renvoyée n'est pas celle de la vente", async () => {
+    // Base pas encore migrée : tranche 2 de l'ancienne grille pour une mise à prix de 45 000 € (tranche 3).
+    fetchAuctionScenarios.mockResolvedValue({
+      ...RESPONSE,
+      scenarios: { ...RESPONSE.scenarios!, band: 2 },
+    });
+    renderSection();
+    const lead = await screen.findByText(/D’après 165 adjudications du TJ Bobigny/);
+    expect(lead.textContent).not.toMatch(/pour des mises à prix/);
+    expect(lead.textContent).not.toMatch(/20\s000|35\s000|50\s000/);
+    expect(lead.textContent).toMatch(
+      /sur les trois dernières années, en ne comparant que des logements\.$/,
+    );
+  });
+
+  it("termine la phrase sans fourchette ni type quand la tranche manque", async () => {
+    fetchAuctionScenarios.mockResolvedValue({
+      ...RESPONSE,
+      propertyType: null,
+      scenarios: { ...RESPONSE.scenarios!, band: null },
+    });
+    renderSection();
+    const lead = await screen.findByText(/D’après 165 adjudications du TJ Bobigny/);
+    expect(lead.textContent).toMatch(
+      /sur les tribunaux couverts sur les trois dernières années\.$/,
+    );
   });
 
   it("n'affiche plus la référence DVF « Y € pour Z m² »", async () => {

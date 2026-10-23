@@ -293,8 +293,8 @@ export function UrbanismeCadastrePanel({
             ) : (
               <EmptyState>
                 Aucun signal PLU, permis, servitude, copropriété ou usage n’est rattaché aux sources
-                collectées. Consultez le document d’urbanisme opposable de la commune et le cahier
-                des conditions.
+                collectées. Consultez le document d’urbanisme opposable de la commune en mairie, et
+                lisez le cahier des conditions de vente avec votre avocat.
               </EmptyState>
             )}
             {urbanPlanning.missingChecks.length > 0 ? (
@@ -353,8 +353,11 @@ export function UrbanismeCadastrePanel({
 
           <p className={styles.footnote}>
             Une mention, un rattachement géographique ou une pièce repérée ne vaut pas validation
-            juridique. Confirmez le zonage, les limites, les servitudes et les autorisations dans
-            les sources officielles et le cahier des conditions de vente.
+            juridique. Confirmez le zonage et les autorisations auprès de la mairie (certificat
+            d’urbanisme). En saisie immobilière, le cahier des conditions de vente doit notamment
+            désigner l’immeuble et indiquer ses servitudes et ses baux (art. R. 322-10 du Code des
+            procédures civiles d’exécution) : le zonage d’urbanisme ne figure pas dans cette liste.
+            Pour les autres ventes, lisez le cahier des charges, avec votre avocat.
           </p>
         </div>
       </details>

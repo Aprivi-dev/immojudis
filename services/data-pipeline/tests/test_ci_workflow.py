@@ -36,3 +36,27 @@ def test_the_hashed_lockfiles_are_audited_without_exception() -> None:
     for lockfile in ("requirements.lock", "requirements-dev.lock", "requirements-valuation.lock"):
         assert lockfile in audit.splitlines()[0]
     assert "--ignore-vuln" not in audit
+
+
+def test_the_migration_guard_requires_exactly_the_ci_jobs_that_run_on_a_push() -> None:
+    # scripts/check-commit-ci-green.mjs refuses to apply migrations unless these checks are green.
+    script = (WORKFLOWS.parents[1] / "scripts" / "check-commit-ci-green.mjs").read_text(encoding="utf-8")
+    listed = re.search(r"REQUIRED_CI_CHECKS = \[\n(.*?)\n\];", script, re.S)
+    assert listed is not None
+    required = set(re.findall(r'^  "(.+)",$', listed.group(1), re.M))
+
+    expected = set()
+    for name, text in _jobs().items():
+        if re.search(r"(?m)^    if: github\.event_name == 'pull_request'$", text):
+            continue  # Dependency review does not run on a push to main
+        label = re.search(r"(?m)^    name: (.+)$", text)
+        assert label is not None, name
+        label_text = label.group(1).strip()
+        if "${{ matrix.python-version }}" in label_text:
+            versions = re.search(r"(?m)^        python-version: \[(.+)\]$", text)
+            assert versions is not None
+            for version in re.findall(r'"([^"]+)"', versions.group(1)):
+                expected.add(label_text.replace("${{ matrix.python-version }}", version))
+        else:
+            expected.add(label_text)
+    assert required == expected

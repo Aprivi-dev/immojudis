@@ -78,7 +78,7 @@ const FAQ: Array<{ q: string; a: string }> = [
   },
   {
     q: "Que se passe-t-il en cas de surenchère ?",
-    a: "En saisie immobilière, toute personne peut former une surenchère d’au moins un dixième du prix principal, par acte d’avocat déposé au greffe du juge de l’exécution dans les dix jours qui suivent l’adjudication (art. R. 322-50 et R. 322-51). Une nouvelle audience a alors lieu deux à quatre mois plus tard, et l’adjudication initiale n’est pas définitive. La surenchère du dixième dans les dix jours est une règle légale en saisie immobilière (art. R. 322-50 et R. 322-51 du CPCE). En licitation, la surenchère du dixième se forme dans les dix jours de l’adjudication définitive (art. 1279, qui renvoie aux art. R. 322-50 à R. 322-55 du CPCE). Devant notaire, la forme exacte est à confirmer avec l’avocat ou le notaire. Dans une vente notariale volontaire, elle n’est pas prévue par la loi : seul le cahier des charges peut la prévoir (Notaires de France décrit 10\u00a0% dans les 10 jours pour la vente « à la bougie »). Dans une vente domaniale, tout dépend du cahier des charges. Lisez-le avant d’enchérir.",
+    a: "En saisie immobilière, toute personne peut former une surenchère d’au moins un dixième du prix principal, par acte d’avocat déposé au greffe du juge de l’exécution dans les dix jours qui suivent l’adjudication (art. R. 322-50 et R. 322-51). Ces dix jours se comptent à partir du lendemain de l’adjudication, week-ends et jours fériés compris ; si le dixième jour est un samedi, un dimanche ou un jour férié, le délai est prorogé jusqu’au premier jour ouvrable suivant (art. 641 et 642 du Code de procédure civile). Une nouvelle audience a alors lieu deux à quatre mois plus tard, et l’adjudication initiale n’est pas définitive. En licitation, la surenchère du dixième se forme dans les dix jours de l’adjudication définitive (art. 1279, qui renvoie aux art. R. 322-50 à R. 322-55 du CPCE). Devant notaire, la forme exacte est à confirmer avec l’avocat ou le notaire. Dans une vente notariale volontaire, elle n’est pas prévue par la loi : seul le cahier des charges peut la prévoir (Notaires de France décrit 10\u00a0% dans les 10 jours pour la vente « à la bougie »). Dans une vente domaniale, tout dépend du cahier des charges. Lisez-le avant d’enchérir.",
   },
   {
     q: "Quels frais s’ajoutent au prix d’adjudication ?",
@@ -215,7 +215,7 @@ const LEXIQUE: Array<{ term: string; def: string }> = [
   },
   {
     term: "Surenchère",
-    def: "Offre supérieure d’au moins un dixième du prix principal, formée dans les dix jours qui suivent l’adjudication en saisie immobilière, entraînant une nouvelle audience (art. R. 322-50 et R. 322-51).",
+    def: "Offre supérieure d’au moins un dixième du prix principal, formée dans les dix jours qui suivent l’adjudication en saisie immobilière, entraînant une nouvelle audience (art. R. 322-50 et R. 322-51). Si le dixième jour est un samedi, un dimanche ou un jour férié, le délai est prorogé jusqu’au premier jour ouvrable suivant (art. 641 et 642 du Code de procédure civile).",
   },
   {
     term: "Tantièmes",
@@ -247,6 +247,15 @@ const INSTITUTIONAL_LINKS: Array<{ href: string; label: string }> = [
   {
     href: "https://www.legifrance.gouv.fr/codes/id/LEGISCTA000025939177",
     label: "Légifrance — Surenchère",
+  },
+  {
+    href: "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000006411002",
+    label: "Légifrance — Code de procédure civile, article 641 (délais en jours)",
+  },
+  {
+    href: "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000006411003",
+    label:
+      "Légifrance — Code de procédure civile, article 642 (expiration du délai, jour non ouvrable)",
   },
   {
     href: "https://www.justice.fr/",
@@ -314,7 +323,7 @@ const PROCEDURE_STEPS: Array<{ title: string; text: string; href: string }> = [
   },
   {
     title: "Surenchère possible (10 jours)",
-    text: "En saisie immobilière, une surenchère d’au moins un dixième du prix principal peut être formée dans les 10 jours qui suivent l’adjudication.",
+    text: "En saisie immobilière, une surenchère d’au moins un dixième du prix principal peut être formée dans les 10 jours qui suivent l’adjudication (délai reporté au premier jour ouvrable suivant s’il expire un samedi, un dimanche ou un jour férié).",
     href: "#apres-adjudication",
   },
   {
@@ -333,7 +342,7 @@ const KEY_POINTS = {
     "La vente se déroule en trois temps : l’analyse avant la vente, l’audience d’adjudication, puis les formalités après l’enchère.",
     "Pour enchérir, il faut être représenté par un avocat inscrit au barreau du tribunal compétent : l’acheteur ne porte pas lui-même les enchères.",
     "Le Code impose de remettre à l’avocat, avant les enchères, une garantie de 10 % de la mise à prix, avec un minimum de 3 000 €.",
-    "En saisie immobilière, une surenchère d’au moins un dixième du prix principal peut être formée dans les 10 jours qui suivent l’adjudication : l’adjudication n’est définitive qu’à l’expiration de ce délai.",
+    "En saisie immobilière, une surenchère d’au moins un dixième du prix principal peut être formée dans les 10 jours qui suivent l’adjudication (délai reporté au premier jour ouvrable suivant s’il expire un samedi, un dimanche ou un jour férié) : l’adjudication n’est définitive qu’à l’expiration de ce délai.",
   ],
   frais: [
     "Le budget d’une vente judiciaire ne doit jamais être limité au prix d’adjudication.",
@@ -875,15 +884,23 @@ export function ResourcesPage() {
               Après l’adjudication, une surenchère peut être formée dans le délai légal de dix
               jours. Elle doit respecter les conditions prévues par les textes, notamment être
               déposée par acte d’avocat au greffe du juge de l’exécution et porter sur au moins un
-              dixième du prix principal (art. R. 322-50 et R. 322-51). La surenchère du dixième dans
-              les dix jours est une règle légale en saisie immobilière (art. R. 322-50 et R. 322-51
-              du CPCE). En licitation, la surenchère du dixième se forme dans les dix jours de
-              l’adjudication définitive (art. 1279, qui renvoie aux art. R. 322-50 à R. 322-55 du
-              CPCE). Devant notaire, la forme exacte est à confirmer avec l’avocat ou le notaire.
-              Dans une vente notariale volontaire, elle n’est pas prévue par la loi : seul le cahier
-              des charges peut la prévoir (Notaires de France décrit 10&nbsp;% dans les 10 jours
-              pour la vente « à la bougie »). Dans une vente domaniale, tout dépend du cahier des
-              charges. Lisez-le avant d’enchérir.
+              dixième du prix principal (art. R. 322-50 et R. 322-51). Le jour de l’adjudication ne
+              compte pas : les dix jours se comptent à partir du lendemain, week-ends et jours
+              fériés compris (art. 641 du Code de procédure civile). Si le dixième jour est un
+              samedi, un dimanche ou un jour férié, le délai est prorogé jusqu’au premier jour
+              ouvrable suivant (art. 642 du même code). Exemple : pour une adjudication prononcée le
+              jeudi 8 octobre 2026, le dixième jour est le dimanche 18 octobre, et le délai est
+              prorogé jusqu’au lundi 19 octobre 2026. Le greffe n’étant ouvert qu’à ses heures
+              d’ouverture, ne comptez pas sur la dernière heure du dernier jour : votre avocat vous
+              indiquera l’heure limite de dépôt. La surenchère du dixième dans les dix jours est une
+              règle légale en saisie immobilière (art. R. 322-50 et R. 322-51 du CPCE). En
+              licitation, la surenchère du dixième se forme dans les dix jours de l’adjudication
+              définitive (art. 1279, qui renvoie aux art. R. 322-50 à R. 322-55 du CPCE). Devant
+              notaire, la forme exacte est à confirmer avec l’avocat ou le notaire. Dans une vente
+              notariale volontaire, elle n’est pas prévue par la loi : seul le cahier des charges
+              peut la prévoir (Notaires de France décrit 10&nbsp;% dans les 10 jours pour la vente «
+              à la bougie »). Dans une vente domaniale, tout dépend du cahier des charges. Lisez-le
+              avant d’enchérir.
             </P>
             <P>
               Vous pouvez consulter le texte officiel sur Légifrance :{" "}
@@ -929,7 +946,7 @@ export function ResourcesPage() {
             </P>
             <Checklist
               items={[
-                "en saisie immobilière, une surenchère d’au moins un dixième du prix principal peut être formée dans les 10 jours qui suivent l’adjudication : l’adjudication n’est définitive qu’à l’expiration de ce délai ;",
+                "en saisie immobilière, une surenchère d’au moins un dixième du prix principal peut être formée dans les 10 jours qui suivent l’adjudication (délai reporté au premier jour ouvrable suivant s’il expire un samedi, un dimanche ou un jour férié) : l’adjudication n’est définitive qu’à l’expiration de ce délai ;",
                 "le Code impose de remettre à l’avocat, avant les enchères, une garantie de 10\u00a0% de la mise à prix, avec un minimum de 3\u202f000\u00a0€, sous forme de chèque de banque ou de caution bancaire irrévocable (art. R. 322-41) ;",
                 "le prix doit être versé ou consigné dans les deux mois qui suivent l’adjudication définitive ; au-delà, des intérêts sont dus (art. R. 322-56) ;",
                 "les frais de poursuite taxés et les droits de mutation se paient en plus du prix, dans le même délai fixé par le Code : le justificatif doit être remis au greffe avant l’expiration de deux mois à compter de l’adjudication définitive (art. R. 322-58) ;",
@@ -937,9 +954,10 @@ export function ResourcesPage() {
               ]}
             />
             <P>
-              Ces règles résument les textes consultés le 13/10/2026. Elles ne remplacent pas le
-              cahier des conditions de vente du dossier ni l'avis de votre avocat, qui confirmera
-              les montants et les délais de votre vente.
+              Ces règles résument les textes consultés le 13/10/2026 (calcul du délai de surenchère
+              revérifié le 23/10/2026). Elles ne remplacent pas le cahier des conditions de vente du
+              dossier ni l'avis de votre avocat, qui confirmera les montants et les délais de votre
+              vente.
             </P>
           </Section>
 

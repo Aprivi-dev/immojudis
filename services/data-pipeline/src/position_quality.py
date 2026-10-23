@@ -11,7 +11,14 @@ Drapeaux de position (``quality_flags``), exposés à la garde de la vue aérien
 * ``geocode_outside_department`` : le géocodage a trouvé un point hors du département de la vente ; il a été refusé.
 
 Un drapeau décrit la position actuelle : dès qu'une position vérifiée remplace ou confirme le point, ils sont retirés
-(``clear_position_flags``). Le recalcul des ventes repart d'une liste vide et ne garde que ces trois drapeaux.
+(``clear_position_flags``). Le recalcul des ventes repart d'une liste vide et ne garde que ces trois drapeaux, et
+``probable_duplicate``.
+
+``probable_duplicate`` n'est pas un drapeau de position : il vient d'un rapprochement entre plusieurs lignes
+(``src.probable_duplicates``), que le recalcul d'une seule ligne ne sait pas refaire. La vente est probablement la
+copie d'une autre : la vue aérienne « bâtiment » de la fiche est refusée, car deux copies peuvent porter des points
+différents. Il n'est jamais retiré par ``clear_position_flags`` ; seul le prochain passage de
+``src.probable_duplicates`` le retire, quand la condition a disparu.
 """
 
 from __future__ import annotations
@@ -26,6 +33,9 @@ IMPLAUSIBLE_COORDINATES = "implausible_coordinates"
 UNVERIFIED_SOURCE_COORDINATES = "unverified_source_coordinates"
 GEOCODE_OUTSIDE_DEPARTMENT = "geocode_outside_department"
 POSITION_FLAGS = frozenset({IMPLAUSIBLE_COORDINATES, UNVERIFIED_SOURCE_COORDINATES, GEOCODE_OUTSIDE_DEPARTMENT})
+PROBABLE_DUPLICATE = "probable_duplicate"
+# Ce que le recalcul d'une ligne garde de la liste lue en base (il ne peut pas le redéduire du texte de la vente).
+PRESERVED_FLAGS = POSITION_FLAGS | {PROBABLE_DUPLICATE}
 
 # Une commune française dépasse rarement 12 km du centre à sa limite ; aucune ne dépasse 40 km (Arles, la plus
 # étendue de métropole, fait environ 40 km dans sa plus grande longueur : son centre est à moins de 30 km de
@@ -37,10 +47,10 @@ EARTH_RADIUS_KM = 6371.0088
 
 
 def preserved_position_flags(flags: object) -> list[str]:
-    """Les drapeaux de position d'une liste lue en base, dans l'ordre, sans doublon."""
+    """Les drapeaux de position (et ``probable_duplicate``) d'une liste lue en base, dans l'ordre, sans doublon."""
     if not isinstance(flags, list):
         return []
-    return list(dict.fromkeys(flag for flag in flags if isinstance(flag, str) and flag in POSITION_FLAGS))
+    return list(dict.fromkeys(flag for flag in flags if isinstance(flag, str) and flag in PRESERVED_FLAGS))
 
 
 def add_position_flag(flags: list[str], flag: str) -> None:

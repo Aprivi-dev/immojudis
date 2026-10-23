@@ -3,6 +3,7 @@ import { errorDetailForLog } from "@/lib/api-errors";
 import {
   deactivateAlertForUser,
   revokeEmailAlertConsent,
+  revokeLaunchOfferEndNotice,
   revokeOfferOpeningRequest,
   revokeSaleReminderConsent,
   revokeSaleResultsConsent,
@@ -48,6 +49,12 @@ function confirmationCopy(kind: UnsubscribeScope["kind"]): { question: string; b
         question:
           "Voulez-vous retirer votre demande d'être prévenu de l'ouverture de l'offre Analyse ?",
         button: "Retirer ma demande",
+      };
+    case "launch-offer-end":
+      return {
+        question:
+          "Voulez-vous ne plus recevoir le préavis de fin de l'offre de lancement ? Votre compte n'est pas modifié.",
+        button: "Ne plus recevoir ce message",
       };
     default:
       return {
@@ -154,6 +161,15 @@ export async function POST(request: Request) {
           { href: "/offres", label: "Voir les offres" },
         );
       }
+      if (claims.scope.kind === "launch-offer-end") {
+        await revokeLaunchOfferEndNotice({ userId: claims.userId });
+        return htmlResponse(
+          "Préavis désactivé",
+          "Vous ne recevrez plus ce message. Votre compte et vos alertes email ne sont pas modifiés.",
+          200,
+          { href: "/compte", label: "Voir mon compte" },
+        );
+      }
       await revokeEmailAlertConsent({ userId: claims.userId });
     } else if (legacyNotificationId && UUID_PATTERN.test(legacyNotificationId)) {
       await unsubscribeEmailAlertsByNotificationId({ notificationId: legacyNotificationId });
@@ -196,7 +212,7 @@ function expiredLinkResponse(token: string) {
       { href: "/compte", label: "Gérer mes notifications" },
     );
   }
-  if (kind === "weekly-digest" || kind === "sale-results") {
+  if (kind === "weekly-digest" || kind === "sale-results" || kind === "launch-offer-end") {
     return htmlResponse(
       "Lien expiré",
       "Ce lien de désinscription n'est plus valide. Ouvrez votre compte pour gérer vos notifications.",

@@ -13,9 +13,15 @@ import {
   setOfferOpeningNotification,
   setOfferOpeningSurvey,
 } from "@/lib/offer-opening-notification";
+import {
+  OFFER_OPENING_INTERVIEW_TEXT,
+  offerOpeningInterviewAvailable,
+  offerOpeningInterviewNotice,
+} from "@/lib/offer-opening-consent";
 import { PublicApiError } from "@/lib/api-errors";
 
 const timestamp = "2026-10-20T10:00:00.000Z";
+const publisher = { entityName: "Éditeur SAS", contactEmail: "contact@example.test" };
 
 describe("offer opening notification", () => {
   it("records the first request with its timestamp and the wording version", () => {
@@ -203,6 +209,43 @@ describe("liste d'attente qualifiée : questions facultatives", () => {
     ).toMatchObject({ profile: null, salesPerMonth: null, priceCheapEur: 20 });
   });
 
+  it("l'information de la case d'entretien donne finalité, responsable, enregistrement, durée et retrait", () => {
+    const notice = offerOpeningInterviewNotice({
+      controller: "Éditeur SAS",
+      contactEmail: "contact@example.test",
+    }).join(" ");
+    expect(notice).toContain("Objectif");
+    expect(notice).toContain("Responsable du traitement : Éditeur SAS");
+    expect(notice).toContain("Enregistrement : aucun sans votre accord exprès");
+    expect(notice).toContain("supprimé au plus tard 30 jours");
+    expect(notice).toContain("Refuser l’enregistrement n’a aucune conséquence.");
+    expect(notice).toContain("Retrait : à tout moment");
+    expect(notice).toContain(
+      "le retrait prend effet après un clic sur « Enregistrer mes réponses »",
+    );
+    expect(notice).toContain("contact@example.test");
+    expect(notice).toContain(
+      "Vos droits (accès, rectification, effacement, retrait) et la possibilité de saisir la CNIL sont détaillés dans la politique de confidentialité.",
+    );
+    // Changer le texte impose de changer la version (elle est conservée avec les réponses).
+    expect(OFFER_OPENING_SURVEY_VERSION).toBe("2026-10-28.2");
+  });
+
+  it("annonce un entretien d'environ 45 minutes, par un seul email", () => {
+    expect(OFFER_OPENING_INTERVIEW_TEXT).toBe(
+      "J’accepte d’être contacté une fois par email pour un entretien d’environ 45 minutes",
+    );
+    expect(OFFER_OPENING_INTERVIEW_TEXT).not.toContain("20 minutes");
+  });
+
+  it("ne propose la case d'entretien que si le nom de l'éditeur et l'email de contact sont renseignés", () => {
+    expect(offerOpeningInterviewAvailable(publisher)).toBe(true);
+    expect(offerOpeningInterviewAvailable({ ...publisher, entityName: null })).toBe(false);
+    expect(offerOpeningInterviewAvailable({ ...publisher, contactEmail: null })).toBe(false);
+    expect(offerOpeningInterviewAvailable({ entityName: null, contactEmail: null })).toBe(false);
+    expect(offerOpeningInterviewAvailable({ entityName: "  ", contactEmail: "" })).toBe(false);
+  });
+
   it("la case d'entretien n'est jamais cochée par défaut", () => {
     expect(
       offerOpeningSurveySchema.parse({ surveyTextVersion: OFFER_OPENING_SURVEY_VERSION })
@@ -233,7 +276,11 @@ describe("liste d'attente qualifiée : questions facultatives", () => {
   it("date l'accord à l'entretien une fois, et l'efface quand la case est décochée", () => {
     const input = offerOpeningSurveySchema.parse(answers);
     const first = buildOfferOpeningSurveyPatch({
-      current: { survey_interview_accepted: false, survey_interview_consented_at: null },
+      current: {
+        survey_interview_accepted: false,
+        survey_interview_consented_at: null,
+        survey_text_version: null,
+      },
       input,
       timestamp,
     });
@@ -252,16 +299,33 @@ describe("liste d'attente qualifiée : questions facultatives", () => {
       current: {
         survey_interview_accepted: true,
         survey_interview_consented_at: "2026-10-01T00:00:00.000Z",
+        survey_text_version: OFFER_OPENING_SURVEY_VERSION,
       },
       input,
       timestamp,
     });
     expect(again.survey_interview_consented_at).toBe("2026-10-01T00:00:00.000Z");
 
+    // Accord donné sous un texte plus ancien : la case recochée date un nouvel accord.
+    for (const storedVersion of ["2026-10-20.1", null]) {
+      const reconsented = buildOfferOpeningSurveyPatch({
+        current: {
+          survey_interview_accepted: true,
+          survey_interview_consented_at: "2026-10-01T00:00:00.000Z",
+          survey_text_version: storedVersion,
+        },
+        input,
+        timestamp,
+      });
+      expect(reconsented.survey_interview_consented_at).toBe(timestamp);
+      expect(reconsented.survey_text_version).toBe(OFFER_OPENING_SURVEY_VERSION);
+    }
+
     const withdrawn = buildOfferOpeningSurveyPatch({
       current: {
         survey_interview_accepted: true,
         survey_interview_consented_at: "2026-10-01T00:00:00.000Z",
+        survey_text_version: "2026-10-20.1",
       },
       input: offerOpeningSurveySchema.parse({ ...answers, interviewAccepted: false }),
       timestamp,
@@ -304,6 +368,7 @@ describe("liste d'attente qualifiée : questions facultatives", () => {
       admin,
       input: offerOpeningSurveySchema.parse(answers),
       now: new Date(timestamp),
+      publisher,
     });
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -325,6 +390,39 @@ describe("liste d'attente qualifiée : questions facultatives", () => {
     });
   });
 
+  it("relit la version du texte de la ligne : un accord ancien est redaté, un accord courant est conservé", async () => {
+    const row = {
+      user_id: "user-1",
+      notify_enabled: true,
+      consented_at: "2026-10-01T00:00:00.000Z",
+      survey_interview_accepted: true,
+      survey_interview_consented_at: "2026-10-02T00:00:00.000Z",
+    };
+    const old = surveyAdmin({ ...row, survey_text_version: "2026-10-20.1" });
+    await setOfferOpeningSurvey({
+      auth: { userId: "user-1" },
+      admin: old.admin,
+      input: offerOpeningSurveySchema.parse(answers),
+      now: new Date(timestamp),
+      publisher,
+    });
+    expect(old.update).toHaveBeenCalledWith(
+      expect.objectContaining({ survey_interview_consented_at: timestamp }),
+    );
+
+    const current = surveyAdmin({ ...row, survey_text_version: OFFER_OPENING_SURVEY_VERSION });
+    await setOfferOpeningSurvey({
+      auth: { userId: "user-1" },
+      admin: current.admin,
+      input: offerOpeningSurveySchema.parse(answers),
+      now: new Date(timestamp),
+      publisher,
+    });
+    expect(current.update).toHaveBeenCalledWith(
+      expect.objectContaining({ survey_interview_consented_at: "2026-10-02T00:00:00.000Z" }),
+    );
+  });
+
   it("ne s'enregistre pas sans demande d'information active (rien ne passe par l'inscription)", async () => {
     for (const current of [
       null,
@@ -336,10 +434,59 @@ describe("liste d'attente qualifiée : questions facultatives", () => {
           auth: { userId: "user-1" },
           admin,
           input: offerOpeningSurveySchema.parse(answers),
+          publisher,
         }),
       ).rejects.toBeInstanceOf(PublicApiError);
       expect(update).not.toHaveBeenCalled();
     }
+  });
+
+  it("refuse un accord à l'entretien quand la case n'est pas affichée (éditeur non renseigné)", async () => {
+    for (const missing of [
+      { entityName: null, contactEmail: "contact@example.test" },
+      { entityName: "Éditeur SAS", contactEmail: null },
+    ]) {
+      const { admin, update } = surveyAdmin({
+        user_id: "user-1",
+        notify_enabled: true,
+        consented_at: "2026-10-01T00:00:00.000Z",
+        survey_interview_accepted: false,
+        survey_interview_consented_at: null,
+      });
+      await expect(
+        setOfferOpeningSurvey({
+          auth: { userId: "user-1" },
+          admin,
+          input: offerOpeningSurveySchema.parse(answers),
+          publisher: missing,
+        }),
+      ).rejects.toMatchObject({ status: 400 });
+      expect(update).not.toHaveBeenCalled();
+    }
+  });
+
+  it("enregistre les autres réponses sans accord à l'entretien quand la case n'est pas affichée", async () => {
+    const { admin, update } = surveyAdmin({
+      user_id: "user-1",
+      notify_enabled: true,
+      consented_at: "2026-10-01T00:00:00.000Z",
+      survey_interview_accepted: true,
+      survey_interview_consented_at: "2026-10-02T00:00:00.000Z",
+    });
+    await setOfferOpeningSurvey({
+      auth: { userId: "user-1" },
+      admin,
+      input: offerOpeningSurveySchema.parse({ ...answers, interviewAccepted: false }),
+      now: new Date(timestamp),
+      publisher: { entityName: null, contactEmail: null },
+    });
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        survey_profile: "marchand_de_biens",
+        survey_interview_accepted: false,
+        survey_interview_consented_at: null,
+      }),
+    );
   });
 });
 

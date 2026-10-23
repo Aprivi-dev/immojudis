@@ -267,6 +267,8 @@ export const ERASURE_TABLES: ReadonlyArray<readonly [table: string, column: stri
   ["sale_reminder_dispatches", "user_id"],
   ["weekly_digest_dispatches", "user_id"],
   ["sale_result_dispatches", "user_id"],
+  ["launch_offer_end_notices", "user_id"],
+  ["launch_offer_end_notice_optouts", "user_id"],
   ["user_watched_zones", "user_id"],
   ["user_sale_change_events", "user_id"],
   ["user_sale_unlocks", "user_id"],
@@ -297,7 +299,7 @@ export const ERASURE_TABLES: ReadonlyArray<readonly [table: string, column: stri
 ];
 
 /**
- * Tables créées par les migrations 20261030110100, 20261030120100 et 20261030120200. Tant qu'une
+ * Tables créées par les migrations 20261030110100, 20261030120100, 20261030120200 et 20261102140000. Tant qu'une
  * migration n'est pas appliquée (code déployé avant elle), sa table n'existe pas : il n'y a alors aucune
  * donnée à effacer, et l'effacement ne doit pas échouer pour autant. Pour toute autre table, une table
  * absente reste une erreur (liste d'effacement fausse ou schéma incomplet).
@@ -306,6 +308,8 @@ const ERASURE_TABLES_FROM_RECENT_MIGRATIONS: ReadonlySet<string> = new Set([
   "sale_signal_feedback",
   "weekly_digest_dispatches",
   "sale_result_dispatches",
+  "launch_offer_end_notices",
+  "launch_offer_end_notice_optouts",
 ]);
 
 /** « La table n'existe pas » : `PGRST205` (cache du schéma de PostgREST) ou `42P01` (PostgreSQL). */

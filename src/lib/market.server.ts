@@ -31,6 +31,7 @@ import {
   resolveMarketLocation,
 } from "@/lib/market-server/sources";
 import { analyzeAtRadius } from "@/lib/market-server/radius-analysis";
+import { shouldWidenRadius } from "@/lib/market-server/radius-widening";
 import { buildParkingEstimate, isParkingProperty } from "@/lib/market-server/parking";
 
 export { officialDvfCommuneCode } from "@/lib/market-server/sources";
@@ -93,17 +94,42 @@ async function buildEstimate(input: BuildEstimateInput): Promise<MarketEstimate>
     candidates: analysis.candidates,
   });
   let radiusM = radii[0];
-  for (let i = 1; i < radii.length && !engineResult?.actionable; i += 1) {
-    radiusM = radii[i];
-    analysis = await analyzeAtRadius(lat, lng, radiusM, segment, detailedCommune);
-    engineResult = analyzeMarketCandidates({
+  // Élargissement du rayon : jusqu'à une estimation exploitable, puis tant qu'elle reste sous
+  // l'effectif exigé par la porte publique et que le rayon suivant reste admis par elle.
+  for (let i = 1; i < radii.length; i += 1) {
+    if (
+      engineResult &&
+      !shouldWidenRadius({
+        actionable: engineResult.actionable,
+        sampleSize: engineResult.sampleSize,
+        nextRadiusM: radii[i],
+        segment,
+        areaKind,
+      })
+    ) {
+      break;
+    }
+    const wideAnalysis = await analyzeAtRadius(lat, lng, radii[i], segment, detailedCommune);
+    const wideResult = analyzeMarketCandidates({
       segment,
       subjectBuiltSurfaceM2: subjectBuiltSurface,
       subjectLandSurfaceM2: subjectLandSurface,
       subjectLatitude: lat,
       subjectLongitude: lng,
-      candidates: analysis.candidates,
+      candidates: wideAnalysis.candidates,
     });
+    // Une estimation déjà exploitable n'est remplacée que par une estimation exploitable plus
+    // fournie : un rayon plus large ne doit ni la défaire (dispersion trop forte) ni afficher un
+    // rayon plus large sans ajouter de comparable.
+    if (
+      engineResult?.actionable &&
+      !(wideResult?.actionable && wideResult.sampleSize > engineResult.sampleSize)
+    ) {
+      continue;
+    }
+    analysis = wideAnalysis;
+    engineResult = wideResult;
+    radiusM = radii[i];
   }
   if ((!engineResult || !engineResult.actionable) && commune && subjectSurface) {
     const statisticsFallback = await getDvfMarketStatisticsFallback({

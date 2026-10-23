@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import FolderHeart from "lucide-react/dist/esm/icons/folder-heart.js";
 import { FavoriteButton } from "@/components/FavoriteButton";
 import { SaleRemindersToggle } from "@/components/SaleRemindersToggle";
+import { StaleCeilingNotice } from "@/components/sale-detail/StaleCeilingNotice";
 import { Button, Card, Eyebrow } from "@/components/ui/primitives";
 import { useAuth } from "@/hooks/use-auth";
 import { fetchFavoriteDossier, saveFavoriteDossier } from "@/lib/client-api";
@@ -215,6 +216,15 @@ export function SaleFileCard({
                 "Aucune enchère plafond enregistrée."
               )}
             </p>
+            {savedCeiling != null ? (
+              <StaleCeilingNotice
+                saleId={saleId}
+                userId={userId}
+                savedAt={dossier.bidCeilingSavedAt}
+                ceiling={savedCeiling}
+                canRecalculate={ceiling != null || calculationPending}
+              />
+            ) : null}
             <form onSubmit={submitCeiling} noValidate className="mt-2" aria-busy={save.isPending}>
               <div className="flex flex-wrap items-center gap-2">
                 <div className="flex min-w-0 flex-1 items-center gap-2">

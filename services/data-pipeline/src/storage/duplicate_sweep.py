@@ -21,6 +21,7 @@ import httpx
 
 from src.dedupe import SWEEP_STRICT_EXCLUDED_SOURCES, SWEEP_STRICT_MAX_GROUP, merge_duplicate_sales
 from src.models import AuctionSale
+from src.position_quality import PROBABLE_DUPLICATE
 from src.reviewed_aliases import ReviewedAliasRegistry
 from src.storage.column_sets import DEDUPLICATION_SALE_SELECT
 from src.storage.postgrest_helpers import _postgrest_in_filter, _rest_headers
@@ -59,6 +60,8 @@ class DuplicateRowSummary:
     sale_date: str | None
     starting_price_eur: str | None
     status: str | None
+    # Drapeaux de qualité de la ligne avant la fusion (``src.probable_duplicates`` y pose ou retire un drapeau).
+    quality_flags: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -110,6 +113,7 @@ def _summary(sale: AuctionSale) -> DuplicateRowSummary:
         sale_date=sale.sale_date.isoformat() if sale.sale_date else None,
         starting_price_eur=str(sale.starting_price_eur) if sale.starting_price_eur is not None else None,
         status=sale.status,
+        quality_flags=tuple(flag for flag in sale.quality_flags if isinstance(flag, str)),
     )
 
 
@@ -243,6 +247,8 @@ def build_plan(
             plan.deferred_rows += len(secondary_urls)
             continue
         kept += len(secondary_urls)
+        # La fusion recopie les drapeaux de la ligne absorbée : la survivante n'est pas une copie.
+        sale.quality_flags = [flag for flag in sale.quality_flags if flag != PROBABLE_DUPLICATE]
         plan.impacted_sales.append(sale)
         plan.groups.append(
             DuplicateMergeGroup(

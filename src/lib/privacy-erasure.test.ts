@@ -139,6 +139,8 @@ describe("erasure execution (P4-10)", () => {
       "user_subscriptions",
       "offer_opening_notifications",
       "user_sale_unlocks",
+      "launch_offer_end_notices",
+      "launch_offer_end_notice_optouts",
     ]) {
       expect(tables).toContain(table);
     }
@@ -154,7 +156,13 @@ describe("erasure execution (P4-10)", () => {
   describe("deployment order: tables of migrations not applied yet", () => {
     const missing = { code: "PGRST205", message: "Could not find the table in the schema cache" };
 
-    it.each(["sale_signal_feedback", "weekly_digest_dispatches", "sale_result_dispatches"])(
+    it.each([
+      "sale_signal_feedback",
+      "weekly_digest_dispatches",
+      "sale_result_dispatches",
+      "launch_offer_end_notices",
+      "launch_offer_end_notice_optouts",
+    ])(
       "does not fail the erasure when %s does not exist yet (nothing to erase there)",
       async (table) => {
         state.deleteErrors[table] = missing;

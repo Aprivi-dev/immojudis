@@ -143,22 +143,27 @@ describe("operational cron errors", () => {
     );
   });
 
+  /** `run_data_retention` répond `retention` ; la purge du journal du préavis répond `noticePurge`. */
+  function retentionRpc(retention: unknown, noticePurge: unknown = { data: 0, error: null }) {
+    mocks.rpc.mockImplementation(async (name: string) =>
+      name === "purge_launch_offer_end_notices" ? noticePurge : { data: retention, error: null },
+    );
+  }
+
   it("reports a clean data retention run", async () => {
-    mocks.rpc.mockResolvedValue({ data: { user_sale_unlocks: 2 }, error: null });
+    retentionRpc({ user_sale_unlocks: 2 }, { data: 4, error: null });
 
     await expect(runDataRetention(new Date("2026-10-15T10:00:00.000Z"))).resolves.toEqual({
-      deleted: { user_sale_unlocks: 2 },
+      deleted: { user_sale_unlocks: 2, launch_offer_end_notices: 4 },
     });
     expect(mocks.rpc).toHaveBeenCalledWith("run_data_retention", {
       p_now: "2026-10-15T10:00:00.000Z",
     });
+    expect(mocks.rpc).toHaveBeenCalledWith("purge_launch_offer_end_notices");
   });
 
   it("fails the data retention job when an isolated purge failed", async () => {
-    mocks.rpc.mockResolvedValue({
-      data: { information_agent_contacts: 3, purge_errors: { purge_sale_unlocks: "57014" } },
-      error: null,
-    });
+    retentionRpc({ information_agent_contacts: 3, purge_errors: { purge_sale_unlocks: "57014" } });
 
     await expect(runDataRetention()).rejects.toThrow(
       "Data retention: purge failed: purge_sale_unlocks (57014).",
@@ -166,9 +171,25 @@ describe("operational cron errors", () => {
   });
 
   it("ignores an empty purge_errors report", async () => {
-    mocks.rpc.mockResolvedValue({ data: { purge_errors: {} }, error: null });
+    retentionRpc({ purge_errors: {} });
 
-    await expect(runDataRetention()).resolves.toEqual({ deleted: { purge_errors: {} } });
+    await expect(runDataRetention()).resolves.toEqual({
+      deleted: { purge_errors: {}, launch_offer_end_notices: 0 },
+    });
+  });
+
+  it("ignores a missing notice journal purge (migration not applied yet) but not other failures", async () => {
+    retentionRpc(
+      { user_sale_unlocks: 2 },
+      { data: null, error: { code: "PGRST202", message: "Could not find the function" } },
+    );
+    await expect(runDataRetention()).resolves.toEqual({ deleted: { user_sale_unlocks: 2 } });
+
+    retentionRpc(
+      { user_sale_unlocks: 2 },
+      { data: null, error: { code: "XX000", message: "boom" } },
+    );
+    await expect(runDataRetention()).rejects.toThrow("purge_launch_offer_end_notices");
   });
 
   it("rejects unauthorized calls with a safe request id and a structured log", async () => {

@@ -1,26 +1,18 @@
 import { LAUNCH_OFFER_DATA_TEXT, LAUNCH_OFFER_DURATION_TEXT } from "@/lib/launch-offer";
-import { PLAN_LIMITS } from "@/lib/plans";
-import { MONTHLY_SALE_UNLOCKS } from "@/lib/sale-unlocks";
+import {
+  LAUNCH_OFFER_END_NEEDS_ANALYSIS,
+  LAUNCH_OFFER_END_STAYS,
+} from "@/lib/launch-offer-end-lists";
 
 /**
  * Ce qui resterait au compte si l'offre de lancement se terminait, dit à l'avance et sans pression :
- * ni date, ni compte à rebours, ni incitation à s'abonner. Les chiffres viennent de `PLAN_LIMITS`.
+ * ni date, ni compte à rebours, ni incitation à s'abonner. Les listes sont celles du préavis par email
+ * (`launch-offer-end-lists.ts`).
  * Affiché dans /compte seulement sous l'offre de lancement (compte sans abonnement réel).
  */
 export function AccountLaunchOfferEnd() {
-  const free = PLAN_LIMITS.decouverte;
-  const stays = [
-    `${free.favoriteSales} favoris`,
-    `${free.watchedZones} alerte avec un email récapitulatif par semaine`,
-    `${MONTHLY_SALE_UNLOCKS} déblocages de ventes par mois`,
-    "« Mon dossier » : le statut et l’enchère plafond enregistrés sur vos favoris",
-  ];
-  const needsAnalysis = [
-    "le rapport PDF",
-    "l’estimation détaillée et les ventes comparables",
-    "les pièces du dossier et leur lecture sur toutes les ventes (avec le compte gratuit : les déblocages du mois)",
-    "les exports (PDF et CSV) et les rapports enregistrés",
-  ];
+  const stays = LAUNCH_OFFER_END_STAYS;
+  const needsAnalysis = LAUNCH_OFFER_END_NEEDS_ANALYSIS;
   return (
     <section
       className="mt-6 rounded-xl border border-border bg-card p-5"

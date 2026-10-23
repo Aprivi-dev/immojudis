@@ -82,7 +82,7 @@ export function landReportToLines(
           zoneCheck.matches === true
             ? " - concorde avec le zonage officiel."
             : zoneCheck.matches === false
-              ? " - diffère du zonage officiel : à vérifier dans le cahier des conditions de vente."
+              ? " - diffère du zonage officiel : à vérifier auprès de la mairie (certificat d’urbanisme)."
               : " - aucun zonage officiel à comparer."
         }`
       : "",

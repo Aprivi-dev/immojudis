@@ -1,14 +1,22 @@
 name: Check Pending Supabase Migrations
 
-# Daily read-only watchdog. It lists the supabase/migrations/*.sql files of main
+# Read-only watchdog. It lists the supabase/migrations/*.sql files of main
 # that are absent from supabase_migrations.schema_migrations in production and
 # fails (GitHub then notifies the owner) when at least one is pending.
+# It runs on every push to main that touches supabase/migrations/** (the Vercel deployment of the
+# same commit starts at the same time, and code that reads a new column or function fails until the
+# migration is applied: the alert must not wait for the next schedule) and once a day as a net.
+# On a push the run is expected to turn red until the owner dispatches "Apply Supabase Migrations".
 # It never applies anything: the only SQL it runs is a SELECT on the history table
 # (scripts/apply-supabase-migrations.mjs --dry-run --fail-on-pending).
 # It collects no data, so it is outside the collection workflows that
 # scripts/check-manual-data-collection.mjs requires to stay manual.
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/migrations/**"
   schedule:
     - cron: "10 7 * * *"
   workflow_dispatch:
@@ -29,8 +37,7 @@ jobs:
     environment: Production
     timeout-minutes: 15
     env:
-      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-      SUPABASE_DB_SSL_CA: ${{ secrets.SUPABASE_DB_SSL_CA }}
+      # Secrets are not part of the job environment: npm ci must not see them.
       SUPABASE_MIGRATION_RUNNER: postgres-js
       POSTGRES_SSL: verify-full
       PGCONNECT_TIMEOUT: "60"
@@ -66,4 +73,33 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: Compare main migrations with production history (read-only)
+        id: compare
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_SSL_CA: ${{ secrets.SUPABASE_DB_SSL_CA }}
         run: node scripts/apply-supabase-migrations.mjs --dry-run --fail-on-pending
+
+      # The script already annotates the pending list. This step adds what to do, in the run summary
+      # and as a second error annotation, so that the red run is read as an action and not as noise.
+      # The repository has no issue-based alerting (the operational alerts of the application go
+      # through operational-alert.yml, which only the application dispatches): the failed run and its
+      # GitHub notification are the signal.
+      - name: Say what to do about the failure
+        if: failure() && steps.compare.outcome == 'failure'
+        env:
+          TRIGGER: ${{ github.event_name }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          echo "::error title=Production may be behind main::Commit ${COMMIT:0:7} (${TRIGGER}): the migration check failed (pending migrations, or history unreadable: see the previous step). Deployed code may rely on pending migrations. Run the Apply Supabase Migrations workflow from main once CI is green."
+          {
+            echo "### Migrations non appliquées en production"
+            echo
+            echo "Déclencheur : \`${TRIGGER}\`, commit \`${COMMIT:0:7}\`."
+            echo
+            echo "1. Vérifier que le CI de ce commit est vert."
+            echo "2. Lancer **Apply Supabase Migrations** depuis \`main\` (saisie : \`production\`)."
+            echo "3. Tant que ce n'est pas fait, le code déployé par Vercel peut appeler une colonne ou une fonction absente."
+            echo
+            echo "Un échec peut aussi venir d'un historique incohérent ou d'une base injoignable : le journal de l'étape précédente le dit."
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -32,7 +32,7 @@ export type InformationRequestEmailProps = {
   legalFooter?: InformationAgentLegalFooter;
 };
 
-export const INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION = "information_request_v10";
+export const INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION = "information_request_v11";
 
 type BodyBlock =
   | { kind: "paragraph"; lines: string[] }

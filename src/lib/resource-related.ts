@@ -17,6 +17,7 @@ export type ResourceTopic =
   | "occupation"
   | "investissement"
   | "types-de-vente"
+  | "terrain"
   | "apres-vente";
 
 export const RESOURCE_TOPICS: Readonly<Record<string, readonly ResourceTopic[]>> = {
@@ -37,6 +38,9 @@ export const RESOURCE_TOPICS: Readonly<Record<string, readonly ResourceTopic[]>>
   "vente-encheres-immobiliere-reportee-retiree-annulee": ["procedure", "audience", "avocat"],
   "liquidation-judiciaire-vente-immeuble-entreprise-encheres": ["types-de-vente", "procedure"],
   "mise-a-prix-valeur-de-marche-dvf-lire-ecart-encheres": ["analyse", "budget"],
+  "lire-plu-bien-vendu-encheres": ["terrain", "documents", "analyse"],
+  "risques-georisques-avant-encherir": ["terrain", "analyse", "documents"],
+  "adresse-parcelle-cadastre-encheres": ["terrain", "documents", "analyse"],
 };
 
 const TOPIC_WEIGHT = 3;

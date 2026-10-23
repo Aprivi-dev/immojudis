@@ -26,7 +26,7 @@ on:
         default: "750000"
         type: string
       activate:
-        description: "Activate models that pass the promotion gates (median APE better than the active model and than the naive local reference). Off by default: models are published as drafts."
+        description: "Activate models that pass the promotion gates (median APE better than the active model and than the naive local reference, and at least 70% of the newest validation sales inside the served interval, nominal 80%). Off by default: models are published as drafts."
         required: true
         default: false
         type: boolean

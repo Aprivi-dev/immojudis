@@ -1,0 +1,374 @@
+{
+  "slug": "lire-plu-bien-vendu-encheres",
+  "publishedAt": "2026-10-23",
+  "title": "Lire le PLU d’un bien vendu aux enchères",
+  "category": "Méthode",
+  "description": "Zones U, AU, A, N, règlement, servitudes, certificat d’urbanisme : les règles à lire.",
+  "seoDescription": "Zones U, AU, A, N, règlement, servitudes, certificat d’urbanisme : lire les règles d’urbanisme d’un bien avant d’enchérir et savoir où les vérifier.",
+  "intro": [
+    "Un terrain, un immeuble à diviser, un local commercial à transformer en logement : ce que vous pourrez faire d’un bien acheté aux enchères dépend d’abord des règles d’urbanisme de la commune. Ces règles figurent dans le plan local d’urbanisme (PLU), le document qui fixe, sur un plan et dans un règlement écrit, ce qui peut être construit ou transformé. Il peut être établi par une commune ou, à l’échelle d’un groupement de communes, sous la forme d’un PLU intercommunal (PLUi).",
+    "Cet article explique comment lire un PLU quand on prépare une enchère : ses pièces, les quatre grandes zones (U, AU, A et N), le règlement, les servitudes, les sources à consulter et le certificat d’urbanisme. Il s’appuie sur le Code de l’urbanisme et sur des sites officiels. Il ne dit pas ce que vous pouvez faire d’un bien précis : seule l’autorité qui instruit les demandes, le plus souvent la mairie, peut répondre pour votre projet. Pour la suite, voir « Lire le cahier des conditions de vente et préparer la visite » et « Préemption : la commune peut-elle vous évincer ? »."
+  ],
+  "takeaways": [
+    "Un PLU comprend un rapport de présentation, un projet d’aménagement et de développement durables, des orientations d’aménagement et de programmation, un règlement et des annexes (art. L. 151-2 du Code de l’urbanisme). Les travaux doivent être conformes au règlement et à ses documents graphiques, et compatibles avec les orientations d’aménagement (art. L. 152-1).",
+    "Le règlement répartit le territoire en zones urbaines (U), à urbaniser (AU), agricoles (A) et naturelles et forestières (N) (art. R. 151-17). Une zone U n’autorise pas tout, et les zones A et N ne sont pas fermées à toute construction : lisez le règlement de la zone.",
+    "En saisie immobilière, la liste des mentions obligatoires du cahier des conditions de vente ne cite ni le zonage ni le règlement du PLU (art. R. 322-10 du Code des procédures civiles d’exécution) ; pour les autres ventes, lisez le cahier des charges. Ne présumez pas que ces règles y figurent, et vérifiez-les auprès de la mairie.",
+    "Le Géoportail de l’urbanisme donne accès aux documents d’urbanisme, mais il précise lui-même que seuls les documents détenus par la mairie, l’intercommunalité ou la préfecture font foi. Confirmez le zonage auprès de la collectivité.",
+    "Toute personne peut demander un certificat d’urbanisme, gratuitement. Il indique les règles applicables au terrain, les gèle pendant 18 mois et ne vaut pas autorisation de construire (art. L. 410-1 ; service-public.fr). La mairie dispose d’un mois (certificat d’information) ou de deux mois (certificat opérationnel) pour répondre : demandez-le tôt."
+  ],
+  "sections": [
+    {
+      "id": "pourquoi-lire",
+      "title": "Pourquoi lire le PLU avant d’enchérir",
+      "paragraphs": [
+        "Le Code de l’urbanisme impose que les travaux, constructions et aménagements soient conformes au règlement du PLU et à ses documents graphiques, et compatibles avec les orientations d’aménagement et de programmation, lorsqu’elles existent (art. L. 152-1). Ces orientations, appelées OAP, sont des dispositions qui précisent l’aménagement d’un quartier ou d’un secteur. Le PLU s’applique donc aux projets de l’acheteur, pas seulement à ceux de l’ancien propriétaire.",
+        "Le zonage n’est pas un prix, mais il pèse sur ce que le bien peut devenir : agrandir, surélever, diviser un terrain, changer l’usage d’un local. Le règlement peut interdire de construire et définir, selon les situations locales, la nature des constructions et des activités autorisées (art. L. 151-9). Deux terrains voisins, mis à prix au même montant, peuvent donc avoir un potentiel très différent.",
+        "Ne comptez pas sur le cahier pour apprendre ces règles. En saisie immobilière, les mentions obligatoires du cahier des conditions de vente sont l’énonciation du titre exécutoire, le décompte des sommes dues, le commandement de payer valant saisie, la désignation de l’immeuble, l’origine de propriété, les servitudes qui le grèvent, les baux, le procès-verbal de description, les conditions de la vente, la mise à prix et le séquestre (art. R. 322-10 du Code des procédures civiles d’exécution). Le zonage et le règlement du PLU n’y figurent pas. Un cahier peut contenir des informations d’urbanisme, par exemple dans le descriptif ou en annexe, mais cette liste ne l’impose pas et elles ne remplacent pas le document officiel. Pour les autres ventes, lisez le cahier des charges."
+      ]
+    },
+    {
+      "id": "pieces-du-plu",
+      "title": "Les cinq pièces d’un PLU, et celles qui s’imposent",
+      "paragraphs": [
+        "Un PLU comprend cinq éléments : un rapport de présentation, un projet d’aménagement et de développement durables (PADD), des orientations d’aménagement et de programmation (OAP), un règlement et des annexes (art. L. 151-2). Chacun peut comporter des documents graphiques, c’est-à-dire des plans.",
+        "Toutes les pièces n’ont pas le même poids pour un projet. En langage courant, être conforme, c’est respecter la règle telle qu’elle est écrite, et être compatible, c’est ne pas la contredire. Le Code retient la conformité pour le règlement et la compatibilité pour les OAP (art. L. 152-1). Seules la partie écrite et la partie graphique du règlement peuvent être opposées au titre de l’obligation de conformité (art. R. 151-10)."
+      ],
+      "table": {
+        "headers": ["Pièce", "Ce qu’elle contient", "Portée pour votre projet"],
+        "rows": [
+          [
+            "Rapport de présentation",
+            "Les justifications des choix de la commune, dont la délimitation des zones (art. R. 151-2).",
+            "Aide à comprendre. N’est pas une pièce du règlement, donc ne peut pas être opposé au titre de la conformité (art. R. 151-10)."
+          ],
+          [
+            "Projet d’aménagement et de développement durables (PADD)",
+            "Les orientations générales d’aménagement, d’équipement, d’urbanisme, de paysage, d’habitat et de transports (art. L. 151-5).",
+            "Cadre politique : le règlement est établi en cohérence avec lui (art. L. 151-8)."
+          ],
+          [
+            "Orientations d’aménagement et de programmation (OAP)",
+            "Des dispositions sur l’aménagement, l’habitat, les transports et les déplacements d’un quartier ou d’un secteur (art. L. 151-6 et R. 151-6).",
+            "Les travaux doivent être compatibles avec elles (art. L. 152-1)."
+          ],
+          [
+            "Règlement écrit et documents graphiques",
+            "Les zones et les règles qui s’y appliquent (art. L. 151-8 et R. 151-17).",
+            "Les travaux doivent lui être conformes (art. L. 152-1)."
+          ],
+          [
+            "Annexes",
+            "Notamment les servitudes d’utilité publique (art. L. 151-43) et des périmètres comme ceux du droit de préemption urbain (art. R. 151-52 et R. 151-53).",
+            "S’ajoutent au règlement : voir la section sur les servitudes."
+          ]
+        ]
+      }
+    },
+    {
+      "id": "zones",
+      "title": "Les quatre zones : U, AU, A et N",
+      "paragraphs": [
+        "Le règlement délimite sur ses documents graphiques les zones urbaines, les zones à urbaniser, les zones agricoles et les zones naturelles et forestières, et fixe les règles de chacune (art. R. 151-17). Sur le plan, chaque zone porte un sigle. Le tableau reprend la définition du Code et ce qu’il faut en retenir.",
+        "Le site service-public.fr résume ces zones en parlant de zone U « constructible » et de zones A et N « inconstructibles ». C’est un bon premier repère, mais le Code est plus nuancé : une zone U impose des règles de hauteur, d’implantation ou de destination, et le règlement peut autoriser, en zones A et N, certaines constructions et extensions."
+      ],
+      "table": {
+        "headers": ["Zone", "Ce que dit le Code", "Ce que cela suggère", "À vérifier"],
+        "rows": [
+          [
+            "U : zone urbaine",
+            "Secteurs déjà urbanisés et secteurs où les équipements publics existants ou en cours de réalisation ont une capacité suffisante pour desservir les constructions à implanter (art. R. 151-18).",
+            "Un bien déjà dans le tissu urbain. Cela ne dit pas ce qu’on peut y faire.",
+            "Le secteur de la zone, la hauteur, l’implantation, les usages admis, les emplacements réservés."
+          ],
+          [
+            "AU : zone à urbaniser",
+            "Secteurs destinés à être ouverts à l’urbanisation. Si les voies et réseaux en périphérie immédiate ont une capacité suffisante et que les OAP et le règlement fixent les conditions d’aménagement, les constructions sont autorisées dans le cadre d’une opération d’ensemble ou au fur et à mesure des équipements. Sinon, l’ouverture suppose une modification ou une révision du PLU (art. R. 151-20).",
+            "Un terrain dont l’avenir dépend d’un projet d’aménagement ou d’une procédure de la commune.",
+            "Si la zone est déjà ouverte à l’urbanisation, l’OAP qui la concerne, les conditions posées."
+          ],
+          [
+            "A : zone agricole",
+            "Secteurs à protéger en raison du potentiel agronomique, biologique ou économique des terres agricoles (art. R. 151-22). Y peuvent être autorisées les constructions nécessaires à l’exploitation agricole, ainsi que les extensions, annexes, changements de destination et aménagements prévus aux articles L. 151-11 à L. 151-13, dans les conditions fixées par ceux-ci (art. R. 151-23).",
+            "Une vocation agricole. Le Code limite ce qui peut y être construit.",
+            "Les bâtiments existants, les changements de destination que le règlement désigne, les petits secteurs exceptionnels où il autorise des constructions (art. L. 151-13)."
+          ],
+          [
+            "N : zone naturelle et forestière",
+            "Secteurs à protéger pour la qualité des sites, milieux et paysages, une exploitation forestière, leur caractère d’espaces naturels, les ressources naturelles ou la prévention des risques, notamment d’expansion des crues (art. R. 151-24). Les autorisations possibles sont du même ordre qu’en zone A (art. R. 151-25).",
+            "Une vocation de protection. Les possibilités de construire sont limitées.",
+            "Les mêmes points qu’en zone A, et les risques naturels de la zone."
+          ]
+        ]
+      },
+      "callout": {
+        "title": "Un sigle ne suffit pas",
+        "text": "Le règlement peut diviser une zone en secteurs aux règles différentes (art. R. 151-21 en donne un exemple pour les zones U et AU), et les noms de ces secteurs varient d’une commune à l’autre. Seuls la légende du plan et le règlement de la commune disent ce que recouvre un sigle."
+      }
+    },
+    {
+      "id": "lire-le-reglement",
+      "title": "Lire le règlement et les OAP : quatre repères",
+      "paragraphs": [
+        "Une fois la zone repérée sur le plan, ouvrez le règlement écrit de cette zone. Le règlement fixe les règles générales et les servitudes d’utilisation des sols (art. L. 151-8). Selon la fiche de service-public.fr sur l’achat d’un terrain à bâtir, les règles d’urbanisme précisent notamment le zonage, les constructions autorisées, les règles d’implantation et de hauteur, les zones à risques, les servitudes et les projets publics prévus, comme les emplacements réservés.",
+        "Quatre repères aident à une première lecture. Ils ne remplacent pas la lecture complète du règlement."
+      ],
+      "bullets": [
+        "Les usages permis. Le Code distingue cinq destinations de construction : exploitation agricole et forestière, habitation, commerce et activités de service, équipements d’intérêt collectif et services publics, autres activités des secteurs primaire, secondaire ou tertiaire (art. R. 151-27). Transformer un local commercial en logement, c’est passer du commerce à l’habitation : cherchez si le règlement de la zone l’admet.",
+        "Les gabarits. La hauteur et les règles d’implantation déterminent ce que vous pourrez agrandir ou surélever.",
+        "Les emplacements réservés. Le règlement peut réserver des terrains à des voies et ouvrages publics, à des installations d’intérêt général ou à des espaces verts (art. L. 151-41). Repérez-les sur le plan : un terrain concerné ne se prête pas à n’importe quel projet.",
+        "Les OAP du secteur. Si le bien se trouve dans un secteur couvert par une OAP, lisez-la. Pour certains secteurs de zones U et AU dont le règlement ne fixe pas les conditions d’aménagement, elle porte au moins sur l’insertion architecturale, urbaine et paysagère, la mixité, la qualité environnementale et la prévention des risques, le stationnement, les transports en commun et la desserte, et elle comporte un schéma d’aménagement (art. R. 151-8)."
+      ]
+    },
+    {
+      "id": "servitudes-annexes",
+      "title": "Servitudes et annexes : ce qui s’ajoute au règlement",
+      "paragraphs": [
+        "Une servitude d’utilité publique est une limitation administrative au droit de propriété, décidée dans l’intérêt général : service-public.fr cite les mines, les canalisations et les captages d’eau. Le PLU comporte en annexe les servitudes d’utilité publique qui affectent l’utilisation du sol et figurent sur une liste fixée par décret en Conseil d’État (art. L. 151-43). Un an après l’approbation du PLU, seules les servitudes annexées au plan ou publiées sur le portail national de l’urbanisme peuvent être opposées aux demandes d’autorisation d’occupation du sol (art. L. 152-7).",
+        "Ne confondez pas ces servitudes avec celles du cahier des conditions de vente. En saisie immobilière, le cahier mentionne les servitudes qui grèvent l’immeuble (art. R. 322-10), par exemple un droit de passage au profit d’un voisin. Les servitudes d’utilité publique du PLU ne figurent pas forcément dans cette rubrique : vérifiez les deux.",
+        "Les annexes recensent aussi des périmètres utiles à un acheteur aux enchères. Les périmètres du droit de préemption urbain et les zones d’aménagement différé y figurent (art. R. 151-52, 7°) : voir « Préemption : la commune peut-elle vous évincer ? ». Les secteurs d’information sur les sols, les secteurs soumis à l’obligation de débroussaillement et les dispositions d’un projet de plan de prévention des risques naturels rendues opposables par anticipation y figurent aussi (art. R. 151-53, 9°, 10° et 13°) : voir « Risques naturels et Géorisques avant d’enchérir »."
+      ]
+    },
+    {
+      "id": "ou-consulter",
+      "title": "Où consulter le PLU, et ce que valent les sources",
+      "paragraphs": [
+        "La mairie est le premier interlocuteur. Service-public.fr indique que le PLU se consulte sur internet ou auprès de la mairie. Le Géoportail de l’urbanisme précise que, pour toute question sur les règles d’urbanisme, il faut s’adresser à la collectivité qui a la compétence urbanisme : la mairie, ou le siège de l’intercommunalité si la compétence lui a été transférée. La préfecture est aussi un recours.",
+        "Le Géoportail de l’urbanisme est le portail national de l’urbanisme, le site qui donne accès aux documents d’urbanisme et aux servitudes d’utilité publique (art. L. 133-1). Depuis le 1er janvier 2023, un PLU nouvellement approuvé ou modifié doit être publié sur ce portail pour devenir exécutoire (art. L. 153-23 ; foire aux questions du site), sauf difficulté technique avérée du portail. Les versions entrées en vigueur avant cette date restent exécutoires même si elles n’y figurent pas. Le site apporte aussi une réserve dans sa foire aux questions : l’alimentation a été progressive, l’absence d’un document ne signifie pas que la commune n’est pas couverte, et les données chargées ont un caractère informatif, seuls les documents détenus au siège de la commune, de l’intercommunalité ou de la préfecture faisant foi. Retenez que le Géoportail permet de trouver et de lire, et que la mairie permet de confirmer.",
+        "Sans PLU, d’autres règles s’appliquent. Une carte communale comprend un rapport de présentation et des documents graphiques, avec les servitudes d’utilité publique en annexe (art. L. 161-1). En l’absence de PLU, de document en tenant lieu ou de carte communale, le règlement national d’urbanisme s’applique et les constructions ne peuvent être autorisées que dans les parties urbanisées de la commune (art. L. 111-1 et L. 111-3). Les plans d’occupation des sols qui n’avaient pas été transformés en PLU au 31 décembre 2015 sont devenus caducs, sous réserve de cas particuliers (art. L. 174-1)."
+      ],
+      "callout": {
+        "title": "Dans Immojudis",
+        "text": "Sur la fiche d’une vente, le bloc « Urbanisme & cadastre » recherche la parcelle à partir de l’annonce ou de l’adresse, puis affiche le zonage, des extraits du règlement, les servitudes repérées et les risques, avec un lien vers chaque pièce officielle et la date de consultation des sources. Si l’annonce cite une zone, la fiche la compare au zonage officiel et signale une différence. Quand une source ne répond pas, la fiche écrit « non vérifiées » plutôt que « aucune ». L’accès au dossier « PLU et risques » dépend de l’offre : voir la page Offres. Ce bloc oriente la lecture ; il ne remplace ni le document de la mairie ni le certificat d’urbanisme."
+      }
+    },
+    {
+      "id": "certificat-urbanisme",
+      "title": "Le certificat d’urbanisme : demander la réponse officielle",
+      "paragraphs": [
+        "Le certificat d’urbanisme (CU) est un document délivré par l’autorité compétente, le plus souvent la mairie, qui indique les règles applicables à un terrain. Il en existe deux formes (art. L. 410-1). Le certificat d’information indique les dispositions d’urbanisme, les limitations administratives au droit de propriété et la liste des taxes et participations d’urbanisme applicables. Le certificat opérationnel indique en plus, lorsque la demande précise l’opération envisagée, si le terrain peut être utilisé pour la réaliser et l’état des équipements publics existants ou prévus.",
+        "Toute personne peut le demander, pas seulement le propriétaire : service-public.fr cite l’acquéreur potentiel, le notaire et le professionnel de l’immobilier. La demande est gratuite, et la mairie n’informe pas le propriétaire quand le certificat est délivré à un tiers. Elle indique la localisation, la superficie et les références cadastrales du terrain (art. R*410-1) : voir « Adresse, parcelle et cadastre : situer le bien ».",
+        "La mairie dispose d’un mois à compter de la réception de la demande pour un certificat d’information (art. R*410-9) et de deux mois pour un certificat opérationnel (art. R*410-10). Le silence de la mairie vaut certificat tacite, qui ne garantit que les règles d’urbanisme, les limitations administratives et la liste des taxes (service-public.fr). En saisie immobilière, l’avis de vente est publié entre un et deux mois avant l’audience (art. R. 322-31 du Code des procédures civiles d’exécution) : faites la demande dès que le dossier est connu, car la réponse peut arriver après l’audience.",
+        "Le certificat est valable 18 mois. Si une demande d’autorisation est déposée dans ce délai, les dispositions d’urbanisme, le régime des taxes et les limitations administratives tels qu’ils existaient à la date du certificat ne peuvent être remis en cause, sauf pour préserver la sécurité ou la salubrité publiques (art. L. 410-1). La prorogation d’un an est possible, sur demande présentée deux mois au moins avant l’expiration, si les règles, servitudes et taxes n’ont pas changé (service-public.fr)."
+      ],
+      "callout": {
+        "title": "Ce que le certificat ne fait pas",
+        "text": "Le certificat d’urbanisme n’est pas une autorisation d’urbanisme (service-public.fr). Il ne permet pas de commencer des travaux. Il doit aussi mentionner un éventuel sursis à statuer, c’est-à-dire une décision différée sur une demande de permis (art. L. 410-1 et L. 424-1)."
+      }
+    },
+    {
+      "id": "limites-et-questions",
+      "title": "Ce que le PLU ne dit pas, et vos questions avant l’audience",
+      "paragraphs": [
+        "Un PLU décrit des règles à une date donnée, pas la situation de fait d’un bien."
+      ],
+      "bullets": [
+        "Il peut changer. Le PLU est révisé quand la commune change les orientations de son PADD (art. L. 153-31) et fait en principe l’objet d’une procédure de modification dans les autres cas (art. L. 153-36). Un projet de modification est soumis au public, par mise à disposition pendant un mois, par participation électronique ou par enquête publique (art. L. 153-41). Le certificat d’urbanisme fige les règles pendant 18 mois.",
+        "Il ne dit pas si les constructions existantes ont été autorisées ni si les travaux déjà faits sont réguliers. Posez la question à l’avocat et au service de l’urbanisme.",
+        "Il ne dit rien du prix. Un zonage favorable ne rend pas une mise à prix attractive, et un zonage restrictif ne la rend pas mauvaise : voir « Mise à prix et valeur de marché : lire un écart sans se tromper ».",
+        "Il ne remplace pas la lecture du cahier des conditions de vente, des diagnostics et de la copropriété."
+      ],
+      "callout": {
+        "title": "Cinq questions à poser avant d’enchérir",
+        "text": "Dans quelle zone et quel secteur se trouve la parcelle ? Le règlement admet-il l’usage que j’envisage ? Le bien est-il concerné par une servitude d’utilité publique, un emplacement réservé, une OAP ou un périmètre de préemption ? Le document consulté est-il la version en vigueur, avec sa date d’approbation et sa dernière modification ? Ai-je demandé un certificat d’urbanisme, et la réponse arrivera-t-elle avant l’audience ? Ni le PLU ni le certificat ne valent autorisation de construire ou de transformer : ils donnent les règles selon lesquelles votre projet sera instruit."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "label": "Légifrance — Code de l’urbanisme, article L. 151-2 (contenu du plan local d’urbanisme)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000031211149"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article L. 151-5 (projet d’aménagement et de développement durables)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000047303404"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article L. 151-6 (orientations d’aménagement et de programmation)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000043978102"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article L. 151-8 (règlement)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000031211169"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article L. 151-9 (zones, affectation des sols, destination des constructions)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000031211173"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article L. 151-11 (constructions et changements de destination en zones agricoles et naturelles)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000047303685"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article L. 151-12 (extensions et annexes des bâtiments d’habitation existants)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000031211181"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article L. 151-13 (secteurs exceptionnels en zones agricoles et naturelles)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000037667291"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article L. 151-41 (emplacements réservés)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000043978366"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article L. 151-43 (servitudes d’utilité publique en annexe)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000031211257"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article L. 152-1 (conformité au règlement, compatibilité avec les OAP)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000031211275"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article L. 152-7 (opposabilité des servitudes d’utilité publique)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000039101861"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article L. 153-23 (publication sur le portail national de l’urbanisme)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000044190577"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article L. 153-31 (révision du plan local d’urbanisme)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000052866290"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article L. 153-36 (modification du plan local d’urbanisme)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000052866306"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article L. 153-41 (mise à disposition du public d’un projet de modification)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000052866324"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article L. 133-1 (portail national de l’urbanisme)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000043978398"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, articles L. 111-1 et L. 111-3 (règlement national d’urbanisme)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000031210179"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article L. 161-1 (carte communale)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000031211478"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article L. 174-1 (caducité des plans d’occupation des sols)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000031211566"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article L. 410-1 (certificat d’urbanisme)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000037667619"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article L. 424-1 (sursis à statuer)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000043978479"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article R*410-1 (demande de certificat d’urbanisme)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000031764607"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article R*410-9 (délai d’instruction du certificat d’information)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000006818970"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article R*410-10 (délai d’instruction du certificat opérationnel)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000031764615"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article R. 151-2 (rapport de présentation)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000031720655"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article R. 151-6 (orientations d’aménagement par quartier ou secteur)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000031720645"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article R. 151-8 (orientations d’aménagement des zones U et AU)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000031720641"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article R. 151-10 (parties du règlement opposables)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000031720633"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article R. 151-17 (zones du règlement)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000031720617"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article R. 151-18 (zones urbaines)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000031720615"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article R. 151-20 (zones à urbaniser)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000031720611"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article R. 151-21 (secteurs à l’intérieur des zones U et AU)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000031720609"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article R. 151-22 (zones agricoles)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000031720607"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article R. 151-23 (constructions autorisées en zone agricole)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000031720605"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article R. 151-24 (zones naturelles et forestières)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000031720603"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article R. 151-25 (constructions autorisées en zone naturelle)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000031720601"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article R. 151-27 (destinations des constructions)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000047337112"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article R. 151-52 (annexes du plan local d’urbanisme)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000047337075"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article R. 151-53 (autres annexes du plan local d’urbanisme)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000052100237"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-10 (contenu du cahier des conditions de vente)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939072"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-31 (avis de vente)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000039343494"
+    },
+    {
+      "label": "Service-public.fr — Certificat d’urbanisme (fiche vérifiée le 2 juillet 2025)",
+      "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F1633"
+    },
+    {
+      "label": "Service-public.fr — Quelles questions d’urbanisme poser avant de construire une maison ? (fiche vérifiée le 23 juin 2025)",
+      "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F36909"
+    },
+    {
+      "label": "Service-public.fr — Précautions avant d’acheter un terrain à bâtir (fiche vérifiée le 22 août 2025)",
+      "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F33818"
+    },
+    {
+      "label": "Géoportail de l’urbanisme — portail national de l’urbanisme",
+      "url": "https://www.geoportail-urbanisme.gouv.fr/"
+    },
+    {
+      "label": "Géoportail de l’urbanisme — foire aux questions (valeur juridique des documents, interlocuteurs)",
+      "url": "https://www.geoportail-urbanisme.gouv.fr/faq/"
+    },
+    {
+      "label": "Immojudis — Les ventes à venir : le bloc « Urbanisme & cadastre » de chaque fiche",
+      "url": "/sales"
+    },
+    {
+      "label": "Immojudis — Les offres d’accès, dont le dossier « PLU et risques »",
+      "url": "/offres"
+    }
+  ]
+}

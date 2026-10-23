@@ -176,10 +176,13 @@ export async function listSaleChangeEvents({
   auth,
   limit = DEFAULT_SALE_CHANGE_EVENT_LIMIT,
   includeDismissed = false,
+  saleId,
 }: {
   auth: SupabaseAuthContext;
   limit?: number;
   includeDismissed?: boolean;
+  /** Une seule vente (fiche de la vente : « plafond à vérifier ») ; absent : toutes les ventes suivies. */
+  saleId?: string;
 }): Promise<SaleChangeEventListResponse> {
   await assertRealtimeChangesAvailable(auth);
 
@@ -191,6 +194,7 @@ export async function listSaleChangeEvents({
     .limit(clampLimit(limit, MAX_SALE_CHANGE_EVENT_LIMIT));
 
   if (!includeDismissed) query = query.is("dismissed_at", null);
+  if (saleId) query = query.eq("sale_id", saleId);
 
   const { data, error } = await query;
   if (error) throw error;

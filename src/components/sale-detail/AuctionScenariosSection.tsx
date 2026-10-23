@@ -12,13 +12,13 @@ import {
   PROPERTY_GROUP_LABELS,
   RELIABILITY_EXPLANATIONS,
   RELIABILITY_LABELS,
-  STARTING_PRICE_BAND_LABELS,
   formatDataAsOf,
   formatEuro,
   formatPercent,
   formatRatio,
   largestRemainderPercentages,
   scenarioPropertyGroup,
+  startingPriceBandLabel,
   type AuctionScenario,
   type AuctionScenariosResponse,
   type AuctionScenarioSet,
@@ -137,6 +137,8 @@ export function AuctionScenariosSection({
         0,
       )
     : 0;
+  // Only the band of this sale's price: an older database grid would name a wrong range.
+  const bandLabel = figures ? startingPriceBandLabel(figures.band, startingPrice) : null;
   const currentYear = new Date().getFullYear();
 
   return (
@@ -169,8 +171,8 @@ export function AuctionScenariosSection({
                 {number.format(figures.nationalSample)} ventes comparables des tribunaux couverts
               </>
             )}{" "}
-            sur les trois dernières années, pour des mises à prix de{" "}
-            {STARTING_PRICE_BAND_LABELS[figures.band ?? 0] ?? "même niveau"}
+            sur les trois dernières années
+            {bandLabel ? `, pour des mises à prix ${bandLabel}` : ""}
             {propertyGroup ? `, en ne comparant que ${PROPERTY_GROUP_LABELS[propertyGroup]}` : ""}.
           </p>
           {figures.reliability ? (

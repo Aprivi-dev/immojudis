@@ -187,7 +187,7 @@ describe("SearchLawyerPlacement", () => {
       ),
     ).toBeTruthy();
     expect(screen.getByRole("link", { name: "Présenter mon cabinet" }).getAttribute("href")).toBe(
-      "/contact",
+      "/contact?sujet=avocat",
     );
   });
 

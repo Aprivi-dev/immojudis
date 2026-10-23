@@ -96,6 +96,7 @@ export function mapboxStaticImageUrl({
   style,
   pixelRatio = 2,
   format,
+  overlay: extraOverlay,
 }: {
   lat: number;
   lng: number;
@@ -105,6 +106,8 @@ export function mapboxStaticImageUrl({
   width?: number;
   height?: number;
   marker?: boolean;
+  /** Recouvrement déjà encodé (par exemple `geojson(...)`), tracé sous le repère. */
+  overlay?: string;
   style?: string;
   /** 2 (défaut) ajoute le suffixe "@2x" ; 1 demande l'image à la densité normale. */
   pixelRatio?: 1 | 2;
@@ -123,7 +126,9 @@ export function mapboxStaticImageUrl({
     camera.push(formatCoordinate(clamp(pitch ?? 0, 0, 85)));
   }
   const center = camera.join(",");
-  const overlay = marker ? `pin-s+0f766e(${formatCoordinate(lng)},${formatCoordinate(lat)})/` : "";
+  const pin = marker ? `pin-s+0f766e(${formatCoordinate(lng)},${formatCoordinate(lat)})` : "";
+  const overlays = [extraOverlay, pin].filter(Boolean).join(",");
+  const overlay = overlays && `${overlays}/`;
 
   return `https://api.mapbox.com/styles/v1/${stylePath}/static/${overlay}${center}/${safeWidth}x${safeHeight}${pixelRatio === 2 ? "@2x" : ""}${
     format ? `.${format}` : ""

@@ -16,6 +16,8 @@ export type PipelineSourceState = {
     publication_pending?: number;
     publication_failed?: number;
     publication_published?: number;
+    /** Ce qui empêche la publication d'être « complète » (vide : rien). */
+    publication_blockers?: string[];
     observed_at?: string;
     stop_reason?: string;
   };
