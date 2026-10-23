@@ -21,3 +21,11 @@ export const MARKET_NON_JACKKNIFE_MIN_COMPARABLES = 8;
  * résidus), donc franchit la porte sur ce critère ; 4 ou 5 comparables ne le peuvent jamais.
  */
 export const MARKET_WIDEN_UNTIL_COMPARABLES = MARKET_JACKKNIFE_MIN_COMPARABLES;
+
+/**
+ * Couverture minimale, en % des ventes de validation, de l'intervalle d'un modèle statistique pour
+ * qu'il soit mis en service (niveau nominal : 80 %). Recopiée de `MIN_PROMOTION_COVERAGE_PCT`
+ * (services/data-pipeline/src/valuation_training.py) ; `market-comparable-minimums.test.ts` relit
+ * le source Python pour que les deux ne divergent pas. Citée par la page méthode.
+ */
+export const VALUATION_MODEL_MIN_COVERAGE_PCT = 70;
