@@ -1,4 +1,5 @@
 import { predictLightGbmQuantiles } from "@/lib/lightgbm-inference";
+import { hasLocalMarketExport, localMarketFeaturesFromArtifact } from "@/lib/local-market-features";
 import type { MarketPropertySegment } from "@/lib/market-estimation-engine";
 import { loadActiveValuationModel } from "@/lib/valuation-model-registry";
 
@@ -42,7 +43,9 @@ export async function applyActiveHybridModel(
 ): Promise<HybridValuationResult | null> {
   const model = await loadActiveValuationModel(input.segment);
   if (!model || model.framework !== "lightgbm_quantile") return null;
-  const prediction = predictLightGbmQuantiles(model.artifact, valuationFeatures(input));
+  const features = valuationFeatures(input, model.artifact);
+  if (!features) return null;
+  const prediction = predictLightGbmQuantiles(model.artifact, features);
   if (!prediction) return null;
 
   const modelWeight = resolveModelWeight(input.comparableQualityScore, model.training_metrics);
@@ -77,9 +80,27 @@ export async function applyActiveHybridModel(
   };
 }
 
-function valuationFeatures(input: HybridValuationInput): Record<string, number | null> {
+/**
+ * Variables du modèle. Les trois variables de marché local viennent de l'export `localMarket` de
+ * l'artefact (`local-market-features.ts`), c'est-à-dire du même calcul qu'à l'entraînement : un
+ * modèle n'est jamais alimenté avec des variables locales construites autrement que celles sur
+ * lesquelles il a appris. Un export d'un format inconnu ou mal formé fait renoncer au modèle
+ * (`null`), l'estimation reste alors celle des comparables.
+ *
+ * Transition : un artefact antérieur à l'export (sans `localMarket`) a été entraîné avec une
+ * définition qu'on ne peut plus reproduire ; on lui garde l'ancienne approximation tirée des
+ * comparables du moteur jusqu'à son remplacement par un modèle réentraîné.
+ */
+function valuationFeatures(
+  input: HybridValuationInput,
+  artifact: unknown,
+): Record<string, number | null> | null {
   const now = input.now ?? new Date();
   const monthAngle = (2 * Math.PI * now.getUTCMonth()) / 12;
+  const local = hasLocalMarketExport(artifact)
+    ? localMarketFeaturesFromArtifact(artifact, input.latitude, input.longitude)
+    : legacyLocalFeatures(input);
+  if (!local) return null;
   return {
     surface_m2: input.surfaceM2,
     log_surface_m2: Math.log(input.surfaceM2),
@@ -91,13 +112,19 @@ function valuationFeatures(input: HybridValuationInput): Record<string, number |
     sale_year: now.getUTCFullYear(),
     sale_month_sin: Math.sin(monthAngle),
     sale_month_cos: Math.cos(monthAngle),
-    local_median_log: Math.log(input.comparableMedianPricePerM2),
-    local_spread_log: Math.log(input.comparableP90PricePerM2 / input.comparableP10PricePerM2),
+    ...local,
     local_sample_size: input.comparableSampleSize,
-    local_sample_size_log: Math.log1p(input.comparableSampleSize),
     local_quality_score: input.comparableQualityScore,
     annual_market_trend_pct: input.annualMarketTrendPct,
     radius_m: input.radiusM,
+  };
+}
+
+function legacyLocalFeatures(input: HybridValuationInput) {
+  return {
+    local_median_log: Math.log(input.comparableMedianPricePerM2),
+    local_spread_log: Math.log(input.comparableP90PricePerM2 / input.comparableP10PricePerM2),
+    local_sample_size_log: Math.log1p(input.comparableSampleSize),
   };
 }
 
