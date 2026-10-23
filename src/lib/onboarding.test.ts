@@ -1,6 +1,57 @@
 import { describe, expect, it } from "vitest";
-import { firstSearchToUrl, postAuthDestination } from "./onboarding";
+import { firstSearchToUrl, postAuthDestination, saleDetailReturnPath } from "./onboarding";
 import { validateSalesSearch } from "./search/search-url-state";
+
+const SALE = "4655881c-249d-4eab-beba-f2624d8a1af0";
+
+describe("inscription depuis une fiche", () => {
+  it("passe par /bienvenue puis retrouve la fiche", () => {
+    expect(
+      postAuthDestination({ mode: "investor", professional: false, redirect: `/sales/${SALE}` }),
+    ).toBe(`/bienvenue?retour=${encodeURIComponent(`/sales/${SALE}`)}`);
+  });
+  it("garde l'origine de la fiche", () => {
+    const sale = `/sales/${SALE}?from=${encodeURIComponent("/favoris")}`;
+    expect(postAuthDestination({ mode: "investor", professional: false, redirect: sale })).toBe(
+      `/bienvenue?retour=${encodeURIComponent(sale)}`,
+    );
+  });
+  it("renvoie directement à la fiche une personne qui se connecte ou un compte pro", () => {
+    expect(
+      postAuthDestination({ mode: "login", professional: false, redirect: `/sales/${SALE}` }),
+    ).toBe(`/sales/${SALE}`);
+    expect(
+      postAuthDestination({ mode: "investor", professional: true, redirect: `/sales/${SALE}` }),
+    ).toBe(`/sales/${SALE}`);
+  });
+  it.each([
+    `/sales/${SALE}`,
+    `/sales/${SALE.toUpperCase()}`,
+    `/sales/${SALE}?from=${encodeURIComponent("/sales?map=true")}`,
+  ])("accepte la fiche %s", (value) => {
+    expect(saleDetailReturnPath(value)).toBeDefined();
+  });
+  it.each([
+    undefined,
+    null,
+    42,
+    "",
+    "/sales",
+    "/sales/sale-1",
+    "//evil.example/sales/x",
+    `https://evil.example/sales/${SALE}`,
+    `/sales/${SALE}/autre`,
+    `/sales/${SALE}?utm=1`,
+    `/sales/${SALE}#ancre`,
+  ])("refuse %s", (value) => {
+    expect(saleDetailReturnPath(value)).toBeUndefined();
+  });
+  it("ignore une origine non valide sans refuser la fiche", () => {
+    expect(saleDetailReturnPath(`/sales/${SALE}?from=https%3A%2F%2Fevil.example`)).toBe(
+      `/sales/${SALE}`,
+    );
+  });
+});
 
 describe("first-search onboarding", () => {
   it("guides new investors, including a generic catalogue redirect", () => {

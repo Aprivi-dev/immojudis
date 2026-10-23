@@ -11,10 +11,12 @@ import {
   fetchAccessPlan,
   fetchNotificationPreferences,
 } from "@/lib/client-api";
+import { ALERT_CREATION_PATH } from "@/lib/discovery-alerts";
 import type { GeoPoint } from "@/lib/geo";
 import { OFFERS_PATH, loginPathWithRedirect } from "@/lib/navigation";
 import { trackProductEvent } from "@/lib/product-events";
 import { queryKeys } from "@/lib/query-keys";
+import { savePendingAlert } from "@/lib/pending-alert";
 import { createAlert } from "@/lib/queries";
 import {
   countAlertableSearchFilters,
@@ -107,7 +109,15 @@ export function useCreateAlert({
       }
       if (!user) {
         // La première alerte est gratuite : on invite à créer un compte puis on
-        // ramène la personne sur sa recherche.
+        // ramène la personne sur sa recherche. La demande est gardée pour être créée à la
+        // connexion (`PendingAlertRunner`), sauf depuis la page de confirmation d'une alerte
+        // (`/alertes/creer`) : la personne y retrouve ses critères et confirme elle-même.
+        if (
+          countAlertableSearchFilters(search) > 0 &&
+          !(returnTo ?? "").startsWith(ALERT_CREATION_PATH)
+        ) {
+          savePendingAlert(search, options);
+        }
         router.push(loginPathWithRedirect(returnTo, { reason: "alerte" }));
         return { status: "login" };
       }
@@ -235,5 +245,8 @@ export function useCreateAlert({
     ],
   );
 
-  return { createAlertFromSearch, saving, emailRecapEnabled };
+  /** Les droits du compte sont lus : une création lancée maintenant ne sera pas refusée « en cours ». */
+  const ready = Boolean(user) && !authLoading && !entitlementsLoading && Boolean(entitlements);
+
+  return { createAlertFromSearch, saving, emailRecapEnabled, ready };
 }
