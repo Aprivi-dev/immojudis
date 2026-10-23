@@ -13,14 +13,15 @@ set local lock_timeout = '5s';
 -- Cette migration commence à COLLECTER, rien d'autre : aucune lecture par l'application, aucun affichage.
 --
 -- 1. Table privée app_private.sale_market_estimate_snapshots : un instantané par vente, écrit juste avant la
---    disparition de la ligne d'estimation, sans donnée personnelle, sans adresse, sans commune ni code postal,
---    sans identifiant de vente réutilisable. Colonnes : tribunal (code), département, type de bien et groupe de
+--    disparition de la ligne d'estimation, sans donnée directement identifiante : ni adresse, ni commune, ni
+--    code postal, ni identifiant de vente en clair. Colonnes : tribunal (code), département, type de bien et groupe de
 --    comparaison (app_private.scenario_property_group, celui des scénarios), mise à prix, date d'audience (jour,
 --    heure de Paris), estimation P10 / P50 / P90 (le moteur ne stocke pas de P25 / P75), actionable, nombre de
 --    comparables, indice de confiance, moteur et version du modèle, date de l'instantané.
---    La clé d'unicité (snapshot_key) est l'empreinte SHA-256 de l'identifiant de la vente : elle garantit « une
---    seule fois par vente » sans conserver l'identifiant (la vente, elle, est purgée ; l'empreinte ne se
---    rattache à plus aucune ligne).
+--    La clé d'unicité (snapshot_key) est l'empreinte SHA-256 non salée de l'identifiant de la vente : elle
+--    garantit « une seule fois par vente » sans conserver l'identifiant en clair. C'est une pseudonymisation, pas
+--    une anonymisation : tant que l'identifiant de la vente existe ailleurs, l'empreinte peut lui être
+--    rattachée en la recalculant.
 -- 2. Deux points d'écriture, tous deux AVANT la suppression de la ligne d'estimation :
 --    * déclencheur BEFORE DELETE sur public.auction_sales : la purge à l'heure de l'audience (le cas de loin le plus
 --      fréquent : la vente est encore « upcoming ») et la suppression d'un doublon ; c'est le seul point où la
@@ -65,7 +66,7 @@ create index if not exists sale_market_estimate_snapshots_court_date_idx
   on app_private.sale_market_estimate_snapshots (court_code, sale_date);
 
 comment on table app_private.sale_market_estimate_snapshots is
-  'Un instantané par vente de tribunal, écrit juste avant la disparition de la ligne d''estimation (purge à l''audience ou sortie des statuts active/upcoming) : tribunal, département, type de bien, mise à prix, date d''audience, estimation P10/P50/P90 et qualité. Aucune adresse, aucun identifiant de vente (snapshot_key = SHA-256 de l''identifiant). Sert à apparier plus tard estimation et prix d''adjudication agrégé. Conservé 36 mois après l''audience (app_private.market_estimate_snapshot_retention), purgé par run_data_retention.';
+  'Un instantané par vente de tribunal, écrit juste avant la disparition de la ligne d''estimation (purge à l''audience ou sortie des statuts active/upcoming) : tribunal, département, type de bien, mise à prix, date d''audience, estimation P10/P50/P90 et qualité. Ne contient pas de donnée directement identifiante : aucune adresse, aucun identifiant de vente en clair (snapshot_key = empreinte SHA-256 non salée de l''identifiant de la vente : pseudonymisation, pas anonymisation, tant que l''identifiant existe ailleurs). Sert à apparier plus tard estimation et prix d''adjudication agrégé. Conservé 36 mois après l''audience (app_private.market_estimate_snapshot_retention), purgé par run_data_retention.';
 
 alter table app_private.sale_market_estimate_snapshots enable row level security;
 revoke all on table app_private.sale_market_estimate_snapshots from public, anon, authenticated;
