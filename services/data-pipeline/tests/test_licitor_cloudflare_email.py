@@ -28,6 +28,15 @@ CONTACT_WITHOUT_EMAIL = (
 )
 
 
+@pytest.fixture(autouse=True)
+def _decoding_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Le décodage est désactivé par défaut : les tests de décodage l'activent explicitement.
+
+    Les tests de l'interrupteur (plus bas) posent ou retirent eux-mêmes la variable.
+    """
+    monkeypatch.setenv("LICITOR_DECODE_PROTECTED_EMAILS", "true")
+
+
 def cloudflare_encode(email: str, key: int = 0x2A) -> str:
     """Encodage Cloudflare : la clé, puis chaque octet XOR la clé (hexadécimal)."""
     return f"{key:02x}" + "".join(f"{byte ^ key:02x}" for byte in email.encode())
@@ -353,13 +362,18 @@ def test_a_failing_decoder_never_fails_the_page(monkeypatch: pytest.MonkeyPatch,
 # --- Interrupteur de suspension : LICITOR_DECODE_PROTECTED_EMAILS -----------------------------------------
 
 
-@pytest.mark.parametrize("value", ["false", "0", "off", "no", "non", "disabled", "FALSE", "Off", " false "])
-def test_switch_off_removes_the_masked_nodes_but_decodes_and_keeps_nothing(
-    monkeypatch: pytest.MonkeyPatch, value: str
+@pytest.mark.parametrize(
+    "value", [None, "", "false", "0", "off", "no", "non", "disabled", "FALSE", "Off", " false ", "garbage"]
+)
+def test_switch_is_off_by_default_and_for_any_value_that_is_not_explicitly_true(
+    monkeypatch: pytest.MonkeyPatch, value: str | None
 ) -> None:
     from src.sources import common
 
-    monkeypatch.setenv("LICITOR_DECODE_PROTECTED_EMAILS", value)
+    if value is None:
+        monkeypatch.delenv("LICITOR_DECODE_PROTECTED_EMAILS", raising=False)
+    else:
+        monkeypatch.setenv("LICITOR_DECODE_PROTECTED_EMAILS", value)
 
     def never(_encoded: object) -> str:
         raise AssertionError("aucune adresse ne doit être décodée quand l'interrupteur est coupé")
@@ -374,14 +388,11 @@ def test_switch_off_removes_the_masked_nodes_but_decodes_and_keeps_nothing(
     assert normalize_sale(raw).internal_contacts == []
 
 
-@pytest.mark.parametrize("value", [None, "", "true", "1", "on", "yes", "oui", "enabled", "garbage"])
-def test_switch_is_active_by_default_and_for_any_other_value(
-    monkeypatch: pytest.MonkeyPatch, value: str | None
+@pytest.mark.parametrize("value", ["true", "1", "on", "yes", "oui", "enabled", "TRUE", " true "])
+def test_switch_is_active_only_for_an_explicitly_true_value(
+    monkeypatch: pytest.MonkeyPatch, value: str
 ) -> None:
-    if value is None:
-        monkeypatch.delenv("LICITOR_DECODE_PROTECTED_EMAILS", raising=False)
-    else:
-        monkeypatch.setenv("LICITOR_DECODE_PROTECTED_EMAILS", value)
+    monkeypatch.setenv("LICITOR_DECODE_PROTECTED_EMAILS", value)
 
     raw = parse_licitor_detail_html(_html(_data_cfemail_block(LAWYER_EMAIL)), URL)
 
@@ -396,7 +407,7 @@ def test_extract_without_decoding_still_removes_every_element() -> None:
     assert soup.get_text("|") == "reste"
 
 
-def test_an_unrecognised_switch_value_keeps_decoding_and_warns_once_without_the_value(
+def test_an_unrecognised_switch_value_stays_off_and_warns_once_without_the_value(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     from src.sources import licitor
@@ -405,11 +416,11 @@ def test_an_unrecognised_switch_value_keeps_decoding_and_warns_once_without_the_
     monkeypatch.setenv("LICITOR_DECODE_PROTECTED_EMAILS", "peut-etre")
 
     with caplog.at_level("WARNING"):
-        assert licitor.decode_protected_emails_enabled() is True
-        assert licitor.decode_protected_emails_enabled() is True
+        assert licitor.decode_protected_emails_enabled() is False
+        assert licitor.decode_protected_emails_enabled() is False
 
     messages = [record.getMessage() for record in caplog.records if "LICITOR_DECODE_PROTECTED_EMAILS" in record.getMessage()]
-    assert len(messages) == 1 and "peut-etre" not in messages[0] and "false" in messages[0]
+    assert len(messages) == 1 and "peut-etre" not in messages[0] and "true" in messages[0]
 
 
 def test_recognised_switch_values_never_warn(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:

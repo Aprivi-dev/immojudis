@@ -135,6 +135,26 @@ describe("DiscoveryDecisionPanel", () => {
     expect(screen.getByRole("button", { name: "Pas pertinent" })).toBeTruthy();
   });
 
+  it("keeps the range but says the gap is withheld for an occupied property or an unknown occupation", async () => {
+    mocks.auth = { user: { id: "user-1" }, loading: false };
+    mocks.fetchValuePreview.mockResolvedValue({
+      available: true,
+      lowEur: 80_000,
+      highEur: 100_000,
+      discountPct: null,
+      discountNotSignificant: false,
+      startingPricePerM2: null,
+      gapWithheld: "occupancy_unknown",
+    });
+    renderWithQuery(<DiscoveryDecisionPanel sale={sale} />);
+
+    const status = await screen.findByRole("status");
+    expect(status.textContent).toContain("Occupation du bien non précisée");
+    expect(status.textContent).not.toMatch(/\d+ %|sous la valeur estimée/);
+    expect(screen.getByText(/80\s000\s€\s–\s100\s000\s€/)).toBeTruthy();
+    expect(screen.queryByTestId("sale-signal-feedback")).toBeNull();
+  });
+
   it("offers no feedback to a visitor: no account, no anonymous measure", () => {
     renderWithQuery(<DiscoveryDecisionPanel sale={sale} />);
 

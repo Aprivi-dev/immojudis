@@ -24,6 +24,7 @@ const sale = {
   app_surface_m2: 60,
   app_surface_kind: "habitable",
   starting_price_eur: 60_000,
+  occupancy_status: "vacant",
 } as unknown as AuctionSale;
 
 function withEstimate(estimatedValueEur: number | null, extra: Record<string, unknown> = {}) {
@@ -107,5 +108,32 @@ describe("alerte « décote minimale » sur un écart aberrant", () => {
       matchedAt: "2026-10-15T08:00:00.000Z",
     });
     expect(summary.marketDiscountPct).toBeNull();
+  });
+});
+
+describe("décote minimale : même règle d'occupation que la bande publique", () => {
+  const alert = { min_market_discount_pct: 20 } as unknown as UserAlert;
+  const withOccupancy = (occupancy: string | null) =>
+    ({ ...sale, occupancy_status: occupancy }) as unknown as AuctionSale;
+
+  it.each(["occupied", "rented", "owner_occupied", "unknown", "", null])(
+    "ne donne aucun écart pour une occupation %s, même avec 40 % de décote brute",
+    async (occupancy) => {
+      withEstimate(100_000); // 60 000 € pour 100 000 € : 40 % pour un bien libre
+      const marketDiscountPct = await estimateMarketDiscountPct(withOccupancy(occupancy));
+      expect(marketDiscountPct).toBeNull();
+      expect(alertMatchesSale(alert, sale, { marketDiscountPct }).matches).toBe(false);
+    },
+  );
+
+  it.each(["vacant", "libre", "Inoccupé"])("donne l'écart d'un bien %s", async (occupancy) => {
+    withEstimate(100_000);
+    expect(await estimateMarketDiscountPct(withOccupancy(occupancy))).toBe(40);
+  });
+
+  it("ne lit même pas l'estimation d'un bien dont l'écart est retenu", async () => {
+    withEstimate(100_000);
+    await estimateMarketDiscountPct(withOccupancy("occupied"));
+    expect(mocks.estimate).not.toHaveBeenCalled();
   });
 });

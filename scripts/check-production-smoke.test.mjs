@@ -320,6 +320,59 @@ describe("production smoke test, supervision and court pages", () => {
     });
   });
 
+  it("reads the freshness in the body when the route answers 200 (available, degraded)", async () => {
+    const tolerated = fakeSite({
+      health: { status: 200, body: healthBody({ operationalMinutes: 55 }) },
+    });
+    const report = await run(tolerated, { indexing: "closed" });
+    expect(report.checks.find((check) => check.path === "/api/health")).toMatchObject({
+      status: 200,
+      health: "degraded-tolerated",
+    });
+
+    const stale = fakeSite({
+      health: { status: 200, body: healthBody({ operationalMinutes: 3, collectionHours: 50 }) },
+    });
+    await expect(run(stale, { indexing: "closed" })).rejects.toThrow(
+      "/api/health: état dégradé (operational-health : 3 min, collecte : 50 h, sources activées en retard : 1).",
+    );
+  });
+
+  it("fails with the availability reason when the route says the database does not answer", async () => {
+    const site = fakeSite({
+      health: { status: 503, body: { ...healthBody(), available: false, status: "degraded" } },
+    });
+    await expect(run(site, { indexing: "closed" })).rejects.toThrow(
+      "/api/health: base de données injoignable",
+    );
+  });
+
+  it("reports every failing check, not only the first one", async () => {
+    const site = fakeSite({
+      health: { status: 200, body: healthBody({ operationalMinutes: 90 }) },
+      overrides: {
+        "/legal": (headers) => ({
+          status: 500,
+          headers: headers("text/html; charset=utf-8"),
+          body: { cancel: async () => undefined },
+        }),
+      },
+    });
+    const error = await run(site, { indexing: "closed" }).then(
+      () => null,
+      (caught) => caught,
+    );
+    expect(error.message).toMatch(/^2 contrôles en échec/);
+    expect(error.message).toContain("/api/health: état dégradé");
+    expect(error.message).toContain("/legal: statut HTTP 500 au lieu de 200.");
+    expect(error.report.failures.map((failure) => failure.check).sort()).toEqual([
+      "/api/health",
+      "/legal",
+    ]);
+    // The checks that passed are still in the report.
+    expect(error.report.checks.length).toBeGreaterThan(5);
+  });
+
   it("fails when operational-health has not succeeded for more than 60 minutes", async () => {
     const site = fakeSite({
       health: { status: 503, body: healthBody({ operationalMinutes: 61 }) },

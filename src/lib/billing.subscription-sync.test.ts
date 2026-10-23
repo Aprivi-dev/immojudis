@@ -2,13 +2,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
+  from: vi.fn(),
   constructEvent: vi.fn(),
   subscriptionsRetrieve: vi.fn(),
   retrievePaymentMethod: vi.fn(),
   sendCommercialConfirmation: vi.fn(),
 }));
 
-vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: { rpc: mocks.rpc } }));
+vi.mock("@/integrations/supabase/client.server", () => ({
+  supabaseAdmin: { rpc: mocks.rpc, from: mocks.from },
+}));
 vi.mock("stripe", () => ({
   default: class FakeStripe {
     webhooks = { constructEvent: mocks.constructEvent };
@@ -17,15 +20,22 @@ vi.mock("stripe", () => ({
     customers = { retrieve: vi.fn() };
   },
 }));
-vi.mock("@/lib/legal-documents", () => ({ assertPaidOfferLegalReadiness: vi.fn() }));
 vi.mock("@/lib/commercial-acceptance", () => ({
-  assertCommercialConfirmationReadiness: vi.fn(),
   recordCommercialAcceptance: vi.fn(),
   sendCommercialConfirmation: mocks.sendCommercialConfirmation,
 }));
 
 import type Stripe from "stripe";
 import { handleStripeWebhook } from "@/lib/billing";
+
+/** `from()` of the journal and of the payment lifecycle: chainable and awaitable. */
+function tableAnswer(result: { data: unknown; error: unknown }) {
+  const query: Record<string, unknown> = {};
+  for (const method of ["select", "eq", "limit"]) query[method] = () => query;
+  query.maybeSingle = () => Promise.resolve(result);
+  query.then = (resolve: (value: unknown) => unknown) => Promise.resolve(result).then(resolve);
+  return query;
+}
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const PERIOD_END = 1_900_000_000;
@@ -74,6 +84,14 @@ describe("synchronisation d'un abonnement Stripe d'un ancien identifiant", () =>
     vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_sync");
     vi.stubEnv("STRIPE_ANALYSIS_PRICE_ID", "price_a");
     mocks.rpc.mockReset();
+    mocks.from.mockReset();
+    // Par défaut : aucun litige ouvert, journal sans événement bloqué.
+    mocks.from.mockImplementation((table: string) =>
+      tableAnswer({
+        data: table === "stripe_webhook_events" ? { processing_status: "processed" } : [],
+        error: null,
+      }),
+    );
     mocks.constructEvent.mockReset();
     mocks.subscriptionsRetrieve.mockReset();
     mocks.retrievePaymentMethod.mockReset();
@@ -195,5 +213,136 @@ describe("synchronisation d'un abonnement Stripe d'un ancien identifiant", () =>
 
     await expect(deliver("customer.subscription.deleted", subscription())).rejects.toThrow("boom");
     expect(completionStatus()).toMatchObject({ p_processing_status: "failed" });
+  });
+});
+
+describe("robustesse du webhook et de la synchronisation", () => {
+  beforeEach(() => {
+    vi.stubEnv("STRIPE_SECRET_KEY", "sk_test_sync");
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_sync");
+    vi.stubEnv("STRIPE_ANALYSIS_PRICE_ID", "price_a");
+    vi.stubEnv("STRIPE_ANALYSIS_LEGACY_PRICE_IDS", "");
+    mocks.rpc.mockReset();
+    mocks.from.mockReset();
+    mocks.constructEvent.mockReset();
+    mocks.subscriptionsRetrieve.mockReset();
+    mocks.from.mockImplementation((table: string) =>
+      tableAnswer({
+        data: table === "stripe_webhook_events" ? { processing_status: "processed" } : [],
+        error: null,
+      }),
+    );
+    vi.restoreAllMocks();
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  });
+
+  it("répond une erreur réessayable quand l'événement est encore en cours de traitement", async () => {
+    mocks.rpc.mockImplementation(async (name: string) =>
+      name === "begin_stripe_webhook_event"
+        ? { data: false, error: null }
+        : { data: null, error: null },
+    );
+    mocks.from.mockImplementation(() =>
+      tableAnswer({ data: { processing_status: "processing" }, error: null }),
+    );
+
+    await expect(deliver("customer.subscription.updated", subscription())).rejects.toMatchObject({
+      name: "PublicApiError",
+      status: 503,
+    });
+    expect(rpcCalls("apply_stripe_subscription_state")).toHaveLength(0);
+  });
+
+  it.each(["processed", "ignored"])(
+    "répond 200 pour un doublon d'un événement déjà %s",
+    async (processingStatus) => {
+      mocks.rpc.mockImplementation(async (name: string) =>
+        name === "begin_stripe_webhook_event"
+          ? { data: false, error: null }
+          : { data: null, error: null },
+      );
+      mocks.from.mockImplementation(() =>
+        tableAnswer({ data: { processing_status: processingStatus }, error: null }),
+      );
+
+      await expect(deliver("customer.subscription.updated", subscription())).resolves.toMatchObject(
+        { handled: true, duplicate: true },
+      );
+    },
+  );
+
+  it("reconnaît les anciens Price de l'offre Analyse listés en configuration", async () => {
+    vi.stubEnv("STRIPE_ANALYSIS_LEGACY_PRICE_IDS", "price_old1, price_old2");
+    stubRpc({ applied: true, reason: "applied" });
+    const legacy = subscription({
+      id: "sub_legacy",
+      status: "active",
+      items: {
+        data: [{ current_period_end: PERIOD_END, price: { id: "price_old2" } }],
+      } as Stripe.Subscription["items"],
+    });
+    mocks.subscriptionsRetrieve.mockResolvedValue(legacy);
+
+    await deliver("customer.subscription.updated", legacy);
+
+    expect(rpcCalls("apply_stripe_subscription_state")[0][1]).toMatchObject({
+      p_plan_code: "analyse",
+      p_status: "active",
+    });
+  });
+
+  it("garde l'accès coupé pour un Price qui n'est dans aucune liste", async () => {
+    stubRpc({ applied: true, reason: "applied" });
+    const unknown = subscription({
+      id: "sub_unknown",
+      status: "active",
+      items: {
+        data: [{ current_period_end: PERIOD_END, price: { id: "price_other" } }],
+      } as Stripe.Subscription["items"],
+    });
+    mocks.subscriptionsRetrieve.mockResolvedValue(unknown);
+
+    await deliver("customer.subscription.updated", unknown);
+
+    expect(rpcCalls("apply_stripe_subscription_state")[0][1]).toMatchObject({
+      p_plan_code: "decouverte",
+    });
+  });
+
+  it("l'état litige l'emporte : un abonnement actif reste en pause tant que le litige est ouvert", async () => {
+    stubRpc({ applied: true, reason: "applied" });
+    mocks.from.mockImplementation((table: string) =>
+      tableAnswer({
+        data:
+          table === "stripe_payment_lifecycle"
+            ? [{ payment_intent_id: "pi_1" }]
+            : { processing_status: "processed" },
+        error: null,
+      }),
+    );
+    const active = subscription({ id: "sub_new", status: "active" });
+    mocks.subscriptionsRetrieve.mockResolvedValue(active);
+
+    await deliver("customer.subscription.updated", active);
+
+    expect(rpcCalls("apply_stripe_subscription_state")[0][1]).toMatchObject({
+      p_status: "paused",
+      p_stripe_subscription_id: "sub_new",
+    });
+  });
+
+  it("laisse passer un état sans accès (annulé) pendant un litige", async () => {
+    stubRpc({ applied: true, reason: "applied" });
+    mocks.from.mockImplementation(() =>
+      tableAnswer({ data: [{ payment_intent_id: "pi_1" }], error: null }),
+    );
+    mocks.subscriptionsRetrieve.mockResolvedValue(subscription());
+
+    await deliver("customer.subscription.deleted", subscription());
+
+    expect(rpcCalls("apply_stripe_subscription_state")[0][1]).toMatchObject({
+      p_status: "cancelled",
+    });
   });
 });

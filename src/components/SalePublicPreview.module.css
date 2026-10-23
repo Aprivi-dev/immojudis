@@ -222,11 +222,48 @@
   gap: 10px;
 }
 
-.blurred {
-  filter: blur(6px);
-  color: var(--brand-navy);
-  font-weight: 750;
+/* Barre de remplacement d'une valeur masquée : aucun chiffre, ni réel ni inventé. */
+.skeleton {
+  display: inline-block;
+  height: 0.9em;
+  border-radius: 6px;
+  background: var(--line-soft);
   user-select: none;
+}
+
+.skeleton_short {
+  width: 2.5rem;
+}
+
+.skeleton_medium {
+  width: 4.5rem;
+}
+
+.skeleton_wide {
+  width: 8rem;
+}
+
+/* Liens sous « Pour enchérir » : trouver un avocat, estimer les frais. */
+.factLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.factLinks a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* Source de l'annonce et signalement d'une erreur, sous les faits du bien. */
+.sourceNote {
+  margin-top: 8px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .pastDate {
@@ -353,14 +390,14 @@
   line-height: 1.5;
 }
 
-/* Tant que l'état de l'offre de lancement n'est pas lu : place de la mention (6 lignes sur mobile). */
+/* Tant que l'état de l'offre de lancement n'est pas lu : place de la mention (3 lignes sur mobile). */
 .signupLinePending {
-  min-height: 7.5rem;
+  min-height: 4.5rem;
 }
 
 @media (min-width: 640px) {
   .signupLinePending {
-    min-height: 5rem;
+    min-height: 3rem;
   }
 }
 

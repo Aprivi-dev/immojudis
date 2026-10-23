@@ -25,6 +25,11 @@ vi.mock("@/lib/mapbox", () => ({
   MAPBOX_ATTRIBUTION: "Mapbox",
   MAPBOX_COPYRIGHT_URL: "https://www.mapbox.com/about/maps/",
   mapboxSatelliteImageUrl: vi.fn(),
+  mapboxLocaleFr: (title: string) => ({
+    "AttributionControl.ToggleAttribution": "Afficher ou masquer les crédits de la carte",
+    "Map.Title": title,
+    "NavigationControl.ZoomIn": "Zoomer",
+  }),
 }));
 vi.mock("mapbox-gl", () => ({
   default: {

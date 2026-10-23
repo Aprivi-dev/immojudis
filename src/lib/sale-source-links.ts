@@ -1,6 +1,6 @@
 import type { AuctionSale } from "@/lib/types";
 import { safeExternalHttpUrl } from "@/lib/external-url";
-import { isWithdrawnSourceUrl } from "@/lib/withdrawn-sources";
+import { isWithdrawnSourceName, isWithdrawnSourceUrl } from "@/lib/withdrawn-sources";
 
 export type SaleSourceLink = { label: string; href: string };
 
@@ -59,6 +59,16 @@ export function sourceLabel(
   const fromHost = href ? sourceLabelFromUrl(href) : null;
   if (fromHost) return fromHost;
   return cleanLabel(sourceName) ?? fallback;
+}
+
+/**
+ * Nom d'une source de la liste fermée ci-dessus, pour la fiche publique : jamais un nom interne
+ * inconnu, jamais une source retirée du catalogue. `null` sinon.
+ */
+export function knownSourceLabel(sourceName: string | null | undefined): string | null {
+  if (isWithdrawnSourceName(sourceName)) return null;
+  const normalized = normalizeSourceName(sourceName);
+  return normalized ? (SOURCE_LABELS[normalized] ?? null) : null;
 }
 
 export function sourceLabelFromUrl(href: string): string | null {

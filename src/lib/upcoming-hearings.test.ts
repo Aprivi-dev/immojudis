@@ -3,9 +3,12 @@ import {
   HEARINGS_RPC_DAYS,
   HEARINGS_WINDOW_DAYS,
   dedupeHearings,
+  filterWindowsByDepartment,
+  hearingDepartments,
   hearingsPageDescription,
   isHearingsPageIndexable,
   mapHearingRows,
+  validHearingDepartment,
   windowHearings,
   type PublicHearing,
   type UpcomingHearingRow,
@@ -266,5 +269,78 @@ describe("page : seuil et description", () => {
     expect(hearingsPageDescription(1234, 5678).length).toBeLessThanOrEqual(158);
     expect(hearingsPageDescription(0, 0)).toContain("Aucune audience");
     expect(hearingsPageDescription(0, 0).length).toBeLessThanOrEqual(158);
+  });
+});
+
+describe("filtre par département", () => {
+  let counter = 0;
+  const at = (overrides: Partial<UpcomingHearingRow>) =>
+    row({ id: `00000000-0000-4000-8000-${String(++counter).padStart(12, "0")}`, ...overrides });
+  const windows = () =>
+    windowHearings(
+      mapHearingRows([
+        at({ department: "93", city: "Pantin" }),
+        at({ department: "93", city: "Bobigny", sale_date: "2026-10-22T08:00:00Z" }),
+        at({
+          department: "2A",
+          city: "Ajaccio",
+          tribunal_code: "ajaccio",
+          tribunal_name: "TJ Ajaccio",
+        }),
+        at({
+          department: "33",
+          city: "Bordeaux",
+          sale_date: "2026-11-05T12:00:00Z",
+          tribunal_code: "bordeaux",
+          tribunal_name: "TJ Bordeaux",
+        }),
+        at({ department: null, city: "Sans département" }),
+      ]),
+      NOW,
+    );
+
+  it("liste les départements qui ont une audience, par ordre de code, avec leur nombre", () => {
+    expect(hearingDepartments(windows())).toEqual([
+      { code: "2A", count: 1 },
+      { code: "33", count: 1 },
+      { code: "93", count: 2 },
+    ]);
+  });
+
+  it("réduit les fenêtres aux audiences du département, sans jour ni tribunal vide", () => {
+    const filtered = filterWindowsByDepartment(windows(), "93");
+    expect(filtered.weekCount).toBe(2);
+    expect(filtered.laterCount).toBe(0);
+    expect(filtered.later).toEqual([]);
+    const cities = filtered.week.flatMap((day) =>
+      day.tribunals.flatMap((group) => group.hearings.map((hearing) => hearing.city)),
+    );
+    expect(cities.sort()).toEqual(["Bobigny", "Pantin"]);
+    for (const day of filtered.week) {
+      expect(day.count).toBeGreaterThan(0);
+      for (const group of day.tribunals) expect(group.hearings.length).toBeGreaterThan(0);
+    }
+    const later = filterWindowsByDepartment(windows(), "33");
+    expect([later.weekCount, later.laterCount]).toEqual([0, 1]);
+  });
+
+  it("rend les fenêtres telles quelles sans département, et vides pour un département sans audience", () => {
+    const all = windows();
+    expect(filterWindowsByDepartment(all, null)).toBe(all);
+    expect(filterWindowsByDepartment(all, "64")).toEqual({
+      week: [],
+      weekCount: 0,
+      later: [],
+      laterCount: 0,
+    });
+  });
+
+  it("ne retient du paramètre d'adresse qu'un département de la liste", () => {
+    const options = hearingDepartments(windows());
+    expect(validHearingDepartment("93", options)).toBe("93");
+    expect(validHearingDepartment(" 2a ", options)).toBe("2A");
+    for (const value of ["99", "abc", "", null, undefined, "93;drop", "<script>"]) {
+      expect(validHearingDepartment(value, options)).toBeNull();
+    }
   });
 });

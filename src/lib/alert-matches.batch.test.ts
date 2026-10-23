@@ -7,6 +7,9 @@ const state = vi.hoisted(() => ({
   getSalesCalls: [] as Array<{ filters: Record<string, unknown>; limit: number; offset: number }>,
   salesPool: [] as Row[],
   updates: [] as Row[],
+  upserts: [] as Row[][],
+  /** Alertes dont l'écriture des correspondances échoue (erreur PostgREST, pas une Error). */
+  failingAlerts: new Set<string>(),
 }));
 
 function fakeClient() {
@@ -16,6 +19,7 @@ function fakeClient() {
       let range: [number, number] | null = null;
       let op: "select" | "update" | "upsert" = "select";
       let patch: Row | null = null;
+      let upserted: Row[] = [];
       let columns = "*";
       const chain: Record<string, unknown> = {
         select(value?: string) {
@@ -37,11 +41,22 @@ function fakeClient() {
           patch = value;
           return chain;
         },
-        upsert: () => {
+        upsert: (rows: Row[]) => {
           op = "upsert";
+          upserted = rows;
           return chain;
         },
-        then(resolve: (value: { data: unknown; error: null }) => void) {
+        then(resolve: (value: { data: unknown; error: unknown }) => void) {
+          if (op === "upsert") {
+            state.upserts.push(upserted);
+            if (state.failingAlerts.has(String(upserted[0]?.alert_id))) {
+              return resolve({
+                data: null,
+                error: { message: "canceling statement due to statement timeout", code: "57014" },
+              });
+            }
+            return resolve({ data: [], error: null });
+          }
           if (table === "user_alerts" && op === "update") {
             state.updates.push({ ...patch, id: filters.id });
             return resolve({ data: null, error: null });
@@ -113,6 +128,8 @@ describe("smart alert batch", () => {
     state.salesPool = [];
     state.getSalesCalls = [];
     state.updates = [];
+    state.upserts = [];
+    state.failingAlerts = new Set();
   });
 
   it("évalue les 100 alertes de test en une exécution, sans plafond d'utilisateurs", async () => {
@@ -158,6 +175,99 @@ describe("smart alert batch", () => {
     expect(result.evaluatedUserCount).toBe(0);
     expect(state.updates).toHaveLength(0);
   });
+
+  it("n'applique à une alerte « 26 » que les ventes de la Drôme", async () => {
+    state.userAlerts = [
+      alertRow(1, { advanced_criteria: { source: "sales_search", query: "26" } }),
+    ];
+    state.salesPool = [
+      { id: "sale-26", department: "26" },
+      { id: "sale-33", department: "33" },
+      { id: "sale-07", department: "07" },
+    ];
+
+    await runSmartAlertEvaluationBatch();
+
+    expect(state.upserts.flat().map((row) => row.sale_id)).toEqual(["sale-26"]);
+  });
+
+  it("écrit les correspondances par lots de 200", async () => {
+    state.userAlerts = [alertRow(1)];
+    state.salesPool = Array.from({ length: 450 }, (_, index) => ({ id: `sale-${index}` }));
+
+    const result = await runSmartAlertEvaluationBatch();
+
+    expect(state.upserts.map((rows) => rows.length)).toEqual([200, 200, 50]);
+    expect(result.totalMatchCount).toBe(450);
+  });
+});
+
+describe("alertes en échec isolées", () => {
+  beforeEach(() => {
+    state.userAlerts = [];
+    state.salesPool = [{ id: "sale-1" }];
+    state.getSalesCalls = [];
+    state.updates = [];
+    state.upserts = [];
+    state.failingAlerts = new Set();
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+  });
+
+  const sameUser = (alerts: string[]) =>
+    alerts.map((id) => alertRow(1, { id, user_id: "user-1", name: `Alerte ${id}` }));
+
+  it("une alerte en échec ne fait pas échouer le compte ni les autres alertes", async () => {
+    state.userAlerts = sameUser(["a", "b", "c"]);
+    state.failingAlerts = new Set(["b"]);
+
+    const result = await runSmartAlertEvaluationBatch();
+
+    expect(result.failedUserCount).toBe(0);
+    expect(result.evaluatedUserCount).toBe(1);
+    expect(result.failedAlertCount).toBe(1);
+    expect(result.alertFailures).toEqual([
+      {
+        userId: "user-1",
+        alertId: "b",
+        error: "canceling statement due to statement timeout (57014)",
+      },
+    ]);
+    // L'alerte en échec garde son ancienne date d'évaluation : le passage suivant la reprend.
+    expect(state.updates.map((update) => update.id).sort()).toEqual(["a", "c"]);
+    expect(() => assertSmartAlertBatchComplete(result)).not.toThrow();
+  });
+
+  it("journalise le message et le code d'une erreur qui n'est pas une Error", async () => {
+    state.userAlerts = sameUser(["a", "b"]);
+    state.failingAlerts = new Set(["a"]);
+
+    await runSmartAlertEvaluationBatch();
+
+    const logged = vi.mocked(console.error).mock.calls.map(([line]) => JSON.parse(String(line)));
+    expect(logged).toContainEqual(
+      expect.objectContaining({
+        outcome: "alert_failed",
+        alertId: "a",
+        code: "57014",
+        message: "canceling statement due to statement timeout",
+      }),
+    );
+  });
+
+  it("le compte échoue, avec le vrai motif, quand toutes ses alertes échouent", async () => {
+    state.userAlerts = sameUser(["a", "b"]);
+    state.failingAlerts = new Set(["a", "b"]);
+
+    const result = await runSmartAlertEvaluationBatch();
+
+    expect(result.failedUserCount).toBe(1);
+    expect(result.failedAlertCount).toBe(2);
+    expect(result.results[0].error).toBe(
+      "2 alerte(s) en échec : canceling statement due to statement timeout (57014)",
+    );
+    expect(() => assertSmartAlertBatchComplete(result)).toThrow(/57014/);
+    expect(state.updates).toHaveLength(0);
+  });
 });
 
 describe("passage des alertes intelligentes : échecs partiels", () => {
@@ -171,6 +281,7 @@ describe("passage des alertes intelligentes : échecs partiels", () => {
       saleCount: 0,
       matchCount: 0,
       notificationCount: 0,
+      failedAlertCount: 0,
       error,
     })),
   });

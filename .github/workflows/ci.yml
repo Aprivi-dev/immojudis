@@ -11,12 +11,15 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # A newer push supersedes the run of a pull request, never the run of main: each commit merged
+  # into main keeps its own verdict.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   manual-collection:
     name: Single-scheduler data collection invariant
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -130,6 +133,7 @@ jobs:
     # requires "Web (typecheck + lint)" keeps working now that the jobs run in parallel.
     name: Web (typecheck + lint)
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     needs: [typecheck, lint, unit, audit, build]
     # `always()`: without it a failed or cancelled dependency leaves this job "skipped", and a
     # skipped required check is treated as passing by branch protection.
@@ -156,6 +160,7 @@ jobs:
     # checks in the repository settings, then delete this job.
     name: Data pipeline (Python 3.11)
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     needs: [pipeline]
     # `always()`: without it a failed pipeline leaves this gate "skipped", which branch
     # protection treats as passing.
@@ -174,6 +179,7 @@ jobs:
   pipeline:
     name: Data pipeline (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -243,12 +249,26 @@ jobs:
           }
           # Production runtime (what data-pipeline.yml installs): no exception.
           audit -r requirements.txt
+          # What is really installed: the hashed lockfiles (data-pipeline.yml installs
+          # requirements.lock; CI and model training install the other two). They pin every
+          # transitive dependency, so no resolution is needed (--no-deps). No exception.
+          for lockfile in requirements.lock requirements-dev.lock requirements-valuation.lock; do
+            audit -r "$lockfile" --no-deps --disable-pip
+          done
           # Optional Docling extractor, never installed by the production workflows. Every
           # Docling release so far (docling-core, docling-parse, docling-ibm-models) requires
           # pillow<13, so it resolves pillow 12.3.0 and its advisories fixed only in pillow
           # 13.0.0 (TIFF, GIF, PPM, EPS decoders, PDF append) cannot be fixed here yet. They are
           # ignored for this audit only; anything else still fails. Remove these ignores as soon
           # as a Docling release accepts pillow 13 (and bump requirements-docling.txt).
+          # Review deadline: 2026-11-30. Past it the audit still passes but prints a warning on
+          # every run: check whether a Docling release accepts pillow 13, then drop the ignores
+          # or push the date back with a reason. The ignores are advisory identifiers, specific
+          # to pillow 12; pip-audit cannot scope an ignore to a package.
+          pillow_12_review_by="2026-11-30"
+          if [[ "$(date -u +%F)" > "$pillow_12_review_by" ]]; then
+            echo "::warning::The pillow 12 audit exceptions in ci.yml are past their review date ($pillow_12_review_by): check whether Docling now accepts pillow 13."
+          fi
           pillow_12_advisories=(
             CVE-2026-112395 CVE-2026-112397 CVE-2026-112400 CVE-2026-112404
             CVE-2026-112895 CVE-2026-112896 CVE-2026-112897 CVE-2026-112899
@@ -265,6 +285,8 @@ jobs:
             CVE-2026-96636 CVE-2026-96637 CVE-2026-96638 CVE-2026-96639
             CVE-2026-96640 CVE-2026-96641 CVE-2026-96642 CVE-2026-96643
             CVE-2026-96644 CVE-2026-96778
+            # Reported on 23/10/2026 (pillow 12.3.0 via Docling), fixed only in pillow 13.0.0.
+            GHSA-78g4-xqwv-q3g8
           )
           ignore_args=()
           for advisory in "${pillow_12_advisories[@]}"; do ignore_args+=(--ignore-vuln "$advisory"); done
@@ -384,6 +406,7 @@ jobs:
     if: github.event_name == 'pull_request'
     name: Dependency review
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:

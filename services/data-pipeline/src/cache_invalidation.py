@@ -18,9 +18,11 @@ dédiée de ``data-pipeline.yml`` (la seule avec ``CRON_SECRET``) :
   reste en place, le passage s'arrête (inutile d'insister auprès d'un site qui répond mal) et le suivant
   reprend ;
 * au plus ``MAX_BATCHES`` lots par passage, pour que l'étape reste courte même après une fusion massive ;
-* ne lève jamais et sort toujours avec le code 0 : une invalidation en échec ne doit pas faire échouer la
-  collecte (le cache expire de toute façon en quelques minutes). L'échec est visible dans les compteurs
-  journalisés et dans une annotation ``::warning::`` du workflow.
+* ne lève jamais. Une panne passagère (site, base) sort avec le code 0 : une invalidation en échec ne doit pas
+  faire échouer la collecte (le cache expire de toute façon en quelques minutes), elle est visible dans les
+  compteurs journalisés et dans une annotation ``::warning::``. Une configuration absente ou invalide
+  (``SITE_URL``, ``CRON_SECRET``, ``SUPABASE_DB_URL``) sort avec le code 1 et une annotation ``::error::`` :
+  l'étape est rouge (le travail reste vert, ``continue-on-error``) au lieu de sauter en silence.
 
 Ne journalise jamais le secret, ni l'URL de connexion.
 """
@@ -186,21 +188,32 @@ def main(argv: list[str] | None = None, *, env: Mapping[str, str] | None = None)
     else:
         summary = flush(db_url=db_url, site_url=site_url, cron_secret=secret)
 
-    _emit(summary)
-    return 0
+    return _emit(summary)
 
 
-def _emit(summary: FlushSummary) -> None:
+def _emit(summary: FlushSummary) -> int:
+    """Journalise le résultat. Code 1 si l'invalidation a été sautée faute de configuration."""
     payload = {"event": "cache_invalidation", **asdict(summary)}
     print(json.dumps(payload, sort_keys=True), flush=True)
-    problem = summary.skipped or summary.error or (summary.requests_failed and "request_failed")
+    if summary.skipped:
+        # Configuration absente ou invalide : l'invalidation ne partira jamais tant qu'on ne la corrige pas.
+        # L'étape devient rouge (le travail reste vert : continue-on-error), avec une annotation d'erreur.
+        print(
+            f"::error title=Invalidate public cache::cache NON invalidé ({summary.skipped}) : "
+            "renseigner la variable de dépôt SITE_URL et les secrets SUPABASE_DB_URL et CRON_SECRET ; "
+            "les lignes restent dans app_private.catalogue_invalidations pour le prochain passage",
+            flush=True,
+        )
+        return 1
+    problem = summary.error or (summary.requests_failed and "request_failed")
     if problem:
-        # Annotation visible dans le résumé du workflow ; l'étape reste verte.
+        # Panne passagère : annotation visible dans le résumé du workflow ; l'étape reste verte.
         print(
             f"::warning title=Invalidate public cache::cache non invalidé ({problem}) ; "
             "les lignes restent dans app_private.catalogue_invalidations pour le prochain passage",
             flush=True,
         )
+    return 0
 
 
 if __name__ == "__main__":

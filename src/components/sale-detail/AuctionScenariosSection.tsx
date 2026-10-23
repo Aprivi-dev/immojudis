@@ -6,18 +6,35 @@ import { fetchAuctionScenarios } from "@/lib/client-api";
 import { queryKeys, type SaleAccessMode } from "@/lib/query-keys";
 import {
   AUCTION_SCENARIO_LABELS,
+  MIN_COURT_SAMPLE,
+  MIN_NATIONAL_SAMPLE,
+  MIN_SCENARIO_STARTING_PRICE,
+  PROPERTY_GROUP_LABELS,
+  RELIABILITY_EXPLANATIONS,
+  RELIABILITY_LABELS,
   STARTING_PRICE_BAND_LABELS,
-  dvfReferenceForType,
+  formatDataAsOf,
   formatEuro,
   formatPercent,
   formatRatio,
-  probabilityAtLeast,
+  largestRemainderPercentages,
+  scenarioPropertyGroup,
   type AuctionScenario,
   type AuctionScenariosResponse,
+  type AuctionScenarioSet,
+  type ScenariosUnavailableReason,
 } from "@/lib/auction-scenarios";
 import styles from "./AuctionScenariosSection.module.css";
 
 const number = new Intl.NumberFormat("fr-FR");
+
+const SEGMENT_CLASSES = [
+  styles.segment0,
+  styles.segment1,
+  styles.segment2,
+  styles.segment3,
+  styles.segment4,
+];
 
 function scenarioAmount(scenario: AuctionScenario, startingPrice: number): string {
   if (scenario.highRatio == null)
@@ -30,9 +47,29 @@ function yearLabel(date: string | null): string {
   return date ? date.slice(0, 4) : "";
 }
 
+/** One message per cause: the sale has no starting price, no known court, too small a price, or too few sales. */
+function unavailableMessage(
+  reason: ScenariosUnavailableReason | null,
+  scenarios: AuctionScenarioSet | null,
+  court: string,
+): string {
+  switch (reason) {
+    case "no_starting_price":
+      return "Cette vente n’a pas de mise à prix connue : les scénarios se calculent à partir de la mise à prix.";
+    case "starting_price_too_low":
+      return `La mise à prix de cette vente est inférieure à ${number.format(MIN_SCENARIO_STARTING_PRICE)} € : aucun scénario n’est chiffré à ce niveau.`;
+    case "no_court_code":
+      return "Le tribunal de cette vente n’est pas encore identifié dans notre référentiel : nous ne pouvons pas la rapprocher des adjudications passées.";
+    default:
+      return scenarios
+        ? `Données insuffisantes : ${number.format(scenarios.nationalSample)} vente${scenarios.nationalSample > 1 ? "s" : ""} comparable${scenarios.nationalSample > 1 ? "s" : ""} seulement sur les tribunaux couverts (dont ${number.format(scenarios.courtSample)} au ${court}), pour au moins ${MIN_NATIONAL_SAMPLE} nécessaires à chiffrer des scénarios.`
+        : "Données insuffisantes : pas assez d’adjudications comparables pour chiffrer des scénarios sur cette vente.";
+  }
+}
+
 /**
  * « Scénarios d'enchères » (offre Analyse) : la répartition observée des issues et la
- * fourchette centrale des prix finaux, d'après les trois dernières années d'adjudications
+ * fourchette centrale des prix d'adjudication, d'après les trois dernières années d'adjudications
  * du tribunal (Licitor pour les rapports à la mise à prix, DVF pour les prix
  * officiels). Rendered for Analyse members and for a sale the account unlocked.
  */
@@ -86,68 +123,126 @@ export function AuctionScenariosSection({
 
   const { scenarios, history, startingPrice } = data;
   const licitor = history.licitor;
-  const dvfType = dvfReferenceForType(history.dvf, data.propertyType);
+  const price = startingPrice ?? 0;
   const court = data.courtName ?? "ce tribunal";
+  const asOf = formatDataAsOf(data.dataAsOf);
+  const propertyGroup = scenarioPropertyGroup(data.propertyType);
+  const figures = scenarios && scenarios.status === "ok" && startingPrice ? scenarios : null;
+  const percentages = figures
+    ? largestRemainderPercentages(figures.scenarios.map((scenario) => scenario.probability))
+    : [];
+  const atLeastDouble = figures
+    ? figures.scenarios.reduce(
+        (sum, scenario, index) => (scenario.lowRatio >= 2 ? sum + percentages[index] : sum),
+        0,
+      )
+    : 0;
+  const currentYear = new Date().getFullYear();
 
   return (
     <section id="scenarios" className={styles.card} aria-labelledby="auction-scenarios-title">
       <h2 id="auction-scenarios-title">Scénarios d’enchères</h2>
+      {asOf ? <p className={styles.asOf}>Données au {asOf}</p> : null}
 
-      {scenarios && startingPrice ? (
+      <p className={styles.warning} id="scenarios-caveat">
+        <strong>À lire avant les chiffres.</strong> Ces statistiques ne portent que sur les ventes
+        adjugées : elles ne comptent ni les reports ni les ventes restées sans enchérisseur, où le
+        bien revient au créancier poursuivant. Ces ventes absentes des chiffres tirent les rapports
+        observés vers le haut : les prix ci-dessous sont plus élevés que ceux de l’ensemble des
+        mises en vente. Ils ne remplacent ni la visite ni la lecture du cahier des conditions de
+        vente.
+      </p>
+
+      {figures ? (
         <>
           <p className={styles.lead}>
-            D’après {number.format(scenarios.courtSample)} adjudication
-            {scenarios.courtSample > 1 ? "s" : ""} du {court} et{" "}
-            {number.format(scenarios.nationalSample)} en France sur les trois dernières années, pour
-            des mises à prix de {STARTING_PRICE_BAND_LABELS[scenarios.band ?? 0] ?? "même niveau"}.
+            {figures.basis === "court" ? (
+              <>
+                D’après {number.format(figures.courtSample)} adjudication
+                {figures.courtSample > 1 ? "s" : ""} du {court} et{" "}
+                {number.format(figures.nationalSample)} sur les tribunaux couverts
+              </>
+            ) : (
+              <>
+                Moins de {MIN_COURT_SAMPLE} ventes comparables au {court} (
+                {number.format(figures.courtSample)}) : repli sur les{" "}
+                {number.format(figures.nationalSample)} ventes comparables des tribunaux couverts
+              </>
+            )}{" "}
+            sur les trois dernières années, pour des mises à prix de{" "}
+            {STARTING_PRICE_BAND_LABELS[figures.band ?? 0] ?? "même niveau"}
+            {propertyGroup ? `, en ne comparant que ${PROPERTY_GROUP_LABELS[propertyGroup]}` : ""}.
           </p>
-          {scenarios.ratioQuartiles.q25 != null && scenarios.ratioQuartiles.q75 != null ? (
+          {figures.reliability ? (
+            <p className={styles.reliability} data-reliability={figures.reliability}>
+              Niveau de fiabilité : <strong>{RELIABILITY_LABELS[figures.reliability]}</strong> (
+              {RELIABILITY_EXPLANATIONS[figures.reliability]}).
+            </p>
+          ) : null}
+          {figures.ratioQuartiles.q25 != null && figures.ratioQuartiles.q75 != null ? (
             <div className={styles.headline}>
               <span>
-                Fourchette centrale des prix finaux (estimation à partir des ventes passées)
+                Fourchette centrale des prix d’adjudication (estimation à partir des ventes passées)
               </span>
               <strong>
-                {formatEuro(scenarios.ratioQuartiles.q25 * startingPrice)} à{" "}
-                {formatEuro(scenarios.ratioQuartiles.q75 * startingPrice)}
+                {formatEuro(figures.ratioQuartiles.q25 * price)} à{" "}
+                {formatEuro(figures.ratioQuartiles.q75 * price)}
               </strong>
               <small>
                 Dans la moitié centrale des ventes comparables{" "}
-                {scenarios.priceScope === "court" ? `du ${court}` : "en France"}, le prix final a
-                été compris entre {formatRatio(scenarios.ratioQuartiles.q25)} et{" "}
-                {formatRatio(scenarios.ratioQuartiles.q75)} la mise à prix. Appliqué à cette vente,
-                cela donne environ {formatEuro(scenarios.ratioQuartiles.q25 * startingPrice)} à{" "}
-                {formatEuro(scenarios.ratioQuartiles.q75 * startingPrice)}
-                {scenarios.ratioQuartiles.q50 != null
+                {figures.priceScope === "court" ? `du ${court}` : "des tribunaux couverts"}, le prix
+                d’adjudication, avant éventuelle surenchère, a été compris entre{" "}
+                {formatRatio(figures.ratioQuartiles.q25)} et{" "}
+                {formatRatio(figures.ratioQuartiles.q75)} la mise à prix. Appliqué à cette vente,
+                cela donne environ {formatEuro(figures.ratioQuartiles.q25 * price)} à{" "}
+                {formatEuro(figures.ratioQuartiles.q75 * price)}, hors frais
+                {figures.ratioQuartiles.q50 != null
                   ? `, avec un prix médian d’environ ${formatEuro(
-                      scenarios.ratioQuartiles.q50 * startingPrice,
-                    )} (${formatRatio(scenarios.ratioQuartiles.q50)})`
+                      figures.ratioQuartiles.q50 * price,
+                    )} (${formatRatio(figures.ratioQuartiles.q50)})`
                   : ""}
                 . Ce n’est pas une prévision.
               </small>
             </div>
           ) : null}
+          <div className={styles.stack} aria-hidden="true">
+            {figures.scenarios.map((scenario, index) => (
+              <span
+                key={scenario.key}
+                className={SEGMENT_CLASSES[index]}
+                style={{ width: `${percentages[index]}%` }}
+              />
+            ))}
+          </div>
           <ul className={styles.scenarios} aria-label="Répartition observée des issues">
-            {scenarios.scenarios.map((scenario) => (
+            {figures.scenarios.map((scenario, index) => (
               <li key={scenario.key}>
                 <div className={styles.scenarioTop}>
-                  <span>{AUCTION_SCENARIO_LABELS[scenario.key]}</span>
-                  <strong>{formatPercent(scenario.probability)}</strong>
+                  <span>
+                    <i
+                      className={`${styles.swatch} ${SEGMENT_CLASSES[index]}`}
+                      aria-hidden="true"
+                    />
+                    {AUCTION_SCENARIO_LABELS[scenario.key]}
+                  </span>
+                  <strong>{formatPercent(percentages[index] / 100)}</strong>
                 </div>
-                <div className={styles.bar} aria-hidden="true">
-                  <span style={{ width: `${Math.round(scenario.probability * 100)}%` }} />
-                </div>
-                <small>{scenarioAmount(scenario, startingPrice)}</small>
+                <small>{scenarioAmount(scenario, price)}</small>
               </li>
             ))}
           </ul>
+          <p className={styles.note}>
+            Montants calculés sur la mise à prix de cette vente, hors frais. Parts estimées,
+            arrondies pour totaliser 100 %.
+          </p>
           <p className={styles.chance}>
-            Part des ventes comparables adjugées à au moins 2 fois la mise à prix :{" "}
-            <strong>{formatPercent(probabilityAtLeast(scenarios.scenarios, 2))}</strong>
+            Part estimée des ventes comparables adjugées à au moins 2 fois la mise à prix :{" "}
+            <strong>{formatPercent(atLeastDouble / 100)}</strong>
           </p>
         </>
       ) : (
         <p className={styles.lead}>
-          Pas assez d’adjudications comparables pour chiffrer des scénarios sur cette vente.
+          {unavailableMessage(data.unavailable ?? "insufficient_data", scenarios, court)}
         </p>
       )}
 
@@ -160,12 +255,12 @@ export function AuctionScenariosSection({
               <dd>{number.format(licitor.sample)}</dd>
             </div>
             <div>
-              <dt>Mise à prix moyenne</dt>
-              <dd>{formatEuro(licitor.meanStartingPrice)}</dd>
+              <dt>Mise à prix médiane</dt>
+              <dd>{formatEuro(licitor.medianStartingPrice)}</dd>
             </div>
             <div>
-              <dt>Prix final moyen</dt>
-              <dd>{formatEuro(licitor.meanHammerPrice)}</dd>
+              <dt>Prix d’adjudication médian (avant éventuelle surenchère, hors frais)</dt>
+              <dd>{formatEuro(licitor.medianHammerPrice)}</dd>
             </div>
             <div>
               <dt>Adjugées à au moins 2 fois la mise à prix</dt>
@@ -174,7 +269,13 @@ export function AuctionScenariosSection({
           </dl>
           {licitor.byYear.length > 1 ? (
             <p className={styles.note}>
-              Par année : {licitor.byYear.map((item) => `${item.year} : ${item.sales}`).join(" · ")}
+              Par année :{" "}
+              {licitor.byYear
+                .map(
+                  (item) =>
+                    `${item.year}${item.year === currentYear ? " (partielle)" : ""} : ${item.sales}`,
+                )
+                .join(" · ")}
             </p>
           ) : null}
         </div>
@@ -185,20 +286,13 @@ export function AuctionScenariosSection({
           Prix officiels (DVF) : {number.format(history.dvf.sample)} adjudications enregistrées dans
           le ressort du tribunal entre {yearLabel(history.dvf.firstDate)} et{" "}
           {yearLabel(history.dvf.lastDate)}, prix médian {formatEuro(history.dvf.medianPrice)}.
-          {dvfType && data.surfaceM2 && dvfType.medianPricePerM2
-            ? ` Pour ce type de bien : ${number.format(dvfType.medianPricePerM2)} €/m², soit environ ${formatEuro(
-                dvfType.medianPricePerM2 * data.surfaceM2,
-              )} pour ${number.format(Math.round(data.surfaceM2))} m².`
-            : ""}
         </p>
       ) : null}
 
       <p className={styles.caveat}>
-        Statistiques sur les ventes adjugées : elles ne comptent ni les reports ni les ventes sans
-        enchérisseur, et ne remplacent pas la visite ni la lecture du cahier des conditions de
-        vente. Fréquences observées dans le passé sur un échantillon limité, issues de données
-        tierces non vérifiées auprès du greffe ; elles ne constituent pas une probabilité pour cette
-        vente. Sources : historique des adjudications publié par Licitor, DVF (DGFiP).
+        Fréquences observées dans le passé sur un échantillon limité, issues de données tierces non
+        vérifiées auprès du greffe ; elles ne constituent pas une probabilité pour cette vente.
+        Sources : historique des adjudications publié par Licitor, DVF (DGFiP).
       </p>
     </section>
   );

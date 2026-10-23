@@ -153,8 +153,8 @@ jobs:
       # Crawl-delay raises it).
       PDF_HOST_MIN_DELAY_SECONDS: 2
       ENABLE_LICITOR_BENCHMARK: true
-      # Interrupteur de suspension du decodage des adresses masquees (actif si la variable de depot est absente).
-      LICITOR_DECODE_PROTECTED_EMAILS: ${{ vars.LICITOR_DECODE_PROTECTED_EMAILS || 'true' }}
+      # Interrupteur du decodage des adresses masquees (desactive si la variable de depot est absente ; 'true' pour l'activer).
+      LICITOR_DECODE_PROTECTED_EMAILS: ${{ vars.LICITOR_DECODE_PROTECTED_EMAILS || 'false' }}
       ENABLE_VENCH_BENCHMARK: true
       ENABLE_INFO_ENCHERES_BENCHMARK: true
       # A repository variable is required for each half of the future source
@@ -284,6 +284,10 @@ jobs:
           REQUESTED_SOURCE: ${{ github.event.inputs.source }}
           REQUESTED_LIMIT: ${{ github.event.inputs.limit }}
           REQUESTED_LLM_BACKFILL: ${{ github.event.inputs.llm_backfill }}
+          # Garde contre un appel bloqué (src/stage_watchdog.py) : manuel, src.main se termine avec le
+          # code 124 et un journal des étapes avant le délai du job (180 min, installation comprise).
+          # En exécution automatique, le lanceur impose sa propre valeur (budget de la source moins 90 s).
+          PIPELINE_WATCHDOG_SECONDS: "9600"
         run: |
           set -euo pipefail
           : "${SUPABASE_DB_URL:?Transactional publication requires SUPABASE_DB_URL}"
@@ -337,7 +341,9 @@ jobs:
       # POST /api/pipeline/revalidate-sale (100 par appel, supprimées seulement sur une réponse 2xx). Elle
       # tourne même quand la collecte échoue (un retrait déjà enregistré doit partir), ne fait jamais échouer
       # le job, et c'est la seule étape qui reçoit CRON_SECRET (variable de dépôt SITE_URL : l'origine
-      # publique, https://immojudis.com). Voir docs/runbooks/catalogue-visibility-projection.md.
+      # publique, https://immojudis.com, valeur de repli quand la variable est absente). Une configuration
+      # manquante (secret absent, adresse invalide) rend l'étape rouge avec une annotation d'erreur : elle ne
+      # saute plus en silence. Voir docs/runbooks/catalogue-visibility-projection.md.
       - name: Invalidate public cache
         if: always()
         continue-on-error: true
@@ -345,7 +351,7 @@ jobs:
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
-          SITE_URL: ${{ vars.SITE_URL }}
+          SITE_URL: ${{ vars.SITE_URL || 'https://immojudis.com' }}
         run: python -m src.cache_invalidation --flush
 
       - name: Report source coverage and enrichment backlog

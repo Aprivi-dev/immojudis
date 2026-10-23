@@ -6,6 +6,7 @@ import { AppProviders } from "./providers";
 import { AudienceMeasurement } from "@/components/AudienceMeasurement";
 import { DeferredGoogleAnalytics } from "@/components/DeferredGoogleAnalytics";
 import { SkipLink } from "@/components/SkipLink";
+import { COMPANY_DESCRIPTION } from "@/lib/company-description";
 import { cspRequiresDynamicRendering } from "@/lib/security-headers";
 import { resolveSiteOrigin } from "@/lib/site-url";
 
@@ -76,8 +77,7 @@ export const metadata: Metadata = {
     default: "Immojudis - Les enchères immobilières en toute clarté",
     template: "%s - Immojudis",
   },
-  description:
-    "Tribunal, notaire ou État : annonces immobilières référencées, procédures expliquées et analyses pour préparer votre achat.",
+  description: COMPANY_DESCRIPTION,
   authors: [{ name: "Immojudis" }],
   manifest: "/manifest.webmanifest",
   icons: {
@@ -89,8 +89,7 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: "Immojudis - Les enchères immobilières en toute clarté",
-    description:
-      "Ventes au tribunal, notariales et domaniales référencées : comprenez les règles et préparez votre achat avec Immojudis.",
+    description: COMPANY_DESCRIPTION,
     type: "website",
     // Pas d'`url` ici : cet objet est hérité par toutes les pages, et fixer l'accueil comme
     // adresse Open Graph de chacune d'elles serait faux. Chaque page pose la sienne.

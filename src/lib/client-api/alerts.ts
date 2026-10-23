@@ -3,7 +3,7 @@ import type {
   AlertNotificationListResponse,
   AlertNotificationSummary,
 } from "@/lib/alert-notifications";
-import type { AlertEvaluationResponse, AlertMatchSummary } from "@/lib/alert-matches";
+import type { PublicAlertEvaluationResponse, AlertMatchSummary } from "@/lib/alert-matches";
 import type {
   NotificationPreferencesResponse,
   NotificationPreferenceUpdateInput,
@@ -35,7 +35,7 @@ export async function evaluateAlertMatches(
     saleLimit?: number;
     persist?: boolean;
   } = {},
-): Promise<AlertEvaluationResponse> {
+): Promise<PublicAlertEvaluationResponse> {
   const response = await fetch("/api/alerts/matches", {
     method: "POST",
     headers: {
@@ -45,7 +45,7 @@ export async function evaluateAlertMatches(
     body: JSON.stringify(args),
   });
 
-  return readJson<AlertEvaluationResponse>(response);
+  return readJson<PublicAlertEvaluationResponse>(response);
 }
 
 export async function fetchAlertNotifications(

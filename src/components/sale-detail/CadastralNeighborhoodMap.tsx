@@ -4,7 +4,7 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import { useEffect, useId, useRef, useState } from "react";
 import type * as MapboxGL from "mapbox-gl";
 import type { ParcelOutlines } from "@/lib/land-parcel-outline";
-import { disableMapboxTelemetry, getMapboxAccessToken } from "@/lib/mapbox";
+import { disableMapboxTelemetry, getMapboxAccessToken, mapboxLocaleFr } from "@/lib/mapbox";
 import styles from "./CadastralNeighborhoodMap.module.css";
 
 const IGN_ATTRIBUTION =
@@ -85,6 +85,7 @@ export function CadastralNeighborhoodMap({
             center: [lng, lat],
             container,
             dragRotate: false,
+            locale: mapboxLocaleFr("Plan cadastral du quartier"),
             maxZoom: 19,
             minZoom: 13,
             renderWorldCopies: false,

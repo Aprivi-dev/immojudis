@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import {
+  MAPBOX_ATTRIBUTION,
+  MAPBOX_SATELLITE_ATTRIBUTION,
   getMapboxStyleUrl,
+  mapboxLocaleFr,
   mapboxAerial3dUrl,
   mapboxSatelliteImageUrl,
   mapboxStaticImageUrl,
@@ -74,5 +78,37 @@ describe("mapbox helpers", () => {
     expect(
       mapboxSatelliteImageUrl({ lat: 45.1234567, lng: 1.2345678, width: 640, height: 360 }),
     ).toContain("/styles/v1/mapbox/satellite-v9/static/");
+  });
+
+  it("requests the satellite placeholder at 1x in WebP", () => {
+    vi.stubEnv("NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN", "pk.test-token");
+
+    const url = mapboxSatelliteImageUrl({
+      lat: 45,
+      lng: 1,
+      width: 1280,
+      height: 720,
+      pixelRatio: 1,
+      format: "webp",
+    });
+    expect(url).toMatch(/\/1280x720\.webp\?access_token=/);
+  });
+
+  it("credits Maxar on satellite images only", () => {
+    expect(MAPBOX_SATELLITE_ATTRIBUTION).toContain("© Maxar");
+    expect(MAPBOX_SATELLITE_ATTRIBUTION).toContain(MAPBOX_ATTRIBUTION);
+    expect(MAPBOX_ATTRIBUTION).not.toContain("Maxar");
+  });
+
+  it("gives every Mapbox UI string in French, with keys mapbox-gl knows", () => {
+    const locale = mapboxLocaleFr("Plan du quartier");
+    expect(locale["Map.Title"]).toBe("Plan du quartier");
+    expect(locale["NavigationControl.ZoomIn"]).toBe("Zoomer");
+    expect(locale["NavigationControl.ZoomOut"]).toBe("Dézoomer");
+    expect(locale["NavigationControl.ResetBearing"]).toMatch(/nord/);
+    expect(locale["AttributionControl.ToggleAttribution"]).toMatch(/crédits/);
+    expect(locale["LogoControl.Title"]).toMatch(/Mapbox/);
+    const source = readFileSync("node_modules/mapbox-gl/dist/mapbox-gl-dev.js", "utf8");
+    for (const key of Object.keys(locale)) expect(source).toContain(`"${key}":`);
   });
 });

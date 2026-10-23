@@ -399,21 +399,21 @@ _warned_values: set[str] = set()
 
 
 def decode_protected_emails_enabled() -> bool:
-    """Interrupteur de suspension du décodage (actif par défaut, lu à chaque fiche).
+    """Interrupteur du décodage (désactivé par défaut, lu à chaque fiche).
 
-    Coupé par ``false`` (valeur à utiliser), ``0``, ``off``, ``no``, ``non`` ou ``disabled`` (espaces et casse
-    ignorés). Absent, vide ou vrai (``true``, ``1``, ``on``, ``yes``, ``oui``, ``enabled``) : actif. Une autre
-    valeur est inconnue : le décodage reste actif et un avertissement est journalisé une fois (sans la valeur).
-    Coupé, les éléments masqués sont tout de même retirés de la page (jamais publiés) mais aucune adresse n'est
-    décodée ni écrite au registre.
+    Activé seulement par une valeur explicitement vraie (``true``, ``1``, ``on``, ``yes``, ``oui`` ou
+    ``enabled``, espaces et casse ignorés). Absent, vide, faux (``false``, ``0``, ``off``, ``no``, ``non``,
+    ``disabled``) ou inconnu : désactivé. Une valeur inconnue est signalée par un avertissement journalisé une
+    fois (sans la valeur). Désactivé, les éléments masqués sont tout de même retirés de la page (jamais
+    publiés) mais aucune adresse n'est décodée ni écrite au registre.
     """
     value = (os.getenv(DECODE_ENV) or "").strip().lower()
-    if value in _DECODE_OFF:
-        return False
-    if value and value not in _DECODE_ON and value not in _warned_values:
+    if value in _DECODE_ON:
+        return True
+    if value and value not in _DECODE_OFF and value not in _warned_values:
         _warned_values.add(value)
-        LOGGER.warning("%s a une valeur non reconnue : le décodage reste actif (utiliser « false » pour le couper)", DECODE_ENV)
-    return True
+        LOGGER.warning("%s a une valeur non reconnue : le décodage reste désactivé (utiliser « true » pour l'activer)", DECODE_ENV)
+    return False
 
 
 def _internal_lawyer_contacts(soup: BeautifulSoup, trusts: list[Any]) -> list[dict[str, str]]:

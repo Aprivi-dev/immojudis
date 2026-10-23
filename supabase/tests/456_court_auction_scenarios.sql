@@ -94,7 +94,7 @@ select is(
 );
 
 select ok(
-  not has_function_privilege('authenticated', 'public.get_court_auction_scenarios(text, numeric)', 'execute')
+  not has_function_privilege('authenticated', 'public.get_court_auction_scenarios(text, numeric, text)', 'execute')
     and not has_function_privilege('anon', 'public.get_court_auction_summaries()', 'execute')
     and not has_table_privilege('authenticated', 'public.dvf_court_adjudications', 'select'),
   'scenarios are served by the Analyse API only'

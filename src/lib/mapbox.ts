@@ -5,6 +5,13 @@ const MAPBOX_STATIC_STREETS_STYLE = "mapbox/streets-v12";
 const MAPBOX_STATIC_SATELLITE_STYLE = "mapbox/satellite-v9";
 
 export const MAPBOX_ATTRIBUTION = "© Mapbox © OpenStreetMap";
+/**
+ * Crédits d'une image satellite : l'imagerie de Mapbox est fournie par Maxar (entre autres), à
+ * mentionner en plus. Les images de rue gardent `MAPBOX_ATTRIBUTION`. La date de prise de vue n'est
+ * pas connue de l'application.
+ */
+export const MAPBOX_SATELLITE_ATTRIBUTION = "© Mapbox © OpenStreetMap © Maxar";
+export const MAPBOX_SATELLITE_IMAGERY_DATE_NOTICE = "Date d’imagerie inconnue";
 export const MAPBOX_COPYRIGHT_URL = "https://www.mapbox.com/about/maps/";
 
 export type MapboxStaticImageFormat = "png" | "jpeg" | "webp";
@@ -16,6 +23,30 @@ export type MapboxStaticImageFormat = "png" | "jpeg" | "webp";
  * `undefined` pour revenir au format implicite de Mapbox.
  */
 export const MAPBOX_LIST_THUMBNAIL_FORMAT: MapboxStaticImageFormat | undefined = "webp";
+
+/**
+ * Textes que Mapbox écrit lui-même (nom du canevas, bouton des crédits, zoom…) : sans cette table,
+ * `language: "fr"` ne traduit que les étiquettes du fond de carte. Clés de `defaultLocale` de
+ * mapbox-gl. `mapTitle` nomme la carte (rôle « region » du canevas) : un nom propre à chaque carte
+ * évite plusieurs régions « Map » identiques sur une page.
+ */
+export function mapboxLocaleFr(mapTitle = "Carte interactive") {
+  return {
+    "AttributionControl.ToggleAttribution": "Afficher ou masquer les crédits de la carte",
+    "FullscreenControl.Enter": "Passer en plein écran",
+    "FullscreenControl.Exit": "Quitter le plein écran",
+    "GeolocateControl.FindMyLocation": "Trouver ma position",
+    "GeolocateControl.LocationNotAvailable": "Position indisponible",
+    "LogoControl.Title": "Page d’accueil de Mapbox",
+    "Map.Title": mapTitle,
+    "NavigationControl.ResetBearing": "Réorienter la carte vers le nord",
+    "NavigationControl.ZoomIn": "Zoomer",
+    "NavigationControl.ZoomOut": "Dézoomer",
+    "ScrollZoomBlocker.CtrlMessage": "Utilisez Ctrl + molette pour zoomer la carte",
+    "ScrollZoomBlocker.CmdMessage": "Utilisez ⌘ + molette pour zoomer la carte",
+    "TouchPanBlocker.Message": "Utilisez deux doigts pour déplacer la carte",
+  } as const;
+}
 
 /**
  * Désactive la télémétrie de Mapbox GL (envois vers events.mapbox.com) : sans consentement, la

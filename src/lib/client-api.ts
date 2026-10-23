@@ -63,6 +63,7 @@ export {
   updateAdminPrivacyRequest,
   executeAdminContractWithdrawal,
   executeAdminPrivacyErasure,
+  fetchAdminProfessionalPrivacyExport,
 } from "@/lib/client-api/privacy";
 
 export { requestDataRefresh, fetchDataRefreshRequests } from "@/lib/client-api/data-refresh";

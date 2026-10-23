@@ -95,39 +95,75 @@ export async function checkProductionSmoke({
   }
   const normalizedOrigin = normalizeOrigin(origin);
   const startedAt = Date.now();
-  const results = await Promise.all(
-    checks.map((check) =>
-      runCheck({
-        check: withIndexingExpectation(check, indexing),
-        origin: normalizedOrigin,
-        fetchImpl,
-      }),
-    ),
+  // Every check runs and is reported: one failing group (a slow page, an unavailable hearings page)
+  // must not hide the state of the others. A group is a run of dependent requests (two successive
+  // requests to /sales for the cache, a redirect and its target...): it stops at its first failure.
+  const groups = [
+    {
+      name: HEALTH_PATH,
+      run: async () => [await runHealthCheck({ origin: normalizedOrigin, fetchImpl })],
+    },
+    ...checks.map((check) => ({
+      name: check.path,
+      run: async () => [
+        await runCheck({
+          check: withIndexingExpectation(check, indexing),
+          origin: normalizedOrigin,
+          fetchImpl,
+        }),
+      ],
+    })),
+    {
+      name: "tribunaux",
+      run: () => runTribunalChecks({ origin: normalizedOrigin, fetchImpl, tribunalPath }),
+    },
+    { name: "catalogue", run: () => runCatalogueChecks({ origin: normalizedOrigin, fetchImpl }) },
+    {
+      name: "seo",
+      run: () =>
+        runSeoChecks({
+          origin: normalizedOrigin,
+          fetchImpl,
+          indexing,
+          minPageUrls,
+          minSaleUrls,
+          minTribunalUrls,
+        }),
+    },
+  ];
+  const settled = await Promise.allSettled(groups.map((group) => group.run()));
+  const passed = settled.flatMap((outcome) =>
+    outcome.status === "fulfilled" ? outcome.value : [],
   );
-  const healthResult = await runHealthCheck({ origin: normalizedOrigin, fetchImpl });
-  const tribunalResults = await runTribunalChecks({
-    origin: normalizedOrigin,
-    fetchImpl,
-    tribunalPath,
-  });
-  const catalogueResults = await runCatalogueChecks({ origin: normalizedOrigin, fetchImpl });
-  const seoResults = await runSeoChecks({
-    origin: normalizedOrigin,
-    fetchImpl,
-    indexing,
-    minPageUrls,
-    minSaleUrls,
-    minTribunalUrls,
-  });
+  const failures = settled.flatMap((outcome, index) =>
+    outcome.status === "rejected"
+      ? [
+          {
+            check: groups[index].name,
+            error:
+              outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason),
+          },
+        ]
+      : [],
+  );
 
-  return {
-    ok: true,
+  const report = {
+    ok: failures.length === 0,
     origin: normalizedOrigin,
     indexing,
     checkedAt: new Date().toISOString(),
     durationMs: Date.now() - startedAt,
-    checks: [healthResult, ...results, ...tribunalResults, ...catalogueResults, ...seoResults],
+    checks: passed,
+    failures,
   };
+  if (failures.length > 0) {
+    const message =
+      failures.length === 1
+        ? failures[0].error
+        : `${failures.length} contrôles en échec :\n${failures.map((failure) => `- ${failure.error}`).join("\n")}`;
+    throw Object.assign(new Error(message), { report });
+  }
+  return report;
 }
 
 /**
@@ -235,7 +271,9 @@ function isShortLivedCacheControl(value) {
 }
 
 /**
- * Independent supervision: `/api/health` must be `ok` (200). The only degradation tolerated is a
+ * Independent supervision: `/api/health` must be `ok`. The route answers 200 as soon as the database
+ * answers, even when `status` is `degraded` (stale collection): the verdict is read in the body. 503
+ * with `available: false` means the database does not answer. The only degradation tolerated is a
  * `operational-health` run older than 45 minutes but not older than 60 (HEALTH_SMOKE_MAX_AGE_MINUTES),
  * with every enabled source collected recently. The page only carries ages, counts and thresholds,
  * nothing sensitive.
@@ -269,16 +307,18 @@ async function runHealthCheck({ origin, fetchImpl }) {
   if (!body || (body.status !== "ok" && body.status !== "degraded")) {
     throw new Error(`${HEALTH_PATH}: contrat de la réponse invalide.`);
   }
+  // Availability and freshness are separate: the route answers 200 while the database answers (the
+  // freshness verdict is in `status` and the ages), and 503 with `available: false` when it does not.
+  if (body.available === false) {
+    throw new Error(`${HEALTH_PATH}: base de données injoignable (disponibilité : non).`);
+  }
   if (body.status === "ok" && response.status === 200) {
     return { path: HEALTH_PATH, status: 200, health: "ok", durationMs: Date.now() - startedAt };
   }
 
   const age = body.operationalHealth?.ageMinutes;
   const lateTickOnly =
-    typeof age === "number" &&
-    age <= HEALTH_SMOKE_MAX_AGE_MINUTES &&
-    body.collection?.ok === true &&
-    response.status === 503;
+    typeof age === "number" && age <= HEALTH_SMOKE_MAX_AGE_MINUTES && body.collection?.ok === true;
   if (!lateTickOnly) {
     throw new Error(
       `${HEALTH_PATH}: état dégradé (operational-health : ${age ?? "aucun succès"} min, collecte : ${body.collection?.ageHours ?? "aucune"} h, sources activées en retard : ${body.collection?.lateSources ?? "inconnu"}).`,
@@ -752,11 +792,14 @@ if (import.meta.url === new URL(process.argv[1], "file:").href) {
     });
     console.info(JSON.stringify(report));
   } catch (error) {
+    // `report` is set when the checks ran: every failure and every passed check are printed.
+    const report = error instanceof Error ? error.report : undefined;
     console.error(
       JSON.stringify({
         ok: false,
         checkedAt: new Date().toISOString(),
         error: error instanceof Error ? error.message : String(error),
+        ...(report ? { failures: report.failures, checks: report.checks } : {}),
       }),
     );
     process.exitCode = 1;

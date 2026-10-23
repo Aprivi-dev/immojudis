@@ -26,6 +26,7 @@ describe("télémétrie Mapbox", () => {
     for (const file of [
       "src/components/search/MapPanel.tsx",
       "src/components/MapboxPreviewButton.tsx",
+      "src/components/sale-detail/AerialOrbitHero.tsx",
       "src/components/sale-detail/CadastralNeighborhoodMap.tsx",
     ]) {
       expect(readFileSync(join(ROOT, file), "utf8")).toContain("disableMapboxTelemetry(");

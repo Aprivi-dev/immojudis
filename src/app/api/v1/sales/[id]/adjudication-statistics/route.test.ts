@@ -160,6 +160,18 @@ describe("GET /api/v1/sales/:id/adjudication-statistics", () => {
     await expect(response.json()).resolves.toMatchObject({ code: "INTERNAL_ERROR" });
   });
 
+  it("répond 404 pour une vente inconnue ou retirée, pas 503", async () => {
+    const unknown = new Error("Vente introuvable ou inaccessible.");
+    unknown.name = "SalePublicationUnavailableError";
+    mocks.getStatistics.mockRejectedValue(unknown);
+
+    const response = await request();
+
+    expect(response.status).toBe(404);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    await expect(response.json()).resolves.toMatchObject({ code: "NOT_FOUND" });
+  });
+
   it("ne fait pas échouer la lecture si la télémétrie asynchrone échoue", async () => {
     mocks.recordUsage.mockRejectedValue(new Error("telemetry unavailable"));
 

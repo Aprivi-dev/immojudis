@@ -108,6 +108,16 @@ def find_commune(city: object, postal_code: object, department: object) -> dict[
     return matches[0] if len(matches) == 1 else None
 
 
+def is_municipality_point(sale: AuctionSale) -> bool:
+    """Le point de la vente est un centre de commune (``geo_precision = municipality``), pas une adresse."""
+    return (
+        sale.latitude is not None
+        and sale.longitude is not None
+        and isinstance(sale.raw_payload, dict)
+        and sale.raw_payload.get("geo_precision") == GEO_PRECISION
+    )
+
+
 def locate_sale_by_municipality(sale: AuctionSale) -> bool:
     """Pose le centre de la commune sur une vente sans point ; renvoie vrai si un point a été posé."""
     if sale.latitude is not None or sale.longitude is not None or not isinstance(sale.raw_payload, dict):

@@ -3,6 +3,7 @@ import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
 import {
   MAPBOX_ATTRIBUTION,
   MAPBOX_COPYRIGHT_URL,
+  MAPBOX_SATELLITE_ATTRIBUTION,
   mapboxSatelliteImageUrl,
   mapboxStaticImageUrl,
 } from "@/lib/mapbox";
@@ -84,7 +85,7 @@ export function MapThumbnail({
         rel="noreferrer"
         className="absolute bottom-1 right-1 rounded bg-white/85 px-1.5 py-0.5 text-[9px] font-semibold text-brand-navy shadow-sm"
       >
-        {MAPBOX_ATTRIBUTION}
+        {variant === "satellite" ? MAPBOX_SATELLITE_ATTRIBUTION : MAPBOX_ATTRIBUTION}
       </a>
     </div>
   );

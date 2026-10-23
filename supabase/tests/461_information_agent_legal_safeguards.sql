@@ -523,7 +523,7 @@ from (
 
 select is(
   app_private.purge_information_agent_data(now()),
-  '{"information_agent_missions": 9, "information_agent_contacts": 4}'::jsonb,
+  '{"information_agent_missions": 9, "information_agent_cases": 1, "information_agent_contacts": 4}'::jsonb,
   'the retention report counts the purged missions and registry addresses'
 );
 select is(
@@ -566,7 +566,7 @@ select ok(
 );
 select is(
   app_private.purge_information_agent_data(now()),
-  '{"information_agent_missions": 0, "information_agent_contacts": 0}'::jsonb,
+  '{"information_agent_missions": 0, "information_agent_cases": 0, "information_agent_contacts": 0}'::jsonb,
   'a second run has nothing left to purge'
 );
 

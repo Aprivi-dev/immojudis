@@ -24,7 +24,7 @@ afterEach(() => {
 
 describe("product events", () => {
   it("does nothing in the test environment", () => {
-    trackProductEvent("signup_completed");
+    trackProductEvent("signup_submitted");
     expect(track).not.toHaveBeenCalled();
   });
 
@@ -41,7 +41,8 @@ describe("product events", () => {
     });
 
     it("sends every event without property by its name only", () => {
-      trackProductEvent("signup_completed");
+      trackProductEvent("signup_submitted");
+      trackProductEvent("signup_confirmed");
       trackProductEvent("favorite_added");
       trackProductEvent("sample_report_viewed");
       trackProductEvent("offers_viewed");
@@ -49,7 +50,8 @@ describe("product events", () => {
       trackProductEvent("opening_notification_requested");
       trackProductEvent("fees_simulator_used");
       expect(track.mock.calls).toEqual([
-        ["signup_completed"],
+        ["signup_submitted"],
+        ["signup_confirmed"],
         ["favorite_added"],
         ["sample_report_viewed"],
         ["offers_viewed"],
@@ -100,19 +102,40 @@ describe("product events", () => {
 
     it("sends nothing once the visitor has opposed the audience measurement", () => {
       setAudienceOptOut(true);
-      trackProductEvent("signup_completed");
+      trackProductEvent("signup_submitted");
       trackProductEvent("alert_created", { email_consent: true });
       expect(track).not.toHaveBeenCalled();
 
       setAudienceOptOut(false);
-      trackProductEvent("signup_completed");
-      expect(track.mock.calls).toEqual([["signup_completed"]]);
+      trackProductEvent("signup_submitted");
+      expect(track.mock.calls).toEqual([["signup_submitted"]]);
     });
 
     it("honours an opposition stored by an earlier visit", () => {
       window.localStorage.setItem(AUDIENCE_OPT_OUT_STORAGE_KEY, "1");
       trackProductEvent("offers_viewed");
       expect(track).not.toHaveBeenCalled();
+    });
+
+    it("keeps an event sent before the Vercel script is injected, for the script to send", () => {
+      const page = window as unknown as { va?: unknown; vaq?: unknown[] };
+      page.va = undefined;
+      page.vaq = undefined;
+
+      trackProductEvent("offers_viewed");
+      expect(typeof page.va).toBe("function");
+
+      // Same queue as the one `@vercel/analytics` creates itself: the script drains `vaq`.
+      (page.va as (...params: unknown[]) => void)("event", { name: "offers_viewed" });
+      expect(page.vaq).toEqual([["event", { name: "offers_viewed" }]]);
+
+      // A queue that already exists (injected script, or the package's own) is left alone.
+      const existing = vi.fn();
+      page.va = existing;
+      trackProductEvent("sample_report_viewed");
+      expect(page.va).toBe(existing);
+      page.va = undefined;
+      page.vaq = undefined;
     });
 
     it("never lets an analytics failure reach the caller", () => {
@@ -125,7 +148,8 @@ describe("product events", () => {
 
   it("keeps the list of event names closed and anonymous", () => {
     expect([...PRODUCT_EVENT_NAMES]).toEqual([
-      "signup_completed",
+      "signup_submitted",
+      "signup_confirmed",
       "alert_created",
       "favorite_added",
       "sample_report_viewed",

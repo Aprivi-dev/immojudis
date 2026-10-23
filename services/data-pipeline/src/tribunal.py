@@ -8,6 +8,7 @@ from src.court_competence import (
     OfficialCourt,
     resolve_competent_court,
     resolve_court_by_label,
+    tribunal_label_court_key,
     verified_sale_insee_code,
 )
 from src.department_inference import department_from_geocode_evidence
@@ -134,10 +135,45 @@ def infer_tribunal(sale: AuctionSale) -> str | None:
     return None
 
 
+# Sources dont le « tribunal » est le « Lieu de vente » de la fiche : un lieu (« Paris », « Versailles »), pas toujours
+# un tribunal nommé. Un tribunal qui en est tiré est une déduction, signalée comme telle.
+VENUE_LABEL_SOURCES = frozenset({"petites_affiches"})
+TRIBUNAL_DEDUCED_FLAG = "tribunal_deduced"
+TRIBUNAL_DEDUCED_KEY = "tribunal_deduced"
+
+
 def fill_tribunal(sale: AuctionSale) -> AuctionSale:
+    source_label = clean_text(sale.tribunal)
     _fill_tribunal_fields(sale)
+    _mark_deduced_tribunal(sale, source_label)
     infer_missing_department(sale)
     return sale
+
+
+def _mark_deduced_tribunal(sale: AuctionSale, source_label: str | None) -> None:
+    """Signale (drapeau + trace) un tribunal déduit d'un « Lieu de vente » qui ne nomme pas de tribunal.
+
+    Un libellé « Tribunal judiciaire de X » / « TJ X » est explicite : rien à signaler. La trace garde le libellé
+    d'origine : au passage suivant (recalcul), le tribunal stocké est celui qu'on avait déduit, pas un libellé source.
+    """
+    payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else None
+    if payload is None or sale.source_name not in VENUE_LABEL_SOURCES:
+        return
+    previous = payload.get(TRIBUNAL_DEDUCED_KEY)
+    if isinstance(previous, dict) and previous.get("tribunal") == source_label and previous.get("source_label"):
+        source_label = clean_text(previous["source_label"])
+    if sale.tribunal and source_label and tribunal_label_court_key(source_label) is None:
+        _add_quality_flag(sale, TRIBUNAL_DEDUCED_FLAG)
+        if sale.raw_payload.get("tribunal_assignment"):
+            method = "commune_competence"
+        elif sale.raw_payload.get(LABEL_ASSIGNMENT_KEY):
+            method = "label"
+        else:
+            method = "city_list"
+        payload[TRIBUNAL_DEDUCED_KEY] = {"source_label": source_label, "tribunal": sale.tribunal, "method": method}
+    else:
+        _remove_quality_flag(sale, TRIBUNAL_DEDUCED_FLAG)
+        payload.pop(TRIBUNAL_DEDUCED_KEY, None)
 
 
 def infer_missing_department(sale: AuctionSale) -> AuctionSale:

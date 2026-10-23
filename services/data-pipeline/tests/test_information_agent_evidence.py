@@ -746,7 +746,7 @@ def test_worker_persists_optional_semantic_facts_as_pending_with_provenance(monk
     )
     candidates = json.loads(candidate_request.content)
     address = next(row for row in candidates if row["fact_key"] == "address")
-    assert address["extraction_method"] == "semantic_evidence_v1"
+    assert address["extraction_method"] == "semantic_evidence_v2"
     assert address["status"] == "pending"
     assert address["source_page"] == 1
     finish_payload = json.loads(

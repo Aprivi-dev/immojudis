@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   compareListingZone,
+  landConstraintsOverview,
   landReportReliability,
+  landZoneVerdict,
   listingPluZone,
   parcelSurfaceGap,
   rulesUnavailableReason,
@@ -19,6 +21,24 @@ describe("listingPluZone", () => {
     expect(listingPluZone(null, "Le terrain est situé en zone A du PLU.")).toBe("A");
   });
 
+  it.each([
+    ["Terrain en zone Nord du PLU."],
+    ["Secteur Sud du PLU, belle vue."],
+    ["Le PLU classe la zone Est en réserve."],
+    ["Zone NATURELLE au PLU."],
+    ["Selon le PLU, zone Ouest de la commune."],
+  ])("does not take a word for a zone code: %s", (text) => {
+    expect(listingPluZone(text)).toBeNull();
+  });
+
+  it.each([
+    ["Zone AUs du PLU.", "AUs"],
+    ["PLU : zone Ah", "Ah"],
+    ["Terrain en zone N du PLU.", "N"],
+  ])("keeps a short code: %s", (text, zone) => {
+    expect(listingPluZone(text)).toBe(zone);
+  });
+
   it("ignores texts that only mention the PLU", () => {
     expect(
       listingPluZone("Renseignements d’urbanisme : voir la zone du PLU en annexe."),
@@ -33,6 +53,34 @@ describe("compareListingZone", () => {
       zone: "UP1*1L40",
       matches: true,
     });
+  });
+
+  it.each([
+    ["A", "AU"],
+    ["AU", "A"],
+    ["N", "NA"],
+    ["NA", "N"],
+    ["U", "UA"],
+    ["UA", "U"],
+    ["UP1", "UP10"],
+    ["UP10", "UP1"],
+    ["UP1*1L40", "UP2"],
+  ])("does not match the listing zone %s with the official zone %s", (quoted, official) => {
+    expect(compareListingZone(quoted, [{ label: official }])?.matches).toBe(false);
+  });
+
+  it.each([
+    ["UB", "UB"],
+    ["ub", "UB"],
+    ["Ah", "A"],
+    ["A", "Ah"],
+    ["UCa2*L12", "UCa2"],
+    ["UC", "UCa2"],
+    ["N", "Nh"],
+    ["AUs", "AUs"],
+    ["UP1*1L40", "UP1"],
+  ])("matches the listing zone %s with the official zone %s", (quoted, official) => {
+    expect(compareListingZone(quoted, [{ label: official }])?.matches).toBe(true);
   });
 
   it("flags a different zone and stays neutral without an official one", () => {
@@ -100,5 +148,60 @@ describe("rulesUnavailableReason", () => {
       "téléchargé",
     );
     expect(rulesUnavailableReason([])).toContain("Aucun article");
+  });
+});
+
+describe("landZoneVerdict", () => {
+  it.each([
+    [[{ label: "UCa2", type: "U" }], "zone urbaine (U)"],
+    [[{ label: "1AUh", type: "AUc" }], "zone à urbaniser (AU)"],
+    [[{ label: "Ap", type: "A" }], "zone agricole (A)"],
+    [[{ label: "Nh", type: "unknown" }], "zone naturelle (N)"],
+  ])("names the family in plain words", (zones, expected) => {
+    expect(landZoneVerdict(zones)).toContain(expected);
+  });
+
+  it("lists several families and stays silent without a zone", () => {
+    expect(
+      landZoneVerdict([
+        { label: "UB", type: "U" },
+        { label: "N", type: "N" },
+      ]),
+    ).toBe("Terrain à cheval sur plusieurs zones : zone urbaine (U) et zone naturelle (N).");
+    expect(landZoneVerdict([])).toBeNull();
+    expect(landZoneVerdict([{ label: "Zone GPU", type: "unknown" }])).toBeNull();
+  });
+});
+
+describe("landConstraintsOverview", () => {
+  const parcels = [{}] as never;
+  const layer = (key: string, status: string) => ({ key, status }) as never;
+
+  it("counts what was found", () => {
+    expect(
+      landConstraintsOverview({ parcels, constraints: [{}, {}] as never, checks: [] }),
+    ).toEqual({ status: "found", count: 2 });
+  });
+
+  it("says « none » only when the layers were really read", () => {
+    expect(
+      landConstraintsOverview({
+        parcels,
+        constraints: [],
+        checks: [layer("gpu.prescription-surf", "empty"), layer("gpu.assiette-sup-s", "available")],
+      }),
+    ).toEqual({ status: "none" });
+  });
+
+  it.each([
+    ["no parcel", { parcels: [], checks: [layer("gpu.info-surf", "empty")] }],
+    ["no layer read", { parcels, checks: [layer("planning", "unavailable")] }],
+    ["a layer down", { parcels, checks: [layer("gpu.info-surf", "unavailable")] }],
+    ["a layer partial", { parcels, checks: [layer("gpu.info-lin", "partial")] }],
+  ])("is unverified with %s", (_name, planning) => {
+    expect(landConstraintsOverview({ constraints: [], ...planning })).toMatchObject({
+      status: "unverified",
+      reason: expect.any(String),
+    });
   });
 });

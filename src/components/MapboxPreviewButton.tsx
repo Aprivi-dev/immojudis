@@ -12,13 +12,17 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { disableMapboxTelemetry, getMapboxAccessToken } from "@/lib/mapbox";
+import { disableMapboxTelemetry, getMapboxAccessToken, mapboxLocaleFr } from "@/lib/mapbox";
 import {
   mapboxPreviewCamera,
   mapboxPreviewLoadingLabel,
   mapboxPreviewModeLabel,
   type MapboxPreviewMode,
 } from "@/lib/mapbox-preview";
+
+const PREVIEW_DEGREES_PER_SECOND = 3.5;
+const PREVIEW_MAX_DEGREES = 720;
+const PREVIEW_MAX_FPS = 30;
 
 type PreviewStatus = "idle" | "loading" | "ready" | "missing" | "error" | "unconfigured";
 
@@ -123,6 +127,7 @@ function MapboxPreviewCanvas({
 
     let frameId = 0;
     let previous = performance.now();
+    let removeRotationListeners: (() => void) | null = null;
     let cancelled = false;
     let map: MapboxGL.Map | null = null;
     let marker: MapboxGL.Marker | null = null;
@@ -144,6 +149,7 @@ function MapboxPreviewCanvas({
           center: [lng, lat],
           container,
           dragRotate: true,
+          locale: mapboxLocaleFr(mapboxPreviewModeLabel(mode)),
           pitch: camera.pitch,
           pitchWithRotate: true,
           style: camera.style,
@@ -187,14 +193,43 @@ function MapboxPreviewCanvas({
           }
 
           if (mode === "aerial3d") {
+            // Rotation lente : 30 images/s au plus, deux tours au plus, jamais en mouvement réduit
+            // (suivi en direct) ni onglet masqué. La boucle ne tourne que quand tout cela est réuni.
+            const reducedMotion =
+              typeof window.matchMedia === "function"
+                ? window.matchMedia("(prefers-reduced-motion: reduce)")
+                : null;
+            let rotated = 0;
             const animate = (now: number) => {
               if (!map) return;
-              const delta = Math.min((now - previous) / 1000, 0.08);
-              previous = now;
-              map.rotateTo((map.getBearing() + delta * 3.5) % 360, { duration: 0 });
               frameId = window.requestAnimationFrame(animate);
+              if (now - previous < 1000 / PREVIEW_MAX_FPS - 1) return;
+              const degrees = Math.min((now - previous) / 1000, 0.08) * PREVIEW_DEGREES_PER_SECOND;
+              previous = now;
+              rotated += degrees;
+              map.rotateTo((map.getBearing() + degrees) % 360, { duration: 0 });
+              if (rotated >= PREVIEW_MAX_DEGREES) stopRotation();
             };
-            frameId = window.requestAnimationFrame(animate);
+            const stopRotation = () => {
+              if (frameId) window.cancelAnimationFrame(frameId);
+              frameId = 0;
+            };
+            const syncRotation = () => {
+              const wanted =
+                !reducedMotion?.matches && !document.hidden && rotated < PREVIEW_MAX_DEGREES;
+              if (!wanted) stopRotation();
+              else if (!frameId) {
+                previous = performance.now();
+                frameId = window.requestAnimationFrame(animate);
+              }
+            };
+            reducedMotion?.addEventListener("change", syncRotation);
+            document.addEventListener("visibilitychange", syncRotation);
+            removeRotationListeners = () => {
+              reducedMotion?.removeEventListener("change", syncRotation);
+              document.removeEventListener("visibilitychange", syncRotation);
+            };
+            syncRotation();
           }
 
           setStatus("ready");
@@ -214,6 +249,7 @@ function MapboxPreviewCanvas({
     return () => {
       cancelled = true;
       if (frameId) window.cancelAnimationFrame(frameId);
+      removeRotationListeners?.();
       marker?.remove();
       map?.remove();
       setStatus("idle");

@@ -53,6 +53,10 @@ export function StreetViewDialog({
   buttonProps,
 }: StreetViewDialogProps) {
   const [open, setOpen] = useState(false);
+  // Le panorama est un contenu de Google : rien n'est demandé (ni la recherche du panorama ni
+  // l'iframe, donc aucune connexion du navigateur à Google) avant un clic sur « Afficher Street
+  // View (Google) », à chaque ouverture de la fenêtre.
+  const [loaded, setLoaded] = useState(false);
   const apiKey = getGoogleMapsEmbedApiKey();
   const fallbackUrl = useMemo(
     () => buildStreetViewEmbedUrl(target, apiKey, camera),
@@ -61,7 +65,11 @@ export function StreetViewDialog({
   // The Embed API alone opens the nearest panorama of any kind, often a
   // contributed photo sphere: look up Google's own street imagery first.
   const lookupEnabled =
-    open && Boolean(fallbackUrl) && !target.pano?.trim() && hasStreetViewCoordinates(target);
+    open &&
+    loaded &&
+    Boolean(fallbackUrl) &&
+    !target.pano?.trim() &&
+    hasStreetViewCoordinates(target);
   const panorama = useQuery({
     queryKey: queryKeys.streetViewPanorama(target.lat ?? 0, target.lng ?? 0),
     queryFn: ({ signal }) => fetchPanorama(target.lat as number, target.lng as number, signal),
@@ -82,6 +90,25 @@ export function StreetViewDialog({
   let viewport: ReactNode;
   if (!open) {
     viewport = null;
+  } else if (!loaded) {
+    viewport = (
+      <div className={styles.unavailable}>
+        <div className="flex max-w-md flex-col items-center gap-4">
+          <p>
+            Street View est un service de Google. En l’affichant, votre navigateur se connecte aux
+            serveurs de Google, qui reçoivent votre adresse IP et les données techniques de la
+            connexion. Rien n’est chargé tant que vous ne le demandez pas.
+          </p>
+          <button
+            type="button"
+            onClick={() => setLoaded(true)}
+            className="inline-flex min-h-10 items-center justify-center rounded-full border border-white/30 bg-white px-4 py-2 text-sm font-semibold text-slate-900 transition-colors hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+          >
+            Afficher Street View (Google)
+          </button>
+        </div>
+      </div>
+    );
   } else if (lookupEnabled && panorama.isPending) {
     viewport = (
       <div className={styles.loading} role="status">
@@ -132,7 +159,13 @@ export function StreetViewDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setLoaded(false);
+      }}
+    >
       <DialogTrigger asChild>
         <button
           {...buttonProps}

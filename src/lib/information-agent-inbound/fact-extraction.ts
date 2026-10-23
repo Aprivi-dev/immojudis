@@ -5,6 +5,20 @@ import {
   normalizeWhitespace,
   replyTextForExtraction,
 } from "@/lib/information-agent-inbound/text";
+import { unicodeWordBoundaries } from "@/lib/information-agent-inbound/unicode-boundaries";
+
+/**
+ * Occupation d'un temps révolu : « était loué », « ancien locataire », « bail résilié ». Ce n'est pas l'état actuel : « Le bien était loué mais il est désormais libre » ne
+ * donne pas « loué ». Les passages sont blanchis (même longueur) avant la recherche des formules
+ * d'occupation, pour que les positions des extraits restent justes.
+ */
+const PAST_OCCUPANCY = unicodeWordBoundaries(
+  /\b(?:(?:était|étaient|fut|furent|a\s+été|ont\s+été|avait|avaient|anciennement|précédemment|auparavant)\s+(?:[^.!?\n]{0,40}?\s)?(?:lou[ée]e?s?|occup[ée]e?s?|squatt[ée]e?s?)|ancien(?:ne)?s?\s+(?:locataires?|occupants?)|bail\s+(?:r[ée]sili[ée]|expir[ée]|termin[ée]|[ée]chu))(?![\p{L}\p{N}])/giu,
+);
+
+function withoutPastOccupancy(text: string): string {
+  return text.replace(PAST_OCCUPANCY, (match) => " ".repeat(match.length));
+}
 
 export type ExtractedInformationAgentFact = {
   factKey:
@@ -80,6 +94,7 @@ export function extractInformationAgentFacts(bodyText: string): ExtractedInforma
     }
   }
 
+  const occupancyText = withoutPastOccupancy(normalized);
   const occupancyPatterns: Array<[RegExp, string, string]> = [
     [
       /\b(?:bien|logement|maison|appartement)\s+(?:(?:est|était|sera|serait)\s+)?occup[ée]e?s?\s+par\s+(?:le|la|les)\s+propri[ée]taire(?:s)?\b/iu,
@@ -87,6 +102,12 @@ export function extractInformationAgentFacts(bodyText: string): ExtractedInforma
       "Bien occupé par le propriétaire",
     ],
     [/\b(?:libre\s+de\s+toute\s+occupation|vacant|inoccup[ée])\b/iu, "vacant", "Bien libre"],
+    // « Il était loué mais il est désormais libre » : l'état actuel est celui d'après le changement.
+    [
+      /\b(?:désormais|dorénavant|maintenant|à\s+présent|actuellement|aujourd['’]hui)\s+(?:(?:est|sont)\s+)?(?:libres?|vacants?|inoccup[ée]e?s?)\b/iu,
+      "vacant",
+      "Bien libre",
+    ],
     // « Le locataire a quitté les lieux » : le bien est libre, pas loué.
     [
       /\b(?:locataires?|occupants?)\s+(?:a|ont|est|sont)\s+(?:quitt[ée]s?|parti(?:e|s|es)?)(?![\p{L}\p{N}])/iu,
@@ -115,9 +136,11 @@ export function extractInformationAgentFacts(bodyText: string): ExtractedInforma
     ],
     [/\bsquatt[ée]e?s?(?![\p{L}\p{N}])/iu, "squatted", "Bien squatté"],
   ];
-  const occupancyMatches = occupancyPatterns.flatMap(([pattern, value, label]) =>
-    pattern.test(normalized) ? [{ pattern, value, label }] : [],
-  );
+  const occupancyMatches = occupancyPatterns.flatMap(([source, value, label]) => {
+    // `\b` de JavaScript ne voit pas les lettres accentuées : « inoccupé » finissait sans frontière.
+    const pattern = unicodeWordBoundaries(source);
+    return pattern.test(occupancyText) ? [{ pattern, value, label }] : [];
+  });
   const effectiveOccupancyMatches = occupancyMatches.some(
     (match) => match.value === "owner_occupied",
   )
@@ -125,11 +148,11 @@ export function extractInformationAgentFacts(bodyText: string): ExtractedInforma
     : occupancyMatches;
   if (new Set(effectiveOccupancyMatches.map((match) => match.value)).size === 1) {
     for (const { pattern, value, label } of effectiveOccupancyMatches) {
-      const match = normalized.match(pattern);
+      const match = occupancyText.match(pattern);
       if (!match) continue;
       if (
         !hasAmbiguousCorrectionNear(normalized, match.index ?? 0) &&
-        !hasNegatedValueNear(normalized, match.index ?? 0)
+        !hasNegatedValueNear(occupancyText, match.index ?? 0)
       ) {
         facts.push({
           factKey: "occupancy_status",

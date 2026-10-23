@@ -2,6 +2,7 @@ import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
+import { saleNotFoundAsPublicError } from "@/lib/api-sale-not-found";
 import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
 import { assertFeatureEntitlement } from "@/lib/property-reports";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
@@ -53,7 +54,7 @@ export async function GET(request: Request) {
         { status: 422 },
       );
     }
-    const response = apiError(error, context, {
+    const response = apiError(saleNotFoundAsPublicError(error), context, {
       fallbackMessage: "Activité judiciaire du tribunal temporairement indisponible.",
       fallbackStatus: 503,
     });

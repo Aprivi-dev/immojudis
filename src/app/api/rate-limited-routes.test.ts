@@ -74,6 +74,9 @@ vi.mock("@/lib/geographic-boundary", () => ({
 vi.mock("@/lib/billing", () => ({
   resolveAnalysisCheckoutAvailability: mocks.checkout,
 }));
+vi.mock("@/lib/analysis-checkout-readiness", () => ({
+  analysisCheckoutReadiness: () => ({ open: true, missing: [], launchOfferActive: false }),
+}));
 
 import { POST as marketEstimate } from "./market-estimate/route";
 import { GET as directory } from "./lawyers/directory/route";
@@ -276,7 +279,6 @@ describe("P4-02 rate limits on costly and public routes", () => {
   });
 
   it("answers billing/offer failures with a generic 503 and caches anonymous answers for 5 minutes", async () => {
-    vi.stubEnv("STRIPE_ANALYSIS_PRICE_ID", "price_test");
     const anonymous = await offerGet(new Request("https://example.test/api/billing/offer"));
     expect(anonymous.status).toBe(200);
     expect(anonymous.headers.get("cache-control")).toContain("s-maxage=300");
@@ -291,7 +293,6 @@ describe("P4-02 rate limits on costly and public routes", () => {
     expect(failed.status).toBe(503);
     expect(body.error).toBe("Offre indisponible.");
     expect(JSON.stringify(body)).not.toContain("sk_live");
-    vi.unstubAllEnvs();
   });
 });
 

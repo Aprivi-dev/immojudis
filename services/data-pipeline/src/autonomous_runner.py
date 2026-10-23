@@ -19,6 +19,7 @@ from src.config import load_settings
 from src.run_finalizer import register_run
 from src.source_absence import withdraw_missing_sales
 from src.source_health import SOURCE_WARNING_EXIT_CODE
+from src.stage_watchdog import WATCHDOG_ENV, WATCHDOG_EXIT_CODE
 from src.storage.supabase_client import connect
 
 # Alias de compatibilité : des tests patchent ce nom de module.
@@ -472,9 +473,14 @@ def _run_document_reading(env: dict[str, str]) -> int:
 
 
 LICITOR_HISTORY_BUDGET_SECONDS = 330
+# Copie des lots pour les scénarios d'enchères, seule, quand le tick a épuisé son budget (60 s de SQL au plus).
+LICITOR_SNAPSHOT_ONLY_SECONDS = 90
 LICITOR_SOURCE = 'licitor'
 # Temps laissé après la lecture des fiches pour normaliser, publier et clore le run.
 LICITOR_BUDGET_MARGIN_SECONDS = 8 * 60
+# The collection process ends itself (watchdog, src/stage_watchdog.py) this long before
+# the hard kill, so that the log names the blocked step instead of ending on a bare kill.
+WATCHDOG_MARGIN_SECONDS = 90
 
 
 def _run_licitor_history_refresh(env: dict[str, str]) -> int:
@@ -487,6 +493,15 @@ def _run_licitor_history_refresh(env: dict[str, str]) -> int:
     try:
         result = subprocess.run(command, env=env, timeout=LICITOR_HISTORY_BUDGET_SECONDS, check=False)
         return int(result.returncode)
+    except subprocess.TimeoutExpired:
+        # The tick was stopped before the scenarios' copy of the lots: refresh it alone.
+        try:
+            subprocess.run(
+                [*command, '--snapshot-only'], env=env, timeout=LICITOR_SNAPSHOT_ONLY_SECONDS, check=False
+            )
+        except Exception:
+            pass
+        return 1
     except Exception:
         return 1
 
@@ -537,6 +552,7 @@ def execute(run_id: str) -> int:
         # Licitor's full public inventory took about 27 minutes to collect on
         # 2026-09-21, leaving too little of the ordinary budget to publish it.
         budget = (50 if source == 'licitor' else 35) * 60
+        env[WATCHDOG_ENV] = str(budget - WATCHDOG_MARGIN_SECONDS)
         if source == 'petites_affiches':
             # Leave time for the main process to flush factual publications and
             # persist the partial run before the scheduler's hard kill.
@@ -556,6 +572,11 @@ def execute(run_id: str) -> int:
         code, failure = 1, 'Execution budget exceeded; committed checkpoints preserved'
     except Exception as exc:
         code, failure = 1, str(exc)[:1000]
+    if code == WATCHDOG_EXIT_CODE:
+        failure = (
+            'Worker watchdog fired: a step stayed blocked until the end of the budget; '
+            'see the "WATCHDOG" line and the stage journal in the job log'
+        )
     worker_code = code
     reading_code = _run_document_reading(env) if source == 'enrichment-queue' and worker_code == 0 else None
     licitor_history_code = (

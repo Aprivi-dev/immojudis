@@ -182,6 +182,9 @@ def test_known_sale_preflight_uses_postgres_when_configured(monkeypatch) -> None
     class FakeDb:
         isolation = False
 
+        def __init__(self):
+            self.statements: list[str] = []
+
         def __enter__(self):
             return self
 
@@ -191,6 +194,10 @@ def test_known_sale_preflight_uses_postgres_when_configured(monkeypatch) -> None
         def execute(self, query, params=None):
             if query == "set transaction isolation level repeatable read":
                 self.isolation = True
+                return SimpleNamespace(fetchall=lambda: [])
+            if query.startswith("set local statement_timeout"):
+                assert self.isolation, "statement_timeout must follow the isolation level"
+                self.statements.append(query)
                 return SimpleNamespace(fetchall=lambda: [])
             if "to_regclass" in query and "to_regprocedure" in query:
                 return SimpleNamespace(
@@ -241,6 +248,10 @@ def test_known_sale_preflight_uses_postgres_when_configured(monkeypatch) -> None
         "source_presence": {"licitor": {"availability": "available"}},
     }
     assert databases[0].isolation is True
+    # Bounded inside the transaction: a transaction pooler ignores the connection-level setting.
+    assert databases[0].statements == [
+        f"set local statement_timeout = '{supabase_client.KNOWN_SALE_DETAIL_STATEMENT_TIMEOUT}'"
+    ]
 
 
 def test_known_sale_projection_keeps_source_contract_and_compact_presence() -> None:
@@ -314,6 +325,8 @@ def test_fetch_known_sale_details_filters_direct_rows_for_payload_hydration(monk
             calls.append((query, params))
             if query == "set transaction isolation level repeatable read":
                 return SimpleNamespace(fetchall=lambda: [])
+            if query.startswith("set local statement_timeout"):
+                return SimpleNamespace(fetchall=lambda: [])
             if "to_regclass" in query and "to_regprocedure" in query:
                 return SimpleNamespace(fetchone=lambda: (None, None))
             if "list_reviewed_publication_aliases" in query:
@@ -339,7 +352,7 @@ def test_fetch_known_sale_details_filters_direct_rows_for_payload_hydration(monk
     )
 
     assert details[source_url]["raw_payload"] == {"source_evidence": {"url": source_url}}
-    assert len(calls) == 4
+    assert len(calls) == 5
 
 
 def test_fetch_known_sale_details_hydrates_reviewed_alias_canonical_row(monkeypatch) -> None:
@@ -366,6 +379,8 @@ def test_fetch_known_sale_details_hydrates_reviewed_alias_canonical_row(monkeypa
 
         def execute(self, query, params=None):
             if query == "set transaction isolation level repeatable read":
+                return SimpleNamespace(fetchall=lambda: [])
+            if query.startswith("set local statement_timeout"):
                 return SimpleNamespace(fetchall=lambda: [])
             if "to_regclass" in query and "to_regprocedure" in query:
                 return SimpleNamespace(fetchone=lambda: (None, None))

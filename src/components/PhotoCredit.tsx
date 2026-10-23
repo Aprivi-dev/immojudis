@@ -40,3 +40,53 @@ export function PhotoCredit({
     </span>
   );
 }
+
+/**
+ * Crédit d'un ensemble de photos (vignettes) : un seul crédit quand toutes viennent de la même
+ * source, sinon « Photos : via A, B » avec une entrée par source, sans doublon.
+ */
+export function PhotoCredits({
+  credits,
+  className,
+  linkClassName,
+}: {
+  credits: readonly (PhotoCreditData | null | undefined)[];
+  className?: string;
+  linkClassName?: string;
+}) {
+  const distinct: PhotoCreditData[] = [];
+  for (const credit of credits) {
+    if (!credit) continue;
+    if (!distinct.some((item) => item.label === credit.label)) distinct.push(credit);
+  }
+  if (distinct.length === 0) return null;
+  if (distinct.length === 1) {
+    return <PhotoCredit credit={distinct[0]} className={className} linkClassName={linkClassName} />;
+  }
+  // Les sources nommées d'abord ; les photos de source inconnue forment une dernière entrée.
+  const named = distinct.filter((item) => item.label);
+  const unknown = distinct.some((item) => !item.label);
+  return (
+    <span data-testid="photo-credit" className={className}>
+      Photos : via{" "}
+      {named.map((item, index) => (
+        <span key={item.label}>
+          {index > 0 ? ", " : ""}
+          {item.href ? (
+            <a
+              href={item.href}
+              target="_blank"
+              rel="nofollow noopener noreferrer"
+              className={cn("underline underline-offset-2", linkClassName)}
+            >
+              {item.label}
+            </a>
+          ) : (
+            item.label
+          )}
+        </span>
+      ))}
+      {unknown ? `${named.length ? ", " : ""}source de l'annonce` : null}
+    </span>
+  );
+}

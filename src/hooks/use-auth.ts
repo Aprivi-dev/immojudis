@@ -17,6 +17,7 @@ import {
 } from "@/integrations/supabase/lazy";
 import type { AccountProfile } from "@/lib/account";
 import { profileFromUserMetadata } from "@/lib/account";
+import { trackSignupConfirmed } from "@/lib/signup-confirmation";
 
 // Share only concurrent reads. Settled results are never cached across auth events.
 const pendingUsers = new Map<string, ReturnType<SupabaseBrowserClient["auth"]["getUser"]>>();
@@ -234,6 +235,7 @@ export function useVerifiedAuth(enabled = true, routeKey?: string) {
         fetchProfile(data.user!),
       ).catch(() => profileFromUserMetadata(data.user!));
       if (!active || currentVerification !== verification) return;
+      if (verifiedUserId !== data.user.id) trackSignupConfirmed(data.user);
       verifiedUserId = data.user.id;
       setSession(nextSession);
       setUser(data.user);

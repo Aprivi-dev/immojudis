@@ -7,7 +7,12 @@
  * `Speed Insights` ne sont plus rendus (voir `AudienceMeasurement`). Si le stockage est
  * inaccessible (navigation privée stricte, stockage bloqué), le choix est tout de même respecté
  * jusqu'à la fermeture de l'onglet.
+ *
+ * S'opposer efface aussi l'accord aux cookies de Google Analytics (`analytics-consent.ts`) : après
+ * le retrait de l'opposition, le bandeau redemande un choix au lieu de rétablir l'ancien accord.
  */
+
+import { clearAnalyticsConsent } from "@/lib/analytics-consent";
 
 export const AUDIENCE_OPT_OUT_STORAGE_KEY = "immojudis:audience-opt-out";
 const AUDIENCE_OPT_OUT_EVENT = "immojudis:audience-opt-out-change";
@@ -36,6 +41,7 @@ export function setAudienceOptOut(optedOut: boolean): void {
   } catch {
     // Stockage inaccessible : `memoryChoice` garde le choix pour cet onglet.
   }
+  if (optedOut) clearAnalyticsConsent();
   window.dispatchEvent(new Event(AUDIENCE_OPT_OUT_EVENT));
 }
 

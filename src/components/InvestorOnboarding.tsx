@@ -19,7 +19,7 @@ const steps = ["Votre secteur", "Vos critères", "Votre première recherche"];
 const inputClass =
   "w-full rounded-lg border border-border bg-background px-4 py-3 text-base text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold";
 
-export function InvestorOnboarding() {
+export function InvestorOnboarding({ returnTo }: { returnTo?: string } = {}) {
   const router = useRouter();
   const launchOffer = useLaunchOffer().active;
   const [step, setStep] = useState(0);
@@ -279,10 +279,10 @@ export function InvestorOnboarding() {
           </div>
         </form>
         <Link
-          href="/sales"
+          href={returnTo ?? "/sales"}
           className="mt-6 inline-block text-sm text-muted-foreground underline underline-offset-4"
         >
-          Passer et explorer le catalogue
+          {returnTo ? "Passer et revenir à la fiche" : "Passer et explorer le catalogue"}
         </Link>
       </section>
     </main>

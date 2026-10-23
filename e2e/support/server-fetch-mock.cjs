@@ -62,6 +62,8 @@ globalThis.fetch = async function e2eFetch(input, init) {
   // The market gap band of the public page: nothing to say (no reliable estimate in the E2E
   // build). An answer is still needed, or the lookup waits for a DNS error.
   if (pathname.endsWith("/rpc/get_public_sale_market_gap_band")) return json(null);
+  // The source name of the public page (an enrichment, like the band): none in the E2E build.
+  if (pathname.endsWith("/rpc/get_public_sale_source_name")) return json(null);
   // No source withdrawn (the default state): without this answer the lookup waits for a DNS error.
   if (pathname.endsWith("/rpc/get_withdrawn_catalogue_sources")) return json([]);
   // Everything else (the catalogue search…) keeps failing as it did before

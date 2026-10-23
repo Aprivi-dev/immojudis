@@ -12,6 +12,7 @@ import {
 import { createUnsubscribeToken } from "@/lib/email-unsubscribe-token";
 import { asRecord, escapeHtml } from "@/lib/guards";
 import { isMissingRpcError } from "@/lib/postgrest-errors";
+import { EMAIL_COLORS } from "@/lib/email-brand";
 
 /**
  * Envoi de l'email d'ouverture à la liste d'attente (`offer_opening_notifications`), depuis
@@ -153,17 +154,17 @@ export function buildOfferOpeningMessage({
   ].join("\n");
   const html = `<!doctype html>
 <html lang="fr">
-  <body style="margin:0;background:#f6f4ef;color:#182033;font-family:Arial,sans-serif;">
+  <body style="margin:0;background:${EMAIL_COLORS.surface};color:${EMAIL_COLORS.navy};font-family:Arial,sans-serif;">
     <div style="max-width:620px;margin:0 auto;padding:28px 18px;">
-      <div style="background:#fff;border:1px solid #e8e1d4;border-radius:10px;padding:24px;">
+      <div style="background:#fff;border:1px solid ${EMAIL_COLORS.lineWarm};border-radius:10px;padding:24px;">
         <p style="margin:0 0 12px;font-size:16px;">Bonjour,</p>
-        <p style="margin:0 0 14px;color:#4b5563;line-height:1.55;">${escapeHtml(INTRO)}</p>
-        <p style="margin:0 0 18px;color:#4b5563;line-height:1.55;">${escapeHtml(OFFERS_LINE)}</p>
-        <p style="margin:0 0 18px;"><a href="${escapeAttribute(offersUrl)}" style="display:inline-block;background:#182033;color:#fff;text-decoration:none;border-radius:8px;padding:10px 14px;font-weight:700;">Voir les offres</a></p>
-        <p style="margin:0;color:#4b5563;line-height:1.55;">${escapeHtml(NO_COMMITMENT)}</p>
+        <p style="margin:0 0 14px;color:${EMAIL_COLORS.inkStrong};line-height:1.55;">${escapeHtml(INTRO)}</p>
+        <p style="margin:0 0 18px;color:${EMAIL_COLORS.inkStrong};line-height:1.55;">${escapeHtml(OFFERS_LINE)}</p>
+        <p style="margin:0 0 18px;"><a href="${escapeAttribute(offersUrl)}" style="display:inline-block;background:${EMAIL_COLORS.navy};color:#fff;text-decoration:none;border-radius:8px;padding:10px 14px;font-weight:700;">Voir les offres</a></p>
+        <p style="margin:0;color:${EMAIL_COLORS.inkStrong};line-height:1.55;">${escapeHtml(NO_COMMITMENT)}</p>
       </div>
-      <p style="margin:14px 0 0;text-align:center;color:#6c7280;font-size:12px;">
-        <a href="${escapeAttribute(unsubscribeUrl)}" style="color:#6c7280;">Retirer ma demande d’être prévenu(e)</a>
+      <p style="margin:14px 0 0;text-align:center;color:${EMAIL_COLORS.inkSoft};font-size:12px;">
+        <a href="${escapeAttribute(unsubscribeUrl)}" style="color:${EMAIL_COLORS.inkSoft};">Retirer ma demande d’être prévenu(e)</a>
       </p>
     </div>
   </body>

@@ -14,6 +14,9 @@ import type {
 } from "@/lib/land-report-types";
 import { LandPotentialPanel } from "./LandPotentialPanel";
 
+const launch = vi.hoisted(() => ({ state: { active: false, pending: false } }));
+vi.mock("@/hooks/use-launch-offer", () => ({ useLaunchOffer: () => launch.state }));
+
 const mocks = vi.hoisted(() => ({
   fetchReport: vi.fn(),
   downloadReport: vi.fn(),
@@ -188,6 +191,7 @@ function renderPanel(props: Partial<React.ComponentProps<typeof LandPotentialPan
 describe("LandPotentialPanel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    launch.state = { active: false, pending: false };
     mocks.fetchReport.mockResolvedValue(makeReport());
     mocks.downloadReport.mockResolvedValue(undefined);
   });
@@ -265,7 +269,8 @@ describe("LandPotentialPanel", () => {
     expect(screen.queryByText(/source indisponible/iu)).toBeNull();
     fireEvent.click(screen.getByText("Sources, dates et limites"));
     expect(screen.getByText(/Aucun enregistrement dans cette couche/)).toBeTruthy();
-    expect(screen.getAllByText(/Aucun article de la zone n’a pu être extrait/).length).toBe(2);
+    // La raison n'est dite qu'une fois (résumé) : le bloc des règles ne la répète pas.
+    expect(screen.getAllByText(/Aucun article de la zone n’a pu être extrait/).length).toBe(1);
     expect(screen.queryByLabelText("Votre projet")).toBeNull();
   });
 
@@ -301,6 +306,124 @@ describe("LandPotentialPanel", () => {
     expect(blocks.every((block) => !block.open)).toBe(true);
     expect(screen.getByText(/Servitudes et prescriptions \(1\)/)).toBeTruthy();
     expect(screen.getAllByText(/sans valeur juridique/)).toHaveLength(1);
+  });
+
+  it("énonce d’abord la famille de zone, en clair", () => {
+    const { container } = renderPanel();
+    const summary = container.querySelector("[class*='summary']");
+    expect(summary?.firstElementChild?.textContent).toBe(
+      "Terrain en zone urbaine (U) : secteur déjà bâti ou équipé.",
+    );
+  });
+
+  it("n’écrit jamais « Aucune repérée » quand les servitudes n’ont pas été vérifiées", () => {
+    const withoutConstraints = {
+      ...makeReport(),
+      planning: {
+        ...planning,
+        constraints: [],
+        checks: [{ ...sourceCheck("planning", "unavailable"), key: "planning" }],
+      },
+    };
+    const { container } = renderPanel({ initialReport: withoutConstraints });
+    const summary = screen.getByText("Servitudes").closest("div");
+    expect(summary?.textContent).toContain("Non vérifiées");
+    expect(container.textContent).not.toContain("Aucune repérée");
+    expect(container.textContent).not.toContain("Aucune servitude ni prescription repérée");
+    expect(container.textContent).toContain("Cela ne prouve pas qu’il n’y en a pas");
+    cleanup();
+
+    const read = {
+      ...withoutConstraints,
+      planning: {
+        ...withoutConstraints.planning,
+        checks: [{ ...sourceCheck("gpu.info-surf", "empty"), key: "gpu.info-surf" }],
+      },
+    };
+    renderPanel({ initialReport: read });
+    expect(screen.getByText("Servitudes").closest("div")?.textContent).toContain(
+      "Aucune repérée dans les couches consultées",
+    );
+  });
+
+  it("date la consultation des sources et explique le jargon", () => {
+    const { container } = renderPanel();
+    expect(container.textContent).toContain("Sources consultées le");
+    expect(container.textContent).not.toContain("Vérifié le");
+    expect(container.textContent).toContain("Géoportail de l’urbanisme (GPU)");
+    expect(container.textContent).toContain("OAP (orientations d’aménagement");
+  });
+
+  it("garde une structure de titres sous le h2 de la section et aucun landmark dans les détails", () => {
+    const withRisk = makeReport();
+    withRisk.risks = {
+      ...risks,
+      findings: [
+        {
+          id: "rga-1",
+          category: "clay",
+          label: "Argiles",
+          scope: "parcel",
+          status: "mapped",
+          level: "3",
+          description: "Exposition.",
+          consequences: ["Vérifier l’étude géotechnique."],
+          regulatory: false,
+          sourceUrl: "https://www.georisques.gouv.fr/api/v2/rga",
+          sourceLabel: "RGA",
+          checkedAt: "2026-10-02T12:00:00.000Z",
+          sourceUpdatedAt: null,
+          vintage: null,
+          parcelIds: [],
+          distanceM: null,
+          precision: "parcelle",
+        },
+      ],
+    };
+    const { container } = renderPanel({ initialReport: withRisk });
+    expect(container.querySelector("h5")).toBeNull();
+    expect(container.querySelector("h3")?.textContent).toBe("Argiles");
+    expect(container.querySelector("h4")?.textContent).toBe("Conséquences à vérifier");
+    expect(container.textContent).toContain("année des données : non renseignée");
+    expect(container.querySelectorAll("details section")).toHaveLength(0);
+  });
+
+  it("annonce l’arrivée du rapport dans une région de statut toujours montée", async () => {
+    render(<LandPotentialPanel saleId={SALE_ID} enabled />);
+    const status = screen.getByRole("status");
+    expect(status.textContent).not.toContain("prêt");
+    await waitFor(() => expect(status.textContent).toContain("Le dossier PLU et risques est prêt"));
+    expect(screen.getByRole("status")).toBe(status);
+  });
+
+  it("n’annonce pas « environ 15 secondes » avant le début de la consultation", async () => {
+    mocks.fetchReport.mockReturnValue(new Promise(() => undefined));
+    const observe = vi.fn();
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        observe = observe;
+        disconnect = vi.fn();
+      },
+    );
+    try {
+      render(<LandPotentialPanel saleId={SALE_ID} enabled />);
+      expect(mocks.fetchReport).not.toHaveBeenCalled();
+      expect(screen.queryByText(/environ 15 secondes/)).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    cleanup();
+    render(<LandPotentialPanel saleId={SALE_ID} enabled />);
+    expect(await screen.findByText(/environ 15 secondes/)).toBeTruthy();
+  });
+
+  it("signale l’ouverture dans un nouvel onglet pour les lecteurs d’écran", () => {
+    renderPanel();
+    fireEvent.click(screen.getByText("Parcelles et zonage"));
+    const link = screen.getByRole("link", { name: /Lire le règlement/ });
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.textContent).toContain("(nouvel onglet)");
   });
 
   it("dit d’abord d’où vient la parcelle", () => {
@@ -343,6 +466,23 @@ describe("LandPotentialPanel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Exporter le dossier PDF" }));
     await waitFor(() => expect(mocks.downloadReport).toHaveBeenCalledWith(SALE_ID));
+  });
+
+  it("dit que l’offre de lancement ouvre le dossier tant qu’elle est active", () => {
+    launch.state = { active: true, pending: false };
+    render(<LandPotentialPanel saleId={SALE_ID} enabled={false} />);
+    expect(screen.getByText(/Pendant l’offre de lancement/)).toBeTruthy();
+    expect(screen.getByText(/compte gratuit dont l’adresse email est confirmée/)).toBeTruthy();
+    expect(screen.queryByText(/L’offre Analyse donne accès/)).toBeNull();
+    expect(screen.getByRole("link", { name: /Voir l’offre de lancement/ })).toBeTruthy();
+    expect(mocks.fetchReport).not.toHaveBeenCalled();
+  });
+
+  it("ne promet rien tant que l’état de l’offre de lancement n’est pas lu", () => {
+    launch.state = { active: false, pending: true };
+    render(<LandPotentialPanel saleId={SALE_ID} enabled={false} />);
+    expect(screen.getByText(/dépend de votre offre/)).toBeTruthy();
+    expect(screen.queryByText(/Pendant l’offre de lancement/)).toBeNull();
   });
 
   it("affiche l'upsell sans appeler les sources lorsque le panneau est verrouillé", () => {

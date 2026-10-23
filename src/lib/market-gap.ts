@@ -32,6 +32,15 @@ export const MARKET_GAP_METHOD_PATH = "/methode-ecart-marche";
 export const MARKET_GAP_NOT_SIGNIFICANT_LABEL = "écart non significatif";
 
 /**
+ * Phrases à la place de l'écart pour un bien occupé ou d'occupation inconnue : la valeur estimée
+ * s'appuie sur des ventes de biens libres, la comparaison avec la mise à prix n'est donc pas donnée.
+ */
+export const MARKET_GAP_WITHHELD_OCCUPIED =
+  "Bien occupé : l’écart avec la valeur estimée n’est pas indiqué, car cette valeur s’appuie sur des ventes de biens libres.";
+export const MARKET_GAP_WITHHELD_OCCUPANCY_UNKNOWN =
+  "Occupation du bien non précisée : l’écart avec la valeur estimée n’est pas indiqué, car cette valeur s’appuie sur des ventes de biens libres.";
+
+/**
  * Décote en % (entier), ou `null` sans valeur ni mise à prix exploitable. Même formule que
  * partout dans le code : (valeur estimée - mise à prix) / valeur estimée.
  */
@@ -92,7 +101,11 @@ export function describeMarketGap(gap: {
   discountPct: number | null;
   discountNotSignificant?: boolean;
   startingPricePerM2?: number | null;
+  /** Occupied property or unknown occupation: say why there is no gap (`buildValuePreview`). */
+  gapWithheld?: "occupied" | "occupancy_unknown" | null;
 }): string | null {
+  if (gap.gapWithheld === "occupied") return MARKET_GAP_WITHHELD_OCCUPIED;
+  if (gap.gapWithheld === "occupancy_unknown") return MARKET_GAP_WITHHELD_OCCUPANCY_UNKNOWN;
   if (gap.discountNotSignificant) {
     const label = `${MARKET_GAP_NOT_SIGNIFICANT_LABEL[0].toLocaleUpperCase("fr-FR")}${MARKET_GAP_NOT_SIGNIFICANT_LABEL.slice(1)}`;
     return gap.startingPricePerM2 != null

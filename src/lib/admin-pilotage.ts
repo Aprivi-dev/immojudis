@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { asRecord, stringValue } from "@/lib/guards";
+import type { BidCeilingSummary } from "@/lib/admin-bid-ceilings";
 import type { SaleSignalFeedbackSummary } from "@/lib/admin-sale-signal-feedback";
 import { parisDateKey } from "@/lib/sale-countdown";
 
@@ -105,6 +106,8 @@ export type AdminPilotageResponse = AdminPilotage & {
   saleReminders?: SaleReminderAccuracy;
   /** Retours « Utile » / « Pas pertinent » sur les signaux d'une vente (point 67). */
   signalFeedback?: SaleSignalFeedbackSummary;
+  /** Plafonds d'enchère calculés sur 7 et 30 jours : l'usage réel pendant l'offre de lancement. */
+  bidCeilings?: BidCeilingSummary;
 };
 
 const count = z.number().int().nonnegative().nullish();

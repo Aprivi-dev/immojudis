@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
+  from: vi.fn(),
   getUserById: vi.fn(),
   constructEvent: vi.fn(),
   subscriptionsRetrieve: vi.fn(),
@@ -10,7 +11,11 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: { rpc: mocks.rpc, auth: { admin: { getUserById: mocks.getUserById } } },
+  supabaseAdmin: {
+    rpc: mocks.rpc,
+    from: mocks.from,
+    auth: { admin: { getUserById: mocks.getUserById } },
+  },
 }));
 vi.mock("stripe", () => ({
   default: class FakeStripe {
@@ -24,15 +29,22 @@ vi.mock("@/lib/email-alerts", () => ({
   resolveEmailAlertDeliveryConfig: mocks.resolveConfig,
   sendResendEmail: mocks.sendResendEmail,
 }));
-vi.mock("@/lib/legal-documents", () => ({ assertPaidOfferLegalReadiness: vi.fn() }));
 vi.mock("@/lib/commercial-acceptance", () => ({
-  assertCommercialConfirmationReadiness: vi.fn(),
   recordCommercialAcceptance: vi.fn(),
   sendCommercialConfirmation: vi.fn(),
 }));
 
 import type Stripe from "stripe";
 import { cancellationNoticeKind, handleStripeWebhook } from "@/lib/billing";
+
+/** `from()` of the journal and of the payment lifecycle: chainable and awaitable. */
+function tableAnswer(result: { data: unknown; error: unknown }) {
+  const query: Record<string, unknown> = {};
+  for (const method of ["select", "eq", "limit"]) query[method] = () => query;
+  query.maybeSingle = () => Promise.resolve(result);
+  query.then = (resolve: (value: unknown) => unknown) => Promise.resolve(result).then(resolve);
+  return query;
+}
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 // 2030-03-17T17:46:40Z
@@ -111,6 +123,12 @@ describe("confirmation de résiliation par email", () => {
     vi.spyOn(console, "info").mockImplementation(() => undefined);
     seenEvents = new Set();
     stubRpc();
+    mocks.from.mockImplementation((table: string) =>
+      tableAnswer({
+        data: table === "stripe_webhook_events" ? { processing_status: "processed" } : [],
+        error: null,
+      }),
+    );
     mocks.resolveConfig.mockReturnValue({
       configured: true,
       apiKey: "re_test",

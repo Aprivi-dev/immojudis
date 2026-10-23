@@ -25,10 +25,16 @@ export type AuctionSale = {
     | "near"
     | "above"
     | "occupied"
+    | "occupancy_unknown"
     | "insufficient_surface"
     | "insufficient_type"
     | "insufficient"
     | null;
+  /**
+   * Signed-out page only: name of the source the listing comes from (`get_public_sale_source_name`),
+   * only when it is one of the known sources. Absent otherwise.
+   */
+  source_label?: string | null;
   source_checks?: Record<string, { checked_at?: string }> | null;
   source_conflicts?: Array<{
     field?: string;
@@ -123,6 +129,12 @@ export type AuctionSale = {
   source_blocks_by_source: Record<string, Record<string, unknown>> | null;
   dedupe_confidence: string | null;
   quality_flags: unknown;
+  /**
+   * Précision du point (`address`, `parcel`, `street`, `municipality`…), exposée par les vues de
+   * ventes (`raw_payload->>'geo_precision'`). Absente ou null : précision inconnue, donc pas de vue
+   * aérienne tournante.
+   */
+  location_precision?: string | null;
   documents: unknown;
   documents_rich: SaleDocumentRich[] | null;
   media: SaleMedia[] | null;

@@ -606,7 +606,10 @@ export function AdminInformationAgentMissionsPanel({
           {activeMission.failureReason ? (
             <p className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-900">
               <span className="font-semibold">
-                {activeMission.status === "failed" ? "Motif de l’échec" : "À vérifier"} :
+                {activeMission.status === "failed" && activeMission.sendOutcome !== "unverified"
+                  ? "Motif de l’échec"
+                  : "À vérifier"}{" "}
+                :
               </span>{" "}
               {activeMission.failureReason}
             </p>
@@ -895,7 +898,12 @@ export function AdminInformationAgentMissionsPanel({
                     {missionStatusLabel(mission.status)} · {formatDateTime(mission.updatedAt)}
                   </p>
                   {mission.status === "failed" && mission.failureReason ? (
-                    <p className="mt-0.5 line-clamp-2 text-xs text-red-800">
+                    <p
+                      className={`mt-0.5 line-clamp-2 text-xs ${
+                        mission.sendOutcome === "unverified" ? "text-amber-900" : "text-red-800"
+                      }`}
+                    >
+                      {mission.sendOutcome === "unverified" ? "À vérifier : " : ""}
                       {mission.failureReason}
                     </p>
                   ) : null}

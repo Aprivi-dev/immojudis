@@ -20,6 +20,8 @@ begin;
 select plan(38);
 
 -- Fixtures -------------------------------------------------------------------------------------
+-- Tous les biens sont libres (occupancy_status = 'vacant') : depuis la migration 20261101190000, une
+-- bande n'est dite que pour un bien libre (l'occupation est testée dans le test 705).
 -- n : numéro de la vente ; price : mise à prix ; venue : type de vente ; status : statut de la vente.
 --   1  mise à prix sous la fourchette (P10 = 100 000)           -> under
 --   2  mise à prix dans la fourchette                             -> near
@@ -53,14 +55,14 @@ insert into public.auction_sales (
   id, source_name, source_url, title, address, city, department, property_type,
   starting_price_eur, sale_date, app_surface_m2, app_surface_kind,
   rooms_count, bedrooms_count, bathrooms_count, status, latitude, longitude,
-  sale_venue_type, sale_verification_status, raw_payload
+  sale_venue_type, sale_verification_status, occupancy_status, raw_payload
 )
 select
   ('c5200000-1000-4000-8000-' || lpad(f.n::text, 12, '0'))::uuid,
   'public-market-gap-band-test', 'https://example.test/c520/' || f.n,
   'Market gap title ' || f.n, 'Adresse privée ' || f.n, 'Gapville' || f.n, '33', 'apartment',
   f.price, now() + interval '30 days', 50, 'habitable', 2, 1, 1, f.status, 44.837812, -0.579234,
-  f.venue, 'pending', '{}'::jsonb
+  f.venue, 'pending', 'vacant', '{}'::jsonb
 from (
   values
     (1, 60000, 'tribunal', 'upcoming'),

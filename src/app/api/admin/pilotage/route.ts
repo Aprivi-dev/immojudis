@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
+import { getAdminBidCeilings, unavailableBidCeilings } from "@/lib/admin-bid-ceilings";
 import { withAdminDeadline } from "@/lib/admin-route-deadline";
 import {
   getAdminPilotage,
@@ -22,7 +23,7 @@ async function handleGET(request: Request) {
     const now = new Date();
     // La mesure des rappels ne doit pas faire tomber le reste du pilotage : en cas d'échec, elle vaut
     // « non mesuré » (le contrôle du rôle administrateur est fait par `getAdminPilotage`).
-    const [pilotage, saleReminders, signalFeedback] = await Promise.all([
+    const [pilotage, saleReminders, signalFeedback, bidCeilings] = await Promise.all([
       getAdminPilotage(token, now),
       getAdminSaleReminderAccuracy(token, now).catch(() => {
         console.error("[admin-pilotage] mesure des fausses alertes des rappels indisponible");
@@ -33,9 +34,14 @@ async function handleGET(request: Request) {
         console.error("[admin-pilotage] retours sur les signaux d'une vente indisponibles");
         return unavailableSaleSignalFeedback();
       }),
+      // Et pour les plafonds d'enchère calculés, qui remplacent « 3 déblocages » pendant l'offre.
+      getAdminBidCeilings(token, now).catch(() => {
+        console.error("[admin-pilotage] plafonds d'enchère calculés indisponibles");
+        return unavailableBidCeilings();
+      }),
     ]);
     return NextResponse.json(
-      { ...pilotage, saleReminders, signalFeedback },
+      { ...pilotage, saleReminders, signalFeedback, bidCeilings },
       { headers: { "cache-control": "private, no-store" } },
     );
   } catch (error) {

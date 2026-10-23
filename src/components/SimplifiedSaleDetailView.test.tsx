@@ -228,6 +228,16 @@ describe("integrated listing", () => {
     expect(section?.textContent).toContain("La liste n’est pas exhaustive");
   });
 
+  it("ne promet pas d'informations complémentaires tant que l'agent d'information est coupé", () => {
+    renderDetail("analysis", undefined, true, true);
+
+    for (const tab of ["Aperçu", "Prix et plafond", "Statistiques", "Travaux", "Démarches"]) {
+      selectTab(tab);
+      expect(document.body.textContent).not.toContain("Informations complémentaires");
+      expect(document.body.textContent).not.toContain("seront ajoutées à cette annonce");
+    }
+  });
+
   it("mounts one panel at a time and supports keyboard tab navigation", () => {
     const { container } = renderDetail("analysis", undefined, true, true);
 

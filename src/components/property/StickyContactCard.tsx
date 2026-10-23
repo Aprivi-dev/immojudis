@@ -94,7 +94,7 @@ export function StickyContactCard({ property }: { property: Property }) {
         </div>
       </aside>
 
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-white/95 p-3 shadow-[0_-16px_38px_rgba(15,23,42,0.14)] backdrop-blur lg:hidden">
+      <div className="fixed inset-x-0 bottom-[var(--cookie-banner-height,0px)] z-40 border-t border-border bg-white/95 p-3 shadow-[0_-16px_38px_rgba(15,23,42,0.14)] backdrop-blur lg:hidden">
         <div className="mx-auto flex max-w-7xl items-center gap-3">
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-semibold text-foreground">

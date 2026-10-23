@@ -76,7 +76,7 @@ from src.quality import (
 from src.run_finalizer import register_run
 from src.sale_procedure import classify_sale_procedure
 from src.source_health import SOURCE_WARNING_EXIT_CODE, failed_sources, warning_annotations
-from src.source_process import run_source_in_subprocess
+from src.source_process import kill_live_source_processes, run_source_in_subprocess
 from src.sources.agrasc import scrape_agrasc_aquitaine_result
 from src.sources.avoventes import scrape_avoventes_aquitaine_result
 from src.sources.cessions_etat import scrape_cessions_etat_aquitaine_result
@@ -89,6 +89,7 @@ from src.sources.listing_characteristics import restore_known_detail_blocks
 from src.sources.notaires import scrape_notaires_aquitaine_result
 from src.sources.petites_affiches import scrape_petites_affiches_aquitaine_result
 from src.sources.vench import scrape_vench_aquitaine_result
+from src.stage_watchdog import arm_from_env, track_stage
 from src.storage.supabase_client import (
     create_run_in_supabase,
     delete_expired_sales_in_supabase,
@@ -385,23 +386,38 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     options = options or PipelineOptions()
     if source_withdrawal.refuse_withdrawn_run(options.source, load_settings()):
         return 0  # pas de run, donc pas d'alerte « source manquée » : un retrait volontaire n'est pas une panne
-    run = _open_run(options)
-    if not _load_known_sale_details(run):
-        return 1
-    scrapers = _scrape_sources(run)
-    if not _hydrate_collected_payloads(run):
-        return 1
-    _assess_collection(run, scrapers)
-    _restore_known_unchanged_sales(run)
-    _normalize_and_deduplicate(run)
-    _lookup_incremental_hashes(run)
-    _prepare_and_publish_early(run)
-    _select_enrichment_scope(run)
-    _enrich_pdf_documents(run)
-    _enrich_with_llm(run)
-    _finalize_enriched_sales(run)
-    _apply_admission_and_reports(run)
-    _publish_run(run)
+    with track_stage("open_run"):
+        run = _open_run(options)
+    with track_stage("known_sale_details"):
+        if not _load_known_sale_details(run):
+            return 1
+    with track_stage("scrape_sources"):
+        scrapers = _scrape_sources(run)
+    with track_stage("hydrate_collected_payloads"):
+        if not _hydrate_collected_payloads(run):
+            return 1
+    with track_stage("assess_collection"):
+        _assess_collection(run, scrapers)
+    with track_stage("restore_known_unchanged_sales"):
+        _restore_known_unchanged_sales(run)
+    with track_stage("normalize_and_deduplicate"):
+        _normalize_and_deduplicate(run)
+    with track_stage("lookup_incremental_hashes"):
+        _lookup_incremental_hashes(run)
+    with track_stage("prepare_and_publish_early"):
+        _prepare_and_publish_early(run)
+    with track_stage("select_enrichment_scope"):
+        _select_enrichment_scope(run)
+    with track_stage("enrich_pdf_documents"):
+        _enrich_pdf_documents(run)
+    with track_stage("enrich_with_llm"):
+        _enrich_with_llm(run)
+    with track_stage("finalize_enriched_sales"):
+        _finalize_enriched_sales(run)
+    with track_stage("apply_admission_and_reports"):
+        _apply_admission_and_reports(run)
+    with track_stage("publish_run"):
+        _publish_run(run)
     _print_run_summary(run)
     if run.publication_failed:
         return 1
@@ -2163,6 +2179,9 @@ def parse_args(argv: list[str] | None = None) -> PipelineOptions:
 
 
 if __name__ == "__main__":
+    # Guard against a call that never returns (see src/stage_watchdog.py); the collectors
+    # run in their own session, so they are stopped before the process ends.
+    arm_from_env(label="src.main", on_fire=kill_live_source_processes)
     if os.getenv("PIPELINE_TRACEBACK_SECONDS"):
         faulthandler.dump_traceback_later(max(60, int(os.environ["PIPELINE_TRACEBACK_SECONDS"])), repeat=True)
     pipeline_options = parse_args()

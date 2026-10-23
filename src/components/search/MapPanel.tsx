@@ -31,6 +31,7 @@ import {
   MAPBOX_COPYRIGHT_URL,
   disableMapboxTelemetry,
   getMapboxAccessToken,
+  mapboxLocaleFr,
   mapboxSatelliteImageUrl,
 } from "@/lib/mapbox";
 import {
@@ -374,7 +375,7 @@ export function MapPanel({
           container: containerRef.current,
           style: mapStyle,
           language: "fr",
-          locale: MAP_LOCALE_FR,
+          locale: mapboxLocaleFr("Carte interactive des annonces"),
           center: DEFAULT_MAP_CENTER,
           zoom: defaultMapZoomForViewport(containerRef.current),
           minZoom: MIN_MAP_ZOOM,
@@ -1186,27 +1187,6 @@ function buildPopupHtml(
     </article>
   `;
 }
-
-/**
- * Textes de la carte que Mapbox écrit lui-même (nom du canevas, bouton des crédits, zoom…) : sans
- * cette table, `language: "fr"` ne traduit que les étiquettes du fond de carte et le reste reste en
- * anglais. Clés de `defaultLocale` de mapbox-gl.
- */
-const MAP_LOCALE_FR = {
-  "AttributionControl.ToggleAttribution": "Afficher ou masquer les crédits de la carte",
-  "FullscreenControl.Enter": "Passer en plein écran",
-  "FullscreenControl.Exit": "Quitter le plein écran",
-  "GeolocateControl.FindMyLocation": "Trouver ma position",
-  "GeolocateControl.LocationNotAvailable": "Position indisponible",
-  "LogoControl.Title": "Page d’accueil de Mapbox",
-  "Map.Title": "Carte interactive des annonces",
-  "NavigationControl.ResetBearing": "Réorienter la carte vers le nord",
-  "NavigationControl.ZoomIn": "Zoomer",
-  "NavigationControl.ZoomOut": "Dézoomer",
-  "ScrollZoomBlocker.CtrlMessage": "Utilisez Ctrl + molette pour zoomer la carte",
-  "ScrollZoomBlocker.CmdMessage": "Utilisez ⌘ + molette pour zoomer la carte",
-  "TouchPanBlocker.Message": "Utilisez deux doigts pour déplacer la carte",
-} as const;
 
 function defaultMapZoomForViewport(node: HTMLDivElement) {
   if (node.clientWidth > 0 && node.clientWidth < 640) return DEFAULT_MOBILE_MAP_ZOOM;

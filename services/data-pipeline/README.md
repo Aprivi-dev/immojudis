@@ -717,11 +717,11 @@ Règle de sûreté : le LLM ne remplace pas une valeur déterministe déjà fiab
 
 ## Source Licitor
 
-> **Décodage des adresses email masquées par Cloudflare (usage interne).** `LICITOR_DECODE_PROTECTED_EMAILS` est actif
-> par défaut ; pour le couper, mettre `false` (toute autre valeur le laisse actif, une valeur non reconnue est
-> signalée par un avertissement). Coupé, les éléments masqués sont toujours retirés de la page (jamais publiés)
-> mais aucune adresse n'est décodée ni écrite au registre de l'agent. En production : variable de dépôt GitHub
-> `LICITOR_DECODE_PROTECTED_EMAILS` (absente = actif). Procédure complète : `docs/runbooks/information-agent.md`.
+> **Décodage des adresses email masquées par Cloudflare (usage interne).** `LICITOR_DECODE_PROTECTED_EMAILS` est
+> **désactivé par défaut** ; pour l'activer, mettre `true` (toute autre valeur le laisse désactivé, une valeur non
+> reconnue est signalée par un avertissement). Désactivé, les éléments masqués sont toujours retirés de la page
+> (jamais publiés) mais aucune adresse n'est décodée ni écrite au registre de l'agent. En production : variable de
+> dépôt GitHub `LICITOR_DECODE_PROTECTED_EMAILS` (absente = désactivé). Procédure complète : `docs/runbooks/information-agent.md`.
 
 > **Licitor est collecté et affiché normalement.** Aucune source n'est retirée du catalogue à ce jour. Le dépôt
 > garde toutefois un **interrupteur de retrait** pour un usage futur (par exemple si une source devait être

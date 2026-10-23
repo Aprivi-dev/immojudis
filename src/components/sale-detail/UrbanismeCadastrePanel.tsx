@@ -343,7 +343,8 @@ export function UrbanismeCadastrePanel({
                     target="_blank"
                     rel="noreferrer"
                   >
-                    {source.label} <ExternalLink size={13} aria-hidden="true" />
+                    {source.label} <span className="sr-only">(nouvel onglet)</span>{" "}
+                    <ExternalLink size={13} aria-hidden="true" />
                   </a>
                 </li>
               ))}
@@ -535,7 +536,8 @@ function DocumentsBlock({ documents }: { documents: CadastralAnalysis["documents
                 <div>
                   {href ? (
                     <a className={styles.documentLink} href={href} target="_blank" rel="noreferrer">
-                      {document.label} <ExternalLink size={13} aria-hidden="true" />
+                      {document.label} <span className="sr-only">(nouvel onglet)</span>{" "}
+                      <ExternalLink size={13} aria-hidden="true" />
                     </a>
                   ) : (
                     <span className={styles.documentLink}>{document.label}</span>

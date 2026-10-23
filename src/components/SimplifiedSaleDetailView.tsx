@@ -100,7 +100,6 @@ import {
   TribunalEstimationEvidence,
 } from "@/components/sale-detail/SaleDetailMarket";
 import {
-  InformationAvailabilityNotice,
   LawyerSection,
   PanelIntro,
   RisksAndDocuments,
@@ -566,6 +565,7 @@ function SaleDetailWorkspace({
               sale={displaySale}
               aiReviewProjections={resolvedAiReviewProjections}
               aiReviewStatus={aiReviewStatus}
+              publicDemo={publicDemo}
             />
             <div className={listingStyles.heroSummary}>
               <ListingOverview
@@ -1041,7 +1041,6 @@ function SaleDetailWorkspace({
                     />
                   </section>
                 ) : null}
-                {access === "analysis" ? <InformationAvailabilityNotice /> : null}
               </>
             ) : null}
           </div>

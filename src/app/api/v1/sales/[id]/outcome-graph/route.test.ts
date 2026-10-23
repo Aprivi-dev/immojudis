@@ -113,6 +113,17 @@ describe("GET /api/v1/sales/:id/outcome-graph", () => {
     expect(mocks.getForecast).not.toHaveBeenCalled();
   });
 
+  it("répond 404 pour une vente inconnue ou retirée de la publication", async () => {
+    const unknown = new Error("Vente introuvable ou inaccessible.");
+    unknown.name = "SalePublicationUnavailableError";
+    mocks.getForecast.mockRejectedValue(unknown);
+
+    const response = await request();
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toMatchObject({ code: "NOT_FOUND" });
+  });
+
   it("valide l’identifiant seulement après authentification et entitlement", async () => {
     const response = await request("not-a-uuid");
 

@@ -18,6 +18,8 @@ const COURTS = {
         sample: 442,
         meanStartingPrice: 61_000,
         meanHammerPrice: 140_000,
+        medianStartingPrice: 50_000,
+        medianHammerPrice: 121_000,
         medianRatio: 2.28,
         atLeastDoubleRate: 0.57,
       },
@@ -52,11 +54,11 @@ describe("CourtAuctionSummaryTable", () => {
     const { container } = renderTable();
 
     const region = await screen.findByRole("region", {
-      name: "Moyennes par tribunal, défilement horizontal",
+      name: "Médianes par tribunal, défilement horizontal",
     });
     expect(region.getAttribute("tabindex")).toBe("0");
     const table = screen.getByRole("table");
-    expect(table.querySelector("caption")?.textContent).toContain("Moyennes par tribunal");
+    expect(table.querySelector("caption")?.textContent).toContain("Médianes par tribunal");
     const headers = [...container.querySelectorAll("thead th")];
     expect(headers).toHaveLength(7);
     for (const header of headers) expect(header.getAttribute("scope")).toBe("col");
@@ -77,6 +79,18 @@ describe("CourtAuctionSummaryTable", () => {
       }),
     ).toBeTruthy();
     expect(screen.queryByText("Au moins le double")).toBeNull();
+  });
+
+  it("montre des médianes, pas des moyennes, pour la mise à prix et le prix d'adjudication", async () => {
+    fetchCourtAuctionSummaries.mockResolvedValue(COURTS);
+    renderTable();
+    expect(await screen.findByRole("columnheader", { name: "Mise à prix médiane" })).toBeTruthy();
+    expect(screen.getByRole("columnheader", { name: "Prix d’adjudication médian" })).toBeTruthy();
+    expect(screen.queryByRole("columnheader", { name: /moyen/i })).toBeNull();
+    const row = screen.getByRole("rowheader", { name: "TJ Bobigny" }).closest("tr");
+    expect(row?.textContent).toMatch(/50\s000\s€/);
+    expect(row?.textContent).toMatch(/121\s000\s€/);
+    expect(row?.textContent).not.toMatch(/61\s000/);
   });
 
   it("précise sous le tableau le champ des statistiques, leur origine et leurs sources", async () => {

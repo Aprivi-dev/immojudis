@@ -257,9 +257,12 @@ function PageContent() {
             publié, n’a pas de repère.
           </p>
           <p>
-            Pour un bien occupé, loué ou occupé par son propriétaire, la fiche n’affiche jamais «{" "}
-            {MARKET_GAP_BAND_LABELS.under} » : les ventes comparables sont surtout des biens libres,
-            et la comparaison n’est pas pertinente. Elle dit « {MARKET_GAP_BAND_LABELS.occupied} ».
+            Pour un bien occupé, loué ou occupé par son propriétaire, la fiche n’affiche aucune
+            bande : les ventes comparables sont surtout des biens libres, et la comparaison n’est
+            pas pertinente. Elle dit « {MARKET_GAP_BAND_LABELS.occupied} ». Il en va de même quand
+            l’occupation n’est pas connue, ce qui est fréquent dans les annonces : rien ne dit alors
+            que le bien est libre, et la fiche dit « {MARKET_GAP_BAND_LABELS.occupancy_unknown} ».
+            Seul un bien indiqué libre reçoit une bande.
           </p>
           <p>
             Quand l’estimation n’est pas assez fiable, la fiche en donne la raison : « surface du

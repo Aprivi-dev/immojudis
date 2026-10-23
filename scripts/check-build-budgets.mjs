@@ -87,7 +87,12 @@ const MAX_CLIENT_CHUNK_BYTES = 330_000;
 // filters, lawyer statement, works breakdown, weekly digest and result emails) measured 6,075,737
 // bytes, mostly on-demand chunks with every page budget passing; the owner approved (20/10/2026) a
 // fifth raise, to 6,125,000.
-const MAX_TOTAL_CLIENT_JS_BYTES = 6_125_000;
+// The ten work sites of 23/10/2026 (aerial view, scenarios, PLU panel, consent, information agent,
+// pending alert after sign-up…) measured 6,164,297 bytes with every page budget passing except
+// admin-lawyers; the owner approved (23/10/2026) a sixth raise, to 6,165,000. The review fixes of the
+// same day (alert criteria labels, consent texts) measured 6,166,442 bytes in CI; the owner approved
+// (23/10/2026) a seventh raise, to 6,170,000.
+const MAX_TOTAL_CLIENT_JS_BYTES = 6_170_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 // New homepage: lossless panorama for large screens plus editorial photography.
 const MAX_PUBLIC_MEDIA_BYTES = 5_000_000;
@@ -273,7 +278,9 @@ const routeBudgets = [
     manifest: ".next/server/app/admin/lawyers/page_client-reference-manifest.js",
     routeKey: "/admin/lawyers/page",
     entryKey: "[project]/src/app/admin/lawyers/page",
-    maxBytes: 530_000,
+    // 534,843 bytes on 23/10/2026 (pending alert after sign-up in the shared providers, consent
+    // state): the owner approved (23/10/2026) raising this budget from 530,000 to 535,000.
+    maxBytes: 535_000,
   },
   {
     name: "admin-compliance",

@@ -5,6 +5,7 @@ import { AdminPanel, AdminSectionHeading, AdminShell } from "@/components/admin/
 import { formatDateTime, formatInteger, queryErrorMessage } from "@/components/admin/admin-format";
 import { AdminPanelLoading, useAdminRefresh } from "@/components/admin/admin-ui";
 import { useAuth } from "@/hooks/use-auth";
+import type { BidCeilingSummary } from "@/lib/admin-bid-ceilings";
 import type {
   AdminPilotageResponse,
   PilotageCount,
@@ -419,6 +420,8 @@ function PilotageTables({ data }: { data: AdminPilotageResponse }) {
 
       <ReminderAccuracyCard accuracy={data.saleReminders ?? null} />
 
+      <BidCeilingCard summary={data.bidCeilings ?? null} />
+
       <SignalFeedbackCard summary={data.signalFeedback ?? null} />
 
       <AdminPanel className="mt-6 p-5">
@@ -527,6 +530,57 @@ function ReminderAccuracyCard({ accuracy }: { accuracy: SaleReminderAccuracy | n
 }
 
 /** Les signaux dont la page lit les retours, avec leur libellé et leurs motifs (dans cet ordre). */
+/**
+ * Plafonds d'enchère calculés : l'indicateur d'usage de la fonction payante qui reste lisible pendant
+ * l'offre de lancement, où « Déblocages de ventes » et « dont déblocages du mois » valent 0 faute de
+ * déblocage consommé (tous les comptes ont alors l'accès Analyse).
+ */
+function BidCeilingCard({ summary }: { summary: BidCeilingSummary | null }) {
+  const windows = [7, 30].map((days) => summary?.windows.find((window) => window.days === days));
+  return (
+    <AdminPanel className="mt-6 p-5">
+      <AdminSectionHeading title="Plafonds calculés" />
+      <p className="mt-1 text-sm text-brand-navy/70">
+        Comptes ayant calculé au moins une enchère plafond et ventes concernées. Pendant l’offre de
+        lancement, aucun déblocage n’est consommé : les lignes « Déblocages » ci-dessus valent 0 et
+        ne disent rien de l’usage ; celle-ci, si. Administrateurs exclus.
+      </p>
+      <div className="mt-4 grid gap-6 sm:grid-cols-2">
+        {[7, 30].map((days, index) => {
+          const window = windows[index];
+          const lines = [
+            { label: "Comptes ayant calculé au moins un plafond", value: window?.accounts ?? null },
+            { label: "Ventes concernées", value: window?.sales ?? null },
+            {
+              label: "Plafonds calculés (un par compte, vente et jour)",
+              value: window?.occurrences ?? null,
+            },
+          ];
+          return (
+            <div key={days} data-window={days}>
+              <h3 className="text-sm font-semibold text-brand-navy">{days} jours</h3>
+              <dl className="mt-2 grid gap-y-1.5 text-sm">
+                {lines.map((line) => (
+                  <div key={line.label} className="flex items-baseline justify-between gap-3">
+                    <dt className="text-brand-navy/70">{line.label}</dt>
+                    <dd
+                      className={`tabular-nums ${
+                        line.value == null ? "text-xs italic text-brand-navy/70" : "font-semibold"
+                      }`}
+                    >
+                      {formatCount(line.value)}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          );
+        })}
+      </div>
+    </AdminPanel>
+  );
+}
+
 const FEEDBACK_SIGNALS: Array<{ signal: SaleSignal; label: string; reasons: string[] }> = [
   {
     signal: "market_gap_band",

@@ -1,4 +1,6 @@
 import { propertyTypeLabel } from "@/lib/format";
+import { COMPANY_DESCRIPTION, COMPANY_NAME } from "@/lib/company-description";
+import { propertyImages } from "@/lib/sale-media";
 import { getSaleProcedure } from "@/lib/sale-procedure";
 import type { AuctionSale, SaleVenueType } from "@/lib/types";
 
@@ -365,10 +367,17 @@ type StructuredDataContext = {
   now?: Date;
 };
 
+/**
+ * Image of the JSON-LD: the first photo the page itself would show (`propertyImages`, the filter of
+ * the sale page), served over https. A photo the page rejects (logo, navigation asset, source
+ * withdrawn from the catalogue, duplicate) is never put in the structured data.
+ */
 function thumbnail(sale: SaleFacts): string | null {
-  const media = sale.media as Array<{ type?: string; url?: string }> | null | undefined;
-  const url = media?.find((item) => item?.url && (item.type ?? "image") === "image")?.url;
-  return url && /^https:\/\//i.test(url) ? url : null;
+  const media = sale.media as AuctionSale["media"] | null | undefined;
+  const image = propertyImages(media).find(
+    (item) => (item.type ?? "image") === "image" && /^https:\/\//i.test(item.url),
+  );
+  return image?.url ?? null;
 }
 
 /**
@@ -506,6 +515,32 @@ export function siteLogoUrl(origin: string): string {
   return `${origin}/brand/immojudis-mark-transparent.png`;
 }
 
+/**
+ * Page « À propos » (`AboutPage`) : la même description que l'`Organization` de l'accueil, qu'elle
+ * désigne par son `@id`. Rien de plus que ce que la page dit : pas d'adresse, de téléphone ni de
+ * numéro d'immatriculation (ils sont dans les mentions légales).
+ */
+export function aboutPageStructuredData(origin: string): Record<string, unknown> {
+  return {
+    "@context": "https://schema.org",
+    "@type": "AboutPage",
+    "@id": `${origin}/a-propos#page`,
+    url: `${origin}/a-propos`,
+    name: `À propos d’${COMPANY_NAME}`,
+    description: COMPANY_DESCRIPTION,
+    inLanguage: "fr-FR",
+    isPartOf: { "@id": `${origin}/#site` },
+    about: {
+      "@type": "Organization",
+      "@id": `${origin}/#organisation`,
+      name: COMPANY_NAME,
+      url: origin,
+      description: COMPANY_DESCRIPTION,
+    },
+    mainEntity: { "@id": `${origin}/#organisation` },
+  };
+}
+
 export function organizationStructuredData(origin: string): Record<string, unknown> {
   return {
     "@context": "https://schema.org",
@@ -513,8 +548,9 @@ export function organizationStructuredData(origin: string): Record<string, unkno
       {
         "@type": "Organization",
         "@id": `${origin}/#organisation`,
-        name: "Immojudis",
+        name: COMPANY_NAME,
         url: origin,
+        description: COMPANY_DESCRIPTION,
         logo: {
           "@type": "ImageObject",
           url: siteLogoUrl(origin),

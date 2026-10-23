@@ -58,6 +58,14 @@ const BENEFITS: ReadonlyArray<{
   },
 ];
 
+/**
+ * Tant que l'offre de lancement dure, le compte gratuit a les avantages Analyse : la carte
+ * Découverte et le comparatif décrivent le plan gratuit « de droit », pas ce que le visiteur a
+ * aujourd'hui. Cette mention l'évite (elle ne parle ni de prix ni de paiement).
+ */
+const LAUNCH_OFFER_FREE_PLAN_NOTE =
+  "Pendant l’offre de lancement, un compte gratuit dont l’adresse email est confirmée bénéficie des avantages de l’offre Analyse. Les limites de Découverte indiquées ici s’appliqueront à la fin de l’offre.";
+
 const UNLOCKED_ITEMS = unlockedItemsText({ ceiling: true, statistics: true });
 
 const DISCOVERY_FEATURES = [
@@ -75,7 +83,7 @@ const ANALYSIS_FEATURES = [
   "Estimation détaillée et ventes comparables",
   "Jusqu’à 25 alertes avec email quotidien, favoris illimités",
   "Suivi des changements de vos favoris (date, mise à prix, statut, documents), consultable dans Mes favoris",
-  "Statistiques des tribunaux : prix d’adjudication et scénarios d’enchères, quand l’historique du tribunal est suffisant ; rapport PDF et export des résultats",
+  "Statistiques des tribunaux : prix d’adjudication, quand l’historique du tribunal est suffisant ; rapport PDF et export des résultats",
 ] as const;
 
 /**
@@ -215,6 +223,9 @@ export function OffersPage() {
   // Offre de lancement : le compte gratuit a les avantages Analyse, le paiement reste fermé.
   const launchActive = launch.active;
   const subscriptionOpen = !launchActive && offer.status === "ready" && offer.open;
+  // Le rendu serveur et le premier rendu du navigateur ignorent l'état de l'offre de lancement et
+  // celui de la souscription : tant qu'ils ne sont pas lus, la page ne dit pas « Analyse coûte ».
+  const offerKnown = !launch.pending && offer.status === "ready";
   // Sous le prix : le 59 € n'est qu'un tarif prévu tant que rien ne se souscrit.
   const priceNote =
     launchActive || (offer.status === "ready" && !offer.open)
@@ -304,7 +315,9 @@ export function OffersPage() {
             ? `Analyse est prévue à ${price} ; sa souscription n’est pas ouverte et rien ne devient payant automatiquement.`
             : offer.status === "ready" && !offer.open
               ? `Analyse : tarif prévu ${price}, pas encore souscriptible.`
-              : `Analyse coûte ${price}, résiliable à tout moment.`}
+              : offerKnown
+                ? `Analyse coûte ${price}, résiliable à tout moment.`
+                : `Analyse : ${price}. Les conditions de souscription s’affichent une fois l’offre chargée.`}
         </p>
         <div className="mt-6 grid gap-5 lg:grid-cols-2">
           <PlanPanel
@@ -313,6 +326,11 @@ export function OffersPage() {
             description="Pour repérer les ventes et conserver vos favoris."
             features={DISCOVERY_FEATURES}
           >
+            {launchActive ? (
+              <p data-testid="launch-offer-free-note" className="mb-4 text-sm text-ink-soft">
+                {LAUNCH_OFFER_FREE_PLAN_NOTE}
+              </p>
+            ) : null}
             {user ? null : (
               <Link
                 href={pathWithSearch("/login", { mode: "investor", redirect: "/sales" })}
@@ -366,6 +384,11 @@ export function OffersPage() {
           <h2 id="comparatif" className="font-display text-3xl font-medium sm:text-4xl">
             Comparer les deux offres
           </h2>
+          {launchActive ? (
+            <p data-testid="launch-offer-comparison-note" className="mt-3 text-sm text-ink-soft">
+              {LAUNCH_OFFER_FREE_PLAN_NOTE}
+            </p>
+          ) : null}
           <ComparisonTable />
           <p className="mt-4 text-sm text-ink-soft">
             Les scénarios d’enchères s’appuient sur les adjudications des trois dernières années

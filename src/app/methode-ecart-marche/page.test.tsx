@@ -187,7 +187,7 @@ describe("page « Comment est calculé l’écart avec le marché ? »", () => {
     const text = (
       section("Le repère en trois bandes de la fiche publique").textContent ?? ""
     ).replace(/\s/g, " ");
-    for (const band of ["under", "near", "above", "occupied"] as const) {
+    for (const band of ["under", "near", "above", "occupied", "occupancy_unknown"] as const) {
       expect(text).toContain(MARKET_GAP_BAND_LABELS[band]);
     }
     expect(text).not.toMatch(/nettement|proche de la valeur/);

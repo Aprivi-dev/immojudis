@@ -1,4 +1,5 @@
 import { safeExternalHttpUrl } from "@/lib/external-url";
+import { isInFrance } from "@/lib/france-bounds";
 import { formatDateTime } from "@/lib/format";
 import { getDisplaySurface, getMarketValuationSurfaces } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
@@ -58,16 +59,14 @@ export function listingSurface(sale: AuctionSale) {
   };
 }
 
+/**
+ * Point de la vente, s'il est en France (métropole ou outre-mer). Les ventes sont toutes françaises :
+ * (0, 0), des coordonnées inversées ou un point à l'étranger sont des erreurs de géocodage, que les
+ * bornes ±90/±180 laissaient passer jusqu'aux cartes.
+ */
 export function listingCoordinates(sale: AuctionSale): { lat: number; lng: number } | null {
   const { latitude: lat, longitude: lng } = sale;
-  return lat != null &&
-    lng != null &&
-    Number.isFinite(lat) &&
-    Number.isFinite(lng) &&
-    Math.abs(lat) <= 90 &&
-    Math.abs(lng) <= 180
-    ? { lat, lng }
-    : null;
+  return lat != null && lng != null && isInFrance(lat, lng) ? { lat, lng } : null;
 }
 
 export function listingDate(value: string | null | undefined): string {

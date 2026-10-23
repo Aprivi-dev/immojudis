@@ -29,6 +29,8 @@ from src.sources.licitor_history_run import (
     prepare_candidates,
 )
 
+MIN_REQUEST_DELAY_SECONDS = 2.0
+
 
 class BatchYield(RuntimeError):
     pass
@@ -52,6 +54,10 @@ class SourceHttp:
         if time.monotonic() - self.started >= self.max_seconds - 35 or self.count >= self.max_requests:
             raise BatchYield("bounded_batch_finished")
 
+    def request_delay(self) -> float:
+        """Pause between two requests: our 2 s floor, raised to the Crawl-delay of robots.txt."""
+        return max(MIN_REQUEST_DELAY_SECONDS, self.rules.crawl_delay or 0.0)
+
     def load_robots(self):
         html, _ = self.fetch(ROBOTS_URL, "robots")
         self.rules = RobotsRules.parse(html, USER_AGENT)
@@ -71,7 +77,12 @@ class SourceHttp:
                 raise RunPaused("source_origin_or_path_denied")
             if kind != "robots" and not self.rules.can_fetch(current):
                 raise RunPaused("robots_path_disallowed")
-            time.sleep(max(0, 2 - (time.monotonic() - self.previous)))
+            wait = max(0.0, self.request_delay() - (time.monotonic() - self.previous))
+            if time.monotonic() - self.started + wait >= self.max_seconds - 35:
+                # The published Crawl-delay does not fit in what is left of this batch: resume in the next one
+                # rather than sleep past the function's limit or fetch sooner than the site asks.
+                raise BatchYield("bounded_batch_finished")
+            time.sleep(wait)
             self.checkpoint()
             self.store.request_started(self.run_id)
             self.count += 1

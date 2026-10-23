@@ -676,4 +676,75 @@ describe("information agent contribution integration", () => {
     expect(state.assets).toHaveLength(1);
     expect(mocks.persistFactCandidates).toHaveBeenCalledTimes(2);
   });
+
+  it("reprend un dépôt interrompu avec une réponse corrigée, sans conflit sur la pièce déjà enregistrée", async () => {
+    const state = fixture();
+    const file = await preparedFile(state);
+    // Premier essai : message et pièce enregistrés, puis une panne avant la fin.
+    mocks.persistFactCandidates.mockRejectedValueOnce(new Error("panne passagère"));
+    await expect(
+      submitInformationAgentContribution({
+        missionId: MISSION_ID,
+        input: submission(file),
+        env: ENV,
+      }),
+    ).rejects.toThrow("panne passagère");
+    expect(state.messages).toHaveLength(1);
+    expect(state.assets).toHaveLength(1);
+
+    // Le formulaire change d'identifiant dès que la réponse est corrigée : autre message, même pièce.
+    const retried = await submitInformationAgentContribution({
+      missionId: MISSION_ID,
+      input: submission(file, {
+        submissionId: "88888888-8888-4888-8888-888888888888",
+        note: "La surface habitable est de 84 m², corrigée.",
+      }),
+      env: ENV,
+    });
+
+    expect(retried.assetCount).toBe(1);
+    expect(state.messages).toHaveLength(2);
+    expect(state.assets).toHaveLength(1);
+    expect(state.informationCase.status).toBe("review");
+  });
+
+  it("refuse toujours une pièce déjà enregistrée avec un autre contenu", async () => {
+    const state = fixture();
+    const file = await preparedFile(state);
+    await submitInformationAgentContribution({
+      missionId: MISSION_ID,
+      input: submission(file),
+      env: ENV,
+    });
+    state.assets[0]!.sha256 = "0".repeat(64);
+
+    await expect(
+      submitInformationAgentContribution({
+        missionId: MISSION_ID,
+        input: submission(file, {
+          submissionId: "88888888-8888-4888-8888-888888888888",
+          note: "Autre réponse.",
+        }),
+        env: ENV,
+      }),
+    ).rejects.toMatchObject({ code: "23505" });
+  });
+
+  it("dit quel champ est en cause quand la réponse est trop longue pour être enregistrée", async () => {
+    const state = fixture();
+    const file = await preparedFile(state);
+    // 10 000 caractères de réponse + 5 liens de 2 000 caractères : plus de 16 000 une fois assemblés.
+    const links = Array.from(
+      { length: 5 },
+      (_, index) => `https://exemple.test/${index}/${"a".repeat(1990)}`,
+    );
+
+    await expect(
+      submitInformationAgentContribution({
+        missionId: MISSION_ID,
+        input: submission(file, { note: "x".repeat(10_000), externalLinks: links, files: [] }),
+        env: ENV,
+      }),
+    ).rejects.toMatchObject({ status: 400, field: "note" });
+  });
 });

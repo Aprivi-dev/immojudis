@@ -13,8 +13,11 @@ import {
  * puis 20261029120000) :
  * - `under`, `near`, `above` : la mise à prix est sous, dans ou au-dessus de la fourchette des
  *   ventes comparables (P10 à P90 de l'estimation) ;
- * - `occupied` : la bande aurait été `under`, mais le bien est occupé, loué ou occupé par son
- *   propriétaire : la comparaison avec des ventes de biens libres n'est pas pertinente ;
+ * - `occupied` : le bien est occupé, loué, occupé par son propriétaire ou squatté, quelle que soit la
+ *   bande qu'il aurait eue : la comparaison avec des ventes de biens libres n'est pas pertinente ;
+ * - `occupancy_unknown` : l'occupation est inconnue, non renseignée ou illisible (56 % des ventes le
+ *   20/10, 59,6 % le 23/10) : rien ne dit que le bien est libre, donc aucune bande sans réserve
+ *   (migration 20261101190000). Une bande n'est dite que pour un bien libre ;
  * - `insufficient_surface`, `insufficient_type`, `insufficient` : une estimation a été tentée mais
  *   n'est pas assez fiable ; la raison est séparée (surface inconnue, type de bien non pris en
  *   charge, pas assez de ventes comparables fiables) ;
@@ -34,15 +37,17 @@ export const MARKET_GAP_INSUFFICIENT_BANDS = [
   "insufficient",
 ] as const;
 
-/** Ce que la fiche affiche : une bande, « bien occupé », ou la raison d'une estimation insuffisante. */
+/** Ce que la fiche affiche : une bande, « bien occupé », « occupation inconnue » ou la raison d'une estimation insuffisante. */
 export type PublicMarketGapBand =
   | MarketGapBand
   | "occupied"
+  | "occupancy_unknown"
   | (typeof MARKET_GAP_INSUFFICIENT_BANDS)[number];
 
 const PUBLIC_MARKET_GAP_BANDS: readonly string[] = [
   ...MARKET_GAP_BANDS,
   "occupied",
+  "occupancy_unknown",
   ...MARKET_GAP_INSUFFICIENT_BANDS,
 ];
 
@@ -163,6 +168,30 @@ export function isOccupiedOccupancyStatus(value: string | null | undefined): boo
   );
 }
 
+/**
+ * Vrai pour un bien libre, vacant ou inoccupé ; faux pour un bien occupé et pour une occupation
+ * inconnue. Miroir de `app_private.is_vacant_occupancy_status` (migration 20261101190000) : seul un
+ * bien libre reçoit une bande d'écart au marché.
+ */
+export function isVacantOccupancyStatus(value: string | null | undefined): boolean {
+  const normalized = value?.trim().toLocaleLowerCase("fr-FR");
+  if (!normalized) return false;
+  return normalized === "vacant" || /inoccup|libre/.test(normalized);
+}
+
+/**
+ * Pourquoi l'écart avec la valeur estimée ne se dit pas pour ce bien, ou `null` pour un bien libre.
+ * C'est la règle de la bande publique (`get_public_sale_market_gap_band`) : les comptes (aperçu de
+ * valeur), les alertes et les filtres l'appliquent aussi, pour ne pas annoncer « environ 62 % sous la
+ * valeur estimée » à propos d'un bien occupé ou dont l'occupation est inconnue, que la base ne situe pas.
+ */
+export function marketGapWithheldReason(
+  occupancyStatus: string | null | undefined,
+): "occupied" | "occupancy_unknown" | null {
+  if (isOccupiedOccupancyStatus(occupancyStatus)) return "occupied";
+  return isVacantOccupancyStatus(occupancyStatus) ? null : "occupancy_unknown";
+}
+
 export function isPublicMarketGapBand(value: unknown): value is PublicMarketGapBand {
   return typeof value === "string" && PUBLIC_MARKET_GAP_BANDS.includes(value);
 }
@@ -205,6 +234,8 @@ export const MARKET_GAP_BAND_LABELS: Record<PublicMarketGapBand, string> = {
   near: "Mise à prix dans la fourchette des ventes comparables",
   above: "Mise à prix au-dessus de la fourchette des ventes comparables",
   occupied: "Bien occupé : la comparaison avec les ventes de biens libres n'est pas pertinente",
+  occupancy_unknown:
+    "Occupation du bien non précisée : la comparaison avec les ventes de biens libres ne peut pas être située",
   insufficient_surface:
     "Surface du bien inconnue : pas de comparaison possible avec les ventes du secteur",
   insufficient_type:

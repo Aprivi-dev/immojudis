@@ -92,6 +92,14 @@ describe("createTextPdf", () => {
     const xref = Number(text.match(/startxref\n(\d+)/)?.[1]);
     expect(text.slice(xref, xref + 4)).toBe("xref");
   });
+  it("writes ≤ and ≥ in words instead of dropping them", () => {
+    const lines = paginatePdfLines(["Hauteur ≤ 9 m, recul ≥ 3 m", "Emprise ≤60 %"]);
+    expect(lines[0].map((line) => line.text)).toEqual([
+      "Hauteur au plus 9 m, recul au moins 3 m",
+      "Emprise au plus 60 %",
+    ]);
+  });
+
   it("embeds a sanitized watermark when provided", () => {
     const pdf = createTextPdf({
       title: "Rapport test",

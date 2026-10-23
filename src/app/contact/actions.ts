@@ -2,20 +2,39 @@
 
 import { headers } from "next/headers";
 import { Resend } from "resend";
-import { createContactLimiter, deliverContact, type ContactState } from "@/lib/contact-message";
+import { RateLimitError } from "@/lib/api-errors";
+import { deliverContact, type ContactState } from "@/lib/contact-message";
 import { publicLegalPublisher } from "@/lib/legal-documents";
+import { enforceGlobalRateLimit, enforceIpRateLimit } from "@/lib/rate-limit";
+import { CONTACT_RATE_LIMITS } from "@/lib/rate-limit-policies";
 
-const limiter = createContactLimiter();
-
-function clientKey(list: Headers): string {
-  const forwarded = list.get("x-forwarded-for")?.split(",")[0]?.trim();
-  return forwarded || list.get("x-real-ip") || "inconnu";
+/**
+ * Limiteur partagé du dépôt (tenu en base, donc valable d'une instance Vercel à l'autre) : par adresse,
+ * puis pour tout le site. Une base indisponible lève : le message n'est pas envoyé et l'échec est
+ * journalisé (voir `deliverContact`).
+ */
+function sharedLimiter(list: Headers) {
+  return {
+    async consume(): Promise<boolean> {
+      try {
+        // Seuls les en-têtes comptent pour l'adresse du visiteur.
+        const request = new Request("https://immojudis.local/contact", { headers: list });
+        await enforceIpRateLimit({ request, bucketKey: "contact", ...CONTACT_RATE_LIMITS.perIp });
+        await enforceGlobalRateLimit({ bucketKey: "contact", ...CONTACT_RATE_LIMITS.global });
+        return true;
+      } catch (error) {
+        if (error instanceof RateLimitError) return false;
+        throw error;
+      }
+    },
+  };
 }
 
 /**
  * Envoie le message du formulaire de contact à l'équipe via Resend.
  * Destinataire : CONTACT_EMAIL_TO, à défaut l'adresse de contact légale publiée.
- * Expéditeur : CONTACT_EMAIL_FROM, à défaut ALERT_EMAIL_FROM (domaine déjà vérifié chez Resend).
+ * Expéditeur : CONTACT_EMAIL_FROM seulement, sans repli sur l'expéditeur des alertes : sans lui le
+ * formulaire répond qu'il n'est pas disponible et rien n'est envoyé.
  */
 export async function sendContactMessage(
   _previous: ContactState,
@@ -23,7 +42,7 @@ export async function sendContactMessage(
 ): Promise<ContactState> {
   const apiKey = process.env.RESEND_API_KEY?.trim();
   const to = process.env.CONTACT_EMAIL_TO?.trim() || publicLegalPublisher().contactEmail;
-  const from = process.env.CONTACT_EMAIL_FROM?.trim() || process.env.ALERT_EMAIL_FROM?.trim();
+  const from = process.env.CONTACT_EMAIL_FROM?.trim();
   const resend = apiKey ? new Resend(apiKey) : null;
 
   return deliverContact(
@@ -34,9 +53,9 @@ export async function sendContactMessage(
       message: formData.get("message"),
       website: formData.get("website"),
     },
-    clientKey(await headers()),
+    "contact",
     {
-      limiter,
+      limiter: sharedLimiter(await headers()),
       to,
       from,
       send: resend

@@ -350,7 +350,9 @@ export function LoginPage() {
         },
       });
       if (error) throw error;
-      trackProductEvent("signup_completed");
+      // Formulaire envoyé, pas encore compte confirmé : `signup_confirmed` part à la confirmation
+      // (`signup-confirmation.ts`).
+      trackProductEvent("signup_submitted");
       // Sans session, le compte attend la confirmation de l'adresse : un toast qui disparaît
       // laisserait la personne devant le même formulaire, on le remplace donc par un panneau.
       if (data?.session === null) {

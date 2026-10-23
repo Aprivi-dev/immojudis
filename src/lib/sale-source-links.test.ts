@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { saleSourceLinks, sourceLabel, sourceLabelFromUrl } from "@/lib/sale-source-links";
+import {
+  knownSourceLabel,
+  saleSourceLinks,
+  sourceLabel,
+  sourceLabelFromUrl,
+} from "@/lib/sale-source-links";
 import type { AuctionSale } from "@/lib/types";
 import { resetWithdrawnSources, setWithdrawnSources } from "@/lib/withdrawn-sources";
 
@@ -68,5 +73,17 @@ describe("sale source links", () => {
     } as AuctionSale;
 
     expect(saleSourceLinks(sale)).toEqual([]);
+  });
+
+  it("ne nomme publiquement qu'une source connue, jamais un nom interne ni une source retirée", () => {
+    expect(knownSourceLabel("licitor")).toBe("Licitor");
+    expect(knownSourceLabel("Petites Affiches")).toBe("Petites Affiches");
+    expect(knownSourceLabel("cessions_etat")).toBe("Cessions de l'Etat");
+    expect(knownSourceLabel("licitor_v2_internal")).toBeNull();
+    expect(knownSourceLabel("")).toBeNull();
+    expect(knownSourceLabel(null)).toBeNull();
+    setWithdrawnSources(["licitor"]);
+    expect(knownSourceLabel("licitor")).toBeNull();
+    expect(knownSourceLabel("avoventes")).toBe("Avoventes");
   });
 });

@@ -63,7 +63,7 @@ Toutes les variables sont lues par un seul module, [`src/lib/env.ts`](src/lib/en
 | `CRON_SECRET`                          |   ✅   | Secret des routes Vercel Cron et de `POST /api/pipeline/revalidate-sale` (invalidation du cache d'une fiche par le pipeline)                                                                                                                                                                                         |
 | `SITE_URL`                             |   ✅   | **Nom canonique.** Origine canonique publique (`https://immojudis.com`). Replis : `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_APP_URL`, `APP_URL`. `VERCEL_URL` n'est plus acceptée seule en production (garde-fou de build)                                                                                                |
 | `RESEND_API_KEY`                       |   ✅   | Clé serveur Resend pour envoyer les alertes email consenties et les emails aux avocats référencés                                                                                                                                                                                                                    |
-| `ALERT_EMAIL_FROM`                     |   ✅   | Expéditeur vérifié Resend, par exemple `ImmoJudis <alertes@immojudis.fr>`                                                                                                                                                                                                                                            |
+| `ALERT_EMAIL_FROM`                     |   ✅   | Expéditeur vérifié Resend, par exemple `Immojudis <alertes@immojudis.com>`                                                                                                                                                                                                                                            |
 | `NEXT_PUBLIC_LEGAL_*`                  |   ✅   | Mentions légales : `ENTITY_NAME`, `ENTITY_FORM`, `ENTITY_ADDRESS`, `REGISTRATION`, `PUBLICATION_DIRECTOR`, `CONTACT_EMAIL`, `CONTACT_PHONE`, `MEDIATOR_NAME`, `MEDIATOR_ADDRESS`, `MEDIATOR_WEBSITE`. Le build de production échoue si l'une manque                                                                  |
 | `ADMIN_MFA_REQUIRED`                   |   ✅   | Doit valoir `true` en production (second facteur obligatoire pour l'administration). Le build de production échoue sinon                                                                                                                                                                                             |
 | `ALLOW_INCOMPLETE_LAUNCH_CONFIG`       |   ➖   | **Échappatoire temporaire.** `true` transforme en avertissements très visibles les erreurs du build de production sur les mentions légales et `ADMIN_MFA_REQUIRED` (jamais l'absence d'origine canonique, toujours bloquante). Le déploiement n'est alors pas conforme : à retirer dès que les valeurs sont fournies |
@@ -110,21 +110,21 @@ Mapbox configurés pour l'application.
 
 ## Scripts
 
-| Script                                   | Effet                                                                                                         |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `npm run dev`                            | Serveur de dev Next.js (HMR)                                                                                  |
-| `npm run dev:ready`                      | Dev + attente que le client et le SSR répondent                                                               |
-| `npm run build`                          | Build de production pur (validation des variables puis compilation Next.js)                                   |
-| `npm run preview`                        | Smoke-test du build                                                                                           |
-| `npm run test`                           | Tests unitaires Vitest                                                                                        |
-| `npm run lint`                           | ESLint (flat config)                                                                                          |
-| `npm run env:check:prod`                 | Vérifie les variables nécessaires aux API prod + migrations                                                   |
-| `npm run db:migrate`                     | Applique les migrations Supabase en attente (`SUPABASE_DB_URL`, `POSTGRES_URL_NON_POOLING` ou `POSTGRES_URL`) |
-| `npm run check:schema-drift`             | Vérifie que le schéma Supabase correspond exactement aux migrations versionnées                               |
-| `npm run ops:health-scheduler:configure` | Chiffre dans Vault l'URL et le secret du contrôle de santé toutes les 15 minutes                              |
-| `npm run valuation:publish`              | Publie explicitement les modèles de valorisation                                                              |
-| `npm run release:prepare`                | Vérifie l'environnement puis applique migrations et modèles avant une release                                 |
-| `npm run format`                         | Prettier (écriture)                                                                                           |
+| Script                                   | Effet                                                                                                           |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `npm run dev`                            | Serveur de dev Next.js (HMR)                                                                                    |
+| `npm run dev:ready`                      | Dev + attente que le client et le SSR répondent                                                                 |
+| `npm run build`                          | Build de production pur (validation des variables puis compilation Next.js)                                     |
+| `npm run preview`                        | Smoke-test du build                                                                                             |
+| `npm run test`                           | Tests unitaires Vitest                                                                                          |
+| `npm run lint`                           | ESLint (flat config)                                                                                            |
+| `npm run env:check:prod`                 | Vérifie les variables nécessaires aux API prod + migrations                                                     |
+| `npm run db:migrate`                     | Applique les migrations Supabase en attente (`SUPABASE_DB_URL`, `POSTGRES_URL_NON_POOLING` ou `POSTGRES_URL`)   |
+| `npm run check:schema-drift`             | Vérifie que le schéma Supabase correspond exactement aux migrations versionnées                                 |
+| `npm run ops:health-scheduler:configure` | Chiffre dans Vault l'URL et le secret du contrôle de santé toutes les 15 minutes                                |
+| `npm run valuation:publish`              | Publie explicitement les modèles de valorisation                                                                |
+| `npm run release:prepare`                | **ÉCRIT EN PRODUCTION** : applique les migrations, reconfigure Vault, publie les modèles (confirmation requise) |
+| `npm run format`                         | Prettier (écriture)                                                                                             |
 
 ## Structure du dépôt
 
@@ -182,6 +182,13 @@ La gouvernance Phase 6 est décrite dans
 Le build ne modifie plus la base et ne publie plus de modèle. Exécuter
 `npm run release:prepare` dans une étape de release explicitement autorisée,
 puis `npm run build` dans l'étape de compilation.
+
+> ⚠️ **`npm run release:prepare` écrit en production** : il enchaîne `db:migrate` (migrations Supabase),
+> `ops:health-scheduler:configure` (Vault) et `valuation:publish` (modèles de valorisation) sur la base
+> désignée par `SUPABASE_DB_URL`, `POSTGRES_URL_NON_POOLING` ou `POSTGRES_URL`. Il n'est pas réversible
+> et ne se lance ni pour « essayer » ni depuis un poste de développement. Il affiche la base ciblée et
+> demande de taper `production` ; sans terminal interactif, il faut `RELEASE_PREPARE_CONFIRM=production`.
+> Une migration et le code qui en dépend partent ensemble : voir [`supabase/README.md`](supabase/README.md).
 
 ## Intégration continue
 

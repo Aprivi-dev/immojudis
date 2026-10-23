@@ -8,6 +8,12 @@ import LoaderCircle from "lucide-react/dist/esm/icons/loader-circle.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import UploadCloud from "lucide-react/dist/esm/icons/upload-cloud.js";
 import X from "lucide-react/dist/esm/icons/x.js";
+import {
+  CONTRIBUTION_LIMITS,
+  isContributionFieldName,
+  validateContributionDraft,
+  type ContributionFieldName,
+} from "@/lib/information-agent-contribution-rules";
 import { legalValue, publicLegalPublisher } from "@/lib/legal-documents";
 import { pathWithSearch } from "@/lib/navigation";
 import { userMessage } from "@/lib/user-messages";
@@ -19,7 +25,7 @@ const DEFAULT_MAX_SUBMISSION_BYTES = 40 * 1024 * 1024;
 const DEFAULT_MAX_PORTAL_BYTES = 480 * 1024 * 1024;
 const DEFAULT_MAX_PORTAL_FILES = 12;
 const MAX_FILES = 10;
-const MAX_EXTERNAL_LINKS = 5;
+const MAX_EXTERNAL_LINKS = CONTRIBUTION_LIMITS.linksMax;
 
 const MIME_BY_EXTENSION: Record<string, string> = {
   ".pdf": "application/pdf",
@@ -78,13 +84,7 @@ type UploadedFile = {
 
 type ContributionState = "reading" | "loading" | "ready" | "invalid" | "error" | "sent";
 
-type FieldName =
-  | "senderName"
-  | "senderEmail"
-  | "note"
-  | "externalLinks"
-  | "files"
-  | "authorizedToTransmit";
+type FieldName = ContributionFieldName;
 
 const INCOMPLETE_LINK_MESSAGE =
   "Ce lien semble incomplet. Rouvrez-le depuis l’email que vous avez reçu, ou répondez simplement à cet email.";
@@ -147,6 +147,8 @@ class ContributionHttpError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    /** Champ que le serveur désigne comme fautif (400), pour le mettre en évidence. */
+    readonly field: FieldName | null = null,
   ) {
     super(message);
     this.name = "ContributionHttpError";
@@ -259,7 +261,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
     const sentReference = activeToken ? null : readSubmittedReference(missionId);
     if (sentReference) {
       setState("sent");
-      setStatus(`Votre contribution au dossier ${sentReference} a déjà été transmise.`);
+      setStatus(`Votre réponse au dossier ${sentReference} a déjà été transmise.`);
       return;
     }
     if (!activeToken) {
@@ -325,14 +327,20 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
     }
     const invalidType = normalized.find((item) => !isAllowedMimeType(item.mimeType));
     if (invalidType) {
-      fail(`Format non pris en charge : ${invalidType.file.name}.`, "files");
+      fail(
+        `Format non pris en charge : ${invalidType.file.name}. Enregistrez le document en PDF (Word, Excel et archives ne sont pas acceptés), puis joignez-le de nouveau.`,
+        "files",
+      );
       return;
     }
     const tooLarge = normalized.find(
       (item) => item.file.size > (session?.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES),
     );
     if (tooLarge) {
-      fail(`Le fichier ${tooLarge.file.name} dépasse la limite de 20 Mo.`, "files");
+      fail(
+        `Le fichier ${tooLarge.file.name} dépasse la limite de ${formatLimit(session?.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES)}.`,
+        "files",
+      );
       return;
     }
     if (files.length + normalized.length > MAX_FILES) {
@@ -341,7 +349,10 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
     }
     const totalBytes = [...files, ...normalized].reduce((total, item) => total + item.file.size, 0);
     if (totalBytes > (session?.maxSubmissionBytes ?? DEFAULT_MAX_SUBMISSION_BYTES)) {
-      fail("Le dépôt dépasse la limite totale de 40 Mo.", "files");
+      fail(
+        `Le dépôt dépasse la limite totale de ${formatLimit(session?.maxSubmissionBytes ?? DEFAULT_MAX_SUBMISSION_BYTES)}.`,
+        "files",
+      );
       return;
     }
     resetSubmissionProgress();
@@ -366,31 +377,18 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
 
     setError(null);
     setStatus(null);
-    if (cleanName.length < 2) {
-      fail("Indiquez votre nom ou votre cabinet.", "senderName");
-      return;
-    }
-    if (!isEmail(cleanEmail)) {
-      fail("Indiquez une adresse e-mail valide.", "senderEmail");
-      return;
-    }
-    if (links.length > MAX_EXTERNAL_LINKS) {
-      fail(`Ajoutez au maximum ${MAX_EXTERNAL_LINKS} liens, un par ligne.`, "externalLinks");
-      return;
-    }
-    if (links.some((value) => !isHttpUrl(value))) {
-      fail("Chaque lien doit commencer par http:// ou https://.", "externalLinks");
-      return;
-    }
-    if (!cleanNote && !links.length && !files.length) {
-      fail("Ajoutez une réponse, un lien ou au moins une pièce jointe.", "note");
-      return;
-    }
-    if (!authorizedToTransmit) {
-      fail(
-        "Confirmez que vous êtes autorisé à transmettre ces informations.",
-        "authorizedToTransmit",
-      );
+    // Les contrôles du serveur, appliqués avant tout téléversement : un refus tardif aurait déjà
+    // consommé le quota de pièces du dossier.
+    const invalid = validateContributionDraft({
+      senderName: cleanName,
+      senderEmail: cleanEmail,
+      note: cleanNote,
+      links,
+      fileCount: files.length,
+      authorizedToTransmit,
+    });
+    if (invalid) {
+      fail(invalid.message, invalid.field);
       return;
     }
 
@@ -460,7 +458,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
       setStatus(
         result?.opposed === true
           ? "Votre demande est enregistrée : Immojudis ne vous sollicitera plus."
-          : "Votre contribution a bien été transmise.",
+          : "Votre réponse a bien été transmise.",
       );
       setFiles([]);
       setSubmissionId(null);
@@ -469,7 +467,16 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
       setLinksText("");
     } catch (cause: unknown) {
       if (isLinkRejectedByServer(cause)) clearStoredToken(missionId);
-      fail(errorMessage(cause, "Impossible de transmettre votre contribution."));
+      // Un refus de validation du serveur désigne un champ : son message est écrit pour le
+      // visiteur (il ne passe pas par le filtre des messages techniques).
+      const rejected = cause instanceof ContributionHttpError && cause.field ? cause : null;
+      const rejectedField = rejected?.field ?? null;
+      fail(
+        rejected
+          ? rejected.message
+          : errorMessage(cause, "Impossible de transmettre votre réponse."),
+        rejectedField,
+      );
       setStatus(null);
     } finally {
       setSubmitting(false);
@@ -493,7 +500,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
         <header className="glass-shell rounded-lg p-6 sm:p-9">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-gold-text">
             <ShieldCheck className="size-4" aria-hidden="true" />
-            Contribution sécurisée
+            Dépôt sécurisé
           </div>
           <h1 className="mt-4 max-w-2xl font-display text-4xl leading-tight text-foreground sm:text-5xl">
             Transmettre les informations demandées
@@ -521,7 +528,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                 <button
                   type="button"
                   onClick={retryLoad}
-                  className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-md bg-gold px-4 py-2 text-sm font-semibold text-brand-navy transition hover:bg-gold-soft"
+                  className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-md bg-gold px-4 py-2 text-sm font-semibold text-brand-navy transition hover:bg-gold-light"
                 >
                   Réessayer
                 </button>
@@ -536,7 +543,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
             aria-labelledby="contribution-title"
           >
             <h2 id="contribution-title" className="sr-only">
-              Contribution au dossier
+              Réponse au dossier
             </h2>
             {submitted ? (
               <>
@@ -546,7 +553,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                     tabIndex={-1}
                     className="text-lg font-semibold outline-none"
                   >
-                    Contribution reçue
+                    Réponse reçue
                   </h2>
                   <p role="status" aria-live="polite" className="mt-2 text-sm leading-relaxed">
                     {status ?? "Votre réponse a bien été transmise."}
@@ -570,12 +577,13 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
               <>
                 <div className="rounded-lg border border-border bg-white/70 p-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                    Référence
+                    Vente concernée
                   </p>
-                  <p className="mt-1 font-display text-2xl text-foreground">
-                    {session.caseReference}
+                  <p className="mt-1 font-display text-2xl text-foreground">{session.subject}</p>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Référence de suivi :{" "}
+                    <span className="font-semibold text-foreground">{session.caseReference}</span>
                   </p>
-                  <p className="mt-2 text-sm text-muted-foreground">{session.subject}</p>
                   {session.questions.length ? (
                     <div className="mt-4 border-t border-border pt-3">
                       <p className="text-sm font-semibold text-foreground">
@@ -595,6 +603,21 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                 </div>
 
                 <form className="mt-7 space-y-6" onSubmit={submit} noValidate>
+                  <p className="text-sm leading-relaxed text-muted-foreground">
+                    Les champs marqués{" "}
+                    <span aria-hidden="true" className="font-semibold text-gold-text">
+                      *
+                    </span>
+                    <span className="sr-only">d’un astérisque</span> sont obligatoires.
+                  </p>
+                  <p
+                    id="contribution-data-reminder"
+                    className="rounded-lg border border-border bg-background/60 p-4 text-sm leading-relaxed text-foreground"
+                  >
+                    Votre réponse et vos pièces sont lues par l’équipe Immojudis, avec l’aide d’un
+                    outil d’IA, puis vérifiées avant toute utilisation sur une fiche. Rien n’est
+                    publié sans cette vérification.
+                  </p>
                   {error ? (
                     <p
                       ref={errorRef}
@@ -712,7 +735,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                       id="files-help"
                       className="mt-1 text-xs leading-relaxed text-muted-foreground"
                     >
-                      PDF, JPEG, PNG, WebP, HEIC, HEIF ou TXT · 20 Mo par fichier · 40 Mo au total.
+                      {`PDF, JPEG, PNG, WebP, HEIC, HEIF ou TXT · ${formatLimit(session.maxFileBytes)} par fichier · ${formatLimit(session.maxSubmissionBytes)} au total. Un document Word ou Excel : enregistrez-le d’abord en PDF.`}
                     </p>
                     {portalQuota && portalQuota.remainingFiles <= 3 ? (
                       <p
@@ -800,7 +823,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                         resetSubmissionProgress();
                         setAuthorizedToTransmit(event.target.checked);
                       }}
-                      className="mt-1 size-4 accent-gold"
+                      className="mt-1 size-4 accent-brand-navy"
                     />
                     <span>
                       J’atteste être autorisé à transmettre ces informations et pièces à Immojudis.
@@ -834,13 +857,13 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
 
                   <button
                     type="submit"
-                    className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-gold px-5 py-3 text-sm font-semibold text-brand-navy transition hover:bg-gold-soft hover:text-brand-navy disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-gold px-5 py-3 text-sm font-semibold text-brand-navy transition hover:bg-gold-light hover:text-brand-navy disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={submitting}
                   >
                     {submitting ? (
                       <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
                     ) : null}
-                    {submitting ? "Transmission en cours…" : "Transmettre ma contribution"}
+                    {submitting ? "Transmission en cours…" : "Transmettre ma réponse"}
                   </button>
                 </form>
               </>
@@ -911,12 +934,13 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
 }
 
 /**
- * Invitation à déposer ses prochaines ventes, après une contribution volontaire. Coupée par
- * `NEXT_PUBLIC_INFORMATION_AGENT_PRO_INVITATION=false`. Sans « gratuit » tant que des conditions
- * professionnelles ne le garantissent pas, sans « mise en avant » ni « visibilité ».
+ * Invitation à déposer ses prochaines ventes, après une contribution volontaire. Désactivée par
+ * défaut : seule la valeur exacte `NEXT_PUBLIC_INFORMATION_AGENT_PRO_INVITATION=true` l'affiche.
+ * Sans « gratuit » tant que des conditions professionnelles ne le garantissent pas, sans « mise en
+ * avant » ni « visibilité ».
  */
 function professionalInvitationEnabled(): boolean {
-  return process.env.NEXT_PUBLIC_INFORMATION_AGENT_PRO_INVITATION !== "false";
+  return process.env.NEXT_PUBLIC_INFORMATION_AGENT_PRO_INVITATION === "true";
 }
 
 function ProfessionalDepositInvitation() {
@@ -929,10 +953,10 @@ function ProfessionalDepositInvitation() {
         Vous menez régulièrement des ventes aux enchères ?
       </h3>
       <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-        Vous pouvez déposer vous-même vos prochaines ventes sur Immojudis, avec leurs pièces. Vous
-        gardez la main sur ce qui est affiché, et les candidats trouvent le cahier des conditions de
-        vente sans avoir à solliciter votre cabinet ou votre étude. Chaque compte professionnel est
-        vérifié, et chaque vente est relue par notre équipe avant publication.
+        Vous pouvez déposer vous-même vos prochaines ventes sur Immojudis, avec leurs pièces, depuis
+        un compte professionnel. Notre équipe valide chaque compte professionnel et contrôle chaque
+        demande avant sa mise en ligne ; une demande peut être refusée. Le dépôt ne donne aucune
+        priorité de classement.
       </p>
       <Link
         href={pathWithSearch("/login", { mode: "professional", redirect: "/publish" })}
@@ -1006,7 +1030,7 @@ function StatusCard({
 }
 
 const inputClassName =
-  "block min-h-11 w-full rounded-md border border-input bg-white/75 px-3 py-2.5 text-sm text-foreground transition placeholder:text-muted-foreground focus:border-gold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft";
+  "block min-h-11 w-full rounded-md border border-brand-navy/55 bg-white/75 px-3 py-2.5 text-sm text-foreground transition placeholder:text-muted-foreground focus:border-gold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft";
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
   const response = await fetch(url, {
@@ -1027,9 +1051,14 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
       payload && typeof payload === "object" && !Array.isArray(payload) && "error" in payload
         ? (payload as { error?: unknown }).error
         : null;
+    const field =
+      payload && typeof payload === "object" && !Array.isArray(payload)
+        ? (payload as { field?: unknown }).field
+        : null;
     throw new ContributionHttpError(
       typeof message === "string" ? message : "La demande n’a pas abouti.",
       response.status,
+      isContributionFieldName(field) ? field : null,
     );
   }
   return payload as T;
@@ -1058,17 +1087,9 @@ function parseLinks(value: string): string[] {
     .filter(Boolean);
 }
 
-function isHttpUrl(value: string): boolean {
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
-function isEmail(value: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+/** Limite en Mo entiers (« 20 Mo »), telle que la session la fixe. */
+function formatLimit(value: number): string {
+  return `${Math.round(value / (1024 * 1024))} Mo`;
 }
 
 function formatBytes(value: number): string {

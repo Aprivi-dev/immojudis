@@ -9,6 +9,7 @@ import {
   executeAdminContractWithdrawal,
   executeAdminPrivacyErasure,
   fetchAdminPrivacyRequests,
+  fetchAdminProfessionalPrivacyExport,
   updateAdminPrivacyRequest,
 } from "@/lib/client-api";
 import { privacyDeadlineLabel } from "@/lib/privacy-deadline";
@@ -65,12 +66,28 @@ export function AdminPrivacyRequestsPanel() {
       executeAdminPrivacyErasure(input),
     onSuccess: async () => {
       toast.success(
-        "Effacement exécuté : compte, données applicatives et client Stripe supprimés.",
+        "Effacement exécuté : données du demandeur supprimées (compte et client Stripe, s'il en avait).",
       );
       await queryClient.invalidateQueries({ queryKey: ["admin-privacy-requests"] });
     },
     onError: (mutationError) => {
       toast.error(mutationError instanceof Error ? mutationError.message : "Effacement impossible");
+    },
+  });
+  const professionalExport = useMutation({
+    mutationFn: fetchAdminProfessionalPrivacyExport,
+    onSuccess: (result) => {
+      const blob = new Blob([JSON.stringify(result, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `donnees-professionnel-${result.generatedAt.slice(0, 10)}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast.success("Export des données du professionnel téléchargé.");
+    },
+    onError: (mutationError) => {
+      toast.error(mutationError instanceof Error ? mutationError.message : "Export impossible");
     },
   });
   const requests = data?.requests ?? [];
@@ -135,10 +152,16 @@ export function AdminPrivacyRequestsPanel() {
           <PrivacyRequestEditor
             key={request.id}
             request={request}
-            busy={mutation.isPending || withdrawal.isPending || erasure.isPending}
+            busy={
+              mutation.isPending ||
+              withdrawal.isPending ||
+              erasure.isPending ||
+              professionalExport.isPending
+            }
             onSave={(input) => mutation.mutate(input)}
             onWithdraw={(refundMode) => withdrawal.mutate({ requestId: request.id, refundMode })}
             onErase={(input) => erasure.mutate(input)}
+            onExportProfessional={(requestId) => professionalExport.mutate(requestId)}
           />
         ))}
       </div>
@@ -209,12 +232,14 @@ function PrivacyRequestEditor({
   onSave,
   onWithdraw,
   onErase,
+  onExportProfessional,
 }: {
   request: PrivacyRequestAdminSummary;
   busy: boolean;
   onSave: (input: PrivacyRequestAdminUpdate) => void;
   onWithdraw: (refundMode: "prorata" | "full") => void;
   onErase: (input: { requestId: string; confirmEmail: string }) => void;
+  onExportProfessional: (requestId: string) => void;
 }) {
   const [withdrawalMode, setWithdrawalMode] = useState<"prorata" | "full">("prorata");
   const [withdrawalArmed, setWithdrawalArmed] = useState(false);
@@ -365,11 +390,33 @@ function PrivacyRequestEditor({
           </div>
         </div>
       ) : null}
-      {request.requestType === "erasure" && !terminal && request.userId ? (
+      {(request.requestType === "access" || request.requestType === "portability") &&
+      request.subjectKind === "information_agent_professional" &&
+      !terminal ? (
+        <div className="mt-4 rounded-lg border border-border p-3">
+          <p className="text-xs text-muted-foreground">
+            Professionnel contacté par l'agent d'information (sans compte, adresse vérifiée par le
+            lien signé de l'email). Le fichier est à envoyer à l'adresse du demandeur, pas ailleurs.
+          </p>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onExportProfessional(request.id)}
+            className="mt-3 rounded-lg border border-brand-navy/30 px-4 py-2 text-xs font-bold disabled:opacity-50"
+          >
+            Télécharger les données du professionnel (JSON)
+          </button>
+        </div>
+      ) : null}
+      {request.requestType === "erasure" &&
+      !terminal &&
+      (request.userId || request.subjectKind === "information_agent_professional") ? (
         <div className="mt-4 rounded-lg border border-red-300/25 bg-red-400/5 p-3">
           <p className="text-xs text-red-100">
-            Exécuter l'effacement supprime définitivement le client Stripe, les données applicatives
-            et le compte. Identité vérifiée requise ; action irréversible.
+            {request.userId
+              ? "Exécuter l'effacement supprime définitivement le client Stripe, les données applicatives et le compte."
+              : "Exécuter l'effacement supprime définitivement les messages, dossiers et pièces de l'agent d'information liés à cette adresse, qui reste sur la liste des contacts à ne plus solliciter."}{" "}
+            Identité vérifiée requise ; action irréversible.
           </p>
           <div className="mt-3 flex flex-col gap-2 sm:flex-row">
             <input

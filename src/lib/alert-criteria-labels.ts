@@ -67,7 +67,9 @@ export function alertCriteriaSummary(
     criteria.push(`Occupation : ${occupancyLabel(alert.occupancy_status)}`);
   if (alert.min_yield_pct != null) criteria.push(`Rendement minimal : ${alert.min_yield_pct} %`);
   if (alert.min_market_discount_pct != null) {
-    criteria.push(`Décote minimale : ${alert.min_market_discount_pct} %`);
+    criteria.push(
+      `Décote minimale : ${alert.min_market_discount_pct} % (seulement pour les biens déclarés libres)`,
+    );
   }
   if (alert.min_investment_score != null) {
     criteria.push(`Note minimale : ${alert.min_investment_score} sur 100`);

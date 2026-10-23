@@ -7,12 +7,13 @@ import { normalizePlanCode, type PlanCode, type PlanStatus } from "@/lib/plans";
 import { nullableRpcArg } from "@/lib/rpc-args";
 import { resolveSiteOrigin } from "@/lib/site-url";
 import {
-  assertCommercialConfirmationReadiness,
   type CheckoutConsent,
   recordCommercialAcceptance,
   sendCommercialConfirmation,
 } from "@/lib/commercial-acceptance";
-import { assertPaidOfferLegalReadiness } from "@/lib/legal-documents";
+import { assertAnalysisCheckoutOpen } from "@/lib/analysis-checkout-readiness";
+import { PublicApiError } from "@/lib/api-errors";
+import { readLaunchOfferState } from "@/lib/launch-offer.server";
 import type { BillingPortalIntent } from "@/lib/billing-portal-request";
 import {
   sendCancellationConfirmationNotice,
@@ -147,8 +148,17 @@ export async function createPlanCheckoutSession({
   requestId?: string | null;
   userAgent?: string | null;
 }): Promise<BillingSessionResponse> {
-  assertPaidOfferLegalReadiness();
-  assertCommercialConfirmationReadiness();
+  // Une seule définition de « paiements ouverts » (`analysisCheckoutReadiness`) : configuration
+  // Stripe complète, secret de webhook compris (sans lui, un paiement n'ouvrirait aucun accès),
+  // identité légale, canal de confirmation, et offre de lancement coupée. Si l'état de l'offre de
+  // lancement ne peut pas être lu, on refuse plutôt que d'encaisser sur une supposition.
+  const launchOffer = await readLaunchOfferState();
+  if (launchOffer.degraded) {
+    throw new Error(
+      "L'état de l'offre de lancement n'a pas pu être vérifié. Le checkout est suspendu.",
+    );
+  }
+  assertAnalysisCheckoutOpen(process.env, { launchOfferActive: launchOffer.active });
   const stripe = getStripe();
   const appOrigin = resolveBillingOrigin(origin);
   const priceId = resolveAnalysisPriceId();
@@ -157,7 +167,13 @@ export async function createPlanCheckoutSession({
   // Start the Session window before acquiring the database reservation so
   // Customer/history requests cannot make Checkout outlive that reservation.
   const checkoutExpiresAt = Math.floor(Date.now() / 1000) + ANALYSIS_CHECKOUT_EXPIRY_MINUTES * 60;
-  if (!(await reserveAnalyseCheckout(auth.userId, reservationToken))) {
+  let reserved = await reserveAnalyseCheckout(auth.userId, reservationToken);
+  // Un checkout abandonné garde la réservation jusqu'à 31 minutes : on libère le Checkout ouvert
+  // et abandonné du même compte, puis on réessaie une fois.
+  if (!reserved && (await reclaimAbandonedCheckout(stripe, auth).catch(() => false))) {
+    reserved = await reserveAnalyseCheckout(auth.userId, reservationToken);
+  }
+  if (!reserved) {
     throw new Error(
       "Un abonnement Analyse ou un checkout est déjà associé à ce compte. Gérez-le depuis le portail Stripe.",
     );
@@ -240,6 +256,44 @@ export async function createPlanCheckoutSession({
     }
     throw error;
   }
+}
+
+/** A Session younger than this may belong to a request still creating it: never taken over. */
+const ABANDONED_CHECKOUT_MIN_AGE_SECONDS = 60;
+
+/**
+ * Le client a quitté Stripe Checkout sans payer : la réservation de son compte tient encore
+ * jusqu'à 31 minutes (`checkout.session.expired` ne tombe qu'à l'expiration). Plutôt que de lui
+ * refuser un nouveau checkout, on expire ses Sessions ouvertes (créées par nous pour ce compte,
+ * depuis plus d'une minute) et on libère leur réservation. Ne touche jamais une Session payée :
+ * seules les Sessions `open` sont listées, et `expire` échoue sur une Session déjà complétée.
+ */
+async function reclaimAbandonedCheckout(
+  stripe: Stripe,
+  auth: SupabaseAuthContext,
+): Promise<boolean> {
+  const subscription = await getUserSubscription(auth);
+  const customerId = subscription?.stripe_customer_id;
+  if (!customerId) return false;
+  const sessions = await stripe.checkout.sessions.list({
+    customer: customerId,
+    status: "open",
+    limit: 10,
+  });
+  const cutoff = Math.floor(Date.now() / 1000) - ABANDONED_CHECKOUT_MIN_AGE_SECONDS;
+  let reclaimed = false;
+  for (const session of sessions.data) {
+    const token = session.metadata?.checkout_reservation_token;
+    if (!token || session.metadata?.user_id !== auth.userId || session.created > cutoff) continue;
+    try {
+      await stripe.checkout.sessions.expire(session.id);
+    } catch {
+      continue;
+    }
+    await releaseAnalyseCheckout(auth.userId, token).catch(() => undefined);
+    reclaimed = true;
+  }
+  return reclaimed;
 }
 
 export function canReleaseCheckoutReservationAfterFailure(
@@ -482,6 +536,12 @@ export async function handleStripeWebhook({
   const event = stripe.webhooks.constructEvent(payload, signature, stripeWebhookSecret());
   const isNewEvent = await beginStripeWebhookEvent(event);
   if (!isNewEvent) {
+    // Un événement encore « processing » n'est pas un doublon traité : le premier passage a pu
+    // être interrompu. Répondre 200 ferait abandonner l'événement par Stripe ; on répond une erreur
+    // réessayable, et la base reprend l'événement bloqué au-delà de 15 minutes.
+    if ((await readStripeWebhookEventStatus(event.id)) === "processing") {
+      throw new PublicApiError("Événement en cours de traitement : réessayez plus tard.", 503);
+    }
     return { eventId: event.id, type: event.type, handled: true, duplicate: true };
   }
 
@@ -801,6 +861,16 @@ async function beginStripeWebhookEvent(event: Stripe.Event): Promise<boolean> {
   return data === true;
 }
 
+async function readStripeWebhookEventStatus(eventId: string): Promise<string | null> {
+  const { data, error } = await supabaseAdmin
+    .from("stripe_webhook_events")
+    .select("processing_status")
+    .eq("event_id", eventId)
+    .maybeSingle();
+  if (error) throw new Error(error.message || "Journal Stripe indisponible.");
+  return data?.processing_status ?? null;
+}
+
 async function completeStripeWebhookEvent(
   eventId: string,
   status: "processed" | "ignored" | "failed",
@@ -1021,13 +1091,38 @@ async function retrieveCurrentSubscription(
   }
 }
 
-/** True when the price is the approved Analyse price (or none is configured yet). */
+/**
+ * Every Price of the Analyse offer: the one used by new checkouts (`STRIPE_ANALYSIS_PRICE_ID`) and
+ * the former ones still billed to existing subscribers (`STRIPE_ANALYSIS_LEGACY_PRICE_IDS`, comma
+ * separated). Changing the Price of the offer therefore does not cut the access of subscribers who
+ * stay on the previous one.
+ */
+export function analysisSubscriptionPriceIds(
+  env: Pick<NodeJS.ProcessEnv, string> = process.env,
+): string[] {
+  return [env.STRIPE_ANALYSIS_PRICE_ID, ...(env.STRIPE_ANALYSIS_LEGACY_PRICE_IDS ?? "").split(",")]
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value));
+}
+
+/** True when the price belongs to the Analyse offer (or none is configured yet). */
 export function isAnalysisSubscriptionPrice(
   priceId: string | null | undefined,
   env: Pick<NodeJS.ProcessEnv, string> = process.env,
 ): boolean {
-  const configured = env.STRIPE_ANALYSIS_PRICE_ID?.trim();
-  return !configured || !priceId || priceId === configured;
+  const accepted = analysisSubscriptionPriceIds(env);
+  return accepted.length === 0 || !priceId || accepted.includes(priceId);
+}
+
+async function userHasOpenPaymentDispute(userId: string): Promise<boolean> {
+  const { data, error } = await supabaseAdmin
+    .from("stripe_payment_lifecycle")
+    .select("payment_intent_id")
+    .eq("user_id", userId)
+    .eq("state", "disputed")
+    .limit(1);
+  if (error) throw new Error(error.message || "Lecture des litiges Stripe impossible.");
+  return (data?.length ?? 0) > 0;
 }
 
 /** `apply_stripe_subscription_state` refusal for an old subscription id that no longer matters. */
@@ -1056,7 +1151,18 @@ async function syncStripeSubscription(
   const current = await retrieveCurrentSubscription(subscription);
   const customerId = stripeObjectId(current.customer);
   const price = current.items.data[0]?.price;
-  const status = stripeSubscriptionStatusToPlanStatus(current.status);
+  let status = stripeSubscriptionStatusToPlanStatus(current.status);
+  // Un litige ouvert l'emporte : un `subscription.updated` (même tardif) ne rouvre pas l'accès
+  // que `charge.dispute.created` a suspendu. Le litige gagné ou perdu règle ensuite l'accès.
+  if (
+    (status === "trialing" || status === "active" || status === "past_due") &&
+    (await userHasOpenPaymentDispute(userId))
+  ) {
+    console.warn("[billing] subscription kept paused: payment dispute still open", {
+      subscription: current.id,
+    });
+    status = "paused";
+  }
   const plan: PlanCode = isAnalysisSubscriptionPrice(price?.id)
     ? resolveStripePlanCode({
         metadataPlanCode: current.metadata?.plan_code,

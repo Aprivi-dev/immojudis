@@ -50,16 +50,20 @@ requêtes amènent des inscrits actifs, pas à acheter du volume.
 - Aucun concurrent cité nommément dans le texte d'une annonce. Enchérir sur la marque d'un
   concurrent soulève des questions de droit des marques : à soumettre à `juridique-rgpd`, pas
   par défaut.
-- Consentement : Immojudis mesure aujourd'hui l'audience sans cookie (Vercel Analytics,
-  `src/lib/product-events.ts`). Une balise de conversion ou de reciblage publicitaire dépose
-  des traceurs : bandeau de consentement, registre et politique de confidentialité à revoir
-  avec `juridique-rgpd` avant toute installation. Pas de liste de clients importée.
+- Consentement : Immojudis mesure l'audience avec Vercel Analytics (sans cookie) et, après
+  l'accord donné dans le bandeau, avec Google Analytics 4 (cookies `_ga`, 13 mois au plus ;
+  stockage publicitaire refusé, pas de signaux Google : `src/lib/google-analytics.ts`), plus
+  les événements de `src/lib/product-events.ts`. Le site n'est donc pas « sans cookie ». Une
+  balise de conversion ou de reciblage publicitaire dépose d'autres traceurs : bandeau de
+  consentement, registre et politique de confidentialité à revoir avec `juridique-rgpd` avant
+  toute installation. Pas de liste de clients importée.
 - Pas de manipulation : pas de fausse urgence, pas d'extension d'annonce trompeuse, page
   d'arrivée qui tient la promesse de l'annonce.
 
 ## Ce que tu prépares
 
-1. **Prérequis** : site ouvert à l'indexation et au public, pages d'arrivée rapides
+1. **Prérequis** : site ouvert à l'indexation (c'est le cas en production depuis le
+   15/10/2026 ; à revérifier) et au public, pages d'arrivée rapides
    (`performance-web`), mesure des conversions conforme. Sans ces trois points, recommande
    d'attendre et dis pourquoi.
 2. **Structure** : campagnes par intention, pas par produit :

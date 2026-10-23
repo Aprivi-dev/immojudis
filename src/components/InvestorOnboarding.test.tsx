@@ -178,6 +178,21 @@ describe("investor welcome flow", () => {
       expect(document.body.textContent).toContain("Indiquez un secteur, un type de bien");
     });
 
+    it("propose de revenir à la fiche plutôt qu'au catalogue quand on vient d'une fiche", () => {
+      render(<InvestorOnboarding returnTo="/sales/4655881c-249d-4eab-beba-f2624d8a1af0" />);
+      expect(
+        screen.getByRole("link", { name: "Passer et revenir à la fiche" }).getAttribute("href"),
+      ).toBe("/sales/4655881c-249d-4eab-beba-f2624d8a1af0");
+      expect(screen.queryByRole("link", { name: "Passer et explorer le catalogue" })).toBeNull();
+    });
+
+    it("garde le lien vers le catalogue sans fiche d'origine", () => {
+      render(<InvestorOnboarding />);
+      expect(
+        screen.getByRole("link", { name: "Passer et explorer le catalogue" }).getAttribute("href"),
+      ).toBe("/sales");
+    });
+
     it("grise la case pour un secteur en texte libre avec l'offre gratuite, pas avec Analyse", () => {
       const { unmount } = render(<InvestorOnboarding />);
       goToLastStep("Bordeaux");

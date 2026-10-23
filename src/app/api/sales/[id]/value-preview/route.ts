@@ -30,7 +30,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     });
     const { data: sale, error } = await auth.supabase
       .from("v_auction_sales_discovery")
-      .select("id, starting_price_eur")
+      .select("id, starting_price_eur, occupancy_status")
       .eq("id", saleId)
       .maybeSingle();
     if (error) throw error;
@@ -38,6 +38,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     const preview = buildValuePreview(
       await getPrecomputedMarketEstimate(saleId),
       (sale as { starting_price_eur: number | null }).starting_price_eur,
+      (sale as { occupancy_status: string | null }).occupancy_status,
     );
     return NextResponse.json(preview, {
       headers: { "cache-control": "private, max-age=300, stale-while-revalidate=3600" },
