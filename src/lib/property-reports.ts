@@ -72,7 +72,7 @@ import {
   shareIsExpired,
   slugify,
 } from "./property-report/serialization";
-import { asRecord, stringOrNumberValue } from "@/lib/guards";
+import { asRecord, numberValue, stringOrNumberValue } from "@/lib/guards";
 export type SupabaseClient = SupabaseAuthContext["supabase"];
 export type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
 export type SavedReportRow = Database["public"]["Tables"]["saved_property_reports"]["Row"];
@@ -85,7 +85,11 @@ export type ActiveComparableSales = {
   sales: AuctionSale[];
 };
 
-import { computeReportSimulation, reportSimulationSchema } from "./report-simulation";
+import {
+  computeReportSimulation,
+  publicReportSimulation,
+  reportSimulationSchema,
+} from "./report-simulation";
 import { listingValuationConflict } from "./listing-evidence";
 
 export const propertyReportRequestSchema = z.object({
@@ -206,6 +210,14 @@ export type PropertyReportShareResponse = {
   share: PropertyReportShare;
 };
 
+export type PublicSharedCeiling = {
+  available: boolean;
+  maxBid: number | null;
+  safetyDiscountPct: number | null;
+  basisLabel: string | null;
+  personalSimulation?: Record<string, unknown>;
+};
+
 export type PublicSharedPropertyReport = {
   id: string;
   title: string;
@@ -217,9 +229,8 @@ export type PublicSharedPropertyReport = {
   plan: string | null;
   sale: Record<string, unknown>;
   analysis: Record<string, unknown>;
-  market: Json;
-  environmental: Json | null;
-  ceiling: Json;
+  /** Allow-list of the ceiling: only what the shared page renders, never the private inputs. */
+  ceiling: PublicSharedCeiling;
   sourceTrace: SourceTraceEntry[];
   limitations: string[];
   disclaimer: string;
@@ -681,6 +692,24 @@ export function buildPropertyReportShare(
   };
 }
 
+/**
+ * Liste blanche du plafond d'enchère exposé par un lien public. Le snapshot complet contient les
+ * entrées privées du propriétaire (loyer, mensualité, charges, taxe foncière) : seuls les champs
+ * que la page partagée affiche sont recopiés. `market_snapshot` et `environmental_snapshot` ne
+ * sont pas rendus par cette page et ne sont donc pas renvoyés.
+ */
+function buildPublicSharedCeiling(snapshot: Json): PublicSharedCeiling {
+  const ceiling = asRecord(snapshot);
+  const personalSimulation = publicReportSimulation(ceiling.personalSimulation);
+  return {
+    available: ceiling.available === true,
+    maxBid: numberValue(ceiling.maxBid),
+    safetyDiscountPct: numberValue(ceiling.safetyDiscountPct),
+    basisLabel: typeof ceiling.basisLabel === "string" ? ceiling.basisLabel : null,
+    ...(personalSimulation ? { personalSimulation } : {}),
+  };
+}
+
 export function buildPublicSharedPropertyReport(
   report: Pick<
     SavedReportRow,
@@ -716,9 +745,7 @@ export function buildPublicSharedPropertyReport(
     plan: typeof snapshot.plan === "string" ? snapshot.plan : null,
     sale: redactPersonalData(asRecord(snapshot.sale)),
     analysis: redactPersonalData(asRecord(snapshot.analysis)),
-    market: report.market_snapshot,
-    environmental: report.environmental_snapshot,
-    ceiling: report.ceiling_snapshot,
+    ceiling: buildPublicSharedCeiling(report.ceiling_snapshot),
     sourceTrace: normalizeSourceTrace(traceability.entries),
     limitations: normalizeStringList(traceability.limitations),
     disclaimer: stringOrNumberValue(traceability.complianceNotice, REPORT_COMPLIANCE_NOTICE),
