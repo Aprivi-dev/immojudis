@@ -232,6 +232,50 @@ describe("useCreateAlert", () => {
     );
   });
 
+  it("enregistre un code de département tapé dans la recherche comme filtre département", async () => {
+    mocks.plan.mockResolvedValue({
+      plan: {
+        hasAnalysisAccess: true,
+        features: { smartAlerts: "included", watchedZones: "included" },
+      },
+    });
+    const hook = setup();
+    for (const [query, department] of [
+      ["26", "26"],
+      ["07", "07"],
+      ["2A", "2A"],
+    ]) {
+      mocks.createAlert.mockClear();
+      const outcome = await create(hook, { query });
+      expect(outcome.status).toBe("created");
+      expect(mocks.createAlert).toHaveBeenCalledWith(
+        "user-1",
+        expect.objectContaining({
+          department,
+          advanced_criteria: expect.objectContaining({ query: null }),
+        }),
+      );
+    }
+  });
+
+  it("garde le texte libre et le département explicite tels quels", async () => {
+    mocks.plan.mockResolvedValue({
+      plan: {
+        hasAnalysisAccess: true,
+        features: { smartAlerts: "included", watchedZones: "included" },
+      },
+    });
+    const hook = setup();
+    await create(hook, { query: "26", department: "33" });
+    expect(mocks.createAlert).toHaveBeenCalledWith(
+      "user-1",
+      expect.objectContaining({
+        department: "33",
+        advanced_criteria: expect.objectContaining({ query: "26" }),
+      }),
+    );
+  });
+
   it("explique que les alertes sont réservées quand l'offre ne les ouvre pas", async () => {
     mocks.plan.mockResolvedValue({
       plan: {

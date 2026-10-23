@@ -1,6 +1,7 @@
 import { saleDateBoundary, validSaleDate } from "./search/sale-date-range";
 import { dpeMatches, extractDpe } from "@/lib/dpe";
 import { getSaleProcedure } from "@/lib/sale-procedure";
+import { matchesFrenchGeoSearch, resolveFrenchGeoSearch } from "@/lib/search/french-geo-search";
 import { parseSaleType, saleVenueMatchesType } from "@/lib/sale-types";
 import { estimateGrossYieldPct, pricePerM2 } from "@/lib/geo";
 import { getSaleSurface } from "@/lib/surface";
@@ -52,6 +53,9 @@ export function alertMatchesSale(
   const saleType = parseSaleType(alert.advanced_criteria?.sale_type);
   if (saleType && !saleVenueMatchesType(getSaleProcedure(sale).venueType, saleType)) {
     return noMatch("type de vente différent");
+  }
+  if (!matchesAlertQueryScope(sale, alert.advanced_criteria?.query)) {
+    return noMatch("secteur différent");
   }
   const surface = getSaleSurface(sale).value;
   const ppm2 = pricePerM2(sale.starting_price_eur, surface);
@@ -109,6 +113,30 @@ export function alertMatchesSale(
   if (context.watchedZone) reasons.push(watchedZoneSummary(context.watchedZone));
 
   return { matches: true, reasons };
+}
+
+/**
+ * Une recherche enregistrée garde parfois le texte tapé dans la barre de recherche (`query`). Quand
+ * ce texte désigne un secteur (code ou nom de département, région, code postal), la recherche du
+ * catalogue le traite comme un filtre géographique : l'alerte fait de même, sinon « 26 » serait
+ * sans effet et l'alerte correspondrait à toutes les ventes. Un texte libre n'est pas évalué ici
+ * (les champs de description ne sont pas chargés pour les alertes).
+ */
+export function matchesAlertQueryScope(sale: AuctionSale, query: unknown): boolean {
+  if (typeof query !== "string" || !query.trim()) return true;
+  const scope = resolveFrenchGeoSearch(query);
+  if (scope.kind === "text" || scope.kind === "empty") return true;
+  return matchesFrenchGeoSearch(sale, query);
+}
+
+/**
+ * Code du département quand le texte de recherche n'est que cela (« 26 », « 2A », « 974 » ou un nom
+ * de département) : l'alerte l'enregistre alors comme son département plutôt que comme texte libre.
+ * `null` pour tout autre texte, une région ou un code postal.
+ */
+export function departmentFromSearchQuery(query: string | null | undefined): string | null {
+  const scope = resolveFrenchGeoSearch(query);
+  return scope.kind === "department" ? (scope.departments[0] ?? null) : null;
 }
 
 export function isHouseWithLand(sale: AuctionSale): boolean {

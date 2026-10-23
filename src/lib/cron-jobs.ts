@@ -58,6 +58,7 @@ export async function runMonitoredCron(
     );
   }
 
+  await closeOrphanedRuns(jobName);
   let runId = await beginRun(jobName, retryDelaysMs);
 
   try {
@@ -159,6 +160,43 @@ async function succeededRecently(jobName: string, windowHours: number): Promise<
     return (data?.length ?? 0) > 0;
   } catch {
     return false;
+  }
+}
+
+/** Une fonction planifiée dure au plus 300 s : au-delà, une exécution « running » est orpheline. */
+export const ORPHANED_RUN_AFTER_MS = 30 * 60 * 1000;
+
+/**
+ * Clôt en échec les exécutions de ce job restées « running » (fonction interrompue avant
+ * `finish_operational_job_run`). Elles faussent sinon l'historique et les contrôles qui lisent la
+ * dernière exécution. Sans effet sur une exécution récente, donc sur un passage encore en cours.
+ * Best-effort : une erreur ici ne doit jamais empêcher le passage.
+ */
+export async function closeOrphanedRuns(jobName: string, now = Date.now()): Promise<number> {
+  try {
+    const cutoff = new Date(now - ORPHANED_RUN_AFTER_MS).toISOString();
+    const { data, error } = await supabaseAdmin
+      .from("operational_job_runs")
+      .update({
+        status: "failed",
+        error_message: "Exécution interrompue : jamais terminée, clôturée au passage suivant.",
+        finished_at: new Date(now).toISOString(),
+      })
+      .eq("job_name", jobName)
+      .eq("status", "running")
+      .lt("started_at", cutoff)
+      .select("id");
+    if (error) throw error;
+    const closed = data?.length ?? 0;
+    if (closed > 0) logCron("warn", { jobName, status: "orphaned_runs_closed", closed });
+    return closed;
+  } catch (error) {
+    logCron("warn", {
+      jobName,
+      status: "orphan_cleanup_failed",
+      message: operationalErrorMessage(error),
+    });
+    return 0;
   }
 }
 
