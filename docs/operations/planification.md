@@ -148,14 +148,14 @@ relus) est créée au premier tick du mois. Son code de sortie est noté dans `a
 
 ## Workflows GitHub Actions
 
-| Workflow                                  | Déclencheur                                      | Supervision                                                          |
-| ----------------------------------------- | ------------------------------------------------ | -------------------------------------------------------------------- |
-| Immojudis Data Pipeline (`data-pipeline`) | planifié + répartition par l'application         | alertes `pipeline.source.*`, `pipeline.import.unhealthy`             |
-| Recompute des ventes existantes           | manuel                                           | verrou `immojudis-recompute` + verrou en base                        |
-| DVF import                                | **manuel** (`workflow_dispatch`, aucun planning) | alerte `dvf.freshness` (donnée de plus de 220 jours)                 |
-| Information Agent Evidence                | planifié toutes les 30 min + manuel              | analyse des pièces jointes privées de l'agent (OCR), lecture seule   |
-| Production smoke                          | planifié toutes les 30 min + manuel              | échec du workflow ; voir `docs/operations/supervision-externe.md`    |
-| Immojudis Operational Alert               | déclenché par l'application                      | échec = incident ouvert ; avertissement = rappel ; vert = résolution |
-| Entraînement du modèle de valorisation    | manuel                                           | rapport JSON + tableau de synthèse                                   |
-| Apply Supabase Migrations                 | manuel depuis `main`                             | contrôle de dérive du schéma                                         |
-| Check Pending Supabase Migrations         | planifié (tous les jours 07:10 UTC)              | échec = migrations de `main` non appliquées en production            |
+| Workflow                                  | Déclencheur                                               | Supervision                                                          |
+| ----------------------------------------- | --------------------------------------------------------- | -------------------------------------------------------------------- |
+| Immojudis Data Pipeline (`data-pipeline`) | planifié + répartition par l'application                  | alertes `pipeline.source.*`, `pipeline.import.unhealthy`             |
+| Recompute des ventes existantes           | manuel                                                    | verrou `immojudis-recompute` + verrou en base                        |
+| DVF import                                | **manuel** (`workflow_dispatch`, aucun planning)          | alerte `dvf.freshness` (donnée de plus de 220 jours)                 |
+| Information Agent Evidence                | planifié toutes les 30 min + manuel                       | analyse des pièces jointes privées de l'agent (OCR), lecture seule   |
+| Production smoke                          | planifié toutes les 30 min + manuel                       | échec du workflow ; voir `docs/operations/supervision-externe.md`    |
+| Immojudis Operational Alert               | déclenché par l'application                               | échec = incident ouvert ; avertissement = rappel ; vert = résolution |
+| Entraînement du modèle de valorisation    | manuel                                                    | rapport JSON + tableau de synthèse                                   |
+| Apply Supabase Migrations                 | manuel depuis `main`                                      | refuse si le CI du commit n'est pas vert ; contrôle de dérive        |
+| Check Pending Supabase Migrations         | `push` sur `main` (migrations) + tous les jours 07:10 UTC | échec = migrations de `main` non appliquées en production            |
