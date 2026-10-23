@@ -247,6 +247,51 @@ describe("useCreateAlert", () => {
     expect(mocks.createAlert).not.toHaveBeenCalled();
   });
 
+  it("accepte à un compte gratuit un code de département tapé dans la recherche (critère public)", async () => {
+    const hook = setup();
+    for (const query of ["26", "2A"]) {
+      mocks.createAlert.mockClear();
+      mocks.toast.error.mockClear();
+      const outcome = await create(hook, { query });
+      expect(outcome.status).toBe("created");
+      expect(mocks.toast.error).not.toHaveBeenCalled();
+      expect(mocks.createAlert).toHaveBeenCalledWith(
+        "user-1",
+        expect.objectContaining({
+          department: query,
+          alert_frequency: "weekly",
+          advanced_criteria: expect.objectContaining({ query: null }),
+        }),
+      );
+    }
+  });
+
+  it("refuse toujours à un compte gratuit un texte libre, même avec un département explicite", async () => {
+    const hook = setup();
+    const outcome = await create(hook, { query: "26", department: "33" });
+    expect(outcome).toEqual({ status: "blocked" });
+    expect(mocks.createAlert).not.toHaveBeenCalled();
+  });
+
+  it("recrée l'alerte en attente d'un visiteur qui avait tapé un département, une fois inscrit", async () => {
+    mocks.auth = { user: null, loading: false };
+    const visitor = setup("/sales?q=26");
+    await act(async () => {
+      await visitor.result.current.createAlertFromSearch({ query: "26" });
+    });
+    const pending = peekPendingAlert();
+    expect(pending?.search).toEqual(expect.objectContaining({ query: "26" }));
+
+    mocks.auth = { user: { id: "user-1" }, loading: false };
+    const member = setup("/sales?q=26");
+    const outcome = await create(member, pending!.search, pending!.options);
+    expect(outcome.status).toBe("created");
+    expect(mocks.createAlert).toHaveBeenCalledWith(
+      "user-1",
+      expect.objectContaining({ department: "26" }),
+    );
+  });
+
   it("accepte ces critères pour un compte Analyse, en alerte quotidienne", async () => {
     mocks.plan.mockResolvedValue({
       plan: {
