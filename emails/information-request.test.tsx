@@ -165,13 +165,24 @@ describe("renderInformationRequestEmail", () => {
     }
   });
 
+  it("met toujours en forme l'ancienne étiquette « Référence de l’annonce » d'un modèle publié", async () => {
+    const message = await renderInformationRequestEmail({
+      subject: "Maison à Bordeaux",
+      bodyText:
+        "Référence de l’annonce : Maison — 33000 Bordeaux\nAudience annoncée : 12 septembre 2026",
+      replyTo: "enquete+1234@reponses.immojudis.com",
+      caseReference: "IJ-8F31A290",
+    });
+    expect(message.html).toMatch(/text-transform:uppercase[^>]*>Référence de l’annonce</);
+  });
+
   it("met en forme la vente, annonce les points à vérifier et propose le dépôt avant la signature", async () => {
     const message = await renderInformationRequestEmail({
       subject: "Maison à Bordeaux, audience du 12/09/2026 : vérification de l’annonce",
       bodyText: [
         "Bonjour Maître Jean Dupont,",
         "",
-        "Référence de l’annonce : Maison — 33000 Bordeaux",
+        "Vente concernée : Maison — 33000 Bordeaux",
         "Audience annoncée, à confirmer : 12 septembre 2026",
         "Mise à prix annoncée : 85 000 €",
         "",
@@ -189,7 +200,9 @@ describe("renderInformationRequestEmail", () => {
     });
 
     // Bloc « vente » : chaque ligne devient une étiquette et une valeur, pas un paragraphe.
-    expect(message.html).toMatch(/text-transform:uppercase[^>]*>Référence de l’annonce</);
+    expect(message.html).toMatch(/text-transform:uppercase[^>]*>Vente concernée</);
+    // Une seule « référence » désigne le dossier : « Référence de suivi », en tête comme au pied.
+    expect(message.text.match(/Référence de suivi : IJ-8F31A290/g)).toHaveLength(2);
     expect(message.html).toMatch(/text-transform:uppercase[^>]*>Audience annoncée, à confirmer</);
     // Aperçu de la messagerie : ce qu'on attend, et que c'est facultatif (pas l'objet répété).
     expect(message.html).toContain(

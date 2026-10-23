@@ -32,7 +32,7 @@ export type InformationRequestEmailProps = {
   legalFooter?: InformationAgentLegalFooter;
 };
 
-export const INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION = "information_request_v9";
+export const INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION = "information_request_v10";
 
 type BodyBlock =
   | { kind: "paragraph"; lines: string[] }
@@ -107,7 +107,7 @@ export function InformationRequestEmail({
 
           <Section style={styles.footer}>
             <Text style={styles.footerBrand}>{EMAIL_BRAND_NAME}</Text>
-            <Text style={styles.footerText}>Référence {caseReference}</Text>
+            <Text style={styles.footerText}>Référence de suivi : {caseReference}</Text>
             <Text style={styles.footerText}>
               Adresse de réponse : <Link href={replyHref}>{replyTo}</Link>
             </Text>
@@ -208,9 +208,9 @@ function BodyBlockView({ block }: { block: BodyBlock }) {
   );
 }
 
-/** Lignes du bloc « vente » : « Référence de l’annonce : … », « Audience annoncée, à confirmer : … ». */
+/** Lignes du bloc « vente » : « Vente concernée : … », « Audience annoncée, à confirmer : … ». */
 const SALE_LINE =
-  /^(Référence(?: de l[’']annonce)?|Audience annoncée|Date annoncée|Date de vente annoncée|Mise à prix annoncée)(?:, à confirmer)?\s*:/i;
+  /^(Vente concernée|Référence(?: de l[’']annonce)?|Audience annoncée|Date annoncée|Date de vente annoncée|Mise à prix annoncée)(?:, à confirmer)?\s*:/i;
 
 /** Aperçu affiché par la messagerie sous l'objet : ce qu'on attend, et que c'est facultatif. */
 function informationRequestPreviewText(blocks: readonly BodyBlock[]): string {

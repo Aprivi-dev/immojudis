@@ -91,9 +91,9 @@ beforeEach(() => {
 
 describe("modèle de message publié en base", () => {
   it("la révision minimale reste celle de la mise en conformité", () => {
-    // La révision 8 ne change que la rédaction : un modèle publié en révision 7 reste utilisable.
+    // Les révisions 8 et 9 ne changent que la rédaction : un modèle publié en révision 7 reste utilisable.
     expect(MIN_COMPLIANT_TEMPLATE_REVISION).toBe(7);
-    expect(INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION).toBe(8);
+    expect(INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION).toBe(9);
   });
 
   it("ignore un modèle publié antérieur à la mise en conformité et retombe sur le modèle du code", async () => {
