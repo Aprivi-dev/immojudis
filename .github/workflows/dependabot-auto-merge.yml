@@ -1,6 +1,7 @@
 name: Dependabot auto-merge (patch)
 
-# Enables auto-merge on Dependabot pull requests that only bump a patch version.
+# Enables auto-merge on Dependabot pull requests that only bump patch versions (a single bump, or a
+# grouped pull request whose every bump is a patch).
 # GitHub merges them once every required check is green; minor and major bumps stay manual.
 on:
   pull_request:
@@ -18,17 +19,29 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - name: Enable auto-merge when every bump in the title is a patch
+      - name: Enable auto-merge when every bump is a patch
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
           PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
         run: |
           set -euo pipefail
-          from="$(sed -nE 's/.* from ([0-9]+)\.([0-9]+)\.[0-9]+.* to ([0-9]+)\.([0-9]+)\.[0-9]+.*/\1.\2/p' <<<"$PR_TITLE")"
-          to="$(sed -nE 's/.* from ([0-9]+)\.([0-9]+)\.[0-9]+.* to ([0-9]+)\.([0-9]+)\.[0-9]+.*/\3.\4/p' <<<"$PR_TITLE")"
-          if [ -n "$from" ] && [ "$from" = "$to" ]; then
+          PR_BODY="${PR_BODY//$'\r'/}"
+          # One bump: the title names it ("Bump x from 1.2.3 to 1.2.4"). Grouped PRs ("Bump the
+          # python-dependencies group with 5 updates") name none: every bump is then a row of the
+          # "| [package](url) | `from` | `to` |" table of the description. Either way every bump
+          # must keep its major.minor, and every row must be readable.
+          single="$(sed -nE 's/.* from v?([0-9]+\.[0-9]+)\.[0-9]+.* to v?([0-9]+\.[0-9]+)\.[0-9]+.*/\1 \2/p' <<<"$PR_TITLE")"
+          if [ -n "$single" ]; then
+            bumps=1
+            patch_bumps="$(awk '$1 == $2' <<<"$single" | wc -l)"
+          else
+            bumps="$(grep -cE '^\| *\[' <<<"$PR_BODY" || true)"
+            patch_bumps="$(sed -nE 's/^\| *\[[^|]*\| *`?v?([0-9]+\.[0-9]+)\.[0-9]+[^|`]*`? *\| *`?v?([0-9]+\.[0-9]+)\.[0-9]+[^|`]*`? *\| *$/\1 \2/p' <<<"$PR_BODY" | awk '$1 == $2' | wc -l)"
+          fi
+          if [ "$bumps" -gt 0 ] && [ "$bumps" -eq "$patch_bumps" ]; then
             gh pr merge --auto --squash "$PR_URL"
           else
-            echo "Not a single patch bump (from='$from' to='$to'): left for manual review."
+            echo "Not only patch bumps (bumps=$bumps, patch=$patch_bumps): left for manual review."
           fi

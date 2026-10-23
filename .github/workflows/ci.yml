@@ -11,12 +11,15 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # A newer push supersedes the run of a pull request, never the run of main: each commit merged
+  # into main keeps its own verdict.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   manual-collection:
     name: Single-scheduler data collection invariant
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -130,6 +133,7 @@ jobs:
     # requires "Web (typecheck + lint)" keeps working now that the jobs run in parallel.
     name: Web (typecheck + lint)
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     needs: [typecheck, lint, unit, audit, build]
     # `always()`: without it a failed or cancelled dependency leaves this job "skipped", and a
     # skipped required check is treated as passing by branch protection.
@@ -156,6 +160,7 @@ jobs:
     # checks in the repository settings, then delete this job.
     name: Data pipeline (Python 3.11)
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     needs: [pipeline]
     # `always()`: without it a failed pipeline leaves this gate "skipped", which branch
     # protection treats as passing.
@@ -174,6 +179,7 @@ jobs:
   pipeline:
     name: Data pipeline (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -400,6 +406,7 @@ jobs:
     if: github.event_name == 'pull_request'
     name: Dependency review
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
