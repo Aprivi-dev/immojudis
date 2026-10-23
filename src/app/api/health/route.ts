@@ -13,11 +13,13 @@ import {
 export const dynamic = "force-dynamic";
 
 /**
- * Supervision indépendante : `ok` ou `degraded`, avec l'âge du dernier succès de `operational-health`
- * (dégradé au-delà de 45 min) et l'état de la collecte des sources ACTIVÉES (dégradé quand l'une d'elles
- * n'a pas de publication complète depuis plus de 36 h, ou n'en a jamais eu). Publique et sans détail
- * sensible (voir `src/lib/health-status.ts`) ; 200 quand tout va bien, 503 sinon pour qu'une sonde HTTP
- * ordinaire s'en aperçoive. Voir docs/operations/supervision-externe.md.
+ * Supervision indépendante, en deux niveaux. Disponibilité : 200 tant que le site et la base répondent
+ * (`available: true`), 503 seulement quand la base ne répond pas. Fraîcheur : `status` vaut `ok` ou
+ * `degraded` dans le corps, avec l'âge du dernier succès de `operational-health` (dégradé au-delà de
+ * 45 min) et l'état de la collecte des sources ACTIVÉES (dégradé quand l'une d'elles n'a pas de
+ * publication complète depuis plus de 36 h, ou n'en a jamais eu) : un retard de collecte ne rend plus la
+ * route 503 en permanence. Publique et sans détail sensible (voir `src/lib/health-status.ts`). Voir
+ * docs/operations/supervision-externe.md.
  *
  * La route est publique : le CDN garde la réponse 30 s (`s-maxage`), ce qui borne les lectures de la
  * base quel que soit le nombre d'appelants (un appelant qui ajoute un paramètre d'adresse contourne le
@@ -56,7 +58,9 @@ export async function GET(request: Request) {
       report,
       context,
       {
-        status: report.status === "ok" ? 200 : 503,
+        // Disponibilité et fraîcheur sont séparées : la base répond, donc 200, même quand une tâche
+        // ou une source est en retard (`status: "degraded"` et les âges sont dans le corps).
+        status: 200,
         headers: { "cache-control": `public, s-maxage=${HEALTH_CACHE_SECONDS}` },
       },
       { echoRequestId: false },

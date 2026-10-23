@@ -60,6 +60,24 @@
    pour obtenir le texte exact en vigueur, et vérifier par une garde que la base en production a bien cette
    forme.
 
+8. **Une migration et le code qui en dépend partent ensemble.** Règle unique, pour la revue comme pour
+   la mise en production :
+   - la migration et le code qui l'utilise (colonne, fonction, droit, vue) sont dans la **même PR** ; une
+     PR qui lit une colonne ou appelle une fonction absente de `migrations/` est refusée, et inversement
+     une migration ajoutée « pour plus tard » signale qui l'utilisera ;
+   - **ordre de mise en production** : le propriétaire applique la migration, puis le code se déploie.
+     Une migration additive (nouvelle colonne, nouvelle fonction, nouveau droit) doit donc rester
+     compatible avec le code actuellement en ligne ; le code, lui, ne doit pas faire tomber une page si la
+     migration n'est pas encore appliquée (voir le repli sur `completeness_tier` dans `src/lib/queries.ts`) ;
+   - **changement qui casse l'ancien code** (supprimer ou renommer une colonne, resserrer un droit) : en
+     deux temps, d'abord le code qui n'utilise plus l'ancien objet, déployé, puis la migration dans une
+     PR suivante ;
+   - un droit manquant est aussi un défaut de migration : une fonction appelée par `service_role` doit lui
+     être accordée dans la migration qui la crée (`20261031100600` a corrigé un `starting_price_band`
+     oublié ; l'invariant `npm run test:security-invariants` le vérifie, par signature) ;
+   - une migration ou un test pgTAP ajouté se **signale** au propriétaire dans le compte-rendu : aucun
+     agent ne l'applique.
+
 ## Tests
 
 Un test pgTAP par migration, dans `tests/`, qui ne laisse aucune trace (`begin; … rollback;`). Pour les

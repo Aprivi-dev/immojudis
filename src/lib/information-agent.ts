@@ -244,6 +244,8 @@ export type InformationAgentMission = {
   /** Inventaire enregistré avec le brouillon (absent des missions antérieures). */
   inventory: InformationAgentInventoryItem[];
   failureReason: string | null;
+  /** `unverified` : l'envoi a dépassé le délai de Resend, l'email est peut-être parti (à vérifier). */
+  sendOutcome: typeof UNVERIFIED_SEND_OUTCOME | null;
   approvedAt: string | null;
   sentAt: string | null;
   repliedAt: string | null;
@@ -672,6 +674,7 @@ async function approveAndSendMission({
   if (mission.status !== "draft" && mission.status !== "failed") {
     throw new Error("Requête invalide : cette enquête ne peut plus être modifiée.");
   }
+  assertUnverifiedSendWithinIdempotencyWindow(mission);
   // Envoi strictement manuel : l'administrateur a affiché l'aperçu de ce contenu exact.
   assertInformationAgentPreviewFingerprint({ adminId, input });
   // Aucune mention commerciale : le message reste purement informatif.
@@ -826,7 +829,7 @@ async function approveAndSendMission({
     assertInformationAgentCanaryRecipient(edited.recipient_email);
     const delivery = await sendResendEmail({
       apiKey: config.apiKey,
-      idempotencyKey: `immojudis-information-agent-case-${approval.case_id}`,
+      idempotencyKey: informationAgentIdempotencyKey(approval.case_id),
       fetchImpl,
       message: {
         from: config.from,
@@ -874,6 +877,8 @@ async function approveAndSendMission({
       sent_at: sentAt,
       provider_message_id: delivery.id,
       failure_reason: null,
+      // L'envoi est confirmé : plus rien à vérifier.
+      metadata: omitUnverifiedSendOutcome(asObject(edited.metadata)),
     });
     await updateCaseOrThrow(approval.case_id, {
       status: "sent",
@@ -904,17 +909,83 @@ async function approveAndSendMission({
       ]);
       throw new Error(`${note}. Ne renvoyez pas ce message.`, { cause: error });
     }
+    // Resend n'a pas répondu à temps (ou la connexion est tombée) : l'email a peut-être été
+    // accepté. Ce n'est pas un échec établi. La demande est marquée « à vérifier » : le délai de
+    // 30 jours reste tenu (assertInformationAgentRecipientCooldown), la vérification est
+    // demandée, et un renvoi dans les 24 heures réutilise la clé d'idempotence (pas de doublon).
+    const unverified = isIndeterminateSendError(error);
+    const reason = unverified
+      ? `Envoi à vérifier : Resend n’a pas répondu à temps, l’email est peut-être parti. Vérifiez dans Resend (clé d’idempotence ${informationAgentIdempotencyKey(approval.case_id)}, valable 24 h) avant tout renvoi.`
+      : detail;
     await updateMissionOrThrow(mission.id, mission.user_id, {
       status: "failed",
-      failure_reason: detail,
-      metadata: { ...asObject(edited.metadata), last_send_attempt_at: sendingAt },
+      failure_reason: reason,
+      metadata: {
+        ...asObject(edited.metadata),
+        last_send_attempt_at: sendingAt,
+        ...(unverified ? { send_outcome: UNVERIFIED_SEND_OUTCOME } : {}),
+      },
     });
     await updateCaseOrThrow(approval.case_id, {
       status: "failed",
-      failure_reason: detail,
+      failure_reason: reason,
     });
-    throw error;
+    throw unverified ? new Error(reason, { cause: error }) : error;
   }
+}
+
+/** Clé d'idempotence de l'envoi d'un dossier : un renvoi sous 24 h retrouve le premier envoi chez Resend. */
+function informationAgentIdempotencyKey(caseId: string): string {
+  return `immojudis-information-agent-case-${caseId}`;
+}
+
+/** Valeur de `metadata.send_outcome` d'un envoi dont on ignore s'il est parti. */
+export const UNVERIFIED_SEND_OUTCOME = "unverified";
+const IDEMPOTENCY_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+export function omitUnverifiedSendOutcome(metadata: Record<string, Json | undefined>): Json {
+  const { send_outcome: _outcome, ...rest } = metadata;
+  return rest as Json;
+}
+
+/**
+ * Un renvoi après un envoi « à vérifier » n'est sûr que pendant la fenêtre d'idempotence de Resend
+ * (24 h) : au-delà, si l'email était parti, il partirait une seconde fois. L'administrateur
+ * vérifie d'abord dans Resend, puis lève le drapeau (voir le runbook de l'agent).
+ */
+export function assertUnverifiedSendWithinIdempotencyWindow(
+  mission: Pick<MissionRow, "metadata">,
+  now = Date.now(),
+): void {
+  const metadata = asObject(mission.metadata);
+  if (metadata.send_outcome !== UNVERIFIED_SEND_OUTCOME) return;
+  const attemptedAt = Date.parse(String(metadata.last_send_attempt_at ?? ""));
+  if (Number.isFinite(attemptedAt) && now - attemptedAt <= IDEMPOTENCY_WINDOW_MS) return;
+  throw new Error(
+    "Le résultat du dernier envoi n’a jamais été confirmé et la fenêtre de 24 h de la clé d’idempotence est dépassée : un renvoi pourrait créer un doublon. Vérifiez dans Resend (docs/runbooks/information-agent.md, « Envoi à vérifier »).",
+  );
+}
+
+/**
+ * Erreur dont on ne peut pas dire si l'email est parti : délai dépassé (`AbortSignal.timeout`) ou
+ * connexion coupée après l'envoi de la requête. Une réponse d'erreur de Resend, elle, est un refus.
+ */
+function isIndeterminateSendError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  if (error.name === "TimeoutError" || error.name === "AbortError") return true;
+  const code = String((error as { code?: unknown }).code ?? "");
+  const causeCode = String((error.cause as { code?: unknown } | undefined)?.code ?? "");
+  return (
+    /^(?:ECONNRESET|ETIMEDOUT|EPIPE|UND_ERR_(?:SOCKET|BODY_TIMEOUT|HEADERS_TIMEOUT|CONNECT_TIMEOUT))$/.test(
+      code,
+    ) ||
+    /^(?:ECONNRESET|ETIMEDOUT|EPIPE|UND_ERR_(?:SOCKET|BODY_TIMEOUT|HEADERS_TIMEOUT|CONNECT_TIMEOUT))$/.test(
+      causeCode,
+    ) ||
+    /\b(?:timed? out|timeout|aborted|socket hang up|other side closed|terminated)\b/i.test(
+      error.message,
+    )
+  );
 }
 
 /** Refuses to send while the data controller identity (art. 14 GDPR) is not configured. */
@@ -1157,7 +1228,7 @@ export async function previewAdminInformationAgentMission({
   return {
     ok: true,
     preview: {
-      from: env.INFORMATION_AGENT_EMAIL_FROM?.trim() || env.ALERT_EMAIL_FROM?.trim() || null,
+      from: env.INFORMATION_AGENT_EMAIL_FROM?.trim() || null,
       to: input.recipientName?.trim() ? `${input.recipientName.trim()} <${recipient}>` : recipient,
       replyTo,
       subject: input.subject,
@@ -1281,6 +1352,10 @@ function missionFromRow(row: MissionRow): InformationAgentMission {
     missingInformation: row.missing_information,
     inventory: inventoryFromMetadata(row.metadata),
     failureReason: row.failure_reason,
+    sendOutcome:
+      asObject(row.metadata).send_outcome === UNVERIFIED_SEND_OUTCOME
+        ? UNVERIFIED_SEND_OUTCOME
+        : null,
     approvedAt: row.approved_at,
     sentAt: row.sent_at,
     repliedAt: row.replied_at,
@@ -1345,9 +1420,15 @@ function approvalFingerprint(mission: MissionRow): string {
     .digest("hex");
 }
 
-function resolveInformationAgentEmailConfig(env: NodeJS.ProcessEnv = process.env) {
+/**
+ * Configuration d'envoi de l'agent. L'expéditeur est celui de l'agent, `INFORMATION_AGENT_EMAIL_FROM`,
+ * et rien d'autre : le repli sur `ALERT_EMAIL_FROM` envoyait les emails à des tiers depuis l'adresse
+ * des alertes aux comptes, donc leur réputation d'expéditeur était commune. Sans expéditeur, l'envoi
+ * est bloqué (et l'aperçu le dit).
+ */
+export function resolveInformationAgentEmailConfig(env: NodeJS.ProcessEnv = process.env) {
   const apiKey = env.RESEND_API_KEY?.trim();
-  const from = env.INFORMATION_AGENT_EMAIL_FROM?.trim() || env.ALERT_EMAIL_FROM?.trim();
+  const from = env.INFORMATION_AGENT_EMAIL_FROM?.trim();
   const inboundDomain = env.INFORMATION_AGENT_INBOUND_DOMAIN?.trim().toLowerCase();
   if (!apiKey || !from || !inboundDomain) {
     throw new Error("Configuration d'envoi et de réception de l'agent incomplète.");

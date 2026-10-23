@@ -12,6 +12,7 @@ paths = [
 '''(?:^|/)docs/audits/backoffice-2026-10-04\.patch''',
 '''(?:^|/)docs/audits/information-agent-mail-2026-10-04/release\.patch''',
 '''(?:^|/)e2e/admin-information-agent\.spec\.ts''',
+'''(?:^|/)services/data-pipeline/src/information_agent_semantic\.py''',
 '''(?:^|/)services/data-pipeline/tests/test_fact_claims\.py''',
 '''(?:^|/)src/components/sale-detail/SaleListing\.test\.tsx''',
 '''(?:^|/)src/lib/auction-fact-claims\.test\.ts''',

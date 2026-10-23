@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { unavailablePilotage, unavailableSaleReminderAccuracy } from "@/lib/admin-pilotage";
 
-const mocks = vi.hoisted(() => ({ get: vi.fn(), accuracy: vi.fn(), feedback: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  get: vi.fn(),
+  accuracy: vi.fn(),
+  feedback: vi.fn(),
+  ceilings: vi.fn(),
+}));
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
   bearerTokenFromRequest: (request: Request) => {
     const header = request.headers.get("authorization");
@@ -15,11 +20,17 @@ vi.mock("@/lib/admin-pilotage", async (importOriginal) => ({
   getAdminSaleReminderAccuracy: mocks.accuracy,
 }));
 
+vi.mock("@/lib/admin-bid-ceilings", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/admin-bid-ceilings")>()),
+  getAdminBidCeilings: mocks.ceilings,
+}));
+
 vi.mock("@/lib/admin-sale-signal-feedback", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/admin-sale-signal-feedback")>()),
   getAdminSaleSignalFeedback: mocks.feedback,
 }));
 
+import { unavailableBidCeilings } from "@/lib/admin-bid-ceilings";
 import { unavailableSaleSignalFeedback } from "@/lib/admin-sale-signal-feedback";
 import { GET } from "./route";
 
@@ -28,6 +39,7 @@ const url = "https://example.test/api/admin/pilotage";
 describe("GET /api/admin/pilotage", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    mocks.ceilings.mockResolvedValue(unavailableBidCeilings());
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     vi.spyOn(console, "error").mockImplementation(() => undefined);
   });
@@ -47,6 +59,14 @@ describe("GET /api/admin/pilotage", () => {
     mocks.get.mockResolvedValue(unavailablePilotage());
     mocks.accuracy.mockResolvedValue(saleReminders);
     mocks.feedback.mockResolvedValue(signalFeedback);
+    const bidCeilings = {
+      generatedAt: "2026-11-03T06:00:00Z",
+      windows: [
+        { days: 7, accounts: 12, sales: 9, occurrences: 40 },
+        { days: 30, accounts: 31, sales: 22, occurrences: 140 },
+      ],
+    };
+    mocks.ceilings.mockResolvedValue(bidCeilings);
 
     const response = await GET(
       new Request(url, { headers: { authorization: "Bearer admin-token" } }),
@@ -58,7 +78,9 @@ describe("GET /api/admin/pilotage", () => {
       ...unavailablePilotage(),
       saleReminders,
       signalFeedback,
+      bidCeilings,
     });
+    expect(mocks.ceilings).toHaveBeenCalledWith("admin-token", expect.any(Date));
     expect(mocks.get).toHaveBeenCalledWith("admin-token", expect.any(Date));
     expect(mocks.accuracy).toHaveBeenCalledWith("admin-token", expect.any(Date));
     expect(mocks.feedback).toHaveBeenCalledWith("admin-token", expect.any(Date));
@@ -77,6 +99,22 @@ describe("GET /api/admin/pilotage", () => {
     const body = await response.json();
     expect(body.signalFeedback).toEqual(unavailableSaleSignalFeedback());
     expect(JSON.stringify(body)).not.toContain("does not exist");
+  });
+
+  it("garde le pilotage quand les plafonds calculés sont illisibles : « non mesuré »", async () => {
+    mocks.get.mockResolvedValue(unavailablePilotage());
+    mocks.accuracy.mockResolvedValue(unavailableSaleReminderAccuracy(new Date()));
+    mocks.feedback.mockResolvedValue(unavailableSaleSignalFeedback());
+    mocks.ceilings.mockRejectedValue(new Error("function admin_pilotage_bid_ceilings failed"));
+
+    const response = await GET(
+      new Request(url, { headers: { authorization: "Bearer admin-token" } }),
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.bidCeilings).toEqual(unavailableBidCeilings());
+    expect(JSON.stringify(body)).not.toContain("failed");
   });
 
   it("garde le pilotage quand la mesure des rappels échoue : « non mesuré »", async () => {

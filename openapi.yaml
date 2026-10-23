@@ -1,12 +1,23 @@
 openapi: 3.1.0
 info:
   title: ImmoJudis Premium Analytics API
-  version: 1.4.0
+  version: 1.5.0
   description: >-
     Contrats de lecture pour l'activité publique des ventes judiciaires, Outcome
     Graph et les statistiques descriptives expérimentales par tribunal. Les
     registres opérateur, preuves, membres de cohortes et commandes d'écriture
     restent hors de cette API.
+
+
+    Authentification : toutes les routes exigent le jeton Bearer Supabase d'un
+    compte connecté (`Authorization: Bearer <jeton>`) et, sauf mention contraire,
+    l'offre Analyse. Les clés d'API ne sont pas acceptées sur ces routes à ce
+    jour : seule une session de compte ouvre l'accès.
+
+
+    Limites : chaque route limite les appels par compte; au-delà, la réponse est
+    un 429 avec l'en-tête `Retry-After` (secondes). Une vente inconnue ou retirée
+    de la publication renvoie un 404.
 servers:
   - url: /api/v1
 paths:
@@ -53,6 +64,10 @@ paths:
           $ref: "#/components/responses/AuthRequired"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "500":
           $ref: "#/components/responses/InternalError"
   /tribunals/judicial-activity:
@@ -60,13 +75,18 @@ paths:
       operationId: getTribunalJudicialActivity
       summary: Lire l'activité des ventes judiciaires suivies pour un tribunal
       description: >-
-        Agrégat public limité aux annonces explicitement judiciaires, confirmées
+        Réservé au plan Analyse : jeton Bearer obligatoire (401 sans jeton, 403
+        sans l'offre Analyse). Agrégat limité aux annonces explicitement judiciaires, confirmées
         ou recoupées, et rattachées par code exact à un tribunal actif du
         référentiel Justice. Les ventes notariales, les annonces en attente ou en
         conflit, les dates aberrantes et les rattachements approximatifs sont
         exclus. Les médianes sont masquées sous cinq observations. Cet agrégat
         mesure la couverture Immojudis et ne prétend pas être un registre exhaustif
-        de l'activité du greffe.
+        de l'activité du greffe. Répond 404 quand `saleId` ne désigne aucune
+        annonce visible et 422 `COURT_UNRESOLVED` quand le rattachement exact au
+        tribunal reste à confirmer.
+      security:
+        - bearerAuth: []
       parameters:
         - name: courtCode
           in: query
@@ -91,10 +111,12 @@ paths:
         - name: historyMonths
           in: query
           required: false
-          description: Fenêtre des ventes passées observées; 36 mois par défaut.
+          description: >-
+            Fenêtre des ventes passées observées, en mois; 36 par défaut. La valeur
+            3 donne la fenêtre glissante la plus courte.
           schema:
             type: integer
-            enum: [12, 24, 36]
+            enum: [3, 12, 24, 36]
             default: 36
       responses:
         "200":
@@ -103,7 +125,12 @@ paths:
             Cache-Control:
               schema:
                 type: string
-                const: public, s-maxage=300, stale-while-revalidate=600
+                const: private, no-store
+            Vary:
+              description: La réponse privée varie selon le jeton d'autorisation.
+              schema:
+                type: string
+                const: Authorization
             X-Request-Id:
               schema:
                 type: string
@@ -113,26 +140,41 @@ paths:
                 $ref: "#/components/schemas/TribunalJudicialActivityResponse"
         "400":
           $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/AuthRequired"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/CourtUnresolved"
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "503":
           $ref: "#/components/responses/StatisticsUnavailable"
   /tribunals/judicial-activity/directory:
     get:
       operationId: getTribunalJudicialActivityDirectory
-      summary: Parcourir les profils publics des tribunaux suivis
+      summary: Parcourir les profils des tribunaux suivis
       description: >-
-        Observatoire public organisé France, ressort judiciaire, puis tribunal.
+        Réservé au plan Analyse : jeton Bearer obligatoire (401 sans jeton, 403
+        sans l'offre Analyse). Observatoire organisé France, ressort judiciaire, puis tribunal.
         Il ne retient que les tribunaux disposant d'au moins une vente judiciaire
         contrôlée dans la fenêtre. Chaque niveau conserve ses échantillons, ses
         fourchettes centrales de mise à prix et d'anticipation, ainsi que ses
         limites de couverture. Aucune ligne d'annonce ou preuve source n'est renvoyée.
+      security:
+        - bearerAuth: []
       parameters:
         - name: historyMonths
           in: query
           required: false
-          description: Fenêtre des ventes passées observées; 36 mois par défaut.
+          description: >-
+            Fenêtre des ventes passées observées, en mois; 36 par défaut. La valeur
+            3 donne la fenêtre glissante la plus courte.
           schema:
             type: integer
-            enum: [12, 24, 36]
+            enum: [3, 12, 24, 36]
             default: 36
       responses:
         "200":
@@ -141,7 +183,12 @@ paths:
             Cache-Control:
               schema:
                 type: string
-                const: public, s-maxage=300, stale-while-revalidate=600
+                const: private, no-store
+            Vary:
+              description: La réponse privée varie selon le jeton d'autorisation.
+              schema:
+                type: string
+                const: Authorization
             X-Request-Id:
               schema:
                 type: string
@@ -151,6 +198,12 @@ paths:
                 $ref: "#/components/schemas/TribunalJudicialActivityDirectoryResponse"
         "400":
           $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/AuthRequired"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "503":
           $ref: "#/components/responses/StatisticsUnavailable"
   /tribunals/statistics:
@@ -218,6 +271,8 @@ paths:
           $ref: "#/components/responses/AuthRequired"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "503":
           $ref: "#/components/responses/StatisticsUnavailable"
   /sales/{saleId}/adjudication-statistics:
@@ -257,6 +312,10 @@ paths:
           $ref: "#/components/responses/AuthRequired"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "503":
           $ref: "#/components/responses/StatisticsUnavailable"
   /sales/{saleId}/land-report:
@@ -290,7 +349,7 @@ paths:
             default: "0"
       responses:
         "200":
-          description: Réponse JSON
+          description: Rapport en JSON, ou en PDF avec `format=pdf`.
           headers:
             Cache-Control:
               schema:
@@ -304,12 +363,20 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
+            application/pdf:
+              schema:
+                type: string
+                format: binary
         "400":
           $ref: "#/components/responses/InvalidRequest"
         "401":
           $ref: "#/components/responses/AuthRequired"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "503":
           $ref: "#/components/responses/StatisticsUnavailable"
   /sales/{saleId}/urbanisme-cadastre:
@@ -349,6 +416,10 @@ paths:
           $ref: "#/components/responses/AuthRequired"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "503":
           $ref: "#/components/responses/StatisticsUnavailable"
   /tribunals/listing-statistics:
@@ -375,18 +446,16 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
-        "422":
-          description: Le rattachement exact au tribunal reste à confirmer.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
         "400":
           $ref: "#/components/responses/InvalidRequest"
         "401":
           $ref: "#/components/responses/AuthRequired"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/CourtUnresolved"
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "503":
           $ref: "#/components/responses/StatisticsUnavailable"
   /tribunals/adjudication-statistics:
@@ -413,12 +482,12 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
-        "400":
-          $ref: "#/components/responses/InvalidRequest"
         "401":
           $ref: "#/components/responses/AuthRequired"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "503":
           $ref: "#/components/responses/StatisticsUnavailable"
   /tribunals/auction-summaries:
@@ -431,7 +500,7 @@ paths:
         - bearerAuth: []
       responses:
         "200":
-          description: Réponse JSON
+          description: Moyennes d'adjudication par tribunal, avec l'instant de génération.
           headers:
             Cache-Control:
               schema:
@@ -444,13 +513,28 @@ paths:
             application/json:
               schema:
                 type: object
-                additionalProperties: true
+                required: [generatedAt, courts]
+                properties:
+                  generatedAt:
+                    type: string
+                    format: date-time
+                    description: >-
+                      Instant où la réponse a été calculée côté serveur (la route
+                      ne sert pas de copie figée).
+                  courts:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
         "401":
           $ref: "#/components/responses/AuthRequired"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "503":
           $ref: "#/components/responses/StatisticsUnavailable"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -472,6 +556,30 @@ components:
             $ref: "#/components/schemas/ApiError"
     Forbidden:
       description: Fonctionnalité réservée au plan Analyse
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    NotFound:
+      description: Vente inconnue, retirée de la publication ou inaccessible
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    CourtUnresolved:
+      description: Le rattachement exact au tribunal reste à confirmer (`COURT_UNRESOLVED`)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    RateLimited:
+      description: Trop d'appels pour ce compte; réessayer après `Retry-After`
+      headers:
+        Retry-After:
+          description: Délai d'attente conseillé, en secondes.
+          schema:
+            type: integer
+            minimum: 1
       content:
         application/json:
           schema:
@@ -504,7 +612,9 @@ components:
           enum:
             - AUTH_REQUIRED
             - FORBIDDEN
+            - NOT_FOUND
             - INVALID_REQUEST
+            - COURT_UNRESOLVED
             - RATE_LIMITED
             - CONFIGURATION_ERROR
             - INTERNAL_ERROR

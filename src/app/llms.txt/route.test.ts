@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
+import { COMPANY_DESCRIPTION } from "@/lib/company-description";
 import { RESOURCE_ARTICLES } from "@/lib/resource-articles";
 import { buildLlmsTxt, llmsTxtPages } from "@/lib/llms-txt";
 import { config, proxy } from "../../proxy";
@@ -31,7 +32,7 @@ describe("/llms.txt (site ouvert)", () => {
     expect(response.headers.get("content-type")).toBe("text/plain; charset=utf-8");
     expect(response.headers.get("cache-control")).toContain("s-maxage=300");
     const text = await response.text();
-    expect(text.startsWith("# Immojudis\n\n> Immojudis est une plateforme")).toBe(true);
+    expect(text.startsWith(`# Immojudis\n\n> ${COMPANY_DESCRIPTION}`)).toBe(true);
     expect(text).toContain("ni un conseil juridique ni un conseil financier");
     expect(text.endsWith("\n")).toBe(true);
   });
@@ -43,6 +44,8 @@ describe("/llms.txt (site ouvert)", () => {
       "https://immojudis.com",
       "https://immojudis.com/ventes-immobilieres-judiciaires",
       "https://immojudis.com/ressources",
+      "https://immojudis.com/comment-ca-marche",
+      "https://immojudis.com/a-propos",
       "https://immojudis.com/offres",
       "https://immojudis.com/methode-ecart-marche",
       "https://immojudis.com/classement-des-annonces",
@@ -141,10 +144,10 @@ describe("contenu du fichier", () => {
     }
   });
 
-  it("n'a pas de doublon et tient en moins de 8 Ko", () => {
+  it("n'a pas de doublon et tient en moins de 9 Ko", () => {
     const pages = llmsTxtPages();
     expect(new Set(pages.map((page) => page.path)).size).toBe(pages.length);
-    expect(buildLlmsTxt("https://immojudis.com").length).toBeLessThan(8_000);
+    expect(buildLlmsTxt("https://immojudis.com").length).toBeLessThan(9_000);
   });
 
   it("suit le format llms.txt : un titre, un résumé en citation, des sections de liens", () => {

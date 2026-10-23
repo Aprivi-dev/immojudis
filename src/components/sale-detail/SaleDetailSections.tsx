@@ -321,27 +321,3 @@ export function LawyerSection({ sale }: { sale: AuctionSale }) {
     </section>
   );
 }
-
-export function InformationAvailabilityNotice() {
-  return (
-    <section
-      aria-labelledby="information-availability-title"
-      className="border-b border-brand-navy/10 bg-background"
-    >
-      <div className="mx-auto max-w-[1260px] px-4 py-8 sm:px-6 lg:px-8">
-        <div className="rounded-lg border border-line bg-white p-5 shadow-sm sm:p-7">
-          <h2
-            id="information-availability-title"
-            className="font-display text-2xl font-semibold text-brand-navy"
-          >
-            Informations complémentaires
-          </h2>
-          <p className="mt-2 max-w-3xl text-sm leading-relaxed text-brand-navy/70">
-            Les enrichissements sont initiés et validés par Immojudis. Les informations et pièces
-            confirmées seront ajoutées à cette annonce lorsqu’elles seront disponibles.
-          </p>
-        </div>
-      </div>
-    </section>
-  );
-}

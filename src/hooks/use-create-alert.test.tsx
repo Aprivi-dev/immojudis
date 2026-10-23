@@ -33,6 +33,7 @@ vi.mock("@/lib/product-events", () => ({ trackProductEvent: mocks.track }));
 vi.mock("@/lib/search/analysis-offer-open", () => ({ isAnalysisOfferOpen: mocks.offerOpen }));
 vi.mock("@/lib/toast", () => ({ toast: mocks.toast }));
 
+import { peekPendingAlert, clearPendingAlert } from "@/lib/pending-alert";
 import { useCreateAlert } from "./use-create-alert";
 
 function freePlan() {
@@ -75,6 +76,7 @@ async function create(
 
 beforeEach(() => {
   vi.clearAllMocks();
+  clearPendingAlert();
   mocks.auth = { user: { id: "user-1" }, loading: false };
   mocks.plan.mockResolvedValue(freePlan());
   mocks.preferences.mockResolvedValue({ preferences: { alertEmailEnabled: false } });
@@ -97,6 +99,39 @@ describe("useCreateAlert", () => {
       "/login?redirect=%2Fsales%3Fdepartment%3D33%26maxPrice%3D150000&mode=investor&reason=alerte",
     );
     expect(mocks.createAlert).not.toHaveBeenCalled();
+  });
+
+  it("garde la demande d'un visiteur pour la créer après sa connexion", async () => {
+    mocks.auth = { user: null, loading: false };
+    const hook = setup("/sales?department=33&maxPrice=150000");
+    await act(async () => {
+      await hook.result.current.createAlertFromSearch(
+        { department: "33", maxPrice: 150000 },
+        { emailRecap: true, frequency: "weekly" },
+      );
+    });
+    expect(peekPendingAlert()).toEqual({
+      search: expect.objectContaining({ department: "33", maxPrice: 150000 }),
+      options: { emailRecap: true, frequency: "weekly" },
+    });
+  });
+
+  it("ne garde rien depuis la page de confirmation d'alerte, où la personne confirme elle-même", async () => {
+    mocks.auth = { user: null, loading: false };
+    const hook = setup("/alertes/creer?department=33");
+    await act(async () => {
+      await hook.result.current.createAlertFromSearch({ department: "33" });
+    });
+    expect(peekPendingAlert()).toBeNull();
+  });
+
+  it("ne garde rien pour une recherche sans critère d'alerte", async () => {
+    mocks.auth = { user: null, loading: false };
+    const hook = setup("/sales?belowRange=true");
+    await act(async () => {
+      await hook.result.current.createAlertFromSearch({ belowRange: true });
+    });
+    expect(peekPendingAlert()).toBeNull();
   });
 
   it("n'envoie pas vers la connexion pendant que le compte se vérifie", async () => {
@@ -212,6 +247,66 @@ describe("useCreateAlert", () => {
     expect(mocks.createAlert).not.toHaveBeenCalled();
   });
 
+  it("accepte à un compte gratuit un code de département tapé dans la recherche (critère public)", async () => {
+    const hook = setup();
+    for (const query of ["26", "2A"]) {
+      mocks.createAlert.mockClear();
+      mocks.toast.error.mockClear();
+      const outcome = await create(hook, { query });
+      expect(outcome.status).toBe("created");
+      expect(mocks.toast.error).not.toHaveBeenCalled();
+      expect(mocks.createAlert).toHaveBeenCalledWith(
+        "user-1",
+        expect.objectContaining({
+          department: query,
+          alert_frequency: "weekly",
+          advanced_criteria: expect.objectContaining({ query: null }),
+        }),
+      );
+    }
+  });
+
+  it("refuse toujours à un compte gratuit un texte libre, même avec un département explicite", async () => {
+    const hook = setup();
+    const outcome = await create(hook, { query: "26", department: "33" });
+    expect(outcome).toEqual({ status: "blocked" });
+    expect(mocks.createAlert).not.toHaveBeenCalled();
+  });
+
+  it("recrée l'alerte en attente d'un visiteur qui avait tapé un département, une fois inscrit", async () => {
+    mocks.auth = { user: null, loading: false };
+    const visitor = setup("/sales?q=26");
+    await act(async () => {
+      await visitor.result.current.createAlertFromSearch({ query: "26" });
+    });
+    const pending = peekPendingAlert();
+    expect(pending?.search).toEqual(expect.objectContaining({ query: "26" }));
+
+    mocks.auth = { user: { id: "user-1" }, loading: false };
+    const member = setup("/sales?q=26");
+    const outcome = await create(member, pending!.search, pending!.options);
+    expect(outcome.status).toBe("created");
+    expect(mocks.createAlert).toHaveBeenCalledWith(
+      "user-1",
+      expect.objectContaining({ department: "26" }),
+    );
+  });
+
+  it("dit qu'une décote minimale ne vaut que pour les biens déclarés libres", async () => {
+    mocks.plan.mockResolvedValue({
+      plan: {
+        hasAnalysisAccess: true,
+        features: { smartAlerts: "included", watchedZones: "included" },
+      },
+    });
+    const hook = setup();
+    const outcome = await create(hook, { department: "33", minMarketDiscount: 20 });
+    expect(outcome.status).toBe("created");
+    expect(mocks.toast.message).toHaveBeenCalledWith(
+      expect.stringContaining("biens déclarés libres"),
+    );
+  });
+
   it("accepte ces critères pour un compte Analyse, en alerte quotidienne", async () => {
     mocks.plan.mockResolvedValue({
       plan: {
@@ -228,6 +323,50 @@ describe("useCreateAlert", () => {
         name: "Recherche Bordeaux",
         alert_frequency: "daily",
         advanced_criteria: expect.objectContaining({ query: "Bordeaux" }),
+      }),
+    );
+  });
+
+  it("enregistre un code de département tapé dans la recherche comme filtre département", async () => {
+    mocks.plan.mockResolvedValue({
+      plan: {
+        hasAnalysisAccess: true,
+        features: { smartAlerts: "included", watchedZones: "included" },
+      },
+    });
+    const hook = setup();
+    for (const [query, department] of [
+      ["26", "26"],
+      ["07", "07"],
+      ["2A", "2A"],
+    ]) {
+      mocks.createAlert.mockClear();
+      const outcome = await create(hook, { query });
+      expect(outcome.status).toBe("created");
+      expect(mocks.createAlert).toHaveBeenCalledWith(
+        "user-1",
+        expect.objectContaining({
+          department,
+          advanced_criteria: expect.objectContaining({ query: null }),
+        }),
+      );
+    }
+  });
+
+  it("garde le texte libre et le département explicite tels quels", async () => {
+    mocks.plan.mockResolvedValue({
+      plan: {
+        hasAnalysisAccess: true,
+        features: { smartAlerts: "included", watchedZones: "included" },
+      },
+    });
+    const hook = setup();
+    await create(hook, { query: "26", department: "33" });
+    expect(mocks.createAlert).toHaveBeenCalledWith(
+      "user-1",
+      expect.objectContaining({
+        department: "33",
+        advanced_criteria: expect.objectContaining({ query: "26" }),
       }),
     );
   });

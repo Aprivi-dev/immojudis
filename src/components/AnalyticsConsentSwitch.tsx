@@ -38,9 +38,9 @@ export function AnalyticsConsentSwitch() {
       </label>
       <p id={statusId} role="status" className="mt-2 text-xs">
         {optedOut
-          ? "Votre opposition à la mesure d’audience est active : Google Analytics n’est pas chargé. Retirez-la pour pouvoir donner votre accord."
+          ? "Vous avez coché « Je m’oppose à la mesure d’audience » : Google Analytics n’est pas chargé. Décochez cette autre case pour pouvoir donner votre accord."
           : granted
-            ? "Accord enregistré dans ce navigateur pour 6 mois. Décochez la case pour le retirer : les envois cessent et les cookies Google Analytics sont effacés."
+            ? "Accord enregistré dans ce navigateur pour 6 mois. Décochez la case pour le retirer : Google Analytics ne reçoit plus rien et ses cookies sont effacés de ce navigateur."
             : "Aucun accord : Google Analytics n’est pas chargé et ne dépose aucun cookie. Cochez la case pour l’accepter ; votre choix est mémorisé 6 mois dans ce navigateur."}
       </p>
     </div>

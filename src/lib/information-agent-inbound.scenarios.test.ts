@@ -10,7 +10,10 @@ const mocks = vi.hoisted(() => ({
   list: vi.fn(),
   from: vi.fn(),
   storageFrom: vi.fn(),
+  globalLimit: vi.fn(),
 }));
+
+vi.mock("@/lib/rate-limit", () => ({ enforceGlobalRateLimit: mocks.globalLimit }));
 
 vi.mock("resend", () => ({
   Resend: class {
@@ -43,11 +46,14 @@ function fixture({
   closeCaseBeforeFinalUpdate = false,
   moveCaseToReviewBeforeFinalUpdate = false,
   bodyAssetCollisionSha256,
+  multiLotSale = false,
 }: {
   concurrentAssetLookup?: boolean;
   closeCaseBeforeFinalUpdate?: boolean;
   moveCaseToReviewBeforeFinalUpdate?: boolean;
   bodyAssetCollisionSha256?: string;
+  /** La vente A compte plusieurs lots (drapeau `multi_lot_sale` de la collecte). */
+  multiLotSale?: boolean;
 } = {}) {
   const cases: Row[] = [
     {
@@ -109,6 +115,7 @@ function fixture({
         app_surface_m2: null,
         rooms_count: null,
         occupancy_status: null,
+        quality_flags: multiLotSale ? ["multi_lot_sale"] : [],
       },
       {
         id: SALE_B,
@@ -338,26 +345,39 @@ function receivedEmail({
   from = "Contact <contact@example.test>",
   text = "La surface habitable est de 84 m². Il y a 4 pièces.",
   authentication = { spf: "pass", dkim: "pass", dmarc: "pass" },
+  subject = "Re: Vente A",
+  headers,
+  eventFrom,
 }: {
   token?: string;
   from?: string;
   text?: string;
   authentication?: { spf?: string; dkim?: string; dmarc?: string } | null;
+  subject?: string;
+  headers?: Record<string, string>;
+  /** Expéditeur porté par l'événement signé du webhook (absent des anciens événements de test). */
+  eventFrom?: string;
 } = {}) {
   mocks.verify.mockReturnValue({
     type: "email.received",
     created_at: "2026-09-23T10:00:00.000Z",
-    data: { email_id: "provider-email-1", to: [address(token)], received_for: [address(token)] },
+    data: {
+      email_id: "provider-email-1",
+      to: [address(token)],
+      received_for: [address(token)],
+      ...(eventFrom ? { from: eventFrom } : {}),
+    },
   });
   mocks.get.mockResolvedValue({
     data: {
       from,
       to: [address(token)],
-      subject: "Re: Vente A",
+      subject,
       text,
       html: null,
       created_at: "2026-09-23T10:00:00.000Z",
       authentication,
+      headers,
     },
     error: null,
   });
@@ -454,6 +474,44 @@ describe("information-agent offline inbound scenarios", () => {
     });
     expect(mocks.from).not.toHaveBeenCalled();
     expect(mocks.get).not.toHaveBeenCalled();
+  });
+
+  it("writes a permanent bounce of the agent's email on the contact registry, through the signed webhook", async () => {
+    const upsert = vi.fn().mockResolvedValue({ error: null });
+    mocks.from.mockReturnValue({ upsert });
+    mocks.verify.mockReturnValueOnce({
+      type: "email.bounced",
+      created_at: "2026-10-23T10:00:00.000Z",
+      data: {
+        from: "Assistant Immojudis <agent@immojudis.test>",
+        to: ["Contact@Example.test"],
+        bounce: { type: "Permanent", subType: "General", message: "no such mailbox" },
+      },
+    });
+
+    const result = await webhook(vi.fn(), "signed", {}, false, {
+      INFORMATION_AGENT_EMAIL_FROM: "Assistant Immojudis <agent@immojudis.test>",
+    });
+
+    expect(result).toEqual({ accepted: true });
+    expect(mocks.from).toHaveBeenCalledWith("information_agent_contacts");
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ email: "contact@example.test", bounce_status: "permanent" }),
+      { onConflict: "scope_sale_id,normalized_email" },
+    );
+    expect(mocks.get).not.toHaveBeenCalled();
+  });
+
+  it("does not write a bounce when the signature is invalid", async () => {
+    mocks.verify.mockImplementationOnce(() => {
+      throw new Error("Invalid signature");
+    });
+    await expect(
+      webhook(vi.fn(), "forged", {}, false, {
+        INFORMATION_AGENT_EMAIL_FROM: "agent@immojudis.test",
+      }),
+    ).rejects.toMatchObject({ name: "InvalidInformationAgentWebhookSignatureError" });
+    expect(mocks.from).not.toHaveBeenCalled();
   });
 
   it("associates a reply and its attachment with only the token's sale, then stays idempotent", async () => {
@@ -1416,6 +1474,198 @@ describe("information-agent offline inbound scenarios", () => {
     expect(await webhook()).toMatchObject({ factCount: 0 });
     expect(state.messages).toHaveLength(1);
     expect(state.facts).toHaveLength(0);
+  });
+
+  describe("emails sans dossier ouvert (n° 48)", () => {
+    it("ne lit pas chez Resend l'email d'un expéditeur inconnu", async () => {
+      const state = fixture();
+      state.cases.splice(0, state.cases.length);
+      receivedEmail({ text: "STOP", eventFrom: "Spam <inconnu@spam.example>" });
+      vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+      expect(await webhook()).toMatchObject({
+        accepted: true,
+        ignored: true,
+        ignoredReason: "unknown_case",
+        oppositionRecorded: false,
+      });
+      expect(mocks.get).not.toHaveBeenCalled();
+      expect(mocks.globalLimit).not.toHaveBeenCalled();
+      expect(state.contacts).toHaveLength(0);
+    });
+
+    it("lit l'email d'un expéditeur connu, dans la limite du plafond global, et enregistre son opposition", async () => {
+      const state = fixture();
+      state.cases[1]!.status = "completed";
+      state.cases.splice(0, 1);
+      receivedEmail({
+        token: TOKEN_B,
+        text: "Ne plus me contacter.",
+        eventFrom: "Contact <contact@example.test>",
+      });
+      vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+      expect(await webhook()).toMatchObject({
+        ignoredReason: "case_not_open",
+        oppositionRecorded: true,
+      });
+      expect(mocks.get).toHaveBeenCalledTimes(1);
+      expect(mocks.globalLimit).toHaveBeenCalledWith(
+        expect.objectContaining({ bucketKey: "information-agent.unrouted-inbound-fetch" }),
+      );
+      expect(state.contacts[0]).toMatchObject({ opposition_status: "opposed" });
+    });
+
+    it("laisse le fournisseur rejouer la livraison quand le plafond de lectures est atteint", async () => {
+      const state = fixture();
+      state.cases.splice(0, state.cases.length);
+      receivedEmail({ eventFrom: "Contact <contact@example.test>", text: "STOP" });
+      state.contacts.push({
+        email: "contact@example.test",
+        normalized_email: "contact@example.test",
+        opposition_status: "unknown",
+      });
+      mocks.globalLimit.mockRejectedValue(new Error("Trop de demandes."));
+
+      await expect(webhook()).rejects.toThrow("Trop de demandes.");
+      expect(mocks.get).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("lecture des réponses (n° 47)", () => {
+    it.each([
+      [
+        "l'en-tête Auto-Submitted",
+        { subject: "Re: Vente A", headers: { "Auto-Submitted": "auto-replied" } },
+      ],
+      ["l'en-tête X-Autoreply", { subject: "Re: Vente A", headers: { "X-Autoreply": "yes" } }],
+      [
+        "l'objet « Absence »",
+        { subject: "Absence du bureau jusqu'au 5 novembre", headers: undefined },
+      ],
+      ["l'objet « Automatic reply: »", { subject: "Automatic reply: Vente A", headers: undefined }],
+    ])(
+      "ignore une réponse automatique repérée par %s : pas de lecture, le dossier reste ouvert",
+      async (_label, extra) => {
+        const state = fixture();
+        receivedEmail({
+          text: "Je suis absent jusqu'au 5 novembre. La surface est de 99 m².",
+          ...extra,
+        });
+        const fetchImpl = vi.fn();
+
+        expect(await webhook(fetchImpl)).toMatchObject({
+          accepted: true,
+          caseId: CASE_A,
+          factCount: 0,
+          attachmentCount: 0,
+          processingStatus: "ignored",
+        });
+        expect(state.facts).toHaveLength(0);
+        expect(state.cases[0]?.status).toBe("sent");
+        expect(state.messages[0]?.metadata).toMatchObject({
+          inbound_processing: { status: "ignored", reason: "auto_reply" },
+        });
+        expect(mocks.list).not.toHaveBeenCalled();
+        expect(fetchImpl).not.toHaveBeenCalled();
+      },
+    );
+
+    it("traite une réponse écrite par une personne même si l'en-tête Auto-Submitted vaut « no »", async () => {
+      const state = fixture();
+      receivedEmail({ headers: { "Auto-Submitted": "no" } });
+
+      expect(await webhook()).toMatchObject({ factCount: 2, processingStatus: "review" });
+      expect(state.facts).toHaveLength(2);
+    });
+
+    it("enregistre l'opposition d'un « Je ne souhaite plus être contacté. » (é final accentué)", async () => {
+      const state = fixture();
+      receivedEmail({ text: "Bonjour,\nJe ne souhaite plus être contacté.\nCordialement" });
+
+      expect(await webhook()).toMatchObject({ caseId: CASE_A, factCount: 0 });
+      expect(state.contacts[0]).toMatchObject({
+        email: "contact@example.test",
+        opposition_status: "opposed",
+      });
+    });
+
+    it("envoie en relecture, sans opposition ni lecture, une réponse qui parle de spam et de CNIL", async () => {
+      const state = fixture();
+      receivedEmail({
+        text: "C'est du spam. Je vais saisir la CNIL. La surface est de 84 m².",
+      });
+      const fetchImpl = vi.fn();
+
+      expect(await webhook(fetchImpl)).toMatchObject({
+        caseId: CASE_A,
+        factCount: 0,
+        attachmentCount: 0,
+        processingStatus: "review",
+      });
+      expect(state.contacts).toHaveLength(0);
+      expect(state.facts).toHaveLength(0);
+      expect(state.cases[0]?.status).toBe("review");
+      expect(state.messages[0]?.metadata).toMatchObject({
+        inbound_processing: { status: "review", reason: "possible_opposition" },
+      });
+      expect(mocks.list).not.toHaveBeenCalled();
+    });
+
+    it("retire l'historique cité d'un message transféré (From:/Sent: ou « De : » sans adresse)", async () => {
+      for (const quoted of [
+        "From: Immojudis\nSent: Monday, 5 October 2026 10:00\nTo: contact\nSubject: Vente A\n\nSurface 84 m² et 4 pièces",
+        "De : Équipe Immojudis\nEnvoyé : lundi 5 octobre 2026 10:00\nÀ : Contact\nObjet : Vente A\n\nSurface 84 m² et 4 pièces",
+      ]) {
+        const state = fixture();
+        receivedEmail({ text: `Je vérifie et reviens vers vous.\n\n${quoted}` });
+
+        expect(await webhook()).toMatchObject({ factCount: 0 });
+        expect(state.facts).toHaveLength(0);
+      }
+    });
+
+    it("lit l'occupation au présent : « était loué mais désormais libre » donne un bien libre", async () => {
+      const state = fixture();
+      receivedEmail({ text: "Le bien était loué mais il est désormais libre." });
+
+      await webhook();
+
+      const occupancy = state.facts.filter((fact) => fact.fact_key === "occupancy_status");
+      expect(occupancy.map((fact) => fact.proposed_value)).toEqual([{ value: "vacant" }]);
+    });
+
+    it("marque « lot non identifié » une réponse sans numéro de lot pour une vente à plusieurs lots", async () => {
+      const state = fixture({ multiLotSale: true });
+      receivedEmail();
+
+      expect(await webhook()).toMatchObject({ caseId: CASE_A, processingStatus: "review" });
+
+      expect(state.facts.length).toBeGreaterThan(0);
+      expect(state.facts.every((fact) => (fact.metadata as Row)?.lot_unidentified === true)).toBe(
+        true,
+      );
+      expect(state.cases[0]?.metadata).toMatchObject({ last_inbound_lot_unidentified: true });
+      expect(state.messages[0]?.metadata).toMatchObject({
+        inbound_processing: { status: "review", reason: "unidentified_lot_review" },
+      });
+    });
+
+    it("ne marque pas le lot quand la réponse le désigne, ni pour une vente à lot unique", async () => {
+      const identified = fixture({ multiLotSale: true });
+      receivedEmail({ text: "Lot 2 : la surface habitable est de 84 m². Il y a 4 pièces." });
+      await webhook();
+      expect(identified.facts.length).toBeGreaterThan(0);
+      expect(identified.facts.some((fact) => (fact.metadata as Row)?.lot_unidentified)).toBe(false);
+
+      vi.resetAllMocks();
+      const single = fixture({ multiLotSale: false });
+      receivedEmail();
+      await webhook();
+      expect(single.facts.length).toBeGreaterThan(0);
+      expect(single.facts.some((fact) => (fact.metadata as Row)?.lot_unidentified)).toBe(false);
+      expect(single.cases[0]?.metadata).toMatchObject({ last_inbound_lot_unidentified: false });
+    });
   });
 
   it("ignores replies to a draft that was never sent", async () => {

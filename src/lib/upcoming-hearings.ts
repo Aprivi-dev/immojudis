@@ -1,4 +1,9 @@
 import { calendarDaysBetween, parisDateKey } from "@/lib/sale-countdown";
+import {
+  HEARINGS_DEPARTMENT_PARAM,
+  validHearingDepartment,
+  type HearingDepartment,
+} from "@/lib/hearings-department";
 import { saleHearingTime } from "@/lib/seo";
 import { tribunalLongNameFromRaw } from "@/lib/tribunal-pages";
 
@@ -220,6 +225,55 @@ export function windowHearings(
     weekCount: week.length,
     later: groupByDay(later),
     laterCount: later.length,
+  };
+}
+
+export { HEARINGS_DEPARTMENT_PARAM, validHearingDepartment, type HearingDepartment };
+
+/** Les départements qui ont au moins une audience dans les fenêtres, par ordre de code, avec leur nombre. */
+export function hearingDepartments(windows: HearingWindows): HearingDepartment[] {
+  const counts = new Map<string, number>();
+  for (const day of [...windows.week, ...windows.later]) {
+    for (const group of day.tribunals) {
+      for (const hearing of group.hearings) {
+        const code = hearing.department?.trim();
+        if (code) counts.set(code, (counts.get(code) ?? 0) + 1);
+      }
+    }
+  }
+  return [...counts.entries()]
+    .map(([code, count]) => ({ code, count }))
+    .sort((a, b) => a.code.localeCompare(b.code, "fr", { numeric: true }));
+}
+
+function filterDays(days: readonly HearingDay[], department: string): HearingDay[] {
+  const result: HearingDay[] = [];
+  for (const day of days) {
+    const tribunals = day.tribunals
+      .map((group) => ({
+        ...group,
+        hearings: group.hearings.filter((hearing) => hearing.department?.trim() === department),
+      }))
+      .filter((group) => group.hearings.length > 0);
+    const count = tribunals.reduce((total, group) => total + group.hearings.length, 0);
+    if (count > 0) result.push({ dayKey: day.dayKey, tribunals, count });
+  }
+  return result;
+}
+
+/** Les mêmes fenêtres, réduites aux audiences d'un département (jours et tribunaux vides retirés). */
+export function filterWindowsByDepartment(
+  windows: HearingWindows,
+  department: string | null,
+): HearingWindows {
+  if (!department) return windows;
+  const week = filterDays(windows.week, department);
+  const later = filterDays(windows.later, department);
+  return {
+    week,
+    weekCount: week.reduce((total, day) => total + day.count, 0),
+    later,
+    laterCount: later.reduce((total, day) => total + day.count, 0),
   };
 }
 

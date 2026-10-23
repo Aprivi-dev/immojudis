@@ -175,6 +175,39 @@ describe("page admin Pilotage", () => {
     expect(screen.queryByText(/^[0-4]$/)).toBeNull();
   });
 
+  it("shows the bid ceilings calculated, with accounts and sales, masked under 5", async () => {
+    mocks.fetchPilotage.mockResolvedValue({
+      ...data,
+      bidCeilings: {
+        generatedAt: "2026-11-10T12:00:00Z",
+        windows: [
+          { days: 7, accounts: 12, sales: 3, occurrences: 40 },
+          { days: 30, accounts: 31, sales: 22, occurrences: 140 },
+        ],
+      },
+    });
+    renderPage();
+
+    await screen.findByRole("heading", { name: "Plafonds calculés" });
+    const line = (days: string, label: string) =>
+      within(document.querySelector(`[data-window="${days}"]`) as HTMLElement).getByText(label)
+        .nextSibling?.textContent;
+    expect(line("7", "Comptes ayant calculé au moins un plafond")).toBe("12");
+    expect(line("7", "Ventes concernées")).toBe(MASKED);
+    expect(line("30", "Ventes concernées")).toBe("22");
+  });
+
+  it("says « non mesuré » for the bid ceilings when the indicator is unavailable", async () => {
+    mocks.fetchPilotage.mockResolvedValue(data);
+    renderPage();
+
+    await screen.findByRole("heading", { name: "Plafonds calculés" });
+    const values = Array.from(document.querySelectorAll("[data-window] dd")).map(
+      (value) => value.textContent,
+    );
+    expect(values).toEqual(Array(6).fill(NOT_MEASURED));
+  });
+
   it("warns that under about 30 accounts the figures cannot support a conclusion", async () => {
     mocks.fetchPilotage.mockResolvedValue({
       ...data,

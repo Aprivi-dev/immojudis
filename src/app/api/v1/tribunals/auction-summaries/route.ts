@@ -24,7 +24,7 @@ export async function GET(request: Request) {
       "Les statistiques d’adjudication sont réservées à l’offre Analyse.",
     );
     const courts = await getCourtAuctionSummaries();
-    return apiJson({ courts }, context, {
+    return apiJson({ generatedAt: new Date().toISOString(), courts }, context, {
       headers: { "cache-control": "private, no-store", vary: "authorization" },
     });
   } catch (error) {

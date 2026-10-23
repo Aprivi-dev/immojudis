@@ -60,7 +60,10 @@ jobs:
       REQUESTED_ACTIVATE: ${{ github.event.inputs.activate }}
       REQUESTED_CONFIRM_TARGET: ${{ github.event.inputs.confirm_target }}
     steps:
+      # Before the checkout, services/data-pipeline does not exist yet: the default working-directory
+      # would make this step fail to start. It only reads environment variables.
       - name: Validate production activation
+        working-directory: ${{ github.workspace }}
         run: |
           set -euo pipefail
           if [ "$TRIGGER_EVENT" = "workflow_dispatch" ] && [ "$REQUESTED_ACTIVATE" = "true" ] && [ "$REQUESTED_CONFIRM_TARGET" != "production" ]; then

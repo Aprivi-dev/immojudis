@@ -4,6 +4,13 @@ import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Tables } from "@/integrations/supabase/types";
 import { getStripe } from "@/lib/billing";
+import {
+  collectProfessionalData,
+  eraseProfessionalData,
+  PROFESSIONAL_PRIVACY_SOURCE,
+  type ProfessionalDataExport,
+  type ProfessionalErasureReport,
+} from "@/lib/information-agent-professional-rights";
 import { privacyDeadlineStatus, type PrivacyDeadlineStatus } from "@/lib/privacy-deadline";
 
 const privacyRequestTypeSchema = z.enum([
@@ -71,6 +78,11 @@ export type PrivacyRequestSummary = {
 export type PrivacyRequestAdminSummary = PrivacyRequestSummary & {
   requesterEmail: string;
   userId: string | null;
+  /**
+   * `account` : titulaire d'un compte (`userId`). `information_agent_professional` : professionnel
+   * contacté par l'agent d'information, sans compte, vérifié par le lien signé de l'email.
+   */
+  subjectKind: "account" | "information_agent_professional";
   operatorNotes: string | null;
   deadline: PrivacyDeadlineStatus;
 };
@@ -87,7 +99,8 @@ export type PrivacyErasureReport = {
   stripeCustomerDeleted: boolean;
   deletedRows: Record<string, number>;
   storageObjectsRemoved: number;
-  authUserDeleted: true;
+  /** Faux pour un professionnel sans compte : seules ses données de l'agent d'information sont effacées. */
+  authUserDeleted: boolean;
 };
 
 export type PrivacyRequestListResponse = { requests: PrivacyRequestSummary[] };
@@ -106,7 +119,7 @@ type PrivacyRequestRow = Tables<"data_subject_requests">;
 
 const USER_COLUMNS =
   "id,request_type,status,identity_status,message,submitted_at,acknowledged_at,due_at,completed_at,resolution_code";
-const ADMIN_COLUMNS = `${USER_COLUMNS},requester_email,user_id,operator_notes`;
+const ADMIN_COLUMNS = `${USER_COLUMNS},requester_email,user_id,operator_notes,metadata`;
 
 export async function createPrivacyRequest({
   auth,
@@ -197,10 +210,7 @@ export async function listPrivacyRequestsForAdmin(
       const typed = row as Pick<PrivacyRequestRow, AdminColumn>;
       return {
         ...toPrivacyRequestSummary(typed),
-        requesterEmail: typed.requester_email,
-        userId: typed.user_id,
-        operatorNotes: typed.operator_notes,
-        deadline: privacyDeadlineStatus(typed.due_at, typed.status),
+        ...adminFields(typed),
       };
     }),
     totalCount: totalCount ?? data?.length ?? 0,
@@ -238,10 +248,7 @@ export async function updatePrivacyRequestForAdmin({
   const typed = data as Pick<PrivacyRequestRow, AdminColumn>;
   return {
     ...toPrivacyRequestSummary(typed),
-    requesterEmail: typed.requester_email,
-    userId: typed.user_id,
-    operatorNotes: typed.operator_notes,
-    deadline: privacyDeadlineStatus(typed.due_at, typed.status),
+    ...adminFields(typed),
   };
 }
 
@@ -349,6 +356,9 @@ export async function executePrivacyErasure({
   if (request.identity_status !== "verified") {
     throw new Error("Vérifiez l'identité du demandeur avant d'exécuter l'effacement.");
   }
+  if (isProfessionalRequest(request)) {
+    return executeProfessionalErasure({ auth, input, request });
+  }
   const userId = request.user_id;
   if (!userId) throw new Error("Le compte de ce demandeur n'existe plus.");
   if (userId === auth.userId) {
@@ -422,15 +432,92 @@ export async function executePrivacyErasure({
   return {
     request: {
       ...toPrivacyRequestSummary(typed),
-      requesterEmail: typed.requester_email,
-      userId: typed.user_id,
-      operatorNotes: typed.operator_notes,
-      deadline: privacyDeadlineStatus(typed.due_at, typed.status),
+      ...adminFields(typed),
     },
     stripeCustomerDeleted,
     deletedRows,
     storageObjectsRemoved,
     authUserDeleted: true,
+  };
+}
+
+/**
+ * Copie des données d'un professionnel sans compte (demande d'accès ou de portabilité vérifiée par le
+ * lien signé de l'email). Réservé aux administrateurs ; l'export est remis à l'adresse du demandeur.
+ */
+export async function exportProfessionalPrivacyData({
+  auth,
+  requestId,
+}: {
+  auth: SupabaseAuthContext;
+  requestId: string;
+}): Promise<ProfessionalDataExport> {
+  assertAdmin(auth);
+  const { data, error } = await supabaseAdmin
+    .from("data_subject_requests")
+    .select(ADMIN_COLUMNS)
+    .eq("id", requestId)
+    .single();
+  if (error) throw error;
+  const request = data as Pick<PrivacyRequestRow, AdminColumn>;
+  if (
+    !isProfessionalRequest(request) ||
+    !["access", "portability"].includes(request.request_type)
+  ) {
+    throw new Error("Cette demande n'est pas une demande d'accès d'un professionnel.");
+  }
+  if (request.identity_status !== "verified") {
+    throw new Error("Vérifiez l'identité du demandeur avant d'exporter ses données.");
+  }
+  return collectProfessionalData(request.requester_email);
+}
+
+/**
+ * Effacement demandé par un professionnel sans compte : ses messages, dossiers et pièces de l'agent
+ * d'information. L'administrateur retape l'adresse, comme pour un compte.
+ */
+async function executeProfessionalErasure({
+  auth,
+  input,
+  request,
+}: {
+  auth: SupabaseAuthContext;
+  input: z.output<typeof privacyErasureExecuteSchema>;
+  request: Pick<PrivacyRequestRow, AdminColumn>;
+}): Promise<PrivacyErasureReport> {
+  if (input.confirmEmail.trim().toLowerCase() !== request.requester_email.trim().toLowerCase()) {
+    throw new Error("L'adresse de confirmation ne correspond pas à celle du demandeur.");
+  }
+  const erased: ProfessionalErasureReport = await eraseProfessionalData(request.requester_email);
+  const report = {
+    executed_at: new Date().toISOString(),
+    executed_by: auth.userId,
+    kind: "information_agent_professional",
+    storage_objects_queued: erased.storageObjectsQueued,
+    deleted_rows: erased.deletedRows,
+  };
+  const { data: closed, error: closeError } = await supabaseAdmin
+    .from("data_subject_requests")
+    .update({
+      status: "completed",
+      resolution_code: "information_agent_professional_erasure_executed",
+      completed_at: new Date().toISOString(),
+      operator_notes: [request.operator_notes, `Effacement exécuté: ${JSON.stringify(report)}`]
+        .filter(Boolean)
+        .join("\n")
+        .slice(0, 8000),
+    })
+    .eq("id", input.requestId)
+    .select(ADMIN_COLUMNS)
+    .single();
+  if (closeError) throw closeError;
+  const typed = closed as Pick<PrivacyRequestRow, AdminColumn>;
+  return {
+    request: { ...toPrivacyRequestSummary(typed), ...adminFields(typed) },
+    stripeCustomerDeleted: false,
+    deletedRows: erased.deletedRows,
+    storageObjectsRemoved: erased.storageObjectsQueued,
+    authUserDeleted: false,
   };
 }
 
@@ -486,7 +573,24 @@ type UserColumn =
   | "due_at"
   | "completed_at"
   | "resolution_code";
-type AdminColumn = UserColumn | "requester_email" | "user_id" | "operator_notes";
+type AdminColumn = UserColumn | "requester_email" | "user_id" | "operator_notes" | "metadata";
+
+function isProfessionalRequest(row: Pick<PrivacyRequestRow, "user_id" | "metadata">): boolean {
+  const metadata = row.metadata as Record<string, unknown> | null;
+  return !row.user_id && metadata?.source === PROFESSIONAL_PRIVACY_SOURCE;
+}
+
+function adminFields(row: Pick<PrivacyRequestRow, AdminColumn>) {
+  return {
+    requesterEmail: row.requester_email,
+    userId: row.user_id,
+    subjectKind: isProfessionalRequest(row)
+      ? ("information_agent_professional" as const)
+      : ("account" as const),
+    operatorNotes: row.operator_notes,
+    deadline: privacyDeadlineStatus(row.due_at, row.status),
+  };
+}
 
 function toPrivacyRequestSummary(row: Pick<PrivacyRequestRow, UserColumn>): PrivacyRequestSummary {
   return {

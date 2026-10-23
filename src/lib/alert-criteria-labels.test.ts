@@ -45,6 +45,12 @@ describe("alertCriteriaSummary", () => {
     expect(alertCriteriaSummary(base)).toEqual([]);
   });
 
+  it("précise que la décote minimale ne vaut que pour les biens déclarés libres", () => {
+    expect(alertCriteriaSummary({ ...base, min_market_discount_pct: 20 })).toEqual([
+      "Décote minimale : 20 % (seulement pour les biens déclarés libres)",
+    ]);
+  });
+
   it("n'emploie aucun jargon interne", () => {
     const text = alertCriteriaSummary({
       ...base,

@@ -26,7 +26,9 @@ function escapeIlike(value: string): string {
  * professional under another address (`identityKeys`: `contact@cabinet` then `jean.dupont@cabinet`).
  * With `approvedAt` (post-approval check) only strictly older approvals count, which makes
  * concurrent approvals deterministic: the earliest one proceeds, the others stand down. Without
- * `missionId` (draft not created yet) every mission counts.
+ * `missionId` (draft not created yet) every mission counts. A mission whose send « needs checking »
+ * (Resend timed out, the email may have gone out: `metadata.send_outcome = "unverified"`, status
+ * failed) counts too, so another mission cannot send a second email to the same recipient.
  */
 export async function assertInformationAgentRecipientCooldown({
   email,
@@ -46,12 +48,14 @@ export async function assertInformationAgentRecipientCooldown({
   const since = new Date(
     now.getTime() - INFORMATION_AGENT_RECIPIENT_COOLDOWN_DAYS * DAY_MS,
   ).toISOString();
-  const recent = (match: "email" | "identity") => {
-    let query = supabaseAdmin
+  const recent = (match: "email" | "identity", unverifiedSend = false) => {
+    const base = supabaseAdmin
       .from("information_agent_missions")
       .select("id,approved_at")
-      .in("status", [...COOLDOWN_BLOCKING_MISSION_STATUSES])
       .gte("approved_at", since);
+    let query = unverifiedSend
+      ? base.eq("status", "failed").eq("metadata->>send_outcome", "unverified")
+      : base.in("status", [...COOLDOWN_BLOCKING_MISSION_STATUSES]);
     query =
       match === "email"
         ? query.ilike("recipient_email", escapeIlike(normalized))
@@ -63,6 +67,8 @@ export async function assertInformationAgentRecipientCooldown({
   const results = await Promise.all([
     recent("email"),
     ...(identityKeys.length ? [recent("identity")] : []),
+    recent("email", true),
+    ...(identityKeys.length ? [recent("identity", true)] : []),
   ]);
   const approvals: number[] = [];
   for (const { data, error } of results) {

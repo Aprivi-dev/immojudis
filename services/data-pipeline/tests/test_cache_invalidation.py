@@ -330,16 +330,18 @@ def test_main_exits_zero_and_warns_when_the_site_answers_badly(monkeypatch, caps
         ({"SUPABASE_DB_URL": "postgres://x", "SITE_URL": SITE, "CRON_SECRET": "  "}, "missing_cron_secret"),
     ],
 )
-def test_main_skips_without_the_required_variables(monkeypatch, capsys, env, expected):
+def test_main_fails_loudly_without_the_required_variables(monkeypatch, capsys, env, expected):
     def never(**_kwargs):
         raise AssertionError("no flush expected")
 
     monkeypatch.setattr(cache_invalidation, "flush", never)
 
-    assert main(["--flush"], env=env) == 0
+    assert main(["--flush"], env=env) == 1
     out = capsys.readouterr().out
     assert json.loads(out.splitlines()[0])["skipped"] == expected
-    assert "::warning" in out
+    assert "::error title=Invalidate public cache::" in out
+    assert expected in out
+    assert "::warning" not in out
 
 
 def test_main_requires_the_flush_flag():

@@ -582,6 +582,21 @@ def redact_personal_text(text: str | None) -> str | None:
     return text
 
 
+EMAIL_PLACEHOLDER = "[email masqué]"
+_EMAIL = re.compile(r"(?<![\w.%+-])[\w.%+-]+@(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z]{2,}(?![\w@])")
+
+
+def redact_email_addresses(text: str | None) -> str | None:
+    """Masque les adresses email d'un texte publié (descriptif de l'annonce).
+
+    Règle à part du filtre des noms : elle ne vaut que pour le descriptif affiché. Les blocs de la source
+    gardent les coordonnées de l'avocat qui alimentent le contact (``lawyer_contact``).
+    """
+    if not isinstance(text, str) or "@" not in text:
+        return text
+    return _EMAIL.sub(EMAIL_PLACEHOLDER, text)
+
+
 def redact_personal_data(value: Any, *, _depth: int = 0) -> Any:
     """Applique le filtre à toutes les chaînes d'une valeur JSON (liste, dict, chaîne)."""
     if _depth > 12:
@@ -611,6 +626,10 @@ PAYLOAD_TEXT_KEYS = (
 )
 
 
+# Descriptifs publiés : les adresses email y sont masquées (colonne `description` comprise).
+PAYLOAD_EMAIL_KEYS = ("description", "source_description", "llm_display_description")
+
+
 def redact_payload(payload: Any) -> Any:
     """Filtre les clés texte d'un `raw_payload` ou d'une observation."""
     if not isinstance(payload, dict):
@@ -619,6 +638,9 @@ def redact_payload(payload: Any) -> Any:
     for key in PAYLOAD_TEXT_KEYS:
         if key in redacted:
             redacted[key] = redact_personal_data(redacted[key])
+    for key in PAYLOAD_EMAIL_KEYS:
+        if isinstance(redacted.get(key), str):
+            redacted[key] = redact_email_addresses(redacted[key])
     return redacted
 
 
@@ -636,6 +658,8 @@ def redact_storage_row(row: dict[str, Any]) -> dict[str, Any]:
     for column in SALE_TEXT_COLUMNS:
         if isinstance(row.get(column), str):
             row[column] = redact_personal_text(row[column])
+    if isinstance(row.get("description"), str):
+        row["description"] = redact_email_addresses(row["description"])
     if isinstance(row.get("raw_payload"), dict):
         row["raw_payload"] = redact_payload(row["raw_payload"])
     if isinstance(row.get("observations"), list):

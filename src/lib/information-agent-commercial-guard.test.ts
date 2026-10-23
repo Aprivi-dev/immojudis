@@ -190,6 +190,111 @@ describe("aucune mention commerciale dans le message de l'agent (cadrage juridiq
     expect(mentions.map((mention) => mention.excerpt)).toEqual(["Créez un compte"]);
   });
 
+  it("contrôle les liens même dans les textes repris de l'annonce", () => {
+    const options = {
+      appOrigin: APP_URL,
+      ignore: ["Appartement T3 https://offres.exemple.test/promo"],
+    };
+    const mentions = findInformationAgentCommercialMentions(
+      "<p>Appartement T3 https://offres.exemple.test/promo à Bordeaux</p>",
+      options,
+    );
+    expect(mentions.map((mention) => mention.rule)).toEqual(["link"]);
+    expect(() =>
+      assertNoInformationAgentCommercialMention("Appartement T3 exemple.fr/promo", {
+        ignore: ["Appartement T3 exemple.fr/promo"],
+      }),
+    ).toThrow("aucune mention commerciale");
+  });
+
+  it("un texte à ignorer trop court n'efface pas le message", () => {
+    for (const ignored of ["a", "A", "e", " ", "", null, undefined, "Pau", "Aix"]) {
+      const mentions = findInformationAgentCommercialMentions(
+        "Créez un compte pour déposer vos ventes. Nos tarifs sont publics.",
+        { ignore: [ignored] },
+      );
+      expect(mentions.length, String(ignored)).toBeGreaterThan(0);
+    }
+  });
+
+  it("n'écarte que les occurrences isolées du texte de l'annonce", () => {
+    // « Premium » collé à un autre mot ne fait pas partie du titre ignoré.
+    expect(
+      findInformationAgentCommercialMentions("Résidence Premium. Abonnement Premiumplus", {
+        ignore: ["Résidence Premium"],
+      }).map((mention) => mention.excerpt),
+    ).toEqual(["Abonnement"]);
+    expect(
+      findInformationAgentCommercialMentions("Super Résidence Premiums", {
+        ignore: ["Résidence Premium"],
+      }),
+    ).toEqual([]);
+  });
+
+  it.each([
+    "Voir exemple.fr",
+    "Voir www.exemple.test",
+    "Voir exemple.fr/offres",
+    "Voir WWW.Exemple.COM/inscription",
+    "Voir sous-domaine.cabinet-exemple.com",
+    "<p>Notre site : offres.exemple.io/pro</p>",
+    "Voir immojudis.example.evil.com",
+    "Voir www.immojudis.example/offres",
+  ])("refuse le nom de domaine sans http : %s", (text) => {
+    const options = { appOrigin: APP_URL };
+    expect(
+      findInformationAgentCommercialMentions(text, options).map((mention) => mention.rule),
+    ).toContain("link");
+  });
+
+  it.each([
+    "Écrire à contact@example.fr",
+    "Écrire à prenom.nom@cabinet-exemple.com avant le 12.",
+    "Voir l'article 12.3 et le lot n°2.",
+    "Mme.Dupont a répondu le 14.09.2026.",
+    "Voir www.immojudis.example",
+    "Voir cnil.fr/plaintes",
+    "Voir www.cnil.fr/fr/plaintes",
+    "Voir www.immojudis.example/privacy",
+    "Voir licitor.com",
+    "Voir www.licitor.com/annonce/1",
+    "Fichier plan.pdf joint.",
+  ])("n'écarte pas à tort : %s", (text) => {
+    expect(
+      findInformationAgentCommercialMentions(text, {
+        appOrigin: APP_URL,
+        allowedUrls: ["https://www.licitor.com/annonce/1"],
+      }),
+      text,
+    ).toEqual([]);
+  });
+
+  it.each([
+    "Déposez vos ventes sur notre site.",
+    "Vous pouvez déposer vous-même vos prochaines ventes.",
+    "Publiez vos annonces directement.",
+    "Transmettez-nous vos prochaines ventes.",
+    "Déposez toutes vos ventes ici.",
+    "Pour vos prochaines ventes, contactez-nous.",
+    "Confiez-nous vos mandats.",
+    "DÉPOSEZ VOS VENTES",
+  ])("refuse l'invitation à déposer ses ventes : %s", (text) => {
+    expect(findInformationAgentCommercialMentions(text).map((mention) => mention.rule)).toContain(
+      "offer",
+    );
+  });
+
+  it("garde le dépôt de pièces et d'offres d'achat", () => {
+    for (const text of [
+      "Vous pouvez déposer vos pièces dans l'espace privé de ce dossier.",
+      "Déposez vos offres avant l'audience ?",
+      "Transmettez-nous le cahier des conditions de vente.",
+      "La vente est prévue à l'audience du 14 septembre.",
+    ]) {
+      expect(findInformationAgentCommercialMentions(text), text).toEqual([]);
+    }
+  });
+
   it.each([
     `${APP_URL}/offres`,
     `${APP_URL}/offres?utm_source=agent`,

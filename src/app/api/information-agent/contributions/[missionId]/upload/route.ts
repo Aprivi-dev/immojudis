@@ -20,6 +20,6 @@ export async function POST(
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    return contributionErrorResponse(error);
+    return contributionErrorResponse(error, "contribution.upload");
   }
 }

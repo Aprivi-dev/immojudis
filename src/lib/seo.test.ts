@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AuctionSale } from "@/lib/types";
+import { resetWithdrawnSources, setWithdrawnSources } from "@/lib/withdrawn-sources";
 import {
   atTribunal,
   breadcrumbStructuredData,
@@ -271,6 +272,36 @@ describe("sale structured data", () => {
         "BreadcrumbList",
       ]);
     }
+  });
+
+  it("only uses images the sale page itself would show", () => {
+    const image = (media: unknown) => {
+      const data = saleStructuredData(sale({ media } as Partial<AuctionSale>), {
+        origin,
+        now: NOW,
+      }) as { "@graph": Array<Record<string, unknown>> };
+      return data["@graph"][0].image;
+    };
+    // Logo and navigation assets are skipped for the next real photo.
+    expect(
+      image([
+        { type: "image", url: "https://media.example.test/assets/logo.png" },
+        { type: "image", url: "https://media.example.test/photo.jpg" },
+      ]),
+    ).toEqual(["https://media.example.test/photo.jpg"]);
+    // A photo hosted by a source withdrawn from the catalogue never reaches the structured data.
+    setWithdrawnSources(["licitor"]);
+    try {
+      expect(
+        image([{ type: "image", url: "https://www.licitor.com/photos/1.jpg" }]),
+      ).toBeUndefined();
+    } finally {
+      resetWithdrawnSources();
+    }
+    // No plain http, no non-image media, nothing usable: no image property at all.
+    expect(image([{ type: "image", url: "http://media.example.test/photo.jpg" }])).toBeUndefined();
+    expect(image([{ type: "video", url: "https://media.example.test/clip.jpg" }])).toBeUndefined();
+    expect(image([{ type: "image", url: "https://media.example.test/doc.pdf" }])).toBeUndefined();
   });
 
   it("omits the offer and the image when the page has none", () => {

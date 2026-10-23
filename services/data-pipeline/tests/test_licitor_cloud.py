@@ -111,3 +111,81 @@ def test_batch_duration_is_bounded(monkeypatch):
     with pytest.raises(cloud.BatchYield):
         http.checkpoint()
     http.client.close()
+
+
+def _fetch_with_robots(monkeypatch, robots_text, *, previous_ago=0.0, elapsed=0.0):
+    """Fetch one detail page; return the pauses requested and whether the page was requested."""
+    pauses = []
+    seen = []
+    client_class = httpx.Client
+
+    class Guard:
+        def __enter__(self):
+            return None
+
+        def __exit__(self, *_args):
+            return False
+
+    class Store:
+        def request_started(self, _run):
+            pass
+
+        def guarded(self):
+            return Guard()
+
+        def capture(self, *_args):
+            return {}
+
+    def handle(request):
+        seen.append(str(request.url))
+        return httpx.Response(200, text='<div class="LegalAd"></div>')
+
+    monkeypatch.setattr(cloud.httpx, "Client", lambda **kw: client_class(transport=httpx.MockTransport(handle), **kw))
+    monkeypatch.setattr(cloud.time, "sleep", pauses.append)
+    http = cloud.SourceHttp(Store(), "test")
+    http.rules = cloud.RobotsRules.parse(robots_text, cloud.USER_AGENT)
+    http.previous -= previous_ago
+    http.started -= elapsed
+    try:
+        http.fetch("https://www.licitor.com/annonce/test/123.html", "detail")
+    except cloud.BatchYield:
+        pass
+    finally:
+        http.client.close()
+    return pauses, bool(seen)
+
+
+def test_pause_between_requests_defaults_to_two_seconds(monkeypatch):
+    pauses, fetched = _fetch_with_robots(monkeypatch, "User-agent: *\nAllow: /")
+
+    assert fetched
+    assert len(pauses) == 1
+    assert 1.9 < pauses[0] <= 2.0
+
+
+def test_pause_between_requests_follows_the_published_crawl_delay(monkeypatch):
+    pauses, fetched = _fetch_with_robots(monkeypatch, "User-agent: *\nCrawl-delay: 7\nAllow: /")
+
+    assert fetched
+    assert 6.9 < pauses[0] <= 7.0
+
+
+def test_a_crawl_delay_below_two_seconds_never_shortens_the_pause(monkeypatch):
+    pauses, _ = _fetch_with_robots(monkeypatch, "User-agent: *\nCrawl-delay: 0.5\nAllow: /")
+
+    assert 1.9 < pauses[0] <= 2.0
+
+
+def test_the_crawl_delay_counts_the_time_already_waited(monkeypatch):
+    pauses, _ = _fetch_with_robots(monkeypatch, "User-agent: *\nCrawl-delay: 7\nAllow: /", previous_ago=5.0)
+
+    assert 1.9 < pauses[0] <= 2.0
+
+
+def test_a_crawl_delay_that_does_not_fit_the_batch_yields_instead_of_fetching_early(monkeypatch):
+    pauses, fetched = _fetch_with_robots(
+        monkeypatch, "User-agent: *\nCrawl-delay: 60\nAllow: /", elapsed=190.0
+    )
+
+    assert pauses == []
+    assert fetched is False

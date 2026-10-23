@@ -11,10 +11,13 @@ import {
   fetchAccessPlan,
   fetchNotificationPreferences,
 } from "@/lib/client-api";
+import { departmentFromSearchQuery } from "@/lib/alerts";
+import { ALERT_CREATION_PATH } from "@/lib/discovery-alerts";
 import type { GeoPoint } from "@/lib/geo";
 import { OFFERS_PATH, loginPathWithRedirect } from "@/lib/navigation";
 import { trackProductEvent } from "@/lib/product-events";
 import { queryKeys } from "@/lib/query-keys";
+import { savePendingAlert } from "@/lib/pending-alert";
 import { createAlert } from "@/lib/queries";
 import {
   countAlertableSearchFilters,
@@ -107,7 +110,15 @@ export function useCreateAlert({
       }
       if (!user) {
         // La première alerte est gratuite : on invite à créer un compte puis on
-        // ramène la personne sur sa recherche.
+        // ramène la personne sur sa recherche. La demande est gardée pour être créée à la
+        // connexion (`PendingAlertRunner`), sauf depuis la page de confirmation d'une alerte
+        // (`/alertes/creer`) : la personne y retrouve ses critères et confirme elle-même.
+        if (
+          countAlertableSearchFilters(search) > 0 &&
+          !(returnTo ?? "").startsWith(ALERT_CREATION_PATH)
+        ) {
+          savePendingAlert(search, options);
+        }
         router.push(loginPathWithRedirect(returnTo, { reason: "alerte" }));
         return { status: "login" };
       }
@@ -133,9 +144,14 @@ export function useCreateAlert({
         return { status: "blocked" };
       }
 
+      // Un code de département tapé dans la recherche texte est un filtre département, comme dans
+      // le catalogue : il n'est pas gardé comme texte libre (que l'évaluation n'applique pas). Seul
+      // le texte restant est un critère avancé : le contrôle de l'offre gratuite porte sur lui.
+      const queryDepartment = search.department ? null : departmentFromSearchQuery(search.query);
+      const residualQuery = queryDepartment ? null : search.query;
       if (
         !entitlements.plan.hasAnalysisAccess &&
-        (search.query ||
+        (residualQuery ||
           search.occupancy ||
           search.minScore != null ||
           search.minYield != null ||
@@ -164,7 +180,7 @@ export function useCreateAlert({
 
         await createAlert(user.id, {
           name: options.name ?? buildAlertName(options.nameSearch ?? search),
-          department: search.department || null,
+          department: search.department || queryDepartment || null,
           city: search.city || null,
           property_type: search.homeTypes?.length === 1 ? search.homeTypes[0] : null,
           max_price_eur: search.maxPrice ?? null,
@@ -184,7 +200,7 @@ export function useCreateAlert({
             min_sale_date: search.minSaleDate ?? null,
             max_sale_date: search.maxSaleDate ?? null,
             sale_type: search.saleType ?? null,
-            query: search.query ?? null,
+            query: residualQuery ?? null,
             around_address: search.aroundAddress ?? null,
             around_radius_km: search.aroundRadius ?? null,
             watched_zone_id: watchedZoneResponse?.zone.id ?? null,
@@ -212,6 +228,11 @@ export function useCreateAlert({
             "Les filtres « sous la fourchette » et « sans point à vérifier » ne sont pas enregistrés dans l'alerte.",
           );
         }
+        if (search.minMarketDiscount != null) {
+          toast.message(
+            "La décote minimale ne s'applique qu'aux biens déclarés libres : les biens occupés ou d'occupation inconnue n'y correspondent pas.",
+          );
+        }
         trackProductEvent("alert_created", { email_consent: emailConsent });
         return { status: "created", emailConsent };
       } catch (saveError) {
@@ -235,5 +256,8 @@ export function useCreateAlert({
     ],
   );
 
-  return { createAlertFromSearch, saving, emailRecapEnabled };
+  /** Les droits du compte sont lus : une création lancée maintenant ne sera pas refusée « en cours ». */
+  const ready = Boolean(user) && !authLoading && !entitlementsLoading && Boolean(entitlements);
+
+  return { createAlertFromSearch, saving, emailRecapEnabled, ready };
 }

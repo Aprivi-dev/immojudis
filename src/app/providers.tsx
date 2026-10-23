@@ -12,6 +12,7 @@ import {
 import { usePublicPathname } from "@/hooks/use-public-pathname";
 import { AuthProvider } from "@/components/AuthProvider";
 import { LaunchOfferProvider } from "@/components/LaunchOfferProvider";
+import { PendingAlertRunner } from "@/components/PendingAlertRunner";
 import { SiteFooter } from "@/components/SiteFooter";
 import { LazyToaster } from "@/components/LazyToaster";
 import { retryUnlessRefused } from "@/lib/query-retry";
@@ -52,6 +53,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
             </Suspense>
             {children}
             <SiteFooter />
+            <PendingAlertRunner />
             <LazyToaster />
           </div>
         </LaunchOfferProvider>

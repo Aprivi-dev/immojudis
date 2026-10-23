@@ -211,3 +211,51 @@ it("rejects an alert match outside the saved local sale-date range", () => {
     reasons: ["vente hors période"],
   });
 });
+
+describe("recherche texte enregistrée dans l'alerte (query)", () => {
+  const open = {
+    department: null,
+    max_price_eur: null,
+    min_surface_m2: null,
+    occupancy_status: null,
+    min_investment_score: null,
+    max_price_per_m2: null,
+    min_yield_pct: null,
+    min_market_discount_pct: null,
+    dpe_classes: [],
+    require_house_with_land: false,
+    property_type: null,
+  } satisfies Partial<AlertCriteria>;
+  const alertWithQuery = (query: unknown) =>
+    makeAlert({ ...open, advanced_criteria: { source: "sales_search", query } });
+  const matches = (query: unknown, sale: Partial<AuctionSale>) =>
+    alertMatchesSale(alertWithQuery(query), makeSale(sale)).matches;
+
+  it("traite un code de département comme un filtre département", () => {
+    expect(matches("26", { department: "26" })).toBe(true);
+    expect(alertMatchesSale(alertWithQuery("26"), makeSale({ department: "33" }))).toEqual({
+      matches: false,
+      reasons: ["secteur différent"],
+    });
+  });
+
+  it("couvre les codes à zéro initial, corses et d'outre-mer", () => {
+    expect(matches("07", { department: "07" })).toBe(true);
+    expect(matches("07", { department: "74" })).toBe(false);
+    expect(matches("2A", { department: "2A" })).toBe(true);
+    expect(matches("974", { department: "974" })).toBe(true);
+    expect(matches("974", { department: "33" })).toBe(false);
+  });
+
+  it("accepte le nom du département et un code postal", () => {
+    expect(matches("Drôme", { department: "26" })).toBe(true);
+    expect(matches("33000", { postal_code: "33000" })).toBe(true);
+    expect(matches("33000", { postal_code: "75001" })).toBe(false);
+  });
+
+  it("n'écarte rien pour une requête vide ou un texte libre", () => {
+    for (const query of [null, "", "  ", "jardin piscine", 12]) {
+      expect(matches(query, {})).toBe(true);
+    }
+  });
+});

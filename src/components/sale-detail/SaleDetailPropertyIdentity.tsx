@@ -10,7 +10,7 @@ import Camera from "lucide-react/dist/esm/icons/camera.js";
 import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
 import { MapboxPreviewButton } from "@/components/MapboxPreviewButton";
 import { StreetViewDialog } from "@/components/StreetViewDialog";
-import { PhotoCredit } from "@/components/PhotoCredit";
+import { PhotoCredit, PhotoCredits } from "@/components/PhotoCredit";
 import { SaleVisual } from "@/components/SaleVisual";
 import { AerialOrbitHero } from "@/components/sale-detail/AerialOrbitHero";
 import listingStyles from "@/components/sale-detail/SaleListing.module.css";
@@ -38,15 +38,25 @@ export function PropertyIdentity({
   sale,
   aiReviewProjections = null,
   aiReviewStatus = "ready",
+  publicDemo = false,
 }: {
   sale: AuctionSale;
   aiReviewProjections?: readonly AiReviewProjectionReadModel[] | null;
   aiReviewStatus?: AiReviewRequestStatus;
+  /** Page d'exemple : la vue aérienne reste une image fixe, la carte animée n'est jamais chargée. */
+  publicDemo?: boolean;
 }) {
   const images = propertyImages(sale.media);
   // La source d'une photo est l'hôte de son URL d'ORIGINE (jamais celui de notre copie).
   const creditOf = (index: number) => photoCredit(images[index]?.url, sale);
   const [galleryIndex, setGalleryIndex] = useState<number | null>(null);
+  // Vignettes dont la photo ne s'est pas chargée : sans aucune vignette valide, le bloc disparaît.
+  const [failedThumbnails, setFailedThumbnails] = useState<ReadonlySet<number>>(() => new Set());
+  const markThumbnailFailed = (index: number) =>
+    setFailedThumbnails((current) => (current.has(index) ? current : new Set(current).add(index)));
+  const thumbnailIndexes = images.slice(0, 4).map((_, index) => index);
+  const allThumbnailsFailed =
+    thumbnailIndexes.length > 0 && thumbnailIndexes.every((index) => failedThumbnails.has(index));
   const [mobilePhotoIndex, setMobilePhotoIndex] = useState(0);
   const mobileCarouselRef = useRef<HTMLDivElement>(null);
   const propertyTypeReview = getAiReviewFieldResult(
@@ -110,6 +120,7 @@ export function PropertyIdentity({
             <AerialOrbitHero
               target={orbitTarget}
               title={title}
+              publicDemo={publicDemo}
               className={listingStyles.orbitMain}
             />
             {/* Au-dessus du logo Mapbox, que les conditions d'utilisation imposent visible. */}
@@ -221,7 +232,7 @@ export function PropertyIdentity({
         )}
       </div>
 
-      {orbitTarget && images[0] ? (
+      {orbitTarget && images[0] && !allThumbnailsFailed ? (
         <div className="mt-2">
           <div className="flex items-baseline justify-between gap-3">
             <p className="text-xs font-semibold text-brand-navy">Photos de l’annonce</p>
@@ -231,7 +242,7 @@ export function PropertyIdentity({
               className="inline-flex min-h-10 items-center gap-1.5 rounded-md text-xs font-semibold text-brand-navy underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
             >
               <Camera className="h-4 w-4" aria-hidden />
-              Voir les {images.length} photo{images.length > 1 ? "s" : ""}
+              {images.length > 1 ? `Voir les ${images.length} photos` : "Voir la photo"}
             </button>
           </div>
           <div className="mt-1 grid grid-cols-4 gap-2">
@@ -258,6 +269,7 @@ export function PropertyIdentity({
                     className="h-full w-full object-cover transition-transform duration-300 hover:scale-[1.03]"
                     loading="lazy"
                     referrerPolicy="strict-origin-when-cross-origin"
+                    onOriginalError={() => markThumbnailFailed(index)}
                   />
                   {last ? (
                     <span
@@ -271,13 +283,16 @@ export function PropertyIdentity({
               );
             })}
           </div>
-          <PhotoCredit
-            credit={creditOf(0)}
+          {/* Une entrée par source des vignettes encore affichées : la photo 1 ne crédite pas les autres. */}
+          <PhotoCredits
+            credits={thumbnailIndexes
+              .filter((index) => !failedThumbnails.has(index))
+              .map((index) => creditOf(index))}
             className="mt-1.5 block text-xs text-muted-foreground"
             linkClassName="hover:text-foreground"
           />
         </div>
-      ) : images[0] ? (
+      ) : images[0] && !orbitTarget ? (
         // Sur grand écran la photo affichée est la principale ; sur mobile, celle du carrousel.
         <PhotoCredit
           credit={creditOf(mobilePhotoIndex)}

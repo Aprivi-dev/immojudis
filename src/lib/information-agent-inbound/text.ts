@@ -33,11 +33,31 @@ export function boundedInboundError(error: unknown): string {
   return value.replace(/[\r\n]+/g, " ").slice(0, 500);
 }
 
+/**
+ * Début de l'historique cité : séparateurs des clients de messagerie, « Le … a écrit : » (sur une
+ * ou deux lignes), « On … wrote: », et l'en-tête d'un message transféré ou cité, avec ou sans
+ * adresse (« De : Jean Dupont », « From: Jean Dupont », suivi de « Envoyé / Sent / Date / Objet /
+ * Subject / À / To »). Le texte qui suit n'est pas du professionnel : il porte nos propres valeurs.
+ */
+const QUOTED_HISTORY_START_PATTERNS: RegExp[] = [
+  /^(?:-{2,}\s*(?:message d.origine|original message|forwarded message|message transféré)\s*-{2,}|le .+ a écrit\s*:|on .+ wrote\s*:|de\s*:\s*.+@.+)$/imu,
+  // « Le jeu. 15 oct. 2026 à 10:32, Jean <\nj@x.fr> a écrit : » : la ligne est coupée.
+  /^le [^\n]{3,200}\n[^\n]{0,120}a écrit\s*:\s*$/imu,
+  // En-tête Outlook ou Gmail sur plusieurs lignes, sans adresse sur la ligne « De : ».
+  /^[ \t]*(?:de|from)\s*:[ \t]*\S[^\n]*\n(?:[^\n]*\n){0,4}?[ \t]*(?:envoy[ée]|sent|date|objet|subject|à|to)\s*:/imu,
+  // En-tête aplati sur une seule ligne par la conversion du HTML.
+  /^[ \t]*(?:de|from)\s*:[^\n]{0,200}?\b(?:envoy[ée]|sent)\s*:/imu,
+  // Ligne « Envoyé : … » ou « Sent: … » qui ouvre l'en-tête d'un message cité.
+  /^[ \t]*(?:envoy[ée]|sent)\s*:[^\n]{0,160}\n(?:[^\n]*\n){0,3}?[ \t]*(?:à|to|objet|subject|cc)\s*:/imu,
+];
+
 export function replyTextForExtraction(bodyText: string): string {
-  const quotedStart =
-    /^(?:-{2,}\s*(?:message d.origine|original message|forwarded message|message transféré)\s*-{2,}|le .+ a écrit\s*:|on .+ wrote\s*:|de\s*:\s*.+@.+)$/imu;
-  const quotedMatch = quotedStart.exec(bodyText);
-  const withoutQuotedHistory = quotedMatch ? bodyText.slice(0, quotedMatch.index) : bodyText;
+  let quotedIndex = -1;
+  for (const pattern of QUOTED_HISTORY_START_PATTERNS) {
+    const match = pattern.exec(bodyText);
+    if (match && (quotedIndex < 0 || match.index < quotedIndex)) quotedIndex = match.index;
+  }
+  const withoutQuotedHistory = quotedIndex >= 0 ? bodyText.slice(0, quotedIndex) : bodyText;
   const mobileSignatureMatch = MOBILE_SIGNATURE_LINE_PATTERN.exec(withoutQuotedHistory);
   const withoutMobileSignature = mobileSignatureMatch
     ? withoutQuotedHistory.slice(0, mobileSignatureMatch.index)
@@ -53,9 +73,39 @@ export function replyTextForExtraction(bodyText: string): string {
     .trim();
 }
 
+/** Style qui masque un élément à l'écran : texte caché pour le lecteur, lu par un outil automatique. */
+const HIDDEN_STYLE_PATTERN =
+  /(?:^|;)\s*(?:display\s*:\s*none|visibility\s*:\s*(?:hidden|collapse)|opacity\s*:\s*0(?:\.0+)?\s*(?:;|$)|font-size\s*:\s*0(?:px|pt|em|rem|%)?\s*(?:;|$)|mso-hide\s*:\s*all|(?:max-)?height\s*:\s*0(?:px|pt|em|rem|%)?\s*(?:;|$)[^]*overflow\s*:\s*hidden|(?:max-)?width\s*:\s*0(?:px|pt|em|rem|%)?\s*(?:;|$)[^]*overflow\s*:\s*hidden|text-indent\s*:\s*-\d{3,})/i;
+
+function isHiddenHtmlElement(tag: string, attributes: Record<string, string>): boolean {
+  if (tag === "script" || tag === "style" || tag === "template" || tag === "noscript") return true;
+  if (tag === "head" || tag === "title") return true;
+  if ("hidden" in attributes) return true;
+  return HIDDEN_STYLE_PATTERN.test(attributes.style ?? "");
+}
+
+/** Éléments sans contenu : ils ne gardent pas d'état « caché » ouvert. */
+const VOID_HTML_TAGS = new Set([
+  "area",
+  "base",
+  "br",
+  "col",
+  "embed",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "source",
+  "track",
+  "wbr",
+]);
+
 export function htmlToPlainText(value: string) {
   let output = "";
   let suppressedDepth = 0;
+  // Pour chaque élément ouvert : a-t-il été masqué (script, style, display:none, hidden…) ?
+  const hiddenStack: boolean[] = [];
   let quotedDepth = 0;
   const outlookDivStack: boolean[] = [];
   const append = (text: string) => {
@@ -66,8 +116,13 @@ export function htmlToPlainText(value: string) {
     {
       onopentag(name, attributes) {
         const tag = name.toLowerCase();
-        if (tag === "script" || tag === "style") {
-          suppressedDepth += 1;
+        if (!VOID_HTML_TAGS.has(tag)) {
+          const hidden = isHiddenHtmlElement(tag, attributes);
+          hiddenStack.push(hidden);
+          if (hidden) suppressedDepth += 1;
+        }
+        if (suppressedDepth > 0 && tag !== "div" && tag !== "blockquote") {
+          // Contenu masqué : rien à écrire, mais les piles de citations restent équilibrées.
         } else if (tag === "div") {
           const isOutlookQuote = isQuotedHtmlContainer(attributes);
           outlookDivStack.push(isOutlookQuote);
@@ -87,8 +142,11 @@ export function htmlToPlainText(value: string) {
       },
       onclosetag(name) {
         const tag = name.toLowerCase();
-        if (tag === "script" || tag === "style") {
-          suppressedDepth = Math.max(0, suppressedDepth - 1);
+        if (!VOID_HTML_TAGS.has(tag) && hiddenStack.length) {
+          if (hiddenStack.pop()) suppressedDepth = Math.max(0, suppressedDepth - 1);
+        }
+        if (suppressedDepth > 0 && tag !== "div" && tag !== "blockquote") {
+          // Fin d'un élément dans une zone masquée : rien à écrire.
         } else if (tag === "div") {
           const wasOutlookQuote = outlookDivStack.pop() ?? false;
           if (wasOutlookQuote) {
@@ -145,9 +203,22 @@ export function normalizeComparableText(value: string): string {
     .trim();
 }
 
+/**
+ * Caractères sans rendu : espaces de largeur nulle, marques de direction, trait d'union conditionnel,
+ * BOM et « caractères de balise » (U+E0000 à U+E007F). Ils servent à couper un mot (« ne\u200b plus »)
+ * pour échapper à une détection, ou à cacher des consignes à un modèle. Retirés dès l'entrée.
+ */
+const INVISIBLE_CHARACTERS =
+  // eslint-disable-next-line no-misleading-character-class -- chaque caractère est retiré isolément
+  /[\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u202a-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0\u{e0000}-\u{e007f}]/gu;
+
+export function stripInvisibleCharacters(value: string): string {
+  return value.replace(INVISIBLE_CHARACTERS, "");
+}
+
 export function cleanInboundBody(text: string | null, html: string | null) {
-  const plainText = text?.replace(/\r\n?/g, "\n").trim() ?? "";
-  const htmlText = htmlToPlainText(html || "");
+  const plainText = stripInvisibleCharacters(text?.replace(/\r\n?/g, "\n") ?? "").trim();
+  const htmlText = stripInvisibleCharacters(htmlToPlainText(html || ""));
   const source =
     (plainText && replyTextForExtraction(plainText) ? plainText : htmlText || plainText) ||
     "Réponse reçue sans corps de texte.";

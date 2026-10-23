@@ -4,7 +4,12 @@ import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
-import { evaluateUserAlertMatches, listUserAlertMatches } from "@/lib/alert-matches";
+import { PublicApiError } from "@/lib/api-errors";
+import {
+  evaluateUserAlertMatches,
+  listUserAlertMatches,
+  type PublicAlertEvaluationResponse,
+} from "@/lib/alert-matches";
 
 export async function GET(request: Request) {
   try {
@@ -37,7 +42,24 @@ export async function POST(request: Request) {
       persist: body.persist ?? true,
     });
 
-    return NextResponse.json(response, {
+    // Every alert failed: not « 0 correspondance ». The reasons are already in the server logs.
+    if (response.alertCount > 0 && response.failedAlertCount >= response.alertCount) {
+      throw new PublicApiError(
+        "L’évaluation de vos alertes est momentanément indisponible. Réessayez dans quelques minutes.",
+        503,
+      );
+    }
+
+    // The raw error of a failed alert (database message, details, hint) never reaches the browser.
+    const publicResponse: PublicAlertEvaluationResponse = {
+      ...response,
+      alertFailures: response.alertFailures.map(({ alertId }) => ({
+        alertId,
+        code: "alert_evaluation_failed",
+      })),
+    };
+
+    return NextResponse.json(publicResponse, {
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {

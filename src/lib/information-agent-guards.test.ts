@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/integrations/supabase/client.server", () => {
   const query: Record<string, unknown> = {};
-  for (const method of ["select", "ilike", "in", "neq", "gte", "lte", "overlaps"]) {
+  for (const method of ["select", "eq", "ilike", "in", "neq", "gte", "lte", "overlaps"]) {
     query[method] = (...args: unknown[]) => {
       mocks.calls.push([method, ...args]);
       return query;
@@ -98,10 +98,13 @@ describe("one email per recipient per 30 days (P4-12)", () => {
   });
 
   it("also refuses the same professional under another address", async () => {
-    mocks.missions.mockResolvedValueOnce({ data: [], error: null }).mockResolvedValueOnce({
-      data: [{ id: "other", approved_at: "2026-10-05T10:00:00.000Z" }],
-      error: null,
-    });
+    mocks.missions
+      .mockResolvedValueOnce({ data: [], error: null })
+      .mockResolvedValueOnce({
+        data: [{ id: "other", approved_at: "2026-10-05T10:00:00.000Z" }],
+        error: null,
+      })
+      .mockResolvedValue({ data: [], error: null });
     await expect(
       assertInformationAgentRecipientCooldown({
         email: "jean.dupont@cabinet.test",
@@ -115,6 +118,28 @@ describe("one email per recipient per 30 days (P4-12)", () => {
       "recipient_identity_keys",
       ["lawyer|bordeaux|dupont jean"],
     ]);
+  });
+
+  it("also refuses a recipient whose last send needs checking (Resend timed out)", async () => {
+    // L'envoi de cette demande a dépassé le délai de Resend : l'email est peut-être parti, la demande
+    // est « failed » avec send_outcome = unverified. Une autre demande ne doit pas écrire une seconde fois.
+    mocks.missions
+      .mockResolvedValueOnce({ data: [], error: null })
+      .mockResolvedValueOnce({
+        data: [{ id: "unverified", approved_at: "2026-10-05T10:00:00.000Z" }],
+        error: null,
+      })
+      .mockResolvedValue({ data: [], error: null });
+
+    await expect(
+      assertInformationAgentRecipientCooldown({
+        email: "cabinet@example.test",
+        missionId: "other-mission",
+        now: new Date("2026-10-10T10:00:00.000Z"),
+      }),
+    ).rejects.toThrow("déjà été sollicité le 05/10/2026");
+    expect(mocks.calls).toContainEqual(["eq", "status", "failed"]);
+    expect(mocks.calls).toContainEqual(["eq", "metadata->>send_outcome", "unverified"]);
   });
 
   it("allows a recipient with no recent solicitation", async () => {

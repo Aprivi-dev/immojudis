@@ -246,6 +246,119 @@ describe("property report sharing", () => {
     expect(record(analysis.activeComparablesAnalysis).items).toEqual(["bien concurrent"]);
   });
 
+  it("ne renvoie au lien public que la liste blanche du plafond, sans les entrées privées", () => {
+    const report = buildPublicSharedPropertyReport({
+      id: "report-private",
+      title: "Rapport locatif",
+      report_kind: "opportunity",
+      report_snapshot: {
+        plan: "analyse",
+        sale: {},
+        analysis: {},
+        sourceTraceability: { entries: [], limitations: [], complianceNotice: "Notice." },
+      } as Json,
+      market_snapshot: { sampleSize: 8, secretMarketField: "marche-prive" } as Json,
+      environmental_snapshot: { secretEnvironmentField: "env-prive" } as Json,
+      ceiling_snapshot: {
+        available: true,
+        maxBid: 98000,
+        safetyDiscountPct: 8,
+        basisLabel: "Médiane locale",
+        targetTotalCost: 123456,
+        steps: [{ key: "x", label: "étape interne", amount: 1, kind: "cost" }],
+        personalRentalScenario: {
+          inputs: { monthlyRent: 1234, monthlyDebtService: 987, annualPropertyTax: 777 },
+          result: { monthlyCashFlow: 55 },
+        },
+        personalSimulation: {
+          version: 2,
+          expectedMaxBid: 98000,
+          choices: {
+            project: "louer",
+            profile: "prudent",
+            works: { key: "devis", amount: 31000, months: 4 },
+            fpt: 5000,
+            monthlyRent: 1234,
+            monthlyCharges: 321,
+            annualPropertyTax: 777,
+            financingRatePct: 3.4,
+          },
+          rentalScenario: {
+            acquisitionCost: 143000,
+            monthlyRent: 1234,
+            vacancyRatePct: 5,
+            annualNonRecoverableCharges: 0,
+            annualPropertyTax: 777,
+            annualLandlordInsurance: 0,
+            monthlyDebtService: 987,
+            missingExpenseFields: [],
+          },
+        },
+      } as Json,
+      shared_at: null,
+      share_expires_at: null,
+      share_view_count: 0,
+      updated_at: "2026-07-06T10:00:00.000Z",
+    });
+
+    expect(report).not.toHaveProperty("market");
+    expect(report).not.toHaveProperty("environmental");
+    expect(report.ceiling).toEqual({
+      available: true,
+      maxBid: 98000,
+      safetyDiscountPct: 8,
+      basisLabel: "Médiane locale",
+      personalSimulation: {
+        version: 2,
+        expectedMaxBid: 98000,
+        choices: expect.objectContaining({
+          project: "louer",
+          profile: "prudent",
+          works: { key: "devis", amount: 31000 },
+          fpt: 5000,
+        }),
+      },
+    });
+    const serialized = JSON.stringify(report);
+    for (const secret of [
+      "1234",
+      "987",
+      "777",
+      "321",
+      "financingRatePct",
+      "rentalScenario",
+      "personalRentalScenario",
+      "marche-prive",
+      "env-prive",
+      "123456",
+      "étape interne",
+    ]) {
+      expect(serialized).not.toContain(secret);
+    }
+  });
+
+  it("garde un plafond public sûr quand le snapshot est vide ou illisible", () => {
+    const report = buildPublicSharedPropertyReport({
+      id: "report-empty",
+      title: "Rapport vide",
+      report_kind: "opportunity",
+      report_snapshot: {} as Json,
+      market_snapshot: {} as Json,
+      environmental_snapshot: null,
+      ceiling_snapshot: { personalSimulation: { monthlyRent: 1234 } } as Json,
+      shared_at: null,
+      share_expires_at: null,
+      share_view_count: 0,
+      updated_at: "2026-07-06T10:00:00.000Z",
+    });
+    expect(report.ceiling).toEqual({
+      available: false,
+      maxBid: null,
+      safetyDiscountPct: null,
+      basisLabel: null,
+    });
+  });
+
   it("creates a page URL only for active non-expired share links", () => {
     const active = buildPropertyReportShare(
       {

@@ -209,6 +209,17 @@ Contrôles juste après le déploiement :
 
 Puis configurer la sonde externe sur `/api/health` si ce n'est pas fait : `docs/operations/supervision-externe.md`.
 
+### Lot du 23/10/2026 (migrations `20261101*`) : migrations Supabase avant déploiement Vercel
+
+Pour ce lot, l'ordre n'est plus facultatif : **appliquer les migrations Supabase, puis déployer sur Vercel.**
+Le code déployé avant la migration `20261101120100` (scénarios d'enchères) envoie `p_property_group` à
+`get_court_auction_scenarios`, un paramètre que la base ne connaît pas encore : PostgREST répond `PGRST202`.
+La route `/api/sales/[id]/auction-scenarios` se replie alors sur « données insuffisantes » (jamais de chiffres
+de toutes natures de biens, jamais de réessai sans le groupe), mais les scénarios restent vides tant que la
+migration manque. Si le déploiement automatique de Vercel part avant les migrations (fusion dans `main`),
+vérifier les scénarios d'une vente après l'application de la migration ; ils reviennent sans nouveau
+déploiement (le repli n'est pas mis en cache).
+
 ### Étape 4 : ce qui reste `off`, et ce qui n'est pas lancé
 
 - `SALE_REMINDERS_MODE`, `WEEKLY_DIGEST_MODE`, `SALE_RESULTS_MODE` : **restent `off`** tant que la politique de
@@ -225,8 +236,10 @@ Puis configurer la sonde externe sur `/api/health` si ce n'est pas fait : `docs/
 
 1. **`/api/health` devient plus sévère.** Il compare désormais chaque source **activée** à 36 h (et non plus
    la plus récente à 18 h). Une source activée figée (Enchères Immobilières, dont la cause du blocage de
-   publication n'est pas trouvée) ou jamais collectée en entier rend le site `degraded` (503) : la sonde
-   externe alerte, le test de fumée GitHub (toutes les 30 min) échoue. **Avant le déploiement**, lire :
+   publication n'est pas trouvée) ou jamais collectée en entier rend le site `degraded` : le test de fumée GitHub
+   (toutes les 30 min) échoue et la sonde externe de type « mot-clé » alerte. _Mise à jour du 23/10/2026 : la route
+   répond désormais 200 tant que la base répond, la fraîcheur se lit dans `status` (`docs/operations/supervision-externe.md`) ;
+   elle ne répond 503 que base injoignable._ **Avant le déploiement**, lire :
 
    ```sql
    select source_name, last_publication_complete_at
@@ -249,6 +262,31 @@ Puis configurer la sonde externe sur `/api/health` si ce n'est pas fait : `docs/
 4. **Consentements** : le navigateur n'écrit plus ces colonnes ; seule la route serveur le fait (rôle de
    service). Une opération de maintenance en SQL qui doit poser une version du texte passe par
    `set role service_role`.
+
+5. **Écart connu : `precompute-valuations` désactivé dans le dépôt, actif en production.** Le dépôt
+   désactive la tâche `pg_cron` `immojudis-market-valuations` (migration `20260910160206`, « collecte et
+   enrichissement sur action explicite » : `cron.alter_job(jobid, active := false)`), alors que
+   `docs/operations/planification.md` la décrit « toutes les 5 min » et qu'elle a été constatée active en production lors du
+   diagnostic de session du 23/10/2026 (lecture seule, à revérifier par les requêtes ci-dessous). Aucune migration du
+   dépôt ne la réactive : l'état réel vient donc d'une action manuelle sur la base (ou d'un état antérieur
+   jamais reproduit dans le dépôt). Conséquences : une base reconstruite depuis les migrations n'aurait pas ce
+   pré-calcul, et la tâche n'est pas supervisée par `cron.stale` (`docs/runbooks/valuation-queue-degraded.md`).
+   Vérifier l'état réel avant de décider (lecture seule) :
+
+   ```sql
+   select jobname, schedule, active from cron.job where jobname = 'immojudis-market-valuations';
+
+   select status, started_at, finished_at, error_message
+   from public.operational_job_runs
+   where job_name = 'precompute-valuations'
+   order by started_at desc
+   limit 5;
+   ```
+
+   Décision du propriétaire : soit consigner l'état voulu par une migration (activer ou désactiver
+   explicitement, avec son test pgTAP), soit couper la tâche en production. Tant que ce n'est pas fait, le
+   dépôt et la production divergent : ne pas s'appuyer sur la migration `20260910160206` pour dire que la
+   tâche est arrêtée.
 
 ## 4. Retour arrière
 

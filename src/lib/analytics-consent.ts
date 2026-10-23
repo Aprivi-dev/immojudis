@@ -5,17 +5,25 @@
  * Contrairement à Vercel Analytics (sans cookie, opposition possible : `audience-opt-out.ts`),
  * Google Analytics dépose des cookies : il n'est chargé qu'après un accord explicite. Le choix,
  * accord comme refus, est mémorisé dans `localStorage` avec sa date et redemandé après
- * `ANALYTICS_CONSENT_MAX_AGE_MS` (6 mois, durée recommandée par la CNIL). Si le stockage est
+ * `ANALYTICS_CONSENT_MAX_AGE_MS` (6 mois, durée recommandée par la CNIL) ou quand le texte
+ * sur lequel il a été donné change (`ANALYTICS_CONSENT_TEXT_VERSION`). Si le stockage est
  * inaccessible, le choix vaut jusqu'à la fermeture de l'onglet.
  */
 
 export const ANALYTICS_CONSENT_STORAGE_KEY = "immojudis:analytics-consent";
 const ANALYTICS_CONSENT_EVENT = "immojudis:analytics-consent-change";
 export const ANALYTICS_CONSENT_MAX_AGE_MS = 182 * 24 * 60 * 60 * 1000;
+/**
+ * Version du texte sur lequel le choix est donné (bandeau et section « Cookies » de la politique
+ * de confidentialité). À incrémenter quand ce texte change sur le fond (finalité, destinataires,
+ * durées) : les choix enregistrés avec une autre version ne comptent plus et le bandeau redemande.
+ * Un choix enregistré avant l'introduction de la version vaut pour la version 1.
+ */
+export const ANALYTICS_CONSENT_TEXT_VERSION = 1;
 
 export type AnalyticsConsentChoice = "granted" | "denied";
 
-type StoredChoice = { choice: AnalyticsConsentChoice; at: string };
+type StoredChoice = { choice: AnalyticsConsentChoice; at: string; version?: number };
 
 /** Valeur retenue quand le stockage est inaccessible : le choix vaut pour l'onglet en cours. */
 let memoryChoice: AnalyticsConsentChoice | null = null;
@@ -25,6 +33,7 @@ function parseStoredChoice(raw: string | null, now: number): AnalyticsConsentCho
   try {
     const stored = JSON.parse(raw) as Partial<StoredChoice>;
     if (stored.choice !== "granted" && stored.choice !== "denied") return null;
+    if ((stored.version ?? 1) !== ANALYTICS_CONSENT_TEXT_VERSION) return null;
     const at = Date.parse(stored.at ?? "");
     if (!Number.isFinite(at) || at > now || now - at > ANALYTICS_CONSENT_MAX_AGE_MS) return null;
     return stored.choice;
@@ -48,12 +57,31 @@ export function setAnalyticsConsent(choice: AnalyticsConsentChoice, now = new Da
   if (typeof window === "undefined") return;
   memoryChoice = choice;
   try {
-    const stored: StoredChoice = { choice, at: now.toISOString() };
+    const stored: StoredChoice = {
+      choice,
+      at: now.toISOString(),
+      version: ANALYTICS_CONSENT_TEXT_VERSION,
+    };
     window.localStorage.setItem(ANALYTICS_CONSENT_STORAGE_KEY, JSON.stringify(stored));
     // Le stockage a pris le choix : la mémoire n'a plus à le doubler.
     memoryChoice = null;
   } catch {
     // Stockage inaccessible : `memoryChoice` garde le choix pour cet onglet.
+  }
+  window.dispatchEvent(new Event(ANALYTICS_CONSENT_EVENT));
+}
+
+/**
+ * Efface le choix (accord ou refus) : le bandeau redemandera. Appelé quand la personne s'oppose à
+ * la mesure d'audience, pour que le retrait de l'opposition ne rétablisse pas un ancien accord.
+ */
+export function clearAnalyticsConsent(): void {
+  if (typeof window === "undefined") return;
+  memoryChoice = null;
+  try {
+    window.localStorage.removeItem(ANALYTICS_CONSENT_STORAGE_KEY);
+  } catch {
+    // Stockage inaccessible : il n'y a rien d'autre à effacer que la mémoire de l'onglet.
   }
   window.dispatchEvent(new Event(ANALYTICS_CONSENT_EVENT));
 }

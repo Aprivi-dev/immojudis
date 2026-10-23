@@ -237,6 +237,8 @@ export const EXAMPLE_SALE = {
   adjudication_price_eur: null,
   latitude: 44.8378,
   longitude: -0.5792,
+  // Exemple fictif : la position est celle de l'adresse, la vue aérienne s'affiche.
+  location_precision: "address",
   occupancy_status: "unknown",
   habitable_surface_m2: 68,
   carrez_surface_m2: 68,

@@ -58,6 +58,7 @@ export async function runMonitoredCron(
     );
   }
 
+  await closeOrphanedRuns(jobName);
   let runId = await beginRun(jobName, retryDelaysMs);
 
   try {
@@ -162,6 +163,47 @@ async function succeededRecently(jobName: string, windowHours: number): Promise<
   }
 }
 
+/**
+ * Une fonction planifiée dure au plus 300 s : au-delà, une exécution « running » est orpheline.
+ * Les alertes SQL « exécution bloquée » (`evaluate_information_agent_health`, 20 minutes) restent
+ * sous ce seuil : sinon la clôture passerait avant elles et l'alerte ne s'ouvrirait jamais.
+ */
+export const ORPHANED_RUN_AFTER_MS = 30 * 60 * 1000;
+
+/**
+ * Clôt en échec les exécutions de ce job restées « running » (fonction interrompue avant
+ * `finish_operational_job_run`). Elles faussent sinon l'historique et les contrôles qui lisent la
+ * dernière exécution. Sans effet sur une exécution récente, donc sur un passage encore en cours.
+ * Best-effort : une erreur ici ne doit jamais empêcher le passage.
+ */
+export async function closeOrphanedRuns(jobName: string, now = Date.now()): Promise<number> {
+  try {
+    const cutoff = new Date(now - ORPHANED_RUN_AFTER_MS).toISOString();
+    const { data, error } = await supabaseAdmin
+      .from("operational_job_runs")
+      .update({
+        status: "failed",
+        error_message: "Exécution interrompue : jamais terminée, clôturée au passage suivant.",
+        finished_at: new Date(now).toISOString(),
+      })
+      .eq("job_name", jobName)
+      .eq("status", "running")
+      .lt("started_at", cutoff)
+      .select("id");
+    if (error) throw error;
+    const closed = data?.length ?? 0;
+    if (closed > 0) logCron("warn", { jobName, status: "orphaned_runs_closed", closed });
+    return closed;
+  } catch (error) {
+    logCron("warn", {
+      jobName,
+      status: "orphan_cleanup_failed",
+      message: operationalErrorMessage(error),
+    });
+    return 0;
+  }
+}
+
 const MAX_ERROR_MESSAGE_LENGTH = 500;
 
 /** Turn an HTML error page (a gateway answer) into a one-line summary. */
@@ -211,6 +253,14 @@ export async function runDataRetention(now = new Date()): Promise<Record<string,
   return { deleted: data ?? {} };
 }
 
+/** Position de `evaluate_information_agent_health` dans la liste des évaluations ci-dessous. */
+const INFORMATION_AGENT_HEALTH_INDEX = 3;
+
+/** « La fonction n'existe pas » : `PGRST202` (cache du schéma de PostgREST) ou `42883` (PostgreSQL). */
+function isMissingFunctionError(error: { code?: string }): boolean {
+  return error.code === "PGRST202" || error.code === "42883";
+}
+
 export async function evaluateOperationalHealth(
   now = new Date(),
 ): Promise<Record<string, unknown>> {
@@ -219,14 +269,21 @@ export async function evaluateOperationalHealth(
     supabaseAdmin.rpc("evaluate_operational_health", args),
     supabaseAdmin.rpc("evaluate_market_valuation_health", args),
     supabaseAdmin.rpc("observe_autonomous_pipeline", args),
+    // Progression de l'agent d'information (mission en envoi, réponse en file, exécution bloquée),
+    // évaluation séparée de evaluate_operational_health.
+    supabaseAdmin.rpc("evaluate_information_agent_health", args),
   ]);
   // Deliver incidents even when an independent evaluator fails.
   const delivery = await deliverOperationalAlertNotifications();
-  const failures = results.flatMap((result) =>
+  const failures = results.flatMap((result, index) =>
     result.status === "rejected"
       ? [operationalErrorMessage(result.reason)]
       : result.value.error
-        ? [result.value.error.message ?? "Health evaluation failed"]
+        ? // Évaluation de l'agent d'information pas encore migrée (code déployé avant la migration) :
+          // elle est absente, pas en échec, et ne doit pas faire échouer la supervision du reste.
+          index === INFORMATION_AGENT_HEALTH_INDEX && isMissingFunctionError(result.value.error)
+          ? []
+          : [result.value.error.message ?? "Health evaluation failed"]
         : [],
   );
   if (!delivery.configured) {
@@ -239,7 +296,13 @@ export async function evaluateOperationalHealth(
   const data = results.map((result) =>
     result.status === "fulfilled" ? (result.value.data ?? {}) : {},
   );
-  return { health: data[0], valuation: data[1], pipeline: data[2], externalAlerts: delivery };
+  return {
+    health: data[0],
+    valuation: data[1],
+    pipeline: data[2],
+    informationAgent: data[3],
+    externalAlerts: delivery,
+  };
 }
 
 export function positiveNumberFromEnv(name: string): number | undefined {

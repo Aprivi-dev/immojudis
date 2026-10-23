@@ -384,6 +384,12 @@ export function AdminInformationAgentReviewPanel() {
                       </p>
                     ) : null}
                     <FactProvenance source={factSourcesByMessageId.get(fact.message_id)} />
+                    {isLotUnidentified(fact.metadata) ? (
+                      <p className="mt-2 text-xs font-medium text-amber-900">
+                        Vente à plusieurs lots : la réponse ne cite aucun lot. Rattachez cette
+                        information au bon lot avant de l’accepter.
+                      </p>
+                    ) : null}
                     {fact.evidence_excerpt ? (
                       <p className="mt-2 text-sm italic text-brand-navy/60">
                         « {fact.evidence_excerpt} »
@@ -742,9 +748,23 @@ const PROCESSING_REASON_LABELS: Record<string, string> = {
   sender_mismatch: "expéditeur différent du contact sollicité",
   sender_authentication_failed: "authentification de l’expéditeur échouée",
   sender_authentication_unverified: "authentification de l’expéditeur non vérifiée",
+  auto_reply: "réponse automatique (absence ou accusé de réception) : ignorée",
+  possible_opposition:
+    "possible demande de ne plus être contacté : à lire avant toute relance, aucune opposition enregistrée",
+  unidentified_lot_review: "vente à plusieurs lots : lot non identifié dans la réponse",
+  ambiguous_reply_review: "réponse ambiguë à relire",
   case_closed: "dossier clos",
   case_closed_during_processing: "dossier clos pendant le traitement",
 };
+
+function isLotUnidentified(metadata: unknown): boolean {
+  return (
+    Boolean(metadata) &&
+    typeof metadata === "object" &&
+    !Array.isArray(metadata) &&
+    (metadata as Record<string, unknown>).lot_unidentified === true
+  );
+}
 
 /** État du traitement automatique d'une réponse : rien n'est montré quand il s'est terminé normalement. */
 function ProcessingStatus({ processing }: { processing: Record<string, unknown> | null }) {

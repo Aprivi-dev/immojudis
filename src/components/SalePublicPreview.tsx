@@ -10,6 +10,8 @@ import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { Terme } from "@/components/ceiling/Terme";
 import { ListingPhoto } from "@/components/ListingPhoto";
 import { PhotoCredit } from "@/components/PhotoCredit";
+import { SectorAlertCta } from "@/components/SectorAlertCta";
+import { contactReportPath } from "@/lib/contact-message";
 import { photoCredit } from "@/lib/photo-credit";
 import { photoMirrorForDetail } from "@/lib/photo-mirror";
 import { SaleCalendarButton } from "@/components/SaleCalendarButton";
@@ -113,6 +115,14 @@ const VENUE_COPY: Record<SaleVenueType, { title: string; explanation: string }> 
   },
 };
 
+type TeaserItem = {
+  label: string;
+  width: "short" | "medium" | "wide";
+  tier: string;
+  visibleWith: string;
+  offerAware?: boolean;
+};
+
 /** Rien à écouter : la valeur n'est lue qu'une fois le navigateur monté (voir `pastDate`). */
 const subscribeNever = () => () => undefined;
 
@@ -164,6 +174,15 @@ function MarketGapBandNote({ band, saleId }: { band: PublicMarketGapBand; saleId
 }
 
 /**
+ * Offre de lancement active : la ligne courte sous le bouton d'inscription de la fiche. Le texte de
+ * l'offre en entier (durée, fin, retrait) est celui de `launchOfferText("visitor")`, lisible sur
+ * /offres, à la connexion et à l'inscription : la fiche en donne l'essentiel et y renvoie, au lieu de
+ * le répéter sur sept lignes sous le prix. Aucun texte juridique nouveau.
+ */
+const LAUNCH_OFFER_SIGNUP_LINE =
+  "Gratuit, sans carte bancaire. Offre de lancement : les avantages de l’offre Analyse, une fois votre adresse email confirmée.";
+
+/**
  * Ligne d'accès sous le bouton d'inscription. Offre de lancement active : la mention du visiteur
  * (`launchOfferText("visitor")`) ; sinon la ligne habituelle. Tant que l'état n'est pas lu (rendu
  * serveur compris), une ligne neutre qui ne promet aucun quota, avec une hauteur réservée pour que
@@ -177,7 +196,18 @@ function SignupAccessLine() {
       className={`${styles.signupLine} ${pending ? styles.signupLinePending : ""}`}
       data-testid="public-signup-line"
     >
-      {pending ? "Gratuit, sans carte bancaire" : freeAccessLine({ launchOffer: active })}
+      {pending ? (
+        "Gratuit, sans carte bancaire"
+      ) : active ? (
+        <>
+          {LAUNCH_OFFER_SIGNUP_LINE}{" "}
+          <Link href="/offres" className="underline">
+            Voir les conditions
+          </Link>
+        </>
+      ) : (
+        freeAccessLine({ launchOffer: false })
+      )}
     </p>
   );
 }
@@ -306,19 +336,20 @@ export function SalePublicPreview({
     </dl>
   );
   const description = publicSaleDescription(preview);
-  // Placeholders only: the real figures are never sent to a signed-out visitor.
+  // Skeletons only: the real figures are never sent to a signed-out visitor, and no made-up figure
+  // either (« 000 000 € » was read as a value by crawlers and assistants). `width` sizes the bar.
   // `offerAware` : l'étiquette change pendant l'offre de lancement (voir `TeaserTier`).
-  const analysisTeaser = [
+  const analysisTeaserRows: Array<TeaserItem | null> = [
     {
       label: "Valeur estimée",
-      placeholder: "000 000 € – 000 000 €",
+      width: "wide",
       tier: "Compte gratuit",
       visibleWith: "un compte gratuit",
     },
     price
       ? {
           label: "Écart chiffré avec la mise à prix",
-          placeholder: "00 %",
+          width: "short",
           tier: "Compte gratuit",
           visibleWith: "un compte gratuit",
         }
@@ -326,7 +357,7 @@ export function SalePublicPreview({
     procedure.venueType === "tribunal"
       ? {
           label: "Enchère plafond (simulation)",
-          placeholder: "000 000 €",
+          width: "medium",
           tier: `Offre Analyse, ou ${MONTHLY_SALE_UNLOCKS} déblocages par mois`,
           visibleWith: "l’offre Analyse, ou en débloquant la vente",
           offerAware: true,
@@ -334,22 +365,13 @@ export function SalePublicPreview({
       : null,
     {
       label: "Ventes comparables du secteur",
-      placeholder: "00 ventes",
+      width: "medium",
       tier: "Offre Analyse",
       visibleWith: "l’offre Analyse",
       offerAware: true,
     },
-  ].filter(
-    (
-      item,
-    ): item is {
-      label: string;
-      placeholder: string;
-      tier: string;
-      visibleWith: string;
-      offerAware?: boolean;
-    } => item !== null,
-  );
+  ];
+  const analysisTeaser = analysisTeaserRows.filter((item): item is TeaserItem => item !== null);
   const priceBlock =
     price || !state ? (
       <div className={styles.priceBlock}>
@@ -388,8 +410,10 @@ export function SalePublicPreview({
       ) : (
         <>
           <p className={styles.signupText}>
-            Créez votre compte gratuit pour voir l’adresse, les photos et la fourchette de valeur de
-            cette vente.
+            {/* Une photo est déjà visible : le compte ouvre « les autres », pas « les photos ». */}
+            Créez votre compte gratuit pour voir l’adresse,{" "}
+            {photo?.url ? "les autres photos" : "les photos"} et la fourchette de valeur de cette
+            vente.
           </p>
           <Link href={accountLink} className={styles.primary}>
             Créer mon compte gratuit
@@ -409,11 +433,23 @@ export function SalePublicPreview({
       <div className={styles.fact}>
         <dt>{state ? "Démarches" : notary ? "Participation" : "Pour enchérir"}</dt>
         <dd>
-          {state
-            ? "Conditions précisées par le service vendeur"
-            : notary
-              ? "Modalités à consulter dans le dossier"
-              : lawyerRequirementLabel(procedure)}
+          {state ? (
+            "Conditions précisées par le service vendeur"
+          ) : notary ? (
+            "Modalités à consulter dans le dossier"
+          ) : (
+            <>
+              {lawyerRequirementLabel(procedure)}
+              {procedure.lawyerRequired === true ? (
+                <span className={styles.factLinks} data-testid="public-lawyer-links">
+                  <Link href={`/avocats?saleId=${encodeURIComponent(saleId)}`}>
+                    Trouver un avocat
+                  </Link>
+                  <Link href="/simulateur-frais-encheres">Estimer les frais (avocat compris)</Link>
+                </span>
+              ) : null}
+            </>
+          )}
         </dd>
       </div>
     </dl>
@@ -472,6 +508,12 @@ export function SalePublicPreview({
               </>
             ) : null}
             {propertyFacts}
+            <p className={styles.sourceNote} data-testid="public-source-note">
+              {preview.source_label ? <>Source de l’annonce : {preview.source_label}. </> : null}
+              <Link href={contactReportPath(saleId)} className="underline">
+                Signaler une erreur sur cette fiche
+              </Link>
+            </p>
             <section className={styles.description} aria-labelledby="public-description-title">
               <h2 id="public-description-title" className={styles.addsTitle}>
                 Le bien en bref
@@ -500,14 +542,16 @@ export function SalePublicPreview({
                   <div key={item.label} className={styles.teaserRow}>
                     <dt>{item.label}</dt>
                     <dd>
-                      {/* Le chiffre flouté est un décor (aria-hidden) : un lecteur d'écran entend
-                          que la valeur est masquée et ce qui la débloque, pas « 000 000 € ». */}
+                      {/* La barre est un décor (aria-hidden) et ne porte aucun chiffre : un lecteur
+                          d'écran entend que la valeur est masquée et ce qui la débloque. */}
                       <span className="sr-only">
                         Valeur masquée, visible avec {item.visibleWith}
                       </span>
-                      <span className={styles.blurred} aria-hidden data-nosnippet>
-                        {item.placeholder}
-                      </span>
+                      <span
+                        className={`${styles.skeleton} ${styles[`skeleton_${item.width}`]}`}
+                        aria-hidden
+                        data-nosnippet
+                      />
                       <TeaserTier tier={item.tier} offerAware={item.offerAware} />
                     </dd>
                   </div>
@@ -623,6 +667,14 @@ export function SalePublicPreview({
             </div>
           </div>
         </section>
+        {preview.department && !verifyingAccount ? (
+          <div className="mt-8" data-testid="public-sector-alert">
+            <SectorAlertCta
+              criteria={{ department: preview.department }}
+              intro="Cette vente vous intéresse ? Recevez les nouvelles ventes du même département."
+            />
+          </div>
+        ) : null}
         <section className="mt-8" aria-labelledby="public-further-title">
           <h2 id="public-further-title" className={styles.sectionTitle}>
             Pour aller plus loin

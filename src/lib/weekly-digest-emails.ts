@@ -5,6 +5,7 @@ import { createUnsubscribeToken } from "@/lib/email-unsubscribe-token";
 import { escapeHtml } from "@/lib/guards";
 import { SALE_CALENDAR_DISCLAIMER } from "@/lib/sale-calendar";
 import { SALE_REMINDER_DISCLAIMER } from "@/lib/sale-reminder-emails";
+import { EMAIL_COLORS } from "@/lib/email-brand";
 
 /**
  * Email du récapitulatif hebdomadaire « Ma semaine » : un seul email par semaine, au jour choisi par
@@ -210,29 +211,27 @@ export function buildWeeklyDigestMessage({
 
 type LinkedItem = WeeklyDigestSaleItem & { url: string; calendarUrl: string | null };
 
-const BUTTON =
-  "display:inline-block;background:#182033;color:#fff;text-decoration:none;border-radius:8px;padding:10px 14px;font-weight:700;";
-const LINK =
-  "display:inline-block;color:#182033;text-decoration:underline;padding:10px 6px;font-weight:700;";
+const BUTTON = `display:inline-block;background:${EMAIL_COLORS.navy};color:${EMAIL_COLORS.white};text-decoration:none;border-radius:8px;padding:10px 14px;font-weight:700;`;
+const LINK = `display:inline-block;color:${EMAIL_COLORS.navy};text-decoration:underline;padding:10px 6px;font-weight:700;`;
 
 function itemHtml(item: LinkedItem): string {
-  return `<div style="margin:0 0 14px;padding:0 0 12px;border-bottom:1px solid #eee7d8;">
-          ${item.label ? `<p style="margin:0 0 4px;color:#7a5f1f;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;">${escapeHtml(item.label)}</p>` : ""}
-          <h3 style="margin:0 0 4px;font-size:16px;line-height:1.3;color:#182033;">${escapeHtml(item.title)}</h3>
-          ${item.location ? `<p style="margin:0 0 6px;color:#6c7280;">${escapeHtml(item.location)}</p>` : ""}
-          ${item.detail ? `<p style="margin:0 0 8px;font-weight:700;color:#182033;">${escapeHtml(item.detail)}</p>` : ""}
+  return `<div style="margin:0 0 14px;padding:0 0 12px;border-bottom:1px solid ${EMAIL_COLORS.lineWarm};">
+          ${item.label ? `<p style="margin:0 0 4px;color:${EMAIL_COLORS.goldText};font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;">${escapeHtml(item.label)}</p>` : ""}
+          <h3 style="margin:0 0 4px;font-size:16px;line-height:1.3;color:${EMAIL_COLORS.navy};">${escapeHtml(item.title)}</h3>
+          ${item.location ? `<p style="margin:0 0 6px;color:${EMAIL_COLORS.inkSoft};">${escapeHtml(item.location)}</p>` : ""}
+          ${item.detail ? `<p style="margin:0 0 8px;font-weight:700;color:${EMAIL_COLORS.navy};">${escapeHtml(item.detail)}</p>` : ""}
           <a href="${escapeAttribute(item.url)}" style="${BUTTON}">Voir l'annonce</a>
           ${item.calendarUrl ? ` <a href="${escapeAttribute(item.calendarUrl)}" style="${LINK}">Ajouter à mon agenda</a>` : ""}
         </div>`;
 }
 
 function sectionHtml(title: string, body: string): string {
-  return `<h2 style="margin:22px 0 10px;font-size:18px;line-height:1.3;color:#182033;">${escapeHtml(title)}</h2>${body}`;
+  return `<h2 style="margin:22px 0 10px;font-size:18px;line-height:1.3;color:${EMAIL_COLORS.navy};">${escapeHtml(title)}</h2>${body}`;
 }
 
 function moreHtml(count: number, href: string): string {
   return count > 0
-    ? `<p style="margin:0 0 12px;color:#4b5563;font-size:13px;">… et ${escapeHtml(plural(count, "autre", "autres"))} : <a href="${escapeAttribute(href)}" style="color:#182033;">Mes favoris</a></p>`
+    ? `<p style="margin:0 0 12px;color:${EMAIL_COLORS.inkStrong};font-size:13px;">… et ${escapeHtml(plural(count, "autre", "autres"))} : <a href="${escapeAttribute(href)}" style="color:${EMAIL_COLORS.navy};">Mes favoris</a></p>`
     : "";
 }
 
@@ -268,7 +267,7 @@ function buildWeeklyDigestHtml({
         "Vos audiences des 14 prochains jours",
         audiences.map(itemHtml).join("") +
           moreHtml(audiencesMore, favoritesUrl) +
-          `<p style="margin:0 0 12px;color:#4b5563;font-size:13px;">${escapeHtml(SALE_CALENDAR_DISCLAIMER)}</p>`,
+          `<p style="margin:0 0 12px;color:${EMAIL_COLORS.inkStrong};font-size:13px;">${escapeHtml(SALE_CALENDAR_DISCLAIMER)}</p>`,
       ),
     );
   }
@@ -285,10 +284,10 @@ function buildWeeklyDigestHtml({
     sections.push(
       sectionHtml(
         `Nouvelles ventes dans ${plural1 ? "vos départements" : "votre département"} (${newSalesMeta.departments.join(", ")})`,
-        `<p style="margin:0 0 12px;color:#4b5563;">${escapeHtml(plural(newSalesMeta.total, "vente", "ventes"))} en 7 jours.</p>` +
+        `<p style="margin:0 0 12px;color:${EMAIL_COLORS.inkStrong};">${escapeHtml(plural(newSalesMeta.total, "vente", "ventes"))} en 7 jours.</p>` +
           newSales.map(itemHtml).join("") +
           (newSalesMeta.total > newSales.length
-            ? `<p style="margin:0 0 12px;"><a href="${escapeAttribute(alertsUrl)}" style="color:#182033;">Gérer mes alertes</a></p>`
+            ? `<p style="margin:0 0 12px;"><a href="${escapeAttribute(alertsUrl)}" style="color:${EMAIL_COLORS.navy};">Gérer mes alertes</a></p>`
             : ""),
       ),
     );
@@ -297,25 +296,25 @@ function buildWeeklyDigestHtml({
     sections.push(
       sectionHtml(
         "Les nouvelles ventes de votre département",
-        `<p style="margin:0 0 12px;color:#4b5563;">Créez une alerte pour être prévenu des nouvelles ventes de votre département.</p><a href="${escapeAttribute(alertsUrl)}" style="${BUTTON}">Créer une alerte</a>`,
+        `<p style="margin:0 0 12px;color:${EMAIL_COLORS.inkStrong};">Créez une alerte pour être prévenu des nouvelles ventes de votre département.</p><a href="${escapeAttribute(alertsUrl)}" style="${BUTTON}">Créer une alerte</a>`,
       ),
     );
   }
 
   return `<!doctype html>
 <html lang="fr">
-  <body style="margin:0;background:#f6f4ef;color:#182033;font-family:Arial,sans-serif;">
+  <body style="margin:0;background:${EMAIL_COLORS.surface};color:${EMAIL_COLORS.navy};font-family:Arial,sans-serif;">
     <div style="max-width:620px;margin:0 auto;padding:28px 18px;">
-      <div style="background:#fff;border:1px solid #e8e1d4;border-radius:10px;padding:24px;">
+      <div style="background:#fff;border:1px solid ${EMAIL_COLORS.lineWarm};border-radius:10px;padding:24px;">
         <p style="margin:0 0 8px;font-size:16px;">Bonjour,</p>
-        <p style="margin:0;color:#4b5563;">Voici votre semaine sur Immojudis.</p>
+        <p style="margin:0;color:${EMAIL_COLORS.inkStrong};">Voici votre semaine sur Immojudis.</p>
         ${sections.join("\n        ")}
-        <p style="margin:18px 0 0;color:#6c7280;font-size:12px;line-height:1.5;">${escapeHtml(SALE_REMINDER_DISCLAIMER)}</p>
+        <p style="margin:18px 0 0;color:${EMAIL_COLORS.inkSoft};font-size:12px;line-height:1.5;">${escapeHtml(SALE_REMINDER_DISCLAIMER)}</p>
       </div>
-      <p style="margin:14px 0 0;text-align:center;color:#6c7280;font-size:12px;line-height:1.5;">
+      <p style="margin:14px 0 0;text-align:center;color:${EMAIL_COLORS.inkSoft};font-size:12px;line-height:1.5;">
         Vous recevez ce message parce que vous avez activé le récapitulatif hebdomadaire « Ma semaine ».<br />
-        <a href="${escapeAttribute(settingsUrl)}" style="color:#6c7280;">Gérer mes notifications</a> ·
-        <a href="${escapeAttribute(unsubscribeUrl)}" style="color:#6c7280;">Se désinscrire du récapitulatif</a>
+        <a href="${escapeAttribute(settingsUrl)}" style="color:${EMAIL_COLORS.inkSoft};">Gérer mes notifications</a> ·
+        <a href="${escapeAttribute(unsubscribeUrl)}" style="color:${EMAIL_COLORS.inkSoft};">Se désinscrire du récapitulatif</a>
       </p>
     </div>
   </body>

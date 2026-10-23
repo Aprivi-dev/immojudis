@@ -138,14 +138,14 @@ export const INFORMATION_AGENT_ACCOUNT_INVITATION_HEADING =
 export const INFORMATION_AGENT_ACCOUNT_INVITATION_CTA = "Créer un compte professionnel";
 export const INFORMATION_AGENT_ACCOUNT_INVITATION_LEGACY_TEXT = "Vous publiez d’autres ventes ?";
 
-export const INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION = 8;
+export const INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION = 9;
 
 /**
  * Révision minimale d'un modèle publié en base pour qu'il soit utilisé. Un modèle publié avant cette
  * révision (présentation commerciale d'Immojudis, invitation à créer un compte…) est ignoré au profit
  * du modèle du code, sans rien écrire en base ; un nouveau modèle publié depuis l'éditeur reprend la
- * numérotation après cette révision (migration `information_agent_legal_safeguards`). La révision 8
- * ne change que la rédaction : le seuil de conformité reste la révision 7.
+ * numérotation après cette révision (migration `information_agent_legal_safeguards`). Les révisions 8 et 9
+ * ne changent que la rédaction : le seuil de conformité reste la révision 7.
  */
 export const MIN_COMPLIANT_TEMPLATE_REVISION = 7;
 
@@ -263,7 +263,7 @@ export const informationAgentEmailTemplateContentSchema = z
   });
 
 export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemplateContent = {
-  name: "Demande de précisions sur une vente — version 8",
+  name: "Demande de précisions sur une vente — version 9",
   subjectTemplate: "{{sale_subject_title}}, {{subject_date}} : vérification de l’annonce",
   blocks: [
     {
@@ -277,13 +277,13 @@ export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemp
       kind: "fixed",
       label: "Objet du message",
       content:
-        "Immojudis est un site indépendant d’information sur les ventes immobilières aux enchères, destiné aux candidats acquéreurs. Il ne vend aucun bien et n’agit pas au nom d’un tribunal. Nous souhaitons vérifier avec vous quelques points de la fiche de cette vente :",
+        "Immojudis est un site indépendant d’information sur les ventes immobilières aux enchères, destiné aux candidats acquéreurs. Il ne vend aucun bien et n’agit pas au nom d’un tribunal. Nous souhaitons vérifier avec vous quelques points de la fiche que nous publions sur cette vente :",
     },
     {
       id: "sale_details",
       kind: "dynamic",
       label: "Informations de la vente",
-      content: "Référence de l’annonce : {{sale_reference}}\n{{hearing_line}}\n{{price_line}}",
+      content: "Vente concernée : {{sale_reference}}\n{{hearing_line}}\n{{price_line}}",
     },
     {
       id: "request_intro",

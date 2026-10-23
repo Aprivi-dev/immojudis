@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   assertInformationAgentCanaryRecipient,
+  assertUnverifiedSendWithinIdempotencyWindow,
   assertInformationAgentOutboundEnabled,
   buildInformationRequestDraft,
   createAdminInformationAgentDraft,
@@ -10,6 +11,7 @@ import {
   informationAgentAppOrigin,
   informationAgentCreateSchema,
   informationAgentPreviewFingerprint,
+  omitUnverifiedSendOutcome,
   runAdminInformationAgentAction,
   selectInformationAgentContact,
   selectDefaultInformationAgentQuestionKeys,
@@ -153,7 +155,7 @@ describe("supervised information agent", () => {
     },
   );
 
-  it.each(["opposition", "sent", "record_fails", "already_sent"] as const)(
+  it.each(["opposition", "sent", "record_fails", "already_sent", "timeout"] as const)(
     "rechecks the registry and records manual delivery correctly (%s)",
     async (scenario) => {
       const opposition = scenario === "opposition";
@@ -311,6 +313,13 @@ describe("supervised information agent", () => {
         return { data: null, error: null };
       }) as never);
       emailMocks.sendResendEmail.mockResolvedValue({ id: "provider-message-id" });
+      if (scenario === "timeout") {
+        emailMocks.sendResendEmail.mockRejectedValue(
+          Object.assign(new Error("The operation was aborted due to timeout"), {
+            name: "TimeoutError",
+          }),
+        );
+      }
       vi.stubEnv("INFORMATION_AGENT_OUTBOUND_ENABLED", "true");
       vi.stubEnv("INFORMATION_AGENT_OUTBOUND_CANARY_ONLY", "false");
       vi.stubEnv("RESEND_API_KEY", "test-resend-key");
@@ -350,6 +359,18 @@ describe("supervised information agent", () => {
           await expect(operation).rejects.toThrow("Aucun email n’est parti");
           expect(emailMocks.sendResendEmail).not.toHaveBeenCalled();
           return;
+        } else if (scenario === "timeout") {
+          // Resend n'a pas répondu à temps : l'email est peut-être parti. Ni « sent », ni un échec
+          // ordinaire : la demande est marquée à vérifier (le délai de 30 jours reste tenu).
+          await expect(operation).rejects.toThrow("Envoi à vérifier");
+          expect(emailMocks.sendResendEmail).toHaveBeenCalledOnce();
+          expect(emailMocks.sendResendEmail.mock.calls[0][0].idempotencyKey).toBe(
+            "immojudis-information-agent-case-33333333-3333-4333-8333-333333333333",
+          );
+          expect(mission.status).toBe("failed");
+          expect(mission.failure_reason).toContain("Envoi à vérifier");
+          expect(mission.failure_reason).toContain("immojudis-information-agent-case-");
+          expect(mission.metadata).toMatchObject({ send_outcome: "unverified" });
         } else if (scenario === "record_fails") {
           // Resend accepted the email: the mission stays sent, so no retry and the cooldown holds.
           await expect(operation).rejects.toThrow("Ne renvoyez pas ce message");
@@ -402,6 +423,45 @@ describe("supervised information agent", () => {
       }
     },
   );
+
+  describe("envoi à vérifier (n° 48)", () => {
+    const attempt = (hoursAgo: number) => ({
+      send_outcome: "unverified",
+      last_send_attempt_at: new Date(Date.now() - hoursAgo * 3_600_000).toISOString(),
+    });
+
+    it("autorise un renvoi dans les 24 h (même clé d'idempotence), le refuse au-delà", () => {
+      expect(() =>
+        assertUnverifiedSendWithinIdempotencyWindow({ metadata: attempt(2) }),
+      ).not.toThrow();
+      expect(() => assertUnverifiedSendWithinIdempotencyWindow({ metadata: attempt(25) })).toThrow(
+        "fenêtre de 24 h",
+      );
+      expect(() =>
+        assertUnverifiedSendWithinIdempotencyWindow({
+          metadata: { send_outcome: "unverified" },
+        }),
+      ).toThrow("fenêtre de 24 h");
+    });
+
+    it("ne gêne pas une demande dont l'envoi n'est pas à vérifier", () => {
+      expect(() => assertUnverifiedSendWithinIdempotencyWindow({ metadata: {} })).not.toThrow();
+      expect(() =>
+        assertUnverifiedSendWithinIdempotencyWindow({
+          metadata: { last_send_attempt_at: "2020-01-01T00:00:00.000Z" },
+        }),
+      ).not.toThrow();
+    });
+
+    it("lève le drapeau une fois l'envoi confirmé", () => {
+      expect(
+        omitUnverifiedSendOutcome({ ...attempt(1), recipient_origin_url: "https://a.test" }),
+      ).toEqual({
+        last_send_attempt_at: expect.any(String),
+        recipient_origin_url: "https://a.test",
+      });
+    });
+  });
 
   it("detects the material gaps of an incomplete auction listing", () => {
     const gaps = detectInformationGaps(incompleteSale());

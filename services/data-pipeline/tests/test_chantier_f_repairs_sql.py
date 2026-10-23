@@ -18,6 +18,7 @@ LOCATION = REPAIRS / "20261020130001_repair_sale_department_and_coordinates.sql"
 PHANTOM = REPAIRS / "20261020130002_clear_info_encheres_phantom_point.sql"
 LICITOR = REPAIRS / "20261020130003_quarantine_licitor_multi_lot_annonces.sql"
 DOUBLED_TRIBUNALS = REPAIRS / "20261025100001_repair_doubled_tribunal_names.sql"
+OUTSIDE_DEPARTMENT = REPAIRS / "20261101110100_clear_points_outside_their_department.sql"
 
 SCHEMA = """
 do $$ begin
@@ -255,6 +256,83 @@ def test_phantom_point_repair_counts_by_default_and_ignores_non_numeric_geocode_
         after_first = _snapshot(db)
         _psql(repair_database, PHANTOM, apply=True)
         assert _snapshot(db) == after_first
+
+
+# --- W2, point 65 : points hors de leur département -----------------------------------------------------
+
+
+def _seed_outside_department(db) -> None:
+    _insert_sale(  # Avoventes, Grasse : point dans le Yorkshire
+        db, "g1", city="Grasse", department="06", latitude=54.27, longitude=-0.40,
+        quality_flags=["multi_lot_sale", "missing_gps"],
+        raw_payload={"latitude": 54.27, "longitude": -0.40, "geo_precision": "address"},
+    )
+    _insert_sale(  # preuve de géocodage au même point : retirée avec lui
+        db, "g2", city="Bordeaux", department="33", latitude=48.85, longitude=2.35,
+        raw_payload={"geocode": {"provider": "ban_geoplateforme", "accepted": True, "latitude": 48.85, "longitude": 2.35}},
+    )
+    _insert_sale(db, "g3", city="Grasse", department="06", latitude=43.66, longitude=6.92)  # dans son département
+    _insert_sale(db, "g4", city="Cayenne", department="973", latitude=4.94, longitude=-52.33)  # outre-mer, dans sa boîte
+    _insert_sale(db, "g5", city="Mamoudzou", department="976", latitude=48.85, longitude=2.35)  # outre-mer, hors boîte
+    _insert_sale(db, "g6", city="Saint-Martin", department="978", latitude=18.07, longitude=-63.08)  # sans boîte
+    _insert_sale(db, "g7", city="Grasse", department="06")  # sans point
+    _insert_sale(db, "g8", city="Grasse", latitude=54.27, longitude=-0.40)  # sans département
+
+
+def test_points_outside_department_repair_counts_by_default_and_repairs_on_demand(repair_database) -> None:
+    import psycopg
+
+    with psycopg.connect(repair_database, autocommit=True) as db:
+        _seed_outside_department(db)
+        before = _snapshot(db)
+
+        output = _psql(repair_database, OUTSIDE_DEPARTMENT)
+        assert "MODE COMPTAGE SEULEMENT" in output
+        assert _snapshot(db) == before
+
+        _psql(repair_database, OUTSIDE_DEPARTMENT, apply=True)
+
+        g1 = _sale(db, "g1")
+        assert g1["latitude"] is None and g1["longitude"] is None
+        assert g1["quality_flags"] == ["multi_lot_sale", "implausible_coordinates", "missing_gps"]
+        assert "geo_precision" not in g1["raw_payload"] and "latitude" not in g1["raw_payload"]
+        assert g1["raw_payload"]["rejected_source_coordinates"] == {
+            "latitude": 54.27, "longitude": -0.4, "reason": "outside_department", "department": "06",
+        }
+        g2 = _sale(db, "g2")
+        assert g2["latitude"] is None and "geocode" not in g2["raw_payload"]
+        assert float(_sale(db, "g3")["latitude"]) == 43.66
+        assert float(_sale(db, "g4")["latitude"]) == 4.94
+        assert _sale(db, "g5")["latitude"] is None
+        assert float(_sale(db, "g6")["latitude"]) == 18.07
+        assert _sale(db, "g7")["quality_flags"] == []
+        assert float(_sale(db, "g8")["latitude"]) == 54.27
+
+        after_first = _snapshot(db)
+        _psql(repair_database, OUTSIDE_DEPARTMENT, apply=True)
+        assert _snapshot(db) == after_first
+
+
+def test_outside_department_repair_defaults_to_counting_only_and_is_not_a_migration() -> None:
+    text = OUTSIDE_DEPARTMENT.read_text(encoding="utf-8")
+
+    assert OUTSIDE_DEPARTMENT.parent == REPAIRS
+    assert not list((REPAIRS.parent / "migrations").glob("20261101110100*"))
+    assert "\\set apply off" in text and "set transaction read only" in text
+    assert text.rstrip().splitlines()[-1].startswith("--")
+    assert not re.search(r"^\s*(?:update|insert|delete)\b[^\n]*public\.", text.split("\\if :apply\n  create table")[0], re.M)
+
+
+def test_outside_department_repair_boxes_are_the_pipeline_boxes() -> None:
+    from src.department_bounds import DEPARTMENT_BOUNDS
+
+    text = OUTSIDE_DEPARTMENT.read_text(encoding="utf-8")
+    pairs = re.findall(
+        r"\('([0-9A-Z]{2,3})', (-?[0-9.]+), (-?[0-9.]+), (-?[0-9.]+), (-?[0-9.]+)\)", text.split("values\n", 1)[1]
+    )
+    in_sql = {code: tuple(float(value) for value in values) for code, *values in pairs}
+
+    assert in_sql == DEPARTMENT_BOUNDS
 
 
 # --- point 16 : Licitor multi-lots ------------------------------------------------------------------

@@ -232,7 +232,7 @@ describe("UrbanismeCadastrePanel", () => {
       />,
     );
 
-    expect(await screen.findByText(/^Vérifié le/)).toBeTruthy();
+    expect(await screen.findByText(/^Sources consultées le/)).toBeTruthy();
     await waitFor(() => expect(screen.queryByText(/· parcelle à rattacher$/)).toBeNull());
     fireEvent.click(screen.getByText("Voir les références et contrôles"));
     expect(screen.getByRole("heading", { name: "Mentions du dossier de vente" })).toBeTruthy();

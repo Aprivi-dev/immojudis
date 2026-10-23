@@ -1,6 +1,34 @@
-import type { LoginPageMode } from "@/lib/navigation";
+import { saleDetailPath, type LoginPageMode } from "@/lib/navigation";
 import { HOME_TYPE_OPTIONS } from "@/lib/search/search-filters";
 import type { SalesSearchUrlRecord } from "@/lib/search/search-url-state";
+
+/** Paramètre de `/bienvenue` qui porte la fiche à retrouver après la première recherche. */
+export const ONBOARDING_RETURN_PARAM = "retour";
+
+const SALE_DETAIL_PATH = /^\/sales\/([0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12})$/i;
+const RETURN_BASE = "http://immojudis.local";
+
+/**
+ * Adresse d'une fiche de vente (`/sales/<identifiant>`, avec au plus une origine `?from=` valide),
+ * ou `undefined`. Une adresse reconstruite est rendue, jamais la chaîne reçue : `/bienvenue` ne
+ * ramène que sur une fiche du site.
+ */
+export function saleDetailReturnPath(value: unknown): string | undefined {
+  if (typeof value !== "string" || !value.startsWith("/sales/") || value.startsWith("//")) {
+    return undefined;
+  }
+  let url: URL;
+  try {
+    url = new URL(value, RETURN_BASE);
+  } catch {
+    return undefined;
+  }
+  if (url.origin !== RETURN_BASE || url.hash) return undefined;
+  const match = SALE_DETAIL_PATH.exec(url.pathname);
+  if (!match) return undefined;
+  if ([...url.searchParams.keys()].some((key) => key !== "from")) return undefined;
+  return saleDetailPath(match[1], url.searchParams.get("from") ?? undefined);
+}
 
 export function postAuthDestination({
   mode,
@@ -11,6 +39,12 @@ export function postAuthDestination({
   redirect?: string;
   professional: boolean;
 }): string {
+  // Une personne qui crée son compte depuis une fiche passe aussi par la première recherche, puis
+  // retrouve la fiche (`/bienvenue?retour=`) ; une personne qui se connecte y retourne directement.
+  if (mode === "investor" && !professional) {
+    const sale = saleDetailReturnPath(redirect);
+    if (sale) return `/bienvenue?${ONBOARDING_RETURN_PARAM}=${encodeURIComponent(sale)}`;
+  }
   // Preserve a listing, checkout or filtered search that prompted registration.
   if (redirect && redirect !== "/sales") return redirect;
   if (mode === "investor" && !professional) return "/bienvenue";
