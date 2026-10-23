@@ -518,7 +518,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                 <button
                   type="button"
                   onClick={retryLoad}
-                  className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-md bg-gold px-4 py-2 text-sm font-semibold text-brand-navy transition hover:bg-gold-soft"
+                  className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-md bg-gold px-4 py-2 text-sm font-semibold text-brand-navy transition hover:bg-gold-light"
                 >
                   Réessayer
                 </button>
@@ -567,12 +567,13 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
               <>
                 <div className="rounded-lg border border-border bg-white/70 p-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                    Référence
+                    Vente concernée
                   </p>
-                  <p className="mt-1 font-display text-2xl text-foreground">
-                    {session.caseReference}
+                  <p className="mt-1 font-display text-2xl text-foreground">{session.subject}</p>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Référence du dossier :{" "}
+                    <span className="font-semibold text-foreground">{session.caseReference}</span>
                   </p>
-                  <p className="mt-2 text-sm text-muted-foreground">{session.subject}</p>
                   {session.questions.length ? (
                     <div className="mt-4 border-t border-border pt-3">
                       <p className="text-sm font-semibold text-foreground">
@@ -592,6 +593,21 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                 </div>
 
                 <form className="mt-7 space-y-6" onSubmit={submit} noValidate>
+                  <p className="text-sm leading-relaxed text-muted-foreground">
+                    Les champs marqués{" "}
+                    <span aria-hidden="true" className="font-semibold text-gold-text">
+                      *
+                    </span>
+                    <span className="sr-only">d’un astérisque</span> sont obligatoires.
+                  </p>
+                  <p
+                    id="contribution-data-reminder"
+                    className="rounded-lg border border-border bg-background/60 p-4 text-sm leading-relaxed text-foreground"
+                  >
+                    Votre réponse et vos pièces sont lues par l’équipe Immojudis, avec l’aide d’un
+                    outil d’IA, puis vérifiées avant toute utilisation sur une fiche. Rien n’est
+                    publié sans cette vérification.
+                  </p>
                   {error ? (
                     <p
                       ref={errorRef}
@@ -797,7 +813,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                         resetSubmissionProgress();
                         setAuthorizedToTransmit(event.target.checked);
                       }}
-                      className="mt-1 size-4 accent-gold"
+                      className="mt-1 size-4 accent-brand-navy"
                     />
                     <span>
                       J’atteste être autorisé à transmettre ces informations et pièces à Immojudis.
@@ -831,7 +847,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
 
                   <button
                     type="submit"
-                    className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-gold px-5 py-3 text-sm font-semibold text-brand-navy transition hover:bg-gold-soft hover:text-brand-navy disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-gold px-5 py-3 text-sm font-semibold text-brand-navy transition hover:bg-gold-light hover:text-brand-navy disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={submitting}
                   >
                     {submitting ? (
@@ -1004,7 +1020,7 @@ function StatusCard({
 }
 
 const inputClassName =
-  "block min-h-11 w-full rounded-md border border-input bg-white/75 px-3 py-2.5 text-sm text-foreground transition placeholder:text-muted-foreground focus:border-gold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft";
+  "block min-h-11 w-full rounded-md border border-brand-navy/55 bg-white/75 px-3 py-2.5 text-sm text-foreground transition placeholder:text-muted-foreground focus:border-gold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft";
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
   const response = await fetch(url, {

@@ -696,6 +696,63 @@ describe("InformationAgentContributionForm", () => {
     });
   });
 
+  describe("lisibilité du formulaire (n° 49)", () => {
+    it("annonce les champs obligatoires avant le premier champ, avec l'objet de la vente en tête et la référence en petit", async () => {
+      mocks.fetch.mockResolvedValueOnce(referenceResponse());
+      renderContribution();
+      await screen.findByText("CASE-1234");
+
+      const legend = screen.getByText(/sont obligatoires/);
+      const firstField = screen.getByLabelText(/Nom ou cabinet/);
+      expect(
+        legend.compareDocumentPosition(firstField) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(legend.textContent).toContain("Les champs marqués");
+
+      const subject = screen.getByText("Informations sur le bien");
+      expect(subject.className).toContain("text-2xl");
+      expect(subject.className).toContain("font-display");
+      const reference = screen.getByText("CASE-1234");
+      expect(reference.className).not.toContain("text-2xl");
+      expect(reference.parentElement?.textContent).toContain("Référence du dossier");
+    });
+
+    it("rappelle, avant le premier champ, ce que deviennent les données", async () => {
+      mocks.fetch.mockResolvedValueOnce(referenceResponse());
+      renderContribution();
+      await screen.findByText("CASE-1234");
+
+      const reminder = screen.getByText(/lues par l’équipe Immojudis, avec l’aide d’un outil d’IA/);
+      expect(reminder.textContent).toContain("Rien n’est publié sans cette vérification");
+      expect(
+        reminder.compareDocumentPosition(screen.getByLabelText(/Nom ou cabinet/)) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+
+    it("garde des contrastes suffisants : bordure des champs, case cochée et survol des boutons", async () => {
+      mocks.fetch.mockResolvedValueOnce(referenceResponse());
+      renderContribution();
+      await screen.findByText("CASE-1234");
+
+      for (const field of [
+        screen.getByLabelText(/Nom ou cabinet/),
+        screen.getByLabelText(/Adresse e-mail/),
+        screen.getByLabelText("Votre réponse"),
+        screen.getByLabelText("Liens utiles"),
+      ]) {
+        expect(field.className).toContain("border-brand-navy/55");
+        expect(field.className).not.toContain("border-input");
+      }
+      const checkbox = screen.getByLabelText(/J’atteste être autorisé/);
+      expect(checkbox.className).toContain("accent-brand-navy");
+      expect(checkbox.className).not.toContain("accent-gold");
+      const submit = screen.getByRole("button", { name: "Transmettre ma contribution" });
+      expect(submit.className).not.toContain("hover:bg-gold-soft");
+      expect(submit.className).toContain("hover:bg-gold-light");
+    });
+  });
+
   describe("mêmes contrôles que le serveur, avant tout téléversement (n° 45)", () => {
     async function readyWithFile() {
       Element.prototype.scrollIntoView = vi.fn();
