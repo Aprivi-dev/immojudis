@@ -251,6 +251,17 @@ def test_photo_copy_step_runs_after_a_failed_collection_and_fails_visibly() -> N
     assert "python -m src.photo_mirror --automatic" in step.run
 
 
+def _assert_main_only_without_persisted_credentials(text: str) -> None:
+    # Un workflow qui écrit en production ne part que de main (condition évaluée avant l'environnement),
+    # et le jeton du dépôt n'est pas laissé dans .git/config pour les étapes qui reçoivent les secrets.
+    assert re.search(r"^    if: github\.ref == 'refs/heads/main'$", text, re.M)
+    assert re.search(
+        r"^        uses: actions/checkout@\S+.*\n        with:\n          persist-credentials: false$",
+        text,
+        re.M,
+    )
+
+
 def test_dedupe_sweep_is_manual_serialised_with_the_pipeline_and_gives_secrets_to_one_step() -> None:
     text = (WORKFLOWS / "dedupe-sweep.yml").read_text(encoding="utf-8")
     jobs = parse_jobs(text)
@@ -278,6 +289,7 @@ def test_dedupe_sweep_is_manual_serialised_with_the_pipeline_and_gives_secrets_t
     # Chaque action est épinglée par SHA de commit (40 hexadécimaux), jamais par étiquette.
     assert all(re.search(r"@[0-9a-f]{40}( |$)", step.uses) for step in jobs[0].steps if step.uses)
     assert "python -m src.dedupe_apply" in text
+    _assert_main_only_without_persisted_credentials(text)
 
 
 def test_probable_duplicate_flags_is_manual_serialised_and_dry_by_default() -> None:
@@ -297,6 +309,7 @@ def test_probable_duplicate_flags_is_manual_serialised_and_dry_by_default() -> N
     assert "--require-hashes" in text
     assert all(re.search(r"@[0-9a-f]{40}( |$)", step.uses) for step in jobs[0].steps if step.uses)
     assert "python -m src.probable_duplicates --write" in text
+    _assert_main_only_without_persisted_credentials(text)
 
 
 def test_information_agent_always_runs_main_with_secrets_on_its_two_business_steps() -> None:
