@@ -92,6 +92,15 @@ describe("annuaire des avocats", () => {
     expect(document.body.textContent).not.toMatch(/Spécialistes en droit immobilier/i);
   });
 
+  it("a une colonne unique sur mobile : l'en-tête ne déborde pas à 390 px", async () => {
+    renderDirectory([profile({ id: "a" })]);
+    const title = await screen.findByRole("heading", { level: 1 });
+    const grid = title.parentElement?.parentElement;
+    expect(grid?.className).toContain("grid-cols-1");
+    expect(grid?.className).toContain("lg:grid-cols-[minmax(0,1fr)_25rem]");
+    expect(title.parentElement?.className).toContain("min-w-0");
+  });
+
   it("affiche « Publicité · Sponsorisé » sur les profils sponsorisés seulement", async () => {
     renderDirectory([
       profile({

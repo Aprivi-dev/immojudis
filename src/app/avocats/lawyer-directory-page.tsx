@@ -127,8 +127,8 @@ function DirectoryLayout({
             {search.saleId ? "Retour à l'annonce" : "Retour aux ventes"}
           </Link>
 
-          <div className="mt-7 grid gap-7 lg:grid-cols-[minmax(0,1fr)_25rem] lg:items-end">
-            <div>
+          <div className="mt-7 grid grid-cols-1 gap-7 lg:grid-cols-[minmax(0,1fr)_25rem] lg:items-end">
+            <div className="min-w-0">
               <h1 className="max-w-4xl font-display text-5xl font-medium leading-[0.98] text-brand-navy sm:text-6xl">
                 Avocats inscrits au barreau
               </h1>
@@ -158,7 +158,7 @@ function DirectoryLayout({
             <form
               action="/avocats"
               method="get"
-              className="rounded-lg border border-brand-navy/12 bg-white p-4 shadow-sm"
+              className="min-w-0 rounded-lg border border-brand-navy/12 bg-white p-4 shadow-sm"
             >
               {search.saleId ? <input type="hidden" name="saleId" value={search.saleId} /> : null}
               <label htmlFor="lawyer-bar" className="text-sm font-semibold text-brand-navy">
@@ -277,7 +277,7 @@ function DirectoryResults({
                 : "Ces avocats rémunèrent Immojudis pour une visibilité renforcée sur ce barreau."}
             </p>
           </div>
-          <div className="grid gap-5 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
             {sponsoredLawyers.map((lawyer) => (
               <LawyerCard
                 key={lawyer.id}
@@ -341,7 +341,7 @@ function DirectoryResults({
         ) : null}
 
         {directoryLawyers.length ? (
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             {directoryLawyers.map((lawyer) => (
               <LawyerCard
                 key={lawyer.id}
@@ -480,7 +480,7 @@ function LawyerCard({
       ) : null}
 
       <dl
-        className={`${sponsored ? "mt-5" : "mt-4"} grid gap-3 border-y border-brand-navy/10 py-4 text-sm`}
+        className={`${sponsored ? "mt-5" : "mt-4"} grid grid-cols-1 gap-3 border-y border-brand-navy/10 py-4 text-sm`}
       >
         <DirectoryFact icon={<MapPin className="h-4 w-4" />} label="Cabinet">
           {[lawyer.address, lawyer.city].filter(Boolean).join(", ") || "Adresse à confirmer"}
@@ -678,7 +678,7 @@ function DirectoryError({ message }: { message: string }) {
 
 function DirectorySkeleton() {
   return (
-    <div className="grid gap-4 lg:grid-cols-2" aria-label="Chargement de l'annuaire">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2" aria-label="Chargement de l'annuaire">
       {[0, 1].map((item) => (
         <div
           key={item}
