@@ -418,9 +418,14 @@ export function LandPotentialPanel({
                       Les articles applicables se lisent dans le règlement de la zone.
                     </p>
                   )}
+                  <p className={styles.caption}>
+                    La mairie délivre, sur demande, un certificat d’urbanisme : il précise les
+                    règles qui s’appliquent au terrain, ou indique si un projet précis est
+                    réalisable. Il ne vaut pas autorisation de construire.
+                  </p>
                   <SourceLink
                     url="https://www.service-public.gouv.fr/particuliers/vosdroits/F1633"
-                    label="Préparer un certificat d’urbanisme opérationnel"
+                    label="Certificat d’urbanisme : à quoi il sert et comment le demander"
                   />
                 </div>
               </details>

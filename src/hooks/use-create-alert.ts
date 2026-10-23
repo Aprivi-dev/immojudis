@@ -144,9 +144,14 @@ export function useCreateAlert({
         return { status: "blocked" };
       }
 
+      // Un code de département tapé dans la recherche texte est un filtre département, comme dans
+      // le catalogue : il n'est pas gardé comme texte libre (que l'évaluation n'applique pas). Seul
+      // le texte restant est un critère avancé : le contrôle de l'offre gratuite porte sur lui.
+      const queryDepartment = search.department ? null : departmentFromSearchQuery(search.query);
+      const residualQuery = queryDepartment ? null : search.query;
       if (
         !entitlements.plan.hasAnalysisAccess &&
-        (search.query ||
+        (residualQuery ||
           search.occupancy ||
           search.minScore != null ||
           search.minYield != null ||
@@ -173,9 +178,6 @@ export function useCreateAlert({
           ? await createWatchedZoneRequest({ data: watchedZoneInput })
           : null;
 
-        // Un code de département tapé dans la recherche texte est un filtre département, comme dans
-        // le catalogue : il n'est pas gardé comme texte libre (que l'évaluation n'applique pas).
-        const queryDepartment = search.department ? null : departmentFromSearchQuery(search.query);
         await createAlert(user.id, {
           name: options.name ?? buildAlertName(options.nameSearch ?? search),
           department: search.department || queryDepartment || null,
@@ -198,7 +200,7 @@ export function useCreateAlert({
             min_sale_date: search.minSaleDate ?? null,
             max_sale_date: search.maxSaleDate ?? null,
             sale_type: search.saleType ?? null,
-            query: queryDepartment ? null : (search.query ?? null),
+            query: residualQuery ?? null,
             around_address: search.aroundAddress ?? null,
             around_radius_km: search.aroundRadius ?? null,
             watched_zone_id: watchedZoneResponse?.zone.id ?? null,

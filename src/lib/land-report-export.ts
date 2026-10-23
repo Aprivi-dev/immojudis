@@ -145,8 +145,8 @@ export function landReportToLines(
     LAND_REPORT_HEADINGS[7],
     ...new Set([...report.planning.warnings, ...report.risks.warnings, ...report.rules.warnings]),
     "La couverture dépend des sources disponibles. Un résultat vide, une panne ou une donnée communale ne prouvent pas l’absence de risque sur le bien.",
-    "Les règles repérées doivent être lues avec les dispositions générales, les OAP, les servitudes, le règlement PPR et les pièces de vente. Le dossier ne constitue pas une autorisation d’urbanisme.",
-    "Le certificat d’urbanisme opérationnel indique si le terrain peut être utilisé pour une opération décrite. Il ne vaut pas autorisation de travaux.",
+    "Les règles repérées doivent être lues avec les dispositions générales, les orientations d’aménagement et de programmation (OAP), les servitudes, le règlement du plan de prévention des risques (PPR) et les pièces de vente. Le dossier ne constitue pas une autorisation d’urbanisme.",
+    "Le certificat d’urbanisme, délivré par la mairie sur demande, précise les règles applicables à un terrain (certificat d’information) ou indique si un projet précis est réalisable (certificat opérationnel). Il ne vaut pas autorisation de construire. Pour en savoir plus (service-public.gouv.fr) :",
     "https://www.service-public.gouv.fr/particuliers/vosdroits/F1633",
   ];
   return lines.filter(Boolean);
