@@ -195,8 +195,9 @@ const EMPTY_SURVEY_COLUMNS = {
 /**
  * Records the optional answers of someone whose request is active. Same rule as the request
  * itself: written by the service client after the route authenticated the user, so the interview
- * consent date cannot be forged from the browser. An interview agreed earlier keeps its first
- * date; unticking the box clears it. Sending nothing is allowed (every answer is optional).
+ * consent date cannot be forged from the browser. An interview agreed earlier under the current
+ * wording keeps its first date (under an older wording, ticking again dates a new consent);
+ * unticking the box clears it. Sending nothing is allowed (every answer is optional).
  * The interview agreement is refused while the box is not shown (publisher name or contact email
  * missing): the server applies the same rule as the form, so a request cannot record a consent
  * the person was never asked for.
@@ -242,10 +243,19 @@ export function buildOfferOpeningSurveyPatch({
   input,
   timestamp,
 }: {
-  current: Pick<OpeningRow, "survey_interview_accepted" | "survey_interview_consented_at">;
+  current: Pick<
+    OpeningRow,
+    "survey_interview_accepted" | "survey_interview_consented_at" | "survey_text_version"
+  >;
   input: OfferOpeningSurveyInput;
   timestamp: string;
 }): Partial<OpeningInsert> {
+  // A consent given under an older wording is not one for the current wording: ticking the box
+  // again dates a new consent.
+  const keepsConsentDate =
+    current.survey_interview_accepted &&
+    current.survey_interview_consented_at &&
+    current.survey_text_version === OFFER_OPENING_SURVEY_VERSION;
   return {
     survey_profile: input.profile,
     survey_sales_per_month: input.salesPerMonth,
@@ -253,7 +263,7 @@ export function buildOfferOpeningSurveyPatch({
     survey_price_cheap_eur: input.priceCheapEur,
     survey_interview_accepted: input.interviewAccepted,
     survey_interview_consented_at: input.interviewAccepted
-      ? current.survey_interview_accepted && current.survey_interview_consented_at
+      ? keepsConsentDate
         ? current.survey_interview_consented_at
         : timestamp
       : null,

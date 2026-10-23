@@ -276,7 +276,11 @@ describe("liste d'attente qualifiée : questions facultatives", () => {
   it("date l'accord à l'entretien une fois, et l'efface quand la case est décochée", () => {
     const input = offerOpeningSurveySchema.parse(answers);
     const first = buildOfferOpeningSurveyPatch({
-      current: { survey_interview_accepted: false, survey_interview_consented_at: null },
+      current: {
+        survey_interview_accepted: false,
+        survey_interview_consented_at: null,
+        survey_text_version: null,
+      },
       input,
       timestamp,
     });
@@ -295,16 +299,33 @@ describe("liste d'attente qualifiée : questions facultatives", () => {
       current: {
         survey_interview_accepted: true,
         survey_interview_consented_at: "2026-10-01T00:00:00.000Z",
+        survey_text_version: OFFER_OPENING_SURVEY_VERSION,
       },
       input,
       timestamp,
     });
     expect(again.survey_interview_consented_at).toBe("2026-10-01T00:00:00.000Z");
 
+    // Accord donné sous un texte plus ancien : la case recochée date un nouvel accord.
+    for (const storedVersion of ["2026-10-20.1", null]) {
+      const reconsented = buildOfferOpeningSurveyPatch({
+        current: {
+          survey_interview_accepted: true,
+          survey_interview_consented_at: "2026-10-01T00:00:00.000Z",
+          survey_text_version: storedVersion,
+        },
+        input,
+        timestamp,
+      });
+      expect(reconsented.survey_interview_consented_at).toBe(timestamp);
+      expect(reconsented.survey_text_version).toBe(OFFER_OPENING_SURVEY_VERSION);
+    }
+
     const withdrawn = buildOfferOpeningSurveyPatch({
       current: {
         survey_interview_accepted: true,
         survey_interview_consented_at: "2026-10-01T00:00:00.000Z",
+        survey_text_version: "2026-10-20.1",
       },
       input: offerOpeningSurveySchema.parse({ ...answers, interviewAccepted: false }),
       timestamp,
@@ -367,6 +388,39 @@ describe("liste d'attente qualifiée : questions facultatives", () => {
         answeredAt: timestamp,
       },
     });
+  });
+
+  it("relit la version du texte de la ligne : un accord ancien est redaté, un accord courant est conservé", async () => {
+    const row = {
+      user_id: "user-1",
+      notify_enabled: true,
+      consented_at: "2026-10-01T00:00:00.000Z",
+      survey_interview_accepted: true,
+      survey_interview_consented_at: "2026-10-02T00:00:00.000Z",
+    };
+    const old = surveyAdmin({ ...row, survey_text_version: "2026-10-20.1" });
+    await setOfferOpeningSurvey({
+      auth: { userId: "user-1" },
+      admin: old.admin,
+      input: offerOpeningSurveySchema.parse(answers),
+      now: new Date(timestamp),
+      publisher,
+    });
+    expect(old.update).toHaveBeenCalledWith(
+      expect.objectContaining({ survey_interview_consented_at: timestamp }),
+    );
+
+    const current = surveyAdmin({ ...row, survey_text_version: OFFER_OPENING_SURVEY_VERSION });
+    await setOfferOpeningSurvey({
+      auth: { userId: "user-1" },
+      admin: current.admin,
+      input: offerOpeningSurveySchema.parse(answers),
+      now: new Date(timestamp),
+      publisher,
+    });
+    expect(current.update).toHaveBeenCalledWith(
+      expect.objectContaining({ survey_interview_consented_at: "2026-10-02T00:00:00.000Z" }),
+    );
   });
 
   it("ne s'enregistre pas sans demande d'information active (rien ne passe par l'inscription)", async () => {
