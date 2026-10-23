@@ -208,6 +208,33 @@ describe("fiche : vue aérienne 360° et photos", () => {
     expect(toggle("Photos").getAttribute("aria-pressed")).toBe("true");
   });
 
+  it("ne monte la vue aérienne qu'une fois choisie, puis la garde montée (masquée) au retour aux photos", () => {
+    const { container } = renderWithClient(<PropertyIdentity sale={sale(located)} />);
+    const hero = () => container.querySelector("[data-orbit-status]");
+
+    // Jamais choisie : pas montée, donc rien n'est chargé (ni image ni carte Mapbox).
+    expect(hero()).toBeNull();
+
+    fireEvent.click(toggle("Vue 360°"));
+    const mounted = hero();
+    expect(mounted).not.toBeNull();
+    expect(aerial()).toBeTruthy();
+
+    // Retour aux photos : le même élément reste monté, masqué (pas de rechargement à la prochaine bascule).
+    fireEvent.click(toggle("Photos"));
+    expect(hero()).toBe(mounted);
+    expect(aerial()).toBeNull();
+    expect(mounted?.closest("[hidden]")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Ouvrir la galerie photos" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Lancer la vue 360°/ })).toBeNull();
+
+    fireEvent.click(toggle("Vue 360°"));
+    expect(hero()).toBe(mounted);
+    expect(aerial()).toBeTruthy();
+    expect(mounted?.closest("[hidden]")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Ouvrir la galerie photos" })).toBeNull();
+  });
+
   it("avec une seule photo, la vue 360° passe devant et la photo reste accessible", () => {
     renderWithClient(<PropertyIdentity sale={sale({ ...located, media: onePhoto })} />);
 

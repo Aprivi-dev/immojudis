@@ -92,6 +92,11 @@ export function PropertyIdentity({
       ? "vue"
       : (chosen ?? (images.length > 1 ? "photos" : "vue"));
   const orbitTarget = view === "vue" ? eligibleOrbit : null;
+  // Une fois la vue 360° affichée, elle reste montée (masquée quand « Photos » est choisi) : la
+  // démonter puis la remonter relancerait un chargement Mapbox facturé à chaque bascule. Tant
+  // qu'elle n'a jamais été affichée, elle n'est pas montée et rien n'est chargé.
+  const [orbitSeen, setOrbitSeen] = useState(false);
+  if (orbitTarget && !orbitSeen) setOrbitSeen(true);
 
   const locationButtons = (location: { lat: number; lng: number }) => (
     <>
@@ -155,10 +160,11 @@ export function PropertyIdentity({
         </div>
       ) : null}
       <div className={listingStyles.photo}>
-        {orbitTarget && mapLocation ? (
-          <>
+        {eligibleOrbit && mapLocation && (orbitTarget || orbitSeen) ? (
+          // `contents` ne s'applique qu'affichée : la classe l'emporterait sur l'attribut `hidden`.
+          <div hidden={!orbitTarget} className={orbitTarget ? "contents" : undefined}>
             <AerialOrbitHero
-              target={orbitTarget}
+              target={eligibleOrbit}
               title={title}
               publicDemo={publicDemo}
               startImmediately={clicked}
@@ -168,8 +174,9 @@ export function PropertyIdentity({
             <div className="absolute bottom-9 left-3 z-10 flex max-w-[calc(100%-1.5rem)] flex-wrap gap-2 md:left-4">
               {locationButtons(mapLocation)}
             </div>
-          </>
-        ) : images[0] ? (
+          </div>
+        ) : null}
+        {orbitTarget ? null : images[0] ? (
           <>
             <div
               ref={mobileCarouselRef}
