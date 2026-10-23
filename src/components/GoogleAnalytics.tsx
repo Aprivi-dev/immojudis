@@ -6,13 +6,15 @@ import { usePublicPathname } from "@/hooks/use-public-pathname";
 import {
   enableGoogleAnalytics,
   GA_SCRIPT_URL,
-  getGoogleAnalyticsServerState,
-  getGoogleAnalyticsState,
   revokeGoogleAnalytics,
   sanitizeAnalyticsUrl,
-  subscribeGoogleAnalyticsState,
   trackGooglePageView,
 } from "@/lib/google-analytics";
+import {
+  getGoogleAnalyticsServerState,
+  getGoogleAnalyticsState,
+  subscribeGoogleAnalyticsState,
+} from "@/lib/google-analytics-state";
 import { whenIdle } from "@/lib/when-idle";
 
 /**
@@ -20,7 +22,8 @@ import { whenIdle } from "@/lib/when-idle";
  * la politique de confidentialité. Sans accord, aucun script n'est chargé ni aucun cookie déposé ;
  * au retrait de l'accord, les envois cessent et les cookies sont effacés.
  *
- * Rendu une fois le navigateur inactif (`DeferredGoogleAnalytics`). Une page vue est envoyée à
+ * Rendu une fois le navigateur inactif, et seulement après l'accord (`DeferredGoogleAnalytics`
+ * n'importe même pas ce module sans accord, ni sur les pages exclues). Une page vue est envoyée à
  * chaque changement de chemin, avec une adresse nettoyée (`sanitizeAnalyticsUrl`).
  */
 export function GoogleAnalytics() {
