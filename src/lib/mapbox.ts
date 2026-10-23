@@ -3,6 +3,7 @@ const DEFAULT_MAPBOX_STYLE = "mapbox/streets-v12";
 const DEFAULT_STATIC_IMAGE_SIZE = { width: 640, height: 360 };
 const MAPBOX_STATIC_STREETS_STYLE = "mapbox/streets-v12";
 const MAPBOX_STATIC_SATELLITE_STYLE = "mapbox/satellite-v9";
+const MAPBOX_STATIC_SATELLITE_STREETS_STYLE = "mapbox/satellite-streets-v12";
 
 export const MAPBOX_ATTRIBUTION = "© Mapbox © OpenStreetMap";
 /**
@@ -15,6 +16,23 @@ export const MAPBOX_SATELLITE_IMAGERY_DATE_NOTICE = "Date d’imagerie inconnue"
 export const MAPBOX_COPYRIGHT_URL = "https://www.mapbox.com/about/maps/";
 
 export type MapboxStaticImageFormat = "png" | "jpeg" | "webp";
+
+/**
+ * Disque d'incertitude autour d'un point : polygone GeoJSON de 24 côtés dont le rayon est en mètres.
+ * Sert à l'image fixe (recouvrement GeoJSON de l'API Static Images) et à la carte animée.
+ */
+export function uncertaintyCircle(lat: number, lng: number, meters: number) {
+  const dLat = meters / 111_320;
+  const dLng = dLat / Math.cos((lat * Math.PI) / 180);
+  const ring = Array.from({ length: 25 }, (_, index) => {
+    const angle = (index % 24) * (Math.PI / 12);
+    return [
+      formatCoordinate(lng + dLng * Math.cos(angle)),
+      formatCoordinate(lat + dLat * Math.sin(angle)),
+    ];
+  });
+  return { type: "Polygon" as const, coordinates: [ring] };
+}
 
 /**
  * Format demandé à Mapbox pour les vignettes de liste : l'API Static Images le sert nativement
@@ -96,6 +114,7 @@ export function mapboxStaticImageUrl({
   style,
   pixelRatio = 2,
   format,
+  uncertaintyMeters,
 }: {
   lat: number;
   lng: number;
@@ -105,6 +124,8 @@ export function mapboxStaticImageUrl({
   width?: number;
   height?: number;
   marker?: boolean;
+  /** Rayon, en mètres, d'un disque d'incertitude tracé sous le repère. */
+  uncertaintyMeters?: number;
   style?: string;
   /** 2 (défaut) ajoute le suffixe "@2x" ; 1 demande l'image à la densité normale. */
   pixelRatio?: 1 | 2;
@@ -123,7 +144,24 @@ export function mapboxStaticImageUrl({
     camera.push(formatCoordinate(clamp(pitch ?? 0, 0, 85)));
   }
   const center = camera.join(",");
-  const overlay = marker ? `pin-s+0f766e(${formatCoordinate(lng)},${formatCoordinate(lat)})/` : "";
+  const overlays = [
+    uncertaintyMeters
+      ? `geojson(${encodeURIComponent(
+          JSON.stringify({
+            type: "Feature",
+            properties: {
+              stroke: "#ffffff",
+              "stroke-width": 2,
+              fill: "#ffffff",
+              "fill-opacity": 0.2,
+            },
+            geometry: uncertaintyCircle(lat, lng, uncertaintyMeters),
+          }),
+        )})`
+      : "",
+    marker ? `pin-s+0f766e(${formatCoordinate(lng)},${formatCoordinate(lat)})` : "",
+  ].filter(Boolean);
+  const overlay = overlays.length ? `${overlays.join(",")}/` : "";
 
   return `https://api.mapbox.com/styles/v1/${stylePath}/static/${overlay}${center}/${safeWidth}x${safeHeight}${pixelRatio === 2 ? "@2x" : ""}${
     format ? `.${format}` : ""
@@ -178,6 +216,8 @@ export function mapboxSatelliteImageUrl({
   marker = true,
   pixelRatio,
   format,
+  streets = false,
+  uncertaintyMeters,
 }: {
   lat: number;
   lng: number;
@@ -187,6 +227,9 @@ export function mapboxSatelliteImageUrl({
   marker?: boolean;
   pixelRatio?: 1 | 2;
   format?: MapboxStaticImageFormat;
+  /** Imagerie satellite avec les noms de rues (`satellite-streets`) au lieu de l'imagerie seule. */
+  streets?: boolean;
+  uncertaintyMeters?: number;
 }) {
   return mapboxStaticImageUrl({
     lat,
@@ -197,7 +240,8 @@ export function mapboxSatelliteImageUrl({
     marker,
     pixelRatio,
     format,
-    style: MAPBOX_STATIC_SATELLITE_STYLE,
+    uncertaintyMeters,
+    style: streets ? MAPBOX_STATIC_SATELLITE_STREETS_STYLE : MAPBOX_STATIC_SATELLITE_STYLE,
   });
 }
 

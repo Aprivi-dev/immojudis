@@ -14,9 +14,10 @@ import {
   getMapboxAccessToken,
   mapboxLocaleFr,
   mapboxSatelliteImageUrl,
+  uncertaintyCircle,
 } from "@/lib/mapbox";
 import { addMapboxBuildingVolumes } from "@/lib/mapbox-preview";
-import type { AerialOrbitTarget } from "@/lib/sale-aerial-orbit";
+import { mapLoadNeedsGesture, type AerialOrbitTarget } from "@/lib/sale-aerial-orbit";
 import { cn } from "@/lib/utils";
 
 const ORBIT_STYLE = "mapbox://styles/mapbox/standard-satellite";
@@ -33,6 +34,7 @@ const ORBIT_MAX_FPS = 30;
 /** Au-delà, la carte est abandonnée au profit de l'image d'attente. */
 export const ORBIT_LOAD_TIMEOUT_MS = 12_000;
 const DEM_SOURCE = "immojudis-orbit-dem";
+const ACCURACY_ID = "immojudis-orbit-accuracy";
 /** Posé par Radix (react-remove-scroll) sur `<body>` tant qu'une fenêtre modale est ouverte. */
 const SCROLL_LOCK_ATTRIBUTE = "data-scroll-locked";
 
@@ -47,8 +49,9 @@ function reducedMotionQuery() {
 /**
  * Visuel principal de la fiche quand la position est sûre : une vue aérienne Mapbox qui tourne
  * lentement autour du repère du bien. L'image satellite fixe s'affiche d'abord (elle sert aussi de
- * repli) ; la carte animée n'est chargée qu'au premier passage du visuel à l'écran, et seulement au
- * clic si l'utilisateur demande moins d'animations. Une fois chargée, elle reste en place : la
+ * repli) ; la carte animée n'est chargée qu'au premier passage du visuel à l'écran sur ordinateur, et
+ * seulement au geste (bouton « Lancer la vue 360° ») sur mobile, avec l'économiseur de données, sur un
+ * réseau 2G ou 3G, ou si l'utilisateur demande moins d'animations. Une fois chargée, elle reste en place : la
  * rotation s'arrête hors de l'écran, sous une fenêtre modale, après deux tours ou à la demande,
  * mais la carte n'est pas rechargée (chaque chargement compte). En `publicDemo` (page d'exemple),
  * la carte n'est jamais chargée : l'image fixe suffit.
@@ -58,18 +61,21 @@ export function AerialOrbitHero({
   title,
   className,
   publicDemo = false,
+  startImmediately = false,
 }: {
   target: AerialOrbitTarget;
   title: string;
   className?: string;
   publicDemo?: boolean;
+  /** Le visiteur vient de choisir « Vue 360° » : ce geste vaut demande de chargement. */
+  startImmediately?: boolean;
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapboxGL.Map | null>(null);
   const rotatedRef = useRef(0);
   const [status, setStatus] = useState<OrbitStatus>("poster");
-  const [requested, setRequested] = useState(false);
+  const [requested, setRequested] = useState(startImmediately);
   // Intention de l'utilisateur (pause / reprise), distincte des conditions du moment.
   const [playing, setPlaying] = useState(true);
   const [finished, setFinished] = useState(false);
@@ -78,9 +84,11 @@ export function AerialOrbitHero({
   const [modalOpen, setModalOpen] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
   // Un clic sur « Lancer / Reprendre » vaut accord pour l'animation malgré le mouvement réduit.
-  const [motionConsent, setMotionConsent] = useState(false);
+  const [motionConsent, setMotionConsent] = useState(startImmediately);
+  // Image à noms de rues ; si Mapbox la refuse, l'imagerie seule la remplace.
+  const [plainPoster, setPlainPoster] = useState(false);
   const token = getMapboxAccessToken();
-  const { lat, lng, address } = target;
+  const { lat, lng, address, accuracyMeters } = target;
 
   const poster = mapboxSatelliteImageUrl({
     lat,
@@ -92,8 +100,10 @@ export function AerialOrbitHero({
     // au lieu de 900 Ko en JPEG @2x pour un cadre de 400 à 600 px.
     pixelRatio: 1,
     format: "webp",
+    streets: !plainPoster,
+    uncertaintyMeters: accuracyMeters,
   });
-  const posterAlt = `Vue aérienne autour de l’adresse ${address}, avec le repère indicatif de « ${title} »`;
+  const posterAlt = `Vue aérienne autour de l’adresse ${address}, avec la position approximative de « ${title} »`;
 
   // Préférence de mouvement réduit, suivie en direct.
   useEffect(() => {
@@ -136,7 +146,7 @@ export function AerialOrbitHero({
       ([entry]) => {
         const visible = Boolean(entry?.isIntersecting);
         setInView(visible);
-        if (visible && loadAutomatically) setRequested(true);
+        if (visible && loadAutomatically && !mapLoadNeedsGesture()) setRequested(true);
       },
       { threshold: 0.2 },
     );
@@ -236,6 +246,24 @@ export function AerialOrbitHero({
             instance.setTerrain({ source: DEM_SOURCE, exaggeration: 1.1 });
           }
           addMapboxBuildingVolumes(instance);
+          instance.addSource(ACCURACY_ID, {
+            type: "geojson",
+            data: {
+              type: "Feature",
+              properties: {},
+              geometry: uncertaintyCircle(lat, lng, accuracyMeters),
+            },
+          });
+          instance.addLayer({
+            id: ACCURACY_ID,
+            type: "fill",
+            source: ACCURACY_ID,
+            paint: {
+              "fill-color": "#ffffff",
+              "fill-opacity": 0.2,
+              "fill-outline-color": "#ffffff",
+            },
+          });
           setStatus("ready");
         });
         instance.on("error", () => {
@@ -251,7 +279,7 @@ export function AerialOrbitHero({
       cancelled = true;
       dispose();
     };
-  }, [shouldLoad, lat, lng, token, address]);
+  }, [shouldLoad, lat, lng, token, address, accuracyMeters]);
 
   // Rotation : la boucle n'existe que tant que toutes les conditions sont réunies, et se défait
   // d'elle-même dès que l'une tombe (hors écran, pause, modale, onglet masqué, mouvement réduit).
@@ -350,6 +378,7 @@ export function AerialOrbitHero({
             alt={posterAlt}
             fetchPriority="high"
             decoding="async"
+            onError={() => setPlainPoster(true)}
             className={cn(
               "absolute inset-0 h-full w-full object-cover transition-opacity duration-700",
               mapShown ? "opacity-0" : "opacity-100",
@@ -377,22 +406,22 @@ export function AerialOrbitHero({
           target="_blank"
           rel="noreferrer"
           data-testid="aerial-orbit-attribution"
-          className="absolute bottom-1 right-1 z-10 max-w-[calc(100%-0.5rem)] rounded bg-night/75 px-1.5 py-0.5 text-[10px] font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+          className="absolute bottom-1 right-1 z-10 max-w-[calc(100%-0.5rem)] rounded bg-night/85 px-1.5 py-0.5 text-[10px] font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
         >
           {MAPBOX_SATELLITE_ATTRIBUTION} · {MAPBOX_SATELLITE_IMAGERY_DATE_NOTICE}
         </a>
       ) : null}
 
       <div className="pointer-events-none absolute left-3 top-3 z-10 flex flex-col gap-1 md:left-4 md:top-4">
-        <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-white/20 bg-night/75 px-2.5 py-1 text-[11px] font-semibold text-white shadow-lg backdrop-blur">
+        <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-white/20 bg-night/85 px-2.5 py-1 text-[11px] font-semibold text-white shadow-lg backdrop-blur">
           <RotateCw className="h-3 w-3" aria-hidden />
           Vue aérienne 360°
         </span>
-        <span className="w-fit rounded-full bg-night/75 px-2.5 py-0.5 text-[11px] text-white backdrop-blur">
-          Repère indicatif d’après l’adresse
+        <span className="w-fit rounded-full bg-night/85 px-2.5 py-0.5 text-[11px] text-white backdrop-blur">
+          Position approximative
         </span>
         {mapShown ? (
-          <span className="w-fit rounded-full bg-night/75 px-2.5 py-0.5 text-[11px] text-white backdrop-blur">
+          <span className="w-fit rounded-full bg-night/85 px-2.5 py-0.5 text-[11px] text-white backdrop-blur">
             3D schématique : hauteurs des bâtiments estimées
           </span>
         ) : null}
@@ -407,13 +436,13 @@ export function AerialOrbitHero({
   );
 }
 
-/** Repère en goutte, bien visible sur l'imagerie satellite (contour blanc, ombre portée). */
+/** Petit repère en goutte (contour blanc, ombre portée) : le cercle d'incertitude dit la précision. */
 function orbitPin() {
   const pin = document.createElement("span");
   pin.className = "pointer-events-none block drop-shadow-lg";
   pin.setAttribute("aria-hidden", "true");
   pin.innerHTML =
-    '<svg width="38" height="50" viewBox="0 0 38 50" xmlns="http://www.w3.org/2000/svg">' +
+    '<svg width="24" height="32" viewBox="0 0 38 50" xmlns="http://www.w3.org/2000/svg">' +
     '<path d="M19 48C19 48 3 30.6 3 18.5C3 9.4 10.2 2 19 2s16 7.4 16 16.5C35 30.6 19 48 19 48Z" style="fill:var(--brand-navy);stroke:#fff;stroke-width:3"/>' +
     '<circle cx="19" cy="18.5" r="6" style="fill:var(--gold-soft)"/></svg>';
   return pin;

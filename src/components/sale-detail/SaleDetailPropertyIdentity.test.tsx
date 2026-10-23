@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuctionSale } from "@/lib/types";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -130,7 +130,7 @@ function renderWithClient(ui: ReactElement) {
   return render(<QueryClientProvider client={new QueryClient()}>{ui}</QueryClientProvider>);
 }
 
-describe("fiche : vue aérienne 360° devant les photos", () => {
+describe("fiche : vue aérienne 360° et photos", () => {
   const located = {
     latitude: 44.8378,
     longitude: -0.5792,
@@ -139,6 +139,10 @@ describe("fiche : vue aérienne 360° devant les photos", () => {
     quality_flags: [],
     location_precision: "address",
   } as Partial<AuctionSale>;
+  const onePhoto = [{ type: "image", url: LICITOR_PHOTO }] as Partial<AuctionSale>["media"];
+
+  const aerial = () => screen.queryByRole("img", { name: /Vue aérienne autour/ });
+  const toggle = (name: "Photos" | "Vue 360°") => screen.getByRole("button", { name });
 
   beforeEach(() => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://ci.supabase.co");
@@ -151,11 +155,31 @@ describe("fiche : vue aérienne 360° devant les photos", () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllEnvs();
+    window.history.replaceState(null, "", "/");
     Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
   });
 
-  it("met la vue aérienne en tête et les photos en vignettes quand l'adresse est précise", () => {
+  it("avec deux photos ou plus, montre les photos d'abord et propose la vue 360° dans un sélecteur", () => {
     renderWithClient(<PropertyIdentity sale={sale(located)} />);
+
+    expect(aerial()).toBeNull();
+    expect(screen.getByRole("button", { name: "Ouvrir la galerie photos" })).toBeTruthy();
+    const group = screen.getByRole("group", { name: "Visuel du bien" });
+    expect(
+      within(group)
+        .getAllByRole("button")
+        .map((button) => button.textContent),
+    ).toEqual(["Photos", "Vue 360°"]);
+    expect(toggle("Photos").getAttribute("aria-pressed")).toBe("true");
+    expect(toggle("Vue 360°").getAttribute("aria-pressed")).toBe("false");
+    // La carte et l'image Mapbox ne sont pas chargées tant que la vue 360° n'est pas demandée.
+    expect(screen.queryByRole("button", { name: "Lancer la vue 360°" })).toBeNull();
+  });
+
+  it("le bouton « Vue 360° » met la vue aérienne en tête et les photos en vignettes, et le lance", () => {
+    renderWithClient(<PropertyIdentity sale={sale(located)} />);
+
+    fireEvent.click(toggle("Vue 360°"));
 
     expect(
       screen.getByRole("img", { name: /Vue aérienne autour de l’adresse 12 rue Sainte-Catherine/ }),
@@ -165,12 +189,91 @@ describe("fiche : vue aérienne 360° devant les photos", () => {
     expect(screen.getByRole("button", { name: "Ouvrir la photo 1" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Ouvrir la photo 2" })).toBeTruthy();
     expect(screen.getByTestId("photo-credit").textContent).toBe("Photos : via Licitor, Vench");
+    expect(toggle("Vue 360°").getAttribute("aria-pressed")).toBe("true");
+    expect(toggle("Photos").getAttribute("aria-pressed")).toBe("false");
     // Sans IntersectionObserver (jsdom), la carte animée n'est pas chargée : l'image fixe reste.
-    expect(screen.getByRole("button", { name: "Lancer la vue 360°" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: /Lancer la vue 360°|Chargement de la vue/ }),
+    ).toBeTruthy();
+  });
+
+  it("le bouton « Photos » revient aux photos", () => {
+    renderWithClient(<PropertyIdentity sale={sale(located)} />);
+    fireEvent.click(toggle("Vue 360°"));
+
+    fireEvent.click(toggle("Photos"));
+
+    expect(aerial()).toBeNull();
+    expect(screen.getByRole("button", { name: "Ouvrir la galerie photos" })).toBeTruthy();
+    expect(toggle("Photos").getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("avec une seule photo, la vue 360° passe devant et la photo reste accessible", () => {
+    renderWithClient(<PropertyIdentity sale={sale({ ...located, media: onePhoto })} />);
+
+    expect(aerial()).toBeTruthy();
+    expect(toggle("Vue 360°").getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Voir la photo" })).toBeTruthy();
+
+    fireEvent.click(toggle("Photos"));
+
+    expect(aerial()).toBeNull();
+    expect(screen.getByRole("button", { name: "Ouvrir la galerie photos" })).toBeTruthy();
+  });
+
+  it("sans photo, montre la vue aérienne sans sélecteur", () => {
+    renderWithClient(<PropertyIdentity sale={sale({ ...located, media: [] })} />);
+
+    expect(aerial()).toBeTruthy();
+    expect(screen.queryByRole("group", { name: "Visuel du bien" })).toBeNull();
+    expect(screen.queryByText("Photos de l’annonce")).toBeNull();
+  });
+
+  it.each([
+    ["vue", 2, true],
+    ["photos", 1, false],
+  ] as const)(
+    "?visuel=%s impose ce visuel (%i photo(s))",
+    async (visuel, photoCount, aerialShown) => {
+      window.history.replaceState(null, "", `/sales/x?visuel=${visuel}`);
+      const media = [
+        { type: "image", url: LICITOR_PHOTO },
+        { type: "image", url: VENCH_PHOTO },
+      ].slice(0, photoCount) as Partial<AuctionSale>["media"];
+
+      renderWithClient(<PropertyIdentity sale={sale({ ...located, media })} />);
+
+      await waitFor(() => expect(Boolean(aerial())).toBe(aerialShown));
+      expect(toggle("Vue 360°").getAttribute("aria-pressed")).toBe(String(aerialShown));
+    },
+  );
+
+  it("ignore un ?visuel= inconnu", async () => {
+    window.history.replaceState(null, "", "/sales/x?visuel=carte");
+
+    renderWithClient(<PropertyIdentity sale={sale(located)} />);
+
+    await Promise.resolve();
+    expect(aerial()).toBeNull();
+    expect(toggle("Photos").getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("?visuel=vue ne force pas la vue 360° quand la position n'est pas sûre", async () => {
+    window.history.replaceState(null, "", "/sales/x?visuel=vue");
+
+    renderWithClient(
+      <PropertyIdentity sale={sale({ ...located, location_precision: "municipality" })} />,
+    );
+
+    await Promise.resolve();
+    expect(aerial()).toBeNull();
+    expect(screen.queryByRole("group", { name: "Visuel du bien" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Ouvrir la galerie photos" })).toBeTruthy();
   });
 
   it("ouvre la galerie depuis le lien « Voir les photos »", async () => {
     renderWithClient(<PropertyIdentity sale={sale(located)} />);
+    fireEvent.click(toggle("Vue 360°"));
 
     fireEvent.click(screen.getByRole("button", { name: "Voir les 2 photos" }));
 
@@ -178,12 +281,13 @@ describe("fiche : vue aérienne 360° devant les photos", () => {
     expect(within(dialog).getByTestId("photo-credit").textContent).toBe("Photo : via Licitor");
   });
 
-  it("garde la photo en tête quand l'adresse n'a pas de numéro", () => {
+  it("garde la photo en tête quand l'adresse n'a pas de numéro, sans sélecteur", () => {
     renderWithClient(
       <PropertyIdentity sale={sale({ ...located, address: "rue Sainte-Catherine" })} />,
     );
 
-    expect(screen.queryByRole("img", { name: /Vue aérienne autour/ })).toBeNull();
+    expect(aerial()).toBeNull();
+    expect(screen.queryByRole("group", { name: "Visuel du bien" })).toBeNull();
     expect(screen.getByRole("button", { name: "Ouvrir la galerie photos" })).toBeTruthy();
   });
 
@@ -191,14 +295,8 @@ describe("fiche : vue aérienne 360° devant les photos", () => {
     vi.stubEnv("NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN", "");
     renderWithClient(<PropertyIdentity sale={sale(located)} />);
 
-    expect(screen.queryByRole("img", { name: /Vue aérienne autour/ })).toBeNull();
-  });
-
-  it("montre la vue aérienne même sans photo", () => {
-    renderWithClient(<PropertyIdentity sale={sale({ ...located, media: [] })} />);
-
-    expect(screen.getByRole("img", { name: /Vue aérienne autour/ })).toBeTruthy();
-    expect(screen.queryByText("Photos de l’annonce")).toBeNull();
+    expect(aerial()).toBeNull();
+    expect(screen.queryByRole("group", { name: "Visuel du bien" })).toBeNull();
   });
 
   it.each([null, undefined, "street", "municipality"])(
@@ -206,32 +304,41 @@ describe("fiche : vue aérienne 360° devant les photos", () => {
     (location_precision) => {
       renderWithClient(<PropertyIdentity sale={sale({ ...located, location_precision })} />);
 
-      expect(screen.queryByRole("img", { name: /Vue aérienne autour/ })).toBeNull();
+      expect(aerial()).toBeNull();
     },
   );
 
   it("n'affiche pas la vue aérienne d'un parking", () => {
     renderWithClient(<PropertyIdentity sale={sale({ ...located, property_type: "parking" })} />);
 
-    expect(screen.queryByRole("img", { name: /Vue aérienne autour/ })).toBeNull();
+    expect(aerial()).toBeNull();
+  });
+
+  it("n'affiche pas la vue aérienne d'un doublon probable, même demandée", async () => {
+    window.history.replaceState(null, "", "/sales/x?visuel=vue");
+
+    renderWithClient(
+      <PropertyIdentity
+        sale={sale({ ...located, quality_flags: ["multi_lot_sale", "probable_duplicate"] })}
+      />,
+    );
+
+    await Promise.resolve();
+    expect(aerial()).toBeNull();
+    expect(screen.queryByRole("group", { name: "Visuel du bien" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Ouvrir la galerie photos" })).toBeTruthy();
   });
 
   it("crédite chaque source des vignettes, sans doublon", () => {
     renderWithClient(<PropertyIdentity sale={sale(located)} />);
+    fireEvent.click(toggle("Vue 360°"));
 
     // Photo 1 : Licitor (copie hébergée), photo 2 : Vench.
     expect(screen.getByTestId("photo-credit").textContent).toBe("Photos : via Licitor, Vench");
   });
 
   it("écrit « Voir la photo » au singulier", () => {
-    renderWithClient(
-      <PropertyIdentity
-        sale={sale({
-          ...located,
-          media: [{ type: "image", url: LICITOR_PHOTO }],
-        } as Partial<AuctionSale>)}
-      />,
-    );
+    renderWithClient(<PropertyIdentity sale={sale({ ...located, media: onePhoto })} />);
 
     expect(screen.getByRole("button", { name: "Voir la photo" })).toBeTruthy();
     expect(screen.queryByText(/Voir les 1 photo/)).toBeNull();
@@ -249,6 +356,7 @@ describe("fiche : vue aérienne 360° devant les photos", () => {
         } as Partial<AuctionSale>)}
       />,
     );
+    fireEvent.click(toggle("Vue 360°"));
     expect(screen.getByText("Photos de l’annonce")).toBeTruthy();
 
     const thumbnails = screen
@@ -274,6 +382,7 @@ describe("fiche : vue aérienne 360° devant les photos", () => {
         } as Partial<AuctionSale>)}
       />,
     );
+    fireEvent.click(toggle("Vue 360°"));
     expect(screen.getByTestId("photo-credit").textContent).toBe(
       "Photos : via Licitor, source de l'annonce",
     );
@@ -286,10 +395,11 @@ describe("fiche : vue aérienne 360° devant les photos", () => {
     expect(screen.getByTestId("photo-credit").textContent).toBe("Photo : via Licitor");
   });
 
-  it("en démonstration publique, la vue aérienne n'est qu'une image fixe sans bouton", () => {
+  it("en démonstration publique, la vue aérienne n'est qu'une image fixe sans bouton de lancement", () => {
     renderWithClient(<PropertyIdentity sale={sale(located)} publicDemo />);
+    fireEvent.click(toggle("Vue 360°"));
 
-    expect(screen.getByRole("img", { name: /Vue aérienne autour/ })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Lancer la vue 360°" })).toBeNull();
+    expect(aerial()).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Lancer la vue 360°/ })).toBeNull();
   });
 });
