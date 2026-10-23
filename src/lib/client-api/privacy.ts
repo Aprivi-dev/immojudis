@@ -1,4 +1,5 @@
 import { authHeaders, readJson } from "@/lib/client-api-core";
+import type { ProfessionalDataExport } from "@/lib/information-agent-professional-rights";
 import type {
   PrivacyRequestAdminListResponse,
   PrivacyRequestAdminSummary,
@@ -61,6 +62,18 @@ export async function executeAdminContractWithdrawal(data: {
     body: JSON.stringify(data),
   });
   return readJson<{ refundedCents: number; subscriptionCancelled: boolean }>(response);
+}
+
+/** Copie des données d'un professionnel sans compte qui a demandé l'accès (administrateur). */
+export async function fetchAdminProfessionalPrivacyExport(
+  requestId: string,
+): Promise<ProfessionalDataExport> {
+  const search = new URLSearchParams({ requestId });
+  const response = await fetch("/api/admin/privacy-requests/professional-export?" + search, {
+    signal: AbortSignal.timeout(30_000),
+    headers: await authHeaders(),
+  });
+  return readJson<ProfessionalDataExport>(response);
 }
 
 export async function executeAdminPrivacyErasure(
