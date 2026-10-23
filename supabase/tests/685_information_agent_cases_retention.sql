@@ -67,9 +67,11 @@ from (
     ('68500000-3000-4000-8000-000000000010', 'sent', 'case-g-685@example.test', 'G', interval '14 months', null, interval '14 months')
 ) as fixture(id, status, email, label, sent_age, replied_age, created_age);
 
+-- La demande rattachée à G a son propre envoi, il y a 6 mois : sans lui, elle hériterait de l'envoi du
+-- dossier (il y a 14 mois) et serait elle-même échue, donc supprimée avant le dossier.
 insert into public.information_agent_missions (
   id, user_id, sale_id, case_id, recipient_email, subject, body_text, question_keys,
-  missing_information, privacy_version
+  missing_information, privacy_version, sent_at
 )
 values (
   '68500000-2000-4000-8000-000000000002',
@@ -79,7 +81,7 @@ values (
   'case-g-685@example.test',
   'Demande encore rattachée au dossier G',
   'Merci de transmettre les informations du dossier.',
-  array['documents'], array['documents'], '685-pgtap'
+  array['documents'], array['documents'], '685-pgtap', now() - interval '6 months'
 );
 
 insert into public.information_agent_messages (
