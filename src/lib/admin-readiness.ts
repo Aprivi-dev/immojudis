@@ -137,7 +137,6 @@ export async function getAdminOperationalReadiness(
 }
 
 export function buildEnvironmentReadiness(env: Pick<NodeJS.ProcessEnv, string>): ReadinessItem[] {
-  const appUrl = resolveSiteOrigin(env);
   const config = serverEnv(env);
   const stripeSecret = config.stripe.secretKey;
   const webhookSecret = config.stripe.webhookSecret;

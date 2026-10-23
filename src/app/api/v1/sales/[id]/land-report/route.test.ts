@@ -89,7 +89,9 @@ describe("dossier PLU et risques premium", () => {
   });
   it("ne consulte aucune source pour une vente inaccessible", async () => {
     mocks.sale.mockRejectedValue(new Error("Vente introuvable ou inaccessible."));
-    expect((await request()).status).toBe(503);
+    const response = await request();
+    expect(response.status).toBe(404);
+    expect(await response.json()).toMatchObject({ code: "NOT_FOUND" });
     expect(mocks.report).not.toHaveBeenCalled();
   });
   it("valide identifiant et format sans accepter une URL de fournisseur arbitraire", async () => {

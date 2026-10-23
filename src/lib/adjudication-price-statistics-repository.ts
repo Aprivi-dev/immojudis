@@ -16,7 +16,10 @@ import {
   TribunalJudicialActivityUnavailableError,
 } from "@/lib/tribunal-judicial-activity-repository";
 import { TribunalCourtUnresolvedError } from "@/lib/tribunal-judicial-activity";
-import { isPublicationQuarantined } from "@/lib/sale-publication-guard";
+import {
+  isPublicationQuarantined,
+  SalePublicationUnavailableError,
+} from "@/lib/sale-publication-guard";
 
 const STORED_COLUMNS = [
   "build_id",
@@ -117,10 +120,10 @@ export async function getAdjudicationPriceStatisticsForSale(
   if (saleResult.error) {
     throw unavailable(`Judicial sale lookup failed: ${saleResult.error.message}`);
   }
-  if (!saleResult.data) throw unavailable("No judicial sale is available.");
+  if (!saleResult.data) throw new SalePublicationUnavailableError();
   const sale = parseStoredSale(saleResult.data);
   if (isPublicationQuarantined(sale.raw_payload, sale.status)) {
-    throw unavailable("No judicial sale is available.");
+    throw new SalePublicationUnavailableError();
   }
   if (sale.sale_venue_type !== "tribunal") {
     throw unavailable("The sale is not identified as a tribunal sale.");
