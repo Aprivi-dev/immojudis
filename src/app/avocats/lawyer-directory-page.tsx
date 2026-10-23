@@ -20,7 +20,11 @@ import { LawyerReferralButton } from "@/components/LawyerReferralButton";
 import { useAuth } from "@/hooks/use-auth";
 import { fetchLawyerDirectory, fetchLawyerProsecutedSales } from "@/lib/client-api";
 import { fetchAccessPlan } from "@/lib/client-billing";
-import { sponsoredPlacementLabel } from "@/lib/lawyer-placement-label";
+import {
+  LAWYER_CONTACT_HREF,
+  SPONSORED_LABEL,
+  sponsoredPlacementLabel,
+} from "@/lib/lawyer-placement-label";
 import type { LawyerDirectoryOfficialSource, LawyerDirectoryProfile } from "@/lib/lawyer-directory";
 import { validateDirectorySearch, type DirectorySearch } from "@/lib/lawyer-directory-search";
 import type { LawyerUpcomingSales } from "@/lib/lawyer-prosecuted-sales";
@@ -155,35 +159,55 @@ function DirectoryLayout({
               </section>
             </div>
 
-            <form
-              action="/avocats"
-              method="get"
-              className="min-w-0 rounded-lg border border-brand-navy/12 bg-white p-4 shadow-sm"
-            >
-              {search.saleId ? <input type="hidden" name="saleId" value={search.saleId} /> : null}
-              <label htmlFor="lawyer-bar" className="text-sm font-semibold text-brand-navy">
-                Rechercher un barreau
-              </label>
-              <div className="mt-2 flex gap-2">
-                <div className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md border border-brand-navy/16 px-3 focus-within:border-gold-soft focus-within:outline-2 focus-within:outline-gold-soft">
-                  <Search className="h-4 w-4 shrink-0 text-brand-navy/65" aria-hidden />
-                  <input
-                    id="lawyer-bar"
-                    name="bar"
-                    defaultValue={search.bar ?? search.city ?? ""}
-                    placeholder="Bordeaux, Paris, Lyon…"
-                    autoComplete="address-level2"
-                    className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-brand-navy/65"
-                  />
+            <div className="min-w-0 space-y-3">
+              <form
+                action="/avocats"
+                method="get"
+                className="min-w-0 rounded-lg border border-brand-navy/12 bg-white p-4 shadow-sm"
+              >
+                {search.saleId ? <input type="hidden" name="saleId" value={search.saleId} /> : null}
+                <label htmlFor="lawyer-bar" className="text-sm font-semibold text-brand-navy">
+                  Rechercher un barreau
+                </label>
+                <div className="mt-2 flex gap-2">
+                  <div className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md border border-brand-navy/16 px-3 focus-within:border-gold-soft focus-within:outline-2 focus-within:outline-gold-soft">
+                    <Search className="h-4 w-4 shrink-0 text-brand-navy/65" aria-hidden />
+                    <input
+                      id="lawyer-bar"
+                      name="bar"
+                      defaultValue={search.bar ?? search.city ?? ""}
+                      placeholder="Bordeaux, Paris, Lyon…"
+                      autoComplete="address-level2"
+                      className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-brand-navy/65"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    className="min-h-11 rounded-md bg-brand-navy px-4 text-sm font-semibold text-white transition-colors hover:bg-gold-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
+                  >
+                    Rechercher
+                  </button>
                 </div>
-                <button
-                  type="submit"
-                  className="min-h-11 rounded-md bg-brand-navy px-4 text-sm font-semibold text-white transition-colors hover:bg-gold-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
+              </form>
+              <aside
+                aria-labelledby="lawyer-entry-title"
+                className="min-w-0 rounded-lg border border-gold/45 bg-surface p-4"
+              >
+                <h2 id="lawyer-entry-title" className="text-sm font-semibold text-brand-navy">
+                  Vous êtes avocat ?
+                </h2>
+                <p className="mt-1 text-sm leading-relaxed text-brand-navy/70">
+                  Présentez votre cabinet aux acquéreurs de votre barreau. Les mises en avant sont
+                  signalées « {SPONSORED_LABEL} ».
+                </p>
+                <Link
+                  href={LAWYER_CONTACT_HREF}
+                  className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-md border border-gold/45 bg-white px-4 text-sm font-semibold text-gold-text transition-colors hover:border-gold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft sm:w-auto"
                 >
-                  Rechercher
-                </button>
-              </div>
-            </form>
+                  Présenter mon cabinet
+                </Link>
+              </aside>
+            </div>
           </div>
         </div>
       </section>

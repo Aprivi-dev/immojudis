@@ -110,20 +110,29 @@ de cliquer sur « Couper l'offre de lancement » :
    données sont conservées tant que le compte existe et redeviennent accessibles avec l'offre Analyse, que
    `/compte` détaille « Ce qui reste gratuit » et « Ce qui demandera l'offre Analyse », et comment exporter.
    Aucun compte à rebours, aucune pression pour s'abonner.
-   **Outil d'envoi : à ce jour, le seul outil d'envoi existant dans l'application est « Prévenir la liste
-   d'attente » (voir plus bas), qui ne vise que les personnes inscrites à `offer_opening_notifications`
-   (demande « Me prévenir de l'ouverture »). Il ne couvre pas les comptes qui ont l'offre de lancement.**
-   Procédure, tant qu'aucun envoi dédié n'existe :
-   1. établir la liste des destinataires dans l'éditeur SQL (propriétaire) : comptes à adresse confirmée,
-      `account_tier` gratuit, sans abonnement réel (`user_subscriptions`) ; compter, ne rien modifier ;
-   2. envoyer le message depuis le fournisseur d'email de l'application (Resend, même domaine d'expédition
-      que `ALERT_EMAIL_FROM`), par lots, en gardant la liste des adresses prévenues et la date d'envoi (la
-      preuve du préavis) ; relire le texte (ton sobre, sans prix ni pression) avant l'envoi réel ;
-   3. si la liste d'attente et les comptes de l'offre se recoupent, ne pas écrire à la même personne deux
-      fois.
-      Si le volume ou la fréquence justifie un envoi dans l'application (par exemple une marque `notified_at`
-      comme `offer_opening_notifications`, un essai administrateur et un lien de désinscription), c'est un
-      chantier à part : il demande une migration (non appliquée par les agents).
+   **Outil d'envoi (n° 74, migration `20261102140000`) : le bloc « Fin de l'offre de lancement : préavis » de
+   `/admin/clients`.**
+   1. Enregistrer la **date de fin annoncée** (`app_private.launch_offer.ends_on`). Elle est celle que dit le
+      message ; **elle ne coupe rien** : l'offre reste active jusqu'au bouton « Couper l'offre de lancement »,
+      à faire à la main ce jour-là (ou après avoir reporté la date). Une date passée est refusée.
+   2. Le bloc donne le nombre de comptes concernés (ceux qui n'ont l'accès Analyse que grâce à l'offre, règle
+      canonique d'éligibilité, hors administrateurs, premium et abonnés), les déjà prévenus, les désinscrits,
+      et l'**aperçu** du message (`emails/launch-offer-end-notice.tsx`, ton factuel, aucun prix). « M'envoyer un
+      essai » l'envoie à l'administrateur (objet « [Test] … », rien n'est journalisé).
+   3. **« Envoyer le préavis à N comptes »** (après confirmation) envoie un lot de 200 au plus. **Rien n'est
+      envoyé automatiquement.** L'envoi est refusé si la date est à moins de 30 jours (procédure du 20/10/2026),
+      si l'offre est déjà coupée, si la date affichée n'est plus la date enregistrée, ou si l'envoi d'emails n'est
+      pas configuré (`RESEND_API_KEY`, `ALERT_EMAIL_FROM`, `SITE_URL`). Relancer pour le reste si le bloc le dit.
+   4. **Idempotent** : `public.launch_offer_end_notices` (un préavis par compte et par date, réservé avant
+      l'envoi ; un échec se reprend, 3 essais au plus dans les 23 h, clé d'idempotence Resend
+      `immojudis-launch-offer-end-<user_id>-<date>`). Le journal est la preuve du préavis ; purgé à 24 mois par
+      la tâche de rétention. Les envois « à vérifier » (essais épuisés ou vieux de plus de 23 h) ne repartent pas
+      seuls : consulter le journal de Resend avant de les reprendre.
+   5. **Désinscription** : chaque message porte un lien signé (et `List-Unsubscribe` en un clic). Le compte
+      désinscrit entre dans `public.launch_offer_end_notice_optouts` et n'est plus jamais dans la file, pour
+      aucune date ; son accès n'est pas modifié.
+   Si la liste d'attente et les comptes de l'offre se recoupent, ce sont deux envois distincts (la liste
+   d'attente n'est prévenue que quand la souscription est ouverte).
 3. **30 jours d'accès en lecture et d'export aux contenus créés** : l'offre reste active pendant ces 30 jours,
    les comptes lisent et exportent ce qu'ils ont créé (rapports PDF, exports CSV, comparaisons). Ne pas couper
    avant la fin du délai.
@@ -162,7 +171,8 @@ bloc de `/admin/clients` :
 ### Bandeau d'annonce de fin configurable par l'administrateur (non implémenté)
 
 Pas fait ici : ce n'est pas simple, car il faut une nouvelle donnée en base lue par une route publique en cache.
-Conception proposée, à faire dans un chantier à part :
+Conception proposée, à faire dans un chantier à part (la colonne `ends_on` existe désormais, posée par la
+migration `20261102140000` du préavis par email ; le point 1 ci-dessous ne garde que `end_announcement_text`) :
 
 1. Migration : deux colonnes sur `app_private.launch_offer` (`end_announcement_text text` borné à 300 caractères,
    `ends_on date`) et une fonction `public.set_launch_offer_announcement(text, date)` réservée à

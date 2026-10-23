@@ -7,6 +7,7 @@ import type { LawyerDirectoryProfile } from "@/lib/lawyer-directory";
 import { resolveFrenchGeoSearch } from "@/lib/search/french-geo-search";
 import { queryKeys } from "@/lib/query-keys";
 import {
+  LAWYER_CONTACT_HREF,
   LAWYER_INVITATION_LABEL,
   LAWYER_RANKING_HREF,
   LAWYER_RANKING_LINK_LABEL,
@@ -156,7 +157,7 @@ function OpenLawyerPlacement({ loading, className }: { loading: boolean; classNa
         Présentez votre cabinet aux acquéreurs qui recherchent un bien dans ce secteur.
       </p>
       <a
-        href="/contact"
+        href={LAWYER_CONTACT_HREF}
         className="mt-auto inline-flex min-h-10 items-center justify-center rounded-md bg-brand-navy px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-brand-navy-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
       >
         Présenter mon cabinet

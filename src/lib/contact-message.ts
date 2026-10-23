@@ -10,6 +10,7 @@ export const CONTACT_SUBJECTS = [
   { value: "donnees", label: "Mes données personnelles" },
   { value: "erreur", label: "Signaler une erreur ou une information manquante" },
   { value: "professionnel", label: "Espace professionnel" },
+  { value: "avocat", label: "Avocat : présenter mon cabinet" },
   { value: "autre", label: "Autre demande" },
 ] as const;
 

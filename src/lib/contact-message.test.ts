@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { LAWYER_CONTACT_HREF } from "./lawyer-placement-label";
 import {
   buildContactEmail,
   contactFailureLine,
@@ -231,6 +232,12 @@ describe("signalement depuis une fiche", () => {
     expect(prefill.subject).toBe("erreur");
     expect(prefill.message).toContain(`Vente concernée : ${SALE}`);
     expect(prefill.message).toContain("Rubrique : Mise à prix");
+  });
+
+  it("préremplit le sujet « avocat » d'après le lien de /avocats, et l'accepte à l'envoi", () => {
+    const prefill = contactPrefill(new URLSearchParams(LAWYER_CONTACT_HREF.split("?")[1]));
+    expect(prefill).toEqual({ subject: "avocat" });
+    expect(validateContact({ ...valid, subject: "avocat" }).ok).toBe(true);
   });
 
   it("ignore tout ce qui n'est pas dans les listes ou n'a pas la forme d'un identifiant", () => {

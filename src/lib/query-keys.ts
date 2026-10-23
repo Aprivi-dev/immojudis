@@ -32,6 +32,9 @@ export const queryKeys = {
     ["favorites-ai-review", userId, saleIds] as const,
   /** Changes detected on the sales the account follows (« Mes favoris »). */
   saleChangeEvents: (userId: Id) => ["sale-change-events", userId] as const,
+  /** Les changements d'une seule vente (fiche : « plafond à vérifier »), sous le préfixe de la liste. */
+  saleChangeEventsForSale: (userId: Id, saleId: string) =>
+    ["sale-change-events", userId, saleId] as const,
   favoriteStatus: (userId: Id, saleId: string) => ["favorite-status", userId, saleId] as const,
   /** « Mon dossier » d'une vente suivie ; sous le préfixe `favorites`, donc rafraîchi avec la liste. */
   favoriteDossier: (userId: Id, saleId: string) =>

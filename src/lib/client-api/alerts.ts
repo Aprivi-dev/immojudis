@@ -90,11 +90,13 @@ export async function fetchSaleChangeEvents(
   args: {
     limit?: number;
     includeDismissed?: boolean;
+    saleId?: string;
   } = {},
 ): Promise<SaleChangeEventListResponse> {
   const search = new URLSearchParams();
   if (args.limit) search.set("limit", String(args.limit));
   if (args.includeDismissed) search.set("includeDismissed", "true");
+  if (args.saleId) search.set("saleId", args.saleId);
   const response = await fetch(
     `/api/sale-change-events${search.size ? `?${search.toString()}` : ""}`,
     {

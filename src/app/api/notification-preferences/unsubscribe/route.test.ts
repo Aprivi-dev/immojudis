@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
     userId,
     revokedAt: "2026-10-20T10:00:00.000Z",
   })),
+  revokeLaunchOfferEndNotice: vi.fn(async (_input: { userId: string }) => undefined),
   deactivateAlertForUser: vi.fn(async (_input: { userId: string; alertId: string }) => undefined),
   unsubscribeEmailAlertsByNotificationId: vi.fn(async (_input: { notificationId: string }) => ({
     userId: "u",
@@ -23,6 +24,7 @@ const {
   revokeEmailAlertConsent,
   revokeSaleReminderConsent,
   revokeOfferOpeningRequest,
+  revokeLaunchOfferEndNotice,
   deactivateAlertForUser,
   unsubscribeEmailAlertsByNotificationId,
 } = mocks;
@@ -221,5 +223,37 @@ describe("unsubscribe route", () => {
     expect(revokeEmailAlertConsent).not.toHaveBeenCalled();
     expect(revokeSaleReminderConsent).not.toHaveBeenCalled();
     expect(html).toContain("Demande retirée");
+  });
+
+  it("n'écrit rien sur un GET d'un jeton « fin de l'offre de lancement » et demande confirmation", async () => {
+    const token = createUnsubscribeToken({ userId, scope: { kind: "launch-offer-end" } });
+    const response = await GET(
+      new Request(`https://immojudis.test/api/notification-preferences/unsubscribe?token=${token}`),
+    );
+    const html = await response.text();
+    expect(response.status).toBe(200);
+    expect(html).toContain("Votre compte n&#39;est pas modifié");
+    expect(revokeLaunchOfferEndNotice).not.toHaveBeenCalled();
+  });
+
+  it("inscrit le compte sur la liste d'exclusion du préavis, sans toucher aux autres envois", async () => {
+    const token = createUnsubscribeToken({ userId, scope: { kind: "launch-offer-end" } });
+    const response = await POST(
+      new Request(
+        `https://immojudis.test/api/notification-preferences/unsubscribe?token=${token}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/x-www-form-urlencoded" },
+          body: "List-Unsubscribe=One-Click",
+        },
+      ),
+    );
+    const html = await response.text();
+    expect(response.status).toBe(200);
+    expect(revokeLaunchOfferEndNotice).toHaveBeenCalledWith({ userId });
+    expect(revokeEmailAlertConsent).not.toHaveBeenCalled();
+    expect(revokeSaleReminderConsent).not.toHaveBeenCalled();
+    expect(revokeOfferOpeningRequest).not.toHaveBeenCalled();
+    expect(html).toContain("Préavis désactivé");
   });
 });

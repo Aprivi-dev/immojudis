@@ -25,5 +25,11 @@ export const LAWYER_RANKING_LINK_LABEL = "Comment sont classés les avocats ?";
 /** Ancre de la section « Comment sont classés les avocats ? » de /avocats (`id` de son titre). */
 export const LAWYER_RANKING_HREF = "/avocats#lawyer-ranking-title";
 
+/**
+ * Parcours des cabinets qui veulent être mis en avant : le formulaire de contact, sujet « avocat »
+ * déjà choisi (il n'existe pas d'autre inscription). Utilisé par l'encart de /sales et par /avocats.
+ */
+export const LAWYER_CONTACT_HREF = "/contact?sujet=avocat";
+
 /** Libellé de l'encart de repli qui invite les avocats à présenter leur cabinet (aucune publicité). */
 export const LAWYER_INVITATION_LABEL = "Pour les avocats · Immojudis";
