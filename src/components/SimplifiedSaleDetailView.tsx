@@ -6,7 +6,7 @@ import type { MouseEvent as ReactMouseEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
 import ArrowLeft from "lucide-react/dist/esm/icons/arrow-left.js";
-import { listingValuationConflict } from "@/lib/listing-evidence";
+import { listingSaleStatus, listingValuationConflict } from "@/lib/listing-evidence";
 import { useAuth } from "@/hooks/use-auth";
 import { salesReturnHref, salesReturnLabel } from "@/lib/navigation";
 import { DocumentReadingSection } from "@/components/sale-detail/DocumentReadingSection";
@@ -131,6 +131,10 @@ const SaleFileCard = dynamic(() =>
 // « Mon plafond face au tribunal » (n° 92) : chargé à la demande, hors du JavaScript initial de la fiche.
 const CeilingVsCourt = dynamic(() =>
   import("@/components/sale-detail/CeilingVsCourt").then((module) => module.CeilingVsCourt),
+);
+// « Mes questions pour l'avocat » (n° 92) : chargé à la demande, avec le repérage des points ouverts.
+const LawyerQuestions = dynamic(() =>
+  import("@/components/sale-detail/LawyerQuestions").then((module) => module.LawyerQuestions),
 );
 const ListingWorks = dynamic(
   () => import("@/components/sale-detail/ListingWorks").then((module) => module.ListingWorks),
@@ -1024,6 +1028,11 @@ function SaleDetailWorkspace({
                   locked={!fullData}
                 />
                 <LawyerSection sale={displaySale} />
+                {fullData && isTribunalSale && !publicDemo && !listingSaleStatus(displaySale) ? (
+                  <div className="mx-auto w-full max-w-[1380px] px-4 sm:px-6 lg:px-8">
+                    <LawyerQuestions sale={displaySale} facts={factReliabilities} />
+                  </div>
+                ) : null}
                 <details
                   className={panelStyles.disclosure}
                   open={Boolean(expandedDetails.participation)}
