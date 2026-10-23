@@ -9,8 +9,8 @@ import { formatEuro, formatPercent, formatRatio } from "@/lib/auction-scenarios"
 const number = new Intl.NumberFormat("fr-FR");
 
 /**
- * Trois ans d'adjudications par tribunal : moyennes Licitor (mise à prix, prix
- * final, part adjugée à au moins 2 fois la mise à prix) et volumes officiels DVF. Analyse members only;
+ * Trois ans d'adjudications par tribunal : médianes Licitor (mise à prix, prix
+ * d'adjudication, part adjugée à au moins 2 fois la mise à prix) et volumes officiels DVF. Analyse members only;
  * the caller checks the plan before rendering.
  */
 export function CourtAuctionSummaryTable() {
@@ -24,7 +24,7 @@ export function CourtAuctionSummaryTable() {
   if (query.isLoading) {
     return (
       <p className="mt-8 text-sm text-brand-navy/65" role="status">
-        Chargement des moyennes par tribunal…
+        Chargement des statistiques par tribunal…
       </p>
     );
   }
@@ -51,12 +51,13 @@ export function CourtAuctionSummaryTable() {
   return (
     <div className="mt-10" id="moyennes-tribunaux">
       <h3 className="font-display text-2xl font-semibold text-brand-navy">
-        Moyennes par tribunal sur trois ans
+        Médianes par tribunal sur trois ans
       </h3>
       <p className="mt-2 max-w-4xl text-sm leading-relaxed text-brand-navy/70">
-        Mise à prix et prix final moyens des ventes adjugées (Licitor), part des ventes adjugées à
-        au moins 2 fois la mise à prix, et nombre d’adjudications enregistrées par l’administration
-        fiscale dans le ressort du tribunal (DVF).
+        Mise à prix et prix d’adjudication médians des ventes adjugées (Licitor, avant éventuelle
+        surenchère, hors frais), part des ventes adjugées à au moins 2 fois la mise à prix, et
+        nombre d’adjudications enregistrées par l’administration fiscale dans le ressort du tribunal
+        (DVF).
       </p>
       <label className="mt-4 block text-sm font-semibold text-brand-navy" htmlFor="court-filter">
         Rechercher un tribunal
@@ -77,13 +78,14 @@ export function CourtAuctionSummaryTable() {
         <div
           role="region"
           tabIndex={0}
-          aria-label="Moyennes par tribunal, défilement horizontal"
+          aria-label="Médianes par tribunal, défilement horizontal"
           className="mt-4 overflow-x-auto outline-offset-[-2px] focus-visible:outline-2 focus-visible:outline-gold"
         >
           <table className="w-full min-w-[640px] text-left text-sm">
             <caption className="sr-only">
-              Moyennes par tribunal sur trois ans : ventes adjugées, mise à prix et prix final
-              moyens, part des ventes adjugées à au moins 2 fois la mise à prix et adjudications DVF
+              Médianes par tribunal sur trois ans : ventes adjugées, mise à prix et prix
+              d’adjudication médians, part des ventes adjugées à au moins 2 fois la mise à prix et
+              adjudications DVF
             </caption>
             <thead className="text-xs uppercase tracking-wide text-brand-navy/60">
               <tr>
@@ -94,13 +96,13 @@ export function CourtAuctionSummaryTable() {
                   Ventes adjugées
                 </th>
                 <th scope="col" className="py-2 pr-4">
-                  Mise à prix moyenne
+                  Mise à prix médiane
                 </th>
                 <th scope="col" className="py-2 pr-4">
-                  Prix final moyen
+                  Prix d’adjudication médian
                 </th>
                 <th scope="col" className="py-2 pr-4">
-                  Prix final / mise à prix
+                  Prix d’adjudication / mise à prix (médiane)
                 </th>
                 <th scope="col" className="py-2 pr-4">
                   Adjugées à au moins 2 fois la mise à prix
@@ -122,8 +124,8 @@ export function CourtAuctionSummaryTable() {
                   <td className="py-2 pr-4">
                     {court.licitor ? number.format(court.licitor.sample) : "—"}
                   </td>
-                  <td className="py-2 pr-4">{formatEuro(court.licitor?.meanStartingPrice)}</td>
-                  <td className="py-2 pr-4">{formatEuro(court.licitor?.meanHammerPrice)}</td>
+                  <td className="py-2 pr-4">{formatEuro(court.licitor?.medianStartingPrice)}</td>
+                  <td className="py-2 pr-4">{formatEuro(court.licitor?.medianHammerPrice)}</td>
                   <td className="py-2 pr-4">{formatRatio(court.licitor?.medianRatio)}</td>
                   <td className="py-2 pr-4">{formatPercent(court.licitor?.atLeastDoubleRate)}</td>
                   <td className="py-2">{court.dvf ? number.format(court.dvf.sample) : "—"}</td>
@@ -134,8 +136,8 @@ export function CourtAuctionSummaryTable() {
         </div>
       )}
       <p className="mt-3 text-xs text-brand-navy/60">
-        Rapport prix final / mise à prix : valeur du milieu. Un tribunal apparaît à partir de 10
-        ventes. Les moyennes sont tirées vers le haut par quelques ventes très disputées.
+        Valeurs du milieu (médianes), que quelques ventes très disputées ne tirent pas vers le haut.
+        Un tribunal apparaît à partir de 10 ventes.
       </p>
       <p className="mt-2 max-w-4xl text-xs leading-relaxed text-brand-navy/70" id="moyennes-caveat">
         Statistiques sur les ventes adjugées uniquement (ni reports, ni ventes sans enchérisseur),

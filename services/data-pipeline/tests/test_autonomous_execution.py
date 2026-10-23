@@ -261,3 +261,29 @@ def test_worker_watchdog_exit_is_explained_and_armed_before_the_hard_kill(monkey
     assert updates[0][0] == "failed"
     assert updates[0][1].obj["runner"][0].startswith("Worker watchdog fired")
     assert updates[0][2].obj["completion_status"] == "interrupted"
+
+
+def test_licitor_history_budget_overrun_still_refreshes_the_scenarios_copy(monkeypatch) -> None:
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append((command, kwargs))
+        if len(calls) == 1:
+            raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(autonomous_runner.subprocess, "run", run)
+
+    assert autonomous_runner._run_licitor_history_refresh({}) == 1
+    assert "--snapshot-only" not in calls[0][0]
+    assert calls[1][0][-1] == "--snapshot-only"
+    assert calls[1][1]["timeout"] == autonomous_runner.LICITOR_SNAPSHOT_ONLY_SECONDS
+
+
+def test_licitor_history_snapshot_only_failure_does_not_raise(monkeypatch) -> None:
+    def run(command, **kwargs):
+        raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+
+    monkeypatch.setattr(autonomous_runner.subprocess, "run", run)
+
+    assert autonomous_runner._run_licitor_history_refresh({}) == 1

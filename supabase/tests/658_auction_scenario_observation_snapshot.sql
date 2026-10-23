@@ -2,7 +2,7 @@
 -- app_private.auction_scenario_observation_snapshot, une copie de la vue des lots remplie par
 -- app_private.refresh_auction_scenario_observations(p_force).
 begin;
-select plan(9);
+select plan(14);
 
 create or replace view app_private.auction_scenario_observations as
 select court_code, property_type, starting_price_eur, hammer_price_eur, sale_date
@@ -67,9 +67,9 @@ select is(
 );
 
 select ok(
-  has_function_privilege('service_role', 'app_private.refresh_auction_scenario_observations(boolean)', 'EXECUTE')
-  and not has_function_privilege('authenticated', 'app_private.refresh_auction_scenario_observations(boolean)', 'EXECUTE')
-  and not has_function_privilege('anon', 'app_private.refresh_auction_scenario_observations(boolean)', 'EXECUTE'),
+  has_function_privilege('service_role', 'app_private.refresh_auction_scenario_observations(boolean, boolean)', 'EXECUTE')
+  and not has_function_privilege('authenticated', 'app_private.refresh_auction_scenario_observations(boolean, boolean)', 'EXECUTE')
+  and not has_function_privilege('anon', 'app_private.refresh_auction_scenario_observations(boolean, boolean)', 'EXECUTE'),
   'only the server refreshes the copy'
 );
 select ok(
@@ -79,6 +79,45 @@ select ok(
   and not has_table_privilege('service_role', 'app_private.auction_scenario_observation_snapshot', 'INSERT'),
   'the copy is read by the server only and written by the refresh only'
 );
+
+select ok(
+  (select bool_and(class_row.relrowsecurity)
+   from pg_class class_row
+   where class_row.oid in (
+     'app_private.auction_scenario_observation_snapshot'::regclass,
+     'app_private.auction_scenario_snapshot_state'::regclass
+   )),
+  'row level security is enabled on the copy and on its state'
+);
+select ok(
+  (select procedure_row.prosecdef and procedure_row.proconfig @> array['search_path=""']::text[]
+   from pg_proc procedure_row
+   where procedure_row.oid = 'app_private.refresh_auction_scenario_observations(boolean, boolean)'::regprocedure),
+  'the refresh is SECURITY DEFINER with an empty search_path'
+);
+select ok(
+  not has_table_privilege('authenticated', 'app_private.auction_scenario_snapshot_state', 'SELECT')
+  and not has_table_privilege('anon', 'app_private.auction_scenario_snapshot_state', 'SELECT')
+  and has_table_privilege('service_role', 'app_private.auction_scenario_snapshot_state', 'SELECT')
+  and not has_table_privilege('service_role', 'app_private.auction_scenario_snapshot_state', 'UPDATE'),
+  'the state of the copy is read by the server only'
+);
+
+-- Cas d'échec : un compte connecté ne recopie rien et ne lit rien.
+set local role authenticated;
+select throws_ok(
+  $$select app_private.refresh_auction_scenario_observations(true)$$,
+  '42501',
+  null,
+  'a signed-in account cannot refresh the copy'
+);
+select throws_ok(
+  $$select count(*) from app_private.auction_scenario_observation_snapshot$$,
+  '42501',
+  null,
+  'a signed-in account cannot read the copy'
+);
+reset role;
 
 select * from finish();
 rollback;

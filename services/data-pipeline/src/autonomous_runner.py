@@ -473,6 +473,8 @@ def _run_document_reading(env: dict[str, str]) -> int:
 
 
 LICITOR_HISTORY_BUDGET_SECONDS = 330
+# Copie des lots pour les scénarios d'enchères, seule, quand le tick a épuisé son budget (60 s de SQL au plus).
+LICITOR_SNAPSHOT_ONLY_SECONDS = 90
 LICITOR_SOURCE = 'licitor'
 # Temps laissé après la lecture des fiches pour normaliser, publier et clore le run.
 LICITOR_BUDGET_MARGIN_SECONDS = 8 * 60
@@ -491,6 +493,15 @@ def _run_licitor_history_refresh(env: dict[str, str]) -> int:
     try:
         result = subprocess.run(command, env=env, timeout=LICITOR_HISTORY_BUDGET_SECONDS, check=False)
         return int(result.returncode)
+    except subprocess.TimeoutExpired:
+        # The tick was stopped before the scenarios' copy of the lots: refresh it alone.
+        try:
+            subprocess.run(
+                [*command, '--snapshot-only'], env=env, timeout=LICITOR_SNAPSHOT_ONLY_SECONDS, check=False
+            )
+        except Exception:
+            pass
+        return 1
     except Exception:
         return 1
 
