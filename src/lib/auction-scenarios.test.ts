@@ -18,6 +18,7 @@ import {
   representativeStartingPrice,
   scenarioPropertyGroup,
   startingPriceBand,
+  startingPriceBandLabel,
 } from "./auction-scenarios";
 
 const RAW_SCENARIOS = {
@@ -292,6 +293,17 @@ describe("parité avec le SQL", () => {
     expect(STARTING_PRICE_BAND_LABELS[startingPriceBand(80_000)!]).toBe("de 75 000 à 100 000 €");
     expect(STARTING_PRICE_BAND_LABELS[startingPriceBand(150_000)!]).toBe("de 100 000 à 200 000 €");
     expect(STARTING_PRICE_BAND_LABELS[startingPriceBand(250_000)!]).toBe("de 200 000 € et plus");
+  });
+
+  it("startingPriceBandLabel ne nomme que la tranche du prix de la vente", () => {
+    expect(startingPriceBandLabel(3, 45_000)).toBe("de 35 000 à 50 000 €");
+    expect(startingPriceBandLabel(7, 250_000)).toBe("de 200 000 € et plus");
+    // Base à l'ancienne grille : une autre tranche que celle de la vente, aucun libellé.
+    expect(startingPriceBandLabel(2, 45_000)).toBeNull();
+    expect(startingPriceBandLabel(5, 45_000)).toBeNull();
+    expect(startingPriceBandLabel(null, 45_000)).toBeNull();
+    expect(startingPriceBandLabel(3, null)).toBeNull();
+    expect(startingPriceBandLabel(3, 0)).toBeNull();
   });
 
   it("les groupes de nature de bien du TS sont ceux de app_private.scenario_property_group", () => {

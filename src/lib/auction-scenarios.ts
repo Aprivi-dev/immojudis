@@ -168,6 +168,20 @@ export function startingPriceBand(startingPrice: number | null | undefined): num
   return index === -1 ? STARTING_PRICE_BAND_UPPER_BOUNDS.length + 1 : index + 1;
 }
 
+/**
+ * Complement « pour des mises à prix … » of the band the database answered, or null when it is not the
+ * band of this sale's starting price. While the seven-band migration (20261102110000) is not applied,
+ * the database answers with a band of the old grid: naming it would state a wrong range, so the
+ * sentence then goes without one.
+ */
+export function startingPriceBandLabel(
+  band: number | null | undefined,
+  startingPrice: number | null | undefined,
+): string | null {
+  if (band == null || band !== startingPriceBand(startingPrice)) return null;
+  return STARTING_PRICE_BAND_LABELS[band] ?? null;
+}
+
 /** A price inside each band (its lower edge, 1 000 € for band 1): the database reads the band only. */
 export function representativeStartingPrice(band: number): number {
   return band <= 1 ? MIN_SCENARIO_STARTING_PRICE : STARTING_PRICE_BAND_UPPER_BOUNDS[band - 2];
