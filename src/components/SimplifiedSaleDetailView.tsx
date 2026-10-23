@@ -128,6 +128,10 @@ const PropertyReportActions = dynamic(
 const SaleFileCard = dynamic(() =>
   import("@/components/sale-detail/SaleFileCard").then((module) => module.SaleFileCard),
 );
+// « Mon plafond face au tribunal » (n° 92) : chargé à la demande, hors du JavaScript initial de la fiche.
+const CeilingVsCourt = dynamic(() =>
+  import("@/components/sale-detail/CeilingVsCourt").then((module) => module.CeilingVsCourt),
+);
 const ListingWorks = dynamic(
   () => import("@/components/sale-detail/ListingWorks").then((module) => module.ListingWorks),
   {
@@ -829,6 +833,14 @@ function SaleDetailWorkspace({
                       valueReason={valueReason}
                       dpeClass={dpeClass}
                     />
+                    {statisticsAvailable && heroCeiling != null && user && !publicDemo ? (
+                      <CeilingVsCourt
+                        saleId={sale.id}
+                        ceiling={heroCeiling}
+                        access={access}
+                        userKey={user.id}
+                      />
+                    ) : null}
                   </div>
                 ) : access === "analysis" ? (
                   <details
