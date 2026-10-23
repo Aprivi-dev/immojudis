@@ -9,18 +9,20 @@
 --     même pour un bien occupé ou d'occupation inconnue.
 begin;
 
-select plan(15);
+select plan(13);
 
 -- Fixtures -------------------------------------------------------------------------------------
+-- La contrainte auction_sales_occupancy_status_check n'admet que les valeurs normalisées : les
+-- libellés libres (« Inoccupé », « Libre ») sont testés directement sur is_vacant_occupancy_status.
 -- Estimation fiable : 8 ventes comparables, échantillon effectif 5, fourchette 100 000 à 140 000,
 -- valeur centrale 120 000, rayon 300 m, appartement urbain, intervalle de repli fixe.
 --   1  libre, sous la fourchette (60 000)            -> under
 --   2  libre, dans la fourchette (115 000)           -> near
 --   3  libre, au-dessus de la fourchette (150 000)   -> above
---   4  'Inoccupé', sous la fourchette                -> under
+--   4  libre, sous la fourchette (second cas)      -> under
 --   5  occupation inconnue ('unknown'), sous         -> occupancy_unknown
 --   6  occupation non renseignée (null), dans        -> occupancy_unknown
---   7  occupation illisible, au-dessus               -> occupancy_unknown
+--   7  occupation inconnue, au-dessus             -> occupancy_unknown
 --   8  occupé, sous                                  -> occupied
 --   9  loué, dans la fourchette                      -> occupied
 --   10 occupé par le propriétaire, au-dessus         -> occupied
@@ -43,8 +45,8 @@ select
 from (
   values
     (1, 60000, 'vacant'::text), (2, 115000, 'vacant'), (3, 150000, 'vacant'),
-    (4, 60000, 'Inoccupé'), (5, 60000, 'unknown'), (6, 115000, null),
-    (7, 150000, 'à voir sur place'), (8, 60000, 'occupied'), (9, 115000, 'rented'),
+    (4, 60000, 'vacant'), (5, 60000, 'unknown'), (6, 115000, null),
+    (7, 150000, 'unknown'), (8, 60000, 'occupied'), (9, 115000, 'rented'),
     (10, 150000, 'owner_occupied'), (11, 60000, 'squatted'), (12, 60000, 'unknown'),
     (13, 20000, 'unknown'), (14, 300000, 'occupied')
 ) as f(n, price, occupancy);
@@ -106,7 +108,7 @@ select is(
      ('c7050000-1000-4000-8000-' || lpad(n::text, 12, '0'))::uuid) order by ord)
      from unnest(array[5, 6, 7]) with ordinality as t(n, ord)),
   array['occupancy_unknown', 'occupancy_unknown', 'occupancy_unknown'],
-  'an unknown, missing or unreadable occupancy gets no band, whichever it would have been'
+  'an unknown or missing occupancy gets no band, whichever it would have been'
 );
 select is(
   (select array_agg(public.get_public_sale_market_gap_band(
