@@ -3,10 +3,12 @@ import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import type { Database } from "@/integrations/supabase/types";
 import { PublicApiError } from "@/lib/api-errors";
+import { publicLegalPublisher, type LegalPublisher } from "@/lib/legal-documents";
 import {
   OFFER_OPENING_CONSENT_VERSION,
   OFFER_OPENING_SURVEY_PROFILES,
   OFFER_OPENING_SURVEY_VERSION,
+  offerOpeningInterviewAvailable,
   type OfferOpeningSurveyProfile,
 } from "@/lib/offer-opening-consent";
 
@@ -49,8 +51,9 @@ const optionalCount = (max: number) =>
 
 /**
  * Questions facultatives de la liste d'attente : profil, ventes étudiées par mois, deux repères de
- * prix (euros par mois), et l'accord à un entretien de 20 minutes (faux tant que la personne n'a pas
- * coché la case). Les bornes sont celles des contraintes de la base (migration
+ * prix (euros par mois), et l'accord à être contacté pour un entretien d'environ 45 minutes (faux
+ * tant que la personne n'a pas coché la case, et refusé par `setOfferOpeningSurvey` quand la case
+ * n'est pas affichée). Les bornes sont celles des contraintes de la base (migration
  * `offer_opening_survey`). Rien de ceci ne conditionne l'inscription à la liste.
  */
 export const offerOpeningSurveySchema = z
@@ -194,18 +197,26 @@ const EMPTY_SURVEY_COLUMNS = {
  * itself: written by the service client after the route authenticated the user, so the interview
  * consent date cannot be forged from the browser. An interview agreed earlier keeps its first
  * date; unticking the box clears it. Sending nothing is allowed (every answer is optional).
+ * The interview agreement is refused while the box is not shown (publisher name or contact email
+ * missing): the server applies the same rule as the form, so a request cannot record a consent
+ * the person was never asked for.
  */
 export async function setOfferOpeningSurvey({
   auth,
   admin,
   input,
   now = new Date(),
+  publisher = publicLegalPublisher(),
 }: {
   auth: Pick<SupabaseAuthContext, "userId">;
   admin: SupabaseClient<Database>;
   input: OfferOpeningSurveyInput;
   now?: Date;
+  publisher?: Pick<LegalPublisher, "entityName" | "contactEmail">;
 }): Promise<OfferOpeningNotificationResponse> {
+  if (input.interviewAccepted && !offerOpeningInterviewAvailable(publisher)) {
+    throw new PublicApiError("L’entretien n’est pas proposé pour le moment.", 400);
+  }
   const { data: current, error: readError } = await admin
     .from("offer_opening_notifications")
     .select("*")
