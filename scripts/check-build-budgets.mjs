@@ -89,8 +89,10 @@ const MAX_CLIENT_CHUNK_BYTES = 330_000;
 // fifth raise, to 6,125,000.
 // The ten work sites of 23/10/2026 (aerial view, scenarios, PLU panel, consent, information agent,
 // pending alert after sign-up…) measured 6,164,297 bytes with every page budget passing except
-// admin-lawyers; the owner approved (23/10/2026) a sixth raise, to 6,165,000.
-const MAX_TOTAL_CLIENT_JS_BYTES = 6_165_000;
+// admin-lawyers; the owner approved (23/10/2026) a sixth raise, to 6,165,000. The review fixes of the
+// same day (alert criteria labels, consent texts) measured 6,166,442 bytes in CI; the owner approved
+// (23/10/2026) a seventh raise, to 6,170,000.
+const MAX_TOTAL_CLIENT_JS_BYTES = 6_170_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 // New homepage: lossless panorama for large screens plus editorial photography.
 const MAX_PUBLIC_MEDIA_BYTES = 5_000_000;
