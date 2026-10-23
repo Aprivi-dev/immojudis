@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from src.normalize import clean_text
+from src.personal_data import redact_personal_text
 
 MAX_SEMANTIC_INPUT_CHARS = 12_000
 MAX_SEMANTIC_PAGES = 12
@@ -223,6 +224,83 @@ class PhotoSemanticAnalysis:
         return payload
 
 
+# --- Données personnelles : rien de ceci ne part vers le fournisseur du modèle ----------------------
+_PHONE_RE = re.compile(
+    r"(?<![\w+])(?:(?:\+|00)\s?\d{1,3}[\s.\-]?\(?0?\)?[\s.\-]?|0)[1-9](?:[\s.\-]?\d{2}){4}(?!\d)"
+)
+_EMAIL_RE = re.compile(r"[\w.+\-]+@[\w\-]+(?:\.[\w\-]+)+")
+_CIVILITY_NAME_RE = re.compile(
+    r"\b(?:Ma[iî]tres?|Me|MM?\.|Mmes?|Mlle|Monsieur|Madame|Mademoiselle|Messieurs|Mesdames|Mr|Dr|Docteur)"
+    r"(?:[^\S\r\n]+(?:et|ou)[^\S\r\n]+(?:Ma[iî]tre|Me|MM?\.|Mme|Monsieur|Madame))?"
+    r"(?:[^\S\r\n]+(?:(?:de|du|des|d['’]|van|von|le|la)[^\S\r\n]+)?"
+    r"[A-ZÀ-ÖØ-ÞŒ][A-Za-zÀ-ÖØ-öø-ÿŒœ'’\-]*){1,3}"
+)
+# Formule de politesse qui ouvre un bloc de signature (« Bien cordialement », « Envoyé de mon iPhone »…).
+_CLOSING_RE = re.compile(
+    r"\b(?:bien\s+cordialement|tr[èe]s\s+cordialement|cordialement|cordiales\s+salutations|"
+    r"meilleures\s+salutations|salutations(?:\s+(?:distingu[ée]es|respectueuses|sinc[èe]res))?|"
+    r"bien\s+[àa]\s+vous|respectueusement|bien\s+amicalement|amicalement|cdlt|cdt|"
+    r"bonne\s+(?:journ[ée]e|soir[ée]e|fin\s+de\s+journ[ée]e)|envoy[ée]\s+de\s+mon\s+\w+)\b",
+    re.IGNORECASE,
+)
+_SIGNATURE_MAX_LINES = 8
+_SIGNATURE_MAX_LINE_CHARS = 90
+_SIGNATURE_FLAT_CHARS = 160
+
+
+def _signature_end(text: str, closing_end: int) -> int:
+    """Fin du bloc de signature qui suit une formule de politesse.
+
+    Avec des retours à la ligne : jusqu'à huit lignes courtes (une ligne vide est tolérée juste après
+    la formule), jusqu'à la première ligne vide ou longue. Sans retour à la ligne (texte déjà aplati) :
+    les 160 caractères suivants. Dans les deux cas, mieux vaut retirer un fait de trop qu'un nom.
+    """
+    rest = text[closing_end:]
+    if "\n" not in rest:
+        return min(len(text), closing_end + _SIGNATURE_FLAT_CHARS)
+    lines = rest.split("\n")
+    consumed = len(lines[0]) + 1  # reste de la ligne de la formule
+    index = 1
+    if index < len(lines) and not lines[index].strip():
+        consumed += len(lines[index]) + 1
+        index += 1
+    taken = 0
+    while index < len(lines) and taken < _SIGNATURE_MAX_LINES:
+        line = lines[index]
+        if not line.strip() or len(line) > _SIGNATURE_MAX_LINE_CHARS:
+            break
+        consumed += len(line) + 1
+        index += 1
+        taken += 1
+    return min(len(text), closing_end + consumed)
+
+
+def redact_text_for_model(text: object) -> str:
+    """Retire noms, signatures, téléphones et adresses email d'un texte avant l'envoi au modèle.
+
+    Réutilise le filtre de données personnelles du pipeline (`redact_personal_text` : occupants,
+    locataires, propriétaires, créanciers…) et ajoute ce que les réponses de professionnels contiennent
+    en plus : signature après la formule de politesse, civilité suivie d'un nom, téléphone, email. Les
+    faits cherchés (surface, pièces, dates de visite, occupation…) ne sont pas touchés. Idempotent.
+    """
+    if not isinstance(text, str) or not text:
+        return ""
+    result = text.replace("\r\n", "\n").replace("\r", "\n")
+    # Signatures d'abord, de la dernière formule à la première (les positions restent valables).
+    for match in reversed(list(_CLOSING_RE.finditer(result))):
+        end = _signature_end(result, match.end())
+        result = result[: match.start()] + "[signature retirée]" + result[end:]
+    result = _EMAIL_RE.sub("[email retiré]", result)
+    result = _PHONE_RE.sub("[téléphone retiré]", result)
+    result = redact_personal_text(result) or ""
+    return _CIVILITY_NAME_RE.sub("[nom retiré]", result)
+
+
+def _model_text(value: object) -> str:
+    """Texte d'une page tel que le modèle le reçoit et que les citations sont vérifiées."""
+    return clean_text(redact_text_for_model(value)) or ""
+
+
 def build_semantic_user_prompt(
     pages: Sequence[Mapping[str, object]],
 ) -> tuple[str, bool]:
@@ -233,13 +311,13 @@ def build_semantic_user_prompt(
             page_number = int(page.get("page") or 1)
         except (TypeError, ValueError):
             continue
-        text = clean_text(page.get("text")) or ""
+        text = _model_text(page.get("text"))
         if text:
             normalized_pages.append((max(1, page_number), text))
     normalized_pages.sort(key=lambda item: item[0])
     normalized_pages = normalized_pages[:MAX_SEMANTIC_PAGES]
     remaining = MAX_SEMANTIC_INPUT_CHARS
-    truncated = len(normalized_pages) < sum(1 for page in pages if clean_text(page.get("text")))
+    truncated = len(normalized_pages) < sum(1 for page in pages if _model_text(page.get("text")))
     sections: list[str] = []
     for page_number, text in normalized_pages:
         if remaining <= 0:
@@ -332,7 +410,8 @@ def validate_semantic_facts(
             page_number = int(page.get("page") or 1)
         except (TypeError, ValueError):
             continue
-        text = clean_text(page.get("text")) or ""
+        # Les citations sont vérifiées contre le texte tel que le modèle l'a reçu (sans noms).
+        text = _model_text(page.get("text"))
         if text:
             page_texts[max(1, page_number)] = text
     facts: list[SemanticFact] = []
@@ -677,7 +756,7 @@ def build_photo_user_prompt(ocr_text: str | None = None) -> str:
         "rien sur la surface, le prix, l'occupation, la propriété, le droit ou "
         "la conformité. Réponds uniquement au format JSON demandé."
     )
-    cleaned_ocr = clean_text(ocr_text) or ""
+    cleaned_ocr = _model_text(ocr_text)
     if cleaned_ocr:
         safe_ocr = cleaned_ocr[:2_000].replace("<", "‹").replace(">", "›")
         prompt += (

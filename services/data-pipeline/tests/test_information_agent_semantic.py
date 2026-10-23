@@ -374,3 +374,101 @@ def test_system_prompt_is_explicitly_external_data_only() -> None:
     assert "URL" in SEMANTIC_SYSTEM_PROMPT
     assert "ne modifient jamais" in SEMANTIC_SYSTEM_PROMPT
     assert "directement une annonce" in SEMANTIC_SYSTEM_PROMPT
+
+
+# --- Données personnelles : rien de nominatif ne part vers le fournisseur (n° 44) -----------------
+
+PERSONAL_PAGE = (
+    "Bonjour,\n\n"
+    "Le bien est occupé par Monsieur Pierre Martin suivant bail. La surface est de 72 m².\n"
+    "Pour une visite, appelez Me Jean Dupont au 06 12 34 56 78 (ou +33 1 23 45 67 89) "
+    "ou écrivez à jean.dupont@cabinet-dupont.fr.\n\n"
+    "Bien cordialement,\n\n"
+    "Maître Jean DUPONT\n"
+    "Avocat au barreau de Bordeaux\n"
+    "12 rue de la Paix 33000 Bordeaux\n"
+    "Tél : 05 56 00 00 00\n\n"
+    "PJ : dpe.pdf"
+)
+
+
+def test_prompt_never_carries_names_signature_phone_or_email() -> None:
+    prompt, _ = build_semantic_user_prompt([{"page": 1, "text": PERSONAL_PAGE}])
+
+    for personal in (
+        "Pierre Martin",
+        "Jean Dupont",
+        "DUPONT",
+        "06 12 34 56 78",
+        "+33 1 23 45 67 89",
+        "05 56 00 00 00",
+        "jean.dupont@cabinet-dupont.fr",
+        "cabinet-dupont",
+        "rue de la Paix",
+        "barreau",
+    ):
+        assert personal not in prompt, personal
+    # Les faits cherchés restent lisibles.
+    assert "72 m²" in prompt
+    assert "dpe.pdf" in prompt
+
+
+def test_the_provider_receives_the_redacted_text_and_citations_are_checked_against_it() -> None:
+    sent: dict[str, str] = {}
+
+    def generate_json(_system: str, user: str):
+        sent["user"] = user
+        return {
+            "facts": [
+                {
+                    "fact_key": "surface_m2",
+                    "proposed_value": {"value": 72},
+                    "display_value": "72 m²",
+                    "evidence_excerpt": "La surface est de 72 m²",
+                    "source_page": 1,
+                    "confidence": 0.9,
+                }
+            ]
+        }
+
+    result = analyze_semantic_evidence(
+        [{"page": 1, "text": PERSONAL_PAGE}], generate_json=generate_json, enabled=True
+    )
+
+    assert result.status == "completed"
+    assert [(fact.fact_key, fact.value) for fact in result.facts] == [("surface_m2", 72)]
+    assert "Pierre Martin" not in sent["user"] and "@" not in sent["user"]
+    # Une citation qui reprendrait le nom retiré n'est plus vérifiable : elle est refusée.
+    assert (
+        validate_semantic_facts(
+            [
+                {
+                    "fact_key": "occupancy_status",
+                    "proposed_value": {"value": "occupied"},
+                    "display_value": "occupied",
+                    "evidence_excerpt": "occupé par Monsieur Pierre Martin",
+                    "source_page": 1,
+                    "confidence": 0.9,
+                }
+            ],
+            [{"page": 1, "text": PERSONAL_PAGE}],
+        )
+        == []
+    )
+
+
+def test_redaction_is_idempotent_and_leaves_ordinary_sentences_alone() -> None:
+    from src.information_agent_semantic import redact_text_for_model
+
+    once = redact_text_for_model(PERSONAL_PAGE)
+    assert redact_text_for_model(once) == once
+    plain = "Me voici : la surface est de 80 m², 3 pièces, visite le 12 novembre à 10 h."
+    assert redact_text_for_model(plain) == plain
+    assert redact_text_for_model(None) == ""
+    assert "[signature retirée]" in redact_text_for_model("Cordialement, J. Dupont 06 12 34 56 78")
+
+
+def test_photo_ocr_text_is_redacted_too() -> None:
+    prompt = build_photo_user_prompt("Contact : M. Dupont 06 12 34 56 78 jean@cabinet.fr")
+
+    assert "Dupont" not in prompt and "06 12" not in prompt and "@" not in prompt
