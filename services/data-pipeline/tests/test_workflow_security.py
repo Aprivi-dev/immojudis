@@ -25,6 +25,7 @@ class Step:
 class Job:
     name: str
     env: str = ""
+    defaults: str = ""
     steps: list[Step] = field(default_factory=list)
 
 
@@ -65,6 +66,8 @@ def parse_jobs(text: str) -> list[Job]:
             line = rows[position]
             if re.match(r"^    env:\s*$", line):
                 job.env, position = _block(rows, position, 4)
+            elif re.match(r"^    defaults:\s*$", line):
+                job.defaults, position = _block(rows, position, 4)
             elif re.match(r"^    steps:\s*$", line):
                 steps_text, position = _block(rows, position, 4)
                 job.steps = _parse_steps(steps_text)
@@ -115,6 +118,21 @@ def test_every_workflow_declares_read_only_contents_at_workflow_level(path: Path
     text = path.read_text(encoding="utf-8")
 
     assert re.search(r"^permissions:\n(?:  #.*\n)*  contents: read\n", text, re.M), path.name
+
+
+@pytest.mark.parametrize("path", _workflows(), ids=lambda path: path.name)
+def test_default_working_directory_is_not_used_before_the_checkout(path: Path) -> None:
+    # The runner cannot start a step in a directory that the checkout has not created yet.
+    offenders = []
+    for job in parse_jobs(path.read_text(encoding="utf-8")):
+        if "working-directory:" not in job.defaults:
+            continue
+        for step in job.steps:
+            if step.uses.startswith("actions/checkout@"):
+                break
+            if step.run and "working-directory:" not in step.text:
+                offenders.append(f"{job.name}/{step.name}")
+    assert offenders == []
 
 
 @pytest.mark.parametrize("path", _workflows(), ids=lambda path: path.name)
