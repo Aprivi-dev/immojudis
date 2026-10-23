@@ -327,14 +327,20 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
     }
     const invalidType = normalized.find((item) => !isAllowedMimeType(item.mimeType));
     if (invalidType) {
-      fail(`Format non pris en charge : ${invalidType.file.name}.`, "files");
+      fail(
+        `Format non pris en charge : ${invalidType.file.name}. Enregistrez le document en PDF (Word, Excel et archives ne sont pas acceptés), puis joignez-le de nouveau.`,
+        "files",
+      );
       return;
     }
     const tooLarge = normalized.find(
       (item) => item.file.size > (session?.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES),
     );
     if (tooLarge) {
-      fail(`Le fichier ${tooLarge.file.name} dépasse la limite de 20 Mo.`, "files");
+      fail(
+        `Le fichier ${tooLarge.file.name} dépasse la limite de ${formatLimit(session?.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES)}.`,
+        "files",
+      );
       return;
     }
     if (files.length + normalized.length > MAX_FILES) {
@@ -343,7 +349,10 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
     }
     const totalBytes = [...files, ...normalized].reduce((total, item) => total + item.file.size, 0);
     if (totalBytes > (session?.maxSubmissionBytes ?? DEFAULT_MAX_SUBMISSION_BYTES)) {
-      fail("Le dépôt dépasse la limite totale de 40 Mo.", "files");
+      fail(
+        `Le dépôt dépasse la limite totale de ${formatLimit(session?.maxSubmissionBytes ?? DEFAULT_MAX_SUBMISSION_BYTES)}.`,
+        "files",
+      );
       return;
     }
     resetSubmissionProgress();
@@ -726,7 +735,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                       id="files-help"
                       className="mt-1 text-xs leading-relaxed text-muted-foreground"
                     >
-                      PDF, JPEG, PNG, WebP, HEIC, HEIF ou TXT · 20 Mo par fichier · 40 Mo au total.
+                      {`PDF, JPEG, PNG, WebP, HEIC, HEIF ou TXT · ${formatLimit(session.maxFileBytes)} par fichier · ${formatLimit(session.maxSubmissionBytes)} au total. Un document Word ou Excel : enregistrez-le d’abord en PDF.`}
                     </p>
                     {portalQuota && portalQuota.remainingFiles <= 3 ? (
                       <p
@@ -1076,6 +1085,11 @@ function parseLinks(value: string): string[] {
     .split(/\r?\n/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+/** Limite en Mo entiers (« 20 Mo »), telle que la session la fixe. */
+function formatLimit(value: number): string {
+  return `${Math.round(value / (1024 * 1024))} Mo`;
 }
 
 function formatBytes(value: number): string {

@@ -262,6 +262,23 @@ describe("InformationAgentContributionForm", () => {
     expect(screen.queryByText("large.pdf")).toBeNull();
   });
 
+  it("explique comment joindre un document Word, qui n'est pas accepté", async () => {
+    mocks.fetch.mockResolvedValueOnce(referenceResponse());
+    renderContribution();
+    await screen.findByText("CASE-1234");
+    expect(
+      screen.getByText(/Un document Word ou Excel : enregistrez-le d’abord en PDF/),
+    ).toBeTruthy();
+    const word = new File(["x"], "pv.docx", {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+    fireEvent.change(screen.getByLabelText("Pièces jointes"), { target: { files: [word] } });
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Enregistrez le document en PDF",
+    );
+  });
+
   it("refuse les pièces vides et les noms trop longs avant le dépôt", async () => {
     mocks.fetch.mockResolvedValueOnce(referenceResponse());
     renderContribution();
