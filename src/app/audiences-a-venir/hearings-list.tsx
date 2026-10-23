@@ -2,9 +2,8 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useId } from "react";
+import { Suspense, lazy, useId } from "react";
 import { SaleDetailLink } from "@/components/SaleDetailLink";
-import { SectorAlertCta } from "@/components/SectorAlertCta";
 import { Card } from "@/components/ui/primitives";
 import { formatStartingPrice, propertyTypeLabel } from "@/lib/format";
 import {
@@ -17,6 +16,12 @@ import {
   type HearingWindows,
 } from "@/lib/upcoming-hearings";
 import { RelativeDay } from "./relative-day";
+
+// L'invitation à créer une alerte n'apparaît qu'une fois un département choisi : son code (session,
+// formulaire) n'entre pas dans le JavaScript initial de la page.
+const SectorAlertCta = lazy(() =>
+  import("@/components/SectorAlertCta").then((module) => ({ default: module.SectorAlertCta })),
+);
 
 const count = new Intl.NumberFormat("fr-FR");
 
@@ -264,10 +269,12 @@ export function HearingsListing({
       ) : null}
 
       {department ? (
-        <SectorAlertCta
-          criteria={{ department }}
-          intro={`Recevez les nouvelles ventes du département ${option?.label ?? department}, dont les prochaines audiences.`}
-        />
+        <Suspense fallback={null}>
+          <SectorAlertCta
+            criteria={{ department }}
+            intro={`Recevez les nouvelles ventes du département ${option?.label ?? department}, dont les prochaines audiences.`}
+          />
+        </Suspense>
       ) : null}
     </>
   );

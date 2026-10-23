@@ -397,11 +397,11 @@ describe("/audiences-a-venir : filtre par département et jours repliables", () 
     expect(screen.getByRole("status").textContent).toContain(
       "2 audiences dans le département Seine-Saint-Denis (93)",
     );
-    // Alerte du département : un visiteur passe par la connexion et retrouve ses critères.
+    // Alerte du département (chargée à la demande) : un visiteur passe par la connexion et retrouve ses critères.
     expect(
-      screen
-        .getByRole("link", { name: "Recevoir les nouvelles ventes de ce secteur" })
-        .getAttribute("href"),
+      (
+        await screen.findByRole("link", { name: "Recevoir les nouvelles ventes de ce secteur" })
+      ).getAttribute("href"),
     ).toBe("/login?redirect=%2Falertes%2Fcreer%3Fdepartment%3D93&mode=investor&reason=alerte");
     // La liste filtrée est courte : tous les jours sont dépliés.
     for (const details of document.querySelectorAll("details[open]")) {
