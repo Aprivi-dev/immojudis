@@ -59,6 +59,7 @@ from src.reviewed_aliases import (
     load_reviewed_aliases,
     registry_from_rows,
 )
+from src.stage_watchdog import track_stage
 from src.storage import internal_contacts
 from src.storage.column_sets import (
     JUDICIAL_SALE_COLUMNS,  # noqa: F401  (re-exported)
@@ -3058,6 +3059,10 @@ def _has_recent_llm_description_failure(
 
 
 KNOWN_SALE_DETAIL_PAGE_SIZE = 100
+# Applied with ``set local`` inside the snapshot transaction: a transaction-mode pooler
+# rejects the connection-level ``statement_timeout`` (startup option), and a session-level
+# ``set`` does not follow the transaction from one backend to the next.
+KNOWN_SALE_DETAIL_STATEMENT_TIMEOUT = "60s"
 
 
 def fetch_sale_for_data_refresh(source_url: str) -> AuctionSale | None:
@@ -3124,13 +3129,15 @@ def fetch_known_sale_details(
             # REPEATABLE READ before the first read preserves it after the
             # egress-bounded pagination change.
             db.execute("set transaction isolation level repeatable read")
-            compact_presence = db.execute(
-                "select to_regclass(%s), to_regprocedure(%s)",
-                (
-                    "app_private.auction_sale_source_presence",
-                    "app_private.auction_sale_source_presence_json(uuid)",
-                ),
-            ).fetchone()
+            db.execute(f"set local statement_timeout = '{KNOWN_SALE_DETAIL_STATEMENT_TIMEOUT}'")
+            with track_stage("known_sales.preflight"):
+                compact_presence = db.execute(
+                    "select to_regclass(%s), to_regprocedure(%s)",
+                    (
+                        "app_private.auction_sale_source_presence",
+                        "app_private.auction_sale_source_presence_json(uuid)",
+                    ),
+                ).fetchone()
             use_compact_presence = bool(
                 compact_presence
                 and compact_presence[0]
@@ -3140,7 +3147,8 @@ def fetch_known_sale_details(
                 compact_presence=use_compact_presence,
                 include_enrichment_payload=include_enrichment_payload,
             )
-            reviewed_aliases = load_reviewed_aliases(db)
+            with track_stage("known_sales.reviewed_aliases"):
+                reviewed_aliases = load_reviewed_aliases(db)
             relevant_aliases = (
                 reviewed_aliases.aliases_for_urls(requested_urls)
                 if source_urls is not None
@@ -3158,7 +3166,9 @@ def fetch_known_sale_details(
                 where += " and (" + " or ".join(source_filters) + ")"
             all_rows = []
             last_id: str | None = None
+            page_number = 0
             while True:
+                page_number += 1
                 if last_id is None:
                     query = (
                         f"select to_jsonb(sale) from (select {postgres_select} "
@@ -3173,7 +3183,8 @@ def fetch_known_sale_details(
                         "order by id limit %s) sale"
                     )
                     params = (*filter_params, last_id, KNOWN_SALE_DETAIL_PAGE_SIZE)
-                rows = db.execute(query, params).fetchall()
+                with track_stage(f"known_sales.page_{page_number}"):
+                    rows = db.execute(query, params).fetchall()
                 if not rows:
                     break
                 all_rows.extend(row[0] for row in rows)

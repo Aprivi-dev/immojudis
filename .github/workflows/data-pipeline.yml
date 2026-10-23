@@ -284,6 +284,10 @@ jobs:
           REQUESTED_SOURCE: ${{ github.event.inputs.source }}
           REQUESTED_LIMIT: ${{ github.event.inputs.limit }}
           REQUESTED_LLM_BACKFILL: ${{ github.event.inputs.llm_backfill }}
+          # Garde contre un appel bloqué (src/stage_watchdog.py) : manuel, src.main se termine avec le
+          # code 124 et un journal des étapes avant le délai du job (180 min, installation comprise).
+          # En exécution automatique, le lanceur impose sa propre valeur (budget de la source moins 90 s).
+          PIPELINE_WATCHDOG_SECONDS: "9600"
         run: |
           set -euo pipefail
           : "${SUPABASE_DB_URL:?Transactional publication requires SUPABASE_DB_URL}"

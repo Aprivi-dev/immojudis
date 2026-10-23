@@ -222,3 +222,42 @@ def test_worker_timeout_remains_failed_and_visible(monkeypatch) -> None:
     ]
     assert updates[0][2].obj["worker_exit_code"] == 1
     assert updates[0][2].obj["completion_status"] == "interrupted"
+
+
+def test_worker_watchdog_exit_is_explained_and_armed_before_the_hard_kill(monkeypatch) -> None:
+    run_id = "00000000-0000-0000-0000-000000000006"
+    updates = []
+    subprocess_calls = []
+
+    class FakeDb:
+        def execute(self, statement, params):
+            if "returning source" in statement:
+                return SimpleNamespace(fetchone=lambda: ("licitor",))
+            if "select summary from public.auction_runs" in statement:
+                return SimpleNamespace(fetchone=lambda: ({},))
+            if "update public.auction_runs set status=%s" in statement:
+                updates.append(params)
+            return SimpleNamespace(fetchone=lambda: None)
+
+    monkeypatch.setattr(autonomous_runner, "load_settings", lambda: {"supabase_db_url": "postgresql://test"})
+    monkeypatch.setattr(autonomous_runner, "_postgres_connect", lambda _url: nullcontext(FakeDb()))
+    monkeypatch.setattr(autonomous_runner, "register_run", lambda _run_id: None)
+    monkeypatch.setattr(autonomous_runner, "finish_source", lambda _db_url, _run_id: None)
+    monkeypatch.setattr(
+        autonomous_runner.subprocess,
+        "run",
+        lambda command, **kwargs: subprocess_calls.append((command, kwargs))
+        or SimpleNamespace(returncode=autonomous_runner.WATCHDOG_EXIT_CODE),
+    )
+
+    assert autonomous_runner.execute(run_id) == autonomous_runner.WATCHDOG_EXIT_CODE
+
+    budget = subprocess_calls[0][1]["timeout"]
+    watchdog = int(subprocess_calls[0][1]["env"][autonomous_runner.WATCHDOG_ENV])
+    assert budget == 50 * 60
+    assert watchdog == budget - autonomous_runner.WATCHDOG_MARGIN_SECONDS
+    # Room remains for the source budget (budget minus 8 min) to run out first.
+    assert watchdog > budget - autonomous_runner.LICITOR_BUDGET_MARGIN_SECONDS
+    assert updates[0][0] == "failed"
+    assert updates[0][1].obj["runner"][0].startswith("Worker watchdog fired")
+    assert updates[0][2].obj["completion_status"] == "interrupted"

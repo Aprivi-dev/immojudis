@@ -34,6 +34,23 @@ WORKER_CWD = str(Path(__file__).resolve().parent.parent)
 WORKER_EVENT_PREFIX = "__IMMOJUDIS_SOURCE_EVENT__"
 
 
+_LIVE_PROCESSES: set[subprocess.Popen[str]] = set()
+_LIVE_PROCESSES_LOCK = threading.Lock()
+
+
+def kill_live_source_processes() -> int:
+    """Kill every collector still running (used just before the watchdog ends the parent).
+
+    The collectors run in their own session, so they would otherwise outlive a parent
+    that ends without cleaning up.
+    """
+    with _LIVE_PROCESSES_LOCK:
+        processes = list(_LIVE_PROCESSES)
+    for process in processes:
+        _kill_process_tree(process)
+    return len(processes)
+
+
 class SourceScrapeTimeout(TimeoutError):
     """Raised when an isolated collector exceeds its wall-clock budget."""
 
@@ -169,6 +186,25 @@ def _communicate_with_timeout(
         text=True,
         start_new_session=(os.name == "posix"),
     )
+    with _LIVE_PROCESSES_LOCK:
+        _LIVE_PROCESSES.add(process)
+    try:
+        return _communicate_with_live_process(
+            process, started, input_text, timeout_seconds, label, on_batch
+        )
+    finally:
+        with _LIVE_PROCESSES_LOCK:
+            _LIVE_PROCESSES.discard(process)
+
+
+def _communicate_with_live_process(
+    process: subprocess.Popen[str],
+    started: float,
+    input_text: str,
+    timeout_seconds: float,
+    label: str,
+    on_batch: Callable[[list[dict[str, Any]]], None] | None,
+) -> tuple[str, str, int, float]:
     stdout_chunks: list[str] = []
     stderr_chunks: list[str] = []
     event_errors: list[BaseException] = []
