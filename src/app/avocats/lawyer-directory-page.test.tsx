@@ -101,6 +101,25 @@ describe("annuaire des avocats", () => {
     expect(title.parentElement?.className).toContain("min-w-0");
   });
 
+  it("propose aux avocats de présenter leur cabinet, vers le contact prérempli, sans attendre l'annuaire", () => {
+    // Le bloc est dans le HTML de la page, avant même que l'annuaire réponde.
+    mocks.fetchLawyerDirectory.mockReturnValue(new Promise(() => {}));
+    mocks.query = "bar=Bordeaux";
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <LawyerDirectoryPage />
+      </QueryClientProvider>,
+    );
+    const entry = screen.getByRole("complementary", { name: "Vous êtes avocat ?" });
+    const link = within(entry).getByRole("link", { name: "Présenter mon cabinet" });
+    expect(link.getAttribute("href")).toBe("/contact?sujet=avocat");
+    // Cible tactile de 44 px et pleine largeur sous 640 px (320 et 390 px) : rien ne déborde.
+    expect(link.className).toContain("min-h-11");
+    expect(link.className).toContain("w-full");
+    expect(entry.className).toContain("min-w-0");
+    expect(entry.textContent).toContain("Publicité · Sponsorisé");
+  });
+
   it("affiche « Publicité · Sponsorisé » sur les profils sponsorisés seulement", async () => {
     renderDirectory([
       profile({
