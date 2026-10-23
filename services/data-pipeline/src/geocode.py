@@ -202,6 +202,15 @@ def locate_sale_by_cadastre(sale: AuctionSale) -> AuctionSale:
     return sale
 
 
+def sale_needs_position(sale: AuctionSale) -> bool:
+    """Vente sans point, ou dont le point n'est que le centre de sa commune (repli sans réseau ou repli BAN).
+
+    L'enrichissement retente alors la BAN pour trouver mieux ; son cache négatif de 14 jours évite de la rappeler à
+    chaque passage.
+    """
+    return sale.latitude is None or sale.longitude is None or is_municipality_point(sale)
+
+
 def clear_position_flags(sale: AuctionSale) -> None:
     """Retire les drapeaux de position : le point actuel est vérifié (BAN, parcelle) ou confirmé."""
     sale.quality_flags = remove_flags(sale.quality_flags, POSITION_FLAGS)

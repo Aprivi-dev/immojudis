@@ -306,7 +306,12 @@ def test_preserved_position_flags_ignores_what_is_not_a_known_flag() -> None:
 def test_a_commune_centre_is_recognised_so_that_the_enrichment_retries_the_ban(communes) -> None:
     sale = _sale(address="chemin sans nom", postal_code="33000", city="Bordeaux", department="33")
     assert municipality_location.is_municipality_point(sale) is False
+    assert geocode.sale_needs_position(sale) is True  # aucun point
 
     municipality_location.locate_sale_by_municipality(sale)
 
     assert municipality_location.is_municipality_point(sale) is True
+    assert geocode.sale_needs_position(sale) is True  # un centre de commune se retente
+
+    sale.raw_payload["geo_precision"] = "address"
+    assert geocode.sale_needs_position(sale) is False  # une adresse précise ne se retente pas
