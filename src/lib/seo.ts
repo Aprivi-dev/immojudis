@@ -1,4 +1,5 @@
 import { propertyTypeLabel } from "@/lib/format";
+import { propertyImages } from "@/lib/sale-media";
 import { getSaleProcedure } from "@/lib/sale-procedure";
 import type { AuctionSale, SaleVenueType } from "@/lib/types";
 
@@ -365,10 +366,17 @@ type StructuredDataContext = {
   now?: Date;
 };
 
+/**
+ * Image of the JSON-LD: the first photo the page itself would show (`propertyImages`, the filter of
+ * the sale page), served over https. A photo the page rejects (logo, navigation asset, source
+ * withdrawn from the catalogue, duplicate) is never put in the structured data.
+ */
 function thumbnail(sale: SaleFacts): string | null {
-  const media = sale.media as Array<{ type?: string; url?: string }> | null | undefined;
-  const url = media?.find((item) => item?.url && (item.type ?? "image") === "image")?.url;
-  return url && /^https:\/\//i.test(url) ? url : null;
+  const media = sale.media as AuctionSale["media"] | null | undefined;
+  const image = propertyImages(media).find(
+    (item) => (item.type ?? "image") === "image" && /^https:\/\//i.test(item.url),
+  );
+  return image?.url ?? null;
 }
 
 /**
