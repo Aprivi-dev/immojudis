@@ -34,7 +34,7 @@ function candidate(index: number, distanceM: number, pricePerM2 = 3_600): Market
 function serve(sales: MarketEngineCandidate[]) {
   analyzeAtRadius.mockImplementation(
     async (_lat: number, _lng: number, radiusM: number): Promise<RadiusAnalysis> => ({
-      source: "cerema_dvf",
+      source: "DVF Cerema",
       candidates: sales.filter((sale) => sale.distanceM <= radiusM),
       addressMutations: [],
       totalNearby: sales.length,
