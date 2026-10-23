@@ -172,7 +172,7 @@ def test_data_pipeline_secrets_reach_only_the_business_steps() -> None:
     assert [name for name, step in steps.items() if "CRON_SECRET" in step.env] == ["Invalidate public cache"]
     invalidation = steps["Invalidate public cache"]
     assert "CRON_SECRET: ${{ secrets.CRON_SECRET }}" in invalidation.env
-    assert "SITE_URL: ${{ vars.SITE_URL }}" in invalidation.env
+    assert "SITE_URL: ${{ vars.SITE_URL || 'https://immojudis.com' }}" in invalidation.env
     assert invalidation.run.strip() == "python -m src.cache_invalidation --flush"
     # Après la finalisation (un retrait déjà écrit part même si la collecte échoue) et jamais bloquante.
     names = [step.name for step in jobs["run"].steps]
