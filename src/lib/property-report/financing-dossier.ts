@@ -158,7 +158,7 @@ export function financingDossierLines(input: FinancingDossierInput): string[] {
           `Montant indiqué dans l’annonce: ${euros(announcedGuarantee.amountEur)}`,
           ...(insolvency
             ? [
-                "Forme: chèque de banque ou caution bancaire irrévocable (art. R. 642-29-2 du Code de commerce, renvoi à R. 322-41 du CPCE ; chez un notaire : art. R. 642-32).",
+                "Forme: chèque de banque ou caution bancaire irrévocable (art. R. 642-29-2 du Code de commerce, renvoi à R. 322-41 du CPCE).",
                 "Bénéficiaire du chèque: à lire dans le cahier des conditions de vente.",
               ]
             : [
@@ -183,7 +183,7 @@ export function financingDossierLines(input: FinancingDossierInput): string[] {
               ? "Délai: deux mois après l’adjudication définitive (l’adjudication devient définitive à la fin du délai de surenchère, selon l’analyse usuelle : point de départ à confirmer avec l’avocat) pour verser le prix ou le consigner, à peine de réitération des enchères (art. R. 322-56)."
               : `Délai: ${FINANCING_NOT_PROVIDED} (cadre juridique de la vente non établi). Deux mois après l’adjudication définitive pour une saisie immobilière (art. R. 322-56) ; autre délai possible dans les autres cas : à lire dans le cahier des conditions de vente.`,
           insolvency
-            ? "Frais de la vente en plus du prix, selon le cahier (art. L. 642-18 du Code de commerce)."
+            ? "Frais de poursuite taxés en plus du prix, selon le cahier (à confirmer avec l’avocat)."
             : "Frais de poursuite taxés et droits de mutation en plus du prix (art. R. 322-58).",
           "Imputation de la garantie sur le prix: non précisée par les textes, à demander à l’avocat.",
         ]

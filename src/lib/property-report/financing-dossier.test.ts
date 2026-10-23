@@ -295,11 +295,15 @@ describe("cadre juridique de la vente au tribunal", () => {
   it("liquidation judiciaire : cite le Code de commerce, pas les articles de la saisie immobilière", () => {
     const insolvency = dossierLines({ sale: { legalFramework: "insolvency" } });
     const text = insolvency.join("\n");
-    // Garantie : renvoi du Code de commerce aux règles d'enchères du CPCE (R. 322-41), avec le notaire à part.
+    // Garantie : renvoi du Code de commerce aux règles d'enchères du CPCE (R. 322-41).
     expect(text).toContain("art. R. 642-29-2 du Code de commerce, renvoi à R. 322-41 du CPCE");
-    expect(text).toContain("chez un notaire : art. R. 642-32");
-    // Frais : l'article L. 642-18 du Code de commerce, pas R. 322-58.
-    expect(text).toContain("(art. L. 642-18 du Code de commerce)");
+    // Branche tribunal : jamais atteinte pour une vente chez notaire, donc pas de R. 642-32.
+    expect(text).not.toContain("R. 642-32");
+    // Frais : frais de poursuite taxés selon le cahier, sans article cité, pas R. 322-58.
+    expect(text).toContain(
+      "Frais de poursuite taxés en plus du prix, selon le cahier (à confirmer avec l’avocat).",
+    );
+    expect(text).not.toContain("L. 642-18");
     expect(text).not.toContain("R. 322-58");
     expect(text).not.toContain("art. R. 322-41 du CPCE)");
     // Les autres cadres gardent R. 322-58.
