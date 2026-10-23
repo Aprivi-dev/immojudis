@@ -13405,6 +13405,7 @@ export type Database = {
         }[];
       };
       admin_sale_signal_feedback_summary: { Args: { p_now?: string }; Returns: Json };
+      admin_pilotage_bid_ceilings: { Args: { p_now?: string }; Returns: Json };
       abort_information_agent_evidence_publication: {
         Args: { p_fact_id: string; p_public_path: string };
         Returns: boolean;

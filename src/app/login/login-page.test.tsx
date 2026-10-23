@@ -90,7 +90,7 @@ describe("login page", () => {
     expect(options.privacy_version).toMatch(/^\d{4}-\d{2}-\d{2}\.\d+$/);
     expect(typeof options.terms_accepted_at).toBe("string");
     expect(mocks.track).toHaveBeenCalledTimes(1);
-    expect(mocks.track).toHaveBeenCalledWith("signup_completed");
+    expect(mocks.track).toHaveBeenCalledWith("signup_submitted");
   });
 
   it("shows a French error inside the form instead of the raw Supabase message", async () => {

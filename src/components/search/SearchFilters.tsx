@@ -26,7 +26,7 @@ export function MobileMapToggle({
   onOpenMap: () => void;
 }) {
   return (
-    <div className="fixed inset-x-0 bottom-0 z-30 grid auto-cols-fr grid-flow-col gap-2 border-t border-brand-navy/10 bg-white/95 p-2 shadow-[0_-14px_34px_rgba(19,34,56,0.12)] backdrop-blur lg:hidden">
+    <div className="fixed inset-x-0 bottom-[var(--cookie-banner-height,0px)] z-30 grid auto-cols-fr grid-flow-col gap-2 border-t border-brand-navy/10 bg-white/95 p-2 shadow-[0_-14px_34px_rgba(19,34,56,0.12)] backdrop-blur lg:hidden">
       <button
         type="button"
         onClick={onOpenFilters}
