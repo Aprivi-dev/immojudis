@@ -35,7 +35,7 @@
     "ops:health-scheduler:configure": "node scripts/configure-operational-health-scheduler.mjs",
     "ops:smoke": "node scripts/check-production-smoke.mjs",
     "valuation:publish": "node scripts/publish-valuation-models.mjs",
-    "release:prepare": "npm run env:check:prod && npm run db:migrate && npm run ops:health-scheduler:configure && npm run check:schema-drift -- --remote && npm run valuation:publish",
+    "release:prepare": "node scripts/confirm-release-prepare.mjs && npm run env:check:prod && npm run db:migrate && npm run ops:health-scheduler:configure && npm run check:schema-drift -- --remote && npm run valuation:publish",
     "format": "prettier --write .",
     "check:secrets": "node scripts/check-secrets.mjs"
   },

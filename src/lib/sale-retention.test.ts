@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { runSaleRetention } from "./sale-retention";
+import { SaleRetentionError, runSaleRetention } from "./sale-retention";
 
 type QueueItem = { id: string; bucket: string; object_path: string };
 const DEFAULT_QUEUE: QueueItem[] = [
@@ -107,11 +107,59 @@ describe("sale retention", () => {
     await expect(runSaleRetention(new Date(), client)).rejects.toThrow("unavailable");
     expect(ack).not.toHaveBeenCalled();
   });
-  it("propagates database failures before any storage deletion", async () => {
-    const { client, rpc, remove } = clientFor();
+  it("a failing sale purge no longer stops the orphan queue nor the Storage drain", async () => {
+    const { client, rpc, ack, remove } = clientFor();
     rpc.mockResolvedValueOnce({ data: null, error: { message: "bridge failed" } });
-    await expect(runSaleRetention(new Date(), client)).rejects.toThrow("bridge failed");
-    expect(remove).not.toHaveBeenCalled();
+    const error = await runSaleRetention(new Date(), client).catch((caught) => caught);
+    // The job fails, with the step and its message...
+    expect(error).toBeInstanceOf(SaleRetentionError);
+    expect(error.message).toContain("purge: bridge failed");
+    expect(error.failures).toEqual([{ step: "purge", message: "bridge failed" }]);
+    // ... but the other two steps ran to the end.
+    expect(rpc).toHaveBeenCalledWith("enqueue_orphan_information_agent_portal_uploads", {
+      p_now: expect.any(String),
+      p_limit: 100,
+    });
+    expect(remove).toHaveBeenCalledWith(["sale/file.pdf"]);
+    expect(ack).toHaveBeenCalledWith("id", ["job"]);
+    expect(error.summary).toMatchObject({ orphanUploadsQueued: 1, filesDeleted: 1 });
+  });
+  it("reports the orphan step error and still drains the Storage queue", async () => {
+    const { client, rpc, remove } = clientFor();
+    rpc.mockImplementation(async (name: string) =>
+      name === "enqueue_orphan_information_agent_portal_uploads"
+        ? { data: null, error: { message: "orphans unavailable" } }
+        : { data: { deleted: 2, remaining: 0, busy: false }, error: null },
+    );
+    const error = await runSaleRetention(new Date(), client).catch((caught) => caught);
+    expect(error.failures).toEqual([{ step: "orphans", message: "orphans unavailable" }]);
+    expect(error.summary).toMatchObject({ deleted: 2, filesDeleted: 1 });
+    expect(remove).toHaveBeenCalledTimes(1);
+  });
+  it("reports every failing step together", async () => {
+    const { client, rpc } = clientFor("storage down");
+    rpc.mockImplementation(async (name: string) =>
+      name === "enqueue_orphan_information_agent_portal_uploads"
+        ? { data: null, error: { message: "orphans unavailable" } }
+        : { data: null, error: { message: "purge down" } },
+    );
+    const error = await runSaleRetention(new Date(), client).catch((caught) => caught);
+    expect(error.failures.map((failure: { step: string }) => failure.step)).toEqual([
+      "purge",
+      "orphans",
+      "storage",
+    ]);
+    expect(error.message).toContain("purge: purge down");
+    expect(error.message).toContain("orphans: orphans unavailable");
+    expect(error.message).toContain("storage: storage down");
+  });
+  it("keeps the purge deletions counted before a later batch fails", async () => {
+    const { client, rpc } = clientFor();
+    rpc
+      .mockResolvedValueOnce({ data: { deleted: 25, remaining: 10, busy: false }, error: null })
+      .mockResolvedValueOnce({ data: null, error: { message: "timeout" } });
+    const error = await runSaleRetention(new Date(), client).catch((caught) => caught);
+    expect(error.summary).toMatchObject({ deleted: 25, remaining: 10 });
   });
   it("stops on concurrent purge and still drains committed file removals", async () => {
     const { client, rpc } = clientFor();

@@ -11,6 +11,7 @@ import {
   fetchAccessPlan,
   fetchNotificationPreferences,
 } from "@/lib/client-api";
+import { departmentFromSearchQuery } from "@/lib/alerts";
 import type { GeoPoint } from "@/lib/geo";
 import { OFFERS_PATH, loginPathWithRedirect } from "@/lib/navigation";
 import { trackProductEvent } from "@/lib/product-events";
@@ -162,9 +163,12 @@ export function useCreateAlert({
           ? await createWatchedZoneRequest({ data: watchedZoneInput })
           : null;
 
+        // Un code de département tapé dans la recherche texte est un filtre département, comme dans
+        // le catalogue : il n'est pas gardé comme texte libre (que l'évaluation n'applique pas).
+        const queryDepartment = search.department ? null : departmentFromSearchQuery(search.query);
         await createAlert(user.id, {
           name: options.name ?? buildAlertName(options.nameSearch ?? search),
-          department: search.department || null,
+          department: search.department || queryDepartment || null,
           city: search.city || null,
           property_type: search.homeTypes?.length === 1 ? search.homeTypes[0] : null,
           max_price_eur: search.maxPrice ?? null,
@@ -184,7 +188,7 @@ export function useCreateAlert({
             min_sale_date: search.minSaleDate ?? null,
             max_sale_date: search.maxSaleDate ?? null,
             sale_type: search.saleType ?? null,
-            query: search.query ?? null,
+            query: queryDepartment ? null : (search.query ?? null),
             around_address: search.aroundAddress ?? null,
             around_radius_km: search.aroundRadius ?? null,
             watched_zone_id: watchedZoneResponse?.zone.id ?? null,

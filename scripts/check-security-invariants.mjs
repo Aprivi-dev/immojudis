@@ -950,26 +950,174 @@ for (const [name, source] of migrationSources) {
 // call such a function, every app_private function it calls (and created since) must be granted
 // to service_role too, or each call fails with « permission denied » (court_auction_scenarios
 // calling starting_price_band broke the « Scénarios d'enchères » that way).
+//
+// Functions are keyed by SIGNATURE (schema.name(argument types), normalised), not by name: a
+// function and its overload are two functions with their own grants, and a grant on one does not
+// cover the other. A call in a body carries no types, so a callee is checked on every one of its
+// overloads created since 20261010004000.
+const POSTGRES_TYPE_WORDS = new Set([
+  "smallint",
+  "integer",
+  "int",
+  "int2",
+  "int4",
+  "int8",
+  "bigint",
+  "numeric",
+  "decimal",
+  "real",
+  "double",
+  "float",
+  "float4",
+  "float8",
+  "text",
+  "varchar",
+  "character",
+  "char",
+  "bpchar",
+  "boolean",
+  "bool",
+  "uuid",
+  "date",
+  "time",
+  "timetz",
+  "timestamp",
+  "timestamptz",
+  "interval",
+  "json",
+  "jsonb",
+  "bytea",
+  "inet",
+  "cidr",
+  "citext",
+  "record",
+  "void",
+  "trigger",
+  "anyelement",
+  "anyarray",
+  "oid",
+  "regclass",
+  "name",
+  "money",
+  "bit",
+  "point",
+  "tsvector",
+  "tsquery",
+  "geometry",
+  "geography",
+  "vector",
+]);
+const POSTGRES_TYPE_ALIASES = new Map([
+  ["int", "integer"],
+  ["int4", "integer"],
+  ["int2", "smallint"],
+  ["int8", "bigint"],
+  ["bool", "boolean"],
+  ["float8", "double precision"],
+  ["float4", "real"],
+  ["float", "double precision"],
+  ["decimal", "numeric"],
+  ["varchar", "character varying"],
+  ["char", "character"],
+  ["bpchar", "character"],
+  ["timestamptz", "timestamp with time zone"],
+  ["timestamp", "timestamp without time zone"],
+  ["timetz", "time with time zone"],
+  ["time", "time without time zone"],
+]);
+
+function splitTopLevel(text) {
+  const parts = [];
+  let depth = 0;
+  let current = "";
+  for (const char of text) {
+    if (char === "(" || char === "[") depth += 1;
+    if (char === ")" || char === "]") depth -= 1;
+    if (char === "," && depth === 0) {
+      parts.push(current);
+      current = "";
+    } else current += char;
+  }
+  if (current.trim()) parts.push(current);
+  return parts;
+}
+
+function normalizeTypeName(text) {
+  let type = text
+    .replace(/\(\s*[\d\s,]*\)/g, "")
+    .replace(/\s+/g, " ")
+    .replace(/\s*\[\s*\]/g, "[]")
+    .replace(/^(?:public|pg_catalog)\./, "")
+    .trim();
+  let arrays = "";
+  while (type.endsWith("[]")) {
+    arrays += "[]";
+    type = type.slice(0, -2).trim();
+  }
+  return `${POSTGRES_TYPE_ALIASES.get(type) ?? type}${arrays}`;
+}
+
+/** Normalised argument types of one parameter, or null for an OUT parameter (not in the identity). */
+function parameterType(parameter) {
+  let text = parameter
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/\s+default\s.*$/s, "")
+    .replace(/\s*:?=\s.*$/s, "");
+  const mode = /^(inout|in|out|variadic)\s+/.exec(text)?.[1];
+  if (mode === "out") return null;
+  if (mode) text = text.slice(mode.length).trim();
+  const words = text.split(" ");
+  const isType = (word) =>
+    POSTGRES_TYPE_WORDS.has(word.replace(/[([].*$/, "")) || /[."]/.test(word);
+  // « p_amount numeric » → numeric ; « numeric » → numeric ; « name text » → text.
+  if (words.length > 1 && (!isType(words[0]) || isType(words[1]))) words.shift();
+  return normalizeTypeName(words.join(" "));
+}
+
+/** `schema.name(type, type…)` from the text that follows the opening parenthesis of the arguments. */
+function functionSignature(schema, name, argumentText) {
+  let depth = 1;
+  let end = argumentText.length;
+  for (let index = 0; index < argumentText.length; index += 1) {
+    if (argumentText[index] === "(") depth += 1;
+    if (argumentText[index] === ")") depth -= 1;
+    if (depth === 0) {
+      end = index;
+      break;
+    }
+  }
+  const types = splitTopLevel(argumentText.slice(0, end))
+    .map(parameterType)
+    .filter((type) => type !== null);
+  return `${schema}.${name}(${types.join(",")})`.toLowerCase();
+}
+
 {
   const firstCreated = new Map();
   const latestDefinition = new Map();
   const serviceRoleGranted = new Map();
+  const signaturesByName = new Map();
   const statements =
-    /create\s+(?:or\s+replace\s+)?function\s+(public|app_private)\.(\w+)\s*\(([\s\S]*?)\bas\s+\$(\w*)\$([\s\S]*?)\$\4\$|grant\s+(?:execute|all)\s+on\s+function\s+(public|app_private)\.(\w+)\s*\([^)]*\)\s+to\s+([^;]+);|revoke\s+(?:execute|all)\s+on\s+function\s+(public|app_private)\.(\w+)\s*\([^)]*\)\s+from\s+([^;]+);/gi;
+    /create\s+(?:or\s+replace\s+)?function\s+(public|app_private)\.(\w+)\s*\(([\s\S]*?)\bas\s+\$(\w*)\$([\s\S]*?)\$\4\$|grant\s+(?:execute|all)\s+on\s+function\s+(public|app_private)\.(\w+)\s*\(((?:[^()]|\([^()]*\))*)\)\s+to\s+([^;]+);|revoke\s+(?:execute|all)\s+on\s+function\s+(public|app_private)\.(\w+)\s*\(((?:[^()]|\([^()]*\))*)\)\s+from\s+([^;]+);/gi;
   for (const [name, source] of migrationSources) {
     const sql = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--[^\n]*/g, "");
     for (const match of sql.matchAll(statements)) {
       if (match[1]) {
-        const key = `${match[1]}.${match[2]}`.toLowerCase();
+        const key = functionSignature(match[1], match[2], match[3]);
         if (!firstCreated.has(key)) firstCreated.set(key, name);
         latestDefinition.set(key, {
           definer: /security\s+definer/i.test(match[3]),
           body: match[5],
         });
-      } else if (match[6] && /\bservice_role\b/i.test(match[8])) {
-        serviceRoleGranted.set(`${match[6]}.${match[7]}`.toLowerCase(), true);
-      } else if (match[9] && /\bservice_role\b/i.test(match[11])) {
-        serviceRoleGranted.set(`${match[9]}.${match[10]}`.toLowerCase(), false);
+        const byName = `${match[1]}.${match[2]}`.toLowerCase();
+        if (!signaturesByName.has(byName)) signaturesByName.set(byName, new Set());
+        signaturesByName.get(byName).add(key);
+      } else if (match[6] && /\bservice_role\b/i.test(match[9])) {
+        serviceRoleGranted.set(functionSignature(match[6], match[7], `${match[8]})`), true);
+      } else if (match[10] && /\bservice_role\b/i.test(match[13])) {
+        serviceRoleGranted.set(functionSignature(match[10], match[11], `${match[12]})`), false);
       }
     }
   }
@@ -984,10 +1132,11 @@ for (const [name, source] of migrationSources) {
         firstCreated.get(caller) >= defaultPrivilegeName);
     if (!callableByServiceRole) continue;
     for (const call of definition.body.matchAll(/\bapp_private\.(\w+)\s*\(/gi)) {
-      const callee = `app_private.${call[1]}`.toLowerCase();
-      if (!latestDefinition.has(callee) || firstCreated.get(callee) < defaultPrivilegeName)
-        continue;
-      if (serviceRoleGranted.get(callee) !== true) missing.add(`${caller} -> ${callee}`);
+      const overloads = signaturesByName.get(`app_private.${call[1]}`.toLowerCase()) ?? [];
+      for (const callee of overloads) {
+        if (firstCreated.get(callee) < defaultPrivilegeName) continue;
+        if (serviceRoleGranted.get(callee) !== true) missing.add(`${caller} -> ${callee}`);
+      }
     }
   }
   for (const call of missing) {

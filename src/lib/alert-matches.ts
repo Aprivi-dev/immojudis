@@ -6,6 +6,7 @@ import { isDiscoveryAlertCompatible } from "@/lib/discovery-alerts";
 import { alertMatchesSale } from "@/lib/alerts";
 import { createAlertNotificationsForMatches } from "@/lib/alert-notifications";
 import { extractDpe } from "@/lib/dpe";
+import { errorDetails, errorSummary } from "@/lib/error-details";
 import { estimateGrossYieldPct, pricePerM2 } from "@/lib/geo";
 import { resolveMarketGap } from "@/lib/market-gap";
 import { featureIncluded } from "@/lib/plans";
@@ -38,6 +39,12 @@ export type AlertMatchSummary = {
   dismissedAt: string | null;
 };
 
+/** Une alerte qui n'a pas pu être évaluée ou enregistrée (message et code de l'erreur d'origine). */
+export type AlertEvaluationFailure = {
+  alertId: string;
+  error: string;
+};
+
 export type AlertEvaluationResponse = {
   evaluatedAt: string;
   alertCount: number;
@@ -45,6 +52,9 @@ export type AlertEvaluationResponse = {
   matchCount: number;
   notificationCount: number;
   persisted: boolean;
+  /** Alertes en échec : les autres sont évaluées et enregistrées normalement. */
+  failedAlertCount: number;
+  alertFailures: AlertEvaluationFailure[];
   matches: AlertMatchSummary[];
 };
 
@@ -64,8 +74,13 @@ export type SmartAlertBatchUserResult = {
   saleCount: number;
   matchCount: number;
   notificationCount: number;
+  /** Alertes du compte en échec ; le compte n'échoue que si elles ont toutes échoué. */
+  failedAlertCount: number;
   error: string | null;
 };
+
+/** Échecs d'alertes gardés dans le résumé de l'exécution (le reste est dans les journaux). */
+const MAX_REPORTED_ALERT_FAILURES = 20;
 
 export type SmartAlertBatchRunResult = {
   ok: true;
@@ -77,6 +92,9 @@ export type SmartAlertBatchRunResult = {
   analysedUserCount: number;
   evaluatedUserCount: number;
   failedUserCount: number;
+  /** Alertes en échec sur l'ensemble des comptes (un compte reste « évalué » si une seule échoue). */
+  failedAlertCount: number;
+  alertFailures: Array<AlertEvaluationFailure & { userId: string }>;
   totalMatchCount: number;
   totalNotificationCount: number;
   results: SmartAlertBatchUserResult[];
@@ -93,6 +111,8 @@ const ALERT_EVALUATION_OVERLAP_MS = 60 * 60 * 1000;
 const ALERT_BATCH_CONCURRENCY = 4;
 /** The batch stops starting new users after this long; the rest come first next run. */
 const DEFAULT_ALERT_BATCH_TIME_BUDGET_MS = 240_000;
+/** Lignes écrites par requête : une alerte très large ne doit pas dépasser le délai d'une requête. */
+const ALERT_MATCH_UPSERT_BATCH_SIZE = 200;
 const DEFAULT_ALERT_MATCH_LIST_LIMIT = 50;
 const MAX_ALERT_MATCH_LIST_LIMIT = 200;
 
@@ -127,6 +147,13 @@ export async function listUserAlertMatches({
   };
 }
 
+type AlertEvaluationEntry = {
+  alert: UserAlert;
+  matches: AlertMatchSummary[];
+  rows: Database["public"]["Tables"]["user_alert_matches"]["Insert"][];
+  notificationCount?: number;
+};
+
 export async function evaluateUserAlertMatches({
   auth,
   saleLimit = DEFAULT_ALERT_EVALUATION_SALE_LIMIT,
@@ -157,110 +184,203 @@ export async function evaluateUserAlertMatches({
     : [];
   const marketDiscountCache = new Map<string, Promise<number | null>>();
   const watchedZones = await getUserWatchedZonesForAlerts({ auth, alerts });
-  const matches: AlertMatchSummary[] = [];
-  const rows: Database["public"]["Tables"]["user_alert_matches"]["Insert"][] = [];
-  const matchCounts = new Map<string, number>();
+  const failures: AlertEvaluationFailure[] = [];
 
+  // Chaque alerte est évaluée, enregistrée puis marquée évaluée isolément : l'échec de l'une est
+  // compté et journalisé, sans empêcher les autres ni faire échouer le compte. Une alerte en échec
+  // garde son ancienne date d'évaluation : le passage suivant la reprend en entier.
+  const entries: AlertEvaluationEntry[] = [];
   for (const alert of alerts) {
-    if (discovery && !isDiscoveryAlertCompatible(alert)) continue;
-    const watchedZone = alert.watched_zone_id
-      ? (watchedZones.get(alert.watched_zone_id) ?? null)
-      : null;
-    if (alert.watched_zone_id && !watchedZone) continue;
-
-    for (const sale of sales) {
-      let marketDiscountPct: number | null = null;
-      if (alert.min_market_discount_pct != null) {
-        const preliminary = alertMatchesSale({ ...alert, min_market_discount_pct: null }, sale, {
-          watchedZone,
-        });
-        if (!preliminary.matches) continue;
-        marketDiscountPct = await getCachedMarketDiscount(marketDiscountCache, sale);
-      }
-
-      const baseContext = {
-        ...(alert.min_market_discount_pct == null ? {} : { marketDiscountPct }),
-        watchedZone,
-      };
-      const result = alertMatchesSale(alert, sale, baseContext);
-      if (!result.matches) continue;
-
-      const summary = buildAlertMatchSummary({
-        alert,
-        sale,
-        reasons: result.reasons,
-        marketDiscountPct,
-        matchedAt: evaluatedAt,
+    const entry: AlertEvaluationEntry = { alert, matches: [], rows: [] };
+    try {
+      await collectAlertMatches({
+        entry,
+        auth,
+        sales,
+        discovery,
+        evaluatedAt,
+        watchedZones,
+        marketDiscountCache,
       });
-      if (discovery) {
-        summary.saleTitle = "Vente immobilière";
-        summary.marketDiscountPct = null;
-        summary.reasons = ["Critères publics correspondants"];
+      if (persist) {
+        await persistAlertEvaluation({ entry, auth, evaluatedAt, discovery });
       }
-      matches.push(summary);
-      matchCounts.set(alert.id, (matchCounts.get(alert.id) ?? 0) + 1);
-
-      rows.push({
-        user_id: auth.userId,
-        alert_id: alert.id,
-        sale_id: sale.id,
-        match_reasons: summary.reasons,
-        matched_at: evaluatedAt,
-        match_snapshot: asJson(
-          buildAlertMatchSnapshot({ alert, sale, summary, watchedZone, discovery }),
-        ),
-      });
+    } catch (error) {
+      failures.push(recordAlertFailure({ userId: auth.userId, alert, error }));
+      continue;
     }
+    entries.push(entry);
   }
 
-  if (persist) {
-    if (rows.length) {
-      const { data, error } = await supabaseAdmin
-        .from("user_alert_matches")
-        .upsert(rows, { onConflict: "alert_id,sale_id" })
-        .select("*");
-      if (error) throw error;
-
-      const persistedByKey = new Map(
-        (data ?? []).map((row) => [`${row.alert_id}:${row.sale_id}`, row]),
-      );
-      matches.forEach((match) => {
-        const persistedRow = persistedByKey.get(`${match.alertId}:${match.saleId}`);
-        if (persistedRow) {
-          match.id = persistedRow.id;
-          match.readAt = persistedRow.read_at;
-          match.dismissedAt = persistedRow.dismissed_at;
-        }
-      });
-    }
-
-    await updateAlertEvaluationState({
-      auth,
-      alerts,
-      matchCounts,
-      evaluatedAt,
-    });
-  }
-  const notificationResult =
-    persist && matches.some((match) => match.id)
-      ? await createAlertNotificationsForMatches({
-          auth,
-          matches,
-          alerts,
-          now: new Date(evaluatedAt),
-          discovery,
-        })
-      : { notificationCount: 0 };
+  const matches = entries.flatMap((entry) => entry.matches);
+  const notificationCount = entries.reduce(
+    (total, entry) => total + (entry.notificationCount ?? 0),
+    0,
+  );
 
   return {
     evaluatedAt,
     alertCount: alerts.length,
     saleCount: sales.length,
     matchCount: matches.length,
-    notificationCount: notificationResult.notificationCount,
+    notificationCount,
     persisted: persist,
+    failedAlertCount: failures.length,
+    alertFailures: failures,
     matches,
   };
+}
+
+async function collectAlertMatches({
+  entry,
+  auth,
+  sales,
+  discovery,
+  evaluatedAt,
+  watchedZones,
+  marketDiscountCache,
+}: {
+  entry: AlertEvaluationEntry;
+  auth: SupabaseAuthContext;
+  sales: AuctionSale[];
+  discovery: boolean;
+  evaluatedAt: string;
+  watchedZones: Map<string, UserWatchedZone>;
+  marketDiscountCache: Map<string, Promise<number | null>>;
+}): Promise<void> {
+  const { alert } = entry;
+  if (discovery && !isDiscoveryAlertCompatible(alert)) return;
+  const watchedZone = alert.watched_zone_id
+    ? (watchedZones.get(alert.watched_zone_id) ?? null)
+    : null;
+  if (alert.watched_zone_id && !watchedZone) return;
+
+  for (const sale of sales) {
+    let marketDiscountPct: number | null = null;
+    if (alert.min_market_discount_pct != null) {
+      const preliminary = alertMatchesSale({ ...alert, min_market_discount_pct: null }, sale, {
+        watchedZone,
+      });
+      if (!preliminary.matches) continue;
+      marketDiscountPct = await getCachedMarketDiscount(marketDiscountCache, sale);
+    }
+
+    const baseContext = {
+      ...(alert.min_market_discount_pct == null ? {} : { marketDiscountPct }),
+      watchedZone,
+    };
+    const result = alertMatchesSale(alert, sale, baseContext);
+    if (!result.matches) continue;
+
+    const summary = buildAlertMatchSummary({
+      alert,
+      sale,
+      reasons: result.reasons,
+      marketDiscountPct,
+      matchedAt: evaluatedAt,
+    });
+    if (discovery) {
+      summary.saleTitle = "Vente immobilière";
+      summary.marketDiscountPct = null;
+      summary.reasons = ["Critères publics correspondants"];
+    }
+    entry.matches.push(summary);
+    entry.rows.push({
+      user_id: auth.userId,
+      alert_id: alert.id,
+      sale_id: sale.id,
+      match_reasons: summary.reasons,
+      matched_at: evaluatedAt,
+      match_snapshot: asJson(
+        buildAlertMatchSnapshot({ alert, sale, summary, watchedZone, discovery }),
+      ),
+    });
+  }
+}
+
+/**
+ * Enregistre les correspondances d'une alerte par lots (une alerte très large ferait sinon une
+ * seule requête de plusieurs milliers de lignes, au-delà du délai d'une requête), crée ses
+ * notifications, puis la marque évaluée. L'ordre compte : la date d'évaluation n'avance qu'une
+ * fois le reste écrit, et tout est rejouable sans doublon (upsert).
+ */
+async function persistAlertEvaluation({
+  entry,
+  auth,
+  evaluatedAt,
+  discovery,
+}: {
+  entry: AlertEvaluationEntry;
+  auth: SupabaseAuthContext;
+  evaluatedAt: string;
+  discovery: boolean;
+}): Promise<void> {
+  const { alert, matches, rows } = entry;
+  for (let offset = 0; offset < rows.length; offset += ALERT_MATCH_UPSERT_BATCH_SIZE) {
+    const { data, error } = await supabaseAdmin
+      .from("user_alert_matches")
+      .upsert(rows.slice(offset, offset + ALERT_MATCH_UPSERT_BATCH_SIZE), {
+        onConflict: "alert_id,sale_id",
+      })
+      .select("*");
+    if (error) throw error;
+
+    const persistedBySale = new Map((data ?? []).map((row) => [row.sale_id, row]));
+    for (const match of matches.slice(offset, offset + ALERT_MATCH_UPSERT_BATCH_SIZE)) {
+      const persistedRow = persistedBySale.get(match.saleId);
+      if (persistedRow) {
+        match.id = persistedRow.id;
+        match.readAt = persistedRow.read_at;
+        match.dismissedAt = persistedRow.dismissed_at;
+      }
+    }
+  }
+
+  const persistedMatches = matches.filter((match) => match.id);
+  let notificationCount = 0;
+  for (let offset = 0; offset < persistedMatches.length; offset += ALERT_MATCH_UPSERT_BATCH_SIZE) {
+    const result = await createAlertNotificationsForMatches({
+      auth,
+      matches: persistedMatches.slice(offset, offset + ALERT_MATCH_UPSERT_BATCH_SIZE),
+      alerts: [alert],
+      now: new Date(evaluatedAt),
+      discovery,
+    });
+    notificationCount += result.notificationCount;
+  }
+  entry.notificationCount = notificationCount;
+
+  const { error } = await auth.supabase
+    .from("user_alerts")
+    .update({ last_evaluated_at: evaluatedAt, last_match_count: matches.length })
+    .eq("id", alert.id)
+    .eq("user_id", auth.userId);
+  if (error) throw error;
+}
+
+/** Journalise l'échec d'une alerte avec son message et son code (jamais « Évaluation impossible »). */
+function recordAlertFailure({
+  userId,
+  alert,
+  error,
+}: {
+  userId: string;
+  alert: Pick<UserAlert, "id" | "name">;
+  error: unknown;
+}): AlertEvaluationFailure {
+  const { message, code } = errorDetails(error, "Évaluation impossible");
+  console.error(
+    JSON.stringify({
+      scope: "smart-alerts",
+      level: "error",
+      outcome: "alert_failed",
+      userId,
+      alertId: alert.id,
+      code,
+      message,
+    }),
+  );
+  return { alertId: alert.id, error: errorSummary(error, "Évaluation impossible") };
 }
 
 /**
@@ -330,6 +450,7 @@ export async function runSmartAlertEvaluationBatch({
   // Every user with an active alert is processed, oldest evaluation first.
   const userIds = await getSmartAlertCandidateUserIds();
   const results: SmartAlertBatchUserResult[] = [];
+  const alertFailures: SmartAlertBatchRunResult["alertFailures"] = [];
   let next = 0;
   let deferred = 0;
 
@@ -347,17 +468,36 @@ export async function runSmartAlertEvaluationBatch({
           saleLimit,
           persist: true,
         });
+        // Le compte n'échoue que si toutes ses alertes ont échoué ; sinon les échecs sont comptés.
+        const allFailed =
+          response.alertCount > 0 && response.failedAlertCount >= response.alertCount;
+        alertFailures.push(...response.alertFailures.map((failure) => ({ userId, ...failure })));
         results.push({
           userId,
-          ok: true,
+          ok: !allFailed,
           alertCount: response.alertCount,
           saleCount: response.saleCount,
           matchCount: response.matchCount,
           notificationCount: response.notificationCount,
-          error: null,
+          failedAlertCount: response.failedAlertCount,
+          error: allFailed
+            ? `${response.failedAlertCount} alerte(s) en échec : ${response.alertFailures[0]?.error ?? "Évaluation impossible"}`
+            : null,
         });
       } catch (error) {
         const skipped = error instanceof AlertsNotIncludedError;
+        const message = skipped ? null : errorSummary(error, "Évaluation impossible");
+        if (!skipped) {
+          console.error(
+            JSON.stringify({
+              scope: "smart-alerts",
+              level: "error",
+              outcome: "user_failed",
+              userId,
+              ...errorDetails(error, "Évaluation impossible"),
+            }),
+          );
+        }
         results.push({
           userId,
           ok: skipped,
@@ -366,7 +506,8 @@ export async function runSmartAlertEvaluationBatch({
           saleCount: 0,
           matchCount: 0,
           notificationCount: 0,
-          error: skipped ? null : error instanceof Error ? error.message : "Évaluation impossible",
+          failedAlertCount: 0,
+          error: message,
         });
       }
     }
@@ -382,6 +523,8 @@ export async function runSmartAlertEvaluationBatch({
     deferredUserCount: deferred,
     evaluatedUserCount: results.filter((result) => result.ok && !result.skipped).length,
     failedUserCount: results.filter((result) => !result.ok).length,
+    failedAlertCount: results.reduce((total, result) => total + result.failedAlertCount, 0),
+    alertFailures: alertFailures.slice(0, MAX_REPORTED_ALERT_FAILURES),
     totalMatchCount: results.reduce((total, result) => total + result.matchCount, 0),
     totalNotificationCount: results.reduce((total, result) => total + result.notificationCount, 0),
     results,
@@ -637,32 +780,6 @@ async function getSmartAlertCandidateUserIds(): Promise<string[]> {
     if ((data?.length ?? 0) < pageSize) break;
   }
   return userIds;
-}
-
-async function updateAlertEvaluationState({
-  auth,
-  alerts,
-  matchCounts,
-  evaluatedAt,
-}: {
-  auth: SupabaseAuthContext;
-  alerts: UserAlert[];
-  matchCounts: Map<string, number>;
-  evaluatedAt: string;
-}) {
-  await Promise.all(
-    alerts.map(async (alert) => {
-      const { error } = await auth.supabase
-        .from("user_alerts")
-        .update({
-          last_evaluated_at: evaluatedAt,
-          last_match_count: matchCounts.get(alert.id) ?? 0,
-        })
-        .eq("id", alert.id)
-        .eq("user_id", auth.userId);
-      if (error) throw error;
-    }),
-  );
 }
 
 async function getCachedMarketDiscount(
