@@ -18,7 +18,7 @@ select ok(
   'anon and authenticated still cannot execute starting_price_band'
 );
 
--- 40 lots du tribunal de la tranche 20 000 à 50 000 €, tous adjugés à 2,5 fois la mise à prix.
+-- 40 lots du tribunal de la tranche 35 000 à 50 000 €, tous adjugés à 2,5 fois la mise à prix.
 create or replace view app_private.auction_scenario_observations as
 select court_code, property_type, starting_price_eur, hammer_price_eur, sale_date
 from (
@@ -42,7 +42,7 @@ select is(
 );
 select is(
   (public.get_court_auction_scenarios('pgtap_656_court', 45000)->'scenarios'->>'band')::int,
-  2,
+  3,
   'the scenarios report the band of the starting price'
 );
 select is(
@@ -52,7 +52,7 @@ select is(
 );
 select is(
   app_private.starting_price_band(45000),
-  2::smallint,
+  3::smallint,
   'service_role reads the starting price band'
 );
 

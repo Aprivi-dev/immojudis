@@ -64,7 +64,7 @@ export const MIN_SCENARIO_STARTING_PRICE = 1_000;
 export type AuctionScenarioSet = {
   /** "insufficient": fewer than MIN_NATIONAL_SAMPLE comparable sales, only the sample sizes are known. */
   status: "ok" | "insufficient";
-  /** Starting-price band (1: under 20 k€ … 5: 200 k€ and more). */
+  /** Starting-price band (1: under 20 k€ … 7: 200 k€ and more). */
   band: number | null;
   courtSample: number;
   nationalSample: number;
@@ -139,19 +139,27 @@ export const PROPERTY_GROUP_LABELS: Record<ScenarioPropertyGroup, string> = {
   commercial: "des locaux d’activité",
 };
 
+/** Complement of « des mises à prix … » in a sentence. */
 export const STARTING_PRICE_BAND_LABELS: Record<number, string> = {
-  1: "moins de 20 000 €",
-  2: "20 000 à 50 000 €",
-  3: "50 000 à 100 000 €",
-  4: "100 000 à 200 000 €",
-  5: "200 000 € et plus",
+  1: "inférieures à 20 000 €",
+  2: "de 20 000 à 35 000 €",
+  3: "de 35 000 à 50 000 €",
+  4: "de 50 000 à 75 000 €",
+  5: "de 75 000 à 100 000 €",
+  6: "de 100 000 à 200 000 €",
+  7: "de 200 000 € et plus",
 };
 
 /**
- * Upper bounds (exclusive) of the starting-price bands 1 to 4; band 5 is everything above. Mirrors
- * `app_private.starting_price_band` (supabase/migrations/20261019100000); a test compares the two.
+ * Upper bounds (exclusive) of the starting-price bands 1 to 6; band 7 is everything above. Mirrors
+ * `app_private.starting_price_band` (supabase/migrations/20261102110000); a test compares the two.
+ * Seven bands rather than five (20261102110000): the share of lots whose court has at least 10 / 30
+ * comparable sales in its band is 89 % / 59 % with them, against 92 % / 72 % with five bands and
+ * 86 % / 47 % with ten.
  */
-export const STARTING_PRICE_BAND_UPPER_BOUNDS = [20_000, 50_000, 100_000, 200_000] as const;
+export const STARTING_PRICE_BAND_UPPER_BOUNDS = [
+  20_000, 35_000, 50_000, 75_000, 100_000, 200_000,
+] as const;
 
 /** Band of a starting price, as the database computes it (null without a positive price). */
 export function startingPriceBand(startingPrice: number | null | undefined): number | null {

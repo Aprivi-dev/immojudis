@@ -60,8 +60,9 @@ describe("getAuctionScenarios", () => {
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
     expect(mocks.rpc).toHaveBeenCalledWith("get_court_auction_scenarios", {
       p_court_code: "justice_tj_1_210",
-      // Le SQL ne lit que la tranche : le cache est donc par (tribunal, tranche, groupe).
-      p_starting_price: 20_000,
+      // Le SQL ne lit que la tranche : le cache est donc par (tribunal, tranche, groupe). 45 000 € est
+      // dans la tranche « de 35 000 à 50 000 € » (tranche 3 sur 7), représentée par sa borne basse.
+      p_starting_price: 35_000,
       p_property_group: "housing",
     });
     expect(response.scenarios).toMatchObject({ status: "ok", reliability: "good" });
@@ -83,8 +84,31 @@ describe("getAuctionScenarios", () => {
     await getAuctionScenarios({ ...sale, property_type: "building" });
     expect(mocks.rpc).toHaveBeenCalledWith("get_court_auction_scenarios", {
       p_court_code: "justice_tj_1_210",
-      p_starting_price: 20_000,
+      p_starting_price: 35_000,
     });
+  });
+
+  it.each([
+    [5_000, 1_000],
+    [25_000, 20_000],
+    [45_000, 35_000],
+    [60_000, 50_000],
+    [80_000, 75_000],
+    [150_000, 100_000],
+    [350_000, 200_000],
+  ])(
+    "une mise à prix de %i € est lue par le SQL comme la borne basse de sa tranche (%i €)",
+    async (startingPrice, expected) => {
+      await getAuctionScenarios({ ...sale, starting_price_eur: startingPrice });
+      expect(mocks.rpc).toHaveBeenCalledWith(
+        "get_court_auction_scenarios",
+        expect.objectContaining({ p_starting_price: expected }),
+      );
+    },
+  );
+
+  it("range le cache sous une clé « v2 » : les entrées des cinq anciennes tranches ne sont pas relues", () => {
+    expect(mocks.cacheKey).toHaveBeenCalledWith(["auction-scenarios", "v2"]);
   });
 
   it("met le cache sous le contrôle d'une durée et d'une étiquette", () => {
