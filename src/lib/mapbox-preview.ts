@@ -45,11 +45,15 @@ export function mapboxPreviewLoadingLabel(mode: MapboxPreviewMode) {
 
 const BUILDINGS_SOURCE = "immojudis-streets-buildings";
 const BUILDINGS_LAYER = "immojudis-building-volumes";
+/** Hauteur, en mètres, des bâtiments dont les données n'ont pas de hauteur. */
+export const DEFAULT_BUILDING_HEIGHT_M = 6;
 
 /**
  * Le style satellite de Mapbox n'a pas de bâtiments en 3D : on extrude ceux de Mapbox Streets
- * (hauteur relevée, ou estimée par Mapbox), dans un ton pierre clair à demi transparent : le relief se
- * lit et la photo satellite des toits reste visible au travers.
+ * (hauteur relevée dans les données), dans un ton pierre clair à demi transparent : le relief se lit
+ * et la photo satellite des toits reste visible au travers. Un bâtiment sans hauteur est extrudé à
+ * `DEFAULT_BUILDING_HEIGHT_M` mètres (pas à une hauteur estimée par Mapbox) : la 3D est schématique
+ * et le visuel qui l'affiche doit le dire (« 3D schématique »).
  */
 export function addMapboxBuildingVolumes(map: MapboxGL.Map) {
   if (map.getLayer(BUILDINGS_LAYER)) return;
@@ -65,7 +69,7 @@ export function addMapboxBuildingVolumes(map: MapboxGL.Map) {
     minzoom: 14,
     paint: {
       "fill-extrusion-color": "#ece6dc",
-      "fill-extrusion-height": ["coalesce", ["get", "height"], 6],
+      "fill-extrusion-height": ["coalesce", ["get", "height"], DEFAULT_BUILDING_HEIGHT_M],
       "fill-extrusion-base": ["coalesce", ["get", "min_height"], 0],
       "fill-extrusion-opacity": 0.55,
       "fill-extrusion-vertical-gradient": true,
