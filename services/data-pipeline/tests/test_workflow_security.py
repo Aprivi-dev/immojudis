@@ -280,6 +280,25 @@ def test_dedupe_sweep_is_manual_serialised_with_the_pipeline_and_gives_secrets_t
     assert "python -m src.dedupe_apply" in text
 
 
+def test_probable_duplicate_flags_is_manual_serialised_and_dry_by_default() -> None:
+    text = (WORKFLOWS / "probable-duplicate-flags.yml").read_text(encoding="utf-8")
+    jobs = parse_jobs(text)
+
+    assert [job.name for job in jobs] == ["flag"]
+    assert re.search(r"^    environment: Production$", text, re.M)
+    assert "workflow_dispatch" in text and "pull_request" not in text and "schedule" not in text
+    # Même groupe que la collecte : les deux réécrivent les mêmes lignes.
+    assert re.search(r"^  group: immojudis-data-pipeline$", text, re.M)
+    assert re.search(r"^  cancel-in-progress: false$", text, re.M)
+    # Essai à blanc par défaut : la case « write » est décochée tant qu'on ne la coche pas.
+    assert re.search(r"^      write:\n(?:        .*\n)*?        default: false$", text, re.M)
+    assert [job.name for job in jobs if SECRET.search(job.env)] == []
+    assert [step.name for step in jobs[0].steps if SECRET.search(step.env)] == ["Flag probable duplicates"]
+    assert "--require-hashes" in text
+    assert all(re.search(r"@[0-9a-f]{40}( |$)", step.uses) for step in jobs[0].steps if step.uses)
+    assert "python -m src.probable_duplicates --write" in text
+
+
 def test_information_agent_always_runs_main_with_secrets_on_its_two_business_steps() -> None:
     text = (WORKFLOWS / "information-agent-evidence.yml").read_text(encoding="utf-8")
     steps = {step.name: step for step in parse_jobs(text)[0].steps}

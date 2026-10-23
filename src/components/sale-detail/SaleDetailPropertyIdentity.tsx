@@ -1,7 +1,7 @@
 "use client";
 
 import { ListingPhoto } from "@/components/ListingPhoto";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { UIEvent } from "react";
 import dynamic from "next/dynamic";
 import ArrowLeft from "lucide-react/dist/esm/icons/arrow-left.js";
@@ -59,6 +59,14 @@ export function PropertyIdentity({
     thumbnailIndexes.length > 0 && thumbnailIndexes.every((index) => failedThumbnails.has(index));
   const [mobilePhotoIndex, setMobilePhotoIndex] = useState(0);
   const mobileCarouselRef = useRef<HTMLDivElement>(null);
+  // Visuel choisi par le visiteur ou imposé par `?visuel=photos|vue` (lu après l'affichage : la page
+  // reste statique) ; `clicked` : le choix vient d'un geste, qui vaut demande de chargement de la carte.
+  const [chosen, setChosen] = useState<"photos" | "vue" | null>(null);
+  const [clicked, setClicked] = useState(false);
+  useEffect(() => {
+    const forced = new URLSearchParams(window.location.search).get("visuel");
+    if (forced === "photos" || forced === "vue") setChosen(forced);
+  }, []);
   const propertyTypeReview = getAiReviewFieldResult(
     aiReviewProjections,
     "property.property_type",
@@ -73,9 +81,17 @@ export function PropertyIdentity({
       : saleDisplayTitle(sale, propertyTypeLabel(sale.property_type));
   const address = [sale.address, sale.postal_code, sale.city].filter(Boolean).join(", ");
   const mapLocation = cityReview.blocked ? null : listingCoordinates(sale);
-  // Les photos des annonces sont souvent médiocres : quand la position est sûre, la vue aérienne
-  // passe devant et les photos deviennent des vignettes sous le visuel.
-  const orbitTarget = mapLocation && getMapboxAccessToken() ? aerialOrbitTarget(sale) : null;
+  const eligibleOrbit = mapLocation && getMapboxAccessToken() ? aerialOrbitTarget(sale) : null;
+  // Avec deux photos ou plus, les photos viennent d'abord ; avec une seule photo (ou aucune), la vue
+  // aérienne passe devant quand la position est sûre, et la photo devient une vignette sous le visuel.
+  // Le sélecteur « Photos / Vue 360° » laisse le choix quand les deux existent.
+  const selectable = Boolean(eligibleOrbit && images[0]);
+  const view = !eligibleOrbit
+    ? "photos"
+    : !images[0]
+      ? "vue"
+      : (chosen ?? (images.length > 1 ? "photos" : "vue"));
+  const orbitTarget = view === "vue" ? eligibleOrbit : null;
 
   const locationButtons = (location: { lat: number; lng: number }) => (
     <>
@@ -114,6 +130,30 @@ export function PropertyIdentity({
 
   return (
     <div className={listingStyles.heroGallery}>
+      {selectable ? (
+        <div
+          role="group"
+          aria-label="Visuel du bien"
+          className="mb-2 inline-flex rounded-lg border border-brand-navy/15 bg-white p-0.5"
+        >
+          {(["photos", "vue"] as const).map((choice) => (
+            <button
+              key={choice}
+              type="button"
+              aria-pressed={view === choice}
+              onClick={() => {
+                setChosen(choice);
+                setClicked(true);
+              }}
+              className={`min-h-10 rounded-md px-4 text-xs font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft ${
+                view === choice ? "bg-brand-navy text-white" : "text-brand-navy hover:bg-surface"
+              }`}
+            >
+              {choice === "photos" ? "Photos" : "Vue 360°"}
+            </button>
+          ))}
+        </div>
+      ) : null}
       <div className={listingStyles.photo}>
         {orbitTarget && mapLocation ? (
           <>
@@ -121,6 +161,7 @@ export function PropertyIdentity({
               target={orbitTarget}
               title={title}
               publicDemo={publicDemo}
+              startImmediately={clicked}
               className={listingStyles.orbitMain}
             />
             {/* Au-dessus du logo Mapbox, que les conditions d'utilisation imposent visible. */}
