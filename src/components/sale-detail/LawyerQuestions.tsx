@@ -29,7 +29,9 @@ async function fetchLawyerQuestions(saleId: string): Promise<LawyerQuestionsResp
  * des questions à poser à son avocat avant d'enchérir. Le repérage est fait par le serveur
  * (`/api/sales/[id]/lawyer-questions`, qui reprend les questions de l'agent d'information) : ce
  * composant ne fait que l'afficher. Copiable et imprimable ; aucun envoi, rien n'est enregistré.
- * Rien n'est affiché quand la lecture est refusée ou échoue.
+ * Rien n'est affiché quand la lecture est refusée ou échoue. Le repérage porte sur la ligne brute,
+ * sans le filtrage de la relecture IA que la fiche applique : une liste vide ne dit donc pas que la
+ * fiche est complète, et le message ne le laisse pas entendre.
  */
 export function LawyerQuestions({
   saleId,
@@ -99,8 +101,8 @@ export function LawyerQuestions({
         </>
       ) : (
         <p className="mt-3 text-sm leading-relaxed">
-          La fiche ne laisse aucun point ouvert que nous sachions repérer. Cela ne remplace pas vos
-          propres questions à l’avocat.
+          Aucune question détectée automatiquement. Relisez tout de même le cahier des conditions de
+          vente avec votre avocat.
         </p>
       )}
     </Card>

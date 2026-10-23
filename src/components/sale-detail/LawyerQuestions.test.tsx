@@ -112,11 +112,16 @@ describe("LawyerQuestions (Mes questions pour l'avocat)", () => {
     );
   });
 
-  it("dit qu'aucun point n'est ouvert, sans boutons, quand la fiche est complète", async () => {
+  it("ne rassure pas quand aucune question n'est détectée, et n'affiche pas de boutons", async () => {
     answer([]);
     renderQuestions();
 
-    expect(await screen.findByText(/ne laisse aucun point ouvert/)).toBeTruthy();
+    expect(
+      await screen.findByText(
+        "Aucune question détectée automatiquement. Relisez tout de même le cahier des conditions de vente avec votre avocat.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/aucun point ouvert|fiche est complète/i)).toBeNull();
     expect(screen.queryByRole("button", { name: "Copier la liste" })).toBeNull();
   });
 
