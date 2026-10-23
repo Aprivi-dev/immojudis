@@ -455,8 +455,24 @@ Tout est sur la branche `claude/friendly-lamport-rtb97c`, PR #293 (brouillon) : 
 - **Budgets relevés avec l'accord du propriétaire (23/10) :**
   - `admin-lawyers` : de 530 000 à 535 000, pour 534 843 mesurés (alerte en attente dans les providers, état du
     consentement) ;
-  - JS client total : de 6 125 000 à 6 165 000, pour 6 164 297 mesurés.
+  - JS client total : de 6 125 000 à 6 165 000 pour 6 164 297 mesurés, puis à 6 170 000 après les corrections de
+    relecture (6 166 442 mesurés en CI).
 - **Commits de W6 :** la ligne d'attribution erronée a été corrigée et les commits ont été re-signés.
+
+### Vérifications finales (branche complète, machine au calme)
+
+| Vérification                        | Résultat                                                                      |
+| ----------------------------------- | ----------------------------------------------------------------------------- |
+| `npx tsc --noEmit`                  | OK                                                                            |
+| `npm run lint`                      | OK                                                                            |
+| `npm test` (Vitest)                 | 8 340 OK, 8 ignorés, 0 échec (721 fichiers)                                   |
+| `npm run test:security-invariants`  | OK                                                                            |
+| Migrations (Supabase local, Docker) | toutes appliquées par `db reset`                                              |
+| pgTAP (`supabase test db`)          | 197 fichiers, 3 634 tests, 0 échec                                            |
+| Types Supabase                      | identiques à `npm run db:types`                                               |
+| `npm run build` + `build:budgets`   | OK ; JS total 6 166 424 octets ; `hearings` 180 391 ; `admin-lawyers` 534 843 |
+| Pipeline `ruff` + `pytest`          | OK, 4 823 tests, 156 ignorés                                                  |
+| Gitleaks (commits de la session)    | aucun secret                                                                  |
 
 ### Relecture de code (`code-reviewer`)
 
