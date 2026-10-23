@@ -91,8 +91,11 @@ const MAX_CLIENT_CHUNK_BYTES = 330_000;
 // pending alert after sign-up…) measured 6,164,297 bytes with every page budget passing except
 // admin-lawyers; the owner approved (23/10/2026) a sixth raise, to 6,165,000. The review fixes of the
 // same day (alert criteria labels, consent texts) measured 6,166,442 bytes in CI; the owner approved
-// (23/10/2026) a seventh raise, to 6,170,000.
-const MAX_TOTAL_CLIENT_JS_BYTES = 6_170_000;
+// (23/10/2026) a seventh raise, to 6,170,000. The second wave of 23/10/2026 (seven price bands,
+// estimate snapshots, photo / 360° selector, launch-offer end notice, ceiling against the court,
+// questions for the lawyer, stale ceiling) measured 6,197,582 bytes; the owner approved (23/10/2026)
+// an eighth raise, to 6,200,000.
+const MAX_TOTAL_CLIENT_JS_BYTES = 6_200_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 // New homepage: lossless panorama for large screens plus editorial photography.
 const MAX_PUBLIC_MEDIA_BYTES = 5_000_000;
@@ -211,7 +214,8 @@ const routeBudgets = [
     manifest: ".next/server/app/audiences-a-venir/page_client-reference-manifest.js",
     routeKey: "/audiences-a-venir/page",
     entryKey: "[project]/src/app/audiences-a-venir/page",
-    maxBytes: 181_000,
+    // 181,521 bytes after the second wave of 23/10/2026: raised to 182,000 with the owner's approval.
+    maxBytes: 182_000,
   },
   {
     name: "example",
@@ -279,8 +283,9 @@ const routeBudgets = [
     routeKey: "/admin/lawyers/page",
     entryKey: "[project]/src/app/admin/lawyers/page",
     // 534,843 bytes on 23/10/2026 (pending alert after sign-up in the shared providers, consent
-    // state): the owner approved (23/10/2026) raising this budget from 530,000 to 535,000.
-    maxBytes: 535_000,
+    // state): the owner approved (23/10/2026) raising this budget from 530,000 to 535,000. The second
+    // wave of the same day measured 536,104 bytes: raised to 537,000 with the owner's approval.
+    maxBytes: 537_000,
   },
   {
     name: "admin-compliance",
