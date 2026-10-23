@@ -78,7 +78,7 @@ const FAQ: Array<{ q: string; a: string }> = [
   },
   {
     q: "Que se passe-t-il en cas de surenchère ?",
-    a: "En saisie immobilière, toute personne peut former une surenchère d’au moins un dixième du prix principal, par acte d’avocat déposé au greffe du juge de l’exécution dans les dix jours qui suivent l’adjudication (art. R. 322-50 et R. 322-51). Ces dix jours se comptent à partir du lendemain de l’adjudication, week-ends et jours fériés compris ; si le dixième jour est un samedi, un dimanche ou un jour férié, le délai est prorogé jusqu’au premier jour ouvrable suivant (art. 641 et 642 du Code de procédure civile). Une nouvelle audience a alors lieu deux à quatre mois plus tard, et l’adjudication initiale n’est pas définitive. La surenchère du dixième dans les dix jours est une règle légale en saisie immobilière (art. R. 322-50 et R. 322-51 du CPCE). En licitation, la surenchère du dixième se forme dans les dix jours de l’adjudication définitive (art. 1279, qui renvoie aux art. R. 322-50 à R. 322-55 du CPCE). Devant notaire, la forme exacte est à confirmer avec l’avocat ou le notaire. Dans une vente notariale volontaire, elle n’est pas prévue par la loi : seul le cahier des charges peut la prévoir (Notaires de France décrit 10\u00a0% dans les 10 jours pour la vente « à la bougie »). Dans une vente domaniale, tout dépend du cahier des charges. Lisez-le avant d’enchérir.",
+    a: "En saisie immobilière, toute personne peut former une surenchère d’au moins un dixième du prix principal, par acte d’avocat déposé au greffe du juge de l’exécution dans les dix jours qui suivent l’adjudication (art. R. 322-50 et R. 322-51). Ces dix jours se comptent à partir du lendemain de l’adjudication, week-ends et jours fériés compris ; si le dixième jour est un samedi, un dimanche ou un jour férié, le délai est prorogé jusqu’au premier jour ouvrable suivant (art. 641 et 642 du Code de procédure civile). Une nouvelle audience a alors lieu deux à quatre mois plus tard, et l’adjudication initiale n’est pas définitive. En licitation, la surenchère du dixième se forme dans les dix jours de l’adjudication définitive (art. 1279, qui renvoie aux art. R. 322-50 à R. 322-55 du CPCE). Devant notaire, la forme exacte est à confirmer avec l’avocat ou le notaire. Dans une vente notariale volontaire, elle n’est pas prévue par la loi : seul le cahier des charges peut la prévoir (Notaires de France décrit 10\u00a0% dans les 10 jours pour la vente « à la bougie »). Dans une vente domaniale, tout dépend du cahier des charges. Lisez-le avant d’enchérir.",
   },
   {
     q: "Quels frais s’ajoutent au prix d’adjudication ?",
@@ -889,16 +889,18 @@ export function ResourcesPage() {
               fériés compris (art. 641 du Code de procédure civile). Si le dixième jour est un
               samedi, un dimanche ou un jour férié, le délai est prorogé jusqu’au premier jour
               ouvrable suivant (art. 642 du même code). Exemple : pour une adjudication prononcée le
-              jeudi 8 octobre 2026, le dixième jour est le dimanche 18 octobre, et le délai court
-              donc jusqu’au lundi 19 octobre 2026 à minuit. La surenchère du dixième dans les dix
-              jours est une règle légale en saisie immobilière (art. R. 322-50 et R. 322-51 du
-              CPCE). En licitation, la surenchère du dixième se forme dans les dix jours de
-              l’adjudication définitive (art. 1279, qui renvoie aux art. R. 322-50 à R. 322-55 du
-              CPCE). Devant notaire, la forme exacte est à confirmer avec l’avocat ou le notaire.
-              Dans une vente notariale volontaire, elle n’est pas prévue par la loi : seul le cahier
-              des charges peut la prévoir (Notaires de France décrit 10&nbsp;% dans les 10 jours
-              pour la vente « à la bougie »). Dans une vente domaniale, tout dépend du cahier des
-              charges. Lisez-le avant d’enchérir.
+              jeudi 8 octobre 2026, le dixième jour est le dimanche 18 octobre, et le délai est
+              prorogé jusqu’au lundi 19 octobre 2026. Le greffe n’étant ouvert qu’à ses heures
+              d’ouverture, ne comptez pas sur la dernière heure du dernier jour : votre avocat vous
+              indiquera l’heure limite de dépôt. La surenchère du dixième dans les dix jours est une
+              règle légale en saisie immobilière (art. R. 322-50 et R. 322-51 du CPCE). En
+              licitation, la surenchère du dixième se forme dans les dix jours de l’adjudication
+              définitive (art. 1279, qui renvoie aux art. R. 322-50 à R. 322-55 du CPCE). Devant
+              notaire, la forme exacte est à confirmer avec l’avocat ou le notaire. Dans une vente
+              notariale volontaire, elle n’est pas prévue par la loi : seul le cahier des charges
+              peut la prévoir (Notaires de France décrit 10&nbsp;% dans les 10 jours pour la vente «
+              à la bougie »). Dans une vente domaniale, tout dépend du cahier des charges. Lisez-le
+              avant d’enchérir.
             </P>
             <P>
               Vous pouvez consulter le texte officiel sur Légifrance :{" "}

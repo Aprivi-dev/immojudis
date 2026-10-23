@@ -24,7 +24,7 @@ responsable de traitement.
    service. Il est légitime mais doit être pesé comme tel, d’où l’exclusion de toute promotion.
 2. **Nécessité.** Le professionnel est la source directe des informations absentes ou
    contradictoires (cahier des conditions de vente, procès-verbal descriptif, diagnostics, dates de
-   visite, mise à prix, consignation, audience). Alternatives examinées : pièces publiques, greffe,
+   visite, mise à prix, garantie exigée pour enchérir, audience). Alternatives examinées : pièces publiques, greffe,
    téléphone. **À chiffrer :** part des ventes dont la fiche reste incomplète sans réponse du professionnel,
    avec `services/data-pipeline/sql/insufficient_information_report.sql` (à exécuter par le
    propriétaire), pour établir pourquoi les alternatives ne suffisent pas.

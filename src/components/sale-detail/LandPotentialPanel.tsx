@@ -575,10 +575,11 @@ export function LandPotentialPanel({
               </div>
 
               <p className={styles.disclaimer}>
-                Lecture automatique de sources officielles, sans valeur juridique. Le cahier des
-                conditions de vente doit notamment désigner l’immeuble et indiquer ses servitudes et
-                ses baux (art. R. 322-10 du Code des procédures civiles d’exécution) : le zonage
-                d’urbanisme ne figure pas dans cette liste. Confirmez le zonage auprès de la mairie
+                Lecture automatique de sources officielles, sans valeur juridique. En saisie
+                immobilière, le cahier des conditions de vente doit notamment désigner l’immeuble et
+                indiquer ses servitudes et ses baux (art. R. 322-10 du Code des procédures civiles
+                d’exécution) : le zonage d’urbanisme ne figure pas dans cette liste. Pour les autres
+                ventes, lisez le cahier des charges. Confirmez le zonage auprès de la mairie
                 (certificat d’urbanisme), consultez les risques sur Géorisques, et faites relire le
                 cahier par votre avocat avant d’enchérir.
               </p>

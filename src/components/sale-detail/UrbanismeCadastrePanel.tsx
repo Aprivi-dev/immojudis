@@ -354,9 +354,10 @@ export function UrbanismeCadastrePanel({
           <p className={styles.footnote}>
             Une mention, un rattachement géographique ou une pièce repérée ne vaut pas validation
             juridique. Confirmez le zonage et les autorisations auprès de la mairie (certificat
-            d’urbanisme). La désignation de l’immeuble et ses servitudes figurent au cahier des
-            conditions de vente (art. R. 322-10 du Code des procédures civiles d’exécution) :
-            lisez-le avec votre avocat.
+            d’urbanisme). En saisie immobilière, le cahier des conditions de vente doit notamment
+            désigner l’immeuble et indiquer ses servitudes et ses baux (art. R. 322-10 du Code des
+            procédures civiles d’exécution) : le zonage d’urbanisme ne figure pas dans cette liste.
+            Pour les autres ventes, lisez le cahier des charges, avec votre avocat.
           </p>
         </div>
       </details>

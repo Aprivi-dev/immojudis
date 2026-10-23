@@ -303,7 +303,9 @@ describe("guide des ventes immobilières judiciaires", () => {
       // L'exemple chiffré : jeudi 8 octobre 2026 + 10 jours = dimanche 18, donc lundi 19.
       expect(new Date(Date.UTC(2026, 9, 8)).getUTCDay()).toBe(4);
       expect(new Date(Date.UTC(2026, 9, 18)).getUTCDay()).toBe(0);
-      expect(body).toContain("jusqu’au lundi 19 octobre 2026 à minuit");
+      expect(body).toContain("le délai est prorogé jusqu’au lundi 19 octobre 2026.");
+      expect(body).toContain("votre avocat vous indiquera l’heure limite de dépôt");
+      expect(body).not.toContain("minuit");
     });
 
     it("reprend le report dans la FAQ visible et dans le JSON-LD", () => {
