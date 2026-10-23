@@ -14,6 +14,7 @@ import { getCadastralParcels, getSale } from "@/lib/property-report/repository";
 import { enforceDailyOperationLimits, enforceUserRateLimit } from "@/lib/rate-limit";
 import { landLocationInputFromSale } from "@/lib/land-report-input";
 import { getCachedLandReport } from "@/lib/land-report";
+import { listingPluZone } from "@/lib/land-report-coherence";
 import { landReportToLines, LAND_REPORT_HEADINGS } from "@/lib/land-report-export";
 import { createTextPdf } from "@/lib/simple-pdf";
 
@@ -28,24 +29,28 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const context = createApiRequestContext(request, "land-report.sale");
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
-    const plan = await assertFeatureEntitlement(
-      auth,
-      "property.urbanPlanning",
-      "L’analyse du PLU et des risques est réservée à l’offre Analyse.",
-    );
-    await assertFeatureEntitlement(
-      auth,
-      "property.cadastralAnalysis",
-      "L’analyse cadastrale est réservée à l’offre Analyse.",
-    );
     const { id } = paramsSchema.parse(await params);
     const query = querySchema.parse(Object.fromEntries(new URL(request.url).searchParams));
-    if (query.format === "pdf")
-      await assertFeatureEntitlement(
+    // Les droits sont indépendants : contrôlés ensemble, avant toute lecture de la vente.
+    const [plan] = await Promise.all([
+      assertFeatureEntitlement(
         auth,
-        "property.pdfExport",
-        "L’export PDF est réservé à l’offre Analyse.",
-      );
+        "property.urbanPlanning",
+        "L’analyse du PLU et des risques est réservée à l’offre Analyse.",
+      ),
+      assertFeatureEntitlement(
+        auth,
+        "property.cadastralAnalysis",
+        "L’analyse cadastrale est réservée à l’offre Analyse.",
+      ),
+      query.format === "pdf"
+        ? assertFeatureEntitlement(
+            auth,
+            "property.pdfExport",
+            "L’export PDF est réservé à l’offre Analyse.",
+          )
+        : null,
+    ]);
     const sale = await getSale(auth.supabase, id);
     await enforceUserRateLimit({
       userId: auth.userId,
@@ -70,7 +75,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       const address = [sale.address, sale.postal_code, sale.city].filter(Boolean).join(", ");
       const pdf = createTextPdf({
         title: "Immojudis - PLU et risques du bien",
-        lines: landReportToLines(report, address),
+        lines: landReportToLines(report, address, {
+          listingZone: listingPluZone(sale.source_description, sale.description),
+          landSurfaceM2: sale.land_surface_m2,
+        }),
         headings: LAND_REPORT_HEADINGS,
         footer: "Immojudis - preuves officielles et vérifications, ne vaut pas autorisation.",
       });

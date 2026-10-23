@@ -8,6 +8,7 @@ import ShieldAlert from "lucide-react/dist/esm/icons/shield-alert.js";
 import { fetchSaleLandReport, downloadSaleLandReport } from "@/lib/land-report-client";
 import { LAND_SCOPE_LABELS, LAND_SOURCE_STATUS_LABELS } from "@/lib/land-report-export";
 import { safeExternalHttpUrl } from "@/lib/external-url";
+import { useLaunchOffer } from "@/hooks/use-launch-offer";
 import type {
   LandProjectKind,
   LandReport,
@@ -18,7 +19,9 @@ import type {
 } from "@/lib/land-report-types";
 import {
   compareListingZone,
+  landConstraintsOverview,
   landReportReliability,
+  landZoneVerdict,
   parcelSurfaceGap,
   rulesUnavailableReason,
 } from "@/lib/land-report-coherence";
@@ -44,6 +47,11 @@ const PROJECT_LABELS: Record<LandProjectKind, string> = {
   division: "Diviser le terrain",
   destination: "Changer de destination",
 };
+/** One short sentence for the project names that need it. */
+const PROJECT_HINTS: Partial<Record<LandProjectKind, string>> = {
+  destination:
+    "Changer de destination, c’est passer d’un usage à un autre, par exemple d’un commerce à un logement.",
+};
 
 export function LandPotentialPanel({
   saleId,
@@ -53,6 +61,7 @@ export function LandPotentialPanel({
   landSurfaceM2 = null,
   onReport,
 }: Props) {
+  const launchOffer = useLaunchOffer();
   const rootRef = useRef<HTMLElement | null>(null);
   const autoLoadStarted = useRef(false);
   const [report, setReport] = useState(initialReport ?? null);
@@ -129,6 +138,8 @@ export function LandPotentialPanel({
   const unavailableCount = checks.filter((check) => check.status === "unavailable").length;
   const surfaceGap = report ? parcelSurfaceGap(report.planning.parcels, landSurfaceM2) : null;
   const zoneCheck = report ? compareListingZone(listingZone, report.planning.zones) : null;
+  const verdict = report ? landZoneVerdict(report.planning.zones) : null;
+  const constraints = report ? landConstraintsOverview(report.planning) : null;
   const warnings = report
     ? [
         ...new Set([
@@ -163,19 +174,36 @@ export function LandPotentialPanel({
 
       {!enabled ? (
         <div className={styles.notice}>
-          <p>L’offre Analyse donne accès au dossier PLU et risques de chaque annonce.</p>
+          <p>
+            {launchOffer.pending
+              ? "L’accès au dossier PLU et risques de chaque annonce dépend de votre offre."
+              : launchOffer.active
+                ? "Pendant l’offre de lancement, le dossier PLU et risques de chaque annonce est inclus avec un compte gratuit dont l’adresse email est confirmée. Cette offre est temporaire."
+                : "L’offre Analyse donne accès au dossier PLU et risques de chaque annonce."}
+          </p>
           <a href="/offres">
-            Découvrir l’offre Analyse <ArrowUpRight size={15} aria-hidden="true" />
+            {launchOffer.active ? "Voir l’offre de lancement" : "Découvrir l’offre Analyse"}{" "}
+            <ArrowUpRight size={15} aria-hidden="true" />
           </a>
         </div>
       ) : (
         <>
+          {/* Toujours montée : une région créée avec son texte n'est pas toujours annoncée. */}
+          <p role="status" className="sr-only">
+            {loading
+              ? "Consultation des sources officielles en cours."
+              : report
+                ? "Le dossier PLU et risques est prêt."
+                : ""}
+          </p>
           {loading || (!report && !error) ? (
             <div className={styles.loading}>
-              <p role="status">
-                Recherche de la parcelle, du zonage et des risques, puis lecture du règlement :
-                environ 15 secondes.
-              </p>
+              {loading ? (
+                <p>
+                  Recherche de la parcelle, du zonage et des risques, puis lecture du règlement :
+                  environ 15 secondes.
+                </p>
+              ) : null}
               {report ? null : (
                 <dl className={styles.summaryList} aria-hidden="true">
                   {SUMMARY_LABELS.map((label) => (
@@ -196,6 +224,7 @@ export function LandPotentialPanel({
           {report ? (
             <div className={styles.report}>
               <div className={styles.summary}>
+                {verdict ? <p className={styles.verdict}>{verdict}</p> : null}
                 {reliability ? (
                   <p className={styles.reliability} data-tone={reliability.tone}>
                     <strong>{reliability.text}</strong>
@@ -229,13 +258,15 @@ export function LandPotentialPanel({
                   <div className={styles.summaryRow}>
                     <dt>Servitudes</dt>
                     <dd>
-                      {report.planning.constraints.length
+                      {constraints?.status === "found"
                         ? countLabel(
-                            report.planning.constraints.length,
+                            constraints.count,
                             "servitude ou prescription",
                             "servitudes ou prescriptions",
                           )
-                        : "Aucune repérée"}
+                        : constraints?.status === "unverified"
+                          ? `Non vérifiées : ${constraints.reason}`
+                          : "Aucune repérée dans les couches consultées"}
                     </dd>
                   </div>
                   <div className={styles.summaryRow}>
@@ -245,7 +276,7 @@ export function LandPotentialPanel({
                 </dl>
                 {surfaceGap ? <p className={styles.attention}>{surfaceGap}</p> : null}
                 <p className={styles.summaryMeta}>
-                  Vérifié le {formatDate(report.generatedAt)}
+                  Sources consultées le {formatDate(report.generatedAt)}
                   {unavailableCount > 0
                     ? ` · ${unavailableCount} source${unavailableCount > 1 ? "s" : ""} indisponible${unavailableCount > 1 ? "s" : ""}`
                     : ""}
@@ -254,7 +285,7 @@ export function LandPotentialPanel({
 
               <details className={styles.block}>
                 <summary>Parcelles et zonage</summary>
-                <section className={styles.blockBody} aria-label="Parcelles et zonage officiel">
+                <div className={styles.blockBody}>
                   {report.planning.parcels.length ? (
                     <>
                       <LandParcelDiagram
@@ -317,7 +348,8 @@ export function LandPotentialPanel({
                     <details className={styles.document} key={document.id}>
                       <summary>{document.title || document.name}</summary>
                       <p>
-                        Statut GPU : {document.legalStatus ?? "non renseigné"} ·{" "}
+                        Statut au Géoportail de l’urbanisme (GPU) :{" "}
+                        {document.legalStatus ?? "non renseigné"} ·{" "}
                         {document.effectiveStatus ?? "statut effectif non renseigné"}
                       </p>
                       <p>
@@ -337,7 +369,7 @@ export function LandPotentialPanel({
                       </ul>
                     </details>
                   ))}
-                </section>
+                </div>
               </details>
 
               <details className={styles.block}>
@@ -345,7 +377,7 @@ export function LandPotentialPanel({
                   Règles utiles à votre projet
                   {report.rules.rules.length ? ` (${report.rules.rules.length})` : ""}
                 </summary>
-                <section className={styles.blockBody} aria-label="Projet et règles du PLU">
+                <div className={styles.blockBody}>
                   {selectedProject ? (
                     <>
                       <label className={styles.projectLabel} htmlFor={`land-project-${saleId}`}>
@@ -363,6 +395,9 @@ export function LandPotentialPanel({
                           </option>
                         ))}
                       </select>
+                      {PROJECT_HINTS[selectedProject.kind] ? (
+                        <p className={styles.caption}>{PROJECT_HINTS[selectedProject.kind]}</p>
+                      ) : null}
                       <RuleGroups key={selectedProject.kind} rules={selectedProject.rules} />
                       <details className={styles.coverage}>
                         <summary>Points à vérifier avant ce projet</summary>
@@ -379,7 +414,7 @@ export function LandPotentialPanel({
                     <p className={styles.notice}>
                       {report.rules.rules.length
                         ? "Les articles lus ne portent sur aucun des projets proposés."
-                        : rulesUnavailableReason(report.rules.checks)}{" "}
+                        : "Aucun article n’est présenté ici (la raison est donnée dans le résumé)."}{" "}
                       Les articles applicables se lisent dans le règlement de la zone.
                     </p>
                   )}
@@ -387,7 +422,7 @@ export function LandPotentialPanel({
                     url="https://www.service-public.gouv.fr/particuliers/vosdroits/F1633"
                     label="Préparer un certificat d’urbanisme opérationnel"
                   />
-                </section>
+                </div>
               </details>
 
               <details className={styles.block}>
@@ -397,7 +432,13 @@ export function LandPotentialPanel({
                     ? ` (${report.planning.constraints.length})`
                     : ""}
                 </summary>
-                <section className={styles.blockBody} aria-label="Servitudes et prescriptions">
+                <div className={styles.blockBody}>
+                  {constraints?.status === "unverified" ? (
+                    <p className={styles.attention}>
+                      Servitudes non vérifiées : {constraints.reason}. Cela ne prouve pas qu’il n’y
+                      en a pas.
+                    </p>
+                  ) : null}
                   {report.planning.constraints.length ? (
                     <ul className={styles.cardGrid}>
                       {report.planning.constraints.map((constraint) => (
@@ -427,10 +468,12 @@ export function LandPotentialPanel({
                         </li>
                       ))}
                     </ul>
-                  ) : (
-                    <p className={styles.caption}>Aucune servitude ni prescription repérée.</p>
-                  )}
-                </section>
+                  ) : constraints?.status === "none" ? (
+                    <p className={styles.caption}>
+                      Aucune servitude ni prescription repérée dans les couches consultées.
+                    </p>
+                  ) : null}
+                </div>
               </details>
 
               <details className={styles.block}>
@@ -438,12 +481,12 @@ export function LandPotentialPanel({
                   Risques liés à l’emplacement
                   {report.risks.findings.length ? ` (${report.risks.findings.length})` : ""}
                 </summary>
-                <section className={styles.blockBody} aria-label="Risques liés à l’emplacement">
+                <div className={styles.blockBody}>
                   {report.risks.findings.length ? (
                     <div className={styles.riskGroups}>
                       {groupRisks(report.risks.findings).map(([category, findings]) => (
                         <div key={category}>
-                          <h5>{RISK_CATEGORY_LABELS[category]}</h5>
+                          <h3>{RISK_CATEGORY_LABELS[category]}</h3>
                           <ul className={styles.riskList}>
                             {findings.slice(0, 2).map((risk) => (
                               <RiskCard key={risk.id} risk={risk} />
@@ -472,12 +515,17 @@ export function LandPotentialPanel({
                       l’absence de risque.
                     </p>
                   )}
-                </section>
+                </div>
               </details>
 
               <details className={styles.block}>
                 <summary>Sources, dates et limites</summary>
                 <div className={styles.blockBody}>
+                  <p className={styles.caption}>
+                    Le Géoportail de l’urbanisme (GPU) est le site officiel qui publie les PLU. Les
+                    OAP (orientations d’aménagement et de programmation) sont les pièces du PLU qui
+                    précisent l’aménagement de certains secteurs.
+                  </p>
                   {!report.rules.completeCoverage ? (
                     <p className={styles.attention}>
                       Lecture partielle du règlement : les extraits ne couvrent pas toutes les
@@ -673,7 +721,7 @@ function RiskCard({ risk }: { risk: LandRiskFinding }) {
       <p>{risk.description}</p>
       {risk.consequences.length ? (
         <div className={styles.consequences}>
-          <h5>Conséquences à vérifier</h5>
+          <h4>Conséquences à vérifier</h4>
           <ul>
             {risk.consequences.map((item) => (
               <li key={item}>{item}</li>
@@ -682,7 +730,7 @@ function RiskCard({ risk }: { risk: LandRiskFinding }) {
         </div>
       ) : null}
       <p className={styles.ruleMeta}>
-        {risk.sourceLabel} · millésime {risk.vintage ?? "non renseigné"}
+        {risk.sourceLabel} · année des données : {risk.vintage ?? "non renseignée"}
         {risk.sourceUpdatedAt ? ` · source mise à jour le ${formatDate(risk.sourceUpdatedAt)}` : ""}
         {risk.precision ? ` · ${risk.precision}` : ""}
         {risk.distanceM != null ? ` · distance indicative ${Math.round(risk.distanceM)} m` : ""}
@@ -719,7 +767,8 @@ function SourceLink({ url, label }: { url: string; label: string }) {
   const safeUrl = safeExternalHttpUrl(url);
   return safeUrl ? (
     <a className={styles.sourceLink} href={safeUrl} target="_blank" rel="noopener noreferrer">
-      {label} <ArrowUpRight size={14} aria-hidden="true" />
+      {label} <span className="sr-only">(nouvel onglet)</span>
+      <ArrowUpRight size={14} aria-hidden="true" />
     </a>
   ) : null;
 }

@@ -128,6 +128,15 @@ describe("dossier PLU et risques premium", () => {
     expect(mocks.sale).toHaveBeenCalledWith(context.supabase, id);
     expect(mocks.report).toHaveBeenCalledWith({ address: sale.address }, { refresh: true });
   });
+  it("contrôle les droits en parallèle, avant toute lecture de la vente", async () => {
+    const releases: Array<(value: unknown) => void> = [];
+    mocks.entitlement.mockImplementation(() => new Promise((resolve) => releases.push(resolve)));
+    const pending = request("?format=pdf");
+    await vi.waitFor(() => expect(mocks.entitlement).toHaveBeenCalledTimes(3));
+    expect(mocks.sale).not.toHaveBeenCalled();
+    for (const release of releases) release({ plan: "analyse" });
+    expect((await pending).status).toBe(200);
+  });
   it("exporte un vrai PDF après vérification du droit d'export", async () => {
     const response = await request("?format=pdf");
     expect(response.status).toBe(200);
