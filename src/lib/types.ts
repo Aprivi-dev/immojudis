@@ -30,6 +30,11 @@ export type AuctionSale = {
     | "insufficient_type"
     | "insufficient"
     | null;
+  /**
+   * Signed-out page only: name of the source the listing comes from (`get_public_sale_source_name`),
+   * only when it is one of the known sources. Absent otherwise.
+   */
+  source_label?: string | null;
   source_checks?: Record<string, { checked_at?: string }> | null;
   source_conflicts?: Array<{
     field?: string;

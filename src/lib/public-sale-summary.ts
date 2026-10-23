@@ -1,5 +1,6 @@
 import { isPublicMarketGapBand, type PublicMarketGapBand } from "@/lib/market-gap-band";
 import { isLikelyPropertyImageUrl } from "@/lib/sale-media";
+import { knownSourceLabel } from "@/lib/sale-source-links";
 import type { AuctionSale } from "@/lib/types";
 
 /**
@@ -17,7 +18,8 @@ export type PublicSaleSummaryClient = {
       | "get_public_sale_summary"
       | "get_public_sale_details"
       | "get_public_sale_indexability"
-      | "get_public_sale_market_gap_band",
+      | "get_public_sale_market_gap_band"
+      | "get_public_sale_source_name",
     args: { p_sale_id: string },
   ) => PromiseLike<{ data: unknown; error: unknown }>;
 };
@@ -162,6 +164,24 @@ async function fetchPublicSaleMarketGapBand(
   }
 }
 
+/**
+ * Nom de la source d'origine de l'annonce (`get_public_sale_source_name`), seulement quand c'est une
+ * source connue (`knownSourceLabel`) ; `undefined` sinon, y compris fonction absente ou en erreur :
+ * c'est un enrichissement, sa panne ne change ni la fiche ni son statut.
+ */
+async function fetchPublicSaleSourceLabel(
+  client: PublicSaleSummaryClient,
+  id: string,
+): Promise<string | undefined> {
+  try {
+    const { data, error } = await client.rpc("get_public_sale_source_name", { p_sale_id: id });
+    if (error) return undefined;
+    return (typeof data === "string" ? knownSourceLabel(data) : null) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function warnMarketGapBand(saleId: string, code?: string, message?: string) {
   console.warn(
     JSON.stringify({
@@ -206,11 +226,12 @@ export async function fetchPublicSaleSummary(
   options: { withIndexability?: boolean } = {},
 ): Promise<PublicSaleSummaryResult> {
   if (!SALE_ID_PATTERN.test(id)) return { kind: "missing" };
-  const [{ data, error }, details, indexable, marketGapBand] = await Promise.all([
+  const [{ data, error }, details, indexable, marketGapBand, sourceLabel] = await Promise.all([
     client.rpc("get_public_sale_summary", { p_sale_id: id }),
     fetchPublicSaleDetails(client, id),
     options.withIndexability ? fetchPublicSaleIndexability(client, id) : undefined,
     fetchPublicSaleMarketGapBand(client, id),
+    fetchPublicSaleSourceLabel(client, id),
   ]);
   if (error) {
     if (isMissingFunction(error as ErrorLike)) return { kind: "unsupported" };
@@ -224,6 +245,7 @@ export async function fetchPublicSaleSummary(
           ...mapPublicSaleSummary(row),
           ...details,
           ...(marketGapBand === undefined ? {} : { market_gap_band: marketGapBand }),
+          ...(sourceLabel === undefined ? {} : { source_label: sourceLabel }),
         },
         ...(indexable === undefined ? {} : { indexable }),
       }

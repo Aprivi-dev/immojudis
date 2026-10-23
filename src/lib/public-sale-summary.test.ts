@@ -318,4 +318,50 @@ describe("public sale summary", () => {
       ).rejects.toMatchObject({ code: "57014" });
     });
   });
+
+  describe("source label", () => {
+    const answer = (source: unknown, error: unknown = null) =>
+      vi.fn((fn: string) =>
+        Promise.resolve(
+          fn === "get_public_sale_source_name"
+            ? { data: error ? null : source, error }
+            : { data: [row], error: null },
+        ),
+      );
+
+    it("joins the name of a known source", async () => {
+      const rpc = answer("licitor");
+      const result = await fetchPublicSaleSummary({ rpc }, ID);
+      expect(rpc).toHaveBeenCalledWith("get_public_sale_source_name", { p_sale_id: ID });
+      if (result.kind !== "found") throw new Error("expected a sale");
+      expect(result.sale.source_label).toBe("Licitor");
+    });
+
+    it.each([null, "", 42, "source_interne_inconnue", { name: "licitor" }])(
+      "leaves the label out for %j",
+      async (source) => {
+        const result = await fetchPublicSaleSummary({ rpc: answer(source) }, ID);
+        if (result.kind !== "found") throw new Error("expected a sale");
+        expect(result.sale).not.toHaveProperty("source_label");
+      },
+    );
+
+    it("keeps the sale when the function is missing or fails", async () => {
+      for (const error of [
+        { code: "PGRST202", message: "Could not find the function" },
+        { code: "57014", message: "timeout" },
+      ]) {
+        const result = await fetchPublicSaleSummary({ rpc: answer(null, error) }, ID);
+        expect(result.kind).toBe("found");
+        if (result.kind === "found") expect(result.sale).not.toHaveProperty("source_label");
+      }
+    });
+
+    it("never exposes a source URL: the sale keeps no source_url or source_name", async () => {
+      const result = await fetchPublicSaleSummary({ rpc: answer("licitor") }, ID);
+      if (result.kind !== "found") throw new Error("expected a sale");
+      expect(result.sale).not.toHaveProperty("source_url");
+      expect(result.sale).not.toHaveProperty("source_name");
+    });
+  });
 });

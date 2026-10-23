@@ -343,6 +343,21 @@ describe("SalePublicPreview", () => {
       expect(block.previousElementSibling?.textContent).toContain("Mise à prix");
     });
 
+    it("dit « les autres photos » quand une photo est déjà visible, « les photos » sinon", () => {
+      const withPhoto = renderPreview({
+        sale_venue_type: "tribunal",
+        media: [{ type: "image", url: "https://www.licitor.com/photo.jpg" }],
+      } as Partial<AuctionSale>);
+      const text = screen.getByTestId("public-signup").textContent ?? "";
+      expect(text).toContain("voir l’adresse, les autres photos et la fourchette");
+      expect(text).not.toContain("voir l’adresse, les photos");
+      withPhoto.unmount();
+      renderPreview({ sale_venue_type: "tribunal" });
+      expect(screen.getByTestId("public-signup").textContent).toContain(
+        "voir l’adresse, les photos et la fourchette",
+      );
+    });
+
     it("dit « Vérification de votre compte… » à la place du bouton quand une session est détectée", () => {
       const { container } = renderPreview({ sale_venue_type: "tribunal" }, "sale-1", true);
       const block = screen.getByTestId("public-signup");
@@ -351,6 +366,72 @@ describe("SalePublicPreview", () => {
       expect(container.textContent).not.toContain(FREE_ACCESS_LINE);
       // La suite de la recherche reste proposée.
       expect(screen.getByRole("link", { name: "Continuer ma recherche" })).toBeTruthy();
+    });
+  });
+
+  describe("avocat, frais, source et signalement", () => {
+    const SALE = "4655881c-249d-4eab-beba-f2624d8a1af0";
+
+    it("« Avocat obligatoire » renvoie vers /avocats de la vente et vers le simulateur de frais", () => {
+      renderPreview({ sale_venue_type: "tribunal" }, SALE);
+      const links = screen.getByTestId("public-lawyer-links");
+      expect(links.parentElement?.textContent).toContain("Avocat obligatoire pour enchérir");
+      expect(
+        within(links).getByRole("link", { name: "Trouver un avocat" }).getAttribute("href"),
+      ).toBe(`/avocats?saleId=${SALE}`);
+      expect(
+        within(links)
+          .getByRole("link", { name: /Estimer les frais/ })
+          .getAttribute("href"),
+      ).toBe("/simulateur-frais-encheres");
+    });
+
+    it("n'ajoute aucun lien d'avocat pour une vente chez le notaire", () => {
+      renderPreview({ sale_venue_type: "notary" });
+      expect(screen.queryByTestId("public-lawyer-links")).toBeNull();
+    });
+
+    it("« Signaler une erreur sur cette fiche » ouvre /contact prérempli avec la vente et la rubrique", () => {
+      renderPreview({ sale_venue_type: "tribunal" }, SALE);
+      const link = screen.getByRole("link", { name: "Signaler une erreur sur cette fiche" });
+      expect(link.getAttribute("href")).toBe(`/contact?sujet=erreur&vente=${SALE}&rubrique=fiche`);
+    });
+
+    it("nomme la source de l'annonce près des faits, et seulement quand elle est connue", () => {
+      const { unmount } = renderPreview({
+        sale_venue_type: "tribunal",
+        source_label: "Licitor",
+      });
+      const note = screen.getByTestId("public-source-note");
+      expect(note.textContent).toContain("Source de l’annonce : Licitor.");
+      expect(note.previousElementSibling?.tagName).toBe("DL");
+      unmount();
+      renderPreview({ sale_venue_type: "tribunal" });
+      expect(screen.getByTestId("public-source-note").textContent).not.toContain("Source de");
+      expect(
+        screen.getByRole("link", { name: "Signaler une erreur sur cette fiche" }),
+      ).toBeTruthy();
+    });
+  });
+
+  describe("alerte du secteur", () => {
+    it("propose l'alerte du département de la vente, avec retour à la page de confirmation", () => {
+      renderPreview({ sale_venue_type: "tribunal", department: "64" });
+      const block = screen.getByTestId("public-sector-alert");
+      const link = within(block).getByRole("link", {
+        name: "Recevoir les nouvelles ventes de ce secteur",
+      });
+      expect(link.getAttribute("href")).toBe(
+        "/login?redirect=%2Falertes%2Fcreer%3Fdepartment%3D64&mode=investor&reason=alerte",
+      );
+    });
+
+    it("n'en propose pas sans département, ni pendant la vérification du compte", () => {
+      renderPreview({ sale_venue_type: "tribunal", department: null });
+      expect(screen.queryByTestId("public-sector-alert")).toBeNull();
+      cleanup();
+      renderPreview({ sale_venue_type: "tribunal", department: "64" }, "sale-1", true);
+      expect(screen.queryByTestId("public-sector-alert")).toBeNull();
     });
   });
 
@@ -538,9 +619,11 @@ describe("SalePublicPreview", () => {
       "Valeur masquée, visible avec l’offre Analyse, ou en débloquant la vente",
     );
     expect(spoken[3]).toBe("Valeur masquée, visible avec l’offre Analyse");
-    // Le chiffre flouté reste un décor : jamais lu.
+    // La barre de remplacement reste un décor : jamais lue, et sans aucun chiffre.
     for (const row of rows) {
-      expect(row.querySelector("[aria-hidden='true'][data-nosnippet]")?.textContent).toMatch(/0/);
+      const bar = row.querySelector("[aria-hidden='true'][data-nosnippet]");
+      expect(bar).not.toBeNull();
+      expect(bar?.textContent).toBe("");
     }
   });
 
@@ -649,19 +732,18 @@ describe("SalePublicPreview", () => {
     expect(screen.queryByRole("button", { name: "Définition : mise à prix" })).toBeNull();
   });
 
-  it("masque les valeurs factices aux lecteurs d'écran et aux extraits de recherche", () => {
+  it("ne met aucun chiffre factice dans le HTML : des barres, pas « 000 000 € » ni « 00 ventes »", () => {
     const { container } = renderPreview({
       sale_venue_type: "tribunal",
       starting_price_eur: 59_000,
     });
     const placeholders = Array.from(container.querySelectorAll("[data-nosnippet]"));
-    expect(placeholders.map((node) => node.textContent)).toEqual([
-      "000 000 € – 000 000 €",
-      "00 %",
-      "000 000 €",
-      "00 ventes",
-    ]);
+    expect(placeholders).toHaveLength(4);
+    expect(placeholders.map((node) => node.textContent)).toEqual(["", "", "", ""]);
     for (const node of placeholders) expect(node.getAttribute("aria-hidden")).toBe("true");
+    const teaser = screen.getByRole("region", { name: "L’analyse de cette vente" });
+    expect(teaser.innerHTML).not.toMatch(/000 000|00 ventes|00 %/);
+    expect(teaser.textContent).not.toMatch(/€|%|ventes? comparables? : \d/);
   });
 
   it("describes the property from its facts and teases the analysis without figures", () => {
@@ -681,7 +763,7 @@ describe("SalePublicPreview", () => {
     expect(description.textContent).toContain("Jardin");
     const teaser = screen.getByRole("region", { name: "L’analyse de cette vente" });
     expect(teaser.textContent).toContain("Enchère plafond (simulation)");
-    expect(teaser.textContent).toContain("000 000 €");
+    expect(teaser.textContent).not.toMatch(/000 000/);
     expect(teaser.textContent).not.toMatch(/[1-9]\d* ?\d* €/);
   });
 
@@ -785,7 +867,16 @@ describe("offre de lancement sur la fiche publique", () => {
   it("offre active : la mention du visiteur sous le bouton, et les étiquettes de l'offre", () => {
     render(withOffer({ active: true, pending: false }));
     const block = screen.getByTestId("public-signup");
-    expect(screen.getByTestId("public-signup-line").textContent).toBe(LAUNCH_OFFER_VISITOR_TEXT);
+    // Trois lignes factuelles au lieu du texte de l'offre en entier (durée, retrait « sans préavis »…) :
+    // l'essentiel, puis un renvoi vers /offres où le texte complet reste lisible.
+    const line = screen.getByTestId("public-signup-line");
+    expect(line.textContent).toContain("Offre de lancement : les avantages de l’offre Analyse");
+    expect(line.textContent).not.toContain("sans préavis");
+    expect(line.textContent).not.toContain(LAUNCH_OFFER_VISITOR_TEXT);
+    expect(line.textContent?.length).toBeLessThan(200);
+    expect(
+      within(line).getByRole("link", { name: "Voir les conditions" }).getAttribute("href"),
+    ).toBe("/offres");
     expect(block.textContent).not.toContain(FREE_ACCESS_LINE);
     const teaser = screen.getByRole("region", { name: "L’analyse de cette vente" });
     expect(teaser.textContent).toContain("Compte gratuit (offre de lancement)");
