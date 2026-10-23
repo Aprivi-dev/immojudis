@@ -1,3 +1,4 @@
+import { COMPANY_DESCRIPTION } from "@/lib/company-description";
 import { MARKET_GAP_METHOD_PATH } from "@/lib/market-gap";
 import { EXISTING_GUIDE, RESOURCE_ARTICLES } from "@/lib/resource-articles";
 
@@ -8,8 +9,8 @@ import { EXISTING_GUIDE, RESOURCE_ARTICLES } from "@/lib/resource-articles";
  */
 export type LlmsTxtPage = { title: string; path: string; description: string };
 
-const LLMS_TXT_SUMMARY =
-  "Immojudis est une plateforme française d’exploration des ventes immobilières aux enchères : ventes au tribunal, chez un notaire ou domaniales. Elle référence des annonces publiées par des tiers, explique les procédures et propose des outils d’aide à la décision. Les informations sont indicatives ; elles ne constituent ni un conseil juridique ni un conseil financier, et seuls les documents officiels de chaque vente font foi.";
+// La description est celle du site entier (`company-description.ts`) ; la suite précise la portée.
+const LLMS_TXT_SUMMARY = `${COMPANY_DESCRIPTION} Les ventes sont celles du tribunal, d’un notaire ou domaniales ; les annonces sont publiées par des tiers. Les informations sont indicatives ; elles ne constituent ni un conseil juridique ni un conseil financier, et seuls les documents officiels de chaque vente font foi.`;
 
 const LLMS_TXT_SCOPE_NOTE =
   "Ce fichier ne liste que les pages éditoriales du site. Les annonces de vente ne sont pas décrites ici.";
@@ -25,6 +26,18 @@ const LLMS_TXT_MAIN_PAGES: readonly LlmsTxtPage[] = [
     title: EXISTING_GUIDE.title,
     path: EXISTING_GUIDE.href,
     description: EXISTING_GUIDE.description,
+  },
+  {
+    title: "Comment ça marche",
+    path: "/comment-ca-marche",
+    description:
+      "Les étapes pour préparer une vente aux enchères : repérer une vente, comprendre le bien, fixer son enchère plafond, se faire accompagner.",
+  },
+  {
+    title: "À propos",
+    path: "/a-propos",
+    description:
+      "Ce qu’est Immojudis, d’où viennent les données, l’indépendance vis-à-vis des tribunaux et ce que le site ne fait pas.",
   },
   {
     title: "Ressources",
