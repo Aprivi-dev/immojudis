@@ -169,8 +169,8 @@ export function AuctionScenariosSection({
                 {number.format(figures.nationalSample)} ventes comparables des tribunaux couverts
               </>
             )}{" "}
-            sur les trois dernières années, pour des mises à prix de{" "}
-            {STARTING_PRICE_BAND_LABELS[figures.band ?? 0] ?? "même niveau"}
+            sur les trois dernières années, pour des mises à prix{" "}
+            {STARTING_PRICE_BAND_LABELS[figures.band ?? 0] ?? "de même niveau"}
             {propertyGroup ? `, en ne comparant que ${PROPERTY_GROUP_LABELS[propertyGroup]}` : ""}.
           </p>
           {figures.reliability ? (

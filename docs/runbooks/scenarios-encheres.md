@@ -18,6 +18,12 @@ décrite ici est une action du propriétaire (`service_role`), jamais d'un agent
    délai de 8 s : c'est la cause de l'ancien « Les statistiques du tribunal n'ont pas pu être chargées ».
 4. L'état du cliché est dans `app_private.auction_scenario_snapshot_state` (une ligne : `refreshed_at`,
    `observation_count`).
+5. Une vente n'est comparée qu'aux lots de **sa tranche de mise à prix** (`app_private.starting_price_band`,
+   migration `20261102110000`) : moins de 20 000 €, 20 000 à 35 000, 35 000 à 50 000, 50 000 à 75 000,
+   75 000 à 100 000, 100 000 à 200 000, 200 000 € et plus (sept tranches, numérotées de 1 à 7 dans la clé
+   `band` de la réponse). Les bornes sont reprises dans `src/lib/auction-scenarios.ts`
+   (`STARTING_PRICE_BAND_UPPER_BOUNDS`) et comparées par un test. Le cache de la route est sous la clé `v2`
+   depuis ce changement : changer la grille impose de changer cette clé.
 
 ## Qui remplit le cliché
 
