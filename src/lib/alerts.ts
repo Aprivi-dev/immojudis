@@ -122,7 +122,7 @@ export function alertMatchesSale(
  * sans effet et l'alerte correspondrait à toutes les ventes. Un texte libre n'est pas évalué ici
  * (les champs de description ne sont pas chargés pour les alertes).
  */
-export function matchesAlertQueryScope(sale: AuctionSale, query: unknown): boolean {
+function matchesAlertQueryScope(sale: AuctionSale, query: unknown): boolean {
   if (typeof query !== "string" || !query.trim()) return true;
   const scope = resolveFrenchGeoSearch(query);
   if (scope.kind === "text" || scope.kind === "empty") return true;
