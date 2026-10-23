@@ -196,11 +196,16 @@ function splitLongLine(line: string): string[] {
 }
 
 function sanitizePdfText(value: string): string {
-  return value
-    .normalize("NFC")
-    .replace(/[^\x20-\x7E\u00A0-\u00FF€ŒœŸŠšŽž‘’“”–—…•]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  return (
+    value
+      .normalize("NFC")
+      // WinAnsi has neither ≤ nor ≥; dropping them would reverse the meaning of « hauteur ≤ 9 m ».
+      .replace(/≤\s*/g, "au plus ")
+      .replace(/≥\s*/g, "au moins ")
+      .replace(/[^\x20-\x7E\u00A0-\u00FF€ŒœŸŠšŽž‘’“”–—…•]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+  );
 }
 
 function escapePdfString(value: string): string {
