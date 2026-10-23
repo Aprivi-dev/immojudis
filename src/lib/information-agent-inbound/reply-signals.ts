@@ -33,7 +33,7 @@ function normalizeHeaders(value: unknown): Map<string, string> {
 
 /** Objets de réponse automatique : « Absence du bureau », « Out of office », « Réponse automatique »… */
 const AUTO_REPLY_SUBJECT = unicodeWordBoundaries(
-  /^\s*(?:(?:re|r[ée]|tr|fw|fwd)\s*:\s*)*(?:\[?\s*(?:r[ée]ponse\s+)?(?:automatique|auto(?:matic)?[-\s]?repl(?:y|ies))\s*\]?|absence(?:\s+(?:du\s+bureau|temporaire|de\s+\p{L}+|jusqu['’]au|le|du|cong[ée]s?))?|absent(?:e)?\b|out\s+of\s+(?:the\s+)?office|automatic\s+reply|auto[-\s]?reply|abwesenheit|cong[ée]s?\s+annuels?|fermeture\s+(?:du\s+cabinet|de\s+l['’][ée]tude))/iu,
+  /^\s*(?:(?:r[eé]|tr|fwd?)\s*:\s*)*(?:\[?\s*(?:r[ée]ponse\s+)?(?:automatique|auto(?:matic)?[-\s]?repl(?:y|ies))\s*\]?|absence(?:\s+(?:du\s+bureau|temporaire|de\s+\p{L}+|jusqu['’]au|le|du|cong[ée]s?))?|absent(?:e)?\b|out\s+of\s+(?:the\s+)?office|automatic\s+reply|auto[-\s]?reply|abwesenheit|cong[ée]s?\s+annuels?|fermeture\s+(?:du\s+cabinet|de\s+l['’][ée]tude))/iu,
 );
 
 /**

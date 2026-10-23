@@ -292,6 +292,21 @@ describe("useCreateAlert", () => {
     );
   });
 
+  it("dit qu'une décote minimale ne vaut que pour les biens déclarés libres", async () => {
+    mocks.plan.mockResolvedValue({
+      plan: {
+        hasAnalysisAccess: true,
+        features: { smartAlerts: "included", watchedZones: "included" },
+      },
+    });
+    const hook = setup();
+    const outcome = await create(hook, { department: "33", minMarketDiscount: 20 });
+    expect(outcome.status).toBe("created");
+    expect(mocks.toast.message).toHaveBeenCalledWith(
+      expect.stringContaining("biens déclarés libres"),
+    );
+  });
+
   it("accepte ces critères pour un compte Analyse, en alerte quotidienne", async () => {
     mocks.plan.mockResolvedValue({
       plan: {

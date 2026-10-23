@@ -48,7 +48,7 @@ describe("AnalyticsConsentSwitch", () => {
     act(() => setAudienceOptOut(true));
     expect((googleSwitch() as HTMLInputElement).disabled).toBe(true);
     expect((googleSwitch() as HTMLInputElement).checked).toBe(false);
-    expect(screen.getByRole("status").textContent).toMatch(/opposition/);
+    expect(screen.getByRole("status").textContent).toMatch(/Je m’oppose à la mesure d’audience/);
 
     // Le retrait de l'opposition ne rétablit pas l'ancien accord : un nouveau choix est attendu.
     act(() => setAudienceOptOut(false));

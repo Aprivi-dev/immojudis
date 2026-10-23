@@ -91,13 +91,14 @@ export function CookieConsentBanner() {
             Cookies de mesure d’audience
           </h2>
           <p className="mt-1">
-            Nous mesurons déjà la fréquentation sans cookie. Avec votre accord, Google Analytics
-            dépose aussi des cookies pour nous aider à comprendre l’usage du site, sans publicité.{" "}
+            Nous mesurons déjà la fréquentation sans cookie. Si vous acceptez, Google Analytics
+            dépose des cookies pour nous aider à comprendre l’usage du site, sans publicité. Refuser
+            ne change rien à votre navigation.{" "}
             <Link
               href="/privacy#cookies"
               className="font-semibold text-gold-text underline underline-offset-4"
             >
-              En savoir plus
+              En savoir plus et gérer mes choix
             </Link>
           </p>
         </div>

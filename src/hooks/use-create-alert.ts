@@ -228,6 +228,11 @@ export function useCreateAlert({
             "Les filtres « sous la fourchette » et « sans point à vérifier » ne sont pas enregistrés dans l'alerte.",
           );
         }
+        if (search.minMarketDiscount != null) {
+          toast.message(
+            "La décote minimale ne s'applique qu'aux biens déclarés libres : les biens occupés ou d'occupation inconnue n'y correspondent pas.",
+          );
+        }
         trackProductEvent("alert_created", { email_consent: emailConsent });
         return { status: "created", emailConsent };
       } catch (saveError) {

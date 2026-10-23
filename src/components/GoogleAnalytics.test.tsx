@@ -131,9 +131,9 @@ describe("CookieConsentBanner", () => {
     const refuse = screen.getByRole("button", { name: "Refuser" });
     const accept = screen.getByRole("button", { name: "Accepter" });
     expect(refuse.className).toBe(accept.className);
-    expect(screen.getByRole("link", { name: "En savoir plus" }).getAttribute("href")).toBe(
-      "/privacy#cookies",
-    );
+    expect(
+      screen.getByRole("link", { name: "En savoir plus et gérer mes choix" }).getAttribute("href"),
+    ).toBe("/privacy#cookies");
 
     fireEvent.click(refuse);
     expect(screen.queryByTestId("cookie-consent-banner")).toBeNull();
