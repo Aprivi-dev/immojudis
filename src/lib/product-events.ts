@@ -16,7 +16,8 @@ import { isAudienceOptedOut } from "@/lib/audience-opt-out";
  */
 
 export const PRODUCT_EVENT_NAMES = [
-  "signup_completed",
+  "signup_submitted",
+  "signup_confirmed",
   "alert_created",
   "favorite_added",
   "sample_report_viewed",
@@ -30,7 +31,8 @@ export const PRODUCT_EVENT_NAMES = [
 export type ProductEventName = (typeof PRODUCT_EVENT_NAMES)[number];
 
 export type ProductEventProperties = {
-  signup_completed: undefined;
+  signup_submitted: undefined;
+  signup_confirmed: undefined;
   alert_created: { email_consent: boolean };
   favorite_added: undefined;
   sample_report_viewed: undefined;
@@ -45,7 +47,8 @@ type PropertySpec = { kind: "boolean" } | { kind: "enum"; values: readonly strin
 
 /** Propriétés admises par événement, avec leur domaine de valeurs. */
 const PROPERTY_SPECS: { [N in ProductEventName]: Record<string, PropertySpec> } = {
-  signup_completed: {},
+  signup_submitted: {},
+  signup_confirmed: {},
   alert_created: { email_consent: { kind: "boolean" } },
   favorite_added: {},
   sample_report_viewed: {},
@@ -59,6 +62,19 @@ const PROPERTY_SPECS: { [N in ProductEventName]: Record<string, PropertySpec> } 
 type TrackArguments<N extends ProductEventName> = ProductEventProperties[N] extends undefined
   ? []
   : [properties: ProductEventProperties[N]];
+
+/**
+ * `@vercel/analytics` n'installe `window.va` qu'à l'injection de son script, que `AudienceMeasurement`
+ * attend d'un navigateur inactif : un événement envoyé au montage d'une page (`offers_viewed`,
+ * `sample_report_viewed`) serait perdu. On installe donc la même file d'attente que le paquet
+ * (`window.vaq`), que le script vide en arrivant ; le paquet la laisse en place si elle existe.
+ */
+function ensureVercelQueue(): void {
+  if (window.va) return;
+  window.va = function queueVercelAnalyticsEvent(...params) {
+    (window.vaq ??= []).push(params);
+  };
+}
 
 function trackingEnabled(): boolean {
   return typeof window !== "undefined" && process.env.NODE_ENV !== "test" && !isAudienceOptedOut();
@@ -90,6 +106,7 @@ export function trackProductEvent<N extends ProductEventName>(
   if (!trackingEnabled()) return;
   if (!PRODUCT_EVENT_NAMES.includes(name)) return;
   try {
+    ensureVercelQueue();
     const properties = sanitizeProductEventProperties(name, args[0]);
     if (properties) track(name, properties);
     else track(name);
