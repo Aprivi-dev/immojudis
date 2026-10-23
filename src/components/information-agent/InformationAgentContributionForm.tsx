@@ -8,6 +8,12 @@ import LoaderCircle from "lucide-react/dist/esm/icons/loader-circle.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import UploadCloud from "lucide-react/dist/esm/icons/upload-cloud.js";
 import X from "lucide-react/dist/esm/icons/x.js";
+import {
+  CONTRIBUTION_LIMITS,
+  isContributionFieldName,
+  validateContributionDraft,
+  type ContributionFieldName,
+} from "@/lib/information-agent-contribution-rules";
 import { legalValue, publicLegalPublisher } from "@/lib/legal-documents";
 import { pathWithSearch } from "@/lib/navigation";
 import { userMessage } from "@/lib/user-messages";
@@ -19,7 +25,7 @@ const DEFAULT_MAX_SUBMISSION_BYTES = 40 * 1024 * 1024;
 const DEFAULT_MAX_PORTAL_BYTES = 480 * 1024 * 1024;
 const DEFAULT_MAX_PORTAL_FILES = 12;
 const MAX_FILES = 10;
-const MAX_EXTERNAL_LINKS = 5;
+const MAX_EXTERNAL_LINKS = CONTRIBUTION_LIMITS.linksMax;
 
 const MIME_BY_EXTENSION: Record<string, string> = {
   ".pdf": "application/pdf",
@@ -78,13 +84,7 @@ type UploadedFile = {
 
 type ContributionState = "reading" | "loading" | "ready" | "invalid" | "error" | "sent";
 
-type FieldName =
-  | "senderName"
-  | "senderEmail"
-  | "note"
-  | "externalLinks"
-  | "files"
-  | "authorizedToTransmit";
+type FieldName = ContributionFieldName;
 
 const INCOMPLETE_LINK_MESSAGE =
   "Ce lien semble incomplet. Rouvrez-le depuis l’email que vous avez reçu, ou répondez simplement à cet email.";
@@ -147,6 +147,8 @@ class ContributionHttpError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    /** Champ que le serveur désigne comme fautif (400), pour le mettre en évidence. */
+    readonly field: FieldName | null = null,
   ) {
     super(message);
     this.name = "ContributionHttpError";
@@ -366,31 +368,18 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
 
     setError(null);
     setStatus(null);
-    if (cleanName.length < 2) {
-      fail("Indiquez votre nom ou votre cabinet.", "senderName");
-      return;
-    }
-    if (!isEmail(cleanEmail)) {
-      fail("Indiquez une adresse e-mail valide.", "senderEmail");
-      return;
-    }
-    if (links.length > MAX_EXTERNAL_LINKS) {
-      fail(`Ajoutez au maximum ${MAX_EXTERNAL_LINKS} liens, un par ligne.`, "externalLinks");
-      return;
-    }
-    if (links.some((value) => !isHttpUrl(value))) {
-      fail("Chaque lien doit commencer par http:// ou https://.", "externalLinks");
-      return;
-    }
-    if (!cleanNote && !links.length && !files.length) {
-      fail("Ajoutez une réponse, un lien ou au moins une pièce jointe.", "note");
-      return;
-    }
-    if (!authorizedToTransmit) {
-      fail(
-        "Confirmez que vous êtes autorisé à transmettre ces informations.",
-        "authorizedToTransmit",
-      );
+    // Les contrôles du serveur, appliqués avant tout téléversement : un refus tardif aurait déjà
+    // consommé le quota de pièces du dossier.
+    const invalid = validateContributionDraft({
+      senderName: cleanName,
+      senderEmail: cleanEmail,
+      note: cleanNote,
+      links,
+      fileCount: files.length,
+      authorizedToTransmit,
+    });
+    if (invalid) {
+      fail(invalid.message, invalid.field);
       return;
     }
 
@@ -469,7 +458,15 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
       setLinksText("");
     } catch (cause: unknown) {
       if (isLinkRejectedByServer(cause)) clearStoredToken(missionId);
-      fail(errorMessage(cause, "Impossible de transmettre votre contribution."));
+      // Un refus de validation du serveur désigne un champ : son message est écrit pour le
+      // visiteur (il ne passe pas par le filtre des messages techniques).
+      const rejectedField = cause instanceof ContributionHttpError ? cause.field : null;
+      fail(
+        rejectedField && cause instanceof Error
+          ? cause.message
+          : errorMessage(cause, "Impossible de transmettre votre contribution."),
+        rejectedField,
+      );
       setStatus(null);
     } finally {
       setSubmitting(false);
@@ -1028,9 +1025,14 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
       payload && typeof payload === "object" && !Array.isArray(payload) && "error" in payload
         ? (payload as { error?: unknown }).error
         : null;
+    const field =
+      payload && typeof payload === "object" && !Array.isArray(payload)
+        ? (payload as { field?: unknown }).field
+        : null;
     throw new ContributionHttpError(
       typeof message === "string" ? message : "La demande n’a pas abouti.",
       response.status,
+      isContributionFieldName(field) ? field : null,
     );
   }
   return payload as T;
@@ -1057,19 +1059,6 @@ function parseLinks(value: string): string[] {
     .split(/\r?\n/)
     .map((item) => item.trim())
     .filter(Boolean);
-}
-
-function isHttpUrl(value: string): boolean {
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
-function isEmail(value: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
 function formatBytes(value: number): string {

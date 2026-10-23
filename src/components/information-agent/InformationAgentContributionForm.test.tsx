@@ -695,4 +695,94 @@ describe("InformationAgentContributionForm", () => {
       expect(remove.className).toContain("min-w-11");
     });
   });
+
+  describe("mêmes contrôles que le serveur, avant tout téléversement (n° 45)", () => {
+    async function readyWithFile() {
+      Element.prototype.scrollIntoView = vi.fn();
+      mocks.fetch.mockResolvedValueOnce(referenceResponse());
+      renderContribution();
+      await screen.findByText("CASE-1234");
+      fillRequiredFields();
+      fireEvent.change(screen.getByLabelText("Pièces jointes"), {
+        target: { files: [new File(["%PDF-1.7"], "pv.pdf", { type: "application/pdf" })] },
+      });
+    }
+
+    it.each([
+      [
+        "une adresse e-mail que le serveur refuse",
+        /Adresse e-mail/,
+        "a@b.c",
+        "Indiquez une adresse e-mail valide.",
+        /Adresse e-mail/,
+      ],
+      [
+        "un nom de 181 caractères",
+        /Nom ou cabinet/,
+        "N".repeat(181),
+        "ne doit pas dépasser 180 caractères",
+        /Nom ou cabinet/,
+      ],
+      [
+        "une réponse de plus de 10 000 caractères",
+        "Votre réponse",
+        "x".repeat(10_001),
+        "dépasse 10\u202f000 caractères",
+        "Votre réponse",
+      ],
+      [
+        "un lien de plus de 2 048 caractères",
+        "Liens utiles",
+        `https://example.test/${"a".repeat(2040)}`,
+        "dépasse 2\u202f048 caractères",
+        "Liens utiles",
+      ],
+      [
+        "un lien avec identifiants",
+        "Liens utiles",
+        "https://u:mdp@example.test/",
+        "Chaque lien doit commencer",
+        "Liens utiles",
+      ],
+    ] as Array<[string, RegExp | string, string, string, RegExp | string]>)(
+      "refuse %s sans rien téléverser, et désigne le champ",
+      async (_label, fieldLabel, value, message, invalidLabel) => {
+        await readyWithFile();
+        fireEvent.change(screen.getByLabelText(fieldLabel), { target: { value } });
+
+        fireEvent.click(screen.getByRole("button", { name: "Transmettre ma contribution" }));
+
+        const alert = await screen.findByRole("alert");
+        expect(alert.textContent).toContain(message);
+        expect(screen.getByLabelText(invalidLabel).getAttribute("aria-invalid")).toBe("true");
+        // Seule la lecture du dossier a eu lieu : pas de préparation de pièce, pas de dépôt.
+        expect(mocks.fetch).toHaveBeenCalledTimes(1);
+        expect(mocks.storageFrom).not.toHaveBeenCalled();
+        expect(mocks.uploadToSignedUrl).not.toHaveBeenCalled();
+      },
+    );
+
+    it("met en évidence le champ que le serveur désigne dans sa réponse 400", async () => {
+      Element.prototype.scrollIntoView = vi.fn();
+      mocks.fetch.mockResolvedValueOnce(referenceResponse()).mockResolvedValueOnce(
+        jsonResponse(
+          {
+            error: "Chaque lien doit commencer par http:// ou https://.",
+            field: "externalLinks",
+          },
+          400,
+        ),
+      );
+      renderContribution();
+      await screen.findByText("CASE-1234");
+      fillRequiredFields();
+      fireEvent.change(screen.getByLabelText("Votre réponse"), { target: { value: "Oui." } });
+      fireEvent.click(screen.getByRole("button", { name: "Transmettre ma contribution" }));
+
+      const alert = await screen.findByRole("alert");
+      expect(alert.textContent).toContain("Chaque lien doit commencer");
+      expect(screen.getByLabelText("Liens utiles").getAttribute("aria-invalid")).toBe("true");
+      expect(screen.getByLabelText("Votre réponse").getAttribute("aria-invalid")).toBeNull();
+    });
+  });
 });
