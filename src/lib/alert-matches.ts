@@ -8,6 +8,7 @@ import { createAlertNotificationsForMatches } from "@/lib/alert-notifications";
 import { extractDpe } from "@/lib/dpe";
 import { estimateGrossYieldPct, pricePerM2 } from "@/lib/geo";
 import { resolveMarketGap } from "@/lib/market-gap";
+import { marketGapWithheldReason } from "@/lib/market-gap-band";
 import { featureIncluded } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
 import { getSales } from "@/lib/queries";
@@ -681,8 +682,14 @@ async function getCachedMarketDiscount(
  * Écart entre la mise à prix et la valeur DVF précalculée, ou `null` sans estimation exploitable
  * et pour un écart aberrant (`src/lib/market-gap.ts`) : une telle vente ne remplit donc jamais un
  * critère « décote minimale » et son résumé n'affiche aucun pourcentage. Même entier que la fiche.
+ *
+ * Même règle que la bande publique (`get_public_sale_market_gap_band`) : seul un bien indiqué libre
+ * reçoit un écart. Pour un bien occupé ou d'occupation inconnue, la valeur estimée s'appuie sur des
+ * ventes de biens libres et la comparaison ne tient pas : `null`, donc jamais « environ 62 % sous la
+ * valeur » pour un bien que la fiche ne situe pas.
  */
 export async function estimateMarketDiscountPct(sale: AuctionSale): Promise<number | null> {
+  if (marketGapWithheldReason(sale.occupancy_status)) return null;
   const marketSurfaces = getMarketValuationSurfaces(sale);
   const surface = marketSurfaces.builtSurfaceM2 ?? marketSurfaces.landSurfaceM2;
   const startingPrice = sale.starting_price_eur;

@@ -434,6 +434,18 @@ describe("SalePublicPreview", () => {
       ).toBeTruthy();
     });
 
+    it("dit « occupation non précisée » sans bande ni phrase sur la mise à prix basse", () => {
+      renderPreview({ sale_venue_type: "tribunal", market_gap_band: "occupancy_unknown" });
+      const note = screen.getByTestId("market-gap-band");
+      expect(note.textContent).toContain(
+        "Occupation du bien non précisée : la comparaison avec les ventes de biens libres ne peut pas être située",
+      );
+      expect(note.textContent).not.toMatch(/inférieure|dans la fourchette|volontairement basse/);
+      expect(
+        within(note).getByRole("link", { name: "Comment est calculé ce repère ?" }),
+      ).toBeTruthy();
+    });
+
     it("n'affiche rien sans bande, ni sans mise à prix", () => {
       const absent = renderPreview({ sale_venue_type: "tribunal" });
       expect(screen.queryByTestId("market-gap-band")).toBeNull();

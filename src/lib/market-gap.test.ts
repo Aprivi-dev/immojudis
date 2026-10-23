@@ -109,4 +109,21 @@ describe("describeMarketGap", () => {
       }),
     ).toBe("Écart non significatif.");
   });
+
+  it("dit pourquoi l'écart est retenu pour un bien occupé ou d'occupation inconnue", () => {
+    for (const gapWithheld of ["occupied", "occupancy_unknown"] as const) {
+      const sentence = describeMarketGap({ discountPct: 30, gapWithheld });
+      expect(sentence).toContain("l’écart avec la valeur estimée n’est pas indiqué");
+      expect(sentence).not.toMatch(/\d+ %/);
+    }
+    expect(describeMarketGap({ discountPct: null, gapWithheld: "occupied" })).toMatch(
+      /^Bien occupé/,
+    );
+    expect(describeMarketGap({ discountPct: null, gapWithheld: "occupancy_unknown" })).toMatch(
+      /^Occupation du bien non précisée/,
+    );
+    expect(describeMarketGap({ discountPct: 30, gapWithheld: null })).toBe(
+      "La mise à prix est environ 30 % sous la valeur estimée du bien.",
+    );
+  });
 });

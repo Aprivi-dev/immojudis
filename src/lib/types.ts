@@ -25,6 +25,7 @@ export type AuctionSale = {
     | "near"
     | "above"
     | "occupied"
+    | "occupancy_unknown"
     | "insufficient_surface"
     | "insufficient_type"
     | "insufficient"
