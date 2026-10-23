@@ -223,12 +223,17 @@ describe("relecture juridique du 19/10/2026", () => {
   });
 
   it("date de la relecture les articles dont le texte a été corrigé", () => {
-    for (const slug of [
-      "apres-adjudication-surenchere-paiement-titre-vente",
-      "licitation-vente-bien-indivis-encheres-acheteur",
-    ]) {
-      expect(getResourceArticle(slug)!.updatedAt, slug).toBe("2026-10-19");
-    }
+    expect(getResourceArticle("licitation-vente-bien-indivis-encheres-acheteur")!.updatedAt).toBe(
+      "2026-10-19",
+    );
+    // Corrigé à nouveau le 23/10/2026 : report du délai de dix jours (art. 641 et 642 CPC).
+    const afterAward = getResourceArticle("apres-adjudication-surenchere-paiement-titre-vente")!;
+    expect(afterAward.updatedAt).toBe("2026-10-23");
+    const text = visibleText(afterAward);
+    expect(text).toContain("prorogé au premier jour ouvrable suivant (art. 642");
+    expect(text).toContain("art. 641 et 642 CPC");
+    expect(afterAward.sources.some((source) => /article 641/.test(source.label))).toBe(true);
+    expect(afterAward.sources.some((source) => /article 642/.test(source.label))).toBe(true);
   });
 
   it("garde les prudences de la préemption (affichage d'un mois, indivision volontaire dans le texte)", () => {
@@ -338,7 +343,9 @@ describe("trois articles du 23/10/2026 : PLU, risques, cadastre", () => {
       (section) => section.id === "etat-des-risques-vente-publique",
     );
     const saleText = sale!.paragraphs.join(" ");
-    expect(saleText).toContain("Dans une vente ordinaire, l’acquéreur peut poursuivre");
+    expect(saleText).toContain(
+      "Dans une vente ordinaire, l’acquéreur peut demander au juge la résolution du contrat ou une diminution du prix",
+    );
     expect(saleText).toContain("Ne supposez pas qu’un tel recours existe après une adjudication");
   });
 
