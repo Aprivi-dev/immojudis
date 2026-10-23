@@ -154,6 +154,11 @@ export function AdminPipelinePanel() {
                         {source.coverage.publication_pending ?? 0} à finaliser.
                       </p>
                     ) : null}
+                    {source.coverage?.publication_blockers?.length ? (
+                      <p className="text-xs">
+                        Bloquée par : {source.coverage.publication_blockers.join(", ")}.
+                      </p>
+                    ) : null}
                     {typeof metrics?.discovery_to_publication_p95_seconds === "number" ? (
                       <p>
                         Délai de publication, p95 :{" "}
