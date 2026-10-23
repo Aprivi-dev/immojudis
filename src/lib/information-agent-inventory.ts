@@ -518,7 +518,11 @@ function saleTermsItem(
       conditions.origin,
     );
   }
-  return item("sale_terms", "missing", "Consignation, frais et délais ne sont pas étayés.");
+  return item(
+    "sale_terms",
+    "missing",
+    "Garantie pour enchérir, frais et délais ne sont pas étayés.",
+  );
 }
 
 export function hasVerifiedSaleTerms(sale: AuctionSale): boolean {
