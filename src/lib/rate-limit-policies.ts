@@ -18,6 +18,16 @@ export const RATE_LIMIT_POLICIES = {
   catalogPreviewIp: { limit: 180, windowSeconds: 60 },
 } as const;
 
+/**
+ * Formulaire de contact (`src/app/contact/actions.ts`), tenu en base par le limiteur partagé : 3
+ * messages par quart d'heure et par adresse, 40 par heure pour tout le site (disjoncteur). Mêmes
+ * chiffres que l'ancien limiteur en mémoire, qui n'avait aucun effet d'une instance serveur à l'autre.
+ */
+export const CONTACT_RATE_LIMITS = {
+  perIp: { limit: 3, windowSeconds: 15 * 60 },
+  global: { limit: 40, windowSeconds: 60 * 60 },
+} as const;
+
 /** Fenêtre des plafonds journaliers : un jour UTC (fenêtre fixe, elle repart à zéro à minuit UTC). */
 export const DAILY_WINDOW_SECONDS = 86_400;
 

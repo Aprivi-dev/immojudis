@@ -2,14 +2,32 @@
 
 import { headers } from "next/headers";
 import { Resend } from "resend";
-import { createContactLimiter, deliverContact, type ContactState } from "@/lib/contact-message";
+import { RateLimitError } from "@/lib/api-errors";
+import { deliverContact, type ContactState } from "@/lib/contact-message";
 import { publicLegalPublisher } from "@/lib/legal-documents";
+import { enforceGlobalRateLimit, enforceIpRateLimit } from "@/lib/rate-limit";
+import { CONTACT_RATE_LIMITS } from "@/lib/rate-limit-policies";
 
-const limiter = createContactLimiter();
-
-function clientKey(list: Headers): string {
-  const forwarded = list.get("x-forwarded-for")?.split(",")[0]?.trim();
-  return forwarded || list.get("x-real-ip") || "inconnu";
+/**
+ * Limiteur partagé du dépôt (tenu en base, donc valable d'une instance Vercel à l'autre) : par adresse,
+ * puis pour tout le site. Une base indisponible lève : le message n'est pas envoyé et l'échec est
+ * journalisé (voir `deliverContact`).
+ */
+function sharedLimiter(list: Headers) {
+  return {
+    async consume(): Promise<boolean> {
+      try {
+        // Seuls les en-têtes comptent pour l'adresse du visiteur.
+        const request = new Request("https://immojudis.local/contact", { headers: list });
+        await enforceIpRateLimit({ request, bucketKey: "contact", ...CONTACT_RATE_LIMITS.perIp });
+        await enforceGlobalRateLimit({ bucketKey: "contact", ...CONTACT_RATE_LIMITS.global });
+        return true;
+      } catch (error) {
+        if (error instanceof RateLimitError) return false;
+        throw error;
+      }
+    },
+  };
 }
 
 /**
@@ -34,9 +52,9 @@ export async function sendContactMessage(
       message: formData.get("message"),
       website: formData.get("website"),
     },
-    clientKey(await headers()),
+    "contact",
     {
-      limiter,
+      limiter: sharedLimiter(await headers()),
       to,
       from,
       send: resend
