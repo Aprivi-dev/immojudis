@@ -17,6 +17,9 @@ import condominiumArticle from "@/content/resources/copropriete-encheres-charges
 import postponedSaleArticle from "@/content/resources/vente-encheres-immobiliere-reportee-retiree-annulee.json";
 import liquidationArticle from "@/content/resources/liquidation-judiciaire-vente-immeuble-entreprise-encheres.json";
 import marketGapArticle from "@/content/resources/mise-a-prix-valeur-de-marche-dvf-lire-ecart-encheres.json";
+import planningArticle from "@/content/resources/lire-plu-bien-vendu-encheres.json";
+import risksArticle from "@/content/resources/risques-georisques-avant-encherir.json";
+import cadastreArticle from "@/content/resources/adresse-parcelle-cadastre-encheres.json";
 import { GUIDE_READING_MINUTES } from "@/lib/guide-dates";
 
 export interface ResourceSection {
@@ -109,6 +112,9 @@ export const RESOURCE_ARTICLES: ResourceArticle[] = [
   defineArticle(postponedSaleArticle, "/media/landing/auction-bordeaux.webp"),
   defineArticle(liquidationArticle, "/media/landing/gallery-townhouse.webp"),
   defineArticle(marketGapArticle, "/media/landing/home-favorites.webp"),
+  defineArticle(planningArticle, "/media/landing/gallery-land.webp"),
+  defineArticle(risksArticle, "/media/landing/auction-lyon.webp"),
+  defineArticle(cadastreArticle, "/media/landing/dossier-apartment.webp"),
 ];
 
 export const EXISTING_GUIDE: ResourceSummary = {

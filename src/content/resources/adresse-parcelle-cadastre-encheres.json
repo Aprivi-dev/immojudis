@@ -1,0 +1,254 @@
+{
+  "slug": "adresse-parcelle-cadastre-encheres",
+  "publishedAt": "2026-10-23",
+  "title": "Adresse, parcelle et cadastre : situer le bien",
+  "category": "Méthode",
+  "description": "Adresse, références cadastrales, plan, lot : retrouver la parcelle d’un bien, et ses limites.",
+  "seoDescription": "Retrouver la parcelle d’un bien vendu aux enchères, lire le plan cadastral et connaître ses limites : adresse, références cadastrales, lot, bornage.",
+  "intro": [
+    "Pour savoir si un bien est soumis à une règle d’urbanisme, à une servitude ou à un risque, il faut d’abord savoir où il se trouve, précisément. Or une annonce donne une adresse, le cahier des conditions de vente donne une désignation avec des références cadastrales, et un appartement est décrit par des lots. Ce sont trois choses différentes, que l’on confond facilement.",
+    "Cet article explique la différence entre adresse, parcelle et lot, comment lire des références cadastrales, comment retrouver la parcelle d’un bien, comment lire le plan cadastral et quelles sont les limites de ces données. Il s’appuie sur cadastre.gouv.fr, service-public.fr et les textes. Il ne remplace ni un géomètre-expert ni l’avocat qui vous accompagne. Pour la suite, voir « Lire le PLU d’un bien vendu aux enchères » et « Risques naturels et Géorisques avant d’enchérir »."
+  ],
+  "takeaways": [
+    "L’adresse, la parcelle et le lot ne sont pas la même chose. La commune est l’autorité responsable de l’adresse ; la parcelle est identifiée au cadastre par des références (préfixe, section, numéro) ; le lot est une unité de copropriété. Une adresse ou un point géocodé ne délimite pas à lui seul une parcelle.",
+    "Les références cadastrales servent de clé : la désignation des biens dans les actes soumis à publicité foncière s’y réfère (cadastre.gouv.fr), la demande de certificat d’urbanisme les exige (art. R*410-1 du Code de l’urbanisme) et l’état des risques indique le numéro des parcelles concernées (art. R. 125-24 du Code de l’environnement).",
+    "Le plan cadastral se consulte sans inscription sur cadastre.gouv.fr, par adresse ou par références. Il a une valeur fiscale, ne fixe pas les limites de propriété et ne mentionne pas les propriétaires (service-public.fr).",
+    "Le cadastre n’a pas vocation à garantir un droit de propriété, même s’il peut constituer une présomption de propriété (cadastre.gouv.fr). Pour délimiter un terrain, il faut un bornage établi par un géomètre-expert (service-public.fr).",
+    "Le plan est mis à jour par étapes : une construction récente peut ne pas y figurer encore. Comparez toujours le plan à la désignation du cahier, aux diagnostics et à ce que vous voyez à la visite."
+  ],
+  "sections": [
+    {
+      "id": "trois-notions",
+      "title": "Adresse, parcelle, lot : trois notions à ne pas confondre",
+      "paragraphs": [
+        "Le tableau distingue les trois repères que l’on rencontre dans un dossier de vente. Chacun répond à une question différente et vient d’une source différente."
+      ],
+      "table": {
+        "headers": ["Repère", "Ce que c’est", "Où le lire"],
+        "rows": [
+          [
+            "Adresse",
+            "Un numéro de voirie et un nom de voie, utilisés pour trouver un bien. La commune est l’autorité responsable de l’adresse ; la Base Adresse Nationale, publiée sur adresse.data.gouv.fr, vise à référencer toutes les adresses du territoire.",
+            "L’annonce, l’avis de vente, la désignation du cahier des conditions de vente."
+          ],
+          [
+            "Parcelle cadastrale",
+            "Une portion de terrain repérée au cadastre par ses références : un préfixe de section, une section et un numéro. Ces références identifient la parcelle de manière unique au sein de la commune (cadastre.gouv.fr).",
+            "Le plan cadastral, la désignation du cahier, l’état des risques, le certificat d’urbanisme."
+          ],
+          [
+            "Lot de copropriété",
+            "Une partie d’un immeuble en copropriété, avec sa quote-part de parties communes, exprimée en tantièmes. Plusieurs lots partagent le même terrain.",
+            "Le cahier des conditions de vente et les documents de copropriété."
+          ]
+        ]
+      },
+      "callout": {
+        "title": "Une adresse ne suffit pas",
+        "text": "Une adresse ou un point géocodé ne délimite pas à lui seul une parcelle. Pour un appartement, le plan cadastral montre le terrain et les bâtiments, pas votre lot : la place de l’appartement dans l’immeuble se lit dans le cahier des conditions de vente et dans les documents de copropriété."
+      }
+    },
+    {
+      "id": "pourquoi-la-parcelle",
+      "title": "Pourquoi la parcelle est la clé de la plupart des vérifications",
+      "paragraphs": [
+        "La plupart des vérifications officielles partent de la parcelle, parce que les règles et les risques sont rattachés à un terrain."
+      ],
+      "bullets": [
+        "Le Géoportail de l’urbanisme propose de consulter les règlements d’urbanisme qui s’appliquent à votre parcelle ou à votre commune : voir « Lire le PLU d’un bien vendu aux enchères ».",
+        "La demande de certificat d’urbanisme précise la localisation, la superficie et les références cadastrales du terrain (art. R*410-1 du Code de l’urbanisme).",
+        "L’état des risques mentionne le numéro de la ou des parcelles concernées (art. R. 125-24 du Code de l’environnement). Géorisques permet de chercher les risques par parcelle cadastrale : voir « Risques naturels et Géorisques avant d’enchérir ».",
+        "Le droit de préemption, les servitudes d’utilité publique et les emplacements réservés s’appliquent à des périmètres tracés sur des plans : savoir quelle parcelle est visée évite de se tromper de terrain."
+      ]
+    },
+    {
+      "id": "references-cadastrales",
+      "title": "Lire des références cadastrales",
+      "paragraphs": [
+        "Les références cadastrales se composent de trois éléments (cadastre.gouv.fr). Le préfixe de section est « 000 » par défaut ; dans le cas de communes absorbantes ou absorbées, il est « 000 » pour les sections de la commune absorbante et égal au code de la commune absorbée pour les sections de celle-ci. La section est le nom de la section qui contient la parcelle. Le numéro parcellaire est le numéro de la parcelle. Exemple donné par le site : « 000 AB 121 ». Les parcelles reçoivent un numéro par section, dans un ordre continu à partir de un.",
+        "Le même site rappelle que, dans tous les actes soumis à publicité foncière, comme les ventes ou les échanges, la désignation des immeubles se fait par leurs références cadastrales. Le dossier d’une vente aux enchères les contient à plusieurs endroits."
+      ],
+      "table": {
+        "headers": ["Document", "Ce qu’on y trouve", "Source"],
+        "rows": [
+          [
+            "Commandement de payer valant saisie",
+            "La désignation de chacun des biens saisis, telle qu’exigée par les règles de la publicité foncière.",
+            "Art. R. 321-3, 5° du Code des procédures civiles d’exécution"
+          ],
+          [
+            "Cahier des conditions de vente",
+            "La désignation de l’immeuble saisi, l’origine de propriété, les servitudes, les baux et le procès-verbal de description.",
+            "Art. R. 322-10, 4°"
+          ],
+          [
+            "Avis de vente",
+            "La désignation de l’immeuble saisi et une description sommaire : nature, occupation éventuelle, superficie connue.",
+            "Art. R. 322-31, 2°"
+          ],
+          [
+            "État des risques",
+            "Le numéro de la ou des parcelles concernées.",
+            "Art. R. 125-24 du Code de l’environnement"
+          ],
+          [
+            "Demande de certificat d’urbanisme",
+            "La localisation, la superficie et les références cadastrales du terrain.",
+            "Art. R*410-1 du Code de l’urbanisme"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "retrouver-la-parcelle",
+      "title": "Retrouver la parcelle d’un bien, pas à pas",
+      "paragraphs": [
+        "Quand l’annonce ne donne que l’adresse, voici une méthode prudente. Elle suppose de croiser plusieurs sources."
+      ],
+      "bullets": [
+        "Cherchez d’abord les références cadastrales dans la désignation du cahier des conditions de vente, de l’avis de vente et des diagnostics.",
+        "Sinon, ouvrez cadastre.gouv.fr : le service permet de chercher par numéro de voirie et rue, par commune ou par références cadastrales, sans inscription.",
+        "Vérifiez la cohérence : la commune, la section, la surface, la forme de la parcelle et le bâtiment doivent correspondre à l’annonce et à ce que vous voyez à la visite.",
+        "En cas de doute, ou si l’adresse recouvre plusieurs parcelles, demandez à l’avocat poursuivant les références exactes. Ne déduisez pas la parcelle de l’adresse seule.",
+        "Reportez les références dans les autres outils : Géoportail de l’urbanisme, Géorisques, demande de certificat d’urbanisme."
+      ],
+      "callout": {
+        "title": "Dans Immojudis",
+        "text": "Le bloc « Urbanisme & cadastre » d’une fiche affiche l’adresse fournie, cherche la ou les parcelles et indique d’où vient chaque rattachement : « citée dans l’annonce », « citée dans le dossier » ou « trouvée d’après l’adresse ». Pour une parcelle trouvée d’après l’adresse, il demande de confirmer la section et le numéro dans le plan cadastral officiel. Quand aucune référence n’est disponible, la fiche rappelle que la surface du terrain seule ne permet pas d’identifier une parcelle. Le plan affiché sert au repérage ; il ne délimite pas le bien."
+      }
+    },
+    {
+      "id": "lire-le-plan",
+      "title": "Lire le plan cadastral",
+      "paragraphs": [
+        "Le plan cadastral est un document administratif qui sert à recenser et à identifier les immeubles pour établir les impôts locaux (cadastre.gouv.fr). Il se consulte en ligne, sans inscription. Service-public.fr précise que la recherche d’information et l’impression sont gratuites, alors que la commande d’information délivrée sous forme physique ou numérique est payante ; une feuille de plan en format A3 ou A4 est délivrée gratuitement.",
+        "Pour le lire, procédez du général au particulier. Le tableau d’assemblage montre le découpage de la commune en sections cadastrales, les principales voies et les cours d’eau. Chaque section a ses feuilles de plan, où les parcelles sont tracées et numérotées."
+      ],
+      "table": {
+        "headers": ["Élément du plan", "Ce qu’il vous apprend", "Prudence"],
+        "rows": [
+          [
+            "Section et numéro",
+            "L’identité de la parcelle : c’est ce que vous reportez dans les autres outils.",
+            "Vérifiez le préfixe de section et la commune, surtout après une fusion de communes."
+          ],
+          [
+            "Contour de la parcelle",
+            "La forme et la position du terrain par rapport à la voie et aux voisins.",
+            "Il n’a pas valeur de limite de propriété (service-public.fr)."
+          ],
+          [
+            "Bâtiments",
+            "L’emplacement des constructions repérées. Le site cadastre.data.gouv.fr décrit les données ouvertes comme des parcelles, des sections, du bâti et des éléments d’habillage.",
+            "Une construction récente peut ne pas encore y figurer."
+          ],
+          [
+            "Échelle",
+            "Le rapport entre une distance sur le plan et la distance réelle : au 1/1000, 1 cm sur le plan correspond à 10 m.",
+            "Ne mesurez pas une limite à la règle : l’échelle ne donne qu’un ordre de grandeur."
+          ]
+        ]
+      },
+      "callout": {
+        "title": "Plan vecteur ou plan image",
+        "text": "Un plan vecteur est une représentation numérique dont les feuilles sont assemblées, ce qui donne une vue continue du parcellaire de la commune. Un plan image est une version numérisée du plan papier : ses feuilles ne sont pas assemblées et la plupart ne sont pas rattachées à un système de coordonnées géographiques usuel (cadastre.gouv.fr). Un plan image est donc moins pratique pour situer un bien."
+      }
+    },
+    {
+      "id": "limites",
+      "title": "Les limites du cadastre",
+      "paragraphs": [
+        "Le cadastre est un outil fiscal. Ses limites expliquent pourquoi il faut croiser les sources."
+      ],
+      "bullets": [
+        "Il ne fixe pas les limites de propriété. Service-public.fr indique que le plan cadastral a une valeur fiscale, ne fixe pas les limites de propriété, et que, pour délimiter un terrain, il faut faire établir un bornage par un géomètre-expert. Le bornage fixe officiellement les limites du terrain (service-public.fr, fiche sur l’achat d’un terrain à bâtir), et tout propriétaire peut obliger son voisin au bornage de leurs propriétés contiguës, à frais communs (art. 646 du Code civil).",
+        "Il ne garantit pas la propriété. Selon cadastre.gouv.fr, la finalité du plan est essentiellement fiscale : il n’a pas vocation à garantir un droit de propriété, même s’il peut constituer une présomption de propriété. Un litige de propriété entre particuliers relève toujours des juridictions civiles.",
+        "Il est mis à jour par étapes. Pour une maison achevée, le propriétaire doit déclarer les travaux à l’administration fiscale dans les 90 jours, puis un géomètre prend les mesures sur place, puis la représentation est intégrée au plan en ligne. Le passage du géomètre est annuel dans les communes les plus importantes et moins fréquent ailleurs : une construction récente peut donc manquer (cadastre.gouv.fr).",
+        "Il ne nomme pas les propriétaires. Le nom des propriétaires ne figure pas sur le plan (service-public.fr), et les fichiers des propriétés et des propriétaires ne sont pas ouverts sur cadastre.data.gouv.fr.",
+        "Il ne remplace pas la désignation du cahier. Une surface de terrain n’est pas la surface d’un logement. Pour un lot de copropriété, comparez les surfaces du cahier et des diagnostics, pas celles de la parcelle."
+      ],
+      "callout": {
+        "title": "À garder en tête",
+        "text": "Le cadastre indique où un bien est repéré pour l’impôt, pas jusqu’où va la propriété. Une limite contestée se règle par un bornage, ou devant le juge civil. Avant d’enchérir, vous pouvez surtout vérifier que la parcelle du cahier est bien celle que vous visitez."
+      }
+    },
+    {
+      "id": "questions",
+      "title": "Questions à poser avant l’audience",
+      "paragraphs": ["Reprenez cette liste avec l’avocat qui vous accompagne."],
+      "bullets": [
+        "Quelles sont les références cadastrales exactes du ou des biens, et la désignation du cahier correspond-elle à l’annonce ?",
+        "Le plan cadastral montre-t-il les bâtiments que je visite ? Sinon, la construction est-elle récente ?",
+        "Le terrain a-t-il des limites matérialisées ou un bornage ? Un plan de bornage figure-t-il au dossier ?",
+        "Si le terrain ne donne pas directement sur la voie publique, existe-t-il une servitude de passage ? Service-public.fr recommande de poser la question avant l’achat d’un terrain à bâtir.",
+        "Pour un lot de copropriété, quelles parties communes et quelles annexes (cave, parking) sont comprises dans la vente ?"
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "label": "Cadastre.gouv.fr — Service de consultation du plan cadastral",
+      "url": "https://www.cadastre.gouv.fr/scpc/accueil.do"
+    },
+    {
+      "label": "Cadastre.gouv.fr — Questions-réponses (valeur juridique du plan, références cadastrales, mise à jour)",
+      "url": "https://cadastre.gouv.fr/scpc/html/QuestionsReponses.html"
+    },
+    {
+      "label": "Cadastre.data.gouv.fr — Données ouvertes du plan cadastral",
+      "url": "https://cadastre.data.gouv.fr/"
+    },
+    {
+      "label": "Adresse.data.gouv.fr — Base Adresse Nationale",
+      "url": "https://adresse.data.gouv.fr/"
+    },
+    {
+      "label": "Service-public.fr — Rechercher, consulter et commander un extrait du plan cadastral (outil vérifié le 11 septembre 2026)",
+      "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/R31895"
+    },
+    {
+      "label": "Service-public.fr — Comment consulter le cadastre ? (fiche vérifiée le 13 mars 2025)",
+      "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F14226"
+    },
+    {
+      "label": "Service-public.fr — Précautions avant d’acheter un terrain à bâtir (fiche vérifiée le 22 août 2025)",
+      "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F33818"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 321-3 (commandement de payer valant saisie)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000042941204"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-10 (contenu du cahier des conditions de vente)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939072"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-31 (avis de vente)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000039343494"
+    },
+    {
+      "label": "Légifrance — Code de l’environnement, article R. 125-24 (contenu de l’état des risques)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000049492548"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article R*410-1 (demande de certificat d’urbanisme)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000031764607"
+    },
+    {
+      "label": "Légifrance — Code civil, article 646 (bornage)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000006429902"
+    },
+    {
+      "label": "Géoportail de l’urbanisme — consulter les règlements d’urbanisme sur une parcelle",
+      "url": "https://www.geoportail-urbanisme.gouv.fr/"
+    },
+    {
+      "label": "Géorisques — rechercher les risques par adresse ou par parcelle",
+      "url": "https://www.georisques.gouv.fr/"
+    },
+    {
+      "label": "Immojudis — Les ventes à venir : le bloc « Urbanisme & cadastre » de chaque fiche",
+      "url": "/sales"
+    }
+  ]
+}

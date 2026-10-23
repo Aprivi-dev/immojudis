@@ -1,0 +1,277 @@
+{
+  "slug": "risques-georisques-avant-encherir",
+  "publishedAt": "2026-10-23",
+  "title": "Risques naturels et Géorisques avant d’enchérir",
+  "category": "Méthode",
+  "description": "État des risques, plans de prévention, Géorisques : que vérifier, et avec quelles limites.",
+  "seoDescription": "État des risques, plans de prévention (PPR), Géorisques : ce qu’on peut vérifier sur les risques d’un bien avant d’enchérir, et les limites de ces données.",
+  "intro": [
+    "Inondation, sécheresse qui fissure les murs, séisme, pollution des sols : les risques auxquels un bien est exposé peuvent limiter ce qu’on a le droit d’y construire, imposer des travaux et compter dans le choix de l’enchère. Dans une vente par autorité de justice, la garantie des vices cachés ne s’applique pas (art. 1649 du Code civil) : mieux vaut vérifier avant l’audience.",
+    "Cet article explique le document qui informe l’acheteur sur les risques, l’état des risques, puis les plans de prévention des risques (PPR), l’usage du site Géorisques, trois risques qui méritent une question de plus et les limites de ces données. Il ne mesure pas le risque d’un bien précis. Pour le reste du dossier, voir « Lire le cahier des conditions de vente et préparer la visite » et « Lire le PLU d’un bien vendu aux enchères »."
+  ],
+  "takeaways": [
+    "Quand un bien se trouve dans une zone listée par le Code de l’environnement (plan de prévention des risques prescrit ou approuvé, sismicité de niveau 2 à 5, potentiel radon de niveau 3, recul du trait de côte, débroussaillement), un état des risques doit être établi (art. L. 125-5 et R. 125-23). Il indique la date, les parcelles et les zones concernées (art. R. 125-24).",
+    "En cas de vente publique, le dossier de diagnostic technique, qui comprend l’état des risques dans ces zones, est annexé au cahier des charges (art. L. 271-4 du Code de la construction et de l’habitation). Pour un terrain non bâti, le Code de l’environnement ne vise que la promesse et l’acte de vente : demandez à l’avocat où figure le document.",
+    "Un plan de prévention des risques approuvé vaut servitude d’utilité publique et peut interdire de construire ou fixer des prescriptions (art. L. 562-1 et L. 562-4). Pour les biens construits régulièrement avant son approbation, les travaux qu’il impose ne peuvent porter que sur des aménagements limités, dont le coût est inférieur à 10 % de la valeur vénale ou estimée du bien à la date d’approbation du plan (art. R. 562-5).",
+    "Géorisques permet de rechercher les risques par adresse ou par parcelle et de générer un état des risques avec l’outil ERRIAL. Les données par commune décrivent la commune, pas la parcelle.",
+    "Rien d’affiché ne prouve l’absence de risque. L’obligation d’information ne vise que les zones listées par le Code, et un état des risques ne chiffre ni la probabilité d’un dommage ni le coût des travaux."
+  ],
+  "sections": [
+    {
+      "id": "pourquoi",
+      "title": "Pourquoi les risques comptent pour un acheteur aux enchères",
+      "paragraphs": [
+        "Un risque naturel ou technologique peut avoir trois effets pour un acheteur. Il peut restreindre les constructions possibles, par un plan de prévention. Il peut imposer des travaux sur l’existant. Il peut enfin peser sur la revente ou sur la couverture d’assurance : interrogez un assureur ou un courtier sur le bien qui vous intéresse. Il peut aussi être sans conséquence pour votre projet : l’enjeu est de le savoir avant l’audience.",
+        "Dans une vente par autorité de justice, l’article 1649 du Code civil écarte la garantie des vices cachés, c’est-à-dire des défauts non apparents du bien. Il ne parle pas de l’exposition aux risques, mais il rappelle que la vérification se fait avant l’enchère, pas après l’adjudication."
+      ]
+    },
+    {
+      "id": "etat-des-risques",
+      "title": "L’état des risques, le document à lire en premier",
+      "paragraphs": [
+        "Quand un bien est situé dans une zone à risque définie par la loi, le vendeur informe l’acquéreur : un état des risques est établi (art. L. 125-5 du Code de l’environnement). Cette obligation d’information des acquéreurs et des locataires est souvent désignée par le sigle IAL. Elle concerne la vente de toute construction ou de tout terrain, constructible ou non (service-public.fr). Elle s’applique aux biens situés (art. R. 125-23) :"
+      ],
+      "bullets": [
+        "dans le périmètre d’un plan de prévention des risques technologiques, approuvé ou mis à l’étude ;",
+        "dans une zone délimitée par un plan de prévention des risques naturels prévisibles, approuvé (ou dont certaines dispositions sont immédiatement opposables) ou prescrit ;",
+        "dans une zone exposée délimitée par un plan de prévention des risques miniers, approuvé ou prescrit ;",
+        "dans une zone de sismicité de niveau 2, 3, 4 ou 5 ;",
+        "dans une zone à potentiel radon significatif, de niveau 3 ;",
+        "dans une zone exposée au recul du trait de côte ;",
+        "dans une zone soumise aux obligations de débroussaillement."
+      ],
+      "table": {
+        "headers": ["Ce que contient l’état des risques", "Source"],
+        "rows": [
+          [
+            "La date d’élaboration, le numéro de la ou des parcelles concernées et les zones ou périmètres dans lesquels se situe le bien.",
+            "Art. R. 125-24"
+          ],
+          [
+            "Pour chaque plan de prévention : un extrait du document graphique, l’extrait du règlement, et une information indiquant si des travaux sont prescrits pour le bien et s’ils ont été réalisés.",
+            "Art. R. 125-24, 1°"
+          ],
+          [
+            "Les fiches d’information sur le risque sismique et sur le radon disponibles sur Géorisques, selon la zone.",
+            "Art. R. 125-24, 2° et 3°"
+          ],
+          [
+            "La liste des arrêtés de catastrophe naturelle de la commune qui ont affecté le bien et ont donné lieu à une indemnisation.",
+            "Art. R. 125-24, 5°"
+          ],
+          [
+            "Les sinistres ayant donné lieu à une indemnisation au titre d’une catastrophe naturelle ou technologique, survenus pendant la période de propriété du vendeur ou dont il a été informé.",
+            "Art. L. 125-5, IV"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "etat-des-risques-vente-publique",
+      "title": "Où trouver l’état des risques dans une vente aux enchères",
+      "paragraphs": [
+        "En cas de vente publique, le dossier de diagnostic technique est annexé au cahier des charges ; il comprend, dans les zones mentionnées à l’article L. 125-5 du Code de l’environnement, l’état des risques (art. L. 271-4 du Code de la construction et de l’habitation). En saisie immobilière, le document qui fixe les conditions de la vente est le cahier des conditions de vente : cherchez l’état des risques parmi les diagnostics annexés. L’article L. 271-4 vise la vente d’un immeuble bâti.",
+        "Pour un terrain non bâti, l’article L. 125-5 prévoit que l’état des risques est annexé à la promesse de vente ou, à défaut, à l’acte authentique, et ne parle pas de la vente publique. Demandez à l’avocat où figure le document dans votre dossier.",
+        "Dans une vente ordinaire, l’état des risques est remis au potentiel acquéreur lors de la première visite, doit avoir été établi depuis moins de six mois et doit être actualisé si ses informations ne sont plus exactes à la signature (art. R. 125-25). Regardez la date du document annexé au cahier, et comparez-le à ce que vous trouvez sur Géorisques. Pour un bien concerné, toute annonce de vente doit aussi renvoyer vers Géorisques par la phrase prévue par ce texte : « Les informations sur les risques auxquels ce bien est exposé sont disponibles sur le site Géorisques ».",
+        "Dans une vente ordinaire, l’acquéreur peut poursuivre la résolution du contrat ou demander une diminution du prix si l’état des risques n’a pas été remis comme la loi l’exige (art. L. 125-5, V ; service-public.fr). Ne supposez pas qu’un tel recours existe après une adjudication : posez la question à l’avocat avant l’audience."
+      ]
+    },
+    {
+      "id": "plans-de-prevention",
+      "title": "Les plans de prévention des risques (PPR)",
+      "paragraphs": [
+        "Un plan de prévention des risques est un plan établi par l’État qui délimite les zones exposées à un risque et y fixe des règles. Il en existe pour les risques naturels prévisibles, comme les inondations, les mouvements de terrain, les incendies de forêt ou les séismes (art. L. 562-1), pour les risques technologiques liés à certaines installations industrielles (art. L. 515-15) et pour les risques miniers (art. R. 125-23). Un même bien peut se trouver à un stade différent de la procédure.",
+        "Le plan de prévention des risques naturels, le plus courant, peut délimiter des zones où toute construction est interdite ou soumise à des conditions, et des zones non exposées où des constructions pourraient aggraver les risques (art. L. 562-1, II). Il définit aussi des mesures de prévention, de protection et de sauvegarde, dont certaines peuvent incomber aux particuliers."
+      ],
+      "table": {
+        "headers": ["Stade du plan", "Ce qu’il faut retenir", "Source"],
+        "rows": [
+          [
+            "Prescrit",
+            "Un arrêté préfectoral fixe le périmètre mis à l’étude et la nature des risques. Le plan est approuvé, en principe, dans les trois ans. Le bien est déjà concerné par l’état des risques.",
+            "Art. R. 562-2 et R. 125-23, 4°"
+          ],
+          [
+            "Dispositions rendues immédiatement opposables",
+            "En cas d’urgence, le préfet peut rendre certaines dispositions d’un projet de plan opposables avant l’approbation. Elles figurent alors en annexe du PLU.",
+            "Art. L. 562-2 ; art. R. 151-53, 9° du Code de l’urbanisme"
+          ],
+          [
+            "Approuvé",
+            "Le plan vaut servitude d’utilité publique et est annexé au plan local d’urbanisme. Les constructions peuvent être interdites ou soumises à des prescriptions.",
+            "Art. L. 562-4 et L. 562-1"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "plan-et-batiment-existant",
+      "title": "Un plan de prévention et un bâtiment déjà construit",
+      "paragraphs": [
+        "Pour les constructions existantes, un plan de prévention peut définir des mesures de prévention, de protection et de sauvegarde. Elles peuvent être rendues obligatoires dans un délai de cinq ans, qui peut être réduit en cas d’urgence (art. R. 562-5). À défaut de mise en conformité dans le délai prescrit, le préfet peut, après mise en demeure non suivie d’effet, ordonner la réalisation des mesures aux frais du propriétaire, de l’exploitant ou de l’utilisateur (art. L. 562-1, III).",
+        "La loi encadre ces obligations. Pour un bien construit ou aménagé conformément au Code de l’urbanisme avant l’approbation du plan, les travaux de prévention imposés ne peuvent porter que sur des aménagements limités, dont le coût est inférieur à 10 % de la valeur vénale ou estimée du bien à la date d’approbation du plan (art. R. 562-5). Le plan ne peut pas interdire les travaux d’entretien et de gestion courants, sauf s’ils augmentent les risques ou en créent de nouveaux, ou s’ils conduisent à une augmentation de la population exposée.",
+        "Construire dans une zone interdite par un plan approuvé, ou ne pas respecter les conditions qu’il prescrit, est puni des peines prévues à l’article L. 480-4 du Code de l’urbanisme (art. L. 562-5). Lisez donc, dans l’état des risques, l’extrait du règlement et l’information sur les travaux prescrits : elle indique s’ils ont été réalisés (art. R. 125-24)."
+      ]
+    },
+    {
+      "id": "georisques",
+      "title": "Géorisques : ce que l’outil permet de vérifier",
+      "paragraphs": [
+        "Géorisques est le site du ministère chargé de l’écologie sur les risques naturels, miniers et technologiques. Sa page d’accueil permet de chercher par adresse exacte, sur une carte ou par parcelle cadastrale, et donne accès à ERRIAL, un outil gratuit pour établir un état des risques. D’après le site, l’outil génère un état des risques à partir de l’adresse ou du numéro de parcelle, puis le propriétaire vérifie les informations, les complète avec celles du site de la préfecture et mentionne les sinistres indemnisés.",
+        "Géorisques précise aussi que toute façon d’établir le document est valable à condition qu’il comporte les informations exigées par l’article R. 125-24 et qu’il soit à jour à la date de signature. Le document que vous générez vous-même n’est pas celui du dossier de vente : utilisez-le comme point de comparaison. Voici une méthode pour l’utiliser avant l’audience."
+      ],
+      "bullets": [
+        "Retrouvez l’adresse exacte du bien et, si possible, ses références cadastrales : voir « Adresse, parcelle et cadastre : situer le bien ».",
+        "Lancez la recherche sur Géorisques par adresse ou par parcelle, et lisez les risques listés.",
+        "Générez un état des risques avec ERRIAL et comparez-le à celui du cahier : zones citées, plans de prévention, date.",
+        "Pour chaque plan de prévention cité, repérez le bien sur le plan de zonage réglementaire et lisez le règlement de la zone.",
+        "Notez la sismicité, le potentiel radon et les arrêtés de catastrophe naturelle qui ont affecté le bien.",
+        "Consignez vos constats avec leur date, et posez vos questions à l’avocat et, si besoin, à la mairie."
+      ],
+      "callout": {
+        "title": "Dans Immojudis",
+        "text": "Dans le bloc « Risques environnementaux » d’une fiche, Immojudis reprend le profil de la commune issu de Géorisques : risques recensés, plans de prévention en vigueur ou prescrits, arrêtés de catastrophe naturelle, sismicité et potentiel radon, avec la date de mise à jour de la source quand elle est connue. La fiche précise que ces informations décrivent la commune, pas la parcelle, et renvoie à l’état des risques annexé au cahier des conditions de vente pour le bien. Le dossier « PLU et risques » du bloc « Urbanisme & cadastre » ajoute les risques liés au terrain, avec la date de consultation et un lien vers chaque source ; son accès dépend de l’offre (voir la page Offres)."
+      }
+    },
+    {
+      "id": "autres-risques",
+      "title": "Trois risques qui méritent une question de plus",
+      "paragraphs": [
+        "Certains risques ne se lisent pas seulement dans l’état des risques. Trois méritent une question à l’avocat."
+      ],
+      "bullets": [
+        "L’argile. Le retrait-gonflement des sols argileux, provoqué par la sécheresse puis la réhydratation, peut fissurer un bâtiment. Une carte classe les zones selon leur exposition ; les zones d’exposition moyenne ou forte sont celles qui sont considérées comme exposées (art. R. 132-3 du Code de la construction et de l’habitation). En cas de vente d’un terrain non bâti constructible dans ces zones, le vendeur fournit une étude géotechnique préalable, annexée, en cas de vente publique, au cahier des charges (art. L. 132-5). Demandez si elle figure au dossier.",
+        "La pollution des sols. L’État établit des secteurs d’information sur les sols, annexés au plan local d’urbanisme (art. L. 125-6). Quand un terrain situé dans un tel secteur fait l’objet d’une vente, le vendeur est tenu d’en informer l’acquéreur par écrit (art. L. 125-7). Le certificat d’urbanisme indique si le terrain est situé sur un site répertorié sur la carte des anciens sites industriels ou sur un ancien site industriel connu du service instructeur (art. L. 125-6, IV). Demandez à l’avocat comment cette information est donnée dans une vente judiciaire.",
+        "Le littoral et les incendies de forêt. Les zones exposées au recul du trait de côte et les zones soumises aux obligations de débroussaillement figurent parmi celles qui donnent lieu à un état des risques (art. R. 125-23, 7° et 8°). Pour le débroussaillement, l’état des risques comprend une fiche d’information disponible sur Géorisques (art. R. 125-24, 6°)."
+      ]
+    },
+    {
+      "id": "limites",
+      "title": "Ce que ces données ne disent pas",
+      "paragraphs": [
+        "Les données publiques sur les risques sont utiles, mais elles ont des limites qu’il faut avoir en tête."
+      ],
+      "bullets": [
+        "La commune n’est pas la parcelle. Un profil de commune recense des risques présents sur le territoire, pas ceux qui touchent le bien. Une même commune peut comprendre des zones exposées et des zones qui ne le sont pas.",
+        "Une absence n’est pas une garantie. L’obligation d’état des risques ne vise que les zones listées à l’article R. 125-23. Un bien situé hors de ces zones n’a pas à en avoir un, ce qui ne prouve pas qu’il n’est exposé à aucun aléa. La fiche Immojudis le rappelle : « Aucun constat retourné, ce qui n’exclut pas un risque ».",
+        "Le passé du bien reste à demander. Le vendeur informe des sinistres indemnisés survenus pendant sa période de propriété (art. L. 125-5, IV). Dans une vente forcée, c’est le créancier poursuivant qui fait vendre : l’information sur les sinistres passés peut manquer au dossier, et son avocat peut en dire plus.",
+        "Un état des risques ne chiffre rien. Il situe le bien dans des zones ; il n’estime ni la probabilité d’un dommage, ni le coût d’éventuels travaux, ni la prime d’assurance."
+      ],
+      "callout": {
+        "title": "À garder en tête",
+        "text": "Un état des risques informe sur l’exposition du bien. Il ne remplace ni la visite, ni l’avis d’un professionnel du bâtiment ou d’un géotechnicien, ni celui de l’avocat. Si une pièce manque ou si le doute demeure, réduisez votre enchère plafond ou renoncez : c’est une décision cohérente."
+      }
+    },
+    {
+      "id": "questions",
+      "title": "Questions à poser avant l’audience",
+      "paragraphs": ["Reprenez cette liste avec l’avocat qui vous accompagne."],
+      "bullets": [
+        "L’état des risques figure-t-il au cahier des conditions de vente, et de quelle date est-il ?",
+        "Le bien se trouve-t-il dans le périmètre d’un plan de prévention prescrit ou approuvé ? Quelles prescriptions, quels travaux, et ont-ils été réalisés ?",
+        "Quels sinistres et quels arrêtés de catastrophe naturelle ont affecté le bien ?",
+        "S’il s’agit d’un terrain à construire en zone argileuse, une étude géotechnique est-elle annexée ?",
+        "Le terrain est-il dans un secteur d’information sur les sols ou sur un ancien site industriel ?",
+        "Un assureur accepte-t-il de couvrir le bien, et à quelles conditions ?"
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "label": "Légifrance — Code de l’environnement, article L. 125-5 (information des acquéreurs et locataires, état des risques)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000047810693"
+    },
+    {
+      "label": "Légifrance — Code de l’environnement, article R. 125-23 (biens concernés par l’état des risques)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000049492559"
+    },
+    {
+      "label": "Légifrance — Code de l’environnement, article R. 125-24 (contenu de l’état des risques)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000049492548"
+    },
+    {
+      "label": "Légifrance — Code de l’environnement, article R. 125-25 (annonce, remise et validité de l’état des risques)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000046364628"
+    },
+    {
+      "label": "Légifrance — Code de l’environnement, article L. 125-6 (secteurs d’information sur les sols)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000043978153"
+    },
+    {
+      "label": "Légifrance — Code de l’environnement, article L. 125-7 (information de l’acquéreur d’un terrain en secteur d’information sur les sols)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000043978143"
+    },
+    {
+      "label": "Légifrance — Code de l’environnement, article L. 562-1 (plans de prévention des risques naturels prévisibles)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000047299303"
+    },
+    {
+      "label": "Légifrance — Code de l’environnement, article L. 562-2 (dispositions immédiatement opposables)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000022495359"
+    },
+    {
+      "label": "Légifrance — Code de l’environnement, article L. 562-4 (plan approuvé, servitude d’utilité publique)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000054116332"
+    },
+    {
+      "label": "Légifrance — Code de l’environnement, article L. 562-5 (sanctions)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000039280037"
+    },
+    {
+      "label": "Légifrance — Code de l’environnement, article R. 562-2 (arrêté de prescription du plan)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000053198420"
+    },
+    {
+      "label": "Légifrance — Code de l’environnement, article R. 562-5 (mesures sur les biens existants)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000038743783"
+    },
+    {
+      "label": "Légifrance — Code de l’environnement, article L. 515-15 (plans de prévention des risques technologiques)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000027723052"
+    },
+    {
+      "label": "Légifrance — Code de la construction et de l’habitation, article L. 271-4 (dossier de diagnostic technique)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000049398848"
+    },
+    {
+      "label": "Légifrance — Code de la construction et de l’habitation, article L. 132-5 (étude géotechnique, terrain non bâti)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000041588033"
+    },
+    {
+      "label": "Légifrance — Code de la construction et de l’habitation, article R. 132-3 (carte d’exposition des sols argileux)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000043818705"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article R. 151-53 (annexes du plan local d’urbanisme)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000052100237"
+    },
+    {
+      "label": "Légifrance — Code civil, article 1649 (vices cachés et ventes par autorité de justice)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000006442022"
+    },
+    {
+      "label": "Service-public.fr — État des risques, information des acquéreurs et locataires (fiche vérifiée le 28 septembre 2026)",
+      "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F12239"
+    },
+    {
+      "label": "Géorisques — Rechercher les risques par adresse ou par parcelle",
+      "url": "https://www.georisques.gouv.fr/"
+    },
+    {
+      "label": "Géorisques — L’information des acquéreurs et des locataires (IAL) : remplir son état des risques",
+      "url": "https://www.georisques.gouv.fr/information-des-acquereurs-et-locataires"
+    },
+    {
+      "label": "Géorisques — ERRIAL, l’outil de création de l’état des risques",
+      "url": "https://errial.georisques.gouv.fr/"
+    },
+    {
+      "label": "Immojudis — Les ventes à venir : « Risques environnementaux » et « Urbanisme & cadastre » sur chaque fiche",
+      "url": "/sales"
+    },
+    {
+      "label": "Immojudis — Les offres d’accès, dont le dossier « PLU et risques »",
+      "url": "/offres"
+    }
+  ]
+}

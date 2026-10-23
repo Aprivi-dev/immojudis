@@ -239,3 +239,156 @@ describe("relecture juridique du 19/10/2026", () => {
     expect(text).toContain("créée volontairement");
   });
 });
+
+describe("trois articles du 23/10/2026 : PLU, risques, cadastre", () => {
+  const PLANNING = "lire-plu-bien-vendu-encheres";
+  const RISKS = "risques-georisques-avant-encherir";
+  const CADASTRE = "adresse-parcelle-cadastre-encheres";
+  const SLUGS = [PLANNING, RISKS, CADASTRE] as const;
+
+  it.each(SLUGS)("%s : publié le 23/10/2026, titre court, description de partage", (slug) => {
+    const article = getResourceArticle(slug);
+    expect(article).toBeDefined();
+    expect(article!.publishedAt).toBe("2026-10-23");
+    expect(article!.updatedAt).toBeUndefined();
+    expect(article!.category).toBe("Méthode");
+    expect(article!.title.length).toBeLessThanOrEqual(48);
+    expect(article!.seoTitle).toBeUndefined();
+    expect(article!.seoDescription).toBeDefined();
+    expect(article!.sources.some((source) => source.url === "/sales")).toBe(true);
+  });
+
+  it("garde une promesse neutre : ni gain, ni conseil juridique personnalisé", () => {
+    for (const slug of SLUGS) {
+      expect(visibleText(getResourceArticle(slug)!), slug).not.toMatch(
+        /garanti[es]? de gagner|rendement garanti|sans risque|bonne affaire|assuré[es]? de/i,
+      );
+    }
+  });
+
+  it("renvoie à des articles qui existent, par leur titre exact", () => {
+    const references: Record<string, string[]> = {
+      [PLANNING]: [
+        "lire-cahier-conditions-vente-preparer-visite",
+        "droit-de-preemption-encheres-commune-acheteur",
+        RISKS,
+        CADASTRE,
+        "mise-a-prix-valeur-de-marche-dvf-lire-ecart-encheres",
+      ],
+      [RISKS]: ["lire-cahier-conditions-vente-preparer-visite", PLANNING, CADASTRE],
+      [CADASTRE]: [PLANNING, RISKS],
+    };
+    for (const [slug, targets] of Object.entries(references)) {
+      const text = visibleText(getResourceArticle(slug)!);
+      for (const target of targets) {
+        const linked = getResourceArticle(target);
+        expect(linked, target).toBeDefined();
+        expect(text, `${slug} -> ${target}`).toContain(`« ${linked!.title} »`);
+      }
+    }
+  });
+
+  it("PLU : zones du Code, règlement, Géoportail à valeur informative, certificat d'urbanisme", () => {
+    const text = visibleText(getResourceArticle(PLANNING)!);
+    for (const reference of [
+      "R. 151-17",
+      "R. 151-18",
+      "R. 151-20",
+      "R. 151-22",
+      "R. 151-24",
+      "L. 152-1",
+      "R. 322-10",
+      "L. 410-1",
+      "R*410-9",
+      "R*410-10",
+      "R. 322-31",
+    ]) {
+      expect(text, reference).toContain(reference);
+    }
+    expect(text).toContain("18 mois");
+    expect(text).toContain("seuls les documents détenus");
+    expect(text).toContain("n’est pas une autorisation d’urbanisme");
+    // service-public résume A et N en « inconstructibles » : l'article doit nuancer ce raccourci.
+    expect(text).toContain("le Code est plus nuancé");
+    // Le zonage ne figure pas parmi les mentions obligatoires du cahier.
+    expect(text).toContain("Le zonage et le règlement du PLU n’y figurent pas");
+  });
+
+  it("risques : état des risques (L. 125-5, R. 125-23 à R. 125-25), PPR, 10 % de la valeur vénale", () => {
+    const article = getResourceArticle(RISKS)!;
+    const text = visibleText(article);
+    for (const reference of [
+      "L. 125-5",
+      "R. 125-23",
+      "R. 125-24",
+      "R. 125-25",
+      "L. 271-4",
+      "L. 562-1",
+      "L. 562-4",
+      "R. 562-5",
+      "L. 132-5",
+    ]) {
+      expect(text, reference).toContain(reference);
+    }
+    expect(text).toContain("moins de six mois");
+    expect(text).toContain("10 % de la valeur vénale");
+    expect(text).toContain("ERRIAL");
+    // Le recours de l'article L. 125-5, V est décrit pour la vente ordinaire seulement.
+    const sale = article.sections.find(
+      (section) => section.id === "etat-des-risques-vente-publique",
+    );
+    const saleText = sale!.paragraphs.join(" ");
+    expect(saleText).toContain("Dans une vente ordinaire, l’acquéreur peut poursuivre");
+    expect(saleText).toContain("Ne supposez pas qu’un tel recours existe après une adjudication");
+  });
+
+  it("cadastre : références, valeur fiscale, bornage, présomption de propriété", () => {
+    const text = visibleText(getResourceArticle(CADASTRE)!);
+    for (const reference of [
+      "000 AB 121",
+      "R. 321-3",
+      "R. 322-10",
+      "R. 322-31",
+      "R*410-1",
+      "art. 646",
+    ]) {
+      expect(text, reference).toContain(reference);
+    }
+    expect(text).toContain("valeur fiscale");
+    expect(text).toContain("présomption de propriété");
+    expect(text).toContain("bornage");
+    expect(text).toContain("juridictions civiles");
+    // Le plan cadastral ne délimite pas la propriété.
+    expect(text).not.toMatch(/le plan cadastral (fixe|garantit|prouve)/i);
+  });
+
+  it("cite des sources officielles : Légifrance, service-public.fr, Géoportail, Géorisques, cadastre.gouv.fr", () => {
+    const hosts = (slug: string) =>
+      new Set(
+        getResourceArticle(slug)!.sources.flatMap((source) =>
+          source.url.startsWith("https://") ? [new URL(source.url).hostname] : [],
+        ),
+      );
+    for (const host of [
+      "www.legifrance.gouv.fr",
+      "www.service-public.gouv.fr",
+      "www.geoportail-urbanisme.gouv.fr",
+    ]) {
+      expect(hosts(PLANNING).has(host), host).toBe(true);
+    }
+    for (const host of [
+      "www.legifrance.gouv.fr",
+      "www.service-public.gouv.fr",
+      "www.georisques.gouv.fr",
+    ]) {
+      expect(hosts(RISKS).has(host), host).toBe(true);
+    }
+    for (const host of [
+      "www.legifrance.gouv.fr",
+      "www.service-public.gouv.fr",
+      "cadastre.gouv.fr",
+    ]) {
+      expect(hosts(CADASTRE).has(host), host).toBe(true);
+    }
+  });
+});
