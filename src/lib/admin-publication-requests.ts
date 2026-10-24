@@ -34,7 +34,7 @@ export type AdminPublicationRequestsResponse = {
 };
 
 export const adminPublicationReviewInputSchema = z.object({
-  id: z.string().uuid(),
+  id: z.string().guid(),
   status: z.enum(["approved", "rejected"]),
 });
 

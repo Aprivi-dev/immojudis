@@ -19,7 +19,7 @@ import {
   workspaceAnnotationUpdateSchema,
 } from "@/lib/sale-workspace-collaboration";
 
-const saleIdSchema = z.string().uuid();
+const saleIdSchema = z.string().guid();
 
 const postSchema = z.discriminatedUnion("action", [
   z.object({

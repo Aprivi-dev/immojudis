@@ -56,8 +56,8 @@ export type LawyerReferralStatus = z.infer<typeof referralStatusSchema>;
 export type LawyerReferralMatchingStatus = z.infer<typeof referralMatchingStatusSchema>;
 
 export const lawyerReferralRequestInputSchema = z.object({
-  saleId: z.string().uuid(),
-  lawyerId: z.string().uuid().optional(),
+  saleId: z.string().guid(),
+  lawyerId: z.string().guid().optional(),
   preferredContactMethod: z.enum(["email", "phone", "either"]).default("email"),
   /**
    * The user has seen the recap of the data sent to the lawyer and confirms the transmission
@@ -73,12 +73,12 @@ export const lawyerReferralRequestInputSchema = z.object({
 });
 
 export const lawyerReferralPreviewQuerySchema = z.object({
-  saleId: z.string().uuid(),
-  lawyerId: z.string().uuid().optional(),
+  saleId: z.string().guid(),
+  lawyerId: z.string().guid().optional(),
 });
 
 export const lawyerReferralListQuerySchema = z.object({
-  saleId: z.string().uuid().optional(),
+  saleId: z.string().guid().optional(),
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });
 

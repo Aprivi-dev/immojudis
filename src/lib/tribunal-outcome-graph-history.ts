@@ -30,7 +30,7 @@ const numericSchema = z.union([
 
 const archivedHearingRowSchema = z
   .object({
-    round_id: z.string().uuid(),
+    round_id: z.string().guid(),
     court_code: z.string().min(1),
     scheduled_at: z.string().datetime({ offset: true }),
     initial_starting_price_eur: numericSchema.nullable(),
@@ -39,7 +39,7 @@ const archivedHearingRowSchema = z
     publication_first_seen_at: z.string().datetime({ offset: true }).nullable(),
     occupation_status: z.string().nullable(),
     source_name: z.string().min(1),
-    auction_sale_id: z.string().uuid().nullable(),
+    auction_sale_id: z.string().guid().nullable(),
     external_id: z.string().nullable(),
     source_url: z.string().nullable(),
     lot_label: z.string().nullable(),

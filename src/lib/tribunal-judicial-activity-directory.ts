@@ -1,4 +1,7 @@
-import { z } from "zod";
+// zod/mini : la réponse de l'annuaire est validée dans le navigateur
+// (`tribunal-judicial-activity-directory-client`). Mêmes règles que l'écriture chaînée de zod,
+// avec bien moins de code envoyé au navigateur.
+import { z } from "zod/mini";
 import {
   buildTribunalJudicialActivity,
   judicialActivityPeriod,
@@ -12,98 +15,90 @@ import {
   type TribunalJudicialActivitySale,
 } from "@/lib/tribunal-judicial-activity";
 
-const isoDateTimeSchema = z.string().datetime({ offset: true });
+const isoDateTimeSchema = z.string().check(z.iso.datetime({ offset: true }));
 const DIRECTORY_VERSION = "tribunal_judicial_activity_directory_v2" as const;
+// Entier positif ou nul.
+const countSchema = () => z.number().check(z.int(), z.nonnegative());
 
 const scopeCoverageSchema = z
-  .object({
-    trackedCourts: z.number().int().nonnegative(),
-    publishableCourtProfiles: z.number().int().nonnegative(),
-    rate: z.number().min(0).max(1),
+  .strictObject({
+    trackedCourts: countSchema(),
+    publishableCourtProfiles: countSchema(),
+    rate: z.number().check(z.gte(0), z.lte(1)),
   })
-  .strict()
-  .superRefine((coverage, context) => {
-    if (coverage.publishableCourtProfiles > coverage.trackedCourts) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["publishableCourtProfiles"],
-        message: "Le nombre de profils publiables ne peut pas dépasser les tribunaux suivis.",
-      });
-    }
-    const expectedRate =
-      coverage.trackedCourts === 0 ? 0 : coverage.publishableCourtProfiles / coverage.trackedCourts;
-    if (Math.abs(coverage.rate - expectedRate) > 0.000001) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["rate"],
-        message: "Le taux de couverture doit correspondre aux profils publiables.",
-      });
-    }
-  });
+  .check(
+    z.superRefine((coverage, context) => {
+      if (coverage.publishableCourtProfiles > coverage.trackedCourts) {
+        context.addIssue({
+          code: "custom",
+          path: ["publishableCourtProfiles"],
+          message: "Le nombre de profils publiables ne peut pas dépasser les tribunaux suivis.",
+        });
+      }
+      const expectedRate =
+        coverage.trackedCourts === 0
+          ? 0
+          : coverage.publishableCourtProfiles / coverage.trackedCourts;
+      if (Math.abs(coverage.rate - expectedRate) > 0.000001) {
+        context.addIssue({
+          code: "custom",
+          path: ["rate"],
+          message: "Le taux de couverture doit correspondre aux profils publiables.",
+        });
+      }
+    }),
+  );
 
-const scopeOverviewSchema = z
-  .object({
-    observedPastSales: z.number().int().nonnegative(),
-    upcomingSales: z.number().int().nonnegative(),
-    upcomingSales90Days: z.number().int().nonnegative(),
-    startingPriceRangeEur: tribunalJudicialActivityRangeMetricSchema,
-    discoveryLeadRangeDays: tribunalJudicialActivityRangeMetricSchema,
-    upcomingStartingPriceRangeEur: tribunalJudicialActivityRangeMetricSchema,
-    upcomingDiscoveryLeadRangeDays: tribunalJudicialActivityRangeMetricSchema,
-    visitCoverage: tribunalJudicialActivityMetricSchema,
-    coverage: scopeCoverageSchema,
-  })
-  .strict();
+const scopeOverviewSchema = z.strictObject({
+  observedPastSales: countSchema(),
+  upcomingSales: countSchema(),
+  upcomingSales90Days: countSchema(),
+  startingPriceRangeEur: tribunalJudicialActivityRangeMetricSchema,
+  discoveryLeadRangeDays: tribunalJudicialActivityRangeMetricSchema,
+  upcomingStartingPriceRangeEur: tribunalJudicialActivityRangeMetricSchema,
+  upcomingDiscoveryLeadRangeDays: tribunalJudicialActivityRangeMetricSchema,
+  visitCoverage: tribunalJudicialActivityMetricSchema,
+  coverage: scopeCoverageSchema,
+});
 
-export const tribunalJudicialActivityDirectoryQuerySchema = z
-  .object({
-    historyMonths: z.preprocess(
-      (value) => (value === undefined ? 36 : Number(value)),
-      tribunalJudicialActivityHistoryMonthsSchema,
-    ),
-  })
-  .strict();
+export const tribunalJudicialActivityDirectoryQuerySchema = z.strictObject({
+  // `z.preprocess(fn, schema)` de zod est le tuyau `transform(fn)` puis `schema`.
+  historyMonths: z.pipe(
+    z.transform((value: unknown) => (value === undefined ? 36 : Number(value))),
+    tribunalJudicialActivityHistoryMonthsSchema,
+  ),
+});
 
-export const tribunalJudicialActivityDirectoryResponseSchema = z
-  .object({
-    period: z
-      .object({
-        historyMonths: tribunalJudicialActivityHistoryMonthsSchema,
-        historyStart: isoDateTimeSchema,
-        asOf: isoDateTimeSchema,
-        upcomingEnd: isoDateTimeSchema,
-      })
-      .strict(),
-    totals: z
-      .object({
-        trackedCourts: z.number().int().nonnegative(),
-        observedPastSales: z.number().int().nonnegative(),
-        upcomingSales: z.number().int().nonnegative(),
-        upcomingSales90Days: z.number().int().nonnegative(),
-      })
-      .strict(),
-    national: scopeOverviewSchema,
-    regions: z
-      .array(
-        z
-          .object({
-            name: z.string().min(1),
-            ...scopeOverviewSchema.shape,
-          })
-          .strict(),
-      )
-      .max(50),
-    tribunals: z.array(tribunalJudicialActivityResponseSchema).max(250),
-    provenance: z
-      .object({
-        generatedAt: isoDateTimeSchema,
-        directoryVersion: z.literal(DIRECTORY_VERSION),
-        includesOnlyExactActiveCourts: z.literal(true),
-        aggregationOrder: z.literal("national_region_tribunal"),
-      })
-      .strict(),
-  })
-  .strict();
+export const tribunalJudicialActivityDirectoryResponseSchema = z.strictObject({
+  period: z.strictObject({
+    historyMonths: tribunalJudicialActivityHistoryMonthsSchema,
+    historyStart: isoDateTimeSchema,
+    asOf: isoDateTimeSchema,
+    upcomingEnd: isoDateTimeSchema,
+  }),
+  totals: z.strictObject({
+    trackedCourts: countSchema(),
+    observedPastSales: countSchema(),
+    upcomingSales: countSchema(),
+    upcomingSales90Days: countSchema(),
+  }),
+  national: scopeOverviewSchema,
+  regions: z
+    .array(
+      z.strictObject({
+        name: z.string().check(z.minLength(1)),
+        ...scopeOverviewSchema.shape,
+      }),
+    )
+    .check(z.maxLength(50)),
+  tribunals: z.array(tribunalJudicialActivityResponseSchema).check(z.maxLength(250)),
+  provenance: z.strictObject({
+    generatedAt: isoDateTimeSchema,
+    directoryVersion: z.literal(DIRECTORY_VERSION),
+    includesOnlyExactActiveCourts: z.literal(true),
+    aggregationOrder: z.literal("national_region_tribunal"),
+  }),
+});
 
 export type TribunalJudicialActivityDirectoryQuery = z.infer<
   typeof tribunalJudicialActivityDirectoryQuerySchema

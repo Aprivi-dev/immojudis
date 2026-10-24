@@ -53,7 +53,7 @@ export const storedDvfCache = new Map<
 >();
 
 export const inputSchema = z.object({
-  saleId: z.string().uuid().nullable().optional(),
+  saleId: z.string().guid().nullable().optional(),
   lat: z.number().min(-90).max(90).nullable().optional(),
   lng: z.number().min(-180).max(180).nullable().optional(),
   address: z.string().max(300).nullable().optional(),

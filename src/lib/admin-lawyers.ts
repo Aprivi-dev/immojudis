@@ -61,7 +61,7 @@ const optionalPlacementDateSchema = optionalTextSchema.refine(
 
 export const adminReferencedLawyerCoverageInputSchema = z
   .object({
-    id: z.string().uuid().optional(),
+    id: z.string().guid().optional(),
     tribunalCode: optionalTextSchema,
     tribunalName: optionalTextSchema,
     city: optionalTextSchema,
@@ -78,7 +78,7 @@ export const adminReferencedLawyerCoverageInputSchema = z
 
 export const adminReferencedLawyerInputSchema = z
   .object({
-    id: z.string().uuid().optional(),
+    id: z.string().guid().optional(),
     status: lawyerStatusSchema.default("draft"),
     paidPlacementStatus: paidPlacementStatusSchema.default("not_started"),
     displayName: z.string().trim().min(2).max(160),

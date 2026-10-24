@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { deleteWatchedZone, watchedZoneInputSchema } from "@/lib/watched-zones";
+import {
+  deleteWatchedZone,
+  watchedZoneAlertDefaultsSchema,
+  watchedZoneInputSchema,
+  watchedZoneUpdateSchema,
+} from "@/lib/watched-zones";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { watchedZoneMatchesSale } from "@/lib/watched-zones-shared";
 import type { AuctionSale, UserWatchedZone } from "@/lib/types";
@@ -170,6 +175,17 @@ describe("watched zones", () => {
     ).toMatchObject({
       zoneKind: "radius",
       radiusKm: 8,
+    });
+  });
+
+  it("leaves omitted fields out of an update and fills alert defaults", () => {
+    expect(watchedZoneUpdateSchema.parse({ isActive: false })).toEqual({ isActive: false });
+    expect(
+      watchedZoneInputSchema.parse({ name: "Gironde", zoneKind: "department", department: "33" }),
+    ).not.toHaveProperty("alertDefaults");
+    expect(watchedZoneAlertDefaultsSchema.parse(undefined)).toEqual({
+      dpeClasses: [],
+      requireHouseWithLand: false,
     });
   });
 

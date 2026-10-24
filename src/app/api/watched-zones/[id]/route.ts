@@ -7,7 +7,7 @@ import {
 } from "@/integrations/supabase/auth-middleware";
 import { deleteWatchedZone, updateWatchedZone, watchedZoneUpdateSchema } from "@/lib/watched-zones";
 
-const zoneIdSchema = z.string().uuid();
+const zoneIdSchema = z.string().guid();
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
