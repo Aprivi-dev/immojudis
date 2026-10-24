@@ -202,10 +202,10 @@ describe("Navbar", () => {
     }
   });
 
-  it("utilise le thème sombre uniquement sur l'accueil", () => {
+  it("utilise le thème clair partout, accueil compris", () => {
     state.pathname = "/";
     const { container, unmount } = render(<Navbar />);
-    expect(container.querySelector("header")?.getAttribute("data-theme")).toBe("dark");
+    expect(container.querySelector("header")?.getAttribute("data-theme")).toBe("light");
     unmount();
     state.pathname = "/offres";
     const second = render(<Navbar />);
