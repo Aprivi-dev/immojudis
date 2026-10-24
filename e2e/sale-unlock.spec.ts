@@ -446,7 +446,10 @@ test("compte Analyse : aucun panneau ni lien de déblocage", async ({ page }) =>
 
   // La fiche s'affiche une fois les droits lus : c'est à ce moment qu'un compte Découverte
   // demanderait l'état de ses déblocages.
-  await expect(page.getByRole("heading", { level: 1, name: sale.title })).toBeVisible();
+  // Titre court de la fiche (type, surface, ville), le même que sur la fiche publique.
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Appartement de 60 m² à Lyon" }),
+  ).toBeVisible();
   await page.waitForTimeout(500);
   // L'état des déblocages n'est même pas demandé à un compte qui a déjà toutes les ventes.
   expect(counters.get).toBe(0);
