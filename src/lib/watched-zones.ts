@@ -21,7 +21,9 @@ export const watchedZoneAlertDefaultsSchema = z
     dpeClasses: z.array(z.enum(["A", "B", "C", "D", "E", "F", "G"])).default([]),
     requireHouseWithLand: z.boolean().default(false),
   })
-  .default({});
+  // `prefault` reprend le `.default()` de zod 3 : `{}` repasse par le schéma et reçoit les
+  // valeurs par défaut des champs (`dpeClasses`, `requireHouseWithLand`).
+  .prefault({});
 
 const watchedZoneShape = z.object({
   name: z.string().trim().min(2).max(120),
@@ -32,7 +34,8 @@ const watchedZoneShape = z.object({
   centerLat: z.number().finite().min(-90).max(90).nullable().optional(),
   centerLng: z.number().finite().min(-180).max(180).nullable().optional(),
   radiusKm: z.number().finite().min(0.1).max(200).nullable().optional(),
-  alertDefaults: watchedZoneAlertDefaultsSchema.optional(),
+  // Sans `unwrap()`, zod 4 appliquerait la valeur par défaut sous `.optional()`.
+  alertDefaults: watchedZoneAlertDefaultsSchema.unwrap().optional(),
   isActive: z.boolean().optional(),
 });
 
@@ -70,7 +73,11 @@ export const watchedZoneInputSchema = watchedZoneShape.superRefine((value, conte
   }
 });
 
-export const watchedZoneUpdateSchema = watchedZoneShape.partial();
+// Zod 4 applique les valeurs par défaut même sous `.partial()` : la mise à jour redéclare
+// `zoneKind` sans défaut, pour qu'un champ omis reste inchangé en base.
+export const watchedZoneUpdateSchema = watchedZoneShape.partial().extend({
+  zoneKind: watchedZoneShape.shape.zoneKind.unwrap().optional(),
+});
 
 export type WatchedZoneInput = z.input<typeof watchedZoneInputSchema>;
 export type WatchedZonePayload = z.output<typeof watchedZoneInputSchema>;

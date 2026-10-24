@@ -12,7 +12,7 @@ import {
 } from "@/lib/sale-workspaces";
 import { assertFeatureEntitlement } from "@/lib/property-reports";
 
-const saleIdSchema = z.string().uuid();
+const saleIdSchema = z.string().guid();
 
 export async function GET(request: Request) {
   try {

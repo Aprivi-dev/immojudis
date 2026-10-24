@@ -2,9 +2,7 @@
 #
 # Install this file after requirements.txt when you want the Docling-first PDF pipeline.
 # The base HTTPX, Pydantic, and Supabase pins are kept compatible with this stack.
-# Pillow: every Docling release so far requires pillow<13, so installing this file brings
-# pillow back to 12.3.0, which has known advisories fixed only in 13.0.0 (TIFF, GIF, PPM, EPS
-# decoders, PDF append). The production workflows do not install Docling; use it locally, on
-# trusted files. The CI audit ignores those advisories for this file only (.github/workflows/ci.yml):
-# drop the ignores and bump docling once a release accepts pillow 13.
-docling==2.140.0
+# Pillow: docling 2.142.1 (docling-core 2.104.0) accepts pillow 13, which fixes the pillow 12
+# advisories (TIFF, GIF, PPM, EPS decoders, PDF append). The CI audits this file without any
+# exception (.github/workflows/ci.yml). The production workflows do not install Docling.
+docling==2.142.1

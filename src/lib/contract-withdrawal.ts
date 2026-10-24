@@ -9,7 +9,7 @@ import {
 } from "@/lib/privacy-requests";
 
 export const contractWithdrawalInputSchema = z.object({
-  requestId: z.string().uuid(),
+  requestId: z.string().guid(),
   /**
    * `prorata`: the customer asked for immediate performance, so the part of
    * the period already provided stays due (art. L221-25 du Code de la
