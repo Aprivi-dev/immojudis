@@ -250,7 +250,6 @@
 }
 
 .heroCopy h1 em {
-  display: block;
   color: var(--gold-text);
   font-weight: 500;
 }
@@ -898,9 +897,18 @@
     animation-delay: calc(900ms + var(--d, 0ms));
   }
 
+  /* Halos des grandes villes : un cycle de 5,5 s, décalés l'un après l'autre. */
   .ring {
-    animation: home-pulse 3.2s ease-out infinite;
-    animation-delay: calc(2600ms + var(--d, 0ms) * 4);
+    animation: home-pulse 5.5s ease-out infinite;
+    animation-delay: calc(2600ms + var(--k, 0) * 470ms);
+  }
+
+  /* Quelques petits points s'allument en or, chacun à son tour, comme de nouvelles ventes. */
+  .fresh {
+    animation:
+      home-pop 0.5s var(--home-ease) forwards,
+      home-fresh 9s ease-in-out infinite;
+    animation-delay: calc(900ms + var(--d, 0ms)), calc(3400ms + var(--k, 0) * 1100ms);
   }
 
   .peek {
@@ -1028,13 +1036,27 @@
   }
 }
 
+@keyframes home-fresh {
+  0%,
+  72%,
+  100% {
+    fill: var(--brand-navy);
+  }
+
+  78%,
+  90% {
+    fill: var(--gold);
+    fill-opacity: 1;
+  }
+}
+
 @keyframes home-pulse {
   0% {
     opacity: 0.9;
     transform: scale(1);
   }
 
-  70%,
+  45%,
   100% {
     opacity: 0;
     transform: scale(3.2);

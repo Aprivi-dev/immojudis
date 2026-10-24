@@ -8,7 +8,7 @@ import { HomeOffers } from "@/components/home/HomeOffers";
 import { HomeClosing, HomeFeatures, HomeJourney, HomeStats } from "@/components/home/HomeSections";
 import homeStyles from "@/components/home/HomePage.module.css";
 import { loadHomeCatalogueSummary } from "@/lib/home-catalogue-summary.server";
-import { loadHomeSalesMap } from "@/lib/home-sales-map.server";
+import { loadHomeDepartmentCount } from "@/lib/home-departments.server";
 import { jsonLdString } from "@/lib/json-ld";
 import { PreloadCormorantItalic } from "@/components/PreloadCormorantItalic";
 
@@ -25,7 +25,10 @@ export const metadata: Metadata = {
 export const revalidate = 300;
 
 export default async function Page() {
-  const [summary, salesMap] = await Promise.all([loadHomeCatalogueSummary(), loadHomeSalesMap()]);
+  const [summary, departments] = await Promise.all([
+    loadHomeCatalogueSummary(),
+    loadHomeDepartmentCount(),
+  ]);
   const origin = resolveSiteOrigin(process.env, "http://localhost:3000")!;
   const structuredData = organizationStructuredData(origin);
   return (
@@ -36,11 +39,11 @@ export default async function Page() {
           __html: jsonLdString(structuredData),
         }}
       />
-      {/* L'italique du h1 (accent « sur une seule carte. ») est préchargée par cette page seule. */}
+      {/* L'italique du h1 (accent « clarté. ») est préchargée par cette page seule. */}
       <PreloadCormorantItalic />
       <main id="contenu" className={`ij-page ${homeStyles.page}`}>
-        <HomeHero summary={summary} cells={salesMap?.cells ?? []} />
-        <HomeStats summary={summary} map={salesMap} />
+        <HomeHero summary={summary} />
+        <HomeStats summary={summary} departments={departments} />
         <HomeJourney />
         <HomeFeatures />
         <HomeOffers />

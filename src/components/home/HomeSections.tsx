@@ -4,7 +4,6 @@ import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import { exampleHeadlineFigures } from "@/lib/example-sale";
 import { formatNumber, formatPrice } from "@/lib/format";
 import type { HomeCatalogueSummary } from "@/lib/home-catalogue-summary.server";
-import type { HomeSalesMap } from "@/lib/home-sales-map.server";
 import { notaryAndStatePilotsEnabled } from "@/lib/sale-types";
 import { HomeFreeAccessLine } from "./HomeFreeAccessLine";
 import { HomeSearch } from "./HomeSearch";
@@ -17,15 +16,15 @@ function delay(ms: number): CSSProperties {
   return { "--delay": `${ms}ms` } as CSSProperties;
 }
 
-type Stat = { value: string; label: string; countTo?: number; countSuffix?: string };
+type Stat = { value: string; label: string; countTo?: number };
 
 /** Les chiffres réels du catalogue ; un chiffre inconnu n'est pas affiché (jamais de repli inventé). */
 export function HomeStats({
   summary,
-  map,
+  departments,
 }: {
   summary: HomeCatalogueSummary | null;
-  map: HomeSalesMap | null;
+  departments: number | null;
 }) {
   const stats: Stat[] = [];
   if (summary) {
@@ -35,29 +34,27 @@ export function HomeStats({
       label: summary.count > 1 ? "ventes à venir en France" : "vente à venir en France",
     });
   }
-  if (map?.venueTypes === 3 && notaryAndStatePilotsEnabled()) {
-    stats.push({ value: "3", label: "lieux de vente réunis : tribunal, notaire, État" });
-  }
-  if (map?.lowestStartingPrice) {
+  if (departments) {
     stats.push({
-      value: formatPrice(map.lowestStartingPrice),
-      countTo: map.lowestStartingPrice,
-      countSuffix: " €",
-      label: "la plus petite mise à prix du moment",
+      value: formatNumber(departments),
+      countTo: departments,
+      label:
+        departments > 1
+          ? "départements où une vente est annoncée"
+          : "département où une vente est annoncée",
     });
   }
-  if (!stats.length) return null;
+  if (notaryAndStatePilotsEnabled()) {
+    stats.push({ value: "3", label: "lieux de vente réunis : tribunal, notaire, État" });
+  }
+  if (!summary && !departments) return null;
   return (
     <section className={styles.stats} aria-label="Le catalogue en chiffres">
       <dl className={styles.container} data-reveal="">
         {stats.map((stat) => (
           <div key={stat.label} className={styles.stat}>
             <dt>{stat.label}</dt>
-            <dd
-              data-count-to={stat.countTo}
-              data-count-suffix={stat.countSuffix}
-              className={styles.statValue}
-            >
+            <dd data-count-to={stat.countTo} className={styles.statValue}>
               {stat.value}
             </dd>
           </div>

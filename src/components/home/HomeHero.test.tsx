@@ -33,7 +33,7 @@ describe("home hero", () => {
     );
     const text = visibleText(markup);
 
-    expect(text).toContain("Toutes les ventes aux enchères, sur une seule carte.");
+    expect(text).toContain("Les enchères immobilières, en toute clarté.");
     expect(text).toContain("1 753 ventes à venir · données vérifiées le 15/10/2026");
     expect(text).not.toContain("mises à jour le");
     expect(markup).toMatch(/<a[^>]*href="\/sales"[^>]*>1[^<]*753 ventes à venir/);
@@ -43,7 +43,7 @@ describe("home hero", () => {
   it("says nothing about the catalogue without figures, but keeps the free-access line", () => {
     for (const markup of [
       renderToStaticMarkup(<HomeHero />),
-      renderToStaticMarkup(<HomeHero summary={null} cells={[]} />),
+      renderToStaticMarkup(<HomeHero summary={null} />),
     ]) {
       expect(markup).not.toContain("ventes à venir");
       expect(markup).not.toContain("vérifiées");
@@ -58,22 +58,13 @@ describe("home hero", () => {
     );
   });
 
-  it("draws one dot per sector and labels the map with the real total", () => {
-    const markup = renderToStaticMarkup(
-      <HomeHero
-        summary={{ count: 1548, verifiedAt: null }}
-        cells={[
-          { x: 120.4, y: 260.1, count: 30 },
-          { x: 200, y: 100, count: 2 },
-        ]}
-      />,
+  it("says that the map is an illustration with fictional dots", () => {
+    const markup = renderToStaticMarkup(<HomeHero />);
+    expect(markup).toContain(
+      'aria-label="Illustration : carte de France parsemée de ventes aux enchères (points fictifs)."',
     );
-    // Le point du secteur, plus son halo : les secteurs les plus fournis en portent un.
-    expect(markup.match(/<circle[^>]*cx="200"[^>]*>/g)).toHaveLength(2);
-    expect(markup.match(/<circle[^>]*cx="120.4"[^>]*>/g)).toHaveLength(2);
-    expect(markup).toMatch(
-      /aria-label="Carte de France métropolitaine : les 1.548 ventes à venir, regroupées par secteur."/,
-    );
+    expect(visibleText(markup)).toContain("Illustration, points fictifs.");
+    expect((markup.match(/<circle\b/g) ?? []).length).toBeGreaterThan(150);
   });
 
   it("marks the example card on the map as fictional and links it to the example", () => {
@@ -84,34 +75,28 @@ describe("home hero", () => {
 });
 
 describe("home figures band", () => {
-  it("shows only the figures it knows", () => {
-    expect(renderToStaticMarkup(<HomeStats summary={null} map={null} />)).toBe("");
+  it("shows the real figures it knows, and nothing without them", () => {
+    expect(renderToStaticMarkup(<HomeStats summary={null} departments={null} />)).toBe("");
     const markup = renderToStaticMarkup(
-      <HomeStats
-        summary={{ count: 1548, verifiedAt: null }}
-        map={{ cells: [], lowestStartingPrice: 750, venueTypes: 3 }}
-      />,
+      <HomeStats summary={{ count: 1548, verifiedAt: null }} departments={94} />,
     );
     // Libellé (dt) puis valeur (dd) ; la valeur s'affiche au-dessus en CSS.
     expect(markup).toMatch(
       /<dt>ventes à venir en France<\/dt><dd[^>]*data-count-to="1548"[^>]*>1.548<\/dd>/,
     );
     expect(markup).toMatch(
+      /<dt>départements où une vente est annoncée<\/dt><dd[^>]*data-count-to="94"[^>]*>94<\/dd>/,
+    );
+    expect(markup).toMatch(
       /<dt>lieux de vente réunis : tribunal, notaire, État<\/dt><dd[^>]*>3<\/dd>/,
     );
-    expect(markup).toMatch(/<dt>la plus petite mise à prix du moment<\/dt><dd[^>]*>750.€<\/dd>/);
   });
 
-  it("does not claim three venues when the catalogue holds fewer", () => {
-    const text = visibleText(
-      renderToStaticMarkup(
-        <HomeStats
-          summary={{ count: 10, verifiedAt: null }}
-          map={{ cells: [], lowestStartingPrice: null, venueTypes: 1 }}
-        />,
-      ),
+  it("leaves out the departments when that figure is unknown", () => {
+    const markup = renderToStaticMarkup(
+      <HomeStats summary={{ count: 10, verifiedAt: null }} departments={null} />,
     );
-    expect(text).not.toContain("lieux de vente");
-    expect(text).not.toContain("mise à prix");
+    expect(markup).not.toContain("départements");
+    expect(markup).toContain("ventes à venir en France");
   });
 });

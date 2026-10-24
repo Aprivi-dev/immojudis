@@ -2,7 +2,6 @@ import Link from "next/link";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import { formatNumber } from "@/lib/format";
 import type { HomeCatalogueSummary } from "@/lib/home-catalogue-summary.server";
-import type { HomeSalesMapCell } from "@/lib/home-sales-map.server";
 import { notaryAndStatePilotsEnabled } from "@/lib/sale-types";
 import { HomeFranceMap } from "./HomeFranceMap";
 import { HomeFreeAccessLine } from "./HomeFreeAccessLine";
@@ -29,20 +28,15 @@ export function catalogueSummaryLine({ count, verifiedAt }: HomeCatalogueSummary
     : sales;
 }
 
-/** Premier écran : la promesse, la recherche, puis la preuve (la carte des ventes réelles). */
-export function HomeHero({
-  summary = null,
-  cells = [],
-}: {
-  summary?: HomeCatalogueSummary | null;
-  cells?: HomeSalesMapCell[];
-}) {
+/** Premier écran : la promesse, la recherche et les chiffres réels, à côté de la carte animée. */
+export function HomeHero({ summary = null }: { summary?: HomeCatalogueSummary | null }) {
   return (
     <section className={styles.hero} aria-labelledby="home-title">
       <div className={`${styles.container} ${styles.heroGrid}`}>
         <div className={styles.heroCopy}>
           <h1 id="home-title">
-            Toutes les ventes aux enchères, <em>sur une seule carte.</em>
+            Les enchères immobilières, <br />
+            en toute <em>clarté.</em>
           </h1>
           <p className={styles.lead}>
             {notaryAndStatePilotsEnabled()
@@ -64,7 +58,7 @@ export function HomeHero({
             Voir une analyse exemple <ArrowRight size={17} aria-hidden="true" />
           </Link>
         </div>
-        <HomeFranceMap cells={cells} total={summary?.count ?? null} />
+        <HomeFranceMap />
       </div>
     </section>
   );

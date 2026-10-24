@@ -9,7 +9,6 @@ function countUp(element: HTMLElement) {
   const target = Number(element.dataset.countTo);
   const finalText = element.textContent ?? "";
   if (!Number.isFinite(target) || target <= 0) return;
-  const suffix = element.dataset.countSuffix ?? "";
   const start = performance.now();
   const step = (now: number) => {
     const progress = Math.min(1, (now - start) / COUNT_MS);
@@ -17,7 +16,7 @@ function countUp(element: HTMLElement) {
       element.textContent = finalText;
       return;
     }
-    element.textContent = `${NUMBER.format(Math.round(target * (1 - (1 - progress) ** 3)))}${suffix}`;
+    element.textContent = NUMBER.format(Math.round(target * (1 - (1 - progress) ** 3)));
     requestAnimationFrame(step);
   };
   requestAnimationFrame(step);
