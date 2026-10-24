@@ -95,7 +95,11 @@ const MAX_CLIENT_CHUNK_BYTES = 330_000;
 // estimate snapshots, photo / 360° selector, launch-offer end notice, ceiling against the court,
 // questions for the lawyer, stale ceiling) measured 6,197,582 bytes; the owner approved (23/10/2026)
 // an eighth raise, to 6,200,000.
-const MAX_TOTAL_CLIENT_JS_BYTES = 6_200_000;
+// Migration vers zod 4 (24/10/2026, alerte GHSA-mrhx-c7xc-m3w5 sur zod 3) : le bloc client partagé
+// de zod passe de 56 149 à 113 987 octets ; total mesuré 6 256 865. Le propriétaire a approuvé
+// (24/10/2026) un neuvième relèvement, à 6 260 000, et ceux des routes qui chargent ce bloc. Ce poids
+// est à récupérer en passant les schémas envoyés au navigateur sur zod/mini.
+const MAX_TOTAL_CLIENT_JS_BYTES = 6_260_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 // New homepage: lossless panorama for large screens plus editorial photography.
 const MAX_PUBLIC_MEDIA_BYTES = 5_000_000;
@@ -163,7 +167,8 @@ const routeBudgets = [
     manifest: ".next/server/app/favoris/page_client-reference-manifest.js",
     routeKey: "/favoris/page",
     entryKey: "[project]/src/app/favoris/page",
-    maxBytes: 670_000,
+    // zod 4 : 710 442 octets (24/10/2026), relevé de 670 000 avec l'accord du propriétaire.
+    maxBytes: 712_000,
   },
   {
     name: "alerts",
@@ -184,21 +189,24 @@ const routeBudgets = [
     manifest: ".next/server/app/sales/page_client-reference-manifest.js",
     routeKey: "/sales/page",
     entryKey: "[project]/src/app/sales/page",
-    maxBytes: 560_000,
+    // zod 4 : 573 076 octets (24/10/2026), relevé de 560 000 avec l'accord du propriétaire.
+    maxBytes: 575_000,
   },
   {
     name: "sale-detail",
     manifest: ".next/server/app/sales/[id]/page_client-reference-manifest.js",
     routeKey: "/sales/[id]/page",
     entryKey: "[project]/src/app/sales/[id]/page",
-    maxBytes: 370_000,
+    // zod 4 : 413 928 octets (24/10/2026), relevé de 370 000 avec l'accord du propriétaire.
+    maxBytes: 415_000,
   },
   {
     name: "tribunals",
     manifest: ".next/server/app/tribunaux/page_client-reference-manifest.js",
     routeKey: "/tribunaux/page",
     entryKey: "[project]/src/app/tribunaux/page",
-    maxBytes: 385_000,
+    // zod 4 : 400 363 octets (24/10/2026), relevé de 385 000 avec l'accord du propriétaire.
+    maxBytes: 402_000,
   },
   // Pages ajoutées par la session du 18/10 : budget à la mesure du 20/10/2026 + 10 %
   // (171 731 et 164 138 octets).
@@ -274,8 +282,9 @@ const routeBudgets = [
     routeKey: "/admin/pilotage/page",
     entryKey: "[project]/src/app/admin/pilotage/page",
     // 20/10/2026 : resserré de 540 000 à 500 000 par W8, puis porté à 520 000 (sous le plafond d'origine)
-    // par les cartes de la seconde vague (rappels, retours sur les signaux).
-    maxBytes: 520_000,
+    // par les cartes de la seconde vague (rappels, retours sur les signaux). zod 4 : 572 396 octets
+    // (24/10/2026), relevé à 574 000 avec l'accord du propriétaire.
+    maxBytes: 574_000,
   },
   {
     name: "admin-lawyers",
@@ -285,7 +294,8 @@ const routeBudgets = [
     // 534,843 bytes on 23/10/2026 (pending alert after sign-up in the shared providers, consent
     // state): the owner approved (23/10/2026) raising this budget from 530,000 to 535,000. The second
     // wave of the same day measured 536,104 bytes: raised to 537,000 with the owner's approval.
-    maxBytes: 537_000,
+    // zod 4 measured 594,371 bytes on 24/10/2026: raised to 596,000 with the owner's approval.
+    maxBytes: 596_000,
   },
   {
     name: "admin-compliance",
