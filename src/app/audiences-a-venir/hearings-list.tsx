@@ -21,8 +21,7 @@ const OPEN_DAYS_WITHOUT_FILTER = 2;
  * Les classes de `<Card as="section">` : `Card` passe par `cn` (tailwind-merge), qui alourdirait le
  * JavaScript initial de la page. Un test vérifie que les deux restent identiques.
  */
-export const CARD_CLASS =
-  "rounded-xl border border-line bg-white text-foreground shadow-sm p-4 sm:p-5";
+export const CARD_CLASS = "rounded-lg border border-line bg-white text-foreground p-4 sm:p-5";
 
 export type HearingDepartmentOption = { code: string; label: string; count: number };
 

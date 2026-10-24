@@ -37,9 +37,9 @@ export function Card<T extends ElementType = "div">({
   return (
     <Component
       className={cn(
-        "rounded-xl border border-line bg-white text-foreground shadow-sm",
+        "rounded-lg border border-line bg-white text-foreground",
         padded && "p-4 sm:p-5",
-        interactive && "transition-shadow hover:border-gold hover:shadow-md",
+        interactive && "transition-colors hover:border-gold",
         className,
       )}
       {...props}
@@ -57,7 +57,7 @@ const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
   secondary: "border border-line bg-white text-brand-navy hover:border-brand-navy",
   dark: "bg-brand-navy text-white hover:bg-brand-navy-soft",
   ghost: "text-brand-navy hover:bg-surface-tint",
-  danger: "border border-red-700 bg-white text-red-700 hover:bg-red-50",
+  danger: "border border-danger bg-white text-danger hover:bg-danger-tint",
 };
 
 const BUTTON_SIZES: Record<ButtonSize, string> = {
@@ -92,15 +92,22 @@ export function Button({
 
 // ── Badge ─────────────────────────────────────────────────────────────────
 
+/**
+ * Tons des pastilles (docs/design/fondations.md) : la couleur ne marque que ce qui demande
+ * l'attention. `neutral` pour une information (type de vente), `danger` pour l'urgent (vente
+ * aujourd'hui), `warning` pour ce qui est à surveiller (échéance proche, point à vérifier),
+ * `success` pour une donnée confirmée, `info` pour une aide. Deux pastilles au plus par carte, et
+ * toujours un libellé : la couleur seule ne porte jamais l'information.
+ */
 export type BadgeTone = "neutral" | "gold" | "success" | "warning" | "danger" | "info";
 
 const BADGE_TONES: Record<BadgeTone, string> = {
-  neutral: "border-line bg-surface-tint text-ink-soft",
+  neutral: "border-line bg-white text-brand-navy",
   gold: "border-gold/40 bg-gold/10 text-gold-text",
-  success: "border-emerald-700/30 bg-emerald-50 text-emerald-800",
-  warning: "border-amber-700/30 bg-amber-50 text-amber-900",
-  danger: "border-red-700/30 bg-red-50 text-red-800",
-  info: "border-sky-700/30 bg-sky-50 text-sky-900",
+  success: "border-success/25 bg-success-tint text-success",
+  warning: "border-warning/25 bg-warning-tint text-warning",
+  danger: "border-danger/25 bg-danger-tint text-danger",
+  info: "border-info/25 bg-info-tint text-info",
 };
 
 export function Badge({
@@ -108,13 +115,15 @@ export function Badge({
   className,
   ...props
 }: ComponentProps<"span"> & { tone?: BadgeTone }) {
+  // `text-caption` est ajoutée après la fusion : tailwind-merge la prend pour une couleur et la
+  // retirerait devant celle du ton (la déclarer dans sa configuration coûte 1 Ko par page).
   return (
     <span
-      className={cn(
-        "inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold",
+      className={`${cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-medium",
         BADGE_TONES[tone],
         className,
-      )}
+      )} text-caption`}
       {...props}
     />
   );

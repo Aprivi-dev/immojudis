@@ -56,7 +56,7 @@ describe("erreur globale", () => {
       });
       return container.innerHTML;
     })();
-    expect(html).toContain("rgb(238, 247, 255)");
+    expect(html).toContain("rgb(251, 249, 245)");
     expect(html).toContain("Réessayer");
     expect(html).not.toContain("rgb(7, 17, 31)");
   });

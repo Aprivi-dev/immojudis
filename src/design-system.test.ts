@@ -5,6 +5,10 @@ import { describe, expect, it } from "vitest";
 
 const ROOT = process.cwd();
 
+// Plafonds du cliquet, relevés le 24/10/2026 : à abaisser à chaque page migrée, jamais à relever.
+const RAW_PALETTE_CLASSES_MAX = 526;
+const TINY_TEXT_CLASSES_MAX = 116;
+
 // Couleurs qui ne peuvent pas passer par une classe ou une variable CSS :
 // e-mails (styles en ligne), image Open Graph, page d'erreur globale (sans feuille de style),
 // styles de la carte Mapbox (valeurs JavaScript) et pages légales à contenu figé.
@@ -70,6 +74,30 @@ describe("système visuel", () => {
     );
     expect(good.messages.filter((message) => message.ruleId === "no-restricted-syntax")).toEqual(
       [],
+    );
+  });
+
+  // Cliquet des fondations (docs/design/fondations.md) : la dette existante est comptée et ne peut
+  // que baisser. Une page migrée fait descendre ces plafonds ; une nouvelle classe brute fait
+  // échouer ce test. Utiliser les jetons (danger, warning, success, info, ink-soft, line…) et
+  // l'échelle de texte (12 px minimum, `text-caption` pour 13 px).
+  const productionFiles = () =>
+    files(join(ROOT, "src")).filter((path) => /\.tsx?$/.test(path) && !/\.test\./.test(path));
+  const count = (pattern: RegExp) =>
+    productionFiles().reduce(
+      (total, path) => total + [...readFileSync(path, "utf8").matchAll(pattern)].length,
+      0,
+    );
+
+  it("ne gagne aucune classe de couleur Tailwind brute (rouge, ambre, ardoise…)", () => {
+    const raw =
+      /\b(?:bg|text|border|ring|from|to|divide|outline|decoration|fill|stroke|placeholder)-(?:emerald|red|amber|green|orange|yellow|rose|sky|blue|slate|gray|zinc|teal|stone|neutral|indigo|violet|purple|pink|lime|cyan|fuchsia)-\d{2,3}\b/g;
+    expect(count(raw)).toBeLessThanOrEqual(RAW_PALETTE_CLASSES_MAX);
+  });
+
+  it("ne gagne aucun texte de moins de 12 px", () => {
+    expect(count(/\btext-\[(?:[0-9]|1[01])(?:\.\d+)?px\]/g)).toBeLessThanOrEqual(
+      TINY_TEXT_CLASSES_MAX,
     );
   });
 
