@@ -77,12 +77,7 @@ export function HomeProductTour() {
                   <span id={`product-tour-title-${screen.id}`} className={styles.tabTitle}>
                     {screen.title}
                   </span>
-                  <span
-                    id={`product-tour-description-${screen.id}`}
-                    className={styles.tabDescription}
-                  >
-                    {screen.description}
-                  </span>
+                  <span className={styles.tabDescription}>{screen.description}</span>
                 </span>
               </>
             ),

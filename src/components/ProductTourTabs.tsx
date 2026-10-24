@@ -16,8 +16,9 @@ const MOVES: Record<string, (index: number, count: number) => number> = {
 
 /**
  * Onglets verticaux de HomeProductTour (motif ARIA « tabs », activation automatique). Le contenu
- * de chaque onglet et de chaque panneau arrive déjà rendu par le serveur ; les identifiants
- * `product-tour-title-*` et `product-tour-description-*` y sont posés.
+ * de chaque onglet et de chaque panneau arrive déjà rendu par le serveur. Un onglet est nommé par
+ * son texte visible (contrôle Axe label-content-name-mismatch) : son titre, plus sa description
+ * quand il est sélectionné ; chaque panneau est nommé par le titre `product-tour-title-*`.
  */
 export function ProductTourTabs({
   label,
@@ -54,8 +55,6 @@ export function ProductTourTabs({
             role="tab"
             aria-selected={index === active}
             aria-controls={`product-tour-panel-${item.id}`}
-            aria-labelledby={`product-tour-title-${item.id}`}
-            aria-describedby={`product-tour-description-${item.id}`}
             tabIndex={index === active ? 0 : -1}
             onClick={() => setActive(index)}
             onKeyDown={(event) => onKeyDown(event, index)}

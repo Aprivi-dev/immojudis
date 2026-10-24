@@ -16,9 +16,11 @@ describe("HomeProductTour", () => {
       "false",
     ]);
     expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
-    expect(screen.getByRole("tab", { name: "La carte des ventes" })).toBe(tabs[0]);
+    // Named by its visible text (title, then description), never by a hidden label.
+    expect(screen.getByRole("tab", { name: /^La carte des ventes/ })).toBe(tabs[0]);
+    expect(tabs.every((tab) => !tab.hasAttribute("aria-labelledby"))).toBe(true);
 
-    fireEvent.click(screen.getByRole("tab", { name: "L’enchère plafond" }));
+    fireEvent.click(screen.getByRole("tab", { name: /^L’enchère plafond/ }));
     expect(screen.getByRole("tabpanel", { name: "L’enchère plafond" })).toBeTruthy();
   });
 
