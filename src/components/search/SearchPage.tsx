@@ -75,10 +75,10 @@ import { useFirstGestureStart } from "./use-first-gesture-start";
 import { WHOLE_FRANCE_PATCH, activeFilterChips, hasGeographicFilter } from "./active-filter-chips";
 import { Footer, MapPanelSkeleton, MobileMapToggle } from "./SearchFilters";
 import {
+  CsvExportButton,
   ResultsSummary,
   ResultsViewToggle,
   SearchHeader,
-  SortByDateShortcut,
   SortDropdown,
   type SaveSearchOptions,
 } from "./SearchHeader";
@@ -903,8 +903,6 @@ export function SearchPage({
         isFetching={listBusy}
         filtersOpen={filtersOpen}
         savingAlert={savingAlert}
-        exportingCsv={exportingCsv}
-        csvExportLocked={csvExportLocked}
         signedIn={Boolean(user)}
         dailyAlertsAllowed={entitlementsData?.plan.hasAnalysisAccess === true}
         emailRecapEnabled={emailRecapEnabled}
@@ -913,7 +911,6 @@ export function SearchPage({
         onFiltersOpenChange={setFiltersOpen}
         onReset={resetFilters}
         onSaveSearch={saveSearch}
-        onExportCsv={exportCsv}
         onToggleLayout={() => setWideMap((value) => !value)}
       />
 
@@ -931,52 +928,60 @@ export function SearchPage({
           aria-label="Résultats de recherche"
           aria-busy={listBusy}
         >
-          <div className="flex flex-wrap items-center justify-between gap-1 border-b border-line-soft bg-white pr-4">
-            <ResultsSummary
-              search={search}
-              displayCount={displayCount}
-              hasLocalFilters={hasLocalFilters}
-              isLoading={
-                isInitialLoading || publicTotalMissing || (isCountLoading && !publicListShown)
-              }
-              hasError={Boolean(error) && !pageOutOfRange && rawSales.length === 0}
-              geocoding={geocoding}
-              refreshing={listBusy && !isInitialLoading}
-            />
+          {/* En-tête des résultats (maquette /sales du 24/10/2026) : titre et compteur, une rangée de
+              réglages (tri, cartes ou tableau, type de vente), puis une ligne de liens d'aide. */}
+          <div className="border-b border-line-soft bg-white">
+            <div className="flex flex-wrap items-center justify-between gap-1 pr-4">
+              <ResultsSummary
+                search={search}
+                displayCount={displayCount}
+                hasLocalFilters={hasLocalFilters}
+                isLoading={
+                  isInitialLoading || publicTotalMissing || (isCountLoading && !publicListShown)
+                }
+                hasError={Boolean(error) && !pageOutOfRange && rawSales.length === 0}
+                geocoding={geocoding}
+                refreshing={listBusy && !isInitialLoading}
+              />
 
-            <div className="flex flex-wrap items-center gap-2 px-4 pb-2 sm:px-0">
-              <SortDropdown
-                preview={isPreview}
-                hasCenter={Boolean(center)}
-                investmentScore={investmentSortAllowed}
-                sort={visibleSearchSort(search.sort, {
-                  allowInvestmentScore: investmentSortAllowed,
-                })}
-                onChange={(sort) => chooseSearch({ sort })}
-              />
-              <SortByDateShortcut
-                sort={visibleSearchSort(search.sort, {
-                  allowInvestmentScore: investmentSortAllowed,
-                })}
-                onChange={(sort) => chooseSearch({ sort })}
-              />
-              <ResultsViewToggle view={resultsView} onChange={changeResultsView} />
+              <div className="flex flex-wrap items-center gap-2 px-4 pb-2 sm:px-0">
+                <SortDropdown
+                  preview={isPreview}
+                  hasCenter={Boolean(center)}
+                  investmentScore={investmentSortAllowed}
+                  sort={visibleSearchSort(search.sort, {
+                    allowInvestmentScore: investmentSortAllowed,
+                  })}
+                  onChange={(sort) => chooseSearch({ sort })}
+                />
+                <ResultsViewToggle view={resultsView} onChange={changeResultsView} />
+              </div>
             </div>
-          </div>
-          <RankingExplanation investmentScore={investmentSortAllowed} />
-          <HearingsWeekBanner />
-          <div className="border-b border-line-soft bg-white px-4 py-3 sm:px-5">
-            <SaleTypeFilter
-              compact
-              value={draft.saleType}
-              onChange={(saleType) =>
-                setDraft((current) => ({
-                  ...current,
-                  saleType,
-                  tribunal: !saleType || saleType === "tribunal" ? current.tribunal : "",
-                }))
-              }
-            />
+            <div className="px-4 pb-1 sm:px-5">
+              <SaleTypeFilter
+                compact
+                value={draft.saleType}
+                onChange={(saleType) =>
+                  setDraft((current) => ({
+                    ...current,
+                    saleType,
+                    tribunal: !saleType || saleType === "tribunal" ? current.tribunal : "",
+                  }))
+                }
+              />
+            </div>
+            <div className="flex flex-wrap items-start gap-x-5 px-4 pb-2 text-xs text-ink-soft sm:px-5">
+              <HearingsWeekBanner inline />
+              <RankingExplanation investmentScore={investmentSortAllowed} inline />
+              {/* Export réservé au grand écran, comme avant dans la barre de filtres. */}
+              <span className="hidden lg:inline-flex">
+                <CsvExportButton
+                  exporting={exportingCsv}
+                  locked={csvExportLocked}
+                  onClick={exportCsv}
+                />
+              </span>
+            </div>
           </div>
           <SaleComparisonBar
             key={comparisonScope ?? "loading"}

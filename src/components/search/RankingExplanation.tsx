@@ -46,9 +46,22 @@ export const RANKING_EXPLANATION_INVESTMENT_NOTE =
  * Encart repliable (`<details>`) : natif, accessible au clavier et aux lecteurs d'écran, il
  * fonctionne avant l'hydratation et n'ajoute aucun JavaScript au client.
  */
-export function RankingExplanation({ investmentScore = false }: { investmentScore?: boolean }) {
+export function RankingExplanation({
+  investmentScore = false,
+  inline = false,
+}: {
+  investmentScore?: boolean;
+  /** Dans la ligne d'aide sous le titre des résultats : ouvert, l'encart prend toute la largeur. */
+  inline?: boolean;
+}) {
   return (
-    <details className="group border-t border-line-soft bg-white px-4 py-2 text-xs text-ink-soft sm:px-5">
+    <details
+      className={
+        inline
+          ? "group text-xs text-ink-soft open:basis-full"
+          : "group border-t border-line-soft bg-white px-4 py-2 text-xs text-ink-soft sm:px-5"
+      }
+    >
       <summary className="inline-flex min-h-8 cursor-pointer items-center font-semibold text-brand-navy underline underline-offset-2 hover:text-gold-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft">
         {RANKING_EXPLANATION_TITLE}
       </summary>
