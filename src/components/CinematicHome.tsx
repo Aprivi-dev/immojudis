@@ -95,11 +95,6 @@ export function CinematicHero({ summary = null }: { summary?: HomeCatalogueSumma
           <Link className={styles.exampleLink} href="/annonce-exemple" prefetch={false}>
             Voir une analyse exemple <ArrowRight size={18} aria-hidden="true" />
           </Link>
-          <p className={styles.caption}>
-            Une autre façon
-            <br />
-            d’envisager l’immobilier.
-          </p>
         </div>
 
         <article id="exemples" className={styles.dossier} aria-labelledby="home-dossier-title">

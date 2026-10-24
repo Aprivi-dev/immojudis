@@ -45,20 +45,11 @@ describe("home page images", () => {
     expect(preloads[1]).toContain('fetchPriority="high"');
   });
 
-  it("does not fetch the example photo a second time further down the page", () => {
-    // The second block lazy-loads the same URLs: one download, served from the cache.
-    const [inOffers] = imageTags(discovery, "dossier-apartment");
-    expect(attribute(inOffers, "loading")).toBe("lazy");
+  it("shows the example photo only in the hero, never a second time further down the page", () => {
+    // The offers section used to repeat the same photo; it now leaves the product screens of
+    // HomeProductTour to illustrate the page.
+    expect(imageTags(discovery, "dossier-apartment")).toHaveLength(0);
     expect(discovery).not.toMatch(/rel="preload"/);
-  });
-
-  it("asks for the same size and quality of dossier-apartment.webp in both blocks", () => {
-    const [inHero] = imageTags(hero, "dossier-apartment");
-    const [inOffers] = imageTags(discovery, "dossier-apartment");
-    expect(inHero && inOffers).toBeTruthy();
-    expect(attribute(inOffers, "sizes")).toBe(attribute(inHero, "sizes"));
-    expect(attribute(inOffers, "srcset")).toBe(attribute(inHero, "srcset"));
-    expect(attribute(inOffers, "src")).toBe(attribute(inHero, "src"));
   });
 });
 

@@ -63,6 +63,7 @@
 }
 
 .method {
+  border-top: 1px solid var(--line-warm);
   background: var(--ivory);
   scroll-margin-top: 100px;
 }
@@ -231,66 +232,40 @@
 }
 
 .offers {
+  border-top: 1px solid var(--line-warm);
+  background: var(--surface);
+}
+
+.offersLayout {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  background: var(--ivory);
-}
-
-.offersImage {
-  position: relative;
-  min-height: 680px;
-  overflow: hidden;
-}
-
-.offersImage > img {
-  object-fit: cover;
-}
-
-.imageCaption {
-  position: absolute;
-  right: 25px;
-  bottom: 24px;
-  left: 25px;
-  display: flex;
-  flex-direction: column;
-  width: fit-content;
-  max-width: calc(100% - 50px);
-  padding: 10px 14px;
-  background: color-mix(in srgb, var(--brand-navy) 85%, transparent);
-  color: #ffffff;
-  font-size: 11px;
-  line-height: 1.45;
-}
-
-.imageCaption strong {
-  color: var(--hd-gold-light);
-  font-size: 10px;
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
-}
-
-.offersCopy {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  padding: 52px clamp(32px, 4vw, 64px);
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.45fr);
+  align-items: start;
+  gap: clamp(32px, 4vw, 72px);
+  padding-block: 88px 84px;
 }
 
 .offersInner {
-  width: 100%;
-  max-width: 650px;
+  min-width: 0;
 }
 
 .offers h2 {
   margin-top: 23px;
-  font-size: clamp(40px, 3.5vw, 55px);
-  line-height: 0.99;
+  font-size: clamp(40px, 4vw, 60px);
+  line-height: 1.02;
+}
+
+.offers h2 em {
+  color: var(--hd-gold);
+  font-weight: 400;
 }
 
 .plans {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin-top: 46px;
+  padding: clamp(26px, 3vw, 40px);
+  border: 1px solid var(--line-warm);
+  border-radius: 10px;
+  background: var(--ivory);
 }
 
 .plan {
@@ -319,8 +294,17 @@
   color: var(--navy);
   font-family: var(--font-display), Georgia, serif;
   font-variant-numeric: lining-nums;
-  font-size: clamp(36px, 3.7vw, 54px);
   line-height: 1;
+  white-space: nowrap;
+}
+
+.planAmount {
+  font-size: clamp(40px, 3.7vw, 54px);
+}
+
+.planUnit {
+  color: var(--ink-strong);
+  font-size: clamp(19px, 1.6vw, 23px);
 }
 
 .plan ul {
@@ -394,55 +378,6 @@
   color: var(--ink-soft);
   font-size: 12px;
   line-height: 1.5;
-}
-
-.banner {
-  position: relative;
-  min-height: 280px;
-  overflow: hidden;
-  background: var(--brand-navy);
-  color: #ffffff;
-}
-
-.bannerImage {
-  object-fit: cover;
-  object-position: center 58%;
-}
-
-.bannerShade {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--brand-navy) 91%, transparent) 0%,
-    color-mix(in srgb, var(--brand-navy) 65%, transparent) 48%,
-    color-mix(in srgb, var(--brand-navy) 19%, transparent) 100%
-  );
-}
-
-.bannerContent {
-  position: relative;
-  z-index: 1;
-  padding-block: 64px;
-}
-
-.banner .eyebrow {
-  color: var(--hd-gold-light);
-}
-
-.banner h2 {
-  max-width: 1100px;
-  margin-top: 19px;
-  font-size: clamp(44px, 4.8vw, 68px);
-  line-height: 0.96;
-}
-
-.bannerContent > p:last-child {
-  margin-top: 18px;
-  color: #ffffff;
-  font-family: var(--font-display), Georgia, serif;
-  font-size: 29px;
-  line-height: 1.25;
 }
 
 .footer {
@@ -531,10 +466,6 @@
     --gutter: 42px;
   }
 
-  .offers {
-    grid-template-columns: 0.8fr 1.2fr;
-  }
-
   .steps {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 32px 42px;
@@ -549,12 +480,8 @@
     margin-top: 6px;
   }
 
-  .offersCopy {
-    padding-inline: 28px;
-  }
-
-  .plans {
-    margin-top: 37px;
+  .offersLayout {
+    grid-template-columns: 1fr;
   }
 
   .plan,
@@ -612,17 +539,9 @@
     gap: 22px;
   }
 
-  .offers {
-    display: block;
-  }
-
-  .offersImage {
-    min-height: 0;
-    aspect-ratio: 1.32;
-  }
-
-  .offersCopy {
-    padding: 59px var(--gutter) 67px;
+  .offersLayout {
+    gap: 34px;
+    padding-block: 58px 64px;
   }
 
   .offers h2 {
@@ -632,7 +551,7 @@
   .plans {
     grid-template-columns: 1fr;
     gap: 0;
-    margin-top: 39px;
+    padding: 26px 22px 6px;
   }
 
   .plan,
@@ -650,23 +569,6 @@
     padding-top: 31px;
     border-top: 1px solid var(--line-warm);
     border-left: 0;
-  }
-
-  .banner {
-    min-height: 320px;
-  }
-
-  .bannerContent {
-    padding-block: 74px 69px;
-  }
-
-  .banner h2 {
-    font-size: 47px;
-  }
-
-  .bannerContent > p:last-child {
-    max-width: 340px;
-    font-size: 19px;
   }
 
   .footer {
@@ -745,17 +647,6 @@
   .root h2,
   .offers h2 {
     font-size: 38px;
-  }
-
-  .imageCaption {
-    right: 14px;
-    bottom: 14px;
-    left: 14px;
-    max-width: calc(100% - 28px);
-  }
-
-  .banner h2 {
-    font-size: 43px;
   }
 }
 
