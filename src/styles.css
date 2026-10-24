@@ -48,7 +48,9 @@
 
 /*
  * Design system — Immojudis
- * Direction 2026 : ciel clair / cuivre judiciaire / crème, reprise de la homepage.
+ * Direction 2026 : papier chaud / cuivre judiciaire / marine, reprise de la homepage.
+ * Règles communes (fond, couleurs par rôle, échelle de texte, arrondis, pastilles) :
+ * docs/design/fondations.md.
  * Typo : Cormorant Garamond (brand/display) + IBM Plex Sans (UI/body).
  * Référence homepage :
  * - Logo : Cormorant Garamond 600, 32px desktop.
@@ -59,10 +61,15 @@
  */
 
 @theme inline {
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
+  /* Fondations (docs/design/fondations.md) : 4 px repères, 6 px contrôles, 10 px cartes et blocs
+     (lg et xl), pilule pour les pastilles. Les rayons 2xl et plus restent pour l'existant. */
+  /* Taille « légende » de l'échelle de texte : 13 px (12 px reste le minimum, pour les surtitres). */
+  --text-caption: 0.8125rem;
+  --text-caption--line-height: 1.45;
+  --radius-sm: calc(var(--radius) - 6px);
+  --radius-md: calc(var(--radius) - 4px);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-xl: var(--radius);
   --radius-2xl: calc(var(--radius) + 8px);
   --radius-3xl: calc(var(--radius) + 12px);
   --radius-4xl: calc(var(--radius) + 16px);
@@ -136,11 +143,12 @@
 }
 
 :root {
-  --radius: 0.5rem;
+  --radius: 0.625rem;
 
   /* Immojudis core */
   --brand-navy: #132238;
-  --background: #eef7ff;
+  /* Fond « papier chaud » du site (décision du 24/10/2026, remplace le ciel #eef7ff). */
+  --background: #fbf9f5;
   --foreground: #132238;
   --surface: #fffaf2;
   --gold: #c98d45;
@@ -153,11 +161,11 @@
   /* Neutres de l'interface : encres, filets et fonds */
   --ink-strong: #3d4b57;
   --ink-soft: #526170;
-  --line: #cbd5df;
-  --line-soft: #dce3eb;
+  --line: #d8cfc1;
+  --line-soft: #e8e1d6;
   --line-warm: #e1d8ca;
-  --surface-muted: #f7f8fa;
-  --surface-tint: #eef3f8;
+  --surface-muted: #f8f5ef;
+  --surface-tint: #f3eee5;
   --sand: #efe6d6;
   --night: #07111f;
   /* États (toujours doublés d'un libellé ou d'une icône) : texte ≥ 4,5:1 sur leur teinte */
@@ -180,7 +188,7 @@
   --primary-foreground: var(--brand-navy);
   --secondary: #f5ecdf;
   --secondary-foreground: var(--foreground);
-  --muted: #e9f2fb;
+  --muted: #f4efe6;
   --muted-foreground: rgb(19 34 56 / 68%);
   --accent: rgb(201 141 69 / 12%);
   --accent-foreground: var(--gold-soft);

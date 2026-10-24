@@ -39,6 +39,22 @@ describe("primitives", () => {
     expect(container.querySelector("article")?.className).toContain("border-line");
   });
 
+  it("aucune pastille ni bouton ne reprend une couleur Tailwind brute", () => {
+    const tones = ["neutral", "gold", "success", "warning", "danger", "info"] as const;
+    const { container } = render(
+      <>
+        {tones.map((tone) => (
+          <Badge key={tone} tone={tone}>
+            {tone}
+          </Badge>
+        ))}
+      </>,
+    );
+    const classes = [container.innerHTML, buttonClasses({ variant: "danger" })].join(" ");
+    expect(classes).not.toMatch(/-(?:red|amber|emerald|sky|slate|gray)-\d/);
+    expect(classes).not.toMatch(/shadow-/);
+  });
+
   it("PageShell pose le contenu principal, un seul h1 et aucun décalage codé en dur", () => {
     const { container } = render(
       <PageShell eyebrow="Mon espace" title="Mes alertes">
