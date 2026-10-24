@@ -44,13 +44,13 @@ const isoDateTimeSchema = z.string().datetime({ offset: true });
 
 const storedSnapshotSchema = z
   .object({
-    id: z.string().uuid(),
+    id: z.string().guid(),
     scope_type: z.enum(["national", "tribunal"]),
-    court_id: z.string().uuid().nullable(),
+    court_id: z.string().guid().nullable(),
     court_code: z.string().min(1).nullable(),
     court_name: z.string().min(1).nullable(),
     judicial_region: z.string().min(1).nullable(),
-    parent_snapshot_id: z.string().uuid().nullable(),
+    parent_snapshot_id: z.string().guid().nullable(),
     round_kind: z.enum(["initial", "postponed", "surenchere", "reiteration"]),
     window_months: tribunalStatisticsWindowMonthsSchema,
     period_start: isoDateSchema,
@@ -74,7 +74,7 @@ const storedSnapshotSchema = z
     postponement_delay_sample_size: storedIntegerSchema,
     double_reviewed_count: storedIntegerSchema,
     outcome_coverage: storedProbabilitySchema,
-    statistics: z.unknown(),
+    statistics: z.unknown().optional(),
     source_manifest_hash: hashSchema,
     statistics_hash: hashSchema,
     computed_at: isoDateTimeSchema,

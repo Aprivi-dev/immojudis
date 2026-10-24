@@ -45,7 +45,7 @@ const DVF_BACKTEST_COLUMNS =
   "id,source_mutation_id,sale_date,total_price_eur,built_surface_m2,land_surface_m2,price_per_m2,property_type,dvf_property_type_code,address,city,postal_code,parcel_id,department,latitude,longitude,source";
 
 export const valuationBacktestQuerySchema = z.object({
-  saleId: z.string().uuid(),
+  saleId: z.string().guid(),
   radiusM: z.coerce.number().int().min(300).max(2_000).default(1_000),
   months: z.coerce.number().int().min(12).max(84).default(48),
   maxTests: z.coerce.number().int().min(5).max(80).default(30),

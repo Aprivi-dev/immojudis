@@ -36,7 +36,7 @@ export type LawyerStatement = {
 
 const count = z.coerce.number().int().nonnegative();
 const statementRowSchema = z.object({
-  lawyer_id: z.string().uuid(),
+  lawyer_id: z.string().guid(),
   display_name: z.string(),
   firm_name: z.string().nullish(),
   impressions: count,

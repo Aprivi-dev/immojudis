@@ -93,7 +93,7 @@ import {
 import { listingValuationConflict } from "./listing-evidence";
 
 export const propertyReportRequestSchema = z.object({
-  saleId: z.string().uuid(),
+  saleId: z.string().guid(),
   reportKind: z.enum(["opportunity", "market", "bid_ceiling"]).default("opportunity"),
   title: z.string().trim().min(3).max(140).optional(),
   userNotes: z.string().trim().max(2500).optional(),

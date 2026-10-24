@@ -27,7 +27,9 @@ export const workspaceNotesSchema = z
     privateMode: z.boolean().default(true),
     professionalDossier: pilotDraftSchema.optional(),
   })
-  .default(DEFAULT_WORKSPACE_NOTES);
+  // `prefault` reprend le `.default()` de zod 3 : la valeur par défaut repasse par le schéma et
+  // donne un objet neuf à chaque lecture (le `.default()` de zod 4 la renverrait telle quelle).
+  .prefault(DEFAULT_WORKSPACE_NOTES);
 
 export const documentReviewSchema = z
   .object({
@@ -40,23 +42,28 @@ export const documentReviewSchema = z
     documentType: z.string().trim().max(120).nullable().default(null),
     documentUrl: z.string().trim().max(2000).nullable().default(null),
     readPages: z
-      .preprocess((value) => normalizeBooleanRecord(value as Json), z.record(z.boolean()))
+      .preprocess(
+        (value) => normalizeBooleanRecord(value as Json),
+        z.record(z.string(), z.boolean()),
+      )
       .default(DEFAULT_DOCUMENT_REVIEW.readPages),
     highlightedExcerpt: z.string().max(5000).nullable().default(null),
   })
-  .default(DEFAULT_DOCUMENT_REVIEW);
+  .prefault(DEFAULT_DOCUMENT_REVIEW);
 
-export const documentReviewsSchema = z.record(documentReviewSchema).default({});
+export const documentReviewsSchema = z.record(z.string(), documentReviewSchema).default({});
 
 export const saleWorkspaceInputSchema = z.object({
-  saleId: z.string().uuid(),
+  saleId: z.string().guid(),
   trackingStatus: z.enum(SALE_WORKSPACE_STATUSES).optional(),
   userMaxBidEur: z.number().finite().min(0).nullable().optional(),
   targetYieldPct: z.number().finite().min(0).max(100).nullable().optional(),
-  privateNotes: workspaceNotesSchema.optional(),
-  checklist: z.record(z.boolean()).optional(),
-  alertPreferences: z.record(z.boolean()).optional(),
-  documentReviews: documentReviewsSchema.optional(),
+  // Zod 4 appliquerait la valeur par défaut sous `.optional()` : sans `unwrap()`, des notes ou des
+  // revues omises écraseraient celles déjà enregistrées (voir `hasInput`).
+  privateNotes: workspaceNotesSchema.unwrap().optional(),
+  checklist: z.record(z.string(), z.boolean()).optional(),
+  alertPreferences: z.record(z.string(), z.boolean()).optional(),
+  documentReviews: documentReviewsSchema.unwrap().optional(),
   nextAction: z.string().trim().max(300).nullable().optional(),
   nextActionDueAt: z.string().datetime().nullable().optional(),
 });
@@ -80,7 +87,7 @@ export type SaleWorkspaceResponse = {
 };
 
 export const professionalPilotSaveSchema = z.object({
-  saleId: z.string().uuid(),
+  saleId: z.string().guid(),
   expectedUpdatedAt: z.string().datetime({ offset: true }).nullable(),
   draft: pilotDraftSchema,
 });

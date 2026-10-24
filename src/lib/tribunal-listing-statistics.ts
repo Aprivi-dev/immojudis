@@ -46,7 +46,7 @@ export const tribunalListingStatisticsQuerySchema = z
         message: "Code tribunal invalide.",
       })
       .optional(),
-    saleId: z.string().uuid().optional(),
+    saleId: z.string().guid().optional(),
     historyMonths: z.preprocess(
       (value) => (value === undefined ? 3 : Number(value)),
       tribunalJudicialActivityHistoryMonthsSchema,

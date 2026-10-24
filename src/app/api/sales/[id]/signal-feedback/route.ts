@@ -10,7 +10,7 @@ import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import { saleSignalFeedbackSchema } from "@/lib/sale-signal-feedback";
 import { recordSaleSignalFeedback } from "@/lib/sale-signal-feedback.server";
 
-const saleIdSchema = z.string().uuid();
+const saleIdSchema = z.string().guid();
 
 const PRIVATE_HEADERS = { "cache-control": "private, no-store", vary: "authorization" };
 

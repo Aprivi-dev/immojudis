@@ -30,7 +30,7 @@ export function normalizeFavoriteDossierStatus(value: unknown): FavoriteDossierS
 
 export const favoriteDossierInputSchema = z
   .object({
-    saleId: z.string().uuid(),
+    saleId: z.string().guid(),
     /** `null` efface le statut ; absent : le statut n'est pas modifié. */
     personalStatus: z.enum(FAVORITE_DOSSIER_STATUSES).nullable().optional(),
     /**
@@ -53,7 +53,7 @@ export const favoriteDossierInputSchema = z
 export type FavoriteDossierInput = z.input<typeof favoriteDossierInputSchema>;
 export type FavoriteDossierPayload = z.output<typeof favoriteDossierInputSchema>;
 
-export const favoriteDossierQuerySchema = z.object({ saleId: z.string().uuid() });
+export const favoriteDossierQuerySchema = z.object({ saleId: z.string().guid() });
 
 export type FavoriteDossier = {
   saleId: string;

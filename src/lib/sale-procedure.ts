@@ -44,7 +44,7 @@ const sourceSchema = z
 const factSchema = z
   .object({
     key: z.string(),
-    value: z.unknown(),
+    value: z.unknown().optional(),
     status: verificationStatusSchema,
     evidence: z.array(z.string()).default([]),
     source_url: z.string().nullable().optional(),

@@ -17,7 +17,7 @@ const evidenceRightsReviewSchema = z.object({
   rightsStatus: z.enum(["authorized", "restricted"]),
   notes: z.string().trim().max(1000).nullable().optional(),
 });
-const evidenceAssetIdSchema = z.string().uuid();
+const evidenceAssetIdSchema = z.string().guid();
 const privateEvidenceBucket = "information-agent-evidence";
 
 const publicationRevocationConflict = new PublicApiError(
