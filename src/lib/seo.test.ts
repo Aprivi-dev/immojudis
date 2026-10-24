@@ -13,7 +13,9 @@ import {
   saleReference,
   saleSeoDescription,
   saleSeoTitle,
+  saleShortHeading,
   saleStructuredData,
+  saleVenueSentence,
   tribunalCityName,
   tribunalDisplayName,
 } from "./seo";
@@ -62,6 +64,27 @@ describe("sale headline", () => {
 
   it("is the generic title when there is no sale", () => {
     expect(saleHeadline(null)).toBe(GENERIC_SALE_SEO_TITLE);
+  });
+});
+
+describe("short heading of the public page", () => {
+  it("names the property, its surface and its city, without the sale type nor the date", () => {
+    expect(saleShortHeading(sale())).toBe("Appartement de 50 m² à Romainville");
+  });
+
+  it("leaves out what is unknown", () => {
+    expect(saleShortHeading(sale({ app_surface_m2: null }))).toBe("Appartement à Romainville");
+    expect(saleShortHeading(sale({ city: null }))).toBe("Appartement de 50 m²");
+    expect(saleShortHeading(sale({ property_type: null, app_surface_m2: null, city: null }))).toBe(
+      "Bien immobilier",
+    );
+    expect(saleShortHeading(null)).toBe(GENERIC_SALE_SEO_TITLE);
+  });
+
+  it("says the type of sale in full at the head of the subtitle", () => {
+    expect(saleVenueSentence(sale())).toBe("Vente au tribunal");
+    expect(saleVenueSentence(sale({ sale_venue_type: "notary" }))).toBe("Vente chez le notaire");
+    expect(saleVenueSentence(sale({ sale_venue_type: "state" }))).toBe("Vente par l’État");
   });
 
   it("never gives two different lots the same reference", () => {
@@ -178,7 +201,8 @@ describe("sale structured data", () => {
       {
         "@type": "ListItem",
         position: 3,
-        name: expect.stringContaining("Romainville"),
+        // Le même libellé que le fil d'Ariane visible et le titre de la page.
+        name: "Appartement de 50 m² à Romainville",
         item: `${origin}/sales/005a914d-563c-427b-88a4-740cbf851afb`,
       },
     ]);

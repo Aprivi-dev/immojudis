@@ -27,9 +27,9 @@ describe("SalePublicPreview", () => {
         requestedHash="#proofs"
       />,
     );
-    // Le bloc sous le prix et la section « Consulter le dossier » mènent au même endroit.
+    // Un seul bouton de compte sur la page, dans la synthèse (maquette validée du 24/10/2026).
     const links = screen.getAllByRole("link", { name: /Créer mon compte gratuit/ });
-    expect(links).toHaveLength(2);
+    expect(links).toHaveLength(1);
     for (const link of links) {
       const params = new URL(link.getAttribute("href")!, "https://example.test").searchParams;
       expect(params.get("redirect")).toBe("/sales/sale-1?from=%2Fsales%3Fcity%3DToulouse#proofs");
@@ -83,10 +83,8 @@ describe("SalePublicPreview", () => {
       lawyer_contact: "confidential@example.test",
     });
 
-    expect(screen.getByText("Bien immobilier vendu chez le notaire")).toBeTruthy();
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toContain(
-      "vente chez le notaire",
-    );
+    // Le type de vente reste écrit en toutes lettres près du titre, dans le sous-titre.
+    expect(screen.getByText(/^Vente chez le notaire/)).toBeTruthy();
     expect(screen.getAllByText("Vente notariale").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("Modalités à consulter dans le dossier")).toBeTruthy();
     expect(screen.getByText("Un seul catalogue, plusieurs procédures")).toBeTruthy();
@@ -239,10 +237,14 @@ describe("SalePublicPreview", () => {
       sale_date: "2026-10-20T09:00:00+02:00",
       tribunal: "TJ Bobigny",
     });
+    // Titre court ; le type de vente, le département et la date passent dans le sous-titre.
     const heading = screen.getByRole("heading", { level: 1 });
-    expect(heading.textContent).toContain(
-      "Appartement 50 m² à Romainville (93) – vente au tribunal le 20 octobre 2026",
-    );
+    expect(heading.firstChild?.textContent).toBe("Appartement de 50 m² à Romainville");
+    expect(
+      screen.getByText(
+        "Vente au tribunal · Seine-Saint-Denis (93) · audience le 20 octobre 2026 à 9 h 00",
+      ),
+    ).toBeTruthy();
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
   });
 
@@ -284,8 +286,10 @@ describe("SalePublicPreview", () => {
     expect(facts.textContent).toContain("92 m²");
     expect(facts.textContent).toContain("4");
     expect(facts.textContent).toContain("Pau · 64");
-    expect(facts.textContent).toContain("20 octobre 2026 à 9 h 30");
-    expect(facts.textContent).toContain("Tribunal judiciaire de Pau");
+    // La date et le tribunal sont dans la synthèse, sous la mise à prix.
+    const summary = screen.getByRole("complementary", { name: "Synthèse de la vente" });
+    expect(summary.textContent).toContain("20 octobre 2026 à 9 h 30");
+    expect(summary.textContent).toContain("Tribunal judiciaire de Pau");
     expect(screen.getByRole("img", { name: /Photo du bien/ })).toBeTruthy();
   });
 
@@ -299,8 +303,9 @@ describe("SalePublicPreview", () => {
     const facts = screen.getByText("Type de bien").closest("dl")!;
     expect(facts.textContent).not.toContain("Surface");
     expect(facts.textContent).not.toContain("Pièces");
-    expect(facts.textContent).toContain("23 octobre 2026");
-    expect(facts.textContent).not.toMatch(/\d h \d{2}/);
+    const summary = screen.getByRole("complementary", { name: "Synthèse de la vente" });
+    expect(summary.textContent).toContain("23 octobre 2026");
+    expect(summary.textContent).not.toMatch(/\d h \d{2}/);
     expect(screen.queryByRole("img")).toBeNull();
   });
 
@@ -325,6 +330,13 @@ describe("SalePublicPreview", () => {
   });
 
   describe("bloc d'inscription sous le prix", () => {
+    /** L'inscription suit le prix dans la synthèse, après la date, le lieu et les conditions. */
+    const followsPrice = (block: HTMLElement) => {
+      const price = screen.getByText(/^Mise à prix$|^Prix publié$/).closest("[class*=priceBlock]")!;
+      expect(price.compareDocumentPosition(block) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(price.parentElement).toBe(block.parentElement);
+    };
+
     it("vient juste après le prix, avec la phrase, le bouton et la ligne d'accès commune", () => {
       renderPreview({ sale_venue_type: "tribunal", starting_price_eur: 59_000 });
       const block = screen.getByTestId("public-signup");
@@ -333,14 +345,12 @@ describe("SalePublicPreview", () => {
       );
       expect(block.textContent).toContain(FREE_ACCESS_LINE);
       expect(within(block).getByRole("link", { name: /Créer mon compte gratuit/ })).toBeTruthy();
-      const priceBlock = screen.getByText("Prix de départ, hors frais").parentElement!;
-      expect(priceBlock.nextElementSibling).toBe(block);
+      followsPrice(block);
     });
 
-    it("suit le prix aussi pour une vente notariale, dont le prix passe après les faits", () => {
+    it("suit le prix aussi pour une vente notariale", () => {
       renderPreview({ sale_venue_type: "notary", starting_price_eur: 59_000 });
-      const block = screen.getByTestId("public-signup");
-      expect(block.previousElementSibling?.textContent).toContain("Mise à prix");
+      followsPrice(screen.getByTestId("public-signup"));
     });
 
     it("dit « les autres photos » quand une photo est déjà visible, « les photos » sinon", () => {
@@ -462,10 +472,14 @@ describe("SalePublicPreview", () => {
       );
       // Le libellé est exclu des extraits de recherche.
       expect(note.querySelector("[data-nosnippet]")?.textContent).toBe(label);
-      // Sous le prix, dans le même bloc : l'inscription le suit toujours.
+      // Sous le prix, dans le même bloc : l'inscription le suit toujours, dans la synthèse.
       const priceBlock = screen.getByText("Prix de départ, hors frais").parentElement!;
       expect(priceBlock.contains(note)).toBe(true);
-      expect(priceBlock.nextElementSibling).toBe(screen.getByTestId("public-signup"));
+      const signup = screen.getByTestId("public-signup");
+      expect(priceBlock.parentElement).toBe(signup.parentElement);
+      expect(
+        priceBlock.compareDocumentPosition(signup) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
     });
 
     it("renvoie à la page de méthode", () => {
@@ -756,7 +770,7 @@ describe("SalePublicPreview", () => {
       department: "64",
       has_garden: true,
     });
-    const description = screen.getByRole("region", { name: "Le bien en bref" });
+    const description = screen.getByRole("region", { name: "Le bien" });
     expect(description.textContent).toContain(
       "Maison de 92 m², sur un terrain de 640 m², à Pau (64).",
     );

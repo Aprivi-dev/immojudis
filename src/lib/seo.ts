@@ -234,6 +234,31 @@ export function saleHeadline(sale: SaleFacts | null | undefined): string {
   return `${propertyLine(sale)} – ${venuePhrase(venueType(sale))}${date ? ` le ${date}` : ""}`;
 }
 
+/**
+ * Titre visible court de la fiche publique : « Appartement de 39 m² à Beure ». Sans surface :
+ * « Maison à Pau » ; sans ville : « Terrain de 1 663 m² » ; sans rien : « Bien immobilier ». Il nomme
+ * aussi la fiche dans le fil d'Ariane et le BreadcrumbList ; `saleHeadline` reste le nom du
+ * `RealEstateListing` et le texte alternatif de la photo.
+ */
+export function saleShortHeading(sale: SaleFacts | null | undefined): string {
+  if (!sale) return GENERIC_SALE_SEO_TITLE;
+  const surface = seoSurface(sale.app_surface_m2);
+  const city = cleanText(sale.city);
+  return [
+    seoPropertyLabel(sale.property_type),
+    surface ? `de ${surface}` : null,
+    city ? `à ${city}` : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+/** « Vente au tribunal », « Vente chez le notaire »… : le type de vente en tête du sous-titre. */
+export function saleVenueSentence(sale: SaleFacts): string {
+  const phrase = venuePhrase(venueType(sale));
+  return phrase.charAt(0).toUpperCase() + phrase.slice(1);
+}
+
 /** Eight-character reference shown with the heading so that two lots never share one. */
 export function saleReference(id: string): string {
   return id
@@ -477,7 +502,7 @@ export function saleStructuredData(
   graph.push(
     breadcrumbStructuredData(origin, [
       { name: "Ventes", path: "/sales" },
-      { name: headline, path: `/sales/${encodeURIComponent(sale.id)}` },
+      { name: saleShortHeading(sale), path: `/sales/${encodeURIComponent(sale.id)}` },
     ]),
   );
 

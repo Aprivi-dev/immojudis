@@ -5,6 +5,7 @@ import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import ChartNoAxesCombined from "lucide-react/dist/esm/icons/chart-no-axes-combined.js";
 import Eye from "lucide-react/dist/esm/icons/eye.js";
 import FolderHeart from "lucide-react/dist/esm/icons/folder-heart.js";
+import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.js";
 import LockKeyholeOpen from "lucide-react/dist/esm/icons/lock-keyhole-open.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { Terme } from "@/components/ceiling/Terme";
@@ -47,10 +48,13 @@ import {
   saleVerificationLabel,
   saleVenueLabel,
 } from "@/lib/sale-procedure";
+import { departmentFromCode } from "@/lib/department-pages";
 import {
   saleHeadline,
   saleHearingTime,
   saleReference,
+  saleShortHeading,
+  saleVenueSentence,
   seoLongDate,
   seoPropertyLabel,
   seoSurface,
@@ -259,7 +263,10 @@ export function SalePublicPreview({
   const state = procedure.venueType === "state";
   const notary = procedure.venueType === "notary";
   const price = preview.starting_price_eur != null && preview.starting_price_eur > 0;
+  // Titre long : nom des données structurées et texte alternatif de la photo ; titre court : h1 et
+  // fil d'Ariane (avis SEO du 24/10/2026, docs/design/fondations.md).
   const headline = saleHeadline(preview);
+  const shortHeading = saleShortHeading(preview);
   const photo = preview.media?.find((item) => item?.url && (item.type ?? "image") === "image");
   const surface = seoSurface(preview.app_surface_m2);
   const hearingDate = seoLongDate(preview.sale_date);
@@ -301,8 +308,13 @@ export function SalePublicPreview({
           <dd>{location}</dd>
         </div>
       ) : null}
+    </dl>
+  );
+  // Date, lieu et conditions de la vente : la colonne de synthèse, sous la mise à prix.
+  const hearingFacts = (
+    <>
       {hearingDate ? (
-        <div className={styles.fact}>
+        <div className={styles.saleFact}>
           <dt>{procedure.venueType === "tribunal" ? "Date de l’audience" : "Date de la vente"}</dt>
           <dd>
             {hearingDate}
@@ -319,11 +331,10 @@ export function SalePublicPreview({
         </div>
       ) : null}
       {tribunal ? (
-        <div className={styles.fact}>
+        <div className={styles.saleFact}>
           <dt>Tribunal</dt>
           <dd>
             {preview.tribunal_code ? (
-              // La page du tribunal : ses prochaines ventes, ses chiffres, l'alerte de son département.
               <Link href={tribunalPagePath(preview.tribunal_code)} className="underline">
                 {tribunal}
               </Link>
@@ -333,7 +344,7 @@ export function SalePublicPreview({
           </dd>
         </div>
       ) : null}
-    </dl>
+    </>
   );
   const description = publicSaleDescription(preview);
   // Skeletons only: the real figures are never sent to a signed-out visitor, and no made-up figure
@@ -424,13 +435,14 @@ export function SalePublicPreview({
       )}
     </div>
   );
-  const factsBlock = (
-    <dl className={styles.facts}>
-      <div className={styles.fact}>
+  const saleFacts = (
+    <dl className={styles.saleFacts}>
+      {hearingFacts}
+      <div className={styles.saleFact}>
         <dt>{state ? "Mode de cession" : "Type de vente"}</dt>
         <dd>{state ? "À consulter dans le dossier" : saleVenueLabel(procedure.venueType)}</dd>
       </div>
-      <div className={styles.fact}>
+      <div className={styles.saleFact}>
         <dt>{state ? "Démarches" : notary ? "Participation" : "Pour enchérir"}</dt>
         <dd>
           {state ? (
@@ -454,6 +466,20 @@ export function SalePublicPreview({
       </div>
     </dl>
   );
+  const departmentName = departmentFromCode(preview.department);
+  const subtitle = [
+    saleVenueSentence(preview),
+    departmentName
+      ? `${departmentName.name} (${departmentName.code})`
+      : preview.department
+        ? `Département ${preview.department}`
+        : null,
+    hearingDate
+      ? `${procedure.venueType === "tribunal" ? "audience le" : "le"} ${hearingDate}${hearingTime ? ` à ${hearingTime}` : ""}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <main id="contenu" className={styles.page}>
@@ -468,8 +494,8 @@ export function SalePublicPreview({
               <Link href="/sales">Ventes</Link>
             </li>
             <li>
-              <span aria-current="page" title={headline}>
-                {headline}
+              <span aria-current="page" title={shortHeading}>
+                {shortHeading}
               </span>
             </li>
           </ol>
@@ -479,46 +505,65 @@ export function SalePublicPreview({
           {salesReturnLabel(returnTo)}
         </Link>
 
-        <div
-          className={`${styles.hero} ${state ? styles.heroState : notary ? styles.heroNotary : ""}`}
-        >
-          <section className={styles.summary} aria-labelledby="public-sale-title">
-            <SaleProcedureBadge sale={preview} />
-            <p className={styles.kicker}>{venueCopy.title}</p>
-            <h1 id="public-sale-title" className={styles.title}>
-              {headline}
-              <span className={styles.reference}>Réf. {saleReference(saleId)}</span>
-            </h1>
-            {photo?.url ? (
-              <>
-                <figure className={styles.photo}>
-                  <ListingPhoto
-                    src={photo.url}
-                    mirror={photoMirrorForDetail(photo.mirror)}
-                    alt={`Photo du bien : ${headline}`}
-                    className="h-full w-full object-cover"
-                    fetchPriority="high"
-                  />
-                </figure>
-                <PhotoCredit
-                  credit={photoCredit(photo.url, preview)}
-                  className="mt-1.5 block text-xs text-muted-foreground"
-                  linkClassName="hover:text-foreground"
+        <header className={styles.head}>
+          <SaleProcedureBadge sale={preview} />
+          <h1 id="public-sale-title" className={styles.title}>
+            {shortHeading}
+            <span className={styles.reference}>Réf. {saleReference(saleId)}</span>
+          </h1>
+          <p className={styles.subtitle}>{subtitle}</p>
+        </header>
+
+        <div className={styles.layout}>
+          {photo?.url ? (
+            <div className={styles.photoArea}>
+              <figure className={styles.photo}>
+                <ListingPhoto
+                  src={photo.url}
+                  mirror={photoMirrorForDetail(photo.mirror)}
+                  alt={`Photo du bien : ${headline}`}
+                  className="h-full w-full object-cover"
+                  fetchPriority="high"
                 />
-              </>
-            ) : null}
-            {propertyFacts}
-            <p className={styles.sourceNote} data-testid="public-source-note">
-              {preview.source_label ? <>Source de l’annonce : {preview.source_label}. </> : null}
-              <Link href={contactReportPath(saleId)} className="underline">
-                Signaler une erreur sur cette fiche
-              </Link>
-            </p>
-            <section className={styles.description} aria-labelledby="public-description-title">
-              <h2 id="public-description-title" className={styles.addsTitle}>
-                Le bien en bref
+              </figure>
+              <PhotoCredit
+                credit={photoCredit(photo.url, preview)}
+                className="mt-1.5 block text-xs text-muted-foreground"
+                linkClassName="hover:text-foreground"
+              />
+            </div>
+          ) : null}
+
+          {/* Synthèse : sous la photo sur mobile, à droite et suivant le défilement sur ordinateur. */}
+          <aside className={styles.summary} aria-label="Synthèse de la vente">
+            <div className={styles.summaryCard}>
+              {priceBlock}
+              {saleFacts}
+              {signupBlock}
+            </div>
+            <div className={styles.verification}>
+              <ShieldCheck aria-hidden />
+              <p>
+                <strong>{saleVerificationLabel(procedure.verificationStatus)}</strong>
+                <br />
+                {saleVerificationExplanation(procedure.verificationStatus)}
+              </p>
+            </div>
+          </aside>
+
+          <div className={styles.body}>
+            <section className={styles.card} aria-labelledby="public-property-title">
+              <h2 id="public-property-title" className={styles.cardTitle}>
+                Le bien
               </h2>
-              <p>{description.sentence}</p>
+              {propertyFacts}
+              <p className={styles.sourceNote} data-testid="public-source-note">
+                {preview.source_label ? <>Source de l’annonce : {preview.source_label}. </> : null}
+                <Link href={contactReportPath(saleId)} className="underline">
+                  Signaler une erreur sur cette fiche
+                </Link>
+              </p>
+              <p className={styles.description}>{description.sentence}</p>
               {description.amenities.length > 0 ? (
                 <ul className={styles.amenities} aria-label="Équipements mentionnés">
                   {description.amenities.map((item) => (
@@ -527,20 +572,24 @@ export function SalePublicPreview({
                 </ul>
               ) : null}
             </section>
+
             {/* Cible de `#points-a-verifier` ; l'occupation n'est pas lue sur l'aperçu public. */}
             <SalePointsToVerify
-              className="mt-4"
               points={pointsToVerify(preview, { occupancyVisible: false })}
               saleId={saleId}
             />
-            <section className={styles.teaser} aria-labelledby="public-teaser-title">
-              <h2 id="public-teaser-title" className={styles.addsTitle}>
+
+            <section className={styles.card} aria-labelledby="public-teaser-title">
+              <h2 id="public-teaser-title" className={styles.cardTitle}>
                 L’analyse de cette vente
               </h2>
-              <dl>
+              <dl className={styles.teaser}>
                 {analysisTeaser.map((item) => (
                   <div key={item.label} className={styles.teaserRow}>
-                    <dt>{item.label}</dt>
+                    <dt>
+                      <LockKeyhole aria-hidden />
+                      {item.label}
+                    </dt>
                     <dd>
                       {/* La barre est un décor (aria-hidden) et ne porte aucun chiffre : un lecteur
                           d'écran entend que la valeur est masquée et ce qui la débloque. */}
@@ -558,8 +607,9 @@ export function SalePublicPreview({
                 ))}
               </dl>
             </section>
-            {/* « Mon dossier » (statut, enchère plafond) : ce que le compte gratuit ajoute, sans le montrer.
-                Hors du bloc « L'analyse » : le plafond noté est le sien, pas un calcul promis. */}
+
+            {/* « Mon dossier » (statut, enchère plafond) : ce que le compte gratuit ajoute, sans le
+                montrer. Hors du bloc « L’analyse » : le plafond noté est le sien, pas un calcul promis. */}
             <p className={styles.dossierNote} data-testid="public-dossier-teaser">
               <FolderHeart aria-hidden />
               <span>
@@ -570,138 +620,93 @@ export function SalePublicPreview({
               </span>
             </p>
 
-            {state || notary ? (
-              <>
-                {factsBlock}
-                {priceBlock}
-                {signupBlock}
-              </>
-            ) : (
-              <>
-                {priceBlock}
-                {signupBlock}
-                {factsBlock}
-              </>
-            )}
-          </section>
-
-          <aside className={styles.procedure} aria-labelledby="public-procedure-title">
-            <h2 id="public-procedure-title" className={styles.sectionTitle}>
-              Cette vente en clair
-            </h2>
-            <p className={styles.procedureText}>{withAdjudicationTerm(venueCopy.explanation)}</p>
-            <div className={styles.verification}>
-              <ShieldCheck aria-hidden />
-              <p>
-                <strong>{saleVerificationLabel(procedure.verificationStatus)}</strong>
-                <br />
-                {saleVerificationExplanation(procedure.verificationStatus)}
-              </p>
-            </div>
-            <p className={styles.catalogueNote}>
-              <strong>Un seul catalogue, plusieurs procédures</strong>
-              Immojudis référence les ventes immobilières au tribunal, chez le notaire et les ventes
-              domaniales. Les règles affichées s’adaptent au type de chaque vente.
-            </p>
-          </aside>
-        </div>
-
-        <section className={styles.access} aria-labelledby="public-access-title">
-          <div className={styles.accessHeader}>
-            <div>
-              <h2 id="public-access-title" className={styles.sectionTitle}>
-                Consulter le dossier
+            <section className={styles.card} aria-labelledby="public-procedure-title">
+              <h2 id="public-procedure-title" className={styles.cardTitle}>
+                Cette vente en clair
               </h2>
-            </div>
-            <div className={styles.actions}>
-              {verifyingAccount ? null : (
-                <Link href={accountLink} className={styles.primary}>
-                  Créer mon compte gratuit
-                  <ArrowRight className="h-4 w-4" aria-hidden />
-                </Link>
-              )}
+              <p className={styles.procedureText}>{withAdjudicationTerm(venueCopy.explanation)}</p>
+              <ol className={styles.tiers} aria-label="Ce que vous voyez, selon votre accès">
+                <li className={styles.tier}>
+                  <h3 className={styles.tierTitle}>
+                    <Eye aria-hidden />
+                    Visible maintenant
+                  </h3>
+                  <p>
+                    {state
+                      ? "Le bien et ses équipements, la commune, la date de la vente, le prix s'il est publié et le niveau de vérification."
+                      : "Le bien et ses équipements, la commune, la date de la vente, la mise à prix et le niveau de vérification."}
+                  </p>
+                </li>
+                <li className={`${styles.tier} ${styles.tierFree}`}>
+                  <h3 className={styles.tierTitle}>
+                    <LockKeyholeOpen aria-hidden />
+                    Découverte · gratuit
+                  </h3>
+                  <p>
+                    Adresse, photos, description, occupation, dates de visite et contact du dossier,
+                    fourchette de valeur estimée, Street View, météo et risques de la commune. Et
+                    chaque mois, {MONTHLY_SALE_UNLOCKS} déblocages de ventes :{" "}
+                    {unlockedItemsText({
+                      ceiling: procedure.venueType === "tribunal",
+                      statistics:
+                        procedure.venueType === "tribunal" && adjudicationStatisticsEnabled,
+                    })}
+                    .
+                  </p>
+                </li>
+                <li className={`${styles.tier} ${styles.tierAnalysis}`}>
+                  <h3 className={styles.tierTitle}>
+                    <ChartNoAxesCombined aria-hidden />
+                    Offre Analyse
+                  </h3>
+                  <p>
+                    {procedure.venueType === "tribunal"
+                      ? "Pièces du dossier, ventes comparables, travaux, statistiques du tribunal et calcul de votre enchère plafond."
+                      : "Pièces du dossier, ventes comparables et risques repérés lorsque les données le permettent."}
+                  </p>
+                </li>
+              </ol>
+              <p className={styles.catalogueNote}>
+                <strong>Un seul catalogue, plusieurs procédures</strong>
+                Immojudis référence les ventes immobilières au tribunal, chez le notaire et les
+                ventes domaniales. Les règles affichées s’adaptent au type de chaque vente.
+              </p>
               <Link href={returnTo} className={styles.secondary}>
                 Continuer ma recherche
               </Link>
-            </div>
-          </div>
+            </section>
 
-          <div className={styles.tiers}>
-            <div className={styles.tier}>
-              <h3 className={styles.tierTitle}>
-                <Eye aria-hidden />
-                Visible maintenant
-              </h3>
-              <p>
-                {state
-                  ? "Le bien et ses équipements, la commune, la date de la vente, le prix s'il est publié et le niveau de vérification."
-                  : "Le bien et ses équipements, la commune, la date de la vente, la mise à prix et le niveau de vérification."}
-              </p>
-            </div>
-            <div className={`${styles.tier} ${styles.tierFree}`}>
-              <h3 className={styles.tierTitle}>
-                <LockKeyholeOpen aria-hidden />
-                Découverte · gratuit
-              </h3>
-              <p>
-                Adresse, photos, description, occupation, dates de visite et contact du dossier,
-                fourchette de valeur estimée, Street View, météo et risques de la commune. Et chaque
-                mois, {MONTHLY_SALE_UNLOCKS} déblocages de ventes :{" "}
-                {unlockedItemsText({
-                  ceiling: procedure.venueType === "tribunal",
-                  statistics: procedure.venueType === "tribunal" && adjudicationStatisticsEnabled,
-                })}
-                .
-              </p>
-            </div>
-            <div className={`${styles.tier} ${styles.tierAnalysis}`}>
-              <h3 className={styles.tierTitle}>
-                <ChartNoAxesCombined aria-hidden />
-                Offre Analyse
-              </h3>
-              <p>
-                {procedure.venueType === "tribunal"
-                  ? "Pièces du dossier, ventes comparables, travaux, statistiques du tribunal et calcul de votre enchère plafond."
-                  : "Pièces du dossier, ventes comparables et risques repérés lorsque les données le permettent."}
-              </p>
-            </div>
+            {preview.department && !verifyingAccount ? (
+              <div data-testid="public-sector-alert">
+                <SectorAlertCta
+                  criteria={{ department: preview.department }}
+                  intro="Cette vente vous intéresse ? Recevez les nouvelles ventes du même département."
+                />
+              </div>
+            ) : null}
+
+            <section aria-labelledby="public-further-title">
+              <h2 id="public-further-title" className={styles.cardTitle}>
+                Pour aller plus loin
+              </h2>
+              <ul className={styles.further}>
+                {FURTHER_READING_LINKS.map((link) => (
+                  <li key={link.href}>
+                    <Link href={link.href}>{link.label}</Link>
+                    <span> : {link.hint}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+            <p className={styles.officialSources}>
+              Les sources officielles restent consultables librement :{" "}
+              <a href="https://www.georisques.gouv.fr/" target="_blank" rel="noopener noreferrer">
+                consulter Géorisques
+              </a>
+              .
+            </p>
           </div>
-        </section>
-        {preview.department && !verifyingAccount ? (
-          <div className="mt-8" data-testid="public-sector-alert">
-            <SectorAlertCta
-              criteria={{ department: preview.department }}
-              intro="Cette vente vous intéresse ? Recevez les nouvelles ventes du même département."
-            />
-          </div>
-        ) : null}
-        <section className="mt-8" aria-labelledby="public-further-title">
-          <h2 id="public-further-title" className={styles.sectionTitle}>
-            Pour aller plus loin
-          </h2>
-          <ul className="mt-3 grid gap-2 text-sm leading-relaxed text-slate-700 sm:grid-cols-2">
-            {FURTHER_READING_LINKS.map((link) => (
-              <li key={link.href}>
-                <Link href={link.href} className="font-medium underline underline-offset-4">
-                  {link.label}
-                </Link>
-                <span className="text-slate-600"> : {link.hint}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-        <p className="mt-6 text-sm leading-relaxed text-slate-600">
-          Les sources officielles restent consultables librement :{" "}
-          <a
-            href="https://www.georisques.gouv.fr/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline underline-offset-4"
-          >
-            consulter Géorisques
-          </a>
-          .
-        </p>
+        </div>
       </div>
     </main>
   );
