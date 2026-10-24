@@ -24,7 +24,7 @@ export const EMAIL_COLORS = {
   /** `--surface` : fond de la page de l'email. */
   surface: "#fffaf2",
   /** `--surface-muted` : panneau discret. */
-  surfaceMuted: "#f7f8fa",
+  surfaceMuted: "#f8f5ef",
   /** `--cream` : pastille ou encadré doré clair. */
   cream: "#fff7eb",
   white: "#ffffff",

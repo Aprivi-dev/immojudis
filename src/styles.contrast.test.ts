@@ -25,7 +25,7 @@ export function contrastRatio(foreground: string, background: string): number {
 describe("contraste des jetons dorés (WCAG AA)", () => {
   const backgrounds = {
     blanc: "#ffffff",
-    ciel: token("background"),
+    papier: token("background"),
     crème: token("surface"),
     sable: token("secondary"),
   };
@@ -38,7 +38,7 @@ describe("contraste des jetons dorés (WCAG AA)", () => {
     ["blanc", "#ffffff"],
     ["crème", token("surface")],
     ["gris clair", token("surface-muted")],
-    ["bleu pâle", token("surface-tint")],
+    ["teinte chaude", token("surface-tint")],
   ])("le texte secondaire (12 px) tient 4,5:1 sur %s", (_name, background) => {
     expect(contrastRatio(token("ink-soft"), background)).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(token("gold-text"), background)).toBeGreaterThanOrEqual(4.5);

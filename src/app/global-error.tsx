@@ -2,7 +2,7 @@
 
 /**
  * Dernier filet de sécurité : cette page remplace le gabarit racine, donc sans
- * feuille de style du site. Les couleurs reprennent la charte (ciel #eef7ff,
+ * feuille de style du site. Les couleurs reprennent la charte (papier #fbf9f5,
  * marine #132238, or #c98d45 avec texte marine à 5,6:1).
  */
 export default function GlobalError({
@@ -18,7 +18,7 @@ export default function GlobalError({
         <main
           style={{
             alignItems: "center",
-            background: "#eef7ff",
+            background: "#fbf9f5",
             color: "#132238",
             display: "flex",
             fontFamily: "system-ui, sans-serif",
@@ -31,7 +31,7 @@ export default function GlobalError({
             role="alert"
             style={{
               background: "#ffffff",
-              border: "1px solid #cbd5df",
+              border: "1px solid #d8cfc1",
               borderRadius: ".75rem",
               maxWidth: "36rem",
               padding: "2rem",
