@@ -64,14 +64,14 @@ export const adminCatalogueReadinessActionSchema = z.discriminatedUnion("action"
   }),
   z.object({
     action: z.literal("set_override"),
-    saleId: z.string().uuid(),
+    saleId: z.string().guid(),
     decision: z.enum(["hold", "publish"]),
     reason: z.string().trim().min(8).max(2000),
     expiresAt: z.string().datetime().nullable().optional(),
   }),
   z.object({
     action: z.literal("clear_override"),
-    saleId: z.string().uuid(),
+    saleId: z.string().guid(),
   }),
 ]);
 

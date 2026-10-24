@@ -22,7 +22,7 @@ export async function GET(request: Request) {
       includeDismissed: url.searchParams.get("includeDismissed") === "true",
       saleId: z
         .string()
-        .uuid()
+        .guid()
         .optional()
         .parse(url.searchParams.get("saleId") ?? undefined),
     });

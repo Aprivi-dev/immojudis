@@ -12,7 +12,7 @@ export const adminAuctionFactClaimReviewQuerySchema = z.object({
 });
 
 export const adminAuctionFactClaimDecisionSchema = z.object({
-  claimId: z.string().uuid(),
+  claimId: z.string().guid(),
   decision: z.enum(["accepted", "rejected", "conflicted"]),
   resolutionNote: z.string().trim().max(2000).nullable().optional(),
 });

@@ -102,12 +102,18 @@ const MAX_WEBHOOK_BODY_BYTES = 256 * 1024;
  * as the previous ad-hoc casts did, and never rejects the whole delivery.
  */
 const receivedEmailExtrasSchema = z.object({
-  to: z.unknown().transform((value) => stringArray(value)),
-  received_for: z.unknown().transform((value) => stringArray(value)),
-  authentication: z.unknown(),
+  to: z
+    .unknown()
+    .optional()
+    .transform((value) => stringArray(value)),
+  received_for: z
+    .unknown()
+    .optional()
+    .transform((value) => stringArray(value)),
+  authentication: z.unknown().optional(),
   message_id: optionalText,
   /** En-têtes du message reçu (`Auto-Submitted`, `X-Autoreply`…), pour repérer les réponses automatiques. */
-  headers: z.unknown(),
+  headers: z.unknown().optional(),
 });
 
 const providerMessageIdSchema = z.object({ message_id: optionalText });

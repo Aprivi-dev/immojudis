@@ -9,7 +9,7 @@ import { enforceIpRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import { loadVisibleSaleLocation } from "@/lib/sale-location.server";
 
-const saleIdSchema = z.string().uuid();
+const saleIdSchema = z.string().guid();
 
 type SaleRisksResponse = { saleId: string; risks: CommuneRiskResult };
 
