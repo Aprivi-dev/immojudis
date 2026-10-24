@@ -5,8 +5,9 @@ import { describe, expect, it } from "vitest";
 
 const ROOT = process.cwd();
 
-// Plafonds du cliquet, relevés le 24/10/2026 : à abaisser à chaque page migrée, jamais à relever.
-const RAW_PALETTE_CLASSES_MAX = 526;
+// Plafonds du cliquet, relevés le 24/10/2026 (526 couleurs brutes, puis 514 après la fiche publique) :
+// à abaisser à chaque page migrée, jamais à relever.
+const RAW_PALETTE_CLASSES_MAX = 514;
 const TINY_TEXT_CLASSES_MAX = 116;
 
 // Couleurs qui ne peuvent pas passer par une classe ou une variable CSS :

@@ -11,21 +11,23 @@ export function SaleProcedureBadge({ sale }: { sale: AuctionSale }) {
   const procedure = getSaleProcedure(sale);
   const verified = ["verified", "cross_checked"].includes(procedure.verificationStatus);
 
+  // Fondations (docs/design/fondations.md) : le type de vente est une information, en ton neutre ;
+  // la couleur ne marque que ce qui demande l'attention (sources en conflit, vente non vérifiée).
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold backdrop-blur ${
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-caption font-medium backdrop-blur ${
         verified
-          ? "border-emerald-200 bg-emerald-50/95 text-emerald-900"
+          ? "border-line bg-white/95 text-brand-navy"
           : procedure.verificationStatus === "conflict"
-            ? "border-red-200 bg-red-50/95 text-red-900"
-            : "border-amber-200 bg-amber-50/95 text-amber-950"
+            ? "border-danger/25 bg-danger-tint/95 text-danger"
+            : "border-warning/25 bg-warning-tint/95 text-warning"
       }`}
       title={`${saleVenueLabel(procedure.venueType)} · ${saleVerificationExplanation(procedure.verificationStatus)}`}
     >
       {verified ? (
-        <ShieldCheck className="h-3 w-3" aria-hidden />
+        <ShieldCheck className="h-3.5 w-3.5 text-success" aria-hidden />
       ) : (
-        <CircleAlert className="h-3 w-3" aria-hidden />
+        <CircleAlert className="h-3.5 w-3.5" aria-hidden />
       )}
       {saleVenueLabel(procedure.venueType)}
     </span>
