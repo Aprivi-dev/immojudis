@@ -1,11 +1,12 @@
+/* Cartes de l'onglet Aperçu (docs/design/fondations.md) : fond blanc, bordure beige, coins 10 px. */
 .section {
-  max-width: 1260px;
-  margin: 30px auto 0;
-  padding: 28px;
-  border: 1px solid var(--line-warm);
-  border-radius: 24px;
+  margin: 0 0 22px;
+  padding: 22px 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
   background: #ffffff;
   color: var(--brand-navy);
+  scroll-margin-top: 136px;
 }
 
 .header {
@@ -15,19 +16,10 @@
   gap: 24px;
 }
 
-.eyebrow {
-  margin: 0 0 7px;
-  color: var(--gold-text);
-  font-size: 11px;
-  font-weight: 750;
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
-}
-
 .header h2 {
   margin: 0;
   font-family: var(--font-display), Georgia, serif;
-  font-size: clamp(25px, 3vw, 33px);
+  font-size: clamp(26px, 2.6vw, 30px);
   font-weight: 500;
   letter-spacing: -0.025em;
   line-height: 1.15;
@@ -110,72 +102,91 @@
   font-variant-numeric: tabular-nums;
 }
 
-.essentialNotice {
-  margin: 14px 0 0;
-  color: var(--gold-text);
-  font-size: 13px;
-  line-height: 1.65;
-}
-
-.remaining {
-  margin-top: 24px;
-  padding: 22px;
-  border-radius: 16px;
-  background: var(--surface);
-}
-
-.remainingHeader {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 20px;
-}
-.remainingHeader h3 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 650;
-  letter-spacing: -0.02em;
-}
-.remainingHeader p {
-  margin: 6px 0 0;
-  color: var(--ink-soft);
-  font-size: 13px;
-  line-height: 1.6;
-}
-.remainingHeader .textButton {
-  flex-shrink: 0;
-}
-
-.priorityList {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 18px;
-  margin: 18px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.priorityList li {
-  display: grid;
-  align-content: start;
-  gap: 5px;
-  min-width: 0;
-  font-size: 13px;
-  line-height: 1.6;
-}
-.priorityList strong {
-  font-weight: 650;
-}
-.priorityList span {
-  color: var(--ink-soft);
-  overflow-wrap: anywhere;
-}
 .remainingActions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 12px 24px;
-  margin-top: 20px;
+  margin-top: 12px;
+}
+
+/* « À vérifier avant d'enchérir » : une ligne par point, sa raison et son statut. */
+.checkList {
+  display: grid;
+  margin: 18px 0 0;
+  padding: 0;
+  border-top: 1px solid var(--line-soft);
+  list-style: none;
+}
+.checkList li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 4px 16px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.checkList li > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.checkList strong {
+  font-weight: 600;
+}
+.checkList li > div > span {
+  color: var(--ink-soft);
+  font-size: 14px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+/* La pastille de statut (Badge) garde ses couleurs. */
+.checkList li > span {
+  justify-self: end;
+  white-space: nowrap;
+}
+.checksEmpty {
+  margin: 16px 0 0;
+  color: var(--ink-soft);
+  font-size: 15px;
+}
+.checksDocuments {
+  margin: 14px 0 0;
+  color: var(--ink-soft);
+  font-size: 14px;
+}
+.checksDocuments a {
+  color: var(--gold-text);
+  font-weight: 600;
+  text-underline-offset: 3px;
+}
+.checksEvidence {
+  margin-top: 12px;
+  font-size: 14px;
+}
+.checksEvidence summary {
+  min-height: 44px;
+  padding: 10px 0;
+  color: var(--gold-text);
+  cursor: pointer;
+  font-weight: 600;
+}
+.checksEvidence article {
+  display: grid;
+  gap: 6px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line-soft);
+}
+.checksEvidence h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.checksEvidence blockquote {
+  margin: 4px 0 0;
+  padding-left: 12px;
+  border-left: 2px solid var(--line);
+  color: var(--ink-soft);
 }
 
 .dialogContent {
@@ -321,9 +332,13 @@
 
 @media (max-width: 760px) {
   .section {
-    margin-top: 20px;
-    padding: 22px 18px;
-    border-radius: 20px;
+    padding: 18px 16px;
+  }
+  .checkList li {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .checkList li > span {
+    justify-self: start;
   }
   .header {
     flex-direction: column;
@@ -337,22 +352,6 @@
   }
   .coverageSummary ul {
     gap: 5px 15px;
-  }
-  .remaining {
-    padding: 18px 15px;
-  }
-  .remainingHeader {
-    flex-direction: column;
-    gap: 0;
-  }
-  .priorityList {
-    grid-template-columns: 1fr;
-    gap: 13px;
-    margin-top: 10px;
-  }
-  .priorityList li + li {
-    border-top: 1px solid var(--line-warm);
-    padding-top: 12px;
   }
   .remainingActions {
     align-items: stretch;

@@ -1,12 +1,16 @@
 .root {
   /* Fond des cartes : le blanc n'existe pas comme jeton global. */
   --paper: #ffffff;
-  border: 1px solid var(--line-warm);
-  border-radius: 16px;
+  /* Une seule forme de carte sur la fiche (docs/design/fondations.md) : le vert qui servait de
+     couleur d'accent à ce panneau devient la marine, et ses fonds teintés le neutre chaud. */
+  --success: var(--brand-navy);
+  --success-tint: var(--surface-muted);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
   padding: 22px;
   margin: 20px 0;
-  background: var(--surface-muted);
-  color: var(--success);
+  background: #ffffff;
+  color: var(--brand-navy);
 }
 .header {
   display: flex;
@@ -25,14 +29,14 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   font-weight: 700;
-  color: var(--success);
+  color: var(--gold-text);
   margin: 0;
 }
 .intro {
   margin: 0;
   max-width: 700px;
   font-size: 0.88rem;
-  color: var(--success);
+  color: var(--ink-soft);
   line-height: 1.6;
 }
 .actions {

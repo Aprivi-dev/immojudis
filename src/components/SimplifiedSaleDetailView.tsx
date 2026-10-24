@@ -12,7 +12,6 @@ import { salesReturnHref, salesReturnLabel } from "@/lib/navigation";
 import { DocumentReadingSection } from "@/components/sale-detail/DocumentReadingSection";
 import { SalePassagesSection } from "@/components/sale-detail/SalePassagesSection";
 import { SaleUnlockPanel } from "@/components/sale-detail/SaleUnlockPanel";
-import { SalePointsToVerify } from "@/components/sale-detail/SalePointsToVerify";
 import { pointsToVerify } from "@/lib/search/points-to-verify";
 import { SaleUnlockOfferProvider } from "@/components/sale-detail/UnlockCallToAction";
 import type { SaleUnlockResult, SaleUnlockStatus } from "@/lib/sale-unlocks";
@@ -28,14 +27,14 @@ import { buildStatePilot } from "@/lib/professional-pilot-state";
 import {
   ListingActions,
   ListingOverview,
+  SaleDetailHeading,
   ListingPracticalDetails,
   ListingDescription,
   ListingLocation,
 } from "@/components/sale-detail/SaleListing";
 import { ListingBudget } from "@/components/sale-detail/ListingBudget";
 import { ListingCharacteristics } from "@/components/sale-detail/ListingCharacteristics";
-import { ListingPreparation } from "@/components/sale-detail/ListingPreparation";
-import { SaleKeyFactsBand } from "@/components/sale-detail/SaleKeyFactsBand";
+import { ListingChecks, ListingPreparation } from "@/components/sale-detail/ListingPreparation";
 import type { WorksBreakdownItem } from "@/lib/works-breakdown";
 import type { FinancingDraft, FinancingResult } from "@/components/sale-detail/FinancingSimulator";
 import type { ListingRentalDraft } from "@/components/sale-detail/ListingRental";
@@ -102,7 +101,6 @@ import {
 import {
   LawyerSection,
   PanelIntro,
-  RisksAndDocuments,
   SaleDocumentsSection,
   UrbanismeSection,
 } from "@/components/sale-detail/SaleDetailSections";
@@ -337,6 +335,17 @@ function SaleDetailWorkspace({
   const criticalAnalysisInputsBlocked =
     priceReview.blocked || surfaceBlocked || propertyTypeReview.blocked || roomsReview.blocked;
   const isTribunalSale = saleIsTribunalVenue(sale);
+  // Action principale de la synthèse et du bloc « À vérifier » : le calcul du plafond quand il est
+  // possible, sinon les rendez-vous et contacts du dossier.
+  const preparation = isTribunalSale
+    ? {
+        href:
+          fullData && !valuationConflict && !criticalAnalysisInputsBlocked
+            ? "#calculation"
+            : "#rendez-vous",
+        label: "Préparer mon enchère",
+      }
+    : { href: "#rendez-vous", label: "Préparer ma démarche" };
   // Les statistiques des tribunaux restent fermées tant que le drapeau l'est : ni l'onglet, ni
   // son aperçu verrouillé, ni les ancres qui y mènent.
   const statisticsAvailable = isTribunalSale && adjudicationStatisticsEnabled;
@@ -567,6 +576,12 @@ function SaleDetailWorkspace({
             </Link>
             <ListingActions sale={displaySale} publicDemo={publicDemo} />
           </div>
+          <SaleDetailHeading
+            sale={displaySale}
+            publicDemo={publicDemo}
+            aiReviewProjections={resolvedAiReviewProjections}
+            aiReviewStatus={aiReviewStatus}
+          />
           <div className={listingStyles.upper}>
             <PropertyIdentity
               key={sale.id}
@@ -578,7 +593,7 @@ function SaleDetailWorkspace({
             <div className={listingStyles.heroSummary}>
               <ListingOverview
                 sale={displaySale}
-                publicDemo={publicDemo}
+                preparation={preparation}
                 premiumCeiling={heroCeiling}
                 ceilingContext={ceilingContext}
                 showPremiumTeaser={access === "discovery" && isTribunalSale}
@@ -602,29 +617,6 @@ function SaleDetailWorkspace({
               />
             </div>
           </div>
-          <SaleKeyFactsBand
-            sale={displaySale}
-            aiReviewProjections={resolvedAiReviewProjections}
-            aiReviewStatus={aiReviewStatus}
-          />
-          {/* Cible de `#points-a-verifier` : les points de la pastille de la liste. */}
-          <SalePointsToVerify
-            className="mt-4"
-            points={pointsToVerify(displaySale, { occupancyVisible: true })}
-            saleId={sale.id}
-          />
-          <ListingPreparation
-            key={`${user?.id ?? "guest-demo"}:${sale.id}`}
-            sale={displaySale}
-            publicDemo={publicDemo}
-            ownerId={user?.id ?? "guest-demo"}
-            factReliabilities={factReliabilities}
-            aiReviewProjections={resolvedAiReviewProjections}
-            aiReviewStatus={aiReviewStatus}
-            canSimulate={
-              fullData && isTribunalSale && !valuationConflict && !criticalAnalysisInputsBlocked
-            }
-          />
           {!publicDemo && user && access !== "analysis" ? (
             <SaleUnlockPanel
               saleId={sale.id}
@@ -668,6 +660,10 @@ function SaleDetailWorkspace({
             activeTab={activeTab}
             onTabChange={changeTab}
             showStatistics={statisticsAvailable}
+            priceRecall={{
+              startingPrice: priceReview.blocked ? null : (displaySale.starting_price_eur ?? null),
+              ceiling: criticalAnalysisInputsBlocked ? null : heroCeiling,
+            }}
           />
           <div
             id={`sale-detail-panel-${activeTab}`}
@@ -678,7 +674,24 @@ function SaleDetailWorkspace({
           >
             {activeTab === "apercu" ? (
               <>
-                <PanelIntro eyebrow="01 / Le bien" title="L’essentiel sur le bien" />
+                <ListingChecks
+                  sale={displaySale}
+                  points={pointsToVerify(displaySale, { occupancyVisible: true })}
+                  showRisks={access === "analysis"}
+                  saleId={sale.id}
+                  ownerId={user?.id ?? "guest-demo"}
+                  preparation={preparation}
+                  factReliabilities={factReliabilities}
+                  aiReviewProjections={resolvedAiReviewProjections}
+                  aiReviewStatus={aiReviewStatus}
+                />
+                <ListingPreparation
+                  sale={displaySale}
+                  publicDemo={publicDemo}
+                  factReliabilities={factReliabilities}
+                  aiReviewProjections={resolvedAiReviewProjections}
+                  aiReviewStatus={aiReviewStatus}
+                />
                 <div className={panelStyles.twoColumns}>
                   <ListingDescription
                     sale={displaySale}
@@ -706,15 +719,6 @@ function SaleDetailWorkspace({
                   access={access}
                   userKey={user?.id}
                 />
-                {access === "analysis" ? (
-                  <RisksAndDocuments sale={displaySale} />
-                ) : (
-                  <div id="risks" className={panelStyles.riskCard}>
-                    <h2>Points à vérifier</h2>
-                    <p>Consultez les pièces et faites confirmer l’état du bien avant de décider.</p>
-                    <a href="#documents">Voir les pièces disponibles</a>
-                  </div>
-                )}
                 <UrbanismeSection
                   sale={displaySale}
                   mapLocation={sale}

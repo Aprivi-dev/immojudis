@@ -15,6 +15,15 @@ import {
   type PublicListingFact,
 } from "@/lib/listing-public-information";
 import { getSaleProcedure } from "@/lib/sale-procedure";
+import { collectSaleDocuments } from "@/lib/sale-documents";
+import { riskEvidence } from "@/lib/risk-evidence";
+import {
+  POINTS_TO_VERIFY_ANCHOR,
+  POINTS_TO_VERIFY_NOTE,
+  type PointToVerify,
+} from "@/lib/search/points-to-verify";
+import { SaleSignalFeedback } from "@/components/SaleSignalFeedback";
+import { Badge, type BadgeTone } from "@/components/ui/primitives";
 import type { AuctionSale } from "@/lib/types";
 import type { FactReliabilityMap } from "@/lib/fact-reliability";
 import {
@@ -25,15 +34,11 @@ import {
 } from "@/lib/ai-review-guard";
 import styles from "./ListingPreparation.module.css";
 
-type ListingPreparationProps = {
+type ListingInformationProps = {
   sale: AuctionSale;
-  publicDemo?: boolean;
-  ownerId?: string;
-  canSimulate?: boolean;
   factReliabilities?: FactReliabilityMap | null;
   aiReviewProjections?: readonly AiReviewProjectionReadModel[] | null;
   aiReviewStatus?: AiReviewRequestStatus;
-  onNavigate?: (href: string) => void;
 };
 
 const PERSONAL_NOTE_PREFIX = "immojudis:listing-personal-note:";
@@ -74,17 +79,27 @@ function statusLabel(item: PublicListingFact): string {
   }
 }
 
-export function ListingPreparation({
+function statusTone(item: PublicListingFact): { label: string; tone: BadgeTone } {
+  switch (item.status) {
+    case "missing":
+      return { label: "Manquante", tone: "neutral" };
+    case "conflict":
+      return { label: "Contradictoire", tone: "danger" };
+    case "estimated":
+      return { label: "Estimation", tone: "warning" };
+    default:
+      return { label: "À confirmer", tone: "warning" };
+  }
+}
+
+/** Les informations publiques du bien, sans celles qu'une vérification en cours retient. */
+function useListingInformation({
   sale,
-  publicDemo = false,
-  ownerId = "guest-demo",
-  canSimulate = true,
   factReliabilities = null,
   aiReviewProjections = null,
   aiReviewStatus = "disabled",
-  onNavigate,
-}: ListingPreparationProps) {
-  const information = useMemo(() => {
+}: ListingInformationProps) {
+  return useMemo(() => {
     const blockedFieldIds = new Set(
       PUBLIC_REVIEW_FIELDS.flatMap(([field, ids]) =>
         getAiReviewFieldResult(aiReviewProjections, field, aiReviewStatus).blocked ? ids : [],
@@ -92,33 +107,25 @@ export function ListingPreparation({
     );
     return getListingPublicInformation(sale, factReliabilities, { blockedFieldIds });
   }, [sale, factReliabilities, aiReviewProjections, aiReviewStatus]);
-  const procedure = useMemo(() => getSaleProcedure(sale), [sale]);
-  const unresolved = information.items.filter((item) => item.status !== "sourced");
-  const priorities = information.priorityItems.slice(0, 3);
-  const missingEssentials = information.priorityItems
-    .filter((item) => item.status === "missing" || item.status === "conflict")
-    .slice(0, 3);
-  const [checklistOpen, setChecklistOpen] = useState(false);
-  const [personalNote, setPersonalNote] = useState("");
-  const [noteStatus, setNoteStatus] = useState<"idle" | "saved" | "error">("idle");
-  const checklistTriggerRef = useRef<HTMLButtonElement>(null);
-  const storageOwner = ownerId.trim() || "guest-demo";
+}
 
-  const isTribunalSale = procedure.venueType === "tribunal";
-  const preparationHref = isTribunalSale && canSimulate ? "#calculation" : "#rendez-vous";
-  const preparationLabel = isTribunalSale ? "Préparer mon enchère" : "Préparer ma démarche";
+/** Point de la pastille de la liste → informations du dossier qui disent la même chose. */
+const POINT_INFORMATION_IDS: Record<string, readonly string[]> = {
+  surface: ["surface"],
+  occupancy: ["occupancy_status"],
+  date: ["sale_date"],
+};
 
-  useEffect(() => {
-    setPersonalNote("");
-    setNoteStatus("idle");
-    if (typeof window === "undefined") return;
-    try {
-      setPersonalNote(window.localStorage.getItem(localStorageKey(sale.id, storageOwner)) ?? "");
-    } catch {
-      setPersonalNote("");
-      setNoteStatus("error");
-    }
-  }, [sale.id, storageOwner]);
+/**
+ * « Ce que nous savons de ce bien » : le bilan des informations du dossier et leur grille, chacune
+ * avec son origine. Ce qui reste ouvert est repris par `ListingChecks`.
+ */
+export function ListingPreparation({
+  publicDemo = false,
+  onNavigate,
+  ...props
+}: ListingInformationProps & { publicDemo?: boolean; onNavigate?: (href: string) => void }) {
+  const information = useListingInformation(props);
 
   const navigateTo = (href: string) => {
     if (onNavigate) {
@@ -126,18 +133,6 @@ export function ListingPreparation({
       return;
     }
     if (typeof window !== "undefined") window.location.hash = href.slice(1);
-  };
-
-  const savePersonalNote = () => {
-    if (typeof window === "undefined") return;
-    try {
-      const key = localStorageKey(sale.id, storageOwner);
-      if (personalNote.trim()) window.localStorage.setItem(key, personalNote.trim());
-      else window.localStorage.removeItem(key);
-      setNoteStatus("saved");
-    } catch {
-      setNoteStatus("error");
-    }
   };
 
   return (
@@ -148,7 +143,6 @@ export function ListingPreparation({
     >
       <div className={styles.header}>
         <div>
-          <p className={styles.eyebrow}>Le dossier du bien</p>
           <h2 id="listing-preparation-title">Ce que nous savons de ce bien</h2>
           <p className={styles.summaryIntro}>
             Les informations de l’annonce et des documents disponibles, avec leur origine.
@@ -181,61 +175,196 @@ export function ListingPreparation({
           </li>
         </ul>
       </div>
-      {missingEssentials.length > 0 ? (
-        <p className={styles.essentialNotice}>
-          <strong>À préciser en priorité :</strong>{" "}
-          {missingEssentials.map((item) => item.label).join(" · ")}
-        </p>
-      ) : null}
 
       <ListingDataCoverage
-        sale={sale}
-        factReliabilities={factReliabilities}
+        sale={props.sale}
+        factReliabilities={props.factReliabilities ?? null}
         publicInformation={information}
       />
+    </section>
+  );
+}
 
-      <section className={styles.remaining} aria-labelledby="listing-remaining-title">
-        <div className={styles.remainingHeader}>
-          <div>
-            <h3 id="listing-remaining-title">Ce qu’il reste à connaître</h3>
-            <p>
-              {unresolved.length
-                ? "Les points à compléter ou à confirmer pour mieux comprendre le bien."
-                : "Chaque information de cette grille est rattachée à une source consultable."}
-            </p>
-          </div>
-          <button
-            ref={checklistTriggerRef}
-            type="button"
-            className={styles.textButton}
-            onClick={() => setChecklistOpen(true)}
-          >
-            {unresolved.length ? `Voir les ${unresolved.length} points` : "Mes notes"}
-          </button>
+/**
+ * « À vérifier avant d'enchérir » : un seul bloc pour ce qui reste ouvert, cible de l'ancre
+ * `#points-a-verifier` de la pastille de la liste. Il réunit les points relevés dans le dossier
+ * (offre Analyse), les points de la pastille et les informations prioritaires qui manquent ou sont
+ * à confirmer, sans doublon, avec la liste complète et une note personnelle dans une fenêtre.
+ */
+export function ListingChecks({
+  points,
+  showRisks = false,
+  saleId,
+  ownerId = "guest-demo",
+  preparation = null,
+  ...props
+}: ListingInformationProps & {
+  points: readonly PointToVerify[];
+  /** Points relevés dans les pièces (`sale.risks`) : réservés à l'offre Analyse. */
+  showRisks?: boolean;
+  /** Avec un identifiant, un compte connecté peut dire si la liste lui est utile. */
+  saleId?: string;
+  ownerId?: string;
+  preparation?: { href: string; label: string } | null;
+}) {
+  const { sale } = props;
+  const information = useListingInformation(props);
+  const procedure = useMemo(() => getSaleProcedure(sale), [sale]);
+  const risks = showRisks ? (sale.risks ?? []) : [];
+  const documentCount = collectSaleDocuments(sale).length;
+  const unresolved = information.items.filter((item) => item.status !== "sourced");
+  // Un point relevé dans les pièces sur l'occupation dit déjà ce que la pastille et la grille disent.
+  const risksCoverOccupancy = risks.some((risk) => /occup/i.test(risk.risk_type));
+  const shownPoints = risksCoverOccupancy
+    ? points.filter((point) => point.key !== "occupancy")
+    : points;
+  const coveredIds = new Set([
+    ...points.flatMap((point) => POINT_INFORMATION_IDS[point.key] ?? []),
+    ...(risksCoverOccupancy ? ["occupancy_status"] : []),
+  ]);
+  const priorities = information.priorityItems
+    .slice(0, 3)
+    .filter((item) => !coveredIds.has(item.id));
+  const [checklistOpen, setChecklistOpen] = useState(false);
+  const [personalNote, setPersonalNote] = useState("");
+  const [noteStatus, setNoteStatus] = useState<"idle" | "saved" | "error">("idle");
+  const checklistTriggerRef = useRef<HTMLButtonElement>(null);
+  const storageOwner = ownerId.trim() || "guest-demo";
+  const titleId = `${POINTS_TO_VERIFY_ANCHOR}-title`;
+  const empty = risks.length === 0 && shownPoints.length === 0 && priorities.length === 0;
+
+  useEffect(() => {
+    setPersonalNote("");
+    setNoteStatus("idle");
+    if (typeof window === "undefined") return;
+    try {
+      setPersonalNote(window.localStorage.getItem(localStorageKey(sale.id, storageOwner)) ?? "");
+    } catch {
+      setPersonalNote("");
+      setNoteStatus("error");
+    }
+  }, [sale.id, storageOwner]);
+
+  const savePersonalNote = () => {
+    if (typeof window === "undefined") return;
+    try {
+      const key = localStorageKey(sale.id, storageOwner);
+      if (personalNote.trim()) window.localStorage.setItem(key, personalNote.trim());
+      else window.localStorage.removeItem(key);
+      setNoteStatus("saved");
+    } catch {
+      setNoteStatus("error");
+    }
+  };
+
+  return (
+    <section id={POINTS_TO_VERIFY_ANCHOR} className={styles.section} aria-labelledby={titleId}>
+      <div className={styles.header}>
+        <div>
+          <h2 id={titleId}>
+            {procedure.venueType === "state"
+              ? "À vérifier avant de vous positionner"
+              : "À vérifier avant d’enchérir"}
+          </h2>
+          <p className={styles.summaryIntro}>{POINTS_TO_VERIFY_NOTE}</p>
         </div>
-        {priorities.length > 0 ? (
-          <ul className={styles.priorityList}>
-            {priorities.map((item) => (
-              <li key={item.id}>
-                <strong>{item.label}</strong>
-                <span>{item.explanation || statusLabel(item)}</span>
+        <button
+          ref={checklistTriggerRef}
+          type="button"
+          className={styles.textButton}
+          onClick={() => setChecklistOpen(true)}
+        >
+          {unresolved.length
+            ? `Voir les ${unresolved.length} informations à compléter`
+            : "Mes notes"}
+        </button>
+      </div>
+
+      {empty ? (
+        <p className={styles.checksEmpty}>
+          Aucun point particulier n’est relevé dans les éléments disponibles. Vérifiez le dossier
+          officiel avant de décider.
+        </p>
+      ) : (
+        <ul id="risks" className={styles.checkList}>
+          {risks.map((risk) => (
+            <li key={`risk-${risk.risk_type}-${risk.risk_label}`}>
+              <div>
+                <strong>{risk.risk_label}</strong>
+                <span>{riskEvidence(risk).action}</span>
+              </div>
+              <Badge tone="warning">
+                {risk.severity != null && risk.severity >= 4 ? "Prioritaire" : "À vérifier"}
+              </Badge>
+            </li>
+          ))}
+          {shownPoints.map((point) => (
+            <li key={`point-${point.key}`}>
+              <div>
+                <strong>{point.label}</strong>
+              </div>
+              <Badge tone="warning">À vérifier</Badge>
+            </li>
+          ))}
+          {priorities.map((item) => {
+            const status = statusTone(item);
+            return (
+              <li key={`info-${item.id}`}>
+                <div>
+                  <strong>{item.label}</strong>
+                  <span>{item.explanation || statusLabel(item)}</span>
+                </div>
+                <Badge tone={status.tone}>{status.label}</Badge>
               </li>
-            ))}
-          </ul>
-        ) : null}
+            );
+          })}
+        </ul>
+      )}
+
+      <p className={styles.checksDocuments}>
+        {documentCount > 0 ? `${documentCount} pièce(s) consultable(s)` : "Aucune pièce attachée"}
+        {" · "}
+        <a href="#documents">Consulter les pièces du dossier</a>
+      </p>
+
+      {risks.length ? (
+        <details className={styles.checksEvidence}>
+          <summary>Voir les sources et actions à confirmer</summary>
+          <div>
+            {risks.map((risk) => {
+              const evidence = riskEvidence(risk);
+              return (
+                <article key={`${risk.risk_type}-${risk.risk_label}`}>
+                  <h3>{risk.risk_label}</h3>
+                  <p>{evidence.action}</p>
+                  {evidence.proofs.map((proof, index) => (
+                    <div key={`${index}-${proof.label}`}>
+                      {proof.url ? (
+                        <a href={proof.url} target="_blank" rel="noopener noreferrer">
+                          {proof.label} (nouvel onglet)
+                        </a>
+                      ) : (
+                        <span>{proof.label}</span>
+                      )}
+                      {proof.page != null ? <span> · page {proof.page}</span> : null}
+                      {proof.excerpt ? <blockquote>{proof.excerpt}</blockquote> : null}
+                    </div>
+                  ))}
+                </article>
+              );
+            })}
+          </div>
+        </details>
+      ) : null}
+
+      {preparation ? (
         <div className={styles.remainingActions}>
-          <a
-            className={styles.textLink}
-            href={preparationHref}
-            onClick={(event) => {
-              event.preventDefault();
-              navigateTo(preparationHref);
-            }}
-          >
-            {preparationLabel}
+          <a className={styles.textLink} href={preparation.href}>
+            {preparation.label}
           </a>
         </div>
-      </section>
+      ) : null}
+      {saleId ? <SaleSignalFeedback saleId={saleId} signal="points_to_verify" /> : null}
 
       <Dialog open={checklistOpen} onOpenChange={setChecklistOpen}>
         <DialogContent

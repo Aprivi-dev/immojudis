@@ -1,7 +1,7 @@
 .tabRegion {
   max-width: 1360px;
   margin: 0 auto;
-  padding: 0 16px 76px;
+  padding: 0 16px 48px;
   scroll-margin-top: 96px;
 }
 
@@ -13,7 +13,7 @@
 .panel:focus-visible {
   outline: 3px solid rgb(156 100 43 / 40%);
   outline-offset: 5px;
-  border-radius: 18px;
+  border-radius: var(--radius);
 }
 
 .intro {
@@ -58,7 +58,7 @@
   margin-top: 24px;
   padding: 20px 24px;
   border: 1px solid var(--line-soft);
-  border-radius: 18px;
+  border-radius: var(--radius);
   background: #ffffff;
   box-shadow: 0 7px 24px rgb(19 34 56 / 4%);
   scroll-margin-top: 110px;
@@ -114,7 +114,7 @@
   margin-bottom: 20px;
   padding: 17px 20px;
   border: 1px solid var(--gold-light);
-  border-radius: 14px;
+  border-radius: var(--radius);
   background: var(--warning-tint);
   color: var(--gold-text);
   font-size: 14px;
@@ -152,7 +152,7 @@
   margin-top: 28px;
   padding: 24px 28px;
   border: 1px solid var(--line-soft);
-  border-radius: 18px;
+  border-radius: var(--radius);
   background: #ffffff;
 }
 
@@ -184,7 +184,7 @@
   margin-top: 26px;
   padding: 24px;
   border: 1px solid var(--line-soft);
-  border-radius: 18px;
+  border-radius: var(--radius);
   background: #ffffff;
 }
 
@@ -226,9 +226,8 @@
 .estimationCard {
   overflow: hidden;
   border: 1px solid var(--line-soft);
-  border-radius: 20px;
+  border-radius: var(--radius);
   background: #ffffff;
-  box-shadow: 0 12px 32px rgb(19 34 56 / 5%);
 }
 
 .marketSnapshot {
@@ -239,7 +238,7 @@
   margin-top: 20px;
   padding: 22px 26px;
   border: 1px solid var(--line-warm);
-  border-radius: 16px;
+  border-radius: var(--radius);
   background: #ffffff;
 }
 .metricEyebrow {
@@ -401,43 +400,7 @@
   font-size: 13px;
 }
 
-.riskCard {
-  margin-top: 24px;
-  padding: 24px 27px;
-  border: 1px solid var(--line-soft);
-  border-radius: 18px;
-  background: #ffffff;
-  color: var(--ink-strong);
-}
-
-.riskCard h2 {
-  color: var(--brand-navy);
-  font-family: var(--font-display), Georgia, serif;
-  font-size: 25px;
-  font-weight: 600;
-}
-
-.riskCard > p {
-  margin-top: 7px;
-  font-size: 14px;
-  line-height: 1.55;
-}
-
-.riskCard > a {
-  display: inline-block;
-  margin-top: 15px;
-  color: var(--gold-text, var(--gold-text));
-  font-size: 14px;
-  font-weight: 700;
-  text-decoration: underline;
-  text-underline-offset: 4px;
-}
-
 @media (max-width: 720px) {
-  .tabRegion {
-    padding-bottom: 118px;
-  }
-
   .priceGrid {
     grid-template-columns: 1fr;
     gap: 16px;
@@ -470,91 +433,4 @@
   .surfaceCaution {
     padding-inline: 22px;
   }
-}
-
-.riskPreview {
-  display: grid;
-  gap: 0;
-  margin-top: 16px;
-  border-top: 1px solid var(--line-soft);
-  border-bottom: 1px solid var(--line-soft);
-}
-
-.riskPreview li {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 0;
-  color: var(--brand-navy);
-  font-size: 14px;
-}
-
-.riskPreview li + li {
-  border-top: 1px solid var(--line-soft);
-}
-
-.riskPreview svg {
-  color: var(--gold-text, var(--gold-text));
-}
-
-.riskPreview span {
-  flex: 1 1 auto;
-}
-
-.riskPreview strong {
-  flex: 0 0 auto;
-  color: var(--gold-text, var(--gold-text));
-  font-size: 12px;
-}
-
-.riskCard > p a {
-  color: var(--gold-text, var(--gold-text));
-  font-weight: 700;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.riskEvidence {
-  margin-top: 15px;
-  padding-top: 13px;
-  border-top: 1px solid var(--line-soft);
-  font-size: 13px;
-}
-
-.riskEvidence summary {
-  color: var(--gold-text, var(--gold-text));
-  cursor: pointer;
-  font-weight: 700;
-}
-
-.riskEvidence article {
-  margin-top: 18px;
-}
-
-.riskEvidence h3 {
-  color: var(--brand-navy);
-  font-size: 15px;
-  font-weight: 700;
-}
-
-.riskEvidence article > p {
-  margin: 4px 0 10px;
-  color: var(--ink-strong);
-}
-
-.riskEvidence article > div {
-  margin-top: 5px;
-  line-height: 1.5;
-}
-
-.riskEvidence a {
-  color: var(--gold-text, var(--gold-text));
-  text-decoration: underline;
-}
-
-.riskEvidence blockquote {
-  margin: 6px 0 0;
-  padding-left: 11px;
-  border-left: 2px solid var(--line);
-  color: var(--ink-soft);
 }

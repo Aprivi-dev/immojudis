@@ -46,11 +46,10 @@
 }
 .heroSummary {
   min-width: 0;
-  border: 1px solid var(--line-soft);
-  border-radius: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
   background: #ffffff;
   padding: 22px 24px;
-  box-shadow: 0 12px 32px rgb(19 34 56 / 5%);
 }
 .heroDetails {
   display: grid;
@@ -69,7 +68,7 @@
 .photo {
   position: relative;
   overflow: hidden;
-  border-radius: 20px;
+  border-radius: var(--radius);
   background: var(--line-soft);
 }
 .heroGallery {
@@ -84,12 +83,13 @@
 }
 .title {
   font-family: var(--font-display), Georgia, serif;
-  font-size: clamp(28px, 2.7vw, 36px);
-  line-height: 1.08;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  margin-top: 12px;
+  font-size: clamp(32px, 4.4vw, 46px);
+  line-height: 1.04;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  margin: 0;
   overflow-wrap: anywhere;
+  text-wrap: balance;
 }
 .muted {
   color: var(--ink-soft);
@@ -112,10 +112,6 @@
   grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
   gap: 14px;
   align-items: start;
-  margin-top: 20px;
-  padding: 14px 16px;
-  border-radius: 14px;
-  background: var(--surface);
 }
 .premiumPrice {
   min-width: 0;
@@ -125,10 +121,10 @@
 .premiumPriceValue {
   margin: 4px 0 2px;
   color: var(--gold-text, var(--gold-text));
-  font-size: clamp(25px, 3vw, 36px);
-  font-weight: 700;
-  line-height: 1.16;
-  letter-spacing: -0.04em;
+  font-size: clamp(26px, 2.6vw, 32px);
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
 }
 .premiumTeaser {
@@ -164,7 +160,7 @@
   padding: 18px 20px;
   border: 1px solid var(--line);
   border-left: 4px solid var(--gold-soft);
-  border-radius: 14px;
+  border-radius: var(--radius);
   background: var(--background);
   color: var(--brand-navy);
 }
@@ -184,97 +180,16 @@
   font-size: 14px;
   line-height: 1.5;
 }
+/* Prix en marine, Plex demi-gras (docs/design/fondations.md). */
 .price {
-  font-size: clamp(28px, 3vw, 34px);
-  line-height: 1.15;
-  font-weight: 700;
-  letter-spacing: -0.04em;
+  color: var(--brand-navy);
+  font-size: clamp(26px, 2.6vw, 32px);
+  line-height: 1.1;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   margin: 2px 0 4px;
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
-}
-.heroEvent {
-  display: grid;
-  grid-template-columns: 20px minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: center;
-  margin-top: 18px;
-  padding: 14px 0;
-  border-top: 1px solid var(--line-soft);
-  border-bottom: 1px solid var(--line-soft);
-}
-.heroEvent > svg {
-  width: 20px;
-  height: 20px;
-  color: var(--gold-text, var(--gold-text));
-}
-.heroEvent span {
-  display: block;
-  color: var(--ink-soft);
-  font-size: 12px;
-}
-.heroEvent strong {
-  display: block;
-  margin-top: 2px;
-  font-size: 15px;
-  line-height: 1.4;
-}
-.heroEvent a {
-  color: var(--gold-text, var(--gold-text));
-  font-size: 13px;
-  font-weight: 600;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-.facts {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  column-gap: 0;
-  row-gap: 18px;
-  margin-top: 15px;
-  padding-top: 0;
-}
-.fact {
-  display: flex;
-  flex-direction: column-reverse;
-  justify-content: flex-end;
-  padding: 0 12px;
-  border-left: 1px solid var(--line-soft);
-  min-width: 0;
-}
-.fact:nth-child(odd) {
-  padding-left: 0;
-  border-left: 0;
-}
-.fact:nth-child(even) {
-  padding-left: 12px;
-}
-.factValue {
-  font-size: 17px;
-  line-height: 1.25;
-  font-weight: 700;
-  letter-spacing: -0.025em;
-  overflow-wrap: anywhere;
-}
-.factLabel {
-  color: var(--ink-soft);
-  font-size: 11px;
-  line-height: 1.4;
-  margin-top: 4px;
-}
-.factValue.factMissing {
-  color: var(--ink-soft);
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: 0;
-  overflow-wrap: normal;
-}
-.heroLinks {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 20px;
-  margin-top: 14px;
 }
 .sourceLink {
   display: inline-flex;
@@ -315,7 +230,7 @@
 }
 .card {
   border: 1px solid var(--line-soft);
-  border-radius: 20px;
+  border-radius: var(--radius);
   background: #ffffff;
   padding: 20px;
   min-width: 0;
@@ -323,14 +238,14 @@
 .descriptionDisclosure {
   overflow: hidden;
   border: 1px solid var(--line-soft);
-  border-radius: 16px;
+  border-radius: var(--radius);
   background: #ffffff;
 }
 .descriptionPreview {
   padding: 22px 24px;
   margin-bottom: 12px;
   border: 1px solid var(--line-warm);
-  border-radius: 16px;
+  border-radius: var(--radius);
   background: #ffffff;
   color: var(--ink-strong);
   font-size: 15px;
@@ -468,7 +383,7 @@
 .map {
   position: relative;
   overflow: hidden;
-  border-radius: 14px;
+  border-radius: var(--radius);
   margin: -4px -4px 16px;
 }
 .address {
@@ -595,11 +510,6 @@
   outline-offset: 4px;
 }
 @media (max-width: 767px) {
-  .heroSummary {
-    border: 0;
-    border-radius: 0;
-    box-shadow: none;
-  }
   .premiumPrice {
     padding-top: 16px;
     padding-left: 0;
@@ -624,9 +534,6 @@
   }
   .card {
     padding: 24px;
-  }
-  .factValue {
-    font-size: 19px;
   }
   .row {
     grid-template-columns: 110px minmax(0, 1fr);
@@ -661,18 +568,21 @@
     grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.85fr);
     gap: 40px;
   }
-  .title {
-    font-size: clamp(28px, 2.7vw, 36px);
-  }
   .heading {
     font-size: 24px;
+  }
+  /* La synthèse reste visible pendant qu'on regarde les photos. */
+  .heroSummary {
+    position: sticky;
+    top: 88px;
+    align-self: start;
   }
 }
 
 .scenarioSummary {
   margin-top: 16px;
   border: 1px solid var(--sand);
-  border-radius: 14px;
+  border-radius: var(--radius);
   background: var(--surface);
   overflow: hidden;
 }
@@ -788,9 +698,7 @@
     background: transparent;
   }
   .heroSummary {
-    border: 1px solid var(--line-warm);
-    border-radius: 18px;
-    padding: 22px 18px;
+    padding: 18px 16px;
   }
   .heroPrices {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -864,13 +772,9 @@
   }
 }
 
-/* Mobile : le bloc titre, mise à prix et date d'audience passe avant le visuel et les espaces sont
-   resserrés, pour que la mise à prix et la date restent sous les yeux sans défiler (mesuré à 320 et
-   390 px de large). L'ordre du DOM ne change pas : seul l'affichage est réordonné. */
+/* Mobile : l'en-tête (titre, lieu, date) puis la photo et la synthèse, comme sur la fiche publique ;
+   les espaces sont resserrés. */
 @media (max-width: 767px) {
-  .heroSummary {
-    order: -1;
-  }
   .container {
     padding-top: 8px;
   }
@@ -883,11 +787,120 @@
   .heroSummary {
     padding: 16px;
   }
-  .heroPrices {
-    margin-top: 14px;
+}
+
+/* En-tête de la fiche complète (même forme que la fiche publique). */
+.pageHeading {
+  display: grid;
+  gap: 10px;
+  margin: 4px 0 22px;
+}
+.headingBadges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.demoNote {
+  color: var(--ink-soft);
+  font-size: var(--text-caption);
+}
+.subtitle {
+  color: var(--ink-soft);
+  font-size: 17px;
+  line-height: 1.5;
+}
+
+/* Synthèse : une liste de lignes (date, visite, lieu, surface, pièces, occupation). */
+.summaryFacts {
+  display: grid;
+  margin: 18px -24px 0;
+  border-top: 1px solid var(--line-soft);
+}
+.summaryFact {
+  display: grid;
+  grid-template-columns: 128px minmax(0, 1fr);
+  gap: 4px 12px;
+  align-items: baseline;
+  padding: 11px 24px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 15px;
+}
+.summaryFact dt {
+  color: var(--ink-soft);
+  font-size: 14px;
+}
+.summaryFact dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  min-width: 0;
+  margin: 0;
+  font-weight: 500;
+}
+.summaryFact dd.factMissing {
+  color: var(--ink-soft);
+  font-weight: 400;
+}
+.summaryNote {
+  color: var(--warning);
+  font-size: var(--text-caption);
+  font-weight: 500;
+}
+.summaryHelper {
+  margin-top: 10px;
+}
+.summaryActions {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+.primaryAction,
+.secondaryAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 0 18px;
+  border-radius: var(--radius-md);
+  font-size: 15px;
+  font-weight: 500;
+  text-align: center;
+  text-decoration: none;
+}
+.primaryAction {
+  background: var(--brand-navy);
+  color: #ffffff;
+}
+.primaryAction:hover {
+  background: var(--brand-navy-soft);
+}
+.secondaryAction {
+  border: 1px solid var(--line);
+  background: #ffffff;
+  color: var(--brand-navy);
+}
+.secondaryAction:hover {
+  background: var(--surface-muted);
+}
+.summaryActions .sourceLink {
+  justify-content: center;
+  font-size: 14px;
+}
+@media (max-width: 767px) {
+  .subtitle {
+    font-size: 16px;
   }
-  .heroEvent {
-    margin-top: 12px;
-    padding: 10px 0;
+  .summaryFacts {
+    margin-inline: -16px;
+  }
+  .summaryFact {
+    grid-template-columns: 112px minmax(0, 1fr);
+    padding-inline: 16px;
+    font-size: 14px;
+  }
+  .summaryFact dt {
+    font-size: 13px;
   }
 }

@@ -19,7 +19,7 @@ function Harness({ showStatistics = false }: { showStatistics?: boolean }) {
 }
 
 describe("SaleDetailTabNav", () => {
-  it("adds the tribunal statistics section to both keyboard and mobile navigation", () => {
+  it("adds the tribunal statistics section to the keyboard navigation", () => {
     render(<Harness showStatistics />);
     expect(screen.getAllByRole("tab")).toHaveLength(6);
     fireEvent.keyDown(screen.getByRole("tab", { name: "Prix et plafond" }), { key: "ArrowRight" });
@@ -27,11 +27,6 @@ describe("SaleDetailTabNav", () => {
       "true",
     );
     expect(document.activeElement).toBe(screen.getByRole("tab", { name: "Statistiques" }));
-    fireEvent.click(screen.getByRole("button", { name: "Explorer : Statistiques" }));
-    expect(screen.getAllByRole("menuitemradio")).toHaveLength(6);
-    expect(
-      screen.getByRole("menuitemradio", { name: "Statistiques" }).getAttribute("aria-checked"),
-    ).toBe("true");
   });
   it("exposes a single selected tab with the five primary sections", () => {
     render(<Harness />);
@@ -73,40 +68,33 @@ describe("SaleDetailTabNav", () => {
     expect(document.activeElement).toBe(tabs[4]);
   });
 
-  it("opens the compact section menu and returns focus to its trigger after selection", () => {
+  it("keeps one row of tabs on every screen, with no separate menu", () => {
     render(<Harness />);
 
-    const trigger = screen.getByRole("button", { name: "Explorer : Aperçu" });
-    fireEvent.click(trigger);
-
-    expect(trigger.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByRole("menu")).toBeTruthy();
-    expect(screen.getAllByRole("menuitemradio")).toHaveLength(5);
-    expect(document.activeElement).toBe(screen.getByRole("menuitemradio", { name: "Aperçu" }));
-
-    fireEvent.click(screen.getByRole("menuitemradio", { name: "Travaux" }));
-
+    expect(screen.getAllByRole("tablist")).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: /Explorer/ })).toBeNull();
     expect(screen.queryByRole("menu")).toBeNull();
-    expect(trigger.getAttribute("aria-expanded")).toBe("false");
-    expect(trigger.getAttribute("aria-label")).toBe("Explorer : Travaux");
-    expect(document.activeElement).toBe(trigger);
-    expect(screen.getByRole("tab", { name: "Travaux" }).getAttribute("aria-selected")).toBe("true");
   });
 
-  it("closes the mobile menu with Escape or an outside pointer", () => {
-    render(<Harness />);
+  it("recalls the two prices beside the tabs, and only the known ones", () => {
+    const { rerender, container } = render(
+      <SaleDetailTabNav
+        activeTab="apercu"
+        onTabChange={() => undefined}
+        priceRecall={{ startingPrice: 95_000, ceiling: 171_000 }}
+      />,
+    );
+    const recall = container.querySelector("[aria-hidden='true']")?.textContent ?? "";
+    expect(recall).toMatch(/Mise à prix 95\s000\s€/);
+    expect(recall).toMatch(/Plafond 171\s000\s€/);
 
-    const trigger = screen.getByRole("button", { name: "Explorer : Aperçu" });
-    fireEvent.click(trigger);
-    fireEvent.keyDown(screen.getByRole("menuitemradio", { name: "Aperçu" }), { key: "Escape" });
-
-    expect(screen.queryByRole("menu")).toBeNull();
-    expect(document.activeElement).toBe(trigger);
-
-    fireEvent.click(trigger);
-    expect(screen.getByRole("menu")).toBeTruthy();
-    fireEvent.pointerDown(document.body);
-
-    expect(screen.queryByRole("menu")).toBeNull();
+    rerender(
+      <SaleDetailTabNav
+        activeTab="apercu"
+        onTabChange={() => undefined}
+        priceRecall={{ startingPrice: 95_000, ceiling: null }}
+      />,
+    );
+    expect(container.textContent).not.toContain("Plafond");
   });
 });
