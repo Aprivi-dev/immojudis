@@ -33,9 +33,7 @@ const MAX_PAGES = 100;
 const PARALLEL_PAGES = 5;
 
 /** `fetched` : lignes brutes de la page, avant écart de l'annonce de démonstration. */
-type Reader = (
-  page: number,
-) => Promise<{ items: DepartmentSaleInput[]; count: number; fetched?: number }>;
+type Reader<Item> = (page: number) => Promise<{ items: Item[]; count: number; fetched?: number }>;
 
 type PublicSaleItems = Awaited<ReturnType<typeof runPreviewSearch>>["items"];
 
@@ -61,10 +59,10 @@ function saleRows(
  * le total annoncé par la fonction publique dépasse ce qui a pu être lu (au plus MAX_PAGES pages),
  * le catalogue est tronqué : l'écart est journalisé, sans bloquer la page.
  */
-export async function readAllPublicSales(
-  read: Reader,
+export async function readAllPublicSales<Item = DepartmentSaleInput>(
+  read: Reader<Item>,
   scope: string = "catalogue",
-): Promise<DepartmentSaleInput[]> {
+): Promise<Item[]> {
   const first = await read(1);
   const pages = Math.min(MAX_PAGES, Math.ceil(first.count / PAGE_SIZE));
   const rows = [...first.items];

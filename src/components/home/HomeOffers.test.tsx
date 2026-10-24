@@ -4,13 +4,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/hooks/use-analysis-checkout-open", () => ({ useAnalysisCheckoutOpen: () => true }));
 
-import { HomeDiscovery } from "./HomeDiscovery";
+import { HomeOffers } from "./HomeOffers";
 
 afterEach(cleanup);
 
-describe("HomeDiscovery free offer card", () => {
+describe("HomeOffers free offer card", () => {
   it("announces the monthly unlocks of the free account and sends to account creation", () => {
-    render(<HomeDiscovery />);
+    render(<HomeOffers />);
 
     const card = screen.getByRole("heading", { name: "Découverte" }).closest("article")!;
     expect(
@@ -24,7 +24,7 @@ describe("HomeDiscovery free offer card", () => {
   });
 
   it("keeps the other promises of the free account", () => {
-    render(<HomeDiscovery />);
+    render(<HomeOffers />);
     const card = screen.getByRole("heading", { name: "Découverte" }).closest("article")!;
     expect(card.textContent).toContain("Accès aux annonces");
     expect(card.textContent).toContain("Jusqu’à 10 favoris");

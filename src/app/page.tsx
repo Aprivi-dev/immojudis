@@ -2,9 +2,13 @@ import type { Metadata } from "next";
 import { COMPANY_DESCRIPTION } from "@/lib/company-description";
 import { organizationStructuredData } from "@/lib/seo";
 import { resolveSiteOrigin } from "@/lib/site-url";
-import { CinematicHero } from "@/components/CinematicHome";
-import { HomeDiscovery } from "@/components/HomeDiscovery";
+import { HomeHero } from "@/components/home/HomeHero";
+import { HomeMotion } from "@/components/home/HomeMotion";
+import { HomeOffers } from "@/components/home/HomeOffers";
+import { HomeClosing, HomeFeatures, HomeJourney, HomeStats } from "@/components/home/HomeSections";
+import homeStyles from "@/components/home/HomePage.module.css";
 import { loadHomeCatalogueSummary } from "@/lib/home-catalogue-summary.server";
+import { loadHomeSalesMap } from "@/lib/home-sales-map.server";
 import { jsonLdString } from "@/lib/json-ld";
 import { PreloadCormorantItalic } from "@/components/PreloadCormorantItalic";
 
@@ -21,7 +25,7 @@ export const metadata: Metadata = {
 export const revalidate = 300;
 
 export default async function Page() {
-  const summary = await loadHomeCatalogueSummary();
+  const [summary, salesMap] = await Promise.all([loadHomeCatalogueSummary(), loadHomeSalesMap()]);
   const origin = resolveSiteOrigin(process.env, "http://localhost:3000")!;
   const structuredData = organizationStructuredData(origin);
   return (
@@ -32,11 +36,16 @@ export default async function Page() {
           __html: jsonLdString(structuredData),
         }}
       />
-      {/* L'italique du h1 (accent « clarté. ») est préchargée par cette page seule. */}
+      {/* L'italique du h1 (accent « sur une seule carte. ») est préchargée par cette page seule. */}
       <PreloadCormorantItalic />
-      <main id="contenu" className="ij-page ij-cinematic-page">
-        <CinematicHero summary={summary} />
-        <HomeDiscovery />
+      <main id="contenu" className={`ij-page ${homeStyles.page}`}>
+        <HomeHero summary={summary} cells={salesMap?.cells ?? []} />
+        <HomeStats summary={summary} map={salesMap} />
+        <HomeJourney />
+        <HomeFeatures />
+        <HomeOffers />
+        <HomeClosing />
+        <HomeMotion />
       </main>
     </>
   );

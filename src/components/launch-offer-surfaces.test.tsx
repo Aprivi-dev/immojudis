@@ -52,8 +52,8 @@ vi.mock("@/hooks/use-create-alert", () => ({
 vi.mock("@/components/BillingActions", () => ({ BillingActions: () => <div>Actions</div> }));
 
 import { AccountPage } from "./AccountPage";
-import { CinematicHero } from "./CinematicHome";
-import { HomeDiscovery } from "./HomeDiscovery";
+import { HomeHero } from "./home/HomeHero";
+import { HomeOffers } from "./home/HomeOffers";
 import { InvestorOnboarding } from "./InvestorOnboarding";
 import { HideForLaunchOfferAccount, LaunchOfferNote } from "./LaunchOfferNote";
 
@@ -68,7 +68,7 @@ afterEach(cleanup);
 
 describe("accueil", () => {
   it("garde la ligne du compte gratuit quand l'offre de lancement est coupée", () => {
-    render(<CinematicHero />);
+    render(<HomeHero />);
     expect(screen.getByRole("link", { name: FREE_ACCESS_LINE }).getAttribute("href")).toBe(
       "/offres",
     );
@@ -76,7 +76,7 @@ describe("accueil", () => {
 
   it("remplace cette ligne par la mention de l'offre quand elle est active", () => {
     mocks.launch = { active: true, pending: false };
-    render(<CinematicHero />);
+    render(<HomeHero />);
     expect(screen.getByRole("link", { name: LAUNCH_OFFER_VISITOR_TEXT })).toBeTruthy();
     expect(screen.queryByText(FREE_ACCESS_LINE)).toBeNull();
   });
@@ -84,7 +84,7 @@ describe("accueil", () => {
   it("parle au compte connecté avec le texte du compte", () => {
     mocks.launch = { active: true, pending: false };
     mocks.user = { id: "u1" };
-    render(<CinematicHero />);
+    render(<HomeHero />);
     expect(screen.getByRole("link", { name: LAUNCH_OFFER_ACCOUNT_TEXT })).toBeTruthy();
   });
 });
@@ -96,7 +96,7 @@ describe("carte Analyse de l'accueil", () => {
 
   it("souscription fermée : « Me prévenir de l’ouverture » en bouton principal et tarif prévu", async () => {
     mocks.checkoutOpen = false;
-    render(<HomeDiscovery />);
+    render(<HomeOffers />);
     const card = analysisCard();
     // La demande est chargée à la demande (un seul import dynamique partagé).
     expect(
@@ -108,7 +108,7 @@ describe("carte Analyse de l'accueil", () => {
   });
 
   it("souscription ouverte : le lien « Découvrir Analyse » et l'essai", () => {
-    render(<HomeDiscovery />);
+    render(<HomeOffers />);
     expect(analysisCard().textContent).toContain("Découvrir Analyse");
     expect(analysisCard().textContent).toContain("Essai de 7 jours");
   });
@@ -116,7 +116,7 @@ describe("carte Analyse de l'accueil", () => {
   it("offre de lancement : la mention sur la carte gratuite, aucun achat sur la carte Analyse", () => {
     mocks.launch = { active: true, pending: false };
     mocks.checkoutOpen = false;
-    render(<HomeDiscovery />);
+    render(<HomeOffers />);
     const free = screen.getByRole("heading", { name: "Découverte" }).closest("article")!;
     expect(free.textContent).toContain(LAUNCH_OFFER_VISITOR_TEXT);
     const card = analysisCard();
@@ -128,7 +128,7 @@ describe("carte Analyse de l'accueil", () => {
   });
 
   it("annonce 10 favoris pour le compte gratuit", () => {
-    render(<HomeDiscovery />);
+    render(<HomeOffers />);
     const free = screen.getByRole("heading", { name: "Découverte" }).closest("article")!;
     expect(free.textContent).toContain("Jusqu’à 10 favoris");
     expect(free.textContent).not.toContain("trois favoris");
