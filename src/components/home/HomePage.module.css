@@ -1,0 +1,1083 @@
+/*
+ * Accueil (maquette validée le 24/10/2026, direction « la carte vivante » avec la grille de
+ * fonctions) : fond papier, titres en Cormorant, textes en Plex, une seule couleur d'accent (l'or).
+ * Mouvement en CSS seul. Les apparitions au défilement passent par `HomeMotion` (attributs
+ * `data-reveal` / `data-shown`) ; les animations du premier écran démarrent au chargement. Tout
+ * s'arrête avec « réduire les animations ».
+ */
+.page {
+  --home-ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  background: var(--background);
+  color: var(--brand-navy);
+}
+
+.page :where(h1, h2, h3, p, ol, ul, dl, dd, figure) {
+  margin: 0;
+}
+
+.page :where(a, button):focus-visible {
+  outline: 3px solid var(--gold);
+  outline-offset: 4px;
+}
+
+.container {
+  width: min(1200px, 100%);
+  margin-inline: auto;
+  padding-inline: max(16px, env(safe-area-inset-left, 0px))
+    max(16px, env(safe-area-inset-right, 0px));
+}
+
+@media (min-width: 768px) {
+  .container {
+    padding-inline: 40px;
+  }
+}
+
+.page h2 {
+  font-family: var(--font-display);
+  font-size: clamp(34px, 4.4vw, 54px);
+  font-weight: 500;
+  line-height: 1.02;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.eyebrow {
+  color: var(--gold-text);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.sectionHead {
+  display: grid;
+  gap: 10px;
+  max-width: 760px;
+  margin-bottom: clamp(24px, 3vw, 36px);
+}
+
+.gold {
+  color: var(--gold-text);
+}
+
+/* ---------- Liens ---------- */
+
+.primaryLink,
+.secondaryLink {
+  display: inline-flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: var(--radius);
+  padding: 0 18px;
+  font-size: 15px;
+  font-weight: 500;
+  text-decoration: none;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.primaryLink {
+  background: var(--brand-navy);
+  color: #ffffff;
+}
+
+.primaryLink:hover {
+  background: var(--brand-navy-soft);
+}
+
+.secondaryLink {
+  border: 1px solid var(--line);
+  background: #ffffff;
+  color: var(--brand-navy);
+}
+
+.secondaryLink:hover {
+  border-color: var(--brand-navy);
+}
+
+.textLink,
+.tileLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--brand-navy);
+  font-size: 15px;
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: var(--gold);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 5px;
+}
+
+.textLink svg,
+.tileLink svg,
+.primaryLink svg,
+.secondaryLink svg {
+  transition: transform 0.2s ease;
+}
+
+.textLink:hover svg,
+.tileLink:hover svg,
+.primaryLink:hover svg,
+.secondaryLink:hover svg {
+  transform: translateX(3px);
+}
+
+/* ---------- Recherche ---------- */
+
+.search {
+  display: flex;
+  width: min(560px, 100%);
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 6px 6px 6px 16px;
+  box-shadow: 0 16px 36px -28px rgb(19 34 56 / 45%);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.search:focus-within {
+  border-color: var(--brand-navy);
+  box-shadow: 0 0 0 3px rgb(201 141 69 / 35%);
+}
+
+.search > svg {
+  flex: none;
+  color: var(--ink-soft);
+}
+
+.search input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  background: transparent;
+  color: var(--brand-navy);
+  font-size: 16px;
+  outline: none;
+}
+
+.search input::placeholder {
+  color: var(--ink-soft);
+  opacity: 1;
+}
+
+.search button {
+  display: inline-flex;
+  min-height: 46px;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--brand-navy);
+  padding: 0 16px;
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.search button:hover {
+  background: var(--brand-navy-soft);
+}
+
+.searchDark {
+  border-color: rgb(255 255 255 / 25%);
+  box-shadow: none;
+}
+
+.searchDark button {
+  background: var(--gold);
+  color: var(--brand-navy);
+}
+
+.searchDark button:hover {
+  background: var(--gold-light);
+}
+
+@media (max-width: 479px) {
+  .search button span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .search button {
+    padding: 0 14px;
+  }
+}
+
+/* ---------- Premier écran ---------- */
+
+.hero {
+  overflow: hidden;
+  padding-block: clamp(28px, 5vw, 64px) clamp(36px, 5vw, 72px);
+}
+
+.heroGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.02fr) minmax(0, 0.98fr);
+  align-items: center;
+  gap: clamp(24px, 4vw, 56px);
+}
+
+.heroCopy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 22px;
+}
+
+.heroCopy h1 {
+  font-family: var(--font-display);
+  font-size: clamp(44px, 6vw, 80px);
+  font-weight: 500;
+  line-height: 0.98;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+
+.heroCopy h1 em {
+  color: var(--gold-text);
+  font-weight: 500;
+}
+
+.lead {
+  max-width: 34em;
+  color: var(--ink-strong);
+  font-size: clamp(17px, 1.5vw, 19px);
+  line-height: 1.55;
+}
+
+.facts {
+  display: grid;
+  gap: 4px;
+  color: var(--ink-soft);
+  font-size: 14px;
+}
+
+.facts a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.facts a:hover {
+  color: var(--brand-navy);
+  text-decoration: underline;
+}
+
+@media (max-width: 899px) {
+  .heroGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---------- Carte ---------- */
+
+.map {
+  position: relative;
+  width: 100%;
+  max-width: 600px;
+  justify-self: center;
+}
+
+.mapSvg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.land {
+  fill: #ffffff;
+  stroke: var(--line);
+  stroke-width: 1.4;
+  stroke-linejoin: round;
+}
+
+.pin {
+  fill: var(--brand-navy);
+  fill-opacity: 0.86;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.ring {
+  fill: none;
+  stroke: var(--gold);
+  stroke-width: 1.4;
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.peek {
+  position: absolute;
+  z-index: 1;
+  display: grid;
+  width: min(230px, 58%);
+  gap: 2px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 12px 14px;
+  color: var(--brand-navy);
+  text-decoration: none;
+  box-shadow: 0 18px 40px -24px rgb(19 34 56 / 50%);
+  /* La pointe de la fiche part de Bordeaux, vers le bas et vers l'Atlantique. */
+  top: var(--y);
+  left: var(--x);
+  transform: translate(-82%, 18px);
+  transition: border-color 0.2s ease;
+}
+
+.peek:hover {
+  border-color: var(--brand-navy);
+}
+
+.peek::before {
+  content: "";
+  position: absolute;
+  top: -7px;
+  right: 16%;
+  width: 12px;
+  height: 12px;
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+  background: #ffffff;
+  transform: rotate(45deg);
+}
+
+.peekTag {
+  position: absolute;
+  top: -11px;
+  left: 12px;
+  border: 1px solid var(--gold-light);
+  border-radius: 999px;
+  background: var(--warning-tint);
+  padding: 0 8px;
+  color: var(--warning);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.6;
+}
+
+.peekMeta {
+  margin-top: 4px;
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.peekTitle {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.peekPrice {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 6px;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.peekPrice strong {
+  color: var(--brand-navy);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.mapCaption {
+  margin-top: 10px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  text-align: right;
+}
+
+@media (max-width: 899px) {
+  .map {
+    max-width: 520px;
+  }
+}
+
+/* Sur un téléphone, la fiche se range dans le coin sud-ouest de la carte, sans pointe. */
+@media (max-width: 599px) {
+  .peek {
+    top: auto;
+    bottom: 14%;
+    left: 0;
+    width: min(220px, 62%);
+    transform: none;
+  }
+
+  .peek::before {
+    content: none;
+  }
+}
+
+/* ---------- Chiffres ---------- */
+
+.stats {
+  border-block: 1px solid var(--line-soft);
+  background: #ffffff;
+}
+
+.stats dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.stat {
+  display: flex;
+  flex-direction: column-reverse;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 26px 0;
+}
+
+.stat dt {
+  color: var(--ink-soft);
+  font-size: 14px;
+}
+
+.statValue {
+  font-size: clamp(32px, 3.4vw, 44px);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+@media (min-width: 720px) {
+  .stat {
+    padding-inline: 28px;
+  }
+
+  .stat:first-child {
+    padding-left: 0;
+  }
+
+  .stat + .stat {
+    border-left: 1px solid var(--line-soft);
+  }
+}
+
+@media (max-width: 719px) {
+  .stat + .stat {
+    border-top: 1px solid var(--line-soft);
+  }
+}
+
+/* ---------- Trois écrans ---------- */
+
+.journey,
+.features,
+.offers {
+  padding-block: clamp(48px, 7vw, 96px);
+}
+
+.features {
+  padding-top: 0;
+}
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  padding: 0;
+  list-style: none;
+}
+
+.step {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 20px;
+}
+
+.step h3,
+.tile h3,
+.plan h3 {
+  font-family: var(--font-sans);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.step p,
+.tile p {
+  color: var(--ink-soft);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.stepNumber {
+  color: var(--gold-text);
+  font-family: var(--font-display);
+  font-size: 28px;
+  line-height: 1;
+}
+
+.mini {
+  display: grid;
+  gap: 8px;
+  margin-top: 6px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: var(--surface-muted);
+  padding: 12px;
+  font-size: 13px;
+}
+
+.miniRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.miniThumb {
+  width: 36px;
+  height: 28px;
+  flex: none;
+  border-radius: 5px;
+  background: linear-gradient(160deg, var(--sand), var(--line));
+}
+
+.miniLines {
+  display: grid;
+  flex: 1;
+  gap: 5px;
+}
+
+.miniLines i {
+  display: block;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--line-soft);
+}
+
+.miniLines i:first-child {
+  background: var(--line);
+}
+
+.miniChip {
+  flex: none;
+  border-radius: 999px;
+  background: var(--warning-tint);
+  padding: 1px 8px;
+  color: var(--warning);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.miniLabel {
+  color: var(--warning);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.miniLine {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.miniLine b {
+  font-weight: 600;
+}
+
+.miniBar {
+  display: block;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-tint);
+}
+
+.miniBar i {
+  display: block;
+  width: var(--w);
+  height: 100%;
+  border-radius: inherit;
+  background: var(--gold);
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 8px 10px;
+}
+
+.toast i {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--gold);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px 24px;
+  margin-top: 28px;
+}
+
+@media (max-width: 899px) {
+  .steps {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---------- Grille de fonctions ---------- */
+
+.bento {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.tile {
+  display: grid;
+  min-width: 0;
+  grid-template-rows: auto auto 1fr auto;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 20px;
+}
+
+.tileWide {
+  grid-column: span 2;
+}
+
+.tileLink {
+  justify-self: start;
+  font-size: 14px;
+}
+
+.docLines {
+  display: grid;
+  align-content: center;
+  gap: 8px;
+  padding-block: 6px;
+}
+
+.docLines i {
+  position: relative;
+  display: block;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-tint);
+}
+
+.docLines i.highlight::after {
+  content: "";
+  position: absolute;
+  inset: 0 40% 0 0;
+  border-radius: inherit;
+  background: var(--gold-light);
+}
+
+.bars {
+  display: flex;
+  height: 72px;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.bars i {
+  height: var(--h);
+  flex: 1;
+  border-radius: 4px 4px 0 0;
+  background: var(--surface-tint);
+  transform-origin: bottom;
+}
+
+.bars i.barMine {
+  background: var(--gold);
+}
+
+.days {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.days i {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 500;
+}
+
+.days i.dayBusy {
+  border-color: var(--brand-navy);
+  background: var(--brand-navy);
+  color: #ffffff;
+}
+
+.spark svg {
+  display: block;
+  width: 100%;
+  height: 48px;
+  overflow: visible;
+}
+
+.spark {
+  display: block;
+}
+
+.spark polyline {
+  fill: none;
+  stroke: var(--gold);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+@media (max-width: 899px) {
+  .bento {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tileWide {
+    grid-column: auto;
+  }
+}
+
+/* ---------- Offres ---------- */
+
+.offers {
+  border-top: 1px solid var(--line-soft);
+  background: #ffffff;
+}
+
+.plans {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  max-width: 920px;
+}
+
+.plan {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--background);
+  padding: 24px;
+}
+
+.planFeatured {
+  border-color: var(--gold);
+}
+
+.planPrice {
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.plan ul {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  list-style: none;
+  font-size: 15px;
+}
+
+.plan li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.plan li svg {
+  flex: none;
+  margin-top: 4px;
+  color: var(--gold-text);
+}
+
+.plan .primaryLink,
+.plan .secondaryLink {
+  justify-self: start;
+}
+
+.planFinePrint {
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+@media (max-width: 719px) {
+  .plans {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---------- Clôture ---------- */
+
+.closing {
+  background: var(--brand-navy);
+  color: #ffffff;
+  padding-block: clamp(48px, 7vw, 88px);
+}
+
+.closingInner {
+  display: grid;
+  justify-items: center;
+  gap: 20px;
+  text-align: center;
+}
+
+.closing h2 em {
+  color: var(--gold-light);
+}
+
+.closingNote {
+  color: rgb(255 255 255 / 82%);
+  font-size: 14px;
+}
+
+.closingNote a {
+  color: inherit;
+}
+
+/* ---------- Mouvement ---------- */
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Premier écran : le contour se trace, les ventes apparaissent, la fiche se pose. */
+  .land {
+    fill-opacity: 0;
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation:
+      home-draw 2.2s var(--home-ease) 0.1s forwards,
+      home-fill 0.9s ease 1.3s forwards;
+  }
+
+  .pin {
+    opacity: 0;
+    transform: scale(0);
+    animation: home-pop 0.5s var(--home-ease) forwards;
+    animation-delay: calc(900ms + var(--d, 0ms));
+  }
+
+  /* Halos des grandes villes : un cycle de 5,5 s, décalés l'un après l'autre. */
+  .ring {
+    animation: home-pulse 5.5s ease-out infinite;
+    animation-delay: calc(2600ms + var(--k, 0) * 470ms);
+  }
+
+  /* Quelques petits points s'allument en or, chacun à son tour, comme de nouvelles ventes. */
+  .fresh {
+    animation:
+      home-pop 0.5s var(--home-ease) forwards,
+      home-fresh 9s ease-in-out infinite;
+    animation-delay: calc(900ms + var(--d, 0ms)), calc(3400ms + var(--k, 0) * 1100ms);
+  }
+
+  .peek {
+    opacity: 0;
+    animation: home-rise 0.7s var(--home-ease) 2.6s forwards;
+  }
+
+  .heroCopy > * {
+    animation: home-fade 0.8s var(--home-ease) backwards;
+  }
+
+  .heroCopy > :nth-child(2) {
+    animation-delay: 0.12s;
+  }
+
+  .heroCopy > :nth-child(3) {
+    animation-delay: 0.24s;
+  }
+
+  .heroCopy > :nth-child(n + 4) {
+    animation-delay: 0.36s;
+  }
+
+  /* Le titre reste visible dès la première image (élément le plus grand de l'écran). */
+  .heroCopy > h1 {
+    animation: none;
+  }
+
+  /* Apparitions au défilement : seulement quand le script les gère (voir HomeMotion). */
+  :global(html[data-home-motion]) .page [data-reveal] {
+    transition:
+      opacity 0.8s var(--home-ease),
+      transform 0.8s var(--home-ease);
+    transition-delay: var(--delay, 0ms);
+  }
+
+  :global(html[data-home-motion]) .page [data-reveal]:not([data-shown]) {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+
+  :global(html[data-home-motion]) .page [data-reveal]:not([data-shown]) .miniRow,
+  :global(html[data-home-motion]) .page [data-reveal]:not([data-shown]) .toast {
+    opacity: 0;
+    transform: translateX(14px);
+  }
+
+  .miniRow,
+  .toast {
+    transition:
+      opacity 0.6s ease,
+      transform 0.6s var(--home-ease);
+    transition-delay: var(--delay, 0ms);
+  }
+
+  :global(html[data-home-motion]) .page [data-reveal]:not([data-shown]) .miniBar i {
+    width: 0;
+  }
+
+  .miniBar i {
+    transition: width 1.4s var(--home-ease) 0.4s;
+  }
+
+  :global(html[data-home-motion])
+    .page
+    [data-reveal]:not([data-shown])
+    .docLines
+    i.highlight::after {
+    transform: scaleX(0);
+  }
+
+  .docLines i::after {
+    transform-origin: left;
+    transition: transform 1s var(--home-ease);
+    transition-delay: var(--delay, 0ms);
+  }
+
+  :global(html[data-home-motion]) .page [data-reveal]:not([data-shown]) .bars i {
+    transform: scaleY(0);
+  }
+
+  .bars i {
+    transition: transform 0.9s var(--home-ease);
+    transition-delay: var(--delay, 0ms);
+  }
+
+  :global(html[data-home-motion]) .page [data-reveal]:not([data-shown]) .spark {
+    clip-path: inset(0 100% 0 0);
+  }
+
+  .spark {
+    clip-path: inset(0 0 0 0);
+    transition: clip-path 1.6s var(--home-ease) 0.3s;
+  }
+
+  .days i.dayBusy {
+    transition:
+      background-color 0.4s ease 0.6s,
+      color 0.4s ease 0.6s;
+  }
+
+  :global(html[data-home-motion]) .page [data-reveal]:not([data-shown]) .days i.dayBusy {
+    border-color: var(--line-soft);
+    background: transparent;
+    color: var(--ink-soft);
+  }
+}
+
+@keyframes home-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes home-fill {
+  to {
+    fill-opacity: 1;
+  }
+}
+
+@keyframes home-pop {
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes home-fresh {
+  0%,
+  72%,
+  100% {
+    fill: var(--brand-navy);
+  }
+
+  78%,
+  90% {
+    fill: var(--gold);
+    fill-opacity: 1;
+  }
+}
+
+@keyframes home-pulse {
+  0% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+
+  45%,
+  100% {
+    opacity: 0;
+    transform: scale(3.2);
+  }
+}
+
+@keyframes home-rise {
+  from {
+    opacity: 0;
+    translate: 0 10px;
+  }
+
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+@keyframes home-fade {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}

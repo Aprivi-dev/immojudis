@@ -24,6 +24,9 @@ for (const route of PUBLIC_ROUTES) {
   test(`${route} reste lisible au clavier, avec contrôle Axe sur Chromium`, async ({
     page,
   }, testInfo) => {
+    // Axe mesure la page au repos : sans animation, les blocs qui apparaissent au défilement
+    // (accueil) sont déjà affichés, et leurs contrastes sont ceux que le visiteur lira.
+    await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto(route);
     await expect(page.locator("h1:visible").first()).toBeVisible();
 
