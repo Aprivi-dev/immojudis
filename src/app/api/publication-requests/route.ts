@@ -59,7 +59,7 @@ export async function PUT(request: Request) {
 export async function DELETE(request: Request) {
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
-    const body = z.object({ requestId: z.string().uuid() }).parse(await request.json());
+    const body = z.object({ requestId: z.string().guid() }).parse(await request.json());
     await removePublicationRequestUploads({ auth, requestId: body.requestId });
     return NextResponse.json({ ok: true }, { headers: { "cache-control": "private, no-store" } });
   } catch (error) {

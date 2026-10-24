@@ -15,7 +15,7 @@ import { refreshSaleValuationOnDemand } from "@/lib/sale-market-estimates";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import { z } from "zod";
 
-const requestSchema = z.object({ saleId: z.string().uuid() });
+const requestSchema = z.object({ saleId: z.string().guid() });
 
 export const maxDuration = 60;
 

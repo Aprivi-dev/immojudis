@@ -1,4 +1,7 @@
-import { z } from "zod";
+// zod/mini : la réponse est validée aussi dans le navigateur (annuaire de l'activité judiciaire,
+// statistiques de la fiche). Mêmes règles que l'écriture chaînée de zod (objets `strict` devenus
+// `strictObject`, `.refine` devenu `.check(z.refine(...))`), avec bien moins de code envoyé.
+import { z } from "zod/mini";
 import { publishedDay } from "@/lib/listing-evidence";
 import { labelFingerprint, parisDayKey } from "@/lib/tribunal-hearing-identity";
 import { mergeDuplicateJudicialAnnouncements } from "@/lib/tribunal-judicial-activity-dedup";
@@ -13,7 +16,12 @@ export class TribunalCourtUnresolvedError extends Error {
 export const TRIBUNAL_JUDICIAL_ACTIVITY_BUILDER_VERSION = "tribunal_judicial_activity_v3" as const;
 export const TRIBUNAL_JUDICIAL_ACTIVITY_MIN_SAMPLE = 5;
 
-const isoDateTimeSchema = z.string().datetime({ offset: true });
+const isoDateTimeSchema = z.string().check(z.iso.datetime({ offset: true }));
+// Entier positif ou nul ; entier strictement positif ; part entre 0 et 1 ; libellé non vide.
+const countSchema = () => z.number().check(z.int(), z.nonnegative());
+const positiveCountSchema = () => z.number().check(z.int(), z.positive());
+const shareSchema = () => z.number().check(z.gte(0), z.lte(1));
+const nonEmptyStringSchema = () => z.string().check(z.minLength(1));
 
 export const tribunalJudicialActivityHistoryMonthsSchema = z.union([
   z.literal(3),
@@ -23,43 +31,43 @@ export const tribunalJudicialActivityHistoryMonthsSchema = z.union([
 ]);
 
 export const tribunalJudicialActivityQuerySchema = z
-  .object({
-    courtCode: z
-      .string()
-      .trim()
-      .min(1)
-      .max(80)
-      .transform((value) => value.toLocaleLowerCase("fr-FR"))
-      .refine((value) => /^[a-z0-9][a-z0-9:._-]*$/.test(value), {
-        message: "Code tribunal invalide.",
-      })
-      .optional(),
-    saleId: z.string().uuid().optional(),
-    historyMonths: z.preprocess(
-      (value) => (value === undefined ? 36 : Number(value)),
+  .strictObject({
+    courtCode: z.optional(
+      z
+        .pipe(
+          z.string().check(z.trim(), z.minLength(1), z.maxLength(80)),
+          z.transform((value: string) => value.toLocaleLowerCase("fr-FR")),
+        )
+        .check(
+          z.refine((value) => /^[a-z0-9][a-z0-9:._-]*$/.test(value), {
+            message: "Code tribunal invalide.",
+          }),
+        ),
+    ),
+    saleId: z.optional(z.string().check(z.guid())),
+    // `z.preprocess(fn, schema)` de zod est le tuyau `transform(fn)` puis `schema`.
+    historyMonths: z.pipe(
+      z.transform((value: unknown) => (value === undefined ? 36 : Number(value))),
       tribunalJudicialActivityHistoryMonthsSchema,
     ),
   })
-  .strict()
-  .refine((value) => Boolean(value.courtCode) !== Boolean(value.saleId), {
-    message: "Fournissez exactement courtCode ou saleId.",
-  });
+  .check(
+    z.refine((value) => Boolean(value.courtCode) !== Boolean(value.saleId), {
+      message: "Fournissez exactement courtCode ou saleId.",
+    }),
+  );
 
-const publishedMetricSchema = z
-  .object({
-    status: z.literal("published"),
-    value: z.number().nonnegative(),
-    sampleSize: z.number().int().nonnegative(),
-  })
-  .strict();
+const publishedMetricSchema = z.strictObject({
+  status: z.literal("published"),
+  value: z.number().check(z.nonnegative()),
+  sampleSize: countSchema(),
+});
 
-const suppressedMetricSchema = z
-  .object({
-    status: z.literal("insufficient_data"),
-    value: z.null(),
-    sampleSize: z.number().int().nonnegative(),
-  })
-  .strict();
+const suppressedMetricSchema = z.strictObject({
+  status: z.literal("insufficient_data"),
+  value: z.null(),
+  sampleSize: countSchema(),
+});
 
 export const tribunalJudicialActivityMetricSchema = z.discriminatedUnion("status", [
   publishedMetricSchema,
@@ -67,220 +75,201 @@ export const tribunalJudicialActivityMetricSchema = z.discriminatedUnion("status
 ]);
 
 const publishedRangeMetricSchema = z
-  .object({
+  .strictObject({
     status: z.literal("published"),
-    p25: z.number().nonnegative(),
-    p50: z.number().nonnegative(),
-    p75: z.number().nonnegative(),
-    sampleSize: z.number().int().nonnegative(),
+    p25: z.number().check(z.nonnegative()),
+    p50: z.number().check(z.nonnegative()),
+    p75: z.number().check(z.nonnegative()),
+    sampleSize: countSchema(),
   })
-  .strict()
-  .superRefine((metric, context) => {
-    if (metric.p25 > metric.p50 || metric.p50 > metric.p75) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Les quantiles doivent être monotones (P25 ≤ P50 ≤ P75).",
-      });
-    }
-  });
+  .check(
+    z.superRefine((metric, context) => {
+      if (metric.p25 > metric.p50 || metric.p50 > metric.p75) {
+        context.addIssue({
+          code: "custom",
+          message: "Les quantiles doivent être monotones (P25 ≤ P50 ≤ P75).",
+        });
+      }
+    }),
+  );
 
-const suppressedRangeMetricSchema = z
-  .object({
-    status: z.literal("insufficient_data"),
-    p25: z.null(),
-    p50: z.null(),
-    p75: z.null(),
-    sampleSize: z.number().int().nonnegative(),
-  })
-  .strict();
+const suppressedRangeMetricSchema = z.strictObject({
+  status: z.literal("insufficient_data"),
+  p25: z.null(),
+  p50: z.null(),
+  p75: z.null(),
+  sampleSize: countSchema(),
+});
 
 export const tribunalJudicialActivityRangeMetricSchema = z.union([
   publishedRangeMetricSchema,
   suppressedRangeMetricSchema,
 ]);
 
-const propertyTypeShareSchema = z
-  .object({
-    propertyType: z.string().min(1),
-    count: z.number().int().positive(),
-    share: z.number().min(0).max(1),
-  })
-  .strict();
+const propertyTypeShareSchema = z.strictObject({
+  propertyType: nonEmptyStringSchema(),
+  count: positiveCountSchema(),
+  share: shareSchema(),
+});
 
-const propertyTypeBenchmarkSchema = z
-  .object({
-    propertyType: z.string().min(1),
-    observedSales: z.number().int().positive(),
-    startingPriceRangeEur: tribunalJudicialActivityRangeMetricSchema,
-    discoveryLeadRangeDays: tribunalJudicialActivityRangeMetricSchema,
-  })
-  .strict();
+const propertyTypeBenchmarkSchema = z.strictObject({
+  propertyType: nonEmptyStringSchema(),
+  observedSales: positiveCountSchema(),
+  startingPriceRangeEur: tribunalJudicialActivityRangeMetricSchema,
+  discoveryLeadRangeDays: tribunalJudicialActivityRangeMetricSchema,
+});
 
-const upcomingPropertyTypeBenchmarkSchema = z
-  .object({
-    propertyType: z.string().min(1),
-    upcomingSales: z.number().int().positive(),
-    startingPriceRangeEur: tribunalJudicialActivityRangeMetricSchema,
-    discoveryLeadRangeDays: tribunalJudicialActivityRangeMetricSchema,
-  })
-  .strict();
+const upcomingPropertyTypeBenchmarkSchema = z.strictObject({
+  propertyType: nonEmptyStringSchema(),
+  upcomingSales: positiveCountSchema(),
+  startingPriceRangeEur: tribunalJudicialActivityRangeMetricSchema,
+  discoveryLeadRangeDays: tribunalJudicialActivityRangeMetricSchema,
+});
 
-const occupationDistributionSchema = z
-  .object({
-    status: z.enum(["vacant", "occupied", "rented"]),
-    count: z.number().int().nonnegative(),
-    share: z.number().min(0).max(1),
-  })
-  .strict();
+const occupationDistributionSchema = z.strictObject({
+  status: z.enum(["vacant", "occupied", "rented"]),
+  count: countSchema(),
+  share: shareSchema(),
+});
 
 const occupationSchema = z
-  .object({
-    knownSales: z.number().int().nonnegative(),
-    unknownSales: z.number().int().nonnegative(),
-    distribution: z.array(occupationDistributionSchema).max(3),
+  .strictObject({
+    knownSales: countSchema(),
+    unknownSales: countSchema(),
+    distribution: z.array(occupationDistributionSchema).check(z.maxLength(3)),
   })
-  .strict()
-  .superRefine((occupation, context) => {
-    const statuses = new Set<string>();
-    let countTotal = 0;
-    let shareTotal = 0;
-    for (const [index, item] of occupation.distribution.entries()) {
-      if (statuses.has(item.status)) {
+  .check(
+    z.superRefine((occupation, context) => {
+      const statuses = new Set<string>();
+      let countTotal = 0;
+      let shareTotal = 0;
+      for (const [index, item] of occupation.distribution.entries()) {
+        if (statuses.has(item.status)) {
+          context.addIssue({
+            code: "custom",
+            path: ["distribution", index, "status"],
+            message: "Chaque statut d’occupation ne peut apparaître qu’une fois.",
+          });
+        }
+        statuses.add(item.status);
+        countTotal += item.count;
+        shareTotal += item.share;
+        const expectedShare = occupation.knownSales === 0 ? 0 : item.count / occupation.knownSales;
+        if (Math.abs(item.share - expectedShare) > 0.000001) {
+          context.addIssue({
+            code: "custom",
+            path: ["distribution", index, "share"],
+            message: "La part d’occupation doit utiliser le dénominateur des ventes renseignées.",
+          });
+        }
+      }
+      if (countTotal !== occupation.knownSales) {
         context.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["distribution", index, "status"],
-          message: "Chaque statut d’occupation ne peut apparaître qu’une fois.",
+          code: "custom",
+          path: ["distribution"],
+          message: "Les effectifs d’occupation doivent totaliser les ventes renseignées.",
         });
       }
-      statuses.add(item.status);
-      countTotal += item.count;
-      shareTotal += item.share;
-      const expectedShare = occupation.knownSales === 0 ? 0 : item.count / occupation.knownSales;
-      if (Math.abs(item.share - expectedShare) > 0.000001) {
+      const expectedShareTotal = occupation.knownSales === 0 ? 0 : 1;
+      // Shares are serialized to six decimals by the builder. Three thirds
+      // therefore sum to 0.999999, while each individual share still has to be
+      // accurate to one millionth of its count denominator.
+      if (Math.abs(shareTotal - expectedShareTotal) > 0.000003) {
         context.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["distribution", index, "share"],
-          message: "La part d’occupation doit utiliser le dénominateur des ventes renseignées.",
+          code: "custom",
+          path: ["distribution"],
+          message: "Les parts d’occupation doivent totaliser 100 % des ventes renseignées.",
         });
       }
-    }
-    if (countTotal !== occupation.knownSales) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["distribution"],
-        message: "Les effectifs d’occupation doivent totaliser les ventes renseignées.",
-      });
-    }
-    const expectedShareTotal = occupation.knownSales === 0 ? 0 : 1;
-    // Shares are serialized to six decimals by the builder. Three thirds
-    // therefore sum to 0.999999, while each individual share still has to be
-    // accurate to one millionth of its count denominator.
-    if (Math.abs(shareTotal - expectedShareTotal) > 0.000003) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["distribution"],
-        message: "Les parts d’occupation doivent totaliser 100 % des ventes renseignées.",
-      });
-    }
-  });
+    }),
+  );
 
-const hearingCalendarEntrySchema = z
-  .object({
-    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-    sales: z.number().int().positive(),
-  })
-  .strict();
+const hearingCalendarEntrySchema = z.strictObject({
+  date: z.string().check(z.regex(/^\d{4}-\d{2}-\d{2}$/)),
+  sales: positiveCountSchema(),
+});
 
-const communeShareSchema = z
-  .object({
-    city: z.string().min(1),
-    count: z.number().int().positive(),
-    share: z.number().min(0).max(1),
-  })
-  .strict();
+const communeShareSchema = z.strictObject({
+  city: nonEmptyStringSchema(),
+  count: positiveCountSchema(),
+  share: shareSchema(),
+});
 
 export const tribunalJudicialActivityResponseSchema = z
-  .object({
-    court: z
-      .object({
-        code: z.string().min(1),
-        name: z.string().min(1),
-        judicialRegion: z.string().min(1).nullable(),
-      })
-      .strict(),
-    period: z
-      .object({
-        historyMonths: tribunalJudicialActivityHistoryMonthsSchema,
-        historyStart: isoDateTimeSchema,
-        asOf: isoDateTimeSchema,
-        upcomingEnd: isoDateTimeSchema,
-      })
-      .strict(),
-    activity: z
-      .object({
-        observedPastSales: z.number().int().nonnegative(),
-        upcomingSales: z.number().int().nonnegative(),
-        upcomingSales90Days: z.number().int().nonnegative(),
-        upcomingHearingDays: z.number().int().nonnegative(),
-        nextSaleAt: isoDateTimeSchema.nullable(),
-        medianStartingPriceEur: tribunalJudicialActivityMetricSchema,
-        startingPriceRangeEur: tribunalJudicialActivityRangeMetricSchema,
-        upcomingMedianStartingPriceEur: tribunalJudicialActivityMetricSchema,
-        upcomingStartingPriceRangeEur: tribunalJudicialActivityRangeMetricSchema,
-        visitCoverage: tribunalJudicialActivityMetricSchema,
-        observedVisitCoverage: tribunalJudicialActivityMetricSchema.optional(),
-        occupation: occupationSchema.optional(),
-        hearingCalendar: z.array(hearingCalendarEntrySchema).max(100).optional(),
-        communes: z.array(communeShareSchema).max(20).optional(),
-        medianDiscoveryLeadDays: tribunalJudicialActivityMetricSchema,
-        discoveryLeadRangeDays: tribunalJudicialActivityRangeMetricSchema,
-        upcomingMedianDiscoveryLeadDays: tribunalJudicialActivityMetricSchema,
-        upcomingDiscoveryLeadRangeDays: tribunalJudicialActivityRangeMetricSchema,
-        medianLotsPerHearingDay: tribunalJudicialActivityMetricSchema,
-        medianDaysBetweenHearingDays: tribunalJudicialActivityMetricSchema,
-        topPropertyTypes: z.array(propertyTypeShareSchema).max(3),
-        upcomingTopPropertyTypes: z.array(propertyTypeShareSchema).max(3),
-        propertyTypeBenchmarks: z.array(propertyTypeBenchmarkSchema).max(12),
-        upcomingPropertyTypeBenchmarks: z.array(upcomingPropertyTypeBenchmarkSchema).max(12),
-      })
-      .strict(),
-    reliability: z
-      .object({
-        level: z.enum(["insufficient_data", "indicative", "descriptive", "strong"]),
-        label: z.string().min(1),
-        currentSampleSize: z.number().int().nonnegative(),
-        exactCourtMatch: z.literal(true),
-        limitations: z.array(z.string().min(1)).min(1),
-      })
-      .strict(),
-    provenance: z
-      .object({
-        builderVersion: z.literal(TRIBUNAL_JUDICIAL_ACTIVITY_BUILDER_VERSION),
-        generatedAt: isoDateTimeSchema,
-        courtReferenceSource: z.literal("justice_open_data"),
-        includedVerificationStatuses: z.tuple([z.literal("verified"), z.literal("cross_checked")]),
-        excludedPendingOrConflictingSales: z.literal(true),
-        // Past hearings come from live catalogue rows and from the Outcome
-        // Graph archive of purged announcements (verification status and
-        // visit dates are not kept in the archive).
-        historySources: z.tuple([z.literal("catalogue"), z.literal("outcome_graph_archive")]),
-        archivedPastSales: z.number().int().nonnegative(),
-        mergedDuplicateAnnouncements: z.number().int().nonnegative(),
-      })
-      .strict(),
+  .strictObject({
+    court: z.strictObject({
+      code: nonEmptyStringSchema(),
+      name: nonEmptyStringSchema(),
+      judicialRegion: z.nullable(nonEmptyStringSchema()),
+    }),
+    period: z.strictObject({
+      historyMonths: tribunalJudicialActivityHistoryMonthsSchema,
+      historyStart: isoDateTimeSchema,
+      asOf: isoDateTimeSchema,
+      upcomingEnd: isoDateTimeSchema,
+    }),
+    activity: z.strictObject({
+      observedPastSales: countSchema(),
+      upcomingSales: countSchema(),
+      upcomingSales90Days: countSchema(),
+      upcomingHearingDays: countSchema(),
+      nextSaleAt: z.nullable(isoDateTimeSchema),
+      medianStartingPriceEur: tribunalJudicialActivityMetricSchema,
+      startingPriceRangeEur: tribunalJudicialActivityRangeMetricSchema,
+      upcomingMedianStartingPriceEur: tribunalJudicialActivityMetricSchema,
+      upcomingStartingPriceRangeEur: tribunalJudicialActivityRangeMetricSchema,
+      visitCoverage: tribunalJudicialActivityMetricSchema,
+      observedVisitCoverage: z.optional(tribunalJudicialActivityMetricSchema),
+      occupation: z.optional(occupationSchema),
+      hearingCalendar: z.optional(z.array(hearingCalendarEntrySchema).check(z.maxLength(100))),
+      communes: z.optional(z.array(communeShareSchema).check(z.maxLength(20))),
+      medianDiscoveryLeadDays: tribunalJudicialActivityMetricSchema,
+      discoveryLeadRangeDays: tribunalJudicialActivityRangeMetricSchema,
+      upcomingMedianDiscoveryLeadDays: tribunalJudicialActivityMetricSchema,
+      upcomingDiscoveryLeadRangeDays: tribunalJudicialActivityRangeMetricSchema,
+      medianLotsPerHearingDay: tribunalJudicialActivityMetricSchema,
+      medianDaysBetweenHearingDays: tribunalJudicialActivityMetricSchema,
+      topPropertyTypes: z.array(propertyTypeShareSchema).check(z.maxLength(3)),
+      upcomingTopPropertyTypes: z.array(propertyTypeShareSchema).check(z.maxLength(3)),
+      propertyTypeBenchmarks: z.array(propertyTypeBenchmarkSchema).check(z.maxLength(12)),
+      upcomingPropertyTypeBenchmarks: z
+        .array(upcomingPropertyTypeBenchmarkSchema)
+        .check(z.maxLength(12)),
+    }),
+    reliability: z.strictObject({
+      level: z.enum(["insufficient_data", "indicative", "descriptive", "strong"]),
+      label: nonEmptyStringSchema(),
+      currentSampleSize: countSchema(),
+      exactCourtMatch: z.literal(true),
+      limitations: z.array(nonEmptyStringSchema()).check(z.minLength(1)),
+    }),
+    provenance: z.strictObject({
+      builderVersion: z.literal(TRIBUNAL_JUDICIAL_ACTIVITY_BUILDER_VERSION),
+      generatedAt: isoDateTimeSchema,
+      courtReferenceSource: z.literal("justice_open_data"),
+      includedVerificationStatuses: z.tuple([z.literal("verified"), z.literal("cross_checked")]),
+      excludedPendingOrConflictingSales: z.literal(true),
+      // Past hearings come from live catalogue rows and from the Outcome
+      // Graph archive of purged announcements (verification status and
+      // visit dates are not kept in the archive).
+      historySources: z.tuple([z.literal("catalogue"), z.literal("outcome_graph_archive")]),
+      archivedPastSales: countSchema(),
+      mergedDuplicateAnnouncements: countSchema(),
+    }),
   })
-  .strict()
-  .superRefine((response, context) => {
-    const occupation = response.activity.occupation;
-    if (!occupation) return;
-    if (occupation.knownSales + occupation.unknownSales !== response.activity.observedPastSales) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["activity", "occupation"],
-        message: "Les ventes renseignées et inconnues doivent couvrir l’historique observé.",
-      });
-    }
-  });
+  .check(
+    z.superRefine((response, context) => {
+      const occupation = response.activity.occupation;
+      if (!occupation) return;
+      if (occupation.knownSales + occupation.unknownSales !== response.activity.observedPastSales) {
+        context.addIssue({
+          code: "custom",
+          path: ["activity", "occupation"],
+          message: "Les ventes renseignées et inconnues doivent couvrir l’historique observé.",
+        });
+      }
+    }),
+  );
 
 export type TribunalJudicialActivityHistoryMonths = z.infer<
   typeof tribunalJudicialActivityHistoryMonthsSchema

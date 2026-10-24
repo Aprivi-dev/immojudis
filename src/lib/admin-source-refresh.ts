@@ -22,12 +22,12 @@ type SourceDetailJobRow = Omit<
 > & { status: SourceDetailStatus };
 
 export const adminSourceRefreshRequestSchema = z.object({
-  saleId: z.string().uuid(),
+  saleId: z.string().guid(),
   force: z.boolean().default(true),
 });
 
 export const adminSourceRefreshStatusQuerySchema = z.object({
-  saleId: z.string().uuid(),
+  saleId: z.string().guid(),
 });
 
 export type AdminSourceRefreshRequestInput = z.input<typeof adminSourceRefreshRequestSchema>;

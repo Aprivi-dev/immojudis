@@ -66,7 +66,7 @@ export type AlertEmailMessage = ResendEmailMessage & {
   unsubscribeUrl: string;
 };
 
-const notificationIdSchema = z.string().uuid();
+const notificationIdSchema = z.string().guid();
 
 export function resolveEmailAlertDeliveryConfig(
   env: Pick<NodeJS.ProcessEnv, string> = process.env,

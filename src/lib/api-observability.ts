@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
-import { ZodError } from "zod";
+// Classe de base des erreurs de zod 4 : couvre les ZodError de zod et celles levées par les
+// schémas zod/mini (partagés avec le navigateur), qui ne sont pas des instances de ZodError.
+import { $ZodError } from "zod/v4/core";
 import { PublicApiError, RateLimitError, isPublicErrorMessage } from "@/lib/api-errors";
 import { resolveRequestId } from "@/lib/request-id";
 
@@ -215,7 +217,7 @@ export function classifyApiError(
     };
   }
   if (
-    error instanceof ZodError ||
+    error instanceof $ZodError ||
     error instanceof SyntaxError ||
     message.startsWith("Requête invalide")
   ) {

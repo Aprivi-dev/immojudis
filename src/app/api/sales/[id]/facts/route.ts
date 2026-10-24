@@ -11,7 +11,7 @@ import { getFactReliabilitiesFromClaims } from "@/lib/fact-reliability";
 import { assertSalePublicationVisible } from "@/lib/sale-publication-guard";
 import { saleRow } from "@/lib/sale-rows";
 
-const saleIdSchema = z.string().uuid();
+const saleIdSchema = z.string().guid();
 
 // This is the minimum legacy payload needed to preserve the existing
 // reliability calculation when no claim rows exist yet.

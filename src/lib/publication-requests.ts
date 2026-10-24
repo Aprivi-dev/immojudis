@@ -79,7 +79,7 @@ export const publicationUploadRequestSchema = z.object({
 });
 
 export const publicationRequestFinalizeSchema = z.object({
-  requestId: z.string().uuid(),
+  requestId: z.string().guid(),
   fields: publicationRequestFieldsSchema,
   documents: z.array(uploadedPublicationDocumentSchema).max(MAX_PUBLICATION_DOCUMENTS),
 });
@@ -182,7 +182,7 @@ export async function finalizePublicationRequest({
   documents: UploadedPublicationDocument[];
 }): Promise<{ request: PublicationRequestSummary }> {
   const requesterEmail = await assertApprovedProfessional(auth);
-  const id = z.string().uuid().parse(requestId);
+  const id = z.string().guid().parse(requestId);
   if (!fields.documentTypes.length && !documents.length) {
     throw new Error("Ajoutez au moins un type de document ou une pièce transmise.");
   }
@@ -287,7 +287,7 @@ export async function getPublicationRequest({
   auth: SupabaseAuthContext;
   requestId: string;
 }): Promise<{ request: PublicationRequestDetail }> {
-  const id = z.string().uuid().parse(requestId);
+  const id = z.string().guid().parse(requestId);
   let query = supabaseAdmin
     .from("listing_publication_requests")
     .select(PUBLICATION_REQUEST_COLUMNS)
@@ -475,7 +475,7 @@ export async function removePublicationRequestUploads({
   auth: SupabaseAuthContext;
   requestId: string;
 }): Promise<void> {
-  const id = z.string().uuid().parse(requestId);
+  const id = z.string().guid().parse(requestId);
   const { data: existingRequest, error: existingRequestError } = await supabaseAdmin
     .from("listing_publication_requests")
     .select("id")

@@ -11,7 +11,7 @@ import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import type { SaleUnlockQuotaReachedResponse } from "@/lib/sale-unlocks";
 import { getSaleUnlockStatus, SaleUnlockQuotaError, unlockSale } from "@/lib/sale-unlocks.server";
 
-const saleIdSchema = z.string().uuid();
+const saleIdSchema = z.string().guid();
 
 const PRIVATE_HEADERS = { "cache-control": "private, no-store", vary: "authorization" };
 

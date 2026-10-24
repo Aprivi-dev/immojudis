@@ -14,7 +14,7 @@ import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import { DETAIL_VIEW, DISCOVERY_VIEW } from "@/lib/sale-views";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 
-const saleIdSchema = z.string().uuid();
+const saleIdSchema = z.string().guid();
 
 /**
  * The usage event is written once the response is sent (`after()`): a slow or failing write never

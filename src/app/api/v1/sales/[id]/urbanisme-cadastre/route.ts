@@ -14,7 +14,7 @@ import {
   getUrbanPlanningSignals,
 } from "@/lib/property-report/repository";
 
-const paramsSchema = z.object({ id: z.string().uuid() });
+const paramsSchema = z.object({ id: z.string().guid() });
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const context = createApiRequestContext(request, "urbanisme-cadastre.sale");

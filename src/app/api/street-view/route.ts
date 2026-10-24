@@ -9,7 +9,7 @@ import type { StreetViewPanorama } from "@/lib/street-view";
 import { findStreetViewPanorama } from "@/lib/street-view-panorama.server";
 
 const coordinate = (min: number, max: number) =>
-  z.string().trim().min(1).pipe(z.coerce.number().finite().min(min).max(max));
+  z.string().trim().min(1).pipe(z.coerce.number<string>().finite().min(min).max(max));
 
 const querySchema = z.object({
   lat: coordinate(-90, 90),

@@ -22,6 +22,7 @@ import {
   buildCanonicalComparisonSnapshot,
   buildSaleAnalysisSummary,
   saleAnalysisSetInputSchema,
+  saleAnalysisSetUpdateSchema,
   type SaleAnalysisItem,
 } from "@/lib/sale-analysis-sets";
 
@@ -89,6 +90,12 @@ describe("sale analysis sets", () => {
           userMaxBidEur: 120_000,
         },
       ],
+    });
+  });
+
+  it("leaves omitted fields out of an update instead of resetting them to their defaults", () => {
+    expect(saleAnalysisSetUpdateSchema.parse({ name: "Analyse renommée" })).toEqual({
+      name: "Analyse renommée",
     });
   });
 

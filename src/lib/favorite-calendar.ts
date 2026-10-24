@@ -24,7 +24,7 @@ const FAVORITE_CALENDAR_MAX_SALES = PLANNING_CALENDAR_MAX_SALES;
 const RPC_BATCH_SIZE = 10;
 
 export const favoriteCalendarInputSchema = z.object({
-  saleIds: z.array(z.string().uuid()).min(1).max(FAVORITE_CALENDAR_MAX_SALES),
+  saleIds: z.array(z.string().guid()).min(1).max(FAVORITE_CALENDAR_MAX_SALES),
 });
 
 type FavoriteCalendarResult = {

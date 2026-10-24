@@ -17,7 +17,7 @@ import { assertSalePublicationVisible } from "@/lib/sale-publication-guard";
 import { saleRow } from "@/lib/sale-rows";
 import { DETAIL_VIEW, SALE_LIST_COLUMNS, UNLOCKED_VIEW } from "@/lib/sale-views";
 
-const saleIdSchema = z.string().uuid();
+const saleIdSchema = z.string().guid();
 
 /**
  * « Mes questions pour l'avocat » : les points que la fiche laisse ouverts, formulés comme des

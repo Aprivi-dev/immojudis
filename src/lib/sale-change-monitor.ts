@@ -151,7 +151,7 @@ type InvestorMonitorCandidate = {
 };
 
 export const saleChangeEventActionSchema = z.object({
-  eventId: z.string().uuid(),
+  eventId: z.string().guid(),
   action: z.enum(["read", "unread", "dismiss", "restore"]),
 });
 

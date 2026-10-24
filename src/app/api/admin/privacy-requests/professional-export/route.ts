@@ -10,7 +10,7 @@ import { withAdminDeadline } from "@/lib/admin-route-deadline";
 // Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
 export const maxDuration = 30;
 
-const querySchema = z.object({ requestId: z.string().uuid() });
+const querySchema = z.object({ requestId: z.string().guid() });
 
 /**
  * Copie des données d'un professionnel sans compte qui a demandé l'accès par le lien signé de

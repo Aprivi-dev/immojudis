@@ -11,7 +11,7 @@ import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 
-const paramsSchema = z.object({ id: z.string().uuid() });
+const paramsSchema = z.object({ id: z.string().guid() });
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const context = createApiRequestContext(request, "adjudication-price-statistics.sale");

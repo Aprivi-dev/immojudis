@@ -5,13 +5,13 @@ import { PLAN_FEATURES, featureIncluded } from "@/lib/plans";
 import {
   FAVORITE_DOSSIER_STATUSES,
   emptyFavoriteDossier,
-  favoriteDossierInputSchema,
   favoriteDossierStatusLabel,
   formatBidCeilingInput,
   normalizeFavoriteDossierStatus,
   parseBidCeilingInput,
   toFavoriteDossier,
 } from "@/lib/favorite-dossier-shared";
+import { favoriteDossierInputSchema } from "@/lib/favorite-dossier-input";
 import { SALE_WORKSPACE_STATUSES } from "@/lib/sale-workspace-shared";
 
 const mocks = vi.hoisted(() => ({

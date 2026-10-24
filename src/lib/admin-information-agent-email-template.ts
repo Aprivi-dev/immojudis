@@ -34,12 +34,12 @@ export const adminInformationAgentEmailTemplateActionSchema = z.discriminatedUni
   }),
   z.object({
     action: z.literal("save_draft"),
-    draftId: z.string().uuid().nullable().optional(),
+    draftId: z.string().guid().nullable().optional(),
     template: informationAgentEmailTemplateContentSchema,
   }),
   z.object({
     action: z.literal("publish"),
-    draftId: z.string().uuid(),
+    draftId: z.string().guid(),
     publicationConfirmed: z.literal(true),
   }),
 ]);

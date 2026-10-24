@@ -19,21 +19,21 @@ export const ANNOTATION_TARGET_KINDS = ["general", "document", "page", "excerpt"
 export const ANNOTATION_STATUSES = ["open", "resolved", "archived"] as const;
 
 export const collaboratorInviteSchema = z.object({
-  saleId: z.string().uuid(),
+  saleId: z.string().guid(),
   invitedEmail: z.string().trim().email().max(320).transform(normalizeEmail),
   role: z.enum(COLLABORATOR_ROLES).default("commenter"),
 });
 
 export const collaboratorAcceptSchema = z.object({
-  collaboratorId: z.string().uuid(),
+  collaboratorId: z.string().guid(),
 });
 
 export const collaboratorRevokeSchema = z.object({
-  collaboratorId: z.string().uuid(),
+  collaboratorId: z.string().guid(),
 });
 
 export const workspaceAnnotationCreateSchema = z.object({
-  saleId: z.string().uuid(),
+  saleId: z.string().guid(),
   documentKey: z.string().trim().max(240).nullable().optional(),
   documentLabel: z.string().trim().max(300).nullable().optional(),
   documentType: z.string().trim().max(120).nullable().optional(),
@@ -45,7 +45,7 @@ export const workspaceAnnotationCreateSchema = z.object({
 });
 
 export const workspaceAnnotationUpdateSchema = z.object({
-  annotationId: z.string().uuid(),
+  annotationId: z.string().guid(),
   body: z.string().trim().min(1).max(5000).optional(),
   status: z.enum(ANNOTATION_STATUSES).optional(),
 });

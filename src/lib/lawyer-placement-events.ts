@@ -11,8 +11,8 @@ import {
 type LawyerPlacementEventInsert = Database["public"]["Tables"]["lawyer_placement_events"]["Insert"];
 
 export const lawyerPlacementEventInputSchema = z.object({
-  saleId: z.string().uuid(),
-  lawyerId: z.string().uuid(),
+  saleId: z.string().guid(),
+  lawyerId: z.string().guid(),
   eventType: z.enum(["impression", "cta_click"]),
   placementSlot: z.string().trim().min(1).max(80).default("sale_detail_featured_lawyer"),
   pagePath: z.string().trim().max(300).optional(),

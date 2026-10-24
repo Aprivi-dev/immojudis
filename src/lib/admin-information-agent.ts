@@ -86,7 +86,7 @@ export async function previewAdminInformationAgentMissionForToken({
 }
 
 export const adminInformationAgentReviewSchema = z.object({
-  factId: z.string().uuid(),
+  factId: z.string().guid(),
   decision: z.enum(["accepted", "rejected"]),
   notes: z.string().trim().max(2000).nullable().optional(),
   /** "Caviardage vérifié": required to accept a document or a photo for publication. */
@@ -253,7 +253,7 @@ export function informationAgentFactSource(message: FactSourceMessage): Informat
 
 export const adminInformationAgentMessageActionSchema = z.object({
   action: z.enum(["record_opposition", "mark_handled"]),
-  messageId: z.string().uuid(),
+  messageId: z.string().guid(),
 });
 
 export type AdminInformationAgentMessageAction = z.output<

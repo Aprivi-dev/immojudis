@@ -25,7 +25,7 @@ export type DataRefreshKind = (typeof DATA_REFRESH_KINDS)[number];
 export const DATA_REFRESH_REQUESTS_PER_MINUTE = 5;
 
 export const dataRefreshRequestSchema = z.object({
-  saleId: z.string().uuid(),
+  saleId: z.string().guid(),
   kinds: z
     .preprocess((value) => normalizeDataRefreshKindList(value), z.array(z.enum(DATA_REFRESH_KINDS)))
     .default(["full"]),
@@ -33,7 +33,7 @@ export const dataRefreshRequestSchema = z.object({
 });
 
 export const dataRefreshListQuerySchema = z.object({
-  saleId: z.string().uuid().optional(),
+  saleId: z.string().guid().optional(),
   status: z.enum(["queued", "running", "completed", "failed", "cancelled"]).optional(),
 });
 

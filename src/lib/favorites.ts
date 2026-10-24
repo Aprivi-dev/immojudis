@@ -16,7 +16,7 @@ import type { AuctionSale } from "@/lib/types";
 type FavoriteRow = Database["public"]["Tables"]["user_favorites"]["Row"];
 
 export const favoriteSaleInputSchema = z.object({
-  saleId: z.string().uuid(),
+  saleId: z.string().guid(),
 });
 
 export type FavoriteSaleInput = z.input<typeof favoriteSaleInputSchema>;

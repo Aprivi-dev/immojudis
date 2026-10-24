@@ -48,7 +48,7 @@ export type FollowedSaleSnapshot = {
 export type FollowedSaleSnapshotsResponse = { snapshots: FollowedSaleSnapshot[] };
 export type FollowedSaleSnapshotDeleteResponse = { ok: true; removed: boolean };
 
-export const followedSaleSnapshotDeleteSchema = z.object({ id: z.string().uuid() });
+export const followedSaleSnapshotDeleteSchema = z.object({ id: z.string().guid() });
 
 export type FollowedSaleSnapshotRow = {
   id: string;

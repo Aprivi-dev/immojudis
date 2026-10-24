@@ -31,7 +31,7 @@ type ReferencedLawyerRow = Pick<
 type CoverageColumn = "tribunal_code" | "department" | "postal_code_prefix" | "city";
 
 export const featuredLawyerQuerySchema = z.object({
-  saleId: z.string().uuid(),
+  saleId: z.string().guid(),
 });
 
 export type FeaturedReferencedLawyer = {

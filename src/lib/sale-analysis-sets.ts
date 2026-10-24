@@ -38,7 +38,7 @@ export const SALE_ANALYSIS_DECISION_STATUSES = [
 ] as const;
 
 export const saleAnalysisItemInputSchema = z.object({
-  saleId: z.string().uuid(),
+  saleId: z.string().guid(),
   decisionStatus: z.enum(SALE_ANALYSIS_DECISION_STATUSES).default("watching"),
   userMaxBidEur: z.number().finite().min(0).nullable().optional(),
   targetYieldPct: z.number().finite().min(0).max(100).nullable().optional(),
@@ -50,13 +50,19 @@ export const saleAnalysisSetInputSchema = z.object({
   name: z.string().trim().min(2).max(140),
   analysisKind: z.enum(SALE_ANALYSIS_KINDS).default("comparison"),
   notes: z.string().trim().max(3000).nullable().optional(),
-  assumptions: z.record(z.unknown()).default({}),
-  summarySnapshot: z.record(z.unknown()).default({}),
+  assumptions: z.record(z.string(), z.unknown()).default({}),
+  summarySnapshot: z.record(z.string(), z.unknown()).default({}),
   isArchived: z.boolean().default(false),
   items: z.array(saleAnalysisItemInputSchema).min(1).max(12),
 });
 
+// Zod 4 applique les valeurs par défaut même sous `.partial()` : la mise à jour redéclare sans
+// défaut les champs qui en ont un, pour qu'un champ omis reste inchangé en base.
 export const saleAnalysisSetUpdateSchema = saleAnalysisSetInputSchema.partial().extend({
+  analysisKind: saleAnalysisSetInputSchema.shape.analysisKind.unwrap().optional(),
+  assumptions: saleAnalysisSetInputSchema.shape.assumptions.unwrap().optional(),
+  summarySnapshot: saleAnalysisSetInputSchema.shape.summarySnapshot.unwrap().optional(),
+  isArchived: saleAnalysisSetInputSchema.shape.isArchived.unwrap().optional(),
   items: z.array(saleAnalysisItemInputSchema).min(1).max(12).optional(),
 });
 

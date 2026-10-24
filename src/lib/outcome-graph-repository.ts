@@ -29,14 +29,14 @@ const FORECASTABLE_ROUND_STATUSES = new Set([
 const storedMoneySchema = z.union([z.string(), z.number()]).nullable();
 
 const lotSchema = z.object({
-  id: z.string().uuid(),
+  id: z.string().guid(),
   active: z.boolean(),
   initial_starting_price_eur: storedMoneySchema,
 });
 
 const roundSchema = z.object({
-  id: z.string().uuid(),
-  lot_id: z.string().uuid(),
+  id: z.string().guid(),
+  lot_id: z.string().guid(),
   sequence_number: z.number().int().positive(),
   scheduled_at: z.string().nullable(),
   current_status: z.string().min(1),
@@ -45,40 +45,40 @@ const roundSchema = z.object({
 });
 
 const predictionSchema = z.object({
-  id: z.string().uuid(),
-  round_id: z.string().uuid(),
-  snapshot_id: z.string().uuid(),
-  model_version_id: z.string().uuid(),
-  cohort_statistics_id: z.string().uuid().nullable(),
+  id: z.string().guid(),
+  round_id: z.string().guid(),
+  snapshot_id: z.string().guid(),
+  model_version_id: z.string().guid(),
+  cohort_statistics_id: z.string().guid().nullable(),
   prediction_status: z.enum(["ready", "insufficient_data"]),
   generated_at: z.string(),
   created_at: z.string(),
   horizon: horizonSchema,
-  probabilities: z.unknown(),
-  quantiles: z.unknown(),
+  probabilities: z.unknown().optional(),
+  quantiles: z.unknown().optional(),
   confidence_level: z.union([z.string(), z.number()]).nullable(),
   confidence_label: z.string().nullable(),
   sample_size: z.number().int().nonnegative().nullable(),
-  explanation_factors: z.unknown(),
-  limitations: z.unknown(),
+  explanation_factors: z.unknown().optional(),
+  limitations: z.unknown().optional(),
   refusal_reason: z.string().nullable(),
 });
 
 const snapshotSchema = z.object({
-  id: z.string().uuid(),
-  lot_id: z.string().uuid(),
-  round_id: z.string().uuid(),
+  id: z.string().guid(),
+  lot_id: z.string().guid(),
+  round_id: z.string().guid(),
   prediction_horizon: horizonSchema,
   feature_cutoff_at: z.string(),
   built_at: z.string(),
   feature_schema_version: z.string().min(1),
   leakage_check_status: z.enum(["pending", "passed", "failed"]),
   retrospective: z.boolean(),
-  features: z.unknown(),
+  features: z.unknown().optional(),
 });
 
 const modelSchema = z.object({
-  id: z.string().uuid(),
+  id: z.string().guid(),
   model_key: z.string().min(1),
   version: z.string().min(1),
   status: z.enum(["draft", "validated", "shadow", "active", "retired", "rejected"]),
@@ -89,8 +89,8 @@ const modelSchema = z.object({
 });
 
 const cohortStatisticsSchema = z.object({
-  id: z.string().uuid(),
-  cohort_definition_id: z.string().uuid(),
+  id: z.string().guid(),
+  cohort_definition_id: z.string().guid(),
   prediction_horizon: horizonSchema,
   period_start: z.string(),
   period_end: z.string(),
@@ -102,13 +102,13 @@ const cohortStatisticsSchema = z.object({
 });
 
 const cohortDefinitionSchema = z.object({
-  id: z.string().uuid(),
+  id: z.string().guid(),
   cohort_level: cohortLevelSchema,
   label: z.string().min(1),
 });
 
 const saleVisibilitySchema = z.object({
-  id: z.string().uuid(),
+  id: z.string().guid(),
   status: z.string().nullable().optional(),
   raw_payload: z.unknown().nullable().optional(),
 });

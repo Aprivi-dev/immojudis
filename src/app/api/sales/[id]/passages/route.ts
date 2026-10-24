@@ -14,7 +14,7 @@ import { getSalePassages } from "@/lib/sale-passages.server";
 import { DETAIL_VIEW, DISCOVERY_VIEW } from "@/lib/sale-views";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 
-const saleIdSchema = z.string().uuid();
+const saleIdSchema = z.string().guid();
 
 /**
  * « Historique de la vente ». Analyse, or a sale the account unlocked: the full

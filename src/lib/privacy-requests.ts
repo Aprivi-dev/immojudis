@@ -39,7 +39,7 @@ export const privacyRequestInputSchema = z.object({
 
 export const privacyRequestAdminUpdateSchema = z
   .object({
-    requestId: z.string().uuid(),
+    requestId: z.string().guid(),
     status: privacyRequestStatusSchema,
     identityStatus: z
       .enum(["authenticated", "additional_verification_required", "verified"])
@@ -88,7 +88,7 @@ export type PrivacyRequestAdminSummary = PrivacyRequestSummary & {
 };
 
 export const privacyErasureExecuteSchema = z.object({
-  requestId: z.string().uuid(),
+  requestId: z.string().guid(),
   /** The operator retypes the requester's email: erasure is irreversible. */
   confirmEmail: z.string().trim().email().max(320),
 });

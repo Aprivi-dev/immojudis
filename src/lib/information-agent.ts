@@ -161,14 +161,14 @@ const QUESTION_KEYS = Object.keys(INFORMATION_AGENT_QUESTIONS) as [
 ];
 
 export const informationAgentCreateSchema = z.object({
-  saleId: z.string().uuid(),
+  saleId: z.string().guid(),
   recipientEmail: z.string().trim().email().max(320).optional(),
   recipientName: z.string().trim().max(180).optional(),
   questionKeys: z.array(z.enum(QUESTION_KEYS)).min(1).max(8).optional(),
 });
 
 export const informationAgentListQuerySchema = z.object({
-  saleId: z.string().uuid().optional(),
+  saleId: z.string().guid().optional(),
   ...adminPageQueryShape,
 });
 
@@ -197,7 +197,7 @@ const editableMessageFields = {
 
 /** Aperçu exact de l'e-mail, préalable obligatoire à tout envoi. */
 export const informationAgentPreviewSchema = z.object({
-  missionId: z.string().uuid(),
+  missionId: z.string().guid(),
   ...editableMessageFields,
 });
 export type InformationAgentPreviewInput = z.output<typeof informationAgentPreviewSchema>;
@@ -208,7 +208,7 @@ export type InformationAgentPreviewInput = z.output<typeof informationAgentPrevi
 export const informationAgentAdminActionSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("approve_and_send"),
-    missionId: z.string().uuid(),
+    missionId: z.string().guid(),
     approvalConfirmed: z.literal(true),
     /** Empreinte rendue par l'aperçu de ce contenu exact : sans aperçu, aucun envoi. */
     previewFingerprint: z.string().regex(/^[a-f0-9]{64}$/, "Aperçu requis avant l'envoi."),
@@ -216,11 +216,11 @@ export const informationAgentAdminActionSchema = z.discriminatedUnion("action", 
   }),
   z.object({
     action: z.literal("cancel"),
-    missionId: z.string().uuid(),
+    missionId: z.string().guid(),
   }),
   z.object({
     action: z.literal("record_reply"),
-    missionId: z.string().uuid(),
+    missionId: z.string().guid(),
     bodyText: z.string().trim().min(1).max(16000),
     subject: z.string().trim().min(3).max(200).optional(),
   }),

@@ -23,7 +23,7 @@ const optionalText = (max = 140) =>
 
 export const saleHistoryQuerySchema = z
   .object({
-    saleId: optionalText().pipe(z.string().uuid().optional()),
+    saleId: optionalText().pipe(z.string().guid().optional()),
     department: optionalText(12),
     city: optionalText(140),
     tribunalCode: optionalText(80),

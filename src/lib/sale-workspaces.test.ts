@@ -34,6 +34,15 @@ describe("sale workspace helpers", () => {
     ).toEqual(dossier);
   });
 
+  it("leaves omitted notes and document reviews out of a partial save", () => {
+    const parsed = saleWorkspaceInputSchema.parse({
+      saleId: "7d335032-e935-4550-9347-ed22b0f63449",
+      trackingStatus: "watching",
+    });
+    expect(parsed).not.toHaveProperty("privateNotes");
+    expect(parsed).not.toHaveProperty("documentReviews");
+  });
+
   it("keeps only boolean checklist values", () => {
     expect(
       normalizeBooleanRecord({

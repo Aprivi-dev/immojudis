@@ -11,7 +11,7 @@ import {
   updateSaleAnalysisSet,
 } from "@/lib/sale-analysis-sets";
 
-const setIdSchema = z.string().uuid();
+const setIdSchema = z.string().guid();
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   try {

@@ -16,7 +16,7 @@ import {
   type AiReviewState,
 } from "@/lib/ai-review-guard";
 
-const saleIdsSchema = z.array(z.string().uuid()).min(1).max(500);
+const saleIdsSchema = z.array(z.string().guid()).min(1).max(500);
 
 const PROJECTION_COLUMNS =
   "auction_sale_id,field_key,review_state,citation_status,is_publishable,source_name,source_url";

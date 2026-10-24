@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ZodError } from "zod";
+import { z as zm } from "zod/mini";
 import { PublicApiError, RateLimitError, isPublicErrorMessage } from "./api-errors";
 import { apiRouteError } from "./api-observability";
 
@@ -118,6 +119,27 @@ describe("apiRouteError", () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const response = apiRouteError(new ZodError([]), request(), "test.scope", {
       fallbackMessage: "Action impossible.",
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      error: "Requête invalide.",
+      code: "INVALID_REQUEST",
+    });
+  });
+
+  it("maps a zod/mini validation error (not a ZodError instance) to the same 400", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    let thrown: unknown;
+    try {
+      zm.object({ month: zm.string() }).parse({ month: 3 });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).not.toBeInstanceOf(ZodError);
+    const response = apiRouteError(thrown, request(), "test.scope", {
+      fallbackMessage: "Action impossible.",
+      fallbackStatus: 503,
     });
 
     expect(response.status).toBe(400);

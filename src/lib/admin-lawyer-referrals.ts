@@ -56,13 +56,13 @@ const referralStatusSchema = z.enum([
 const optionalUuidSchema = z
   .string()
   .trim()
-  .uuid()
+  .guid()
   .nullable()
   .optional()
   .or(z.literal("").transform(() => null));
 
 export const adminLawyerReferralUpdateInputSchema = z.object({
-  id: z.string().uuid(),
+  id: z.string().guid(),
   status: referralStatusSchema,
   requestedLawyerId: optionalUuidSchema,
   adminNotes: z

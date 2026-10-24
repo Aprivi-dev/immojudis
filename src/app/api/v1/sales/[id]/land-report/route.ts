@@ -20,7 +20,7 @@ import { landReportToLines, LAND_REPORT_HEADINGS } from "@/lib/land-report-expor
 import { createTextPdf } from "@/lib/simple-pdf";
 
 export const maxDuration = 180;
-const paramsSchema = z.object({ id: z.string().uuid() });
+const paramsSchema = z.object({ id: z.string().guid() });
 const querySchema = z.object({
   format: z.enum(["json", "pdf"]).default("json"),
   refresh: z.enum(["0", "1"]).default("0"),

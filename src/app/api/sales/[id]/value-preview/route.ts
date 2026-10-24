@@ -11,7 +11,7 @@ import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import { getPrecomputedMarketEstimate } from "@/lib/sale-market-estimates";
 import { buildValuePreview } from "@/lib/value-preview";
 
-const saleIdSchema = z.string().uuid();
+const saleIdSchema = z.string().guid();
 
 /**
  * Valuation preview for any signed-in account: the estimated range and the gap

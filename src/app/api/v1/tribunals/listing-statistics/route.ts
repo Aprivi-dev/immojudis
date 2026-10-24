@@ -42,7 +42,7 @@ export async function GET(request: Request) {
       auth,
       "sales.statistics",
       "Statistiques des annonces judiciaires réservées à l’offre Analyse.",
-      { saleId: z.string().uuid().safeParse(query.saleId).data },
+      { saleId: z.string().guid().safeParse(query.saleId).data },
     );
     const input = tribunalListingStatisticsQuerySchema.parse(query);
     const statistics = tribunalListingStatisticsResponseSchema.parse(

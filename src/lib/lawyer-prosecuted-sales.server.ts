@@ -163,7 +163,7 @@ export async function loadUpcomingProsecutedSales(
   return result;
 }
 
-const lawyerIdSchema = z.string().uuid();
+const lawyerIdSchema = z.string().guid();
 
 /**
  * Identifiants d'avocats demandés (`lawyerIds=a,b,c`, ceux d'une page de l'annuaire : au plus

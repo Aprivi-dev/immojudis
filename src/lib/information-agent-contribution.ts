@@ -84,7 +84,7 @@ const submittedFileSchema = z.object({
 
 export const submitContributionSchema = z.object({
   token: z.string().regex(/^[a-f0-9]{64}$/),
-  submissionId: z.string().uuid(),
+  submissionId: z.string().guid(),
   senderName: z
     .string()
     .trim()
@@ -157,7 +157,7 @@ export async function loadInformationAgentContribution(
   token: string,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<ContributionSession> {
-  if (!z.string().uuid().safeParse(missionId).success || !/^[a-f0-9]{64}$/.test(token)) {
+  if (!z.string().guid().safeParse(missionId).success || !/^[a-f0-9]{64}$/.test(token)) {
     throw new InformationAgentContributionError("Lien de dépôt invalide.", 404);
   }
   const secret = contributionSecret(env);

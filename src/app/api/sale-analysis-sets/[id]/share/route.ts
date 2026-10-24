@@ -7,7 +7,7 @@ import {
 } from "@/integrations/supabase/auth-middleware";
 import { disableSaleComparisonShare, enableSaleComparisonShare } from "@/lib/sale-analysis-sets";
 
-const setIdSchema = z.string().uuid();
+const setIdSchema = z.string().guid();
 
 type RouteContext = { params: Promise<{ id: string }> };
 

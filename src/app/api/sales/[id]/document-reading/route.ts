@@ -13,7 +13,7 @@ import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import { DETAIL_VIEW, DISCOVERY_VIEW } from "@/lib/sale-views";
 
-const saleIdSchema = z.string().uuid();
+const saleIdSchema = z.string().guid();
 
 /**
  * « Lecture des pièces ». Analyse, or a sale the account unlocked: the points with their

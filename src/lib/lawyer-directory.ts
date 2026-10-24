@@ -64,7 +64,7 @@ type SaleSector = Pick<
 >;
 
 export const lawyerDirectoryQuerySchema = z.object({
-  saleId: z.string().uuid().optional(),
+  saleId: z.string().guid().optional(),
   bar: z.string().trim().max(120).optional().transform(emptyToUndefined),
   city: z.string().trim().max(120).optional().transform(emptyToUndefined),
   department: z.string().trim().max(120).optional().transform(emptyToUndefined),

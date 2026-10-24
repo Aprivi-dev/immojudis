@@ -76,7 +76,7 @@ const storedTribunalReferenceSchema = z
 
 const storedSaleSchema = z
   .object({
-    id: z.string().uuid(),
+    id: z.string().guid(),
     sale_date: z.string().datetime({ offset: true }),
     status: z.string().min(1),
     starting_price_eur: z
@@ -89,7 +89,7 @@ const storedSaleSchema = z
       ])
       .nullable(),
     property_type: z.string().nullable(),
-    visit_dates: z.unknown(),
+    visit_dates: z.unknown().optional(),
     occupancy_status: z.string().nullable().optional(),
     city: z.string().nullable().optional(),
     first_seen_at: z.string().datetime({ offset: true }).nullable(),
