@@ -68,7 +68,8 @@ const storedRowSchema = z
     source_name: z.literal("licitor"),
     built_at: z.string().datetime({ offset: true }),
     reviewed_at: z.string().datetime({ offset: true }),
-    extra_statistics: adjudicationEnrichmentSchema.nullable().optional(),
+    // `adjudicationEnrichmentSchema` est un schéma zod/mini (partagé avec le navigateur).
+    extra_statistics: z.optional(z.nullable(adjudicationEnrichmentSchema)),
   })
   .strict();
 

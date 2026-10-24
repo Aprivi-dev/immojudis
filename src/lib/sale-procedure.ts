@@ -1,4 +1,6 @@
-import { z } from "zod";
+// zod/mini : `getSaleProcedure` lit la procédure dans le navigateur (fiches, favoris). Mêmes règles
+// que l'écriture chaînée de zod, avec bien moins de code envoyé au navigateur.
+import { z } from "zod/mini";
 import { formatPrice } from "@/lib/format";
 import type {
   AuctionSale,
@@ -28,86 +30,76 @@ const legalFrameworkSchema = z.enum([
   "unknown",
 ]);
 const verificationStatusSchema = z.enum(["verified", "cross_checked", "pending", "conflict"]);
-const nullableNumber = z.number().finite().nonnegative().nullable();
+// Nombre fini (zod 4 refuse déjà l'infini) et positif ou nul.
+const nullableNumber = z.nullable(z.number().check(z.nonnegative()));
 
-const sourceSchema = z
-  .object({
-    kind: z.string().optional(),
-    label: z.string().optional(),
-    source_name: z.string().optional(),
-    url: z.string().nullable().optional(),
-    checked_at: z.string().nullable().optional(),
-    document_type: z.string().nullable().optional(),
-  })
-  .passthrough();
+// Les objets « passthrough » de zod sont les `looseObject` de zod/mini : les clés inconnues sont
+// conservées.
+const sourceSchema = z.looseObject({
+  kind: z.optional(z.string()),
+  label: z.optional(z.string()),
+  source_name: z.optional(z.string()),
+  url: z.optional(z.nullable(z.string())),
+  checked_at: z.optional(z.nullable(z.string())),
+  document_type: z.optional(z.nullable(z.string())),
+});
 
-const factSchema = z
-  .object({
-    key: z.string(),
-    value: z.unknown().optional(),
+const factSchema = z.looseObject({
+  key: z.string(),
+  value: z.optional(z.unknown()),
+  status: verificationStatusSchema,
+  evidence: z._default(z.array(z.string()), []),
+  source_url: z.optional(z.nullable(z.string())),
+});
+
+export const saleProcedureSchema = z.looseObject({
+  schema_version: z.literal("sale_procedure_v1"),
+  ruleset_version: z.string().check(z.minLength(1)),
+  venue_type: venueTypeSchema,
+  // `z.preprocess(fn, schema)` de zod est le tuyau `transform(fn)` puis `schema`.
+  state_sale_method: z.pipe(
+    z.transform((value: unknown) => (value == null ? "unknown" : value)),
+    stateSaleMethodSchema,
+  ),
+  legal_framework: legalFrameworkSchema,
+  venue_name: z.nullable(z.string()),
+  venue_address: z.nullable(z.string()),
+  participation_mode: z.enum(["in_person", "online", "hybrid", "unknown"]),
+  organizer_name: z.nullable(z.string()),
+  organizer_type: z.string(),
+  organizer_contact: z.nullable(z.string()),
+  eligible_bar: z.nullable(z.string()),
+  rules: z.looseObject({
+    lawyer_required: z.nullable(z.boolean()),
+    lawyer_note: z.string(),
+    bid_method: z.string(),
+    guarantee: z.looseObject({
+      amount_eur: nullableNumber,
+      rate_pct: nullableNumber,
+      minimum_eur: nullableNumber,
+      status: z.string(),
+      note: z.string(),
+    }),
+    financing_condition: z.nullable(z.boolean()),
+    cooling_off_period: z.nullable(z.boolean()),
+    payment_deadline_days: z.nullable(z.number().check(z.int(), z.positive())),
+    overbid: z.looseObject({
+      allowed: z.nullable(z.boolean()),
+      minimum_increase_pct: nullableNumber,
+      window_days: z.nullable(z.number().check(z.int(), z.positive())),
+      note: z.string(),
+    }),
+  }),
+  verification: z.looseObject({
     status: verificationStatusSchema,
-    evidence: z.array(z.string()).default([]),
-    source_url: z.string().nullable().optional(),
-  })
-  .passthrough();
-
-export const saleProcedureSchema = z
-  .object({
-    schema_version: z.literal("sale_procedure_v1"),
-    ruleset_version: z.string().min(1),
-    venue_type: venueTypeSchema,
-    state_sale_method: z.preprocess(
-      (value) => (value == null ? "unknown" : value),
-      stateSaleMethodSchema,
-    ),
-    legal_framework: legalFrameworkSchema,
-    venue_name: z.string().nullable(),
-    venue_address: z.string().nullable(),
-    participation_mode: z.enum(["in_person", "online", "hybrid", "unknown"]),
-    organizer_name: z.string().nullable(),
-    organizer_type: z.string(),
-    organizer_contact: z.string().nullable(),
-    eligible_bar: z.string().nullable(),
-    rules: z
-      .object({
-        lawyer_required: z.boolean().nullable(),
-        lawyer_note: z.string(),
-        bid_method: z.string(),
-        guarantee: z
-          .object({
-            amount_eur: nullableNumber,
-            rate_pct: nullableNumber,
-            minimum_eur: nullableNumber,
-            status: z.string(),
-            note: z.string(),
-          })
-          .passthrough(),
-        financing_condition: z.boolean().nullable(),
-        cooling_off_period: z.boolean().nullable(),
-        payment_deadline_days: z.number().int().positive().nullable(),
-        overbid: z
-          .object({
-            allowed: z.boolean().nullable(),
-            minimum_increase_pct: nullableNumber,
-            window_days: z.number().int().positive().nullable(),
-            note: z.string(),
-          })
-          .passthrough(),
-      })
-      .passthrough(),
-    verification: z
-      .object({
-        status: verificationStatusSchema,
-        verified_at: z.string().nullable(),
-        case_source_count: z.number().int().nonnegative(),
-        case_sources: z.array(sourceSchema),
-        regulatory_sources: z.array(sourceSchema),
-        facts: z.array(factSchema),
-        issues: z.array(z.string()),
-      })
-      .passthrough(),
-  })
-  .passthrough();
+    verified_at: z.nullable(z.string()),
+    case_source_count: z.number().check(z.int(), z.nonnegative()),
+    case_sources: z.array(sourceSchema),
+    regulatory_sources: z.array(sourceSchema),
+    facts: z.array(factSchema),
+    issues: z.array(z.string()),
+  }),
+});
 
 export type SaleProcedure = z.infer<typeof saleProcedureSchema>;
 export type SaleProcedureSource = z.infer<typeof sourceSchema>;

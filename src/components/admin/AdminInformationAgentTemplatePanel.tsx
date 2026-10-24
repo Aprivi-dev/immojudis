@@ -8,13 +8,14 @@ import {
   publishAdminInformationAgentEmailTemplateDraft,
   saveAdminInformationAgentEmailTemplateDraft,
 } from "@/lib/client-api";
-import {
-  type InformationAgentEmailBlock,
-  type InformationAgentEmailTemplateContent,
-  type InformationAgentEmailTemplatePreview,
-  type InformationAgentEmailTemplateWorkspace,
-  templateVariableToken,
+import type {
+  InformationAgentEmailBlock,
+  InformationAgentEmailTemplateContent,
+  InformationAgentEmailTemplatePreview,
+  InformationAgentEmailTemplateWorkspace,
 } from "@/lib/information-agent-email-template";
+// Le jeton seul : le module du modèle embarque zod, que l'éditeur n'a pas à télécharger.
+import { templateVariableToken } from "@/lib/information-agent-email-template-token";
 
 const TEMPLATE_QUERY_KEY = ["admin-information-agent-email-template"] as const;
 

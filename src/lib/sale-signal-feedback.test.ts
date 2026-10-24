@@ -8,8 +8,8 @@ import {
   SALE_SIGNAL_VALUES,
   SALE_SIGNAL_VALUE_LABELS,
   isReasonOfSignal,
-  saleSignalFeedbackSchema,
 } from "./sale-signal-feedback";
+import { saleSignalFeedbackSchema } from "./sale-signal-feedback-schema";
 
 const migration = readFileSync(
   join(process.cwd(), "supabase", "migrations", "20261030110100_sale_signal_feedback.sql"),
