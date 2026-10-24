@@ -351,7 +351,11 @@ export function SearchPage({
     () => stableUrlRecord(salesSearchToUrlRecord({ ...search, page: undefined, limit: undefined })),
     [search],
   );
-  const { data: entitlementsData, isLoading: entitlementsLoading } = useQuery({
+  const {
+    data: entitlementsData,
+    isLoading: entitlementsLoading,
+    isPending: entitlementsPending,
+  } = useQuery({
     queryKey: queryKeys.featureEntitlementsPlan(user?.id ?? "anonymous"),
     queryFn: fetchAccessPlan,
     enabled: Boolean(user) && !authLoading,
@@ -360,7 +364,10 @@ export function SearchPage({
   const isDiscovery = Boolean(user) && entitlementsData?.plan.hasAnalysisAccess !== true;
   // Le tri par score d'investissement n'existe que dans l'offre Analyse.
   const investmentSortAllowed = !isPreview && !isDiscovery;
-  const catalogReady = !authLoading && (isPreview || !entitlementsLoading);
+  // `isPending`, pas `isLoading` : au rendu où le compte vient d'être reconnu, la requête des droits
+  // est activée mais pas encore partie (`isLoading` faux) ; le catalogue partait alors comme pour
+  // un compte Découverte, avant de connaître les droits.
+  const catalogReady = !authLoading && (isPreview || !entitlementsPending);
   const comparisonScope = catalogReady
     ? `${user?.id ?? "anonymous"}:${isPreview ? "preview" : isDiscovery ? "discovery" : "analysis"}`
     : null;
