@@ -10,7 +10,6 @@ import {
   ResultsViewToggle,
   SaveSearchButton,
   SearchHeader,
-  SortByDateShortcut,
   SortDropdown,
 } from "./SearchHeader";
 import { emptySearchDraft, type SearchDraft } from "./search-page-state";
@@ -150,27 +149,15 @@ describe("SortDropdown : options selon l'offre", () => {
   });
 });
 
-describe("SortByDateShortcut", () => {
-  it("propose « Trier par date de vente » à côté du tri par défaut, sans le changer", () => {
+describe("Tri et hauteur tactile", () => {
+  it("garde le tri par date de vente dans le seul menu de tri", () => {
     const onChange = vi.fn();
-    render(<SortByDateShortcut sort="relevance" onChange={onChange} />);
-    const button = screen.getByRole("button", { name: "Trier par date de vente" });
-    expect(button.getAttribute("aria-pressed")).toBe("false");
-    expect(button.className).toContain("min-h-11");
-    fireEvent.click(button);
+    render(<SortDropdown sort="relevance" onChange={onChange} />);
+    const select = screen.getByRole("combobox") as HTMLSelectElement;
+    expect([...select.options].map((option) => option.value)).toContain("sale_date_asc");
+    fireEvent.change(select, { target: { value: "sale_date_asc" } });
     expect(onChange).toHaveBeenCalledWith("sale_date_asc");
-    cleanup();
-    render(<SortDropdown sort="relevance" onChange={vi.fn()} />);
-    expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe("relevance");
-  });
-
-  it("revient au classement par défaut au second appui", () => {
-    const onChange = vi.fn();
-    render(<SortByDateShortcut sort="sale_date_asc" onChange={onChange} />);
-    const button = screen.getByRole("button", { name: "Trier par date de vente" });
-    expect(button.getAttribute("aria-pressed")).toBe("true");
-    fireEvent.click(button);
-    expect(onChange).toHaveBeenCalledWith("relevance");
+    expect(screen.queryByRole("button", { name: "Trier par date de vente" })).toBeNull();
   });
 
   it("donne aux listes Type de bien et Tri une hauteur tactile d'au moins 44 px", () => {
@@ -224,7 +211,7 @@ describe("ResultsSummary", () => {
     }
   });
 
-  it("masque le surtitre sous sm (il reste affiché à partir de sm)", () => {
+  it("n'a plus de surtitre au-dessus du titre des résultats", () => {
     render(
       <ResultsSummary
         search={{}}
@@ -234,11 +221,10 @@ describe("ResultsSummary", () => {
         geocoding={false}
       />,
     );
-    const eyebrow = screen.getByText("Le catalogue des enchères");
-    expect(eyebrow.className).toContain("hidden");
-    expect(eyebrow.className).toContain("sm:block");
-    // Le titre, lui, reste toujours là.
-    expect(screen.getByRole("heading", { level: 1 })).toBeTruthy();
+    expect(screen.queryByText("Le catalogue des enchères")).toBeNull();
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
+      "Ventes immobilières aux enchères",
+    );
   });
 
   it("montre une petite pastille dans la ligne du compteur quand la liste se met à jour, sans texte", () => {

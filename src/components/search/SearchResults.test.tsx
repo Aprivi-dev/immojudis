@@ -255,10 +255,11 @@ describe("useful public discovery", () => {
         />
       </QueryClientProvider>,
     );
-    expect(screen.getByRole("heading", { name: "Appartement · Bordeaux" })).toBeTruthy();
-    expect(screen.getByText(/Département 33 · 60\s*m²/)).toBeTruthy();
+    // Titre court de la fiche ; la surface y figure, la ligne dessous dit le département et les pièces.
+    expect(screen.getByRole("heading", { name: "Appartement de 60 m² à Bordeaux" })).toBeTruthy();
+    expect(screen.getByText(/Gironde \(33\) · 3 pièces/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Définition : mise à prix" })).toBeTruthy();
-    expect(screen.getByText("Mise à prix").className).not.toContain("text-xs");
+    expect(screen.getByText("mise à prix").className).not.toContain("text-xs");
     expect(screen.getAllByText(/oct/i).length).toBeGreaterThan(0);
     for (const text of [
       "Visuel réservé",
@@ -276,7 +277,7 @@ describe("useful public discovery", () => {
     ).toBeTruthy();
   });
 
-  it("titles the card « Type de bien · Ville » with a clean fallback when one is missing", () => {
+  it("titles the card with the sale page's short heading, with a clean fallback", () => {
     const renderCard = (fields: Record<string, unknown>) =>
       render(
         <QueryClientProvider client={new QueryClient()}>
@@ -301,24 +302,26 @@ describe("useful public discovery", () => {
       );
 
     renderCard({ property_type: "house", city: "Lille", department: "59" });
-    expect(screen.getByRole("heading", { name: "Maison · Lille" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Maison à Lille" })).toBeTruthy();
     cleanup();
 
-    // Unknown type: « Bien », never an internal code.
+    // Unknown type: « Bien immobilier », never an internal code.
     renderCard({ property_type: "other", city: "Lille", department: "59" });
-    expect(screen.getByRole("heading", { name: "Bien · Lille" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Bien immobilier à Lille" })).toBeTruthy();
     cleanup();
 
     // No city: the type alone, the department takes over below the title.
     renderCard({ property_type: "apartment", city: null, department: "Gironde" });
     expect(screen.getByRole("heading", { name: "Appartement" })).toBeTruthy();
-    expect(screen.getByText(/^Gironde · /)).toBeTruthy();
+    expect(screen.getByText(/^Gironde/).textContent).toMatch(/^Gironde.* · /);
     cleanup();
 
     // Neither city nor department: say so rather than leave a hole.
     renderCard({ property_type: "apartment", city: "  ", department: null });
     expect(screen.getByRole("heading", { name: "Appartement" })).toBeTruthy();
-    expect(screen.getByText(/^Localisation à préciser · /)).toBeTruthy();
+    expect(screen.getByText("Localisation à préciser").parentElement?.textContent).toMatch(
+      /^Localisation à préciser · /,
+    );
   });
 
   it("keeps the old reassurance on a locked sale that cannot be unlocked", () => {
@@ -347,12 +350,14 @@ describe("useful public discovery", () => {
     expect(screen.queryByText(/fiches détaillées par mois/)).toBeNull();
   });
 
-  it("signale « Annonce bien renseignée » sur les seules cartes du palier haut", () => {
-    const renderCard = (completeness_tier: number | null | undefined, locked: boolean) =>
+  it("laisse « Annonce bien renseignée » à la fiche : la carte ne la montre plus", () => {
+    // Décision du 24/10/2026 (docs/design/fondations.md) : deux pastilles au plus par carte,
+    // l'échéance et les points à vérifier ; la qualité de l'annonce n'est dite que sur la fiche.
+    for (const locked of [true, false]) {
       render(
         <QueryClientProvider client={new QueryClient()}>
           <ListingCard
-            sale={{ ...sale("tier-card"), completeness_tier } as AuctionSale}
+            sale={{ ...sale("tier-card"), completeness_tier: 1 } as AuctionSale}
             returnTo="/sales"
             locked={locked}
             analysisLocked={false}
@@ -362,15 +367,6 @@ describe("useful public discovery", () => {
           />
         </QueryClientProvider>,
       );
-
-    renderCard(1, true);
-    expect(screen.getByText("Annonce bien renseignée")).toBeTruthy();
-    cleanup();
-    renderCard(1, false);
-    expect(screen.getByText("Annonce bien renseignée")).toBeTruthy();
-    cleanup();
-    for (const tier of [0, null, undefined]) {
-      renderCard(tier, false);
       expect(screen.queryByText("Annonce bien renseignée")).toBeNull();
       cleanup();
     }
@@ -409,7 +405,7 @@ describe("useful public discovery", () => {
 
     it("compte les points déjà visibles sur la carte et mène à la fiche", () => {
       renderCard({ app_surface_m2: null, occupancy_status: null });
-      expect(screen.getByText("Surface n.c.")).toBeTruthy();
+      expect(screen.getByText(/surface non communiquée/)).toBeTruthy();
       fireEvent.click(screen.getByRole("button", { name: "2 points à vérifier" }));
       const note = screen.getByRole("note");
       expect(note.textContent).toContain("Surface non communiquée dans l’annonce");
@@ -438,15 +434,11 @@ describe("useful public discovery", () => {
       expect(screen.getByRole("button", { name: "1 point à vérifier" })).toBeTruthy();
     });
 
-    it("n'affiche pas « Annonce bien renseignée » à côté d'un point à vérifier", () => {
-      renderCard({ completeness_tier: 1, app_surface_m2: null });
-      expect(screen.getByRole("button", { name: "1 point à vérifier" })).toBeTruthy();
-      expect(screen.queryByText("Annonce bien renseignée")).toBeNull();
-    });
-
-    it("garde « Annonce bien renseignée » quand aucun point n'est à vérifier", () => {
-      renderCard({ completeness_tier: 1 });
-      expect(screen.getByText("Annonce bien renseignée")).toBeTruthy();
+    it("montre l'occupation dans la ligne du bien, pas dans une pastille", () => {
+      renderCard({ occupancy_status: "libre" });
+      expect(screen.getByRole("heading", { level: 3 }).nextElementSibling?.textContent).toBe(
+        "libre",
+      );
       expect(screen.queryByRole("button", { name: /à vérifier/ })).toBeNull();
     });
   });
@@ -563,7 +555,7 @@ describe("useful public discovery", () => {
     expect(screen.getByText("Type de bien à confirmer")).toBeTruthy();
     expect(screen.queryByText("Appartement", { exact: true })).toBeNull();
     expect(screen.getByRole("heading", { level: 3 }).textContent).toContain(
-      "Source : AGRASC · Bordeaux",
+      "Source : AGRASC à Bordeaux",
     );
     expect(screen.getByText(/Source : AGRASC/)).toBeTruthy();
   });
@@ -869,7 +861,8 @@ describe("« 3 déblocages par mois » on the cards of a Découverte account", (
     expect(await screen.findAllByText("Débloquée")).toHaveLength(1);
     const cards = screen.getAllByRole("article");
     expect(cards[1].textContent).toContain("Débloquée");
-    expect(cards[1].textContent).toContain("Voir le détail");
+    // La carte entière mène à la fiche : « Voir le détail » ne s'écrit plus en bas de carte.
+    expect(cards[1].textContent).not.toContain("Voir le détail");
     expect(cards[0].textContent).not.toContain("Débloquée");
     expect(cards[0].textContent).toContain(
       "Gratuit, sans carte bancaire · 3 fiches détaillées par mois",
@@ -893,7 +886,6 @@ describe("« 3 déblocages par mois » on the cards of a Découverte account", (
       "Gratuit, sans carte bancaire · 3 fiches détaillées par mois",
     );
     expect(cards[1].textContent).not.toContain("fiches détaillées par mois");
-    expect(cards[1].textContent).toContain("Voir le détail");
   });
 
   it("does not ask for the unlocks of a visitor or of an Analyse account", async () => {

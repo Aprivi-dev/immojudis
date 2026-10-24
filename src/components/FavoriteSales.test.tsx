@@ -170,8 +170,8 @@ describe("FavoriteSales", () => {
       </QueryClientProvider>,
     );
 
-    await screen.findByRole("heading", { name: "Appartement · Bordeaux" });
-    expect(screen.getByText("Mise à prix")).toBeTruthy();
+    await screen.findByRole("heading", { name: "Appartement de 68 m² à Bordeaux" });
+    expect(screen.getByText("mise à prix")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Retirer des favoris" }));
     await waitFor(() => expect(mocks.toast).toHaveBeenCalled());
     const [message, options] = mocks.toast.mock.calls[0];
@@ -202,7 +202,7 @@ describe("FavoriteSales", () => {
     );
     renderFavorites();
 
-    await screen.findByRole("heading", { name: "Appartement · Bordeaux" });
+    await screen.findByRole("heading", { name: "Appartement de 68 m² à Bordeaux" });
     fireEvent.click(screen.getByRole("button", { name: "Retirer des favoris" }));
 
     const dialog = await screen.findByRole("dialog");
@@ -232,7 +232,7 @@ describe("FavoriteSales", () => {
     );
     renderFavorites();
 
-    await screen.findByRole("heading", { name: "Appartement · Bordeaux" });
+    await screen.findByRole("heading", { name: "Appartement de 68 m² à Bordeaux" });
     fireEvent.click(screen.getByRole("button", { name: "Retirer des favoris" }));
     fireEvent.click(await screen.findByRole("button", { name: "Retirer et effacer mon dossier" }));
 
@@ -260,7 +260,7 @@ describe("FavoriteSales", () => {
     mocks.addFavoriteSale.mockResolvedValue({ favorite: null, created: true });
     renderFavorites();
 
-    await screen.findByRole("heading", { name: "Appartement · Bordeaux" });
+    await screen.findByRole("heading", { name: "Appartement de 68 m² à Bordeaux" });
     fireEvent.click(screen.getByRole("button", { name: "Retirer des favoris" }));
     await waitFor(() => expect(mocks.toast).toHaveBeenCalled());
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -282,7 +282,7 @@ describe("FavoriteSales", () => {
     mocks.saveFavoriteDossier.mockRejectedValue(new Error("boom"));
     renderFavorites();
 
-    await screen.findByRole("heading", { name: "Appartement · Bordeaux" });
+    await screen.findByRole("heading", { name: "Appartement de 68 m² à Bordeaux" });
     fireEvent.click(screen.getByRole("button", { name: "Retirer des favoris" }));
     fireEvent.click(await screen.findByRole("button", { name: "Retirer et effacer mon dossier" }));
     await waitFor(() => expect(mocks.toast).toHaveBeenCalled());
@@ -334,7 +334,7 @@ describe("FavoriteSales : Mon dossier (point 68)", () => {
     mocks.fetchSaleChangeEvents.mockResolvedValue({ events: [] });
     renderPage();
 
-    await screen.findByRole("heading", { name: "Appartement · Bordeaux" });
+    await screen.findByRole("heading", { name: "Appartement de 68 m² à Bordeaux" });
     expect(screen.getByText("Je prépare mon enchère")).toBeTruthy();
     expect(screen.getByText(/185\s000\s€/)).toBeTruthy();
     expect(screen.getByRole("link", { name: "Modifier sur la fiche" }).getAttribute("href")).toBe(
@@ -348,7 +348,7 @@ describe("FavoriteSales : Mon dossier (point 68)", () => {
     mocks.fetchSaleChangeEvents.mockResolvedValue({ events: [] });
     renderPage();
 
-    await screen.findByRole("heading", { name: "Appartement · Bordeaux" });
+    await screen.findByRole("heading", { name: "Appartement de 68 m² à Bordeaux" });
     expect(screen.getByText("aucun")).toBeTruthy();
     expect(screen.getByText("aucun enregistré")).toBeTruthy();
   });
@@ -458,7 +458,7 @@ describe("FavoriteSales : changements des ventes suivies", () => {
       await screen.findByText("Impossible de charger les changements pour le moment."),
     ).toBeTruthy();
     // Les favoris restent affichés malgré l'erreur.
-    expect(screen.getByRole("heading", { name: "Appartement · Bordeaux" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Appartement de 68 m² à Bordeaux" })).toBeTruthy();
     const retry = screen.getAllByRole("button", { name: "Réessayer" });
     fireEvent.click(retry[retry.length - 1]);
 
@@ -506,7 +506,7 @@ describe("FavoriteSales : changements des ventes suivies", () => {
     const line = await screen.findByRole("region", {
       name: "Suivez les changements de vos ventes",
     });
-    const card = screen.getByRole("heading", { name: "Appartement · Bordeaux" });
+    const card = screen.getByRole("heading", { name: "Appartement de 68 m² à Bordeaux" });
     // La carte du favori précède la ligne d'offre dans la page.
     expect(card.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     // Une ligne : ni aperçu flouté, ni libellés de substitution.
@@ -520,7 +520,7 @@ describe("FavoriteSales : changements des ventes suivies", () => {
     renderPage();
 
     const changes = await screen.findByRole("heading", { name: "Changements récents" });
-    const card = screen.getByRole("heading", { name: "Appartement · Bordeaux" });
+    const card = screen.getByRole("heading", { name: "Appartement de 68 m² à Bordeaux" });
     expect(card.compareDocumentPosition(changes) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 

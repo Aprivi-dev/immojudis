@@ -1,5 +1,3 @@
-import { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
-import { WellInformedBadge } from "@/components/WellInformedBadge";
 import { PointsToVerifyBadge } from "@/components/PointsToVerifyBadge";
 import { pointsToVerify } from "@/lib/search/points-to-verify";
 import { SaleCountdown } from "@/components/SaleCountdown";
@@ -39,6 +37,8 @@ import {
 import { formatStartingPrice, occupancyLabel } from "@/lib/format";
 import { trackProductEvent } from "@/lib/product-events";
 import { stateListingStatus } from "@/lib/property-characteristics";
+import { departmentFromCode } from "@/lib/department-pages";
+import { saleShortHeading, saleVenueSentence, seoSurface } from "@/lib/seo";
 import type { AuctionSale } from "@/lib/types";
 import { MAX_COMPARED_SALES } from "@/lib/search/sale-comparison";
 import type { ActiveFilterChip } from "./active-filter-chips";
@@ -47,8 +47,9 @@ import { LaunchOfferListBanner } from "./LaunchOfferListBanner";
 import { SearchResultsSkeleton } from "./SearchResultsSkeleton";
 import { SearchResultsTable } from "./SearchResultsTable";
 import {
-  cardTypeLabel,
   departmentLabel,
+  LISTING_DETAIL_LINE,
+  LISTING_LAUNCH_OFFER_LINE,
   listingAccessLine,
   listingDateLabel,
   listingLinkLabel,
@@ -257,6 +258,11 @@ export function SearchResultsList({
   );
 }
 /** Assemble les éléments présents, séparés par « · » : aucun séparateur ne reste seul. */
+/** « Vente par l'État » → « vente par l'État » : seule la première lettre passe en minuscule. */
+function lowerFirst(text: string): string {
+  return text.charAt(0).toLowerCase() + text.slice(1);
+}
+
 function withSeparators(parts: React.ReactNode[]): React.ReactNode {
   const kept = parts.filter((part) => part != null && part !== false && part !== "");
   return kept.map((part, index) => (
@@ -339,9 +345,45 @@ export const ListingCard = memo(function ListingCard({
   const title = listingTitle(sale, { locked, aiReviewProjections, aiReviewStatus });
   // Cession de l'État en ligne sans échéance publiée : « Procédure à venir » plutôt que « Date à confirmer ».
   const stateListing = stateListingStatus(sale);
-  // Titre « Type de bien · Ville » ; sans ville, le département prend le relais sous le titre.
-  const showCity = cityReview.blocked || Boolean(sale.city?.trim());
-  const departmentLine = departmentLabel(sale.department);
+  // Titre court de la fiche (« Appartement de 39 m² à Beure ») : un champ en cours de vérification
+  // n'y entre pas (docs/design/fondations.md, décision du 24/10/2026).
+  const typeReview = getAiReviewFieldResult(
+    aiReviewProjections,
+    "property.property_type",
+    aiReviewStatus,
+  );
+  const headingSale = {
+    ...sale,
+    city: cityReview.blocked ? null : sale.city,
+    app_surface_m2: surfaceReviewField ? null : sale.app_surface_m2,
+  };
+  // Type en cours de vérification : « Type de bien à confirmer » et sa source, puis la ville.
+  const heading = typeReview.blocked ? (
+    <>
+      <AiReviewField
+        fieldKey="property.property_type"
+        projections={aiReviewProjections}
+        reviewStatus={aiReviewStatus}
+        fallback="Type de bien à confirmer"
+        sourceName={sale.source_name}
+        sourceUrl={sale.source_url}
+        showSourceLink={false}
+      >
+        {saleShortHeading(headingSale)}
+      </AiReviewField>
+      {headingSale.city?.trim() ? ` à ${headingSale.city.trim()}` : null}
+    </>
+  ) : (
+    saleShortHeading(headingSale)
+  );
+  const headingHasSurface = !surfaceReviewField && seoSurface(sale.app_surface_m2) != null;
+  const department = departmentFromCode(sale.department);
+  // Une ville en cours de vérification ne laisse pas non plus son département (comme sur la fiche).
+  const departmentLine = cityReview.blocked
+    ? null
+    : department
+      ? `${department.name} (${department.code})`
+      : departmentLabel(sale.department);
   const roomSummary = roomsReview.blocked
     ? null
     : sale.rooms_count != null
@@ -349,6 +391,18 @@ export const ListingCard = memo(function ListingCard({
       : sale.bedrooms_count != null
         ? `${sale.bedrooms_count} ch.`
         : null;
+  // La ligne d'accès n'apparaît que lorsqu'elle dit quelque chose de propre à la vente : l'offre de
+  // lancement est dite une fois au-dessus de la liste, et « Voir le détail » répète le lien.
+  const accessLine = listingAccessLine(sale, {
+    locked,
+    analysisLocked,
+    unlocked,
+    verifying,
+    launchOffer,
+    launchPending,
+  });
+  const showAccessLine =
+    accessLine !== LISTING_LAUNCH_OFFER_LINE && accessLine !== LISTING_DETAIL_LINE;
 
   return (
     <article
@@ -356,7 +410,7 @@ export const ListingCard = memo(function ListingCard({
       onMouseLeave={() => onHover(null)}
       onFocusCapture={() => onHover(sale.id)}
       onBlurCapture={() => onHover(null)}
-      className={`group relative overflow-hidden rounded-xl border bg-white shadow-[0_1px_2px_rgba(19,34,56,0.05)] transition-[border-color,box-shadow] [contain-intrinsic-size:none_auto_28rem] [content-visibility:auto] ${active ? "border-gold ring-1 ring-gold" : "border-line-soft hover:border-gold hover:shadow-[0_8px_24px_rgba(19,34,56,0.09)]"}`}
+      className={`group relative overflow-hidden rounded-lg border bg-white transition-[border-color,box-shadow] [contain-intrinsic-size:none_auto_28rem] [content-visibility:auto] ${active ? "border-gold ring-1 ring-gold" : "border-line hover:border-gold"}`}
     >
       <Link
         id={`sale-card-${sale.id}`}
@@ -383,7 +437,21 @@ export const ListingCard = memo(function ListingCard({
           title={title}
           returnTo={returnTo}
           onSelect={onSelect}
+          placeLabel={headingSale.city}
         />
+        <div className="absolute right-2 top-2 z-30">
+          <CompactFavoriteButton
+            key={`${sale.id}:${favoriteScope ?? "anonymous"}`}
+            saleId={sale.id}
+            // Discovery can save a limited number of favourites (PLAN_LIMITS.decouverte.favoriteSales).
+            // Keep the favourite control available while the rest of the card stays analysis-gated.
+            locked={locked}
+            favoriteScope={favoriteScope}
+            initialFavorite={initialFavorite}
+            onChange={onFavoriteChange}
+            onImage
+          />
+        </div>
         {(unlocked || viewed) && (
           <div className="absolute left-3 top-3 z-20 flex flex-wrap gap-1">
             {unlocked && (
@@ -400,122 +468,34 @@ export const ListingCard = memo(function ListingCard({
         )}
       </div>
       <div className="relative min-w-0 p-4">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <h3 className="font-display text-lg font-semibold leading-tight sm:text-xl">
+        <h3 className="font-sans text-base font-semibold leading-snug text-brand-navy">
+          {heading}
+        </h3>
+        <p className="mt-1 text-sm leading-5 text-ink-soft">
+          {withSeparators([
+            cityReview.blocked || (!headingSale.city?.trim() && !departmentLine) ? (
+              <span>Localisation à préciser</span>
+            ) : null,
+            departmentLine,
+            headingHasSurface ? null : surfaceReviewField ? (
               <AiReviewField
-                fieldKey="property.property_type"
+                fieldKey={surfaceReviewField}
                 projections={aiReviewProjections}
                 reviewStatus={aiReviewStatus}
-                fallback="Type de bien à confirmer"
+                fallback="Surface à confirmer"
                 sourceName={sale.source_name}
                 sourceUrl={sale.source_url}
                 showSourceLink={false}
               >
-                {cardTypeLabel(sale.property_type)}
+                {displaySurface.value != null ? displaySurface.label : "Surface n.c."}
               </AiReviewField>
-              {showCity ? (
-                <>
-                  {" · "}
-                  <AiReviewField
-                    fieldKey="property.city"
-                    projections={aiReviewProjections}
-                    reviewStatus={aiReviewStatus}
-                    fallback="Localisation à préciser"
-                    sourceName={sale.source_name}
-                    sourceUrl={sale.source_url}
-                    showSourceLink={false}
-                  >
-                    {sale.city}
-                  </AiReviewField>
-                </>
-              ) : null}
-            </h3>
-            <p className="mt-1 text-sm leading-5 text-ink-soft">
-              {withSeparators([
-                !showCity && !departmentLine ? "Localisation à préciser" : null,
-                departmentLine,
-                surfaceReviewField ? (
-                  <AiReviewField
-                    fieldKey={surfaceReviewField}
-                    projections={aiReviewProjections}
-                    reviewStatus={aiReviewStatus}
-                    fallback="Surface à confirmer"
-                    sourceName={sale.source_name}
-                    sourceUrl={sale.source_url}
-                    showSourceLink={false}
-                  >
-                    {displaySurface.value != null ? displaySurface.label : "Surface n.c."}
-                  </AiReviewField>
-                ) : displaySurface.value != null ? (
-                  displaySurface.label
-                ) : (
-                  "Surface n.c."
-                ),
-                roomSummary,
-              ])}
-            </p>
-          </div>
-          <CompactFavoriteButton
-            key={`${sale.id}:${favoriteScope ?? "anonymous"}`}
-            saleId={sale.id}
-            // Discovery can save a limited number of favourites (PLAN_LIMITS.decouverte.favoriteSales).
-            // Keep the favourite control available while the rest of the card stays analysis-gated.
-            locked={locked}
-            favoriteScope={favoriteScope}
-            initialFavorite={initialFavorite}
-            onChange={onFavoriteChange}
-          />
-        </div>
-        <p className="mt-3 text-2xl font-bold leading-none text-gold-text sm:text-[1.7rem]">
-          <AiReviewField
-            fieldKey="sale.starting_price_eur"
-            projections={aiReviewProjections}
-            reviewStatus={aiReviewStatus}
-            sourceName={sale.source_name}
-            sourceUrl={sale.source_url}
-            showSourceLink={false}
-          >
-            {formatStartingPrice(sale.starting_price_eur)}
-          </AiReviewField>
-        </p>
-        <p className="text-[13px] font-medium leading-5 text-ink-soft sm:text-sm">
-          <Terme terme="mise-a-prix" placement="top">
-            Mise à prix
-          </Terme>
-        </p>
-        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-ink-soft">
-          <span className="inline-flex items-center gap-1">
-            <CalendarDays className="h-3.5 w-3.5" />
-            <AiReviewField
-              fieldKey="sale.sale_date"
-              projections={aiReviewProjections}
-              reviewStatus={aiReviewStatus}
-              sourceName={sale.source_name}
-              sourceUrl={sale.source_url}
-              showSourceLink={false}
-            >
-              {stateListing ? stateListing.label : listingDateLabel(sale)}
-            </AiReviewField>
-          </span>
-          <SaleCountdown
-            sale={sale}
-            precisionUnknown={locked}
-            variant="chip"
-            omitPast={!stateListing && listingDateLabel(sale) === PAST_SALE_LABEL}
-          />
-          <SaleProcedureBadge sale={sale} />
-          {/* « Annonce bien renseignée » et « N points à vérifier » se contredisent côte à côte : un
-              point ouvert l'emporte (la liste des points est celle de la carte). */}
-          {verifyPoints.length === 0 ? <WellInformedBadge sale={sale} /> : null}
-          <PointsToVerifyBadge
-            points={verifyPoints}
-            detailHref={detailLink.href}
-            detailLinkProps={detailLink.armProps}
-            onNavigate={() => onSelect(sale.id)}
-          />
-          {!premiumLocked && sale.occupancy_status && (
-            <span className="rounded bg-success-tint px-2 py-1">
+            ) : displaySurface.value != null ? (
+              displaySurface.label
+            ) : (
+              "surface non communiquée"
+            ),
+            roomSummary,
+            !premiumLocked && sale.occupancy_status ? (
               <AiReviewField
                 fieldKey="property.occupancy_status"
                 projections={aiReviewProjections}
@@ -524,22 +504,62 @@ export const ListingCard = memo(function ListingCard({
                 sourceUrl={sale.source_url}
                 showSourceLink={false}
               >
-                {occupancyLabel(sale.occupancy_status)}
+                {occupancyLabel(sale.occupancy_status).toLowerCase()}
               </AiReviewField>
-            </span>
-          )}
-        </div>
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-1 border-t border-surface-tint pt-3">
-          <span className="text-sm text-ink-soft">
-            {listingAccessLine(sale, {
-              locked,
-              analysisLocked,
-              unlocked,
-              verifying,
-              launchOffer,
-              launchPending,
-            })}
+            ) : null,
+          ])}
+        </p>
+        <p className="mt-3 flex flex-wrap items-baseline gap-x-2">
+          <span className="text-2xl font-semibold leading-none tracking-[-0.01em] text-brand-navy tabular-nums">
+            <AiReviewField
+              fieldKey="sale.starting_price_eur"
+              projections={aiReviewProjections}
+              reviewStatus={aiReviewStatus}
+              sourceName={sale.source_name}
+              sourceUrl={sale.source_url}
+              showSourceLink={false}
+            >
+              {formatStartingPrice(sale.starting_price_eur)}
+            </AiReviewField>
           </span>
+          <span className="text-caption text-ink-soft">
+            <Terme terme="mise-a-prix" placement="top">
+              mise à prix
+            </Terme>
+          </span>
+        </p>
+        <p className="mt-3 flex flex-wrap items-center gap-x-1.5 text-sm text-brand-navy">
+          <CalendarDays className="h-3.5 w-3.5 text-ink-soft" aria-hidden />
+          <AiReviewField
+            fieldKey="sale.sale_date"
+            projections={aiReviewProjections}
+            reviewStatus={aiReviewStatus}
+            sourceName={sale.source_name}
+            sourceUrl={sale.source_url}
+            showSourceLink={false}
+          >
+            {stateListing ? stateListing.label : listingDateLabel(sale)}
+          </AiReviewField>
+          <span className="text-ink-soft">· {lowerFirst(saleVenueSentence(sale))}</span>
+        </p>
+        {/* Deux pastilles au plus (docs/design/fondations.md) : l'échéance et les points à vérifier.
+            Le type de vente est dans la ligne de date ; la qualité de l'annonce est sur la fiche. */}
+        <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
+          <SaleCountdown
+            sale={sale}
+            precisionUnknown={locked}
+            variant="chip"
+            omitPast={!stateListing && listingDateLabel(sale) === PAST_SALE_LABEL}
+          />
+          <PointsToVerifyBadge
+            points={verifyPoints}
+            detailHref={detailLink.href}
+            detailLinkProps={detailLink.armProps}
+            onNavigate={() => onSelect(sale.id)}
+          />
+        </div>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-1 border-t border-line-soft pt-2">
+          <span className="text-sm text-ink-soft">{showAccessLine ? accessLine : null}</span>
           <div className="flex items-center">
             <ShareButton sale={sale} title={title} />
             {onToggleComparison && (
@@ -572,6 +592,7 @@ export function ListingImage({
   title,
   returnTo,
   onSelect,
+  placeLabel = null,
 }: {
   sale: AuctionSale;
   locked: boolean;
@@ -579,6 +600,8 @@ export function ListingImage({
   title: string;
   returnTo?: string;
   onSelect?: (saleId: string) => void;
+  /** Ville écrite dans la case neutre ; `null` quand elle est en cours de vérification. */
+  placeLabel?: string | null;
 }) {
   return (
     <ListingMediaCarousel
@@ -588,6 +611,7 @@ export function ListingImage({
       title={title}
       returnTo={returnTo}
       onSelect={onSelect}
+      placeLabel={placeLabel}
     />
   );
 }
@@ -610,6 +634,7 @@ export function ListingMediaCarousel({
   title,
   returnTo,
   onSelect,
+  placeLabel = null,
 }: {
   sale: AuctionSale;
   locked: boolean;
@@ -617,6 +642,7 @@ export function ListingMediaCarousel({
   title: string;
   returnTo?: string;
   onSelect?: (saleId: string) => void;
+  placeLabel?: string | null;
 }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [failedPhotoUrls, setFailedPhotoUrls] = useState<Set<string>>(() => new Set());
@@ -711,6 +737,9 @@ export function ListingMediaCarousel({
           mapWidth={LIST_MAP_THUMBNAIL.width}
           mapHeight={LIST_MAP_THUMBNAIL.height}
           mapFramingWidth={LIST_MAP_THUMBNAIL.framingWidth}
+          // Sans photo : la vue satellite de l'adresse, sinon une case neutre avec la ville.
+          sectorMap={false}
+          placeLabel={placeLabel}
         />
       </div>
     );
@@ -914,12 +943,15 @@ export function CompactFavoriteButton({
   favoriteScope,
   initialFavorite = false,
   onChange,
+  onImage = false,
 }: {
   saleId: string;
   locked: boolean;
   favoriteScope?: string | null;
   initialFavorite?: boolean;
   onChange?: (saleId: string, isFavorite: boolean, removed?: RemovedFavoriteDossier | null) => void;
+  /** Posé sur la photo de la carte : pastille blanche lisible sur n'importe quelle image. */
+  onImage?: boolean;
 }) {
   const { user, loading } = useAuth();
   const router = useRouter();
@@ -998,7 +1030,7 @@ export function CompactFavoriteButton({
         // annoncé) plutôt qu'un clic sans effet.
         aria-disabled={verifying ? true : undefined}
         title={verifying ? FAVORITE_VERIFYING_TITLE : locked ? FAVORITE_ANONYMOUS_TITLE : undefined}
-        className="relative z-20 grid h-11 w-11 cursor-pointer place-items-center rounded-full text-brand-navy transition-colors hover:bg-surface-tint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft disabled:cursor-not-allowed disabled:opacity-60 aria-disabled:cursor-wait aria-disabled:opacity-60"
+        className={`relative z-20 grid h-11 w-11 cursor-pointer place-items-center rounded-full text-brand-navy transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft disabled:cursor-not-allowed disabled:opacity-60 aria-disabled:cursor-wait aria-disabled:opacity-60 ${onImage ? "bg-white/95 ring-1 ring-line-soft hover:bg-white" : "hover:bg-surface-tint"}`}
       >
         <Heart className={`h-5 w-5 ${isFavorite && !locked ? "fill-danger text-danger" : ""}`} />
       </button>

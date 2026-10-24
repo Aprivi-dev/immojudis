@@ -93,6 +93,45 @@ describe("SaleVisual", () => {
     expect(map.getAttribute("src")).toContain("/api.mapbox.com/");
   });
 
+  it("liste des ventes : sans adresse, une case neutre avec la ville plutôt que la carte du secteur", () => {
+    vi.stubEnv("NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN", "pk.test-token");
+
+    render(
+      <SaleVisual
+        sale={{ ...EXAMPLE_SALE, media: [], address: null } as AuctionSale}
+        title="Garage à Lyon"
+        thumbnail
+        sectorMap={false}
+        placeLabel="Lyon"
+      />,
+    );
+
+    expect(screen.queryByRole("img")).toBeNull();
+    expect(screen.getByText("Aucun visuel fiable")).toBeTruthy();
+    expect(screen.getByText("Lyon")).toBeTruthy();
+  });
+
+  it("liste des ventes : avec une adresse, la vue satellite reste le visuel sans photo", () => {
+    vi.stubEnv("NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN", "pk.test-token");
+    vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(false);
+
+    render(
+      <SaleVisual
+        sale={{ ...EXAMPLE_SALE, media: [] } as AuctionSale}
+        title="Appartement à Bordeaux"
+        thumbnail
+        sectorMap={false}
+        placeLabel="Bordeaux"
+      />,
+    );
+
+    expect(
+      screen
+        .getByRole("img", { name: "Vue aérienne de Appartement à Bordeaux" })
+        .getAttribute("src"),
+    ).toContain("/mapbox/satellite-v9/static/");
+  });
+
   it("conserve une photo additionnelle du bien lorsque le satellite Mapbox échoue", async () => {
     vi.stubEnv("NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN", "pk.test-token");
     vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(false);

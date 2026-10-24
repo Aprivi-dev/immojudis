@@ -46,8 +46,6 @@ export function SearchHeader({
   isFetching,
   filtersOpen,
   savingAlert,
-  exportingCsv,
-  csvExportLocked,
   signedIn = false,
   dailyAlertsAllowed = false,
   emailRecapEnabled = false,
@@ -56,7 +54,6 @@ export function SearchHeader({
   onFiltersOpenChange,
   onReset,
   onSaveSearch,
-  onExportCsv,
   onToggleLayout,
 }: {
   draft: SearchDraft;
@@ -66,8 +63,6 @@ export function SearchHeader({
   isFetching: boolean;
   filtersOpen: boolean;
   savingAlert: boolean;
-  exportingCsv: boolean;
-  csvExportLocked: boolean;
   signedIn?: boolean;
   dailyAlertsAllowed?: boolean;
   /** Le consentement à l'email récapitulatif est déjà donné : on ne le redemande pas. */
@@ -77,7 +72,6 @@ export function SearchHeader({
   onFiltersOpenChange: (open: boolean) => void;
   onReset: () => void;
   onSaveSearch: (options?: SaveSearchOptions) => void;
-  onExportCsv: () => void;
   onToggleLayout: () => void;
 }) {
   const headerRef = useRef<HTMLElement>(null);
@@ -150,11 +144,6 @@ export function SearchHeader({
               </button>
             )}
             <div className="ml-auto hidden items-center gap-2 lg:flex">
-              <CsvExportButton
-                exporting={exportingCsv}
-                locked={csvExportLocked}
-                onClick={onExportCsv}
-              />
               <SaveSearchButton
                 saving={savingAlert}
                 signedIn={signedIn}
@@ -483,37 +472,6 @@ export function SortDropdown({
   );
 }
 
-/**
- * Raccourci visible à côté du tri par défaut (« Mieux renseignées d’abord ») : un appui trie par
- * date de vente (la plus proche d'abord), un second appui revient au classement par défaut.
- */
-export const SORT_BY_DATE_SHORTCUT_LABEL = "Trier par date de vente";
-
-export function SortByDateShortcut({
-  sort,
-  onChange,
-}: {
-  sort: SearchSortKey;
-  onChange: (sort: SearchSortKey) => void;
-}) {
-  const active = sort === "sale_date_asc";
-  return (
-    <button
-      type="button"
-      aria-pressed={active}
-      onClick={() => onChange(active ? "relevance" : "sale_date_asc")}
-      className={`inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-md border px-3 text-sm font-bold shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft ${
-        active
-          ? "border-brand-navy bg-brand-navy text-white"
-          : "border-line bg-white text-brand-navy hover:border-gold"
-      }`}
-    >
-      <CalendarDays className="h-4 w-4" aria-hidden />
-      {SORT_BY_DATE_SHORTCUT_LABEL}
-    </button>
-  );
-}
-
 const RESULTS_VIEW_OPTIONS = [
   { value: "cards", label: "Cartes" },
   { value: "table", label: "Tableau" },
@@ -695,13 +653,14 @@ export function CsvExportButton({
   locked: boolean;
   onClick: () => void;
 }) {
+  // Un lien discret dans la ligne d'aide sous le titre des résultats (maquette /sales du 24/10/2026).
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={exporting}
       title={locked ? "Export CSV réservé à l'offre Analyse" : "Exporter les résultats en CSV"}
-      className="inline-flex h-10 shrink-0 cursor-pointer items-center gap-2 rounded-md border border-line bg-white px-3 text-sm font-semibold text-brand-navy shadow-sm transition-colors hover:border-brand-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft disabled:cursor-not-allowed disabled:bg-surface-tint disabled:text-ink-soft"
+      className="inline-flex min-h-8 shrink-0 cursor-pointer items-center gap-1.5 font-semibold text-brand-navy underline underline-offset-2 hover:text-gold-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft disabled:cursor-not-allowed disabled:text-ink-soft"
     >
       {exporting ? (
         <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -761,10 +720,7 @@ export function ResultsSummary({
   const location = search.city || search.department || search.query || "France entière";
   return (
     <div className={`min-w-0 px-4 py-4 sm:px-5 ${RESULTS_SUMMARY_MOBILE_MIN_HEIGHT}`}>
-      <p className="mb-1 hidden text-xs font-bold uppercase tracking-[0.12em] text-gold-text sm:block">
-        Le catalogue des enchères
-      </p>
-      <h1 className="font-display text-[1.65rem] font-semibold leading-tight">
+      <h1 className="font-display text-[1.65rem] font-medium leading-tight">
         {location === "France entière"
           ? "Ventes immobilières aux enchères"
           : `Ventes immobilières aux enchères à ${location}`}

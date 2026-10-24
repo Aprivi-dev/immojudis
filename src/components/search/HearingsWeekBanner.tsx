@@ -8,7 +8,18 @@ const HEARINGS_PAGE_PATH = "/audiences-a-venir";
  * jour par jour et tribunal par tribunal. Un simple lien, sans état ni JavaScript : il figure dans
  * le HTML du serveur et ne déplace rien à l'hydratation.
  */
-export function HearingsWeekBanner() {
+export function HearingsWeekBanner({ inline = false }: { inline?: boolean }) {
+  // `inline` : le lien seul, dans la ligne d'aide sous le titre des résultats.
+  if (inline) {
+    return (
+      <Link
+        href={HEARINGS_PAGE_PATH}
+        className="inline-flex min-h-8 items-center font-semibold text-brand-navy underline underline-offset-2 hover:text-gold-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
+      >
+        Audiences de la semaine
+      </Link>
+    );
+  }
   return (
     <p className="border-t border-line-soft bg-white px-4 py-2 text-xs text-ink-soft sm:px-5">
       <Link

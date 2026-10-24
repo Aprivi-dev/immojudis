@@ -88,7 +88,8 @@ describe("compte en cours de vérification", () => {
     for (const card of cards) {
       expect(card.textContent).not.toContain(FREE_LINE);
       expect(card.textContent).not.toContain("Fiche complète avec un compte gratuit");
-      expect(card.textContent).toContain("Voir le détail");
+      // Ligne neutre : rien n'est écrit en bas de carte (la carte entière mène à la fiche).
+      expect(card.textContent).not.toContain("Voir le détail");
     }
   });
 

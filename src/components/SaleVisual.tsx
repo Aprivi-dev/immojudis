@@ -31,6 +31,13 @@ type SaleVisualProps = {
    * le zoom est ajusté pour que la zone affichée reste la même (même cadrage, moins de pixels).
    */
   mapFramingWidth?: number;
+  /**
+   * Sans adresse précise, carte du secteur Mapbox (par défaut). La liste des ventes la remplace par
+   * une case neutre (décision du 24/10/2026) : la grande carte montre déjà le secteur.
+   */
+  sectorMap?: boolean;
+  /** Lieu écrit dans la case neutre (ville), quand aucun visuel n'est disponible. */
+  placeLabel?: string | null;
 };
 
 type VisualCandidate = {
@@ -96,6 +103,8 @@ export function SaleVisual({
   preferPhoto = false,
   thumbnail = false,
   mapFramingWidth,
+  sectorMap = true,
+  placeLabel = null,
 }: SaleVisualProps) {
   const photos = locked ? [] : propertyImages(sale.media);
   const hasCoordinates = sale.latitude != null && sale.longitude != null;
@@ -120,7 +129,7 @@ export function SaleVisual({
       }),
   );
   const sectorMapImage = mapboxImage(
-    !locked && hasCoordinates && !hasPreciseAddress,
+    sectorMap && !locked && hasCoordinates && !hasPreciseAddress,
     thumbnail,
     (pixelRatio) =>
       mapboxStaticImageUrl({
@@ -199,23 +208,26 @@ export function SaleVisual({
   }, [candidateChecksSize, candidateUrl, markUrlReady, rejectUrl]);
 
   if (!candidate) {
+    // Case neutre (docs/design/fondations.md) : fond beige, icône or, et la ville quand elle est connue.
     return (
       <div
         className={cn(
-          "relative flex h-full w-full items-center justify-center overflow-hidden bg-gradient-to-br from-background to-surface",
+          "relative flex h-full w-full items-center justify-center overflow-hidden bg-surface-tint",
           className,
         )}
       >
-        <div className="absolute inset-0 opacity-35 [background-image:radial-gradient(circle_at_22%_18%,rgba(15,118,110,0.22),transparent_28%),linear-gradient(135deg,transparent_45%,rgba(201,141,69,0.16)_46%,transparent_47%)]" />
-        <div className="relative px-4 text-center text-brand-navy/75">
+        <div className="relative px-4 text-center text-ink-soft">
           {locked ? (
-            <LockKeyhole className="mx-auto h-7 w-7" aria-hidden />
+            <LockKeyhole className="mx-auto h-7 w-7 text-gold-text" aria-hidden />
           ) : (
-            <ImageOff className="mx-auto h-7 w-7" aria-hidden />
+            <ImageOff className="mx-auto h-7 w-7 text-gold-text" aria-hidden />
           )}
-          <span className="mt-2 block text-xs font-semibold">
+          <span className="mt-2 block text-caption">
             {locked ? "Visuel réservé" : "Aucun visuel fiable"}
           </span>
+          {!locked && placeLabel ? (
+            <span className="mt-0.5 block text-sm font-semibold text-brand-navy">{placeLabel}</span>
+          ) : null}
         </div>
       </div>
     );
@@ -272,7 +284,7 @@ export function SaleVisual({
         }`}
       />
       {candidateIsReady ? (
-        <span className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md border border-white/65 bg-night/78 px-2 py-1 text-xs font-bold uppercase tracking-[0.04em] text-white shadow-sm backdrop-blur">
+        <span className="pointer-events-none absolute bottom-2 left-2 whitespace-nowrap rounded-md bg-white/95 px-2 py-0.5 text-caption font-medium text-brand-navy">
           {candidate.label}
         </span>
       ) : null}
