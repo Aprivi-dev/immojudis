@@ -11,6 +11,7 @@ import {
   ListingLocation,
   ListingOverview,
   ListingPracticalDetails,
+  SaleDetailHeading,
 } from "./SaleListing";
 import { ListingBudget } from "./ListingBudget";
 
@@ -163,12 +164,24 @@ describe("readable listing sections", () => {
 
   it("leads with the starting price and known essential facts", () => {
     render(<ListingOverview sale={item()} />);
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toContain("Bordeaux");
+    expect(screen.getByRole("complementary", { name: "Synthèse de la vente" })).toBeTruthy();
     expect(screen.getByText("68 m²")).toBeTruthy();
     expect(screen.getByText("Surface Carrez")).toBeTruthy();
     expect(screen.getByText("Chambres")).toBeTruthy();
     expect(screen.getByText("2", { exact: true })).toBeTruthy();
-    expect(screen.getAllByRole("term")).toHaveLength(4);
+    const terms = screen.getAllByRole("term").map((term) => term.textContent);
+    expect(terms).toEqual(
+      expect.arrayContaining([
+        "Audience annoncée",
+        "Tribunal",
+        "Surface Carrez",
+        "Pièces",
+        "Chambres",
+        "Occupation",
+      ]),
+    );
+    expect(screen.getByText("Tribunal judiciaire de Bordeaux")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Définition : mise à prix" })).toBeTruthy();
     expect(screen.queryByText("Mise à prix au m²")).toBeNull();
     expect(screen.getByText("Prix de départ, hors frais")).toBeTruthy();
     expect(screen.getByRole("link", { name: /rendez-vous/i }).getAttribute("href")).toBe(
@@ -181,7 +194,9 @@ describe("readable listing sections", () => {
     );
 
     expect(within(container).queryByText("Chambres", { exact: true })).toBeNull();
-    expect(screen.getAllByRole("term")).toHaveLength(3);
+    const terms = screen.getAllByRole("term").map((term) => term.textContent);
+    expect(terms).toContain("Pièces");
+    expect(terms).not.toContain("Chambres");
   });
   it("keeps AI-blocked room data from reappearing as bedrooms", () => {
     const projection: AiReviewProjectionReadModel = {
@@ -325,13 +340,11 @@ describe("readable listing sections", () => {
       />,
     );
 
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toContain(
-      "Type de bien à confirmer",
-    );
+    expect(screen.queryByText("Appartement", { exact: false })).toBeNull();
     expect(screen.getByText("À confirmer")).toBeTruthy();
-    expect(
-      screen.getAllByRole("link", { name: /Source : Avoventes/ }).length,
-    ).toBeGreaterThanOrEqual(2);
+    // Le type bloqué sort de la synthèse (le titre le dit « à confirmer ») ; les pièces gardent
+    // leur provenance.
+    expect(screen.getAllByRole("link", { name: /Source : Avoventes/ }).length).toBeGreaterThan(0);
     expect(screen.queryByText("4", { exact: true })).toBeNull();
   });
   it("suppresses a blocked surface even when another raw surface field is present", () => {
@@ -481,8 +494,32 @@ describe("readable listing sections", () => {
     expect(screen.getAllByText("Non renseignée").length).toBeGreaterThanOrEqual(2);
     expect(screen.getAllByText("Non renseigné").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("Date non renseignée")).toBeTruthy();
-    expect(screen.getByText("Localisation non renseignée")).toBeTruthy();
   });
+  it("offers the preparation first, then the appointments, from the summary", () => {
+    render(
+      <ListingOverview
+        sale={item()}
+        preparation={{ href: "#calculation", label: "Préparer mon enchère" }}
+      />,
+    );
+    const actions = screen
+      .getAllByRole("link")
+      .map((link) => [link.textContent, link.getAttribute("href")]);
+    expect(actions).toEqual(
+      expect.arrayContaining([
+        ["Préparer mon enchère", "#calculation"],
+        ["Rendez-vous et contacts", "#rendez-vous"],
+      ]),
+    );
+  });
+  it("shows the status of a postponed sale next to its date", () => {
+    render(<ListingOverview sale={item({ status: "postponed" })} />);
+    expect(screen.getByRole("status").textContent).toBe(
+      "Vente reportée · nouvelle date à confirmer",
+    );
+    expect(screen.getByText("Audience annoncée")).toBeTruthy();
+  });
+
   it("labels absent venue, visit and contact details explicitly", () => {
     render(
       <ListingPracticalDetails
@@ -662,5 +699,54 @@ describe("listing actions", () => {
   it("only mounts favorites for a real persisted sale", () => {
     render(<ListingActions sale={item({ id: "11111111-1111-4111-8111-111111111111" })} />);
     expect(screen.getByRole("button", { name: "Suivre cette vente" })).toBeTruthy();
+  });
+});
+
+describe("SaleDetailHeading", () => {
+  const blocked = (field_key: AiReviewProjectionReadModel["field_key"]) => ({
+    auction_sale_id: "sale-1",
+    field_key,
+    review_state: "unresolved" as const,
+    citation_status: "not_required" as const,
+    is_publishable: false,
+    source_name: "Avoventes",
+    source_url: "https://avoventes.fr/vente/1",
+  });
+
+  it("gives the same short title and line as the public page", () => {
+    render(<SaleDetailHeading sale={item()} />);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
+      "Appartement de 68 m² à Bordeaux",
+    );
+    expect(
+      screen.getByText(/^Vente au tribunal · Gironde \(33\) · audience le 15 octobre 2026/),
+    ).toBeTruthy();
+  });
+
+  it("says the type is to be confirmed instead of showing a blocked type", () => {
+    render(
+      <SaleDetailHeading sale={item()} aiReviewProjections={[blocked("property.property_type")]} />,
+    );
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
+      "Type de bien à confirmer à Bordeaux",
+    );
+  });
+
+  it("leaves a blocked city and a blocked date out of the title and the line", () => {
+    render(
+      <SaleDetailHeading
+        sale={item()}
+        aiReviewProjections={[blocked("property.city"), blocked("sale.sale_date")]}
+      />,
+    );
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Appartement de 68 m²");
+    const line = screen.getByText(/^Vente au tribunal ·/).textContent ?? "";
+    expect(line).not.toContain("octobre");
+    expect(line).toContain("localisation à confirmer");
+  });
+
+  it("marks the example page as fictional", () => {
+    render(<SaleDetailHeading sale={item()} publicDemo />);
+    expect(screen.getByText("Annonce exemple · données fictives")).toBeTruthy();
   });
 });

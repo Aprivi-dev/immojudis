@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { EXAMPLE_SALE } from "@/lib/example-sale";
 import type { AuctionSale } from "@/lib/types";
-import { ListingPreparation } from "./ListingPreparation";
+import { ListingChecks, ListingPreparation } from "./ListingPreparation";
 
 afterEach(() => {
   cleanup();
@@ -49,15 +49,20 @@ describe("ListingPreparation", () => {
       documents: [],
       documents_rich: [],
     });
-    const { container } = render(<ListingPreparation sale={item} />);
+    const { container } = render(
+      <>
+        <ListingChecks sale={item} points={[]} />
+        <ListingPreparation sale={item} />
+      </>,
+    );
 
     expect(screen.getByRole("heading", { name: "Ce que nous savons de ce bien" })).toBeTruthy();
     expect(screen.getByLabelText("Bilan des informations du bien")).toBeTruthy();
     expect(screen.queryByLabelText(/Niveau de détail/)).toBeNull();
     expect(container.textContent).not.toContain("130 critères");
     expect(container.textContent).not.toContain("12 informations essentielles");
-    expect(screen.getByRole("heading", { name: "Ce qu’il reste à connaître" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /Voir les .* points/ }));
+    expect(screen.getByRole("heading", { name: "À vérifier avant d’enchérir" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Voir les .* informations à compléter/ }));
     const dialog = screen.getByRole("dialog");
     expect(dialog.textContent).toMatch(/Surface.*information manquante/);
     expect(dialog.textContent).toMatch(/[Vv]isite.*information manquante/);
@@ -68,21 +73,23 @@ describe("ListingPreparation", () => {
   it("does not expose the end-user email draft workflow", () => {
     const writeText = vi.fn();
     vi.stubGlobal("navigator", { clipboard: { writeText } });
-    render(<ListingPreparation sale={sale({ occupancy_status: "unknown" })} publicDemo />);
+    render(<ListingChecks sale={sale({ occupancy_status: "unknown" })} points={[]} />);
 
     expect(screen.queryByRole("button", { name: /Préparer une demande/i })).toBeNull();
     expect(screen.queryByRole("textbox", { name: "Message prêt à copier" })).toBeNull();
     expect(screen.queryByRole("button", { name: /Copier le message/i })).toBeNull();
-    expect(screen.getByRole("button", { name: /Voir les .* points/ })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: /Voir les .* informations à compléter/ }),
+    ).toBeTruthy();
     expect(writeText).not.toHaveBeenCalled();
   });
 
   it("stores only the optional personal note locally", async () => {
     const storage = installLocalStorage();
     const item = sale({ id: "sale-local-note" });
-    render(<ListingPreparation sale={item} ownerId="owner-1" />);
+    render(<ListingChecks sale={item} points={[]} ownerId="owner-1" />);
 
-    fireEvent.click(screen.getByRole("button", { name: /Voir les .* points|Mes notes/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Voir les .* informations|Mes notes/ }));
     const note = screen.getByLabelText(/Votre note personnelle/i);
     fireEvent.change(note, { target: { value: "Demander le DPE" } });
     fireEvent.click(screen.getByRole("button", { name: "Enregistrer ma note" }));
@@ -124,9 +131,11 @@ describe("ListingPreparation", () => {
   it("keeps personal notes isolated by account", async () => {
     const storage = installLocalStorage();
     storage.setItem("immojudis:listing-personal-note:owner-a:sale-account-scope", "Private note");
-    render(<ListingPreparation sale={sale({ id: "sale-account-scope" })} ownerId="owner-b" />);
+    render(
+      <ListingChecks sale={sale({ id: "sale-account-scope" })} points={[]} ownerId="owner-b" />,
+    );
 
-    fireEvent.click(screen.getByRole("button", { name: /Voir les .* points|Mes notes/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Voir les .* informations|Mes notes/ }));
     await waitFor(() => {
       expect((screen.getByLabelText(/Votre note personnelle/i) as HTMLTextAreaElement).value).toBe(
         "",
@@ -135,5 +144,51 @@ describe("ListingPreparation", () => {
     expect(
       (screen.getByLabelText(/Votre note personnelle/i) as HTMLTextAreaElement).value,
     ).not.toBe("Private note");
+  });
+
+  it("gathers the listing points, the file's points and the missing essentials in one block", () => {
+    const item = sale({
+      occupancy_status: "unknown",
+      risks: [
+        {
+          risk_type: "occupation_to_confirm",
+          risk_label: "Occupation à confirmer",
+          severity: 3,
+        } as NonNullable<AuctionSale["risks"]>[number],
+      ],
+    });
+    render(
+      <ListingChecks
+        sale={item}
+        points={[{ key: "occupancy", label: "Occupation du bien à vérifier" }]}
+        showRisks
+        preparation={{ href: "#calculation", label: "Préparer mon enchère" }}
+      />,
+    );
+
+    const block = screen.getByRole("region", { name: "À vérifier avant d’enchérir" });
+    expect(block.id).toBe("points-a-verifier");
+    // Le point relevé dans les pièces dit déjà ce que dit la pastille : pas de doublon.
+    expect(screen.getAllByText("Occupation à confirmer").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Occupation du bien à vérifier")).toBeNull();
+    expect(screen.getByText(/Ces points sont ceux que l’annonce laisse ouverts/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Préparer mon enchère" }).getAttribute("href")).toBe(
+      "#calculation",
+    );
+  });
+
+  it("keeps the file's points to the Analyse offer", () => {
+    const item = sale({
+      risks: [
+        {
+          risk_type: "works_to_price",
+          risk_label: "Travaux à chiffrer",
+          severity: 2,
+        } as NonNullable<AuctionSale["risks"]>[number],
+      ],
+    });
+    render(<ListingChecks sale={item} points={[]} />);
+
+    expect(screen.queryByText("Travaux à chiffrer")).toBeNull();
   });
 });

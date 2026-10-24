@@ -3,30 +3,27 @@
   color: var(--brand-navy);
 }
 
+/* Groupes à plat, séparés par un filet : pas de carte dans la carte (docs/design/fondations.md). */
 .accordionList {
   display: grid;
-  gap: 12px;
 }
 
 .accordion {
   min-width: 0;
-  overflow: hidden;
-  border: 1px solid var(--line-warm);
-  border-radius: 16px;
+  border-top: 1px solid var(--line-soft);
   background: #ffffff;
-  box-shadow: 0 9px 24px rgb(19 34 56 / 5%);
 }
 
 .summary {
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 54px;
-  padding: 14px 17px;
+  min-height: 52px;
+  padding: 14px 0;
   color: var(--brand-navy);
   cursor: pointer;
-  font-size: 15px;
-  font-weight: 750;
+  font-size: 16px;
+  font-weight: 600;
   list-style: none;
 }
 
@@ -46,7 +43,7 @@
 }
 
 .accordion[open] .summary {
-  border-bottom: 1px solid var(--sand);
+  border-bottom: 1px solid var(--line-soft);
 }
 
 .accordion[open] .summary::after {
@@ -62,28 +59,27 @@
 
 .sectionCount {
   color: var(--ink-soft);
-  font-size: 11px;
-  font-weight: 600;
+  font-size: var(--text-caption);
+  font-weight: 400;
 }
 
 .factList {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0 18px;
+  gap: 0 32px;
   margin: 0;
-  padding: 15px;
+  padding: 0 0 12px;
   list-style: none;
 }
 
 .factCard {
   display: flex;
   min-width: 0;
-  min-height: 92px;
   flex-direction: column;
   justify-content: space-between;
-  gap: 8px;
-  padding: 11px 0;
-  border-bottom: 1px solid var(--sand);
+  gap: 6px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line-soft);
   background: transparent;
 }
 
@@ -103,18 +99,17 @@
 
 .factLabel {
   color: var(--ink-soft);
-  font-size: 12px;
-  font-weight: 650;
+  font-size: var(--text-caption);
+  font-weight: 400;
   line-height: 1.35;
 }
 
 .factValue {
-  margin-top: 4px;
+  margin-top: 2px;
   color: var(--brand-navy);
-  font-size: 17px;
-  font-weight: 750;
-  letter-spacing: -0.01em;
-  line-height: 1.25;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.3;
 }
 
 .factMeta {
@@ -195,7 +190,7 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0 18px;
   margin: 0;
-  padding: 8px 15px 12px;
+  padding: 8px 0 12px;
   list-style: none;
 }
 
@@ -207,7 +202,7 @@
   flex-wrap: wrap;
   gap: 4px 10px;
   padding: 9px 0;
-  border-bottom: 1px solid var(--sand);
+  border-bottom: 1px solid var(--line-soft);
 }
 
 .notCommunicatedLabel {
@@ -361,7 +356,7 @@
   .summary {
     align-items: flex-start;
     flex-wrap: wrap;
-    padding: 13px 14px;
+    padding: 13px 0;
   }
 
   .summary::after {
@@ -376,16 +371,12 @@
   .factList {
     grid-template-columns: minmax(0, 1fr);
     gap: 0;
-    padding: 11px 14px;
-  }
-
-  .factCard {
-    min-height: 0;
+    padding: 0 0 10px;
   }
 
   .notCommunicatedList {
     grid-template-columns: minmax(0, 1fr);
-    padding: 6px 14px 10px;
+    padding: 6px 0 10px;
   }
 }
 

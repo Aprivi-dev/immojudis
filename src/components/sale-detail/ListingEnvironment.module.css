@@ -1,8 +1,8 @@
 .section {
   margin-top: 1.5rem;
   padding: clamp(1.1rem, 3vw, 1.8rem);
-  border: 1px solid var(--line-soft);
-  border-radius: 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
   background: #ffffff;
   color: var(--brand-navy);
 }
@@ -61,12 +61,13 @@
 }
 .facts > div {
   padding: 0.7rem 0.8rem;
-  border-radius: 0.7rem;
-  background: var(--surface-tint);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  background: #ffffff;
 }
 .facts dt {
   color: var(--ink-soft);
-  font-size: 0.75rem;
+  font-size: var(--text-caption);
 }
 .facts dd {
   margin: 0.2rem 0 0;

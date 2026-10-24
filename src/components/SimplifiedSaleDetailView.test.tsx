@@ -233,7 +233,9 @@ describe("integrated listing", () => {
     renderDetail("analysis", sale, true);
     const section = document.getElementById("points-a-verifier");
     expect(section?.tagName).toBe("SECTION");
-    expect(section?.textContent).toContain("Occupation du bien à vérifier");
+    // Offre Analyse : le point relevé dans les pièces remplace celui de la pastille, sans doublon.
+    expect(section?.textContent).toContain("Occupation à confirmer");
+    expect(section?.textContent).not.toContain("Occupation du bien à vérifier");
     expect(section?.textContent).toContain("La liste n’est pas exhaustive");
   });
 
@@ -547,7 +549,7 @@ describe("integrated listing", () => {
       ],
     });
 
-    expect(await screen.findAllByText("Type de bien à confirmer")).not.toHaveLength(0);
+    expect(await screen.findAllByText(/Type de bien à confirmer/)).not.toHaveLength(0);
     expect(mocks.fetchAiReviewProjections).toHaveBeenCalledWith(
       EXAMPLE_SALE_RECORDS.bordeaux.sale.id,
     );
@@ -576,10 +578,10 @@ describe("integrated listing", () => {
       </QueryClientProvider>,
     );
 
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toContain(
-      "Localisation à confirmer",
-    );
     expect(screen.getByRole("heading", { level: 1 }).textContent).not.toContain("Bordeaux");
+    const line = screen.getByText(/localisation à confirmer/);
+    expect(line.textContent).not.toContain("Bordeaux");
+    expect(line.textContent).not.toContain("Gironde");
     const map = screen.getByTestId("cadastral-map");
     expect(map.getAttribute("data-lat")).toBe(String(EXAMPLE_SALE_RECORDS.bordeaux.sale.latitude));
     expect(map.getAttribute("data-lng")).toBe(String(EXAMPLE_SALE_RECORDS.bordeaux.sale.longitude));
