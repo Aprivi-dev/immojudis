@@ -48,13 +48,12 @@ import {
   saleVerificationLabel,
   saleVenueLabel,
 } from "@/lib/sale-procedure";
-import { departmentFromCode } from "@/lib/department-pages";
 import {
   saleHeadline,
   saleHearingTime,
   saleReference,
+  saleHeadingSubtitle,
   saleShortHeading,
-  saleVenueSentence,
   seoLongDate,
   seoPropertyLabel,
   seoSurface,
@@ -466,20 +465,7 @@ export function SalePublicPreview({
       </div>
     </dl>
   );
-  const departmentName = departmentFromCode(preview.department);
-  const subtitle = [
-    saleVenueSentence(preview),
-    departmentName
-      ? `${departmentName.name} (${departmentName.code})`
-      : preview.department
-        ? `Département ${preview.department}`
-        : null,
-    hearingDate
-      ? `${procedure.venueType === "tribunal" ? "audience le" : "le"} ${hearingDate}${hearingTime ? ` à ${hearingTime}` : ""}`
-      : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  const subtitle = saleHeadingSubtitle(preview);
 
   return (
     <main id="contenu" className={styles.page}>

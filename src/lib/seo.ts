@@ -1,5 +1,6 @@
 import { propertyTypeLabel } from "@/lib/format";
 import { COMPANY_DESCRIPTION, COMPANY_NAME } from "@/lib/company-description";
+import { departmentFromCode } from "@/lib/department-pages";
 import { propertyImages } from "@/lib/sale-media";
 import { getSaleProcedure } from "@/lib/sale-procedure";
 import type { AuctionSale, SaleVenueType } from "@/lib/types";
@@ -257,6 +258,33 @@ export function saleShortHeading(sale: SaleFacts | null | undefined): string {
 export function saleVenueSentence(sale: SaleFacts): string {
   const phrase = venuePhrase(venueType(sale));
   return phrase.charAt(0).toUpperCase() + phrase.slice(1);
+}
+
+/**
+ * Ligne sous le titre court, sur la fiche publique comme sur la fiche complète : « Vente au tribunal ·
+ * Doubs (25) · audience le 24 octobre 2026 à 17 h 30 ». `withDate: false` retire la date (date en
+ * cours de vérification sur la fiche complète).
+ */
+export function saleHeadingSubtitle(
+  sale: SaleFacts,
+  { withDate = true }: { withDate?: boolean } = {},
+): string {
+  const department = departmentFromCode(sale.department);
+  const date = withDate ? seoLongDate(sale.sale_date) : null;
+  const time = date ? saleHearingTime(sale.sale_date) : null;
+  return [
+    saleVenueSentence(sale),
+    department
+      ? `${department.name} (${department.code})`
+      : sale.department
+        ? `Département ${sale.department}`
+        : null,
+    date
+      ? `${venueType(sale) === "tribunal" ? "audience le" : "le"} ${date}${time ? ` à ${time}` : ""}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 /** Eight-character reference shown with the heading so that two lots never share one. */

@@ -25,9 +25,10 @@ import { MapboxPreviewButton } from "@/components/MapboxPreviewButton";
 import { SaleCalendarButton } from "@/components/SaleCalendarButton";
 import { StreetViewDialog } from "@/components/StreetViewDialog";
 import { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
+import { Terme } from "@/components/ceiling/Terme";
 import { safeExternalHttpUrl } from "@/lib/external-url";
 import { saleSourceLinks } from "@/lib/sale-source-links";
-import { formatDate, formatPrice, propertyTypeLabel } from "@/lib/format";
+import { formatDate, formatPrice } from "@/lib/format";
 import { buildStructuredDescription } from "@/lib/sale-description";
 import {
   listingContactLinks,
@@ -45,6 +46,8 @@ import {
   stateSaleMethodLabel,
 } from "@/lib/sale-procedure";
 import { saleDisplayTitle } from "@/lib/sale-title";
+import { saleKeyFacts } from "@/lib/sale-key-facts";
+import { saleHeadingSubtitle, saleShortHeading } from "@/lib/seo";
 import { stateListingStatus } from "@/lib/property-characteristics";
 import { saleSession, saleWindow } from "@/lib/sale-window";
 import type { AuctionSale } from "@/lib/types";
@@ -152,7 +155,6 @@ function ceilingContextItems(context: CeilingContext): string[] {
 
 export function ListingOverview({
   sale,
-  publicDemo = false,
   premiumCeiling = null,
   showPremiumTeaser = false,
   factReliabilities = null,
@@ -160,9 +162,11 @@ export function ListingOverview({
   aiReviewStatus = "ready",
   scenarioSummary = null,
   ceilingContext = null,
+  preparation = null,
 }: {
   sale: AuctionSale;
-  publicDemo?: boolean;
+  /** Action principale de la synthèse (« Préparer mon enchère »), qui ouvre l'onglet concerné. */
+  preparation?: { href: string; label: string } | null;
   premiumCeiling?: number | null;
   ceilingContext?: CeilingContext | null;
   showPremiumTeaser?: boolean;
@@ -202,7 +206,6 @@ export function ListingOverview({
       : procedure.venueType === "tribunal"
         ? "Audience annoncée"
         : "Date annoncée";
-  const cityReview = getAiReviewFieldResult(aiReviewProjections, "property.city", aiReviewStatus);
   const priceReview = getAiReviewFieldResult(
     aiReviewProjections,
     "sale.starting_price_eur",
@@ -247,13 +250,7 @@ export function ListingOverview({
   const guardedSurface = surfaceReviewField
     ? { ...surface, label: "Surface à confirmer", formatted: "À confirmer", helperText: null }
     : surface;
-  const title = propertyTypeReview.blocked
-    ? "Type de bien à confirmer"
-    : valuationConflict
-      ? "Type de bien à confirmer"
-      : cityReview.blocked
-        ? `${propertyTypeLabel(sale.property_type)} · Localisation à confirmer`
-        : saleDisplayTitle(sale, propertyTypeLabel(sale.property_type));
+  const keyFacts = saleKeyFacts(sale);
   const analysisDataBlocked =
     propertyTypeReview.blocked ||
     priceReview.blocked ||
@@ -337,48 +334,7 @@ export function ListingOverview({
     },
   ];
   return (
-    <div className={styles.overview}>
-      <SaleProcedureBadge sale={sale} />
-      {saleStatus ? (
-        <p
-          role="status"
-          className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-950"
-        >
-          {saleStatus}
-        </p>
-      ) : null}
-      {publicDemo ? (
-        <p className="mt-3 text-xs text-slate-600">Annonce exemple · données fictives</p>
-      ) : null}
-      <h1 className={styles.title}>
-        {propertyTypeReview.blocked ? (
-          <AiReviewField
-            fieldKey="property.property_type"
-            projections={aiReviewProjections}
-            reviewStatus={aiReviewStatus}
-            fallback="Type de bien à confirmer"
-            sourceName={sale.source_name}
-            sourceUrl={sale.source_url}
-          >
-            {title}
-          </AiReviewField>
-        ) : (
-          title
-        )}
-      </h1>
-      <p className={`${styles.muted} mt-2`}>
-        <AiReviewField
-          fieldKey="property.city"
-          projections={aiReviewProjections}
-          reviewStatus={aiReviewStatus}
-          fallback="Localisation à confirmer"
-          sourceName={sale.source_name}
-          sourceUrl={sale.source_url}
-        >
-          {[sale.city, sale.postal_code].filter(Boolean).join(" · ") ||
-            "Localisation non renseignée"}
-        </AiReviewField>
-      </p>
+    <aside className={styles.overview} aria-label="Synthèse de la vente">
       {notary || state ? (
         <div className={styles.procedureLead}>
           <p className={styles.procedureLeadEyebrow}>
@@ -402,7 +358,7 @@ export function ListingOverview({
         <div className={styles.heroPrices}>
           <div>
             <div className={styles.priceLabel}>
-              {state ? "Prix publié" : "Mise à prix"}
+              {state ? "Prix publié" : <Terme terme="mise-a-prix">Mise à prix</Terme>}
               {publicPriceFact ? <PublicListingFactSource fact={publicPriceFact} /> : null}
             </div>
             <p className={styles.price}>
@@ -462,12 +418,11 @@ export function ListingOverview({
           {publicPriceFact ? <PublicListingFactSource fact={publicPriceFact} /> : null}
         </div>
       )}
-      {showDateFact ? (
-        <div className={styles.heroEvent}>
-          <CalendarDays aria-hidden />
-          <div>
-            <span>{eventLabel}</span>
-            <strong>
+      <dl className={styles.summaryFacts}>
+        {showDateFact ? (
+          <div className={styles.summaryFact}>
+            <dt>{eventLabel}</dt>
+            <dd>
               <AiReviewField
                 fieldKey="sale.sale_date"
                 projections={aiReviewProjections}
@@ -478,52 +433,43 @@ export function ListingOverview({
               >
                 {listingDate(eventDate)}
               </AiReviewField>
-            </strong>
-            {publicDateFact ? <PublicListingFactSource fact={publicDateFact} /> : null}
+              {saleStatus ? (
+                <span role="status" className={styles.summaryNote}>
+                  {saleStatus}
+                </span>
+              ) : null}
+              {keyFacts.timeConflict && !saleStatus && !dateReview.blocked ? (
+                <span className={styles.summaryNote}>Horaire à faire confirmer</span>
+              ) : null}
+              {publicDateFact ? <PublicListingFactSource fact={publicDateFact} /> : null}
+            </dd>
           </div>
-          {hasVisibleEvent ? <a href="#rendez-vous">Rendez-vous</a> : null}
-        </div>
-      ) : null}
-      {sourceLink || !hasVisibleEvent ? (
-        <div className={styles.heroLinks}>
-          {!hasVisibleEvent ? (
-            <a href={state ? "#participation" : "#rendez-vous"} className={styles.textLink}>
-              {state ? "Voir la procédure de cession" : "Voir les rendez-vous et contacts"}{" "}
-              <ArrowRight className="h-4 w-4 shrink-0" aria-hidden />
-            </a>
-          ) : null}
-          {sourceLink ? (
-            <a
-              href={sourceLink.href}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={styles.sourceLink}
-            >
-              Source originale · {sourceLink.label} <span className="sr-only">(nouvel onglet)</span>
-            </a>
-          ) : null}
-        </div>
-      ) : null}
-      <dl className={styles.facts}>
+        ) : null}
+        {keyFacts.nextVisit && !dateReview.blocked ? (
+          <div className={styles.summaryFact}>
+            <dt>Prochaine visite</dt>
+            <dd>{keyFacts.nextVisit}</dd>
+          </div>
+        ) : null}
+        {keyFacts.venueName ? (
+          <div className={styles.summaryFact}>
+            <dt>{keyFacts.venueLabel}</dt>
+            <dd>{keyFacts.venueName}</dd>
+          </div>
+        ) : null}
         {facts.map(({ label, value, field }) => {
           const missing = field
             ? getFactPresentation(sale, field, undefined, factReliabilities).kind === "missing"
             : rooms == null;
           return (
-            <div key={label} className={styles.fact}>
-              <dt className={styles.factLabel}>{label}</dt>
-              <dd className={`${styles.factValue} ${missing ? styles.factMissing : ""}`}>
+            <div key={label} className={styles.summaryFact}>
+              <dt>{label}</dt>
+              <dd className={missing ? styles.factMissing : undefined}>
                 {value}
-                {field ? (
-                  field === "surface" ? (
-                    publicSurfaceFact ? (
-                      <PublicListingFactSource fact={publicSurfaceFact} />
-                    ) : null
-                  ) : field === "occupancy_status" ? (
-                    publicOccupancyFact ? (
-                      <PublicListingFactSource fact={publicOccupancyFact} />
-                    ) : null
-                  ) : null
+                {field === "surface" && publicSurfaceFact ? (
+                  <PublicListingFactSource fact={publicSurfaceFact} />
+                ) : field === "occupancy_status" && publicOccupancyFact ? (
+                  <PublicListingFactSource fact={publicOccupancyFact} />
                 ) : null}
               </dd>
             </div>
@@ -531,8 +477,28 @@ export function ListingOverview({
         })}
       </dl>
       {guardedSurface.estimated ? (
-        <p className={`${styles.muted} mt-3`}>{guardedSurface.helperText}</p>
+        <p className={`${styles.muted} ${styles.summaryHelper}`}>{guardedSurface.helperText}</p>
       ) : null}
+      <div className={styles.summaryActions}>
+        {preparation ? (
+          <a href={preparation.href} className={styles.primaryAction}>
+            {preparation.label}
+          </a>
+        ) : null}
+        <a href={state ? "#participation" : "#rendez-vous"} className={styles.secondaryAction}>
+          {state ? "Voir la procédure de cession" : "Rendez-vous et contacts"}
+        </a>
+        {sourceLink ? (
+          <a
+            href={sourceLink.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={styles.sourceLink}
+          >
+            Source originale · {sourceLink.label} <span className="sr-only">(nouvel onglet)</span>
+          </a>
+        ) : null}
+      </div>
       {guardedScenarioSummary ? (
         <details className={styles.scenarioSummary} aria-label="Résumé du scénario">
           <summary className={styles.scenarioSummaryToggle}>
@@ -576,7 +542,62 @@ export function ListingOverview({
           </div>
         </details>
       ) : null}
-    </div>
+    </aside>
+  );
+}
+
+/**
+ * En-tête de la fiche complète, le même que celui de la fiche publique (même adresse, même titre) :
+ * type de vente, titre court (type, surface, ville) et une ligne (lieu de vente, département, date).
+ * Un champ en cours de vérification sort du titre ou de la ligne au lieu d'y être affiché.
+ */
+export function SaleDetailHeading({
+  sale,
+  publicDemo = false,
+  aiReviewProjections = null,
+  aiReviewStatus = "ready",
+}: {
+  sale: AuctionSale;
+  publicDemo?: boolean;
+  aiReviewProjections?: readonly AiReviewProjectionReadModel[] | null;
+  aiReviewStatus?: AiReviewRequestStatus;
+}) {
+  const review = (field: Parameters<typeof getAiReviewFieldResult>[1]) =>
+    getAiReviewFieldResult(aiReviewProjections, field, aiReviewStatus).blocked;
+  const typeBlocked = review("property.property_type") || Boolean(listingValuationConflict(sale));
+  const cityBlocked = review("property.city");
+  const surfaceBlocked = firstBlockedAiReviewField(
+    aiReviewProjections,
+    AI_REVIEW_SURFACE_FIELD_KEYS,
+    aiReviewStatus,
+  );
+  const shown = {
+    ...sale,
+    city: cityBlocked ? null : sale.city,
+    // Une ville en cours de vérification ne laisse pas non plus son département dans la ligne.
+    department: cityBlocked ? null : sale.department,
+    app_surface_m2: surfaceBlocked ? null : sale.app_surface_m2,
+  };
+  const title = typeBlocked
+    ? cityBlocked || !sale.city
+      ? "Type de bien à confirmer"
+      : `Type de bien à confirmer à ${sale.city}`
+    : saleShortHeading(shown);
+  const subtitle = saleHeadingSubtitle(shown, { withDate: !review("sale.sale_date") });
+  return (
+    <header className={styles.pageHeading}>
+      <div className={styles.headingBadges}>
+        <SaleProcedureBadge sale={sale} />
+        {publicDemo ? (
+          <span className={styles.demoNote}>Annonce exemple · données fictives</span>
+        ) : null}
+      </div>
+      <h1 className={styles.title}>{title}</h1>
+      <p className={styles.subtitle}>
+        {subtitle}
+        {cityBlocked ? " · localisation à confirmer" : null}
+      </p>
+    </header>
   );
 }
 

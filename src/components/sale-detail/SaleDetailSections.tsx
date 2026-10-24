@@ -3,12 +3,10 @@
 import { useQuery } from "@tanstack/react-query";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
-import CircleAlert from "lucide-react/dist/esm/icons/circle-alert.js";
 import FileText from "lucide-react/dist/esm/icons/file-text.js";
 import Scale from "lucide-react/dist/esm/icons/scale.js";
 import { DocumentsList } from "@/components/DocumentsList";
 import { collectSaleDocuments } from "@/lib/sale-documents";
-import { riskEvidence } from "@/lib/risk-evidence";
 import { listingSaleStatus } from "@/lib/listing-evidence";
 import { LawyerReferralButton } from "@/components/LawyerReferralButton";
 import { UrbanismeCadastrePanel } from "@/components/sale-detail/UrbanismeCadastrePanel";
@@ -165,76 +163,6 @@ export function SaleDocumentsSection({
           )}
         </div>
       </details>
-    </section>
-  );
-}
-
-export function RisksAndDocuments({ sale }: { sale: AuctionSale }) {
-  const risks = sale.risks ?? [];
-  const documentCount = collectSaleDocuments(sale).length;
-  const preview = risks.slice(0, 2);
-
-  return (
-    <section id="risks" className={panelStyles.riskCard} aria-labelledby="risk-summary-title">
-      <h2 id="risk-summary-title">Points à vérifier</h2>
-      {preview.length ? (
-        <ul className={panelStyles.riskPreview}>
-          {preview.map((risk) => (
-            <li key={`${risk.risk_type}-${risk.risk_label}`}>
-              <CircleAlert className="h-4 w-4 shrink-0" aria-hidden />
-              <span>{risk.risk_label}</span>
-              <strong>
-                {risk.severity != null && risk.severity >= 4 ? "Prioritaire" : "À vérifier"}
-              </strong>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p>
-          Aucun point particulier n’est décrit dans les éléments disponibles. Vérifiez le dossier
-          officiel.
-        </p>
-      )}
-      {risks.length > 2 ? (
-        <p>
-          {risks.length - 2} autre{risks.length > 3 ? "s" : ""} point{risks.length > 3 ? "s" : ""}{" "}
-          dans le dossier.
-        </p>
-      ) : null}
-      <p>
-        {documentCount > 0 ? `${documentCount} pièce(s) consultable(s)` : "Aucune pièce attachée"}
-        {" · "}
-        <a href="#documents">Consulter les pièces du dossier</a>
-      </p>
-      {risks.length ? (
-        <details className={panelStyles.riskEvidence}>
-          <summary>Voir les sources et actions à confirmer</summary>
-          <div>
-            {risks.map((risk) => {
-              const evidence = riskEvidence(risk);
-              return (
-                <article key={`${risk.risk_type}-${risk.risk_label}`}>
-                  <h3>{risk.risk_label}</h3>
-                  <p>{evidence.action}</p>
-                  {evidence.proofs.map((proof, index) => (
-                    <div key={`${index}-${proof.label}`}>
-                      {proof.url ? (
-                        <a href={proof.url} target="_blank" rel="noopener noreferrer">
-                          {proof.label} (nouvel onglet)
-                        </a>
-                      ) : (
-                        <span>{proof.label}</span>
-                      )}
-                      {proof.page != null ? <span> · page {proof.page}</span> : null}
-                      {proof.excerpt ? <blockquote>{proof.excerpt}</blockquote> : null}
-                    </div>
-                  ))}
-                </article>
-              );
-            })}
-          </div>
-        </details>
-      ) : null}
     </section>
   );
 }
