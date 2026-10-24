@@ -1,11 +1,14 @@
-import { z } from "zod";
+// zod/mini : le scénario locatif est validé dans le navigateur (fiche de la vente). Mêmes règles que
+// l'écriture chaînée de zod, avec bien moins de code envoyé au navigateur.
+import { z } from "zod/mini";
 import { buildCeilingSnapshot } from "./property-report/ceiling-snapshot";
 import { listingValuationConflict } from "./listing-evidence";
 import type { AuctionSale } from "./types";
 import type { MarketEstimate } from "./market.server";
 
-const amount = z.number().finite().min(0).max(1_000_000_000);
-const positiveAmount = amount.gt(0);
+// Nombre fini (zod 4 refuse déjà l'infini), de 0 à un milliard.
+const amount = z.number().check(z.gte(0), z.lte(1_000_000_000));
+const positiveAmount = amount.check(z.gt(0));
 export const REPORT_RENTAL_EXPENSE_FIELD_LABELS = {
   annualNonRecoverableCharges: "charges non récupérables",
   annualPropertyTax: "taxe foncière",
@@ -23,13 +26,16 @@ const reportRentalExpenseFieldSchema = z.enum([
 export const reportRentalScenarioSchema = z.object({
   acquisitionCost: positiveAmount,
   monthlyRent: positiveAmount,
-  vacancyRatePct: z.number().finite().min(0).max(100),
+  vacancyRatePct: z.number().check(z.gte(0), z.lte(100)),
   annualNonRecoverableCharges: amount,
   annualPropertyTax: amount,
   annualLandlordInsurance: amount,
-  monthlyDebtService: amount.nullable(),
+  monthlyDebtService: z.nullable(amount),
   /** Expense fields that were blank in the form and therefore calculated as 0. */
-  missingExpenseFields: z.array(reportRentalExpenseFieldSchema).max(3).default([]),
+  missingExpenseFields: z._default(
+    z.array(reportRentalExpenseFieldSchema).check(z.maxLength(3)),
+    [],
+  ),
 });
 export type ReportRentalScenario = z.infer<typeof reportRentalScenarioSchema>;
 
@@ -169,12 +175,12 @@ export function computeReportRentalScenario(
   return { inputs, result };
 }
 
-const pct = (max: number) => z.number().finite().min(0).max(max);
-const optional = <T extends z.ZodTypeAny>(schema: T) => schema.nullable().optional();
+const pct = (max: number) => z.number().check(z.gte(0), z.lte(max));
+const optional = <T extends z.ZodMiniType>(schema: T) => z.optional(z.nullable(schema));
 
 export const ceilingChoicesSchema = z.object({
-  project: z.enum(["habiter", "louer", "revendre"]).optional(),
-  profile: z.enum(["prudent", "equilibre", "offensif"]).optional(),
+  project: z.optional(z.enum(["habiter", "louer", "revendre"])),
+  profile: z.optional(z.enum(["prudent", "equilibre", "offensif"])),
   customMarginPct: optional(pct(50)),
   manualPricePerM2: optional(amount),
   works: optional(
@@ -191,7 +197,7 @@ export const ceilingChoicesSchema = z.object({
   fpt: optional(amount),
   lawyerFees: optional(amount),
   registrationRatePct: optional(pct(20)),
-  taxRegime: z.enum(["registration", "vat"]).optional(),
+  taxRegime: z.optional(z.enum(["registration", "vat"])),
   monthlyCharges: optional(amount),
   annualPropertyTax: optional(amount),
   financingRatePct: optional(pct(20)),
@@ -204,7 +210,7 @@ export const reportSimulationSchema = z.object({
   version: z.literal(2),
   choices: ceilingChoicesSchema,
   expectedMaxBid: amount,
-  rentalScenario: reportRentalScenarioSchema.optional(),
+  rentalScenario: z.optional(reportRentalScenarioSchema),
 });
 export type ReportSimulation = z.infer<typeof reportSimulationSchema>;
 
@@ -214,7 +220,7 @@ const legacyReportSimulationSchema = z.object({
   works: amount,
   fpt: amount,
   scenario: z.enum(["prudent", "offensif", "custom"]),
-  manualMarketPricePerM2: amount.nullable(),
+  manualMarketPricePerM2: z.nullable(amount),
 });
 
 /** Recompute user hypotheses against the server's current property and market data. */

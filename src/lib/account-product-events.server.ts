@@ -35,7 +35,7 @@ export type AccountProductEvent =
   | { type: "calendar_exported"; saleId: string }
   | { type: "email_clicked"; email: "alert" | "reminder" | "weekly" | "result"; saleId: string };
 
-const uuidSchema = z.string().uuid();
+const uuidSchema = z.string().guid();
 
 /** Colonnes `event_type`, `detail` et `sale_id` de la table, déduites de l'événement. */
 export function accountProductEventRow(event: AccountProductEvent): {

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "zod/mini";
 
 /**
  * Relevé mensuel des avocats référencés (point 72) : pour un mois civil (heure de Paris), le nombre
@@ -7,13 +7,14 @@ import { z } from "zod";
  *
  * Uniquement des nombres et le nom professionnel de l'avocat : aucune donnée d'acquéreur ni de
  * compte. Ce module n'importe rien de serveur : le navigateur s'en sert pour valider le mois et
- * construire le CSV à partir des lignes déjà reçues.
+ * construire le CSV à partir des lignes déjà reçues. Schémas en zod/mini (mêmes règles que zod,
+ * beaucoup moins de code envoyé au navigateur).
  */
 
 /** Mois demandé, au format `AAAA-MM`. */
 export const lawyerStatementMonthSchema = z
   .string()
-  .regex(/^\d{4}-(?:0[1-9]|1[0-2])$/, "Le mois du relevé doit être au format AAAA-MM.");
+  .check(z.regex(/^\d{4}-(?:0[1-9]|1[0-2])$/, "Le mois du relevé doit être au format AAAA-MM."));
 
 type LawyerStatementRow = {
   lawyerId: string;
@@ -34,11 +35,11 @@ export type LawyerStatement = {
   totals: { impressions: number; ctaClicks: number; referralRequestsSent: number };
 };
 
-const count = z.coerce.number().int().nonnegative();
+const count = z.coerce.number().check(z.int(), z.nonnegative());
 const statementRowSchema = z.object({
-  lawyer_id: z.string().uuid(),
+  lawyer_id: z.string().check(z.guid()),
   display_name: z.string(),
-  firm_name: z.string().nullish(),
+  firm_name: z.nullish(z.string()),
   impressions: count,
   cta_clicks: count,
   referral_requests_sent: count,

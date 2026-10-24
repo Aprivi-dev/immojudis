@@ -51,7 +51,7 @@ const numericSchema = z.union([
 ]);
 const storedRowSchema = z
   .object({
-    build_id: z.string().uuid(),
+    build_id: z.string().guid(),
     scope_type: z.enum(["national", "tribunal"]),
     court_code: z.string().min(1).nullable(),
     scope_label: z.string().min(1),
@@ -68,7 +68,8 @@ const storedRowSchema = z
     source_name: z.literal("licitor"),
     built_at: z.string().datetime({ offset: true }),
     reviewed_at: z.string().datetime({ offset: true }),
-    extra_statistics: adjudicationEnrichmentSchema.nullable().optional(),
+    // `adjudicationEnrichmentSchema` est un schéma zod/mini (partagé avec le navigateur).
+    extra_statistics: z.optional(z.nullable(adjudicationEnrichmentSchema)),
   })
   .strict();
 
@@ -103,7 +104,7 @@ export async function getAdjudicationPriceStatisticsForSale(
     );
   }
   const pinnedBuildId = process.env.ADJUDICATION_PRICE_STATISTICS_BUILD_ID?.trim() || null;
-  if (pinnedBuildId && !z.string().uuid().safeParse(pinnedBuildId).success) {
+  if (pinnedBuildId && !z.string().guid().safeParse(pinnedBuildId).success) {
     throw unavailable("Configuration: the pinned adjudication-price build ID is invalid.");
   }
 
@@ -161,7 +162,7 @@ export async function getAdjudicationPriceStatisticsDirectory(): Promise<Adjudic
     throw unavailable("Configuration: adjudication price statistics are disabled.");
   }
   const pinnedBuildId = process.env.ADJUDICATION_PRICE_STATISTICS_BUILD_ID?.trim() || null;
-  if (pinnedBuildId && !z.string().uuid().safeParse(pinnedBuildId).success) {
+  if (pinnedBuildId && !z.string().guid().safeParse(pinnedBuildId).success) {
     throw unavailable("Configuration: the pinned adjudication-price build ID is invalid.");
   }
 

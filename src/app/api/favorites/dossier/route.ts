@@ -8,7 +8,7 @@ import { getFavoriteDossier, saveFavoriteDossier } from "@/lib/favorite-dossier"
 import {
   favoriteDossierInputSchema,
   favoriteDossierQuerySchema,
-} from "@/lib/favorite-dossier-shared";
+} from "@/lib/favorite-dossier-input";
 
 // « Mon dossier » gratuit (point 68) : statut personnel et enchère plafond d'une vente suivie.
 // Ouvert à tout compte qui a les favoris ; la RLS de user_favorites tient la frontière (propriétaire

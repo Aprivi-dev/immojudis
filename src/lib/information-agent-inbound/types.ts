@@ -52,4 +52,8 @@ export type InboundProcessingState = {
   reason?: string;
 };
 
-export const optionalText = z.unknown().transform((value) => trimmedStringValue(value));
+// `.optional()` : zod 4 refuse une clé absente devant un `z.unknown()` nu.
+export const optionalText = z
+  .unknown()
+  .optional()
+  .transform((value) => trimmedStringValue(value));

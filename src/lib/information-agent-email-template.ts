@@ -377,9 +377,8 @@ export function renderInformationAgentEmailContent({
   };
 }
 
-export function templateVariableToken(key: InformationAgentEmailVariable): string {
-  return `{{${key}}}`;
-}
+// `templateVariableToken` (jeton `{{clé}}`) est dans `information-agent-email-template-token.ts` :
+// l'éditeur de l'administration l'importe sans embarquer les schémas zod de ce module.
 
 const TEMPLATE_VARIABLE_PATTERN = /{{\s*([^{}]+?)\s*}}/g;
 

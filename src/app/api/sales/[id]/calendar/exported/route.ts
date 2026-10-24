@@ -11,7 +11,7 @@ import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import type { SaleCalendarRow } from "@/lib/sale-calendar";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
 
-const saleIdSchema = z.string().uuid();
+const saleIdSchema = z.string().guid();
 
 /**
  * Vrai quand la vente est publiquement visible ET que son audience est exportable (celle d'un

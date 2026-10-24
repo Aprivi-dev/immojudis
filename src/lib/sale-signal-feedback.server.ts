@@ -2,9 +2,9 @@ import "server-only";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { errorDetailForLog } from "@/lib/api-errors";
-import type { SaleSignalFeedbackInput } from "@/lib/sale-signal-feedback";
+import type { SaleSignalFeedbackInput } from "@/lib/sale-signal-feedback-schema";
 
-const uuidSchema = z.string().uuid();
+const uuidSchema = z.string().guid();
 
 /**
  * Enregistre ou corrige le retour du jour d'un compte sur un signal d'une vente
