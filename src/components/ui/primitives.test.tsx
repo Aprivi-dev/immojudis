@@ -55,6 +55,22 @@ describe("primitives", () => {
     expect(classes).not.toMatch(/shadow-/);
   });
 
+  it("chaque pastille garde la taille de texte des légendes, quel que soit son ton", () => {
+    const tones = ["neutral", "gold", "success", "warning", "danger", "info"] as const;
+    const { container } = render(
+      <>
+        {tones.map((tone) => (
+          <Badge key={tone} tone={tone}>
+            {tone}
+          </Badge>
+        ))}
+      </>,
+    );
+    for (const badge of container.querySelectorAll("span")) {
+      expect(badge.className.split(" ")).toContain("text-caption");
+    }
+  });
+
   it("PageShell pose le contenu principal, un seul h1 et aucun décalage codé en dur", () => {
     const { container } = render(
       <PageShell eyebrow="Mon espace" title="Mes alertes">

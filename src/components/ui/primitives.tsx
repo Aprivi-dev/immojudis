@@ -115,13 +115,15 @@ export function Badge({
   className,
   ...props
 }: ComponentProps<"span"> & { tone?: BadgeTone }) {
+  // `text-caption` est ajoutée après la fusion : tailwind-merge la prend pour une couleur et la
+  // retirerait devant celle du ton (la déclarer dans sa configuration coûte 1 Ko par page).
   return (
     <span
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-caption font-medium",
+      className={`${cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-medium",
         BADGE_TONES[tone],
         className,
-      )}
+      )} text-caption`}
       {...props}
     />
   );
