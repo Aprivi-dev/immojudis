@@ -3,8 +3,14 @@ import { COMPANY_DESCRIPTION } from "@/lib/company-description";
 import { organizationStructuredData } from "@/lib/seo";
 import { resolveSiteOrigin } from "@/lib/site-url";
 import { CinematicHero } from "@/components/CinematicHome";
+import { HomeClosing } from "@/components/HomeClosing";
 import { HomeDiscovery } from "@/components/HomeDiscovery";
-import { loadHomeCatalogueSummary } from "@/lib/home-catalogue-summary.server";
+import { HomeFigures } from "@/components/HomeFigures";
+import { HomeProductTour } from "@/components/HomeProductTour";
+import {
+  loadHomeCatalogueSummary,
+  loadHomeTribunalCount,
+} from "@/lib/home-catalogue-summary.server";
 import { jsonLdString } from "@/lib/json-ld";
 import { PreloadCormorantItalic } from "@/components/PreloadCormorantItalic";
 
@@ -21,7 +27,10 @@ export const metadata: Metadata = {
 export const revalidate = 300;
 
 export default async function Page() {
-  const summary = await loadHomeCatalogueSummary();
+  const [summary, tribunalCount] = await Promise.all([
+    loadHomeCatalogueSummary(),
+    loadHomeTribunalCount(),
+  ]);
   const origin = resolveSiteOrigin(process.env, "http://localhost:3000")!;
   const structuredData = organizationStructuredData(origin);
   return (
@@ -36,7 +45,10 @@ export default async function Page() {
       <PreloadCormorantItalic />
       <main id="contenu" className="ij-page ij-cinematic-page">
         <CinematicHero summary={summary} />
+        <HomeFigures summary={summary} tribunalCount={tribunalCount} />
+        <HomeProductTour />
         <HomeDiscovery />
+        <HomeClosing />
       </main>
     </>
   );

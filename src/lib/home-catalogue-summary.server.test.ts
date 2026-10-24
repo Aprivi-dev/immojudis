@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ createClient: vi.fn(), loadInitialCatalogue: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  createClient: vi.fn(),
+  loadInitialCatalogue: vi.fn(),
+  loadPublicTribunalActivity: vi.fn(),
+}));
 
 vi.mock("@/lib/supabase-public.server", () => ({
   createPublicSupabaseClient: mocks.createClient,
@@ -8,12 +12,18 @@ vi.mock("@/lib/supabase-public.server", () => ({
 vi.mock("@/lib/public-catalogue.server", () => ({
   loadInitialCatalogue: mocks.loadInitialCatalogue,
 }));
+vi.mock("@/lib/public-tribunal-activity.server", () => ({
+  loadPublicTribunalActivity: mocks.loadPublicTribunalActivity,
+}));
 
 import {
   loadHomeCatalogueSummary,
+  loadHomeTribunalCount,
   usableVerifiedAt,
   type HomeCatalogueSummaryDependencies,
 } from "@/lib/home-catalogue-summary.server";
+
+import type { PublicTribunalActivity } from "@/lib/public-tribunal-activity";
 
 const NOW = new Date("2026-10-19T12:00:00Z");
 
@@ -27,6 +37,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   mocks.createClient.mockReset();
   mocks.loadInitialCatalogue.mockReset();
+  mocks.loadPublicTribunalActivity.mockReset();
 });
 
 describe("loadHomeCatalogueSummary", () => {
@@ -139,5 +150,38 @@ describe("usableVerifiedAt", () => {
   it("normalises a readable date and tolerates a small clock gap", () => {
     expect(usableVerifiedAt("2026-10-10T06:00:00+02:00", NOW)).toBe("2026-10-10T04:00:00.000Z");
     expect(usableVerifiedAt("2026-10-20T06:00:00Z", NOW)).toBe("2026-10-20T06:00:00.000Z");
+  });
+});
+
+describe("loadHomeTribunalCount", () => {
+  const court = (upcomingCount: number) => ({ upcomingCount }) as PublicTribunalActivity;
+
+  it("counts the courts of /tribunaux that have at least one upcoming sale", async () => {
+    mocks.loadPublicTribunalActivity.mockResolvedValue({
+      status: "ok",
+      items: [court(12), court(0), court(1)],
+    });
+
+    expect(await loadHomeTribunalCount()).toBe(2);
+    expect(mocks.loadPublicTribunalActivity).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows nothing when the list is empty, unavailable, slow or throws", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    expect(
+      await loadHomeTribunalCount({ activity: async () => ({ status: "ok", items: [court(0)] }) }),
+    ).toBeNull();
+    expect(await loadHomeTribunalCount({ activity: async () => ({ status: "error" }) })).toBeNull();
+    expect(
+      await loadHomeTribunalCount({ activity: () => new Promise(() => undefined), timeoutMs: 5 }),
+    ).toBeNull();
+    expect(
+      await loadHomeTribunalCount({
+        activity: async () => {
+          throw new Error("base indisponible");
+        },
+      }),
+    ).toBeNull();
   });
 });

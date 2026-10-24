@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { notaryAndStatePilotsEnabled } from "@/lib/sale-types";
 import Link from "next/link";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
@@ -14,7 +13,6 @@ import { launchOfferText } from "@/lib/launch-offer";
 import { loginPathWithRedirect } from "@/lib/navigation";
 import { PLAN_LIMITS } from "@/lib/plans";
 import { MONTHLY_SALE_UNLOCKS, UNLOCK_HIGHLIGHTS_TEXT } from "@/lib/sale-unlocks";
-import { DOSSIER_APARTMENT_QUALITY, DOSSIER_APARTMENT_SIZES } from "./home-images";
 import styles from "./HomeDiscovery.module.css";
 
 const methodSteps = [
@@ -57,6 +55,27 @@ const analysisFeatures = [
   "Pièces et risques, selon la vente",
   "Simulation ajustable",
 ] as const;
+
+/**
+ * « 59 € TTC / mois » → montant en grand, unité en petit, sur une seule ligne : le libellé public
+ * (variable d'environnement) ne passe plus à la ligne au milieu du prix. Sans « € », tout reste en
+ * grand.
+ */
+export function splitPriceLabel(label: string): { amount: string; unit: string } {
+  const end = label.indexOf("€");
+  if (end < 0) return { amount: label.trim(), unit: "" };
+  return { amount: label.slice(0, end + 1).trim(), unit: label.slice(end + 1).trim() };
+}
+
+function PlanPrice({ label }: { label: string }) {
+  const { amount, unit } = splitPriceLabel(label);
+  return (
+    <>
+      <span className={styles.planAmount}>{amount}</span>
+      {unit ? <span className={styles.planUnit}> {unit}</span> : null}
+    </>
+  );
+}
 
 export function HomeDiscovery() {
   const analysisPrice = resolveAnalysisOfferLabel();
@@ -138,31 +157,22 @@ export function HomeDiscovery() {
       </section>
 
       <section className={styles.offers} aria-labelledby="offers-title">
-        <div className={styles.offersImage}>
-          <Image
-            src="/media/landing/dossier-apartment.webp"
-            alt="Intérieur lumineux d’un appartement de caractère, visuel d’illustration"
-            fill
-            sizes={DOSSIER_APARTMENT_SIZES}
-            quality={DOSSIER_APARTMENT_QUALITY}
-          />
-          <p className={styles.imageCaption}>
-            <strong>Visuel d’illustration</strong>
-            <span>Les informations varient selon chaque vente.</span>
-          </p>
-        </div>
-        <div className={styles.offersCopy}>
-          <div className={styles.offersInner}>
+        <div className={`${styles.container} ${styles.offersLayout}`}>
+          <div className={styles.offersHeading}>
             <p className={styles.eyebrow}>Nos offres</p>
             <h2 id="offers-title">
               Explorez librement.
               <br />
-              Analysez en profondeur.
+              <em>Analysez en profondeur.</em>
             </h2>
+          </div>
+          <div className={styles.offersInner}>
             <div className={styles.plans}>
               <article className={styles.plan}>
                 <h3>Découverte</h3>
-                <p className={styles.planPrice}>0 €</p>
+                <p className={styles.planPrice}>
+                  <PlanPrice label="0 €" />
+                </p>
                 <ul>
                   {discoveryFeatures.map((feature) => (
                     <li key={feature}>
@@ -182,7 +192,9 @@ export function HomeDiscovery() {
               </article>
               <article className={styles.plan}>
                 <h3>Analyse</h3>
-                <p className={styles.planPrice}>{analysisPrice}</p>
+                <p className={styles.planPrice}>
+                  <PlanPrice label={analysisPrice} />
+                </p>
                 <ul>
                   {analysisFeatures.map((feature) => (
                     <li key={feature}>
@@ -217,22 +229,6 @@ export function HomeDiscovery() {
               </article>
             </div>
           </div>
-        </div>
-      </section>
-
-      <section className={styles.banner} aria-labelledby="banner-title">
-        <Image
-          className={styles.bannerImage}
-          src="/media/landing/gallery-townhouse.webp"
-          alt=""
-          fill
-          sizes="100vw"
-        />
-        <div className={styles.bannerShade} aria-hidden="true" />
-        <div className={`${styles.container} ${styles.bannerContent}`}>
-          <p className={styles.eyebrow}>Plus qu’une annonce</p>
-          <h2 id="banner-title">L’analyse fait la différence.</h2>
-          <p>Prenez de meilleures décisions sur les ventes immobilières.</p>
         </div>
       </section>
     </div>

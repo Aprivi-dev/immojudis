@@ -1,5 +1,9 @@
 import "server-only";
 import { loadInitialCatalogue, type InitialCatalogue } from "@/lib/public-catalogue.server";
+import {
+  loadPublicTribunalActivity,
+  type PublicTribunalActivityResult,
+} from "@/lib/public-tribunal-activity.server";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
 
 /**
@@ -97,6 +101,36 @@ export async function loadHomeCatalogueSummary(
   } catch (error) {
     console.warn(
       "[accueil] Chiffres du catalogue indisponibles:",
+      error instanceof Error ? error.message : error,
+    );
+    return null;
+  }
+}
+
+export type HomeTribunalCountDependencies = {
+  activity?: () => Promise<PublicTribunalActivityResult>;
+  timeoutMs?: number;
+};
+
+/**
+ * Nombre de tribunaux qui ont au moins une vente à venir dans le catalogue public : la même liste,
+ * en cache une heure, que la page /tribunaux. `null` (rien d'affiché) quand la liste est
+ * indisponible ou vide : jamais de chiffre inventé, jamais d'erreur.
+ */
+export async function loadHomeTribunalCount(
+  dependencies: HomeTribunalCountDependencies = {},
+): Promise<number | null> {
+  try {
+    const activity = await withTimeout(
+      (dependencies.activity ?? (() => loadPublicTribunalActivity()))(),
+      dependencies.timeoutMs ?? SUMMARY_TIMEOUT_MS,
+    );
+    if (activity.status !== "ok") return null;
+    const count = activity.items.filter((tribunal) => tribunal.upcomingCount > 0).length;
+    return count > 0 ? count : null;
+  } catch (error) {
+    console.warn(
+      "[accueil] Nombre de tribunaux indisponible:",
       error instanceof Error ? error.message : error,
     );
     return null;

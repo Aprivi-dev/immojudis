@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/hooks/use-analysis-checkout-open", () => ({ useAnalysisCheckoutOpen: () => true }));
 
-import { HomeDiscovery } from "./HomeDiscovery";
+import { HomeDiscovery, splitPriceLabel } from "./HomeDiscovery";
 
 afterEach(cleanup);
 
@@ -28,5 +28,13 @@ describe("HomeDiscovery free offer card", () => {
     const card = screen.getByRole("heading", { name: "Découverte" }).closest("article")!;
     expect(card.textContent).toContain("Accès aux annonces");
     expect(card.textContent).toContain("Jusqu’à 10 favoris");
+  });
+});
+
+describe("splitPriceLabel", () => {
+  it("keeps the amount and its unit apart so the price stays on one line", () => {
+    expect(splitPriceLabel("59 € TTC / mois")).toEqual({ amount: "59 €", unit: "TTC / mois" });
+    expect(splitPriceLabel("0 €")).toEqual({ amount: "0 €", unit: "" });
+    expect(splitPriceLabel("Sur devis")).toEqual({ amount: "Sur devis", unit: "" });
   });
 });
