@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "zod/mini";
 
 export const PILOT_KINDS = ["tribunal", "notary", "state"] as const;
 export type PilotKind = (typeof PILOT_KINDS)[number];
@@ -36,24 +36,33 @@ export type PilotDefinition = {
   checks: PilotCheck[];
 };
 
+// zod/mini : le brouillon est validé dans le navigateur (espace de travail des pilotes) ; mêmes
+// règles et mêmes valeurs par défaut que l'écriture chaînée de zod, avec bien moins de code envoyé.
+// Un montant : nombre fini (zod 4 refuse déjà l'infini), de 0 à un milliard d'euros, `null` par défaut.
+const pilotAmountSchema = () =>
+  z._default(z.nullable(z.number().check(z.gte(0), z.lte(1_000_000_000))), null);
+
 export const pilotDraftSchema = z.object({
-  schemaVersion: z.literal(1).default(1),
+  schemaVersion: z._default(z.literal(1), 1),
   kind: z.enum(PILOT_KINDS),
-  priceEur: z.number().finite().min(0).max(1_000_000_000).nullable().default(null),
-  acquisitionCostsEur: z.number().finite().min(0).max(1_000_000_000).nullable().default(null),
-  worksEur: z.number().finite().min(0).max(1_000_000_000).nullable().default(null),
-  carryingCostsEur: z.number().finite().min(0).max(1_000_000_000).nullable().default(null),
-  exitValueEur: z.number().finite().min(0).max(1_000_000_000).nullable().default(null),
-  financingEur: z.number().finite().min(0).max(1_000_000_000).nullable().default(null),
-  targetProfitEur: z.number().finite().min(0).max(1_000_000_000).nullable().default(null),
-  checkStatuses: z.record(z.string(), z.enum(["todo", "verified", "blocked"])).default({}),
-  documentStatuses: z.record(z.string(), z.enum(["todo", "reviewed", "question"])).default({}),
-  documentNotes: z.record(z.string(), z.string().max(1000)).default({}),
-  questions: z.string().max(5000).default(""),
-  nextAction: z.string().max(300).default(""),
-  nextActionAt: z.string().max(32).nullable().default(null),
-  updatedAt: z.string().datetime().nullable().default(null),
-  workspaceRevision: z.string().datetime({ offset: true }).nullable().default(null),
+  priceEur: pilotAmountSchema(),
+  acquisitionCostsEur: pilotAmountSchema(),
+  worksEur: pilotAmountSchema(),
+  carryingCostsEur: pilotAmountSchema(),
+  exitValueEur: pilotAmountSchema(),
+  financingEur: pilotAmountSchema(),
+  targetProfitEur: pilotAmountSchema(),
+  checkStatuses: z._default(z.record(z.string(), z.enum(["todo", "verified", "blocked"])), {}),
+  documentStatuses: z._default(z.record(z.string(), z.enum(["todo", "reviewed", "question"])), {}),
+  documentNotes: z._default(z.record(z.string(), z.string().check(z.maxLength(1000))), {}),
+  questions: z._default(z.string().check(z.maxLength(5000)), ""),
+  nextAction: z._default(z.string().check(z.maxLength(300)), ""),
+  nextActionAt: z._default(z.nullable(z.string().check(z.maxLength(32))), null),
+  updatedAt: z._default(z.nullable(z.string().check(z.iso.datetime())), null),
+  workspaceRevision: z._default(
+    z.nullable(z.string().check(z.iso.datetime({ offset: true }))),
+    null,
+  ),
 });
 
 export type PilotDraft = z.infer<typeof pilotDraftSchema>;

@@ -25,7 +25,8 @@ export const workspaceNotesSchema = z
     works: z.string().max(5000).default(""),
     market: z.string().max(5000).default(""),
     privateMode: z.boolean().default(true),
-    professionalDossier: pilotDraftSchema.optional(),
+    // `pilotDraftSchema` est un schéma zod/mini (partagé avec le navigateur) : pas de `.optional()`.
+    professionalDossier: z.optional(pilotDraftSchema),
   })
   // `prefault` reprend le `.default()` de zod 3 : la valeur par défaut repasse par le schéma et
   // donne un objet neuf à chaque lecture (le `.default()` de zod 4 la renverrait telle quelle).

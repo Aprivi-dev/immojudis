@@ -98,7 +98,8 @@ export const propertyReportRequestSchema = z.object({
   title: z.string().trim().min(3).max(140).optional(),
   userNotes: z.string().trim().max(2500).optional(),
   includeEnvironment: z.boolean().default(false),
-  simulation: reportSimulationSchema.optional(),
+  // `reportSimulationSchema` est un schéma zod/mini (partagé avec le navigateur).
+  simulation: z.optional(reportSimulationSchema),
 });
 
 export const propertyReportUpdateSchema = z.object({
