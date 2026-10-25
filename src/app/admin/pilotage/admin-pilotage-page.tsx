@@ -371,7 +371,7 @@ function PilotageTables({ data }: { data: AdminPilotageResponse }) {
                         <td key={column.key} className="px-3 py-2 text-right tabular-nums">
                           <span
                             className={
-                              value == null ? "text-xs italic text-brand-navy/70" : "font-semibold"
+                              value == null ? "text-xs text-brand-navy/70" : "font-semibold"
                             }
                           >
                             {formatCount(value)}
@@ -408,7 +408,7 @@ function PilotageTables({ data }: { data: AdminPilotageResponse }) {
               <dt className="text-brand-navy/70">{label}</dt>
               <dd
                 className={`tabular-nums ${
-                  value == null ? "text-xs italic text-brand-navy/70" : "font-semibold"
+                  value == null ? "text-xs text-brand-navy/70" : "font-semibold"
                 }`}
               >
                 {formatCount(value)}
@@ -500,7 +500,7 @@ function ReminderAccuracyCard({ accuracy }: { accuracy: SaleReminderAccuracy | n
           <dt className="text-brand-navy/70">Taux de fausses alertes</dt>
           <dd
             className={`tabular-nums ${
-              rate === NOT_MEASURED ? "text-xs italic text-brand-navy/70" : "font-semibold"
+              rate === NOT_MEASURED ? "text-xs text-brand-navy/70" : "font-semibold"
             }`}
           >
             {rate}
@@ -510,7 +510,7 @@ function ReminderAccuracyCard({ accuracy }: { accuracy: SaleReminderAccuracy | n
           <dt className="text-brand-navy/70">Rappels mesurés</dt>
           <dd
             className={`tabular-nums ${
-              measured == null ? "text-xs italic text-brand-navy/70" : "font-semibold"
+              measured == null ? "text-xs text-brand-navy/70" : "font-semibold"
             }`}
           >
             {formatCount(measured)}
@@ -565,7 +565,7 @@ function BidCeilingCard({ summary }: { summary: BidCeilingSummary | null }) {
                     <dt className="text-brand-navy/70">{line.label}</dt>
                     <dd
                       className={`tabular-nums ${
-                        line.value == null ? "text-xs italic text-brand-navy/70" : "font-semibold"
+                        line.value == null ? "text-xs text-brand-navy/70" : "font-semibold"
                       }`}
                     >
                       {formatCount(line.value)}
@@ -647,7 +647,7 @@ function SignalFeedbackCard({ summary }: { summary: SaleSignalFeedbackSummary | 
                   <dt className="text-brand-navy/70">{line.label}</dt>
                   <dd
                     className={`tabular-nums ${
-                      line.measured ? "font-semibold" : "text-xs italic text-brand-navy/70"
+                      line.measured ? "font-semibold" : "text-xs text-brand-navy/70"
                     }`}
                   >
                     {line.text}

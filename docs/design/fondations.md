@@ -2,8 +2,10 @@
 
 Règles communes à toutes les pages d'Immojudis, validées par le propriétaire le 24/10/2026
 (planche de proposition : fond, couleurs par rôle, échelle de texte, arrondis, pastilles).
-Elles ne changent ni la marque (marine, or, Cormorant Garamond, IBM Plex Sans) ni le contenu :
-elles retirent le bruit visuel. Les jetons vivent dans `src/styles.css`, les composants de base
+Elles ne changent ni la marque (marine, or, Manrope) ni le contenu : elles retirent le bruit
+visuel. Depuis le 25/10/2026, Manrope est la seule police du site, sans italique (à la place de
+Cormorant Garamond et d'IBM Plex Sans), la navigation est une pilule flottante et l'accueil suit
+sa maquette (`src/components/home/HomePage.module.css`, qui a sa propre échelle). Les jetons vivent dans `src/styles.css`, les composants de base
 dans `src/components/ui/primitives.tsx`.
 
 ## Fond et surfaces
@@ -24,7 +26,7 @@ dans `src/components/ui/primitives.tsx`.
 | Encre         | `brand-navy` / `foreground` | Titres, texte, montants                                 |
 | Encre douce   | `ink-soft`                  | Texte secondaire, légendes                              |
 | Or d'accent   | `gold`                      | Décor, filets forts, focus. **Jamais du texte** (2,8:1) |
-| Or texte      | `gold-text`                 | Surtitres, liens, italiques, enchère plafond            |
+| Or texte      | `gold-text`                 | Surtitres, liens, accents de titre, enchère plafond     |
 | Or sur marine | `gold-light`                | Accents sur fond sombre                                 |
 | Urgent        | `danger` / `danger-tint`    | Vente aujourd'hui, erreur                               |
 | Attention     | `warning` / `warning-tint`  | Échéance proche, point à vérifier                       |
@@ -37,21 +39,24 @@ ne peut que baisser, et chaque page migrée l'abaisse.
 
 ## Échelle de texte
 
-Rien sous **12 px**. Cormorant pour les titres, Plex pour tout ce qui se lit ou se compare.
+Rien sous **12 px**. Manrope partout, sans italique : l'accent d'un titre se marque par la
+couleur. Les titres des pages autres que l'accueil gardent les tailles ci-dessous, réglées pour
+Cormorant : `--font-display-adjust` (`src/styles.css`) ramène la hauteur des capitales de Manrope
+à celle de Cormorant, pour que leurs mises en page ne bougent pas. Titre de l'accueil : 60 px
+(48 sous 1 100 px, 36 sur mobile), Manrope 800.
 
-| Rôle                  | Police                                     | Taille                   |
-| --------------------- | ------------------------------------------ | ------------------------ |
-| Titre de l'accueil    | Cormorant 500                              | 56 (mobile 44)           |
-| Titre de page         | Cormorant 500                              | 40                       |
-| Section               | Cormorant 500                              | 30                       |
-| Titre de carte        | Cormorant 500                              | 22                       |
-| Montant clé           | Plex 600, chiffres alignés, **marine**     | 28 (carte 22)            |
-| Chapô                 | Plex 400                                   | 18                       |
-| Texte                 | Plex 400                                   | 16                       |
-| Petit texte / légende | Plex 400                                   | 14 / 13 (`text-caption`) |
-| Surtitre              | Plex 600, capitales, interlettrage 0,14 em | 12                       |
+| Rôle                  | Police                                        | Taille                   |
+| --------------------- | --------------------------------------------- | ------------------------ |
+| Titre de page         | Manrope 500 (ajustée)                         | 40                       |
+| Section               | Manrope 500 (ajustée)                         | 30                       |
+| Titre de carte        | Manrope 500 (ajustée)                         | 22                       |
+| Montant clé           | Manrope 600, chiffres alignés, **marine**     | 28 (carte 22)            |
+| Chapô                 | Manrope 400                                   | 18                       |
+| Texte                 | Manrope 400                                   | 16                       |
+| Petit texte / légende | Manrope 400                                   | 14 / 13 (`text-caption`) |
+| Surtitre              | Manrope 600, capitales, interlettrage 0,14 em | 12                       |
 
-Les **prix** sont en marine, Plex demi-gras, `tabular-nums` : ce qu'on compare d'une vente à
+Les **prix** sont en marine, Manrope demi-gras, `tabular-nums` : ce qu'on compare d'une vente à
 l'autre doit être lisible avant d'être décoratif. L'or reste pour les surtitres et l'enchère
 plafond.
 

@@ -18,6 +18,7 @@
 .heading {
   margin: 0;
   font-family: var(--font-display), Georgia, serif;
+  font-size-adjust: var(--font-display-adjust);
   font-size: 25px;
   font-weight: 600;
 }

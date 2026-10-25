@@ -1,5 +1,5 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 const fonts = vi.hoisted(() => ({ calls: [] as Array<Record<string, unknown>> }));
@@ -41,97 +41,45 @@ describe("root layout metadata", () => {
     expect(metadata.openGraph).toMatchObject({ siteName: "Immojudis", locale: "fr_FR" });
   });
 
-  it("preloads the display font used by the home heading", () => {
-    expect(fontCall("--font-cormorant-garamond")).toMatchObject({
+  it("loads Manrope only, preloaded, in the weights the stylesheet uses", () => {
+    // Une seule police depuis le 25/10/2026 (Cormorant Garamond et IBM Plex Sans retirées).
+    expect(fonts.calls.map((call) => call.variable)).toEqual(["--font-manrope"]);
+    expect(fontCall("--font-manrope")).toMatchObject({
       preload: true,
       display: "swap",
-      adjustFontFallback: "Times New Roman",
+      adjustFontFallback: "Arial",
     });
-  });
-
-  it("loads exactly the weights and styles the stylesheet uses, same variables as before", () => {
-    // Graisses normales dans le layout ; l'italique (mêmes graisses) est déclarée en CSS, voir plus bas.
-    expect(faces("--font-cormorant-garamond")).toEqual(["normal 400", "normal 500", "normal 600"]);
-    expect(faces("--font-ibm-plex-sans")).toEqual([
+    expect(faces("--font-manrope")).toEqual([
       "normal 400",
       "normal 500",
       "normal 600",
       "normal 700",
+      "normal 800",
     ]);
-    expect(fontCall("--font-ibm-plex-sans")).toMatchObject({
-      display: "swap",
-      adjustFontFallback: "Arial",
-    });
   });
 
-  it("declares the italic once, by @font-face, not through next/font (which preloads on every route)", () => {
-    // Deux déclarations `next/font` du même fichier (une préchargée, une non) produisent deux
-    // fichiers distincts, et toute déclaration préchargée l'est sur chaque route qui l'appelle.
-    expect(fonts.calls.map((call) => call.variable).sort()).toEqual([
-      "--font-cormorant-garamond",
-      "--font-ibm-plex-sans",
-    ]);
+  it("declares no italic and no other font face", () => {
     for (const call of fonts.calls as FontCall[]) {
       expect(call.src.map((source) => source.style)).not.toContain("italic");
     }
+    const css = readFileSync(join(process.cwd(), "src", "styles.css"), "utf8");
+    expect(css).not.toMatch(/@font-face/);
+    expect(css).not.toMatch(/font-style:\s*italic/);
     for (const removed of [
-      "cormorant-garamond-italic.ts",
-      "cormorant-garamond-italic-preloaded.ts",
+      "cormorant-garamond-latin-normal.woff2",
+      "cormorant-garamond-latin-italic.woff2",
+      "ibm-plex-sans-latin.woff2",
     ]) {
       expect(existsSync(join(process.cwd(), "src", "fonts", removed)), removed).toBe(false);
     }
-
-    const css = readFileSync(join(process.cwd(), "src", "styles.css"), "utf8");
-    const declarations = [...css.matchAll(/@font-face\s*\{([^}]*)\}/g)].map((match) => match[1]);
-    const property = (block: string, name: string) =>
-      new RegExp(`${name}:\\s*([^;]+);`).exec(block)?.[1].trim();
-    expect(
-      declarations.map((block) => ({
-        family: property(block, "font-family"),
-        style: property(block, "font-style"),
-        weight: property(block, "font-weight"),
-        display: property(block, "font-display"),
-        src: property(block, "src"),
-      })),
-    ).toEqual(
-      ["400", "500", "600"].map((weight) => ({
-        // Le nom que `next/font` donne aux graisses normales du layout (d'après la constante
-        // `cormorantGaramond`) : normal et italique forment ainsi UNE famille, sans italique
-        // synthétique.
-        family: "cormorantGaramond",
-        style: "italic",
-        weight,
-        display: "swap",
-        src: 'url("./fonts/cormorant-garamond-latin-italic.woff2") format("woff2")',
-      })),
-    );
-    // La famille du layout porte bien ce nom.
-    expect(readFileSync(join(process.cwd(), "src/app/layout.tsx"), "utf8")).toMatch(
-      /\bconst cormorantGaramond = localFont\(/,
+    expect(existsSync(join(process.cwd(), "src", "components", "PreloadCormorantItalic.tsx"))).toBe(
+      false,
     );
   });
 
-  it("preloads the italic only through the pages that show it above the fold (home, /ressources)", () => {
-    const root = process.cwd();
-    const importers: string[] = [];
-    const walk = (directory: string) => {
-      for (const name of readdirSync(directory)) {
-        const path = join(directory, name);
-        if (statSync(path).isDirectory()) walk(path);
-        else if (/\.(ts|tsx)$/.test(name) && !/\.test\.tsx?$/.test(name)) {
-          if (/from "@\/components\/PreloadCormorantItalic"/.test(readFileSync(path, "utf8"))) {
-            importers.push(relative(root, path).split("\\").join("/"));
-          }
-        }
-      }
-    };
-    walk(join(root, "src"));
-    expect(importers.sort()).toEqual(["src/app/page.tsx", "src/app/ressources/page.tsx"]);
-  });
-
-  it("self-hosts the font files with their licence, without Google Fonts", () => {
+  it("self-hosts the font file with its licence, without Google Fonts", () => {
     const layoutDir = join(process.cwd(), "src", "app");
-    // Les chemins sont relatifs au layout, qui déclare les polices `next/font`.
+    // Les chemins sont relatifs au layout, qui déclare la police `next/font`.
     for (const call of fonts.calls) {
       for (const source of (call as FontCall).src) {
         const file = join(layoutDir, source.path);
@@ -139,11 +87,7 @@ describe("root layout metadata", () => {
         expect(readFileSync(file).subarray(0, 4).toString("latin1"), source.path).toBe("wOF2");
       }
     }
-    const italic = join(process.cwd(), "src", "fonts", "cormorant-garamond-latin-italic.woff2");
-    expect(readFileSync(italic).subarray(0, 4).toString("latin1")).toBe("wOF2");
-    for (const licence of ["OFL-cormorant-garamond.txt", "OFL-ibm-plex-sans.txt"]) {
-      expect(existsSync(join(process.cwd(), "src", "fonts", licence)), licence).toBe(true);
-    }
+    expect(existsSync(join(process.cwd(), "src", "fonts", "OFL-manrope.txt"))).toBe(true);
     expect(readFileSync(join(layoutDir, "layout.tsx"), "utf8")).not.toMatch(
       /from\s+["']next\/font\/google["']/,
     );

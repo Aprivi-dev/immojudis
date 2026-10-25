@@ -236,6 +236,7 @@
 .sourceDialog [data-slot="dialog-title"] {
   max-width: calc(100% - 22px);
   font-family: var(--font-display), Georgia, serif;
+  font-size-adjust: var(--font-display-adjust);
   font-size: 25px;
   letter-spacing: -0.02em;
   line-height: 1.1;

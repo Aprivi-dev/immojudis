@@ -1,8 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
-import Check from "lucide-react/dist/esm/icons/check.js";
 import { OfferOpeningRequest } from "@/components/OfferOpeningRequestLazy";
 import { useAnalysisCheckoutOpen } from "@/hooks/use-analysis-checkout-open";
 import { useAuth } from "@/hooks/use-auth";
@@ -12,11 +10,12 @@ import { launchOfferText } from "@/lib/launch-offer";
 import { loginPathWithRedirect } from "@/lib/navigation";
 import { PLAN_LIMITS } from "@/lib/plans";
 import { MONTHLY_SALE_UNLOCKS, UNLOCK_HIGHLIGHTS_TEXT } from "@/lib/sale-unlocks";
+import { ArrowRight, Check } from "./HomeIcons";
 import styles from "./HomePage.module.css";
 
 const discoveryFeatures = [
-  "Accès aux annonces",
-  "Informations essentielles",
+  "Accès aux annonces, sur la carte et en liste",
+  "Informations essentielles de chaque vente",
   `${MONTHLY_SALE_UNLOCKS} ventes débloquées par mois : ${UNLOCK_HIGHLIGHTS_TEXT}`,
   `Jusqu’à ${PLAN_LIMITS.decouverte.favoriteSales} favoris`,
 ] as const;
@@ -28,68 +27,64 @@ const analysisFeatures = [
   "Simulation ajustable",
 ] as const;
 
+function Features({ items }: { items: readonly string[] }) {
+  return (
+    <ul>
+      {items.map((feature) => (
+        <li key={feature}>
+          <Check aria-hidden size={16} />
+          <span>{feature}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /**
  * Les deux offres, Découverte et Analyse. L'accueil met en avant l'inscription gratuite et l'essai
  * de 7 jours ; le tarif de l'offre Analyse n'y figure pas (décision du 25/10/2026) : il est sur
- * /offres, et présenté avant toute souscription.
+ * /offres, et présenté avant toute souscription. Une seule action d'inscription, sous les deux
+ * cartes, pour un visiteur ; la carte Analyse garde son lien (« Découvrir Analyse ») ou la demande
+ * d'ouverture quand ni essai ni souscription ne sont ouverts.
  */
 export function HomeOffers() {
   const checkoutOpen = useAnalysisCheckoutOpen();
   const { user } = useAuth();
-  const launchOffer = useLaunchOffer().active;
-  const signupPath = loginPathWithRedirect(undefined);
+  const trialOpen = useLaunchOffer().active;
 
   return (
-    <section className={styles.offers} aria-labelledby="offers-title">
+    <section
+      id="offres"
+      className={`${styles.section} ${styles.sectionFlush}`}
+      aria-labelledby="offers-title"
+    >
       <div className={styles.container}>
-        <div className={styles.sectionHead} data-reveal="">
+        <div className={styles.head} data-reveal="">
           <p className={styles.eyebrow}>Nos offres</p>
-          <h2 id="offers-title">Explorez librement. Analysez en profondeur.</h2>
+          <h2 id="offers-title" className={styles.h2}>
+            {trialOpen
+              ? `Explorez gratuitement. Analysez ${ANALYSIS_TRIAL_DAYS} jours sans payer.`
+              : "Explorez gratuitement. Analysez en profondeur."}
+          </h2>
         </div>
         <div className={styles.plans}>
           <article className={styles.plan} data-reveal="">
-            <h3>Découverte</h3>
-            <p className={styles.planPrice}>0 €</p>
-            <ul>
-              {discoveryFeatures.map((feature) => (
-                <li key={feature}>
-                  <Check aria-hidden="true" size={15} />
-                  <span>{feature}</span>
-                </li>
-              ))}
-            </ul>
-            {user ? null : (
-              <Link href={signupPath} className={styles.secondaryLink}>
-                Créer mon compte gratuit <ArrowRight aria-hidden="true" size={17} />
-              </Link>
-            )}
+            <div className={styles.planHead}>
+              <h3>Découverte</h3>
+              <p className={styles.planPrice}>0 €</p>
+            </div>
+            <Features items={discoveryFeatures} />
+            <p className={styles.planFinePrint}>Gratuit, sans limite de durée.</p>
           </article>
           <article className={`${styles.plan} ${styles.planFeatured}`} data-reveal="">
-            <h3>Analyse</h3>
-            <p className={styles.planPrice}>
-              {launchOffer ? `${ANALYSIS_TRIAL_DAYS} jours offerts` : "Sur abonnement"}
-            </p>
-            <ul>
-              {analysisFeatures.map((feature) => (
-                <li key={feature}>
-                  <Check aria-hidden="true" size={15} />
-                  <span>{feature}</span>
-                </li>
-              ))}
-            </ul>
-            {launchOffer && !user ? (
-              <Link href={signupPath} className={styles.primaryLink}>
-                Commencer l’essai gratuit <ArrowRight aria-hidden="true" size={17} />
-              </Link>
-            ) : !launchOffer && checkoutOpen === false ? (
-              // Ni essai ni souscription : le bouton principal est la demande d'information.
-              <OfferOpeningRequest primary className="mt-2" />
-            ) : (
-              <Link href="/offres" className={styles.primaryLink}>
-                Découvrir Analyse <ArrowRight aria-hidden="true" size={17} />
-              </Link>
-            )}
-            {launchOffer ? (
+            <div className={styles.planHead}>
+              <h3>Analyse</h3>
+              <p className={styles.planPrice}>
+                {trialOpen ? `${ANALYSIS_TRIAL_DAYS} jours offerts` : "Sur abonnement"}
+              </p>
+            </div>
+            <Features items={analysisFeatures} />
+            {trialOpen ? (
               <p className={styles.planFinePrint} data-testid="home-launch-offer">
                 {launchOfferText(user ? "account" : "visitor")}
               </p>
@@ -101,8 +96,26 @@ export function HomeOffers() {
             ) : checkoutOpen === false ? (
               <p className={styles.planFinePrint}>Abonnement bientôt disponible.</p>
             ) : null}
+            {!trialOpen && checkoutOpen === false ? (
+              // Ni essai ni souscription : la carte propose la demande d'information.
+              <OfferOpeningRequest primary className="mt-2" />
+            ) : trialOpen && !user ? null : (
+              <Link href="/offres" className={`${styles.textLink} ${styles.planAction}`}>
+                Découvrir Analyse <ArrowRight aria-hidden size={16} />
+              </Link>
+            )}
           </article>
         </div>
+        {user ? null : (
+          <div className={styles.plansCta} data-reveal="">
+            <Link href={loginPathWithRedirect(undefined)} className={styles.button}>
+              Créer mon compte gratuit <ArrowRight aria-hidden size={20} />
+            </Link>
+            {trialOpen ? (
+              <span className={styles.ctaNote}>Rien n’est prélevé à la fin de l’essai.</span>
+            ) : null}
+          </div>
+        )}
       </div>
     </section>
   );

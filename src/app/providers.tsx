@@ -3,12 +3,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Suspense, useEffect, useState } from "react";
 import { Navbar, showsNavbar } from "@/components/Navbar";
-import { HeaderLogo } from "@/components/site-header-shared";
-import {
-  SITE_HEADER_BAR_CLASSES,
-  siteHeaderClasses,
-  siteHeaderReservesHeight,
-} from "@/components/SiteHeader";
+import { SitePillFallback } from "@/components/SiteHeader";
 import { usePublicPathname } from "@/hooks/use-public-pathname";
 import { AuthProvider } from "@/components/AuthProvider";
 import { LaunchOfferProvider } from "@/components/LaunchOfferProvider";
@@ -63,21 +58,12 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * En-tête de secours le temps que le vrai se charge. Il prend la place exacte du vrai (même
- * position, même hauteur, même espace réservé dans la page) ; le catalogue et l'administration n'en
+ * En-tête de secours le temps que le vrai se charge : la pilule, à la place exacte de la vraie (même
+ * position, même largeur, même espace réservé dans la page) ; le catalogue et l'administration n'en
  * ont pas (leur propre barre). Un espace laissé là où le vrai en-tête n'en laisse pas décalait la
  * page à son arrivée (CLS 0,078).
  */
 export function NavigationFallback() {
   if (!showsNavbar(usePublicPathname())) return null;
-  return (
-    <>
-      <header className={siteHeaderClasses("fixed")}>
-        <div className={SITE_HEADER_BAR_CLASSES}>
-          <HeaderLogo showTagline />
-        </div>
-      </header>
-      {siteHeaderReservesHeight("fixed") ? <div className="h-16" aria-hidden /> : null}
-    </>
-  );
+  return <SitePillFallback />;
 }

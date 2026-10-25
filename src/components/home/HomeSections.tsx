@@ -1,16 +1,21 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
-import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
+import { ANALYSIS_TRIAL_DAYS } from "@/lib/analysis-offer";
 import { exampleHeadlineFigures } from "@/lib/example-sale";
 import { formatNumber, formatPrice } from "@/lib/format";
 import type { HomeCatalogueSummary } from "@/lib/home-catalogue-summary.server";
+import { MONTHLY_SALE_UNLOCKS } from "@/lib/sale-unlocks";
 import { notaryAndStatePilotsEnabled } from "@/lib/sale-types";
-import { HomeFreeAccessLine } from "./HomeFreeAccessLine";
-import { HomeSearch } from "./HomeSearch";
+import { ArrowRight, Bank, Bell, ChartBar, FileText, MapPin, Target } from "./HomeIcons";
+import {
+  HomeBrowseWithoutAccount,
+  HomePrimaryAction,
+  HomeSignupStepText,
+} from "./HomePrimaryAction";
 import styles from "./HomePage.module.css";
 
 // Mêmes chiffres que /annonce-exemple : calculés une fois depuis l'exemple, jamais saisis ici.
-const EXAMPLE_FIGURES = exampleHeadlineFigures();
+const EXAMPLE = exampleHeadlineFigures();
 
 function delay(ms: number): CSSProperties {
   return { "--delay": `${ms}ms` } as CSSProperties;
@@ -26,6 +31,7 @@ export function HomeStats({
   summary: HomeCatalogueSummary | null;
   departments: number | null;
 }) {
+  if (!summary && !departments) return null;
   const stats: Stat[] = [];
   if (summary) {
     stats.push({
@@ -47,197 +53,394 @@ export function HomeStats({
   if (notaryAndStatePilotsEnabled()) {
     stats.push({ value: "3", label: "lieux de vente réunis : tribunal, notaire, État" });
   }
-  if (!summary && !departments) return null;
+  stats.push({
+    value: formatNumber(MONTHLY_SALE_UNLOCKS),
+    label: "fiches détaillées gratuites chaque mois",
+  });
   return (
-    <section className={styles.stats} aria-label="Le catalogue en chiffres">
-      <dl className={styles.container} data-reveal="">
-        {stats.map((stat) => (
-          <div key={stat.label} className={styles.stat}>
-            <dt>{stat.label}</dt>
-            <dd data-count-to={stat.countTo} className={styles.statValue}>
-              {stat.value}
-            </dd>
-          </div>
-        ))}
-      </dl>
+    <section className={styles.statsBand} aria-label="Le catalogue en chiffres">
+      <div className={styles.container}>
+        <dl className={styles.stats} data-reveal="">
+          {stats.map((stat) => (
+            <div key={stat.label} className={styles.stat}>
+              <dt>{stat.label}</dt>
+              <dd data-count-to={stat.countTo} className={styles.statValue}>
+                {stat.value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </div>
     </section>
   );
 }
 
-/** De l'annonce à l'enchère : trois écrans, chacun avec sa petite illustration animée. */
-export function HomeJourney() {
+const PAIRS = [
+  {
+    before: "Les annonces sont dispersées entre les sites des avocats et des tribunaux.",
+    after: "Toutes les ventes à venir sur une carte et une liste, filtrables par secteur.",
+  },
+  {
+    before: "Le cahier des conditions de vente compte souvent des dizaines de pages.",
+    after: "Les points clés relevés pour vous, avec ce qu’il reste à vérifier.",
+  },
+  {
+    before: "On enchérit à l’instinct, dans la salle, sans limite écrite.",
+    after: "Une enchère plafond calculée avant l’audience, et ajustable.",
+  },
+] as const;
+
+/** Le problème (une mise à prix ne dit rien du prix à payer) et ce qu'Immojudis y répond. */
+export function HomeProblem() {
   return (
-    <section className={styles.journey} aria-labelledby="journey-title">
-      <div className={styles.container}>
-        <div className={styles.sectionHead} data-reveal="">
-          <p className={styles.eyebrow}>Comment ça marche</p>
-          <h2 id="journey-title">De l’annonce à l’enchère, en trois écrans.</h2>
+    <section className={styles.section} aria-labelledby="problem-title">
+      <div className={`${styles.container} ${styles.split}`}>
+        <div className={`${styles.head} ${styles.headAside}`} data-reveal="">
+          <p className={styles.eyebrow}>Le problème</p>
+          <h2 id="problem-title" className={styles.h2}>
+            Une mise à prix ne dit rien du prix à payer.
+          </h2>
+          <p className={styles.lead}>
+            Elle est souvent fixée bas pour attirer les enchérisseurs. Ce qui compte se trouve
+            ailleurs : dans les pièces, dans le marché du quartier et dans vos frais.
+          </p>
         </div>
-        <ol className={styles.steps}>
-          <li className={styles.step} data-reveal="">
-            <span className={styles.stepNumber}>01</span>
-            <h3>Repérer</h3>
-            <p>La carte et la liste des ventes, avec les points à vérifier de chaque annonce.</p>
-            <div className={styles.mini} aria-hidden="true">
-              {[62, 48, 70].map((width, index) => (
-                <span key={width} className={styles.miniRow} style={delay(300 + index * 160)}>
-                  <i className={styles.miniThumb} />
-                  <span className={styles.miniLines}>
-                    <i style={{ width: `${width}%` }} />
-                    <i style={{ width: `${width - 22}%` }} />
-                  </span>
-                  {index === 1 ? <b className={styles.miniChip}>À vérifier</b> : null}
-                </span>
-              ))}
+        <div className={styles.pairs}>
+          {PAIRS.map((pair, index) => (
+            <div key={pair.after} className={styles.pair} data-reveal="" style={delay(index * 120)}>
+              <div className={styles.pairBefore}>
+                <span className={styles.pairLabel}>Aujourd’hui</span>
+                <p>{pair.before}</p>
+              </div>
+              <div className={styles.pairAfter}>
+                <span className={styles.pairLabel}>Avec Immojudis</span>
+                <p>{pair.after}</p>
+              </div>
             </div>
-          </li>
-          <li className={styles.step} data-reveal="" style={delay(140)}>
-            <span className={styles.stepNumber}>02</span>
-            <h3>Calculer son plafond</h3>
-            <p>Valeur du marché, frais, travaux et marge : l’enchère à ne pas dépasser.</p>
-            <div className={styles.mini}>
-              <span className={styles.miniLabel}>
-                Exemple fictif · {EXAMPLE_FIGURES.city}, avec travaux de rafraîchissement
-              </span>
-              <span className={styles.miniLine}>
-                <span>Valeur estimée</span>
-                <b>{formatPrice(EXAMPLE_FIGURES.marketValue)}</b>
-              </span>
-              <span className={styles.miniBar} aria-hidden="true">
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/** Quatre bénéfices, chacun avec sa petite illustration. */
+export function HomeBenefits() {
+  const share = (value: number) => `${((value / EXAMPLE.marketValue) * 100).toFixed(1)}%`;
+  return (
+    <section
+      id="avantages"
+      className={`${styles.section} ${styles.sectionFlush}`}
+      aria-labelledby="benefits-title"
+    >
+      <div className={styles.container}>
+        <div className={styles.head} data-reveal="">
+          <p className={styles.eyebrow}>Ce que vous savez avant d’enchérir</p>
+          <h2 id="benefits-title" className={styles.h2}>
+            Quatre réponses que l’annonce ne donne pas.
+          </h2>
+        </div>
+        <div className={styles.benefits}>
+          <article className={styles.benefit} data-reveal="">
+            <span className={styles.icon} aria-hidden>
+              <FileText size={22} />
+            </span>
+            <h3>Sachez ce que disent les pièces</h3>
+            <p>
+              Cahier des conditions de vente, descriptif du bien, diagnostics : les points clés
+              relevés pièce par pièce, selon la vente.
+            </p>
+            <span className={`${styles.visual} ${styles.docLines}`} aria-hidden>
+              {[92, 74, 86, 58, 80].map((width, index) => (
                 <i
-                  style={
-                    {
-                      "--w": `${Math.round((EXAMPLE_FIGURES.ceiling / EXAMPLE_FIGURES.marketValue) * 100)}%`,
-                    } as CSSProperties
-                  }
+                  key={index}
+                  className={index % 2 ? styles.highlight : undefined}
+                  style={{ width: `${width}%` }}
                 />
+              ))}
+            </span>
+          </article>
+          <article className={styles.benefit} data-reveal="" style={delay(120)}>
+            <span className={styles.icon} aria-hidden>
+              <Target size={22} />
+            </span>
+            <h3>Connaissez votre enchère plafond</h3>
+            <p>
+              Valeur estimée, frais de la vente, travaux et marge de sécurité : le montant à ne pas
+              dépasser, que vous ajustez à votre projet.
+            </p>
+            <span className={styles.visual} aria-hidden>
+              <span className={`${styles.bar} ${styles.barSmall}`}>
+                <i className={styles.barCeiling} style={{ width: share(EXAMPLE.ceiling) }} />
+                <i className={styles.barCosts} style={{ width: share(EXAMPLE.feesAndWorks) }} />
+                <i className={styles.barMargin} style={{ width: share(EXAMPLE.safetyMargin) }} />
               </span>
-              <span className={styles.miniLine}>
-                <span>Enchère plafond</span>
-                <b className={styles.gold}>{formatPrice(EXAMPLE_FIGURES.ceiling)}</b>
+              <span className={styles.visualLegend}>
+                <span>Plafond {formatPrice(EXAMPLE.ceiling)}</span>
+                <span>Valeur {formatPrice(EXAMPLE.marketValue)}</span>
               </span>
-            </div>
-          </li>
-          <li className={styles.step} data-reveal="" style={delay(280)}>
-            <span className={styles.stepNumber}>03</span>
-            <h3>Être prévenu</h3>
-            <p>Une alerte sur votre secteur : chaque nouvelle vente arrive par e-mail.</p>
-            <div className={styles.mini} aria-hidden="true">
-              <span className={styles.toast} style={delay(500)}>
+            </span>
+          </article>
+          <article className={styles.benefit} data-reveal="" style={delay(60)}>
+            <span className={styles.icon} aria-hidden>
+              <ChartBar size={22} />
+            </span>
+            <h3>Situez la mise à prix face au quartier</h3>
+            <p>
+              Le prix au mètre carré des ventes voisines enregistrées dans les Demandes de valeurs
+              foncières (DVF), comparé à la vente.
+            </p>
+            <span className={styles.visual} aria-hidden>
+              <span className={styles.miniBars}>
+                {[52, 70, 30, 84, 62, 76].map((height, index) => (
+                  <i
+                    key={index}
+                    className={index === 2 ? styles.mine : undefined}
+                    style={{ height: `${height}%` }}
+                  />
+                ))}
+              </span>
+              <span className={styles.visualLegend}>
+                <span>Ventes voisines</span>
+                <span>Mise à prix</span>
+              </span>
+            </span>
+          </article>
+          <article className={styles.benefit} data-reveal="" style={delay(180)}>
+            <span className={styles.icon} aria-hidden>
+              <Bell size={22} />
+            </span>
+            <h3>Ne ratez plus une vente de votre secteur</h3>
+            <p>
+              Une alerte sur votre zone : les nouvelles ventes et les dates d’audience confirmées
+              arrivent par email.
+            </p>
+            <span className={styles.visual} aria-hidden>
+              <span className={styles.toast}>
                 <i />
                 Nouvelle vente dans votre secteur
               </span>
-              <span className={styles.toast} style={delay(900)}>
+              <span className={styles.toast}>
                 <i />
                 Date d’audience confirmée
               </span>
-            </div>
+            </span>
+          </article>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/** De l'inscription à l'audience, en trois étapes (une vraie séquence : numérotée). */
+export function HomeSteps() {
+  return (
+    <section
+      id="etapes"
+      className={`${styles.section} ${styles.stepsBand}`}
+      aria-labelledby="steps-title"
+    >
+      <div className={styles.container}>
+        <div className={styles.head} data-reveal="">
+          <p className={styles.eyebrow}>Comment ça marche</p>
+          <h2 id="steps-title" className={styles.h2}>
+            De l’annonce à l’audience, en trois étapes.
+          </h2>
+        </div>
+        <ol className={styles.steps}>
+          <li className={styles.step} data-reveal="">
+            <span className={styles.stepNumber}>Étape 1</span>
+            <h3>Créez votre compte gratuit</h3>
+            <HomeSignupStepText />
+          </li>
+          <li className={styles.step} data-reveal="" style={delay(120)}>
+            <span className={styles.stepNumber}>Étape 2</span>
+            <h3>Repérez vos ventes</h3>
+            <p>
+              Cherchez par ville, département ou région, puis enregistrez une alerte sur votre
+              secteur.
+            </p>
+          </li>
+          <li className={styles.step} data-reveal="" style={delay(240)}>
+            <span className={styles.stepNumber}>Étape 3</span>
+            <h3>Fixez votre plafond</h3>
+            <p>
+              Lisez les points clés des pièces, ajustez travaux et marge, puis confiez votre limite
+              à votre avocat.
+            </p>
           </li>
         </ol>
-        <div className={styles.actions}>
-          <Link href="/sales" prefetch={false} className={styles.primaryLink}>
-            Explorer les ventes <ArrowRight size={17} aria-hidden="true" />
-          </Link>
-          <Link href="/ventes-immobilieres-judiciaires" className={styles.textLink}>
-            Comprendre les enchères <ArrowRight size={17} aria-hidden="true" />
-          </Link>
-        </div>
       </div>
     </section>
   );
 }
 
-/** Ce qu'Immojudis montre de plus qu'une annonce : quatre tuiles qui s'animent à leur arrivée. */
-export function HomeFeatures() {
+/** D'où viennent les chiffres : les sources publiques et la méthode. */
+export function HomeSources() {
   return (
-    <section className={styles.features} aria-labelledby="features-title">
-      <div className={styles.container}>
-        <div className={styles.sectionHead} data-reveal="">
-          <p className={styles.eyebrow}>Plus qu’une annonce</p>
-          <h2 id="features-title">Ce que vous savez avant l’audience.</h2>
+    <section className={styles.section} aria-labelledby="sources-title">
+      <div className={`${styles.container} ${styles.split}`}>
+        <div className={`${styles.head} ${styles.headAside}`} data-reveal="">
+          <p className={styles.eyebrow}>D’où viennent les chiffres</p>
+          <h2 id="sources-title" className={styles.h2}>
+            Des sources publiques, une méthode publiée.
+          </h2>
+          <p className={styles.lead}>
+            Chaque estimation affiche sa fourchette et les ventes qui la fondent. Quand les données
+            manquent, la fiche le dit.
+          </p>
+          <p className={styles.sourceLinks}>
+            <Link href="/annonce-exemple" prefetch={false} className={styles.textLink}>
+              Voir une analyse exemple <ArrowRight aria-hidden size={16} />
+            </Link>
+            <Link href="/methode-ecart-marche" className={styles.textLink}>
+              La méthode <ArrowRight aria-hidden size={16} />
+            </Link>
+          </p>
         </div>
-        <div className={styles.bento}>
-          <article className={`${styles.tile} ${styles.tileWide}`} data-reveal="">
-            <h3>Les pièces, lues pour vous</h3>
-            <p>
-              Cahier des conditions de vente, procès-verbal descriptif : les points clés relevés,
-              pièce par pièce.
-            </p>
-            <span className={styles.docLines} aria-hidden="true">
-              {[false, true, false, true, false].map((highlight, index) => (
-                <i
-                  key={index}
-                  className={highlight ? styles.highlight : undefined}
-                  style={delay(300 + index * 180)}
-                />
-              ))}
-            </span>
-            <Link href="/annonce-exemple" prefetch={false} className={styles.tileLink}>
-              Voir l’annonce exemple <ArrowRight size={16} aria-hidden="true" />
-            </Link>
-          </article>
-          <article className={styles.tile} data-reveal="" style={delay(120)}>
-            <h3>Le marché autour</h3>
-            <p>La mise à prix face aux ventes voisines enregistrées (DVF).</p>
-            <span className={styles.bars} aria-hidden="true">
-              {[42, 64, 34, 82, 56].map((height, index) => (
-                <i
-                  key={index}
-                  className={index === 2 ? styles.barMine : undefined}
-                  style={{ "--h": `${height}%`, ...delay(300 + index * 90) } as CSSProperties}
-                />
-              ))}
-            </span>
-            <Link href="/methode-ecart-marche" className={styles.tileLink}>
-              La méthode <ArrowRight size={16} aria-hidden="true" />
-            </Link>
-          </article>
-          <article className={styles.tile} data-reveal="" style={delay(200)}>
-            <h3>Les audiences de la semaine</h3>
-            <p>Les prochaines ventes, jour par jour et tribunal par tribunal.</p>
-            <span className={styles.days} aria-hidden="true">
-              {["L", "M", "M", "J", "V"].map((day, index) => (
-                <i key={index} className={index === 1 || index === 3 ? styles.dayBusy : undefined}>
-                  {day}
-                </i>
-              ))}
-            </span>
-            <Link href="/audiences-a-venir" className={styles.tileLink}>
-              Les audiences <ArrowRight size={16} aria-hidden="true" />
-            </Link>
-          </article>
-          <article
-            className={`${styles.tile} ${styles.tileWide}`}
-            data-reveal=""
-            style={delay(280)}
-          >
-            <h3>Les tribunaux en chiffres</h3>
-            <p>Volumes, mises à prix médianes et prochaines audiences de chaque tribunal.</p>
-            <span className={styles.spark} aria-hidden="true">
-              <svg viewBox="0 0 200 40" preserveAspectRatio="none">
-                <polyline points="0,32 25,26 50,29 75,18 100,22 125,12 150,16 175,8 200,11" />
-              </svg>
-            </span>
-            <Link href="/tribunaux" className={styles.tileLink}>
-              Les tribunaux <ArrowRight size={16} aria-hidden="true" />
-            </Link>
-          </article>
+        <ul className={styles.sources} data-reveal="">
+          <li>
+            <Bank aria-hidden size={20} />
+            <div>
+              <b>Annonces et pièces des ventes</b>
+              <span>
+                {notaryAndStatePilotsEnabled()
+                  ? "Publiées pour chaque vente par les avocats poursuivants, les notaires et les services de l’État."
+                  : "Publiées pour chaque vente par les avocats poursuivants."}
+              </span>
+            </div>
+          </li>
+          <li>
+            <ChartBar aria-hidden size={20} />
+            <div>
+              <b>Demandes de valeurs foncières (DVF)</b>
+              <span>
+                Les ventes immobilières enregistrées, publiées par la Direction générale des
+                finances publiques.
+              </span>
+            </div>
+          </li>
+          <li>
+            <MapPin aria-hidden size={20} />
+            <div>
+              <b>Géoplateforme de l’IGN</b>
+              <span>
+                La position de chaque adresse, pour placer la vente au bon endroit sur la carte.
+              </span>
+            </div>
+          </li>
+        </ul>
+      </div>
+    </section>
+  );
+}
+
+/** Questions fréquentes : affichées en accordéon et reprises en données structurées (FAQPage). */
+export function homeFaqItems(): Array<{ question: string; answer: string }> {
+  return [
+    {
+      question: "Combien coûte l’inscription ?",
+      answer:
+        "Rien. Aucune carte bancaire n’est demandée, et l’offre Découverte reste gratuite sans limite de durée.",
+    },
+    {
+      question: `Et après les ${ANALYSIS_TRIAL_DAYS} jours d’essai ?`,
+      answer:
+        "Votre compte revient à l’offre Découverte. Rien n’est prélevé. L’offre Analyse est ensuite proposée sur abonnement ; son tarif figure sur la page Offres.",
+    },
+    {
+      question: "Quand commence l’essai ?",
+      answer: `À la confirmation de votre adresse email. Il dure ${ANALYSIS_TRIAL_DAYS} jours et n’est proposé qu’une fois par personne.`,
+    },
+    {
+      question: "D’où viennent les ventes ?",
+      answer: notaryAndStatePilotsEnabled()
+        ? "Des annonces publiées pour les ventes des tribunaux judiciaires, des notaires et de l’État. La date de la dernière vérification des données est affichée en haut de cette page."
+        : "Des annonces publiées pour les ventes des tribunaux judiciaires. La date de la dernière vérification des données est affichée en haut de cette page.",
+    },
+    {
+      question: "Comment est calculée l’enchère plafond ?",
+      answer:
+        "Valeur estimée du bien, moins les frais de la vente, le budget travaux et votre marge de sécurité. Chaque hypothèse est modifiable. Elle est proposée pour les ventes au tribunal.",
+    },
+    {
+      question: "Quelle confiance accorder aux estimations ?",
+      answer:
+        "Elles sont indicatives : elles reposent sur les ventes voisines enregistrées dans DVF et s’affichent avec une fourchette. Lisez les pièces et visitez le bien avant d’enchérir.",
+    },
+    {
+      question: "Comment enchérir à une vente au tribunal ?",
+      answer:
+        "Au tribunal judiciaire, les enchères sont portées par un avocat inscrit au barreau de ce tribunal. Immojudis vous aide à préparer la vente ; il ne porte pas d’enchères.",
+    },
+    {
+      question: "Comment être prévenu des nouvelles ventes ?",
+      answer:
+        "Créez une alerte sur votre secteur : les nouvelles ventes qui y correspondent vous sont envoyées par email.",
+    },
+  ];
+}
+
+export function HomeFaq() {
+  return (
+    <section
+      id="questions"
+      className={`${styles.section} ${styles.sectionFlush}`}
+      aria-labelledby="faq-title"
+    >
+      <div className={`${styles.container} ${styles.faqGrid}`}>
+        <div className={`${styles.head} ${styles.headAside}`} data-reveal="">
+          <p className={styles.eyebrow}>Questions fréquentes</p>
+          <h2 id="faq-title" className={styles.h2}>
+            Avant de vous inscrire.
+          </h2>
+          <p className={styles.lead}>
+            Une autre question ?{" "}
+            <Link href="/contact" className={styles.textLink}>
+              La page Contact
+            </Link>{" "}
+            est faite pour ça.
+          </p>
+        </div>
+        <div className={styles.faq} data-reveal="">
+          {homeFaqItems().map((item) => (
+            <details key={item.question}>
+              <summary>
+                {item.question}
+                <span className={styles.plus} aria-hidden />
+              </summary>
+              <p className={styles.answer}>{item.answer}</p>
+            </details>
+          ))}
         </div>
       </div>
     </section>
   );
 }
 
-/** Dernier écran : la recherche, à nouveau, sur fond marine. */
-export function HomeClosing() {
+/** Dernier écran, sur fond sombre : la même action principale qu'en haut de page. */
+export function HomeClosing({
+  summary,
+  departments,
+}: {
+  summary: HomeCatalogueSummary | null;
+  departments: number | null;
+}) {
   return (
     <section className={styles.closing} aria-labelledby="closing-title">
       <div className={`${styles.container} ${styles.closingInner}`} data-reveal="">
-        <h2 id="closing-title">
-          Commencez par <em>votre secteur.</em>
-        </h2>
-        <HomeSearch id="home-search-end" tone="dark" />
-        <HomeFreeAccessLine className={styles.closingNote} />
+        <h2 id="closing-title">Regardez ce qui se vend dans votre secteur.</h2>
+        {summary ? (
+          <p>
+            {formatNumber(summary.count)} vente{summary.count > 1 ? "s" : ""} à venir
+            {departments
+              ? ` dans ${formatNumber(departments)} département${departments > 1 ? "s" : ""}`
+              : ""}
+            , sur une seule carte.
+          </p>
+        ) : null}
+        <HomePrimaryAction />
+        <HomeBrowseWithoutAccount className={styles.textLink} />
       </div>
     </section>
   );

@@ -5,59 +5,15 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * Italique de Cormorant Garamond : UN fichier, déclaré ici et nulle part ailleurs. `next/font` ne
- * convient pas à cette police : il précharge tout fichier déclaré sur toutes les routes qui
- * l'appellent (39 Ko d'en-tête sur /sales, qui n'affiche aucune italique), et deux déclarations
- * (une précharge, une non) produisent deux fichiers `.woff2` distincts. L'accueil et /ressources
- * la préchargent à la main : `src/components/PreloadCormorantItalic.tsx`.
- *
- * Même famille (`cormorantGaramond`, nom que `next/font` donne aux graisses normales du layout) :
- * normal et italique restent une seule famille, sans italique synthétique. Une déclaration par
- * graisse, comme les graisses normales, et la même plage de caractères (latin).
- */
-@font-face {
-  font-family: cormorantGaramond;
-  font-style: italic;
-  font-weight: 400;
-  font-display: swap;
-  src: url("./fonts/cormorant-garamond-latin-italic.woff2") format("woff2");
-  unicode-range:
-    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
-    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-@font-face {
-  font-family: cormorantGaramond;
-  font-style: italic;
-  font-weight: 500;
-  font-display: swap;
-  src: url("./fonts/cormorant-garamond-latin-italic.woff2") format("woff2");
-  unicode-range:
-    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
-    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-@font-face {
-  font-family: cormorantGaramond;
-  font-style: italic;
-  font-weight: 600;
-  font-display: swap;
-  src: url("./fonts/cormorant-garamond-latin-italic.woff2") format("woff2");
-  unicode-range:
-    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
-    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-
-/*
  * Design system — Immojudis
  * Direction 2026 : papier chaud / cuivre judiciaire / marine, reprise de la homepage.
  * Règles communes (fond, couleurs par rôle, échelle de texte, arrondis, pastilles) :
  * docs/design/fondations.md.
- * Typo : Cormorant Garamond (brand/display) + IBM Plex Sans (UI/body).
- * Référence homepage :
- * - Logo : Cormorant Garamond 600, 32px desktop.
- * - H1 : Cormorant Garamond 500, 84px grand desktop, 76-78px desktop médian, line-height 0.98.
- * - Accent H1 : Cormorant Garamond italic 400, cuivre.
- * - Headings sections : Cormorant Garamond 500, 38-41px.
- * - Navigation, formulaires, labels : IBM Plex Sans 400-600.
+ * Typo : Manrope seule (décision du 25/10/2026, à la place de Cormorant Garamond et d'IBM Plex
+ * Sans), sans italique. Les titres des pages autres que l'accueil gardent les tailles réglées pour
+ * Cormorant : `--font-display-adjust` ramène la hauteur des capitales de Manrope à celle de
+ * Cormorant (0,63 em au lieu de 0,72), pour que leurs mises en page ne bougent pas. L'accueil
+ * suit sa propre échelle (src/components/home/HomePage.module.css), sans cet ajustement.
  */
 
 @theme inline {
@@ -137,13 +93,23 @@
   --color-signal-verified: var(--signal-verified);
   --color-signal-missing: var(--signal-missing);
   --color-signal-action: var(--signal-action);
-  --font-display: var(--font-cormorant-garamond), "Cormorant Garamond", ui-serif, Georgia, serif;
-  --font-sans: var(--font-ibm-plex-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-brand: var(--font-cormorant-garamond), "Cormorant Garamond", ui-serif, Georgia, serif;
+  --font-display: var(--font-manrope), "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-manrope), "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-brand: var(--font-manrope), "Manrope", ui-sans-serif, system-ui, sans-serif;
 }
 
 :root {
   --radius: 0.625rem;
+  /* Titres hors accueil : capitales de Manrope à la hauteur de celles de Cormorant (voir en tête). */
+  --font-display-adjust: cap-height 0.63;
+  /* Accueil (maquette du 25/10/2026) : dégradé du titre, bandeau sombre du dernier écran. */
+  --title-gradient-from: #000000;
+  --title-gradient-to: #666666;
+  --band-dark: #131209;
+  --band-dark-fg: #f5efe4;
+  --band-dark-soft: #bdb4a4;
+  --band-dark-line: #313131;
+  --gold-light-hover: #f1d9aa;
 
   /* Immojudis core */
   --brand-navy: #132238;
@@ -250,6 +216,7 @@
     background-color: var(--color-background);
     color: var(--color-foreground);
     font-family: var(--font-sans);
+    font-size-adjust: none;
     font-size: 1rem;
     font-weight: 400;
     line-height: 1.5;
@@ -264,10 +231,23 @@
   h4,
   .font-display {
     font-family: var(--font-display);
+    font-size-adjust: var(--font-display-adjust);
     letter-spacing: 0;
     font-feature-settings:
       "liga" 1,
       "kern" 1;
+  }
+
+  /* Pas d'italique (Manrope n'en a pas, et la charte n'en veut pas) : l'accent d'un titre se marque
+     par la couleur, l'emphase d'un texte par la graisse. */
+  em,
+  i,
+  cite {
+    font-style: normal;
+  }
+
+  :where(p, li, td, dd, blockquote) > em {
+    font-weight: 600;
   }
 
   ::selection {
@@ -286,6 +266,14 @@
   select,
   textarea {
     font-size: 16px;
+  }
+}
+
+/* Un titre passé en police de texte (`font-sans`) garde la taille de Manrope, sans l'ajustement
+   des titres (`--font-display-adjust`, posé sur h1-h4 par la couche de base). */
+@layer utilities {
+  .font-sans {
+    font-size-adjust: none;
   }
 }
 
@@ -351,6 +339,7 @@
   .admin-console h3,
   .admin-console h4 {
     font-family: var(--font-sans);
+    font-size-adjust: none;
     letter-spacing: -0.01em;
   }
 
@@ -528,6 +517,7 @@
 
   .brand-logo-text {
     font-family: var(--font-brand);
+    font-size-adjust: var(--font-display-adjust);
     font-weight: 600;
     letter-spacing: 0;
   }
@@ -962,6 +952,7 @@
   margin-top: clamp(1.4rem, 4vw, 2.8rem);
   max-width: 11ch;
   font-family: var(--font-display);
+  font-size-adjust: var(--font-display-adjust);
   font-size: clamp(4.2rem, 9vw, 8rem);
   font-weight: 400;
   line-height: 0.84;
@@ -1030,6 +1021,7 @@
 .hx-hero-score strong {
   color: var(--cream);
   font-family: var(--font-sans);
+  font-size-adjust: none;
   font-size: 0.74rem;
   font-weight: 800;
   letter-spacing: 0.12em;
@@ -1219,6 +1211,7 @@
 .hx-demo-content h3 {
   margin-top: 0.45rem;
   font-family: var(--font-display);
+  font-size-adjust: var(--font-display-adjust);
   font-size: clamp(2rem, 3vw, 2.25rem);
   line-height: 1.12;
   color: var(--cream);
@@ -1443,6 +1436,7 @@
   display: block;
   color: var(--cream);
   font-family: var(--font-display);
+  font-size-adjust: var(--font-display-adjust);
   font-size: clamp(1.45rem, 2.7vw, 2.2rem);
   line-height: 1.05;
 }
@@ -1474,6 +1468,7 @@
   margin-top: 0.9rem;
   color: var(--cream);
   font-family: var(--font-display);
+  font-size-adjust: var(--font-display-adjust);
   font-size: clamp(2.2rem, 5vw, 4.15rem);
   line-height: 1.08;
   text-wrap: balance;
@@ -1546,6 +1541,7 @@
   margin-top: 1.1rem;
   color: var(--cream);
   font-family: var(--font-display);
+  font-size-adjust: var(--font-display-adjust);
   font-size: clamp(1.45rem, 3vw, 2.2rem);
   line-height: 1.15;
 }
@@ -2295,6 +2291,7 @@
   margin-top: clamp(1.2rem, 2.5vw, 1.85rem);
   color: var(--ij-navy);
   font-family: var(--font-display);
+  font-size-adjust: var(--font-display-adjust);
   font-size: 5.25rem;
   font-weight: 500;
   line-height: 0.98;
@@ -2307,8 +2304,8 @@
 
 .ij-title em {
   color: var(--ij-copper);
-  font-style: italic;
-  font-weight: 400;
+  font-style: normal;
+  font-weight: inherit;
   white-space: nowrap;
 }
 
@@ -2823,6 +2820,7 @@
 .ij-candle-note h2 {
   color: var(--ij-navy);
   font-family: var(--font-sans);
+  font-size-adjust: none;
   font-size: 1rem;
   font-weight: 700;
   line-height: 1.3;
@@ -2871,6 +2869,7 @@
 .ij-auctions h2 {
   color: var(--ij-navy);
   font-family: var(--font-display);
+  font-size-adjust: var(--font-display-adjust);
   font-size: 2.55rem;
   font-weight: 500;
   line-height: 1.06;
@@ -2987,6 +2986,7 @@
 .ij-card-body strong {
   color: var(--ij-navy);
   font-family: var(--font-display);
+  font-size-adjust: var(--font-display-adjust);
   font-size: 1.28rem;
   font-weight: 600;
   line-height: 1.18;
@@ -3023,6 +3023,7 @@
   padding: 0.24rem 0.5rem;
   color: var(--success);
   font-family: var(--font-sans);
+  font-size-adjust: none;
   font-size: 0.78rem;
   font-weight: 800;
 }
@@ -3066,6 +3067,7 @@
 .ij-plans-intro h2 {
   color: var(--ij-navy);
   font-family: var(--font-display);
+  font-size-adjust: var(--font-display-adjust);
   font-size: clamp(2.05rem, 3.1vw, 3.05rem);
   font-weight: 500;
   line-height: 1.06;
@@ -3299,6 +3301,7 @@
 .ij-plan-card strong {
   color: var(--ij-navy);
   font-family: var(--font-display);
+  font-size-adjust: var(--font-display-adjust);
   font-size: clamp(1.95rem, 3vw, 2.55rem);
   font-weight: 500;
   line-height: 1;
@@ -3375,6 +3378,7 @@
   margin-top: 0.18rem;
   color: var(--ij-navy);
   font-family: var(--font-display);
+  font-size-adjust: var(--font-display-adjust);
   font-size: 2.35rem;
   font-weight: 500;
   line-height: 1.08;
@@ -3514,6 +3518,7 @@
 
 .ij-footer-brand strong {
   font-family: var(--font-display);
+  font-size-adjust: var(--font-display-adjust);
   font-size: 1.75rem;
   font-weight: 600;
   line-height: 1;
@@ -4083,6 +4088,7 @@
 .ij-report-outcome h3 {
   color: var(--ij-navy);
   font-family: var(--font-display);
+  font-size-adjust: var(--font-display-adjust);
   font-size: 1.45rem;
   font-weight: 600;
   line-height: 1.1;
@@ -4111,6 +4117,7 @@
 
 .ij-report-card-head strong {
   font-family: var(--font-display);
+  font-size-adjust: var(--font-display-adjust);
   font-size: 1.55rem;
   font-weight: 600;
 }
@@ -4346,6 +4353,7 @@
 
 .ij-step strong {
   font-family: var(--font-display);
+  font-size-adjust: var(--font-display-adjust);
   font-size: clamp(1.4rem, 2vw, 1.75rem);
   font-weight: 600;
   line-height: 1.05;
@@ -4732,6 +4740,7 @@
   width: min(21rem, calc(100vw - 2rem));
   color: var(--brand-navy);
   font-family: var(--font-sans);
+  font-size-adjust: none;
 }
 
 .immo-mapbox-popup-image {
@@ -4839,4 +4848,89 @@
 .mapboxgl-ctrl-logo,
 .mapboxgl-ctrl-attrib {
   filter: drop-shadow(0 3px 8px rgb(19 34 56 / 12%));
+}
+
+/*
+ * Barre en pilule et menu mobile plein écran (décision du 25/10/2026). Mouvement de la charte :
+ * courbe cubic-bezier(0.32, 0.72, 0, 1), 700 ms. Le bouton de menu passe de deux traits à un X ; le
+ * menu ouvert reprend la pilule à la même place, son X part des deux traits, et ses liens arrivent
+ * un à un (léger flou, glissé de 16 px). Rien ne bouge quand le visiteur réduit les animations.
+ */
+.menu-bar {
+  transition:
+    top 700ms cubic-bezier(0.32, 0.72, 0, 1),
+    transform 700ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.menu-bar-close-top {
+  top: 7px;
+  transform: rotate(45deg);
+  animation: menu-bar-close-top 700ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+.menu-bar-close-bottom {
+  top: 7px;
+  transform: rotate(-45deg);
+  animation: menu-bar-close-bottom 700ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+@keyframes menu-bar-close-top {
+  from {
+    top: 4px;
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes menu-bar-close-bottom {
+  from {
+    top: 11px;
+    transform: rotate(0deg);
+  }
+}
+
+.menu-overlay {
+  animation: menu-overlay-in 700ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+@keyframes menu-overlay-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.menu-reveal {
+  animation: menu-reveal 700ms cubic-bezier(0.32, 0.72, 0, 1) both;
+  animation-delay: calc(var(--menu-index, 0) * 50ms + 120ms);
+}
+
+@keyframes menu-reveal {
+  from {
+    opacity: 0;
+    filter: blur(8px);
+    transform: translateY(16px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menu-bar,
+  .menu-bar-close-top,
+  .menu-bar-close-bottom,
+  .menu-overlay,
+  .menu-reveal {
+    animation: none;
+    transition: none;
+  }
+}
+
+/*
+ * Espace sous la pilule de l'en-tête : porté par le `<main>` de la page quand il suit (bordure
+ * transparente, que le fond du `<main>` remplit, sans toucher à ses marges internes), sinon par
+ * l'élément `[data-site-pill-spacer]` lui-même.
+ */
+[data-site-pill-spacer]:has(~ main) {
+  display: none;
+}
+
+[data-site-pill-spacer] ~ main {
+  border-top: 6rem solid transparent;
 }

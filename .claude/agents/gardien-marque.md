@@ -54,8 +54,8 @@ du reste.
    le logo du site, l'icône d'onglet, les icônes d'application et l'image de partage.
 4. **Couleurs** : palette définie par des variables ; codes couleur en dur dans les
    composants ; contrastes conformes (texte normal 4,5:1, grand texte 3:1).
-5. **Typographie** : polices utilisées (Cormorant Garamond, IBM Plex Sans), rôle de
-   chacune, graisses, hiérarchie des titres ; polices parasites.
+5. **Typographie** : Manrope seule depuis le 25/10/2026 (sans italique), graisses,
+   hiérarchie des titres ; polices parasites.
 6. **Composants** : boutons, cartes, badges, champs ; variantes non prévues par le design
    system, espacements et rayons incohérents.
 7. **Ton** : vouvoiement constant, phrases claires, sobriété ; pas de superlatifs

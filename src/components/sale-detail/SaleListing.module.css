@@ -83,6 +83,7 @@
 }
 .title {
   font-family: var(--font-display), Georgia, serif;
+  font-size-adjust: var(--font-display-adjust);
   font-size: clamp(32px, 4.4vw, 46px);
   line-height: 1.04;
   font-weight: 500;
