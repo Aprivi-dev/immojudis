@@ -15,7 +15,7 @@ export function SectionNav({
   return (
     <nav
       aria-label="Sections de la fiche"
-      className="sticky top-[72px] z-30 border-y border-border bg-white/92 backdrop-blur"
+      className="sticky top-[88px] z-30 border-y border-border bg-white/92 backdrop-blur"
     >
       <div className="mx-auto flex max-w-7xl gap-1 overflow-x-auto px-4 sm:px-6 lg:px-8">
         {sections.map((section) => (

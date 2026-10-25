@@ -33,6 +33,7 @@
   margin-top: 8px;
   color: var(--brand-navy);
   font-family: var(--font-display), Georgia, serif;
+  font-size-adjust: var(--font-display-adjust);
   font-size: clamp(28px, 3vw, 38px);
   font-weight: 600;
   line-height: 1.12;
@@ -160,6 +161,7 @@
 .reportActions h2 {
   color: var(--brand-navy);
   font-family: var(--font-display), Georgia, serif;
+  font-size-adjust: var(--font-display-adjust);
   font-size: 24px;
   font-weight: 600;
 }
@@ -321,6 +323,7 @@
   margin-top: 11px;
   color: var(--brand-navy);
   font-family: var(--font-display), Georgia, serif;
+  font-size-adjust: var(--font-display-adjust);
   font-size: clamp(24px, 2.4vw, 36px);
   font-weight: 650;
   line-height: 1.15;

@@ -5,14 +5,9 @@ vi.mock("@/hooks/use-auth", () => ({ useAuth: () => ({ user: null, loading: fals
 vi.mock("@/hooks/use-launch-offer", () => ({
   useLaunchOffer: () => ({ active: false, pending: false }),
 }));
-vi.mock("next/form", () => ({
-  default: ({ children, ...props }: { children: React.ReactNode }) => (
-    <form {...props}>{children}</form>
-  ),
-}));
 
 import { HomeHero, catalogueSummaryLine } from "./HomeHero";
-import { HomeStats } from "./HomeSections";
+import { HomeClosing, HomeStats, homeFaqItems } from "./HomeSections";
 
 // Text outside the tags, read character by character (no tag-stripping regex).
 function visibleText(markup: string): string {
@@ -23,35 +18,40 @@ function visibleText(markup: string): string {
     else if (char === ">") inTag = false;
     else if (!inTag) text += /\s/.test(char) ? " " : char;
   }
-  return text.replace(/\s+/g, " ");
+  return text.replace(/\s+/g, " ").replace(/&nbsp;| /g, " ");
 }
 
 describe("home hero", () => {
-  it("shows the real figures with a link to /sales, then the free-access line", () => {
+  it("keeps the brand line, the sign-up action and the real figures with a link to /sales", () => {
     const markup = renderToStaticMarkup(
-      <HomeHero summary={{ count: 1753, verifiedAt: "2026-10-15T07:30:00.000Z" }} />,
+      <HomeHero
+        summary={{ count: 1753, verifiedAt: "2026-10-15T07:30:00.000Z" }}
+        departments={88}
+      />,
     );
     const text = visibleText(markup);
 
     expect(text).toContain("Les enchères immobilières, en toute clarté.");
-    expect(text).toContain("1 753 ventes à venir · données vérifiées le 15/10/2026");
-    expect(text).not.toContain("mises à jour le");
-    expect(markup).toMatch(/<a[^>]*href="\/sales"[^>]*>1[^<]*753 ventes à venir/);
-    // Tant que l'état de l'essai n'est pas lu (rendu serveur), la ligne habituelle, vers l'inscription.
-    expect(markup).toMatch(
-      /<a[^>]*href="\/login\?mode=investor"[^>]*>Gratuit, sans carte bancaire/,
+    expect(text).toMatch(
+      /1.753 ventes à venir · 88 départements · données vérifiées le 15\/10\/2026/,
     );
-    expect(markup).toMatch(/<a[^>]*href="\/login\?mode=investor"[^>]*>S’inscrire gratuitement/);
+    expect(text).not.toContain("mises à jour le");
+    expect(markup).toMatch(/<a[^>]*href="\/sales"[^>]*>.*1.753/);
+    // Rendu serveur : celui du visiteur, l'essai pas encore lu (ligne du compte gratuit).
+    expect(markup).toMatch(/<a[^>]*href="\/login\?mode=investor"[^>]*>Créer mon compte gratuit/);
+    expect(text).toContain("Gratuit, sans carte bancaire");
+    // Pas d'italique : l'accent du titre est une couleur.
+    expect(markup).not.toContain("<em");
   });
 
-  it("says nothing about the catalogue without figures, but keeps the free-access line", () => {
+  it("says nothing about the catalogue without figures, but keeps the sign-up action", () => {
     for (const markup of [
       renderToStaticMarkup(<HomeHero />),
       renderToStaticMarkup(<HomeHero summary={null} />),
     ]) {
       expect(markup).not.toContain("ventes à venir");
       expect(markup).not.toContain("vérifiées");
-      expect(markup).toContain("Gratuit, sans carte bancaire");
+      expect(markup).toContain("Créer mon compte gratuit");
     }
   });
 
@@ -62,19 +62,14 @@ describe("home hero", () => {
     );
   });
 
-  it("says that the map is an illustration with fictional dots", () => {
+  it("marks the example card as fictional, with the example's own figures and a link to it", () => {
     const markup = renderToStaticMarkup(<HomeHero />);
-    expect(markup).toContain(
-      'aria-label="Illustration : carte de France parsemée de ventes aux enchères (points fictifs)."',
-    );
-    expect(visibleText(markup)).toContain("Illustration, points fictifs.");
-    expect((markup.match(/<circle\b/g) ?? []).length).toBeGreaterThan(150);
-  });
-
-  it("marks the example card on the map as fictional and links it to the example", () => {
-    const markup = renderToStaticMarkup(<HomeHero />);
-    expect(markup).toMatch(/<a[^>]*href="\/annonce-exemple"[^>]*>.*Exemple fictif/);
-    expect(visibleText(markup)).toContain("Appartement de 68 m² à Bordeaux");
+    const text = visibleText(markup);
+    expect(text).toContain("Exemple fictif");
+    expect(text).toContain("Appartement T3 de 68 m² à Bordeaux");
+    expect(text).toMatch(/Enchère plafond 135.000.€/);
+    expect(text).toMatch(/Valeur estimée du bien 230.000.€/);
+    expect(markup).toMatch(/<a[^>]*href="\/annonce-exemple"[^>]*>Voir l’analyse complète/);
   });
 });
 
@@ -94,6 +89,7 @@ describe("home figures band", () => {
     expect(markup).toMatch(
       /<dt>lieux de vente réunis : tribunal, notaire, État<\/dt><dd[^>]*>3<\/dd>/,
     );
+    expect(markup).toMatch(/<dt>fiches détaillées gratuites chaque mois<\/dt><dd[^>]*>3<\/dd>/);
   });
 
   it("leaves out the departments when that figure is unknown", () => {
@@ -102,5 +98,30 @@ describe("home figures band", () => {
     );
     expect(markup).not.toContain("départements");
     expect(markup).toContain("ventes à venir en France");
+  });
+});
+
+describe("home closing and questions", () => {
+  it("repeats the top action and the real figures only", () => {
+    const withFigures = visibleText(
+      renderToStaticMarkup(
+        <HomeClosing summary={{ count: 1512, verifiedAt: null }} departments={88} />,
+      ),
+    );
+    expect(withFigures).toMatch(/1.512 ventes à venir dans 88 départements, sur une seule carte/);
+    expect(withFigures).toContain("Créer mon compte gratuit");
+    expect(withFigures).toContain("Ou explorez les ventes sans compte");
+    const without = visibleText(
+      renderToStaticMarkup(<HomeClosing summary={null} departments={null} />),
+    );
+    expect(without).not.toContain("ventes à venir");
+  });
+
+  it("answers the trial questions without a price, and never with a hyphenated phrase", () => {
+    const items = homeFaqItems();
+    expect(items.length).toBeGreaterThanOrEqual(6);
+    const all = items.map((item) => `${item.question} ${item.answer}`).join(" ");
+    expect(all).toContain("Rien n’est prélevé");
+    expect(all).not.toMatch(/€|59/);
   });
 });

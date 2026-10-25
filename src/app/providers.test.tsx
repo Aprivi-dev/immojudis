@@ -10,11 +10,12 @@ vi.mock("next/navigation", () => ({
 }));
 
 import { showsNavbar } from "@/components/Navbar";
+import { siteHeaderReservesHeight } from "@/components/SiteHeader";
 import {
-  SITE_HEADER_BAR_CLASSES,
-  siteHeaderClasses,
-  siteHeaderReservesHeight,
-} from "@/components/SiteHeader";
+  SITE_HEADER_PILL_CLASSES,
+  SITE_HEADER_PILL_SHELL_CLASSES,
+  SITE_HEADER_PILL_SPACER_CLASSES,
+} from "@/components/site-header-shared";
 import { NavigationFallback } from "./providers";
 
 afterEach(cleanup);
@@ -25,14 +26,21 @@ function renderFallback(path: string) {
 }
 
 describe("en-tête de secours : même place que le vrai en-tête (pas de décalage à son arrivée)", () => {
-  it("fixé en haut, avec l'espace de 4 rem que laisse le vrai en-tête (accueil compris)", () => {
+  it("la pilule fixée en haut, avec l'espace que laisse la vraie (accueil compris)", () => {
     for (const path of ["/", "/tribunaux"]) {
       const container = renderFallback(path);
       const header = container.querySelector("header");
-      expect(header?.className, path).toBe(siteHeaderClasses("fixed"));
+      expect(header?.className, path).toBe(SITE_HEADER_PILL_SHELL_CLASSES);
       expect(header?.className, path).toContain("fixed");
-      expect(header?.firstElementChild?.className, path).toBe(SITE_HEADER_BAR_CLASSES);
-      expect(container.querySelector(".h-16"), path).not.toBeNull();
+      expect(header?.firstElementChild?.className, path).toBe(SITE_HEADER_PILL_CLASSES);
+      expect(container.querySelector("[data-site-pill-spacer]")?.className, path).toBe(
+        SITE_HEADER_PILL_SPACER_CLASSES,
+      );
+      // Mêmes liens que la vraie pilule : sa largeur ne change pas à l'arrivée du vrai en-tête.
+      expect(
+        [...container.querySelectorAll("nav a")].map((link) => link.textContent),
+        path,
+      ).toEqual(["Ventes", "Tribunaux", "Avocats", "Ressources", "Offres"]);
       cleanup();
     }
   });

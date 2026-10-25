@@ -5,13 +5,18 @@ import Link from "next/link";
 import { usePublicPathname } from "@/hooks/use-public-pathname";
 import { lazy, Suspense, useEffect, useRef, useState, type ReactNode, type Ref } from "react";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
-import Menu from "lucide-react/dist/esm/icons/menu.js";
 import {
   buttonBase,
-  goldButton,
   HeaderLogo,
   isActive,
   lightGhost,
+  MenuBars,
+  primaryButton,
+  quietButton,
+  SignupLink,
+  SITE_HEADER_PILL_CLASSES,
+  SITE_HEADER_PILL_SHELL_CLASSES,
+  SITE_HEADER_PILL_SPACER_CLASSES,
 } from "@/components/site-header-shared";
 import { MobileMenuDialog } from "@/components/SiteHeaderMobileMenu";
 import { MOBILE_MENU_UNREAD_ID } from "@/components/mobile-menu-unread";
@@ -47,9 +52,8 @@ const AccountMenu = lazy(() =>
 type SiteHeaderPlacement = "fixed" | "sticky";
 
 /**
- * Position et habillage de la barre (élément `<header>`), partagés avec l'en-tête de secours
- * (`NavigationFallback` de `providers.tsx`) : tant que le vrai en-tête n'est pas là, la barre de
- * secours doit occuper exactement la même place, sinon la page bouge quand il arrive.
+ * Position et habillage de la barre pleine largeur (élément `<header>`) du catalogue (/sales), qui
+ * porte la recherche et les filtres.
  */
 export function siteHeaderClasses(placement: SiteHeaderPlacement): string {
   return cn(
@@ -58,7 +62,7 @@ export function siteHeaderClasses(placement: SiteHeaderPlacement): string {
   );
 }
 
-/** Rangée de la barre (logo, navigation) : même largeur et même hauteur que l'en-tête réel. */
+/** Rangée de la barre pleine largeur (logo, recherche, navigation). */
 export const SITE_HEADER_BAR_CLASSES =
   "mx-auto flex min-h-16 max-w-[96rem] items-center gap-3 px-4 sm:px-6 lg:px-8";
 
@@ -122,77 +126,184 @@ export function SiteHeader({
     ...(admin ? [{ href: "/admin", label: "Administration" }] : []),
   ];
 
+  const navLinks = SITE_NAV_LINKS.map((link) => (
+    <HeaderNavLink key={link.href} link={link} active={isActive(pathname, link.href)} />
+  ));
+  const accountActions = signedIn ? (
+    <>
+      <AlertNotificationCenter />
+      <Suspense fallback={<AccountMenuPlaceholder />}>
+        <AccountMenu links={accountLinks} />
+      </Suspense>
+    </>
+  ) : (
+    <VisitorActions />
+  );
+  const menuButton = (
+    <>
+      <MenuButton
+        buttonRef={menuButtonRef}
+        open={menuOpen}
+        signedIn={signedIn}
+        onOpen={() => setMenuOpen(true)}
+      />
+      <MobileMenuDialog
+        open={menuOpen}
+        onOpenChange={setMenuOpen}
+        triggerRef={menuButtonRef}
+        signedIn={signedIn}
+        accountLinks={accountLinks}
+        pathname={pathname}
+        openNotifications={notificationsRequested}
+      />
+    </>
+  );
+
+  // Le catalogue garde la barre pleine largeur : la recherche et les filtres y tiennent la place.
+  if (center || belowBar) {
+    return (
+      <>
+        <header
+          ref={headerRef}
+          data-site-header
+          className={cn(siteHeaderClasses(placement), className)}
+        >
+          <div className={SITE_HEADER_BAR_CLASSES}>
+            <HeaderLogo />
+            {center ? <div className="hidden min-w-0 max-w-md flex-1 lg:flex">{center}</div> : null}
+            <nav aria-label="Navigation principale" className="hidden items-center gap-1 lg:flex">
+              {navLinks}
+            </nav>
+            <div className="ml-auto hidden items-center gap-2 lg:flex">{accountActions}</div>
+            <div className="ml-auto lg:hidden">{menuButton}</div>
+          </div>
+          {belowBar}
+        </header>
+        {siteHeaderReservesHeight(placement) ? <div className="h-16" aria-hidden /> : null}
+      </>
+    );
+  }
+
+  return (
+    <SitePill
+      headerRef={headerRef}
+      className={className}
+      pathname={pathname}
+      actions={accountActions}
+      signup={!signedIn}
+      menu={menuButton}
+    />
+  );
+}
+
+/**
+ * La pilule elle-même (logo, navigation, actions ; sous « lg », inscription et bouton de menu),
+ * partagée par l'en-tête et par son en-tête de secours, et l'espace qu'elle laisse dans la page.
+ */
+function SitePill({
+  headerRef,
+  className,
+  pathname,
+  actions,
+  signup,
+  menu,
+}: {
+  headerRef?: Ref<HTMLElement>;
+  className?: string;
+  pathname: string | null;
+  actions: ReactNode;
+  signup: boolean;
+  menu: ReactNode;
+}) {
   return (
     <>
       <header
         ref={headerRef}
         data-site-header
-        className={cn(siteHeaderClasses(placement), className)}
+        className={cn(SITE_HEADER_PILL_SHELL_CLASSES, className)}
       >
-        <div className={SITE_HEADER_BAR_CLASSES}>
-          <HeaderLogo showTagline={!center} />
-          {center ? <div className="hidden min-w-0 max-w-md flex-1 lg:flex">{center}</div> : null}
-
-          <nav
-            aria-label="Navigation principale"
-            className={cn(
-              "hidden items-center gap-1 lg:flex",
-              center ? "" : "flex-1 justify-center",
-            )}
-          >
+        <div className={SITE_HEADER_PILL_CLASSES}>
+          <HeaderLogo />
+          <nav aria-label="Navigation principale" className="hidden items-center gap-1 lg:flex">
             {SITE_NAV_LINKS.map((link) => (
               <HeaderNavLink key={link.href} link={link} active={isActive(pathname, link.href)} />
             ))}
           </nav>
-
-          <div className={cn("hidden items-center gap-2 lg:flex", center && "ml-auto")}>
-            {signedIn ? (
-              <>
-                <AlertNotificationCenter />
-                <Suspense fallback={<AccountMenuPlaceholder />}>
-                  <AccountMenu links={accountLinks} />
-                </Suspense>
-              </>
-            ) : (
-              <>
-                <Link href="/login" className={cn(buttonBase, lightGhost)}>
-                  Connexion
-                </Link>
-                <Link href="/login?mode=investor" className={cn(buttonBase, goldButton)}>
-                  Créer un compte
-                </Link>
-              </>
-            )}
+          <div className="hidden items-center gap-2 lg:flex">{actions}</div>
+          <div className="flex items-center gap-2 lg:hidden">
+            {signup ? <SignupLink /> : null}
+            {menu}
           </div>
-
-          <button
-            ref={menuButtonRef}
-            type="button"
-            aria-label="Ouvrir le menu"
-            aria-haspopup="dialog"
-            aria-expanded={menuOpen}
-            aria-controls={menuOpen ? "site-mobile-navigation" : undefined}
-            aria-describedby={signedIn ? MOBILE_MENU_UNREAD_ID : undefined}
-            onClick={() => setMenuOpen(true)}
-            className="relative ml-auto inline-grid size-11 shrink-0 cursor-pointer place-items-center rounded-md border border-border bg-white text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft lg:hidden"
-          >
-            <Menu className="size-5" aria-hidden />
-            {signedIn ? <MobileMenuUnreadBadge /> : null}
-          </button>
-          <MobileMenuDialog
-            open={menuOpen}
-            onOpenChange={setMenuOpen}
-            triggerRef={menuButtonRef}
-            signedIn={signedIn}
-            accountLinks={accountLinks}
-            pathname={pathname}
-            openNotifications={notificationsRequested}
-          />
         </div>
-        {belowBar}
       </header>
-      {siteHeaderReservesHeight(placement) ? <div className="h-16" aria-hidden /> : null}
+      <div data-site-pill-spacer className={SITE_HEADER_PILL_SPACER_CLASSES} aria-hidden />
     </>
+  );
+}
+
+function VisitorActions() {
+  return (
+    <>
+      <Link href="/login" className={cn(buttonBase, quietButton)}>
+        Connexion
+      </Link>
+      <Link href="/login?mode=investor" className={cn(buttonBase, primaryButton)}>
+        Créer un compte
+      </Link>
+    </>
+  );
+}
+
+/**
+ * Bouton du menu mobile : deux traits qui se croisent en X à l'ouverture (le menu plein écran
+ * reprend la pilule à la même place, avec un X identique pour le fermer).
+ */
+function MenuButton({
+  buttonRef,
+  open,
+  signedIn,
+  onOpen,
+}: {
+  buttonRef: Ref<HTMLButtonElement>;
+  open: boolean;
+  signedIn: boolean;
+  onOpen: () => void;
+}) {
+  return (
+    <button
+      ref={buttonRef}
+      type="button"
+      aria-label="Ouvrir le menu"
+      aria-haspopup="dialog"
+      aria-expanded={open}
+      aria-controls={open ? "site-mobile-navigation" : undefined}
+      aria-describedby={signedIn ? MOBILE_MENU_UNREAD_ID : undefined}
+      onClick={onOpen}
+      className="relative inline-grid size-10 shrink-0 cursor-pointer place-items-center rounded-full text-foreground transition-colors hover:bg-gold/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft lg:hidden"
+    >
+      <MenuBars open={open} />
+      {signedIn ? <MobileMenuUnreadBadge /> : null}
+    </button>
+  );
+}
+
+/**
+ * En-tête de secours, le temps que le vrai se charge : la même pilule, à la même place, avec les
+ * liens et les actions d'un visiteur (le cas le plus fréquent), pour que la barre ne change ni de
+ * place ni de largeur à l'arrivée du vrai en-tête.
+ */
+export function SitePillFallback() {
+  return (
+    <SitePill
+      pathname={null}
+      actions={<VisitorActions />}
+      signup
+      menu={
+        <span className="inline-grid size-10 place-items-center" aria-hidden>
+          <MenuBars />
+        </span>
+      }
+    />
   );
 }
 
@@ -203,7 +314,7 @@ function HeaderNavLink({ link, active }: { link: SiteLink; active: boolean }) {
       prefetch={linkPrefetch(link.href)}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "rounded-md px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft",
+        "rounded-full px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft",
         active
           ? "bg-gold/10 text-gold-text"
           : "text-foreground hover:bg-gold/10 hover:text-gold-text",

@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   LAUNCH_OFFER_ACCOUNT_TEXT,
   LAUNCH_OFFER_DURATION_TEXT,
-  LAUNCH_OFFER_SHORT_TEXT,
   LAUNCH_OFFER_VISITOR_TEXT,
   SIGNUP_TRIAL_DENIED_TEXT,
 } from "@/lib/launch-offer";
@@ -59,6 +58,7 @@ vi.mock("@/components/BillingActions", () => ({ BillingActions: () => <div>Actio
 
 import { AccountPage } from "./AccountPage";
 import { HomeHero } from "./home/HomeHero";
+import { HOME_TRIAL_NOTE } from "./home/HomePrimaryAction";
 import { HomeOffers } from "./home/HomeOffers";
 import { InvestorOnboarding } from "./InvestorOnboarding";
 import { HideForLaunchOfferAccount, LaunchOfferNote } from "./LaunchOfferNote";
@@ -73,33 +73,33 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("accueil", () => {
-  it("garde la ligne du compte gratuit, vers l'inscription, quand l'essai est coupé", () => {
+  it("garde la ligne du compte gratuit sous l'inscription, quand l'essai est coupé", () => {
     render(<HomeHero />);
-    expect(screen.getByRole("link", { name: FREE_ACCESS_LINE }).getAttribute("href")).toBe(
-      "/login?mode=investor",
-    );
-    expect(screen.getByRole("link", { name: /S’inscrire gratuitement/ }).getAttribute("href")).toBe(
-      "/login?mode=investor",
-    );
+    expect(screen.getByText(FREE_ACCESS_LINE)).toBeTruthy();
+    expect(screen.queryByText(HOME_TRIAL_NOTE)).toBeNull();
+    expect(
+      screen.getByRole("link", { name: /Créer mon compte gratuit/ }).getAttribute("href"),
+    ).toBe("/login?mode=investor");
   });
 
-  it("remplace cette ligne par le résumé de l'essai, vers l'inscription, quand il est ouvert", () => {
+  it("annonce l'essai sous l'inscription quand il est ouvert, sans en répéter les règles", () => {
     mocks.launch = { active: true, pending: false };
     render(<HomeHero />);
-    expect(screen.getByRole("link", { name: LAUNCH_OFFER_SHORT_TEXT }).getAttribute("href")).toBe(
-      "/login?mode=investor",
-    );
+    expect(screen.getByText(HOME_TRIAL_NOTE)).toBeTruthy();
     expect(screen.queryByText(FREE_ACCESS_LINE)).toBeNull();
     // Les règles complètes ne sont pas répétées dans le premier écran.
     expect(document.body.textContent).not.toContain(LAUNCH_OFFER_DURATION_TEXT);
   });
 
-  it("n'invite pas à s'inscrire un compte déjà connecté", () => {
+  it("n'invite pas à s'inscrire un compte déjà connecté : il explore les ventes", () => {
     mocks.launch = { active: true, pending: false };
     mocks.user = { id: "u1" };
     render(<HomeHero />);
-    expect(screen.queryByRole("link", { name: LAUNCH_OFFER_SHORT_TEXT })).toBeNull();
-    expect(screen.queryByRole("link", { name: /S’inscrire gratuitement/ })).toBeNull();
+    expect(screen.queryByText(HOME_TRIAL_NOTE)).toBeNull();
+    expect(screen.queryByRole("link", { name: /Créer mon compte gratuit/ })).toBeNull();
+    expect(screen.getByRole("link", { name: /Explorer les ventes/ }).getAttribute("href")).toBe(
+      "/sales",
+    );
   });
 
   it("ne cite jamais le tarif de l'offre Analyse", () => {
@@ -147,21 +147,19 @@ describe("carte Analyse de l'accueil", () => {
     expect(analysisCard().textContent).not.toMatch(/carte bancaire/);
   });
 
-  it("essai ouvert : 7 jours offerts et ses règles sur la carte Analyse, l'inscription en bouton", () => {
+  it("essai ouvert : 7 jours offerts et ses règles sur la carte Analyse, une seule inscription dessous", () => {
     mocks.launch = { active: true, pending: false };
     mocks.checkoutOpen = false;
     render(<HomeOffers />);
     const card = analysisCard();
     expect(card.textContent).toContain("7 jours offerts");
     expect(screen.getByTestId("home-launch-offer").textContent).toBe(LAUNCH_OFFER_VISITOR_TEXT);
-    expect(card.querySelector("button")).toBeNull();
-    expect(
-      within(card)
-        .getByRole("link", { name: /Commencer l’essai gratuit/ })
-        .getAttribute("href"),
-    ).toBe("/login?mode=investor");
-    const free = screen.getByRole("heading", { name: "Découverte" }).closest("article")!;
-    expect(within(free).getByRole("link", { name: /Créer mon compte gratuit/ })).toBeTruthy();
+    expect(card.querySelector("button, a")).toBeNull();
+    const signups = screen.getAllByRole("link", { name: /Créer mon compte gratuit/ });
+    expect(signups).toHaveLength(1);
+    expect(signups[0].closest("article")).toBeNull();
+    expect(signups[0].getAttribute("href")).toBe("/login?mode=investor");
+    expect(document.body.textContent).toContain("Rien n’est prélevé à la fin de l’essai.");
   });
 
   it("essai ouvert : un compte connecté lit la règle, sans invitation à s'inscrire", () => {
@@ -169,9 +167,7 @@ describe("carte Analyse de l'accueil", () => {
     mocks.user = { id: "u1" };
     render(<HomeOffers />);
     expect(screen.getByTestId("home-launch-offer").textContent).toBe(LAUNCH_OFFER_ACCOUNT_TEXT);
-    expect(
-      screen.queryByRole("link", { name: /Créer mon compte gratuit|Commencer l’essai/ }),
-    ).toBeNull();
+    expect(screen.queryByRole("link", { name: /Créer mon compte gratuit/ })).toBeNull();
     expect(within(analysisCard()).getByRole("link", { name: /Découvrir Analyse/ })).toBeTruthy();
   });
 

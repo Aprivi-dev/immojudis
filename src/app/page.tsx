@@ -5,12 +5,21 @@ import { resolveSiteOrigin } from "@/lib/site-url";
 import { HomeHero } from "@/components/home/HomeHero";
 import { HomeMotion } from "@/components/home/HomeMotion";
 import { HomeOffers } from "@/components/home/HomeOffers";
-import { HomeClosing, HomeFeatures, HomeJourney, HomeStats } from "@/components/home/HomeSections";
+import {
+  HomeBenefits,
+  HomeClosing,
+  HomeFaq,
+  homeFaqItems,
+  HomeProblem,
+  HomeSources,
+  HomeStats,
+  HomeSteps,
+} from "@/components/home/HomeSections";
+import { HomeTagline } from "@/components/home/HomeTagline";
 import homeStyles from "@/components/home/HomePage.module.css";
 import { loadHomeCatalogueSummary } from "@/lib/home-catalogue-summary.server";
 import { loadHomeDepartmentCount } from "@/lib/home-departments.server";
 import { jsonLdString } from "@/lib/json-ld";
-import { PreloadCormorantItalic } from "@/components/PreloadCormorantItalic";
 
 export const metadata: Metadata = {
   title: { absolute: "Immojudis - Les enchères immobilières en toute clarté" },
@@ -31,6 +40,15 @@ export default async function Page() {
   ]);
   const origin = resolveSiteOrigin(process.env, "http://localhost:3000")!;
   const structuredData = organizationStructuredData(origin);
+  const faqStructuredData = {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: homeFaqItems().map((item) => ({
+      "@type": "Question",
+      name: item.question,
+      acceptedAnswer: { "@type": "Answer", text: item.answer },
+    })),
+  };
   return (
     <>
       <script
@@ -39,15 +57,23 @@ export default async function Page() {
           __html: jsonLdString(structuredData),
         }}
       />
-      {/* L'italique du h1 (accent « clarté. ») est préchargée par cette page seule. */}
-      <PreloadCormorantItalic />
-      <main id="contenu" className={`ij-page ${homeStyles.page}`}>
-        <HomeHero summary={summary} />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: jsonLdString(faqStructuredData),
+        }}
+      />
+      <main id="contenu" className={homeStyles.page}>
+        <HomeHero summary={summary} departments={departments} />
         <HomeStats summary={summary} departments={departments} />
-        <HomeJourney />
-        <HomeFeatures />
+        <HomeProblem />
+        <HomeTagline />
+        <HomeBenefits />
+        <HomeSteps />
+        <HomeSources />
         <HomeOffers />
-        <HomeClosing />
+        <HomeFaq />
+        <HomeClosing summary={summary} departments={departments} />
         <HomeMotion />
       </main>
     </>

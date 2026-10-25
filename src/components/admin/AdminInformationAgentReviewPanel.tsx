@@ -391,9 +391,7 @@ export function AdminInformationAgentReviewPanel() {
                       </p>
                     ) : null}
                     {fact.evidence_excerpt ? (
-                      <p className="mt-2 text-sm italic text-brand-navy/60">
-                        « {fact.evidence_excerpt} »
-                      </p>
+                      <p className="mt-2 text-sm text-brand-navy/60">« {fact.evidence_excerpt} »</p>
                     ) : null}
                     {requiresRights ? (
                       <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">

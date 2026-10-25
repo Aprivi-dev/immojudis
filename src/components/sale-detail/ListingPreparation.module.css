@@ -19,6 +19,7 @@
 .header h2 {
   margin: 0;
   font-family: var(--font-display), Georgia, serif;
+  font-size-adjust: var(--font-display-adjust);
   font-size: clamp(26px, 2.6vw, 30px);
   font-weight: 500;
   letter-spacing: -0.025em;
@@ -201,6 +202,7 @@
 
 .dialogContent [data-slot="dialog-title"] {
   font-family: var(--font-display), Georgia, serif;
+  font-size-adjust: var(--font-display-adjust);
   font-size: 25px;
   letter-spacing: -0.02em;
 }
