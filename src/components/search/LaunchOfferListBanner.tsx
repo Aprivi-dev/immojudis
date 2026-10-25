@@ -4,7 +4,7 @@ import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
 import Link from "next/link";
 import { useAuth } from "@/hooks/use-auth";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
-import { LAUNCH_OFFER_LABEL, launchOfferText } from "@/lib/launch-offer";
+import { LAUNCH_OFFER_SHORT_TEXT, launchOfferText } from "@/lib/launch-offer";
 
 /**
  * Offre de lancement au-dessus de la liste des ventes : une seule bannière repliable avec le texte
@@ -34,7 +34,7 @@ export function LaunchOfferListBanner() {
       className="group mb-3 rounded-lg border border-gold/30 bg-gold/10 text-sm text-brand-navy"
     >
       <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-lg px-4 py-2 font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft">
-        <span>{LAUNCH_OFFER_LABEL} : compte gratuit avec les avantages Analyse, temporaires</span>
+        <span>{LAUNCH_OFFER_SHORT_TEXT}</span>
         <ChevronDown
           className="size-4 shrink-0 transition-transform group-open:rotate-180"
           aria-hidden
