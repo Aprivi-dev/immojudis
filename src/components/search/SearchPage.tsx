@@ -239,6 +239,11 @@ export function SearchPage({
       return;
     }
     const scope = resolveFrenchGeoSearch(geographicLabel);
+    // Plusieurs départements : aucun centre unique, la carte garde le cadrage des résultats.
+    if (scope.kind === "department" && scope.departments.length > 1) {
+      setLocationCenter(null);
+      return;
+    }
     const administrative = scope.kind === "department" || scope.kind === "region";
     const label =
       scope.kind === "department"

@@ -6,7 +6,10 @@ const mocks = vi.hoisted(() => ({ estimate: vi.fn() }));
 vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: {} }));
 vi.mock("@/lib/system-auth", () => ({ systemAuthForUser: vi.fn() }));
 vi.mock("@/lib/property-reports", () => ({ resolvePlanEntitlements: vi.fn() }));
-vi.mock("@/lib/queries", () => ({ getSales: vi.fn() }));
+vi.mock("@/lib/queries", () => ({
+  getSalesForAlertEvaluation: vi.fn(),
+  getSaleAlertDetails: vi.fn(),
+}));
 vi.mock("@/lib/alert-notifications", () => ({ createAlertNotificationsForMatches: vi.fn() }));
 vi.mock("@/lib/sale-market-estimates", () => ({ getPrecomputedMarketEstimate: mocks.estimate }));
 

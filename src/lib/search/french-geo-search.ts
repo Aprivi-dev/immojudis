@@ -231,7 +231,45 @@ export function resolveFrenchGeoSearch(
     return { kind: "department", departments: [department] };
   }
 
+  const departmentList = departmentsFromList(raw, normalized);
+  if (departmentList) {
+    return { kind: "department", departments: departmentList };
+  }
+
   return { kind: "text", text: raw };
+}
+
+/**
+ * Plusieurs départements tapés à la suite (« 66, 65, 05 », « Gers et Landes », « 66 65 05 ») : la
+ * liste de leurs codes, ou `null` dès qu'un élément n'est pas un département. Les éléments se
+ * séparent par une virgule, un point-virgule, une barre oblique, « + », « & » ou « et » ; des codes
+ * seuls peuvent aussi être séparés par des espaces.
+ */
+function departmentsFromList(raw: string, normalized: string): string[] | null {
+  const departmentKey = (value: string) =>
+    stripAdministrativePrefix(normalizeFrenchSearchText(value));
+  // « Seine et Marne » est un département : « et » ne sépare que ce qui n'en est pas un. Le texte
+  // normalisé n'a que des espaces simples : « et » s'y découpe sans expression rationnelle (un
+  // motif comme /\s+et\s+/ sur le texte tapé coûterait un temps quadratique sur une longue suite
+  // d'espaces).
+  const parts = raw
+    .split(/[,;/+&]/)
+    .map(departmentKey)
+    .flatMap((key) =>
+      DEPARTMENT_BY_SEARCH_KEY.has(key) ? [key] : key.split(" et ").map(stripAdministrativePrefix),
+    )
+    .filter(Boolean);
+  const words = normalized.split(" ");
+  const tokens =
+    parts.length > 1 ? parts : words.every((word) => /^(\d{2,3}|2[ab])$/.test(word)) ? words : [];
+  if (tokens.length < 2) return null;
+  const codes: string[] = [];
+  for (const token of tokens) {
+    const code = DEPARTMENT_BY_SEARCH_KEY.get(token);
+    if (!code) return null;
+    if (!codes.includes(code)) codes.push(code);
+  }
+  return codes;
 }
 
 export function matchesFrenchGeoSearch(

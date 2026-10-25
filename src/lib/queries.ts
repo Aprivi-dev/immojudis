@@ -2,7 +2,13 @@ import { saleDateBoundary } from "./search/sale-date-range";
 import { getSupabase, type SupabaseBrowserClient } from "@/integrations/supabase/lazy";
 import { departmentSearchValues, frenchSearchTerms } from "@/lib/search/french-geo-search";
 import type { AuctionSale, SaleFilters, SortKey } from "./types";
-import { DETAIL_VIEW, SALE_LIST_COLUMNS, UNLOCKED_VIEW } from "./sale-views";
+import {
+  ALERT_DETAIL_COLUMNS,
+  ALERT_EVALUATION_COLUMNS,
+  DETAIL_VIEW,
+  SALE_LIST_COLUMNS,
+  UNLOCKED_VIEW,
+} from "./sale-views";
 import { assertCloudConfigured } from "./query-configuration";
 import { sanitizeAuctionSaleForDisplay } from "./listing-data-cleanup";
 import { fetchPublicSaleSummary } from "./public-sale-summary";
@@ -406,6 +412,39 @@ export async function getSales(
     if (error) throw error;
     return saleRows(data);
   });
+}
+
+/**
+ * Ventes à évaluer par les alertes : mêmes filtres et même ordre que `getSales` (date croissante),
+ * mais sans les colonnes lourdes de la vue (`ALERT_EVALUATION_COLUMNS`). Les blocs des sources et
+ * les pièces des ventes retenues se relisent avec `getSaleAlertDetails`.
+ */
+export async function getSalesForAlertEvaluation(
+  filters: SaleFilters,
+  limit: number,
+  offset: number,
+  options: { client: SupabaseReader; discovery?: boolean },
+): Promise<AuctionSale[]> {
+  const catalogView = options.discovery ? DISCOVERY_SEARCH_VIEW : SEARCH_VIEW;
+  let q = applySearchOrder(
+    options.client.from(catalogView).select(ALERT_EVALUATION_COLUMNS),
+    "date_asc",
+    false,
+  ).range(offset, offset + limit - 1);
+  q = applyAuthenticatedSaleFilters(q, filters);
+
+  const { data, error } = await q;
+  if (error) throw error;
+  return saleRows(data);
+}
+
+/** Blocs des sources et pièces de ces ventes (catalogue Analyse), par lots de 100 identifiants. */
+export async function getSaleAlertDetails(
+  ids: string[],
+  options: { client: SupabaseReader },
+): Promise<AuctionSale[]> {
+  if (!ids.length) return [];
+  return fetchSaleRowsByIds(options.client, SEARCH_VIEW, ALERT_DETAIL_COLUMNS, {}, ids);
 }
 
 export async function getSalesForSearch(

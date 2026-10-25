@@ -6,6 +6,9 @@ const state = vi.hoisted(() => ({
   userAlerts: [] as Row[],
   getSalesCalls: [] as Array<{ filters: Record<string, unknown>; limit: number; offset: number }>,
   salesPool: [] as Row[],
+  /** Colonnes lourdes relues par identifiant (blocs des sources, pièces). */
+  salesDetails: {} as Record<string, Row>,
+  detailCalls: [] as string[][],
   updates: [] as Row[],
   upserts: [] as Row[][],
   /** Alertes dont l'écriture des correspondances échoue (erreur PostgREST, pas une Error). */
@@ -91,14 +94,18 @@ vi.mock("@/lib/property-reports", () => ({
   resolvePlanEntitlements: async () => ({ plan: "analyse", hasAnalysisAccess: true }),
 }));
 vi.mock("@/lib/queries", () => ({
-  getSales: async (
+  getSalesForAlertEvaluation: async (
     filters: Record<string, unknown>,
     limit: number,
-    _sort: string,
     offset: number,
   ) => {
     state.getSalesCalls.push({ filters, limit, offset });
-    return state.salesPool.slice(offset, offset + limit);
+    // Copies : l'évaluation ajoute les colonnes relues aux ventes, comme aux lignes réelles.
+    return state.salesPool.slice(offset, offset + limit).map((sale) => ({ ...sale }));
+  },
+  getSaleAlertDetails: async (ids: string[]) => {
+    state.detailCalls.push(ids);
+    return ids.map((id) => ({ id, ...state.salesDetails[id] }));
   },
 }));
 vi.mock("@/lib/sale-market-estimates", () => ({ getPrecomputedMarketEstimate: async () => null }));
@@ -126,6 +133,8 @@ describe("smart alert batch", () => {
   beforeEach(() => {
     state.userAlerts = [];
     state.salesPool = [];
+    state.salesDetails = {};
+    state.detailCalls = [];
     state.getSalesCalls = [];
     state.updates = [];
     state.upserts = [];
@@ -189,6 +198,72 @@ describe("smart alert batch", () => {
     await runSmartAlertEvaluationBatch();
 
     expect(state.upserts.flat().map((row) => row.sale_id)).toEqual(["sale-26"]);
+  });
+
+  it("« 66, 65, 05 » : seules les ventes de ces trois départements", async () => {
+    state.userAlerts = [
+      alertRow(1, { advanced_criteria: { source: "sales_search", query: "66, 65, 05" } }),
+    ];
+    state.salesPool = [
+      { id: "sale-66", department: "66" },
+      { id: "sale-33", department: "33" },
+      { id: "sale-05", department: "05" },
+      { id: "sale-65", department: "65" },
+    ];
+
+    await runSmartAlertEvaluationBatch();
+
+    expect(state.upserts.flat().map((row) => row.sale_id)).toEqual([
+      "sale-66",
+      "sale-05",
+      "sale-65",
+    ]);
+  });
+
+  it("ne relit les blocs et les pièces que des ventes retenues sur les autres critères", async () => {
+    state.userAlerts = [
+      alertRow(1, { advanced_criteria: { source: "sales_search", query: "26" } }),
+    ];
+    state.salesPool = [
+      { id: "sale-26", department: "26" },
+      { id: "sale-33", department: "33" },
+    ];
+    state.salesDetails = { "sale-26": { documents_rich: [{ url: "https://x/cahier.pdf" }] } };
+
+    await runSmartAlertEvaluationBatch();
+
+    expect(state.detailCalls).toEqual([["sale-26"]]);
+    const snapshot = state.upserts.flat()[0]?.match_snapshot as { sale: Row };
+    expect(snapshot.sale.documentCount).toBe(1);
+  });
+
+  it("lit la classe DPE dans les blocs relus pour un critère DPE", async () => {
+    state.userAlerts = [alertRow(1, { department: "26", dpe_classes: ["D"] })];
+    state.salesPool = [
+      { id: "sale-d", department: "26" },
+      { id: "sale-f", department: "26" },
+      { id: "sale-33", department: "33" },
+    ];
+    state.salesDetails = {
+      "sale-d": { source_blocks: { dpe: "D" } },
+      "sale-f": { source_blocks: { dpe: "F" } },
+    };
+
+    await runSmartAlertEvaluationBatch();
+
+    expect(state.detailCalls).toEqual([["sale-d", "sale-f"]]);
+    const rows = state.upserts.flat();
+    expect(rows.map((row) => row.sale_id)).toEqual(["sale-d"]);
+    expect((rows[0].match_snapshot as { sale: Row }).sale.dpe).toBe("D");
+  });
+
+  it("aucune relecture quand aucune vente n'est retenue", async () => {
+    state.userAlerts = [alertRow(1, { department: "26" })];
+    state.salesPool = [{ id: "sale-33", department: "33" }];
+
+    await runSmartAlertEvaluationBatch();
+
+    expect(state.detailCalls).toEqual([]);
   });
 
   it("écrit les correspondances par lots de 200", async () => {
