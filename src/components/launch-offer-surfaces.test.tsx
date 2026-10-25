@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   LAUNCH_OFFER_ACCOUNT_TEXT,
   LAUNCH_OFFER_DURATION_TEXT,
   LAUNCH_OFFER_SHORT_TEXT,
   LAUNCH_OFFER_VISITOR_TEXT,
+  SIGNUP_TRIAL_DENIED_TEXT,
 } from "@/lib/launch-offer";
 import { PLAN_LIMITS } from "@/lib/plans";
 import { FREE_ACCESS_LINE } from "@/lib/sale-unlocks";
@@ -72,34 +73,50 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("accueil", () => {
-  it("garde la ligne du compte gratuit quand l'offre de lancement est coupée", () => {
+  it("garde la ligne du compte gratuit, vers l'inscription, quand l'essai est coupé", () => {
     render(<HomeHero />);
     expect(screen.getByRole("link", { name: FREE_ACCESS_LINE }).getAttribute("href")).toBe(
-      "/offres",
+      "/login?mode=investor",
+    );
+    expect(screen.getByRole("link", { name: /S’inscrire gratuitement/ }).getAttribute("href")).toBe(
+      "/login?mode=investor",
     );
   });
 
-  it("remplace cette ligne par le résumé de l'offre, vers /offres, quand elle est active", () => {
-    for (const user of [null, { id: "u1" }]) {
-      mocks.launch = { active: true, pending: false };
-      mocks.user = user;
-      render(<HomeHero />);
-      expect(screen.getByRole("link", { name: LAUNCH_OFFER_SHORT_TEXT }).getAttribute("href")).toBe(
-        "/offres",
-      );
-      expect(screen.queryByText(FREE_ACCESS_LINE)).toBeNull();
-      // Le texte complet (durée, conditions) n'est pas répété dans le premier écran.
-      expect(document.body.textContent).not.toContain(LAUNCH_OFFER_DURATION_TEXT);
-      cleanup();
-    }
+  it("remplace cette ligne par le résumé de l'essai, vers l'inscription, quand il est ouvert", () => {
+    mocks.launch = { active: true, pending: false };
+    render(<HomeHero />);
+    expect(screen.getByRole("link", { name: LAUNCH_OFFER_SHORT_TEXT }).getAttribute("href")).toBe(
+      "/login?mode=investor",
+    );
+    expect(screen.queryByText(FREE_ACCESS_LINE)).toBeNull();
+    // Les règles complètes ne sont pas répétées dans le premier écran.
+    expect(document.body.textContent).not.toContain(LAUNCH_OFFER_DURATION_TEXT);
   });
 
-  it("garde le texte complet de l'offre dans la carte Découverte de l'accueil", () => {
+  it("n'invite pas à s'inscrire un compte déjà connecté", () => {
     mocks.launch = { active: true, pending: false };
     mocks.user = { id: "u1" };
-    render(<HomeOffers />);
-    const free = screen.getByRole("heading", { name: "Découverte" }).closest("article")!;
-    expect(free.textContent).toContain(LAUNCH_OFFER_ACCOUNT_TEXT);
+    render(<HomeHero />);
+    expect(screen.queryByRole("link", { name: LAUNCH_OFFER_SHORT_TEXT })).toBeNull();
+    expect(screen.queryByRole("link", { name: /S’inscrire gratuitement/ })).toBeNull();
+  });
+
+  it("ne cite jamais le tarif de l'offre Analyse", () => {
+    for (const checkoutOpen of [true, false, null]) {
+      for (const active of [true, false]) {
+        mocks.checkoutOpen = checkoutOpen;
+        mocks.launch = { active, pending: false };
+        render(
+          <>
+            <HomeHero />
+            <HomeOffers />
+          </>,
+        );
+        expect(document.body.textContent).not.toMatch(/59|€ TTC|Tarif prévu/);
+        cleanup();
+      }
+    }
   });
 });
 
@@ -108,7 +125,7 @@ describe("carte Analyse de l'accueil", () => {
     return screen.getByRole("heading", { name: "Analyse" }).closest("article")!;
   }
 
-  it("souscription fermée : « Me prévenir de l’ouverture » en bouton principal et tarif prévu", async () => {
+  it("ni essai ni souscription : « Me prévenir de l’ouverture » en bouton principal", async () => {
     mocks.checkoutOpen = false;
     render(<HomeOffers />);
     const card = analysisCard();
@@ -116,29 +133,46 @@ describe("carte Analyse de l'accueil", () => {
     expect(
       await within(card).findByRole("button", { name: "Me prévenir de l’ouverture" }),
     ).toBeTruthy();
-    expect(card.textContent).toContain("Tarif prévu : 59 € TTC / mois. Pas encore souscriptible.");
-    expect(card.textContent).not.toContain("Offre bientôt disponible");
+    expect(card.textContent).toContain("Sur abonnement");
+    expect(card.textContent).toContain("Abonnement bientôt disponible.");
     expect(card.textContent).not.toContain("Découvrir Analyse");
   });
 
-  it("souscription ouverte : le lien « Découvrir Analyse » et l'essai", () => {
+  it("souscription ouverte : le lien « Découvrir Analyse », sans essai avec carte", () => {
     render(<HomeOffers />);
     expect(analysisCard().textContent).toContain("Découvrir Analyse");
-    expect(analysisCard().textContent).toContain("Essai de 7 jours");
+    expect(analysisCard().textContent).toContain(
+      "Abonnement mensuel, résiliable depuis votre compte.",
+    );
+    expect(analysisCard().textContent).not.toMatch(/carte bancaire/);
   });
 
-  it("offre de lancement : la mention sur la carte gratuite, aucun achat sur la carte Analyse", () => {
+  it("essai ouvert : 7 jours offerts et ses règles sur la carte Analyse, l'inscription en bouton", () => {
     mocks.launch = { active: true, pending: false };
     mocks.checkoutOpen = false;
     render(<HomeOffers />);
-    const free = screen.getByRole("heading", { name: "Découverte" }).closest("article")!;
-    expect(free.textContent).toContain(LAUNCH_OFFER_VISITOR_TEXT);
     const card = analysisCard();
+    expect(card.textContent).toContain("7 jours offerts");
+    expect(screen.getByTestId("home-launch-offer").textContent).toBe(LAUNCH_OFFER_VISITOR_TEXT);
     expect(card.querySelector("button")).toBeNull();
-    expect(card.textContent).toContain(
-      "Inclus avec un compte gratuit pendant l’offre de lancement",
-    );
-    expect(card.textContent).toContain("Pas encore souscriptible.");
+    expect(
+      within(card)
+        .getByRole("link", { name: /Commencer l’essai gratuit/ })
+        .getAttribute("href"),
+    ).toBe("/login?mode=investor");
+    const free = screen.getByRole("heading", { name: "Découverte" }).closest("article")!;
+    expect(within(free).getByRole("link", { name: /Créer mon compte gratuit/ })).toBeTruthy();
+  });
+
+  it("essai ouvert : un compte connecté lit la règle, sans invitation à s'inscrire", () => {
+    mocks.launch = { active: true, pending: false };
+    mocks.user = { id: "u1" };
+    render(<HomeOffers />);
+    expect(screen.getByTestId("home-launch-offer").textContent).toBe(LAUNCH_OFFER_ACCOUNT_TEXT);
+    expect(
+      screen.queryByRole("link", { name: /Créer mon compte gratuit|Commencer l’essai/ }),
+    ).toBeNull();
+    expect(within(analysisCard()).getByRole("link", { name: /Découvrir Analyse/ })).toBeTruthy();
   });
 
   it("annonce 10 favoris pour le compte gratuit", () => {
@@ -169,7 +203,7 @@ describe("onboarding /bienvenue", () => {
     fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
     const text = document.body.textContent ?? "";
     expect(text).toContain(
-      "Pendant l’offre de lancement, votre compte gratuit ouvre les outils de l’offre Analyse sur toutes les ventes (contenu selon la vente).",
+      "Pendant votre essai gratuit de 7 jours, votre compte ouvre les outils de l’offre Analyse sur toutes les ventes (contenu selon la vente). Ensuite, vous pourrez débloquer 3 ventes en détail chaque mois.",
     );
     expect(text).not.toContain("Chaque mois, vous pouvez débloquer");
   });
@@ -190,20 +224,23 @@ describe("page Mon compte", () => {
     mocks.user = { id: "u1", email: "a@b.test" };
   });
 
-  it("offre de lancement : plan Analyse marqué, mention retirable, ni date de fin ni portail", async () => {
+  it("essai gratuit : plan Analyse marqué, fin de l'essai datée, ni période payée ni portail", async () => {
     mocks.plan.mockResolvedValue({
       plan: {
         plan: "analyse",
         label: "Analyse",
         hasAnalysisAccess: true,
         launchOffer: true,
+        trialEndsAt: "2026-11-01T13:05:00.000Z",
         currentPeriodEnd: null,
       },
     });
     renderPage();
 
-    expect(await screen.findByText("Analyse · offre de lancement")).toBeTruthy();
-    expect(screen.getByTestId("account-launch-offer").textContent).toBe(LAUNCH_OFFER_ACCOUNT_TEXT);
+    expect(await screen.findByText("Analyse · essai gratuit")).toBeTruthy();
+    expect(screen.getByTestId("account-launch-offer").textContent).toBe(
+      "Essai gratuit de l’offre Analyse jusqu’au 1er novembre 2026 à 14:05. À son terme, votre compte revient à l’offre Découverte, gratuite : rien ne devient payant automatiquement.",
+    );
     // Aucun compteur de déblocages (accès complet) et aucune explication du portail Stripe.
     expect(screen.queryByTestId("account-unlocks")).toBeNull();
     expect(mocks.overview).not.toHaveBeenCalled();
@@ -211,7 +248,7 @@ describe("page Mon compte", () => {
     expect(screen.queryByText(/accès jusqu’au/)).toBeNull();
   });
 
-  it("offre de lancement : dit ce qui reste gratuit et ce qui demandera Analyse, sans date ni pression", async () => {
+  it("essai gratuit : dit ce qui reste gratuit et ce qui demandera Analyse, sans compte à rebours", async () => {
     mocks.plan.mockResolvedValue({
       plan: {
         plan: "analyse",
@@ -236,16 +273,48 @@ describe("page Mon compte", () => {
     expect(text).toContain("le rapport PDF");
     expect(text).toContain("ventes comparables");
     expect(text).toContain("les exports");
-    expect(text).toContain(
-      "Ces avantages sont temporaires et prendront fin au plus tard au lancement officiel du site",
-    );
-    expect(text).toContain("Nous vous prévenons par email avant leur fin");
+    expect(text).toContain(LAUNCH_OFFER_DURATION_TEXT);
     expect(text).toContain(
       "Vos données (favoris, alertes, rapports enregistrés) restent conservées tant que votre compte existe et dans les durées de la politique de confidentialité. Elles redeviennent accessibles avec l’offre Analyse.",
     );
-    // Ni compte à rebours, ni date, ni incitation à s'abonner.
-    expect(text).not.toMatch(/\d{4}|jours?|dernier|vite|profitez|abonnez/i);
+    // Ni compte à rebours, ni date, ni incitation à s'abonner (la date est dans « Abonnement »).
+    expect(text).not.toMatch(/\d{4}|restants?|dernier|vite|profitez|abonnez/i);
     expect(block.querySelector("a, button")).toBeNull();
+  });
+
+  it("après l'essai : le compte Découverte lit la date de fin de son essai", async () => {
+    mocks.plan.mockResolvedValue({
+      plan: {
+        plan: "decouverte",
+        label: "Découverte",
+        hasAnalysisAccess: false,
+        trialEndedAt: "2026-10-30T09:00:00.000Z",
+        currentPeriodEnd: null,
+      },
+    });
+    mocks.overview.mockResolvedValue({ status: null });
+    renderPage();
+    expect((await screen.findByTestId("account-trial-ended")).textContent).toContain(
+      "Votre essai gratuit de l’offre Analyse s’est terminé le 30 octobre 2026",
+    );
+    expect(screen.queryByTestId("account-offer-end")).toBeNull();
+  });
+
+  it("essai refusé : le compte lit pourquoi, et où écrire", async () => {
+    mocks.plan.mockResolvedValue({
+      plan: {
+        plan: "decouverte",
+        label: "Découverte",
+        hasAnalysisAccess: false,
+        trialDenied: true,
+        currentPeriodEnd: null,
+      },
+    });
+    mocks.overview.mockResolvedValue({ status: null });
+    renderPage();
+    expect((await screen.findByTestId("account-trial-ended")).textContent).toBe(
+      SIGNUP_TRIAL_DENIED_TEXT,
+    );
   });
 
   it("n'affiche pas ce bloc à un abonné réel ni hors de l'offre de lancement", async () => {
@@ -321,27 +390,48 @@ describe("mention des pages rendues côté serveur", () => {
 
 describe("incitation à découvrir l'offre Analyse", () => {
   const cta = () => <a href="/offres">Découvrir l’offre Analyse</a>;
+  function renderHidden() {
+    return render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <HideForLaunchOfferAccount>{cta()}</HideForLaunchOfferAccount>
+      </QueryClientProvider>,
+    );
+  }
 
-  it("reste montrée à un visiteur, avec ou sans offre de lancement", () => {
-    const { unmount } = render(<HideForLaunchOfferAccount>{cta()}</HideForLaunchOfferAccount>);
+  it("reste montrée à un visiteur, avec ou sans essai ouvert", () => {
+    const { unmount } = renderHidden();
     expect(screen.getByRole("link", { name: "Découvrir l’offre Analyse" })).toBeTruthy();
     unmount();
 
     mocks.launch = { active: true, pending: false };
-    render(<HideForLaunchOfferAccount>{cta()}</HideForLaunchOfferAccount>);
+    renderHidden();
     expect(screen.getByRole("link", { name: "Découvrir l’offre Analyse" })).toBeTruthy();
+    expect(mocks.plan).not.toHaveBeenCalled();
   });
 
-  it("est masquée à un compte qui bénéficie déjà des avantages Analyse", () => {
+  it("est masquée à un compte en essai, qui a déjà l'offre Analyse", async () => {
     mocks.launch = { active: true, pending: false };
     mocks.user = { id: "u1" };
-    render(<HideForLaunchOfferAccount>{cta()}</HideForLaunchOfferAccount>);
-    expect(screen.queryByRole("link", { name: "Découvrir l’offre Analyse" })).toBeNull();
+    mocks.plan.mockResolvedValue({ plan: { plan: "analyse", launchOffer: true } });
+    renderHidden();
+    await waitFor(() =>
+      expect(screen.queryByRole("link", { name: "Découvrir l’offre Analyse" })).toBeNull(),
+    );
   });
 
-  it("revient pour un compte connecté quand l'offre est coupée", () => {
+  it("revient pour un compte dont l'essai est fini, et quand l'essai est coupé", async () => {
+    mocks.launch = { active: true, pending: false };
     mocks.user = { id: "u1" };
-    render(<HideForLaunchOfferAccount>{cta()}</HideForLaunchOfferAccount>);
+    mocks.plan.mockResolvedValue({ plan: { plan: "decouverte", trialEndedAt: "2026-10-01" } });
+    const { unmount } = renderHidden();
+    await waitFor(() => expect(mocks.plan).toHaveBeenCalled());
+    expect(screen.getByRole("link", { name: "Découvrir l’offre Analyse" })).toBeTruthy();
+    unmount();
+
+    mocks.launch = { active: false, pending: false };
+    renderHidden();
     expect(screen.getByRole("link", { name: "Découvrir l’offre Analyse" })).toBeTruthy();
   });
 });

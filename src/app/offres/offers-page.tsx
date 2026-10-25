@@ -59,12 +59,11 @@ const BENEFITS: ReadonlyArray<{
 ];
 
 /**
- * Tant que l'offre de lancement dure, le compte gratuit a les avantages Analyse : la carte
- * Découverte et le comparatif décrivent le plan gratuit « de droit », pas ce que le visiteur a
- * aujourd'hui. Cette mention l'évite (elle ne parle ni de prix ni de paiement).
+ * Pendant les 7 jours d'essai qui suivent l'inscription, le compte gratuit a l'offre Analyse : la
+ * carte Découverte et le comparatif décrivent le plan gratuit, qui s'applique après l'essai. Cette
+ * mention le dit (elle ne parle ni de prix ni de paiement).
  */
-const LAUNCH_OFFER_FREE_PLAN_NOTE =
-  "Pendant l’offre de lancement, un compte gratuit dont l’adresse email est confirmée bénéficie des avantages de l’offre Analyse. Les limites de Découverte indiquées ici s’appliqueront à la fin de l’offre.";
+const LAUNCH_OFFER_FREE_PLAN_NOTE = `Pendant les ${ANALYSIS_TRIAL_DAYS} jours d’essai qui suivent la confirmation de son adresse email, un compte gratuit bénéficie de l’offre Analyse (un essai par personne). Les limites de Découverte indiquées ici s’appliquent ensuite.`;
 
 const UNLOCKED_ITEMS = unlockedItemsText({ ceiling: true, statistics: true });
 
@@ -87,27 +86,15 @@ const ANALYSIS_FEATURES = [
 ] as const;
 
 /**
- * `subscriptionOpen` : la souscription est ouverte pour de bon (état lu, offre de lancement
- * coupée). Faux dans tous les autres cas, y compris tant que l'état n'est pas lu : une réponse sur
- * la résiliation ou le remboursement ne doit pas laisser croire qu'un abonnement existe déjà.
+ * `subscriptionOpen` : la souscription est ouverte pour de bon (état lu). Faux dans tous les autres
+ * cas, y compris tant que l'état n'est pas lu : une réponse sur la résiliation ou le remboursement ne
+ * doit pas laisser croire qu'un abonnement existe déjà. `launchActive` : l'essai à l'inscription est
+ * ouvert.
  */
 type FaqContext = { offer: BillingOfferState; launchActive: boolean; subscriptionOpen: boolean };
 
 /** Aucun abonnement n'existe tant que la souscription est fermée : la réponse décrit l'à-venir. */
 const NOT_OPEN_PREFIX = "Quand l’abonnement sera ouvert, les règles prévues sont les suivantes. ";
-
-const LAUNCH_OFFER_FAQ: { question: string; answer: (context: FaqContext) => ReactNode } = {
-  question: "Qu’est-ce que l’offre de lancement ?",
-  answer: () => (
-    <>
-      Tant que le site n’est pas officiellement lancé, tout compte gratuit dont l’adresse email est
-      confirmée bénéficie, à titre exceptionnel, des avantages de l’offre Analyse, sans carte
-      bancaire et sans paiement. {LAUNCH_OFFER_DURATION_TEXT} À la fin de l’offre, le compte gratuit
-      revient à l’offre Découverte. {LAUNCH_OFFER_DATA_TEXT} Aucun prélèvement n’est possible
-      aujourd’hui.
-    </>
-  ),
-};
 
 const FAQ: { question: string; answer: (context: FaqContext) => ReactNode }[] = [
   {
@@ -124,30 +111,18 @@ const FAQ: { question: string; answer: (context: FaqContext) => ReactNode }[] = 
   },
   {
     question: "Y a-t-il un essai gratuit ?",
-    answer: ({ offer }) =>
-      offer.status === "loading" ? (
-        <>Les conditions de l’essai s’affichent dès que l’offre est chargée.</>
-      ) : offer.status === "error" ? (
+    answer: ({ launchActive, subscriptionOpen }) =>
+      launchActive ? (
         <>
-          Les conditions de l’offre n’ont pas pu être chargées pour le moment. Rechargez la page
-          dans un instant.
-        </>
-      ) : !offer.open ? (
-        <>
-          Aucun essai n’est proposé avant l’ouverture des souscriptions. Le catalogue reste
-          accessible gratuitement avec l’offre Découverte.
-        </>
-      ) : offer.trialAvailable ? (
-        <>
-          Oui. L’offre Analyse démarre par un essai de {ANALYSIS_TRIAL_DAYS} jours avec carte
-          bancaire. Sans résiliation avant la fin de l’essai, l’abonnement se poursuit au tarif
-          affiché ({resolveAnalysisOfferLabel()}). L’essai n’est proposé qu’une fois par compte.
+          Oui. Une fois votre adresse email confirmée, votre compte bénéficie gratuitement de
+          l’offre Analyse pendant {ANALYSIS_TRIAL_DAYS} jours, sans carte bancaire.{" "}
+          {LAUNCH_OFFER_DURATION_TEXT} {LAUNCH_OFFER_DATA_TEXT}{" "}
+          {subscriptionOpen
+            ? `Pour garder l’offre Analyse après l’essai, il faut y souscrire (${resolveAnalysisOfferLabel()}).`
+            : `Pour garder l’offre Analyse après l’essai, il faudra y souscrire ; l’abonnement n’est pas encore ouvert (tarif prévu : ${resolveAnalysisOfferLabel()}). Vous pouvez demander à être prévenu de son ouverture.`}
         </>
       ) : (
-        <>
-          L’essai gratuit n’est proposé qu’une fois par compte. Vous pouvez souscrire directement à
-          l’offre Analyse au tarif affiché ({resolveAnalysisOfferLabel()}).
-        </>
+        <>Pas pour le moment. Le catalogue reste accessible gratuitement avec l’offre Découverte.</>
       ),
   },
   {
@@ -162,7 +137,7 @@ const FAQ: { question: string; answer: (context: FaqContext) => ReactNode }[] = 
         accessible tant qu’elle est en ligne sur Immojudis, dans la limite de 24 mois après le
         déblocage. Aucune carte bancaire n’est demandée et rien ne devient payant automatiquement.{" "}
         {launchActive
-          ? "Pendant l’offre de lancement, l’export PDF ou CSV, les rapports enregistrés, les alertes avancées, l’estimation détaillée et les ventes comparables sont aussi ouverts au compte gratuit ; ils redeviendront réservés à Analyse à la fin de l’offre."
+          ? `Pendant les ${ANALYSIS_TRIAL_DAYS} jours d’essai qui suivent la confirmation de l’adresse email, l’export PDF ou CSV, les rapports enregistrés, les alertes avancées, l’estimation détaillée et les ventes comparables sont aussi ouverts au compte gratuit ; ils redeviennent réservés à Analyse ensuite.`
           : "L’export PDF ou CSV, les rapports enregistrés, les alertes avancées, l’estimation détaillée et les ventes comparables restent réservés à Analyse."}
       </>
     ),
@@ -220,30 +195,29 @@ export function OffersPage() {
   const source = useBillingOffer();
   const { offer } = source;
   const price = resolveAnalysisOfferLabel();
-  // Offre de lancement : le compte gratuit a les avantages Analyse, le paiement reste fermé.
+  // Essai gratuit de 7 jours à l'inscription : indépendant de la souscription, qui s'ouvre avec le
+  // paiement (Stripe et identité légale).
   const launchActive = launch.active;
-  const subscriptionOpen = !launchActive && offer.status === "ready" && offer.open;
-  // Le rendu serveur et le premier rendu du navigateur ignorent l'état de l'offre de lancement et
-  // celui de la souscription : tant qu'ils ne sont pas lus, la page ne dit pas « Analyse coûte ».
-  const offerKnown = !launch.pending && offer.status === "ready";
+  const subscriptionOpen = offer.status === "ready" && offer.open;
+  // Le rendu serveur et le premier rendu du navigateur ignorent l'état de la souscription : tant
+  // qu'il n'est pas lu, la page ne dit pas « Analyse coûte ».
+  const offerKnown = offer.status === "ready";
   // Sous le prix : le 59 € n'est qu'un tarif prévu tant que rien ne se souscrit.
   const priceNote =
-    launchActive || (offer.status === "ready" && !offer.open)
-      ? "Tarif prévu, pas encore souscriptible"
-      : undefined;
+    offer.status === "ready" && !offer.open ? "Tarif prévu, pas encore souscriptible" : undefined;
   const trialLine =
-    launchActive || offer.status !== "ready"
+    offer.status !== "ready"
       ? null
       : !offer.open
         ? `Tarif prévu : ${price}. Pas encore souscriptible.`
-        : offer.trialAvailable
-          ? `Essai gratuit de ${ANALYSIS_TRIAL_DAYS} jours avec carte bancaire, puis abonnement résiliable à tout moment.`
-          : "Abonnement résiliable à tout moment, sans nouvel essai.";
+        : "Abonnement mensuel, résiliable à tout moment.";
+  // L'invitation à l'essai s'adresse au visiteur : un compte voit son offre dans Mon compte.
+  const visitorTrial = launchActive && !user;
 
   return (
     <main id="contenu" className="min-h-screen bg-white text-brand-navy">
-      {launch.pending ? <LaunchOfferBannerPlaceholder /> : null}
-      {launchActive ? <LaunchOfferBanner signedIn={Boolean(user)} /> : null}
+      {launch.pending && !user ? <LaunchOfferBannerPlaceholder /> : null}
+      {visitorTrial ? <LaunchOfferBanner /> : null}
       <section className="border-b border-brand-navy/10 bg-background">
         <div className="mx-auto grid max-w-[1460px] gap-10 px-4 py-10 sm:px-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(500px,0.85fr)] lg:items-center lg:px-8 lg:py-12">
           <div>
@@ -311,13 +285,14 @@ export function OffersPage() {
         <p className="mt-2 max-w-3xl text-ink-soft">
           Découverte est gratuite, sans limite de durée ; elle comprend {MONTHLY_SALE_UNLOCKS}{" "}
           déblocages par mois, chacun ouvrant, pour une vente, {UNLOCKED_ITEMS}.{" "}
+          {offer.status === "ready" && !offer.open
+            ? `Analyse : tarif prévu ${price}, pas encore souscriptible.`
+            : offerKnown
+              ? `Analyse coûte ${price}, résiliable à tout moment.`
+              : `Analyse : ${price}. Les conditions de souscription s’affichent une fois l’offre chargée.`}
           {launchActive
-            ? `Analyse est prévue à ${price} ; sa souscription n’est pas ouverte et rien ne devient payant automatiquement.`
-            : offer.status === "ready" && !offer.open
-              ? `Analyse : tarif prévu ${price}, pas encore souscriptible.`
-              : offerKnown
-                ? `Analyse coûte ${price}, résiliable à tout moment.`
-                : `Analyse : ${price}. Les conditions de souscription s’affichent une fois l’offre chargée.`}
+            ? ` Elle est offerte pendant ${ANALYSIS_TRIAL_DAYS} jours à l’inscription, sans carte bancaire.`
+            : null}
         </p>
         <div className="mt-6 grid gap-5 lg:grid-cols-2">
           <PlanPanel
@@ -348,17 +323,17 @@ export function OffersPage() {
             features={ANALYSIS_FEATURES}
             priceNote={priceNote}
             highlighted
-            recommended={!launchActive && offer.status === "ready" && offer.open}
+            recommended={subscriptionOpen}
           >
-            {launch.pending ? (
+            {launch.pending && !user ? (
               <div
                 role="status"
                 aria-busy="true"
                 aria-label="Chargement de l’offre"
                 className="h-11 w-full animate-pulse rounded-md bg-muted"
               />
-            ) : launchActive ? (
-              <LaunchOfferPanel signedIn={Boolean(user)} />
+            ) : visitorTrial ? (
+              <LaunchOfferPanel trialLine={trialLine} />
             ) : (
               <>
                 {trialLine ? (
@@ -407,7 +382,7 @@ export function OffersPage() {
           Questions fréquentes
         </h2>
         <div className="mt-6 divide-y divide-line border-y border-line">
-          {(launchActive ? [LAUNCH_OFFER_FAQ, ...FAQ] : FAQ).map((item) => (
+          {FAQ.map((item) => (
             <details key={item.question} className="group py-4">
               <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft">
                 {item.question}
@@ -526,33 +501,26 @@ function ComparisonCell({ cell }: { cell: OfferCell }) {
   );
 }
 
-/** En tête de page tant que l'offre de lancement dure : elle passe avant les deux offres. */
-function LaunchOfferBanner({ signedIn }: { signedIn: boolean }) {
+/** En tête de page pour un visiteur, tant que l'essai à l'inscription est ouvert. */
+function LaunchOfferBanner() {
   return (
     <section
-      aria-label="Offre de lancement"
+      aria-label="Essai gratuit"
       data-testid="launch-offer-banner"
       className="border-b border-gold/40 bg-gold/10"
     >
       <div className="mx-auto flex max-w-[1460px] flex-col gap-4 px-4 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
         <p className="flex max-w-4xl items-start gap-3 text-sm font-medium leading-relaxed text-brand-navy sm:text-base">
           <Gift className="mt-0.5 size-5 shrink-0 text-gold-text" aria-hidden />
-          <span>{launchOfferText(signedIn ? "account" : "visitor")}</span>
+          <span>{launchOfferText("visitor")}</span>
         </p>
-        {signedIn ? (
-          <Link href="/sales" className={buttonClasses({ variant: "primary", size: "lg" })}>
-            Explorer les ventes
-            <ArrowRight className="size-4" aria-hidden />
-          </Link>
-        ) : (
-          <Link
-            href={pathWithSearch("/login", { mode: "investor", redirect: "/sales" })}
-            className={buttonClasses({ variant: "primary", size: "lg" })}
-          >
-            Créer mon compte gratuit
-            <ArrowRight className="size-4" aria-hidden />
-          </Link>
-        )}
+        <Link
+          href={pathWithSearch("/login", { mode: "investor", redirect: "/sales" })}
+          className={buttonClasses({ variant: "primary", size: "lg" })}
+        >
+          Créer mon compte gratuit
+          <ArrowRight className="size-4" aria-hidden />
+        </Link>
       </div>
     </section>
   );
@@ -575,26 +543,23 @@ function LaunchOfferBannerPlaceholder() {
   );
 }
 
-/** Dans la carte Analyse tant que l'offre de lancement dure : aucun bouton de paiement. */
-function LaunchOfferPanel({ signedIn }: { signedIn: boolean }) {
+/**
+ * Dans la carte Analyse, pour un visiteur, tant que l'essai à l'inscription est ouvert : l'essai
+ * d'abord, puis l'état de la souscription. Aucun bouton de paiement : il faut un compte.
+ */
+function LaunchOfferPanel({ trialLine }: { trialLine: string | null }) {
   return (
     <div className="text-center text-sm leading-relaxed" data-testid="launch-offer-panel">
       <p className="font-semibold">
-        {signedIn
-          ? "Inclus avec votre compte gratuit pendant l’offre de lancement."
-          : "Inclus avec un compte gratuit pendant l’offre de lancement."}
+        Offerte pendant {ANALYSIS_TRIAL_DAYS} jours à l’inscription, sans carte bancaire.
       </p>
-      <p className="mt-1 text-ink-soft">
-        Tarif prévu : {resolveAnalysisOfferLabel()}. Pas encore souscriptible.
-      </p>
-      {signedIn ? null : (
-        <Link
-          href={pathWithSearch("/login", { mode: "investor", redirect: "/sales" })}
-          className={buttonClasses({ variant: "primary", size: "lg", className: "mt-4 w-full" })}
-        >
-          Créer mon compte gratuit
-        </Link>
-      )}
+      {trialLine ? <p className="mt-1 text-ink-soft">{trialLine}</p> : null}
+      <Link
+        href={pathWithSearch("/login", { mode: "investor", redirect: "/sales" })}
+        className={buttonClasses({ variant: "primary", size: "lg", className: "mt-4 w-full" })}
+      >
+        Commencer l’essai gratuit
+      </Link>
     </div>
   );
 }

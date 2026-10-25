@@ -91,10 +91,11 @@ export function TermsPage() {
               {MONTHLY_SALE_UNLOCKS} le 1er de chaque mois à 00 h 00, heure de Paris. Une vente
               débloquée reste consultable avec ces éléments tant qu’elle est en ligne sur Immojudis,
               dans la limite de 24 mois après le déblocage, et tant que votre compte existe. Les
-              déblocages sont personnels (article 9). Pendant un abonnement Analyse, essai compris,
-              aucun déblocage n’est consommé. À la fin de l’abonnement, le compte revient à
-              Découverte : les ventes que vous aviez déjà débloquées restent accessibles ; les
-              autres ventes consultées pendant l’abonnement redeviennent soumises aux déblocages.
+              déblocages sont personnels (article 9). Pendant un abonnement Analyse ou l’essai
+              gratuit de l’article 13, aucun déblocage n’est consommé. À la fin de l’abonnement ou
+              de l’essai, le compte revient à Découverte : les ventes que vous aviez déjà débloquées
+              restent accessibles ; les autres ventes consultées pendant l’abonnement ou l’essai
+              redeviennent soumises aux déblocages.
             </p>
             <p className="mt-3">
               Immojudis peut modifier ou supprimer les déblocages mensuels pour l’avenir, en vous
@@ -106,7 +107,7 @@ export function TermsPage() {
               <Link to="/mes-droits" className="text-gold underline">
                 Mes droits
               </Link>
-              . Ce délai ne s’applique pas à l’offre de lancement, régie par l’article 13.
+              . Ce délai ne s’applique pas à l’essai gratuit à l’inscription, régi par l’article 13.
             </p>
             <p className="mt-3">
               Analyse est un abonnement aux outils d’analyse : statistiques des tribunaux et
@@ -116,12 +117,9 @@ export function TermsPage() {
               les pièces disponibles ; elle est indiquée sur chaque fiche. L’abonnement est conclu
               pour une durée indéterminée et facturé chaque mois. Vous pouvez le résilier à tout
               moment, sans frais ni préavis ; la résiliation prend effet à la fin de la période
-              mensuelle en cours. Lorsqu’il est proposé (une seule fois par compte), un essai
-              gratuit de {ANALYSIS_TRIAL_DAYS} jours nécessite l’enregistrement d’une carte bancaire
-              auprès de Stripe. À son terme, l’abonnement devient payant et se renouvelle
-              automatiquement, sauf résiliation avant la fin de l’essai. Les conditions
-              d’éligibilité et le tarif applicable sont présentés avant la confirmation de la
-              souscription.
+              mensuelle en cours. L’abonnement ne comprend pas de période d’essai : l’essai gratuit
+              est proposé à l’inscription, sans carte bancaire (article 13). Le tarif applicable est
+              présenté avant la confirmation de la souscription.
             </p>
           </TermsSection>
 
@@ -136,12 +134,9 @@ export function TermsPage() {
               </li>
               <li>
                 Le client ouvre le récapitulatif Stripe et vérifie le montant récurrent, la
-                périodicité, la fin de l’essai et la date du premier prélèvement.
+                périodicité et la date du premier prélèvement.
               </li>
-              <li>
-                La souscription est conclue après sa confirmation dans Stripe. L’essai n’entraîne
-                pas de prélèvement du prix de l’abonnement avant son échéance.
-              </li>
+              <li>La souscription est conclue après sa confirmation dans Stripe.</li>
             </ol>
             <p className="mt-3">
               Avant de confirmer, le client peut fermer le récapitulatif ou interrompre le paiement.
@@ -153,12 +148,11 @@ export function TermsPage() {
 
           <TermsSection title="4. Prix et paiement">
             <p>
-              Prix de l’abonnement Analyse : {resolveAnalysisOfferLabel()}, précédé d’un essai
-              gratuit de {ANALYSIS_TRIAL_DAYS} jours lorsque celui-ci est proposé. La souscription
-              n’est pas encore ouverte. Le montant TTC et la périodicité sont précisés dans le
-              récapitulatif avant toute souscription. Après l’essai, Stripe prélève ce montant à
-              chaque échéance tant que l’abonnement n’est pas résilié. Immojudis ne reçoit ni ne
-              conserve le numéro complet de la carte.
+              Prix de l’abonnement Analyse : {resolveAnalysisOfferLabel()}. La souscription n’est
+              pas encore ouverte. Le montant TTC et la périodicité sont précisés dans le
+              récapitulatif avant toute souscription. Stripe prélève ce montant à la souscription,
+              puis à chaque échéance tant que l’abonnement n’est pas résilié. Immojudis ne reçoit ni
+              ne conserve le numéro complet de la carte.
             </p>
             <p className="mt-3">
               En cas d’échec de paiement, Stripe retente le prélèvement. Votre accès Analyse reste
@@ -172,9 +166,9 @@ export function TermsPage() {
           <TermsSection title="5. Exécution et disponibilité">
             <p>
               À la demande expresse du client, l’accès Analyse commence après confirmation de la
-              souscription, pendant l’essai puis les périodes payées. Une maintenance, un incident
-              fournisseur ou un cas de force majeure peut interrompre temporairement certaines
-              fonctions ; Immojudis met alors en œuvre les moyens raisonnables de rétablissement.
+              souscription, pendant les périodes payées. Une maintenance, un incident fournisseur ou
+              un cas de force majeure peut interrompre temporairement certaines fonctions ;
+              Immojudis met alors en œuvre les moyens raisonnables de rétablissement.
             </p>
             <p className="mt-3">
               Résiliation. Vous pouvez résilier à tout moment, gratuitement, depuis la page{" "}
@@ -183,18 +177,21 @@ export function TermsPage() {
               </Link>
               , bouton « Résilier mon abonnement », qui ouvre directement le formulaire de
               résiliation du portail de paiement sécurisé Stripe. La date de fin d’accès est
-              affichée avant confirmation. Une résiliation pendant l’essai évite le premier
-              prélèvement ; après l’essai, elle empêche les prochains renouvellements et l’accès
-              reste ouvert jusqu’à la fin de la période payée. Les accès précédemment achetés par
-              paiement unique restent valables jusqu’à leur échéance initiale. Nous vous confirmons
-              par email la réception de votre demande et la date de fin du contrat.
+              affichée avant confirmation. La résiliation empêche les prochains renouvellements et
+              l’accès reste ouvert jusqu’à la fin de la période payée. Les accès précédemment
+              achetés par paiement unique restent valables jusqu’à leur échéance initiale. Nous vous
+              confirmons par email la réception de votre demande et la date de fin du contrat.
             </p>
           </TermsSection>
 
           <TermsSection title="6. Droit de rétractation">
             <p className="mb-3">
-              L’essai commercial de {ANALYSIS_TRIAL_DAYS} jours ne remplace pas le droit légal de
-              rétractation. Pendant l’essai gratuit, aucun montant n’est dû en cas de rétractation.
+              L’essai gratuit à l’inscription (article 13) est sans paiement : aucun montant n’est
+              dû, et vous pouvez demander la fermeture de votre compte à tout moment, gratuitement,
+              depuis Mes droits. Le droit de rétractation ci-dessous s’applique à l’abonnement
+              Analyse : le délai de 14 jours court à compter de la conclusion de l’abonnement, et le
+              service fourni pendant l’essai gratuit n’est pas pris en compte dans le montant
+              éventuellement dû en cas de rétractation.
             </p>
             <p>
               Le consommateur dispose en principe de 14 jours à compter de la conclusion du contrat
@@ -241,10 +238,10 @@ export function TermsPage() {
               Le client maintient ses accès confidentiels et fournit des informations exactes. Les
               déblocages de ventes sont personnels : ils ne se partagent ni ne se transmettent. Sont
               interdits l’accès automatisé abusif, le contournement des quotas, notamment la
-              création de plusieurs comptes pour multiplier les déblocages, la redistribution
-              massive des données, l’atteinte aux droits de tiers et l’utilisation frauduleuse. Un
-              accès peut être suspendu de manière proportionnée en cas de fraude ou d’atteinte
-              grave, sans priver le consommateur de ses droits légaux.
+              création de plusieurs comptes pour multiplier les déblocages ou obtenir plusieurs fois
+              l’essai gratuit, la redistribution massive des données, l’atteinte aux droits de tiers
+              et l’utilisation frauduleuse. Un accès peut être suspendu de manière proportionnée en
+              cas de fraude ou d’atteinte grave, sans priver le consommateur de ses droits légaux.
             </p>
           </TermsSection>
 
@@ -257,11 +254,12 @@ export function TermsPage() {
             </p>
             <p className="mt-3">
               Dans l’annuaire des avocats, les cabinets qui rémunèrent Immojudis, ou bénéficient
-              d’un essai gratuit de cette offre, sont affichés en premier dans une section
-              distincte, signalés « Publicité · Sponsorisé » ; ils ne sont ni recommandés ni notés.
-              Un encart d’un cabinet d’avocats, signalé de la même façon, peut aussi apparaître dans
-              la liste des ventes pour une zone géographique ; il ne modifie pas l’ordre des
-              annonces et n’est ni une recommandation, ni une notation, ni une garantie de résultat.
+              d’une période d’essai de cette offre de mise en avant, sont affichés en premier dans
+              une section distincte, signalés « Publicité · Sponsorisé » ; ils ne sont ni
+              recommandés ni notés. Un encart d’un cabinet d’avocats, signalé de la même façon, peut
+              aussi apparaître dans la liste des ventes pour une zone géographique ; il ne modifie
+              pas l’ordre des annonces et n’est ni une recommandation, ni une notation, ni une
+              garantie de résultat.
             </p>
             <p className="mt-3">
               Les annonces proviennent de sources publiques et d’organisateurs de ventes, ou de
@@ -308,25 +306,49 @@ export function TermsPage() {
             </p>
           </TermsSection>
 
-          <TermsSection title="13. Offre de lancement">
+          <TermsSection title="13. Essai gratuit à l’inscription">
             <p>
-              Pendant l’offre de lancement, tout compte gratuit dont l’adresse email est confirmée
-              bénéficie, à titre exceptionnel et sans paiement, des avantages de l’offre Analyse.
-              Ces avantages sont temporaires et prendront fin au plus tard au lancement officiel du
-              site. Nous vous prévenons par email avant leur fin ; ils peuvent toutefois être
-              retirés plus tôt, sans préavis, en cas d’abus ou d’impératif technique ou juridique.
+              À l’inscription, un compte gratuit bénéficie de l’offre Analyse, sans paiement et sans
+              carte bancaire, pendant {ANALYSIS_TRIAL_DAYS} jours à compter de la confirmation de
+              son adresse email. L’essai n’est proposé qu’une fois par personne : il est réservé au
+              premier compte confirmé d’une même adresse email (les variantes d’écriture d’une même
+              boîte, par exemple avec un suffixe après « + » ou avec des points pour les adresses
+              Gmail, sont considérées comme la même adresse) et n’est pas ouvert aux adresses
+              jetables. Cette vérification est automatique ; si vous pensez qu’elle est erronée,
+              écrivez à {legalValue(publisher.contactEmail)}. L’essai peut être retiré plus tôt,
+              sans préavis, en cas d’abus (notamment la création de plusieurs comptes ou l’usage
+              d’adresses jetables pour obtenir plusieurs essais) ou d’impératif technique ou
+              juridique. Immojudis peut cesser de proposer l’essai aux nouveaux comptes.
             </p>
             <p className="mt-3">
-              Cet article est spécial à l’offre de lancement : il s’applique à la place du délai de
-              prévenance de {FREE_BENEFIT_NOTICE_DAYS} jours de l’article 2, qui continue de
-              s’appliquer aux déblocages mensuels de l’offre Découverte.
+              Cet article est spécial à l’essai : il s’applique à la place du délai de prévenance de{" "}
+              {FREE_BENEFIT_NOTICE_DAYS} jours de l’article 2, qui continue de s’appliquer aux
+              déblocages mensuels de l’offre Découverte.
             </p>
             <p className="mt-3">
-              À la fin de l’offre, le compte revient à l’offre Découverte, sans frais, sans paiement
+              À la fin de l’essai, le compte revient à l’offre Découverte, sans frais, sans paiement
               automatique et sans suppression des données. Vos données (favoris, alertes, rapports
               enregistrés) restent conservées tant que votre compte existe et dans les durées de la
               politique de confidentialité ; elles redeviennent accessibles avec l’offre Analyse.
-              Aucun abonnement ne commence sans confirmation dans Stripe.
+              Pour conserver l’offre Analyse, il faudra y souscrire (articles 3 et 4) une fois la
+              souscription ouverte : aucun abonnement ne commence sans confirmation dans Stripe.
+            </p>
+            <p className="mt-3">
+              Cet essai remplace l’offre de lancement à compter du 25 octobre 2026. Les comptes qui
+              en bénéficiaient suivent la même règle : leurs avantages prennent fin{" "}
+              {ANALYSIS_TRIAL_DAYS} jours après la confirmation de leur adresse email.
+            </p>
+          </TermsSection>
+
+          <TermsSection title="14. Modification des conditions">
+            <p>
+              Immojudis peut modifier les présentes conditions pour tenir compte de l’évolution du
+              service, du droit ou de contraintes techniques. Les titulaires de compte en sont
+              informés par email ou par message dans l’application au moins{" "}
+              {FREE_BENEFIT_NOTICE_DAYS} jours avant l’entrée en vigueur, sauf pour l’essai gratuit
+              (article 13) et sauf obligation légale ou impératif de sécurité. Une modification
+              n’est jamais appliquée à un abonnement en cours sans l’accord du client. Le titulaire
+              peut fermer son compte gratuitement avant l’entrée en vigueur.
             </p>
           </TermsSection>
         </div>

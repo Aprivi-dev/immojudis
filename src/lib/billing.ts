@@ -13,7 +13,6 @@ import {
 } from "@/lib/commercial-acceptance";
 import { assertAnalysisCheckoutOpen } from "@/lib/analysis-checkout-readiness";
 import { PublicApiError } from "@/lib/api-errors";
-import { readLaunchOfferState } from "@/lib/launch-offer.server";
 import type { BillingPortalIntent } from "@/lib/billing-portal-request";
 import {
   sendCancellationConfirmationNotice,
@@ -33,6 +32,7 @@ import {
   ANALYSIS_SUBSCRIPTION_OFFER_CODE,
   ANALYSIS_TRIAL_DAYS,
   resolveAnalysisOfferLabel,
+  STRIPE_CHECKOUT_TRIAL_OFFERED,
 } from "@/lib/analysis-offer";
 
 type UserSubscriptionRow = Database["public"]["Tables"]["user_subscriptions"]["Row"];
@@ -150,15 +150,9 @@ export async function createPlanCheckoutSession({
 }): Promise<BillingSessionResponse> {
   // Une seule définition de « paiements ouverts » (`analysisCheckoutReadiness`) : configuration
   // Stripe complète, secret de webhook compris (sans lui, un paiement n'ouvrirait aucun accès),
-  // identité légale, canal de confirmation, et offre de lancement coupée. Si l'état de l'offre de
-  // lancement ne peut pas être lu, on refuse plutôt que d'encaisser sur une supposition.
-  const launchOffer = await readLaunchOfferState();
-  if (launchOffer.degraded) {
-    throw new Error(
-      "L'état de l'offre de lancement n'a pas pu être vérifié. Le checkout est suspendu.",
-    );
-  }
-  assertAnalysisCheckoutOpen(process.env, { launchOfferActive: launchOffer.active });
+  // identité légale et canal de confirmation. L'essai gratuit à l'inscription (interrupteur de
+  // l'offre de lancement) n'y entre plus : un compte peut s'abonner pendant ou après son essai.
+  assertAnalysisCheckoutOpen(process.env);
   const stripe = getStripe();
   const appOrigin = resolveBillingOrigin(origin);
   const priceId = resolveAnalysisPriceId();
@@ -196,9 +190,11 @@ export async function createPlanCheckoutSession({
         "Un abonnement Analyse ou un checkout est déjà associé à ce compte. Gérez-le depuis le portail Stripe.",
       );
     }
-    const trialAvailable = !subscriptionHistory.some(
-      (subscription) => subscription.trial_start != null || subscription.trial_end != null,
-    );
+    const trialAvailable =
+      STRIPE_CHECKOUT_TRIAL_OFFERED &&
+      !subscriptionHistory.some(
+        (subscription) => subscription.trial_start != null || subscription.trial_end != null,
+      );
     const trialDays = trialAvailable ? ANALYSIS_TRIAL_DAYS : 0;
     const offerCode = trialAvailable ? ANALYSIS_OFFER_CODE : ANALYSIS_SUBSCRIPTION_OFFER_CODE;
     const billingModel = trialAvailable
@@ -307,6 +303,7 @@ export function canReleaseCheckoutReservationAfterFailure(
 export async function resolveAnalysisCheckoutAvailability(
   auth: SupabaseAuthContext,
 ): Promise<{ trialAvailable: boolean }> {
+  if (!STRIPE_CHECKOUT_TRIAL_OFFERED) return { trialAvailable: false };
   const subscription = await getUserSubscription(auth);
   if (!subscription?.stripe_customer_id) return { trialAvailable: true };
   const history = await listCustomerSubscriptions(getStripe(), subscription.stripe_customer_id);

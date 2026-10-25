@@ -240,6 +240,13 @@
   gap: 22px;
 }
 
+.heroActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px 22px;
+}
+
 .heroCopy h1 {
   font-family: var(--font-display);
   font-size: clamp(44px, 6vw, 80px);

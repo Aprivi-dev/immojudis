@@ -5,46 +5,67 @@ import {
   LAUNCH_OFFER_ACCOUNT_TEXT,
   LAUNCH_OFFER_DATA_TEXT,
   LAUNCH_OFFER_DURATION_TEXT,
+  LAUNCH_OFFER_SHORT_TEXT,
   LAUNCH_OFFER_VISITOR_TEXT,
   launchOfferText,
   parseLaunchOfferResponse,
+  SIGNUP_TRIAL_DENIED_TEXT,
+  signupTrialStatusText,
 } from "@/lib/launch-offer";
 import { FREE_ACCESS_LINE, freeAccessLine } from "@/lib/sale-unlocks";
 import { PLAN_LIMITS } from "@/lib/plans";
 
-describe("textes de l'offre de lancement", () => {
-  it("dit la durée de l'offre avec la formule de la relecture juridique : temporaire, fin annoncée par email, retrait anticipé limité", () => {
+const END_RULES =
+  "À son terme, votre compte revient à l’offre Découverte, gratuite et sans limite de durée : rien ne devient payant automatiquement. L’offre Analyse est ensuite proposée sur abonnement payant ; son tarif figure sur la page Offres. L’essai peut être retiré plus tôt, sans préavis, en cas d’abus ou d’impératif technique ou juridique.";
+
+describe("textes de l'essai gratuit à l'inscription", () => {
+  it("disent les règles : début à la confirmation, 7 jours, une fois par personne, retour à Découverte", () => {
     expect(LAUNCH_OFFER_DURATION_TEXT).toBe(
-      "Ces avantages sont temporaires et prendront fin au plus tard au lancement officiel du site. Nous vous prévenons par email avant leur fin ; ils peuvent toutefois être retirés plus tôt, sans préavis, en cas d’abus ou d’impératif technique ou juridique.",
+      `L’essai commence à la confirmation de votre adresse email, dure 7 jours et n’est proposé qu’une fois par personne. ${END_RULES}`,
     );
     expect(LAUNCH_OFFER_DATA_TEXT).toBe(
       "Vos données (favoris, alertes, rapports enregistrés) restent conservées tant que votre compte existe et dans les durées de la politique de confidentialité. Elles redeviennent accessibles avec l’offre Analyse.",
     );
   });
 
-  it("dit au compte connecté que l’email confirmé est requis, puis la durée de l'offre", () => {
+  it("disent à un compte connecté la règle, vraie que son essai soit en cours, fini ou refusé", () => {
     expect(LAUNCH_OFFER_ACCOUNT_TEXT).toBe(
-      `Offre de lancement : votre compte gratuit, une fois votre adresse email confirmée, bénéficie des avantages de l’offre Analyse. ${LAUNCH_OFFER_DURATION_TEXT}`,
+      `Essai gratuit : le premier compte confirmé de chaque personne bénéficie de l’offre Analyse pendant 7 jours à compter de la confirmation de son adresse email, sans carte bancaire. ${END_RULES}`,
     );
   });
 
-  it("dit au visiteur de créer un compte gratuit et de confirmer son email, avec la même durée", () => {
+  it("disent au visiteur l'inscription gratuite et ses conditions dans la même phrase", () => {
     expect(LAUNCH_OFFER_VISITOR_TEXT).toBe(
-      `Offre de lancement : créez un compte gratuit, confirmez votre adresse email et accédez aux avantages de l’offre Analyse. ${LAUNCH_OFFER_DURATION_TEXT}`,
+      `Inscrivez-vous gratuitement : une fois votre adresse email confirmée, votre compte bénéficie de l’offre Analyse pendant 7 jours (un essai par personne), sans carte bancaire. ${END_RULES}`,
+    );
+    expect(LAUNCH_OFFER_SHORT_TEXT).toBe(
+      "Inscription gratuite : 7 jours d’accès à l’offre Analyse, sans carte bancaire",
     );
   });
 
-  it("n'annonce plus un retrait « sans préavis, à tout moment » sans condition", () => {
+  it("ne promettent ni retrait « à tout moment » sans condition, ni prix sans le dire payant", () => {
     for (const text of [LAUNCH_OFFER_ACCOUNT_TEXT, LAUNCH_OFFER_VISITOR_TEXT]) {
       expect(text).not.toContain("à tout moment");
-      expect(text).not.toContain("pourront");
+      expect(text).not.toContain("offre de lancement");
       expect(text).toContain("adresse email");
+      expect(text).toContain("abonnement payant");
     }
   });
 
   it("choisit la mention selon le public", () => {
     expect(launchOfferText("account")).toBe(LAUNCH_OFFER_ACCOUNT_TEXT);
     expect(launchOfferText("visitor")).toBe(LAUNCH_OFFER_VISITOR_TEXT);
+  });
+
+  it("dit à un compte l'état de son essai : en cours, terminé ou refusé", () => {
+    expect(signupTrialStatusText({ trialEndsAt: "2026-11-01T13:05:00.000Z" })).toBe(
+      "Essai gratuit de l’offre Analyse jusqu’au 1er novembre 2026 à 14:05. À son terme, votre compte revient à l’offre Découverte, gratuite : rien ne devient payant automatiquement.",
+    );
+    expect(signupTrialStatusText({ trialEndedAt: "2026-10-30T09:00:00.000Z" })).toBe(
+      "Votre essai gratuit de l’offre Analyse s’est terminé le 30 octobre 2026 à 10:00 : votre compte est revenu à l’offre Découverte. Pour continuer avec l’offre Analyse, il faudra y souscrire ; l’état de l’abonnement est indiqué ci-dessous.",
+    );
+    expect(signupTrialStatusText({ trialDenied: true })).toBe(SIGNUP_TRIAL_DENIED_TEXT);
+    expect(signupTrialStatusText({})).toBeNull();
   });
 });
 
@@ -88,6 +109,29 @@ describe("migrations de l'offre de lancement", () => {
     expect(file, `définition de ${signature}`).toBeDefined();
     return { file: file as string, text: stripComments(read(file as string)) };
   };
+
+  it("limite l'éligibilité à 7 jours après la confirmation, sans ouvrir aux navigateurs (20261103100000)", () => {
+    const trial = stripComments(read("20261103100000_signup_trial_seven_days.sql"));
+    expect(trial).toMatch(/account\.email_confirmed_at \+ interval '7 days'/);
+    expect(trial).toMatch(
+      /launch_offer_account_eligible[\s\S]*?coalesce\(app_private\.signup_trial_ends_at\(p_user_id\) > now\(\), false\)/,
+    );
+    for (const fn of [
+      "app_private.signup_trial_ends_at(uuid)",
+      "app_private.launch_offer_account_eligible(uuid)",
+      "public.get_signup_trial_end(uuid)",
+    ]) {
+      expect(trial).toContain(`revoke all on function ${fn} from public, anon, authenticated`);
+      expect(trial).toContain(`grant execute on function ${fn} to service_role`);
+    }
+    // Les fonctions d'accès Analyse ne sont pas redéfinies : elles lisent déjà l'éligibilité.
+    expect(trial).not.toMatch(
+      /function app_private\.(current_user_has_premium_access|has_active_analysis_access)/,
+    );
+    expect(latestDefinition("app_private.launch_offer_account_eligible(").file).toBe(
+      "20261103100000_signup_trial_seven_days.sql",
+    );
+  });
 
   it("crée une table à une seule ligne, active à l'application, fermée aux navigateurs", () => {
     expect(sql).toMatch(/create table if not exists app_private\.launch_offer/);

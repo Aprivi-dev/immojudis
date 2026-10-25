@@ -4,11 +4,19 @@ import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middlewar
 const mocks = vi.hoisted(() => ({
   launchOffer: vi.fn(),
   confirmedEmail: vi.fn(),
+  /** Essai lu en base, quand un test veut une date de fin précise. */
+  trial: vi.fn(),
   adminRows: vi.fn(),
 }));
 vi.mock("@/lib/launch-offer.server", () => ({
   isLaunchOfferActive: mocks.launchOffer,
-  hasConfirmedEmail: mocks.confirmedEmail,
+  // Essai en cours ou non (`confirmedEmail`), sans date de fin connue.
+  hasActiveSignupTrial: mocks.confirmedEmail,
+  readSignupTrial: async (userId: string) =>
+    (await mocks.trial(userId)) ?? {
+      active: Boolean(await mocks.confirmedEmail(userId)),
+      endsAt: null,
+    },
 }));
 vi.mock("@/lib/sale-unlocks.server", () => ({ hasUnlockedSale: vi.fn() }));
 vi.mock("@/integrations/supabase/client.server", () => ({
@@ -75,7 +83,43 @@ describe("plan effectif pendant l'offre de lancement", () => {
     mocks.launchOffer.mockReset();
     mocks.confirmedEmail.mockReset();
     mocks.confirmedEmail.mockResolvedValue(true);
+    mocks.trial.mockReset();
     mocks.adminRows.mockReset();
+  });
+
+  describe("dates de l'essai gratuit à l'inscription", () => {
+    const endsAt = new Date(Date.now() + 3 * 86_400_000).toISOString();
+    const endedAt = new Date(Date.now() - 86_400_000).toISOString();
+    beforeEach(() => mocks.launchOffer.mockResolvedValue(true));
+
+    it("donne la fin d'un essai en cours", async () => {
+      mocks.trial.mockResolvedValueOnce({ active: true, endsAt });
+      const plan = await resolvePlanEntitlements(account({ hasProfile: true }));
+      expect(plan).toMatchObject({ plan: "analyse", launchOffer: true, trialEndsAt: endsAt });
+      expect(plan).not.toHaveProperty("trialEndedAt");
+    });
+
+    it("revient à Découverte après l'essai, avec sa date de fin", async () => {
+      mocks.trial.mockResolvedValueOnce({ active: false, endsAt: endedAt });
+      const plan = await resolvePlanEntitlements(account({ hasProfile: true }));
+      expect(plan).toMatchObject({ plan: "decouverte", trialEndedAt: endedAt });
+      expect(plan).not.toHaveProperty("launchOffer");
+      expect(plan.limits).toEqual(PLAN_LIMITS.decouverte);
+    });
+
+    it("signale un essai refusé par la base", async () => {
+      mocks.trial.mockResolvedValueOnce({ active: false, endsAt: null, denied: true });
+      const plan = await resolvePlanEntitlements(account({ hasProfile: true }));
+      expect(plan).toMatchObject({ plan: "decouverte", trialDenied: true });
+    });
+
+    it("ne dit rien de l'essai quand l'interrupteur est coupé", async () => {
+      mocks.launchOffer.mockResolvedValue(false);
+      const plan = await resolvePlanEntitlements(account({ hasProfile: true }));
+      expect(plan).not.toHaveProperty("trialEndedAt");
+      expect(plan).not.toHaveProperty("trialDenied");
+      expect(mocks.trial).not.toHaveBeenCalled();
+    });
   });
 
   it("n'accorde rien à un compte dont l'email n'est pas confirmé, comme la base", async () => {

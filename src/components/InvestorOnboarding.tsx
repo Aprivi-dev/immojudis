@@ -209,8 +209,9 @@ export function InvestorOnboarding({ returnTo }: { returnTo?: string } = {}) {
                 bien.{" "}
                 {launchOffer ? (
                   <>
-                    Pendant l’offre de lancement, votre compte gratuit ouvre les outils de l’offre
-                    Analyse sur toutes les ventes (contenu selon la vente).
+                    Pendant votre essai gratuit de 7 jours, votre compte ouvre les outils de l’offre
+                    Analyse sur toutes les ventes (contenu selon la vente). Ensuite, vous pourrez
+                    débloquer {MONTHLY_SALE_UNLOCKS} ventes en détail chaque mois.
                   </>
                 ) : (
                   <>

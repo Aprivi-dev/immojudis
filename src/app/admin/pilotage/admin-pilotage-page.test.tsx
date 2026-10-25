@@ -240,7 +240,7 @@ describe("page admin Pilotage", () => {
     const term = (label: string) => screen.getByText(label).nextElementSibling?.textContent;
     expect(term("Consentements actifs aux rappels d’audience")).toBe("14");
     expect(term("Dossiers enregistrés en tout")).toBe("40");
-    expect(term("Comptes sous l’offre de lancement")).toBe("33");
+    expect(term("Comptes en essai gratuit")).toBe("33");
     expect(term("Demandes de liste d’attente actives")).toBe("12");
   });
 

@@ -23,8 +23,8 @@ export const LAUNCH_OFFER_QUERY_KEY = ["admin-launch-offer"] as const;
 const LAUNCH_OFFER_ACCOUNTS_QUERY_KEY = ["admin-launch-offer-accounts"] as const;
 
 const CUT_MESSAGE =
-  "Offre de lancement coupée : les comptes gratuits reviennent à l’offre Découverte.";
-const RESTORED_MESSAGE = "Offre de lancement rétablie.";
+  "Essai gratuit à l’inscription coupé : les comptes en essai reviennent à l’offre Découverte.";
+const RESTORED_MESSAGE = "Essai gratuit à l’inscription rétabli.";
 
 /**
  * Interrupteur de l'offre de lancement : tant qu'elle est active, tout compte gratuit bénéficie des
@@ -54,7 +54,7 @@ export function AdminLaunchOfferPanel() {
     },
     onError: (error) => {
       const message = error instanceof Error ? error.message : "Action impossible";
-      setAnnouncement(`Offre de lancement non modifiée : ${message}`);
+      setAnnouncement(`Essai gratuit non modifié : ${message}`);
       toast.error(message);
     },
   });
@@ -103,21 +103,23 @@ export function AdminLaunchOfferPanel() {
         <div className="max-w-3xl">
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-text">
             <Gift className="size-4" aria-hidden />
-            Offre de lancement
+            Essai gratuit à l’inscription (offre de lancement)
           </div>
           <h2 className="mt-2 text-xl font-semibold">
             {query.isPending
-              ? "Chargement de l’offre de lancement…"
+              ? "Chargement de l’essai gratuit…"
               : query.isError
-                ? "Offre de lancement indisponible"
+                ? "Essai gratuit : état indisponible"
                 : active
-                  ? "Offre de lancement active"
-                  : "Offre de lancement coupée"}
+                  ? "Essai gratuit ouvert"
+                  : "Essai gratuit coupé"}
           </h2>
           <p className="mt-2 text-sm leading-6 text-brand-navy/70">
-            Tant qu’elle est active, tout compte gratuit bénéficie des avantages de l’offre Analyse,
-            sans carte bancaire. Aucune écriture dans les comptes ni dans les abonnements : la
-            couper ramène chacun à son offre réelle. Mention affichée aux utilisateurs :
+            Tant qu’il est ouvert, chaque compte gratuit bénéficie de l’offre Analyse pendant 7
+            jours après la confirmation de son adresse email, une fois par personne, sans carte
+            bancaire. Aucune écriture dans les comptes ni dans les abonnements : le couper ramène
+            chacun à son offre réelle et ferme l’essai aux nouveaux inscrits. Mention affichée aux
+            utilisateurs :
           </p>
           <p className="mt-2 rounded-lg bg-gold/10 p-3 text-sm leading-6">
             {LAUNCH_OFFER_ACCOUNT_TEXT}
@@ -142,8 +144,8 @@ export function AdminLaunchOfferPanel() {
               {mutation.isPending
                 ? "Enregistrement…"
                 : active
-                  ? "Couper l’offre de lancement"
-                  : "Rétablir l’offre de lancement"}
+                  ? "Couper l’essai gratuit"
+                  : "Rétablir l’essai gratuit"}
             </button>
           )}
         </div>
@@ -154,10 +156,10 @@ export function AdminLaunchOfferPanel() {
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Couper l’offre de lancement ?</DialogTitle>
+            <DialogTitle>Couper l’essai gratuit ?</DialogTitle>
             <DialogDescription>
-              Tous les comptes gratuits perdent immédiatement les avantages de l’offre Analyse (la
-              mise à jour peut prendre jusqu’à une minute).
+              Les comptes en essai perdent immédiatement l’offre Analyse et les nouveaux inscrits
+              n’ont plus d’essai (la mise à jour peut prendre jusqu’à une minute).
             </DialogDescription>
           </DialogHeader>
           <p className="text-sm font-semibold" data-testid="launch-offer-accounts">
@@ -170,7 +172,7 @@ export function AdminLaunchOfferPanel() {
               </button>
             </DialogClose>
             <button type="button" className="admin-button-primary" onClick={confirmCut}>
-              Couper l’offre
+              Couper l’essai
             </button>
           </DialogFooter>
         </DialogContent>

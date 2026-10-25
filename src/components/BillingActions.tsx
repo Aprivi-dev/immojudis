@@ -37,6 +37,7 @@ import {
   ANALYSIS_SUBSCRIPTION_ONLY_LABEL,
   ANALYSIS_TRIAL_LABEL,
   resolveAnalysisOfferLabel,
+  STRIPE_CHECKOUT_TRIAL_OFFERED,
 } from "@/lib/analysis-offer";
 import { OfferOpeningRequest } from "@/components/OfferOpeningRequestLazy";
 import { userMessage } from "@/lib/user-messages";
@@ -73,7 +74,7 @@ export function BillingActions({
   const checkoutReturn = useCheckoutReturn(handleCheckoutReturn);
   const launch = useLaunchOffer();
   const [plan, setPlan] = useState<PlanCode | null>(null);
-  // Plan Analyse parce que l'offre de lancement est active (pas d'abonnement) : aucun parcours de paiement.
+  // Plan Analyse pendant l'essai gratuit à l'inscription (pas d'abonnement) : aucun parcours de paiement.
   const [launchOfferPlan, setLaunchOfferPlan] = useState(false);
   const [planState, setPlanState] = useState<PlanReadState>("loading");
   const [currentPeriodEnd, setCurrentPeriodEnd] = useState<string | null>(null);
@@ -87,7 +88,8 @@ export function BillingActions({
   const [immediatePerformanceAccepted, setImmediatePerformanceAccepted] = useState(false);
 
   const offerOpen = offer.status === "ready" && offer.open;
-  const trialAvailable = offer.status === "ready" ? offer.trialAvailable : true;
+  const trialAvailable =
+    offer.status === "ready" ? offer.trialAvailable : STRIPE_CHECKOUT_TRIAL_OFFERED;
   const offerLabel = (offer.status === "ready" ? offer.label : null) ?? resolveAnalysisOfferLabel();
 
   useEffect(() => {
@@ -361,7 +363,7 @@ export function BillingActions({
                 <span className="inline-flex items-center justify-center px-3 py-2 text-xs font-semibold text-muted-foreground">
                   {trialAvailable
                     ? `${ANALYSIS_TRIAL_LABEL} · abonnement résiliable depuis Mon compte`
-                    : `${ANALYSIS_SUBSCRIPTION_ONLY_LABEL} · sans nouvel essai`}
+                    : ANALYSIS_SUBSCRIPTION_ONLY_LABEL}
                 </span>
               ) : null}
             </div>
@@ -404,7 +406,7 @@ export function BillingActions({
               <div>
                 <strong className="text-foreground">Immojudis Analyse</strong>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {trialAvailable ? ANALYSIS_TRIAL_LABEL : "Abonnement immédiat, sans nouvel essai"}
+                  {trialAvailable ? ANALYSIS_TRIAL_LABEL : "Abonnement immédiat"}
                 </p>
               </div>
               <strong className="text-lg text-foreground">{offerLabel}</strong>
@@ -490,8 +492,10 @@ export function BillingActions({
 }
 
 /**
- * Offre de lancement : à la place du bouton d'achat. Aucun paiement n'est proposé, la mention
- * rappelle que les avantages sont retirables sans préavis (textes de `src/lib/launch-offer.ts`).
+ * Essai gratuit à l'inscription : à la place du bouton d'achat, pour un compte en essai ou un
+ * visiteur. Aucun paiement n'est proposé ; la mention donne les règles de l'essai (textes de
+ * `src/lib/launch-offer.ts`). Après l'essai, le compte voit le parcours habituel (souscription, ou
+ * « Me prévenir de l'ouverture » tant qu'elle est fermée).
  */
 function LaunchOfferNotice({ audience }: { audience: "account" | "visitor" }) {
   return (

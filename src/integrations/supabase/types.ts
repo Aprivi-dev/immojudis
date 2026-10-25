@@ -14860,6 +14860,7 @@ export type Database = {
       get_public_upcoming_hearings: { Args: { p_days?: number }; Returns: Json };
       get_sale_passages: { Args: { p_sale_id: string }; Returns: Json };
       get_sale_unlock_status: { Args: { p_sale_id?: string }; Returns: Json };
+      get_signup_trial_end: { Args: { p_user_id: string }; Returns: string };
       get_withdrawn_catalogue_sources: { Args: never; Returns: string[] };
       gettransactionid: { Args: never; Returns: unknown };
       grant_analysis_access_from_checkout: {

@@ -49,13 +49,16 @@ describe("conditions générales", () => {
     );
     expect(text).not.toContain("À l’attention de l’éditeur Immojudis");
     expect(text).toContain(
-      "Pendant l’essai gratuit, aucun montant n’est dû en cas de rétractation.",
+      "L’essai gratuit à l’inscription (article 13) est sans paiement : aucun montant n’est dû",
+    );
+    expect(text).toContain(
+      "le délai de 14 jours court à compter de la conclusion de l’abonnement, et le service fourni pendant l’essai gratuit n’est pas pris en compte dans le montant éventuellement dû en cas de rétractation.",
     );
   });
 
-  it("affichent le prix configurable et l'essai gratuit s'il est proposé", () => {
+  it("affichent le prix configurable, sans essai dans l'abonnement", () => {
     expect(pageText(<TermsPage />)).toContain(
-      `Prix de l’abonnement Analyse : ${DEFAULT_ANALYSIS_OFFER_LABEL}, précédé d’un essai gratuit de ${ANALYSIS_TRIAL_DAYS} jours lorsque celui-ci est proposé`,
+      `Prix de l’abonnement Analyse : ${DEFAULT_ANALYSIS_OFFER_LABEL}. La souscription n’est pas encore ouverte.`,
     );
     cleanup();
     // Only a label stating the billed price passes the build (scripts/verify-required-env.mjs).
@@ -105,7 +108,7 @@ describe("conditions générales : classement, référencement et mise en avant"
       "Par défaut, les annonces dont la position sur la carte est connue passent avant les autres. Elles sont ensuite classées selon la quantité d’informations renseignées dans leur fiche, puis par date de vente la plus proche. Aucune rémunération ne peut améliorer le rang d’une annonce.",
     );
     expect(text).toContain(
-      "Dans l’annuaire des avocats, les cabinets qui rémunèrent Immojudis, ou bénéficient d’un essai gratuit de cette offre, sont affichés en premier dans une section distincte, signalés « Publicité · Sponsorisé » ; ils ne sont ni recommandés ni notés.",
+      "Dans l’annuaire des avocats, les cabinets qui rémunèrent Immojudis, ou bénéficient d’une période d’essai de cette offre de mise en avant, sont affichés en premier dans une section distincte, signalés « Publicité · Sponsorisé » ; ils ne sont ni recommandés ni notés.",
     );
     expect(text).toContain(
       "Un encart d’un cabinet d’avocats, signalé de la même façon, peut aussi apparaître dans la liste des ventes pour une zone géographique ; il ne modifie pas l’ordre des annonces et n’est ni une recommandation, ni une notation, ni une garantie de résultat.",
@@ -122,59 +125,78 @@ describe("conditions générales : classement, référencement et mise en avant"
     expect(text).toContain("12. Réclamations, médiation et droit applicable");
   });
 
-  it("portent la version 2026-10-20.1 (offre de lancement), ancrée par l'empreinte de leur source", () => {
-    expect(LEGAL_DOCUMENTS.terms.version).toBe("2026-10-20.1");
-    expect(LEGAL_DOCUMENTS.terms.effectiveDate).toBe("20 octobre 2026");
+  it("portent la version 2026-10-25.1 (essai gratuit à l'inscription), ancrée par l'empreinte de leur source", () => {
+    expect(LEGAL_DOCUMENTS.terms.version).toBe("2026-10-25.1");
+    expect(LEGAL_DOCUMENTS.terms.effectiveDate).toBe("25 octobre 2026");
   });
 
-  it("la politique de confidentialité est en version 2026-10-21.1 (Google Analytics avec consentement)", () => {
-    expect(LEGAL_DOCUMENTS.privacy.version).toBe("2026-10-21.1");
-    expect(LEGAL_DOCUMENTS.privacy.effectiveDate).toBe("21 octobre 2026");
+  it("la politique de confidentialité est en version 2026-10-25.1 (essai gratuit à l'inscription)", () => {
+    expect(LEGAL_DOCUMENTS.privacy.version).toBe("2026-10-25.1");
+    expect(LEGAL_DOCUMENTS.privacy.effectiveDate).toBe("25 octobre 2026");
   });
 });
 
-describe("conditions générales : offre de lancement (relecture juridique du 20/10/2026)", () => {
-  it("ajoutent l'article 13 : avantages temporaires, fin annoncée par email, retrait anticipé limité", () => {
+describe("conditions générales : essai gratuit à l'inscription (25/10/2026)", () => {
+  it("décrivent l'article 13 : 7 jours après la confirmation, une fois par personne, retour à Découverte", () => {
     const text = pageText(<TermsPage />);
-    expect(text).toContain("13. Offre de lancement");
+    expect(text).toContain("13. Essai gratuit à l’inscription");
     expect(text).toContain(
-      "Ces avantages sont temporaires et prendront fin au plus tard au lancement officiel du site. Nous vous prévenons par email avant leur fin ; ils peuvent toutefois être retirés plus tôt, sans préavis, en cas d’abus ou d’impératif technique ou juridique.",
+      `pendant ${ANALYSIS_TRIAL_DAYS} jours à compter de la confirmation de son adresse email. L’essai n’est proposé qu’une fois par personne`,
     );
-    expect(text).toContain("dont l’adresse email est confirmée");
+    expect(text).toContain(
+      "n’est pas ouvert aux adresses jetables. Cette vérification est automatique",
+    );
+    expect(text).toContain(
+      "en cas d’abus (notamment la création de plusieurs comptes ou l’usage d’adresses jetables pour obtenir plusieurs essais) ou d’impératif technique ou juridique",
+    );
     expect(text).toContain(
       "le compte revient à l’offre Découverte, sans frais, sans paiement automatique et sans suppression des données",
     );
-    expect(text).toContain("Aucun abonnement ne commence sans confirmation dans Stripe.");
+    expect(text).toContain("aucun abonnement ne commence sans confirmation dans Stripe.");
     expect(text).toContain(
       "restent conservées tant que votre compte existe et dans les durées de la politique de confidentialité ; elles redeviennent accessibles avec l’offre Analyse",
     );
-    // Aucun retrait « à tout moment, sans préavis » sans condition.
-    expect(text).not.toContain("retirables sans préavis");
+    expect(text).toContain("Cet essai remplace l’offre de lancement à compter du 25 octobre 2026.");
+    expect(text).not.toContain("13. Offre de lancement");
+    expect(text).not.toContain("prendront fin au plus tard au lancement officiel du site");
   });
 
-  it("résolvent la contradiction avec le préavis de 30 jours : l'article est spécial à l'offre de lancement", () => {
+  it("résolvent la contradiction avec le préavis de 30 jours : l'article est spécial à l'essai", () => {
     const text = pageText(<TermsPage />);
     expect(text).toContain(
-      "Cet article est spécial à l’offre de lancement : il s’applique à la place du délai de prévenance de 30 jours de l’article 2, qui continue de s’appliquer aux déblocages mensuels de l’offre Découverte.",
+      "Cet article est spécial à l’essai : il s’applique à la place du délai de prévenance de 30 jours de l’article 2, qui continue de s’appliquer aux déblocages mensuels de l’offre Découverte.",
     );
     expect(text).toContain(
-      "Ce délai ne s’applique pas à l’offre de lancement, régie par l’article 13.",
+      "Ce délai ne s’applique pas à l’essai gratuit à l’inscription, régi par l’article 13.",
     );
+  });
+
+  it("ajoutent l'article 14 : modification des conditions avec 30 jours de préavis", () => {
+    const text = pageText(<TermsPage />);
+    expect(text).toContain("14. Modification des conditions");
+    expect(text).toContain(
+      "au moins 30 jours avant l’entrée en vigueur, sauf pour l’essai gratuit (article 13) et sauf obligation légale ou impératif de sécurité. Une modification n’est jamais appliquée à un abonnement en cours sans l’accord du client.",
+    );
+  });
+
+  it("ne mettent plus d'essai avec carte bancaire dans l'abonnement", () => {
+    const text = pageText(<TermsPage />);
+    expect(text).toContain("L’abonnement ne comprend pas de période d’essai");
+    expect(text).not.toContain("nécessite l’enregistrement d’une carte bancaire");
+    expect(text).not.toContain("la fin de l’essai et la date du premier prélèvement");
+    expect(text).not.toContain("Une résiliation pendant l’essai évite le premier prélèvement");
   });
 
   it("tirent le nombre de favoris et la durée de l'essai du code, pas du texte", () => {
     const text = pageText(<TermsPage />);
     expect(text).toContain(`${PLAN_LIMITS.decouverte.favoriteSales} favoris au maximum`);
     expect(text).not.toContain("trois favoris");
-    expect(text).toContain(
-      `L’essai commercial de ${ANALYSIS_TRIAL_DAYS} jours ne remplace pas le droit légal de rétractation.`,
-    );
     expect(text).not.toContain("sept jours");
   });
 
   it("disent que la souscription n'est pas encore ouverte, à côté du prix", () => {
     expect(pageText(<TermsPage />)).toContain(
-      `Prix de l’abonnement Analyse : ${DEFAULT_ANALYSIS_OFFER_LABEL}, précédé d’un essai gratuit de ${ANALYSIS_TRIAL_DAYS} jours lorsque celui-ci est proposé. La souscription n’est pas encore ouverte.`,
+      `Prix de l’abonnement Analyse : ${DEFAULT_ANALYSIS_OFFER_LABEL}. La souscription n’est pas encore ouverte.`,
     );
   });
 
@@ -240,7 +262,7 @@ describe("conditions générales : 3 déblocages par mois", () => {
   it("disent le sort des ventes débloquées après un abonnement Analyse", () => {
     const text = pageText(<TermsPage />);
     expect(text).toContain(
-      "Pendant un abonnement Analyse, essai compris, aucun déblocage n’est consommé. À la fin de l’abonnement, le compte revient à Découverte : les ventes que vous aviez déjà débloquées restent accessibles ; les autres ventes consultées pendant l’abonnement redeviennent soumises aux déblocages.",
+      "Pendant un abonnement Analyse ou l’essai gratuit de l’article 13, aucun déblocage n’est consommé. À la fin de l’abonnement ou de l’essai, le compte revient à Découverte : les ventes que vous aviez déjà débloquées restent accessibles ; les autres ventes consultées pendant l’abonnement ou l’essai redeviennent soumises aux déblocages.",
     );
   });
 

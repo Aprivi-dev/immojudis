@@ -24,12 +24,8 @@ const COMPLETE_ENV = {
 };
 
 describe("analysisCheckoutReadiness", () => {
-  it("est ouvert quand tout est configuré et que l'offre de lancement est coupée", () => {
-    expect(analysisCheckoutReadiness(COMPLETE_ENV)).toEqual({
-      open: true,
-      missing: [],
-      launchOfferActive: false,
-    });
+  it("est ouvert quand tout est configuré", () => {
+    expect(analysisCheckoutReadiness(COMPLETE_ENV)).toEqual({ open: true, missing: [] });
     expect(() => assertAnalysisCheckoutOpen(COMPLETE_ENV)).not.toThrow();
   });
 
@@ -67,20 +63,6 @@ describe("analysisCheckoutReadiness", () => {
     expect(readiness.open).toBe(false);
     expect(readiness.missing).toEqual(
       expect.arrayContaining(["NEXT_PUBLIC_LEGAL_ENTITY_NAME", "RESEND_API_KEY"]),
-    );
-  });
-
-  it("n'est pas ouvert pendant l'offre de lancement, même entièrement configuré", () => {
-    const readiness = analysisCheckoutReadiness(COMPLETE_ENV, { launchOfferActive: true });
-    expect(readiness).toEqual({ open: false, missing: [], launchOfferActive: true });
-    expect(() => assertAnalysisCheckoutOpen(COMPLETE_ENV, { launchOfferActive: true })).toThrow(
-      /offre de lancement/,
-    );
-  });
-
-  it("n'expose aucun nom de variable dans le message de l'offre de lancement", () => {
-    expect(() => assertAnalysisCheckoutOpen(COMPLETE_ENV, { launchOfferActive: true })).toThrow(
-      /^(?!.*STRIPE)/,
     );
   });
 });

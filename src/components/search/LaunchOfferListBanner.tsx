@@ -4,12 +4,14 @@ import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
 import Link from "next/link";
 import { useAuth } from "@/hooks/use-auth";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
-import { LAUNCH_OFFER_SHORT_TEXT, launchOfferText } from "@/lib/launch-offer";
+import { LAUNCH_OFFER_SHORT_TEXT, LAUNCH_OFFER_VISITOR_TEXT } from "@/lib/launch-offer";
+import { loginPathWithRedirect } from "@/lib/navigation";
 
 /**
- * Offre de lancement au-dessus de la liste des ventes : une seule bannière repliable avec le texte
- * complet (`src/lib/launch-offer.ts`) et un lien vers /offres. Les cartes n'ont que la ligne courte
- * `LISTING_LAUNCH_OFFER_LINE`, au lieu de répéter ce texte 24 fois.
+ * Essai gratuit à l'inscription au-dessus de la liste des ventes, pour un visiteur sans compte : une
+ * seule bannière repliable avec les règles de l'essai (`src/lib/launch-offer.ts`) et un lien vers la
+ * création du compte. Les cartes n'ont que la ligne courte `LISTING_LAUNCH_OFFER_LINE`. Un compte
+ * connecté voit son offre dans Mon compte, pas cette invitation.
  *
  * Jamais rendue côté serveur : tant que l'état n'est pas lu (rendu serveur compris), seule une
  * hauteur est réservée, pour que la liste ne descende pas quand la bannière arrive ; la coupure de
@@ -18,6 +20,7 @@ import { LAUNCH_OFFER_SHORT_TEXT, launchOfferText } from "@/lib/launch-offer";
 export function LaunchOfferListBanner() {
   const { user } = useAuth();
   const { active, pending } = useLaunchOffer();
+  if (user) return null;
   if (pending) {
     return (
       <div
@@ -41,12 +44,12 @@ export function LaunchOfferListBanner() {
         />
       </summary>
       <div className="px-4 pb-3 leading-relaxed">
-        <p>{launchOfferText(user ? "account" : "visitor")}</p>
+        <p>{LAUNCH_OFFER_VISITOR_TEXT}</p>
         <Link
-          href="/offres"
+          href={loginPathWithRedirect("/sales")}
           className="mt-2 inline-block font-semibold underline underline-offset-4"
         >
-          Voir les offres
+          S’inscrire gratuitement
         </Link>
       </div>
     </details>

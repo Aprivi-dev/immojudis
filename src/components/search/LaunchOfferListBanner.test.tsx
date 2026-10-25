@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/hooks/use-launch-offer", () => ({ useLaunchOffer: () => mocks.launch }));
 vi.mock("@/hooks/use-auth", () => ({ useAuth: () => ({ user: mocks.user, loading: false }) }));
 
-import { LAUNCH_OFFER_ACCOUNT_TEXT, LAUNCH_OFFER_VISITOR_TEXT } from "@/lib/launch-offer";
+import { LAUNCH_OFFER_SHORT_TEXT, LAUNCH_OFFER_VISITOR_TEXT } from "@/lib/launch-offer";
 import { LaunchOfferListBanner } from "./LaunchOfferListBanner";
 
 afterEach(() => {
@@ -18,26 +18,27 @@ afterEach(() => {
   mocks.user = null;
 });
 
-describe("bannière de l'offre de lancement au-dessus de la liste", () => {
-  it("porte le texte complet une seule fois, dans un bloc repliable, avec un lien vers /offres", () => {
+describe("bannière de l'essai gratuit au-dessus de la liste", () => {
+  it("porte les règles de l'essai une seule fois, dans un bloc repliable, avec un lien d'inscription", () => {
     render(<LaunchOfferListBanner />);
     const banner = screen.getByTestId("launch-offer-list-banner");
     expect(banner.tagName).toBe("DETAILS");
     expect(banner.hasAttribute("open")).toBe(false);
     expect(banner.textContent).toContain(LAUNCH_OFFER_VISITOR_TEXT);
-    expect(banner.textContent).toContain("les avantages Analyse, temporaires");
+    expect(banner.textContent).toContain(LAUNCH_OFFER_SHORT_TEXT);
     expect(banner.textContent).not.toContain("retirables sans préavis");
-    expect(screen.getByRole("link", { name: "Voir les offres" }).getAttribute("href")).toBe(
-      "/offres",
+    expect(screen.getByRole("link", { name: "S’inscrire gratuitement" }).getAttribute("href")).toBe(
+      "/login?redirect=%2Fsales&mode=investor",
     );
   });
 
-  it("lit la mention du compte connecté", () => {
+  it("ne s'adresse pas à un compte connecté, qui voit son offre dans Mon compte", () => {
     mocks.user = { id: "user-1" };
-    render(<LaunchOfferListBanner />);
-    expect(screen.getByTestId("launch-offer-list-banner").textContent).toContain(
-      LAUNCH_OFFER_ACCOUNT_TEXT,
-    );
+    const { container } = render(<LaunchOfferListBanner />);
+    expect(container.innerHTML).toBe("");
+    mocks.launch = { active: false, pending: true };
+    const pending = render(<LaunchOfferListBanner />);
+    expect(pending.container.innerHTML).toBe("");
   });
 
   it("n'affiche rien quand l'offre est coupée", () => {

@@ -11,7 +11,12 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/launch-offer.server", () => ({
   isLaunchOfferActive: mocks.launchOffer,
-  hasConfirmedEmail: mocks.confirmedEmail,
+  // Essai en cours ou non (`confirmedEmail`), sans date de fin connue.
+  hasActiveSignupTrial: mocks.confirmedEmail,
+  readSignupTrial: async (userId: string) => ({
+    active: Boolean(await mocks.confirmedEmail(userId)),
+    endsAt: null,
+  }),
 }));
 vi.mock("@/lib/usage", () => ({ recordFeatureUsageEvent: vi.fn() }));
 vi.mock("@/integrations/supabase/client.server", () => {

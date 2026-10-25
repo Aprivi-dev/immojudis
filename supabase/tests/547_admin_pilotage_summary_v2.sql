@@ -378,8 +378,20 @@ select is(
 select is(
   (select summary #>> '{snapshot,launch_offer_active}' from pgtap_547_summary where case_name = 'after')
   || ':' || pg_temp.delta('{snapshot,launch_offer_accounts}')::text,
-  'true:3',
-  'under the launch offer: confirmed accounts without paid access, not the unconfirmed one, the subscriber or the administrator'
+  -- Essai à l'inscription (20261103100000) : parmi les comptes confirmés sans accès payant (1, 3
+  -- et 4), seuls ceux dont l'essai de 7 jours après la confirmation court encore sont comptés. Les
+  -- dates des fixtures sont fixes : l'attendu se calcule avec la même règle, à l'heure du test.
+  'true:' || (
+    select count(*)
+    from auth.users account
+    where account.id in (
+        'c5470000-0000-4000-8000-000000000001',
+        'c5470000-0000-4000-8000-000000000003',
+        'c5470000-0000-4000-8000-000000000004'
+      )
+      and account.email_confirmed_at + interval '7 days' > now()
+  )::text,
+  'under the signup trial: confirmed accounts without paid access still in their 7 days, not the unconfirmed one, the subscriber or the administrator'
 );
 select is(
   pg_temp.delta('{snapshot,reminder_consents_active}'),

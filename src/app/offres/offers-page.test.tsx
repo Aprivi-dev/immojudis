@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { LAUNCH_OFFER_ACCOUNT_TEXT, LAUNCH_OFFER_VISITOR_TEXT } from "@/lib/launch-offer";
+import { LAUNCH_OFFER_VISITOR_TEXT } from "@/lib/launch-offer";
 import { PLAN_LIMITS } from "@/lib/plans";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -121,9 +121,10 @@ describe("page Offres", () => {
     ).toBeTruthy();
   });
 
-  it("promet l'essai seulement quand la souscription est ouverte", async () => {
-    render(<OffersPage />);
-    expect(await screen.findByText(/Essai gratuit de 7 jours avec carte bancaire/)).toBeTruthy();
+  it("n'ajoute jamais d'essai avec carte au paiement : abonnement mensuel, ou tarif prévu", async () => {
+    const open = render(<OffersPage />);
+    expect(await screen.findByText(/Abonnement mensuel, résiliable à tout moment\./)).toBeTruthy();
+    expect(open.container.textContent).not.toMatch(/avec carte bancaire/);
     cleanup();
 
     mocks.offer.mockResolvedValue({
@@ -135,7 +136,7 @@ describe("page Offres", () => {
     expect(
       await screen.findByText(/Tarif prévu : 59 € TTC \/ mois\. Pas encore souscriptible\./),
     ).toBeTruthy();
-    expect(screen.queryByText(/Essai gratuit de 7 jours avec carte bancaire/)).toBeNull();
+    expect(screen.queryByText(/Abonnement mensuel, résiliable/)).toBeNull();
   });
 
   it("n'annonce aucun essai tant que l'offre est en chargement ou en erreur", async () => {
@@ -144,14 +145,17 @@ describe("page Offres", () => {
     expect(container.textContent).not.toMatch(/essai de 7 jours|Essai gratuit de 7 jours/);
     expect(container.textContent).not.toMatch(/Ouverture prochaine|ne sont pas ouvertes/);
     expect(container.textContent).not.toMatch(/Tarif prévu|Pas encore souscriptible/);
-    expect(
-      screen.getByText("Les conditions de l’essai s’affichent dès que l’offre est chargée."),
-    ).toBeTruthy();
+    expect(container.textContent).toContain(
+      "Les conditions de souscription s’affichent une fois l’offre chargée.",
+    );
     unmount();
 
     mocks.offer.mockRejectedValue(new Error("réseau"));
     const failed = render(<OffersPage />);
-    expect(await screen.findByText(/n’ont pas pu être chargées/)).toBeTruthy();
+    await waitFor(() => expect(mocks.offer).toHaveBeenCalled());
+    expect(failed.container.textContent).toContain(
+      "Les conditions de souscription s’affichent une fois l’offre chargée.",
+    );
     expect(failed.container.textContent).not.toMatch(/essai de 7 jours|Essai gratuit de 7 jours/);
     expect(failed.container.textContent).not.toMatch(/Ouverture prochaine|Tarif prévu/);
   });
@@ -177,7 +181,7 @@ describe("page Offres", () => {
 
   it("lit l'offre une seule fois et la partage avec le bouton de paiement", async () => {
     render(<OffersPage />);
-    await screen.findByText(/Essai gratuit de 7 jours/);
+    await screen.findByText(/Abonnement mensuel, résiliable à tout moment\./);
     expect(mocks.offer).toHaveBeenCalledTimes(1);
     const props = mocks.billingActionsProps.mock.calls.at(-1)?.[0] as {
       offerSource: { offer: { status: string }; reload: () => void };
@@ -190,12 +194,21 @@ describe("page Offres", () => {
   it("relit l'offre quand le bouton « Réessayer » du paiement appelle reload", async () => {
     mocks.offer.mockRejectedValueOnce(new Error("réseau"));
     render(<OffersPage />);
-    await screen.findByText(/n’ont pas pu être chargées/);
+    await waitFor(() => expect(mocks.billingActionsProps).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(
+        (
+          mocks.billingActionsProps.mock.calls.at(-1)?.[0] as {
+            offerSource: { offer: { status: string } };
+          }
+        ).offerSource.offer.status,
+      ).toBe("error"),
+    );
     const props = mocks.billingActionsProps.mock.calls.at(-1)?.[0] as {
       offerSource: { reload: () => void };
     };
     act(() => props.offerSource.reload());
-    expect(await screen.findByText(/Essai gratuit de 7 jours/)).toBeTruthy();
+    expect(await screen.findByText(/Abonnement mensuel, résiliable à tout moment\./)).toBeTruthy();
     expect(mocks.offer).toHaveBeenCalledTimes(2);
   });
 
@@ -298,30 +311,34 @@ describe("page Offres", () => {
 
   it("souscription ouverte : ni note de tarif prévu ni préfixe dans la FAQ", async () => {
     const { container } = render(<OffersPage />);
-    await screen.findByText(/Essai gratuit de 7 jours/);
+    await screen.findByText(/Abonnement mensuel, résiliable à tout moment\./);
     expect(screen.queryByTestId("price-note")).toBeNull();
     expect(container.textContent).not.toContain("Quand l’abonnement sera ouvert");
   });
 
-  it("offre de lancement : le tarif prévu est sous le prix et la FAQ des déblocages est nuancée", () => {
+  it("essai gratuit : le tarif prévu reste sous le prix, la FAQ explique l'essai et ses règles", async () => {
     mocks.launch.mockReturnValue({ active: true, pending: false });
+    mocks.offer.mockResolvedValue({ configured: false, trialAvailable: false, label: "59 €" });
     const { container } = render(<OffersPage />);
-    expect(screen.getByTestId("price-note").textContent).toBe(
+    expect((await screen.findByTestId("price-note")).textContent).toBe(
       "Tarif prévu, pas encore souscriptible",
     );
-    const unlocks = Array.from(container.querySelectorAll("details")).find((node) =>
-      node.querySelector("summary")?.textContent?.includes("déblocages par mois"),
-    )!.textContent;
+    const answer = (question: string) =>
+      Array.from(container.querySelectorAll("details")).find((node) =>
+        node.querySelector("summary")?.textContent?.includes(question),
+      )!.textContent;
+    const unlocks = answer("déblocages par mois");
+    expect(unlocks).toContain("qui suivent la confirmation de l’adresse email");
     expect(unlocks).toContain("sont aussi ouverts au compte gratuit");
-    expect(unlocks).toContain("redeviendront réservés à Analyse à la fin de l’offre");
-    expect(unlocks).not.toContain("restent réservés à Analyse");
-    expect(container.textContent).toContain("dont l’adresse email est confirmée");
-    expect(container.textContent).toContain(
-      "prendront fin au plus tard au lancement officiel du site. Nous vous prévenons par email avant leur fin",
-    );
-    expect(container.textContent).toContain("en cas d’abus ou d’impératif technique ou juridique");
-    expect(container.textContent).toContain("restent conservées tant que votre compte existe");
-    expect(container.textContent).not.toContain("à tout moment, notamment au lancement officiel");
+    expect(unlocks).toContain("redeviennent réservés à Analyse ensuite");
+    const trial = answer("Y a-t-il un essai gratuit ?");
+    expect(trial).toContain("Oui. Une fois votre adresse email confirmée");
+    expect(trial).toContain("n’est proposé qu’une fois par personne");
+    expect(trial).toContain("en cas d’abus ou d’impératif technique ou juridique");
+    expect(trial).toContain("restent conservées tant que votre compte existe");
+    expect(trial).toContain("l’abonnement n’est pas encore ouvert (tarif prévu : 59 € TTC / mois)");
+    expect(container.textContent).not.toContain("prendront fin au plus tard au lancement officiel");
+    expect(container.textContent).not.toContain("Qu’est-ce que l’offre de lancement ?");
   });
 
   it("réserve la hauteur du bandeau tant que l'état est inconnu, sans le rendre", () => {
@@ -353,9 +370,9 @@ describe("page Offres", () => {
     expect(table.parentElement?.className).toContain("sm:block");
   });
 
-  it("offre de lancement : la mention passe avant les offres, sans bouton de paiement", async () => {
+  it("essai gratuit : l'invitation passe avant les offres pour un visiteur, sans bouton de paiement", async () => {
     mocks.launch.mockReturnValue({ active: true, pending: false });
-    const { container } = render(<OffersPage />);
+    render(<OffersPage />);
 
     const banner = screen.getByTestId("launch-offer-banner");
     expect(banner.textContent).toContain(LAUNCH_OFFER_VISITOR_TEXT);
@@ -368,28 +385,23 @@ describe("page Offres", () => {
       screen.getAllByRole("link", { name: /Créer mon compte gratuit/ }).length,
     ).toBeGreaterThan(0);
 
-    // Aucun parcours d'achat : la carte Analyse ne monte pas le bouton de paiement.
+    // Aucun parcours d'achat sans compte : la carte Analyse ne monte pas le bouton de paiement.
     expect(mocks.billingActionsProps).not.toHaveBeenCalled();
-    expect(screen.queryByText("Démarrer l’essai Analyse")).toBeNull();
     const panel = screen.getByTestId("launch-offer-panel");
-    expect(panel.textContent).toContain("Tarif prévu : 59 € TTC / mois. Pas encore souscriptible.");
-    expect(container.textContent).not.toMatch(/Essai gratuit de 7 jours/);
-    expect(container.textContent).toContain("Qu’est-ce que l’offre de lancement ?");
+    expect(panel.textContent).toContain(
+      "Offerte pendant 7 jours à l’inscription, sans carte bancaire.",
+    );
+    expect(await within(panel).findByText(/Abonnement mensuel, résiliable/)).toBeTruthy();
+    expect(within(panel).getByRole("link", { name: "Commencer l’essai gratuit" })).toBeTruthy();
   });
 
-  it("offre de lancement : un compte connecté lit la mention de son compte", () => {
+  it("essai gratuit : un compte connecté n'a pas l'invitation, mais son parcours d'abonnement", () => {
     mocks.launch.mockReturnValue({ active: true, pending: false });
     mocks.user.mockReturnValue({ id: "user-1" });
     render(<OffersPage />);
-    expect(screen.getByTestId("launch-offer-banner").textContent).toContain(
-      LAUNCH_OFFER_ACCOUNT_TEXT,
-    );
-    expect(screen.getByRole("link", { name: /Explorer les ventes/ }).getAttribute("href")).toBe(
-      "/sales",
-    );
-    expect(screen.getByTestId("launch-offer-panel").textContent).not.toContain(
-      "Créer mon compte gratuit",
-    );
+    expect(screen.queryByTestId("launch-offer-banner")).toBeNull();
+    expect(screen.queryByTestId("launch-offer-panel")).toBeNull();
+    expect(mocks.billingActionsProps).toHaveBeenCalled();
   });
 
   it("n'affiche ni l'offre de lancement ni le bouton de paiement tant que l'état est inconnu", () => {
@@ -441,18 +453,21 @@ describe("page Offres", () => {
     ).toBeTruthy();
   });
 
-  it("offre de lancement : jamais « Analyse coûte », et la carte Découverte et le comparatif disent que le compte gratuit a les avantages Analyse", () => {
+  it("essai gratuit : le prix reste dit, et la carte Découverte et le comparatif disent quand ses limites s'appliquent", async () => {
     mocks.launch.mockReturnValue({ active: true, pending: false });
+    mocks.offer.mockResolvedValue({ configured: false, trialAvailable: false, label: "59 €" });
     const { container } = render(<OffersPage />);
+    await screen.findByTestId("price-note");
     expect(container.textContent).not.toMatch(/Analyse coûte/);
     expect(container.textContent).toContain(
-      "Analyse est prévue à 59 € TTC / mois ; sa souscription n’est pas ouverte",
+      "Analyse : tarif prévu 59 € TTC / mois, pas encore souscriptible. Elle est offerte pendant 7 jours à l’inscription, sans carte bancaire.",
     );
     const discovery = screen.getByTestId("launch-offer-free-note");
     const comparison = screen.getByTestId("launch-offer-comparison-note");
     for (const note of [discovery, comparison]) {
-      expect(note.textContent).toContain("bénéficie des avantages de l’offre Analyse");
-      expect(note.textContent).toContain("s’appliqueront à la fin de l’offre");
+      expect(note.textContent).toContain("qui suivent la confirmation de son adresse email");
+      expect(note.textContent).toContain("bénéficie de l’offre Analyse (un essai par personne)");
+      expect(note.textContent).toContain("s’appliquent ensuite");
     }
     // La carte Découverte contient sa mention, le comparatif la sienne.
     expect(discovery.closest("article")?.textContent).toContain("Découverte");
@@ -461,7 +476,7 @@ describe("page Offres", () => {
 
   it("hors offre de lancement, aucune mention de l'offre de lancement dans la carte ni le comparatif", async () => {
     render(<OffersPage />);
-    await screen.findByText(/Essai gratuit de 7 jours/);
+    await screen.findByText(/Abonnement mensuel, résiliable à tout moment\./);
     expect(screen.queryByTestId("launch-offer-free-note")).toBeNull();
     expect(screen.queryByTestId("launch-offer-comparison-note")).toBeNull();
   });

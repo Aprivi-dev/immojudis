@@ -31,12 +31,12 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-describe("étiquette « Inclus pendant l'offre de lancement »", () => {
+describe("étiquette « Inclus pendant votre essai gratuit »", () => {
   it("s'affiche pour un compte dont l'accès Analyse vient de l'offre", async () => {
     mocks.plan.mockResolvedValue({ plan: { hasAnalysisAccess: true, launchOffer: true } });
     renderTag();
     expect((await screen.findByTestId("launch-offer-included")).textContent).toBe(
-      "Inclus pendant l’offre de lancement",
+      "Inclus pendant votre essai gratuit",
     );
   });
 
