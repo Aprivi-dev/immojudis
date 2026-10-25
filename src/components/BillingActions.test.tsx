@@ -439,6 +439,25 @@ describe("BillingActions : offre en chargement, en erreur ou fermée", () => {
     expect(mocks.track).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps a request made before the initial status arrives, even if that status says otherwise", async () => {
+    let answerInitialStatus!: (value: { notification: { requested: boolean } }) => void;
+    mocks.fetchOfferOpeningNotification.mockReturnValue(
+      new Promise((resolve) => {
+        answerInitialStatus = resolve;
+      }),
+    );
+    renderActions();
+
+    // Le bouton est là avant la réponse sur l'état de la demande : la personne clique aussitôt.
+    fireEvent.click(await screen.findByRole("button", { name: "Me prévenir de l’ouverture" }));
+    expect(await screen.findByText(/Votre demande est enregistrée/)).toBeTruthy();
+
+    // La lecture de l'état initial répond ensuite, avec l'état d'avant le clic : elle est ignorée.
+    await act(async () => answerInitialStatus({ notification: { requested: false } }));
+    expect(screen.getByText(/Votre demande est enregistrée/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Me prévenir de l’ouverture" })).toBeNull();
+  });
+
   it("shows the request as recorded when the account already asked", async () => {
     mocks.fetchOfferOpeningNotification.mockResolvedValue({
       notification: { requested: true, consentedAt: "2026-10-20T10:00:00.000Z" },
