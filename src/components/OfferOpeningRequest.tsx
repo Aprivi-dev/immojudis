@@ -54,6 +54,12 @@ export function OfferOpeningRequest({
   const [survey, setSurvey] = useState<OfferOpeningSurveyState | null>(null);
   const [openingBusy, setOpeningBusy] = useState(false);
   const resumed = useRef(false);
+  /**
+   * Vrai dès que la personne a changé sa demande : la lecture de l'état initial, si elle répond
+   * après, ne doit pas effacer ce qu'elle vient d'enregistrer (le bouton est affiché avant la fin de
+   * cette lecture).
+   */
+  const changedByUser = useRef(false);
 
   async function changeOpeningRequest(enabled: boolean) {
     if (openingBusy) return;
@@ -63,6 +69,7 @@ export function OfferOpeningRequest({
       return;
     }
     setOpeningBusy(true);
+    changedByUser.current = true;
     try {
       const response = await updateOfferOpeningNotification(enabled);
       setOpeningRequested(response.notification.requested);
@@ -80,9 +87,10 @@ export function OfferOpeningRequest({
   useEffect(() => {
     if (!userId) return;
     let active = true;
+    changedByUser.current = false;
     fetchOfferOpeningNotification()
       .then((response) => {
-        if (!active) return;
+        if (!active || changedByUser.current) return;
         setOpeningRequested(response.notification.requested);
         setSurvey(response.notification.survey ?? null);
         // Retour de la connexion après un clic sur « Me prévenir » : on enregistre la demande.
@@ -100,7 +108,7 @@ export function OfferOpeningRequest({
         }
       })
       .catch(() => {
-        if (active) setOpeningRequested(null);
+        if (active && !changedByUser.current) setOpeningRequested(null);
       });
     return () => {
       active = false;
