@@ -280,15 +280,13 @@ describe("vue « tableau » des résultats", () => {
     );
   });
 
-  it("offre de lancement : le visiteur lit la ligne courte de l'offre, pour toutes les ventes", () => {
+  it("essai gratuit : le visiteur lit la ligne courte de l'essai, pour toutes les ventes", () => {
     const tribunal = makeSale("sale-t");
     const notary = makeSale("sale-n", { sale_venue_type: "notary" });
     const visitor = { locked: true, analysisLocked: true, unlocked: false, launchOffer: true };
     expect(listingAccessLine(tribunal, visitor)).toBe(LISTING_LAUNCH_OFFER_LINE);
     expect(listingAccessLine(notary, visitor)).toBe(LISTING_LAUNCH_OFFER_LINE);
-    expect(LISTING_LAUNCH_OFFER_LINE).toBe(
-      "Compte gratuit : avantages Analyse (offre de lancement)",
-    );
+    expect(LISTING_LAUNCH_OFFER_LINE).toBe("Inscription gratuite : 7 jours d’offre Analyse");
     // Le texte complet n'est pas répété sur chaque carte : il vit dans la bannière de la liste.
     expect(LISTING_LAUNCH_OFFER_LINE.length).toBeLessThan(70);
     // Hors offre, ou pour un compte connecté, la ligne habituelle ne change pas.

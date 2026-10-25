@@ -7,7 +7,7 @@ import { OfferOpeningRequest } from "@/components/OfferOpeningRequestLazy";
 import { useAnalysisCheckoutOpen } from "@/hooks/use-analysis-checkout-open";
 import { useAuth } from "@/hooks/use-auth";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
-import { ANALYSIS_TRIAL_DAYS, resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
+import { ANALYSIS_TRIAL_DAYS } from "@/lib/analysis-offer";
 import { launchOfferText } from "@/lib/launch-offer";
 import { loginPathWithRedirect } from "@/lib/navigation";
 import { PLAN_LIMITS } from "@/lib/plans";
@@ -28,12 +28,16 @@ const analysisFeatures = [
   "Simulation ajustable",
 ] as const;
 
-/** Les deux offres, Découverte et Analyse, avec l'état réel de la souscription. */
+/**
+ * Les deux offres, Découverte et Analyse. L'accueil met en avant l'inscription gratuite et l'essai
+ * de 7 jours ; le tarif de l'offre Analyse n'y figure pas (décision du 25/10/2026) : il est sur
+ * /offres, et présenté avant toute souscription.
+ */
 export function HomeOffers() {
-  const analysisPrice = resolveAnalysisOfferLabel();
   const checkoutOpen = useAnalysisCheckoutOpen();
   const { user } = useAuth();
   const launchOffer = useLaunchOffer().active;
+  const signupPath = loginPathWithRedirect(undefined);
 
   return (
     <section className={styles.offers} aria-labelledby="offers-title">
@@ -54,18 +58,17 @@ export function HomeOffers() {
                 </li>
               ))}
             </ul>
-            <Link href={loginPathWithRedirect(undefined)} className={styles.secondaryLink}>
-              Créer mon compte gratuit <ArrowRight aria-hidden="true" size={17} />
-            </Link>
-            {launchOffer ? (
-              <p className={styles.planFinePrint} data-testid="home-launch-offer">
-                {launchOfferText(user ? "account" : "visitor")}
-              </p>
-            ) : null}
+            {user ? null : (
+              <Link href={signupPath} className={styles.secondaryLink}>
+                Créer mon compte gratuit <ArrowRight aria-hidden="true" size={17} />
+              </Link>
+            )}
           </article>
           <article className={`${styles.plan} ${styles.planFeatured}`} data-reveal="">
             <h3>Analyse</h3>
-            <p className={styles.planPrice}>{analysisPrice}</p>
+            <p className={styles.planPrice}>
+              {launchOffer ? `${ANALYSIS_TRIAL_DAYS} jours offerts` : "Sur abonnement"}
+            </p>
             <ul>
               {analysisFeatures.map((feature) => (
                 <li key={feature}>
@@ -74,8 +77,12 @@ export function HomeOffers() {
                 </li>
               ))}
             </ul>
-            {!launchOffer && checkoutOpen === false ? (
-              // Offre fermée : le bouton principal est la demande d'information.
+            {launchOffer && !user ? (
+              <Link href={signupPath} className={styles.primaryLink}>
+                Commencer l’essai gratuit <ArrowRight aria-hidden="true" size={17} />
+              </Link>
+            ) : !launchOffer && checkoutOpen === false ? (
+              // Ni essai ni souscription : le bouton principal est la demande d'information.
               <OfferOpeningRequest primary className="mt-2" />
             ) : (
               <Link href="/offres" className={styles.primaryLink}>
@@ -83,19 +90,16 @@ export function HomeOffers() {
               </Link>
             )}
             {launchOffer ? (
-              <p className={styles.planFinePrint}>
-                Inclus avec un compte gratuit pendant l’offre de lancement. Tarif prévu :{" "}
-                {analysisPrice}. Pas encore souscriptible.
+              <p className={styles.planFinePrint} data-testid="home-launch-offer">
+                {launchOfferText(user ? "account" : "visitor")}
               </p>
             ) : checkoutOpen === true ? (
               <p className={styles.planFinePrint}>
-                Essai de {ANALYSIS_TRIAL_DAYS} jours avec carte bancaire, puis abonnement récurrent.
-                Résiliable depuis votre compte.
+                Abonnement mensuel, résiliable depuis votre compte. Tarif et conditions sur la page
+                Offres.
               </p>
             ) : checkoutOpen === false ? (
-              <p className={styles.planFinePrint}>
-                Tarif prévu : {analysisPrice}. Pas encore souscriptible.
-              </p>
+              <p className={styles.planFinePrint}>Abonnement bientôt disponible.</p>
             ) : null}
           </article>
         </div>

@@ -1,5 +1,28 @@
 # Offre de lancement : couper (ou rétablir) le surclassement des comptes gratuits
 
+> **Depuis le 25/10/2026, l'offre de lancement est l'essai gratuit de 7 jours à l'inscription.**
+> Décision du propriétaire : un compte gratuit a l'offre Analyse pendant 7 jours à compter de la
+> confirmation de son adresse email, une fois par personne, sans carte bancaire ; ensuite il revient à
+> Découverte, sauf abonnement. Le mécanisme ci-dessous est inchangé (même interrupteur, mêmes
+> garde-fous, mêmes noms internes `launch_offer`), à une différence près : l'éligibilité d'un compte
+> (`app_private.launch_offer_account_eligible`) dure 7 jours après la confirmation
+> (`app_private.signup_trial_ends_at`, migration `20261103100000_signup_trial_seven_days.sql`).
+>
+> - L'interrupteur veut dire « l'essai à l'inscription est ouvert ». Le couper ferme les essais en cours
+>   et n'en accorde plus aux nouveaux comptes.
+> - Le paiement ne dépend plus de l'interrupteur : il s'ouvre quand Stripe, l'identité légale et le
+>   canal de confirmation sont prêts (`analysisCheckoutReadiness`). Le checkout n'ajoute plus d'essai
+>   avec carte (`STRIPE_CHECKOUT_TRIAL_OFFERED = false`).
+> - Les comptes qui avaient l'offre de lancement suivent la même règle, sans email préalable (décision
+>   du propriétaire du 25/10/2026, malgré l'avis de la relecture de conformité qui recommandait un email
+>   d'information et un délai d'au moins 7 jours).
+> - Le préavis de fin (`/admin/clients`, email `launch-offer-end-notice`) ne sert plus : chaque essai a
+>   sa propre date de fin, affichée dans Mon compte.
+> - CGV 2026-10-25.1 (art. 13 « Essai gratuit à l'inscription », art. 14 « Modification des
+>   conditions ») et confidentialité 2026-10-25.1.
+>
+> Le reste de ce document décrit l'offre de lancement telle qu'elle était avant cette date.
+
 Demande du propriétaire (19/10/2026) : « jusqu'à ce que je te le dise, on va permettre au compte
 gratuit de bénéficier exceptionnellement d'un compte premium. Vu que la société n'est pas créée, vu que
 Stripe n'est pas configuré [...] ». Tant que l'offre est **active**, tout compte gratuit qui a un

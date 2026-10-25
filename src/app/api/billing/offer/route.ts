@@ -2,7 +2,11 @@ import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
-import { ANALYSIS_TRIAL_DAYS, resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
+import {
+  ANALYSIS_TRIAL_DAYS,
+  resolveAnalysisOfferLabel,
+  STRIPE_CHECKOUT_TRIAL_OFFERED,
+} from "@/lib/analysis-offer";
 import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
 import { analysisCheckoutReadiness } from "@/lib/analysis-checkout-readiness";
 import { resolveAnalysisCheckoutAvailability } from "@/lib/billing";
@@ -25,12 +29,12 @@ export async function GET(request: Request) {
       bucketKey: "billing.offer",
       ...RATE_LIMIT_POLICIES.publicIp,
     });
-    // Même définition que le checkout (`analysisCheckoutReadiness`). L'offre de lancement n'y entre
-    // pas : cette réponse est mise en cache au CDN, la page lit cet état à part (/api/launch-offer)
-    // et le checkout le contrôle lui-même côté serveur.
+    // Même définition que le checkout (`analysisCheckoutReadiness`).
     const configured = analysisCheckoutReadiness().open;
-    const personalized = configured && request.headers.has("authorization");
-    let trialAvailable = true;
+    // L'essai est accordé à l'inscription : le checkout n'en ajoute pas de second.
+    const personalized =
+      configured && STRIPE_CHECKOUT_TRIAL_OFFERED && request.headers.has("authorization");
+    let trialAvailable = STRIPE_CHECKOUT_TRIAL_OFFERED;
     if (personalized) {
       const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
       trialAvailable = (await resolveAnalysisCheckoutAvailability(auth)).trialAvailable;

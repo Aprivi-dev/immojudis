@@ -81,45 +81,60 @@ export function resetLaunchOfferCache(): void {
 }
 
 /**
- * Durées de garde, par compte, de la dernière lecture de l'éligibilité à l'offre :
- * - « éligible » 10 minutes : une confirmation ne se défait pas, et un compte plus ancien ne peut
- *   apparaître qu'avec une date de confirmation antérieure, ce qui n'arrive qu'à un changement
- *   d'adresse ;
- * - « non éligible » 30 secondes : le compte peut confirmer son adresse à tout moment, mais sans ce
- *   cache négatif un compte non confirmé ferait une lecture en base à chaque requête ;
+ * Essai gratuit de 7 jours à l'inscription (l'« offre de lancement » depuis le 25/10/2026 : mêmes
+ * interrupteur et garde-fous, éligibilité limitée à 7 jours après la confirmation de l'adresse).
+ *
+ * `active` : l'essai du compte est en cours. `endsAt` : sa fin (ISO), même passée, ou `null` si le
+ * compte n'a pas droit à l'essai (pas d'adresse confirmée, adresse jetable, ou un compte plus ancien
+ * de la même adresse canonique l'a déjà eu). `denied` : la base a répondu « pas d'essai » (jamais
+ * après une erreur ni par l'ancienne règle).
+ */
+export type SignupTrial = { active: boolean; endsAt: string | null; denied?: true };
+
+/**
+ * Durées de garde, par compte, de la dernière lecture :
+ * - avec une date de fin, 10 minutes : la date ne bouge pas (la confirmation ne se défait pas), et
+ *   « en cours » se recalcule à chaque appel contre l'heure, donc l'essai se ferme à l'heure dite ;
+ * - sans essai, 30 secondes : le compte peut confirmer son adresse à tout moment, mais sans ce cache
+ *   négatif un compte non confirmé ferait une lecture en base à chaque requête ;
  * - une erreur n'est jamais gardée.
  */
 const ELIGIBLE_CACHE_MS = 10 * 60_000;
 const NOT_ELIGIBLE_CACHE_MS = 30_000;
 const ELIGIBILITY_CACHE_MAX = 1_000;
-const eligibilityReads = new Map<string, { eligible: boolean; expiresAt: number }>();
+const eligibilityReads = new Map<string, { read: TrialRead; expiresAt: number }>();
 
 /**
- * Le compte a droit à l'offre de lancement : l'état est lu dans la base (RPC
- * `get_launch_offer_account_eligibility`, rôle service_role), qui applique la règle de
- * `app_private.launch_offer_account_eligible` : profil, adresse email confirmée, domaine non jetable,
- * et plus ancien compte confirmé de son adresse canonique (sans `+tag`, sans points Gmail). Les
- * écrans et les droits en base répondent ainsi pareil, sans seconde copie de la règle. Fermé en cas
- * d'erreur, comme la lecture de l'état de l'offre : l'accès normal (abonnement, premium,
- * administrateur) n'en dépend pas.
- *
- * Ordre de déploiement : si la fonction n'existe pas encore (code déployé avant la migration
- * 20261029110000 : `PGRST202` ou `42883`), on revient à l'ancienne règle, celle que la base appliquait
- * avant cette migration : l'adresse email est confirmée (API Auth d'administration). Le repli n'est
- * jamais plus large que l'ancienne règle et ne s'applique qu'à l'absence de la fonction, jamais à une
- * autre erreur (qui reste fermée). Sans lui l'offre se fermerait pour tous tant que la migration n'est
- * pas appliquée.
+ * Lecture en base : `endsAt` (fonction `get_signup_trial_end`), ou, avant la migration
+ * 20261103100000, l'ancienne éligibilité sans durée (`fallbackActive`).
  */
-export async function hasConfirmedEmail(
+type TrialRead = { endsAt: string | null; fallbackActive?: boolean };
+
+const NO_TRIAL: SignupTrial = { active: false, endsAt: null };
+
+/**
+ * L'essai du compte, lu dans la base (RPC `get_signup_trial_end`, rôle service_role), qui applique
+ * la règle de `app_private.signup_trial_ends_at` : profil, adresse email confirmée, domaine non
+ * jetable, plus ancien compte confirmé de son adresse canonique, et 7 jours à compter de la
+ * confirmation. Les écrans et les droits en base répondent ainsi pareil, sans seconde copie de la
+ * règle. Fermé en cas d'erreur : l'accès normal (abonnement, premium, administrateur) n'en dépend
+ * pas.
+ *
+ * Ordre de déploiement : tant que la migration 20261103100000 n'est pas appliquée (`PGRST202` ou
+ * `42883`), la base applique encore l'offre de lancement sans durée ; on lit alors la même règle
+ * qu'elle (`get_launch_offer_account_eligibility`, puis l'adresse confirmée avant 20261029110000).
+ * Le repli ne s'applique qu'à l'absence de la fonction, jamais à une autre erreur (qui reste fermée).
+ */
+export async function readSignupTrial(
   userId: string,
   now: number = Date.now(),
-): Promise<boolean> {
+): Promise<SignupTrial> {
   const known = eligibilityReads.get(userId);
-  if (known && known.expiresAt > now) return known.eligible;
+  if (known && known.expiresAt > now) return trialAt(known.read, now);
   try {
-    const eligible = await readEligibility(userId);
-    rememberEligibility(userId, eligible, now);
-    return eligible;
+    const read = await readTrialFromDatabase(userId);
+    rememberEligibility(userId, read, now);
+    return trialAt(read, now);
   } catch (error) {
     console.error(
       JSON.stringify({
@@ -127,8 +142,31 @@ export async function hasConfirmedEmail(
         error: error instanceof Error ? error.message : String(error),
       }),
     );
-    return false;
+    return NO_TRIAL;
   }
+}
+
+/** L'essai du compte est en cours (voir `readSignupTrial`). */
+export async function hasActiveSignupTrial(
+  userId: string,
+  now: number = Date.now(),
+): Promise<boolean> {
+  return (await readSignupTrial(userId, now)).active;
+}
+
+function trialAt(read: TrialRead, now: number): SignupTrial {
+  if (read.endsAt) return { active: Date.parse(read.endsAt) > now, endsAt: read.endsAt };
+  if (read.fallbackActive === undefined) return { active: false, endsAt: null, denied: true };
+  return { active: read.fallbackActive, endsAt: null };
+}
+
+async function readTrialFromDatabase(userId: string): Promise<TrialRead> {
+  const { data, error } = await supabaseAdmin.rpc("get_signup_trial_end", {
+    p_user_id: userId,
+  });
+  if (!error) return { endsAt: typeof data === "string" && data ? data : null };
+  if (!isMissingRpcError(error)) throw error;
+  return { endsAt: null, fallbackActive: await readEligibility(userId) };
 }
 
 async function readEligibility(userId: string): Promise<boolean> {
@@ -162,7 +200,7 @@ function warnEligibilityFallback(): void {
   );
 }
 
-function rememberEligibility(userId: string, eligible: boolean, now: number): void {
+function rememberEligibility(userId: string, read: TrialRead, now: number): void {
   // Une table pleine perd sa plus ancienne lecture (l'ordre d'insertion d'une Map) au lieu de tout
   // oublier d'un coup : un pic de comptes ne déclenche pas une rafale de lectures en base.
   eligibilityReads.delete(userId);
@@ -171,8 +209,9 @@ function rememberEligibility(userId: string, eligible: boolean, now: number): vo
     if (oldest === undefined) break;
     eligibilityReads.delete(oldest);
   }
+  const known = read.endsAt != null || read.fallbackActive === true;
   eligibilityReads.set(userId, {
-    eligible,
-    expiresAt: now + (eligible ? ELIGIBLE_CACHE_MS : NOT_ELIGIBLE_CACHE_MS),
+    read,
+    expiresAt: now + (known ? ELIGIBLE_CACHE_MS : NOT_ELIGIBLE_CACHE_MS),
   });
 }

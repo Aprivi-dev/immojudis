@@ -1,14 +1,17 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
+import { fetchAccessPlan } from "@/lib/client-billing";
 import { launchOfferText } from "@/lib/launch-offer";
+import { queryKeys } from "@/lib/query-keys";
 
 /**
- * Mention de l'offre de lancement pour les pages rendues côté serveur (comment ça marche,
- * simulateur…) : elle n'apparaît qu'une fois l'état lu dans la base, et seulement tant que l'offre
- * est active. Visiteur ou compte connecté : le texte correspondant (`src/lib/launch-offer.ts`).
+ * Mention de l'essai gratuit à l'inscription pour les pages rendues côté serveur (comment ça marche,
+ * simulateur…) : elle n'apparaît qu'une fois l'état lu dans la base, et seulement tant que l'essai
+ * est ouvert. Visiteur ou compte connecté : le texte correspondant (`src/lib/launch-offer.ts`).
  *
  * Tant que l'état n'est pas lu, une hauteur est réservée (vide, masquée aux lecteurs d'écran) :
  * sans elle, le bloc insérait une soixantaine de pixels sous le titre (décalage de mise en page).
@@ -41,10 +44,18 @@ export function LaunchOfferNote({ className = "mt-4" }: { className?: string }) 
 
 /**
  * Une incitation à « découvrir l'offre Analyse » (page rendue côté serveur) : montrée à tous, sauf à
- * un compte connecté qui bénéficie déjà des avantages Analyse grâce à l'offre de lancement.
+ * un compte connecté en essai gratuit (`plan.launchOffer`), qui a déjà l'offre Analyse. Un compte dont
+ * l'essai est fini la revoit. Même requête de plan que les autres écrans (clé partagée).
  */
 export function HideForLaunchOfferAccount({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const { active } = useLaunchOffer();
-  return user && active ? null : <>{children}</>;
+  const { data } = useQuery({
+    queryKey: queryKeys.featureEntitlementsPlan(user?.id ?? "anonymous"),
+    queryFn: fetchAccessPlan,
+    enabled: Boolean(user && active),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  return user && active && data?.plan.launchOffer === true ? null : <>{children}</>;
 }

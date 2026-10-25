@@ -6,9 +6,10 @@ vi.mock("@/integrations/supabase/client.server", () => ({
 }));
 
 import {
-  hasConfirmedEmail,
+  hasActiveSignupTrial,
   isLaunchOfferActive,
   readLaunchOfferState,
+  readSignupTrial,
   resetLaunchOfferCache,
 } from "@/lib/launch-offer.server";
 
@@ -100,67 +101,94 @@ describe("état de l'offre de lancement côté serveur", () => {
   });
 });
 
-describe("éligibilité du compte à l'offre de lancement (email confirmé, adresse canonique)", () => {
-  const eligible = { data: true, error: null };
-  const notEligible = { data: false, error: null };
+describe("essai gratuit du compte (7 jours après la confirmation, une fois par personne)", () => {
+  const DAY = 24 * 60 * 60_000;
+  const now = Date.parse("2026-10-25T10:00:00.000Z");
+  const inTrial = new Date(now + 3 * DAY).toISOString();
+  const ended = new Date(now - DAY).toISOString();
+  const missing = (name: string, code = "PGRST202") => ({
+    data: null,
+    error: { code, message: `Could not find the function ${name}` },
+  });
+  /** Réponses des deux RPC : la fin de l'essai, puis l'ancienne éligibilité (avant 20261103100000). */
+  const database = (
+    trialEnd: { data: unknown; error: unknown },
+    eligibility: { data: unknown; error: unknown } = { data: false, error: null },
+  ) =>
+    mocks.rpc.mockImplementation(async (name: string) =>
+      name === "get_signup_trial_end" ? trialEnd : eligibility,
+    );
 
   beforeEach(() => {
     resetLaunchOfferCache();
     mocks.rpc.mockReset();
+    mocks.getUserById.mockReset();
     vi.spyOn(console, "error").mockImplementation(() => undefined);
   });
 
-  it("lit la règle de la base (RPC), sans interroger l'API Auth d'administration", async () => {
-    mocks.rpc.mockResolvedValue(eligible);
-    await expect(hasConfirmedEmail("user-1")).resolves.toBe(true);
-    expect(mocks.rpc).toHaveBeenCalledWith("get_launch_offer_account_eligibility", {
-      p_user_id: "user-1",
+  it("lit la fin de l'essai dans la base (RPC), sans interroger l'API Auth d'administration", async () => {
+    database({ data: inTrial, error: null });
+    await expect(readSignupTrial("user-1", now)).resolves.toEqual({
+      active: true,
+      endsAt: inTrial,
     });
+    expect(mocks.rpc).toHaveBeenCalledWith("get_signup_trial_end", { p_user_id: "user-1" });
+    expect(mocks.getUserById).not.toHaveBeenCalled();
   });
 
-  it("ne traite que `true` comme une éligibilité", async () => {
-    mocks.rpc.mockResolvedValue({ data: "true", error: null });
-    await expect(hasConfirmedEmail("user-1")).resolves.toBe(false);
-    mocks.rpc.mockResolvedValue({ data: null, error: null });
-    await expect(hasConfirmedEmail("user-2")).resolves.toBe(false);
+  it("garde la date d'un essai terminé, sans l'ouvrir", async () => {
+    database({ data: ended, error: null });
+    await expect(readSignupTrial("user-1", now)).resolves.toEqual({ active: false, endsAt: ended });
+    await expect(hasActiveSignupTrial("user-2", now)).resolves.toBe(false);
   });
 
-  it("garde un refus 30 s (cache négatif), puis relit : le compte peut confirmer à tout moment", async () => {
-    mocks.rpc.mockResolvedValue(notEligible);
-    const start = Date.now();
-    await expect(hasConfirmedEmail("user-1", start)).resolves.toBe(false);
-    await expect(hasConfirmedEmail("user-1", start + 29_000)).resolves.toBe(false);
+  it("ne traite qu'une date comme une fin d'essai", async () => {
+    // La base a répondu « pas d'essai » : refus explicite, à la différence d'une erreur.
+    const denied = { active: false, endsAt: null, denied: true };
+    database({ data: true, error: null });
+    await expect(readSignupTrial("user-1", now)).resolves.toEqual(denied);
+    database({ data: null, error: null });
+    await expect(readSignupTrial("user-2", now)).resolves.toEqual(denied);
+  });
+
+  it("ferme l'essai à l'heure dite, même si la lecture est encore gardée", async () => {
+    const endsAt = new Date(now + 5 * 60_000).toISOString();
+    database({ data: endsAt, error: null });
+    await expect(hasActiveSignupTrial("user-1", now)).resolves.toBe(true);
+    await expect(hasActiveSignupTrial("user-1", now + 6 * 60_000)).resolves.toBe(false);
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
-    // Le compte confirme : l'offre s'ouvre à la lecture qui suit l'expiration du cache négatif.
-    mocks.rpc.mockResolvedValue(eligible);
-    await expect(hasConfirmedEmail("user-1", start + 31_000)).resolves.toBe(true);
+  });
+
+  it("garde un compte sans essai 30 s (cache négatif), puis relit : il peut confirmer à tout moment", async () => {
+    database({ data: null, error: null });
+    await expect(hasActiveSignupTrial("user-1", now)).resolves.toBe(false);
+    await expect(hasActiveSignupTrial("user-1", now + 29_000)).resolves.toBe(false);
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    // Le compte confirme : l'essai s'ouvre à la lecture qui suit l'expiration du cache négatif.
+    database({ data: inTrial, error: null });
+    await expect(hasActiveSignupTrial("user-1", now + 31_000)).resolves.toBe(true);
     expect(mocks.rpc).toHaveBeenCalledTimes(2);
   });
 
-  it("garde une éligibilité 10 minutes, puis la relit", async () => {
-    mocks.rpc.mockResolvedValue(eligible);
-    const start = Date.now();
-    await hasConfirmedEmail("user-1", start);
-    await expect(hasConfirmedEmail("user-1", start + 9 * 60_000)).resolves.toBe(true);
+  it("garde une date de fin 10 minutes, puis la relit", async () => {
+    database({ data: inTrial, error: null });
+    await readSignupTrial("user-1", now);
+    await expect(hasActiveSignupTrial("user-1", now + 9 * 60_000)).resolves.toBe(true);
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
-    await hasConfirmedEmail("user-1", start + 11 * 60_000);
+    await readSignupTrial("user-1", now + 11 * 60_000);
     expect(mocks.rpc).toHaveBeenCalledTimes(2);
   });
 
   it("reste fermé si la base ne répond pas, sans mémoriser l'échec", async () => {
-    mocks.rpc.mockResolvedValueOnce({ data: null, error: new Error("base indisponible") });
-    await expect(hasConfirmedEmail("user-1")).resolves.toBe(false);
+    database({ data: null, error: new Error("base indisponible") });
+    await expect(readSignupTrial("user-1", now)).resolves.toEqual({ active: false, endsAt: null });
     mocks.rpc.mockRejectedValueOnce(new Error("réseau"));
-    await expect(hasConfirmedEmail("user-1")).resolves.toBe(false);
-    mocks.rpc.mockResolvedValue(eligible);
-    await expect(hasConfirmedEmail("user-1")).resolves.toBe(true);
+    await expect(hasActiveSignupTrial("user-1", now)).resolves.toBe(false);
+    database({ data: inTrial, error: null });
+    await expect(hasActiveSignupTrial("user-1", now)).resolves.toBe(true);
   });
 
-  describe("ordre de déploiement : la fonction d'éligibilité n'existe pas encore", () => {
-    const missing = (code: string) => ({
-      data: null,
-      error: { code, message: "Could not find the function get_launch_offer_account_eligibility" },
-    });
+  describe("ordre de déploiement : la migration de l'essai n'est pas encore appliquée", () => {
     const authUser = (confirmedAt: string | null) =>
       mocks.getUserById.mockResolvedValue({
         data: { user: { id: "user-1", email_confirmed_at: confirmedAt } },
@@ -168,76 +196,79 @@ describe("éligibilité du compte à l'offre de lancement (email confirmé, adre
       });
 
     beforeEach(() => {
-      mocks.getUserById.mockReset();
       vi.spyOn(console, "warn").mockImplementation(() => undefined);
     });
 
     it.each(["PGRST202", "42883"])(
-      "revient à l'ancienne règle (email confirmé, API Auth) sur %s : l'offre ne se ferme pas pour tous",
+      "lit l'ancienne éligibilité sans durée sur %s, comme la base l'applique encore",
       async (code) => {
-        mocks.rpc.mockResolvedValue(missing(code));
-        authUser("2026-10-01T00:00:00Z");
-        await expect(hasConfirmedEmail("user-1")).resolves.toBe(true);
-        expect(mocks.getUserById).toHaveBeenCalledWith("user-1");
+        database(missing("get_signup_trial_end", code), { data: true, error: null });
+        await expect(readSignupTrial("user-1", now)).resolves.toEqual({
+          active: true,
+          endsAt: null,
+        });
+        expect(mocks.rpc).toHaveBeenCalledWith("get_launch_offer_account_eligibility", {
+          p_user_id: "user-1",
+        });
       },
     );
 
-    it("n'ouvre rien à un compte dont l'email n'est pas confirmé", async () => {
-      mocks.rpc.mockResolvedValue(missing("PGRST202"));
-      authUser(null);
-      await expect(hasConfirmedEmail("user-1")).resolves.toBe(false);
+    it("n'ouvre rien à un compte que l'ancienne règle refuse", async () => {
+      database(missing("get_signup_trial_end"), { data: false, error: null });
+      await expect(hasActiveSignupTrial("user-1", now)).resolves.toBe(false);
     });
 
-    it("reste fermé quand l'API Auth échoue aussi, sans mémoriser l'échec", async () => {
-      mocks.rpc.mockResolvedValue(missing("PGRST202"));
-      mocks.getUserById.mockResolvedValueOnce({ data: null, error: new Error("auth down") });
-      await expect(hasConfirmedEmail("user-1")).resolves.toBe(false);
+    it("revient à l'adresse confirmée (API Auth) quand l'ancienne fonction manque aussi", async () => {
+      database(missing("get_signup_trial_end"), missing("get_launch_offer_account_eligibility"));
       authUser("2026-10-01T00:00:00Z");
-      await expect(hasConfirmedEmail("user-1")).resolves.toBe(true);
+      await expect(hasActiveSignupTrial("user-1", now)).resolves.toBe(true);
+      expect(mocks.getUserById).toHaveBeenCalledWith("user-1");
+      resetLaunchOfferCache();
+      authUser(null);
+      await expect(hasActiveSignupTrial("user-1", now)).resolves.toBe(false);
     });
 
     it("ne se replie que sur l'absence de la fonction, jamais sur une autre erreur", async () => {
-      mocks.rpc.mockResolvedValue({ data: null, error: { code: "XX000", message: "boom" } });
-      authUser("2026-10-01T00:00:00Z");
-      await expect(hasConfirmedEmail("user-1")).resolves.toBe(false);
-      expect(mocks.getUserById).not.toHaveBeenCalled();
+      database(
+        { data: null, error: { code: "XX000", message: "boom" } },
+        { data: true, error: null },
+      );
+      await expect(hasActiveSignupTrial("user-1", now)).resolves.toBe(false);
+      expect(mocks.rpc).toHaveBeenCalledTimes(1);
     });
 
-    it("garde les mêmes durées de cache que la lecture de la base", async () => {
-      mocks.rpc.mockResolvedValue(missing("PGRST202"));
-      authUser("2026-10-01T00:00:00Z");
-      const start = Date.now();
-      await hasConfirmedEmail("user-1", start);
-      await expect(hasConfirmedEmail("user-1", start + 9 * 60_000)).resolves.toBe(true);
-      expect(mocks.getUserById).toHaveBeenCalledTimes(1);
+    it("garde 10 minutes une éligibilité lue par l'ancienne règle", async () => {
+      database(missing("get_signup_trial_end"), { data: true, error: null });
+      await hasActiveSignupTrial("user-1", now);
+      await expect(hasActiveSignupTrial("user-1", now + 9 * 60_000)).resolves.toBe(true);
+      expect(mocks.rpc).toHaveBeenCalledTimes(2);
     });
 
-    it("le signale une fois dans le journal, sans donnée personnelle", async () => {
+    it("signale une fois le repli sur l'API Auth, sans donnée personnelle", async () => {
       const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
       warn.mockClear();
-      mocks.rpc.mockResolvedValue(missing("PGRST202"));
+      database(missing("get_signup_trial_end"), missing("get_launch_offer_account_eligibility"));
       authUser("2026-10-01T00:00:00Z");
-      await hasConfirmedEmail("user-1");
-      await hasConfirmedEmail("user-2");
+      await hasActiveSignupTrial("user-1", now);
+      await hasActiveSignupTrial("user-2", now);
       expect(warn).toHaveBeenCalledTimes(1);
       expect(String(warn.mock.calls[0][0])).not.toContain("user-1");
     });
   });
 
   it("évince la plus ancienne lecture quand la mémoire est pleine, sans tout oublier", async () => {
-    mocks.rpc.mockResolvedValue(eligible);
-    const start = Date.now();
+    database({ data: inTrial, error: null });
     for (let index = 0; index < 1_000; index += 1) {
-      await hasConfirmedEmail(`user-${index}`, start);
+      await hasActiveSignupTrial(`user-${index}`, now);
     }
     expect(mocks.rpc).toHaveBeenCalledTimes(1_000);
     // Une 1 001e entrée chasse la plus ancienne (user-0), pas les autres.
-    await hasConfirmedEmail("user-new", start);
+    await hasActiveSignupTrial("user-new", now);
     expect(mocks.rpc).toHaveBeenCalledTimes(1_001);
-    await hasConfirmedEmail("user-999", start);
-    await hasConfirmedEmail("user-1", start);
+    await hasActiveSignupTrial("user-999", now);
+    await hasActiveSignupTrial("user-1", now);
     expect(mocks.rpc).toHaveBeenCalledTimes(1_001);
-    await hasConfirmedEmail("user-0", start);
+    await hasActiveSignupTrial("user-0", now);
     expect(mocks.rpc).toHaveBeenCalledTimes(1_002);
   });
 });

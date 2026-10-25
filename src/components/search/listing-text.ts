@@ -60,11 +60,11 @@ export function listingTitle(
 export const LISTING_DETAIL_LINE = "Voir le détail";
 
 /**
- * Ligne courte de chaque carte pendant l'offre de lancement. Le texte complet (avec la durée
- * temporaire des avantages) n'est écrit qu'une fois, dans la bannière repliable au-dessus de la
- * liste (`LaunchOfferListBanner`) : répété sur 24 cartes, il noyait la liste.
+ * Ligne courte de chaque carte pendant l'essai à l'inscription (cartes d'un visiteur sans compte).
+ * Les règles de l'essai ne sont écrites qu'une fois, dans la bannière repliable au-dessus de la liste
+ * (`LaunchOfferListBanner`) : répétées sur 24 cartes, elles noyaient la liste.
  */
-export const LISTING_LAUNCH_OFFER_LINE = "Compte gratuit : avantages Analyse (offre de lancement)";
+export const LISTING_LAUNCH_OFFER_LINE = "Inscription gratuite : 7 jours d’offre Analyse";
 
 /**
  * Ce que la fiche coûte au visiteur : un compte gratuit, un déblocage mensuel (ventes au tribunal

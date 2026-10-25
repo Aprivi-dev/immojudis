@@ -1,50 +1,104 @@
 /**
- * Offre de lancement : tant qu'elle est active, tout compte gratuit bénéficie des avantages de
- * l'offre Analyse (demande du propriétaire, 19/10/2026 : la société n'est pas créée et Stripe n'est
- * pas configuré, le paiement reste fermé).
+ * Essai gratuit de 7 jours à l'inscription (décision du propriétaire du 25/10/2026) : un compte
+ * gratuit bénéficie de l'offre Analyse pendant 7 jours à compter de la confirmation de son adresse
+ * email, une fois par personne, sans carte bancaire ; ensuite il revient à Découverte, sauf
+ * abonnement. Il remplace l'offre de lancement sans durée (19/10/2026), dont il reprend le
+ * mécanisme et les noms internes (`launch_offer`, `launchOffer`, `LAUNCH_OFFER_*`).
  *
- * Source de vérité : la base de données (`app_private.launch_offer`, lue par
- * `app_private.launch_offer_active()`). Le serveur la lit par le RPC `get_launch_offer_status`
- * (voir `launch-offer.server.ts`, cache de 30 s) et le navigateur par `GET /api/launch-offer`.
- * Aucune variable d'environnement : un second réglage pourrait diverger de la base.
+ * Source de vérité : la base de données. L'interrupteur `app_private.launch_offer` (« l'essai est
+ * ouvert ») est lu par le RPC `get_launch_offer_status` (voir `launch-offer.server.ts`, cache de
+ * 30 s) et par le navigateur avec `GET /api/launch-offer` ; la fin de l'essai d'un compte vient de
+ * `app_private.signup_trial_ends_at` (`PlanEntitlements.trialEndsAt` / `trialEndedAt`). Aucune
+ * variable d'environnement : un second réglage pourrait diverger de la base.
  *
- * Module pur, sans import serveur : les textes ci-dessous sont les seuls à utiliser partout où le
- * surclassement est présenté (bandeau de /offres, inscription, onboarding, /compte, lignes d'accès
- * des appels à l'inscription). Les autres chantiers les réutilisent, ils ne les recopient pas.
+ * Module pur, sans import serveur : les textes ci-dessous sont les seuls à utiliser partout où
+ * l'essai est présenté. L'interrupteur seul ne dit pas si un compte connecté est en essai : les
+ * textes pour un compte (`LAUNCH_OFFER_ACCOUNT_TEXT`) énoncent donc la règle, et seuls les écrans qui
+ * lisent les droits du compte disent « jusqu'au … » ou « votre essai est terminé ».
  */
 
-/** Nom court de l'offre, pour les badges et les titres. */
-export const LAUNCH_OFFER_LABEL = "Offre de lancement";
+import { ANALYSIS_TRIAL_DAYS } from "@/lib/analysis-offer";
+
+/** Nom court de l'essai, pour les badges et les titres. */
+export const LAUNCH_OFFER_LABEL = `Essai gratuit de ${ANALYSIS_TRIAL_DAYS} jours`;
 
 /**
- * Résumé d'une ligne, toujours accompagné du texte complet sur la même page ou d'un lien vers
- * /offres (bannière repliable de /sales, premier écran de l'accueil).
+ * Résumé d'une ligne pour un visiteur, toujours accompagné du texte complet sur la même page ou d'un
+ * lien (bannière repliable de /sales, premier écran de l'accueil).
  */
-export const LAUNCH_OFFER_SHORT_TEXT = `${LAUNCH_OFFER_LABEL} : compte gratuit avec les avantages Analyse, temporaires`;
+export const LAUNCH_OFFER_SHORT_TEXT = `Inscription gratuite : ${ANALYSIS_TRIAL_DAYS} jours d’accès à l’offre Analyse, sans carte bancaire`;
 
 /**
- * Durée de l'offre, formule de la relecture juridique du 20/10/2026 (à faire valider par un avocat,
- * comme tout ce fichier) : les avantages sont temporaires, finissent au plus tard au lancement
- * officiel, la fin est annoncée par email, et ils ne sont retirés plus tôt, sans préavis, que pour
- * abus ou impératif technique ou juridique. Reprise dans l'article « Offre de lancement » des CGV
- * (`src/routes/conditions-generales.tsx`, qui l'écrit en toutes lettres : le texte juridique est
- * ancré par empreinte).
+ * Règles de l'essai, reprises dans l'article « Essai gratuit à l'inscription » des CGV
+ * (`src/routes/conditions-generales.tsx`, qui les écrit en toutes lettres : le texte juridique est
+ * ancré par empreinte). La clause de retrait anticipé reprend la relecture juridique du 20/10/2026.
  */
-export const LAUNCH_OFFER_DURATION_TEXT =
-  "Ces avantages sont temporaires et prendront fin au plus tard au lancement officiel du site. Nous vous prévenons par email avant leur fin ; ils peuvent toutefois être retirés plus tôt, sans préavis, en cas d’abus ou d’impératif technique ou juridique.";
+/**
+ * La fin de l'essai : retour à Découverte, offre payante ensuite, retrait anticipé limité. Des
+ * constantes, sans appel au chargement du module : `client-billing` (chargé sur toutes les pages)
+ * importe `parseLaunchOfferResponse` d'ici, et le reste du module doit pouvoir être écarté du paquet.
+ */
+const TRIAL_END_RULES =
+  "À son terme, votre compte revient à l’offre Découverte, gratuite et sans limite de durée : rien ne devient payant automatiquement. L’offre Analyse est ensuite proposée sur abonnement payant ; son tarif figure sur la page Offres. L’essai peut être retiré plus tôt, sans préavis, en cas d’abus ou d’impératif technique ou juridique.";
 
-/** Ce que deviennent les données à la fin de l'offre (même relecture). */
+export const LAUNCH_OFFER_DURATION_TEXT = `L’essai commence à la confirmation de votre adresse email, dure ${ANALYSIS_TRIAL_DAYS} jours et n’est proposé qu’une fois par personne. ${TRIAL_END_RULES}`;
+
+/** Ce que deviennent les données à la fin de l'essai. */
 export const LAUNCH_OFFER_DATA_TEXT =
   "Vos données (favoris, alertes, rapports enregistrés) restent conservées tant que votre compte existe et dans les durées de la politique de confidentialité. Elles redeviennent accessibles avec l’offre Analyse.";
 
 /**
- * Mention à un compte connecté : ses avantages Analyse sont ceux de l'offre de lancement (à condition
- * que son adresse email soit confirmée), temporaires, avec la durée dite par `LAUNCH_OFFER_DURATION_TEXT`.
+ * Mention à un compte connecté : la règle de l'essai, vraie que le compte soit en essai, après son
+ * essai ou sans droit à l'essai. Son état à lui est dans Mon compte (`signupTrialStatusText`).
  */
-export const LAUNCH_OFFER_ACCOUNT_TEXT = `Offre de lancement : votre compte gratuit, une fois votre adresse email confirmée, bénéficie des avantages de l’offre Analyse. ${LAUNCH_OFFER_DURATION_TEXT}`;
+export const LAUNCH_OFFER_ACCOUNT_TEXT = `Essai gratuit : le premier compte confirmé de chaque personne bénéficie de l’offre Analyse pendant ${ANALYSIS_TRIAL_DAYS} jours à compter de la confirmation de son adresse email, sans carte bancaire. ${TRIAL_END_RULES}`;
 
 /** Mention à un visiteur non connecté (appels à l'inscription). */
-export const LAUNCH_OFFER_VISITOR_TEXT = `Offre de lancement : créez un compte gratuit, confirmez votre adresse email et accédez aux avantages de l’offre Analyse. ${LAUNCH_OFFER_DURATION_TEXT}`;
+export const LAUNCH_OFFER_VISITOR_TEXT = `Inscrivez-vous gratuitement : une fois votre adresse email confirmée, votre compte bénéficie de l’offre Analyse pendant ${ANALYSIS_TRIAL_DAYS} jours (un essai par personne), sans carte bancaire. ${TRIAL_END_RULES}`;
+
+let trialDateFormat: Intl.DateTimeFormat | null = null;
+
+/** « 1er novembre 2026 à 14:05 », heure de Paris. */
+export function signupTrialDateLabel(iso: string): string {
+  const time = Date.parse(iso);
+  if (!Number.isFinite(time)) return iso;
+  trialDateFormat ??= new Intl.DateTimeFormat("fr-FR", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Europe/Paris",
+  });
+  return trialDateFormat.format(time).replace(/^1 /, "1er ");
+}
+
+/** Compte confirmé auquel la base refuse l'essai (pas le premier de son adresse, adresse jetable). */
+export const SIGNUP_TRIAL_DENIED_TEXT =
+  "L’essai gratuit n’a pas été accordé à ce compte : il est réservé au premier compte confirmé de chaque personne et n’est pas ouvert aux adresses jetables. Votre compte reste en offre Découverte. Si vous pensez qu’il s’agit d’une erreur, écrivez-nous depuis la page Contact.";
+
+/**
+ * État de l'essai d'un compte dont on connaît les droits (Mon compte) : en cours jusqu'à telle date,
+ * terminé, ou refusé. `null` quand le compte n'a pas d'essai connu (abonné, état non lu).
+ */
+export function signupTrialStatusText({
+  trialEndsAt,
+  trialEndedAt,
+  trialDenied,
+}: {
+  trialEndsAt?: string | null;
+  trialEndedAt?: string | null;
+  trialDenied?: boolean;
+}): string | null {
+  if (trialEndsAt) {
+    return `Essai gratuit de l’offre Analyse jusqu’au ${signupTrialDateLabel(trialEndsAt)}. À son terme, votre compte revient à l’offre Découverte, gratuite : rien ne devient payant automatiquement.`;
+  }
+  if (trialEndedAt) {
+    return `Votre essai gratuit de l’offre Analyse s’est terminé le ${signupTrialDateLabel(trialEndedAt)} : votre compte est revenu à l’offre Découverte. Pour continuer avec l’offre Analyse, il faudra y souscrire ; l’état de l’abonnement est indiqué ci-dessous.`;
+  }
+  if (trialDenied) return SIGNUP_TRIAL_DENIED_TEXT;
+  return null;
+}
 
 export type LaunchOfferAudience = "account" | "visitor";
 
@@ -53,18 +107,10 @@ export function launchOfferText(audience: LaunchOfferAudience): string {
   return audience === "account" ? LAUNCH_OFFER_ACCOUNT_TEXT : LAUNCH_OFFER_VISITOR_TEXT;
 }
 
-/** Réponse de `GET /api/launch-offer` : seul l'état, rien de personnel. */
-export type LaunchOfferResponse = { active: boolean };
-
-/**
- * Durée de cache serveur (processus) ET du CDN pour `GET /api/launch-offer` : l'une après l'autre,
- * elles retardent une coupure de 60 s au plus (le brief du propriétaire : 60 s maximum).
- */
-export const LAUNCH_OFFER_CACHE_SECONDS = 30;
-
-/** Lit la réponse de `/api/launch-offer` sans faire confiance à sa forme. */
-export function parseLaunchOfferResponse(value: unknown): boolean | null {
-  if (typeof value !== "object" || value === null) return null;
-  const active = (value as { active?: unknown }).active;
-  return typeof active === "boolean" ? active : null;
-}
+// Lecture de `GET /api/launch-offer`, dans un module à part : `client-billing`, chargé sur toutes
+// les pages, l'importe sans tirer les textes de l'essai ni `analysis-offer` dans le paquet commun.
+export {
+  LAUNCH_OFFER_CACHE_SECONDS,
+  parseLaunchOfferResponse,
+  type LaunchOfferResponse,
+} from "@/lib/launch-offer-response";

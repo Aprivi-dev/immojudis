@@ -14,27 +14,24 @@ import { legalConfigurationStatus } from "@/lib/legal-documents";
  * - la clé secrète Stripe, un Price récurrent valide et le secret de webhook (un encaissement sans
  *   webhook n'ouvrirait aucun accès : le client paierait sans rien recevoir) ;
  * - l'identité légale publiée (`NEXT_PUBLIC_LEGAL_*`) ;
- * - le canal de confirmation contractuelle (Resend, expéditeur, `SITE_URL`) ;
- * - l'offre de lancement coupée, quand l'appelant la connaît (`launchOfferActive`) : tant qu'elle
- *   dure, rien ne se souscrit, même si Stripe est configuré.
+ * - le canal de confirmation contractuelle (Resend, expéditeur, `SITE_URL`).
  *
- * Module sans accès à la base : l'état de l'offre de lancement est passé par l'appelant (le checkout
- * le lit dans `launch-offer.server.ts`). Les contrôles côté navigateur (`legalPublisherConfigurationStatus`)
- * ne font que restreindre ce résultat, jamais l'élargir.
+ * L'essai gratuit de 7 jours à l'inscription (l'interrupteur de l'offre de lancement) n'y entre
+ * pas depuis le 25/10/2026 : un compte peut s'abonner pendant ou après son essai. Module sans accès
+ * à la base. Les contrôles côté navigateur (`legalPublisherConfigurationStatus`) ne font que
+ * restreindre ce résultat, jamais l'élargir.
  */
 export type AnalysisCheckoutReadiness = {
-  /** Vrai seulement si rien ne manque et que l'offre de lancement n'est pas active. */
+  /** Vrai seulement si rien ne manque. */
   open: boolean;
   /** Variables d'environnement absentes ou invalides. */
   missing: string[];
-  launchOfferActive: boolean;
 };
 
 const PRICE_ID_PATTERN = /^price_[A-Za-z0-9]+$/;
 
 export function analysisCheckoutReadiness(
   env: Pick<NodeJS.ProcessEnv, string> = process.env,
-  { launchOfferActive = false }: { launchOfferActive?: boolean } = {},
 ): AnalysisCheckoutReadiness {
   const config = serverEnv(env);
   const priceId = env.STRIPE_ANALYSIS_PRICE_ID?.trim();
@@ -46,23 +43,16 @@ export function analysisCheckoutReadiness(
     ...resolveEmailAlertDeliveryConfig(env).missing,
   ];
   return {
-    open: missing.length === 0 && !launchOfferActive,
+    open: missing.length === 0,
     missing: Array.from(new Set(missing)),
-    launchOfferActive,
   };
 }
 
 /** Lève une erreur claire quand le checkout ne doit pas s'ouvrir. */
 export function assertAnalysisCheckoutOpen(
   env: Pick<NodeJS.ProcessEnv, string> = process.env,
-  options: { launchOfferActive?: boolean } = {},
 ): void {
-  const readiness = analysisCheckoutReadiness(env, options);
-  if (readiness.launchOfferActive) {
-    throw new Error(
-      "L'abonnement Analyse n'est pas encore ouvert : l'offre de lancement est en cours. Le checkout est suspendu.",
-    );
-  }
+  const readiness = analysisCheckoutReadiness(env);
   if (readiness.missing.length > 0) {
     throw new Error(
       `Configuration du paiement incomplète: ${readiness.missing.join(", ")}. Le checkout est suspendu.`,

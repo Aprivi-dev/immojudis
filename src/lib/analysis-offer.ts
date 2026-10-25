@@ -5,7 +5,18 @@
  * public label is configurable for deployment copy and defaults to that same
  * commercial contract.
  */
+/**
+ * Durée de l'essai gratuit de l'offre Analyse, accordé à l'inscription sans carte bancaire (affichée
+ * dans les textes ; la durée appliquée est celle de `app_private.signup_trial_ends_at`, migration
+ * 20261103100000).
+ */
 export const ANALYSIS_TRIAL_DAYS = 7 as const;
+/**
+ * Le checkout Stripe n'ajoute plus d'essai : l'essai de 7 jours est accordé à l'inscription
+ * (décision du 25/10/2026). Le code de l'essai Stripe (une fois par carte et par client) reste en
+ * place, inactif ; le remettre à `true` rouvrirait un second essai, avec carte, au paiement.
+ */
+export const STRIPE_CHECKOUT_TRIAL_OFFERED = false as boolean;
 /** Approved local commercial contract: 59 EUR TTC billed every month. */
 export const ANALYSIS_RECURRING_PRICE_CENTS = 5_900 as const;
 export const ANALYSIS_RECURRING_CURRENCY = "eur" as const;

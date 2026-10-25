@@ -1,10 +1,11 @@
 /**
- * Date d'entrée en vigueur de la version CGV 2026-10-20.1 (article « Offre de lancement », texte de la
- * relecture juridique du 20/10/2026, à faire valider par un avocat), soit sa date de mise en ligne.
- * Elle n'entre pas dans l'empreinte du texte. La section « Classement, référencement et mise en
- * avant » est en vigueur depuis la version 2026-10-14.1 (14 octobre 2026).
+ * Date d'entrée en vigueur de la version CGV 2026-10-25.1 (article 13 « Essai gratuit à
+ * l'inscription », qui remplace l'offre de lancement, et article 14 « Modification des conditions » ;
+ * relecture de conformité du 25/10/2026, à faire valider par un avocat), soit sa date de mise en
+ * ligne. Elle n'entre pas dans l'empreinte du texte. La section « Classement, référencement et mise
+ * en avant » est en vigueur depuis la version 2026-10-14.1 (14 octobre 2026).
  */
-const LAUNCH_OFFER_TERMS_EFFECTIVE_DATE = "20 octobre 2026";
+const SIGNUP_TRIAL_TERMS_EFFECTIVE_DATE = "25 octobre 2026";
 
 export const LEGAL_DOCUMENTS = {
   legal: {
@@ -14,15 +15,15 @@ export const LEGAL_DOCUMENTS = {
     path: "/legal",
   },
   terms: {
-    version: "2026-10-20.1",
-    sha256: "3923f2d8ab380f1a2f129048bc933158022e3c0180c9887592b97f3b2b3b5c5a",
-    effectiveDate: LAUNCH_OFFER_TERMS_EFFECTIVE_DATE,
+    version: "2026-10-25.1",
+    sha256: "45b05a29108fc2c9b7637d92f9b5e8169971f6d4170ed09cfe3af9f7ae1de39c",
+    effectiveDate: SIGNUP_TRIAL_TERMS_EFFECTIVE_DATE,
     path: "/conditions-generales",
   },
   privacy: {
-    version: "2026-10-21.1",
-    sha256: "87a6bbd447213d97e4aa95ef92e4fc983b91610e6b9032d705d27de550c0a929",
-    effectiveDate: "21 octobre 2026",
+    version: "2026-10-25.1",
+    sha256: "f4eb47491d7ba15e83868156e2a084698d765166479c730b29c089a4f834bf60",
+    effectiveDate: "25 octobre 2026",
     path: "/privacy",
   },
 } as const;

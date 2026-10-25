@@ -12,7 +12,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { fetchSaleUnlocksOverview } from "@/lib/client-api";
 import { fetchAccessPlan } from "@/lib/client-billing";
 import { accountLinksFor } from "@/lib/navigation";
-import { LAUNCH_OFFER_ACCOUNT_TEXT } from "@/lib/launch-offer";
+import { LAUNCH_OFFER_ACCOUNT_TEXT, signupTrialStatusText } from "@/lib/launch-offer";
 import { hasLiveStripeSubscription } from "@/lib/plans";
 import { queryKeys } from "@/lib/query-keys";
 import { unlockUsageLine } from "@/lib/sale-unlocks";
@@ -65,8 +65,9 @@ export function AccountPage() {
   const pastDue = plan?.billing?.status === "past_due";
   const graceEnd = formatDate(plan?.billing?.graceEndsAt);
   const periodEnd = formatDate(plan?.currentPeriodEnd);
-  // Plan Analyse grâce à l'offre de lancement : pas d'abonnement, donc ni date de fin ni portail.
+  // Plan Analyse grâce à l'essai à l'inscription : pas d'abonnement, donc ni portail ni période payée.
   const launchOffer = plan?.launchOffer === true;
+  const trialStatus = plan ? signupTrialStatusText(plan) : null;
   const manageableSubscription =
     !launchOffer || hasLiveStripeSubscription(plan?.billing, plan?.currentPeriodEnd);
 
@@ -159,11 +160,7 @@ export function AccountPage() {
           <p className="mt-2 text-sm text-muted-foreground">
             Offre actuelle :{" "}
             <strong className="text-foreground">
-              {plan
-                ? launchOffer
-                  ? `${plan.label} · offre de lancement`
-                  : plan.label
-                : "Chargement…"}
+              {plan ? (launchOffer ? `${plan.label} · essai gratuit` : plan.label) : "Chargement…"}
             </strong>
             {plan?.hasAnalysisAccess && periodEnd && !launchOffer ? (
               <> · accès jusqu’au {periodEnd}</>
@@ -176,7 +173,15 @@ export function AccountPage() {
             data-testid="account-launch-offer"
             className="mt-3 rounded-lg border border-gold/30 bg-gold/10 p-3 text-sm leading-relaxed text-foreground"
           >
-            {LAUNCH_OFFER_ACCOUNT_TEXT}
+            {trialStatus ?? LAUNCH_OFFER_ACCOUNT_TEXT}
+          </p>
+        ) : trialStatus ? (
+          <p
+            role="status"
+            data-testid="account-trial-ended"
+            className="mt-3 rounded-lg border border-border bg-muted/40 p-3 text-sm leading-relaxed text-foreground"
+          >
+            {trialStatus}
           </p>
         ) : null}
         {pastDue ? (

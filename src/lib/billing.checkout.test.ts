@@ -48,8 +48,8 @@ const USER_ID = "11111111-1111-4111-8111-111111111111";
 const CUSTOMER_ID = "cus_shared";
 const consent = {
   termsAccepted: true,
-  termsVersion: "2026-10-20.1",
-  privacyVersion: "2026-10-21.1",
+  termsVersion: "2026-10-25.1",
+  privacyVersion: "2026-10-25.1",
   paymentObligationAcknowledged: true,
   immediatePerformanceRequested: true,
   withdrawalInformationAcknowledged: true,
@@ -61,6 +61,8 @@ describe("createPlanCheckoutSession customer reservation", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Un test qui fait refuser la règle d'ouverture ne la laisse pas refuser pour les suivants.
+    mocks.assertOpen.mockReset();
     mocks.events.length = 0;
     mocks.launchState.mockResolvedValue({ active: false, degraded: false });
     mocks.sessionsExpire.mockResolvedValue({});
@@ -171,29 +173,27 @@ describe("createPlanCheckoutSession customer reservation", () => {
     expect(mocks.checkoutCreate).not.toHaveBeenCalled();
   });
 
-  it("transmet l'état de l'offre de lancement à la règle d'ouverture et refuse pendant l'offre", async () => {
-    mocks.launchState.mockResolvedValue({ active: true, degraded: false });
-    mocks.assertOpen.mockImplementation(
-      (_env: unknown, options: { launchOfferActive?: boolean }) => {
-        if (options.launchOfferActive) throw new Error("L'offre de lancement est en cours.");
-      },
-    );
+  it("n'ajoute pas d'essai Stripe : l'essai gratuit est accordé à l'inscription", async () => {
+    mocks.customersCreate.mockResolvedValue({ id: CUSTOMER_ID });
 
-    await expect(
-      createPlanCheckoutSession({
-        auth: buildAuthContext(),
-        origin: "https://immojudis.test",
-        plan: "analyse",
-        consent,
-      }),
-    ).rejects.toThrow(/offre de lancement/);
-    expect(mocks.assertOpen).toHaveBeenCalledWith(expect.anything(), { launchOfferActive: true });
-    expect(mocks.checkoutCreate).not.toHaveBeenCalled();
-    expect(mocks.adminRpc).not.toHaveBeenCalled();
+    await createPlanCheckoutSession({
+      auth: buildAuthContext(),
+      origin: "https://immojudis.test",
+      plan: "analyse",
+      consent,
+    });
+
+    const params = mocks.checkoutCreate.mock.calls[0]?.[0] as {
+      subscription_data?: { trial_period_days?: number; metadata?: Record<string, string> };
+    };
+    expect(params.subscription_data?.trial_period_days).toBeUndefined();
+    expect(params.subscription_data?.metadata?.trial_days).toBe("0");
   });
 
-  it("refuse le checkout quand l'état de l'offre de lancement est illisible", async () => {
-    mocks.launchState.mockResolvedValue({ active: false, degraded: true });
+  it("ne dépend pas de l'essai gratuit à l'inscription : seule la règle d'ouverture décide", async () => {
+    mocks.assertOpen.mockImplementationOnce(() => {
+      throw new Error("Configuration du paiement incomplète. Le checkout est suspendu.");
+    });
 
     await expect(
       createPlanCheckoutSession({
@@ -202,8 +202,11 @@ describe("createPlanCheckoutSession customer reservation", () => {
         plan: "analyse",
         consent,
       }),
-    ).rejects.toThrow(/offre de lancement n'a pas pu être vérifié/);
+    ).rejects.toThrow(/checkout est suspendu/);
+    expect(mocks.assertOpen).toHaveBeenCalledWith(expect.anything());
+    expect(mocks.launchState).not.toHaveBeenCalled();
     expect(mocks.checkoutCreate).not.toHaveBeenCalled();
+    expect(mocks.adminRpc).not.toHaveBeenCalled();
   });
 
   describe("réservation tenue par un checkout abandonné", () => {

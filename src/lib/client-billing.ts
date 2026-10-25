@@ -1,5 +1,5 @@
 import type { BillingSessionResponse } from "@/lib/billing";
-import { parseLaunchOfferResponse } from "@/lib/launch-offer";
+import { parseLaunchOfferResponse } from "@/lib/launch-offer-response";
 import {
   OFFER_OPENING_CONSENT_VERSION,
   OFFER_OPENING_SURVEY_VERSION,

@@ -68,8 +68,9 @@ const RESEND_COOLDOWN_SECONDS = 30;
 
 /**
  * Phrase du bandeau : l'action qui a envoyé la personne ici, et ce que le compte gratuit change.
- * Deux états : avec l'offre de lancement le compte gratuit a les avantages Analyse (export compris) ;
- * sans elle, l'export reste réservé à l'offre Analyse et le texte ne promet pas plus que le produit.
+ * Deux états : avec l'essai à l'inscription, le nouveau compte a l'offre Analyse pendant 7 jours
+ * (export compris) ; sans lui, l'export reste réservé à l'offre Analyse et le texte ne promet pas plus
+ * que le produit. Le texte de connexion ne promet rien : l'essai d'un compte existant peut être fini.
  */
 function reasonCopy(reason: LoginReason, launchOffer: boolean): { signup: string; login: string } {
   switch (reason) {
@@ -87,7 +88,7 @@ function reasonCopy(reason: LoginReason, launchOffer: boolean): { signup: string
       return launchOffer
         ? {
             signup:
-              "Créez votre compte gratuit pour exporter ces résultats : l’export fait partie des avantages de l’offre Analyse accordés pendant l’offre de lancement, sans carte bancaire.",
+              "Créez votre compte gratuit pour exporter ces résultats : l’export fait partie de l’offre Analyse, offerte pendant 7 jours à l’inscription, sans carte bancaire.",
             login: "Connectez-vous pour exporter ces résultats.",
           }
         : {
@@ -99,8 +100,8 @@ function reasonCopy(reason: LoginReason, launchOffer: boolean): { signup: string
       return launchOffer
         ? {
             signup:
-              "Créez votre compte gratuit : pendant l’offre de lancement, il bénéficie des avantages de l’offre Analyse.",
-            login: "Connectez-vous pour retrouver les avantages de l’offre Analyse.",
+              "Créez votre compte gratuit : il bénéficie de l’offre Analyse pendant 7 jours, sans carte bancaire.",
+            login: "Connectez-vous pour voir votre offre.",
           }
         : {
             signup:
@@ -125,7 +126,7 @@ function reasonCopy(reason: LoginReason, launchOffer: boolean): { signup: string
     case "fiche":
       return {
         signup: launchOffer
-          ? "Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente : pendant l’offre de lancement, il ouvre aussi les analyses de l’offre Analyse."
+          ? "Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente : pendant les 7 jours d’essai, il ouvre aussi les analyses de l’offre Analyse."
           : `Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente, et en débloquer ${MONTHLY_SALE_UNLOCKS} en détail chaque mois (contenu selon la vente).`,
         login: "Connectez-vous pour consulter cette vente.",
       };
@@ -396,10 +397,9 @@ export function LoginPage() {
             <p className="mt-5 max-w-md text-sm leading-relaxed text-muted-foreground">
               {launchOffer ? (
                 <>
-                  Découverte ouvre gratuitement le catalogue. Pendant l’offre de lancement, le
-                  compte gratuit bénéficie des avantages de l’offre Analyse : comparables, alertes
-                  quotidiennes et exports (contenu selon la vente). Tarif prévu de l’offre Analyse :{" "}
-                  {resolveAnalysisOfferLabel()}, pas encore souscriptible.
+                  Découverte ouvre gratuitement le catalogue. À l’inscription, l’offre Analyse est
+                  offerte pendant 7 jours : comparables, alertes quotidiennes et exports (contenu
+                  selon la vente).
                 </>
               ) : (
                 <>

@@ -39,6 +39,13 @@ const processingRows = [
       "Preuves contractuelles et comptables jusqu’à 10 ans ; données carte conservées par Stripe, pas par Immojudis",
   },
   {
+    purpose: "Essai gratuit de l’offre Analyse à l’inscription et prévention des abus",
+    data: "Date de confirmation de l’adresse email ; forme normalisée de l’adresse (sans sous-adresse ni points pour Gmail) comparée à celle des autres comptes ; domaine de l’adresse comparé à une liste d’adresses jetables. La vérification est automatique : si l’essai ne vous est pas accordé, écrivez-nous pour la faire revoir",
+    basis:
+      "Intérêt légitime : réserver l’essai à une fois par personne et prévenir les comptes multiples. Vous pouvez vous y opposer en nous écrivant",
+    retention: "Pendant le compte ; la forme normalisée de l’adresse est supprimée avec le compte",
+  },
+  {
     purpose: "Déblocages mensuels de ventes (offre Découverte)",
     data: "Identifiant de compte, vente débloquée, date du déblocage",
     basis:

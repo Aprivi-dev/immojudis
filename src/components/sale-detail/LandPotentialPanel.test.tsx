@@ -486,13 +486,14 @@ describe("LandPotentialPanel", () => {
     await waitFor(() => expect(mocks.downloadReport).toHaveBeenCalledWith(SALE_ID));
   });
 
-  it("dit que l’offre de lancement ouvre le dossier tant qu’elle est active", () => {
+  it("dit que l’essai gratuit à l’inscription ouvre le dossier, sans le promettre au compte", () => {
     launch.state = { active: true, pending: false };
     render(<LandPotentialPanel saleId={SALE_ID} enabled={false} />);
-    expect(screen.getByText(/Pendant l’offre de lancement/)).toBeTruthy();
-    expect(screen.getByText(/compte gratuit dont l’adresse email est confirmée/)).toBeTruthy();
-    expect(screen.queryByText(/L’offre Analyse donne accès/)).toBeNull();
-    expect(screen.getByRole("link", { name: /Voir l’offre de lancement/ })).toBeTruthy();
+    expect(
+      screen.getByText(/Elle est offerte pendant 7 jours à l’inscription, une fois par personne/),
+    ).toBeTruthy();
+    expect(screen.queryByText(/inclus avec un compte gratuit/)).toBeNull();
+    expect(screen.getByRole("link", { name: /Voir l’essai gratuit/ })).toBeTruthy();
     expect(mocks.fetchReport).not.toHaveBeenCalled();
   });
 
@@ -500,7 +501,7 @@ describe("LandPotentialPanel", () => {
     launch.state = { active: false, pending: true };
     render(<LandPotentialPanel saleId={SALE_ID} enabled={false} />);
     expect(screen.getByText(/dépend de votre offre/)).toBeTruthy();
-    expect(screen.queryByText(/Pendant l’offre de lancement/)).toBeNull();
+    expect(screen.queryByText(/offerte pendant 7 jours/)).toBeNull();
   });
 
   it("affiche l'upsell sans appeler les sources lorsque le panneau est verrouillé", () => {

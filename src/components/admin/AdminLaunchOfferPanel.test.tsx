@@ -56,10 +56,10 @@ describe("AdminLaunchOfferPanel", () => {
   it("asks for confirmation in a dialog, not with window.confirm, and names the accounts affected", async () => {
     renderPanel();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Couper l’offre de lancement" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Couper l’essai gratuit" }));
 
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByText("Couper l’offre de lancement ?")).toBeTruthy();
+    expect(within(dialog).getByText("Couper l’essai gratuit ?")).toBeTruthy();
     expect(await within(dialog).findByText(/27 comptes perdent les avantages/)).toBeTruthy();
     expect(window.confirm).not.toHaveBeenCalled();
     expect(mocks.setOffer).not.toHaveBeenCalled();
@@ -68,12 +68,14 @@ describe("AdminLaunchOfferPanel", () => {
   it("cuts the offer only after the confirmation, and announces the new state", async () => {
     renderPanel();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Couper l’offre de lancement" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Couper l’offre" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Couper l’essai gratuit" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Couper l’essai" }));
 
     await waitFor(() => expect(mocks.setOffer).toHaveBeenCalledWith(false));
     const status = screen.getByRole("status");
-    await waitFor(() => expect(status.textContent).toContain("Offre de lancement coupée"));
+    await waitFor(() =>
+      expect(status.textContent).toContain("Essai gratuit à l’inscription coupé"),
+    );
     expect(mocks.success).toHaveBeenCalled();
     expect(screen.queryByRole("dialog")).toBeNull();
   });
@@ -81,7 +83,7 @@ describe("AdminLaunchOfferPanel", () => {
   it("changes nothing when the administrator cancels", async () => {
     renderPanel();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Couper l’offre de lancement" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Couper l’essai gratuit" }));
     fireEvent.click(await screen.findByRole("button", { name: "Annuler" }));
 
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -92,7 +94,7 @@ describe("AdminLaunchOfferPanel", () => {
   it("says when the number of accounts is not available, and when it is one or none", async () => {
     mocks.pilotage.mockResolvedValue(pilotageWith(null));
     renderPanel();
-    fireEvent.click(await screen.findByRole("button", { name: "Couper l’offre de lancement" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Couper l’essai gratuit" }));
     expect(
       await screen.findByText(/nombre de comptes concernés n’est pas disponible/),
     ).toBeTruthy();
@@ -100,7 +102,7 @@ describe("AdminLaunchOfferPanel", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 
     mocks.pilotage.mockResolvedValue(pilotageWith(1));
-    fireEvent.click(screen.getByRole("button", { name: "Couper l’offre de lancement" }));
+    fireEvent.click(screen.getByRole("button", { name: "Couper l’essai gratuit" }));
     expect(await screen.findByText(/^1 compte perd les avantages/)).toBeTruthy();
   });
 
@@ -108,13 +110,15 @@ describe("AdminLaunchOfferPanel", () => {
     mocks.getOffer.mockResolvedValue({ active: false });
     renderPanel();
 
-    await screen.findByRole("heading", { name: "Offre de lancement coupée" });
-    fireEvent.click(screen.getByRole("button", { name: "Rétablir l’offre de lancement" }));
+    await screen.findByRole("heading", { name: "Essai gratuit coupé" });
+    fireEvent.click(screen.getByRole("button", { name: "Rétablir l’essai gratuit" }));
 
     await waitFor(() => expect(mocks.setOffer).toHaveBeenCalledWith(true));
     expect(screen.queryByRole("dialog")).toBeNull();
     await waitFor(() =>
-      expect(screen.getByRole("status").textContent).toContain("Offre de lancement rétablie"),
+      expect(screen.getByRole("status").textContent).toContain(
+        "Essai gratuit à l’inscription rétabli",
+      ),
     );
     expect(mocks.pilotage).not.toHaveBeenCalled();
   });
@@ -123,11 +127,11 @@ describe("AdminLaunchOfferPanel", () => {
     mocks.setOffer.mockRejectedValue(new Error("Accès refusé"));
     renderPanel();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Couper l’offre de lancement" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Couper l’offre" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Couper l’essai gratuit" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Couper l’essai" }));
 
     await waitFor(() =>
-      expect(screen.getByRole("status").textContent).toContain("Offre de lancement non modifiée"),
+      expect(screen.getByRole("status").textContent).toContain("Essai gratuit non modifié"),
     );
     expect(mocks.error).toHaveBeenCalledWith("Accès refusé");
   });

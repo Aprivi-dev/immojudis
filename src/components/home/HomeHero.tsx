@@ -4,7 +4,7 @@ import { formatNumber } from "@/lib/format";
 import type { HomeCatalogueSummary } from "@/lib/home-catalogue-summary.server";
 import { notaryAndStatePilotsEnabled } from "@/lib/sale-types";
 import { HomeFranceMap } from "./HomeFranceMap";
-import { HomeFreeAccessLine } from "./HomeFreeAccessLine";
+import { HomeFreeAccessLine, HomeSignupButton } from "./HomeFreeAccessLine";
 import { HomeSearch } from "./HomeSearch";
 import styles from "./HomePage.module.css";
 
@@ -54,9 +54,12 @@ export function HomeHero({ summary = null }: { summary?: HomeCatalogueSummary | 
             ) : null}
             <HomeFreeAccessLine />
           </div>
-          <Link className={styles.textLink} href="/annonce-exemple" prefetch={false}>
-            Voir une analyse exemple <ArrowRight size={17} aria-hidden="true" />
-          </Link>
+          <div className={styles.heroActions}>
+            <HomeSignupButton className={styles.primaryLink} />
+            <Link className={styles.textLink} href="/annonce-exemple" prefetch={false}>
+              Voir une analyse exemple <ArrowRight size={17} aria-hidden="true" />
+            </Link>
+          </div>
         </div>
         <HomeFranceMap />
       </div>
