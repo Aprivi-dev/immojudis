@@ -248,13 +248,16 @@ export function resolveFrenchGeoSearch(
 function departmentsFromList(raw: string, normalized: string): string[] | null {
   const departmentKey = (value: string) =>
     stripAdministrativePrefix(normalizeFrenchSearchText(value));
-  // « Seine et Marne » est un département : « et » ne sépare que ce qui n'en est pas un.
+  // « Seine et Marne » est un département : « et » ne sépare que ce qui n'en est pas un. Le texte
+  // normalisé n'a que des espaces simples : « et » s'y découpe sans expression rationnelle (un
+  // motif comme /\s+et\s+/ sur le texte tapé coûterait un temps quadratique sur une longue suite
+  // d'espaces).
   const parts = raw
     .split(/[,;/+&]/)
-    .flatMap((part) =>
-      DEPARTMENT_BY_SEARCH_KEY.has(departmentKey(part)) ? [part] : part.split(/\s+et\s+/i),
-    )
     .map(departmentKey)
+    .flatMap((key) =>
+      DEPARTMENT_BY_SEARCH_KEY.has(key) ? [key] : key.split(" et ").map(stripAdministrativePrefix),
+    )
     .filter(Boolean);
   const words = normalized.split(" ");
   const tokens =
