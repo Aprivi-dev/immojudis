@@ -288,8 +288,8 @@ function PilotageTables({ data }: { data: AdminPilotageResponse }) {
     {
       label:
         snapshot.launchOfferActive === false
-          ? "Comptes sous l’offre de lancement (offre coupée)"
-          : "Comptes sous l’offre de lancement",
+          ? "Comptes en essai gratuit (essai coupé)"
+          : "Comptes en essai gratuit",
       value: snapshot.launchOfferActive === null ? null : snapshot.launchOfferAccounts,
     },
   ];

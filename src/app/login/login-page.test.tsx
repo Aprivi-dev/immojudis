@@ -283,7 +283,9 @@ describe("login page", () => {
     expect(screen.getByTestId("login-reason").textContent).toContain(
       "Créez votre compte gratuit pour exporter ces résultats",
     );
-    expect(screen.getByTestId("login-reason").textContent).toContain("offre de lancement");
+    expect(screen.getByTestId("login-reason").textContent).toContain(
+      "offerte pendant 7 jours à l’inscription",
+    );
     active.unmount();
 
     mocks.search = { reason: "export" };
@@ -313,7 +315,7 @@ describe("login page", () => {
     );
   });
 
-  it("offre de lancement : la mention du visiteur remplace la promesse des 3 ventes", () => {
+  it("essai gratuit : la mention du visiteur remplace la promesse des 3 ventes", () => {
     mocks.search = { mode: "investor" };
     mocks.launch = { active: true, pending: false };
     render(<LoginPage />);
@@ -325,18 +327,25 @@ describe("login page", () => {
     );
   });
 
-  it("offre de lancement : motifs « offre » et « fiche » sans promesse de quota", () => {
+  it("essai gratuit : motifs « offre » et « fiche » sans promesse de quota", () => {
     mocks.launch = { active: true, pending: false };
     mocks.search = { mode: "investor", reason: "fiche" };
     const { unmount } = render(<LoginPage />);
-    expect(screen.getByTestId("login-reason").textContent).toContain("offre de lancement");
+    expect(screen.getByTestId("login-reason").textContent).toContain("pendant les 7 jours d’essai");
     expect(screen.getByTestId("login-reason").textContent).not.toContain("3 en détail");
     unmount();
 
     mocks.search = { mode: "investor", reason: "offre" };
     render(<LoginPage />);
     expect(screen.getByTestId("login-reason").textContent).toBe(
-      "Créez votre compte gratuit : pendant l’offre de lancement, il bénéficie des avantages de l’offre Analyse.",
+      "Créez votre compte gratuit : il bénéficie de l’offre Analyse pendant 7 jours, sans carte bancaire.",
+    );
+    // La connexion ne promet rien : l'essai d'un compte existant peut être fini.
+    cleanup();
+    mocks.search = { reason: "offre" };
+    render(<LoginPage />);
+    expect(screen.getByTestId("login-reason").textContent).toBe(
+      "Connectez-vous pour voir votre offre.",
     );
   });
 
@@ -361,11 +370,10 @@ describe("login page", () => {
     mocks.launch = { active: true, pending: false };
     const active = render(<LoginPage />);
     expect(active.container.textContent).toContain(
-      "Pendant l’offre de lancement, le compte gratuit bénéficie des avantages de l’offre Analyse",
+      "À l’inscription, l’offre Analyse est offerte pendant 7 jours",
     );
-    expect(active.container.textContent).toContain(
-      "Tarif prévu de l’offre Analyse : 59 € TTC / mois, pas encore souscriptible.",
-    );
+    // Pendant l'essai à l'inscription, la page d'inscription ne met pas le tarif en avant.
+    expect(active.container.textContent).not.toContain("59 €");
     expect(active.container.textContent).not.toContain("sur abonnement résiliable");
   });
 

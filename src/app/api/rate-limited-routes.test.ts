@@ -283,7 +283,9 @@ describe("P4-02 rate limits on costly and public routes", () => {
     expect(anonymous.status).toBe(200);
     expect(anonymous.headers.get("cache-control")).toContain("s-maxage=300");
 
-    mocks.auth.mockRejectedValue(new Error("Stripe secret sk_live_123 rejected"));
+    // Le checkout n'ajoute plus d'essai : la réponse n'est plus personnalisée, et l'échec vient
+    // ici d'une autre dépendance de la route.
+    mocks.enforceIp.mockRejectedValueOnce(new Error("Stripe secret sk_live_123 rejected"));
     const failed = await offerGet(
       new Request("https://example.test/api/billing/offer", {
         headers: { authorization: "Bearer token" },

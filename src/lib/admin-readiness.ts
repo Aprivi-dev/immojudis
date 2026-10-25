@@ -2,7 +2,6 @@ import "server-only";
 import postgres from "postgres";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { analysisCheckoutReadiness } from "@/lib/analysis-checkout-readiness";
-import { ANALYSIS_TRIAL_DAYS } from "@/lib/analysis-offer";
 import { resolveEmailAlertDeliveryConfig } from "@/lib/email-alerts";
 import { firstFilled, serverEnv } from "@/lib/env";
 import { resolveSiteOrigin } from "@/lib/site-url";
@@ -169,7 +168,7 @@ export function buildEnvironmentReadiness(env: Pick<NodeJS.ProcessEnv, string>):
       label: "Checkout Analyse",
       status: checkoutReadiness.open ? "ready" : "blocked",
       detail: checkoutReadiness.open
-        ? `Le checkout Analyse peut ouvrir l’essai gratuit de ${ANALYSIS_TRIAL_DAYS} jours avec carte bancaire, puis l’abonnement récurrent, tout en conservant la preuve contractuelle.`
+        ? "Le checkout Analyse peut ouvrir l’abonnement récurrent, sans essai (l’essai gratuit est accordé à l’inscription), tout en conservant la preuve contractuelle."
         : "Le checkout Analyse attend Stripe, un Price récurrent Analyse valide, le secret du webhook, son URL canonique, ses mentions juridiques ou le canal de confirmation contractuelle.",
       action: checkoutReadiness.open
         ? null

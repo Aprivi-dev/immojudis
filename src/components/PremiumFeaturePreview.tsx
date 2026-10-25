@@ -80,9 +80,8 @@ export function PremiumFeaturePreview({
       <p className="mt-2 text-sm text-muted-foreground">{description}</p>
       {checkoutOpen === true ? (
         <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-          Pour un premier accès éligible : {ANALYSIS_TRIAL_DAYS} jours d’essai gratuits avec carte
-          bancaire, puis abonnement récurrent. Un compte ayant déjà utilisé l’essai souscrit
-          directement. Résiliation depuis votre compte.
+          L’offre Analyse est offerte pendant {ANALYSIS_TRIAL_DAYS} jours à l’inscription, puis
+          proposée sur abonnement mensuel, résiliable depuis votre compte.
         </p>
       ) : checkoutOpen === false ? (
         <p className="mt-3 text-xs leading-relaxed text-muted-foreground">

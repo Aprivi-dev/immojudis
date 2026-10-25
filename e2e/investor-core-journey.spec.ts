@@ -102,7 +102,8 @@ test("inscription → recherche → rapport → paiement → partage", async ({ 
       json: {
         configured: true,
         trialDays: 7,
-        trialAvailable: true,
+        // Le checkout n'ajoute plus d'essai : l'essai gratuit est accordé à l'inscription.
+        trialAvailable: false,
         label: "59 € / mois",
       },
     });
@@ -160,7 +161,7 @@ test("inscription → recherche → rapport → paiement → partage", async ({ 
       .or(page.getByRole("listitem").filter({ hasText: "Enchère plafond chiffrée" }))
       .getByText("Pour 3 ventes par mois"),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Démarrer l’essai Analyse" }).click();
+  await page.getByRole("button", { name: "Souscrire à Analyse" }).click();
   await expect(page.getByRole("heading", { name: "Récapitulatif avant paiement" })).toBeVisible();
   const consentCheckboxes = page.getByRole("checkbox");
   await expect(consentCheckboxes).toHaveCount(2);

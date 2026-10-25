@@ -12,7 +12,12 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/rate-limit", () => ({ enforceDailyOperationLimits: mocks.daily }));
 vi.mock("@/lib/launch-offer.server", () => ({
   isLaunchOfferActive: mocks.launchOffer,
-  hasConfirmedEmail: mocks.confirmedEmail,
+  // Essai en cours ou non (`confirmedEmail`), sans date de fin connue.
+  hasActiveSignupTrial: mocks.confirmedEmail,
+  readSignupTrial: async (userId: string) => ({
+    active: Boolean(await mocks.confirmedEmail(userId)),
+    endsAt: null,
+  }),
 }));
 vi.mock("@/lib/sale-unlocks.server", () => ({ hasUnlockedSale: vi.fn() }));
 vi.mock("@/lib/usage", () => ({

@@ -40,6 +40,7 @@ import {
 import Link from "next/link";
 import { useSyncExternalStore } from "react";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
+import { LAUNCH_OFFER_SHORT_TEXT } from "@/lib/launch-offer";
 import { freeAccessLine, MONTHLY_SALE_UNLOCKS, unlockedItemsText } from "@/lib/sale-unlocks";
 import {
   getSaleProcedure,
@@ -177,13 +178,12 @@ function MarketGapBandNote({ band, saleId }: { band: PublicMarketGapBand; saleId
 }
 
 /**
- * Offre de lancement active : la ligne courte sous le bouton d'inscription de la fiche. Le texte de
- * l'offre en entier (durée, fin, retrait) est celui de `launchOfferText("visitor")`, lisible sur
- * /offres, à la connexion et à l'inscription : la fiche en donne l'essentiel et y renvoie, au lieu de
- * le répéter sur sept lignes sous le prix. Aucun texte juridique nouveau.
+ * Essai à l'inscription ouvert : la ligne courte sous le bouton d'inscription de la fiche. Les
+ * règles de l'essai en entier (début, durée, une fois par personne, retour à Découverte) sont celles
+ * de `launchOfferText("visitor")`, lisibles sur /offres, à la connexion et à l'inscription : la
+ * fiche en donne l'essentiel et y renvoie. Aucun texte juridique nouveau.
  */
-const LAUNCH_OFFER_SIGNUP_LINE =
-  "Gratuit, sans carte bancaire. Offre de lancement : les avantages de l’offre Analyse, une fois votre adresse email confirmée.";
+const LAUNCH_OFFER_SIGNUP_LINE = LAUNCH_OFFER_SHORT_TEXT;
 
 /**
  * Ligne d'accès sous le bouton d'inscription. Offre de lancement active : la mention du visiteur
@@ -216,9 +216,9 @@ function SignupAccessLine() {
 }
 
 /**
- * Étiquette d'une ligne de l'aperçu. Pendant l'offre de lancement, ce que l'offre Analyse ouvre
- * (enchère plafond, comparables) l'est aussi avec le compte gratuit ; tant que l'état n'est pas lu,
- * une étiquette qui ne promet rien.
+ * Étiquette d'une ligne de l'aperçu. Pendant l'essai à l'inscription, ce que l'offre Analyse ouvre
+ * (enchère plafond, comparables) l'est aussi pendant les 7 jours d'essai ; tant que l'état n'est pas
+ * lu, une étiquette qui ne promet rien.
  */
 function TeaserTier({ tier, offerAware }: { tier: string; offerAware?: boolean }) {
   const { active, pending } = useLaunchOffer();
@@ -227,7 +227,7 @@ function TeaserTier({ tier, offerAware }: { tier: string; offerAware?: boolean }
     : pending
       ? "Selon votre compte"
       : active
-        ? "Compte gratuit (offre de lancement)"
+        ? "Essai gratuit de 7 jours"
         : tier;
   // Décor : le texte masqué de la ligne dit déjà ce qui débloque la valeur.
   return (

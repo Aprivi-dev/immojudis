@@ -178,11 +178,11 @@ export function LandPotentialPanel({
             {launchOffer.pending
               ? "L’accès au dossier PLU et risques de chaque annonce dépend de votre offre."
               : launchOffer.active
-                ? "Pendant l’offre de lancement, le dossier PLU et risques de chaque annonce est inclus avec un compte gratuit dont l’adresse email est confirmée. Cette offre est temporaire."
+                ? "L’offre Analyse donne accès au dossier PLU et risques de chaque annonce. Elle est offerte pendant 7 jours à l’inscription, une fois par personne."
                 : "L’offre Analyse donne accès au dossier PLU et risques de chaque annonce."}
           </p>
           <a href="/offres">
-            {launchOffer.active ? "Voir l’offre de lancement" : "Découvrir l’offre Analyse"}{" "}
+            {launchOffer.active ? "Voir l’essai gratuit" : "Découvrir l’offre Analyse"}{" "}
             <ArrowUpRight size={15} aria-hidden="true" />
           </a>
         </div>

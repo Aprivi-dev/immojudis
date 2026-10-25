@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { cleanup, render as renderElement, screen, within } from "@testing-library/react";
+import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   adjudicationDirectoryFixture,
@@ -15,6 +17,13 @@ vi.mock("@/lib/adjudication-price-statistics-repository", () => ({
 }));
 
 import Page, { generateMetadata, revalidate } from "./page";
+
+/** La page est rendue dans l'application, sous son QueryClientProvider (`src/app/providers.tsx`). */
+function render(element: ReactElement) {
+  return renderElement(
+    <QueryClientProvider client={new QueryClient()}>{element}</QueryClientProvider>,
+  );
+}
 
 /** Intl met des espaces insécables (fines) dans les nombres : on les ramène à des espaces. */
 const plain = (text: string | null) => (text ?? "").replace(/[\u00a0\u202f]/g, " ");

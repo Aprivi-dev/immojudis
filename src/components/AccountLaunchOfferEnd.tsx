@@ -5,10 +5,10 @@ import {
 } from "@/lib/launch-offer-end-lists";
 
 /**
- * Ce qui resterait au compte si l'offre de lancement se terminait, dit à l'avance et sans pression :
- * ni date, ni compte à rebours, ni incitation à s'abonner. Les listes sont celles du préavis par email
- * (`launch-offer-end-lists.ts`).
- * Affiché dans /compte seulement sous l'offre de lancement (compte sans abonnement réel).
+ * Ce qui restera au compte à la fin de son essai gratuit, dit à l'avance et sans pression : ni compte
+ * à rebours, ni incitation à s'abonner (la date est dans le bloc « Abonnement »). Les listes sont
+ * celles de `launch-offer-end-lists.ts`.
+ * Affiché dans /compte seulement pendant l'essai (compte sans abonnement réel).
  */
 export function AccountLaunchOfferEnd() {
   const stays = LAUNCH_OFFER_END_STAYS;
@@ -20,13 +20,13 @@ export function AccountLaunchOfferEnd() {
       data-testid="account-offer-end"
     >
       <h2 id="acc-offer-end" className="text-lg font-semibold text-foreground">
-        Si l’offre de lancement se terminait
+        À la fin de votre essai
       </h2>
       <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
         {LAUNCH_OFFER_DURATION_TEXT}
       </p>
       <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-        {LAUNCH_OFFER_DATA_TEXT} Les fonctions qui se ferment à la fin de l’offre sont listées
+        {LAUNCH_OFFER_DATA_TEXT} Les fonctions qui se ferment à la fin de l’essai sont listées
         ci-dessous.
       </p>
       <div className="mt-4 grid gap-4 sm:grid-cols-2">

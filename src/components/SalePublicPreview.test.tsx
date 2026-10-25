@@ -10,7 +10,7 @@ import {
   type LaunchOfferState,
   type LaunchOfferStore,
 } from "@/hooks/use-launch-offer";
-import { LAUNCH_OFFER_VISITOR_TEXT } from "@/lib/launch-offer";
+import { LAUNCH_OFFER_SHORT_TEXT, LAUNCH_OFFER_VISITOR_TEXT } from "@/lib/launch-offer";
 import type { AuctionSale, SaleVenueType } from "@/lib/types";
 import { FREE_ACCESS_LINE } from "@/lib/sale-unlocks";
 import { publicSaleVenueCopy, SalePublicPreview } from "./SalePublicPreview";
@@ -859,7 +859,7 @@ function renderPreview(
   );
 }
 
-describe("offre de lancement sur la fiche publique", () => {
+describe("essai gratuit à l'inscription sur la fiche publique", () => {
   const sale = {
     id: "sale-1",
     starting_price_eur: 59_000,
@@ -884,7 +884,7 @@ describe("offre de lancement sur la fiche publique", () => {
     // Trois lignes factuelles au lieu du texte de l'offre en entier (durée, retrait « sans préavis »…) :
     // l'essentiel, puis un renvoi vers /offres où le texte complet reste lisible.
     const line = screen.getByTestId("public-signup-line");
-    expect(line.textContent).toContain("Offre de lancement : les avantages de l’offre Analyse");
+    expect(line.textContent).toContain(LAUNCH_OFFER_SHORT_TEXT);
     expect(line.textContent).not.toContain("sans préavis");
     expect(line.textContent).not.toContain(LAUNCH_OFFER_VISITOR_TEXT);
     expect(line.textContent?.length).toBeLessThan(200);
@@ -893,7 +893,7 @@ describe("offre de lancement sur la fiche publique", () => {
     ).toBe("/offres");
     expect(block.textContent).not.toContain(FREE_ACCESS_LINE);
     const teaser = screen.getByRole("region", { name: "L’analyse de cette vente" });
-    expect(teaser.textContent).toContain("Compte gratuit (offre de lancement)");
+    expect(teaser.textContent).toContain("Essai gratuit de 7 jours");
     expect(teaser.textContent).not.toContain("3 déblocages par mois");
     expect(teaser.textContent).not.toContain("Offre Analyse");
   });

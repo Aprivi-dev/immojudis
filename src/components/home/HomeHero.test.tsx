@@ -37,7 +37,11 @@ describe("home hero", () => {
     expect(text).toContain("1 753 ventes à venir · données vérifiées le 15/10/2026");
     expect(text).not.toContain("mises à jour le");
     expect(markup).toMatch(/<a[^>]*href="\/sales"[^>]*>1[^<]*753 ventes à venir/);
-    expect(markup).toMatch(/<a[^>]*href="\/offres"[^>]*>Gratuit, sans carte bancaire/);
+    // Tant que l'état de l'essai n'est pas lu (rendu serveur), la ligne habituelle, vers l'inscription.
+    expect(markup).toMatch(
+      /<a[^>]*href="\/login\?mode=investor"[^>]*>Gratuit, sans carte bancaire/,
+    );
+    expect(markup).toMatch(/<a[^>]*href="\/login\?mode=investor"[^>]*>S’inscrire gratuitement/);
   });
 
   it("says nothing about the catalogue without figures, but keeps the free-access line", () => {
