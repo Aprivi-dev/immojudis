@@ -17,6 +17,12 @@
 export const LAUNCH_OFFER_LABEL = "Offre de lancement";
 
 /**
+ * Résumé d'une ligne, toujours accompagné du texte complet sur la même page ou d'un lien vers
+ * /offres (bannière repliable de /sales, premier écran de l'accueil).
+ */
+export const LAUNCH_OFFER_SHORT_TEXT = `${LAUNCH_OFFER_LABEL} : compte gratuit avec les avantages Analyse, temporaires`;
+
+/**
  * Durée de l'offre, formule de la relecture juridique du 20/10/2026 (à faire valider par un avocat,
  * comme tout ce fichier) : les avantages sont temporaires, finissent au plus tard au lancement
  * officiel, la fin est annoncée par email, et ils ne sont retirés plus tôt, sans préavis, que pour

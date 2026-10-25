@@ -2,7 +2,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { LAUNCH_OFFER_ACCOUNT_TEXT, LAUNCH_OFFER_VISITOR_TEXT } from "@/lib/launch-offer";
+import {
+  LAUNCH_OFFER_ACCOUNT_TEXT,
+  LAUNCH_OFFER_DURATION_TEXT,
+  LAUNCH_OFFER_SHORT_TEXT,
+  LAUNCH_OFFER_VISITOR_TEXT,
+} from "@/lib/launch-offer";
 import { PLAN_LIMITS } from "@/lib/plans";
 import { FREE_ACCESS_LINE } from "@/lib/sale-unlocks";
 
@@ -74,18 +79,27 @@ describe("accueil", () => {
     );
   });
 
-  it("remplace cette ligne par la mention de l'offre quand elle est active", () => {
-    mocks.launch = { active: true, pending: false };
-    render(<HomeHero />);
-    expect(screen.getByRole("link", { name: LAUNCH_OFFER_VISITOR_TEXT })).toBeTruthy();
-    expect(screen.queryByText(FREE_ACCESS_LINE)).toBeNull();
+  it("remplace cette ligne par le résumé de l'offre, vers /offres, quand elle est active", () => {
+    for (const user of [null, { id: "u1" }]) {
+      mocks.launch = { active: true, pending: false };
+      mocks.user = user;
+      render(<HomeHero />);
+      expect(screen.getByRole("link", { name: LAUNCH_OFFER_SHORT_TEXT }).getAttribute("href")).toBe(
+        "/offres",
+      );
+      expect(screen.queryByText(FREE_ACCESS_LINE)).toBeNull();
+      // Le texte complet (durée, conditions) n'est pas répété dans le premier écran.
+      expect(document.body.textContent).not.toContain(LAUNCH_OFFER_DURATION_TEXT);
+      cleanup();
+    }
   });
 
-  it("parle au compte connecté avec le texte du compte", () => {
+  it("garde le texte complet de l'offre dans la carte Découverte de l'accueil", () => {
     mocks.launch = { active: true, pending: false };
     mocks.user = { id: "u1" };
-    render(<HomeHero />);
-    expect(screen.getByRole("link", { name: LAUNCH_OFFER_ACCOUNT_TEXT })).toBeTruthy();
+    render(<HomeOffers />);
+    const free = screen.getByRole("heading", { name: "Découverte" }).closest("article")!;
+    expect(free.textContent).toContain(LAUNCH_OFFER_ACCOUNT_TEXT);
   });
 });
 
