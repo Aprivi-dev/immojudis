@@ -46,6 +46,14 @@ vi.mock("@/lib/client-api", async (importOriginal) => ({
   fetchSalesAiReviewProjections: state.fetchSalesAiReviewProjections,
   fetchNotificationPreferences: state.fetchNotificationPreferences,
 }));
+// Le menu « Mon compte » et le menu mobile lisent les droits par `@/lib/client-billing`, sous la
+// même clé de requête que la page : sans ce second mock, le premier composant monté (le menu, déjà
+// chargé par un test précédent, s'abonne avant la page) lançait le vrai appel, qui échoue ici, et
+// la page partait en Découverte avant la réponse simulée (échec intermittent en CI).
+vi.mock("@/lib/client-billing", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/client-billing")>()),
+  fetchAccessPlan: state.fetchAccessPlan,
+}));
 vi.mock("@/lib/search/search-service", () => ({
   fetchSearchResults: state.fetchSearchResults,
   fetchSearchCount: state.fetchSearchCount,
