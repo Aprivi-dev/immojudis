@@ -41,6 +41,10 @@ describe("official geographic boundaries", () => {
     );
   });
 
+  it("draws no single contour for a list of departments", () => {
+    expect(boundaryRequestForLabel("66, 65, 05")).toBeNull();
+  });
+
   it("accepts one exact commune match and computes a fitting box", async () => {
     const fetcher = vi.fn(
       async (_url: string, _init?: RequestInit) =>

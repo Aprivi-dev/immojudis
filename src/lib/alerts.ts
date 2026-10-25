@@ -132,11 +132,14 @@ function matchesAlertQueryScope(sale: AuctionSale, query: unknown): boolean {
 /**
  * Code du département quand le texte de recherche n'est que cela (« 26 », « 2A », « 974 » ou un nom
  * de département) : l'alerte l'enregistre alors comme son département plutôt que comme texte libre.
- * `null` pour tout autre texte, une région ou un code postal.
+ * `null` pour tout autre texte, une région, un code postal ou plusieurs départements (« 66, 65, 05 »
+ * reste dans le texte enregistré, que l'évaluation lit comme ces trois départements).
  */
 export function departmentFromSearchQuery(query: string | null | undefined): string | null {
   const scope = resolveFrenchGeoSearch(query);
-  return scope.kind === "department" ? (scope.departments[0] ?? null) : null;
+  return scope.kind === "department" && scope.departments.length === 1
+    ? (scope.departments[0] ?? null)
+    : null;
 }
 
 export function isHouseWithLand(sale: AuctionSale): boolean {

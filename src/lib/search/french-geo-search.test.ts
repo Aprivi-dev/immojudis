@@ -44,6 +44,29 @@ describe("French geographic search", () => {
     expect(resolveFrenchGeoSearch("33")).toEqual({ kind: "department", departments: ["33"] });
   });
 
+  it.each([
+    ["66, 65, 05", ["66", "65", "05"]],
+    ["66 65 05", ["66", "65", "05"]],
+    ["66;65", ["66", "65"]],
+    ["Gers et Landes", ["32", "40"]],
+    ["Seine et Marne, Paris", ["77", "75"]],
+    ["33 / Gironde / 2A", ["33", "2A"]],
+  ])("resolves the department list %s to each department", (query, departments) => {
+    expect(resolveFrenchGeoSearch(query)).toEqual({ kind: "department", departments });
+  });
+
+  it.each(["66, Perpignan", "Maisons et appartements", "33 rue", "75 001"])(
+    "keeps %s as free text when one element is not a department",
+    (query) => {
+      expect(resolveFrenchGeoSearch(query).kind).toBe("text");
+    },
+  );
+
+  it("matches a department list on any of its departments", () => {
+    expect(matchesFrenchGeoSearch(sale({ department: "65" }), "66, 65, 05")).toBe(true);
+    expect(matchesFrenchGeoSearch(sale({ department: "33" }), "66, 65, 05")).toBe(false);
+  });
+
   it("builds database values for catalogs storing a code or a department name", () => {
     expect(departmentSearchValues(["33", "2A"])).toEqual(["33", "Gironde", "2A", "Corse-du-Sud"]);
   });
