@@ -9,9 +9,9 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 
-import { navbarTheme } from "@/components/Navbar";
+import { showsNavbar } from "@/components/Navbar";
 import {
-  siteHeaderBarClasses,
+  SITE_HEADER_BAR_CLASSES,
   siteHeaderClasses,
   siteHeaderReservesHeight,
 } from "@/components/SiteHeader";
@@ -25,13 +25,13 @@ function renderFallback(path: string) {
 }
 
 describe("en-tête de secours : même place que le vrai en-tête (pas de décalage à son arrivée)", () => {
-  it("clair, fixé en haut, avec l'espace de 4 rem que laisse le vrai en-tête (accueil compris)", () => {
+  it("fixé en haut, avec l'espace de 4 rem que laisse le vrai en-tête (accueil compris)", () => {
     for (const path of ["/", "/tribunaux"]) {
       const container = renderFallback(path);
       const header = container.querySelector("header");
-      expect(header?.className, path).toBe(siteHeaderClasses("light", "fixed"));
+      expect(header?.className, path).toBe(siteHeaderClasses("fixed"));
       expect(header?.className, path).toContain("fixed");
-      expect(header?.firstElementChild?.className, path).toBe(siteHeaderBarClasses("light"));
+      expect(header?.firstElementChild?.className, path).toBe(SITE_HEADER_BAR_CLASSES);
       expect(container.querySelector(".h-16"), path).not.toBeNull();
       cleanup();
     }
@@ -44,13 +44,12 @@ describe("en-tête de secours : même place que le vrai en-tête (pas de décala
     }
   });
 
-  it("suit le thème du vrai en-tête pour chaque adresse", () => {
-    expect(navbarTheme("/")).toBe("light");
-    expect(navbarTheme("/tribunaux/justice-tj-1-93")).toBe("light");
-    expect(navbarTheme("/sales")).toBeNull();
-    expect(navbarTheme("/admin")).toBeNull();
-    expect(siteHeaderReservesHeight("dark", "fixed")).toBe(false);
-    expect(siteHeaderReservesHeight("light", "fixed")).toBe(true);
-    expect(siteHeaderReservesHeight("light", "sticky")).toBe(false);
+  it("suit le vrai en-tête pour chaque adresse", () => {
+    expect(showsNavbar("/")).toBe(true);
+    expect(showsNavbar("/tribunaux/justice-tj-1-93")).toBe(true);
+    expect(showsNavbar("/sales")).toBe(false);
+    expect(showsNavbar("/admin")).toBe(false);
+    expect(siteHeaderReservesHeight("fixed")).toBe(true);
+    expect(siteHeaderReservesHeight("sticky")).toBe(false);
   });
 });

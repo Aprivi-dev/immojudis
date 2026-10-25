@@ -39,14 +39,11 @@ afterEach(() => {
 });
 
 describe("SiteHeader", () => {
-  it("expose les mêmes cinq entrées quel que soit le thème", () => {
+  it("expose les cinq entrées de la navigation principale", () => {
     const labels = ["Ventes", "Tribunaux", "Avocats", "Ressources", "Offres"];
-    for (const theme of ["light", "dark"] as const) {
-      const { unmount } = render(<SiteHeader theme={theme} />);
-      const nav = within(screen.getByRole("navigation", { name: "Navigation principale" }));
-      expect(nav.getAllByRole("link").map((link) => link.textContent)).toEqual(labels);
-      unmount();
-    }
+    render(<SiteHeader />);
+    const nav = within(screen.getByRole("navigation", { name: "Navigation principale" }));
+    expect(nav.getAllByRole("link").map((link) => link.textContent)).toEqual(labels);
   });
 
   it("écrit Immojudis d'une seule façon", () => {
@@ -202,13 +199,12 @@ describe("Navbar", () => {
     }
   });
 
-  it("utilise le thème clair partout, accueil compris", () => {
-    state.pathname = "/";
-    const { container, unmount } = render(<Navbar />);
-    expect(container.querySelector("header")?.getAttribute("data-theme")).toBe("light");
-    unmount();
-    state.pathname = "/offres";
-    const second = render(<Navbar />);
-    expect(second.container.querySelector("header")?.getAttribute("data-theme")).toBe("light");
+  it("s'affiche sur les autres pages, accueil compris", () => {
+    for (const pathname of ["/", "/offres"]) {
+      state.pathname = pathname;
+      const { container, unmount } = render(<Navbar />);
+      expect(container.querySelector("header"), pathname).not.toBeNull();
+      unmount();
+    }
   });
 });

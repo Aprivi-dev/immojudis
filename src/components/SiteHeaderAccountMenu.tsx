@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useState } from "react";
 import LogOut from "lucide-react/dist/esm/icons/log-out.js";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
-import { buttonBase, darkGhost, lightGhost } from "@/components/site-header-shared";
+import { buttonBase, lightGhost } from "@/components/site-header-shared";
 import { useAuth } from "@/hooks/use-auth";
 import { useHasAnalysisAccess } from "@/hooks/use-has-analysis-access";
 import { getSupabase } from "@/integrations/supabase/lazy";
@@ -13,14 +13,14 @@ import { visibleAccountLinks, type AccountLink } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 
 /** Menu « Mon compte » (personnes connectées) : Radix Popover n'est chargé que pour elles. */
-export function AccountMenu({ links, dark }: { links: AccountLink[]; dark: boolean }) {
+export function AccountMenu({ links }: { links: AccountLink[] }) {
   const [open, setOpen] = useState(false);
   const { user } = useAuth();
   const shownLinks = visibleAccountLinks(links, useHasAnalysisAccess(user?.id));
   return (
     <PopoverPrimitive.Root open={open} onOpenChange={setOpen}>
       <PopoverPrimitive.Trigger asChild>
-        <button type="button" className={cn(buttonBase, dark ? darkGhost : lightGhost)}>
+        <button type="button" className={cn(buttonBase, lightGhost)}>
           Mon compte
           <ChevronDown className="size-4" aria-hidden />
         </button>

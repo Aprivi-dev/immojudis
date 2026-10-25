@@ -2,10 +2,10 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Suspense, useEffect, useState } from "react";
-import { Navbar, navbarTheme } from "@/components/Navbar";
+import { Navbar, showsNavbar } from "@/components/Navbar";
 import { HeaderLogo } from "@/components/site-header-shared";
 import {
-  siteHeaderBarClasses,
+  SITE_HEADER_BAR_CLASSES,
   siteHeaderClasses,
   siteHeaderReservesHeight,
 } from "@/components/SiteHeader";
@@ -63,23 +63,21 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * En-tête de secours le temps que le vrai se charge. Il prend la place exacte du vrai pour l'adresse
- * courante (même thème, même position, même hauteur, même espace réservé dans la page) : l'accueil
- * porte un en-tête sombre posé par-dessus la photo, qui ne réserve aucune place ; le catalogue et
- * l'administration n'en ont pas (leur propre barre). Un espace de 4 rem laissé là où le vrai en-tête
- * n'en laisse pas décalait la page à son arrivée (CLS 0,078).
+ * En-tête de secours le temps que le vrai se charge. Il prend la place exacte du vrai (même
+ * position, même hauteur, même espace réservé dans la page) ; le catalogue et l'administration n'en
+ * ont pas (leur propre barre). Un espace laissé là où le vrai en-tête n'en laisse pas décalait la
+ * page à son arrivée (CLS 0,078).
  */
 export function NavigationFallback() {
-  const theme = navbarTheme(usePublicPathname());
-  if (!theme) return null;
+  if (!showsNavbar(usePublicPathname())) return null;
   return (
     <>
-      <header className={siteHeaderClasses(theme, "fixed")}>
-        <div className={siteHeaderBarClasses(theme)}>
-          <HeaderLogo dark={theme === "dark"} showTagline={theme !== "dark"} />
+      <header className={siteHeaderClasses("fixed")}>
+        <div className={SITE_HEADER_BAR_CLASSES}>
+          <HeaderLogo showTagline />
         </div>
       </header>
-      {siteHeaderReservesHeight(theme, "fixed") ? <div className="h-16" aria-hidden /> : null}
+      {siteHeaderReservesHeight("fixed") ? <div className="h-16" aria-hidden /> : null}
     </>
   );
 }

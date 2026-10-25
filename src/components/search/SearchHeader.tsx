@@ -89,7 +89,6 @@ export function SearchHeader({
   }, []);
   return (
     <SiteHeader
-      theme="light"
       placement="sticky"
       headerRef={headerRef}
       // L'en-tête ne reste collé en haut de l'écran qu'à partir de `lg` : sur mobile il défile avec la
