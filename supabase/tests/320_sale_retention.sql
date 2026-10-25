@@ -28,6 +28,12 @@ insert into public.auction_sale_court_label_assignments(source_key,auction_sale_
 select app_private.auction_sale_catalogue_source_key('https://example.test/retention/1'),'ffffffff-ffff-ffff-ffff-ffffffffff71','https://example.test/retention/1',name,app_private.normalize_court_label(name),id,code,name,name,app_private.normalize_court_label(name),'source_tribunal_label_exact' from public.outcome_courts where code='retention:test';
 select throws_ok($$update public.auction_sale_competent_court_assignments set auction_sale_id=null where source_url_snapshot='https://example.test/retention/1'$$,'55000','Competent-court audit rows are immutable.','manual evidence detachment still forbidden');
 select throws_ok($$update public.auction_sale_court_label_assignments set court_name='changed' where source_url_snapshot='https://example.test/retention/1'$$,'55000','Court enrichment audit rows are immutable.','evidence content remains immutable');
+-- Les tâches pg_cron de la base de test (rétention toutes les 5 minutes, observateurs) peuvent tenir
+-- le verrou consultatif de la purge ou un verrou d'auction_sales : la purge rend alors « busy » sans
+-- rien supprimer, et le test échouait selon l'heure. Le test prend lui-même ces deux verrous, dans
+-- l'ordre de la purge, en attendant qu'ils se libèrent ; la purge les retrouve acquis.
+select pg_advisory_xact_lock(hashtextextended('immojudis:outcome_catalogue_bridge:v1', 0));
+lock table public.auction_sales in share row exclusive mode;
 set local role service_role;
 select is((public.purge_expired_auction_sales('2000-01-02 11:59:59Z',25)->>'deleted')::integer,0,'not deleted before catalogue boundary');
 select is((public.purge_expired_auction_sales('2000-01-02 12:00Z',25)->>'deleted')::integer,1,'deleted at catalogue boundary as service role');
