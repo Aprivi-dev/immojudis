@@ -128,6 +128,8 @@ export function boundaryRequestForLabel(label: string | null | undefined): Bound
   }
 
   if (resolution.kind === "department") {
+    // Plusieurs départements (« 66, 65, 05 ») : pas de contour unique à tracer.
+    if (resolution.departments.length !== 1) return null;
     const [code] = resolution.departments;
     return {
       endpoint: "departements",

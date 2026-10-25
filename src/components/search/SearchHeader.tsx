@@ -182,7 +182,9 @@ export function GeographicSearch({
       : scope.kind === "region"
         ? "Région"
         : scope.kind === "department"
-          ? "Département"
+          ? scope.departments.length > 1
+            ? "Départements"
+            : "Département"
           : "Code postal";
   function apply() {
     const text = value.trim();

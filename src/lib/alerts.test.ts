@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { alertMatchesSale, isHouseWithLand } from "@/lib/alerts";
+import { alertMatchesSale, departmentFromSearchQuery, isHouseWithLand } from "@/lib/alerts";
 import type { AuctionSale, UserWatchedZone } from "@/lib/types";
 
 type AlertCriteria = Parameters<typeof alertMatchesSale>[0];
@@ -251,6 +251,19 @@ describe("recherche texte enregistrée dans l'alerte (query)", () => {
     expect(matches("Drôme", { department: "26" })).toBe(true);
     expect(matches("33000", { postal_code: "33000" })).toBe(true);
     expect(matches("33000", { postal_code: "75001" })).toBe(false);
+  });
+
+  it("lit une liste de départements comme chacun de ces départements", () => {
+    expect(matches("66, 65, 05", { department: "65" })).toBe(true);
+    expect(matches("66, 65, 05", { department: "05" })).toBe(true);
+    expect(matches("66, 65, 05", { department: "33" })).toBe(false);
+  });
+
+  it("n'enregistre comme département de l'alerte qu'un seul département", () => {
+    expect(departmentFromSearchQuery("26")).toBe("26");
+    expect(departmentFromSearchQuery("Drôme")).toBe("26");
+    // La liste reste dans le texte enregistré, que l'évaluation lit comme ces trois départements.
+    expect(departmentFromSearchQuery("66, 65, 05")).toBeNull();
   });
 
   it("n'écarte rien pour une requête vide ou un texte libre", () => {

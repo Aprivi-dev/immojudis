@@ -84,3 +84,41 @@ const SALE_LIST_COLUMN_NAMES = [
 
 // Littéral typé : le client Supabase infère ainsi les lignes sélectionnées.
 export const SALE_LIST_COLUMNS = joinColumns(SALE_LIST_COLUMN_NAMES);
+
+/**
+ * Colonnes lues par le service des alertes et lourdes à produire par la vue (blocs des sources,
+ * pièces, photos) : elles ne sont relues que pour les ventes qu'une alerte retient déjà sur les autres
+ * critères (classe DPE, résumé enregistré avec la correspondance).
+ */
+export const ALERT_DETAIL_COLUMN_NAMES = ["source_blocks", "documents", "documents_rich"] as const;
+
+/**
+ * Colonnes inutiles à l'évaluation d'une alerte, et coûteuses : textes, provenance, photos.
+ * Le texte libre d'une alerte n'est pas évalué (seul un secteur l'est, voir `src/lib/alerts.ts`).
+ */
+const ALERT_SKIPPED_COLUMN_NAMES: ReadonlySet<string> = new Set([
+  ...ALERT_DETAIL_COLUMN_NAMES,
+  "source_blocks_by_source",
+  "media",
+  "description",
+  "source_description",
+  "llm_display_description",
+  "about_description",
+  "surface_evidence",
+  "source_checks",
+  "source_conflicts",
+  "source_presence",
+  "analysis_status",
+  "risks",
+  "quality_flags",
+]);
+
+/**
+ * Colonnes du catalogue lues pour toutes les ventes à évaluer par les alertes. Une page de 400 ventes
+ * avec toutes les colonnes de la liste dépassait le délai de 8 s d'une requête (environ 17 s) ; sans
+ * les colonnes ci-dessus, elle prend moins d'une seconde.
+ */
+export const ALERT_EVALUATION_COLUMNS = SALE_LIST_COLUMN_NAMES.filter(
+  (column) => !ALERT_SKIPPED_COLUMN_NAMES.has(column),
+).join(",");
+export const ALERT_DETAIL_COLUMNS = ["id", ...ALERT_DETAIL_COLUMN_NAMES].join(",");

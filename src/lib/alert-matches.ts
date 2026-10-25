@@ -12,7 +12,7 @@ import { resolveMarketGap } from "@/lib/market-gap";
 import { marketGapWithheldReason } from "@/lib/market-gap-band";
 import { featureIncluded } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
-import { getSales } from "@/lib/queries";
+import { getSaleAlertDetails, getSalesForAlertEvaluation } from "@/lib/queries";
 import { systemAuthForUser } from "@/lib/system-auth";
 import { getPrecomputedMarketEstimate } from "@/lib/sale-market-estimates";
 import { cleanSaleTitle } from "@/lib/sale-title";
@@ -193,6 +193,8 @@ export async function evaluateUserAlertMatches({
     : [];
   const marketDiscountCache = new Map<string, Promise<number | null>>();
   const watchedZones = await getUserWatchedZonesForAlerts({ auth, alerts });
+  // Une alerte Découverte n'a pas de critère DPE et son résumé ne garde ni DPE ni pièces.
+  if (!discovery) await attachAlertDetails({ auth, alerts, sales, watchedZones });
   const failures: AlertEvaluationFailure[] = [];
 
   // Chaque alerte est évaluée, enregistrée puis marquée évaluée isolément : l'échec de l'une est
@@ -431,7 +433,7 @@ async function loadSalesToEvaluate({
   const seen = new Set<string>();
   for (let offset = 0; offset < limit; offset += ALERT_EVALUATION_PAGE_SIZE) {
     const pageSize = Math.min(ALERT_EVALUATION_PAGE_SIZE, limit - offset);
-    const page = await getSales(filters, pageSize, "date_asc", offset, {
+    const page = await getSalesForAlertEvaluation(filters, pageSize, offset, {
       client: auth.supabase,
       discovery,
     });
@@ -443,6 +445,52 @@ async function loadSalesToEvaluate({
     if (page.length < pageSize) break;
   }
   return sales;
+}
+
+/**
+ * Relit les colonnes lourdes (blocs des sources, pièces) des seules ventes qu'une alerte retient sur
+ * ses autres critères, et les ajoute à ces ventes : la classe DPE se lit dans les blocs, et le résumé
+ * enregistré avec la correspondance garde la classe DPE et le nombre de pièces. Les autres ventes
+ * échouent déjà sur un critère qui ne dépend pas de ces colonnes.
+ */
+async function attachAlertDetails({
+  auth,
+  alerts,
+  sales,
+  watchedZones,
+}: {
+  auth: SupabaseAuthContext;
+  alerts: UserAlert[];
+  sales: AuctionSale[];
+  watchedZones: Map<string, UserWatchedZone>;
+}): Promise<void> {
+  const ids = sales
+    .filter((sale) =>
+      alerts.some((alert) => {
+        const watchedZone = alert.watched_zone_id
+          ? (watchedZones.get(alert.watched_zone_id) ?? null)
+          : null;
+        if (alert.watched_zone_id && !watchedZone) return false;
+        return alertMatchesSale(
+          { ...alert, dpe_classes: [], min_market_discount_pct: null },
+          sale,
+          { watchedZone },
+        ).matches;
+      }),
+    )
+    .map((sale) => sale.id);
+  if (!ids.length) return;
+
+  const details = new Map(
+    (await getSaleAlertDetails(ids, { client: auth.supabase })).map((row) => [row.id, row]),
+  );
+  for (const sale of sales) {
+    const detail = details.get(sale.id);
+    if (!detail) continue;
+    sale.source_blocks = detail.source_blocks;
+    sale.documents = detail.documents;
+    sale.documents_rich = detail.documents_rich;
+  }
 }
 
 export async function runSmartAlertEvaluationBatch({
