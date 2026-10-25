@@ -9,7 +9,6 @@ import { EXISTING_GUIDE, RESOURCE_SUMMARIES } from "@/lib/resource-articles";
 import { resolveSiteOrigin } from "@/lib/site-url";
 import styles from "@/components/resources/Resources.module.css";
 import { jsonLdString } from "@/lib/json-ld";
-import { PreloadCormorantItalic } from "@/components/PreloadCormorantItalic";
 
 const title = "Ressources : le blog des enchères immobilières";
 const description =
@@ -54,8 +53,6 @@ export default function Page() {
 
   return (
     <main id="contenu" className={styles.root}>
-      {/* L'italique du h1 (« Éclairer vos décisions. ») est préchargée par cette page seule. */}
-      <PreloadCormorantItalic />
       <BreadcrumbJsonLd trail={[{ name: "Ressources", path: "/ressources" }]} />
       <script
         type="application/ld+json"

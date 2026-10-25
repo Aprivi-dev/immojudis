@@ -190,7 +190,7 @@ describe("ResultsSummary", () => {
   });
 
   it("réserve la hauteur de deux lignes de titre sous sm, pour qu'aucune police ne décale la page", () => {
-    // Le h1 passe de deux lignes (police de secours) à une (Cormorant) à l'arrivée de la police :
+    // Le h1 pouvait passer de deux lignes (police de secours) à une à l'arrivée de la police :
     // sans réserve, tout ce qui suit remonte de 33 px (CLS) et la photo de la première carte
     // change de surface visible (LCP). 7,625 rem = py-4 + 2 lignes de h1 + compteur (le surtitre,
     // masqué sous sm, n'y est plus compté : 8,8125 rem avant).

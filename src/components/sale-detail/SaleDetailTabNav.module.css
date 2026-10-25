@@ -1,8 +1,8 @@
 /* Barre d'onglets de la fiche (docs/design/fondations.md) : fond papier, filet beige, onglet actif
-   souligné en or. Collée sous l'en-tête du site (64 px) à toutes les largeurs. */
+   souligné en or. Collée sous la pilule de l'en-tête (24 px + 58 px) à toutes les largeurs. */
 .nav {
   position: sticky;
-  top: 64px;
+  top: 88px;
   z-index: 20;
   margin: 28px 0 24px;
   border-bottom: 1px solid var(--line);

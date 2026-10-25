@@ -20,6 +20,7 @@
 
 .root :where(h1, h2, h3) {
   font-family: var(--font-display), Georgia, serif;
+  font-size-adjust: var(--font-display-adjust);
   font-weight: 500;
   text-wrap: balance;
 }
@@ -40,7 +41,7 @@
 .hero h1 {
   margin-top: 20px;
   font-size: clamp(46px, 5.6vw, 76px);
-  letter-spacing: -0.035em;
+  letter-spacing: -0.02em;
   line-height: 1.02;
 }
 
@@ -339,6 +340,7 @@
 
 .footer > a:first-child {
   font-family: var(--font-display);
+  font-size-adjust: var(--font-display-adjust);
   color: var(--ink);
   font-size: 25px;
 }
@@ -419,6 +421,7 @@
 .toc h2 {
   margin-bottom: 18px;
   font-family: var(--font-sans);
+  font-size-adjust: none;
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.1em;
@@ -505,6 +508,7 @@
   margin-bottom: 8px;
   color: var(--ink);
   font-family: var(--font-sans);
+  font-size-adjust: none;
   font-size: 14px;
   font-weight: 600;
 }

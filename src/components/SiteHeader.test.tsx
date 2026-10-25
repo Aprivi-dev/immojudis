@@ -83,7 +83,8 @@ describe("SiteHeader", () => {
     expect(button.getAttribute("aria-expanded")).toBe("true");
     expect(button.getAttribute("aria-controls")).toBe("site-mobile-navigation");
 
-    fireEvent.click(screen.getByRole("button", { name: "Fermer le menu" }));
+    // Le contenu du menu est chargé à sa première ouverture.
+    fireEvent.click(await screen.findByRole("button", { name: "Fermer le menu" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(button.getAttribute("aria-expanded")).toBe("false");
     expect(document.activeElement).toBe(button);

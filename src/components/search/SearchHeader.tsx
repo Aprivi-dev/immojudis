@@ -688,9 +688,11 @@ export function LayoutToggle({ wideMap, onToggle }: { wideMap: boolean; onToggle
 }
 
 /**
- * Hauteur de l'en-tête avec un titre sur DEUX lignes, réservée sous `sm`. À 412 px, le h1 tient
- * sur une ligne en Cormorant Garamond (348 px pour 348 px disponibles) mais sur deux dans la
- * police de secours, plus large (379 px) ; sur les écrans plus étroits, sur deux dans les deux.
+ * Hauteur de l'en-tête avec un titre sur DEUX lignes, réservée sous `sm`. Mesuré avec l'ancienne
+ * police de titre (Cormorant Garamond) : à 412 px, le h1 tenait sur une ligne avec elle (348 px
+ * pour 348 px disponibles) mais sur deux dans la police de secours (379 px). Manrope, ramenée à la
+ * hauteur de capitales de Cormorant (`--font-display-adjust`), est un peu plus large : le titre
+ * prend deux lignes, la hauteur réservée.
  * Quand la police arrive après le premier affichage (4G), la ligne en trop disparaissait : tout
  * ce qui suit remontait de 33 px (CLS 0,03) et la photo de la première carte, déjà peinte, gardait
  * pour le LCP une surface rognée par le bas de l'écran (puis un second LCP quand elle était

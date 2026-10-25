@@ -334,7 +334,7 @@ const htmlScriptBudgets = [
 
 await checkSourceLineLimits();
 
-const requiredHtml = [[".next/server/app/index.html", "Les enchères immobilières"]];
+const requiredHtml = [[".next/server/app/index.html", "en toute"]];
 
 for (const [path, expectedText] of requiredHtml) {
   const html = await readFile(path, "utf8");
@@ -349,7 +349,7 @@ for (const [path, expectedText] of requiredHtml) {
 await readFile(".next/server/app/sales/page.js", "utf8");
 await readFile(".next/server/app/annonce-exemple/page.js", "utf8");
 
-await checkCormorantItalicFont();
+await checkSingleFont();
 
 const businessModuleLines = Object.fromEntries(
   await Promise.all(
@@ -461,75 +461,41 @@ console.info(
 );
 
 /**
- * L'italique de Cormorant Garamond, mesurée sur le build et non sur le code source :
- * - un seul fichier dans `_next/static/media`, et toutes les règles `@font-face` italiques des
- *   feuilles de style pointent vers lui (pas de doublon préchargé / non préchargé) ;
- * - l'accueil et /ressources le préchargent, une seule fois ;
- * - /sales (variante statique) ne le précharge pas ;
- * - aucun indice de préchargement (`:HL[…]`) de l'italique dans les charges RSC (`.rsc`) que les
- *   autres pages préfetchent : sinon /sales l'ajouterait à son `<head>` au préfetch du menu
- *   (avertissement « preloaded but not used »).
+ * La police du site, mesurée sur le build et non sur le code source : Manrope seule (25/10/2026).
+ * - un seul fichier de police dans `_next/static/media` ;
+ * - aucune règle `@font-face` italique dans les feuilles de style ;
+ * - l'accueil et /sales (variante statique) préchargent ce fichier, une seule fois.
  */
-async function checkCormorantItalicFont() {
+async function checkSingleFont() {
   const media = await readdir(".next/static/media");
-  const italicFiles = media.filter((name) => /cormorant.*italic.*\.woff2$/iu.test(name));
-  if (italicFiles.length !== 1) {
+  const fontFiles = media.filter((name) => /\.(?:woff2?|ttf|otf)$/iu.test(name));
+  if (fontFiles.length !== 1) {
     throw new Error(
-      `Un seul fichier d'italique Cormorant attendu dans .next/static/media, trouvé : ${italicFiles.join(", ") || "aucun"}.`,
+      `Un seul fichier de police attendu dans .next/static/media, trouvé : ${fontFiles.join(", ") || "aucun"}.`,
     );
   }
-  const italicUrl = `/_next/static/media/${italicFiles[0]}`;
+  const fontUrl = `/_next/static/media/${fontFiles[0]}`;
 
   const stylesheets = await filesUnder(".next/static/chunks", (path) => path.endsWith(".css"));
-  let italicFontFaces = 0;
   for (const path of stylesheets) {
     for (const [rule] of (await readFile(path, "utf8")).matchAll(/@font-face\{[^}]*\}/gu)) {
-      if (!/font-style:italic/u.test(rule)) continue;
-      italicFontFaces += 1;
-      const target = /url\(([^)]+)\)/u.exec(rule)?.[1]?.replace(/["']/gu, "");
-      if (!target || !target.endsWith(`/${italicFiles[0]}`)) {
-        throw new Error(
-          `@font-face italique vers un autre fichier que ${italicFiles[0]} : ${path}.`,
-        );
+      if (/font-style:italic/u.test(rule)) {
+        throw new Error(`@font-face italique dans ${path} : le site n'emploie pas d'italique.`);
       }
     }
   }
-  if (italicFontFaces === 0)
-    throw new Error("Aucun @font-face italique dans les feuilles de style.");
 
-  const italicPreloads = (html) =>
+  const fontPreloads = (html) =>
     [...html.matchAll(/<link\b[^>]*>/giu)]
       .map(([tag]) => tag)
       .filter((tag) => /\srel="preload"/iu.test(tag) && /\sas="font"/iu.test(tag))
-      .map((tag) => /\shref="([^"]+)"/iu.exec(tag)?.[1] ?? "")
-      .filter((href) => /italic/iu.test(href));
+      .map((tag) => /\shref="([^"]+)"/iu.exec(tag)?.[1] ?? "");
 
-  for (const path of [".next/server/app/index.html", ".next/server/app/ressources.html"]) {
-    const preloads = italicPreloads(await readFile(path, "utf8"));
-    if (preloads.length !== 1 || preloads[0] !== italicUrl) {
+  for (const path of [".next/server/app/index.html", ".next/server/app/sales/defaut.html"]) {
+    const preloads = fontPreloads(await readFile(path, "utf8"));
+    if (preloads.length !== 1 || preloads[0] !== fontUrl) {
       throw new Error(
-        `${path} doit précharger l'italique une fois (${italicUrl}), trouvé : ${JSON.stringify(preloads)}.`,
-      );
-    }
-  }
-  const salesPreloads = italicPreloads(
-    await readFile(".next/server/app/sales/defaut.html", "utf8"),
-  );
-  if (salesPreloads.length > 0) {
-    throw new Error(`/sales ne doit pas précharger l'italique : ${JSON.stringify(salesPreloads)}.`);
-  }
-
-  for (const path of [
-    ".next/server/app/index.rsc",
-    ".next/server/app/ressources.rsc",
-    ".next/server/app/sales/defaut.rsc",
-  ]) {
-    const hints = [...(await readFile(path, "utf8")).matchAll(/:HL\[[^\]]*\]/gu)]
-      .map(([hint]) => hint)
-      .filter((hint) => /italic/iu.test(hint));
-    if (hints.length > 0) {
-      throw new Error(
-        `${path} (préfetché par les autres pages) porte un indice de préchargement de l'italique : ${hints.join(" ")}.`,
+        `${path} doit précharger la police une fois (${fontUrl}), trouvé : ${JSON.stringify(preloads)}.`,
       );
     }
   }
