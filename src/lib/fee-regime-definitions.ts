@@ -27,6 +27,12 @@ export type CashStepText = { when: string; label: string; detail: string };
  * planificateur.
  */
 export type FeeRegimeLabels = FeeRegimeTerms & {
+  /** Le prix de départ de la vente, sans article : « mise à prix », « première offre possible ». */
+  referencePriceTerm: string;
+  /** Le verbe de ce que le montant permet : « enchérir » (enchères) ou « offrir » (offres). */
+  bidVerb: string;
+  /** Une vente par offres : ni enchère ni adjudication dans aucun titre ni aucune étape. */
+  byOffers: boolean;
   /** Dernière étape du calcul. */
   ceilingStepLabel: string;
   ceilingStepDetail: string;
@@ -35,6 +41,8 @@ export type FeeRegimeLabels = FeeRegimeTerms & {
   feesStepDetail: (amount: string) => string;
   /** Début de l'explication de la libération d'un bien occupé. */
   releaseOccupiedIntro: string;
+  /** Ce que la marge de sécurité justifie, pour un projet « habiter » (suite de « 10 % sous la valeur : »). */
+  marginWhy: string;
   planner: {
     title: string;
     intro: string;
@@ -45,16 +53,41 @@ export type FeeRegimeLabels = FeeRegimeTerms & {
     /** Intitulé du prix dans le simulateur « Si vous l’emportez à… ». */
     priceLabel: string;
     emolumentsLabel: string;
-    lawyerLabel: string;
-    preliminaryLabel: string;
+    /** `null` : pas d'avocat dans ce régime (vente notariale). */
+    lawyerLabel: string | null;
+    /** `null` : pas de frais préalables taxés dans ce régime. */
+    preliminaryLabel: string | null;
+    organizationLabel?: string;
+    negotiationLabel?: string;
+    advertisingLabel?: string;
+    simulatorTitle: string;
+    simulatorInputLabel: string;
+    /** Introduction du calendrier de trésorerie ; `amount` est le prix simulé (« 120 000 € »). */
+    cashIntro: (amount: string) => string;
+    /** Action principale de la synthèse : « Préparer mon enchère ». */
+    prepareLabel: string;
+    /** Ce que le calcul ne couvre pas (« Hors débours et formalités du notaire. »), vente notariale. */
+    scopeNote?: string;
+    /** Mention obligatoire d'une vente par offres : le vendeur peut ne pas retenir la meilleure. */
+    reserveNotice?: string;
+    /** Mise en garde de bas de planificateur, quand elle diffère de celle du tribunal. */
+    footnote?: string;
   };
+  /**
+   * Le calendrier de trésorerie, dans l'ordre où `buildCashPlan` l'écrit : une entrée absente n'est
+   * pas écrite (pas de consignation, d'avocat ou de surenchère dans une vente interactive).
+   */
   cash: {
     /** `detail` : règle du régime ; `documentDetail` : montant lu dans l'annonce. */
-    consignation: CashStepText & { documentDetail: string };
-    lawyer: CashStepText;
-    overbid: CashStepText;
+    consignation?: CashStepText & { documentDetail: string };
+    lawyer?: CashStepText;
+    /** Écrite seulement quand la surenchère est prévue (toujours au tribunal). */
+    overbid?: CashStepText;
     /** `detail` : montant par défaut ; `documentDetail` : lu dans les pièces ; `enteredDetail` : saisi. */
-    preliminary: CashStepText & { documentDetail: string; enteredDetail: string };
+    preliminary?: CashStepText & { documentDetail: string; enteredDetail: string };
+    /** Vente interactive : la période d'offres, puis l'avant-contrat avec l'acheteur retenu. */
+    offers?: CashStepText;
+    precontract?: CashStepText;
     balance: CashStepText;
   };
 };
@@ -62,6 +95,9 @@ export type FeeRegimeLabels = FeeRegimeTerms & {
 /** Textes du régime tribunal : ceux qui étaient écrits dans le moteur et dans le planificateur. */
 export const TRIBUNAL_FEE_REGIME_LABELS: FeeRegimeLabels = {
   ...TRIBUNAL_FEE_REGIME_TERMS,
+  referencePriceTerm: "mise à prix",
+  bidVerb: "enchérir",
+  byOffers: false,
   ceilingStepLabel: "Enchère plafond",
   ceilingStepDetail:
     "Arrondie aux 500 € inférieurs. Au-delà, l’opération ne respecte plus vos objectifs.",
@@ -70,6 +106,8 @@ export const TRIBUNAL_FEE_REGIME_LABELS: FeeRegimeLabels = {
     `Droits d’enregistrement, émoluments de l’avocat poursuivant, frais préalables et honoraires de votre avocat, calculés pour une enchère de ${amount}.`,
   releaseOccupiedIntro:
     "Bien occupé : le jugement d’adjudication vaut titre d’expulsion, mais la procédure prend du temps.",
+  marginWhy:
+    "l’écart qui justifie d’acheter aux enchères plutôt qu’en agence, et qui absorbe une estimation trop optimiste",
   planner: {
     title: "Votre enchère plafond",
     intro:
@@ -82,6 +120,11 @@ export const TRIBUNAL_FEE_REGIME_LABELS: FeeRegimeLabels = {
     emolumentsLabel: "Émoluments de l’avocat poursuivant",
     lawyerLabel: "Honoraires de votre avocat",
     preliminaryLabel: "Frais préalables",
+    simulatorTitle: "Si vous l’emportez à…",
+    simulatorInputLabel: "Montant de l’enchère simulée",
+    cashIntro: (amount) =>
+      `Pour une adjudication à ${amount}, dans l’ordre où les sommes sont dues.`,
+    prepareLabel: "Préparer mon enchère",
   },
   cash: {
     consignation: {
@@ -129,6 +172,12 @@ export type ConsignationRule = {
   minimum: number;
   /** Texte de loi, pour les mentions et les tests. */
   reference: string;
+  /**
+   * Vrai quand la règle n'est pas un texte de loi mais une valeur par défaut (vente notariale :
+   * 20 % de la mise à prix, montant à lire dans les conditions de la vente) : sans montant lu dans
+   * l'annonce, la garantie est signalée comme estimée.
+   */
+  estimated?: boolean;
 };
 
 export type EmolumentScale = {
@@ -140,15 +189,24 @@ export type EmolumentScale = {
 
 export type FeeRegime = {
   key: FeeRegimeKey;
+  /**
+   * Cadre de la vente : « judicial » (vente au tribunal : avocat, frais préalables taxés,
+   * surenchère de 10 jours) ou « notarial » (vente chez le notaire : ni avocat, ni frais préalables).
+   */
+  kind: "judicial" | "notarial";
   /** À changer avec toute règle du régime (barème, frais par défaut, consignation, textes). */
   version: string;
   emolumentScale: EmolumentScale;
-  /** Frais préalables retenus quand l'annonce ne les chiffre pas. */
+  /** Frais préalables retenus quand l'annonce ne les chiffre pas (0 : ce régime n'en a pas). */
   defaultPreliminaryFees: number;
   /** Honoraires de l'avocat enchérisseur retenus par défaut (TTC, hors émoluments tarifés). */
   defaultLawyerFees: number;
   /** `null` : le régime n'exige aucune consignation. */
   consignation: ConsignationRule | null;
+  /** Frais d'organisation et de publicité, part HT du prix (vente à la bougie) ; 0 sinon. */
+  organizationFeeRate: number;
+  /** Honoraires de négociation et frais de publicité de l'acquéreur lus dans l'annonce (vente interactive). */
+  buyerFeesFromListing: boolean;
   labels: FeeRegimeLabels;
 };
 
@@ -161,7 +219,9 @@ export const TRIBUNAL_CONSIGNATION_RULE: ConsignationRule = {
 
 export const TRIBUNAL_FEE_REGIME: FeeRegime = {
   key: "tribunal",
-  version: "2026-10-26.1",
+  kind: "judicial",
+  // .2 : les frais préalables sortent de la base des droits de mutation (BOFiP § 50).
+  version: "2026-10-26.2",
   emolumentScale: {
     reference: EMOLUMENT_SCALE_REFERENCE,
     date: EMOLUMENT_SCALE_DATE,
@@ -170,11 +230,17 @@ export const TRIBUNAL_FEE_REGIME: FeeRegime = {
   defaultPreliminaryFees: DEFAULT_PRELIMINARY_FEES,
   defaultLawyerFees: DEFAULTS.lawyerFees,
   consignation: TRIBUNAL_CONSIGNATION_RULE,
+  organizationFeeRate: 0,
+  buyerFeesFromListing: false,
   labels: TRIBUNAL_FEE_REGIME_LABELS,
 };
 
-/** Les régimes définis : les autres clés de `FeeRegimeKey` n'ont pas encore de règles. */
-export const FEE_REGIMES: Readonly<Partial<Record<FeeRegimeKey, FeeRegime>>> = {
+/**
+ * Le régime du tribunal seul. La table complète des régimes définis (`FEE_REGIMES`) est dans
+ * `fee-regime.ts` : le moteur, le planificateur et le simulateur de frais lisent le régime porté par
+ * leurs hypothèses (`labelsOf`) et n'embarquent pas les textes des régimes notariaux.
+ */
+export const TRIBUNAL_ONLY_FEE_REGIMES: Readonly<Partial<Record<FeeRegimeKey, FeeRegime>>> = {
   tribunal: TRIBUNAL_FEE_REGIME,
 };
 

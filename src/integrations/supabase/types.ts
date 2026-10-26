@@ -13357,6 +13357,7 @@ export type Database = {
           risk_notes: string | null;
           risks: Json | null;
           rooms_count: number | null;
+          sale_conditions: Json | null;
           sale_date: string | null;
           sale_legal_framework: string | null;
           sale_procedure: Json | null;
@@ -13730,6 +13731,7 @@ export type Database = {
           risk_notes: string | null;
           risks: Json | null;
           rooms_count: number | null;
+          sale_conditions: Json | null;
           sale_date: string | null;
           sale_legal_framework: string | null;
           sale_procedure: Json | null;

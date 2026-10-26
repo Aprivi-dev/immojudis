@@ -27,6 +27,7 @@ import { buildStatePilot } from "@/lib/professional-pilot-state";
 import {
   ListingActions,
   ListingOverview,
+  type CeilingWording,
   SaleDetailHeading,
   ListingPracticalDetails,
   ListingDescription,
@@ -50,7 +51,8 @@ import type { MarketEstimate } from "@/lib/market.server";
 import { isDetailedMarketEstimate } from "@/lib/market-estimate-ceiling";
 import { computeAcquisitionCosts } from "@/lib/profitability";
 import { maxWorksAtBid } from "@/lib/bid-ceiling-engine";
-import type { FeeRegimeKey } from "@/lib/fee-regime";
+import { ceilingTermsFor, feeRegimeKeysForVenue, type FeeRegimeKey } from "@/lib/fee-regime";
+import { estimatedFeeItems } from "@/lib/bid-ceiling-engine";
 import { assessSaleCeilingInputs, computeSaleCeiling } from "@/lib/sale-ceiling";
 import { ceilingGap, valueGapReason } from "@/lib/bid-ceiling-gaps";
 import { buildDpeAnalysis } from "@/lib/dpe-analysis";
@@ -168,7 +170,7 @@ type SaleDetailProps = {
   adjudicationStatisticsEnabled?: boolean;
   /**
    * Fee regimes whose bid ceiling is open (server switch `CEILING_FEE_REGIMES_OPEN`, see
-   * `parseOpenFeeRegimes`). Absent: the tribunal only, which is always open.
+   * `parseOpenFeeRegimes`). Absent: every regime whose rules are defined (the tribunal is always open).
    */
   openFeeRegimes?: readonly FeeRegimeKey[];
   aiReviewProjections?: readonly AiReviewProjectionReadModel[] | null;
@@ -340,6 +342,16 @@ function SaleDetailWorkspace({
   // tribunal aujourd'hui). Pas de régime, pas de plafond.
   const feeRegime = ceilingInputs.regime;
   const ceilingOpen = feeRegime != null;
+  // Avant le déblocage (compte Découverte), les conditions d'une vente notariale ne sont pas lues :
+  // on ne sait pas si la vente est à la bougie ou interactive. Le déblocage est promis dès qu'un des
+  // régimes de ce type de vente est ouvert, avec les deux termes possibles.
+  const venueCeilingTerms = ceilingTermsFor(
+    feeRegimeKeysForVenue(getSaleProcedure(sale).venueType, openFeeRegimes),
+  );
+  const ceilingPromised = ceilingOpen || (access === "discovery" && venueCeilingTerms != null);
+  // Une vente débloquée dont le mode reste inconnu (conditions illisibles) n'a pas de plafond : on ne
+  // le promet plus, seul le compte qui n'a pas encore débloqué la vente reçoit les deux termes possibles.
+  const ceilingTerms = feeRegime?.labels ?? (access === "discovery" ? venueCeilingTerms : null);
   // Action principale de la synthèse et du bloc « À vérifier » : le calcul du plafond quand il est
   // possible, sinon les rendez-vous et contacts du dossier.
   const preparation = ceilingOpen
@@ -348,7 +360,7 @@ function SaleDetailWorkspace({
           fullData && !valuationConflict && !criticalAnalysisInputsBlocked
             ? "#calculation"
             : "#rendez-vous",
-        label: "Préparer mon enchère",
+        label: feeRegime.labels.planner.prepareLabel,
       }
     : { href: "#rendez-vous", label: "Préparer ma démarche" };
   // Les statistiques des tribunaux restent fermées tant que le drapeau l'est : ni l'onglet, ni
@@ -406,6 +418,23 @@ function SaleDetailWorkspace({
     [ceilingChoices.choices, ceilingInputs, fullData, marketEstimate, personalWorksBudget, surface],
   );
   const { enabled: ceilingEnabled, hypotheses: ceilingHypotheses, plan: ceilingPlan } = ceiling;
+  // Le vocabulaire du plafond de cette vente (« offre plafond », « première offre possible »…) et
+  // les frais importants qui viennent d'une valeur par défaut, pour le hero et le panneau de prix.
+  const estimatedFees = useMemo(
+    () => (ceilingEnabled ? estimatedFeeItems(ceilingHypotheses) : []),
+    [ceilingEnabled, ceilingHypotheses],
+  );
+  const ceilingWording: CeilingWording | null = feeRegime
+    ? {
+        label: feeRegime.labels.ceilingSimulationLabel,
+        terms: feeRegime.labels,
+        byOffers: feeRegime.labels.byOffers,
+        reserveNotice: feeRegime.labels.planner.reserveNotice ?? null,
+        estimatedFees,
+      }
+    : venueCeilingTerms
+      ? { label: venueCeilingTerms.ceilingSimulationLabel }
+      : null;
   const marketPending = marketQuery.isLoading && marketEstimate == null;
   const valueReason = marketPending
     ? "estimation en cours"
@@ -601,7 +630,8 @@ function SaleDetailWorkspace({
                 startingPriceGap={ceilingPlan.startingPriceGap}
                 ceilingUnreachable={heroCeilingUnreachable}
                 ceilingContext={ceilingContext}
-                showPremiumTeaser={access === "discovery" && ceilingOpen}
+                ceilingWording={ceilingWording}
+                showPremiumTeaser={access === "discovery" && ceilingPromised}
                 factReliabilities={factReliabilities}
                 aiReviewProjections={resolvedAiReviewProjections}
                 aiReviewStatus={aiReviewStatus}
@@ -630,7 +660,8 @@ function SaleDetailWorkspace({
               // and the card already says so.
               unlocked={access === "unlocked" || unlockStatus?.unlocked === true}
               opens={{
-                ceiling: feeRegime?.labels.ceilingTermWithArticle ?? null,
+                ceiling: ceilingTerms?.ceilingTermWithArticle ?? null,
+                ceilingTerm: ceilingTerms?.ceilingTerm ?? null,
                 statistics: statisticsAvailable,
               }}
               announce={justUnlocked}
@@ -815,6 +846,7 @@ function SaleDetailWorkspace({
                       ceilingAvailable={ceilingPlan.available && ceilingPlan.reachable}
                       startingPriceGap={ceilingPlan.startingPriceGap}
                       ceilingGap={ceilingMissing}
+                      ceilingWording={ceilingWording}
                       valueReason={valueReason}
                       onAdjust={() => undefined}
                       onEditWorks={() => changeTab("travaux")}

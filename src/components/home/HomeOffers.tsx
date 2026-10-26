@@ -13,19 +13,24 @@ import { MONTHLY_SALE_UNLOCKS, UNLOCK_HIGHLIGHTS_TEXT } from "@/lib/sale-unlocks
 import { ArrowRight, Check } from "./HomeIcons";
 import styles from "./HomePage.module.css";
 
-const discoveryFeatures = [
-  "Accès aux annonces, sur la carte et en liste",
-  "Informations essentielles de chaque vente",
-  `${MONTHLY_SALE_UNLOCKS} ventes débloquées par mois : ${UNLOCK_HIGHLIGHTS_TEXT}`,
-  `Jusqu’à ${PLAN_LIMITS.decouverte.favoriteSales} favoris`,
-] as const;
+const discoveryFeatures = (unlockHighlights: string) =>
+  [
+    "Accès aux annonces, sur la carte et en liste",
+    "Informations essentielles de chaque vente",
+    `${MONTHLY_SALE_UNLOCKS} ventes débloquées par mois : ${unlockHighlights}`,
+    `Jusqu’à ${PLAN_LIMITS.decouverte.favoriteSales} favoris`,
+  ] as const;
 
-const analysisFeatures = [
-  "Enchère plafond et travaux",
-  "Estimation et comparables",
-  "Pièces et risques, selon la vente",
-  "Simulation ajustable",
-] as const;
+/** Le terme par défaut de la carte Analyse : les régimes ouverts par défaut le justifient. */
+export const DEFAULT_HOME_CEILING_FEATURE = "Enchère plafond et travaux";
+
+const analysisFeatures = (ceilingFeature: string) =>
+  [
+    ceilingFeature,
+    "Estimation et comparables",
+    "Pièces et risques, selon la vente",
+    "Simulation ajustable",
+  ] as const;
 
 function Features({ items }: { items: readonly string[] }) {
   return (
@@ -47,7 +52,18 @@ function Features({ items }: { items: readonly string[] }) {
  * cartes, pour un visiteur ; la carte Analyse garde son lien (« Découvrir Analyse ») ou la demande
  * d'ouverture quand ni essai ni souscription ne sont ouverts.
  */
-export function HomeOffers() {
+export function HomeOffers({
+  unlockHighlights = UNLOCK_HIGHLIGHTS_TEXT,
+  ceilingFeature = DEFAULT_HOME_CEILING_FEATURE,
+}: {
+  /**
+   * Ce qu'un déblocage ouvre, composé par la page serveur avec les régimes de frais ouverts
+   * (`unlockHighlightsText`) ; absent : le texte des régimes ouverts par défaut.
+   */
+  unlockHighlights?: string;
+  /** Première ligne de la carte Analyse (« Enchère plafond et travaux »), composée de même. */
+  ceilingFeature?: string;
+} = {}) {
   const checkoutOpen = useAnalysisCheckoutOpen();
   const { user } = useAuth();
   const trialOpen = useLaunchOffer().active;
@@ -73,7 +89,7 @@ export function HomeOffers() {
               <h3>Découverte</h3>
               <p className={styles.planPrice}>0 €</p>
             </div>
-            <Features items={discoveryFeatures} />
+            <Features items={discoveryFeatures(unlockHighlights)} />
             <p className={styles.planFinePrint}>Gratuit, sans limite de durée.</p>
           </article>
           <article className={`${styles.plan} ${styles.planFeatured}`} data-reveal="">
@@ -83,7 +99,7 @@ export function HomeOffers() {
                 {trialOpen ? `${ANALYSIS_TRIAL_DAYS} jours offerts` : "Sur abonnement"}
               </p>
             </div>
-            <Features items={analysisFeatures} />
+            <Features items={analysisFeatures(ceilingFeature)} />
             {trialOpen ? (
               <p className={styles.planFinePrint} data-testid="home-launch-offer">
                 {launchOfferText(user ? "account" : "visitor")}

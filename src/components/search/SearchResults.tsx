@@ -16,6 +16,7 @@ import Heart from "lucide-react/dist/esm/icons/heart.js";
 import Share2 from "lucide-react/dist/esm/icons/share-2.js";
 import { toast } from "@/lib/toast";
 import { useAuth } from "@/hooks/use-auth";
+import { useFeeRegimes } from "@/components/FeeRegimesProvider";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
 import { useViewedSales } from "@/hooks/use-viewed-sales";
 import { getSupabase } from "@/integrations/supabase/lazy";
@@ -325,6 +326,7 @@ export const ListingCard = memo(function ListingCard({
   const { isViewed } = useViewedSales();
   const detailLink = useSaleDetailLink(sale.id, returnTo);
   const { active: launchOffer, pending: launchPending } = useLaunchOffer();
+  const openFeeRegimes = useFeeRegimes()?.open;
   const premiumLocked = locked || analysisLocked;
   // « N points à vérifier » : seulement des faits déjà sur la carte ; l'occupation n'est comptée
   // que si la carte la montre.
@@ -402,6 +404,7 @@ export const ListingCard = memo(function ListingCard({
     verifying,
     launchOffer,
     launchPending,
+    openFeeRegimes,
   });
   const showAccessLine =
     accessLine !== LISTING_LAUNCH_OFFER_LINE && accessLine !== LISTING_DETAIL_LINE;

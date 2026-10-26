@@ -6,6 +6,7 @@ import { formatDate, formatPrice, formatPricePerM2, formatStartingPrice } from "
 import { reportSaleSchedule } from "@/lib/report-sale-schedule";
 import { describeReportSimulation, isCurrentReportSimulation } from "@/lib/report-simulation";
 import { asRecord, numberValue, stringOrNumberValue } from "@/lib/guards";
+import { reportWording } from "@/lib/property-report/report-wording";
 
 type PageParams = {
   params: Promise<{ token: string }>;
@@ -114,6 +115,12 @@ export default async function SharedReportPage({ params }: PageParams) {
   const audienceReadinessActions = normalizeStringList(audienceReadinessAnalysis.nextActions);
   const ceiling = asRecord(report.ceiling);
   const personalSimulation = describeReportSimulation(ceiling.personalSimulation);
+  // Vocabulaire du régime du plafond : « mise à prix » et « enchère », ou « première offre possible »
+  // et « offre » pour une vente notariale interactive.
+  const wording = reportWording(ceiling.regime);
+  const estimatedFeeLabels = Array.isArray(ceiling.estimatedFees)
+    ? ceiling.estimatedFees.filter((fee): fee is string => typeof fee === "string")
+    : [];
 
   return (
     <main id="contenu" className="liquid-page min-h-screen px-4 py-10 text-foreground sm:px-6">
@@ -148,7 +155,7 @@ export default async function SharedReportPage({ params }: PageParams) {
             value={stringOrNumberValue(audienceReadinessAnalysis.summary, "À compléter")}
           />
           <SharedMetric
-            label="Mise à prix"
+            label={wording.referencePrice}
             value={formatStartingPrice(numberValue(sale.startingPrice))}
           />
           <SharedMetric
@@ -179,7 +186,7 @@ export default async function SharedReportPage({ params }: PageParams) {
             value={`${stringOrNumberValue(valueEstimate.sampleSize, "0")} vente(s) comparable(s)`}
           />
           <SharedMetric
-            label="Enchère plafond (simulation)"
+            label={stringOrNumberValue(ceiling.label, wording.ceilingLabel)}
             value={
               ceiling.available ? formatPrice(numberValue(ceiling.maxBid)) : "Données insuffisantes"
             }
@@ -212,6 +219,23 @@ export default async function SharedReportPage({ params }: PageParams) {
           />
         </section>
 
+        {ceiling.available === true &&
+        (ceiling.reserveNotice || ceiling.scopeNote || estimatedFeeLabels.length > 0) ? (
+          <section className="border-b border-border py-5" aria-label="Réserves sur le plafond">
+            {typeof ceiling.reserveNotice === "string" ? (
+              <p className="text-sm font-semibold text-foreground">{ceiling.reserveNotice}</p>
+            ) : null}
+            {typeof ceiling.scopeNote === "string" ? (
+              <p className="mt-2 text-sm text-muted-foreground">{ceiling.scopeNote}</p>
+            ) : null}
+            {estimatedFeeLabels.length > 0 ? (
+              <p className="mt-2 text-sm text-muted-foreground">
+                Frais estimés, à confirmer : {estimatedFeeLabels.join(", ")}.
+              </p>
+            ) : null}
+          </section>
+        ) : null}
+
         {personalSimulation ? (
           <section className="border-b border-border py-5" aria-labelledby="shared-simulation">
             <h2 id="shared-simulation" className="text-lg font-semibold text-foreground">
@@ -232,7 +256,7 @@ export default async function SharedReportPage({ params }: PageParams) {
               <SharedMetric
                 label={
                   isCurrentReportSimulation(ceiling.personalSimulation)
-                    ? "Coût complet à la mise à prix"
+                    ? `Coût complet à la ${wording.referencePriceLower}`
                     : "Coût complet au prix simulé"
                 }
                 value={
@@ -392,7 +416,7 @@ export default async function SharedReportPage({ params }: PageParams) {
                 label="Impact décision"
                 value={stringOrNumberValue(
                   audienceReadinessAnalysis.decisionImpact,
-                  "À arbitrer avant enchère",
+                  `À arbitrer ${wording.beforeBid}`,
                 )}
               />
               <SharedMetric
@@ -588,7 +612,7 @@ export default async function SharedReportPage({ params }: PageParams) {
                 label="Impact décision"
                 value={stringOrNumberValue(
                   renovationAnalysis.decisionImpact,
-                  "État à confirmer avant enchère",
+                  `État à confirmer ${wording.beforeBid}`,
                 )}
               />
             </div>
@@ -622,7 +646,7 @@ export default async function SharedReportPage({ params }: PageParams) {
                 label="Impact décision"
                 value={stringOrNumberValue(
                   urbanPlanningAnalysis.decisionImpact,
-                  "À intégrer avant l’enchère plafond",
+                  `À intégrer avant ${wording.ceilingTermWithArticle}`,
                 )}
               />
             </div>
@@ -662,7 +686,7 @@ export default async function SharedReportPage({ params }: PageParams) {
                 label="Impact décision"
                 value={stringOrNumberValue(
                   streetFacadeAnalysis.decisionImpact,
-                  "Vérifier l'environnement visible avant enchère",
+                  `Vérifier l'environnement visible ${wording.beforeBid}`,
                 )}
               />
             </div>
@@ -815,7 +839,7 @@ export default async function SharedReportPage({ params }: PageParams) {
                 label="Impact décision"
                 value={stringOrNumberValue(
                   occupancyAnalysis.decisionImpact,
-                  "À vérifier avant enchère",
+                  `À vérifier ${wording.beforeBid}`,
                 )}
               />
             </div>

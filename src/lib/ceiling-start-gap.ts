@@ -17,41 +17,58 @@ export type CeilingStartGap = {
   text: string;
 };
 
+/** Les mots du régime de la vente dont les phrases ont besoin (le tribunal par défaut). */
+export type CeilingStartGapTerms = {
+  /** « enchère plafond », « offre plafond ». */
+  ceilingTerm: string;
+  /** Le prix de départ, sans article : « mise à prix », « première offre possible ». */
+  referencePriceTerm: string;
+  /** Ce que le plafond permet : « enchérir » (enchères) ou « offrir » (offres). */
+  bidVerb: string;
+};
+
+const TRIBUNAL_START_GAP_TERMS: CeilingStartGapTerms = {
+  ceilingTerm: "enchère plafond",
+  referencePriceTerm: "mise à prix",
+  bidVerb: "enchérir",
+};
+
 /**
  * `null` quand la comparaison n'a pas de sens : plafond non chiffré ou inatteignable, mise à prix
- * absente ou nulle.
+ * absente ou nulle. `terms` : le vocabulaire du régime de la vente (« offre plafond », « première
+ * offre possible », « offrir » pour une vente par offres).
  */
 export function describeCeilingStartGap(
   plan: Pick<CeilingPlan, "available" | "reachable" | "maxBid" | "startingPriceGap">,
   startingPrice: number | null | undefined,
+  terms: CeilingStartGapTerms = TRIBUNAL_START_GAP_TERMS,
 ): CeilingStartGap | null {
   const gap = plan.startingPriceGap;
   if (!plan.available || !plan.reachable || gap == null) return null;
   if (startingPrice == null || !Number.isFinite(startingPrice) || startingPrice <= 0) return null;
 
   const ceiling = formatPrice(plan.maxBid);
+  const start = `la ${terms.referencePriceTerm}`;
   if (gap < 0) {
     return {
       kind: "below",
       gap,
-      text: `Avec ces hypothèses, votre enchère plafond (${ceiling}) est ${formatPrice(-gap)} (${formatPercent(-gap / startingPrice)}) sous la mise à prix : le bien ne tient pas à son prix de départ.`,
+      text: `Avec ces hypothèses, votre ${terms.ceilingTerm} (${ceiling}) est ${formatPrice(-gap)} (${formatPercent(-gap / startingPrice)}) sous ${start} : le bien ne tient pas à son prix de départ.`,
     };
   }
   if (gap < startingPrice * NARROW_MARGIN_RATIO) {
     const above =
-      gap === 0
-        ? "soit exactement la mise à prix"
-        : `soit ${formatPrice(gap)} au-dessus de la mise à prix`;
+      gap === 0 ? `soit exactement ${start}` : `soit ${formatPrice(gap)} au-dessus de ${start}`;
     return {
       kind: "narrow",
       gap,
-      text: `Peu d’écart avec la mise à prix : selon vos hypothèses, vous pouvez enchérir jusqu’à ${ceiling}, ${above}.`,
+      text: `Peu d’écart avec ${start} : selon vos hypothèses, vous pouvez ${terms.bidVerb} jusqu’à ${ceiling}, ${above}.`,
     };
   }
   return {
     kind: "above",
     gap,
-    text: `Selon vos hypothèses, vous pouvez enchérir jusqu’à ${ceiling}, soit ${formatPrice(gap)} au-dessus de la mise à prix.`,
+    text: `Selon vos hypothèses, vous pouvez ${terms.bidVerb} jusqu’à ${ceiling}, soit ${formatPrice(gap)} au-dessus de ${start}.`,
   };
 }
 

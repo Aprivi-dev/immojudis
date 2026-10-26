@@ -29,28 +29,33 @@ import {
 import { offerComparisonRows, type OfferCell } from "@/lib/offer-comparison";
 import { PLAN_LIMITS } from "@/lib/plans";
 import {
-  ceilingTermText,
+  ceilingTermIndefiniteText,
   ceilingTermWithArticleText,
-  ceilingVenueScopeText,
+  ceilingTermWithScopeText,
 } from "@/lib/fee-regime-labels";
+import type { FeeRegimeKey } from "@/lib/fee-regime-open";
 import { MONTHLY_SALE_UNLOCKS, unlockedItemsText } from "@/lib/sale-unlocks";
 import Link from "next/link";
 import { pathWithSearch } from "@/lib/navigation";
 import { trackProductEvent } from "@/lib/product-events";
 
-const CEILING_TERM = ceilingTermText();
-const CEILING_TERM_CAPITALIZED = `${CEILING_TERM.charAt(0).toUpperCase()}${CEILING_TERM.slice(1)}`;
+// Le montant plafond s'appelle « enchère plafond » (tribunal, vente notariale à la bougie) ou
+// « offre plafond » (vente notariale interactive) : les textes de la page reflètent les régimes
+// ouverts (`openFeeRegimes`, lus côté serveur dans `CEILING_FEE_REGIMES_OPEN`).
+const capitalized = (text: string) => `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
 
-const BENEFITS: ReadonlyArray<{
+type Benefit = {
   icon: ReactNode;
   title: string;
   text: string;
   /** Terme du titre à définir : la bulle « ? » suit le titre. */
   term?: TermeKey;
-}> = [
+};
+
+const benefits = (open?: readonly FeeRegimeKey[]): readonly Benefit[] => [
   {
     icon: <BadgeEuro className="size-6" aria-hidden />,
-    title: `Une ${CEILING_TERM} chiffrée`,
+    title: `${capitalized(ceilingTermIndefiniteText(open))} chiffrée`,
     term: "enchere-plafond",
     text: "Valeur estimée, frais, travaux et marge de sécurité : vous voyez d’où vient votre limite et vous l’ajustez selon votre projet.",
   },
@@ -73,28 +78,27 @@ const BENEFITS: ReadonlyArray<{
  */
 const LAUNCH_OFFER_FREE_PLAN_NOTE = `Pendant les ${ANALYSIS_TRIAL_DAYS} jours d’essai qui suivent la confirmation de son adresse email, un compte gratuit bénéficie de l’offre Analyse (un essai par personne). Les limites de Découverte indiquées ici s’appliquent ensuite.`;
 
-const UNLOCKED_ITEMS = unlockedItemsText({
-  ceiling: ceilingTermWithArticleText(),
-  statistics: true,
-});
+const unlockedItems = (open?: readonly FeeRegimeKey[]) =>
+  unlockedItemsText({ ceiling: ceilingTermWithArticleText(open), statistics: true });
 
-const DISCOVERY_FEATURES = [
-  `${MONTHLY_SALE_UNLOCKS} déblocages par mois : ${UNLOCKED_ITEMS}, pour la vente choisie`,
+const discoveryFeatures = (open?: readonly FeeRegimeKey[]) => [
+  `${MONTHLY_SALE_UNLOCKS} déblocages par mois : ${unlockedItems(open)}, pour la vente choisie`,
   "Fiches complètes : adresse, photos, description, occupation, visites et contact",
   "Fourchette de valeur estimée et écart avec la mise à prix",
   `Une alerte avec un email récapitulatif par semaine, ${PLAN_LIMITS.decouverte.favoriteSales} favoris`,
   "Simulateur de financement, risques de la commune et annuaire des avocats",
-] as const;
+];
 
-const ANALYSIS_FEATURES = [
-  `${CEILING_TERM_CAPITALIZED} chiffrée pour toutes les ${ceilingVenueScopeText()} : travaux, libération, portage et tous les frais`,
-  "Pièces du dossier et leur lecture, pour les ventes qui en comportent : points clés cités avec la page",
-  "Historique de la vente, quand il existe : passages précédents, baisses de mise à prix, reports",
-  "Estimation détaillée et ventes comparables",
-  "Jusqu’à 25 alertes avec email quotidien, favoris illimités",
-  "Suivi des changements de vos favoris (date, mise à prix, statut, documents), consultable dans Mes favoris",
-  "Statistiques des tribunaux : prix d’adjudication, quand l’historique du tribunal est suffisant ; rapport PDF et export des résultats",
-] as const;
+const analysisFeatures = (open?: readonly FeeRegimeKey[]) =>
+  [
+    `${capitalized(ceilingTermWithScopeText(open))} chiffrée : travaux, libération, portage et tous les frais`,
+    "Pièces du dossier et leur lecture, pour les ventes qui en comportent : points clés cités avec la page",
+    "Historique de la vente, quand il existe : passages précédents, baisses de mise à prix, reports",
+    "Estimation détaillée et ventes comparables",
+    "Jusqu’à 25 alertes avec email quotidien, favoris illimités",
+    "Suivi des changements de vos favoris (date, mise à prix, statut, documents), consultable dans Mes favoris",
+    "Statistiques des tribunaux : prix d’adjudication, quand l’historique du tribunal est suffisant ; rapport PDF et export des résultats",
+  ] as const;
 
 /**
  * `subscriptionOpen` : la souscription est ouverte pour de bon (état lu). Faux dans tous les autres
@@ -102,7 +106,13 @@ const ANALYSIS_FEATURES = [
  * doit pas laisser croire qu'un abonnement existe déjà. `launchActive` : l'essai à l'inscription est
  * ouvert.
  */
-type FaqContext = { offer: BillingOfferState; launchActive: boolean; subscriptionOpen: boolean };
+type FaqContext = {
+  offer: BillingOfferState;
+  launchActive: boolean;
+  subscriptionOpen: boolean;
+  /** « l’enchère plafond », « l’offre plafond » ou les deux, selon les régimes ouverts. */
+  ceilingWithArticle: string;
+};
 
 /** Aucun abonnement n'existe tant que la souscription est fermée : la réponse décrit l'à-venir. */
 const NOT_OPEN_PREFIX = "Quand l’abonnement sera ouvert, les règles prévues sont les suivantes. ";
@@ -138,16 +148,15 @@ const FAQ: { question: string; answer: (context: FaqContext) => ReactNode }[] = 
   },
   {
     question: `Comment fonctionnent les ${MONTHLY_SALE_UNLOCKS} déblocages par mois ?`,
-    answer: ({ launchActive }) => (
+    answer: ({ launchActive, ceilingWithArticle }) => (
       <>
         Chaque mois, vous pouvez débloquer {MONTHLY_SALE_UNLOCKS} ventes avec votre compte
-        Découverte. Pour chacune, vous voyez, lorsque la vente les comporte,{" "}
-        {ceilingTermWithArticleText()}, la lecture des pièces, l’historique de la vente, les
-        statistiques du tribunal de cette vente et les pièces du dossier. Le compteur repart à{" "}
-        {MONTHLY_SALE_UNLOCKS} le 1er du mois à 00 h 00, heure de Paris ; les déblocages non
-        utilisés ne sont pas reportés. Une vente débloquée reste accessible tant qu’elle est en
-        ligne sur Immojudis, dans la limite de 24 mois après le déblocage. Aucune carte bancaire
-        n’est demandée et rien ne devient payant automatiquement.{" "}
+        Découverte. Pour chacune, vous voyez, lorsque la vente les comporte, {ceilingWithArticle},
+        la lecture des pièces, l’historique de la vente, les statistiques du tribunal de cette vente
+        et les pièces du dossier. Le compteur repart à {MONTHLY_SALE_UNLOCKS} le 1er du mois à 00 h
+        00, heure de Paris ; les déblocages non utilisés ne sont pas reportés. Une vente débloquée
+        reste accessible tant qu’elle est en ligne sur Immojudis, dans la limite de 24 mois après le
+        déblocage. Aucune carte bancaire n’est demandée et rien ne devient payant automatiquement.{" "}
         {launchActive
           ? `Pendant les ${ANALYSIS_TRIAL_DAYS} jours d’essai qui suivent la confirmation de l’adresse email, l’export PDF ou CSV, les rapports enregistrés, les alertes avancées, l’estimation détaillée et les ventes comparables sont aussi ouverts au compte gratuit ; ils redeviennent réservés à Analyse ensuite.`
           : "L’export PDF ou CSV, les rapports enregistrés, les alertes avancées, l’estimation détaillée et les ventes comparables restent réservés à Analyse."}
@@ -198,7 +207,12 @@ const FAQ: { question: string; answer: (context: FaqContext) => ReactNode }[] = 
   },
 ];
 
-export function OffersPage() {
+export function OffersPage({
+  openFeeRegimes,
+}: {
+  /** Régimes de frais ouverts (`openFeeRegimesFromEnv`) ; absent : tous ceux dont les règles sont définies. */
+  openFeeRegimes?: readonly FeeRegimeKey[];
+} = {}) {
   useEffect(() => {
     trackProductEvent("offers_viewed");
   }, []);
@@ -266,7 +280,7 @@ export function OffersPage() {
           Ce que l’offre Analyse apporte
         </h2>
         <ul className="grid gap-4 md:grid-cols-3">
-          {BENEFITS.map((benefit) => (
+          {benefits(openFeeRegimes).map((benefit) => (
             <li key={benefit.title}>
               <Card className="h-full">
                 <span className="text-gold-text">{benefit.icon}</span>
@@ -296,7 +310,7 @@ export function OffersPage() {
         </h2>
         <p className="mt-2 max-w-3xl text-ink-soft">
           Découverte est gratuite, sans limite de durée ; elle comprend {MONTHLY_SALE_UNLOCKS}{" "}
-          déblocages par mois, chacun ouvrant, pour une vente, {UNLOCKED_ITEMS}.{" "}
+          déblocages par mois, chacun ouvrant, pour une vente, {unlockedItems(openFeeRegimes)}.{" "}
           {offer.status === "ready" && !offer.open
             ? `Analyse : tarif prévu ${price}, pas encore souscriptible.`
             : offerKnown
@@ -311,7 +325,7 @@ export function OffersPage() {
             name="Découverte"
             price="0 €"
             description="Pour repérer les ventes et conserver vos favoris."
-            features={DISCOVERY_FEATURES}
+            features={discoveryFeatures(openFeeRegimes)}
           >
             {launchActive ? (
               <p data-testid="launch-offer-free-note" className="mb-4 text-sm text-ink-soft">
@@ -332,7 +346,7 @@ export function OffersPage() {
             name="Analyse"
             price={price}
             description="Pour décider, chiffrer et préparer l’enchère."
-            features={ANALYSIS_FEATURES}
+            features={analysisFeatures(openFeeRegimes)}
             priceNote={priceNote}
             highlighted
             recommended={subscriptionOpen}
@@ -376,7 +390,7 @@ export function OffersPage() {
               {LAUNCH_OFFER_FREE_PLAN_NOTE}
             </p>
           ) : null}
-          <ComparisonTable />
+          <ComparisonTable open={openFeeRegimes} />
           <p className="mt-4 text-sm text-ink-soft">
             Les scénarios d’enchères s’appuient sur les adjudications des trois dernières années
             publiées par Licitor (source tierce, non officielle) et sur les prix DVF ; les
@@ -404,7 +418,12 @@ export function OffersPage() {
                 />
               </summary>
               <div className="mt-2 text-sm leading-relaxed text-ink-soft">
-                {item.answer({ offer, launchActive, subscriptionOpen })}
+                {item.answer({
+                  offer,
+                  launchActive,
+                  subscriptionOpen,
+                  ceilingWithArticle: ceilingTermWithArticleText(openFeeRegimes),
+                })}
               </div>
             </details>
           ))}
@@ -419,8 +438,8 @@ export function OffersPage() {
   );
 }
 
-function ComparisonTable() {
-  const rows = offerComparisonRows();
+function ComparisonTable({ open }: { open?: readonly FeeRegimeKey[] }) {
+  const rows = offerComparisonRows(open);
   return (
     <>
       <ComparisonList rows={rows} />

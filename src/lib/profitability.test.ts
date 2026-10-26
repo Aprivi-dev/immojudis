@@ -68,19 +68,32 @@ describe("registrationRateForDepartment", () => {
 });
 
 describe("computeAcquisitionCosts", () => {
-  it("applique émoluments, droits sur prix + frais préalables, CSI et honoraires", () => {
+  it("applique émoluments, droits sur le prix seul, CSI et honoraires, frais préalables en plus", () => {
     const result = computeAcquisitionCosts({ price: 100_000 });
 
     expect(result.emolumentsHT).toBeCloseTo(2_242.56, 1);
     expect(result.emolumentsTTC).toBeCloseTo(2_691.07, 1);
-    // Base taxable = prix + frais préalables par défaut (105 000 €).
-    expect(result.registrationDuties).toBeCloseTo(105_000 * 0.0632, 2);
-    expect(result.csi).toBeCloseTo(105, 2);
+    // Base taxable = le prix seul : les frais préalables (frais de poursuite taxés, 5 000 € par
+    // défaut) en sont exclus (BOFiP BOI-ENR-DMTOI-10-10-30-20 (Adjudication), § 50).
+    expect(result.registrationDuties).toBeCloseTo(100_000 * 0.0632, 2);
+    expect(result.csi).toBeCloseTo(100, 2);
     expect(result.lawyerFees).toBe(1_500);
     expect(result.fpt).toBe(5_000);
     expect(result.fpt).toBe(DEFAULT_PRELIMINARY_FEES);
-    expect(result.acquisitionFeesTotal).toBeCloseTo(15_932.07, 1);
-    expect(result.totalCost).toBeCloseTo(115_932.07, 1);
+    // Les frais préalables restent dus en plus du prix, sans droits.
+    expect(result.acquisitionFeesTotal).toBeCloseTo(15_611.07, 1);
+    expect(result.totalCost).toBeCloseTo(115_611.07, 1);
+    expect(result.organizationFees).toBe(0);
+    expect(result.negotiationFees).toBe(0);
+    expect(result.advertisingFees).toBe(0);
+  });
+
+  it("ne change pas les droits quand les frais préalables changent (hors base)", () => {
+    const base = computeAcquisitionCosts({ price: 100_000, fpt: 0 });
+    const withFees = computeAcquisitionCosts({ price: 100_000, fpt: 8_000 });
+    expect(withFees.registrationDuties).toBe(base.registrationDuties);
+    expect(withFees.csi).toBe(base.csi);
+    expect(withFees.acquisitionFeesTotal - base.acquisitionFeesTotal).toBeCloseTo(8_000, 6);
   });
 
   it("utilise le taux de l'utilisateur quand il est saisi", () => {
@@ -89,7 +102,7 @@ describe("computeAcquisitionCosts", () => {
       department: "36",
       registrationRate: 0.0581,
     });
-    expect(result.registrationDuties).toBeCloseTo(105_000 * 0.0581, 2);
+    expect(result.registrationDuties).toBeCloseTo(100_000 * 0.0581, 2);
     expect(computeAcquisitionCosts({ price: 100_000, department: "36" }).registrationRate).toBe(
       0.0509,
     );

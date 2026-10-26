@@ -1,8 +1,4 @@
-import {
-  ceilingTermText,
-  ceilingTermWithArticleText,
-  ceilingVenueScopeText,
-} from "@/lib/fee-regime-labels";
+import { ceilingTermText, ceilingTermWithScopeText } from "@/lib/fee-regime-labels";
 import type { FeeRegimeKey } from "@/lib/fee-regime-open";
 import { launchOfferText } from "@/lib/launch-offer";
 import { parisDayMonthLabel, parisMonthName } from "@/lib/paris-month";
@@ -93,20 +89,19 @@ export type SaleUnlockQuotaReachedResponse = {
 /**
  * Ce qu'un déblocage ouvre sur cette vente, en une phrase. Le montant plafond n'existe que pour une
  * vente dont un régime de frais est ouvert (`ceiling` : son libellé avec l'article, « l’enchère
- * plafond », ou `null` quand la vente n'en a pas) et les statistiques du tribunal tant que leur
- * drapeau est ouvert : on ne promet jamais un élément que la fiche n'affiche pas. `true` vaut le
- * libellé des régimes ouverts par défaut, `false` l'absence de plafond.
+ * plafond » ou « l’offre plafond », ou `null` quand la vente n'en a pas) et les statistiques du
+ * tribunal tant que leur drapeau est ouvert : on ne promet jamais un élément que la fiche
+ * n'affiche pas.
  */
 export function unlockedItemsText({
   ceiling,
   statistics,
 }: {
-  ceiling: string | boolean | null;
+  ceiling: string | null;
   statistics: boolean;
 }): string {
-  const ceilingItem = ceiling === true ? ceilingTermWithArticleText() : ceiling || null;
   const items = [
-    ...(ceilingItem ? [ceilingItem] : []),
+    ...(ceiling ? [ceiling] : []),
     "la lecture des pièces",
     "l’historique de la vente",
     ...(statistics ? ["les statistiques du tribunal"] : []),
@@ -119,11 +114,12 @@ export function unlockedItemsText({
  * Les éléments que l'on cite en un mot pour présenter le compte gratuit (accueil). Une version
  * courte de `unlockedItemsText` : `sale-unlocks.test.ts` vérifie que chacun y figure, pour que les
  * deux ne dérivent pas. Ce qu'un déblocage ouvre dépend de la vente (le plafond n'existe que pour
- * les ventes dont un régime de frais est ouvert) : on le dit, on ne promet pas la même chose pour
- * toutes. `open` : les régimes ouverts (le tribunal seul par défaut).
+ * les ventes dont un régime de frais est ouvert, et son nom change : « enchère plafond » ou « offre
+ * plafond ») : on le dit, on ne promet pas la même chose pour toutes. `open` : les régimes ouverts
+ * (tous ceux qui sont définis par défaut).
  */
 export function unlockHighlightsText(open?: readonly FeeRegimeKey[]): string {
-  return `${ceilingTermText(open)} (${ceilingVenueScopeText(open)}), lecture des pièces, historique, selon la vente`;
+  return `${ceilingTermWithScopeText(open)}, lecture des pièces, historique, selon la vente`;
 }
 
 /**
@@ -134,8 +130,14 @@ export function unlockHighlightsInlineText(open?: readonly FeeRegimeKey[]): stri
   return `${ceilingTermText(open)}, lecture des pièces, historique, selon la vente`;
 }
 
-export const UNLOCK_HIGHLIGHTS_TEXT = unlockHighlightsText();
-export const UNLOCK_HIGHLIGHTS_INLINE_TEXT = unlockHighlightsInlineText();
+// Ces deux textes sont ceux de `unlockHighlightsText()` et `unlockHighlightsInlineText()` pour les
+// régimes ouverts par défaut (tous ceux qui sont définis). Ils sont écrits en toutes lettres pour que
+// les pages qui les citent (accueil, connexion, accueil du compte, favoris) n'embarquent pas le
+// calcul des termes ; `sale-unlocks.test.ts` vérifie qu'ils restent égaux à ce calcul.
+export const UNLOCK_HIGHLIGHTS_TEXT =
+  "enchère plafond (ventes au tribunal et ventes notariales à la bougie) ou offre plafond (ventes notariales interactives), lecture des pièces, historique, selon la vente";
+export const UNLOCK_HIGHLIGHTS_INLINE_TEXT =
+  "enchère plafond ou offre plafond, lecture des pièces, historique, selon la vente";
 
 function unlockCountLabel(count: number): string {
   return `${count} déblocage${count > 1 ? "s" : ""}`;

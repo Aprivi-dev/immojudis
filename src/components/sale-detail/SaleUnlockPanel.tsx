@@ -10,7 +10,7 @@ import { UNLOCK_PANEL_ID } from "@/components/sale-detail/UnlockCallToAction";
 import { useAnalysisCheckoutOpen } from "@/hooks/use-analysis-checkout-open";
 import { SaleUnlockQuotaReachedError, unlockSaleRequest } from "@/lib/client-api";
 import { resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
-import { ceilingTermWithArticleText } from "@/lib/fee-regime-labels";
+import { ceilingTermText, ceilingTermWithArticleText } from "@/lib/fee-regime-labels";
 import {
   MONTHLY_SALE_UNLOCKS,
   remainingUnlocksLine,
@@ -34,7 +34,11 @@ export function SaleUnlockPanel({
   saleId,
   status,
   unlocked,
-  opens = { ceiling: ceilingTermWithArticleText(), statistics: true },
+  opens = {
+    ceiling: ceilingTermWithArticleText(),
+    ceilingTerm: ceilingTermText(),
+    statistics: true,
+  },
   announce = false,
   onUnlocked,
 }: {
@@ -45,24 +49,18 @@ export function SaleUnlockPanel({
   unlocked: boolean;
   /**
    * What this sale really offers once unlocked. `ceiling`: the name of the maximum amount with its
-   * article (« l’enchère plafond », from the fee regime of the sale), or `null` when the sale has no
-   * ceiling (a sale whose fee regime is not open). A boolean is accepted: `true` is the name of the
-   * regimes open by default, `false` no ceiling.
+   * article (« l’enchère plafond », « l’offre plafond », from the fee regime of the sale; both while
+   * the mode of a notarial sale is unknown), or `null` when the sale has no ceiling (no open fee
+   * regime). `ceilingTerm`: the same name without article, for « Voir mon … » (never derived from
+   * the first one).
    */
-  opens?: { ceiling: string | boolean | null; statistics: boolean };
+  opens?: { ceiling: string | null; ceilingTerm: string | null; statistics: boolean };
   /** The sale was unlocked a moment ago: move the focus to the result so it is announced. */
   announce?: boolean;
   onUnlocked: (result: SaleUnlockResult) => void;
 }) {
   const items = unlockedItemsText(opens);
-  const ceilingLabel =
-    typeof opens.ceiling === "string"
-      ? opens.ceiling
-      : opens.ceiling === true
-        ? ceilingTermWithArticleText()
-        : null;
-  // « l’enchère plafond » -> « enchère plafond » : the name alone, for « Voir mon … ».
-  const ceilingName = (ceilingLabel ?? ceilingTermWithArticleText()).replace(/^l[’']/, "");
+  const ceilingLabel = opens.ceiling;
   const [step, setStep] = useState<"idle" | "confirm" | "pending">("idle");
   const [error, setError] = useState<string | null>(null);
   // A refusal (quota spent elsewhere in the meantime) only holds for the status it was given for.
@@ -121,8 +119,11 @@ export function SaleUnlockPanel({
           </p>
           <p className="mt-2 text-xs leading-relaxed text-ink-soft">
             Ces éléments sont une aide à la décision : ils ne constituent ni un conseil juridique ni
-            un conseil financier, et {ceilingLabel ?? ceilingTermWithArticleText()} est une
-            simulation fondée sur des hypothèses modifiables.
+            un conseil financier
+            {ceilingLabel
+              ? `, et ${ceilingLabel} est une simulation fondée sur des hypothèses modifiables`
+              : ""}
+            .
           </p>
           {remainingUnlocksLine(current) ? (
             <p className="mt-2 text-sm font-medium text-brand-navy">
@@ -135,7 +136,7 @@ export function SaleUnlockPanel({
               href="#calculation"
               className={buttonClasses({ variant: "primary", className: "mt-4" })}
             >
-              Voir mon {ceilingName}
+              {opens.ceilingTerm ? `Voir mon ${opens.ceilingTerm}` : "Voir mon plafond"}
             </a>
           ) : null}
         </Card>

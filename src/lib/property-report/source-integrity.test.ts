@@ -35,4 +35,44 @@ describe("saved report source integrity", () => {
   it("requires refreshing legacy reports without a verifiable source fingerprint", () => {
     expect(() => assertReportSourceCurrent({}, EXAMPLE_SALE)).toThrow(/sauvegardez/);
   });
+
+  describe("sale_conditions (migration 20261103110000)", () => {
+    const conditions = { procedure: "online_tender", first_offer_eur: 200_000 };
+    const notarial = { ...EXAMPLE_SALE, sale_conditions: conditions } as typeof EXAMPLE_SALE;
+
+    it("keeps valid a notarial report saved before the column existed", () => {
+      // Saved before the migration: fingerprint of the sale without the column.
+      const before = { sourceFingerprint: reportSourceFingerprint(EXAMPLE_SALE) };
+      expect(() => assertReportSourceCurrent(before, notarial)).not.toThrow();
+      // The same fingerprint written with an explicit null column.
+      const withNull = {
+        sourceFingerprint: reportSourceFingerprint({ ...EXAMPLE_SALE, sale_conditions: null }),
+      };
+      expect(() => assertReportSourceCurrent(withNull, notarial)).not.toThrow();
+    });
+
+    it("reads a report saved with the conditions as current, and rejects changed conditions", () => {
+      const after = { sourceFingerprint: reportSourceFingerprint(notarial) };
+      expect(() => assertReportSourceCurrent(after, notarial)).not.toThrow();
+      expect(() =>
+        assertReportSourceCurrent(after, {
+          ...notarial,
+          sale_conditions: { ...conditions, negotiation_fee_rate: 0.05 },
+        } as typeof EXAMPLE_SALE),
+      ).toThrow(/actualisées/);
+    });
+
+    it("still rejects a corrected source on a report saved before the column", () => {
+      const before = { sourceFingerprint: reportSourceFingerprint(EXAMPLE_SALE) };
+      expect(() =>
+        assertReportSourceCurrent(before, { ...notarial, occupancy_status: "occupied" } as never),
+      ).toThrow(/actualisées/);
+    });
+
+    it("gives a tribunal sale the same fingerprint with or without an empty column", () => {
+      expect(reportSourceFingerprint({ ...EXAMPLE_SALE, sale_conditions: null })).toBe(
+        reportSourceFingerprint(EXAMPLE_SALE),
+      );
+    });
+  });
 });

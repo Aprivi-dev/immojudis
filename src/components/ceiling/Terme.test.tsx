@@ -176,3 +176,60 @@ describe("Terme : glossaire et zone d'appui", () => {
     expect(screen.getByRole("note").className).toContain("top-full");
   });
 });
+
+describe("Terme : ventes notariales", () => {
+  const ARTICLE = "/ressources/ventes-notariales-domaniales-differences-tribunal";
+
+  it.each([
+    [
+      "offre-plafond",
+      "offre plafond",
+      "Montant maximum à ne pas dépasser dans une vente par offres, simulé à partir du marché, des frais et des risques. Le vendeur n’est pas forcément tenu de retenir la meilleure offre ; lisez les conditions de la vente.",
+      `${ARTICLE}#vente-interactive`,
+    ],
+    [
+      "vente-bougie",
+      "vente à la bougie",
+      "quand deux feux successifs s’éteignent sans nouvelle enchère",
+      `${ARTICLE}#notaire`,
+    ],
+    [
+      "vente-interactive",
+      "vente notariale interactive",
+      "offres en ligne, pendant une durée limitée",
+      `${ARTICLE}#vente-interactive`,
+    ],
+    [
+      "premiere-offre",
+      "première offre possible",
+      "Ce n’est pas une mise à prix : le prix de réserve n’est pas publié.",
+      `${ARTICLE}#vente-interactive`,
+    ],
+  ] as const)(
+    "définit « %s » et renvoie à l'article sur les ventes notariales, pas au lexique judiciaire",
+    (terme, label, extrait, lien) => {
+      render(<Terme terme={terme} />);
+      expect(screen.getByText(label)).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: `Définition : ${label}` }));
+      const note = screen.getByRole("note");
+      expect(note.textContent).toContain(extrait);
+      expect(note.textContent).not.toMatch(/conseill|recommand|mieux vaut/i);
+      expect(screen.getByRole("link", { name: "En savoir plus" }).getAttribute("href")).toBe(lien);
+    },
+  );
+
+  it("renvoie vers des sections qui existent dans l'article", async () => {
+    const article = (
+      await import("@/content/resources/ventes-notariales-domaniales-differences-tribunal.json")
+    ).default;
+    const sectionIds = article.sections.map((section: { id: string }) => section.id);
+    expect(sectionIds).toContain("vente-interactive");
+    expect(sectionIds).toContain("notaire");
+  });
+
+  it("n'écrit ni « enchère » ni « adjudication » dans le terme ni la définition de l'offre plafond", () => {
+    render(<Terme terme="offre-plafond" />);
+    fireEvent.click(screen.getByRole("button", { name: "Définition : offre plafond" }));
+    expect(screen.getByRole("note").textContent).not.toMatch(/ench[èe]re|adjudication/i);
+  });
+});

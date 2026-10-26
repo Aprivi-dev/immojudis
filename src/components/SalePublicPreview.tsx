@@ -41,8 +41,8 @@ import Link from "next/link";
 import { useSyncExternalStore } from "react";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
 import { LAUNCH_OFFER_SHORT_TEXT } from "@/lib/launch-offer";
-import { FEE_REGIME_TERMS } from "@/lib/fee-regime-labels";
-import { feeRegimeKeyForVenue, type FeeRegimeKey } from "@/lib/fee-regime-open";
+import { ceilingTermsFor } from "@/lib/fee-regime-labels";
+import { feeRegimeKeysForVenue, type FeeRegimeKey } from "@/lib/fee-regime-open";
 import { freeAccessLine, MONTHLY_SALE_UNLOCKS, unlockedItemsText } from "@/lib/sale-unlocks";
 import {
   getSaleProcedure,
@@ -254,7 +254,7 @@ export function SalePublicPreview({
   requestedHash?: string;
   /** The statistics of the tribunal are only announced while their flag is open. */
   adjudicationStatisticsEnabled?: boolean;
-  /** Fee regimes whose bid ceiling is open (see `parseOpenFeeRegimes`); absent: the tribunal only. */
+  /** Fee regimes whose bid ceiling is open (see `parseOpenFeeRegimes`); absent: every regime whose rules are defined. */
   openFeeRegimes?: readonly FeeRegimeKey[];
   /**
    * Une session est détectée et ses droits sont en cours de lecture : l'inscription n'a pas de sens
@@ -265,8 +265,7 @@ export function SalePublicPreview({
   const procedure = getSaleProcedure(preview);
   // The ceiling is promised only when the fee regime of the sale is open (the tribunal for now). Only
   // its terms are needed here: the light vocabulary module keeps the fee rules out of this bundle.
-  const regimeKey = feeRegimeKeyForVenue(procedure.venueType, openFeeRegimes);
-  const ceilingTerms = regimeKey ? (FEE_REGIME_TERMS[regimeKey] ?? null) : null;
+  const ceilingTerms = ceilingTermsFor(feeRegimeKeysForVenue(procedure.venueType, openFeeRegimes));
   const venueCopy = publicSaleVenueCopy(procedure.venueType);
   const state = procedure.venueType === "state";
   const notary = procedure.venueType === "notary";

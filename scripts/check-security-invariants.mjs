@@ -692,6 +692,149 @@ if (
 if (/using\s*\(\s*true\s*\)/i.test(saleUnlockMigration)) {
   failures.push("The sale unlock migration contains a permissive policy");
 }
+// Plafond des ventes notariales: the conditions of a notarial sale reach the browser of an Analyse
+// account (v_auction_sales_app) and of an account that unlocked the sale (v_auction_sales_unlocked)
+// through one allow-list function, never through raw_payload, and never to the discovery view (an
+// account that did not unlock the sale). The reserved conditions (adjudication price, floor price,
+// price reduction, last possible offer, deposit terms, session date, negotiation fee amount) are
+// never copied.
+const saleConditionsName = "20261103110000_sale_conditions_public_projection.sql";
+const saleConditionsSql = (migrationSources.get(saleConditionsName) ?? "")
+  .replace(/\/\*[\s\S]*?\*\//g, "")
+  .replace(/--[^\n]*/g, "");
+if (!saleConditionsSql) {
+  failures.push("The sale conditions migration is missing");
+} else {
+  const projection =
+    /create\s+or\s+replace\s+function\s+app_private\.public_sale_conditions\([^)]*\)[\s\S]*?\$\$;/i.exec(
+      saleConditionsSql,
+    )?.[0] ?? "";
+  const allowedConditionKeys = [
+    "adjudication_type",
+    "advertising_fees_eur",
+    "deposit_eur",
+    "first_offer_eur",
+    "negotiation_fee_payer",
+    "negotiation_fee_rate",
+    "origin",
+    "overbid_allowed",
+    "price_nature",
+    "procedure",
+  ];
+  const projectedKeys = [...projection.matchAll(/'(\w+)',\s*case\b/gi)]
+    .map((match) => match[1])
+    .sort();
+  if (!projection) {
+    failures.push("public_sale_conditions is not defined by the sale conditions migration");
+  } else {
+    if (projectedKeys.join(",") !== allowedConditionKeys.join(",")) {
+      failures.push(
+        `public_sale_conditions projects ${projectedKeys.join(",")} instead of the allow-list ${allowedConditionKeys.join(",")}`,
+      );
+    }
+    if (
+      !/security\s+invoker/i.test(projection) ||
+      !/set\s+search_path\s*=\s*''/i.test(projection)
+    ) {
+      failures.push("public_sale_conditions is not SECURITY INVOKER with an empty search_path");
+    }
+    // The function reads raw_payload, which changes: it is STABLE, never IMMUTABLE.
+    if (/\bimmutable\b/i.test(projection)) {
+      failures.push("public_sale_conditions must be STABLE, not IMMUTABLE");
+    }
+    // Every key read from the source conditions (`conditions -> 'x'`, `->> 'x'`, `#> '{x}'`) must be
+    // an allowed key: a key that is read but not projected today could be projected by a later edit
+    // without the allow-list above noticing, and a reserved key must never be read at all.
+    const readConditionKeys = [
+      ...projection.matchAll(/\bconditions\s*(?:->>?|#>>?)\s*'([^']+)'/gi),
+    ].map((match) => match[1]);
+    const unexpectedReads = [...new Set(readConditionKeys)].filter(
+      (key) => !allowedConditionKeys.includes(key),
+    );
+    if (unexpectedReads.length > 0) {
+      failures.push(
+        `public_sale_conditions reads ${unexpectedReads.join(",")} from the conditions, outside the allow-list`,
+      );
+    }
+    // raw_payload itself is read in two places only: the conditions object and the price nature.
+    const rawPayloadReads = [
+      ...projection.matchAll(/\bp_raw_payload\s*(?:->>?|#>>?)\s*'([^']+)'/gi),
+    ].map((match) => match[1]);
+    const allowedPayloadReads = [
+      "{source_property_features,sale_conditions}",
+      "starting_price_nature",
+    ];
+    const unexpectedPayloadReads = [...new Set(rawPayloadReads)].filter(
+      (key) => !allowedPayloadReads.includes(key),
+    );
+    if (unexpectedPayloadReads.length > 0) {
+      failures.push(
+        `public_sale_conditions reads ${unexpectedPayloadReads.join(",")} from raw_payload, outside the allow-list`,
+      );
+    }
+    if (!/in\s*\(\s*'ADJUDICATION'\s*,\s*'LICITATION'\s*,\s*'SAISIE'\s*\)/.test(projection)) {
+      failures.push("public_sale_conditions must limit origin to the values the pipeline writes");
+    }
+    // Only a source whose raw_payload is small and known (notaires) is read by the views.
+    if (
+      !/CASE\s+WHEN\s+s\.source_name\s*=\s*''notaires''\s+THEN\s+app_private\.public_sale_conditions\(s\.raw_payload\)/i.test(
+        saleConditionsSql,
+      )
+    ) {
+      failures.push("The views must call public_sale_conditions only for source_name = notaires");
+    }
+    for (const reserved of [
+      "adjudication_price_eur",
+      "floor_price_eur",
+      "last_offer_eur",
+      "price_reduction",
+      "deposit_transfer_terms",
+      "deposit_deadline_time",
+      "session_at",
+      "negotiation_fee_eur",
+      "negotiation_fee_amount",
+    ]) {
+      if (projection.includes(reserved)) {
+        failures.push(`public_sale_conditions copies the reserved condition ${reserved}`);
+      }
+    }
+  }
+  if (
+    !/revoke\s+all\s+on\s+function\s+app_private\.public_sale_conditions\(pg_catalog\.jsonb\)\s+from\s+public,\s*anon,\s*authenticated/i.test(
+      saleConditionsSql,
+    ) ||
+    !/grant\s+execute\s+on\s+function\s+app_private\.public_sale_conditions\(pg_catalog\.jsonb\)\s+to\s+authenticated,\s*service_role/i.test(
+      saleConditionsSql,
+    ) ||
+    /grant\s+execute\s+on\s+function\s+app_private\.public_sale_conditions\([^)]*\)\s+to\s+[^;]*\banon\b/i.test(
+      saleConditionsSql,
+    )
+  ) {
+    failures.push("public_sale_conditions is not closed to anon and open to authenticated only");
+  }
+  const rewrittenViews =
+    /relname\s+in\s*\(([^)]*)\)/i
+      .exec(saleConditionsSql)?.[1]
+      ?.match(/'(\w+)'/g)
+      ?.map((name) => name.replaceAll("'", ""))
+      .sort() ?? [];
+  if (rewrittenViews.join(",") !== "v_auction_sales_app,v_auction_sales_unlocked") {
+    failures.push(
+      "The sale conditions migration must add sale_conditions to v_auction_sales_app and v_auction_sales_unlocked only",
+    );
+  }
+}
+for (const [name, source] of migrationSources) {
+  const sql = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--[^\n]*/g, "");
+  const discoveryView =
+    /create\s+or\s+replace\s+view\s+public\.v_auction_sales_discovery\b[\s\S]*?;/i.exec(sql)?.[0] ??
+    "";
+  if (/sale_conditions/i.test(discoveryView)) {
+    failures.push(
+      `${name} gives sale_conditions to the discovery view (accounts that did not unlock)`,
+    );
+  }
+}
 if (
   !/redactReadingTexts\(\s*mapDocumentReading\(/.test(documentReadingServer) ||
   !/import\s*\{\s*redactPersonalText\s*\}\s*from\s*"@\/lib\/personal-data-filter"/.test(

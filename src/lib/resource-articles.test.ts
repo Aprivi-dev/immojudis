@@ -239,6 +239,31 @@ describe("article sur l'enchère plafond", () => {
   });
 });
 
+describe("article sur les frais d'une vente judiciaire", () => {
+  const article = getResourceArticle("frais-vente-encheres-judiciaire")!;
+
+  it("est daté de sa mise à jour du 26/10/2026 (droits de mutation sur le prix seul)", () => {
+    expect(article.publishedAt).toBe("2026-10-13");
+    expect(article.updatedAt).toBe("2026-10-26");
+  });
+
+  it("présente la règle du BOFiP sur les frais de poursuite et cite sa source", () => {
+    const text = visibleText(article);
+    expect(text).toContain("BOI-ENR-DMTOI-10-10-30-20");
+    expect(text).toContain("réponse ministérielle au Sénat de 1997");
+    expect(text).toContain("Le simulateur Immojudis retient le prix seul");
+    expect(text).not.toContain("prix augmenté de toutes les charges en capital");
+    expect(article.sources.some((source) => /BOFiP/.test(source.label))).toBe(true);
+  });
+
+  it("garde le même ordre de grandeur que l'article sur l'enchère plafond (environ 13 % à 150 000 €)", () => {
+    const table = article.sections.find((section) => section.id === "ordres-de-grandeur")!.table!;
+    expect(table.rows).toContainEqual(["150 000 €", "environ 19 700 €", "environ 13 %"]);
+    const ceiling = visibleText(getResourceArticle("prix-plafond-encheres-immobilieres")!);
+    expect(ceiling).toContain("environ 19 600 € pour une enchère d’environ 147 900 €");
+  });
+});
+
 describe("relecture juridique du 19/10/2026", () => {
   it("ne décrit plus la surenchère en licitation devant notaire comme une requête au greffe (art. 1280)", () => {
     for (const article of RESOURCE_ARTICLES) {

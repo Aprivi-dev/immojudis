@@ -13,13 +13,45 @@ import {
 
 const tribunal = { id: "a", sale_venue_type: "tribunal" } as unknown as AuctionSale;
 const notary = { id: "b", sale_venue_type: "notary" } as unknown as AuctionSale;
+const state = { id: "c", sale_venue_type: "state" } as unknown as AuctionSale;
+const unknownVenue = { id: "d", sale_venue_type: "unknown" } as unknown as AuctionSale;
 const FREE_LINE = "Gratuit, sans carte bancaire · 3 fiches détaillées par mois";
 
 describe("listingAccessLine", () => {
   it("promet un compte gratuit au visiteur sans compte", () => {
     const access = { locked: true, analysisLocked: false, unlocked: false };
     expect(listingAccessLine(tribunal, access)).toBe(FREE_LINE);
-    expect(listingAccessLine(notary, access)).toBe("Fiche complète avec un compte gratuit");
+    // Le déblocage ouvre le plafond des ventes notariales (bougie ou interactive) comme celui du tribunal.
+    expect(listingAccessLine(notary, access)).toBe(FREE_LINE);
+    // Ventes domaniales et type inconnu : pas de plafond, donc rien à débloquer de plus.
+    expect(listingAccessLine(state, access)).toBe("Fiche complète avec un compte gratuit");
+    expect(listingAccessLine(unknownVenue, access)).toBe("Fiche complète avec un compte gratuit");
+  });
+
+  it("propose le déblocage d'une vente notariale à un compte gratuit, pas d'une vente domaniale", () => {
+    const access = { locked: false, analysisLocked: true, unlocked: false };
+    expect(listingAccessLine(notary, access)).toBe(FREE_LINE);
+    expect(listingAccessLine(state, access)).toBe(LISTING_DETAIL_LINE);
+    expect(listingAccessLine(notary, { ...access, unlocked: true })).toBe(LISTING_DETAIL_LINE);
+  });
+
+  it("ne promet pas de déblocage d'une vente notariale quand l'interrupteur ferme ses régimes", () => {
+    const tribunalOnly = ["tribunal"] as const;
+    const visitor = { locked: true, analysisLocked: false, unlocked: false };
+    const freeAccount = { locked: false, analysisLocked: true, unlocked: false };
+    expect(listingAccessLine(notary, { ...visitor, openFeeRegimes: tribunalOnly })).toBe(
+      "Fiche complète avec un compte gratuit",
+    );
+    expect(listingAccessLine(notary, { ...freeAccount, openFeeRegimes: tribunalOnly })).toBe(
+      LISTING_DETAIL_LINE,
+    );
+    // Le tribunal reste ouvert, et une seule de ses deux formes notariales suffit.
+    expect(listingAccessLine(tribunal, { ...freeAccount, openFeeRegimes: tribunalOnly })).toBe(
+      FREE_LINE,
+    );
+    expect(
+      listingAccessLine(notary, { ...freeAccount, openFeeRegimes: ["tribunal", "notary_online"] }),
+    ).toBe(FREE_LINE);
   });
 
   it("reste neutre pour un compte reconnu dont les droits sont en cours de vérification", () => {

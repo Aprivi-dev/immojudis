@@ -10,7 +10,11 @@ import {
 } from "@/lib/ai-review-guard";
 import { listingValuationConflict } from "@/lib/listing-evidence";
 import type { CeilingMarketEstimate } from "@/lib/market-estimate-ceiling";
-import { buildCeilingSnapshot } from "@/lib/property-report/ceiling-snapshot";
+import { DEFAULT_OPEN_FEE_REGIMES } from "@/lib/fee-regime";
+import {
+  buildCeilingSnapshot,
+  NO_CEILING_REGIME_REASON,
+} from "@/lib/property-report/ceiling-snapshot";
 import { computeAcquisitionCosts } from "@/lib/profitability";
 import { assessSaleCeilingInputs, computeSaleCeiling } from "@/lib/sale-ceiling";
 import { getMarketValuationSurfaces } from "@/lib/surface";
@@ -159,8 +163,8 @@ describe("computeSaleCeiling : parité avec l'ancien calcul de la fiche", () => 
     });
   }
 
-  it("ne chiffre aucun plafond pour une vente notariale ou domaniale (aucun régime ouvert)", () => {
-    for (const venue of ["notary", "state", "online", "unknown"]) {
+  it("ne chiffre aucun plafond pour une vente domaniale ou de type inconnu, même avec tous les régimes listés", () => {
+    for (const venue of ["state", "online", "unknown"]) {
       const item = sale({ sale_venue_type: venue });
       const market = estimate(220_000, 62);
       const expected = legacyViewCeiling({
@@ -173,7 +177,7 @@ describe("computeSaleCeiling : parité avec l'ancien calcul de la fiche", () => 
         estimate: market,
         aiProjections: null,
         aiReviewStatus: "disabled",
-        // Les régimes notariaux et domaniaux n'ont pas de règles : les ouvrir n'y change rien.
+        // Les ventes domaniales n'ont pas de régime : les ouvrir n'y change rien.
         regimes: ["tribunal", "notary_auction", "notary_online", "state_auction"],
       });
       expect(actual.regime).toBeNull();
@@ -181,6 +185,65 @@ describe("computeSaleCeiling : parité avec l'ancien calcul de la fiche", () => 
       expect(actual.plan).toEqual(expected.plan);
       expect(actual.plan.available).toBe(false);
     }
+  });
+
+  it.each([
+    ["notarial_auction", "notary_auction", "Enchère plafond (simulation)"],
+    ["online_tender", "notary_online", "Offre plafond (simulation)"],
+  ])(
+    "chiffre le plafond d'une vente notariale dont la procédure est %s (régime %s)",
+    (procedure, key, label) => {
+      const item = sale({
+        sale_venue_type: "notary",
+        sale_conditions: { procedure },
+        description: "Appartement libre.",
+      });
+      const actual = computeSaleCeiling({
+        sale: item,
+        estimate: estimate(220_000, 62),
+        aiProjections: null,
+        aiReviewStatus: "disabled",
+      });
+      expect(actual.regime?.key).toBe(key);
+      expect(actual.regime?.labels.ceilingSimulationLabel).toBe(label);
+      expect(actual.enabled).toBe(true);
+      expect(actual.plan.available).toBe(true);
+      expect(actual.plan.reachable).toBe(true);
+    },
+  );
+
+  it("ne chiffre aucun plafond d'une vente notariale dont le mode est inconnu (compte Découverte)", () => {
+    for (const conditions of [null, {}, { price_nature: "displayed_price" }]) {
+      const actual = computeSaleCeiling({
+        sale: sale({ sale_venue_type: "notary", sale_conditions: conditions }),
+        estimate: estimate(220_000, 62),
+        aiProjections: null,
+        aiReviewStatus: "disabled",
+      });
+      expect(actual.regime).toBeNull();
+      expect(actual.enabled).toBe(false);
+      expect(actual.plan.available).toBe(false);
+    }
+  });
+
+  it("ferme la vente notariale quand son régime n'est pas ouvert", () => {
+    const item = sale({
+      sale_venue_type: "notary",
+      sale_conditions: { procedure: "online_tender" },
+    });
+    const base = {
+      sale: item,
+      estimate: estimate(220_000, 62),
+      aiProjections: null,
+      aiReviewStatus: "disabled" as const,
+    };
+    expect(computeSaleCeiling({ ...base, regimes: ["tribunal", "notary_auction"] }).enabled).toBe(
+      false,
+    );
+    expect(computeSaleCeiling({ ...base, regimes: ["tribunal", "notary_online"] }).enabled).toBe(
+      true,
+    );
+    expect(computeSaleCeiling(base).enabled).toBe(true);
   });
 
   it("ne chiffre rien quand la vente n'est pas lue en entier", () => {
@@ -309,12 +372,14 @@ describe("computeSaleCeiling : parité avec l'ancien calcul de la fiche", () => 
   });
 });
 
+const ALL_OPEN = [...DEFAULT_OPEN_FEE_REGIMES];
+
 describe("buildCeilingSnapshot : même chaîne que la fiche", () => {
   it.each(SALES.flatMap((item) => CHOICES.map((choices) => [item.name, item, choices] as const)))(
     "%s : le rapport et la fiche affichent le même plafond (%j)",
     (_name, item, choices) => {
       const market = estimate(item.value, item.sale.app_surface_m2 ?? 50);
-      const snapshot = buildCeilingSnapshot(item.sale, market as never, choices);
+      const snapshot = buildCeilingSnapshot(item.sale, market as never, choices, ALL_OPEN);
       const view = computeSaleCeiling({
         sale: item.sale,
         estimate: market,
@@ -362,12 +427,62 @@ describe("buildCeilingSnapshot : même chaîne que la fiche", () => {
     }
   });
 
-  it("ne change pas le rapport d'une vente sans régime ouvert : le calcul reste celui d'avant", () => {
-    const item = sale({ sale_venue_type: "notary" });
+  it("ne sauve aucun plafond pour une vente sans régime (domaniale, mode notarial inconnu)", () => {
     const market = estimate(220_000, 62);
-    const snapshot = buildCeilingSnapshot(item, market as never);
-    const legacy = computeCeilingPlan(buildCeilingHypotheses(item, market));
-    expect(snapshot.available).toBe(true);
-    expect(snapshot.maxBid).toBe(legacy.maxBid);
+    for (const item of [
+      sale({ sale_venue_type: "state" }),
+      sale({ sale_venue_type: "unknown" }),
+      sale({ sale_venue_type: "notary" }),
+      sale({ sale_venue_type: "notary", sale_conditions: { price_nature: "displayed_price" } }),
+    ]) {
+      const snapshot = buildCeilingSnapshot(item, market as never, {}, ALL_OPEN);
+      expect(snapshot.available).toBe(false);
+      expect(snapshot.reason).toBe(NO_CEILING_REGIME_REASON);
+      expect(snapshot.maxBid).toBeNull();
+      expect(snapshot.maxBidWithoutWorks).toBeNull();
+      expect(snapshot.targetTotalCost).toBeNull();
+      expect(snapshot.steps).toEqual([]);
+      expect(snapshot.regime).toBeNull();
+      expect(snapshot.estimatedFees).toEqual([]);
+    }
+  });
+
+  it("ne sauve aucun plafond quand le régime de la vente est fermé sur le serveur", () => {
+    const market = estimate(220_000, 62);
+    const item = sale({
+      sale_venue_type: "notary",
+      sale_conditions: { procedure: "online_tender" },
+    });
+    const open = buildCeilingSnapshot(item, market as never, {}, ALL_OPEN);
+    expect(open.available).toBe(true);
+    expect(open.regime).toBe("notary_online");
+    expect(open.label).toBe("Offre plafond (simulation)");
+    expect(open.reserveNotice).toBe(
+      "Le vendeur n’est pas tenu de retenir la meilleure offre ; prix de réserve inconnu.",
+    );
+    expect(open.scopeNote).toBe("Hors débours et formalités du notaire.");
+    const closed = buildCeilingSnapshot(item, market as never, {}, ["tribunal"]);
+    expect(closed.available).toBe(false);
+    expect(closed.reason).toBe(NO_CEILING_REGIME_REASON);
+    expect(closed.maxBid).toBeNull();
+    // Le tribunal reste ouvert quoi qu'il arrive.
+    expect(buildCeilingSnapshot(sale(), market as never, {}, ["notary_online"]).available).toBe(
+      true,
+    );
+  });
+
+  it("garde « Enchère plafond (simulation) » pour le tribunal et la bougie", () => {
+    const market = estimate(220_000, 62);
+    expect(buildCeilingSnapshot(sale(), market as never, {}, ALL_OPEN).label).toBe(
+      "Enchère plafond (simulation)",
+    );
+    const auction = sale({
+      sale_venue_type: "notary",
+      sale_conditions: { procedure: "notarial_auction" },
+    });
+    const snapshot = buildCeilingSnapshot(auction, market as never, {}, ALL_OPEN);
+    expect(snapshot.label).toBe("Enchère plafond (simulation)");
+    expect(snapshot.regime).toBe("notary_auction");
+    expect(snapshot.reserveNotice).toBeNull();
   });
 });

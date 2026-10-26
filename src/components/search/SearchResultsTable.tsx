@@ -4,6 +4,7 @@ import { AiReviewField } from "@/components/sale-detail/AiReviewField";
 import { PointsToVerifyBadge } from "@/components/PointsToVerifyBadge";
 import { SaleCountdown } from "@/components/SaleCountdown";
 import { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
+import { useFeeRegimes } from "@/components/FeeRegimesProvider";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
 import { useViewedSales } from "@/hooks/use-viewed-sales";
 import {
@@ -214,6 +215,7 @@ const ListingRow = memo(function ListingRow({
   const showCity = cityReview.blocked || Boolean(sale.city?.trim());
   const departmentLine = departmentLabel(sale.department);
   const { active: launchOffer, pending: launchPending } = useLaunchOffer();
+  const openFeeRegimes = useFeeRegimes()?.open;
   const accessLine = listingAccessLine(sale, {
     locked,
     analysisLocked,
@@ -221,6 +223,7 @@ const ListingRow = memo(function ListingRow({
     verifying,
     launchOffer,
     launchPending,
+    openFeeRegimes,
   });
   const surfaceText = displaySurface.value != null ? displaySurface.label : "Surface n.c.";
   const review = {

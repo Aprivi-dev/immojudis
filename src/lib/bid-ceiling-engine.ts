@@ -20,14 +20,23 @@ import {
  * Version des règles de calcul du plafond. À incrémenter dès qu'un résultat change volontairement
  * (barème, marge, hypothèse par défaut) : `bid-ceiling-characterization.test.ts` la compare à celle
  * qu'il a enregistrée avec le résultat de référence.
+ *
+ * Historique : « 2026-10-26.1 » (tests de caractérisation), « 2026-10-26.2 » (les frais préalables
+ * du tribunal sortent de la base des droits de mutation et de la CSI, BOFiP § 50 ; régimes
+ * notariaux).
  */
-export const CEILING_ENGINE_VERSION = "2026-10-26.1";
+export const CEILING_ENGINE_VERSION = "2026-10-26.2";
 
 export type CeilingProject = "habiter" | "louer" | "revendre";
 export type CeilingProfile = "prudent" | "equilibre" | "offensif";
 export type OccupationCase = "libre" | "occupe" | "loue" | "squat" | "inconnu";
 export type CeilingWorksKey = "aucun" | "rafraichissement" | "confort" | "premium" | "devis";
 export type ValueReliability = "forte" | "correcte" | "fragile" | "saisie";
+/**
+ * D'où vient le montant d'un poste de frais : lu dans l'annonce ou les pièces (`document`), saisi par
+ * l'utilisateur (`saisie`) ou valeur par défaut, à confirmer (`defaut`).
+ */
+export type FeeSource = "document" | "saisie" | "defaut";
 
 export const CEILING_PROJECTS: ReadonlyArray<{
   key: CeilingProject;
@@ -131,8 +140,20 @@ export type CeilingHypotheses = {
     resaleMonths: number;
   };
   fees: Omit<AcquisitionCostOptions, "works"> & { fpt: number; lawyerFees: number };
-  /** `fpt` : lu dans l'annonce (`document`), saisi par l'utilisateur (`saisie`) ou valeur par défaut (`defaut`). */
-  feesSource: { fpt: "document" | "saisie" | "defaut"; consignation: "document" | "regle" };
+  /**
+   * Une source par poste de frais. `fpt` : frais préalables (tribunal). `consignation` : la garantie,
+   * `regle` quand elle suit un texte de loi (tribunal), `defaut` quand elle est une valeur par
+   * défaut (vente à la bougie). `negotiation` et `advertising` : honoraires de négociation et frais
+   * de publicité de l'acquéreur (vente interactive).
+   */
+  feesSource: {
+    fpt: FeeSource;
+    consignation: FeeSource | "regle";
+    negotiation?: FeeSource;
+    advertising?: FeeSource;
+  };
+  /** Ce que les conditions d'une vente notariale disent de la surenchère ; `null` : non lu. */
+  overbidAllowed?: boolean | null;
   rent: {
     monthly: number | null;
     source: "saisi" | "estime" | "absent";
@@ -353,7 +374,7 @@ function buildSteps(h: CeilingHypotheses, plan: CeilingPlan, value: number): Cei
     h.project === "revendre"
       ? `${plan.marginPct} % du prix de revente : c’est votre bénéfice avant impôt si tout se passe comme prévu.`
       : h.project === "habiter"
-        ? `${plan.marginPct} % sous la valeur : l’écart qui justifie d’acheter aux enchères plutôt qu’en agence, et qui absorbe une estimation trop optimiste.`
+        ? `${plan.marginPct} % sous la valeur : ${labelsOf(h).marginWhy}.`
         : `${plan.marginPct} % sous la valeur : votre coussin si l’estimation est trop optimiste.`;
   steps.push({
     key: "margin",
@@ -592,29 +613,40 @@ export function buildCashPlan(h: CeilingHypotheses, plan: CeilingPlan, price: nu
   const cash = labelsOf(h).cash;
   const fees = evaluation.fees;
   const duties = Math.round(fees.registrationDuties + fees.csi + fees.vatOnPrice);
-  const steps: CashStep[] = [
-    {
+  const steps: CashStep[] = [];
+  if (cash.consignation) {
+    steps.push({
       when: cash.consignation.when,
       label: cash.consignation.label,
       amount: consignation,
       detail:
-        h.feesSource.consignation === "document"
+        h.feesSource.consignation === "document" || h.feesSource.consignation === "saisie"
           ? cash.consignation.documentDetail
           : cash.consignation.detail,
-    },
-    {
+    });
+  }
+  if (cash.offers) {
+    steps.push({ ...cash.offers, amount: null });
+  }
+  if (cash.lawyer) {
+    steps.push({
       when: cash.lawyer.when,
       label: cash.lawyer.label,
       amount: Math.round(fees.lawyerFees),
       detail: cash.lawyer.detail,
-    },
-    {
+    });
+  }
+  // Au tribunal la surenchère est de droit ; chez le notaire, seulement quand l'annonce la prévoit.
+  if (cash.overbid && (h.regime?.kind !== "notarial" || h.overbidAllowed === true)) {
+    steps.push({
       when: cash.overbid.when,
       label: cash.overbid.label,
       amount: null,
       detail: cash.overbid.detail,
-    },
-    {
+    });
+  }
+  if (cash.preliminary) {
+    steps.push({
       when: cash.preliminary.when,
       label: cash.preliminary.label,
       amount: Math.round(fees.fpt),
@@ -624,20 +656,30 @@ export function buildCashPlan(h: CeilingHypotheses, plan: CeilingPlan, price: nu
           : h.feesSource.fpt === "saisie"
             ? cash.preliminary.enteredDetail
             : cash.preliminary.detail,
-    },
-    {
-      when: cash.balance.when,
-      label: cash.balance.label,
-      amount: Math.round(Math.max(0, price - consignation) + duties + fees.emolumentsTTC),
-      detail: cash.balance.detail,
-    },
-  ];
+    });
+  }
+  if (cash.precontract) {
+    steps.push({ ...cash.precontract, amount: null });
+  }
+  steps.push({
+    when: cash.balance.when,
+    label: cash.balance.label,
+    amount: Math.round(
+      Math.max(0, price - consignation) +
+        duties +
+        fees.emolumentsTTC +
+        fees.organizationFees +
+        fees.negotiationFees +
+        fees.advertisingFees,
+    ),
+    detail: cash.balance.detail,
+  });
   if (plan.releaseCost > 0) {
     steps.push({
       when: "Ensuite",
       label: "Libération du bien",
       amount: plan.releaseCost,
-      detail: `Procédure d’expulsion et frais annexes, sur environ ${h.occupation.releaseMonths} mois.`,
+      detail: `Libération du bien et frais annexes (délai et coût à confirmer), sur environ ${h.occupation.releaseMonths} mois.`,
     });
   }
   if (plan.worksTotal > 0) {
@@ -716,20 +758,35 @@ export function ceilingConfidence(h: CeilingHypotheses): CeilingConfidence {
   const valuePoints = { forte: 40, correcte: 30, fragile: 15, saisie: 25 }[reliability];
   score += h.value.source === "absente" ? 0 : valuePoints;
   if (reliability === "fragile") gaps.push("peu de ventes comparables autour du bien");
+  const notarial = h.regime?.kind === "notarial";
   if (h.value.surfaceEstimated) {
     score += 8;
-    gaps.push("surface estimée, à confirmer dans le procès-verbal descriptif");
+    gaps.push(
+      notarial
+        ? "surface estimée, à confirmer dans le descriptif et les diagnostics"
+        : "surface estimée, à confirmer dans le procès-verbal descriptif",
+    );
   } else score += 20;
   if (h.occupation.case === "inconnu") {
     score += 5;
     gaps.push("occupation non confirmée");
   } else score += 20;
   // Lus dans l'annonce ou saisis par l'utilisateur : le montant n'est plus une valeur par défaut.
-  const feesKnown = h.feesSource.fpt !== "defaut";
+  // Au tribunal, ce sont les frais préalables ; chez le notaire, les frais que l'annonce ne chiffre
+  // pas (honoraires de négociation), la garantie ne changeant pas le coût.
+  const estimatedCosts = estimatedFeeItems(h).filter((item) => item.key !== "consignation");
+  const feesKnown = notarial ? estimatedCosts.length === 0 : h.feesSource.fpt !== "defaut";
   if (feesKnown) score += 20;
   else {
     score += 8;
-    gaps.push("frais préalables à lire dans le cahier des conditions de vente");
+    gaps.push(
+      notarial
+        ? `${estimatedCosts.map((item) => item.label.toLowerCase()).join(", ")} à confirmer dans les conditions de la vente`
+        : "frais préalables à lire dans le cahier des conditions de vente",
+    );
+  }
+  if (notarial && estimatedFeeItems(h).some((item) => item.key === "consignation")) {
+    gaps.push("garantie à lire dans les conditions de la vente");
   }
   const rounded = Math.min(100, Math.round(score));
   const label = rounded >= 75 ? "Solide" : rounded >= 50 ? "À consolider" : "Indicatif";
@@ -739,6 +796,73 @@ export function ceilingConfidence(h: CeilingHypotheses): CeilingConfidence {
     label: label === "Solide" && !feesKnown ? "À consolider" : label,
     gaps,
   };
+}
+
+/** Un poste de frais dont le montant n'est pas lu mais estimé : à confirmer avant de s'y fier. */
+export type EstimatedFee = {
+  key: "fpt" | "consignation" | "negotiation" | "advertising";
+  label: string;
+  /** Le montant retenu ; `null` : inconnu (rien n'est compté, à confirmer). */
+  amount: number | null;
+};
+
+/** Sous ce montant, un poste estimé n'est pas assez important pour être signalé. */
+export const IMPORTANT_ESTIMATED_FEE_EUR = 1_000;
+
+/**
+ * Les postes importants dont le montant vient d'une valeur par défaut (source `defaut`) : frais
+ * préalables au tribunal ; garantie, honoraires de négociation et frais de publicité chez le notaire.
+ * Un poste saisi par l'utilisateur (`saisie`) ou lu dans l'annonce (`document`) n'y figure plus.
+ * Alimente la pastille « Frais estimés, à confirmer » du hero et du planificateur.
+ */
+export function estimatedFeeItems(h: CeilingHypotheses): EstimatedFee[] {
+  const labels = labelsOf(h);
+  const items: EstimatedFee[] = [];
+  const add = (item: EstimatedFee) => {
+    if (item.amount == null || item.amount >= IMPORTANT_ESTIMATED_FEE_EUR) items.push(item);
+  };
+  if (labels.planner.preliminaryLabel && h.feesSource.fpt === "defaut") {
+    add({ key: "fpt", label: labels.planner.preliminaryLabel, amount: h.fees.fpt });
+  }
+  if (labels.cash.consignation && h.feesSource.consignation === "defaut") {
+    add({
+      key: "consignation",
+      label: labels.cash.consignation.label,
+      amount: consignationAmount(h, consignationRuleOf(h)),
+    });
+  }
+  if (labels.planner.negotiationLabel && h.feesSource.negotiation === "defaut") {
+    const rate = h.fees.negotiationFeeRate ?? 0;
+    const start = positive(h.startingPrice);
+    add({
+      key: "negotiation",
+      label: labels.planner.negotiationLabel,
+      amount: rate > 0 && start ? Math.round(rate * start) : null,
+    });
+  }
+  if (labels.planner.advertisingLabel && h.feesSource.advertising === "defaut") {
+    add({
+      key: "advertising",
+      label: labels.planner.advertisingLabel,
+      amount: h.fees.advertisingFees ?? 0,
+    });
+  }
+  return items;
+}
+
+/**
+ * Ce que 1 000 € de frais de plus font perdre au plafond (« +1 000 € de frais = −X € d'enchère
+ * plafond »), en euros arrondis à 50 € ; `null` quand le plafond ne se calcule pas ou ne tient plus.
+ * Le plafond étant arrondi à 500 €, l'écart est mesuré sur 10 000 € de frais puis ramené à 1 000 €
+ * (1 000 € seuls tomberaient sur 0, 500 ou 1 000 € selon l'arrondi).
+ */
+export function feeSensitivity(h: CeilingHypotheses, plan: CeilingPlan): number | null {
+  if (!plan.available || !plan.reachable) return null;
+  const extra = 10_000;
+  const heavier = computeCeilingPlan({ ...h, fees: { ...h.fees, fpt: h.fees.fpt + extra } });
+  if (!heavier.available || !heavier.reachable) return null;
+  const perThousand = ((plan.maxBid - heavier.maxBid) / extra) * 1_000;
+  return Math.max(0, Math.round(perThousand / 50) * 50);
 }
 
 function solveMaxBid(budget: number, totalAt: (price: number) => number): number {

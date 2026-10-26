@@ -19,7 +19,10 @@ import { HomeTagline } from "@/components/home/HomeTagline";
 import homeStyles from "@/components/home/HomePage.module.css";
 import { loadHomeCatalogueSummary } from "@/lib/home-catalogue-summary.server";
 import { loadHomeDepartmentCount } from "@/lib/home-departments.server";
+import { ceilingTermText } from "@/lib/fee-regime-labels";
+import { openFeeRegimesFromEnv } from "@/lib/fee-regime.server";
 import { jsonLdString } from "@/lib/json-ld";
+import { unlockHighlightsText } from "@/lib/sale-unlocks";
 
 export const metadata: Metadata = {
   title: { absolute: "Immojudis - Les enchères immobilières en toute clarté" },
@@ -38,6 +41,9 @@ export default async function Page() {
     loadHomeCatalogueSummary(),
     loadHomeDepartmentCount(),
   ]);
+  // Le terme du plafond des cartes d'offres suit l'interrupteur par régime (CEILING_FEE_REGIMES_OPEN).
+  const openFeeRegimes = openFeeRegimesFromEnv();
+  const ceilingTerm = ceilingTermText(openFeeRegimes);
   const origin = resolveSiteOrigin(process.env, "http://localhost:3000")!;
   const structuredData = organizationStructuredData(origin);
   const faqStructuredData = {
@@ -71,7 +77,10 @@ export default async function Page() {
         <HomeBenefits />
         <HomeSteps />
         <HomeSources />
-        <HomeOffers />
+        <HomeOffers
+          unlockHighlights={unlockHighlightsText(openFeeRegimes)}
+          ceilingFeature={`${ceilingTerm.charAt(0).toUpperCase()}${ceilingTerm.slice(1)} et travaux`}
+        />
         <HomeFaq />
         <HomeClosing summary={summary} departments={departments} />
         <HomeMotion />

@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Terme } from "@/components/ceiling/Terme";
+import type { CeilingWording } from "@/components/sale-detail/SaleListing";
 import { PremiumFeaturePreview } from "@/components/PremiumFeaturePreview";
 import { SaleSignalFeedback } from "@/components/SaleSignalFeedback";
 import { UnlockCallToAction } from "@/components/sale-detail/UnlockCallToAction";
@@ -20,8 +21,8 @@ import { formatPrice, formatStartingPrice } from "@/lib/format";
 import type { MarketEstimate } from "@/lib/market.server";
 import { describeMarketGap } from "@/lib/market-gap";
 import type { CeilingMarketEstimate } from "@/lib/market-estimate-ceiling";
-import { FEE_REGIME_TERMS } from "@/lib/fee-regime-labels";
-import { feeRegimeKeyForVenue, type FeeRegimeKey } from "@/lib/fee-regime-open";
+import { ceilingTermsFor } from "@/lib/fee-regime-labels";
+import { feeRegimeKeysForVenue, type FeeRegimeKey } from "@/lib/fee-regime-open";
 import { getSaleProcedure } from "@/lib/sale-procedure";
 import { loginPathWithRedirect, saleDetailPath } from "@/lib/navigation";
 import { getMarketValuationSurfaces } from "@/lib/surface";
@@ -36,6 +37,7 @@ export function AnalysisDecisionPanel({
   ceilingAvailable,
   startingPriceGap,
   ceilingGap = null,
+  ceilingWording = null,
   valueReason,
   onAdjust,
   onEditWorks,
@@ -52,6 +54,8 @@ export function AnalysisDecisionPanel({
   startingPriceGap?: number | null;
   /** Why the ceiling is not a number (missing input, or no profitable bid). */
   ceilingGap?: CeilingGap | null;
+  /** Wording of the ceiling of this sale (« offre plafond »…); absent: the tribunal's. */
+  ceilingWording?: CeilingWording | null;
   /** Why the market value is missing, when it is (« surface manquante », …). */
   valueReason?: string;
   onAdjust: () => void;
@@ -61,8 +65,10 @@ export function AnalysisDecisionPanel({
   const ceiling = ceilingAvailable ? recommendedCeiling : null;
   const marketValue =
     marketEstimate?.actionable === true ? roundedValue(marketEstimate.estimatedValueEur) : null;
+  const ceilingLabel = ceilingWording?.label ?? "Enchère plafond (simulation)";
+  const startLabel = ceilingWording?.byOffers ? "Première offre possible" : "Mise à prix";
   const missingMarker = (label: string): { main: string; note?: string; compact?: boolean } => {
-    if (label === "Mise à prix") return { main: "À confirmer" };
+    if (label === startLabel) return { main: "À confirmer" };
     if (label === "Valeur estimée") {
       return marketLoading
         ? { main: "Calcul…" }
@@ -90,6 +96,7 @@ export function AnalysisDecisionPanel({
             : null,
     },
     sale.starting_price_eur,
+    ceilingWording?.terms,
   );
   const markers = comparisonMarkerPositions({
     start:
@@ -98,6 +105,8 @@ export function AnalysisDecisionPanel({
         : null,
     ceiling,
     market: marketValue,
+    startLabel,
+    ceilingLabel,
   });
 
   return (
@@ -121,9 +130,7 @@ export function AnalysisDecisionPanel({
       <div className={panelStyles.estimationFoot}>
         <p>
           <strong>{worksLine(worksBudget)}</strong>
-          <span>
-            Enchère plafond (simulation), selon vos hypothèses de marché, de frais et de travaux.
-          </span>
+          <span>{ceilingLabel}, selon vos hypothèses de marché, de frais et de travaux.</span>
         </p>
         <div>
           {onEditWorks ? (
@@ -208,12 +215,13 @@ export function DiscoveryDecisionPanel({
   openFeeRegimes,
 }: {
   sale: AuctionSale;
-  /** Fee regimes whose bid ceiling is open (see `parseOpenFeeRegimes`); absent: the tribunal only. */
+  /** Fee regimes whose bid ceiling is open (see `parseOpenFeeRegimes`); absent: every regime whose rules are defined. */
   openFeeRegimes?: readonly FeeRegimeKey[];
 }) {
   // The unlock is promised only for a sale whose fee regime is open: it opens the bid ceiling.
-  const regimeKey = feeRegimeKeyForVenue(getSaleProcedure(sale).venueType, openFeeRegimes);
-  const ceilingTerms = regimeKey ? (FEE_REGIME_TERMS[regimeKey] ?? null) : null;
+  const ceilingTerms = ceilingTermsFor(
+    feeRegimeKeysForVenue(getSaleProcedure(sale).venueType, openFeeRegimes),
+  );
   const { user, loading: authLoading } = useAuth();
   // The value route requires an account: a visitor never gets an answer from it.
   const preview = useQuery({
@@ -258,7 +266,9 @@ export function DiscoveryDecisionPanel({
           </dd>
         </div>
         <div>
-          <dt>{markerLabel("Enchère plafond (simulation)")}</dt>
+          <dt>
+            {markerLabel(ceilingTerms?.ceilingSimulationLabel ?? "Enchère plafond (simulation)")}
+          </dt>
           <dd className={panelStyles.textValue}>
             Avec l’offre Analyse ou en débloquant cette vente
             <div className={panelStyles.valueNote}>
@@ -277,7 +287,7 @@ export function DiscoveryDecisionPanel({
             {gapSentence}
             {value?.gapWithheld
               ? null
-              : " Reste à savoir jusqu’où enchérir une fois les frais, les travaux et la libération du bien comptés : c’est le calcul de l’enchère plafond."}
+              : ` Reste à savoir jusqu’où ${ceilingTerms == null || ceilingTerms.ceilingTerm === "enchère plafond" ? "enchérir" : "aller"} une fois les frais, les travaux et la libération du bien comptés : c’est le calcul de ${ceilingTerms?.ceilingTermWithArticle ?? "l’enchère plafond"}.`}
           </p>
           {value?.gapWithheld ? null : (
             <SaleSignalFeedback saleId={sale.id} signal="market_gap_band" />
@@ -291,7 +301,11 @@ export function DiscoveryDecisionPanel({
             : "Les comparables et les travaux avec l’offre Analyse"
         }
         description="Le calcul complet de la mise à ne pas dépasser : valeur du bien, marge, travaux, libération, portage et tous les frais de la vente, avec les ventes comparables du secteur."
-        labels={["Enchère plafond (simulation)", "Ventes comparables", "Travaux et frais"]}
+        labels={[
+          ceilingTerms?.ceilingSimulationLabel ?? "Enchère plafond (simulation)",
+          "Ventes comparables",
+          "Travaux et frais",
+        ]}
         unlockOffer={ceilingTerms != null}
       />
     </aside>
@@ -314,9 +328,11 @@ function worksLine(worksBudget: number | null): string {
 /** The two terms a reader may not know get a « ? » definition; the others stay plain text. */
 function markerLabel(label: string): ReactNode {
   if (label === "Mise à prix") return <Terme terme="mise-a-prix">{label}</Terme>;
-  if (label === "Enchère plafond (simulation)") {
-    return <Terme terme="enchere-plafond">{label}</Terme>;
+  if (label === "Première offre possible") return <Terme terme="premiere-offre">{label}</Terme>;
+  if (label === "Offre plafond (simulation)") {
+    return <Terme terme="offre-plafond">{label}</Terme>;
   }
+  if (/plafond/i.test(label)) return <Terme terme="enchere-plafond">{label}</Terme>;
   return label;
 }
 
@@ -334,10 +350,14 @@ function comparisonMarkerPositions({
   start,
   ceiling,
   market,
+  startLabel,
+  ceilingLabel,
 }: {
   start: number | null;
   ceiling: number | null;
   market: number | null;
+  startLabel: string;
+  ceilingLabel: string;
 }) {
   const values = [start, ceiling, market].filter((value): value is number => value != null);
   const min = values.length ? Math.min(...values) : 0;
@@ -347,8 +367,8 @@ function comparisonMarkerPositions({
     value == null ? fallback : 8 + ((value - min) / span) * 84;
 
   return [
-    { label: "Mise à prix", value: start, position: position(start, 8) },
-    { label: "Enchère plafond (simulation)", value: ceiling, position: position(ceiling, 50) },
+    { label: startLabel, value: start, position: position(start, 8) },
+    { label: ceilingLabel, value: ceiling, position: position(ceiling, 50) },
     { label: "Valeur estimée", value: market, position: position(market, 92) },
   ];
 }

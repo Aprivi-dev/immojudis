@@ -135,6 +135,12 @@ export type AuctionSale = {
    * aérienne tournante.
    */
   location_precision?: string | null;
+  /**
+   * Conditions d'une vente notariale lues par le pipeline (procédure, honoraires de négociation,
+   * garantie…), liste blanche `app_private.public_sale_conditions`. Servie par la vue de la fiche
+   * (Analyse) et par la vue des ventes débloquées ; absente pour un compte Découverte.
+   */
+  sale_conditions?: Record<string, unknown> | null;
   documents: unknown;
   documents_rich: SaleDocumentRich[] | null;
   media: SaleMedia[] | null;

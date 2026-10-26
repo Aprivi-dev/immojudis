@@ -1,10 +1,18 @@
 // Filet de non-régression du plafond : chaque résultat ci-dessous a été calculé avec le moteur
-// AVANT toute évolution du lot 0 puis écrit en dur. Si un résultat change volontairement,
-// incrémentez CEILING_ENGINE_VERSION et mettez à jour ce test.
+// puis écrit en dur. Si un résultat change volontairement, incrémentez CEILING_ENGINE_VERSION et
+// mettez à jour ce test.
+//
+// Version « 2026-10-26.1 » : résultats calculés AVANT toute évolution du lot 0.
+// Version « 2026-10-26.2 » (lot A2, n° 14) : les frais préalables (frais de poursuite taxés) sortent
+// de la base des droits de mutation et de la CSI (BOFiP BOI-ENR-DMTOI-10-10-30-20 (Adjudication), § 50) ; les
+// émoluments, le budget et le mode limitant ne changent pas, les frais baissent de
+// frais préalables × (taux de droits + 0,10 % de CSI), et le plafond peut gagner 500 € (un pas
+// d'enchère). Les valeurs de la version précédente sont gardées dans `PREVIOUS_EXPECTED`.
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { buildCeilingHypotheses, type CeilingUserChoices } from "@/lib/bid-ceiling-defaults";
 import { CEILING_ENGINE_VERSION, computeCeilingPlan } from "@/lib/bid-ceiling-engine";
+import { CSI_RATE } from "@/lib/profitability";
 import type { CeilingMarketEstimate } from "@/lib/market-estimate-ceiling";
 import type { AuctionSale } from "@/lib/types";
 
@@ -68,14 +76,14 @@ const cases: Case[] = [
     }),
     estimate: estimateFor(220_000, 62),
     choices: {},
-    expected: { maxBid: 176500, budget: 198000, acquisitionFeesTotal: 21419, binding: "valeur" },
+    expected: { maxBid: 176500, budget: 198000, acquisitionFeesTotal: 21147, binding: "valeur" },
   },
   {
     name: "33, appartement libre, frais préalables par défaut, habiter",
     sale: tribunalSale({ ...apartment33, starting_price_eur: 60_000, occupancy_status: "vacant" }),
     estimate: estimateFor(220_000, 62),
     choices: {},
-    expected: { maxBid: 175500, budget: 198000, acquisitionFeesTotal: 22135, binding: "valeur" },
+    expected: { maxBid: 176000, budget: 198000, acquisitionFeesTotal: 21856, binding: "valeur" },
   },
   {
     name: "33, appartement occupé, frais préalables par défaut, louer",
@@ -86,7 +94,7 @@ const cases: Case[] = [
     }),
     estimate: estimateFor(220_000, 62),
     choices: { project: "louer" },
-    expected: { maxBid: 132500, budget: 163062, acquisitionFeesTotal: 18602, binding: "rendement" },
+    expected: { maxBid: 132500, budget: 163062, acquisitionFeesTotal: 18281, binding: "rendement" },
   },
   {
     name: "33, appartement loué, frais préalables lus, revendre",
@@ -98,7 +106,7 @@ const cases: Case[] = [
     }),
     estimate: estimateFor(220_000, 62),
     choices: { project: "revendre", works: { key: "rafraichissement", amount: 31_000 } },
-    expected: { maxBid: 100000, budget: 154000, acquisitionFeesTotal: 15134, binding: "valeur" },
+    expected: { maxBid: 100500, budget: 154000, acquisitionFeesTotal: 14902, binding: "valeur" },
   },
   {
     name: "36, maison libre, frais préalables lus, revendre avec travaux",
@@ -110,28 +118,28 @@ const cases: Case[] = [
     }),
     estimate: estimateFor(120_000, 110, "correcte", 12),
     choices: { project: "revendre", works: { key: "confort", amount: 33_000 } },
-    expected: { maxBid: 50500, budget: 100800, acquisitionFeesTotal: 10337, binding: "valeur" },
+    expected: { maxBid: 50500, budget: 100800, acquisitionFeesTotal: 10116, binding: "valeur" },
   },
   {
     name: "36, maison occupée, frais préalables par défaut, habiter",
     sale: tribunalSale({ ...house36, starting_price_eur: 25_000, occupancy_status: "occupied" }),
     estimate: estimateFor(120_000, 110, "correcte", 12),
     choices: {},
-    expected: { maxBid: 85500, budget: 108000, acquisitionFeesTotal: 13628, binding: "valeur" },
+    expected: { maxBid: 86000, budget: 108000, acquisitionFeesTotal: 13403, binding: "valeur" },
   },
   {
     name: "36, maison louée, frais préalables par défaut, habiter, estimation fragile",
     sale: tribunalSale({ ...house36, starting_price_eur: 25_000, occupancy_status: "rented" }),
     estimate: estimateFor(120_000, 110, "fragile", 5),
     choices: {},
-    expected: { maxBid: 80500, budget: 93960, acquisitionFeesTotal: 13278, binding: "valeur" },
+    expected: { maxBid: 80500, budget: 93960, acquisitionFeesTotal: 13019, binding: "valeur" },
   },
   {
     name: "36, maison libre, frais préalables par défaut, louer",
     sale: tribunalSale({ ...house36, starting_price_eur: 25_000, occupancy_status: "vacant" }),
     estimate: estimateFor(120_000, 110, "correcte", 12),
     choices: { project: "louer", profile: "prudent" },
-    expected: { maxBid: 88000, budget: 102000, acquisitionFeesTotal: 13802, binding: "valeur" },
+    expected: { maxBid: 88000, budget: 102000, acquisitionFeesTotal: 13543, binding: "valeur" },
   },
   {
     name: "75, appartement libre, frais préalables lus, habiter",
@@ -143,7 +151,7 @@ const cases: Case[] = [
     }),
     estimate: estimateFor(420_000, 45),
     choices: {},
-    expected: { maxBid: 342500, budget: 378000, acquisitionFeesTotal: 35059, binding: "valeur" },
+    expected: { maxBid: 343000, budget: 378000, acquisitionFeesTotal: 34827, binding: "valeur" },
   },
   {
     name: "75, appartement occupé, frais préalables par défaut, revendre",
@@ -154,7 +162,7 @@ const cases: Case[] = [
     }),
     estimate: estimateFor(420_000, 45),
     choices: { project: "revendre", profile: "offensif" },
-    expected: { maxBid: 300000, budget: 357000, acquisitionFeesTotal: 32365, binding: "valeur" },
+    expected: { maxBid: 300000, budget: 357000, acquisitionFeesTotal: 32044, binding: "valeur" },
   },
   {
     name: "75, appartement loué, frais préalables lus, louer",
@@ -166,14 +174,14 @@ const cases: Case[] = [
     }),
     estimate: estimateFor(420_000, 45),
     choices: { project: "louer" },
-    expected: { maxBid: 245500, budget: 272888, acquisitionFeesTotal: 27089, binding: "rendement" },
+    expected: { maxBid: 246000, budget: 272888, acquisitionFeesTotal: 26857, binding: "rendement" },
   },
   {
     name: "75, appartement libre, mise à prix proche de la valeur, habiter",
     sale: tribunalSale({ ...apartment75, starting_price_eur: 330_000, occupancy_status: "vacant" }),
     estimate: estimateFor(420_000, 45),
     choices: {},
-    expected: { maxBid: 342000, budget: 378000, acquisitionFeesTotal: 35816, binding: "valeur" },
+    expected: { maxBid: 342000, budget: 378000, acquisitionFeesTotal: 35495, binding: "valeur" },
   },
   {
     name: "75, appartement occupé, travaux lourds : aucun prix ne tient",
@@ -184,9 +192,65 @@ const cases: Case[] = [
     }),
     estimate: estimateFor(180_000, 45),
     choices: { project: "revendre", works: { key: "devis", amount: 160_000 } },
-    expected: { maxBid: 0, budget: 144000, acquisitionFeesTotal: 6821, binding: "valeur" },
+    expected: { maxBid: 0, budget: 144000, acquisitionFeesTotal: 6500, binding: "valeur" },
   },
 ];
+
+/** Résultats de la version « 2026-10-26.1 » (droits calculés sur prix + frais préalables), par cas. */
+const PREVIOUS_EXPECTED: Record<string, { maxBid: number; acquisitionFeesTotal: number }> = {
+  "33, appartement libre, frais préalables lus, habiter": {
+    maxBid: 176500,
+    acquisitionFeesTotal: 21419,
+  },
+  "33, appartement libre, frais préalables par défaut, habiter": {
+    maxBid: 175500,
+    acquisitionFeesTotal: 22135,
+  },
+  "33, appartement occupé, frais préalables par défaut, louer": {
+    maxBid: 132500,
+    acquisitionFeesTotal: 18602,
+  },
+  "33, appartement loué, frais préalables lus, revendre": {
+    maxBid: 100000,
+    acquisitionFeesTotal: 15134,
+  },
+  "36, maison libre, frais préalables lus, revendre avec travaux": {
+    maxBid: 50500,
+    acquisitionFeesTotal: 10337,
+  },
+  "36, maison occupée, frais préalables par défaut, habiter": {
+    maxBid: 85500,
+    acquisitionFeesTotal: 13628,
+  },
+  "36, maison louée, frais préalables par défaut, habiter, estimation fragile": {
+    maxBid: 80500,
+    acquisitionFeesTotal: 13278,
+  },
+  "36, maison libre, frais préalables par défaut, louer": {
+    maxBid: 88000,
+    acquisitionFeesTotal: 13802,
+  },
+  "75, appartement libre, frais préalables lus, habiter": {
+    maxBid: 342500,
+    acquisitionFeesTotal: 35059,
+  },
+  "75, appartement occupé, frais préalables par défaut, revendre": {
+    maxBid: 300000,
+    acquisitionFeesTotal: 32365,
+  },
+  "75, appartement loué, frais préalables lus, louer": {
+    maxBid: 245500,
+    acquisitionFeesTotal: 27089,
+  },
+  "75, appartement libre, mise à prix proche de la valeur, habiter": {
+    maxBid: 342000,
+    acquisitionFeesTotal: 35816,
+  },
+  "75, appartement occupé, travaux lourds : aucun prix ne tient": {
+    maxBid: 0,
+    acquisitionFeesTotal: 6821,
+  },
+};
 
 describe("computeCeilingPlan on representative tribunal sales (characterization)", () => {
   it.each(cases)("$name", ({ sale, estimate, choices, expected }) => {
@@ -200,13 +264,39 @@ describe("computeCeilingPlan on representative tribunal sales (characterization)
     };
     expect(actual).toEqual(expected);
   });
+
+  // Ce que la version « 2026-10-26.2 » change, et seulement cela : à mise égale, les frais baissent
+  // des droits et de la CSI que les frais préalables portaient (ils sortent de la base, BOFiP § 50).
+  it.each(cases.filter((item) => PREVIOUS_EXPECTED[item.name]?.maxBid === item.expected.maxBid))(
+    "$name : à mise égale, les frais baissent de frais préalables × (droits + CSI)",
+    ({ name, sale, estimate, choices, expected }) => {
+      const fees = buildCeilingHypotheses(sale, estimate, choices).fees;
+      const drop = PREVIOUS_EXPECTED[name].acquisitionFeesTotal - expected.acquisitionFeesTotal;
+      expect(drop).toBeGreaterThan(0);
+      expect(
+        Math.abs(drop - fees.fpt * ((fees.registrationRate ?? 0) + CSI_RATE)),
+      ).toBeLessThanOrEqual(1);
+    },
+  );
+
+  it("garde le budget et le mode limitant des résultats d'avant (seuls les frais et le pas d'enchère bougent)", () => {
+    for (const item of cases) {
+      const previous = PREVIOUS_EXPECTED[item.name];
+      expect(previous, item.name).toBeDefined();
+      // Le plafond ne bouge que d'un pas d'enchère (500 €), vers le haut : les frais baissent.
+      expect(item.expected.maxBid - previous.maxBid).toBeGreaterThanOrEqual(0);
+      expect(item.expected.maxBid - previous.maxBid).toBeLessThanOrEqual(500);
+    }
+  });
 });
 
 // Empreinte de la table ci-dessus (ventes, hypothèses et résultats figés), enregistrée par version du
 // moteur. Elle n'est pas recalculée depuis le moteur : changer un résultat figé sans changer
 // CEILING_ENGINE_VERSION fait échouer le test de garde.
 const FINGERPRINTS_BY_ENGINE_VERSION: Record<string, string> = {
+  // Table d'avant le lot A2 (droits sur prix + frais préalables) : gardée, jamais recalculée.
   "2026-10-26.1": "ef301937dabe1dc0",
+  "2026-10-26.2": "486a42258e49b43b",
 };
 
 function fingerprint(): string {

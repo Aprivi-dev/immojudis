@@ -361,9 +361,9 @@ describe("/ressources/sitemap.xml (articles)", () => {
     expect(byUrl.get("https://immojudis.com/ressources/prix-plafond-encheres-immobilieres")).toBe(
       "2026-10-26",
     );
-    // Published on 13/10, never changed since.
+    // Published on 13/10, updated on 26/10 (droits de mutation computed on the price alone).
     expect(byUrl.get("https://immojudis.com/ressources/frais-vente-encheres-judiciaire")).toBe(
-      "2026-10-13",
+      "2026-10-26",
     );
   });
 });

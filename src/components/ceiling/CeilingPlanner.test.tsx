@@ -4,7 +4,12 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { afterEach, describe, expect, it } from "vitest";
 import { buildCeilingHypotheses, type CeilingUserChoices } from "@/lib/bid-ceiling-defaults";
 import { computeCeilingPlan, type CeilingHypotheses } from "@/lib/bid-ceiling-engine";
-import { TRIBUNAL_FEE_REGIME, type FeeRegime } from "@/lib/fee-regime";
+import {
+  NOTARY_AUCTION_FEE_REGIME,
+  NOTARY_ONLINE_FEE_REGIME,
+  TRIBUNAL_FEE_REGIME,
+  type FeeRegime,
+} from "@/lib/fee-regime";
 import type { MarketEstimate } from "@/lib/market.server";
 import type { AuctionSale } from "@/lib/types";
 import { CeilingPlanner } from "./CeilingPlanner";
@@ -439,6 +444,124 @@ describe("CeilingPlanner : simulateur d'enchère", () => {
     renderPlanner({ onEditWorks: () => undefined });
     expect(screen.getByRole("button", { name: "Choisir les travaux" }).className).toContain(
       "min-h-11",
+    );
+  });
+});
+
+describe("CeilingPlanner : ventes notariales", () => {
+  const onlineSale = {
+    ...sale,
+    sale_venue_type: "notary",
+    sale_conditions: {
+      procedure: "online_tender",
+      first_offer_eur: 30_000,
+      negotiation_fee_rate: 0.045,
+      negotiation_fee_payer: "ACQUEREUR",
+      advertising_fees_eur: 1_200,
+    },
+  } as unknown as AuctionSale;
+  const auctionSale = {
+    ...sale,
+    sale_venue_type: "notary",
+    sale_conditions: { procedure: "notarial_auction", deposit_eur: 12_000, overbid_allowed: true },
+  } as unknown as AuctionSale;
+
+  function renderNotarial(item: AuctionSale, regime: FeeRegime, choices: CeilingUserChoices = {}) {
+    const hypotheses = buildCeilingHypotheses(item, estimate, choices, regime);
+    return render(
+      <CeilingPlanner
+        hypotheses={hypotheses}
+        plan={computeCeilingPlan(hypotheses)}
+        choices={choices}
+        onChoicesChange={() => undefined}
+        onReset={() => undefined}
+      />,
+    );
+  }
+
+  it("écrit « offre plafond », la première offre possible et la mention du vendeur pour la vente interactive", () => {
+    renderNotarial(onlineSale, NOTARY_ONLINE_FEE_REGIME);
+
+    expect(screen.getByRole("heading", { name: "Votre offre plafond" })).toBeTruthy();
+    expect(screen.getByText(/^Offre plafond \(simulation\) · /)).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Si votre offre est retenue à…" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "À vérifier avant votre offre" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Première offre possible · / })).toBeTruthy();
+    // Mention obligatoire, dans le verdict et dans la liste de vérifications.
+    expect(
+      screen.getAllByText(
+        "Le vendeur n’est pas tenu de retenir la meilleure offre ; prix de réserve inconnu.",
+      ).length,
+    ).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText(/Hors débours et formalités du notaire/).length).toBeGreaterThan(0);
+    // Ni enchère ni adjudication dans les titres, les étapes et le calendrier.
+    const headings = screen.getAllByRole("heading").map((node) => node.textContent ?? "");
+    expect(headings.join(" | ")).not.toMatch(/ench[èe]re|adjudication/i);
+    const steps = within(document.getElementById("why-this-ceiling")!).getAllByRole("listitem");
+    expect(steps.map((step) => step.textContent).join(" | ")).not.toMatch(
+      /ench[èe]re|adjudication/i,
+    );
+    const cash = within(
+      screen.getByRole("heading", { name: "Trésorerie à prévoir" }).parentElement!,
+    );
+    expect(cash.getByText("Avant-contrat")).toBeTruthy();
+    expect(cash.queryByText(/surenchère|Honoraires de votre avocat|Garantie/)).toBeNull();
+    expect(cash.getByText(/^Pour une offre retenue à /)).toBeTruthy();
+  });
+
+  it("garde « enchère plafond » et la garantie pour la vente à la bougie, sans avocat ni frais préalables", () => {
+    renderNotarial(auctionSale, NOTARY_AUCTION_FEE_REGIME);
+
+    expect(screen.getByRole("heading", { name: "Votre enchère plafond" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "À vérifier avant la vente" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Mise à prix · / })).toBeTruthy();
+    const cash = within(
+      screen.getByRole("heading", { name: "Trésorerie à prévoir" }).parentElement!,
+    );
+    expect(cash.getByText("Garantie à déposer")).toBeTruthy();
+    expect(cash.getByText("Fin du délai de surenchère")).toBeTruthy();
+    expect(cash.getByText("Solde du prix, droits et frais")).toBeTruthy();
+    expect(cash.queryByText(/Honoraires de votre avocat|Frais préalables/)).toBeNull();
+    const text = document.body.textContent ?? "";
+    expect(text).not.toMatch(/avocat poursuivant|R\. ?322|sous 2 mois/);
+    expect(text).toContain("Frais d’organisation et de publicité");
+  });
+
+  it("signale « Frais estimés, à confirmer » avec l'icône et le texte, jamais la couleur seule", () => {
+    renderNotarial(
+      {
+        ...onlineSale,
+        sale_conditions: { procedure: "online_tender", first_offer_eur: 30_000 },
+      } as never,
+      NOTARY_ONLINE_FEE_REGIME,
+    );
+    const badge = screen.getByText("Frais estimés, à confirmer");
+    expect(badge.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+    expect(badge.parentElement?.textContent).toContain("honoraires de négociation");
+    cleanup();
+    // Les honoraires lus dans l'annonce : plus de pastille.
+    renderNotarial(onlineSale, NOTARY_ONLINE_FEE_REGIME);
+    expect(screen.queryByText("Frais estimés, à confirmer")).toBeNull();
+  });
+
+  it("signale les frais préalables par défaut au tribunal, et plus une fois saisis", () => {
+    renderPlanner();
+    const badge = screen.getByText("Frais estimés, à confirmer");
+    expect(badge.parentElement?.textContent).toContain("frais préalables");
+    cleanup();
+    renderPlanner({ choices: { fpt: 4_000 } });
+    expect(screen.queryByText("Frais estimés, à confirmer")).toBeNull();
+  });
+
+  it("écrit la sensibilité aux frais : +1 000 € de frais = −X € d'enchère (ou d'offre) plafond", () => {
+    renderPlanner();
+    const tribunal = screen.getByTestId("fee-sensitivity").textContent ?? "";
+    expect(tribunal).toMatch(/^\+1 000 € de frais = −[\d\s\u202f\u00a0]+€ d’enchère plafond/);
+    expect(tribunal).toContain("ce n’est pas une fourchette");
+    cleanup();
+    renderNotarial(onlineSale, NOTARY_ONLINE_FEE_REGIME);
+    expect(screen.getByTestId("fee-sensitivity").textContent).toMatch(
+      /^\+1 000 € de frais = −[\d\s\u202f\u00a0]+€ d’offre plafond/,
     );
   });
 });

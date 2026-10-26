@@ -243,7 +243,7 @@ describe("login page", () => {
     const { unmount } = render(<LoginPage />);
     const promise = screen.getByTestId("login-free-promise");
     expect(promise.textContent).toBe(
-      "Gratuit : 3 ventes en détail par mois (enchère plafond, lecture des pièces, historique, selon la vente), sans carte bancaire",
+      "Gratuit : 3 ventes en détail par mois (enchère plafond ou offre plafond, lecture des pièces, historique, selon la vente), sans carte bancaire",
     );
     // Visible sous le point de rupture « lg », où la colonne d'explication prend le relais.
     expect(promise.className).toContain("lg:hidden");
@@ -411,9 +411,9 @@ describe("login page", () => {
     ).toBeNull();
   });
 
-  it("emploie « enchère plafond » au singulier", () => {
+  it("emploie « enchère plafond » et « offre plafond » au singulier", () => {
     render(<LoginPage />);
-    expect(document.body.textContent).not.toMatch(/enchères plafonds/);
+    expect(document.body.textContent).not.toMatch(/enchères plafonds|offres plafonds/);
   });
 
   describe("confirmation de l'adresse après l'inscription", () => {

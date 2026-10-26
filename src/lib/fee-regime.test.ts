@@ -9,13 +9,17 @@ import {
 } from "@/lib/bid-ceiling-engine";
 import {
   ceilingTermText,
+  ceilingTermsFor,
   ceilingTermWithArticleText,
+  ceilingTermWithScopeText,
   ceilingVenueScopeText,
+  DEFAULT_OPEN_FEE_REGIMES,
   DEFINED_FEE_REGIMES,
   FEE_REGIME_KEYS,
   FEE_REGIME_TERMS,
   FEE_REGIMES,
   feeRegimeForSale,
+  feeRegimeKeysForVenue,
   isFeeRegimeOpen,
   labelsOf,
   parseOpenFeeRegimes,
@@ -79,11 +83,27 @@ describe("régime de frais du tribunal", () => {
     expect(labels.ceilingTermWithArticle).toBe("l’enchère plafond");
     expect(labels.ceilingSimulationLabel).toBe("Enchère plafond (simulation)");
     expect(labels.venueScope).toBe("ventes au tribunal");
-    expect(ceilingTermText()).toBe("enchère plafond");
-    expect(ceilingTermWithArticleText()).toBe("l’enchère plafond");
-    expect(ceilingVenueScopeText()).toBe("ventes au tribunal");
+    expect(ceilingTermText(["tribunal"])).toBe("enchère plafond");
+    expect(ceilingTermWithArticleText(["tribunal"])).toBe("l’enchère plafond");
+    expect(ceilingVenueScopeText(["tribunal"])).toBe("ventes au tribunal");
     // Sans régime, les textes sont ceux du tribunal.
     expect(labelsOf({})).toBe(TRIBUNAL_FEE_REGIME.labels);
+  });
+
+  it("nomme le montant selon les régimes ouverts : tous ceux qui sont définis par défaut", () => {
+    expect(ceilingTermText()).toBe("enchère plafond ou offre plafond");
+    expect(ceilingTermWithArticleText()).toBe("l’enchère plafond ou l’offre plafond");
+    expect(ceilingVenueScopeText()).toBe(
+      "ventes au tribunal, ventes notariales à la bougie et ventes notariales interactives",
+    );
+    expect(ceilingTermWithScopeText()).toBe(
+      "enchère plafond (ventes au tribunal et ventes notariales à la bougie) ou offre plafond (ventes notariales interactives)",
+    );
+    // Le régime interactif fermé : seul le terme « enchère » reste, avec ses deux types de vente.
+    expect(ceilingTermWithScopeText(["tribunal", "notary_auction"])).toBe(
+      "enchère plafond (ventes au tribunal et ventes notariales à la bougie)",
+    );
+    expect(ceilingTermWithScopeText(["tribunal"])).toBe("enchère plafond (ventes au tribunal)");
   });
 });
 
@@ -101,15 +121,123 @@ describe("tables de régimes", () => {
   });
 });
 
+/** Les conditions d'une vente notariale, comme la vue de la fiche les sert (`sale_conditions`). */
+function notarySale(
+  conditions: Record<string, unknown> | null,
+  overrides: Record<string, unknown> = {},
+): AuctionSale {
+  return sale({ sale_venue_type: "notary", sale_conditions: conditions, ...overrides });
+}
+
 describe("feeRegimeForSale", () => {
   it("donne le régime tribunal à une vente au tribunal", () => {
     expect(feeRegimeForSale(sale({ sale_venue_type: "tribunal" }))?.key).toBe("tribunal");
   });
 
-  it.each(["notary", "state", "online", "unknown"])(
-    "ne donne aucun régime à une vente de type %s (pas encore de règles)",
+  it("donne le régime de la bougie ou de la vente interactive à une vente notariale, selon ses conditions", () => {
+    expect(feeRegimeForSale(notarySale({ procedure: "notarial_auction" }))?.key).toBe(
+      "notary_auction",
+    );
+    expect(feeRegimeForSale(notarySale({ procedure: "online_tender" }))?.key).toBe("notary_online");
+    // À défaut de procédure, la nature du prix de départ départage.
+    expect(feeRegimeForSale(notarySale({ price_nature: "first_offer_possible" }))?.key).toBe(
+      "notary_online",
+    );
+    expect(feeRegimeForSale(notarySale({ price_nature: "mise_a_prix" }))?.key).toBe(
+      "notary_auction",
+    );
+  });
+
+  it("ne donne aucun plafond à une vente notariale dont le mode est inconnu", () => {
+    // Compte Découverte (aucune condition lue), conditions vides, nature du prix non précisée.
+    expect(feeRegimeForSale(notarySale(null))).toBeNull();
+    expect(feeRegimeForSale(notarySale({}))).toBeNull();
+    expect(feeRegimeForSale(notarySale({ price_nature: "displayed_price" }))).toBeNull();
+    // Procédure et nature contradictoires : on ne devine pas.
+    expect(
+      feeRegimeForSale(
+        notarySale({ procedure: "notarial_auction", price_nature: "first_offer_possible" }),
+      ),
+    ).toBeNull();
+  });
+
+  it("ne donne aucun plafond à une vente à la bougie qui n'est pas une adjudication volontaire", () => {
+    expect(
+      feeRegimeForSale(
+        notarySale({ procedure: "notarial_auction", adjudication_type: "JUDICIAIRE" }),
+      ),
+    ).toBeNull();
+    expect(
+      feeRegimeForSale(
+        notarySale({ procedure: "notarial_auction", adjudication_type: "VOLONTAIRE" }),
+      )?.key,
+    ).toBe("notary_auction");
+  });
+
+  it("ne donne aucun plafond à une vente dont l'origine est une licitation, une saisie ou un autre marqueur judiciaire", () => {
+    for (const origin of ["LICITATION", "SAISIE", "licitation", "EXPROPRIATION"]) {
+      expect(
+        feeRegimeForSale(
+          notarySale({
+            procedure: "notarial_auction",
+            adjudication_type: "VOLONTAIRE",
+            origin,
+          }),
+        ),
+      ).toBeNull();
+      // Une vente interactive d'origine judiciaire n'a pas non plus le barème de gré à gré.
+      expect(feeRegimeForSale(notarySale({ procedure: "online_tender", origin }))).toBeNull();
+    }
+    // L'origine « adjudication » ou absente garde la règle actuelle (type d'adjudication).
+    expect(
+      feeRegimeForSale(
+        notarySale({
+          procedure: "notarial_auction",
+          adjudication_type: "VOLONTAIRE",
+          origin: "ADJUDICATION",
+        }),
+      )?.key,
+    ).toBe("notary_auction");
+    expect(
+      feeRegimeForSale(
+        notarySale({ procedure: "notarial_auction", adjudication_type: "VOLONTAIRE" }),
+      )?.key,
+    ).toBe("notary_auction");
+    // Un type d'adjudication judiciaire reste refusé, quelle que soit l'origine.
+    expect(
+      feeRegimeForSale(
+        notarySale({
+          procedure: "notarial_auction",
+          adjudication_type: "JUDICIAIRE",
+          origin: "ADJUDICATION",
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("ne donne aucun plafond à une vente notariale d'origine judiciaire (licitation, saisie)", () => {
+    const conditions = { procedure: "notarial_auction" };
+    expect(
+      feeRegimeForSale(notarySale(conditions, { sale_legal_framework: "judicial_partition" })),
+    ).toBeNull();
+    expect(
+      feeRegimeForSale(notarySale(conditions, { sale_legal_framework: "judicial_seizure" })),
+    ).toBeNull();
+    expect(
+      feeRegimeForSale(notarySale(conditions, { sale_legal_framework: "voluntary_notarial" }))?.key,
+    ).toBe("notary_auction");
+  });
+
+  it.each(["state", "online", "unknown"])(
+    "ne donne aucun régime à une vente de type %s",
     (venue) => {
       expect(feeRegimeForSale(sale({ sale_venue_type: venue }))).toBeNull();
+      // Même avec des conditions notariales : le type de vente décide d'abord.
+      expect(
+        feeRegimeForSale(
+          sale({ sale_venue_type: venue, sale_conditions: { procedure: "online_tender" } }),
+        ),
+      ).toBeNull();
     },
   );
 
@@ -117,27 +245,64 @@ describe("feeRegimeForSale", () => {
     expect(feeRegimeForSale(sale({ sale_venue_type: undefined }))).toBeNull();
   });
 
-  it("n'ouvre pas un régime notarial ou domanial dont les règles ne sont pas définies", () => {
+  it("laisse les ventes domaniales sans régime, même ouvertes par la configuration", () => {
     const open = ["tribunal", "notary_auction", "notary_online", "state_auction"] as const;
-    expect(feeRegimeForSale(sale({ sale_venue_type: "notary" }), open)).toBeNull();
     expect(feeRegimeForSale(sale({ sale_venue_type: "state" }), open)).toBeNull();
-    for (const key of ["notary_auction", "notary_online", "state_auction"] as const) {
-      expect(FEE_REGIMES[key]).toBeUndefined();
-      expect(isFeeRegimeOpen(key, open)).toBe(false);
-    }
+    expect(FEE_REGIMES.state_auction).toBeUndefined();
+    expect(isFeeRegimeOpen("state_auction", open)).toBe(false);
   });
 
-  it("garde le tribunal toujours ouvert, même avec une liste vide", () => {
+  it("ferme un régime notarial qui n'est pas listé, et garde le tribunal toujours ouvert", () => {
+    const online = notarySale({ procedure: "online_tender" });
+    const auction = notarySale({ procedure: "notarial_auction" });
+    expect(feeRegimeForSale(online, ["tribunal", "notary_auction"])).toBeNull();
+    expect(feeRegimeForSale(auction, ["tribunal", "notary_auction"])?.key).toBe("notary_auction");
+    expect(feeRegimeForSale(auction, ["tribunal"])).toBeNull();
     expect(isFeeRegimeOpen("tribunal", [])).toBe(true);
     expect(feeRegimeForSale(sale({ sale_venue_type: "tribunal" }), [])?.key).toBe("tribunal");
   });
 });
 
+describe("régimes possibles d'un type de vente", () => {
+  it("donne les deux régimes notariaux tant que les conditions de la vente sont inconnues", () => {
+    expect(feeRegimeKeysForVenue("tribunal")).toEqual(["tribunal"]);
+    expect(feeRegimeKeysForVenue("notary")).toEqual(["notary_auction", "notary_online"]);
+    expect(feeRegimeKeysForVenue("state")).toEqual([]);
+    expect(feeRegimeKeysForVenue("online")).toEqual([]);
+    expect(feeRegimeKeysForVenue("unknown")).toEqual([]);
+    expect(feeRegimeKeysForVenue("notary", ["tribunal", "notary_online"])).toEqual([
+      "notary_online",
+    ]);
+    expect(feeRegimeKeysForVenue("notary", [])).toEqual([]);
+  });
+
+  it("nomme le terme possible : un seul terme, ou les deux tant que le mode est inconnu", () => {
+    expect(ceilingTermsFor(["tribunal"])?.ceilingTermWithArticle).toBe("l’enchère plafond");
+    expect(ceilingTermsFor(["notary_online"])?.ceilingTermWithArticle).toBe("l’offre plafond");
+    expect(ceilingTermsFor(["notary_online"])?.ceilingSimulationLabel).toBe(
+      "Offre plafond (simulation)",
+    );
+    expect(ceilingTermsFor(["notary_auction", "notary_online"])).toEqual({
+      ceilingTerm: "enchère plafond ou offre plafond",
+      ceilingTermWithArticle: "l’enchère plafond ou l’offre plafond",
+      ceilingSimulationLabel: "Enchère plafond ou offre plafond (simulation)",
+    });
+    expect(ceilingTermsFor([])).toBeNull();
+  });
+});
+
 describe("parseOpenFeeRegimes", () => {
-  it("ouvre toujours le tribunal et ignore les clés inconnues", () => {
-    expect(parseOpenFeeRegimes(undefined)).toEqual(["tribunal"]);
+  it("ouvre tous les régimes définis quand la variable est absente", () => {
+    expect(parseOpenFeeRegimes(undefined)).toEqual(["tribunal", "notary_auction", "notary_online"]);
+    expect(parseOpenFeeRegimes(null)).toEqual(["tribunal", "notary_auction", "notary_online"]);
+    expect([...DEFAULT_OPEN_FEE_REGIMES]).toEqual([...DEFINED_FEE_REGIMES]);
+  });
+
+  it("n'ouvre que les régimes listés quand la variable est présente, le tribunal toujours", () => {
     expect(parseOpenFeeRegimes("")).toEqual(["tribunal"]);
+    expect(parseOpenFeeRegimes("tribunal")).toEqual(["tribunal"]);
     expect(parseOpenFeeRegimes("nimporte,quoi")).toEqual(["tribunal"]);
+    expect(parseOpenFeeRegimes("notary_online")).toEqual(["tribunal", "notary_online"]);
   });
 
   it("lit une liste séparée par des virgules, sans doublon", () => {
@@ -147,11 +312,18 @@ describe("parseOpenFeeRegimes", () => {
       "notary_online",
     ]);
   });
+
+  it("n'ouvre jamais un régime dont les règles ne sont pas définies", () => {
+    expect(parseOpenFeeRegimes("state_auction")).toEqual(["tribunal", "state_auction"]);
+    expect(isFeeRegimeOpen("state_auction", parseOpenFeeRegimes("state_auction"))).toBe(false);
+  });
 });
 
 // Un régime de démonstration, pour vérifier les points d'accroche que le lot suivant utilisera.
 const DEMO_REGIME: FeeRegime = {
   key: "notary_auction",
+  // Un régime « judicial » de démonstration : seuls les régimes notariaux écartent les frais préalables.
+  kind: "judicial",
   version: "test",
   emolumentScale: {
     reference: "test",
@@ -161,6 +333,8 @@ const DEMO_REGIME: FeeRegime = {
   defaultPreliminaryFees: 1_000,
   defaultLawyerFees: 0,
   consignation: { rate: 0.05, minimum: 500, reference: "test" },
+  organizationFeeRate: 0,
+  buyerFeesFromListing: false,
   labels: {
     ...TRIBUNAL_FEE_REGIME.labels,
     ceilingTerm: "offre plafond",
@@ -169,7 +343,7 @@ const DEMO_REGIME: FeeRegime = {
     cash: {
       ...TRIBUNAL_FEE_REGIME.labels.cash,
       consignation: {
-        ...TRIBUNAL_FEE_REGIME.labels.cash.consignation,
+        ...TRIBUNAL_FEE_REGIME.labels.cash.consignation!,
         label: "Dépôt de garantie",
       },
     },

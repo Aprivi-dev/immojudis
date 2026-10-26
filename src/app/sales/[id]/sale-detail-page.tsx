@@ -69,7 +69,7 @@ type SaleDetailPageProps = {
   id: string;
   initialData?: SaleDetailRouteData;
   adjudicationStatisticsEnabled?: boolean;
-  /** Fee regimes whose bid ceiling is open (see `parseOpenFeeRegimes`); absent: the tribunal only. */
+  /** Fee regimes whose bid ceiling is open (see `parseOpenFeeRegimes`); absent: every regime whose rules are defined. */
   openFeeRegimes?: readonly FeeRegimeKey[];
 };
 

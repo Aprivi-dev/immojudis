@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { EXAMPLE_SALE, EXAMPLE_SALE_RECORDS } from "@/lib/example-sale";
-import { buildCeilingSnapshot } from "@/lib/property-report/ceiling-snapshot";
+import { DEFAULT_OPEN_FEE_REGIMES } from "@/lib/fee-regime-open";
+import {
+  buildCeilingSnapshot,
+  NO_CEILING_REGIME_REASON,
+} from "@/lib/property-report/ceiling-snapshot";
 import {
   buildReportRentalScenario,
   computeReportSimulation,
   reportSimulationSchema,
   type ReportRentalScenario,
 } from "./report-simulation";
+
+const ALL_OPEN = [...DEFAULT_OPEN_FEE_REGIMES];
 
 describe("report simulation", () => {
   const sale = {
@@ -27,7 +33,7 @@ describe("report simulation", () => {
   };
 
   it("rejects an obsolete or forged ceiling instead of exporting a different result", () => {
-    expect(() => computeReportSimulation(sale, null, input)).toThrow(/ont changé/);
+    expect(() => computeReportSimulation(sale, null, input, ALL_OPEN)).toThrow(/ont changé/);
   });
 
   it("validates finite nonnegative financial inputs", () => {
@@ -46,8 +52,50 @@ describe("report simulation", () => {
         { ...sale, property_type: "land", source_blocks: { titre_detail: "Appartement T5" } },
         null,
         input,
+        ALL_OPEN,
       ),
     ).toThrow(/contradictoire/);
+  });
+
+  it("refuses to save a ceiling for a sale without an open fee regime (server control)", () => {
+    // Domanial sale, or a regime switched off on the server: no ceiling, whatever the browser sent.
+    expect(() =>
+      computeReportSimulation(
+        { ...sale, sale_venue_type: "state", sale_procedure: null, source_blocks: null },
+        null,
+        input,
+        ALL_OPEN,
+      ),
+    ).toThrow(NO_CEILING_REGIME_REASON);
+    expect(() =>
+      computeReportSimulation(
+        {
+          ...sale,
+          sale_venue_type: "notary",
+          sale_legal_framework: "voluntary_notarial",
+          sale_procedure: null,
+          source_blocks: null,
+          sale_conditions: { procedure: "online_tender" },
+        },
+        null,
+        input,
+        ["tribunal"],
+      ),
+    ).toThrow(NO_CEILING_REGIME_REASON);
+  });
+
+  it("accepts the notarial fields of the personal choices", () => {
+    const notarial = {
+      ...input,
+      choices: { negotiationFeeRatePct: 4.5, advertisingFees: 1200, consignation: 12_000 },
+    };
+    expect(reportSimulationSchema.safeParse(notarial).success).toBe(true);
+    expect(
+      reportSimulationSchema.safeParse({
+        ...notarial,
+        choices: { negotiationFeeRatePct: 80 },
+      }).success,
+    ).toBe(false);
   });
 });
 
@@ -91,15 +139,20 @@ describe("report rental scenario payload", () => {
       missingExpenseFields: [],
     };
     const choices = { works: { key: "devis" as const, amount: 20_000 }, fpt: 5_000 };
-    const expectedCeiling = buildCeilingSnapshot(sale, marketEstimate, choices);
+    const expectedCeiling = buildCeilingSnapshot(sale, marketEstimate, choices, ALL_OPEN);
     expect(expectedCeiling.available).toBe(true);
 
-    const computed = computeReportSimulation(sale, marketEstimate, {
-      version: 2,
-      choices,
-      expectedMaxBid: expectedCeiling.maxBid!,
-      rentalScenario,
-    });
+    const computed = computeReportSimulation(
+      sale,
+      marketEstimate,
+      {
+        version: 2,
+        choices,
+        expectedMaxBid: expectedCeiling.maxBid!,
+        rentalScenario,
+      },
+      ALL_OPEN,
+    );
 
     expect(computed.personalRentalScenario?.inputs).toEqual(rentalScenario);
     expect(computed.personalRentalScenario?.result).toMatchObject({

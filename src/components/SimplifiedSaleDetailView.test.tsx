@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
+import { DEFAULT_OPEN_FEE_REGIMES } from "@/lib/fee-regime-open";
 import { getExampleSaleRecords } from "@/lib/example-sale";
 import { buildCeilingSnapshot } from "@/lib/property-report/ceiling-snapshot";
 import { computeSaleCeiling } from "@/lib/sale-ceiling";
@@ -963,18 +964,17 @@ describe("« 3 déblocages par mois » on the sale page", () => {
     ...overrides,
   });
 
-  function renderFree(status: SaleUnlockStatus | null) {
+  function renderFree(
+    status: SaleUnlockStatus | null,
+    sale: AuctionSale = EXAMPLE_SALE_RECORDS.bordeaux.sale,
+  ) {
     mocks.authUser = { id: "free-account" };
     mocks.fetchValuePreview.mockResolvedValue({ available: false });
     return render(
       <QueryClientProvider
         client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
       >
-        <FreeSaleDetailView
-          sale={EXAMPLE_SALE_RECORDS.bordeaux.sale}
-          adjudicationStatisticsEnabled
-          unlockStatus={status}
-        />
+        <FreeSaleDetailView sale={sale} adjudicationStatisticsEnabled unlockStatus={status} />
       </QueryClientProvider>,
     );
   }
@@ -1019,6 +1019,40 @@ describe("« 3 déblocages par mois » on the sale page", () => {
     expect(screen.getByRole("heading", { name: "Débloquer cette vente" })).toBeTruthy();
     expect(screen.getByText("Il vous reste 2 déblocages sur 3 ce mois-ci.")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Débloquer cette vente" })).toBeTruthy();
+  });
+
+  const notarialSale = (conditions: Record<string, unknown> | null) =>
+    ({
+      ...EXAMPLE_SALE_RECORDS.bordeaux.sale,
+      sale_venue_type: "notary",
+      sale_legal_framework: "voluntary_notarial",
+      sale_procedure: null,
+      source_blocks: null,
+      sale_conditions: conditions,
+    }) as AuctionSale;
+
+  it("promises both terms of the ceiling on a locked notarial sale, whose mode a Découverte account cannot read", () => {
+    renderFree(unlockStatus(), notarialSale(null));
+
+    expect(
+      screen.getByText(/l’enchère plafond ou l’offre plafond, la lecture des pièces/),
+    ).toBeTruthy();
+    // The hero teaser names both terms too.
+    expect(
+      screen.getAllByText("Enchère plafond ou offre plafond (simulation)").length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("promises no ceiling on an unlocked notarial sale whose mode stays unknown, and names the exact term once known", async () => {
+    const unknown = renderUnlocked(notarialSale({}));
+    expect(screen.getByText("Cette vente est débloquée")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /Voir mon/ })).toBeNull();
+    expect(document.body.textContent).not.toContain("l’offre plafond");
+    expect(document.body.textContent).not.toContain("simulation fondée sur des hypothèses");
+    unknown.unmount();
+
+    renderUnlocked(notarialSale({ procedure: "online_tender" }));
+    expect(screen.getByRole("link", { name: "Voir mon offre plafond" })).toBeTruthy();
   });
 
   it("shows nothing about unlocking before the status is known, or to a visitor", () => {
@@ -1123,7 +1157,7 @@ describe("« 3 déblocages par mois » on the sale page", () => {
       aiProjections: [],
       aiReviewStatus: "ready",
     });
-    const report = buildCeilingSnapshot(sale, marketEstimate);
+    const report = buildCeilingSnapshot(sale, marketEstimate, {}, [...DEFAULT_OPEN_FEE_REGIMES]);
 
     expect(onPage).toBeGreaterThan(0);
     expect(shared.enabled).toBe(true);
@@ -1132,13 +1166,15 @@ describe("« 3 déblocages par mois » on the sale page", () => {
   });
 
   it.each(["notary", "state"] as const)(
-    "opens no ceiling on a %s sale even when its regimes are listed as open (no rules defined yet)",
+    "opens no ceiling on a %s sale whose mode is unknown, even when its regimes are listed as open",
     (venue) => {
       const sale = {
         ...EXAMPLE_SALE_RECORDS.bordeaux.sale,
         sale_venue_type: venue,
         sale_procedure: null,
         source_blocks: null,
+        // No conditions: a notarial sale is neither a candle sale nor an interactive one for the page.
+        sale_conditions: null,
       } as AuctionSale;
       const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
       mocks.fetchAiReviewProjections.mockResolvedValue({ projections: [] });
@@ -1157,6 +1193,76 @@ describe("« 3 déblocages par mois » on the sale page", () => {
       expect(container.querySelector("#calculation")).toBeNull();
     },
   );
+
+  it.each([
+    ["notarial_auction", "Prix et enchère plafond", "Enchère plafond"],
+    ["online_tender", "Prix et offre plafond", "Offre plafond"],
+  ] as const)(
+    "opens the ceiling of a notarial sale whose procedure is %s, with its own wording",
+    (procedure, heading, term) => {
+      const sale = {
+        ...EXAMPLE_SALE_RECORDS.bordeaux.sale,
+        sale_venue_type: "notary",
+        sale_legal_framework: "voluntary_notarial",
+        sale_procedure: null,
+        source_blocks: null,
+        sale_conditions: {
+          procedure,
+          ...(procedure === "online_tender"
+            ? { negotiation_fee_rate: 0.045, negotiation_fee_payer: "ACQUEREUR" }
+            : { deposit_eur: 12_000 }),
+        },
+      } as AuctionSale;
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      mocks.fetchAiReviewProjections.mockResolvedValue({ projections: [] });
+      const { container } = render(
+        <QueryClientProvider client={client}>
+          <AnalysisSaleDetailView
+            sale={sale}
+            marketEstimateOverride={EXAMPLE_SALE_RECORDS.bordeaux.marketEstimate}
+          />
+        </QueryClientProvider>,
+      );
+      selectTab("Prix et plafond");
+
+      expect(screen.getByRole("heading", { name: heading })).toBeTruthy();
+      expect(container.querySelector("#calculation")).not.toBeNull();
+      expect(container.textContent).toContain(`${term} (simulation)`);
+      // An interactive sale never speaks of an auction or an adjudication in its ceiling titles.
+      if (procedure === "online_tender") {
+        const titles = [...container.querySelectorAll("#calculation h2, #calculation h3")].map(
+          (node) => node.textContent ?? "",
+        );
+        expect(titles.join(" | ")).not.toMatch(/ench[èe]re|adjudication/i);
+      }
+    },
+  );
+
+  it("closes the ceiling of a notarial sale when the server switch lists the tribunal only", () => {
+    const sale = {
+      ...EXAMPLE_SALE_RECORDS.bordeaux.sale,
+      sale_venue_type: "notary",
+      sale_legal_framework: "voluntary_notarial",
+      sale_procedure: null,
+      source_blocks: null,
+      sale_conditions: { procedure: "online_tender" },
+    } as AuctionSale;
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    mocks.fetchAiReviewProjections.mockResolvedValue({ projections: [] });
+    const { container } = render(
+      <QueryClientProvider client={client}>
+        <AnalysisSaleDetailView
+          sale={sale}
+          marketEstimateOverride={EXAMPLE_SALE_RECORDS.bordeaux.marketEstimate}
+          openFeeRegimes={["tribunal"]}
+        />
+      </QueryClientProvider>,
+    );
+    selectTab("Prix et plafond");
+
+    expect(screen.getByRole("heading", { name: "Prix et marché" })).toBeTruthy();
+    expect(container.querySelector("#calculation")).toBeNull();
+  });
 
   it("offers « Mon dossier » without any ceiling to a free account that has not unlocked the sale", async () => {
     renderFree(unlockStatus());

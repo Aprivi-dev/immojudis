@@ -324,16 +324,16 @@ describe("useful public discovery", () => {
     );
   });
 
-  it("keeps the old reassurance on a locked sale that cannot be unlocked", () => {
+  it("keeps the old reassurance on a locked sale that cannot be unlocked (no fee regime: domanial)", () => {
     render(
       <QueryClientProvider client={new QueryClient()}>
         <ListingCard
           sale={
             {
-              id: "sale-notary",
+              id: "sale-state",
               city: "Lyon",
               property_type: "apartment",
-              sale_venue_type: "notary",
+              sale_venue_type: "state",
               media: [],
             } as unknown as AuctionSale
           }
@@ -914,7 +914,7 @@ describe("« 3 déblocages par mois » on the cards of a Découverte account", (
     expect(document.body.textContent).not.toContain("Analyse détaillée avec l’offre Analyse");
   });
 
-  it("sells the unlocks only on the sales held at a court", async () => {
+  it("sells the unlocks on the sales that have a fee regime (court, notary), not on a domanial sale", async () => {
     setAuthenticatedUser("user-a");
     testState.favoriteQuery.in.mockResolvedValue({ data: [], error: null });
     testState.unlocksOverview.mockResolvedValue({ status: {}, sales: [] });
@@ -922,6 +922,7 @@ describe("« 3 déblocages par mois » on the cards of a Découverte account", (
     renderForDiscoveryAccount([
       tribunalSale("sale-a"),
       { ...sale("sale-b"), sale_venue_type: "notary" } as unknown as AuctionSale,
+      { ...sale("sale-c"), sale_venue_type: "state" } as unknown as AuctionSale,
     ]);
 
     await waitFor(() => expect(testState.unlocksOverview).toHaveBeenCalled());
@@ -929,7 +930,10 @@ describe("« 3 déblocages par mois » on the cards of a Découverte account", (
     expect(cards[0].textContent).toContain(
       "Gratuit, sans carte bancaire · 3 fiches détaillées par mois",
     );
-    expect(cards[1].textContent).not.toContain("fiches détaillées par mois");
+    expect(cards[1].textContent).toContain(
+      "Gratuit, sans carte bancaire · 3 fiches détaillées par mois",
+    );
+    expect(cards[2].textContent).not.toContain("fiches détaillées par mois");
   });
 
   it("does not ask for the unlocks of a visitor or of an Analyse account", async () => {

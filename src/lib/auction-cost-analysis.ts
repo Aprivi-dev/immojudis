@@ -216,7 +216,10 @@ function structuredConsignation(sale: AuctionSale): AuctionCostSourceAmount | nu
 }
 
 /**
- * `sale_conditions` lues par le pipeline dans l'annonce notariale. Deux emplacements :
+ * `sale_conditions` lues par le pipeline dans l'annonce notariale. Trois emplacements :
+ *  - `sale.sale_conditions` : la projection de la base servie au compte Analyse et au compte qui a
+ *    débloqué la vente (`app_private.public_sale_conditions`, liste blanche de champs) : c'est ce
+ *    qui donne à un compte qui a débloqué la vente la même consignation qu'au compte Analyse ;
  *  - `raw_payload.source_property_features.sale_conditions` : forme certaine (écrite par le
  *    pipeline), mais `raw_payload` n'est pas exposé au navigateur ni à la vue des ventes débloquées :
  *    cette branche ne sert aujourd'hui que côté serveur ;
@@ -226,6 +229,8 @@ function structuredConsignation(sale: AuctionSale): AuctionCostSourceAmount | nu
  *    dictionnaire direct ou un `claim` observé dont la valeur est ce dictionnaire.
  */
 function saleConditions(sale: AuctionSale): Record<string, unknown> | null {
+  const fromView = asRecordOrNull(sale.sale_conditions);
+  if (fromView) return fromView;
   const fromPayload = asRecordOrNull(
     asRecordOrNull(asRecordOrNull(sale.raw_payload)?.source_property_features)?.sale_conditions,
   );

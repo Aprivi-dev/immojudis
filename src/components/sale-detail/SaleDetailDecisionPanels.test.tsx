@@ -216,16 +216,28 @@ describe("DiscoveryDecisionPanel", () => {
       for (const link of links) expect(link.getAttribute("href")).toBe("#debloquer");
     });
 
-    it("offers no unlock for a notary sale even when notarial regimes are listed as open", () => {
+    it("links the ceiling row and the preview of a notarial sale to the unlock card, with both terms", () => {
       mocks.auth = { user: { id: "user-1" }, loading: false };
       mocks.fetchValuePreview.mockResolvedValue({ available: false });
       const notary = { ...sale, sale_venue_type: "notary" } as unknown as AuctionSale;
       renderWithQuery(
         <SaleUnlockOfferProvider status={offer}>
-          <DiscoveryDecisionPanel
-            sale={notary}
-            openFeeRegimes={["tribunal", "notary_auction", "notary_online"]}
-          />
+          <DiscoveryDecisionPanel sale={notary} />
+        </SaleUnlockOfferProvider>,
+      );
+
+      expect(screen.getAllByRole("link", { name: /Débloquer cette vente/ })).toHaveLength(2);
+      // The mode of the sale (candle or interactive) is not readable before the unlock.
+      expect(document.body.textContent).toContain("Enchère plafond ou offre plafond (simulation)");
+    });
+
+    it("offers no unlock for a notarial sale when the server lists the tribunal only", () => {
+      mocks.auth = { user: { id: "user-1" }, loading: false };
+      mocks.fetchValuePreview.mockResolvedValue({ available: false });
+      const notary = { ...sale, sale_venue_type: "notary" } as unknown as AuctionSale;
+      renderWithQuery(
+        <SaleUnlockOfferProvider status={offer}>
+          <DiscoveryDecisionPanel sale={notary} openFeeRegimes={["tribunal"]} />
         </SaleUnlockOfferProvider>,
       );
 
@@ -239,13 +251,16 @@ describe("DiscoveryDecisionPanel", () => {
       expect(screen.getByRole("link", { name: "Découvrir l’offre Analyse" })).toBeTruthy();
     });
 
-    it("does not offer the unlock for the preview of a sale without ceiling", () => {
+    it("does not offer the unlock for the preview of a sale without ceiling (domanial)", () => {
       mocks.auth = { user: { id: "user-1" }, loading: false };
       mocks.fetchValuePreview.mockResolvedValue({ available: false });
-      const notary = { ...sale, sale_venue_type: "notary" } as unknown as AuctionSale;
+      const state = { ...sale, sale_venue_type: "state" } as unknown as AuctionSale;
       renderWithQuery(
         <SaleUnlockOfferProvider status={offer}>
-          <DiscoveryDecisionPanel sale={notary} />
+          <DiscoveryDecisionPanel
+            sale={state}
+            openFeeRegimes={["tribunal", "notary_auction", "notary_online", "state_auction"]}
+          />
         </SaleUnlockOfferProvider>,
       );
 

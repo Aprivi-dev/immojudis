@@ -63,19 +63,22 @@ describe("SaleUnlockPanel", () => {
 
     expect(screen.getByRole("heading", { name: "Débloquer cette vente" })).toBeTruthy();
     expect(screen.getByText("Il vous reste 2 déblocages sur 3 ce mois-ci.")).toBeTruthy();
-    expect(screen.getByText(/l’enchère plafond, la lecture des pièces/)).toBeTruthy();
+    // Without a regime of its own (default), both terms of the open regimes are named.
+    expect(
+      screen.getByText(/l’enchère plafond ou l’offre plafond, la lecture des pièces/),
+    ).toBeTruthy();
     // No countdown, no scarcity: only the figure and the reset date (given at confirmation).
     expect(document.body.textContent).not.toMatch(/dernière chance|plus que|vite|expire/i);
     expect(mocks.unlock).not.toHaveBeenCalled();
   });
 
-  it("only promises the elements the sale really offers (no ceiling on a notarial sale)", () => {
+  it("only promises the elements the sale really offers (no ceiling on a sale without a fee regime)", () => {
     render(
       <SaleUnlockPanel
         saleId={saleId}
         status={status()}
         unlocked={false}
-        opens={{ ceiling: false, statistics: false }}
+        opens={{ ceiling: null, ceilingTerm: null, statistics: false }}
         onUnlocked={vi.fn()}
       />,
     );
@@ -93,7 +96,7 @@ describe("SaleUnlockPanel", () => {
         saleId={saleId}
         status={status()}
         unlocked={false}
-        opens={{ ceiling: "l’offre plafond", statistics: false }}
+        opens={{ ceiling: "l’offre plafond", ceilingTerm: "offre plafond", statistics: false }}
         onUnlocked={vi.fn()}
       />,
     );
@@ -118,7 +121,7 @@ describe("SaleUnlockPanel", () => {
         saleId={saleId}
         status={status()}
         unlocked={false}
-        opens={{ ceiling: null, statistics: false }}
+        opens={{ ceiling: null, ceilingTerm: null, statistics: false }}
         onUnlocked={vi.fn()}
       />,
     );
@@ -436,22 +439,65 @@ describe("SaleUnlockPanel", () => {
     expect(screen.queryByRole("button")).toBeNull();
   });
 
-  it("links an unlocked tribunal sale to its bid ceiling, and never promises one elsewhere", () => {
+  it("links an unlocked sale to its bid ceiling with the term of its regime, and never promises one elsewhere", () => {
     const unlockedStatus = status({ unlocked: true, used: 2, remaining: 1 });
+    const tribunal = {
+      ceiling: "l’enchère plafond",
+      ceilingTerm: "enchère plafond",
+      statistics: false,
+    };
     const view = render(
-      <SaleUnlockPanel saleId={saleId} status={unlockedStatus} unlocked onUnlocked={vi.fn()} />,
+      <SaleUnlockPanel
+        saleId={saleId}
+        status={unlockedStatus}
+        unlocked
+        opens={tribunal}
+        onUnlocked={vi.fn()}
+      />,
     );
     expect(
       screen.getByRole("link", { name: "Voir mon enchère plafond" }).getAttribute("href"),
     ).toBe("#calculation");
     view.unmount();
 
+    const online = render(
+      <SaleUnlockPanel
+        saleId={saleId}
+        status={unlockedStatus}
+        unlocked
+        opens={{ ceiling: "l’offre plafond", ceilingTerm: "offre plafond", statistics: false }}
+        onUnlocked={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("link", { name: "Voir mon offre plafond" }).getAttribute("href")).toBe(
+      "#calculation",
+    );
+    expect(screen.queryByRole("link", { name: "Voir mon enchère plafond" })).toBeNull();
+    online.unmount();
+
+    // The mode of a notarial sale is unknown before the unlock reads its conditions: both terms.
+    const either = render(
+      <SaleUnlockPanel
+        saleId={saleId}
+        status={unlockedStatus}
+        unlocked
+        opens={{
+          ceiling: "l’enchère plafond ou l’offre plafond",
+          ceilingTerm: null,
+          statistics: false,
+        }}
+        onUnlocked={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("link", { name: "Voir mon plafond" })).toBeTruthy();
+    either.unmount();
+
     render(
       <SaleUnlockPanel
         saleId={saleId}
         status={unlockedStatus}
         unlocked
-        opens={{ ceiling: false, statistics: false }}
+        opens={{ ceiling: null, ceilingTerm: null, statistics: false }}
         onUnlocked={vi.fn()}
       />,
     );

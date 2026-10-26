@@ -11,6 +11,7 @@ import {
   type LaunchOfferStore,
 } from "@/hooks/use-launch-offer";
 import { LAUNCH_OFFER_SHORT_TEXT, LAUNCH_OFFER_VISITOR_TEXT } from "@/lib/launch-offer";
+import type { FeeRegimeKey } from "@/lib/fee-regime-open";
 import type { AuctionSale, SaleVenueType } from "@/lib/types";
 import { FREE_ACCESS_LINE } from "@/lib/sale-unlocks";
 import { publicSaleVenueCopy, SalePublicPreview } from "./SalePublicPreview";
@@ -92,7 +93,9 @@ describe("SalePublicPreview", () => {
       "ventes immobilières au tribunal, chez le notaire et les ventes domaniales",
     );
     expect(container.textContent).not.toContain("confidential@example.test");
-    expect(container.textContent).not.toContain("enchère plafond");
+    // The notarial regimes are open: the ceiling is promised, with both terms while the mode of the
+    // sale (candle or interactive) is not readable by a visitor.
+    expect(container.textContent).toContain("enchère plafond ou offre plafond");
     expect(screen.queryByText(/Activité publique du tribunal/)).toBeNull();
 
     const cta = screen.getAllByRole("link", { name: /Créer mon compte gratuit/ })[0];
@@ -791,15 +794,25 @@ describe("SalePublicPreview", () => {
     expect(teaser.contains(note)).toBe(false);
   });
 
-  it("ne cite pas l'enchère plafond sur une vente hors tribunal : le statut seul", () => {
-    renderPreview({ sale_venue_type: "notary" });
+  it("ne cite pas le plafond sur une vente domaniale : le statut seul", () => {
+    renderPreview({ sale_venue_type: "state" });
     expect(screen.getByTestId("public-dossier-teaser").textContent).toBe(
       "Compte gratuit : notez votre statut sur chaque vente suivie.",
     );
   });
 
-  it("does not promise a bid ceiling for a notarial sale", () => {
+  it("names both terms of the ceiling on a notarial sale, whose mode is not readable before the unlock", () => {
     renderPreview({ sale_venue_type: "notary" });
+    expect(screen.getByTestId("public-dossier-teaser").textContent).toBe(
+      "Compte gratuit : notez votre statut et votre enchère plafond ou offre plafond sur chaque vente suivie.",
+    );
+    const teaser = screen.getByRole("region", { name: "L’analyse de cette vente" });
+    expect(teaser.textContent).toContain("Enchère plafond ou offre plafond (simulation)");
+    expect(teaser.textContent).toContain("Ventes comparables");
+  });
+
+  it("does not promise a bid ceiling for a domanial sale", () => {
+    renderPreview({ sale_venue_type: "state" });
     const teaser = screen.getByRole("region", { name: "L’analyse de cette vente" });
     expect(teaser.textContent).not.toContain("plafond");
     expect(teaser.textContent).toContain("Ventes comparables");
@@ -870,25 +883,64 @@ describe("plafond annoncé selon le régime de frais de la vente", () => {
     expect(text).toContain("l’enchère plafond");
   });
 
-  it("n'annonce aucun plafond hors tribunal, même quand des régimes notariaux sont listés ouverts", () => {
-    const { container } = render(
+  function renderNotarial(openFeeRegimes?: readonly FeeRegimeKey[], venue = "notary") {
+    return render(
       <SalePublicPreview
         saleId="sale-1"
         returnTo="/sales"
-        openFeeRegimes={["tribunal", "notary_auction", "notary_online", "state_auction"]}
+        openFeeRegimes={openFeeRegimes}
         preview={
           {
             id: "sale-1",
             starting_price_eur: 59_000,
-            sale_venue_type: "notary",
+            sale_venue_type: venue,
             sale_verification_status: "cross_checked",
           } as AuctionSale
         }
       />,
     );
+  }
+
+  it("annonce l'enchère plafond ou l'offre plafond d'une vente notariale : les deux régimes sont ouverts par défaut", () => {
+    const { container } = renderNotarial();
+    const text = container.textContent ?? "";
+    expect(text).toContain(
+      "Compte gratuit : notez votre statut et votre enchère plafond ou offre plafond sur chaque vente suivie.",
+    );
+    expect(text).toContain("l’enchère plafond ou l’offre plafond, la lecture des pièces");
+    expect(text).toContain("calcul de votre enchère plafond ou offre plafond");
+  });
+
+  it("n'annonce que l'enchère plafond quand seul le régime de la bougie est ouvert", () => {
+    const { container } = renderNotarial(["tribunal", "notary_auction"]);
+    const text = container.textContent ?? "";
+    expect(text).toContain("votre enchère plafond sur chaque vente suivie.");
+    expect(text).not.toContain("offre plafond");
+  });
+
+  it("n'annonce que l'offre plafond quand seul le régime interactif est ouvert", () => {
+    const { container } = renderNotarial(["tribunal", "notary_online"]);
+    const text = container.textContent ?? "";
+    expect(text).toContain("votre offre plafond sur chaque vente suivie.");
+    expect(text).toContain("l’offre plafond, la lecture des pièces");
+    expect(text).not.toContain("enchère plafond");
+  });
+
+  it("n'annonce aucun plafond pour une vente notariale quand le serveur ne liste que le tribunal", () => {
+    const { container } = renderNotarial(["tribunal"]);
     const text = container.textContent ?? "";
     expect(text).toContain("Compte gratuit : notez votre statut sur chaque vente suivie.");
-    expect(text).not.toContain("enchère plafond");
+    expect(text).not.toContain("plafond");
+  });
+
+  it("n'annonce aucun plafond pour une vente domaniale, même quand tous les régimes sont listés ouverts", () => {
+    const { container } = renderNotarial(
+      ["tribunal", "notary_auction", "notary_online", "state_auction"],
+      "state",
+    );
+    const text = container.textContent ?? "";
+    expect(text).toContain("Compte gratuit : notez votre statut sur chaque vente suivie.");
+    expect(text).not.toContain("plafond");
   });
 });
 

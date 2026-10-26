@@ -25,12 +25,14 @@ import { MapboxPreviewButton } from "@/components/MapboxPreviewButton";
 import { SaleCalendarButton } from "@/components/SaleCalendarButton";
 import { StreetViewDialog } from "@/components/StreetViewDialog";
 import { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
+import { EstimatedFeesBadge } from "@/components/ceiling/EstimatedFeesBadge";
 import { Terme } from "@/components/ceiling/Terme";
 import { safeExternalHttpUrl } from "@/lib/external-url";
 import { saleSourceLinks } from "@/lib/sale-source-links";
 import { formatDate, formatPrice } from "@/lib/format";
 import { UNPROFITABLE_EXPLANATION, UNPROFITABLE_HEADLINE } from "@/lib/bid-ceiling-gaps";
-import { describeCeilingStartGap } from "@/lib/ceiling-start-gap";
+import type { EstimatedFee } from "@/lib/bid-ceiling-engine";
+import { describeCeilingStartGap, type CeilingStartGapTerms } from "@/lib/ceiling-start-gap";
 import { buildStructuredDescription } from "@/lib/sale-description";
 import {
   listingContactLinks,
@@ -155,6 +157,25 @@ function ceilingContextItems(context: CeilingContext): string[] {
   ];
 }
 
+/**
+ * Le vocabulaire du plafond de la vente (régime de frais), tel que le hero l'écrit : absent, celui
+ * du tribunal.
+ */
+export type CeilingWording = {
+  /** « Enchère plafond (simulation) » ou « Offre plafond (simulation) ». */
+  label: string;
+  /** Mots des phrases qui comparent le plafond au prix de départ ; absents : ceux du tribunal. */
+  terms?: CeilingStartGapTerms;
+  /** Une vente par offres : le prix de départ est la « première offre possible ». */
+  byOffers?: boolean;
+  /** Mention d'une vente par offres : le vendeur n'est pas tenu de retenir la meilleure offre. */
+  reserveNotice?: string | null;
+  /** Postes importants dont le montant vient d'une valeur par défaut. */
+  estimatedFees?: readonly EstimatedFee[];
+};
+
+const TRIBUNAL_CEILING_LABEL = "Enchère plafond (simulation)";
+
 export function ListingOverview({
   sale,
   premiumCeiling = null,
@@ -166,9 +187,12 @@ export function ListingOverview({
   aiReviewStatus = "ready",
   scenarioSummary = null,
   ceilingContext = null,
+  ceilingWording = null,
   preparation = null,
 }: {
   sale: AuctionSale;
+  /** Vocabulaire du plafond de la vente ; absent : celui du tribunal. */
+  ceilingWording?: CeilingWording | null;
   /** Action principale de la synthèse (« Préparer mon enchère »), qui ouvre l'onglet concerné. */
   preparation?: { href: string; label: string } | null;
   premiumCeiling?: number | null;
@@ -282,8 +306,10 @@ export function ListingOverview({
                   : null,
           },
           price,
+          ceilingWording?.terms,
         )
       : null;
+  const ceilingLabel = ceilingWording?.label ?? TRIBUNAL_CEILING_LABEL;
   const guardedScenarioSummary = analysisDataBlocked ? null : scenarioSummary;
   const publicSurfaceFact = surfaceReview?.blocked ? null : publicFactsById.get("surface");
   const publicOccupancyFact = occupancyReview.blocked
@@ -385,7 +411,13 @@ export function ListingOverview({
         <div className={styles.heroPrices}>
           <div>
             <div className={styles.priceLabel}>
-              {state ? "Prix publié" : <Terme terme="mise-a-prix">Mise à prix</Terme>}
+              {state ? (
+                "Prix publié"
+              ) : ceilingWording?.byOffers ? (
+                <Terme terme="premiere-offre">Première offre possible</Terme>
+              ) : (
+                <Terme terme="mise-a-prix">Mise à prix</Terme>
+              )}
               {publicPriceFact ? <PublicListingFactSource fact={publicPriceFact} /> : null}
             </div>
             <p className={styles.price}>
@@ -408,7 +440,7 @@ export function ListingOverview({
           </div>
           {guardedPremiumCeiling != null ? (
             <div className={styles.premiumPrice}>
-              <p className={styles.priceLabel}>Enchère plafond (simulation)</p>
+              <p className={styles.priceLabel}>{ceilingLabel}</p>
               <p className={styles.premiumPriceValue}>{formatPrice(guardedPremiumCeiling)}</p>
               {ceilingContext ? (
                 <p className={styles.premiumContext}>
@@ -426,13 +458,23 @@ export function ListingOverview({
                   <strong>{ceilingStartGap.text}</strong>
                 </p>
               ) : null}
+              {ceilingWording?.estimatedFees?.length ? (
+                <p className={styles.premiumContext}>
+                  <EstimatedFeesBadge items={ceilingWording.estimatedFees} />
+                </p>
+              ) : null}
+              {ceilingWording?.reserveNotice ? (
+                <p className={styles.premiumContext}>
+                  <strong>{ceilingWording.reserveNotice}</strong>
+                </p>
+              ) : null}
               <a href="#why-this-ceiling" className={styles.priceExplanation}>
                 Comprendre le calcul
               </a>
             </div>
           ) : guardedCeilingUnreachable ? (
             <div className={styles.premiumPrice}>
-              <p className={styles.priceLabel}>Enchère plafond (simulation)</p>
+              <p className={styles.priceLabel}>{ceilingLabel}</p>
               <p className={styles.premiumPriceValue}>{UNPROFITABLE_HEADLINE}</p>
               <p className={styles.premiumContext}>{UNPROFITABLE_EXPLANATION}</p>
               <a href="#why-this-ceiling" className={styles.priceExplanation}>
@@ -441,7 +483,7 @@ export function ListingOverview({
             </div>
           ) : showPremiumTeaser ? (
             <div className={styles.premiumPrice}>
-              <p className={styles.priceLabel}>Enchère plafond (simulation)</p>
+              <p className={styles.priceLabel}>{ceilingLabel}</p>
               <p className={styles.premiumTeaser}>
                 Disponible avec l’offre Analyse ou en débloquant cette vente
               </p>

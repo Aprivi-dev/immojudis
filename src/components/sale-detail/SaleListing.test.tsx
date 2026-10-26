@@ -446,6 +446,69 @@ describe("readable listing sections", () => {
       ),
     ).toBeTruthy();
   });
+  it("writes « offre plafond » and « première offre possible » for a sale by offers, with the seller mention and the estimated fees", () => {
+    const sale = item({ starting_price_eur: 100_000 });
+    render(
+      <ListingOverview
+        sale={sale}
+        premiumCeiling={160_000}
+        startingPriceGap={60_000}
+        ceilingWording={{
+          label: "Offre plafond (simulation)",
+          terms: {
+            ceilingTerm: "offre plafond",
+            referencePriceTerm: "première offre possible",
+            bidVerb: "offrir",
+          },
+          byOffers: true,
+          reserveNotice:
+            "Le vendeur n’est pas tenu de retenir la meilleure offre ; prix de réserve inconnu.",
+          estimatedFees: [{ key: "negotiation", label: "Honoraires de négociation", amount: null }],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Offre plafond (simulation)")).toBeTruthy();
+    expect(screen.queryByText("Enchère plafond (simulation)")).toBeNull();
+    expect(screen.getByText("Première offre possible")).toBeTruthy();
+    expect(screen.queryByText("Mise à prix")).toBeNull();
+    expect(
+      screen.getByText(
+        /^Selon vos hypothèses, vous pouvez offrir jusqu’à 160\s000\s€, soit 60\s000\s€ au-dessus de la première offre possible\.$/,
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Le vendeur n’est pas tenu de retenir la meilleure offre ; prix de réserve inconnu.",
+      ),
+    ).toBeTruthy();
+    // La pastille dit « Frais estimés, à confirmer » avec une icône et du texte.
+    const badge = screen.getByText("Frais estimés, à confirmer");
+    expect(badge.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+    expect(badge.parentElement?.textContent).toContain("honoraires de négociation");
+    const heroText = document.body.textContent ?? "";
+    expect(heroText).not.toMatch(/enchérir/);
+  });
+
+  it("shows no estimated-fees badge when every important fee is read or entered", () => {
+    render(
+      <ListingOverview
+        sale={item()}
+        premiumCeiling={160_000}
+        ceilingWording={{
+          label: "Enchère plafond (simulation)",
+          terms: {
+            ceilingTerm: "enchère plafond",
+            referencePriceTerm: "mise à prix",
+            bidVerb: "enchérir",
+          },
+          estimatedFees: [],
+        }}
+      />,
+    );
+    expect(screen.queryByText("Frais estimés, à confirmer")).toBeNull();
+  });
+
   it("says that no price holds, with the reason, instead of an empty hero", () => {
     render(<ListingOverview sale={item()} ceilingUnreachable showPremiumTeaser />);
 

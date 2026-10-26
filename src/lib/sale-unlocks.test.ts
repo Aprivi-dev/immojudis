@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { PLAN_LIMITS } from "@/lib/plans";
 import { parseSaleUnlockResult, parseSaleUnlockStatus } from "@/lib/sale-unlocks.server";
+import { ceilingTermWithArticleText } from "@/lib/fee-regime-labels";
 import {
   FREE_ACCESS_LINE,
   MONTHLY_SALE_UNLOCKS,
@@ -153,36 +154,56 @@ describe("texts of the unlock", () => {
   const status = parseSaleUnlockStatus(rpcStatus);
 
   it("lists what an unlock opens, without promising what the page does not show", () => {
-    expect(unlockedItemsText({ ceiling: true, statistics: true })).toBe(
+    expect(unlockedItemsText({ ceiling: "l’enchère plafond", statistics: true })).toBe(
       "l’enchère plafond, la lecture des pièces, l’historique de la vente, les statistiques du tribunal et les pièces du dossier",
     );
-    expect(unlockedItemsText({ ceiling: false, statistics: false })).toBe(
+    expect(unlockedItemsText({ ceiling: null, statistics: false })).toBe(
       "la lecture des pièces, l’historique de la vente et les pièces du dossier",
     );
-    expect(unlockedItemsText({ ceiling: true, statistics: false })).not.toContain("statistiques");
+    expect(unlockedItemsText({ ceiling: "l’enchère plafond", statistics: false })).not.toContain(
+      "statistiques",
+    );
   });
 
   it("names the ceiling from the label given by the fee regime of the sale", () => {
-    expect(unlockedItemsText({ ceiling: "l’enchère plafond", statistics: false })).toBe(
-      unlockedItemsText({ ceiling: true, statistics: false }),
-    );
     expect(unlockedItemsText({ ceiling: "l’offre plafond", statistics: false })).toBe(
       "l’offre plafond, la lecture des pièces, l’historique de la vente et les pièces du dossier",
     );
-    expect(unlockedItemsText({ ceiling: null, statistics: false })).toBe(
-      unlockedItemsText({ ceiling: false, statistics: false }),
+    expect(
+      unlockedItemsText({ ceiling: "l’enchère plafond ou l’offre plafond", statistics: false }),
+    ).toBe(
+      "l’enchère plafond ou l’offre plafond, la lecture des pièces, l’historique de la vente et les pièces du dossier",
     );
+    // No regime, no ceiling: nothing is promised.
+    expect(unlockedItemsText({ ceiling: null, statistics: false })).not.toContain("plafond");
   });
 
-  it("builds the highlights of the free account from the open regimes, unchanged for the tribunal alone", () => {
+  it("builds the highlights of the free account from the open regimes", () => {
+    // The constants are written out (to keep the term computation out of the pages that cite them):
+    // they must stay equal to the computation for the regimes open by default.
     expect(unlockHighlightsText()).toBe(UNLOCK_HIGHLIGHTS_TEXT);
+    expect(unlockHighlightsInlineText()).toBe(UNLOCK_HIGHLIGHTS_INLINE_TEXT);
+    // The tribunal alone: unchanged wording.
     expect(unlockHighlightsText(["tribunal"])).toBe(
       "enchère plafond (ventes au tribunal), lecture des pièces, historique, selon la vente",
     );
-    expect(unlockHighlightsInlineText(["tribunal"])).toBe(UNLOCK_HIGHLIGHTS_INLINE_TEXT);
-    // Opening a regime whose rules are not defined promises nothing more.
-    expect(unlockHighlightsText(["tribunal", "notary_auction", "state_auction"])).toBe(
-      UNLOCK_HIGHLIGHTS_TEXT,
+    expect(unlockHighlightsInlineText(["tribunal"])).toBe(
+      "enchère plafond, lecture des pièces, historique, selon la vente",
+    );
+    // Both notarial regimes open (default): both terms, each with its sales.
+    expect(UNLOCK_HIGHLIGHTS_TEXT).toBe(
+      "enchère plafond (ventes au tribunal et ventes notariales à la bougie) ou offre plafond (ventes notariales interactives), lecture des pièces, historique, selon la vente",
+    );
+    expect(UNLOCK_HIGHLIGHTS_INLINE_TEXT).toBe(
+      "enchère plafond ou offre plafond, lecture des pièces, historique, selon la vente",
+    );
+    // A notarial regime switched off promises nothing more.
+    expect(unlockHighlightsText(["tribunal", "notary_auction"])).toBe(
+      "enchère plafond (ventes au tribunal et ventes notariales à la bougie), lecture des pièces, historique, selon la vente",
+    );
+    // A regime whose rules are not defined opens nothing.
+    expect(unlockHighlightsText(["tribunal", "state_auction"])).toBe(
+      unlockHighlightsText(["tribunal"]),
     );
   });
 
@@ -200,16 +221,21 @@ describe("texts of the unlock", () => {
   });
 
   it("cites each highlight of the free account in the full list of what an unlock opens", () => {
-    const full = unlockedItemsText({ ceiling: true, statistics: false });
-    expect(UNLOCK_HIGHLIGHTS_TEXT).toBe(
-      "enchère plafond (ventes au tribunal), lecture des pièces, historique, selon la vente",
-    );
-    expect(UNLOCK_HIGHLIGHTS_INLINE_TEXT).toBe(
-      "enchère plafond, lecture des pièces, historique, selon la vente",
-    );
+    const full = unlockedItemsText({
+      ceiling: ceilingTermWithArticleText(),
+      statistics: false,
+    });
+    expect(full).toContain("l’enchère plafond ou l’offre plafond");
     for (const word of ["plafond", "pièces", "historique"]) {
       expect(UNLOCK_HIGHLIGHTS_TEXT).toContain(word);
+      expect(UNLOCK_HIGHLIGHTS_INLINE_TEXT).toContain(word);
       expect(full).toContain(word);
+    }
+    // Each term of the full list is cited by the highlights too (they must not drift apart).
+    for (const term of ["enchère plafond", "offre plafond"]) {
+      expect(UNLOCK_HIGHLIGHTS_TEXT).toContain(term);
+      expect(UNLOCK_HIGHLIGHTS_INLINE_TEXT).toContain(term);
+      expect(full).toContain(term);
     }
   });
 

@@ -6,7 +6,7 @@ import {
 import { formatDate, formatStartingPrice, propertyTypeLabel } from "@/lib/format";
 import { parisDateKey } from "@/lib/sale-countdown";
 import { saleDisplayTitle } from "@/lib/sale-title";
-import { feeRegimeKeyForVenue } from "@/lib/fee-regime-open";
+import { feeRegimeKeysForVenue, type FeeRegimeKey } from "@/lib/fee-regime-open";
 import { getSaleProcedure } from "@/lib/sale-procedure";
 import { FREE_ACCESS_LINE } from "@/lib/sale-unlocks";
 import type { AuctionSale } from "@/lib/types";
@@ -89,9 +89,13 @@ export function listingPriceText(sale: AuctionSale): string {
     : formatStartingPrice(sale.starting_price_eur);
 }
 
-/** Un régime de frais est ouvert pour cette vente : le déblocage ouvre son plafond. */
-function ceilingOpenFor(sale: AuctionSale): boolean {
-  return feeRegimeKeyForVenue(getSaleProcedure(sale).venueType) != null;
+/**
+ * Un régime de frais est ouvert pour ce type de vente (le tribunal, la bougie et la vente
+ * interactive d'une vente notariale) : le déblocage ouvre son plafond. Les cartes ignorent le
+ * mode d'une vente notariale, que seules les conditions de la vente donnent.
+ */
+function ceilingOpenFor(sale: AuctionSale, open?: readonly FeeRegimeKey[]): boolean {
+  return feeRegimeKeysForVenue(getSaleProcedure(sale).venueType, open).length > 0;
 }
 
 /**
@@ -116,15 +120,19 @@ export function listingAccessLine(
      * « Fiche complète avec un compte gratuit » s'adressent à un visiteur sans compte.
      */
     verifying?: boolean;
+    /** Régimes de frais ouverts (`openFeeRegimesFromEnv`) ; absent : tous ceux qui sont définis. */
+    openFeeRegimes?: readonly FeeRegimeKey[];
   },
 ): string {
   if (access.verifying || access.launchPending) return LISTING_DETAIL_LINE;
   if (access.locked) {
     if (access.launchOffer) return LISTING_LAUNCH_OFFER_LINE;
-    return ceilingOpenFor(sale) ? FREE_ACCESS_LINE : "Fiche complète avec un compte gratuit";
+    return ceilingOpenFor(sale, access.openFeeRegimes)
+      ? FREE_ACCESS_LINE
+      : "Fiche complète avec un compte gratuit";
   }
   // Le déblocage n'est proposé que pour les ventes dont le plafond est ouvert (régime de frais).
-  if (access.analysisLocked && !access.unlocked && ceilingOpenFor(sale)) {
+  if (access.analysisLocked && !access.unlocked && ceilingOpenFor(sale, access.openFeeRegimes)) {
     return FREE_ACCESS_LINE;
   }
   return LISTING_DETAIL_LINE;

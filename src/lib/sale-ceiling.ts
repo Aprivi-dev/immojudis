@@ -27,7 +27,7 @@ type SaleCeilingSource = {
   aiProjections: readonly AiReviewProjectionReadModel[] | null;
   /** État de la lecture de la relecture IA (voir `getAiReviewFieldResult`). */
   aiReviewStatus: AiReviewRequestStatus;
-  /** Régimes de frais ouverts ; absent : le tribunal seul (voir `parseOpenFeeRegimes`). */
+  /** Régimes de frais ouverts ; absent : tous ceux dont les règles sont définies (voir `parseOpenFeeRegimes`). */
   regimes?: readonly FeeRegimeKey[];
 };
 
