@@ -89,14 +89,21 @@ export function worksChoiceForAmount(
   return { key: scenario ? (scenario.key as CeilingWorksKey) : "devis", amount: clean };
 }
 
-/** Per user and per sale, the choices survive a reload; storage failures are ignored. */
-export function useCeilingChoices(ownerId: string, saleId: string) {
+/**
+ * Per user and per sale, the choices survive a reload; storage failures are ignored. `defaults`
+ * (the example page's works level) fill in whatever the visitor has not chosen yet.
+ */
+export function useCeilingChoices(
+  ownerId: string,
+  saleId: string,
+  defaults: CeilingUserChoices = NO_DEFAULTS,
+) {
   const key = ceilingStorageKey(ownerId, saleId);
   const [state, setState] = useState<{ key: string; choices: CeilingUserChoices }>(() => ({
     key,
-    choices: readChoices(key),
+    choices: { ...defaults, ...readChoices(key) },
   }));
-  if (state.key !== key) setState({ key, choices: readChoices(key) });
+  if (state.key !== key) setState({ key, choices: { ...defaults, ...readChoices(key) } });
 
   useEffect(() => {
     try {
@@ -127,6 +134,8 @@ export function useCeilingChoices(ownerId: string, saleId: string) {
   );
   return { choices: state.choices, update, reset };
 }
+
+const NO_DEFAULTS: CeilingUserChoices = {};
 
 function readChoices(key: string): CeilingUserChoices {
   if (typeof window === "undefined") return {};

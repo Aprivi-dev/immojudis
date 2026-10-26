@@ -62,14 +62,24 @@ describe("home hero", () => {
     );
   });
 
-  it("marks the example card as fictional, with the example's own figures and a link to it", () => {
+  it("shows the example photo, its analysis and a verdict from the bid ceiling engine", () => {
     const markup = renderToStaticMarkup(<HomeHero />);
     const text = visibleText(markup);
     expect(text).toContain("Exemple fictif");
-    expect(text).toContain("Appartement T3 de 68 m² à Bordeaux");
-    expect(text).toMatch(/Enchère plafond 135.000.€/);
-    expect(text).toMatch(/Valeur estimée du bien 230.000.€/);
-    expect(markup).toMatch(/<a[^>]*href="\/annonce-exemple"[^>]*>Voir l’analyse complète/);
+    expect(text).toContain("T3 de 68 m², balcon · Bordeaux");
+    expect(text).toContain("Analyse du bien");
+    expect(text).toMatch(/Estimation 230.000.€/);
+    expect(text).toMatch(/Même immeuble, 2024 226.000.€/);
+    expect(text).toContain("Occupation À confirmer");
+    // Premier rendu : la situation de /annonce-exemple, et son verdict.
+    expect(text).toContain("Pour y habiter, occupé, rafraîchissement");
+    expect(text).toMatch(/135.000.€/);
+    expect(text).toContain("On enchérit");
+    expect(markup).toContain("dossier-apartment.webp");
+    // Les trois situations, dont celle qui fait passer son tour.
+    for (const label of ["Y habiter", "Revendre, loué", "Louer après rénovation"]) {
+      expect(markup).toMatch(new RegExp(`<button[^>]*>${label}</button>`));
+    }
   });
 });
 

@@ -49,7 +49,7 @@ import {
 import type { MarketEstimate } from "@/lib/market.server";
 import { isDetailedMarketEstimate } from "@/lib/market-estimate-ceiling";
 import { computeAcquisitionCosts } from "@/lib/profitability";
-import { buildCeilingHypotheses } from "@/lib/bid-ceiling-defaults";
+import { buildCeilingHypotheses, type CeilingUserChoices } from "@/lib/bid-ceiling-defaults";
 import { computeCeilingPlan, maxWorksAtBid } from "@/lib/bid-ceiling-engine";
 import { ceilingGap, valueGapReason } from "@/lib/bid-ceiling-gaps";
 import { buildDpeAnalysis } from "@/lib/dpe-analysis";
@@ -167,6 +167,8 @@ type SaleDetailProps = {
   /** Libellé du lien de retour ; absent : il suit la page d'origine (voir `salesReturnLabel`). */
   backLabel?: string;
   publicDemo?: boolean;
+  /** Choix de départ de l'enchère plafond (annonce exemple) ; ceux du visiteur passent devant. */
+  defaultCeilingChoices?: CeilingUserChoices;
   adjudicationStatisticsEnabled?: boolean;
   aiReviewProjections?: readonly AiReviewProjectionReadModel[] | null;
   /** Where the account stands this month; drives the « Débloquer cette vente » panel. */
@@ -182,6 +184,7 @@ export function AnalysisSaleDetailView({
   returnTo = "/sales",
   backLabel,
   publicDemo = false,
+  defaultCeilingChoices,
   adjudicationStatisticsEnabled = false,
   aiReviewProjections = null,
 }: SaleDetailProps) {
@@ -193,6 +196,7 @@ export function AnalysisSaleDetailView({
       returnTo={returnTo}
       backLabel={backLabel}
       publicDemo={publicDemo}
+      defaultCeilingChoices={defaultCeilingChoices}
       adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
       aiReviewProjections={aiReviewProjections}
       access="analysis"
@@ -258,6 +262,7 @@ function SaleDetailWorkspace({
   returnTo,
   backLabel,
   publicDemo = false,
+  defaultCeilingChoices,
   adjudicationStatisticsEnabled = false,
   aiReviewProjections = null,
   unlockStatus = null,
@@ -270,7 +275,11 @@ function SaleDetailWorkspace({
   const [financingResult, setFinancingResult] = useState<FinancingResult | null>(null);
   const [rentalDraft, setRentalDraft] = useState<ListingRentalDraft | null>(null);
   const { user, loading: authLoading } = useAuth();
-  const ceilingChoices = useCeilingChoices(user?.id ?? "guest-demo", sale.id);
+  const ceilingChoices = useCeilingChoices(
+    user?.id ?? "guest-demo",
+    sale.id,
+    defaultCeilingChoices,
+  );
   // The sale rows are open (Analyse, or a sale this account unlocked). Everything below that
   // only Analyse has stays on `access === "analysis"`.
   const fullData = access !== "discovery";

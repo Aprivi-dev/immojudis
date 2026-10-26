@@ -1,0 +1,320 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
+import {
+  bidVerdict,
+  bidVerdictSentence,
+  BID_VERDICT_LABEL,
+  TIGHT_MARGIN_LABEL,
+} from "@/lib/bid-verdict";
+import {
+  EXAMPLE_OCCUPATIONS,
+  EXAMPLE_PROJECTS,
+  EXAMPLE_WORKS,
+  findExampleScenario,
+  type ExampleOccupation,
+  type ExampleProject,
+  type ExampleVerdictData,
+  type ExampleWorks,
+} from "@/lib/example-verdict-shared";
+import { formatNumber, formatPrice } from "@/lib/format";
+import { ArrowRight, Check } from "./HomeIcons";
+import {
+  OCCUPATION_LABEL,
+  PROJECT_LABEL,
+  scenarioExplanation,
+  WORKS_LABEL,
+} from "./example-verdict-text";
+import { useCountTo } from "./use-count-to";
+import styles from "./HomePage.module.css";
+
+type Choice = { project: ExampleProject; occupation: ExampleOccupation; works: ExampleWorks };
+
+/** Situation affichée d'abord : celle de /annonce-exemple (occupation à confirmer). */
+const DEFAULT_CHOICE: Choice = {
+  project: "habiter",
+  occupation: "occupe",
+  works: "rafraichissement",
+};
+
+/** Démonstration tant que le visiteur n'a rien choisi : du vert au rouge. */
+const DEMO: Choice[] = [
+  DEFAULT_CHOICE,
+  { project: "habiter", occupation: "libre", works: "rafraichissement" },
+  { project: "revendre", occupation: "loue", works: "rafraichissement" },
+  { project: "louer", occupation: "occupe", works: "confort" },
+];
+const DEMO_MS = 3_000;
+
+function Segmented<T extends string>({
+  label,
+  options,
+  labels,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: readonly T[];
+  labels: Record<T, string>;
+  value: T;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div className={styles.tryControl}>
+      <span id={`try-${label}`}>{label}</span>
+      <div className={styles.segmented} role="group" aria-labelledby={`try-${label}`}>
+        {options.map((option) => (
+          <button
+            key={option}
+            type="button"
+            aria-pressed={option === value}
+            onClick={() => onChange(option)}
+          >
+            {labels[option]}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * « Essayez sur un exemple » : les données qu'Immojudis croise pour l'annonce exemple, trois
+ * réglages (projet, occupation, travaux) et le verdict, recalculé par le moteur d'enchère plafond
+ * (tous les scénarios sont calculés au rendu serveur). Une démonstration défile quand la section
+ * apparaît, jusqu'au premier choix du visiteur.
+ */
+export function HomeTryExample({ data }: { data: ExampleVerdictData }) {
+  const [choice, setChoice] = useState<Choice>(DEFAULT_CHOICE);
+  const [touched, setTouched] = useState(false);
+  const card = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const element = card.current;
+    if (!element || touched || typeof IntersectionObserver === "undefined") return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    let interval: number | null = null;
+    let delay: number | null = null;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry?.isIntersecting) return;
+        observer.disconnect();
+        let step = 0;
+        delay = window.setTimeout(() => {
+          interval = window.setInterval(() => {
+            step = (step + 1) % DEMO.length;
+            setChoice(DEMO[step]);
+          }, DEMO_MS);
+        }, 2_200);
+      },
+      { threshold: 0.3 },
+    );
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+      if (delay) window.clearTimeout(delay);
+      if (interval) window.clearInterval(interval);
+    };
+  }, [touched]);
+
+  const choose = (patch: Partial<Choice>) => {
+    setTouched(true);
+    setChoice((current) => ({ ...current, ...patch }));
+  };
+
+  const scenario =
+    findExampleScenario(data.scenarios, choice.project, choice.occupation, choice.works) ??
+    data.scenarios[0];
+  const ceiling = scenario?.ceiling ?? 0;
+  const verdict = bidVerdict(ceiling, data.startingPrice);
+  const shown = useCountTo(ceiling);
+  const scale = data.valueHigh || data.value || 1;
+  const percent = (amount: number) => `${Math.min(100, (amount / scale) * 100).toFixed(1)}%`;
+
+  const facts: Array<{ title: string; detail: string; warn?: boolean }> = [
+    {
+      title: `Estimation ${formatPrice(data.value)}`,
+      detail: `Fourchette ${formatPrice(data.valueLow)} à ${formatPrice(data.valueHigh)}${data.estimateQuality ? `, fiabilité ${data.estimateQuality}` : ""}`,
+    },
+    {
+      title: `${formatNumber(data.comparables)} ventes à moins de ${formatNumber(data.radiusM)} m`,
+      detail: `Médiane ${formatNumber(data.medianPricePerM2)} €/m², ${formatNumber(data.yearsBack)} ans de DVF`,
+    },
+    ...(data.sameBuilding
+      ? [
+          {
+            title: `Même immeuble : ${formatPrice(data.sameBuilding.totalPrice)}`,
+            detail: `${data.sameBuilding.surface ? `${formatNumber(data.sameBuilding.surface)} m² vendus` : "Vendu"} en ${data.sameBuilding.month} ${data.sameBuilding.year}`,
+          },
+        ]
+      : []),
+    {
+      title: `Mise à prix ${formatNumber(data.startingGapPct)} % sous le marché`,
+      detail: `${formatNumber(data.startingPricePerM2)} €/m² contre ${formatNumber(data.medianPricePerM2)} €/m²`,
+    },
+    {
+      title: "Occupation à confirmer",
+      detail: `Occupant déclaré, bail non produit${data.occupationPage ? ` (PV p. ${data.occupationPage})` : ""}`,
+      warn: true,
+    },
+    {
+      title: "État et énergie",
+      detail: [data.condition, data.dpe ? `DPE ${data.dpe}` : null].filter(Boolean).join(", "),
+    },
+    {
+      title: "Frais de la vente",
+      detail: `${data.registrationRatePct ? `Droits de ${formatNumber(data.registrationRatePct)} %, ` : ""}émoluments, frais préalables`,
+    },
+    { title: "Portage et marge", detail: "Charges, taxe foncière, financement, marge" },
+  ];
+
+  return (
+    <section id="essayer" className={styles.section} aria-labelledby="try-title">
+      <div className={`${styles.container} ${styles.trySplit}`}>
+        <div
+          ref={card}
+          className={styles.tryCard}
+          data-reveal=""
+          role="group"
+          aria-label={`Exemple fictif : simulateur du verdict pour un T3 à ${data.city}`}
+        >
+          <div className={styles.tryTop}>
+            <div>
+              <b>
+                Appartement T3 de {data.surfaceM2}&nbsp;m² à {data.city}
+              </b>
+              <span>
+                {data.floor ? `${data.floor} · ` : ""}balcon · mise à prix{" "}
+                {formatPrice(data.startingPrice)}
+              </span>
+            </div>
+            <span className={styles.tag}>Exemple fictif</span>
+          </div>
+          <div>
+            <p className={styles.tryDataHead}>
+              <b>Ce qu’Immojudis a croisé</b>
+              <span>{facts.length} données, sources citées</span>
+            </p>
+            <ul className={styles.tryData}>
+              {facts.map((fact, position) => (
+                <li
+                  key={fact.title}
+                  className={fact.warn ? styles.analysisWarn : undefined}
+                  style={{ "--i": position } as React.CSSProperties}
+                >
+                  <span className={styles.analysisCheck} aria-hidden>
+                    {fact.warn ? "!" : <Check size={10} />}
+                  </span>
+                  <b>{fact.title}</b> <span>{fact.detail}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className={styles.tryControls}>
+            <Segmented
+              label="Projet"
+              options={EXAMPLE_PROJECTS}
+              labels={PROJECT_LABEL}
+              value={choice.project}
+              onChange={(project) => choose({ project })}
+            />
+            <Segmented
+              label="Occupation"
+              options={EXAMPLE_OCCUPATIONS}
+              labels={OCCUPATION_LABEL}
+              value={choice.occupation}
+              onChange={(occupation) => choose({ occupation })}
+            />
+            <Segmented
+              label="Travaux"
+              options={EXAMPLE_WORKS}
+              labels={WORKS_LABEL}
+              value={choice.works}
+              onChange={(works) => choose({ works })}
+            />
+          </div>
+          <div
+            className={`${styles.tryVerdict} ${styles[`verdict_${verdict}`]}`}
+            aria-live={touched ? "polite" : "off"}
+          >
+            <div className={styles.tryVerdictTop}>
+              <small>Votre enchère plafond</small>
+              <span className={styles.verdictPill}>
+                <i aria-hidden />
+                {BID_VERDICT_LABEL[verdict]}
+              </span>
+            </div>
+            <p className={styles.verdictAmount}>{formatPrice(shown)}</p>
+            <p className={styles.verdictText}>{bidVerdictSentence(ceiling, data.startingPrice)}</p>
+            <div className={styles.gauge} aria-hidden>
+              <span
+                className={styles.gaugeBand}
+                style={{
+                  left: percent(data.valueLow),
+                  width: `${(((data.valueHigh - data.valueLow) / scale) * 100).toFixed(1)}%`,
+                }}
+              />
+              <span className={styles.gaugeFill} style={{ width: percent(ceiling) }} />
+              <span className={styles.gaugeMark} style={{ left: percent(data.startingPrice) }}>
+                <span>Mise à prix</span>
+              </span>
+              <span
+                className={`${styles.gaugeMark} ${styles.gaugeMarkEnd}`}
+                style={{ left: percent(data.value) }}
+              >
+                <span>Valeur</span>
+              </span>
+            </div>
+            <p className={styles.gaugeAxis} aria-hidden>
+              <span>0 €</span>
+              <span>Fourchette d’estimation</span>
+            </p>
+            {scenario ? <p className={styles.tryWhy}>{scenarioExplanation(scenario)}</p> : null}
+          </div>
+          <p className={`${styles.tryHint} ${touched ? styles.tryHintOff : ""}`}>
+            <i aria-hidden />
+            Changez votre projet, l’occupation ou les travaux.
+          </p>
+        </div>
+        <div className={`${styles.head} ${styles.headAside}`} data-reveal="">
+          <p className={styles.eyebrow}>Essayez sur un exemple</p>
+          <h2 id="try-title" className={styles.h2}>
+            Enchérir ou passer son tour : la réponse dépend de votre projet.
+          </h2>
+          <p className={styles.lead}>
+            Immojudis croise l’estimation, les ventes du quartier, les pièces de la vente et vos
+            coûts. Changez un réglage : l’enchère plafond et le verdict se recalculent.
+          </p>
+          <ul className={styles.verdictRules}>
+            <li className={styles.verdict_go}>
+              <span aria-hidden>✓</span>
+              <span>
+                <b>{BID_VERDICT_LABEL.go}</b> quand le plafond dépasse la mise à prix d’au moins{" "}
+                {TIGHT_MARGIN_LABEL}.
+              </span>
+            </li>
+            <li className={styles.verdict_tight}>
+              <span aria-hidden>~</span>
+              <span>
+                <b>{BID_VERDICT_LABEL.tight}</b> quand la marge est de moins de {TIGHT_MARGIN_LABEL}
+                .
+              </span>
+            </li>
+            <li className={styles.verdict_pass}>
+              <span aria-hidden>×</span>
+              <span>
+                <b>{BID_VERDICT_LABEL.pass}</b> quand la mise à prix dépasse déjà le plafond.
+              </span>
+            </li>
+          </ul>
+          <p>
+            <Link href="/annonce-exemple" prefetch={false} className={styles.textLink}>
+              Voir l’analyse complète de l’exemple <ArrowRight aria-hidden size={16} />
+            </Link>
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}

@@ -9,6 +9,7 @@ import { Card, buttonClasses } from "@/components/ui/primitives";
 import { useAuth } from "@/hooks/use-auth";
 import { loginPathWithRedirect } from "@/lib/navigation";
 import type { MarketEstimate } from "@/lib/market.server";
+import type { CeilingUserChoices } from "@/lib/bid-ceiling-defaults";
 import type { AuctionSale } from "@/lib/types";
 import { trackProductEvent } from "@/lib/product-events";
 
@@ -24,9 +25,12 @@ const AnalysisSaleDetailView = dynamic(
  */
 export function ExampleSalePage({
   example,
+  ceilingChoices,
   adjudicationStatisticsEnabled = false,
 }: {
   example: { sale: AuctionSale; marketEstimate: MarketEstimate };
+  /** Choix de départ de l'enchère plafond, les mêmes que les chiffres de l'accueil. */
+  ceilingChoices?: CeilingUserChoices;
   /** Lu côté serveur (`ADJUDICATION_PRICE_STATISTICS_ENABLED`) : la démo montre l'onglet quand le drapeau est ouvert. */
   adjudicationStatisticsEnabled?: boolean;
 }) {
@@ -51,6 +55,7 @@ export function ExampleSalePage({
         returnTo="/#exemples"
         backLabel="Retour aux exemples"
         publicDemo
+        defaultCeilingChoices={ceilingChoices}
         adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
       />
       {/* Fin de l'exemple : la suite est un compte gratuit et le catalogue, pas /offres (l'offre

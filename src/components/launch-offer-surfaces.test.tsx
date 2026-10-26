@@ -113,7 +113,8 @@ describe("accueil", () => {
             <HomeOffers />
           </>,
         );
-        expect(document.body.textContent).not.toMatch(/59|€ TTC|Tarif prévu/);
+        // Le tarif (59 €) : « −59 % » de la fiche exemple (écart au marché) n'en est pas un.
+        expect(document.body.textContent).not.toMatch(/59\s*€|€ TTC|Tarif prévu/);
         cleanup();
       }
     }

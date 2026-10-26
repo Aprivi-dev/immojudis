@@ -126,3 +126,22 @@ describe("useCeilingChoices with a works breakdown", () => {
     });
   });
 });
+
+describe("useCeilingChoices with defaults", () => {
+  const defaults = { works: { key: "rafraichissement" as const, amount: 10_200 } };
+
+  it("starts from the defaults when the visitor has chosen nothing", () => {
+    window.localStorage.setItem(ceilingStorageKey("guest-demo", "sale-1"), "{}");
+    const { result } = renderHook(() => useCeilingChoices("guest-demo", "sale-1", defaults));
+    expect(result.current.choices.works).toEqual(defaults.works);
+  });
+
+  it("keeps the visitor's own choice over the defaults", () => {
+    window.localStorage.setItem(
+      ceilingStorageKey("guest-demo", "sale-1"),
+      JSON.stringify({ works: { key: "aucun", amount: 0 } }),
+    );
+    const { result } = renderHook(() => useCeilingChoices("guest-demo", "sale-1", defaults));
+    expect(result.current.choices.works).toEqual({ key: "aucun", amount: 0, months: null });
+  });
+});
