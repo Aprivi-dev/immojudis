@@ -355,7 +355,10 @@ jobs:
   e2e:
     name: Investor journey (Playwright)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Les parcours prennent 12 à 15 minutes ; l'installation des navigateurs et de leurs paquets
+    # système en prend 2 à 3, mais plus de 20 quand le miroir Ubuntu est lent (26/10/2026 : trois
+    # annulations avant le moindre test). Marge pour ce cas, plafonnée à l'étape d'installation.
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -366,6 +369,7 @@ jobs:
         run: npm install --global npm@11.18.0
       - run: npm ci
       - name: Install Chromium, Firefox and WebKit
+        timeout-minutes: 18
         run: npx playwright install --with-deps chromium firefox webkit
       - name: Run cross-browser journeys and accessibility checks
         run: npm run test:e2e
