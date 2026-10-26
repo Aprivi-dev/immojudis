@@ -61,3 +61,15 @@ def test_the_migration_guard_requires_exactly_the_ci_jobs_that_run_on_a_push() -
         else:
             expected.add(label_text)
     assert required == expected
+
+
+def test_the_playwright_image_matches_the_installed_playwright() -> None:
+    # The e2e job runs in mcr.microsoft.com/playwright, whose browsers only work with the same
+    # @playwright/test version: a bump of one without the other breaks the job.
+    import json
+
+    package = json.loads((WORKFLOWS.parent.parent / "package.json").read_text(encoding="utf-8"))
+    version = package["devDependencies"]["@playwright/test"]
+    image = re.search(r"mcr\.microsoft\.com/playwright:v([\d.]+)-", _jobs()["e2e"])
+    assert image is not None
+    assert image.group(1) == version
