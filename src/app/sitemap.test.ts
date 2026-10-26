@@ -226,6 +226,16 @@ describe("sitemap.xml (static pages)", () => {
     expect(byUrl.get("https://immojudis.com/methode-ecart-marche")).toBe("2026-10-15");
   });
 
+  it("lists the pepite method page, and dates the pages changed on 26 October by their real last change", async () => {
+    mocks.loadSitemapSales.mockResolvedValue([]);
+    const byUrl = new Map((await sitemap()).map((entry) => [entry.url, entry.lastModified]));
+    expect(byUrl.get("https://immojudis.com/methode-pepites")).toBe("2026-10-26");
+    expect(byUrl.get("https://immojudis.com/classement-des-annonces")).toBe("2026-10-26");
+    expect(byUrl.get("https://immojudis.com/a-propos")).toBe("2026-10-26");
+    expect(byUrl.get("https://immojudis.com/legal")).toBe("2026-10-26");
+    expect(byUrl.get("https://immojudis.com/conditions-generales")).toBe("2026-10-26");
+  });
+
   describe("department pages", () => {
     const catalogue = aggregateDepartments([
       ...departmentSales("33", 3),

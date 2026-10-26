@@ -36,6 +36,7 @@ const PAGES: Array<
     "classement-des-annonces",
     () => import("./classement-des-annonces/page"),
   ],
+  ["/methode-pepites", "methode-pepites", () => import("./methode-pepites/page")],
   ["/annonce-exemple", "annonce-exemple", () => import("./annonce-exemple/page")],
   [
     "/sales",

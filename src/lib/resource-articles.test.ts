@@ -164,8 +164,34 @@ describe("trois nouveaux articles du 19/10/2026", () => {
 describe("article sur les ventes notariales", () => {
   const article = getResourceArticle("ventes-notariales-domaniales-differences-tribunal")!;
 
-  it("est daté de sa mise à jour du 19/10/2026", () => {
-    expect(article.updatedAt).toBe("2026-10-19");
+  it("est daté de sa mise à jour du 26/10/2026", () => {
+    expect(article.updatedAt).toBe("2026-10-26");
+  });
+
+  it("distingue la surenchère des créanciers inscrits de la clause de 10 % en 10 jours", () => {
+    const text = visibleText(article);
+    expect(text).toContain(
+      "nous n’avons identifié dans la loi que la surenchère des créanciers inscrits : lorsque l’acquéreur purge les hypothèques, tout créancier inscrit dispose de quarante jours à compter de la notification pour requérir la remise aux enchères en surenchérissant du dixième avec caution (art. 2464 et 2465 du Code civil) ; ce délai ne part pas de l’adjudication",
+    );
+    expect(text).not.toMatch(/créanciers hypothécaires/);
+    expect(text).toContain("chèque de consignation de 20 %");
+    expect(text).not.toContain("ou certifié");
+    expect(text).toContain("caution bancaire irrévocable ou un chèque de banque du dixième");
+    expect(text).not.toMatch(/art\. 2480|articles? 2480 à 2482/);
+    expect(article.sources.some((source) => /articles 2464 et 2465/.test(source.label))).toBe(true);
+    expect(article.sources.some((source) => /BOI-ENR-DMTOI-10-10-30-20/.test(source.label))).toBe(
+      true,
+    );
+  });
+
+  it("nuance les frais d'une vente à la bougie : en sus selon la Chambre de Paris (2019), pas selon Notaires de France", () => {
+    const text = visibleText(article);
+    expect(text).toContain("en plus du prix d’adjudication");
+    expect(text).toContain("1 % HT du prix (minimum 387,50 € HT)");
+    expect(text).toContain("2 % HT (minimum 775 € HT)");
+    expect(text).toContain("« le prix comprend les frais de vente »");
+    expect(text).toContain("montant de la consignation indiquée dans la publicité");
+    expect(article.sources.some((source) => /13\/03\/2019/.test(source.label))).toBe(true);
   });
 
   it("distingue la vente à la bougie (enchères) de la vente interactive (offres, avant-contrat)", () => {
@@ -225,9 +251,15 @@ describe("relecture juridique du 19/10/2026", () => {
   });
 
   it("date de la relecture les articles dont le texte a été corrigé", () => {
-    expect(getResourceArticle("licitation-vente-bien-indivis-encheres-acheteur")!.updatedAt).toBe(
-      "2026-10-19",
-    );
+    // Repris le 26/10/2026 : frais taxés (art. R. 322-42, rendu applicable par l'art. 1278 du CPC) et
+    // caution du dixième du surenchérisseur (art. R. 322-51).
+    const licitation = getResourceArticle("licitation-vente-bien-indivis-encheres-acheteur")!;
+    expect(licitation.updatedAt).toBe("2026-10-26");
+    const licitationText = visibleText(licitation);
+    expect(licitationText).toContain("R. 322-42");
+    expect(licitationText).toContain("publiquement annoncés avant l’ouverture des enchères");
+    expect(licitationText).toContain("caution bancaire irrévocable ou d’un chèque de banque");
+    expect(licitation.sources.some((source) => /article R\. 322-42/.test(source.label))).toBe(true);
     // Corrigé à nouveau le 23/10/2026 : report du délai de dix jours (art. 641 et 642 CPC).
     const afterAward = getResourceArticle("apres-adjudication-surenchere-paiement-titre-vente")!;
     expect(afterAward.updatedAt).toBe("2026-10-23");

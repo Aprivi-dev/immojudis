@@ -54,6 +54,12 @@ const LLMS_TXT_METHOD_PAGES: readonly LlmsTxtPage[] = [
       "Source DVF, ventes comparables, périmètre, période, repli et limites de l’écart entre la mise à prix et la valeur de marché estimée.",
   },
   {
+    title: "Comment repérons-nous les pépites ?",
+    path: "/methode-pepites",
+    description:
+      "Le repère « Pépite » : calcul automatique sur critères publics, seuils, prix probable, limites et indépendance.",
+  },
+  {
     title: "Classement des annonces",
     path: "/classement-des-annonces",
     description:
