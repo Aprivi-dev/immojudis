@@ -5,9 +5,14 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
 import { DEFAULT_OPEN_FEE_REGIMES } from "@/lib/fee-regime-open";
-import { getExampleSaleRecords } from "@/lib/example-sale";
 import { buildCeilingSnapshot } from "@/lib/property-report/ceiling-snapshot";
 import { computeSaleCeiling } from "@/lib/sale-ceiling";
+import {
+  exampleCeilingChoices,
+  exampleHeadlineFigures,
+  getExampleSaleRecords,
+} from "@/lib/example-sale";
+import { formatPrice } from "@/lib/format";
 
 // Dated relative to today, like /annonce-exemple: the frozen records would turn into a past sale.
 const EXAMPLE_SALE_RECORDS = getExampleSaleRecords();
@@ -370,6 +375,30 @@ describe("après la vente : prix d'adjudication et plafond estimé", () => {
       false,
     );
     expect(screen.queryByTestId("adjudication-vs-ceiling")).toBeNull();
+  });
+});
+
+describe("example page ceiling", () => {
+  it("starts from the example's works level, so it shows the home page ceiling", () => {
+    window.localStorage.clear();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    mocks.fetchAiReviewProjections.mockResolvedValue({ projections: [] });
+    render(
+      <QueryClientProvider client={client}>
+        <AnalysisSaleDetailView
+          sale={EXAMPLE_SALE_RECORDS.bordeaux.sale}
+          marketEstimateOverride={EXAMPLE_SALE_RECORDS.bordeaux.marketEstimate}
+          publicDemo
+          defaultCeilingChoices={exampleCeilingChoices("bordeaux")}
+        />
+      </QueryClientProvider>,
+    );
+    const hero = (document.body.textContent ?? "").match(
+      /Enchère plafond \(simulation\)[^C]*/,
+    )?.[0];
+    expect(hero).toContain(formatPrice(exampleHeadlineFigures().ceiling));
+    expect(hero).toContain("Travaux");
+    expect(hero).not.toContain("Plafond hors travaux");
   });
 });
 

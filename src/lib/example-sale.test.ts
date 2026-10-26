@@ -8,6 +8,7 @@ import {
   getExampleSaleRecords,
 } from "./example-sale";
 import { getListingPublicInformation } from "./listing-public-information";
+import { propertyImages } from "./sale-media";
 import { buildCeilingHypotheses } from "./bid-ceiling-defaults";
 import { computeCeilingPlan } from "./bid-ceiling-engine";
 import { estimateWorksBudget } from "./profitability";
@@ -130,5 +131,15 @@ describe("home page figures", () => {
     expect(marketValue - feesAndWorks - safetyMargin).toBe(ceiling);
     expect(ceiling).toBeGreaterThan(exampleHeadlineFigures().startingPrice);
     expect(ceiling).toBeLessThan(marketValue);
+  });
+});
+
+describe("example photo hosted by the site", () => {
+  it("is the home page photo and leads the gallery", () => {
+    const media = getExampleSaleRecords().bordeaux.sale.media ?? [];
+    expect(media[0]?.url).toBe("/media/landing/dossier-apartment.webp?w=1600");
+    const gallery = propertyImages(media);
+    expect(gallery).toHaveLength(media.length);
+    expect(gallery[0]?.url).toBe(media[0]?.url);
   });
 });

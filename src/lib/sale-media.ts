@@ -6,6 +6,12 @@ const STRONG_NON_PROPERTY_IMAGE_PATTERN =
 const NON_IMAGE_EXTENSION_PATTERN = /\.(pdf|docx?|svg)([?#].*)?$/i;
 const POSITIVE_PROPERTY_IMAGE_PATTERN =
   /(^|[/_.-])(annonce|bien|gallery|galerie|hd|house|image|immobilier|large|media|original|photo|property|upload)([/_.-]|$)/i;
+/**
+ * Photo hébergée par le site lui-même (`public/media/landing/`), utilisée par les annonces exemple :
+ * une adresse relative de ce dossier ne vient jamais d'une source.
+ */
+const SITE_PHOTO_PATTERN = /^\/media\/landing\/[\w-]+\.(?:avif|jpe?g|png|webp)(?:\?w=\d+)?$/;
+const SITE_PHOTO_BASE = "https://site.invalid";
 const LOW_RESOLUTION_IMAGE_PATTERN =
   /(^|[/_.-])(low|mini|small|thumb|thumbnail)([/_.-]|$)|[?&](?:h|height|w|width)=(?:[1-3]?\d{1,2})(?:&|$)/i;
 
@@ -31,7 +37,7 @@ export function propertyImages(media: AuctionSale["media"] | undefined): SaleMed
 }
 
 export function isLikelyPropertyImageUrl(url: string | null | undefined): url is string {
-  if (!url || !/^https?:\/\//i.test(url)) return false;
+  if (!url || !(/^https?:\/\//i.test(url) || SITE_PHOTO_PATTERN.test(url))) return false;
 
   try {
     const parsed = propertyImageSource(url);
@@ -62,7 +68,7 @@ export function isLikelyPropertyImageUrl(url: string | null | undefined): url is
 // Inspect the source without fetching it, and use it to deduplicate variants.
 function propertyImageSource(url: string): URL | null {
   try {
-    let parsed = new URL(url);
+    let parsed = SITE_PHOTO_PATTERN.test(url) ? new URL(url, SITE_PHOTO_BASE) : new URL(url);
     for (let depth = 0; depth < 4; depth++) {
       if (!/^https?:$/.test(parsed.protocol)) return null;
       if (parsed.pathname !== "/_next/image" || !parsed.searchParams.has("url")) return parsed;
@@ -95,7 +101,7 @@ export function propertyImageUrlScore(url: string): number {
   if (LOW_RESOLUTION_IMAGE_PATTERN.test(url)) score -= 35;
 
   try {
-    const parsed = new URL(url);
+    const parsed = SITE_PHOTO_PATTERN.test(url) ? new URL(url, SITE_PHOTO_BASE) : new URL(url);
     for (const key of ["w", "width", "h", "height"]) {
       const dimension = Number(parsed.searchParams.get(key));
       if (dimension >= 800) score += 8;

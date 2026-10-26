@@ -10,12 +10,13 @@ import {
   HomeClosing,
   HomeFaq,
   homeFaqItems,
-  HomeProblem,
   HomeSources,
   HomeStats,
   HomeSteps,
 } from "@/components/home/HomeSections";
 import { HomeTagline } from "@/components/home/HomeTagline";
+import { HomeTryExample } from "@/components/home/HomeTryExample";
+import { exampleVerdictData } from "@/lib/example-verdict";
 import homeStyles from "@/components/home/HomePage.module.css";
 import { loadHomeCatalogueSummary } from "@/lib/home-catalogue-summary.server";
 import { loadHomeDepartmentCount } from "@/lib/home-departments.server";
@@ -72,7 +73,7 @@ export default async function Page() {
       <main id="contenu" className={homeStyles.page}>
         <HomeHero summary={summary} departments={departments} />
         <HomeStats summary={summary} departments={departments} />
-        <HomeProblem />
+        <HomeTryExample data={exampleVerdictData()} />
         <HomeTagline />
         <HomeBenefits />
         <HomeSteps />
