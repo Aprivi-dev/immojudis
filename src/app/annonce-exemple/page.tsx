@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { getExampleSaleRecords, isExampleSaleKey } from "@/lib/example-sale";
+import { exampleCeilingChoices, getExampleSaleRecords, isExampleSaleKey } from "@/lib/example-sale";
 import { resolveSiteOrigin } from "@/lib/site-url";
 import { pageMetadata } from "@/lib/page-metadata";
 import { ExampleSalePage } from "./example-sale-page";
@@ -32,6 +32,7 @@ export default async function Page({ searchParams }: PageProps) {
           key
         ]
       }
+      ceilingChoices={exampleCeilingChoices(key)}
       adjudicationStatisticsEnabled={process.env.ADJUDICATION_PRICE_STATISTICS_ENABLED === "true"}
     />
   );

@@ -1,5 +1,5 @@
 import type { MarketEstimate } from "@/lib/market.server";
-import { buildCeilingHypotheses } from "@/lib/bid-ceiling-defaults";
+import { buildCeilingHypotheses, type CeilingUserChoices } from "@/lib/bid-ceiling-defaults";
 import { computeCeilingPlan } from "@/lib/bid-ceiling-engine";
 import { estimateWorksBudget } from "@/lib/profitability";
 import type { AuctionSale } from "@/lib/types";
@@ -1013,17 +1013,25 @@ export function getExampleSaleRecords(
  * pages cannot disagree. Amounts are rounded to 100 €, consistently: value -
  * fees and works - margin = ceiling.
  */
+/**
+ * Les choix de départ du calcul de l'enchère plafond d'un exemple, avant tout réglage du visiteur :
+ * le niveau de travaux que l'annonce décrit (Bordeaux : « Rafraîchissement à prévoir »). Les chiffres
+ * de l'accueil partent des mêmes choix, si bien que /annonce-exemple affiche le même plafond.
+ */
+export function exampleCeilingChoices(key: ExampleSaleKey): CeilingUserChoices {
+  if (key !== "bordeaux") return {};
+  const surface = EXAMPLE_SALE_RECORDS.bordeaux.sale.app_surface_m2 ?? 0;
+  return {
+    works: { key: "rafraichissement", amount: estimateWorksBudget(surface, "rafraichissement") },
+  };
+}
+
 export function exampleHeadlineFigures() {
   const { sale, marketEstimate } = EXAMPLE_SALE_RECORDS.bordeaux;
   const surface = sale.app_surface_m2 ?? 0;
   const startingPrice = sale.starting_price_eur ?? 0;
   const result = computeCeilingPlan(
-    buildCeilingHypotheses(sale, marketEstimate, {
-      works: {
-        key: "rafraichissement",
-        amount: estimateWorksBudget(surface, "rafraichissement"),
-      },
-    }),
+    buildCeilingHypotheses(sale, marketEstimate, exampleCeilingChoices("bordeaux")),
   );
   const hundred = (value: number) => Math.round(value / 100) * 100;
   const marketValue = hundred(marketEstimate.estimatedValueEur ?? 0);
