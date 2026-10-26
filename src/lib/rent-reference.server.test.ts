@@ -6,8 +6,10 @@ const state = vi.hoisted(() => ({
   calls: [] as Array<{ table: string; filters: Array<[string, unknown]>; select: string }>,
   anilRows: [] as Array<Record<string, unknown>>,
   saleRows: [] as Array<Record<string, unknown>>,
+  communeRows: [] as Array<Record<string, unknown>>,
   singleRow: null as Record<string, unknown> | null,
   failTable: null as string | null,
+  failCode: undefined as string | undefined,
   configured: true,
   /** Lectures en cours en même temps (preuve du parallélisme des lots). */
   running: 0,
@@ -28,7 +30,8 @@ vi.mock("@/integrations/supabase/client.server", () => ({
       const call: Call = { table, filters: [], select: "" };
       state.calls.push(call);
       const result = () => {
-        if (state.failTable === table) return { data: null, error: new Error("boom") };
+        if (state.failTable === table)
+          return { data: null, error: Object.assign(new Error("boom"), { code: state.failCode }) };
         if (table === "anil_rents") {
           // Comme PostgREST : seulement les lignes des communes et des segments demandés.
           const codes = (call.filters.find(([column]) => column === "commune_code")?.[1] ??
@@ -43,6 +46,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
             error: null,
           };
         }
+        if (table === "auction_sale_communes") return { data: state.communeRows, error: null };
         return { data: state.saleRows, error: null };
       };
       const query: Record<string, unknown> = {
@@ -116,6 +120,8 @@ beforeEach(() => {
   state.calls = [];
   state.anilRows = [];
   state.saleRows = [];
+  state.communeRows = [];
+  state.failCode = undefined;
   state.singleRow = null;
   state.failTable = null;
   state.configured = true;
@@ -246,6 +252,44 @@ describe("loadRentLookup", () => {
     ]);
 
     expect(lookup({ id: "paris" })?.communeCode).toBe("75108");
+  });
+
+  it("prefers the stored commune table to the raw payload, and derives the arrondissement from the postal code", async () => {
+    state.anilRows = [anil("33063", "apt_all"), anil("75108", "apt_all")];
+    state.saleRows = [
+      { id: "stored", postal_code: null, citycode: "33281", accepted: "true", commune: null },
+      { id: "paris-centre", postal_code: "75008", citycode: null, accepted: null, commune: null },
+      { id: "raw-only", postal_code: null, citycode: "33063", accepted: "true", commune: null },
+    ];
+    state.communeRows = [
+      { sale_id: "stored", commune_insee: "33063", arrondissement_insee: null },
+      { sale_id: "paris-centre", commune_insee: "75056", arrondissement_insee: null },
+    ];
+
+    const lookup = await loadRentLookup([
+      { id: "stored", department: "33", property_type: "apartment" },
+      { id: "paris-centre", department: "75", property_type: "apartment" },
+      { id: "raw-only", department: "33", property_type: "apartment" },
+    ]);
+
+    expect(lookup({ id: "stored" })?.communeCode).toBe("33063");
+    expect(lookup({ id: "paris-centre" })?.communeCode).toBe("75108");
+    expect(lookup({ id: "raw-only" })?.communeCode).toBe("33063");
+  });
+
+  it("keeps reading the raw payload when the commune table does not exist yet", async () => {
+    state.anilRows = [anil("33063", "apt_all")];
+    state.saleRows = [
+      { id: "sale-d", postal_code: null, citycode: "33063", accepted: "true", commune: null },
+    ];
+    state.failTable = "auction_sale_communes";
+    state.failCode = "PGRST205";
+
+    const lookup = await loadRentLookup([
+      { id: "sale-d", department: "33", property_type: "apartment" },
+    ]);
+
+    expect(lookup({ id: "sale-d" })?.communeCode).toBe("33063");
   });
 
   it("serves the department rent to a sale whose geocode is rejected or missing", async () => {

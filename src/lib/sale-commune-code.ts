@@ -9,7 +9,7 @@ import { asRecordOrNull } from "@/lib/guards";
 //  2. `raw_payload.geocode.citycode`, là où le pipeline l'écrit déjà à chaque géocodage accepté.
 // Pour 75056, 69123 et 13055 (la commune, sans arrondissement), l'arrondissement se déduit du code
 // postal de la vente (75008 donne 75108, 69003 donne 69383, 13008 donne 13208).
-// Quand la table `auction_sale_communes` sera fusionnée, la lire en premier ici.
+// La table `auction_sale_communes` est lue en premier par `rent-reference.server.ts` (lecture serveur).
 //
 // `raw_payload` n'est exposé ni au navigateur ni aux vues de liste : hors lecture serveur, la fonction
 // rend `null` et le loyer retombe sur le repli départemental.

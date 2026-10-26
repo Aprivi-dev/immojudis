@@ -10,7 +10,7 @@ import {
   type RentReference,
   type RentSegment,
 } from "@/lib/rent-reference";
-import { saleCommuneCode } from "@/lib/sale-commune-code";
+import { arrondissementCode, normalizeCommuneCode, saleCommuneCode } from "@/lib/sale-commune-code";
 import type { AuctionSale } from "@/lib/types";
 
 // Lecture serveur de la carte des loyers de l'ANIL (`anil_rents`, table privée, rôle de service).
@@ -72,6 +72,31 @@ function chunked<T>(items: readonly T[], size: number): T[][] {
   return chunks;
 }
 
+/** Codes déjà stockés dans `auction_sale_communes` ; vide si la table n'existe pas encore. */
+async function readStoredSaleCommunes(
+  ids: readonly string[],
+): Promise<Map<string, { commune: string; arrondissement: string | null }>> {
+  const stored = new Map<string, { commune: string; arrondissement: string | null }>();
+  const { data, error } = await supabaseAdmin
+    .from("auction_sale_communes")
+    .select("sale_id,commune_insee,arrondissement_insee")
+    .in("sale_id", [...ids]);
+  if (error) {
+    // Avant la migration 20261106100000 : on garde la lecture des champs bruts.
+    if (error.code === "42P01" || error.code === "PGRST205") return stored;
+    throw error;
+  }
+  for (const row of data ?? []) {
+    const commune = normalizeCommuneCode(row.commune_insee);
+    if (!commune) continue;
+    stored.set(row.sale_id.toLowerCase(), {
+      commune,
+      arrondissement: normalizeCommuneCode(row.arrondissement_insee),
+    });
+  }
+  return stored;
+}
+
 /**
  * Code commune de chaque vente (clé : identifiant en minuscules). D'abord `saleCommuneCode` (la
  * seule fonction à rebrancher quand le code sera stocké sur la vente), puis, pour les ventes dont
@@ -99,24 +124,34 @@ async function resolveCommuneCodes(
     }
   }
   await inWaves(chunked([...toRead.keys()], SALE_ID_BATCH), async (ids) => {
-    const { data, error } = await supabaseAdmin
-      .from("auction_sales")
-      .select(
-        "id,postal_code,citycode:raw_payload->geocode->>citycode,accepted:raw_payload->geocode->>accepted,commune:raw_payload->commune",
-      )
-      .in("id", ids);
+    const [{ data, error }, stored] = await Promise.all([
+      supabaseAdmin
+        .from("auction_sales")
+        .select(
+          "id,postal_code,citycode:raw_payload->geocode->>citycode,accepted:raw_payload->geocode->>accepted,commune:raw_payload->commune",
+        )
+        .in("id", ids),
+      readStoredSaleCommunes(ids),
+    ]);
     if (error) throw error;
     const found = new Map<string, string | null>();
     for (const row of data ?? []) {
+      const id = row.id.toLowerCase();
+      const postalCode = row.postal_code ?? toRead.get(id)?.postal_code;
+      // La table des communes (remplie par le pipeline et le remplissage initial) passe avant les
+      // champs bruts : elle couvre aussi les ventes résolues par code postal ou par nom.
+      const storedCommune = stored.get(id);
       found.set(
-        row.id.toLowerCase(),
-        saleCommuneCode({
-          raw_payload: {
-            geocode: { citycode: row.citycode, accepted: row.accepted },
-            commune: row.commune,
-          },
-          postal_code: row.postal_code ?? toRead.get(row.id.toLowerCase())?.postal_code,
-        }),
+        id,
+        storedCommune
+          ? (storedCommune.arrondissement ?? arrondissementCode(storedCommune.commune, postalCode))
+          : saleCommuneCode({
+              raw_payload: {
+                geocode: { citycode: row.citycode, accepted: row.accepted },
+                commune: row.commune,
+              },
+              postal_code: postalCode,
+            }),
       );
     }
     for (const id of ids) {
