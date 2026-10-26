@@ -18,6 +18,9 @@ export type ExamplePhotoProps = {
   hearingInDays: number;
   startingPrice: number;
   value: number;
+  /** Fourchette de l'estimation ; 0 quand elle manque (rien ne s'affiche alors). */
+  valueLow: number;
+  valueHigh: number;
   comparables: number;
   radiusM: number;
   sameBuildingYear: number | null;
@@ -31,9 +34,10 @@ const CYCLE_MS = 3_400;
 const FIRST_CYCLE_MS = 4_200;
 
 /**
- * Premier écran : la photo de l'annonce exemple, un panneau « Analyse du bien » (les données
- * croisées) et le verdict. Trois situations défilent seules, du vert au rouge, tant que le visiteur
- * n'a pas choisi la sienne ; rien ne défile quand il réduit les animations.
+ * Premier écran : la fiche de l'annonce exemple sur un panneau blanc (photo en vignette, panneau
+ * « Analyse du bien » avec les données croisées), puis l'estimation et l'enchère à ne pas dépasser
+ * côte à côte. Trois situations défilent seules, du vert au rouge, tant que le visiteur n'a pas
+ * choisi la sienne ; rien ne défile quand il réduit les animations.
  */
 export function HomeExamplePhoto(props: ExamplePhotoProps) {
   const { presets, startingPrice } = props;
@@ -62,7 +66,6 @@ export function HomeExamplePhoto(props: ExamplePhotoProps) {
   const shown = useCountTo(preset.ceiling);
 
   const rows: Array<{ label: string; value: string; warn?: boolean }> = [
-    { label: "Estimation", value: formatPrice(props.value) },
     {
       label: `Ventes à moins de ${formatNumber(props.radiusM)} m`,
       value: formatNumber(props.comparables),
@@ -80,73 +83,93 @@ export function HomeExamplePhoto(props: ExamplePhotoProps) {
     ...(props.dpe ? [{ label: "DPE", value: props.dpe }] : []),
     { label: "Frais, travaux, portage", value: "Chiffrés" },
   ];
+  const range =
+    props.valueLow > 0 && props.valueHigh > props.valueLow
+      ? `${formatNumber(props.valueLow)} – ${formatPrice(props.valueHigh)}`
+      : null;
 
   return (
-    <figure
-      className={`${styles.examplePhoto} ${styles.heroAnim}`}
+    <div
+      className={`${styles.exampleStage} ${styles.heroAnim}`}
       style={{ "--delay": "200ms" } as React.CSSProperties}
-      aria-label={`Exemple fictif : analyse et verdict pour un appartement de ${props.surfaceM2} m² à ${props.city}`}
     >
-      <Image
-        src={props.photo}
-        alt="Séjour d’un appartement ancien, parquet et grandes fenêtres (photo d’illustration)"
-        fill
-        // La photo (16:9, 1 600 px) remplit un cadre plus haut que large : elle s'affiche environ deux
-        // fois plus large que le cadre (trois fois sur mobile). Demander la largeur du cadre la ferait
-        // agrandir, donc floue.
-        sizes="(max-width: 960px) 310vw, 1040px"
-        quality={85}
-        loading="eager"
-        fetchPriority="high"
-        className={styles.examplePhotoImage}
-      />
-      <div className={styles.examplePhotoShade} aria-hidden />
-      <div className={styles.exampleTop}>
-        <span className={styles.glass}>
-          <span>
-            T3 de {props.surfaceM2}&nbsp;m², balcon · {props.city}
-            <small>Tribunal judiciaire · audience dans {props.hearingInDays} jours</small>
-          </span>
-        </span>
-        <span className={styles.glass}>Exemple fictif</span>
-      </div>
-      <div className={styles.analysisPanel}>
-        <p className={styles.analysisHead}>
-          <span>Analyse du bien</span>
-          <span>
-            {rows.length} sur {rows.length}
-          </span>
-        </p>
-        <ul>
-          {rows.map((row, position) => (
-            <li
-              key={row.label}
-              className={row.warn ? styles.analysisWarn : undefined}
-              style={{ "--i": position } as React.CSSProperties}
-            >
-              <span className={styles.analysisCheck} aria-hidden>
-                {row.warn ? "!" : <Check size={9} />}
-              </span>
-              <span>{row.label}</span> <b>{row.value}</b>
-            </li>
-          ))}
-        </ul>
-      </div>
-      <div
-        className={`${styles.photoVerdict} ${styles[`verdict_${verdict}`]}`}
-        aria-live={chosen ? "polite" : "off"}
+      <figure
+        className={styles.exampleCard}
+        aria-label={`Exemple fictif : analyse et verdict pour un appartement de ${props.surfaceM2} m² à ${props.city}`}
       >
-        <div className={styles.photoVerdictRow}>
-          <div>
-            <span className={styles.photoVerdictLabel}>{preset.label}</span>
-            <p className={styles.verdictAmount}>{formatPrice(shown)}</p>
+        <div className={styles.exampleHeader}>
+          <div className={styles.exampleThumb}>
+            <Image
+              src={props.photo}
+              alt="Séjour d’un appartement ancien, parquet et grandes fenêtres (photo d’illustration)"
+              fill
+              sizes="(max-width: 520px) 128px, 200px"
+              quality={85}
+              loading="eager"
+              fetchPriority="high"
+              className={styles.exampleThumbImage}
+            />
+            <span className={styles.exampleBadge}>Exemple fictif</span>
           </div>
-          <span className={styles.verdictPill}>
-            <i aria-hidden />
-            {BID_VERDICT_LABEL[verdict]}
-          </span>
+          <div className={styles.exampleTitle}>
+            <p>
+              T3 de {props.surfaceM2}&nbsp;m², balcon · {props.city}
+            </p>
+            <p className={styles.exampleSub}>
+              Tribunal judiciaire · audience dans {props.hearingInDays} jours
+            </p>
+            <p className={styles.exampleChip}>
+              Mise à prix <b>{formatPrice(startingPrice)}</b>
+            </p>
+          </div>
         </div>
-        <p className={styles.verdictText}>{bidVerdictSentence(preset.ceiling, startingPrice)}</p>
+
+        <div className={styles.analysisBlock}>
+          <p className={styles.analysisHead}>
+            <span>Analyse du bien</span>{" "}
+            <span>
+              {rows.length} sur {rows.length}
+            </span>
+          </p>
+          <ul>
+            {rows.map((row, position) => (
+              <li
+                key={row.label}
+                className={row.warn ? styles.analysisWarn : undefined}
+                style={{ "--i": position } as React.CSSProperties}
+              >
+                <span className={styles.analysisCheck} aria-hidden>
+                  {row.warn ? "!" : <Check size={9} />}
+                </span>
+                <span>{row.label}</span> <b>{row.value}</b>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div aria-live={chosen ? "polite" : "off"}>
+          <div className={styles.exampleTiles}>
+            <div className={styles.valueTile}>
+              <span className={styles.tileLabel}>Estimation</span>{" "}
+              <p className={styles.tileAmount}>{formatPrice(props.value)}</p>
+              {range ? <span className={styles.tileNote}>Fourchette : {range}</span> : null}
+            </div>
+            <div className={`${styles.ceilingTile} ${styles[`verdict_${verdict}`]}`}>
+              <span className={styles.tileLabel}>Enchère à ne pas dépasser</span>{" "}
+              <p className={styles.verdictAmount}>{formatPrice(shown)}</p>
+              <span className={styles.verdictPill}>
+                <i aria-hidden />
+                {BID_VERDICT_LABEL[verdict]}
+              </span>
+            </div>
+          </div>
+          <p className={`${styles.exampleSituation} ${styles[`verdict_${verdict}`]}`}>
+            <span className={styles.situationLabel}>{preset.label}</span>{" "}
+            <span className={styles.verdictText}>
+              {bidVerdictSentence(preset.ceiling, startingPrice)}
+            </span>
+          </p>
+        </div>
         <div className={styles.presetButtons} role="group" aria-label="Situations de l’exemple">
           {presets.map((item, position) => (
             <button
@@ -162,7 +185,7 @@ export function HomeExamplePhoto(props: ExamplePhotoProps) {
             </button>
           ))}
         </div>
-      </div>
-    </figure>
+      </figure>
+    </div>
   );
 }
