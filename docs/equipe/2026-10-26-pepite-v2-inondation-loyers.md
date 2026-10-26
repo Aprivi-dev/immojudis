@@ -181,3 +181,40 @@ inonderait** (scénario « forte probabilité » de la cartographie officielle).
   - calcul de 18 h 35 passé (600 ventes évaluées).
 - **Seul effet visible** : l'historique des réponses `pg_net` a été vidé.
 - **Mesure** : proposition n° 16.
+
+## Validation (26/10/2026)
+
+Le fondateur suit les recommandations du chef d'orchestre :
+
+- **Validés** : n° 1 à 13 et 16.
+- **Reportés** : n° 14 (rendement locatif dans la pépite, une `pepite-v3`) et n° 15 (précision des positions, mission à
+  part).
+- **Points tranchés** :
+  1. L'exclusion se limite au scénario « forte probabilité » d'un TRI ; le périmètre d'un PPRI est seulement affiché.
+  2. Une position imprécise dans une commune qui a un TRI ne peut pas devenir pépite.
+  3. Une pépite déjà publiée dont le verdict devient inconnu reste affichée jusqu'à la vente ; seul un risque élevé la
+     fait sortir.
+
+## Vérification réelle de l'API TRI (n° 3, 26/10/2026)
+
+`GET https://www.georisques.gouv.fr/api/v1/tri_zonage?latlon=<lon>,<lat>` répond sans jeton. L'API rend une entrée
+par type d'inondation, avec le scénario le plus probable dont la zone contient le point.
+
+| Point testé | Entrées rendues (type / scénario) |
+|---|---|
+| Loire à Tours (0.6890, 47.3990) | `01/01For` |
+| Bordeaux (-0.5590, 44.8460) | `01/04Fai`, `03/02Moy` |
+| Quai d'Austerlitz, Paris (2.3640, 48.8443) | `01/04Fai` |
+| Montmartre (2.3420, 48.8867) | aucune |
+
+Conclusion : le point est bien testé à l'intérieur de la zone. Le critère « élevé » est donc « au moins une entrée de
+scénario `01For` ». Aucun repli sur les fichiers de formes n'est nécessaire. Les cartes datent du premier cycle
+(arrêtés de 2013).
+
+## Exécution
+
+- **Lot inondation** (n° 1, 2, 4, 5, 6, 8, 16) : confié à `developpeur`, sur la branche `claude/pepite-v2`. La règle v2
+  est livrée derrière un interrupteur, désactivé par défaut. La bascule aura lieu après l'alimentation du traitement et
+  la calibration (n° 7).
+- **Lot loyers et zones tendues** (n° 10 à 13) : confié à un second `developpeur`, dans une copie séparée.
+- **Relecture juridique** (n° 9) : confiée à `juridique-rgpd`.
