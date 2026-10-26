@@ -284,7 +284,43 @@ Le suivi est complété ci-dessous à chaque lot.
 - **Lot 0** : livré (commit `1167697`) après relecture par `code-reviewer`. CI verte sur la PR #312.
 - **Lot A1** : livré (commit `87f9536`) après relecture. Aucun résultat du tribunal ne change.
 - **Lot A2** : en cours.
-- **Contenus** (n° 13, 20, 21) : en cours, en parallèle du lot A2.
+- **Contenus** (n° 13, 20, 21) : livrés (commit `e75605f`) après relecture par `juridique-rgpd`. Aucun point bloquant ne reste. Le préavis des CGU a été repoussé au 1er décembre 2026.
+
+### Actions du fondateur
+
+1. **Avant le 1er novembre 2026 : envoyer l'email d'information sur les CGU** à tous les comptes dont l'adresse est confirmée, et garder la trace de l'envoi.
+   - Aucun outil du dépôt ne fait cet envoi. Celui de l'offre de lancement ne convient pas.
+   - Passé le 1er novembre, repousser `PEPITE_TERMS_EFFECTIVE_DATE` dans `src/lib/legal-documents.ts` à la date d'envoi plus 30 jours.
+
+   Texte proposé :
+
+   > **Objet : Mise à jour de nos conditions générales au 1er décembre 2026**
+   >
+   > Bonjour,
+   >
+   > Nous mettons à jour les conditions générales d'utilisation et de vente d'Immojudis. La nouvelle version (2026-10-26.1) s'appliquera à votre compte à compter du **1er décembre 2026**. D'ici là, la version actuelle (2026-10-25.1) continue de s'appliquer ; elle vous est communiquée sur simple demande.
+   >
+   > Ce qui change :
+   > - **Le repère « Pépite »** : un repère calculé automatiquement par Immojudis sur des critères publics. Ce n'est ni un conseil ni une recommandation d'acheter, ni une garantie de prix, de rendement ou d'adjudication. Le repère est visible par tous ; le montant de l'enchère plafond estimée et le détail du calcul restent réservés à l'offre Analyse ou à un déblocage.
+   > - **Enchère plafond ou offre plafond, selon la vente** : pour les ventes par offres, on parle d'offre plafond. Une enchère ou une offre plafond est une hypothèse, pas un résultat.
+   > - **Indépendance vis-à-vis de la publicité** : aucune rémunération ne peut obtenir ou améliorer une Pépite, ni améliorer le rang d'une annonce. Les encarts sponsorisés d'avocats restent séparés des annonces et sans lien avec ce repère.
+   >
+   > Lire la nouvelle version : https://immojudis.com/conditions-generales
+   >
+   > Si ces changements ne vous conviennent pas, vous pouvez fermer votre compte gratuitement, à tout moment avant le 1er décembre 2026, depuis la page Mes droits.
+   >
+   > L'équipe Immojudis
+
+2. **Avant le passage du label en `on` : obtenir l'accord écrit de Licitor.**
+   - Le test B et le prix probable dérivent des prix d'adjudication de Licitor.
+   - Un badge public est un usage en accès libre, que l'accord téléphonique ne couvre pas (`docs/vercel_setup.md`, `docs/model-card-tribunal-statistics.md`).
+
+3. **Recommandé : faire valider par un avocat** les points listés par `juridique-rgpd` :
+   - qualification du repère ;
+   - opposabilité des CGU ;
+   - droit des bases de données ;
+   - règles de la profession d'avocat ;
+   - loi Hoguet.
 
 **Décision du fondateur (26/10/2026).** Le chef d'orchestre mène le sujet jusqu'au bout :
 - fusion de la PR #312 dans `main`, CI verte ;
