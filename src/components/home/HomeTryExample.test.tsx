@@ -33,7 +33,7 @@ describe("Essayez sur un exemple", () => {
     fireEvent.click(screen.getByRole("button", { name: "Rénovation confort" }));
     expect(screen.getByRole("button", { name: "Louer" }).getAttribute("aria-pressed")).toBe("true");
     expect(text(verdictBox())).toContain("On passe son tour");
-    expect(text(verdictBox())).toContain("La mise à prix dépasse déjà votre plafond de 51 000 €.");
+    expect(text(verdictBox())).toContain("La mise à prix dépasse déjà votre plafond de 50 500 €.");
     expect(text(verdictBox())).toContain("Louer : le loyer estimé fixe la limite (rendement).");
     // Le choix du visiteur est annoncé ; la démonstration automatique ne l'est pas.
     expect(verdictBox().getAttribute("aria-live")).toBe("polite");

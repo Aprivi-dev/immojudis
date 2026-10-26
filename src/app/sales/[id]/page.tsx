@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound, permanentRedirect } from "next/navigation";
+import { openFeeRegimesFromEnv } from "@/lib/fee-regime.server";
 import { lookupPublicSale } from "@/lib/public-sale.server";
 import {
   GENERIC_SALE_SEO_TITLE,
@@ -123,6 +124,7 @@ export default async function Page({ params }: PageProps) {
         id={id}
         initialData={{ sale: null, preview: sale }}
         adjudicationStatisticsEnabled={process.env.ADJUDICATION_PRICE_STATISTICS_ENABLED === "true"}
+        openFeeRegimes={openFeeRegimesFromEnv()}
       />
     </>
   );

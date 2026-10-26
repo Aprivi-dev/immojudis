@@ -71,20 +71,21 @@ plafond.
 
 ## Pastilles
 
-Composant `Badge` (`tone` : `neutral`, `gold`, `success`, `warning`, `danger`, `info`).
+Composant `Badge` (`tone` : `neutral`, `gold`, `success`, `warning`, `danger`, `info`, `pepite`).
 
-- **Deux pastilles au plus** par carte.
+- **Deux pastilles au plus** par carte, photo comprise : si « Débloquée », « Pépite » et « Vu » s'appliquent à la même vente, « Vu » disparaît de la photo. La pastille « Pépite » est opaque blanche, bordure et logo or, texte `gold-text`, sans animation : elle se distingue du fond or plein de « Débloquée » et de l'encart « Sponsorisé ».
 - La couleur seulement pour ce qui demande l'attention ; toujours un libellé, souvent une icône.
 
-| Information                                  | Ton                       | Où                                                 |
-| -------------------------------------------- | ------------------------- | -------------------------------------------------- |
-| Type de vente (tribunal, notaire, domaniale) | `neutral` avec icône      | Carte et fiche                                     |
-| Vente aujourd'hui                            | `danger`                  | Carte et fiche                                     |
-| Vente dans 7 jours ou moins                  | `warning`                 | Carte et fiche                                     |
-| Points à vérifier                            | `warning`                 | Fiche seulement                                    |
-| Donnée recoupée                              | `success`                 | Fiche seulement                                    |
-| Heure à confirmer                            | texte simple sous la date | Carte et fiche                                     |
-| Qualité de l'annonce                         | —                         | **Fiche seulement** (retirée des cartes de /sales) |
+| Information                                  | Ton                                            | Où                                                     |
+| -------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------ |
+| Type de vente (tribunal, notaire, domaniale) | `neutral` avec icône                           | Carte et fiche                                         |
+| Vente aujourd'hui                            | `danger`                                       | Carte et fiche                                         |
+| Vente dans 7 jours ou moins                  | `warning`                                      | Carte et fiche                                         |
+| Points à vérifier                            | `warning`                                      | Fiche seulement                                        |
+| Donnée recoupée                              | `success`                                      | Fiche seulement                                        |
+| Heure à confirmer                            | texte simple sous la date                      | Carte et fiche                                         |
+| Pépite                                       | `pepite` avec le logo de pépite (`PepiteIcon`) | Photo des cartes (haut gauche), tableau (icône), fiche |
+| Qualité de l'annonce                         | —                                              | **Fiche seulement** (retirée des cartes de /sales)     |
 
 ## Migration
 

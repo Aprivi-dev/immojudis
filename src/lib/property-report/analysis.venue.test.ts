@@ -1,3 +1,4 @@
+import { DEFAULT_OPEN_FEE_REGIMES } from "@/lib/fee-regime-open";
 import { describe, expect, it, vi } from "vitest";
 import type { AuctionSale } from "@/lib/types";
 import { buildPlanEntitlements } from "./entitlements";
@@ -27,7 +28,7 @@ function snapshotOf(sale: Partial<AuctionSale>) {
     dpeDiagnostics: [],
     urbanPlanningSignals: [],
     valuationBacktest: null,
-    ceilingSnapshot: buildCeilingSnapshot(full, null),
+    ceilingSnapshot: buildCeilingSnapshot(full, null, {}, DEFAULT_OPEN_FEE_REGIMES),
     plan: buildPlanEntitlements("analyse"),
   });
 }

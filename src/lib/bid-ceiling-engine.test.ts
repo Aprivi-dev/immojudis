@@ -44,17 +44,17 @@ function hypotheses(overrides: Partial<CeilingHypotheses> = {}): CeilingHypothes
 describe("computeCeilingPlan", () => {
   it("counts down from the value to the ceiling (worked example)", () => {
     // 200 000 € − 10 % = 180 000 € de coût total. Frais à l'enchère P :
-    // émoluments TTC + droits 6,32 % et CSI sur P + 5 000 € + 5 000 € + 1 500 €.
+    // émoluments TTC + droits 6,32 % et CSI sur P (les frais préalables sont hors base) + 5 000 € + 5 000 € + 1 500 €.
     const h = hypotheses();
     const plan = computeCeilingPlan(h);
 
     expect(plan.budget).toBe(180_000);
-    expect(plan.maxBid).toBe(159_000);
+    expect(plan.maxBid).toBe(159_500);
     expect(evaluateBid(h, plan, plan.maxBid).totalCost).toBeLessThanOrEqual(180_000);
     expect(evaluateBid(h, plan, plan.maxBid + 500).totalCost).toBeGreaterThan(180_000);
     expect(plan.steps.at(0)).toMatchObject({ key: "value", amount: 200_000 });
-    expect(plan.steps.at(-1)).toMatchObject({ key: "ceiling", amount: 159_000 });
-    expect(plan.startingPriceGap).toBe(59_000);
+    expect(plan.steps.at(-1)).toMatchObject({ key: "ceiling", amount: 159_500 });
+    expect(plan.startingPriceGap).toBe(59_500);
   });
 
   it("charges the release of an occupied property and the months it takes", () => {
@@ -261,9 +261,41 @@ describe("ceilingConfidence", () => {
     expect(confidence.gaps).toEqual(
       expect.arrayContaining([
         "occupation non confirmée",
-        "frais préalables à demander à l’avocat poursuivant",
+        "frais préalables à lire dans le cahier des conditions de vente",
       ]),
     );
+  });
+});
+
+describe("ceilingConfidence and preliminary fees", () => {
+  it("is never « Solide » while the preliminary fees are a default value", () => {
+    const confidence = ceilingConfidence(hypotheses());
+
+    expect(confidence.score).toBe(88);
+    expect(confidence.label).toBe("À consolider");
+    expect(confidence.gaps).toEqual([
+      "frais préalables à lire dans le cahier des conditions de vente",
+    ]);
+  });
+
+  it("is « Solide » when the user entered the preliminary fees, with no gap", () => {
+    const confidence = ceilingConfidence(
+      hypotheses({ feesSource: { fpt: "saisie", consignation: "regle" } }),
+    );
+
+    expect(confidence.score).toBe(100);
+    expect(confidence.label).toBe("Solide");
+    expect(confidence.gaps).toEqual([]);
+  });
+
+  it("is « Solide » once the preliminary fees are read in the listing", () => {
+    const confidence = ceilingConfidence(
+      hypotheses({ feesSource: { fpt: "document", consignation: "regle" } }),
+    );
+
+    expect(confidence.score).toBe(100);
+    expect(confidence.label).toBe("Solide");
+    expect(confidence.gaps).toEqual([]);
   });
 });
 

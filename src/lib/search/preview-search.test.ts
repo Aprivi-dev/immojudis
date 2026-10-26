@@ -3,8 +3,11 @@ import {
   buildPreviewSearchArgs,
   mapPreviewRows,
   previewSearchRequestKey,
+  MAX_PEPITE_SCAN_ROWS,
+  PEPITE_SCAN_CONCURRENCY,
   runPreviewSearch,
 } from "./preview-search";
+import { PublicApiError } from "@/lib/api-errors";
 import { salesSearchSignature, validateSalesSearch } from "./search-url-state";
 
 const row = {
@@ -81,6 +84,120 @@ describe("public preview search", () => {
     expect(rpc.mock.calls[1][1]).toMatchObject({
       p_min_sale_date: "2026-10-01",
       p_max_sale_date: null,
+    });
+  });
+
+  describe("« Pépites seulement » (visiteur)", () => {
+    /** Une page de la recherche : les ventes d'index [offset, offset + limit) d'un catalogue de 250 ventes. */
+    const catalogue = Array.from({ length: 250 }, (_, index) => ({
+      ...row,
+      id: `SALE-${index}`,
+      total_count: 250,
+    }));
+    function client(pepiteResult: { data: unknown; error: unknown }) {
+      return {
+        rpc: vi.fn(async (name: string, args: { p_limit?: number; p_offset?: number }) =>
+          name === "list_public_pepite_sale_ids"
+            ? pepiteResult
+            : {
+                data: catalogue.slice(args.p_offset, (args.p_offset ?? 0) + (args.p_limit ?? 24)),
+                error: null,
+              },
+        ),
+      };
+    }
+    const searchCalls = (rpc: ReturnType<typeof client>["rpc"]) =>
+      rpc.mock.calls.filter(([name]) => name !== "list_public_pepite_sale_ids");
+
+    it("croise la liste des pépites (une lecture) avec les lignes, dans l'ordre de la recherche", async () => {
+      const { rpc } = client({ data: ["sale-200", "sale-3", "sale-120", "absente"], error: null });
+      const { items, count } = await runPreviewSearch({ rpc }, { pepite: true });
+      expect(items.map((item) => item.id)).toEqual(["SALE-3", "SALE-120", "SALE-200"]);
+      expect(count).toBe(3);
+      expect(
+        rpc.mock.calls.filter(([name]) => name === "list_public_pepite_sale_ids"),
+      ).toHaveLength(1);
+      // 250 ventes : trois pages de 100.
+      expect(searchCalls(rpc)).toHaveLength(3);
+    });
+
+    it("pagine le résultat filtré, pas le catalogue", async () => {
+      const ids = Array.from({ length: 30 }, (_, index) => `sale-${index * 8}`);
+      const { rpc } = client({ data: ids, error: null });
+      const second = await runPreviewSearch({ rpc }, { pepite: true, page: 2, limit: 24 });
+      expect(second.count).toBe(30);
+      expect(second.items).toHaveLength(6);
+    });
+
+    it("sans pépite (mode shadow, fonction absente, panne), rend aucune vente sans lire le catalogue", async () => {
+      for (const result of [
+        { data: [], error: null },
+        { data: null, error: { code: "PGRST202" } },
+        { data: null, error: { code: "57014" } },
+      ]) {
+        const { rpc } = client(result);
+        await expect(runPreviewSearch({ rpc }, { pepite: true })).resolves.toEqual({
+          items: [],
+          count: 0,
+        });
+        expect(searchCalls(rpc)).toHaveLength(0);
+      }
+    });
+
+    it("lit les pages 4 à la fois au plus, jamais en rafale", async () => {
+      let inFlight = 0;
+      let peak = 0;
+      const rpc = vi.fn(async (name: string, args: { p_limit?: number; p_offset?: number }) => {
+        if (name === "list_public_pepite_sale_ids") return { data: ["sale-3"], error: null };
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        inFlight -= 1;
+        const rows = Array.from({ length: 3_000 }, (_, index) => ({
+          ...row,
+          id: `SALE-${index}`,
+          total_count: 3_000,
+        }));
+        return {
+          data: rows.slice(args.p_offset, (args.p_offset ?? 0) + (args.p_limit ?? 24)),
+          error: null,
+        };
+      });
+      const result = await runPreviewSearch({ rpc }, { pepite: true });
+      expect(result.items.map((item) => item.id)).toEqual(["SALE-3"]);
+      // 3 000 lignes : 30 pages, lues par groupes de 4 au plus (la première seule, puis 4 à la fois).
+      expect(
+        rpc.mock.calls.filter(([name]) => name !== "list_public_pepite_sale_ids"),
+      ).toHaveLength(30);
+      expect(peak).toBeLessThanOrEqual(PEPITE_SCAN_CONCURRENCY);
+      expect(peak).toBeGreaterThan(1);
+    });
+
+    it("refuse une recherche de plus de 3 000 lignes (« trop large ») au lieu de tronquer en silence", async () => {
+      const rpc = vi.fn(async (name: string) =>
+        name === "list_public_pepite_sale_ids"
+          ? { data: ["sale-1"], error: null }
+          : {
+              data: [{ ...row, id: "SALE-1", total_count: MAX_PEPITE_SCAN_ROWS + 1 }],
+              error: null,
+            },
+      );
+      const failure = await runPreviewSearch({ rpc }, { pepite: true }).catch(
+        (error: unknown) => error,
+      );
+      expect(failure).toBeInstanceOf(PublicApiError);
+      expect((failure as PublicApiError).status).toBe(400);
+      expect((failure as Error).message).toBe(
+        "Cette recherche est trop large. Choisissez une région ou un département pour appliquer les filtres avancés.",
+      );
+      // Une seule page lue : on ne balaie pas ce qu'on va refuser.
+      expect(
+        rpc.mock.calls.filter(([name]) => name !== "list_public_pepite_sale_ids"),
+      ).toHaveLength(1);
+    });
+
+    it("distingue la recherche filtrée des pépites de la même recherche sans filtre", () => {
+      expect(previewSearchRequestKey({ pepite: true })).not.toBe(previewSearchRequestKey({}));
     });
   });
 

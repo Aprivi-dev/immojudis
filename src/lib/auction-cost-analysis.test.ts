@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildAuctionCostAnalysis } from "@/lib/auction-cost-analysis";
+import { buildAuctionCostAnalysis, findConsignation } from "@/lib/auction-cost-analysis";
 import { EXAMPLE_SALE } from "@/lib/example-sale";
 import { computeAcquisitionCosts } from "@/lib/profitability";
+import type { AuctionSale } from "@/lib/types";
 
 describe("auction cost analysis", () => {
   it("shows the fee clause instead of a long source heading and ignores property rights", () => {
@@ -184,5 +185,137 @@ describe("auction cost analysis", () => {
     expect(analysis.nextActions).toEqual(
       expect.arrayContaining(["Identifier le montant de consignation exigé avant l'audience."]),
     );
+  });
+});
+
+describe("findConsignation: typed facts before text", () => {
+  const procedure = (guarantee: Record<string, unknown>) => ({
+    schema_version: "sale_procedure_v1",
+    ruleset_version: "test",
+    venue_type: "notary",
+    state_sale_method: "unknown",
+    legal_framework: "voluntary_notarial",
+    venue_name: null,
+    venue_address: null,
+    participation_mode: "unknown",
+    organizer_name: null,
+    organizer_type: "notary",
+    organizer_contact: null,
+    eligible_bar: null,
+    rules: {
+      lawyer_required: false,
+      lawyer_note: "",
+      bid_method: "direct_or_sale_specific",
+      guarantee: { rate_pct: null, minimum_eur: null, note: "", ...guarantee },
+      financing_condition: false,
+      cooling_off_period: false,
+      payment_deadline_days: null,
+      overbid: { allowed: null, minimum_increase_pct: null, window_days: null, note: "" },
+    },
+    verification: {
+      status: "verified",
+      verified_at: null,
+      case_source_count: 0,
+      case_sources: [],
+      regulatory_sources: [],
+      facts: [],
+      issues: [],
+    },
+  });
+  const textSale = (overrides: Partial<AuctionSale> = {}): AuctionSale => ({
+    ...EXAMPLE_SALE,
+    source_blocks: null,
+    source_blocks_by_source: null,
+    description: null,
+    source_description: "Consignation : 5 000 €.",
+    ...overrides,
+  });
+
+  it("reads the amount of a case-verified guarantee first", () => {
+    const sale = textSale({
+      sale_procedure: procedure({ amount_eur: 12_000, status: "case_verified" }),
+      raw_payload: { source_property_features: { sale_conditions: { deposit_eur: 8_000 } } },
+    });
+
+    expect(findConsignation(sale)).toEqual({
+      amountEur: 12_000,
+      label: "Consignation",
+      source: "Procédure de vente vérifiée",
+    });
+  });
+
+  it("ignores a guarantee that is only the regulatory minimum", () => {
+    const sale = textSale({
+      sale_procedure: procedure({ amount_eur: 9_500, status: "regulatory_verified" }),
+    });
+
+    expect(findConsignation(sale)).toMatchObject({
+      amountEur: 5_000,
+      source: "Description source",
+    });
+  });
+
+  it("ignores a case-verified guarantee that has a rate but no amount", () => {
+    const sale = textSale({
+      sale_procedure: procedure({ amount_eur: null, rate_pct: 10, status: "case_verified" }),
+    });
+
+    expect(findConsignation(sale)).toMatchObject({ amountEur: 5_000 });
+  });
+
+  it("reads deposit_eur of the notarial announcement when the procedure gives no amount", () => {
+    const sale = textSale({
+      sale_procedure: procedure({ amount_eur: null, status: "pending_case_document" }),
+      raw_payload: { source_property_features: { sale_conditions: { deposit_eur: 12_000 } } },
+    });
+
+    expect(findConsignation(sale)).toEqual({
+      amountEur: 12_000,
+      label: "Consignation",
+      source: "Annonce notariale",
+    });
+  });
+
+  it("reads deposit_eur from the projection the browser receives, as a record or an observed claim", () => {
+    const projected = (value: unknown) =>
+      textSale({
+        source_blocks: {
+          listing_completeness: { source_property_features: { sale_conditions: value } },
+        },
+      });
+
+    for (const value of [
+      { deposit_eur: 12_000 },
+      { state: "observed", value: { deposit_eur: 12_000 } },
+    ]) {
+      expect(findConsignation(projected(value))).toEqual({
+        amountEur: 12_000,
+        label: "Consignation",
+        source: "Annonce notariale",
+      });
+    }
+    // A claim that is not observed is not a fact: back to the text.
+    expect(
+      findConsignation(projected({ state: "unknown", value: { deposit_eur: 12_000 } })),
+    ).toMatchObject({ amountEur: 5_000, source: "Description source" });
+  });
+
+  it("does not take a zero or non-numeric deposit_eur", () => {
+    for (const deposit of [0, "12000", null]) {
+      const sale = textSale({
+        raw_payload: { source_property_features: { sale_conditions: { deposit_eur: deposit } } },
+      });
+
+      expect(findConsignation(sale)).toMatchObject({ amountEur: 5_000 });
+    }
+  });
+
+  it("keeps the text and blocks behaviour without typed facts, ambiguity included", () => {
+    expect(findConsignation(textSale())).toMatchObject({ amountEur: 5_000 });
+    expect(
+      findConsignation(
+        textSale({ source_description: "Consignation : 5 000 €. Consignation : 7 000 €." }),
+      ),
+    ).toBeNull();
   });
 });

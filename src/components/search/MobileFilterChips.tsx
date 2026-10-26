@@ -3,12 +3,15 @@ import { useId } from "react";
 import type * as React from "react";
 import Building2 from "lucide-react/dist/esm/icons/building-2.js";
 import CalendarDays from "lucide-react/dist/esm/icons/calendar-days.js";
+import Check from "lucide-react/dist/esm/icons/check.js";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
 import {
   HOME_TYPE_OPTIONS,
   NO_POINTS_TO_VERIFY_FILTER_LABEL,
   compactPrice,
 } from "@/lib/search/search-filters";
+import { PepiteIcon } from "@/components/PepiteBadge";
+import { PEPITE_FILTER_LABEL } from "@/lib/pepite-copy";
 import { DateRangeFields } from "./DateRangeFields";
 import { draftPrice, priceRangeError, type SearchDraft } from "./search-page-state";
 
@@ -36,11 +39,18 @@ export function MobileFilterChips({
   draft,
   setDraft,
   preview = false,
+  pepitesActive = false,
 }: {
   draft: SearchDraft;
   setDraft: React.Dispatch<React.SetStateAction<SearchDraft>>;
   /** Visiteur sans compte : les deux filtres de repères nécessitent un compte, ils ne sont pas proposés. */
   preview?: boolean;
+  /**
+   * Les pépites sont ouvertes au public (liste non vide) : la pastille « Pépites seulement » est proposée en
+   * première, aux visiteurs aussi. Sinon (mode « shadow », panne) elle n'apparaît pas : pas de filtre qui ne
+   * renverrait jamais rien.
+   */
+  pepitesActive?: boolean;
 }) {
   return (
     <div
@@ -48,6 +58,17 @@ export function MobileFilterChips({
       aria-label="Filtres rapides"
       className="-mx-4 flex w-full gap-2 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] lg:hidden"
     >
+      {pepitesActive ? (
+        <button
+          type="button"
+          aria-pressed={draft.pepite}
+          onClick={() => setDraft((current) => ({ ...current, pepite: !current.pepite }))}
+          className={chipClass(draft.pepite)}
+        >
+          {draft.pepite ? <Check className="size-4" aria-hidden /> : <PepiteIcon />}
+          {PEPITE_FILTER_LABEL}
+        </button>
+      ) : null}
       <HomeTypeChip draft={draft} setDraft={setDraft} />
       <MaxPriceChip draft={draft} setDraft={setDraft} />
       <SaleDateChip draft={draft} setDraft={setDraft} />

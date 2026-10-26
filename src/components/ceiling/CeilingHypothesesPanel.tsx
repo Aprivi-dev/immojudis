@@ -2,8 +2,9 @@
 
 import { useId, useState } from "react";
 import type { CeilingHypotheses, OccupationCase } from "@/lib/bid-ceiling-engine";
-import { marginPctFor, targetYieldPct } from "@/lib/bid-ceiling-engine";
+import { consignationAmount, marginPctFor, targetYieldPct } from "@/lib/bid-ceiling-engine";
 import type { CeilingUserChoices } from "@/lib/bid-ceiling-defaults";
+import { consignationRuleOf, labelsOf } from "@/lib/fee-regime-definitions";
 
 type ChoicesUpdate = (change: (choices: CeilingUserChoices) => CeilingUserChoices) => void;
 type NumberChoice = {
@@ -37,6 +38,12 @@ export function CeilingHypothesesPanel({
     h.occupation.case === "occupe" ||
     h.occupation.case === "squat" ||
     h.occupation.case === "inconnu";
+  const labels = labelsOf(h).planner;
+  const notarial = h.regime?.kind === "notarial";
+  const byOffers = labelsOf(h).byOffers;
+  const registrationHint = notarial
+    ? `Selon le département du bien. Les émoluments du notaire suivent le barème réglementé (${h.regime?.emolumentScale.reference}, relevé le ${h.regime?.emolumentScale.date} : à confirmer sur Légifrance).`
+    : "Selon le département du bien. Les émoluments de l’avocat poursuivant suivent le barème réglementé.";
 
   return (
     <div className="mt-4 grid gap-5 rounded-lg border border-border bg-muted/30 p-4 sm:p-5">
@@ -79,7 +86,8 @@ export function CeilingHypothesesPanel({
           >
             {OCCUPATION_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
-                {option.label}
+                {/* « saisi » est un mot de la saisie immobilière : chez le notaire, un bien sans bail. */}
+                {notarial && option.value === "occupe" ? "Occupé (sans bail)" : option.label}
               </option>
             ))}
           </select>
@@ -90,7 +98,11 @@ export function CeilingHypothesesPanel({
               label="Délai pour libérer le bien"
               suffix="mois"
               value={h.occupation.releaseMonths}
-              hint="Commandement, délais du juge, trêve hivernale : 6 à 18 mois en pratique."
+              hint={
+                notarial
+                  ? "Hors vente judiciaire, il n’y a pas de titre d’expulsion automatique : délai et coût à confirmer."
+                  : "Commandement, délais du juge, trêve hivernale : 6 à 18 mois en pratique."
+              }
               onChange={(value) => set("releaseMonths", value)}
             />
             <NumberField
@@ -113,29 +125,85 @@ export function CeilingHypothesesPanel({
       </Group>
 
       <Group title="Frais de la vente">
-        <NumberField
-          label="Frais préalables"
-          suffix="€"
-          value={h.fees.fpt}
-          hint={
-            h.feesSource.fpt === "document"
-              ? "Montant lu dans l’annonce."
-              : "Valeur prudente par défaut : demandez le montant exact à l’avocat poursuivant."
-          }
-          onChange={(value) => set("fpt", value)}
-        />
-        <NumberField
-          label="Honoraires de votre avocat"
-          suffix="€"
-          value={h.fees.lawyerFees}
-          onChange={(value) => set("lawyerFees", value)}
-        />
+        {labels.preliminaryLabel ? (
+          <NumberField
+            label={labels.preliminaryLabel}
+            suffix="€"
+            value={h.fees.fpt}
+            hint={
+              h.feesSource.fpt === "document"
+                ? "Montant lu dans l’annonce."
+                : h.feesSource.fpt === "saisie"
+                  ? "Montant que vous avez saisi."
+                  : "Valeur prudente par défaut : frais préalables à lire dans le cahier des conditions de vente. Saisissez le montant lu dans le cahier : il remplace la valeur par défaut et le poste n’est plus signalé comme estimé."
+            }
+            onChange={(value) => set("fpt", value)}
+          />
+        ) : null}
+        {labels.lawyerLabel ? (
+          <NumberField
+            label={labels.lawyerLabel}
+            suffix="€"
+            value={h.fees.lawyerFees}
+            onChange={(value) => set("lawyerFees", value)}
+          />
+        ) : null}
+        {notarial && h.regime?.consignation ? (
+          <NumberField
+            label="Garantie à déposer"
+            suffix="€"
+            value={consignationAmount(h, consignationRuleOf(h))}
+            hint={
+              h.feesSource.consignation === "document"
+                ? "Montant lu dans l’annonce."
+                : h.feesSource.consignation === "saisie"
+                  ? "Montant que vous avez saisi."
+                  : "Valeur par défaut (20 % de la mise à prix) : montant à lire dans les conditions de la vente. Saisissez le montant lu : il remplace la valeur par défaut et le poste n’est plus signalé comme estimé."
+            }
+            onChange={(value) => set("consignation", value)}
+          />
+        ) : null}
+        {byOffers ? (
+          <>
+            <NumberField
+              label={labels.negotiationLabel ?? "Honoraires de négociation"}
+              suffix="% du prix"
+              step={0.1}
+              value={Math.round((h.fees.negotiationFeeRate ?? 0) * 1000) / 10}
+              hint={
+                h.feesSource.negotiation === "document"
+                  ? (h.fees.negotiationFeeRate ?? 0) > 0
+                    ? "Taux lu dans l’annonce, à la charge de l’acquéreur."
+                    : "À la charge du vendeur d’après l’annonce : rien n’est compté."
+                  : h.feesSource.negotiation === "saisie"
+                    ? "Taux que vous avez saisi."
+                    : (h.fees.negotiationFeeRate ?? 0) > 0
+                      ? "Taux lu dans l’annonce, mais le redevable n’est pas indiqué : par prudence, l’acquéreur est supposé payer. À confirmer dans les conditions de la vente. Saisissez le taux lu : il remplace cette valeur et le poste n’est plus signalé comme estimé."
+                      : "Taux non indiqué dans l’annonce : aucun honoraire n’est compté. À confirmer dans les conditions de la vente. Saisissez le taux lu : il remplace cette valeur et le poste n’est plus signalé comme estimé."
+              }
+              onChange={(value) => set("negotiationFeeRatePct", value)}
+            />
+            <NumberField
+              label={labels.advertisingLabel ?? "Frais de publicité"}
+              suffix="€"
+              value={h.fees.advertisingFees ?? 0}
+              hint={
+                h.feesSource.advertising === "document"
+                  ? "Montant lu dans l’annonce."
+                  : h.feesSource.advertising === "saisie"
+                    ? "Montant que vous avez saisi."
+                    : "Non indiqués dans l’annonce : 0 € est compté. À confirmer dans les conditions de la vente."
+              }
+              onChange={(value) => set("advertisingFees", value)}
+            />
+          </>
+        ) : null}
         <NumberField
           label="Droits d’enregistrement"
           suffix="%"
           step={0.01}
           value={Math.round((h.fees.registrationRate ?? 0) * 10_000) / 100}
-          hint="Selon le département du bien. Les émoluments de l’avocat poursuivant suivent le barème réglementé."
+          hint={registrationHint}
           onChange={(value) => set("registrationRatePct", value)}
         />
       </Group>

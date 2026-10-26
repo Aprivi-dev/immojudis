@@ -17,6 +17,7 @@ const PUBLIC_ROUTES = [
   "/ressources",
   "/audiences-a-venir",
   "/methode-ecart-marche",
+  "/methode-pepites",
   "/login",
 ] as const;
 

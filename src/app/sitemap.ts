@@ -47,12 +47,13 @@ const PUBLIC_ROUTES = [
   ["/ventes-immobilieres-judiciaires", GUIDE_LAST_UPDATED], // same date as the guide page
   ["/simulateur-frais-encheres", "2026-10-13"],
   [PUBLIC_ADJUDICATION_PRICES_PATH, null], // listed only while PUBLIC_ADJUDICATION_PRICES_ENABLED is "true"
-  ["/a-propos", "2026-10-13"],
+  ["/a-propos", "2026-10-26"],
   ["/contact", "2026-10-08"],
-  ["/classement-des-annonces", "2026-10-14"],
+  ["/classement-des-annonces", "2026-10-26"],
   ["/methode-ecart-marche", "2026-10-15"],
-  ["/legal", "2026-10-08"],
-  ["/conditions-generales", "2026-10-20"],
+  ["/methode-pepites", "2026-10-26"],
+  ["/legal", "2026-10-26"],
+  ["/conditions-generales", "2026-10-26"],
   ["/privacy", "2026-10-21"],
 ] as const;
 

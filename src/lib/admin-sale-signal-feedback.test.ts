@@ -34,11 +34,19 @@ const raw = {
       accounts: 5,
       reasons: { point_wrong: 3, point_missing: 1 },
     },
+    {
+      signal: "pepite",
+      total: 6,
+      useful: 2,
+      not_relevant: 4,
+      accounts: 4,
+      reasons: { amount_too_high: 2, criterion_wrong: 1, not_interesting: 1 },
+    },
   ],
 };
 
 describe("parseSaleSignalFeedbackSummary", () => {
-  it("lit les deux signaux, leurs parts et leurs motifs", () => {
+  it("lit les trois signaux, leurs parts et leurs motifs", () => {
     expect(parseSaleSignalFeedbackSummary(raw)).toEqual({
       generatedAt: "2026-11-10T12:00:00Z",
       windowDays: 90,
@@ -56,6 +64,13 @@ describe("parseSaleSignalFeedbackSummary", () => {
           notRelevant: 4,
           accounts: 5,
           reasons: { point_wrong: 3, point_missing: 1 },
+        },
+        pepite: {
+          total: 6,
+          useful: 2,
+          notRelevant: 4,
+          accounts: 4,
+          reasons: { amount_too_high: 2, criterion_wrong: 1, not_interesting: 1 },
         },
       },
     });

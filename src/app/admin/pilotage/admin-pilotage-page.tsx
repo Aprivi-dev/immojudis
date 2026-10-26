@@ -592,6 +592,11 @@ const FEEDBACK_SIGNALS: Array<{ signal: SaleSignal; label: string; reasons: stri
     label: "Points à vérifier",
     reasons: ["point_wrong", "point_missing"],
   },
+  {
+    signal: "pepite",
+    label: "Repère Pépite",
+    reasons: ["amount_too_high", "criterion_wrong", "not_interesting"],
+  },
 ];
 
 /** Part d'« Utile » en pourcentage ; masquée sous le seuil d'affichage, « non mesuré » sans mesure. */
@@ -634,8 +639,9 @@ function SignalFeedbackCard({ summary }: { summary: SaleSignalFeedbackSummary | 
       <AdminSectionHeading title="Retours sur les signaux d’une vente" />
       <p className="mt-1 text-sm text-brand-navy/70">
         « Utile » ou « Pas pertinent », cliqué par un compte connecté sous la bande d’écart au
-        marché ou sous la liste des points à vérifier, avec un motif choisi dans une liste (aucun
-        texte libre). {summary?.windowDays ?? 90} derniers jours, administrateurs exclus.
+        marché, sous la liste des points à vérifier ou sous le repère Pépite, avec un motif choisi
+        dans une liste (aucun texte libre). {summary?.windowDays ?? 90} derniers jours,
+        administrateurs exclus.
       </p>
       <div className="mt-4 grid gap-6 sm:grid-cols-2">
         {FEEDBACK_SIGNALS.map(({ signal, label, reasons }) => (

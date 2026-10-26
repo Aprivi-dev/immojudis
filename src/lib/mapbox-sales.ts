@@ -15,6 +15,8 @@ export type MapboxSaleFeatureProperties = {
   tribunal: string;
   saleDate: string;
   priceValue: number;
+  /** 1 : pépite publiable (anneau et glyphe sur la carte) ; 0 sinon. Numérique : `clusterProperties` l'additionne. */
+  pepite: 0 | 1;
 };
 
 export type MapboxSaleFeature = {
@@ -31,6 +33,10 @@ export type MapboxSaleFeatureCollection = {
   features: MapboxSaleFeature[];
 };
 
+/**
+ * `AuctionSale.pepite` marque les pépites (liste publique, lue une fois par page de résultats). Jamais un
+ * montant : la carte ne reçoit que ce drapeau.
+ */
 export function buildMapboxSaleFeatureCollection(
   sales: AuctionSale[],
 ): MapboxSaleFeatureCollection {
@@ -57,6 +63,7 @@ export function buildMapboxSaleFeatureCollection(
           tribunal: sale.tribunal_city ?? sale.tribunal_name ?? "",
           saleDate: sale.sale_date ?? "",
           priceValue: sale.starting_price_eur ?? 0,
+          pepite: sale.pepite === true ? 1 : 0,
         },
       };
     }),

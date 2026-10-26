@@ -17,7 +17,7 @@ values ('pgtap_716_tj', 'TJ pgTAP 716', '33', 'Bordeaux', '[]'::jsonb);
 --   c : estimation restée « pending »                        -> aucun
 --   d : audience à venir                                     -> aucun
 --   e : vente reportée                                       -> aucun
---   f : vente chez un notaire                                -> aucun
+--   f : vente d'un autre type (domaniale ; les ventes notariales ont leur instantané depuis 20261104110000, voir le test 752) -> aucun
 --   g : fusion de doublons                                   -> aucun
 --   i : sans code de tribunal                                -> aucun
 --   k : appels répétés de la fonction d'écriture             -> un seul instantané
@@ -36,7 +36,7 @@ insert into public.auction_sales (
   ('c7160000-1000-4000-8000-000000000005', 'pgtap-716', 'https://example.test/716/e', 'Maison E', 'upcoming',
    '2000-01-02 12:00:00Z', 80000, 'pgtap_716_tj', '33', 'house', 'tribunal'),
   ('c7160000-1000-4000-8000-000000000006', 'pgtap-716', 'https://example.test/716/f', 'Maison F', 'upcoming',
-   '2000-01-02 12:00:00Z', 90000, 'pgtap_716_tj', '33', 'house', 'notary'),
+   '2000-01-02 12:00:00Z', 90000, 'pgtap_716_tj', '33', 'house', 'state'),
   ('c7160000-1000-4000-8000-000000000007', 'pgtap-716', 'https://example.test/716/g', 'Maison G', 'upcoming',
    '2000-01-02 12:00:00Z', 95000, 'pgtap_716_tj', '33', 'house', 'tribunal'),
   ('c7160000-1000-4000-8000-000000000008', 'pgtap-716', 'https://example.test/716/h', 'Maison H (conservée)', 'upcoming',
@@ -237,7 +237,7 @@ select lives_ok(
 select is(
   (select count(*) from app_private.sale_market_estimate_snapshots),
   3::bigint,
-  'none of them leaves a snapshot: estimate pending, hearing to come, postponed, notary, merge, no court'
+  'none of them leaves a snapshot: estimate pending, hearing to come, postponed, other type of sale, merge, no court'
 );
 
 -- Une panne de l'écriture ne bloque pas la suppression ------------------------------------------------

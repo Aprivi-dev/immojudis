@@ -365,3 +365,53 @@ describe("public sale summary", () => {
     });
   });
 });
+
+describe("repère « Pépite » du résumé public", () => {
+  const rpcFor = (pepite: { data: unknown; error: unknown }) =>
+    vi.fn(async (fn: string) => {
+      if (fn === "get_public_sale_summary") return { data: [row], error: null };
+      if (fn === "get_public_sale_pepite") return pepite;
+      return { data: null, error: { code: "PGRST202" } };
+    });
+
+  it("est lu avec les autres fonctions publiques (une seule fois, par vente)", async () => {
+    const rpc = rpcFor({ data: true, error: null });
+    const result = await fetchPublicSaleSummary({ rpc }, ID);
+    expect(rpc).toHaveBeenCalledWith("get_public_sale_pepite", { p_sale_id: ID });
+    expect(rpc.mock.calls.filter(([fn]) => fn === "get_public_sale_pepite")).toHaveLength(1);
+    if (result.kind !== "found") throw new Error("expected a found sale");
+    expect(result.sale.pepite).toBe(true);
+  });
+
+  it("n'ajoute aucune propriété hors pépite : la page d'une vente ordinaire ne change pas", async () => {
+    for (const pepite of [
+      { data: false, error: null },
+      { data: null, error: null },
+      { data: "true", error: null },
+      // Fonction absente (migration pas appliquée) ou panne : « pas de pépite », sans erreur.
+      { data: null, error: { code: "PGRST202", message: "absente" } },
+      { data: null, error: { code: "42883", message: "absente" } },
+      { data: null, error: { code: "57014", message: "timeout" } },
+    ]) {
+      const result = await fetchPublicSaleSummary({ rpc: rpcFor(pepite) }, ID);
+      if (result.kind !== "found") throw new Error("expected a found sale");
+      expect(result.sale).not.toHaveProperty("pepite");
+    }
+  });
+
+  it("une exception de la fonction ne fait pas échouer la fiche", async () => {
+    const rpc = vi.fn(async (fn: string) => {
+      if (fn === "get_public_sale_pepite") throw new Error("réseau");
+      if (fn === "get_public_sale_summary") return { data: [row], error: null };
+      return { data: null, error: { code: "PGRST202" } };
+    });
+    const result = await fetchPublicSaleSummary({ rpc }, ID);
+    expect(result.kind).toBe("found");
+  });
+
+  it("ne rend jamais un montant : seul un drapeau est lu", async () => {
+    const result = await fetchPublicSaleSummary({ rpc: rpcFor({ data: true, error: null }) }, ID);
+    if (result.kind !== "found") throw new Error("expected a found sale");
+    expect(JSON.stringify(result.sale)).not.toMatch(/ceiling|plafond|probable/i);
+  });
+});

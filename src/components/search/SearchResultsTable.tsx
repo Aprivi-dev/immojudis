@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { memo, useMemo, type ComponentType } from "react";
 import { AiReviewField } from "@/components/sale-detail/AiReviewField";
+import { PepiteInfoBadge } from "@/components/PepiteBadge";
 import { PointsToVerifyBadge } from "@/components/PointsToVerifyBadge";
 import { SaleCountdown } from "@/components/SaleCountdown";
 import { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
+import { useFeeRegimes } from "@/components/FeeRegimesProvider";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
 import { useViewedSales } from "@/hooks/use-viewed-sales";
 import {
@@ -13,7 +15,6 @@ import {
   type AiReviewProjectionReadModel,
   type AiReviewRequestStatus,
 } from "@/lib/ai-review-guard";
-import { formatStartingPrice } from "@/lib/format";
 import { pointsToVerify } from "@/lib/search/points-to-verify";
 import { stateListingStatus } from "@/lib/property-characteristics";
 import { saleIsTribunalVenue } from "@/lib/sale-procedure";
@@ -27,7 +28,9 @@ import {
   listingAccessLine,
   listingDateLabel,
   listingLinkLabel,
+  listingPriceText,
   listingTitle,
+  stateSaleWithoutPrice,
 } from "./listing-text";
 import { useSaleDetailLink } from "./use-sale-detail-link";
 
@@ -58,6 +61,7 @@ export function SearchResultsTable({
   onHover,
   onSelect,
   unlockedIds,
+  pepiteSaleIds,
   favoriteIds,
   favoriteScope,
   FavoriteButton,
@@ -77,6 +81,8 @@ export function SearchResultsTable({
   onSelect: (saleId: string | null) => void;
   /** Ventes que le compte Découverte a débloquées. */
   unlockedIds: ReadonlySet<string>;
+  /** Pépites publiables : une icône « Pépite » (avec son texte pour lecteur d'écran) dans la colonne Statut. */
+  pepiteSaleIds?: ReadonlySet<string>;
   favoriteIds: ReadonlySet<string>;
   favoriteScope: string | null;
   /** Le cœur des cartes (`CompactFavoriteButton`), fourni par la liste qui porte l'état des favoris. */
@@ -146,6 +152,7 @@ export function SearchResultsTable({
                   onHover={onHover}
                   onSelect={onSelect}
                   unlocked={unlockedIds.has(sale.id)}
+                  pepite={pepiteSaleIds?.has(sale.id.toLowerCase()) === true}
                   aiReviewProjections={aiReviewBySaleId?.[sale.id]}
                   aiReviewStatus={aiReviewStatus}
                   favoriteScope={favoriteScope}
@@ -169,6 +176,7 @@ const ListingRow = memo(function ListingRow({
   onHover,
   onSelect,
   unlocked,
+  pepite = false,
   aiReviewProjections,
   aiReviewStatus,
   favoriteScope,
@@ -184,6 +192,7 @@ const ListingRow = memo(function ListingRow({
   onHover: (saleId: string | null) => void;
   onSelect: (saleId: string | null) => void;
   unlocked: boolean;
+  pepite?: boolean;
   aiReviewProjections?: readonly AiReviewProjectionReadModel[] | null;
   aiReviewStatus: AiReviewRequestStatus;
   favoriteScope: string | null;
@@ -213,6 +222,7 @@ const ListingRow = memo(function ListingRow({
   const showCity = cityReview.blocked || Boolean(sale.city?.trim());
   const departmentLine = departmentLabel(sale.department);
   const { active: launchOffer, pending: launchPending } = useLaunchOffer();
+  const openFeeRegimes = useFeeRegimes()?.open;
   const accessLine = listingAccessLine(sale, {
     locked,
     analysisLocked,
@@ -220,6 +230,7 @@ const ListingRow = memo(function ListingRow({
     verifying,
     launchOffer,
     launchPending,
+    openFeeRegimes,
   });
   const surfaceText = displaySurface.value != null ? displaySurface.label : "Surface n.c.";
   const review = {
@@ -253,6 +264,7 @@ const ListingRow = memo(function ListingRow({
             ).blocked,
             date: getAiReviewFieldResult(aiReviewProjections, "sale.sale_date", aiReviewStatus)
               .blocked,
+            pepite,
           })}
           className="font-semibold text-brand-navy underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
         >
@@ -292,12 +304,14 @@ const ListingRow = memo(function ListingRow({
       <td className="px-3 py-3">
         <span className="block whitespace-nowrap font-bold text-gold-text">
           <AiReviewField fieldKey="sale.starting_price_eur" {...review}>
-            {formatStartingPrice(sale.starting_price_eur)}
+            {listingPriceText(sale)}
           </AiReviewField>
         </span>
-        <span className="block text-xs text-ink-soft">
-          {tribunal ? "Mise à prix" : "Prix publié"}
-        </span>
+        {stateSaleWithoutPrice(sale) ? null : (
+          <span className="block text-xs text-ink-soft">
+            {tribunal ? "Mise à prix" : "Prix publié"}
+          </span>
+        )}
       </td>
       <td className="px-3 py-3">
         {tribunal ? <span className="block text-xs text-ink-soft">Audience</span> : null}
@@ -307,6 +321,7 @@ const ListingRow = memo(function ListingRow({
       </td>
       <td className="px-3 py-3">
         <div className="flex flex-wrap items-center gap-1.5">
+          {pepite ? <PepiteInfoBadge variant="icon" /> : null}
           {unlocked ? (
             <span className="rounded-md bg-gold px-2 py-0.5 text-[11px] font-bold text-brand-navy">
               Débloquée

@@ -7,7 +7,10 @@ import {
   describeReportSimulation,
   REPORT_RENTAL_EXPENSE_FIELD_LABELS,
 } from "@/lib/report-simulation";
+import { DEFAULT_OPEN_FEE_REGIMES, type FeeRegimeKey } from "@/lib/fee-regime-open";
+import { analysisForOpenRegimes, ceilingForOpenRegimes } from "./ceiling-switch";
 import { featureUnlocked, sanitizeReportSnapshotForPlan } from "./entitlements";
+import { reportWording } from "./report-wording";
 import { FINANCING_DOSSIER_HEADINGS, financingDossierLines } from "./financing-dossier";
 import { PlanEntitlements, SavedReportRow } from "../property-reports";
 import {
@@ -45,6 +48,7 @@ export const REPORT_PDF_HEADINGS = [
   "Scénario locatif personnel",
   "Estimation locative indicative",
   "Enchère plafond (simulation)",
+  "Offre plafond (simulation)",
   "Préparation audience",
   "Actions préparation audience",
   "Analyse de bien",
@@ -79,7 +83,12 @@ export const REPORT_PDF_HEADINGS = [
   ...FINANCING_DOSSIER_HEADINGS,
 ] as const;
 
-export function reportToPdfLines(report: SavedReportRow, plan: PlanEntitlements): string[] {
+export function reportToPdfLines(
+  report: SavedReportRow,
+  plan: PlanEntitlements,
+  /** Régimes de frais ouverts (`openFeeRegimesFromEnv`) ; absent : tous ceux qui sont définis. */
+  regimes: readonly FeeRegimeKey[] = DEFAULT_OPEN_FEE_REGIMES,
+): string[] {
   // Un rapport enregistré avant le durcissement du filtre peut encore porter un nom de particulier :
   // le PDF refiltre à la lecture, comme le lien partagé.
   const snapshot = redactPersonalData(
@@ -93,9 +102,16 @@ export function reportToPdfLines(report: SavedReportRow, plan: PlanEntitlements)
     REPORT_COMPLIANCE_NOTICE,
   );
   const market = asRecord(report.market_snapshot);
-  const ceiling = asRecord(report.ceiling_snapshot);
+  const savedCeiling = asRecord(report.ceiling_snapshot);
+  // Régime fermé depuis l'enregistrement du rapport : plafond indisponible, montants masqués.
+  const ceiling = ceilingForOpenRegimes(savedCeiling, regimes);
+  // Vocabulaire du régime du plafond : « mise à prix » et « enchère », ou « première offre » et
+  // « offre » pour une vente notariale interactive.
+  const wording = reportWording(ceiling.regime);
+  // « Enchère plafond (simulation) » ou « Offre plafond (simulation) » (vente notariale interactive).
+  const ceilingLabel = stringOrNumberValue(ceiling.label, wording.ceilingLabel);
   const sale = asRecord(snapshot.sale);
-  const analysis = asRecord(snapshot.analysis);
+  const analysis = analysisForOpenRegimes(asRecord(snapshot.analysis), savedCeiling, regimes);
   const valueEstimate = asRecord(analysis.valueEstimate);
   const marketComparables = asRecord(analysis.marketComparablesAnalysis);
   const retainedComparables = normalizeMarketComparableRows(marketComparables.retainedComparables);
@@ -211,12 +227,12 @@ export function reportToPdfLines(report: SavedReportRow, plan: PlanEntitlements)
       stringOrNumberValue(sale.occupancy, "à vérifier"),
     )}`,
     `Confiance occupation: ${stringOrNumberValue(occupancyAnalysis.confidenceLabel, "à confirmer")}`,
-    `Impact occupation: ${stringOrNumberValue(occupancyAnalysis.decisionImpact, "à vérifier avant enchère")}`,
+    `Impact occupation: ${stringOrNumberValue(occupancyAnalysis.decisionImpact, `à vérifier ${wording.beforeBid}`)}`,
     `Tribunal: ${stringOrNumberValue(sale.tribunal, "à confirmer")}`,
     ...reportSaleSchedule(sale).map(({ label, value }) => `${label}: ${value}`),
     `Préparation audience: ${stringOrNumberValue(audienceReadinessAnalysis.summary, "à compléter")}`,
     `Urgence audience: ${stringOrNumberValue(audienceReadinessAnalysis.urgencyLabel, "date à confirmer")}`,
-    `Mise à prix: ${formatStartingPrice(numberValue(sale.startingPrice))}`,
+    `${wording.referencePrice}: ${formatStartingPrice(numberValue(sale.startingPrice))}`,
     "",
     "Estimation marché",
     valueEstimate.medianPricePerM2
@@ -360,7 +376,7 @@ export function reportToPdfLines(report: SavedReportRow, plan: PlanEntitlements)
             ? `Cashflow mensuel estime: ${formatPrice(numberValue(rentabilityScore.cashflowMonthly))}`
             : "Cashflow mensuel estime: à compléter",
         ]),
-    `Frais adjudication: ${stringOrNumberValue(
+    `${wording.feesHeading}: ${stringOrNumberValue(
       auctionCostAnalysis.summary,
       "frais et consignation à confirmer",
     )}`,
@@ -372,8 +388,8 @@ export function reportToPdfLines(report: SavedReportRow, plan: PlanEntitlements)
       ? `Frais estimés hors travaux: ${formatPrice(numberValue(acquisitionCosts.acquisitionFeesTotal))}`
       : "Frais estimés hors travaux: à compléter",
     acquisitionCosts.totalCost
-      ? `Coût complet à la mise à prix: ${formatPrice(numberValue(acquisitionCosts.totalCost))}`
-      : "Coût complet à la mise à prix: à compléter",
+      ? `Coût complet à la ${wording.referencePriceLower}: ${formatPrice(numberValue(acquisitionCosts.totalCost))}`
+      : `Coût complet à la ${wording.referencePriceLower}: à compléter`,
     `Travaux / état: ${stringOrNumberValue(renovationAnalysis.summary, "état à qualifier")}`,
     `Priorité travaux: ${stringOrNumberValue(renovationAnalysis.priorityLabel, "à qualifier")}`,
     renovationBudgetRange
@@ -381,10 +397,10 @@ export function reportToPdfLines(report: SavedReportRow, plan: PlanEntitlements)
       : "Budget travaux indicatif: à chiffrer",
     `Impact travaux: ${stringOrNumberValue(
       renovationAnalysis.decisionImpact,
-      "état à confirmer avant enchère",
+      `état à confirmer ${wording.beforeBid}`,
     )}`,
     "",
-    "Enchère plafond (simulation)",
+    ceilingLabel,
     ...(personalSimulation
       ? [
           "Scénario personnel sauvegardé",
@@ -405,15 +421,27 @@ export function reportToPdfLines(report: SavedReportRow, plan: PlanEntitlements)
         ]
       : []),
     ceiling.available
-      ? `Enchère plafond (simulation): ${formatPrice(numberValue(ceiling.maxBid))}`
-      : `Enchère plafond (simulation): indisponible (${stringOrNumberValue(ceiling.reason, "données incomplètes")})`,
+      ? `${ceilingLabel}: ${formatPrice(numberValue(ceiling.maxBid))}`
+      : `${ceilingLabel}: indisponible (${stringOrNumberValue(ceiling.reason, "données incomplètes")})`,
+    // Vente notariale : ce que le calcul ne couvre pas, la mention d'une vente par offres et les
+    // frais qui viennent d'une valeur par défaut.
+    ...(typeof ceiling.scopeNote === "string" && ceiling.available ? [ceiling.scopeNote] : []),
+    ...(typeof ceiling.reserveNotice === "string" && ceiling.available
+      ? [ceiling.reserveNotice]
+      : []),
+    ...(Array.isArray(ceiling.estimatedFees) && ceiling.estimatedFees.length && ceiling.available
+      ? [
+          `Frais estimés, à confirmer : ${ceiling.estimatedFees
+            .map((fee) => stringOrNumberValue(asRecord(fee).label, ""))
+            .filter(Boolean)
+            .join(", ")}`,
+        ]
+      : []),
     ...(ceiling.available &&
     numberValue(ceiling.maxBid) != null &&
     numberValue(sale.startingPrice) != null &&
     (numberValue(ceiling.maxBid) ?? Infinity) < (numberValue(sale.startingPrice) ?? 0)
-      ? [
-          "Plafond inférieur à la mise à prix : ce scénario ne permet pas d’enchérir au prix de départ.",
-        ]
+      ? [wording.belowStartSentence]
       : []),
     ceiling.targetTotalCost
       ? `Coût complet cible: ${formatPrice(numberValue(ceiling.targetTotalCost))}`
@@ -585,7 +613,7 @@ export function reportToPdfLines(report: SavedReportRow, plan: PlanEntitlements)
     `Niveau: ${stringOrNumberValue(legalAttentionAnalysis.confidenceLabel, "à vérifier")}`,
     ...(legalAttentionItems.length
       ? legalAttentionItems.slice(0, 6).map((item) => `- ${item}`)
-      : ["- Relire les pièces officielles avant toute enchère."]),
+      : [`- Relire les pièces officielles ${wording.beforeAnyBid}.`]),
     ...(legalAttentionActions.length
       ? ["Actions juridiques", ...legalAttentionActions.slice(0, 4).map((action) => `- ${action}`)]
       : []),

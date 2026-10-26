@@ -10,6 +10,7 @@ import { errorDetails, errorSummary } from "@/lib/error-details";
 import { estimateGrossYieldPct, pricePerM2 } from "@/lib/geo";
 import { resolveMarketGap } from "@/lib/market-gap";
 import { marketGapWithheldReason } from "@/lib/market-gap-band";
+import { listPepiteSaleIds, type PepiteIdsClient } from "@/lib/pepite-sale-ids";
 import { featureIncluded } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
 import { getSaleAlertDetails, getSalesForAlertEvaluation } from "@/lib/queries";
@@ -156,6 +157,42 @@ export async function listUserAlertMatches({
   };
 }
 
+/** Une alerte « Seulement les pépites » (`advanced_criteria.pepite_only`). */
+function isPepiteAlert(alert: Pick<UserAlert, "advanced_criteria">): boolean {
+  return alert.advanced_criteria?.pepite_only === true;
+}
+
+const PEPITE_IDS_CACHE_MS = 60_000;
+let pepiteIdsCache: { at: number; ids: Promise<ReadonlySet<string>> } | null = null;
+
+/**
+ * Les pépites publiables, lues côté serveur avec le rôle de service par la fonction publique
+ * `list_public_pepite_sale_ids` : la liste vide tant que le mode n'est pas « on » (une alerte ne prévient
+ * jamais d'une pépite que le site n'affiche pas) et aux mêmes gardes que la fiche. La table privée
+ * `auction_sale_pepites` n'est jamais lue ici. Gardée une minute entre deux comptes d'un même passage ;
+ * une panne n'est pas gardée et fait échouer les alertes qui en ont besoin (elles gardent leur date
+ * d'évaluation et sont reprises au passage suivant).
+ */
+export function loadPepiteSaleIdsForAlerts(now = Date.now()): Promise<ReadonlySet<string>> {
+  if (pepiteIdsCache && now - pepiteIdsCache.at < PEPITE_IDS_CACHE_MS) return pepiteIdsCache.ids;
+  const entry = {
+    at: now,
+    ids: listPepiteSaleIds({
+      rpc: (fn) => supabaseAdmin.rpc(fn),
+    } as PepiteIdsClient).then((ids) => new Set(ids) as ReadonlySet<string>),
+  };
+  pepiteIdsCache = entry;
+  entry.ids.catch(() => {
+    if (pepiteIdsCache === entry) pepiteIdsCache = null;
+  });
+  return entry.ids;
+}
+
+/** Pour les tests : oublie la liste gardée. */
+export function resetPepiteSaleIdsForAlertsCache(): void {
+  pepiteIdsCache = null;
+}
+
 type AlertEvaluationEntry = {
   alert: UserAlert;
   matches: AlertMatchSummary[];
@@ -183,18 +220,38 @@ export async function evaluateUserAlertMatches({
   const alerts = discovery
     ? activeAlerts.filter(isDiscoveryAlertCompatible).slice(0, 1)
     : activeAlerts;
+  // « Seulement les pépites » : une vente devient pépite sans que sa ligne change (`updated_at`), la lecture
+  // « depuis la dernière évaluation » la manquerait. La fenêtre incrémentale reste celle de tous les comptes ;
+  // on y ajoute seulement les ventes de la liste des pépites (lues par identifiant), évaluées par les alertes
+  // « pépites » seules : une alerte d'un autre critère ne relit rien de plus.
+  let pepiteSaleIds: ReadonlySet<string> | null = null;
+  let pepiteFailure: unknown = null;
+  const wantsPepites = alerts.some(isPepiteAlert);
+  if (wantsPepites) {
+    try {
+      pepiteSaleIds = await loadPepiteSaleIdsForAlerts();
+    } catch (error) {
+      pepiteFailure = error;
+    }
+  }
+  const evaluationLimit = clampLimit(saleLimit, MAX_ALERT_EVALUATION_SALE_LIMIT);
   const sales = alerts.length
-    ? await loadSalesToEvaluate({
-        auth,
-        alerts,
-        discovery,
-        limit: clampLimit(saleLimit, MAX_ALERT_EVALUATION_SALE_LIMIT),
-      })
+    ? await loadSalesToEvaluate({ auth, alerts, discovery, limit: evaluationLimit })
     : [];
+  const pepiteOnlySaleIds = new Set<string>();
+  if (pepiteSaleIds && pepiteSaleIds.size > 0 && alerts.length) {
+    const known = new Set(sales.map((sale) => sale.id.toLowerCase()));
+    const missing = [...pepiteSaleIds].filter((id) => !known.has(id));
+    for (const sale of await loadSalesByIds({ auth, ids: missing, discovery })) {
+      if (sales.length >= evaluationLimit) break;
+      sales.push(sale);
+      pepiteOnlySaleIds.add(sale.id);
+    }
+  }
   const marketDiscountCache = new Map<string, Promise<number | null>>();
   const watchedZones = await getUserWatchedZonesForAlerts({ auth, alerts });
   // Une alerte Découverte n'a pas de critère DPE et son résumé ne garde ni DPE ni pièces.
-  if (!discovery) await attachAlertDetails({ auth, alerts, sales, watchedZones });
+  if (!discovery) await attachAlertDetails({ auth, alerts, sales, watchedZones, pepiteSaleIds });
   const failures: AlertEvaluationFailure[] = [];
 
   // Chaque alerte est évaluée, enregistrée puis marquée évaluée isolément : l'échec de l'une est
@@ -212,6 +269,9 @@ export async function evaluateUserAlertMatches({
         evaluatedAt,
         watchedZones,
         marketDiscountCache,
+        pepiteSaleIds,
+        pepiteFailure,
+        pepiteOnlySaleIds,
       });
       if (persist) {
         await persistAlertEvaluation({ entry, auth, evaluatedAt, discovery });
@@ -250,6 +310,9 @@ async function collectAlertMatches({
   evaluatedAt,
   watchedZones,
   marketDiscountCache,
+  pepiteSaleIds,
+  pepiteFailure,
+  pepiteOnlySaleIds,
 }: {
   entry: AlertEvaluationEntry;
   auth: SupabaseAuthContext;
@@ -258,8 +321,15 @@ async function collectAlertMatches({
   evaluatedAt: string;
   watchedZones: Map<string, UserWatchedZone>;
   marketDiscountCache: Map<string, Promise<number | null>>;
+  pepiteSaleIds: ReadonlySet<string> | null;
+  pepiteFailure: unknown;
+  /** Ventes lues seulement pour les alertes « pépites » : les autres alertes ne les évaluent pas. */
+  pepiteOnlySaleIds: ReadonlySet<string>;
 }): Promise<void> {
   const { alert } = entry;
+  // Liste des pépites illisible : l'alerte échoue (et garde sa date d'évaluation) au lieu de n'avoir aucune
+  // correspondance et d'avancer.
+  if (isPepiteAlert(alert) && pepiteFailure) throw pepiteFailure;
   if (discovery && !isDiscoveryAlertCompatible(alert)) return;
   const watchedZone = alert.watched_zone_id
     ? (watchedZones.get(alert.watched_zone_id) ?? null)
@@ -267,10 +337,12 @@ async function collectAlertMatches({
   if (alert.watched_zone_id && !watchedZone) return;
 
   for (const sale of sales) {
+    if (!isPepiteAlert(alert) && pepiteOnlySaleIds.has(sale.id)) continue;
     let marketDiscountPct: number | null = null;
     if (alert.min_market_discount_pct != null) {
       const preliminary = alertMatchesSale({ ...alert, min_market_discount_pct: null }, sale, {
         watchedZone,
+        pepiteSaleIds,
       });
       if (!preliminary.matches) continue;
       marketDiscountPct = await getCachedMarketDiscount(marketDiscountCache, sale);
@@ -279,6 +351,7 @@ async function collectAlertMatches({
     const baseContext = {
       ...(alert.min_market_discount_pct == null ? {} : { marketDiscountPct }),
       watchedZone,
+      pepiteSaleIds,
     };
     const result = alertMatchesSale(alert, sale, baseContext);
     if (!result.matches) continue;
@@ -293,7 +366,9 @@ async function collectAlertMatches({
     if (discovery) {
       summary.saleTitle = "Vente immobilière";
       summary.marketDiscountPct = null;
-      summary.reasons = ["Critères publics correspondants"];
+      summary.reasons = isPepiteAlert(alert)
+        ? ["Critères publics correspondants", "pépite"]
+        : ["Critères publics correspondants"];
     }
     entry.matches.push(summary);
     entry.rows.push({
@@ -448,6 +523,34 @@ async function loadSalesToEvaluate({
 }
 
 /**
+ * Les ventes ouvertes de ces identifiants (par lots de 100, ceux de la liste des pépites), pour les alertes
+ * « Seulement les pépites » : mêmes colonnes et même vue que la lecture incrémentale.
+ */
+async function loadSalesByIds({
+  auth,
+  ids,
+  discovery,
+}: {
+  auth: SupabaseAuthContext;
+  ids: string[];
+  discovery: boolean;
+}): Promise<AuctionSale[]> {
+  const sales: AuctionSale[] = [];
+  for (let offset = 0; offset < ids.length; offset += 100) {
+    const chunk = ids.slice(offset, offset + 100);
+    sales.push(
+      ...(await getSalesForAlertEvaluation(
+        { status_in: ["active", "upcoming"], ids: chunk },
+        chunk.length,
+        0,
+        { client: auth.supabase, discovery },
+      )),
+    );
+  }
+  return sales;
+}
+
+/**
  * Relit les colonnes lourdes (blocs des sources, pièces) des seules ventes qu'une alerte retient sur
  * ses autres critères, et les ajoute à ces ventes : la classe DPE se lit dans les blocs, et le résumé
  * enregistré avec la correspondance garde la classe DPE et le nombre de pièces. Les autres ventes
@@ -458,11 +561,13 @@ async function attachAlertDetails({
   alerts,
   sales,
   watchedZones,
+  pepiteSaleIds,
 }: {
   auth: SupabaseAuthContext;
   alerts: UserAlert[];
   sales: AuctionSale[];
   watchedZones: Map<string, UserWatchedZone>;
+  pepiteSaleIds: ReadonlySet<string> | null;
 }): Promise<void> {
   const ids = sales
     .filter((sale) =>
@@ -474,7 +579,7 @@ async function attachAlertDetails({
         return alertMatchesSale(
           { ...alert, dpe_classes: [], min_market_discount_pct: null },
           sale,
-          { watchedZone },
+          { watchedZone, pepiteSaleIds },
         ).matches;
       }),
     )
@@ -685,7 +790,10 @@ export function buildAlertMatchSnapshot({
         saleDate: sale.sale_date,
       },
       match: {
-        reasons: ["Critères publics correspondants"],
+        // Seule la mention « pépite » (texte, sans montant) s'ajoute au motif public.
+        reasons: summary.reasons.includes("pépite")
+          ? ["Critères publics correspondants", "pépite"]
+          : ["Critères publics correspondants"],
         marketDiscountPct: null,
         matchedAt: summary.matchedAt,
       },

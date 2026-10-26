@@ -203,6 +203,8 @@ export function useCreateAlert({
             query: residualQuery ?? null,
             around_address: search.aroundAddress ?? null,
             around_radius_km: search.aroundRadius ?? null,
+            // « Seulement les pépites » : lu côté serveur à l'évaluation (liste publique des pépites).
+            ...(search.pepite ? { pepite_only: true } : {}),
             watched_zone_id: watchedZoneResponse?.zone.id ?? null,
           },
         });

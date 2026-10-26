@@ -37,6 +37,7 @@ describe("arborescence /admin", () => {
         "/admin/compliance",
         "/admin/lawyers",
         "/admin/operations",
+        "/admin/pepites",
         "/admin/pilotage",
         "/admin/publications",
         "/admin/quality",
@@ -75,6 +76,7 @@ describe("arborescence /admin", () => {
       "compliance/page.tsx": "./admin-compliance-page",
       "quality/page.tsx": "./admin-quality-page",
       "pilotage/page.tsx": "./admin-pilotage-page",
+      "pepites/page.tsx": "./admin-pepites-page",
     };
     for (const [file, module] of Object.entries(own)) {
       const source = readFileSync(join(ADMIN_DIR, file), "utf8");

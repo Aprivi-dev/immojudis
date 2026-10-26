@@ -11,6 +11,11 @@ import { watchedZoneMatchesSale, watchedZoneSummary } from "@/lib/watched-zones-
 export type AlertMatchContext = {
   marketDiscountPct?: number | null;
   watchedZone?: UserWatchedZone | null;
+  /**
+   * Identifiants (en minuscules) des pépites publiables, pour le critère « Seulement les pépites »
+   * (`advanced_criteria.pepite_only`). Absent : une alerte qui le demande ne retient aucune vente.
+   */
+  pepiteSaleIds?: ReadonlySet<string> | null;
 };
 
 export type AlertMatchResult = {
@@ -56,6 +61,12 @@ export function alertMatchesSale(
   }
   if (!matchesAlertQueryScope(sale, alert.advanced_criteria?.query)) {
     return noMatch("secteur différent");
+  }
+  if (
+    alert.advanced_criteria?.pepite_only === true &&
+    !context.pepiteSaleIds?.has(sale.id.toLowerCase())
+  ) {
+    return noMatch("pas une pépite");
   }
   const surface = getSaleSurface(sale).value;
   const ppm2 = pricePerM2(sale.starting_price_eur, surface);
@@ -111,6 +122,8 @@ export function alertMatchesSale(
   if (alert.require_house_with_land) reasons.push("terrain");
   if (alert.min_market_discount_pct != null) reasons.push("décote");
   if (context.watchedZone) reasons.push(watchedZoneSummary(context.watchedZone));
+  // Texte seulement : jamais un montant dans une alerte (voir `email-alerts.ts`).
+  if (alert.advanced_criteria?.pepite_only === true) reasons.push("pépite");
 
   return { matches: true, reasons };
 }

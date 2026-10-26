@@ -48,6 +48,7 @@ describe("/llms.txt (site ouvert)", () => {
       "https://immojudis.com/a-propos",
       "https://immojudis.com/offres",
       "https://immojudis.com/methode-ecart-marche",
+      "https://immojudis.com/methode-pepites",
       "https://immojudis.com/classement-des-annonces",
       "https://immojudis.com/tribunaux",
       "https://immojudis.com/simulateur-frais-encheres",
@@ -144,10 +145,10 @@ describe("contenu du fichier", () => {
     }
   });
 
-  it("n'a pas de doublon et tient en moins de 9 Ko", () => {
+  it("n'a pas de doublon et tient en moins de 10 Ko", () => {
     const pages = llmsTxtPages();
     expect(new Set(pages.map((page) => page.path)).size).toBe(pages.length);
-    expect(buildLlmsTxt("https://immojudis.com").length).toBeLessThan(9_000);
+    expect(buildLlmsTxt("https://immojudis.com").length).toBeLessThan(10_000);
   });
 
   it("suit le format llms.txt : un titre, un résumé en citation, des sections de liens", () => {

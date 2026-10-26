@@ -8,7 +8,7 @@
  *
  * Module sans dépendance, pour que le sitemap l'importe sans charger le composant du guide.
  */
-export const GUIDE_LAST_UPDATED = "2026-10-23";
+export const GUIDE_LAST_UPDATED = "2026-10-26";
 
 /**
  * Temps de lecture du guide, en minutes : source unique de la mention de la page
@@ -18,4 +18,4 @@ export const GUIDE_LAST_UPDATED = "2026-10-23";
  * cette valeur s'en écarte de plus d'une minute. À mettre à jour avec `GUIDE_LAST_UPDATED` quand
  * le contenu du guide change sur le fond.
  */
-export const GUIDE_READING_MINUTES = 25;
+export const GUIDE_READING_MINUTES = 26;
