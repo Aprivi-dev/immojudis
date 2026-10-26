@@ -297,6 +297,45 @@ describe("computeRentabilityScore", () => {
     );
   });
 
+  it("uses the ANIL rent of the commune, and flags only an indicative reliability", () => {
+    const reference = (reliability: "reliable" | "indicative") => ({
+      rentPerM2: 20,
+      source: "anil_commune" as const,
+      reliability,
+      segment: "apt_all" as const,
+      communeCode: "75108",
+      lowPerM2: 17,
+      highPerM2: 23,
+      observations: 900,
+      vintage: 2025,
+      sourceUpdatedOn: "2025-12-11",
+    });
+    const base = { surface: 40, price: 120_000, department: "75" };
+
+    const reliable = computeRentabilityScore({ ...base, rentReference: reference("reliable") });
+    expect(reliable.rentSource).toBe("anil_commune");
+    expect(reliable.monthlyRent).toBe(800);
+    expect(reliable.rentReliability).toBe("reliable");
+    expect(reliable.rentVintage).toBe(2025);
+    expect(reliable.rentSourceUpdatedOn).toBe("2025-12-11");
+    expect(reliable.factors.some((factor) => factor.key === "rent_source")).toBe(false);
+
+    const indicative = computeRentabilityScore({ ...base, rentReference: reference("indicative") });
+    expect(indicative.rentReliability).toBe("indicative");
+    expect(
+      indicative.factors.some((factor) => factor.key === "rent_source" && factor.delta < 0),
+    ).toBe(true);
+
+    // A typed rent still wins, and carries no ANIL source.
+    const manual = computeRentabilityScore({
+      ...base,
+      monthlyRent: 900,
+      rentReference: reference("reliable"),
+    });
+    expect(manual.rentSource).toBe("manual");
+    expect(manual.rentReliability).toBeNull();
+  });
+
   it("returns unavailable when the surface is missing", () => {
     const result = computeRentabilityScore({
       surface: null,

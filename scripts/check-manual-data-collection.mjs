@@ -28,6 +28,9 @@ const allowedVercelCronPaths = new Set([
   "/api/cron/listing-completeness",
   // Calcul dérivé (pépite des ventes déjà en base, mode shadow par défaut) : ne collecte aucune donnée.
   "/api/cron/sale-pepites",
+  // Contrôle du risque d'inondation des ventes déjà en base (règle pepite-v2) : n'envoie que les coordonnées d'une
+  // vente à Géorisques et à l'API Carto de l'IGN, et ne collecte aucune vente.
+  "/api/cron/sale-flood-risk",
   "/api/cron/sale-retention",
   "/api/cron/operational-health",
 ]);
@@ -38,6 +41,7 @@ const allowedDatabaseCronJobs = new Set([
   "immojudis-information-agent-inbound",
   "immojudis-listing-completeness",
   "immojudis-sale-pepites",
+  "immojudis-sale-flood-risk",
 ]);
 // Keep immutable migration history, but forbid reintroducing these schedules.
 // The terminal migration disables both; pgTAP checks the resulting database state.

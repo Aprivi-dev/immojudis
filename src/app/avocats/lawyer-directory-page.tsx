@@ -34,7 +34,7 @@ import { propertyTypeLabel } from "@/lib/format/property-labels";
 import { saleDetailPath, searchParamsToRecord } from "@/lib/navigation";
 import Link from "next/link";
 import { userMessage } from "@/lib/user-messages";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 
 /** At most three areas of practice are shown per lawyer (RIN, art. 10.2). */
 const MAX_PRACTICE_TAGS = 3;

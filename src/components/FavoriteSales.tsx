@@ -23,7 +23,7 @@ import { FavoriteSaleChanges } from "./FavoriteSaleChanges";
 import { FavoritePlanning } from "./FavoritePlanning";
 import { MonDemarrage } from "./MonDemarrage";
 import { PLAN_LIMITS } from "@/lib/plans";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 
 const NOOP = () => undefined;
 

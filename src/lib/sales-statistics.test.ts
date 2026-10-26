@@ -18,6 +18,77 @@ function makeSale(overrides: Partial<AuctionSale> = {}): AuctionSale {
   };
 }
 
+describe("sales statistics rents", () => {
+  const reference = (rentPerM2: number) => ({
+    rentPerM2,
+    source: "anil_commune" as const,
+    reliability: "reliable" as const,
+    segment: "apt_all" as const,
+    communeCode: "23096",
+    lowPerM2: null,
+    highPerM2: null,
+    observations: 100,
+    vintage: 2025,
+    sourceUpdatedOn: "2025-12-11",
+  });
+  const sales = [
+    makeSale({ id: "a", department: "23", starting_price_eur: 100_000, app_surface_m2: 50 }),
+    makeSale({ id: "b", department: "23", starting_price_eur: 100_000, app_surface_m2: 50 }),
+  ];
+
+  it("averages the yields of the commune rents, and leaves a department without rent out", () => {
+    expect(buildSalesStatisticsSummary(sales).averageGrossYieldPct).toBeNull();
+
+    const summary = buildSalesStatisticsSummary(
+      sales,
+      false,
+      new Date("2026-07-06T00:00:00.000Z"),
+      (sale) => (sale.id === "a" ? reference(12) : reference(6)),
+    );
+
+    // About 6.2 % and 3.1 %.
+    expect(summary.averageGrossYieldPct).toBeCloseTo(4.7, 1);
+    expect(summary.medianGrossYieldPct).toBeCloseTo(4.7, 1);
+  });
+
+  it("carries the mandatory credit next to the yields", () => {
+    const response = buildSalesStatisticsResponse({ sales, capped: false, search: {} });
+
+    expect(response.meta.rentAttribution).toBe(
+      "Estimations ANIL, à partir des données du Groupe SeLoger et de leboncoin.",
+    );
+  });
+
+  it("says honestly what the yields are made of: ANIL, department, or both", () => {
+    const build = (rents?: (sale: { id: string }) => ReturnType<typeof reference> | null) =>
+      buildSalesStatisticsResponse({ sales, capped: false, search: {}, rents }).meta.rentBasis;
+    const department = {
+      rentPerM2: 14,
+      source: "department_estimate" as const,
+      reliability: "indicative" as const,
+    };
+
+    expect(build((sale) => (sale.id ? reference(12) : null))).toBe("anil");
+    expect(build((sale) => (sale.id === "a" ? reference(12) : department) as never)).toBe("mixed");
+    expect(build(undefined)).toBe("department");
+    // Department 23 has no department rent: those sales have no yield and do not vote.
+    expect(
+      buildSalesStatisticsResponse({
+        sales: [makeSale({ id: "x", department: "33" })],
+        capped: false,
+        search: {},
+      }).meta.rentBasis,
+    ).toBe("department");
+  });
+
+  it("leaves a property that is not a dwelling out of the yields", () => {
+    const land = makeSale({ id: "terrain", department: "23", property_type: "land" });
+    const summary = buildSalesStatisticsSummary([land], false, undefined, () => reference(12));
+
+    expect(summary.averageGrossYieldPct).toBeNull();
+  });
+});
+
 describe("sales statistics", () => {
   it("builds aggregate search statistics from judicial sales", () => {
     const summary = buildSalesStatisticsSummary(

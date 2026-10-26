@@ -1,10 +1,11 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useId, useState, type ReactNode } from "react";
 import type { CeilingHypotheses, OccupationCase } from "@/lib/bid-ceiling-engine";
 import { consignationAmount, marginPctFor, targetYieldPct } from "@/lib/bid-ceiling-engine";
 import type { CeilingUserChoices } from "@/lib/bid-ceiling-defaults";
 import { consignationRuleOf, labelsOf } from "@/lib/fee-regime-definitions";
+import { LazyRentSourceNotice } from "@/components/LazyRentSourceNotice";
 
 type ChoicesUpdate = (change: (choices: CeilingUserChoices) => CeilingUserChoices) => void;
 type NumberChoice = {
@@ -234,21 +235,27 @@ export function CeilingHypothesesPanel({
       {h.project === "louer" ? (
         <Group title="Location">
           <NumberField
-            label="Loyer mensuel hors charges"
+            label={rentFieldLabel(h)}
             suffix="€"
             value={h.rent.monthly}
             zeroMeansEmpty
-            hint={
-              h.rent.source === "estime"
-                ? "Loyer de référence du département. Remplacez-le si vous connaissez le loyer réel."
-                : h.rent.source === "absent"
-                  ? "Aucun loyer de référence pour ce département : saisissez un loyer, sinon le plafond ne tient pas compte du rendement."
-                  : undefined
-            }
+            hint={rentFieldHint(h)}
             onChange={(value) => set("monthlyRent", value)}
           />
           <NumberField
-            label="Rendement net visé"
+            label="Charges récupérables comprises dans le loyer (€/mois)"
+            suffix="€"
+            value={h.rent.recoverableCharges ?? null}
+            zeroMeansEmpty
+            hint={
+              h.rent.reference?.source.startsWith("anil_")
+                ? "Vide : le loyer d’annonce ANIL est compté charges comprises. Saisissez-les pour les retirer du loyer."
+                : undefined
+            }
+            onChange={(value) => set("recoverableCharges", value)}
+          />
+          <NumberField
+            label={`Rendement ${h.rent.chargesIncluded ? "brut visé, charges comprises" : "net visé"}`}
             suffix="%"
             step={0.1}
             value={targetYieldPct(h)}
@@ -301,7 +308,7 @@ function NumberField({
   label: string;
   suffix: string;
   value: number | null;
-  hint?: string;
+  hint?: ReactNode;
   step?: number;
   zeroMeansEmpty?: boolean;
   onChange: (value: number | null) => void;
@@ -344,7 +351,41 @@ function NumberField({
         />
         <span className="shrink-0 text-xs text-muted-foreground">{suffix}</span>
       </div>
-      {hint ? <span className="text-xs leading-relaxed text-muted-foreground">{hint}</span> : null}
+      {hint ? <div className="text-xs leading-relaxed text-muted-foreground">{hint}</div> : null}
+    </div>
+  );
+}
+
+/**
+ * Le loyer prérempli de la carte de l'ANIL est un loyer d'annonce CHARGES COMPRISES : tant que
+ * l'utilisateur ne saisit pas les charges récupérables, rien ne les en retire (le moteur ne déduit que
+ * les charges non récupérables, en pourcentage du loyer). Le champ ne s'appelle « hors charges » que
+ * pour un loyer saisi ou absent.
+ */
+function rentFieldLabel(h: CeilingHypotheses): string {
+  if (h.rent.source !== "estime") return "Loyer mensuel hors charges";
+  return h.rent.reference?.source.startsWith("anil_")
+    ? "Loyer d’annonce estimé, charges comprises (le loyer hors charges est plus bas)"
+    : "Loyer estimé du département";
+}
+
+function rentFieldHint(h: CeilingHypotheses): ReactNode {
+  if (h.rent.source === "absent") {
+    return "Aucun loyer de référence pour cette commune ni pour ce département : saisissez un loyer, sinon le plafond ne tient pas compte du rendement.";
+  }
+  if (h.rent.source !== "estime") return undefined;
+  const reference = h.rent.reference;
+  if (!reference?.source.startsWith("anil_")) {
+    return "Ordre de grandeur du département : remplacez-le si vous connaissez le loyer réel.";
+  }
+  return (
+    <div className="grid gap-1">
+      <p>
+        Estimation du loyer d’annonce de la commune
+        {reference.reliability === "reliable" ? "" : " (fiabilité indicative)"}, non constaté et non
+        garanti. Remplacez-le par le loyer réel si vous le connaissez.
+      </p>
+      <LazyRentSourceNotice reference={reference} className="text-xs leading-relaxed" />
     </div>
   );
 }

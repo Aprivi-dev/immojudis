@@ -112,6 +112,67 @@ function makeWatchedZone(overrides: Partial<UserWatchedZone> = {}): UserWatchedZ
   };
 }
 
+describe("alert yield criterion", () => {
+  const sale = makeSale({
+    department: "23",
+    starting_price_eur: 100_000,
+    app_surface_m2: 50,
+    app_surface_kind: "habitable",
+  });
+  const alert = makeAlert({
+    city: null,
+    department: null,
+    property_type: null,
+    max_price_eur: null,
+    min_surface_m2: null,
+    occupancy_status: null,
+    min_investment_score: null,
+    max_price_per_m2: null,
+    min_market_discount_pct: null,
+    dpe_classes: [],
+    require_house_with_land: false,
+    min_yield_pct: 6,
+  });
+  const reference = (rentPerM2: number) => ({
+    rentPerM2,
+    source: "anil_commune" as const,
+    reliability: "reliable" as const,
+    segment: "apt_all" as const,
+    communeCode: "23096",
+    lowPerM2: null,
+    highPerM2: null,
+    observations: 100,
+    vintage: 2025,
+    sourceUpdatedOn: "2025-12-11",
+  });
+
+  it("measures the yield with the commune rent of the context", () => {
+    // 50 m² x 12 EUR x 12 months = 7 200 EUR a year over about 112 000 EUR of total cost: above 6 %.
+    expect(alertMatchesSale(alert, sale, { rents: () => reference(12) })).toMatchObject({
+      matches: true,
+      reasons: expect.arrayContaining(["rendement"]),
+    });
+    // 6 EUR/m²: about 3 %.
+    expect(alertMatchesSale(alert, sale, { rents: () => reference(6) }).matches).toBe(false);
+  });
+
+  it("gives no yield, so no match, to a property that is not a dwelling", () => {
+    for (const property_type of ["land", "parking", "garage", "local commercial", "building"]) {
+      const item = { ...sale, property_type, department: "33" };
+      expect(
+        alertMatchesSale(alert, item, { rents: () => reference(12) }).matches,
+        property_type,
+      ).toBe(false);
+    }
+  });
+
+  it("keeps the department rent when no reference is given, and never invents one", () => {
+    // Department 23 has no department rent: no yield, so no match.
+    expect(alertMatchesSale(alert, sale).matches).toBe(false);
+    expect(alertMatchesSale(alert, sale, { rents: () => null }).matches).toBe(false);
+  });
+});
+
 describe("smart alert matching", () => {
   it("respects the saved sale family, including judicial-origin notarial sales", () => {
     const alert = makeAlert({ advanced_criteria: { sale_type: "notary" } });

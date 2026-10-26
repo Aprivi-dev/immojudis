@@ -14,7 +14,7 @@ import {
 } from "@/lib/client-api";
 import type { LawyerReferralPreviewResponse, LawyerReferralSummary } from "@/lib/lawyer-referrals";
 import { userMessage } from "@/lib/user-messages";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 
 export function LawyerReferralButton({
   saleId,

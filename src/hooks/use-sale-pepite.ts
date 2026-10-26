@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { fetchSalePepite, type PepiteView } from "@/lib/client-api/sale-pepite";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 import { fetchPepiteSaleIds } from "@/lib/search/pepite-filter";
 import type { PepitePayload } from "@/lib/sale-pepite-view";
 

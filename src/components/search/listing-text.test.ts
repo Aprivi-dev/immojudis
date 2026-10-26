@@ -198,6 +198,15 @@ describe("listingLinkLabel d'une pépite", () => {
     expect(plain).not.toContain("pépite");
   });
 
+  it("ajoute la mention « exposé » (périmètre d'un PPRi) au nom du lien d'une pépite exposée seulement", () => {
+    const plain = listingLinkLabel(pepiteSale, "Maison · Pau");
+    expect(listingLinkLabel(pepiteSale, "Maison · Pau", { pepite: true, floodExposed: true })).toBe(
+      `${plain}, pépite. Dans le périmètre d’un plan de prévention des risques d’inondation (PPRi) : zonage à vérifier.`,
+    );
+    // Sans pépite, l'exposition n'est jamais dite.
+    expect(listingLinkLabel(pepiteSale, "Maison · Pau", { floodExposed: true })).toBe(plain);
+  });
+
   it("garde le mot même quand le prix et la date sont masqués par la relecture", () => {
     expect(
       listingLinkLabel(pepiteSale, "Maison · Pau", { price: true, date: true, pepite: true }),

@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { fetchAlertNotifications } from "@/lib/client-api";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 import { MOBILE_MENU_UNREAD_ID } from "@/components/mobile-menu-unread";
 
 /**

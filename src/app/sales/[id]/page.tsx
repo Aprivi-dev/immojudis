@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound, permanentRedirect } from "next/navigation";
 import { openFeeRegimesFromEnv } from "@/lib/fee-regime.server";
 import { lookupPublicSale } from "@/lib/public-sale.server";
+import { loadSaleRentReference } from "@/lib/rent-reference.server";
 import {
   GENERIC_SALE_SEO_TITLE,
   isIndexablePublicSale,
@@ -105,6 +106,9 @@ export default async function Page({ params }: PageProps) {
   if (lookup.status === "merged") permanentRedirect(salePath(lookup.targetId));
 
   const sale = lookup.status === "found" ? lookup.sale : null;
+  // Loyer de référence de la commune (carte ANIL), lu côté serveur : le navigateur ne lit jamais la
+  // table. Le rapport enregistré lit la même référence, pour que les deux plafonds restent égaux.
+  const rentReference = sale ? await loadSaleRentReference(sale) : null;
   const siteOrigin = resolveSiteOrigin(process.env, "http://localhost:3000")!;
   const structuredData = sale
     ? saleStructuredData({ ...sale, id: sale.id.toLowerCase() }, { origin: siteOrigin })
@@ -125,6 +129,7 @@ export default async function Page({ params }: PageProps) {
         initialData={{ sale: null, preview: sale }}
         adjudicationStatisticsEnabled={process.env.ADJUDICATION_PRICE_STATISTICS_ENABLED === "true"}
         openFeeRegimes={openFeeRegimesFromEnv()}
+        rentReference={rentReference}
       />
     </>
   );

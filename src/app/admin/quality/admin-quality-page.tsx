@@ -18,7 +18,7 @@ import type {
   DataQualityReport,
   DataQualitySourceCoverage,
 } from "@/lib/data-quality-monitor";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 
 export function AdminQualityPage() {
   const qualityQuery = useQuery({

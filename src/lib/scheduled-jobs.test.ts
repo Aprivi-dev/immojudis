@@ -196,4 +196,35 @@ describe("scheduled jobs inventory", () => {
     const route = readFileSync(join(root, "src/app/api/cron/sale-pepites/route.ts"), "utf8");
     expect(route).toMatch(/^export const maxDuration = \d+;$/m);
   });
+
+  it("observe le risque d'inondation toutes les heures à :25 (pg_cron), avec un filet quotidien et une alerte de fraîcheur", () => {
+    const scheduler = readFileSync(
+      join(root, "supabase/migrations/20261106100300_sale_flood_risk_scheduler.sql"),
+      "utf8",
+    );
+    expect(scheduler).toContain("'immojudis-sale-flood-risk'");
+    expect(scheduler).toContain("'25 * * * *'");
+    expect(scheduler).toContain("/api/cron/sale-flood-risk");
+    // Dans la migration, les apostrophes de la liste attendue de cron.stale sont doublées.
+    expect(scheduler).toContain("(''sale-flood-risk'', interval ''3 hours'')");
+    // L'observation précède le calcul des pépites (:35) qui lit le verdict.
+    const pepites = readFileSync(
+      join(root, "supabase/migrations/20261104100100_sale_pepites_scheduler.sql"),
+      "utf8",
+    );
+    expect(pepites).toContain("'35 * * * *'");
+
+    const vercel = JSON.parse(readFileSync(join(root, "vercel.json"), "utf8")) as {
+      crons: Array<{ path: string; schedule: string }>;
+    };
+    expect(vercel.crons.filter((cron) => cron.path === "/api/cron/sale-flood-risk")).toEqual([
+      { path: "/api/cron/sale-flood-risk", schedule: "35 5 * * *" },
+    ]);
+
+    const document = readFileSync(join(root, "docs/operations/planification.md"), "utf8");
+    expect(document).toMatch(/`\/api\/cron\/sale-flood-risk`.*\| oui /);
+    expect(document).toContain("PEPITE_RULE_V2_ENABLED");
+    const route = readFileSync(join(root, "src/app/api/cron/sale-flood-risk/route.ts"), "utf8");
+    expect(route).toMatch(/^export const maxDuration = \d+;$/m);
+  });
 });

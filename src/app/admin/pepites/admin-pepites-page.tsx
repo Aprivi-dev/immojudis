@@ -42,7 +42,7 @@ export function AdminPepitesPage() {
     <AdminShell
       activeSection="pepites"
       title="Pépites"
-      description="Règle pepite-v1 : contrôle des résultats sur le catalogue réel avant toute publication."
+      description="Règle des pépites : contrôle des résultats sur le catalogue réel avant toute publication."
       adminEmail={user?.email}
       onRefresh={() => void query.refetch()}
       isRefreshing={query.isFetching}

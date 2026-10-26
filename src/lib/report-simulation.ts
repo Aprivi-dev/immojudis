@@ -6,6 +6,7 @@ import type { FeeRegimeKey } from "./fee-regime-open";
 import { listingValuationConflict } from "./listing-evidence";
 import type { AuctionSale } from "./types";
 import type { MarketEstimate } from "./market.server";
+import type { RentReference } from "./rent-reference";
 
 // Nombre fini (zod 4 refuse déjà l'infini), de 0 à un milliard.
 const amount = z.number().check(z.gte(0), z.lte(1_000_000_000));
@@ -236,6 +237,7 @@ export function computeReportSimulation(
   market: MarketEstimate | null,
   input: ReportSimulation,
   regimes: readonly FeeRegimeKey[],
+  rentReference: RentReference | null = null,
 ) {
   const conflict = listingValuationConflict(sale);
   if (conflict) throw new Error(conflict);
@@ -244,6 +246,7 @@ export function computeReportSimulation(
     market?.actionable ? market : null,
     input.choices,
     regimes,
+    rentReference,
   );
   if (snapshot.regime == null) throw new Error(NO_CEILING_REGIME_REASON);
   if (!snapshot.available || snapshot.maxBid !== input.expectedMaxBid) {

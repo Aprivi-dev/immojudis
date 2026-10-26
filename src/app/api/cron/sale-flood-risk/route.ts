@@ -1,0 +1,31 @@
+import { runMonitoredCron } from "@/lib/cron-jobs";
+import { serverEnv } from "@/lib/env";
+import { runSaleFloodRiskBatch } from "@/lib/sale-flood-risk-batch";
+
+export const maxDuration = 300;
+
+/** Taille de lot par défaut (ventes observées par passe) ; `SALE_FLOOD_RISK_BATCH_LIMIT` la remplace. */
+const DEFAULT_BATCH_LIMIT = 150;
+
+/** La taille de lot de l'environnement (circuit commun `serverEnv`), ou la valeur par défaut. */
+function batchLimit(): number {
+  const parsed = Number(serverEnv().saleFloodRisk.batchLimit);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_BATCH_LIMIT;
+}
+
+/**
+ * Observe le risque d'inondation des ventes à venir et le stocke (voir `src/lib/sale-flood-risk-batch.ts` : TRI
+ * `tri_zonage` de Géorisques et périmètre PPRi du Géoportail de l'urbanisme, 2 à 3 appels par seconde, un 429
+ * arrête la passe). Alimente la règle `pepite-v2`, qui ne fait elle-même aucun appel réseau. Même protection que
+ * les autres routes planifiées : jeton `CRON_SECRET`, supervision par `runMonitoredCron`.
+ */
+export async function GET(request: Request) {
+  // Aucune reprise différée : les pauses de reprise (5 s, 20 s, 60 s) s'ajouteraient au temps de la passe et
+  // pourraient dépasser `maxDuration`. La passe suivante (toutes les heures) reprend ce qui reste.
+  return runMonitoredCron(
+    request,
+    "sale-flood-risk",
+    () => runSaleFloodRiskBatch({ limit: batchLimit() }),
+    { retryDelaysMs: [] },
+  );
+}

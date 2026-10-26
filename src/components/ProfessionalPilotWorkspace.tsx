@@ -26,7 +26,7 @@ import { saleDisplayTitle } from "@/lib/sale-title";
 import { isUuid } from "@/lib/sale-workspace-shared";
 import type { AuctionSale } from "@/lib/types";
 import { userMessage } from "@/lib/user-messages";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 
 type AmountField =
   | "priceEur"

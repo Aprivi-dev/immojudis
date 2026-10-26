@@ -28,6 +28,7 @@ from unnest(array[
   'information-agent-inbound',
   'listing-completeness',
   'sale-pepites',
+  'sale-flood-risk',
   'cnb-lawyer-directory',
   'sale-reminders'
 ]) as job_name;

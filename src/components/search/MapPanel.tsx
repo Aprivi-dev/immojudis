@@ -56,6 +56,7 @@ import {
 import { escapeHtml } from "@/lib/guards";
 import { PepiteIcon } from "@/components/PepiteBadge";
 import { PEPITE_LABEL } from "@/lib/pepite-copy";
+import { FLOOD_EXPOSED_SHORT } from "@/lib/pepite-flood-copy";
 import { safeSalesReturnTo, saleDetailPath } from "@/lib/navigation";
 
 // Chargé à la demande par l'effet de création de la carte (import dynamique).
@@ -112,6 +113,8 @@ export type MapPanelProps = {
   aiReviewStatus?: AiReviewRequestStatus;
   /** Pépites publiables (liste publique) : anneau et glyphe sur la carte, ligne « Pépite » dans la fenêtre. */
   pepiteSaleIds?: ReadonlySet<string>;
+  /** Parmi les pépites, celles dont le bien est dans le périmètre d'un PPRi (mention courte, sans montant). */
+  pepiteExposedSaleIds?: ReadonlySet<string>;
   onHover: (saleId: string | null) => void;
   onSelect: (saleId: string) => void;
   onViewportChange: (viewport: MapViewportChange) => void;
@@ -237,6 +240,7 @@ export function MapPanel({
   aiReviewBySaleId,
   aiReviewStatus = "disabled",
   pepiteSaleIds,
+  pepiteExposedSaleIds,
   onHover,
   onSelect,
   onViewportChange,
@@ -280,12 +284,21 @@ export function MapPanel({
           aiReviewStatus,
           preview,
         );
-        return pepiteSaleIds?.has(sale.id.toLowerCase()) ? { ...reviewed, pepite: true } : reviewed;
+        if (!pepiteSaleIds?.has(sale.id.toLowerCase())) return reviewed;
+        return pepiteExposedSaleIds?.has(sale.id.toLowerCase())
+          ? { ...reviewed, pepite: true, pepiteFloodExposed: true }
+          : { ...reviewed, pepite: true };
       }),
-    [aiReviewBySaleId, aiReviewStatus, pepiteSaleIds, preview, sales],
+    [aiReviewBySaleId, aiReviewStatus, pepiteExposedSaleIds, pepiteSaleIds, preview, sales],
   );
   const pepiteCount = useMemo(
     () => displaySales.filter((sale) => sale.pepite && hasCoordinates(sale)).length,
+    [displaySales],
+  );
+  const pepiteExposedCount = useMemo(
+    () =>
+      displaySales.filter((sale) => sale.pepite && sale.pepiteFloodExposed && hasCoordinates(sale))
+        .length,
     [displaySales],
   );
   const featureCollection = useMemo(
@@ -480,7 +493,13 @@ export function MapPanel({
           : sale;
         popupRef.current = showSalePopup(
           map,
-          { ...popupSale, pepite: sale.pepite, latitude: sale.latitude, longitude: sale.longitude },
+          {
+            ...popupSale,
+            pepite: sale.pepite,
+            pepiteFloodExposed: sale.pepiteFloodExposed,
+            latitude: sale.latitude,
+            longitude: sale.longitude,
+          },
           popupRef.current,
           popupAccessRef.current,
         );
@@ -857,6 +876,9 @@ export function MapPanel({
           les séparer.
           {pepiteCount > 0
             ? ` Dont ${pepiteCount} pépite${pepiteCount > 1 ? "s" : ""}, repérée${pepiteCount > 1 ? "s" : ""} par un anneau doré épais et un pictogramme.`
+            : ""}
+          {pepiteExposedCount > 0
+            ? ` Parmi elles, ${pepiteExposedCount} ${pepiteExposedCount > 1 ? "sont" : "est"} dans le périmètre d’un plan de prévention des risques d’inondation : zonage à vérifier.`
             : ""}
         </span>
         {pepiteCount > 0 ? (
@@ -1263,6 +1285,11 @@ function buildPopupHtml(
         ${
           sale.pepite
             ? `<p class="immo-mapbox-popup-location"><strong>${escapeHtml(PEPITE_LABEL)}</strong> · repère calculé automatiquement</p>`
+            : ""
+        }
+        ${
+          sale.pepite && sale.pepiteFloodExposed
+            ? `<p class="immo-mapbox-popup-location">${escapeHtml(FLOOD_EXPOSED_SHORT)}</p>`
             : ""
         }
         <div class="immo-mapbox-popup-metrics">

@@ -19,7 +19,7 @@ import {
   type FavoriteDossierResponse,
 } from "@/lib/favorite-dossier-shared";
 import { formatDate, formatPrice } from "@/lib/format";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 import { toast } from "@/lib/toast";
 import { userMessage } from "@/lib/user-messages";
 

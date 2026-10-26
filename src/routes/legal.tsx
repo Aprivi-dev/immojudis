@@ -118,6 +118,50 @@ export function LegalPage() {
             </p>
           </LegalSection>
 
+          {/*
+            Garder les mentions « ANIL » (carte des loyers) et « zone tendue » de la liste ci-dessous : le lot loyers
+            ANIL et zones tendues est fusionné dans la même mise en production que le contrôle du risque d'inondation
+            (Géorisques, Géoportail de l'urbanisme). Retirer ces deux lignes laisserait des données réutilisées sans
+            leur mention de source.
+          */}
+          <LegalSection title="Données publiques réutilisées">
+            <p>
+              Immojudis réutilise des données publiques, dont les mentions de source sont affichées
+              avec les résultats qui en proviennent :
+            </p>
+            <ul className="mt-3 list-disc space-y-2 pl-5">
+              <li>
+                Géorisques (ministère de la Transition écologique, BRGM) : cartographie des
+                territoires à risque important d’inondation (TRI), scénario de crue fréquente, et
+                risques recensés par commune, Licence Ouverte 2.0 ;
+              </li>
+              <li>
+                Géoportail de l’urbanisme (IGN), via l’API Carto : servitudes d’utilité publique PM1
+                (plans de prévention des risques naturels prévisibles) et zonages d’urbanisme,
+                Licence Ouverte 2.0 ;
+              </li>
+              <li>
+                Demandes de valeurs foncières (DVF), direction générale des Finances publiques :
+                ventes immobilières passées servant aux estimations, Licence Ouverte 2.0 ;
+              </li>
+              <li>
+                Carte des loyers de l’Agence nationale pour l’information sur le logement (ANIL) : «
+                Estimations ANIL, à partir des données du Groupe SeLoger et de leboncoin », Licence
+                Ouverte 2.0 ;
+              </li>
+              <li>
+                Zonage des communes en zone tendue, ministère de la Transition écologique, Licence
+                Ouverte 2.0.
+              </li>
+            </ul>
+            <p className="mt-3">
+              Ces mentions ne signifient pas que ces organismes cautionnent les services
+              d’Immojudis. Ces données sont des aides à la lecture, sans valeur d’expertise : elles
+              ne remplacent ni les diagnostics, ni l’état des risques annexé au cahier des
+              conditions de vente, ni la lecture des pièces officielles.
+            </p>
+          </LegalSection>
+
           <LegalSection title="Mise en relation avec un avocat">
             <p>
               La mise en relation ne remplace pas le libre choix du conseil, ne crée pas de mandat

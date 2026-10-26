@@ -13,7 +13,7 @@ import {
 import { fetchSaleChangeEvents } from "@/lib/client-api";
 import type { FavoriteSale } from "@/lib/favorites";
 import { propertyTypeLabel } from "@/lib/format";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 import {
   MAX_DISPLAYED_SALE_CHANGES,
   RECENT_SALE_CHANGE_DAYS,

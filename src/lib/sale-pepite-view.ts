@@ -1,4 +1,20 @@
-import { formatPrice } from "@/lib/format";
+import { formatDate, formatPrice } from "@/lib/format";
+import {
+  FLOOD_EXPOSED_LONG,
+  FLOOD_EXPOSED_SHORT,
+  FLOOD_NONE_FOUND_DETAIL,
+  FLOOD_NONE_FOUND_LINE,
+  FLOOD_NO_SIGNAL_LINE,
+  FLOOD_TRI_ONLY_LINE,
+  FLOOD_PM1_SOURCE_URL,
+  FLOOD_TRI_SOURCE_URL,
+  FLOOD_UNKNOWN_LAST_CHECK_PREFIX,
+  FLOOD_UNKNOWN_LINE,
+  FLOOD_WARNING,
+  floodPm1SourceLine,
+  floodTriSourceLine,
+  type PepiteFloodDisplayVerdict,
+} from "@/lib/pepite-flood-copy";
 import { pepiteConfirmLabel, pepitePassLabel } from "@/lib/pepite-reasons";
 import {
   PEPITE_CHANCE_EXIT_SHARE,
@@ -21,7 +37,7 @@ import {
  *
  * Deux niveaux, jamais mélangés :
  *  - « criteria » (visiteur, compte Découverte qui n'a pas débloqué la vente) : le NOM des critères réunis,
- *    sans valeur ni montant ;
+ *    sans valeur ni montant, et le contrôle du risque d'inondation (`flood` : un fait public sans montant) ;
  *  - « detail » (offre Analyse, vente débloquée) : en plus, la condition, le plafond de référence, le prix
  *    probable et sa fourchette, avec leurs réserves.
  * `pepiteCriteriaPayload` ne reçoit jamais le détail privé : un montant ne peut pas partir par ce niveau.
@@ -37,8 +53,30 @@ export type PepiteCriterionView = {
 /** Les deux tests de la règle, présentés en tête ; tout le reste est une vérification de fiabilité. */
 export const PEPITE_TEST_IDS: readonly PepiteCriterionId[] = ["test_b_chance", "test_c_cost"];
 
+/**
+ * Le contrôle du risque d'inondation tel que la fiche l'affiche (règle `pepite-v2`, textes dans
+ * `pepite-flood-copy.ts`). Un fait public, sans montant : il part au niveau « criteria ». Jamais de coche pour
+ * « exposé », « aucun signal » ou « inconnu » (`tone`).
+ */
+export type PepiteFloodView = {
+  verdict: PepiteFloodDisplayVerdict;
+  /** « check » : coche (rien d'élevé identifié) ; « alert » : pictogramme d'alerte (exposé) ; « neutral » : ligne neutre. */
+  tone: "check" | "alert" | "neutral";
+  /** La phrase de la ligne d'inondation. */
+  line: string;
+  /** Texte développé : cartes consultées (replié) ou mention longue « exposé » ; `null` : aucun. */
+  details: string | null;
+  /** Mention de source, sous la ligne, avec son lien. */
+  sourceLine: string | null;
+  sourceUrl: string | null;
+  /** Mise en garde sous le bloc Pépite. */
+  warning: string;
+};
+
 export type PepiteCriteriaPayload = {
   access: "criteria";
+  /** Contrôle d'inondation (règle v2) ; `null` : pas de contrôle à afficher (règle v1, vente ancienne). */
+  flood: PepiteFloodView | null;
   /** Tests réussis (au tribunal : chances de l'emporter et achat sous la valeur ; en vente notariale : l'achat). */
   count: number;
   /** Les tests présents pour ce type de vente, réussis ou à confirmer. */
@@ -80,6 +118,9 @@ export type PepitePayload = PepiteCriteriaPayload | PepiteDetailPayload;
 
 const percent = (share: number) => Math.round(share * 100);
 
+/** Critères qui ne s'affichent pas comme les autres : l'inondation a sa propre ligne (`PepiteFloodView`). */
+const HIDDEN_CRITERIA: readonly PepiteCriterionId[] = ["flood_risk_known", "no_high_flood_risk"];
+
 /** Un code de motif `pass:<critère>` ou `fail:<critère>` : le critère et son issue, ou `null` (code de stabilité). */
 function parseReasonCode(code: string): { id: PepiteCriterionId; passed: boolean } | null {
   const separator = code.indexOf(":");
@@ -104,7 +145,7 @@ export function pepiteCriteriaViews(
   const views: PepiteCriterionView[] = [];
   for (const code of reasonCodes) {
     const parsed = parseReasonCode(code);
-    if (!parsed) continue;
+    if (!parsed || HIDDEN_CRITERIA.includes(parsed.id)) continue;
     if (parsed.passed) {
       views.push({ id: parsed.id, label: pepitePassLabel(parsed.id, regime), state: "pass" });
     } else if (!PEPITE_BLOCKING_CRITERIA.includes(parsed.id) && !holdMissed.includes(parsed.id)) {
@@ -115,11 +156,15 @@ export function pepiteCriteriaViews(
 }
 
 /** Niveau « criteria » : les noms des tests et des vérifications, sans la moindre valeur. */
-export function pepiteCriteriaPayload(criteria: PepiteCriterionView[]): PepiteCriteriaPayload {
+export function pepiteCriteriaPayload(
+  criteria: PepiteCriterionView[],
+  flood: PepiteFloodView | null = null,
+): PepiteCriteriaPayload {
   const tests = criteria.filter((criterion) => PEPITE_TEST_IDS.includes(criterion.id));
   const checks = criteria.filter((criterion) => !PEPITE_TEST_IDS.includes(criterion.id));
   return {
     access: "criteria",
+    flood,
     count: tests.filter((criterion) => criterion.state === "pass").length,
     tests,
     checks,
@@ -270,6 +315,83 @@ export function pepiteDetailView(
 export function pepiteDetailPayload(
   criteria: PepiteCriterionView[],
   detail: PepiteDetailView,
+  flood: PepiteFloodView | null = null,
 ): PepiteDetailPayload {
-  return { ...pepiteCriteriaPayload(criteria), access: "detail", detail };
+  return { ...pepiteCriteriaPayload(criteria, flood), access: "detail", detail };
+}
+
+function dateText(value: unknown): string | null {
+  return typeof value === "string" && value ? formatDate(value) : null;
+}
+
+/**
+ * Le contrôle d'inondation d'une pépite publiée, d'après le verdict enregistré avec son évaluation
+ * (`details.flood`, écrit par le traitement des pépites sous la règle v2). Ne lit que le verdict et deux dates :
+ * aucun montant, aucune coordonnée. `null` : pas de contrôle (règle v1), verdict illisible ou « élevé » (une
+ * pépite ne peut pas l'être : rien ne s'affiche).
+ */
+export function pepiteFloodView(details: Record<string, unknown>): PepiteFloodView | null {
+  const flood = details.flood;
+  if (!flood || typeof flood !== "object") return null;
+  const record = flood as Record<string, unknown>;
+  const checkedOn = dateText(record.observedAt);
+  switch (record.verdict) {
+    case "none_found":
+      // Périmètres de PPRi non lus : le verdict ne repose que sur les TRI. Ligne neutre, sans coche, sans la phrase
+      // sur les périmètres de PPRi.
+      if (record.ppriChecked === false) {
+        return {
+          verdict: "tri_only",
+          tone: "neutral",
+          line: FLOOD_TRI_ONLY_LINE,
+          details: null,
+          sourceLine: floodTriSourceLine(checkedOn),
+          sourceUrl: FLOOD_TRI_SOURCE_URL,
+          warning: FLOOD_WARNING,
+        };
+      }
+      return {
+        verdict: "none_found",
+        tone: "check",
+        line: FLOOD_NONE_FOUND_LINE,
+        details: FLOOD_NONE_FOUND_DETAIL,
+        sourceLine: floodTriSourceLine(checkedOn),
+        sourceUrl: FLOOD_TRI_SOURCE_URL,
+        warning: FLOOD_WARNING,
+      };
+    case "exposed":
+      return {
+        verdict: "exposed",
+        tone: "alert",
+        line: FLOOD_EXPOSED_SHORT,
+        details: FLOOD_EXPOSED_LONG,
+        sourceLine: floodPm1SourceLine(checkedOn),
+        sourceUrl: FLOOD_PM1_SOURCE_URL,
+        warning: FLOOD_WARNING,
+      };
+    case "no_signal":
+      return {
+        verdict: "no_signal",
+        tone: "neutral",
+        line: FLOOD_NO_SIGNAL_LINE,
+        details: null,
+        sourceLine: null,
+        sourceUrl: null,
+        warning: FLOOD_WARNING,
+      };
+    case "unknown":
+      return {
+        verdict: "unknown",
+        tone: "neutral",
+        line: checkedOn
+          ? `${FLOOD_UNKNOWN_LINE} ${FLOOD_UNKNOWN_LAST_CHECK_PREFIX} ${checkedOn}.`
+          : FLOOD_UNKNOWN_LINE,
+        details: null,
+        sourceLine: null,
+        sourceUrl: null,
+        warning: FLOOD_WARNING,
+      };
+    default:
+      return null;
+  }
 }

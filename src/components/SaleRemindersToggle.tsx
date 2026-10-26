@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/lib/toast";
 import { fetchNotificationPreferences, updateNotificationPreferences } from "@/lib/client-api";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 import { userMessage } from "@/lib/user-messages";
 
 /**

@@ -565,3 +565,40 @@ describe("CeilingPlanner : ventes notariales", () => {
     );
   });
 });
+
+describe("CeilingPlanner : rendement d'un loyer ANIL", () => {
+  // 2 EUR/m2 : le loyer est le seul à limiter le plafond du projet « louer ».
+  const lowAnil = {
+    rentPerM2: 2,
+    source: "anil_commune" as const,
+    reliability: "reliable" as const,
+    segment: "apt_all" as const,
+    communeCode: "34172",
+    lowPerM2: null,
+    highPerM2: null,
+    observations: 900,
+    vintage: 2025,
+    sourceUpdatedOn: "2025-12-11",
+  };
+  const withAnil = (choices: CeilingUserChoices) =>
+    renderPlanner({
+      choices,
+      tweak: () => buildCeilingHypotheses(sale, estimate, choices, null, lowAnil),
+    });
+
+  it("parle d'un rendement brut, charges comprises, tant que les charges récupérables sont vides", () => {
+    withAnil({ project: "louer" });
+
+    expect(document.body.textContent).toMatch(
+      /c’est le loyer qui limite le plafond \(rendement brut visé [\d.,]+ %, charges comprises\)/,
+    );
+    expect(document.body.textContent).not.toMatch(/rendement net visé/);
+  });
+
+  it("revient à « net » dès que les charges récupérables sont saisies", () => {
+    withAnil({ project: "louer", recoverableCharges: 10 });
+
+    expect(document.body.textContent).toMatch(/rendement net visé [\d.,]+ %\)/);
+    expect(document.body.textContent).not.toMatch(/charges comprises\)/);
+  });
+});

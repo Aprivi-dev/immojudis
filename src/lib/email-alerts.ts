@@ -16,6 +16,12 @@ import { asRecord, escapeHtml, numberValue, stringValue } from "@/lib/guards";
 import { listPepiteSaleIds, type PepiteIdsClient } from "@/lib/pepite-sale-ids";
 import { EMAIL_COLORS } from "@/lib/email-brand";
 import { PEPITE_LABEL, PEPITE_METHOD_LINK_LABEL, PEPITE_METHOD_PATH } from "@/lib/pepite-copy";
+import {
+  ANIL_CURRENT_EDITION,
+  RENT_ATTRIBUTION,
+  RENT_SOURCE_URL,
+  rentSourceDetail,
+} from "@/lib/rent-source-notice";
 
 type NotificationRow = Database["public"]["Tables"]["user_alert_notifications"]["Row"];
 
@@ -395,6 +401,8 @@ async function cancelQueuedEmailNotifications({
 }
 
 const PEPITE_REASON = "pépite";
+/** Motif écrit par `alertMatchesSale` quand l'alerte filtre sur le rendement. */
+const RENT_YIELD_REASON = "rendement";
 /** Mention de l'email : en texte, jamais un montant (la page de la vente porte le détail, selon le droit du compte). */
 const PEPITE_EMAIL_LINE = "repère calculé automatiquement par Immojudis, ni conseil ni garantie.";
 
@@ -507,6 +515,12 @@ export function buildAlertDigestMessage({
   const disclaimer =
     "Les données et estimations Immojudis sont indicatives. Elles ne constituent ni une expertise, ni un conseil juridique ou financier, ni une promesse de gain.";
 
+  // Une alerte qui filtre sur le rendement cite le loyer de la carte de l'ANIL : sa mention (Licence Ouverte 2.0)
+  // et le lien vers la source figurent au pied de l'email.
+  const rentNotice = items.some((item) => item.reasons.includes(RENT_YIELD_REASON))
+    ? `${RENT_ATTRIBUTION} ${rentSourceDetail({ source: "anil_commune", ...ANIL_CURRENT_EDITION }) ?? ""}`.trim()
+    : null;
+
   const intro =
     allItems.length === 1
       ? "Une vente correspond à l’une de vos alertes Immojudis :"
@@ -538,8 +552,9 @@ export function buildAlertDigestMessage({
       "",
     );
   }
+  textLines.push(disclaimer);
+  if (rentNotice) textLines.push("", rentNotice, `Source : ${RENT_SOURCE_URL}`);
   textLines.push(
-    disclaimer,
     "",
     `Se désinscrire de tous les emails d'alerte : ${unsubscribeUrl}`,
     `Gérer mes alertes : ${alertsUrl}`,
@@ -561,6 +576,7 @@ export function buildAlertDigestMessage({
       methodUrl: `${appUrl}${PEPITE_METHOD_PATH}`,
       unsubscribeUrl,
       disclaimer,
+      rentNotice,
       intro,
     }),
     unsubscribeUrl,
@@ -965,6 +981,7 @@ function buildAlertDigestHtml({
   methodUrl,
   unsubscribeUrl,
   disclaimer,
+  rentNotice,
   intro,
 }: {
   groups: Array<{
@@ -978,6 +995,8 @@ function buildAlertDigestHtml({
   methodUrl: string;
   unsubscribeUrl: string;
   disclaimer: string;
+  /** Mention de la carte des loyers de l'ANIL, quand une alerte du message filtre sur le rendement. */
+  rentNotice: string | null;
   intro: string;
 }): string {
   const sections = groups
@@ -1022,6 +1041,11 @@ function buildAlertDigestHtml({
             : ""
         }
         <p style="margin:12px 0 0;color:${EMAIL_COLORS.inkSoft};font-size:12px;line-height:1.5;">${escapeHtml(disclaimer)}</p>
+        ${
+          rentNotice
+            ? `<p style="margin:8px 0 0;color:${EMAIL_COLORS.inkSoft};font-size:12px;line-height:1.5;">${escapeHtml(rentNotice)} <a href="${escapeAttribute(RENT_SOURCE_URL)}" style="color:${EMAIL_COLORS.inkSoft};">Source : data.gouv.fr</a></p>`
+            : ""
+        }
       </div>
       <p style="margin:14px 0 0;text-align:center;color:${EMAIL_COLORS.inkSoft};font-size:12px;">
         <a href="${escapeAttribute(alertsUrl)}" style="color:${EMAIL_COLORS.inkSoft};">Gérer mes alertes</a> ·

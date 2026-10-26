@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { fetchOutcomeGraphForecast } from "@/lib/client-api";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 
 export function useOutcomeGraphForecast(saleId: string, enabled = true) {
   return useQuery({

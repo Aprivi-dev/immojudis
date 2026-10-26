@@ -5,6 +5,7 @@ import {
   ceilingsByWorks,
   computeCeilingPlan,
   evaluateBid,
+  yieldNoun,
   type CeilingHypotheses,
 } from "@/lib/bid-ceiling-engine";
 
@@ -127,6 +128,23 @@ describe("computeCeilingPlan", () => {
     expect(plan.binding).toBe("rendement");
     expect(plan.yieldBudget).toBeLessThan(plan.valueBudget);
     expect(plan.steps.some((step) => step.key === "yield")).toBe(true);
+  });
+
+  it("words the yield step as gross, charges included, for an ANIL rent without recoverable charges", () => {
+    const detail = (rent: Partial<CeilingHypotheses["rent"]>) =>
+      computeCeilingPlan(
+        hypotheses({
+          project: "louer",
+          rent: { monthly: 900, source: "estime", vacancyPct: 5, nonRecoverablePct: 7, ...rent },
+        }),
+      ).steps.find((step) => step.key === "yield")?.detail;
+
+    expect(detail({ chargesIncluded: true })).toContain("rendement brut, charges comprises de");
+    expect(detail({ chargesIncluded: true })).not.toMatch(/rendement net/);
+    expect(detail({})).toContain("rendement net de");
+    expect(yieldNoun({ rent: { chargesIncluded: true } as CeilingHypotheses["rent"] })).toBe(
+      "rendement brut, charges comprises",
+    );
   });
 
   it.each([null, 0])("flags a rental project whose rent is %s", (monthly) => {

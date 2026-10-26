@@ -2,8 +2,15 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MARKET_GAP_METHOD_PATH } from "@/lib/market-gap";
+import { FLOOD_FORBIDDEN_WORDS } from "@/lib/pepite-flood-copy";
 import * as policy from "@/lib/pepite-policy";
-import { PEPITE_METHOD_PATH, PEPITE_RULE_VERSION, PEPITE_V1 } from "./method";
+import {
+  PEPITE_METHOD_PATH,
+  PEPITE_RULE_PARAMS,
+  PEPITE_LATEST_RULE_VERSION,
+  PEPITE_V1_RULE_VERSION,
+  pepiteV2EffectiveClause,
+} from "./method";
 import Page, { metadata } from "./page";
 
 beforeEach(() => {
@@ -82,8 +89,8 @@ describe("page « Comment repérons-nous les pépites ? »", () => {
   });
 
   it("reprend les seuils du module de calcul : la page n'annonce que ce que le calcul applique", () => {
-    expect(PEPITE_RULE_VERSION).toBe(policy.PEPITE_RULE_VERSION);
-    expect(PEPITE_V1).toEqual({
+    expect(PEPITE_LATEST_RULE_VERSION).toBe(policy.PEPITE_LATEST_RULE_VERSION);
+    expect(PEPITE_RULE_PARAMS).toEqual({
       chanceMinPct: policy.PEPITE_CHANCE_MIN_SHARE * 100,
       maxCostShareCourtPct: policy.PEPITE_COST_MAX_SHARE_COURT * 100,
       maxCostShareNotaryPct: policy.PEPITE_COST_MAX_SHARE_NOTARY * 100,
@@ -106,18 +113,23 @@ describe("page « Comment repérons-nous les pépites ? »", () => {
   it("donne les seuils de pepite-v1 à partir des constantes de la règle", () => {
     render(<Page />);
     const text = sectionText("Les critères et les seuils");
-    expect(PEPITE_RULE_VERSION).toBe("pepite-v1");
+    // Interrupteur fermé (défaut) : la page décrit la règle appliquée, pepite-v1.
+    expect(PEPITE_V1_RULE_VERSION).toBe("pepite-v1");
     expect(text).toContain("Version pepite-v1.");
     expect(text).not.toContain("indiquée sur cette page");
-    expect(PEPITE_V1.chanceMinPct).toBe(70);
-    expect(PEPITE_V1.maxCostShareCourtPct).toBe(75);
-    expect(PEPITE_V1.maxCostShareNotaryPct).toBe(65);
-    expect(text).toContain(`Au moins ${PEPITE_V1.chanceMinPct} % des ventes comparables`);
-    expect(text).toContain(`d’au plus ${PEPITE_V1.maxCostShareCourtPct} % de la valeur estimée`);
-    expect(text).toContain(`au plus ${PEPITE_V1.maxCostShareNotaryPct} %`);
-    expect(text).toContain(`${PEPITE_V1.historyYears} dernières années`);
-    expect(text).toContain(`moins de ${PEPITE_V1.courtCompleteBelowSales} ventes comparables`);
-    expect(text).toContain(`sous ${PEPITE_V1.courtReplaceBelowSales} ventes`);
+    expect(PEPITE_RULE_PARAMS.chanceMinPct).toBe(70);
+    expect(PEPITE_RULE_PARAMS.maxCostShareCourtPct).toBe(75);
+    expect(PEPITE_RULE_PARAMS.maxCostShareNotaryPct).toBe(65);
+    expect(text).toContain(`Au moins ${PEPITE_RULE_PARAMS.chanceMinPct} % des ventes comparables`);
+    expect(text).toContain(
+      `d’au plus ${PEPITE_RULE_PARAMS.maxCostShareCourtPct} % de la valeur estimée`,
+    );
+    expect(text).toContain(`au plus ${PEPITE_RULE_PARAMS.maxCostShareNotaryPct} %`);
+    expect(text).toContain(`${PEPITE_RULE_PARAMS.historyYears} dernières années`);
+    expect(text).toContain(
+      `moins de ${PEPITE_RULE_PARAMS.courtCompleteBelowSales} ventes comparables`,
+    );
+    expect(text).toContain(`sous ${PEPITE_RULE_PARAMS.courtReplaceBelowSales} ventes`);
     expect(text).toContain("Vente au tribunal");
     expect(text).toContain("Vente notariale à la bougie");
     expect(text).toContain("Vente notariale interactive");
@@ -128,17 +140,26 @@ describe("page « Comment repérons-nous les pépites ? »", () => {
     );
   });
 
+  it("règle pepite-v2 fermée (défaut) : aucune trace du risque d'inondation sur la page", () => {
+    const { container } = render(<Page />);
+    const text = plain(container.textContent ?? "");
+    expect(screen.queryByRole("region", { name: "Le risque d’inondation" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Historique des versions" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Sources des données" })).toBeNull();
+    expect(text).not.toMatch(/inondation|TRI\b|Géorisques|PPRi/);
+  });
+
   it("énonce les garde-fous", () => {
     render(<Page />);
     const guard = section("Les garde-fous");
     const text = plain(guard.textContent ?? "");
     expect(within(guard).getAllByRole("listitem")).toHaveLength(4);
-    expect(text).toContain(`au moins ${PEPITE_V1.minValueComparables} ventes comparables`);
+    expect(text).toContain(`au moins ${PEPITE_RULE_PARAMS.minValueComparables} ventes comparables`);
     expect(text).toContain("Un terrain seul et un bien mixte n’ont pas de repère");
-    expect(PEPITE_V1.extremeStartingPriceBelowPct).toBe(10);
-    expect(PEPITE_V1.extremeStartingPriceAbovePct).toBe(150);
+    expect(PEPITE_RULE_PARAMS.extremeStartingPriceBelowPct).toBe(10);
+    expect(PEPITE_RULE_PARAMS.extremeStartingPriceAbovePct).toBe(150);
     expect(text).toContain(
-      `une mise à prix inférieure à ${PEPITE_V1.extremeStartingPriceBelowPct} % ou supérieure à ${PEPITE_V1.extremeStartingPriceAbovePct} % de la valeur estimée signale le plus souvent une erreur de données, et la vente est alors écartée`,
+      `une mise à prix inférieure à ${PEPITE_RULE_PARAMS.extremeStartingPriceBelowPct} % ou supérieure à ${PEPITE_RULE_PARAMS.extremeStartingPriceAbovePct} % de la valeur estimée signale le plus souvent une erreur de données, et la vente est alors écartée`,
     );
     expect(text).toContain("Un bien libre comme un bien occupé est admis");
     expect(text).toContain("Une occupation inconnue ou un squat excluent le repère");
@@ -150,15 +171,19 @@ describe("page « Comment repérons-nous les pépites ? »", () => {
     render(<Page />);
     const text = sectionText("La stabilité du repère");
     expect(text).toContain(
-      `après ${PEPITE_V1.favourableEvaluations} évaluations favorables consécutives`,
+      `après ${PEPITE_RULE_PARAMS.favourableEvaluations} évaluations favorables consécutives`,
     );
-    expect(text).toContain(`sous ${PEPITE_V1.exitChanceBelowPct} %`);
-    expect(text).toContain(`dépasse ${PEPITE_V1.exitCostShareAbovePct} %`);
-    expect(text).toContain(`dépasse ${PEPITE_V1.exitCostShareNotaryAbovePct} %`);
-    expect(PEPITE_V1.exitCostShareNotaryAbovePct).toBeGreaterThan(PEPITE_V1.maxCostShareNotaryPct);
-    expect(text).toContain(`figé ${PEPITE_V1.freezeDaysBeforeSale} jours avant la vente`);
-    expect(PEPITE_V1.exitChanceBelowPct).toBeLessThan(PEPITE_V1.chanceMinPct);
-    expect(PEPITE_V1.exitCostShareAbovePct).toBeGreaterThan(PEPITE_V1.maxCostShareCourtPct);
+    expect(text).toContain(`sous ${PEPITE_RULE_PARAMS.exitChanceBelowPct} %`);
+    expect(text).toContain(`dépasse ${PEPITE_RULE_PARAMS.exitCostShareAbovePct} %`);
+    expect(text).toContain(`dépasse ${PEPITE_RULE_PARAMS.exitCostShareNotaryAbovePct} %`);
+    expect(PEPITE_RULE_PARAMS.exitCostShareNotaryAbovePct).toBeGreaterThan(
+      PEPITE_RULE_PARAMS.maxCostShareNotaryPct,
+    );
+    expect(text).toContain(`figé ${PEPITE_RULE_PARAMS.freezeDaysBeforeSale} jours avant la vente`);
+    expect(PEPITE_RULE_PARAMS.exitChanceBelowPct).toBeLessThan(PEPITE_RULE_PARAMS.chanceMinPct);
+    expect(PEPITE_RULE_PARAMS.exitCostShareAbovePct).toBeGreaterThan(
+      PEPITE_RULE_PARAMS.maxCostShareCourtPct,
+    );
   });
 
   it("présente le prix probable avec sa réserve, jamais comme une prévision", () => {
@@ -206,7 +231,7 @@ describe("page « Comment repérons-nous les pépites ? »", () => {
   it("décrit la mise à jour et le retrait", () => {
     render(<Page />);
     const text = sectionText("Mise à jour et retrait");
-    expect(text).toContain(`moins de ${PEPITE_V1.maxEvaluationAgeHours} heures`);
+    expect(text).toContain(`moins de ${PEPITE_RULE_PARAMS.maxEvaluationAgeHours} heures`);
     expect(text).toContain("suspendre le repère pour l’ensemble du site");
     expect(text).toContain("Le repère serait recalculé régulièrement");
     expect(text).not.toMatch(/Le repère est recalculé|Il disparaît quand/);
@@ -253,5 +278,131 @@ describe("page « Comment repérons-nous les pépites ? »", () => {
       /meilleur|exceptionnel|incroyable|ne manquez pas|dernière chance|\bvite\b/i,
     );
     expect(text).not.toMatch(/prix plafond|plafond d’enchère|enchère maximale|mise maximale/i);
+  });
+});
+
+describe("page de méthode : règle pepite-v2 (interrupteur PEPITE_RULE_V2_ENABLED ouvert)", () => {
+  beforeEach(() => vi.stubEnv("PEPITE_RULE_V2_ENABLED", "true"));
+
+  it("annonce la version pepite-v2 et garde les mêmes seuils que la v1", () => {
+    render(<Page />);
+    const text = sectionText("Les critères et les seuils");
+    expect(text).toContain("Version pepite-v2.");
+    expect(text).toContain(`Au moins ${PEPITE_RULE_PARAMS.chanceMinPct} % des ventes comparables`);
+  });
+
+  it("décrit le critère d'inondation : TRI, position précise, position imprécise, PPRi, limites", () => {
+    render(<Page />);
+    const text = sectionText("Le risque d’inondation");
+    expect(text).toContain(
+      "Depuis la version pepite-v2, le repère n’est pas attribué à un bien dont la position connue se trouve dans la zone que la crue fréquente d’un territoire à risque important d’inondation (TRI) inonderait.",
+    );
+    expect(text).toContain(
+      "Immojudis consulte pour cela la cartographie officielle des TRI diffusée par Géorisques, à partir des coordonnées du bien.",
+    );
+    expect(text).toContain("Ce contrôle suppose une position précise (adresse ou parcelle).");
+    expect(text).toContain(
+      "si la commune compte un TRI, la vente ne reçoit pas le repère ; si elle n’en compte pas, le contrôle n’a pas d’objet et le repère reste possible, sans vérification du risque d’inondation du bien.",
+    );
+    expect(text).toContain(
+      "Un bien déjà repéré dont le contrôle devient impossible (position retirée, source indisponible) garde son repère jusqu’à la vente ; la fiche l’indique.",
+    );
+    expect(text).toContain(
+      "Quand le bien se trouve dans le périmètre d’un plan de prévention des risques d’inondation (PPRi) d’après le Géoportail de l’urbanisme, le repère peut être attribué, mais la fiche le signale",
+    );
+    expect(text).toContain("Son zonage est à vérifier.");
+    expect(text).toContain(
+      "Ce contrôle n’est ni une expertise, ni un état des risques, ni un certificat.",
+    );
+    expect(text).toContain("article L. 125-5 du code de l’environnement");
+    expect(text).toContain("ni l’avis de votre avocat ou du notaire");
+  });
+
+  it("n'écrit aucune date réservée tant que la date d'entrée en vigueur n'est pas renseignée", () => {
+    expect(pepiteV2EffectiveClause(null)).toBe("");
+    expect(pepiteV2EffectiveClause("27 novembre 2026")).toBe(" (en vigueur le 27 novembre 2026)");
+    const { container } = render(<Page />);
+    expect(container.textContent).not.toMatch(/\[date\]|à renseigner|undefined|null/);
+  });
+
+  it("ajoute au « ce que ce n'est pas » l'état des risques et la garantie d'absence de risque", () => {
+    render(<Page />);
+    const text = sectionText("Ce que le repère n’est pas");
+    expect(text).toContain(
+      "Ce n’est ni un état des risques, ni un certificat, et cela ne remplace pas l’état des risques annexé au cahier des conditions de vente.",
+    );
+    expect(text).toContain("Ce n’est pas une garantie d’absence de risque d’inondation.");
+  });
+
+  it("ajoute le garde-fou d'inondation (cinq garde-fous)", () => {
+    render(<Page />);
+    const guard = section("Les garde-fous");
+    expect(within(guard).getAllByRole("listitem")).toHaveLength(5);
+    expect(plain(guard.textContent ?? "")).toContain(
+      "Le bien n’est pas situé, à sa position connue, dans la zone de crue fréquente d’un territoire à risque important d’inondation (voir « Le risque d’inondation »).",
+    );
+  });
+
+  it("remplace la deuxième puce de « ce que le repère ne mesure pas »", () => {
+    render(<Page />);
+    const text = sectionText("Ce que le repère ne mesure pas");
+    expect(text).toContain(
+      "Les charges de copropriété, les servitudes, l’urbanisme, les diagnostics (dont l’état des risques) et les risques juridiques de la procédure, qui se lisent dans le cahier des conditions de vente et les pièces. Seul le risque d’inondation fait l’objet d’un contrôle cartographique limité, décrit plus haut.",
+    );
+    expect(text).toContain("L’état réel du bien");
+  });
+
+  it("dit que l'absence du repère ne permet aucune conclusion, sans donner la raison", () => {
+    render(<Page />);
+    const text = sectionText("Quand il n’y a pas de repère");
+    expect(text).toContain(
+      "L’absence de ce repère ne permet de tirer aucune conclusion sur le bien : les données peuvent manquer, ou un critère, dont celui du risque d’inondation, peut ne pas être rempli. Immojudis n’indique pas, vente par vente, la raison.",
+    );
+    expect(text).not.toContain("ne signifie pas que le bien est sans intérêt");
+  });
+
+  it("donne l'historique des versions", () => {
+    render(<Page />);
+    const text = sectionText("Historique des versions");
+    expect(text).toContain("pepite-v2 : ajout du contrôle du risque d’inondation.");
+    expect(text).toContain("pepite-v1 (depuis le 26 octobre 2026) : version initiale.");
+  });
+
+  it("cite les sources, la licence et la précaution sur les mentions", () => {
+    render(<Page />);
+    const text = sectionText("Sources des données");
+    expect(text).toContain("Géorisques (ministère de la Transition écologique, BRGM)");
+    expect(text).toContain("Géoportail de l’urbanisme (IGN)");
+    expect(text).toContain("API Carto");
+    expect(text).toContain("Licence Ouverte 2.0");
+    expect(text).toContain(
+      "Ces mentions ne signifient pas que Géorisques, l’IGN ou leurs partenaires cautionnent ce repère, calculé par Immojudis.",
+    );
+    expect(text).toContain("Seules les coordonnées géographiques du bien sont transmises");
+  });
+
+  it("n'emploie aucun mot interdit, sans exception", () => {
+    const { container } = render(<Page />);
+    const text = plain(container.textContent ?? "");
+    expect(text).toContain("Il ne signifie pas l’absence de risque d’inondation");
+    for (const forbidden of FLOOD_FORBIDDEN_WORDS) {
+      expect(text).not.toMatch(forbidden);
+    }
+  });
+
+  it("décrit la position « rue » testée avec un tampon, et le périmètre de PPRi non contrôlé", () => {
+    render(<Page />);
+    const text = sectionText("Le risque d’inondation");
+    expect(text).toContain("tampon de 100 mètres");
+    expect(text).toContain("entièrement dans la zone de crue fréquente, ou entièrement en dehors");
+    expect(text).toContain("périmètres de PPRi n’ont pas pu être consultés");
+  });
+
+  it("garde un seul titre de niveau 1 et reste sobre", () => {
+    const { container } = render(<Page />);
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    expect(plain(container.textContent ?? "")).not.toMatch(
+      /meilleur|exceptionnel|incroyable|ne manquez pas|dernière chance|\bvite\b/i,
+    );
   });
 });

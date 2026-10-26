@@ -11,7 +11,7 @@ import { AlertEmailRecapToggle } from "@/components/AlertEmailRecapToggle";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import type { AlertNotificationSummary } from "@/lib/alert-notifications";
 import { userMessage } from "@/lib/user-messages";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 
 export default function AlertNotificationPanel({
   mobile,

@@ -12,7 +12,8 @@ import {
 import { ceilingPosition } from "@/lib/ceiling-vs-court";
 import { fetchAuctionScenarios } from "@/lib/client-api";
 import { formatPrice } from "@/lib/format";
-import { queryKeys, type SaleAccessMode } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
+import type { SaleAccessMode } from "@/lib/query-keys";
 
 /**
  * « Mon plafond face au tribunal » : à côté de l'enchère plafond calculée, la part des ventes

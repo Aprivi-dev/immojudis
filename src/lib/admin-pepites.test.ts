@@ -207,6 +207,31 @@ describe("parseAdminPepiteRow", () => {
     expect(parsed?.missed).toEqual([]);
   });
 
+  it("distingue, pour « aucun risque d'inondation élevé », ce que le verdict enregistré veut dire", () => {
+    const withFlood = (flood: Record<string, unknown> | undefined) =>
+      parseAdminPepiteRow({
+        ...row,
+        reason_codes: ["pass:no_high_flood_risk", "pass:flood_risk_known"],
+        details: { ...(row.details as Record<string, unknown>), flood },
+      })?.passed.find(
+        (label) =>
+          !label.startsWith("Risque d’inondation contrôlé") && /inondation|PPRi|TRI/.test(label),
+      ) ?? "";
+
+    const noneFound = withFlood({ verdict: "none_found", ppriChecked: true });
+    expect(noneFound).toMatch(/TRI et périmètres de PPRi consultés/);
+    const triOnly = withFlood({ verdict: "none_found", ppriChecked: false });
+    expect(triOnly).toMatch(/périmètres de PPRi non lus/);
+    const exposed = withFlood({ verdict: "exposed", ppriChecked: true });
+    expect(exposed).toMatch(/Dans le périmètre d’un PPRi/);
+    expect(exposed).toMatch(/zonage à vérifier/);
+    const noSignal = withFlood({ verdict: "no_signal", ppriChecked: true });
+    expect(noSignal).toMatch(/Position imprécise dans une commune sans TRI/);
+    // Quatre libellés différents ; sans verdict enregistré, le libellé générique.
+    expect(new Set([noneFound, triOnly, exposed, noSignal]).size).toBe(4);
+    expect(withFlood(undefined)).toBe("Aucun risque d’inondation élevé identifié");
+  });
+
   it("classe : publiée, à confirmer, presque pépite", () => {
     expect(parseAdminPepiteRow({ ...row, is_pepite: false, status: "pepite" })?.category).toBe(
       "pending",

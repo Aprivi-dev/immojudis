@@ -6,7 +6,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { fetchSaleUnlocksOverview } from "@/lib/client-api";
 import { formatDate, formatStartingPrice, propertyTypeLabel } from "@/lib/format";
 import { saleDetailPath } from "@/lib/navigation";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 import { unlockUsageLine, type UnlockedSaleSummary } from "@/lib/sale-unlocks";
 
 function saleLine(sale: UnlockedSaleSummary): string {

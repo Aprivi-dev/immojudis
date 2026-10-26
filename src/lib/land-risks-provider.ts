@@ -17,6 +17,7 @@ import {
   payloadHasNoRecords,
   type QueryContext,
   type RawFinding,
+  records,
   type SourceSpec,
   text,
   uniqueStrings,
@@ -36,6 +37,8 @@ import {
   parseRisques,
   parseSeismic,
   parseSsp,
+  parseCommuneTri,
+  parseTriZonage,
   summarizeCappedFindings,
 } from "@/lib/land-risks/parsers";
 
@@ -144,10 +147,12 @@ const sourceSpecs: SourceSpec[] = [
   {
     key: "tri",
     label: "Territoires à risque important d’inondation (TRI)",
-    v1Path: "/api/v1/gaspar/tri",
-    v2Path: "/api/v2/gaspar/tri",
-    mode: "radius",
-    parser: parseFloodProcedure,
+    // Appartenance : le point est-il DANS la zone d'un scénario du TRI ? (et non « un TRI existe dans un rayon
+    // de 1 000 m »). Aucune opération équivalente n'est publiée dans l'OpenAPI v2 : la couche n'est alors pas
+    // interrogée (l'API v1 n'est pas mélangée dans un même rapport).
+    v1Path: "/api/v1/tri_zonage",
+    mode: "point",
+    parser: parseTriZonage,
   },
   {
     key: "radon",
@@ -191,6 +196,18 @@ const sourceSpecs: SourceSpec[] = [
     parser: parseNuclear,
   },
 ];
+
+/**
+ * TRI à la commune (API v1 seulement) : quand la position du bien n'est pas connue avec précision (centre de commune
+ * ou commune seule), la couche TRI garde une information au niveau de la commune au lieu de « non vérifiée ».
+ */
+const TRI_COMMUNE_SPEC: SourceSpec = {
+  key: "tri",
+  label: "Territoires à risque important d’inondation (TRI), niveau commune",
+  v1Path: "/api/v1/gaspar/tri",
+  mode: "commune",
+  parser: parseCommuneTri,
+};
 
 /**
  * Fetch the independent Géorisques layers used by the land dossier.
@@ -256,6 +273,132 @@ export async function fetchLandRisks(
   };
 }
 
+/** Résultat d'un appel d'inondation : jamais l'URL, ni une coordonnée, ni le corps de la réponse d'erreur. */
+export type FloodApiFailure = {
+  kind: "failure";
+  /** `http_<statut>`, `timeout` ou `network` : de quoi journaliser sans donnée de la vente. */
+  code: string;
+};
+export type FloodApiRateLimited = { kind: "rate_limited" };
+
+export type TriZonageResult =
+  | {
+      kind: "ok";
+      /** Codes de scénario de chaque entrée rendue (`01For`, `02Moy`, `03Mcc`, `04Fai`) ; vide : hors zone. */
+      scenarios: string[];
+      /** Date de la carte (`date_arrete_carte`), AAAA-MM-JJ, quand elle est donnée. */
+      mapDate: string | null;
+    }
+  | FloodApiFailure
+  | FloodApiRateLimited;
+
+export type CommuneTriResult =
+  | { kind: "ok"; hasTri: boolean }
+  | FloodApiFailure
+  | FloodApiRateLimited;
+
+export type FloodApiOptions = {
+  fetcher?: typeof fetch;
+  timeoutMs?: number;
+  /** Cadence : appelé avant chaque requête (voir `createStartPacer`). */
+  pace?: () => Promise<void>;
+  userAgent?: string;
+};
+
+/** Codes de scénario de la cartographie des TRI : forte (01For), moyenne (02Moy), CC (03Mcc), faible (04Fai). */
+const TRI_SCENARIO_CODES: readonly string[] = ["01For", "02Moy", "03Mcc", "04Fai"];
+
+export const FLOOD_API_USER_AGENT = "immojudis-flood-risk/1.0 (+https://immojudis.com)";
+
+/** « 18/12/2013 » (format de l'API) en « 2013-12-18 » ; `null` si illisible. */
+export function isoDateFromFrench(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value.trim());
+  return match ? `${match[3]}-${match[2]}-${match[1]}` : null;
+}
+
+function floodFailure(
+  response: Extract<RequestResult, { kind: "failure" }>,
+): FloodApiFailure | FloodApiRateLimited {
+  if (response.httpStatus === 429) return { kind: "rate_limited" };
+  if (response.httpStatus) return { kind: "failure", code: `http_${response.httpStatus}` };
+  return { kind: "failure", code: /délai/i.test(response.message) ? "timeout" : "network" };
+}
+
+/**
+ * Le point est-il dans la zone d'un scénario d'un TRI ? `GET /api/v1/tri_zonage?latlon=<lon>,<lat>` (sans jeton).
+ * L'API rend une entrée par type d'inondation, avec le scénario le plus probable dont la zone contient le point.
+ */
+export async function fetchTriZonage(
+  point: LandCoordinates,
+  options: FloodApiOptions = {},
+): Promise<TriZonageResult> {
+  const coordinates = validCoordinates(point);
+  if (!coordinates) return { kind: "failure", code: "invalid_position" };
+  const url = new URL(`${GEORISQUES_BASE_URL}/api/v1/tri_zonage`);
+  url.searchParams.set("latlon", `${coordinates.longitude},${coordinates.latitude}`);
+  if (options.pace) await options.pace();
+  const response = await requestJson(
+    url.toString(),
+    "v1",
+    options.fetcher ?? fetch,
+    options.timeoutMs,
+    null,
+    options.userAgent ?? FLOOD_API_USER_AGENT,
+    true,
+  );
+  if (response.kind === "failure") return floodFailure(response);
+  if (response.kind === "empty") return { kind: "ok", scenarios: [], mapDate: null };
+  const entries = records(response.payload, ["code_national_tri", "identifiant_tri"]);
+  if (entries.length === 0 && !payloadHasNoRecords(response.payload)) {
+    return { kind: "failure", code: "unexpected_shape" };
+  }
+  // Une entrée sans code de scénario reconnu n'est pas une réponse exploitable : jamais un « ok » vide, qui
+  // passerait pour « hors zone ».
+  const scenarios: string[] = [];
+  for (const entry of entries) {
+    const code = text(asRecordOrNull(entry.scenario), ["code"]);
+    if (!code || !TRI_SCENARIO_CODES.includes(code)) {
+      return { kind: "failure", code: "unexpected_shape" };
+    }
+    scenarios.push(code);
+  }
+  const mapDate =
+    entries.map((entry) => isoDateFromFrench(entry.date_arrete_carte)).find(Boolean) ?? null;
+  return { kind: "ok", scenarios, mapDate };
+}
+
+/**
+ * La commune compte-t-elle un TRI ? `GET /api/v1/gaspar/tri?code_insee=…`. Une commune sans TRI rend une liste
+ * vide (HTTP 200).
+ */
+export async function fetchCommuneTri(
+  codeInsee: string,
+  options: FloodApiOptions = {},
+): Promise<CommuneTriResult> {
+  const code = normalizeCodeInsee(codeInsee);
+  if (!code) return { kind: "failure", code: "invalid_commune" };
+  const url = new URL(`${GEORISQUES_BASE_URL}/api/v1/gaspar/tri`);
+  url.searchParams.set("code_insee", code);
+  if (options.pace) await options.pace();
+  const response = await requestJson(
+    url.toString(),
+    "v1",
+    options.fetcher ?? fetch,
+    options.timeoutMs,
+    null,
+    options.userAgent ?? FLOOD_API_USER_AGENT,
+    true,
+  );
+  if (response.kind === "failure") return floodFailure(response);
+  if (response.kind === "empty") return { kind: "ok", hasTri: false };
+  const entries = records(response.payload, ["code_national_tri", "libelle_tri"]);
+  if (entries.length === 0 && !payloadHasNoRecords(response.payload)) {
+    return { kind: "failure", code: "unexpected_shape" };
+  }
+  return { kind: "ok", hasTri: entries.length > 0 };
+}
+
 function resolveToken(options: LandProviderOptions): string | null {
   const configured = options.token === undefined ? process.env.GEORISQUES_API_TOKEN : options.token;
   const value = typeof configured === "string" ? configured.trim() : "";
@@ -311,6 +454,15 @@ async function runSource(
   token: string | null,
   pace?: () => Promise<void>,
 ): Promise<SourceRun> {
+  if (
+    spec.key === "tri" &&
+    spec.mode === "point" &&
+    context.version === "v1" &&
+    !context.coordinates &&
+    context.codeInsee
+  ) {
+    return runSource(TRI_COMMUNE_SPEC, context, fetcher, options, checkedAt, token, pace);
+  }
   const path = context.version === "v2" ? spec.v2Path : spec.v1Path;
   const sourceUrl = `${GEORISQUES_BASE_URL}${path ?? spec.v1Path ?? spec.v2Path ?? ""}`;
   const scope = sourceScope(spec, context);
@@ -490,14 +642,22 @@ async function requestJson(
   fetcher: typeof fetch,
   timeoutOption: number | undefined,
   token: string | null,
+  userAgent?: string,
+  /** Appels d'inondation : une redirection est refusée (`redirect: "error"`), jamais suivie vers un autre hôte. */
+  refuseRedirect = false,
 ): Promise<RequestResult> {
   const timeoutMs = boundedTimeout(timeoutOption);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const headers: Record<string, string> = { Accept: "application/json" };
+  if (userAgent) headers["User-Agent"] = userAgent;
   if (version === "v2" && token) headers.Authorization = `Bearer ${token}`;
   try {
-    const response = await fetcher(url, { headers, signal: controller.signal });
+    const response = await fetcher(url, {
+      headers,
+      signal: controller.signal,
+      ...(refuseRedirect ? { redirect: "error" as const } : {}),
+    });
     if (response.status === 204) return { kind: "empty", httpStatus: response.status };
     if (!response.ok && response.status !== 404) {
       return {
@@ -725,6 +885,8 @@ function addV2Location(
   if (context.coordinates) {
     params.set("longitude", String(context.coordinates.longitude));
     params.set("latitude", String(context.coordinates.latitude));
+    // Même rayon qu'en v1 pour les couches de proximité : les deux versions interrogent 1 000 m autour du point.
+    if (mode === "radius") params.set("rayon", String(DEFAULT_RADIUS_METERS));
     return true;
   }
   if (context.codeInsee && (mode !== "point" || context.version === "v2")) {
@@ -781,7 +943,7 @@ function addV1Location(
 
 function sourceScope(spec: SourceSpec, context: QueryContext): LandScope {
   if (spec.mode === "commune" || spec.mode === "radon") return "commune";
-  if (context.version === "v1" && spec.mode === "radius" && context.coordinates) return "radius";
+  if (isRadiusQuery(spec, context)) return "radius";
   if (context.version === "v1" && context.parcels.length > 0 && context.coordinates) return "point";
   if (
     context.queryScope === "parcel" ||
@@ -840,9 +1002,18 @@ function finalizeFinding(
   };
 }
 
+/**
+ * Une couche de proximité interrogée autour d'un point (rayon de `DEFAULT_RADIUS_METERS`), en v1 comme en v2.
+ * En v2, une parcelle fournie prime sur le point : la requête est alors parcellaire, pas un rayon.
+ */
+function isRadiusQuery(spec: SourceSpec, context: QueryContext): boolean {
+  if (spec.mode !== "radius" || !context.coordinates) return false;
+  return context.version === "v1" || context.parcelIds.length === 0;
+}
+
 function defaultFindingScope(spec: SourceSpec, context: QueryContext): LandScope {
   if (spec.mode === "commune" || spec.mode === "radon") return "commune";
-  if (context.version === "v1" && spec.mode === "radius" && context.coordinates) return "radius";
+  if (isRadiusQuery(spec, context)) return "radius";
   if (
     context.queryScope === "parcel" ||
     context.queryScope === "point" ||
@@ -953,7 +1124,7 @@ async function runWithConcurrency<T, R>(
   return result;
 }
 
-function createStartPacer(minIntervalMs: number): () => Promise<void> {
+export function createStartPacer(minIntervalMs: number): () => Promise<void> {
   let nextStartAt = 0;
   let queue = Promise.resolve();
   return () => {

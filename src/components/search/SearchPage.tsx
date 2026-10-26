@@ -58,7 +58,11 @@ import {
   type SalesSearchUrlRecord,
 } from "@/lib/search/search-url-state";
 import { isOutOfRangeSearchError } from "@/lib/search/search-errors";
-import { fetchPepiteSaleIds, pepitesActive as hasPepites } from "@/lib/search/pepite-filter";
+import {
+  fetchPepiteFloodExposedIds,
+  fetchPepiteSaleIds,
+  pepitesActive as hasPepites,
+} from "@/lib/search/pepite-filter";
 import {
   fetchSearchCount,
   fetchSearchMapResults,
@@ -105,7 +109,7 @@ import {
   useResultsView,
 } from "./search-page-state";
 import { userMessage } from "@/lib/user-messages";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 
 const LazyMapPanel = dynamic(() => loadMapPanelModule().then((mod) => mod.MapPanel), {
   ssr: false,
@@ -509,6 +513,15 @@ export function SearchPage({
     retry: false,
   });
   const pepitesActive = hasPepites(pepiteSaleIds);
+  // Parmi les pépites, celles dont le bien est dans le périmètre d'un PPRi (mention courte, sans montant) : la même
+  // lecture que la liste ci-dessus (gardée avec elle), sans appel de plus.
+  const { data: pepiteExposedSaleIds } = useQuery({
+    queryKey: queryKeys.pepiteFloodExposedIds(),
+    queryFn: () => fetchPepiteFloodExposedIds(),
+    staleTime: 5 * 60_000,
+    retry: false,
+    enabled: pepitesActive,
+  });
   // « Pépites seulement » et « sous la fourchette » sont déjà appliqués par la recherche (listes d'identifiants
   // croisées avec les lignes) : le second passage local ne les rejoue pas, il n'a pas ces listes et viderait l'écran.
   const localFilterSearch = useMemo(
@@ -856,6 +869,7 @@ export function SearchPage({
     aiReviewBySaleId,
     aiReviewStatus,
     pepiteSaleIds,
+    pepiteExposedSaleIds,
     onHover: setHoveredSaleId,
     onSelect: handleMapSelect,
     onViewportChange: handleViewportChange,
@@ -1069,6 +1083,7 @@ export function SearchPage({
             hideEmptyState={page > 1}
             view={displayedView}
             pepiteSaleIds={pepiteSaleIds}
+            pepiteExposedSaleIds={pepiteExposedSaleIds}
             pepiteEmpty={{
               count: pepiteSaleIds?.size ?? 0,
               // Garde la seule pépite (et le tri) : les autres critères sont retirés.

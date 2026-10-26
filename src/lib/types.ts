@@ -36,6 +36,11 @@ export type AuctionSale = {
    */
   pepite?: boolean;
   /**
+   * With `pepite`: the sale's position is inside a flood prevention plan perimeter (PPRi): short mention
+   * « zonage à vérifier » (`list_public_pepite_flood_exposed_ids`). Present and true, or absent: never an amount.
+   */
+  pepiteFloodExposed?: boolean;
+  /**
    * Signed-out page only: name of the source the listing comes from (`get_public_sale_source_name`),
    * only when it is one of the known sources. Absent otherwise.
    */

@@ -15,7 +15,7 @@ import type { TribunalListingStatisticsResponse } from "@/lib/tribunal-listing-s
 import { fetchTribunalListingStatistics } from "@/lib/tribunal-listing-statistics-client";
 import type { AuctionSale } from "@/lib/types";
 import styles from "./ListingStatistics.module.css";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 
 type ListingHistoryMonths = 3 | 12 | 36;
 

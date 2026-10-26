@@ -11,6 +11,8 @@ import { DEFAULT_OPEN_FEE_REGIMES, type FeeRegimeKey } from "@/lib/fee-regime-op
 import { analysisForOpenRegimes, ceilingForOpenRegimes } from "./ceiling-switch";
 import { featureUnlocked, sanitizeReportSnapshotForPlan } from "./entitlements";
 import { reportWording } from "./report-wording";
+import { RENT_SOURCE_URL, rentSourceNotice } from "@/lib/rent-source-notice";
+import { reportRentReference } from "./rent-notice";
 import { FINANCING_DOSSIER_HEADINGS, financingDossierLines } from "./financing-dossier";
 import { PlanEntitlements, SavedReportRow } from "../property-reports";
 import {
@@ -126,6 +128,7 @@ export function reportToPdfLines(
   const valuationRiskFlags = normalizeStringList(valuationAudit.riskFlags);
   const opportunity = asRecord(analysis.opportunity);
   const rentabilityScore = asRecord(opportunity.rentabilityScore);
+  const rentNotice = rentSourceNotice(reportRentReference(opportunity.rentReference));
   const personalRentalScenario = asRecord(ceiling.personalRentalScenario);
   const personalSimulation = describeReportSimulation(ceiling.personalSimulation);
   const personalRentalInputs = asRecord(personalRentalScenario.inputs);
@@ -342,7 +345,13 @@ export function reportToPdfLines(
       : "Fourchette de valeur: à compléter",
     ...(hasPersonalRentalScenario
       ? []
-      : [`Rendement brut potentiel: ${formatPercent(opportunity.grossYieldPct)}`]),
+      : [
+          `${rentNotice ? "Rendement brut potentiel, charges comprises" : "Rendement brut potentiel"}: ${formatPercent(opportunity.grossYieldPct)}`,
+        ]),
+    // Mention de la carte des loyers de l'ANIL, avec le lien vers la source : obligatoire avec le rendement.
+    ...(rentNotice && !hasPersonalRentalScenario
+      ? [rentNotice, `Source : ${RENT_SOURCE_URL}`]
+      : []),
     ...(hasPersonalRentalScenario
       ? [
           "Scénario locatif personnel",
@@ -370,8 +379,8 @@ export function reportToPdfLines(
             ? `Score de rentabilite: ${rentabilityScore.score}/100 - ${stringOrNumberValue(rentabilityScore.label, "à qualifier")}`
             : `Score de rentabilite: indisponible (${stringOrNumberValue(rentabilityScore.reason, "données incomplètes")})`,
           rentabilityScore.netYieldPct != null
-            ? `Rendement net estime: ${formatPercent(rentabilityScore.netYieldPct)}`
-            : "Rendement net estime: à compléter",
+            ? `${rentNotice ? "Rendement estime, charges comprises" : "Rendement net estime"}: ${formatPercent(rentabilityScore.netYieldPct)}`
+            : `${rentNotice ? "Rendement estime, charges comprises" : "Rendement net estime"}: à compléter`,
           rentabilityScore.cashflowMonthly != null
             ? `Cashflow mensuel estime: ${formatPrice(numberValue(rentabilityScore.cashflowMonthly))}`
             : "Cashflow mensuel estime: à compléter",

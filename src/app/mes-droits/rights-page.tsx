@@ -11,7 +11,7 @@ import Link from "next/link";
 import { createPrivacyRequestClient, fetchPrivacyRequests } from "@/lib/client-api";
 import type { PrivacyRequestType } from "@/lib/privacy-requests";
 import { userMessage } from "@/lib/user-messages";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 
 const requestOptions: Array<{ value: PrivacyRequestType; label: string; detail: string }> = [
   {

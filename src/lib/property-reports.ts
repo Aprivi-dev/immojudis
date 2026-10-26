@@ -98,6 +98,7 @@ import {
   reportSimulationSchema,
 } from "./report-simulation";
 import { listingValuationConflict } from "./listing-evidence";
+import { loadSaleRentReference } from "@/lib/rent-reference.server";
 
 export const propertyReportRequestSchema = z.object({
   saleId: z.string().guid(),
@@ -387,9 +388,18 @@ export async function savePropertyReport({
   ]);
   // The fee regimes open on the server decide whether the sale has a ceiling at all.
   const regimes = openFeeRegimesFromEnv();
-  const ceilingSnapshot = buildCeilingSnapshot(sale, marketEstimate, {}, regimes);
+  // Même référence de loyer (carte ANIL à la commune) que la fiche de la vente : sans elle, le plafond
+  // du rapport et celui de la fiche différeraient.
+  const rentReference = await loadSaleRentReference(sale);
+  const ceilingSnapshot = buildCeilingSnapshot(sale, marketEstimate, {}, regimes, rentReference);
   if (input.simulation) {
-    const personal = computeReportSimulation(sale, marketEstimate, input.simulation, regimes);
+    const personal = computeReportSimulation(
+      sale,
+      marketEstimate,
+      input.simulation,
+      regimes,
+      rentReference,
+    );
     Object.assign(ceilingSnapshot, personal, { personalSimulation: input.simulation });
   }
   const reportSnapshot = {
@@ -404,6 +414,7 @@ export async function savePropertyReport({
       valuationBacktest,
       ceilingSnapshot,
       plan,
+      rentReference,
     }),
     sourceFingerprint: reportSourceFingerprint(sale),
   };

@@ -161,6 +161,15 @@ export function parseCatNat(payload: unknown, context: QueryContext): RawFinding
     });
 }
 
+/** Un état textuel de la source : jamais un booléen ou un nombre (`text()` écrirait « true » ou « false »). */
+function stateText(record: Record<string, unknown>, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value.replace(/\s+/g, " ").trim();
+  }
+  return null;
+}
+
 export function parsePprn(payload: unknown): RawFinding[] {
   return records(payload, ["idGaspar", "libPpr", "zonageReglementaire"]).map((record) => {
     const title = text(record, ["libPpr", "libelle", "libBassinRisques"]) ?? "PPR naturel";
@@ -178,7 +187,9 @@ export function parsePprn(payload: unknown): RawFinding[] {
     return {
       category,
       label: `Plan de prévention des risques naturels : ${title}`,
-      level: zoneExists ? "zonage réglementaire signalé" : text(record, ["etatRevision", "etat"]),
+      level: zoneExists
+        ? "zonage réglementaire signalé"
+        : stateText(record, ["etatRevision", "etat"]),
       description: `Un PPR naturel est associé au territoire interrogé${zoneExists ? ", avec un zonage réglementaire signalé par l’API" : ""}. Le niveau ou la couleur de zone doit être lu dans le règlement et la carte officielle.`,
       consequences: [
         "Télécharger et lire la carte de zonage et le règlement du PPR avant de conclure sur la constructibilité.",
@@ -229,6 +240,54 @@ export function parseFloodProcedure(payload: unknown): RawFinding[] {
       consequences: [
         "Comparer la parcelle au PPR inondation et à ses prescriptions lorsqu’ils existent.",
         "Vérifier les niveaux d’eau, les accès et les mesures de réduction de vulnérabilité du projet.",
+      ],
+      regulatory: false,
+      sourceUpdatedAt: dateFrom(record),
+    };
+  });
+}
+
+/**
+ * `tri_zonage` : le point est DANS la zone inondée d'un scénario du TRI (une entrée par type d'inondation, avec le
+ * scénario le plus probable dont la zone contient le point). C'est une appartenance, pas une proximité.
+ */
+export function parseTriZonage(payload: unknown): RawFinding[] {
+  return records(payload, ["code_national_tri", "identifiant_tri", "libelle_tri"]).map((record) => {
+    const title = text(record, ["libelle_tri"]) ?? "territoire à risque important d’inondation";
+    const kind = text(asRecordOrNull(record.typeInondation), ["libelle"]);
+    const scenario = text(asRecordOrNull(record.scenario), ["libelle"]);
+    return {
+      category: "flood",
+      label: `Territoire à risque important d’inondation : ${title}`,
+      level: scenario,
+      description: `Le point est situé dans la zone cartographiée par le TRI « ${title} »${kind ? ` (${kind})` : ""}${scenario ? `, pour le scénario « ${scenario} »` : ""}. La cartographie des TRI ne vaut ni classement réglementaire de la parcelle ni état des risques.`,
+      consequences: [
+        "Comparer la parcelle au plan de prévention des risques d’inondation et à ses prescriptions lorsqu’ils existent.",
+        "Vérifier les niveaux d’eau, les accès et les mesures de réduction de vulnérabilité du projet.",
+      ],
+      regulatory: false,
+      sourceUpdatedAt: dateFrom(record, ["date_arrete_carte"]),
+    };
+  });
+}
+
+/**
+ * `gaspar/tri` à la COMMUNE (position du bien inconnue ou limitée au centre de la commune) : la commune compte un
+ * territoire à risque important d'inondation. Ce n'est PAS une appartenance : on ne sait pas si le bien est dans la
+ * zone cartographiée. Une commune sans TRI rend une liste vide (aucun constat, et non « absence de risque »).
+ */
+export function parseCommuneTri(payload: unknown): RawFinding[] {
+  return records(payload, ["code_national_tri", "libelle_tri"]).map((record) => {
+    const title = text(record, ["libelle_tri"]) ?? "territoire à risque important d’inondation";
+    return {
+      category: "flood",
+      label: `Commune comprise dans un territoire à risque important d’inondation : ${title}`,
+      level: null,
+      scope: "commune",
+      description: `La commune est rattachée au TRI « ${title} ». La position du bien n’étant pas connue avec précision, ce résultat communal ne dit pas si le bien se trouve dans la zone cartographiée. La cartographie des TRI ne vaut ni classement réglementaire de la parcelle ni état des risques.`,
+      consequences: [
+        "Faire situer le bien par rapport à la cartographie du TRI et au plan de prévention des risques d’inondation.",
+        "Vérifier l’état des risques annexé au cahier des conditions de vente.",
       ],
       regulatory: false,
       sourceUpdatedAt: dateFrom(record),

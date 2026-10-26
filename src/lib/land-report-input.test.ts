@@ -120,4 +120,33 @@ describe("land report input", () => {
     expect(input.references ?? []).toHaveLength(0);
     expect(input.coordinates).toEqual({ latitude: 49.84, longitude: 3.28 });
   });
+
+  describe("précision de la position (location_precision)", () => {
+    it.each(["address", "parcel", "street"])(
+      "transmet la précision %s avec les coordonnées",
+      (precision) => {
+        const input = landLocationInputFromSale(sale({ location_precision: precision }));
+        expect(input.locationPrecision).toBe(precision);
+        expect(input.coordinates).toEqual({ latitude: 49.84, longitude: 3.28 });
+      },
+    );
+
+    it("un centre de commune compte comme une position absente : aucune coordonnée n'est transmise", () => {
+      const input = landLocationInputFromSale(sale({ location_precision: "municipality" }));
+      expect(input.locationPrecision).toBe("municipality");
+      expect(input.coordinates).toBeNull();
+    });
+
+    it("la précision est lue sans tenir compte de la casse ni des espaces", () => {
+      const input = landLocationInputFromSale(sale({ location_precision: " Municipality " }));
+      expect(input.locationPrecision).toBe("municipality");
+      expect(input.coordinates).toBeNull();
+    });
+
+    it("précision inconnue (point fourni par la source) : les coordonnées restent transmises", () => {
+      const input = landLocationInputFromSale(sale({ location_precision: null }));
+      expect(input.locationPrecision).toBeNull();
+      expect(input.coordinates).toEqual({ latitude: 49.84, longitude: 3.28 });
+    });
+  });
 });

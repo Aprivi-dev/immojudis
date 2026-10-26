@@ -2,6 +2,7 @@
 // on retire la marge de sécurité, puis tout ce qu'il faudra payer en plus du
 // prix (travaux, libération, portage, frais de la vente). Ce qui reste est la
 // mise à ne pas dépasser. Toutes les valeurs sont en euros.
+import type { RentReference } from "@/lib/rent-reference";
 import {
   computeAcquisitionCosts,
   WORKS_SCENARIOS,
@@ -157,6 +158,18 @@ export type CeilingHypotheses = {
   rent: {
     monthly: number | null;
     source: "saisi" | "estime" | "absent";
+    /**
+     * Référence dont vient le loyer estimé (carte ANIL à la commune ou repli départemental) : sa
+     * source, sa fiabilité, son millésime. Absente quand le loyer est saisi ou manque.
+     */
+    reference?: RentReference | null;
+    /** Charges récupérables saisies, comprises dans le loyer d'annonce estimé (€/mois) ; `null` : non saisies. */
+    recoverableCharges?: number | null;
+    /**
+     * Loyer d'annonce estimé (ANIL, charges comprises) sans charges récupérables saisies : le rendement
+     * qui en résulte est un rendement brut, charges comprises, jamais un rendement « net ».
+     */
+    chargesIncluded?: true;
     vacancyPct: number;
     nonRecoverablePct: number;
     targetNetYieldPct?: number | null;
@@ -319,6 +332,11 @@ export function computeCeilingPlan(h: CeilingHypotheses): CeilingPlan {
   return plan;
 }
 
+/** « rendement net » ; « rendement brut, charges comprises » pour un loyer ANIL sans charges saisies. */
+export function yieldNoun(h: Pick<CeilingHypotheses, "rent">): string {
+  return h.rent.chargesIncluded ? "rendement brut, charges comprises" : "rendement net";
+}
+
 /** Coût total maximal compatible avec le rendement net visé. */
 function rentalBudget(h: CeilingHypotheses): number | null {
   const rent = positive(h.rent.monthly);
@@ -401,7 +419,7 @@ function buildSteps(h: CeilingHypotheses, plan: CeilingPlan, value: number): Cei
       label: "Limite fixée par le loyer",
       amount: -(plan.valueBudget - plan.yieldBudget),
       kind: "minus",
-      detail: `Avec ${formatEur(h.rent.monthly ?? 0)} de loyer par mois, le coût total ne doit pas dépasser ${formatEur(plan.yieldBudget)} pour un rendement net de ${targetYieldPct(h)} %.`,
+      detail: `Avec ${formatEur(h.rent.monthly ?? 0)} de loyer par mois, le coût total ne doit pas dépasser ${formatEur(plan.yieldBudget)} pour un ${yieldNoun(h)} de ${targetYieldPct(h)} %.`,
     });
   }
   steps.push({

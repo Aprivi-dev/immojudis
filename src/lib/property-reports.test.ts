@@ -12,6 +12,88 @@ import { computeAcquisitionCosts, computeRentabilityScore } from "@/lib/profitab
 import { DEFAULT_OPEN_FEE_REGIMES } from "@/lib/fee-regime-open";
 import { buildCeilingSnapshot } from "./property-report/analysis";
 
+const anilReference = {
+  rentPerM2: 12,
+  source: "anil_commune" as const,
+  reliability: "reliable" as const,
+  segment: "apt_all" as const,
+  communeCode: "33063",
+  lowPerM2: 10,
+  highPerM2: 14,
+  observations: 500,
+  vintage: 2025,
+  sourceUpdatedOn: "2025-12-11",
+};
+
+describe("report rent reference", () => {
+  const sale = {
+    ...EXAMPLE_SALE,
+    department: "23",
+    starting_price_eur: 100_000,
+    app_surface_m2: 50,
+    app_surface_kind: "habitable" as const,
+    investment_score: 70,
+  };
+  const build = (rentReference?: typeof anilReference | null) =>
+    buildOpportunityAnalysis({
+      sale,
+      surfaceM2: 50,
+      marketEstimate: null,
+      ceilingSnapshot: buildCeilingSnapshot(
+        sale,
+        null,
+        {},
+        DEFAULT_OPEN_FEE_REGIMES,
+        rentReference ?? null,
+      ),
+      rentReference,
+    });
+
+  it("computes the gross yield with the commune rent and records where the rent comes from", () => {
+    const opportunity = build(anilReference);
+
+    // 50 m² x 12 EUR x 12 months over the total cost of a 100 000 EUR sale.
+    expect(opportunity.grossYieldPct).toBeCloseTo(6.2, 1);
+    expect(opportunity.rentReference).toEqual({
+      source: "anil_commune",
+      reliability: "reliable",
+      rentPerM2: 12,
+      vintage: 2025,
+      sourceUpdatedOn: "2025-12-11",
+    });
+    expect(opportunity.rentabilityScore.rentSource).toBe("anil_commune");
+  });
+
+  it("gives no yield and no rent source to a property that is not a dwelling", () => {
+    const land = { ...sale, department: "33", property_type: "land" };
+    const opportunity = buildOpportunityAnalysis({
+      sale: land,
+      surfaceM2: 50,
+      marketEstimate: null,
+      ceilingSnapshot: buildCeilingSnapshot(
+        land,
+        null,
+        {},
+        DEFAULT_OPEN_FEE_REGIMES,
+        anilReference,
+      ),
+      rentReference: anilReference,
+    });
+
+    expect(opportunity.grossYieldPct).toBeNull();
+    expect(opportunity.rentReference).toBeNull();
+    expect(opportunity.rentabilityScore.available).toBe(false);
+    expect(opportunity.rentabilityScore.reason).toBe("Loyer de référence indisponible");
+  });
+
+  it("keeps no ANIL source for a department without any rent, and no invented yield", () => {
+    const opportunity = build(null);
+
+    expect(opportunity.grossYieldPct).toBeNull();
+    expect(opportunity.rentReference).toBeNull();
+  });
+});
+
 describe("property report sharing", () => {
   it("does not recreate a withdrawn documentary score from financial indicators", () => {
     const sale = { ...EXAMPLE_SALE, investment_score: null, score_confidence: 0.9 };

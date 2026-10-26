@@ -186,6 +186,16 @@ describe("serverEnv pipeline, alerts and email", () => {
     expect(serverEnv({}).saleReminders.mode).toBeUndefined();
   });
 
+  it("reads PEPITE_RULE_V2_ENABLED and SALE_FLOOD_RISK_BATCH_LIMIT through the shared configuration, trimmed and blank as unset", () => {
+    expect(serverEnv({ PEPITE_RULE_V2_ENABLED: " true " }).pepiteRule.v2Enabled).toBe("true");
+    expect(serverEnv({ PEPITE_RULE_V2_ENABLED: "  " }).pepiteRule.v2Enabled).toBeUndefined();
+    expect(serverEnv({}).pepiteRule.v2Enabled).toBeUndefined();
+    expect(serverEnv({ SALE_FLOOD_RISK_BATCH_LIMIT: " 120 " }).saleFloodRisk.batchLimit).toBe(
+      "120",
+    );
+    expect(serverEnv({ SALE_FLOOD_RISK_BATCH_LIMIT: "" }).saleFloodRisk.batchLimit).toBeUndefined();
+  });
+
   it("reads WEEKLY_DIGEST_MODE and SALE_RESULTS_MODE through the shared configuration, trimmed and blank as unset", () => {
     expect(serverEnv({ WEEKLY_DIGEST_MODE: " internal " }).weeklyDigest.mode).toBe("internal");
     expect(serverEnv({ WEEKLY_DIGEST_MODE: "  " }).weeklyDigest.mode).toBeUndefined();

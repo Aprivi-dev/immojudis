@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { SaleDetailPage } from "./sale-detail-page";
 import { EXAMPLE_SALE } from "@/lib/example-sale";
 import { markSaleViewed } from "@/hooks/use-viewed-sales";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 
 const mocks = vi.hoisted(() => ({
   scroll: vi.fn(),

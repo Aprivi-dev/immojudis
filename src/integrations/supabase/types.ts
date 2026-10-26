@@ -332,6 +332,66 @@ export type Database = {
           },
         ];
       };
+      anil_rents: {
+        Row: {
+          commune_code: string;
+          commune_name: string;
+          department_code: string;
+          epci_code: string | null;
+          imported_at: string;
+          observations_commune: number | null;
+          observations_mesh: number | null;
+          prediction_type: string;
+          r2_adj: number | null;
+          rent_high_per_m2: number | null;
+          rent_low_per_m2: number | null;
+          rent_per_m2: number;
+          segment: string;
+          source_updated_on: string | null;
+          source_url: string;
+          vintage: number;
+          zone_id: number | null;
+        };
+        Insert: {
+          commune_code: string;
+          commune_name: string;
+          department_code: string;
+          epci_code?: string | null;
+          imported_at?: string;
+          observations_commune?: number | null;
+          observations_mesh?: number | null;
+          prediction_type: string;
+          r2_adj?: number | null;
+          rent_high_per_m2?: number | null;
+          rent_low_per_m2?: number | null;
+          rent_per_m2: number;
+          segment: string;
+          source_updated_on?: string | null;
+          source_url: string;
+          vintage: number;
+          zone_id?: number | null;
+        };
+        Update: {
+          commune_code?: string;
+          commune_name?: string;
+          department_code?: string;
+          epci_code?: string | null;
+          imported_at?: string;
+          observations_commune?: number | null;
+          observations_mesh?: number | null;
+          prediction_type?: string;
+          r2_adj?: number | null;
+          rent_high_per_m2?: number | null;
+          rent_low_per_m2?: number | null;
+          rent_per_m2?: number;
+          segment?: string;
+          source_updated_on?: string | null;
+          source_url?: string;
+          vintage?: number;
+          zone_id?: number | null;
+        };
+        Relationships: [];
+      };
       api_ip_rate_limit_buckets: {
         Row: {
           bucket_key: string;
@@ -2980,6 +3040,87 @@ export type Database = {
         };
         Relationships: [];
       };
+      auction_sale_communes: {
+        Row: {
+          arrondissement_insee: string | null;
+          commune_insee: string;
+          resolved_at: string;
+          sale_id: string;
+          source: string;
+        };
+        Insert: {
+          arrondissement_insee?: string | null;
+          commune_insee: string;
+          resolved_at?: string;
+          sale_id: string;
+          source: string;
+        };
+        Update: {
+          arrondissement_insee?: string | null;
+          commune_insee?: string;
+          resolved_at?: string;
+          sale_id?: string;
+          source?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "auction_sale_communes_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "auction_sales";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_communes_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_map_pins";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_communes_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_app";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_communes_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_app_preview";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_communes_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_app_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_communes_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_discovery";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_communes_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_discovery_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_communes_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_unlocked";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       auction_sale_competent_court_assignments: {
         Row: {
           auction_sale_id: string | null;
@@ -3339,6 +3480,126 @@ export type Database = {
             columns: ["court_id"];
             isOneToOne: false;
             referencedRelation: "outcome_courts";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      auction_sale_flood_risk: {
+        Row: {
+          attempted_at: string;
+          commune_has_tri: boolean | null;
+          commune_insee: string | null;
+          created_at: string;
+          derive_version: string;
+          failure_count: number;
+          last_failure: string | null;
+          map_date: string | null;
+          observed_at: string | null;
+          position_key: string;
+          position_kind: string;
+          ppri_checked: boolean;
+          ppri_perimeter: boolean | null;
+          sale_id: string;
+          tri_scenarios: Json;
+          updated_at: string;
+          verdict: string;
+          verdict_changed_at: string;
+        };
+        Insert: {
+          attempted_at?: string;
+          commune_has_tri?: boolean | null;
+          commune_insee?: string | null;
+          created_at?: string;
+          derive_version: string;
+          failure_count?: number;
+          last_failure?: string | null;
+          map_date?: string | null;
+          observed_at?: string | null;
+          position_key: string;
+          position_kind: string;
+          ppri_checked?: boolean;
+          ppri_perimeter?: boolean | null;
+          sale_id: string;
+          tri_scenarios?: Json;
+          updated_at?: string;
+          verdict: string;
+          verdict_changed_at?: string;
+        };
+        Update: {
+          attempted_at?: string;
+          commune_has_tri?: boolean | null;
+          commune_insee?: string | null;
+          created_at?: string;
+          derive_version?: string;
+          failure_count?: number;
+          last_failure?: string | null;
+          map_date?: string | null;
+          observed_at?: string | null;
+          position_key?: string;
+          position_kind?: string;
+          ppri_checked?: boolean;
+          ppri_perimeter?: boolean | null;
+          sale_id?: string;
+          tri_scenarios?: Json;
+          updated_at?: string;
+          verdict?: string;
+          verdict_changed_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "auction_sale_flood_risk_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "auction_sales";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_flood_risk_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_map_pins";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_flood_risk_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_app";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_flood_risk_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_app_preview";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_flood_risk_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_app_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_flood_risk_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_discovery";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_flood_risk_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_discovery_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_flood_risk_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_unlocked";
             referencedColumns: ["id"];
           },
         ];
@@ -5534,6 +5795,54 @@ export type Database = {
           },
         ];
       };
+      commune_housing_tension: {
+        Row: {
+          commune_code: string;
+          commune_name: string;
+          decree_date: string | null;
+          decree_reference: string;
+          department_code: string;
+          epci_code: string | null;
+          epci_name: string | null;
+          imported_at: string;
+          source_updated_on: string | null;
+          source_url: string;
+          zoning_2013: string;
+          zoning_2023: string;
+          zoning_post_decree: string;
+        };
+        Insert: {
+          commune_code: string;
+          commune_name: string;
+          decree_date?: string | null;
+          decree_reference: string;
+          department_code: string;
+          epci_code?: string | null;
+          epci_name?: string | null;
+          imported_at?: string;
+          source_updated_on?: string | null;
+          source_url: string;
+          zoning_2013: string;
+          zoning_2023: string;
+          zoning_post_decree: string;
+        };
+        Update: {
+          commune_code?: string;
+          commune_name?: string;
+          decree_date?: string | null;
+          decree_reference?: string;
+          department_code?: string;
+          epci_code?: string | null;
+          epci_name?: string | null;
+          imported_at?: string;
+          source_updated_on?: string | null;
+          source_url?: string;
+          zoning_2013?: string;
+          zoning_2023?: string;
+          zoning_post_decree?: string;
+        };
+        Relationships: [];
+      };
       commune_risk_profiles: {
         Row: {
           catnat_by_type: Json;
@@ -5735,6 +6044,7 @@ export type Database = {
       data_sources: {
         Row: {
           active: boolean;
+          attribution_notice: string | null;
           base_url: string | null;
           created_at: string;
           id: string;
@@ -5748,10 +6058,12 @@ export type Database = {
           rate_limit: Json;
           terms_url: string | null;
           terms_version: string | null;
+          update_frequency: string | null;
           updated_at: string;
         };
         Insert: {
           active?: boolean;
+          attribution_notice?: string | null;
           base_url?: string | null;
           created_at?: string;
           id?: string;
@@ -5765,10 +6077,12 @@ export type Database = {
           rate_limit?: Json;
           terms_url?: string | null;
           terms_version?: string | null;
+          update_frequency?: string | null;
           updated_at?: string;
         };
         Update: {
           active?: boolean;
+          attribution_notice?: string | null;
           base_url?: string | null;
           created_at?: string;
           id?: string;
@@ -5782,6 +6096,7 @@ export type Database = {
           rate_limit?: Json;
           terms_url?: string | null;
           terms_version?: string | null;
+          update_frequency?: string | null;
           updated_at?: string;
         };
         Relationships: [];
@@ -9361,6 +9676,27 @@ export type Database = {
           row_count?: number;
           search_snapshot?: Json;
           user_id?: string;
+        };
+        Relationships: [];
+      };
+      sale_flood_risk_lease: {
+        Row: {
+          claimed_at: string | null;
+          id: boolean;
+          leased_until: string | null;
+          token: string | null;
+        };
+        Insert: {
+          claimed_at?: string | null;
+          id?: boolean;
+          leased_until?: string | null;
+          token?: string | null;
+        };
+        Update: {
+          claimed_at?: string | null;
+          id?: boolean;
+          leased_until?: string | null;
+          token?: string | null;
         };
         Relationships: [];
       };
@@ -14414,6 +14750,7 @@ export type Database = {
           severity: string;
         }[];
       };
+      claim_sale_flood_risk_lease: { Args: { p_ttl_seconds: number }; Returns: string };
       claim_sale_reminder: {
         Args: {
           p_key: string;
@@ -15020,6 +15357,7 @@ export type Database = {
       };
       has_analysis_access: { Args: never; Returns: boolean };
       is_admin: { Args: never; Returns: boolean };
+      list_public_pepite_flood_exposed_ids: { Args: never; Returns: string[] };
       list_public_pepite_sale_ids: { Args: never; Returns: string[] };
       list_public_sale_ids_under_market_range: {
         Args: never;
@@ -15218,6 +15556,7 @@ export type Database = {
         Args: { p_checkout_token: string; p_user_id: string };
         Returns: boolean;
       };
+      release_sale_flood_risk_lease: { Args: { p_token: string }; Returns: boolean };
       remap_archived_catalogue_courts_by_label_batch: {
         Args: { p_after_id?: string; p_limit?: number };
         Returns: {

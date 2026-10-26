@@ -9,7 +9,7 @@ import { buildDpeAnalysis } from "@/lib/dpe-analysis";
 import { type StructuredDpeDiagnostic } from "@/lib/dpe";
 import { propertyTypeLabel } from "@/lib/format";
 import { type EnvironmentalContext } from "@/lib/environmental-context";
-import { estimateGrossYieldPct, pricePerM2 } from "@/lib/geo";
+import { estimateSaleGrossYieldPct, pricePerM2 } from "@/lib/geo";
 import { buildLegalAttentionAnalysis } from "@/lib/legal-attention-analysis";
 import type { MarketEstimate } from "@/lib/market.server";
 import { buildMarketComparablesAnalysis } from "@/lib/market-comparables-analysis";
@@ -21,6 +21,8 @@ import { getSaleProcedure } from "@/lib/sale-procedure";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import { getPrecomputedMarketEstimate } from "@/lib/sale-market-estimates";
 import { computeRentabilityScore } from "@/lib/profitability";
+import { isRentApplicable, type RentReference } from "@/lib/rent-reference";
+import { isAnilRentReference } from "@/lib/rent-source-notice";
 import { buildCeilingSnapshot } from "./ceiling-snapshot";
 import { buildReportTraceability } from "@/lib/source-traceability";
 import { buildStreetFacadeAnalysis } from "@/lib/street-facade-analysis";
@@ -63,12 +65,17 @@ export function buildOpportunityAnalysis({
   surfaceM2,
   marketEstimate,
   ceilingSnapshot,
+  rentReference: givenRentReference = null,
 }: {
   sale: AuctionSale;
   surfaceM2: number | null;
   marketEstimate: MarketEstimate | null;
   ceilingSnapshot: ReturnType<typeof buildCeilingSnapshot>;
+  /** Référence de loyer de la vente (carte ANIL à la commune) ; absente, repli départemental. */
+  rentReference?: RentReference | null;
 }) {
+  // Un bien qui n'est pas un logement n'a aucune référence de loyer.
+  const rentReference = isRentApplicable(sale) ? givenRentReference : null;
   const startingPrice = positiveNumber(sale.starting_price_eur);
   const surface = positiveNumber(surfaceM2);
   const startingPricePerM2 = roundedNumber(pricePerM2(startingPrice, surface));
@@ -96,7 +103,11 @@ export function buildOpportunityAnalysis({
       ? roundPercent(((estimatedMarketValue - startingPrice) / estimatedMarketValue) * 100)
       : null;
   const grossYieldPct = roundPercent(
-    estimateGrossYieldPct(startingPrice, surface, sale.department),
+    estimateSaleGrossYieldPct(
+      { ...sale, starting_price_eur: startingPrice },
+      surface,
+      rentReference,
+    ),
   );
   // A missing or withdrawn documentary score must remain unavailable.
   const score = roundedNumber(sale.investment_score);
@@ -110,7 +121,9 @@ export function buildOpportunityAnalysis({
     price: acquisition.price,
     works: acquisition.works,
     fpt: acquisition.fpt,
-    department: sale.department,
+    // Un bien qui n'est pas un logement n'a aucun loyer de référence : « indisponible ».
+    department: isRentApplicable(sale) ? sale.department : null,
+    rentReference,
     // Les frais du régime de la vente (notaire : émoluments du notaire, organisation, négociation).
     acquisition,
     marketMarginPerM2: ceilingSnapshot.available ? ceilingSnapshot.marginPerM2 : null,
@@ -135,6 +148,16 @@ export function buildOpportunityAnalysis({
       : "Repère P25-P75 des comparables appliqué à la surface",
     apparentDiscountPct,
     grossYieldPct,
+    // Source du loyer derrière le rendement : la mention ANIL s'affiche avec lui (rapport, PDF).
+    rentReference: isAnilRentReference(rentReference)
+      ? {
+          source: rentReference.source,
+          reliability: rentReference.reliability,
+          rentPerM2: rentReference.rentPerM2,
+          vintage: rentReference.vintage,
+          sourceUpdatedOn: rentReference.sourceUpdatedOn,
+        }
+      : null,
     rentabilityScore,
     acquisitionCosts: {
       price: acquisition.price,
@@ -167,7 +190,9 @@ export function buildReportSnapshot({
   valuationBacktest,
   ceilingSnapshot,
   plan,
+  rentReference = null,
 }: {
+  rentReference?: RentReference | null;
   sale: AuctionSale;
   marketEstimate: MarketEstimate | null;
   environmentalContext?: EnvironmentalContext | null;
@@ -335,6 +360,7 @@ export function buildReportSnapshot({
         surfaceM2: surface.value,
         marketEstimate,
         ceilingSnapshot,
+        rentReference,
       }),
       legalAttentionPoints: legalAttentionAnalysis.items
         .map((item) => `${item.label} : ${item.action}`)

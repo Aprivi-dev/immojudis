@@ -5,7 +5,7 @@ import {
   fetchNotificationPreferences,
   updateNotificationPreferences,
 } from "@/lib/client-api";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 import { userMessage } from "@/lib/user-messages";
 
 /**

@@ -46,7 +46,14 @@ export function landLocationInputFromSale(
       });
     }
   }
+  // Précision de la position (`location_precision`) : un centre de commune n'est pas la position du bien, il
+  // compte comme une position absente (aucune coordonnée n'est transmise aux sources de risques).
+  const locationPrecision =
+    typeof sale.location_precision === "string" && sale.location_precision.trim()
+      ? sale.location_precision.trim().toLowerCase()
+      : null;
   const hasCoordinates =
+    locationPrecision !== "municipality" &&
     typeof sale.latitude === "number" &&
     typeof sale.longitude === "number" &&
     Number.isFinite(sale.latitude) &&
@@ -59,6 +66,7 @@ export function landLocationInputFromSale(
     city: sale.city,
     codeInsee,
     coordinates: hasCoordinates ? { latitude: sale.latitude!, longitude: sale.longitude! } : null,
+    locationPrecision,
     references,
   };
 }

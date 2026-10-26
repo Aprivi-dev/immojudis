@@ -16,13 +16,26 @@ import { getAuctionScenarios } from "@/lib/auction-scenarios.server";
 import { CEILING_ENGINE_VERSION } from "@/lib/bid-ceiling-engine";
 import { FEE_REGIMES } from "@/lib/fee-regime";
 import { openFeeRegimesFromEnv } from "@/lib/fee-regime.server";
+import { floodFacts, type FloodVerdict } from "@/lib/flood-risk";
+import { floodPositionKey } from "@/lib/flood-risk-position.server";
+import {
+  floodPositionOf,
+  readFloodSales,
+  readSaleCommunes,
+  readStoredFloodRisks,
+  type FloodSale,
+  type SaleCommune,
+  type StoredFloodRow,
+} from "@/lib/flood-risk-store.server";
 import { evaluateSaleForPepite, type PepiteSaleFacts } from "@/lib/pepite-input";
+import { activePepiteRuleVersion } from "@/lib/pepite-rule-switch.server";
 import {
   PEPITE_REFRESH_HOURS,
-  PEPITE_RULE_VERSION,
+  PEPITE_LATEST_RULE_VERSION,
   applyPepiteStability,
   pepiteReasonCodes,
   type PepiteEvaluation,
+  type PepiteRuleVersion,
   type PepiteStability,
   type PepiteStoredState,
   type PepiteStatus,
@@ -40,7 +53,13 @@ import type { AuctionSale } from "@/lib/types";
  * 20261104100000). Le calcul reste en TypeScript : c'est le chemin de la fiche (assainissement de la
  * vente, relecture IA, conflit de valorisation, estimation stockée sans mise en file d'attente,
  * `computeSaleCeiling`), lu avec le rôle de service sur `v_auction_sales_app`, puis la règle
- * `pepite-v1` (`pepite-policy.ts`) et sa stabilité.
+ * `pepite-v1` ou `pepite-v2` (`pepite-policy.ts`) et sa stabilité.
+ *
+ * Règle appliquée : `pepite-v1` tant que l'interrupteur serveur `PEPITE_RULE_V2_ENABLED` est fermé (défaut : le
+ * traitement ne lit alors pas la table d'inondation et rien ne change) ; `pepite-v2` quand il est ouvert : le
+ * verdict d'inondation de chaque vente est lu dans la table privée alimentée par `/api/cron/sale-flood-risk`
+ * (jamais un appel réseau ici). Sans cette table ni celle des communes, la passe se termine proprement
+ * (`skipped: "not_migrated"`). Voir `pepite-rule-switch.server.ts`.
  *
  * Mode (`app_private.sale_pepite_settings`) : `off`, la passe ne fait rien ; `shadow`, les résultats sont
  * calculés et stockés mais rien n'est visible du public ; `on`, les fonctions publiques de lecture
@@ -95,14 +114,16 @@ export type StoredEvaluation = {
 
 /** Les versions dont dépend un résultat : règle, moteur de plafond et régimes de frais. */
 export type PepiteVersions = {
-  rule: string;
+  rule: PepiteRuleVersion;
   engine: string;
   regimes: readonly string[];
 };
 
-export function currentPepiteVersions(): PepiteVersions {
+export function currentPepiteVersions(
+  env: Record<string, string | undefined> = process.env,
+): PepiteVersions {
   return {
-    rule: PEPITE_RULE_VERSION,
+    rule: activePepiteRuleVersion(env),
     engine: CEILING_ENGINE_VERSION,
     regimes: Object.values(FEE_REGIMES).flatMap((regime) => (regime ? [regime.version] : [])),
   };
@@ -121,6 +142,8 @@ export type SalePepitesBatchResult = {
   insufficient: number;
   failed: number;
   remaining: number;
+  /** Verdicts d'inondation lus pour les ventes évaluées (règle v2 seulement) ; `null` sous la règle v1. */
+  floodVerdicts: Record<FloodVerdict, number> | null;
   errors: string[];
 };
 
@@ -141,15 +164,16 @@ export function isObsoleteEvaluation(evaluation: StoredEvaluation, versions: Pep
 
 /**
  * Ventes à (ré)évaluer, les plus urgentes d'abord :
- *   0. les pépites DÉJÀ publiées dont la vente, l'estimation ou le prix ont changé, qui sont évaluées sous
- *      une autre version, ou qui n'ont plus de donnée (délai de tolérance en cours) : une pépite affichée
- *      ne doit pas attendre derrière les ventes jamais évaluées ;
+ *   0. les pépites DÉJÀ publiées dont la vente, l'estimation, le prix ou le verdict d'inondation ont changé,
+ *      qui sont évaluées sous une autre version, ou qui n'ont plus de donnée (délai de tolérance en cours) :
+ *      une pépite affichée ne doit pas attendre derrière les ventes jamais évaluées ;
  *   1. jamais évaluées, les plus récemment modifiées en premier ;
  *   2. évaluées avec une autre version (règle, moteur, régime), les plus anciennes d'abord ;
  *   3. vente ou estimation modifiée depuis la dernière évaluation, les plus anciennes d'abord ;
  *   4. évaluées il y a plus de 24 h (tables liées), les plus anciennes d'abord, sauf une vente « non
  *      applicable » qui n'est plus à venir : rien n'y changera.
- * `estimateComputedAt` : date de calcul de l'estimation stockée de chaque vente.
+ * `estimateComputedAt` : date de calcul de l'estimation stockée de chaque vente. `floodChangedAt` : date du dernier
+ * changement du verdict d'inondation de chaque vente (règle v2 ; vide sous la règle v1).
  */
 export function pickPendingSales(
   online: OnlineSale[],
@@ -157,6 +181,7 @@ export function pickPendingSales(
   estimateComputedAt: ReadonlyMap<string, string | null>,
   versions: PepiteVersions = currentPepiteVersions(),
   now: Date = new Date(),
+  floodChangedAt: ReadonlyMap<string, string | null> = new Map(),
 ): string[] {
   const evaluationBySale = new Map(evaluations.map((row) => [row.saleId, row]));
   const published: Array<{ id: string; evaluatedAt: number }> = [];
@@ -175,9 +200,11 @@ export function pickPendingSales(
     const obsolete = isObsoleteEvaluation(evaluation, versions);
     const updatedAt = time(sale.updatedAt);
     const estimatedAt = time(estimateComputedAt.get(sale.id) ?? null);
+    const floodAt = time(floodChangedAt.get(sale.id) ?? null);
     const changed =
       (updatedAt != null && updatedAt > evaluatedAt) ||
       (estimatedAt != null && estimatedAt > evaluatedAt) ||
+      (floodAt != null && floodAt > evaluatedAt) ||
       (evaluation.inputStartingPriceEur != null &&
         sale.startingPriceEur != null &&
         evaluation.inputStartingPriceEur !== sale.startingPriceEur);
@@ -271,6 +298,16 @@ export function pepiteDetails(evaluation: PepiteEvaluation, facts: PepiteSaleFac
     costRatio: roundRatio(metrics.costRatio),
     startingShareOfValue: roundRatio(metrics.startingShareOfValue),
     gapDiscountPct: facts?.gapDiscountPct ?? null,
+    // Verdict d'inondation (règle v2) : sert au bloc de la fiche. Ni coordonnée ni commune, seulement le verdict
+    // et deux dates de contrôle.
+    flood: facts?.flood
+      ? {
+          verdict: facts.flood.verdict,
+          observedAt: facts.flood.observedAt,
+          mapDate: facts.flood.mapDate,
+          ppriChecked: facts.flood.ppriChecked,
+        }
+      : null,
     estimateReliability: facts?.estimateReliability ?? null,
     estimateEffectiveSample: facts?.estimateEffectiveSample ?? null,
     scenarios: facts?.scenarios ?? null,
@@ -584,6 +621,7 @@ export async function runSalePepitesBatch({
     insufficient: 0,
     failed: 0,
     remaining: 0,
+    floodVerdicts: null,
     errors: [],
   };
   const fail = (count: number, error: unknown) => {
@@ -600,10 +638,35 @@ export async function runSalePepitesBatch({
   const [online, stored] = await Promise.all([readOnlineSales(), readStoredEvaluations()]);
   if (stored == null) return { ...result, skipped: "not_migrated" };
   const estimateDates = await readEstimateDates();
+
+  // Règle v2 : le verdict d'inondation de chaque vente, lu dans la table privée (aucun appel réseau).
+  const v2 = versions.rule === PEPITE_LATEST_RULE_VERSION;
+  let flood: {
+    stored: Map<string, StoredFloodRow>;
+    communes: Map<string, SaleCommune>;
+    sales: Map<string, FloodSale>;
+  } | null = null;
+  if (v2) {
+    const [floodSales, floodRows, communes] = await Promise.all([
+      readFloodSales(),
+      readStoredFloodRisks(),
+      readSaleCommunes(),
+    ]);
+    if (floodRows == null || communes == null) return { ...result, skipped: "not_migrated" };
+    flood = {
+      stored: new Map(floodRows.map((row) => [row.saleId, row])),
+      communes,
+      sales: new Map(floodSales.map((sale) => [sale.id, sale])),
+    };
+    result.floodVerdicts = { high: 0, exposed: 0, none_found: 0, no_signal: 0, unknown: 0 };
+  }
+  const floodChangedAt = new Map(
+    [...(flood?.stored.values() ?? [])].map((row) => [row.saleId, row.verdictChangedAt]),
+  );
   const storedBySale = new Map(stored.map((row) => [row.saleId, row]));
   const onlineBySale = new Map(online.map((sale) => [sale.id, sale]));
 
-  const pending = pickPendingSales(online, stored, estimateDates, versions, now);
+  const pending = pickPendingSales(online, stored, estimateDates, versions, now, floodChangedAt);
   const selected = pending.slice(0, Math.max(1, Math.min(2000, Math.floor(limit))));
   result.online = online.length;
   result.pending = pending.length;
@@ -665,18 +728,32 @@ export async function runSalePepitesBatch({
               : undefined,
           );
           const scenarios = await getAuctionScenarios(sale);
-          const { evaluation, facts } = evaluateSaleForPepite({
-            sale,
-            scoreStatus: inputs?.score_status ?? null,
-            aiProjections: projections.get(sale.id) ?? [],
-            aiReviewStatus: "ready",
-            regimes,
-            estimate: estimateRow && verifiable ? { row: estimateRow, context } : null,
-            modelActive:
-              estimateRow?.model_version_id != null && modelIds.has(estimateRow.model_version_id),
-            scenarios,
-            now,
-          });
+          const floodSale = flood?.sales.get(sale.id);
+          const saleFlood =
+            flood && floodSale
+              ? floodFacts(
+                  flood.stored.get(sale.id),
+                  floodPositionKey(floodPositionOf(floodSale, flood.communes.get(sale.id))),
+                  now,
+                )
+              : { verdict: "unknown" as const, observedAt: null, mapDate: null, ppriChecked: true };
+          if (result.floodVerdicts) result.floodVerdicts[saleFlood.verdict] += 1;
+          const { evaluation, facts } = evaluateSaleForPepite(
+            {
+              sale,
+              scoreStatus: inputs?.score_status ?? null,
+              aiProjections: projections.get(sale.id) ?? [],
+              aiReviewStatus: "ready",
+              regimes,
+              estimate: estimateRow && verifiable ? { row: estimateRow, context } : null,
+              modelActive:
+                estimateRow?.model_version_id != null && modelIds.has(estimateRow.model_version_id),
+              scenarios,
+              flood: saleFlood,
+              now,
+            },
+            versions.rule,
+          );
           const previous = storedBySale.get(sale.id);
           const stability = applyPepiteStability({
             previous: storedStateFor(previous),

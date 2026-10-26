@@ -1,4 +1,4 @@
-// Entrée de la règle `pepite-v1` pour une vente : la même chaîne que la fiche (assainissement de la
+// Entrée de la règle `pepite` (v1 et v2) pour une vente : la même chaîne que la fiche (assainissement de la
 // vente, relecture IA, conflit de valorisation, estimation stockée, `computeSaleCeiling`), avec les
 // hypothèses par défaut de la fiche (habiter, équilibré, sans travaux, frais du régime de la vente,
 // libération incluse si le bien est occupé) et la valeur BASSE (P10) de l'estimation. Les lectures
@@ -11,16 +11,19 @@ import type { AuctionScenariosResponse } from "@/lib/auction-scenarios";
 import type { AiReviewProjectionReadModel, AiReviewRequestStatus } from "@/lib/ai-review-guard";
 import { evaluateBid } from "@/lib/bid-ceiling-engine";
 import type { FeeRegimeKey } from "@/lib/fee-regime-open";
+import type { FloodFacts } from "@/lib/flood-risk";
 import { sanitizeAuctionSaleForDisplay } from "@/lib/listing-data-cleanup";
 import { marketDiscountPct } from "@/lib/market-gap";
 import { passesPublicMarketGapGate } from "@/lib/market-gap-band";
 import { ceilingMarketEstimate } from "@/lib/market-estimate-ceiling";
 import type { MarketContext } from "@/lib/market-server/types";
 import {
+  PEPITE_LATEST_RULE_VERSION,
   evaluatePepite,
   type PepiteEvaluation,
   type PepiteInput,
   type PepiteRegimeKey,
+  type PepiteRuleVersion,
   type PepiteScenariosInput,
 } from "@/lib/pepite-policy";
 import { buildRenovationAnalysis } from "@/lib/renovation-analysis";
@@ -50,7 +53,12 @@ const DEGRADED_CONDITIONS: readonly string[] = ["heavy_works", "works_to_budget"
 
 const PEPITE_REGIMES: readonly FeeRegimeKey[] = ["tribunal", "notary_auction", "notary_online"];
 
+/** Le verdict d'inondation de la vente (`floodFacts`), lu dans la table privée sans appel réseau. */
+export type PepiteFloodFacts = FloodFacts;
+
 export type PepiteSaleFacts = {
+  /** Verdict d'inondation lu pour cette évaluation (règle v2 seulement) ; `null` sous la règle v1. */
+  flood: PepiteFloodFacts | null;
   regimeKey: PepiteRegimeKey | null;
   regimeVersion: string | null;
   /** Type de vente lu comme la fiche le lit (`getSaleProcedure`). */
@@ -89,6 +97,8 @@ export type PepiteSourceData = {
   /** Le modèle LightGBM de l'estimation est actif (ignoré pour un autre moteur). */
   modelActive: boolean;
   scenarios: AuctionScenariosResponse | null;
+  /** Verdict d'inondation de la vente (jamais un appel réseau) ; ignoré sous la règle v1. */
+  flood: PepiteFloodFacts;
   now: Date;
 };
 
@@ -107,7 +117,10 @@ function scenariosInput(response: AuctionScenariosResponse | null): PepiteScenar
 }
 
 /** Entrée de la règle, et les faits stockés avec l'évaluation. */
-export function buildPepiteInput(source: PepiteSourceData): {
+export function buildPepiteInput(
+  source: PepiteSourceData,
+  ruleVersion: PepiteRuleVersion,
+): {
   input: PepiteInput;
   facts: PepiteSaleFacts;
 } {
@@ -222,10 +235,12 @@ export function buildPepiteInput(source: PepiteSourceData): {
       probableDuplicate: flags.includes("probable_duplicate"),
       unqualifiedRisks: source.scoreStatus === "withheld_unqualified_risks",
     },
+    flood: { verdict: source.flood.verdict, ppriChecked: source.flood.ppriChecked },
   };
 
   const scenarioSet = source.scenarios?.scenarios;
   const facts: PepiteSaleFacts = {
+    flood: ruleVersion === PEPITE_LATEST_RULE_VERSION ? source.flood : null,
     regimeKey,
     regimeVersion: inputs.regime?.version ?? null,
     venueType: procedure.venueType,
@@ -256,11 +271,14 @@ export function buildPepiteInput(source: PepiteSourceData): {
 }
 
 /** Évalue une vente : l'entrée, la règle, et les faits à stocker. */
-export function evaluateSaleForPepite(source: PepiteSourceData): {
+export function evaluateSaleForPepite(
+  source: PepiteSourceData,
+  ruleVersion: PepiteRuleVersion,
+): {
   evaluation: PepiteEvaluation;
   input: PepiteInput;
   facts: PepiteSaleFacts;
 } {
-  const { input, facts } = buildPepiteInput(source);
-  return { evaluation: evaluatePepite(input), input, facts };
+  const { input, facts } = buildPepiteInput(source, ruleVersion);
+  return { evaluation: evaluatePepite(input, ruleVersion), input, facts };
 }

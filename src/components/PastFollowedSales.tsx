@@ -13,7 +13,7 @@ import type {
   FollowedSaleSnapshotResult,
 } from "@/lib/followed-sale-snapshots-shared";
 import { tribunalBarAssociation } from "@/lib/lawyer-bar";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 import type { SurenchereWindow } from "@/lib/surenchere-window";
 import { toast } from "@/lib/toast";
 import { userMessage } from "@/lib/user-messages";

@@ -83,7 +83,9 @@ test("un prix au m² ou un loyer à 0 compte pour « non saisi »", async ({ pag
   await price.press("Tab");
   await expect(price).toHaveValue(estimatedPrice);
 
-  const rent = page.getByLabel("Loyer mensuel hors charges");
+  // Le libellé suit l'origine du loyer : estimé (département ou carte de l'ANIL, charges comprises) tant
+  // qu'il n'est pas saisi, « hors charges » une fois saisi.
+  const rent = page.getByLabel(/^Loyer (mensuel hors charges|estimé|d’annonce estimé)/);
   const referenceRent = await rent.inputValue();
   await rent.fill("0");
   await rent.press("Tab");
