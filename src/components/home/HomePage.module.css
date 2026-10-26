@@ -1493,11 +1493,8 @@
 /* Mouvement ------------------------------------------------------------------------------------- */
 
 @media (prefers-reduced-motion: no-preference) {
-  /* Fiche exemple : zoom lent de la photo, lignes d'analyse cochées une à une, verdict qui se pose. */
-  .examplePhotoImage {
-    animation: home-zoom 12000ms linear both;
-  }
-
+  /* Fiche exemple : lignes d'analyse cochées une à une, verdict qui se pose. La photo reste fixe : un
+     zoom continu sous les panneaux flous (`backdrop-filter`) la faisait trembler et l'adoucissait. */
   .analysisPanel li {
     animation: home-slide 500ms var(--home-ease) both;
     animation-delay: calc(var(--i) * 260ms + 600ms);
@@ -1581,12 +1578,6 @@
 @keyframes home-grow {
   from {
     transform: scaleX(0);
-  }
-}
-
-@keyframes home-zoom {
-  from {
-    transform: scale(1.08);
   }
 }
 
