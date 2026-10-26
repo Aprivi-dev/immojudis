@@ -278,3 +278,17 @@ Ordre :
 - contenus (n° 13, 20).
 
 Le suivi est complété ci-dessous à chaque lot.
+
+### Suivi
+
+- **Lot 0** : livré (commit `1167697`) après relecture par `code-reviewer`. CI verte sur la PR #312.
+- **Lot A1** : livré (commit `87f9536`) après relecture. Aucun résultat du tribunal ne change.
+- **Lot A2** : en cours.
+- **Contenus** (n° 13, 20, 21) : en cours, en parallèle du lot A2.
+
+**Décision du fondateur (26/10/2026).** Le chef d'orchestre mène le sujet jusqu'au bout :
+- fusion de la PR #312 dans `main`, CI verte ;
+- application des migrations par le workflow « Apply Supabase Migrations » (lancé depuis `main`, confirmation `production`) ;
+- déploiement Vercel et contrôles de production.
+
+Le calcul de la pépite est livré en mode `shadow`. Le passage en `on` se fait après contrôle de la liste sur le catalogue réel.
