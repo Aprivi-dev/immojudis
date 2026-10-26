@@ -971,35 +971,15 @@ function withExampleSchedule(sale: AuctionSale, now: Date): AuctionSale {
   };
 }
 
-/**
- * Photos hébergées par le site (`/media/...`) en adresse absolue : la galerie des fiches n'accepte
- * que des photos en `https://` (une adresse relative venue d'une source désignerait notre domaine).
- */
-function withSiteMedia(sale: AuctionSale, origin: string | null): AuctionSale {
-  if (!origin || !sale.media) return sale;
-  return {
-    ...sale,
-    media: sale.media.map((item) =>
-      item.url.startsWith("/") && !item.url.startsWith("//")
-        ? { ...item, url: new URL(item.url, origin).href }
-        : item,
-    ),
-  };
-}
-
-/**
- * The example records with their dates relative to `now` (default: today). With `origin`, the
- * photos hosted by the site are given as absolute addresses, so the gallery shows them.
- */
+/** The example records with their dates relative to `now` (default: today). */
 export function getExampleSaleRecords(
   now: Date = new Date(),
-  origin: string | null = null,
 ): Record<ExampleSaleKey, { sale: AuctionSale; marketEstimate: MarketEstimate }> {
   return Object.fromEntries(
     EXAMPLE_SALE_KEYS.map((key) => [
       key,
       {
-        sale: withSiteMedia(withExampleSchedule(EXAMPLE_SALE_RECORDS[key].sale, now), origin),
+        sale: withExampleSchedule(EXAMPLE_SALE_RECORDS[key].sale, now),
         marketEstimate: EXAMPLE_SALE_RECORDS[key].marketEstimate,
       },
     ]),

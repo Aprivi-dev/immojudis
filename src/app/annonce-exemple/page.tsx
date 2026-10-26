@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { exampleCeilingChoices, getExampleSaleRecords, isExampleSaleKey } from "@/lib/example-sale";
-import { resolveSiteOrigin } from "@/lib/site-url";
 import { pageMetadata } from "@/lib/page-metadata";
 import { ExampleSalePage } from "./example-sale-page";
 
@@ -27,11 +26,7 @@ export default async function Page({ searchParams }: PageProps) {
   // Dates are computed now (hearing in 21 days), never frozen at build time.
   return (
     <ExampleSalePage
-      example={
-        getExampleSaleRecords(new Date(), resolveSiteOrigin(process.env, "http://localhost:3000"))[
-          key
-        ]
-      }
+      example={getExampleSaleRecords()[key]}
       ceilingChoices={exampleCeilingChoices(key)}
       adjudicationStatisticsEnabled={process.env.ADJUDICATION_PRICE_STATISTICS_ENABLED === "true"}
     />

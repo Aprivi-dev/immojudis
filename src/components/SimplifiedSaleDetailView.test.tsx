@@ -12,7 +12,7 @@ import {
 import { formatPrice } from "@/lib/format";
 
 // Dated relative to today, like /annonce-exemple: the frozen records would turn into a past sale.
-const EXAMPLE_SALE_RECORDS = getExampleSaleRecords(new Date(), "https://immojudis.com");
+const EXAMPLE_SALE_RECORDS = getExampleSaleRecords();
 import type { AuctionSale } from "@/lib/types";
 import type { MarketEstimate } from "@/lib/market.server";
 import { AI_REVIEW_FIELD_KEYS, type AiReviewProjectionReadModel } from "@/lib/ai-review-guard";

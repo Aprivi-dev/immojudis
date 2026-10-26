@@ -134,19 +134,12 @@ describe("home page figures", () => {
   });
 });
 
-describe("example photos hosted by the site", () => {
-  it("become absolute with the site origin, and the home page photo leads the gallery", () => {
-    const relative = getExampleSaleRecords().bordeaux.sale.media ?? [];
-    const absolute = getExampleSaleRecords(new Date(), "https://immojudis.com").bordeaux.sale.media;
-    expect(relative[0]?.url).toBe("/media/landing/dossier-apartment.webp?w=1600");
-    expect(absolute?.[0]?.url).toBe(
-      "https://immojudis.com/media/landing/dossier-apartment.webp?w=1600",
-    );
-    expect(absolute?.slice(1).map((item) => item.url)).toEqual(
-      relative.slice(1).map((item) => item.url),
-    );
-    const gallery = propertyImages(absolute);
-    expect(gallery).toHaveLength(relative.length);
-    expect(gallery[0]?.url).toBe(absolute?.[0]?.url);
+describe("example photo hosted by the site", () => {
+  it("is the home page photo and leads the gallery", () => {
+    const media = getExampleSaleRecords().bordeaux.sale.media ?? [];
+    expect(media[0]?.url).toBe("/media/landing/dossier-apartment.webp?w=1600");
+    const gallery = propertyImages(media);
+    expect(gallery).toHaveLength(media.length);
+    expect(gallery[0]?.url).toBe(media[0]?.url);
   });
 });
