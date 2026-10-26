@@ -8,6 +8,7 @@ import {
   getExampleSaleRecords,
 } from "./example-sale";
 import { getListingPublicInformation } from "./listing-public-information";
+import { propertyImages } from "./sale-media";
 import { buildCeilingHypotheses } from "./bid-ceiling-defaults";
 import { computeCeilingPlan } from "./bid-ceiling-engine";
 import { estimateWorksBudget } from "./profitability";
@@ -130,5 +131,22 @@ describe("home page figures", () => {
     expect(marketValue - feesAndWorks - safetyMargin).toBe(ceiling);
     expect(ceiling).toBeGreaterThan(exampleHeadlineFigures().startingPrice);
     expect(ceiling).toBeLessThan(marketValue);
+  });
+});
+
+describe("example photos hosted by the site", () => {
+  it("become absolute with the site origin, and the home page photo leads the gallery", () => {
+    const relative = getExampleSaleRecords().bordeaux.sale.media ?? [];
+    const absolute = getExampleSaleRecords(new Date(), "https://immojudis.com").bordeaux.sale.media;
+    expect(relative[0]?.url).toBe("/media/landing/dossier-apartment.webp?w=1600");
+    expect(absolute?.[0]?.url).toBe(
+      "https://immojudis.com/media/landing/dossier-apartment.webp?w=1600",
+    );
+    expect(absolute?.slice(1).map((item) => item.url)).toEqual(
+      relative.slice(1).map((item) => item.url),
+    );
+    const gallery = propertyImages(absolute);
+    expect(gallery).toHaveLength(relative.length);
+    expect(gallery[0]?.url).toBe(absolute?.[0]?.url);
   });
 });

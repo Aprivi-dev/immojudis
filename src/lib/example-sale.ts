@@ -458,7 +458,10 @@ export const EXAMPLE_SALE = {
   media: [
     {
       type: "image",
-      url: "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?auto=format&fit=crop&w=1600&q=80",
+      // Même photo que la fiche exemple du premier écran de l'accueil (`HomeExamplePhoto`). `w=1600`
+      // (sa largeur réelle) la garde en tête de la galerie, qui classe les photos par leur adresse
+      // (`propertyImageUrlScore`) : sans lui, les photos Unsplash (`w=1200`) passeraient devant.
+      url: "/media/landing/dossier-apartment.webp?w=1600",
       source: "Visuel d'exemple",
     },
     {
@@ -968,15 +971,35 @@ function withExampleSchedule(sale: AuctionSale, now: Date): AuctionSale {
   };
 }
 
-/** The example records with their dates relative to `now` (default: today). */
+/**
+ * Photos hébergées par le site (`/media/...`) en adresse absolue : la galerie des fiches n'accepte
+ * que des photos en `https://` (une adresse relative venue d'une source désignerait notre domaine).
+ */
+function withSiteMedia(sale: AuctionSale, origin: string | null): AuctionSale {
+  if (!origin || !sale.media) return sale;
+  return {
+    ...sale,
+    media: sale.media.map((item) =>
+      item.url.startsWith("/") && !item.url.startsWith("//")
+        ? { ...item, url: new URL(item.url, origin).href }
+        : item,
+    ),
+  };
+}
+
+/**
+ * The example records with their dates relative to `now` (default: today). With `origin`, the
+ * photos hosted by the site are given as absolute addresses, so the gallery shows them.
+ */
 export function getExampleSaleRecords(
   now: Date = new Date(),
+  origin: string | null = null,
 ): Record<ExampleSaleKey, { sale: AuctionSale; marketEstimate: MarketEstimate }> {
   return Object.fromEntries(
     EXAMPLE_SALE_KEYS.map((key) => [
       key,
       {
-        sale: withExampleSchedule(EXAMPLE_SALE_RECORDS[key].sale, now),
+        sale: withSiteMedia(withExampleSchedule(EXAMPLE_SALE_RECORDS[key].sale, now), origin),
         marketEstimate: EXAMPLE_SALE_RECORDS[key].marketEstimate,
       },
     ]),
