@@ -75,55 +75,6 @@ export function HomeStats({
   );
 }
 
-const PAIRS = [
-  {
-    before: "Les annonces sont dispersées entre les sites des avocats et des tribunaux.",
-    after: "Toutes les ventes à venir sur une carte et une liste, filtrables par secteur.",
-  },
-  {
-    before: "Le cahier des conditions de vente compte souvent des dizaines de pages.",
-    after: "Les points clés relevés pour vous, avec ce qu’il reste à vérifier.",
-  },
-  {
-    before: "On enchérit à l’instinct, dans la salle, sans limite écrite.",
-    after: "Une enchère plafond calculée avant l’audience, et ajustable.",
-  },
-] as const;
-
-/** Le problème (une mise à prix ne dit rien du prix à payer) et ce qu'Immojudis y répond. */
-export function HomeProblem() {
-  return (
-    <section className={styles.section} aria-labelledby="problem-title">
-      <div className={`${styles.container} ${styles.split}`}>
-        <div className={`${styles.head} ${styles.headAside}`} data-reveal="">
-          <p className={styles.eyebrow}>Le problème</p>
-          <h2 id="problem-title" className={styles.h2}>
-            Une mise à prix ne dit rien du prix à payer.
-          </h2>
-          <p className={styles.lead}>
-            Elle est souvent fixée bas pour attirer les enchérisseurs. Ce qui compte se trouve
-            ailleurs : dans les pièces, dans le marché du quartier et dans vos frais.
-          </p>
-        </div>
-        <div className={styles.pairs}>
-          {PAIRS.map((pair, index) => (
-            <div key={pair.after} className={styles.pair} data-reveal="" style={delay(index * 120)}>
-              <div className={styles.pairBefore}>
-                <span className={styles.pairLabel}>Aujourd’hui</span>
-                <p>{pair.before}</p>
-              </div>
-              <div className={styles.pairAfter}>
-                <span className={styles.pairLabel}>Avec Immojudis</span>
-                <p>{pair.after}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
 /** Quatre bénéfices, chacun avec sa petite illustration. */
 export function HomeBenefits() {
   const share = (value: number) => `${((value / EXAMPLE.marketValue) * 100).toFixed(1)}%`;

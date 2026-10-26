@@ -92,6 +92,28 @@ describe("sale media selection", () => {
   });
 });
 
+describe("photos hosted by the site", () => {
+  it("accepts the example photos of public/media/landing, and no other relative address", () => {
+    expect(isLikelyPropertyImageUrl("/media/landing/dossier-apartment.webp")).toBe(true);
+    expect(isLikelyPropertyImageUrl("/media/landing/dossier-apartment.webp?w=1600")).toBe(true);
+    for (const url of [
+      "/media/photo.jpg",
+      "/uploads/maison.jpg",
+      "//cdn.test/media/landing/x.webp",
+      "/media/landing/../secret.webp",
+      "/media/landing/x.webp?url=https://evil.test",
+    ]) {
+      expect(isLikelyPropertyImageUrl(url)).toBe(false);
+    }
+  });
+
+  it("ranks a site photo with its width like any other photo", () => {
+    expect(propertyImageUrlScore("/media/landing/dossier-apartment.webp?w=1600")).toBe(
+      propertyImageUrlScore("https://example.test/media/x.webp?w=1600"),
+    );
+  });
+});
+
 describe("photos copiées", () => {
   it("garde la copie attachée à la photo et l'URL d'origine comme identité", () => {
     const mirror = { path640: "s/a-640.webp", path1600: null, width: 1200, height: 800 };
