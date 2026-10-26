@@ -17,6 +17,7 @@ import type { AuctionSale } from "@/lib/types";
 import * as queryKeys from "@/lib/query-keys";
 import type { SaleAccessMode } from "@/lib/query-keys";
 import type { FeeRegimeKey } from "@/lib/fee-regime-open";
+import type { RentReference } from "@/lib/rent-reference";
 import type { SaleUnlockResult } from "@/lib/sale-unlocks";
 
 const loadDiscoveryView = () => import("@/components/DiscoverySaleDetailView");
@@ -72,6 +73,11 @@ type SaleDetailPageProps = {
   adjudicationStatisticsEnabled?: boolean;
   /** Fee regimes whose bid ceiling is open (see `parseOpenFeeRegimes`); absent: every regime whose rules are defined. */
   openFeeRegimes?: readonly FeeRegimeKey[];
+  /**
+   * Référence de loyer de la vente (carte ANIL à la commune), résolue par le serveur au rendu de la
+   * page ; absente ou `null`, le simulateur retombe sur le loyer départemental.
+   */
+  rentReference?: RentReference | null;
 };
 
 export function SaleDetailPage(props: SaleDetailPageProps) {
@@ -91,6 +97,7 @@ function SaleDetailContent({
   initialData,
   adjudicationStatisticsEnabled = false,
   openFeeRegimes,
+  rentReference = null,
 }: SaleDetailPageProps) {
   // The page is statically generated and cached (ISR): it must not read the URL
   // during rendering (useSearchParams would force client-side rendering and hide
@@ -317,6 +324,7 @@ function SaleDetailContent({
           returnTo={returnTo}
           adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
           openFeeRegimes={openFeeRegimes}
+          rentReference={rentReference}
           unlockStatus={unlockQuery.data ?? null}
           justUnlocked={justUnlocked}
           onSaleUnlocked={handleSaleUnlocked}
@@ -392,6 +400,7 @@ function SaleDetailContent({
         returnTo={returnTo}
         adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
         openFeeRegimes={openFeeRegimes}
+        rentReference={rentReference}
         unlockStatus={unlockQuery.data ?? null}
         justUnlocked={justUnlocked}
       />
@@ -424,6 +433,7 @@ function SaleDetailContent({
         returnTo={returnTo}
         adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
         openFeeRegimes={openFeeRegimes}
+        rentReference={rentReference}
         unlockStatus={unlockQuery.data ?? null}
         onSaleUnlocked={handleSaleUnlocked}
       />
@@ -434,6 +444,7 @@ function SaleDetailContent({
       returnTo={returnTo}
       adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
       openFeeRegimes={openFeeRegimes}
+      rentReference={rentReference}
     />
   );
 }

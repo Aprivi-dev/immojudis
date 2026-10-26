@@ -16,6 +16,56 @@ import {
 import type { ViewportBounds } from "./search-url-state";
 import type { AuctionSale } from "@/lib/types";
 
+describe("filtre « rendement minimal »", () => {
+  const sale = {
+    id: "sale-yield",
+    department: "23",
+    starting_price_eur: 100_000,
+    app_surface_m2: 50,
+    app_surface_kind: "habitable",
+    source_blocks: null,
+  } as unknown as AuctionSale;
+  const reference = (rentPerM2: number) => ({
+    rentPerM2,
+    source: "anil_commune" as const,
+    reliability: "reliable" as const,
+    segment: "apt_all" as const,
+    communeCode: "23096",
+    lowPerM2: null,
+    highPerM2: null,
+    observations: 100,
+    vintage: 2025,
+    sourceUpdatedOn: "2025-12-11",
+  });
+
+  it("uses the commune rent that the server resolved", () => {
+    const search = { minYield: 6 };
+
+    expect(applyClientSearchFilters([sale], search, null, { rents: () => reference(12) })).toEqual([
+      sale,
+    ]);
+    expect(applyClientSearchFilters([sale], search, null, { rents: () => reference(6) })).toEqual(
+      [],
+    );
+  });
+
+  it("drops a property that is not a dwelling, whatever the rent", () => {
+    const land = { ...sale, property_type: "land" } as AuctionSale;
+
+    expect(
+      applyClientSearchFilters([land], { minYield: 1 }, null, { rents: () => reference(40) }),
+    ).toEqual([]);
+  });
+
+  it("falls back to the department rent, and drops a department without any reference", () => {
+    const covered = { ...sale, department: "33" } as AuctionSale;
+
+    // 14 EUR/m² in Gironde: about 7.5 % of the total cost.
+    expect(applyClientSearchFilters([covered], { minYield: 6 }, null)).toEqual([covered]);
+    expect(applyClientSearchFilters([sale], { minYield: 1 }, null)).toEqual([]);
+  });
+});
+
 describe("filtre « visite dans les 7 jours »", () => {
   afterEach(() => vi.useRealTimers());
 

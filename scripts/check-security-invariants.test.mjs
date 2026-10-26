@@ -442,6 +442,25 @@ describe("invariants de sécurité : aucun montant de pépite sans le droit", ()
     expect(run.status).toBe(0);
   });
 
+  it("cartes de référence privées : refuse un autre fichier de src/ qui nomme la table des loyers", () => {
+    for (const table of ["anil_rents", "commune_housing_tension"]) {
+      const run = runInvariants({}, [], {
+        "src/lib/zz-rents.ts": `export const table = "${table}";\n`,
+      });
+      expect(run.status).toBe(1);
+      expect(run.stderr).toContain("src/lib/zz-rents.ts names a private reference table");
+    }
+  });
+
+  it("cartes de référence privées : accepte un commentaire et les tests", () => {
+    const run = runInvariants({}, [], {
+      "src/lib/zz-comment.ts": "// la table anil_rents est privée\nexport const value = 1;\n",
+      "src/lib/zz-rents.test.ts": 'export const table = "anil_rents";\n',
+    });
+    expect(run.stderr).toBe("");
+    expect(run.status).toBe(0);
+  });
+
   it("refuse que la liste publique lise la table privée ou son détail", () => {
     const run = runInvariants({}, [], {
       "src/lib/pepite-sale-ids.ts":

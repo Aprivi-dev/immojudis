@@ -10,6 +10,7 @@ import type { FeeRegimeKey } from "@/lib/fee-regime-open";
 import { assessSaleCeilingInputs, computeSaleCeiling } from "@/lib/sale-ceiling";
 import type { MarketEstimate } from "@/lib/market.server";
 import { computeAcquisitionCosts, estimateWorksBudget } from "@/lib/profitability";
+import type { RentReference } from "@/lib/rent-reference";
 import type { AuctionSale } from "@/lib/types";
 
 /** Why a saved report has no ceiling when the sale has no open fee regime. */
@@ -25,12 +26,16 @@ export const NO_CEILING_REGIME_REASON = "Pas d’enchère plafond pour ce type d
  * ceiling (`available: false`, `NO_CEILING_REGIME_REASON`), whatever the caller sent. The other
  * guards of `computeSaleCeiling` (valuation conflict, AI review) are applied by the callers: the
  * report refuses a valuation conflict before building the snapshot.
+ *
+ * `rentReference` must be the one the sale page received (same server read, `loadSaleRentReference`):
+ * the default property tax comes from the estimated rent, so two references give two ceilings.
  */
 export function buildCeilingSnapshot(
   sale: AuctionSale,
   marketEstimate: MarketEstimate | null,
   choices: CeilingUserChoices = {},
   regimes: readonly FeeRegimeKey[],
+  rentReference: RentReference | null = null,
 ) {
   const inputs = assessSaleCeilingInputs({
     sale,
@@ -45,6 +50,7 @@ export function buildCeilingSnapshot(
     estimate: noRegime ? null : marketEstimate,
     choices,
     guarded: false,
+    rentReference,
   });
   // Sans régime, aucun montant dérivé du plan n'entre dans le rapport (plafond par type de travaux,
   // marge au prix de départ, budget, étapes) : le plan n'est pas un calcul de cette vente.

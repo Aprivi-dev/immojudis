@@ -143,6 +143,47 @@ describe("email alerts", () => {
     );
   });
 
+  it("cite la carte des loyers de l'ANIL, avec son lien, quand une alerte filtre sur le rendement", () => {
+    const yieldNotification = {
+      ...notification("6b6b42a1-b719-48cc-9c9f-f0c9f707e1bb", "sale-y", "Studio"),
+      notification_snapshot: {
+        alert: { id: alertA, name: "Rendement" },
+        sale: { id: "sale-y", title: "Studio", city: "Bordeaux", department: "33" },
+        match: { marketDiscountPct: null, reasons: ["rendement"] },
+      },
+    };
+    const build = (notifications: unknown[]) =>
+      buildAlertDigestMessage({
+        userId,
+        from: "Immojudis <alertes@immojudis.fr>",
+        recipientEmail: "client@example.test",
+        appUrl: "https://immojudis.example",
+        now: new Date("2026-10-09T10:00:00Z"),
+        env,
+        notifications: notifications as Parameters<
+          typeof buildAlertDigestMessage
+        >[0]["notifications"],
+      });
+
+    const message = build([yieldNotification]);
+    for (const body of [message.text, message.html]) {
+      expect(body).toContain(
+        "Estimations ANIL, à partir des données du Groupe SeLoger et de leboncoin.",
+      );
+      expect(body).toContain("charges comprises");
+      expect(body).toContain("Licence Ouverte 2.0");
+      expect(body).toContain("sous sa seule responsabilité");
+      expect(body).toContain("https://www.data.gouv.fr/datasets/693aa2feed1bf4da603faa49");
+    }
+    // Le pied reste avant les liens de désinscription, et sans la mention pour une alerte sans rendement.
+    expect(message.text.indexOf("Estimations ANIL")).toBeLessThan(
+      message.text.indexOf("Se désinscrire de tous les emails d'alerte"),
+    );
+    const other = build([notification("6b6b42a1-b719-48cc-9c9f-f0c9f707e17d", "sale-1", "Maison")]);
+    expect(other.text).not.toContain("ANIL");
+    expect(other.html).not.toContain("ANIL");
+  });
+
   it("n'ajoute rien pour une vente qui ne vient pas d'une alerte « pépites »", () => {
     const message = buildAlertDigestMessage({
       userId,

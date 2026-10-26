@@ -7,6 +7,8 @@ import { reportSaleSchedule } from "@/lib/report-sale-schedule";
 import { describeReportSimulation, isCurrentReportSimulation } from "@/lib/report-simulation";
 import { asRecord, numberValue, stringOrNumberValue } from "@/lib/guards";
 import { reportWording } from "@/lib/property-report/report-wording";
+import { RentSourceNotice } from "@/components/RentSourceNotice";
+import { reportRentReference } from "@/lib/property-report/rent-notice";
 
 type PageParams = {
   params: Promise<{ token: string }>;
@@ -54,6 +56,7 @@ export default async function SharedReportPage({ params }: PageParams) {
   const opportunity = asRecord(analysis.opportunity);
   const rentabilityScore = asRecord(opportunity.rentabilityScore);
   const acquisitionCosts = asRecord(opportunity.acquisitionCosts);
+  const rentReference = reportRentReference(opportunity.rentReference);
   const legalAttentionPoints = Array.isArray(analysis.legalAttentionPoints)
     ? analysis.legalAttentionPoints
     : [];
@@ -447,7 +450,11 @@ export default async function SharedReportPage({ params }: PageParams) {
             value={formatPrice(numberValue(opportunity.estimatedMarketValue))}
           />
           <SharedMetric
-            label="Rendement brut potentiel"
+            label={
+              rentReference
+                ? "Rendement brut potentiel, charges comprises"
+                : "Rendement brut potentiel"
+            }
             value={formatPercent(numberValue(opportunity.grossYieldPct))}
           />
           <SharedMetric
@@ -459,7 +466,7 @@ export default async function SharedReportPage({ params }: PageParams) {
             }
           />
           <SharedMetric
-            label="Rendement net estimé"
+            label={rentReference ? "Rendement estimé, charges comprises" : "Rendement net estimé"}
             value={formatPercent(numberValue(rentabilityScore.netYieldPct))}
           />
           <SharedMetric
@@ -481,6 +488,12 @@ export default async function SharedReportPage({ params }: PageParams) {
             label="Coût complet"
             value={formatPrice(numberValue(acquisitionCosts.totalCost))}
           />
+          {rentReference ? (
+            <RentSourceNotice
+              reference={rentReference}
+              className="text-xs text-muted-foreground sm:col-span-2"
+            />
+          ) : null}
         </section>
 
         <section className="grid gap-4 py-5 sm:grid-cols-2">

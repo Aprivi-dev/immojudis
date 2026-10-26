@@ -332,6 +332,66 @@ export type Database = {
           },
         ];
       };
+      anil_rents: {
+        Row: {
+          commune_code: string;
+          commune_name: string;
+          department_code: string;
+          epci_code: string | null;
+          imported_at: string;
+          observations_commune: number | null;
+          observations_mesh: number | null;
+          prediction_type: string;
+          r2_adj: number | null;
+          rent_high_per_m2: number | null;
+          rent_low_per_m2: number | null;
+          rent_per_m2: number;
+          segment: string;
+          source_updated_on: string | null;
+          source_url: string;
+          vintage: number;
+          zone_id: number | null;
+        };
+        Insert: {
+          commune_code: string;
+          commune_name: string;
+          department_code: string;
+          epci_code?: string | null;
+          imported_at?: string;
+          observations_commune?: number | null;
+          observations_mesh?: number | null;
+          prediction_type: string;
+          r2_adj?: number | null;
+          rent_high_per_m2?: number | null;
+          rent_low_per_m2?: number | null;
+          rent_per_m2: number;
+          segment: string;
+          source_updated_on?: string | null;
+          source_url: string;
+          vintage: number;
+          zone_id?: number | null;
+        };
+        Update: {
+          commune_code?: string;
+          commune_name?: string;
+          department_code?: string;
+          epci_code?: string | null;
+          imported_at?: string;
+          observations_commune?: number | null;
+          observations_mesh?: number | null;
+          prediction_type?: string;
+          r2_adj?: number | null;
+          rent_high_per_m2?: number | null;
+          rent_low_per_m2?: number | null;
+          rent_per_m2?: number;
+          segment?: string;
+          source_updated_on?: string | null;
+          source_url?: string;
+          vintage?: number;
+          zone_id?: number | null;
+        };
+        Relationships: [];
+      };
       api_ip_rate_limit_buckets: {
         Row: {
           bucket_key: string;
@@ -5735,6 +5795,54 @@ export type Database = {
           },
         ];
       };
+      commune_housing_tension: {
+        Row: {
+          commune_code: string;
+          commune_name: string;
+          decree_date: string | null;
+          decree_reference: string;
+          department_code: string;
+          epci_code: string | null;
+          epci_name: string | null;
+          imported_at: string;
+          source_updated_on: string | null;
+          source_url: string;
+          zoning_2013: string;
+          zoning_2023: string;
+          zoning_post_decree: string;
+        };
+        Insert: {
+          commune_code: string;
+          commune_name: string;
+          decree_date?: string | null;
+          decree_reference: string;
+          department_code: string;
+          epci_code?: string | null;
+          epci_name?: string | null;
+          imported_at?: string;
+          source_updated_on?: string | null;
+          source_url: string;
+          zoning_2013: string;
+          zoning_2023: string;
+          zoning_post_decree: string;
+        };
+        Update: {
+          commune_code?: string;
+          commune_name?: string;
+          decree_date?: string | null;
+          decree_reference?: string;
+          department_code?: string;
+          epci_code?: string | null;
+          epci_name?: string | null;
+          imported_at?: string;
+          source_updated_on?: string | null;
+          source_url?: string;
+          zoning_2013?: string;
+          zoning_2023?: string;
+          zoning_post_decree?: string;
+        };
+        Relationships: [];
+      };
       commune_risk_profiles: {
         Row: {
           catnat_by_type: Json;
@@ -5936,6 +6044,7 @@ export type Database = {
       data_sources: {
         Row: {
           active: boolean;
+          attribution_notice: string | null;
           base_url: string | null;
           created_at: string;
           id: string;
@@ -5949,10 +6058,12 @@ export type Database = {
           rate_limit: Json;
           terms_url: string | null;
           terms_version: string | null;
+          update_frequency: string | null;
           updated_at: string;
         };
         Insert: {
           active?: boolean;
+          attribution_notice?: string | null;
           base_url?: string | null;
           created_at?: string;
           id?: string;
@@ -5966,10 +6077,12 @@ export type Database = {
           rate_limit?: Json;
           terms_url?: string | null;
           terms_version?: string | null;
+          update_frequency?: string | null;
           updated_at?: string;
         };
         Update: {
           active?: boolean;
+          attribution_notice?: string | null;
           base_url?: string | null;
           created_at?: string;
           id?: string;
@@ -5983,6 +6096,7 @@ export type Database = {
           rate_limit?: Json;
           terms_url?: string | null;
           terms_version?: string | null;
+          update_frequency?: string | null;
           updated_at?: string;
         };
         Relationships: [];

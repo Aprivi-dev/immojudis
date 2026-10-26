@@ -296,6 +296,10 @@ export function MobileFilterDrawer({
                   className="h-10 bg-white"
                 />
               </FilterField>
+              <p className="text-xs leading-relaxed text-ink-soft">
+                Ce filtre s’appuie sur un repère de loyer départemental ; les alertes, exports et
+                statistiques utilisent la carte des loyers de l’ANIL (par commune).
+              </p>
 
               <label className="flex cursor-pointer items-center gap-3 rounded-md border border-line-soft bg-surface-muted px-3 py-2 text-sm font-bold text-brand-navy">
                 <input

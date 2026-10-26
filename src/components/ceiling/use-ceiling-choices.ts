@@ -27,6 +27,7 @@ const NUMBER_FIELDS = [
   "annualPropertyTax",
   "financingRatePct",
   "monthlyRent",
+  "recoverableCharges",
   "targetNetYieldPct",
   "sellingCostsPct",
 ] as const;
