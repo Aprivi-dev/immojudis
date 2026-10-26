@@ -55,11 +55,13 @@ export function OfferOpeningRequest({
   const [openingBusy, setOpeningBusy] = useState(false);
   const resumed = useRef(false);
   /**
-   * Vrai dès que la personne a changé sa demande : la lecture de l'état initial, si elle répond
-   * après, ne doit pas effacer ce qu'elle vient d'enregistrer (le bouton est affiché avant la fin de
-   * cette lecture).
+   * Compte pour lequel la personne a changé sa demande : la lecture de l'état initial de ce compte,
+   * si elle répond après, ne doit pas effacer ce qu'elle vient d'enregistrer (le bouton est affiché
+   * avant la fin de cette lecture). Ce n'est pas un booléen remis à zéro au lancement de la lecture :
+   * l'effet qui la lance peut s'exécuter après un clic très rapide, et effacerait alors la trace du
+   * clic.
    */
-  const changedByUser = useRef(false);
+  const changedByUser = useRef<string | null>(null);
 
   async function changeOpeningRequest(enabled: boolean) {
     if (openingBusy) return;
@@ -69,7 +71,7 @@ export function OfferOpeningRequest({
       return;
     }
     setOpeningBusy(true);
-    changedByUser.current = true;
+    changedByUser.current = user.id;
     try {
       const response = await updateOfferOpeningNotification(enabled);
       setOpeningRequested(response.notification.requested);
@@ -87,10 +89,12 @@ export function OfferOpeningRequest({
   useEffect(() => {
     if (!userId) return;
     let active = true;
-    changedByUser.current = false;
+    // Le changement d'un autre compte ne compte plus ; celui du compte courant, fait avant que cet
+    // effet ne s'exécute, est conservé.
+    if (changedByUser.current !== userId) changedByUser.current = null;
     fetchOfferOpeningNotification()
       .then((response) => {
-        if (!active || changedByUser.current) return;
+        if (!active || changedByUser.current === userId) return;
         setOpeningRequested(response.notification.requested);
         setSurvey(response.notification.survey ?? null);
         // Retour de la connexion après un clic sur « Me prévenir » : on enregistre la demande.
@@ -108,7 +112,7 @@ export function OfferOpeningRequest({
         }
       })
       .catch(() => {
-        if (active && !changedByUser.current) setOpeningRequested(null);
+        if (active && changedByUser.current !== userId) setOpeningRequested(null);
       });
     return () => {
       active = false;
