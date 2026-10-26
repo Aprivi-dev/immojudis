@@ -180,4 +180,75 @@ Ensuite, selon la voie choisie : affichage (n° 22, 23).
 
 ## Validation
 
-En attente des numéros validés par le fondateur.
+Décision du fondateur, le 26/10/2026 : toutes les propositions sont validées, avec les changements ci-dessous, qui remplacent les arbitrages correspondants.
+
+1. **Nom.** Le label s'appelle « Pépite ». Le badge porte un petit logo de pépite (pictogramme dessiné, en or) pour bien ressortir sur les vignettes. Cela remplace « Sélection Immojudis » (arbitrage 1 et n° 15).
+   - Le montant reste formulé « Enchère plafond estimée : X € » (ou « Offre plafond estimée » pour une vente par offres), avec les hypothèses par défaut.
+   - « Intéressant jusqu'à X € » reste exclu.
+2. **Calendrier.** Mise en place immédiate, sans attendre une validation juridique ni des paires d'adjudication.
+   - La définition d'une pépite est fixée par l'équipe dès maintenant, dans une règle versionnée.
+   - Le calcul est livré en mode `shadow`. Une page d'administration liste les ventes qui seraient des pépites, avec leurs critères, pour contrôler la méthode sur le catalogue réel.
+   - Le fondateur passe en mode `on` quand la méthode le satisfait.
+   - Les critères d'arrêt (n° 19) servent de surveillance et de bouton d'arrêt, pas de condition d'ouverture.
+   - La validation par un avocat (n° 25) reste recommandée, mais elle n'est plus un préalable.
+3. Les points discutables (n° 14 et 24) sont retenus.
+
+## Définition v1 d'une pépite (`pepite-v1`)
+
+Règle fixée par l'équipe le 26/10/2026. Les seuils sont des valeurs de départ. Ils seront ajustés sur le catalogue réel en mode `shadow`, depuis la page d'administration, avant le passage en `on`. Toute modification crée une nouvelle version.
+
+Une vente est une pépite si toutes les conditions ci-dessous sont vraies.
+
+**1. Type de vente couvert**
+- tribunal ;
+- vente notariale à la bougie ;
+- vente notariale interactive.
+
+Les ventes domaniales et de type inconnu sont exclues.
+
+**2. Estimation solide**
+- estimation de marché `actionable`, de fiabilité « forte » ou « correcte » ;
+- échantillon effectif d'au moins 8 ventes ;
+- surface enregistrée (non estimée) ;
+- l'estimation passe la porte publique de la bande de marché ;
+- écart à la valeur non aberrant (garde de `market-gap.ts`) ;
+- ni terrain seul ni actif mixte.
+
+**3. Bien connu**
+- occupation connue et libre ;
+- aucun état dégradé ou « à rénover » documenté.
+
+**4. Aucun signal bloquant**
+- pas de conflit de valorisation ;
+- pas de champ critique bloqué par la relecture IA ;
+- pas de vente en conflit de vérification ;
+- pas de doublon probable ;
+- pas de risques documentés non qualifiés.
+
+**5. Marge nette**
+- On calcule le plafond de référence avec les hypothèses par défaut de la fiche (habiter, profil équilibré, sans travaux, frais du type de vente), **sur la valeur basse P10 de l'estimation**.
+- Ce plafond doit dépasser d'au moins **10 %** le prix de référence :
+  - au tribunal : le plus élevé de la mise à prix et du prix d'adjudication médian attendu. Ce dernier vaut la mise à prix multipliée par le ratio médian adjudication / mise à prix de la cohorte des scénarios d'enchères (cohorte du tribunal si sa fiabilité est au moins « medium », repli national sinon) ;
+  - à la bougie : la mise à prix ;
+  - en vente interactive : la première offre possible.
+
+**6. Stabilité**
+- la vente n'apparaît qu'après deux évaluations favorables consécutives ;
+- elle sort si la marge descend sous 5 % ou si un signal bloquant apparaît ;
+- le label est gelé 7 jours avant la vente, sauf signal bloquant ou changement de prix.
+
+**Exclusions.** Ne servent pas d'entrée : `investment_score`, les données d'avocat ou de sponsoring, le profil de l'utilisateur.
+
+**Surveillance.** On vise 5 à 10 % des ventes évaluables. On alerte si le taux sort de la plage 2 à 15 %. On peut revenir à tout moment en mode `shadow` ou `off`.
+
+## Exécution
+
+Ordre :
+- Lot 0 (n° 1 à 6) ;
+- lot A1 (n° 7, 11, 12) ;
+- lot A2 (n° 8, 9, 10, 14) ;
+- lot B1 (n° 16 à 19, 23) ;
+- lot B2 (n° 15, 21, 22, 24) ;
+- contenus (n° 13, 20).
+
+Le suivi est complété ci-dessous à chaque lot.
