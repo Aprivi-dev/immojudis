@@ -14,7 +14,8 @@ import { getSaleById, getSalePreviewById } from "@/lib/queries";
 import { fetchAccessPlan, fetchSaleUnlockStatus } from "@/lib/client-api";
 import { loginPathWithRedirect, safeSalesReturnTo, saleDetailPath } from "@/lib/navigation";
 import type { AuctionSale } from "@/lib/types";
-import { queryKeys, type SaleAccessMode } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
+import type { SaleAccessMode } from "@/lib/query-keys";
 import type { FeeRegimeKey } from "@/lib/fee-regime-open";
 import type { SaleUnlockResult } from "@/lib/sale-unlocks";
 

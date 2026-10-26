@@ -1226,6 +1226,38 @@ describe("repère « Pépite » des cartes", () => {
     expect(container.textContent).not.toMatch(/Débloquer|déblocage/i);
   });
 
+  it("une pépite dans le périmètre d'un PPRi affiche la mention courte, dans la carte et dans le nom du lien", () => {
+    const { container } = render(
+      <QueryClientProvider client={new QueryClient()}>
+        <SearchResultsList
+          sales={[pepiteSale, { ...sale("autre") } as AuctionSale]}
+          returnTo="/sales"
+          locked={false}
+          analysisLocked={false}
+          isLoading={false}
+          error={null}
+          selectedSaleId={null}
+          hoveredSaleId={null}
+          onHover={vi.fn()}
+          onSelect={vi.fn()}
+          comparedSaleIds={[]}
+          comparisonDisabled={false}
+          onToggleComparison={vi.fn()}
+          pepiteSaleIds={new Set(["pepite-1"])}
+          pepiteExposedSaleIds={new Set(["pepite-1", "autre"])}
+        />
+      </QueryClientProvider>,
+    );
+    // Seule la pépite est concernée : une vente « exposée » qui n'est pas une pépite n'affiche rien.
+    const notes = screen.getAllByTestId("pepite-flood-exposed");
+    expect(notes).toHaveLength(1);
+    expect(notes[0].textContent).toContain("zonage à vérifier");
+    expect(notes[0].closest("article")?.querySelector("h3")).toBeTruthy();
+    const links = container.querySelectorAll("a[id^='sale-card-']");
+    expect(links[0].getAttribute("aria-label")).toMatch(/zonage à vérifier\.$/);
+    expect(links[1].getAttribute("aria-label")).not.toMatch(/zonage/);
+  });
+
   it("n'ajoute rien sans liste de pépites (mode shadow) : la carte est celle d'avant", () => {
     const { container } = render(
       <QueryClientProvider client={new QueryClient()}>

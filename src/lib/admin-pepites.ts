@@ -9,10 +9,10 @@ import { matchProsecutedSales, type ProsecutionLawyer } from "@/lib/lawyer-prose
 import { PUBLIC_CATALOGUE_CACHE_TAG } from "@/lib/public-catalogue.server";
 import { PUBLIC_SALES_CACHE_TAG } from "@/lib/public-sale.server";
 import { describePepiteReasonCodes } from "@/lib/pepite-reasons";
+import { activePepiteRuleVersion } from "@/lib/pepite-rule-switch.server";
 import {
   PEPITE_RATE_ALERT_MAX,
   PEPITE_RATE_ALERT_MIN,
-  PEPITE_RULE_VERSION,
   PEPITE_TARGET_RATE_MAX,
   PEPITE_TARGET_RATE_MIN,
 } from "@/lib/pepite-policy";
@@ -224,7 +224,8 @@ export function parseAdminPepiteRow(raw: unknown): AdminPepiteRow | null {
   const codes = Array.isArray(row.reason_codes)
     ? row.reason_codes.filter((code): code is string => typeof code === "string")
     : [];
-  const reasons = describePepiteReasonCodes(codes);
+  const flood = asRecordOrNull(details.flood);
+  const reasons = describePepiteReasonCodes(codes, flood);
   const venue = venueOf(row.venue);
   const isPepite = row.is_pepite === true;
   return {
@@ -270,7 +271,7 @@ export function unavailablePepites(): AdminPepitesResponse {
     migrated: false,
     generatedAt: null,
     mode: "unknown",
-    ruleVersion: PEPITE_RULE_VERSION,
+    ruleVersion: activePepiteRuleVersion(),
     counters,
     totals,
     rate: pepiteRate(0, 0, 0),
@@ -483,7 +484,7 @@ export async function getAdminPepites(
     migrated: true,
     generatedAt: textOrNull(body.generated_at),
     mode,
-    ruleVersion: PEPITE_RULE_VERSION,
+    ruleVersion: activePepiteRuleVersion(),
     counters,
     totals,
     rate: pepiteRate(totals.pepites, totals.pending, totals.evaluable),

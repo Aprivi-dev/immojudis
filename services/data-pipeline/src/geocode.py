@@ -10,6 +10,7 @@ import httpx
 
 from src.cadastre_references import PROVIDER as CADASTRE_PROVIDER
 from src.cadastre_references import resolve_sale_cadastre
+from src.commune_insee import record_sale_commune
 from src.config import load_settings
 from src.department_bounds import coordinates_in_department
 from src.models import AuctionSale
@@ -111,6 +112,8 @@ def geocode_sale(sale: AuctionSale) -> AuctionSale:
     finally:
         if placeholder is not None:
             restore_municipality_placeholder(sale, placeholder)
+        # Code commune (INSEE) de la vente, pour le contrôle d'inondation et les loyers : jamais bloquant.
+        record_sale_commune(sale)
 
 
 def _geocode_sale(sale: AuctionSale) -> AuctionSale:
@@ -199,6 +202,7 @@ def locate_sale_by_cadastre(sale: AuctionSale) -> AuctionSale:
         locate_sale_by_municipality(sale)
     else:
         verify_source_coordinates(sale)
+    record_sale_commune(sale)
     return sale
 
 

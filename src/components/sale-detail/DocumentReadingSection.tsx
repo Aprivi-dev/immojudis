@@ -2,7 +2,8 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { fetchDocumentReading } from "@/lib/client-api";
-import { queryKeys, type SaleAccessMode } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
+import type { SaleAccessMode } from "@/lib/query-keys";
 import {
   DOCUMENT_READING_IMPORTANCE,
   DOCUMENT_READING_THEMES,

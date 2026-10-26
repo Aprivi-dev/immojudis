@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import Bell from "lucide-react/dist/esm/icons/bell.js";
 import { fetchAlertNotifications } from "@/lib/client-api";
 import type { AlertNotificationSummary } from "@/lib/alert-notifications";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 import { isDesktopHeader, onOpenNotificationsRequest } from "@/lib/notification-center-events";
 const AlertNotificationPanel = lazy(() => import("./AlertNotificationPanel"));
 

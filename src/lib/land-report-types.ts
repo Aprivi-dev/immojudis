@@ -42,6 +42,8 @@ export type LandLocationInput = {
   city?: string | null;
   codeInsee?: string | null;
   coordinates?: LandCoordinates | null;
+  /** `location_precision` de la vente (address, parcel, street, municipality) ; `null` : inconnue. */
+  locationPrecision?: string | null;
   references?: LandParcelReference[];
 };
 

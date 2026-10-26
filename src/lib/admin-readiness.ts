@@ -104,6 +104,7 @@ const EXPECTED_CRONS = [
   "/api/cron/information-agent-inbound",
   "/api/cron/listing-completeness",
   "/api/cron/sale-pepites",
+  "/api/cron/sale-flood-risk",
   "/api/cron/sale-retention",
 ] as const;
 

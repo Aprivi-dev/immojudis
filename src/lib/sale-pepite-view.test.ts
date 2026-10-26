@@ -6,6 +6,7 @@ import {
   pepiteCriteriaViews,
   pepiteDetailPayload,
   pepiteDetailView,
+  pepiteFloodView,
 } from "./sale-pepite-view";
 
 const CODES = [
@@ -145,6 +146,7 @@ describe("critères d'une pépite", () => {
       "checks",
       "checksPassed",
       "count",
+      "flood",
       "tests",
     ]);
     expect(payload.access).toBe("criteria");
@@ -311,5 +313,136 @@ describe("détail d'une pépite notariale", () => {
     expect(payload.access).toBe("detail");
     expect(payload.count).toBe(pepiteCriteriaPayload(criteria).count);
     expect(payload.tests).toHaveLength(2);
+  });
+});
+
+describe("contrôle d'inondation d'une pépite (règle v2)", () => {
+  const FLOOD_CODES = [
+    ...CODES,
+    "pass:flood_risk_known",
+    "pass:no_high_flood_risk",
+    "fail:flood_risk_known",
+  ];
+
+  it("les deux critères d'inondation n'entrent pas dans les listes de critères : ils ont leur propre ligne", () => {
+    const views = pepiteCriteriaViews(FLOOD_CODES, [], "tribunal");
+    expect(views.map((view) => view.id)).not.toContain("flood_risk_known");
+    expect(views.map((view) => view.id)).not.toContain("no_high_flood_risk");
+    // Le critère « connu » manqué, toléré au maintien, n'apparaît jamais comme « à confirmer ».
+    expect(views.some((view) => view.state === "confirm")).toBe(false);
+  });
+
+  it("aucun risque élevé identifié : coche, source, cartes consultées repliées", () => {
+    const view = pepiteFloodView({
+      flood: {
+        verdict: "none_found",
+        observedAt: "2026-11-05T09:00:00.000Z",
+        mapDate: "2013-12-18",
+      },
+    });
+    expect(view).toMatchObject({ verdict: "none_found", tone: "check" });
+    expect(view?.line).toBe(
+      "Aucun risque d’inondation élevé identifié à la position connue du bien, d’après les cartes officielles consultées.",
+    );
+    expect(view?.details).toMatch(/^Cartes consultées/);
+    expect(view?.sourceLine).toMatch(
+      /^Source : Géorisques .*scénario de crue fréquente ; consulté le 05 novembre 2026\.$/,
+    );
+    expect(view?.sourceUrl).toBe("https://www.georisques.gouv.fr/");
+    expect(view?.warning).toMatch(/sans valeur d’expertise/);
+  });
+
+  it("PPRI non lu : ligne neutre, sans coche et sans la phrase sur les périmètres de PPRi", () => {
+    const view = pepiteFloodView({
+      flood: {
+        verdict: "none_found",
+        ppriChecked: false,
+        observedAt: "2026-11-05T09:00:00.000Z",
+        mapDate: "2013-12-18",
+      },
+    });
+    expect(view).toMatchObject({ verdict: "tri_only", tone: "neutral", details: null });
+    expect(view?.line).toBe(
+      "Zone de crue fréquente des TRI consultée ; périmètres de PPRi non contrôlés à ce jour.",
+    );
+    // Aucune phrase « aucun risque élevé identifié » ni « cartes consultées … périmètres des PPRi ».
+    expect(JSON.stringify(view)).not.toMatch(/Aucun risque d’inondation élevé/);
+    expect(JSON.stringify(view)).not.toMatch(/Cartes consultées/);
+    // La source est celle du TRI seul : le Géoportail n'a pas été lu.
+    expect(view?.sourceLine).toMatch(/^Source : Géorisques .*consulté le 05 novembre 2026\.$/);
+    expect(view?.sourceUrl).toBe("https://www.georisques.gouv.fr/");
+    expect(view?.warning).toMatch(/sans valeur d’expertise/);
+  });
+
+  it("PPRI lu (ou drapeau absent) : la ligne « aucun risque élevé » habituelle", () => {
+    for (const flood of [{ verdict: "none_found", ppriChecked: true }, { verdict: "none_found" }]) {
+      expect(pepiteFloodView({ flood })).toMatchObject({ verdict: "none_found", tone: "check" });
+    }
+  });
+
+  it("le drapeau « PPRI non lu » ne change rien aux autres verdicts", () => {
+    for (const verdict of ["exposed", "no_signal", "unknown"]) {
+      expect(pepiteFloodView({ flood: { verdict, ppriChecked: false } })?.verdict).toBe(verdict);
+    }
+  });
+
+  it("exposé : pictogramme d'alerte, mention courte, mention développée, source du Géoportail", () => {
+    const view = pepiteFloodView({
+      flood: { verdict: "exposed", observedAt: "2026-11-05T09:00:00.000Z" },
+    });
+    expect(view).toMatchObject({ verdict: "exposed", tone: "alert" });
+    expect(view?.line).toBe(
+      "Dans le périmètre d’un plan de prévention des risques d’inondation (PPRi) : zonage à vérifier.",
+    );
+    expect(view?.details).toMatch(/Géoportail de l’urbanisme/);
+    expect(view?.sourceLine).toMatch(/servitude d’utilité publique PM1/);
+    expect(view?.sourceUrl).toBe("https://www.geoportail-urbanisme.gouv.fr/");
+  });
+
+  it("aucun signal : ligne neutre, sans coche ni source", () => {
+    const view = pepiteFloodView({ flood: { verdict: "no_signal" } });
+    expect(view).toMatchObject({ verdict: "no_signal", tone: "neutral", sourceLine: null });
+    expect(view?.line).toMatch(/non vérifié au niveau du bien/);
+  });
+
+  it("inconnu : ligne neutre qui garde le repère, avec la date du dernier contrôle réussi quand elle existe", () => {
+    const without = pepiteFloodView({ flood: { verdict: "unknown", observedAt: null } });
+    expect(without).toMatchObject({ verdict: "unknown", tone: "neutral" });
+    expect(without?.line).toBe(
+      "Risque d’inondation non vérifié à ce jour pour ce bien (position imprécise ou source indisponible). Le repère est conservé sans ce contrôle.",
+    );
+    const withDate = pepiteFloodView({
+      flood: { verdict: "unknown", observedAt: "2026-11-05T09:00:00.000Z" },
+    });
+    expect(withDate?.line).toMatch(/Dernier contrôle réussi le 05 novembre 2026\.$/);
+    // Jamais le libellé générique « à confirmer ».
+    expect(withDate?.line).not.toMatch(/à confirmer/);
+  });
+
+  it.each([
+    ["règle v1 : aucun contrôle enregistré", {}],
+    [
+      "verdict élevé : une pépite ne l'est jamais, rien ne s'affiche",
+      { flood: { verdict: "high" } },
+    ],
+    ["verdict illisible", { flood: { verdict: "dangerous" } }],
+    ["valeur qui n'est pas un objet", { flood: "none_found" }],
+  ])("%s : pas de ligne d'inondation", (_name, details) => {
+    expect(pepiteFloodView(details)).toBeNull();
+  });
+
+  it("le niveau « criteria » porte le contrôle d'inondation, sans montant ; le niveau détail aussi", () => {
+    const flood = pepiteFloodView({
+      flood: { verdict: "exposed", observedAt: "2026-11-05T09:00:00.000Z" },
+    });
+    const criteria = pepiteCriteriaViews(CODES, [], "tribunal");
+    const open = pepiteCriteriaPayload(criteria, flood);
+    expect(open.flood?.verdict).toBe("exposed");
+    expect(JSON.stringify(open)).not.toMatch(
+      /€|EUR|referenceCeiling|probablePrice|rangeLow|rangeHigh|costRatio|chanceShare/,
+    );
+    const detail = pepiteDetailView(TRIBUNAL_DETAILS, "2026-11-05T09:00:00.000Z", criteria)!;
+    expect(pepiteDetailPayload(criteria, detail, flood).flood?.verdict).toBe("exposed");
+    expect(pepiteCriteriaPayload(criteria).flood).toBeNull();
   });
 });

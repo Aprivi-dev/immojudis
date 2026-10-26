@@ -12,7 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/lib/toast";
 import { userMessage } from "@/lib/user-messages";
 import { trackProductEvent } from "@/lib/product-events";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 import { useFavoriteRemovalConfirmation } from "./favorite-removal";
 import {
   FAVORITE_ADD_LABEL,

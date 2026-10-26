@@ -12,8 +12,11 @@ reçues et ne déclenche aucune collecte d'annonces ni aucun envoi sortant. Le j
 du palier de complétude des annonces, sans collecte) avec les mêmes secrets Vault ; sa fraîcheur
 est suivie par `cron.stale` (3 h).
 Le job `immojudis-sale-pepites` appelle toutes les heures (à :35) `/api/cron/sale-pepites` (calcul de la
-pépite des ventes, mode `shadow` par défaut, sans collecte) avec les mêmes secrets Vault ; sa fraîcheur est
-suivie par `cron.stale` (3 h).
+pépite des ventes, mode `on` depuis le 26/10/2026, sans collecte) avec les mêmes secrets Vault ; sa fraîcheur est
+suivie par `cron.stale` (3 h). Le job `immojudis-sale-flood-risk` appelle toutes les heures (à :25)
+`/api/cron/sale-flood-risk` (observation du risque d'inondation des ventes à venir pour la règle `pepite-v2` : API
+Géorisques et API Carto, 2 à 3 appels par seconde, arrêt au premier 429, sans collecte de ventes) avec les mêmes
+secrets Vault ; sa fraîcheur est suivie par `cron.stale` (3 h).
 
 Chaque passage :
 

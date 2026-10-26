@@ -3,7 +3,8 @@
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { fetchSalePassages } from "@/lib/client-api";
-import { queryKeys, type SaleAccessMode } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
+import type { SaleAccessMode } from "@/lib/query-keys";
 import {
   describePreviousPassage,
   describeTimelineEvent,

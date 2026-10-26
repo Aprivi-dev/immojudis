@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import Check from "lucide-react/dist/esm/icons/check.js";
 import CircleHelp from "lucide-react/dist/esm/icons/circle-help.js";
+import Info from "lucide-react/dist/esm/icons/info.js";
 import Lock from "lucide-react/dist/esm/icons/lock.js";
 import { PepiteIcon } from "@/components/PepiteBadge";
 import { SaleSignalFeedback } from "@/components/SaleSignalFeedback";
@@ -14,7 +15,7 @@ import {
   PEPITE_METHOD_LINK_LABEL,
   PEPITE_METHOD_PATH,
 } from "@/lib/pepite-copy";
-import type { PepiteCriterionView, PepitePayload } from "@/lib/sale-pepite-view";
+import type { PepiteCriterionView, PepiteFloodView, PepitePayload } from "@/lib/sale-pepite-view";
 
 const METHOD_LINK =
   "font-semibold text-gold-text underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft";
@@ -47,6 +48,70 @@ function CriteriaList({
         </li>
       ))}
     </ul>
+  );
+}
+
+/**
+ * La ligne du contrôle d'inondation : coche seulement quand rien d'élevé n'a été identifié (`tone` « check »),
+ * pictogramme d'information (de couleur d'alerte, le texte dit « Attention ») pour un bien dans le périmètre d'un
+ * PPRi, pictogramme d'information neutre sinon. Le texte dit
+ * son état : jamais la couleur ni l'icône seules. Textes écrits côté serveur (`pepite-flood-copy.ts`).
+ */
+function FloodRow({ flood }: { flood: PepiteFloodView }) {
+  return (
+    <div
+      aria-label="Risque d’inondation"
+      role="group"
+      className="mt-3 space-y-1 border-t border-line-soft pt-3 text-sm text-foreground"
+    >
+      <p className="flex items-start gap-2">
+        {flood.tone === "check" ? (
+          <>
+            <Check className="mt-0.5 size-4 shrink-0 text-success" aria-hidden />
+            <span className="sr-only">Réussi : </span>
+          </>
+        ) : flood.tone === "alert" ? (
+          <>
+            <Info className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+            <span className="sr-only">Attention : </span>
+          </>
+        ) : (
+          <>
+            <Info className="mt-0.5 size-4 shrink-0 text-ink-soft" aria-hidden />
+            <span className="sr-only">Information : </span>
+          </>
+        )}
+        <span>{flood.line}</span>
+      </p>
+      {flood.details ? (
+        flood.tone === "alert" ? (
+          <p className="pl-6 text-ink-soft">{flood.details}</p>
+        ) : (
+          <details className="pl-6 text-ink-soft">
+            <summary className="min-h-11 cursor-pointer py-2 font-semibold text-brand-navy">
+              Cartes consultées
+            </summary>
+            <p>{flood.details}</p>
+          </details>
+        )
+      ) : null}
+      {flood.sourceLine ? (
+        <p className="pl-6 text-xs text-ink-soft">
+          {flood.sourceUrl ? (
+            <a
+              href={flood.sourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={METHOD_LINK}
+            >
+              {flood.sourceLine}
+            </a>
+          ) : (
+            flood.sourceLine
+          )}
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -117,6 +182,8 @@ export function PepiteBlock({
           </details>
         ) : null}
 
+        {payload.flood ? <FloodRow flood={payload.flood} /> : null}
+
         {detail ? (
           <div className="mt-4 space-y-2 border-t border-line-soft pt-4 text-sm text-foreground">
             <p>{detail.condition}</p>
@@ -167,6 +234,7 @@ export function PepiteBlock({
           </div>
         )}
       </div>
+      {payload.flood ? <p className="mt-2 text-xs text-ink-soft">{payload.flood.warning}</p> : null}
     </section>
   );
 }

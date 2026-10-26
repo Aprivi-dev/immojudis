@@ -3,7 +3,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/primitives";
 import { fetchAuctionScenarios } from "@/lib/client-api";
-import { queryKeys, type SaleAccessMode } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
+import type { SaleAccessMode } from "@/lib/query-keys";
 import {
   AUCTION_SCENARIO_LABELS,
   MIN_COURT_SAMPLE,

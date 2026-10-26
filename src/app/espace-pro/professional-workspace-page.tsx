@@ -30,7 +30,7 @@ import {
   type PublicationRequestSummary,
 } from "@/lib/publication-requests-client";
 import { userMessage } from "@/lib/user-messages";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 
 export function ProfessionalWorkspacePage() {
   const { user, profile, loading } = useAuth();

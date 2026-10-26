@@ -2980,6 +2980,87 @@ export type Database = {
         };
         Relationships: [];
       };
+      auction_sale_communes: {
+        Row: {
+          arrondissement_insee: string | null;
+          commune_insee: string;
+          resolved_at: string;
+          sale_id: string;
+          source: string;
+        };
+        Insert: {
+          arrondissement_insee?: string | null;
+          commune_insee: string;
+          resolved_at?: string;
+          sale_id: string;
+          source: string;
+        };
+        Update: {
+          arrondissement_insee?: string | null;
+          commune_insee?: string;
+          resolved_at?: string;
+          sale_id?: string;
+          source?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "auction_sale_communes_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "auction_sales";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_communes_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_map_pins";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_communes_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_app";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_communes_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_app_preview";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_communes_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_app_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_communes_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_discovery";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_communes_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_discovery_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_communes_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_unlocked";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       auction_sale_competent_court_assignments: {
         Row: {
           auction_sale_id: string | null;
@@ -3339,6 +3420,126 @@ export type Database = {
             columns: ["court_id"];
             isOneToOne: false;
             referencedRelation: "outcome_courts";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      auction_sale_flood_risk: {
+        Row: {
+          attempted_at: string;
+          commune_has_tri: boolean | null;
+          commune_insee: string | null;
+          created_at: string;
+          derive_version: string;
+          failure_count: number;
+          last_failure: string | null;
+          map_date: string | null;
+          observed_at: string | null;
+          position_key: string;
+          position_kind: string;
+          ppri_checked: boolean;
+          ppri_perimeter: boolean | null;
+          sale_id: string;
+          tri_scenarios: Json;
+          updated_at: string;
+          verdict: string;
+          verdict_changed_at: string;
+        };
+        Insert: {
+          attempted_at?: string;
+          commune_has_tri?: boolean | null;
+          commune_insee?: string | null;
+          created_at?: string;
+          derive_version: string;
+          failure_count?: number;
+          last_failure?: string | null;
+          map_date?: string | null;
+          observed_at?: string | null;
+          position_key: string;
+          position_kind: string;
+          ppri_checked?: boolean;
+          ppri_perimeter?: boolean | null;
+          sale_id: string;
+          tri_scenarios?: Json;
+          updated_at?: string;
+          verdict: string;
+          verdict_changed_at?: string;
+        };
+        Update: {
+          attempted_at?: string;
+          commune_has_tri?: boolean | null;
+          commune_insee?: string | null;
+          created_at?: string;
+          derive_version?: string;
+          failure_count?: number;
+          last_failure?: string | null;
+          map_date?: string | null;
+          observed_at?: string | null;
+          position_key?: string;
+          position_kind?: string;
+          ppri_checked?: boolean;
+          ppri_perimeter?: boolean | null;
+          sale_id?: string;
+          tri_scenarios?: Json;
+          updated_at?: string;
+          verdict?: string;
+          verdict_changed_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "auction_sale_flood_risk_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "auction_sales";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_flood_risk_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_map_pins";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_flood_risk_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_app";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_flood_risk_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_app_preview";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_flood_risk_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_app_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_flood_risk_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_discovery";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_flood_risk_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_discovery_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_flood_risk_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_unlocked";
             referencedColumns: ["id"];
           },
         ];
@@ -9364,6 +9565,27 @@ export type Database = {
         };
         Relationships: [];
       };
+      sale_flood_risk_lease: {
+        Row: {
+          claimed_at: string | null;
+          id: boolean;
+          leased_until: string | null;
+          token: string | null;
+        };
+        Insert: {
+          claimed_at?: string | null;
+          id?: boolean;
+          leased_until?: string | null;
+          token?: string | null;
+        };
+        Update: {
+          claimed_at?: string | null;
+          id?: boolean;
+          leased_until?: string | null;
+          token?: string | null;
+        };
+        Relationships: [];
+      };
       sale_photos: {
         Row: {
           attempts: number;
@@ -14414,6 +14636,7 @@ export type Database = {
           severity: string;
         }[];
       };
+      claim_sale_flood_risk_lease: { Args: { p_ttl_seconds: number }; Returns: string };
       claim_sale_reminder: {
         Args: {
           p_key: string;
@@ -15020,6 +15243,7 @@ export type Database = {
       };
       has_analysis_access: { Args: never; Returns: boolean };
       is_admin: { Args: never; Returns: boolean };
+      list_public_pepite_flood_exposed_ids: { Args: never; Returns: string[] };
       list_public_pepite_sale_ids: { Args: never; Returns: string[] };
       list_public_sale_ids_under_market_range: {
         Args: never;
@@ -15218,6 +15442,7 @@ export type Database = {
         Args: { p_checkout_token: string; p_user_id: string };
         Returns: boolean;
       };
+      release_sale_flood_risk_lease: { Args: { p_token: string }; Returns: boolean };
       remap_archived_catalogue_courts_by_label_batch: {
         Args: { p_after_id?: string; p_limit?: number };
         Returns: {

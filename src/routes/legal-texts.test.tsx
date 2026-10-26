@@ -192,9 +192,10 @@ describe("conditions générales : classement, référencement et mise en avant"
     for (const link of links) expect(link.getAttribute("href")).toBe("/methode-pepites");
   });
 
-  it("la politique de confidentialité est en version 2026-10-25.1 (essai gratuit à l'inscription)", () => {
-    expect(LEGAL_DOCUMENTS.privacy.version).toBe("2026-10-25.1");
-    expect(LEGAL_DOCUMENTS.privacy.effectiveDate).toBe("25 octobre 2026");
+  it("la politique de confidentialité est en version 2026-10-26.1 (contrôle du risque d'inondation) ; la 2026-10-25.1 est archivée", () => {
+    expect(LEGAL_DOCUMENTS.privacy.version).toBe("2026-10-26.1");
+    expect(LEGAL_DOCUMENTS.privacy.effectiveDate).toBe("26 octobre 2026");
+    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.version).toBe("2026-10-25.1");
   });
 });
 
@@ -367,10 +368,36 @@ describe("conditions générales : 3 déblocages par mois", () => {
   });
 });
 
-describe("mentions légales : repère « Pépite »", () => {
-  it("portent la version 2026-10-26.1, en vigueur le 26 octobre 2026", () => {
+describe("mentions légales : données publiques réutilisées", () => {
+  it("cite Géorisques, le Géoportail de l'urbanisme, la DVF, la carte des loyers de l'ANIL et le zonage tendu", () => {
     const text = pageText(<LegalPage />);
-    expect(LEGAL_DOCUMENTS.legal.version).toBe("2026-10-26.1");
+    expect(text).toContain("Données publiques réutilisées");
+    expect(text).toContain("Géorisques (ministère de la Transition écologique, BRGM)");
+    expect(text).toContain("territoires à risque important d’inondation (TRI)");
+    expect(text).toContain("Géoportail de l’urbanisme (IGN), via l’API Carto");
+    expect(text).toContain("servitudes d’utilité publique PM1");
+    expect(text).toContain("Demandes de valeurs foncières (DVF)");
+    expect(text).toContain(
+      "« Estimations ANIL, à partir des données du Groupe SeLoger et de leboncoin »",
+    );
+    expect(text).toContain("Zonage des communes en zone tendue");
+    expect(text.match(/Licence Ouverte 2\.0/g)?.length).toBeGreaterThanOrEqual(5);
+    expect(text).toContain("ne signifient pas que ces organismes cautionnent");
+  });
+
+  it("le code explique pourquoi les mentions ANIL et zone tendue restent (lot loyers fusionné dans la même mise en production)", () => {
+    const source = readFileSync(resolve(__dirname, "legal.tsx"), "utf8");
+    expect(source).toMatch(
+      /Garder les mentions « ANIL » \(carte des loyers\) et « zone tendue »[\s\S]*fusionné dans la même mise en production/,
+    );
+  });
+});
+
+describe("mentions légales : repère « Pépite »", () => {
+  it("portent la version 2026-10-26.2, en vigueur le 26 octobre 2026 ; la 2026-10-26.1 est archivée", () => {
+    const text = pageText(<LegalPage />);
+    expect(LEGAL_DOCUMENTS.legal.version).toBe("2026-10-26.2");
+    expect(PREVIOUS_LEGAL_DOCUMENTS.legal.version).toBe("2026-10-26.1");
     expect(LEGAL_DOCUMENTS.legal.effectiveDate).toBe("26 octobre 2026");
     expect(text).toContain(
       `Version ${LEGAL_DOCUMENTS.legal.version}, en vigueur le ${LEGAL_DOCUMENTS.legal.effectiveDate}.`,
@@ -443,6 +470,21 @@ describe("politique de confidentialité", () => {
     expect(text).toContain("Exécution du contrat");
     expect(text).toContain("6 mois après la constitution du résumé");
     expect(text).toContain("suppression à tout moment par la personne");
+  });
+
+  it("déclare le contrôle du risque d'inondation : coordonnées d'une vente seulement, BRGM et IGN, supprimé avec la vente", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).toContain("Repère « Pépite » : contrôle du risque d’inondation d’une vente");
+    expect(text).toContain(
+      "Coordonnées géographiques d’une vente (jamais celles d’un visiteur ni les données d’un compte), transmises aux services de l’État ; résultat du contrôle conservé pour chaque vente (les coordonnées ne sont pas copiées ; la position n’est gardée que sous la forme d’une empreinte, une pseudonymisation)",
+    );
+    expect(text).toContain(
+      "Intérêt légitime à informer le public sur des ventes publiques avec un repère fiable. Opposition et retrait par email, sans compte",
+    );
+    expect(text).toContain("Supprimé avec la vente");
+    expect(text).toContain(
+      "Les coordonnées géographiques d’une vente (et non celles d’une personne) sont aussi transmises au Bureau de recherches géologiques et minières (Géorisques) et à l’Institut national de l’information géographique et forestière (API Carto, Géoportail de l’urbanisme) pour contrôler les risques et les servitudes du bien.",
+    );
   });
 
   it("annonce sa version et écrit Immojudis", () => {

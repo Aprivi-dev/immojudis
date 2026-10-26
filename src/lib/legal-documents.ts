@@ -22,6 +22,22 @@ const PEPITE_TERMS_EFFECTIVE_DATE = "1er décembre 2026";
 const PEPITE_LEGAL_EFFECTIVE_DATE = "26 octobre 2026";
 
 /**
+ * Versions du 26/10/2026 liées au contrôle du risque d'inondation de la règle `pepite-v2` (coordonnées d'une
+ * vente transmises à Géorisques et à l'API Carto de l'IGN, données publiques réutilisées). Elles ne touchent pas
+ * aux CGU : la décision du fondateur est prise, les CGU restent intactes (version 2026-10-26.1) et aucun email
+ * d'information n'est envoyé aux titulaires de compte pour ce lot (la politique de confidentialité et les mentions
+ * légales entrent en vigueur à la mise en ligne, sans préavis).
+ *
+ * - Politique de confidentialité 2026-10-26.1 : ligne de traitement « Repère « Pépite » : contrôle du risque
+ *   d'inondation d'une vente » et destinataires (BRGM, IGN) ; en vigueur à la mise en ligne, sans préavis.
+ * - Mentions légales 2026-10-26.2 : paragraphe « Données publiques réutilisées » ; en vigueur à la mise en ligne,
+ *   sans préavis.
+ * Les dates d'effet ci-dessous sont celles de la rédaction : à décaler à la date réelle de mise en ligne si elle
+ * diffère (elles n'entrent pas dans l'empreinte du texte).
+ */
+const FLOOD_LEGAL_EFFECTIVE_DATE = "26 octobre 2026";
+
+/**
  * Versions précédentes encore applicables ou à produire sur demande. Le code source exact de
  * chacune est archivé dans `docs/legal-archives/` (extension `.txt`, jamais modifié) et son
  * empreinte contrôlée par `legal-documents.test.ts`.
@@ -35,19 +51,36 @@ export const PREVIOUS_LEGAL_DOCUMENTS = {
     archive: "docs/legal-archives/conditions-generales-2026-10-25.1.tsx.txt",
   },
   legal: {
-    version: "2026-07-29.1",
-    sha256: "c55e7cffefcf3ebc6e0807e3a234f8d155603e32344cd6ffc0f2478533538df9",
-    effectiveDate: "29 juillet 2026",
-    applicableUntil: PEPITE_LEGAL_EFFECTIVE_DATE,
-    archive: "docs/legal-archives/legal-2026-07-29.1.tsx.txt",
+    version: "2026-10-26.1",
+    sha256: "d781161fc310eed0195caeccc50e5ef8df4d7dd986f419134baceaf8738a3b46",
+    effectiveDate: PEPITE_LEGAL_EFFECTIVE_DATE,
+    applicableUntil: FLOOD_LEGAL_EFFECTIVE_DATE,
+    archive: "docs/legal-archives/legal-2026-10-26.1.tsx.txt",
+    /** Versions plus anciennes, archivées elles aussi. */
+    earlier: [
+      {
+        version: "2026-07-29.1",
+        sha256: "c55e7cffefcf3ebc6e0807e3a234f8d155603e32344cd6ffc0f2478533538df9",
+        effectiveDate: "29 juillet 2026",
+        applicableUntil: PEPITE_LEGAL_EFFECTIVE_DATE,
+        archive: "docs/legal-archives/legal-2026-07-29.1.tsx.txt",
+      },
+    ],
+  },
+  privacy: {
+    version: "2026-10-25.1",
+    sha256: "f4eb47491d7ba15e83868156e2a084698d765166479c730b29c089a4f834bf60",
+    effectiveDate: "25 octobre 2026",
+    applicableUntil: FLOOD_LEGAL_EFFECTIVE_DATE,
+    archive: "docs/legal-archives/privacy-2026-10-25.1.tsx.txt",
   },
 } as const;
 
 export const LEGAL_DOCUMENTS = {
   legal: {
-    version: "2026-10-26.1",
-    sha256: "d781161fc310eed0195caeccc50e5ef8df4d7dd986f419134baceaf8738a3b46",
-    effectiveDate: PEPITE_LEGAL_EFFECTIVE_DATE,
+    version: "2026-10-26.2",
+    sha256: "dde9d6be17b0ad750cb04fbcca4b51555c90324e143b9605523004ccca674247",
+    effectiveDate: FLOOD_LEGAL_EFFECTIVE_DATE,
     path: "/legal",
   },
   terms: {
@@ -57,9 +90,9 @@ export const LEGAL_DOCUMENTS = {
     path: "/conditions-generales",
   },
   privacy: {
-    version: "2026-10-25.1",
-    sha256: "f4eb47491d7ba15e83868156e2a084698d765166479c730b29c089a4f834bf60",
-    effectiveDate: "25 octobre 2026",
+    version: "2026-10-26.1",
+    sha256: "e3860fd8c06ffad5896fb6821d0abb4dd61a6d18bd9eb62afa1d25955fb532bb",
+    effectiveDate: FLOOD_LEGAL_EFFECTIVE_DATE,
     path: "/privacy",
   },
 } as const;

@@ -25,6 +25,12 @@ const db = vi.hoisted(() => ({
   upsertRejects: new Set<string>(),
   /** Ce que le calcul a reçu comme estimation, par vente. */
   estimateArgs: new Map<string, unknown>(),
+  /** Règle de la dernière évaluation et verdict d'inondation reçu, par vente. */
+  floodArgs: new Map<string, { flood: unknown; ruleVersion: unknown }>(),
+  /** Verdicts d'inondation stockés ; `null` : la table n'existe pas (migration non appliquée). */
+  floodRows: [] as Row[] | null,
+  /** Codes commune des ventes ; `null` : la table n'existe pas. */
+  communeRows: [] as Row[] | null,
 }));
 
 vi.mock("@/integrations/supabase/client.server", () => ({
@@ -57,14 +63,22 @@ vi.mock("@/lib/sale-market-estimates", () => ({
   }),
 }));
 vi.mock("@/lib/pepite-input", () => ({
-  evaluateSaleForPepite: ({ sale, estimate }: { sale: { id: string }; estimate?: unknown }) => {
+  evaluateSaleForPepite: (
+    { sale, estimate, flood }: { sale: { id: string }; estimate?: unknown; flood?: unknown },
+    ruleVersion?: unknown,
+  ) => {
     db.estimateArgs.set(sale.id, estimate ?? null);
+    db.floodArgs.set(sale.id, { flood, ruleVersion });
     if (db.evaluateError.has(sale.id)) throw new Error(`boom ${sale.id}`);
     const entry = db.evaluations.get(sale.id) as
       | { evaluation: PepiteEvaluation; input?: PepiteInput; facts: Row }
       | undefined;
     if (!entry) throw new Error(`pas d'évaluation prévue pour ${sale.id}`);
-    return entry;
+    // Comme la vraie fonction : les faits portent le verdict d'inondation sous la règle v2 seulement.
+    return {
+      ...entry,
+      facts: { ...entry.facts, flood: ruleVersion === "pepite-v2" ? flood : null },
+    };
   },
 }));
 
@@ -82,7 +96,9 @@ import {
   type StoredEvaluation,
 } from "./sale-pepites-batch";
 import { CEILING_ENGINE_VERSION } from "./bid-ceiling-engine";
-import { PEPITE_RULE_VERSION, evaluatePepite } from "./pepite-policy";
+import { FLOOD_DERIVE_VERSION } from "./flood-risk";
+import { floodPositionKey } from "./flood-risk-position.server";
+import { evaluatePepite } from "./pepite-policy";
 
 class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
   private ids: string[] | null = null;
@@ -150,6 +166,16 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
           };
         }
         return { data: db.online.slice(this.page[0], this.page[1] + 1), error: null };
+      case "auction_sale_flood_risk":
+        if (db.floodRows == null) {
+          return { data: null, error: { code: "PGRST205", message: "Could not find the table" } };
+        }
+        return { data: db.floodRows.slice(this.page[0], this.page[1] + 1), error: null };
+      case "auction_sale_communes":
+        if (db.communeRows == null) {
+          return { data: null, error: { code: "PGRST205", message: "Could not find the table" } };
+        }
+        return { data: db.communeRows.slice(this.page[0], this.page[1] + 1), error: null };
       case "auction_sales":
         return {
           data: (this.ids ?? [])
@@ -186,7 +212,7 @@ function stored(saleId: string, overrides: Partial<StoredEvaluation> = {}): Stor
     saleId,
     status: "not_pepite",
     evaluatedAt: EVALUATED,
-    ruleVersion: PEPITE_RULE_VERSION,
+    ruleVersion: VERSIONS.rule,
     engineVersion: CEILING_ENGINE_VERSION,
     regimeVersion: VERSIONS.regimes[0] ?? null,
     isPepite: false,
@@ -232,32 +258,36 @@ function storedRow(saleId: string, overrides: Partial<StoredEvaluation> = {}): R
 }
 
 function favorableEvaluation(): PepiteEvaluation {
-  const base = evaluatePepite({
-    regime: "notary_online",
-    upcoming: true,
-    startingPriceEur: 80_000,
-    estimate: {
-      actionable: true,
-      reliability: "forte",
-      effectiveSampleSize: 12,
-      surfaceEstimated: false,
-      publicGatePassed: true,
-      centralValueEur: 200_000,
-      lowValueEur: 180_000,
+  const base = evaluatePepite(
+    {
+      regime: "notary_online",
+      upcoming: true,
+      startingPriceEur: 80_000,
+      estimate: {
+        actionable: true,
+        reliability: "forte",
+        effectiveSampleSize: 12,
+        surfaceEstimated: false,
+        publicGatePassed: true,
+        centralValueEur: 200_000,
+        lowValueEur: 180_000,
+      },
+      ceiling: { available: true, referenceEur: 120_000, totalCostAt: (price) => price * 1.2 },
+      scenarios: null,
+      signals: {
+        landOrMixed: false,
+        occupancy: "libre",
+        degradedCondition: false,
+        valuationConflict: false,
+        aiBlocked: false,
+        verificationConflict: false,
+        probableDuplicate: false,
+        unqualifiedRisks: false,
+      },
+      flood: { verdict: "none_found", ppriChecked: true },
     },
-    ceiling: { available: true, referenceEur: 120_000, totalCostAt: (price) => price * 1.2 },
-    scenarios: null,
-    signals: {
-      landOrMixed: false,
-      occupancy: "libre",
-      degradedCondition: false,
-      valuationConflict: false,
-      aiBlocked: false,
-      verificationConflict: false,
-      probableDuplicate: false,
-      unqualifiedRisks: false,
-    },
-  });
+    "pepite-v2",
+  );
   expect(base.status).toBe("pepite");
   return base;
 }
@@ -322,6 +352,10 @@ beforeEach(() => {
   db.missingInputs = new Set();
   db.upsertRejects = new Set();
   db.estimateArgs = new Map();
+  db.floodArgs = new Map();
+  db.floodRows = [];
+  db.communeRows = [];
+  vi.unstubAllEnvs();
 });
 
 describe("pickPendingSales", () => {
@@ -376,6 +410,24 @@ describe("pickPendingSales", () => {
     }
     // Pas de régime (vente non applicable) : rien à comparer.
     expect(isObsoleteEvaluation(stored("a", { regimeVersion: null }), VERSIONS)).toBe(false);
+  });
+
+  it("une évaluation stockée « pepite-v1 » (valeur littérale) n'est obsolète que si l'interrupteur v2 est ouvert", () => {
+    const evaluation = stored("a", { ruleVersion: "pepite-v1" });
+    const closed = currentPepiteVersions({});
+    const open = currentPepiteVersions({ PEPITE_RULE_V2_ENABLED: "true" });
+    expect(closed.rule).toBe("pepite-v1");
+    expect(open.rule).toBe("pepite-v2");
+    // Interrupteur absent : la règle v1 reste appliquée, rien à refaire.
+    expect(isObsoleteEvaluation(evaluation, closed)).toBe(false);
+    expect(pickPendingSales([online("a")], [evaluation], dates, closed, NOW)).toEqual([]);
+    // Interrupteur ouvert : l'évaluation v1 est obsolète et la vente est réévaluée.
+    expect(isObsoleteEvaluation(evaluation, open)).toBe(true);
+    expect(pickPendingSales([online("a")], [evaluation], dates, open, NOW)).toEqual(["a"]);
+    // Et réciproquement : une évaluation « pepite-v2 » est obsolète une fois l'interrupteur refermé (retour arrière).
+    const v2 = stored("a", { ruleVersion: "pepite-v2" });
+    expect(isObsoleteEvaluation(v2, closed)).toBe(true);
+    expect(isObsoleteEvaluation(v2, open)).toBe(false);
   });
 
   it("passe les pépites déjà publiées modifiées avant les ventes jamais évaluées", () => {
@@ -490,7 +542,7 @@ describe("lignes écrites", () => {
 
     expect(row).toMatchObject({
       sale_id: "a",
-      rule_version: PEPITE_RULE_VERSION,
+      rule_version: VERSIONS.rule,
       engine_version: CEILING_ENGINE_VERSION,
       regime_version: null,
       status: "not_applicable",
@@ -702,7 +754,7 @@ describe("runSalePepitesBatch", () => {
     expect(db.upserts.flat()[0]).toMatchObject({
       is_pepite: true,
       favorable_streak: 2,
-      rule_version: PEPITE_RULE_VERSION,
+      rule_version: VERSIONS.rule,
       last_favorable_at: NOW.toISOString(),
     });
   });
@@ -844,5 +896,200 @@ describe("runSalePepitesBatch", () => {
     db.evaluateError.clear();
     const result = await runSalePepitesBatch({ now: NOW });
     expect(JSON.stringify(result)).not.toMatch(/\d{5,}/);
+  });
+});
+
+describe("pickPendingSales : verdict d'inondation (règle v2)", () => {
+  const dates = new Map<string, string | null>();
+
+  it("une pépite publiée dont le verdict d'inondation est plus récent que l'évaluation passe en priorité 0", () => {
+    const sales = [online("never"), online("published-flood"), online("plain-flood")];
+    const evaluations = [stored("published-flood", { isPepite: true }), stored("plain-flood")];
+    const floodChangedAt = new Map([
+      ["published-flood", AFTER],
+      ["plain-flood", AFTER],
+    ]);
+    expect(pickPendingSales(sales, evaluations, dates, VERSIONS, NOW, floodChangedAt)).toEqual([
+      "published-flood",
+      "never",
+      "plain-flood",
+    ]);
+  });
+
+  it("un verdict plus ancien que l'évaluation, ou absent, ne change rien", () => {
+    const floodChangedAt = new Map<string, string | null>([
+      ["a", BEFORE],
+      ["b", null],
+    ]);
+    expect(
+      pickPendingSales(
+        [online("a"), online("b")],
+        [stored("a", { isPepite: true }), stored("b", { isPepite: true })],
+        dates,
+        VERSIONS,
+        NOW,
+        floodChangedAt,
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe("runSalePepitesBatch : interrupteur de la règle pepite-v2", () => {
+  const POSITION = {
+    latitude: 47.399,
+    longitude: 0.689,
+    location_precision: "address",
+    quality_flags: [],
+  };
+
+  function setPositioned(ids: string[]) {
+    setSales(ids);
+    db.online = db.online.map((row) => ({ ...row, ...POSITION }));
+  }
+
+  function floodRow(saleId: string, overrides: Row = {}): Row {
+    return {
+      sale_id: saleId,
+      verdict: "exposed",
+      derive_version: FLOOD_DERIVE_VERSION,
+      position_key: floodPositionKey({
+        latitude: POSITION.latitude,
+        longitude: POSITION.longitude,
+        precision: "address",
+        flags: [],
+        communeInsee: null,
+      }),
+      commune_insee: null,
+      observed_at: "2026-10-20T08:00:00.000Z",
+      attempted_at: "2026-10-20T08:00:00.000Z",
+      failure_count: 0,
+      ppri_checked: true,
+      map_date: "2013-12-18",
+      verdict_changed_at: "2026-10-20T08:00:00.000Z",
+      ...overrides,
+    };
+  }
+
+  it("fermé (défaut) : la règle appliquée est pepite-v1 et la table d'inondation n'est jamais lue", async () => {
+    setPositioned(["a"]);
+    const result = await runSalePepitesBatch({ now: NOW });
+
+    expect(result).toMatchObject({ ruleVersion: "pepite-v1", evaluated: 1, floodVerdicts: null });
+    expect(db.touched).not.toContain("auction_sale_flood_risk");
+    expect(db.touched).not.toContain("auction_sale_communes");
+    expect(db.floodArgs.get("a")?.ruleVersion).toBe("pepite-v1");
+    expect(db.upserts.flat()[0]).toMatchObject({ rule_version: "pepite-v1" });
+    expect((db.upserts.flat()[0].details as Row).flood).toBeNull();
+  });
+
+  it("fermé : un verdict élevé stocké ne change rien (aucun résultat de la v1 ne bouge)", async () => {
+    setPositioned(["a"]);
+    db.floodRows = [floodRow("a", { verdict: "high" })];
+    const result = await runSalePepitesBatch({ now: NOW });
+    expect(result.floodVerdicts).toBeNull();
+    expect(db.floodArgs.get("a")?.flood).toMatchObject({ verdict: "unknown" });
+  });
+
+  it("ouvert : la règle appliquée est pepite-v2, le verdict stocké est lu et gardé dans le détail", async () => {
+    vi.stubEnv("PEPITE_RULE_V2_ENABLED", "true");
+    setPositioned(["a"]);
+    db.floodRows = [floodRow("a")];
+
+    const result = await runSalePepitesBatch({ now: NOW });
+
+    expect(result).toMatchObject({
+      ruleVersion: "pepite-v2",
+      evaluated: 1,
+      floodVerdicts: { exposed: 1, high: 0, none_found: 0, no_signal: 0, unknown: 0 },
+    });
+    expect(db.floodArgs.get("a")).toEqual({
+      ruleVersion: "pepite-v2",
+      flood: {
+        verdict: "exposed",
+        observedAt: "2026-10-20T08:00:00.000Z",
+        mapDate: "2013-12-18",
+        ppriChecked: true,
+      },
+    });
+    const row = db.upserts.flat()[0];
+    expect(row.rule_version).toBe("pepite-v2");
+    // Le détail ne garde que le verdict, deux dates et le drapeau des PPRi : ni coordonnée, ni commune.
+    expect((row.details as Row).flood).toEqual({
+      verdict: "exposed",
+      observedAt: "2026-10-20T08:00:00.000Z",
+      mapDate: "2013-12-18",
+      ppriChecked: true,
+    });
+    expect(JSON.stringify(row.details)).not.toMatch(/47\.39|0\.689/);
+  });
+
+  it("ouvert : un verdict dont le périmètre des PPRi n'a pas été lu est gardé avec son drapeau dans le détail", async () => {
+    vi.stubEnv("PEPITE_RULE_V2_ENABLED", "true");
+    setPositioned(["unread"]);
+    db.floodRows = [floodRow("unread", { verdict: "none_found", ppri_checked: false })];
+
+    const result = await runSalePepitesBatch({ now: NOW });
+
+    expect(db.floodArgs.get("unread")).toMatchObject({
+      flood: { verdict: "none_found", ppriChecked: false },
+    });
+    expect(result.floodVerdicts?.none_found).toBe(1);
+    const row = db.upserts.flat()[0];
+    expect((row.details as Row).flood).toMatchObject({ verdict: "none_found", ppriChecked: false });
+    // La décision d'entrée (« contrôlé » manquant) est celle de la règle, testée dans pepite-input.test.ts.
+  });
+
+  it("ouvert : un verdict d'une autre position, expiré ou absent compte pour inconnu (jamais une panne)", async () => {
+    vi.stubEnv("PEPITE_RULE_V2_ENABLED", "1");
+    setPositioned(["moved", "expired", "none"]);
+    db.floodRows = [
+      floodRow("moved", { position_key: "point:address:0000000000000000" }),
+      floodRow("expired", { observed_at: "2026-04-01T08:00:00.000Z" }),
+    ];
+
+    const result = await runSalePepitesBatch({ now: NOW });
+
+    expect(result.floodVerdicts).toMatchObject({ unknown: 3 });
+    expect(result.failed).toBe(0);
+  });
+
+  it("ouvert : sans la table d'inondation (migration non appliquée), la passe se termine sans rien écrire", async () => {
+    vi.stubEnv("PEPITE_RULE_V2_ENABLED", "true");
+    setPositioned(["a"]);
+    db.floodRows = null;
+
+    expect(await runSalePepitesBatch({ now: NOW })).toMatchObject({
+      skipped: "not_migrated",
+      evaluated: 0,
+    });
+    expect(db.upserts).toEqual([]);
+  });
+
+  it("ouvert : sans la table des communes, même réponse", async () => {
+    vi.stubEnv("PEPITE_RULE_V2_ENABLED", "true");
+    setPositioned(["a"]);
+    db.communeRows = null;
+    expect(await runSalePepitesBatch({ now: NOW })).toMatchObject({ skipped: "not_migrated" });
+  });
+
+  it("ouvert : une pépite publiée dont le verdict a changé après son évaluation est refaite avant les autres", async () => {
+    vi.stubEnv("PEPITE_RULE_V2_ENABLED", "true");
+    setPositioned(["fresh", "published"]);
+    db.stored = [
+      storedRow("published", {
+        ruleVersion: "pepite-v2",
+        isPepite: true,
+        favorableStreak: 2,
+        status: "pepite",
+        evaluatedAt: EVALUATED,
+      }),
+      storedRow("fresh", { ruleVersion: "pepite-v2", evaluatedAt: EVALUATED }),
+    ];
+    db.floodRows = [floodRow("published", { verdict_changed_at: AFTER })];
+
+    const result = await runSalePepitesBatch({ now: NOW, limit: 1 });
+
+    expect(result.evaluated).toBe(1);
+    expect(db.upserts.flat()[0].sale_id).toBe("published");
   });
 });

@@ -13,6 +13,12 @@ export type PepiteIdsClient = {
   rpc: (fn: "list_public_pepite_sale_ids") => PromiseLike<{ data: unknown; error: unknown }>;
 };
 
+export type PepiteFloodIdsClient = {
+  rpc: (
+    fn: "list_public_pepite_flood_exposed_ids",
+  ) => PromiseLike<{ data: unknown; error: unknown }>;
+};
+
 /** Fonction de base absente (migration pas encore appliquée). */
 export function isMissingPepiteFunction(error: unknown): boolean {
   const code = (error as { code?: unknown } | null)?.code;
@@ -22,6 +28,23 @@ export function isMissingPepiteFunction(error: unknown): boolean {
 /** Identifiants des pépites publiables, en minuscules ; vide quand la fonction est absente. */
 export async function listPepiteSaleIds(client: PepiteIdsClient): Promise<string[]> {
   const { data, error } = await client.rpc("list_public_pepite_sale_ids");
+  if (error) {
+    if (isMissingPepiteFunction(error)) return [];
+    throw error;
+  }
+  return Array.isArray(data)
+    ? data.filter((id): id is string => typeof id === "string").map((id) => id.toLowerCase())
+    : [];
+}
+
+/**
+ * Identifiants, parmi les pépites publiables, de celles dont le bien est dans le périmètre d'un plan de prévention
+ * des risques d'inondation (`list_public_pepite_flood_exposed_ids`) : un fait public, sans montant, qui sert à
+ * afficher la mention courte « zonage à vérifier » partout où le badge Pépite apparaît. Vide quand la fonction est
+ * absente (migration pas encore appliquée), en mode « shadow » ou sous la règle `pepite-v1`.
+ */
+export async function listPepiteFloodExposedIds(client: PepiteFloodIdsClient): Promise<string[]> {
+  const { data, error } = await client.rpc("list_public_pepite_flood_exposed_ids");
   if (error) {
     if (isMissingPepiteFunction(error)) return [];
     throw error;

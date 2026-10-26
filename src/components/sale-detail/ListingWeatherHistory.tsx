@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import type { ClimateHistory, ClimateResult, ClimateStationRef } from "@/lib/environment-reference";
 import styles from "./ListingEnvironment.module.css";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 
 export function ListingWeatherHistory({
   saleId,

@@ -3,7 +3,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { toast } from "@/lib/toast";
 import { fetchFavoriteSales } from "@/lib/client-api";
 import { PLAN_LIMITS } from "@/lib/plans";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 
 export const FAVORITE_ADD_LABEL = "Ajouter aux favoris";
 export const FAVORITE_REMOVE_LABEL = "Retirer des favoris";

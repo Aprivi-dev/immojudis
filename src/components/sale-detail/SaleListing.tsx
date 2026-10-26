@@ -641,6 +641,7 @@ export function SaleDetailHeading({
   aiReviewProjections = null,
   aiReviewStatus = "ready",
   pepite = false,
+  pepiteFloodExposed = false,
 }: {
   sale: AuctionSale;
   publicDemo?: boolean;
@@ -648,6 +649,8 @@ export function SaleDetailHeading({
   aiReviewStatus?: AiReviewRequestStatus;
   /** La vente est une pépite publiable : pastille « Pépite » et lien « Pourquoi ? » vers le bloc `#pepite`. */
   pepite?: boolean;
+  /** Pépite dont le bien est dans le périmètre d'un PPRi : mention courte à côté de la pastille. */
+  pepiteFloodExposed?: boolean;
 }) {
   const review = (field: Parameters<typeof getAiReviewFieldResult>[1]) =>
     getAiReviewFieldResult(aiReviewProjections, field, aiReviewStatus).blocked;
@@ -675,7 +678,7 @@ export function SaleDetailHeading({
     <header className={styles.pageHeading}>
       <div className={styles.headingBadges}>
         <SaleProcedureBadge sale={sale} />
-        {pepite ? <PepiteHeroBadge /> : null}
+        {pepite ? <PepiteHeroBadge floodExposed={pepiteFloodExposed} /> : null}
         {publicDemo ? (
           <span className={styles.demoNote}>Annonce exemple · données fictives</span>
         ) : null}

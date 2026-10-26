@@ -932,6 +932,7 @@ if (
     "src/lib/pepite-policy.ts",
     "src/lib/pepite-input.ts",
     "src/lib/pepite-reasons.ts",
+    "src/lib/flood-risk.ts",
     "src/lib/sale-pepites-batch.ts",
     "src/app/api/cron/sale-pepites/route.ts",
   ];
@@ -1105,6 +1106,109 @@ if (
     }
   }
 
+  // (4 bis) Liste blanche de la table privée du risque d'inondation (règle pepite-v2) : seuls le magasin du
+  // traitement planifié (lectures et écritures, rôle de service) et les types générés la nomment. Le calcul des
+  // pépites, la route publique, l'administration et le navigateur ne la lisent jamais : le calcul lit le verdict par
+  // le magasin, et le seul fait public (« exposé ») sort de la fonction `list_public_pepite_flood_exposed_ids`.
+  const floodTableAllowed = new Set([
+    "src/lib/flood-risk-store.server.ts",
+    "src/integrations/supabase/types.ts",
+  ]);
+  for (const entry of sourceFiles) {
+    const name = String(entry);
+    if (!/\.(?:ts|tsx|mjs|cjs)$/.test(name) || /\.test\.[cm]?[jt]sx?$/.test(name)) continue;
+    const relativePath = `src/${name}`;
+    if (floodTableAllowed.has(relativePath)) continue;
+    if ((await read(relativePath)).includes("auction_sale_flood_risk")) {
+      failures.push(
+        `${relativePath} names the private table auction_sale_flood_risk: only the flood risk store may (the pepite rule reads the verdict through it, never the table)`,
+      );
+    }
+  }
+
+  // (4 ter) Liste blanche des modules qui importent le magasin de la table d'inondation : le traitement planifié,
+  // la recopie des communes et le calcul des pépites (lecture des verdicts) ; rien d'autre, ni le navigateur, ni
+  // une route publique, ni l'administration.
+  const floodStoreImporters = new Set([
+    "src/lib/sale-pepites-batch.ts",
+    "src/lib/sale-flood-risk-batch.ts",
+    "src/lib/sale-communes-sync.server.ts",
+  ]);
+  for (const entry of sourceFiles) {
+    const name = String(entry);
+    if (!/\.(?:ts|tsx|mjs|cjs)$/.test(name) || /\.test\.[cm]?[jt]sx?$/.test(name)) continue;
+    const relativePath = `src/${name}`;
+    if (relativePath === "src/lib/flood-risk-store.server.ts") continue;
+    if (floodStoreImporters.has(relativePath)) continue;
+    if (/flood-risk-store\.server/.test(await read(relativePath))) {
+      failures.push(
+        `${relativePath} imports the flood risk store: only the flood batch, the commune sync and the pepite batch may`,
+      );
+    }
+  }
+
+  // (4 quater) Contrôle SQL des migrations de l'inondation : RLS activée, aucun droit pour anon ni authenticated,
+  // et les enveloppes publiques ne sont jamais SECURITY DEFINER (une fonction définer de public exécutable par
+  // anon est refusée par supabase/tests/441_function_privileges.sql).
+  {
+    const sql = async (file) => {
+      try {
+        return (
+          await readFile(new URL(`../supabase/migrations/${file}`, import.meta.url), "utf8")
+        ).replace(/--[^\n]*/g, "");
+      } catch {
+        return null;
+      }
+    };
+    for (const [file, table] of [
+      ["20261106100200_sale_flood_risk.sql", "auction_sale_flood_risk"],
+      ["20261106100500_sale_flood_risk_lease.sql", "sale_flood_risk_lease"],
+    ]) {
+      const text = await sql(file);
+      if (text == null) {
+        failures.push(`${file} is missing: the flood risk migrations must exist`);
+        continue;
+      }
+      if (
+        !new RegExp(
+          `alter\\s+table\\s+public\\.${table}\\s+enable\\s+row\\s+level\\s+security`,
+          "i",
+        ).test(text)
+      ) {
+        failures.push(`${file} does not enable row level security on public.${table}`);
+      }
+      if (/\bgrant\b[^;]*\bto\b[^;]*\b(?:anon|authenticated|public)\b/i.test(text)) {
+        failures.push(
+          `${file} grants a right on the flood risk objects to anon, authenticated or public`,
+        );
+      }
+    }
+    const exposed = await sql("20261106100400_pepite_flood_exposed_ids.sql");
+    if (exposed == null) {
+      failures.push("20261106100400_pepite_flood_exposed_ids.sql is missing");
+    } else {
+      const wrapper =
+        /create\s+or\s+replace\s+function\s+public\.list_public_pepite_flood_exposed_ids\s*\(\s*\)([\s\S]*?)\$function\$\s*;/i.exec(
+          exposed,
+        );
+      if (!wrapper) {
+        failures.push(
+          "public.list_public_pepite_flood_exposed_ids is not defined in its migration",
+        );
+      } else if (/security\s+definer/i.test(wrapper[1].split("$function$")[0])) {
+        failures.push(
+          "public.list_public_pepite_flood_exposed_ids must not be SECURITY DEFINER (use the app_private definer)",
+        );
+      }
+    }
+    const lease = await sql("20261106100500_sale_flood_risk_lease.sql");
+    if (lease != null && /security\s+definer/i.test(lease)) {
+      failures.push(
+        "20261106100500_sale_flood_risk_lease.sql must not define SECURITY DEFINER functions",
+      );
+    }
+  }
+
   for (const relativePath of [
     "src/app/api/catalogue/pepites/route.ts",
     "src/lib/pepite-sale-ids.ts",
@@ -1128,6 +1232,7 @@ if (
     "src/lib/client-api/sale-pepite.ts",
     "src/lib/search/pepite-filter.ts",
     "src/lib/pepite-copy.ts",
+    "src/lib/pepite-flood-copy.ts",
   ]) {
     if (
       /@\/lib\/pepite-policy|@\/lib\/pepite-reasons|@\/lib\/pepite-input|client\.server|sale-pepite\.server/.test(

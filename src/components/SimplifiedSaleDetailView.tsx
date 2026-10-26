@@ -84,7 +84,7 @@ import {
 } from "@/lib/ai-review-guard";
 import type { AuctionSale } from "@/lib/types";
 import { userMessage } from "@/lib/user-messages";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 import {
   isTabAnchor,
   knownTabForAnchor,
@@ -649,6 +649,7 @@ function SaleDetailWorkspace({
             aiReviewProjections={resolvedAiReviewProjections}
             aiReviewStatus={aiReviewStatus}
             pepite={pepite != null}
+            pepiteFloodExposed={pepite?.flood?.verdict === "exposed"}
           />
           <div className={listingStyles.upper}>
             <PropertyIdentity

@@ -460,3 +460,77 @@ describe("invariants de sécurité : aucun montant de pépite sans le droit", ()
     expect(run.stderr).toContain("PepiteBlock.tsx imports the pepite rule or a server module");
   });
 });
+
+const migration = (name) => readFileSync(join(repo, "supabase/migrations", name), "utf8");
+
+describe("invariants de sécurité : risque d'inondation", () => {
+  it("refuse un module qui importe le magasin de la table d'inondation hors liste blanche", () => {
+    const result = runInvariants({}, [], {
+      "src/lib/rogue-flood-reader.ts":
+        'import { readStoredFloodRisks } from "@/lib/flood-risk-store.server";\nexport const rows = readStoredFloodRisks;\n',
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "src/lib/rogue-flood-reader.ts imports the flood risk store: only the flood batch, the commune sync and the pepite batch may",
+    );
+  });
+
+  it("refuse un module qui nomme la table privée d'inondation", () => {
+    const result = runInvariants({}, [], {
+      "src/lib/rogue-flood-table.ts": 'export const table = "auction_sale_flood_risk";\n',
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "src/lib/rogue-flood-table.ts names the private table auction_sale_flood_risk",
+    );
+  });
+
+  it("refuse la migration de la table d'inondation sans row level security", () => {
+    const file = "20261106100200_sale_flood_risk.sql";
+    const bad = migration(file).replace(
+      /alter table public\.auction_sale_flood_risk enable row level security;/i,
+      "",
+    );
+    expect(bad).not.toBe(migration(file));
+    const result = runInvariants({ [file]: bad }, [file]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      `${file} does not enable row level security on public.auction_sale_flood_risk`,
+    );
+  });
+
+  it("refuse un droit donné à anon ou authenticated sur la table d'inondation", () => {
+    const file = "20261106100200_sale_flood_risk.sql";
+    for (const role of ["anon", "authenticated"]) {
+      const bad = `${migration(file)}\ngrant select on table public.auction_sale_flood_risk to ${role};\n`;
+      const result = runInvariants({ [file]: bad }, [file]);
+      expect(result.status, role).toBe(1);
+      expect(result.stderr).toContain(
+        `${file} grants a right on the flood risk objects to anon, authenticated or public`,
+      );
+    }
+  });
+
+  it("refuse l'enveloppe publique des pépites exposées en SECURITY DEFINER", () => {
+    const file = "20261106100400_pepite_flood_exposed_ids.sql";
+    const original = migration(file);
+    const bad = original.replace(
+      /(create or replace function public\.list_public_pepite_flood_exposed_ids\(\)\nreturns setof uuid\nlanguage sql\nstable\n)/,
+      "$1security definer\n",
+    );
+    expect(bad).not.toBe(original);
+    const result = runInvariants({ [file]: bad }, [file]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "public.list_public_pepite_flood_exposed_ids must not be SECURITY DEFINER",
+    );
+  });
+
+  it("refuse une fonction SECURITY DEFINER dans la migration du bail", () => {
+    const file = "20261106100500_sale_flood_risk_lease.sql";
+    const bad = migration(file).replace(/security invoker/, "security definer");
+    const result = runInvariants({ [file]: bad }, [file]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(`${file} must not define SECURITY DEFINER functions`);
+  });
+});

@@ -22,7 +22,7 @@ import type {
   TribunalJudicialActivityRangeMetric,
   TribunalJudicialActivityResponse,
 } from "@/lib/tribunal-judicial-activity";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 
 const WINDOWS: TribunalJudicialActivityHistoryMonths[] = [12, 24, 36];
 

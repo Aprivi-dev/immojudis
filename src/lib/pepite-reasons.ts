@@ -19,9 +19,36 @@ import {
   type PepiteRegimeKey,
 } from "@/lib/pepite-policy";
 
+/**
+ * Libellé d'administration d'un risque élevé : jamais affiché au public (la vente n'est pas une pépite). Ce texte
+ * reste ici, hors du module de textes que le navigateur charge (`pepite-flood-copy.ts`).
+ */
+const FLOOD_HIGH_ADMIN_LABEL =
+  "Exclue : bien situé dans la zone inondée par une crue fréquente (territoire à risque important d’inondation, scénario « forte probabilité »).";
+
 const percent = (share: number) => `${Math.round(share * 100)} %`;
 /** Une part (0 à 1) en dixièmes : 0,7 donne 7 (« 7 ventes sur 10 »). */
 const tenths = (share: number) => Math.round(share * 10);
+
+/**
+ * `/admin/pepites` : ce que « aucun risque d'inondation élevé » veut dire pour CETTE vente, d'après le verdict
+ * enregistré avec son évaluation (`details.flood`). Le libellé générique (`PEPITE_CRITERION_LABELS`) ne distingue
+ * pas un contrôle complet, une position imprécise dans une commune sans TRI, ni un bien dans un périmètre de PPRi.
+ */
+export function floodPassAdminLabel(flood: { verdict?: unknown; ppriChecked?: unknown } | null) {
+  switch (flood?.verdict) {
+    case "none_found":
+      return flood.ppriChecked === false
+        ? "Aucun risque d’inondation élevé identifié d’après les TRI ; périmètres de PPRi non lus (pas de nouvelle pépite tant qu’ils ne le sont pas)"
+        : "Aucun risque d’inondation élevé identifié : TRI et périmètres de PPRi consultés à la position du bien";
+    case "exposed":
+      return "Dans le périmètre d’un PPRi (zonage à vérifier), hors zone de crue fréquente des TRI : repère conservé, mention publique « zonage à vérifier »";
+    case "no_signal":
+      return "Position imprécise dans une commune sans TRI : aucun contrôle au niveau du bien, le critère n’a pas d’objet";
+    default:
+      return PEPITE_CRITERION_LABELS.no_high_flood_risk.pass;
+  }
+}
 
 /** Pour chaque critère : ce qu'on écrit quand il est réussi, et quand il est manqué. */
 export const PEPITE_CRITERION_LABELS: Record<PepiteCriterionId, { pass: string; fail: string }> = {
@@ -73,6 +100,14 @@ export const PEPITE_CRITERION_LABELS: Record<PepiteCriterionId, { pass: string; 
   occupancy_known: {
     pass: "Occupation connue (libre, occupée ou louée)",
     fail: "Occupation inconnue ou bien squatté",
+  },
+  flood_risk_known: {
+    pass: "Risque d’inondation contrôlé, ou sans objet pour la commune",
+    fail: "Risque d’inondation non vérifié (position imprécise dans une commune qui compte un territoire à risque important d’inondation, source indisponible, ou périmètres de PPRi non lus)",
+  },
+  no_high_flood_risk: {
+    pass: "Aucun risque d’inondation élevé identifié",
+    fail: FLOOD_HIGH_ADMIN_LABEL,
   },
   no_valuation_conflict: {
     pass: "Aucun conflit de valorisation",
@@ -172,7 +207,10 @@ function stabilityLabel(code: string): string | null {
 }
 
 /** Les codes de motif stockés, en clair. Un code inconnu (version plus récente de la règle) est ignoré. */
-export function describePepiteReasonCodes(codes: readonly string[]): PepiteReasonDescription {
+export function describePepiteReasonCodes(
+  codes: readonly string[],
+  flood: { verdict?: unknown; ppriChecked?: unknown } | null = null,
+): PepiteReasonDescription {
   const result: PepiteReasonDescription = { passed: [], missed: [], stability: [] };
   const order = (id: string) => PEPITE_CRITERIA.indexOf(id as PepiteCriterionId);
   const sorted = [...codes].sort((left, right) => order(left.slice(5)) - order(right.slice(5)));
@@ -185,7 +223,9 @@ export function describePepiteReasonCodes(codes: readonly string[]): PepiteReaso
       if (label) result.stability.push(label);
     } else if (KNOWN_CRITERIA.has(id) && (kind === "pass" || kind === "fail")) {
       const labels = PEPITE_CRITERION_LABELS[id as PepiteCriterionId];
-      (kind === "pass" ? result.passed : result.missed).push(labels[kind]);
+      const label =
+        kind === "pass" && id === "no_high_flood_risk" ? floodPassAdminLabel(flood) : labels[kind];
+      (kind === "pass" ? result.passed : result.missed).push(label);
     }
   }
   return result;

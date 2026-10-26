@@ -24,7 +24,7 @@ import type { UserAlert, UserWatchedZone } from "@/lib/types";
 import { toast } from "@/lib/toast";
 import { userMessage } from "@/lib/user-messages";
 import { Badge, Button, Card, PageShell, buttonClasses } from "@/components/ui/primitives";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 import { requestOpenNotifications } from "@/lib/notification-center-events";
 
 export function SavedAlerts() {

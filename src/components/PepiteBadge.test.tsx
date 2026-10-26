@@ -161,3 +161,36 @@ describe("fenêtre d'aide : fermeture et rognage", () => {
     expect(screen.queryByRole("note")).toBeNull();
   });
 });
+
+describe("mention « exposé » (périmètre d'un PPRi)", () => {
+  const SHORT =
+    "Dans le périmètre d’un plan de prévention des risques d’inondation (PPRi) : zonage à vérifier.";
+
+  it("la pastille de la fiche porte la mention courte", () => {
+    render(<PepiteHeroBadge floodExposed />);
+    expect(screen.getByTestId("pepite-flood-exposed").textContent).toBe(SHORT);
+  });
+
+  it("sans exposition, aucune mention", () => {
+    render(<PepiteHeroBadge />);
+    expect(screen.queryByTestId("pepite-flood-exposed")).toBeNull();
+  });
+
+  it("la pastille d'une carte annonce la mention aux lecteurs d'écran et la répète dans sa fenêtre d'aide", () => {
+    render(<PepiteInfoBadge floodExposed />);
+    const button = screen.getByRole("button");
+    expect(button.textContent).toContain(SHORT);
+    fireEvent.click(button);
+    expect(screen.getByRole("note").textContent).toContain(SHORT);
+  });
+
+  it("la version icône garde la mention dans son nom accessible", () => {
+    render(<PepiteInfoBadge variant="icon" floodExposed />);
+    expect(screen.getByRole("button", { name: `Pépite. ${SHORT}` })).toBeTruthy();
+  });
+
+  it("sans exposition, la pastille ne dit que « Pépite »", () => {
+    render(<PepiteInfoBadge variant="icon" />);
+    expect(screen.getByRole("button", { name: "Pépite" })).toBeTruthy();
+  });
+});

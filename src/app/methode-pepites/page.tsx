@@ -2,10 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { BreadcrumbJsonLd } from "@/components/BreadcrumbJsonLd";
 import { Card, PageShell } from "@/components/ui/primitives";
+import { FLOOD_STREET_BUFFER_METERS } from "@/lib/flood-risk";
 import { publicLegalPublisher } from "@/lib/legal-documents";
 import { MARKET_GAP_METHOD_PATH } from "@/lib/market-gap";
 import { pageMetadata } from "@/lib/page-metadata";
-import { PEPITE_METHOD_PATH, PEPITE_RULE_VERSION, PEPITE_V1 } from "./method";
+import { activePepiteRuleVersion, pepiteV2EnabledFromEnv } from "@/lib/pepite-rule-switch.server";
+import { PEPITE_METHOD_PATH, PEPITE_RULE_PARAMS, pepiteV2EffectiveClause } from "./method";
 
 const PAGE_TITLE = "Comment repérons-nous les pépites ?";
 
@@ -29,7 +31,7 @@ const NOT_LIST = [
 ] as const;
 
 const GUARDRAILS = [
-  `L’estimation de valeur du bien est jugée exploitable et fiable (fiabilité forte ou correcte), s’appuie sur au moins ${PEPITE_V1.minValueComparables} ventes comparables, repose sur une surface connue et ne présente pas d’écart aberrant avec la mise à prix : une mise à prix inférieure à ${PEPITE_V1.extremeStartingPriceBelowPct} % ou supérieure à ${PEPITE_V1.extremeStartingPriceAbovePct} % de la valeur estimée signale le plus souvent une erreur de données, et la vente est alors écartée. Elle suit la méthode décrite sur la page « Comment est calculé l’écart avec le marché ». Un terrain seul et un bien mixte n’ont pas de repère.`,
+  `L’estimation de valeur du bien est jugée exploitable et fiable (fiabilité forte ou correcte), s’appuie sur au moins ${PEPITE_RULE_PARAMS.minValueComparables} ventes comparables, repose sur une surface connue et ne présente pas d’écart aberrant avec la mise à prix : une mise à prix inférieure à ${PEPITE_RULE_PARAMS.extremeStartingPriceBelowPct} % ou supérieure à ${PEPITE_RULE_PARAMS.extremeStartingPriceAbovePct} % de la valeur estimée signale le plus souvent une erreur de données, et la vente est alors écartée. Elle suit la méthode décrite sur la page « Comment est calculé l’écart avec le marché ». Un terrain seul et un bien mixte n’ont pas de repère.`,
   "L’occupation du bien est connue. Un bien libre comme un bien occupé est admis, car le coût de libération est intégré à l’enchère plafond estimée. Une occupation inconnue ou un squat excluent le repère.",
   "Aucun signal bloquant n’est présent : valeurs d’estimation qui se contredisent, information essentielle mise en doute par la relecture automatique de l’annonce, conflit entre les sources de la vente, annonce probablement en double, risque non qualifié, état dégradé connu des données.",
   "Au tribunal, les ventes comparables passées sont assez fiables pour mesurer les chances de l’emporter (fiabilité au moins moyenne). Sinon, le premier test ne peut pas être évalué et il n’y a pas de repère.",
@@ -42,6 +44,25 @@ const NOT_MEASURED = [
   "La concurrence réelle le jour de la vente : le nombre et les moyens des enchérisseurs.",
   "Votre situation : budget, financement, fiscalité, projet (habiter, louer, revendre). Le repère ne mesure ni un rendement locatif ni une marge de revente.",
 ] as const;
+
+/**
+ * Règle `pepite-v2` (risque d'inondation) : ces textes ne s'affichent que si l'interrupteur serveur
+ * `PEPITE_RULE_V2_ENABLED` est ouvert (`pepiteV2EnabledFromEnv`). Fermé, la page décrit `pepite-v1`, la règle
+ * appliquée. Rédaction validée par `juridique-rgpd` le 26/10/2026 : ne rien y changer sans nouvelle relecture.
+ */
+const NOT_LIST_V2 = [
+  "Ce n’est ni un état des risques, ni un certificat, et cela ne remplace pas l’état des risques annexé au cahier des conditions de vente.",
+  "Ce n’est pas une garantie d’absence de risque d’inondation.",
+] as const;
+
+const GUARDRAIL_FLOOD_V2 =
+  "Le bien n’est pas situé, à sa position connue, dans la zone de crue fréquente d’un territoire à risque important d’inondation (voir « Le risque d’inondation »).";
+
+const NOT_MEASURED_V2_DILIGENCE =
+  "Les charges de copropriété, les servitudes, l’urbanisme, les diagnostics (dont l’état des risques) et les risques juridiques de la procédure, qui se lisent dans le cahier des conditions de vente et les pièces. Seul le risque d’inondation fait l’objet d’un contrôle cartographique limité, décrit plus haut. Immojudis ne lit pas toutes les pièces : ne rien y trouver ne prouve pas l’absence de risque.";
+
+const ABSENCE_V2 =
+  "L’absence de ce repère ne permet de tirer aucune conclusion sur le bien : les données peuvent manquer, ou un critère, dont celui du risque d’inondation, peut ne pas être rempli. Immojudis n’indique pas, vente par vente, la raison. Un bien peut convenir à votre projet sans remplir ces critères.";
 
 function Section({
   id,
@@ -73,6 +94,15 @@ export default function Page() {
 
 function PageContent() {
   const contactEmail = publicLegalPublisher().contactEmail;
+  // Interrupteur serveur de la règle pepite-v2 : fermé (défaut), la page décrit pepite-v1, la règle appliquée.
+  const v2 = pepiteV2EnabledFromEnv();
+  const version = activePepiteRuleVersion();
+  const effectiveClause = pepiteV2EffectiveClause();
+  const notList = v2 ? [...NOT_LIST, ...NOT_LIST_V2] : [...NOT_LIST];
+  const guardrails = v2 ? [...GUARDRAILS, GUARDRAIL_FLOOD_V2] : [...GUARDRAILS];
+  const notMeasured = v2
+    ? [NOT_MEASURED[0], NOT_MEASURED_V2_DILIGENCE, ...NOT_MEASURED.slice(2)]
+    : [...NOT_MEASURED];
 
   return (
     <PageShell
@@ -95,13 +125,13 @@ function PageContent() {
                 Les ventes comparables passées ont-elles été le plus souvent adjugées sous l’enchère
                 plafond estimée ?
               </strong>{" "}
-              Immojudis regarde si au moins {PEPITE_V1.chanceMinPct} % l’ont été.
+              Immojudis regarde si au moins {PEPITE_RULE_PARAMS.chanceMinPct} % l’ont été.
             </li>
             <li>
               <strong>
                 Le coût total estimé au prix de référence, frais compris, représente-t-il au plus{" "}
-                {PEPITE_V1.maxCostShareCourtPct} % de la valeur estimée (
-                {PEPITE_V1.maxCostShareNotaryPct} % en vente notariale) ?
+                {PEPITE_RULE_PARAMS.maxCostShareCourtPct} % de la valeur estimée (
+                {PEPITE_RULE_PARAMS.maxCostShareNotaryPct} % en vente notariale) ?
               </strong>
             </li>
           </ol>
@@ -128,7 +158,7 @@ function PageContent() {
 
         <Section id="ce-que-ce-n-est-pas" title="Ce que le repère n’est pas">
           <ul className="list-disc space-y-1 pl-5">
-            {NOT_LIST.map((item) => (
+            {notList.map((item) => (
               <li key={item}>{item}</li>
             ))}
           </ul>
@@ -141,40 +171,40 @@ function PageContent() {
 
         <Section id="criteres" title="Les critères et les seuils">
           <p>
-            <strong>Version {PEPITE_RULE_VERSION}.</strong> Les seuils ci-dessous sont des valeurs
-            de départ, contrôlées sur le catalogue. Une modification des critères ou des seuils
-            donnerait lieu à une nouvelle version.
+            <strong>Version {version}.</strong> Les seuils ci-dessous sont des valeurs de départ,
+            contrôlées sur le catalogue. Une modification des critères ou des seuils donnerait lieu
+            à une nouvelle version.
           </p>
           <h3 className="font-semibold text-foreground">Les ventes comparables</h3>
           <p>
             Les chances de l’emporter se mesurent sur les ventes passées des{" "}
-            {PEPITE_V1.historyYears} dernières années, au même tribunal, dans une tranche de mise à
-            prix voisine et pour le même type de bien. Quand le tribunal compte moins de{" "}
-            {PEPITE_V1.courtCompleteBelowSales} ventes comparables, l’observation est complétée par
-            celle de toute la France ; sous {PEPITE_V1.courtReplaceBelowSales} ventes, elle est
-            remplacée par elle.
+            {PEPITE_RULE_PARAMS.historyYears} dernières années, au même tribunal, dans une tranche
+            de mise à prix voisine et pour le même type de bien. Quand le tribunal compte moins de{" "}
+            {PEPITE_RULE_PARAMS.courtCompleteBelowSales} ventes comparables, l’observation est
+            complétée par celle de toute la France ; sous{" "}
+            {PEPITE_RULE_PARAMS.courtReplaceBelowSales} ventes, elle est remplacée par elle.
           </p>
           <h3 className="font-semibold text-foreground">Selon le type de vente</h3>
           <ul className="list-disc space-y-2 pl-5">
             <li>
               <strong>Vente au tribunal :</strong> les deux tests doivent être réussis. Au moins{" "}
-              {PEPITE_V1.chanceMinPct} % des ventes comparables ont été adjugées sous l’enchère
-              plafond estimée, et le coût total estimé au prix de référence est d’au plus{" "}
-              {PEPITE_V1.maxCostShareCourtPct} % de la valeur estimée.
+              {PEPITE_RULE_PARAMS.chanceMinPct} % des ventes comparables ont été adjugées sous
+              l’enchère plafond estimée, et le coût total estimé au prix de référence est d’au plus{" "}
+              {PEPITE_RULE_PARAMS.maxCostShareCourtPct} % de la valeur estimée.
             </li>
             <li>
               <strong>Vente notariale à la bougie :</strong> seul le second test s’applique, avec un
-              seuil plus strict : au plus {PEPITE_V1.maxCostShareNotaryPct} %. L’enchère plafond
-              estimée doit en outre être au moins égale à la mise à prix. Le coût est calculé à
-              partir de la mise à prix, faute d’historique de résultats.
+              seuil plus strict : au plus {PEPITE_RULE_PARAMS.maxCostShareNotaryPct} %. L’enchère
+              plafond estimée doit en outre être au moins égale à la mise à prix. Le coût est
+              calculé à partir de la mise à prix, faute d’historique de résultats.
             </li>
             <li>
               <strong>Vente notariale interactive (par offres) :</strong> seul le second test
-              s’applique, avec le même seuil de {PEPITE_V1.maxCostShareNotaryPct} %, calculé à
-              partir de la première offre possible. L’offre plafond estimée doit en outre être au
-              moins égale à cette première offre, faute de quoi aucune offre ne tient. Le prix de
-              réserve du vendeur, qui n’est pas public, reste inconnu : la mention « prix de réserve
-              inconnu » accompagne le repère.
+              s’applique, avec le même seuil de {PEPITE_RULE_PARAMS.maxCostShareNotaryPct} %,
+              calculé à partir de la première offre possible. L’offre plafond estimée doit en outre
+              être au moins égale à cette première offre, faute de quoi aucune offre ne tient. Le
+              prix de réserve du vendeur, qui n’est pas public, reste inconnu : la mention « prix de
+              réserve inconnu » accompagne le repère.
             </li>
             <li>
               <strong>Vente domaniale ou de type inconnu :</strong> pas de repère.
@@ -193,7 +223,7 @@ function PageContent() {
             réunies :
           </p>
           <ul className="list-disc space-y-2 pl-5">
-            {GUARDRAILS.map((item) => (
+            {guardrails.map((item) => (
               <li key={item}>{item}</li>
             ))}
           </ul>
@@ -203,6 +233,50 @@ function PageContent() {
           </p>
         </Section>
 
+        {v2 ? (
+          <Section id="risque-inondation" title="Le risque d’inondation">
+            <p>
+              Depuis la version pepite-v2{effectiveClause}, le repère n’est pas attribué à un bien
+              dont la position connue se trouve dans la zone que la crue fréquente d’un territoire à
+              risque important d’inondation (TRI) inonderait. Immojudis consulte pour cela la
+              cartographie officielle des TRI diffusée par Géorisques, à partir des coordonnées du
+              bien.
+            </p>
+            <p>
+              Ce contrôle suppose une position précise (adresse ou parcelle). Quand seule la rue est
+              connue, le bien est testé avec un tampon de {FLOOD_STREET_BUFFER_METERS} mètres autour
+              du point (le point et quatre points situés à cette distance) : le résultat n’est
+              retenu que si le tampon est entièrement dans la zone de crue fréquente, ou entièrement
+              en dehors ; sinon, le contrôle reste sans résultat. Quand la position n’est
+              qu’approximative : si la commune compte un TRI, la vente ne reçoit pas le repère ; si
+              elle n’en compte pas, le contrôle n’a pas d’objet et le repère reste possible, sans
+              vérification du risque d’inondation du bien. Un bien déjà repéré dont le contrôle
+              devient impossible (position retirée, source indisponible) garde son repère jusqu’à la
+              vente ; la fiche l’indique.
+            </p>
+            <p>
+              Quand le bien se trouve dans le périmètre d’un plan de prévention des risques
+              d’inondation (PPRi) d’après le Géoportail de l’urbanisme, le repère peut être
+              attribué, mais la fiche le signale : ce périmètre ne dit pas dans quelle zone du plan
+              se situe le bien. Son zonage est à vérifier. Cette mention est visible par tous, avec
+              le repère. Tant que les périmètres de PPRi n’ont pas pu être consultés pour un bien,
+              un nouveau repère n’est pas attribué ; un bien déjà repéré le garde, et la fiche
+              indique que ces périmètres ne sont pas contrôlés à ce jour.
+            </p>
+            <p>
+              Ce contrôle n’est ni une expertise, ni un état des risques, ni un certificat. Il ne
+              signifie pas l’absence de risque d’inondation : les cartes consultées ne couvrent pas
+              tout le territoire ni toutes les causes d’inondation, elles peuvent être incomplètes
+              ou anciennes, et leur précision ne permet pas toujours de situer un bien. Il ne
+              remplace pas l’état des risques qui, lorsque le bien se situe dans une zone prévue par
+              l’article L. 125-5 du code de l’environnement, doit figurer parmi les diagnostics
+              annexés au cahier des conditions de vente ou à l’acte de vente, ni la lecture du plan
+              de prévention et du règlement d’urbanisme, ni la visite, ni l’avis de votre avocat ou
+              du notaire.
+            </p>
+          </Section>
+        ) : null}
+
         <Section id="stabilite" title="La stabilité du repère">
           <p>
             Pour éviter qu’un repère apparaisse et disparaisse d’un jour à l’autre, on n’y entre pas
@@ -210,20 +284,20 @@ function PageContent() {
           </p>
           <ul className="list-disc space-y-1 pl-5">
             <li>
-              Une vente reçoit le repère après {PEPITE_V1.favourableEvaluations} évaluations
-              favorables consécutives.
+              Une vente reçoit le repère après {PEPITE_RULE_PARAMS.favourableEvaluations}{" "}
+              évaluations favorables consécutives.
             </li>
             <li>
               Au tribunal, elle le perd si la part des ventes comparables adjugées sous l’enchère
-              plafond estimée passe sous {PEPITE_V1.exitChanceBelowPct} % ou si le coût total
-              probable dépasse {PEPITE_V1.exitCostShareAbovePct} % de la valeur estimée, ou dès
-              qu’un signal bloquant apparaît. En vente notariale, elle le perd si le coût total
-              probable dépasse {PEPITE_V1.exitCostShareNotaryAbovePct} % de la valeur estimée, ou
-              dès qu’un signal bloquant apparaît.
+              plafond estimée passe sous {PEPITE_RULE_PARAMS.exitChanceBelowPct} % ou si le coût
+              total probable dépasse {PEPITE_RULE_PARAMS.exitCostShareAbovePct} % de la valeur
+              estimée, ou dès qu’un signal bloquant apparaît. En vente notariale, elle le perd si le
+              coût total probable dépasse {PEPITE_RULE_PARAMS.exitCostShareNotaryAbovePct} % de la
+              valeur estimée, ou dès qu’un signal bloquant apparaît.
             </li>
             <li>
-              Le repère est figé {PEPITE_V1.freezeDaysBeforeSale} jours avant la vente, sauf signal
-              bloquant ou changement de prix.
+              Le repère est figé {PEPITE_RULE_PARAMS.freezeDaysBeforeSale} jours avant la vente,
+              sauf signal bloquant ou changement de prix.
             </li>
           </ul>
         </Section>
@@ -233,11 +307,12 @@ function PageContent() {
             Le <strong>prix probable</strong> est la mise à prix multipliée par le rapport habituel
             entre le prix d’adjudication et la mise à prix des ventes comparables. On retient le
             rapport médian (la moitié des ventes comparables se sont conclues en dessous), sauf
-            quand la mise à prix est inférieure à {PEPITE_V1.lowStartingPricePct} % de la valeur
-            estimée : les enchérisseurs visent alors la valeur du bien, et on retient le rapport en
-            dessous duquel se sont conclues trois ventes sur quatre. La fourchette va du rapport en
-            dessous duquel s’est conclue une vente sur quatre à celui en dessous duquel s’en sont
-            conclues trois sur quatre : elle encadre la moitié centrale des ventes comparables.
+            quand la mise à prix est inférieure à {PEPITE_RULE_PARAMS.lowStartingPricePct} % de la
+            valeur estimée : les enchérisseurs visent alors la valeur du bien, et on retient le
+            rapport en dessous duquel se sont conclues trois ventes sur quatre. La fourchette va du
+            rapport en dessous duquel s’est conclue une vente sur quatre à celui en dessous duquel
+            s’en sont conclues trois sur quatre : elle encadre la moitié centrale des ventes
+            comparables.
           </p>
           <p>
             Lorsqu’il est affiché, le prix probable l’est avec cette réserve : « Repère statistique
@@ -273,7 +348,7 @@ function PageContent() {
 
         <Section id="non-mesure" title="Ce que le repère ne mesure pas">
           <ul className="list-disc space-y-2 pl-5">
-            {NOT_MEASURED.map((item) => (
+            {notMeasured.map((item) => (
               <li key={item}>{item}</li>
             ))}
           </ul>
@@ -292,7 +367,7 @@ function PageContent() {
             <li>
               Le repère serait recalculé régulièrement. Il ne serait affiché que si le prix de la
               vente et l’estimation n’ont pas changé depuis le dernier calcul, et si ce calcul date
-              de moins de {PEPITE_V1.maxEvaluationAgeHours} heures.
+              de moins de {PEPITE_RULE_PARAMS.maxEvaluationAgeHours} heures.
             </li>
             <li>
               Il disparaîtrait quand une condition n’est plus remplie, quand la vente n’est plus
@@ -330,15 +405,57 @@ function PageContent() {
 
         <Section id="absence" title="Quand il n’y a pas de repère">
           <p>
-            <strong>
-              L’absence de ce repère ne signifie pas que le bien est sans intérêt ni qu’il présente
-              un risque.
-            </strong>{" "}
-            Beaucoup de ventes ne peuvent pas être évaluées : données manquantes, estimation peu
-            fiable, type de vente non couvert. Et un bien peut convenir à votre projet sans remplir
-            ces critères.
+            {v2 ? (
+              <strong>{ABSENCE_V2}</strong>
+            ) : (
+              <>
+                <strong>
+                  L’absence de ce repère ne signifie pas que le bien est sans intérêt ni qu’il
+                  présente un risque.
+                </strong>{" "}
+                Beaucoup de ventes ne peuvent pas être évaluées : données manquantes, estimation peu
+                fiable, type de vente non couvert. Et un bien peut convenir à votre projet sans
+                remplir ces critères.
+              </>
+            )}
           </p>
         </Section>
+
+        {v2 ? (
+          <>
+            <Section id="historique" title="Historique des versions">
+              <ul className="list-disc space-y-1 pl-5">
+                <li>pepite-v2{effectiveClause} : ajout du contrôle du risque d’inondation.</li>
+                <li>pepite-v1 (depuis le 26 octobre 2026) : version initiale.</li>
+              </ul>
+            </Section>
+
+            <Section id="sources" title="Sources des données">
+              <ul className="list-disc space-y-2 pl-5">
+                <li>
+                  <strong>Géorisques</strong> (ministère de la Transition écologique, BRGM) :
+                  cartographie des territoires à risque important d’inondation (TRI), scénario de
+                  crue fréquente, diffusée par l’API publique Géorisques. Les cartes diffusées à ce
+                  jour datent du premier cycle de cartographie ; la date de la carte consultée est
+                  enregistrée pour chaque bien. Données publiques réutilisées sous Licence Ouverte
+                  2.0.
+                </li>
+                <li>
+                  <strong>Géoportail de l’urbanisme</strong> (IGN) : servitudes d’utilité publique
+                  PM1 (plans de prévention des risques naturels prévisibles), aléa inondation, via
+                  l’API Carto de l’IGN. La date de consultation est indiquée sur la fiche. Données
+                  publiques réutilisées sous Licence Ouverte 2.0.
+                </li>
+              </ul>
+              <p>
+                Seules les coordonnées géographiques du bien sont transmises à ces services, jamais
+                l’adresse ni aucune donnée d’un visiteur ou d’un compte. Ces mentions ne signifient
+                pas que Géorisques, l’IGN ou leurs partenaires cautionnent ce repère, calculé par
+                Immojudis.
+              </p>
+            </Section>
+          </>
+        ) : null}
 
         <Card as="section" aria-labelledby="signaler-erreur" className="bg-surface-muted">
           <h2 id="signaler-erreur" className="font-display text-2xl font-semibold">

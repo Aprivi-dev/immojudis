@@ -1,7 +1,7 @@
-// Règle « pepite-v1 » : ce qu'est une pépite, et comment un résultat devient publiable. Module pur :
+// Règles « pepite-v1 » et « pepite-v2 » : ce qu'est une pépite, et comment un résultat devient publiable. Module pur :
 // aucune donnée, aucun import serveur. Les seuils sont des constantes exportées, que la page
 // « Comment repérons-nous les pépites ? » (`src/app/methode-pepites/method.ts`) relit : un seuil
-// change ici ou nulle part, et toute modification crée une nouvelle version (`PEPITE_RULE_VERSION`).
+// change ici ou nulle part, et toute modification crée une nouvelle version (`PEPITE_LATEST_RULE_VERSION`).
 //
 // Une pépite est un potentiel d'investissement. Elle combine deux tests :
 //   B : de bonnes chances de remporter la vente sans dépasser l'enchère plafond de référence
@@ -17,8 +17,17 @@
 import type { AuctionScenario, ScenarioReliability } from "@/lib/auction-scenarios";
 import type { OccupationCase } from "@/lib/bid-ceiling-engine";
 import { ceilingPosition } from "@/lib/ceiling-vs-court";
+import type { FloodVerdict } from "@/lib/flood-risk";
 
-export const PEPITE_RULE_VERSION = "pepite-v1";
+/**
+ * Version courante de la règle : `pepite-v2` ajoute le critère éliminatoire du risque d'inondation (module
+ * `flood-risk.ts`). `pepite-v1` reste rejouable (`evaluatePepite(input, PEPITE_V1_RULE_VERSION)`) : c'est la
+ * règle APPLIQUÉE tant que l'interrupteur serveur `PEPITE_RULE_V2_ENABLED` est fermé
+ * (`pepite-rule-switch.server.ts`). Les seuils sont communs aux deux versions : seule l'inondation s'ajoute.
+ */
+export const PEPITE_LATEST_RULE_VERSION = "pepite-v2";
+export const PEPITE_V1_RULE_VERSION = "pepite-v1";
+export type PepiteRuleVersion = typeof PEPITE_LATEST_RULE_VERSION | typeof PEPITE_V1_RULE_VERSION;
 
 /** Test B, entrée : part minimale des ventes comparables adjugées sous l'enchère plafond. */
 export const PEPITE_CHANCE_MIN_SHARE = 0.7;
@@ -108,6 +117,8 @@ export const PEPITE_CRITERIA = [
   "gap_significant",
   "property_type_supported",
   "occupancy_known",
+  // Inondation (pepite-v2) : exigée à l'entrée, tolérée au maintien, jamais affichée.
+  "flood_risk_known",
   // Signaux bloquants.
   "no_valuation_conflict",
   "no_ai_block",
@@ -115,6 +126,8 @@ export const PEPITE_CRITERIA = [
   "verification_not_conflict",
   "no_probable_duplicate",
   "risks_qualified",
+  // Inondation (pepite-v2) : bloquant, évalué seulement quand le verdict est connu.
+  "no_high_flood_risk",
   // Tests.
   "test_b_chance",
   "test_c_cost",
@@ -145,6 +158,8 @@ export const PEPITE_BLOCKING_CRITERIA: readonly PepiteCriterionId[] = [
   "no_probable_duplicate",
   "risks_qualified",
   "occupancy_known",
+  // Seul un risque d'inondation ÉLEVÉ fait sortir une pépite publiée, même gelée à J-7.
+  "no_high_flood_risk",
 ];
 
 export type PepiteEstimateInput = {
@@ -198,6 +213,12 @@ export type PepiteSignals = {
   unqualifiedRisks: boolean;
 };
 
+/**
+ * Le verdict d'inondation de la vente (`flood-risk.ts`), lu dans la table privée : jamais un appel réseau.
+ * `ppriChecked` : le périmètre des PPRi a pu être lu au dernier contrôle (vrai aussi quand il ne s'applique pas).
+ */
+export type PepiteFloodInput = { verdict: FloodVerdict; ppriChecked: boolean };
+
 export type PepiteInput = {
   /** Régime de frais de la vente quand son calcul est ouvert ; `null` : pas de pépite. */
   regime: PepiteRegimeKey | null;
@@ -209,6 +230,8 @@ export type PepiteInput = {
   ceiling: PepiteCeilingInput | null;
   scenarios: PepiteScenariosInput;
   signals: PepiteSignals;
+  /** Verdict d'inondation ; ignoré par `pepite-v1`. */
+  flood: PepiteFloodInput;
 };
 
 export type PepiteMetrics = {
@@ -277,7 +300,13 @@ const EMPTY_METRICS: PepiteMetrics = {
   startingShareOfValue: null,
 };
 
-type Thresholds = { chanceMinShare: number; costMaxShare: number };
+/**
+ * Inondation selon le jeu de seuils : `entry` (entrée : verdict connu exigé, risque élevé refusé), `hold`
+ * (maintien : verdict inconnu toléré, risque élevé refusé) ou `off` (pepite-v1 : aucun critère d'inondation).
+ */
+type FloodMode = "entry" | "hold" | "off";
+
+type Thresholds = { chanceMinShare: number; costMaxShare: number; flood: FloodMode };
 
 /** Seuil du test C à l'entrée : plus strict pour les ventes notariales. */
 function entryCostMaxShare(regime: PepiteRegimeKey): number {
@@ -377,6 +406,19 @@ function runCriteria(
   check("no_probable_duplicate", !signals.probableDuplicate);
   check("risks_qualified", !signals.unqualifiedRisks);
 
+  // Inondation (pepite-v2). Le verdict inconnu (position imprécise dans une commune qui a un TRI, source
+  // indisponible) ne passe pas à l'entrée mais est toléré au maintien ; `no_high_flood_risk` n'est évalué que
+  // si le verdict est connu, et seul un risque ÉLEVÉ le manque.
+  if (thresholds.flood !== "off") {
+    const verdict = input.flood.verdict;
+    const known = verdict !== "unknown";
+    // « Aucun risque élevé identifié » sans lecture du périmètre des PPRi n'est qu'un demi-contrôle : il ne fait
+    // pas entrer une nouvelle pépite (au maintien, il est toléré, comme un verdict inconnu).
+    const fullyChecked = verdict !== "none_found" || input.flood.ppriChecked;
+    if (thresholds.flood === "entry") check("flood_risk_known", known && fullyChecked);
+    if (known) check("no_high_flood_risk", verdict !== "high");
+  }
+
   const metrics: PepiteMetrics = {
     ...EMPTY_METRICS,
     startingPriceEur: start,
@@ -450,19 +492,30 @@ const sortByCatalogue = (ids: PepiteCriterionId[]) =>
   [...ids].sort((left, right) => PEPITE_CRITERIA.indexOf(left) - PEPITE_CRITERIA.indexOf(right));
 
 /**
- * Évalue une vente avec la règle `pepite-v1`, à cet instant et sans mémoire : la stabilité (deux
- * évaluations favorables, hystérésis, gel) est appliquée ensuite par `applyPepiteStability`.
+ * Évalue une vente avec la règle `pepite-v2` (ou `pepite-v1` : même règle sans le critère d'inondation, voir
+ * `PEPITE_V1_RULE_VERSION`), à cet instant et sans mémoire : la stabilité (deux
+ * évaluations favorables, hystérésis, gel) est appliquée ensuite par `applyPepiteStability`. La version est
+ * OBLIGATOIRE : aucun appelant ne peut contourner l'interrupteur `PEPITE_RULE_V2_ENABLED` en l'oubliant.
  *
  *  - ventes couvertes : tribunal, vente notariale à la bougie et vente notariale interactive, quand
  *    le régime est ouvert (`openFeeRegimesFromEnv`) ; rien pour les autres ;
  *  - tribunal : tests B et C ; bougie et interactive : test C seul, au seuil de 65 % (la bougie exige
  *    aussi un plafond de référence au moins égal à la mise à prix) ;
  *  - un signal bloquant donne « pas une pépite », même si une donnée manque ; sinon une donnée
- *    indispensable manquante donne « données insuffisantes ».
+ *    indispensable manquante donne « données insuffisantes » ;
+ *  - inondation (v2) : `no_high_flood_risk` est bloquant (un risque élevé fait sortir même une pépite figée à
+ *    J-7) ; `flood_risk_known` manque à l'entrée quand le verdict est inconnu (aucune nouvelle pépite) mais
+ *    n'est pas exigé au maintien (une pépite publiée reste affichée) ; il manque aussi à l'entrée quand « aucun
+ *    risque élevé » ne repose que sur les TRI (périmètre des PPRi non lu) ; un verdict inconnu n'est PAS une donnée
+ *    manquante (pas de sortie par délai de grâce). La v2 ne rend jamais favorable ce que la v1 refusait.
  */
-export function evaluatePepite(input: PepiteInput): PepiteEvaluation {
+export function evaluatePepite(
+  input: PepiteInput,
+  ruleVersion: PepiteRuleVersion,
+): PepiteEvaluation {
   const regime = input.regime;
-  const base = { ruleVersion: PEPITE_RULE_VERSION, regime };
+  const base = { ruleVersion, regime };
+  const v2 = ruleVersion === PEPITE_LATEST_RULE_VERSION;
 
   const eligibility: PepiteCriterionId[] = [];
   const ineligible: PepiteCriterionId[] = [];
@@ -485,10 +538,12 @@ export function evaluatePepite(input: PepiteInput): PepiteEvaluation {
   const entry = runCriteria(input, regime, {
     chanceMinShare: PEPITE_CHANCE_MIN_SHARE,
     costMaxShare: entryCostMaxShare(regime),
+    flood: v2 ? "entry" : "off",
   });
   const exit = runCriteria(input, regime, {
     chanceMinShare: PEPITE_CHANCE_EXIT_SHARE,
     costMaxShare: exitCostMaxShare(regime),
+    flood: v2 ? "hold" : "off",
   });
 
   const missed = sortByCatalogue(entry.missed);

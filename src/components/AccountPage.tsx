@@ -14,7 +14,7 @@ import { fetchAccessPlan } from "@/lib/client-billing";
 import { accountLinksFor } from "@/lib/navigation";
 import { LAUNCH_OFFER_ACCOUNT_TEXT, signupTrialStatusText } from "@/lib/launch-offer";
 import { hasLiveStripeSubscription } from "@/lib/plans";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 import { unlockUsageLine } from "@/lib/sale-unlocks";
 
 const dateFormat = new Intl.DateTimeFormat("fr-FR", {

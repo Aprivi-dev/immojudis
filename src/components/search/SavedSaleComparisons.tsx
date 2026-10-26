@@ -24,7 +24,7 @@ import {
   type ComparedSale,
 } from "@/lib/search/sale-comparison";
 import { userMessage } from "@/lib/user-messages";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 
 export function SavedSaleComparisons({
   items,

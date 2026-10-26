@@ -143,10 +143,16 @@ Le calcul du palier de complétude des annonces (classement de `/sales`, route
 sans nouvelle configuration. `vercel.json` ne garde qu'un filet quotidien (05:50 UTC, décalé du job horaire pour ne pas se chevaucher), compatible
 avec Vercel Hobby. La tâche figure dans la liste de fraîcheur `cron.stale` (3 h).
 
+L'observation du risque d'inondation des ventes (`/api/cron/sale-flood-risk`, règle `pepite-v2`) suit le même
+mécanisme : le job `immojudis-sale-flood-risk` l'appelle toutes les heures (à :25, avant le calcul des pépites) avec
+les mêmes secrets Vault ; `vercel.json` garde un filet quotidien (05:35 UTC). La tâche figure dans la liste de
+fraîcheur `cron.stale` (3 h). La règle `pepite-v2` n'est appliquée que si la variable `PEPITE_RULE_V2_ENABLED` vaut
+`true` (fermée par défaut) : voir `operations/planification.md`.
+
 Le calcul des pépites (`/api/cron/sale-pepites`) suit le même mécanisme : le job `immojudis-sale-pepites`
 l'appelle toutes les heures (à :35) avec les mêmes secrets Vault ; `vercel.json` garde un filet quotidien
 (05:42 UTC). La tâche figure dans la liste de fraîcheur `cron.stale` (3 h). Mode `shadow` à l'application de la
-migration : rien n'est visible du public.
+migration, `on` depuis le 26/10/2026 (migration `20261105100000`).
 
 Le workflow `Apply Supabase Migrations` exécute automatiquement cette étape, puis vérifie l'absence
 de dérive du schéma distant. Voir [`operations-phase-3.md`](operations-phase-3.md) pour les SLO,

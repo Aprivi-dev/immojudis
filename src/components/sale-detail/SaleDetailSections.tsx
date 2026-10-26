@@ -19,7 +19,7 @@ import {
   saleProcedureIsConfirmed,
 } from "@/lib/sale-procedure";
 import type { AuctionSale } from "@/lib/types";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 
 export function PanelIntro({
   eyebrow,

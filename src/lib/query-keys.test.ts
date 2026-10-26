@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { catalogPlaceholder } from "./search/catalog-placeholder";
-import { queryKeys } from "./query-keys";
+import * as queryKeys from "./query-keys";
 
 // These literals are the keys the components used before the factory existed.
 // Cache invalidation and optimistic updates match on them, so they must not drift.
