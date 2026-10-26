@@ -1,5 +1,5 @@
 -- Pépites (migration 20261104100000) : résultat de la règle pepite-v1 stocké dans une table privée, mode
--- « off / shadow / on » (valeur initiale « shadow »), lecture publique par deux fonctions qui ne rendent
+-- « off / shadow / on » (valeur initiale « shadow », ouvert à « on » par 20261105100000), lecture publique par deux fonctions qui ne rendent
 -- jamais un montant, liste d'administration, signal « pepite » des retours « Utile / Pas pertinent ».
 --   * la table n'est lisible ni par anon ni par authenticated, écrite par service_role ;
 --   * mode « shadow » ou « off » : les fonctions publiques ne rendent rien ;
@@ -177,11 +177,11 @@ select ok(
 );
 select is(
   (select mode from app_private.sale_pepite_settings where singleton),
-  'shadow',
-  'the initial mode is « shadow »: nothing is public'
+  'on',
+  'the mode starts in « shadow » (20261104100000) and is opened to « on » by 20261105100000'
 );
-select is(app_private.sale_pepite_mode(), 'shadow', 'the mode function reads the singleton');
-select is(public.get_sale_pepite_mode(), 'shadow', 'the application reads the mode through the public function');
+select is(app_private.sale_pepite_mode(), 'on', 'the mode function reads the singleton');
+select is(public.get_sale_pepite_mode(), 'on', 'the application reads the mode through the public function');
 select throws_ok(
   $$update app_private.sale_pepite_settings set mode = 'maybe' where singleton$$,
   '23514', null, 'the mode comes from the list off, shadow, on'
@@ -226,6 +226,7 @@ select ok(
 );
 
 -- Lecture publique : mode « shadow » -> rien ------------------------------------------------------------
+update app_private.sale_pepite_settings set mode = 'shadow' where singleton;
 select is(
   (select count(*) from public.list_public_pepite_sale_ids() as id
     where id::text like 'c7500000-1000-4000-8000-0000000000%'),

@@ -296,7 +296,7 @@ Le suivi est complété ci-dessous à chaque lot.
   - Budgets relevés à la demande du fondateur : fiche 380 000, favoris 680 000, plus gros fichier 335 000, total inchangé à 6 220 000. Les marges restantes sont fines, environ 5 Ko chacune.
 - **Points remis à `juridique-rgpd`** :
   - les prix d'adjudication notariaux sont conservés 36 mois dans les instantanés ;
-  - le prix probable, tiré des données Licitor, est montré à un compte gratuit qui débloque une vente. L'accord écrit de Licitor est attendu avant le passage en `on`.
+  - le prix probable, tiré des données Licitor, est montré à un compte gratuit qui débloque une vente. Le fondateur a tranché : aucun accord écrit n'est demandé, la plateforme n'étant pas encore officiellement lancée.
 
 ### Actions du fondateur
 
@@ -323,11 +323,7 @@ Le suivi est complété ci-dessous à chaque lot.
    >
    > L'équipe Immojudis
 
-2. **Avant le passage du label en `on` : obtenir l'accord écrit de Licitor.**
-   - Le test B et le prix probable dérivent des prix d'adjudication de Licitor.
-   - Un badge public est un usage en accès libre, que l'accord téléphonique ne couvre pas (`docs/vercel_setup.md`, `docs/model-card-tribunal-statistics.md`).
-
-3. **Recommandé : faire valider par un avocat** les points listés par `juridique-rgpd` :
+2. **Recommandé : faire valider par un avocat** les points listés par `juridique-rgpd` :
    - qualification du repère ;
    - opposabilité des CGU ;
    - droit des bases de données ;
@@ -339,4 +335,8 @@ Le suivi est complété ci-dessous à chaque lot.
 - application des migrations par le workflow « Apply Supabase Migrations » (lancé depuis `main`, confirmation `production`) ;
 - déploiement Vercel et contrôles de production.
 
-Le calcul de la pépite est livré en mode `shadow`. Le passage en `on` se fait après contrôle de la liste sur le catalogue réel.
+Le calcul de la pépite a été livré en mode `shadow` (mise en production du 26/10/2026, 17 h UTC).
+
+**Ouverture (décision du fondateur, 26/10/2026).** Le label passe en `on` sans attendre, par la migration `20261105100000_sale_pepites_open.sql`. Aucun accord écrit de Licitor n'est demandé : la plateforme n'est pas encore officiellement lancée. Une vente ne s'affiche comme pépite qu'après deux évaluations favorables espacées de 12 h. L'arrêt d'urgence de `/admin/pepites` repasse en `shadow` à tout moment.
+
+**Suite.** Une version 2 de la pépite, avec d'autres critères (emplacement, potentiel locatif, urbanisme, risques, état du bien, liquidité…), sera définie avec le fondateur à partir de l'inventaire des données disponibles.
