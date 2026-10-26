@@ -4,6 +4,10 @@ import Link from "next/link";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import CircleHelp from "lucide-react/dist/esm/icons/circle-help.js";
 
+/** Une section de l'article qui compare les ventes notariales (bougie, interactive) au tribunal. */
+const notaryHref = (section: string) =>
+  `/ressources/ventes-notariales-domaniales-differences-tribunal#${section}`;
+
 /**
  * Définitions courtes et neutres, alignées sur le lexique du guide. Elles n'énoncent pas de règle
  * de procédure, sauf le montant de la garantie pour enchérir en saisie immobilière : les autres
@@ -38,6 +42,30 @@ const TERMES: Record<TermeKey, TermeEntry> = {
     definition:
       "Montant maximum à ne pas dépasser, simulé à partir du marché, des frais, des travaux et des risques. C’est une aide à la décision, pas un conseil d’achat.",
     anchor: "lexique-enchere-plafond",
+  },
+  "offre-plafond": {
+    label: "offre plafond",
+    definition:
+      "Montant maximum à ne pas dépasser dans une vente par offres, simulé à partir du marché, des frais et des risques. Le vendeur n’est pas forcément tenu de retenir la meilleure offre ; lisez les conditions de la vente.",
+    href: notaryHref("vente-interactive"),
+  },
+  "vente-bougie": {
+    label: "vente à la bougie",
+    definition:
+      "Vente aux enchères chez le notaire, en salle : l’adjudication est prononcée quand deux feux successifs s’éteignent sans nouvelle enchère.",
+    href: notaryHref("notaire"),
+  },
+  "vente-interactive": {
+    label: "vente notariale interactive",
+    definition:
+      "Vente chez le notaire par offres en ligne, pendant une durée limitée. L’acheteur retenu signe un avant-contrat ; le vendeur n’est pas tenu de retenir la meilleure offre.",
+    href: notaryHref("vente-interactive"),
+  },
+  "premiere-offre": {
+    label: "première offre possible",
+    definition:
+      "Plus bas montant que l’on peut proposer dans une vente notariale interactive. Ce n’est pas une mise à prix : le prix de réserve n’est pas publié.",
+    href: notaryHref("vente-interactive"),
   },
   liberation: {
     label: "libération du bien",
@@ -91,6 +119,11 @@ type TermeEntry = {
   definition: string;
   /** Ancre de l'entrée dans le lexique du guide (`lexique-<terme>`) ; sans elle, le lexique entier. */
   anchor?: string;
+  /**
+   * Lien complet quand le terme n'est pas dans le lexique du guide, qui est judiciaire : les termes
+   * des ventes notariales renvoient à l'article qui les compare au tribunal.
+   */
+  href?: string;
 };
 
 export type TermeKey =
@@ -99,6 +132,10 @@ export type TermeKey =
   | "surenchere"
   | "consignation"
   | "enchere-plafond"
+  | "offre-plafond"
+  | "vente-bougie"
+  | "vente-interactive"
+  | "premiere-offre"
   | "liberation"
   | "portage"
   | "emoluments"
@@ -112,7 +149,7 @@ const GUIDE_PATH = "/ventes-immobilieres-judiciaires";
 
 /** Lien vers l'entrée précise du lexique quand le terme y figure, vers le lexique sinon. */
 function guideHref(entry: TermeEntry): string {
-  return `${GUIDE_PATH}#${entry.anchor ?? "lexique"}`;
+  return entry.href ?? `${GUIDE_PATH}#${entry.anchor ?? "lexique"}`;
 }
 
 /** Décale la bulle vers la gauche si elle dépasse du bord droit de l'écran (mot en fin de ligne). */

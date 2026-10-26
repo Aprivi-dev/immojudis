@@ -102,11 +102,19 @@ export function LegalPage() {
 
           <LegalSection title="Estimations, rapports et responsabilité">
             <p>
-              Les scores, comparables DVF, fourchettes de valeur, rendements, analyses de risques et
-              plafonds d’enchère sont des aides à la lecture fondées sur les données disponibles au
-              moment du calcul. Ils ne constituent ni un conseil juridique ou financier, ni une
-              expertise immobilière, ni une garantie de rentabilité, de financement, d’adjudication
-              ou de revente.
+              Les scores, le repère « Pépite », comparables DVF, fourchettes de valeur, prix
+              probables, rendements, analyses de risques, enchères plafond et offres plafond
+              estimées sont des aides à la lecture fondées sur les données disponibles au moment du
+              calcul. Ils ne constituent ni un conseil juridique ou financier, ni une recommandation
+              d’acheter ou d’enchérir, ni une expertise immobilière, ni une garantie de prix, de
+              rentabilité, de financement, d’adjudication ou de revente.
+            </p>
+            <p className="mt-3">
+              Le repère « Pépite » est calculé automatiquement par Immojudis sur des critères
+              publics. Aucune rémunération ne peut l’obtenir ni l’améliorer, y compris celle des
+              cabinets d’avocats qui achètent une mise en avant ou des organisateurs, vendeurs et
+              professionnels qui publient des annonces. Une enchère ou une offre plafond est une
+              hypothèse, pas un résultat.
             </p>
           </LegalSection>
 
@@ -114,7 +122,9 @@ export function LegalPage() {
             <p>
               La mise en relation ne remplace pas le libre choix du conseil, ne crée pas de mandat
               et ne constitue pas une validation juridique du dossier. Les conditions d’intervention
-              et honoraires relèvent exclusivement de l’accord conclu avec l’avocat choisi.
+              et honoraires relèvent exclusivement de l’accord conclu avec l’avocat choisi. La mise
+              en relation ne dépend pas du repère « Pépite » : elle n’en est ni une condition ni une
+              conséquence.
             </p>
           </LegalSection>
 

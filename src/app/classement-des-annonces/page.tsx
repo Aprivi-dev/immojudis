@@ -15,6 +15,7 @@ import {
 import { publicLegalPublisher } from "@/lib/legal-documents";
 import { BreadcrumbJsonLd } from "@/components/BreadcrumbJsonLd";
 import { pageMetadata } from "@/lib/page-metadata";
+import { PEPITE_METHOD_PATH } from "@/app/methode-pepites/method";
 import {
   LAWYER_RANKING_HREF,
   LAWYER_RANKING_LINK_LABEL,
@@ -26,7 +27,7 @@ export const metadata: Metadata = pageMetadata({
   path: "/classement-des-annonces",
   title: "Classement des annonces",
   description:
-    "Comment Immojudis classe les annonces : ordre par défaut, autres tris, repère « Annonce bien renseignée », publicité des avocats, origine et retrait des ventes.",
+    "Comment Immojudis classe les annonces : ordre par défaut, tris, repères « Annonce bien renseignée » et « Pépite », publicité des avocats, retrait des ventes.",
 });
 
 /**
@@ -66,7 +67,7 @@ function PageContent() {
     <PageShell
       eyebrow="Transparence"
       title="Comment sont classées les annonces ?"
-      description="L’ordre dans lequel les annonces s’affichent, ce que signifie le repère « Annonce bien renseignée », la publicité des avocats, l’origine des annonces et leur retrait."
+      description="L’ordre dans lequel les annonces s’affichent, ce que signifient les repères « Annonce bien renseignée » et « Pépite », la publicité des avocats, l’origine des annonces et leur retrait."
       width="narrow"
     >
       <div className="grid gap-5">
@@ -124,6 +125,31 @@ function PageContent() {
           </div>
         </Card>
 
+        <Card as="section" aria-labelledby="repere-pepite">
+          <h2 id="repere-pepite" className="font-display text-2xl font-semibold">
+            Le repère « Pépite »
+          </h2>
+          <div className="mt-3 space-y-3 text-ink-soft">
+            <p>
+              « Pépite » est un repère calculé automatiquement par Immojudis, sur des critères
+              publics, pour signaler un potentiel d’investissement mesuré par deux conditions
+              chiffrées, calculées sur les données disponibles : des ventes comparables passées le
+              plus souvent adjugées sous l’enchère plafond estimée, et un coût total estimé, frais
+              compris, d’au plus une part fixée de la valeur estimée. Ce n’est ni un conseil, ni une
+              recommandation d’acheter, ni une garantie de prix, de rendement ou d’adjudication.
+            </p>
+            <p>
+              Ce repère ne change pas l’ordre par défaut des annonces, ni les autres tris. L’absence
+              de ce repère ne signifie pas que le bien est sans intérêt ni qu’il présente un risque.
+            </p>
+            <p>
+              <Link href={PEPITE_METHOD_PATH} className="font-semibold text-gold-text underline">
+                Comment repérons-nous les pépites ?
+              </Link>
+            </p>
+          </div>
+        </Card>
+
         <Card as="section" aria-labelledby="publicite-avocats">
           <h2 id="publicite-avocats" className="font-display text-2xl font-semibold">
             L’encart « {SPONSORED_LABEL} » des avocats
@@ -139,6 +165,12 @@ function PageContent() {
             <p>
               Cet encart n’est ni une recommandation, ni une notation, ni une garantie de résultat.
               Les annonces ne sont ni avancées ni reculées par cet encart.
+            </p>
+            <p>
+              Aucune rémunération ne peut obtenir ou améliorer une Pépite : ni les cabinets
+              d’avocats qui achètent une mise en avant, ni les organisateurs, vendeurs ou
+              professionnels qui publient des annonces. Cet encart est sans lien avec le repère
+              Pépite.
             </p>
             <p>
               <Link href={LAWYER_RANKING_HREF} className="font-semibold text-gold-text underline">

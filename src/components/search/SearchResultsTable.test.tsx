@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { FeeRegimesProvider } from "@/components/FeeRegimesProvider";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AiReviewProjectionReadModel } from "@/lib/ai-review-guard";
 import { formatStartingPrice } from "@/lib/format";
@@ -182,6 +183,30 @@ describe("vue « tableau » des résultats", () => {
     }
   });
 
+  it("dit « Prix non publié » pour une cession domaniale sans prix, et rien de plus ailleurs", () => {
+    renderTable([
+      makeSale("sale-state-none", { sale_venue_type: "state", starting_price_eur: null }),
+      makeSale("sale-state-zero", { sale_venue_type: "state", starting_price_eur: 0 }),
+      makeSale("sale-state-priced", { sale_venue_type: "state", starting_price_eur: 80_000 }),
+      makeSale("sale-notary-none", { sale_venue_type: "notary", starting_price_eur: null }),
+      makeSale("sale-tribunal-none", { sale_venue_type: "tribunal", starting_price_eur: null }),
+    ]);
+    const [none, zero, priced, notary, tribunal] = screen.getAllByRole("row").slice(1);
+    for (const row of [none, zero]) {
+      expect(row.textContent).toContain("Prix non publié");
+      // Pas d'intitulé « Prix publié » sous « Prix non publié » (même règle que la carte).
+      expect(row.textContent).not.toContain("Prix publié");
+      expect(row.textContent).not.toContain("Prix non communiqué");
+    }
+    expect(priced.textContent).not.toContain("Prix non publié");
+    expect(priced.textContent).toMatch(/80\s000/);
+    expect(priced.textContent).toContain("Prix publié");
+    for (const row of [notary, tribunal]) {
+      expect(row.textContent).toContain("Prix non communiqué");
+      expect(row.textContent).not.toContain("Prix non publié");
+    }
+  });
+
   it("garde les mentions de la carte quand une valeur manque", () => {
     renderTable([
       makeSale("sale-a", {
@@ -226,7 +251,9 @@ describe("vue « tableau » des résultats", () => {
 
   it("applique les règles d'accès de la carte : mêmes lignes pour un visiteur", () => {
     const tribunal = makeSale("sale-t");
-    const notary = makeSale("sale-n", { sale_venue_type: "notary" });
+    // Une vente domaniale n'a pas de régime de frais : pas de déblocage promis. Une vente notariale
+    // a le sien (bougie ou interactive) : le déblocage ouvre son plafond.
+    const notary = makeSale("sale-n", { sale_venue_type: "state" });
     renderTable([tribunal, notary], { locked: true, analysisLocked: true });
 
     const [rowT, rowN] = screen.getAllByRole("row").slice(1);
@@ -255,6 +282,65 @@ describe("vue « tableau » des résultats", () => {
     expect(cardN.textContent).toContain("Fiche complète avec un compte gratuit");
   });
 
+  it("suit l'interrupteur par régime lu par la page serveur : pas de déblocage promis pour une vente notariale fermée", () => {
+    const tribunal = makeSale("sale-t");
+    const notarial = makeSale("sale-b", { sale_venue_type: "notary" });
+    const access = { locked: true, analysisLocked: true };
+    const closed = { open: ["tribunal"] as const, scopeNote: "" };
+
+    // Sans fournisseur : tous les régimes définis sont ouverts.
+    renderTable([tribunal, notarial], access);
+    expect(screen.getAllByRole("row").slice(1)[1].textContent).toContain(FREE_ACCESS_LINE);
+    cleanup();
+
+    // Tableau, puis cartes, sous un interrupteur qui ne laisse que le tribunal.
+    render(
+      <FeeRegimesProvider value={closed}>
+        <QueryClientProvider client={new QueryClient()}>
+          <SearchResultsList
+            sales={[tribunal, notarial]}
+            returnTo="/sales"
+            {...access}
+            isLoading={false}
+            error={null}
+            selectedSaleId={null}
+            hoveredSaleId={null}
+            onHover={vi.fn()}
+            onSelect={vi.fn()}
+            comparedSaleIds={[]}
+            comparisonDisabled={false}
+            onToggleComparison={vi.fn()}
+            view="table"
+          />
+        </QueryClientProvider>
+      </FeeRegimesProvider>,
+    );
+    const [rowT, rowB] = screen.getAllByRole("row").slice(1);
+    expect(rowT.textContent).toContain(FREE_ACCESS_LINE);
+    expect(rowB.textContent).not.toContain(FREE_ACCESS_LINE);
+    expect(rowB.textContent).toContain("Fiche complète avec un compte gratuit");
+    cleanup();
+
+    render(
+      <FeeRegimesProvider value={closed}>
+        <QueryClientProvider client={new QueryClient()}>
+          <ListingCard
+            sale={notarial}
+            returnTo="/sales"
+            locked
+            analysisLocked
+            active={false}
+            onHover={vi.fn()}
+            onSelect={vi.fn()}
+          />
+        </QueryClientProvider>
+      </FeeRegimesProvider>,
+    );
+    const card = screen.getByRole("article");
+    expect(card.textContent).not.toContain(FREE_ACCESS_LINE);
+    expect(card.textContent).toContain("Fiche complète avec un compte gratuit");
+  });
+
   it("ne montre ni statut d'occupation ni donnée réservée que la carte cache", () => {
     renderTable([makeSale("sale-a", { occupancy_status: "occupied", investment_score: 78 })], {
       locked: true,
@@ -267,9 +353,11 @@ describe("vue « tableau » des résultats", () => {
 
   it("choisit la ligne d'accès par un seul helper, partagé avec la carte", () => {
     const tribunal = makeSale("sale-t");
-    const notary = makeSale("sale-n", { sale_venue_type: "notary" });
+    const notary = makeSale("sale-n", { sale_venue_type: "state" });
+    const notarial = makeSale("sale-b", { sale_venue_type: "notary" });
     const open = { locked: false, analysisLocked: false, unlocked: false };
     expect(listingAccessLine(tribunal, open)).toBe("Voir le détail");
+    expect(listingAccessLine(notarial, { ...open, analysisLocked: true })).toBe(FREE_ACCESS_LINE);
     expect(listingAccessLine(tribunal, { ...open, analysisLocked: true })).toBe(FREE_ACCESS_LINE);
     expect(listingAccessLine(tribunal, { ...open, analysisLocked: true, unlocked: true })).toBe(
       "Voir le détail",
@@ -422,5 +510,26 @@ describe("vue « tableau » des résultats", () => {
     renderTable([makeSale("sale-a")], { view: "cards" });
     expect(screen.queryByRole("table")).toBeNull();
     expect(screen.getAllByRole("article")).toHaveLength(1);
+  });
+});
+
+describe("vue « tableau » : repère « Pépite »", () => {
+  it("met une icône avec son texte pour lecteur d'écran dans la colonne Statut, sur la ligne d'une pépite seulement", () => {
+    renderTable([makeSale("sale-a"), makeSale("sale-b", { city: "Lyon" })], {
+      pepiteSaleIds: new Set(["sale-b"]),
+    });
+    const rows = within(screen.getAllByRole("rowgroup")[1]).getAllByRole("row");
+    expect(within(rows[0]).queryByRole("button", { name: "Pépite" })).toBeNull();
+    const badge = within(rows[1]).getByRole("button", { name: "Pépite" });
+    expect(badge.querySelector(".sr-only")?.textContent).toBe("Pépite");
+    expect(badge.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+    // Le nom accessible du lien de la ligne porte aussi le mot.
+    expect(within(rows[1]).getByRole("link").getAttribute("aria-label")).toMatch(/, pépite$/);
+    expect(within(rows[0]).getByRole("link").getAttribute("aria-label")).not.toMatch(/pépite/);
+  });
+
+  it("n'ajoute rien quand la liste est vide ou absente (mode shadow)", () => {
+    renderTable([makeSale("sale-a")], { pepiteSaleIds: new Set() });
+    expect(screen.queryByText("Pépite")).toBeNull();
   });
 });

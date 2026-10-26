@@ -12,17 +12,26 @@ import {
   ceilingConfidence,
   ceilingsByWorks,
   computeCeilingPlan,
+  estimatedFeeItems,
   evaluateBid,
+  feeSensitivity,
   targetYieldPct,
   type CeilingHypotheses,
   type CeilingPlan,
   type CeilingStep,
 } from "@/lib/bid-ceiling-engine";
 import type { CeilingUserChoices } from "@/lib/bid-ceiling-defaults";
-import { ceilingGap, UNPROFITABLE_HEADLINE } from "@/lib/bid-ceiling-gaps";
+import {
+  ceilingGap,
+  UNPROFITABLE_EXPLANATION,
+  UNPROFITABLE_HEADLINE,
+} from "@/lib/bid-ceiling-gaps";
+import { describeCeilingStartGap } from "@/lib/ceiling-start-gap";
+import { labelsOf, type FeeRegimeLabels } from "@/lib/fee-regime-definitions";
 import { formatPrice } from "@/lib/format";
 import { dpeRentalNote } from "@/lib/works-guidance";
 import { CeilingHypothesesPanel } from "@/components/ceiling/CeilingHypothesesPanel";
+import { EstimatedFeesBadge } from "@/components/ceiling/EstimatedFeesBadge";
 import { Terme, type TermeKey } from "@/components/ceiling/Terme";
 
 type ChoicesUpdate = (change: (choices: CeilingUserChoices) => CeilingUserChoices) => void;
@@ -51,7 +60,17 @@ export function CeilingPlanner({
 }) {
   const [hypothesesOpen, setHypothesesOpen] = useState(false);
   const confidence = ceilingConfidence(hypotheses);
+  // Textes du régime de frais de la vente (ceux du tribunal sans régime).
+  const regimeLabels = labelsOf(hypotheses);
+  const labels = regimeLabels.planner;
   const gap = ceilingGap(plan, valueReason);
+  const startGap = describeCeilingStartGap(
+    plan,
+    positiveAmount(hypotheses.startingPrice),
+    regimeLabels,
+  );
+  const estimatedFees = estimatedFeeItems(hypotheses);
+  const sensitivity = useMemo(() => feeSensitivity(hypotheses, plan), [hypotheses, plan]);
   const profilePlans = useMemo(
     () =>
       CEILING_PROFILES.map((profile) => ({
@@ -73,11 +92,10 @@ export function CeilingPlanner({
               id="ceiling-planner-title"
               className="font-display text-2xl font-medium text-brand-navy sm:text-3xl"
             >
-              Votre enchère plafond
+              {labels.title}
             </h2>
             <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-              Le montant à ne pas dépasser à l’audience, une fois comptés la valeur du bien, votre
-              marge, les travaux, la libération, le portage et tous les frais de la vente.
+              {labels.intro}
             </p>
           </div>
           <button
@@ -97,7 +115,7 @@ export function CeilingPlanner({
             <div className="min-w-0">
               <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-text">
                 <Target className="h-4 w-4" />
-                Enchère plafond (simulation) · {profileLabel(hypotheses)}
+                {labels.resultEyebrow} · {profileLabel(hypotheses)}
               </div>
               {gap == null || marketLoading ? (
                 <div className="mt-3 text-4xl font-semibold leading-none tabular-nums text-foreground sm:text-5xl">
@@ -110,7 +128,7 @@ export function CeilingPlanner({
                     : `À compléter : ${gap.reason}`}
                 </div>
               )}
-              <Verdict hypotheses={hypotheses} plan={plan} />
+              <Verdict hypotheses={hypotheses} plan={plan} labels={regimeLabels} />
             </div>
             <ProfilePicker
               profiles={profilePlans}
@@ -118,15 +136,37 @@ export function CeilingPlanner({
               onChoicesChange={onChoicesChange}
             />
           </div>
-          <ConfidenceNote confidence={confidence} />
+          <ConfidenceNote
+            confidence={confidence}
+            notarial={hypotheses.regime?.kind === "notarial"}
+          />
+          {estimatedFees.length > 0 || sensitivity != null ? (
+            <div className="mt-3 grid gap-2 text-sm leading-relaxed text-muted-foreground">
+              <EstimatedFeesBadge items={estimatedFees} />
+              {sensitivity != null ? (
+                <p data-testid="fee-sensitivity">
+                  <strong className="text-foreground">
+                    +1 000 € de frais = −{formatPrice(sensitivity)} d’{regimeLabels.ceilingTerm}
+                  </strong>{" "}
+                  (calcul avec vos hypothèses : ce n’est pas une fourchette).
+                </p>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         {plan.available ? (
           <>
             <CeilingSteps steps={plan.steps} />
             <WorksCeilings hypotheses={hypotheses} onEditWorks={onEditWorks} />
-            <BidSimulator hypotheses={hypotheses} plan={plan} />
-            <CashPlan hypotheses={hypotheses} plan={plan} />
+            {/* Le point de départ du simulateur suit le passage du plafond sous la mise à prix. */}
+            <BidSimulator
+              key={startGap?.kind === "below" ? "ceiling-below-start" : "ceiling-above-start"}
+              hypotheses={hypotheses}
+              plan={plan}
+            />
+            {/* Sans prix qui tienne, pas de calendrier de trésorerie à la mise à prix. */}
+            {plan.reachable ? <CashPlan hypotheses={hypotheses} plan={plan} /> : null}
           </>
         ) : null}
 
@@ -153,13 +193,17 @@ export function CeilingPlanner({
 
         <p className="mt-5 flex items-start gap-2 text-xs leading-relaxed text-muted-foreground">
           <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gold-text" />
-          <span>
-            Aide à la décision calculée avec vos hypothèses : elle ne remplace ni la lecture du{" "}
-            <Terme terme="cahier-conditions-vente" placement="top">
-              cahier des conditions de vente
-            </Terme>{" "}
-            ni le conseil de votre avocat. Aucun prix d’adjudication n’est garanti.
-          </span>
+          {labels.footnote ? (
+            <span>{labels.footnote}</span>
+          ) : (
+            <span>
+              Aide à la décision calculée avec vos hypothèses : elle ne remplace ni la lecture du{" "}
+              <Terme terme="cahier-conditions-vente" placement="top">
+                cahier des conditions de vente
+              </Terme>{" "}
+              ni le conseil de votre avocat. Aucun prix d’adjudication n’est garanti.
+            </span>
+          )}
         </p>
       </div>
     </section>
@@ -254,9 +298,17 @@ function ProfilePicker({
   );
 }
 
-function Verdict({ hypotheses, plan }: { hypotheses: CeilingHypotheses; plan: CeilingPlan }) {
+function Verdict({
+  hypotheses,
+  plan,
+  labels,
+}: {
+  hypotheses: CeilingHypotheses;
+  plan: CeilingPlan;
+  labels: FeeRegimeLabels;
+}) {
   const start = positiveAmount(hypotheses.startingPrice);
-  const startingPrice = <Terme terme="mise-a-prix">mise à prix</Terme>;
+  const startGap = describeCeilingStartGap(plan, start, labels);
   const limitedByRent = plan.available && plan.reachable && plan.binding === "rendement";
   return (
     <>
@@ -264,22 +316,19 @@ function Verdict({ hypotheses, plan }: { hypotheses: CeilingHypotheses; plan: Ce
         {!plan.available ? (
           `${plan.reason}. Complétez-la dans les hypothèses ci-dessous pour obtenir votre plafond.`
         ) : !plan.reachable ? (
-          "À ces hypothèses, aucun prix d’enchère ne respecte la marge choisie : travaux, libération et frais dépassent déjà le coût total maximal."
-        ) : start && plan.maxBid < start ? (
+          UNPROFITABLE_EXPLANATION
+        ) : startGap ? (
+          startGap.text
+        ) : labels.byOffers ? (
           <>
-            À ces hypothèses, votre plafond ({formatPrice(plan.maxBid)}) est inférieur à la{" "}
-            {startingPrice} ({formatPrice(start)}) : une enchère à la mise à prix ne respecterait
-            pas la marge de sécurité choisie.
-          </>
-        ) : start ? (
-          <>
-            La {startingPrice} ({formatPrice(start)}) est inférieure à votre plafond de{" "}
-            {formatPrice(plan.maxBid)} (simulation, hors aléas).
+            <Terme terme="premiere-offre">Première offre possible</Terme> non communiquée : comparez
+            votre {labels.ceilingTerm} au prix annoncé.
           </>
         ) : (
           <>
             <Terme terme="mise-a-prix">Mise à prix</Terme> non communiquée : comparez votre plafond
-            au montant annoncé à l’audience.
+            au montant annoncé{" "}
+            {hypotheses.regime?.kind === "notarial" ? "à la vente" : "à l’audience"}.
           </>
         )}
         {limitedByRent
@@ -291,6 +340,11 @@ function Verdict({ hypotheses, plan }: { hypotheses: CeilingHypotheses; plan: Ce
           Loyer non renseigné : le plafond ne tient pas compte du rendement. Saisissez un loyer.
         </p>
       ) : null}
+      {labels.planner.reserveNotice ? (
+        <p role="note" className="mt-2 max-w-xl text-sm font-semibold leading-relaxed">
+          {labels.planner.reserveNotice}
+        </p>
+      ) : null}
     </>
   );
 }
@@ -299,13 +353,21 @@ function positiveAmount(value: number | null | undefined): number | null {
   return value != null && Number.isFinite(value) && value > 0 ? value : null;
 }
 
-function ConfidenceNote({ confidence }: { confidence: ReturnType<typeof ceilingConfidence> }) {
+function ConfidenceNote({
+  confidence,
+  notarial,
+}: {
+  confidence: ReturnType<typeof ceilingConfidence>;
+  notarial: boolean;
+}) {
   return (
     <p className="mt-5 border-t border-gold/20 pt-4 text-sm leading-relaxed text-muted-foreground">
       <strong className="text-foreground">Fiabilité : {confidence.label}.</strong>{" "}
       {confidence.gaps.length
         ? `Reste à confirmer : ${confidence.gaps.join(", ")}.`
-        : "Valeur, surface, occupation et frais préalables sont renseignés."}
+        : notarial
+          ? "Valeur, surface, occupation et frais de la vente sont renseignés."
+          : "Valeur, surface, occupation et frais préalables sont renseignés."}
     </p>
   );
 }
@@ -438,7 +500,11 @@ function WorksCeilings({
 }
 
 function BidSimulator({ hypotheses, plan }: { hypotheses: CeilingHypotheses; plan: CeilingPlan }) {
-  const defaultBid = hypotheses.startingPrice ?? plan.maxBid;
+  // Plafond sous la mise à prix : on propose d'abord le plafond, pas la mise à prix.
+  const startingPrice = hypotheses.startingPrice;
+  const ceilingBelowStart =
+    plan.reachable && startingPrice != null && startingPrice > 0 && plan.maxBid < startingPrice;
+  const defaultBid = ceilingBelowStart ? plan.maxBid : (startingPrice ?? plan.maxBid);
   const [bid, setBid] = useState<number>(defaultBid);
   // Texte en cours de saisie : effacer le champ le laisse vide au lieu de le ramener à 0. `null` :
   // le champ montre le montant (choix rapide, sortie du champ).
@@ -449,12 +515,34 @@ function BidSimulator({ hypotheses, plan }: { hypotheses: CeilingHypotheses; pla
   };
   const evaluation = evaluateBid(hypotheses, plan, bid);
   const fees = evaluation.fees;
+  const regimeLabels = labelsOf(hypotheses);
+  const labels = regimeLabels.planner;
+  const byOffers = regimeLabels.byOffers;
+  const notarial = hypotheses.regime?.kind === "notarial";
+  const startLabel = `${regimeLabels.referencePriceTerm.charAt(0).toUpperCase()}${regimeLabels.referencePriceTerm.slice(1)}`;
+  // Une vente par offres n'a ni adjudication ni émoluments « à définir » : seuls les postes du
+  // régime sont écrits (les montants nuls sont retirés plus bas).
   const rows: Array<[label: string, value: number, term?: TermeKey]> = [
-    ["Prix d’adjudication", evaluation.price, "adjudication"],
-    ["Frais préalables", fees.fpt, "frais-prealables"],
+    [labels.priceLabel, evaluation.price, byOffers ? undefined : "adjudication"],
+    ...(labels.preliminaryLabel
+      ? ([[labels.preliminaryLabel, fees.fpt, "frais-prealables"]] as Array<
+          [string, number, TermeKey]
+        >)
+      : []),
+    ...(labels.organizationLabel
+      ? ([[labels.organizationLabel, fees.organizationFees]] as Array<[string, number]>)
+      : []),
+    ...(labels.negotiationLabel
+      ? ([[labels.negotiationLabel, fees.negotiationFees]] as Array<[string, number]>)
+      : []),
+    ...(labels.advertisingLabel
+      ? ([[labels.advertisingLabel, fees.advertisingFees]] as Array<[string, number]>)
+      : []),
     ["Droits d’enregistrement", fees.registrationDuties + fees.csi + fees.vatOnPrice],
-    ["Émoluments de l’avocat poursuivant", fees.emolumentsTTC, "emoluments"],
-    ["Honoraires de votre avocat", fees.lawyerFees],
+    [labels.emolumentsLabel, fees.emolumentsTTC, notarial ? undefined : "emoluments"],
+    ...(labels.lawyerLabel
+      ? ([[labels.lawyerLabel, fees.lawyerFees]] as Array<[string, number]>)
+      : []),
     ["Travaux et imprévus", plan.worksTotal],
     ["Libération du bien", plan.releaseCost, "liberation"],
     ["Portage", plan.carryingFixed + evaluation.financing, "portage"],
@@ -462,10 +550,10 @@ function BidSimulator({ hypotheses, plan }: { hypotheses: CeilingHypotheses; pla
   return (
     <section aria-labelledby="ceiling-simulator-title" className="mt-8">
       <h3 id="ceiling-simulator-title" className="text-lg font-semibold text-brand-navy">
-        Si vous l’emportez à…
+        {labels.simulatorTitle}
       </h3>
       <label className="mt-3 flex max-w-xs items-center gap-2 rounded-lg border border-border px-3 focus-within:border-gold">
-        <span className="sr-only">Montant de l’enchère simulée</span>
+        <span className="sr-only">{labels.simulatorInputLabel}</span>
         <input
           type="number"
           inputMode="numeric"
@@ -482,10 +570,15 @@ function BidSimulator({ hypotheses, plan }: { hypotheses: CeilingHypotheses; pla
         <span className="text-sm text-muted-foreground">€</span>
       </label>
       <div className="mt-2 flex flex-wrap gap-2 text-xs">
-        {hypotheses.startingPrice ? (
-          <QuickBid label="Mise à prix" value={hypotheses.startingPrice} onPick={pickBid} />
+        {ceilingBelowStart ? (
+          <QuickBid label="Plafond" value={plan.maxBid} onPick={pickBid} />
         ) : null}
-        {plan.reachable ? <QuickBid label="Plafond" value={plan.maxBid} onPick={pickBid} /> : null}
+        {hypotheses.startingPrice ? (
+          <QuickBid label={startLabel} value={hypotheses.startingPrice} onPick={pickBid} />
+        ) : null}
+        {!ceilingBelowStart && plan.reachable ? (
+          <QuickBid label="Plafond" value={plan.maxBid} onPick={pickBid} />
+        ) : null}
       </div>
       <dl className="mt-4 divide-y divide-border border-y border-border text-sm">
         {rows
@@ -503,6 +596,9 @@ function BidSimulator({ hypotheses, plan }: { hypotheses: CeilingHypotheses; pla
           <dd className="tabular-nums">{formatPrice(evaluation.totalCost)}</dd>
         </div>
       </dl>
+      {labels.scopeNote ? (
+        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{labels.scopeNote}</p>
+      ) : null}
       <p
         role="status"
         className={`mt-3 rounded-lg px-3 py-2 text-sm ${
@@ -545,23 +641,29 @@ function QuickBid({
   );
 }
 
-/** Libellés de `buildCashPlan` qui portent un terme à définir. */
-const CASH_STEP_TERMS: Record<string, TermeKey> = {
-  Consignation: "garantie-encherir",
-  "Fin du délai de surenchère": "surenchere",
-  "Libération du bien": "liberation",
-};
+/** Libellés de `buildCashPlan` qui portent un terme à définir (ceux du régime de frais de la vente). */
+function cashStepTerms(hypotheses: CeilingHypotheses): Record<string, TermeKey> {
+  const cash = labelsOf(hypotheses).cash;
+  return {
+    // La définition de la garantie est celle de la saisie immobilière : le tribunal seulement.
+    ...(cash.consignation && hypotheses.regime?.kind !== "notarial"
+      ? { [cash.consignation.label]: "garantie-encherir" as const }
+      : {}),
+    ...(cash.overbid ? { [cash.overbid.label]: "surenchere" as const } : {}),
+    "Libération du bien": "liberation",
+  };
+}
 
 function CashPlan({ hypotheses, plan }: { hypotheses: CeilingHypotheses; plan: CeilingPlan }) {
-  const price = plan.reachable ? plan.maxBid : (hypotheses.startingPrice ?? 0);
-  const steps = buildCashPlan(hypotheses, plan, price);
+  const steps = buildCashPlan(hypotheses, plan, plan.maxBid);
+  const terms = cashStepTerms(hypotheses);
   return (
     <section aria-labelledby="ceiling-cash-title" className="mt-8">
       <h3 id="ceiling-cash-title" className="text-lg font-semibold text-brand-navy">
         Trésorerie à prévoir
       </h3>
       <p className="mt-1 text-sm text-muted-foreground">
-        Pour une adjudication à {formatPrice(price)}, dans l’ordre où les sommes sont dues.
+        {labelsOf(hypotheses).planner.cashIntro(formatPrice(plan.maxBid))}
       </p>
       <ol className="mt-4 space-y-3">
         {steps.map((step) => (
@@ -574,8 +676,8 @@ function CashPlan({ hypotheses, plan }: { hypotheses: CeilingHypotheses; plan: C
             </span>
             <span className="text-sm">
               <span className="font-semibold text-foreground">
-                {CASH_STEP_TERMS[step.label] ? (
-                  <Terme terme={CASH_STEP_TERMS[step.label]}>{step.label}</Terme>
+                {terms[step.label] ? (
+                  <Terme terme={terms[step.label]}>{step.label}</Terme>
                 ) : (
                   step.label
                 )}
@@ -600,23 +702,42 @@ function Checklist({
   dpeClass: string | null;
 }) {
   const items: Array<{ key: string; content: ReactNode }> = [];
-  const procesVerbal = (
+  const regimeLabels = labelsOf(hypotheses);
+  const notarial = hypotheses.regime?.kind === "notarial";
+  // Chez le notaire, il n'y a ni procès-verbal descriptif d'un commissaire de justice ni cahier des
+  // conditions de vente d'un avocat : les conditions de la vente (cahier des charges) et les
+  // diagnostics en tiennent lieu.
+  const procesVerbal = notarial ? (
+    "descriptif du bien et diagnostics"
+  ) : (
     <Terme terme="proces-verbal-descriptif" placement="top">
       procès-verbal descriptif
     </Terme>
   );
-  if (hypotheses.feesSource.fpt === "defaut")
+  if (!notarial && hypotheses.feesSource.fpt === "defaut")
     items.push({
       key: "frais-prealables",
       content: (
         <>
-          Demandez à l’avocat poursuivant le montant des{" "}
+          Lisez dans le cahier des conditions de vente le montant des{" "}
           <Terme terme="frais-prealables" placement="top">
             frais préalables
           </Terme>{" "}
           : ils s’ajoutent au prix.
         </>
       ),
+    });
+  if (notarial && hypotheses.feesSource.consignation === "defaut")
+    items.push({
+      key: "garantie",
+      content:
+        "Lisez dans les conditions de la vente le montant de la garantie à déposer : la valeur retenue (20 % de la mise à prix) est une valeur par défaut.",
+    });
+  if (notarial && hypotheses.feesSource.negotiation === "defaut")
+    items.push({
+      key: "honoraires-negociation",
+      content:
+        "Confirmez dans les conditions de la vente qui paie les honoraires de négociation et à quel taux : le montant retenu n’est pas lu dans l’annonce.",
     });
   if (hypotheses.occupation.case === "inconnu")
     items.push({
@@ -631,7 +752,9 @@ function Checklist({
   if (hypotheses.value.surfaceEstimated)
     items.push({
       key: "surface",
-      content: (
+      content: notarial ? (
+        "Confirmez la surface (loi Carrez ou habitable) dans le descriptif du bien et les diagnostics annexés aux conditions de la vente."
+      ) : (
         <>
           Confirmez la surface (loi Carrez ou habitable) dans le {procesVerbal} et les diagnostics
           annexés au cahier des conditions de vente.
@@ -648,7 +771,16 @@ function Checklist({
     },
     {
       key: "preemption",
-      content: (
+      content: notarial ? (
+        <>
+          Selon la situation du bien, la commune (ou un autre titulaire prévu par la loi) peut
+          exercer un{" "}
+          <Terme terme="droit-preemption" placement="top">
+            droit de préemption
+          </Terme>
+          . Demandez au notaire si le bien est concerné.
+        </>
+      ) : (
         <>
           Selon la situation du bien, la commune (ou un autre titulaire prévu par la loi) peut
           exercer un{" "}
@@ -660,16 +792,18 @@ function Checklist({
         </>
       ),
     },
+    ...(regimeLabels.planner.reserveNotice
+      ? [{ key: "prix-de-reserve", content: regimeLabels.planner.reserveNotice }]
+      : []),
     {
       key: "plafond-avant-audience",
-      content:
-        "Fixez votre plafond avant l’audience et donnez-le à votre avocat : les enchères vont vite.",
+      content: regimeLabels.planner.ceilingBeforeSaleAdvice,
     },
   );
   return (
     <section aria-labelledby="ceiling-checklist-title" className="mt-8">
       <h3 id="ceiling-checklist-title" className="text-lg font-semibold text-brand-navy">
-        À vérifier avant l’audience
+        {regimeLabels.planner.checklistTitle}
       </h3>
       <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-muted-foreground">
         {items.map((item) => (

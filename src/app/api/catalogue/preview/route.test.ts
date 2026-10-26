@@ -4,11 +4,15 @@ import { RateLimitError } from "@/lib/api-errors";
 const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   enforceIp: vi.fn(),
+  cacheDeclarations: [] as Array<{ keyParts: string[]; options: unknown }>,
 }));
 
 vi.mock("next/cache", () => ({
-  // Le cache de données de Next est remplacé par un passe-plat dans les tests unitaires.
-  unstable_cache: (load: (...args: unknown[]) => unknown) => load,
+  // Le cache de données de Next est remplacé par un passe-plat dans les tests unitaires ; ses déclarations sont notées.
+  unstable_cache: (load: (...args: unknown[]) => unknown, keyParts: string[], options: unknown) => {
+    mocks.cacheDeclarations.push({ keyParts, options });
+    return load;
+  },
 }));
 vi.mock("@/lib/supabase-public.server", () => ({
   createPublicSupabaseClient: () => ({ rpc: mocks.rpc }),
@@ -341,6 +345,89 @@ describe("GET /api/catalogue/preview", () => {
     expect(response.headers.get("retry-after")).toBe("9");
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  describe("« Pépites seulement »", () => {
+    beforeEach(() => {
+      mocks.cacheDeclarations.length = 0;
+      mocks.rpc.mockImplementation((name: string) =>
+        Promise.resolve(
+          name === "list_public_pepite_sale_ids"
+            ? { data: ["b"], error: null }
+            : name === "sale_photo_mirrors"
+              ? { data: [], error: null }
+              : { data: searchRows, error: null },
+        ),
+      );
+    });
+
+    it("a son propre seau de débit : 30 par minute et par adresse, en plus du seau ordinaire", async () => {
+      await GET(request("/api/catalogue/preview?pepite=true"));
+      const buckets = mocks.enforceIp.mock.calls.map(([options]) => options.bucketKey);
+      expect(buckets).toEqual(["catalogue.preview", "catalogue.preview.pepite"]);
+      expect(mocks.enforceIp).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          bucketKey: "catalogue.preview.pepite",
+          limit: 30,
+          windowSeconds: 60,
+        }),
+      );
+      mocks.enforceIp.mockClear();
+      await GET(request("/api/catalogue/preview?city=Pau"));
+      expect(mocks.enforceIp.mock.calls.map(([options]) => options.bucketKey)).toEqual([
+        "catalogue.preview",
+      ]);
+    });
+
+    it("répond 429 avec Retry-After, sans cache et sans balayer le catalogue, au-delà de ce quota", async () => {
+      mocks.enforceIp.mockImplementation(async ({ bucketKey }: { bucketKey: string }) => {
+        if (bucketKey === "catalogue.preview.pepite") throw new RateLimitError(undefined, 17);
+      });
+      const response = await GET(request("/api/catalogue/preview?pepite=true"));
+      expect(response.status).toBe(429);
+      expect(response.headers.get("retry-after")).toBe("17");
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      expect(mocks.rpc).not.toHaveBeenCalled();
+    });
+
+    it("garde la lecture complète (sans la pagination) en cache, par recherche de base, sous le tag du catalogue", async () => {
+      await GET(request("/api/catalogue/preview?pepite=true&city=Pau&page=2&limit=50"));
+      const scan = mocks.cacheDeclarations.find(({ keyParts }) => keyParts[1] === "pepite-scan");
+      expect(scan).toBeDefined();
+      // Ni la page ni la taille de page ne font partie de la clé : une lecture pour toutes les pages.
+      expect(scan!.keyParts.join("|")).not.toMatch(/page|limit/);
+      expect(scan!.keyParts.join("|")).toContain("Pau");
+      expect(scan!.options).toMatchObject({ revalidate: 120, tags: ["public-catalogue"] });
+    });
+
+    it("filtre la liste par les pépites et pagine le résultat filtré", async () => {
+      // Un catalogue de deux ventes : une seule page lue.
+      mocks.rpc.mockImplementation((name: string) =>
+        Promise.resolve(
+          name === "list_public_pepite_sale_ids"
+            ? { data: ["b"], error: null }
+            : name === "sale_photo_mirrors"
+              ? { data: [], error: null }
+              : { data: searchRows.map((row) => ({ ...row, total_count: 2 })), error: null },
+        ),
+      );
+      const body = await (await GET(request("/api/catalogue/preview?pepite=true"))).json();
+      expect(body.items.map((sale: { id: string }) => sale.id)).toEqual(["b"]);
+      expect(body.count).toBe(1);
+    });
+
+    it("répond 400 « recherche trop large » au lieu de tronquer, au-delà de 3 000 lignes", async () => {
+      mocks.rpc.mockImplementation((name: string) =>
+        Promise.resolve(
+          name === "list_public_pepite_sale_ids"
+            ? { data: ["b"], error: null }
+            : { data: [{ id: "a", total_count: 3_001 }], error: null },
+        ),
+      );
+      const response = await GET(request("/api/catalogue/preview?pepite=true"));
+      expect(response.status).toBe(400);
+      expect((await response.json()).error).toContain("trop large");
+    });
   });
 
   describe("paramètres invalides", () => {

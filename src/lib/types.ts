@@ -31,6 +31,11 @@ export type AuctionSale = {
     | "insufficient"
     | null;
   /**
+   * Signed-out page only: the sale is a published « Pépite » (`get_public_sale_pepite`, mode « on »
+   * only). Present and true, or absent: never an amount.
+   */
+  pepite?: boolean;
+  /**
    * Signed-out page only: name of the source the listing comes from (`get_public_sale_source_name`),
    * only when it is one of the known sources. Absent otherwise.
    */
@@ -135,6 +140,12 @@ export type AuctionSale = {
    * aérienne tournante.
    */
   location_precision?: string | null;
+  /**
+   * Conditions d'une vente notariale lues par le pipeline (procédure, honoraires de négociation,
+   * garantie…), liste blanche `app_private.public_sale_conditions`. Servie par la vue de la fiche
+   * (Analyse) et par la vue des ventes débloquées ; absente pour un compte Découverte.
+   */
+  sale_conditions?: Record<string, unknown> | null;
   documents: unknown;
   documents_rich: SaleDocumentRich[] | null;
   media: SaleMedia[] | null;
@@ -192,6 +203,8 @@ export type SaleFilters = {
   only_new?: boolean;
   /** Sales created or modified at or after this instant (ISO timestamp). */
   updated_since?: string;
+  /** Only these sales (at most 100 identifiers per read: they travel in the request address). */
+  ids?: string[];
 };
 
 export const SORT_KEYS = [

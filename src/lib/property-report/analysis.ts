@@ -111,6 +111,8 @@ export function buildOpportunityAnalysis({
     works: acquisition.works,
     fpt: acquisition.fpt,
     department: sale.department,
+    // Les frais du régime de la vente (notaire : émoluments du notaire, organisation, négociation).
+    acquisition,
     marketMarginPerM2: ceilingSnapshot.available ? ceilingSnapshot.marginPerM2 : null,
   });
 

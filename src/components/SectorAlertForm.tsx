@@ -53,7 +53,7 @@ export function SectorAlertForm({
       min_market_discount_pct: null,
       dpe_classes: [],
       require_house_with_land: false,
-      advanced_criteria: { sale_type: search.saleType },
+      advanced_criteria: { sale_type: search.saleType, pepite_only: search.pepite === true },
     });
   }, [search]);
   const { createAlertFromSearch, saving } = useCreateAlert({

@@ -23,7 +23,7 @@ describe("métadonnées de /offres", () => {
     mocks.readiness.mockReturnValue(readiness(false, ["STRIPE_ANALYSIS_PRICE_ID"]));
     const description = String(generateMetadata().description);
     expect(description).toBe(
-      "Découverte est gratuite. Analyse, l’offre d’aide à la décision (enchère plafond, alertes quotidiennes, comparables), n’est pas encore ouverte à la souscription.",
+      "Découverte est gratuite. L’offre Analyse (enchère ou offre plafond, alertes quotidiennes, comparables) n’est pas encore ouverte à la souscription.",
     );
     expect(description).not.toMatch(/€|TTC|\d/);
     expect(description.length).toBeLessThanOrEqual(160);
@@ -42,6 +42,15 @@ describe("métadonnées de /offres", () => {
     const description = String(generateMetadata().description);
     expect(description).toContain("59 € TTC / mois");
     expect(description.length).toBeLessThanOrEqual(160);
+    vi.unstubAllEnvs();
+  });
+
+  it("suit l'interrupteur par régime pour le terme du plafond", () => {
+    mocks.readiness.mockReturnValue(readiness(false, ["STRIPE_ANALYSIS_PRICE_ID"]));
+    vi.stubEnv("CEILING_FEE_REGIMES_OPEN", "tribunal");
+    expect(String(generateMetadata().description)).toContain("(enchère plafond, alertes");
+    vi.stubEnv("CEILING_FEE_REGIMES_OPEN", "tribunal,notary_online");
+    expect(String(generateMetadata().description)).toContain("(enchère ou offre plafond, alertes");
     vi.unstubAllEnvs();
   });
 

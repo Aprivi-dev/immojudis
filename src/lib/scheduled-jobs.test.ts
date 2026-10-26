@@ -173,4 +173,27 @@ describe("scheduled jobs inventory", () => {
     }
     expect(definition).not.toContain("interval '30 hours'");
   });
+  it("calcule les pépites toutes les heures à :35 (pg_cron), avec un filet quotidien et une alerte de fraîcheur", () => {
+    const scheduler = readFileSync(
+      join(root, "supabase/migrations/20261104100100_sale_pepites_scheduler.sql"),
+      "utf8",
+    );
+    expect(scheduler).toContain("'immojudis-sale-pepites'");
+    expect(scheduler).toContain("'35 * * * *'");
+    expect(scheduler).toContain("/api/cron/sale-pepites");
+    // Dans la migration, les apostrophes de la liste attendue de cron.stale sont doublées.
+    expect(scheduler).toContain("(''sale-pepites'', interval ''3 hours'')");
+
+    const vercel = JSON.parse(readFileSync(join(root, "vercel.json"), "utf8")) as {
+      crons: Array<{ path: string; schedule: string }>;
+    };
+    expect(vercel.crons.filter((cron) => cron.path === "/api/cron/sale-pepites")).toEqual([
+      { path: "/api/cron/sale-pepites", schedule: "42 5 * * *" },
+    ]);
+
+    const document = readFileSync(join(root, "docs/operations/planification.md"), "utf8");
+    expect(document).toMatch(/`\/api\/cron\/sale-pepites`.*\| oui /);
+    const route = readFileSync(join(root, "src/app/api/cron/sale-pepites/route.ts"), "utf8");
+    expect(route).toMatch(/^export const maxDuration = \d+;$/m);
+  });
 });

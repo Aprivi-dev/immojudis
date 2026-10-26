@@ -216,6 +216,34 @@ describe("DiscoveryDecisionPanel", () => {
       for (const link of links) expect(link.getAttribute("href")).toBe("#debloquer");
     });
 
+    it("links the ceiling row and the preview of a notarial sale to the unlock card, with both terms", () => {
+      mocks.auth = { user: { id: "user-1" }, loading: false };
+      mocks.fetchValuePreview.mockResolvedValue({ available: false });
+      const notary = { ...sale, sale_venue_type: "notary" } as unknown as AuctionSale;
+      renderWithQuery(
+        <SaleUnlockOfferProvider status={offer}>
+          <DiscoveryDecisionPanel sale={notary} />
+        </SaleUnlockOfferProvider>,
+      );
+
+      expect(screen.getAllByRole("link", { name: /Débloquer cette vente/ })).toHaveLength(2);
+      // The mode of the sale (candle or interactive) is not readable before the unlock.
+      expect(document.body.textContent).toContain("Enchère plafond ou offre plafond (simulation)");
+    });
+
+    it("offers no unlock for a notarial sale when the server lists the tribunal only", () => {
+      mocks.auth = { user: { id: "user-1" }, loading: false };
+      mocks.fetchValuePreview.mockResolvedValue({ available: false });
+      const notary = { ...sale, sale_venue_type: "notary" } as unknown as AuctionSale;
+      renderWithQuery(
+        <SaleUnlockOfferProvider status={offer}>
+          <DiscoveryDecisionPanel sale={notary} openFeeRegimes={["tribunal"]} />
+        </SaleUnlockOfferProvider>,
+      );
+
+      expect(screen.getAllByRole("link", { name: /Débloquer cette vente/ })).toHaveLength(1);
+    });
+
     it("keeps only the offer when the page has no unlock card", () => {
       renderWithQuery(<DiscoveryDecisionPanel sale={tribunalSale} />);
 
@@ -223,13 +251,16 @@ describe("DiscoveryDecisionPanel", () => {
       expect(screen.getByRole("link", { name: "Découvrir l’offre Analyse" })).toBeTruthy();
     });
 
-    it("does not offer the unlock for the preview of a sale without ceiling", () => {
+    it("does not offer the unlock for the preview of a sale without ceiling (domanial)", () => {
       mocks.auth = { user: { id: "user-1" }, loading: false };
       mocks.fetchValuePreview.mockResolvedValue({ available: false });
-      const notary = { ...sale, sale_venue_type: "notary" } as unknown as AuctionSale;
+      const state = { ...sale, sale_venue_type: "state" } as unknown as AuctionSale;
       renderWithQuery(
         <SaleUnlockOfferProvider status={offer}>
-          <DiscoveryDecisionPanel sale={notary} />
+          <DiscoveryDecisionPanel
+            sale={state}
+            openFeeRegimes={["tribunal", "notary_auction", "notary_online", "state_auction"]}
+          />
         </SaleUnlockOfferProvider>,
       );
 
@@ -292,9 +323,52 @@ describe("AnalysisDecisionPanel", () => {
       />,
     );
 
-    expect(screen.getByText("Marge de sécurité non tenue avec ces hypothèses")).toBeTruthy();
+    expect(screen.getByText("Aucun prix ne tient")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Les frais, les travaux et la libération dépassent déjà le budget que permettent la valeur du bien et vos objectifs.",
+      ),
+    ).toBeTruthy();
     expect(screen.queryByText("À compléter")).toBeNull();
   });
+
+  it.each([
+    [
+      "above",
+      90_000,
+      45_000,
+      /^Selon vos hypothèses, vous pouvez enchérir jusqu’à 90\s000\s€, soit 45\s000\s€ au-dessus de la mise à prix\.$/,
+    ],
+    [
+      "narrow",
+      46_000,
+      1_000,
+      /^Peu d’écart avec la mise à prix : selon vos hypothèses, vous pouvez enchérir jusqu’à 46\s000\s€, soit 1\s000\s€ au-dessus de la mise à prix\.$/,
+    ],
+    [
+      "below",
+      36_000,
+      -9_000,
+      /^Avec ces hypothèses, votre enchère plafond \(36\s000\s€\) est 9\s000\s€ \(20\s%\) sous la mise à prix : le bien ne tient pas à son prix de départ\.$/,
+    ],
+  ])(
+    "says in words where the ceiling stands against the starting price (%s)",
+    (kind, ceiling, gap, text) => {
+      renderWithQuery(
+        <AnalysisDecisionPanel
+          {...base}
+          recommendedCeiling={ceiling}
+          ceilingAvailable
+          startingPriceGap={gap}
+        />,
+      );
+
+      const status = screen.getByRole("status");
+      expect(status.textContent).toMatch(text);
+      // Warning style only when the margin is thin or missing, not when the ceiling is comfortable.
+      expect(/surfaceCaution/.test(status.className)).toBe(kind !== "above");
+    },
+  );
 
   it("calls the ceiling a simulation everywhere it is named", () => {
     const { container } = renderWithQuery(<AnalysisDecisionPanel {...base} />);
@@ -363,6 +437,43 @@ describe("AnalysisDecisionPanel", () => {
 });
 
 describe("NonJudicialDecisionPanel", () => {
+  it("says « Prix non publié » for a domanial sale without price, and keeps « À confirmer » elsewhere", () => {
+    const render = (fields: Record<string, unknown>) =>
+      renderWithQuery(
+        <NonJudicialDecisionPanel
+          sale={{ ...sale, ...fields } as AuctionSale}
+          marketEstimate={null}
+          marketLoading={false}
+        />,
+      );
+    const state = render({ sale_venue_type: "state", starting_price_eur: null });
+    expect(screen.getByText("Prix publié")).toBeTruthy();
+    expect(screen.getByText("Prix non publié")).toBeTruthy();
+    expect(screen.queryByText("À confirmer")).toBeNull();
+    state.unmount();
+
+    const notary = render({ sale_venue_type: "notary", starting_price_eur: null });
+    expect(screen.getByText("À confirmer")).toBeTruthy();
+    expect(screen.queryByText("Prix non publié")).toBeNull();
+    notary.unmount();
+
+    render({ sale_venue_type: "state", starting_price_eur: 90_000 });
+    expect(screen.queryByText("Prix non publié")).toBeNull();
+  });
+
+  it("keeps « À confirmer » for a domanial sale whose price the AI review blocks", () => {
+    renderWithQuery(
+      <NonJudicialDecisionPanel
+        sale={{ ...sale, sale_venue_type: "state", starting_price_eur: null } as AuctionSale}
+        marketEstimate={null}
+        marketLoading={false}
+        priceBlocked
+      />,
+    );
+    expect(screen.getByText("À confirmer")).toBeTruthy();
+    expect(screen.queryByText("Prix non publié")).toBeNull();
+  });
+
   it("shows a zero starting price as to be confirmed", () => {
     renderWithQuery(
       <NonJudicialDecisionPanel

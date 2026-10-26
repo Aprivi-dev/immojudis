@@ -118,3 +118,22 @@ describe("alertSalesPath", () => {
     expect(alertSalesPath({ ...base, advanced_criteria: { sale_type: "autre" } })).toBe("/sales");
   });
 });
+
+describe("critère « Seulement les pépites »", () => {
+  it("se lit dans les critères avancés, en texte", () => {
+    expect(
+      alertCriteriaSummary({ ...base, city: "Pau", advanced_criteria: { pepite_only: true } }),
+    ).toEqual(["Lieu : Pau", "Seulement les pépites"]);
+    expect(alertCriteriaSummary({ ...base, advanced_criteria: {} })).toEqual([]);
+    expect(alertCriteriaSummary({ ...base, advanced_criteria: { pepite_only: "oui" } })).toEqual(
+      [],
+    );
+  });
+
+  it("revient dans la recherche du catalogue (filtre et adresse de l'alerte)", () => {
+    expect(
+      alertSalesPath({ ...base, city: "Pau", advanced_criteria: { pepite_only: true } }),
+    ).toMatch(/pepite=true/);
+    expect(alertSalesPath({ ...base, city: "Pau" })).not.toMatch(/pepite/);
+  });
+});

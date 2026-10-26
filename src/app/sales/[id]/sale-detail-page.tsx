@@ -15,6 +15,7 @@ import { fetchAccessPlan, fetchSaleUnlockStatus } from "@/lib/client-api";
 import { loginPathWithRedirect, safeSalesReturnTo, saleDetailPath } from "@/lib/navigation";
 import type { AuctionSale } from "@/lib/types";
 import { queryKeys, type SaleAccessMode } from "@/lib/query-keys";
+import type { FeeRegimeKey } from "@/lib/fee-regime-open";
 import type { SaleUnlockResult } from "@/lib/sale-unlocks";
 
 const loadDiscoveryView = () => import("@/components/DiscoverySaleDetailView");
@@ -68,6 +69,8 @@ type SaleDetailPageProps = {
   id: string;
   initialData?: SaleDetailRouteData;
   adjudicationStatisticsEnabled?: boolean;
+  /** Fee regimes whose bid ceiling is open (see `parseOpenFeeRegimes`); absent: every regime whose rules are defined. */
+  openFeeRegimes?: readonly FeeRegimeKey[];
 };
 
 export function SaleDetailPage(props: SaleDetailPageProps) {
@@ -86,6 +89,7 @@ function SaleDetailContent({
   id,
   initialData,
   adjudicationStatisticsEnabled = false,
+  openFeeRegimes,
 }: SaleDetailPageProps) {
   // The page is statically generated and cached (ISR): it must not read the URL
   // during rendering (useSearchParams would force client-side rendering and hide
@@ -274,6 +278,7 @@ function SaleDetailContent({
         returnTo={returnTo}
         requestedHash={requestedHash}
         adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
+        openFeeRegimes={openFeeRegimes}
         verifyingAccount={sessionHinted}
       />
     );
@@ -310,6 +315,7 @@ function SaleDetailContent({
           sale={freeViewBeforeUnlock}
           returnTo={returnTo}
           adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
+          openFeeRegimes={openFeeRegimes}
           unlockStatus={unlockQuery.data ?? null}
           justUnlocked={justUnlocked}
           onSaleUnlocked={handleSaleUnlocked}
@@ -333,6 +339,7 @@ function SaleDetailContent({
         returnTo={returnTo}
         requestedHash={requestedHash}
         adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
+        openFeeRegimes={openFeeRegimes}
         verifyingAccount
       />
     );
@@ -349,6 +356,7 @@ function SaleDetailContent({
         returnTo={returnTo}
         requestedHash={requestedHash}
         adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
+        openFeeRegimes={openFeeRegimes}
       />
     );
   }
@@ -382,6 +390,7 @@ function SaleDetailContent({
         sale={sale}
         returnTo={returnTo}
         adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
+        openFeeRegimes={openFeeRegimes}
         unlockStatus={unlockQuery.data ?? null}
         justUnlocked={justUnlocked}
       />
@@ -413,6 +422,7 @@ function SaleDetailContent({
         sale={sale}
         returnTo={returnTo}
         adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
+        openFeeRegimes={openFeeRegimes}
         unlockStatus={unlockQuery.data ?? null}
         onSaleUnlocked={handleSaleUnlocked}
       />
@@ -422,6 +432,7 @@ function SaleDetailContent({
       sale={sale}
       returnTo={returnTo}
       adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
+      openFeeRegimes={openFeeRegimes}
     />
   );
 }

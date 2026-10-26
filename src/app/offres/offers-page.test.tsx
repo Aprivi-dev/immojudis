@@ -53,7 +53,9 @@ describe("page Offres", () => {
 
   it("présente trois bénéfices concrets, le comparatif, la FAQ et le prix TTC", async () => {
     render(<OffersPage />);
-    expect(screen.getByRole("heading", { name: "Une enchère plafond chiffrée" })).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "Une enchère plafond ou une offre plafond chiffrée" }),
+    ).toBeTruthy();
     expect(
       screen.getByRole("heading", { name: "Des alertes sur les nouvelles ventes" }),
     ).toBeTruthy();
@@ -62,7 +64,9 @@ describe("page Offres", () => {
     const table = screen.getByRole("table", { name: /Comparaison des offres/ });
     expect(within(table).getByRole("columnheader", { name: "Découverte" })).toBeTruthy();
     expect(within(table).getByRole("columnheader", { name: "Analyse" })).toBeTruthy();
-    expect(within(table).getByRole("rowheader", { name: /Enchère plafond chiffrée/ })).toBeTruthy();
+    expect(
+      within(table).getByRole("rowheader", { name: /Enchère plafond ou offre plafond chiffrée/ }),
+    ).toBeTruthy();
 
     expect(screen.getAllByText(/59 € TTC \/ mois/).length).toBeGreaterThan(0);
     await waitFor(() => expect(mocks.offer).toHaveBeenCalled());
@@ -219,11 +223,13 @@ describe("page Offres", () => {
 
     expect(
       screen.getByText(
-        new RegExp(`^${n} déblocages par mois : l’enchère plafond, la lecture des pièces`),
+        new RegExp(
+          `^${n} déblocages par mois : l’enchère plafond ou l’offre plafond, la lecture des pièces`,
+        ),
       ),
     ).toBeTruthy();
     expect(text).toContain(
-      `elle comprend ${n} déblocages par mois, chacun ouvrant, pour une vente, l’enchère plafond`,
+      `elle comprend ${n} déblocages par mois, chacun ouvrant, pour une vente, l’enchère plafond ou l’offre plafond`,
     );
     // Never the names the owner excluded.
     expect(text).not.toMatch(
@@ -237,7 +243,9 @@ describe("page Offres", () => {
       node.querySelector("summary")?.textContent?.includes("déblocages par mois"),
     )?.textContent;
 
-    expect(answer).toContain("l’enchère plafond, la lecture des pièces, l’historique de la vente");
+    expect(answer).toContain(
+      "l’enchère plafond ou l’offre plafond, la lecture des pièces, l’historique de la vente",
+    );
     expect(answer).toContain(
       "les statistiques du tribunal de cette vente et les pièces du dossier",
     );
@@ -255,7 +263,7 @@ describe("page Offres", () => {
     render(<OffersPage />);
     const table = screen.getByRole("table", { name: /Comparaison des offres/ });
     const ceiling = within(table).getByRole("rowheader", {
-      name: /Enchère plafond chiffrée/,
+      name: /Enchère plafond ou offre plafond chiffrée/,
     }).parentElement!;
     expect(ceiling.textContent).toContain("Pour 3 ventes par mois");
     expect(ceiling.textContent).not.toContain("Non inclus");
@@ -265,15 +273,33 @@ describe("page Offres", () => {
     expect(pdf.textContent).toContain("Non inclus");
   });
 
-  it("ne promet l'enchère plafond « pour toutes les ventes » que pour celles du tribunal", () => {
+  it("ne promet le plafond « pour toutes les ventes » que pour celles dont un régime de frais est ouvert", () => {
     const { container } = render(<OffersPage />);
     const text = container.textContent ?? "";
     expect(text).toContain(
-      "Enchère plafond chiffrée pour toutes les ventes au tribunal : travaux, libération, portage et tous les frais",
+      "Enchère plafond (ventes au tribunal et ventes notariales à la bougie) ou offre plafond (ventes notariales interactives) chiffrée : travaux, libération, portage et tous les frais",
     );
-    expect(text).not.toContain("Enchère plafond chiffrée pour toutes les ventes :");
+    expect(text).not.toContain("plafond chiffrée pour toutes les ventes :");
     expect(text).toContain(`${PLAN_LIMITS.decouverte.favoriteSales} favoris`);
     expect(text).not.toContain("trois favoris");
+  });
+
+  it("suit l'interrupteur par régime : seul le tribunal ouvert, la page ne parle que d'enchère plafond", () => {
+    const { container } = render(<OffersPage openFeeRegimes={["tribunal"]} />);
+    const text = container.textContent ?? "";
+    expect(screen.getByRole("heading", { name: "Une enchère plafond chiffrée" })).toBeTruthy();
+    expect(text).toContain("l’enchère plafond, la lecture des pièces");
+    expect(text).toContain("Enchère plafond (ventes au tribunal) chiffrée");
+    expect(text).not.toContain("offre plafond");
+    expect(text).not.toContain("ventes notariales");
+  });
+
+  it("n'ouvre à l'offre plafond que le régime interactif quand la bougie est fermée", () => {
+    const { container } = render(<OffersPage openFeeRegimes={["tribunal", "notary_online"]} />);
+    const text = container.textContent ?? "";
+    expect(text).toContain("l’enchère plafond ou l’offre plafond, la lecture des pièces");
+    expect(text).toContain("ventes notariales interactives");
+    expect(text).not.toContain("ventes notariales à la bougie");
   });
 
   it("offre fermée : le tarif prévu est annoncé sans promettre un prix à payer", async () => {
@@ -419,7 +445,9 @@ describe("page Offres", () => {
     const hints = screen.getAllByRole("button", { name: "Définition : enchère plafond" });
     expect(hints).toHaveLength(2);
     // Le titre garde son nom accessible : la bulle est à côté, pas dedans.
-    expect(screen.getByRole("heading", { name: "Une enchère plafond chiffrée" })).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "Une enchère plafond ou une offre plafond chiffrée" }),
+    ).toBeTruthy();
 
     fireEvent.click(hints[0]);
     expect(screen.getByRole("link", { name: "En savoir plus" }).getAttribute("href")).toBe(

@@ -6,6 +6,8 @@ import { describe, expect, it } from "vitest";
  * Glossaire Immojudis : un seul terme par notion dans les textes visibles.
  *  - « enchère plafond » (jamais « prix plafond », « mise plafond », « plafond d'enchère »,
  *    « enchère maximale », « mise maximale ») ;
+ *  - « offre plafond » pour une vente par offres (vente notariale interactive) : jamais « offre
+ *    maximale », « offre maximum », « plafond d'offre », ni « prix maximal » pour ce montant ;
  *  - « offre Analyse » (jamais « Premium ») ;
  *  - « favoris » (jamais « Mes ventes suivies ») ;
  *  - « Immojudis » (jamais « ImmoJudis »).
@@ -55,6 +57,14 @@ describe("vocabulaire uniforme", () => {
     expect(
       offenders(
         /prix plafond|mise plafond|plafond d['’]enchère|enchère maximale|mise maximale|Mise plafond/i,
+      ),
+    ).toEqual([]);
+  });
+
+  it("n'emploie qu'un terme pour l'offre plafond", () => {
+    expect(
+      offenders(
+        /offre maximale|offre maximum|offre limite|plafond d['’]offre|prix maximal (?:à ne pas dépasser|de votre offre)/i,
       ),
     ).toEqual([]);
   });

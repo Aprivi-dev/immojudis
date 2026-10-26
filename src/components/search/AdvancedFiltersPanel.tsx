@@ -7,7 +7,9 @@ import Landmark from "lucide-react/dist/esm/icons/landmark.js";
 import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
 import RotateCcw from "lucide-react/dist/esm/icons/rotate-ccw.js";
 import X from "lucide-react/dist/esm/icons/x.js";
+import { PepiteIcon } from "@/components/PepiteBadge";
 import { Input } from "@/components/ui/input";
+import { PEPITE_EXPLANATION, PEPITE_FILTER_LABEL } from "@/lib/pepite-copy";
 import { DPE_CLASSES, dpeColor, type DpeClass } from "@/lib/dpe";
 import {
   BELOW_RANGE_FILTER_HINT,
@@ -26,6 +28,7 @@ export function MoreFiltersModal({
   open,
   analysisLocked = false,
   preview = false,
+  pepitesActive = false,
   draft,
   setDraft,
   activeFiltersCount,
@@ -36,6 +39,8 @@ export function MoreFiltersModal({
   open: boolean;
   analysisLocked?: boolean;
   preview?: boolean;
+  /** Les pépites sont ouvertes au public (liste non vide) : la bascule « Pépites seulement » est proposée. */
+  pepitesActive?: boolean;
   draft: SearchDraft;
   setDraft: React.Dispatch<React.SetStateAction<SearchDraft>>;
   activeFiltersCount: number;
@@ -69,6 +74,7 @@ export function MoreFiltersModal({
           <MobileFilterDrawer
             analysisLocked={analysisLocked}
             preview={preview}
+            pepitesActive={pepitesActive}
             draft={draft}
             setDraft={setDraft}
             activeFiltersCount={activeFiltersCount}
@@ -84,6 +90,7 @@ export function MoreFiltersModal({
 export function MobileFilterDrawer({
   analysisLocked = false,
   preview = false,
+  pepitesActive = false,
   draft,
   setDraft,
   activeFiltersCount,
@@ -93,6 +100,7 @@ export function MobileFilterDrawer({
 }: {
   analysisLocked?: boolean;
   preview?: boolean;
+  pepitesActive?: boolean;
   draft: SearchDraft;
   setDraft: React.Dispatch<React.SetStateAction<SearchDraft>>;
   activeFiltersCount: number;
@@ -369,6 +377,20 @@ export function MobileFilterDrawer({
         </div>
 
         <AdvancedGroup title="Repères sur les annonces" className="mt-5">
+          {/* Ouvert aux visiteurs sans compte, et proposé seulement quand il y a des pépites à filtrer. */}
+          {pepitesActive ? (
+            <CheckboxFilter
+              checked={draft.pepite}
+              onChange={(pepite) => setDraft((current) => ({ ...current, pepite }))}
+              label={
+                <span className="inline-flex items-center gap-1.5">
+                  <PepiteIcon />
+                  {PEPITE_FILTER_LABEL}
+                </span>
+              }
+              hint={PEPITE_EXPLANATION}
+            />
+          ) : null}
           <fieldset disabled={preview} className="grid gap-3 disabled:opacity-60 md:grid-cols-2">
             <legend className="sr-only">Repères sur les annonces</legend>
             {preview && <p className="text-xs md:col-span-2">Ces filtres nécessitent un compte.</p>}
@@ -489,7 +511,7 @@ export function CheckboxFilter({
 }: {
   checked: boolean;
   onChange: (checked: boolean) => void;
-  label: string;
+  label: React.ReactNode;
   hint: string;
 }) {
   const hintId = useId();

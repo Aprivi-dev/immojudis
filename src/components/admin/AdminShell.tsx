@@ -28,6 +28,7 @@ export type AdminSection =
   | "publications"
   | "clients"
   | "pilotage"
+  | "pepites"
   | "lawyers"
   | "compliance";
 
@@ -44,6 +45,7 @@ const ADMIN_NAV_ITEMS: Array<{
   { section: "publications", href: "/admin/publications", label: "Publications", icon: FileCheck2 },
   { section: "clients", href: "/admin/clients", label: "Clients & abonnements", icon: CreditCard },
   { section: "pilotage", href: "/admin/pilotage", label: "Pilotage", icon: Gauge },
+  { section: "pepites", href: "/admin/pepites", label: "Pépites", icon: Search },
   { section: "lawyers", href: "/admin/lawyers", label: "Avocats", icon: Scale },
   { section: "compliance", href: "/admin/compliance", label: "Conformité", icon: ShieldCheck },
   { section: "settings", href: "/admin/settings", label: "Configuration", icon: Settings },

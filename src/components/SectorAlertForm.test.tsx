@@ -114,3 +114,20 @@ describe("SectorAlertForm", () => {
     expect(state.create.mock.calls[0][0]).toEqual({ department: "33" });
   });
 });
+
+describe("SectorAlertForm : « Seulement les pépites »", () => {
+  it("rappelle le critère et le transmet à la création", async () => {
+    render(<SectorAlertForm criteria={{ department: "33", pepite: true }} />);
+    expect(screen.getByRole("list", { name: "Critères de l'alerte" }).textContent).toContain(
+      "Seulement les pépites",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Créer l’alerte" }));
+    await waitFor(() => expect(state.create).toHaveBeenCalled());
+    expect(state.create.mock.calls[0][0]).toEqual({ department: "33", pepite: true });
+  });
+
+  it("n'affiche rien de plus sans le critère", () => {
+    render(<SectorAlertForm criteria={{ department: "33" }} />);
+    expect(document.body.textContent).not.toMatch(/pépite/i);
+  });
+});

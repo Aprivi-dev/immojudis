@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 
 import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { hydrateRoot } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderToString } from "react-dom/server";
 import { axe } from "vitest-axe";
 import {
@@ -11,10 +12,35 @@ import {
   type LaunchOfferStore,
 } from "@/hooks/use-launch-offer";
 import { LAUNCH_OFFER_SHORT_TEXT, LAUNCH_OFFER_VISITOR_TEXT } from "@/lib/launch-offer";
+import type { FeeRegimeKey } from "@/lib/fee-regime-open";
 import type { AuctionSale, SaleVenueType } from "@/lib/types";
 import { FREE_ACCESS_LINE } from "@/lib/sale-unlocks";
 import { publicSaleVenueCopy, SalePublicPreview } from "./SalePublicPreview";
+import { pepiteCriteriaPayload, pepiteCriteriaViews } from "@/lib/sale-pepite-view";
 
+const pepiteMocks = vi.hoisted(() => ({ pepite: vi.fn() }));
+const dynamicLoads = vi.hoisted((): Promise<unknown>[] => []);
+vi.mock("@/hooks/use-sale-pepite", () => ({
+  useSalePepite: (args: unknown) => pepiteMocks.pepite(args),
+}));
+vi.mock("next/dynamic", () => ({
+  default: (loader: () => Promise<React.ComponentType<Record<string, unknown>>>) => {
+    // Le bloc chargé à la demande : le vrai composant, résolu tout de suite.
+    let Component: React.ComponentType<Record<string, unknown>> | null = null;
+    dynamicLoads.push(
+      loader().then((resolved) => {
+        Component = resolved;
+      }),
+    );
+    return function Lazy(props: Record<string, unknown>) {
+      return Component ? <Component {...props} /> : null;
+    };
+  },
+}));
+
+// Every lazy module (the pépite block, the alert form) finishes loading before the first test,
+// never after the environment is torn down.
+beforeAll(() => Promise.all(dynamicLoads));
 afterEach(cleanup);
 
 describe("SalePublicPreview", () => {
@@ -92,7 +118,9 @@ describe("SalePublicPreview", () => {
       "ventes immobilières au tribunal, chez le notaire et les ventes domaniales",
     );
     expect(container.textContent).not.toContain("confidential@example.test");
-    expect(container.textContent).not.toContain("enchère plafond");
+    // The notarial regimes are open: the ceiling is promised, with both terms while the mode of the
+    // sale (candle or interactive) is not readable by a visitor.
+    expect(container.textContent).toContain("enchère plafond ou offre plafond");
     expect(screen.queryByText(/Activité publique du tribunal/)).toBeNull();
 
     const cta = screen.getAllByRole("link", { name: /Créer mon compte gratuit/ })[0];
@@ -791,15 +819,25 @@ describe("SalePublicPreview", () => {
     expect(teaser.contains(note)).toBe(false);
   });
 
-  it("ne cite pas l'enchère plafond sur une vente hors tribunal : le statut seul", () => {
-    renderPreview({ sale_venue_type: "notary" });
+  it("ne cite pas le plafond sur une vente domaniale : le statut seul", () => {
+    renderPreview({ sale_venue_type: "state" });
     expect(screen.getByTestId("public-dossier-teaser").textContent).toBe(
       "Compte gratuit : notez votre statut sur chaque vente suivie.",
     );
   });
 
-  it("does not promise a bid ceiling for a notarial sale", () => {
+  it("names both terms of the ceiling on a notarial sale, whose mode is not readable before the unlock", () => {
     renderPreview({ sale_venue_type: "notary" });
+    expect(screen.getByTestId("public-dossier-teaser").textContent).toBe(
+      "Compte gratuit : notez votre statut et votre enchère plafond ou offre plafond sur chaque vente suivie.",
+    );
+    const teaser = screen.getByRole("region", { name: "L’analyse de cette vente" });
+    expect(teaser.textContent).toContain("Enchère plafond ou offre plafond (simulation)");
+    expect(teaser.textContent).toContain("Ventes comparables");
+  });
+
+  it("does not promise a bid ceiling for a domanial sale", () => {
+    renderPreview({ sale_venue_type: "state" });
     const teaser = screen.getByRole("region", { name: "L’analyse de cette vente" });
     expect(teaser.textContent).not.toContain("plafond");
     expect(teaser.textContent).toContain("Ventes comparables");
@@ -859,6 +897,78 @@ function renderPreview(
   );
 }
 
+describe("plafond annoncé selon le régime de frais de la vente", () => {
+  it("annonce l'enchère plafond d'une vente au tribunal, avec le texte actuel", () => {
+    const { container } = renderPreview({ sale_venue_type: "tribunal" });
+    const text = container.textContent ?? "";
+    expect(text).toContain(
+      "Compte gratuit : notez votre statut et votre enchère plafond sur chaque vente suivie.",
+    );
+    expect(text).toContain("calcul de votre enchère plafond");
+    expect(text).toContain("l’enchère plafond");
+  });
+
+  function renderNotarial(openFeeRegimes?: readonly FeeRegimeKey[], venue = "notary") {
+    return render(
+      <SalePublicPreview
+        saleId="sale-1"
+        returnTo="/sales"
+        openFeeRegimes={openFeeRegimes}
+        preview={
+          {
+            id: "sale-1",
+            starting_price_eur: 59_000,
+            sale_venue_type: venue,
+            sale_verification_status: "cross_checked",
+          } as AuctionSale
+        }
+      />,
+    );
+  }
+
+  it("annonce l'enchère plafond ou l'offre plafond d'une vente notariale : les deux régimes sont ouverts par défaut", () => {
+    const { container } = renderNotarial();
+    const text = container.textContent ?? "";
+    expect(text).toContain(
+      "Compte gratuit : notez votre statut et votre enchère plafond ou offre plafond sur chaque vente suivie.",
+    );
+    expect(text).toContain("l’enchère plafond ou l’offre plafond, la lecture des pièces");
+    expect(text).toContain("calcul de votre enchère plafond ou offre plafond");
+  });
+
+  it("n'annonce que l'enchère plafond quand seul le régime de la bougie est ouvert", () => {
+    const { container } = renderNotarial(["tribunal", "notary_auction"]);
+    const text = container.textContent ?? "";
+    expect(text).toContain("votre enchère plafond sur chaque vente suivie.");
+    expect(text).not.toContain("offre plafond");
+  });
+
+  it("n'annonce que l'offre plafond quand seul le régime interactif est ouvert", () => {
+    const { container } = renderNotarial(["tribunal", "notary_online"]);
+    const text = container.textContent ?? "";
+    expect(text).toContain("votre offre plafond sur chaque vente suivie.");
+    expect(text).toContain("l’offre plafond, la lecture des pièces");
+    expect(text).not.toContain("enchère plafond");
+  });
+
+  it("n'annonce aucun plafond pour une vente notariale quand le serveur ne liste que le tribunal", () => {
+    const { container } = renderNotarial(["tribunal"]);
+    const text = container.textContent ?? "";
+    expect(text).toContain("Compte gratuit : notez votre statut sur chaque vente suivie.");
+    expect(text).not.toContain("plafond");
+  });
+
+  it("n'annonce aucun plafond pour une vente domaniale, même quand tous les régimes sont listés ouverts", () => {
+    const { container } = renderNotarial(
+      ["tribunal", "notary_auction", "notary_online", "state_auction"],
+      "state",
+    );
+    const text = container.textContent ?? "";
+    expect(text).toContain("Compte gratuit : notez votre statut sur chaque vente suivie.");
+    expect(text).not.toContain("plafond");
+  });
+});
+
 describe("essai gratuit à l'inscription sur la fiche publique", () => {
   const sale = {
     id: "sale-1",
@@ -912,5 +1022,67 @@ describe("essai gratuit à l'inscription sur la fiche publique", () => {
     expect(html).not.toContain("offre de lancement");
     expect(html).toContain("Gratuit, sans carte bancaire");
     expect(html).toContain("Selon votre compte");
+  });
+});
+
+describe("SalePublicPreview : repère « Pépite »", () => {
+  const LOCKED = pepiteCriteriaPayload(
+    pepiteCriteriaViews(
+      ["pass:regime_open", "pass:sale_upcoming", "pass:test_c_cost"],
+      [],
+      "notary_auction",
+    ),
+  );
+
+  async function renderPreview(preview: Partial<AuctionSale>) {
+    const view = render(
+      <QueryClientProvider client={new QueryClient()}>
+        <SalePublicPreview
+          saleId="sale-1"
+          preview={{ id: "sale-1", sale_venue_type: "tribunal", ...preview } as AuctionSale}
+          returnTo="/sales"
+        />
+      </QueryClientProvider>,
+    );
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    view.rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <SalePublicPreview
+          saleId="sale-1"
+          preview={{ id: "sale-1", sale_venue_type: "tribunal", ...preview } as AuctionSale}
+          returnTo="/sales"
+        />
+      </QueryClientProvider>,
+    );
+    return view;
+  }
+
+  it("ne change rien pour une vente qui n'est pas une pépite", async () => {
+    pepiteMocks.pepite.mockReturnValue(null);
+    await renderPreview({});
+    expect(screen.queryByTestId("pepite-badge")).toBeNull();
+    expect(document.body.textContent).not.toMatch(/pépite/i);
+    expect(pepiteMocks.pepite).not.toHaveBeenCalled();
+  });
+
+  it("pose la pastille et « Pourquoi ? » en tête, puis le bloc verrouillé avec « Créez un compte gratuit »", async () => {
+    pepiteMocks.pepite.mockReturnValue(LOCKED);
+    await renderPreview({ pepite: true });
+    expect(screen.getByTestId("pepite-badge").textContent).toBe("Pépite");
+    expect(screen.getByRole("link", { name: "Pourquoi ?" }).getAttribute("href")).toBe("#pepite");
+    // Niveau « criteria » seulement : la vente est déjà connue comme pépite, aucun montant.
+    expect(pepiteMocks.pepite).toHaveBeenCalledWith(
+      expect.objectContaining({ view: "criteria", known: true }),
+    );
+    const block = screen.getByRole("region", { name: "Pépite : 1 test réussi" });
+    expect(block.textContent).toContain("Montant et détail : débloquez cette vente");
+    expect(
+      within(block).getByRole("link", { name: "Créez un compte gratuit" }).getAttribute("href"),
+    ).toMatch(/^\/login\?/);
+    expect(block.textContent).not.toMatch(/€|Prix probable|fourchette/);
+    expect(block.innerHTML).not.toMatch(/blur/);
   });
 });

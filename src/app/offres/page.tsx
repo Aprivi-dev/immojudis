@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { BreadcrumbJsonLd } from "@/components/BreadcrumbJsonLd";
 import { offersPageDescription } from "@/lib/analysis-offer";
 import { analysisCheckoutReadiness } from "@/lib/analysis-checkout-readiness";
+import { openFeeRegimesFromEnv } from "@/lib/fee-regime.server";
 import { pageMetadata } from "@/lib/page-metadata";
 import { OffersPage } from "./offers-page";
 
@@ -15,7 +16,8 @@ export function generateMetadata(): Metadata {
   return pageMetadata({
     path: "/offres",
     title: "Offres Découverte et Analyse",
-    description: offersPageDescription({ open }),
+    // Le terme du plafond suit l'interrupteur par régime (`CEILING_FEE_REGIMES_OPEN`).
+    description: offersPageDescription({ open, regimes: openFeeRegimesFromEnv() }),
   });
 }
 
@@ -23,7 +25,7 @@ export default function Page() {
   return (
     <>
       <BreadcrumbJsonLd trail={[{ name: "Offres", path: "/offres" }]} />
-      <OffersPage />
+      <OffersPage openFeeRegimes={openFeeRegimesFromEnv()} />
     </>
   );
 }

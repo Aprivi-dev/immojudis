@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import Circle from "lucide-react/dist/esm/icons/circle.js";
 import CircleCheck from "lucide-react/dist/esm/icons/circle-check.js";
 import X from "lucide-react/dist/esm/icons/x.js";
+import { useFeeRegimes } from "@/components/FeeRegimesProvider";
 import { SaleRemindersToggle } from "@/components/SaleRemindersToggle";
 import { Card } from "@/components/ui/primitives";
 import { useAuth } from "@/hooks/use-auth";
@@ -21,6 +22,15 @@ import {
   startSteps,
   writeStartCardClosed,
 } from "@/lib/start-checklist";
+
+// Le plafond n'existe que pour les ventes dont un régime de frais est ouvert : le texte le dit avec
+// les termes et les ventes de ces régimes (« enchère plafond ou offre plafond »). Écrit en toutes
+// lettres pour que la page des favoris n'embarque pas le vocabulaire des régimes ; `MonDemarrage.test`
+// vérifie qu'il reste égal à `ceilingScopeNoteText()` (régimes ouverts par défaut). Sous un
+// `FeeRegimesProvider`, la page serveur qui a lu `CEILING_FEE_REGIMES_OPEN` passe la note composée
+// avec les régimes réellement ouverts, qui remplace celle-ci.
+const CEILING_SCOPE_NOTE =
+  "Le plafond (enchère plafond ou offre plafond) n’existe que pour les ventes au tribunal, ventes notariales à la bougie et ventes notariales interactives ; le statut vaut pour toute vente suivie.";
 
 function StepMark({ done }: { done: boolean }) {
   return (
@@ -45,6 +55,7 @@ function StepMark({ done }: { done: boolean }) {
  */
 export function MonDemarrage({ className = "" }: { className?: string }) {
   const { user, loading } = useAuth();
+  const scopeNote = useFeeRegimes()?.scopeNote ?? CEILING_SCOPE_NOTE;
   const userId = user?.id ?? null;
   // Fermeture lue dans le navigateur après l'affichage : tant qu'elle n'est pas lue, la carte reste cachée.
   const [stored, setStored] = useState<{ userId: string | null; closed: boolean }>({
@@ -142,13 +153,13 @@ export function MonDemarrage({ className = "" }: { className?: string }) {
         <li className="flex items-start gap-3">
           <StepMark done={status("dossier")} />
           <div className="text-sm">
-            <p className="font-semibold text-brand-navy">Noter mon statut ou mon enchère plafond</p>
+            <p className="font-semibold text-brand-navy">Noter mon statut ou mon plafond</p>
             {status("dossier") ? null : (
               <>
                 <p className="text-ink-soft">
                   {progress.followed
-                    ? "Dans « Mon dossier », sur la fiche d’une vente suivie. L’enchère plafond n’existe que pour les ventes au tribunal ; le statut vaut pour toute vente suivie."
-                    : "Suivez d’abord une vente : « Mon dossier » s’ouvre sur sa fiche. L’enchère plafond n’existe que pour les ventes au tribunal ; le statut vaut pour toute vente suivie."}
+                    ? `Dans « Mon dossier », sur la fiche d’une vente suivie. ${scopeNote}`
+                    : `Suivez d’abord une vente : « Mon dossier » s’ouvre sur sa fiche. ${scopeNote}`}
                 </p>
                 {progress.followed && progress.dossierSaleId ? (
                   <Link

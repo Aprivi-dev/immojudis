@@ -61,6 +61,27 @@ describe("POST /api/sales/[id]/signal-feedback", () => {
     });
   });
 
+  it("records the feedback of the Pépite signal with one of its reasons", async () => {
+    await post({ signal: "pepite", value: "not_relevant", reason: "amount_too_high" });
+
+    expect(mocks.record).toHaveBeenCalledWith("user-1", saleId, {
+      signal: "pepite",
+      value: "not_relevant",
+      reason: "amount_too_high",
+    });
+  });
+
+  it("refuses a reason of another signal for the Pépite signal", async () => {
+    const response = await post({
+      signal: "pepite",
+      value: "not_relevant",
+      reason: "estimate_too_high",
+    });
+
+    expect(response.status).toBe(400);
+    expect(mocks.record).not.toHaveBeenCalled();
+  });
+
   it("answers recorded: false when the database refuses (sale out of the catalogue, daily cap)", async () => {
     mocks.record.mockResolvedValue(false);
 

@@ -111,15 +111,15 @@ $$;
 -- Les chiffres -----------------------------------------------------------------------------------------
 select is(
   (select jsonb_array_length(body -> 'signals') from pgtap_623_summary where label = 'after'),
-  2,
-  'both signals are always returned'
+  3,
+  'the three signals are always returned'
 );
 select is(
   (select array_agg(s ->> 'signal' order by s ->> 'signal')
      from pgtap_623_summary t, jsonb_array_elements(t.body -> 'signals') s
     where t.label = 'after'),
-  array['market_gap_band', 'points_to_verify'],
-  'the signals are the two of the closed list'
+  array['market_gap_band', 'pepite', 'points_to_verify'],
+  'the signals are the three of the closed list (pepite added by 20261104100000)'
 );
 select is(
   array[

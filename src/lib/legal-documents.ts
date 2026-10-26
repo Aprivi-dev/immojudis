@@ -1,23 +1,59 @@
 /**
- * Date d'entrée en vigueur de la version CGV 2026-10-25.1 (article 13 « Essai gratuit à
- * l'inscription », qui remplace l'offre de lancement, et article 14 « Modification des conditions » ;
- * relecture de conformité du 25/10/2026, à faire valider par un avocat), soit sa date de mise en
- * ligne. Elle n'entre pas dans l'empreinte du texte. La section « Classement, référencement et mise
- * en avant » est en vigueur depuis la version 2026-10-14.1 (14 octobre 2026).
+ * Dates d'effet des versions du 26/10/2026 (repère « Pépite »). Elles n'entrent pas dans l'empreinte
+ * du texte.
+ *
+ * - CGU 2026-10-26.1 (articles 2, 8 et 10 : repère « Pépite », enchère ou offre plafond selon la
+ *   vente, indépendance vis-à-vis de la publicité) : elles s'appliquent dès l'inscription aux
+ *   comptes créés à partir de leur mise en ligne, et le 1er décembre 2026 aux comptes existants.
+ *   L'article 14 impose d'informer les titulaires de compte au moins 30 jours avant l'entrée en
+ *   vigueur : l'information doit partir au plus tard le 1er novembre 2026. Si elle part plus tard,
+ *   repousser cette date (date d'envoi + 30 jours au moins) avant la mise en ligne. Jusque-là, la
+ *   version 2026-10-25.1 reste applicable aux comptes existants (voir PREVIOUS_LEGAL_DOCUMENTS).
+ * - Mentions légales 2026-10-26.1 (« Estimations, rapports et responsabilité » et « Mise en relation
+ *   avec un avocat ») : en vigueur à leur mise en ligne, sans préavis.
+ *
+ * Historique : la version CGU 2026-10-25.1 est entrée en vigueur le 25 octobre 2026 (article 13
+ * « Essai gratuit à l'inscription », qui remplace l'offre de lancement, et article 14 « Modification
+ * des conditions » ; relecture de conformité du 25/10/2026, à faire valider par un avocat). La
+ * section « Classement, référencement et mise en avant » est en vigueur depuis la version
+ * 2026-10-14.1 (14 octobre 2026).
  */
-const SIGNUP_TRIAL_TERMS_EFFECTIVE_DATE = "25 octobre 2026";
+const PEPITE_TERMS_EFFECTIVE_DATE = "1er décembre 2026";
+const PEPITE_LEGAL_EFFECTIVE_DATE = "26 octobre 2026";
 
-export const LEGAL_DOCUMENTS = {
+/**
+ * Versions précédentes encore applicables ou à produire sur demande. Le code source exact de
+ * chacune est archivé dans `docs/legal-archives/` (extension `.txt`, jamais modifié) et son
+ * empreinte contrôlée par `legal-documents.test.ts`.
+ */
+export const PREVIOUS_LEGAL_DOCUMENTS = {
+  terms: {
+    version: "2026-10-25.1",
+    sha256: "45b05a29108fc2c9b7637d92f9b5e8169971f6d4170ed09cfe3af9f7ae1de39c",
+    effectiveDate: "25 octobre 2026",
+    applicableUntil: PEPITE_TERMS_EFFECTIVE_DATE,
+    archive: "docs/legal-archives/conditions-generales-2026-10-25.1.tsx.txt",
+  },
   legal: {
     version: "2026-07-29.1",
     sha256: "c55e7cffefcf3ebc6e0807e3a234f8d155603e32344cd6ffc0f2478533538df9",
     effectiveDate: "29 juillet 2026",
+    applicableUntil: PEPITE_LEGAL_EFFECTIVE_DATE,
+    archive: "docs/legal-archives/legal-2026-07-29.1.tsx.txt",
+  },
+} as const;
+
+export const LEGAL_DOCUMENTS = {
+  legal: {
+    version: "2026-10-26.1",
+    sha256: "d781161fc310eed0195caeccc50e5ef8df4d7dd986f419134baceaf8738a3b46",
+    effectiveDate: PEPITE_LEGAL_EFFECTIVE_DATE,
     path: "/legal",
   },
   terms: {
-    version: "2026-10-25.1",
-    sha256: "45b05a29108fc2c9b7637d92f9b5e8169971f6d4170ed09cfe3af9f7ae1de39c",
-    effectiveDate: SIGNUP_TRIAL_TERMS_EFFECTIVE_DATE,
+    version: "2026-10-26.1",
+    sha256: "b7edb825c5e4e1626b85bfe09eeb746a557925b8739cda410665898c0de0d866",
+    effectiveDate: PEPITE_TERMS_EFFECTIVE_DATE,
     path: "/conditions-generales",
   },
   privacy: {

@@ -106,6 +106,57 @@ describe("email alerts", () => {
     expect(message.text).toContain("Désactiver cette alerte");
   });
 
+  it("pour une alerte « Seulement les pépites » : la mention en texte, sans aucun montant, avec le lien vers la méthode", () => {
+    const pepiteNotification = {
+      ...notification("6b6b42a1-b719-48cc-9c9f-f0c9f707e1aa", "sale-p", "Maison judiciaire", {
+        saleDate: "2026-11-20T09:00:00Z",
+      }),
+      notification_snapshot: {
+        alert: { id: alertA, name: "Pépites de Bordeaux" },
+        sale: { id: "sale-p", title: "Maison judiciaire", city: "Bordeaux", department: "33" },
+        // Le motif « pépite » vient de l'évaluation de l'alerte ; jamais de montant dans le snapshot.
+        match: { marketDiscountPct: null, reasons: ["pépite", "DPE C"] },
+      },
+    };
+    const message = buildAlertDigestMessage({
+      userId,
+      from: "Immojudis <alertes@immojudis.fr>",
+      recipientEmail: "client@example.test",
+      appUrl: "https://immojudis.example",
+      now: new Date("2026-10-09T10:00:00Z"),
+      env,
+      notifications: [pepiteNotification],
+    });
+
+    expect(message.text).toContain("repère calculé automatiquement par Immojudis");
+    expect(message.text).toContain(
+      "Comment repérons-nous les pépites ? https://immojudis.example/methode-pepites",
+    );
+    expect(message.html).toContain("<strong>Pépite</strong>");
+    expect(message.html).toContain('href="https://immojudis.example/methode-pepites"');
+    // Le mot n'est pas répété dans la liste des critères détectés ; les autres critères y restent.
+    expect(message.text).toContain("Critères détectés : DPE C");
+    expect(message.text).not.toMatch(/Critères détectés : [^\n]*pépite/);
+    // Aucun montant de pépite : ni plafond, ni prix probable, ni fourchette.
+    expect(`${message.text}\n${message.html}`).not.toMatch(
+      /plafond|prix probable|fourchette|\d[\d\s\u00a0\u202f]*€/i,
+    );
+  });
+
+  it("n'ajoute rien pour une vente qui ne vient pas d'une alerte « pépites »", () => {
+    const message = buildAlertDigestMessage({
+      userId,
+      from: "Immojudis <alertes@immojudis.fr>",
+      recipientEmail: "client@example.test",
+      appUrl: "https://immojudis.example",
+      now: new Date("2026-10-09T10:00:00Z"),
+      env,
+      notifications: [notification("6b6b42a1-b719-48cc-9c9f-f0c9f707e17d", "sale-1", "Maison")],
+    });
+    expect(message.text).not.toMatch(/pépite/i);
+    expect(message.html).not.toMatch(/pépite/i);
+  });
+
   it("shows the hearing date and the starting price of each sale when the snapshot has them", () => {
     const message = buildAlertDigestMessage({
       userId,

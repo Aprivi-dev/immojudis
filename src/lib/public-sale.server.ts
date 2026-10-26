@@ -88,6 +88,12 @@ export const PUBLIC_SALE_REVALIDATE_SECONDS = 300;
  * `POST /api/pipeline/revalidate-sale` as soon as it changes the sale. Lower-cased because the
  * identifier pattern is case-insensitive and both spellings describe the same sale.
  */
+/**
+ * Tag shared by EVERY cached public sale lookup: expiring it refreshes all the public pages at once (used by the
+ * emergency stop of the pepites, whose mark is read with the sale). `publicSaleCacheTag` stays the per-sale tag.
+ */
+export const PUBLIC_SALES_CACHE_TAG = "public-sales";
+
 export function publicSaleCacheTag(id: string): string {
   return `sale-${id.toLowerCase()}`;
 }
@@ -144,7 +150,10 @@ export const lookupPublicSale = cache(async (id: string): Promise<PublicSaleLook
   const lookup = await unstable_cache(
     () => readPublicSale(client, normalizedId),
     ["public-sale-lookup", normalizedId],
-    { tags: [publicSaleCacheTag(normalizedId)], revalidate: PUBLIC_SALE_REVALIDATE_SECONDS },
+    {
+      tags: [publicSaleCacheTag(normalizedId), PUBLIC_SALES_CACHE_TAG],
+      revalidate: PUBLIC_SALE_REVALIDATE_SECONDS,
+    },
   )();
   if (lookup.status !== "found") return lookup;
   // Copie hébergée de la photo : cherchée après le cache de la vente, pour qu'un échec ou un délai

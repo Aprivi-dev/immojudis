@@ -120,3 +120,55 @@ describe("MobileFilterChips : « sous la fourchette » et « sans point à véri
     }
   });
 });
+
+describe("MobileFilterChips : « Pépites seulement »", () => {
+  function PepiteHarness({
+    pepitesActive,
+    preview = false,
+    initial = {},
+  }: {
+    pepitesActive: boolean;
+    preview?: boolean;
+    initial?: Partial<SearchDraft>;
+  }) {
+    const [draft, setDraft] = useState<SearchDraft>({ ...emptySearchDraft(), ...initial });
+    return (
+      <MobileFilterChips
+        draft={draft}
+        setDraft={setDraft}
+        preview={preview}
+        pepitesActive={pepitesActive}
+      />
+    );
+  }
+
+  it("n'apparaît pas tant que les pépites ne sont pas ouvertes : pas de filtre qui ne renverrait rien", () => {
+    render(<PepiteHarness pepitesActive={false} />);
+    expect(screen.queryByRole("button", { name: /Pépites seulement/ })).toBeNull();
+    expect(document.body.textContent).not.toMatch(/pépite/i);
+  });
+
+  it("est la première pastille, avec le logo, ouverte aux visiteurs sans compte", () => {
+    render(<PepiteHarness pepitesActive preview />);
+    const group = screen.getByRole("group", { name: "Filtres rapides" });
+    const first = group.querySelector("button, label");
+    expect(first?.textContent).toBe("Pépites seulement");
+    const chip = screen.getByRole("button", { name: "Pépites seulement" });
+    expect(chip.getAttribute("aria-pressed")).toBe("false");
+    expect(chip.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+    // Les deux autres repères restent réservés aux comptes.
+    expect(screen.queryByRole("button", { name: /Sous la fourchette/ })).toBeNull();
+  });
+
+  it("bascule le brouillon et montre l'état par une coche, pas seulement par la couleur", () => {
+    render(<PepiteHarness pepitesActive />);
+    const chip = screen.getByRole("button", { name: "Pépites seulement" });
+    fireEvent.click(chip);
+    expect(chip.getAttribute("aria-pressed")).toBe("true");
+    // Actif : la coche remplace le logo (une forme, pas seulement la couleur).
+    expect(chip.querySelector("svg")?.getAttribute("class")).toMatch(/lucide-check|size-4/);
+    expect(chip.innerHTML).toMatch(/M20 6 9 17l-5-5|lucide-check/);
+    fireEvent.click(chip);
+    expect(chip.getAttribute("aria-pressed")).toBe("false");
+  });
+});

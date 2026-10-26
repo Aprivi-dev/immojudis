@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { AuthGate } from "@/components/AuthGate";
 import { FavoriteSales } from "@/components/FavoriteSales";
+import { FeeRegimesProvider } from "@/components/FeeRegimesProvider";
+import { feeRegimesSettingsFromEnv } from "@/lib/fee-regime.server";
 
 export const metadata: Metadata = {
   title: "Mes favoris",
@@ -10,7 +12,9 @@ export const metadata: Metadata = {
 export default function Page() {
   return (
     <AuthGate>
-      <FavoriteSales />
+      <FeeRegimesProvider value={feeRegimesSettingsFromEnv()}>
+        <FavoriteSales />
+      </FeeRegimesProvider>
     </AuthGate>
   );
 }

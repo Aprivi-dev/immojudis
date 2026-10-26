@@ -16,6 +16,12 @@ export const RATE_LIMIT_POLICIES = {
    * La réponse est de toute façon servie par le CDN pour les recherches répétées.
    */
   catalogPreviewIp: { limit: 180, windowSeconds: 60 },
+  /**
+   * Recherche d'aperçu avec « Pépites seulement » (`bucketKey` `catalogue.preview.pepite`, en plus du seau précédent) :
+   * 30 par minute et par IP. Chaque lecture non gardée balaie le catalogue (jusqu'à 30 pages de 100) : un seau
+   * propre borne ce coût.
+   */
+  catalogPreviewPepiteIp: { limit: 30, windowSeconds: 60 },
 } as const;
 
 /**

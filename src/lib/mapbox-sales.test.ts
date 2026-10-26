@@ -49,6 +49,7 @@ describe("mapbox sale features", () => {
         tribunal: "Bordeaux",
         saleDate: "2026-10-12",
         priceValue: 180_000,
+        pepite: 0,
       },
     });
   });

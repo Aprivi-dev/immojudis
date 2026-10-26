@@ -75,3 +75,24 @@ describe("RankingExplanation", () => {
     expect(RANKING_EXPLANATION_INVESTMENT_NOTE).toContain("sans promesse de rendement");
   });
 });
+
+describe("RankingExplanation : repère « Pépite »", () => {
+  const NOTE = "Le repère « Pépite » ne change ni l’ordre par défaut ni les autres tris.";
+
+  it("n'ajoute rien tant que le repère n'est pas ouvert, sans toucher aux notes relues", () => {
+    const { container } = render(<RankingExplanation />);
+    expect(container.textContent).not.toContain("Pépite");
+    for (const note of RANKING_EXPLANATION_NOTES) expect(container.textContent).toContain(note);
+  });
+
+  it("ajoute la note d'indépendance avec le lien vers la méthode, et garde les autres notes", () => {
+    const { container } = render(<RankingExplanation pepites />);
+    expect(container.textContent).toContain(NOTE);
+    expect(
+      screen
+        .getByRole("link", { name: "Comment repérons-nous les pépites ?" })
+        .getAttribute("href"),
+    ).toBe("/methode-pepites");
+    for (const note of RANKING_EXPLANATION_NOTES) expect(container.textContent).toContain(note);
+  });
+});

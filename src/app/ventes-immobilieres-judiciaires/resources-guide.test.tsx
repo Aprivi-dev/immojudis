@@ -120,7 +120,7 @@ describe("guide des ventes immobilières judiciaires", () => {
       expect(structured.dateModified).toBe(GUIDE_LAST_UPDATED);
       expect(time!.getAttribute("datetime")).toBe(structured.dateModified);
       expect(time!.textContent).toBe(formatGuideDate(structured.dateModified!));
-      expect(time!.textContent).toBe("23/10/2026");
+      expect(time!.textContent).toBe("26/10/2026");
     });
 
     it("est une date AAAA-MM-JJ valide, pas postérieure à aujourd'hui", () => {
@@ -323,6 +323,34 @@ describe("guide des ventes immobilières judiciaires", () => {
       );
       const visible = plain(container.textContent ?? "");
       expect(visible).toContain(answer.slice(0, 200));
+    });
+  });
+
+  describe("surenchère hors saisie : créanciers inscrits et caution du dixième", () => {
+    const expected = [
+      "nous n’avons identifié dans la loi que la surenchère des créanciers inscrits : lorsque l’acquéreur purge les hypothèques, tout créancier inscrit dispose de quarante jours à compter de la notification pour requérir la remise aux enchères en surenchérissant du dixième avec caution (art. 2464 et 2465 du Code civil) ; ce délai ne part pas de l’adjudication",
+      "distincte de la clause de 10 % en 10 jours que seul le cahier des charges peut prévoir",
+      "caution bancaire irrévocable ou un chèque de banque du dixième du prix principal (art. R. 322-51)",
+    ];
+
+    it("le dit dans le corps du guide", () => {
+      const { container } = render(<ResourcesPage />);
+      const body = plain(
+        container.querySelector("#apres-adjudication")!.parentElement!.textContent ?? "",
+      );
+      for (const sentence of expected) expect(body).toContain(sentence);
+      expect(body).not.toMatch(/art\. 2480|2480 à 2482/);
+    });
+
+    it("le dit dans la FAQ et le JSON-LD", () => {
+      const { container } = render(<ResourcesPage />);
+      const script = container.querySelector('script[type="application/ld+json"]');
+      const structured = JSON.parse(script!.textContent ?? "{}") as {
+        mainEntity: Array<{ name: string; acceptedAnswer: { text: string } }>;
+      };
+      const question = structured.mainEntity.find((item) => item.name.includes("surenchère"));
+      const answer = plain(question!.acceptedAnswer.text);
+      for (const sentence of expected) expect(answer).toContain(sentence);
     });
   });
 

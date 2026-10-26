@@ -8,18 +8,25 @@ import {
   type CeilingProfile,
   type CeilingProject,
   type CeilingWorksKey,
+  type FeeSource,
   type OccupationCase,
   type ValueReliability,
 } from "@/lib/bid-ceiling-engine";
+import type { FeeRegime } from "@/lib/fee-regime-definitions";
+import { readNotarySaleConditions } from "@/lib/notary-sale-conditions";
 import type { CeilingMarketEstimate } from "@/lib/market-estimate-ceiling";
 import type { WorksBreakdownItem } from "@/lib/works-breakdown";
-import { DEFAULTS, registrationRateForDepartment } from "@/lib/profitability";
+import {
+  DEFAULT_PRELIMINARY_FEES,
+  DEFAULTS,
+  registrationRateForDepartment,
+} from "@/lib/profitability";
 import { defaultRentPerM2 } from "@/lib/rent-reference";
 import { getMarketValuationSurfaces } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
 
-/** Frais préalables retenus quand l'annonce ne les donne pas : prudent, ils varient de 2 000 à plus de 10 000 €. */
-export const DEFAULT_PRELIMINARY_FEES = 5_000;
+// Frais préalables retenus quand l'annonce ne les donne pas : valeur unique de `profitability.ts`.
+export { DEFAULT_PRELIMINARY_FEES };
 /** Commissaire de justice, serrurier, garde-meubles : ordre de grandeur d'une libération. */
 export const DEFAULT_RELEASE_COST = 3_000;
 export const DEFAULT_RELEASE_MONTHS = 12;
@@ -50,6 +57,13 @@ export type CeilingUserChoices = {
   rentedDiscountPct?: number | null;
   fpt?: number | null;
   lawyerFees?: number | null;
+  /**
+   * Vente notariale : garantie à déposer lue dans les conditions de la vente (vente à la bougie),
+   * honoraires de négociation (en % du prix) et frais de publicité (vente interactive).
+   */
+  consignation?: number | null;
+  negotiationFeeRatePct?: number | null;
+  advertisingFees?: number | null;
   registrationRatePct?: number | null;
   taxRegime?: "registration" | "vat";
   monthlyCharges?: number | null;
@@ -69,28 +83,51 @@ export function occupationCaseForStatus(status: string | null | undefined): Occu
   return "occupe";
 }
 
+/**
+ * Hypothèses de départ du plafond d'une vente. `regime` : le régime de frais de la vente ; absent,
+ * le calcul est celui du tribunal (barème, frais par défaut et consignation d'origine), sans que
+ * l'hypothèse porte de régime.
+ */
 export function buildCeilingHypotheses(
   sale: AuctionSale,
   estimate: CeilingMarketEstimate | null,
   choices: CeilingUserChoices = {},
+  regime: FeeRegime | null = null,
 ): CeilingHypotheses {
   const surfaces = getMarketValuationSurfaces(sale);
   const surface = surfaces.builtSurfaceM2;
   const apartment = /appart|apartment|studio|duplex|loft/i.test(sale.property_type ?? "");
   const rentPerM2 = defaultRentPerM2(sale.department);
   const estimatedRent = surface && rentPerM2 ? Math.round(surface * rentPerM2) : null;
-  const preliminary = preliminaryFeesFromSale(sale);
-  const consignation = findConsignation(sale)?.amountEur ?? null;
+  const notarial = regime?.kind === "notarial";
+  // Les frais préalables sont une notion du tribunal : une vente notariale n'en a pas.
+  const preliminary = notarial ? null : preliminaryFeesFromSale(sale);
+  const conditions = notarial ? readNotarySaleConditions(sale) : null;
+  const enteredDeposit = positive(choices.consignation);
+  // Un régime sans garantie (vente interactive) ne lit aucune consignation dans le texte de l'annonce :
+  // un montant parasite (« garantie de 3 000 € » d'une autre mention) ne devient pas une garantie.
+  const consignation =
+    regime?.consignation === null
+      ? null
+      : (enteredDeposit ?? findConsignation(sale)?.amountEur ?? null);
   const works = choices.works ?? { key: "aucun" as const, amount: 0 };
   // 0 n'est pas un loyer : un champ vidé ou à 0 revient au loyer de référence, ou à « absent ».
   const manualRent = positive(choices.monthlyRent);
+  const buyerFees = regime?.buyerFeesFromListing ? buyerFeesHypothesis(conditions, choices) : null;
+  // Une vente par offres ne publie pas de mise à prix : son prix de départ est la première offre
+  // possible (`starting_price_eur` en porte le même montant).
+  const startingPrice =
+    regime?.labels.byOffers === true
+      ? (conditions?.firstOfferEur ?? sale.starting_price_eur ?? null)
+      : (sale.starting_price_eur ?? null);
 
   return {
+    ...(regime ? { regime } : {}),
     project: choices.project ?? "habiter",
     profile: choices.profile ?? "equilibre",
     customMarginPct: choices.customMarginPct ?? null,
     surface,
-    startingPrice: sale.starting_price_eur ?? null,
+    startingPrice,
     value: valueHypothesis(estimate, surface, surfaces.builtSurfaceEstimated, choices),
     works: {
       key: works.key,
@@ -120,19 +157,52 @@ export function buildCeilingHypotheses(
       resaleMonths: DEFAULT_RESALE_MONTHS,
     },
     fees: {
-      fpt: choices.fpt ?? preliminary ?? DEFAULT_PRELIMINARY_FEES,
-      lawyerFees: choices.lawyerFees ?? DEFAULTS.lawyerFees,
+      // Chez le notaire : ni frais préalables, ni avocat (ce que l'utilisateur aurait saisi pour
+      // une autre vente n'entre pas dans le calcul).
+      fpt: notarial
+        ? 0
+        : (choices.fpt ??
+          preliminary ??
+          regime?.defaultPreliminaryFees ??
+          DEFAULT_PRELIMINARY_FEES),
+      lawyerFees: notarial
+        ? 0
+        : (choices.lawyerFees ?? regime?.defaultLawyerFees ?? DEFAULTS.lawyerFees),
       department: sale.department ?? null,
       registrationRate:
         choices.registrationRatePct != null
           ? choices.registrationRatePct / 100
           : registrationRateForDepartment(sale.department),
       taxRegime: choices.taxRegime ?? "registration",
+      ...(regime ? { emolumentBrackets: regime.emolumentScale.brackets } : {}),
+      ...(regime && regime.organizationFeeRate > 0
+        ? { organizationFeeRate: regime.organizationFeeRate }
+        : {}),
+      ...(buyerFees
+        ? {
+            negotiationFeeRate: buyerFees.negotiationFeeRate,
+            advertisingFees: buyerFees.advertisingFees,
+          }
+        : {}),
     },
     feesSource: {
-      fpt: choices.fpt == null && preliminary != null ? "document" : "defaut",
-      consignation: consignation != null ? "document" : "regle",
+      fpt: notarial
+        ? "document"
+        : choices.fpt != null
+          ? "saisie"
+          : preliminary != null
+            ? "document"
+            : "defaut",
+      consignation: consignationSource({
+        entered: enteredDeposit != null,
+        found: consignation != null,
+        estimated: regime?.consignation?.estimated === true,
+      }),
+      ...(buyerFees
+        ? { negotiation: buyerFees.negotiationSource, advertising: buyerFees.advertisingSource }
+        : {}),
     },
+    ...(notarial ? { overbidAllowed: conditions?.overbidAllowed ?? null } : {}),
     rent: {
       monthly: manualRent ?? estimatedRent,
       source: manualRent != null ? "saisi" : estimatedRent ? "estime" : "absent",
@@ -142,6 +212,70 @@ export function buildCeilingHypotheses(
     },
     resale: { sellingCostsPct: choices.sellingCostsPct ?? DEFAULT_SELLING_COSTS_PCT },
     consignation,
+  };
+}
+
+function consignationSource({
+  entered,
+  found,
+  estimated,
+}: {
+  entered: boolean;
+  found: boolean;
+  estimated: boolean;
+}): FeeSource | "regle" {
+  if (entered) return "saisie";
+  if (found) return "document";
+  // Une valeur par défaut qui n'est pas une règle de loi est à confirmer ; au tribunal, la règle
+  // légale (10 % de la mise à prix) s'applique.
+  return estimated ? "defaut" : "regle";
+}
+
+type BuyerFeesHypothesis = {
+  negotiationFeeRate: number;
+  advertisingFees: number;
+  negotiationSource: FeeSource;
+  advertisingSource: FeeSource;
+};
+
+/**
+ * Honoraires de négociation et frais de publicité de l'acquéreur d'une vente interactive, lus dans
+ * l'annonce ou saisis. Sans montant lu, rien n'est inventé :
+ *  - le vendeur paie les honoraires : 0, lu dans l'annonce ;
+ *  - l'acquéreur les paie : le taux lu est appliqué au prix ; sans taux lu, 0 est compté et le poste
+ *    est signalé comme estimé, à confirmer dans les conditions de la vente ;
+ *  - le redevable est inconnu : par prudence le taux lu est compté, le poste est signalé estimé ;
+ *  - frais de publicité : ceux de l'annonce quand ils sont indiqués, sinon 0 (le pipeline n'écrit
+ *    pas un montant nul).
+ * Ce que l'utilisateur saisit remplace la valeur lue ou par défaut (source `saisie`).
+ */
+function buyerFeesHypothesis(
+  conditions: ReturnType<typeof readNotarySaleConditions>,
+  choices: CeilingUserChoices,
+): BuyerFeesHypothesis {
+  const enteredRate = choices.negotiationFeeRatePct;
+  const enteredAdvertising = choices.advertisingFees;
+  const payer = conditions?.negotiationFeePayer ?? null;
+  const rate = conditions?.negotiationFeeRate ?? null;
+  let negotiationFeeRate = 0;
+  let negotiationSource: FeeSource = "defaut";
+  if (enteredRate != null) {
+    negotiationFeeRate = Math.max(0, enteredRate) / 100;
+    negotiationSource = "saisie";
+  } else if (payer === "VENDEUR") {
+    negotiationSource = "document";
+  } else if (rate != null) {
+    negotiationFeeRate = rate;
+    negotiationSource = payer === "ACQUEREUR" ? "document" : "defaut";
+  }
+  const listedAdvertising = conditions?.advertisingFeesEur ?? null;
+  return {
+    negotiationFeeRate,
+    advertisingFees:
+      enteredAdvertising != null ? Math.max(0, enteredAdvertising) : (listedAdvertising ?? 0),
+    negotiationSource,
+    advertisingSource:
+      enteredAdvertising != null ? "saisie" : listedAdvertising != null ? "document" : "defaut",
   };
 }
 

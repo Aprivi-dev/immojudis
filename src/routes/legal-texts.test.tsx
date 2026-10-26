@@ -4,9 +4,10 @@ import { resolve } from "node:path";
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_ANALYSIS_OFFER_LABEL, ANALYSIS_TRIAL_DAYS } from "@/lib/analysis-offer";
-import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
+import { LEGAL_DOCUMENTS, PREVIOUS_LEGAL_DOCUMENTS } from "@/lib/legal-documents";
 import { PAST_DUE_GRACE_DAYS, PLAN_LIMITS } from "@/lib/plans";
 import { TermsPage } from "./conditions-generales";
+import { LegalPage } from "./legal";
 import { PrivacyPage } from "./privacy";
 
 function pageText(node: React.ReactElement): string {
@@ -105,7 +106,7 @@ describe("conditions générales : classement, référencement et mise en avant"
     const text = (container.textContent ?? "").replace(/\s+/g, " ");
     expect(text).toContain("10. Classement, référencement et mise en avant");
     expect(text).toContain(
-      "Par défaut, les annonces dont la position sur la carte est connue passent avant les autres. Elles sont ensuite classées selon la quantité d’informations renseignées dans leur fiche, puis par date de vente la plus proche. Aucune rémunération ne peut améliorer le rang d’une annonce.",
+      "Par défaut, les annonces dont la position sur la carte est connue passent avant les autres. Elles sont ensuite classées selon la quantité d’informations renseignées dans leur fiche, puis par date de vente la plus proche. Aucune rémunération ne peut améliorer le rang d’une annonce ni lui valoir un repère (« Annonce bien renseignée », « Pépite »).",
     );
     expect(text).toContain(
       "Dans l’annuaire des avocats, les cabinets qui rémunèrent Immojudis, ou bénéficient d’une période d’essai de cette offre de mise en avant, sont affichés en premier dans une section distincte, signalés « Publicité · Sponsorisé » ; ils ne sont ni recommandés ni notés.",
@@ -125,9 +126,70 @@ describe("conditions générales : classement, référencement et mise en avant"
     expect(text).toContain("12. Réclamations, médiation et droit applicable");
   });
 
-  it("portent la version 2026-10-25.1 (essai gratuit à l'inscription), ancrée par l'empreinte de leur source", () => {
-    expect(LEGAL_DOCUMENTS.terms.version).toBe("2026-10-25.1");
-    expect(LEGAL_DOCUMENTS.terms.effectiveDate).toBe("25 octobre 2026");
+  it("portent la version 2026-10-26.1 (repère « Pépite »), ancrée par l'empreinte de leur source", () => {
+    expect(LEGAL_DOCUMENTS.terms.version).toBe("2026-10-26.1");
+  });
+
+  it("respectent le préavis de 30 jours de l'article 14 : comptes existants soumis à la nouvelle version au moins 30 jours après le 1er novembre 2026, dernier jour d'envoi de l'information", () => {
+    const mois = [
+      "janvier",
+      "février",
+      "mars",
+      "avril",
+      "mai",
+      "juin",
+      "juillet",
+      "août",
+      "septembre",
+      "octobre",
+      "novembre",
+      "décembre",
+    ];
+    expect(LEGAL_DOCUMENTS.terms.effectiveDate).toBe("1er décembre 2026");
+    const [jour, nom, annee] = LEGAL_DOCUMENTS.terms.effectiveDate.split(" ");
+    const entreeEnVigueur = Date.UTC(Number(annee), mois.indexOf(nom), Number.parseInt(jour, 10));
+    const informationAuPlusTard = Date.UTC(2026, 10, 1);
+    expect(entreeEnVigueur - informationAuPlusTard).toBeGreaterThanOrEqual(30 * 24 * 3600 * 1000);
+  });
+
+  it("précisent dans l'en-tête qui est soumis à quelle version, et où obtenir la précédente", () => {
+    const text = pageText(<TermsPage />);
+    expect(text).toContain(
+      "Version 2026-10-26.1, applicable à compter du 1er décembre 2026 aux comptes existants, et dès l’inscription pour les comptes créés à partir de sa mise en ligne. La version précédente (2026-10-25.1) reste applicable aux comptes existants jusqu’au 1er décembre 2026 ; elle est communiquée sur demande à contact@immojudis.example.",
+    );
+    expect(PREVIOUS_LEGAL_DOCUMENTS.terms.applicableUntil).toBe(
+      LEGAL_DOCUMENTS.terms.effectiveDate,
+    );
+  });
+
+  it("annoncent le repère « Pépite » : visible par tous, montant et détail réservés à Analyse ou à un déblocage (article 2)", () => {
+    const text = pageText(<TermsPage />);
+    expect(text).toContain(
+      "Lorsqu’il est attribué à une vente, le repère « Pépite » est visible par tous. Il est calculé automatiquement par Immojudis, à partir de critères publics décrits sur la page Comment repérons-nous les pépites ?. Le montant de l’enchère plafond ou de l’offre plafond estimée, selon la vente, et le détail du calcul sont réservés à l’offre Analyse ou à un déblocage, dans les conditions du présent article.",
+    );
+    expect(text).toContain("enchère plafond ou offre plafond selon la vente");
+    expect(text).toContain(
+      "l’enchère plafond ou l’offre plafond chiffrée, selon la vente, la lecture des pièces",
+    );
+  });
+
+  it("rangent la Pépite parmi les aides à la lecture, sans conseil ni garantie (article 8)", () => {
+    expect(pageText(<TermsPage />)).toContain(
+      "Le repère « Pépite », les enchères et offres plafond estimées et les prix probables sont des aides à la lecture calculées automatiquement à partir des données disponibles : ce sont des hypothèses et non des résultats. Ils ne constituent ni un conseil, ni une recommandation d’acheter ou d’enchérir, et ne garantissent ni un prix, ni un rendement, ni une adjudication, ni un prix de revente.",
+    );
+  });
+
+  it("disent qu'aucune rémunération n'influence la Pépite et que les encarts sponsorisés sont séparés (article 10)", () => {
+    const { container } = render(<TermsPage />);
+    const text = (container.textContent ?? "").replace(/\s+/g, " ");
+    expect(text).toContain(
+      "Le repère « Pépite » est attribué par un calcul automatique, à partir de critères publics décrits sur la page Comment repérons-nous les pépites ?. Aucune rémunération ne peut obtenir ou améliorer une Pépite : ni les cabinets d’avocats qui achètent une mise en avant, ni les organisateurs, vendeurs ou professionnels qui publient des annonces. Le repère ne modifie pas l’ordre des annonces. Les encarts sponsorisés des cabinets d’avocats sont séparés des annonces et sans lien avec ce repère.",
+    );
+    const links = [...container.querySelectorAll("a")].filter(
+      (anchor) => anchor.textContent === "Comment repérons-nous les pépites ?",
+    );
+    expect(links.length).toBeGreaterThanOrEqual(2);
+    for (const link of links) expect(link.getAttribute("href")).toBe("/methode-pepites");
   });
 
   it("la politique de confidentialité est en version 2026-10-25.1 (essai gratuit à l'inscription)", () => {
@@ -215,7 +277,7 @@ describe("conditions générales : 3 déblocages par mois", () => {
     expect(text).toContain("Découverte est gratuite, sans limite de durée et sans carte bancaire.");
     expect(text).toContain(`chaque mois civil, ${n} déblocages`);
     expect(text).toContain(
-      "Un déblocage ouvre, pour une vente de votre choix, les éléments suivants de l’offre Analyse lorsque cette vente les comporte : l’enchère plafond chiffrée, la lecture des pièces, l’historique de la vente, les statistiques du tribunal compétent pour cette vente et les pièces du dossier.",
+      "Un déblocage ouvre, pour une vente de votre choix, les éléments suivants de l’offre Analyse lorsque cette vente les comporte : l’enchère plafond ou l’offre plafond chiffrée, selon la vente, la lecture des pièces, l’historique de la vente, les statistiques du tribunal compétent pour cette vente et les pièces du dossier.",
     );
     expect(text).toContain(
       "Les autres fonctions de l’offre Analyse, notamment l’export PDF ou CSV, les rapports enregistrés, le budget travaux, l’estimation détaillée et les ventes comparables, les alertes avancées et la mise en relation avec un avocat référencé, restent réservées à cette offre.",
@@ -302,6 +364,34 @@ describe("conditions générales : 3 déblocages par mois", () => {
       expect(source, file).not.toMatch(/(?<![\w$])(3|trois) (déblocages|ventes par mois)/i);
       expect(source, file).not.toMatch(/analyses? (complètes? )?gratuites?|Analyse offerte/i);
     }
+  });
+});
+
+describe("mentions légales : repère « Pépite »", () => {
+  it("portent la version 2026-10-26.1, en vigueur le 26 octobre 2026", () => {
+    const text = pageText(<LegalPage />);
+    expect(LEGAL_DOCUMENTS.legal.version).toBe("2026-10-26.1");
+    expect(LEGAL_DOCUMENTS.legal.effectiveDate).toBe("26 octobre 2026");
+    expect(text).toContain(
+      `Version ${LEGAL_DOCUMENTS.legal.version}, en vigueur le ${LEGAL_DOCUMENTS.legal.effectiveDate}.`,
+    );
+  });
+
+  it("rangent la Pépite, les enchères et offres plafond parmi les aides à la lecture, sans conseil ni garantie", () => {
+    const text = pageText(<LegalPage />);
+    expect(text).toContain(
+      "Les scores, le repère « Pépite », comparables DVF, fourchettes de valeur, prix probables, rendements, analyses de risques, enchères plafond et offres plafond estimées sont des aides à la lecture fondées sur les données disponibles au moment du calcul. Ils ne constituent ni un conseil juridique ou financier, ni une recommandation d’acheter ou d’enchérir, ni une expertise immobilière, ni une garantie de prix, de rentabilité, de financement, d’adjudication ou de revente.",
+    );
+    expect(text).toContain(
+      "Le repère « Pépite » est calculé automatiquement par Immojudis sur des critères publics. Aucune rémunération ne peut l’obtenir ni l’améliorer",
+    );
+    expect(text).toContain("Une enchère ou une offre plafond est une hypothèse, pas un résultat.");
+  });
+
+  it("précise que la mise en relation avec un avocat ne dépend pas du repère", () => {
+    expect(pageText(<LegalPage />)).toContain(
+      "La mise en relation ne dépend pas du repère « Pépite » : elle n’en est ni une condition ni une conséquence.",
+    );
   });
 });
 

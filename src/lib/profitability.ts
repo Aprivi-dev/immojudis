@@ -13,7 +13,10 @@ import { defaultRentPerM2, RENT_REFERENCE_UNAVAILABLE } from "@/lib/rent-referen
 // https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000041595310
 export const EMOLUMENT_SCALE_REFERENCE = "art. A444-191 du Code de commerce";
 export const EMOLUMENT_SCALE_DATE = "09/10/2026";
-const EMOLUMENT_BRACKETS: Array<{ upTo: number; rate: number }> = [
+/** Une tranche d'un barème d'émoluments proportionnel dégressif : taux HT jusqu'à `upTo` (inclus). */
+export type EmolumentBracket = { upTo: number; rate: number };
+/** Barème de l'avocat poursuivant, celui de la vente au tribunal (régime de frais `tribunal`). */
+export const TRIBUNAL_EMOLUMENT_BRACKETS: readonly EmolumentBracket[] = [
   { upTo: 6_500, rate: 0.07256 },
   { upTo: 17_000, rate: 0.02993 },
   { upTo: 60_000, rate: 0.01995 },
@@ -42,11 +45,14 @@ export function registrationRateForDepartment(department?: string | null): numbe
   return (code ? DMTO_RATE_BY_DEPARTMENT[code] : undefined) ?? DMTO_DEFAULT_RATE;
 }
 
-export function computeEmolumentsHT(price: number): number {
+export function computeEmolumentsHT(
+  price: number,
+  brackets: readonly EmolumentBracket[] = TRIBUNAL_EMOLUMENT_BRACKETS,
+): number {
   let remaining = Math.max(0, price || 0);
   let prev = 0;
   let total = 0;
-  for (const bracket of EMOLUMENT_BRACKETS) {
+  for (const bracket of brackets) {
     if (remaining <= 0) break;
     const span = Math.min(remaining, bracket.upTo - prev);
     total += span * bracket.rate;
@@ -56,8 +62,16 @@ export function computeEmolumentsHT(price: number): number {
   return total;
 }
 
+/**
+ * Frais préalables retenus quand l'annonce ne les chiffre pas. Source unique : le simulateur de
+ * frais, les rapports et l'enchère plafond la partagent. Prudent (5 000 €), car ils varient de
+ * 2 000 à plus de 10 000 € selon la procédure ; le montant exact est dans le cahier des
+ * conditions de vente.
+ */
+export const DEFAULT_PRELIMINARY_FEES = 5_000;
+
 export const DEFAULTS = {
-  fpt: 3_000,
+  fpt: DEFAULT_PRELIMINARY_FEES,
   works: 0,
   safetyDiscountPct: 8,
   /** Honoraires de l'avocat enchérisseur, hors émoluments tarifés (TTC). */
@@ -120,6 +134,21 @@ export type AcquisitionCostOptions = {
   registrationRate?: number | null;
   /** `vat` : bien soumis à TVA (terrain à bâtir, vendeur assujetti). */
   taxRegime?: TaxRegime;
+  /** Barème d'émoluments du régime de frais ; absent : celui du tribunal (A444-191). */
+  emolumentBrackets?: readonly EmolumentBracket[];
+  /**
+   * Frais d'organisation et de publicité d'une vente notariale à la bougie : part HT du prix (par
+   * exemple 0,02), TVA en sus. Ils entrent dans la base des droits de mutation.
+   */
+  organizationFeeRate?: number;
+  /**
+   * Honoraires de négociation à la charge de l'acquéreur (vente notariale interactive) : part du
+   * prix. Ils sont exclus de la base des droits (BOFiP, § 30 et 230 relevés par la recherche du
+   * 26/10/2026 ; à confirmer sur le BOFiP).
+   */
+  negotiationFeeRate?: number;
+  /** Frais de publicité à la charge de l'acquéreur (vente notariale interactive), en euros. */
+  advertisingFees?: number;
 };
 
 export type AcquisitionCostResult = {
@@ -135,6 +164,12 @@ export type AcquisitionCostResult = {
   csi: number;
   lawyerFees: number;
   fpt: number;
+  /** Frais d'organisation et de publicité d'une vente à la bougie, TTC (0 hors de ce régime). */
+  organizationFees: number;
+  /** Honoraires de négociation de l'acquéreur (0 hors vente interactive). */
+  negotiationFees: number;
+  /** Frais de publicité de l'acquéreur (0 hors vente interactive). */
+  advertisingFees: number;
   works: number;
   acquisitionFeesTotal: number;
   acquisitionFeesPct: number;
@@ -149,16 +184,28 @@ export function computeAcquisitionCosts({
   department,
   registrationRate,
   taxRegime = "registration",
+  emolumentBrackets,
+  organizationFeeRate = 0,
+  negotiationFeeRate = 0,
+  advertisingFees = 0,
 }: { price: number } & AcquisitionCostOptions): AcquisitionCostResult {
   const cleanPrice = Math.max(0, price || 0);
   const cleanWorks = Math.max(0, works || 0);
   const cleanFpt = Math.max(0, fpt || 0);
   const cleanLawyerFees = Math.max(0, lawyerFees || 0);
-  const emolumentsHT = computeEmolumentsHT(cleanPrice);
+  const emolumentsHT = computeEmolumentsHT(cleanPrice, emolumentBrackets);
   const emolumentsTTC = emolumentsHT * (1 + VAT);
-  // Les droits se calculent sur le prix augmenté des frais préalables
-  // (charges augmentatives), pas sur le seul prix.
-  const taxableBase = cleanPrice + cleanFpt;
+  const organizationFees = cleanPrice * clampRate(organizationFeeRate) * (1 + VAT);
+  const negotiationFees = cleanPrice * clampRate(negotiationFeeRate);
+  const cleanAdvertisingFees = Math.max(0, advertisingFees || 0);
+  // Base des droits de mutation : le prix, plus les charges que l'acquéreur supporte en plus du
+  // prix et qui profitent au vendeur (frais d'organisation et de publicité d'une vente à la
+  // bougie, publicité d'une vente interactive). Les frais préalables de la saisie (frais de
+  // poursuite taxés) en sont exclus : BOFiP BOI-ENR-DMTOI-10-10-30-20 (Adjudication), § 50, qui
+  // renvoie à la réponse ministérielle Legendre n° 280 (JO Sénat du 27/11/1997, p. 3289). Les
+  // honoraires de négociation en sont exclus aussi (ils ne profitent pas au vendeur). Avant la
+  // version « 2026-10-26.2 » du moteur de plafond, les frais préalables étaient comptés dans la base.
+  const taxableBase = cleanPrice + organizationFees + cleanAdvertisingFees;
   const rate =
     registrationRate != null && Number.isFinite(registrationRate) && registrationRate >= 0
       ? registrationRate
@@ -168,7 +215,15 @@ export function computeAcquisitionCosts({
   const vatOnPrice = subjectToVat ? cleanPrice * VAT : 0;
   const csi = subjectToVat ? 0 : taxableBase * CSI_RATE;
   const acquisitionFeesTotal =
-    emolumentsTTC + registrationDuties + vatOnPrice + csi + cleanLawyerFees + cleanFpt;
+    emolumentsTTC +
+    registrationDuties +
+    vatOnPrice +
+    csi +
+    cleanLawyerFees +
+    cleanFpt +
+    organizationFees +
+    negotiationFees +
+    cleanAdvertisingFees;
   const totalCost = cleanPrice + acquisitionFeesTotal + cleanWorks;
 
   return {
@@ -182,11 +237,19 @@ export function computeAcquisitionCosts({
     csi,
     lawyerFees: cleanLawyerFees,
     fpt: cleanFpt,
+    organizationFees,
+    negotiationFees,
+    advertisingFees: cleanAdvertisingFees,
     works: cleanWorks,
     acquisitionFeesTotal,
     acquisitionFeesPct: cleanPrice > 0 ? (acquisitionFeesTotal / cleanPrice) * 100 : 0,
     totalCost,
   };
+}
+
+/** Un taux de frais en part du prix : entre 0 et 100 %, 0 si la valeur n'est pas un nombre. */
+function clampRate(value: number): number {
+  return Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0;
 }
 
 export const MARKET_CEILING_SCENARIOS = [
@@ -303,6 +366,13 @@ export type RentabilityScoreFactor = {
 export type RentabilityScoreInputs = AcquisitionCostOptions & {
   surface: number | null;
   price: number;
+  /**
+   * Coût d'acquisition déjà calculé avec les frais du régime de la vente (barème des émoluments,
+   * frais d'organisation, honoraires de négociation, publicité : `computeAcquisitionCosts` avec les
+   * `fees` du plafond). Il remplace le calcul fait ici avec les options du tribunal : sans lui, le
+   * score d'une vente notariale se calculerait sur des frais qui ne sont pas les siens.
+   */
+  acquisition?: AcquisitionCostResult;
   monthlyRent?: number | null;
   vacancyPct?: number;
   annualNonRecoverableCharges?: number | null;
@@ -357,6 +427,7 @@ function costOptionsOf(inputs: AcquisitionCostOptions): AcquisitionCostOptions {
     department: inputs.department,
     registrationRate: inputs.registrationRate,
     taxRegime: inputs.taxRegime,
+    emolumentBrackets: inputs.emolumentBrackets,
   };
 }
 
@@ -484,7 +555,9 @@ export function computeRecommendedCeilings(
 
 export function computeRentabilityScore(inputs: RentabilityScoreInputs): RentabilityScoreResult {
   const surface = Math.max(0, inputs.surface || 0);
-  const acquisition = computeAcquisitionCosts({ price: inputs.price, ...costOptionsOf(inputs) });
+  const acquisition =
+    inputs.acquisition ??
+    computeAcquisitionCosts({ price: inputs.price, ...costOptionsOf(inputs) });
   const assumptions = rentabilityAssumptions(inputs);
   const manualRent = cleanPositive(inputs.monthlyRent);
   const referenceRentPerM2 = defaultRentPerM2(inputs.department);

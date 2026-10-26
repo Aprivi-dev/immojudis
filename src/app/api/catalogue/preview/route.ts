@@ -58,6 +58,14 @@ export async function GET(request: Request) {
       bucketKey: "catalogue.preview",
       ...RATE_LIMIT_POLICIES.catalogPreviewIp,
     });
+    // « Pépites seulement » balaie le catalogue : un seau de débit de plus, plus serré.
+    if (parsed.search.pepite) {
+      await enforceIpRateLimit({
+        request,
+        bucketKey: "catalogue.preview.pepite",
+        ...RATE_LIMIT_POLICIES.catalogPreviewPepiteIp,
+      });
+    }
     const { mirrorsDegraded, ...body }: PreviewCataloguePage = await loadPreviewCataloguePage(
       parsed.search,
     );

@@ -42,7 +42,10 @@ const testState = vi.hoisted(() => {
 });
 
 vi.mock("@/hooks/use-auth", () => ({ useAuth: () => testState.auth.current }));
-vi.mock("@/hooks/use-viewed-sales", () => ({ useViewedSales: () => ({ isViewed: () => false }) }));
+const viewedState = vi.hoisted(() => ({ viewed: false }));
+vi.mock("@/hooks/use-viewed-sales", () => ({
+  useViewedSales: () => ({ isViewed: () => viewedState.viewed }),
+}));
 vi.mock("@/integrations/supabase/client", () => ({ supabase: testState.supabase }));
 vi.mock("@/lib/client-api", () => ({
   addFavoriteSale: testState.addFavoriteSale,
@@ -83,6 +86,7 @@ vi.mock("@/components/SaleVisual", () => ({
 }));
 afterEach(() => {
   cleanup();
+  viewedState.viewed = false;
   testState.auth.current = { user: null, loading: false };
   testState.supabase.from.mockClear();
   testState.favoriteQuery.select.mockClear().mockReturnValue(testState.favoriteQuery);
@@ -324,16 +328,16 @@ describe("useful public discovery", () => {
     );
   });
 
-  it("keeps the old reassurance on a locked sale that cannot be unlocked", () => {
+  it("keeps the old reassurance on a locked sale that cannot be unlocked (no fee regime: domanial)", () => {
     render(
       <QueryClientProvider client={new QueryClient()}>
         <ListingCard
           sale={
             {
-              id: "sale-notary",
+              id: "sale-state",
               city: "Lyon",
               property_type: "apartment",
-              sale_venue_type: "notary",
+              sale_venue_type: "state",
               media: [],
             } as unknown as AuctionSale
           }
@@ -469,6 +473,50 @@ describe("useful public discovery", () => {
     );
     expect(container.textContent).toContain("Prix non communiqué");
     expect(container.textContent).not.toMatch(/0\s?€/);
+  });
+
+  describe("price of a domanial sale", () => {
+    const renderStateCard = (fields: Record<string, unknown>) =>
+      render(
+        <QueryClientProvider client={new QueryClient()}>
+          <ListingCard
+            sale={
+              {
+                id: "sale-state",
+                city: "Lille",
+                department: "59",
+                property_type: "land",
+                sale_date: "2099-10-01T09:00:00Z",
+                sale_venue_type: "state",
+                media: [],
+                ...fields,
+              } as unknown as AuctionSale
+            }
+            returnTo="/sales"
+            locked
+            analysisLocked={false}
+            active={false}
+            onHover={vi.fn()}
+            onSelect={vi.fn()}
+          />
+        </QueryClientProvider>,
+      );
+
+    it("says « Prix non publié » when the State publishes no price, without « mise à prix »", () => {
+      for (const price of [null, 0]) {
+        const { container, unmount } = renderStateCard({ starting_price_eur: price });
+        expect(container.textContent).toContain("Prix non publié");
+        expect(container.textContent).not.toContain("Prix non communiqué");
+        expect(container.textContent).not.toContain("mise à prix");
+        unmount();
+      }
+    });
+
+    it("keeps the published price of a domanial sale", () => {
+      const { container } = renderStateCard({ starting_price_eur: 125_000 });
+      expect(container.textContent).toMatch(/125\s000\s€/);
+      expect(container.textContent).not.toContain("Prix non publié");
+    });
   });
 
   it("offers a working example instead of fabricated statistics", () => {
@@ -870,7 +918,7 @@ describe("« 3 déblocages par mois » on the cards of a Découverte account", (
     expect(document.body.textContent).not.toContain("Analyse détaillée avec l’offre Analyse");
   });
 
-  it("sells the unlocks only on the sales held at a court", async () => {
+  it("sells the unlocks on the sales that have a fee regime (court, notary), not on a domanial sale", async () => {
     setAuthenticatedUser("user-a");
     testState.favoriteQuery.in.mockResolvedValue({ data: [], error: null });
     testState.unlocksOverview.mockResolvedValue({ status: {}, sales: [] });
@@ -878,6 +926,7 @@ describe("« 3 déblocages par mois » on the cards of a Découverte account", (
     renderForDiscoveryAccount([
       tribunalSale("sale-a"),
       { ...sale("sale-b"), sale_venue_type: "notary" } as unknown as AuctionSale,
+      { ...sale("sale-c"), sale_venue_type: "state" } as unknown as AuctionSale,
     ]);
 
     await waitFor(() => expect(testState.unlocksOverview).toHaveBeenCalled());
@@ -885,7 +934,10 @@ describe("« 3 déblocages par mois » on the cards of a Découverte account", (
     expect(cards[0].textContent).toContain(
       "Gratuit, sans carte bancaire · 3 fiches détaillées par mois",
     );
-    expect(cards[1].textContent).not.toContain("fiches détaillées par mois");
+    expect(cards[1].textContent).toContain(
+      "Gratuit, sans carte bancaire · 3 fiches détaillées par mois",
+    );
+    expect(cards[2].textContent).not.toContain("fiches détaillées par mois");
   });
 
   it("does not ask for the unlocks of a visitor or of an Analyse account", async () => {
@@ -1133,5 +1185,194 @@ describe("favourite heart for a visitor", () => {
     expect(testState.push).toHaveBeenCalledWith(
       "/login?redirect=%2Fsales%3Fcity%3DLyon&mode=investor&reason=favori",
     );
+  });
+});
+
+describe("repère « Pépite » des cartes", () => {
+  const pepiteSale = { ...sale("pepite-1"), starting_price_eur: 90_000 } as AuctionSale;
+
+  it("pose la pastille sur la photo, en haut à gauche, et ajoute « , pépite » au nom du lien", () => {
+    const { container } = render(
+      <QueryClientProvider client={new QueryClient()}>
+        <SearchResultsList
+          sales={[pepiteSale, sale("autre")]}
+          returnTo="/sales"
+          locked={false}
+          analysisLocked={false}
+          isLoading={false}
+          error={null}
+          selectedSaleId={null}
+          hoveredSaleId={null}
+          onHover={vi.fn()}
+          onSelect={vi.fn()}
+          comparedSaleIds={[]}
+          comparisonDisabled={false}
+          onToggleComparison={vi.fn()}
+          pepiteSaleIds={new Set(["pepite-1"])}
+        />
+      </QueryClientProvider>,
+    );
+    const badges = screen.getAllByTestId("pepite-badge");
+    expect(badges).toHaveLength(1);
+    const overlay = badges[0].closest("div.absolute");
+    expect(overlay?.className).toMatch(/left-3/);
+    expect(overlay?.className).toMatch(/top-3/);
+    // Sur la photo (zone d'image), pas dans le corps de la carte.
+    expect(overlay?.parentElement?.className).toMatch(/aspect-\[4\/3\]/);
+    const links = container.querySelectorAll("a[id^='sale-card-']");
+    expect(links[0].getAttribute("aria-label")).toMatch(/, pépite$/);
+    expect(links[1].getAttribute("aria-label")).not.toMatch(/pépite/);
+    // Pas de lien d'appel au déblocage sur la carte.
+    expect(container.textContent).not.toMatch(/Débloquer|déblocage/i);
+  });
+
+  it("n'ajoute rien sans liste de pépites (mode shadow) : la carte est celle d'avant", () => {
+    const { container } = render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ListingCard
+          sale={pepiteSale}
+          returnTo="/sales"
+          locked={false}
+          analysisLocked={false}
+          active={false}
+          onHover={vi.fn()}
+          onSelect={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+    expect(screen.queryByTestId("pepite-badge")).toBeNull();
+    expect(container.textContent).not.toMatch(/pépite/i);
+  });
+
+  it("garde deux pastilles au plus dans le corps de la carte (la pépite est sur la photo)", () => {
+    const { container } = render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ListingCard
+          sale={pepiteSale}
+          returnTo="/sales"
+          locked={false}
+          analysisLocked={false}
+          active={false}
+          onHover={vi.fn()}
+          onSelect={vi.fn()}
+          pepite
+        />
+      </QueryClientProvider>,
+    );
+    const body = container.querySelector("div.relative.min-w-0.p-4");
+    expect(body?.querySelector("[data-testid='pepite-badge']")).toBeNull();
+  });
+
+  it("n'y place aucun encart sponsorisé : l'encart reste en fin de liste, séparé", () => {
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <SearchResultsList
+          sales={["a", "b", "c", "pepite-1"].map((id) => ({ ...sale(id) }) as AuctionSale)}
+          returnTo="/sales"
+          locked={false}
+          analysisLocked={false}
+          isLoading={false}
+          error={null}
+          selectedSaleId={null}
+          hoveredSaleId={null}
+          onHover={vi.fn()}
+          onSelect={vi.fn()}
+          comparedSaleIds={[]}
+          comparisonDisabled={false}
+          onToggleComparison={vi.fn()}
+          pepiteSaleIds={new Set(["pepite-1"])}
+          sponsoredPlacement={<aside data-testid="sponsored">Publicité · Sponsorisé</aside>}
+        />
+      </QueryClientProvider>,
+    );
+    const placement = screen.getByTestId("sponsored");
+    expect(placement.closest("article")).toBeNull();
+    for (const article of screen.getAllByRole("article")) {
+      expect(article.contains(placement)).toBe(false);
+    }
+    // Après la dernière carte, jamais entre deux annonces.
+    const cards = screen.getAllByRole("article");
+    expect(
+      cards[cards.length - 1].compareDocumentPosition(placement) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("l'état vide du filtre « Pépites seulement » parle des pépites et propose trois actions", () => {
+    const onKeepOnlyPepite = vi.fn();
+    const onAlert = vi.fn();
+    const onShowFrance = vi.fn();
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <SearchResultsList
+          sales={[]}
+          returnTo="/sales"
+          locked={false}
+          analysisLocked={false}
+          isLoading={false}
+          error={null}
+          selectedSaleId={null}
+          hoveredSaleId={null}
+          onHover={vi.fn()}
+          onSelect={vi.fn()}
+          comparedSaleIds={[]}
+          comparisonDisabled={false}
+          onToggleComparison={vi.fn()}
+          activeFilters={[
+            { key: "city", label: "Pau", clear: { city: undefined } },
+            { key: "pepite", label: "Pépites seulement", clear: { pepite: undefined } },
+          ]}
+          onRemoveFilter={vi.fn()}
+          onShowFrance={onShowFrance}
+          pepiteEmpty={{ count: 12, onKeepOnlyPepite, onAlert }}
+        />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByText("Aucune pépite avec ces critères pour le moment.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Retirer les autres filtres" }));
+    fireEvent.click(screen.getByRole("button", { name: "Élargir à la France" }));
+    fireEvent.click(screen.getByRole("button", { name: "Me prévenir dès qu’une pépite apparaît" }));
+    expect(onKeepOnlyPepite).toHaveBeenCalledTimes(1);
+    expect(onShowFrance).toHaveBeenCalledTimes(1);
+    expect(onAlert).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("pastilles sur la photo : deux au plus", () => {
+  function renderCard(props: { pepite?: boolean; unlocked?: boolean }) {
+    return render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ListingCard
+          sale={{ ...sale("viewed-1"), starting_price_eur: 90_000 } as AuctionSale}
+          returnTo="/sales"
+          locked={false}
+          analysisLocked={false}
+          active={false}
+          onHover={vi.fn()}
+          onSelect={vi.fn()}
+          {...props}
+        />
+      </QueryClientProvider>,
+    );
+  }
+  const photoBadges = (container: HTMLElement) =>
+    container.querySelector("div.absolute.left-3.top-3")?.children.length ?? 0;
+
+  it("« Vu » disparaît quand « Pépite » et « Débloquée » s'appliquent ensemble", () => {
+    viewedState.viewed = true;
+    const both = renderCard({ pepite: true, unlocked: true });
+    expect(photoBadges(both.container)).toBe(2);
+    expect(screen.queryByText("Vu")).toBeNull();
+    expect(screen.getByText("Débloquée")).toBeTruthy();
+    expect(screen.getByTestId("pepite-badge")).toBeTruthy();
+    both.unmount();
+
+    // Deux pastilles au plus aussi dans les autres combinaisons.
+    const pepiteViewed = renderCard({ pepite: true });
+    expect(photoBadges(pepiteViewed.container)).toBe(2);
+    expect(screen.getByText("Vu")).toBeTruthy();
+    pepiteViewed.unmount();
+
+    const unlockedViewed = renderCard({ unlocked: true });
+    expect(photoBadges(unlockedViewed.container)).toBe(2);
   });
 });

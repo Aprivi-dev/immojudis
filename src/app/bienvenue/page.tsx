@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import { AuthGate } from "@/components/AuthGate";
 import { InvestorOnboarding } from "@/components/InvestorOnboarding";
+import { openFeeRegimesFromEnv } from "@/lib/fee-regime.server";
 import { ONBOARDING_RETURN_PARAM, saleDetailReturnPath } from "@/lib/onboarding";
+import { unlockHighlightsInlineText } from "@/lib/sale-unlocks";
 
 export const metadata: Metadata = {
   title: "Votre première recherche",
@@ -19,7 +21,10 @@ export default async function Page({
   const returnTo = saleDetailReturnPath(Array.isArray(returnParam) ? returnParam[0] : returnParam);
   return (
     <AuthGate>
-      <InvestorOnboarding returnTo={returnTo} />
+      <InvestorOnboarding
+        returnTo={returnTo}
+        unlockHighlights={unlockHighlightsInlineText(openFeeRegimesFromEnv())}
+      />
     </AuthGate>
   );
 }

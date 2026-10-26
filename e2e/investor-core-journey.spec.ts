@@ -153,12 +153,18 @@ test("inscription → recherche → rapport → paiement → partage", async ({ 
   await page.goto("/offres");
   // « 3 déblocages par mois » : la limite est annoncée avec l'offre gratuite, et le comparatif ne
   // dit pas « Non inclus » pour ce qu'un déblocage ouvre.
-  await expect(page.getByText(/^3 déblocages par mois : l[’']enchère plafond/)).toBeVisible();
+  // Les régimes de frais sont tous ouverts par défaut : le déblocage ouvre « l’enchère plafond ou
+  // l’offre plafond » (ventes notariales interactives).
+  await expect(
+    page.getByText(/^3 déblocages par mois : l[’']enchère plafond ou l[’']offre plafond/),
+  ).toBeVisible();
   // Tableau au-delà de 640 px, liste en dessous : seule la forme visible est trouvée.
   await expect(
     page
-      .getByRole("row", { name: /Enchère plafond chiffrée/ })
-      .or(page.getByRole("listitem").filter({ hasText: "Enchère plafond chiffrée" }))
+      .getByRole("row", { name: /Enchère plafond ou offre plafond chiffrée/ })
+      .or(
+        page.getByRole("listitem").filter({ hasText: "Enchère plafond ou offre plafond chiffrée" }),
+      )
       .getByText("Pour 3 ventes par mois"),
   ).toBeVisible();
   await page.getByRole("button", { name: "Souscrire à Analyse" }).click();

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PEPITE_METHOD_LINK_LABEL, PEPITE_METHOD_PATH } from "@/lib/pepite-copy";
 
 /** Page publique qui détaille le classement, le repère « Annonce bien renseignée » et la publicité. */
 export const RANKING_PAGE_PATH = "/classement-des-annonces";
@@ -43,14 +44,24 @@ export const RANKING_EXPLANATION_INVESTMENT_NOTE =
   "Le tri « Score d’investissement » classe selon un indicateur calculé par Immojudis ; c’est une estimation indicative, sans promesse de rendement ni conseil en investissement.";
 
 /**
+ * Note partagée sur le repère « Pépite » (proposition n° 21) : il n'entre dans aucun tri. Affichée seulement
+ * quand le repère est ouvert au public (`pepites`), pour ne rien changer de visible tant qu'il ne l'est pas.
+ */
+export const RANKING_PEPITE_NOTE =
+  "Le repère « Pépite » ne change ni l’ordre par défaut ni les autres tris.";
+
+/**
  * Encart repliable (`<details>`) : natif, accessible au clavier et aux lecteurs d'écran, il
  * fonctionne avant l'hydratation et n'ajoute aucun JavaScript au client.
  */
 export function RankingExplanation({
   investmentScore = false,
   inline = false,
+  pepites = false,
 }: {
   investmentScore?: boolean;
+  /** Le repère « Pépite » est ouvert au public : sa note d'indépendance de l'ordre s'ajoute. */
+  pepites?: boolean;
   /** Dans la ligne d'aide sous le titre des résultats : ouvert, l'encart prend toute la largeur. */
   inline?: boolean;
 }) {
@@ -76,6 +87,17 @@ export function RankingExplanation({
           <p key={note}>{note}</p>
         ))}
         {investmentScore ? <p>{RANKING_EXPLANATION_INVESTMENT_NOTE}</p> : null}
+        {pepites ? (
+          <p>
+            {RANKING_PEPITE_NOTE}{" "}
+            <Link
+              href={PEPITE_METHOD_PATH}
+              className="font-semibold text-brand-navy underline underline-offset-2 hover:text-gold-text"
+            >
+              {PEPITE_METHOD_LINK_LABEL}
+            </Link>
+          </p>
+        ) : null}
         <p>
           <Link
             href={RANKING_PAGE_PATH}

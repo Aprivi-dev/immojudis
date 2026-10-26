@@ -189,12 +189,14 @@ export function countActiveSearchFilters(search: SalesSearchParams): number {
     search.openHouse,
     search.belowRange,
     search.noPointsToVerify,
+    search.pepite,
     search.visitSoon,
   ].filter(Boolean).length;
 }
 
 /**
- * Critères actifs qu'une alerte sait enregistrer. « Sous la fourchette » et « Sans point à vérifier »
+ * Critères actifs qu'une alerte sait enregistrer (« Seulement les pépites » en fait partie : critère
+ * `pepite_only` des critères avancés). « Sous la fourchette » et « Sans point à vérifier »
  * n'en font pas partie : une alerte filtre sur la décote en pourcentage (`min_market_discount_pct`), pas sur
  * la bande publique, et ne regarde pas les points à vérifier. Une recherche qui n'a que ces critères
  * donnerait une alerte sans aucun critère.
@@ -227,6 +229,8 @@ export function hasClientOnlyFilters(search: SalesSearchParams): boolean {
     search.noPointsToVerify ||
     search.visitSoon ||
     search.yearBuilt ||
+    // Croisé avec la liste publique des pépites (`pepite-filter.ts`), comme « sous la fourchette ».
+    search.pepite ||
     // « Distance » n'a pas besoin de balayage sans adresse (rien à mesurer) : elle suit déjà
     // `aroundAddress` ci-dessus. « Chambres » se trie côté serveur (`beds_desc`).
     search.transactionType === "for_rent",
@@ -239,6 +243,11 @@ export type ClientSearchFilterContext = {
    * `belowRange`. Absent : le filtre ne passe aucune vente plutôt que toutes.
    */
   underRangeSaleIds?: ReadonlySet<string> | null;
+  /**
+   * Identifiants (en minuscules) des pépites publiables, pour le filtre `pepite`. Absent : le filtre ne
+   * passe aucune vente plutôt que toutes.
+   */
+  pepiteSaleIds?: ReadonlySet<string> | null;
   /** L'occupation est lue pour ce compte (offre Analyse) : comme sur la carte, elle compte parmi les points à vérifier. */
   occupancyVisible?: boolean;
   now?: Date;
@@ -312,6 +321,7 @@ export function applyClientSearchFilters(
       return false;
     }
     if (search.visitSoon && !saleHasVisitSoon(sale)) return false;
+    if (search.pepite && !context.pepiteSaleIds?.has(sale.id.toLowerCase())) return false;
 
     return true;
   });

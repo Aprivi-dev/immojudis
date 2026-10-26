@@ -1,4 +1,6 @@
 import type { Database } from "@/integrations/supabase/types";
+import { PublicApiError } from "@/lib/api-errors";
+import { listPepiteSaleIds } from "@/lib/pepite-sale-ids";
 import { isLikelyPropertyImageUrl } from "@/lib/sale-media";
 import type { AuctionSale, SortKey } from "@/lib/types";
 import { departmentSearchValues, frenchSearchTerms } from "./french-geo-search";
@@ -29,7 +31,10 @@ export type PreviewSearchRow = Omit<GeneratedPreviewSearchRow, "thumbnail_url"> 
 /** Minimal surface of a Supabase client needed to run the public search RPC. */
 export type PreviewRpcClient = {
   rpc: (
-    fn: "search_auction_sales_preview_v3" | "search_auction_sales_preview_v4",
+    fn:
+      | "search_auction_sales_preview_v3"
+      | "search_auction_sales_preview_v4"
+      | "list_public_pepite_sale_ids",
     args: Record<string, unknown>,
   ) => PromiseLike<{ data: unknown; error: unknown }>;
 };
@@ -83,7 +88,13 @@ function previewSort(sort: SortKey): SortKey {
 }
 
 export function previewSearchRequestKey(search: SalesSearchParams): string {
-  return JSON.stringify([buildPreviewSearchArgs(search), search.minSaleDate, search.maxSaleDate]);
+  return JSON.stringify([
+    buildPreviewSearchArgs(search),
+    search.minSaleDate,
+    search.maxSaleDate,
+    // Mêmes arguments de lecture, autre résultat : la liste des pépites est croisée après la lecture.
+    search.pepite === true,
+  ]);
 }
 
 export function mapPreviewRows(rows: PreviewSearchRow[]): AuctionSale[] {
@@ -127,10 +138,10 @@ function previewSearchError(error: unknown): Error {
   return new Error(`Recherche d'aperçu en échec : ${detail}${suffix}`, { cause: error });
 }
 
-export async function runPreviewSearch(
+async function readPreviewRows(
   client: PreviewRpcClient,
   search: SalesSearchParams,
-): Promise<PreviewSearchResponse> {
+): Promise<PreviewSearchRow[]> {
   const args = buildPreviewSearchArgs(search);
   const { data, error } = await (search.minSaleDate || search.maxSaleDate
     ? client.rpc("search_auction_sales_preview_v4", {
@@ -140,7 +151,70 @@ export async function runPreviewSearch(
       })
     : client.rpc("search_auction_sales_preview_v3", args));
   if (error) throw previewSearchError(error);
-  const rows = (data ?? []) as PreviewSearchRow[];
+  return (data ?? []) as PreviewSearchRow[];
+}
+
+/**
+ * Lignes lues au plus pour un filtre « Pépites seulement » : au-delà (trois fois le catalogue actuel), la recherche
+ * est refusée comme celle des filtres avancés d'un compte (« trop large »), jamais tronquée en silence.
+ */
+export const MAX_PEPITE_SCAN_ROWS = 3_000;
+const PEPITE_SCAN_PAGE_SIZE = 100;
+/** Pages lues en parallèle au plus : la base ne reçoit jamais une rafale de quinze appels. */
+export const PEPITE_SCAN_CONCURRENCY = 4;
+export const PEPITE_SCAN_TOO_WIDE_MESSAGE =
+  "Cette recherche est trop large. Choisissez une région ou un département pour appliquer les filtres avancés.";
+
+/**
+ * « Pépites seulement » pour un visiteur, première étape : la liste publique des identifiants (un appel) croisée
+ * avec TOUTES les lignes de la recherche, lues par pages de 100 dans leur ordre (mêmes lignes et même ordre que
+ * sans le filtre), 4 pages à la fois au plus. Le résultat (sans pagination) est celui que le serveur garde en cache
+ * (`public-catalogue.server.ts`). Sans pépite (mode pas « on », fonction absente, erreur de lecture de la liste) :
+ * aucune ligne et aucune lecture du catalogue, jamais « toutes les ventes » à la place de la liste. Plus de
+ * `MAX_PEPITE_SCAN_ROWS` lignes : erreur « recherche trop large ».
+ */
+export async function readPepiteScan(
+  client: PreviewRpcClient,
+  search: SalesSearchParams,
+): Promise<PreviewSearchRow[]> {
+  const pepiteIds = new Set(
+    await listPepiteSaleIds({ rpc: (fn) => client.rpc(fn, {}) }).catch((): string[] => []),
+  );
+  if (pepiteIds.size === 0) return [];
+  const scan = { ...search, pepite: undefined, page: 1, limit: PEPITE_SCAN_PAGE_SIZE };
+  const first = await readPreviewRows(client, scan);
+  const total = Number(first[0]?.total_count ?? 0);
+  if (total > MAX_PEPITE_SCAN_ROWS) throw new PublicApiError(PEPITE_SCAN_TOO_WIDE_MESSAGE, 400);
+  const pages = Math.ceil(total / PEPITE_SCAN_PAGE_SIZE);
+  const rows: PreviewSearchRow[][] = [first];
+  let next = 2;
+  const worker = async () => {
+    while (next <= pages) {
+      const page = next;
+      next += 1;
+      rows[page - 1] = await readPreviewRows(client, { ...scan, page });
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(PEPITE_SCAN_CONCURRENCY, pages - 1) }, worker));
+  return rows.flat().filter((row) => pepiteIds.has(String(row.id).toLowerCase()));
+}
+
+/** Seconde étape : la page demandée du résultat filtré. */
+export function pepitePage(
+  rows: readonly PreviewSearchRow[],
+  search: SalesSearchParams,
+): PreviewSearchResponse {
+  const perPage = search.limit ?? DEFAULT_SEARCH_LIMIT;
+  const offset = ((search.page ?? 1) - 1) * perPage;
+  return { items: mapPreviewRows(rows.slice(offset, offset + perPage)), count: rows.length };
+}
+
+export async function runPreviewSearch(
+  client: PreviewRpcClient,
+  search: SalesSearchParams,
+): Promise<PreviewSearchResponse> {
+  if (search.pepite) return pepitePage(await readPepiteScan(client, search), search);
+  const rows = await readPreviewRows(client, search);
   return {
     items: mapPreviewRows(rows),
     count: Number(rows[0]?.total_count ?? 0),

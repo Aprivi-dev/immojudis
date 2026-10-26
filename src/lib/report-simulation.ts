@@ -1,7 +1,8 @@
 // zod/mini : le scénario locatif est validé dans le navigateur (fiche de la vente). Mêmes règles que
 // l'écriture chaînée de zod, avec bien moins de code envoyé au navigateur.
 import { z } from "zod/mini";
-import { buildCeilingSnapshot } from "./property-report/ceiling-snapshot";
+import { buildCeilingSnapshot, NO_CEILING_REGIME_REASON } from "./property-report/ceiling-snapshot";
+import type { FeeRegimeKey } from "./fee-regime-open";
 import { listingValuationConflict } from "./listing-evidence";
 import type { AuctionSale } from "./types";
 import type { MarketEstimate } from "./market.server";
@@ -196,6 +197,9 @@ export const ceilingChoicesSchema = z.object({
   rentedDiscountPct: optional(pct(50)),
   fpt: optional(amount),
   lawyerFees: optional(amount),
+  consignation: optional(amount),
+  negotiationFeeRatePct: optional(pct(20)),
+  advertisingFees: optional(amount),
   registrationRatePct: optional(pct(20)),
   taxRegime: z.optional(z.enum(["registration", "vat"])),
   monthlyCharges: optional(amount),
@@ -223,15 +227,25 @@ const legacyReportSimulationSchema = z.object({
   manualMarketPricePerM2: z.nullable(amount),
 });
 
-/** Recompute user hypotheses against the server's current property and market data. */
+/**
+ * Recompute user hypotheses against the server's current property and market data. `regimes`: the
+ * fee regimes open on the server; a sale without an open regime has no ceiling to save.
+ */
 export function computeReportSimulation(
   sale: AuctionSale,
   market: MarketEstimate | null,
   input: ReportSimulation,
+  regimes: readonly FeeRegimeKey[],
 ) {
   const conflict = listingValuationConflict(sale);
   if (conflict) throw new Error(conflict);
-  const snapshot = buildCeilingSnapshot(sale, market?.actionable ? market : null, input.choices);
+  const snapshot = buildCeilingSnapshot(
+    sale,
+    market?.actionable ? market : null,
+    input.choices,
+    regimes,
+  );
+  if (snapshot.regime == null) throw new Error(NO_CEILING_REGIME_REASON);
   if (!snapshot.available || snapshot.maxBid !== input.expectedMaxBid) {
     throw new Error(
       "Les données du scénario ont changé. Actualisez la fiche avant de sauvegarder le rapport.",

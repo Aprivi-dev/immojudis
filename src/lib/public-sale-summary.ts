@@ -19,6 +19,7 @@ export type PublicSaleSummaryClient = {
       | "get_public_sale_details"
       | "get_public_sale_indexability"
       | "get_public_sale_market_gap_band"
+      | "get_public_sale_pepite"
       | "get_public_sale_source_name",
     args: { p_sale_id: string },
   ) => PromiseLike<{ data: unknown; error: unknown }>;
@@ -165,6 +166,25 @@ async function fetchPublicSaleMarketGapBand(
 }
 
 /**
+ * Repère « Pépite » (`get_public_sale_pepite`) : vrai seulement quand le mode des pépites est « on » et que la
+ * vente est une pépite publiable (gardes à la lecture, voir la migration 20261104100000). Jamais un montant.
+ * `false` pour tout le reste : mode « shadow » ou « off », fonction pas encore déployée (`PGRST202`, `42883`),
+ * erreur ou réponse hors contrat. C'est un enrichissement : sa panne ne change ni la fiche ni son statut,
+ * elle supprime seulement le repère.
+ */
+async function fetchPublicSalePepite(
+  client: PublicSaleSummaryClient,
+  id: string,
+): Promise<boolean> {
+  try {
+    const { data, error } = await client.rpc("get_public_sale_pepite", { p_sale_id: id });
+    return !error && data === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Nom de la source d'origine de l'annonce (`get_public_sale_source_name`), seulement quand c'est une
  * source connue (`knownSourceLabel`) ; `undefined` sinon, y compris fonction absente ou en erreur :
  * c'est un enrichissement, sa panne ne change ni la fiche ni son statut.
@@ -226,13 +246,15 @@ export async function fetchPublicSaleSummary(
   options: { withIndexability?: boolean } = {},
 ): Promise<PublicSaleSummaryResult> {
   if (!SALE_ID_PATTERN.test(id)) return { kind: "missing" };
-  const [{ data, error }, details, indexable, marketGapBand, sourceLabel] = await Promise.all([
-    client.rpc("get_public_sale_summary", { p_sale_id: id }),
-    fetchPublicSaleDetails(client, id),
-    options.withIndexability ? fetchPublicSaleIndexability(client, id) : undefined,
-    fetchPublicSaleMarketGapBand(client, id),
-    fetchPublicSaleSourceLabel(client, id),
-  ]);
+  const [{ data, error }, details, indexable, marketGapBand, sourceLabel, pepite] =
+    await Promise.all([
+      client.rpc("get_public_sale_summary", { p_sale_id: id }),
+      fetchPublicSaleDetails(client, id),
+      options.withIndexability ? fetchPublicSaleIndexability(client, id) : undefined,
+      fetchPublicSaleMarketGapBand(client, id),
+      fetchPublicSaleSourceLabel(client, id),
+      fetchPublicSalePepite(client, id),
+    ]);
   if (error) {
     if (isMissingFunction(error as ErrorLike)) return { kind: "unsupported" };
     throw error;
@@ -246,6 +268,8 @@ export async function fetchPublicSaleSummary(
           ...details,
           ...(marketGapBand === undefined ? {} : { market_gap_band: marketGapBand }),
           ...(sourceLabel === undefined ? {} : { source_label: sourceLabel }),
+          // Absent (jamais `false`) hors pépite : la page d'une vente ordinaire ne change pas d'un octet.
+          ...(pepite ? { pepite: true } : {}),
         },
         ...(indexable === undefined ? {} : { indexable }),
       }

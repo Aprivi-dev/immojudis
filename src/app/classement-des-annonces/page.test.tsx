@@ -97,6 +97,40 @@ describe("page « Comment sont classées les annonces ? »", () => {
     ).toBe("/methode-ecart-marche");
   });
 
+  it("présente le repère « Pépite » comme un repère calculé, sans effet sur l'ordre, avec renvoi vers sa méthode", () => {
+    render(<Page />);
+    const section = screen.getByRole("region", { name: "Le repère « Pépite »" });
+    const text = (section.textContent ?? "").replace(/\s+/g, " ");
+    expect(text).toContain(
+      "repère calculé automatiquement par Immojudis, sur des critères publics",
+    );
+    expect(text).toContain(
+      "pour signaler un potentiel d’investissement mesuré par deux conditions chiffrées, calculées sur les données disponibles",
+    );
+    expect(text).not.toMatch(/nettement sous la valeur|achat probable/);
+    expect(text).toContain("ni un conseil, ni une recommandation d’acheter");
+    expect(text).toContain("ne change pas l’ordre par défaut des annonces, ni les autres tris");
+    expect(text).toContain(
+      "L’absence de ce repère ne signifie pas que le bien est sans intérêt ni qu’il présente un risque.",
+    );
+    expect(
+      within(section)
+        .getByRole("link", { name: "Comment repérons-nous les pépites ?" })
+        .getAttribute("href"),
+    ).toBe("/methode-pepites");
+  });
+
+  it("étend à la Pépite l'indépendance vis-à-vis de la publicité des avocats", () => {
+    render(<Page />);
+    const text = (
+      screen.getByRole("region", { name: /Publicité · Sponsorisé/ }).textContent ?? ""
+    ).replace(/\s+/g, " ");
+    expect(text).toContain(
+      "Aucune rémunération ne peut obtenir ou améliorer une Pépite : ni les cabinets d’avocats qui achètent une mise en avant, ni les organisateurs, vendeurs ou professionnels qui publient des annonces.",
+    );
+    expect(text).toContain("Cet encart est sans lien avec le repère Pépite.");
+  });
+
   it("énonce les motifs de retrait réellement appliqués", () => {
     render(<Page />);
     const end = screen.getByRole("region", {

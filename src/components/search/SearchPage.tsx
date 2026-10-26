@@ -58,6 +58,7 @@ import {
   type SalesSearchUrlRecord,
 } from "@/lib/search/search-url-state";
 import { isOutOfRangeSearchError } from "@/lib/search/search-errors";
+import { fetchPepiteSaleIds, pepitesActive as hasPepites } from "@/lib/search/pepite-filter";
 import {
   fetchSearchCount,
   fetchSearchMapResults,
@@ -499,16 +500,35 @@ export function SearchPage({
     refetchInterval: 5 * 60_000,
   });
 
+  // Pépites : la liste publique des identifiants, lue UNE fois (gardée 5 minutes), jamais une fois par carte.
+  // Vide tant que le repère n'est pas ouvert (mode « on ») ou en cas de panne : ni pastille, ni filtre.
+  const { data: pepiteSaleIds } = useQuery({
+    queryKey: queryKeys.pepiteSaleIds(),
+    queryFn: () => fetchPepiteSaleIds(),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const pepitesActive = hasPepites(pepiteSaleIds);
+  // « Pépites seulement » et « sous la fourchette » sont déjà appliqués par la recherche (listes d'identifiants
+  // croisées avec les lignes) : le second passage local ne les rejoue pas, il n'a pas ces listes et viderait l'écran.
+  const localFilterSearch = useMemo(
+    () =>
+      search.pepite || search.belowRange
+        ? { ...search, pepite: undefined, belowRange: undefined }
+        : search,
+    [search],
+  );
+
   const filteredSales = useMemo(
     () =>
       listIsPublic
         ? rawSales
         : sortClientSearchResults(
-            applyClientSearchFilters(rawSales, search, center),
-            search,
+            applyClientSearchFilters(rawSales, localFilterSearch, center),
+            localFilterSearch,
             center,
           ),
-    [center, listIsPublic, rawSales, search],
+    [center, listIsPublic, localFilterSearch, rawSales],
   );
 
   const mappableSales = useMemo(
@@ -518,12 +538,16 @@ export function SearchPage({
         : listIsPublic
           ? rawSales
           : sortClientSearchResults(
-              applyClientSearchFilters(rawMapSales.length ? rawMapSales : rawSales, search, center),
-              search,
+              applyClientSearchFilters(
+                rawMapSales.length ? rawMapSales : rawSales,
+                localFilterSearch,
+                center,
+              ),
+              localFilterSearch,
               center,
             )
       ).filter(hasCoordinates),
-    [center, listIsPublic, mapVisible, rawMapSales, rawSales, search],
+    [center, listIsPublic, localFilterSearch, mapVisible, rawMapSales, rawSales],
   );
   const mapSales = useMemo(() => mappableSales.slice(0, MAP_POINT_LIMIT), [mappableSales]);
   const mappablePointsTotal = mappableSales.length;
@@ -705,6 +729,11 @@ export function SearchPage({
     replaceSearch(salesSearchToUrlRecord({ sort: search.sort }), "push");
   }, [replaceSearch, search.sort]);
 
+  const keepOnlyPepite = useCallback(() => {
+    setDraft({ ...emptySearchDraft(), pepite: true });
+    replaceSearch(salesSearchToUrlRecord({ pepite: true, sort: search.sort }), "push");
+  }, [replaceSearch, search.sort]);
+
   const previousPageRef = useRef(page);
   useEffect(() => {
     if (previousPageRef.current === page || listBusy || isInitialLoading) return;
@@ -826,6 +855,7 @@ export function SearchPage({
     showDpeLegend: !dpeLocked,
     aiReviewBySaleId,
     aiReviewStatus,
+    pepiteSaleIds,
     onHover: setHoveredSaleId,
     onSelect: handleMapSelect,
     onViewportChange: handleViewportChange,
@@ -918,6 +948,7 @@ export function SearchPage({
         signedIn={Boolean(user)}
         dailyAlertsAllowed={entitlementsData?.plan.hasAnalysisAccess === true}
         emailRecapEnabled={emailRecapEnabled}
+        pepitesActive={pepitesActive}
         wideMap={wideMap}
         isDesktop={isDesktop}
         onFiltersOpenChange={setFiltersOpen}
@@ -984,7 +1015,11 @@ export function SearchPage({
             </div>
             <div className="flex flex-wrap items-start gap-x-5 px-4 pb-2 text-xs text-ink-soft sm:px-5">
               <HearingsWeekBanner inline />
-              <RankingExplanation investmentScore={investmentSortAllowed} inline />
+              <RankingExplanation
+                investmentScore={investmentSortAllowed}
+                pepites={pepitesActive}
+                inline
+              />
               {/* Export réservé au grand écran, comme avant dans la barre de filtres. */}
               <span className="hidden lg:inline-flex">
                 <CsvExportButton
@@ -1033,6 +1068,14 @@ export function SearchPage({
             }
             hideEmptyState={page > 1}
             view={displayedView}
+            pepiteSaleIds={pepiteSaleIds}
+            pepiteEmpty={{
+              count: pepiteSaleIds?.size ?? 0,
+              // Garde la seule pépite (et le tri) : les autres critères sont retirés.
+              onKeepOnlyPepite: keepOnlyPepite,
+              onAlert: () => void saveSearch(),
+              alertSaving: savingAlert,
+            }}
             // Encart des avocats : en fin de liste, sur la première page seulement.
             sponsoredPlacement={
               page === 1 ? (
@@ -1040,6 +1083,7 @@ export function SearchPage({
                   geographicLabel={geographicLabel}
                   city={search.city}
                   department={search.department}
+                  pepites={pepitesActive}
                 />
               ) : undefined
             }
@@ -1049,6 +1093,7 @@ export function SearchPage({
           !error &&
           page === 1 &&
           activeFiltersCount > 0 &&
+          !(search.pepite && displayCount === 0) &&
           displayCount < FEW_RESULTS_ALERT_THRESHOLD ? (
             <SectorAlertPrompt
               resultCount={displayCount}
@@ -1124,6 +1169,7 @@ export function SearchPage({
           open={filtersOpen}
           analysisLocked={isPreview || isDiscovery}
           preview={isPreview}
+          pepitesActive={pepitesActive}
           draft={draft}
           setDraft={setDraft}
           activeFiltersCount={activeFiltersCount}

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { unlockHighlightsInlineText } from "@/lib/sale-unlocks";
 import { InvestorOnboarding } from "./InvestorOnboarding";
 
 const navigate = vi.hoisted(() => vi.fn());
@@ -86,9 +87,20 @@ describe("investor welcome flow", () => {
     fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
     const text = document.body.textContent ?? "";
     expect(text).toContain(
-      "Chaque mois, vous pouvez débloquer 3 ventes en détail (enchère plafond, lecture des pièces, historique, selon la vente). L’offre Analyse les ouvre toutes.",
+      "Chaque mois, vous pouvez débloquer 3 ventes en détail (enchère plafond ou offre plafond, lecture des pièces, historique, selon la vente). L’offre Analyse les ouvre toutes.",
     );
     expect(text).not.toContain("nécessitent un accès Analyse");
+  });
+
+  it("announces what the server read of the fee regime switch", () => {
+    render(<InvestorOnboarding unlockHighlights={unlockHighlightsInlineText(["tribunal"])} />);
+    fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
+    const text = document.body.textContent ?? "";
+    expect(text).toContain(
+      "Chaque mois, vous pouvez débloquer 3 ventes en détail (enchère plafond, lecture des pièces, historique, selon la vente).",
+    );
+    expect(text).not.toContain("offre plafond");
   });
 
   it.each([

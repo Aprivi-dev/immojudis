@@ -99,7 +99,7 @@ export function Button({
  * `success` pour une donnée confirmée, `info` pour une aide. Deux pastilles au plus par carte, et
  * toujours un libellé : la couleur seule ne porte jamais l'information.
  */
-export type BadgeTone = "neutral" | "gold" | "success" | "warning" | "danger" | "info";
+export type BadgeTone = "neutral" | "gold" | "success" | "warning" | "danger" | "info" | "pepite";
 
 const BADGE_TONES: Record<BadgeTone, string> = {
   neutral: "border-line bg-white text-brand-navy",
@@ -108,6 +108,9 @@ const BADGE_TONES: Record<BadgeTone, string> = {
   warning: "border-warning/25 bg-warning-tint text-warning",
   danger: "border-danger/25 bg-danger-tint text-danger",
   info: "border-info/25 bg-info-tint text-info",
+  // « Pépite » : pastille blanche opaque, bordure et logo or : elle se distingue du fond or plein de « Débloquée »
+  // et de l'encart « Sponsorisé » (docs/design/fondations.md).
+  pepite: "border-gold bg-white text-gold-text",
 };
 
 export function Badge({

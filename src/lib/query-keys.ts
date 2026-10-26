@@ -69,6 +69,11 @@ export const queryKeys = {
   // Sale detail
   saleDetail: (saleId: string, sessionKey: Id, mode: SaleAccessMode) =>
     ["sale-detail", saleId, sessionKey, mode] as const,
+  /** Liste publique des identifiants des pépites (une lecture par page de résultats ou par fiche). */
+  pepiteSaleIds: () => ["pepite-sale-ids"] as const,
+  /** Repère « Pépite » d'une vente : `criteria` (noms des critères) ou `detail` (avec le montant, selon le droit). */
+  salePepite: (saleId: string, view: "criteria" | "detail", userKey: Id) =>
+    ["sale-pepite", saleId, view, userKey] as const,
   saleUnlock: (saleId: string, userKey: Id) => ["sale-unlock", saleId, userKey] as const,
   /** Compteur du mois et ventes débloquées du compte (Mon compte, résultats de recherche). */
   saleUnlocksOverview: (userKey: Id) => ["sale-unlocks-overview", userKey] as const,

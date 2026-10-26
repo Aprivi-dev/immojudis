@@ -226,6 +226,16 @@ describe("sitemap.xml (static pages)", () => {
     expect(byUrl.get("https://immojudis.com/methode-ecart-marche")).toBe("2026-10-15");
   });
 
+  it("lists the pepite method page, and dates the pages changed on 26 October by their real last change", async () => {
+    mocks.loadSitemapSales.mockResolvedValue([]);
+    const byUrl = new Map((await sitemap()).map((entry) => [entry.url, entry.lastModified]));
+    expect(byUrl.get("https://immojudis.com/methode-pepites")).toBe("2026-10-26");
+    expect(byUrl.get("https://immojudis.com/classement-des-annonces")).toBe("2026-10-26");
+    expect(byUrl.get("https://immojudis.com/a-propos")).toBe("2026-10-26");
+    expect(byUrl.get("https://immojudis.com/legal")).toBe("2026-10-26");
+    expect(byUrl.get("https://immojudis.com/conditions-generales")).toBe("2026-10-26");
+  });
+
   describe("department pages", () => {
     const catalogue = aggregateDepartments([
       ...departmentSales("33", 3),
@@ -347,13 +357,13 @@ describe("/ressources/sitemap.xml (articles)", () => {
 
   it("dates an article by its last change (updatedAt), else by its publication", () => {
     const byUrl = new Map(resourcesSitemap().map((entry) => [entry.url, entry.lastModified]));
-    // Published on 05/10, corrected on 19/10.
+    // Published on 05/10, updated on 26/10.
     expect(byUrl.get("https://immojudis.com/ressources/prix-plafond-encheres-immobilieres")).toBe(
-      "2026-10-19",
+      "2026-10-26",
     );
-    // Published on 13/10, never changed since.
+    // Published on 13/10, updated on 26/10 (droits de mutation computed on the price alone).
     expect(byUrl.get("https://immojudis.com/ressources/frais-vente-encheres-judiciaire")).toBe(
-      "2026-10-13",
+      "2026-10-26",
     );
   });
 });

@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { createFileRoute, Link } from "@/lib/router-compat";
 import {
   LEGAL_DOCUMENTS,
+  PREVIOUS_LEGAL_DOCUMENTS,
   legalValue,
   publicLegalPublisher,
   type LegalPublisher,
@@ -43,7 +44,11 @@ export function TermsPage() {
           </h1>
           <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
             Version {LEGAL_DOCUMENTS.terms.version}, applicable à compter du{" "}
-            {LEGAL_DOCUMENTS.terms.effectiveDate}.
+            {LEGAL_DOCUMENTS.terms.effectiveDate} aux comptes existants, et dès l’inscription pour
+            les comptes créés à partir de sa mise en ligne. La version précédente (
+            {PREVIOUS_LEGAL_DOCUMENTS.terms.version}) reste applicable aux comptes existants
+            jusqu’au {LEGAL_DOCUMENTS.terms.effectiveDate} ; elle est communiquée sur demande à{" "}
+            {legalValue(publisher.contactEmail)}.
           </p>
         </header>
 
@@ -72,21 +77,22 @@ export function TermsPage() {
               des ventes, {PLAN_LIMITS.decouverte.favoriteSales} favoris au maximum, une alerte avec
               un email hebdomadaire et, chaque mois civil, {MONTHLY_SALE_UNLOCKS} déblocages. Un
               déblocage ouvre, pour une vente de votre choix, les éléments suivants de l’offre
-              Analyse lorsque cette vente les comporte : l’enchère plafond chiffrée, la lecture des
-              pièces, l’historique de la vente, les statistiques du tribunal compétent pour cette
-              vente et les pièces du dossier. Les autres fonctions de l’offre Analyse, notamment
-              l’export PDF ou CSV, les rapports enregistrés, le budget travaux, l’estimation
-              détaillée et les ventes comparables, les alertes avancées et la mise en relation avec
-              un avocat référencé, restent réservées à cette offre. Le déblocage est consommé quand
-              vous le confirmez, après affichage du nombre restant ; il n’est pas consommé en cas
-              d’erreur technique, ni si la vente est déjà débloquée. Il n’est pas restitué si la
-              vente est ensuite reportée ou adjugée, ni si elle est retirée par la juridiction ou la
-              source. Si Immojudis retire elle-même la vente ou en suspend la publication pour une
-              raison qui lui est imputable (par exemple une erreur de publication ou la suspension
-              d’une source décidée par Immojudis), le déblocage est restitué sur simple demande
-              adressée à {legalValue(publisher.contactEmail)}, qui reçoit une réponse sous un mois.
-              Le déblocage restitué est rendu sur le mois du déblocage : une demande reçue après la
-              fin de ce mois ne rend pas de déblocage, car les déblocages ne sont pas reportés. Les
+              Analyse lorsque cette vente les comporte : l’enchère plafond ou l’offre plafond
+              chiffrée, selon la vente, la lecture des pièces, l’historique de la vente, les
+              statistiques du tribunal compétent pour cette vente et les pièces du dossier. Les
+              autres fonctions de l’offre Analyse, notamment l’export PDF ou CSV, les rapports
+              enregistrés, le budget travaux, l’estimation détaillée et les ventes comparables, les
+              alertes avancées et la mise en relation avec un avocat référencé, restent réservées à
+              cette offre. Le déblocage est consommé quand vous le confirmez, après affichage du
+              nombre restant ; il n’est pas consommé en cas d’erreur technique, ni si la vente est
+              déjà débloquée. Il n’est pas restitué si la vente est ensuite reportée ou adjugée, ni
+              si elle est retirée par la juridiction ou la source. Si Immojudis retire elle-même la
+              vente ou en suspend la publication pour une raison qui lui est imputable (par exemple
+              une erreur de publication ou la suspension d’une source décidée par Immojudis), le
+              déblocage est restitué sur simple demande adressée à{" "}
+              {legalValue(publisher.contactEmail)}, qui reçoit une réponse sous un mois. Le
+              déblocage restitué est rendu sur le mois du déblocage : une demande reçue après la fin
+              de ce mois ne rend pas de déblocage, car les déblocages ne sont pas reportés. Les
               déblocages non utilisés ne sont pas reportés. Le compteur est remis à{" "}
               {MONTHLY_SALE_UNLOCKS} le 1er de chaque mois à 00 h 00, heure de Paris. Une vente
               débloquée reste consultable avec ces éléments tant qu’elle est en ligne sur Immojudis,
@@ -112,14 +118,26 @@ export function TermsPage() {
             <p className="mt-3">
               Analyse est un abonnement aux outils d’analyse : statistiques des tribunaux et
               scénarios d’enchères (disponibles lorsque l’historique des ventes du tribunal est
-              suffisant), enchère plafond, estimation des travaux, valeur du bien et autres analyses
-              présentées sur la page d’offre. La couverture varie selon les tribunaux, les biens et
-              les pièces disponibles ; elle est indiquée sur chaque fiche. L’abonnement est conclu
-              pour une durée indéterminée et facturé chaque mois. Vous pouvez le résilier à tout
-              moment, sans frais ni préavis ; la résiliation prend effet à la fin de la période
-              mensuelle en cours. L’abonnement ne comprend pas de période d’essai : l’essai gratuit
-              est proposé à l’inscription, sans carte bancaire (article 13). Le tarif applicable est
-              présenté avant la confirmation de la souscription.
+              suffisant), enchère plafond ou offre plafond selon la vente, estimation des travaux,
+              valeur du bien et autres analyses présentées sur la page d’offre. La couverture varie
+              selon les tribunaux, les biens et les pièces disponibles ; elle est indiquée sur
+              chaque fiche. L’abonnement est conclu pour une durée indéterminée et facturé chaque
+              mois. Vous pouvez le résilier à tout moment, sans frais ni préavis ; la résiliation
+              prend effet à la fin de la période mensuelle en cours. L’abonnement ne comprend pas de
+              période d’essai : l’essai gratuit est proposé à l’inscription, sans carte bancaire
+              (article 13). Le tarif applicable est présenté avant la confirmation de la
+              souscription.
+            </p>
+            <p className="mt-3">
+              Lorsqu’il est attribué à une vente, le repère « Pépite » est visible par tous. Il est
+              calculé automatiquement par Immojudis, à partir de critères publics décrits sur la
+              page{" "}
+              <Link to="/methode-pepites" className="text-gold underline">
+                Comment repérons-nous les pépites ?
+              </Link>
+              . Le montant de l’enchère plafond ou de l’offre plafond estimée, selon la vente, et le
+              détail du calcul sont réservés à l’offre Analyse ou à un déblocage, dans les
+              conditions du présent article.
             </p>
           </TermsSection>
 
@@ -224,12 +242,16 @@ export function TermsPage() {
           <TermsSection title="8. Nature des analyses et responsabilité">
             <p>
               Immojudis fournit une aide à la lecture, sans conseil juridique, financier ou
-              patrimonial individualisé. Le client doit vérifier les pièces officielles, faire la
-              visite et solliciter les professionnels compétents avant toute enchère. Immojudis ne
-              garantit ni l’exhaustivité d’une source externe, ni une adjudication, une rentabilité,
-              un financement ou un prix de revente. Les rappels et avertissements sont indicatifs.
-              Ils ne dispensent pas de vérifier la date et le statut de la vente auprès de l’avocat
-              poursuivant.
+              patrimonial individualisé. Le repère « Pépite », les enchères et offres plafond
+              estimées et les prix probables sont des aides à la lecture calculées automatiquement à
+              partir des données disponibles : ce sont des hypothèses et non des résultats. Ils ne
+              constituent ni un conseil, ni une recommandation d’acheter ou d’enchérir, et ne
+              garantissent ni un prix, ni un rendement, ni une adjudication, ni un prix de revente.
+              Le client doit vérifier les pièces officielles, faire la visite et solliciter les
+              professionnels compétents avant toute enchère. Immojudis ne garantit ni l’exhaustivité
+              d’une source externe, ni une adjudication, une rentabilité, un financement ou un prix
+              de revente. Les rappels et avertissements sont indicatifs. Ils ne dispensent pas de
+              vérifier la date et le statut de la vente auprès de l’avocat poursuivant.
             </p>
           </TermsSection>
 
@@ -250,7 +272,20 @@ export function TermsPage() {
               Par défaut, les annonces dont la position sur la carte est connue passent avant les
               autres. Elles sont ensuite classées selon la quantité d’informations renseignées dans
               leur fiche, puis par date de vente la plus proche. Aucune rémunération ne peut
-              améliorer le rang d’une annonce.
+              améliorer le rang d’une annonce ni lui valoir un repère (« Annonce bien renseignée »,
+              « Pépite »).
+            </p>
+            <p className="mt-3">
+              Le repère « Pépite » est attribué par un calcul automatique, à partir de critères
+              publics décrits sur la page{" "}
+              <Link to="/methode-pepites" className="text-gold underline">
+                Comment repérons-nous les pépites ?
+              </Link>
+              . Aucune rémunération ne peut obtenir ou améliorer une Pépite : ni les cabinets
+              d’avocats qui achètent une mise en avant, ni les organisateurs, vendeurs ou
+              professionnels qui publient des annonces. Le repère ne modifie pas l’ordre des
+              annonces. Les encarts sponsorisés des cabinets d’avocats sont séparés des annonces et
+              sans lien avec ce repère.
             </p>
             <p className="mt-3">
               Dans l’annuaire des avocats, les cabinets qui rémunèrent Immojudis, ou bénéficient

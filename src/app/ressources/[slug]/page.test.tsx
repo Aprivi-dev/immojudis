@@ -53,6 +53,8 @@ describe("article page", () => {
   });
 
   it("states dateModified: updatedAt when set, the publication date otherwise", async () => {
+    // The real article now carries an updatedAt: force its absence to test the fallback.
+    mocks.override = { updatedAt: undefined };
     const plain = structuredData(renderToStaticMarkup(await Page({ params })))["@graph"][0];
     expect(plain.datePublished).toBe("2026-10-13");
     expect(plain.dateModified).toBe("2026-10-13");
@@ -68,6 +70,7 @@ describe("article page", () => {
   });
 
   it("shows « Mis à jour le » only when updatedAt differs from the publication date", async () => {
+    mocks.override = { updatedAt: undefined };
     const plain = renderToStaticMarkup(await Page({ params }));
     expect(plain).not.toContain("Mis à jour le");
 

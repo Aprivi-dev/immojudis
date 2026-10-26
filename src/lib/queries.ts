@@ -262,6 +262,7 @@ function applyAuthenticatedSaleFilters<TQuery>(query: TQuery, filters: SaleFilte
       .lte("longitude", filters.viewport.east);
   }
   if (filters.updated_since) q = q.gte("updated_at", filters.updated_since);
+  if (filters.ids?.length) q = q.in("id", filters.ids);
   if (filters.only_new) {
     q = q.gte("created_at", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
   }

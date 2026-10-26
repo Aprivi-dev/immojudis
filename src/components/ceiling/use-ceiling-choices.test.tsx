@@ -34,6 +34,19 @@ beforeEach(installLocalStorage);
 afterEach(cleanup);
 
 describe("parseCeilingChoices", () => {
+  it("restores the notarial fees the user read in the conditions of the sale", () => {
+    expect(
+      parseCeilingChoices({
+        consignation: 12_000,
+        negotiationFeeRatePct: 4.5,
+        advertisingFees: 1_200,
+        // A negative or non-numeric stored value is dropped, like every other number field.
+        lawyerFees: -1,
+      }),
+    ).toEqual({ consignation: 12_000, negotiationFeeRatePct: 4.5, advertisingFees: 1_200 });
+    expect(parseCeilingChoices({ negotiationFeeRatePct: "4,5" })).toEqual({});
+  });
+
   it("restores the works breakdown next to the other choices", () => {
     const choices = parseCeilingChoices({
       project: "louer",

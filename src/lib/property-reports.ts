@@ -4,6 +4,8 @@ import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { getEnvironmentalContext } from "@/lib/environmental-context";
+import { openFeeRegimesFromEnv } from "@/lib/fee-regime.server";
+import { DEFAULT_OPEN_FEE_REGIMES, type FeeRegimeKey } from "@/lib/fee-regime-open";
 import { redactPersonalData, redactPersonalText } from "@/lib/personal-data-filter";
 import {
   isPlanPeriodActive,
@@ -44,6 +46,7 @@ import {
   featureUnlocked,
   sanitizeReportSnapshotForPlan,
 } from "./property-report/entitlements";
+import { analysisForOpenRegimes, ceilingForOpenRegimes } from "./property-report/ceiling-switch";
 import { reportToPdfLines, REPORT_PDF_HEADINGS } from "./property-report/pdf";
 import {
   assertReportSourceCurrent,
@@ -223,6 +226,18 @@ export type PropertyReportShareResponse = {
 
 export type PublicSharedCeiling = {
   available: boolean;
+  /** « Enchère plafond (simulation) » ou « Offre plafond (simulation) » ; `null` : rapport ancien. */
+  label?: string | null;
+  /** Régime de frais du plafond (`tribunal`, `notary_auction`, `notary_online`) ; `null` : rapport ancien. */
+  regime?: string | null;
+  /** Ce que le calcul ne couvre pas (vente notariale), `null` sinon. */
+  scopeNote?: string | null;
+  /** Mention d'une vente par offres : le vendeur n'est pas tenu de retenir la meilleure offre. */
+  reserveNotice?: string | null;
+  /** Libellés des frais qui viennent d'une valeur par défaut, à confirmer. */
+  estimatedFees?: string[];
+  /** Ce que la raison d'un plafond indisponible dit (`NO_CEILING_REGIME_REASON`, plafond non rentable). */
+  reason?: string | null;
   maxBid: number | null;
   safetyDiscountPct: number | null;
   basisLabel: string | null;
@@ -370,9 +385,11 @@ export async function savePropertyReport({
     urbanPlanningSignalsPromise,
     valuationBacktestPromise,
   ]);
-  const ceilingSnapshot = buildCeilingSnapshot(sale, marketEstimate);
+  // The fee regimes open on the server decide whether the sale has a ceiling at all.
+  const regimes = openFeeRegimesFromEnv();
+  const ceilingSnapshot = buildCeilingSnapshot(sale, marketEstimate, {}, regimes);
   if (input.simulation) {
-    const personal = computeReportSimulation(sale, marketEstimate, input.simulation);
+    const personal = computeReportSimulation(sale, marketEstimate, input.simulation, regimes);
     Object.assign(ceilingSnapshot, personal, { personalSimulation: input.simulation });
   }
   const reportSnapshot = {
@@ -508,7 +525,7 @@ export async function exportPropertyReportPdf({
   await assertPdfExportAvailable(auth, plan);
   const report = await getReport(auth.supabase, auth.userId, reportId);
   assertReportSourceCurrent(report.report_snapshot, await getSale(auth.supabase, report.sale_id));
-  const lines = reportToPdfLines(report, plan);
+  const lines = reportToPdfLines(report, plan, openFeeRegimesFromEnv());
   const bytes = createTextPdf({
     title: report.title,
     lines,
@@ -644,7 +661,7 @@ export async function getSharedPropertyReport({
     if (!updateError) data.share_view_count = nextViewCount;
   }
 
-  return buildPublicSharedPropertyReport(data);
+  return buildPublicSharedPropertyReport(data, openFeeRegimesFromEnv());
 }
 
 /**
@@ -709,11 +726,27 @@ export function buildPropertyReportShare(
  * que la page partagée affiche sont recopiés. `market_snapshot` et `environmental_snapshot` ne
  * sont pas rendus par cette page et ne sont donc pas renvoyés.
  */
-function buildPublicSharedCeiling(snapshot: Json): PublicSharedCeiling {
-  const ceiling = asRecord(snapshot);
+function buildPublicSharedCeiling(
+  snapshot: Json,
+  regimes: readonly FeeRegimeKey[] = DEFAULT_OPEN_FEE_REGIMES,
+): PublicSharedCeiling {
+  // Régime fermé depuis l'enregistrement du rapport : plafond indisponible, montants masqués.
+  const ceiling = ceilingForOpenRegimes(asRecord(snapshot), regimes);
   const personalSimulation = publicReportSimulation(ceiling.personalSimulation);
+  const estimatedFees = Array.isArray(ceiling.estimatedFees)
+    ? ceiling.estimatedFees.flatMap((fee) => {
+        const label = asRecord(fee).label;
+        return typeof label === "string" && label ? [label] : [];
+      })
+    : [];
   return {
     available: ceiling.available === true,
+    label: typeof ceiling.label === "string" ? ceiling.label : null,
+    regime: typeof ceiling.regime === "string" ? ceiling.regime : null,
+    scopeNote: typeof ceiling.scopeNote === "string" ? ceiling.scopeNote : null,
+    reserveNotice: typeof ceiling.reserveNotice === "string" ? ceiling.reserveNotice : null,
+    estimatedFees,
+    reason: typeof ceiling.reason === "string" ? ceiling.reason : null,
     maxBid: numberValue(ceiling.maxBid),
     safetyDiscountPct: numberValue(ceiling.safetyDiscountPct),
     basisLabel: typeof ceiling.basisLabel === "string" ? ceiling.basisLabel : null,
@@ -736,6 +769,8 @@ export function buildPublicSharedPropertyReport(
     | "share_view_count"
     | "updated_at"
   >,
+  /** Régimes de frais ouverts (`openFeeRegimesFromEnv`) ; absent : tous ceux qui sont définis. */
+  regimes: readonly FeeRegimeKey[] = DEFAULT_OPEN_FEE_REGIMES,
 ): PublicSharedPropertyReport {
   const rawSnapshot = asRecord(report.report_snapshot);
   const snapshot = sanitizeReportSnapshotForPlan(
@@ -743,6 +778,7 @@ export function buildPublicSharedPropertyReport(
     buildPlanEntitlements(normalizePlanCode(rawSnapshot.plan)),
   );
   const traceability = asRecord(snapshot.sourceTraceability);
+  const savedCeiling = asRecord(report.ceiling_snapshot);
 
   // Lecture publique par lien : un rapport figé avant le durcissement du filtre est refiltré ici.
   return {
@@ -755,8 +791,10 @@ export function buildPublicSharedPropertyReport(
     viewCount: report.share_view_count,
     plan: typeof snapshot.plan === "string" ? snapshot.plan : null,
     sale: redactPersonalData(asRecord(snapshot.sale)),
-    analysis: redactPersonalData(asRecord(snapshot.analysis)),
-    ceiling: buildPublicSharedCeiling(report.ceiling_snapshot),
+    analysis: redactPersonalData(
+      analysisForOpenRegimes(asRecord(snapshot.analysis), savedCeiling, regimes),
+    ),
+    ceiling: buildPublicSharedCeiling(report.ceiling_snapshot, regimes),
     sourceTrace: normalizeSourceTrace(traceability.entries),
     limitations: normalizeStringList(traceability.limitations),
     disclaimer: stringOrNumberValue(traceability.complianceNotice, REPORT_COMPLIANCE_NOTICE),

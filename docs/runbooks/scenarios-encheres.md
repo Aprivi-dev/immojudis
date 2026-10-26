@@ -97,14 +97,14 @@ résultat, et le cliché des lots Licitor n'a ni identifiant de vente ni estimat
 23/10/2026 : 1 vente avec prix d'adjudication, 0 avec prix et estimation, 1 595 estimations en tout.
 
 **Ce qui est collecté.** Table privée `app_private.sale_market_estimate_snapshots` (RLS, `service_role` en lecture
-seule) : un instantané par vente de tribunal, avec tribunal (`court_code`), département, type de bien et groupe de
+seule) : un instantané par vente de tribunal ou notariale, avec type de vente (`sale_venue_type`), tribunal (`court_code`, nul pour une vente notariale), département, type de bien et groupe de
 comparaison (`property_group`, celui des scénarios), mise à prix, jour d'audience (heure de Paris), estimation
 P10 / P50 / P90, `actionable`, nombre de comparables, indice de confiance, moteur, version du modèle et date de
 l'instantané. Ni adresse, ni commune, ni identifiant de vente (`snapshot_key` est l'empreinte SHA-256 de
 l'identifiant, qui ne se rattache à aucune ligne restante). Aucun affichage, aucune lecture par l'application.
 
 **Quand.** Juste avant la disparition de la ligne d'estimation, une seule fois par vente, si l'audience est passée,
-si la vente est une vente de tribunal avec code de tribunal et mise à prix, si elle n'est ni reportée, ni annulée, ni
+si la vente est une vente de tribunal (avec code de tribunal) ou notariale, avec mise à prix, si elle n'est ni reportée, ni annulée, ni
 retirée, ni en quarantaine, ni fusionnée, et si l'estimation est `ready` (une estimation en attente de recalcul
 porte une valeur d'avant la modification du bien) : déclencheur `before delete` sur `auction_sales` (la purge à
 l'audience) et déclencheur `before update of status` (sortie de `active` / `upcoming`). Une panne de l'écriture
@@ -117,10 +117,12 @@ n'empêche jamais la purge : elle est journalisée en avertissement (`snapshot_s
 **Suivre la collecte** (lecture seule) :
 
 ```sql
-select count(*) as instantanes,
+select sale_venue_type,
+       count(*) as instantanes,
        count(*) filter (where actionable) as exploitables,
        min(sale_date) as premiere_audience, max(captured_at) as dernier_instantane
-from app_private.sale_market_estimate_snapshots;
+from app_private.sale_market_estimate_snapshots
+group by sale_venue_type;
 ```
 
 ### Apparier aux résultats d'adjudication
@@ -149,6 +151,7 @@ with snap as (
                         starting_price_eur, sale_date) as n
   from app_private.sale_market_estimate_snapshots
   where actionable
+    and sale_venue_type = 'tribunal' and court_code is not null
 ),
 lots as (
   select court_code, app_private.scenario_property_group(property_type) as grp,
@@ -179,6 +182,7 @@ with snap as (
                         starting_price_eur, sale_date) as n
   from app_private.sale_market_estimate_snapshots
   where actionable
+    and sale_venue_type = 'tribunal' and court_code is not null
 ),
 lots as (
   select court_code, app_private.scenario_property_group(property_type) as grp,

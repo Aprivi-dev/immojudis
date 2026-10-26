@@ -16,6 +16,7 @@ import { excludeHomepageExampleSales } from "@/lib/example-sale-identity";
 import { previewSearchRequestKey, type PreviewSearchResponse } from "./preview-search";
 import { previewSearchApiUrl, type PreviewSearchApiResponse } from "./preview-search-request";
 import { fetchUnderRangeSaleIds } from "./market-range-filter";
+import { fetchPepiteSaleIds } from "./pepite-filter";
 import { SearchRejectedError } from "./search-errors";
 import type { SalesSearchParams } from "./search-url-state";
 import {
@@ -217,6 +218,11 @@ async function fetchCompleteFilteredSearch(search: SalesSearchParams, discovery:
     // Ventes sous la fourchette : la liste vient de la base (elle calcule la bande vente par vente), et
     // une lecture impossible fait échouer la recherche au lieu d'afficher toutes les ventes.
     const underRangeSaleIds = search.belowRange ? await fetchUnderRangeSaleIds() : null;
+    // Pépites : la liste publique des identifiants (une lecture, gardée 5 minutes). Vide quand le repère n'est
+    // pas ouvert : le filtre ne passe alors aucune vente plutôt que toutes.
+    const pepiteSaleIds = search.pepite ? await fetchPepiteSaleIds() : null;
+    // Aucune pépite : rien à croiser, on ne lit pas le catalogue pour retirer toutes ses lignes.
+    if (pepiteSaleIds && pepiteSaleIds.size === 0) return [];
     const batchSize = 100;
     const dataFilters = dataFiltersFromSearch(criteria);
     const dataSort = dataSortFromSearch(search.sort, { allowInvestmentScore: !discovery });
@@ -238,6 +244,7 @@ async function fetchCompleteFilteredSearch(search: SalesSearchParams, discovery:
     return sortClientSearchResults(
       applyClientSearchFilters(excludeHomepageExampleSales(rows), search, center, {
         underRangeSaleIds,
+        pepiteSaleIds,
         // Comme sur les cartes : l'occupation ne compte parmi les points que si le compte la lit.
         occupancyVisible: !discovery,
       }),

@@ -241,6 +241,40 @@ describe("filtres « sous la fourchette » et « sans point à vérifier »", ()
     expect(hasUnalertableSearchFilters({ city: "Pau" })).toBe(false);
   });
 
+  describe("pépites seulement", () => {
+    const sales = [complete("pepite-1"), complete("autre"), complete("PEPITE-2")];
+
+    it("ne garde que les ventes de la liste publique, sans tenir compte de la casse", () => {
+      const pepiteSaleIds = new Set(["pepite-1", "pepite-2"]);
+      expect(
+        ids(applyClientSearchFilters(sales, { pepite: true }, null, { pepiteSaleIds })),
+      ).toEqual(["pepite-1", "PEPITE-2"]);
+    });
+
+    it("ne passe aucune vente quand la liste n'a pas été lue, jamais toutes", () => {
+      expect(ids(applyClientSearchFilters(sales, { pepite: true }, null))).toEqual([]);
+      expect(
+        ids(applyClientSearchFilters(sales, { pepite: true }, null, { pepiteSaleIds: null })),
+      ).toEqual([]);
+    });
+
+    it("sans le filtre, la liste est ignorée", () => {
+      expect(
+        ids(applyClientSearchFilters(sales, {}, null, { pepiteSaleIds: new Set(["pepite-1"]) })),
+      ).toEqual(["pepite-1", "autre", "PEPITE-2"]);
+    });
+
+    it("est un filtre lu sur les lignes, compté, et que les alertes savent enregistrer", () => {
+      expect(hasClientOnlyFilters({ pepite: true })).toBe(true);
+      expect(countActiveSearchFilters({ pepite: true })).toBe(1);
+      expect(countAlertableSearchFilters({ pepite: true })).toBe(1);
+      expect(hasUnalertableSearchFilters({ pepite: true })).toBe(false);
+      // Ce n'est pas un tri : il ne change pas les filtres de données ni l'ordre par défaut.
+      expect(dataFiltersFromSearch({ pepite: true })).toEqual(dataFiltersFromSearch({}));
+      expect(dataSortFromSearch(undefined)).toBe("completeness_desc");
+    });
+  });
+
   describe("sous la fourchette", () => {
     const sales = [complete("under"), complete("near"), complete("occupied-under")];
 

@@ -2,6 +2,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ceilingScopeNoteText } from "@/lib/fee-regime-labels";
+import { FeeRegimesProvider } from "@/components/FeeRegimesProvider";
 import { startCardClosedKey } from "@/lib/start-checklist";
 import { MonDemarrage } from "./MonDemarrage";
 
@@ -79,19 +81,48 @@ describe("MonDemarrage", () => {
 
     const card = await screen.findByTestId("mon-demarrage");
     expect(card.textContent).toContain("Suivre une vente");
-    expect(card.textContent).toContain("Noter mon statut ou mon enchère plafond");
+    expect(card.textContent).toContain("Noter mon statut ou mon plafond");
     expect(card.textContent).not.toContain("Recevoir un rappel d’audience");
     expect(card.textContent).toContain("À faire : ");
     // Pas de lien « Mon dossier » sans favori.
     expect(screen.queryByRole("link", { name: /Ouvrir « Mon dossier »/ })).toBeNull();
   });
 
-  it("n'annonce pas l'enchère plafond pour toutes les ventes", async () => {
+  it("garde le texte des ventes à plafond égal aux termes et aux ventes des régimes ouverts", async () => {
+    // Le texte est écrit en toutes lettres dans le composant (la page des favoris n'embarque pas le
+    // vocabulaire des régimes) : il doit rester égal à celui que ce vocabulaire donne.
+    renderCard();
+
+    const card = await screen.findByTestId("mon-demarrage");
+    expect(card.textContent).toContain(ceilingScopeNoteText());
+  });
+
+  it("dit ce que la page serveur a lu de l'interrupteur par régime, pas le texte par défaut", async () => {
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <FeeRegimesProvider
+          value={{ open: ["tribunal"], scopeNote: ceilingScopeNoteText(["tribunal"]) }}
+        >
+          <MonDemarrage />
+        </FeeRegimesProvider>
+      </QueryClientProvider>,
+    );
+
+    const card = await screen.findByTestId("mon-demarrage");
+    expect(card.textContent).toContain(
+      "Le plafond (enchère plafond) n’existe que pour les ventes au tribunal ; le statut vaut pour toute vente suivie.",
+    );
+    expect(card.textContent).not.toContain("offre plafond");
+  });
+
+  it("n'annonce pas le plafond pour toutes les ventes : seulement celles dont un régime de frais est ouvert", async () => {
     renderCard();
 
     const card = await screen.findByTestId("mon-demarrage");
     expect(card.textContent).toContain(
-      "L’enchère plafond n’existe que pour les ventes au tribunal",
+      "Le plafond (enchère plafond ou offre plafond) n’existe que pour les ventes au tribunal, ventes notariales à la bougie et ventes notariales interactives",
     );
     expect(card.textContent).not.toMatch(/toutes les ventes/i);
   });

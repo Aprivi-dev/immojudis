@@ -4,6 +4,11 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useEffect, useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildCeilingHypotheses, type CeilingUserChoices } from "@/lib/bid-ceiling-defaults";
+import {
+  NOTARY_AUCTION_FEE_REGIME,
+  NOTARY_ONLINE_FEE_REGIME,
+  type FeeRegime,
+} from "@/lib/fee-regime";
 import type { MarketEstimate } from "@/lib/market.server";
 import type { AuctionSale } from "@/lib/types";
 import { CeilingHypothesesPanel } from "./CeilingHypothesesPanel";
@@ -34,9 +39,11 @@ const seen: { choices: CeilingUserChoices } = { choices: {} };
 function Harness({
   initial = {},
   saleOverride = sale,
+  regime = null,
 }: {
   initial?: CeilingUserChoices;
   saleOverride?: AuctionSale;
+  regime?: FeeRegime | null;
 }) {
   const [choices, setChoices] = useState<CeilingUserChoices>(initial);
   useEffect(() => {
@@ -44,7 +51,7 @@ function Harness({
   }, [choices]);
   return (
     <CeilingHypothesesPanel
-      hypotheses={buildCeilingHypotheses(saleOverride, estimate, choices)}
+      hypotheses={buildCeilingHypotheses(saleOverride, estimate, choices, regime)}
       choices={choices}
       onChoicesChange={(change) => setChoices((current) => change(current))}
     />
@@ -168,5 +175,102 @@ describe("CeilingHypothesesPanel rent", () => {
 
     expect(input("Loyer mensuel hors charges").value).toBe("");
     expect(screen.getByText(/Aucun loyer de référence pour ce département/)).toBeTruthy();
+  });
+});
+
+describe("CeilingHypothesesPanel : aide des frais estimés (tribunal)", () => {
+  it("dit comment remplacer les frais préalables par le montant lu dans le cahier des conditions de vente", () => {
+    render(<Harness />);
+    expect(
+      screen.getByText(/Saisissez le montant lu dans le cahier : il remplace la valeur par défaut/),
+    ).toBeTruthy();
+    fireEvent.change(input("Frais préalables"), { target: { value: "4200" } });
+    expect(screen.getByText("Montant que vous avez saisi.")).toBeTruthy();
+    expect(seen.choices.fpt).toBe(4_200);
+  });
+});
+
+describe("CeilingHypothesesPanel : ventes notariales", () => {
+  const online = {
+    ...sale,
+    sale_venue_type: "notary",
+    sale_conditions: {
+      procedure: "online_tender",
+      first_offer_eur: 30_000,
+      negotiation_fee_rate: 0.045,
+      negotiation_fee_payer: "ACQUEREUR",
+      advertising_fees_eur: 1_200,
+    },
+  } as unknown as AuctionSale;
+  const auction = {
+    ...sale,
+    sale_venue_type: "notary",
+    sale_conditions: { procedure: "notarial_auction" },
+  } as unknown as AuctionSale;
+
+  it("n'a ni frais préalables ni honoraires d'avocat, et lit honoraires de négociation et publicité (vente interactive)", () => {
+    render(<Harness saleOverride={online} regime={NOTARY_ONLINE_FEE_REGIME} />);
+    expect(screen.queryByLabelText("Frais préalables")).toBeNull();
+    expect(screen.queryByLabelText("Honoraires de votre avocat")).toBeNull();
+    expect(screen.queryByLabelText("Garantie à déposer")).toBeNull();
+    expect(input("Honoraires de négociation").value).toBe("4.5");
+    expect(input("Frais de publicité").value).toBe("1200");
+    expect(screen.getByText("Taux lu dans l’annonce, à la charge de l’acquéreur.")).toBeTruthy();
+    expect(screen.getByText("Montant lu dans l’annonce.")).toBeTruthy();
+  });
+
+  it("remplace le taux de négociation par la saisie de l'utilisateur", () => {
+    render(<Harness saleOverride={online} regime={NOTARY_ONLINE_FEE_REGIME} />);
+    fireEvent.change(input("Honoraires de négociation"), { target: { value: "3" } });
+    expect(seen.choices.negotiationFeeRatePct).toBe(3);
+    expect(screen.getByText("Taux que vous avez saisi.")).toBeTruthy();
+    fireEvent.change(input("Frais de publicité"), { target: { value: "800" } });
+    expect(seen.choices.advertisingFees).toBe(800);
+  });
+
+  it("dit que rien n'est compté quand le taux ou le redevable manquent, à confirmer dans les conditions de la vente", () => {
+    const noRate = {
+      ...online,
+      sale_conditions: { procedure: "online_tender", first_offer_eur: 30_000 },
+    } as unknown as AuctionSale;
+    render(<Harness saleOverride={noRate} regime={NOTARY_ONLINE_FEE_REGIME} />);
+    expect(
+      screen.getByText(/Taux non indiqué dans l’annonce : aucun honoraire n’est compté/),
+    ).toBeTruthy();
+    expect(screen.getByText(/Non indiqués dans l’annonce : 0 € est compté/)).toBeTruthy();
+    cleanup();
+    const vendor = {
+      ...online,
+      sale_conditions: { ...online.sale_conditions, negotiation_fee_payer: "VENDEUR" },
+    } as unknown as AuctionSale;
+    render(<Harness saleOverride={vendor} regime={NOTARY_ONLINE_FEE_REGIME} />);
+    expect(
+      screen.getByText("À la charge du vendeur d’après l’annonce : rien n’est compté."),
+    ).toBeTruthy();
+  });
+
+  it("propose la garantie à déposer d'une vente à la bougie, par défaut 20 % de la mise à prix, à confirmer", () => {
+    render(<Harness saleOverride={auction} regime={NOTARY_AUCTION_FEE_REGIME} />);
+    expect(input("Garantie à déposer").value).toBe("6000");
+    expect(screen.getByText(/Valeur par défaut \(20 % de la mise à prix\)/)).toBeTruthy();
+    expect(screen.queryByLabelText("Honoraires de négociation")).toBeNull();
+    expect(screen.queryByLabelText("Frais préalables")).toBeNull();
+    fireEvent.change(input("Garantie à déposer"), { target: { value: "7500" } });
+    expect(seen.choices.consignation).toBe(7_500);
+    expect(screen.getByText("Montant que vous avez saisi.")).toBeTruthy();
+  });
+
+  it("cite le barème des émoluments du notaire, à confirmer sur Légifrance, et ne parle pas du titre d'expulsion judiciaire", () => {
+    render(
+      <Harness
+        saleOverride={auction}
+        regime={NOTARY_AUCTION_FEE_REGIME}
+        initial={{ occupation: "occupe" }}
+      />,
+    );
+    expect(screen.getByText(/émoluments du notaire suivent le barème réglementé/)).toBeTruthy();
+    expect(screen.getByText(/à confirmer sur Légifrance/)).toBeTruthy();
+    expect(screen.getByText(/pas de titre d’expulsion automatique/)).toBeTruthy();
+    expect(screen.queryByText(/Commandement, délais du juge/)).toBeNull();
   });
 });

@@ -191,3 +191,34 @@ describe("showResultsLabel", () => {
     expect(showResultsLabel(12345).replace(/\s/g, " ")).toBe("Afficher 12 345 annonces");
   });
 });
+
+describe("filtre « Pépites seulement »", () => {
+  it("n'est pas proposé tant que les pépites ne sont pas ouvertes", () => {
+    renderDrawer();
+    expect(screen.queryByRole("checkbox", { name: /Pépites seulement/ })).toBeNull();
+    expect(document.body.textContent).not.toMatch(/pépite/i);
+  });
+
+  it("est proposé avec son explication, y compris à un visiteur (hors du bloc réservé aux comptes)", () => {
+    renderDrawer({ pepitesActive: true, preview: true });
+    const checkbox = screen.getByRole("checkbox", {
+      name: /Pépites seulement/,
+    }) as HTMLInputElement;
+    expect(checkbox.closest("fieldset")).toBeNull();
+    expect(checkbox.disabled).toBe(false);
+    const hint = document.getElementById(checkbox.getAttribute("aria-describedby")!)!;
+    expect(hint.textContent).toContain("ni une recommandation d'acheter");
+    // Les repères réservés aux comptes restent grisés pour un visiteur.
+    expect(
+      screen.getByRole("checkbox", { name: /Sans point à vérifier/ }).matches(":disabled"),
+    ).toBe(true);
+    expect(checkbox.matches(":disabled")).toBe(false);
+  });
+
+  it("coche et décoche le brouillon", () => {
+    const setDraft = vi.fn();
+    renderDrawer({ pepitesActive: true, setDraft });
+    fireEvent.click(screen.getByRole("checkbox", { name: /Pépites seulement/ }));
+    expect(setDraft.mock.calls[0][0](emptySearchDraft())).toMatchObject({ pepite: true });
+  });
+});

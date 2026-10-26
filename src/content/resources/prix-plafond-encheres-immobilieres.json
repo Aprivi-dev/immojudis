@@ -1,7 +1,7 @@
 {
   "slug": "prix-plafond-encheres-immobilieres",
   "publishedAt": "2026-10-05",
-  "updatedAt": "2026-10-19",
+  "updatedAt": "2026-10-26",
   "title": "Fixer son enchère plafond : raisonner par le coût complet avant d’enchérir",
   "seoTitle": "Enchère plafond : raisonner par le coût complet",
   "category": "Budget",
@@ -14,7 +14,7 @@
     "La mise à prix est le départ de l’audience ; l’enchère plafond est votre limite, après déduction des autres coûts.",
     "Une référence DVF doit ressembler au bien par sa surface, son type, son secteur et sa période.",
     "Frais, travaux, financement, occupation et marge de sécurité se déduisent avant de retenir une enchère plafond.",
-    "Dans l’exemple de cet article, les frais pèsent environ 12 % du prix : un ordre de grandeur à vérifier sur le cahier des conditions de vente, pas un tarif.",
+    "Dans l’exemple de cet article, les frais pèsent environ 13 % du prix : un ordre de grandeur à vérifier sur le cahier des conditions de vente, pas un tarif.",
     "L’enchère plafond est une hypothèse documentée, pas une promesse de gain ni un avis personnalisé."
   ],
   "sections": [
@@ -64,8 +64,8 @@
       "title": "Exemple fictif : calculer l’enchère plafond",
       "paragraphs": [
         "Prenons un appartement fictif de 62 m². Vous retenez 210 000 € comme valeur de marché de travail et choisissez une marge de sécurité de 10 %, soit 21 000 €. Le seuil de coût complet devient 189 000 €. La mise à prix de 95 000 € reste un repère d’audience et n’entre pas directement dans la formule.",
-        "Les frais ne sont pas un montant fixe : ils varient avec le prix d’adjudication, il faut donc les recalculer à chaque enchère testée. Avec les hypothèses par défaut du simulateur Immojudis (barème des émoluments relevé le 09/10/2026, droits de mutation d’environ 6,3 % relevés le 01/06/2026, frais préalables de 3 000 € et honoraires de 1 500 €), ils atteignent environ 17 900 € pour une enchère de 149 600 €, soit environ 12 % du prix. Ces valeurs sont des ordres de grandeur à vérifier sur le cahier des conditions de vente et auprès de l’avocat. Les droits de mutation varient selon le département : la hausse du taux départemental de 4,5 % à 5 % vaut pour les actes passés du 1er avril 2025 au 31 mars 2028.",
-        "Le calcul est : 189 000 € − 17 900 € − 18 000 € − 3 500 € ≈ 149 600 €. À 150 000 €, le coût complet dépasse le seuil d’environ 400 € ; à 140 000 €, il reste environ 10 400 € sous le seuil. Les autres montants (travaux, financement) sont inventés pour l’exemple."
+        "Les frais ne sont pas un montant fixe : ils varient avec le prix d’adjudication, il faut donc les recalculer à chaque enchère testée. Avec les hypothèses par défaut du simulateur Immojudis (barème des émoluments relevé le 09/10/2026, droits de mutation d’environ 6,3 % relevés le 01/06/2026, frais préalables de 5 000 € et honoraires de 1 500 €), ils atteignent environ 19 600 € pour une enchère d’environ 147 900 €, soit environ 13 % du prix. Ces valeurs sont des ordres de grandeur à vérifier sur le cahier des conditions de vente et auprès de l’avocat. Les droits de mutation varient selon le département : la hausse du taux départemental de 4,5 % à 5 % vaut pour les actes passés du 1er avril 2025 au 31 mars 2028.",
+        "Le calcul est : 189 000 € − 19 600 € − 18 000 € − 3 500 € ≈ 147 900 €. À 150 000 €, le coût complet dépasse le seuil d’environ 2 200 € ; à 140 000 €, il reste environ 8 600 € sous le seuil. Les autres montants (travaux, financement) sont inventés pour l’exemple."
       ],
       "table": {
         "headers": ["Poste", "Hypothèse fictive", "Impact"],
@@ -74,12 +74,12 @@
           ["Marge de sécurité", "10 % = 21 000 €", "Seuil : 189 000 €"],
           [
             "Frais, droits et débours (ordre de grandeur à vérifier)",
-            "environ 17 900 € à 149 600 €, soit environ 12 % du prix",
-            "− 17 900 €"
+            "environ 19 600 € à 147 900 €, soit environ 13 % du prix",
+            "− 19 600 €"
           ],
           ["Travaux", "18 000 €", "− 18 000 €"],
           ["Financement et provision", "3 500 €", "− 3 500 €"],
-          ["Enchère plafond", "189 000 − 39 400", "environ 149 600 €"]
+          ["Enchère plafond", "189 000 − 41 100", "environ 147 900 €"]
         ]
       }
     },

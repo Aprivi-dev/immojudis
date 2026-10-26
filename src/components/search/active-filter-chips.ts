@@ -136,6 +136,7 @@ export function activeFilterChips(search: SalesSearchParams): ActiveFilterChip[]
   add("noPointsToVerify", search.noPointsToVerify ? "Sans point à vérifier" : null, {
     noPointsToVerify: undefined,
   });
+  add("pepite", search.pepite ? "Pépites seulement" : null, { pepite: undefined });
   add("visitSoon", search.visitSoon ? "Visite dans les 7 jours" : null, {
     visitSoon: undefined,
   });

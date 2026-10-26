@@ -398,3 +398,47 @@ describe("useCreateAlert", () => {
     expect(mocks.track).not.toHaveBeenCalled();
   });
 });
+
+describe("useCreateAlert : « Seulement les pépites »", () => {
+  it("enregistre le critère dans les critères avancés, y compris pour un compte gratuit (critère public)", async () => {
+    const hook = setup();
+    const outcome = await create(hook, { department: "33", pepite: true });
+    expect(outcome.status).toBe("created");
+    expect(mocks.createAlert).toHaveBeenCalledWith(
+      "user-1",
+      expect.objectContaining({
+        advanced_criteria: expect.objectContaining({ source: "sales_search", pepite_only: true }),
+      }),
+    );
+    // Ce n'est pas un des filtres que les alertes ignorent.
+    expect(mocks.toast.message).not.toHaveBeenCalledWith(
+      expect.stringContaining("ne sont pas enregistrés dans l'alerte"),
+    );
+  });
+
+  it("suffit à créer une alerte (la zone préremplie de l'état vide + le critère)", async () => {
+    const hook = setup();
+    const outcome = await create(hook, { pepite: true });
+    expect(outcome.status).toBe("created");
+    expect(mocks.toast.error).not.toHaveBeenCalled();
+  });
+
+  it("n'écrit aucune clé quand le filtre n'est pas actif", async () => {
+    const hook = setup();
+    await create(hook, { department: "33" });
+    const payload = mocks.createAlert.mock.calls[0][1] as {
+      advanced_criteria: Record<string, unknown>;
+    };
+    expect(payload.advanced_criteria).not.toHaveProperty("pepite_only");
+  });
+
+  it("garde la demande d'un visiteur qui n'a que ce critère, pour la créer après sa connexion", async () => {
+    mocks.auth = { user: null, loading: false };
+    const hook = setup();
+    await act(async () => {
+      await hook.result.current.createAlertFromSearch({ pepite: true });
+    });
+    expect(peekPendingAlert()?.search).toMatchObject({ pepite: true });
+    expect(mocks.push).toHaveBeenCalledWith(expect.stringContaining("/login"));
+  });
+});

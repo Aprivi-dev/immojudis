@@ -39,7 +39,7 @@ const SALE_INPUT_COLUMNS = [
 
 // Littéral (et non `SALE_INPUT_COLUMNS.join(",")`) pour que le client type les lignes ;
 // buildSaleValuationInput échoue à la compilation si une colonne de SALE_INPUT_COLUMNS manque ici.
-const SALE_INPUT_SELECT =
+export const SALE_INPUT_SELECT =
   "id,title,address,city,postal_code,property_type,latitude,longitude,app_surface_m2,habitable_surface_m2,carrez_surface_m2,land_surface_m2,app_surface_kind,surface_scope,rooms_count,bedrooms_count,updated_at";
 
 type SaleValuationSource = Pick<AuctionSaleRow, (typeof SALE_INPUT_COLUMNS)[number]>;

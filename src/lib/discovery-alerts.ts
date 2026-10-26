@@ -25,7 +25,7 @@ export const ALERT_CREATION_PATH = "/alertes/creer";
 
 /**
  * Les critères publics qu'une alerte gratuite accepte : zone, type de vente, type de bien (un
- * seul), mise à prix maximale et surface minimale. Tout le reste d'une adresse saisie à la main
+ * seul), mise à prix maximale, surface minimale et « Seulement les pépites ». Tout le reste d'une adresse saisie à la main
  * (texte libre, DPE, rendement…) est ignoré : la page de confirmation ne crée que ce qu'elle
  * affiche, quelle que soit l'adresse reçue.
  */
@@ -38,6 +38,8 @@ export function publicAlertCriteria(record: Record<string, unknown>): SalesSearc
     homeTypes: search.homeTypes?.length === 1 ? search.homeTypes : undefined,
     maxPrice: search.maxPrice,
     minSqft: search.minSqft,
+    // « Seulement les pépites » : un critère public (le repère est visible de tous), gardé par l'alerte gratuite.
+    pepite: search.pepite,
   };
 }
 

@@ -64,7 +64,15 @@ export function knownTabForAnchor(anchor: string, allowStatistics = true): SaleD
     return "demarches";
   }
   if (
-    ["description-ia", "localisation", "caracteristiques", "urbanism", "risks"].includes(anchor)
+    [
+      "description-ia",
+      "localisation",
+      "caracteristiques",
+      "urbanism",
+      "risks",
+      // Bloc « Pourquoi cette pépite » : en tête de l'onglet Aperçu.
+      "pepite",
+    ].includes(anchor)
   ) {
     return "apercu";
   }

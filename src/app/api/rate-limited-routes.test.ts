@@ -19,6 +19,9 @@ const mocks = vi.hoisted(() => ({
   featured: vi.fn(),
   boundary: vi.fn(),
   checkout: vi.fn(),
+  pepiteRpc: vi.fn(),
+  pepitePublished: vi.fn(),
+  pepiteRead: vi.fn(),
 }));
 
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
@@ -71,6 +74,16 @@ vi.mock("@/lib/geographic-boundary", () => ({
   fetchGeographicBoundary: mocks.boundary,
   GeographicBoundaryUpstreamError: class extends Error {},
 }));
+vi.mock("next/cache", () => ({
+  unstable_cache: (load: (...args: unknown[]) => unknown) => load,
+}));
+vi.mock("@/lib/supabase-public.server", () => ({
+  createPublicSupabaseClient: () => ({ rpc: mocks.pepiteRpc }),
+}));
+vi.mock("@/lib/sale-pepite.server", () => ({
+  isPublishedPepite: mocks.pepitePublished,
+  readStoredPepite: mocks.pepiteRead,
+}));
 vi.mock("@/lib/billing", () => ({
   resolveAnalysisCheckoutAvailability: mocks.checkout,
 }));
@@ -87,6 +100,8 @@ import { POST as environmentPost } from "./environment-context/route";
 import { GET as featuredGet } from "./lawyers/featured/route";
 import { GET as boundaryGet } from "./geographic-boundary/route";
 import { GET as offerGet } from "./billing/offer/route";
+import { GET as pepiteGet } from "./sales/[id]/pepite/route";
+import { GET as pepiteIdsGet } from "./catalogue/pepites/route";
 import { GET as v1OutcomeGraph } from "./v1/sales/[id]/outcome-graph/route";
 import { GET as v1SaleAdjudicationStatistics } from "./v1/sales/[id]/adjudication-statistics/route";
 import { GET as v1SaleUrbanismeCadastre } from "./v1/sales/[id]/urbanisme-cadastre/route";
@@ -189,6 +204,47 @@ describe("P4-02 rate limits on costly and public routes", () => {
       ["geographic-boundary", 60],
       ["billing.offer", 60],
     ]);
+  });
+
+  it("limits the pepite routes (criteria, detail, public list): 429, Retry-After, no cache, and no read of the table", async () => {
+    mocks.enforceIp.mockRejectedValue(new RateLimitError(undefined, 11));
+    mocks.enforceUser.mockRejectedValue(new RateLimitError(undefined, 13));
+    const params = { params: Promise.resolve({ id: saleId }) };
+    const get = (path: string, headers: HeadersInit = {}) =>
+      new Request(`https://example.test${path}`, { headers });
+
+    const criteria = await pepiteGet(get(`/api/sales/${saleId}/pepite`), params);
+    const detail = await pepiteGet(
+      get(`/api/sales/${saleId}/pepite?view=detail`, { authorization: "Bearer token" }),
+      params,
+    );
+    const list = await pepiteIdsGet(get("/api/catalogue/pepites"));
+
+    expect(criteria.status).toBe(429);
+    expect(criteria.headers.get("retry-after")).toBe("11");
+    expect(detail.status).toBe(429);
+    expect(detail.headers.get("retry-after")).toBe("13");
+    expect(list.status).toBe(429);
+    expect(list.headers.get("retry-after")).toBe("11");
+    // Aucun cache sur un refus : ni partagé, ni privé réutilisable.
+    for (const response of [criteria, detail, list]) {
+      expect(response.headers.get("cache-control")).toMatch(/no-store/);
+      expect(response.headers.get("cache-control")).not.toMatch(/s-maxage|max-age=[1-9]/);
+    }
+    // Rien n'est lu : ni la fonction publique, ni la table privée, ni le droit.
+    expect(mocks.pepitePublished).not.toHaveBeenCalled();
+    expect(mocks.pepiteRead).not.toHaveBeenCalled();
+    expect(mocks.pepiteRpc).not.toHaveBeenCalled();
+    expect(mocks.entitlement).not.toHaveBeenCalled();
+    expect(
+      mocks.enforceIp.mock.calls.map(([options]) => [options.bucketKey, options.limit]),
+    ).toEqual([
+      ["sale-pepite", 60],
+      ["catalogue.pepites", 180],
+    ]);
+    expect(mocks.enforceUser).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "user-1", bucketKey: "sale-pepite", limit: 30 }),
+    );
   });
 
   it("allows 10 form submissions per hour for referrals and privacy requests", async () => {

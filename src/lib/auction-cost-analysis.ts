@@ -1,5 +1,7 @@
 import type { AcquisitionCostResult } from "@/lib/profitability";
 import { excerpt, flattenKeyValues, normalizeText } from "@/lib/analysis-text";
+import { asRecordOrNull } from "@/lib/guards";
+import { getSaleProcedure } from "@/lib/sale-procedure";
 import type { AuctionSale, SaleRisk } from "@/lib/types";
 
 export type AuctionCostSourceAmount = {
@@ -180,7 +182,70 @@ function limitations(status: AuctionCostAnalysis["status"]): string[] {
   return items;
 }
 
+/**
+ * Consignation exigée pour enchérir. On lit d'abord les faits typés (montant vérifié dans la
+ * procédure de la vente, puis `deposit_eur` lu par le pipeline dans l'annonce notariale), puis le
+ * texte et les blocs de la source : ceux-ci ne donnent un montant que s'il est sans ambiguïté.
+ */
 export function findConsignation(sale: AuctionSale): AuctionCostSourceAmount | null {
+  return structuredConsignation(sale) ?? consignationFromSourceText(sale);
+}
+
+function structuredConsignation(sale: AuctionSale): AuctionCostSourceAmount | null {
+  const guarantee = getSaleProcedure(sale).procedure?.rules.guarantee;
+  // `regulatory_verified` (minimum légal calculé sur la mise à prix) n'est pas un montant lu.
+  if (guarantee?.status === "case_verified") {
+    const amount = positiveNumber(guarantee.amount_eur);
+    if (amount != null) {
+      return {
+        amountEur: Math.round(amount),
+        label: "Consignation",
+        source: "Procédure de vente vérifiée",
+      };
+    }
+  }
+  const deposit = positiveNumber(saleConditions(sale)?.deposit_eur);
+  if (deposit != null) {
+    return {
+      amountEur: Math.round(deposit),
+      label: "Consignation",
+      source: "Annonce notariale",
+    };
+  }
+  return null;
+}
+
+/**
+ * `sale_conditions` lues par le pipeline dans l'annonce notariale. Trois emplacements :
+ *  - `sale.sale_conditions` : la projection de la base servie au compte Analyse et au compte qui a
+ *    débloqué la vente (`app_private.public_sale_conditions`, liste blanche de champs) : c'est ce
+ *    qui donne à un compte qui a débloqué la vente la même consignation qu'au compte Analyse ;
+ *  - `raw_payload.source_property_features.sale_conditions` : forme certaine (écrite par le
+ *    pipeline), mais `raw_payload` n'est pas exposé au navigateur ni à la vue des ventes débloquées :
+ *    cette branche ne sert aujourd'hui que côté serveur ;
+ *  - `source_blocks.listing_completeness.source_property_features.sale_conditions` : forme projetée
+ *    lue par `property-characteristics.ts`, où chaque fait est un `claim` (`{ state, value }`). Aucune
+ *    migration ni code du dépôt n'écrit ce fait : la forme n'est pas vérifiée, on accepte donc le
+ *    dictionnaire direct ou un `claim` observé dont la valeur est ce dictionnaire.
+ */
+function saleConditions(sale: AuctionSale): Record<string, unknown> | null {
+  const fromView = asRecordOrNull(sale.sale_conditions);
+  if (fromView) return fromView;
+  const fromPayload = asRecordOrNull(
+    asRecordOrNull(asRecordOrNull(sale.raw_payload)?.source_property_features)?.sale_conditions,
+  );
+  if (fromPayload) return fromPayload;
+  const projected = asRecordOrNull(
+    asRecordOrNull(
+      asRecordOrNull(sale.source_blocks?.listing_completeness)?.source_property_features,
+    )?.sale_conditions,
+  );
+  if (!projected) return null;
+  if (projected.state === undefined) return projected;
+  return projected.state === "observed" ? asRecordOrNull(projected.value) : null;
+}
+
+function consignationFromSourceText(sale: AuctionSale): AuctionCostSourceAmount | null {
   const amounts = new Map<number, AuctionCostSourceAmount>();
   const add = (amount: number | null, source: string) => {
     if (amount != null) amounts.set(amount, { amountEur: amount, label: "Consignation", source });

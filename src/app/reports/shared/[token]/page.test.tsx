@@ -75,6 +75,74 @@ describe("shared personal simulation", () => {
   });
 });
 
+describe("shared report of a sale by offers", () => {
+  async function offersMarkup(ceiling: Record<string, unknown>) {
+    mocks.report.mockResolvedValue({
+      title: "Rapport vente interactive",
+      updatedAt: "2026-10-26",
+      sharedAt: null,
+      sale: { startingPrice: 150000 },
+      analysis: {
+        occupancyAnalysis: { available: true },
+        opportunity: { acquisitionCosts: { totalCost: 190000 } },
+      },
+      sourceTrace: [],
+      limitations: [],
+      ceiling: {
+        available: true,
+        maxBid: 120000,
+        regime: "notary_online",
+        label: "Offre plafond (simulation)",
+        scopeNote: "Hors débours et formalités du notaire.",
+        reserveNotice:
+          "Le vendeur n’est pas tenu de retenir la meilleure offre ; prix de réserve inconnu.",
+        estimatedFees: ["Honoraires de négociation"],
+        safetyDiscountPct: 8,
+        basisLabel: "Médiane locale",
+        ...ceiling,
+      },
+    });
+    return renderToStaticMarkup(
+      await SharedReportPage({ params: Promise.resolve({ token: "test" }) }),
+    ).replace(/\s/g, "");
+  }
+
+  it("uses the offer vocabulary and shows the reserve notice, the scope and the estimated fees", async () => {
+    const html = await offersMarkup({
+      personalSimulation: { version: 2, choices: { project: "louer" }, expectedMaxBid: 120000 },
+    });
+    expect(html).toContain("Premièreoffrepossible");
+    expect(html).toContain("Offreplafond(simulation)");
+    expect(html).toContain("Levendeurn’estpastenuderetenirlameilleureoffre;prixderéserveinconnu.");
+    expect(html).toContain("Horsdébourset formalitésdunotaire.".replace(/\s/g, ""));
+    expect(html).toContain("Fraisestimés,àconfirmer:Honorairesdenégociation.");
+    expect(html).toContain("Coûtcompletàlapremièreoffrepossible");
+    expect(html).not.toContain("Miseàprix");
+    expect(html).not.toContain("avantenchère");
+    expect(html).not.toContain("Enchèreplafond");
+  });
+
+  it("keeps the court wording for a report without a regime and does not invent a notice", async () => {
+    const html = await offersMarkup({
+      regime: undefined,
+      label: undefined,
+      scopeNote: null,
+      reserveNotice: null,
+      estimatedFees: [],
+    });
+    expect(html).toContain("Miseàprix");
+    expect(html).toContain("Enchèreplafond(simulation)");
+    expect(html).not.toContain("Réservessurleplafond");
+    expect(html).not.toContain("n’estpastenuderetenir");
+  });
+
+  it("does not show the notices of a ceiling that is unavailable", async () => {
+    const html = await offersMarkup({ available: false, maxBid: null });
+    expect(html).toContain("Donnéesinsuffisantes");
+    expect(html).not.toContain("n’estpastenuderetenir");
+  });
+});
+
 describe("shared report evidence", () => {
   async function evidenceMarkup(evidence: unknown, nextActions: unknown) {
     mocks.report.mockResolvedValue({

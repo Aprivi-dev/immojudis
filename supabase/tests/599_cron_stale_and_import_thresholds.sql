@@ -5,7 +5,7 @@
 --   * un seul échec d'import dans l'heure, file vide, n'ouvre plus pipeline.import.unhealthy.
 begin;
 
-select plan(23);
+select plan(26);
 
 delete from public.operational_alerts;
 delete from public.operational_job_runs;
@@ -23,7 +23,7 @@ language sql as $$
   from unnest(array[
     'operational-health', 'smart-alerts', 'alert-notifications', 'sale-change-monitor',
     'data-retention', 'sale-retention', 'information-agent-inbound', 'listing-completeness',
-    'sale-reminders'
+    'sale-pepites', 'sale-reminders'
   ]) as job_name
   where not (job_name = any (skipped));
 $$;
@@ -66,10 +66,10 @@ select ok(
     from unnest(array[
       'operational-health', 'smart-alerts', 'alert-notifications', 'sale-change-monitor',
       'data-retention', 'sale-retention', 'information-agent-inbound', 'listing-completeness',
-      'sale-reminders'
+      'sale-pepites', 'sale-reminders'
     ]) as job_name
   ),
-  'les neuf tâches attendues sont toujours dans la liste'
+  'les dix tâches attendues sont toujours dans la liste'
 );
 
 select ok(
@@ -126,6 +126,56 @@ select ok(
     where alert_key = 'cron.stale'
   ),
   'cron.stale s''ouvre en critique et nomme la tâche périmée'
+);
+
+-- ---------------------------------------------------------------------------------------------
+-- cron.stale pour sale-pepites (20261104100100) : seuil de 3 heures (trois passages horaires manqués).
+-- Un succès terminé il y a 2 h 59 passe, un succès de 3 h 01 est périmé et nommé par l'alerte.
+-- ---------------------------------------------------------------------------------------------
+delete from public.operational_alerts;
+delete from public.operational_job_runs;
+select pg_temp.fresh_runs((select p_now from pgtap_599_context), array['sale-pepites']);
+insert into public.operational_job_runs (job_name, status, started_at, finished_at)
+values (
+  'sale-pepites', 'success',
+  '2026-10-20T10:00:00Z'::timestamptz - interval '3 hours',
+  '2026-10-20T10:00:00Z'::timestamptz - interval '2 hours 59 minutes'
+);
+
+select is(
+  (
+    select public.evaluate_operational_health((select p_now from pgtap_599_context))
+      ->'stale_cron_jobs'
+  ),
+  '[]'::jsonb,
+  'un succès de sale-pepites il y a 2 h 59 n''est pas périmé'
+);
+
+delete from public.operational_job_runs where job_name = 'sale-pepites';
+insert into public.operational_job_runs (job_name, status, started_at, finished_at)
+values (
+  'sale-pepites', 'success',
+  '2026-10-20T10:00:00Z'::timestamptz - interval '3 hours 5 minutes',
+  '2026-10-20T10:00:00Z'::timestamptz - interval '3 hours 1 minute'
+);
+
+select is(
+  (
+    select public.evaluate_operational_health((select p_now from pgtap_599_context))
+      ->'stale_cron_jobs'
+  ),
+  '["sale-pepites"]'::jsonb,
+  'un succès de sale-pepites il y a 3 h 01 est périmé'
+);
+
+select ok(
+  (
+    select status = 'open' and severity = 'critical'
+      and details->'stale_jobs' = '["sale-pepites"]'::jsonb
+    from public.operational_alerts
+    where alert_key = 'cron.stale'
+  ),
+  'cron.stale s''ouvre en critique et nomme sale-pepites'
 );
 
 -- ---------------------------------------------------------------------------------------------

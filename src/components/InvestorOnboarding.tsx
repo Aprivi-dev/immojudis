@@ -19,7 +19,17 @@ const steps = ["Votre secteur", "Vos critères", "Votre première recherche"];
 const inputClass =
   "w-full rounded-lg border border-border bg-background px-4 py-3 text-base text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold";
 
-export function InvestorOnboarding({ returnTo }: { returnTo?: string } = {}) {
+export function InvestorOnboarding({
+  returnTo,
+  unlockHighlights = UNLOCK_HIGHLIGHTS_INLINE_TEXT,
+}: {
+  returnTo?: string;
+  /**
+   * Ce qu'un déblocage ouvre, composé par la page serveur avec les régimes de frais ouverts
+   * (`unlockHighlightsInlineText`) ; absent : le texte des régimes ouverts par défaut.
+   */
+  unlockHighlights?: string;
+} = {}) {
   const router = useRouter();
   const launchOffer = useLaunchOffer().active;
   const [step, setStep] = useState(0);
@@ -216,7 +226,7 @@ export function InvestorOnboarding({ returnTo }: { returnTo?: string } = {}) {
                 ) : (
                   <>
                     Chaque mois, vous pouvez débloquer {MONTHLY_SALE_UNLOCKS} ventes en détail (
-                    {UNLOCK_HIGHLIGHTS_INLINE_TEXT}). L’offre Analyse les ouvre toutes.
+                    {unlockHighlights}). L’offre Analyse les ouvre toutes.
                   </>
                 )}
               </p>

@@ -83,10 +83,12 @@ select is(
             select max(other.ordinal_position)
               from information_schema.columns other
              where other.table_schema = 'public' and other.table_name = columns.table_name
+               -- 20261103110000 appends sale_conditions after it in the fiche and unlocked views.
+               and other.column_name <> 'sale_conditions'
           )
      ) last_columns),
   array['v_auction_sales_app', 'v_auction_sales_discovery', 'v_auction_sales_unlocked']::text[],
-  'location_precision is the last column, of type text, in the three sale views'
+  'location_precision is the last column (sale_conditions aside), of type text, in the three sale views'
 );
 select ok(
   (select pg_get_viewdef('public.v_auction_sales_discovery'::regclass) ~ 'public_position_quality_flags\(s\.quality_flags\) AS quality_flags')

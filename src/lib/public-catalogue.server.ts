@@ -1,6 +1,8 @@
 import { unstable_cache } from "next/cache";
 import { excludeHomepageExampleSales } from "@/lib/example-sale-identity";
 import {
+  pepitePage,
+  readPepiteScan,
   runPreviewSearch,
   type PreviewRpcClient,
   type PreviewSearchResponse,
@@ -83,10 +85,27 @@ export type CatalogueDependencies = {
   withdrawnSourcesClient?: WithdrawnSourcesClient | null;
 };
 
-function defaultSearch(search: SalesSearchParams): Promise<PreviewSearchResponse> {
+/**
+ * Durée de garde de la lecture complète d'un filtre « Pépites seulement » (sans la pagination), par recherche de
+ * base : le balayage du catalogue (jusqu'à 30 pages) ne se refait pas à chaque page ni à chaque visiteur. Sous le
+ * tag `public-catalogue` : l'arrêt d'urgence des pépites et les retraits de ventes la purgent.
+ */
+export const PEPITE_SCAN_REVALIDATE_SECONDS = 120;
+
+async function defaultSearch(search: SalesSearchParams): Promise<PreviewSearchResponse> {
   const client = createPublicSupabaseClient();
-  if (!client) return Promise.reject(new Error("Supabase n'est pas configuré côté serveur."));
-  return runPreviewSearch(client as unknown as PreviewRpcClient, search);
+  if (!client) throw new Error("Supabase n'est pas configuré côté serveur.");
+  const rpcClient = client as unknown as PreviewRpcClient;
+  if (search.pepite) {
+    const base = { ...search, pepite: undefined, page: undefined, limit: undefined };
+    const rows = await unstable_cache(
+      () => readPepiteScan(rpcClient, base),
+      ["public-catalogue", "pepite-scan", "v1", salesSearchSignature(base)],
+      { revalidate: PEPITE_SCAN_REVALIDATE_SECONDS, tags: [PUBLIC_CATALOGUE_CACHE_TAG] },
+    )();
+    return pepitePage(rows, search);
+  }
+  return runPreviewSearch(rpcClient, search);
 }
 
 /**

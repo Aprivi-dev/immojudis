@@ -10,7 +10,10 @@ export type CeilingGap = {
   reason: string;
 };
 
-export const UNPROFITABLE_HEADLINE = "Marge de sécurité non tenue avec ces hypothèses";
+/** Plafond calculé, mais inatteignable : même le premier euro dépasse le coût total maximal. */
+export const UNPROFITABLE_HEADLINE = "Aucun prix ne tient";
+export const UNPROFITABLE_EXPLANATION =
+  "Les frais, les travaux et la libération dépassent déjà le budget que permettent la valeur du bien et vos objectifs.";
 
 /** Motif pour lequel la valeur de marché manque, d'après la surface et l'état du calcul. */
 export function valueGapReason({

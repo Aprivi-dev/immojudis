@@ -83,6 +83,128 @@ describe("property report rental PDF", () => {
     expect(REPORT_PDF_HEADINGS).not.toContain("Enchère plafond");
   });
 
+  it("writes « Offre plafond (simulation) » with the seller mention and the estimated fees for a sale by offers", () => {
+    const report = reportWithRentalScenario();
+    report.ceiling_snapshot = {
+      available: true,
+      maxBid: 80_000,
+      regime: "notary_online",
+      label: "Offre plafond (simulation)",
+      scopeNote: "Hors débours et formalités du notaire.",
+      reserveNotice:
+        "Le vendeur n’est pas tenu de retenir la meilleure offre ; prix de réserve inconnu.",
+      estimatedFees: [{ key: "negotiation", label: "Honoraires de négociation", amount: null }],
+      steps: [],
+    } as Json;
+    const lines = reportToPdfLines(report, buildPlanEntitlements("analyse"));
+
+    expect(REPORT_PDF_HEADINGS).toContain("Offre plafond (simulation)");
+    expect(lines).toContain("Offre plafond (simulation)");
+    expect(lines.some((line) => line.startsWith("Offre plafond (simulation): 80"))).toBe(true);
+    expect(lines).toContain("Hors débours et formalités du notaire.");
+    expect(lines).toContain(
+      "Le vendeur n’est pas tenu de retenir la meilleure offre ; prix de réserve inconnu.",
+    );
+    expect(lines).toContain("Frais estimés, à confirmer : Honoraires de négociation");
+    expect(lines).not.toContain("Enchère plafond (simulation)");
+  });
+
+  it("uses the wording of a sale by offers: first offer, no auction, no court fees", () => {
+    const report = reportWithRentalScenario();
+    const snapshot = report.report_snapshot as { sale: Record<string, unknown> };
+    report.report_snapshot = {
+      ...snapshot,
+      sale: { ...snapshot.sale, startingPrice: 150_000 },
+      analysis: {
+        opportunity: { acquisitionCosts: { acquisitionFeesTotal: 12_000 } },
+      },
+    } as Json;
+    report.ceiling_snapshot = {
+      available: true,
+      maxBid: 120_000,
+      regime: "notary_online",
+      label: "Offre plafond (simulation)",
+      estimatedFees: [],
+      steps: [],
+    } as Json;
+    const lines = reportToPdfLines(report, buildPlanEntitlements("analyse"));
+    const text = lines.join("\n");
+
+    expect(lines.some((line) => line.startsWith("Première offre possible: 150"))).toBe(true);
+    expect(lines).toContain("Frais de l’opération: frais et consignation à confirmer");
+    expect(lines).toContain("Coût complet à la première offre possible: à compléter");
+    expect(lines).toContain(
+      "Plafond inférieur à la première offre possible : ce scénario ne permet pas de faire une offre.",
+    );
+    expect(text).toContain("honoraires de négociation et frais de publicité selon l’annonce");
+    expect(text).not.toMatch(/Mise à prix:|Frais adjudication|avant enchère|d’enchérir/);
+    expect(text).not.toMatch(/frais de poursuite|honoraires d’avocat/);
+    expect(text).toContain("Relire les pièces officielles avant toute offre.");
+  });
+
+  it("keeps the court wording for a tribunal report and for a report saved before the regimes", () => {
+    const before = reportWithRentalScenario();
+    before.report_snapshot = {
+      ...(before.report_snapshot as Record<string, unknown>),
+      analysis: { opportunity: { acquisitionCosts: { acquisitionFeesTotal: 12_000 } } },
+    } as Json;
+    const lines = reportToPdfLines(before, buildPlanEntitlements("analyse"));
+    expect(lines.some((line) => line.startsWith("Mise à prix: "))).toBe(true);
+    expect(lines.some((line) => line.startsWith("Frais adjudication: "))).toBe(true);
+    expect(lines).toContain("- Relire les pièces officielles avant toute enchère.");
+    expect(lines.join("\n")).toContain("frais de poursuite, honoraires d’avocat");
+  });
+
+  it("masks the ceiling of a report whose fee regime has been switched off", () => {
+    const report = reportWithRentalScenario();
+    const snapshot = report.report_snapshot as { analysis: Record<string, unknown> };
+    report.report_snapshot = {
+      ...snapshot,
+      analysis: {
+        ...snapshot.analysis,
+        opportunity: {
+          bidCeiling: { available: true, maxBid: 123_000, marginTotal: 4_000 },
+        },
+      },
+    } as Json;
+    report.ceiling_snapshot = {
+      available: true,
+      maxBid: 123_000,
+      targetTotalCost: 150_000,
+      regime: "notary_online",
+      label: "Offre plafond (simulation)",
+      reserveNotice: "Le vendeur n’est pas tenu de retenir la meilleure offre.",
+      steps: [{ key: "x", label: "Étape", amount: 1_000, kind: "add" }],
+      personalSimulation: { version: 2, monthlyRent: 700 },
+    } as Json;
+    const plan = buildPlanEntitlements("analyse");
+
+    const open = reportToPdfLines(report, plan, ["tribunal", "notary_online"]).join("\n");
+    expect(open).toContain("Offre plafond (simulation): 123");
+
+    const closed = reportToPdfLines(report, plan, ["tribunal"]);
+    const text = closed.join("\n");
+    expect(closed).toContain(
+      "Offre plafond (simulation): indisponible (Pas d’enchère plafond pour ce type de vente)",
+    );
+    expect(text).not.toMatch(/123\s?000|150\s?000/);
+    expect(text).not.toContain("Calcul du plafond");
+    expect(text).not.toContain("Le vendeur n’est pas tenu");
+    expect(text).not.toContain("Scénario personnel sauvegardé");
+    // The financing dossier does not carry the amount either.
+    expect(
+      closed.some((line) => line.startsWith("Offre plafond (simulation): non renseigné")),
+    ).toBe(true);
+  });
+
+  it("keeps « Enchère plafond (simulation) » for a report saved before the regimes, with no notarial mention", () => {
+    const lines = reportToPdfLines(reportWithRentalScenario(), buildPlanEntitlements("analyse"));
+    expect(lines).toContain("Enchère plafond (simulation)");
+    expect(
+      lines.some((line) => /Hors débours|prix de réserve|Frais estimés, à confirmer/.test(line)),
+    ).toBe(false);
+  });
+
   it("prints personal hypotheses and results instead of default rentability metrics", () => {
     const lines = reportToPdfLines(reportWithRentalScenario(), buildPlanEntitlements("analyse"));
 

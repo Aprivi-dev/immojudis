@@ -78,7 +78,7 @@ const FAQ: Array<{ q: string; a: string }> = [
   },
   {
     q: "Que se passe-t-il en cas de surenchère ?",
-    a: "En saisie immobilière, toute personne peut former une surenchère d’au moins un dixième du prix principal, par acte d’avocat déposé au greffe du juge de l’exécution dans les dix jours qui suivent l’adjudication (art. R. 322-50 et R. 322-51). Ces dix jours se comptent à partir du lendemain de l’adjudication, week-ends et jours fériés compris ; si le dixième jour est un samedi, un dimanche ou un jour férié, le délai est prorogé jusqu’au premier jour ouvrable suivant (art. 641 et 642 du Code de procédure civile). Une nouvelle audience a alors lieu deux à quatre mois plus tard, et l’adjudication initiale n’est pas définitive. En licitation, la surenchère du dixième se forme dans les dix jours de l’adjudication définitive (art. 1279, qui renvoie aux art. R. 322-50 à R. 322-55 du CPCE). Devant notaire, la forme exacte est à confirmer avec l’avocat ou le notaire. Dans une vente notariale volontaire, elle n’est pas prévue par la loi : seul le cahier des charges peut la prévoir (Notaires de France décrit 10\u00a0% dans les 10 jours pour la vente « à la bougie »). Dans une vente domaniale, tout dépend du cahier des charges. Lisez-le avant d’enchérir.",
+    a: "En saisie immobilière, toute personne peut former une surenchère d’au moins un dixième du prix principal, par acte d’avocat déposé au greffe du juge de l’exécution dans les dix jours qui suivent l’adjudication (art. R. 322-50 et R. 322-51). Ces dix jours se comptent à partir du lendemain de l’adjudication, week-ends et jours fériés compris ; si le dixième jour est un samedi, un dimanche ou un jour férié, le délai est prorogé jusqu’au premier jour ouvrable suivant (art. 641 et 642 du Code de procédure civile). Une nouvelle audience a alors lieu deux à quatre mois plus tard, et l’adjudication initiale n’est pas définitive. En licitation, la surenchère du dixième se forme dans les dix jours de l’adjudication définitive (art. 1279, qui renvoie aux art. R. 322-50 à R. 322-55 du CPCE). Dans les deux cas, celui qui surenchérit doit remettre à son avocat une caution bancaire irrévocable ou un chèque de banque du dixième du prix principal (art. R. 322-51). Devant notaire, la forme exacte est à confirmer avec l’avocat ou le notaire. Dans une vente notariale volontaire, nous n’avons identifié dans la loi que la surenchère des créanciers inscrits : lorsque l’acquéreur purge les hypothèques, tout créancier inscrit dispose de quarante jours à compter de la notification pour requérir la remise aux enchères en surenchérissant du dixième avec caution (art. 2464 et 2465 du Code civil) ; ce délai ne part pas de l’adjudication. Cette surenchère est distincte de la clause de 10\u00a0% en 10 jours que seul le cahier des charges peut prévoir (Notaires de France la décrit pour la vente « à la bougie »). Dans une vente domaniale, tout dépend du cahier des charges. Lisez-le avant d’enchérir.",
   },
   {
     q: "Quels frais s’ajoutent au prix d’adjudication ?",
@@ -183,7 +183,7 @@ const LEXIQUE: Array<{ term: string; def: string }> = [
   },
   {
     term: "Frais taxés",
-    def: "Frais de la procédure dont le juge a fixé le montant et qui sont annoncés avant l’ouverture des enchères (art. R. 322-42). L’adjudicataire les paie en plus du prix.",
+    def: "Frais de la procédure dont le juge a fixé le montant et qui sont annoncés avant l’ouverture des enchères (art. R. 322-42 ; paiement en sus du prix : art. R. 322-58).",
   },
   {
     term: "Garantie pour enchérir",
@@ -247,6 +247,11 @@ const INSTITUTIONAL_LINKS: Array<{ href: string; label: string }> = [
   {
     href: "https://www.legifrance.gouv.fr/codes/id/LEGISCTA000025939177",
     label: "Légifrance — Surenchère",
+  },
+  {
+    href: "https://www.legifrance.gouv.fr/codes/section_lc/LEGITEXT000006070721/LEGISCTA000044062143/",
+    label:
+      "Légifrance — Code civil, section « De la purge » (surenchère des créanciers inscrits, art. 2464 et 2465)",
   },
   {
     href: "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000006411002",
@@ -895,12 +900,18 @@ export function ResourcesPage() {
               indiquera l’heure limite de dépôt. La surenchère du dixième dans les dix jours est une
               règle légale en saisie immobilière (art. R. 322-50 et R. 322-51 du CPCE). En
               licitation, la surenchère du dixième se forme dans les dix jours de l’adjudication
-              définitive (art. 1279, qui renvoie aux art. R. 322-50 à R. 322-55 du CPCE). Devant
-              notaire, la forme exacte est à confirmer avec l’avocat ou le notaire. Dans une vente
-              notariale volontaire, elle n’est pas prévue par la loi : seul le cahier des charges
-              peut la prévoir (Notaires de France décrit 10&nbsp;% dans les 10 jours pour la vente «
-              à la bougie »). Dans une vente domaniale, tout dépend du cahier des charges. Lisez-le
-              avant d’enchérir.
+              définitive (art. 1279, qui renvoie aux art. R. 322-50 à R. 322-55 du CPCE). Dans les
+              deux cas, celui qui surenchérit doit remettre à son avocat une caution bancaire
+              irrévocable ou un chèque de banque du dixième du prix principal (art. R. 322-51).
+              Devant notaire, la forme exacte est à confirmer avec l’avocat ou le notaire. Dans une
+              vente notariale volontaire, nous n’avons identifié dans la loi que la surenchère des
+              créanciers inscrits : lorsque l’acquéreur purge les hypothèques, tout créancier
+              inscrit dispose de quarante jours à compter de la notification pour requérir la remise
+              aux enchères en surenchérissant du dixième avec caution (art. 2464 et 2465 du Code
+              civil) ; ce délai ne part pas de l’adjudication. Cette surenchère est distincte de la
+              clause de 10&nbsp;% en 10 jours que seul le cahier des charges peut prévoir (Notaires
+              de France la décrit pour la vente « à la bougie »). Dans une vente domaniale, tout
+              dépend du cahier des charges. Lisez-le avant d’enchérir.
             </P>
             <P>
               Vous pouvez consulter le texte officiel sur Légifrance :{" "}
