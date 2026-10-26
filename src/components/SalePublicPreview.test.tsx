@@ -3,7 +3,7 @@
 import { act, cleanup, render, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { hydrateRoot } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderToString } from "react-dom/server";
 import { axe } from "vitest-axe";
 import {
@@ -19,6 +19,7 @@ import { publicSaleVenueCopy, SalePublicPreview } from "./SalePublicPreview";
 import { pepiteCriteriaPayload, pepiteCriteriaViews } from "@/lib/sale-pepite-view";
 
 const pepiteMocks = vi.hoisted(() => ({ pepite: vi.fn() }));
+const dynamicLoads = vi.hoisted((): Promise<unknown>[] => []);
 vi.mock("@/hooks/use-sale-pepite", () => ({
   useSalePepite: (args: unknown) => pepiteMocks.pepite(args),
 }));
@@ -26,15 +27,20 @@ vi.mock("next/dynamic", () => ({
   default: (loader: () => Promise<React.ComponentType<Record<string, unknown>>>) => {
     // Le bloc chargé à la demande : le vrai composant, résolu tout de suite.
     let Component: React.ComponentType<Record<string, unknown>> | null = null;
-    void loader().then((resolved) => {
-      Component = resolved;
-    });
+    dynamicLoads.push(
+      loader().then((resolved) => {
+        Component = resolved;
+      }),
+    );
     return function Lazy(props: Record<string, unknown>) {
       return Component ? <Component {...props} /> : null;
     };
   },
 }));
 
+// Every lazy module (the pépite block, the alert form) finishes loading before the first test,
+// never after the environment is torn down.
+beforeAll(() => Promise.all(dynamicLoads));
 afterEach(cleanup);
 
 describe("SalePublicPreview", () => {
