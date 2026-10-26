@@ -20,6 +20,8 @@ import { formatPrice, formatStartingPrice } from "@/lib/format";
 import type { MarketEstimate } from "@/lib/market.server";
 import { describeMarketGap } from "@/lib/market-gap";
 import type { CeilingMarketEstimate } from "@/lib/market-estimate-ceiling";
+import { FEE_REGIME_TERMS } from "@/lib/fee-regime-labels";
+import { feeRegimeKeyForVenue, type FeeRegimeKey } from "@/lib/fee-regime-open";
 import { getSaleProcedure } from "@/lib/sale-procedure";
 import { loginPathWithRedirect, saleDetailPath } from "@/lib/navigation";
 import { getMarketValuationSurfaces } from "@/lib/surface";
@@ -159,10 +161,13 @@ export function NonJudicialDecisionPanel({
   sale,
   marketEstimate,
   marketLoading,
+  priceBlocked = false,
 }: {
   sale: AuctionSale;
   marketEstimate: MarketEstimate | null;
   marketLoading: boolean;
+  /** The AI review blocks the price: `sale` then carries none, which is not « not published ». */
+  priceBlocked?: boolean;
 }) {
   const venue = getSaleProcedure(sale).venueType;
   const value =
@@ -172,7 +177,12 @@ export function NonJudicialDecisionPanel({
       <dl className={panelStyles.priceGrid}>
         <div>
           <dt>{venue === "state" ? "Prix publié" : markerLabel("Mise à prix")}</dt>
-          <dd>{startingPriceOrConfirm(sale.starting_price_eur)}</dd>
+          <dd>
+            {/* Cession domaniale sans prix : la source n'en publie pas. */}
+            {venue === "state" && !priceBlocked && !((sale.starting_price_eur ?? 0) > 0)
+              ? "Prix non publié"
+              : startingPriceOrConfirm(sale.starting_price_eur)}
+          </dd>
         </div>
         <div>
           <dt>Valeur estimée</dt>
@@ -193,7 +203,17 @@ export function NonJudicialDecisionPanel({
   );
 }
 
-export function DiscoveryDecisionPanel({ sale }: { sale: AuctionSale }) {
+export function DiscoveryDecisionPanel({
+  sale,
+  openFeeRegimes,
+}: {
+  sale: AuctionSale;
+  /** Fee regimes whose bid ceiling is open (see `parseOpenFeeRegimes`); absent: the tribunal only. */
+  openFeeRegimes?: readonly FeeRegimeKey[];
+}) {
+  // The unlock is promised only for a sale whose fee regime is open: it opens the bid ceiling.
+  const regimeKey = feeRegimeKeyForVenue(getSaleProcedure(sale).venueType, openFeeRegimes);
+  const ceilingTerms = regimeKey ? (FEE_REGIME_TERMS[regimeKey] ?? null) : null;
   const { user, loading: authLoading } = useAuth();
   // The value route requires an account: a visitor never gets an answer from it.
   const preview = useQuery({
@@ -266,13 +286,13 @@ export function DiscoveryDecisionPanel({ sale }: { sale: AuctionSale }) {
       ) : null}
       <PremiumFeaturePreview
         title={
-          getSaleProcedure(sale).venueType === "tribunal"
-            ? "Les comparables et les travaux avec l’offre Analyse ; l’enchère plafond aussi en débloquant cette vente"
+          ceilingTerms
+            ? `Les comparables et les travaux avec l’offre Analyse ; ${ceilingTerms.ceilingTermWithArticle} aussi en débloquant cette vente`
             : "Les comparables et les travaux avec l’offre Analyse"
         }
         description="Le calcul complet de la mise à ne pas dépasser : valeur du bien, marge, travaux, libération, portage et tous les frais de la vente, avec les ventes comparables du secteur."
         labels={["Enchère plafond (simulation)", "Ventes comparables", "Travaux et frais"]}
-        unlockOffer={getSaleProcedure(sale).venueType === "tribunal"}
+        unlockOffer={ceilingTerms != null}
       />
     </aside>
   );

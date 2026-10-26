@@ -6,7 +6,8 @@ import {
 import { formatDate, formatStartingPrice, propertyTypeLabel } from "@/lib/format";
 import { parisDateKey } from "@/lib/sale-countdown";
 import { saleDisplayTitle } from "@/lib/sale-title";
-import { saleIsTribunalVenue } from "@/lib/sale-procedure";
+import { feeRegimeKeyForVenue } from "@/lib/fee-regime-open";
+import { getSaleProcedure } from "@/lib/sale-procedure";
 import { FREE_ACCESS_LINE } from "@/lib/sale-unlocks";
 import type { AuctionSale } from "@/lib/types";
 
@@ -66,9 +67,36 @@ export const LISTING_DETAIL_LINE = "Voir le détail";
  */
 export const LISTING_LAUNCH_OFFER_LINE = "Inscription gratuite : 7 jours d’offre Analyse";
 
+/** Mention d'une cession domaniale dont la source ne publie aucun prix. */
+export const STATE_PRICE_NOT_PUBLISHED = "Prix non publié";
+
+/** Cession domaniale (`venueType` « state ») sans prix publié : `starting_price_eur` absent ou nul. */
+export function stateSaleWithoutPrice(sale: AuctionSale): boolean {
+  // Le prix d'abord : une vente qui en publie un n'a pas besoin du type de vente.
+  return (
+    !(sale.starting_price_eur != null && sale.starting_price_eur > 0) &&
+    getSaleProcedure(sale).venueType === "state"
+  );
+}
+
 /**
- * Ce que la fiche coûte au visiteur : un compte gratuit, un déblocage mensuel (ventes au tribunal
- * seulement) ou rien (« Voir le détail »). Offre de lancement active (`launchOffer`) : la ligne
+ * Le prix d'une carte de résultat : « Prix non publié » pour une cession domaniale sans prix, sinon
+ * la mise à prix (ou « Prix non communiqué » quand elle manque).
+ */
+export function listingPriceText(sale: AuctionSale): string {
+  return stateSaleWithoutPrice(sale)
+    ? STATE_PRICE_NOT_PUBLISHED
+    : formatStartingPrice(sale.starting_price_eur);
+}
+
+/** Un régime de frais est ouvert pour cette vente : le déblocage ouvre son plafond. */
+function ceilingOpenFor(sale: AuctionSale): boolean {
+  return feeRegimeKeyForVenue(getSaleProcedure(sale).venueType) != null;
+}
+
+/**
+ * Ce que la fiche coûte au visiteur : un compte gratuit, un déblocage mensuel (ventes dont le
+ * plafond est ouvert, le tribunal aujourd'hui) ou rien (« Voir le détail »). Offre de lancement active (`launchOffer`) : la ligne
  * courte de l'offre (`LISTING_LAUNCH_OFFER_LINE`) à la place de « 3 fiches détaillées par mois »,
  * pour toutes les ventes. Tant que l'état de l'offre est inconnu (`launchPending`, rendu serveur
  * compris), la ligne reste neutre : aucune promesse de quota qui serait remplacée à l'hydratation.
@@ -93,10 +121,10 @@ export function listingAccessLine(
   if (access.verifying || access.launchPending) return LISTING_DETAIL_LINE;
   if (access.locked) {
     if (access.launchOffer) return LISTING_LAUNCH_OFFER_LINE;
-    return saleIsTribunalVenue(sale) ? FREE_ACCESS_LINE : "Fiche complète avec un compte gratuit";
+    return ceilingOpenFor(sale) ? FREE_ACCESS_LINE : "Fiche complète avec un compte gratuit";
   }
-  // Le déblocage n'est proposé que pour les ventes tenues au tribunal.
-  if (access.analysisLocked && !access.unlocked && saleIsTribunalVenue(sale)) {
+  // Le déblocage n'est proposé que pour les ventes dont le plafond est ouvert (régime de frais).
+  if (access.analysisLocked && !access.unlocked && ceilingOpenFor(sale)) {
     return FREE_ACCESS_LINE;
   }
   return LISTING_DETAIL_LINE;
@@ -130,6 +158,7 @@ export function listingLinkLabel(
   blocked: { price?: boolean; date?: boolean } = {},
 ): string {
   if (!blocked.price && sale.starting_price_eur != null && sale.starting_price_eur > 0) {
+    // Prix positif : le texte est celui de la mise à prix, jamais « Prix non publié ».
     return `Voir ${title}, ${formatStartingPrice(sale.starting_price_eur)}`;
   }
   if (!blocked.date && sale.sale_date) {

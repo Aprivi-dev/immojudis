@@ -5,6 +5,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
 import { getExampleSaleRecords } from "@/lib/example-sale";
+import { buildCeilingSnapshot } from "@/lib/property-report/ceiling-snapshot";
+import { computeSaleCeiling } from "@/lib/sale-ceiling";
 
 // Dated relative to today, like /annonce-exemple: the frozen records would turn into a past sale.
 const EXAMPLE_SALE_RECORDS = getExampleSaleRecords();
@@ -1107,6 +1109,54 @@ describe("« 3 déblocages par mois » on the sale page", () => {
       ).toBeGreaterThan(0),
     );
   });
+
+  it("shows the same ceiling as computeSaleCeiling and as the saved report", async () => {
+    mocks.authUser = { id: "user-1" };
+    const { sale, marketEstimate } = EXAMPLE_SALE_RECORDS.bordeaux;
+    renderDetail("analysis", sale, false, false, marketEstimate);
+
+    const card = await screen.findByRole("region", { name: "Mon dossier" });
+    const onPage = Number(card.getAttribute("data-ceiling"));
+    const shared = computeSaleCeiling({
+      sale,
+      estimate: marketEstimate,
+      aiProjections: [],
+      aiReviewStatus: "ready",
+    });
+    const report = buildCeilingSnapshot(sale, marketEstimate);
+
+    expect(onPage).toBeGreaterThan(0);
+    expect(shared.enabled).toBe(true);
+    expect(onPage).toBe(shared.plan.maxBid);
+    expect(report.maxBid).toBe(onPage);
+  });
+
+  it.each(["notary", "state"] as const)(
+    "opens no ceiling on a %s sale even when its regimes are listed as open (no rules defined yet)",
+    (venue) => {
+      const sale = {
+        ...EXAMPLE_SALE_RECORDS.bordeaux.sale,
+        sale_venue_type: venue,
+        sale_procedure: null,
+        source_blocks: null,
+      } as AuctionSale;
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      mocks.fetchAiReviewProjections.mockResolvedValue({ projections: [] });
+      const { container } = render(
+        <QueryClientProvider client={client}>
+          <AnalysisSaleDetailView
+            sale={sale}
+            marketEstimateOverride={EXAMPLE_SALE_RECORDS.bordeaux.marketEstimate}
+            openFeeRegimes={["tribunal", "notary_auction", "notary_online", "state_auction"]}
+          />
+        </QueryClientProvider>,
+      );
+      selectTab("Prix et plafond");
+
+      expect(screen.getByRole("heading", { name: "Prix et marché" })).toBeTruthy();
+      expect(container.querySelector("#calculation")).toBeNull();
+    },
+  );
 
   it("offers « Mon dossier » without any ceiling to a free account that has not unlocked the sale", async () => {
     renderFree(unlockStatus());

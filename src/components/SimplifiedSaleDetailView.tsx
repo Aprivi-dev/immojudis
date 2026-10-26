@@ -6,7 +6,7 @@ import type { MouseEvent as ReactMouseEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
 import ArrowLeft from "lucide-react/dist/esm/icons/arrow-left.js";
-import { listingSaleStatus, listingValuationConflict } from "@/lib/listing-evidence";
+import { listingSaleStatus } from "@/lib/listing-evidence";
 import { useAuth } from "@/hooks/use-auth";
 import { salesReturnHref, salesReturnLabel } from "@/lib/navigation";
 import { DocumentReadingSection } from "@/components/sale-detail/DocumentReadingSection";
@@ -49,8 +49,9 @@ import {
 import type { MarketEstimate } from "@/lib/market.server";
 import { isDetailedMarketEstimate } from "@/lib/market-estimate-ceiling";
 import { computeAcquisitionCosts } from "@/lib/profitability";
-import { buildCeilingHypotheses } from "@/lib/bid-ceiling-defaults";
-import { computeCeilingPlan, maxWorksAtBid } from "@/lib/bid-ceiling-engine";
+import { maxWorksAtBid } from "@/lib/bid-ceiling-engine";
+import type { FeeRegimeKey } from "@/lib/fee-regime";
+import { assessSaleCeilingInputs, computeSaleCeiling } from "@/lib/sale-ceiling";
 import { ceilingGap, valueGapReason } from "@/lib/bid-ceiling-gaps";
 import { buildDpeAnalysis } from "@/lib/dpe-analysis";
 import { CeilingPlanner } from "@/components/ceiling/CeilingPlanner";
@@ -67,10 +68,8 @@ import {
   saleHasVerifiedTribunal,
   saleIsTribunalVenue,
 } from "@/lib/sale-procedure";
-import { getMarketValuationSurfaces } from "@/lib/surface";
 import { buildReportRentalScenario } from "@/lib/report-simulation";
 import {
-  AI_REVIEW_SURFACE_FIELD_KEYS,
   getAiReviewFieldResult,
   type AiReviewProjectionReadModel,
   type AiReviewRequestStatus,
@@ -86,7 +85,6 @@ import {
   revealAnchor,
   tabForAnchor,
 } from "@/components/sale-detail/sale-detail-anchors";
-import { saleForAiReviewDisplay } from "@/components/sale-detail/ai-review-display";
 import { PropertyIdentity } from "@/components/sale-detail/SaleDetailPropertyIdentity";
 import {
   AnalysisDecisionPanel,
@@ -168,6 +166,11 @@ type SaleDetailProps = {
   backLabel?: string;
   publicDemo?: boolean;
   adjudicationStatisticsEnabled?: boolean;
+  /**
+   * Fee regimes whose bid ceiling is open (server switch `CEILING_FEE_REGIMES_OPEN`, see
+   * `parseOpenFeeRegimes`). Absent: the tribunal only, which is always open.
+   */
+  openFeeRegimes?: readonly FeeRegimeKey[];
   aiReviewProjections?: readonly AiReviewProjectionReadModel[] | null;
   /** Where the account stands this month; drives the « Débloquer cette vente » panel. */
   unlockStatus?: SaleUnlockStatus | null;
@@ -183,6 +186,7 @@ export function AnalysisSaleDetailView({
   backLabel,
   publicDemo = false,
   adjudicationStatisticsEnabled = false,
+  openFeeRegimes,
   aiReviewProjections = null,
 }: SaleDetailProps) {
   return (
@@ -194,6 +198,7 @@ export function AnalysisSaleDetailView({
       backLabel={backLabel}
       publicDemo={publicDemo}
       adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
+      openFeeRegimes={openFeeRegimes}
       aiReviewProjections={aiReviewProjections}
       access="analysis"
     />
@@ -204,6 +209,7 @@ export function FreeSaleDetailView({
   sale,
   returnTo = "/sales",
   adjudicationStatisticsEnabled = false,
+  openFeeRegimes,
   aiReviewProjections = null,
   unlockStatus = null,
   justUnlocked = false,
@@ -215,6 +221,7 @@ export function FreeSaleDetailView({
       sale={sale}
       returnTo={returnTo}
       adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
+      openFeeRegimes={openFeeRegimes}
       aiReviewProjections={aiReviewProjections}
       unlockStatus={unlockStatus}
       justUnlocked={justUnlocked}
@@ -229,6 +236,7 @@ export function UnlockedSaleDetailView({
   sale,
   returnTo = "/sales",
   adjudicationStatisticsEnabled = false,
+  openFeeRegimes,
   aiReviewProjections = null,
   unlockStatus = null,
   justUnlocked = false,
@@ -239,6 +247,7 @@ export function UnlockedSaleDetailView({
       sale={sale}
       returnTo={returnTo}
       adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
+      openFeeRegimes={openFeeRegimes}
       aiReviewProjections={aiReviewProjections}
       unlockStatus={unlockStatus}
       justUnlocked={justUnlocked}
@@ -259,6 +268,7 @@ function SaleDetailWorkspace({
   backLabel,
   publicDemo = false,
   adjudicationStatisticsEnabled = false,
+  openFeeRegimes,
   aiReviewProjections = null,
   unlockStatus = null,
   justUnlocked = false,
@@ -298,10 +308,22 @@ function SaleDetailWorkspace({
   const resolvedAiReviewProjections = fullData
     ? (aiReviewProjections ?? aiReviewQuery.data?.projections ?? null)
     : null;
-  const displaySale = useMemo(
-    () => saleForAiReviewDisplay(sale, resolvedAiReviewProjections, aiReviewStatus),
-    [aiReviewStatus, resolvedAiReviewProjections, sale],
+  // Les gardes du plafond (conflit de valorisation, champs bloqués par la relecture IA, surface,
+  // régime de frais) : `computeSaleCeiling` s'appuie sur le même résultat plus bas.
+  const ceilingInputs = useMemo(
+    () =>
+      assessSaleCeilingInputs({
+        sale,
+        aiProjections: resolvedAiReviewProjections,
+        aiReviewStatus,
+        regimes: openFeeRegimes,
+      }),
+    [aiReviewStatus, openFeeRegimes, resolvedAiReviewProjections, sale],
   );
+  const { displaySale, valuationConflict, surface } = ceilingInputs;
+  const priceBlocked = ceilingInputs.blocked.price;
+  const propertyTypeBlocked = ceilingInputs.blocked.propertyType;
+  const criticalAnalysisInputsBlocked = ceilingInputs.blocked.critical;
   const factReliabilityQuery = useQuery({
     queryKey: queryKeys.saleFactReliability(sale.id, user?.id ?? "anonymous"),
     queryFn: () => fetchSaleFactReliabilities(sale.id),
@@ -312,32 +334,15 @@ function SaleDetailWorkspace({
   });
   const factReliabilities =
     access === "analysis" ? (factReliabilityQuery.data?.facts ?? null) : null;
-  const valuationConflict = listingValuationConflict(sale);
-  const priceReview = getAiReviewFieldResult(
-    resolvedAiReviewProjections,
-    "sale.starting_price_eur",
-    aiReviewStatus,
-  );
-  const surfaceBlocked = AI_REVIEW_SURFACE_FIELD_KEYS.some(
-    (fieldKey) =>
-      getAiReviewFieldResult(resolvedAiReviewProjections, fieldKey, aiReviewStatus).blocked,
-  );
-  const propertyTypeReview = getAiReviewFieldResult(
-    resolvedAiReviewProjections,
-    "property.property_type",
-    aiReviewStatus,
-  );
-  const roomsReview = getAiReviewFieldResult(
-    resolvedAiReviewProjections,
-    "property.rooms_count",
-    aiReviewStatus,
-  );
-  const criticalAnalysisInputsBlocked =
-    priceReview.blocked || surfaceBlocked || propertyTypeReview.blocked || roomsReview.blocked;
+  // Propre au tribunal : statistiques du tribunal, étape « choisir un avocat », questions à l'avocat.
   const isTribunalSale = saleIsTribunalVenue(sale);
+  // Ce qui décide du plafond : le régime de frais de la vente, quand son calcul est ouvert (le
+  // tribunal aujourd'hui). Pas de régime, pas de plafond.
+  const feeRegime = ceilingInputs.regime;
+  const ceilingOpen = feeRegime != null;
   // Action principale de la synthèse et du bloc « À vérifier » : le calcul du plafond quand il est
   // possible, sinon les rendez-vous et contacts du dossier.
-  const preparation = isTribunalSale
+  const preparation = ceilingOpen
     ? {
         href:
           fullData && !valuationConflict && !criticalAnalysisInputsBlocked
@@ -350,7 +355,7 @@ function SaleDetailWorkspace({
   // son aperçu verrouillé, ni les ancres qui y mènent.
   const statisticsAvailable = isTribunalSale && adjudicationStatisticsEnabled;
   const budgetTarget =
-    fullData && isTribunalSale && !valuationConflict
+    fullData && ceilingOpen && !valuationConflict
       ? "calculation"
       : access === "analysis"
         ? "budget"
@@ -363,10 +368,8 @@ function SaleDetailWorkspace({
     access === "analysis" &&
     !publicDemo &&
     (venueType === "tribunal" || venueType === "notary" || venueType === "state");
-  const marketSurfaces = getMarketValuationSurfaces(displaySale);
-  const surface = criticalAnalysisInputsBlocked ? null : marketSurfaces.builtSurfaceM2;
   // The market estimate feeds the bid ceiling (judicial sales) and, for Analyse, the market blocks.
-  const marketAccess = access === "analysis" || (access === "unlocked" && isTribunalSale);
+  const marketAccess = access === "analysis" || (access === "unlocked" && ceilingOpen);
   const marketQuery = useQuery({
     queryKey: queryKeys.precomputedMarketEstimate(sale.id, user?.id, access),
     queryFn: () => fetchPrecomputedMarketEstimate({ saleId: sale.id }),
@@ -387,24 +390,22 @@ function SaleDetailWorkspace({
   // The detailed blocks (range, references, comparables) exist for Analyse only.
   const detailedMarketEstimate =
     access === "analysis" && isDetailedMarketEstimate(marketEstimate) ? marketEstimate : null;
-  const ceilingEnabled =
-    fullData && isTribunalSale && !valuationConflict && !criticalAnalysisInputsBlocked;
-  const ceilingHypotheses = useMemo(() => {
-    const built = buildCeilingHypotheses(displaySale, ceilingEnabled ? marketEstimate : null, {
-      ...ceilingChoices.choices,
-      works:
-        ceilingChoices.choices.works ?? worksChoiceForAmount(surface, personalWorksBudget ?? 0),
-    });
-    return { ...built, surface: ceilingEnabled ? surface : null };
-  }, [
-    ceilingChoices.choices,
-    ceilingEnabled,
-    displaySale,
-    marketEstimate,
-    personalWorksBudget,
-    surface,
-  ]);
-  const ceilingPlan = useMemo(() => computeCeilingPlan(ceilingHypotheses), [ceilingHypotheses]);
+  // Hypothèses et plan du plafond : la chaîne de `computeSaleCeiling`, la même que celle du rapport.
+  const ceiling = useMemo(
+    () =>
+      computeSaleCeiling({
+        assessed: ceilingInputs,
+        estimate: marketEstimate,
+        fullData,
+        choices: {
+          ...ceilingChoices.choices,
+          works:
+            ceilingChoices.choices.works ?? worksChoiceForAmount(surface, personalWorksBudget ?? 0),
+        },
+      }),
+    [ceilingChoices.choices, ceilingInputs, fullData, marketEstimate, personalWorksBudget, surface],
+  );
+  const { enabled: ceilingEnabled, hypotheses: ceilingHypotheses, plan: ceilingPlan } = ceiling;
   const marketPending = marketQuery.isLoading && marketEstimate == null;
   const valueReason = marketPending
     ? "estimation en cours"
@@ -600,7 +601,7 @@ function SaleDetailWorkspace({
                 startingPriceGap={ceilingPlan.startingPriceGap}
                 ceilingUnreachable={heroCeilingUnreachable}
                 ceilingContext={ceilingContext}
-                showPremiumTeaser={access === "discovery" && isTribunalSale}
+                showPremiumTeaser={access === "discovery" && ceilingOpen}
                 factReliabilities={factReliabilities}
                 aiReviewProjections={resolvedAiReviewProjections}
                 aiReviewStatus={aiReviewStatus}
@@ -628,7 +629,10 @@ function SaleDetailWorkspace({
               // Just unlocked, while the unlocked read is still loading: the free view stays on screen
               // and the card already says so.
               unlocked={access === "unlocked" || unlockStatus?.unlocked === true}
-              opens={{ ceiling: isTribunalSale, statistics: statisticsAvailable }}
+              opens={{
+                ceiling: feeRegime?.labels.ceilingTermWithArticle ?? null,
+                statistics: statisticsAvailable,
+              }}
               announce={justUnlocked}
               onUnlocked={(result) => onSaleUnlocked?.(result)}
             />
@@ -665,7 +669,7 @@ function SaleDetailWorkspace({
             onTabChange={changeTab}
             showStatistics={statisticsAvailable}
             priceRecall={{
-              startingPrice: priceReview.blocked ? null : (displaySale.starting_price_eur ?? null),
+              startingPrice: priceBlocked ? null : (displaySale.starting_price_eur ?? null),
               ceiling: criticalAnalysisInputsBlocked ? null : heroCeiling,
             }}
           />
@@ -754,9 +758,9 @@ function SaleDetailWorkspace({
               <>
                 <PanelIntro
                   eyebrow="02 / Prix"
-                  title={isTribunalSale ? "Prix et enchère plafond" : "Prix et marché"}
+                  title={ceilingOpen ? `Prix et ${feeRegime.labels.ceilingTerm}` : "Prix et marché"}
                   description={
-                    isTribunalSale
+                    ceilingOpen
                       ? "Les trois montants à comparer avant de définir votre scénario."
                       : "Le prix publié et les références de marché disponibles."
                   }
@@ -801,7 +805,7 @@ function SaleDetailWorkspace({
                         )}
                       </div>
                     </div>
-                  ) : fullData && isTribunalSale ? (
+                  ) : fullData && ceilingOpen ? (
                     <AnalysisDecisionPanel
                       sale={displaySale}
                       marketEstimate={marketEstimate}
@@ -820,9 +824,10 @@ function SaleDetailWorkspace({
                       sale={displaySale}
                       marketEstimate={detailedMarketEstimate}
                       marketLoading={marketQuery.isLoading && marketEstimate == null}
+                      priceBlocked={priceBlocked}
                     />
                   ) : (
-                    <DiscoveryDecisionPanel sale={displaySale} />
+                    <DiscoveryDecisionPanel sale={displaySale} openFeeRegimes={openFeeRegimes} />
                   )}
                 </section>
                 {access === "analysis" ? (
@@ -832,7 +837,7 @@ function SaleDetailWorkspace({
                     loading={marketQuery.isLoading && marketEstimate == null}
                   />
                 ) : null}
-                {fullData && isTribunalSale && !valuationConflict ? (
+                {fullData && ceilingOpen && !valuationConflict ? (
                   <div id="calculation" className="scroll-mt-36">
                     <LaunchOfferIncludedTag className="mb-2" />
                     <CeilingPlanner
@@ -888,7 +893,7 @@ function SaleDetailWorkspace({
                     >
                       Voir les références de marché
                     </summary>
-                    {marketEstimate?.actionable === true || isTribunalSale ? (
+                    {marketEstimate?.actionable === true || ceilingOpen ? (
                       <MarketEvidence
                         marketEstimate={detailedMarketEstimate}
                         marketLoading={marketQuery.isLoading && marketEstimate == null}
@@ -927,7 +932,7 @@ function SaleDetailWorkspace({
                     premium={fullData && adjudicationStatisticsEnabled}
                     showUpcomingListings={access === "analysis"}
                     publicDemo={publicDemo}
-                    propertyTypeVerified={!valuationConflict && !propertyTypeReview.blocked}
+                    propertyTypeVerified={!valuationConflict && !propertyTypeBlocked}
                   />
                 </>
               ) : (
@@ -1060,7 +1065,7 @@ function SaleDetailWorkspace({
                   </summary>
                   <SaleProcedurePanel sale={displaySale} />
                 </details>
-                {access === "analysis" && !publicDemo && isTribunalSale && !valuationConflict ? (
+                {access === "analysis" && !publicDemo && ceilingOpen && !valuationConflict ? (
                   <section
                     aria-label="Sauvegarde et export du rapport"
                     className={panelStyles.reportActions}

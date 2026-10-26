@@ -13,7 +13,10 @@ import { defaultRentPerM2, RENT_REFERENCE_UNAVAILABLE } from "@/lib/rent-referen
 // https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000041595310
 export const EMOLUMENT_SCALE_REFERENCE = "art. A444-191 du Code de commerce";
 export const EMOLUMENT_SCALE_DATE = "09/10/2026";
-const EMOLUMENT_BRACKETS: Array<{ upTo: number; rate: number }> = [
+/** Une tranche d'un barème d'émoluments proportionnel dégressif : taux HT jusqu'à `upTo` (inclus). */
+export type EmolumentBracket = { upTo: number; rate: number };
+/** Barème de l'avocat poursuivant, celui de la vente au tribunal (régime de frais `tribunal`). */
+export const TRIBUNAL_EMOLUMENT_BRACKETS: readonly EmolumentBracket[] = [
   { upTo: 6_500, rate: 0.07256 },
   { upTo: 17_000, rate: 0.02993 },
   { upTo: 60_000, rate: 0.01995 },
@@ -42,11 +45,14 @@ export function registrationRateForDepartment(department?: string | null): numbe
   return (code ? DMTO_RATE_BY_DEPARTMENT[code] : undefined) ?? DMTO_DEFAULT_RATE;
 }
 
-export function computeEmolumentsHT(price: number): number {
+export function computeEmolumentsHT(
+  price: number,
+  brackets: readonly EmolumentBracket[] = TRIBUNAL_EMOLUMENT_BRACKETS,
+): number {
   let remaining = Math.max(0, price || 0);
   let prev = 0;
   let total = 0;
-  for (const bracket of EMOLUMENT_BRACKETS) {
+  for (const bracket of brackets) {
     if (remaining <= 0) break;
     const span = Math.min(remaining, bracket.upTo - prev);
     total += span * bracket.rate;
@@ -128,6 +134,8 @@ export type AcquisitionCostOptions = {
   registrationRate?: number | null;
   /** `vat` : bien soumis à TVA (terrain à bâtir, vendeur assujetti). */
   taxRegime?: TaxRegime;
+  /** Barème d'émoluments du régime de frais ; absent : celui du tribunal (A444-191). */
+  emolumentBrackets?: readonly EmolumentBracket[];
 };
 
 export type AcquisitionCostResult = {
@@ -157,12 +165,13 @@ export function computeAcquisitionCosts({
   department,
   registrationRate,
   taxRegime = "registration",
+  emolumentBrackets,
 }: { price: number } & AcquisitionCostOptions): AcquisitionCostResult {
   const cleanPrice = Math.max(0, price || 0);
   const cleanWorks = Math.max(0, works || 0);
   const cleanFpt = Math.max(0, fpt || 0);
   const cleanLawyerFees = Math.max(0, lawyerFees || 0);
-  const emolumentsHT = computeEmolumentsHT(cleanPrice);
+  const emolumentsHT = computeEmolumentsHT(cleanPrice, emolumentBrackets);
   const emolumentsTTC = emolumentsHT * (1 + VAT);
   // Les droits se calculent sur le prix augmenté des frais préalables
   // (charges augmentatives), pas sur le seul prix.
@@ -365,6 +374,7 @@ function costOptionsOf(inputs: AcquisitionCostOptions): AcquisitionCostOptions {
     department: inputs.department,
     registrationRate: inputs.registrationRate,
     taxRegime: inputs.taxRegime,
+    emolumentBrackets: inputs.emolumentBrackets,
   };
 }
 

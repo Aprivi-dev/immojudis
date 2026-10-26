@@ -7,6 +7,8 @@ import {
   listingAccessLine,
   listingDateLabel,
   listingLinkLabel,
+  listingPriceText,
+  stateSaleWithoutPrice,
 } from "./listing-text";
 
 const tribunal = { id: "a", sale_venue_type: "tribunal" } as unknown as AuctionSale;
@@ -119,5 +121,34 @@ describe("listingLinkLabel", () => {
 
   it("garde « Voir <titre> » sans prix ni date", () => {
     expect(listingLinkLabel(base, "Maison")).toBe("Voir Maison");
+  });
+});
+
+describe("prix d'une cession domaniale", () => {
+  const state = (price: number | null | undefined) =>
+    ({ id: "c", sale_venue_type: "state", starting_price_eur: price }) as unknown as AuctionSale;
+
+  it("dit « Prix non publié » pour une cession domaniale sans prix (absent ou nul)", () => {
+    for (const price of [null, undefined, 0]) {
+      expect(stateSaleWithoutPrice(state(price))).toBe(true);
+      expect(listingPriceText(state(price))).toBe("Prix non publié");
+    }
+  });
+
+  it("garde le prix d'une cession domaniale qui en publie un", () => {
+    expect(stateSaleWithoutPrice(state(125_000))).toBe(false);
+    expect(listingPriceText(state(125_000))).toMatch(/^125\s000\s€$/);
+  });
+
+  it("ne change rien pour le tribunal et le notaire : « Prix non communiqué » sans prix", () => {
+    for (const venue of ["tribunal", "notary", "online", "unknown"]) {
+      const sale = {
+        id: "d",
+        sale_venue_type: venue,
+        starting_price_eur: 0,
+      } as unknown as AuctionSale;
+      expect(stateSaleWithoutPrice(sale)).toBe(false);
+      expect(listingPriceText(sale)).toBe("Prix non communiqué");
+    }
   });
 });

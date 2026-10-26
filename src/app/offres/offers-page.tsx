@@ -28,10 +28,18 @@ import {
 } from "@/lib/launch-offer";
 import { offerComparisonRows, type OfferCell } from "@/lib/offer-comparison";
 import { PLAN_LIMITS } from "@/lib/plans";
+import {
+  ceilingTermText,
+  ceilingTermWithArticleText,
+  ceilingVenueScopeText,
+} from "@/lib/fee-regime-labels";
 import { MONTHLY_SALE_UNLOCKS, unlockedItemsText } from "@/lib/sale-unlocks";
 import Link from "next/link";
 import { pathWithSearch } from "@/lib/navigation";
 import { trackProductEvent } from "@/lib/product-events";
+
+const CEILING_TERM = ceilingTermText();
+const CEILING_TERM_CAPITALIZED = `${CEILING_TERM.charAt(0).toUpperCase()}${CEILING_TERM.slice(1)}`;
 
 const BENEFITS: ReadonlyArray<{
   icon: ReactNode;
@@ -42,7 +50,7 @@ const BENEFITS: ReadonlyArray<{
 }> = [
   {
     icon: <BadgeEuro className="size-6" aria-hidden />,
-    title: "Une enchère plafond chiffrée",
+    title: `Une ${CEILING_TERM} chiffrée`,
     term: "enchere-plafond",
     text: "Valeur estimée, frais, travaux et marge de sécurité : vous voyez d’où vient votre limite et vous l’ajustez selon votre projet.",
   },
@@ -65,7 +73,10 @@ const BENEFITS: ReadonlyArray<{
  */
 const LAUNCH_OFFER_FREE_PLAN_NOTE = `Pendant les ${ANALYSIS_TRIAL_DAYS} jours d’essai qui suivent la confirmation de son adresse email, un compte gratuit bénéficie de l’offre Analyse (un essai par personne). Les limites de Découverte indiquées ici s’appliquent ensuite.`;
 
-const UNLOCKED_ITEMS = unlockedItemsText({ ceiling: true, statistics: true });
+const UNLOCKED_ITEMS = unlockedItemsText({
+  ceiling: ceilingTermWithArticleText(),
+  statistics: true,
+});
 
 const DISCOVERY_FEATURES = [
   `${MONTHLY_SALE_UNLOCKS} déblocages par mois : ${UNLOCKED_ITEMS}, pour la vente choisie`,
@@ -76,7 +87,7 @@ const DISCOVERY_FEATURES = [
 ] as const;
 
 const ANALYSIS_FEATURES = [
-  "Enchère plafond chiffrée pour toutes les ventes au tribunal : travaux, libération, portage et tous les frais",
+  `${CEILING_TERM_CAPITALIZED} chiffrée pour toutes les ${ceilingVenueScopeText()} : travaux, libération, portage et tous les frais`,
   "Pièces du dossier et leur lecture, pour les ventes qui en comportent : points clés cités avec la page",
   "Historique de la vente, quand il existe : passages précédents, baisses de mise à prix, reports",
   "Estimation détaillée et ventes comparables",
@@ -130,12 +141,13 @@ const FAQ: { question: string; answer: (context: FaqContext) => ReactNode }[] = 
     answer: ({ launchActive }) => (
       <>
         Chaque mois, vous pouvez débloquer {MONTHLY_SALE_UNLOCKS} ventes avec votre compte
-        Découverte. Pour chacune, vous voyez, lorsque la vente les comporte, l’enchère plafond, la
-        lecture des pièces, l’historique de la vente, les statistiques du tribunal de cette vente et
-        les pièces du dossier. Le compteur repart à {MONTHLY_SALE_UNLOCKS} le 1er du mois à 00 h 00,
-        heure de Paris ; les déblocages non utilisés ne sont pas reportés. Une vente débloquée reste
-        accessible tant qu’elle est en ligne sur Immojudis, dans la limite de 24 mois après le
-        déblocage. Aucune carte bancaire n’est demandée et rien ne devient payant automatiquement.{" "}
+        Découverte. Pour chacune, vous voyez, lorsque la vente les comporte,{" "}
+        {ceilingTermWithArticleText()}, la lecture des pièces, l’historique de la vente, les
+        statistiques du tribunal de cette vente et les pièces du dossier. Le compteur repart à{" "}
+        {MONTHLY_SALE_UNLOCKS} le 1er du mois à 00 h 00, heure de Paris ; les déblocages non
+        utilisés ne sont pas reportés. Une vente débloquée reste accessible tant qu’elle est en
+        ligne sur Immojudis, dans la limite de 24 mois après le déblocage. Aucune carte bancaire
+        n’est demandée et rien ne devient payant automatiquement.{" "}
         {launchActive
           ? `Pendant les ${ANALYSIS_TRIAL_DAYS} jours d’essai qui suivent la confirmation de l’adresse email, l’export PDF ou CSV, les rapports enregistrés, les alertes avancées, l’estimation détaillée et les ventes comparables sont aussi ouverts au compte gratuit ; ils redeviennent réservés à Analyse ensuite.`
           : "L’export PDF ou CSV, les rapports enregistrés, les alertes avancées, l’estimation détaillée et les ventes comparables restent réservés à Analyse."}

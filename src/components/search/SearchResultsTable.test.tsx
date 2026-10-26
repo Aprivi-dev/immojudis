@@ -182,6 +182,30 @@ describe("vue « tableau » des résultats", () => {
     }
   });
 
+  it("dit « Prix non publié » pour une cession domaniale sans prix, et rien de plus ailleurs", () => {
+    renderTable([
+      makeSale("sale-state-none", { sale_venue_type: "state", starting_price_eur: null }),
+      makeSale("sale-state-zero", { sale_venue_type: "state", starting_price_eur: 0 }),
+      makeSale("sale-state-priced", { sale_venue_type: "state", starting_price_eur: 80_000 }),
+      makeSale("sale-notary-none", { sale_venue_type: "notary", starting_price_eur: null }),
+      makeSale("sale-tribunal-none", { sale_venue_type: "tribunal", starting_price_eur: null }),
+    ]);
+    const [none, zero, priced, notary, tribunal] = screen.getAllByRole("row").slice(1);
+    for (const row of [none, zero]) {
+      expect(row.textContent).toContain("Prix non publié");
+      // Pas d'intitulé « Prix publié » sous « Prix non publié » (même règle que la carte).
+      expect(row.textContent).not.toContain("Prix publié");
+      expect(row.textContent).not.toContain("Prix non communiqué");
+    }
+    expect(priced.textContent).not.toContain("Prix non publié");
+    expect(priced.textContent).toMatch(/80\s000/);
+    expect(priced.textContent).toContain("Prix publié");
+    for (const row of [notary, tribunal]) {
+      expect(row.textContent).toContain("Prix non communiqué");
+      expect(row.textContent).not.toContain("Prix non publié");
+    }
+  });
+
   it("garde les mentions de la carte quand une valeur manque", () => {
     renderTable([
       makeSale("sale-a", {

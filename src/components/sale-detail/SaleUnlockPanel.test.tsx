@@ -87,6 +87,46 @@ describe("SaleUnlockPanel", () => {
     expect(text).not.toContain("statistiques du tribunal");
   });
 
+  it("names the ceiling with the label of the fee regime of the sale", () => {
+    render(
+      <SaleUnlockPanel
+        saleId={saleId}
+        status={status()}
+        unlocked={false}
+        opens={{ ceiling: "l’offre plafond", statistics: false }}
+        onUnlocked={vi.fn()}
+      />,
+    );
+    expect(document.body.textContent).toContain("l’offre plafond, la lecture des pièces");
+    expect(document.body.textContent).not.toContain("enchère plafond");
+  });
+
+  it("tells at the confirmation that fees are estimated when the sale opens a ceiling", () => {
+    const estimated =
+      "Si l’annonce ne les donne pas, les frais sont estimés : vous pourrez les corriger ensuite.";
+    const { unmount } = render(
+      <SaleUnlockPanel saleId={saleId} status={status()} unlocked={false} onUnlocked={vi.fn()} />,
+    );
+    // Only at the confirmation step, not before.
+    expect(screen.queryByText(estimated)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Débloquer cette vente" }));
+    expect(screen.getByText(estimated)).toBeTruthy();
+    unmount();
+
+    render(
+      <SaleUnlockPanel
+        saleId={saleId}
+        status={status()}
+        unlocked={false}
+        opens={{ ceiling: null, statistics: false }}
+        onUnlocked={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Débloquer cette vente" }));
+    expect(screen.getByRole("group", { name: "Confirmer le déblocage" })).toBeTruthy();
+    expect(screen.queryByText(estimated)).toBeNull();
+  });
+
   it("asks for a confirmation before consuming anything, and can be cancelled", () => {
     render(
       <SaleUnlockPanel saleId={saleId} status={status()} unlocked={false} onUnlocked={vi.fn()} />,

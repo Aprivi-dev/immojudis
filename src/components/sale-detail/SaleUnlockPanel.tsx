@@ -10,6 +10,7 @@ import { UNLOCK_PANEL_ID } from "@/components/sale-detail/UnlockCallToAction";
 import { useAnalysisCheckoutOpen } from "@/hooks/use-analysis-checkout-open";
 import { SaleUnlockQuotaReachedError, unlockSaleRequest } from "@/lib/client-api";
 import { resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
+import { ceilingTermWithArticleText } from "@/lib/fee-regime-labels";
 import {
   MONTHLY_SALE_UNLOCKS,
   remainingUnlocksLine,
@@ -33,7 +34,7 @@ export function SaleUnlockPanel({
   saleId,
   status,
   unlocked,
-  opens = { ceiling: true, statistics: true },
+  opens = { ceiling: ceilingTermWithArticleText(), statistics: true },
   announce = false,
   onUnlocked,
 }: {
@@ -42,13 +43,26 @@ export function SaleUnlockPanel({
   status: SaleUnlockStatus | null | undefined;
   /** La vente est déjà débloquée : le panneau rappelle ce qui est ouvert. */
   unlocked: boolean;
-  /** What this sale really offers once unlocked (no ceiling on a notarial sale, for instance). */
-  opens?: { ceiling: boolean; statistics: boolean };
+  /**
+   * What this sale really offers once unlocked. `ceiling`: the name of the maximum amount with its
+   * article (« l’enchère plafond », from the fee regime of the sale), or `null` when the sale has no
+   * ceiling (a sale whose fee regime is not open). A boolean is accepted: `true` is the name of the
+   * regimes open by default, `false` no ceiling.
+   */
+  opens?: { ceiling: string | boolean | null; statistics: boolean };
   /** The sale was unlocked a moment ago: move the focus to the result so it is announced. */
   announce?: boolean;
   onUnlocked: (result: SaleUnlockResult) => void;
 }) {
   const items = unlockedItemsText(opens);
+  const ceilingLabel =
+    typeof opens.ceiling === "string"
+      ? opens.ceiling
+      : opens.ceiling === true
+        ? ceilingTermWithArticleText()
+        : null;
+  // « l’enchère plafond » -> « enchère plafond » : the name alone, for « Voir mon … ».
+  const ceilingName = (ceilingLabel ?? ceilingTermWithArticleText()).replace(/^l[’']/, "");
   const [step, setStep] = useState<"idle" | "confirm" | "pending">("idle");
   const [error, setError] = useState<string | null>(null);
   // A refusal (quota spent elsewhere in the meantime) only holds for the status it was given for.
@@ -107,21 +121,21 @@ export function SaleUnlockPanel({
           </p>
           <p className="mt-2 text-xs leading-relaxed text-ink-soft">
             Ces éléments sont une aide à la décision : ils ne constituent ni un conseil juridique ni
-            un conseil financier, et l’enchère plafond est une simulation fondée sur des hypothèses
-            modifiables.
+            un conseil financier, et {ceilingLabel ?? ceilingTermWithArticleText()} est une
+            simulation fondée sur des hypothèses modifiables.
           </p>
           {remainingUnlocksLine(current) ? (
             <p className="mt-2 text-sm font-medium text-brand-navy">
               {remainingUnlocksLine(current)}
             </p>
           ) : null}
-          {opens.ceiling ? (
+          {ceilingLabel ? (
             // L'ancre est dans le calcul de la fiche : le lien de section de la fiche ouvre l'onglet.
             <a
               href="#calculation"
               className={buttonClasses({ variant: "primary", className: "mt-4" })}
             >
-              Voir mon enchère plafond
+              Voir mon {ceilingName}
             </a>
           ) : null}
         </Card>
@@ -231,6 +245,12 @@ export function SaleUnlockPanel({
             <p className="text-sm leading-relaxed text-brand-navy">
               {unlockConfirmationText(current)}
             </p>
+            {ceilingLabel ? (
+              <p className="mt-2 text-sm leading-relaxed text-brand-navy">
+                Si l’annonce ne les donne pas, les frais sont estimés : vous pourrez les corriger
+                ensuite.
+              </p>
+            ) : null}
             <p className="mt-2 text-xs leading-relaxed text-ink-soft">
               Le déblocage est enregistré sur votre compte (vente et date).{" "}
               <Link href="/privacy" className="font-semibold underline underline-offset-4">

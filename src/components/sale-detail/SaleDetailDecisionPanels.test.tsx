@@ -216,6 +216,22 @@ describe("DiscoveryDecisionPanel", () => {
       for (const link of links) expect(link.getAttribute("href")).toBe("#debloquer");
     });
 
+    it("offers no unlock for a notary sale even when notarial regimes are listed as open", () => {
+      mocks.auth = { user: { id: "user-1" }, loading: false };
+      mocks.fetchValuePreview.mockResolvedValue({ available: false });
+      const notary = { ...sale, sale_venue_type: "notary" } as unknown as AuctionSale;
+      renderWithQuery(
+        <SaleUnlockOfferProvider status={offer}>
+          <DiscoveryDecisionPanel
+            sale={notary}
+            openFeeRegimes={["tribunal", "notary_auction", "notary_online"]}
+          />
+        </SaleUnlockOfferProvider>,
+      );
+
+      expect(screen.getAllByRole("link", { name: /Débloquer cette vente/ })).toHaveLength(1);
+    });
+
     it("keeps only the offer when the page has no unlock card", () => {
       renderWithQuery(<DiscoveryDecisionPanel sale={tribunalSale} />);
 
@@ -406,6 +422,43 @@ describe("AnalysisDecisionPanel", () => {
 });
 
 describe("NonJudicialDecisionPanel", () => {
+  it("says « Prix non publié » for a domanial sale without price, and keeps « À confirmer » elsewhere", () => {
+    const render = (fields: Record<string, unknown>) =>
+      renderWithQuery(
+        <NonJudicialDecisionPanel
+          sale={{ ...sale, ...fields } as AuctionSale}
+          marketEstimate={null}
+          marketLoading={false}
+        />,
+      );
+    const state = render({ sale_venue_type: "state", starting_price_eur: null });
+    expect(screen.getByText("Prix publié")).toBeTruthy();
+    expect(screen.getByText("Prix non publié")).toBeTruthy();
+    expect(screen.queryByText("À confirmer")).toBeNull();
+    state.unmount();
+
+    const notary = render({ sale_venue_type: "notary", starting_price_eur: null });
+    expect(screen.getByText("À confirmer")).toBeTruthy();
+    expect(screen.queryByText("Prix non publié")).toBeNull();
+    notary.unmount();
+
+    render({ sale_venue_type: "state", starting_price_eur: 90_000 });
+    expect(screen.queryByText("Prix non publié")).toBeNull();
+  });
+
+  it("keeps « À confirmer » for a domanial sale whose price the AI review blocks", () => {
+    renderWithQuery(
+      <NonJudicialDecisionPanel
+        sale={{ ...sale, sale_venue_type: "state", starting_price_eur: null } as AuctionSale}
+        marketEstimate={null}
+        marketLoading={false}
+        priceBlocked
+      />,
+    );
+    expect(screen.getByText("À confirmer")).toBeTruthy();
+    expect(screen.queryByText("Prix non publié")).toBeNull();
+  });
+
   it("shows a zero starting price as to be confirmed", () => {
     renderWithQuery(
       <NonJudicialDecisionPanel

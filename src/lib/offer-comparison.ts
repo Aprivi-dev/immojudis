@@ -1,3 +1,4 @@
+import { ceilingTermText, ceilingVenueScopeText } from "@/lib/fee-regime-labels";
 import {
   isSaleUnlockFeature,
   PLAN_FEATURES,
@@ -47,6 +48,10 @@ type RowSpec = {
 
 const UNLOCKS_PER_MONTH = PLAN_LIMITS.decouverte.monthlyUnlocks;
 const UNLOCK_CELL_TEXT = `Pour ${UNLOCKS_PER_MONTH} ventes par mois`;
+// Le montant plafond et les ventes qui en ont un dépendent des régimes de frais ouverts.
+const CEILING_TERM = ceilingTermText();
+const CEILING_TERM_CAPITALIZED = `${CEILING_TERM.charAt(0).toUpperCase()}${CEILING_TERM.slice(1)}`;
+const CEILING_VENUE_SCOPE = ceilingVenueScopeText();
 
 const SPECS: RowSpec[] = [
   {
@@ -64,16 +69,16 @@ const SPECS: RowSpec[] = [
     },
   },
   {
-    // « Mon dossier » : le stockage est gratuit, sur chaque vente suivie ; le calcul de l'enchère
+    // « Mon dossier » : le stockage est gratuit, sur chaque vente suivie ; le calcul du montant
     // plafond garde ses droits (ligne « Enchère plafond chiffrée »).
     id: "dossier",
-    label: "Statut et enchère plafond enregistrés",
-    hint: "Sur chaque vente suivie, dans « Mon dossier » ; le calcul de l’enchère plafond reste soumis à ses droits",
+    label: `Statut et ${CEILING_TERM} enregistrés`,
+    hint: `Sur chaque vente suivie, dans « Mon dossier » ; le calcul de l’${CEILING_TERM} reste soumis à ses droits`,
     features: ["sales.favorites"],
   },
   {
     id: "unlocks",
-    label: "Déblocage d’une vente : enchère plafond, pièces, historique, statistiques du tribunal",
+    label: `Déblocage d’une vente : ${CEILING_TERM}, pièces, historique, statistiques du tribunal`,
     hint: "Ouvre ces éléments pour la vente choisie, tant qu’elle est en ligne (24 mois au plus) ; exports et rapports restent avec Analyse",
     features: ["sales.filters"],
     custom: {
@@ -134,16 +139,17 @@ const SPECS: RowSpec[] = [
   {
     id: "estimate",
     label: "Estimation détaillée et ventes comparables",
-    hint: "La valeur de référence entre dans l’enchère plafond d’une vente débloquée ; la fourchette détaillée et les ventes comparables restent avec Analyse",
+    hint: `La valeur de référence entre dans l’${CEILING_TERM} d’une vente débloquée ; la fourchette détaillée et les ventes comparables restent avec Analyse`,
     // Un déblocage ne renvoie ni la fourchette, ni les quartiles, ni les ventes comparables : « Non
     // inclus » est exact (voir ceilingMarketContext).
     features: ["property.valueEstimate", "property.soldComparables"],
   },
   {
     id: "ceiling",
-    label: "Enchère plafond chiffrée",
-    // L'enchère plafond n'existe que pour une vente au tribunal (voir unlockedItemsText).
-    hint: "Pour toutes les ventes au tribunal avec Analyse ; pour la vente choisie avec un déblocage",
+    label: `${CEILING_TERM_CAPITALIZED} chiffrée`,
+    // Le montant plafond n'existe que pour les ventes dont un régime de frais est ouvert (voir
+    // unlockedItemsText).
+    hint: `Pour toutes les ${CEILING_VENUE_SCOPE} avec Analyse ; pour la vente choisie avec un déblocage`,
     features: ["property.bidCeiling"],
   },
   {

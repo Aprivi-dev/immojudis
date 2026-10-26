@@ -25,6 +25,7 @@ import {
   UNPROFITABLE_HEADLINE,
 } from "@/lib/bid-ceiling-gaps";
 import { describeCeilingStartGap } from "@/lib/ceiling-start-gap";
+import { labelsOf } from "@/lib/fee-regime-definitions";
 import { formatPrice } from "@/lib/format";
 import { dpeRentalNote } from "@/lib/works-guidance";
 import { CeilingHypothesesPanel } from "@/components/ceiling/CeilingHypothesesPanel";
@@ -56,6 +57,8 @@ export function CeilingPlanner({
 }) {
   const [hypothesesOpen, setHypothesesOpen] = useState(false);
   const confidence = ceilingConfidence(hypotheses);
+  // Textes du régime de frais de la vente (ceux du tribunal sans régime).
+  const labels = labelsOf(hypotheses).planner;
   const gap = ceilingGap(plan, valueReason);
   const startGap = describeCeilingStartGap(plan, positiveAmount(hypotheses.startingPrice));
   const profilePlans = useMemo(
@@ -79,11 +82,10 @@ export function CeilingPlanner({
               id="ceiling-planner-title"
               className="font-display text-2xl font-medium text-brand-navy sm:text-3xl"
             >
-              Votre enchère plafond
+              {labels.title}
             </h2>
             <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-              Le montant à ne pas dépasser à l’audience, une fois comptés la valeur du bien, votre
-              marge, les travaux, la libération, le portage et tous les frais de la vente.
+              {labels.intro}
             </p>
           </div>
           <button
@@ -103,7 +105,7 @@ export function CeilingPlanner({
             <div className="min-w-0">
               <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-text">
                 <Target className="h-4 w-4" />
-                Enchère plafond (simulation) · {profileLabel(hypotheses)}
+                {labels.resultEyebrow} · {profileLabel(hypotheses)}
               </div>
               {gap == null || marketLoading ? (
                 <div className="mt-3 text-4xl font-semibold leading-none tabular-nums text-foreground sm:text-5xl">
@@ -456,12 +458,13 @@ function BidSimulator({ hypotheses, plan }: { hypotheses: CeilingHypotheses; pla
   };
   const evaluation = evaluateBid(hypotheses, plan, bid);
   const fees = evaluation.fees;
+  const labels = labelsOf(hypotheses).planner;
   const rows: Array<[label: string, value: number, term?: TermeKey]> = [
-    ["Prix d’adjudication", evaluation.price, "adjudication"],
-    ["Frais préalables", fees.fpt, "frais-prealables"],
+    [labels.priceLabel, evaluation.price, "adjudication"],
+    [labels.preliminaryLabel, fees.fpt, "frais-prealables"],
     ["Droits d’enregistrement", fees.registrationDuties + fees.csi + fees.vatOnPrice],
-    ["Émoluments de l’avocat poursuivant", fees.emolumentsTTC, "emoluments"],
-    ["Honoraires de votre avocat", fees.lawyerFees],
+    [labels.emolumentsLabel, fees.emolumentsTTC, "emoluments"],
+    [labels.lawyerLabel, fees.lawyerFees],
     ["Travaux et imprévus", plan.worksTotal],
     ["Libération du bien", plan.releaseCost, "liberation"],
     ["Portage", plan.carryingFixed + evaluation.financing, "portage"],
@@ -557,15 +560,19 @@ function QuickBid({
   );
 }
 
-/** Libellés de `buildCashPlan` qui portent un terme à définir. */
-const CASH_STEP_TERMS: Record<string, TermeKey> = {
-  Consignation: "garantie-encherir",
-  "Fin du délai de surenchère": "surenchere",
-  "Libération du bien": "liberation",
-};
+/** Libellés de `buildCashPlan` qui portent un terme à définir (ceux du régime de frais de la vente). */
+function cashStepTerms(hypotheses: CeilingHypotheses): Record<string, TermeKey> {
+  const cash = labelsOf(hypotheses).cash;
+  return {
+    [cash.consignation.label]: "garantie-encherir",
+    [cash.overbid.label]: "surenchere",
+    "Libération du bien": "liberation",
+  };
+}
 
 function CashPlan({ hypotheses, plan }: { hypotheses: CeilingHypotheses; plan: CeilingPlan }) {
   const steps = buildCashPlan(hypotheses, plan, plan.maxBid);
+  const terms = cashStepTerms(hypotheses);
   return (
     <section aria-labelledby="ceiling-cash-title" className="mt-8">
       <h3 id="ceiling-cash-title" className="text-lg font-semibold text-brand-navy">
@@ -585,8 +592,8 @@ function CashPlan({ hypotheses, plan }: { hypotheses: CeilingHypotheses; plan: C
             </span>
             <span className="text-sm">
               <span className="font-semibold text-foreground">
-                {CASH_STEP_TERMS[step.label] ? (
-                  <Terme terme={CASH_STEP_TERMS[step.label]}>{step.label}</Terme>
+                {terms[step.label] ? (
+                  <Terme terme={terms[step.label]}>{step.label}</Terme>
                 ) : (
                   step.label
                 )}
@@ -673,14 +680,13 @@ function Checklist({
     },
     {
       key: "plafond-avant-audience",
-      content:
-        "Fixez votre plafond avant l’audience et donnez-le à votre avocat : les enchères vont vite.",
+      content: labelsOf(hypotheses).planner.ceilingBeforeSaleAdvice,
     },
   );
   return (
     <section aria-labelledby="ceiling-checklist-title" className="mt-8">
       <h3 id="ceiling-checklist-title" className="text-lg font-semibold text-brand-navy">
-        À vérifier avant l’audience
+        {labelsOf(hypotheses).planner.checklistTitle}
       </h3>
       <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-muted-foreground">
         {items.map((item) => (

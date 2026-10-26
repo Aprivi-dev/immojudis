@@ -34,7 +34,7 @@ import {
   fetchSaleUnlocksOverview,
   removeFavoriteSale as removeFavoriteSaleRequest,
 } from "@/lib/client-api";
-import { formatStartingPrice, occupancyLabel } from "@/lib/format";
+import { occupancyLabel } from "@/lib/format";
 import { trackProductEvent } from "@/lib/product-events";
 import { stateListingStatus } from "@/lib/property-characteristics";
 import { departmentFromCode } from "@/lib/department-pages";
@@ -53,8 +53,10 @@ import {
   listingAccessLine,
   listingDateLabel,
   listingLinkLabel,
+  listingPriceText,
   PAST_SALE_LABEL,
   listingTitle,
+  stateSaleWithoutPrice,
 } from "./listing-text";
 import { useSaleDetailLink } from "./use-sale-detail-link";
 import styles from "./SearchResults.module.css";
@@ -519,14 +521,16 @@ export const ListingCard = memo(function ListingCard({
               sourceUrl={sale.source_url}
               showSourceLink={false}
             >
-              {formatStartingPrice(sale.starting_price_eur)}
+              {listingPriceText(sale)}
             </AiReviewField>
           </span>
-          <span className="text-caption text-ink-soft">
-            <Terme terme="mise-a-prix" placement="top">
-              mise à prix
-            </Terme>
-          </span>
+          {stateSaleWithoutPrice(sale) ? null : (
+            <span className="text-caption text-ink-soft">
+              <Terme terme="mise-a-prix" placement="top">
+                mise à prix
+              </Terme>
+            </span>
+          )}
         </p>
         <p className="mt-3 flex flex-wrap items-center gap-x-1.5 text-sm text-brand-navy">
           <CalendarDays className="h-3.5 w-3.5 text-ink-soft" aria-hidden />

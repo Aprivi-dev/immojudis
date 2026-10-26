@@ -471,6 +471,50 @@ describe("useful public discovery", () => {
     expect(container.textContent).not.toMatch(/0\s?€/);
   });
 
+  describe("price of a domanial sale", () => {
+    const renderStateCard = (fields: Record<string, unknown>) =>
+      render(
+        <QueryClientProvider client={new QueryClient()}>
+          <ListingCard
+            sale={
+              {
+                id: "sale-state",
+                city: "Lille",
+                department: "59",
+                property_type: "land",
+                sale_date: "2099-10-01T09:00:00Z",
+                sale_venue_type: "state",
+                media: [],
+                ...fields,
+              } as unknown as AuctionSale
+            }
+            returnTo="/sales"
+            locked
+            analysisLocked={false}
+            active={false}
+            onHover={vi.fn()}
+            onSelect={vi.fn()}
+          />
+        </QueryClientProvider>,
+      );
+
+    it("says « Prix non publié » when the State publishes no price, without « mise à prix »", () => {
+      for (const price of [null, 0]) {
+        const { container, unmount } = renderStateCard({ starting_price_eur: price });
+        expect(container.textContent).toContain("Prix non publié");
+        expect(container.textContent).not.toContain("Prix non communiqué");
+        expect(container.textContent).not.toContain("mise à prix");
+        unmount();
+      }
+    });
+
+    it("keeps the published price of a domanial sale", () => {
+      const { container } = renderStateCard({ starting_price_eur: 125_000 });
+      expect(container.textContent).toMatch(/125\s000\s€/);
+      expect(container.textContent).not.toContain("Prix non publié");
+    });
+  });
+
   it("offers a working example instead of fabricated statistics", () => {
     const { container } = render(
       <SearchStatisticsPanel

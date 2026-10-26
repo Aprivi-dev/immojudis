@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { afterEach, describe, expect, it } from "vitest";
 import { buildCeilingHypotheses, type CeilingUserChoices } from "@/lib/bid-ceiling-defaults";
 import { computeCeilingPlan, type CeilingHypotheses } from "@/lib/bid-ceiling-engine";
+import { TRIBUNAL_FEE_REGIME, type FeeRegime } from "@/lib/fee-regime";
 import type { MarketEstimate } from "@/lib/market.server";
 import type { AuctionSale } from "@/lib/types";
 import { CeilingPlanner } from "./CeilingPlanner";
@@ -66,6 +67,41 @@ describe("CeilingPlanner titre", () => {
   it("dit que le montant est une simulation, avec le profil choisi", () => {
     renderPlanner();
     expect(screen.getByText(/^Enchère plafond \(simulation\) · /)).toBeTruthy();
+  });
+});
+
+describe("CeilingPlanner textes du régime de frais", () => {
+  it("garde les textes du tribunal sans régime, et avec le régime tribunal", () => {
+    for (const regime of [undefined, TRIBUNAL_FEE_REGIME]) {
+      renderPlanner({ tweak: (built) => ({ ...built, regime }) });
+      expect(screen.getByRole("heading", { name: "Votre enchère plafond" })).toBeTruthy();
+      expect(screen.getByText(/^Le montant à ne pas dépasser à l’audience/)).toBeTruthy();
+      expect(screen.getByText("Prix d’adjudication")).toBeTruthy();
+      expect(screen.getByText("Émoluments de l’avocat poursuivant")).toBeTruthy();
+      expect(screen.getByText("À vérifier avant l’audience")).toBeTruthy();
+      cleanup();
+    }
+  });
+
+  it("lit les textes du régime porté par les hypothèses", () => {
+    const regime: FeeRegime = {
+      ...TRIBUNAL_FEE_REGIME,
+      labels: {
+        ...TRIBUNAL_FEE_REGIME.labels,
+        planner: {
+          ...TRIBUNAL_FEE_REGIME.labels.planner,
+          title: "Votre offre plafond",
+          resultEyebrow: "Offre plafond (simulation)",
+          priceLabel: "Prix d’adjudication notariale",
+        },
+      },
+    };
+    renderPlanner({ tweak: (built) => ({ ...built, regime }) });
+
+    expect(screen.getByRole("heading", { name: "Votre offre plafond" })).toBeTruthy();
+    expect(screen.getByText(/^Offre plafond \(simulation\) · /)).toBeTruthy();
+    expect(screen.getByText("Prix d’adjudication notariale")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Votre enchère plafond" })).toBeNull();
   });
 });
 

@@ -11,6 +11,7 @@ import {
   type OccupationCase,
   type ValueReliability,
 } from "@/lib/bid-ceiling-engine";
+import type { FeeRegime } from "@/lib/fee-regime-definitions";
 import type { CeilingMarketEstimate } from "@/lib/market-estimate-ceiling";
 import type { WorksBreakdownItem } from "@/lib/works-breakdown";
 import {
@@ -73,10 +74,16 @@ export function occupationCaseForStatus(status: string | null | undefined): Occu
   return "occupe";
 }
 
+/**
+ * Hypothèses de départ du plafond d'une vente. `regime` : le régime de frais de la vente ; absent,
+ * le calcul est celui du tribunal (barème, frais par défaut et consignation d'origine), sans que
+ * l'hypothèse porte de régime.
+ */
 export function buildCeilingHypotheses(
   sale: AuctionSale,
   estimate: CeilingMarketEstimate | null,
   choices: CeilingUserChoices = {},
+  regime: FeeRegime | null = null,
 ): CeilingHypotheses {
   const surfaces = getMarketValuationSurfaces(sale);
   const surface = surfaces.builtSurfaceM2;
@@ -90,6 +97,7 @@ export function buildCeilingHypotheses(
   const manualRent = positive(choices.monthlyRent);
 
   return {
+    ...(regime ? { regime } : {}),
     project: choices.project ?? "habiter",
     profile: choices.profile ?? "equilibre",
     customMarginPct: choices.customMarginPct ?? null,
@@ -124,14 +132,15 @@ export function buildCeilingHypotheses(
       resaleMonths: DEFAULT_RESALE_MONTHS,
     },
     fees: {
-      fpt: choices.fpt ?? preliminary ?? DEFAULT_PRELIMINARY_FEES,
-      lawyerFees: choices.lawyerFees ?? DEFAULTS.lawyerFees,
+      fpt: choices.fpt ?? preliminary ?? regime?.defaultPreliminaryFees ?? DEFAULT_PRELIMINARY_FEES,
+      lawyerFees: choices.lawyerFees ?? regime?.defaultLawyerFees ?? DEFAULTS.lawyerFees,
       department: sale.department ?? null,
       registrationRate:
         choices.registrationRatePct != null
           ? choices.registrationRatePct / 100
           : registrationRateForDepartment(sale.department),
       taxRegime: choices.taxRegime ?? "registration",
+      ...(regime ? { emolumentBrackets: regime.emolumentScale.brackets } : {}),
     },
     feesSource: {
       fpt: choices.fpt != null ? "saisie" : preliminary != null ? "document" : "defaut",

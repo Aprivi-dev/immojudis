@@ -1,3 +1,5 @@
+import { ceilingTermText } from "@/lib/fee-regime-labels";
+
 /**
  * Copy shared by the server checkout contract and the public offer UI.
  *
@@ -56,15 +58,15 @@ export function offersPageDescription({
   label?: string;
 }): string {
   if (!open) {
-    return "Découverte est gratuite. Analyse, l’offre d’aide à la décision (enchère plafond, alertes quotidiennes, comparables), n’est pas encore ouverte à la souscription.";
+    return `Découverte est gratuite. Analyse, l’offre d’aide à la décision (${ceilingTermText()}, alertes quotidiennes, comparables), n’est pas encore ouverte à la souscription.`;
   }
   const candidates = [
-    `Découverte est gratuite. Analyse chiffre votre enchère plafond, suit les nouvelles ventes avec des alertes et s’appuie sur des comparables : ${label}.`,
-    `Découverte est gratuite. Analyse chiffre votre enchère plafond et suit les nouvelles ventes : ${label}.`,
+    `Découverte est gratuite. Analyse chiffre votre ${ceilingTermText()}, suit les nouvelles ventes avec des alertes et s’appuie sur des comparables : ${label}.`,
+    `Découverte est gratuite. Analyse chiffre votre ${ceilingTermText()} et suit les nouvelles ventes : ${label}.`,
   ];
   return (
     candidates.find((text) => text.length <= OFFERS_DESCRIPTION_MAX_LENGTH) ??
-    "Découverte est gratuite. Analyse chiffre votre enchère plafond et suit les nouvelles ventes avec des alertes."
+    `Découverte est gratuite. Analyse chiffre votre ${ceilingTermText()} et suit les nouvelles ventes avec des alertes.`
   );
 }
 

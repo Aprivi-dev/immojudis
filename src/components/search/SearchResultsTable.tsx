@@ -13,7 +13,6 @@ import {
   type AiReviewProjectionReadModel,
   type AiReviewRequestStatus,
 } from "@/lib/ai-review-guard";
-import { formatStartingPrice } from "@/lib/format";
 import { pointsToVerify } from "@/lib/search/points-to-verify";
 import { stateListingStatus } from "@/lib/property-characteristics";
 import { saleIsTribunalVenue } from "@/lib/sale-procedure";
@@ -27,7 +26,9 @@ import {
   listingAccessLine,
   listingDateLabel,
   listingLinkLabel,
+  listingPriceText,
   listingTitle,
+  stateSaleWithoutPrice,
 } from "./listing-text";
 import { useSaleDetailLink } from "./use-sale-detail-link";
 
@@ -292,12 +293,14 @@ const ListingRow = memo(function ListingRow({
       <td className="px-3 py-3">
         <span className="block whitespace-nowrap font-bold text-gold-text">
           <AiReviewField fieldKey="sale.starting_price_eur" {...review}>
-            {formatStartingPrice(sale.starting_price_eur)}
+            {listingPriceText(sale)}
           </AiReviewField>
         </span>
-        <span className="block text-xs text-ink-soft">
-          {tribunal ? "Mise à prix" : "Prix publié"}
-        </span>
+        {stateSaleWithoutPrice(sale) ? null : (
+          <span className="block text-xs text-ink-soft">
+            {tribunal ? "Mise à prix" : "Prix publié"}
+          </span>
+        )}
       </td>
       <td className="px-3 py-3">
         {tribunal ? <span className="block text-xs text-ink-soft">Audience</span> : null}

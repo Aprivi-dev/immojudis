@@ -41,6 +41,8 @@ import Link from "next/link";
 import { useSyncExternalStore } from "react";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
 import { LAUNCH_OFFER_SHORT_TEXT } from "@/lib/launch-offer";
+import { FEE_REGIME_TERMS } from "@/lib/fee-regime-labels";
+import { feeRegimeKeyForVenue, type FeeRegimeKey } from "@/lib/fee-regime-open";
 import { freeAccessLine, MONTHLY_SALE_UNLOCKS, unlockedItemsText } from "@/lib/sale-unlocks";
 import {
   getSaleProcedure,
@@ -243,6 +245,7 @@ export function SalePublicPreview({
   returnTo,
   requestedHash = "",
   adjudicationStatisticsEnabled = false,
+  openFeeRegimes,
   verifyingAccount = false,
 }: {
   saleId: string;
@@ -251,6 +254,8 @@ export function SalePublicPreview({
   requestedHash?: string;
   /** The statistics of the tribunal are only announced while their flag is open. */
   adjudicationStatisticsEnabled?: boolean;
+  /** Fee regimes whose bid ceiling is open (see `parseOpenFeeRegimes`); absent: the tribunal only. */
+  openFeeRegimes?: readonly FeeRegimeKey[];
   /**
    * Une session est détectée et ses droits sont en cours de lecture : l'inscription n'a pas de sens
    * pour ce visiteur, la page dit qu'elle vérifie son compte au lieu de proposer d'en créer un.
@@ -258,6 +263,10 @@ export function SalePublicPreview({
   verifyingAccount?: boolean;
 }) {
   const procedure = getSaleProcedure(preview);
+  // The ceiling is promised only when the fee regime of the sale is open (the tribunal for now). Only
+  // its terms are needed here: the light vocabulary module keeps the fee rules out of this bundle.
+  const regimeKey = feeRegimeKeyForVenue(procedure.venueType, openFeeRegimes);
+  const ceilingTerms = regimeKey ? (FEE_REGIME_TERMS[regimeKey] ?? null) : null;
   const venueCopy = publicSaleVenueCopy(procedure.venueType);
   const state = procedure.venueType === "state";
   const notary = procedure.venueType === "notary";
@@ -364,9 +373,9 @@ export function SalePublicPreview({
           visibleWith: "un compte gratuit",
         }
       : null,
-    procedure.venueType === "tribunal"
+    ceilingTerms
       ? {
-          label: "Enchère plafond (simulation)",
+          label: ceilingTerms.ceilingSimulationLabel,
           width: "medium",
           tier: `Offre Analyse, ou ${MONTHLY_SALE_UNLOCKS} déblocages par mois`,
           visibleWith: "l’offre Analyse, ou en débloquant la vente",
@@ -599,9 +608,9 @@ export function SalePublicPreview({
             <p className={styles.dossierNote} data-testid="public-dossier-teaser">
               <FolderHeart aria-hidden />
               <span>
-                {/* Hors du tribunal, aucune enchère plafond n'est promise sur la page : le statut seul. */}
-                {procedure.venueType === "tribunal"
-                  ? "Compte gratuit : notez votre statut et votre enchère plafond sur chaque vente suivie."
+                {/* Sans régime de frais ouvert, aucun plafond n'est promis sur la page : le statut seul. */}
+                {ceilingTerms
+                  ? `Compte gratuit : notez votre statut et votre ${ceilingTerms.ceilingTerm} sur chaque vente suivie.`
                   : "Compte gratuit : notez votre statut sur chaque vente suivie."}
               </span>
             </p>
@@ -633,7 +642,7 @@ export function SalePublicPreview({
                     fourchette de valeur estimée, Street View, météo et risques de la commune. Et
                     chaque mois, {MONTHLY_SALE_UNLOCKS} déblocages de ventes :{" "}
                     {unlockedItemsText({
-                      ceiling: procedure.venueType === "tribunal",
+                      ceiling: ceilingTerms?.ceilingTermWithArticle ?? null,
                       statistics:
                         procedure.venueType === "tribunal" && adjudicationStatisticsEnabled,
                     })}
@@ -646,8 +655,10 @@ export function SalePublicPreview({
                     Offre Analyse
                   </h3>
                   <p>
-                    {procedure.venueType === "tribunal"
-                      ? "Pièces du dossier, ventes comparables, travaux, statistiques du tribunal et calcul de votre enchère plafond."
+                    {ceilingTerms
+                      ? procedure.venueType === "tribunal"
+                        ? `Pièces du dossier, ventes comparables, travaux, statistiques du tribunal et calcul de votre ${ceilingTerms.ceilingTerm}.`
+                        : `Pièces du dossier, ventes comparables, travaux et calcul de votre ${ceilingTerms.ceilingTerm}.`
                       : "Pièces du dossier, ventes comparables et risques repérés lorsque les données le permettent."}
                   </p>
                 </li>

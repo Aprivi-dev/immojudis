@@ -859,6 +859,39 @@ function renderPreview(
   );
 }
 
+describe("plafond annoncé selon le régime de frais de la vente", () => {
+  it("annonce l'enchère plafond d'une vente au tribunal, avec le texte actuel", () => {
+    const { container } = renderPreview({ sale_venue_type: "tribunal" });
+    const text = container.textContent ?? "";
+    expect(text).toContain(
+      "Compte gratuit : notez votre statut et votre enchère plafond sur chaque vente suivie.",
+    );
+    expect(text).toContain("calcul de votre enchère plafond");
+    expect(text).toContain("l’enchère plafond");
+  });
+
+  it("n'annonce aucun plafond hors tribunal, même quand des régimes notariaux sont listés ouverts", () => {
+    const { container } = render(
+      <SalePublicPreview
+        saleId="sale-1"
+        returnTo="/sales"
+        openFeeRegimes={["tribunal", "notary_auction", "notary_online", "state_auction"]}
+        preview={
+          {
+            id: "sale-1",
+            starting_price_eur: 59_000,
+            sale_venue_type: "notary",
+            sale_verification_status: "cross_checked",
+          } as AuctionSale
+        }
+      />,
+    );
+    const text = container.textContent ?? "";
+    expect(text).toContain("Compte gratuit : notez votre statut sur chaque vente suivie.");
+    expect(text).not.toContain("enchère plafond");
+  });
+});
+
 describe("essai gratuit à l'inscription sur la fiche publique", () => {
   const sale = {
     id: "sale-1",

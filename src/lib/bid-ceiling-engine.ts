@@ -8,6 +8,13 @@ import {
   type AcquisitionCostOptions,
   type AcquisitionCostResult,
 } from "@/lib/profitability";
+import {
+  consignationRuleOf,
+  labelsOf,
+  TRIBUNAL_CONSIGNATION_RULE,
+  type ConsignationRule,
+  type FeeRegime,
+} from "@/lib/fee-regime-definitions";
 
 /**
  * Version des règles de calcul du plafond. À incrémenter dès qu'un résultat change volontairement
@@ -83,11 +90,16 @@ export const WORKS_MONTHS: Record<CeilingWorksKey, number> = {
 
 export const WORKS_CONTINGENCY_PCT = 10;
 /** Consignation exigée pour enchérir (art. R322-41 CPCE) : 10 % de la mise à prix, 3 000 € minimum. */
-export const CONSIGNATION_RATE = 0.1;
-export const CONSIGNATION_MINIMUM = 3_000;
+export const CONSIGNATION_RATE = TRIBUNAL_CONSIGNATION_RULE.rate;
+export const CONSIGNATION_MINIMUM = TRIBUNAL_CONSIGNATION_RULE.minimum;
 const BID_STEP = 500;
 
 export type CeilingHypotheses = {
+  /**
+   * Régime de frais de la vente (règles et vocabulaire propres à son type). Absent : le régime du
+   * tribunal, comme avant l'introduction des régimes.
+   */
+  regime?: FeeRegime | null;
   project: CeilingProject;
   profile: CeilingProfile;
   /** Remplace la marge du profil quand l'utilisateur la fixe lui-même. */
@@ -416,19 +428,20 @@ function buildSteps(h: CeilingHypotheses, plan: CeilingPlan, value: number): Cei
       detail: carryingDetail(h, plan),
     });
   }
+  const labels = labelsOf(h);
   steps.push({
     key: "fees",
-    label: "Frais de la vente",
+    label: labels.feesStepLabel,
     amount: -Math.round(plan.feesAtMaxBid.acquisitionFeesTotal),
     kind: "minus",
-    detail: `Droits d’enregistrement, émoluments de l’avocat poursuivant, frais préalables et honoraires de votre avocat, calculés pour une enchère de ${formatEur(plan.maxBid)}.`,
+    detail: labels.feesStepDetail(formatEur(plan.maxBid)),
   });
   steps.push({
     key: "ceiling",
-    label: "Enchère plafond",
+    label: labels.ceilingStepLabel,
     amount: plan.maxBid,
     kind: "result",
-    detail: "Arrondie aux 500 € inférieurs. Au-delà, l’opération ne respecte plus vos objectifs.",
+    detail: labels.ceilingStepDetail,
   });
   return steps;
 }
@@ -472,7 +485,7 @@ function releaseDetail(h: CeilingHypotheses): string {
       ? "Occupation non confirmée : par prudence, nous comptons le coût d’une libération."
       : h.occupation.case === "squat"
         ? "Bien occupé sans droit ni titre : il faudra faire constater et libérer les lieux."
-        : "Bien occupé : le jugement d’adjudication vaut titre d’expulsion, mais la procédure prend du temps.";
+        : labelsOf(h).releaseOccupiedIntro;
   return `${intro} Frais de commissaire de justice, serrurier et garde-meubles estimés. Le délai (${h.occupation.releaseMonths} mois, trêve hivernale comprise) est compté dans le portage.`;
 }
 
@@ -574,50 +587,49 @@ export type CashStep = { when: string; label: string; amount: number | null; det
 /** Les sommes à sortir, dans l'ordre où elles sont dues, pour une enchère donnée. */
 export function buildCashPlan(h: CeilingHypotheses, plan: CeilingPlan, price: number): CashStep[] {
   const evaluation = evaluateBid(h, plan, price);
-  const consignation = consignationAmount(h);
+  const rule = consignationRuleOf(h);
+  const consignation = consignationAmount(h, rule);
+  const cash = labelsOf(h).cash;
   const fees = evaluation.fees;
   const duties = Math.round(fees.registrationDuties + fees.csi + fees.vatOnPrice);
   const steps: CashStep[] = [
     {
-      when: "Avant l’audience",
-      label: "Consignation",
+      when: cash.consignation.when,
+      label: cash.consignation.label,
       amount: consignation,
       detail:
         h.feesSource.consignation === "document"
-          ? "Montant indiqué dans l’annonce, à remettre à votre avocat (chèque de banque ou caution bancaire). Restituée si vous ne l’emportez pas."
-          : "10 % de la mise à prix, 3 000 € minimum, par chèque de banque ou caution bancaire. Restituée si vous ne l’emportez pas.",
+          ? cash.consignation.documentDetail
+          : cash.consignation.detail,
     },
     {
-      when: "Avant l’audience",
-      label: "Honoraires de votre avocat",
+      when: cash.lawyer.when,
+      label: cash.lawyer.label,
       amount: Math.round(fees.lawyerFees),
-      detail:
-        "Seul un avocat du barreau du tribunal peut enchérir pour vous. Honoraires libres, à convenir avec lui.",
+      detail: cash.lawyer.detail,
     },
     {
-      when: "10 jours après",
-      label: "Fin du délai de surenchère",
+      when: cash.overbid.when,
+      label: cash.overbid.label,
       amount: null,
-      detail:
-        "Pendant 10 jours, n’importe qui peut surenchérir d’au moins 10 %. Votre adjudication n’est définitive qu’ensuite.",
+      detail: cash.overbid.detail,
     },
     {
-      when: "Dans le mois",
-      label: "Frais préalables",
+      when: cash.preliminary.when,
+      label: cash.preliminary.label,
       amount: Math.round(fees.fpt),
       detail:
         h.feesSource.fpt === "document"
-          ? "Frais de la procédure de saisie, indiqués dans les pièces, payés en plus du prix."
+          ? cash.preliminary.documentDetail
           : h.feesSource.fpt === "saisie"
-            ? "Frais de la procédure de saisie, montant que vous avez saisi, payés en plus du prix."
-            : "Frais de la procédure de saisie, payés en plus du prix. Leur montant exact est à lire dans le cahier des conditions de vente.",
+            ? cash.preliminary.enteredDetail
+            : cash.preliminary.detail,
     },
     {
-      when: "Sous 2 mois",
-      label: "Solde du prix et droits",
+      when: cash.balance.when,
+      label: cash.balance.label,
       amount: Math.round(Math.max(0, price - consignation) + duties + fees.emolumentsTTC),
-      detail:
-        "Prix moins la consignation, droits d’enregistrement et émoluments. Passé 2 mois, le prix porte intérêt au taux légal, majoré de 5 points deux mois plus tard.",
+      detail: cash.balance.detail,
     },
   ];
   if (plan.releaseCost > 0) {
@@ -639,11 +651,20 @@ export function buildCashPlan(h: CeilingHypotheses, plan: CeilingPlan, price: nu
   return steps;
 }
 
-export function consignationAmount(h: Pick<CeilingHypotheses, "consignation" | "startingPrice">) {
+/**
+ * Consignation à prévoir : le montant lu dans l'annonce, sinon la règle du régime (par défaut celle
+ * du tribunal). Une règle `null` : le régime n'exige pas de consignation, 0 quand l'annonce n'en
+ * indique pas.
+ */
+export function consignationAmount(
+  h: Pick<CeilingHypotheses, "consignation" | "startingPrice">,
+  rule: ConsignationRule | null = TRIBUNAL_CONSIGNATION_RULE,
+) {
   const found = positive(h.consignation);
   if (found) return Math.round(found);
+  if (!rule) return 0;
   const start = positive(h.startingPrice) ?? 0;
-  return Math.max(CONSIGNATION_MINIMUM, Math.round(start * CONSIGNATION_RATE));
+  return Math.max(rule.minimum, Math.round(start * rule.rate));
 }
 
 export type WorksCeiling = {

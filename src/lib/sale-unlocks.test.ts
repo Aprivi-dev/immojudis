@@ -10,6 +10,8 @@ import {
   unlockConfirmationText,
   UNLOCK_HIGHLIGHTS_INLINE_TEXT,
   UNLOCK_HIGHLIGHTS_TEXT,
+  unlockHighlightsInlineText,
+  unlockHighlightsText,
   unlockCallToActionLabel,
   unlockedItemsText,
   unlockQuotaReachedText,
@@ -158,6 +160,30 @@ describe("texts of the unlock", () => {
       "la lecture des pièces, l’historique de la vente et les pièces du dossier",
     );
     expect(unlockedItemsText({ ceiling: true, statistics: false })).not.toContain("statistiques");
+  });
+
+  it("names the ceiling from the label given by the fee regime of the sale", () => {
+    expect(unlockedItemsText({ ceiling: "l’enchère plafond", statistics: false })).toBe(
+      unlockedItemsText({ ceiling: true, statistics: false }),
+    );
+    expect(unlockedItemsText({ ceiling: "l’offre plafond", statistics: false })).toBe(
+      "l’offre plafond, la lecture des pièces, l’historique de la vente et les pièces du dossier",
+    );
+    expect(unlockedItemsText({ ceiling: null, statistics: false })).toBe(
+      unlockedItemsText({ ceiling: false, statistics: false }),
+    );
+  });
+
+  it("builds the highlights of the free account from the open regimes, unchanged for the tribunal alone", () => {
+    expect(unlockHighlightsText()).toBe(UNLOCK_HIGHLIGHTS_TEXT);
+    expect(unlockHighlightsText(["tribunal"])).toBe(
+      "enchère plafond (ventes au tribunal), lecture des pièces, historique, selon la vente",
+    );
+    expect(unlockHighlightsInlineText(["tribunal"])).toBe(UNLOCK_HIGHLIGHTS_INLINE_TEXT);
+    // Opening a regime whose rules are not defined promises nothing more.
+    expect(unlockHighlightsText(["tribunal", "notary_auction", "state_auction"])).toBe(
+      UNLOCK_HIGHLIGHTS_TEXT,
+    );
   });
 
   it("states the remaining unlocks with the monthly total", () => {

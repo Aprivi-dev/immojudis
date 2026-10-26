@@ -1,11 +1,11 @@
-import { buildCeilingHypotheses, type CeilingUserChoices } from "@/lib/bid-ceiling-defaults";
+import type { CeilingUserChoices } from "@/lib/bid-ceiling-defaults";
 import {
   CEILING_PROFILES,
   CEILING_PROJECTS,
   ceilingsByWorks,
-  computeCeilingPlan,
   evaluateBid,
 } from "@/lib/bid-ceiling-engine";
+import { computeSaleCeiling } from "@/lib/sale-ceiling";
 import type { MarketEstimate } from "@/lib/market.server";
 import { computeAcquisitionCosts, estimateWorksBudget } from "@/lib/profitability";
 import type { AuctionSale } from "@/lib/types";
@@ -13,14 +13,22 @@ import type { AuctionSale } from "@/lib/types";
 /**
  * The bid ceiling saved in a report, computed with the same engine and the
  * same defaults as the sale page so the two never show different amounts.
+ * The report route has already decided that a ceiling makes sense for the sale, so the guards of
+ * `computeSaleCeiling` (fee regime, valuation conflict, AI review) are not applied again here.
  */
 export function buildCeilingSnapshot(
   sale: AuctionSale,
   marketEstimate: MarketEstimate | null,
   choices: CeilingUserChoices = {},
 ) {
-  const hypotheses = buildCeilingHypotheses(sale, marketEstimate, choices);
-  const plan = computeCeilingPlan(hypotheses);
+  const { hypotheses, plan } = computeSaleCeiling({
+    sale,
+    estimate: marketEstimate,
+    aiProjections: null,
+    aiReviewStatus: "disabled",
+    choices,
+    guarded: false,
+  });
   const available = plan.available && plan.reachable;
   const byWorks = plan.available ? ceilingsByWorks(hypotheses) : [];
   const startingPrice = Math.max(0, sale.starting_price_eur ?? 0);
