@@ -49,6 +49,7 @@ describe("adresse de la recherche d'aperçu", () => {
       minSaleDate: "2026-11-01",
       minSqft: 40,
       page: 3,
+      pepite: true,
       query: "Nîmes centre",
       saleType: "notary",
       sort: "price_desc",

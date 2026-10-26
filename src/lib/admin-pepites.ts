@@ -1,10 +1,13 @@
 import "server-only";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { z } from "zod";
 import { adminDeadlineSignal } from "@/lib/admin-route-deadline";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { asRecord, asRecordOrNull } from "@/lib/guards";
 import { matchProsecutedSales, type ProsecutionLawyer } from "@/lib/lawyer-prosecuted-sales";
+import { PUBLIC_CATALOGUE_CACHE_TAG } from "@/lib/public-catalogue.server";
+import { PUBLIC_SALES_CACHE_TAG } from "@/lib/public-sale.server";
 import { describePepiteReasonCodes } from "@/lib/pepite-reasons";
 import {
   PEPITE_RATE_ALERT_MAX,
@@ -499,6 +502,29 @@ export const adminPepitesSuspendSchema = z
   .strict();
 export type AdminPepitesSuspendInput = z.input<typeof adminPepitesSuspendSchema>;
 
+/**
+ * Après un arrêt d'urgence réussi : les caches du site qui portent le repère sont expirés tout de suite, au lieu
+ * d'attendre leur durée (5 minutes) : la liste publique et les lectures de recherche (`public-catalogue`), les
+ * lectures de chaque fiche publique (`public-sales`) et les pages des fiches. Même API que
+ * `/api/pipeline/revalidate-sale`. Les copies du CDN ne se purgent pas par étiquette : les routes des pépites les
+ * gardent une minute seulement. Un échec d'expiration (hors requête) ne défait pas l'arrêt, déjà enregistré.
+ */
+function expirePepiteCaches(): void {
+  try {
+    revalidateTag(PUBLIC_CATALOGUE_CACHE_TAG, { expire: 0 });
+    revalidateTag(PUBLIC_SALES_CACHE_TAG, { expire: 0 });
+    revalidatePath("/sales/[id]", "page");
+  } catch (error) {
+    console.warn(
+      JSON.stringify({
+        scope: "admin.pepites",
+        event: "cache_expiry_failed",
+        code: (error as { code?: unknown } | null)?.code ?? null,
+      }),
+    );
+  }
+}
+
 export async function suspendAdminPepites(
   authToken: string,
   input: AdminPepitesSuspendInput = {},
@@ -513,5 +539,6 @@ export async function suspendAdminPepites(
   });
   if (error) throw error;
   console.info(JSON.stringify({ scope: "admin.pepites", userId: auth.userId, mode: data }));
+  expirePepiteCaches();
   return { mode: data === "off" || data === "shadow" || data === "on" ? data : "unknown" };
 }

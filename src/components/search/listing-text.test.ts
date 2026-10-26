@@ -184,3 +184,23 @@ describe("prix d'une cession domaniale", () => {
     }
   });
 });
+
+describe("listingLinkLabel d'une pépite", () => {
+  const pepiteSale = {
+    id: "p",
+    sale_venue_type: "tribunal",
+    starting_price_eur: 90_000,
+  } as unknown as AuctionSale;
+
+  it("ajoute « , pépite » au nom accessible du lien de la carte", () => {
+    const plain = listingLinkLabel(pepiteSale, "Maison · Pau");
+    expect(listingLinkLabel(pepiteSale, "Maison · Pau", { pepite: true })).toBe(`${plain}, pépite`);
+    expect(plain).not.toContain("pépite");
+  });
+
+  it("garde le mot même quand le prix et la date sont masqués par la relecture", () => {
+    expect(
+      listingLinkLabel(pepiteSale, "Maison · Pau", { price: true, date: true, pepite: true }),
+    ).toBe("Voir Maison · Pau, pépite");
+  });
+});

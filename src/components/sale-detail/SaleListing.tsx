@@ -55,6 +55,7 @@ import { saleHeadingSubtitle, saleShortHeading } from "@/lib/seo";
 import { stateListingStatus } from "@/lib/property-characteristics";
 import { saleSession, saleWindow } from "@/lib/sale-window";
 import type { AuctionSale } from "@/lib/types";
+import { PepiteHeroBadge } from "@/components/PepiteBadge";
 import styles from "./SaleListing.module.css";
 import { PublicListingFactSource } from "./ListingDataCoverage";
 import {
@@ -639,11 +640,14 @@ export function SaleDetailHeading({
   publicDemo = false,
   aiReviewProjections = null,
   aiReviewStatus = "ready",
+  pepite = false,
 }: {
   sale: AuctionSale;
   publicDemo?: boolean;
   aiReviewProjections?: readonly AiReviewProjectionReadModel[] | null;
   aiReviewStatus?: AiReviewRequestStatus;
+  /** La vente est une pépite publiable : pastille « Pépite » et lien « Pourquoi ? » vers le bloc `#pepite`. */
+  pepite?: boolean;
 }) {
   const review = (field: Parameters<typeof getAiReviewFieldResult>[1]) =>
     getAiReviewFieldResult(aiReviewProjections, field, aiReviewStatus).blocked;
@@ -671,6 +675,7 @@ export function SaleDetailHeading({
     <header className={styles.pageHeading}>
       <div className={styles.headingBadges}>
         <SaleProcedureBadge sale={sale} />
+        {pepite ? <PepiteHeroBadge /> : null}
         {publicDemo ? (
           <span className={styles.demoNote}>Annonce exemple · données fictives</span>
         ) : null}

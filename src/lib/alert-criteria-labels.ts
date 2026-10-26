@@ -1,5 +1,6 @@
 import { formatDate, formatPrice, occupancyLabel, propertyTypeLabel } from "@/lib/format";
 import { pathWithSearch } from "@/lib/navigation";
+import { PEPITE_ALERT_LABEL } from "@/lib/pepite-copy";
 import { salesSearchToUrlRecord, type SalesSearchParams } from "@/lib/search/search-url-state";
 import { parseSaleType, saleTypeFilterLabel } from "@/lib/sale-types";
 import type { UserAlert } from "@/lib/types";
@@ -76,6 +77,7 @@ export function alertCriteriaSummary(
   }
   if (alert.dpe_classes?.length) criteria.push(`DPE : ${alert.dpe_classes.join(", ")}`);
   if (alert.require_house_with_land) criteria.push("Maison avec terrain");
+  if (advanced.pepite_only === true) criteria.push(PEPITE_ALERT_LABEL);
   const from = text(advanced.min_sale_date);
   const to = text(advanced.max_sale_date);
   if (from || to) {
@@ -134,6 +136,7 @@ export function alertToSalesSearch(alert: AlertSearchCriteria): SalesSearchParam
     query: text(advanced.query) ?? undefined,
     aroundAddress: text(advanced.around_address) ?? undefined,
     aroundRadius: nonNegativeNumber(advanced.around_radius_km),
+    pepite: advanced.pepite_only === true ? true : undefined,
   };
 }
 

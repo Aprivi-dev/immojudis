@@ -76,6 +76,14 @@ describe("publicAlertCriteria", () => {
     });
   });
 
+  it("garde « Seulement les pépites » : un critère public, comme la zone", () => {
+    expect(publicAlertCriteria({ department: "33", pepite: "true" })).toEqual({
+      department: "33",
+      pepite: true,
+    });
+    expect(publicAlertCriteria({ department: "33", pepite: "peut-être" }).pepite).toBeUndefined();
+  });
+
   it("n'accepte qu'un seul type de bien", () => {
     expect(publicAlertCriteria({ department: "33", homeTypes: "house,apartment" }).homeTypes).toBe(
       undefined,

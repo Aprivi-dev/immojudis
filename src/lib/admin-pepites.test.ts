@@ -10,6 +10,13 @@ const mocks = vi.hoisted(() => ({
   reads: [] as string[],
   /** Les lectures de table ne rendent jamais la main (base qui ne répond plus). */
   hang: false,
+  revalidateTag: vi.fn(),
+  revalidatePath: vi.fn(),
+}));
+vi.mock("next/cache", () => ({
+  revalidateTag: mocks.revalidateTag,
+  revalidatePath: mocks.revalidatePath,
+  unstable_cache: (load: (...args: unknown[]) => unknown) => load,
 }));
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
   requireSupabaseAuthContext: mocks.requireAuth,
@@ -194,7 +201,7 @@ describe("parseAdminPepiteRow", () => {
       startingPriceEur: 80000,
       href: "/sales/sale-1",
     });
-    expect(parsed?.passed.join(" ")).toContain("Test C");
+    expect(parsed?.passed.join(" ")).toContain("Achat probable nettement sous la valeur");
     expect(parsed?.passed.join(" ")).toContain("ventes comparables");
     expect(parsed?.stability).toEqual(["Publiée : 2 évaluations favorables consécutives"]);
     expect(parsed?.missed).toEqual([]);
@@ -574,5 +581,42 @@ describe("suspendAdminPepites", () => {
     mocks.rpc.mockResolvedValue({ data: null, error: { code: "XX000", message: "boom" } });
 
     await expect(suspendAdminPepites("jeton")).rejects.toMatchObject({ message: "boom" });
+  });
+
+  describe("expiration des caches après l'arrêt d'urgence", () => {
+    beforeEach(() => {
+      mocks.revalidateTag.mockReset();
+      mocks.revalidatePath.mockReset();
+      mocks.requireAuth.mockResolvedValue({ isAdmin: true, userId: "admin-1" });
+    });
+
+    it("expire la liste publique, les lectures de chaque fiche et les pages des fiches", async () => {
+      mocks.rpc.mockResolvedValue({ data: "shadow", error: null });
+
+      await suspendAdminPepites("jeton");
+
+      expect(mocks.revalidateTag).toHaveBeenCalledWith("public-catalogue", { expire: 0 });
+      expect(mocks.revalidateTag).toHaveBeenCalledWith("public-sales", { expire: 0 });
+      expect(mocks.revalidatePath).toHaveBeenCalledWith("/sales/[id]", "page");
+    });
+
+    it("n'expire rien quand l'arrêt échoue ou n'est pas permis", async () => {
+      mocks.rpc.mockResolvedValue({ data: null, error: { code: "XX000", message: "boom" } });
+      await expect(suspendAdminPepites("jeton")).rejects.toBeDefined();
+      mocks.requireAuth.mockResolvedValue({ isAdmin: false, userId: "u" });
+      await expect(suspendAdminPepites("jeton")).rejects.toBeDefined();
+      expect(mocks.revalidateTag).not.toHaveBeenCalled();
+      expect(mocks.revalidatePath).not.toHaveBeenCalled();
+    });
+
+    it("un échec de l'expiration (hors requête) ne défait pas l'arrêt déjà enregistré", async () => {
+      mocks.rpc.mockResolvedValue({ data: "shadow", error: null });
+      mocks.revalidateTag.mockImplementation(() => {
+        throw new Error("hors requête");
+      });
+      vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+      await expect(suspendAdminPepites("jeton")).resolves.toEqual({ mode: "shadow" });
+    });
   });
 });

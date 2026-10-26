@@ -272,3 +272,55 @@ describe("recherche texte enregistrée dans l'alerte (query)", () => {
     }
   });
 });
+
+describe("alerte « Seulement les pépites »", () => {
+  const pepiteAlert = (overrides: Partial<AlertCriteria> = {}) =>
+    makeAlert({
+      city: null,
+      department: null,
+      property_type: null,
+      max_price_eur: null,
+      min_surface_m2: null,
+      occupancy_status: null,
+      min_investment_score: null,
+      max_price_per_m2: null,
+      min_yield_pct: null,
+      min_market_discount_pct: null,
+      dpe_classes: [],
+      require_house_with_land: false,
+      advanced_criteria: { pepite_only: true },
+      ...overrides,
+    });
+
+  it("ne retient que les ventes de la liste publique des pépites", () => {
+    const pepiteSaleIds = new Set(["sale-1"]);
+    const hit = alertMatchesSale(pepiteAlert(), makeSale({ id: "SALE-1" }), { pepiteSaleIds });
+    expect(hit.matches).toBe(true);
+    // Un mot, jamais un montant.
+    expect(hit.reasons).toContain("pépite");
+    expect(
+      alertMatchesSale(pepiteAlert(), makeSale({ id: "sale-2" }), { pepiteSaleIds }).matches,
+    ).toBe(false);
+  });
+
+  it("ne retient aucune vente quand la liste n'est pas fournie, jamais toutes", () => {
+    expect(alertMatchesSale(pepiteAlert(), makeSale()).matches).toBe(false);
+    expect(alertMatchesSale(pepiteAlert(), makeSale(), { pepiteSaleIds: null }).matches).toBe(
+      false,
+    );
+  });
+
+  it("n'agit pas sur une alerte qui ne le demande pas", () => {
+    const plain = pepiteAlert({ advanced_criteria: {} });
+    const result = alertMatchesSale(plain, makeSale(), { pepiteSaleIds: new Set() });
+    expect(result.matches).toBe(true);
+    expect(result.reasons).not.toContain("pépite");
+  });
+
+  it("se cumule avec les autres critères de l'alerte", () => {
+    const pepiteSaleIds = new Set(["sale-1"]);
+    expect(
+      alertMatchesSale(pepiteAlert({ city: "Lyon" }), makeSale(), { pepiteSaleIds }).matches,
+    ).toBe(false);
+  });
+});

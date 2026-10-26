@@ -54,7 +54,13 @@ export function SaleUnlockPanel({
    * regime). `ceilingTerm`: the same name without article, for « Voir mon … » (never derived from
    * the first one).
    */
-  opens?: { ceiling: string | null; ceilingTerm: string | null; statistics: boolean };
+  opens?: {
+    ceiling: string | null;
+    ceilingTerm: string | null;
+    statistics: boolean;
+    /** La vente est une pépite : le détail du repère (montant, prix probable) fait partie de ce qui s'ouvre. */
+    pepite?: boolean;
+  };
   /** The sale was unlocked a moment ago: move the focus to the result so it is announced. */
   announce?: boolean;
   onUnlocked: (result: SaleUnlockResult) => void;

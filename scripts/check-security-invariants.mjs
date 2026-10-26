@@ -1004,6 +1004,143 @@ if (
   }
 }
 
+// Pépites, affichage (lot B2, 26/10/2026) : aucun montant ne part sans le droit au plafond. Le détail
+// (plafond de référence, prix probable, fourchette, ratio) est dans une table privée ; seule la route
+// `GET /api/sales/[id]/pepite` le lit, et seulement après avoir vérifié le droit pour CETTE vente. Le niveau
+// « criteria » (ouvert aux visiteurs) ne reçoit que les noms des critères. Contrôles :
+// (1) le premier bloc `if (detailRequested) { … }` de la route exige une session (`requireSupabaseAuthContext`)
+//     puis, avec `await`, `assertFeatureEntitlementVia(auth, "property.bidCeiling", …, { saleId })` : la clé du
+//     droit, l'`await` et la vente font partie du contrôle, et le contrôle est DANS ce bloc ;
+// (2) ce bloc précède la lecture de la ligne privée (`readStoredPepite(`) ;
+// (3) `pepiteDetailView(` n'est appelé que dans un bloc `if (detailRequested)`, où toute réponse porte
+//     `PRIVATE_HEADERS` et jamais `PUBLIC_HEADERS` ; `PRIVATE_HEADERS` contient `private, no-store` ;
+// (4) aucun fichier de `src/` hors liste blanche ne nomme la table privée `auction_sale_pepites` (commentaires
+//     retirés) : les tests, les types générés, le traitement horaire, l'administration et la lecture de la route ;
+// (5) la route publique de la liste et le module de lecture de la liste ne lisent ni la table privée ni son détail ;
+// (6) les modules du navigateur n'importent ni la règle ni un client de service (la règle reste hors du
+//     JavaScript du site, et un montant ne peut pas être recalculé côté navigateur).
+{
+  const stripComments = (text) =>
+    text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`])\/\/[^\n]*/g, "$1");
+  const read = async (relativePath) =>
+    stripComments(await readFile(new URL(`../${relativePath}`, import.meta.url), "utf8"));
+  const compact = (text) => text.replace(/\s+/g, "");
+  // Le contenu du bloc `{ … }` dont l'accolade ouvrante est à `open` (accolades des chaînes ignorées).
+  const balancedBlock = (text, open) => {
+    let depth = 0;
+    let quote = null;
+    for (let index = open; index < text.length; index += 1) {
+      const char = text[index];
+      if (quote) {
+        if (char === "\\") index += 1;
+        else if (char === quote) quote = null;
+      } else if (char === '"' || char === "'" || char === "`") quote = char;
+      else if (char === "{") depth += 1;
+      else if (char === "}") {
+        depth -= 1;
+        if (depth === 0) return { start: open, end: index, body: text.slice(open + 1, index) };
+      }
+    }
+    return null;
+  };
+  const detailBlocks = (text) =>
+    [...text.matchAll(/if\s*\(\s*detailRequested\s*\)\s*\{/g)]
+      .map((match) => balancedBlock(text, match.index + match[0].length - 1))
+      .filter(Boolean);
+
+  const routePath = "src/app/api/sales/[id]/pepite/route.ts";
+  const route = await read(routePath);
+  const blocks = detailBlocks(route);
+  const guard = blocks[0];
+  const guardText = guard ? compact(guard.body) : "";
+  if (
+    !guard ||
+    !guardText.includes("requireSupabaseAuthContext(") ||
+    !guardText.includes('awaitassertFeatureEntitlementVia(auth,"property.bidCeiling"') ||
+    !guardText.includes("{saleId}")
+  ) {
+    failures.push(
+      `${routePath} must, inside its first detailRequested block, require a session then await assertFeatureEntitlementVia(auth, "property.bidCeiling", …, { saleId })`,
+    );
+  }
+  const storedRead = route.indexOf("readStoredPepite(");
+  if (!guard || storedRead < 0 || guard.end > storedRead) {
+    failures.push(`${routePath} reads the stored pepite before the right is checked`);
+  }
+  const privateHeaders = /const\s+PRIVATE_HEADERS\s*=\s*\{[^}]*\}/.exec(route)?.[0] ?? "";
+  if (!privateHeaders.includes("private, no-store")) {
+    failures.push(`${routePath}: PRIVATE_HEADERS must carry cache-control "private, no-store"`);
+  }
+  for (const call of route.matchAll(/pepiteDetailView\(/g)) {
+    const inside = blocks.find((block) => call.index > block.start && call.index < block.end);
+    if (!inside) {
+      failures.push(`${routePath} builds the pepite detail outside a detailRequested block`);
+    } else if (!inside.body.includes("PRIVATE_HEADERS") || inside.body.includes("PUBLIC_HEADERS")) {
+      failures.push(
+        `${routePath}: the detail block must answer with PRIVATE_HEADERS only, never PUBLIC_HEADERS`,
+      );
+    }
+  }
+  if (!route.includes("pepiteDetailView(")) {
+    failures.push(`${routePath} no longer builds the detail through pepiteDetailView`);
+  }
+
+  // (4) Liste blanche de la table privée.
+  const privateTableAllowed = new Set([
+    "src/lib/sale-pepite.server.ts",
+    "src/lib/sale-pepites-batch.ts",
+    "src/lib/admin-pepites.ts",
+    "src/integrations/supabase/types.ts",
+  ]);
+  const sourceFiles = await readdir(new URL("../src/", import.meta.url), { recursive: true });
+  for (const entry of sourceFiles) {
+    const name = String(entry);
+    if (!/\.(?:ts|tsx|mjs|cjs)$/.test(name) || /\.test\.[cm]?[jt]sx?$/.test(name)) continue;
+    const relativePath = `src/${name}`;
+    if (privateTableAllowed.has(relativePath)) continue;
+    if ((await read(relativePath)).includes("auction_sale_pepites")) {
+      failures.push(
+        `${relativePath} names the private table auction_sale_pepites: only the pepite server read, the hourly batch and the administration may`,
+      );
+    }
+  }
+
+  for (const relativePath of [
+    "src/app/api/catalogue/pepites/route.ts",
+    "src/lib/pepite-sale-ids.ts",
+    "src/lib/search/pepite-filter.ts",
+  ]) {
+    if (
+      /auction_sale_pepites|supabaseAdmin|\.details\b|referenceCeiling|probablePrice/.test(
+        await read(relativePath),
+      )
+    ) {
+      failures.push(
+        `${relativePath} reads the private pepite table or its details: the public list carries identifiers only`,
+      );
+    }
+  }
+  for (const relativePath of [
+    "src/components/PepiteBadge.tsx",
+    "src/components/sale-detail/PepiteBlock.tsx",
+    "src/components/sale-detail/PepiteBlockLazy.tsx",
+    "src/hooks/use-sale-pepite.ts",
+    "src/lib/client-api/sale-pepite.ts",
+    "src/lib/search/pepite-filter.ts",
+    "src/lib/pepite-copy.ts",
+  ]) {
+    if (
+      /@\/lib\/pepite-policy|@\/lib\/pepite-reasons|@\/lib\/pepite-input|client\.server|sale-pepite\.server/.test(
+        await read(relativePath),
+      )
+    ) {
+      failures.push(
+        `${relativePath} imports the pepite rule or a server module: the browser never computes or reads an amount`,
+      );
+    }
+  }
+}
+
 // Photos principales hébergées (test du 16/10/2026): the bucket serves only re-encoded WebP files by
 // public URL, the table is closed to the browser roles, the site reads copies through one definer
 // function keyed by a source URL it already knows, and the files leave with the sale through the
@@ -1414,6 +1551,7 @@ console.log(
       "document-reading-personal-data-filter",
       "listing-completeness-score-stays-private",
       "pepite-rule-independent-of-lawyers-sponsoring-and-score",
+      "pepite-detail-never-without-entitlement",
       "sale-photos-bucket-table-and-purge",
       "launch-offer-switch-and-access-functions",
       "invoker-functions-callees-granted-to-service-role",

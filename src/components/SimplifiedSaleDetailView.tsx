@@ -13,7 +13,12 @@ import { DocumentReadingSection } from "@/components/sale-detail/DocumentReading
 import { SalePassagesSection } from "@/components/sale-detail/SalePassagesSection";
 import { SaleUnlockPanel } from "@/components/sale-detail/SaleUnlockPanel";
 import { pointsToVerify } from "@/lib/search/points-to-verify";
-import { SaleUnlockOfferProvider } from "@/components/sale-detail/UnlockCallToAction";
+import {
+  SaleUnlockOfferProvider,
+  UnlockCallToAction,
+} from "@/components/sale-detail/UnlockCallToAction";
+import { useSalePepite } from "@/hooks/use-sale-pepite";
+import { adjudicationVersusCeilingLine } from "@/lib/adjudication-vs-ceiling";
 import type { SaleUnlockResult, SaleUnlockStatus } from "@/lib/sale-unlocks";
 import { AuctionScenariosSection } from "@/components/sale-detail/AuctionScenariosSection";
 import { ListingEnvironmentalRisks } from "@/components/sale-detail/ListingEnvironmentalRisks";
@@ -133,6 +138,10 @@ const CeilingVsCourt = dynamic(() =>
 // « Mes questions pour l'avocat » (n° 92) : chargé à la demande, avec le repérage des points ouverts.
 const LawyerQuestions = dynamic(() =>
   import("@/components/sale-detail/LawyerQuestions").then((module) => module.LawyerQuestions),
+);
+// Bloc « Pourquoi cette pépite » : chargé à la demande, seule une pépite l'affiche.
+const PepiteBlock = dynamic(() =>
+  import("@/components/sale-detail/PepiteBlock").then((module) => module.PepiteBlock),
 );
 const ListingWorks = dynamic(
   () => import("@/components/sale-detail/ListingWorks").then((module) => module.ListingWorks),
@@ -286,6 +295,14 @@ function SaleDetailWorkspace({
   // The sale rows are open (Analyse, or a sale this account unlocked). Everything below that
   // only Analyse has stays on `access === "analysis"`.
   const fullData = access !== "discovery";
+  // Repère « Pépite » : sa présence (liste publique, lue une fois) et ses critères ; le détail avec le montant
+  // seulement pour une fiche dont les lignes sont ouvertes (Analyse, vente débloquée), la route vérifie le droit.
+  const pepite = useSalePepite({
+    saleId: sale.id,
+    view: fullData ? "detail" : "criteria",
+    userKey: user?.id ?? "guest-demo",
+    enabled: !publicDemo && !authLoading,
+  });
   const aiReviewQuery = useQuery({
     queryKey: queryKeys.saleAiReview(sale.id, user?.id ?? "anonymous"),
     queryFn: () => fetchSaleAiReviewProjections(sale.id),
@@ -510,6 +527,14 @@ function SaleDetailWorkspace({
     ceilingEnabled && ceilingPlan.available && ceilingPlan.reachable ? ceilingPlan.maxBid : null;
   // Calculé mais inatteignable : le hero le dit au lieu de rester vide.
   const heroCeilingUnreachable = ceilingEnabled && ceilingPlan.available && !ceilingPlan.reachable;
+  // Après la vente : le prix d'adjudication connu, placé par rapport au plafond du compte (neutre).
+  const adjudicationLine = adjudicationVersusCeilingLine({
+    adjudicationEur: displaySale.adjudication_price_eur,
+    ceilingEur: criticalAnalysisInputsBlocked ? null : heroCeiling,
+    saleDate: displaySale.sale_date,
+    ceilingTerm: feeRegime?.labels.ceilingTerm,
+    byOffers: feeRegime?.labels.byOffers,
+  });
   const ceilingContext =
     heroCeiling != null
       ? {
@@ -613,6 +638,7 @@ function SaleDetailWorkspace({
             publicDemo={publicDemo}
             aiReviewProjections={resolvedAiReviewProjections}
             aiReviewStatus={aiReviewStatus}
+            pepite={pepite != null}
           />
           <div className={listingStyles.upper}>
             <PropertyIdentity
@@ -663,6 +689,7 @@ function SaleDetailWorkspace({
                 ceiling: ceilingTerms?.ceilingTermWithArticle ?? null,
                 ceilingTerm: ceilingTerms?.ceilingTerm ?? null,
                 statistics: statisticsAvailable,
+                pepite: pepite != null,
               }}
               announce={justUnlocked}
               onUnlocked={(result) => onSaleUnlocked?.(result)}
@@ -713,6 +740,27 @@ function SaleDetailWorkspace({
           >
             {activeTab === "apercu" ? (
               <>
+                {pepite ? (
+                  <PepiteBlock
+                    payload={pepite}
+                    saleId={sale.id}
+                    userCeilingEur={heroCeiling}
+                    lockedAction={
+                      <UnlockCallToAction
+                        offerLabel="Découvrir l’offre Analyse"
+                        primaryClassName="font-semibold text-gold-text underline underline-offset-4"
+                      />
+                    }
+                  />
+                ) : null}
+                {adjudicationLine ? (
+                  <p
+                    data-testid="adjudication-vs-ceiling"
+                    className="mx-auto w-full max-w-[1380px] px-4 text-sm font-medium text-foreground sm:px-6 lg:px-8"
+                  >
+                    {adjudicationLine}
+                  </p>
+                ) : null}
                 <ListingChecks
                   sale={displaySale}
                   points={pointsToVerify(displaySale, { occupancyVisible: true })}

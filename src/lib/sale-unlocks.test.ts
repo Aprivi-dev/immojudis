@@ -279,3 +279,19 @@ describe("texts of the unlock", () => {
     ).toBe("Vous avez utilisé vos 3 déblocages de novembre. Ils reviennent le 1er décembre.");
   });
 });
+
+describe("le détail de la pépite parmi ce qu'un déblocage ouvre", () => {
+  it("l'ajoute après le plafond, seulement pour une pépite", () => {
+    expect(
+      unlockedItemsText({ ceiling: "l’enchère plafond", statistics: false, pepite: true }),
+    ).toBe(
+      "l’enchère plafond, le détail de la pépite, la lecture des pièces, l’historique de la vente et les pièces du dossier",
+    );
+    expect(unlockedItemsText({ ceiling: "l’enchère plafond", statistics: false })).not.toContain(
+      "pépite",
+    );
+    expect(
+      unlockedItemsText({ ceiling: "l’enchère plafond", statistics: true, pepite: false }),
+    ).not.toContain("pépite");
+  });
+});

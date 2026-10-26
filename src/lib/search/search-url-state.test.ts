@@ -157,6 +157,21 @@ describe("sales search URL state", () => {
   });
 });
 
+describe("filtre « Pépites seulement »", () => {
+  it("se lit dans l'adresse (`pepite`) et s'y réécrit à l'identique", () => {
+    const search = validateSalesSearch({ pepite: "true" });
+    expect(search.pepite).toBe(true);
+    expect(salesSearchToUrlRecord(search)).toMatchObject({ pepite: true });
+    expect(canonicalSalesQuery(new URLSearchParams("pepite=true"))).toBeNull();
+  });
+
+  it("n'écrit rien quand il est éteint ou illisible", () => {
+    for (const raw of [undefined, "false", "0", "peut-être"]) {
+      expect(salesSearchToUrlRecord(validateSalesSearch({ pepite: raw })).pepite).toBeUndefined();
+    }
+  });
+});
+
 describe("filtres « sous la fourchette » et « sans point à vérifier »", () => {
   it("se lisent dans l'adresse et s'y réécrivent à l'identique", () => {
     const search = validateSalesSearch({ belowRange: "true", noPointsToVerify: "1" });

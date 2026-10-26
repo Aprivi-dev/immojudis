@@ -15,7 +15,11 @@ import { runInNewContext } from "node:vm";
 const MAX_MAPBOX_CHUNK_BYTES = 1_875_000;
 // Tous les autres chunks : le plus gros mesure 284 721 octets le 20/10/2026 ; plafond à la mesure
 // + 15 % (resserré : l'ancien plafond unique, 1 875 000, couvrait tout).
-const MAX_CLIENT_CHUNK_BYTES = 330_000;
+const MAX_CLIENT_CHUNK_BYTES = 335_000;
+// Lot B2 des pépites (affichage du repère). Décision du fondateur du 26/10/2026 : relèvement possible de
+// 10 000 octets au plus sur le plus gros chunk, sur la fiche et sur les favoris. Le plus gros chunk passe de
+// 328 769 à 329 987 octets (13 octets sous l'ancien plafond de 330 000) : on le relève de 5 000 seulement, à
+// 335 000, pour garder une marge. Les plafonds de la fiche et des favoris sont relevés plus bas.
 // The protected admin editor adds an isolated client route; keep a small global
 // allowance for it while enforcing a dedicated initial-load budget below.
 // Separate favorites and alerts routes add independently loaded client chunks.
@@ -175,7 +179,9 @@ const routeBudgets = [
     routeKey: "/favoris/page",
     entryKey: "[project]/src/app/favoris/page",
     // zod 4 puis zod/mini : 660 222 octets (24/10/2026), plafond d'origine rétabli.
-    maxBytes: 670_000,
+    // Décision du fondateur du 26/10/2026 (lot B2, repère « Pépite ») : relevé de 10 000 octets, à 680 000
+    // (669 267 avant le lot).
+    maxBytes: 680_000,
   },
   {
     name: "alerts",
@@ -205,7 +211,9 @@ const routeBudgets = [
     routeKey: "/sales/[id]/page",
     entryKey: "[project]/src/app/sales/[id]/page",
     // zod 4 puis zod/mini : 363 784 octets (24/10/2026), plafond d'origine rétabli.
-    maxBytes: 370_000,
+    // Décision du fondateur du 26/10/2026 (lot B2, repère « Pépite ») : relevé de 10 000 octets, à 380 000
+    // (368 970 avant le lot).
+    maxBytes: 380_000,
   },
   {
     name: "tribunals",

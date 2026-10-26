@@ -512,3 +512,24 @@ describe("vue « tableau » des résultats", () => {
     expect(screen.getAllByRole("article")).toHaveLength(1);
   });
 });
+
+describe("vue « tableau » : repère « Pépite »", () => {
+  it("met une icône avec son texte pour lecteur d'écran dans la colonne Statut, sur la ligne d'une pépite seulement", () => {
+    renderTable([makeSale("sale-a"), makeSale("sale-b", { city: "Lyon" })], {
+      pepiteSaleIds: new Set(["sale-b"]),
+    });
+    const rows = within(screen.getAllByRole("rowgroup")[1]).getAllByRole("row");
+    expect(within(rows[0]).queryByRole("button", { name: "Pépite" })).toBeNull();
+    const badge = within(rows[1]).getByRole("button", { name: "Pépite" });
+    expect(badge.querySelector(".sr-only")?.textContent).toBe("Pépite");
+    expect(badge.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+    // Le nom accessible du lien de la ligne porte aussi le mot.
+    expect(within(rows[1]).getByRole("link").getAttribute("aria-label")).toMatch(/, pépite$/);
+    expect(within(rows[0]).getByRole("link").getAttribute("aria-label")).not.toMatch(/pépite/);
+  });
+
+  it("n'ajoute rien quand la liste est vide ou absente (mode shadow)", () => {
+    renderTable([makeSale("sale-a")], { pepiteSaleIds: new Set() });
+    expect(screen.queryByText("Pépite")).toBeNull();
+  });
+});

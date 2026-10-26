@@ -8,10 +8,20 @@ const db = vi.hoisted(() => ({
   updates: [] as Array<{ table: string; patch: Row; filters: Record<string, unknown> }>,
   plan: { hasAnalysisAccess: true },
   user: { email: "client@example.test", email_confirmed_at: "2026-09-01T09:00:00Z" } as Row,
+  /** Liste publique des pépites lue au moment de l'envoi (`list_public_pepite_sale_ids`). */
+  pepiteIds: [] as string[],
+  pepiteError: null as unknown,
+  rpcCalls: [] as string[],
 }));
 
 vi.mock("@/integrations/supabase/client.server", () => {
   const client = {
+    async rpc(fn: string) {
+      db.rpcCalls.push(fn);
+      return db.pepiteError
+        ? { data: null, error: db.pepiteError }
+        : { data: db.pepiteIds, error: null };
+    },
     auth: {
       admin: {
         getUserById: async () => ({ data: { user: db.user }, error: null }),
@@ -84,6 +94,9 @@ describe("dispatch des emails d'alerte", () => {
     db.updates = [];
     db.plan = { hasAnalysisAccess: true };
     db.user = { email: "client@example.test", email_confirmed_at: "2026-09-01T09:00:00Z" };
+    db.pepiteIds = [];
+    db.pepiteError = null;
+    db.rpcCalls = [];
   });
 
   it("n'écrit pas à une adresse non confirmée : rien n'est envoyé, les envois sont marqués en échec", async () => {
@@ -222,5 +235,72 @@ describe("readUserEmail", () => {
     await expect(readUserEmail(userId)).resolves.toBeNull();
     db.user = { email: null, email_confirmed_at: "2026-09-01T09:00:00Z" };
     await expect(readUserEmail(userId)).resolves.toBeNull();
+  });
+});
+
+describe("mention « pépite » au moment de l'envoi", () => {
+  const pepiteNotification = (index: number) => {
+    const base = notification(index) as unknown as { notification_snapshot: Row };
+    base.notification_snapshot = {
+      ...base.notification_snapshot,
+      match: { reasons: ["pépite", "Budget respecté"] },
+    };
+    return base as never;
+  };
+  const sentBody = (fetchMock: ReturnType<typeof vi.fn>) =>
+    JSON.parse(String((fetchMock.mock.calls[0] as unknown[][])[1]?.["body" as never] ?? "{}")) as {
+      text: string;
+      html: string;
+    };
+
+  beforeEach(() => {
+    db.prefs = {
+      alert_email_enabled: true,
+      alert_email_consented_at: "2026-09-01T10:00:00Z",
+    };
+    db.activeAlerts = [{ id: alertId }];
+    db.updates = [];
+    db.plan = { hasAnalysisAccess: true };
+    db.user = { email: "client@example.test", email_confirmed_at: "2026-09-01T09:00:00Z" };
+    db.pepiteIds = [];
+    db.pepiteError = null;
+    db.rpcCalls = [];
+  });
+
+  async function send(notifications: unknown[]) {
+    const fetchMock = vi.fn(async () => Response.json({ id: "email_1" }));
+    await dispatchQueuedEmailAlertNotifications({
+      notifications: notifications as never,
+      env,
+      fetchImpl: fetchMock as unknown as typeof fetch,
+    });
+    return sentBody(fetchMock as never);
+  }
+
+  it("garde la mention quand la vente est toujours dans la liste publique des pépites", async () => {
+    db.pepiteIds = ["sale-1"];
+    const body = await send([pepiteNotification(1)]);
+    expect(body.text).toContain("Pépite : repère calculé automatiquement");
+    expect(db.rpcCalls).toEqual(["list_public_pepite_sale_ids"]);
+  });
+
+  it("retire la mention quand la vente n'est plus une pépite (arrêt d'urgence, mode shadow)", async () => {
+    db.pepiteIds = [];
+    const body = await send([pepiteNotification(1)]);
+    expect(body.text).not.toMatch(/pépite/i);
+    expect(body.html).not.toMatch(/pépite/i);
+    // Les autres critères restent.
+    expect(body.text).toContain("Budget respecté");
+  });
+
+  it("retire la mention quand la liste est illisible : on n'affirme rien qu'on n'a pas vérifié", async () => {
+    db.pepiteError = { code: "57014" };
+    const body = await send([pepiteNotification(1)]);
+    expect(body.text).not.toMatch(/pépite/i);
+  });
+
+  it("ne lit pas la liste pour une notification sans mention", async () => {
+    await send([notification(1)]);
+    expect(db.rpcCalls).toEqual([]);
   });
 });

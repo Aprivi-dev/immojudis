@@ -68,6 +68,11 @@ export type SalesSearchParams = {
   belowRange?: boolean;
   /** Sans point à vérifier (`points-to-verify.ts`) : l'annonce ne laisse rien d'ouvert. */
   noPointsToVerify?: boolean;
+  /**
+   * Pépites seulement : les ventes de la liste publique des pépites (`pepite-filter.ts`). Ouvert aux
+   * visiteurs sans compte ; sans effet visible tant que le repère n'est pas ouvert (mode « on »).
+   */
+  pepite?: boolean;
   /** Une visite à date publiée dans les 7 jours (voir `saleHasVisitSoon`). */
   visitSoon?: boolean;
   map?: boolean;
@@ -223,6 +228,7 @@ export function validateSalesSearch(search: Record<string, unknown>): SalesSearc
     openHouse: booleanValue(search.openHouse),
     belowRange: booleanValue(search.belowRange),
     noPointsToVerify: booleanValue(search.noPointsToVerify),
+    pepite: booleanValue(search.pepite),
     visitSoon: booleanValue(search.visitSoon),
     map: booleanValue(search.map),
     searchAsMove: booleanValue(search.searchAsMove),
@@ -268,6 +274,7 @@ export function salesSearchToUrlRecord(search: SalesSearchParams): SalesSearchUr
     openHouse: search.openHouse ? true : undefined,
     belowRange: search.belowRange ? true : undefined,
     noPointsToVerify: search.noPointsToVerify ? true : undefined,
+    pepite: search.pepite ? true : undefined,
     visitSoon: search.visitSoon ? true : undefined,
     map: search.map ? true : undefined,
     searchAsMove: search.searchAsMove ? true : undefined,

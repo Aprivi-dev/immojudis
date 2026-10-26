@@ -6,6 +6,8 @@ const state = vi.hoisted(() => ({
   userAlerts: [] as Row[],
   getSalesCalls: [] as Array<{ filters: Record<string, unknown>; limit: number; offset: number }>,
   salesPool: [] as Row[],
+  /** Ventes que la lecture incrémentale ne rend pas (non modifiées) mais que la lecture par identifiant rend. */
+  untouchedPool: [] as Row[],
   /** Colonnes lourdes relues par identifiant (blocs des sources, pièces). */
   salesDetails: {} as Record<string, Row>,
   detailCalls: [] as string[][],
@@ -13,11 +15,23 @@ const state = vi.hoisted(() => ({
   upserts: [] as Row[][],
   /** Alertes dont l'écriture des correspondances échoue (erreur PostgREST, pas une Error). */
   failingAlerts: new Set<string>(),
+  /** Liste publique des pépites (`list_public_pepite_sale_ids`) et les lectures faites par le client de service. */
+  pepiteIds: [] as string[],
+  pepiteError: null as unknown,
+  rpcCalls: [] as string[],
+  tablesRead: [] as string[],
 }));
 
 function fakeClient() {
   return {
+    async rpc(fn: string) {
+      state.rpcCalls.push(fn);
+      return state.pepiteError
+        ? { data: null, error: state.pepiteError }
+        : { data: state.pepiteIds, error: null };
+    },
     from(table: string) {
+      state.tablesRead.push(table);
       const filters: Record<string, unknown> = {};
       let range: [number, number] | null = null;
       let op: "select" | "update" | "upsert" = "select";
@@ -100,8 +114,12 @@ vi.mock("@/lib/queries", () => ({
     offset: number,
   ) => {
     state.getSalesCalls.push({ filters, limit, offset });
+    const ids = filters.ids as string[] | undefined;
+    const pool = ids
+      ? [...state.salesPool, ...state.untouchedPool].filter((sale) => ids.includes(String(sale.id)))
+      : state.salesPool;
     // Copies : l'évaluation ajoute les colonnes relues aux ventes, comme aux lignes réelles.
-    return state.salesPool.slice(offset, offset + limit).map((sale) => ({ ...sale }));
+    return pool.slice(offset, offset + limit).map((sale) => ({ ...sale }));
   },
   getSaleAlertDetails: async (ids: string[]) => {
     state.detailCalls.push(ids);
@@ -113,7 +131,11 @@ vi.mock("@/lib/alert-notifications", () => ({
   createAlertNotificationsForMatches: async () => ({ notificationCount: 0 }),
 }));
 
-import { assertSmartAlertBatchComplete, runSmartAlertEvaluationBatch } from "./alert-matches";
+import {
+  assertSmartAlertBatchComplete,
+  resetPepiteSaleIdsForAlertsCache,
+  runSmartAlertEvaluationBatch,
+} from "./alert-matches";
 
 function alertRow(index: number, overrides: Row = {}): Row {
   return {
@@ -133,12 +155,18 @@ describe("smart alert batch", () => {
   beforeEach(() => {
     state.userAlerts = [];
     state.salesPool = [];
+    state.untouchedPool = [];
     state.salesDetails = {};
     state.detailCalls = [];
     state.getSalesCalls = [];
     state.updates = [];
     state.upserts = [];
     state.failingAlerts = new Set();
+    state.pepiteIds = [];
+    state.pepiteError = null;
+    state.rpcCalls = [];
+    state.tablesRead = [];
+    resetPepiteSaleIdsForAlertsCache();
   });
 
   it("évalue les 100 alertes de test en une exécution, sans plafond d'utilisateurs", async () => {
@@ -385,5 +413,152 @@ describe("passage des alertes intelligentes : échecs partiels", () => {
     const run = await runSmartAlertEvaluationBatch();
     expect(run.failedUserCount).toBe(0);
     expect(() => assertSmartAlertBatchComplete(run)).not.toThrow();
+  });
+});
+
+describe("alertes « Seulement les pépites »", () => {
+  beforeEach(() => {
+    state.userAlerts = [];
+    state.salesPool = [];
+    state.untouchedPool = [];
+    state.salesDetails = {};
+    state.detailCalls = [];
+    state.getSalesCalls = [];
+    state.updates = [];
+    state.upserts = [];
+    state.failingAlerts = new Set();
+    state.pepiteIds = [];
+    state.pepiteError = null;
+    state.rpcCalls = [];
+    state.tablesRead = [];
+    resetPepiteSaleIdsForAlertsCache();
+  });
+
+  const pepiteAlert = (index: number, overrides: Row = {}) =>
+    alertRow(index, {
+      advanced_criteria: { source: "sales_search", pepite_only: true },
+      ...overrides,
+    });
+
+  it("ne retient que les ventes de la liste publique des pépites, avec la mention en texte", async () => {
+    state.userAlerts = [pepiteAlert(1)];
+    state.pepiteIds = ["sale-b"];
+    state.salesPool = [{ id: "sale-a" }, { id: "SALE-B" }, { id: "sale-c" }];
+
+    await runSmartAlertEvaluationBatch();
+
+    const rows = state.upserts.flat();
+    expect(rows.map((row) => row.sale_id)).toEqual(["SALE-B"]);
+    expect(rows[0].match_reasons).toContain("pépite");
+    // Aucun montant dans le résumé enregistré.
+    expect(JSON.stringify(rows[0])).not.toMatch(/plafond|ceiling|probable|referenceCeiling/i);
+  });
+
+  it("lit la liste PUBLIQUE (vide hors mode « on »), jamais la table privée, une seule fois pour tous les comptes", async () => {
+    state.userAlerts = [pepiteAlert(1), pepiteAlert(2), alertRow(3)];
+    state.pepiteIds = ["sale-b"];
+    state.salesPool = [{ id: "sale-b" }];
+
+    await runSmartAlertEvaluationBatch();
+
+    expect(state.rpcCalls.filter((fn) => fn === "list_public_pepite_sale_ids")).toHaveLength(1);
+    expect(state.tablesRead).not.toContain("auction_sale_pepites");
+  });
+
+  it("en mode shadow (liste vide) : aucune correspondance, et la lecture suit l'évaluation précédente", async () => {
+    state.userAlerts = [pepiteAlert(1, { last_evaluated_at: "2026-10-08T06:15:00.000Z" })];
+    state.pepiteIds = [];
+    state.salesPool = [{ id: "sale-a" }];
+
+    await runSmartAlertEvaluationBatch();
+
+    expect(state.upserts.flat()).toEqual([]);
+    expect(state.getSalesCalls[0].filters.updated_since).toBe("2026-10-08T05:15:00.000Z");
+  });
+
+  it("garde la fenêtre incrémentale et ajoute les pépites par identifiant : une vente le devient sans que sa ligne change", async () => {
+    state.userAlerts = [pepiteAlert(1, { last_evaluated_at: "2026-10-08T06:15:00.000Z" })];
+    state.pepiteIds = ["sale-b"];
+    state.untouchedPool = [{ id: "sale-b" }, { id: "sale-c" }];
+
+    await runSmartAlertEvaluationBatch();
+
+    // Pas de relecture complète : la première lecture reste incrémentale.
+    expect(state.getSalesCalls[0].filters.updated_since).toBe("2026-10-08T05:15:00.000Z");
+    expect(state.getSalesCalls[0].filters.ids).toBeUndefined();
+    expect(state.getSalesCalls[1].filters).toMatchObject({ ids: ["sale-b"] });
+    expect(state.getSalesCalls).toHaveLength(2);
+    expect(state.upserts.flat().map((row) => row.sale_id)).toEqual(["sale-b"]);
+  });
+
+  it("une alerte d'un autre critère du même compte ne relit rien de plus et n'évalue pas ces ventes", async () => {
+    state.userAlerts = [
+      pepiteAlert(1, { user_id: "user-1", last_evaluated_at: "2026-10-08T06:15:00.000Z" }),
+      alertRow(2, { user_id: "user-1", last_evaluated_at: "2026-10-08T06:15:00.000Z" }),
+    ];
+    state.pepiteIds = ["sale-b"];
+    state.untouchedPool = [{ id: "sale-b" }];
+    state.salesPool = [{ id: "sale-new" }];
+
+    await runSmartAlertEvaluationBatch();
+
+    // Une seule lecture complète n'a eu lieu : la fenêtre incrémentale, puis les pépites par identifiant.
+    expect(state.getSalesCalls.filter((call) => !call.filters.ids)).toHaveLength(1);
+    expect(state.getSalesCalls[0].filters.updated_since).toBe("2026-10-08T05:15:00.000Z");
+    const bySale = new Map<string, string[]>();
+    for (const row of state.upserts.flat()) {
+      bySale.set(String(row.sale_id), [
+        ...(bySale.get(String(row.sale_id)) ?? []),
+        String(row.alert_id),
+      ]);
+    }
+    // sale-b (pépite, non modifiée) : seulement l'alerte « pépites » ; sale-new : seulement l'alerte plain.
+    expect(bySale.get("sale-b")).toEqual(["alert-1"]);
+    expect(bySale.get("sale-new")).toEqual(["alert-2"]);
+  });
+
+  it("sans pépite hors de la fenêtre, aucune lecture par identifiant", async () => {
+    state.userAlerts = [pepiteAlert(1, { last_evaluated_at: "2026-10-08T06:15:00.000Z" })];
+    state.pepiteIds = ["sale-b"];
+    state.salesPool = [{ id: "sale-b" }];
+
+    await runSmartAlertEvaluationBatch();
+
+    expect(state.getSalesCalls).toHaveLength(1);
+    expect(state.upserts.flat().map((row) => row.sale_id)).toEqual(["sale-b"]);
+  });
+
+  it("n'appelle pas la liste pour des alertes qui ne la demandent pas", async () => {
+    state.userAlerts = [alertRow(1, { last_evaluated_at: "2026-10-08T06:15:00.000Z" })];
+
+    await runSmartAlertEvaluationBatch();
+
+    expect(state.rpcCalls).toEqual([]);
+    expect(state.getSalesCalls[0].filters.updated_since).toBe("2026-10-08T05:15:00.000Z");
+  });
+
+  it("une liste illisible fait échouer l'alerte, qui garde sa date d'évaluation (reprise au passage suivant)", async () => {
+    state.userAlerts = [pepiteAlert(1)];
+    state.pepiteError = { code: "57014", message: "timeout" };
+    state.salesPool = [{ id: "sale-b" }];
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const result = await runSmartAlertEvaluationBatch();
+
+    expect(result.failedAlertCount).toBe(1);
+    expect(state.updates).toEqual([]);
+    expect(state.upserts.flat()).toEqual([]);
+  });
+
+  it("une fonction absente (migration pas appliquée) vaut aucune pépite, sans échec", async () => {
+    state.userAlerts = [pepiteAlert(1)];
+    state.pepiteError = { code: "PGRST202", message: "absente" };
+    state.salesPool = [{ id: "sale-b" }];
+
+    const result = await runSmartAlertEvaluationBatch();
+
+    expect(result.failedAlertCount).toBe(0);
+    expect(state.upserts.flat()).toEqual([]);
+    expect(state.updates).toHaveLength(1);
   });
 });

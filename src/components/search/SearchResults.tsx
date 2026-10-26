@@ -1,8 +1,9 @@
+import { PepiteInfoBadge } from "@/components/PepiteBadge";
 import { PointsToVerifyBadge } from "@/components/PointsToVerifyBadge";
 import { pointsToVerify } from "@/lib/search/points-to-verify";
 import { SaleCountdown } from "@/components/SaleCountdown";
 import type * as React from "react";
-import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, type ComponentProps, useEffect, useMemo, useRef, useState } from "react";
 import { getDisplaySurface } from "@/lib/surface";
 import { SaleVisual } from "@/components/SaleVisual";
 import { ListingPhoto } from "@/components/ListingPhoto";
@@ -116,6 +117,8 @@ export function SearchResultsList({
   onShowFrance,
   hideEmptyState = false,
   view = "cards",
+  pepiteSaleIds,
+  pepiteEmpty,
 }: {
   sales: AuctionSale[];
   sponsoredPlacement?: React.ReactNode;
@@ -143,6 +146,10 @@ export function SearchResultsList({
   hideEmptyState?: boolean;
   /** « table » : un tableau des mêmes annonces (écran large) ; les cartes sinon. */
   view?: ResultsView;
+  /** Pépites publiables (liste publique lue une fois par page) : pastille sur la carte et le tableau. */
+  pepiteSaleIds?: ReadonlySet<string>;
+  /** Actions de l'état vide quand « Pépites seulement » est actif (voir `NoResultsState`). */
+  pepiteEmpty?: ComponentProps<typeof NoResultsState>["pepite"];
 }) {
   const { user, loading: authLoading } = useAuth();
   const saleIds = useMemo(() => sales.map(({ id }) => id), [sales]);
@@ -195,6 +202,9 @@ export function SearchResultsList({
           onRemoveFilter={onRemoveFilter}
           onReset={onResetFilters}
           onShowFrance={onShowFrance}
+          pepite={
+            activeFilters?.some((filter) => filter.key === "pepite") ? pepiteEmpty : undefined
+          }
         />
       ) : null}
 
@@ -212,6 +222,7 @@ export function SearchResultsList({
             onHover={onHover}
             onSelect={onSelect}
             unlockedIds={unlockedIds}
+            pepiteSaleIds={pepiteSaleIds}
             aiReviewBySaleId={aiReviewBySaleId}
             aiReviewStatus={aiReviewStatus}
             favoriteIds={favoriteIds}
@@ -247,6 +258,7 @@ export function SearchResultsList({
                     favoriteScope={favoriteScope}
                     initialFavorite={favoriteIds.has(sale.id)}
                     unlocked={unlockedIds.has(sale.id)}
+                    pepite={pepiteSaleIds?.has(sale.id.toLowerCase()) === true}
                   />
                 </Fragment>
               ))}
@@ -294,6 +306,7 @@ export const ListingCard = memo(function ListingCard({
   favoriteScope = null,
   initialFavorite = false,
   unlocked = false,
+  pepite = false,
   onFavoriteChange,
 }: {
   sale: AuctionSale;
@@ -315,6 +328,8 @@ export const ListingCard = memo(function ListingCard({
   initialFavorite?: boolean;
   /** Le compte a débloqué cette vente (« 3 déblocages par mois ») : pastille « Débloquée ». */
   unlocked?: boolean;
+  /** La vente est une pépite publiable : pastille « Pépite » sur la photo, mot ajouté au nom du lien. */
+  pepite?: boolean;
   /** Appelé après l'ajout ou le retrait réussi d'un favori depuis la carte. */
   onFavoriteChange?: (
     saleId: string,
@@ -431,6 +446,7 @@ export const ListingCard = memo(function ListingCard({
           ).blocked,
           date: getAiReviewFieldResult(aiReviewProjections, "sale.sale_date", aiReviewStatus)
             .blocked,
+          pepite,
         })}
         className="absolute inset-0 z-10 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
       />
@@ -457,14 +473,17 @@ export const ListingCard = memo(function ListingCard({
             onImage
           />
         </div>
-        {(unlocked || viewed) && (
-          <div className="absolute left-3 top-3 z-20 flex flex-wrap gap-1">
+        {(pepite || unlocked || viewed) && (
+          <div className="absolute left-3 top-3 z-20 flex flex-wrap items-start gap-1">
+            {pepite && <PepiteInfoBadge />}
             {unlocked && (
               <span className="rounded-md bg-gold px-2 py-1 text-[11px] font-bold text-brand-navy shadow-sm">
                 Débloquée
               </span>
             )}
-            {viewed && (
+            {/* Deux pastilles au plus sur la photo (docs/design/fondations.md) : « Vu », la moins utile, cède la
+                place quand « Pépite » et « Débloquée » s'appliquent ensemble. */}
+            {viewed && !(pepite && unlocked) && (
               <span className="rounded-md bg-white/95 px-2 py-1 text-[11px] font-bold text-brand-navy shadow-sm">
                 Vu
               </span>

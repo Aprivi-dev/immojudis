@@ -20,6 +20,14 @@ import {
   FreeSaleDetailView,
   UnlockedSaleDetailView,
 } from "./SimplifiedSaleDetailView";
+import { PepiteBlock } from "./sale-detail/PepiteBlock";
+import {
+  pepiteCriteriaPayload,
+  pepiteCriteriaViews,
+  pepiteDetailPayload,
+  pepiteDetailView,
+  type PepitePayload,
+} from "@/lib/sale-pepite-view";
 
 const mocks = vi.hoisted(() => ({
   fetchMarket: vi.fn(),
@@ -28,7 +36,13 @@ const mocks = vi.hoisted(() => ({
   fetchUrbanism: vi.fn(),
   fetchValuePreview: vi.fn(),
   forecast: vi.fn(),
+  pepite: vi.fn(),
   authUser: null as { id: string } | null,
+}));
+
+// Le repère « Pépite » : la liste publique et la route sont testées à part (use-sale-pepite, route).
+vi.mock("@/hooks/use-sale-pepite", () => ({
+  useSalePepite: (args: unknown) => mocks.pepite(args),
 }));
 
 vi.mock("@/hooks/use-auth", () => ({
@@ -82,7 +96,13 @@ vi.mock("next/dynamic", () => ({
       onOpenWorkspace,
       ceiling,
       userKey,
+      payload,
+      userCeilingEur,
+      lockedAction,
     }: {
+      payload?: PepitePayload;
+      userCeilingEur?: number | null;
+      lockedAction?: React.ReactNode;
       ceiling?: number;
       userKey?: string;
       images?: unknown[];
@@ -97,6 +117,17 @@ vi.mock("next/dynamic", () => ({
       propertyTypeVerified?: boolean;
       onOpenWorkspace?: () => void;
     }) {
+      // Bloc « Pourquoi cette pépite » (chargé à la demande) : le vrai composant.
+      if (payload !== undefined) {
+        return (
+          <PepiteBlock
+            payload={payload}
+            saleId={saleId ?? ""}
+            userCeilingEur={userCeilingEur}
+            lockedAction={lockedAction}
+          />
+        );
+      }
       if (forecastQuery) return <section>Prévision de l’audience chargée</section>;
       // n° 92 : « Mon plafond face au tribunal » (reçoit `ceiling`) et « Mes questions pour l'avocat ».
       if (ceiling !== undefined) {
@@ -188,6 +219,159 @@ function expectActivePanel(container: HTMLElement, tab: string): HTMLElement {
   expect(panels[0].getAttribute("aria-labelledby")).toBe(`sale-detail-tab-${tab}`);
   return panels[0];
 }
+
+const PEPITE_CRITERIA = pepiteCriteriaViews(
+  ["pass:regime_open", "pass:sale_upcoming", "pass:test_b_chance", "pass:test_c_cost"],
+  [],
+  "tribunal",
+);
+const PEPITE_LOCKED = pepiteCriteriaPayload(PEPITE_CRITERIA);
+const PEPITE_OPEN = pepiteDetailPayload(
+  PEPITE_CRITERIA,
+  pepiteDetailView(
+    {
+      regime: "tribunal",
+      referenceCeilingEur: 118_000,
+      chanceShare: 0.78,
+      probablePriceEur: 90_000,
+      rangeLowEur: 75_000,
+      rangeHighEur: 110_000,
+      costRatio: 0.68,
+      scenarios: { reliability: "good", courtSample: 40, nationalSample: 800 },
+    },
+    "2026-11-05T09:00:00.000Z",
+    PEPITE_CRITERIA,
+  )!,
+);
+
+describe("repère « Pépite » de la fiche", () => {
+  it("ne change rien tant que la vente n'est pas une pépite (mode shadow, panne)", () => {
+    mocks.authUser = { id: "user-1" };
+    mocks.pepite.mockReturnValue(null);
+    renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
+    expect(screen.queryByTestId("pepite-badge")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Pourquoi ?" })).toBeNull();
+    expect(screen.queryByRole("region", { name: /Pépite :/ })).toBeNull();
+    expect(document.body.textContent).not.toMatch(/pépite/i);
+  });
+
+  it("Analyse : la pastille et « Pourquoi ? » en tête, le bloc complet avant les points à vérifier", () => {
+    mocks.authUser = { id: "user-1" };
+    mocks.pepite.mockReturnValue(PEPITE_OPEN);
+    renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
+
+    expect(mocks.pepite).toHaveBeenCalledWith(expect.objectContaining({ view: "detail" }));
+    expect(screen.getByTestId("pepite-badge").textContent).toBe("Pépite");
+    expect(screen.getByRole("link", { name: "Pourquoi ?" }).getAttribute("href")).toBe("#pepite");
+    const block = screen.getByRole("region", { name: "Pépite : 2 tests réussis" });
+    expect(block.id).toBe("pepite");
+    expect(block.textContent).toMatch(/Prix probable : environ 90\s000\s€/u);
+    expect(block.textContent).toMatch(/Enchère plafond estimée : 118\s000\s€/u);
+    // En tête de l'Aperçu : avant « À vérifier » (ListingChecks).
+    const checks = document.getElementById("points-a-verifier");
+    expect(checks).not.toBeNull();
+    expect(block.compareDocumentPosition(checks!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("Découverte non débloqué : critères et cadenas, aucun montant, route demandée au niveau criteria", () => {
+    mocks.authUser = { id: "user-1" };
+    mocks.pepite.mockReturnValue(PEPITE_LOCKED);
+    renderDetail("discovery", EXAMPLE_SALE_RECORDS.bordeaux.sale);
+
+    expect(mocks.pepite).toHaveBeenCalledWith(expect.objectContaining({ view: "criteria" }));
+    const block = screen.getByRole("region", { name: "Pépite : 2 tests réussis" });
+    expect(block.textContent).toContain("Montant et détail : débloquez cette vente");
+    expect(block.textContent).not.toMatch(/Prix probable|fourchette|Voir avec mes hypothèses/);
+    expect(block.textContent).not.toMatch(/\b\d{2,3}[\s\u00a0\u202f]\d{3}\s€/u);
+    expect(within(block).queryByRole("button", { name: "Utile" })).toBeNull();
+    expect(block.innerHTML).not.toMatch(/blur/);
+  });
+
+  it("vente débloquée : le détail est demandé (la route vérifie le droit pour cette vente)", () => {
+    mocks.authUser = { id: "user-1" };
+    mocks.pepite.mockReturnValue(PEPITE_OPEN);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <UnlockedSaleDetailView sale={EXAMPLE_SALE_RECORDS.bordeaux.sale} />
+      </QueryClientProvider>,
+    );
+    expect(mocks.pepite).toHaveBeenCalledWith(expect.objectContaining({ view: "detail" }));
+  });
+
+  it("le panneau de déblocage liste le détail de la pépite parmi ce qui s'ouvre", () => {
+    mocks.authUser = { id: "user-1" };
+    mocks.pepite.mockReturnValue(PEPITE_LOCKED);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <FreeSaleDetailView
+          sale={EXAMPLE_SALE_RECORDS.bordeaux.sale}
+          unlockStatus={
+            {
+              saleId: EXAMPLE_SALE_RECORDS.bordeaux.sale.id,
+              unlocked: false,
+              unlockable: true,
+              analysisAccess: false,
+              limit: 3,
+              used: 0,
+              remaining: 3,
+              periodStart: "2026-11-01T00:00:00.000Z",
+              resetsAt: "2026-12-01T00:00:00.000Z",
+            } satisfies SaleUnlockStatus
+          }
+        />
+      </QueryClientProvider>,
+    );
+    expect(document.getElementById("debloquer")?.textContent).toContain("le détail de la pépite");
+  });
+
+  it("n'appelle pas le repère sur l'annonce exemple (démonstration publique)", () => {
+    mocks.pepite.mockReturnValue(null);
+    renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, true);
+    expect(mocks.pepite).toHaveBeenCalledWith(expect.objectContaining({ enabled: false }));
+  });
+});
+
+describe("après la vente : prix d'adjudication et plafond estimé", () => {
+  const past = {
+    ...EXAMPLE_SALE_RECORDS.bordeaux.sale,
+    sale_date: "2020-01-15T10:00:00Z",
+  };
+
+  it("place le prix connu par rapport au plafond du compte, sur un ton neutre", () => {
+    mocks.authUser = { id: "user-1" };
+    mocks.pepite.mockReturnValue(null);
+    renderDetail("analysis", { ...past, adjudication_price_eur: 1 }, false);
+    const line = screen.queryByTestId("adjudication-vs-ceiling");
+    // Au prix de 1 €, la vente est en dessous du plafond estimé.
+    expect(line?.textContent).toMatch(
+      /^Adjugée 1\s€ : en dessous de votre enchère plafond estimée \(/u,
+    );
+    expect(line?.textContent).not.toMatch(/bonne affaire|manqué|raté/i);
+  });
+
+  it("n'affiche rien sans prix d'adjudication, sans plafond (Découverte) ou pour une vente à venir", () => {
+    mocks.authUser = { id: "user-1" };
+    mocks.pepite.mockReturnValue(null);
+    const none = renderDetail("analysis", { ...past, adjudication_price_eur: null }, false);
+    expect(screen.queryByTestId("adjudication-vs-ceiling")).toBeNull();
+    none.unmount();
+
+    window.history.replaceState(null, "", "/");
+    const free = renderDetail("discovery", { ...past, adjudication_price_eur: 150_000 });
+    expect(screen.queryByTestId("adjudication-vs-ceiling")).toBeNull();
+    free.unmount();
+
+    window.history.replaceState(null, "", "/");
+    renderDetail(
+      "analysis",
+      { ...EXAMPLE_SALE_RECORDS.bordeaux.sale, adjudication_price_eur: 150_000 },
+      false,
+    );
+    expect(screen.queryByTestId("adjudication-vs-ceiling")).toBeNull();
+  });
+});
 
 describe("integrated listing", () => {
   it("brings « Retour aux ventes » back to the card of this sale, in a 44 px target", () => {

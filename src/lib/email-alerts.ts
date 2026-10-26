@@ -13,7 +13,9 @@ import { cleanSaleTitle } from "@/lib/sale-title";
 import { resolveSiteOrigin } from "@/lib/site-url";
 import { systemAuthForUser } from "@/lib/system-auth";
 import { asRecord, escapeHtml, numberValue, stringValue } from "@/lib/guards";
+import { listPepiteSaleIds, type PepiteIdsClient } from "@/lib/pepite-sale-ids";
 import { EMAIL_COLORS } from "@/lib/email-brand";
+import { PEPITE_LABEL, PEPITE_METHOD_LINK_LABEL, PEPITE_METHOD_PATH } from "@/lib/pepite-copy";
 
 type NotificationRow = Database["public"]["Tables"]["user_alert_notifications"]["Row"];
 
@@ -98,6 +100,8 @@ type DigestItem = {
   title: string;
   location: string;
   reasons: string[];
+  /** La vente correspond à une alerte « Seulement les pépites » : une mention en texte, jamais un montant. */
+  pepite: boolean;
   discountLine: string | null;
   /** Hearing date, formatted for the email, when the snapshot carries one. */
   hearingDate: string | null;
@@ -390,6 +394,10 @@ async function cancelQueuedEmailNotifications({
   if (error) throw new Error(`Annulation des emails en attente impossible (${reason}).`);
 }
 
+const PEPITE_REASON = "pépite";
+/** Mention de l'email : en texte, jamais un montant (la page de la vente porte le détail, selon le droit du compte). */
+const PEPITE_EMAIL_LINE = "repère calculé automatiquement par Immojudis, ni conseil ni garantie.";
+
 function digestItemFromNotification(notification: NotificationRow): DigestItem {
   const snapshot = asRecord(notification.notification_snapshot);
   const alert = asRecord(snapshot.alert);
@@ -405,7 +413,11 @@ function digestItemFromNotification(notification: NotificationRow): DigestItem {
     saleId: stringValue(sale.id) ?? notification.sale_id ?? null,
     title: cleanSaleTitle(stringValue(sale.title)) ?? "Vente judiciaire",
     location: [city, department].filter(Boolean).join(" · "),
-    reasons: arrayOfStrings(match.reasons).slice(0, 4),
+    // « pépite » n'est pas un critère comme les autres : il a sa mention (sans montant) et son lien.
+    reasons: arrayOfStrings(match.reasons)
+      .filter((reason) => reason !== PEPITE_REASON)
+      .slice(0, 4),
+    pepite: arrayOfStrings(match.reasons).includes(PEPITE_REASON),
     discountLine:
       marketDiscountPct == null
         ? null
@@ -507,6 +519,11 @@ export function buildAlertDigestMessage({
       const facts = saleFactsLine(item);
       if (facts) textLines.push(`  ${facts}`);
       if (item.discountLine) textLines.push(`  ${item.discountLine}`);
+      if (item.pepite) {
+        textLines.push(
+          `  ${PEPITE_LABEL} : ${PEPITE_EMAIL_LINE} ${PEPITE_METHOD_LINK_LABEL} ${appUrl}${PEPITE_METHOD_PATH}`,
+        );
+      }
       if (item.reasons.length) textLines.push(`  Critères détectés : ${item.reasons.join(", ")}`);
       textLines.push(`  Consulter l'annonce : ${saleUrl(item)}`);
     }
@@ -541,6 +558,7 @@ export function buildAlertDigestMessage({
       })),
       hiddenCount,
       alertsUrl,
+      methodUrl: `${appUrl}${PEPITE_METHOD_PATH}`,
       unsubscribeUrl,
       disclaimer,
       intro,
@@ -548,6 +566,48 @@ export function buildAlertDigestMessage({
     unsubscribeUrl,
     oneClickUnsubscribe: true,
   };
+}
+
+/**
+ * Retire la mention « pépite » d'un résumé dont la vente n'est plus une pépite publiable (arrêt d'urgence, sortie de
+ * la liste, mode repassé en `shadow`) : le résumé a été écrit quand l'alerte a été évaluée, l'email part plus tard.
+ * La vérification relit la liste publique avec le rôle de service (`list_public_pepite_sale_ids`) ; une liste
+ * illisible retire la mention (on n'affirme rien qu'on n'a pas pu vérifier). Une notification sans mention n'est pas
+ * touchée et ne déclenche aucune lecture.
+ */
+export async function withCurrentPepiteMentions<
+  T extends Pick<NotificationRow, "notification_snapshot">,
+>(notifications: T[]): Promise<T[]> {
+  const mentions = (notification: T) =>
+    arrayOfStrings(asRecord(asRecord(notification.notification_snapshot).match).reasons).includes(
+      PEPITE_REASON,
+    );
+  if (!notifications.some(mentions)) return notifications;
+  let current: ReadonlySet<string>;
+  try {
+    current = new Set(
+      await listPepiteSaleIds({ rpc: (fn) => supabaseAdmin.rpc(fn) } as PepiteIdsClient),
+    );
+  } catch {
+    current = new Set();
+  }
+  return notifications.map((notification) => {
+    if (!mentions(notification)) return notification;
+    const snapshot = asRecord(notification.notification_snapshot);
+    const saleId = stringValue(asRecord(snapshot.sale).id)?.toLowerCase();
+    if (saleId && current.has(saleId)) return notification;
+    const match = asRecord(snapshot.match);
+    return {
+      ...notification,
+      notification_snapshot: {
+        ...snapshot,
+        match: {
+          ...match,
+          reasons: arrayOfStrings(match.reasons).filter((reason) => reason !== PEPITE_REASON),
+        },
+      },
+    };
+  });
 }
 
 async function deliverEmailAlertDigest({
@@ -610,7 +670,7 @@ async function deliverEmailAlertDigest({
 
   const message = buildAlertDigestMessage({
     userId,
-    notifications: sendable,
+    notifications: await withCurrentPepiteMentions(sendable),
     recipientEmail: recipient,
     from: config.from,
     appUrl: config.appUrl,
@@ -902,6 +962,7 @@ function buildAlertDigestHtml({
   groups,
   hiddenCount,
   alertsUrl,
+  methodUrl,
   unsubscribeUrl,
   disclaimer,
   intro,
@@ -913,6 +974,8 @@ function buildAlertDigestHtml({
   }>;
   hiddenCount: number;
   alertsUrl: string;
+  /** Page « Comment repérons-nous les pépites ? », liée à la mention « Pépite ». */
+  methodUrl: string;
   unsubscribeUrl: string;
   disclaimer: string;
   intro: string;
@@ -929,6 +992,7 @@ function buildAlertDigestHtml({
           ${item.location ? `<p style="margin:0 0 8px;color:${EMAIL_COLORS.inkSoft};">${escapeHtml(item.location)}</p>` : ""}
           ${saleFactsLine(item) ? `<p style="margin:0 0 8px;color:${EMAIL_COLORS.navy};">${escapeHtml(saleFactsLine(item) ?? "")}</p>` : ""}
           ${item.discountLine ? `<p style="margin:0 0 8px;font-weight:700;color:${EMAIL_COLORS.navy};">${escapeHtml(item.discountLine)}</p>` : ""}
+          ${item.pepite ? `<p style="margin:0 0 8px;color:${EMAIL_COLORS.navy};"><strong>${escapeHtml(PEPITE_LABEL)}</strong> : ${escapeHtml(PEPITE_EMAIL_LINE)} <a href="${escapeAttribute(methodUrl)}" style="color:${EMAIL_COLORS.goldText};">${escapeHtml(PEPITE_METHOD_LINK_LABEL)}</a></p>` : ""}
           ${reasons ? `<ul style="margin:0 0 12px;padding-left:18px;color:${EMAIL_COLORS.inkStrong};">${reasons}</ul>` : ""}
           <a href="${escapeAttribute(item.url)}" style="display:inline-block;background:${EMAIL_COLORS.navy};color:#fff;text-decoration:none;border-radius:8px;padding:10px 14px;font-weight:700;">Voir l'annonce</a>
         </div>`;

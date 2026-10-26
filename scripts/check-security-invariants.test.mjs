@@ -4,6 +4,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
   rmSync,
   symlinkSync,
   unlinkSync,
@@ -336,5 +337,126 @@ describe("invariants de sécurité : indépendance de la règle des pépites", (
     const run = runInvariants({}, [], reasons('import "./module-introuvable";'));
     expect(run.status).toBe(1);
     expect(run.stderr).toContain("./module-introuvable");
+  });
+});
+
+describe("invariants de sécurité : aucun montant de pépite sans le droit", () => {
+  const routePath = "src/app/api/sales/[id]/pepite/route.ts";
+  const route = readFileSync(join(repo, routePath), "utf8");
+  const mutate = (apply) => {
+    const mutated = apply(route);
+    // Une mutation qui ne change rien ne prouverait rien.
+    expect(mutated).not.toBe(route);
+    return runInvariants({}, [], { [routePath]: mutated });
+  };
+
+  it("passe sur les sources du dépôt", () => {
+    const run = runInvariants();
+    expect(run.stderr).toBe("");
+    expect(run.status).toBe(0);
+  });
+
+  it("M1 : refuse une clé de droit changée", () => {
+    const run = mutate((text) => text.replace('"property.bidCeiling"', '"property.valueEstimate"'));
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain("property.bidCeiling");
+  });
+
+  it("M2 : refuse un contrôle de droit sans await (la promesse ne serait pas attendue)", () => {
+    const run = mutate((text) =>
+      text.replace("await assertFeatureEntitlementVia(", "assertFeatureEntitlementVia("),
+    );
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain("await assertFeatureEntitlementVia");
+  });
+
+  it("M3 : refuse un contrôle de droit qui ne porte plus la vente ({ saleId })", () => {
+    const run = mutate((text) => text.replace("{ saleId },", "{},"));
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain("{ saleId }");
+  });
+
+  it("M4 : refuse un détail servi avec l'en-tête public", () => {
+    const run = mutate((text) =>
+      text.replace("{ headers: PRIVATE_HEADERS }", "{ headers: PUBLIC_HEADERS }"),
+    );
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain("PRIVATE_HEADERS only");
+  });
+
+  it("M4 bis : refuse un en-tête privé qui n'interdit plus le cache partagé", () => {
+    const run = mutate((text) => text.replace('"private, no-store"', '"public, max-age=60"'));
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain("private, no-store");
+  });
+
+  it("M5 : refuse un contrôle de droit sorti du bloc detailRequested", () => {
+    const run = mutate((text) =>
+      text
+        .replace(/await assertFeatureEntitlementVia\([\s\S]*?\{ saleId \},?\s*\);/, "")
+        .replace(
+          "const saleId = saleIdSchema",
+          'await assertFeatureEntitlementVia(auth, "property.bidCeiling", "x", { saleId });\n    const saleId = saleIdSchema',
+        ),
+    );
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain("inside its first detailRequested block");
+  });
+
+  it("refuse une route qui monte le détail hors d'un bloc detailRequested", () => {
+    const run = mutate((text) =>
+      text.replace(
+        "if (detailRequested) {\n      // Le détail ne part que d'ici",
+        "{\n      // Le détail ne part que d'ici",
+      ),
+    );
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain("outside a detailRequested block");
+  });
+
+  it("refuse une route qui lit la ligne privée avant de vérifier le droit", () => {
+    const run = mutate((text) =>
+      text.replace(
+        "if (detailRequested) {",
+        "await readStoredPepite(saleId);\n    if (detailRequested) {",
+      ),
+    );
+    expect(run.status).toBe(1);
+  });
+
+  it("liste blanche : refuse un autre fichier de src/ qui nomme la table privée", () => {
+    const run = runInvariants({}, [], {
+      "src/lib/zz-offender.ts": 'export const table = "auction_sale_pepites";\n',
+    });
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain("src/lib/zz-offender.ts names the private table");
+  });
+
+  it("liste blanche : accepte un commentaire, et les tests", () => {
+    const run = runInvariants({}, [], {
+      "src/lib/zz-comment.ts":
+        "// la table auction_sale_pepites est privée\nexport const value = 1;\n",
+      "src/lib/zz-offender.test.ts": 'export const table = "auction_sale_pepites";\n',
+    });
+    expect(run.stderr).toBe("");
+    expect(run.status).toBe(0);
+  });
+
+  it("refuse que la liste publique lise la table privée ou son détail", () => {
+    const run = runInvariants({}, [], {
+      "src/lib/pepite-sale-ids.ts":
+        'export const read = () => supabaseAdmin.from("auction_sale_pepites").select("details");\n',
+    });
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain("src/lib/pepite-sale-ids.ts reads the private pepite table");
+  });
+
+  it("refuse qu'un module du navigateur importe la règle ou un module serveur", () => {
+    const run = runInvariants({}, [], {
+      "src/components/sale-detail/PepiteBlock.tsx":
+        'import { PEPITE_CRITERIA } from "@/lib/pepite-policy";\nexport const PepiteBlock = () => null;\n',
+    });
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain("PepiteBlock.tsx imports the pepite rule or a server module");
   });
 });

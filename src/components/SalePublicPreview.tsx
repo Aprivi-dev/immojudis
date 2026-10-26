@@ -9,6 +9,8 @@ import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.js";
 import LockKeyholeOpen from "lucide-react/dist/esm/icons/lock-keyhole-open.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { Terme } from "@/components/ceiling/Terme";
+import { PepiteHeroBadge } from "@/components/PepiteBadge";
+import { PepiteBlockLazy } from "@/components/sale-detail/PepiteBlockLazy";
 import { ListingPhoto } from "@/components/ListingPhoto";
 import { PhotoCredit } from "@/components/PhotoCredit";
 import { SectorAlertCta } from "@/components/SectorAlertCta";
@@ -501,6 +503,7 @@ export function SalePublicPreview({
 
         <header className={styles.head}>
           <SaleProcedureBadge sale={preview} />
+          {preview.pepite ? <PepiteHeroBadge /> : null}
           <h1 id="public-sale-title" className={styles.title}>
             {shortHeading}
             <span className={styles.reference}>Réf. {saleReference(saleId)}</span>
@@ -572,6 +575,23 @@ export function SalePublicPreview({
               points={pointsToVerify(preview, { occupancyVisible: false })}
               saleId={saleId}
             />
+
+            {/* « Pourquoi cette pépite » : les noms des critères, jamais un montant ni un flou ; le détail
+                demande un compte. Le repère vient de `get_public_sale_pepite` (mode « on » seulement). */}
+            {preview.pepite ? (
+              <PepiteBlockLazy
+                saleId={saleId}
+                known
+                lockedAction={
+                  <Link
+                    href={accountLink}
+                    className="font-semibold text-gold-text underline underline-offset-4"
+                  >
+                    Créez un compte gratuit
+                  </Link>
+                }
+              />
+            ) : null}
 
             <section className={styles.card} aria-labelledby="public-teaser-title">
               <h2 id="public-teaser-title" className={styles.cardTitle}>

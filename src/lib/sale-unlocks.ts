@@ -96,12 +96,16 @@ export type SaleUnlockQuotaReachedResponse = {
 export function unlockedItemsText({
   ceiling,
   statistics,
+  pepite = false,
 }: {
   ceiling: string | null;
   statistics: boolean;
+  /** La vente est une pépite : le détail du repère (montant, prix probable, critères) s'ouvre aussi. */
+  pepite?: boolean;
 }): string {
   const items = [
     ...(ceiling ? [ceiling] : []),
+    ...(pepite ? ["le détail de la pépite"] : []),
     "la lecture des pièces",
     "l’historique de la vente",
     ...(statistics ? ["les statistiques du tribunal"] : []),

@@ -28,7 +28,7 @@ import {
  * page change avec elle, et le test de la page (`page.test.tsx`) doit être mis à jour dans le même
  * geste. Le module de la règle ne lit ni la base ni le catalogue : la page non plus.
  */
-export const PEPITE_METHOD_PATH = "/methode-pepites";
+export { PEPITE_METHOD_PATH } from "@/lib/pepite-copy";
 
 export { PEPITE_RULE_VERSION };
 

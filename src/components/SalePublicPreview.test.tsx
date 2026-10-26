@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { hydrateRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderToString } from "react-dom/server";
@@ -15,6 +16,24 @@ import type { FeeRegimeKey } from "@/lib/fee-regime-open";
 import type { AuctionSale, SaleVenueType } from "@/lib/types";
 import { FREE_ACCESS_LINE } from "@/lib/sale-unlocks";
 import { publicSaleVenueCopy, SalePublicPreview } from "./SalePublicPreview";
+import { pepiteCriteriaPayload, pepiteCriteriaViews } from "@/lib/sale-pepite-view";
+
+const pepiteMocks = vi.hoisted(() => ({ pepite: vi.fn() }));
+vi.mock("@/hooks/use-sale-pepite", () => ({
+  useSalePepite: (args: unknown) => pepiteMocks.pepite(args),
+}));
+vi.mock("next/dynamic", () => ({
+  default: (loader: () => Promise<React.ComponentType<Record<string, unknown>>>) => {
+    // Le bloc chargé à la demande : le vrai composant, résolu tout de suite.
+    let Component: React.ComponentType<Record<string, unknown>> | null = null;
+    void loader().then((resolved) => {
+      Component = resolved;
+    });
+    return function Lazy(props: Record<string, unknown>) {
+      return Component ? <Component {...props} /> : null;
+    };
+  },
+}));
 
 afterEach(cleanup);
 
@@ -997,5 +1016,67 @@ describe("essai gratuit à l'inscription sur la fiche publique", () => {
     expect(html).not.toContain("offre de lancement");
     expect(html).toContain("Gratuit, sans carte bancaire");
     expect(html).toContain("Selon votre compte");
+  });
+});
+
+describe("SalePublicPreview : repère « Pépite »", () => {
+  const LOCKED = pepiteCriteriaPayload(
+    pepiteCriteriaViews(
+      ["pass:regime_open", "pass:sale_upcoming", "pass:test_c_cost"],
+      [],
+      "notary_auction",
+    ),
+  );
+
+  async function renderPreview(preview: Partial<AuctionSale>) {
+    const view = render(
+      <QueryClientProvider client={new QueryClient()}>
+        <SalePublicPreview
+          saleId="sale-1"
+          preview={{ id: "sale-1", sale_venue_type: "tribunal", ...preview } as AuctionSale}
+          returnTo="/sales"
+        />
+      </QueryClientProvider>,
+    );
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    view.rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <SalePublicPreview
+          saleId="sale-1"
+          preview={{ id: "sale-1", sale_venue_type: "tribunal", ...preview } as AuctionSale}
+          returnTo="/sales"
+        />
+      </QueryClientProvider>,
+    );
+    return view;
+  }
+
+  it("ne change rien pour une vente qui n'est pas une pépite", async () => {
+    pepiteMocks.pepite.mockReturnValue(null);
+    await renderPreview({});
+    expect(screen.queryByTestId("pepite-badge")).toBeNull();
+    expect(document.body.textContent).not.toMatch(/pépite/i);
+    expect(pepiteMocks.pepite).not.toHaveBeenCalled();
+  });
+
+  it("pose la pastille et « Pourquoi ? » en tête, puis le bloc verrouillé avec « Créez un compte gratuit »", async () => {
+    pepiteMocks.pepite.mockReturnValue(LOCKED);
+    await renderPreview({ pepite: true });
+    expect(screen.getByTestId("pepite-badge").textContent).toBe("Pépite");
+    expect(screen.getByRole("link", { name: "Pourquoi ?" }).getAttribute("href")).toBe("#pepite");
+    // Niveau « criteria » seulement : la vente est déjà connue comme pépite, aucun montant.
+    expect(pepiteMocks.pepite).toHaveBeenCalledWith(
+      expect.objectContaining({ view: "criteria", known: true }),
+    );
+    const block = screen.getByRole("region", { name: "Pépite : 1 test réussi" });
+    expect(block.textContent).toContain("Montant et détail : débloquez cette vente");
+    expect(
+      within(block).getByRole("link", { name: "Créez un compte gratuit" }).getAttribute("href"),
+    ).toMatch(/^\/login\?/);
+    expect(block.textContent).not.toMatch(/€|Prix probable|fourchette/);
+    expect(block.innerHTML).not.toMatch(/blur/);
   });
 });

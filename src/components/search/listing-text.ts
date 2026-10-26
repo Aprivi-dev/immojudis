@@ -163,7 +163,17 @@ export function listingDateLabel(sale: AuctionSale, now: Date = new Date()): str
 export function listingLinkLabel(
   sale: AuctionSale,
   title: string,
-  blocked: { price?: boolean; date?: boolean } = {},
+  blocked: { price?: boolean; date?: boolean; pepite?: boolean } = {},
+): string {
+  const label = baseListingLinkLabel(sale, title, blocked);
+  // Le repère « Pépite » entre dans le nom du lien : un lecteur d'écran l'annonce sans ouvrir la carte.
+  return blocked.pepite ? `${label}, pépite` : label;
+}
+
+function baseListingLinkLabel(
+  sale: AuctionSale,
+  title: string,
+  blocked: { price?: boolean; date?: boolean },
 ): string {
   if (!blocked.price && sale.starting_price_eur != null && sale.starting_price_eur > 0) {
     // Prix positif : le texte est celui de la mise à prix, jamais « Prix non publié ».

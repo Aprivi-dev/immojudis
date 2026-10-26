@@ -3,7 +3,10 @@
 // « Pourquoi » de la fiche. Module pur, sans donnée. Les seuils écrits viennent des constantes de la règle
 // (`pepite-policy.ts`) : un libellé ne peut pas annoncer un seuil que le calcul n'applique pas.
 import {
+  PEPITE_CHANCE_EXIT_SHARE,
   PEPITE_CHANCE_MIN_SHARE,
+  PEPITE_COST_EXIT_SHARE_COURT,
+  PEPITE_COST_EXIT_SHARE_NOTARY,
   PEPITE_COST_MAX_SHARE_COURT,
   PEPITE_COST_MAX_SHARE_NOTARY,
   PEPITE_CRITERIA,
@@ -13,15 +16,18 @@ import {
   PEPITE_FREEZE_DAYS,
   PEPITE_MIN_VALUE_COMPARABLES,
   type PepiteCriterionId,
+  type PepiteRegimeKey,
 } from "@/lib/pepite-policy";
 
 const percent = (share: number) => `${Math.round(share * 100)} %`;
+/** Une part (0 à 1) en dixièmes : 0,7 donne 7 (« 7 ventes sur 10 »). */
+const tenths = (share: number) => Math.round(share * 10);
 
 /** Pour chaque critère : ce qu'on écrit quand il est réussi, et quand il est manqué. */
 export const PEPITE_CRITERION_LABELS: Record<PepiteCriterionId, { pass: string; fail: string }> = {
   regime_open: {
-    pass: "Type de vente couvert (tribunal ou vente notariale dont le calcul est ouvert)",
-    fail: "Type de vente non couvert : ni tribunal, ni vente notariale à la bougie ou interactive dont le calcul est ouvert",
+    pass: "Type de vente pris en compte",
+    fail: "Type de vente non pris en compte",
   },
   sale_upcoming: {
     pass: "Vente à venir, datée dans le futur",
@@ -33,28 +39,28 @@ export const PEPITE_CRITERION_LABELS: Record<PepiteCriterionId, { pass: string; 
     fail: "Estimation de valeur absente, périmée ou non exploitable",
   },
   ceiling_computed: {
-    pass: "Enchère plafond de référence calculée (valeur basse P10)",
-    fail: "Enchère plafond de référence non calculable (valeur ou surface manquante)",
+    pass: "Enchère plafond calculée sur une estimation prudente de la valeur",
+    fail: "Enchère plafond non calculable (valeur ou surface manquante)",
   },
   scenarios_reliable: {
-    pass: "Historique d'adjudications du tribunal de fiabilité suffisante (moyenne ou bonne)",
-    fail: "Historique d'adjudications absent ou de fiabilité faible : le test B n'est pas évaluable",
+    pass: "Assez de ventes passées comparables pour juger les chances",
+    fail: "Pas assez de ventes passées comparables pour juger les chances de l'emporter",
   },
   estimate_reliability: {
     pass: "Estimation de fiabilité forte ou correcte",
     fail: "Estimation de fiabilité fragile ou inconnue",
   },
   estimate_sample: {
-    pass: `Au moins ${PEPITE_MIN_VALUE_COMPARABLES} ventes comparables (effectif)`,
-    fail: `Moins de ${PEPITE_MIN_VALUE_COMPARABLES} ventes comparables (effectif)`,
+    pass: `Au moins ${PEPITE_MIN_VALUE_COMPARABLES} ventes comparables derrière l'estimation`,
+    fail: `Moins de ${PEPITE_MIN_VALUE_COMPARABLES} ventes comparables derrière l'estimation`,
   },
   surface_known: {
     pass: "Surface enregistrée",
     fail: "Surface estimée et non enregistrée",
   },
   public_gap_gate: {
-    pass: "Estimation qui passe la porte publique de la bande de marché",
-    fail: "Estimation hors de la porte publique de la bande de marché (échantillon, largeur de fourchette ou rayon)",
+    pass: "Estimation assez précise pour être affichée",
+    fail: "Estimation pas assez précise pour être affichée (échantillon, largeur de fourchette ou rayon)",
   },
   gap_significant: {
     pass: "Mise à prix dans la plage plausible par rapport à la valeur estimée",
@@ -73,12 +79,12 @@ export const PEPITE_CRITERION_LABELS: Record<PepiteCriterionId, { pass: string; 
     fail: "Conflit de valorisation entre les données de la vente",
   },
   no_ai_block: {
-    pass: "Aucun champ critique bloqué par la relecture IA",
-    fail: "Champ critique (mise à prix, surface, type de bien, pièces) bloqué par la relecture IA",
+    pass: "Aucune donnée importante contestée à la relecture automatique",
+    fail: "Donnée importante (mise à prix, surface, type de bien, pièces) contestée à la relecture automatique",
   },
   no_degraded_condition: {
-    pass: "Aucun état dégradé documenté",
-    fail: "État dégradé ou travaux à budgéter documentés dans l'annonce ou les pièces",
+    pass: "Aucun mauvais état ou gros travaux signalé dans l'annonce",
+    fail: "Mauvais état ou gros travaux signalés dans l'annonce ou les pièces",
   },
   verification_not_conflict: {
     pass: "Vente sans conflit de vérification",
@@ -89,22 +95,53 @@ export const PEPITE_CRITERION_LABELS: Record<PepiteCriterionId, { pass: string; 
     fail: "Doublon probable d'une autre vente",
   },
   risks_qualified: {
-    pass: "Risques documentés qualifiés",
-    fail: "Risques documentés non qualifiés",
+    pass: "Aucun risque signalé laissé sans précision",
+    fail: "Risque signalé laissé sans précision",
   },
   test_b_chance: {
-    pass: `Test B : au moins ${percent(PEPITE_CHANCE_MIN_SHARE)} des ventes comparables adjugées sous l'enchère plafond`,
-    fail: `Test B manqué : moins de ${percent(PEPITE_CHANCE_MIN_SHARE)} des ventes comparables adjugées sous l'enchère plafond (ou plafond sous la mise à prix)`,
+    pass: `Chances de l'emporter : au moins ${tenths(PEPITE_CHANCE_MIN_SHARE)} ventes comparables sur 10 adjugées sous l'enchère plafond`,
+    fail: `Chances de l'emporter insuffisantes : moins de ${tenths(PEPITE_CHANCE_MIN_SHARE)} ventes comparables sur 10 adjugées sous l'enchère plafond (ou plafond sous la mise à prix)`,
   },
   test_c_cost: {
-    pass: `Test C : coût total au prix probable d'au plus ${percent(PEPITE_COST_MAX_SHARE_COURT)} de la valeur (${percent(PEPITE_COST_MAX_SHARE_NOTARY)} en vente notariale)`,
-    fail: `Test C manqué : coût total au prix probable au-dessus de ${percent(PEPITE_COST_MAX_SHARE_COURT)} de la valeur (${percent(PEPITE_COST_MAX_SHARE_NOTARY)} en vente notariale)`,
+    pass: `Achat probable nettement sous la valeur : coût total, frais compris, d'au plus ${percent(PEPITE_COST_MAX_SHARE_COURT)} de la valeur estimée (${percent(PEPITE_COST_MAX_SHARE_NOTARY)} en vente notariale)`,
+    fail: `Achat probable pas assez sous la valeur : coût total, frais compris, au-dessus de ${percent(PEPITE_COST_MAX_SHARE_COURT)} de la valeur estimée (${percent(PEPITE_COST_MAX_SHARE_NOTARY)} en vente notariale)`,
   },
   ceiling_above_start: {
     pass: "Plafond de référence au moins égal à la mise à prix (vente à la bougie)",
     fail: "Plafond de référence sous la mise à prix (vente à la bougie)",
   },
 };
+
+/**
+ * Le libellé d'un critère RÉUSSI pour l'investisseur, selon le régime : « offre plafond » (vente notariale
+ * interactive) à la place de « enchère plafond » (`fee-regime-labels.ts`). Les autres libellés ne nomment pas le
+ * plafond ou ne concernent que le tribunal et la vente à la bougie.
+ */
+export function pepitePassLabel(id: PepiteCriterionId, regime?: PepiteRegimeKey | null): string {
+  const label = PEPITE_CRITERION_LABELS[id].pass;
+  return regime === "notary_online"
+    ? label.replace("Enchère plafond", "Offre plafond").replace("enchère plafond", "offre plafond")
+    : label;
+}
+
+/**
+ * Le libellé d'un critère « à confirmer » : sous son seuil d'entrée, au-dessus de son seuil de MAINTIEN. Il
+ * énonce le seuil de maintien et n'affirme jamais le seuil d'entrée.
+ */
+export function pepiteConfirmLabel(id: PepiteCriterionId, regime?: PepiteRegimeKey | null): string {
+  const later = "à confirmer à la prochaine mise à jour";
+  if (id === "test_b_chance") {
+    return `Chances de l'emporter toujours au-dessus du seuil de maintien (${percent(PEPITE_CHANCE_EXIT_SHARE)} des ventes comparables adjugées sous l'${regime === "notary_online" ? "offre" : "enchère"} plafond), ${later}`;
+  }
+  if (id === "test_c_cost") {
+    const exit =
+      regime && regime !== "tribunal"
+        ? PEPITE_COST_EXIT_SHARE_NOTARY
+        : PEPITE_COST_EXIT_SHARE_COURT;
+    return `Achat probable toujours sous le seuil de maintien (coût total, frais compris, d'au plus ${percent(exit)} de la valeur estimée), ${later}`;
+  }
+  return `Critère proche de son seuil de maintien, ${later}`;
+}
 
 /** Les motifs de stabilité (préfixe `stab:`). */
 const STABILITY_LABELS: Record<string, string> = {
