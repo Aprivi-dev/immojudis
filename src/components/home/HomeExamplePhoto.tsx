@@ -91,7 +91,11 @@ export function HomeExamplePhoto(props: ExamplePhotoProps) {
         src={props.photo}
         alt="Séjour d’un appartement ancien, parquet et grandes fenêtres (photo d’illustration)"
         fill
-        sizes="(max-width: 960px) 100vw, 540px"
+        // La photo (16:9, 1 600 px) remplit un cadre plus haut que large : elle s'affiche environ deux
+        // fois plus large que le cadre (trois fois sur mobile). Demander la largeur du cadre la ferait
+        // agrandir, donc floue.
+        sizes="(max-width: 960px) 310vw, 1040px"
+        quality={85}
         loading="eager"
         fetchPriority="high"
         className={styles.examplePhotoImage}
