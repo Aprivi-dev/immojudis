@@ -40,6 +40,8 @@ describe("home hero", () => {
     // Rendu serveur : celui du visiteur, l'essai pas encore lu (ligne du compte gratuit).
     expect(markup).toMatch(/<a[^>]*href="\/login\?mode=investor"[^>]*>Créer mon compte gratuit/);
     expect(text).toContain("Gratuit, sans carte bancaire");
+    // À côté du bouton, le catalogue sans compte.
+    expect(markup).toMatch(/<a[^>]*href="\/sales"[^>]*>Explorer les ventes sans compte/);
     // Pas d'italique : l'accent du titre est une couleur.
     expect(markup).not.toContain("<em");
   });
@@ -68,7 +70,10 @@ describe("home hero", () => {
     expect(text).toContain("Exemple fictif");
     expect(text).toContain("T3 de 68 m², balcon · Bordeaux");
     expect(text).toContain("Analyse du bien");
-    expect(text).toMatch(/Estimation 230.000.€/);
+    expect(text).toMatch(/Mise à prix 95.000.€/);
+    // L'estimation et sa fourchette, à côté de l'enchère à ne pas dépasser.
+    expect(text).toMatch(/Estimation 230.000.€ ?Fourchette : 215.000 – 247.000.€/);
+    expect(text).toMatch(/Enchère à ne pas dépasser 135.000.€/);
     expect(text).toMatch(/Même immeuble, 2024 226.000.€/);
     expect(text).toContain("Occupation À confirmer");
     // Premier rendu : la situation de /annonce-exemple, et son verdict.

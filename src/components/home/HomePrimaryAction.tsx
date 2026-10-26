@@ -17,8 +17,9 @@ export const HOME_TRIAL_NOTE = `${ANALYSIS_TRIAL_DAYS} jours d’accès complet 
  * compte gratuit, avec en dessous l'essai de 7 jours (ou, l'essai fermé, la ligne du compte
  * gratuit) ; pour un compte connecté, explorer les ventes. Le rendu serveur est celui du visiteur.
  * Les règles complètes de l'essai sont dans la carte Analyse des offres, sur la même page.
+ * `browseLink` (premier écran) : le lien vers le catalogue sans compte, à côté du bouton.
  */
-export function HomePrimaryAction() {
+export function HomePrimaryAction({ browseLink = false }: { browseLink?: boolean } = {}) {
   const { user } = useAuth();
   const trialOpen = useLaunchOffer().active;
   if (user) {
@@ -30,11 +31,23 @@ export function HomePrimaryAction() {
       </div>
     );
   }
+  const signUp = (
+    <Link href={loginPathWithRedirect(undefined)} prefetch={false} className={styles.button}>
+      Créer mon compte gratuit <ArrowRight aria-hidden size={20} />
+    </Link>
+  );
   return (
     <div className={styles.ctaBlock}>
-      <Link href={loginPathWithRedirect(undefined)} prefetch={false} className={styles.button}>
-        Créer mon compte gratuit <ArrowRight aria-hidden size={20} />
-      </Link>
+      {browseLink ? (
+        <div className={styles.ctaRow}>
+          {signUp}
+          <Link href="/sales" prefetch={false} className={styles.quietLink}>
+            Explorer les ventes sans compte <ArrowRight aria-hidden size={16} />
+          </Link>
+        </div>
+      ) : (
+        signUp
+      )}
       <p className={styles.ctaNote}>
         <ShieldCheck aria-hidden size={16} />
         {trialOpen ? HOME_TRIAL_NOTE : FREE_ACCESS_LINE}

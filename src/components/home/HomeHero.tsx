@@ -68,7 +68,7 @@ export function HomeHero({
             Pour les ventes au tribunal, les pièces lues et l’enchère à ne pas dépasser.
           </p>
           <div className={styles.heroAnim} style={delay(240)}>
-            <HomePrimaryAction />
+            <HomePrimaryAction browseLink />
           </div>
           {summary ? (
             <p className={`${styles.proof} ${styles.heroAnim}`} style={delay(320)}>
@@ -119,6 +119,8 @@ function photoProps(): ExamplePhotoProps {
     hearingInDays: data.hearingInDays,
     startingPrice: data.startingPrice,
     value: data.value,
+    valueLow: data.valueLow,
+    valueHigh: data.valueHigh,
     comparables: data.comparables,
     radiusM: data.radiusM,
     sameBuildingYear: data.sameBuilding?.year ?? null,

@@ -166,6 +166,37 @@
   gap: 12px;
 }
 
+.ctaRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 24px;
+}
+
+.quietLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--home-ink);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+  text-decoration: none;
+  transition: color 300ms var(--home-ease);
+}
+
+.quietLink:hover {
+  color: var(--home-accent);
+}
+
+.quietLink svg {
+  transition: transform 300ms var(--home-ease);
+}
+
+.quietLink:hover svg {
+  transform: translateX(2px);
+}
+
 .ctaNote {
   display: flex;
   align-items: center;
@@ -183,8 +214,25 @@
 /* Premier écran -------------------------------------------------------------------------------- */
 
 .hero {
+  position: relative;
+  isolation: isolate;
+  overflow: clip;
   padding-top: 64px;
   padding-bottom: 96px;
+}
+
+/* Deux grandes courbes sable derrière le premier écran, comme un papier qui ondule. */
+.hero::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background:
+    radial-gradient(120% 70% at 0% 100%, var(--surface-tint) 0 48%, transparent 48.2%),
+    radial-gradient(80% 90% at 100% 0%, var(--surface-muted) 0 55%, transparent 55.2%);
+  content: "";
+  pointer-events: none;
+  /* S'efface vers le bas : pas de bord net contre la bande de chiffres qui suit. */
+  mask-image: linear-gradient(180deg, black 55%, transparent 100%);
 }
 
 .heroGrid {
@@ -875,6 +923,10 @@
     padding-bottom: 64px;
   }
 
+  .hero::before {
+    background: radial-gradient(160% 40% at 0% 100%, var(--surface-tint) 0 60%, transparent 60.2%);
+  }
+
   .hero h1,
   .tagline {
     font-size: 36px;
@@ -984,150 +1036,220 @@
   background: var(--warning);
 }
 
-/* Premier écran : la photo porte le panneau d'analyse et le verdict */
-.examplePhoto {
+/* Premier écran : la fiche exemple sur un panneau blanc, posée sur une trame de points */
+.exampleStage {
   position: relative;
   min-width: 0;
-  max-width: 100%;
-  aspect-ratio: 4 / 4.6;
-  overflow: hidden;
-  border-radius: 24px;
-  background: var(--home-surface-2);
-  box-shadow: 0 32px 80px -36px rgb(19 34 56 / 55%);
 }
 
-.examplePhotoImage {
+.exampleStage::before {
+  position: absolute;
+  top: -32px;
+  right: -32px;
+  width: 176px;
+  height: 176px;
+  background-image: radial-gradient(var(--home-line-strong) 1.5px, transparent 1.5px);
+  background-size: 16px 16px;
+  content: "";
+  mask-image: radial-gradient(circle at 70% 30%, black 30%, transparent 72%);
+}
+
+.exampleCard {
+  position: relative;
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--home-line);
+  border-radius: 24px;
+  background: var(--home-surface);
+  box-shadow:
+    0 1px 2px rgb(19 34 56 / 6%),
+    0 32px 80px -32px rgb(19 34 56 / 32%);
+}
+
+.exampleHeader {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+}
+
+.exampleThumb {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--home-surface-2);
+}
+
+.exampleThumbImage {
   object-fit: cover;
   object-position: 35% 50%;
 }
 
-.examplePhotoShade {
+.exampleBadge {
   position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    180deg,
-    rgb(19 34 56 / 12%) 0%,
-    rgb(19 34 56 / 0%) 30%,
-    rgb(19 34 56 / 55%) 100%
-  );
-}
-
-.exampleTop {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  left: 16px;
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.glass,
-.analysisPanel,
-.photoVerdict {
-  border: 1px solid rgb(255 255 255 / 70%);
-  background: rgb(255 255 255 / 86%);
-  backdrop-filter: blur(16px) saturate(1.4);
-  -webkit-backdrop-filter: blur(16px) saturate(1.4);
-  box-shadow: 0 16px 40px -20px rgb(19 34 56 / 50%);
-}
-
-.glass {
-  display: inline-flex;
-  align-items: center;
-  padding: 6px 10px;
-  border-radius: 10px;
-  font-size: 13px;
+  top: 8px;
+  left: 8px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgb(19 34 56 / 82%);
+  color: #ffffff;
+  font-size: 12px;
   font-weight: 600;
   line-height: 18px;
-  white-space: nowrap;
 }
 
-.glass small {
-  display: block;
-  color: var(--home-soft);
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 16px;
-}
-
-.analysisPanel {
-  position: absolute;
-  top: 72px;
-  left: 16px;
+.exampleTitle {
   display: grid;
-  gap: 6px;
-  width: min(272px, calc(100% - 32px));
-  padding: 12px;
+  gap: 4px;
+  min-width: 0;
+}
+
+.exampleTitle > p:first-child {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 28px;
+  letter-spacing: -0.01em;
+}
+
+.exampleSub {
+  color: var(--home-soft);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.exampleChip {
+  justify-self: start;
+  margin-top: 8px;
+  padding: 4px 12px;
+  border: 1px solid var(--home-line);
+  border-radius: 9999px;
+  color: var(--home-soft);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.exampleChip b {
+  color: var(--home-ink);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.analysisBlock {
+  display: grid;
+  gap: 8px;
+  padding: 12px 16px;
+  border: 1px solid var(--home-line);
   border-radius: 16px;
 }
 
 .analysisHead {
   display: flex;
   justify-content: space-between;
-  color: var(--home-soft);
-  font-size: 12px;
+  color: var(--home-ink);
+  font-size: 14px;
   font-weight: 700;
-  line-height: 16px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  line-height: 20px;
 }
 
 .analysisHead span:last-child {
   color: var(--success);
-  letter-spacing: 0;
-  text-transform: none;
+  font-size: 12px;
 }
 
-.analysisPanel ul {
+.analysisBlock ul {
   display: grid;
-  gap: 6px;
 }
 
-.analysisPanel li {
+.analysisBlock li {
   display: grid;
   grid-template-columns: 16px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
+  padding-block: 6px;
   font-size: 13px;
   line-height: 18px;
 }
 
-.analysisPanel li b {
+.analysisBlock li + li {
+  border-top: 1px solid var(--home-line);
+}
+
+.analysisBlock li b {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-.photoVerdict {
-  position: absolute;
-  right: 16px;
-  bottom: 16px;
-  left: 16px;
+.exampleTiles {
   display: grid;
-  gap: 8px;
-  padding: 14px 16px;
-  border-radius: 18px;
-  background: rgb(255 255 255 / 92%);
-}
-
-.photoVerdictRow {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
 }
 
-.photoVerdictLabel {
-  display: block;
+.valueTile,
+.ceilingTile {
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: 4px;
+  padding: 16px;
+  border: 1px solid var(--home-line);
+  border-radius: 16px;
+  background: var(--surface-muted);
+}
+
+.ceilingTile {
+  border-color: color-mix(in srgb, var(--verdict) 28%, transparent);
+  background: var(--verdict-tint);
+  transition:
+    background-color 500ms var(--home-ease),
+    border-color 500ms var(--home-ease);
+}
+
+.tileLabel {
+  color: var(--home-soft);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.tileAmount,
+.ceilingTile .verdictAmount {
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 36px;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.tileNote {
   color: var(--home-soft);
   font-size: 12px;
   line-height: 16px;
+  font-variant-numeric: tabular-nums;
 }
 
-.photoVerdict .verdictAmount {
-  font-size: 36px;
+.ceilingTile .verdictPill {
+  margin-top: 4px;
+  padding: 2px 10px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.exampleSituation {
+  display: grid;
+  gap: 2px;
+  margin-top: 12px;
+}
+
+.situationLabel {
+  color: var(--home-soft);
+  font-size: 12px;
+  line-height: 16px;
 }
 
 .presetButtons {
@@ -1463,22 +1585,44 @@
 }
 
 @media (max-width: 1100px) and (min-width: 961px) {
-  .examplePhoto {
-    aspect-ratio: 4 / 5.4;
+  .exampleHeader {
+    grid-template-columns: 152px minmax(0, 1fr);
   }
 }
 
 @media (max-width: 520px) {
-  .examplePhoto {
-    aspect-ratio: 3 / 5.2;
+  .exampleStage::before {
+    display: none;
   }
 
-  .exampleTop {
-    flex-wrap: wrap;
+  .exampleCard {
+    padding: 12px;
+    border-radius: 20px;
   }
 
-  .analysisPanel {
-    top: 112px;
+  .exampleHeader {
+    grid-template-columns: 128px minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .exampleTitle > p:first-child {
+    font-size: 16px;
+    line-height: 22px;
+  }
+
+  .exampleSub {
+    font-size: 13px;
+    line-height: 18px;
+  }
+
+  .exampleChip {
+    margin-top: 4px;
+  }
+
+  .tileAmount,
+  .ceilingTile .verdictAmount {
+    font-size: 24px;
+    line-height: 32px;
   }
 
   .tryData {
@@ -1493,21 +1637,20 @@
 /* Mouvement ------------------------------------------------------------------------------------- */
 
 @media (prefers-reduced-motion: no-preference) {
-  /* Fiche exemple : lignes d'analyse cochées une à une, verdict qui se pose. La photo reste fixe : un
-     zoom continu sous les panneaux flous (`backdrop-filter`) la faisait trembler et l'adoucissait. */
-  .analysisPanel li {
+  /* Fiche exemple : lignes d'analyse cochées une à une, puis l'estimation et l'enchère qui se posent. */
+  .analysisBlock li {
     animation: home-slide 500ms var(--home-ease) both;
     animation-delay: calc(var(--i) * 260ms + 600ms);
   }
 
-  .analysisPanel .analysisCheck {
+  .analysisBlock .analysisCheck {
     animation: home-tick 400ms var(--home-ease) both;
     animation-delay: calc(var(--i) * 260ms + 800ms);
   }
 
-  .photoVerdict {
+  .exampleTiles {
     animation: home-rise 800ms var(--home-ease) both;
-    animation-delay: 2600ms;
+    animation-delay: 2000ms;
   }
 
   :global(html[data-home-motion]) .tryCard[data-shown] .tryData li {
