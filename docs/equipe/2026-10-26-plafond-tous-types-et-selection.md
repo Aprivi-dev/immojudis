@@ -195,51 +195,77 @@ Décision du fondateur, le 26/10/2026 : toutes les propositions sont validées, 
 
 ## Définition v1 d'une pépite (`pepite-v1`)
 
-Règle fixée par l'équipe le 26/10/2026. Les seuils sont des valeurs de départ. Ils seront ajustés sur le catalogue réel en mode `shadow`, depuis la page d'administration, avant le passage en `on`. Toute modification crée une nouvelle version.
+Validée par le fondateur le 26/10/2026, après correction : **une pépite est un potentiel d'investissement**, pas une fiche riche en informations. Elle combine deux tests :
+- **B** : on a de bonnes chances de remporter la vente sans dépasser notre enchère plafond ;
+- **C** : à ce prix, l'achat est nettement sous la valeur du bien.
 
-Une vente est une pépite si toutes les conditions ci-dessous sont vraies.
+Les seuils sont des valeurs de départ. Ils seront contrôlés sur le catalogue réel en mode `shadow`, depuis la page d'administration, avant le passage en `on`. Toute modification crée une nouvelle version.
 
-**1. Type de vente couvert**
-- tribunal ;
-- vente notariale à la bougie ;
-- vente notariale interactive.
+### Notions
 
-Les ventes domaniales et de type inconnu sont exclues.
+- **Plafond de référence.** Enchère plafond calculée avec les hypothèses par défaut de la fiche : habiter, profil équilibré, sans travaux, frais du type de vente, coût de libération inclus si le bien est occupé. Par prudence, on la calcule sur la valeur basse P10 de l'estimation.
+- **Multiplicateur local.** Rapport prix d'adjudication / mise à prix des ventes comparables des trois dernières années : même tribunal, même tranche de mise à prix, même type de bien. Source : `getAuctionScenarios`. Le multiplicateur du tribunal est complété par le taux national quand le tribunal compte moins de 30 ventes, ou remplacé par lui sous 10 ventes. Le multiplicateur retenu est :
+  - le médian (`q50`) dans le cas général ;
+  - celui des trois quarts des ventes (`q75`) quand la mise à prix est inférieure à 30 % de la valeur estimée. Les enchérisseurs visent alors la valeur, et le médian sous-estimerait le prix.
+- **Prix probable** = mise à prix × multiplicateur retenu.
 
-**2. Estimation solide**
-- estimation de marché `actionable`, de fiabilité « forte » ou « correcte » ;
-- échantillon effectif d'au moins 8 ventes ;
-- surface enregistrée (non estimée) ;
-- l'estimation passe la porte publique de la bande de marché ;
-- écart à la valeur non aberrant (garde de `market-gap.ts`) ;
-- ni terrain seul ni actif mixte.
+### Test B : chances de l'emporter sous le plafond (tribunal)
 
-**3. Bien connu**
-- occupation connue et libre ;
-- aucun état dégradé ou « à rénover » documenté.
+- On calcule la part des ventes comparables adjugées à un prix inférieur au plafond de référence, avec `ceilingPosition` (`src/lib/ceiling-vs-court.ts`) appliquée à la distribution des scénarios.
+- **Seuil : au moins 70 %.**
+- Si cette part n'est qu'un plancher (« au moins », au-delà de 3 fois la mise à prix), le test est réussi.
 
-**4. Aucun signal bloquant**
-- pas de conflit de valorisation ;
-- pas de champ critique bloqué par la relecture IA ;
-- pas de vente en conflit de vérification ;
-- pas de doublon probable ;
-- pas de risques documentés non qualifiés.
+### Test C : décote d'achat attendue
 
-**5. Marge nette**
-- On calcule le plafond de référence avec les hypothèses par défaut de la fiche (habiter, profil équilibré, sans travaux, frais du type de vente), **sur la valeur basse P10 de l'estimation**.
-- Ce plafond doit dépasser d'au moins **10 %** le prix de référence :
-  - au tribunal : le plus élevé de la mise à prix et du prix d'adjudication médian attendu. Ce dernier vaut la mise à prix multipliée par le ratio médian adjudication / mise à prix de la cohorte des scénarios d'enchères (cohorte du tribunal si sa fiabilité est au moins « medium », repli national sinon) ;
-  - à la bougie : la mise à prix ;
-  - en vente interactive : la première offre possible.
+- Coût total au prix probable (prix + frais de la vente + libération) divisé par la valeur centrale estimée.
+- **Seuil : au plus 75 %**, soit un achat probable à au moins 25 % sous le marché, frais compris.
 
-**6. Stabilité**
-- la vente n'apparaît qu'après deux évaluations favorables consécutives ;
-- elle sort si la marge descend sous 5 % ou si un signal bloquant apparaît ;
-- le label est gelé 7 jours avant la vente, sauf signal bloquant ou changement de prix.
+### Par type de vente
 
-**Exclusions.** Ne servent pas d'entrée : `investment_score`, les données d'avocat ou de sponsoring, le profil de l'utilisateur.
+| Type | Prix probable | Règle |
+|---|---|---|
+| Tribunal | mise à prix × multiplicateur local | B **et** C |
+| Notarial à la bougie | mise à prix (aucun historique en base) | C seul, seuil plus strict : **65 %** au plus, et plafond de référence au moins égal à la mise à prix |
+| Notarial interactif | première offre possible (prix de réserve caché) | C seul, seuil **65 %** au plus ; la mention « prix de réserve inconnu » est obligatoire |
+| Domanial, inconnu | — | Pas de pépite |
 
-**Surveillance.** On vise 5 à 10 % des ventes évaluables. On alerte si le taux sort de la plage 2 à 15 %. On peut revenir à tout moment en mode `shadow` ou `off`.
+Les résultats des ventes notariales (prix d'adjudication publié par la source) sont archivés dès maintenant (n° 18). Dès qu'il y en aura assez, ces ventes auront leur propre multiplicateur et passeront à la règle B et C.
+
+### Garde-fous (pas une définition, une protection)
+
+- Estimation `actionable`, de fiabilité « forte » ou « correcte », sur au moins 8 ventes comparables, surface enregistrée, sans écart aberrant (garde de `market-gap.ts`). Ni terrain seul ni actif mixte.
+- Occupation connue : un bien libre comme un bien occupé est admis, puisque la libération est intégrée au plafond. Le squat et l'occupation inconnue sont exclus.
+- Aucun signal bloquant : conflit de valorisation, champ critique bloqué par la relecture IA, vente en conflit de vérification, doublon probable, risques non qualifiés, état dégradé documenté.
+- Au tribunal, la fiabilité des scénarios doit être d'au moins « medium ». Sinon, le test B n'est pas évaluable et il n'y a pas de pépite.
+
+### Stabilité
+
+- La vente n'apparaît qu'après deux évaluations favorables consécutives.
+- Elle sort si B descend sous 65 % ou si C dépasse 80 % (on entre à un seuil et on ne sort qu'à un seuil moins exigeant), ou dès qu'un signal bloquant apparaît.
+- Le label est gelé 7 jours avant la vente, sauf signal bloquant ou changement de prix.
+
+### Affichage du prix probable (validé, « à prendre avec des pincettes »)
+
+- Sur la fiche, pour les comptes qui ont accès au plafond (déblocage ou Analyse) :
+  > « Prix probable : environ 90 000 € (fourchette 75 000 – 110 000 €) · Enchère plafond estimée : 118 000 € · 3 ventes comparables sur 4 adjugées sous ce plafond ».
+- La fourchette va du multiplicateur du quart des ventes (`q25`) à celui des trois quarts (`q75`).
+- Mention obligatoire juste à côté :
+  > « Repère statistique tiré des ventes passées du tribunal (N ventes, fiabilité X). Ce n'est pas une prévision du prix final : les enchères peuvent dépasser ce montant. »
+- En vente notariale : « Prix de départ : X € » et « Prix de réserve du vendeur inconnu ». Pas de prix probable tant qu'il n'y a pas d'historique.
+- L'affichage du prix probable rend publics, pour ces comptes, des chiffres jusqu'ici fermés par `ADJUDICATION_PRICE_STATISTICS_ENABLED`. Le fondateur l'accepte pour ce repère. Le drapeau reste maître des autres statistiques.
+
+### Exclusions et surveillance
+
+- Ne servent pas d'entrée : `investment_score`, les données d'avocat ou de sponsoring, le profil de l'utilisateur.
+- Cible : 5 à 10 % des ventes évaluables. On alerte si le taux sort de la plage 2 à 15 %.
+- On peut revenir à tout moment en mode `shadow` ou `off`.
+
+### Améliorations prévues (versions suivantes)
+
+1. Pondérer les ventes récentes (les 12 derniers mois comptent davantage).
+2. Une fois les estimations archivées au moment de chaque vente, prévoir le prix final à partir de la valeur et de la mise à prix, et plus seulement de la mise à prix. Ce modèle remplacera la règle du `q75`.
+3. Vérifier chaque version sur les ventes adjugées : part des pépites réellement remportables sous le plafond.
+4. Variantes du badge : « pépite locative » (rendement net au prix probable) et « pépite revente » (marge après travaux).
 
 ## Exécution
 
