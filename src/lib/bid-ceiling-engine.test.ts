@@ -261,9 +261,41 @@ describe("ceilingConfidence", () => {
     expect(confidence.gaps).toEqual(
       expect.arrayContaining([
         "occupation non confirmée",
-        "frais préalables à demander à l’avocat poursuivant",
+        "frais préalables à lire dans le cahier des conditions de vente",
       ]),
     );
+  });
+});
+
+describe("ceilingConfidence and preliminary fees", () => {
+  it("is never « Solide » while the preliminary fees are a default value", () => {
+    const confidence = ceilingConfidence(hypotheses());
+
+    expect(confidence.score).toBe(88);
+    expect(confidence.label).toBe("À consolider");
+    expect(confidence.gaps).toEqual([
+      "frais préalables à lire dans le cahier des conditions de vente",
+    ]);
+  });
+
+  it("is « Solide » when the user entered the preliminary fees, with no gap", () => {
+    const confidence = ceilingConfidence(
+      hypotheses({ feesSource: { fpt: "saisie", consignation: "regle" } }),
+    );
+
+    expect(confidence.score).toBe(100);
+    expect(confidence.label).toBe("Solide");
+    expect(confidence.gaps).toEqual([]);
+  });
+
+  it("is « Solide » once the preliminary fees are read in the listing", () => {
+    const confidence = ceilingConfidence(
+      hypotheses({ feesSource: { fpt: "document", consignation: "regle" } }),
+    );
+
+    expect(confidence.score).toBe(100);
+    expect(confidence.label).toBe("Solide");
+    expect(confidence.gaps).toEqual([]);
   });
 });
 

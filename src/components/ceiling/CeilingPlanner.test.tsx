@@ -106,30 +106,135 @@ describe("CeilingPlanner headline", () => {
     renderPlanner();
 
     expect(screen.queryByText(/À compléter/)).toBeNull();
-    expect(screen.queryByText(/Marge de sécurité non tenue/)).toBeNull();
+    expect(screen.queryByText(/Aucun prix ne tient/)).toBeNull();
   });
 
-  it("says that the chosen margin cannot be kept instead of showing « Aucune »", () => {
+  it("says that no price holds, with the reason, instead of showing « Aucune »", () => {
     renderPlanner({ choices: { works: { key: "devis", amount: 400_000 } } });
 
-    expect(screen.getByText("Marge de sécurité non tenue avec ces hypothèses")).toBeTruthy();
+    expect(screen.getByText("Aucun prix ne tient")).toBeTruthy();
     expect(screen.queryByText("Aucune")).toBeNull();
     expect(
       screen.getByText(
-        /À ces hypothèses, aucun prix d’enchère ne respecte la marge choisie : .* le coût total maximal\./,
+        "Les frais, les travaux et la libération dépassent déjà le budget que permettent la valeur du bien et vos objectifs.",
       ),
     ).toBeTruthy();
-    expect(document.body.textContent).not.toMatch(/rentable/);
+    expect(document.body.textContent).not.toMatch(/rentable|Marge de sécurité non tenue/);
   });
 
-  it("says that the starting price is below the ceiling, as a simulation", () => {
+  it("says how far above the starting price the ceiling stands, in words", () => {
     renderPlanner({
       saleOverride: { ...sale, starting_price_eur: 1_000 } as unknown as AuctionSale,
     });
-    const verdict = screen.getByText(/est inférieure à votre plafond de/);
+    const verdict = screen.getByText(/Selon vos hypothèses, vous pouvez enchérir jusqu’à/);
     expect(verdict.textContent).toMatch(
-      /^La mise à prix \(1\s000\s€\) est inférieure à votre plafond de .+€ \(simulation, hors aléas\)\./,
+      /^Selon vos hypothèses, vous pouvez enchérir jusqu’à .+€, soit .+€ au-dessus de la mise à prix\./,
     );
+    expect(verdict.textContent).not.toContain("Peu d’écart");
+  });
+
+  it("flags a narrow margin above the starting price", () => {
+    const maxBid = computeCeilingPlan(buildCeilingHypotheses(sale, estimate)).maxBid;
+    renderPlanner({
+      saleOverride: { ...sale, starting_price_eur: maxBid - 1_000 } as unknown as AuctionSale,
+    });
+
+    const verdict = screen.getByText(
+      /^Peu d’écart avec la mise à prix : selon vos hypothèses, vous pouvez enchérir jusqu’à/,
+    );
+    expect(verdict.textContent).toMatch(/, soit 1\s000\s€ au-dessus de la mise à prix\./);
+  });
+
+  it("states the shortfall in euros and percent when the ceiling is under the starting price", () => {
+    const maxBid = computeCeilingPlan(buildCeilingHypotheses(sale, estimate)).maxBid;
+    renderPlanner({
+      saleOverride: { ...sale, starting_price_eur: maxBid * 2 } as unknown as AuctionSale,
+    });
+
+    const verdict = screen.getByText(/Avec ces hypothèses, votre enchère plafond \(/);
+    expect(verdict.textContent).toMatch(
+      /^Avec ces hypothèses, votre enchère plafond \(.+€\) est .+€ \(50\s%\) sous la mise à prix : le bien ne tient pas à son prix de départ\.$/,
+    );
+  });
+
+  it("starts the simulator at the ceiling, not the starting price, when the ceiling is below it", () => {
+    const maxBid = computeCeilingPlan(buildCeilingHypotheses(sale, estimate)).maxBid;
+    renderPlanner({
+      saleOverride: { ...sale, starting_price_eur: maxBid * 2 } as unknown as AuctionSale,
+    });
+
+    const input = screen.getByRole("spinbutton", {
+      name: /Montant de l’enchère simulée/,
+    }) as HTMLInputElement;
+    expect(Number(input.value)).toBe(maxBid);
+    const quickBids = screen
+      .getAllByRole("button")
+      .filter((button) => /^(Plafond|Mise à prix) · /.test(button.textContent ?? ""));
+    expect(quickBids.map((button) => button.textContent?.split(" · ")[0])).toEqual([
+      "Plafond",
+      "Mise à prix",
+    ]);
+  });
+
+  it("follows the ceiling when it crosses the starting price, instead of staying frozen", () => {
+    const maxBid = computeCeilingPlan(buildCeilingHypotheses(sale, estimate)).maxBid;
+    const planner = (startingPrice: number) => {
+      const hypotheses = buildCeilingHypotheses(
+        { ...sale, starting_price_eur: startingPrice } as unknown as AuctionSale,
+        estimate,
+        {},
+      );
+      return (
+        <CeilingPlanner
+          hypotheses={hypotheses}
+          plan={computeCeilingPlan(hypotheses)}
+          choices={{}}
+          onChoicesChange={() => undefined}
+          onReset={() => undefined}
+        />
+      );
+    };
+    const input = () =>
+      screen.getByRole("spinbutton", { name: /Montant de l’enchère simulée/ }) as HTMLInputElement;
+
+    const { rerender } = render(planner(30_000));
+    expect(Number(input().value)).toBe(30_000);
+
+    rerender(planner(maxBid * 2));
+    expect(Number(input().value)).toBe(maxBid);
+
+    rerender(planner(30_000));
+    expect(Number(input().value)).toBe(30_000);
+  });
+
+  it("shows no cash calendar when no price holds", () => {
+    renderPlanner({ choices: { works: { key: "devis", amount: 400_000 } } });
+
+    expect(screen.getByText("Aucun prix ne tient")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Trésorerie à prévoir" })).toBeNull();
+  });
+
+  it("does not ask to read the preliminary fees, nor call them a default, once the user entered them", () => {
+    const { container, unmount } = renderPlanner();
+    expect(container.textContent).toContain("Fiabilité : À consolider");
+    expect(container.textContent).toContain(
+      "Lisez dans le cahier des conditions de vente le montant des frais préalables",
+    );
+    unmount();
+
+    const entered = renderPlanner({ choices: { fpt: 6_000 } });
+    expect(entered.container.textContent).toContain("Fiabilité : Solide");
+    expect(entered.container.textContent).not.toContain("Lisez dans le cahier des conditions");
+    expect(entered.container.textContent).not.toContain("Reste à confirmer : frais préalables");
+  });
+
+  it("keeps starting the simulator at the starting price when the ceiling is above it", () => {
+    renderPlanner();
+
+    const input = screen.getByRole("spinbutton", {
+      name: /Montant de l’enchère simulée/,
+    }) as HTMLInputElement;
+    expect(Number(input.value)).toBe(30_000);
   });
 
   it("gives the reason when the ceiling cannot be computed", () => {
@@ -194,13 +299,13 @@ describe("CeilingPlanner readability", () => {
 });
 
 describe("CeilingPlanner : vocabulaire du plafond", () => {
-  it("dit que la marge de sécurité ne serait pas tenue quand le plafond est sous la mise à prix, sans conseiller", () => {
+  it("dit que le bien ne tient pas à son prix de départ quand le plafond est sous la mise à prix, sans conseiller", () => {
     const { container } = renderPlanner({
       saleOverride: { ...sale, starting_price_eur: 300_000 } as unknown as AuctionSale,
     });
-    const verdict = screen.getByText(/À ces hypothèses, votre plafond \(/);
+    const verdict = screen.getByText(/Avec ces hypothèses, votre enchère plafond \(/);
     expect(verdict.textContent).toMatch(
-      /votre plafond \(.+€\) est inférieur à la mise à prix \(300\s000\s€\) : une enchère à la mise à prix ne respecterait pas la marge de sécurité choisie\./,
+      /sous la mise à prix : le bien ne tient pas à son prix de départ\./,
     );
     expect(container.textContent).not.toContain("mieux vaut");
     expect(container.textContent).not.toMatch(/conseillée/);

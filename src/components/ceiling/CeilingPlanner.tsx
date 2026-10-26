@@ -19,7 +19,12 @@ import {
   type CeilingStep,
 } from "@/lib/bid-ceiling-engine";
 import type { CeilingUserChoices } from "@/lib/bid-ceiling-defaults";
-import { ceilingGap, UNPROFITABLE_HEADLINE } from "@/lib/bid-ceiling-gaps";
+import {
+  ceilingGap,
+  UNPROFITABLE_EXPLANATION,
+  UNPROFITABLE_HEADLINE,
+} from "@/lib/bid-ceiling-gaps";
+import { describeCeilingStartGap } from "@/lib/ceiling-start-gap";
 import { formatPrice } from "@/lib/format";
 import { dpeRentalNote } from "@/lib/works-guidance";
 import { CeilingHypothesesPanel } from "@/components/ceiling/CeilingHypothesesPanel";
@@ -52,6 +57,7 @@ export function CeilingPlanner({
   const [hypothesesOpen, setHypothesesOpen] = useState(false);
   const confidence = ceilingConfidence(hypotheses);
   const gap = ceilingGap(plan, valueReason);
+  const startGap = describeCeilingStartGap(plan, positiveAmount(hypotheses.startingPrice));
   const profilePlans = useMemo(
     () =>
       CEILING_PROFILES.map((profile) => ({
@@ -125,8 +131,14 @@ export function CeilingPlanner({
           <>
             <CeilingSteps steps={plan.steps} />
             <WorksCeilings hypotheses={hypotheses} onEditWorks={onEditWorks} />
-            <BidSimulator hypotheses={hypotheses} plan={plan} />
-            <CashPlan hypotheses={hypotheses} plan={plan} />
+            {/* Le point de départ du simulateur suit le passage du plafond sous la mise à prix. */}
+            <BidSimulator
+              key={startGap?.kind === "below" ? "ceiling-below-start" : "ceiling-above-start"}
+              hypotheses={hypotheses}
+              plan={plan}
+            />
+            {/* Sans prix qui tienne, pas de calendrier de trésorerie à la mise à prix. */}
+            {plan.reachable ? <CashPlan hypotheses={hypotheses} plan={plan} /> : null}
           </>
         ) : null}
 
@@ -256,7 +268,7 @@ function ProfilePicker({
 
 function Verdict({ hypotheses, plan }: { hypotheses: CeilingHypotheses; plan: CeilingPlan }) {
   const start = positiveAmount(hypotheses.startingPrice);
-  const startingPrice = <Terme terme="mise-a-prix">mise à prix</Terme>;
+  const startGap = describeCeilingStartGap(plan, start);
   const limitedByRent = plan.available && plan.reachable && plan.binding === "rendement";
   return (
     <>
@@ -264,18 +276,9 @@ function Verdict({ hypotheses, plan }: { hypotheses: CeilingHypotheses; plan: Ce
         {!plan.available ? (
           `${plan.reason}. Complétez-la dans les hypothèses ci-dessous pour obtenir votre plafond.`
         ) : !plan.reachable ? (
-          "À ces hypothèses, aucun prix d’enchère ne respecte la marge choisie : travaux, libération et frais dépassent déjà le coût total maximal."
-        ) : start && plan.maxBid < start ? (
-          <>
-            À ces hypothèses, votre plafond ({formatPrice(plan.maxBid)}) est inférieur à la{" "}
-            {startingPrice} ({formatPrice(start)}) : une enchère à la mise à prix ne respecterait
-            pas la marge de sécurité choisie.
-          </>
-        ) : start ? (
-          <>
-            La {startingPrice} ({formatPrice(start)}) est inférieure à votre plafond de{" "}
-            {formatPrice(plan.maxBid)} (simulation, hors aléas).
-          </>
+          UNPROFITABLE_EXPLANATION
+        ) : startGap ? (
+          startGap.text
         ) : (
           <>
             <Terme terme="mise-a-prix">Mise à prix</Terme> non communiquée : comparez votre plafond
@@ -438,7 +441,11 @@ function WorksCeilings({
 }
 
 function BidSimulator({ hypotheses, plan }: { hypotheses: CeilingHypotheses; plan: CeilingPlan }) {
-  const defaultBid = hypotheses.startingPrice ?? plan.maxBid;
+  // Plafond sous la mise à prix : on propose d'abord le plafond, pas la mise à prix.
+  const startingPrice = hypotheses.startingPrice;
+  const ceilingBelowStart =
+    plan.reachable && startingPrice != null && startingPrice > 0 && plan.maxBid < startingPrice;
+  const defaultBid = ceilingBelowStart ? plan.maxBid : (startingPrice ?? plan.maxBid);
   const [bid, setBid] = useState<number>(defaultBid);
   // Texte en cours de saisie : effacer le champ le laisse vide au lieu de le ramener à 0. `null` :
   // le champ montre le montant (choix rapide, sortie du champ).
@@ -482,10 +489,15 @@ function BidSimulator({ hypotheses, plan }: { hypotheses: CeilingHypotheses; pla
         <span className="text-sm text-muted-foreground">€</span>
       </label>
       <div className="mt-2 flex flex-wrap gap-2 text-xs">
+        {ceilingBelowStart ? (
+          <QuickBid label="Plafond" value={plan.maxBid} onPick={pickBid} />
+        ) : null}
         {hypotheses.startingPrice ? (
           <QuickBid label="Mise à prix" value={hypotheses.startingPrice} onPick={pickBid} />
         ) : null}
-        {plan.reachable ? <QuickBid label="Plafond" value={plan.maxBid} onPick={pickBid} /> : null}
+        {!ceilingBelowStart && plan.reachable ? (
+          <QuickBid label="Plafond" value={plan.maxBid} onPick={pickBid} />
+        ) : null}
       </div>
       <dl className="mt-4 divide-y divide-border border-y border-border text-sm">
         {rows
@@ -553,15 +565,14 @@ const CASH_STEP_TERMS: Record<string, TermeKey> = {
 };
 
 function CashPlan({ hypotheses, plan }: { hypotheses: CeilingHypotheses; plan: CeilingPlan }) {
-  const price = plan.reachable ? plan.maxBid : (hypotheses.startingPrice ?? 0);
-  const steps = buildCashPlan(hypotheses, plan, price);
+  const steps = buildCashPlan(hypotheses, plan, plan.maxBid);
   return (
     <section aria-labelledby="ceiling-cash-title" className="mt-8">
       <h3 id="ceiling-cash-title" className="text-lg font-semibold text-brand-navy">
         Trésorerie à prévoir
       </h3>
       <p className="mt-1 text-sm text-muted-foreground">
-        Pour une adjudication à {formatPrice(price)}, dans l’ordre où les sommes sont dues.
+        Pour une adjudication à {formatPrice(plan.maxBid)}, dans l’ordre où les sommes sont dues.
       </p>
       <ol className="mt-4 space-y-3">
         {steps.map((step) => (
@@ -610,7 +621,7 @@ function Checklist({
       key: "frais-prealables",
       content: (
         <>
-          Demandez à l’avocat poursuivant le montant des{" "}
+          Lisez dans le cahier des conditions de vente le montant des{" "}
           <Terme terme="frais-prealables" placement="top">
             frais préalables
           </Terme>{" "}

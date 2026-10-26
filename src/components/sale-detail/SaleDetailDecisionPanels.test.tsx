@@ -292,9 +292,52 @@ describe("AnalysisDecisionPanel", () => {
       />,
     );
 
-    expect(screen.getByText("Marge de sécurité non tenue avec ces hypothèses")).toBeTruthy();
+    expect(screen.getByText("Aucun prix ne tient")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Les frais, les travaux et la libération dépassent déjà le budget que permettent la valeur du bien et vos objectifs.",
+      ),
+    ).toBeTruthy();
     expect(screen.queryByText("À compléter")).toBeNull();
   });
+
+  it.each([
+    [
+      "above",
+      90_000,
+      45_000,
+      /^Selon vos hypothèses, vous pouvez enchérir jusqu’à 90\s000\s€, soit 45\s000\s€ au-dessus de la mise à prix\.$/,
+    ],
+    [
+      "narrow",
+      46_000,
+      1_000,
+      /^Peu d’écart avec la mise à prix : selon vos hypothèses, vous pouvez enchérir jusqu’à 46\s000\s€, soit 1\s000\s€ au-dessus de la mise à prix\.$/,
+    ],
+    [
+      "below",
+      36_000,
+      -9_000,
+      /^Avec ces hypothèses, votre enchère plafond \(36\s000\s€\) est 9\s000\s€ \(20\s%\) sous la mise à prix : le bien ne tient pas à son prix de départ\.$/,
+    ],
+  ])(
+    "says in words where the ceiling stands against the starting price (%s)",
+    (kind, ceiling, gap, text) => {
+      renderWithQuery(
+        <AnalysisDecisionPanel
+          {...base}
+          recommendedCeiling={ceiling}
+          ceilingAvailable
+          startingPriceGap={gap}
+        />,
+      );
+
+      const status = screen.getByRole("status");
+      expect(status.textContent).toMatch(text);
+      // Warning style only when the margin is thin or missing, not when the ceiling is comfortable.
+      expect(/surfaceCaution/.test(status.className)).toBe(kind !== "above");
+    },
+  );
 
   it("calls the ceiling a simulation everywhere it is named", () => {
     const { container } = renderWithQuery(<AnalysisDecisionPanel {...base} />);

@@ -12,7 +12,7 @@
     "Les frais s’ajoutent au prix : frais de poursuite taxés, émoluments des avocats, droits de mutation, honoraires de votre avocat et débours.",
     "Les frais de poursuite sont fixés par le juge et annoncés avant les enchères ; il ne peut rien être exigé au-delà.",
     "Les droits de mutation sont le poste le plus lourd : environ 6,3 % du prix dans la plupart des départements pour un bien ancien, un peu moins dans quelques-uns (valeurs à vérifier).",
-    "Dans les hypothèses par défaut du simulateur Immojudis, les frais pèsent environ 12 % du prix pour un bien à 150 000 € et davantage, en proportion, sur un petit prix.",
+    "Dans les hypothèses par défaut du simulateur Immojudis, les frais pèsent environ 13 % du prix pour un bien à 150 000 € et davantage, en proportion, sur un petit prix.",
     "Ces ordres de grandeur ne remplacent pas le décompte de l’avocat."
   ],
   "sections": [
@@ -91,15 +91,15 @@
       "id": "ordres-de-grandeur",
       "title": "Ce que cela donne en euros, avec les hypothèses du simulateur",
       "paragraphs": [
-        "Le tableau applique les hypothèses par défaut du simulateur Immojudis : émoluments selon le barème ci-dessus (TVA de 20 %), droits de mutation de 6,32 % sur le prix augmenté de 3 000 € de frais préalables, contribution de sécurité immobilière de 0,10 % de cette même base, 3 000 € de frais préalables et 1 500 € d’honoraires. Ces hypothèses sont modifiables et ne correspondent à aucun dossier précis. Les montants sont arrondis."
+        "Le tableau applique les hypothèses par défaut du simulateur Immojudis : émoluments selon le barème ci-dessus (TVA de 20 %), droits de mutation de 6,32 % sur le prix augmenté de 5 000 € de frais préalables, contribution de sécurité immobilière de 0,10 % de cette même base, 5 000 € de frais préalables et 1 500 € d’honoraires. Ces hypothèses sont modifiables et ne correspondent à aucun dossier précis. Les montants sont arrondis."
       ],
       "table": {
         "headers": ["Prix d’adjudication", "Frais estimés", "Part du prix"],
         "rows": [
-          ["50 000 €", "environ 9 600 €", "environ 19 %"],
-          ["100 000 €", "environ 13 800 €", "environ 14 %"],
-          ["150 000 €", "environ 17 900 €", "environ 12 %"],
-          ["300 000 €", "environ 30 200 €", "environ 10 %"]
+          ["50 000 €", "environ 11 800 €", "environ 24 %"],
+          ["100 000 €", "environ 15 900 €", "environ 16 %"],
+          ["150 000 €", "environ 20 000 €", "environ 13 %"],
+          ["300 000 €", "environ 32 400 €", "environ 11 %"]
         ]
       },
       "bullets": [

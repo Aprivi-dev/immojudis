@@ -421,6 +421,43 @@ describe("readable listing sections", () => {
     rerender(<ListingOverview sale={item()} premiumCeiling={120_000} />);
     expect(screen.queryByText(/Marge : /)).toBeNull();
   });
+  it("says in words where the ceiling stands against the starting price", () => {
+    const sale = item({ starting_price_eur: 100_000 });
+    const { rerender } = render(
+      <ListingOverview sale={sale} premiumCeiling={160_000} startingPriceGap={60_000} />,
+    );
+    expect(
+      screen.getByText(
+        /^Selon vos hypothèses, vous pouvez enchérir jusqu’à 160\s000\s€, soit 60\s000\s€ au-dessus/,
+      ),
+    ).toBeTruthy();
+
+    rerender(<ListingOverview sale={sale} premiumCeiling={103_000} startingPriceGap={3_000} />);
+    expect(
+      screen.getByText(
+        /^Peu d’écart avec la mise à prix : selon vos hypothèses, vous pouvez enchérir jusqu’à 103\s000\s€/,
+      ),
+    ).toBeTruthy();
+
+    rerender(<ListingOverview sale={sale} premiumCeiling={80_000} startingPriceGap={-20_000} />);
+    expect(
+      screen.getByText(
+        /^Avec ces hypothèses, votre enchère plafond \(80\s000\s€\) est 20\s000\s€ \(20\s%\) sous la mise à prix : le bien ne tient pas à son prix de départ\.$/,
+      ),
+    ).toBeTruthy();
+  });
+  it("says that no price holds, with the reason, instead of an empty hero", () => {
+    render(<ListingOverview sale={item()} ceilingUnreachable showPremiumTeaser />);
+
+    expect(screen.getByText("Enchère plafond (simulation)")).toBeTruthy();
+    expect(screen.getByText("Aucun prix ne tient")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Les frais, les travaux et la libération dépassent déjà le budget que permettent la valeur du bien et vos objectifs.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Disponible avec l’offre Analyse/)).toBeNull();
+  });
   it("names the ceiling a simulation in the premium teaser too", () => {
     render(<ListingOverview sale={item()} showPremiumTeaser />);
 

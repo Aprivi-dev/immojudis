@@ -15,6 +15,7 @@ from src.sources.notaires_extraction import (
     cadastral_parcels,
     floor_price_from_text,
     parse_immo_interactif_page,
+    sale_conditions,
     virtual_tours,
 )
 
@@ -388,3 +389,24 @@ def test_detail_enrichment_reads_the_operator_page_once_and_tolerates_its_failur
         assert "attachments" not in other["source_blocks"]["caracteristiques_bien"]
     finally:
         notaires._PAGE_CONTEXT.reset(token)
+
+
+@pytest.mark.parametrize(
+    ("fees", "reference", "expected"),
+    [
+        (15000, 333333, 0.045),  # cas courant
+        (1000, 100000, 0.01),  # borne basse incluse
+        (20000, 100000, 0.2),  # borne haute incluse
+        (900, 100000, None),  # sous 1 % : donnée aberrante
+        (20100, 100000, None),  # au-dessus de 20 %
+        (6000, 1, None),  # prix de référence aberrant : taux de 6 000
+        (15000, 0, None),  # sans prix de référence, pas de taux
+    ],
+)
+def test_negotiation_fee_rate_outside_one_to_twenty_percent_is_left_absent(fees, reference, expected):
+    conditions = sale_conditions("VNI", {"emolumentsNegociation": fees, "prixMin": reference})
+
+    if expected is None:
+        assert "negotiation_fee_rate" not in conditions
+    else:
+        assert conditions["negotiation_fee_rate"] == expected

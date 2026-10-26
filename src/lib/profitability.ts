@@ -56,8 +56,16 @@ export function computeEmolumentsHT(price: number): number {
   return total;
 }
 
+/**
+ * Frais préalables retenus quand l'annonce ne les chiffre pas. Source unique : le simulateur de
+ * frais, les rapports et l'enchère plafond la partagent. Prudent (5 000 €), car ils varient de
+ * 2 000 à plus de 10 000 € selon la procédure ; le montant exact est dans le cahier des
+ * conditions de vente.
+ */
+export const DEFAULT_PRELIMINARY_FEES = 5_000;
+
 export const DEFAULTS = {
-  fpt: 3_000,
+  fpt: DEFAULT_PRELIMINARY_FEES,
   works: 0,
   safetyDiscountPct: 8,
   /** Honoraires de l'avocat enchérisseur, hors émoluments tarifés (TTC). */

@@ -29,6 +29,8 @@ import { Terme } from "@/components/ceiling/Terme";
 import { safeExternalHttpUrl } from "@/lib/external-url";
 import { saleSourceLinks } from "@/lib/sale-source-links";
 import { formatDate, formatPrice } from "@/lib/format";
+import { UNPROFITABLE_EXPLANATION, UNPROFITABLE_HEADLINE } from "@/lib/bid-ceiling-gaps";
+import { describeCeilingStartGap } from "@/lib/ceiling-start-gap";
 import { buildStructuredDescription } from "@/lib/sale-description";
 import {
   listingContactLinks,
@@ -156,6 +158,8 @@ function ceilingContextItems(context: CeilingContext): string[] {
 export function ListingOverview({
   sale,
   premiumCeiling = null,
+  startingPriceGap,
+  ceilingUnreachable = false,
   showPremiumTeaser = false,
   factReliabilities = null,
   aiReviewProjections = null,
@@ -168,6 +172,10 @@ export function ListingOverview({
   /** Action principale de la synthèse (« Préparer mon enchère »), qui ouvre l'onglet concerné. */
   preparation?: { href: string; label: string } | null;
   premiumCeiling?: number | null;
+  /** `startingPriceGap` of the ceiling plan: where the ceiling stands against the starting price. */
+  startingPriceGap?: number | null;
+  /** The ceiling is computed but no price holds: the hero says so instead of staying empty. */
+  ceilingUnreachable?: boolean;
   ceilingContext?: CeilingContext | null;
   showPremiumTeaser?: boolean;
   factReliabilities?: FactReliabilityMap | null;
@@ -257,6 +265,25 @@ export function ListingOverview({
     surfaceReview?.blocked === true ||
     roomsReview.blocked;
   const guardedPremiumCeiling = analysisDataBlocked ? null : premiumCeiling;
+  const guardedCeilingUnreachable = !analysisDataBlocked && ceilingUnreachable;
+  const ceilingStartGap =
+    guardedPremiumCeiling != null
+      ? describeCeilingStartGap(
+          {
+            available: true,
+            reachable: true,
+            maxBid: guardedPremiumCeiling,
+            // The engine's gap when the caller has it; the same difference otherwise.
+            startingPriceGap:
+              startingPriceGap !== undefined
+                ? startingPriceGap
+                : price != null
+                  ? guardedPremiumCeiling - price
+                  : null,
+          },
+          price,
+        )
+      : null;
   const guardedScenarioSummary = analysisDataBlocked ? null : scenarioSummary;
   const publicSurfaceFact = surfaceReview?.blocked ? null : publicFactsById.get("surface");
   const publicOccupancyFact = occupancyReview.blocked
@@ -394,6 +421,20 @@ export function ListingOverview({
                   )}
                 </p>
               ) : null}
+              {ceilingStartGap ? (
+                <p className={styles.premiumContext}>
+                  <strong>{ceilingStartGap.text}</strong>
+                </p>
+              ) : null}
+              <a href="#why-this-ceiling" className={styles.priceExplanation}>
+                Comprendre le calcul
+              </a>
+            </div>
+          ) : guardedCeilingUnreachable ? (
+            <div className={styles.premiumPrice}>
+              <p className={styles.priceLabel}>Enchère plafond (simulation)</p>
+              <p className={styles.premiumPriceValue}>{UNPROFITABLE_HEADLINE}</p>
+              <p className={styles.premiumContext}>{UNPROFITABLE_EXPLANATION}</p>
               <a href="#why-this-ceiling" className={styles.priceExplanation}>
                 Comprendre le calcul
               </a>

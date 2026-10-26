@@ -196,7 +196,7 @@ describe("article sur les ventes notariales", () => {
 describe("article sur l'enchère plafond", () => {
   it("précise où s'affiche l'enchère plafond, sans date ni promesse de gratuité durable", () => {
     const article = getResourceArticle("prix-plafond-encheres-immobilieres")!;
-    expect(article.updatedAt).toBe("2026-10-19");
+    expect(article.updatedAt).toBe("2026-10-26");
     const text = article.sections
       .find((section) => section.id === "assistant-immojudis")!
       .paragraphs.join(" ");

@@ -473,7 +473,8 @@ describe("property report sharing", () => {
       estimatedMarketHigh: 249_000,
       estimatedMarketRangeLabel: "Fourchette de valeur estimée",
       apparentDiscountPct: 25,
-      grossYieldPct: 9.9,
+      // 9,9 % avec 3 000 € de frais préalables par défaut ; 9,8 % avec les 5 000 € retenus partout.
+      grossYieldPct: 9.8,
       rentabilityScore: {
         available: true,
         rentSource: "department_estimate",

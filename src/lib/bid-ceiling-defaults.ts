@@ -13,13 +13,17 @@ import {
 } from "@/lib/bid-ceiling-engine";
 import type { CeilingMarketEstimate } from "@/lib/market-estimate-ceiling";
 import type { WorksBreakdownItem } from "@/lib/works-breakdown";
-import { DEFAULTS, registrationRateForDepartment } from "@/lib/profitability";
+import {
+  DEFAULT_PRELIMINARY_FEES,
+  DEFAULTS,
+  registrationRateForDepartment,
+} from "@/lib/profitability";
 import { defaultRentPerM2 } from "@/lib/rent-reference";
 import { getMarketValuationSurfaces } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
 
-/** Frais préalables retenus quand l'annonce ne les donne pas : prudent, ils varient de 2 000 à plus de 10 000 €. */
-export const DEFAULT_PRELIMINARY_FEES = 5_000;
+// Frais préalables retenus quand l'annonce ne les donne pas : valeur unique de `profitability.ts`.
+export { DEFAULT_PRELIMINARY_FEES };
 /** Commissaire de justice, serrurier, garde-meubles : ordre de grandeur d'une libération. */
 export const DEFAULT_RELEASE_COST = 3_000;
 export const DEFAULT_RELEASE_MONTHS = 12;
@@ -130,7 +134,7 @@ export function buildCeilingHypotheses(
       taxRegime: choices.taxRegime ?? "registration",
     },
     feesSource: {
-      fpt: choices.fpt == null && preliminary != null ? "document" : "defaut",
+      fpt: choices.fpt != null ? "saisie" : preliminary != null ? "document" : "defaut",
       consignation: consignation != null ? "document" : "regle",
     },
     rent: {

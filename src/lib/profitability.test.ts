@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   classifyOccupancy,
   computeAcquisitionCosts,
+  DEFAULT_PRELIMINARY_FEES,
   computeEmolumentsHT,
   computeMarketCeiling,
   computeRecommendedCeilings,
@@ -72,13 +73,14 @@ describe("computeAcquisitionCosts", () => {
 
     expect(result.emolumentsHT).toBeCloseTo(2_242.56, 1);
     expect(result.emolumentsTTC).toBeCloseTo(2_691.07, 1);
-    // Base taxable = prix + frais préalables (103 000 €).
-    expect(result.registrationDuties).toBeCloseTo(103_000 * 0.0632, 2);
-    expect(result.csi).toBeCloseTo(103, 2);
+    // Base taxable = prix + frais préalables par défaut (105 000 €).
+    expect(result.registrationDuties).toBeCloseTo(105_000 * 0.0632, 2);
+    expect(result.csi).toBeCloseTo(105, 2);
     expect(result.lawyerFees).toBe(1_500);
-    expect(result.fpt).toBe(3_000);
-    expect(result.acquisitionFeesTotal).toBeCloseTo(13_803.67, 1);
-    expect(result.totalCost).toBeCloseTo(113_803.67, 1);
+    expect(result.fpt).toBe(5_000);
+    expect(result.fpt).toBe(DEFAULT_PRELIMINARY_FEES);
+    expect(result.acquisitionFeesTotal).toBeCloseTo(15_932.07, 1);
+    expect(result.totalCost).toBeCloseTo(115_932.07, 1);
   });
 
   it("utilise le taux de l'utilisateur quand il est saisi", () => {
@@ -87,7 +89,7 @@ describe("computeAcquisitionCosts", () => {
       department: "36",
       registrationRate: 0.0581,
     });
-    expect(result.registrationDuties).toBeCloseTo(103_000 * 0.0581, 2);
+    expect(result.registrationDuties).toBeCloseTo(105_000 * 0.0581, 2);
     expect(computeAcquisitionCosts({ price: 100_000, department: "36" }).registrationRate).toBe(
       0.0509,
     );
@@ -99,7 +101,7 @@ describe("computeAcquisitionCosts", () => {
     expect(result.csi).toBe(0);
     expect(result.vatOnPrice).toBe(20_000);
     expect(result.totalCost).toBeCloseTo(
-      100_000 + 20_000 + result.emolumentsTTC + 1_500 + 3_000,
+      100_000 + 20_000 + result.emolumentsTTC + 1_500 + 5_000,
       2,
     );
   });

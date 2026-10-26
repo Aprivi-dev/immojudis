@@ -39,6 +39,9 @@ DISPLAY_SCHEMA_VERSION = "property_characteristics_v1"
 DOCUMENTS_ACCESS_NOTE = (
     "Pièces consultables sur le site de la vente après connexion, agrément de l'office notarial et visite du bien."
 )
+# Plage plausible d'un taux d'honoraires de négociation (part du prix de référence).
+NEGOTIATION_FEE_RATE_MIN = 0.01
+NEGOTIATION_FEE_RATE_MAX = 0.20
 
 GROUPS = {
     "identification": "Identification",
@@ -494,7 +497,10 @@ def sale_conditions(transaction_type: str | None, transaction: dict[str, Any]) -
         reference = number(transaction.get("prixMin"))
         if fees and reference:
             # Seul le taux est repris : le montant permettrait de retrouver le prix de réserve.
-            conditions["negotiation_fee_rate"] = round(float(fees) / float(reference), 4)
+            rate = round(float(fees) / float(reference), 4)
+            # Un taux hors de 1 % à 20 % vient d'une donnée aberrante : mieux vaut le laisser absent.
+            if NEGOTIATION_FEE_RATE_MIN <= rate <= NEGOTIATION_FEE_RATE_MAX:
+                conditions["negotiation_fee_rate"] = rate
     conditions["result"] = _status_label(transaction)
     return {key: value for key, value in conditions.items() if value not in (None, "", [], {})}
 

@@ -9,7 +9,12 @@ import { SaleSignalFeedback } from "@/components/SaleSignalFeedback";
 import { UnlockCallToAction } from "@/components/sale-detail/UnlockCallToAction";
 import panelStyles from "@/components/sale-detail/SaleDetailPanels.module.css";
 import { useAuth } from "@/hooks/use-auth";
-import { UNPROFITABLE_HEADLINE, type CeilingGap } from "@/lib/bid-ceiling-gaps";
+import {
+  UNPROFITABLE_EXPLANATION,
+  UNPROFITABLE_HEADLINE,
+  type CeilingGap,
+} from "@/lib/bid-ceiling-gaps";
+import { describeCeilingStartGap } from "@/lib/ceiling-start-gap";
 import { fetchValuePreview } from "@/lib/client-api";
 import { formatPrice, formatStartingPrice } from "@/lib/format";
 import type { MarketEstimate } from "@/lib/market.server";
@@ -27,6 +32,7 @@ export function AnalysisDecisionPanel({
   worksBudget,
   recommendedCeiling,
   ceilingAvailable,
+  startingPriceGap,
   ceilingGap = null,
   valueReason,
   onAdjust,
@@ -40,6 +46,8 @@ export function AnalysisDecisionPanel({
   worksBudget: number | null;
   recommendedCeiling: number;
   ceilingAvailable: boolean;
+  /** `startingPriceGap` of the ceiling plan: ceiling minus starting price, when both exist. */
+  startingPriceGap?: number | null;
   /** Why the ceiling is not a number (missing input, or no profitable bid). */
   ceilingGap?: CeilingGap | null;
   /** Why the market value is missing, when it is (« surface manquante », …). */
@@ -59,13 +67,28 @@ export function AnalysisDecisionPanel({
         : { main: "À compléter", note: valueReason ?? "valeur de marché manquante" };
     }
     if (ceilingGap?.kind === "unprofitable") {
-      return { main: UNPROFITABLE_HEADLINE, compact: true };
+      return { main: UNPROFITABLE_HEADLINE, note: UNPROFITABLE_EXPLANATION, compact: true };
     }
     return {
       main: "À compléter",
       note: ceilingGap?.reason ?? valueReason ?? "valeur de marché manquante",
     };
   };
+  const startGap = describeCeilingStartGap(
+    {
+      available: ceilingAvailable,
+      reachable: ceilingAvailable,
+      maxBid: recommendedCeiling,
+      // The engine's gap when the caller has it; the same difference otherwise.
+      startingPriceGap:
+        startingPriceGap !== undefined
+          ? startingPriceGap
+          : sale.starting_price_eur != null && sale.starting_price_eur > 0
+            ? recommendedCeiling - sale.starting_price_eur
+            : null,
+    },
+    sale.starting_price_eur,
+  );
   const markers = comparisonMarkerPositions({
     start:
       sale.starting_price_eur != null && sale.starting_price_eur > 0
@@ -120,10 +143,12 @@ export function AnalysisDecisionPanel({
           confirmer avant de retenir ce plafond.
         </p>
       ) : null}
-      {ceiling != null && sale.starting_price_eur != null && ceiling < sale.starting_price_eur ? (
-        <p role="status" className={panelStyles.surfaceCaution}>
-          Ce scénario donne un plafond inférieur à la mise à prix de{" "}
-          {formatPrice(sale.starting_price_eur)}.
+      {startGap ? (
+        <p
+          role="status"
+          className={startGap.kind === "above" ? undefined : panelStyles.surfaceCaution}
+        >
+          {startGap.text}
         </p>
       ) : null}
     </aside>

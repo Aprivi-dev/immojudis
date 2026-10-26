@@ -478,6 +478,8 @@ function SaleDetailWorkspace({
   };
   const heroCeiling =
     ceilingEnabled && ceilingPlan.available && ceilingPlan.reachable ? ceilingPlan.maxBid : null;
+  // Calculé mais inatteignable : le hero le dit au lieu de rester vide.
+  const heroCeilingUnreachable = ceilingEnabled && ceilingPlan.available && !ceilingPlan.reachable;
   const ceilingContext =
     heroCeiling != null
       ? {
@@ -595,6 +597,8 @@ function SaleDetailWorkspace({
                 sale={displaySale}
                 preparation={preparation}
                 premiumCeiling={heroCeiling}
+                startingPriceGap={ceilingPlan.startingPriceGap}
+                ceilingUnreachable={heroCeilingUnreachable}
                 ceilingContext={ceilingContext}
                 showPremiumTeaser={access === "discovery" && isTribunalSale}
                 factReliabilities={factReliabilities}
@@ -805,6 +809,7 @@ function SaleDetailWorkspace({
                       worksBudget={retainedWorks}
                       recommendedCeiling={ceilingPlan.maxBid}
                       ceilingAvailable={ceilingPlan.available && ceilingPlan.reachable}
+                      startingPriceGap={ceilingPlan.startingPriceGap}
                       ceilingGap={ceilingMissing}
                       valueReason={valueReason}
                       onAdjust={() => undefined}

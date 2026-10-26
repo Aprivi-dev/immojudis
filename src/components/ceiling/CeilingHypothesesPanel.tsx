@@ -120,7 +120,9 @@ export function CeilingHypothesesPanel({
           hint={
             h.feesSource.fpt === "document"
               ? "Montant lu dans l’annonce."
-              : "Valeur prudente par défaut : demandez le montant exact à l’avocat poursuivant."
+              : h.feesSource.fpt === "saisie"
+                ? "Montant que vous avez saisi."
+                : "Valeur prudente par défaut : frais préalables à lire dans le cahier des conditions de vente."
           }
           onChange={(value) => set("fpt", value)}
         />

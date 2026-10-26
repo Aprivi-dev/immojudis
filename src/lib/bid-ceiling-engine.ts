@@ -9,6 +9,13 @@ import {
   type AcquisitionCostResult,
 } from "@/lib/profitability";
 
+/**
+ * Version des règles de calcul du plafond. À incrémenter dès qu'un résultat change volontairement
+ * (barème, marge, hypothèse par défaut) : `bid-ceiling-characterization.test.ts` la compare à celle
+ * qu'il a enregistrée avec le résultat de référence.
+ */
+export const CEILING_ENGINE_VERSION = "2026-10-26.1";
+
 export type CeilingProject = "habiter" | "louer" | "revendre";
 export type CeilingProfile = "prudent" | "equilibre" | "offensif";
 export type OccupationCase = "libre" | "occupe" | "loue" | "squat" | "inconnu";
@@ -112,7 +119,8 @@ export type CeilingHypotheses = {
     resaleMonths: number;
   };
   fees: Omit<AcquisitionCostOptions, "works"> & { fpt: number; lawyerFees: number };
-  feesSource: { fpt: "document" | "defaut"; consignation: "document" | "regle" };
+  /** `fpt` : lu dans l'annonce (`document`), saisi par l'utilisateur (`saisie`) ou valeur par défaut (`defaut`). */
+  feesSource: { fpt: "document" | "saisie" | "defaut"; consignation: "document" | "regle" };
   rent: {
     monthly: number | null;
     source: "saisi" | "estime" | "absent";
@@ -600,7 +608,9 @@ export function buildCashPlan(h: CeilingHypotheses, plan: CeilingPlan, price: nu
       detail:
         h.feesSource.fpt === "document"
           ? "Frais de la procédure de saisie, indiqués dans les pièces, payés en plus du prix."
-          : "Frais de la procédure de saisie, payés en plus du prix. Leur montant exact est annoncé à l’audience : demandez-le à l’avocat poursuivant.",
+          : h.feesSource.fpt === "saisie"
+            ? "Frais de la procédure de saisie, montant que vous avez saisi, payés en plus du prix."
+            : "Frais de la procédure de saisie, payés en plus du prix. Leur montant exact est à lire dans le cahier des conditions de vente.",
     },
     {
       when: "Sous 2 mois",
@@ -693,15 +703,19 @@ export function ceilingConfidence(h: CeilingHypotheses): CeilingConfidence {
     score += 5;
     gaps.push("occupation non confirmée");
   } else score += 20;
-  if (h.feesSource.fpt === "document") score += 20;
+  // Lus dans l'annonce ou saisis par l'utilisateur : le montant n'est plus une valeur par défaut.
+  const feesKnown = h.feesSource.fpt !== "defaut";
+  if (feesKnown) score += 20;
   else {
     score += 8;
-    gaps.push("frais préalables à demander à l’avocat poursuivant");
+    gaps.push("frais préalables à lire dans le cahier des conditions de vente");
   }
   const rounded = Math.min(100, Math.round(score));
+  const label = rounded >= 75 ? "Solide" : rounded >= 50 ? "À consolider" : "Indicatif";
   return {
     score: rounded,
-    label: rounded >= 75 ? "Solide" : rounded >= 50 ? "À consolider" : "Indicatif",
+    // Un frais par défaut ne peut pas donner une fiabilité « Solide » : le chiffre n'est pas lu.
+    label: label === "Solide" && !feesKnown ? "À consolider" : label,
     gaps,
   };
 }
