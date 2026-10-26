@@ -49,6 +49,7 @@ export function SearchHeader({
   signedIn = false,
   dailyAlertsAllowed = false,
   emailRecapEnabled = false,
+  pepitesActive = false,
   wideMap,
   isDesktop = false,
   onFiltersOpenChange,
@@ -67,6 +68,8 @@ export function SearchHeader({
   dailyAlertsAllowed?: boolean;
   /** Le consentement à l'email récapitulatif est déjà donné : on ne le redemande pas. */
   emailRecapEnabled?: boolean;
+  /** Les pépites sont ouvertes au public : la pastille « Pépites seulement » est proposée. */
+  pepitesActive?: boolean;
   wideMap: boolean;
   isDesktop?: boolean;
   onFiltersOpenChange: (open: boolean) => void;
@@ -113,7 +116,12 @@ export function SearchHeader({
                 onClick={onSaveSearch}
               />
             ) : null}
-            <MobileFilterChips draft={draft} setDraft={setDraft} preview={!signedIn} />
+            <MobileFilterChips
+              draft={draft}
+              setDraft={setDraft}
+              preview={!signedIn}
+              pepitesActive={pepitesActive}
+            />
             <div className="hidden lg:flex flex-wrap items-center gap-2">
               <HomeTypeFilter draft={draft} setDraft={setDraft} />
               <PriceFilter draft={draft} setDraft={setDraft} />

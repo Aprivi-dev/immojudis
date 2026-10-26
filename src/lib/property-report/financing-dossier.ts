@@ -3,6 +3,7 @@ import { formatDate, formatPrice } from "@/lib/format";
 import { numberValue, stringOrNumberValue } from "@/lib/guards";
 import { reportSaleSchedule } from "@/lib/report-sale-schedule";
 import { PDF_PAGE_BREAK } from "@/lib/simple-pdf";
+import { reportWording } from "./report-wording";
 
 /**
  * Page « Dossier de financement » du rapport PDF : de quoi montrer à un banquier ou à un courtier
@@ -89,6 +90,8 @@ export function financingGuaranteeEur(startingPrice: unknown): number | null {
 
 export function financingDossierLines(input: FinancingDossierInput): string[] {
   const { sale, ceiling, acquisitionCosts, announcedGuarantee } = input;
+  // Vocabulaire du régime du plafond (mise à prix ou première offre possible, frais couverts).
+  const wording = reportWording(ceiling.regime);
   const startingPrice = positive(sale.startingPrice);
   const venue = typeof sale.venueType === "string" ? sale.venueType : null;
   const venueLabel = venue ? (VENUE_LABELS[venue] ?? null) : null;
@@ -141,14 +144,12 @@ export function financingDossierLines(input: FinancingDossierInput): string[] {
     ...schedule,
     "",
     "Chiffres du dossier",
-    `Mise à prix: ${euros(startingPrice)}`,
-    `Enchère plafond (simulation): ${euros(ceilingBid)}${
+    `${wording.referencePrice}: ${euros(startingPrice)}`,
+    `${typeof ceiling.label === "string" ? ceiling.label : wording.ceilingLabel}: ${euros(ceilingBid)}${
       ceilingBid == null ? "" : " (hypothèses d’Immojudis, pas un budget validé)"
     }`,
     `Frais estimés hors travaux: ${euros(fees)}${
-      fees == null
-        ? ""
-        : " (estimation par défaut : émoluments, droits de mutation, frais de poursuite, honoraires d’avocat)"
+      fees == null ? "" : ` (estimation par défaut : ${wording.feesCoverage})`
     }`,
     "",
     "Garantie à remettre avant les enchères",

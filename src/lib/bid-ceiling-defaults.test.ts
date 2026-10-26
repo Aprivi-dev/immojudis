@@ -7,6 +7,7 @@ import {
 } from "@/lib/bid-ceiling-defaults";
 import { computeCeilingPlan } from "@/lib/bid-ceiling-engine";
 import type { MarketEstimate } from "@/lib/market.server";
+import { DEFAULTS } from "@/lib/profitability";
 import type { AuctionSale } from "@/lib/types";
 
 const sale = {
@@ -41,6 +42,13 @@ describe("occupationCaseForStatus", () => {
     ["unknown", "inconnu"],
   ])("maps %s to %s", (status, expected) => {
     expect(occupationCaseForStatus(status)).toBe(expected);
+  });
+});
+
+describe("DEFAULT_PRELIMINARY_FEES", () => {
+  it("is the one default of the fee simulator and the ceiling: 5 000 €", () => {
+    expect(DEFAULT_PRELIMINARY_FEES).toBe(5_000);
+    expect(DEFAULTS.fpt).toBe(DEFAULT_PRELIMINARY_FEES);
   });
 });
 
@@ -79,6 +87,15 @@ describe("buildCeilingHypotheses", () => {
     expect(h.occupation.case).toBe("libre");
     expect(h.fees.fpt).toBe(DEFAULT_PRELIMINARY_FEES);
     expect(h.feesSource.fpt).toBe("defaut");
+  });
+
+  it("marks the preliminary fees the user entered as entered, whatever the listing says", () => {
+    const entered = buildCeilingHypotheses(sale, estimate, { fpt: 6_000 });
+    expect(entered.fees.fpt).toBe(6_000);
+    expect(entered.feesSource.fpt).toBe("saisie");
+
+    const read = buildCeilingHypotheses(sale, estimate);
+    expect(read.feesSource.fpt).toBe("document");
   });
 
   it("falls back to the department reference rent, and treats a rent of 0 as not entered", () => {

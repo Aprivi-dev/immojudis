@@ -35,6 +35,15 @@ describe("activeFilterChips", () => {
     expect(mergeSalesSearch(search, chip.clear).visitSoon).toBeUndefined();
   });
 
+  it("shows and removes the « Pépites seulement » criterion, alone", () => {
+    const search = { pepite: true, city: "Lyon" };
+    const chip = activeFilterChips(search).find((item) => item.key === "pepite")!;
+    expect(chip.label).toBe("Pépites seulement");
+    const next = mergeSalesSearch(search, chip.clear);
+    expect(next.pepite).toBeUndefined();
+    expect(next.city).toBe("Lyon");
+  });
+
   it("groups a min and a max under one removable chip", () => {
     const chips = activeFilterChips({ minPrice: 50_000, maxPrice: 100_000 });
     expect(chips).toHaveLength(1);

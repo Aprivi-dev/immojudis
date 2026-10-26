@@ -169,7 +169,7 @@ describe("public sale lookup", () => {
       await lookupPublicSale(ID);
       await lookupPublicSale(ID);
       expect(summaryReads(supabase)).toBe(1);
-      expect([...mocks.store.values()][0].tags).toEqual([`sale-${ID}`]);
+      expect([...mocks.store.values()][0].tags).toEqual([`sale-${ID}`, "public-sales"]);
     });
   });
 
@@ -335,11 +335,11 @@ describe("public sale lookup", () => {
       expect(summaryReads(supabase)).toBe(2);
     });
 
-    it("tags entries sale-<id> and revalidates them after five minutes", async () => {
+    it("tags entries sale-<id> and the global public-sales tag, and revalidates them after five minutes", async () => {
       mocks.client.mockReturnValue(client({ rpc: { data: [row], error: null } }));
       await lookupPublicSale(ID.toUpperCase());
       expect(publicSaleCacheTag(ID.toUpperCase())).toBe(`sale-${ID}`);
-      expect([...mocks.store.values()][0].tags).toEqual([`sale-${ID}`]);
+      expect([...mocks.store.values()][0].tags).toEqual([`sale-${ID}`, "public-sales"]);
       expect(mocks.revalidateSeconds).toEqual([300]);
       expect(PUBLIC_SALE_REVALIDATE_SECONDS).toBe(300);
     });

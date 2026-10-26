@@ -15,6 +15,7 @@ from src.sources.notaires_extraction import (
     cadastral_parcels,
     floor_price_from_text,
     parse_immo_interactif_page,
+    sale_conditions,
     virtual_tours,
 )
 
@@ -180,13 +181,13 @@ def devalue(root, *, wrap: bool = True) -> list:
     return table
 
 
-def immo_page(ad_id=9000002, documents=None) -> str:
+def immo_page(ad_id=9000002, documents=None, fee_rate=0.045) -> str:
     ad = {
         "inotrAnnonceId": ad_id,
         "id": ad_id,
         "shortContact": {"afnor1": "Office fictif", "overrideOfficeName": "Office notarial fictif"},
         "seller": {"type": "PROFESSIONAL"},
-        "negotiationFeeRate": 0.045,
+        "negotiationFeeRate": fee_rate,
         "negotiationFeeOwner": "BUYER",
         "pictures": [{"mediaId": 1, "fileName": "a.jpeg", "fileUrl": "https://media.immo-interactif.fr/1/a.jpeg"}],
         "documents": documents if documents is not None else [
@@ -280,6 +281,28 @@ def test_vni_detail_never_exposes_reserve_price_and_keeps_restricted_inventory()
     sale = normalize_sale({"source_name": "notaires", "source_url": VNI_URL, **detail})
     assert sale.documents == []
     assert sale.raw_payload["source_blocks"]["pieces_dossier"] == "Diagnostic amiante ; Règlement de copropriété"
+
+
+@pytest.mark.parametrize(
+    ("published", "expected"),
+    [(0.045, 0.045), (0.0462, 0.045), (0.0476, 0.05), (0.0125, 0.015), (0.002, None)],
+)
+def test_operator_page_fee_rate_is_rounded_to_the_half_point_like_the_api_rate(published, expected):
+    page = parse_immo_interactif_page(immo_page(fee_rate=published), "9000002")
+
+    if expected is None:
+        assert "negotiation_fee_rate" not in page
+    else:
+        assert page["negotiation_fee_rate"] == expected
+
+
+def test_fee_text_is_written_from_the_rounded_rate():
+    from src.sources.notaires_extraction import _fee_text
+
+    assert _fee_text({"negotiation_fee_rate": 0.0462, "negotiation_fee_payer": "ACQUEREUR"}) == (
+        "4,50 % à la charge de l'acquéreur"
+    )
+    assert _fee_text({"negotiation_fee_rate": 0.0476}) == "5,00 %"
 
 
 def test_immo_interactif_page_supplies_inventory_office_and_fee_schedule():
@@ -388,3 +411,29 @@ def test_detail_enrichment_reads_the_operator_page_once_and_tolerates_its_failur
         assert "attachments" not in other["source_blocks"]["caracteristiques_bien"]
     finally:
         notaires._PAGE_CONTEXT.reset(token)
+
+
+@pytest.mark.parametrize(
+    ("fees", "reference", "expected"),
+    [
+        (15000, 333333, 0.045),  # cas courant
+        (1000, 100000, 0.01),  # borne basse incluse
+        (20000, 100000, 0.2),  # borne haute incluse
+        (1240, 100000, 0.01),  # arrondi au demi-point : 1,24 % -> 1,0 %
+        (1250, 100000, 0.015),  # moitié vers le haut : 1,25 % -> 1,5 %
+        (4620, 100000, 0.045),  # 4,62 % -> 4,5 %
+        (4760, 100000, 0.05),  # 4,76 % -> 5,0 %
+        (19990, 100000, 0.2),  # 19,99 % -> 20,0 %
+        (900, 100000, None),  # sous 1 % : donnée aberrante
+        (20100, 100000, None),  # au-dessus de 20 %
+        (6000, 1, None),  # prix de référence aberrant : taux de 6 000
+        (15000, 0, None),  # sans prix de référence, pas de taux
+    ],
+)
+def test_negotiation_fee_rate_is_bounded_then_rounded_to_the_half_point(fees, reference, expected):
+    conditions = sale_conditions("VNI", {"emolumentsNegociation": fees, "prixMin": reference})
+
+    if expected is None:
+        assert "negotiation_fee_rate" not in conditions
+    else:
+        assert conditions["negotiation_fee_rate"] == expected

@@ -1,6 +1,11 @@
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   assertPaidOfferLegalReadiness,
+  LEGAL_DOCUMENTS,
+  PREVIOUS_LEGAL_DOCUMENTS,
   legalConfigurationStatus,
   legalPublisherConfigurationStatus,
   publicLegalPublisher,
@@ -72,5 +77,27 @@ describe("legal publisher configuration", () => {
 
     expect(publicLegalPublisher()).toMatchObject(COMPLETE_PUBLISHER);
     expect(legalPublisherConfigurationStatus()).toEqual({ ready: true, missing: [] });
+  });
+});
+
+describe("versions précédentes archivées", () => {
+  it.each(["terms", "legal"] as const)(
+    "garde le code source exact de la version précédente de %s, à l'empreinte déclarée",
+    (document) => {
+      const previous = PREVIOUS_LEGAL_DOCUMENTS[document];
+      const digest = createHash("sha256")
+        .update(readFileSync(resolve(previous.archive)))
+        .digest("hex");
+      expect(digest).toBe(previous.sha256);
+      expect(previous.version).not.toBe(LEGAL_DOCUMENTS[document].version);
+      expect(previous.sha256).not.toBe(LEGAL_DOCUMENTS[document].sha256);
+    },
+  );
+
+  it("garde la version précédente des CGU applicable jusqu'à l'entrée en vigueur de la nouvelle", () => {
+    expect(PREVIOUS_LEGAL_DOCUMENTS.terms.version).toBe("2026-10-25.1");
+    expect(PREVIOUS_LEGAL_DOCUMENTS.terms.applicableUntil).toBe(
+      LEGAL_DOCUMENTS.terms.effectiveDate,
+    );
   });
 });

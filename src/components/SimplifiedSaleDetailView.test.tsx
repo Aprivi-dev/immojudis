@@ -4,6 +4,9 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
+import { DEFAULT_OPEN_FEE_REGIMES } from "@/lib/fee-regime-open";
+import { buildCeilingSnapshot } from "@/lib/property-report/ceiling-snapshot";
+import { computeSaleCeiling } from "@/lib/sale-ceiling";
 import {
   exampleCeilingChoices,
   exampleHeadlineFigures,
@@ -22,6 +25,14 @@ import {
   FreeSaleDetailView,
   UnlockedSaleDetailView,
 } from "./SimplifiedSaleDetailView";
+import { PepiteBlock } from "./sale-detail/PepiteBlock";
+import {
+  pepiteCriteriaPayload,
+  pepiteCriteriaViews,
+  pepiteDetailPayload,
+  pepiteDetailView,
+  type PepitePayload,
+} from "@/lib/sale-pepite-view";
 
 const mocks = vi.hoisted(() => ({
   fetchMarket: vi.fn(),
@@ -30,7 +41,13 @@ const mocks = vi.hoisted(() => ({
   fetchUrbanism: vi.fn(),
   fetchValuePreview: vi.fn(),
   forecast: vi.fn(),
+  pepite: vi.fn(),
   authUser: null as { id: string } | null,
+}));
+
+// Le repère « Pépite » : la liste publique et la route sont testées à part (use-sale-pepite, route).
+vi.mock("@/hooks/use-sale-pepite", () => ({
+  useSalePepite: (args: unknown) => mocks.pepite(args),
 }));
 
 vi.mock("@/hooks/use-auth", () => ({
@@ -84,7 +101,13 @@ vi.mock("next/dynamic", () => ({
       onOpenWorkspace,
       ceiling,
       userKey,
+      payload,
+      userCeilingEur,
+      lockedAction,
     }: {
+      payload?: PepitePayload;
+      userCeilingEur?: number | null;
+      lockedAction?: React.ReactNode;
       ceiling?: number;
       userKey?: string;
       images?: unknown[];
@@ -99,6 +122,17 @@ vi.mock("next/dynamic", () => ({
       propertyTypeVerified?: boolean;
       onOpenWorkspace?: () => void;
     }) {
+      // Bloc « Pourquoi cette pépite » (chargé à la demande) : le vrai composant.
+      if (payload !== undefined) {
+        return (
+          <PepiteBlock
+            payload={payload}
+            saleId={saleId ?? ""}
+            userCeilingEur={userCeilingEur}
+            lockedAction={lockedAction}
+          />
+        );
+      }
       if (forecastQuery) return <section>Prévision de l’audience chargée</section>;
       // n° 92 : « Mon plafond face au tribunal » (reçoit `ceiling`) et « Mes questions pour l'avocat ».
       if (ceiling !== undefined) {
@@ -190,6 +224,159 @@ function expectActivePanel(container: HTMLElement, tab: string): HTMLElement {
   expect(panels[0].getAttribute("aria-labelledby")).toBe(`sale-detail-tab-${tab}`);
   return panels[0];
 }
+
+const PEPITE_CRITERIA = pepiteCriteriaViews(
+  ["pass:regime_open", "pass:sale_upcoming", "pass:test_b_chance", "pass:test_c_cost"],
+  [],
+  "tribunal",
+);
+const PEPITE_LOCKED = pepiteCriteriaPayload(PEPITE_CRITERIA);
+const PEPITE_OPEN = pepiteDetailPayload(
+  PEPITE_CRITERIA,
+  pepiteDetailView(
+    {
+      regime: "tribunal",
+      referenceCeilingEur: 118_000,
+      chanceShare: 0.78,
+      probablePriceEur: 90_000,
+      rangeLowEur: 75_000,
+      rangeHighEur: 110_000,
+      costRatio: 0.68,
+      scenarios: { reliability: "good", courtSample: 40, nationalSample: 800 },
+    },
+    "2026-11-05T09:00:00.000Z",
+    PEPITE_CRITERIA,
+  )!,
+);
+
+describe("repère « Pépite » de la fiche", () => {
+  it("ne change rien tant que la vente n'est pas une pépite (mode shadow, panne)", () => {
+    mocks.authUser = { id: "user-1" };
+    mocks.pepite.mockReturnValue(null);
+    renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
+    expect(screen.queryByTestId("pepite-badge")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Pourquoi ?" })).toBeNull();
+    expect(screen.queryByRole("region", { name: /Pépite :/ })).toBeNull();
+    expect(document.body.textContent).not.toMatch(/pépite/i);
+  });
+
+  it("Analyse : la pastille et « Pourquoi ? » en tête, le bloc complet avant les points à vérifier", () => {
+    mocks.authUser = { id: "user-1" };
+    mocks.pepite.mockReturnValue(PEPITE_OPEN);
+    renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
+
+    expect(mocks.pepite).toHaveBeenCalledWith(expect.objectContaining({ view: "detail" }));
+    expect(screen.getByTestId("pepite-badge").textContent).toBe("Pépite");
+    expect(screen.getByRole("link", { name: "Pourquoi ?" }).getAttribute("href")).toBe("#pepite");
+    const block = screen.getByRole("region", { name: "Pépite : 2 tests réussis" });
+    expect(block.id).toBe("pepite");
+    expect(block.textContent).toMatch(/Prix probable : environ 90\s000\s€/u);
+    expect(block.textContent).toMatch(/Enchère plafond estimée : 118\s000\s€/u);
+    // En tête de l'Aperçu : avant « À vérifier » (ListingChecks).
+    const checks = document.getElementById("points-a-verifier");
+    expect(checks).not.toBeNull();
+    expect(block.compareDocumentPosition(checks!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("Découverte non débloqué : critères et cadenas, aucun montant, route demandée au niveau criteria", () => {
+    mocks.authUser = { id: "user-1" };
+    mocks.pepite.mockReturnValue(PEPITE_LOCKED);
+    renderDetail("discovery", EXAMPLE_SALE_RECORDS.bordeaux.sale);
+
+    expect(mocks.pepite).toHaveBeenCalledWith(expect.objectContaining({ view: "criteria" }));
+    const block = screen.getByRole("region", { name: "Pépite : 2 tests réussis" });
+    expect(block.textContent).toContain("Montant et détail : débloquez cette vente");
+    expect(block.textContent).not.toMatch(/Prix probable|fourchette|Voir avec mes hypothèses/);
+    expect(block.textContent).not.toMatch(/\b\d{2,3}[\s\u00a0\u202f]\d{3}\s€/u);
+    expect(within(block).queryByRole("button", { name: "Utile" })).toBeNull();
+    expect(block.innerHTML).not.toMatch(/blur/);
+  });
+
+  it("vente débloquée : le détail est demandé (la route vérifie le droit pour cette vente)", () => {
+    mocks.authUser = { id: "user-1" };
+    mocks.pepite.mockReturnValue(PEPITE_OPEN);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <UnlockedSaleDetailView sale={EXAMPLE_SALE_RECORDS.bordeaux.sale} />
+      </QueryClientProvider>,
+    );
+    expect(mocks.pepite).toHaveBeenCalledWith(expect.objectContaining({ view: "detail" }));
+  });
+
+  it("le panneau de déblocage liste le détail de la pépite parmi ce qui s'ouvre", () => {
+    mocks.authUser = { id: "user-1" };
+    mocks.pepite.mockReturnValue(PEPITE_LOCKED);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <FreeSaleDetailView
+          sale={EXAMPLE_SALE_RECORDS.bordeaux.sale}
+          unlockStatus={
+            {
+              saleId: EXAMPLE_SALE_RECORDS.bordeaux.sale.id,
+              unlocked: false,
+              unlockable: true,
+              analysisAccess: false,
+              limit: 3,
+              used: 0,
+              remaining: 3,
+              periodStart: "2026-11-01T00:00:00.000Z",
+              resetsAt: "2026-12-01T00:00:00.000Z",
+            } satisfies SaleUnlockStatus
+          }
+        />
+      </QueryClientProvider>,
+    );
+    expect(document.getElementById("debloquer")?.textContent).toContain("le détail de la pépite");
+  });
+
+  it("n'appelle pas le repère sur l'annonce exemple (démonstration publique)", () => {
+    mocks.pepite.mockReturnValue(null);
+    renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, true);
+    expect(mocks.pepite).toHaveBeenCalledWith(expect.objectContaining({ enabled: false }));
+  });
+});
+
+describe("après la vente : prix d'adjudication et plafond estimé", () => {
+  const past = {
+    ...EXAMPLE_SALE_RECORDS.bordeaux.sale,
+    sale_date: "2020-01-15T10:00:00Z",
+  };
+
+  it("place le prix connu par rapport au plafond du compte, sur un ton neutre", () => {
+    mocks.authUser = { id: "user-1" };
+    mocks.pepite.mockReturnValue(null);
+    renderDetail("analysis", { ...past, adjudication_price_eur: 1 }, false);
+    const line = screen.queryByTestId("adjudication-vs-ceiling");
+    // Au prix de 1 €, la vente est en dessous du plafond estimé.
+    expect(line?.textContent).toMatch(
+      /^Adjugée 1\s€ : en dessous de votre enchère plafond estimée \(/u,
+    );
+    expect(line?.textContent).not.toMatch(/bonne affaire|manqué|raté/i);
+  });
+
+  it("n'affiche rien sans prix d'adjudication, sans plafond (Découverte) ou pour une vente à venir", () => {
+    mocks.authUser = { id: "user-1" };
+    mocks.pepite.mockReturnValue(null);
+    const none = renderDetail("analysis", { ...past, adjudication_price_eur: null }, false);
+    expect(screen.queryByTestId("adjudication-vs-ceiling")).toBeNull();
+    none.unmount();
+
+    window.history.replaceState(null, "", "/");
+    const free = renderDetail("discovery", { ...past, adjudication_price_eur: 150_000 });
+    expect(screen.queryByTestId("adjudication-vs-ceiling")).toBeNull();
+    free.unmount();
+
+    window.history.replaceState(null, "", "/");
+    renderDetail(
+      "analysis",
+      { ...EXAMPLE_SALE_RECORDS.bordeaux.sale, adjudication_price_eur: 150_000 },
+      false,
+    );
+    expect(screen.queryByTestId("adjudication-vs-ceiling")).toBeNull();
+  });
+});
 
 describe("example page ceiling", () => {
   it("starts from the example's works level, so it shows the home page ceiling", () => {
@@ -990,18 +1177,17 @@ describe("« 3 déblocages par mois » on the sale page", () => {
     ...overrides,
   });
 
-  function renderFree(status: SaleUnlockStatus | null) {
+  function renderFree(
+    status: SaleUnlockStatus | null,
+    sale: AuctionSale = EXAMPLE_SALE_RECORDS.bordeaux.sale,
+  ) {
     mocks.authUser = { id: "free-account" };
     mocks.fetchValuePreview.mockResolvedValue({ available: false });
     return render(
       <QueryClientProvider
         client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
       >
-        <FreeSaleDetailView
-          sale={EXAMPLE_SALE_RECORDS.bordeaux.sale}
-          adjudicationStatisticsEnabled
-          unlockStatus={status}
-        />
+        <FreeSaleDetailView sale={sale} adjudicationStatisticsEnabled unlockStatus={status} />
       </QueryClientProvider>,
     );
   }
@@ -1046,6 +1232,40 @@ describe("« 3 déblocages par mois » on the sale page", () => {
     expect(screen.getByRole("heading", { name: "Débloquer cette vente" })).toBeTruthy();
     expect(screen.getByText("Il vous reste 2 déblocages sur 3 ce mois-ci.")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Débloquer cette vente" })).toBeTruthy();
+  });
+
+  const notarialSale = (conditions: Record<string, unknown> | null) =>
+    ({
+      ...EXAMPLE_SALE_RECORDS.bordeaux.sale,
+      sale_venue_type: "notary",
+      sale_legal_framework: "voluntary_notarial",
+      sale_procedure: null,
+      source_blocks: null,
+      sale_conditions: conditions,
+    }) as AuctionSale;
+
+  it("promises both terms of the ceiling on a locked notarial sale, whose mode a Découverte account cannot read", () => {
+    renderFree(unlockStatus(), notarialSale(null));
+
+    expect(
+      screen.getByText(/l’enchère plafond ou l’offre plafond, la lecture des pièces/),
+    ).toBeTruthy();
+    // The hero teaser names both terms too.
+    expect(
+      screen.getAllByText("Enchère plafond ou offre plafond (simulation)").length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("promises no ceiling on an unlocked notarial sale whose mode stays unknown, and names the exact term once known", async () => {
+    const unknown = renderUnlocked(notarialSale({}));
+    expect(screen.getByText("Cette vente est débloquée")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /Voir mon/ })).toBeNull();
+    expect(document.body.textContent).not.toContain("l’offre plafond");
+    expect(document.body.textContent).not.toContain("simulation fondée sur des hypothèses");
+    unknown.unmount();
+
+    renderUnlocked(notarialSale({ procedure: "online_tender" }));
+    expect(screen.getByRole("link", { name: "Voir mon offre plafond" })).toBeTruthy();
   });
 
   it("shows nothing about unlocking before the status is known, or to a visitor", () => {
@@ -1135,6 +1355,126 @@ describe("« 3 déblocages par mois » on the sale page", () => {
         Number(screen.getByRole("region", { name: "Mon dossier" }).getAttribute("data-ceiling")),
       ).toBeGreaterThan(0),
     );
+  });
+
+  it("shows the same ceiling as computeSaleCeiling and as the saved report", async () => {
+    mocks.authUser = { id: "user-1" };
+    const { sale, marketEstimate } = EXAMPLE_SALE_RECORDS.bordeaux;
+    renderDetail("analysis", sale, false, false, marketEstimate);
+
+    const card = await screen.findByRole("region", { name: "Mon dossier" });
+    const onPage = Number(card.getAttribute("data-ceiling"));
+    const shared = computeSaleCeiling({
+      sale,
+      estimate: marketEstimate,
+      aiProjections: [],
+      aiReviewStatus: "ready",
+    });
+    const report = buildCeilingSnapshot(sale, marketEstimate, {}, [...DEFAULT_OPEN_FEE_REGIMES]);
+
+    expect(onPage).toBeGreaterThan(0);
+    expect(shared.enabled).toBe(true);
+    expect(onPage).toBe(shared.plan.maxBid);
+    expect(report.maxBid).toBe(onPage);
+  });
+
+  it.each(["notary", "state"] as const)(
+    "opens no ceiling on a %s sale whose mode is unknown, even when its regimes are listed as open",
+    (venue) => {
+      const sale = {
+        ...EXAMPLE_SALE_RECORDS.bordeaux.sale,
+        sale_venue_type: venue,
+        sale_procedure: null,
+        source_blocks: null,
+        // No conditions: a notarial sale is neither a candle sale nor an interactive one for the page.
+        sale_conditions: null,
+      } as AuctionSale;
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      mocks.fetchAiReviewProjections.mockResolvedValue({ projections: [] });
+      const { container } = render(
+        <QueryClientProvider client={client}>
+          <AnalysisSaleDetailView
+            sale={sale}
+            marketEstimateOverride={EXAMPLE_SALE_RECORDS.bordeaux.marketEstimate}
+            openFeeRegimes={["tribunal", "notary_auction", "notary_online", "state_auction"]}
+          />
+        </QueryClientProvider>,
+      );
+      selectTab("Prix et plafond");
+
+      expect(screen.getByRole("heading", { name: "Prix et marché" })).toBeTruthy();
+      expect(container.querySelector("#calculation")).toBeNull();
+    },
+  );
+
+  it.each([
+    ["notarial_auction", "Prix et enchère plafond", "Enchère plafond"],
+    ["online_tender", "Prix et offre plafond", "Offre plafond"],
+  ] as const)(
+    "opens the ceiling of a notarial sale whose procedure is %s, with its own wording",
+    (procedure, heading, term) => {
+      const sale = {
+        ...EXAMPLE_SALE_RECORDS.bordeaux.sale,
+        sale_venue_type: "notary",
+        sale_legal_framework: "voluntary_notarial",
+        sale_procedure: null,
+        source_blocks: null,
+        sale_conditions: {
+          procedure,
+          ...(procedure === "online_tender"
+            ? { negotiation_fee_rate: 0.045, negotiation_fee_payer: "ACQUEREUR" }
+            : { deposit_eur: 12_000 }),
+        },
+      } as AuctionSale;
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      mocks.fetchAiReviewProjections.mockResolvedValue({ projections: [] });
+      const { container } = render(
+        <QueryClientProvider client={client}>
+          <AnalysisSaleDetailView
+            sale={sale}
+            marketEstimateOverride={EXAMPLE_SALE_RECORDS.bordeaux.marketEstimate}
+          />
+        </QueryClientProvider>,
+      );
+      selectTab("Prix et plafond");
+
+      expect(screen.getByRole("heading", { name: heading })).toBeTruthy();
+      expect(container.querySelector("#calculation")).not.toBeNull();
+      expect(container.textContent).toContain(`${term} (simulation)`);
+      // An interactive sale never speaks of an auction or an adjudication in its ceiling titles.
+      if (procedure === "online_tender") {
+        const titles = [...container.querySelectorAll("#calculation h2, #calculation h3")].map(
+          (node) => node.textContent ?? "",
+        );
+        expect(titles.join(" | ")).not.toMatch(/ench[èe]re|adjudication/i);
+      }
+    },
+  );
+
+  it("closes the ceiling of a notarial sale when the server switch lists the tribunal only", () => {
+    const sale = {
+      ...EXAMPLE_SALE_RECORDS.bordeaux.sale,
+      sale_venue_type: "notary",
+      sale_legal_framework: "voluntary_notarial",
+      sale_procedure: null,
+      source_blocks: null,
+      sale_conditions: { procedure: "online_tender" },
+    } as AuctionSale;
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    mocks.fetchAiReviewProjections.mockResolvedValue({ projections: [] });
+    const { container } = render(
+      <QueryClientProvider client={client}>
+        <AnalysisSaleDetailView
+          sale={sale}
+          marketEstimateOverride={EXAMPLE_SALE_RECORDS.bordeaux.marketEstimate}
+          openFeeRegimes={["tribunal"]}
+        />
+      </QueryClientProvider>,
+    );
+    selectTab("Prix et plafond");
+
+    expect(screen.getByRole("heading", { name: "Prix et marché" })).toBeTruthy();
+    expect(container.querySelector("#calculation")).toBeNull();
   });
 
   it("offers « Mon dossier » without any ceiling to a free account that has not unlocked the sale", async () => {

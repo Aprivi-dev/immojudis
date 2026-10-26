@@ -20,6 +20,8 @@ export type SearchLawyerPlacementProps = {
   department?: string;
   city?: string;
   className?: string;
+  /** Le repère « Pépite » est ouvert au public : la mention d'indépendance le cite. */
+  pepites?: boolean;
 };
 
 /**
@@ -38,6 +40,7 @@ export function SearchLawyerPlacement({
   department,
   city,
   className = "",
+  pepites = false,
 }: SearchLawyerPlacementProps) {
   const cityValue = cleanScopeValue(city);
   const departmentValue = cleanScopeValue(department) ?? singleDepartmentFromLabel(geographicLabel);
@@ -65,7 +68,12 @@ export function SearchLawyerPlacement({
 
   if (sponsoredLawyer) {
     return (
-      <SponsoredLawyerCard lawyer={sponsoredLawyer} areaLabel={areaLabel} className={className} />
+      <SponsoredLawyerCard
+        lawyer={sponsoredLawyer}
+        areaLabel={areaLabel}
+        className={className}
+        pepites={pepites}
+      />
     );
   }
 
@@ -78,10 +86,12 @@ function SponsoredLawyerCard({
   lawyer,
   areaLabel,
   className,
+  pepites,
 }: {
   lawyer: LawyerDirectoryProfile;
   areaLabel: string;
   className: string;
+  pepites: boolean;
 }) {
   const title = lawyer.firmName || lawyer.displayName;
   const matchingArea = lawyer.matchingLabel || areaLabel;
@@ -121,7 +131,7 @@ function SponsoredLawyerCard({
         Voir l’annuaire du secteur
       </a>
       <p className="mt-3 text-xs leading-relaxed text-ink-soft">
-        {sponsoredPlacementDisclosure(lawyer.placement)}{" "}
+        {sponsoredPlacementDisclosure(lawyer.placement, { pepites })}{" "}
         <a
           href={LAWYER_RANKING_HREF}
           className="font-semibold text-gold-text underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"

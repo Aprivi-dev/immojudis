@@ -7,17 +7,51 @@ import {
   listingAccessLine,
   listingDateLabel,
   listingLinkLabel,
+  listingPriceText,
+  stateSaleWithoutPrice,
 } from "./listing-text";
 
 const tribunal = { id: "a", sale_venue_type: "tribunal" } as unknown as AuctionSale;
 const notary = { id: "b", sale_venue_type: "notary" } as unknown as AuctionSale;
+const state = { id: "c", sale_venue_type: "state" } as unknown as AuctionSale;
+const unknownVenue = { id: "d", sale_venue_type: "unknown" } as unknown as AuctionSale;
 const FREE_LINE = "Gratuit, sans carte bancaire · 3 fiches détaillées par mois";
 
 describe("listingAccessLine", () => {
   it("promet un compte gratuit au visiteur sans compte", () => {
     const access = { locked: true, analysisLocked: false, unlocked: false };
     expect(listingAccessLine(tribunal, access)).toBe(FREE_LINE);
-    expect(listingAccessLine(notary, access)).toBe("Fiche complète avec un compte gratuit");
+    // Le déblocage ouvre le plafond des ventes notariales (bougie ou interactive) comme celui du tribunal.
+    expect(listingAccessLine(notary, access)).toBe(FREE_LINE);
+    // Ventes domaniales et type inconnu : pas de plafond, donc rien à débloquer de plus.
+    expect(listingAccessLine(state, access)).toBe("Fiche complète avec un compte gratuit");
+    expect(listingAccessLine(unknownVenue, access)).toBe("Fiche complète avec un compte gratuit");
+  });
+
+  it("propose le déblocage d'une vente notariale à un compte gratuit, pas d'une vente domaniale", () => {
+    const access = { locked: false, analysisLocked: true, unlocked: false };
+    expect(listingAccessLine(notary, access)).toBe(FREE_LINE);
+    expect(listingAccessLine(state, access)).toBe(LISTING_DETAIL_LINE);
+    expect(listingAccessLine(notary, { ...access, unlocked: true })).toBe(LISTING_DETAIL_LINE);
+  });
+
+  it("ne promet pas de déblocage d'une vente notariale quand l'interrupteur ferme ses régimes", () => {
+    const tribunalOnly = ["tribunal"] as const;
+    const visitor = { locked: true, analysisLocked: false, unlocked: false };
+    const freeAccount = { locked: false, analysisLocked: true, unlocked: false };
+    expect(listingAccessLine(notary, { ...visitor, openFeeRegimes: tribunalOnly })).toBe(
+      "Fiche complète avec un compte gratuit",
+    );
+    expect(listingAccessLine(notary, { ...freeAccount, openFeeRegimes: tribunalOnly })).toBe(
+      LISTING_DETAIL_LINE,
+    );
+    // Le tribunal reste ouvert, et une seule de ses deux formes notariales suffit.
+    expect(listingAccessLine(tribunal, { ...freeAccount, openFeeRegimes: tribunalOnly })).toBe(
+      FREE_LINE,
+    );
+    expect(
+      listingAccessLine(notary, { ...freeAccount, openFeeRegimes: ["tribunal", "notary_online"] }),
+    ).toBe(FREE_LINE);
   });
 
   it("reste neutre pour un compte reconnu dont les droits sont en cours de vérification", () => {
@@ -119,5 +153,54 @@ describe("listingLinkLabel", () => {
 
   it("garde « Voir <titre> » sans prix ni date", () => {
     expect(listingLinkLabel(base, "Maison")).toBe("Voir Maison");
+  });
+});
+
+describe("prix d'une cession domaniale", () => {
+  const state = (price: number | null | undefined) =>
+    ({ id: "c", sale_venue_type: "state", starting_price_eur: price }) as unknown as AuctionSale;
+
+  it("dit « Prix non publié » pour une cession domaniale sans prix (absent ou nul)", () => {
+    for (const price of [null, undefined, 0]) {
+      expect(stateSaleWithoutPrice(state(price))).toBe(true);
+      expect(listingPriceText(state(price))).toBe("Prix non publié");
+    }
+  });
+
+  it("garde le prix d'une cession domaniale qui en publie un", () => {
+    expect(stateSaleWithoutPrice(state(125_000))).toBe(false);
+    expect(listingPriceText(state(125_000))).toMatch(/^125\s000\s€$/);
+  });
+
+  it("ne change rien pour le tribunal et le notaire : « Prix non communiqué » sans prix", () => {
+    for (const venue of ["tribunal", "notary", "online", "unknown"]) {
+      const sale = {
+        id: "d",
+        sale_venue_type: venue,
+        starting_price_eur: 0,
+      } as unknown as AuctionSale;
+      expect(stateSaleWithoutPrice(sale)).toBe(false);
+      expect(listingPriceText(sale)).toBe("Prix non communiqué");
+    }
+  });
+});
+
+describe("listingLinkLabel d'une pépite", () => {
+  const pepiteSale = {
+    id: "p",
+    sale_venue_type: "tribunal",
+    starting_price_eur: 90_000,
+  } as unknown as AuctionSale;
+
+  it("ajoute « , pépite » au nom accessible du lien de la carte", () => {
+    const plain = listingLinkLabel(pepiteSale, "Maison · Pau");
+    expect(listingLinkLabel(pepiteSale, "Maison · Pau", { pepite: true })).toBe(`${plain}, pépite`);
+    expect(plain).not.toContain("pépite");
+  });
+
+  it("garde le mot même quand le prix et la date sont masqués par la relecture", () => {
+    expect(
+      listingLinkLabel(pepiteSale, "Maison · Pau", { price: true, date: true, pepite: true }),
+    ).toBe("Voir Maison · Pau, pépite");
   });
 });

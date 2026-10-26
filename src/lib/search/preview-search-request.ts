@@ -35,6 +35,7 @@ export const PREVIEW_SEARCH_URL_KEYS = [
   "minSaleDate",
   "minSqft",
   "page",
+  "pepite",
   "query",
   "saleType",
   "sort",

@@ -3783,6 +3783,120 @@ export type Database = {
           },
         ];
       };
+      auction_sale_pepites: {
+        Row: {
+          data_missing_since: string | null;
+          details: Json;
+          engine_version: string;
+          evaluated_at: string;
+          favorable_streak: number;
+          first_pepite_at: string | null;
+          frozen_at: string | null;
+          input_estimate_computed_at: string | null;
+          input_starting_price_eur: number | null;
+          is_pepite: boolean;
+          last_favorable_at: string | null;
+          reason_codes: string[];
+          regime_version: string | null;
+          rule_version: string;
+          sale_id: string;
+          status: string;
+        };
+        Insert: {
+          data_missing_since?: string | null;
+          details?: Json;
+          engine_version: string;
+          evaluated_at?: string;
+          favorable_streak?: number;
+          first_pepite_at?: string | null;
+          frozen_at?: string | null;
+          input_estimate_computed_at?: string | null;
+          input_starting_price_eur?: number | null;
+          is_pepite?: boolean;
+          last_favorable_at?: string | null;
+          reason_codes?: string[];
+          regime_version?: string | null;
+          rule_version: string;
+          sale_id: string;
+          status: string;
+        };
+        Update: {
+          data_missing_since?: string | null;
+          details?: Json;
+          engine_version?: string;
+          evaluated_at?: string;
+          favorable_streak?: number;
+          first_pepite_at?: string | null;
+          frozen_at?: string | null;
+          input_estimate_computed_at?: string | null;
+          input_starting_price_eur?: number | null;
+          is_pepite?: boolean;
+          last_favorable_at?: string | null;
+          reason_codes?: string[];
+          regime_version?: string | null;
+          rule_version?: string;
+          sale_id?: string;
+          status?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "auction_sale_pepites_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "auction_sales";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_pepites_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_map_pins";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_pepites_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_app";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_pepites_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_app_preview";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_pepites_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_app_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_pepites_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_discovery";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_pepites_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_discovery_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_pepites_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_unlocked";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       auction_sale_readiness_history: {
         Row: {
           blockers: Json;
@@ -13357,6 +13471,7 @@ export type Database = {
           risk_notes: string | null;
           risks: Json | null;
           rooms_count: number | null;
+          sale_conditions: Json | null;
           sale_date: string | null;
           sale_legal_framework: string | null;
           sale_procedure: Json | null;
@@ -13730,6 +13845,7 @@ export type Database = {
           risk_notes: string | null;
           risks: Json | null;
           rooms_count: number | null;
+          sale_conditions: Json | null;
           sale_date: string | null;
           sale_legal_framework: string | null;
           sale_procedure: Json | null;
@@ -13915,6 +14031,10 @@ export type Database = {
           lawyer_id: string;
           referral_requests_sent: number;
         }[];
+      };
+      admin_list_sale_pepites: {
+        Args: { p_limit?: number; p_now?: string };
+        Returns: Json;
       };
       admin_pilotage_bid_ceilings: { Args: { p_now?: string }; Returns: Json };
       admin_pilotage_summary: { Args: { p_now?: string }; Returns: Json };
@@ -14792,6 +14912,7 @@ export type Database = {
         Args: { p_sale_id: string };
         Returns: string;
       };
+      get_public_sale_pepite: { Args: { p_sale_id: string }; Returns: boolean };
       get_public_sale_source_name: {
         Args: { p_sale_id: string };
         Returns: string;
@@ -14859,6 +14980,7 @@ export type Database = {
       };
       get_public_upcoming_hearings: { Args: { p_days?: number }; Returns: Json };
       get_sale_passages: { Args: { p_sale_id: string }; Returns: Json };
+      get_sale_pepite_mode: { Args: never; Returns: string };
       get_sale_unlock_status: { Args: { p_sale_id?: string }; Returns: Json };
       get_signup_trial_end: { Args: { p_user_id: string }; Returns: string };
       get_withdrawn_catalogue_sources: { Args: never; Returns: string[] };
@@ -14898,6 +15020,7 @@ export type Database = {
       };
       has_analysis_access: { Args: never; Returns: boolean };
       is_admin: { Args: never; Returns: boolean };
+      list_public_pepite_sale_ids: { Args: never; Returns: string[] };
       list_public_sale_ids_under_market_range: {
         Args: never;
         Returns: string[];
@@ -16180,6 +16303,10 @@ export type Database = {
           inbound_token: string;
           mission_status: string;
         }[];
+      };
+      suspend_sale_pepites: {
+        Args: { p_mode?: string; p_user_id?: string };
+        Returns: string;
       };
       tribunal_outcome_graph_past_hearings: {
         Args: {

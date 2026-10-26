@@ -1,0 +1,315 @@
+import { describe, expect, it } from "vitest";
+import { PEPITE_CRITERIA } from "./pepite-policy";
+import { PEPITE_CRITERION_LABELS, pepiteConfirmLabel, pepitePassLabel } from "./pepite-reasons";
+import {
+  pepiteCriteriaPayload,
+  pepiteCriteriaViews,
+  pepiteDetailPayload,
+  pepiteDetailView,
+} from "./sale-pepite-view";
+
+const CODES = [
+  "pass:regime_open",
+  "pass:sale_upcoming",
+  "pass:estimate_actionable",
+  "pass:test_c_cost",
+  "pass:test_b_chance",
+  "stab:entered",
+];
+
+const TRIBUNAL_DETAILS = {
+  regime: "tribunal",
+  startingPriceEur: 50_000,
+  referenceCeilingEur: 118_000,
+  probablePriceEur: 90_000,
+  rangeLowEur: 75_000,
+  rangeHighEur: 110_000,
+  costRatio: 0.68,
+  chanceShare: 0.78,
+  chanceAtLeast: false,
+  multiplierKey: "q50",
+  scenarios: { reliability: "good", courtSample: 42, nationalSample: 900 },
+};
+
+const JARGON = /Test [BC]|P10|effectif|porte publique|\bIA\b/;
+
+describe("libellés des critères : le langage de l'investisseur", () => {
+  it("aucun libellé affiché ne contient « Test B », « Test C », « P10 », « effectif », « porte publique » ni « IA »", () => {
+    for (const id of PEPITE_CRITERIA) {
+      for (const regime of [null, "tribunal", "notary_auction", "notary_online"] as const) {
+        for (const label of [
+          PEPITE_CRITERION_LABELS[id].pass,
+          PEPITE_CRITERION_LABELS[id].fail,
+          pepitePassLabel(id, regime),
+          pepiteConfirmLabel(id, regime),
+        ]) {
+          expect(label, `${id} / ${regime}`).not.toMatch(JARGON);
+        }
+      }
+    }
+  });
+
+  it("reprend les libellés demandés pour les deux tests et pour les vérifications", () => {
+    const pass = (id: (typeof PEPITE_CRITERIA)[number]) => PEPITE_CRITERION_LABELS[id].pass;
+    expect(pass("test_b_chance")).toBe(
+      "Chances de l'emporter : au moins 7 ventes comparables sur 10 adjugées sous l'enchère plafond",
+    );
+    expect(pass("test_c_cost")).toBe(
+      "Achat probable nettement sous la valeur : coût total, frais compris, d'au plus 75 % de la valeur estimée (65 % en vente notariale)",
+    );
+    expect(pass("ceiling_computed")).toBe(
+      "Enchère plafond calculée sur une estimation prudente de la valeur",
+    );
+    expect(pass("scenarios_reliable")).toBe(
+      "Assez de ventes passées comparables pour juger les chances",
+    );
+    expect(pass("estimate_sample")).toBe("Au moins 8 ventes comparables derrière l'estimation");
+    expect(pass("public_gap_gate")).toBe("Estimation assez précise pour être affichée");
+    expect(pass("no_ai_block")).toBe(
+      "Aucune donnée importante contestée à la relecture automatique",
+    );
+    expect(pass("no_degraded_condition")).toBe(
+      "Aucun mauvais état ou gros travaux signalé dans l'annonce",
+    );
+    expect(pass("risks_qualified")).toBe("Aucun risque signalé laissé sans précision");
+    expect(pass("regime_open")).toBe("Type de vente pris en compte");
+  });
+
+  it("dit « offre plafond » pour une vente notariale interactive, « enchère plafond » ailleurs", () => {
+    expect(pepitePassLabel("ceiling_computed", "notary_online")).toBe(
+      "Offre plafond calculée sur une estimation prudente de la valeur",
+    );
+    expect(pepitePassLabel("ceiling_computed", "tribunal")).toContain("Enchère plafond");
+    expect(pepitePassLabel("ceiling_computed", "notary_auction")).toContain("Enchère plafond");
+    expect(pepitePassLabel("ceiling_computed", "notary_online")).not.toMatch(/nchère/);
+  });
+});
+
+describe("critères d'une pépite", () => {
+  it("sépare les deux tests (en tête) des vérifications de fiabilité, dans l'ordre du catalogue", () => {
+    const payload = pepiteCriteriaPayload(pepiteCriteriaViews(CODES, [], "tribunal"));
+    expect(payload.tests.map((view) => view.id)).toEqual(["test_b_chance", "test_c_cost"]);
+    expect(payload.checks.map((view) => view.id)).toEqual([
+      "regime_open",
+      "sale_upcoming",
+      "estimate_actionable",
+    ]);
+    expect(payload.count).toBe(2);
+    expect(payload.checksPassed).toBe(3);
+    // Plus de champ « criteria » (les 19 critères réunis) : deux tests et une liste repliée.
+    expect(payload).not.toHaveProperty("criteria");
+  });
+
+  it("en vente notariale, un seul test est présent", () => {
+    const payload = pepiteCriteriaPayload(
+      pepiteCriteriaViews(["pass:test_c_cost", "pass:ceiling_above_start"], [], "notary_auction"),
+    );
+    expect(payload.tests.map((view) => view.id)).toEqual(["test_c_cost"]);
+    expect(payload.count).toBe(1);
+    expect(payload.checks.map((view) => view.id)).toEqual(["ceiling_above_start"]);
+  });
+
+  it("écrit un test « à confirmer » avec son seuil de maintien, jamais avec le seuil d'entrée", () => {
+    const views = pepiteCriteriaViews(["pass:test_c_cost", "fail:test_b_chance"], [], "tribunal");
+    const b = views.find((view) => view.id === "test_b_chance")!;
+    expect(b.state).toBe("confirm");
+    expect(b.label).toBe(
+      "Chances de l'emporter toujours au-dessus du seuil de maintien (65 % des ventes comparables adjugées sous l'enchère plafond), à confirmer à la prochaine mise à jour",
+    );
+    expect(b.label).not.toContain("70");
+    const c = pepiteCriteriaViews(["fail:test_c_cost"], [], "tribunal")[0];
+    expect(c.label).toContain("seuil de maintien");
+    expect(c.label).toContain("80 %");
+    expect(c.label).not.toContain("75 %");
+    expect(pepiteCriteriaViews(["fail:test_c_cost"], [], "notary_online")[0].label).toContain(
+      "70 %",
+    );
+    // Un test « à confirmer » ne compte pas parmi les tests réussis.
+    expect(pepiteCriteriaPayload(views).count).toBe(1);
+  });
+
+  it("ne présente jamais comme « à confirmer » un critère qui ferait sortir la vente ou un signal bloquant", () => {
+    expect(
+      pepiteCriteriaViews(["fail:test_b_chance", "fail:no_ai_block"], ["test_b_chance"]),
+    ).toEqual([]);
+  });
+
+  it("ignore un code inconnu (version plus récente de la règle)", () => {
+    expect(pepiteCriteriaViews(["pass:critere_futur", "pass:regime_open"])).toHaveLength(1);
+  });
+
+  it("le niveau « criteria » ne porte ni montant, ni valeur, ni détail", () => {
+    const payload = pepiteCriteriaPayload(pepiteCriteriaViews(CODES, [], "tribunal"));
+    expect(Object.keys(payload).sort()).toEqual([
+      "access",
+      "checks",
+      "checksPassed",
+      "count",
+      "tests",
+    ]);
+    expect(payload.access).toBe("criteria");
+    expect(JSON.stringify(payload)).not.toMatch(
+      /€|EUR|\b\d{1,3}[\s\u00a0\u202f]\d{3}\b|referenceCeiling|probablePrice|rangeLow|rangeHigh|costRatio|chanceShare/,
+    );
+    for (const view of [...payload.tests, ...payload.checks]) {
+      expect(Object.keys(view).sort()).toEqual(["id", "label", "state"]);
+    }
+  });
+});
+
+describe("détail d'une pépite du tribunal", () => {
+  const criteria = pepiteCriteriaViews(CODES, [], "tribunal");
+
+  it("écrit la condition, le plafond de référence et le prix probable en toutes lettres", () => {
+    const detail = pepiteDetailView(TRIBUNAL_DETAILS, "2026-11-05T09:00:00.000Z", criteria)!;
+    expect(detail.regime).toBe("tribunal");
+    expect(detail.ceilingTerm).toBe("enchère plafond");
+    expect(detail.condition).toBe(
+      "Au moins 70 % des ventes comparables passées du tribunal ont été adjugées sous l'enchère plafond estimée. Au prix probable, le coût total représente 68 % de la valeur estimée.",
+    );
+    expect(detail.ceilingLine).toMatch(
+      /^Enchère plafond estimée : 118\s000\s€ \(hypothèses par défaut : habiter, profil équilibré, sans travaux\)$/u,
+    );
+    expect(detail.referenceCeilingEur).toBe(118_000);
+    expect(detail.priceLine).toMatch(
+      /^Prix probable : environ 90\s000\s€ \(fourchette 75\s000\s€ – 110\s000\s€\)$/u,
+    );
+    expect(detail.calculatedAt).toBe("2026-11-05T09:00:00.000Z");
+  });
+
+  it("reprend le texte validé sur le prix, mot pour mot", () => {
+    const detail = pepiteDetailView(TRIBUNAL_DETAILS, null, criteria)!;
+    expect(detail.priceNote).toBe(
+      "Repère statistique tiré de 42 ventes comparables passées du tribunal (fiabilité bonne). La moitié de ces ventes s'est conclue dans la fourchette indiquée, l'autre moitié en dehors. Ce n'est pas une prévision du prix final : les enchères peuvent dépasser ce montant.",
+    );
+    expect(detail.priceNote).not.toContain("peut être inférieur ou supérieur");
+  });
+
+  it("affiche la part réelle, arrondie vers le bas en « N sur 10 », avec « au moins » pour un plancher", () => {
+    expect(pepiteDetailView(TRIBUNAL_DETAILS, null, criteria)!.chanceLine).toBe(
+      "7 ventes comparables sur 10 adjugées sous ce plafond",
+    );
+    expect(
+      pepiteDetailView(
+        { ...TRIBUNAL_DETAILS, chanceShare: 0.7, chanceAtLeast: true },
+        null,
+        criteria,
+      )!.chanceLine,
+    ).toBe("Au moins 7 ventes comparables sur 10 adjugées sous ce plafond");
+    // Jamais plus que la mesure : 0,69 donne 6, pas 7.
+    expect(
+      pepiteDetailView({ ...TRIBUNAL_DETAILS, chanceShare: 0.69 }, null, criteria)!.chanceLine,
+    ).toBe("6 ventes comparables sur 10 adjugées sous ce plafond");
+    expect(
+      pepiteDetailView({ ...TRIBUNAL_DETAILS, chanceShare: 1 }, null, criteria)!.chanceLine,
+    ).toBe("10 ventes comparables sur 10 adjugées sous ce plafond");
+    expect(
+      pepiteDetailView({ ...TRIBUNAL_DETAILS, chanceShare: null }, null, criteria)!.chanceLine,
+    ).toBeNull();
+  });
+
+  it("explique la mise à prix très basse (multiplicateur q75)", () => {
+    const low = pepiteDetailView({ ...TRIBUNAL_DETAILS, multiplierKey: "q75" }, null, criteria)!;
+    expect(low.priceLowNote).toBe(
+      "La mise à prix est très basse : nous retenons le prix atteint par 3 ventes sur 4.",
+    );
+    expect(pepiteDetailView(TRIBUNAL_DETAILS, null, criteria)!.priceLowNote).toBeNull();
+  });
+
+  it("dit d'où vient la cohorte : tribunal, tribunal complété, ou national", () => {
+    const cohort = (courtSample: number) =>
+      pepiteDetailView(
+        {
+          ...TRIBUNAL_DETAILS,
+          scenarios: { reliability: "medium", courtSample, nationalSample: 800 },
+        },
+        null,
+        criteria,
+      )!;
+    const local = cohort(42);
+    expect(local.condition).toContain("passées du tribunal ont été adjugées");
+    expect(local.priceNote).toContain(
+      "42 ventes comparables passées du tribunal (fiabilité moyenne)",
+    );
+
+    const mixed = cohort(20);
+    expect(mixed.condition).toContain("du tribunal, complétées par des ventes de toute la France");
+    expect(mixed.priceNote).toContain(
+      "20 ventes comparables passées du tribunal, complétées par des ventes de toute la France",
+    );
+
+    const national = cohort(6);
+    expect(national.condition).not.toContain("de ce tribunal");
+    expect(national.condition).toContain("de toute la France (le tribunal n'en compte pas assez)");
+    expect(national.priceNote).toContain("800 ventes comparables passées de toute la France");
+    expect(national.priceNote).not.toContain("passées du tribunal");
+  });
+
+  it("énonce le seuil de maintien d'un test « à confirmer », sans affirmer le seuil d'entrée", () => {
+    const confirmCriteria = pepiteCriteriaViews(
+      ["fail:test_b_chance", "fail:test_c_cost"],
+      [],
+      "tribunal",
+    );
+    const detail = pepiteDetailView(TRIBUNAL_DETAILS, null, confirmCriteria)!;
+    expect(detail.condition).toContain("Au moins 65 % des ventes comparables");
+    expect(detail.condition).toContain("seuil de maintien");
+    expect(detail.condition).toContain("sous le seuil de maintien de 80 %");
+    expect(detail.condition).not.toContain("Au moins 70 %");
+  });
+});
+
+describe("détail d'une pépite notariale", () => {
+  it("vente à la bougie : seuil de 65 %, mise à prix, pas de prix probable ni de prix de réserve cité", () => {
+    const detail = pepiteDetailView(
+      {
+        regime: "notary_auction",
+        startingPriceEur: 60_000,
+        referenceCeilingEur: 95_000,
+        costRatio: 0.61,
+      },
+      null,
+    )!;
+    expect(detail.ceilingTerm).toBe("enchère plafond");
+    expect(detail.condition).toContain("61 % de la valeur estimée, sous le seuil de 65 %");
+    expect(detail.ceilingLine).toMatch(/^Enchère plafond estimée : 95\s000\s€/u);
+    expect(detail.priceLine).toMatch(/^Mise à prix : 60\s000\s€$/u);
+    expect(detail.priceNote).not.toContain("Prix de réserve du vendeur inconnu");
+    expect(detail.priceNote).toContain("Pas de prix probable");
+    expect(detail.chanceLine).toBeNull();
+  });
+
+  it("vente interactive : « offre plafond », première offre possible, prix de réserve inconnu", () => {
+    const detail = pepiteDetailView(
+      {
+        regime: "notary_online",
+        startingPriceEur: 40_000,
+        referenceCeilingEur: 70_000,
+        costRatio: 0.6,
+      },
+      null,
+    )!;
+    expect(detail.ceilingTerm).toBe("offre plafond");
+    expect(detail.ceilingLine).toMatch(/^Offre plafond estimée : 70\s000\s€/u);
+    expect(detail.condition).toContain("première offre possible");
+    expect(detail.condition).toContain("L'offre plafond estimée");
+    expect(detail.priceLine).toMatch(/^Première offre possible : 40\s000\s€$/u);
+    expect(detail.priceNote).toContain("Prix de réserve du vendeur inconnu");
+    expect(detail.priceLine).not.toContain("probable");
+  });
+
+  it("sans régime lisible, aucun détail n'est inventé", () => {
+    expect(pepiteDetailView({ referenceCeilingEur: 1000 }, null)).toBeNull();
+  });
+
+  it("assemble la réponse « detail » avec le même décompte de tests", () => {
+    const criteria = pepiteCriteriaViews(CODES, [], "tribunal");
+    const payload = pepiteDetailPayload(
+      criteria,
+      pepiteDetailView(TRIBUNAL_DETAILS, null, criteria)!,
+    );
+    expect(payload.access).toBe("detail");
+    expect(payload.count).toBe(pepiteCriteriaPayload(criteria).count);
+    expect(payload.tests).toHaveLength(2);
+  });
+});

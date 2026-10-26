@@ -111,7 +111,7 @@ describe("mode inverse : budget vers prix maximal", () => {
     let previous = 0;
     for (const budget of [60_000, 120_000, 250_000, 400_000]) {
       fireEvent.change(field("Budget total"), { target: { value: String(budget) } });
-      const result = maxPriceForBudget(budget, { fpt: 3_000, lawyerFees: 1_500, works: 0 });
+      const result = maxPriceForBudget(budget, { fpt: DEFAULTS.fpt, lawyerFees: 1_500, works: 0 });
       if (result.status !== "ok") throw new Error("budget exploitable attendu");
       expect(live()).toBe(euroWhole.format(result.maxPrice));
       expect(result.maxPrice).toBeGreaterThan(previous);
@@ -127,7 +127,7 @@ describe("mode inverse : budget vers prix maximal", () => {
     fireEvent.change(screen.getByLabelText("Département du bien"), { target: { value: "75" } });
     fireEvent.change(field("Travaux"), { target: { value: "30000" } });
 
-    const options = { fpt: 3_000, lawyerFees: 1_500, works: 30_000, department: "75" };
+    const options = { fpt: DEFAULTS.fpt, lawyerFees: 1_500, works: 30_000, department: "75" };
     const result = maxPriceForBudget(300_000, options);
     if (result.status !== "ok") throw new Error("budget exploitable attendu");
     const costs = computeAcquisitionCosts({ ...options, price: result.maxPrice });

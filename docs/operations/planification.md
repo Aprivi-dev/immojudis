@@ -1,6 +1,6 @@
 # Inventaire des tâches planifiées
 
-Mis à jour le 20 octobre 2026. Toute route `src/app/api/cron/*` doit figurer ici, dans `vercel.json`
+Mis à jour le 26 octobre 2026. Toute route `src/app/api/cron/*` doit figurer ici, dans `vercel.json`
 ou dans une migration `pg_cron` ; le test `src/lib/scheduled-jobs.test.ts` le vérifie.
 
 ## Tâches applicatives (routes `/api/cron/*`)
@@ -16,6 +16,8 @@ ou dans une migration `pg_cron` ; le test `src/lib/scheduled-jobs.test.ts` le v�
 | Rétention des données                                      | Vercel Cron        | dimanche 04:15          | `/api/cron/data-retention`            | oui                                                  | 8 jours                       |
 | Complétude des annonces (palier de classement de /sales)   | Supabase `pg_cron` | toutes les heures à :20 | `/api/cron/listing-completeness`      | oui                                                  | 3 h                           |
 | Complétude des annonces (filet quotidien)                  | Vercel Cron        | 05:50 tous les jours    | `/api/cron/listing-completeness`      | oui (même tâche, même seuil)                         | 3 h                           |
+| Pépites des ventes (règle `pepite-v1`, mode `shadow`)      | Supabase `pg_cron` | toutes les heures à :35 | `/api/cron/sale-pepites`              | oui                                                  | 3 h                           |
+| Pépites des ventes (filet quotidien)                       | Vercel Cron        | 05:42 tous les jours    | `/api/cron/sale-pepites`              | oui (même tâche, même seuil)                         | 3 h                           |
 | Santé opérationnelle                                       | Supabase `pg_cron` | toutes les 15 min       | `/api/cron/operational-health`        | oui                                                  | 45 min                        |
 | Purge des ventes                                           | Supabase `pg_cron` | toutes les 5 min        | `/api/cron/sale-retention`            | oui                                                  | 20 min                        |
 | Pré-calcul des valorisations                               | Supabase `pg_cron` | toutes les 5 min        | `/api/cron/precompute-valuations`     | non (déclenchement géré par la file de valorisation) | —                             |
@@ -34,6 +36,22 @@ Si plus de 3 h séparent l'application de la migration `20261024100100` et le d�
 (qui porte la route), `cron.stale` ouvre une alerte critique : le job Supabase appelle une route
 qui n'existe pas encore. Il suffit alors d'appeler la route une fois, avec `CRON_SECRET`
 (`Authorization: Bearer $CRON_SECRET` sur `/api/cron/listing-completeness`), pour la refermer.
+
+Le calcul des pépites (route `/api/cron/sale-pepites`, règle `pepite-v1`, migrations `20261104100000` et
+`20261104100100`) tourne chaque heure à :35, par lots de 300 ventes (variable `SALE_PEPITES_BATCH_LIMIT`) :
+une vente jamais évaluée, modifiée, dont l'estimation a été recalculée, évaluée avec une autre version de la
+règle, du moteur de plafond ou d'un régime, ou évaluée il y a plus de 24 h, est (ré)évaluée. Le mode
+(`app_private.sale_pepite_settings`) vaut `shadow` à l'application de la migration : les résultats sont
+calculés et stockés, rien n'est visible du public (les fonctions publiques ne rendent rien) ; `off` arrête le
+calcul ; `on` ouvre la lecture publique (décision du fondateur, après contrôle de la liste de `/admin/pepites`) ; l'ouverture se fait par une migration dédiée. Un administrateur peut repasser de `on` à `shadow` avec le bouton « Suspendre les pépites » de `/admin/pepites` (fonction `suspend_sale_pepites`, qui ne sait jamais ouvrir).
+Avant la migration, la route se termine sans rien faire (`skipped: not_migrated`). Même mécanisme Vault que la
+complétude, sans nouveau secret. Ordre de mise en production : code, puis migrations. La migration
+`20261104100100` lance elle-même le premier calcul à sa dernière instruction
+(`select app_private.invoke_sale_pepites_endpoint();`, appel `pg_net` asynchrone) : plus d'appel manuel de la route
+nécessaire quand les secrets Vault sont configurés ; sans secret, l'appel ne fait rien (avertissement) et la
+première passe horaire, à :35, prend le relais. `cron.stale` signale la tâche tant qu'elle n'a jamais réussi (voir
+« Ajouter une tâche supervisée » ci-dessous). Toute redéfinition de `app_private.evaluate_operational_health` doit
+garder `('sale-pepites', interval '3 hours')` dans sa liste de tâches attendues.
 
 Les rappels d'audience (J-7, J-1) et les avertissements graves (date modifiée, vente retirée,
 reportée ou adjugée) passent après le suivi des changements, dont ils lisent les événements. Ils sont

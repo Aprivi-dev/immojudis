@@ -112,11 +112,36 @@ describe("SearchLawyerPlacement", () => {
     expect(region.textContent).toContain(
       "Ce cabinet rémunère Immojudis pour apparaître ici. Il ne s’agit ni d’une recommandation, ni d’une notation, ni d’une garantie de résultat, et l’ordre des annonces n’en est pas modifié.",
     );
+    // Mode shadow : l'encart ne parle pas d'un repère que le visiteur ne voit pas.
+    expect(region.textContent).not.toMatch(/Pépite/);
     expect(
       within(region)
         .getByRole("link", { name: "Comment sont classés les avocats ?" })
         .getAttribute("href"),
     ).toBe("/avocats#lawyer-ranking-title");
+  });
+
+  it("ajoute la phrase d'indépendance du repère Pépite seulement quand le repère est ouvert, dans les deux variantes", async () => {
+    for (const placement of ["active", "trial"] as const) {
+      mocks.fetchLawyerDirectory.mockResolvedValue(
+        directoryResponse({
+          lawyers: [
+            {
+              id: "lawyer-1",
+              displayName: "Maître Élodie Martin",
+              firmName: "Cabinet Martin",
+              isSponsored: true,
+              placement,
+              source: "immojudis",
+            },
+          ],
+        }),
+      );
+      const view = renderPlacement({ city: "Bordeaux", pepites: true });
+      const region = await screen.findByRole("region", { name: /Cabinet Martin/ });
+      expect(region.textContent).toContain("Cet encart est sans lien avec le repère Pépite.");
+      view.unmount();
+    }
   });
 
   it("names a placement still in trial as such, never as paid", async () => {

@@ -54,6 +54,8 @@ import {
   type AiReviewRequestStatus,
 } from "@/lib/ai-review-guard";
 import { escapeHtml } from "@/lib/guards";
+import { PepiteIcon } from "@/components/PepiteBadge";
+import { PEPITE_LABEL } from "@/lib/pepite-copy";
 import { safeSalesReturnTo, saleDetailPath } from "@/lib/navigation";
 
 // Chargé à la demande par l'effet de création de la carte (import dynamique).
@@ -69,6 +71,9 @@ const SALE_POINT_LAYER_ID = "immojudis-sales-points";
 const SALE_ACTIVE_LAYER_ID = "immojudis-sales-active";
 const SALE_PRICE_LAYER_ID = "immojudis-sales-price";
 const SALE_HIT_LAYER_ID = "immojudis-sales-hit";
+const SALE_PEPITE_LAYER_ID = "immojudis-sales-pepite";
+const CLUSTER_PEPITE_LAYER_ID = "immojudis-sales-cluster-pepite";
+const PEPITE_ICON_ID = "immojudis-pepite";
 
 const DEFAULT_MAP_CENTER: [number, number] = [1.7191, 46.7111];
 const DEFAULT_MAP_ZOOM = 5.7;
@@ -105,6 +110,8 @@ export type MapPanelProps = {
   searchAsMove: boolean;
   aiReviewBySaleId?: Readonly<Record<string, readonly AiReviewProjectionReadModel[]>>;
   aiReviewStatus?: AiReviewRequestStatus;
+  /** Pépites publiables (liste publique) : anneau et glyphe sur la carte, ligne « Pépite » dans la fenêtre. */
+  pepiteSaleIds?: ReadonlySet<string>;
   onHover: (saleId: string | null) => void;
   onSelect: (saleId: string) => void;
   onViewportChange: (viewport: MapViewportChange) => void;
@@ -229,6 +236,7 @@ export function MapPanel({
   searchAsMove,
   aiReviewBySaleId,
   aiReviewStatus = "disabled",
+  pepiteSaleIds,
   onHover,
   onSelect,
   onViewportChange,
@@ -265,10 +273,20 @@ export function MapPanel({
   const mapStyle = useMemo(() => "mapbox://styles/mapbox/streets-v12", []);
   const displaySales = useMemo(
     () =>
-      sales.map((sale) =>
-        saleForMapReview(sale, aiReviewBySaleId?.[sale.id], aiReviewStatus, preview),
-      ),
-    [aiReviewBySaleId, aiReviewStatus, preview, sales],
+      sales.map((sale) => {
+        const reviewed = saleForMapReview(
+          sale,
+          aiReviewBySaleId?.[sale.id],
+          aiReviewStatus,
+          preview,
+        );
+        return pepiteSaleIds?.has(sale.id.toLowerCase()) ? { ...reviewed, pepite: true } : reviewed;
+      }),
+    [aiReviewBySaleId, aiReviewStatus, pepiteSaleIds, preview, sales],
+  );
+  const pepiteCount = useMemo(
+    () => displaySales.filter((sale) => sale.pepite && hasCoordinates(sale)).length,
+    [displaySales],
   );
   const featureCollection = useMemo(
     () => buildMapboxSaleFeatureCollection(displaySales),
@@ -462,7 +480,7 @@ export function MapPanel({
           : sale;
         popupRef.current = showSalePopup(
           map,
-          { ...popupSale, latitude: sale.latitude, longitude: sale.longitude },
+          { ...popupSale, pepite: sale.pepite, latitude: sale.latitude, longitude: sale.longitude },
           popupRef.current,
           popupAccessRef.current,
         );
@@ -837,7 +855,18 @@ export function MapPanel({
           {" "}
           Les ronds dorés regroupent plusieurs ventes ({clusterSalesLabel(2)} ou plus) ; zoomez pour
           les séparer.
+          {pepiteCount > 0
+            ? ` Dont ${pepiteCount} pépite${pepiteCount > 1 ? "s" : ""}, repérée${pepiteCount > 1 ? "s" : ""} par un anneau doré épais et un pictogramme.`
+            : ""}
         </span>
+        {pepiteCount > 0 ? (
+          <p className="mt-1 flex items-center gap-1.5 font-semibold text-gold-text">
+            <PepiteIcon className="size-4" />
+            <span>
+              {PEPITE_LABEL} ({pepiteCount.toLocaleString("fr-FR")}) · anneau doré
+            </span>
+          </p>
+        ) : null}
       </div>
 
       <a
@@ -895,8 +924,11 @@ function addSalesLayers(map: MapboxMap, data: MapboxSaleFeatureCollection) {
     cluster: true,
     clusterMaxZoom: 13,
     clusterRadius: 54,
+    // Nombre de pépites dans chaque regroupement : une petite pastille signale celles qu'il contient.
+    clusterProperties: { pepites: ["+", ["get", "pepite"]] },
     generateId: true,
   });
+  addPepiteIcon(map);
 
   const clusterLayer: CircleLayerSpecification = {
     id: CLUSTER_LAYER_ID,
@@ -941,9 +973,36 @@ function addSalesLayers(map: MapboxMap, data: MapboxSaleFeatureCollection) {
       // generous radius at national zoom makes short prices readable without
       // the detached grey text halo that the old map used.
       "circle-radius": ["interpolate", ["linear"], ["zoom"], 4, 20, 9, 24, 14, 29],
-      "circle-stroke-color": "#ffffff",
-      "circle-stroke-width": 2,
+      // Pépite : anneau or plus épais (le glyphe en haut à droite le double : jamais la couleur seule).
+      "circle-stroke-color": ["case", ["==", ["get", "pepite"], 1], "#c98d45", "#ffffff"],
+      "circle-stroke-width": ["case", ["==", ["get", "pepite"], 1], 4, 2],
       "circle-opacity": 0.98,
+    },
+  };
+
+  const pepiteGlyphLayer: SymbolLayerSpecification = {
+    id: SALE_PEPITE_LAYER_ID,
+    type: "symbol",
+    source: SALES_SOURCE_ID,
+    filter: ["all", ["!", ["has", "point_count"]], ["==", ["get", "pepite"], 1]],
+    layout: {
+      "icon-image": PEPITE_ICON_ID,
+      "icon-offset": [16, -16],
+      "icon-allow-overlap": true,
+      "icon-ignore-placement": true,
+    },
+  };
+
+  const clusterPepiteLayer: SymbolLayerSpecification = {
+    id: CLUSTER_PEPITE_LAYER_ID,
+    type: "symbol",
+    source: SALES_SOURCE_ID,
+    filter: ["all", ["has", "point_count"], [">", ["get", "pepites"], 0]],
+    layout: {
+      "icon-image": PEPITE_ICON_ID,
+      "icon-offset": [18, -18],
+      "icon-allow-overlap": true,
+      "icon-ignore-placement": true,
     },
   };
 
@@ -999,7 +1058,53 @@ function addSalesLayers(map: MapboxMap, data: MapboxSaleFeatureCollection) {
   map.addLayer(activeLayer);
   map.addLayer(salePointLayer);
   map.addLayer(salePriceLayer);
+  map.addLayer(pepiteGlyphLayer);
+  map.addLayer(clusterPepiteLayer);
   map.addLayer(hitLayer);
+}
+
+/**
+ * Glyphe de pépite (caillou à facettes sur une pastille blanche) pour les couches `symbol` : dessiné une fois
+ * dans un canvas de 40 px (ratio 2). Sans canvas (environnement sans 2D) : pas de glyphe, l'anneau reste.
+ */
+function addPepiteIcon(map: MapboxMap) {
+  if (map.hasImage(PEPITE_ICON_ID) || typeof document === "undefined") return;
+  const canvas = document.createElement("canvas");
+  canvas.width = 40;
+  canvas.height = 40;
+  const context = canvas.getContext("2d");
+  if (!context) return;
+  context.fillStyle = "#ffffff";
+  context.beginPath();
+  context.arc(20, 20, 19, 0, Math.PI * 2);
+  context.fill();
+  const outline: Array<[number, number]> = [
+    [9, 17],
+    [15, 9],
+    [26, 10],
+    [32, 18],
+    [30, 28],
+    [21, 33],
+    [11, 30],
+    [7, 23],
+  ];
+  context.beginPath();
+  outline.forEach(([x, y], index) => (index ? context.lineTo(x, y) : context.moveTo(x, y)));
+  context.closePath();
+  context.fillStyle = "#c98d45";
+  context.fill();
+  context.strokeStyle = "#132238";
+  context.lineWidth = 1.5;
+  context.lineJoin = "round";
+  context.stroke();
+  context.beginPath();
+  for (const [x, y] of [outline[1], outline[3], outline[5], outline[0]]) {
+    context.moveTo(18, 19);
+    context.lineTo(x, y);
+  }
+  context.lineWidth = 1;
+  context.stroke();
+  map.addImage(PEPITE_ICON_ID, context.getImageData(0, 0, 40, 40), { pixelRatio: 2 });
 }
 
 function updateActiveLayer(map: MapboxMap, activeId: string | null | undefined) {
@@ -1155,6 +1260,11 @@ function buildPopupHtml(
           saleTitle,
         )}</a>
         <p class="immo-mapbox-popup-location">${escapeHtml(location)}</p>
+        ${
+          sale.pepite
+            ? `<p class="immo-mapbox-popup-location"><strong>${escapeHtml(PEPITE_LABEL)}</strong> · repère calculé automatiquement</p>`
+            : ""
+        }
         <div class="immo-mapbox-popup-metrics">
           <span>${escapeHtml(displaySurface.label)}</span>
           <span>${escapeHtml(formatPricePerM2(pricePerSquareMeter))}</span>

@@ -9,6 +9,7 @@ import type { Json } from "@/integrations/supabase/types";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { EXAMPLE_SALE } from "@/lib/example-sale";
 import { computeAcquisitionCosts, computeRentabilityScore } from "@/lib/profitability";
+import { DEFAULT_OPEN_FEE_REGIMES } from "@/lib/fee-regime-open";
 import { buildCeilingSnapshot } from "./property-report/analysis";
 
 describe("property report sharing", () => {
@@ -18,7 +19,7 @@ describe("property report sharing", () => {
       sale,
       surfaceM2: 80,
       marketEstimate: null,
-      ceilingSnapshot: buildCeilingSnapshot(sale, null),
+      ceilingSnapshot: buildCeilingSnapshot(sale, null, {}, DEFAULT_OPEN_FEE_REGIMES),
     });
     expect(result.score).toBeNull();
     expect(result.scoreConfidencePct).toBeNull();
@@ -73,6 +74,85 @@ describe("property report sharing", () => {
       disclaimer: "Notice test sans promesse de gain.",
     });
     expect(JSON.stringify(report)).not.toContain("user_notes");
+  });
+
+  describe("fee regime switch at read time", () => {
+    const row = (ceiling: Record<string, unknown>) => ({
+      id: "report-regime",
+      title: "Rapport vente interactive",
+      report_kind: "opportunity" as const,
+      report_snapshot: {
+        plan: "analyse",
+        sale: { city: "Bordeaux", startingPrice: 150000 },
+        analysis: {
+          opportunity: { bidCeiling: { available: true, maxBid: 120000, marginTotal: 5000 } },
+        },
+        sourceTraceability: { entries: [], limitations: [], complianceNotice: "Notice" },
+      } as Json,
+      market_snapshot: {} as Json,
+      environmental_snapshot: null,
+      ceiling_snapshot: {
+        available: true,
+        maxBid: 120000,
+        regime: "notary_online",
+        label: "Offre plafond (simulation)",
+        scopeNote: "Hors débours et formalités du notaire.",
+        reserveNotice: "Le vendeur n’est pas tenu de retenir la meilleure offre.",
+        estimatedFees: [{ key: "negotiation", label: "Honoraires de négociation" }],
+        safetyDiscountPct: 8,
+        basisLabel: "Médiane locale",
+        personalSimulation: { version: 2, choices: { project: "louer" }, expectedMaxBid: 120000 },
+        ...ceiling,
+      } as Json,
+      shared_at: null,
+      share_expires_at: null,
+      share_view_count: 0,
+      updated_at: "2026-10-26T10:00:00.000Z",
+    });
+
+    it("keeps the allow-listed notices of an open regime", () => {
+      const report = buildPublicSharedPropertyReport(row({}), ["tribunal", "notary_online"]);
+      expect(report.ceiling).toMatchObject({
+        available: true,
+        maxBid: 120000,
+        regime: "notary_online",
+        label: "Offre plafond (simulation)",
+        scopeNote: "Hors débours et formalités du notaire.",
+        reserveNotice: "Le vendeur n’est pas tenu de retenir la meilleure offre.",
+        estimatedFees: ["Honoraires de négociation"],
+      });
+      expect(report.analysis).toMatchObject({ opportunity: { bidCeiling: { maxBid: 120000 } } });
+    });
+
+    it("makes the ceiling unavailable and hides every amount once its regime is closed", () => {
+      const report = buildPublicSharedPropertyReport(row({}), ["tribunal"]);
+      expect(report.ceiling).toMatchObject({
+        available: false,
+        maxBid: null,
+        safetyDiscountPct: null,
+        reason: "Pas d’enchère plafond pour ce type de vente",
+        estimatedFees: [],
+        scopeNote: null,
+        reserveNotice: null,
+      });
+      expect(report.ceiling.personalSimulation).toBeUndefined();
+      expect(report.analysis).toMatchObject({
+        opportunity: { bidCeiling: { available: false, maxBid: null, marginTotal: null } },
+      });
+      expect(JSON.stringify(report)).not.toMatch(/120000|5000,/);
+    });
+
+    it("never closes a tribunal report or a report saved before the regimes", () => {
+      for (const ceiling of [{ regime: "tribunal" }, { regime: undefined }]) {
+        const report = buildPublicSharedPropertyReport(row(ceiling), ["tribunal"]);
+        expect(report.ceiling).toMatchObject({ available: true, maxBid: 120000 });
+      }
+    });
+
+    it("closes by default only a regime without rules", () => {
+      const report = buildPublicSharedPropertyReport(row({ regime: "state_auction" }));
+      expect(report.ceiling).toMatchObject({ available: false, maxBid: null });
+    });
   });
 
   it("refiltre à la lecture les noms de particuliers d'un rapport figé avant le durcissement du filtre", () => {
@@ -305,6 +385,13 @@ describe("property report sharing", () => {
     expect(report).not.toHaveProperty("environmental");
     expect(report.ceiling).toEqual({
       available: true,
+      // Snapshot saved before the fee regimes: no wording of its own (the page keeps the default).
+      label: null,
+      regime: null,
+      scopeNote: null,
+      reserveNotice: null,
+      estimatedFees: [],
+      reason: null,
       maxBid: 98000,
       safetyDiscountPct: 8,
       basisLabel: "Médiane locale",
@@ -337,6 +424,38 @@ describe("property report sharing", () => {
     }
   });
 
+  it("expose au lien public le terme, le régime, les mentions et les libellés des frais, jamais leurs montants", () => {
+    const report = buildPublicSharedPropertyReport({
+      id: "report-offer",
+      title: "Rapport vente interactive",
+      report_kind: "opportunity",
+      report_snapshot: {} as Json,
+      market_snapshot: {} as Json,
+      environmental_snapshot: null,
+      ceiling_snapshot: {
+        available: true,
+        maxBid: 90_000,
+        label: "Offre plafond (simulation)",
+        regime: "notary_online",
+        reserveNotice: "Le vendeur n’est pas tenu de retenir la meilleure offre.",
+        scopeNote: "Hors débours et formalités du notaire.",
+        estimatedFees: [{ key: "negotiation", label: "Honoraires de négociation", amount: 1234 }],
+      } as Json,
+      shared_at: null,
+      share_expires_at: null,
+      share_view_count: 0,
+      updated_at: "2026-07-06T10:00:00.000Z",
+    });
+    expect(report.ceiling).toMatchObject({
+      label: "Offre plafond (simulation)",
+      regime: "notary_online",
+      reserveNotice: "Le vendeur n’est pas tenu de retenir la meilleure offre.",
+      scopeNote: "Hors débours et formalités du notaire.",
+      estimatedFees: ["Honoraires de négociation"],
+    });
+    expect(JSON.stringify(report)).not.toContain("1234");
+  });
+
   it("garde un plafond public sûr quand le snapshot est vide ou illisible", () => {
     const report = buildPublicSharedPropertyReport({
       id: "report-empty",
@@ -353,6 +472,12 @@ describe("property report sharing", () => {
     });
     expect(report.ceiling).toEqual({
       available: false,
+      label: null,
+      regime: null,
+      scopeNote: null,
+      reserveNotice: null,
+      estimatedFees: [],
+      reason: null,
       maxBid: null,
       safetyDiscountPct: null,
       basisLabel: null,
@@ -439,6 +564,11 @@ describe("property report sharing", () => {
         steps: [],
         available: true,
         reason: null,
+        regime: "tribunal" as const,
+        label: "Enchère plafond (simulation)",
+        scopeNote: null,
+        reserveNotice: null,
+        estimatedFees: [],
         maxBid: 130_000,
         maxBidWithoutWorks: 160_000,
         maxBidWithRefreshWorks: 130_000,
@@ -473,7 +603,8 @@ describe("property report sharing", () => {
       estimatedMarketHigh: 249_000,
       estimatedMarketRangeLabel: "Fourchette de valeur estimée",
       apparentDiscountPct: 25,
-      grossYieldPct: 9.9,
+      // 9,9 % avec 3 000 € de frais préalables par défaut ; 9,8 % avec les 5 000 € retenus partout.
+      grossYieldPct: 9.8,
       rentabilityScore: {
         available: true,
         rentSource: "department_estimate",
@@ -488,6 +619,48 @@ describe("property report sharing", () => {
         marginTotal: 8_000,
       },
     });
+  });
+
+  it("scores the rentability of a notarial sale on the fees of its own regime", () => {
+    const sale = {
+      ...EXAMPLE_SALE,
+      sale_venue_type: "notary",
+      sale_procedure: null,
+      source_blocks: null,
+      sale_legal_framework: "voluntary_notarial",
+      starting_price_eur: 50_000,
+      sale_conditions: {
+        procedure: "online_tender",
+        first_offer_eur: 50_000,
+        negotiation_fee_rate: 0.05,
+        negotiation_fee_payer: "ACQUEREUR",
+        advertising_fees_eur: 1_200,
+      },
+    } as unknown as typeof EXAMPLE_SALE;
+    const ceilingSnapshot = buildCeilingSnapshot(sale, null, {}, DEFAULT_OPEN_FEE_REGIMES);
+    expect(ceilingSnapshot.regime).toBe("notary_online");
+    const { acquisition } = ceilingSnapshot;
+    expect(acquisition.negotiationFees).toBeCloseTo(2_500);
+    expect(acquisition.advertisingFees).toBe(1_200);
+    expect(acquisition.fpt).toBe(0);
+
+    const { rentabilityScore } = buildOpportunityAnalysis({
+      sale,
+      surfaceM2: 60,
+      marketEstimate: null,
+      ceilingSnapshot,
+    });
+    // Same total as the ceiling snapshot (negotiation and advertising fees included) ...
+    expect(rentabilityScore.totalCost).toBe(Math.round(acquisition.totalCost));
+    // ... and not the one of a court sale at the same price.
+    const asCourt = computeRentabilityScore({
+      surface: 60,
+      price: acquisition.price,
+      works: acquisition.works,
+      fpt: acquisition.fpt,
+      department: sale.department,
+    });
+    expect(rentabilityScore.totalCost).toBeGreaterThan(asCourt.totalCost);
   });
 
   it("gives administrators Analyse entitlements for premium offer testing", async () => {

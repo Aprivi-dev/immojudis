@@ -692,6 +692,149 @@ if (
 if (/using\s*\(\s*true\s*\)/i.test(saleUnlockMigration)) {
   failures.push("The sale unlock migration contains a permissive policy");
 }
+// Plafond des ventes notariales: the conditions of a notarial sale reach the browser of an Analyse
+// account (v_auction_sales_app) and of an account that unlocked the sale (v_auction_sales_unlocked)
+// through one allow-list function, never through raw_payload, and never to the discovery view (an
+// account that did not unlock the sale). The reserved conditions (adjudication price, floor price,
+// price reduction, last possible offer, deposit terms, session date, negotiation fee amount) are
+// never copied.
+const saleConditionsName = "20261103110000_sale_conditions_public_projection.sql";
+const saleConditionsSql = (migrationSources.get(saleConditionsName) ?? "")
+  .replace(/\/\*[\s\S]*?\*\//g, "")
+  .replace(/--[^\n]*/g, "");
+if (!saleConditionsSql) {
+  failures.push("The sale conditions migration is missing");
+} else {
+  const projection =
+    /create\s+or\s+replace\s+function\s+app_private\.public_sale_conditions\([^)]*\)[\s\S]*?\$\$;/i.exec(
+      saleConditionsSql,
+    )?.[0] ?? "";
+  const allowedConditionKeys = [
+    "adjudication_type",
+    "advertising_fees_eur",
+    "deposit_eur",
+    "first_offer_eur",
+    "negotiation_fee_payer",
+    "negotiation_fee_rate",
+    "origin",
+    "overbid_allowed",
+    "price_nature",
+    "procedure",
+  ];
+  const projectedKeys = [...projection.matchAll(/'(\w+)',\s*case\b/gi)]
+    .map((match) => match[1])
+    .sort();
+  if (!projection) {
+    failures.push("public_sale_conditions is not defined by the sale conditions migration");
+  } else {
+    if (projectedKeys.join(",") !== allowedConditionKeys.join(",")) {
+      failures.push(
+        `public_sale_conditions projects ${projectedKeys.join(",")} instead of the allow-list ${allowedConditionKeys.join(",")}`,
+      );
+    }
+    if (
+      !/security\s+invoker/i.test(projection) ||
+      !/set\s+search_path\s*=\s*''/i.test(projection)
+    ) {
+      failures.push("public_sale_conditions is not SECURITY INVOKER with an empty search_path");
+    }
+    // The function reads raw_payload, which changes: it is STABLE, never IMMUTABLE.
+    if (/\bimmutable\b/i.test(projection)) {
+      failures.push("public_sale_conditions must be STABLE, not IMMUTABLE");
+    }
+    // Every key read from the source conditions (`conditions -> 'x'`, `->> 'x'`, `#> '{x}'`) must be
+    // an allowed key: a key that is read but not projected today could be projected by a later edit
+    // without the allow-list above noticing, and a reserved key must never be read at all.
+    const readConditionKeys = [
+      ...projection.matchAll(/\bconditions\s*(?:->>?|#>>?)\s*'([^']+)'/gi),
+    ].map((match) => match[1]);
+    const unexpectedReads = [...new Set(readConditionKeys)].filter(
+      (key) => !allowedConditionKeys.includes(key),
+    );
+    if (unexpectedReads.length > 0) {
+      failures.push(
+        `public_sale_conditions reads ${unexpectedReads.join(",")} from the conditions, outside the allow-list`,
+      );
+    }
+    // raw_payload itself is read in two places only: the conditions object and the price nature.
+    const rawPayloadReads = [
+      ...projection.matchAll(/\bp_raw_payload\s*(?:->>?|#>>?)\s*'([^']+)'/gi),
+    ].map((match) => match[1]);
+    const allowedPayloadReads = [
+      "{source_property_features,sale_conditions}",
+      "starting_price_nature",
+    ];
+    const unexpectedPayloadReads = [...new Set(rawPayloadReads)].filter(
+      (key) => !allowedPayloadReads.includes(key),
+    );
+    if (unexpectedPayloadReads.length > 0) {
+      failures.push(
+        `public_sale_conditions reads ${unexpectedPayloadReads.join(",")} from raw_payload, outside the allow-list`,
+      );
+    }
+    if (!/in\s*\(\s*'ADJUDICATION'\s*,\s*'LICITATION'\s*,\s*'SAISIE'\s*\)/.test(projection)) {
+      failures.push("public_sale_conditions must limit origin to the values the pipeline writes");
+    }
+    // Only a source whose raw_payload is small and known (notaires) is read by the views.
+    if (
+      !/CASE\s+WHEN\s+s\.source_name\s*=\s*''notaires''\s+THEN\s+app_private\.public_sale_conditions\(s\.raw_payload\)/i.test(
+        saleConditionsSql,
+      )
+    ) {
+      failures.push("The views must call public_sale_conditions only for source_name = notaires");
+    }
+    for (const reserved of [
+      "adjudication_price_eur",
+      "floor_price_eur",
+      "last_offer_eur",
+      "price_reduction",
+      "deposit_transfer_terms",
+      "deposit_deadline_time",
+      "session_at",
+      "negotiation_fee_eur",
+      "negotiation_fee_amount",
+    ]) {
+      if (projection.includes(reserved)) {
+        failures.push(`public_sale_conditions copies the reserved condition ${reserved}`);
+      }
+    }
+  }
+  if (
+    !/revoke\s+all\s+on\s+function\s+app_private\.public_sale_conditions\(pg_catalog\.jsonb\)\s+from\s+public,\s*anon,\s*authenticated/i.test(
+      saleConditionsSql,
+    ) ||
+    !/grant\s+execute\s+on\s+function\s+app_private\.public_sale_conditions\(pg_catalog\.jsonb\)\s+to\s+authenticated,\s*service_role/i.test(
+      saleConditionsSql,
+    ) ||
+    /grant\s+execute\s+on\s+function\s+app_private\.public_sale_conditions\([^)]*\)\s+to\s+[^;]*\banon\b/i.test(
+      saleConditionsSql,
+    )
+  ) {
+    failures.push("public_sale_conditions is not closed to anon and open to authenticated only");
+  }
+  const rewrittenViews =
+    /relname\s+in\s*\(([^)]*)\)/i
+      .exec(saleConditionsSql)?.[1]
+      ?.match(/'(\w+)'/g)
+      ?.map((name) => name.replaceAll("'", ""))
+      .sort() ?? [];
+  if (rewrittenViews.join(",") !== "v_auction_sales_app,v_auction_sales_unlocked") {
+    failures.push(
+      "The sale conditions migration must add sale_conditions to v_auction_sales_app and v_auction_sales_unlocked only",
+    );
+  }
+}
+for (const [name, source] of migrationSources) {
+  const sql = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--[^\n]*/g, "");
+  const discoveryView =
+    /create\s+or\s+replace\s+view\s+public\.v_auction_sales_discovery\b[\s\S]*?;/i.exec(sql)?.[0] ??
+    "";
+  if (/sale_conditions/i.test(discoveryView)) {
+    failures.push(
+      `${name} gives sale_conditions to the discovery view (accounts that did not unlock)`,
+    );
+  }
+}
 if (
   !/redactReadingTexts\(\s*mapDocumentReading\(/.test(documentReadingServer) ||
   !/import\s*\{\s*redactPersonalText\s*\}\s*from\s*"@\/lib\/personal-data-filter"/.test(
@@ -770,6 +913,232 @@ if (
   )
 ) {
   failures.push("v_auction_sales_discovery_search lost its security barrier");
+}
+
+// Pépites (règle pepite-v1, 26/10/2026) : le calcul ne dépend jamais de la publicité ni du score interne.
+// `investment_score`, les données d'avocat et de sponsoring, et le profil de l'utilisateur n'entrent pas
+// dans la règle. Le contrôle d'indépendance de l'administration (src/lib/admin-pepites.ts) lit les encarts
+// pour MESURER la part des pépites sponsorisées : il est volontairement hors de cette liste, et aucun module
+// de la règle ne l'importe.
+// Pour chaque module de la règle : (1) aucun module atteignable par ses imports `@/…` ou relatifs n'a un
+// chemin (depuis src/) qui évoque les avocats, le sponsoring, les encarts ou le contrôle d'indépendance de
+// l'administration (`admin-pepites`) ; (2) le texte, commentaires retirés, de chaque module atteint qui
+// appartient au calcul (`src/lib/pepite*`, `src/lib/sale-pepites-batch.ts`, et le module d'entrée) ne lit ni
+// `investment_score` ni une colonne d'avocat ou de sponsoring (les fichiers de types générés, qui
+// décrivent toutes les colonnes, n'en font pas partie) ; (3) un import `@/…` qui ne se résout pas fait
+// échouer le contrôle : sinon un module renommé sortirait silencieusement du parcours.
+{
+  const pepiteRuleModules = [
+    "src/lib/pepite-policy.ts",
+    "src/lib/pepite-input.ts",
+    "src/lib/pepite-reasons.ts",
+    "src/lib/sale-pepites-batch.ts",
+    "src/app/api/cron/sale-pepites/route.ts",
+  ];
+  const forbiddenModule = /lawyer|sponsor|featured|placement|admin-pepites/i;
+  const computationModule = /^src\/lib\/(?:pepite[^/]*|sale-pepites-batch)\.tsx?$/;
+  const forbiddenRead =
+    /\b(?:investment_score|investment_summary|score_factors|score_confidence|lawyer_name|lawyer_contact|referenced_lawyers|paid_placement\w*|lawyer_placement\w*|sponsor\w*)\b|\blawyer-placement-label\b/i;
+  const stripComments = (text) =>
+    text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`])\/\/[^\n]*/g, "$1");
+  const sourceRoot = new URL("../src/", import.meta.url);
+  const relativeToSrc = (path) => path.slice(path.indexOf("/src/") + 1);
+  const resolveModule = async (specifier, fromPath) => {
+    let base;
+    if (specifier.startsWith("@/")) base = new URL(specifier.slice(2), sourceRoot).pathname;
+    else if (specifier.startsWith(".")) base = new URL(specifier, `file://${fromPath}`).pathname;
+    else return null;
+    for (const candidate of [
+      `${base}.ts`,
+      `${base}.tsx`,
+      `${base}/index.ts`,
+      `${base}/index.tsx`,
+      base,
+    ]) {
+      try {
+        await readFile(candidate);
+        // Un fichier qui n'est pas du TypeScript (JSON, style) existe, mais n'a pas d'imports à suivre.
+        return /\.tsx?$/.test(candidate) ? candidate : "";
+      } catch {
+        // essai suivant
+      }
+    }
+    return undefined;
+  };
+  for (const relativePath of pepiteRuleModules) {
+    const entry = new URL(`../${relativePath}`, import.meta.url).pathname;
+    const seen = new Set();
+    const pending = [entry];
+    while (pending.length) {
+      const path = pending.pop();
+      if (seen.has(path)) continue;
+      seen.add(path);
+      const reached = relativeToSrc(path);
+      if (forbiddenModule.test(reached)) {
+        failures.push(
+          `${relativePath} reaches ${reached}: the pepite rule must not depend on lawyer, sponsoring or pepite administration modules`,
+        );
+        continue;
+      }
+      const text = await readFile(path, "utf8");
+      const code = stripComments(text);
+      if ((path === entry || computationModule.test(reached)) && forbiddenRead.test(code)) {
+        failures.push(
+          `${relativePath} reaches ${reached}, which reads investment_score, lawyer or sponsoring data: they never enter the pepite rule`,
+        );
+      }
+      for (const match of code.matchAll(
+        /(?:import|export)\s[^"';]*?from\s*["']([^"']+)["']|import\(\s*["']([^"']+)["']\s*\)|import\s*["']([^"']+)["']/g,
+      )) {
+        const specifier = match[1] ?? match[2] ?? match[3];
+        const resolved = await resolveModule(specifier, path);
+        if (resolved === undefined) {
+          if (specifier.startsWith("@/") || specifier.startsWith(".")) {
+            failures.push(
+              `${relativePath}: ${reached} imports ${specifier}, which cannot be resolved: the independence check cannot follow it`,
+            );
+          }
+        } else if (resolved) pending.push(resolved);
+      }
+    }
+  }
+}
+
+// Pépites, affichage (lot B2, 26/10/2026) : aucun montant ne part sans le droit au plafond. Le détail
+// (plafond de référence, prix probable, fourchette, ratio) est dans une table privée ; seule la route
+// `GET /api/sales/[id]/pepite` le lit, et seulement après avoir vérifié le droit pour CETTE vente. Le niveau
+// « criteria » (ouvert aux visiteurs) ne reçoit que les noms des critères. Contrôles :
+// (1) le premier bloc `if (detailRequested) { … }` de la route exige une session (`requireSupabaseAuthContext`)
+//     puis, avec `await`, `assertFeatureEntitlementVia(auth, "property.bidCeiling", …, { saleId })` : la clé du
+//     droit, l'`await` et la vente font partie du contrôle, et le contrôle est DANS ce bloc ;
+// (2) ce bloc précède la lecture de la ligne privée (`readStoredPepite(`) ;
+// (3) `pepiteDetailView(` n'est appelé que dans un bloc `if (detailRequested)`, où toute réponse porte
+//     `PRIVATE_HEADERS` et jamais `PUBLIC_HEADERS` ; `PRIVATE_HEADERS` contient `private, no-store` ;
+// (4) aucun fichier de `src/` hors liste blanche ne nomme la table privée `auction_sale_pepites` (commentaires
+//     retirés) : les tests, les types générés, le traitement horaire, l'administration et la lecture de la route ;
+// (5) la route publique de la liste et le module de lecture de la liste ne lisent ni la table privée ni son détail ;
+// (6) les modules du navigateur n'importent ni la règle ni un client de service (la règle reste hors du
+//     JavaScript du site, et un montant ne peut pas être recalculé côté navigateur).
+{
+  const stripComments = (text) =>
+    text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`])\/\/[^\n]*/g, "$1");
+  const read = async (relativePath) =>
+    stripComments(await readFile(new URL(`../${relativePath}`, import.meta.url), "utf8"));
+  const compact = (text) => text.replace(/\s+/g, "");
+  // Le contenu du bloc `{ … }` dont l'accolade ouvrante est à `open` (accolades des chaînes ignorées).
+  const balancedBlock = (text, open) => {
+    let depth = 0;
+    let quote = null;
+    for (let index = open; index < text.length; index += 1) {
+      const char = text[index];
+      if (quote) {
+        if (char === "\\") index += 1;
+        else if (char === quote) quote = null;
+      } else if (char === '"' || char === "'" || char === "`") quote = char;
+      else if (char === "{") depth += 1;
+      else if (char === "}") {
+        depth -= 1;
+        if (depth === 0) return { start: open, end: index, body: text.slice(open + 1, index) };
+      }
+    }
+    return null;
+  };
+  const detailBlocks = (text) =>
+    [...text.matchAll(/if\s*\(\s*detailRequested\s*\)\s*\{/g)]
+      .map((match) => balancedBlock(text, match.index + match[0].length - 1))
+      .filter(Boolean);
+
+  const routePath = "src/app/api/sales/[id]/pepite/route.ts";
+  const route = await read(routePath);
+  const blocks = detailBlocks(route);
+  const guard = blocks[0];
+  const guardText = guard ? compact(guard.body) : "";
+  if (
+    !guard ||
+    !guardText.includes("requireSupabaseAuthContext(") ||
+    !guardText.includes('awaitassertFeatureEntitlementVia(auth,"property.bidCeiling"') ||
+    !guardText.includes("{saleId}")
+  ) {
+    failures.push(
+      `${routePath} must, inside its first detailRequested block, require a session then await assertFeatureEntitlementVia(auth, "property.bidCeiling", …, { saleId })`,
+    );
+  }
+  const storedRead = route.indexOf("readStoredPepite(");
+  if (!guard || storedRead < 0 || guard.end > storedRead) {
+    failures.push(`${routePath} reads the stored pepite before the right is checked`);
+  }
+  const privateHeaders = /const\s+PRIVATE_HEADERS\s*=\s*\{[^}]*\}/.exec(route)?.[0] ?? "";
+  if (!privateHeaders.includes("private, no-store")) {
+    failures.push(`${routePath}: PRIVATE_HEADERS must carry cache-control "private, no-store"`);
+  }
+  for (const call of route.matchAll(/pepiteDetailView\(/g)) {
+    const inside = blocks.find((block) => call.index > block.start && call.index < block.end);
+    if (!inside) {
+      failures.push(`${routePath} builds the pepite detail outside a detailRequested block`);
+    } else if (!inside.body.includes("PRIVATE_HEADERS") || inside.body.includes("PUBLIC_HEADERS")) {
+      failures.push(
+        `${routePath}: the detail block must answer with PRIVATE_HEADERS only, never PUBLIC_HEADERS`,
+      );
+    }
+  }
+  if (!route.includes("pepiteDetailView(")) {
+    failures.push(`${routePath} no longer builds the detail through pepiteDetailView`);
+  }
+
+  // (4) Liste blanche de la table privée.
+  const privateTableAllowed = new Set([
+    "src/lib/sale-pepite.server.ts",
+    "src/lib/sale-pepites-batch.ts",
+    "src/lib/admin-pepites.ts",
+    "src/integrations/supabase/types.ts",
+  ]);
+  const sourceFiles = await readdir(new URL("../src/", import.meta.url), { recursive: true });
+  for (const entry of sourceFiles) {
+    const name = String(entry);
+    if (!/\.(?:ts|tsx|mjs|cjs)$/.test(name) || /\.test\.[cm]?[jt]sx?$/.test(name)) continue;
+    const relativePath = `src/${name}`;
+    if (privateTableAllowed.has(relativePath)) continue;
+    if ((await read(relativePath)).includes("auction_sale_pepites")) {
+      failures.push(
+        `${relativePath} names the private table auction_sale_pepites: only the pepite server read, the hourly batch and the administration may`,
+      );
+    }
+  }
+
+  for (const relativePath of [
+    "src/app/api/catalogue/pepites/route.ts",
+    "src/lib/pepite-sale-ids.ts",
+    "src/lib/search/pepite-filter.ts",
+  ]) {
+    if (
+      /auction_sale_pepites|supabaseAdmin|\.details\b|referenceCeiling|probablePrice/.test(
+        await read(relativePath),
+      )
+    ) {
+      failures.push(
+        `${relativePath} reads the private pepite table or its details: the public list carries identifiers only`,
+      );
+    }
+  }
+  for (const relativePath of [
+    "src/components/PepiteBadge.tsx",
+    "src/components/sale-detail/PepiteBlock.tsx",
+    "src/components/sale-detail/PepiteBlockLazy.tsx",
+    "src/hooks/use-sale-pepite.ts",
+    "src/lib/client-api/sale-pepite.ts",
+    "src/lib/search/pepite-filter.ts",
+    "src/lib/pepite-copy.ts",
+  ]) {
+    if (
+      /@\/lib\/pepite-policy|@\/lib\/pepite-reasons|@\/lib\/pepite-input|client\.server|sale-pepite\.server/.test(
+        await read(relativePath),
+      )
+    ) {
+      failures.push(
+        `${relativePath} imports the pepite rule or a server module: the browser never computes or reads an amount`,
+      );
+    }
+  }
 }
 
 // Photos principales hébergées (test du 16/10/2026): the bucket serves only re-encoded WebP files by
@@ -1181,6 +1550,8 @@ console.log(
       "sale-unlock-rls-and-definer-boundary",
       "document-reading-personal-data-filter",
       "listing-completeness-score-stays-private",
+      "pepite-rule-independent-of-lawyers-sponsoring-and-score",
+      "pepite-detail-never-without-entitlement",
       "sale-photos-bucket-table-and-purge",
       "launch-offer-switch-and-access-functions",
       "invoker-functions-callees-granted-to-service-role",

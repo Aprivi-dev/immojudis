@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import type { CheckoutConsent } from "@/lib/commercial-acceptance";
+import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
 
 const mocks = vi.hoisted(() => ({
   adminRpc: vi.fn(),
@@ -48,8 +49,8 @@ const USER_ID = "11111111-1111-4111-8111-111111111111";
 const CUSTOMER_ID = "cus_shared";
 const consent = {
   termsAccepted: true,
-  termsVersion: "2026-10-25.1",
-  privacyVersion: "2026-10-25.1",
+  termsVersion: LEGAL_DOCUMENTS.terms.version,
+  privacyVersion: LEGAL_DOCUMENTS.privacy.version,
   paymentObligationAcknowledged: true,
   immediatePerformanceRequested: true,
   withdrawalInformationAcknowledged: true,

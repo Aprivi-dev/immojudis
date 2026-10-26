@@ -6,7 +6,8 @@ import type { SaleSignal } from "@/lib/sale-signal-feedback";
 
 /**
  * Retours « Utile » / « Pas pertinent » sur les signaux d'une vente (point 67), lus pour la page admin
- * « Pilotage » par `admin_sale_signal_feedback_summary` (migration 20261030110300) : par signal, le
+ * « Pilotage » par `admin_sale_signal_feedback_summary` (migration 20261030110300, puis 20261104100000 pour
+ * le signal « pepite ») : par signal, le
  * nombre de retours, la part d'« Utile », les comptes distincts et les motifs, sur 90 jours. Nombres
  * exacts, aucun nom, aucune vente ; les « point faux » (motif `point_wrong` de la liste des points à
  * vérifier) y ont leur ligne.
@@ -52,6 +53,7 @@ const summarySchema = z.object({
 const REASON_KEYS: Record<SaleSignal, readonly string[]> = {
   market_gap_band: ["estimate_too_high", "estimate_too_low"],
   points_to_verify: ["point_wrong", "point_missing"],
+  pepite: ["amount_too_high", "criterion_wrong", "not_interesting"],
 };
 
 const orNull = (value: number | null | undefined): FeedbackCount => value ?? null;
@@ -74,6 +76,7 @@ export function unavailableSaleSignalFeedback(): SaleSignalFeedbackSummary {
     signals: {
       market_gap_band: unmeasuredCounts("market_gap_band"),
       points_to_verify: unmeasuredCounts("points_to_verify"),
+      pepite: unmeasuredCounts("pepite"),
     },
   };
 }
@@ -101,6 +104,7 @@ export function parseSaleSignalFeedbackSummary(raw: unknown): SaleSignalFeedback
     signals: {
       market_gap_band: read("market_gap_band"),
       points_to_verify: read("points_to_verify"),
+      pepite: read("pepite"),
     },
   };
 }

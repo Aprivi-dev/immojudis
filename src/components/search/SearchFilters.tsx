@@ -68,6 +68,7 @@ export function NoResultsState({
   onRemoveFilter,
   onReset,
   onShowFrance,
+  pepite,
 }: {
   /** Critères actifs : chacun peut être retiré seul. */
   filters?: ActiveFilterChip[];
@@ -75,14 +76,26 @@ export function NoResultsState({
   onReset?: () => void;
   /** Proposé seulement si la recherche est limitée à un lieu. */
   onShowFrance?: () => void;
+  /**
+   * « Pépites seulement » est actif : l'état vide parle des pépites. `count` : pépites publiables en France ;
+   * « Élargir à la France » n'est proposé que s'il y en a (et que la recherche est limitée à un lieu).
+   */
+  pepite?: {
+    count: number;
+    onKeepOnlyPepite?: () => void;
+    onAlert?: () => void;
+    alertSaving?: boolean;
+  };
 }) {
+  const others = filters.filter((filter) => filter.key !== "pepite");
   return (
     <div className="rounded-md border border-line-soft bg-white p-6 text-center shadow-sm sm:p-10">
       <SearchIcon className="mx-auto h-8 w-8 text-brand-navy" />
       <h2 className="mt-4 text-xl font-extrabold text-brand-navy">Aucune vente trouvée</h2>
       <p className="mt-2 text-sm font-medium text-ink-soft">
-        Aucune annonce référencée ne correspond à ces critères pour le moment. Essayez un autre type
-        de vente, une autre zone ou élargissez votre budget.
+        {pepite
+          ? "Aucune pépite avec ces critères pour le moment."
+          : "Aucune annonce référencée ne correspond à ces critères pour le moment. Essayez un autre type de vente, une autre zone ou élargissez votre budget."}
       </p>
       {filters.length > 0 && onRemoveFilter ? (
         <ul aria-label="Critères actifs" className="mt-4 flex flex-wrap justify-center gap-2">
@@ -101,9 +114,37 @@ export function NoResultsState({
           ))}
         </ul>
       ) : null}
-      {onReset || onShowFrance ? (
+      {onReset || onShowFrance || pepite ? (
         <div className="mt-5 flex flex-wrap justify-center gap-3">
-          {onReset && filters.length > 0 ? (
+          {pepite && others.length > 0 && pepite.onKeepOnlyPepite ? (
+            <button
+              type="button"
+              onClick={pepite.onKeepOnlyPepite}
+              className="inline-flex min-h-11 cursor-pointer items-center rounded-md bg-brand-navy px-4 text-sm font-semibold text-white hover:bg-brand-navy-soft"
+            >
+              Retirer les autres filtres
+            </button>
+          ) : null}
+          {pepite && pepite.count > 0 && onShowFrance ? (
+            <button
+              type="button"
+              onClick={onShowFrance}
+              className="inline-flex min-h-11 cursor-pointer items-center rounded-md border border-line bg-white px-4 text-sm font-semibold text-brand-navy hover:border-brand-navy"
+            >
+              Élargir à la France
+            </button>
+          ) : null}
+          {pepite?.onAlert ? (
+            <button
+              type="button"
+              onClick={pepite.onAlert}
+              disabled={pepite.alertSaving}
+              className="inline-flex min-h-11 cursor-pointer items-center rounded-md border border-line bg-white px-4 text-sm font-semibold text-brand-navy hover:border-brand-navy disabled:opacity-60"
+            >
+              Me prévenir dès qu’une pépite apparaît
+            </button>
+          ) : null}
+          {!pepite && onReset && filters.length > 0 ? (
             <button
               type="button"
               onClick={onReset}
@@ -112,7 +153,7 @@ export function NoResultsState({
               Effacer les filtres
             </button>
           ) : null}
-          {onShowFrance ? (
+          {!pepite && onShowFrance ? (
             <button
               type="button"
               onClick={onShowFrance}

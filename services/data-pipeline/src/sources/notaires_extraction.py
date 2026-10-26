@@ -28,6 +28,7 @@ from __future__ import annotations
 import json
 import re
 from datetime import UTC, date, datetime, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -39,6 +40,20 @@ DISPLAY_SCHEMA_VERSION = "property_characteristics_v1"
 DOCUMENTS_ACCESS_NOTE = (
     "Pièces consultables sur le site de la vente après connexion, agrément de l'office notarial et visite du bien."
 )
+# Plage plausible d'un taux d'honoraires de négociation (part du prix de référence).
+NEGOTIATION_FEE_RATE_MIN = 0.01
+NEGOTIATION_FEE_RATE_MAX = 0.20
+# Le taux est publié arrondi au demi-point : un taux exact (honoraires / prix de réserve) varie avec le
+# prix de réserve dans les barèmes dégressifs et permettrait de le retrouver. Même arrondi que
+# ``app_private.public_sale_conditions`` (moitiés vers le haut).
+NEGOTIATION_FEE_RATE_STEP = Decimal("0.005")
+
+
+def round_negotiation_fee_rate(rate: float) -> float:
+    """Taux d'honoraires de négociation arrondi au demi-point (0,005), moitiés vers le haut."""
+    steps = (Decimal(repr(float(rate))) / NEGOTIATION_FEE_RATE_STEP).quantize(Decimal(1), rounding=ROUND_HALF_UP)
+    return float(steps * NEGOTIATION_FEE_RATE_STEP)
+
 
 GROUPS = {
     "identification": "Identification",
@@ -493,8 +508,12 @@ def sale_conditions(transaction_type: str | None, transaction: dict[str, Any]) -
         fees = number(transaction.get("emolumentsNegociation"))
         reference = number(transaction.get("prixMin"))
         if fees and reference:
-            # Seul le taux est repris : le montant permettrait de retrouver le prix de réserve.
-            conditions["negotiation_fee_rate"] = round(float(fees) / float(reference), 4)
+            # Seul le taux est repris : le montant permettrait de retrouver le prix de réserve. Il est
+            # arrondi au demi-point, car le taux exact le permettrait aussi (voir NEGOTIATION_FEE_RATE_STEP).
+            rate = round(float(fees) / float(reference), 4)
+            # Un taux hors de 1 % à 20 % vient d'une donnée aberrante : mieux vaut le laisser absent.
+            if NEGOTIATION_FEE_RATE_MIN <= rate <= NEGOTIATION_FEE_RATE_MAX:
+                conditions["negotiation_fee_rate"] = round_negotiation_fee_rate(rate)
     conditions["result"] = _status_label(transaction)
     return {key: value for key, value in conditions.items() if value not in (None, "", [], {})}
 
@@ -789,7 +808,12 @@ def _flag_or_text(value: object | None) -> bool | str | None:
 def _fee_text(conditions: dict[str, Any]) -> str | None:
     payer = PAYER_LABELS.get(str(conditions.get("negotiation_fee_payer") or "").upper())
     rate = conditions.get("negotiation_fee_rate")
-    rate_text = f"{float(rate) * 100:.2f} %".replace(".", ",") if isinstance(rate, (int, float)) and rate > 0 else None
+    # Le texte part du taux arrondi : il ne dit pas plus que ce que les conditions publient.
+    rate_text = (
+        f"{round_negotiation_fee_rate(rate) * 100:.2f} %".replace(".", ",")
+        if isinstance(rate, (int, float)) and rate > 0
+        else None
+    )
     parts = [part for part in (rate_text, payer.lower() if payer and rate_text else payer) if part]
     return " ".join(parts) if parts else None
 
@@ -889,7 +913,11 @@ def parse_immo_interactif_page(html: str, expected_id: str | int) -> dict[str, A
             "rate_schedule": {"cumulative": schedule.get("cumulative"), "brackets": brackets} if brackets else None,
         }),
         "seller_type": clean_text(seller.get("type")),
-        "negotiation_fee_rate": round(float(fee_rate), 4) if isinstance(fee_rate, (int, float)) and fee_rate > 0 else None,
+        "negotiation_fee_rate": (
+            round_negotiation_fee_rate(fee_rate) or None
+            if isinstance(fee_rate, (int, float)) and fee_rate > 0
+            else None
+        ),
         "negotiation_fee_payer": clean_text(ad.get("negotiationFeeOwner")),
         "photos_count": len([item for item in ad.get("pictures") or [] if isinstance(item, dict) and item.get("fileUrl")]),
     }

@@ -142,7 +142,11 @@ function PageContent() {
               <li>Il ne fournit ni conseil juridique, ni conseil financier personnalisé.</li>
               <li>
                 Il ne promet aucun gain, aucune décote et ne garantit aucune estimation : une
-                enchère plafond est une hypothèse, pas un résultat.
+                enchère ou une offre plafond est une hypothèse, pas un résultat.
+              </li>
+              <li>
+                Le repère « Pépite » est un repère calculé automatiquement sur des critères publics
+                : ce n’est ni une recommandation d’acheter, ni une garantie de prix ou de résultat.
               </li>
               <li>Il ne remplace ni la lecture des pièces, ni votre avocat.</li>
             </ul>
