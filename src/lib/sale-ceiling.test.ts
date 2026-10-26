@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { buildCeilingHypotheses, type CeilingUserChoices } from "@/lib/bid-ceiling-defaults";
 import { computeCeilingPlan } from "@/lib/bid-ceiling-engine";
@@ -484,5 +485,94 @@ describe("buildCeilingSnapshot : même chaîne que la fiche", () => {
     expect(snapshot.label).toBe("Enchère plafond (simulation)");
     expect(snapshot.regime).toBe("notary_auction");
     expect(snapshot.reserveNotice).toBeNull();
+  });
+});
+
+describe("computeSaleCeiling : loyer de référence de la commune", () => {
+  const reference = {
+    rentPerM2: 22,
+    source: "anil_commune" as const,
+    reliability: "reliable" as const,
+    segment: "apt_all" as const,
+    communeCode: "33063",
+    lowPerM2: null,
+    highPerM2: null,
+    observations: 900,
+    vintage: 2025,
+    sourceUpdatedOn: "2025-12-11",
+  };
+  const item = sale();
+  const market = estimate(220_000, 62);
+  const base = {
+    sale: item,
+    estimate: market,
+    aiProjections: null,
+    aiReviewStatus: "disabled" as const,
+  };
+
+  it("ne change rien sans référence : le loyer départemental reste celui d'avant", () => {
+    const without = computeSaleCeiling(base);
+    const withNull = computeSaleCeiling({ ...base, rentReference: null });
+
+    expect(withNull.plan).toEqual(without.plan);
+    expect(without.hypotheses.rent.source).toBe("estime");
+    expect(without.hypotheses.rent.reference).toMatchObject({ source: "department_estimate" });
+  });
+
+  it("estime le loyer avec la référence de la commune, sans déplacer la taxe foncière par défaut", () => {
+    const actual = computeSaleCeiling({ ...base, rentReference: reference });
+    const without = computeSaleCeiling(base);
+
+    expect(actual.hypotheses.rent.monthly).toBe(62 * 22);
+    expect(actual.hypotheses.rent.reference).toMatchObject({ source: "anil_commune" });
+    expect(actual.hypotheses.carrying.annualPropertyTax).toBe(
+      without.hypotheses.carrying.annualPropertyTax,
+    );
+  });
+
+  it("garde le plafond « habiter » identique avec ou sans loyer ANIL, comme celui de la pépite", () => {
+    // La pépite calcule son plafond sans référence de loyer (`pepite-input.ts`, chaîne `assessed` + estimation,
+    // choix par défaut) ; la fiche reçoit la référence de la commune. Les deux montants doivent être égaux.
+    const assessed = assessSaleCeilingInputs({
+      sale: item,
+      aiProjections: null,
+      aiReviewStatus: "disabled",
+    });
+    const pepiteChain = computeSaleCeiling({ assessed, estimate: market });
+    for (const rentPerM2 of [4, 22, 60]) {
+      const sheet = computeSaleCeiling({
+        assessed,
+        estimate: market,
+        rentReference: { ...reference, rentPerM2 },
+      });
+      expect(sheet.plan.maxBid).toBe(pepiteChain.plan.maxBid);
+      expect(sheet.plan).toEqual(pepiteChain.plan);
+    }
+    // Garde-fou : la chaîne de la pépite ne reçoit pas de référence de loyer.
+    const source = readFileSync(new URL("./pepite-input.ts", import.meta.url), "utf8");
+    expect(source).not.toMatch(/rentReference|rent-reference/);
+  });
+
+  it("donne au rapport enregistré le même plafond qu'à la fiche pour la même référence", () => {
+    // Le projet « louer » plafonne sur le rendement : le loyer de référence y change le plafond.
+    const choices: CeilingUserChoices = { project: "louer" };
+    const fromSheet = computeSaleCeiling({ ...base, choices, rentReference: reference });
+    const fromReport = buildCeilingSnapshot(
+      item,
+      market as never,
+      choices,
+      DEFAULT_OPEN_FEE_REGIMES,
+      reference,
+    );
+    const otherReport = buildCeilingSnapshot(
+      item,
+      market as never,
+      choices,
+      DEFAULT_OPEN_FEE_REGIMES,
+    );
+
+    expect(fromReport.maxBid).toBe(fromSheet.plan.maxBid);
+    // Sans la référence, le loyer (donc le plafond) serait celui du département.
+    expect(otherReport.maxBid).not.toBe(fromReport.maxBid);
   });
 });

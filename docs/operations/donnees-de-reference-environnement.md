@@ -39,7 +39,8 @@ Les quatre tables sont privées : RLS active, aucun droit pour `anon` ni
 
 Workflow manuel **Reference data import** (`.github/workflows/reference-data-import.yml`) :
 
-- `dataset` : `all`, `communes`, `risks` ou `climate` ;
+- `dataset` : `all`, `communes`, `risks`, `climate`, `rents` ou `tension` (les deux derniers sont décrits dans
+  [donnees-de-reference-loyers-et-zonage.md](donnees-de-reference-loyers-et-zonage.md)) ;
 - `dry_run` : télécharge et analyse sans écrire.
 
 Fréquence conseillée : mensuelle (GASPAR est republié chaque semaine,

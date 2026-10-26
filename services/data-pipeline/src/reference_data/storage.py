@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable, Iterator
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -53,6 +53,48 @@ TABLES: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = {
             "catnat_recent",
             "prevention_plans",
             "gaspar_snapshot",
+            "source_url",
+        ),
+    ),
+    "anil_rents": (
+        "commune_code text, segment text, commune_name text, department_code text, epci_code text,"
+        " zone_id integer, rent_per_m2 numeric, rent_low_per_m2 numeric, rent_high_per_m2 numeric,"
+        " prediction_type text, observations_commune integer, observations_mesh integer,"
+        " r2_adj numeric, vintage smallint, source_updated_on date, source_url text",
+        ("commune_code", "segment"),
+        (
+            "commune_name",
+            "department_code",
+            "epci_code",
+            "zone_id",
+            "rent_per_m2",
+            "rent_low_per_m2",
+            "rent_high_per_m2",
+            "prediction_type",
+            "observations_commune",
+            "observations_mesh",
+            "r2_adj",
+            "vintage",
+            "source_updated_on",
+            "source_url",
+        ),
+    ),
+    "commune_housing_tension": (
+        "commune_code text, commune_name text, department_code text, epci_code text, epci_name text,"
+        " zoning_2013 text, zoning_2023 text, zoning_post_decree text, decree_reference text,"
+        " decree_date date, source_updated_on date, source_url text",
+        ("commune_code",),
+        (
+            "commune_name",
+            "department_code",
+            "epci_code",
+            "epci_name",
+            "zoning_2013",
+            "zoning_2023",
+            "zoning_post_decree",
+            "decree_reference",
+            "decree_date",
+            "source_updated_on",
             "source_url",
         ),
     ),
@@ -123,6 +165,51 @@ def upsert_rows(
         connection.commit()
         written += len(batch)
     return written
+
+
+SNAPSHOT_TABLES = frozenset({"anil_rents", "commune_housing_tension"})
+
+
+def database_now(connection: Any) -> datetime:
+    """The database clock: rows written afterwards carry a later ``imported_at``."""
+    with connection.cursor() as cursor:
+        cursor.execute("select now()")
+        row = cursor.fetchone()
+    connection.commit()
+    return row[0]
+
+
+def purge_untouched(connection: Any, table: str, started_at: datetime) -> int:
+    """Delete the rows an import did not write (communes gone from the source)."""
+    if table not in SNAPSHOT_TABLES:
+        raise ValueError(f"{table} is not a snapshot table")
+    with connection.cursor() as cursor:
+        cursor.execute(f"set local statement_timeout = '{STATEMENT_TIMEOUT}'")
+        cursor.execute(f"delete from public.{table} where imported_at < %s", (started_at,))
+        deleted = cursor.rowcount or 0
+    connection.commit()
+    return deleted
+
+
+def vintage_counts(connection: Any, table: str) -> list[tuple[int, int]]:
+    """``(vintage, rows)`` pairs of a table that carries a vintage."""
+    if table != "anil_rents":
+        raise ValueError(f"{table} has no vintage")
+    with connection.cursor() as cursor:
+        cursor.execute("select vintage, count(*) from public.anil_rents group by vintage order by vintage")
+        rows = [(int(vintage), int(count)) for vintage, count in cursor.fetchall()]
+    connection.commit()
+    return rows
+
+
+def row_count(connection: Any, table: str) -> int:
+    if table not in SNAPSHOT_TABLES:
+        raise ValueError(f"{table} is not a snapshot table")
+    with connection.cursor() as cursor:
+        cursor.execute(f"select count(*) from public.{table}")
+        count = int(cursor.fetchone()[0])
+    connection.commit()
+    return count
 
 
 def delete_climate_months_before(connection: Any, first_month: date) -> int:

@@ -2,8 +2,10 @@ name: Reference data import
 
 # Official open data behind the "Risques environnementaux" and "Historique
 # météo" blocks of a listing: communes (geo.api.gouv.fr), GASPAR risks
-# (Géorisques) and Météo-France monthly climatology. Sources refresh at most
-# monthly, so the import stays manual like every other collection workflow.
+# (Géorisques) and Météo-France monthly climatology, plus the ANIL rent map
+# (`rents`, yearly in December) and the rental-tension zoning (`tension`, after a
+# decree). Sources refresh at most monthly, so the import stays manual like every
+# other collection workflow.
 on:
   workflow_dispatch:
     inputs:
@@ -17,6 +19,8 @@ on:
           - communes
           - risks
           - climate
+          - rents
+          - tension
       dry_run:
         description: "Download and parse without writing to Supabase."
         required: false

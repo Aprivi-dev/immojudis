@@ -1,6 +1,9 @@
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { DPE_CLASSES, extractDpe, type DpeClass } from "@/lib/dpe";
-import { estimateGrossYieldPct, geocodeAddress, pricePerM2 } from "@/lib/geo";
+import { estimateSaleGrossYieldPct, geocodeAddress, pricePerM2 } from "@/lib/geo";
+import type { RentLookup } from "@/lib/rent-reference";
+import { RENT_ATTRIBUTION } from "@/lib/rent-source-notice";
+import { createRentLookupSession, rentBasisOf, type RentBasis } from "@/lib/rent-reference.server";
 import { featureIncluded } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
 import { getSales } from "@/lib/queries";
@@ -54,6 +57,10 @@ export type SalesStatisticsResponse = {
     generatedAt: string;
     sourceLimit: number;
     filters: Record<string, string | number | boolean | undefined>;
+    /** Mention de la carte des loyers de l'ANIL, à afficher avec les rendements moyens. */
+    rentAttribution: string;
+    /** Ce que les rendements de l'échantillon utilisent : carte de l'ANIL, repère départemental, ou les deux. */
+    rentBasis: RentBasis;
   };
 };
 
@@ -79,8 +86,12 @@ export async function getSalesStatistics({
     0,
     { client: auth.supabase },
   );
+  // Loyers de la carte ANIL à la commune : sur l'échantillon quand le filtre « rendement minimal » doit
+  // trier avant le calcul, sinon sur les seules ventes retenues.
+  const rentSession = createRentLookupSession();
+  const sourceRents = search.minYield != null ? await rentSession.load(sourceSales) : undefined;
   const filteredSales = sortClientSearchResults(
-    applyClientSearchFilters(sourceSales, search, center),
+    applyClientSearchFilters(sourceSales, search, center, { rents: sourceRents }),
     search,
     center,
   );
@@ -88,6 +99,7 @@ export async function getSalesStatistics({
     sales: filteredSales,
     capped: sourceSales.length >= SALES_STATISTICS_SOURCE_LIMIT,
     search,
+    rents: await rentSession.load(filteredSales),
   });
 
   await recordFeatureUsageEvent({
@@ -109,14 +121,17 @@ export function buildSalesStatisticsResponse({
   capped,
   search,
   now = new Date(),
+  rents,
 }: {
   sales: AuctionSale[];
   capped: boolean;
   search: SalesSearchParams;
   now?: Date;
+  /** Références de loyer (carte ANIL à la commune) ; absentes, le loyer départemental sert de repli. */
+  rents?: RentLookup;
 }): SalesStatisticsResponse {
   return {
-    summary: buildSalesStatisticsSummary(sales, capped, now),
+    summary: buildSalesStatisticsSummary(sales, capped, now, rents),
     segments: {
       propertyTypes: buildSegments(sales, (sale) => sale.property_type, "Non renseigné"),
       departments: buildSegments(sales, (sale) => sale.department, "Non renseigné"),
@@ -126,6 +141,9 @@ export function buildSalesStatisticsResponse({
       generatedAt: now.toISOString(),
       sourceLimit: SALES_STATISTICS_SOURCE_LIMIT,
       filters: salesSearchToUrlRecord(search),
+      // Mention obligatoire de la carte des loyers derrière les rendements moyens (voir `RentSourceNotice`).
+      rentAttribution: RENT_ATTRIBUTION,
+      rentBasis: rentBasisOf(sales, rents),
     },
   };
 }
@@ -134,6 +152,7 @@ export function buildSalesStatisticsSummary(
   sales: AuctionSale[],
   capped = false,
   now = new Date(),
+  rents?: RentLookup,
 ): SalesStatisticsSummary {
   const prices = sales.map((sale) => sale.starting_price_eur).filter(isPositiveNumber);
   const pricePerM2Values = sales
@@ -141,9 +160,7 @@ export function buildSalesStatisticsSummary(
     .filter(isPositiveNumber);
   const scores = sales.map((sale) => sale.investment_score).filter(isFiniteNumber);
   const yields = sales
-    .map((sale) =>
-      estimateGrossYieldPct(sale.starting_price_eur, getSaleSurface(sale).value, sale.department),
-    )
+    .map((sale) => estimateSaleGrossYieldPct(sale, getSaleSurface(sale).value, rents?.(sale)))
     .filter(isPositiveNumber);
   const dpeCounts = emptyDpeCounts();
   let dpeKnownCount = 0;

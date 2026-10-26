@@ -332,7 +332,7 @@ function Verdict({
           </>
         )}
         {limitedByRent
-          ? ` Ici, c’est le loyer qui limite le plafond (rendement net visé ${targetYieldPct(hypotheses)} %).`
+          ? ` Ici, c’est le loyer qui limite le plafond (${hypotheses.rent.chargesIncluded ? `rendement brut visé ${targetYieldPct(hypotheses)} %, charges comprises` : `rendement net visé ${targetYieldPct(hypotheses)} %`}).`
           : ""}
       </p>
       {plan.rentMissing ? (
@@ -611,7 +611,7 @@ function BidSimulator({ hypotheses, plan }: { hypotheses: CeilingHypotheses; pla
           ? `Vous restez ${formatPrice(evaluation.headroom)} sous votre coût total maximal.`
           : `Vous dépassez votre coût total maximal de ${formatPrice(-evaluation.headroom)}.`}
         {evaluation.netYieldPct != null
-          ? ` Rendement net estimé : ${evaluation.netYieldPct.toLocaleString("fr-FR")} %.`
+          ? ` ${hypotheses.rent.chargesIncluded ? "Rendement brut estimé, charges comprises" : "Rendement net estimé"} : ${evaluation.netYieldPct.toLocaleString("fr-FR")} %.`
           : ""}
         {evaluation.resaleProfit != null
           ? ` Bénéfice avant impôt à la revente : ${formatPrice(evaluation.resaleProfit)}.`

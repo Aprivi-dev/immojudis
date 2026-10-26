@@ -21,6 +21,20 @@ function renderDrawer(overrides: Partial<Parameters<typeof MobileFilterDrawer>[0
   );
 }
 
+describe("filtre « rendement minimal »", () => {
+  it("dit que le filtre suit un repère départemental, sans mention de l'ANIL à côté", () => {
+    renderDrawer();
+
+    const note = screen.getByText(/Ce filtre s’appuie sur un repère de loyer départemental/);
+    expect(note.textContent).toBe(
+      "Ce filtre s’appuie sur un repère de loyer départemental ; les alertes, exports et statistiques utilisent la carte des loyers de l’ANIL (par commune).",
+    );
+    // La mention de la Licence Ouverte n'apparaît qu'à côté de ce qui vient réellement de l'ANIL.
+    expect(document.querySelector("[data-rent-source-notice]")).toBeNull();
+    expect(screen.queryByText(/Estimations ANIL/)).toBeNull();
+  });
+});
+
 describe("filtres « sous la fourchette » et « sans point à vérifier »", () => {
   it("propose les deux cases, avec ce que chaque filtre couvre", () => {
     renderDrawer();

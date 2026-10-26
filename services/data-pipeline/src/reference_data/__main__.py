@@ -1,22 +1,29 @@
-"""``python -m src.reference_data {communes,risks,climate,all} [--dry-run]``."""
+"""``python -m src.reference_data {communes,risks,climate,rents,tension,all} [--dry-run]``."""
 
 from __future__ import annotations
 
 import argparse
+import re
 import tempfile
 from datetime import date
 from pathlib import Path
 
 from src.config import load_settings
-from src.reference_data import climate, communes, gaspar, storage
-from src.reference_data.download import download
+from src.reference_data import climate, communes, gaspar, rents, storage, tension
+from src.reference_data.download import download, fetch_json
 from src.storage.supabase_client import connect
 
-DATASETS = ("communes", "risks", "climate")
+DATASETS = ("communes", "risks", "climate", "rents", "tension")
+# Refuse to write a source that looks truncated (France has about 34 900 communes, ANIL lines
+# included; the zoning lists 34 875 communes).
+MIN_RENT_COMMUNES = 34_000
+MIN_TENSION_COMMUNES = 34_000
+# Lines the parser may reject (broken values) before the file is considered unreliable.
+MAX_REJECTED_SHARE = 0.005
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Importe les données de référence (communes, risques, climat).")
+    parser = argparse.ArgumentParser(description="Importe les données de référence (communes, risques, climat, loyers, zonage tendu).")
     parser.add_argument("dataset", choices=(*DATASETS, "all"))
     parser.add_argument("--dry-run", action="store_true", help="Télécharge et analyse sans écrire en base.")
     parser.add_argument("--work-dir", type=Path, default=None)
@@ -88,10 +95,109 @@ def _import_climate(work_dir: Path, connection) -> dict[str, object]:  # type: i
     }
 
 
+_WEB_EDITION = re.compile(
+    r"ANIL_CURRENT_EDITION\s*=\s*\{\s*vintage:\s*(\d{4}),\s*sourceUpdatedOn:\s*\"(\d{4}-\d{2}-\d{2})\"",
+)
+WEB_EDITION_FILE = Path(__file__).resolve().parents[4] / "src" / "lib" / "rent-source-notice.ts"
+
+
+def web_edition_gap(vintage: int, updated_on: date | None, path: Path = WEB_EDITION_FILE) -> str | None:
+    """Tell when the edition shown by the web app differs from the one just read.
+
+    The mentions that do not depend on a sale (yield filter help, alert emails) quote
+    ``ANIL_CURRENT_EDITION`` in ``src/lib/rent-source-notice.ts``: it must follow every import.
+    ``None`` when they agree, or when the file is not there (a checkout without the web app).
+    """
+    try:
+        match = _WEB_EDITION.search(path.read_text(encoding="utf-8"))
+    except OSError:
+        return None
+    if match is None:
+        return "ANIL_CURRENT_EDITION not found in the web app"
+    web_vintage, web_updated = int(match.group(1)), match.group(2)
+    if web_vintage == vintage and web_updated == (updated_on.isoformat() if updated_on else None):
+        return None
+    return (
+        f"ANIL_CURRENT_EDITION says {web_vintage} / {web_updated} but the import reads "
+        f"{vintage} / {updated_on}: update src/lib/rent-source-notice.ts"
+    )
+
+
+def _import_rents(work_dir: Path, connection) -> dict[str, object]:  # type: ignore[no-untyped-def]
+    dataset = fetch_json(rents.ANIL_DATASET_API_URL)
+    resources = rents.select_resources(dataset)
+    vintage = rents.dataset_vintage(dataset)
+    all_rows: list[dict[str, object]] = []
+    summary: dict[str, object] = {"vintage": vintage}
+    for segment, resource in resources.items():
+        target = download(resource.url, work_dir / "rents" / f"{segment}.csv")
+        rows, stats = rents.parse_rent_file(target, segment, resource.url, vintage, resource.updated_on)
+        target.unlink(missing_ok=True)
+        if len(rows) < MIN_RENT_COMMUNES:
+            raise RuntimeError(f"Only {len(rows)} ANIL communes parsed for {segment}; refusing a partial import.")
+        if stats.rejected > stats.lines * MAX_REJECTED_SHARE:
+            raise RuntimeError(f"{stats.rejected} of {stats.lines} ANIL lines rejected for {segment}; refusing the import.")
+        summary[segment] = len(rows)
+        if segment == "apt_all":
+            summary["arrondissements"] = rents.arrondissement_count(rows)
+            summary["updated_on"] = resource.updated_on
+        all_rows.extend(rows)
+    gap = web_edition_gap(vintage, summary.get("updated_on"))  # type: ignore[arg-type]
+    if gap:
+        summary["web_edition_gap"] = gap
+    # Everything is parsed and checked before the first write: a bad file never leaves a mix of vintages.
+    if connection is None:
+        summary["written"] = 0
+        return summary
+    started_at = storage.database_now(connection)
+    summary["written"] = storage.upsert_rows(connection, "anil_rents", all_rows)
+    summary["purged"] = storage.purge_untouched(connection, "anil_rents", started_at)
+    found = storage.vintage_counts(connection, "anil_rents")
+    if found != [(vintage, len(all_rows))]:
+        raise RuntimeError(
+            f"anil_rents holds {found} (vintage, rows) after the import; expected [({vintage}, {len(all_rows)})]. "
+            "A mix of vintages or a wrong row count: nothing may read the table until this is understood."
+        )
+    return summary
+
+
+def _import_tension(work_dir: Path, connection) -> dict[str, object]:  # type: ignore[no-untyped-def]
+    resource = tension.select_resource(fetch_json(tension.TENSION_DATASET_API_URL))
+    target = download(resource.url, work_dir / "tension" / "zonage-tlv.csv")
+    rows, stats = tension.parse_tension_file(target, resource.url, resource.decree_reference, resource.updated_on)
+    target.unlink(missing_ok=True)
+    if len(rows) < MIN_TENSION_COMMUNES:
+        raise RuntimeError(f"Only {len(rows)} communes parsed from the TLV zoning; refusing a partial import.")
+    if stats.rejected > stats.lines * MAX_REJECTED_SHARE:
+        raise RuntimeError(f"{stats.rejected} of {stats.lines} TLV lines rejected; refusing the import.")
+    written = purged = 0
+    if connection is not None:
+        started_at = storage.database_now(connection)
+        written = storage.upsert_rows(connection, "commune_housing_tension", rows)
+        purged = storage.purge_untouched(connection, "commune_housing_tension", started_at)
+        count = storage.row_count(connection, "commune_housing_tension")
+        if count != len(rows):
+            raise RuntimeError(
+                f"commune_housing_tension holds {count} rows after the import; expected {len(rows)}."
+            )
+    tight = sum(1 for row in rows if row["zoning_post_decree"] != "non_tendue")
+    return {
+        "communes": len(rows),
+        "tight_or_touristic": tight,
+        "epci_columns_swapped": stats.epci_columns_swapped,
+        "decree": resource.decree_reference,
+        "updated_on": resource.updated_on,
+        "written": written,
+        "purged": purged,
+    }
+
+
 _IMPORTERS = {
     "communes": _import_communes,
     "risks": _import_risks,
     "climate": _import_climate,
+    "rents": _import_rents,
+    "tension": _import_tension,
 }
 
 

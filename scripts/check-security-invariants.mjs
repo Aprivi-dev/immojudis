@@ -1513,6 +1513,31 @@ function functionSignature(schema, name, argumentText) {
   }
 }
 
+// Cartes de référence privées (loyers de l'ANIL, zonage tendu) : seul le module serveur de lecture
+// (`rent-reference.server.ts`) nomme les tables, avec les types générés ; les tests ne comptent pas.
+{
+  const referenceTables = /\b(?:anil_rents|commune_housing_tension)\b/;
+  const allowed = new Set([
+    "src/lib/rent-reference.server.ts",
+    "src/integrations/supabase/types.ts",
+  ]);
+  const stripComments = (text) =>
+    text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`])\/\/[^\n]*/g, "$1");
+  const entries = await readdir(new URL("../src/", import.meta.url), { recursive: true });
+  for (const entry of entries) {
+    const name = String(entry);
+    if (!/\.(?:ts|tsx|mjs|cjs)$/.test(name) || /\.test\.[cm]?[jt]sx?$/.test(name)) continue;
+    const relativePath = `src/${name}`;
+    if (allowed.has(relativePath)) continue;
+    const source = await readFile(new URL(`../${relativePath}`, import.meta.url), "utf8");
+    if (referenceTables.test(stripComments(source))) {
+      failures.push(
+        `${relativePath} names a private reference table (anil_rents, commune_housing_tension): only rent-reference.server.ts may`,
+      );
+    }
+  }
+}
+
 if (failures.length) {
   console.error(JSON.stringify({ ok: false, failures }, null, 2));
   process.exit(1);
@@ -1555,6 +1580,7 @@ console.log(
       "sale-photos-bucket-table-and-purge",
       "launch-offer-switch-and-access-functions",
       "invoker-functions-callees-granted-to-service-role",
+      "private-reference-tables-only-in-server-module",
     ],
   }),
 );

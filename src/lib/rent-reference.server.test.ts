@@ -1,0 +1,465 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+type Call = { table: string; filters: Array<[string, unknown]>; select: string };
+
+const state = vi.hoisted(() => ({
+  calls: [] as Array<{ table: string; filters: Array<[string, unknown]>; select: string }>,
+  anilRows: [] as Array<Record<string, unknown>>,
+  saleRows: [] as Array<Record<string, unknown>>,
+  singleRow: null as Record<string, unknown> | null,
+  failTable: null as string | null,
+  configured: true,
+  /** Lectures en cours en même temps (preuve du parallélisme des lots). */
+  running: 0,
+  maxRunning: 0,
+}));
+
+vi.mock("server-only", () => ({}));
+vi.mock("@/lib/env", () => ({
+  serverEnv: () => ({
+    supabase: state.configured
+      ? { adminUrl: "https://db.test", serviceRoleKey: "service" }
+      : { adminUrl: null, serviceRoleKey: null },
+  }),
+}));
+vi.mock("@/integrations/supabase/client.server", () => ({
+  supabaseAdmin: {
+    from: (table: string) => {
+      const call: Call = { table, filters: [], select: "" };
+      state.calls.push(call);
+      const result = () => {
+        if (state.failTable === table) return { data: null, error: new Error("boom") };
+        if (table === "anil_rents") {
+          // Comme PostgREST : seulement les lignes des communes et des segments demandés.
+          const codes = (call.filters.find(([column]) => column === "commune_code")?.[1] ??
+            []) as string[];
+          const segments = (call.filters.find(([column]) => column === "segment")?.[1] ??
+            []) as string[];
+          return {
+            data: state.anilRows.filter(
+              (row) =>
+                codes.includes(String(row.commune_code)) && segments.includes(String(row.segment)),
+            ),
+            error: null,
+          };
+        }
+        return { data: state.saleRows, error: null };
+      };
+      const query: Record<string, unknown> = {
+        select: (columns: string) => {
+          call.select = columns;
+          return query;
+        },
+        in: (column: string, values: unknown) => {
+          call.filters.push([column, values]);
+          return query;
+        },
+        eq: (column: string, value: unknown) => {
+          call.filters.push([column, value]);
+          return query;
+        },
+        maybeSingle: async () =>
+          state.failTable === table
+            ? { data: null, error: new Error("boom") }
+            : { data: state.singleRow, error: null },
+        then: (resolve: (value: unknown) => unknown) => {
+          state.running += 1;
+          state.maxRunning = Math.max(state.maxRunning, state.running);
+          return new Promise((done) => setTimeout(done, 1))
+            .then(() => {
+              state.running -= 1;
+              return result();
+            })
+            .then(resolve);
+        },
+      };
+      return query;
+    },
+  },
+}));
+
+import {
+  createRentLookupSession,
+  loadRentLookup,
+  loadSaleRentReference,
+  rentBasisOf,
+  resetRentReferenceCachesForTests,
+} from "./rent-reference.server";
+
+const anil = (code: string, segment: string, overrides: Record<string, unknown> = {}) => ({
+  commune_code: code,
+  segment,
+  rent_per_m2: 16,
+  rent_low_per_m2: 12,
+  rent_high_per_m2: 20,
+  prediction_type: "commune",
+  observations_commune: 500,
+  r2_adj: 0.8,
+  vintage: 2025,
+  source_updated_on: "2025-12-11",
+  ...overrides,
+});
+
+const withGeocode = (id: string, code: string, extra: Record<string, unknown> = {}) => ({
+  id,
+  department: "33",
+  property_type: "apartment",
+  rooms_count: 2,
+  raw_payload: { geocode: { accepted: true, citycode: code } },
+  ...extra,
+});
+
+const salesTableCalls = () => state.calls.filter((call) => call.table === "auction_sales");
+const anilCalls = () => state.calls.filter((call) => call.table === "anil_rents");
+
+beforeEach(() => {
+  state.calls = [];
+  state.anilRows = [];
+  state.saleRows = [];
+  state.singleRow = null;
+  state.failTable = null;
+  state.configured = true;
+  state.running = 0;
+  state.maxRunning = 0;
+  resetRentReferenceCachesForTests();
+  vi.spyOn(console, "error").mockImplementation(() => undefined);
+});
+
+describe("loadRentLookup", () => {
+  it("reads the segment of the commune that the payload names, with the ANIL row's own metadata", async () => {
+    state.anilRows = [anil("33063", "apt_1_2", { observations_commune: 12 })];
+
+    const lookup = await loadRentLookup([withGeocode("sale-a", "33063")]);
+
+    expect(lookup({ id: "sale-a" })).toMatchObject({
+      source: "anil_commune",
+      rentPerM2: 16,
+      segment: "apt_1_2",
+      communeCode: "33063",
+      reliability: "indicative", // 12 observations
+      vintage: 2025,
+      sourceUpdatedOn: "2025-12-11",
+    });
+    // The code was in memory: no read of the sales table. The T1-T2 row and the "all apartments" fallback
+    // row are read together.
+    expect(salesTableCalls()).toEqual([]);
+    expect(anilCalls()[0].filters).toEqual([
+      ["commune_code", ["33063"]],
+      ["segment", ["apt_1_2", "apt_all"]],
+    ]);
+  });
+
+  it("falls back to the department rent when the commune has no ANIL row", async () => {
+    const lookup = await loadRentLookup([withGeocode("sale-a", "33063")]);
+
+    expect(lookup({ id: "sale-a" })).toMatchObject({
+      source: "department_estimate",
+      rentPerM2: 14,
+    });
+  });
+
+  it("falls back from a missing apartment segment to all apartments of the same commune, never to houses", async () => {
+    state.anilRows = [
+      anil("33063", "apt_all", { rent_per_m2: 15 }),
+      anil("33063", "house", { rent_per_m2: 9 }),
+    ];
+
+    const lookup = await loadRentLookup([
+      withGeocode("t3", "33063", { rooms_count: 4 }),
+      withGeocode("t2", "33063", { rooms_count: 1 }),
+      withGeocode("maison", "33063", { property_type: "house", rooms_count: 5 }),
+    ]);
+
+    expect(lookup({ id: "t3" })).toMatchObject({ segment: "apt_all", rentPerM2: 15 });
+    expect(lookup({ id: "t2" })).toMatchObject({ segment: "apt_all", rentPerM2: 15 });
+    expect(lookup({ id: "maison" })).toMatchObject({ segment: "house", rentPerM2: 9 });
+
+    // A house without a house row is not given an apartment rent: the department rent applies.
+    state.anilRows = [anil("33063", "apt_all", { rent_per_m2: 15 })];
+    resetRentReferenceCachesForTests();
+    const noHouse = await loadRentLookup([
+      withGeocode("maison", "33063", { property_type: "house", rooms_count: 5 }),
+    ]);
+    expect(noHouse({ id: "maison" })?.source).toBe("department_estimate");
+  });
+
+  it("prefers the exact segment over the fallback when both exist", async () => {
+    state.anilRows = [
+      anil("33063", "apt_3p", { rent_per_m2: 12 }),
+      anil("33063", "apt_all", { rent_per_m2: 15 }),
+    ];
+
+    const lookup = await loadRentLookup([withGeocode("t3", "33063", { rooms_count: 3 })]);
+
+    expect(lookup({ id: "t3" })).toMatchObject({ segment: "apt_3p", rentPerM2: 12 });
+  });
+
+  it("gives no reference at all to a property that is not a dwelling, and reads nothing for it", async () => {
+    const lookup = await loadRentLookup([
+      withGeocode("terrain", "33063", { property_type: "land" }),
+      withGeocode("parking", "33063", { property_type: "parking" }),
+      withGeocode("immeuble", "33063", { property_type: "building" }),
+    ]);
+
+    for (const id of ["terrain", "parking", "immeuble"]) expect(lookup({ id })).toBeNull();
+    expect(state.calls).toEqual([]);
+  });
+
+  it("reads only the commune fields of the sales loaded without their payload, never the whole object", async () => {
+    state.saleRows = [
+      { id: "sale-b", postal_code: "69003", citycode: "69123", accepted: "true", commune: null },
+    ];
+    state.anilRows = [anil("69383", "house")];
+
+    const lookup = await loadRentLookup([
+      { id: "SALE-B", department: "69", property_type: "house", rooms_count: 5 },
+    ]);
+
+    // Lyon is read as an arrondissement, deduced from the postal code of the sale.
+    expect(lookup({ id: "sale-b" })?.communeCode).toBe("69383");
+    const select = salesTableCalls()[0].select;
+    expect(select).toBe(
+      "id,postal_code,citycode:raw_payload->geocode->>citycode,accepted:raw_payload->geocode->>accepted,commune:raw_payload->commune",
+    );
+    expect(select).not.toMatch(/raw_payload(,|$)/);
+
+    // The code is cached: a second call does not read the sales table again.
+    state.calls = [];
+    await loadRentLookup([{ id: "sale-b", department: "69", property_type: "house" }]);
+    expect(salesTableCalls()).toEqual([]);
+  });
+
+  it("uses the arrondissement that the commune lot writes, before the geocode", async () => {
+    state.anilRows = [anil("75108", "apt_all")];
+
+    const lookup = await loadRentLookup([
+      {
+        id: "paris",
+        department: "75",
+        property_type: "apartment",
+        postal_code: "75008",
+        raw_payload: {
+          commune: { insee: "75056", arrondissement_insee: "75108" },
+          geocode: { accepted: true, citycode: "75056" },
+        },
+      },
+    ]);
+
+    expect(lookup({ id: "paris" })?.communeCode).toBe("75108");
+  });
+
+  it("serves the department rent to a sale whose geocode is rejected or missing", async () => {
+    state.saleRows = [
+      { id: "sale-c", postal_code: null, citycode: "33063", accepted: "false", commune: null },
+    ];
+
+    const lookup = await loadRentLookup([
+      { id: "sale-c", department: "33", property_type: "apartment", rooms_count: 3 },
+    ]);
+
+    expect(lookup({ id: "sale-c" })?.source).toBe("department_estimate");
+    expect(anilCalls()).toEqual([]);
+  });
+
+  it("never throws: an unreadable table leaves every sale on the caller's department fallback", async () => {
+    state.failTable = "anil_rents";
+
+    const lookup = await loadRentLookup([withGeocode("sale-a", "33063")]);
+
+    expect(lookup({ id: "sale-a" })).toBeNull();
+  });
+
+  it("does not remember a failure: the next call tries again", async () => {
+    state.failTable = "anil_rents";
+    const session = createRentLookupSession();
+    await session.load([withGeocode("sale-a", "33063")]);
+    state.failTable = null;
+    state.anilRows = [anil("33063", "apt_1_2")];
+
+    const lookup = await session.load([withGeocode("sale-a", "33063")]);
+
+    expect(lookup({ id: "sale-a" })?.source).toBe("anil_commune");
+  });
+
+  it("reads nothing when the service role is not configured or there is no sale", async () => {
+    state.configured = false;
+    const unconfigured = await loadRentLookup([withGeocode("sale-a", "33063")]);
+    expect(unconfigured({ id: "sale-a" })).toBeNull();
+    state.configured = true;
+    await loadRentLookup([]);
+    expect(state.calls).toEqual([]);
+  });
+
+  it("asks for each commune once, however many sales share it", async () => {
+    state.anilRows = [anil("33063", "apt_all")];
+
+    await loadRentLookup([
+      withGeocode("a", "33063", { rooms_count: null }),
+      withGeocode("b", "33063", { rooms_count: null }),
+    ]);
+
+    expect(anilCalls()).toHaveLength(1);
+    expect(anilCalls()[0].filters[0]).toEqual(["commune_code", ["33063"]]);
+  });
+
+  it("keeps the ANIL rows for six hours, including the absence of a row", async () => {
+    state.anilRows = [anil("33063", "apt_all")];
+    await loadRentLookup([withGeocode("a", "33063", { rooms_count: null })]);
+    await loadRentLookup([
+      withGeocode("b", "33063", { rooms_count: null }),
+      withGeocode("c", "17300", { rooms_count: null }),
+    ]);
+    // 17300 had no row: asked once, then remembered as absent.
+    await loadRentLookup([withGeocode("d", "17300", { rooms_count: null })]);
+
+    expect(anilCalls().map((call) => call.filters[0])).toEqual([
+      ["commune_code", ["33063"]],
+      ["commune_code", ["17300"]],
+    ]);
+
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.now() + 6 * 3_600_000 + 1_000);
+    try {
+      await loadRentLookup([withGeocode("e", "33063", { rooms_count: null })]);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(anilCalls()).toHaveLength(3);
+  });
+
+  it("reads the batches in parallel", async () => {
+    const sales = Array.from({ length: 450 }, (_, index) =>
+      withGeocode(`sale-${index}`, `${10000 + index}`, { rooms_count: null }),
+    );
+
+    await loadRentLookup(sales);
+
+    // 450 communes = 3 batches of 150, read together.
+    expect(anilCalls()).toHaveLength(3);
+    expect(state.maxRunning).toBeGreaterThan(1);
+  });
+});
+
+describe("rent lookup session", () => {
+  it("loads each sale once, even when two callers ask at the same time", async () => {
+    state.anilRows = [anil("33063", "apt_all")];
+    const session = createRentLookupSession();
+    const sale = withGeocode("sale-a", "33063", { rooms_count: null });
+
+    const [first, second] = await Promise.all([session.load([sale]), session.load([sale])]);
+    await session.load([sale]);
+
+    expect(anilCalls()).toHaveLength(1);
+    expect(first({ id: "sale-a" })).toEqual(second({ id: "sale-a" }));
+  });
+
+  it("covers the sales loaded earlier in the session with the same lookup", async () => {
+    state.anilRows = [anil("33063", "apt_all"), anil("69383", "apt_all")];
+    const session = createRentLookupSession();
+    await session.load([withGeocode("a", "33063", { rooms_count: null })]);
+
+    const lookup = await session.load([withGeocode("b", "69383", { rooms_count: null })]);
+
+    expect(lookup({ id: "a" })?.communeCode).toBe("33063");
+    expect(lookup({ id: "b" })?.communeCode).toBe("69383");
+  });
+});
+
+describe("loadSaleRentReference", () => {
+  it("resolves the reference of the sale it is given, reading only the commune code", async () => {
+    state.saleRows = [
+      { id: "sale-a", postal_code: "33000", citycode: "33063", accepted: "true", commune: null },
+    ];
+    state.anilRows = [anil("33063", "apt_3p")];
+
+    await expect(
+      loadSaleRentReference({
+        id: "sale-a",
+        department: "33",
+        property_type: "apartment",
+        rooms_count: 4,
+      }),
+    ).resolves.toMatchObject({ source: "anil_commune", segment: "apt_3p" });
+    // The facts came from the sale: the row is not read for them (only the commune code is).
+    expect(salesTableCalls()).toHaveLength(1);
+    expect(salesTableCalls()[0].select).toContain("citycode:raw_payload->geocode->>citycode");
+  });
+
+  it("does not read the sale again for the report that follows the page", async () => {
+    state.saleRows = [
+      { id: "sale-a", postal_code: "33000", citycode: "33063", accepted: "true", commune: null },
+    ];
+    state.anilRows = [anil("33063", "apt_3p")];
+    const sale = { id: "sale-a", department: "33", property_type: "apartment", rooms_count: 4 };
+
+    const page = await loadSaleRentReference(sale);
+    state.calls = [];
+    const report = await loadSaleRentReference(sale);
+
+    expect(report).toEqual(page);
+    expect(salesTableCalls()).toEqual([]);
+  });
+
+  it("reads the facts of an identifier given alone", async () => {
+    state.singleRow = {
+      id: "sale-a",
+      department: "33",
+      property_type: "apartment",
+      rooms_count: 4,
+      postal_code: "33000",
+    };
+    state.saleRows = [
+      { id: "sale-a", postal_code: "33000", citycode: "33063", accepted: "true", commune: null },
+    ];
+    state.anilRows = [anil("33063", "apt_3p")];
+
+    await expect(loadSaleRentReference("sale-a")).resolves.toMatchObject({ segment: "apt_3p" });
+  });
+
+  it("returns null for an unknown sale, an unreadable base or a missing configuration", async () => {
+    await expect(loadSaleRentReference("missing")).resolves.toBeNull();
+    state.failTable = "auction_sales";
+    await expect(loadSaleRentReference("sale-a")).resolves.toBeNull();
+    state.configured = false;
+    await expect(loadSaleRentReference("sale-a")).resolves.toBeNull();
+  });
+});
+
+describe("rentBasisOf", () => {
+  const reference = (source: string) => ({ rentPerM2: 12, source, reliability: "reliable" });
+  const sale = (id: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    department: "33",
+    property_type: "apartment",
+    ...extra,
+  });
+  const lookupOf = (table: Record<string, unknown>) => (item: { id: string }) =>
+    (table[item.id] ?? null) as never;
+
+  it("says whether the yields come from the ANIL, the department table, or both", () => {
+    const rents = lookupOf({ a: reference("anil_commune"), b: reference("anil_epci") });
+    expect(rentBasisOf([sale("a"), sale("b")], rents)).toBe("anil");
+
+    const mixed = lookupOf({ a: reference("anil_commune"), b: reference("department_estimate") });
+    expect(rentBasisOf([sale("a"), sale("b")], mixed)).toBe("mixed");
+    // A sale with no reference in the lookup still has the department rent when its department has one.
+    expect(rentBasisOf([sale("a"), sale("c")], lookupOf({ a: reference("anil_commune") }))).toBe(
+      "mixed",
+    );
+
+    expect(rentBasisOf([sale("a")], undefined)).toBe("department");
+    expect(rentBasisOf([], undefined)).toBe("department");
+  });
+
+  it("does not count a property without a rent reference", () => {
+    const rents = lookupOf({ a: reference("anil_commune") });
+    const sales = [
+      sale("a"),
+      sale("land", { property_type: "land" }),
+      // Department 23 has no department rent: no yield, so no vote.
+      sale("creuse", { department: "23" }),
+    ];
+
+    expect(rentBasisOf(sales, rents)).toBe("anil");
+  });
+});
