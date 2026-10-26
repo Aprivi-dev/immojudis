@@ -153,6 +153,9 @@ describe("plafonds journaliers de l'export CSV et du flux API", () => {
     const result = await exportSalesApiFeed({ auth, search, request });
     expect(result.meta.rowCount).toBe(40);
     expect(result.meta.limit).toBe(40);
+    // Sans loyer ANIL lu (base de service non configurée ici), les rendements sont départementaux.
+    expect(result.meta.rentBasis).toBe("department");
+    expect(result.meta.rentAttribution).toContain("Estimations ANIL");
 
     alreadyExported(SALES_API_FEED_DAILY_ROWS);
     await expect(exportSalesApiFeed({ auth, search, request })).rejects.toBeInstanceOf(

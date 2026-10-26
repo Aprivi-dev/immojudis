@@ -59,6 +59,7 @@ import { maxWorksAtBid } from "@/lib/bid-ceiling-engine";
 import { ceilingTermsFor, feeRegimeKeysForVenue, type FeeRegimeKey } from "@/lib/fee-regime";
 import { estimatedFeeItems } from "@/lib/bid-ceiling-engine";
 import { assessSaleCeilingInputs, computeSaleCeiling } from "@/lib/sale-ceiling";
+import type { RentReference } from "@/lib/rent-reference";
 import type { CeilingUserChoices } from "@/lib/bid-ceiling-defaults";
 import { ceilingGap, valueGapReason } from "@/lib/bid-ceiling-gaps";
 import { buildDpeAnalysis } from "@/lib/dpe-analysis";
@@ -84,7 +85,7 @@ import {
 } from "@/lib/ai-review-guard";
 import type { AuctionSale } from "@/lib/types";
 import { userMessage } from "@/lib/user-messages";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 import {
   isTabAnchor,
   knownTabForAnchor,
@@ -185,6 +186,8 @@ type SaleDetailProps = {
    * `parseOpenFeeRegimes`). Absent: every regime whose rules are defined (the tribunal is always open).
    */
   openFeeRegimes?: readonly FeeRegimeKey[];
+  /** Référence de loyer de la vente (carte ANIL à la commune), résolue par le serveur ; `null` : repli départemental. */
+  rentReference?: RentReference | null;
   aiReviewProjections?: readonly AiReviewProjectionReadModel[] | null;
   /** Where the account stands this month; drives the « Débloquer cette vente » panel. */
   unlockStatus?: SaleUnlockStatus | null;
@@ -202,6 +205,7 @@ export function AnalysisSaleDetailView({
   defaultCeilingChoices,
   adjudicationStatisticsEnabled = false,
   openFeeRegimes,
+  rentReference = null,
   aiReviewProjections = null,
 }: SaleDetailProps) {
   return (
@@ -215,6 +219,7 @@ export function AnalysisSaleDetailView({
       defaultCeilingChoices={defaultCeilingChoices}
       adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
       openFeeRegimes={openFeeRegimes}
+      rentReference={rentReference}
       aiReviewProjections={aiReviewProjections}
       access="analysis"
     />
@@ -226,6 +231,7 @@ export function FreeSaleDetailView({
   returnTo = "/sales",
   adjudicationStatisticsEnabled = false,
   openFeeRegimes,
+  rentReference = null,
   aiReviewProjections = null,
   unlockStatus = null,
   justUnlocked = false,
@@ -238,6 +244,7 @@ export function FreeSaleDetailView({
       returnTo={returnTo}
       adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
       openFeeRegimes={openFeeRegimes}
+      rentReference={rentReference}
       aiReviewProjections={aiReviewProjections}
       unlockStatus={unlockStatus}
       justUnlocked={justUnlocked}
@@ -253,6 +260,7 @@ export function UnlockedSaleDetailView({
   returnTo = "/sales",
   adjudicationStatisticsEnabled = false,
   openFeeRegimes,
+  rentReference = null,
   aiReviewProjections = null,
   unlockStatus = null,
   justUnlocked = false,
@@ -264,6 +272,7 @@ export function UnlockedSaleDetailView({
       returnTo={returnTo}
       adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
       openFeeRegimes={openFeeRegimes}
+      rentReference={rentReference}
       aiReviewProjections={aiReviewProjections}
       unlockStatus={unlockStatus}
       justUnlocked={justUnlocked}
@@ -286,6 +295,7 @@ function SaleDetailWorkspace({
   defaultCeilingChoices,
   adjudicationStatisticsEnabled = false,
   openFeeRegimes,
+  rentReference = null,
   aiReviewProjections = null,
   unlockStatus = null,
   justUnlocked = false,
@@ -436,13 +446,22 @@ function SaleDetailWorkspace({
         assessed: ceilingInputs,
         estimate: marketEstimate,
         fullData,
+        rentReference,
         choices: {
           ...ceilingChoices.choices,
           works:
             ceilingChoices.choices.works ?? worksChoiceForAmount(surface, personalWorksBudget ?? 0),
         },
       }),
-    [ceilingChoices.choices, ceilingInputs, fullData, marketEstimate, personalWorksBudget, surface],
+    [
+      ceilingChoices.choices,
+      ceilingInputs,
+      fullData,
+      marketEstimate,
+      personalWorksBudget,
+      rentReference,
+      surface,
+    ],
   );
   const { enabled: ceilingEnabled, hypotheses: ceilingHypotheses, plan: ceilingPlan } = ceiling;
   // Le vocabulaire du plafond de cette vente (« offre plafond », « première offre possible »…) et
@@ -649,6 +668,7 @@ function SaleDetailWorkspace({
             aiReviewProjections={resolvedAiReviewProjections}
             aiReviewStatus={aiReviewStatus}
             pepite={pepite != null}
+            pepiteFloodExposed={pepite?.flood?.verdict === "exposed"}
           />
           <div className={listingStyles.upper}>
             <PropertyIdentity

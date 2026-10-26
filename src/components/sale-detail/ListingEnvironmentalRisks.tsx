@@ -7,7 +7,7 @@ import {
   type CommuneRiskProfile,
   type CommuneRiskResult,
 } from "@/lib/environment-reference";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 import styles from "./ListingEnvironment.module.css";
 
 const SEISMIC_LABELS: Record<number, string> = {

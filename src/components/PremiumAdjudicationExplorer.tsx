@@ -9,7 +9,7 @@ import { fetchAccessPlan } from "@/lib/client-api";
 import { fetchAdjudicationPriceStatisticsDirectory } from "@/lib/adjudication-price-statistics-client";
 import { AdjudicationBarometer } from "@/components/AdjudicationBarometer";
 import { CourtAuctionSummaryTable } from "@/components/CourtAuctionSummaryTable";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 
 export function PremiumAdjudicationExplorer({
   selectedCourtCode = null,

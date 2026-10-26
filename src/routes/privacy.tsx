@@ -152,6 +152,13 @@ const processingRows = [
       "Cookies : 13 mois au plus, sans prolongation à chaque visite ; choix d’accord ou de refus : 6 mois dans le navigateur ; données conservées par Google 14 mois au plus",
   },
   {
+    purpose: "Repère « Pépite » : contrôle du risque d’inondation d’une vente",
+    data: "Coordonnées géographiques d’une vente (jamais celles d’un visiteur ni les données d’un compte), transmises aux services de l’État ; résultat du contrôle conservé pour chaque vente (les coordonnées ne sont pas copiées ; la position n’est gardée que sous la forme d’une empreinte, une pseudonymisation)",
+    basis:
+      "Intérêt légitime à informer le public sur des ventes publiques avec un repère fiable. Opposition et retrait par email, sans compte",
+    retention: "Supprimé avec la vente",
+  },
+  {
     purpose: "Exercice des droits et rétractation",
     data: "Email, type de demande, message, vérification, décisions et dates de traitement",
     basis: "Obligation légale et défense des droits",
@@ -286,6 +293,12 @@ export function PrivacyPage() {
               administrateur. Dans ce dernier cas, seules les informations nécessaires à
               l’enrichissement du dossier et au suivi de la réponse sont transmises. Les
               prestataires agissent dans la limite de leurs missions contractuelles.
+            </p>
+            <p className="mt-3">
+              Les coordonnées géographiques d’une vente (et non celles d’une personne) sont aussi
+              transmises au Bureau de recherches géologiques et minières (Géorisques) et à
+              l’Institut national de l’information géographique et forestière (API Carto, Géoportail
+              de l’urbanisme) pour contrôler les risques et les servitudes du bien.
             </p>
             <p className="mt-3">
               Mise en relation avec un avocat. Si vous ne choisissez pas d’avocat, Immojudis en

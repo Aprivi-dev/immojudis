@@ -5,13 +5,24 @@ import { evaluateBid } from "@/lib/bid-ceiling-engine";
 import { feeRegimeForSale } from "@/lib/fee-regime";
 import type { MarketContext, MarketEstimate } from "@/lib/market-server/types";
 import {
-  buildPepiteInput,
-  evaluateSaleForPepite,
+  buildPepiteInput as buildPepiteInputVersioned,
+  evaluateSaleForPepite as evaluateSaleForPepiteVersioned,
   type PepiteEstimateRow,
   type PepiteSourceData,
 } from "@/lib/pepite-input";
+import { PEPITE_LATEST_RULE_VERSION, type PepiteRuleVersion } from "@/lib/pepite-policy";
 import { computeSaleCeiling } from "@/lib/sale-ceiling";
 import type { AuctionSale } from "@/lib/types";
+
+/** La version de la règle est obligatoire : ces tests évaluent la règle courante sauf indication contraire. */
+const buildPepiteInput = (
+  data: PepiteSourceData,
+  ruleVersion: PepiteRuleVersion = PEPITE_LATEST_RULE_VERSION,
+) => buildPepiteInputVersioned(data, ruleVersion);
+const evaluateSaleForPepite = (
+  data: PepiteSourceData,
+  ruleVersion: PepiteRuleVersion = PEPITE_LATEST_RULE_VERSION,
+) => evaluateSaleForPepiteVersioned(data, ruleVersion);
 
 const NOW = new Date("2026-11-01T12:00:00Z");
 const FUTURE = "2026-12-15T10:00:00Z";
@@ -173,6 +184,12 @@ function source(overrides: Partial<PepiteSourceData> = {}): PepiteSourceData {
     estimate: { row: row(), context: context(storedEstimate()) },
     modelActive: true,
     scenarios: SCENARIOS,
+    flood: {
+      verdict: "none_found",
+      observedAt: "2026-11-01T08:00:00.000Z",
+      mapDate: null,
+      ppriChecked: true,
+    },
     now: NOW,
     ...overrides,
   };
@@ -203,6 +220,71 @@ function ficheCeiling(value: number) {
     estimate: ficheEstimate(value),
   });
 }
+
+describe("buildPepiteInput : verdict d'inondation", () => {
+  const flood = (verdict: "high" | "exposed" | "none_found" | "no_signal" | "unknown") => ({
+    verdict,
+    observedAt: "2026-11-01T08:00:00.000Z",
+    mapDate: "2013-12-18",
+    ppriChecked: true,
+  });
+
+  it("passe le verdict stocké à la règle et le garde avec les faits de l'évaluation (règle v2)", () => {
+    const { input, facts } = buildPepiteInput(source({ flood: flood("exposed") }));
+    expect(input.flood).toEqual({ verdict: "exposed", ppriChecked: true });
+    expect(facts.flood).toEqual(flood("exposed"));
+  });
+
+  it("un risque élevé exclut la vente (v2) ; un verdict inconnu empêche l'entrée sans la bloquer", () => {
+    const v1 = evaluateSaleForPepite(source(), "pepite-v1").evaluation;
+    const high = evaluateSaleForPepite(source({ flood: flood("high") })).evaluation;
+    expect(high.blocking).toBe(true);
+    expect(high.favorable).toBe(false);
+    expect(high.holds).toBe(false);
+    expect(high.missed).toContain("no_high_flood_risk");
+
+    const unknown = evaluateSaleForPepite(source({ flood: flood("unknown") })).evaluation;
+    expect(unknown.favorable).toBe(false);
+    expect(unknown.holds).toBe(v1.holds);
+    expect(unknown.blocking).toBe(v1.blocking);
+    expect(unknown.missed).toContain("flood_risk_known");
+
+    // Un verdict contrôlé (ou sans objet) laisse la décision de la règle v1 intacte.
+    for (const verdict of ["none_found", "exposed", "no_signal"] as const) {
+      const known = evaluateSaleForPepite(source({ flood: flood(verdict) })).evaluation;
+      expect([known.status, known.favorable, known.holds]).toEqual([
+        v1.status,
+        v1.favorable,
+        v1.holds,
+      ]);
+    }
+  });
+
+  it("« aucun risque élevé » sans lecture des périmètres de PPRi n'ouvre pas l'entrée, mais ne bloque pas", () => {
+    const v1 = evaluateSaleForPepite(source(), "pepite-v1").evaluation;
+    const unread = evaluateSaleForPepite(
+      source({ flood: { ...flood("none_found"), ppriChecked: false } }),
+    );
+    expect(unread.input.flood).toEqual({ verdict: "none_found", ppriChecked: false });
+    expect(unread.evaluation.favorable).toBe(false);
+    expect(unread.evaluation.blocking).toBe(false);
+    expect(unread.evaluation.missed).toContain("flood_risk_known");
+    // Au maintien, comme un verdict inconnu : une pépite déjà publiée n'est pas retirée.
+    expect(unread.evaluation.holds).toBe(v1.holds);
+    // Lu en entier, le même verdict laisse la décision de la règle v1 intacte.
+    const read = evaluateSaleForPepite(source({ flood: flood("none_found") })).evaluation;
+    expect([read.status, read.favorable, read.holds]).toEqual([v1.status, v1.favorable, v1.holds]);
+  });
+
+  it("sous la règle v1, le verdict est ignoré et n'est pas gardé dans les faits", () => {
+    const reference = evaluateSaleForPepite(source(), "pepite-v1");
+    const result = evaluateSaleForPepite(source({ flood: flood("high") }), "pepite-v1");
+    expect(result.evaluation.ruleVersion).toBe("pepite-v1");
+    expect(result.evaluation.status).toBe(reference.evaluation.status);
+    expect(result.evaluation.blocking).toBe(reference.evaluation.blocking);
+    expect(result.facts.flood).toBeNull();
+  });
+});
 
 describe("buildPepiteInput", () => {
   it("calcule le plafond de référence sur la valeur P10, comme la fiche le calculerait", () => {

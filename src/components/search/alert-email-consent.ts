@@ -1,6 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { updateNotificationPreferences } from "@/lib/client-api";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 
 /**
  * Records the explicit, unticked-by-default consent given while creating an alert

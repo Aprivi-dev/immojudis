@@ -6,7 +6,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
 import { fetchAccessPlan } from "@/lib/client-billing";
 import { launchOfferText } from "@/lib/launch-offer";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 
 /**
  * Mention de l'essai gratuit à l'inscription pour les pages rendues côté serveur (comment ça marche,

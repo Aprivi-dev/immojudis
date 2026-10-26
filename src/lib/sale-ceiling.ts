@@ -18,6 +18,7 @@ import { saleForAiReviewDisplay } from "@/lib/ai-review-display";
 import { feeRegimeForSale, type FeeRegime, type FeeRegimeKey } from "@/lib/fee-regime";
 import { listingValuationConflict } from "@/lib/listing-evidence";
 import type { CeilingMarketEstimate } from "@/lib/market-estimate-ceiling";
+import type { RentReference } from "@/lib/rent-reference";
 import { getMarketValuationSurfaces } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
 
@@ -106,12 +107,18 @@ export function computeSaleCeiling({
   choices = {},
   fullData = true,
   guarded = true,
+  rentReference = null,
   ...rest
 }: ({ assessed: SaleCeilingInputs } | (SaleCeilingSource & { assessed?: undefined })) & {
   estimate: CeilingMarketEstimate | null;
   choices?: CeilingUserChoices;
   fullData?: boolean;
   guarded?: boolean;
+  /**
+   * Référence de loyer de la vente (carte ANIL à la commune, résolue par le serveur) ; absente, le
+   * loyer départemental sert de repli. La fiche et le rapport enregistré doivent recevoir la même.
+   */
+  rentReference?: RentReference | null;
 }): SaleCeiling {
   const inputs = rest.assessed ?? assessSaleCeilingInputs(rest);
   const enabled = guarded
@@ -122,6 +129,7 @@ export function computeSaleCeiling({
     enabled ? estimate : null,
     choices,
     inputs.regime,
+    rentReference,
   );
   // Gardé : la surface retenue (`null` quand un champ critique est bloqué) prime. Non gardé : celle
   // des hypothèses, lue sur la vente telle quelle.

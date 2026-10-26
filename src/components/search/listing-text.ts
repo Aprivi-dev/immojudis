@@ -1,3 +1,4 @@
+import { FLOOD_EXPOSED_SHORT } from "@/lib/pepite-flood-copy";
 import {
   getAiReviewFieldResult,
   type AiReviewProjectionReadModel,
@@ -163,11 +164,13 @@ export function listingDateLabel(sale: AuctionSale, now: Date = new Date()): str
 export function listingLinkLabel(
   sale: AuctionSale,
   title: string,
-  blocked: { price?: boolean; date?: boolean; pepite?: boolean } = {},
+  blocked: { price?: boolean; date?: boolean; pepite?: boolean; floodExposed?: boolean } = {},
 ): string {
   const label = baseListingLinkLabel(sale, title, blocked);
-  // Le repère « Pépite » entre dans le nom du lien : un lecteur d'écran l'annonce sans ouvrir la carte.
-  return blocked.pepite ? `${label}, pépite` : label;
+  // Le repère « Pépite » entre dans le nom du lien : un lecteur d'écran l'annonce sans ouvrir la carte. Un bien
+  // dans le périmètre d'un PPRi le dit aussi (mention courte, sans montant).
+  if (!blocked.pepite) return label;
+  return blocked.floodExposed ? `${label}, pépite. ${FLOOD_EXPOSED_SHORT}` : `${label}, pépite`;
 }
 
 function baseListingLinkLabel(

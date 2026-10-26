@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useEffect, useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildCeilingHypotheses, type CeilingUserChoices } from "@/lib/bid-ceiling-defaults";
@@ -10,6 +10,7 @@ import {
   type FeeRegime,
 } from "@/lib/fee-regime";
 import type { MarketEstimate } from "@/lib/market.server";
+import type { RentReference } from "@/lib/rent-reference";
 import type { AuctionSale } from "@/lib/types";
 import { CeilingHypothesesPanel } from "./CeilingHypothesesPanel";
 
@@ -40,10 +41,12 @@ function Harness({
   initial = {},
   saleOverride = sale,
   regime = null,
+  rentReference = null,
 }: {
   initial?: CeilingUserChoices;
   saleOverride?: AuctionSale;
   regime?: FeeRegime | null;
+  rentReference?: RentReference | null;
 }) {
   const [choices, setChoices] = useState<CeilingUserChoices>(initial);
   useEffect(() => {
@@ -51,7 +54,7 @@ function Harness({
   }, [choices]);
   return (
     <CeilingHypothesesPanel
-      hypotheses={buildCeilingHypotheses(saleOverride, estimate, choices, regime)}
+      hypotheses={buildCeilingHypotheses(saleOverride, estimate, choices, regime, rentReference)}
       choices={choices}
       onChoicesChange={(change) => setChoices((current) => change(current))}
     />
@@ -174,7 +177,82 @@ describe("CeilingHypothesesPanel rent", () => {
     );
 
     expect(input("Loyer mensuel hors charges").value).toBe("");
-    expect(screen.getByText(/Aucun loyer de référence pour ce département/)).toBeTruthy();
+    expect(
+      screen.getByText(/Aucun loyer de référence pour cette commune ni pour ce département/),
+    ).toBeTruthy();
+  });
+
+  it("says charges are included and credits the ANIL when the rent comes from its map", async () => {
+    render(
+      <Harness
+        initial={{ project: "louer" }}
+        rentReference={{
+          rentPerM2: 14,
+          source: "anil_commune",
+          reliability: "reliable",
+          segment: "apt_all",
+          communeCode: "34172",
+          lowPerM2: 11,
+          highPerM2: 17,
+          observations: 900,
+          vintage: 2025,
+          sourceUpdatedOn: "2025-12-11",
+        }}
+      />,
+    );
+
+    // 80 m² x 14 EUR, shown as an estimate of the advertised rent, charges included.
+    expect(
+      input("Loyer d’annonce estimé, charges comprises (le loyer hors charges est plus bas)").value,
+    ).toBe("1120");
+    expect(screen.queryByLabelText("Loyer mensuel hors charges")).toBeNull();
+    expect(screen.getByText(/non constaté et non garanti/)).toBeTruthy();
+    // La mention est chargée à la demande (un seul morceau partagé).
+    await waitFor(() => expect(document.querySelector("[data-rent-source-notice]")).not.toBeNull());
+    const notice = document.querySelector("[data-rent-source-notice]")!;
+    expect(notice.textContent).toContain(
+      "Estimations ANIL, à partir des données du Groupe SeLoger et de leboncoin.",
+    );
+    expect(notice.textContent).toContain("Carte des loyers 2025");
+    expect(notice.textContent).toContain("mise à jour du 11 décembre 2025");
+    expect(notice.textContent).toContain("Licence Ouverte 2.0");
+    expect(notice.querySelector("a")?.getAttribute("href")).toBe(
+      "https://www.data.gouv.fr/datasets/693aa2feed1bf4da603faa49",
+    );
+  });
+
+  it("flags an indicative reliability and never calls the department rent a charges-excluded rent", () => {
+    render(<Harness initial={{ project: "louer" }} />);
+
+    expect(input("Loyer estimé du département").value).toBe("1040");
+    expect(document.querySelector("[data-rent-source-notice]")).toBeNull();
+    cleanup();
+
+    render(
+      <Harness
+        initial={{ project: "louer" }}
+        rentReference={{
+          rentPerM2: 9.5,
+          source: "anil_maille",
+          reliability: "indicative",
+          segment: "apt_all",
+          communeCode: "34172",
+          lowPerM2: null,
+          highPerM2: null,
+          observations: 4,
+          vintage: 2025,
+          sourceUpdatedOn: "2025-12-11",
+        }}
+      />,
+    );
+    expect(screen.getByText(/fiabilité indicative/)).toBeTruthy();
+  });
+
+  it("keeps the charges-excluded label for a rent the user typed", () => {
+    render(<Harness initial={{ project: "louer", monthlyRent: 700 }} />);
+
+    expect(input("Loyer mensuel hors charges").value).toBe("700");
+    expect(document.querySelector("[data-rent-source-notice]")).toBeNull();
   });
 });
 
@@ -272,5 +350,72 @@ describe("CeilingHypothesesPanel : ventes notariales", () => {
     expect(screen.getByText(/à confirmer sur Légifrance/)).toBeTruthy();
     expect(screen.getByText(/pas de titre d’expulsion automatique/)).toBeTruthy();
     expect(screen.queryByText(/Commandement, délais du juge/)).toBeNull();
+  });
+});
+
+describe("CeilingHypothesesPanel : charges récupérables et rendement", () => {
+  const anil: RentReference = {
+    rentPerM2: 14,
+    source: "anil_commune",
+    reliability: "reliable",
+    segment: "apt_all",
+    communeCode: "34172",
+    lowPerM2: 11,
+    highPerM2: 17,
+    observations: 900,
+    vintage: 2025,
+    sourceUpdatedOn: "2025-12-11",
+  };
+  const CHARGES = "Charges récupérables comprises dans le loyer (€/mois)";
+
+  it("offers an empty, editable field for the recoverable charges, with no invented amount", () => {
+    render(<Harness initial={{ project: "louer" }} rentReference={anil} />);
+    const field = input(CHARGES);
+
+    expect(field.value).toBe("");
+    expect(field.placeholder).toBe("");
+    expect(
+      screen.getByText(/Vide : le loyer d’annonce ANIL est compté charges comprises/),
+    ).toBeTruthy();
+
+    // 80 m² x 14 EUR = 1 120; with 120 EUR of recoverable charges the rent kept is 1 000.
+    expect(
+      input("Loyer d’annonce estimé, charges comprises (le loyer hors charges est plus bas)").value,
+    ).toBe("1120");
+    fireEvent.change(field, { target: { value: "120" } });
+    expect(seen.choices.recoverableCharges).toBe(120);
+    expect(
+      input("Loyer d’annonce estimé, charges comprises (le loyer hors charges est plus bas)").value,
+    ).toBe("1000");
+    // Cleared or set to 0, it is empty again.
+    fireEvent.change(field, { target: { value: "0" } });
+    expect(seen.choices.recoverableCharges).toBeNull();
+  });
+
+  it("does not call a charges-included yield « net », and says so only while the charges are empty", () => {
+    render(<Harness initial={{ project: "louer" }} rentReference={anil} />);
+
+    expect(screen.getByLabelText("Rendement brut visé, charges comprises")).toBeTruthy();
+    expect(screen.queryByLabelText("Rendement net visé")).toBeNull();
+
+    fireEvent.change(input(CHARGES), { target: { value: "120" } });
+
+    expect(screen.getByLabelText("Rendement net visé")).toBeTruthy();
+    expect(screen.queryByLabelText("Rendement brut visé, charges comprises")).toBeNull();
+  });
+
+  it("keeps « net » for the department rent and for a typed rent", () => {
+    render(<Harness initial={{ project: "louer" }} />);
+    expect(screen.getByLabelText("Rendement net visé")).toBeTruthy();
+    cleanup();
+
+    render(<Harness initial={{ project: "louer", monthlyRent: 900 }} rentReference={anil} />);
+    expect(screen.getByLabelText("Rendement net visé")).toBeTruthy();
+  });
+
+  it("does not claim that every charge is withdrawn from the rent", () => {
+    render(<Harness initial={{ project: "louer" }} rentReference={anil} />);
+
+    expect(document.body.textContent).not.toMatch(/retire lui-même|toutes les charges/i);
   });
 });

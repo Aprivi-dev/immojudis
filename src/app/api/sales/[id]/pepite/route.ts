@@ -14,6 +14,7 @@ import {
   pepiteCriteriaViews,
   pepiteDetailPayload,
   pepiteDetailView,
+  pepiteFloodView,
   pepiteRegimeOf,
   type PepitePayload,
 } from "@/lib/sale-pepite-view";
@@ -32,7 +33,8 @@ const PUBLIC_HEADERS = { "cache-control": "public, s-maxage=60, stale-while-reva
 /**
  * Repère « Pépite » d'une vente, à deux niveaux (`?view=`) :
  *
- *  - `criteria` (défaut, ouvert à tous, visiteurs compris) : le NOM des critères réunis, sans valeur ni montant ;
+ *  - `criteria` (défaut, ouvert à tous, visiteurs compris) : le NOM des critères réunis, sans valeur ni montant, et
+ *    le contrôle du risque d'inondation (verdict affichable et deux dates : jamais un montant) ;
  *  - `detail` : en plus, la condition, le plafond de référence, le prix probable et sa fourchette. Réservé
  *    aux comptes qui ont le droit au plafond d'enchère (offre Analyse, ou vente débloquée avec « 3 déblocages
  *    par mois », comme `/api/market-estimate`) : 401 sans compte, 403 sans le droit. Jamais un montant en dehors
@@ -84,16 +86,18 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       holdMissed,
       pepiteRegimeOf(stored.details),
     );
+    // Le contrôle d'inondation est un fait public sans montant (verdict et deux dates) : il part à tous les niveaux.
+    const flood = pepiteFloodView(stored.details);
     if (detailRequested) {
       // Le détail ne part que d'ici, après le droit, et avec l'en-tête privé : jamais de cache partagé.
       const detail = pepiteDetailView(stored.details, stored.evaluatedAt, criteria);
       const body: PepitePayload = detail
-        ? pepiteDetailPayload(criteria, detail)
-        : pepiteCriteriaPayload(criteria);
+        ? pepiteDetailPayload(criteria, detail, flood)
+        : pepiteCriteriaPayload(criteria, flood);
       return NextResponse.json(body, { headers: PRIVATE_HEADERS });
     }
     // Le niveau « criteria » ne reçoit JAMAIS le détail : `pepiteCriteriaPayload` ne prend que les critères.
-    return NextResponse.json(pepiteCriteriaPayload(criteria), { headers: PUBLIC_HEADERS });
+    return NextResponse.json(pepiteCriteriaPayload(criteria, flood), { headers: PUBLIC_HEADERS });
   } catch (error) {
     return apiRouteError(error, request, "sale-pepite", {
       fallbackMessage: "Repère Pépite indisponible.",

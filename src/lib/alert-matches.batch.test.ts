@@ -72,7 +72,16 @@ function fakeClient() {
                 error: { message: "canceling statement due to statement timeout", code: "57014" },
               });
             }
-            return resolve({ data: [], error: null });
+            // Les lignes enregistrées reviennent avec leur identifiant, comme PostgREST.
+            return resolve({
+              data: upserted.map((row) => ({
+                ...row,
+                id: `match-${String(row.sale_id)}`,
+                read_at: null,
+                dismissed_at: null,
+              })),
+              error: null,
+            });
           }
           if (table === "user_alerts" && op === "update") {
             state.updates.push({ ...patch, id: filters.id });
@@ -127,12 +136,38 @@ vi.mock("@/lib/queries", () => ({
   },
 }));
 vi.mock("@/lib/sale-market-estimates", () => ({ getPrecomputedMarketEstimate: async () => null }));
+const rents = vi.hoisted(() => ({
+  calls: [] as string[][],
+  sessions: 0,
+  references: {} as Record<string, unknown>,
+}));
+vi.mock("@/lib/rent-reference.server", () => ({
+  createRentLookupSession: () => {
+    rents.sessions += 1;
+    return {
+      load: async (sales: Array<{ id: string }>) => {
+        rents.calls.push(sales.map((sale) => sale.id));
+        return (sale: { id: string }) => rents.references[sale.id] ?? null;
+      },
+    };
+  },
+}));
+const notified = vi.hoisted(() => ({ saleIds: [] as string[] }));
 vi.mock("@/lib/alert-notifications", () => ({
-  createAlertNotificationsForMatches: async () => ({ notificationCount: 0 }),
+  createAlertNotificationsForMatches: async ({
+    matches,
+  }: {
+    matches: Array<{ saleId: string }>;
+  }) => {
+    notified.saleIds.push(...matches.map((match) => match.saleId));
+    return { notificationCount: matches.length };
+  },
 }));
 
 import {
+  RENT_BASIS_SILENT_WINDOW_MS,
   assertSmartAlertBatchComplete,
+  isRentBasisSilentPass,
   resetPepiteSaleIdsForAlertsCache,
   runSmartAlertEvaluationBatch,
 } from "./alert-matches";
@@ -166,6 +201,11 @@ describe("smart alert batch", () => {
     state.pepiteError = null;
     state.rpcCalls = [];
     state.tablesRead = [];
+    rents.calls = [];
+    rents.sessions = 0;
+    rents.references = {};
+    notified.saleIds = [];
+    delete process.env.ALERT_RENT_BASIS_SWITCH_AT;
     resetPepiteSaleIdsForAlertsCache();
   });
 
@@ -292,6 +332,173 @@ describe("smart alert batch", () => {
     await runSmartAlertEvaluationBatch();
 
     expect(state.detailCalls).toEqual([]);
+  });
+
+  describe("loyers de la carte ANIL", () => {
+    const home = (id: string, department = "23") => ({
+      id,
+      department,
+      property_type: "apartment",
+      starting_price_eur: 100_000,
+      app_surface_m2: 50,
+      app_surface_kind: "habitable",
+    });
+    const reference = (rentPerM2: number) => ({
+      rentPerM2,
+      source: "anil_commune",
+      reliability: "reliable",
+      segment: "apt_all",
+      communeCode: "23096",
+      lowPerM2: null,
+      highPerM2: null,
+      observations: 100,
+      vintage: 2025,
+      sourceUpdatedOn: "2025-12-11",
+    });
+
+    it("évalue le rendement minimal avec le loyer de la commune, lu pour les seules ventes candidates", async () => {
+      state.userAlerts = [alertRow(1, { department: "23", min_yield_pct: 6 })];
+      state.salesPool = [home("sale-a"), home("sale-b"), home("sale-33", "33")];
+      rents.references = { "sale-a": reference(12), "sale-b": reference(6) };
+
+      await runSmartAlertEvaluationBatch();
+
+      // Department 23 has no department rent: only the commune rent can make a sale match.
+      expect(state.upserts.flat().map((row) => row.sale_id)).toEqual(["sale-a"]);
+      // The department filter leaves two candidates; sale-33 is never read.
+      expect(rents.calls).toEqual([["sale-a", "sale-b"]]);
+      const snapshot = state.upserts.flat()[0].match_snapshot as { sale: Row };
+      expect(snapshot.sale.grossYieldPct).toBeCloseTo(6.2, 1);
+    });
+
+    it("une alerte sans critère de rendement ne lit les loyers que des ventes retenues, pour son résumé", async () => {
+      state.userAlerts = [alertRow(1, { department: "23" })];
+      state.salesPool = [home("sale-a"), home("sale-33", "33")];
+      rents.references = { "sale-a": reference(12) };
+
+      await runSmartAlertEvaluationBatch();
+
+      expect(rents.calls).toEqual([["sale-a"]]);
+      const snapshot = state.upserts.flat()[0].match_snapshot as { sale: Row };
+      expect(snapshot.sale.grossYieldPct).toBeCloseTo(6.2, 1);
+    });
+  });
+
+  describe("un seul chargement des loyers par exécution", () => {
+    it("partage la session entre tous les comptes et toutes les alertes", async () => {
+      const home = (id: string) => ({
+        id,
+        department: "23",
+        property_type: "apartment",
+        starting_price_eur: 100_000,
+        app_surface_m2: 50,
+        app_surface_kind: "habitable",
+      });
+      state.userAlerts = [
+        alertRow(1, { department: "23", min_yield_pct: 6 }),
+        alertRow(2, { department: "23", min_yield_pct: 6 }),
+      ];
+      state.salesPool = [home("sale-a")];
+
+      await runSmartAlertEvaluationBatch();
+
+      expect(rents.sessions).toBe(1);
+    });
+  });
+
+  describe("base silencieuse du changement de loyers de référence", () => {
+    const hoursAgo = (hours: number) => new Date(Date.now() - hours * 3_600_000).toISOString();
+    const home = (id: string, department: string) => ({
+      id,
+      department,
+      property_type: "apartment",
+      starting_price_eur: 100_000,
+      app_surface_m2: 50,
+      app_surface_kind: "habitable",
+    });
+    const reference = (rentPerM2: number) => ({
+      rentPerM2,
+      source: "anil_commune",
+      reliability: "reliable",
+      segment: "apt_all",
+      communeCode: "23096",
+      lowPerM2: null,
+      highPerM2: null,
+      observations: 100,
+      vintage: 2025,
+      sourceUpdatedOn: "2025-12-11",
+    });
+    // Le département 23 n'a aucun repère départemental : une vente n'y correspond que grâce à l'ANIL.
+    // Le 33 a un repère (14 EUR/m², environ 7,5 %) : sa vente correspondait déjà.
+    const arrange = (alert: Row) => {
+      state.userAlerts = [alert];
+      state.salesPool = [home("sale-new", "23"), home("sale-old", "33")];
+      rents.references = { "sale-new": reference(12), "sale-old": reference(12) };
+    };
+
+    it("enregistre sans notifier les correspondances dues au seul changement de loyers, la première fois", async () => {
+      process.env.ALERT_RENT_BASIS_SWITCH_AT = hoursAgo(1);
+      arrange(alertRow(1, { min_yield_pct: 6, last_evaluated_at: hoursAgo(5) }));
+
+      await runSmartAlertEvaluationBatch();
+
+      expect(
+        state.upserts
+          .flat()
+          .map((row) => row.sale_id)
+          .sort(),
+      ).toEqual(["sale-new", "sale-old"]);
+      // Celle qui existait avec le loyer départemental reste notifiée, comme avant.
+      expect(notified.saleIds).toEqual(["sale-old"]);
+    });
+
+    it("ne tait rien sans le marqueur, hors des 48 heures, ni pour une alerte déjà évaluée depuis", async () => {
+      const cases: Array<[string, () => void]> = [
+        [
+          "sans marqueur",
+          () => arrange(alertRow(1, { min_yield_pct: 6, last_evaluated_at: hoursAgo(5) })),
+        ],
+        [
+          "après 48 heures",
+          () => {
+            process.env.ALERT_RENT_BASIS_SWITCH_AT = hoursAgo(60);
+            arrange(alertRow(1, { min_yield_pct: 6, last_evaluated_at: hoursAgo(70) }));
+          },
+        ],
+        [
+          "alerte évaluée après le changement",
+          () => {
+            process.env.ALERT_RENT_BASIS_SWITCH_AT = hoursAgo(2);
+            arrange(alertRow(1, { min_yield_pct: 6, last_evaluated_at: hoursAgo(1) }));
+          },
+        ],
+        [
+          "alerte jamais évaluée (créée ou modifiée)",
+          () => {
+            process.env.ALERT_RENT_BASIS_SWITCH_AT = hoursAgo(1);
+            arrange(alertRow(1, { min_yield_pct: 6, last_evaluated_at: null }));
+          },
+        ],
+        [
+          "alerte sans critère de rendement",
+          () => {
+            process.env.ALERT_RENT_BASIS_SWITCH_AT = hoursAgo(1);
+            arrange(alertRow(1, { last_evaluated_at: hoursAgo(5) }));
+          },
+        ],
+      ];
+      for (const [label, setUp] of cases) {
+        delete process.env.ALERT_RENT_BASIS_SWITCH_AT;
+        notified.saleIds = [];
+        state.upserts = [];
+        setUp();
+
+        await runSmartAlertEvaluationBatch();
+
+        // Aucune n'est tue : les deux correspondances sont notifiées.
+        expect([...notified.saleIds].sort(), label).toEqual(["sale-new", "sale-old"]);
+      }
+    });
   });
 
   it("écrit les correspondances par lots de 200", async () => {
@@ -560,5 +767,44 @@ describe("alertes « Seulement les pépites »", () => {
     expect(result.failedAlertCount).toBe(0);
     expect(state.upserts.flat()).toEqual([]);
     expect(state.updates).toHaveLength(1);
+  });
+});
+
+describe("isRentBasisSilentPass", () => {
+  const switchAt = "2026-11-10T08:00:00.000Z";
+  const env = { ALERT_RENT_BASIS_SWITCH_AT: switchAt };
+  const yieldAlert = { min_yield_pct: 6, last_evaluated_at: "2026-11-10T06:00:00.000Z" };
+
+  it("ne vaut que pour la première évaluation d'une alerte à rendement, dans les 48 heures", () => {
+    expect(isRentBasisSilentPass(yieldAlert, "2026-11-10T09:00:00.000Z", env)).toBe(true);
+    expect(isRentBasisSilentPass(yieldAlert, "2026-11-12T07:59:00.000Z", env)).toBe(true);
+    // Hors fenêtre, avant le changement, sans marqueur ou avec un marqueur illisible.
+    expect(
+      isRentBasisSilentPass(
+        yieldAlert,
+        new Date(Date.parse(switchAt) + RENT_BASIS_SILENT_WINDOW_MS).toISOString(),
+        env,
+      ),
+    ).toBe(false);
+    expect(isRentBasisSilentPass(yieldAlert, "2026-11-10T07:00:00.000Z", env)).toBe(false);
+    expect(isRentBasisSilentPass(yieldAlert, "2026-11-10T09:00:00.000Z", {})).toBe(false);
+    expect(
+      isRentBasisSilentPass(yieldAlert, "2026-11-10T09:00:00.000Z", {
+        ALERT_RENT_BASIS_SWITCH_AT: "bientôt",
+      }),
+    ).toBe(false);
+  });
+
+  it("exclut une alerte sans rendement, jamais évaluée, ou déjà évaluée après le changement", () => {
+    const now = "2026-11-10T09:00:00.000Z";
+    expect(isRentBasisSilentPass({ ...yieldAlert, min_yield_pct: null }, now, env)).toBe(false);
+    expect(isRentBasisSilentPass({ ...yieldAlert, last_evaluated_at: null }, now, env)).toBe(false);
+    expect(
+      isRentBasisSilentPass(
+        { ...yieldAlert, last_evaluated_at: "2026-11-10T08:30:00.000Z" },
+        now,
+        env,
+      ),
+    ).toBe(false);
   });
 });

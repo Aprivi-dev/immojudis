@@ -20,15 +20,23 @@ import {
   PEPITE_LOW_STARTING_PRICE_SHARE,
   PEPITE_MIN_HOURS_BETWEEN_EVALUATIONS,
   PEPITE_MIN_VALUE_COMPARABLES,
-  PEPITE_RULE_VERSION,
+  PEPITE_LATEST_RULE_VERSION,
+  PEPITE_V1_RULE_VERSION,
   applyPepiteStability,
-  evaluatePepite,
+  evaluatePepite as evaluatePepiteVersioned,
   pepiteReasonCodes,
   type PepiteCriterionId,
   type PepiteEvaluation,
   type PepiteInput,
+  type PepiteRuleVersion,
   type PepiteStoredState,
 } from "./pepite-policy";
+
+/** La version est obligatoire dans la règle : ces tests évaluent la règle courante sauf indication contraire. */
+const evaluatePepite = (
+  input: PepiteInput,
+  ruleVersion: PepiteRuleVersion = PEPITE_LATEST_RULE_VERSION,
+) => evaluatePepiteVersioned(input, ruleVersion);
 
 // Les tranches de la base (`app_private.court_auction_scenarios`) : 0-1,1 / 1,1-1,5 / 1,5-2 / 2-3 / 3+.
 const BUCKETS: AuctionScenario[] = [
@@ -77,6 +85,7 @@ function court(overrides: Partial<PepiteInput> = {}): PepiteInput {
       probableDuplicate: false,
       unqualifiedRisks: false,
     },
+    flood: { verdict: "none_found", ppriChecked: true },
     ...overrides,
   };
 }
@@ -112,9 +121,10 @@ function missedOf(evaluation: PepiteEvaluation): PepiteCriterionId[] {
   return evaluation.missed;
 }
 
-describe("constantes de pepite-v1", () => {
+describe("constantes de la règle pepite", () => {
   it("reprennent les seuils du compte-rendu", () => {
-    expect(PEPITE_RULE_VERSION).toBe("pepite-v1");
+    expect(PEPITE_LATEST_RULE_VERSION).toBe("pepite-v2");
+    expect(PEPITE_V1_RULE_VERSION).toBe("pepite-v1");
     expect(PEPITE_CHANCE_MIN_SHARE).toBe(0.7);
     expect(PEPITE_CHANCE_EXIT_SHARE).toBe(0.65);
     expect(PEPITE_COST_MAX_SHARE_COURT).toBe(0.75);
@@ -162,7 +172,8 @@ describe("evaluatePepite : tribunal", () => {
     expect(evaluation.favorable).toBe(true);
     expect(evaluation.holds).toBe(true);
     expect(evaluation.blocking).toBe(false);
-    expect(evaluation.ruleVersion).toBe("pepite-v1");
+    expect(evaluation.ruleVersion).toBe("pepite-v2");
+    expect(evaluatePepite(court(), PEPITE_V1_RULE_VERSION).ruleVersion).toBe("pepite-v1");
     expect(evaluation.missed).toEqual([]);
     expect(evaluation.metrics).toMatchObject({
       startingPriceEur: START,

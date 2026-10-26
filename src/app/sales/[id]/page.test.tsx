@@ -1,9 +1,10 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ lookup: vi.fn() }));
+const mocks = vi.hoisted(() => ({ lookup: vi.fn(), rent: vi.fn() }));
 
 vi.mock("@/lib/public-sale.server", () => ({ lookupPublicSale: mocks.lookup }));
+vi.mock("@/lib/rent-reference.server", () => ({ loadSaleRentReference: mocks.rent }));
 vi.mock("next/navigation", () => ({
   notFound: () => {
     throw Object.assign(new Error("NEXT_HTTP_ERROR_FALLBACK;404"), {
@@ -18,7 +19,17 @@ vi.mock("next/navigation", () => ({
   },
 }));
 vi.mock("./sale-detail-page", () => ({
-  SaleDetailPage: ({ id }: { id: string }) => <div data-testid="detail">{id}</div>,
+  SaleDetailPage: ({
+    id,
+    rentReference,
+  }: {
+    id: string;
+    rentReference?: { source: string } | null;
+  }) => (
+    <div data-testid="detail" data-rent-source={rentReference?.source ?? "none"}>
+      {id}
+    </div>
+  ),
 }));
 
 import Page, { generateMetadata, generateStaticParams, revalidate } from "./page";
@@ -42,6 +53,8 @@ const params = Promise.resolve({ id: ID });
 describe("public sale page", () => {
   beforeEach(() => {
     mocks.lookup.mockReset();
+    mocks.rent.mockReset();
+    mocks.rent.mockResolvedValue(null);
     process.env.SITE_URL = "https://immojudis.com";
   });
 
@@ -126,6 +139,24 @@ describe("public sale page", () => {
     expect(data["@graph"][0].offers).not.toHaveProperty("availability");
     expect(data["@graph"][1]["@type"]).toBe("Event");
     expect(html).toContain('data-testid="detail"');
+  });
+
+  it("hands the commune rent reference read on the server to the sale page", async () => {
+    mocks.lookup.mockResolvedValue({ status: "found", sale });
+    mocks.rent.mockResolvedValue({ source: "anil_commune", rentPerM2: 15.99 });
+    const html = renderToStaticMarkup(await Page({ params }));
+    expect(mocks.rent).toHaveBeenCalledWith(sale);
+    expect(html).toContain('data-rent-source="anil_commune"');
+
+    // A sale without a resolved reference still renders (department fallback in the browser).
+    mocks.rent.mockResolvedValue(null);
+    expect(renderToStaticMarkup(await Page({ params }))).toContain('data-rent-source="none"');
+  });
+
+  it("does not read any rent for a sale that is not public", async () => {
+    mocks.lookup.mockResolvedValue({ status: "unavailable" });
+    renderToStaticMarkup(await Page({ params }));
+    expect(mocks.rent).not.toHaveBeenCalled();
   });
 
   it("still renders when the server cannot read the sale, without structured data", async () => {

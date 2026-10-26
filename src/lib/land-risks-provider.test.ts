@@ -79,7 +79,8 @@ describe("fetchLandRisks", () => {
       now: () => new Date("2026-10-02T12:00:00.000Z"),
     });
 
-    expect(requests.length).toBe(14);
+    // Treize couches : aucune opération `tri_zonage` n'existe en v2 (la couche n'est pas interrogée).
+    expect(requests.length).toBe(13);
     expect(requests.every((request) => request.url.includes("/api/v2/"))).toBe(true);
     expect(requests.every((request) => request.authorization === "Bearer test-token")).toBe(true);
     expect(
@@ -119,6 +120,7 @@ describe("fetchLandRisks", () => {
     expect(result.findings.some((finding) => finding.category === "flood")).toBe(true);
     expect(result.findings.some((finding) => finding.category === "pollution")).toBe(true);
     expect(result.checks.find((check) => check.key === "catnat")?.status).toBe("not_checked");
+    expect(result.checks.find((check) => check.key === "tri")?.status).toBe("not_checked");
     expect(result.warnings.join(" ")).toContain("absence de risque");
   });
 

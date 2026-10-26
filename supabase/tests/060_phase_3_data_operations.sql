@@ -110,6 +110,7 @@ from unnest(array[
   'information-agent-inbound',
   'listing-completeness',
   'sale-pepites',
+  'sale-flood-risk',
   'cnb-lawyer-directory',
   'sale-reminders'
 ]) as job_name;
@@ -268,6 +269,12 @@ insert into public.operational_job_runs (
   '2026-07-27T16:19:00Z'::timestamptz,
   60000
 ), (
+  'sale-flood-risk',
+  'success',
+  '2026-07-27T16:18:00Z'::timestamptz,
+  '2026-07-27T16:19:00Z'::timestamptz,
+  60000
+), (
   'information-agent-inbound',
   'success',
   '2026-07-27T16:18:00Z'::timestamptz,
@@ -351,6 +358,12 @@ insert into public.operational_job_runs (
   60000
 ), (
   'sale-pepites',
+  'success',
+  '2026-07-27T18:28:00Z'::timestamptz,
+  '2026-07-27T18:29:00Z'::timestamptz,
+  60000
+), (
+  'sale-flood-risk',
   'success',
   '2026-07-27T18:28:00Z'::timestamptz,
   '2026-07-27T18:29:00Z'::timestamptz,

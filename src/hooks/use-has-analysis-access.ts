@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { fetchAccessPlan } from "@/lib/client-billing";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 
 /**
  * Le compte ouvre-t-il toutes les ventes (offre Analyse, y compris une offre de lancement) ?

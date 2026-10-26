@@ -81,7 +81,7 @@ describe("legal publisher configuration", () => {
 });
 
 describe("versions précédentes archivées", () => {
-  it.each(["terms", "legal"] as const)(
+  it.each(["terms", "legal", "privacy"] as const)(
     "garde le code source exact de la version précédente de %s, à l'empreinte déclarée",
     (document) => {
       const previous = PREVIOUS_LEGAL_DOCUMENTS[document];
@@ -93,6 +93,30 @@ describe("versions précédentes archivées", () => {
       expect(previous.sha256).not.toBe(LEGAL_DOCUMENTS[document].sha256);
     },
   );
+
+  it("garde aussi l'archive des mentions légales plus anciennes, à l'empreinte déclarée", () => {
+    for (const earlier of PREVIOUS_LEGAL_DOCUMENTS.legal.earlier) {
+      const digest = createHash("sha256")
+        .update(readFileSync(resolve(earlier.archive)))
+        .digest("hex");
+      expect(digest).toBe(earlier.sha256);
+      expect(earlier.sha256).not.toBe(PREVIOUS_LEGAL_DOCUMENTS.legal.sha256);
+    }
+  });
+
+  it("ancre les versions courantes à l'empreinte du fichier qui les porte (politique, mentions légales)", () => {
+    for (const [document, file] of [
+      ["privacy", "src/routes/privacy.tsx"],
+      ["legal", "src/routes/legal.tsx"],
+    ] as const) {
+      const digest = createHash("sha256")
+        .update(readFileSync(resolve(file)))
+        .digest("hex");
+      expect(digest, `${file} a changé : créer une nouvelle version, archiver la précédente`).toBe(
+        LEGAL_DOCUMENTS[document].sha256,
+      );
+    }
+  });
 
   it("garde la version précédente des CGU applicable jusqu'à l'entrée en vigueur de la nouvelle", () => {
     expect(PREVIOUS_LEGAL_DOCUMENTS.terms.version).toBe("2026-10-25.1");

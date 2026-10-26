@@ -4,7 +4,20 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Json } from "@/integrations/supabase/types";
 import { extractDpe } from "@/lib/dpe";
 import { formatDate } from "@/lib/format";
-import { estimateGrossYieldPct, geocodeAddress, pricePerM2 } from "@/lib/geo";
+import { estimateSaleGrossYieldPct, geocodeAddress, pricePerM2 } from "@/lib/geo";
+import { isRentApplicable, type RentLookup } from "@/lib/rent-reference";
+import {
+  isAnilRentReference,
+  RENT_ATTRIBUTION,
+  RENT_SOURCE_URL,
+  rentSourceDetail,
+} from "@/lib/rent-source-notice";
+import {
+  createRentLookupSession,
+  rentBasisOf,
+  type RentBasis,
+  type RentLookupSession,
+} from "@/lib/rent-reference.server";
 import { cleanDateForListing } from "@/lib/listing-data-cleanup";
 import { featureIncluded } from "@/lib/plans";
 import { computeRentabilityScore } from "@/lib/profitability";
@@ -112,6 +125,23 @@ export type SalesApiFeedItem = {
     score: number | null;
     scoreConfidence: number | null;
     grossYieldPct: number | null;
+    /**
+     * Loyer derrière le rendement : carte des loyers de l'ANIL (loyer d'annonce, charges comprises) ou
+     * repli départemental. `null` quand aucun loyer de référence n'existe.
+     */
+    rentReference: {
+      source: string;
+      reliability: string;
+      rentPerM2: number;
+      vintage: number | null;
+      sourceUpdatedOn: string | null;
+      /** Mention obligatoire de la Licence Ouverte 2.0 ; `null` hors données ANIL. */
+      attribution: string | null;
+      attributionDetail: string | null;
+      /** Vrai pour un loyer ANIL : loyer d'annonce charges comprises, donc rendements bruts, charges comprises. */
+      chargesIncluded: boolean;
+      sourceUrl: string | null;
+    } | null;
     rentability: {
       score: number | null;
       label: string;
@@ -165,6 +195,11 @@ export type SalesApiFeed = {
     capped: boolean;
     filters: Record<string, string | number | boolean | undefined>;
     capabilities: string[];
+    /** Mention obligatoire de la carte des loyers de l'ANIL, à reproduire avec les rendements. */
+    rentAttribution: string;
+    rentSourceUrl: string;
+    /** Ce que les rendements des lignes utilisent : carte de l'ANIL, repère départemental, ou les deux. */
+    rentBasis: RentBasis;
   };
 };
 
@@ -200,7 +235,12 @@ export async function exportSalesCsv({
   });
   const rowBudget = await remainingDailyExportRows(auth, "sales_csv", SALES_CSV_EXPORT_DAILY_ROWS);
 
-  const sales = await resolveFilteredSales({ auth, search, sourceLimit: EXPORT_SOURCE_LIMIT });
+  const { sales } = await resolveFilteredSales({
+    auth,
+    search,
+    sourceLimit: EXPORT_SOURCE_LIMIT,
+    rentSession: createRentLookupSession(),
+  });
   const rows = sales.slice(0, Math.min(EXPORT_ROW_LIMIT, rowBudget));
   const content = buildSalesCsv(rows, origin);
 
@@ -250,8 +290,16 @@ export async function exportSalesApiFeed({
 
   const requestedLimit = search.limit ?? API_ROW_LIMIT;
   const limit = Math.min(Math.max(1, requestedLimit), API_ROW_LIMIT, rowBudget);
-  const sales = await resolveFilteredSales({ auth, search, sourceLimit: API_SOURCE_LIMIT });
+  const rentSession = createRentLookupSession();
+  const { sales } = await resolveFilteredSales({
+    auth,
+    search,
+    sourceLimit: API_SOURCE_LIMIT,
+    rentSession,
+  });
   const rows = sales.slice(0, limit);
+  // Loyers de la carte ANIL à la commune, pour les seules lignes rendues.
+  const rents = await rentSession.load(rows);
 
   await recordSalesDataExport({
     auth,
@@ -261,7 +309,7 @@ export async function exportSalesApiFeed({
   });
 
   return {
-    data: buildSalesApiFeedItems(rows, origin),
+    data: buildSalesApiFeedItems(rows, origin, rents),
     meta: {
       schemaVersion: API_FEED_SCHEMA_VERSION,
       generatedAt: new Date().toISOString(),
@@ -279,6 +327,9 @@ export async function exportSalesApiFeed({
         "opportunity_scoring",
         "source_traceability",
       ],
+      rentAttribution: RENT_ATTRIBUTION,
+      rentSourceUrl: RENT_SOURCE_URL,
+      rentBasis: rentBasisOf(rows, rents),
     },
   };
 }
@@ -344,19 +395,23 @@ export function buildSalesCsv(sales: AuctionSale[], origin?: string | null): str
 export function buildSalesApiFeedItems(
   sales: AuctionSale[],
   origin?: string | null,
+  rents?: RentLookup,
 ): SalesApiFeedItem[] {
-  return sales.map((sale) => saleToApiFeedItem(sale, origin));
+  return sales.map((sale) => saleToApiFeedItem(sale, origin, rents));
 }
 
 async function resolveFilteredSales({
   auth,
   search,
   sourceLimit,
+  rentSession,
 }: {
   auth: SupabaseAuthContext;
   search: SalesSearchParams;
   sourceLimit: number;
-}): Promise<AuctionSale[]> {
+  /** Session de loyers de la requête : les lectures du filtre et des lignes rendues sont partagées. */
+  rentSession: RentLookupSession;
+}): Promise<{ sales: AuctionSale[]; rents: RentLookup | undefined }> {
   const center = search.aroundAddress ? await geocodeAddress(search.aroundAddress) : null;
   // Le tri de l'URL s'applique aussi aux exports: par défaut (« Mieux renseignées d'abord »),
   // l'échantillon plafonné par `sourceLimit` suit donc l'ordre par complétude puis par date.
@@ -373,11 +428,15 @@ async function resolveFilteredSales({
   const visibleSaleIds = await getPublicationVisibleSaleIds(sourceSales.map((sale) => sale.id));
   const visibleSourceSales = sourceSales.filter((sale) => visibleSaleIds.has(sale.id));
 
-  return sortClientSearchResults(
-    applyClientSearchFilters(visibleSourceSales, search, center),
+  // Loyers de la carte ANIL à la commune, lus avant le filtre « rendement minimal » (côté serveur : le
+  // navigateur n'en reçoit pas).
+  const rents = search.minYield != null ? await rentSession.load(visibleSourceSales) : undefined;
+  const sales = sortClientSearchResults(
+    applyClientSearchFilters(visibleSourceSales, search, center, { rents }),
     search,
     center,
   );
+  return { sales, rents };
 }
 
 async function recordSalesDataExport({
@@ -413,19 +472,22 @@ async function recordSalesDataExport({
   });
 }
 
-function saleToApiFeedItem(sale: AuctionSale, origin?: string | null): SalesApiFeedItem {
+function saleToApiFeedItem(
+  sale: AuctionSale,
+  origin?: string | null,
+  rents?: RentLookup,
+): SalesApiFeedItem {
+  const rentReference = isRentApplicable(sale) ? (rents?.(sale) ?? null) : null;
   const surface = getSaleSurface(sale);
   const ppm = pricePerM2(sale.starting_price_eur, surface.value);
   const dpe = extractDpe(sale).class;
-  const grossYieldPct = estimateGrossYieldPct(
-    sale.starting_price_eur,
-    surface.value,
-    sale.department,
-  );
+  const grossYieldPct = estimateSaleGrossYieldPct(sale, surface.value, rentReference);
   const rentability = computeRentabilityScore({
     surface: surface.value,
     price: Math.max(0, sale.starting_price_eur ?? 0),
-    department: sale.department,
+    // Un bien qui n'est pas un logement n'a aucun loyer de référence : « indisponible ».
+    department: isRentApplicable(sale) ? sale.department : null,
+    rentReference,
   });
   const documents = normalizeApiDocuments(sale, origin);
   const risks = normalizeApiRisks(sale);
@@ -487,6 +549,19 @@ function saleToApiFeedItem(sale: AuctionSale, origin?: string | null): SalesApiF
       score: sale.investment_score,
       scoreConfidence: sale.score_confidence,
       grossYieldPct: grossYieldPct == null ? null : Math.round(grossYieldPct * 10) / 10,
+      rentReference: rentReference
+        ? {
+            source: rentReference.source,
+            reliability: rentReference.reliability,
+            rentPerM2: rentReference.rentPerM2,
+            vintage: rentReference.vintage ?? null,
+            sourceUpdatedOn: rentReference.sourceUpdatedOn ?? null,
+            attribution: isAnilRentReference(rentReference) ? RENT_ATTRIBUTION : null,
+            attributionDetail: rentSourceDetail(rentReference),
+            chargesIncluded: isAnilRentReference(rentReference),
+            sourceUrl: isAnilRentReference(rentReference) ? RENT_SOURCE_URL : null,
+          }
+        : null,
       rentability: {
         score: rentability.score,
         label: rentability.label,

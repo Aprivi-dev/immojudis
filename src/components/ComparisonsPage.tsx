@@ -19,7 +19,7 @@ import type {
   SaleAnalysisSetListResponse,
   SaleComparisonShareResponse,
 } from "@/lib/sale-analysis-sets";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 
 const DECISION_STATUS_LABELS: Record<SaleAnalysisItem["decision_status"], string> = {
   watching: "À surveiller",

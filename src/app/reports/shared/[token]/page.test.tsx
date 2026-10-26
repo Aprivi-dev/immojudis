@@ -186,3 +186,50 @@ describe("shared report evidence", () => {
     }
   });
 });
+
+describe("shared report rent source", () => {
+  async function rentMarkup(rentReference: unknown) {
+    mocks.report.mockResolvedValue({
+      title: "Rapport loyers",
+      updatedAt: "2026-11-09",
+      sharedAt: null,
+      sale: { startingPrice: 100000 },
+      analysis: { opportunity: { grossYieldPct: 6.2, rentReference } },
+      sourceTrace: [],
+      limitations: [],
+    });
+    return renderToStaticMarkup(
+      await SharedReportPage({ params: Promise.resolve({ token: "test" }) }),
+    );
+  }
+
+  it("credits the ANIL rent map, with its edition and a source link, beside the yield", async () => {
+    const html = await rentMarkup({
+      source: "anil_commune",
+      vintage: 2025,
+      sourceUpdatedOn: "2025-12-11",
+    });
+
+    expect(html).toContain(
+      "Estimations ANIL, à partir des données du Groupe SeLoger et de leboncoin.",
+    );
+    expect(html).toContain("mise à jour du 11 décembre 2025");
+    expect(html).toContain('href="https://www.data.gouv.fr/datasets/693aa2feed1bf4da603faa49"');
+  });
+
+  it("labels the yields « charges comprises » for an ANIL rent, and keeps « net » for the others", async () => {
+    const anil = await rentMarkup({ source: "anil_commune", vintage: 2025 });
+    expect(anil).toContain("Rendement brut potentiel, charges comprises");
+    expect(anil).toContain("Rendement estimé, charges comprises");
+    expect(anil).not.toContain("Rendement net estimé");
+
+    const department = await rentMarkup({ source: "department_estimate" });
+    expect(department).toContain("Rendement net estimé");
+    expect(department).not.toContain("charges comprises");
+  });
+
+  it("adds no credit to a report built on the department rent, or saved before the ANIL map", async () => {
+    expect(await rentMarkup({ source: "department_estimate" })).not.toContain("ANIL");
+    expect(await rentMarkup(undefined)).not.toContain("ANIL");
+  });
+});

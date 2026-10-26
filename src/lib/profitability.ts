@@ -2,7 +2,13 @@
 // Toutes les valeurs sont en euros sauf indication.
 import { clamp } from "@/lib/guards";
 import { departmentCode } from "@/lib/department-code";
-import { defaultRentPerM2, RENT_REFERENCE_UNAVAILABLE } from "@/lib/rent-reference";
+import {
+  defaultRentPerM2,
+  RENT_REFERENCE_UNAVAILABLE,
+  resolveRentReference,
+  type RentReference,
+  type RentReferenceSource,
+} from "@/lib/rent-reference";
 
 // ─── Barème des émoluments de l'avocat poursuivant ───────────────────────
 // Article A444-191 du Code de commerce, qui renvoie au barème proportionnel
@@ -374,6 +380,11 @@ export type RentabilityScoreInputs = AcquisitionCostOptions & {
    */
   acquisition?: AcquisitionCostResult;
   monthlyRent?: number | null;
+  /**
+   * Référence de loyer de la vente (carte ANIL à la commune, lue côté serveur) ; absente, le loyer
+   * départemental sert de repli.
+   */
+  rentReference?: RentReference | null;
   vacancyPct?: number;
   annualNonRecoverableCharges?: number | null;
   annualPropertyTax?: number | null;
@@ -393,7 +404,11 @@ export type RentabilityScoreResult = {
   score: number | null;
   label: string;
   confidencePct: number;
-  rentSource: "manual" | "department_estimate";
+  rentSource: "manual" | RentReferenceSource;
+  /** Fiabilité et millésime de la référence ANIL utilisée ; `null` : loyer saisi ou aucune référence ANIL. */
+  rentReliability: RentReference["reliability"] | null;
+  rentVintage: number | null;
+  rentSourceUpdatedOn: string | null;
   monthlyRent: number | null;
   annualGrossRent: number | null;
   annualNetOperatingIncome: number | null;
@@ -560,11 +575,13 @@ export function computeRentabilityScore(inputs: RentabilityScoreInputs): Rentabi
     computeAcquisitionCosts({ price: inputs.price, ...costOptionsOf(inputs) });
   const assumptions = rentabilityAssumptions(inputs);
   const manualRent = cleanPositive(inputs.monthlyRent);
-  const referenceRentPerM2 = defaultRentPerM2(inputs.department);
-  const estimatedRent =
-    surface > 0 && referenceRentPerM2 != null ? surface * referenceRentPerM2 : null;
+  const reference = resolveRentReference(inputs.rentReference, inputs.department);
+  const estimatedRent = surface > 0 && reference != null ? surface * reference.rentPerM2 : null;
   const monthlyRent = manualRent ?? estimatedRent;
-  const rentSource = manualRent ? "manual" : "department_estimate";
+  const rentSource: RentabilityScoreResult["rentSource"] = manualRent
+    ? "manual"
+    : (reference?.source ?? "department_estimate");
+  const anilReference = !manualRent && reference?.source.startsWith("anil_") ? reference : null;
 
   if (surface <= 0) {
     return unavailableRentabilityResult("Surface manquante", acquisition.totalCost, assumptions);
@@ -630,6 +647,16 @@ export function computeRentabilityScore(inputs: RentabilityScoreInputs): Rentabi
       tone: "negative",
     });
     score -= 4;
+  } else if (anilReference && anilReference.reliability !== "reliable") {
+    factors.push({
+      key: "rent_source",
+      label: "Loyer estimé",
+      delta: -4,
+      detail:
+        "Loyer d’annonce ANIL de fiabilité indicative (peu d’annonces observées dans la commune ou estimation sur un groupe de communes) : à remplacer par un loyer de marché vérifié.",
+      tone: "negative",
+    });
+    score -= 4;
   }
 
   const finalScore = clampScore(Math.round(score));
@@ -646,6 +673,9 @@ export function computeRentabilityScore(inputs: RentabilityScoreInputs): Rentabi
       totalCost: acquisition.totalCost,
     }),
     rentSource,
+    rentReliability: anilReference?.reliability ?? null,
+    rentVintage: anilReference?.vintage ?? null,
+    rentSourceUpdatedOn: anilReference?.sourceUpdatedOn ?? null,
     monthlyRent: Math.round(monthlyRent),
     annualGrossRent: Math.round(annualGrossRent),
     annualNetOperatingIncome: Math.round(annualNetOperatingIncome),
@@ -679,7 +709,8 @@ function solveMaxBid(targetTotalCost: number, options: AcquisitionCostOptions): 
 
 function rentabilityAssumptions(inputs: RentabilityScoreInputs) {
   const surface = Math.max(0, inputs.surface || 0);
-  const estimatedMonthlyRent = surface * (defaultRentPerM2(inputs.department) ?? 0);
+  const estimatedMonthlyRent =
+    surface * (defaultRentPerM2(inputs.department, inputs.rentReference) ?? 0);
   const annualGrossRent = (cleanPositive(inputs.monthlyRent) ?? estimatedMonthlyRent) * 12;
 
   return {
@@ -847,6 +878,9 @@ function unavailableRentabilityResult(
     label: "Rentabilité à compléter",
     confidencePct: 0,
     rentSource: "department_estimate",
+    rentReliability: null,
+    rentVintage: null,
+    rentSourceUpdatedOn: null,
     monthlyRent: null,
     annualGrossRent: null,
     annualNetOperatingIncome: null,

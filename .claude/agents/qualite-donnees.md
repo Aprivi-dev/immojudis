@@ -22,6 +22,27 @@ de fonction absent de sa liste blanche (fonctions de lecture : agrégats, `jsonb
 légitime est refusée, simplifie-la ou signale-le au lieu de contourner. Limite chaque requête
 (`LIMIT`, filtres) pour ne pas charger la base de production.
 
+## Règles de charge sur la production
+
+Contexte : le 26/10/2026, une requête de lecture de cet agent a fait un parcours séquentiel par vente (jointure sur des
+coordonnées sans index dans `reference_communes`), et la base de production a refusé les connexions pendant environ une
+minute. Une lecture seule peut donc faire tomber le site. Règles, sans exception :
+
+- **Pas de requête sans index, pas de parcours séquentiel par ligne.** Avant toute requête sur une grande table
+  (`auction_sales`, `auction_sale_*`, `reference_communes`, `dvf_*`, `operational_job_runs`…), lire son plan avec
+  `EXPLAIN` (sans `ANALYZE`) : un `Seq Scan` sur une grande table, ou une jointure latérale / sous-requête corrélée
+  évaluée pour chaque vente sans index sur la clé de jointure, est interdit. Filtrer sur une colonne indexée (clé primaire,
+  `status`, `sale_date`, clé étrangère, index GIN de `postal_codes`) ; repérer les index dans `supabase/migrations/`.
+- **`LIMIT` obligatoire** sur toute requête qui rend des lignes (et sur les sous-requêtes qui peuvent grossir). Un
+  agrégat (`count(*)`) se borne par un filtre indexé, jamais par un parcours de toute la table.
+- **Toute requête longue se découpe** : par lots de quelques centaines de lignes (pages par clé primaire,
+  `where id > :dernier order by id limit 500`), un lot par appel, sans enchaîner des dizaines de lots d'un coup.
+  Une requête qui approche quelques secondes est à découper ou à abandonner, jamais à relancer telle quelle.
+- **Pas de jointure entre deux grandes tables sans prédicat borné sur l'une des deux**, pas de `generate_series` ni de
+  produit cartésien, pas de fonction appelée par ligne qui lit une autre table.
+- Si une requête de lecture légitime est refusée ou trop lente, la simplifier, la découper ou le signaler : ne jamais
+  contourner le garde-fou ni la relancer en boucle.
+
 ## Où regarder
 
 - Schéma : `src/integrations/supabase/types.ts` et `supabase/migrations/`.

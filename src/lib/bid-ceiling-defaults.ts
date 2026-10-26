@@ -21,7 +21,12 @@ import {
   DEFAULTS,
   registrationRateForDepartment,
 } from "@/lib/profitability";
-import { defaultRentPerM2 } from "@/lib/rent-reference";
+import {
+  isRentApplicable,
+  rentReference as departmentRentReference,
+  resolveRentReference,
+  type RentReference,
+} from "@/lib/rent-reference";
 import { getMarketValuationSurfaces } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
 
@@ -70,6 +75,11 @@ export type CeilingUserChoices = {
   annualPropertyTax?: number | null;
   financingRatePct?: number | null;
   monthlyRent?: number | null;
+  /**
+   * Charges récupérables comprises dans le loyer d'annonce estimé (€/mois), à saisir ; vide par défaut.
+   * Sans effet sur un loyer saisi (déjà hors charges).
+   */
+  recoverableCharges?: number | null;
   targetNetYieldPct?: number | null;
   sellingCostsPct?: number | null;
 };
@@ -86,19 +96,36 @@ export function occupationCaseForStatus(status: string | null | undefined): Occu
 /**
  * Hypothèses de départ du plafond d'une vente. `regime` : le régime de frais de la vente ; absent,
  * le calcul est celui du tribunal (barème, frais par défaut et consignation d'origine), sans que
- * l'hypothèse porte de régime.
+ * l'hypothèse porte de régime. `rentReference` : la référence de loyer de la vente (carte ANIL à la
+ * commune, lue par le serveur) ; absente, le loyer départemental sert de repli.
  */
 export function buildCeilingHypotheses(
   sale: AuctionSale,
   estimate: CeilingMarketEstimate | null,
   choices: CeilingUserChoices = {},
   regime: FeeRegime | null = null,
+  rentReference: RentReference | null = null,
 ): CeilingHypotheses {
   const surfaces = getMarketValuationSurfaces(sale);
   const surface = surfaces.builtSurfaceM2;
   const apartment = /appart|apartment|studio|duplex|loft/i.test(sale.property_type ?? "");
-  const rentPerM2 = defaultRentPerM2(sale.department);
-  const estimatedRent = surface && rentPerM2 ? Math.round(surface * rentPerM2) : null;
+  // Un bien qui n'est pas un logement (terrain, parking, local…) n'a aucun loyer de référence.
+  const reference = isRentApplicable(sale)
+    ? resolveRentReference(rentReference, sale.department)
+    : null;
+  const referenceRent = surface && reference ? Math.round(surface * reference.rentPerM2) : null;
+  // Charges récupérables comprises dans le loyer d'annonce : saisies par l'utilisateur, jamais inventées.
+  // Elles s'ajoutent au loyer d'annonce estimé (ANIL, charges comprises) : le loyer retenu est hors charges.
+  const recoverableCharges = positive(choices.recoverableCharges);
+  const estimatedRent =
+    referenceRent && recoverableCharges
+      ? Math.max(0, referenceRent - recoverableCharges) || null
+      : referenceRent;
+  // Base historique de la taxe foncière par défaut : le loyer départemental (ou la surface). Elle ne suit
+  // PAS la référence ANIL : l'affichage du loyer ne doit pas déplacer le plafond du projet « habiter ».
+  const departmentRent = surface
+    ? Math.round(surface * (departmentRentReference(sale.department)?.rentPerM2 ?? 0))
+    : 0;
   const notarial = regime?.kind === "notarial";
   // Les frais préalables sont une notion du tribunal : une vente notariale n'en a pas.
   const preliminary = notarial ? null : preliminaryFeesFromSale(sale);
@@ -147,8 +174,8 @@ export function buildCeilingHypotheses(
         (apartment && surface ? Math.round(surface * DEFAULT_CONDO_CHARGES_PER_M2) : 0),
       annualPropertyTax:
         choices.annualPropertyTax ??
-        (estimatedRent
-          ? Math.round(estimatedRent * 12 * 0.08)
+        (departmentRent
+          ? Math.round(departmentRent * 12 * 0.08)
           : surface
             ? Math.round(surface * 12)
             : 0),
@@ -206,6 +233,15 @@ export function buildCeilingHypotheses(
     rent: {
       monthly: manualRent ?? estimatedRent,
       source: manualRent != null ? "saisi" : estimatedRent ? "estime" : "absent",
+      ...(manualRent == null && estimatedRent && reference ? { reference } : {}),
+      recoverableCharges,
+      // Loyer d'annonce ANIL (charges comprises) sans charges saisies : le rendement n'est pas « net ».
+      ...(manualRent == null &&
+      estimatedRent &&
+      !recoverableCharges &&
+      reference?.source.startsWith("anil_")
+        ? { chargesIncluded: true as const }
+        : {}),
       vacancyPct: DEFAULT_VACANCY_PCT,
       nonRecoverablePct: DEFAULT_NON_RECOVERABLE_PCT,
       targetNetYieldPct: choices.targetNetYieldPct ?? null,

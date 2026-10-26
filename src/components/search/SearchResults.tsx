@@ -1,4 +1,4 @@
-import { PepiteInfoBadge } from "@/components/PepiteBadge";
+import { FloodExposedNote, PepiteInfoBadge } from "@/components/PepiteBadge";
 import { PointsToVerifyBadge } from "@/components/PointsToVerifyBadge";
 import { pointsToVerify } from "@/lib/search/points-to-verify";
 import { SaleCountdown } from "@/components/SaleCountdown";
@@ -72,7 +72,7 @@ import {
   type AiReviewRequestStatus,
 } from "@/lib/ai-review-guard";
 import { userMessage } from "@/lib/user-messages";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 import { useFavoriteRemovalConfirmation } from "@/components/favorite-removal";
 import type { RemovedFavoriteDossier } from "@/lib/favorites";
 import type { ResultsView } from "@/lib/search/results-view";
@@ -118,6 +118,7 @@ export function SearchResultsList({
   hideEmptyState = false,
   view = "cards",
   pepiteSaleIds,
+  pepiteExposedSaleIds,
   pepiteEmpty,
 }: {
   sales: AuctionSale[];
@@ -148,6 +149,8 @@ export function SearchResultsList({
   view?: ResultsView;
   /** Pépites publiables (liste publique lue une fois par page) : pastille sur la carte et le tableau. */
   pepiteSaleIds?: ReadonlySet<string>;
+  /** Parmi les pépites, celles dont le bien est dans le périmètre d'un PPRi (mention courte). */
+  pepiteExposedSaleIds?: ReadonlySet<string>;
   /** Actions de l'état vide quand « Pépites seulement » est actif (voir `NoResultsState`). */
   pepiteEmpty?: ComponentProps<typeof NoResultsState>["pepite"];
 }) {
@@ -223,6 +226,7 @@ export function SearchResultsList({
             onSelect={onSelect}
             unlockedIds={unlockedIds}
             pepiteSaleIds={pepiteSaleIds}
+            pepiteExposedSaleIds={pepiteExposedSaleIds}
             aiReviewBySaleId={aiReviewBySaleId}
             aiReviewStatus={aiReviewStatus}
             favoriteIds={favoriteIds}
@@ -259,6 +263,10 @@ export function SearchResultsList({
                     initialFavorite={favoriteIds.has(sale.id)}
                     unlocked={unlockedIds.has(sale.id)}
                     pepite={pepiteSaleIds?.has(sale.id.toLowerCase()) === true}
+                    pepiteFloodExposed={
+                      pepiteSaleIds?.has(sale.id.toLowerCase()) === true &&
+                      pepiteExposedSaleIds?.has(sale.id.toLowerCase()) === true
+                    }
                   />
                 </Fragment>
               ))}
@@ -307,6 +315,7 @@ export const ListingCard = memo(function ListingCard({
   initialFavorite = false,
   unlocked = false,
   pepite = false,
+  pepiteFloodExposed = false,
   onFavoriteChange,
 }: {
   sale: AuctionSale;
@@ -330,6 +339,8 @@ export const ListingCard = memo(function ListingCard({
   unlocked?: boolean;
   /** La vente est une pépite publiable : pastille « Pépite » sur la photo, mot ajouté au nom du lien. */
   pepite?: boolean;
+  /** Pépite dont le bien est dans le périmètre d'un PPRi : mention courte, sans montant. */
+  pepiteFloodExposed?: boolean;
   /** Appelé après l'ajout ou le retrait réussi d'un favori depuis la carte. */
   onFavoriteChange?: (
     saleId: string,
@@ -447,6 +458,7 @@ export const ListingCard = memo(function ListingCard({
           date: getAiReviewFieldResult(aiReviewProjections, "sale.sale_date", aiReviewStatus)
             .blocked,
           pepite,
+          floodExposed: pepiteFloodExposed,
         })}
         className="absolute inset-0 z-10 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
       />
@@ -475,7 +487,7 @@ export const ListingCard = memo(function ListingCard({
         </div>
         {(pepite || unlocked || viewed) && (
           <div className="absolute left-3 top-3 z-20 flex flex-wrap items-start gap-1">
-            {pepite && <PepiteInfoBadge />}
+            {pepite && <PepiteInfoBadge floodExposed={pepiteFloodExposed} />}
             {unlocked && (
               <span className="rounded-md bg-gold px-2 py-1 text-[11px] font-bold text-brand-navy shadow-sm">
                 Débloquée
@@ -495,6 +507,7 @@ export const ListingCard = memo(function ListingCard({
         <h3 className="font-sans text-base font-semibold leading-snug text-brand-navy">
           {heading}
         </h3>
+        {pepite && pepiteFloodExposed ? <FloodExposedNote className="mt-1" /> : null}
         <p className="mt-1 text-sm leading-5 text-ink-soft">
           {withSeparators([
             cityReview.blocked || (!headingSale.city?.trim() && !departmentLine) ? (

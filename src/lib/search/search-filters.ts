@@ -6,7 +6,8 @@ import { dpeMatches, extractDpe } from "@/lib/dpe";
 import { listingVisits, saleHasVisitSoon } from "@/lib/sale-listing";
 import { getSaleSurface } from "@/lib/surface";
 import { isOccupiedOccupancyStatus } from "@/lib/market-gap-band";
-import { estimateGrossYieldPct, haversineKm, pricePerM2, type GeoPoint } from "@/lib/geo";
+import { estimateSaleGrossYieldPct, haversineKm, pricePerM2, type GeoPoint } from "@/lib/geo";
+import type { RentLookup } from "@/lib/rent-reference";
 import {
   matchesFrenchGeoSearch,
   matchesFrenchSearchText,
@@ -250,6 +251,12 @@ export type ClientSearchFilterContext = {
   pepiteSaleIds?: ReadonlySet<string> | null;
   /** L'occupation est lue pour ce compte (offre Analyse) : comme sur la carte, elle compte parmi les points à vérifier. */
   occupancyVisible?: boolean;
+  /**
+   * Références de loyer (carte ANIL à la commune), pour le filtre « rendement minimal ». Lues côté
+   * serveur (`rent-reference.server.ts`) : le navigateur n'en reçoit pas, et le filtre retombe alors
+   * sur le loyer départemental.
+   */
+  rents?: RentLookup;
   now?: Date;
 };
 
@@ -294,7 +301,7 @@ export function applyClientSearchFilters(
       if (ppm == null || ppm > search.maxPricePerM2) return false;
     }
     if (search.minYield != null) {
-      const yieldPct = estimateGrossYieldPct(sale.starting_price_eur, surface, sale.department);
+      const yieldPct = estimateSaleGrossYieldPct(sale, surface, context.rents?.(sale));
       if (yieldPct == null || yieldPct < search.minYield) return false;
     }
     if (search.houseWithLand && !isHouseWithLand(sale)) return false;

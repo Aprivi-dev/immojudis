@@ -7,6 +7,7 @@ import {
   pepiteCriteriaViews,
   pepiteDetailPayload,
   pepiteDetailView,
+  pepiteFloodView,
   type PepitePayload,
 } from "@/lib/sale-pepite-view";
 
@@ -243,5 +244,62 @@ describe("PepiteBlock", () => {
       );
       expect((await axe(container)).violations).toEqual([]);
     });
+  });
+});
+
+describe("PepiteBlock : contrôle du risque d'inondation (règle v2)", () => {
+  beforeEach(() => mocks.auth.mockReturnValue({ user: { id: "user-1" }, loading: false }));
+  afterEach(cleanup);
+
+  const withFlood = (verdict: string, observedAt: string | null = "2026-11-05T09:00:00.000Z") =>
+    pepiteCriteriaPayload(PASSING, pepiteFloodView({ flood: { verdict, observedAt } }));
+
+  it("aucun risque élevé identifié : coche, source avec lien, cartes consultées repliées, mise en garde", () => {
+    render(<PepiteBlock payload={withFlood("none_found")} saleId={saleId} />);
+    const row = screen.getByRole("group", { name: "Risque d’inondation" });
+    expect(row.textContent).toContain("Aucun risque d’inondation élevé identifié");
+    expect(within(row).getByText("Réussi :", { exact: false })).toBeTruthy();
+    const link = within(row).getByRole("link", { name: /Source : Géorisques/ });
+    expect(link.getAttribute("href")).toBe("https://www.georisques.gouv.fr/");
+    expect(link.getAttribute("rel")).toContain("noopener");
+    expect(row.querySelector("details summary")?.textContent).toBe("Cartes consultées");
+    expect(document.body.textContent).toContain(
+      "Contrôle automatique d’après des cartes officielles",
+    );
+  });
+
+  it("exposé : pictogramme d'alerte (jamais de coche), mention courte et développée, au niveau gratuit", () => {
+    render(<PepiteBlock payload={withFlood("exposed")} saleId={saleId} />);
+    const row = screen.getByRole("group", { name: "Risque d’inondation" });
+    expect(row.textContent).toContain(
+      "Dans le périmètre d’un plan de prévention des risques d’inondation (PPRi) : zonage à vérifier.",
+    );
+    expect(row.textContent).toContain("Ce périmètre ne dit pas dans quelle zone du plan");
+    expect(within(row).queryByText("Réussi :", { exact: false })).toBeNull();
+    expect(within(row).getByText("Attention :", { exact: false })).toBeTruthy();
+    expect(within(row).getByRole("link", { name: /Géoportail de l’urbanisme/ })).toBeTruthy();
+  });
+
+  it.each(["no_signal", "unknown"])("%s : ligne neutre, jamais de coche", (verdict) => {
+    render(<PepiteBlock payload={withFlood(verdict)} saleId={saleId} />);
+    const row = screen.getByRole("group", { name: "Risque d’inondation" });
+    expect(within(row).queryByText("Réussi :", { exact: false })).toBeNull();
+    expect(within(row).getByText("Information :", { exact: false })).toBeTruthy();
+    expect(within(row).queryByRole("link")).toBeNull();
+  });
+
+  it("sans contrôle (règle v1) : ni ligne ni mise en garde", () => {
+    render(<PepiteBlock payload={pepiteCriteriaPayload(PASSING)} saleId={saleId} />);
+    expect(screen.queryByRole("group", { name: "Risque d’inondation" })).toBeNull();
+    expect(document.body.textContent).not.toContain("Contrôle automatique");
+  });
+
+  it("n'a pas de défaut d'accessibilité", async () => {
+    const { container } = render(
+      <main>
+        <PepiteBlock payload={withFlood("exposed")} saleId={saleId} />
+      </main>,
+    );
+    expect((await axe(container)).violations).toEqual([]);
   });
 });

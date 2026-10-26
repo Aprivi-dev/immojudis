@@ -5,7 +5,7 @@ import Megaphone from "lucide-react/dist/esm/icons/megaphone.js";
 import { fetchLawyerDirectory } from "@/lib/client-api";
 import type { LawyerDirectoryProfile } from "@/lib/lawyer-directory";
 import { resolveFrenchGeoSearch } from "@/lib/search/french-geo-search";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 import {
   LAWYER_CONTACT_HREF,
   LAWYER_INVITATION_LABEL,

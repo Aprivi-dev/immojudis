@@ -62,6 +62,7 @@ export function SearchResultsTable({
   onSelect,
   unlockedIds,
   pepiteSaleIds,
+  pepiteExposedSaleIds,
   favoriteIds,
   favoriteScope,
   FavoriteButton,
@@ -83,6 +84,8 @@ export function SearchResultsTable({
   unlockedIds: ReadonlySet<string>;
   /** Pépites publiables : une icône « Pépite » (avec son texte pour lecteur d'écran) dans la colonne Statut. */
   pepiteSaleIds?: ReadonlySet<string>;
+  /** Parmi les pépites, celles dont le bien est dans le périmètre d'un PPRi (mention courte). */
+  pepiteExposedSaleIds?: ReadonlySet<string>;
   favoriteIds: ReadonlySet<string>;
   favoriteScope: string | null;
   /** Le cœur des cartes (`CompactFavoriteButton`), fourni par la liste qui porte l'état des favoris. */
@@ -153,6 +156,10 @@ export function SearchResultsTable({
                   onSelect={onSelect}
                   unlocked={unlockedIds.has(sale.id)}
                   pepite={pepiteSaleIds?.has(sale.id.toLowerCase()) === true}
+                  pepiteFloodExposed={
+                    pepiteSaleIds?.has(sale.id.toLowerCase()) === true &&
+                    pepiteExposedSaleIds?.has(sale.id.toLowerCase()) === true
+                  }
                   aiReviewProjections={aiReviewBySaleId?.[sale.id]}
                   aiReviewStatus={aiReviewStatus}
                   favoriteScope={favoriteScope}
@@ -177,6 +184,7 @@ const ListingRow = memo(function ListingRow({
   onSelect,
   unlocked,
   pepite = false,
+  pepiteFloodExposed = false,
   aiReviewProjections,
   aiReviewStatus,
   favoriteScope,
@@ -193,6 +201,7 @@ const ListingRow = memo(function ListingRow({
   onSelect: (saleId: string | null) => void;
   unlocked: boolean;
   pepite?: boolean;
+  pepiteFloodExposed?: boolean;
   aiReviewProjections?: readonly AiReviewProjectionReadModel[] | null;
   aiReviewStatus: AiReviewRequestStatus;
   favoriteScope: string | null;
@@ -265,6 +274,7 @@ const ListingRow = memo(function ListingRow({
             date: getAiReviewFieldResult(aiReviewProjections, "sale.sale_date", aiReviewStatus)
               .blocked,
             pepite,
+            floodExposed: pepiteFloodExposed,
           })}
           className="font-semibold text-brand-navy underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
         >
@@ -321,7 +331,7 @@ const ListingRow = memo(function ListingRow({
       </td>
       <td className="px-3 py-3">
         <div className="flex flex-wrap items-center gap-1.5">
-          {pepite ? <PepiteInfoBadge variant="icon" /> : null}
+          {pepite ? <PepiteInfoBadge variant="icon" floodExposed={pepiteFloodExposed} /> : null}
           {unlocked ? (
             <span className="rounded-md bg-gold px-2 py-0.5 text-[11px] font-bold text-brand-navy">
               Débloquée

@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
 import { fetchAccessPlan } from "@/lib/client-billing";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 
 /**
  * Étiquette sobre « Inclus pendant votre essai gratuit » à côté de ce que l'offre Analyse ouvre

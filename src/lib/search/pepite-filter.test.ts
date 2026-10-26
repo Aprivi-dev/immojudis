@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   PEPITE_IDS_API_PATH,
+  fetchPepiteFloodExposedIds,
   fetchPepiteSaleIds,
   pepitesActive,
   resetPepiteSaleIdsCache,
@@ -26,6 +27,19 @@ describe("liste publique des pépites", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledWith(PEPITE_IDS_API_PATH, expect.anything());
     expect([...lists[0]]).toEqual(["aaa", "bbb"]);
+  });
+
+  it("lit les pépites « exposées » (périmètre d'un PPRi) avec la même réponse, sans appel de plus", async () => {
+    answer({ ids: ["AAA", "bbb"], exposedIds: ["BBB"] });
+    expect([...(await fetchPepiteSaleIds(1_000))]).toEqual(["aaa", "bbb"]);
+    expect([...(await fetchPepiteFloodExposedIds(1_000))]).toEqual(["bbb"]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("une réponse sans « exposedIds » (ancienne version de la route) vaut aucune exposée, jamais une panne", async () => {
+    answer({ ids: ["aaa"] });
+    expect([...(await fetchPepiteFloodExposedIds(1_000))]).toEqual([]);
+    expect([...(await fetchPepiteSaleIds(1_000))]).toEqual(["aaa"]);
   });
 
   it("garde la liste 5 minutes, puis la relit", async () => {

@@ -7,8 +7,10 @@ import { alertMatchesSale } from "@/lib/alerts";
 import { createAlertNotificationsForMatches } from "@/lib/alert-notifications";
 import { extractDpe } from "@/lib/dpe";
 import { errorDetails, errorSummary } from "@/lib/error-details";
-import { estimateGrossYieldPct, pricePerM2 } from "@/lib/geo";
+import { estimateSaleGrossYieldPct, pricePerM2 } from "@/lib/geo";
 import { resolveMarketGap } from "@/lib/market-gap";
+import type { RentLookup } from "@/lib/rent-reference";
+import { createRentLookupSession, type RentLookupSession } from "@/lib/rent-reference.server";
 import { marketGapWithheldReason } from "@/lib/market-gap-band";
 import { listPepiteSaleIds, type PepiteIdsClient } from "@/lib/pepite-sale-ids";
 import { featureIncluded } from "@/lib/plans";
@@ -198,16 +200,58 @@ type AlertEvaluationEntry = {
   matches: AlertMatchSummary[];
   rows: Database["public"]["Tables"]["user_alert_matches"]["Insert"][];
   notificationCount?: number;
+  /** Ventes enregistrées sans notification (base silencieuse du changement de loyers de référence). */
+  silentSaleIds?: Set<string>;
 };
+
+/**
+ * Variable d'environnement posée AU DÉPLOIEMENT du passage à la carte des loyers de l'ANIL (date ISO).
+ * Absente : aucune base silencieuse.
+ */
+export const RENT_BASIS_SWITCH_ENV = "ALERT_RENT_BASIS_SWITCH_AT";
+/** La base silencieuse ne dure que 48 heures après le changement. */
+export const RENT_BASIS_SILENT_WINDOW_MS = 48 * 60 * 60 * 1000;
+
+/**
+ * Base silencieuse. Le passage à la carte des loyers de l'ANIL fait entrer des ventes dans les alertes à
+ * critère de rendement sans qu'elles aient changé : sans précaution, le premier passage enverrait d'un
+ * coup toutes ces « nouvelles » correspondances. Les mailles de déduplication (correspondance unique par
+ * alerte et vente, notification unique par correspondance) n'y suffisent pas : le pipeline réécrit
+ * `updated_at` à chaque collecte, donc la fenêtre incrémentale relit presque tout le catalogue.
+ *
+ * Pour une alerte à critère de rendement évaluée avant le changement (`last_evaluated_at` renseigné et
+ * antérieur à `ALERT_RENT_BASIS_SWITCH_AT`), pendant les 48 heures qui suivent, les correspondances qui
+ * n'existaient pas avec le loyer départemental sont enregistrées SANS notification. Les ventes qui
+ * correspondaient déjà, et toute alerte créée ou modifiée depuis (`last_evaluated_at` nul), gardent le
+ * comportement normal.
+ */
+export function isRentBasisSilentPass(
+  alert: Pick<UserAlert, "min_yield_pct" | "last_evaluated_at">,
+  evaluatedAt: string,
+  env: Pick<NodeJS.ProcessEnv, string> = process.env,
+): boolean {
+  if (alert.min_yield_pct == null || !alert.last_evaluated_at) return false;
+  const switchAt = Date.parse(env[RENT_BASIS_SWITCH_ENV] ?? "");
+  const now = Date.parse(evaluatedAt);
+  const last = Date.parse(alert.last_evaluated_at);
+  if (![switchAt, now, last].every(Number.isFinite)) return false;
+  return now >= switchAt && now < switchAt + RENT_BASIS_SILENT_WINDOW_MS && last < switchAt;
+}
 
 export async function evaluateUserAlertMatches({
   auth,
   saleLimit = DEFAULT_ALERT_EVALUATION_SALE_LIMIT,
   persist = true,
+  rentSession = createRentLookupSession(),
 }: {
   auth: SupabaseAuthContext;
   saleLimit?: number;
   persist?: boolean;
+  /**
+   * Références de loyer (carte ANIL) partagées : le cron en ouvre une par exécution, pour toutes les
+   * alertes de tous les comptes ; seule, une évaluation en ouvre une.
+   */
+  rentSession?: RentLookupSession;
 }): Promise<AlertEvaluationResponse> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "alerts.advanced")) {
@@ -272,6 +316,7 @@ export async function evaluateUserAlertMatches({
         pepiteSaleIds,
         pepiteFailure,
         pepiteOnlySaleIds,
+        rentSession,
       });
       if (persist) {
         await persistAlertEvaluation({ entry, auth, evaluatedAt, discovery });
@@ -313,8 +358,10 @@ async function collectAlertMatches({
   pepiteSaleIds,
   pepiteFailure,
   pepiteOnlySaleIds,
+  rentSession,
 }: {
   entry: AlertEvaluationEntry;
+  rentSession: RentLookupSession;
   auth: SupabaseAuthContext;
   sales: AuctionSale[];
   discovery: boolean;
@@ -336,6 +383,23 @@ async function collectAlertMatches({
     : null;
   if (alert.watched_zone_id && !watchedZone) return;
 
+  // Loyers de la carte ANIL à la commune. Le code commune se lit en base (`raw_payload` est lourd) : une
+  // alerte à critère de rendement ne le lit que pour les ventes qu'elle retient sur ses autres critères ;
+  // les autres alertes, seulement pour leurs ventes retenues (résumé enregistré).
+  let rents: RentLookup | undefined;
+  if (!discovery && alert.min_yield_pct != null) {
+    const withoutYield = { ...alert, min_yield_pct: null, min_market_discount_pct: null };
+    rents = await rentSession.load(
+      sales.filter(
+        (sale) =>
+          (isPepiteAlert(alert) || !pepiteOnlySaleIds.has(sale.id)) &&
+          alertMatchesSale(withoutYield, sale, { watchedZone, pepiteSaleIds }).matches,
+      ),
+    );
+  }
+  // Base silencieuse du changement de loyers de référence (voir `isRentBasisSilentPass`).
+  const silentPass = !discovery && isRentBasisSilentPass(alert, evaluatedAt);
+  const matched: Array<{ sale: AuctionSale; summary: AlertMatchSummary }> = [];
   for (const sale of sales) {
     if (!isPepiteAlert(alert) && pepiteOnlySaleIds.has(sale.id)) continue;
     let marketDiscountPct: number | null = null;
@@ -343,6 +407,7 @@ async function collectAlertMatches({
       const preliminary = alertMatchesSale({ ...alert, min_market_discount_pct: null }, sale, {
         watchedZone,
         pepiteSaleIds,
+        rents,
       });
       if (!preliminary.matches) continue;
       marketDiscountPct = await getCachedMarketDiscount(marketDiscountCache, sale);
@@ -352,9 +417,17 @@ async function collectAlertMatches({
       ...(alert.min_market_discount_pct == null ? {} : { marketDiscountPct }),
       watchedZone,
       pepiteSaleIds,
+      rents,
     };
     const result = alertMatchesSale(alert, sale, baseContext);
     if (!result.matches) continue;
+    // Correspondance qui n'existait pas avec le loyer départemental : due au changement de loyers.
+    if (
+      silentPass &&
+      !alertMatchesSale(alert, sale, { ...baseContext, rents: undefined }).matches
+    ) {
+      (entry.silentSaleIds ??= new Set()).add(sale.id);
+    }
 
     const summary = buildAlertMatchSummary({
       alert,
@@ -371,6 +444,13 @@ async function collectAlertMatches({
         : ["Critères publics correspondants"];
     }
     entry.matches.push(summary);
+    matched.push({ sale, summary });
+  }
+
+  // Les résumés enregistrés citent le rendement estimé : mêmes références que le critère.
+  const snapshotRents =
+    rents ?? (discovery ? undefined : await rentSession.load(matched.map((item) => item.sale)));
+  for (const { sale, summary } of matched) {
     entry.rows.push({
       user_id: auth.userId,
       alert_id: alert.id,
@@ -378,7 +458,14 @@ async function collectAlertMatches({
       match_reasons: summary.reasons,
       matched_at: evaluatedAt,
       match_snapshot: asJson(
-        buildAlertMatchSnapshot({ alert, sale, summary, watchedZone, discovery }),
+        buildAlertMatchSnapshot({
+          alert,
+          sale,
+          summary,
+          watchedZone,
+          discovery,
+          rents: snapshotRents,
+        }),
       ),
     });
   }
@@ -422,7 +509,9 @@ async function persistAlertEvaluation({
     }
   }
 
-  const persistedMatches = matches.filter((match) => match.id);
+  const persistedMatches = matches.filter(
+    (match) => match.id && !entry.silentSaleIds?.has(match.saleId),
+  );
   let notificationCount = 0;
   for (let offset = 0; offset < persistedMatches.length; offset += ALERT_MATCH_UPSERT_BATCH_SIZE) {
     const result = await createAlertNotificationsForMatches({
@@ -577,7 +666,7 @@ async function attachAlertDetails({
           : null;
         if (alert.watched_zone_id && !watchedZone) return false;
         return alertMatchesSale(
-          { ...alert, dpe_classes: [], min_market_discount_pct: null },
+          { ...alert, dpe_classes: [], min_market_discount_pct: null, min_yield_pct: null },
           sale,
           { watchedZone, pepiteSaleIds },
         ).matches;
@@ -612,6 +701,8 @@ export async function runSmartAlertEvaluationBatch({
   // Every user with an active alert is processed, oldest evaluation first.
   const userIds = await getSmartAlertCandidateUserIds();
   const results: SmartAlertBatchUserResult[] = [];
+  // Un seul chargement des loyers par exécution, partagé par toutes les alertes de tous les comptes.
+  const rentSession = createRentLookupSession();
   const alertFailures: SmartAlertBatchRunResult["alertFailures"] = [];
   let next = 0;
   let deferred = 0;
@@ -629,6 +720,7 @@ export async function runSmartAlertEvaluationBatch({
           auth: await systemAuthForUser(userId),
           saleLimit,
           persist: true,
+          rentSession,
         });
         // Le compte n'échoue que si toutes ses alertes ont échoué ; sinon les échecs sont comptés.
         const allFailed =
@@ -754,6 +846,7 @@ export function buildAlertMatchSnapshot({
   summary,
   watchedZone,
   discovery = false,
+  rents,
 }: {
   alert: Pick<
     UserAlert,
@@ -776,6 +869,8 @@ export function buildAlertMatchSnapshot({
   summary: AlertMatchSummary;
   watchedZone?: UserWatchedZone | null;
   discovery?: boolean;
+  /** Références de loyer (carte ANIL) ; absentes, le rendement du résumé suit le loyer départemental. */
+  rents?: RentLookup;
 }) {
   if (discovery) {
     return {
@@ -801,7 +896,7 @@ export function buildAlertMatchSnapshot({
   }
   const surface = getSaleSurface(sale).value;
   const dpe = extractDpe(sale).class;
-  const yieldPct = estimateGrossYieldPct(sale.starting_price_eur, surface, sale.department);
+  const yieldPct = estimateSaleGrossYieldPct(sale, surface, rents?.(sale));
   const documents = documentSignatureParts(sale);
 
   return {

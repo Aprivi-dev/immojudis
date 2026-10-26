@@ -72,6 +72,8 @@ const SERVER_KEYS = [
   "SALE_REMINDERS_MODE",
   "WEEKLY_DIGEST_MODE",
   "SALE_RESULTS_MODE",
+  "PEPITE_RULE_V2_ENABLED",
+  "SALE_FLOOD_RISK_BATCH_LIMIT",
   "GITHUB_SCROLL_TOKEN",
   "IMMOJUDIS_GITHUB_ACTIONS_TOKEN",
   "GITHUB_ACTIONS_DISPATCH_TOKEN",
@@ -195,6 +197,14 @@ export function serverEnv(source?: EnvSource) {
     saleResults: {
       /** Valeur brute de `SALE_RESULTS_MODE` ; `saleResultsMode()` la ramène à off, internal ou on. */
       mode: env.SALE_RESULTS_MODE,
+    },
+    pepiteRule: {
+      /** Valeur brute de `PEPITE_RULE_V2_ENABLED` ; `pepiteV2EnabledFromEnv()` la ramène à vrai ou faux. */
+      v2Enabled: env.PEPITE_RULE_V2_ENABLED,
+    },
+    saleFloodRisk: {
+      /** Valeur brute de `SALE_FLOOD_RISK_BATCH_LIMIT` (ventes observées par passe) ; la route la ramène à un nombre. */
+      batchLimit: env.SALE_FLOOD_RISK_BATCH_LIMIT,
     },
     pipeline: {
       githubToken: firstFilled(

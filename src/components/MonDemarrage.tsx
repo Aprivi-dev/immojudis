@@ -13,7 +13,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { getSupabase } from "@/integrations/supabase/lazy";
 import { fetchNotificationPreferences } from "@/lib/client-api";
 import { saleDetailPath } from "@/lib/navigation";
-import { queryKeys } from "@/lib/query-keys";
+import * as queryKeys from "@/lib/query-keys";
 import {
   START_FAVORITES_LIMIT,
   readStartCardClosed,

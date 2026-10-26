@@ -1,6 +1,6 @@
 # Inventaire des tâches planifiées
 
-Mis à jour le 26 octobre 2026. Toute route `src/app/api/cron/*` doit figurer ici, dans `vercel.json`
+Mis à jour le 26 octobre 2026 (observation du risque d'inondation et règle `pepite-v2`). Toute route `src/app/api/cron/*` doit figurer ici, dans `vercel.json`
 ou dans une migration `pg_cron` ; le test `src/lib/scheduled-jobs.test.ts` le vérifie.
 
 ## Tâches applicatives (routes `/api/cron/*`)
@@ -16,7 +16,9 @@ ou dans une migration `pg_cron` ; le test `src/lib/scheduled-jobs.test.ts` le v�
 | Rétention des données                                      | Vercel Cron        | dimanche 04:15          | `/api/cron/data-retention`            | oui                                                  | 8 jours                       |
 | Complétude des annonces (palier de classement de /sales)   | Supabase `pg_cron` | toutes les heures à :20 | `/api/cron/listing-completeness`      | oui                                                  | 3 h                           |
 | Complétude des annonces (filet quotidien)                  | Vercel Cron        | 05:50 tous les jours    | `/api/cron/listing-completeness`      | oui (même tâche, même seuil)                         | 3 h                           |
-| Pépites des ventes (règle `pepite-v1`, mode `shadow`)      | Supabase `pg_cron` | toutes les heures à :35 | `/api/cron/sale-pepites`              | oui                                                  | 3 h                           |
+| Risque d'inondation des ventes (règle `pepite-v2`)         | Supabase `pg_cron` | toutes les heures à :25 | `/api/cron/sale-flood-risk`           | oui                                                  | 3 h                           |
+| Risque d'inondation des ventes (filet quotidien)           | Vercel Cron        | 05:35 tous les jours    | `/api/cron/sale-flood-risk`           | oui (même tâche, même seuil)                         | 3 h                           |
+| Pépites des ventes (règle `pepite-v1` ou `pepite-v2`)      | Supabase `pg_cron` | toutes les heures à :35 | `/api/cron/sale-pepites`              | oui                                                  | 3 h                           |
 | Pépites des ventes (filet quotidien)                       | Vercel Cron        | 05:42 tous les jours    | `/api/cron/sale-pepites`              | oui (même tâche, même seuil)                         | 3 h                           |
 | Santé opérationnelle                                       | Supabase `pg_cron` | toutes les 15 min       | `/api/cron/operational-health`        | oui                                                  | 45 min                        |
 | Purge des ventes                                           | Supabase `pg_cron` | toutes les 5 min        | `/api/cron/sale-retention`            | oui                                                  | 20 min                        |
@@ -37,13 +39,15 @@ Si plus de 3 h séparent l'application de la migration `20261024100100` et le d�
 qui n'existe pas encore. Il suffit alors d'appeler la route une fois, avec `CRON_SECRET`
 (`Authorization: Bearer $CRON_SECRET` sur `/api/cron/listing-completeness`), pour la refermer.
 
-Le calcul des pépites (route `/api/cron/sale-pepites`, règle `pepite-v1`, migrations `20261104100000` et
-`20261104100100`) tourne chaque heure à :35, par lots de 300 ventes (variable `SALE_PEPITES_BATCH_LIMIT`) :
-une vente jamais évaluée, modifiée, dont l'estimation a été recalculée, évaluée avec une autre version de la
-règle, du moteur de plafond ou d'un régime, ou évaluée il y a plus de 24 h, est (ré)évaluée. Le mode
-(`app_private.sale_pepite_settings`) vaut `shadow` à l'application de la migration : les résultats sont
-calculés et stockés, rien n'est visible du public (les fonctions publiques ne rendent rien) ; `off` arrête le
-calcul ; `on` ouvre la lecture publique (décision du fondateur, après contrôle de la liste de `/admin/pepites`) ; l'ouverture se fait par une migration dédiée. Un administrateur peut repasser de `on` à `shadow` avec le bouton « Suspendre les pépites » de `/admin/pepites` (fonction `suspend_sale_pepites`, qui ne sait jamais ouvrir).
+Le calcul des pépites (route `/api/cron/sale-pepites`, règles `pepite-v1` et `pepite-v2`, migrations
+`20261104100000` et `20261104100100`) tourne chaque heure à :35, par lots de 300 ventes (variable
+`SALE_PEPITES_BATCH_LIMIT`) : une vente jamais évaluée, modifiée, dont l'estimation a été recalculée, évaluée avec
+une autre version de la règle, du moteur de plafond ou d'un régime, ou évaluée il y a plus de 24 h, est
+(ré)évaluée. Le mode (`app_private.sale_pepite_settings`) valait `shadow` à l'application de la migration ; il vaut
+`on` depuis le 26/10/2026 (migration `20261105100000`, décision du fondateur) : les fonctions publiques rendent les
+pépites publiables. `off` arrête le calcul ; `shadow` calcule et stocke sans rien montrer ; l'ouverture se fait par
+une migration dédiée. Un administrateur peut repasser de `on` à `shadow` avec le bouton « Suspendre les pépites » de
+`/admin/pepites` (fonction `suspend_sale_pepites`, qui ne sait jamais ouvrir).
 Avant la migration, la route se termine sans rien faire (`skipped: not_migrated`). Même mécanisme Vault que la
 complétude, sans nouveau secret. Ordre de mise en production : code, puis migrations. La migration
 `20261104100100` lance elle-même le premier calcul à sa dernière instruction
@@ -51,7 +55,100 @@ complétude, sans nouveau secret. Ordre de mise en production : code, puis migra
 nécessaire quand les secrets Vault sont configurés ; sans secret, l'appel ne fait rien (avertissement) et la
 première passe horaire, à :35, prend le relais. `cron.stale` signale la tâche tant qu'elle n'a jamais réussi (voir
 « Ajouter une tâche supervisée » ci-dessous). Toute redéfinition de `app_private.evaluate_operational_health` doit
-garder `('sale-pepites', interval '3 hours')` dans sa liste de tâches attendues.
+garder `('sale-pepites', interval '3 hours')` **et** `('sale-flood-risk', interval '3 hours')` dans sa liste de tâches
+attendues (la seconde, ajoutée par la migration `20261106100300`, ne doit pas être perdue par une redéfinition ultérieure).
+
+## Règle `pepite-v2` : risque d'inondation, mise en production en deux temps
+
+La règle `pepite-v2` ajoute à `pepite-v1` un critère éliminatoire : un bien dont la position précise est dans la zone
+du scénario « forte probabilité » (crue fréquente) d'un TRI n'est pas une pépite (compte-rendu
+`docs/equipe/2026-10-26-pepite-v2-inondation-loyers.md`). Elle est livrée **derrière un interrupteur serveur,
+fermé par défaut**.
+
+**Étape 1 : alimenter et calibrer (interrupteur fermé).** La règle appliquée reste `pepite-v1` : le calcul des pépites
+ne lit pas la table d'inondation, aucun résultat ne change, `/admin/pepites` affiche « Règle pepite-v1 ». Le traitement
+d'inondation, lui, tourne :
+
+- `/api/cron/sale-flood-risk` (pg_cron à :25, filet Vercel quotidien à 05:35, lots de 150 ventes, variable
+  `SALE_FLOOD_RISK_BATCH_LIMIT`) observe les ventes à venir et écrit un verdict par vente dans la table privée
+  `auction_sale_flood_risk` (migration `20261106100200`) :
+  - position précise (adresse, parcelle) : API Géorisques `tri_zonage` au point, puis périmètre d'un PPRi (servitude
+    PM1 du Géoportail de l'urbanisme, API Carto, `code_alea` 11). Une rue : le point et quatre points d'un tampon de
+    100 m (verdict retenu seulement si le tampon est entièrement dans la zone ou entièrement hors zone) ;
+  - position imprécise (centre de commune, précision absente, drapeau `unverified_source_coordinates` ou
+    `implausible_coordinates`) : **aucun appel de position**, seulement « la commune compte-t-elle un TRI ? » (GASPAR,
+    gardé par commune 24 h) ; commune avec TRI : `unknown` (aucune nouvelle pépite) ; sans TRI : `no_signal` ;
+  - cadence de 2 à 3 appels par seconde, tous services confondus ; **un 429 arrête la passe** (coupe-circuit) ; une
+    passe qui n'obtient aucune observation échoue (donc `cron.stale` après 3 h) ;
+  - rafraîchissement : tous les 90 jours et dès que la position ou sa précision change ; une tentative en échec est
+    retentée après 6 h ; **un verdict connu n'est jamais écrasé par « inconnu » après une panne** ; la dernière valeur
+    valable reste utilisée 180 jours ;
+  - **périmètre des PPRi illisible** (PM1 en panne) : le verdict « aucun risque élevé » est écrit avec `ppri_checked`
+    faux (nouvel essai après 6 h) ; la fiche affiche alors une ligne neutre (« périmètres de PPRi non contrôlés à ce
+    jour ») et **aucune nouvelle pépite n'entre** tant que le périmètre n'est pas lu. Un verdict « exposé » connu (ou un
+    « aucun risque élevé » lu en entier) pour la même position **n'est jamais écrasé** par un demi-contrôle : seule la
+    tentative est consignée (`last_failure = ppri_unreadable`) ;
+  - **une seule passe à la fois** : bail `sale_flood_risk_lease` (migration `20261106100500`, fonctions
+    `claim_sale_flood_risk_lease` / `release_sale_flood_risk_lease`). Le bail est pris par un seul `UPDATE` (le verrou de
+    ligne sérialise les demandes simultanées), expire seul au bout de 6 minutes si la passe meurt, et une seconde passe
+    simultanée (pg_cron à :25 et filet de 05:35, ou rejeu manuel) rend `skipped: "busy"`. Un verrou consultatif de
+    session (`pg_try_advisory_lock`) ne convient pas : le traitement parle à la base par appels PostgREST séparés,
+    sans session commune ; le modèle est celui de `claim_autonomous_pipeline_run`. Sans la migration, la passe continue
+    sans verrou (ordre de déploiement tolérant) ;
+  - **temps borné** : `maxDuration` de la route = 300 s ; aucune sonde ne démarre s'il reste moins de 40 s (échéance à
+    260 s, contrôlée avant chaque point testé, une rue en compte cinq) ; chaque appel (TRI, GASPAR, PM1) est coupé à 8 s ;
+    les verdicts sont écrits par paquets de 25 ventes pendant la passe ; toute redirection est refusée
+    (`redirect: "error"`) ;
+  - rien n'est journalisé qui contienne une coordonnée, une URL d'appel ou une réponse de la source (seuls des codes :
+    `http_503`, `timeout`, `ppri_unreadable`…) ; la table ne copie aucune coordonnée : la position n'y figure que sous
+    la forme d'une empreinte tronquée, c'est une pseudonymisation (pas une anonymisation).
+- le code commune de chaque vente (`auction_sale_communes`, migrations `20261106100000` et `20261106100100`) vient du
+  pipeline (`raw_payload.commune`, `services/data-pipeline/src/commune_insee.py`) et est recopié par le même
+  traitement ; les arrondissements de Paris, Lyon et Marseille sont ramenés à 75056, 69123 et 13055 pour GASPAR, le
+  code de l'arrondissement est gardé à part.
+- migrations, dans l'ordre : `20261106100000` (table des communes), `20261106100100` (remplissage initial en SQL pur,
+  sans appel externe), `20261106100200` (table d'inondation), `20261106100300` (pg_cron :25 et `cron.stale`),
+  `20261106100400` (fonction publique des pépites « exposées »), `20261106100500` (bail du traitement). Ordre de mise en production : code, puis migrations,
+  puis un appel de `/api/cron/sale-flood-risk` avec `CRON_SECRET` (voir « Ajouter une tâche supervisée »). La dernière
+  instruction de `20261106100300` lance elle-même un premier passage (`pg_net`, asynchrone).
+
+**Dossier du terrain (rapport foncier).** Pour une position « commune » (centre de commune ou coordonnées absentes), la
+couche TRI du dossier garde une information **au niveau de la commune** (GASPAR `gaspar/tri`, constat « Commune comprise
+dans un territoire à risque important d'inondation », qui ne dit pas si le bien est dans la zone) au lieu de « non
+vérifiée ». Écart connu : en mode **v2** de l'API Géorisques (jeton `GEORISQUES_API_TOKEN` présent), aucune opération
+`tri_zonage` ni `gaspar/tri` n'est publiée dans l'OpenAPI v2 : la couche TRI y reste « non vérifiée » (le dossier ne
+mélange pas les deux versions), quelle que soit la position. Le contrôle des pépites, lui, appelle toujours l'API v1.
+
+**Étape 2 : calibrer.** Mesurer sur le catalogue réel la part des pépites publiées qui ont un verdict
+(`auction_sale_flood_risk` joint à `auction_sale_pepites`, lectures bornées et indexées) et relire à la main une
+quarantaine de ventes à position précise sur Géorisques et le Géoportail de l'urbanisme (proposition n° 7).
+
+**Étape 3 : bascule.** Un seul geste : définir **`PEPITE_RULE_V2_ENABLED=true`** dans l'environnement du serveur
+(Vercel, Production), puis redéployer. La variable, comme `SALE_FLOOD_RISK_BATCH_LIMIT`, est lue par le circuit de
+configuration commun (`src/lib/env.ts`, comme `SALE_REMINDERS_MODE`). Tant que la variable est absente ou autre chose que `true` / `1`, la règle
+appliquée est `pepite-v1`. À la bascule :
+
+- le calcul des pépites lit le verdict stocké de chaque vente (sans table ou sans communes : `skipped:
+  not_migrated`, rien n'est écrit) ; toutes les ventes sont réévaluées (la version de règle change), les pépites déjà
+  publiées en premier, et une pépite publiée dont le verdict change passe en priorité 0 ;
+- un risque **élevé** est un signal bloquant : il fait sortir une pépite publiée immédiatement, même gelée à J-7 ;
+- un verdict **inconnu** empêche l'entrée d'une nouvelle pépite mais **ne fait jamais sortir** une pépite publiée
+  (elle reste affichée jusqu'à la vente, la fiche l'indique) ;
+- le verdict « exposé » (périmètre d'un PPRi) n'exclut pas : il s'affiche, partout où le badge Pépite apparaît (fiche,
+  cartes de liste, carte), par la mention « zonage à vérifier » (fonction publique
+  `list_public_pepite_flood_exposed_ids`, sans montant) ;
+- la page de méthode `/methode-pepites` décrit alors la règle `pepite-v2` (sections « Le risque d'inondation »,
+  garde-fous, historique des versions, sources) ; renseigner `PEPITE_V2_EFFECTIVE_DATE` dans
+  `src/app/methode-pepites/method.ts` à la date de bascule.
+
+**Retour arrière** : retirer `PEPITE_RULE_V2_ENABLED` (ou le mettre à `false`) et redéployer : la règle `pepite-v1`
+est rejouée telle quelle (table figée de `src/lib/pepite-policy.characterization.test.ts`), les pépites sorties pour
+risque élevé redeviennent éligibles à l'évaluation suivante. Le traitement d'inondation peut continuer à tourner.
+
+Le registre des traitements (`docs/rgpd-processing-register.md`), la matrice de conservation
+(`docs/data-retention-matrix.md`), la politique de confidentialité et les mentions légales décrivent l'envoi des
+coordonnées d'une vente à Géorisques (BRGM) et à l'API Carto (IGN) ; ils doivent être à jour avant le premier appel
+réel.
 
 Les rappels d'audience (J-7, J-1) et les avertissements graves (date modifiée, vente retirée,
 reportée ou adjugée) passent après le suivi des changements, dont ils lisent les événements. Ils sont

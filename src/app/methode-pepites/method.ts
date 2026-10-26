@@ -15,27 +15,47 @@ import {
   PEPITE_LOW_STARTING_PRICE_SHARE,
   PEPITE_MAX_EVALUATION_AGE_HOURS,
   PEPITE_MIN_VALUE_COMPARABLES,
-  PEPITE_RULE_VERSION,
+  PEPITE_LATEST_RULE_VERSION,
+  PEPITE_V1_RULE_VERSION,
 } from "@/lib/pepite-policy";
 
 /**
  * Adresse et seuils publiés sur « Comment repérons-nous les pépites ? ».
  *
  * Les seuils sont ceux de la règle `pepite-v1`, validée par le fondateur le 26/10/2026 (compte-rendu
- * `docs/equipe/2026-10-26-plafond-tous-types-et-selection.md`). Ils viennent des constantes de la
- * règle (`src/lib/pepite-policy.ts`), le module pur qui sert aussi au calcul : la page ne peut donc
- * pas annoncer un seuil que le calcul n'applique pas. Quand la règle change (nouvelle version), cette
+ * `docs/equipe/2026-10-26-plafond-tous-types-et-selection.md`), repris tels quels par `pepite-v2`, qui n'ajoute
+ * que le critère éliminatoire du risque d'inondation (aucun seuil chiffré : un verdict). Ils viennent des
+ * constantes de la règle (`src/lib/pepite-policy.ts`), le module pur qui sert aussi au calcul : la page ne peut
+ * donc pas annoncer un seuil que le calcul n'applique pas. Quand la règle change (nouvelle version), cette
  * page change avec elle, et le test de la page (`page.test.tsx`) doit être mis à jour dans le même
  * geste. Le module de la règle ne lit ni la base ni le catalogue : la page non plus.
  */
 export { PEPITE_METHOD_PATH } from "@/lib/pepite-copy";
 
-export { PEPITE_RULE_VERSION };
+export { PEPITE_LATEST_RULE_VERSION, PEPITE_V1_RULE_VERSION };
+
+/**
+ * Date d'entrée en vigueur de la règle `pepite-v2`, écrite en toutes lettres (« 27 novembre 2026 »), À RENSEIGNER
+ * À LA BASCULE (voir `docs/operations/planification.md`, « Règle pepite-v2 »), en même temps que l'ouverture de
+ * l'interrupteur `PEPITE_RULE_V2_ENABLED`. Tant qu'elle est `null`, la page qui décrit la v2 (interrupteur ouvert)
+ * n'écrit pas de date : jamais d'espace réservé visible du public.
+ */
+export const PEPITE_V2_EFFECTIVE_DATE: string | null = null;
+
+/** « (en vigueur le 27 novembre 2026) » ou rien quand la date n'est pas encore renseignée. */
+export function pepiteV2EffectiveClause(date: string | null = PEPITE_V2_EFFECTIVE_DATE): string {
+  return date ? ` (en vigueur le ${date})` : "";
+}
 
 /** Une part (0 à 1) de la règle, en pourcentage entier pour la page. */
 const percent = (share: number) => Math.round(share * 100);
 
-export const PEPITE_V1 = {
+/**
+ * Seuils de la règle, communs à `pepite-v1` et `pepite-v2` (la v2 n'en change aucun). Le nom ne porte plus la
+ * version : un seuil qui changerait créerait une nouvelle version de règle, et cette table suivrait la règle
+ * courante.
+ */
+export const PEPITE_RULE_PARAMS = {
   /** Test B (tribunal) : part minimale des ventes comparables adjugées sous l'enchère plafond, en %. */
   chanceMinPct: percent(PEPITE_CHANCE_MIN_SHARE),
   /** Test C (tribunal) : coût total probable au plus égal à cette part de la valeur centrale, en %. */

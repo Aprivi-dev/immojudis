@@ -77,6 +77,63 @@ function reportWithRentalScenario(
   };
 }
 
+describe("property report rent source", () => {
+  const withRentReference = (reference: unknown) => {
+    const report = reportWithRentalScenario();
+    const snapshot = report.report_snapshot as {
+      analysis: { opportunity: Record<string, unknown> };
+    };
+    report.report_snapshot = {
+      ...snapshot,
+      analysis: { opportunity: { ...snapshot.analysis.opportunity, rentReference: reference } },
+    } as Json;
+    // Without a personal scenario the yield shown is the one built on the reference rent.
+    report.ceiling_snapshot = { available: true, maxBid: 80_000 } as Json;
+    return reportToPdfLines(report, buildPlanEntitlements("analyse"));
+  };
+
+  it("credits the ANIL rent map, with its edition and the source link, next to the yield", () => {
+    const lines = withRentReference({
+      source: "anil_commune",
+      vintage: 2025,
+      sourceUpdatedOn: "2025-12-11",
+    });
+    const yieldIndex = lines.findIndex((line) => line.startsWith("Rendement brut potentiel"));
+
+    expect(yieldIndex).toBeGreaterThan(-1);
+    expect(lines[yieldIndex + 1]).toContain(
+      "Estimations ANIL, à partir des données du Groupe SeLoger et de leboncoin.",
+    );
+    expect(lines[yieldIndex + 1]).toContain("mise à jour du 11 décembre 2025");
+    expect(lines[yieldIndex + 2]).toBe(
+      "Source : https://www.data.gouv.fr/datasets/693aa2feed1bf4da603faa49",
+    );
+  });
+
+  it("does not call a charges-included yield « net »", () => {
+    const text = withRentReference({
+      source: "anil_commune",
+      vintage: 2025,
+      sourceUpdatedOn: "2025-12-11",
+    }).join("\n");
+
+    expect(text).toContain("Rendement brut potentiel, charges comprises:");
+    expect(text).not.toMatch(/Rendement net/);
+  });
+
+  it("keeps the usual wording for a report built on the department rent", () => {
+    const text = withRentReference(null).join("\n");
+
+    expect(text).toContain("Rendement brut potentiel:");
+    expect(text).not.toContain("charges comprises");
+  });
+
+  it("adds no credit for a report built on the department rent or an older report", () => {
+    expect(withRentReference(null).join("\n")).not.toContain("ANIL");
+    expect(withRentReference(undefined).join("\n")).not.toContain("ANIL");
+  });
+});
+
 describe("property report rental PDF", () => {
   it("names the ceiling section a simulation, as a heading too", () => {
     expect(REPORT_PDF_HEADINGS).toContain("Enchère plafond (simulation)");

@@ -19,16 +19,38 @@ export const PEPITE_FILTER_UNAVAILABLE_MESSAGE =
 
 const CACHE_MS = 5 * 60_000;
 
-let cached: { at: number; ids: Promise<ReadonlySet<string>> } | null = null;
+type PepiteLists = { ids: ReadonlySet<string>; exposedIds: ReadonlySet<string> };
 
-async function readPepiteSaleIds(): Promise<ReadonlySet<string>> {
+let cached: { at: number; lists: Promise<PepiteLists> } | null = null;
+
+function idSet(value: unknown): Set<string> {
+  return new Set(
+    (Array.isArray(value) ? value : [])
+      .filter((id): id is string => typeof id === "string")
+      .map((id) => id.toLowerCase()),
+  );
+}
+
+async function readPepiteLists(): Promise<PepiteLists> {
   const response = await fetch(PEPITE_IDS_API_PATH, { headers: { accept: "application/json" } });
   if (!response.ok) throw new Error(PEPITE_FILTER_UNAVAILABLE_MESSAGE);
-  const body = (await response.json().catch(() => null)) as { ids?: unknown } | null;
+  const body = (await response.json().catch(() => null)) as {
+    ids?: unknown;
+    exposedIds?: unknown;
+  } | null;
   if (!Array.isArray(body?.ids)) throw new Error(PEPITE_FILTER_UNAVAILABLE_MESSAGE);
-  return new Set(
-    body.ids.filter((id): id is string => typeof id === "string").map((id) => id.toLowerCase()),
-  );
+  return { ids: idSet(body.ids), exposedIds: idSet(body.exposedIds) };
+}
+
+function readLists(now: number): Promise<PepiteLists> {
+  if (cached && now - cached.at < CACHE_MS) return cached.lists;
+  const entry = { at: now, lists: readPepiteLists() };
+  cached = entry;
+  entry.lists.catch(() => {
+    // Une panne n'est pas gardée : le prochain appel relit la liste.
+    if (cached === entry) cached = null;
+  });
+  return entry.lists;
 }
 
 /**
@@ -37,14 +59,15 @@ async function readPepiteSaleIds(): Promise<ReadonlySet<string>> {
  * Une base sans la fonction, ou un mode qui n'est pas « on », donnent une liste vide, que la route rend en 200.
  */
 export async function fetchPepiteSaleIds(now = Date.now()): Promise<ReadonlySet<string>> {
-  if (cached && now - cached.at < CACHE_MS) return cached.ids;
-  const entry = { at: now, ids: readPepiteSaleIds() };
-  cached = entry;
-  entry.ids.catch(() => {
-    // Une panne n'est pas gardée : le prochain appel relit la liste.
-    if (cached === entry) cached = null;
-  });
-  return entry.ids;
+  return (await readLists(now)).ids;
+}
+
+/**
+ * Parmi les pépites, celles dont le bien est dans le périmètre d'un plan de prévention des risques d'inondation
+ * (mention courte « zonage à vérifier ») : la même lecture, gardée avec la liste.
+ */
+export async function fetchPepiteFloodExposedIds(now = Date.now()): Promise<ReadonlySet<string>> {
+  return (await readLists(now)).exposedIds;
 }
 
 /** Les pépites sont ouvertes au public : la liste n'est pas vide (elle l'est tant que le mode n'est pas « on »). */

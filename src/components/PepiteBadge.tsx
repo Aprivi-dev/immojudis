@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import Info from "lucide-react/dist/esm/icons/info.js";
 import { Badge } from "@/components/ui/primitives";
 import { escapeBelongsToAnotherLayer } from "@/lib/escape-layer";
+import { FLOOD_EXPOSED_SHORT } from "@/lib/pepite-flood-copy";
 import {
   PEPITE_ANCHOR,
   PEPITE_EXPLANATION,
@@ -49,10 +51,11 @@ export function PepitePill({ className }: { className?: string }) {
 }
 
 /** Pastille « Pépite » du haut de la fiche, avec le lien « Pourquoi ? » vers le bloc de la fiche (`#pepite`). */
-export function PepiteHeroBadge() {
+export function PepiteHeroBadge({ floodExposed = false }: { floodExposed?: boolean }) {
   return (
     <span className="inline-flex flex-wrap items-center gap-x-2">
       <PepitePill />
+      {floodExposed ? <FloodExposedNote /> : null}
       <a
         href={`#${PEPITE_ANCHOR}`}
         className="inline-flex min-h-11 items-center text-sm font-semibold text-gold-text underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
@@ -63,11 +66,36 @@ export function PepiteHeroBadge() {
   );
 }
 
+/**
+ * Mention courte d'un bien de pépite dans le périmètre d'un plan de prévention des risques d'inondation (PPRi) :
+ * un fait public, sans montant (`pepite-flood-copy.ts`). Texte, pictogramme d'alerte : jamais la couleur seule.
+ */
+export function FloodExposedNote({ className = "" }: { className?: string }) {
+  return (
+    <span
+      data-testid="pepite-flood-exposed"
+      className={`inline-flex items-start gap-1 text-xs font-semibold text-warning ${className}`}
+    >
+      <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+      <span>{FLOOD_EXPOSED_SHORT}</span>
+    </span>
+  );
+}
+
 /** Le texte que la pastille et son bouton « i » affichent : ce que le repère est, et ce qu'il n'est pas. */
-export function PepiteExplanation({ id, className }: { id?: string; className?: string }) {
+export function PepiteExplanation({
+  id,
+  className,
+  floodExposed = false,
+}: {
+  id?: string;
+  className?: string;
+  floodExposed?: boolean;
+}) {
   return (
     <div id={id} role="note" className={className}>
       <p>{PEPITE_EXPLANATION}</p>
+      {floodExposed ? <FloodExposedNote className="mt-1" /> : null}
       <Link
         href={PEPITE_METHOD_PATH}
         prefetch={false}
@@ -95,7 +123,14 @@ const EDGE = 8;
  * `variant="icon"` : la colonne « Statut » du tableau n'a pas la place du libellé : une icône, dont le nom
  * accessible est « Pépite ».
  */
-export function PepiteInfoBadge({ variant = "pill" }: { variant?: "pill" | "icon" }) {
+export function PepiteInfoBadge({
+  variant = "pill",
+  floodExposed = false,
+}: {
+  variant?: "pill" | "icon";
+  /** Le bien est dans le périmètre d'un PPRi : la mention courte est lue avec la pastille et dans sa fenêtre. */
+  floodExposed?: boolean;
+}) {
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
   const open = position !== null;
   const id = useId();
@@ -160,10 +195,16 @@ export function PepiteInfoBadge({ variant = "pill" }: { variant?: "pill" | "icon
         {variant === "icon" ? (
           <span className="inline-flex size-6 items-center justify-center rounded-full border border-gold bg-white">
             <PepiteIcon className="size-3.5" />
-            <span className="sr-only">{PEPITE_LABEL}</span>
+            <span className="sr-only">
+              {PEPITE_LABEL}
+              {floodExposed ? `. ${FLOOD_EXPOSED_SHORT}` : ""}
+            </span>
           </span>
         ) : (
-          <PepitePill />
+          <>
+            <PepitePill />
+            {floodExposed ? <span className="sr-only">{FLOOD_EXPOSED_SHORT}</span> : null}
+          </>
         )}
       </button>
       {position
@@ -174,7 +215,7 @@ export function PepiteInfoBadge({ variant = "pill" }: { variant?: "pill" | "icon
               style={{ top: position.top, left: position.left, width: PANEL_WIDTH }}
               className="fixed z-[70] max-w-[calc(100vw-1rem)] rounded-lg border border-line-soft bg-white p-3 text-xs leading-relaxed text-foreground shadow-lg outline-none"
             >
-              <PepiteExplanation id={id} />
+              <PepiteExplanation id={id} floodExposed={floodExposed} />
             </div>,
             document.body,
           )

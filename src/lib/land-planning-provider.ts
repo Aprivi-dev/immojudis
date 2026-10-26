@@ -33,7 +33,7 @@ import {
 const API_CARTO_BASE_URL = "https://apicarto.ign.fr/api";
 const CADASTRE_URL = `${API_CARTO_BASE_URL}/cadastre/parcelle`;
 const GEOCODING_URL = "https://data.geopf.fr/geocodage/search";
-const GPU_BASE_URL = `${API_CARTO_BASE_URL}/gpu`;
+export const GPU_BASE_URL = `${API_CARTO_BASE_URL}/gpu`;
 const GPU_DOCUMENT_API_BASE_URL = "https://www.geoportail-urbanisme.gouv.fr/api";
 const DEFAULT_TIMEOUT_MS = 7_500;
 const DEFAULT_MAX_PARCELS = 4;
@@ -76,6 +76,8 @@ type ProviderOptions = LandProviderOptions & {
   maxParcels?: number;
   maxPages?: number;
   maxResponseBytes?: number;
+  /** Refuse toute redirection (`redirect: "error"`) : appels du contrôle d'inondation. */
+  refuseRedirect?: boolean;
 };
 
 type FetchIssue = {
@@ -444,7 +446,10 @@ function sourceMatch(reference: LandParcelReference): LandParcel["match"] {
   return "listing_reference";
 }
 
-function queryUrl(base: string, parameters: Record<string, string | number | undefined>): string {
+export function queryUrl(
+  base: string,
+  parameters: Record<string, string | number | undefined>,
+): string {
   const url = new URL(base);
   for (const [key, value] of Object.entries(parameters)) {
     if (value !== undefined && value !== "") url.searchParams.set(key, String(value));
@@ -507,7 +512,7 @@ async function readResponseBytes(
   return { ok: true, bytes };
 }
 
-async function fetchJson(url: string, options: ProviderOptions): Promise<FetchJsonResult> {
+export async function fetchJson(url: string, options: ProviderOptions): Promise<FetchJsonResult> {
   const fetcher = options.fetcher ?? fetch;
   const timeoutMs = boundedInteger(options.timeoutMs, DEFAULT_TIMEOUT_MS, 250, MAX_TIMEOUT_MS);
   const maxResponseBytes = boundedInteger(
@@ -541,6 +546,7 @@ async function fetchJson(url: string, options: ProviderOptions): Promise<FetchJs
         headers,
         cache: "no-store",
         signal: controller.signal,
+        ...(options.refuseRedirect ? { redirect: "error" as const } : {}),
       }),
       timeoutPromise,
     ]);
@@ -621,7 +627,7 @@ async function fetchJson(url: string, options: ProviderOptions): Promise<FetchJs
   }
 }
 
-function collectionFeatures(data: unknown): GeoJsonFeature[] | null {
+export function collectionFeatures(data: unknown): GeoJsonFeature[] | null {
   const record = asRecord(data);
   if (!isRecordArray(record.features)) return null;
   return record.features.filter((feature): feature is GeoJsonFeature =>

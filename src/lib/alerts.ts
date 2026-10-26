@@ -3,7 +3,8 @@ import { dpeMatches, extractDpe } from "@/lib/dpe";
 import { getSaleProcedure } from "@/lib/sale-procedure";
 import { matchesFrenchGeoSearch, resolveFrenchGeoSearch } from "@/lib/search/french-geo-search";
 import { parseSaleType, saleVenueMatchesType } from "@/lib/sale-types";
-import { estimateGrossYieldPct, pricePerM2 } from "@/lib/geo";
+import { estimateSaleGrossYieldPct, pricePerM2 } from "@/lib/geo";
+import type { RentLookup } from "@/lib/rent-reference";
 import { getSaleSurface } from "@/lib/surface";
 import type { AuctionSale, UserAlert, UserWatchedZone } from "@/lib/types";
 import { watchedZoneMatchesSale, watchedZoneSummary } from "@/lib/watched-zones-shared";
@@ -16,6 +17,11 @@ export type AlertMatchContext = {
    * (`advanced_criteria.pepite_only`). Absent : une alerte qui le demande ne retient aucune vente.
    */
   pepiteSaleIds?: ReadonlySet<string> | null;
+  /**
+   * Références de loyer (carte ANIL à la commune), pour le critère de rendement minimal. Absent : le
+   * loyer départemental sert de repli.
+   */
+  rents?: RentLookup;
 };
 
 export type AlertMatchResult = {
@@ -70,7 +76,7 @@ export function alertMatchesSale(
   }
   const surface = getSaleSurface(sale).value;
   const ppm2 = pricePerM2(sale.starting_price_eur, surface);
-  const yieldPct = estimateGrossYieldPct(sale.starting_price_eur, surface, sale.department);
+  const yieldPct = estimateSaleGrossYieldPct(sale, surface, context.rents?.(sale));
   const dpe = extractDpe(sale).class;
   const acceptedDpeClasses = alert.dpe_classes ?? [];
 
