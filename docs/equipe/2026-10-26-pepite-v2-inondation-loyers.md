@@ -218,3 +218,20 @@ scénario `01For` ». Aucun repli sur les fichiers de formes n'est nécessaire. 
   la calibration (n° 7).
 - **Lot loyers et zones tendues** (n° 10 à 13) : confié à un second `developpeur`, dans une copie séparée.
 - **Relecture juridique** (n° 9) : confiée à `juridique-rgpd`.
+
+## Relecture juridique (n° 9) et décision sur les CGU
+
+- **Retenu par `juridique-rgpd` et transmis aux développeurs :**
+  - libellés selon ce qui a été réellement contrôlé : une seule coche, pour « aucun risque élevé identifié à la position
+    connue » ; les cas « non vérifié » et « exposé » restent sans coche ;
+  - mention « exposé » publique, à côté du badge ;
+  - section « Le risque d'inondation » et historique des versions sur la page de méthode ;
+  - mise en garde : ni état des risques, ni certificat ;
+  - registre des traitements, matrice de conservation et politique de confidentialité mis à jour avant le premier
+    appel réel, y compris pour trois flux existants non déclarés ;
+  - mentions de source : Géorisques, IGN, ANIL, TLV ;
+  - correction du libellé « hors charges », puisque les loyers ANIL sont charges comprises ;
+  - aucun affichage de l'encadrement des loyers.
+- **Décision du fondateur (26/10/2026)** : aucun email d'information sur les CGU n'est envoyé. Les CGU ne sont pas
+  modifiées. Le paragraphe proposé pour l'article 8, sur les limites des cartes de risques, n'est pas ajouté :
+  l'information passe par la page de méthode et les mentions légales.
