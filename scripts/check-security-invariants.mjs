@@ -915,6 +915,95 @@ if (
   failures.push("v_auction_sales_discovery_search lost its security barrier");
 }
 
+// Pépites (règle pepite-v1, 26/10/2026) : le calcul ne dépend jamais de la publicité ni du score interne.
+// `investment_score`, les données d'avocat et de sponsoring, et le profil de l'utilisateur n'entrent pas
+// dans la règle. Le contrôle d'indépendance de l'administration (src/lib/admin-pepites.ts) lit les encarts
+// pour MESURER la part des pépites sponsorisées : il est volontairement hors de cette liste, et aucun module
+// de la règle ne l'importe.
+// Pour chaque module de la règle : (1) aucun module atteignable par ses imports `@/…` ou relatifs n'a un
+// chemin (depuis src/) qui évoque les avocats, le sponsoring, les encarts ou le contrôle d'indépendance de
+// l'administration (`admin-pepites`) ; (2) le texte, commentaires retirés, de chaque module atteint qui
+// appartient au calcul (`src/lib/pepite*`, `src/lib/sale-pepites-batch.ts`, et le module d'entrée) ne lit ni
+// `investment_score` ni une colonne d'avocat ou de sponsoring (les fichiers de types générés, qui
+// décrivent toutes les colonnes, n'en font pas partie) ; (3) un import `@/…` qui ne se résout pas fait
+// échouer le contrôle : sinon un module renommé sortirait silencieusement du parcours.
+{
+  const pepiteRuleModules = [
+    "src/lib/pepite-policy.ts",
+    "src/lib/pepite-input.ts",
+    "src/lib/pepite-reasons.ts",
+    "src/lib/sale-pepites-batch.ts",
+    "src/app/api/cron/sale-pepites/route.ts",
+  ];
+  const forbiddenModule = /lawyer|sponsor|featured|placement|admin-pepites/i;
+  const computationModule = /^src\/lib\/(?:pepite[^/]*|sale-pepites-batch)\.tsx?$/;
+  const forbiddenRead =
+    /\b(?:investment_score|investment_summary|score_factors|score_confidence|lawyer_name|lawyer_contact|referenced_lawyers|paid_placement\w*|lawyer_placement\w*|sponsor\w*)\b|\blawyer-placement-label\b/i;
+  const stripComments = (text) =>
+    text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`])\/\/[^\n]*/g, "$1");
+  const sourceRoot = new URL("../src/", import.meta.url);
+  const relativeToSrc = (path) => path.slice(path.indexOf("/src/") + 1);
+  const resolveModule = async (specifier, fromPath) => {
+    let base;
+    if (specifier.startsWith("@/")) base = new URL(specifier.slice(2), sourceRoot).pathname;
+    else if (specifier.startsWith(".")) base = new URL(specifier, `file://${fromPath}`).pathname;
+    else return null;
+    for (const candidate of [
+      `${base}.ts`,
+      `${base}.tsx`,
+      `${base}/index.ts`,
+      `${base}/index.tsx`,
+      base,
+    ]) {
+      try {
+        await readFile(candidate);
+        // Un fichier qui n'est pas du TypeScript (JSON, style) existe, mais n'a pas d'imports à suivre.
+        return /\.tsx?$/.test(candidate) ? candidate : "";
+      } catch {
+        // essai suivant
+      }
+    }
+    return undefined;
+  };
+  for (const relativePath of pepiteRuleModules) {
+    const entry = new URL(`../${relativePath}`, import.meta.url).pathname;
+    const seen = new Set();
+    const pending = [entry];
+    while (pending.length) {
+      const path = pending.pop();
+      if (seen.has(path)) continue;
+      seen.add(path);
+      const reached = relativeToSrc(path);
+      if (forbiddenModule.test(reached)) {
+        failures.push(
+          `${relativePath} reaches ${reached}: the pepite rule must not depend on lawyer, sponsoring or pepite administration modules`,
+        );
+        continue;
+      }
+      const text = await readFile(path, "utf8");
+      const code = stripComments(text);
+      if ((path === entry || computationModule.test(reached)) && forbiddenRead.test(code)) {
+        failures.push(
+          `${relativePath} reaches ${reached}, which reads investment_score, lawyer or sponsoring data: they never enter the pepite rule`,
+        );
+      }
+      for (const match of code.matchAll(
+        /(?:import|export)\s[^"';]*?from\s*["']([^"']+)["']|import\(\s*["']([^"']+)["']\s*\)|import\s*["']([^"']+)["']/g,
+      )) {
+        const specifier = match[1] ?? match[2] ?? match[3];
+        const resolved = await resolveModule(specifier, path);
+        if (resolved === undefined) {
+          if (specifier.startsWith("@/") || specifier.startsWith(".")) {
+            failures.push(
+              `${relativePath}: ${reached} imports ${specifier}, which cannot be resolved: the independence check cannot follow it`,
+            );
+          }
+        } else if (resolved) pending.push(resolved);
+      }
+    }
+  }
+}
+
 // Photos principales hébergées (test du 16/10/2026): the bucket serves only re-encoded WebP files by
 // public URL, the table is closed to the browser roles, the site reads copies through one definer
 // function keyed by a source URL it already knows, and the files leave with the sale through the
@@ -1324,6 +1413,7 @@ console.log(
       "sale-unlock-rls-and-definer-boundary",
       "document-reading-personal-data-filter",
       "listing-completeness-score-stays-private",
+      "pepite-rule-independent-of-lawyers-sponsoring-and-score",
       "sale-photos-bucket-table-and-purge",
       "launch-offer-switch-and-access-functions",
       "invoker-functions-callees-granted-to-service-role",

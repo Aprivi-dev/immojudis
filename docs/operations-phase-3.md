@@ -11,6 +11,9 @@ reçues et ne déclenche aucune collecte d'annonces ni aucun envoi sortant. Le j
 `immojudis-listing-completeness` appelle toutes les heures `/api/cron/listing-completeness` (calcul
 du palier de complétude des annonces, sans collecte) avec les mêmes secrets Vault ; sa fraîcheur
 est suivie par `cron.stale` (3 h).
+Le job `immojudis-sale-pepites` appelle toutes les heures (à :35) `/api/cron/sale-pepites` (calcul de la
+pépite des ventes, mode `shadow` par défaut, sans collecte) avec les mêmes secrets Vault ; sa fraîcheur est
+suivie par `cron.stale` (3 h).
 
 Chaque passage :
 

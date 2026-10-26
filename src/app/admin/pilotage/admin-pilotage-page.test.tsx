@@ -406,6 +406,13 @@ describe("page admin Pilotage", () => {
           accounts: 5,
           reasons: { point_wrong: 3, point_missing: 1 },
         },
+        pepite: {
+          total: 10,
+          useful: 4,
+          notRelevant: 6,
+          accounts: 6,
+          reasons: { amount_too_high: 4, criterion_wrong: 3, not_interesting: 2 },
+        },
       },
       ...overrides,
     });
@@ -434,6 +441,21 @@ describe("page admin Pilotage", () => {
         Retours: "8",
         "Part d’« Utile »": "50 %",
         "Comptes distincts": "5",
+      });
+    });
+
+    it("shows the Pépite signal with its three reasons, masking what is under 5", async () => {
+      mocks.fetchPilotage.mockResolvedValue({ ...data, signalFeedback: feedback() });
+      renderPage();
+
+      await screen.findByRole("heading", { name: "Retours sur les signaux d’une vente" });
+      expect(lines("Repère Pépite")).toMatchObject({
+        Retours: "10",
+        "Part d’« Utile »": "40 %",
+        "Comptes distincts": "6",
+        "Montant trop haut": MASKED,
+        "Un critère est faux": MASKED,
+        "Peu intéressant": MASKED,
       });
     });
 

@@ -29,7 +29,7 @@ const NOT_LIST = [
 ] as const;
 
 const GUARDRAILS = [
-  `L’estimation de valeur du bien est jugée exploitable et fiable (fiabilité forte ou correcte), s’appuie sur au moins ${PEPITE_V1.minValueComparables} ventes comparables, repose sur une surface connue et ne présente pas d’écart aberrant avec la mise à prix. Elle suit la méthode décrite sur la page « Comment est calculé l’écart avec le marché ». Un terrain seul et un bien mixte n’ont pas de repère.`,
+  `L’estimation de valeur du bien est jugée exploitable et fiable (fiabilité forte ou correcte), s’appuie sur au moins ${PEPITE_V1.minValueComparables} ventes comparables, repose sur une surface connue et ne présente pas d’écart aberrant avec la mise à prix : une mise à prix inférieure à ${PEPITE_V1.extremeStartingPriceBelowPct} % ou supérieure à ${PEPITE_V1.extremeStartingPriceAbovePct} % de la valeur estimée signale le plus souvent une erreur de données, et la vente est alors écartée. Elle suit la méthode décrite sur la page « Comment est calculé l’écart avec le marché ». Un terrain seul et un bien mixte n’ont pas de repère.`,
   "L’occupation du bien est connue. Un bien libre comme un bien occupé est admis, car le coût de libération est intégré à l’enchère plafond estimée. Une occupation inconnue ou un squat excluent le repère.",
   "Aucun signal bloquant n’est présent : valeurs d’estimation qui se contredisent, information essentielle mise en doute par la relecture automatique de l’annonce, conflit entre les sources de la vente, annonce probablement en double, risque non qualifié, état dégradé connu des données.",
   "Au tribunal, les ventes comparables passées sont assez fiables pour mesurer les chances de l’emporter (fiabilité au moins moyenne). Sinon, le premier test ne peut pas être évalué et il n’y a pas de repère.",
@@ -171,8 +171,10 @@ function PageContent() {
             <li>
               <strong>Vente notariale interactive (par offres) :</strong> seul le second test
               s’applique, avec le même seuil de {PEPITE_V1.maxCostShareNotaryPct} %, calculé à
-              partir de la première offre possible. Le prix de réserve du vendeur, qui n’est pas
-              public, reste inconnu : la mention « prix de réserve inconnu » accompagne le repère.
+              partir de la première offre possible. L’offre plafond estimée doit en outre être au
+              moins égale à cette première offre, faute de quoi aucune offre ne tient. Le prix de
+              réserve du vendeur, qui n’est pas public, reste inconnu : la mention « prix de réserve
+              inconnu » accompagne le repère.
             </li>
             <li>
               <strong>Vente domaniale ou de type inconnu :</strong> pas de repère.
@@ -215,7 +217,9 @@ function PageContent() {
               Au tribunal, elle le perd si la part des ventes comparables adjugées sous l’enchère
               plafond estimée passe sous {PEPITE_V1.exitChanceBelowPct} % ou si le coût total
               probable dépasse {PEPITE_V1.exitCostShareAbovePct} % de la valeur estimée, ou dès
-              qu’un signal bloquant apparaît.
+              qu’un signal bloquant apparaît. En vente notariale, elle le perd si le coût total
+              probable dépasse {PEPITE_V1.exitCostShareNotaryAbovePct} % de la valeur estimée, ou
+              dès qu’un signal bloquant apparaît.
             </li>
             <li>
               Le repère est figé {PEPITE_V1.freezeDaysBeforeSale} jours avant la vente, sauf signal

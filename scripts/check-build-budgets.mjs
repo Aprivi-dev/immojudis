@@ -100,7 +100,13 @@ const MAX_CLIENT_CHUNK_BYTES = 330_000;
 // (24/10/2026) un neuvième relèvement, à 6 260 000, et ceux des routes qui chargent ce bloc. Ce poids
 // est à récupérer en passant les schémas envoyés au navigateur sur zod/mini. C'est fait (24/10/2026) :
 // total mesuré 6 118 970, le plafond revient à 6 200 000.
-const MAX_TOTAL_CLIENT_JS_BYTES = 6_200_000;
+// Lot B1 des pépites (26/10/2026) : la page /admin/pepites (2,9 Ko de JavaScript, le reste est mis en forme
+// côté serveur), le bouton « Suspendre les pépites », la carte « Repère Pépite » de /admin/pilotage et le
+// signal « pepite » des retours ajoutent 6 926 octets au total (mesuré 6 201 854 pour 6 194 928 avant).
+// Décision du fondateur (26/10/2026) : relèvement du total de 20 000 octets, à 6 220 000, pour ce lot et le
+// suivant (B2, affichage du repère). Le plafond du plus gros chunk (+10 000 octets au plus, pour la fiche et
+// les favoris) n'est pas relevé dans ce lot : aucun chunk n'a grossi ; il se relèvera avec B2 si besoin.
+const MAX_TOTAL_CLIENT_JS_BYTES = 6_220_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 // New homepage: lossless panorama for large screens plus editorial photography.
 const MAX_PUBLIC_MEDIA_BYTES = 5_000_000;

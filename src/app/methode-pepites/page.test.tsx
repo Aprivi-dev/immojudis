@@ -2,6 +2,7 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MARKET_GAP_METHOD_PATH } from "@/lib/market-gap";
+import * as policy from "@/lib/pepite-policy";
 import { PEPITE_METHOD_PATH, PEPITE_RULE_VERSION, PEPITE_V1 } from "./method";
 import Page, { metadata } from "./page";
 
@@ -80,6 +81,28 @@ describe("page « Comment repérons-nous les pépites ? »", () => {
     expect(text).toContain("garantie de prix, de rendement, d’adjudication ni de revente");
   });
 
+  it("reprend les seuils du module de calcul : la page n'annonce que ce que le calcul applique", () => {
+    expect(PEPITE_RULE_VERSION).toBe(policy.PEPITE_RULE_VERSION);
+    expect(PEPITE_V1).toEqual({
+      chanceMinPct: policy.PEPITE_CHANCE_MIN_SHARE * 100,
+      maxCostShareCourtPct: policy.PEPITE_COST_MAX_SHARE_COURT * 100,
+      maxCostShareNotaryPct: policy.PEPITE_COST_MAX_SHARE_NOTARY * 100,
+      exitChanceBelowPct: policy.PEPITE_CHANCE_EXIT_SHARE * 100,
+      exitCostShareAbovePct: policy.PEPITE_COST_EXIT_SHARE_COURT * 100,
+      exitCostShareNotaryAbovePct: policy.PEPITE_COST_EXIT_SHARE_NOTARY * 100,
+      extremeStartingPriceBelowPct: policy.PEPITE_EXTREME_START_RATIO_MIN * 100,
+      extremeStartingPriceAbovePct: policy.PEPITE_EXTREME_START_RATIO_MAX * 100,
+      favourableEvaluations: policy.PEPITE_FAVOURABLE_EVALUATIONS,
+      freezeDaysBeforeSale: policy.PEPITE_FREEZE_DAYS,
+      minValueComparables: policy.PEPITE_MIN_VALUE_COMPARABLES,
+      historyYears: policy.PEPITE_HISTORY_YEARS,
+      courtCompleteBelowSales: policy.PEPITE_COURT_COMPLETE_BELOW_SALES,
+      courtReplaceBelowSales: policy.PEPITE_COURT_REPLACE_BELOW_SALES,
+      lowStartingPricePct: policy.PEPITE_LOW_STARTING_PRICE_SHARE * 100,
+      maxEvaluationAgeHours: policy.PEPITE_MAX_EVALUATION_AGE_HOURS,
+    });
+  });
+
   it("donne les seuils de pepite-v1 à partir des constantes de la règle", () => {
     render(<Page />);
     const text = sectionText("Les critères et les seuils");
@@ -100,6 +123,9 @@ describe("page « Comment repérons-nous les pépites ? »", () => {
     expect(text).toContain("Vente notariale interactive");
     expect(text).toContain("Vente domaniale ou de type inconnu : pas de repère");
     expect(text).toContain("prix de réserve inconnu");
+    expect(text).toContain(
+      "L’offre plafond estimée doit en outre être au moins égale à cette première offre",
+    );
   });
 
   it("énonce les garde-fous", () => {
@@ -109,6 +135,11 @@ describe("page « Comment repérons-nous les pépites ? »", () => {
     expect(within(guard).getAllByRole("listitem")).toHaveLength(4);
     expect(text).toContain(`au moins ${PEPITE_V1.minValueComparables} ventes comparables`);
     expect(text).toContain("Un terrain seul et un bien mixte n’ont pas de repère");
+    expect(PEPITE_V1.extremeStartingPriceBelowPct).toBe(10);
+    expect(PEPITE_V1.extremeStartingPriceAbovePct).toBe(150);
+    expect(text).toContain(
+      `une mise à prix inférieure à ${PEPITE_V1.extremeStartingPriceBelowPct} % ou supérieure à ${PEPITE_V1.extremeStartingPriceAbovePct} % de la valeur estimée signale le plus souvent une erreur de données, et la vente est alors écartée`,
+    );
     expect(text).toContain("Un bien libre comme un bien occupé est admis");
     expect(text).toContain("Une occupation inconnue ou un squat excluent le repère");
     expect(text).toContain("signal bloquant");
@@ -123,6 +154,8 @@ describe("page « Comment repérons-nous les pépites ? »", () => {
     );
     expect(text).toContain(`sous ${PEPITE_V1.exitChanceBelowPct} %`);
     expect(text).toContain(`dépasse ${PEPITE_V1.exitCostShareAbovePct} %`);
+    expect(text).toContain(`dépasse ${PEPITE_V1.exitCostShareNotaryAbovePct} %`);
+    expect(PEPITE_V1.exitCostShareNotaryAbovePct).toBeGreaterThan(PEPITE_V1.maxCostShareNotaryPct);
     expect(text).toContain(`figé ${PEPITE_V1.freezeDaysBeforeSale} jours avant la vente`);
     expect(PEPITE_V1.exitChanceBelowPct).toBeLessThan(PEPITE_V1.chanceMinPct);
     expect(PEPITE_V1.exitCostShareAbovePct).toBeGreaterThan(PEPITE_V1.maxCostShareCourtPct);
