@@ -283,8 +283,20 @@ Le suivi est complété ci-dessous à chaque lot.
 
 - **Lot 0** : livré (commit `1167697`) après relecture par `code-reviewer`. CI verte sur la PR #312.
 - **Lot A1** : livré (commit `87f9536`) après relecture. Aucun résultat du tribunal ne change.
-- **Lot A2** : en cours.
+- **Lot A2** : livré (commit `987eedb`), plus la correction d'une course dans `OfferOpeningRequest` (`b99c912`).
 - **Contenus** (n° 13, 20, 21) : livrés (commit `e75605f`) après relecture par `juridique-rgpd`. Aucun point bloquant ne reste. Le préavis des CGU a été repoussé au 1er décembre 2026.
+- **Lot B1** : livré (commits `28aecd2` et `a01d8a4`). Règle, calcul quotidien, table privée, mode `shadow`, page `/admin/pepites`.
+  - Garde-fou d'écart aberrant : la borne de 70 % excluait la moitié des ventes au tribunal. Elle est remplacée par une borne de 10 % à 150 % de la valeur (`PEPITE_EXTREME_START_RATIO_MIN` et `_MAX`).
+- **Lot B2** : livré (commit `a0c3f84`) après relecture par `code-reviewer` et `securite-applicative`. Rien de critique ; les 26 corrections demandées sont faites. Contenu :
+  - badge, bloc, filtre, carte et alertes ;
+  - détail réservé au droit `property.bidCeiling` ;
+  - balayage borné et seau de débit propre au filtre ;
+  - caches purgés à la suspension ;
+  - invariant de sécurité durci par des tests de mutation.
+  - Budgets relevés à la demande du fondateur : fiche 380 000, favoris 680 000, plus gros fichier 335 000, total inchangé à 6 220 000. Les marges restantes sont fines, environ 5 Ko chacune.
+- **Points remis à `juridique-rgpd`** :
+  - les prix d'adjudication notariaux sont conservés 36 mois dans les instantanés ;
+  - le prix probable, tiré des données Licitor, est montré à un compte gratuit qui débloque une vente. L'accord écrit de Licitor est attendu avant le passage en `on`.
 
 ### Actions du fondateur
 
