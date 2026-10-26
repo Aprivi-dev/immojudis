@@ -355,7 +355,13 @@ jobs:
   e2e:
     name: Investor journey (Playwright)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Image officielle de Playwright (même version que @playwright/test) : navigateurs et paquets
+    # système déjà installés. `playwright install --with-deps` téléchargeait 142 Mo depuis le miroir
+    # Ubuntu, parfois à 40 Ko/s (26/10/2026 : quatre échecs avant le moindre test).
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:47b510dd9230bf0b9bfc9b20102241e577ea7a99334ab4c3ca19f19770e9b8ea
+      options: --user 1001
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -365,8 +371,6 @@ jobs:
       - name: Pin npm
         run: npm install --global npm@11.18.0
       - run: npm ci
-      - name: Install Chromium, Firefox and WebKit
-        run: npx playwright install --with-deps chromium firefox webkit
       - name: Run cross-browser journeys and accessibility checks
         run: npm run test:e2e
 
