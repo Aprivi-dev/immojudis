@@ -164,6 +164,9 @@ select is(
   2::bigint,
   'two flood rows before the sales are deleted'
 );
+-- Le déclencheur require_outcome_bridge_before_auction_sale_delete exige le pont vers l'Outcome Graph avant toute
+-- suppression d'une vente (même méthode que 409_enrichment_job_delete_receipts.sql).
+do $bridge$ begin perform public.bridge_auction_sales_to_outcome_graph_batch('c753ffff-ffff-4fff-8fff-ffffffffffff'::uuid, 25); end $bridge$;
 delete from public.auction_sales where id = 'c7540000-1000-4000-8000-000000000001';
 select is(
   (select count(*) from public.auction_sale_flood_risk where sale_id = 'c7540000-1000-4000-8000-000000000001'),

@@ -5,7 +5,7 @@
 --   * ni anon ni authenticated n'exécutent les fonctions.
 begin;
 
-select plan(17);
+select plan(16);
 
 select has_table('public', 'sale_flood_risk_lease', 'the flood lease table exists');
 select ok(
