@@ -1,0 +1,19 @@
+name: Flood source probe (temporary)
+on:
+  push:
+    branches: [claude/flood-probe-tmp]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe Géorisques and API Carto (read-only, no secret)
+        run: |
+          for i in 1 2 3 4 5; do
+            curl -sS -o /dev/null -w "tri %{http_code} %{time_total}s\n" --max-time 15 -A "immojudis-flood-risk/1.0 (+https://immojudis.com)" "https://www.georisques.gouv.fr/api/v1/tri_zonage?latlon=0.689,47.399" || echo "tri FAIL"
+            curl -sS -o /dev/null -w "gaspar %{http_code} %{time_total}s\n" --max-time 15 -A "immojudis-flood-risk/1.0 (+https://immojudis.com)" "https://www.georisques.gouv.fr/api/v1/gaspar/tri?code_insee=37261" || echo "gaspar FAIL"
+            sleep 1
+          done
+          curl -sS -o /dev/null -w "pm1 %{http_code} %{time_total}s\n" --max-time 15 "https://apicarto.ign.fr/api/gpu/generateur-sup-s?categorie=PM1&geom=%7B%22type%22%3A%22Point%22%2C%22coordinates%22%3A%5B0.689%2C47.399%5D%7D" || echo "pm1 FAIL"
