@@ -112,7 +112,10 @@ const MAX_CLIENT_CHUNK_BYTES = 335_000;
 // les favoris) n'est pas relevé dans ce lot : aucun chunk n'a grossi ; il se relèvera avec B2 si besoin.
 // Décision du fondateur (26/10/2026, fusion avec la nouvelle page d'accueil #313) : total à 6 250 000.
 // Après fusion, le découpage des chunks partagés coûte environ 55 000 octets de plus qu'avant ; à regagner.
-const MAX_TOTAL_CLIENT_JS_BYTES = 6_250_000;
+// Page /admin/inscriptions (suivi des comptes et prolongation de l'essai, 27/10/2026) : son chunk propre pèse
+// 22 244 octets ; total mesuré 6 270 237 pour 6 245 900 sur main. Décision du fondateur (27/10/2026) :
+// relèvement à 6 275 000.
+const MAX_TOTAL_CLIENT_JS_BYTES = 6_275_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 // New homepage: lossless panorama for large screens plus editorial photography.
 const MAX_PUBLIC_MEDIA_BYTES = 5_000_000;

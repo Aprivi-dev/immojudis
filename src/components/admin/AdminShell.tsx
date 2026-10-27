@@ -14,6 +14,7 @@ import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import Scale from "lucide-react/dist/esm/icons/scale.js";
 import Search from "lucide-react/dist/esm/icons/search.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
+import UserPlus from "lucide-react/dist/esm/icons/user-plus.js";
 import X from "lucide-react/dist/esm/icons/x.js";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
@@ -27,6 +28,7 @@ export type AdminSection =
   | "quality"
   | "publications"
   | "clients"
+  | "signups"
   | "pilotage"
   | "pepites"
   | "lawyers"
@@ -43,6 +45,7 @@ const ADMIN_NAV_ITEMS: Array<{
   { section: "agent", href: "/admin/agent-ia", label: "Agent IA", icon: Bot },
   { section: "quality", href: "/admin/quality", label: "Qualité des données", icon: BarChart3 },
   { section: "publications", href: "/admin/publications", label: "Publications", icon: FileCheck2 },
+  { section: "signups", href: "/admin/inscriptions", label: "Inscriptions", icon: UserPlus },
   { section: "clients", href: "/admin/clients", label: "Clients & abonnements", icon: CreditCard },
   { section: "pilotage", href: "/admin/pilotage", label: "Pilotage", icon: Gauge },
   { section: "pepites", href: "/admin/pepites", label: "Pépites", icon: Search },
