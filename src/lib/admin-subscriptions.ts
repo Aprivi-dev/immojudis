@@ -153,6 +153,7 @@ export function manualSubscriptionPayload({
   user,
   existing,
   grantedBy,
+  source = "admin",
 }: {
   input: AdminSubscriptionGrantPayload;
   user: Pick<User, "id" | "email">;
@@ -161,6 +162,8 @@ export function manualSubscriptionPayload({
     "metadata" | "stripe_customer_id" | "stripe_subscription_id"
   > | null;
   grantedBy: string;
+  /** Origine de l'attribution : `admin` (formulaire) ou `admin_trial_extension` (essai prolongé). */
+  source?: "admin" | "admin_trial_extension";
 }): UserSubscriptionInsert {
   return {
     user_id: user.id,
@@ -172,19 +175,20 @@ export function manualSubscriptionPayload({
     metadata: asJson({
       ...jsonObject(existing?.metadata),
       manual_grant: {
-        source: "admin",
+        source,
         granted_by: grantedBy,
         granted_at: new Date().toISOString(),
         target_email: user.email ?? null,
         plan_code: input.planCode,
         status: input.status,
+        current_period_end: input.currentPeriodEnd,
         note: input.note,
       },
     }),
   };
 }
 
-async function assertAdminAuth(authToken: string) {
+export async function assertAdminAuth(authToken: string) {
   const auth = await requireSupabaseAuthContext(authToken);
   if (!auth.isAdmin) {
     throw new Error("Forbidden: ce compte n'a pas les droits administrateur Immojudis.");
