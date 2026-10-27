@@ -612,6 +612,12 @@ describe("FavoriteSales : changements des ventes suivies", () => {
 });
 
 describe("FavoriteSales : « Mon planning »", () => {
+  // Only the clock is faked, at midday in Paris: « J-x » counts Paris calendar days, so a real
+  // clock between midnight in Paris and midnight UTC would turn « J-3 » into « J-2 ».
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-10-15T10:00:00Z") });
+  });
+
   const DAY = 86_400_000;
   const inDays = (days: number, hour = 13) => {
     const date = new Date(Date.now() + days * DAY);
