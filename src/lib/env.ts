@@ -74,6 +74,7 @@ const SERVER_KEYS = [
   "SALE_RESULTS_MODE",
   "PEPITE_RULE_V2_ENABLED",
   "SALE_FLOOD_RISK_BATCH_LIMIT",
+  "SALE_FLOOD_RISK_RUNNER",
   "GITHUB_SCROLL_TOKEN",
   "IMMOJUDIS_GITHUB_ACTIONS_TOKEN",
   "GITHUB_ACTIONS_DISPATCH_TOKEN",
@@ -205,6 +206,11 @@ export function serverEnv(source?: EnvSource) {
     saleFloodRisk: {
       /** Valeur brute de `SALE_FLOOD_RISK_BATCH_LIMIT` (ventes observées par passe) ; la route la ramène à un nombre. */
       batchLimit: env.SALE_FLOOD_RISK_BATCH_LIMIT,
+      /**
+       * Valeur brute de `SALE_FLOOD_RISK_RUNNER` : `vercel` fait les appels depuis la route ; toute autre valeur
+       * (défaut) déclenche le workflow GitHub `sale-flood-risk.yml`, Géorisques refusant les appels de Vercel.
+       */
+      runner: env.SALE_FLOOD_RISK_RUNNER,
     },
     pipeline: {
       githubToken: firstFilled(

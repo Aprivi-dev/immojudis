@@ -314,3 +314,13 @@ La règle se comporte comme prévu, mais l'ouverture de `PEPITE_RULE_V2_ENABLED`
 Géorisques depuis Vercel. Sans ce retour, les pannes bloqueraient l'entrée de nouvelles pépites. Une fois les pannes
 résorbées et les ventes en panne réobservées (une dizaine de passes), ouvrir l'interrupteur, renseigner
 `PEPITE_V2_EFFECTIVE_DATE` et aligner les dates des documents légaux.
+
+### Géorisques refuse Vercel : traitement déplacé sur GitHub Actions (27/10/2026)
+
+- **Diagnostic** : depuis 11 h 25 UTC, Géorisques coupe les connexions venant de Vercel (`network_econnreset` grâce
+  à #329). Les mêmes appels réussissent depuis GitHub Actions (sonde du 27/10 : 10 sur 10, plus PM1).
+- **Décision du fondateur** : option 1, faire tourner les appels depuis GitHub Actions.
+- **Mise en œuvre** : la route `/api/cron/sale-flood-risk` (pg_cron, :25) déclenche le workflow
+  `sale-flood-risk.yml`, qui exécute le même code (`runSaleFloodRiskBatch`). La passe reste supervisée sous le nom
+  `sale-flood-risk` (`cron.stale`) ; le déclenchement est suivi à part (`sale-flood-risk-dispatch`).
+  `SALE_FLOOD_RISK_RUNNER=vercel` revient aux appels depuis la route.

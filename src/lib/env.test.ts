@@ -194,6 +194,8 @@ describe("serverEnv pipeline, alerts and email", () => {
       "120",
     );
     expect(serverEnv({ SALE_FLOOD_RISK_BATCH_LIMIT: "" }).saleFloodRisk.batchLimit).toBeUndefined();
+    expect(serverEnv({ SALE_FLOOD_RISK_RUNNER: " vercel " }).saleFloodRisk.runner).toBe("vercel");
+    expect(serverEnv({}).saleFloodRisk.runner).toBeUndefined();
   });
 
   it("reads WEEKLY_DIGEST_MODE and SALE_RESULTS_MODE through the shared configuration, trimmed and blank as unset", () => {
