@@ -259,3 +259,58 @@ scénario `01For` ». Aucun repli sur les fichiers de formes n'est nécessaire. 
   passe horaire, le catalogue est couvert en une dizaine d'heures.
 - **Suite** : calibration (n° 7, une quarantaine de cas relus) une fois le catalogue couvert, puis ouverture de
   `PEPITE_RULE_V2_ENABLED` avec sa date d'effet et alignement des dates des documents légaux.
+- **Incident du 27/10, 6 h 25 UTC** : passage en échec (code 57014). La publication du pipeline tient des ventes
+  `FOR UPDATE` le temps de sa transaction, et l'écriture d'un verdict attendait ce verrou jusqu'au délai de la requête.
+  Correctif : #327. Un paquet bloqué est réessayé en fin de passe, puis laissé à la passe suivante.
+
+## Calibration (n° 7, 27/10/2026)
+
+### Couverture
+
+À 14 h 40 UTC, les 1 505 ventes à venir ont toutes un verdict :
+
+| Verdict | Ventes |
+|---|---|
+| Sans signal (position imprécise, commune sans TRI) | 485 |
+| Inconnu | 891 |
+| Aucun risque identifié | 107 |
+| Exposé (périmètre d'un PPRI) | 22 |
+| Risque élevé | 0 |
+
+Le seul risque élevé observé, à Pertuis, concerne une vente retirée.
+
+Parmi les 891 inconnus, 531 viennent d'une panne et non d'une observation : depuis 11 h 25 UTC, les appels de Vercel à
+Géorisques échouent presque tous en `network`. Les mêmes appels réussissent hors de Vercel. La cause sera journalisée
+en code par #329.
+
+### Relecture de 32 cas
+
+Les cas sont tirés au hasard parmi les verdicts observés : 9 exposés, 8 sans risque identifié, 8 sans signal,
+6 inconnus et le seul risque élevé. Les appels aux sources officielles ont été refaits depuis un autre réseau
+(`tri_zonage`, PM1 de l'API Carto, GASPAR pour les communes) :
+
+- **Concordance : 32 sur 32.**
+- **Risque élevé** (Pertuis) : scénario `01For` confirmé.
+- **Exposés** : PM1 d'aléa inondation (`code_alea = 11`) confirmé pour les 9 cas. Quatre ont aussi un scénario moyen
+  ou faible d'un TRI (Arles, Paris 15e, Aubagne, Mallemort) : ils sont bien affichés sans être exclus.
+- **Sans risque identifié** : aucun scénario TRI. Deux cas sont dans un plan de prévention d'un autre aléa
+  (`code_alea = 12`, Paris 5e et Aix-en-Provence) et sont correctement ignorés.
+- **Sans signal** : aucun TRI selon GASPAR pour les 8 communes, dont Blois et La Charité-sur-Loire, au bord de la Loire
+  mais hors des TRI du premier cycle.
+- **Inconnus observés** : la commune a bien un TRI (Rouen-Louviers-Austreberthe, Nice-Cannes-Mandelieu,
+  Dives-Ouistreham, Vilaine de Rennes à Redon, Montluçon, Bordeaux). La position, au centre de la commune, ne permet
+  pas de conclure.
+
+### Effet de la v2 sur les pépites actuelles
+
+- **Publiées (3)** : 1 sans risque identifié, 2 inconnues (dont une par panne). Aucune ne sortirait : seul un risque
+  élevé fait sortir une pépite publiée.
+- **Candidates pas encore publiées (5)** : 1 sans risque identifié et 1 sans signal pourraient entrer ; 3 inconnues
+  par panne seraient bloquées tant que la source ne répond pas.
+
+### Recommandation
+
+La règle se comporte comme prévu, mais l'ouverture de `PEPITE_RULE_V2_ENABLED` doit attendre le retour des appels à
+Géorisques depuis Vercel. Sans ce retour, les pannes bloqueraient l'entrée de nouvelles pépites. Une fois les pannes
+résorbées et les ventes en panne réobservées (une dizaine de passes), ouvrir l'interrupteur, renseigner
+`PEPITE_V2_EFFECTIVE_DATE` et aligner les dates des documents légaux.
