@@ -12,6 +12,8 @@ const db = vi.hoisted(() => ({
   upserts: [] as Array<{ table: string; rows: Row[] }>,
   updates: [] as Array<{ saleId: unknown; changes: Row }>,
   writeError: null as { code?: string; message: string } | null,
+  /** Envois successifs de verdicts : `true` = refusé comme bloqué par un verrou de ligne (57014). */
+  busyFloodUpserts: [] as boolean[],
   /** Erreur de la seule mise à jour d'une ligne existante (les insertions passent). */
   updateError: null as { code?: string; message: string } | null,
   tables: [] as string[],
@@ -94,6 +96,9 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
     const missing = { code: "PGRST205", message: "Could not find the table" };
     if (this.upsertRows) {
       if (db.writeError) return { data: null, error: db.writeError };
+      if (this.table === "auction_sale_flood_risk" && db.busyFloodUpserts.shift()) {
+        return { data: null, error: { code: "57014", message: "statement timeout" } };
+      }
       // Comme PostgREST : dans un envoi groupé, une colonne absente d'une ligne mais présente dans une autre vaut
       // NULL, pas sa valeur par défaut, sauf avec `defaultToNull: false` (« Prefer: missing=default »).
       if (this.table === "auction_sale_flood_risk" && this.defaultToNull) {
@@ -260,6 +265,7 @@ beforeEach(() => {
   db.upserts = [];
   db.updates = [];
   db.writeError = null;
+  db.busyFloodUpserts = [];
   db.updateError = null;
   db.tables = [];
   db.leaseHeld = false;
@@ -1027,6 +1033,50 @@ describe("runSaleFloodRiskBatch : écriture par paquets", () => {
     const result = await run(api);
     expect(result).toMatchObject({ rateLimited: true, observed: 2 });
     expect(written().map((row) => row.sale_id)).toEqual(["a", "b"]);
+  });
+});
+
+describe("runSaleFloodRiskBatch : ventes verrouillées par la publication du pipeline", () => {
+  // Incident du 27/10/2026, 6 h 25 UTC : la publication du pipeline tenait des ventes FOR UPDATE ; l'écriture d'un
+  // paquet a attendu le verrou jusqu'au délai de la requête (57014) et toute la passe a échoué.
+  const sales = (count: number) =>
+    Array.from({ length: count }, (_, index) => sale(`s${String(index).padStart(3, "0")}`));
+
+  it("un paquet bloqué est réessayé en fin de passe : tout est écrit, la passe réussit", async () => {
+    db.sales = sales(WRITE_CHUNK + 3);
+    // Premier paquet bloqué, reliquat écrit, dernier essai du premier paquet écrit.
+    db.busyFloodUpserts = [true, false, false];
+
+    const result = await run(makeApi());
+
+    expect(result.errors).toEqual([]);
+    expect(new Set(written().map((row) => row.sale_id)).size).toBe(WRITE_CHUNK + 3);
+  });
+
+  it("encore bloqué au dernier essai : le reste est écrit, la passe réussit avec un avertissement", async () => {
+    db.sales = sales(WRITE_CHUNK + 3);
+    db.busyFloodUpserts = [true, false, true];
+
+    const result = await run(makeApi());
+
+    expect(result.errors).toEqual([`write_busy_${WRITE_CHUNK}`]);
+    // Les ventes non écrites restent sans verdict : la passe suivante les reprend.
+    expect(written()).toHaveLength(3);
+  });
+
+  it("toutes les écritures bloquées : la passe échoue pour que la supervision le voie", async () => {
+    db.sales = sales(3);
+    db.busyFloodUpserts = [true, true];
+
+    await expect(run(makeApi())).rejects.toThrow(/ventes verrouillées pendant toute la passe/);
+    expect(written()).toEqual([]);
+  });
+
+  it("une autre erreur d'écriture que le verrou fait toujours échouer la passe", async () => {
+    db.sales = sales(3);
+    db.writeError = { code: "23514", message: "check" };
+
+    await expect(run(makeApi())).rejects.toThrow(/code 23514/);
   });
 });
 

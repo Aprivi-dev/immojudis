@@ -71,6 +71,12 @@ export const COMMUNE_TRI_CACHE_MS = 24 * 3_600_000;
 const MAX_REPORTED_ERRORS = 5;
 /** Les verdicts sont écrits par paquets de 25 ventes pendant la passe (20 à 25 : ni trop tard, ni trop souvent). */
 export const WRITE_CHUNK = 25;
+/**
+ * Écriture bloquée par un verrou de ligne : la publication du pipeline tient des ventes `FOR UPDATE` le temps de sa
+ * transaction, et la clé étrangère d'un verdict attend ce verrou jusqu'au délai de la requête (57014). Le paquet
+ * est réessayé en fin de passe, puis laissé à la passe suivante : ces ventes restent en attente.
+ */
+const BUSY_WRITE_CODES = new Set(["57014", "55P03", "40P01"]);
 /** `maxDuration` de la route `/api/cron/sale-flood-risk`. */
 export const FLOOD_MAX_DURATION_MS = 300_000;
 /** Marge minimale avant `maxDuration` pour démarrer une sonde (une sonde dure au plus ~17 s, plus l'écriture). */
@@ -362,12 +368,23 @@ async function runPass({
   result.pending = pending.length;
 
   let toWrite: FloodRiskInsert[] = [];
+  /** Paquets bloqués par un verrou de ligne, réessayés en fin de passe. */
+  let deferred: FloodRiskInsert[] = [];
+  let writtenRows = 0;
   /** Écrit le paquet en cours ; `false` si la table n'existe pas. */
   const flush = async (): Promise<boolean> => {
     if (toWrite.length === 0) return true;
     const rows = toWrite;
     toWrite = [];
-    return upsertFloodRisks(rows);
+    try {
+      const written = await upsertFloodRisks(rows);
+      if (written) writtenRows += rows.length;
+      return written;
+    } catch (error) {
+      if (!BUSY_WRITE_CODES.has(storeErrorCode(error))) throw error;
+      deferred.push(...rows);
+      return true;
+    }
   };
 
   /** Une tentative sans verdict : jamais d'écrasement d'un verdict connu (seule la tentative est consignée). */
@@ -487,6 +504,23 @@ async function runPass({
   }
 
   if (!(await flush())) return { ...result, skipped: "not_migrated" };
+  if (deferred.length > 0) {
+    // Dernier essai des paquets bloqués ; s'ils le sont encore, la passe suivante reprend ces ventes.
+    toWrite = deferred;
+    deferred = [];
+    if (!(await flush())) return { ...result, skipped: "not_migrated" };
+    if (deferred.length > 0) {
+      if (result.errors.length < MAX_REPORTED_ERRORS) {
+        result.errors.push(`write_busy_${deferred.length}`);
+      }
+      // Rien n'a pu être écrit de toute la passe : la tâche est en panne, la supervision doit le voir.
+      if (writtenRows === 0) {
+        throw new Error(
+          "Écriture des verdicts d'inondation impossible : ventes verrouillées pendant toute la passe",
+        );
+      }
+    }
+  }
   result.remaining = Math.max(0, pending.length - done);
 
   // Aucune observation alors qu'il y en avait à faire : la tâche est en panne (ou limitée), on le signale.
