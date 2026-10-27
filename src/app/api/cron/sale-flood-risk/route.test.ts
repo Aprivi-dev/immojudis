@@ -1,8 +1,9 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   runSaleFloodRiskBatch: vi.fn(),
   runMonitoredCron: vi.fn(),
+  dispatchSaleFloodRiskWorkflow: vi.fn(),
 }));
 
 vi.mock("@/lib/cron-jobs", async () => ({
@@ -14,14 +15,28 @@ vi.mock("@/lib/cron-jobs", async () => ({
 vi.mock("@/lib/sale-flood-risk-batch", () => ({
   runSaleFloodRiskBatch: mocks.runSaleFloodRiskBatch,
 }));
+vi.mock("@/lib/sale-flood-risk-dispatch.server", async () => ({
+  saleFloodRiskRunsOnVercel: (
+    await vi.importActual<typeof import("@/lib/sale-flood-risk-dispatch.server")>(
+      "@/lib/sale-flood-risk-dispatch.server",
+    )
+  ).saleFloodRiskRunsOnVercel,
+  dispatchSaleFloodRiskWorkflow: mocks.dispatchSaleFloodRiskWorkflow,
+}));
 
 import { GET, maxDuration } from "./route";
 
 describe("sale flood risk cron route", () => {
+  beforeEach(() => {
+    // Ces cas décrivent la passe dans la route (retour arrière) ; le déclenchement par défaut est testé plus bas.
+    process.env.SALE_FLOOD_RISK_RUNNER = "vercel";
+  });
   afterEach(() => {
     mocks.runSaleFloodRiskBatch.mockReset();
     mocks.runMonitoredCron.mockReset();
+    mocks.dispatchSaleFloodRiskWorkflow.mockReset();
     delete process.env.SALE_FLOOD_RISK_BATCH_LIMIT;
+    delete process.env.SALE_FLOOD_RISK_RUNNER;
   });
 
   function runHandler() {
@@ -74,6 +89,18 @@ describe("sale flood risk cron route", () => {
       expect(mocks.runSaleFloodRiskBatch).toHaveBeenCalledWith({ limit: 150 });
     },
   );
+
+  it("par défaut, ne fait que déclencher le workflow GitHub, suivi sous un autre nom que la passe", async () => {
+    delete process.env.SALE_FLOOD_RISK_RUNNER;
+    mocks.dispatchSaleFloodRiskWorkflow.mockResolvedValueOnce({ dispatched: true });
+
+    const response = await runHandler();
+
+    expect(await response.json()).toEqual({ dispatched: true });
+    // La passe est supervisée par le workflow sous « sale-flood-risk » : le déclenchement ne doit pas la valider.
+    expect(mocks.runMonitoredCron.mock.calls[0][1]).toBe("sale-flood-risk-dispatch");
+    expect(mocks.runSaleFloodRiskBatch).not.toHaveBeenCalled();
+  });
 
   it("laisse cinq minutes à l'exécution", () => {
     expect(maxDuration).toBe(300);

@@ -15,6 +15,8 @@ export default tseslint.config(
       "output",
       ".playwright-cli",
       "node_modules",
+      // Paquet construit du traitement d'inondation pour GitHub Actions (npm run flood-risk:build).
+      ".flood-risk-runner",
       "**/.venv/**",
       ".output",
       ".nitro",

@@ -11,6 +11,7 @@ const collectionWorkflows = [
   ".github/workflows/outcome-judilibre.yml",
   ".github/workflows/recompute-existing-sales.yml",
   ".github/workflows/reference-data-import.yml",
+  ".github/workflows/sale-flood-risk.yml",
   ".github/workflows/valuation-model-training.yml",
 ];
 const allowedWorkflowTriggers = new Set(["workflow_dispatch"]);
