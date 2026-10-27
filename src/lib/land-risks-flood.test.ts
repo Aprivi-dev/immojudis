@@ -120,6 +120,18 @@ describe("fetchTriZonage (appartenance à la zone d'un TRI)", () => {
       },
     );
     expect(network).toEqual({ kind: "failure", code: "network" });
+    const reset = await fetchTriZonage(
+      { longitude: 0.689, latitude: 47.399 },
+      {
+        fetcher: async () => {
+          throw new TypeError("fetch failed", {
+            cause: Object.assign(new Error("read ECONNRESET 0.689,47.399"), { code: "ECONNRESET" }),
+          });
+        },
+      },
+    );
+    // La cause est un code, jamais le message (qui pourrait citer l'URL ou la coordonnée).
+    expect(reset).toEqual({ kind: "failure", code: "network_econnreset" });
     const timeout = await fetchTriZonage(
       { longitude: 0.689, latitude: 47.399 },
       {
@@ -264,7 +276,9 @@ describe("redirections refusées (TRI, GASPAR, PM1)", () => {
     const inits: Array<RequestInit | undefined> = [];
     const fetcher: typeof fetch = async (_input, init) => {
       inits.push(init);
-      if (init?.redirect === "error") throw new TypeError("fetch failed");
+      if (init?.redirect === "error") {
+        throw new TypeError("fetch failed", { cause: new Error("unexpected redirect") });
+      }
       return new Response(null, { status: 302, headers: { location: "https://autre.example/" } });
     };
     return { inits, fetcher };
@@ -274,7 +288,7 @@ describe("redirections refusées (TRI, GASPAR, PM1)", () => {
     const { inits, fetcher } = redirecting();
     expect(await fetchTriZonage({ longitude: 0.689, latitude: 47.399 }, { fetcher })).toEqual({
       kind: "failure",
-      code: "network",
+      code: "network_redirect",
     });
     expect(inits[0]?.redirect).toBe("error");
   });
@@ -283,7 +297,7 @@ describe("redirections refusées (TRI, GASPAR, PM1)", () => {
     const { inits, fetcher } = redirecting();
     expect(await fetchCommuneTri("37261", { fetcher })).toEqual({
       kind: "failure",
-      code: "network",
+      code: "network_redirect",
     });
     expect(inits[0]?.redirect).toBe("error");
   });

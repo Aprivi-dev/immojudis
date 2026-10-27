@@ -67,7 +67,7 @@ type SourceRun = {
 type RequestResult =
   | { kind: "success"; payload: unknown; httpStatus: number; paginationMessage?: string }
   | { kind: "empty"; httpStatus: number; message?: string }
-  | { kind: "failure"; message: string; httpStatus?: number };
+  | { kind: "failure"; message: string; httpStatus?: number; cause?: string };
 
 type BodyReadResult = { ok: true; text: string } | { ok: false };
 
@@ -322,7 +322,8 @@ function floodFailure(
 ): FloodApiFailure | FloodApiRateLimited {
   if (response.httpStatus === 429) return { kind: "rate_limited" };
   if (response.httpStatus) return { kind: "failure", code: `http_${response.httpStatus}` };
-  return { kind: "failure", code: /délai/i.test(response.message) ? "timeout" : "network" };
+  if (/délai/i.test(response.message)) return { kind: "failure", code: "timeout" };
+  return { kind: "failure", code: response.cause ? `network_${response.cause}` : "network" };
 }
 
 /**
@@ -702,15 +703,26 @@ async function requestJson(
       paginationMessage: paginationMessage(payload, version),
     };
   } catch (error) {
-    return {
-      kind: "failure",
-      message: controller.signal.aborted
-        ? `Délai dépassé après ${timeoutMs} ms`
-        : errorMessage(error),
-    };
+    if (controller.signal.aborted) {
+      return { kind: "failure", message: `Délai dépassé après ${timeoutMs} ms` };
+    }
+    return { kind: "failure", message: errorMessage(error), cause: networkCause(error) };
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * Cause d'une panne réseau, réduite à un code sans donnée (`econnreset`, `und_err_socket`, `redirect`…) : de quoi
+ * distinguer une redirection refusée, un refus de connexion ou une coupure, sans URL ni coordonnée.
+ */
+function networkCause(error: unknown): string | undefined {
+  const cause = (error as { cause?: { code?: unknown; message?: unknown } } | null)?.cause;
+  if (typeof cause?.code === "string" && /^[A-Z][A-Z0-9_]{1,29}$/.test(cause.code)) {
+    return cause.code.toLowerCase();
+  }
+  const message = typeof cause?.message === "string" ? cause.message : errorMessage(error);
+  return /redirect/i.test(message) ? "redirect" : undefined;
 }
 
 async function readBoundedResponseText(
