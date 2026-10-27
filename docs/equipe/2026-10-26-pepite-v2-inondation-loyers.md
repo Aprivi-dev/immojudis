@@ -235,3 +235,21 @@ scénario `01For` ». Aucun repli sur les fichiers de formes n'est nécessaire. 
 - **Décision du fondateur (26/10/2026)** : aucun email d'information sur les CGU n'est envoyé. Les CGU ne sont pas
   modifiées. Le paragraphe proposé pour l'article 8, sur les limites des cartes de risques, n'est pas ajouté :
   l'information passe par la page de méthode et les mentions légales.
+
+## Mise en production (26 et 27/10/2026)
+
+- **Fusion** : #318 (les deux lots), le 26/10 à 23 h 17 UTC, CI verte.
+- **CI de `main` en échec après la fusion** : un test ancien de « Mon planning » (`FavoriteSales`) comptait « J-3 »
+  avec l'horloge réelle et échouait entre minuit à Paris et minuit UTC. Correctif : #324, horloge du test fixée.
+  Relance de la CI de `main` après minuit UTC, verte.
+- **Migrations** : `20261106*` et `20261107*`, le 27/10 à 4 h 20 UTC, par le workflow « Apply Supabase Migrations ».
+  1 555 ventes ont leur commune ; la tâche `immojudis-sale-flood-risk` est planifiée à :25.
+- **Alertes** : `ALERT_RENT_BASIS_SWITCH_AT = 2026-10-27T00:10:00Z` (production Vercel), base silencieuse jusqu'au
+  29/10 à 0 h 10 UTC. Le premier passage des alertes de 6 h 15 tombe dans la fenêtre. La variable peut être retirée
+  ensuite.
+- **Imports** : carte des loyers ANIL 2025, 139 600 lignes (34 900 communes, quatre segments) ; zonage tendu, 34 875
+  communes.
+- **Incident du traitement d'inondation** : les passages de 4 h 21 et 4 h 25 UTC ont échoué (code 23502). Un paquet
+  mêlait des verdicts complets et des lignes « inconnu » sans `tri_scenarios` ni `ppri_checked` ; PostgREST y mettait
+  NULL au lieu de la valeur par défaut. Correctif : #325 (`defaultToNull: false`, faux client du test aligné sur
+  PostgREST). Aucun verdict écrit avant le correctif ; la pépite n'est pas concernée (v2 derrière son interrupteur).
