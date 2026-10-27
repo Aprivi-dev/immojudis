@@ -35,6 +35,7 @@ describe("arborescence /admin", () => {
         "/admin/agent-ia",
         "/admin/clients",
         "/admin/compliance",
+        "/admin/inscriptions",
         "/admin/lawyers",
         "/admin/operations",
         "/admin/pepites",
