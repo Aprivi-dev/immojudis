@@ -1,6 +1,10 @@
 import { runMonitoredCron } from "@/lib/cron-jobs";
 import { serverEnv } from "@/lib/env";
 import { runSaleFloodRiskBatch } from "@/lib/sale-flood-risk-batch";
+import {
+  dispatchSaleFloodRiskWorkflow,
+  saleFloodRiskRunsOnVercel,
+} from "@/lib/sale-flood-risk-dispatch.server";
 
 export const maxDuration = 300;
 
@@ -20,6 +24,13 @@ function batchLimit(): number {
  * les autres routes planifiées : jeton `CRON_SECRET`, supervision par `runMonitoredCron`.
  */
 export async function GET(request: Request) {
+  if (!saleFloodRiskRunsOnVercel()) {
+    // Géorisques refuse les appels de Vercel : la route ne fait que déclencher le workflow GitHub, qui supervise la
+    // passe sous le nom `sale-flood-risk`. Le déclenchement a son propre suivi, sans tromper `cron.stale`.
+    return runMonitoredCron(request, "sale-flood-risk-dispatch", () =>
+      dispatchSaleFloodRiskWorkflow(),
+    );
+  }
   // Aucune reprise différée : les pauses de reprise (5 s, 20 s, 60 s) s'ajouteraient au temps de la passe et
   // pourraient dépasser `maxDuration`. La passe suivante (toutes les heures) reprend ce qui reste.
   return runMonitoredCron(
