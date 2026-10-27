@@ -253,3 +253,9 @@ scénario `01For` ». Aucun repli sur les fichiers de formes n'est nécessaire. 
   mêlait des verdicts complets et des lignes « inconnu » sans `tri_scenarios` ni `ppri_checked` ; PostgREST y mettait
   NULL au lieu de la valeur par défaut. Correctif : #325 (`defaultToNull: false`, faux client du test aligné sur
   PostgREST). Aucun verdict écrit avant le correctif ; la pépite n'est pas concernée (v2 derrière son interrupteur).
+- **Premier passage réussi** (27/10, 5 h 25 UTC, après #325) : 150 ventes observées sur 1 505 à venir, aucune
+  panne, aucun 429. Verdicts : 1 élevé, 5 exposés, 22 sans risque identifié, 57 sans signal (position imprécise,
+  commune sans TRI) et 65 inconnus (position imprécise dans une commune qui a un TRI). Au rythme de 150 ventes par
+  passe horaire, le catalogue est couvert en une dizaine d'heures.
+- **Suite** : calibration (n° 7, une quarantaine de cas relus) une fois le catalogue couvert, puis ouverture de
+  `PEPITE_RULE_V2_ENABLED` avec sa date d'effet et alignement des dates des documents légaux.
