@@ -161,9 +161,12 @@ export function floodPositionOf(
 /** Écrit des verdicts (insertion ou remplacement complet de la ligne). Rend `false` si la table n'existe pas. */
 export async function upsertFloodRisks(rows: FloodRiskInsert[]): Promise<boolean> {
   if (rows.length === 0) return true;
+  // Un paquet mêle des verdicts complets et des tentatives « inconnu » sans observation : sans
+  // `defaultToNull: false`, PostgREST mettrait NULL dans les colonnes absentes d'une ligne (tri_scenarios,
+  // ppri_checked, NOT NULL) au lieu de leur valeur par défaut, et tout le paquet serait refusé (23502).
   const { error } = await supabaseAdmin
     .from("auction_sale_flood_risk")
-    .upsert(rows, { onConflict: "sale_id" });
+    .upsert(rows, { onConflict: "sale_id", defaultToNull: false });
   if (error) {
     if (isMissingDatabaseObject(error)) return false;
     // Le message d'erreur peut citer une ligne : seul le code remonte.

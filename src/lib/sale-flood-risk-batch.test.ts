@@ -36,11 +36,23 @@ vi.mock("@/integrations/supabase/client.server", () => ({
   },
 }));
 
+/** Colonnes NOT NULL à valeur par défaut de `auction_sale_flood_risk` (migration 20261106100200). */
+const FLOOD_NOT_NULL_WITH_DEFAULT = [
+  "tri_scenarios",
+  "ppri_checked",
+  "attempted_at",
+  "failure_count",
+  "verdict_changed_at",
+  "created_at",
+  "updated_at",
+];
+
 class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
   private page: [number, number] = [0, 999];
   private upsertRows: Row[] | null = null;
   private changes: Row | null = null;
   private eqValue: unknown = null;
+  private defaultToNull = true;
 
   constructor(private readonly table: string) {}
 
@@ -58,8 +70,9 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
     this.page = [from, to];
     return this;
   }
-  upsert(rows: Row[]) {
+  upsert(rows: Row[], options?: { defaultToNull?: boolean }) {
     this.upsertRows = rows;
+    this.defaultToNull = options?.defaultToNull ?? true;
     return this;
   }
   update(changes: Row) {
@@ -81,6 +94,15 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
     const missing = { code: "PGRST205", message: "Could not find the table" };
     if (this.upsertRows) {
       if (db.writeError) return { data: null, error: db.writeError };
+      // Comme PostgREST : dans un envoi groupé, une colonne absente d'une ligne mais présente dans une autre vaut
+      // NULL, pas sa valeur par défaut, sauf avec `defaultToNull: false` (« Prefer: missing=default »).
+      if (this.table === "auction_sale_flood_risk" && this.defaultToNull) {
+        const columns = new Set(this.upsertRows.flatMap((row) => Object.keys(row)));
+        const nullsNotNull = FLOOD_NOT_NULL_WITH_DEFAULT.some(
+          (column) => columns.has(column) && this.upsertRows!.some((row) => row[column] == null),
+        );
+        if (nullsNotNull) return { data: null, error: { code: "23502", message: "not-null" } };
+      }
       if (
         (this.table === "auction_sale_flood_risk" && db.floodRows == null) ||
         (this.table === "auction_sale_communes" && db.communeRows == null)
@@ -440,6 +462,25 @@ describe("runSaleFloodRiskBatch : pannes et coupe-circuit", () => {
       failure_count: 1,
       last_failure: "http_503",
     });
+  });
+
+  it("un paquet mêlant un verdict et une première tentative manquée s'écrit en entier (valeurs par défaut)", async () => {
+    // Incident du 27/10/2026 : PostgREST mettait NULL dans les colonnes absentes de la ligne « inconnu »
+    // (tri_scenarios, ppri_checked), d'où un refus 23502 de tout le paquet.
+    db.sales = [sale("a"), sale("b", { latitude: 45.123, longitude: 1.456 })];
+    const api = makeApi();
+    const fetcher: typeof fetch = async (input, init) =>
+      String(input).includes("tri_zonage") && String(input).includes("45.123")
+        ? new Response("{}", { status: 503 })
+        : api.fetcher(input, init);
+
+    const result = await run({ ...api, fetcher });
+
+    expect(result).toMatchObject({ observed: 1, failed: 1 });
+    expect(written().map((row) => [row.sale_id, row.verdict])).toEqual([
+      ["a", "none_found"],
+      ["b", "unknown"],
+    ]);
   });
 
   it("toutes les observations échouent : la passe est déclarée en échec (supervision cron.stale)", async () => {
