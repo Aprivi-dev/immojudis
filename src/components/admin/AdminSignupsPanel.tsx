@@ -12,7 +12,7 @@ import { AdminPagination } from "@/components/admin/AdminPagination";
 import { AdminPanel, AdminSectionHeading } from "@/components/admin/AdminShell";
 import { formatInteger } from "@/components/admin/admin-format";
 import { AdminQueryErrorNotice, OverviewMetric } from "@/components/admin/admin-ui";
-import { extendAdminSignupTrials, fetchAdminSignups } from "@/lib/client-api/admin";
+import { extendAdminSignupTrials, fetchAdminSignups } from "@/lib/client-api/admin-signups";
 import { dateTimeLocalToUtcIso, formatDateTimeLocalInput } from "@/lib/admin-subscription-datetime";
 import {
   ADMIN_SIGNUP_ACCESS,

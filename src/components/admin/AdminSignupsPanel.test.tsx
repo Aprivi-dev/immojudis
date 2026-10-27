@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
   error: vi.fn(),
 }));
 
-vi.mock("@/lib/client-api/admin", () => ({
+vi.mock("@/lib/client-api/admin-signups", () => ({
   fetchAdminSignups: mocks.list,
   extendAdminSignupTrials: mocks.extend,
 }));
