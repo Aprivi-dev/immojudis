@@ -410,3 +410,13 @@ describe("points d'accroche d'un régime", () => {
     expect(consignationAmount({ consignation: 7_000, startingPrice: 100_000 }, null)).toBe(7_000);
   });
 });
+
+describe("versions des régimes de frais (n° 30)", () => {
+  it("chaque régime a sa propre version, pour que l'obsolescence se juge régime par régime", () => {
+    const versions = Object.values(FEE_REGIMES).flatMap((regime) =>
+      regime ? [regime.version] : [],
+    );
+    expect(versions.length).toBeGreaterThanOrEqual(3);
+    expect(new Set(versions).size).toBe(versions.length);
+  });
+});

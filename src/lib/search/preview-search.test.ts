@@ -129,11 +129,20 @@ describe("public preview search", () => {
       expect(second.items).toHaveLength(6);
     });
 
-    it("sans pépite (mode shadow, fonction absente, panne), rend aucune vente sans lire le catalogue", async () => {
+    it("une panne de la liste n'est pas une liste vide : elle est levée, donc jamais gardée en cache", async () => {
+      // PGRST205 (objet introuvable) vaut « migration absente » (`isMissingDatabaseObject`, règle unique).
+      for (const error of [{ code: "57014" }, { code: "XX000" }, { code: "PGRST301" }]) {
+        const { rpc } = client({ data: null, error });
+        await expect(runPreviewSearch({ rpc }, { pepite: true })).rejects.toBe(error);
+        expect(searchCalls(rpc)).toHaveLength(0);
+      }
+    });
+
+    it("sans pépite (mode shadow, fonction absente), rend aucune vente sans lire le catalogue", async () => {
       for (const result of [
         { data: [], error: null },
         { data: null, error: { code: "PGRST202" } },
-        { data: null, error: { code: "57014" } },
+        { data: null, error: { code: "42883" } },
       ]) {
         const { rpc } = client(result);
         await expect(runPreviewSearch({ rpc }, { pepite: true })).resolves.toEqual({

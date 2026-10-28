@@ -67,6 +67,55 @@ describe("magasin de l'état de l'offre de lancement", () => {
   });
 });
 
+describe("état lu par le serveur (valeur initiale)", () => {
+  it("part de l'état du serveur, sans « en attente », y compris au rendu serveur", () => {
+    const store = createLaunchOfferStore(vi.fn(), Date.now, true);
+    expect(store.getSnapshot()).toEqual({ active: true, pending: false });
+    expect(store.getServerSnapshot()).toEqual({ active: true, pending: false });
+    expect(createLaunchOfferStore(vi.fn(), Date.now, false).getServerSnapshot()).toEqual({
+      active: false,
+      pending: false,
+    });
+    // Sans valeur initiale, le rendu serveur dit « pas encore lu ».
+    expect(createLaunchOfferStore(vi.fn()).getServerSnapshot()).toEqual({
+      active: false,
+      pending: true,
+    });
+  });
+
+  it("relit à l'affichage et suit une coupure survenue depuis le rendu de la page", async () => {
+    const store = createLaunchOfferStore(vi.fn().mockResolvedValue(false), Date.now, true);
+    store.ensure();
+    await vi.waitFor(() => expect(store.getSnapshot()).toEqual({ active: false, pending: false }));
+    // Le rendu serveur, lui, reste celui de la page.
+    expect(store.getServerSnapshot()).toEqual({ active: true, pending: false });
+  });
+
+  it("garde l'état du serveur quand la relecture échoue ou est illisible", async () => {
+    const failing = createLaunchOfferStore(
+      vi.fn().mockRejectedValue(new Error("réseau")),
+      Date.now,
+      true,
+    );
+    failing.ensure();
+    const unreadable = createLaunchOfferStore(vi.fn().mockResolvedValue(null), Date.now, true);
+    unreadable.ensure();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(failing.getSnapshot()).toEqual({ active: true, pending: false });
+    expect(unreadable.getSnapshot()).toEqual({ active: true, pending: false });
+  });
+
+  it("le fournisseur donne l'état du serveur au premier rendu, avant toute requête", () => {
+    mocks.fetchLaunchOffer.mockReturnValue(new Promise(() => undefined));
+    render(
+      <LaunchOfferProvider initialActive>
+        <Probe />
+      </LaunchOfferProvider>,
+    );
+    expect(screen.getByTestId("state").textContent).toBe("active");
+  });
+});
+
 describe("useLaunchOffer", () => {
   it("sans fournisseur : aucune offre, aucune requête (composant testé seul)", () => {
     render(<Probe />);

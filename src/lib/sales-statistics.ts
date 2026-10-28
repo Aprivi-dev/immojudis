@@ -73,7 +73,7 @@ export async function getSalesStatistics({
 }): Promise<SalesStatisticsResponse> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "sales.statistics")) {
-    throw new Error("Statistiques immobilières réservées au plan Analyse.");
+    throw new Error("Statistiques immobilières réservées à l’offre Analyse.");
   }
 
   const center = search.aroundAddress ? await geocodeAddress(search.aroundAddress) : null;

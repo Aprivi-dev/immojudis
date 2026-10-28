@@ -30,8 +30,11 @@ concurrency:
 
 jobs:
   import:
+    # Receives SUPABASE_DB_URL: only the code of `main` may run with it (a dispatch from another branch
+    # would run that branch's code with the production secret).
+    if: github.ref == 'refs/heads/main'
     name: Import official DVF resources
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 360
     defaults:
       run:

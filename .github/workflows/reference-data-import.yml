@@ -5,7 +5,8 @@ name: Reference data import
 # (Géorisques) and Météo-France monthly climatology, plus the ANIL rent map
 # (`rents`, yearly in December) and the rental-tension zoning (`tension`, after a
 # decree). Sources refresh at most monthly, so the import stays manual like every
-# other collection workflow.
+# other collection workflow (single-scheduler invariant). From November to January, run it
+# by hand with `check_new_vintage` to look for the next ANIL edition (writes nothing).
 on:
   workflow_dispatch:
     inputs:
@@ -26,6 +27,11 @@ on:
         required: false
         default: false
         type: boolean
+      check_new_vintage:
+        description: "Only look for a newer ANIL edition (writes nothing, ignores the dataset)."
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -36,8 +42,11 @@ concurrency:
 
 jobs:
   import:
+    # Receives SUPABASE_DB_URL: only the code of `main` may run with it (a dispatch from another branch
+    # would run that branch's code with the production secret).
+    if: github.ref == 'refs/heads/main'
     name: Import official reference data
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     defaults:
       run:
@@ -56,9 +65,17 @@ jobs:
       - name: Install Python dependencies
         run: python -m pip install --require-hashes -r requirements.lock
 
+      - name: Check for a new ANIL vintage
+        if: github.event.inputs.check_new_vintage == 'true'
+        env:
+          AUCTION_USER_AGENT: ${{ vars.AUCTION_USER_AGENT || 'ImmojudisBot/1.0 (+https://immojudis.com/contact)' }}
+        run: python -m src.reference_data rents --check-new-vintage
+
       - name: Import reference data
+        if: github.event.inputs.check_new_vintage != 'true'
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          AUCTION_USER_AGENT: ${{ vars.AUCTION_USER_AGENT || 'ImmojudisBot/1.0 (+https://immojudis.com/contact)' }}
           REQUESTED_DATASET: ${{ github.event.inputs.dataset }}
           REQUESTED_DRY_RUN: ${{ github.event.inputs.dry_run }}
         run: |
@@ -68,3 +85,18 @@ jobs:
             args+=("--dry-run")
           fi
           python -m src.reference_data "${args[@]}"
+
+      - name: Summarize the failure
+        if: failure()
+        env:
+          REQUESTED_DATASET: ${{ github.event.inputs.dataset }}
+          REQUESTED_DRY_RUN: ${{ github.event.inputs.dry_run }}
+        run: |
+          {
+            echo "## Reference data import failed"
+            echo
+            echo "- Dataset: \`${REQUESTED_DATASET:-all}\` (dry run: \`${REQUESTED_DRY_RUN:-false}\`)"
+            echo "- Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo "- The \`::error::\` annotations name each dataset that failed; a snapshot table (ANIL rents, rental-tension zoning) is rolled back as a whole, so it still holds its previous edition."
+            echo "- Nothing was retried: relaunch the workflow once the cause is fixed (the imports are idempotent)."
+          } >> "$GITHUB_STEP_SUMMARY"

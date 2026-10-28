@@ -6,6 +6,7 @@ import { formatScaleDate } from "@/components/fees-simulator/scale-date";
 import { Card, PageShell, buttonClasses } from "@/components/ui/primitives";
 import { BreadcrumbJsonLd } from "@/components/BreadcrumbJsonLd";
 import { LaunchOfferNote } from "@/components/LaunchOfferNote";
+import { loginPathWithRedirect } from "@/lib/navigation";
 import { pageMetadata } from "@/lib/page-metadata";
 import { EMOLUMENT_SCALE_DATE, EMOLUMENT_SCALE_REFERENCE } from "@/lib/profitability";
 import { MONTHLY_SALE_UNLOCKS } from "@/lib/sale-unlocks";
@@ -70,8 +71,11 @@ function PageContent() {
           >
             Essayer l’enchère plafond sur un exemple
           </Link>
-          <Link href="/offres" className={buttonClasses({ variant: "secondary", size: "md" })}>
-            Voir les offres
+          <Link
+            href={loginPathWithRedirect("/sales")}
+            className={buttonClasses({ variant: "secondary", size: "md" })}
+          >
+            Créer mon compte gratuit
           </Link>
         </div>
       </section>

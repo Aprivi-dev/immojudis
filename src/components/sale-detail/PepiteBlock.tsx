@@ -36,7 +36,7 @@ function CriteriaList({
           {criterion.state === "pass" ? (
             <>
               <Check className="mt-0.5 size-4 shrink-0 text-success" aria-hidden />
-              <span className="sr-only">Réussi : </span>
+              <span className="sr-only">Rempli : </span>
             </>
           ) : (
             <>
@@ -52,10 +52,9 @@ function CriteriaList({
 }
 
 /**
- * La ligne du contrôle d'inondation : coche seulement quand rien d'élevé n'a été identifié (`tone` « check »),
- * pictogramme d'information (de couleur d'alerte, le texte dit « Attention ») pour un bien dans le périmètre d'un
- * PPRi, pictogramme d'information neutre sinon. Le texte dit
- * son état : jamais la couleur ni l'icône seules. Textes écrits côté serveur (`pepite-flood-copy.ts`).
+ * La ligne du contrôle d'inondation : jamais de coche (une coche se lit « c'est bon »), pictogramme
+ * d'information (de couleur d'alerte, le texte dit « Attention ») pour un bien dans le périmètre d'un PPRi,
+ * pictogramme d'information neutre sinon. Le texte dit son état : jamais la couleur ni l'icône seules. Textes écrits côté serveur (`pepite-flood-copy.ts`).
  */
 function FloodRow({ flood }: { flood: PepiteFloodView }) {
   return (
@@ -65,12 +64,7 @@ function FloodRow({ flood }: { flood: PepiteFloodView }) {
       className="mt-3 space-y-1 border-t border-line-soft pt-3 text-sm text-foreground"
     >
       <p className="flex items-start gap-2">
-        {flood.tone === "check" ? (
-          <>
-            <Check className="mt-0.5 size-4 shrink-0 text-success" aria-hidden />
-            <span className="sr-only">Réussi : </span>
-          </>
-        ) : flood.tone === "alert" ? (
+        {flood.tone === "alert" ? (
           <>
             <Info className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
             <span className="sr-only">Attention : </span>
@@ -116,16 +110,28 @@ function FloodRow({ flood }: { flood: PepiteFloodView }) {
 }
 
 /**
+ * Titre du bloc : le nombre de critères remplis sur ceux qui s'appliquent à ce type de vente (deux au tribunal, un
+ * seul en vente notariale), et ceux qui restent à confirmer.
+ */
+export function pepiteTitle(filled: number, total: number): string {
+  if (total <= 1) return filled > 0 ? "Pépite : critère rempli" : "Pépite : critère à confirmer";
+  if (filled === 0) return "Pépite : critères à confirmer";
+  if (filled === total) return `Pépite : ${filled} critères remplis sur ${total}`;
+  const toConfirm = total - filled;
+  return `Pépite : ${filled} critère${filled > 1 ? "s" : ""} rempli${filled > 1 ? "s" : ""} sur ${total}, ${toConfirm} à confirmer`;
+}
+
+/**
  * Bloc « Pourquoi cette pépite » de la fiche (cible de `#pepite`). Deux versions, jamais de flou CSS :
  *
  *  - ouverte (`payload.access === "detail"` : offre Analyse, vente débloquée) : titre, critères, la condition en
- *    toutes lettres, le plafond de référence, le prix probable avec sa réserve, la date du calcul, et le retour
+ *    toutes lettres, le plafond de référence, le prix de référence avec sa réserve, la date du calcul, et le retour
  *    « Utile / Pas pertinent » ;
  *  - verrouillée (visiteur, compte Découverte qui n'a pas débloqué la vente) : titre, nombre et noms des critères
  *    réunis, puis une ligne avec cadenas qui renvoie au déblocage (`lockedAction`). Aucun montant, aucune valeur
  *    ne figure dans les données reçues : la route ne les envoie pas à ce niveau.
  *
- * Chaque critère dit son état en texte et en icône (réussi, à confirmer) : jamais la couleur seule.
+ * Chaque critère dit son état en texte et en icône (rempli, à confirmer) : jamais la couleur seule.
  * Chargé à la demande (`next/dynamic`) : seule une pépite l'affiche.
  */
 export function PepiteBlock({
@@ -133,6 +139,7 @@ export function PepiteBlock({
   saleId,
   userCeilingEur = null,
   lockedAction,
+  visitor = false,
   className = "mx-auto w-full max-w-[1380px] px-4 sm:px-6 lg:px-8",
 }: {
   /** Mise en page du conteneur (les pages qui ont déjà leur colonne passent `""`). */
@@ -143,6 +150,8 @@ export function PepiteBlock({
   userCeilingEur?: number | null;
   /** L'action qui ouvre le détail : « Débloquer cette vente » (compte), « Créez un compte gratuit » (visiteur). */
   lockedAction?: ReactNode;
+  /** Le lecteur n'a pas de compte : il n'a aucune vente à débloquer, la ligne verrouillée le dit. */
+  visitor?: boolean;
 }) {
   if (!payload) return null;
   const detail = payload.access === "detail" ? payload.detail : null;
@@ -152,17 +161,14 @@ export function PepiteBlock({
     reference != null &&
     Math.round(userCeilingEur) !== Math.round(reference);
 
-  const count = payload.count;
-  const title =
-    count > 0
-      ? `Pépite : ${count} test${count > 1 ? "s" : ""} réussi${count > 1 ? "s" : ""}`
-      : "Pépite : tests à confirmer";
+  const total = payload.tests.length;
+  const title = pepiteTitle(payload.count, total);
 
   return (
     <section
       id={PEPITE_ANCHOR}
       aria-labelledby="pepite-title"
-      className={`scroll-mt-36 ${className}`}
+      className={`scroll-mt-2 ${className}`}
     >
       <div className="rounded-lg border border-gold bg-white p-4 sm:p-5">
         <h2
@@ -172,11 +178,16 @@ export function PepiteBlock({
           <PepiteIcon className="size-5" />
           {title}
         </h2>
-        <CriteriaList label="Tests de la pépite" items={payload.tests} className="mt-3 text-base" />
+        <CriteriaList
+          label="Critères de la pépite"
+          items={payload.tests}
+          className="mt-3 text-base"
+        />
         {payload.checks.length > 0 ? (
           <details className="mt-3 text-sm">
             <summary className="min-h-11 cursor-pointer py-2 font-semibold text-brand-navy">
-              Vérifications de fiabilité réussies ({payload.checksPassed})
+              Vérifications de fiabilité remplies ({payload.checksPassed} sur{" "}
+              {payload.checks.length})
             </summary>
             <CriteriaList label="Vérifications de fiabilité" items={payload.checks} />
           </details>
@@ -195,7 +206,6 @@ export function PepiteBlock({
                 </a>
               </p>
             ) : null}
-            {detail.chanceLine ? <p>{detail.chanceLine}</p> : null}
             {differs ? (
               <p>
                 Votre plafond : {formatPrice(userCeilingEur)} · Plafond de référence de la pépite :{" "}
@@ -221,7 +231,9 @@ export function PepiteBlock({
             <p className="flex flex-wrap items-center gap-x-3 gap-y-1 font-semibold text-brand-navy">
               <span className="inline-flex items-center gap-2">
                 <Lock className="size-4 shrink-0" aria-hidden />
-                Montant et détail : débloquez cette vente
+                {visitor
+                  ? "Montant et détail réservés aux comptes"
+                  : "Montant et détail : débloquez cette vente"}
               </span>
               {lockedAction}
             </p>

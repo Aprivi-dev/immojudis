@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 from typing import Any
 
+import psycopg
 from psycopg.types.json import Jsonb
 
 from src.config import load_settings
@@ -180,6 +181,33 @@ class CheckpointSales(list):
     def __init__(self):
         super().__init__()
         self._db = None
+        self._connection_context = None
+
+    def _drop_connection(self) -> None:
+        """Forget this scrape's (dead) checkpoint connection; the next write opens a new one.
+
+        Only this instance's connection: other sources of the same process keep theirs.
+        """
+        context, self._connection_context, self._db = self._connection_context, None, None
+        if context is None:
+            return
+        try:
+            context.__exit__(None, None, None)
+        except Exception:  # noqa: BLE001 - closing a dead connection may fail; it is gone either way
+            pass
+        if context in _connections:
+            _connections.remove(context)
+
+    def _write_checkpoint(self, context, sale, payload, observed) -> None:
+        with self._db.transaction():
+            db = self._db
+            _configure_checkpoint_transaction(db)
+            db.execute("""insert into public.auction_collection_checkpoints(run_id,source_url,signature,payload,observed_at)
+              values(%s,%s,%s,%s,%s) on conflict(run_id,source_url) do update set
+                signature=excluded.signature,payload=excluded.payload,observed_at=excluded.observed_at""",
+              (context[1],sale['source_url'],sale['_checkpoint_signature'],Jsonb(payload),observed))
+            from src.collection_evidence import record_items
+            record_items(context[1], [sale], connection=db)
 
     def append(self, sale):
         context = _context()
@@ -192,19 +220,21 @@ class CheckpointSales(list):
             observed = datetime.now(UTC)
             # Les adresses internes (registre de l'agent) ne sont jamais écrites dans la table de reprise.
             payload = json.loads(json.dumps({k: v for k, v in sale.items() if k != INTERNAL_CONTACTS_KEY}, default=str))
-            if self._db is None:
-                connection_context = _checkpoint_connect(context[0])
-                self._db = connection_context.__enter__()
-                _connections.append(connection_context)
-            with self._db.transaction():
-                db = self._db
-                _configure_checkpoint_transaction(db)
-                db.execute("""insert into public.auction_collection_checkpoints(run_id,source_url,signature,payload,observed_at)
-                  values(%s,%s,%s,%s,%s) on conflict(run_id,source_url) do update set
-                    signature=excluded.signature,payload=excluded.payload,observed_at=excluded.observed_at""",
-                  (context[1],sale['source_url'],sale['_checkpoint_signature'],Jsonb(payload),observed))
-                from src.collection_evidence import record_items
-                record_items(context[1], [sale], connection=db)
+            for attempt in (1, 2):
+                try:
+                    if self._db is None:
+                        connection_context = _checkpoint_connect(context[0])
+                        self._db = connection_context.__enter__()
+                        self._connection_context = connection_context
+                        _connections.append(connection_context)
+                    self._write_checkpoint(context, sale, payload, observed)
+                    break
+                except (psycopg.OperationalError, psycopg.InterfaceError):
+                    # The connection is kept for the whole scrape: a database restart or a dropped connection
+                    # would otherwise end the source on its next checkpoint. One new connection, then the error.
+                    self._drop_connection()
+                    if attempt == 2:
+                        raise
         super().append(sale)
         if _publisher:
             _pending.append(copy.deepcopy(sale))

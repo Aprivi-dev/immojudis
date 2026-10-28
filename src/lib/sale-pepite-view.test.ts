@@ -56,7 +56,7 @@ describe("libellés des critères : le langage de l'investisseur", () => {
       "Chances de l'emporter : au moins 7 ventes comparables sur 10 adjugées sous l'enchère plafond",
     );
     expect(pass("test_c_cost")).toBe(
-      "Achat probable nettement sous la valeur : coût total, frais compris, d'au plus 75 % de la valeur estimée (65 % en vente notariale)",
+      "Coût d'achat estimé nettement sous la valeur : coût total, frais compris, d'au plus 75 % de la valeur estimée (65 % en vente notariale)",
     );
     expect(pass("ceiling_computed")).toBe(
       "Enchère plafond calculée sur une estimation prudente de la valeur",
@@ -125,7 +125,7 @@ describe("critères d'une pépite", () => {
     expect(pepiteCriteriaViews(["fail:test_c_cost"], [], "notary_online")[0].label).toContain(
       "70 %",
     );
-    // Un test « à confirmer » ne compte pas parmi les tests réussis.
+    // Un critère « à confirmer » ne compte pas parmi les critères remplis.
     expect(pepiteCriteriaPayload(views).count).toBe(1);
   });
 
@@ -162,19 +162,19 @@ describe("critères d'une pépite", () => {
 describe("détail d'une pépite du tribunal", () => {
   const criteria = pepiteCriteriaViews(CODES, [], "tribunal");
 
-  it("écrit la condition, le plafond de référence et le prix probable en toutes lettres", () => {
+  it("écrit la condition (valeur mesurée à côté du seuil), le plafond de référence et le prix de référence en toutes lettres", () => {
     const detail = pepiteDetailView(TRIBUNAL_DETAILS, "2026-11-05T09:00:00.000Z", criteria)!;
     expect(detail.regime).toBe("tribunal");
     expect(detail.ceilingTerm).toBe("enchère plafond");
     expect(detail.condition).toBe(
-      "Au moins 70 % des ventes comparables passées du tribunal ont été adjugées sous l'enchère plafond estimée. Au prix probable, le coût total représente 68 % de la valeur estimée.",
+      "Sur les ventes comparables passées du tribunal, complétées par la tendance nationale, 78 % ont été adjugées sous l'enchère plafond estimée. Le critère est rempli à partir de 70 %. Au prix de référence, le coût total estimé représente 68 % de la valeur estimée ; le critère est rempli jusqu'à 75 %.",
     );
     expect(detail.ceilingLine).toMatch(
       /^Enchère plafond estimée : 118\s000\s€ \(hypothèses par défaut : habiter, profil équilibré, sans travaux\)$/u,
     );
     expect(detail.referenceCeilingEur).toBe(118_000);
     expect(detail.priceLine).toMatch(
-      /^Prix probable : environ 90\s000\s€ \(fourchette 75\s000\s€ – 110\s000\s€\)$/u,
+      /^Prix de référence : environ 90\s000\s€ \(fourchette 75\s000\s€ – 110\s000\s€\)$/u,
     );
     expect(detail.calculatedAt).toBe("2026-11-05T09:00:00.000Z");
   });
@@ -187,27 +187,24 @@ describe("détail d'une pépite du tribunal", () => {
     expect(detail.priceNote).not.toContain("peut être inférieur ou supérieur");
   });
 
-  it("affiche la part réelle, arrondie vers le bas en « N sur 10 », avec « au moins » pour un plancher", () => {
-    expect(pepiteDetailView(TRIBUNAL_DETAILS, null, criteria)!.chanceLine).toBe(
-      "7 ventes comparables sur 10 adjugées sous ce plafond",
+  it("écrit la part mesurée, arrondie vers le bas, avec « au moins » pour un plancher, à côté du seuil", () => {
+    const measured = (details: Record<string, unknown>) =>
+      pepiteDetailView({ ...TRIBUNAL_DETAILS, ...details }, null, criteria)!.condition;
+    expect(measured({})).toContain(
+      ", 78 % ont été adjugées sous l'enchère plafond estimée. Le critère",
     );
-    expect(
-      pepiteDetailView(
-        { ...TRIBUNAL_DETAILS, chanceShare: 0.7, chanceAtLeast: true },
-        null,
-        criteria,
-      )!.chanceLine,
-    ).toBe("Au moins 7 ventes comparables sur 10 adjugées sous ce plafond");
-    // Jamais plus que la mesure : 0,69 donne 6, pas 7.
-    expect(
-      pepiteDetailView({ ...TRIBUNAL_DETAILS, chanceShare: 0.69 }, null, criteria)!.chanceLine,
-    ).toBe("6 ventes comparables sur 10 adjugées sous ce plafond");
-    expect(
-      pepiteDetailView({ ...TRIBUNAL_DETAILS, chanceShare: 1 }, null, criteria)!.chanceLine,
-    ).toBe("10 ventes comparables sur 10 adjugées sous ce plafond");
-    expect(
-      pepiteDetailView({ ...TRIBUNAL_DETAILS, chanceShare: null }, null, criteria)!.chanceLine,
-    ).toBeNull();
+    expect(measured({ chanceShare: 0.7, chanceAtLeast: true })).toContain(
+      ", au moins 70 % ont été adjugées",
+    );
+    // Jamais plus que la mesure : 0,69 donne 69 %, pas 70 %, et la phrase ne contredit pas le seuil.
+    expect(measured({ chanceShare: 0.699 })).toContain(", 69 % ont été adjugées");
+    expect(measured({ chanceShare: 1 })).toContain(", 100 % ont été adjugées");
+    // Plus de ligne « N ventes sur 10 » : la valeur est dans la condition.
+    expect(pepiteDetailView(TRIBUNAL_DETAILS, null, criteria)).not.toHaveProperty("chanceLine");
+    // Part inconnue : on le dit, sans seuil inventé à côté d'un chiffre.
+    expect(measured({ chanceShare: null })).toContain(
+      "la part adjugée sous l'enchère plafond estimée n'est pas disponible",
+    );
   });
 
   it("explique la mise à prix très basse (multiplicateur q75)", () => {
@@ -218,7 +215,7 @@ describe("détail d'une pépite du tribunal", () => {
     expect(pepiteDetailView(TRIBUNAL_DETAILS, null, criteria)!.priceLowNote).toBeNull();
   });
 
-  it("dit d'où vient la cohorte : tribunal, tribunal complété, ou national", () => {
+  it("dit d'où vient la cohorte d'après le calcul : tribunal complété dès 10 ventes, fourchette nationale sous 20", () => {
     const cohort = (courtSample: number) =>
       pepiteDetailView(
         {
@@ -228,41 +225,63 @@ describe("détail d'une pépite du tribunal", () => {
         null,
         criteria,
       )!;
+    // 20 ventes et plus : part lissée avec la tendance nationale, fourchette du tribunal seul.
     const local = cohort(42);
-    expect(local.condition).toContain("passées du tribunal ont été adjugées");
+    expect(local.condition).toContain(
+      "Sur les ventes comparables passées du tribunal, complétées par la tendance nationale,",
+    );
     expect(local.priceNote).toContain(
       "42 ventes comparables passées du tribunal (fiabilité moyenne)",
     );
 
-    const mixed = cohort(20);
-    expect(mixed.condition).toContain("du tribunal, complétées par des ventes de toute la France");
-    expect(mixed.priceNote).toContain(
-      "20 ventes comparables passées du tribunal, complétées par des ventes de toute la France",
-    );
+    // De 10 à 19 ventes : la part reste celle du tribunal complétée, mais la fourchette est nationale.
+    const mixed = cohort(15);
+    expect(mixed.condition).toContain("du tribunal, complétées par la tendance nationale");
+    expect(mixed.priceNote).toContain("800 ventes comparables passées de toute la France");
+    expect(mixed.priceNote).not.toContain("15 ventes");
 
+    // Dès 20 ventes, la fourchette est celle du tribunal.
+    expect(cohort(20).priceNote).toContain("20 ventes comparables passées du tribunal");
+
+    // Moins de 10 ventes : tout est national.
     const national = cohort(6);
-    expect(national.condition).not.toContain("de ce tribunal");
-    expect(national.condition).toContain("de toute la France (le tribunal n'en compte pas assez)");
+    expect(national.condition).toContain("Sur les ventes comparables passées de toute la France,");
+    expect(national.condition).not.toContain("tribunal");
     expect(national.priceNote).toContain("800 ventes comparables passées de toute la France");
     expect(national.priceNote).not.toContain("passées du tribunal");
   });
 
-  it("énonce le seuil de maintien d'un test « à confirmer », sans affirmer le seuil d'entrée", () => {
+  it("énonce le seuil de maintien d'un critère « à confirmer », à côté du seuil d'entrée", () => {
     const confirmCriteria = pepiteCriteriaViews(
       ["fail:test_b_chance", "fail:test_c_cost"],
       [],
       "tribunal",
     );
     const detail = pepiteDetailView(TRIBUNAL_DETAILS, null, confirmCriteria)!;
-    expect(detail.condition).toContain("Au moins 65 % des ventes comparables");
-    expect(detail.condition).toContain("seuil de maintien");
-    expect(detail.condition).toContain("sous le seuil de maintien de 80 %");
-    expect(detail.condition).not.toContain("Au moins 70 %");
+    expect(detail.condition).toContain("Le critère est rempli à partir de 70 % ;");
+    expect(detail.condition).toContain(
+      "la mention est maintenue jusqu'à 65 % (à confirmer à la prochaine mise à jour)",
+    );
+    expect(detail.condition).toContain("la mention est maintenue jusqu'à 80 %");
+  });
+
+  it("un bien loué : le coût est rapporté à la valeur diminuée de la décote, et le texte le dit", () => {
+    const detail = pepiteDetailView(
+      { ...TRIBUNAL_DETAILS, occupancyDiscountPct: 10 },
+      null,
+      criteria,
+    )!;
+    expect(detail.condition).toContain(
+      "représente 68 % de la valeur estimée, diminuée de la décote d'un bien loué (10 %)",
+    );
+    expect(
+      pepiteDetailView({ ...TRIBUNAL_DETAILS, occupancyDiscountPct: 0 }, null, criteria)!.condition,
+    ).not.toContain("décote");
   });
 });
 
 describe("détail d'une pépite notariale", () => {
-  it("vente à la bougie : seuil de 65 %, mise à prix, pas de prix probable ni de prix de réserve cité", () => {
+  it("vente à la bougie : seuil de 65 %, mise à prix, pas de prix de référence ni de prix de réserve cité", () => {
     const detail = pepiteDetailView(
       {
         regime: "notary_auction",
@@ -273,12 +292,13 @@ describe("détail d'une pépite notariale", () => {
       null,
     )!;
     expect(detail.ceilingTerm).toBe("enchère plafond");
-    expect(detail.condition).toContain("61 % de la valeur estimée, sous le seuil de 65 %");
+    expect(detail.condition).toContain(
+      "le coût total estimé représente 61 % de la valeur estimée ; le critère est rempli jusqu'à 65 %",
+    );
     expect(detail.ceilingLine).toMatch(/^Enchère plafond estimée : 95\s000\s€/u);
     expect(detail.priceLine).toMatch(/^Mise à prix : 60\s000\s€$/u);
     expect(detail.priceNote).not.toContain("Prix de réserve du vendeur inconnu");
-    expect(detail.priceNote).toContain("Pas de prix probable");
-    expect(detail.chanceLine).toBeNull();
+    expect(detail.priceNote).toContain("Pas de prix de référence");
   });
 
   it("vente interactive : « offre plafond », première offre possible, prix de réserve inconnu", () => {
@@ -332,7 +352,7 @@ describe("contrôle d'inondation d'une pépite (règle v2)", () => {
     expect(views.some((view) => view.state === "confirm")).toBe(false);
   });
 
-  it("aucun risque élevé identifié : coche, source, cartes consultées repliées", () => {
+  it("hors des zones testées : phrase factuelle, icône neutre, date de la carte et de la consultation", () => {
     const view = pepiteFloodView({
       flood: {
         verdict: "none_found",
@@ -340,16 +360,54 @@ describe("contrôle d'inondation d'une pépite (règle v2)", () => {
         mapDate: "2013-12-18",
       },
     });
-    expect(view).toMatchObject({ verdict: "none_found", tone: "check" });
+    expect(view).toMatchObject({ verdict: "none_found", tone: "neutral" });
     expect(view?.line).toBe(
-      "Aucun risque d’inondation élevé identifié à la position connue du bien, d’après les cartes officielles consultées.",
+      "Bien non situé dans la zone de crue fréquente d’un territoire à risque important d’inondation (TRI), ni dans le périmètre d’un plan de prévention des risques d’inondation (PPRi), d’après les cartes consultées.",
     );
     expect(view?.details).toMatch(/^Cartes consultées/);
+    expect(view?.details).toContain("Un plan de prévention seulement prescrit n’apparaît pas");
+    expect(view?.details).toContain("Un risque d’inondation peut exister en dehors de ces zones.");
     expect(view?.sourceLine).toMatch(
-      /^Source : Géorisques .*scénario de crue fréquente ; consulté le 05 novembre 2026\.$/,
+      /^Source : Géorisques .*scénario de crue fréquente ; carte du 18 décembre 2013 ; consulté le 05 novembre 2026\.$/,
     );
     expect(view?.sourceUrl).toBe("https://www.georisques.gouv.fr/");
     expect(view?.warning).toMatch(/sans valeur d’expertise/);
+    expect(view?.warning).toContain("état des risques et pollutions, lorsqu’il est exigé");
+  });
+
+  it("sans date de carte : seule la date de consultation figure", () => {
+    const view = pepiteFloodView({
+      flood: { verdict: "none_found", observedAt: "2026-11-05T09:00:00.000Z", mapDate: null },
+    });
+    expect(view?.sourceLine).toMatch(/crue fréquente ; consulté le 05 novembre 2026\.$/);
+    expect(view?.sourceLine).not.toMatch(/carte du/);
+  });
+
+  it.each([
+    ["tribunal", /cahier des conditions de vente/, /l’avocat poursuivant/],
+    ["notary_auction", /cahier des charges/, /le notaire/],
+    ["notary_online", /avant-contrat/, /le notaire/],
+  ] as const)(
+    "texte propre au type de vente (%s) : pièce annexée et interlocuteur",
+    (regime, document, who) => {
+      const view = pepiteFloodView({ regime, flood: { verdict: "exposed" } });
+      expect(view?.warning).toMatch(document);
+      expect(view?.details).toMatch(document);
+      expect(view?.details).toMatch(who);
+      expect(view?.details).toContain("état des risques et pollutions, lorsqu’il est exigé");
+      if (regime !== "tribunal") {
+        expect(`${view?.warning} ${view?.details}`).not.toMatch(
+          /avocat poursuivant|cahier des conditions de vente/,
+        );
+      }
+    },
+  );
+
+  it("type de vente inconnu : texte neutre qui nomme les trois pièces possibles", () => {
+    const view = pepiteFloodView({ flood: { verdict: "exposed" } });
+    expect(view?.warning).toMatch(
+      /cahier des conditions de vente, cahier des charges ou avant-contrat/,
+    );
   });
 
   it("PPRI non lu : ligne neutre, sans coche et sans la phrase sur les périmètres de PPRi", () => {
@@ -363,10 +421,10 @@ describe("contrôle d'inondation d'une pépite (règle v2)", () => {
     });
     expect(view).toMatchObject({ verdict: "tri_only", tone: "neutral", details: null });
     expect(view?.line).toBe(
-      "Zone de crue fréquente des TRI consultée ; périmètres de PPRi non contrôlés à ce jour.",
+      "Bien non situé dans la zone de crue fréquente d’un TRI, d’après la carte consultée ; périmètres de PPRi non contrôlés à ce jour.",
     );
-    // Aucune phrase « aucun risque élevé identifié » ni « cartes consultées … périmètres des PPRi ».
-    expect(JSON.stringify(view)).not.toMatch(/Aucun risque d’inondation élevé/);
+    // Aucune phrase « … ni dans le périmètre d’un PPRi » ni « cartes consultées … périmètres des PPRi ».
+    expect(JSON.stringify(view)).not.toMatch(/ni dans le périmètre/);
     expect(JSON.stringify(view)).not.toMatch(/Cartes consultées/);
     // La source est celle du TRI seul : le Géoportail n'a pas été lu.
     expect(view?.sourceLine).toMatch(/^Source : Géorisques .*consulté le 05 novembre 2026\.$/);
@@ -374,9 +432,9 @@ describe("contrôle d'inondation d'une pépite (règle v2)", () => {
     expect(view?.warning).toMatch(/sans valeur d’expertise/);
   });
 
-  it("PPRI lu (ou drapeau absent) : la ligne « aucun risque élevé » habituelle", () => {
+  it("PPRI lu (ou drapeau absent) : la ligne habituelle, jamais de coche", () => {
     for (const flood of [{ verdict: "none_found", ppriChecked: true }, { verdict: "none_found" }]) {
-      expect(pepiteFloodView({ flood })).toMatchObject({ verdict: "none_found", tone: "check" });
+      expect(pepiteFloodView({ flood })).toMatchObject({ verdict: "none_found", tone: "neutral" });
     }
   });
 

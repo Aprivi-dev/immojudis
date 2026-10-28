@@ -1,15 +1,19 @@
 # Données de référence : carte des loyers de l'ANIL et zonage tendu (TLV)
 
-Mise à jour : 2026-10-26.
+Mise à jour : 2026-10-28.
 
 ## Pourquoi
 
 - **Loyers.** Les rendements affichés (filtre « rendement minimal », alertes, simulateur, rapports,
   exports) reposaient sur une table de loyers codée en dur pour 24 départements
   (`src/lib/rent-reference.ts`). Ils lisent désormais la carte des loyers de l'ANIL, commune par
-  commune, et ne retombent sur cette table que sans donnée ANIL.
-- **Zonage tendu.** La liste des communes selon le zonage TLV est importée et stockée. Aucun écran ne
-  l'affiche encore.
+  commune, et ne retombent sur cette table que sans donnée ANIL. Le rendement brut est calculé sur la mise à
+  prix avec les frais du régime de la vente (tribunal, vente à la bougie, vente interactive :
+  `sale-yield-fees.ts`), comme le rapport ; un bien n'a de loyer de référence que s'il est une maison ou un
+  appartement (ou de type inconnu avec une surface publiée).
+- **Zonage tendu.** La liste des communes selon le zonage TLV est importée et stockée. La fiche de la vente
+  l'affiche en ligne neutre dans le bloc « Marché locatif de la commune » (`RentalMarketBlock`), sans effet sur
+  le rendement.
 
 ## Sources
 
@@ -69,10 +73,21 @@ serveur uniquement (`service_role`).
 
 Workflow manuel **Reference data import** (`.github/workflows/reference-data-import.yml`) :
 
-- `dataset` : `rents`, `tension` (ou `all`, qui les inclut) ;
-- `dry_run` : télécharge et analyse sans écrire.
+- `dataset` : `rents`, `tension`, ou `all`, qui lance aussi `communes`, `risks` et `climate` (le climat
+  télécharge 96 fichiers, jusqu'à 90 minutes) ; chaque jeu est isolé (la panne de l'un n'empêche pas les
+  autres, le code de sortie est non nul s'il y en a une) et ouvre sa propre connexion, au moment d'écrire ;
+- `dry_run` : télécharge et analyse sans écrire ;
+- `check_new_vintage` : cherche seulement un millésime ANIL plus récent (aucune écriture), à lancer à la
+  main début novembre, début décembre et début janvier (aucune planification automatique : contrôle
+  « Single-scheduler » de la CI) (`python -m src.reference_data rents --check-new-vintage`) : sortie non nulle et `::warning::` si un
+  jeu plus récent que `ANIL_CURRENT_EDITION` est publié. La marche à suivre est dans
+  `docs/runbooks/import-annuel-anil.md`.
+
+Un échec ajoute un résumé à la page du run (étape « Summarize the failure ») et une annotation
+`::error::` par jeu en échec.
 
 Fréquence : la carte des loyers est publiée chaque année en décembre ; le zonage change à chaque décret.
+La checklist de l'import de décembre est dans `docs/runbooks/import-annuel-anil.md`.
 
 En local : `cd services/data-pipeline && python -m src.reference_data rents --dry-run` (idem `tension`).
 
@@ -80,23 +95,32 @@ Hôtes autorisés pour le téléchargement : `www.data.gouv.fr` (API) et `static
 Un texte lu est limité à 32 Mo, un fichier téléchargé à 1 Go (taille déclarée contrôlée d'abord).
 Le jeu du zonage est épinglé par son identifiant (`657c88da2947e13be0597058`), pas par son nom.
 
-Gardes contre un import partiel : au moins 34 000 communes par segment (ANIL) ou au total (zonage), les
-quatre segments présents, au plus 0,5 % de lignes rejetées (code, département, loyer hors de 1 à
-100 €/m², type de prédiction ou zonage inconnu). Tout est analysé et contrôlé avant la première écriture.
-Le département de chaque ligne se déduit du code commune (pas de la colonne `DEP`). Les segments des
-fichiers ANIL sont reconnus par leur nom de fichier d'abord, par leur titre ensuite. Le zonage refuse
-l'import si la documentation du jeu n'identifie aucun décret (pas de repli sur un décret connu).
+Gardes contre un import partiel : au moins 34 800 communes par segment (ANIL) ou au total (zonage), un
+fichier d'au moins 99 % du nombre de lignes que la table contient déjà (sinon l'import est refusé : une
+troncature de quelques pour cent passerait un seuil fixe, puis la purge supprimerait les communes
+perdues), les quatre segments présents, au plus 0,5 % de lignes rejetées (code, département, loyer hors de
+1 à 100 €/m², type de prédiction ou zonage inconnu). Le téléchargement compare les octets reçus à
+`Content-Length` (un écart est une erreur, reprise comme les coupures réseau) ; seuls les statuts 5xx et
+429 sont réessayés, pas un 403 ou un 404. Le département de chaque ligne se déduit du code commune (pas
+de la colonne `DEP`). Les segments des fichiers ANIL sont reconnus par leur nom de fichier d'abord, par
+leur titre ensuite. Le zonage refuse l'import si la documentation du jeu n'identifie aucun décret (pas de
+repli sur un décret connu), choisit le décret dont la date est celle de l'en-tête du CSV (et non le
+dernier de la liste) et refuse un fichier dont la date ne correspond à aucun décret.
 
-Après l'écriture, l'import purge les lignes qu'il n'a pas touchées (communes disparues du millésime) puis
-contrôle la table : un seul millésime et le bon nombre de lignes pour `anil_rents`, le bon nombre de lignes
-pour `commune_housing_tension`. Un mélange de millésimes ou un compte inattendu arrête l'import avec une
-erreur claire (rien ne doit lire la table avant d'avoir compris).
+Tout est analysé et contrôlé avant la première écriture ; l'écriture de chaque table instantanée
+(`anil_rents`, `commune_housing_tension`) tient dans **une seule transaction** : upsert, purge des lignes non
+touchées (communes disparues du millésime) et contrôle (un seul millésime et le bon nombre de lignes pour
+`anil_rents`, le bon nombre de lignes pour `commune_housing_tension`). Un échec, une coupure réseau ou un
+contrôle en défaut annule tout : la table garde son édition précédente, l'application ne lit jamais un
+mélange de deux millésimes. (Les jeux `communes`, `risks` et `climate` écrivent encore par paquets.)
 
 **À chaque nouvel import de la carte des loyers**, mettre à jour `ANIL_CURRENT_EDITION`
 (`src/lib/rent-source-notice.ts`) : il sert aux mentions qui ne portent pas sur une vente (emails d'alerte).
 Les écrans qui portent sur une vente affichent le millésime et la date de la ligne réellement utilisée.
-L'import signale tout écart (`web_edition_gap` dans son résumé, y compris en `--dry-run`) et un test du
-pipeline échoue tant que la constante et le millésime lu ne concordent pas.
+L'import compare cette constante au millésime lu et **échoue avant toute écriture** en cas d'écart
+(`web_edition_gap`, y compris en `--dry-run`) : la pull request qui met à jour la constante précède
+l'import. Attention : le test du pipeline qui compare la constante au jeu (`test_the_real_web_edition_…`)
+fige le couple 2025 / 2025-12-11 ; il se met à jour avec la constante, il ne lit pas le jeu réel.
 
 ## Lecture par l'application
 
@@ -148,9 +172,14 @@ complément (carte des loyers, millésime, date de mise à jour, Licence Ouverte
 Immojudis sous sa seule responsabilité) et du lien vers la source.
 
 - Fiche de la vente, panneau des hypothèses du plafond (projet « louer ») : `CeilingHypothesesPanel`.
-- Le filtre « rendement minimal » (`AdvancedFiltersPanel`) n'affiche **pas** la mention : il dit « Ce filtre
-  s'appuie sur un repère de loyer départemental ; les alertes, exports et statistiques utilisent la carte
-  des loyers de l'ANIL (par commune). » La mention ne figure qu'à côté de ce qui vient de l'ANIL.
+- Fiche de la vente, bloc « Marché locatif de la commune » (`RentalMarketBlock`, aperçu public et fiche complète) :
+  loyer d'annonce avec sa fourchette et le nombre d'annonces, « loyer de maille » quand la source l'est,
+  « Rendement brut à la mise à prix (charges comprises) » (fourchette seule quand la référence est indicative),
+  zone tendue, et la mention ci-dessus.
+- Le filtre « rendement minimal » (`AdvancedFiltersPanel`, « Rendement brut min. à la mise à prix ») n'affiche
+  **pas** la mention : il dit qu'il s'appuie sur un repère de loyer départemental (indicatif) alors que la
+  fiche, les alertes, exports et statistiques utilisent la carte des loyers de l'ANIL (par commune). La
+  mention ne figure qu'à côté de ce qui vient de l'ANIL.
 - Pied des emails d'alerte dont un motif est « rendement » (`email-alerts.ts`).
 - Rapports : page de partage (`/reports/shared/[token]`) et PDF.
 - Export API des ventes : `opportunity.rentReference` (crédit, détail, lien, `chargesIncluded`) et
@@ -172,22 +201,38 @@ catalogue et trouverait d'un coup toutes les ventes devenues rentables.
 
 Mécanisme (`isRentBasisSilentPass`, `alert-matches.ts`) :
 
-- Au déploiement, poser `ALERT_RENT_BASIS_SWITCH_AT` (date ISO du déploiement, voir `.env.example`). Absente,
-  rien n'est tu.
+- Poser `ALERT_RENT_BASIS_SWITCH_AT` (date ISO UTC, voir `.env.example`) à l'heure où l'application commence à
+  lire les nouveaux loyers. Le changement commence **à l'import** de `anil_rents` (avant l'import, le repli
+  départemental s'applique), plus le cache serveur de 6 heures, et non au déploiement du code. Ordre : importer,
+  poser la variable à l'heure de l'import, redéployer, le tout avant le premier passage de `smart-alerts`
+  (06:15 UTC) qui suit. Absente ou invalide, rien n'est tu, sans message.
 - Pendant les 48 heures suivantes, la première évaluation de chaque alerte à critère de rendement déjà
   évaluée avant ce moment (`last_evaluated_at` renseigné et antérieur) enregistre SANS notification les
   correspondances qui n'existaient pas avec le loyer départemental. Les ventes qui correspondaient déjà, les
   alertes sans rendement et les alertes créées ou modifiées depuis (`last_evaluated_at` nul) notifient comme
   avant. Les correspondances tues restent visibles dans la liste des correspondances de l'alerte.
-- Retirer la variable ensuite.
+- Les notifications des correspondances tues sont créées au statut `cancelled` (canaux `in_app` et `email`) : la
+  clé d'unicité (compte, correspondance, genre, canal) bloque toute notification aux passages suivants, même
+  quand la vente est relue hors fenêtre. Une alerte à critère de rendement dont la lecture de l'ANIL échoue
+  (`createRentLookupSession().unavailable(...)`) échoue aussi : elle garde son `last_evaluated_at` et reprend
+  au passage suivant, sans consommer la fenêtre.
+- Retirer la variable ensuite (et redéployer).
+
+**État au 28/10/2026** : la variable est posée en production à `2026-10-27T00:10:00Z` (valeur indiquée par le
+compte-rendu du 26/10/2026, non relue sur Vercel). La fenêtre de 48 heures se termine le **29/10/2026 à
+00:10 UTC** ; **la retirer après cette heure** (Vercel, Production, puis redéployer). Les trois cas qui passent
+sans trace sont : variable absente ou date invalide, recherche ANIL en erreur (repli départemental avec un
+simple `console.error`), et un passage de `smart-alerts` manqué pendant la fenêtre (la rafale partirait à l'évaluation suivante).
 
 ## Reste à faire
 
 - Le filtre « rendement minimal » de la page de recherche s'exécute dans le navigateur, sur des lignes
   qui n'ont ni le code commune ni accès à `anil_rents` : il utilise encore le loyer départemental. Les
   alertes, statistiques et exports, eux, utilisent la commune. Pour l'aligner : une colonne de loyer de
-  référence dans la vue des ventes (après le stockage du code commune), ou un filtrage côté serveur.
-- Le zonage tendu n'est lu par aucun écran. S'il est affiché, la mention est : « Source : ministère de la
-  Transition écologique, liste des communes selon le zonage TLV (article 232 du code général des impôts),
-  mise à jour du 30 décembre 2025 ; Licence Ouverte 2.0. »
+  référence dans la vue des ventes (après le stockage du code commune), ou un filtrage côté serveur. En
+  attendant, le filtre est étiqueté « à la mise à prix » et sa note dit qu'il peut différer de la fiche.
+- Le zonage tendu s'affiche sur la fiche (`loadSaleHousingTension`, lu au code de la commune parent : 75056,
+  69123, 13055 pour les arrondissements). La mention est : « Source : ministère de la Transition écologique,
+  liste des communes selon le zonage TLV (article 232 du code général des impôts), mise à jour du <date du
+  fichier> ; Licence Ouverte 2.0. »
 - Les sources restent `pending` dans `data_sources` tant qu'une relecture juridique n'est pas enregistrée.

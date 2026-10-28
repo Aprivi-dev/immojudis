@@ -254,6 +254,6 @@ describe("unsubscribe route", () => {
     expect(revokeEmailAlertConsent).not.toHaveBeenCalled();
     expect(revokeSaleReminderConsent).not.toHaveBeenCalled();
     expect(revokeOfferOpeningRequest).not.toHaveBeenCalled();
-    expect(html).toContain("Préavis désactivé");
+    expect(html).toContain("Message désactivé");
   });
 });

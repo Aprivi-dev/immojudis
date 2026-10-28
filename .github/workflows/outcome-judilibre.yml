@@ -84,8 +84,11 @@ concurrency:
 
 jobs:
   gate:
+    # Receives SUPABASE_DB_URL: only the code of `main` may run with it (a dispatch from another branch
+    # would run that branch's code with the production secret).
+    if: github.ref == 'refs/heads/main'
     name: Enforce closed-by-default activation gate
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       should_plan: ${{ steps.gate.outputs.should_plan }}
@@ -210,7 +213,7 @@ jobs:
     name: Show source activation plan
     needs: gate
     if: needs.gate.outputs.should_plan == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     defaults:
       run:
@@ -239,9 +242,10 @@ jobs:
     name: Run gated Judilibre ingestion
     needs: gate
     if: >-
-      needs.gate.outputs.should_bootstrap == 'true' ||
-      needs.gate.outputs.should_sync == 'true'
-    runs-on: ubuntu-latest
+      github.ref == 'refs/heads/main' &&
+      (needs.gate.outputs.should_bootstrap == 'true' ||
+      needs.gate.outputs.should_sync == 'true')
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     defaults:
       run:

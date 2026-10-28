@@ -10,6 +10,11 @@ import { fetchLaunchOffer } from "@/lib/client-billing";
  * (Offres, aperçus payants) affiche alors un emplacement neutre plutôt que la version « offre
  * fermée », qui clignoterait avant d'être remplacée. Sans fournisseur (composant testé seul), l'offre
  * est considérée comme absente et aucune requête n'est faite.
+ *
+ * Une page rendue côté serveur (accueil, /offres) lit l'état dans la base et le donne en valeur
+ * initiale au fournisseur (`initialActive`) : le HTML serveur et l'hydratation partent alors de
+ * l'état réel, non de « pas encore lu ». La lecture du navigateur le corrige ensuite si la page est
+ * plus ancienne que l'état.
  */
 export type LaunchOfferState = {
   /** Offre active. Faux tant que l'état n'est pas connu, et en cas d'erreur. */
@@ -26,6 +31,8 @@ const FRESH_MS = 60_000;
 
 export type LaunchOfferStore = {
   getSnapshot: () => LaunchOfferState;
+  /** État du rendu serveur et de l'hydratation : la valeur initiale, ou « pas encore lu ». */
+  getServerSnapshot: () => LaunchOfferState;
   subscribe: (listener: () => void) => () => void;
   /** Lance la lecture si elle n'a jamais eu lieu ou date de plus d'une minute. */
   ensure: () => void;
@@ -34,8 +41,14 @@ export type LaunchOfferStore = {
 export function createLaunchOfferStore(
   read: () => Promise<boolean | null> = fetchLaunchOffer,
   now: () => number = Date.now,
+  /** État lu par le serveur au rendu de la page ; absent : pas encore lu. */
+  initialActive?: boolean,
 ): LaunchOfferStore {
-  let state: LaunchOfferState = PENDING;
+  const initial: LaunchOfferState =
+    initialActive === undefined
+      ? PENDING
+      : Object.freeze({ active: initialActive, pending: false });
+  let state: LaunchOfferState = initial;
   let loadedAt: number | null = null;
   let inflight = false;
   const listeners = new Set<() => void>();
@@ -48,6 +61,7 @@ export function createLaunchOfferStore(
 
   return {
     getSnapshot: () => state,
+    getServerSnapshot: () => initial,
     subscribe(listener) {
       listeners.add(listener);
       return () => {
@@ -59,9 +73,16 @@ export function createLaunchOfferStore(
       if (loadedAt !== null && now() - loadedAt < FRESH_MS) return;
       inflight = true;
       read()
-        .then((active) => publish({ active: active === true, pending: false }))
-        // Erreur réseau ou serveur : pas de surclassement affiché sur une supposition.
-        .catch(() => publish(NO_OFFER))
+        .then((active) => {
+          // Réponse illisible : l'état lu par le serveur reste, faute de mieux.
+          if (active === null && initialActive !== undefined) return;
+          publish({ active: active === true, pending: false });
+        })
+        // Erreur réseau ou serveur : pas de surclassement affiché sur une supposition. Un état déjà
+        // lu par le serveur n'en est pas une : il reste jusqu'à la prochaine lecture réussie.
+        .catch(() => {
+          if (initialActive === undefined) publish(NO_OFFER);
+        })
         .finally(() => {
           inflight = false;
           loadedAt = now();
@@ -80,8 +101,8 @@ export function useLaunchOffer(): LaunchOfferState {
   const state = useSyncExternalStore(
     store?.subscribe ?? subscribeNever,
     store?.getSnapshot ?? noOffer,
-    // Rendu serveur et hydratation : l'état n'est pas encore connu.
-    store ? () => PENDING : noOffer,
+    // Rendu serveur et hydratation : l'état lu par le serveur, ou « pas encore connu ».
+    store ? store.getServerSnapshot : noOffer,
   );
   useEffect(() => {
     store?.ensure();

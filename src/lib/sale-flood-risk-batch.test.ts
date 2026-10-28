@@ -1,11 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { readTableSchema, validateUpsert } from "@/test/fake-postgrest";
 
 type Row = Record<string, unknown>;
 
 const db = vi.hoisted(() => ({
   /** Lignes de `v_auction_sales_app` (ventes en ligne). */
   sales: [] as Row[],
-  /** Lignes de `auction_sales` lues pour recopier `raw_payload.commune`. */
+  /** Réponse de `sync_sale_communes()` (recopie de `raw_payload.commune` faite dans la base). */
+  syncCommunes: { n_with_code: 0, n_changed: 0, n_written: 0 },
+  /** Erreur de `sync_sale_communes()` (par exemple un verrou : 55P03). */
+  syncError: null as { code: string; message: string } | null,
+  /** Champs de position lus dans `auction_sales.raw_payload` (résultat de la BAN, centroïdes des parcelles). */
   rawCommunes: [] as Row[],
   floodRows: [] as Row[] | null,
   communeRows: [] as Row[] | null,
@@ -14,9 +19,13 @@ const db = vi.hoisted(() => ({
   writeError: null as { code?: string; message: string } | null,
   /** Envois successifs de verdicts : `true` = refusé comme bloqué par un verrou de ligne (57014). */
   busyFloodUpserts: [] as boolean[],
+  /** Ventes dont la ligne est refusée par la base (22008, date invalide) : tout envoi qui en contient échoue. */
+  rejectedSaleIds: [] as string[],
   /** Erreur de la seule mise à jour d'une ligne existante (les insertions passent). */
   updateError: null as { code?: string; message: string } | null,
   tables: [] as string[],
+  /** Lectures de `v_auction_sales_app` : filtres d'égalité et curseur. */
+  salesReads: [] as Array<{ filters: Record<string, unknown>; after: string | null }>,
   /** Bail du traitement : `true` = une autre passe le tient ; `"missing"` = fonction absente (migration en retard). */
   leaseHeld: false as boolean | "missing",
   rpcCalls: [] as Array<{ name: string; args: unknown }>,
@@ -33,28 +42,37 @@ vi.mock("@/integrations/supabase/client.server", () => ({
         }
         return { data: db.leaseHeld ? null : "lease-token", error: null };
       }
+      if (name === "sync_sale_communes") {
+        if (db.syncError) return { data: null, error: db.syncError };
+        return { data: [db.syncCommunes], error: null };
+      }
       return { data: true, error: null };
     },
   },
 }));
 
-/** Colonnes NOT NULL à valeur par défaut de `auction_sale_flood_risk` (migration 20261106100200). */
-const FLOOD_NOT_NULL_WITH_DEFAULT = [
-  "tri_scenarios",
-  "ppri_checked",
-  "attempted_at",
-  "failure_count",
-  "verdict_changed_at",
-  "created_at",
-  "updated_at",
-];
+/** Schémas lus dans les migrations : le faux client refuse ce que la base refuserait. */
+const SCHEMAS = {
+  auction_sale_flood_risk: readTableSchema(
+    "20261106100200_sale_flood_risk.sql",
+    "auction_sale_flood_risk",
+  ),
+  auction_sale_communes: readTableSchema(
+    "20261106100000_auction_sale_communes.sql",
+    "auction_sale_communes",
+  ),
+} as const;
 
 class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
   private page: [number, number] = [0, 999];
   private upsertRows: Row[] | null = null;
   private changes: Row | null = null;
   private eqValue: unknown = null;
+  private eqFilters: Record<string, unknown> = {};
+  private after: string | null = null;
+  private max = 1000;
   private defaultToNull = true;
+  private onConflict: string | undefined;
 
   constructor(private readonly table: string) {}
 
@@ -64,17 +82,27 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
   order() {
     return this;
   }
-  eq(_column: string, value: unknown) {
+  eq(column: string, value: unknown) {
     this.eqValue = value;
+    this.eqFilters[column] = value;
+    return this;
+  }
+  gt(_column: string, value: string) {
+    this.after = value;
+    return this;
+  }
+  limit(count: number) {
+    this.max = count;
     return this;
   }
   range(from: number, to: number) {
     this.page = [from, to];
     return this;
   }
-  upsert(rows: Row[], options?: { defaultToNull?: boolean }) {
+  upsert(rows: Row[], options?: { defaultToNull?: boolean; onConflict?: string }) {
     this.upsertRows = rows;
     this.defaultToNull = options?.defaultToNull ?? true;
+    this.onConflict = options?.onConflict;
     return this;
   }
   update(changes: Row) {
@@ -96,17 +124,26 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
     const missing = { code: "PGRST205", message: "Could not find the table" };
     if (this.upsertRows) {
       if (db.writeError) return { data: null, error: db.writeError };
+      if (
+        this.table === "auction_sale_flood_risk" &&
+        this.upsertRows.some((row) => db.rejectedSaleIds.includes(String(row.sale_id)))
+      ) {
+        return {
+          data: null,
+          error: { code: "22008", message: "date/time field value out of range" },
+        };
+      }
       if (this.table === "auction_sale_flood_risk" && db.busyFloodUpserts.shift()) {
         return { data: null, error: { code: "57014", message: "statement timeout" } };
       }
-      // Comme PostgREST : dans un envoi groupé, une colonne absente d'une ligne mais présente dans une autre vaut
-      // NULL, pas sa valeur par défaut, sauf avec `defaultToNull: false` (« Prefer: missing=default »).
-      if (this.table === "auction_sale_flood_risk" && this.defaultToNull) {
-        const columns = new Set(this.upsertRows.flatMap((row) => Object.keys(row)));
-        const nullsNotNull = FLOOD_NOT_NULL_WITH_DEFAULT.some(
-          (column) => columns.has(column) && this.upsertRows!.some((row) => row[column] == null),
-        );
-        if (nullsNotNull) return { data: null, error: { code: "23502", message: "not-null" } };
+      // Comme la base : union des clés, NOT NULL, CHECK, clé en double (src/test/fake-postgrest.ts).
+      const schema = SCHEMAS[this.table as keyof typeof SCHEMAS];
+      if (schema) {
+        const refused = validateUpsert(schema, this.upsertRows, {
+          defaultToNull: this.defaultToNull,
+          onConflict: this.onConflict,
+        });
+        if (refused) return { data: null, error: refused };
       }
       if (
         (this.table === "auction_sale_flood_risk" && db.floodRows == null) ||
@@ -125,8 +162,15 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
     }
     const slice = (rows: Row[]) => rows.slice(this.page[0], this.page[1] + 1);
     switch (this.table) {
-      case "v_auction_sales_app":
-        return { data: slice(db.sales), error: null };
+      case "v_auction_sales_app": {
+        // Lecture par curseur sur `id`, filtrée par statut dans la base.
+        db.salesReads.push({ filters: { ...this.eqFilters }, after: this.after });
+        const rows = db.sales
+          .filter((row) => !("status" in this.eqFilters) || row.status === this.eqFilters.status)
+          .filter((row) => this.after == null || String(row.id) > this.after)
+          .sort((left, right) => String(left.id).localeCompare(String(right.id)));
+        return { data: rows.slice(0, this.max), error: null };
+      }
       case "auction_sales":
         return { data: slice(db.rawCommunes), error: null };
       case "auction_sale_flood_risk":
@@ -147,6 +191,7 @@ import { FLOOD_DERIVE_VERSION } from "./flood-risk";
 import { floodPositionKey } from "./flood-risk-position.server";
 import {
   FLOOD_CALL_TIMEOUT_MS,
+  FLOOD_CONTROL_POINT,
   FLOOD_DEFAULT_TIME_BUDGET_MS,
   FLOOD_MAX_DURATION_MS,
   FLOOD_MIN_INTERVAL_MS,
@@ -189,7 +234,21 @@ type ApiState = {
   triStatus: number;
   communeHasTri: boolean;
   communeStatus: number;
+  /** Scénarios rendus au point de contrôle connu (Garonne à Toulouse) : `01For` tant que la source va bien. */
+  controlScenarios: string[];
+  controlStatus: number;
 };
+
+const CONTROL_LATLON = `${FLOOD_CONTROL_POINT.longitude},${FLOOD_CONTROL_POINT.latitude}`;
+/** L'appel est celui du point de contrôle connu (Garonne à Toulouse), pas celui d'une vente. */
+const isControlUrl = (url: string) =>
+  url.includes("/tri_zonage") && new URL(url).searchParams.get("latlon") === CONTROL_LATLON;
+/** La réponse du point de contrôle quand la source va bien : le scénario `01For`. */
+const controlAnswer = () =>
+  new Response(
+    JSON.stringify({ results: 1, data: [{ code_national_tri: "X", scenario: { code: "01For" } }] }),
+    { status: 200 },
+  );
 
 function makeApi(overrides: Partial<ApiState> = {}) {
   const state: ApiState = {
@@ -198,19 +257,39 @@ function makeApi(overrides: Partial<ApiState> = {}) {
     triStatus: 200,
     communeHasTri: false,
     communeStatus: 200,
+    controlScenarios: ["01For"],
+    controlStatus: 200,
     ...overrides,
   };
   const calls: string[] = [];
+  /** Appels au point de contrôle : à part, pour ne pas fausser le décompte des appels des ventes. */
+  const controlCalls: string[] = [];
   const headers: Array<Record<string, string>> = [];
   const fetcher: typeof fetch = async (input, init) => {
     const url = String(input);
-    calls.push(url);
-    headers.push((init?.headers ?? {}) as Record<string, string>);
     const ok = (body: unknown) =>
       new Response(JSON.stringify(body), {
         status: 200,
         headers: { "content-type": "application/json" },
       });
+    if (
+      url.includes("/tri_zonage") &&
+      new URL(url).searchParams.get("latlon") ===
+        `${FLOOD_CONTROL_POINT.longitude},${FLOOD_CONTROL_POINT.latitude}`
+    ) {
+      controlCalls.push(url);
+      if (state.controlStatus !== 200) return new Response("{}", { status: state.controlStatus });
+      return ok({
+        results: state.controlScenarios.length,
+        data: state.controlScenarios.map((code) => ({
+          code_national_tri: "X",
+          scenario: { code },
+          date_arrete_carte: "03/12/2014",
+        })),
+      });
+    }
+    calls.push(url);
+    headers.push((init?.headers ?? {}) as Record<string, string>);
     if (url.includes("/tri_zonage")) {
       if (state.triStatus !== 200) return new Response("{}", { status: state.triStatus });
       return ok({
@@ -238,7 +317,7 @@ function makeApi(overrides: Partial<ApiState> = {}) {
     }
     return new Response("{}", { status: 404 });
   };
-  return { state, calls, headers, fetcher };
+  return { state, calls, controlCalls, headers, fetcher };
 }
 
 const run = (
@@ -259,13 +338,17 @@ const written = () =>
 
 beforeEach(() => {
   db.sales = [];
+  db.syncCommunes = { n_with_code: 0, n_changed: 0, n_written: 0 };
+  db.syncError = null;
   db.rawCommunes = [];
+  db.salesReads = [];
   db.floodRows = [];
   db.communeRows = [];
   db.upserts = [];
   db.updates = [];
   db.writeError = null;
   db.busyFloodUpserts = [];
+  db.rejectedSaleIds = [];
   db.updateError = null;
   db.tables = [];
   db.leaseHeld = false;
@@ -341,6 +424,93 @@ describe("runSaleFloodRiskBatch : observations", () => {
     await run(api);
     expect(api.calls.filter((url) => url.includes("tri_zonage"))).toHaveLength(5);
     expect(written()[0]).toMatchObject({ verdict: "high", position_kind: "street" });
+  });
+
+  it("une rue hors zone : inconnu (le point BAN d'une rue peut être loin du numéro), jamais « aucun risque »", async () => {
+    db.sales = [sale("a", { location_precision: "street" })];
+    await run(makeApi({ ppri: "in" }));
+    expect(written()[0]).toMatchObject({ verdict: "unknown", position_kind: "street" });
+  });
+
+  it("un lieu-dit de la BAN ou un numéro sous 0,8 : position imprécise, aucun appel de position", async () => {
+    db.sales = [
+      sale("lieu-dit", { location_precision: "street" }),
+      sale("score", { location_precision: "address" }),
+    ];
+    db.rawCommunes = [
+      { id: "lieu-dit", geocode_type: "locality", geocode_score: "0.9" },
+      { id: "score", geocode_type: "housenumber", geocode_score: "0.72" },
+    ];
+    db.communeRows = [COMMUNE("lieu-dit"), COMMUNE("score")];
+    const api = makeApi({ communeHasTri: false });
+    await run(api);
+    expect(written().map((row) => [row.sale_id, row.verdict, row.position_kind])).toEqual([
+      ["lieu-dit", "no_signal", "approximate"],
+      ["score", "no_signal", "approximate"],
+    ]);
+    expect(api.calls.some((url) => url.includes("tri_zonage") || url.includes("apicarto"))).toBe(
+      false,
+    );
+  });
+
+  it("un numéro à 0,8 ou plus reste une position précise", async () => {
+    db.sales = [sale("a")];
+    db.rawCommunes = [{ id: "a", geocode_type: "housenumber", geocode_score: "0.8" }];
+    const api = makeApi();
+    await run(api);
+    expect(written()[0]).toMatchObject({ verdict: "none_found", position_kind: "point" });
+  });
+
+  describe("parcelle multiple", () => {
+    const centroids = (count: number) =>
+      Array.from({ length: count }, (_, index) => ({
+        found: true,
+        centroid: [TOURS.lat + index * 0.001, TOURS.lon],
+      }));
+
+    it("chaque centroïde est testé : tous dans la zone, risque élevé", async () => {
+      db.sales = [sale("a", { location_precision: "parcel" })];
+      db.rawCommunes = [{ id: "a", parcels: centroids(3) }];
+      const api = makeApi({ scenarios: ["01For"] });
+      await run(api);
+      expect(api.calls.filter((url) => url.includes("tri_zonage"))).toHaveLength(3);
+      expect(written()[0]).toMatchObject({ verdict: "high", position_kind: "point" });
+    });
+
+    it("au plus cinq centroïdes ; plus de cinq parcelles et rien dans la zone : inconnu", async () => {
+      db.sales = [sale("a", { location_precision: "parcel" })];
+      db.rawCommunes = [{ id: "a", parcels: centroids(8) }];
+      const api = makeApi();
+      await run(api);
+      expect(api.calls.filter((url) => url.includes("tri_zonage"))).toHaveLength(5);
+      expect(written()[0]).toMatchObject({ verdict: "unknown" });
+    });
+
+    it("résultats divergents entre parcelles : inconnu", async () => {
+      db.sales = [sale("a", { location_precision: "parcel" })];
+      db.rawCommunes = [{ id: "a", parcels: centroids(2) }];
+      const api = makeApi({ scenarios: ["01For"] });
+      const base = api.fetcher;
+      let tri = 0;
+      api.fetcher = async (input, init) =>
+        String(input).includes("/tri_zonage") && (tri += 1) === 2
+          ? new Response(JSON.stringify({ results: 0, data: [] }), {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            })
+          : base(input, init);
+      await run(api);
+      expect(written()[0]).toMatchObject({ verdict: "unknown" });
+    });
+
+    it("une parcelle seule : un seul appel, comme avant", async () => {
+      db.sales = [sale("a", { location_precision: "parcel" })];
+      db.rawCommunes = [{ id: "a", parcels: centroids(1) }];
+      const api = makeApi();
+      await run(api);
+      expect(api.calls.filter((url) => url.includes("tri_zonage"))).toHaveLength(1);
+      expect(written()[0]).toMatchObject({ verdict: "none_found" });
+    });
   });
 
   it("position imprécise (centre de commune) dans une commune qui a un TRI : inconnu, sans appel de position", async () => {
@@ -502,8 +672,9 @@ describe("runSaleFloodRiskBatch : pannes et coupe-circuit", () => {
     );
     let calls = 0;
     const fetcher: typeof fetch = async (input) => {
-      calls += 1;
       const url = String(input);
+      if (isControlUrl(url)) return controlAnswer();
+      calls += 1;
       if (calls === 1 && url.includes("tri_zonage")) {
         return new Response(JSON.stringify({ results: 0, data: [] }), { status: 200 });
       }
@@ -540,6 +711,7 @@ describe("runSaleFloodRiskBatch : pannes et coupe-circuit", () => {
     db.sales = [sale("a"), sale("b")];
     const fetcher: typeof fetch = async (input) => {
       const url = String(input);
+      if (isControlUrl(url)) return controlAnswer();
       if (url.includes("tri_zonage")) {
         return new Response(JSON.stringify({ results: 0, data: [] }), { status: 200 });
       }
@@ -600,8 +772,8 @@ describe("runSaleFloodRiskBatch : cadence et file", () => {
       },
       communeCache: new Map(),
     });
-    // Une requête TRI et une requête PPRi.
-    expect(paced).toBe(2);
+    // Le point de contrôle, une requête TRI et une requête PPRi : tous services confondus.
+    expect(paced).toBe(3);
     expect(api.calls).toHaveLength(2);
   });
 
@@ -700,20 +872,45 @@ describe("runSaleFloodRiskBatch : avant les migrations", () => {
 describe("runSaleFloodRiskBatch : code commune du pipeline", () => {
   it("recopie raw_payload.commune dans la table des communes, puis s'en sert dans la même passe", async () => {
     db.sales = [sale("a", { location_precision: "municipality" })];
-    db.rawCommunes = [
-      { id: "a", commune: { insee: "75056", arrondissement_insee: "75108", source: "geocode" } },
-    ];
+    // La recopie se fait dans la base (`sync_sale_communes()`, migration 20261108110100) : la passe l'appelle une
+    // fois et en reporte le compte, sans relire `raw_payload`.
+    db.syncCommunes = { n_with_code: 1, n_changed: 1, n_written: 1 };
     const api = makeApi();
     const result = await run(api);
     expect(result.communesWritten).toBe(1);
-    expect(
-      db.upserts.find((upsert) => upsert.table === "auction_sale_communes")?.rows[0],
-    ).toMatchObject({
-      sale_id: "a",
-      commune_insee: "75056",
-      arrondissement_insee: "75108",
-      source: "geocode",
+    expect(result.communesRejected).toBe(0);
+    expect(db.rpcCalls.filter((call) => call.name === "sync_sale_communes")).toHaveLength(1);
+    // `auction_sales` n'est plus lue que pour les champs de position (une page), plus pour la commune.
+    expect(db.tables.filter((table) => table === "auction_sales")).toHaveLength(1);
+  });
+
+  it("expose dans le résumé les communes différées et l'arrêt de la recopie par un verrou", async () => {
+    db.sales = [sale("a")];
+    db.syncCommunes = { n_with_code: 10, n_changed: 7, n_written: 4 };
+    expect(await run(makeApi())).toMatchObject({
+      communesWritten: 4,
+      communesDeferred: 3,
+      communesBusy: false,
     });
+
+    db.syncError = { code: "55P03", message: "lock not available" };
+    expect(await run(makeApi())).toMatchObject({
+      communesWritten: 0,
+      communesDeferred: 0,
+      communesBusy: true,
+    });
+  });
+
+  it("lit les ventes à venir par curseur sur l'identifiant, filtrées par statut dans la base", async () => {
+    db.sales = [
+      ...Array.from({ length: 1500 }, (_, index) => sale(`s${String(index).padStart(5, "0")}`)),
+      sale("past-sale", { status: "past" }),
+    ];
+    await run(makeApi());
+    expect(db.salesReads).toHaveLength(2);
+    expect(db.salesReads.every((read) => read.filters.status === "upcoming")).toBe(true);
+    expect(db.salesReads[0].after).toBeNull();
+    expect(db.salesReads[1].after).toBe("s00999");
   });
 });
 
@@ -830,17 +1027,29 @@ describe("runSaleFloodRiskBatch : périmètre des PPRi illisible", () => {
     expect(db.updates).toEqual([]);
   });
 
-  it("un « exposé » trouvé reste exposé même si un autre point du tampon est illisible", async () => {
-    db.sales = [sale("a", { location_precision: "street" })];
+  it("un « exposé » trouvé reste exposé même si un autre centroïde de parcelle est illisible", async () => {
+    const centroids = [
+      { latitude: TOURS.lat, longitude: TOURS.lon },
+      { latitude: TOURS.lat + 0.001, longitude: TOURS.lon },
+      { latitude: TOURS.lat + 0.002, longitude: TOURS.lon },
+    ];
+    db.sales = [sale("a", { location_precision: "parcel" })];
+    db.rawCommunes = [
+      {
+        id: "a",
+        parcels: centroids.map((c) => ({ found: true, centroid: [c.latitude, c.longitude] })),
+      },
+    ];
     db.floodRows = [
       storedFlood("a", {
         verdict: "exposed",
         position_key: floodPositionKey({
           latitude: TOURS.lat,
           longitude: TOURS.lon,
-          precision: "street",
+          precision: "parcel",
           flags: [],
           communeInsee: null,
+          parcelCentroids: centroids,
         }),
       }),
     ];
@@ -948,10 +1157,12 @@ describe("runSaleFloodRiskBatch : temps imparti", () => {
     vi.useFakeTimers();
     db.sales = [sale("a")];
     db.floodRows = [storedFlood("a", { verdict: "exposed" })];
-    const fetcher: typeof fetch = (_input, init) =>
-      new Promise((_resolve, reject) => {
-        init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
-      });
+    const fetcher: typeof fetch = (input, init) =>
+      isControlUrl(String(input))
+        ? Promise.resolve(controlAnswer())
+        : new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+          });
     const settled = runSaleFloodRiskBatch({
       now: NOW,
       api: { fetcher, pace: async () => undefined },
@@ -1003,7 +1214,9 @@ describe("runSaleFloodRiskBatch : écriture par paquets", () => {
     const base = api.fetcher;
     const writtenAtSale: number[] = [];
     api.fetcher = async (input, init) => {
-      if (String(input).includes("tri_zonage")) writtenAtSale.push(written().length);
+      if (String(input).includes("tri_zonage") && !isControlUrl(String(input))) {
+        writtenAtSale.push(written().length);
+      }
       return base(input, init);
     };
 
@@ -1027,7 +1240,7 @@ describe("runSaleFloodRiskBatch : écriture par paquets", () => {
     const api = makeApi();
     const base = api.fetcher;
     api.fetcher = async (input, init) =>
-      String(input).includes("tri_zonage") && (tri += 1) === 3
+      String(input).includes("tri_zonage") && !isControlUrl(String(input)) && (tri += 1) === 3
         ? new Response("{}", { status: 429 })
         : base(input, init);
     const result = await run(api);
@@ -1060,6 +1273,8 @@ describe("runSaleFloodRiskBatch : ventes verrouillées par la publication du pip
     const result = await run(makeApi());
 
     expect(result.errors).toEqual([`write_busy_${WRITE_CHUNK}`]);
+    // Chiffré dans le résumé (alerte `flood_risk.write_blocked`), pas seulement dans les erreurs.
+    expect(result.writeBusy).toBe(WRITE_CHUNK);
     // Les ventes non écrites restent sans verdict : la passe suivante les reprend.
     expect(written()).toHaveLength(3);
   });
@@ -1086,10 +1301,11 @@ describe("runSaleFloodRiskBatch : une seule passe à la fois", () => {
     await run(makeApi());
     expect(db.rpcCalls.map((call) => call.name)).toEqual([
       "claim_sale_flood_risk_lease",
+      "sync_sale_communes",
       "release_sale_flood_risk_lease",
     ]);
     expect(db.rpcCalls[0].args).toEqual({ p_ttl_seconds: 360 });
-    expect(db.rpcCalls[1].args).toEqual({ p_token: "lease-token" });
+    expect(db.rpcCalls[2].args).toEqual({ p_token: "lease-token" });
   });
 
   it("une seconde passe simultanée rend « busy » sans rien lire, appeler ni rendre", async () => {
@@ -1110,6 +1326,7 @@ describe("runSaleFloodRiskBatch : une seule passe à la fois", () => {
     await expect(run(makeApi({ triStatus: 503 }))).rejects.toThrow();
     expect(db.rpcCalls.map((call) => call.name)).toEqual([
       "claim_sale_flood_risk_lease",
+      "sync_sale_communes",
       "release_sale_flood_risk_lease",
     ]);
   });
@@ -1119,7 +1336,10 @@ describe("runSaleFloodRiskBatch : une seule passe à la fois", () => {
     db.leaseHeld = "missing";
     const result = await run(makeApi());
     expect(result.observed).toBe(1);
-    expect(db.rpcCalls.map((call) => call.name)).toEqual(["claim_sale_flood_risk_lease"]);
+    expect(db.rpcCalls.map((call) => call.name)).toEqual([
+      "claim_sale_flood_risk_lease",
+      "sync_sale_communes",
+    ]);
   });
 });
 
@@ -1134,7 +1354,7 @@ describe("runSaleFloodRiskBatch : erreurs d'écriture consignées", () => {
     // Les ventes jamais observées passent d'abord : « new » est observée, puis « known » échoue côté source et la
     // mise à jour de sa tentative est refusée par la base.
     api.fetcher = async (input, init) =>
-      String(input).includes("tri_zonage") && (tri += 1) === 2
+      String(input).includes("tri_zonage") && !isControlUrl(String(input)) && (tri += 1) === 2
         ? new Response("{}", { status: 503 })
         : base(input, init);
 
@@ -1145,5 +1365,216 @@ describe("runSaleFloodRiskBatch : erreurs d'écriture consignées", () => {
     expect(result.errors).toEqual(["http_503", "attempt_write_42501"]);
     expect(written().map((row) => row.sale_id)).toEqual(["new"]);
     expect(JSON.stringify(result)).not.toContain("permission denied");
+  });
+});
+
+/** Un fetcher qui répond à chaque appel de vente selon son rang (le point de contrôle est servi à part). */
+function scriptedApi(answer: (rank: number) => Response | Error) {
+  const api = makeApi();
+  const base = api.fetcher;
+  let rank = 0;
+  api.fetcher = async (input, init) => {
+    const url = String(input);
+    if (isControlUrl(url) || !url.includes("tri_zonage")) return base(input, init);
+    const outcome = answer(rank);
+    rank += 1;
+    if (outcome instanceof Error) throw outcome;
+    return outcome;
+  };
+  return Object.assign(api, { triCalls: () => rank });
+}
+const emptyTri = () =>
+  new Response(JSON.stringify({ results: 0, data: [] }), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+const reset = () =>
+  new TypeError("fetch failed", {
+    cause: Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" }),
+  });
+const manySales = (count: number) =>
+  Array.from({ length: count }, (_, index) => sale(`m${String(index).padStart(3, "0")}`));
+
+describe("runSaleFloodRiskBatch : passe dégradée (pannes partielles)", () => {
+  it("la moitié des appels échouent sur au moins 20 appels : la passe échoue, avec les codes chiffrés", async () => {
+    db.sales = manySales(40);
+    // 20 réussites, 20 échecs 503 en alternance : 50 % exactement.
+    const api = scriptedApi((rank) =>
+      rank % 2 === 0 ? new Response("{}", { status: 503 }) : emptyTri(),
+    );
+
+    await expect(run(api)).rejects.toThrow(
+      /dégradée : 20 appel\(s\) en échec sur 40 \(seuil 50 %\), par code http_503=20/,
+    );
+    // Ce qui a pu être observé est écrit malgré tout : les 20 verdicts et les 20 tentatives.
+    expect(written().filter((row) => row.verdict === "none_found")).toHaveLength(20);
+    expect(written().filter((row) => row.last_failure === "http_503")).toHaveLength(20);
+  });
+
+  it("moins de la moitié d'échecs, ou moins de 20 appels : la passe réussit et chiffre les échecs", async () => {
+    db.sales = manySales(40);
+    const mostlyFine = scriptedApi((rank) =>
+      rank % 8 === 0 ? new Response("{}", { status: 503 }) : emptyTri(),
+    );
+    const result = await run(mostlyFine);
+    expect(result).toMatchObject({
+      observed: 35,
+      failed: 5,
+      callsObserved: 35,
+      callsFailed: 5,
+      failedByCode: { http_503: 5 },
+      circuitOpen: false,
+    });
+
+    db.upserts = [];
+    db.sales = manySales(10);
+    const fewCalls = scriptedApi((rank) =>
+      rank < 6 ? new Response("{}", { status: 503 }) : emptyTri(),
+    );
+    const small = await run(fewCalls);
+    expect(small).toMatchObject({ observed: 4, failed: 6, failedByCode: { http_503: 6 } });
+  });
+
+  it("le nombre de ventes à venir en attente de réobservation est dans le résultat", async () => {
+    // « k » a une tentative en échec d'hier (non reprise avant plusieurs heures) ; « b » échouera dans la passe.
+    db.sales = [
+      sale("k"),
+      sale("b", { sale_date: "2026-12-21T10:00:00.000Z" }),
+      sale("c", { sale_date: "2026-12-22T10:00:00.000Z" }),
+    ];
+    db.floodRows = [
+      storedFlood("k", {
+        failure_count: 2,
+        observed_at: daysAgo(1),
+        attempted_at: NOW.toISOString(),
+      }),
+    ];
+    const result = await run(
+      scriptedApi((rank) => (rank === 0 ? new Response("{}", { status: 503 }) : emptyTri())),
+    );
+    expect(result.awaitingReobservation).toBe(2);
+
+    // Une vente réobservée avec succès sort du compteur.
+    db.sales = [sale("k")];
+    db.floodRows = [storedFlood("k", { failure_count: 2, attempted_at: daysAgo(1) })];
+    const recovered = await run(makeApi());
+    expect(recovered).toMatchObject({ observed: 1, awaitingReobservation: 0 });
+
+    // Une vente passée n'est pas comptée.
+    db.sales = [sale("old", { status: "past" })];
+    db.floodRows = [storedFlood("old", { failure_count: 3 })];
+    expect((await run(makeApi())).awaitingReobservation).toBe(0);
+  });
+});
+
+describe("runSaleFloodRiskBatch : coupe-circuit des pannes réseau", () => {
+  it("s'arrête après 5 pannes réseau de suite : plus aucun appel, le reste est repris à la passe suivante", async () => {
+    db.sales = manySales(12);
+    const api = scriptedApi((rank) => (rank < 3 ? emptyTri() : reset()));
+
+    const result = await run(api);
+
+    expect(result).toMatchObject({
+      circuitOpen: true,
+      observed: 3,
+      failed: 5,
+      failedByCode: { network_econnreset: 5 },
+      remaining: 4,
+    });
+    // 3 réussites puis 5 pannes : la sixième n'est jamais appelée.
+    expect(api.triCalls()).toBe(8);
+  });
+
+  it("une réussite remet le compte à zéro : des pannes isolées n'ouvrent pas le circuit", async () => {
+    db.sales = manySales(18);
+    // 4 pannes, 1 réussite, 4 pannes, 1 réussite, 4 pannes, 1 réussite, 3 pannes.
+    const api = scriptedApi((rank) => (rank % 5 === 4 ? emptyTri() : reset()));
+    const result = await run(api).catch((error: Error) => error);
+    // 18 appels : moins de 20, donc pas de passe dégradée ; le circuit n'est jamais ouvert.
+    expect(result).toMatchObject({ circuitOpen: false, failed: 15, observed: 3 });
+  });
+
+  it("une panne autre que réseau (503) ne l'ouvre pas", async () => {
+    db.sales = manySales(8);
+    const api = scriptedApi((rank) =>
+      rank === 0 ? emptyTri() : new Response("{}", { status: 503 }),
+    );
+    const result = await run(api);
+    expect(result).toMatchObject({ circuitOpen: false, failed: 7, observed: 1 });
+  });
+});
+
+describe("runSaleFloodRiskBatch : point de contrôle de la source", () => {
+  it("une seule fois par passe, avant le premier appel de position", async () => {
+    db.sales = manySales(60);
+    const api = makeApi();
+    await run(api);
+    expect(api.controlCalls).toHaveLength(1);
+    expect(new URL(api.controlCalls[0]).searchParams.get("latlon")).toBe(CONTROL_LATLON);
+  });
+
+  it("une réponse vide au point de contrôle : source_degraded, rien n'est écrit, aucune vente n'est appelée", async () => {
+    db.sales = manySales(3);
+    const api = makeApi({ controlScenarios: [] });
+    await expect(run(api)).rejects.toThrow(/\(source_degraded\).*\(no_scenario\)/);
+    expect(written()).toEqual([]);
+    expect(db.updates).toEqual([]);
+    expect(api.calls).toEqual([]);
+  });
+
+  it("une réponse autre que 01For au point de contrôle est aussi refusée", async () => {
+    db.sales = manySales(2);
+    await expect(run(makeApi({ controlScenarios: ["04Fai"] }))).rejects.toThrow(/source_degraded/);
+  });
+
+  it("un point de contrôle en panne (503, 403) : source_degraded avec le code, sans coordonnée", async () => {
+    db.sales = manySales(2);
+    const error = await run(makeApi({ controlStatus: 403 })).catch((caught: Error) => caught);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toMatch(/source_degraded.*http_403/);
+    expect((error as Error).message).not.toMatch(/43\.6026|1\.4314/);
+    expect(written()).toEqual([]);
+  });
+
+  it("un 429 au point de contrôle arrête la passe comme tout 429", async () => {
+    db.sales = manySales(2);
+    const api = makeApi({ controlStatus: 429 });
+    await expect(run(api)).rejects.toThrow(/limite de débit \(429\)/);
+    expect(api.calls).toEqual([]);
+  });
+
+  it("des ventes à position approximative seulement : aucun appel de position, donc pas de contrôle", async () => {
+    db.sales = [sale("a", { location_precision: null, latitude: null, longitude: null })];
+    db.communeRows = [COMMUNE("a")];
+    const api = makeApi({ controlScenarios: [] });
+    const result = await run(api);
+    expect(result.observed).toBe(1);
+    expect(api.controlCalls).toEqual([]);
+  });
+});
+
+describe("runSaleFloodRiskBatch : une ligne refusée par la base ne bloque pas le paquet", () => {
+  it("la ligne fautive est isolée en coupant le paquet par moitiés : les 24 autres sont écrites", async () => {
+    db.sales = manySales(WRITE_CHUNK);
+    db.rejectedSaleIds = ["m007"];
+
+    const result = await run(makeApi());
+
+    expect(result).toMatchObject({ observed: WRITE_CHUNK, writeRejected: 1 });
+    expect(result.errors).toEqual(["write_refused_22008"]);
+    expect(written()).toHaveLength(WRITE_CHUNK - 1);
+    expect(written().map((row) => row.sale_id)).not.toContain("m007");
+  });
+
+  it("plus de 5 lignes refusées : la panne n'est plus isolée, la passe échoue", async () => {
+    db.sales = manySales(WRITE_CHUNK);
+    db.rejectedSaleIds = manySales(8).map((item) => String(item.id));
+    await expect(run(makeApi())).rejects.toThrow(/code 22008/);
+  });
+
+  it("toutes les lignes refusées : la passe échoue pour que la supervision le voie", async () => {
+    db.sales = manySales(3);
+    db.rejectedSaleIds = ["m000", "m001", "m002"];
+    await expect(run(makeApi())).rejects.toThrow(/3 ligne\(s\) refusée\(s\) \(code 22008\)/);
   });
 });

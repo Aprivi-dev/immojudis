@@ -330,6 +330,84 @@ describe("public map resilience", () => {
     expect(screen.getByText(/Positions approximatives/)).toBeTruthy();
     expect(screen.queryByText("DPE")).toBeNull();
   });
+  it("reads the map style from getMapboxStyleUrl instead of a hard-coded style", async () => {
+    await showMap();
+    expect(mocks.mapOptions[0].style).toBe("test-style");
+  });
+  it("blocks the map on a Mapbox error before load only, not on a later tile error", async () => {
+    await showMap();
+    act(() => mocks.handlers.get("error")?.({ error: { message: "style introuvable" } }));
+    expect(screen.getByText(/annonces restent accessibles dans la liste/)).toBeTruthy();
+    act(() => mocks.handlers.get("load")?.());
+    expect(screen.queryByText(/annonces restent accessibles dans la liste/)).toBeNull();
+    act(() => mocks.handlers.get("error")?.({ error: { message: "tuile 429" } }));
+    expect(screen.queryByText(/annonces restent accessibles dans la liste/)).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Carte indisponible" })).toBeNull();
+  });
+  it("shows a visible legend and keeps a single attribution (Mapbox's own control)", async () => {
+    const sale = {
+      id: "legend",
+      city: "Lyon",
+      property_type: "apartment",
+      latitude: 45.76,
+      longitude: 4.83,
+      media: [],
+    } as unknown as AuctionSale;
+    await showMap({ sales: [sale], preview: false });
+    act(() => mocks.handlers.get("load")?.());
+    const legend = screen.getByRole("list", { name: "Légende de la carte" });
+    expect(legend.textContent).toContain("Une vente (mise à prix)");
+    expect(legend.textContent).toContain("Plusieurs ventes, zoomez");
+    expect(mocks.mapOptions[0].attributionControl).toBe(true);
+    expect(screen.queryByRole("link", { name: /Mapbox/ })).toBeNull();
+  });
+  it("says in the popup when the point is the centre of the commune or a doubtful point", async () => {
+    const base = {
+      city: "Lyon",
+      property_type: "apartment",
+      latitude: 45.76,
+      longitude: 4.83,
+      starting_price_eur: 80_000,
+      media: [],
+    };
+    const centre = { ...base, id: "centre", location_precision: "municipality", quality_flags: [] };
+    await showMap({
+      sales: [centre as unknown as AuctionSale],
+      preview: false,
+      selectedSaleId: "centre",
+    });
+    act(() => mocks.handlers.get("load")?.());
+    expect(mocks.setHtml.mock.calls.at(-1)?.[0]).toContain(
+      "Centre de la commune, position approximative",
+    );
+    cleanup();
+
+    const doubtful = {
+      ...base,
+      id: "doubtful",
+      location_precision: "address",
+      quality_flags: ["unverified_source_coordinates"],
+    };
+    await showMap({
+      sales: [doubtful as unknown as AuctionSale],
+      preview: false,
+      selectedSaleId: "doubtful",
+    });
+    act(() => mocks.handlers.get("load")?.());
+    const html = mocks.setHtml.mock.calls.at(-1)?.[0] as string;
+    expect(html).toContain("Position approximative");
+    expect(html).not.toContain("Centre de la commune");
+    cleanup();
+
+    const exact = { ...base, id: "exact", location_precision: "address", quality_flags: [] };
+    await showMap({
+      sales: [exact as unknown as AuctionSale],
+      preview: false,
+      selectedSaleId: "exact",
+    });
+    act(() => mocks.handlers.get("load")?.());
+    expect(mocks.setHtml.mock.calls.at(-1)?.[0]).not.toContain("approximative");
+  });
   it("starts Mapbox without label fades or repeated world copies", async () => {
     await showMap();
     expect(mocks.mapOptions).toHaveLength(1);

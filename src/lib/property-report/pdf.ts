@@ -53,6 +53,8 @@ export const REPORT_PDF_HEADINGS = [
   "Offre plafond (simulation)",
   "Préparation audience",
   "Actions préparation audience",
+  "Préparation de la vente",
+  "Actions de préparation de la vente",
   "Analyse de bien",
   "Indices occupation",
   "Actions occupation",
@@ -82,6 +84,8 @@ export const REPORT_PDF_HEADINGS = [
   "Points d'attention",
   "Notes",
   "Avertissement",
+  // Intertitre du dossier de financement d'une vente par offres (voir `reportWording`).
+  "Garantie à remettre avant votre offre",
   ...FINANCING_DOSSIER_HEADINGS,
 ] as const;
 
@@ -231,10 +235,10 @@ export function reportToPdfLines(
     )}`,
     `Confiance occupation: ${stringOrNumberValue(occupancyAnalysis.confidenceLabel, "à confirmer")}`,
     `Impact occupation: ${stringOrNumberValue(occupancyAnalysis.decisionImpact, `à vérifier ${wording.beforeBid}`)}`,
-    `Tribunal: ${stringOrNumberValue(sale.tribunal, "à confirmer")}`,
+    `${wording.venueLabel}: ${stringOrNumberValue(sale.tribunal, "à confirmer")}`,
     ...reportSaleSchedule(sale).map(({ label, value }) => `${label}: ${value}`),
-    `Préparation audience: ${stringOrNumberValue(audienceReadinessAnalysis.summary, "à compléter")}`,
-    `Urgence audience: ${stringOrNumberValue(audienceReadinessAnalysis.urgencyLabel, "date à confirmer")}`,
+    `${wording.audiencePreparation}: ${stringOrNumberValue(audienceReadinessAnalysis.summary, "à compléter")}`,
+    `${wording.audienceUrgency}: ${stringOrNumberValue(audienceReadinessAnalysis.urgencyLabel, "date à confirmer")}`,
     `${wording.referencePrice}: ${formatStartingPrice(numberValue(sale.startingPrice))}`,
     "",
     "Estimation marché",
@@ -270,7 +274,7 @@ export function reportToPdfLines(
     `Lecture comparables: ${stringOrNumberValue(marketComparables.summary, "comparables à compléter")}`,
     ...(canShowNeighborhood
       ? [
-          `Analyse quartier: ${stringOrNumberValue(neighborhoodAnalysis.summary, "quartier à qualifier")}`,
+          `Analyse quartier : ${stringOrNumberValue(neighborhoodAnalysis.summary, "quartier à qualifier")}`,
           `Confiance quartier: ${stringOrNumberValue(neighborhoodAnalysis.confidenceLabel, "à vérifier")}`,
           `Position marché quartier: ${stringOrNumberValue(
             neighborhoodAnalysis.marketPositionLabel,
@@ -278,7 +282,7 @@ export function reportToPdfLines(
           )}`,
         ]
       : []),
-    `Analyse démographique: ${stringOrNumberValue(
+    `Analyse démographique : ${stringOrNumberValue(
       demographicAnalysis.summary,
       "données démographiques à enrichir",
     )}`,
@@ -376,14 +380,14 @@ export function reportToPdfLines(
           "Estimation locative indicative",
           "Hypothèses: loyer estimé par défaut et paramètres de vacance, charges, taxe foncière, assurance et financement du modèle.",
           rentabilityScore.score != null
-            ? `Score de rentabilite: ${rentabilityScore.score}/100 - ${stringOrNumberValue(rentabilityScore.label, "à qualifier")}`
-            : `Score de rentabilite: indisponible (${stringOrNumberValue(rentabilityScore.reason, "données incomplètes")})`,
+            ? `Score de rentabilité : ${rentabilityScore.score}/100 - ${stringOrNumberValue(rentabilityScore.label, "à qualifier")}`
+            : `Score de rentabilité : indisponible (${stringOrNumberValue(rentabilityScore.reason, "données incomplètes")})`,
           rentabilityScore.netYieldPct != null
-            ? `${rentNotice ? "Rendement estime, charges comprises" : "Rendement net estime"}: ${formatPercent(rentabilityScore.netYieldPct)}`
-            : `${rentNotice ? "Rendement estime, charges comprises" : "Rendement net estime"}: à compléter`,
+            ? `${rentNotice ? "Rendement estimé, charges comprises" : "Rendement net estimé"} : ${formatPercent(rentabilityScore.netYieldPct)}`
+            : `${rentNotice ? "Rendement estimé, charges comprises" : "Rendement net estimé"} : à compléter`,
           rentabilityScore.cashflowMonthly != null
-            ? `Cashflow mensuel estime: ${formatPrice(numberValue(rentabilityScore.cashflowMonthly))}`
-            : "Cashflow mensuel estime: à compléter",
+            ? `Cash-flow mensuel estimé : ${formatPrice(numberValue(rentabilityScore.cashflowMonthly))}`
+            : "Cash-flow mensuel estimé : à compléter",
         ]),
     `${wording.feesHeading}: ${stringOrNumberValue(
       auctionCostAnalysis.summary,
@@ -459,7 +463,7 @@ export function reportToPdfLines(
       ? `Référence marché retenue: ${formatPricePerM2(numberValue(ceiling.marketReferencePricePerM2))}`
       : "Référence marché retenue: à compléter",
     "",
-    "Préparation audience",
+    wording.audiencePreparation,
     `Synthèse: ${stringOrNumberValue(audienceReadinessAnalysis.summary, "préparation à compléter")}`,
     `Statut: ${stringOrNumberValue(audienceReadinessAnalysis.label, "à vérifier")}`,
     `Progression: ${stringOrNumberValue(audienceReadinessAnalysis.progressPct, "0")} %`,
@@ -472,7 +476,7 @@ export function reportToPdfLines(
       : ["- Checklist à compléter dans le dossier."]),
     ...(audienceReadinessActions.length
       ? [
-          "Actions préparation audience",
+          wording.audienceActions,
           ...audienceReadinessActions.slice(0, 4).map((action) => `- ${action}`),
         ]
       : []),

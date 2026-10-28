@@ -55,6 +55,8 @@ export const CONTACT_REPORT_TOPICS = {
   date: "Date ou lieu de la vente",
   localisation: "Localisation du bien",
   "ecart-marche": "Écart au marché",
+  pepite: "Repère Pépite",
+  plafond: "Enchère ou offre plafond",
   source: "Source de l’annonce",
 } as const;
 export type ContactReportTopic = keyof typeof CONTACT_REPORT_TOPICS;

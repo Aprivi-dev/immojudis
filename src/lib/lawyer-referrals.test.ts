@@ -61,7 +61,7 @@ describe("lawyer referrals", () => {
           dataSharingConfirmed: true,
         },
       }),
-    ).rejects.toThrow("Mise en relation avocat réservée au plan Analyse.");
+    ).rejects.toThrow("Mise en relation avocat réservée à l’offre Analyse.");
 
     expect(recordFeatureUsageEvent).not.toHaveBeenCalled();
   });
@@ -71,7 +71,7 @@ describe("lawyer referrals", () => {
     vi.mocked(resolvePlanEntitlements).mockResolvedValue(planEntitlements("decouverte"));
     await expect(
       createLawyerReferralRequest({ auth: fakeReferralAuth(), input: confirmedInput(), request }),
-    ).rejects.toThrow("réservée au plan Analyse");
+    ).rejects.toThrow("réservée à l’offre Analyse");
     expect(dailyLimits).not.toHaveBeenCalled();
 
     // Abonné : plafond du compte, hors part de l'offre de lancement.
@@ -343,7 +343,7 @@ describe("lawyer referrals", () => {
         auth: fakeReferralAuth(),
         query: { saleId: SALE_ID },
       }),
-    ).rejects.toThrow("Mise en relation avocat réservée au plan Analyse.");
+    ).rejects.toThrow("Mise en relation avocat réservée à l’offre Analyse.");
   });
 
   it("only proposes lawyers of the bar of the sale's tribunal", async () => {

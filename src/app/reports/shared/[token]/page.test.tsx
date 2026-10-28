@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import SharedReportPage from "./page";
+import { SharedReportUnavailableError } from "@/lib/property-report/share-unavailable";
 const mocks = vi.hoisted(() => ({ report: vi.fn() }));
 vi.mock("@/lib/property-reports", () => ({ getSharedPropertyReport: mocks.report }));
 
@@ -76,7 +77,7 @@ describe("shared personal simulation", () => {
 });
 
 describe("shared report of a sale by offers", () => {
-  async function offersMarkup(ceiling: Record<string, unknown>) {
+  async function offersMarkup(ceiling: Record<string, unknown>, disclaimer?: string) {
     mocks.report.mockResolvedValue({
       title: "Rapport vente interactive",
       updatedAt: "2026-10-26",
@@ -88,6 +89,7 @@ describe("shared report of a sale by offers", () => {
       },
       sourceTrace: [],
       limitations: [],
+      disclaimer,
       ceiling: {
         available: true,
         maxBid: 120000,
@@ -122,6 +124,15 @@ describe("shared report of a sale by offers", () => {
     expect(html).not.toContain("Enchèreplafond");
   });
 
+  it("says « avant toute offre » in the footer of a sale by offers, « avant toute enchère » otherwise", async () => {
+    const disclaimer = "Vérifiez les pièces officielles et votre conseil avant toute enchère.";
+    const offers = await offersMarkup({}, disclaimer);
+    expect(offers).toContain("votreconseilavanttouteoffre.");
+    expect(offers).not.toContain("avanttouteenchère");
+    const court = await offersMarkup({ regime: "tribunal", label: undefined }, disclaimer);
+    expect(court).toContain("votreconseilavanttouteenchère.");
+  });
+
   it("keeps the court wording for a report without a regime and does not invent a notice", async () => {
     const html = await offersMarkup({
       regime: undefined,
@@ -136,11 +147,74 @@ describe("shared report of a sale by offers", () => {
     expect(html).not.toContain("n’estpastenuderetenir");
   });
 
-  it("does not show the notices of a ceiling that is unavailable", async () => {
-    const html = await offersMarkup({ available: false, maxBid: null });
-    expect(html).toContain("Donnéesinsuffisantes");
+  it("does not show the notices of a ceiling that is unavailable, and says why", async () => {
+    const html = await offersMarkup({
+      available: false,
+      maxBid: null,
+      reason: "Plafond momentanément indisponible",
+    });
+    expect(html).toContain("Plafondmomentanémentindisponible");
+    expect(html).not.toContain("Donnéesinsuffisantes");
     expect(html).not.toContain("n’estpastenuderetenir");
   });
+
+  it("falls back on a neutral label when the unavailable ceiling gives no reason", async () => {
+    const html = await offersMarkup({ available: false, maxBid: null, reason: undefined });
+    expect(html).toContain("Plafondindisponible");
+    expect(html).not.toContain("Donnéesinsuffisantes");
+  });
+
+  it("names neither the court nor the hearing for a sale by offers, and keeps them for the court", async () => {
+    const offers = await offersMarkup({});
+    expect(offers).toContain("Lieudelavente");
+    expect(offers).toContain("Préparationdelavente");
+    expect(offers).not.toContain("Tribunal<");
+    expect(offers).not.toContain("Préparationaudience");
+    const court = await offersMarkup({ regime: "tribunal", label: undefined });
+    expect(court).toContain("Tribunal");
+    expect(court).toContain("Préparationaudience");
+  });
+});
+
+describe("shared report footer and dead link", () => {
+  it("points the recipient to the example analysis", async () => {
+    const html = await markupOf();
+    expect(html).toContain("Cetteanalyseaétépréparéeavec");
+    expect(html).toContain('href="/annonce-exemple"');
+  });
+
+  it("explains a link that no longer opens instead of a 404", async () => {
+    mocks.report.mockRejectedValue(new SharedReportUnavailableError());
+    const html = renderToStaticMarkup(
+      await SharedReportPage({ params: Promise.resolve({ token: "test" }) }),
+    );
+    expect(html).toContain("Ce rapport n’est plus partagé");
+    expect(html).toContain('href="/annonce-exemple"');
+  });
+
+  it("still answers a 404 for an unknown link", async () => {
+    mocks.report.mockRejectedValue(new Error("Rapport partagé introuvable ou expiré."));
+    await expect(
+      SharedReportPage({ params: Promise.resolve({ token: "test" }) }),
+    ).rejects.toThrow();
+  });
+
+  async function markupOf() {
+    mocks.report.mockResolvedValue({
+      title: "Rapport",
+      updatedAt: "2026-09-09",
+      sharedAt: null,
+      sale: {},
+      analysis: {},
+      sourceTrace: [],
+      limitations: [],
+      disclaimer: "Avertissement",
+      ceiling: { available: false, maxBid: null },
+    });
+    return renderToStaticMarkup(
+      await SharedReportPage({ params: Promise.resolve({ token: "test" }) }),
+    ).replace(/\s/g, "");
+  }
 });
 
 describe("shared report evidence", () => {

@@ -20,7 +20,9 @@ export function EstimatedFeesBadge({
 }) {
   if (items.length === 0) return null;
   return (
-    <span className={`inline-flex flex-wrap items-center gap-x-2 gap-y-1 ${className ?? ""}`}>
+    <span
+      className={`inline-flex flex-col items-start gap-1 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-2 ${className ?? ""}`}
+    >
       <Badge tone="warning">
         <TriangleAlert aria-hidden className="size-3.5 shrink-0" />
         {ESTIMATED_FEES_TEXT}

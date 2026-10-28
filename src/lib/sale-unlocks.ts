@@ -13,16 +13,29 @@ import { PLAN_LIMITS } from "@/lib/plans";
 export const MONTHLY_SALE_UNLOCKS = PLAN_LIMITS.decouverte.monthlyUnlocks;
 
 /**
- * Ce que le compte gratuit coûte et donne, en une ligne (accueil, cartes de résultats). Une
- * « fiche détaillée » est une vente débloquée : le nombre vient de `MONTHLY_SALE_UNLOCKS`, jamais
+ * La formule unique des textes visibles : « 3 déblocages par mois » (jamais « fiches détaillées »,
+ * « ventes en détail » ni « ventes débloquées par mois »). Les conditions générales et la politique de
+ * confidentialité, dont le texte est ancré par empreinte, gardent « déblocages mensuels ».
+ */
+/** Le libellé seul, pour un chiffre affiché à part (« 3 » puis « déblocages par mois »). */
+export const MONTHLY_UNLOCKS_LABEL = "déblocages par mois";
+
+export const MONTHLY_UNLOCKS_TEXT = `${MONTHLY_SALE_UNLOCKS} ${MONTHLY_UNLOCKS_LABEL}`;
+
+/** Ce qu'est un déblocage, à dire à la première occurrence d'un écran. */
+export const UNLOCK_DEFINITION_TEXT = "Débloquer une vente, c’est ouvrir son détail complet.";
+
+/**
+ * Ce que le compte gratuit coûte et donne, en une ligne (accueil, cartes de résultats). Un
+ * déblocage ouvre le détail d'une vente : le nombre vient de `MONTHLY_SALE_UNLOCKS`, jamais
  * écrit en dur. Les offres expliquent ce que chaque déblocage ouvre.
  */
-export const FREE_ACCESS_LINE = `Gratuit, sans carte bancaire · ${MONTHLY_SALE_UNLOCKS} fiches détaillées par mois`;
+export const FREE_ACCESS_LINE = `Gratuit, sans carte bancaire · ${MONTHLY_UNLOCKS_TEXT}`;
 
 /**
  * `FREE_ACCESS_LINE`, ou la mention de l'offre de lancement quand elle est active : un compte
  * gratuit a alors les avantages de l'offre Analyse, et la ligne qui présente le compte gratuit ne
- * promet plus « 3 fiches détaillées par mois ». Texte pour un compte connecté ou pour un visiteur
+ * promet plus « 3 déblocages par mois ». Texte pour un compte connecté ou pour un visiteur
  * (`src/lib/launch-offer.ts`). Les appels à l'inscription et l'accueil passent par ici.
  */
 export function freeAccessLine({

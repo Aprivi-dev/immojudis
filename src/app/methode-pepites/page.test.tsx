@@ -1,13 +1,17 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DEFAULT_RENTED_DISCOUNT_PCT } from "@/lib/bid-ceiling-defaults";
 import { MARKET_GAP_METHOD_PATH } from "@/lib/market-gap";
-import { FLOOD_FORBIDDEN_WORDS } from "@/lib/pepite-flood-copy";
+import { FLOOD_ADDRESS_MIN_SCORE, FLOOD_PARCEL_MAX_PROBES } from "@/lib/flood-risk";
+import { FLOOD_FORBIDDEN_WORDS, floodWarning } from "@/lib/pepite-flood-copy";
 import * as policy from "@/lib/pepite-policy";
 import {
   PEPITE_METHOD_PATH,
   PEPITE_RULE_PARAMS,
   PEPITE_LATEST_RULE_VERSION,
+  PEPITE_V1_1_RULE_VERSION,
   PEPITE_V1_RULE_VERSION,
   pepiteV2EffectiveClause,
 } from "./method";
@@ -43,7 +47,7 @@ describe("page « Comment repérons-nous les pépites ? »", () => {
     expect(String(metadata.title).length + " - Immojudis".length).toBeLessThanOrEqual(60);
     const description = String(metadata.description);
     expect(description.length).toBeGreaterThanOrEqual(90);
-    expect(description.length).toBeLessThanOrEqual(170);
+    expect(description.length).toBeLessThanOrEqual(155);
     expect(description).not.toMatch(/garantie|gratuit|bonne affaire/i);
     expect(metadata.openGraph?.url).toBe("/methode-pepites");
   });
@@ -56,22 +60,28 @@ describe("page « Comment repérons-nous les pépites ? »", () => {
     ]);
   });
 
-  it("dit ce que c'est : un repère calculé automatiquement sur des critères publics, un potentiel d'investissement", () => {
+  it("dit ce que c'est : un repère calculé automatiquement sur des critères publics, sans promesse de potentiel", () => {
     render(<Page />);
     const text = sectionText("Ce qu’est le repère « Pépite »");
     expect(text).toContain("repère calculé automatiquement par Immojudis");
     expect(text).toContain("critères publics");
     expect(text).toContain(
-      "pour signaler un potentiel d’investissement mesuré par deux conditions chiffrées, calculées sur les données disponibles",
+      "Il signale les ventes qui remplissent deux conditions chiffrées, calculées sur les données disponibles.",
     );
+    expect(text).toContain("(en vente notariale, seule la seconde est posée)");
+    expect(text).not.toMatch(/potentiel d’investissement/);
     expect(text).toContain(
-      "Les ventes comparables passées ont-elles été le plus souvent adjugées sous l’enchère plafond estimée ? Immojudis regarde si au moins 70 % l’ont été.",
+      "Les ventes comparables passées ont-elles été le plus souvent adjugées sous l’enchère plafond estimée ? Immojudis regarde si au moins 70 % l’ont été, sur un nombre de ventes suffisant (voir « Les critères et les seuils »).",
     );
     expect(text).toContain(
       "Le coût total estimé au prix de référence, frais compris, représente-t-il au plus 75 % de la valeur estimée (65 % en vente notariale) ?",
     );
     expect(text).toContain(
-      "La valeur estimée est celle d’un bien comparable, d’après les ventes DVF passées ; elle ne tient compte ni de l’état du bien ni de son occupation.",
+      "La valeur estimée est celle d’un bien comparable, d’après les ventes passées de la base Demande de valeurs foncières (DVF) ; elle ne tient compte ni de l’état du bien ni de son occupation.",
+    );
+    expect(text).toContain("Le prix de référence est un repère statistique, décrit plus bas.");
+    expect(text).toContain(
+      "Lorsqu’une vente remplit les critères, sa fiche et sa ligne dans la liste portent un badge",
     );
     expect(text).not.toMatch(/nettement sous la valeur|achat probable/);
     expect(text).toContain("enchère plafond estimée");
@@ -92,6 +102,7 @@ describe("page « Comment repérons-nous les pépites ? »", () => {
     expect(PEPITE_LATEST_RULE_VERSION).toBe(policy.PEPITE_LATEST_RULE_VERSION);
     expect(PEPITE_RULE_PARAMS).toEqual({
       chanceMinPct: policy.PEPITE_CHANCE_MIN_SHARE * 100,
+      chanceMinWilsonLowPct: policy.PEPITE_CHANCE_MIN_WILSON_LOW * 100,
       maxCostShareCourtPct: policy.PEPITE_COST_MAX_SHARE_COURT * 100,
       maxCostShareNotaryPct: policy.PEPITE_COST_MAX_SHARE_NOTARY * 100,
       exitChanceBelowPct: policy.PEPITE_CHANCE_EXIT_SHARE * 100,
@@ -103,19 +114,38 @@ describe("page « Comment repérons-nous les pépites ? »", () => {
       freezeDaysBeforeSale: policy.PEPITE_FREEZE_DAYS,
       minValueComparables: policy.PEPITE_MIN_VALUE_COMPARABLES,
       historyYears: policy.PEPITE_HISTORY_YEARS,
-      courtCompleteBelowSales: policy.PEPITE_COURT_COMPLETE_BELOW_SALES,
-      courtReplaceBelowSales: policy.PEPITE_COURT_REPLACE_BELOW_SALES,
+      // Lissage : recopié de la migration 20261101120100 (voir `method.ts`), 30 et 10 aussi côté application.
+      minNationalSales: 30,
+      minCourtSales: 10,
+      smoothingWeightSales: 15,
+      priceCourtOnlyFromSales: 20,
       lowStartingPricePct: policy.PEPITE_LOW_STARTING_PRICE_SHARE * 100,
       maxEvaluationAgeHours: policy.PEPITE_MAX_EVALUATION_AGE_HOURS,
     });
   });
 
-  it("donne les seuils de pepite-v1 à partir des constantes de la règle", () => {
+  it("décrit le lissage comme la migration SQL le calcule (30 ventes en France, 10 au tribunal, poids 15, quantiles à 20)", () => {
+    const sql = readFileSync(
+      "supabase/migrations/20261101120100_auction_scenarios_reliability.sql",
+      "utf8",
+    );
+    expect(sql).toContain(`sizes.n_national < ${PEPITE_RULE_PARAMS.minNationalSales}`);
+    expect(sql).toContain(`sizes.n_court >= ${PEPITE_RULE_PARAMS.minCourtSales}`);
+    expect(sql).toContain(
+      `${PEPITE_RULE_PARAMS.smoothingWeightSales} * bucket_counts.national_count`,
+    );
+    expect(sql).toContain(
+      `sizes.n_court >= ${PEPITE_RULE_PARAMS.priceCourtOnlyFromSales} then 'court'`,
+    );
+  });
+
+  it("donne les seuils de pepite-v1.1 à partir des constantes de la règle", () => {
     render(<Page />);
     const text = sectionText("Les critères et les seuils");
-    // Interrupteur fermé (défaut) : la page décrit la règle appliquée, pepite-v1.
+    // Interrupteur fermé (défaut) : la page décrit la règle appliquée, pepite-v1.1.
     expect(PEPITE_V1_RULE_VERSION).toBe("pepite-v1");
-    expect(text).toContain("Version pepite-v1.");
+    expect(PEPITE_V1_1_RULE_VERSION).toBe("pepite-v1.1");
+    expect(text).toContain(`Version ${PEPITE_V1_1_RULE_VERSION}.`);
     expect(text).not.toContain("indiquée sur cette page");
     expect(PEPITE_RULE_PARAMS.chanceMinPct).toBe(70);
     expect(PEPITE_RULE_PARAMS.maxCostShareCourtPct).toBe(75);
@@ -126,10 +156,22 @@ describe("page « Comment repérons-nous les pépites ? »", () => {
     );
     expect(text).toContain(`au plus ${PEPITE_RULE_PARAMS.maxCostShareNotaryPct} %`);
     expect(text).toContain(`${PEPITE_RULE_PARAMS.historyYears} dernières années`);
+    expect(text).toContain("Version pepite-v1.1. Les seuils ci-dessous");
+    expect(text).not.toMatch(/Version pepite-v1\.(?!1)/);
+    expect(text).toContain("Le repère est affiché depuis le 26 octobre 2026.");
     expect(text).toContain(
-      `moins de ${PEPITE_RULE_PARAMS.courtCompleteBelowSales} ventes comparables`,
+      `Il faut au moins ${PEPITE_RULE_PARAMS.minNationalSales} ventes comparables en France, tribunaux confondus.`,
     );
-    expect(text).toContain(`sous ${PEPITE_RULE_PARAMS.courtReplaceBelowSales} ventes`);
+    expect(text).toContain(
+      `À partir de ${PEPITE_RULE_PARAMS.minCourtSales} ventes comparables au tribunal, la part des ventes adjugées sous l’enchère plafond estimée combine celle du tribunal et la part nationale, qui compte pour ${PEPITE_RULE_PARAMS.smoothingWeightSales} ventes`,
+    );
+    expect(text).toContain(
+      `Sous ${PEPITE_RULE_PARAMS.minCourtSales} ventes au tribunal, le premier critère ne peut pas être évalué et il n’y a pas de repère.`,
+    );
+    expect(text).toContain(
+      `ventes du tribunal seules à partir de ${PEPITE_RULE_PARAMS.priceCourtOnlyFromSales} ventes, sur celles de toute la France en dessous`,
+    );
+    expect(text).not.toMatch(/complétée par celle de toute la France|remplacée par elle/);
     expect(text).toContain("Vente au tribunal");
     expect(text).toContain("Vente notariale à la bougie");
     expect(text).toContain("Vente notariale interactive");
@@ -138,6 +180,46 @@ describe("page « Comment repérons-nous les pépites ? »", () => {
     expect(text).toContain(
       "L’offre plafond estimée doit en outre être au moins égale à cette première offre",
     );
+  });
+
+  it("décrit la version 1.1 du 28 octobre 2026 avec les constantes de la règle", () => {
+    render(<Page />);
+    const text = sectionText("Les critères et les seuils");
+    expect(text).toContain("Version 1.1 du 28 octobre 2026 : les seuils ne changent pas");
+    expect(text).toContain(
+      `Une mise à prix inférieure à ${PEPITE_RULE_PARAMS.lowStartingPricePct} % de la valeur estimée demande une fiabilité forte.`,
+    );
+    expect(text).toContain(
+      `Pendant les ${PEPITE_RULE_PARAMS.freezeDaysBeforeSale} derniers jours avant la vente, une estimation qui se dégrade fait sortir le repère.`,
+    );
+    // Plancher « au moins » : le seuil d'entrée et celui de maintien ; borne basse de Wilson à l'entrée seulement.
+    expect(text).toContain(
+      `soit ${PEPITE_RULE_PARAMS.chanceMinPct} % pour entrer et ${PEPITE_RULE_PARAMS.exitChanceBelowPct} % pour rester`,
+    );
+    expect(PEPITE_RULE_PARAMS.chanceMinWilsonLowPct).toBe(50);
+    expect(text).toContain(
+      `la borne basse de cette fourchette doit atteindre ${PEPITE_RULE_PARAMS.chanceMinWilsonLowPct} %`,
+    );
+    expect(text).toContain("le critère est indiqué « à confirmer »");
+    // Vente notariale : frais lus, pas des valeurs par défaut.
+    expect(text).toContain("honoraires de négociation de l’acquéreur et les frais de publicité");
+    expect(text).toContain("non remplacés par des valeurs par défaut");
+    // Gel à J-7 : la qualité de l'estimation fait sortir le repère.
+    expect(sectionText("La stabilité du repère")).toContain(
+      "Pendant ce gel, une estimation de valeur qui n’est plus exploitable",
+    );
+    // Décote d'un bien loué.
+    expect(sectionText("Ce qu’est le repère « Pépite »")).toContain(
+      `la valeur estimée d’un bien vendu loué est toutefois diminuée de la décote d’un bien loué (${DEFAULT_RENTED_DISCOUNT_PCT} %, fixée dans les hypothèses par défaut) : un bien loué se vend en général moins cher qu’un bien libre.`,
+    );
+    expect(sectionText("Ce que le repère ne mesure pas")).toContain(
+      "à la seule exception de la décote d’un bien loué, appliquée au second critère",
+    );
+    // Fiabilité forte sous 30 % : dans le garde-fou sur l'estimation.
+    expect(sectionText("Les garde-fous")).toContain(
+      `Quand la mise à prix est inférieure à ${PEPITE_RULE_PARAMS.lowStartingPricePct} % de la valeur estimée`,
+    );
+    expect(sectionText("Les garde-fous")).toContain("seule une fiabilité forte est alors admise");
   });
 
   it("règle pepite-v2 fermée (défaut) : aucune trace du risque d'inondation sur la page", () => {
@@ -186,13 +268,17 @@ describe("page « Comment repérons-nous les pépites ? »", () => {
     );
   });
 
-  it("présente le prix probable avec sa réserve, jamais comme une prévision", () => {
+  it("présente le prix de référence avec sa réserve, jamais comme une prévision", () => {
     render(<Page />);
-    const text = sectionText("Le prix probable et ses limites");
+    const text = sectionText("Le prix de référence et ses limites");
+    expect(text).not.toMatch(/prix probable|probable/);
     expect(text).toContain(
-      "« Repère statistique tiré de N ventes comparables passées du tribunal (fiabilité X). La moitié de ces ventes s’est conclue dans la fourchette indiquée, l’autre moitié en dehors. Ce n’est pas une prévision : le prix final peut être inférieur ou supérieur. »",
+      "« Repère statistique tiré de N ventes comparables passées du tribunal ou de toute la France (fiabilité bonne ou moyenne). La moitié de ces ventes s’est conclue dans la fourchette indiquée, l’autre moitié en dehors. Ce n’est pas une prévision du prix final : les enchères peuvent dépasser ce montant. »",
     );
-    expect(text).toContain("Lorsqu’il est affiché, le prix probable l’est avec cette réserve");
+    expect(text).toContain("Lorsqu’il est affiché, le prix de référence l’est avec cette réserve");
+    expect(text).toContain(
+      "Pour une vente notariale, Immojudis affiche le prix de départ (la première offre possible, pour une vente par offres) et, pour une vente par offres, indique que le prix de réserve du vendeur est inconnu ; il ne donne pas de prix de référence, faute d’historique des résultats.",
+    );
     expect(text).toContain("offre Analyse ou déblocage de la vente");
     expect(text).toContain("prix de réserve du vendeur est inconnu");
     expect(text).toContain("« enchère plafond estimée »");
@@ -200,7 +286,7 @@ describe("page « Comment repérons-nous les pépites ? »", () => {
     expect(text).not.toContain("intéressant jusqu’à");
   });
 
-  it("dit qui voit quoi, sans affirmer que des pépites sont déjà affichées", () => {
+  it("dit qui voit quoi, sans dire combien de pépites sont affichées", () => {
     const { container } = render(<Page />);
     const text = sectionText("Ce qui est visible, et par qui");
     expect(text).toContain("Lorsqu’il est attribué, le repère « Pépite » est visible par tous");
@@ -209,7 +295,7 @@ describe("page « Comment repérons-nous les pépites ? »", () => {
       "Cela n’a aucune influence sur l’attribution du repère, qui obéit aux seuls critères publiés sur cette page.",
     );
     const all = plain(container.textContent ?? "");
-    expect(all).not.toMatch(/\b(déjà|actuellement)\b[^.]*pépite/i);
+    expect(all).not.toMatch(/\b(actuellement)\b[^.]*pépite/i);
     expect(all).not.toMatch(/\d+ pépites/);
     expect(all).not.toMatch(/bonne affaire|achetez|intéressant jusqu’à/i);
   });
@@ -232,9 +318,12 @@ describe("page « Comment repérons-nous les pépites ? »", () => {
     render(<Page />);
     const text = sectionText("Mise à jour et retrait");
     expect(text).toContain(`moins de ${PEPITE_RULE_PARAMS.maxEvaluationAgeHours} heures`);
-    expect(text).toContain("suspendre le repère pour l’ensemble du site");
-    expect(text).toContain("Le repère serait recalculé régulièrement");
-    expect(text).not.toMatch(/Le repère est recalculé|Il disparaît quand/);
+    expect(text).toContain("Immojudis peut suspendre le repère pour l’ensemble du site");
+    expect(text).toContain(
+      `Le repère est recalculé régulièrement, au moins une fois par jour (sous réserve du gel de ${PEPITE_RULE_PARAMS.freezeDaysBeforeSale} jours, voir « La stabilité du repère »).`,
+    );
+    expect(text).toContain("Il disparaît quand une condition n’est plus remplie");
+    expect(text).not.toMatch(/serait|pourrait|disparaîtrait/);
   });
 
   it("affirme l'indépendance vis-à-vis de toute rémunération", () => {
@@ -258,6 +347,37 @@ describe("page « Comment repérons-nous les pépites ? »", () => {
     expect(sectionText("Quand il n’y a pas de repère")).toContain(
       "L’absence de ce repère ne signifie pas que le bien est sans intérêt ni qu’il présente un risque.",
     );
+  });
+
+  it("répond en quatre questions visibles, avec les formulations de la page", () => {
+    render(<Page />);
+    const faq = section("Questions fréquentes");
+    expect(
+      within(faq)
+        .getAllByRole("heading", { level: 3 })
+        .map((h) => h.textContent),
+    ).toEqual([
+      "Qu’est-ce qu’une pépite ?",
+      "Est-ce un conseil ?",
+      "Pourquoi ce bien n’a-t-il pas de pépite ?",
+      "Qui peut obtenir une pépite ?",
+    ]);
+    const text = plain(faq.textContent ?? "");
+    expect(text).toContain("C’est un repère calculé automatiquement par Immojudis");
+    expect(text).toContain("au moins 70 % des ventes comparables passées");
+    expect(text).toContain("ne dépasse pas 75 % de la valeur estimée (65 % en vente notariale");
+    expect(text).toContain("Non. Ce n’est pas un conseil en investissement");
+    expect(text).toContain(
+      "L’absence de ce repère ne signifie pas que le bien est sans intérêt ni qu’il présente un risque.",
+    );
+    expect(text).toContain("Aucune rémunération ne peut obtenir ou améliorer une Pépite");
+    expect(text).not.toMatch(/inondation|Géorisques|PPRi/);
+  });
+
+  it("n'ajoute pas de données structurées FAQ (à ajouter après relecture juridique)", () => {
+    const { container } = render(<Page />);
+    const scripts = Array.from(container.querySelectorAll('script[type="application/ld+json"]'));
+    expect(scripts.some((script) => /FAQPage/.test(script.textContent ?? ""))).toBe(false);
   });
 
   it("permet de signaler une erreur par la page Contact et par email", () => {
@@ -329,8 +449,15 @@ describe("page de méthode : règle pepite-v2 (interrupteur PEPITE_RULE_V2_ENABL
     render(<Page />);
     const text = sectionText("Ce que le repère n’est pas");
     expect(text).toContain(
-      "Ce n’est ni un état des risques, ni un certificat, et cela ne remplace pas l’état des risques annexé au cahier des conditions de vente.",
+      "Ce n’est ni un état des risques, ni un certificat, et cela ne remplace pas l’état des risques et pollutions, lorsqu’il est exigé, annexé au cahier des conditions de vente (vente au tribunal), au cahier des charges (vente notariale à la bougie) ou à l’avant-contrat (vente notariale interactive).",
     );
+    // Les renvois suivent `pepite-flood-copy.ts` (lorsqu'il est exigé, document annexé selon le type de vente).
+    expect(floodWarning("tribunal")).toContain(
+      "lorsqu’il est exigé, annexé au cahier des conditions de vente",
+    );
+    expect(floodWarning("notary_auction")).toContain("annexé au cahier des charges");
+    expect(floodWarning("notary_online")).toContain("annexé à l’avant-contrat");
+    expect(text).not.toContain("l’état des risques annexé au cahier");
     expect(text).toContain("Ce n’est pas une garantie d’absence de risque d’inondation.");
   });
 
@@ -364,7 +491,10 @@ describe("page de méthode : règle pepite-v2 (interrupteur PEPITE_RULE_V2_ENABL
   it("donne l'historique des versions", () => {
     render(<Page />);
     const text = sectionText("Historique des versions");
-    expect(text).toContain("pepite-v2 : ajout du contrôle du risque d’inondation.");
+    expect(text).toContain(
+      "pepite-v2 : ajout du contrôle du risque d’inondation à la version 1.1.",
+    );
+    expect(text).toContain("pepite-v1.1 (28 octobre 2026) : mêmes seuils");
     expect(text).toContain("pepite-v1 (depuis le 26 octobre 2026) : version initiale.");
   });
 
@@ -379,6 +509,8 @@ describe("page de méthode : règle pepite-v2 (interrupteur PEPITE_RULE_V2_ENABL
       "Ces mentions ne signifient pas que Géorisques, l’IGN ou leurs partenaires cautionnent ce repère, calculé par Immojudis.",
     );
     expect(text).toContain("Seules les coordonnées géographiques du bien sont transmises");
+    expect(text).toContain("La date de la carte consultée est enregistrée pour chaque bien.");
+    expect(text).not.toMatch(/premier cycle/);
   });
 
   it("n'emploie aucun mot interdit, sans exception", () => {
@@ -390,12 +522,28 @@ describe("page de méthode : règle pepite-v2 (interrupteur PEPITE_RULE_V2_ENABL
     }
   });
 
-  it("décrit la position « rue » testée avec un tampon, et le périmètre de PPRi non contrôlé", () => {
+  it("décrit la position « rue » (tampon entièrement dans la zone, sinon inconnu), le lieu-dit et la parcelle multiple", () => {
     render(<Page />);
     const text = sectionText("Le risque d’inondation");
     expect(text).toContain("tampon de 100 mètres");
-    expect(text).toContain("entièrement dans la zone de crue fréquente, ou entièrement en dehors");
+    expect(text).toContain(
+      "une position à la rue ne compte que si tout le tampon est dans la zone de crue fréquente",
+    );
+    expect(text).toContain("le résultat est « inconnu »");
+    expect(text).not.toContain("ou entièrement en dehors");
+    expect(text).toContain("Un lieu-dit, ou un numéro");
+    expect(text).toContain(
+      `inférieur à ${String(FLOOD_ADDRESS_MIN_SCORE).replace(".", ",")} sur 1, donne une position approximative`,
+    );
+    expect(text).toContain(`chacune est testée (au plus ${FLOOD_PARCEL_MAX_PROBES})`);
+    // Sans résultat : pas de nouveau repère, le repère déjà attribué est conservé et la fiche l'indique.
+    expect(
+      text.match(
+        /aucun nouveau repère n’est attribué ; un repère déjà attribué est conservé jusqu’à la vente, et la fiche l’indique/g,
+      ),
+    ).toHaveLength(2);
     expect(text).toContain("périmètres de PPRi n’ont pas pu être consultés");
+    expect(text).toContain("Cette règle reprend tous les critères de la version 1.1");
   });
 
   it("garde un seul titre de niveau 1 et reste sobre", () => {

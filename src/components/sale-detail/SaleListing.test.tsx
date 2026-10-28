@@ -458,7 +458,7 @@ describe("readable listing sections", () => {
           terms: {
             ceilingTerm: "offre plafond",
             referencePriceTerm: "première offre possible",
-            bidVerb: "offrir",
+            bidVerb: "faire une offre allant",
           },
           byOffers: true,
           reserveNotice:
@@ -474,7 +474,7 @@ describe("readable listing sections", () => {
     expect(screen.queryByText("Mise à prix")).toBeNull();
     expect(
       screen.getByText(
-        /^Selon vos hypothèses, vous pouvez offrir jusqu’à 160\s000\s€, soit 60\s000\s€ au-dessus de la première offre possible\.$/,
+        /^Selon vos hypothèses, vous pouvez faire une offre allant jusqu’à 160\s000\s€, soit 60\s000\s€ au-dessus de la première offre possible\.$/,
       ),
     ).toBeTruthy();
     expect(
@@ -584,6 +584,7 @@ describe("readable listing sections", () => {
           sale_date: null,
           starting_price_eur: null,
           rooms_count: null,
+          occupancy_status: null,
           app_surface_m2: null,
           habitable_surface_m2: null,
           carrez_surface_m2: null,
@@ -821,6 +822,16 @@ describe("SaleDetailHeading", () => {
     expect(
       screen.getByText(/^Vente au tribunal · Gironde \(33\) · audience le 15 octobre 2026/),
     ).toBeTruthy();
+  });
+
+  it("marque le titre de l'annonce exemple comme fictif, jamais celui d'une vente réelle", () => {
+    const { unmount } = render(<SaleDetailHeading sale={item()} publicDemo />);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
+      "Appartement de 68 m² à Bordeaux (exemple fictif)",
+    );
+    unmount();
+    render(<SaleDetailHeading sale={item()} />);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).not.toContain("fictif");
   });
 
   it("says the type is to be confirmed instead of showing a blocked type", () => {

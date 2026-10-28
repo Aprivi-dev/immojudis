@@ -1,15 +1,20 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   ANALYSIS_RECURRING_CURRENCY,
   ANALYSIS_RECURRING_INTERVAL,
   ANALYSIS_RECURRING_INTERVAL_COUNT,
   ANALYSIS_RECURRING_PRICE_CENTS,
+  ANALYSIS_TRIAL_DAYS,
+  ANALYSIS_TRIAL_LABEL,
   DEFAULT_ANALYSIS_OFFER_LABEL,
   analysisOfferLabelAmountsCents,
   analysisOfferLabelMatchesPrice,
   offersPageDescription,
   OFFERS_DESCRIPTION_MAX_LENGTH,
   resolveAnalysisOfferLabel,
+  STRIPE_CHECKOUT_TRIAL_OFFERED,
 } from "./analysis-offer";
 
 describe("offersPageDescription", () => {
@@ -78,5 +83,28 @@ describe("approved Analyse offer", () => {
     expect(resolveAnalysisOfferLabel(null)).toBe("59 € TTC / mois");
     expect(resolveAnalysisOfferLabel("  ")).toBe("59 € TTC / mois");
     expect(resolveAnalysisOfferLabel("59 € / mois")).toBe("59 € / mois");
+  });
+});
+
+describe("essai gratuit de l'inscription", () => {
+  it("ne rouvre pas un second essai, avec carte, au checkout Stripe", () => {
+    // Le remettre à `true` ajouterait 7 jours avec carte aux 7 jours de l'inscription. Le changer
+    // est une décision du propriétaire : ce test doit alors être modifié volontairement.
+    expect(STRIPE_CHECKOUT_TRIAL_OFFERED).toBe(false);
+  });
+
+  it("distingue le libellé de la période d'essai Stripe de l'essai sans carte", () => {
+    expect(ANALYSIS_TRIAL_LABEL).toBe("Période d’essai Stripe (avec carte)");
+    expect(ANALYSIS_TRIAL_LABEL).not.toMatch(/Essai gratuit/i);
+  });
+
+  it("garde la durée de la constante égale à l'intervalle de la migration de l'essai", () => {
+    const sql = readFileSync(
+      join(process.cwd(), "supabase/migrations/20261103100000_signup_trial_seven_days.sql"),
+      "utf8",
+    );
+    const intervals = [...sql.matchAll(/email_confirmed_at\s*\+\s*interval\s+'(\d+) days'/g)];
+    expect(intervals).toHaveLength(1);
+    expect(Number(intervals[0][1])).toBe(ANALYSIS_TRIAL_DAYS);
   });
 });

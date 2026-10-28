@@ -39,9 +39,10 @@ async function handleGET(request: Request) {
 
 async function handlePOST(request: Request) {
   try {
+    const authToken = bearerTokenFromRequest(request);
     const input = adminSubscriptionGrantInputSchema.parse(await request.json());
     const response = await grantAdminSubscription({
-      authToken: bearerTokenFromRequest(request),
+      authToken,
       input,
     });
     return NextResponse.json(response);

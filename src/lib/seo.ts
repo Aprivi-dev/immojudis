@@ -563,9 +563,12 @@ export function breadcrumbStructuredData(
   };
 }
 
-/** Absolute address of the site logo (publisher logo of the articles, organization logo). */
+/**
+ * Absolute address of the site logo (publisher logo of the articles, organization logo): the
+ * temple of the favicon and the app icons, the only pictogram of the brand.
+ */
 export function siteLogoUrl(origin: string): string {
-  return `${origin}/brand/immojudis-mark-transparent.png`;
+  return `${origin}/icon-512.png`;
 }
 
 /**

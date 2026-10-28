@@ -17,6 +17,7 @@ import type { AuctionSale } from "@/lib/types";
 import * as queryKeys from "@/lib/query-keys";
 import type { SaleAccessMode } from "@/lib/query-keys";
 import type { FeeRegimeKey } from "@/lib/fee-regime-open";
+import type { HousingTension } from "@/lib/housing-tension";
 import type { RentReference } from "@/lib/rent-reference";
 import type { SaleUnlockResult } from "@/lib/sale-unlocks";
 
@@ -78,6 +79,8 @@ type SaleDetailPageProps = {
    * page ; absente ou `null`, le simulateur retombe sur le loyer départemental.
    */
   rentReference?: RentReference | null;
+  /** Zonage « zone tendue » de la commune, lu par le serveur ; `null` : inconnu (ligne absente de la fiche). */
+  housingTension?: HousingTension | null;
 };
 
 export function SaleDetailPage(props: SaleDetailPageProps) {
@@ -98,6 +101,7 @@ function SaleDetailContent({
   adjudicationStatisticsEnabled = false,
   openFeeRegimes,
   rentReference = null,
+  housingTension = null,
 }: SaleDetailPageProps) {
   // The page is statically generated and cached (ISR): it must not read the URL
   // during rendering (useSearchParams would force client-side rendering and hide
@@ -287,17 +291,21 @@ function SaleDetailContent({
         requestedHash={requestedHash}
         adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
         openFeeRegimes={openFeeRegimes}
+        rentReference={rentReference}
+        housingTension={housingTension}
         verifyingAccount={sessionHinted}
       />
     );
   }
   if (freeViewBeforeUnlock && !authLoading && accessReady && (isLoading || error)) {
+    // Les bandeaux passent sous la barre de navigation fixe (6 rem, comme `scroll-padding-top`) :
+    // en haut de page, elle masquait le bouton « Réessayer ».
     return (
       <>
         {error ? (
           <div
             role="alert"
-            className="mx-auto mt-4 flex max-w-[1260px] flex-wrap items-center gap-3 rounded-lg border border-amber-700/30 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+            className="mx-auto mt-24 flex max-w-[1260px] flex-wrap items-center gap-3 rounded-lg border border-amber-700/30 bg-amber-50 px-4 py-3 text-sm text-amber-900"
           >
             <p className="font-medium">
               Vente débloquée, mais le détail n’a pas pu être chargé. Votre déblocage est conservé.
@@ -314,7 +322,7 @@ function SaleDetailContent({
         ) : (
           <div
             role="status"
-            className="mx-auto mt-4 max-w-[1260px] rounded-lg border border-emerald-700/30 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900"
+            className="mx-auto mt-24 max-w-[1260px] rounded-lg border border-emerald-700/30 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900"
           >
             Vente débloquée. Chargement du détail…
           </div>
@@ -325,6 +333,7 @@ function SaleDetailContent({
           adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
           openFeeRegimes={openFeeRegimes}
           rentReference={rentReference}
+          housingTension={housingTension}
           unlockStatus={unlockQuery.data ?? null}
           justUnlocked={justUnlocked}
           onSaleUnlocked={handleSaleUnlocked}
@@ -349,6 +358,8 @@ function SaleDetailContent({
         requestedHash={requestedHash}
         adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
         openFeeRegimes={openFeeRegimes}
+        rentReference={rentReference}
+        housingTension={housingTension}
         verifyingAccount
       />
     );
@@ -366,6 +377,8 @@ function SaleDetailContent({
         requestedHash={requestedHash}
         adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
         openFeeRegimes={openFeeRegimes}
+        rentReference={rentReference}
+        housingTension={housingTension}
       />
     );
   }
@@ -401,8 +414,10 @@ function SaleDetailContent({
         adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
         openFeeRegimes={openFeeRegimes}
         rentReference={rentReference}
+        housingTension={housingTension}
         unlockStatus={unlockQuery.data ?? null}
         justUnlocked={justUnlocked}
+        pepiteKnown={serverPreview?.pepite}
       />
     );
   }
@@ -434,8 +449,10 @@ function SaleDetailContent({
         adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
         openFeeRegimes={openFeeRegimes}
         rentReference={rentReference}
+        housingTension={housingTension}
         unlockStatus={unlockQuery.data ?? null}
         onSaleUnlocked={handleSaleUnlocked}
+        pepiteKnown={serverPreview?.pepite}
       />
     </>
   ) : (
@@ -445,6 +462,8 @@ function SaleDetailContent({
       adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
       openFeeRegimes={openFeeRegimes}
       rentReference={rentReference}
+      housingTension={housingTension}
+      pepiteKnown={serverPreview?.pepite}
     />
   );
 }

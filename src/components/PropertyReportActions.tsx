@@ -7,6 +7,7 @@ import Pencil from "lucide-react/dist/esm/icons/pencil.js";
 import Save from "lucide-react/dist/esm/icons/save.js";
 import Share2 from "lucide-react/dist/esm/icons/share-2.js";
 import { toast } from "@/lib/toast";
+import { reportShareNotice } from "@/lib/property-report/share-notice";
 import { useRouter } from "next/navigation";
 import { loginPathWithRedirect } from "@/lib/navigation";
 import {
@@ -150,9 +151,15 @@ function PropertyReportWorkspace({
       if (response.share.url) {
         try {
           await copyText(response.share.url);
-          toast.success("Lien de partage copié.");
+          toast.success("Lien de partage copié.", {
+            description: reportShareNotice(response.share.expiresAt),
+            duration: 12_000,
+          });
         } catch {
-          toast.success("Lien de partage créé. Copiez-le depuis le rapport.");
+          toast.success("Lien de partage créé. Copiez-le depuis le rapport.", {
+            description: reportShareNotice(response.share.expiresAt),
+            duration: 12_000,
+          });
         }
       } else {
         toast.success("Partage activé.");

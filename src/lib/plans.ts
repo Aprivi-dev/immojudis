@@ -271,6 +271,25 @@ export function hasLiveStripeSubscription(
   );
 }
 
+/** Origine d'une ligne `user_subscriptions` écrite par la prolongation d'essai de l'administrateur. */
+export const TRIAL_EXTENSION_SOURCE = "admin_trial_extension";
+
+/**
+ * La ligne d'abonnement vient d'une prolongation d'essai de l'administrateur et ne porte aucun
+ * abonnement Stripe : c'est un essai, pas un abonnement. Règle TypeScript de
+ * `app_private.is_admin_trial_extension` (migration 20261108130000).
+ */
+export function isTrialExtensionRow(
+  row: { stripe_subscription_id?: string | null; metadata?: unknown } | null | undefined,
+): boolean {
+  if (!row || row.stripe_subscription_id) return false;
+  const metadata = row.metadata;
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return false;
+  const grant = (metadata as Record<string, unknown>).manual_grant;
+  if (!grant || typeof grant !== "object" || Array.isArray(grant)) return false;
+  return (grant as Record<string, unknown>).source === TRIAL_EXTENSION_SOURCE;
+}
+
 /**
  * Le compte a-t-il un droit Analyse DURABLE : abonnement actif, compte premium ou administrateur,
  * jamais le seul avantage de l'offre de lancement (`launchOffer`, retirable sans préavis) ? C'est

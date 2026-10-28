@@ -15,7 +15,7 @@ permissions:
 jobs:
   smoke:
     name: Public journey and API
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -29,13 +29,17 @@ jobs:
         # at least 20 listings in the HTML of /sales?page=2, a public cache-control on
         # /api/catalogue/preview, and no sitemap listing /sales/defaut (when indexing is open).
         #
-        # Supervision and court pages (docs/operations/supervision-externe.md): /api/health must be
-        # `ok` (a late `operational-health` run is only tolerated up to 60 minutes, a collection older
-        # than 18 hours fails at once); a known court (/tribunaux/justice-tj-1-93) answers 200; its old
-        # address (/tribunaux/bobigny) answers a single 308 to a /tribunaux/justice-tj-... address; an
-        # unknown court answers 404; /audiences-a-venir does not say "momentanément indisponibles";
-        # and, when indexing is open, /sitemap.xml lists at least 10 /tribunaux/justice-tj-... pages
-        # (--min-tribunal-urls). An unavailable hearings page fails this job until it is repaired.
+        # Supervision and court pages (docs/operations/supervision-externe.md): /api/health must answer
+        # with a fresh body (`checkedAt` at most 120 s old; its cache-control is rewritten by Vercel and
+        # is not checked), the database must answer, and `operational-health` must have run within 60
+        # minutes. A late collection only fails the job beyond 72 hours (below, it is reported in the
+        # result as `degraded-tolerated`). GitHub does not keep the "every 30 minutes" schedule:
+        # intervals of 2 to 6 hours were observed, so this job does not replace an external probe.
+        # A known court (/tribunaux/justice-tj-1-93) answers 200; its old address (/tribunaux/bobigny)
+        # answers a single 308 to a /tribunaux/justice-tj-... address; an unknown court answers 404;
+        # /audiences-a-venir does not say "momentanément indisponibles"; and, when indexing is open,
+        # /sitemap.xml lists at least 10 /tribunaux/justice-tj-... pages (--min-tribunal-urls). An
+        # unavailable hearings page fails this job until it is repaired.
         #
         # The script must know which indexing state to expect: the repository variable
         # SEO_INDEXING_ENABLED (Settings > Secrets and variables > Actions > Variables) mirrors

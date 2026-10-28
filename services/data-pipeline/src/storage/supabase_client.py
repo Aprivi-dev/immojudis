@@ -7,6 +7,7 @@ import os
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
@@ -67,6 +68,12 @@ from src.storage.column_sets import (
     POSTGRES_JSON_COLUMNS,
     PROPERTY_COLUMNS,  # noqa: F401  (re-exported)
     UPSERT_COLUMNS,
+)
+from src.storage.connection_guards import (
+    POSTGRES_KEEPALIVE_OPTIONS,
+    DatabaseCallTimeout,  # noqa: F401 - re-exported: tests and callers read it here
+    _client_deadline,
+    retry_on_disconnect,
 )
 from src.storage.duplicate_sweep import (
     DedupeScan,
@@ -907,7 +914,7 @@ def _guard_enrichment_revision(connection, sales: list[AuctionSale]) -> list[Auc
     retained = []
     for sale in sorted(sales, key=lambda item: item.source_url):
         current = connection.execute(
-            "select updated_at from public.auction_sales where source_url=%s for update",
+            "select updated_at from public.auction_sales where source_url=%s for no key update",
             (sale.source_url,),
         ).fetchone()
         if current is None or sale.updated_at is None or current[0] != sale.updated_at:
@@ -2034,7 +2041,7 @@ def _persist_pdf_document_checkpoint_with_connection(
     source_url = clean_text(sale.source_url)
     expected_updated_at = sale.updated_at
     current = connection.execute(
-        "select updated_at from public.auction_sales where source_url=%s for update",
+        "select updated_at from public.auction_sales where source_url=%s for no key update",
         (source_url,),
     ).fetchone()
     if current is None or current[0] != expected_updated_at:
@@ -3063,6 +3070,9 @@ KNOWN_SALE_DETAIL_PAGE_SIZE = 100
 # rejects the connection-level ``statement_timeout`` (startup option), and a session-level
 # ``set`` does not follow the transaction from one backend to the next.
 KNOWN_SALE_DETAIL_STATEMENT_TIMEOUT = "60s"
+# Client-side limit: the server one does not apply when the pooler holds the query or the connection vanished.
+KNOWN_SALE_DETAIL_CLIENT_DEADLINE_SECONDS = 90.0
+KNOWN_SALE_DETAIL_RETRY_DELAYS = (5.0, 20.0)
 
 
 def fetch_sale_for_data_refresh(source_url: str) -> AuctionSale | None:
@@ -3098,6 +3108,90 @@ def fetch_sale_for_data_refresh(source_url: str) -> AuctionSale | None:
     return AuctionSale(**row)
 
 
+def _read_known_sales_snapshot(
+    db_url: str,
+    source_urls: list[str] | None,
+    requested_urls: list[str],
+    include_enrichment_payload: bool,
+) -> tuple[Any, list[Any]]:
+    """One attempt at the known-sales snapshot: ``(relevant_aliases, all_rows)``."""
+    with _postgres_connect(db_url) as db:
+        # Aliases and every keyset page are read on one MVCC snapshot.
+        db.execute("set transaction isolation level repeatable read")
+        db.execute(f"set local statement_timeout = '{KNOWN_SALE_DETAIL_STATEMENT_TIMEOUT}'")
+        with track_stage("known_sales.preflight"):
+            compact_presence = db.execute(
+                "select to_regclass(%s), to_regprocedure(%s)",
+                ("app_private.auction_sale_source_presence", "app_private.auction_sale_source_presence_json(uuid)"),
+            ).fetchone()
+        postgres_select = _known_sale_postgres_select(
+            compact_presence=bool(compact_presence and compact_presence[0] and compact_presence[1]),
+            include_enrichment_payload=include_enrichment_payload,
+        )
+        with track_stage("known_sales.reviewed_aliases"):
+            reviewed_aliases = load_reviewed_aliases(db)
+        relevant_aliases = (
+            reviewed_aliases.aliases_for_urls(requested_urls)
+            if source_urls is not None
+            else tuple(reviewed_aliases.by_alias_url.values())
+        )
+        canonical_ids = sorted({alias.canonical_sale_id for alias in relevant_aliases})
+        filter_params: list[object] = []
+        where = "id is not null"
+        if source_urls is not None:
+            source_filters = ["source_url = any(%s::text[])", "source_urls ?| %s"]
+            filter_params.extend((requested_urls, requested_urls))
+            if canonical_ids:
+                source_filters.append("id = any(%s::uuid[])")
+                filter_params.append(canonical_ids)
+            where += " and (" + " or ".join(source_filters) + ")"
+        all_rows = []
+        last_id: str | None = None
+        page_number = 0
+        while True:
+            page_number += 1
+            after = [] if last_id is None else [last_id]
+            query = (
+                f"select to_jsonb(sale) from (select {postgres_select} "
+                f"from public.auction_sales where {where}{' and id > %s::uuid' if after else ''} "
+                "order by id limit %s) sale"
+            )
+            params = (*filter_params, *after, KNOWN_SALE_DETAIL_PAGE_SIZE)
+            with track_stage(f"known_sales.page_{page_number}"), _client_deadline(
+                db, KNOWN_SALE_DETAIL_CLIENT_DEADLINE_SECONDS, "known sale detail page"
+            ):
+                rows = db.execute(query, params).fetchall()
+            if not rows:
+                break
+            all_rows.extend(row[0] for row in rows)
+            if len(rows) < KNOWN_SALE_DETAIL_PAGE_SIZE:
+                break
+            page_ids = [str(row[0].get("id")) for row in rows if isinstance(row[0], dict) and row[0].get("id")]
+            if not page_ids or page_ids[-1] == last_id:
+                raise ReviewedAliasRegistryError("Known sale detail snapshot could not advance its id cursor")
+            last_id = page_ids[-1]
+    return relevant_aliases, all_rows
+
+
+def _read_known_sales_snapshot_with_retries(
+    db_url: str,
+    source_urls: list[str] | None,
+    requested_urls: list[str],
+    include_enrichment_payload: bool,
+    *,
+    retry_delays: tuple[float, ...] | None = None,
+    sleep: Callable[[float], None] = time.sleep,
+) -> tuple[Any, list[Any]]:
+    """Read the snapshot again, on a new connection, when the database dropped or stalled the first one."""
+    delays = KNOWN_SALE_DETAIL_RETRY_DELAYS if retry_delays is None else retry_delays
+    return retry_on_disconnect(
+        lambda: _read_known_sales_snapshot(db_url, source_urls, requested_urls, include_enrichment_payload),
+        delays,
+        sleep,
+        what="Known sale detail read",
+    )
+
+
 def fetch_known_sale_details(
     *,
     source_urls: list[str] | None = None,
@@ -3120,86 +3214,9 @@ def fetch_known_sale_details(
     if source_urls is not None and not requested_urls:
         return {}
     if db_url:
-        # The publication runner already requires PostgreSQL. Read its
-        # preflight snapshot there too, so a Data API outage cannot stop a
-        # collection before the first source is scraped.
-        with _postgres_connect(str(db_url)) as db:
-            # Keep aliases and every keyset page on one MVCC snapshot.  The
-            # previous one-shot SELECT had this property implicitly; setting
-            # REPEATABLE READ before the first read preserves it after the
-            # egress-bounded pagination change.
-            db.execute("set transaction isolation level repeatable read")
-            db.execute(f"set local statement_timeout = '{KNOWN_SALE_DETAIL_STATEMENT_TIMEOUT}'")
-            with track_stage("known_sales.preflight"):
-                compact_presence = db.execute(
-                    "select to_regclass(%s), to_regprocedure(%s)",
-                    (
-                        "app_private.auction_sale_source_presence",
-                        "app_private.auction_sale_source_presence_json(uuid)",
-                    ),
-                ).fetchone()
-            use_compact_presence = bool(
-                compact_presence
-                and compact_presence[0]
-                and compact_presence[1]
-            )
-            postgres_select = _known_sale_postgres_select(
-                compact_presence=use_compact_presence,
-                include_enrichment_payload=include_enrichment_payload,
-            )
-            with track_stage("known_sales.reviewed_aliases"):
-                reviewed_aliases = load_reviewed_aliases(db)
-            relevant_aliases = (
-                reviewed_aliases.aliases_for_urls(requested_urls)
-                if source_urls is not None
-                else tuple(reviewed_aliases.by_alias_url.values())
-            )
-            canonical_ids = sorted({alias.canonical_sale_id for alias in relevant_aliases})
-            filter_params: list[object] = []
-            where = "id is not null"
-            if source_urls is not None:
-                source_filters = ["source_url = any(%s::text[])", "source_urls ?| %s"]
-                filter_params.extend((requested_urls, requested_urls))
-                if canonical_ids:
-                    source_filters.append("id = any(%s::uuid[])")
-                    filter_params.append(canonical_ids)
-                where += " and (" + " or ".join(source_filters) + ")"
-            all_rows = []
-            last_id: str | None = None
-            page_number = 0
-            while True:
-                page_number += 1
-                if last_id is None:
-                    query = (
-                        f"select to_jsonb(sale) from (select {postgres_select} "
-                        f"from public.auction_sales where {where} "
-                        "order by id limit %s) sale"
-                    )
-                    params = (*filter_params, KNOWN_SALE_DETAIL_PAGE_SIZE)
-                else:
-                    query = (
-                        f"select to_jsonb(sale) from (select {postgres_select} "
-                        f"from public.auction_sales where {where} and id > %s::uuid "
-                        "order by id limit %s) sale"
-                    )
-                    params = (*filter_params, last_id, KNOWN_SALE_DETAIL_PAGE_SIZE)
-                with track_stage(f"known_sales.page_{page_number}"):
-                    rows = db.execute(query, params).fetchall()
-                if not rows:
-                    break
-                all_rows.extend(row[0] for row in rows)
-                if len(rows) < KNOWN_SALE_DETAIL_PAGE_SIZE:
-                    break
-                page_ids = [
-                    str(row[0].get("id"))
-                    for row in rows
-                    if isinstance(row[0], dict) and row[0].get("id")
-                ]
-                if not page_ids or page_ids[-1] == last_id:
-                    raise ReviewedAliasRegistryError(
-                        "Known sale detail snapshot could not advance its id cursor"
-                    )
-                last_id = page_ids[-1]
+        relevant_aliases, all_rows = _read_known_sales_snapshot_with_retries(
+            str(db_url), source_urls, requested_urls, include_enrichment_payload
+        )
     else:
         if not url or not key:
             return {}
@@ -3705,6 +3722,7 @@ def _postgres_connect(
             connect_kwargs: dict[str, Any] = {
                 "connect_timeout": connect_timeout,
                 "prepare_threshold": None,
+                **POSTGRES_KEEPALIVE_OPTIONS,
             }
             if options:
                 connect_kwargs["options"] = options
@@ -3717,7 +3735,10 @@ def _postgres_connect(
                 # guaranteed limit still use SET LOCAL).
                 LOGGER.warning("PostgreSQL pooler rejected startup options; using SET statement_timeout")
                 connection = psycopg.connect(
-                    db_url, connect_timeout=connect_timeout, prepare_threshold=None
+                    db_url,
+                    connect_timeout=connect_timeout,
+                    prepare_threshold=None,
+                    **POSTGRES_KEEPALIVE_OPTIONS,
                 )
                 try:
                     connection.execute(f"set statement_timeout = {max(0, int(statement_timeout_ms or 0))}")

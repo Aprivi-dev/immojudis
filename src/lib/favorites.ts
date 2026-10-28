@@ -248,7 +248,7 @@ export function buildFavoriteSalesSummary(
 export async function assertSaleFavoritesAvailable(auth: SupabaseAuthContext) {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "sales.favorites")) {
-    throw new Error("Favoris réservés au plan Analyse.");
+    throw new Error("Favoris réservés à l’offre Analyse.");
   }
   return plan;
 }

@@ -15,8 +15,11 @@ concurrency:
 
 jobs:
   report:
+    # Receives the production service-role key: only the code of `main` may run with it (a dispatch from another
+    # branch would run that branch's code with the secret).
+    if: github.ref == 'refs/heads/main'
     name: List duplicate candidates
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Lit la base de production avec la clé service_role : mêmes règles de déploiement que
     # apply-supabase-migrations.yml (environnement « Production », ses protections et ses secrets).
     environment: Production

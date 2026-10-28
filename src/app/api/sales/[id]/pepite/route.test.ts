@@ -7,6 +7,11 @@ const mocks = vi.hoisted(() => ({
   assertEntitlement: vi.fn(),
   isPublished: vi.fn(),
   readStored: vi.fn(),
+  record: vi.fn(),
+}));
+
+vi.mock("@/lib/account-product-events.server", () => ({
+  recordAccountProductEvent: mocks.record,
 }));
 
 vi.mock("@/integrations/supabase/auth-middleware", async (importOriginal) => ({
@@ -69,6 +74,7 @@ describe("GET /api/sales/[id]/pepite", () => {
     mocks.assertEntitlement.mockResolvedValue({ plan: { plan: "analyse" }, door: "plan" });
     mocks.isPublished.mockResolvedValue(true);
     mocks.readStored.mockResolvedValue(STORED);
+    mocks.record.mockResolvedValue(true);
   });
 
   it("refuse un identifiant qui n'est pas une vente (400), sans rien lire", async () => {
@@ -85,7 +91,7 @@ describe("GET /api/sales/[id]/pepite", () => {
       expect(response.status).toBe(200);
       const body = await response.json();
       expect(body.access).toBe("criteria");
-      // Deux tests réussis, puis les vérifications de fiabilité à part.
+      // Deux critères remplis, puis les vérifications de fiabilité à part.
       expect(body.count).toBe(2);
       expect(body.tests.map((criterion: { id: string }) => criterion.id)).toEqual([
         "test_b_chance",
@@ -131,6 +137,51 @@ describe("GET /api/sales/[id]/pepite", () => {
     it("répond 404 sans ligne stockée, sans rien inventer", async () => {
       mocks.readStored.mockResolvedValue(null);
       expect((await call()).status).toBe(404);
+    });
+
+    it("reste ouvert avec un jeton invalide : le niveau « criteria » ne lit pas le compte", async () => {
+      mocks.auth.mockRejectedValue(new Error("Unauthorized: invalid token"));
+      const response = await call("", "jeton-invalide");
+      expect(response.status).toBe(200);
+      expect((await response.json()).access).toBe("criteria");
+      expect(mocks.auth).not.toHaveBeenCalled();
+    });
+
+    it.each(["?view=Detail", "?view=", "?view=criteria", "?view=autre", "?foo=detail"])(
+      "traite %s comme le niveau « criteria » (seul « detail », en minuscules, ouvre le détail)",
+      async (query) => {
+        const response = await call(query);
+        expect(response.status).toBe(200);
+        expect((await response.json()).access).toBe("criteria");
+        expect(mocks.auth).not.toHaveBeenCalled();
+        expect(mocks.assertEntitlement).not.toHaveBeenCalled();
+      },
+    );
+
+    it("lit le premier paramètre view quand il est répété : « detail » d'abord exige un compte", async () => {
+      const detailFirst = await call("?view=detail&view=criteria");
+      expect(detailFirst.status).toBe(401);
+      mocks.auth.mockResolvedValue({ userId: "user-1" });
+      const criteriaFirst = await call("?view=criteria&view=detail");
+      expect(criteriaFirst.status).toBe(200);
+      expect((await criteriaFirst.json()).access).toBe("criteria");
+    });
+
+    it("cherche la vente en minuscules quand l'identifiant est en majuscules", async () => {
+      const response = await GET(new Request("https://example.test/api/sales/x/pepite"), {
+        params: Promise.resolve({ id: saleId.toUpperCase() }),
+      });
+      expect(response.status).toBe(200);
+      expect(mocks.isPublished).toHaveBeenCalledWith(expect.anything(), saleId);
+      expect(mocks.readStored).toHaveBeenCalledWith(saleId);
+    });
+
+    it("répond 404 (pas 500) pour un identifiant non conforme à la RFC 4122 qui n'est pas une pépite", async () => {
+      mocks.isPublished.mockResolvedValue(false);
+      const response = await GET(new Request("https://example.test/api/sales/x/pepite"), {
+        params: Promise.resolve({ id: "11111111-1111-1111-1111-111111111111" }),
+      });
+      expect(response.status).toBe(404);
     });
   });
 
@@ -179,10 +230,23 @@ describe("GET /api/sales/[id]/pepite", () => {
       expect(body.access).toBe("detail");
       expect(body.count).toBe(2);
       expect(body.detail.referenceCeilingEur).toBe(118_000);
-      expect(body.detail.priceLine).toMatch(/Prix probable : environ 90\s000/u);
+      expect(body.detail.priceLine).toMatch(/Prix de référence : environ 90\s000/u);
       expect(body.detail.priceNote).toContain("Ce n'est pas une prévision");
       expect(response.headers.get("cache-control")).toBe("private, no-store");
       expect(response.headers.get("vary")).toBe("authorization");
+    });
+
+    it("enregistre pour le compte que le détail a été servi, et seulement à ce niveau", async () => {
+      await call("", "token");
+      expect(mocks.record).not.toHaveBeenCalled();
+      await call("?view=detail", "token");
+      expect(mocks.record).toHaveBeenCalledWith("user-1", { type: "pepite_detail_served", saleId });
+    });
+
+    it("n'enregistre rien quand le droit est refusé", async () => {
+      mocks.assertEntitlement.mockRejectedValue(new Error("refusé"));
+      await call("?view=detail", "token");
+      expect(mocks.record).not.toHaveBeenCalled();
     });
 
     it("garde le 404 d'une vente qui n'est pas (ou plus) une pépite, même avec le droit", async () => {

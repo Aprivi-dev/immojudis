@@ -5,6 +5,7 @@ import type { Json } from "@/integrations/supabase/types";
 import { extractDpe } from "@/lib/dpe";
 import { formatDate } from "@/lib/format";
 import { estimateSaleGrossYieldPct, geocodeAddress, pricePerM2 } from "@/lib/geo";
+import { saleYieldFeeOptions } from "@/lib/sale-yield-fees";
 import { isRentApplicable, type RentLookup } from "@/lib/rent-reference";
 import {
   isAnilRentReference,
@@ -20,7 +21,7 @@ import {
 } from "@/lib/rent-reference.server";
 import { cleanDateForListing } from "@/lib/listing-data-cleanup";
 import { featureIncluded } from "@/lib/plans";
-import { computeRentabilityScore } from "@/lib/profitability";
+import { computeAcquisitionCosts, computeRentabilityScore } from "@/lib/profitability";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
 import { getSales } from "@/lib/queries";
 import { RateLimitError } from "@/lib/api-errors";
@@ -43,6 +44,7 @@ import {
   sortClientSearchResults,
 } from "@/lib/search/search-filters";
 import { salesSearchToUrlRecord, type SalesSearchParams } from "@/lib/search/search-url-state";
+import { listPepiteSaleIds } from "@/lib/pepite-sale-ids";
 import { getSaleSurface } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
 import { recordFeatureUsageEvent } from "@/lib/usage";
@@ -52,7 +54,20 @@ const EXPORT_SOURCE_LIMIT = 1_000;
 const EXPORT_ROW_LIMIT = 500;
 const API_SOURCE_LIMIT = 500;
 const API_ROW_LIMIT = 100;
-const API_FEED_SCHEMA_VERSION = "2026-07-judicial-sales-v1";
+/**
+ * Version du schéma du flux. Montée le 27/10/2026 : le SENS de `opportunity.grossYieldPct` et de `rentability.*`
+ * change (loyers de la carte ANIL à la commune, charges comprises, au lieu du repère départemental ; frais du régime
+ * de la vente au lieu de ceux du tribunal ; plus de rendement pour un bien qui n'est pas un logement). Les champs et
+ * leurs types ne changent pas ; la note est dans `meta.changes`.
+ */
+const API_FEED_SCHEMA_VERSION = "2026-10-judicial-sales-v1";
+
+/** Changements de sens depuis la version précédente du schéma (`2026-07-judicial-sales-v1`), pour le client. */
+const API_FEED_CHANGES: readonly string[] = [
+  "2026-10 : opportunity.grossYieldPct et rentability.* partent des loyers de la carte ANIL à la commune (loyers d'annonce, charges comprises) et non plus du repère départemental ; opportunity.rentReference et meta.rentBasis disent quelle source a servi.",
+  "2026-10 : le rendement est calculé avec les frais du type de vente (tribunal, vente à la bougie, vente interactive) et non plus avec ceux du tribunal pour toutes les ventes.",
+  "2026-10 : un bien qui n'est pas un logement (terrain, parking, local, lot mixte ou divers) n'a plus de rendement (null) ; un type inconnu n'en a que si la vente publie une surface.",
+];
 
 export type SalesCsvExport = {
   content: string;
@@ -200,6 +215,8 @@ export type SalesApiFeed = {
     rentSourceUrl: string;
     /** Ce que les rendements des lignes utilisent : carte de l'ANIL, repère départemental, ou les deux. */
     rentBasis: RentBasis;
+    /** Changements de sens des champs depuis la version précédente du schéma. */
+    changes: string[];
   };
 };
 
@@ -217,7 +234,7 @@ export async function exportSalesCsv({
 }): Promise<SalesCsvExport> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "sales.csvExport")) {
-    throw new Error("Export CSV réservé au plan Analyse.");
+    throw new Error("Export CSV réservé à l’offre Analyse.");
   }
   await enforceUserRateLimit({
     userId: auth.userId,
@@ -272,7 +289,7 @@ export async function exportSalesApiFeed({
 }): Promise<SalesApiFeed> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "sales.apiAccess")) {
-    throw new Error("API ventes réservée au plan Analyse.");
+    throw new Error("API ventes réservée à l’offre Analyse.");
   }
   await enforceUserRateLimit({
     userId: auth.userId,
@@ -330,6 +347,7 @@ export async function exportSalesApiFeed({
       rentAttribution: RENT_ATTRIBUTION,
       rentSourceUrl: RENT_SOURCE_URL,
       rentBasis: rentBasisOf(rows, rents),
+      changes: [...API_FEED_CHANGES],
     },
   };
 }
@@ -400,6 +418,20 @@ export function buildSalesApiFeedItems(
   return sales.map((sale) => saleToApiFeedItem(sale, origin, rents));
 }
 
+/**
+ * Identifiants des ventes dont la mise à prix est sous la fourchette (`list_public_sale_ids_under_market_range`,
+ * liste publique). Une panne est levée : le flux ne répond jamais « aucune vente » à la place de la liste.
+ */
+async function listUnderRangeSaleIds(): Promise<Set<string>> {
+  const { data, error } = await supabaseAdmin.rpc("list_public_sale_ids_under_market_range");
+  if (error) throw error;
+  return new Set(
+    (Array.isArray(data) ? data : [])
+      .filter((id): id is string => typeof id === "string")
+      .map((id) => id.toLowerCase()),
+  );
+}
+
 async function resolveFilteredSales({
   auth,
   search,
@@ -431,8 +463,21 @@ async function resolveFilteredSales({
   // Loyers de la carte ANIL à la commune, lus avant le filtre « rendement minimal » (côté serveur : le
   // navigateur n'en reçoit pas).
   const rents = search.minYield != null ? await rentSession.load(visibleSourceSales) : undefined;
+  // « Pépites seulement » et « sous la fourchette » se croisent avec leur liste publique d'identifiants, comme la
+  // recherche : sans elle, le filtre ne passe aucune vente (`applyClientSearchFilters`) et le flux répondait 200 vide.
+  // Une liste illisible lève au lieu de rendre « aucune vente ».
+  const [pepiteSaleIds, underRangeSaleIds] = await Promise.all([
+    search.pepite
+      ? listPepiteSaleIds({ rpc: (fn) => supabaseAdmin.rpc(fn) }).then((ids) => new Set(ids))
+      : null,
+    search.belowRange ? listUnderRangeSaleIds() : null,
+  ]);
   const sales = sortClientSearchResults(
-    applyClientSearchFilters(visibleSourceSales, search, center, { rents }),
+    applyClientSearchFilters(visibleSourceSales, search, center, {
+      rents,
+      pepiteSaleIds,
+      underRangeSaleIds,
+    }),
     search,
     center,
   );
@@ -485,6 +530,12 @@ function saleToApiFeedItem(
   const rentability = computeRentabilityScore({
     surface: surface.value,
     price: Math.max(0, sale.starting_price_eur ?? 0),
+    // Frais du régime de la vente (comme le rendement brut et le rapport), non ceux du tribunal.
+    acquisition: computeAcquisitionCosts({
+      ...saleYieldFeeOptions(sale),
+      price: Math.max(0, sale.starting_price_eur ?? 0),
+      department: isRentApplicable(sale) ? sale.department : null,
+    }),
     // Un bien qui n'est pas un logement n'a aucun loyer de référence : « indisponible ».
     department: isRentApplicable(sale) ? sale.department : null,
     rentReference,

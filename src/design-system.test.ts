@@ -5,10 +5,12 @@ import { describe, expect, it } from "vitest";
 
 const ROOT = process.cwd();
 
-// Plafonds du cliquet, relevés le 24/10/2026 (526 couleurs brutes, puis 514 après la fiche publique) :
+// Plafonds du cliquet, relevés le 24/10/2026 (526 couleurs brutes, puis 514 après la fiche publique, 491 le 27/10/2026) :
 // à abaisser à chaque page migrée, jamais à relever.
-const RAW_PALETTE_CLASSES_MAX = 514;
-const TINY_TEXT_CLASSES_MAX = 116;
+const RAW_PALETTE_CLASSES_MAX = 491;
+const TINY_TEXT_CLASSES_MAX = 109;
+// Déclarations `font-size` de 9 à 11 px des feuilles `.module.css` (accueil, ressources, attribution Mapbox du plan cadastral : 6).
+const TINY_TEXT_CSS_MAX = 6;
 
 // Couleurs qui ne peuvent pas passer par une classe ou une variable CSS :
 // e-mails (styles en ligne), image Open Graph, page d'erreur globale (sans feuille de style),
@@ -100,6 +102,16 @@ describe("système visuel", () => {
     expect(count(/\btext-\[(?:[0-9]|1[01])(?:\.\d+)?px\]/g)).toBeLessThanOrEqual(
       TINY_TEXT_CLASSES_MAX,
     );
+  });
+
+  it("ne gagne aucune taille de texte de moins de 12 px dans les feuilles .module.css", () => {
+    const tiny = /font-size:\s*(?:[0-9]|1[01])(?:\.\d+)?px/g;
+    const modules = files(join(ROOT, "src")).filter((path) => path.endsWith(".module.css"));
+    const total = modules.reduce(
+      (sum, path) => sum + [...readFileSync(path, "utf8").matchAll(tiny)].length,
+      0,
+    );
+    expect(total).toBeLessThanOrEqual(TINY_TEXT_CSS_MAX);
   });
 
   it("n'a plus de couche qui traduit les classes sombres de l'administration", () => {

@@ -14,6 +14,7 @@ import {
 import type { AiReviewProjectionReadModel } from "@/lib/ai-review-guard";
 import { getAuctionScenarios } from "@/lib/auction-scenarios.server";
 import { CEILING_ENGINE_VERSION } from "@/lib/bid-ceiling-engine";
+import { claimCronLease, releaseCronLease } from "@/lib/cron-lease.server";
 import { FEE_REGIMES } from "@/lib/fee-regime";
 import { openFeeRegimesFromEnv } from "@/lib/fee-regime.server";
 import { floodFacts, type FloodVerdict } from "@/lib/flood-risk";
@@ -27,6 +28,7 @@ import {
   type SaleCommune,
   type StoredFloodRow,
 } from "@/lib/flood-risk-store.server";
+import { isMissingDatabaseObject } from "@/lib/postgrest-errors";
 import { evaluateSaleForPepite, type PepiteSaleFacts } from "@/lib/pepite-input";
 import { activePepiteRuleVersion } from "@/lib/pepite-rule-switch.server";
 import {
@@ -47,6 +49,7 @@ import {
   saleValuationFingerprint,
 } from "@/lib/sale-market-estimates";
 import type { AuctionSale } from "@/lib/types";
+import { isBusyWriteError } from "@/lib/write-busy";
 
 /**
  * Calcule la pépite des ventes en ligne et la stocke (table `auction_sale_pepites`, voir la migration
@@ -79,6 +82,13 @@ const MAX_ONLINE_SALES = 20_000;
 /** Lignes complètes lues par requête (une ligne pèse plusieurs dizaines de ko). */
 const READ_CHUNK_SIZE = 25;
 const MAX_REPORTED_ERRORS = 5;
+/** Durée du bail : au-delà de `maxDuration` (300 s) de la route, il expire seul si la passe meurt. */
+export const SALE_PEPITES_LEASE_SECONDS = 360;
+/**
+ * Passé ce délai depuis le début de la passe, l'écriture n'attend plus de verrou : les paquets restants sont différés
+ * (la route est coupée à 300 s, et chaque attente de verrou peut durer jusqu'au délai de la requête).
+ */
+export const SALE_PEPITES_WRITE_DEADLINE_MS = 250_000;
 /** Part d'évaluations tentées en échec à partir de laquelle la passe est déclarée en échec. */
 export const SALE_PEPITES_FAILURE_RATE_THRESHOLD = 0.2;
 /** Une évaluation plus ancienne est refaite : la fiche lit aussi des tables liées (documents, scénarios…). */
@@ -103,6 +113,8 @@ export type StoredEvaluation = {
   ruleVersion: string;
   engineVersion: string;
   regimeVersion: string | null;
+  /** Clé du régime de la vente (`details.regime`) ; `null` : inconnue ou sans régime (vente non applicable). */
+  regimeKey?: string | null;
   isPepite: boolean;
   favorableStreak: number;
   frozenAt: string | null;
@@ -116,7 +128,10 @@ export type StoredEvaluation = {
 export type PepiteVersions = {
   rule: PepiteRuleVersion;
   engine: string;
+  /** Les versions des régimes de frais. */
   regimes: readonly string[];
+  /** La version de chaque régime, par clé : l'obsolescence se juge régime par régime (n° 30). */
+  regimeByKey?: Readonly<Record<string, string>>;
 };
 
 export function currentPepiteVersions(
@@ -126,12 +141,17 @@ export function currentPepiteVersions(
     rule: activePepiteRuleVersion(env),
     engine: CEILING_ENGINE_VERSION,
     regimes: Object.values(FEE_REGIMES).flatMap((regime) => (regime ? [regime.version] : [])),
+    regimeByKey: Object.fromEntries(
+      Object.entries(FEE_REGIMES).flatMap(([key, regime]) =>
+        regime ? [[key, regime.version]] : [],
+      ),
+    ),
   };
 }
 
 export type SalePepitesBatchResult = {
   mode: string;
-  skipped: "mode_off" | "not_migrated" | null;
+  skipped: "mode_off" | "not_migrated" | "busy" | null;
   ruleVersion: string;
   online: number;
   pending: number;
@@ -142,6 +162,11 @@ export type SalePepitesBatchResult = {
   insufficient: number;
   failed: number;
   remaining: number;
+  /**
+   * Évaluations calculées mais non écrites car la ligne de leur vente était verrouillée (publication du pipeline) :
+   * elles restent à évaluer et reprennent à la passe suivante.
+   */
+  deferred: number;
   /** Verdicts d'inondation lus pour les ventes évaluées (règle v2 seulement) ; `null` sous la règle v1. */
   floodVerdicts: Record<FloodVerdict, number> | null;
   errors: string[];
@@ -153,13 +178,36 @@ function time(value: string | null): number | null {
   return Number.isNaN(parsed) ? null : parsed;
 }
 
-/** Une évaluation faite avec une autre version de la règle, du moteur ou d'un régime est obsolète. */
+/**
+ * Une évaluation faite avec une autre version de la règle, du moteur ou du régime DE LA VENTE est obsolète. Quand la
+ * clé du régime est connue, la version est comparée à celle de CE régime : le barème d'un régime qui change ne
+ * laisse pas passer pour à jour l'évaluation d'un autre régime qui avait la même version.
+ */
 export function isObsoleteEvaluation(evaluation: StoredEvaluation, versions: PepiteVersions) {
-  return (
-    evaluation.ruleVersion !== versions.rule ||
-    evaluation.engineVersion !== versions.engine ||
-    (evaluation.regimeVersion != null && !versions.regimes.includes(evaluation.regimeVersion))
-  );
+  if (evaluation.ruleVersion !== versions.rule || evaluation.engineVersion !== versions.engine) {
+    return true;
+  }
+  if (evaluation.regimeVersion == null) return false;
+  const expected = evaluation.regimeKey ? versions.regimeByKey?.[evaluation.regimeKey] : undefined;
+  if (expected !== undefined) return evaluation.regimeVersion !== expected;
+  return !versions.regimes.includes(evaluation.regimeVersion);
+}
+
+/**
+ * Vente dont la date d'audience est passée mais que le pipeline n'a pas encore fait sortir du statut « à venir » :
+ * l'instantané d'estimation (`app_private.snapshot_sale_market_estimate`) est pris à cette sortie de statut et lit
+ * alors l'évaluation de la pépite. Réécrire l'évaluation en « non applicable » avant lui archiverait un
+ * « non applicable » au lieu de la dernière évaluation avant l'audience : on la garde (n° 24). Une vente sans
+ * évaluation, ou déjà « non applicable », n'a rien à garder.
+ */
+export function keepsLastEvaluation(
+  sale: { status: string | null; saleDate: string | null },
+  evaluation: { status: string } | undefined,
+  now: Date,
+): boolean {
+  if (!evaluation || evaluation.status === "not_applicable") return false;
+  const saleTime = time(sale.saleDate);
+  return sale.status === "upcoming" && saleTime != null && saleTime <= now.getTime();
 }
 
 /**
@@ -196,6 +244,8 @@ export function pickPendingSales(
       missing.push(sale);
       continue;
     }
+    // Audience passée, instantané pas encore pris : l'évaluation est gardée telle quelle (n° 24).
+    if (keepsLastEvaluation(sale, evaluation, now)) continue;
     const evaluatedAt = time(evaluation.evaluatedAt) ?? 0;
     const obsolete = isObsoleteEvaluation(evaluation, versions);
     const updatedAt = time(sale.updatedAt);
@@ -266,6 +316,7 @@ export function storedStateFor(stored: StoredEvaluation | undefined): PepiteStor
     lastFavorableAt: stored.lastFavorableAt,
     dataMissingSince: stored.dataMissingSince,
     inputStartingPriceEur: stored.inputStartingPriceEur,
+    ruleVersion: stored.ruleVersion,
   };
 }
 
@@ -293,6 +344,13 @@ export function pepiteDetails(evaluation: PepiteEvaluation, facts: PepiteSaleFac
     rangeHighEur: roundEuro(metrics.rangeHighEur),
     chanceShare: roundRatio(metrics.chanceShare),
     chanceAtLeast: metrics.chanceAtLeast,
+    // Effectif sur lequel la part est lissée et borne basse de Wilson (pepite-v1.1 et suivantes).
+    chanceSample: metrics.chanceSample,
+    chanceWilsonLow: roundRatio(metrics.chanceWilsonLow),
+    occupancyDiscountPct: metrics.occupancyDiscountPct,
+    // Sources des frais : sert au compteur « frais par défaut » de /admin/pepites.
+    fees: facts?.fees ?? null,
+    feesDefault: metrics.feesDefault,
     ceilingBelowStart: metrics.ceilingBelowStart,
     totalCostEur: roundEuro(metrics.totalCostEur),
     costRatio: roundRatio(metrics.costRatio),
@@ -357,6 +415,9 @@ export function buildPepiteRow({
         ? startingPriceEur
         : null,
     input_estimate_computed_at: facts?.estimateComputedAt ?? null,
+    // Version du modèle de valeur et moteur de l'estimation lue (migration 20261108140000).
+    estimate_model_version: facts?.estimateModelVersion ?? null,
+    estimate_engine_kind: facts?.estimateEngineKind ?? null,
     evaluated_at: now.toISOString(),
     first_pepite_at: stored?.firstPepiteAt ?? (stability.isPepite ? now.toISOString() : null),
   };
@@ -374,6 +435,7 @@ export function buildNotApplicableRow(
     status: "not_applicable",
     regime: null,
     favorable: false,
+    frozenQualityMissed: false,
     holds: false,
     blocking: false,
     passed: [],
@@ -391,6 +453,10 @@ export function buildNotApplicableRow(
       rangeHighEur: null,
       chanceShare: null,
       chanceAtLeast: false,
+      chanceSample: null,
+      chanceWilsonLow: null,
+      occupancyDiscountPct: null,
+      feesDefault: false,
       ceilingBelowStart: false,
       totalCostEur: null,
       costRatio: null,
@@ -416,10 +482,15 @@ export function buildNotApplicableRow(
   });
 }
 
-/** Table ou fonction inconnue de la base : la migration n'est pas encore appliquée (déploiement échelonné). */
-function isMissingDatabaseObject(error: unknown): boolean {
+/** Colonne inconnue de la base ou du cache de schéma PostgREST (migration pas encore appliquée). */
+function isUnknownColumn(error: unknown): boolean {
   const code = (error as { code?: unknown } | null)?.code;
-  return code === "PGRST202" || code === "PGRST205" || code === "42883" || code === "42P01";
+  return code === "PGRST204" || code === "42703";
+}
+
+function withoutEstimateVersions(row: PepiteTableInsert): PepiteTableInsert {
+  const { estimate_model_version: _model, estimate_engine_kind: _engine, ...legacy } = row;
+  return legacy;
 }
 
 function errorMessage(error: unknown): string {
@@ -440,30 +511,64 @@ async function readMode(): Promise<string | null> {
   return typeof data === "string" ? data : "off";
 }
 
+const ONLINE_SALE_COLUMNS =
+  "id, updated_at, status, sale_date, sale_venue_type, starting_price_eur";
+
+type OnlineSaleRow = {
+  id: string | null;
+  updated_at: string | null;
+  status: string | null;
+  sale_date: string | null;
+  sale_venue_type: string | null;
+  starting_price_eur: number | null;
+};
+
+function onlineSaleOf(row: OnlineSaleRow): OnlineSale | null {
+  if (!row.id) return null;
+  return {
+    id: row.id,
+    updatedAt: row.updated_at,
+    status: row.status,
+    saleDate: row.sale_date,
+    venueType: row.sale_venue_type,
+    startingPriceEur: row.starting_price_eur,
+  };
+}
+
+/**
+ * Les ventes en ligne, lues par curseur sur `id` (`id > dernier`, pas de décalage : un décalage relit et jette toutes
+ * les lignes précédentes à chaque page) :
+ *  - les ventes À VENIR, filtrées dans la base (c'est l'immense majorité, la seule que la règle évalue) ;
+ *  - puis, séparément, les rares ventes en ligne qui ne le sont pas (statut « inconnu »), pour que leur évaluation
+ *    soit toujours ramenée à « non applicable » (une pépite publiée dont la vente perd son statut ne reste pas
+ *    publiée). Cette seconde lecture est vide ou minuscule.
+ */
 async function readOnlineSales(): Promise<OnlineSale[]> {
   const sales: OnlineSale[] = [];
-  for (let from = 0; from < MAX_ONLINE_SALES; from += PAGE_SIZE) {
-    const { data, error } = await supabaseAdmin
-      .from("v_auction_sales_app")
-      .select("id, updated_at, status, sale_date, sale_venue_type, starting_price_eur")
-      .order("id", { ascending: true })
-      .range(from, from + PAGE_SIZE - 1);
-    if (error) throw error;
-    for (const row of data ?? []) {
-      if (row.id) {
-        sales.push({
-          id: row.id,
-          updatedAt: row.updated_at,
-          status: row.status,
-          saleDate: row.sale_date,
-          venueType: row.sale_venue_type,
-          startingPriceEur: row.starting_price_eur,
-        });
+  for (const upcoming of [true, false]) {
+    let after: string | null = null;
+    for (;;) {
+      if (sales.length >= MAX_ONLINE_SALES) {
+        throw new Error("Trop de ventes en ligne pour l'évaluation des pépites.");
       }
+      let query = supabaseAdmin.from("v_auction_sales_app").select(ONLINE_SALE_COLUMNS);
+      query = upcoming
+        ? query.eq("status", "upcoming")
+        : query.or("status.is.null,status.neq.upcoming");
+      if (after) query = query.gt("id", after);
+      const { data, error } = await query.order("id", { ascending: true }).limit(PAGE_SIZE);
+      if (error) throw error;
+      const rows = (data ?? []) as OnlineSaleRow[];
+      for (const row of rows) {
+        const sale = onlineSaleOf(row);
+        if (sale) sales.push(sale);
+      }
+      const last = rows.at(-1)?.id ?? null;
+      if (rows.length < PAGE_SIZE || !last) break;
+      after = last;
     }
-    if ((data?.length ?? 0) < PAGE_SIZE) return sales;
   }
-  throw new Error("Trop de ventes en ligne pour l'évaluation des pépites.");
+  return sales;
 }
 
 /** Évaluations stockées ; `null` : la table n'existe pas encore. */
@@ -473,7 +578,7 @@ async function readStoredEvaluations(): Promise<StoredEvaluation[] | null> {
     const { data, error } = await supabaseAdmin
       .from("auction_sale_pepites")
       .select(
-        "sale_id, status, evaluated_at, rule_version, engine_version, regime_version, is_pepite, favorable_streak, frozen_at, last_favorable_at, data_missing_since, input_starting_price_eur, first_pepite_at",
+        "sale_id, status, evaluated_at, rule_version, engine_version, regime_version, regime_key:details->>regime, is_pepite, favorable_streak, frozen_at, last_favorable_at, data_missing_since, input_starting_price_eur, first_pepite_at",
       )
       .order("sale_id", { ascending: true })
       .range(from, from + PAGE_SIZE - 1);
@@ -489,6 +594,7 @@ async function readStoredEvaluations(): Promise<StoredEvaluation[] | null> {
         ruleVersion: row.rule_version,
         engineVersion: row.engine_version,
         regimeVersion: row.regime_version,
+        regimeKey: typeof row.regime_key === "string" ? row.regime_key : null,
         isPepite: row.is_pepite,
         favorableStreak: row.favorable_streak,
         frozenAt: row.frozen_at,
@@ -501,6 +607,26 @@ async function readStoredEvaluations(): Promise<StoredEvaluation[] | null> {
     if ((data?.length ?? 0) < PAGE_SIZE) return rows;
   }
   throw new Error("Trop d'évaluations de pépites stockées.");
+}
+
+/**
+ * Détails et motifs de l'évaluation déjà stockée de ces ventes (pépites publiées seulement : une poignée de
+ * lignes), pour les garder tels quels pendant le gel à J-7.
+ */
+async function readStoredDetails(
+  saleIds: readonly string[],
+): Promise<Map<string, { details: Json; reasonCodes: string[] }>> {
+  const kept = new Map<string, { details: Json; reasonCodes: string[] }>();
+  if (!saleIds.length) return kept;
+  const { data, error } = await supabaseAdmin
+    .from("auction_sale_pepites")
+    .select("sale_id, details, reason_codes")
+    .in("sale_id", [...saleIds]);
+  if (error) throw error;
+  for (const row of data ?? []) {
+    kept.set(row.sale_id, { details: row.details, reasonCodes: row.reason_codes ?? [] });
+  }
+  return kept;
 }
 
 async function readEstimateDates(): Promise<Map<string, string | null>> {
@@ -596,19 +722,35 @@ async function activeModelIds(estimates: readonly EstimateRow[]): Promise<Set<st
 
 const AUCTION_SALE_SELECT = `${SALE_INPUT_SELECT},score_status:raw_payload->>score_status` as const;
 
-export async function runSalePepitesBatch({
-  limit = 300,
-  now = new Date(),
-  timeBudgetMs = 240_000,
-}: {
+type SalePepitesBatchOptions = {
   limit?: number;
   now?: Date;
   /** Temps au-delà duquel on ne lit plus de nouveau lot (la prochaine exécution reprend). */
   timeBudgetMs?: number;
-} = {}): Promise<SalePepitesBatchResult> {
-  const startedAt = Date.now();
-  const versions = currentPepiteVersions();
-  const result: SalePepitesBatchResult = {
+};
+
+/**
+ * Une passe, sous bail : une seconde passe simultanée (pg_cron à :35 et filet quotidien de Vercel, ou rejeu manuel)
+ * rend `skipped: "busy"` sans rien lire ni écrire. Le bail est rendu à la fin, même en cas d'erreur ; il expire seul
+ * au bout de `SALE_PEPITES_LEASE_SECONDS` si la passe meurt. Sans la migration (fonction de bail absente), la passe
+ * continue sans verrou.
+ */
+export async function runSalePepitesBatch(
+  options: SalePepitesBatchOptions = {},
+): Promise<SalePepitesBatchResult> {
+  const lease = await claimCronLease("sale-pepites", SALE_PEPITES_LEASE_SECONDS);
+  if (lease.kind === "busy") {
+    return { ...emptyPepitesResult(currentPepiteVersions()), skipped: "busy" };
+  }
+  try {
+    return await runPass(options);
+  } finally {
+    if (lease.kind === "held") await releaseCronLease("sale-pepites", lease.token);
+  }
+}
+
+function emptyPepitesResult(versions: PepiteVersions): SalePepitesBatchResult {
+  return {
     mode: "unknown",
     skipped: null,
     ruleVersion: versions.rule,
@@ -621,9 +763,20 @@ export async function runSalePepitesBatch({
     insufficient: 0,
     failed: 0,
     remaining: 0,
+    deferred: 0,
     floodVerdicts: null,
     errors: [],
   };
+}
+
+async function runPass({
+  limit = 300,
+  now = new Date(),
+  timeBudgetMs = 240_000,
+}: SalePepitesBatchOptions): Promise<SalePepitesBatchResult> {
+  const startedAt = Date.now();
+  const versions = currentPepiteVersions();
+  const result = emptyPepitesResult(versions);
   const fail = (count: number, error: unknown) => {
     result.failed += count;
     if (result.errors.length < MAX_REPORTED_ERRORS) result.errors.push(errorMessage(error));
@@ -686,6 +839,7 @@ export async function runSalePepitesBatch({
     const sale = onlineBySale.get(id);
     if (!sale) continue;
     if (isUpcomingSale(sale, now)) readable.push(id);
+    else if (keepsLastEvaluation(sale, storedBySale.get(id), now)) continue;
     else
       evaluate(buildNotApplicableRow(sale, storedBySale.get(id), versions, now), "not_applicable");
   }
@@ -708,9 +862,11 @@ export async function runSalePepitesBatch({
       const estimateBySale = new Map(
         (estimatesRead.data ?? []).map((row) => [row.auction_sale_id, row]),
       );
-      const [projections, modelIds] = await Promise.all([
+      const [projections, modelIds, storedDetails] = await Promise.all([
         loadAiReviewProjections(sales),
         activeModelIds(estimatesRead.data ?? []),
+        // Pépites publiées de ce lot : leurs détails sont gardés si la vente est dans la fenêtre de gel.
+        readStoredDetails(ids.filter((id) => storedBySale.get(id)?.isPepite)),
       ]);
 
       for (const sale of sales) {
@@ -762,19 +918,30 @@ export async function runSalePepitesBatch({
             saleDate: sale.sale_date,
             now,
           });
-          evaluate(
-            buildPepiteRow({
-              saleId: sale.id,
-              evaluation,
-              stability,
-              facts,
-              stored: previous,
-              versions,
-              startingPriceEur: facts.startingPriceColumnEur,
-              now,
-            }),
-            evaluation.status,
-          );
+          const row = buildPepiteRow({
+            saleId: sale.id,
+            evaluation,
+            stability,
+            facts,
+            stored: previous,
+            versions,
+            startingPriceEur: facts.startingPriceColumnEur,
+            now,
+          });
+          // Gel à J-7 (n° 21) : le résultat publié ne change plus, ses détails et ses motifs non plus. Réécrire
+          // ceux de la nouvelle évaluation afficherait des seuils contredits par les chiffres (« au moins 70 % »
+          // à côté de « 5 ventes sur 10 »). La date d'évaluation, la mise à prix et l'estimation lues continuent
+          // d'être mises à jour : la lecture publique en dépend. Le statut reste celui de l'évaluation publiée.
+          const frozen = previous?.isPepite && stability.codes.includes("stab:frozen");
+          const keep = frozen ? storedDetails.get(sale.id) : undefined;
+          if (keep && previous) {
+            row.details = keep.details;
+            row.reason_codes = keep.reasonCodes.includes("stab:frozen")
+              ? keep.reasonCodes
+              : [...keep.reasonCodes, "stab:frozen"];
+            row.status = previous.status;
+          }
+          evaluate(row, row.status as PepiteStatus);
         } catch (evaluationError) {
           fail(1, evaluationError);
         }
@@ -785,18 +952,41 @@ export async function runSalePepitesBatch({
     }
   }
 
-  // Écriture par paquets. Un paquet refusé est réessayé par moitiés pour isoler la ligne fautive : les autres
-  // sont écrites, la fautive est consignée (identifiant de la vente et code d'erreur, jamais un montant).
+  // Écriture par paquets. Deux sortes de refus :
+  //  - une écriture BLOQUÉE par un verrou (57014, 55P03, 40P01 : la publication du pipeline tient la vente) : le
+  //    paquet n'est pas coupé en deux (chaque niveau attendrait le délai complet), il est différé, réessayé une fois
+  //    en fin de passe, puis laissé à la passe suivante (ces ventes restent à évaluer) ;
+  //  - une ligne INVALIDE (contrainte, type) : le paquet refusé est réessayé par moitiés pour isoler la ligne
+  //    fautive. Les autres sont écrites, la fautive est consignée (identifiant de la vente et code d'erreur, jamais
+  //    un montant).
+  // Passé `SALE_PEPITES_WRITE_DEADLINE_MS`, plus aucun paquet n'est tenté : tout est différé.
   let written = 0;
+  let deferred: PepiteTableInsert[] = [];
+  const writeDeadlineReached = () => Date.now() - startedAt > SALE_PEPITES_WRITE_DEADLINE_MS;
+  // Code déployé avant la migration 20261108140000 : les deux colonnes de version de l'estimation n'existent pas
+  // encore. L'écriture est retentée sans elles (rien n'est perdu d'autre que les versions archivées).
+  let legacyColumns = false;
   const writeRows = async (rows: PepiteTableInsert[]): Promise<"missing" | void> => {
+    if (writeDeadlineReached()) {
+      deferred.push(...rows);
+      return;
+    }
     const { error } = await supabaseAdmin
       .from("auction_sale_pepites")
-      .upsert(rows, { onConflict: "sale_id" });
+      .upsert(legacyColumns ? rows.map(withoutEstimateVersions) : rows, { onConflict: "sale_id" });
     if (!error) {
       written += rows.length;
       return;
     }
     if (isMissingDatabaseObject(error)) return "missing";
+    if (isBusyWriteError(error)) {
+      deferred.push(...rows);
+      return;
+    }
+    if (!legacyColumns && isUnknownColumn(error)) {
+      legacyColumns = true;
+      return writeRows(rows);
+    }
     if (rows.length === 1) {
       fail(
         1,
@@ -813,8 +1003,30 @@ export async function runSalePepitesBatch({
       return { ...result, skipped: "not_migrated" };
     }
   }
+  if (deferred.length > 0) {
+    // Dernier essai des paquets bloqués ; s'ils le sont encore, la passe suivante reprend ces ventes.
+    const retry = deferred;
+    deferred = [];
+    for (let index = 0; index < retry.length; index += 200) {
+      if ((await writeRows(retry.slice(index, index + 200))) === "missing") {
+        return { ...result, skipped: "not_migrated" };
+      }
+    }
+  }
+  result.deferred = deferred.length;
+  if (deferred.length > 0 && result.errors.length < MAX_REPORTED_ERRORS) {
+    result.errors.push(`write_busy_${deferred.length}`);
+  }
   result.evaluated = written;
   result.remaining = Math.max(0, pending.length - written);
+
+  // Rien n'a pu être écrit de toute la passe alors que des évaluations étaient prêtes : ventes verrouillées pendant
+  // toute la passe. La tâche est en panne, la supervision doit le voir (comme pour le traitement d'inondation).
+  if (written === 0 && deferred.length > 0) {
+    throw new Error(
+      "Écriture des évaluations de pépites impossible : ventes verrouillées pendant toute la passe",
+    );
+  }
 
   // Aucune évaluation alors qu'il y en avait à faire : la tâche est en panne, on la signale.
   if (result.evaluated === 0 && result.failed > 0) {

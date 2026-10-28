@@ -6,7 +6,7 @@ import { formatDate } from "@/lib/format";
 import { escapeHtml } from "@/lib/guards";
 import { SALE_REMINDER_DISCLAIMER } from "@/lib/sale-reminder-emails";
 import type { SurenchereWindow } from "@/lib/surenchere-window";
-import { EMAIL_COLORS } from "@/lib/email-brand";
+import { EMAIL_COLORS, EMAIL_FONT_STACK, emailBrandHeaderHtml } from "@/lib/email-brand";
 
 /**
  * Email de l'alerte de résultat ou de remise en vente d'une vente suivie : « la vente que vous suivez
@@ -227,8 +227,9 @@ function buildSaleResultHtml({
 
   return `<!doctype html>
 <html lang="fr">
-  <body style="margin:0;background:${EMAIL_COLORS.surface};color:${EMAIL_COLORS.navy};font-family:Arial,sans-serif;">
+  <body style="margin:0;background:${EMAIL_COLORS.surface};color:${EMAIL_COLORS.navy};font-family:${EMAIL_FONT_STACK};">
     <div style="max-width:620px;margin:0 auto;padding:28px 18px;">
+      ${emailBrandHeaderHtml()}
       <div style="background:#fff;border:1px solid ${EMAIL_COLORS.lineWarm};border-radius:10px;padding:24px;">
         <p style="margin:0 0 8px;font-size:16px;">Bonjour,</p>
         <p style="margin:0 0 18px;color:${EMAIL_COLORS.inkStrong};">${escapeHtml(intro)}</p>

@@ -42,6 +42,8 @@ export type PepiteEstimateRow = {
   value_p90_eur: number | null;
   segment: string | null;
   engine_kind: string | null;
+  /** Version du modèle de valeur de l'estimation (archivée avec l'évaluation, n° 25). */
+  model_version?: string | null;
   computed_at: string | null;
 };
 
@@ -57,6 +59,8 @@ const PEPITE_REGIMES: readonly FeeRegimeKey[] = ["tribunal", "notary_auction", "
 export type PepiteFloodFacts = FloodFacts;
 
 export type PepiteSaleFacts = {
+  /** Source de chaque poste de frais du coût d'achat (`defaut` : montant non lu). */
+  fees: NonNullable<PepiteInput["fees"]>;
   /** Verdict d'inondation lu pour cette évaluation (règle v2 seulement) ; `null` sous la règle v1. */
   flood: PepiteFloodFacts | null;
   regimeKey: PepiteRegimeKey | null;
@@ -67,6 +71,9 @@ export type PepiteSaleFacts = {
   startingPriceColumnEur: number | null;
   /** `computed_at` de l'estimation utilisée ; `null` sans estimation. */
   estimateComputedAt: string | null;
+  /** Version du modèle de valeur et moteur de l'estimation utilisée ; `null` sans estimation. */
+  estimateModelVersion: string | null;
+  estimateEngineKind: string | null;
   saleDate: string | null;
   occupancy: string;
   conditionStatus: string;
@@ -236,11 +243,27 @@ export function buildPepiteInput(
       unqualifiedRisks: source.scoreStatus === "withheld_unqualified_risks",
     },
     flood: { verdict: source.flood.verdict, ppriChecked: source.flood.ppriChecked },
+    // Sources des frais : `defaut` = montant non lu (refusé en vente notariale par pepite-v1.1).
+    fees: {
+      preliminary: regimeKey === "tribunal" ? hypotheses.feesSource.fpt : null,
+      negotiation: hypotheses.feesSource.negotiation ?? null,
+      advertising: hypotheses.feesSource.advertising ?? null,
+    },
+    // Décote d'occupation de la valeur centrale (valeur d'un bien libre) : un bien loué se négocie moins cher
+    // (`rentedDiscountPct` du moteur) ; un bien occupé garde la valeur : ses frais de libération sont déjà
+    // dans le coût d'achat (`releaseCost`), le moteur n'a pas d'autre décote.
+    occupancyDiscountPct:
+      hypotheses.occupation.case === "loue" ? hypotheses.occupation.rentedDiscountPct : 0,
   };
 
   const scenarioSet = source.scenarios?.scenarios;
   const facts: PepiteSaleFacts = {
     flood: ruleVersion === PEPITE_LATEST_RULE_VERSION ? source.flood : null,
+    fees: {
+      preliminary: regimeKey === "tribunal" ? hypotheses.feesSource.fpt : null,
+      negotiation: hypotheses.feesSource.negotiation ?? null,
+      advertising: hypotheses.feesSource.advertising ?? null,
+    },
     regimeKey,
     regimeVersion: inputs.regime?.version ?? null,
     venueType: procedure.venueType,
@@ -250,6 +273,8 @@ export function buildPepiteInput(
         ? sale.starting_price_eur
         : null,
     estimateComputedAt: row?.computed_at ?? null,
+    estimateModelVersion: row?.model_version ?? null,
+    estimateEngineKind: row?.engine_kind ?? null,
     saleDate: sale.sale_date ?? null,
     occupancy: hypotheses.occupation.case,
     conditionStatus: renovation.status,

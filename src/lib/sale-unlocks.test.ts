@@ -39,9 +39,9 @@ describe("single source of the monthly quota", () => {
 
   it("builds the free-access line from the quota, not from a typed number", () => {
     expect(FREE_ACCESS_LINE).toBe(
-      `Gratuit, sans carte bancaire · ${PLAN_LIMITS.decouverte.monthlyUnlocks} fiches détaillées par mois`,
+      `Gratuit, sans carte bancaire · ${PLAN_LIMITS.decouverte.monthlyUnlocks} déblocages par mois`,
     );
-    expect(FREE_ACCESS_LINE).toBe("Gratuit, sans carte bancaire · 3 fiches détaillées par mois");
+    expect(FREE_ACCESS_LINE).toBe("Gratuit, sans carte bancaire · 3 déblocages par mois");
   });
 
   it("matches the constant of the database migration", () => {

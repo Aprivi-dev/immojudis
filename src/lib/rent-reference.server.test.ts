@@ -8,9 +8,13 @@ const state = vi.hoisted(() => ({
   saleRows: [] as Array<Record<string, unknown>>,
   communeRows: [] as Array<Record<string, unknown>>,
   singleRow: null as Record<string, unknown> | null,
+  tensionRow: null as Record<string, unknown> | null,
   failTable: null as string | null,
   failCode: undefined as string | undefined,
   configured: true,
+  rpcCalls: [] as Array<{ name: string; args: Record<string, unknown> }>,
+  rpcRows: {} as Record<string, unknown[]>,
+  rpcError: null as { code?: string } | null,
   /** Lectures en cours en même temps (preuve du parallélisme des lots). */
   running: 0,
   maxRunning: 0,
@@ -26,6 +30,11 @@ vi.mock("@/lib/env", () => ({
 }));
 vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: {
+    rpc: async (name: string, args: Record<string, unknown>) => {
+      state.rpcCalls.push({ name, args });
+      if (state.rpcError) return { data: null, error: state.rpcError };
+      return { data: state.rpcRows[name] ?? [], error: null };
+    },
     from: (table: string) => {
       const call: Call = { table, filters: [], select: "" };
       state.calls.push(call);
@@ -64,8 +73,11 @@ vi.mock("@/integrations/supabase/client.server", () => ({
         },
         maybeSingle: async () =>
           state.failTable === table
-            ? { data: null, error: new Error("boom") }
-            : { data: state.singleRow, error: null },
+            ? { data: null, error: Object.assign(new Error("boom"), { code: state.failCode }) }
+            : {
+                data: table === "commune_housing_tension" ? state.tensionRow : state.singleRow,
+                error: null,
+              },
         then: (resolve: (value: unknown) => unknown) => {
           state.running += 1;
           state.maxRunning = Math.max(state.maxRunning, state.running);
@@ -85,6 +97,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
 import {
   createRentLookupSession,
   loadRentLookup,
+  loadSaleHousingTension,
   loadSaleRentReference,
   rentBasisOf,
   resetRentReferenceCachesForTests,
@@ -123,12 +136,17 @@ beforeEach(() => {
   state.communeRows = [];
   state.failCode = undefined;
   state.singleRow = null;
+  state.tensionRow = null;
   state.failTable = null;
   state.configured = true;
+  state.rpcCalls = [];
+  state.rpcRows = {};
+  state.rpcError = null;
   state.running = 0;
   state.maxRunning = 0;
   resetRentReferenceCachesForTests();
   vi.spyOn(console, "error").mockImplementation(() => undefined);
+  vi.mocked(console.error).mockClear();
 });
 
 describe("loadRentLookup", () => {
@@ -313,16 +331,24 @@ describe("loadRentLookup", () => {
     expect(lookup({ id: "sale-a" })).toBeNull();
   });
 
-  it("does not remember a failure: the next call tries again", async () => {
+  it("marks the session unavailable after a first failure: it does not read again, a new session does", async () => {
     state.failTable = "anil_rents";
     const session = createRentLookupSession();
     await session.load([withGeocode("sale-a", "33063")]);
+    const callsAfterFailure = state.rpcCalls.length + anilCalls().length;
     state.failTable = null;
     state.anilRows = [anil("33063", "apt_1_2")];
 
-    const lookup = await session.load([withGeocode("sale-a", "33063")]);
+    const lookup = await session.load([
+      withGeocode("sale-a", "33063"),
+      withGeocode("sale-b", "33063"),
+    ]);
 
-    expect(lookup({ id: "sale-a" })?.source).toBe("anil_commune");
+    expect(lookup({ id: "sale-a" })).toBeNull();
+    expect(state.rpcCalls.length + anilCalls().length).toBe(callsAfterFailure);
+
+    const fresh = await createRentLookupSession().load([withGeocode("sale-a", "33063")]);
+    expect(fresh({ id: "sale-a" })?.source).toBe("anil_commune");
   });
 
   it("reads nothing when the service role is not configured or there is no sale", async () => {
@@ -384,6 +410,225 @@ describe("loadRentLookup", () => {
   });
 });
 
+describe("fallbacks before the hard-coded department table", () => {
+  const sale = (id: string, code: string, extra: Record<string, unknown> = {}) =>
+    withGeocode(id, code, { rooms_count: 3, ...extra });
+
+  it("tries the successor code of a merged commune, as an indicative reference", async () => {
+    state.rpcRows.commune_code_aliases = [
+      { code: "02077", alias: "02564", direction: "new", depth: 1 },
+    ];
+    state.anilRows = [anil("02564", "apt_3p", { rent_per_m2: 9.5 })];
+
+    const lookup = await loadRentLookup([sale("sale-a", "02077", { department: "02" })]);
+
+    expect(lookup({ id: "sale-a" })).toMatchObject({
+      source: "anil_commune",
+      communeCode: "02564",
+      rentPerM2: 9.5,
+      reliability: "indicative", // 500 observations and a good R², but not the commune the sale names
+    });
+    expect(state.rpcCalls[0]).toEqual({
+      name: "commune_code_aliases",
+      args: { p_codes: ["02077"] },
+    });
+  });
+
+  it("tries the old code when the sale already carries the new one, new codes first", async () => {
+    state.rpcRows.commune_code_aliases = [
+      { code: "02564", alias: "02077", direction: "old", depth: 1 },
+      { code: "02564", alias: "02999", direction: "new", depth: 1 },
+    ];
+    state.anilRows = [
+      anil("02077", "apt_3p", { rent_per_m2: 8 }),
+      anil("02999", "apt_3p", { rent_per_m2: 12 }),
+    ];
+
+    const lookup = await loadRentLookup([sale("sale-a", "02564", { department: "02" })]);
+    expect(lookup({ id: "sale-a" })?.rentPerM2).toBe(12);
+
+    resetRentReferenceCachesForTests();
+    state.anilRows = [anil("02077", "apt_3p", { rent_per_m2: 8 })];
+    const older = await loadRentLookup([sale("sale-b", "02564", { department: "02" })]);
+    expect(older({ id: "sale-b" })).toMatchObject({ communeCode: "02077", rentPerM2: 8 });
+  });
+
+  it("does not look for an alias when the commune has its own ANIL row", async () => {
+    state.anilRows = [anil("33063", "apt_3p")];
+
+    await loadRentLookup([sale("sale-a", "33063")]);
+
+    expect(state.rpcCalls.map((call) => call.name)).toEqual([]);
+  });
+
+  it("gives Paris, Lyon and Marseille without arrondissement the median of their arrondissements", async () => {
+    state.anilRows = [
+      anil("75101", "apt_3p", { rent_per_m2: 30, vintage: 2025 }),
+      anil("75102", "apt_3p", { rent_per_m2: 34 }),
+      anil("75103", "apt_3p", { rent_per_m2: 40 }),
+      anil("75104", "apt_3p", { rent_per_m2: 36 }),
+    ];
+
+    const lookup = await loadRentLookup([sale("sale-a", "75056", { department: "75" })]);
+
+    expect(lookup({ id: "sale-a" })).toMatchObject({
+      source: "anil_arrondissements_median",
+      rentPerM2: 35,
+      reliability: "indicative",
+      segment: "apt_3p",
+      communeCode: "75056",
+      vintage: 2025,
+      sourceUpdatedOn: "2025-12-11",
+    });
+    const read = anilCalls().at(-1);
+    expect(read?.filters[0]).toEqual([
+      "commune_code",
+      Array.from({ length: 20 }, (_, index) => `751${String(index + 1).padStart(2, "0")}`),
+    ]);
+  });
+
+  it("falls back from the segment to all apartments when computing the median of the arrondissements", async () => {
+    state.anilRows = [
+      anil("13201", "apt_all", { rent_per_m2: 14 }),
+      anil("13202", "apt_all", { rent_per_m2: 16 }),
+    ];
+
+    const lookup = await loadRentLookup([sale("sale-a", "13055", { department: "13" })]);
+
+    expect(lookup({ id: "sale-a" })).toMatchObject({ rentPerM2: 15, segment: "apt_all" });
+  });
+
+  it("computes the department median on the map before the hard-coded table, Corsica included", async () => {
+    state.rpcRows.anil_department_medians = [
+      {
+        department_code: "2A",
+        segment: "apt_3p",
+        rent_per_m2: 13.5,
+        communes: 120,
+        vintage: 2025,
+        source_updated_on: "2025-12-11",
+      },
+    ];
+
+    const lookup = await loadRentLookup([
+      {
+        id: "sale-a",
+        department: "2A",
+        property_type: "apartment",
+        rooms_count: 3,
+        raw_payload: {},
+      },
+    ]);
+
+    expect(lookup({ id: "sale-a" })).toMatchObject({
+      source: "anil_department_median",
+      rentPerM2: 13.5,
+      reliability: "indicative",
+      segment: "apt_3p",
+      vintage: 2025,
+      sourceUpdatedOn: "2025-12-11",
+    });
+    expect(state.rpcCalls).toContainEqual({
+      name: "anil_department_medians",
+      args: { p_departments: ["2A"] },
+    });
+  });
+
+  it("keeps the hard-coded table when the map has no median, and nothing for Mayotte", async () => {
+    const lookup = await loadRentLookup([
+      {
+        id: "sale-a",
+        department: "33",
+        property_type: "apartment",
+        rooms_count: 3,
+        raw_payload: {},
+      },
+      {
+        id: "sale-b",
+        department: "976",
+        property_type: "apartment",
+        rooms_count: 3,
+        raw_payload: {},
+      },
+      {
+        id: "sale-c",
+        department: "23",
+        property_type: "apartment",
+        rooms_count: 3,
+        raw_payload: {},
+      },
+    ]);
+
+    expect(lookup({ id: "sale-a" })).toMatchObject({
+      source: "department_estimate",
+      rentPerM2: 14,
+    });
+    // Mayotte is excluded from the ANIL map and absent from the table: no rent, assumed.
+    expect(lookup({ id: "sale-b" })).toBeNull();
+    expect(lookup({ id: "sale-c" })).toBeNull();
+  });
+
+  it("reads the medians of each department once, whatever the number of sales", async () => {
+    state.rpcRows.anil_department_medians = [
+      {
+        department_code: "23",
+        segment: "apt_all",
+        rent_per_m2: 7,
+        communes: 4,
+        vintage: 2025,
+        source_updated_on: null,
+      },
+    ];
+    const facts = (id: string) => ({
+      id,
+      department: "23",
+      property_type: "apartment",
+      rooms_count: null,
+      raw_payload: {},
+    });
+
+    await loadRentLookup([facts("sale-a"), facts("sale-b"), facts("sale-c")]);
+    await loadRentLookup([facts("sale-d")]);
+
+    expect(state.rpcCalls.filter((call) => call.name === "anil_department_medians")).toHaveLength(
+      1,
+    );
+  });
+
+  it("treats a function that is not migrated yet as no fallback, silently", async () => {
+    state.rpcError = { code: "PGRST202" };
+
+    const lookup = await loadRentLookup([
+      sale("sale-a", "33063"),
+      {
+        id: "sale-b",
+        department: "23",
+        property_type: "apartment",
+        rooms_count: 3,
+        raw_payload: {},
+      },
+    ]);
+
+    expect(lookup({ id: "sale-a" })).toMatchObject({ source: "department_estimate" });
+    expect(lookup({ id: "sale-b" })).toBeNull();
+    expect(console.error).not.toHaveBeenCalled();
+  });
+
+  it("keeps the communes it found when an optional fallback fails", async () => {
+    state.rpcError = { code: "XX000" };
+    state.anilRows = [anil("33063", "apt_3p")];
+
+    const lookup = await loadRentLookup([
+      sale("sale-a", "33063"),
+      sale("sale-b", "02077", { department: "02" }),
+    ]);
+
+    expect(lookup({ id: "sale-a" })?.source).toBe("anil_commune");
+    expect(lookup({ id: "sale-b" })).toBeNull();
+    expect(console.error).toHaveBeenCalled();
+  });
+});
+
 describe("rent lookup session", () => {
   it("loads each sale once, even when two callers ask at the same time", async () => {
     state.anilRows = [anil("33063", "apt_all")];
@@ -406,6 +651,69 @@ describe("rent lookup session", () => {
 
     expect(lookup({ id: "a" })?.communeCode).toBe("33063");
     expect(lookup({ id: "b" })?.communeCode).toBe("69383");
+  });
+
+  it("dit « ANIL indisponible » quand la lecture a échoué, et plus une fois la lecture réussie", async () => {
+    const sale = withGeocode("sale-a", "33063");
+    const session = createRentLookupSession();
+    // Rien n'a été lu : la référence d'un logement n'est pas résolue.
+    expect(session.unavailable([sale])).toBe(true);
+
+    state.failTable = "anil_rents";
+    const lookup = await session.load([sale]);
+    expect(lookup({ id: "sale-a" })).toBeNull();
+    expect(session.unavailable([sale])).toBe(true);
+
+    // La session reste indisponible : elle ne retente pas. Une nouvelle session lit et n'est plus indisponible.
+    state.failTable = null;
+    state.anilRows = [anil("33063", "apt_1_2")];
+    await session.load([sale]);
+    expect(session.unavailable([sale])).toBe(true);
+    const fresh = createRentLookupSession();
+    await fresh.load([sale]);
+    expect(fresh.unavailable([sale])).toBe(false);
+  });
+
+  it("remonte l'échec d'un repli dans unavailable(), pour les seuls logements restés sans référence de la carte", async () => {
+    state.rpcError = { code: "XX000" };
+    state.anilRows = [anil("33063", "apt_3p")];
+    const found = withGeocode("sale-a", "33063", { rooms_count: 3 });
+    const missing = withGeocode("sale-b", "02077", { rooms_count: 3, department: "02" });
+    const session = createRentLookupSession();
+
+    await session.load([found, missing]);
+
+    expect(session.unavailable([found])).toBe(false);
+    expect(session.unavailable([missing])).toBe(true);
+    expect(session.unavailable([found, missing])).toBe(true);
+  });
+
+  it("ne dit pas « indisponible » quand un repli est absent de la base (migration en attente)", async () => {
+    state.rpcError = { code: "PGRST202" };
+    const missing = withGeocode("sale-b", "02077", { rooms_count: 3, department: "02" });
+    const session = createRentLookupSession();
+
+    await session.load([missing]);
+
+    expect(session.unavailable([missing])).toBe(false);
+  });
+
+  it("n'est jamais « indisponible » pour un bien qui n'est pas un logement, ni pour une liste vide", async () => {
+    const session = createRentLookupSession();
+    const land = withGeocode("land", "33063", { property_type: "land" });
+    expect(session.unavailable([])).toBe(false);
+    expect(session.unavailable([land])).toBe(false);
+    state.failTable = "anil_rents";
+    await session.load([land]);
+    expect(session.unavailable([land])).toBe(false);
+  });
+
+  it("est « indisponible » quand la base de service n'est pas configurée", async () => {
+    state.configured = false;
+    const session = createRentLookupSession();
+    const sale = withGeocode("sale-a", "33063");
+    await session.load([sale]);
+    expect(session.unavailable([sale])).toBe(true);
   });
 });
 
@@ -505,5 +813,77 @@ describe("rentBasisOf", () => {
     ];
 
     expect(rentBasisOf(sales, rents)).toBe("anil");
+  });
+});
+
+describe("loadSaleHousingTension", () => {
+  const tension = (overrides: Record<string, unknown> = {}) => ({
+    commune_code: "75056",
+    zoning_post_decree: "tendue",
+    decree_reference: "Décret n° 2025-1267 du 22 décembre 2025",
+    source_updated_on: "2026-01-15",
+    source_url: "https://www.data.gouv.fr/datasets/zonage-tlv",
+    ...overrides,
+  });
+  const tensionCalls = () => state.calls.filter((call) => call.table === "commune_housing_tension");
+
+  it.each([
+    ["75108", "75056"],
+    ["75116", "75056"],
+    ["69383", "69123"],
+    ["13208", "13055"],
+    ["33063", "33063"],
+  ])("lit le zonage de la commune parent : %s -> %s", async (code, parent) => {
+    state.tensionRow = tension({ commune_code: parent });
+    const result = await loadSaleHousingTension(withGeocode("sale-a", code));
+    expect(tensionCalls()[0].filters).toEqual([["commune_code", parent]]);
+    expect(result).toEqual({
+      communeCode: parent,
+      zoning: "tendue",
+      decreeReference: "Décret n° 2025-1267 du 22 décembre 2025",
+      sourceUpdatedOn: "2026-01-15",
+      sourceUrl: "https://www.data.gouv.fr/datasets/zonage-tlv",
+    });
+  });
+
+  it("prend le code de la table des communes (parent) avant les champs bruts", async () => {
+    state.saleRows = [
+      { id: "sale-a", postal_code: "13008", citycode: null, accepted: null, commune: null },
+    ];
+    state.communeRows = [
+      { sale_id: "sale-a", commune_insee: "13055", arrondissement_insee: "13208" },
+    ];
+    state.tensionRow = tension({ commune_code: "13055", zoning_post_decree: "touristique_tendue" });
+    const result = await loadSaleHousingTension({
+      id: "sale-a",
+      department: "13",
+      property_type: "apartment",
+    });
+    expect(tensionCalls()[0].filters).toEqual([["commune_code", "13055"]]);
+    expect(result?.zoning).toBe("touristique_tendue");
+  });
+
+  it("rend null sans commune, sans ligne, avec un zonage illisible ou une table absente", async () => {
+    expect(
+      await loadSaleHousingTension({ id: "sale-z", department: "33", property_type: "apartment" }),
+    ).toBeNull();
+    expect(tensionCalls()).toEqual([]);
+    expect(await loadSaleHousingTension(withGeocode("sale-b", "33063"))).toBeNull();
+    state.tensionRow = tension({ zoning_post_decree: "autre" });
+    resetRentReferenceCachesForTests();
+    expect(await loadSaleHousingTension(withGeocode("sale-c", "33063"))).toBeNull();
+    state.failTable = "commune_housing_tension";
+    state.failCode = "42P01";
+    resetRentReferenceCachesForTests();
+    expect(await loadSaleHousingTension(withGeocode("sale-d", "33063"))).toBeNull();
+    state.configured = false;
+    expect(await loadSaleHousingTension(withGeocode("sale-e", "33063"))).toBeNull();
+  });
+
+  it("mémorise le zonage six heures, absence comprise", async () => {
+    state.tensionRow = tension({ commune_code: "33063", zoning_post_decree: "non_tendue" });
+    await loadSaleHousingTension(withGeocode("sale-a", "33063"));
+    await loadSaleHousingTension(withGeocode("sale-b", "33063"));
+    expect(tensionCalls()).toHaveLength(1);
   });
 });

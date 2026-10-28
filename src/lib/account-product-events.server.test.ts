@@ -31,6 +31,15 @@ describe("recordAccountProductEvent", () => {
     });
   });
 
+  it("records the served pepite detail with the sale and no detail", async () => {
+    await recordAccountProductEvent(userId, { type: "pepite_detail_served", saleId });
+    expect(mocks.rpc).toHaveBeenCalledWith("record_account_product_event", {
+      p_user_id: userId,
+      p_event_type: "pepite_detail_served",
+      p_sale_id: "a1b2c3d4-0000-4000-8000-000000000001",
+    });
+  });
+
   it("records a quota with its closed detail and no sale", async () => {
     await recordAccountProductEvent(userId, { type: "quota_reached", quota: "favorites" });
 

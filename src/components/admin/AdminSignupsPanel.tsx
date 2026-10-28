@@ -12,8 +12,10 @@ import { AdminPagination } from "@/components/admin/AdminPagination";
 import { AdminPanel, AdminSectionHeading } from "@/components/admin/AdminShell";
 import { formatInteger } from "@/components/admin/admin-format";
 import { AdminQueryErrorNotice, OverviewMetric } from "@/components/admin/admin-ui";
+import { ANALYSIS_TRIAL_DAYS } from "@/lib/analysis-offer";
 import { extendAdminSignupTrials, fetchAdminSignups } from "@/lib/client-api/admin-signups";
 import { dateTimeLocalToUtcIso, formatDateTimeLocalInput } from "@/lib/admin-subscription-datetime";
+import { TRIAL_EXTENSION_MAX_ACCOUNTS, TRIAL_EXTENSION_MAX_DAYS } from "@/lib/admin-signups-format";
 import {
   ADMIN_SIGNUP_ACCESS,
   ADMIN_SIGNUP_ACCESS_LABELS,
@@ -30,6 +32,7 @@ const PAGE_SIZE = 50;
 const EXTENSION_SHORTCUTS = [7, 14, 30] as const;
 
 type AccessFilter = "all" | AdminSignupAccess;
+type ActivityFilter = "all" | "trial_ended_idle";
 
 /**
  * Liste des comptes inscrits (gratuits compris) : date d'inscription, ancienneté, confirmation de
@@ -42,6 +45,7 @@ export function AdminSignupsPanel() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [access, setAccess] = useState<AccessFilter>("all");
+  const [activity, setActivity] = useState<ActivityFilter>("all");
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [endsAt, setEndsAt] = useState(() => formatDateTimeLocalInput(endOfDayInDays(14)));
   const [note, setNote] = useState("");
@@ -53,8 +57,9 @@ export function AdminSignupsPanel() {
   }, [search]);
 
   const query = useQuery({
-    queryKey: [...SIGNUPS_QUERY_KEY, offset, debouncedSearch, access],
-    queryFn: () => fetchAdminSignups({ offset, limit: PAGE_SIZE, q: debouncedSearch, access }),
+    queryKey: [...SIGNUPS_QUERY_KEY, offset, debouncedSearch, access, activity],
+    queryFn: () =>
+      fetchAdminSignups({ offset, limit: PAGE_SIZE, q: debouncedSearch, access, activity }),
     staleTime: 30_000,
     placeholderData: keepPreviousData,
   });
@@ -65,6 +70,10 @@ export function AdminSignupsPanel() {
     mutationFn: () => {
       const iso = dateTimeLocalToUtcIso(endsAt);
       if (!iso) throw new Error("Choisissez une date de fin valide.");
+      if (selected.size > TRIAL_EXTENSION_MAX_ACCOUNTS) {
+        throw new Error(`Une prolongation vise ${TRIAL_EXTENSION_MAX_ACCOUNTS} comptes au plus.`);
+      }
+      if (note.trim().length < 3) throw new Error("Indiquez le motif de la prolongation.");
       return extendAdminSignupTrials({ userIds: [...selected], endsAt: iso, note });
     },
     onSuccess: async (response) => {
@@ -154,7 +163,7 @@ export function AdminSignupsPanel() {
             icon={<Clock />}
             tone="copper"
             value={inTrial == null ? "—" : formatInteger(inTrial)}
-            label="En essai (7 jours ou prolongé)"
+            label={`En essai (${ANALYSIS_TRIAL_DAYS} jours ou prolongé)`}
           />
         </AdminPanel>
         <AdminPanel>
@@ -182,8 +191,9 @@ export function AdminSignupsPanel() {
 
         {data && !data.launchOfferActive ? (
           <p className="mt-4 rounded-lg border border-warning/25 bg-warning-tint p-3 text-sm text-warning">
-            L’essai gratuit à l’inscription est coupé : les comptes dans leur 7 premiers jours sont
-            en Découverte. Une prolongation, elle, reste active jusqu’à sa date.
+            L’essai gratuit à l’inscription est coupé : les comptes qui confirment leur adresse
+            maintenant n’ont pas d’essai. Ceux confirmés avant la coupure gardent leurs{" "}
+            {ANALYSIS_TRIAL_DAYS} jours, et une prolongation reste active jusqu’à sa date.
           </p>
         ) : null}
         {data?.truncated ? (
@@ -203,7 +213,7 @@ export function AdminSignupsPanel() {
                 setOffset(0);
               }}
               placeholder="prenom@exemple.fr"
-              className="rounded-lg border border-brand-navy/15 bg-white px-3 py-2 text-sm outline-none focus:border-gold"
+              className="rounded-lg border border-brand-navy/55 bg-white px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
             />
           </label>
           <label className="grid gap-1.5 text-sm font-medium text-brand-navy/80">
@@ -214,7 +224,7 @@ export function AdminSignupsPanel() {
                 setAccess(event.target.value as AccessFilter);
                 setOffset(0);
               }}
-              className="rounded-lg border border-brand-navy/15 bg-white px-3 py-2 text-sm outline-none focus:border-gold"
+              className="rounded-lg border border-brand-navy/55 bg-white px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
             >
               <option value="all">Tous{summary ? ` (${summary.total})` : ""}</option>
               {ADMIN_SIGNUP_ACCESS.map((value) => (
@@ -225,7 +235,30 @@ export function AdminSignupsPanel() {
               ))}
             </select>
           </label>
+          <label className="grid gap-1.5 text-sm font-medium text-brand-navy/80">
+            Activité
+            <select
+              value={activity}
+              onChange={(event) => {
+                setActivity(event.target.value as ActivityFilter);
+                setOffset(0);
+              }}
+              className="rounded-lg border border-brand-navy/55 bg-white px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
+            >
+              <option value="all">Toutes</option>
+              <option value="trial_ended_idle">
+                Essai fini sans activité
+                {summary?.trialEndedIdle != null ? ` (${summary.trialEndedIdle})` : ""}
+              </option>
+            </select>
+          </label>
         </div>
+        {data && !data.usageAvailable ? (
+          <p className="mt-3 text-xs text-brand-navy/70">
+            Usage par compte non mesuré (migration non appliquée ou lecture impossible) : le filtre
+            « essai fini sans activité » ne rend rien.
+          </p>
+        ) : null}
 
         {selected.size > 0 ? (
           <form
@@ -257,7 +290,7 @@ export function AdminSignupsPanel() {
                   required
                   value={endsAt}
                   onChange={(event) => setEndsAt(event.target.value)}
-                  className="rounded-lg border border-brand-navy/15 bg-white px-3 py-2 text-sm outline-none focus:border-gold"
+                  className="rounded-lg border border-brand-navy/55 bg-white px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
                 />
               </label>
               <div className="flex flex-wrap gap-2" role="group" aria-label="Raccourcis de durée">
@@ -273,19 +306,21 @@ export function AdminSignupsPanel() {
                 ))}
               </div>
               <label className="grid flex-1 gap-1.5 text-sm font-medium text-brand-navy/80">
-                Note interne (facultative)
+                Motif (obligatoire, gardé en privé)
                 <input
                   type="text"
+                  required
+                  minLength={3}
                   maxLength={500}
                   value={note}
                   onChange={(event) => setNote(event.target.value)}
-                  placeholder="Ex. : bêta-testeur, retour d’expérience promis"
-                  className="rounded-lg border border-brand-navy/15 bg-white px-3 py-2 text-sm outline-none focus:border-gold"
+                  placeholder="Ex. : demande reçue par email, retour d’expérience promis"
+                  className="rounded-lg border border-brand-navy/55 bg-white px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
                 />
               </label>
               <button
                 type="submit"
-                disabled={extension.isPending}
+                disabled={extension.isPending || selected.size > TRIAL_EXTENSION_MAX_ACCOUNTS}
                 className="inline-flex items-center justify-center gap-2 rounded-lg bg-gold-soft px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-gold-text disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <CalendarPlus className="size-4" />
@@ -294,8 +329,10 @@ export function AdminSignupsPanel() {
             </div>
             <p className="text-xs text-brand-navy/62">
               Les comptes gardent l’accès Analyse jusqu’à cette date, puis reviennent seuls en
-              Découverte. Un accès déjà plus long, un compte premium ou un abonnement Stripe ne sont
-              jamais modifiés.
+              Découverte ; rien ne devient payant. Au plus {TRIAL_EXTENSION_MAX_ACCOUNTS} comptes et{" "}
+              {TRIAL_EXTENSION_MAX_DAYS} jours par prolongation. Un accès déjà plus long, une fin
+              antérieure à celle de l’essai, un compte non confirmé, un compte premium ou un abonné
+              Stripe ne sont jamais prolongés. Le motif n’est pas visible par la personne.
             </p>
           </form>
         ) : null}
@@ -327,7 +364,7 @@ export function AdminSignupsPanel() {
         ) : null}
 
         <div className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-[52rem] text-left text-sm">
+          <table className="w-full min-w-[64rem] text-left text-sm">
             <caption className="sr-only">Comptes inscrits sur Immojudis</caption>
             <thead>
               <tr className="border-b border-brand-navy/12 text-xs uppercase text-brand-navy/70">
@@ -355,12 +392,24 @@ export function AdminSignupsPanel() {
                 <th scope="col" className="px-2 py-2 font-semibold">
                   Accès
                 </th>
+                <th scope="col" className="px-2 py-2 font-semibold">
+                  Déblocages
+                </th>
+                <th scope="col" className="px-2 py-2 font-semibold">
+                  Plafonds
+                </th>
+                <th scope="col" className="px-2 py-2 font-semibold">
+                  Favoris
+                </th>
+                <th scope="col" className="px-2 py-2 font-semibold">
+                  Fiches
+                </th>
               </tr>
             </thead>
             <tbody>
               {query.isLoading ? (
                 <tr>
-                  <td colSpan={6} className="px-2 py-6 text-center text-brand-navy/60">
+                  <td colSpan={10} className="px-2 py-6 text-center text-ink-soft">
                     <span role="status">Chargement des inscriptions…</span>
                   </td>
                 </tr>
@@ -375,7 +424,7 @@ export function AdminSignupsPanel() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={6} className="px-2 py-6 text-center text-brand-navy/60">
+                  <td colSpan={10} className="px-2 py-6 text-center text-ink-soft">
                     Aucun compte ne correspond.
                   </td>
                 </tr>
@@ -447,7 +496,20 @@ function SignupRow({
         <AccessPill access={account.access} />
         <span className="mt-1 block text-xs text-brand-navy/62">{accessDetail(account)}</span>
       </td>
+      <UsageCell value={account.usage?.unlocks} />
+      <UsageCell value={account.usage?.ceilings} />
+      <UsageCell value={account.usage?.favorites} />
+      <UsageCell value={account.usage?.sheetsServed} />
     </tr>
+  );
+}
+
+/** Un nombre d'usage ; « non mesuré » quand la lecture d'usage n'est pas disponible. */
+function UsageCell({ value }: { value: number | undefined }) {
+  return (
+    <td className="px-2 py-3 tabular-nums">
+      {value == null ? <span className="text-xs text-brand-navy/62">non mesuré</span> : value}
+    </td>
   );
 }
 
@@ -476,7 +538,7 @@ function accessDetail(account: AdminSignupAccount): string {
   if (account.trialEndsAt && Date.parse(account.trialEndsAt) <= Date.now()) {
     return `Essai terminé le ${formatDate(account.trialEndsAt)}`;
   }
-  if (account.trialEndsAt) return `Essai suspendu jusqu’au ${formatDate(account.trialEndsAt)}`;
+  if (account.trialEndsAt) return "Sans essai (adresse confirmée après la coupure de l’essai)";
   return "Sans essai (adresse déjà utilisée ou jetable)";
 }
 

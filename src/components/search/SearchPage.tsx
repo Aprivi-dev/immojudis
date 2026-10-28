@@ -4,6 +4,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import List from "lucide-react/dist/esm/icons/list.js";
 import { toast } from "@/lib/toast";
@@ -108,8 +109,10 @@ import {
   useMediaQuery,
   useResultsView,
 } from "./search-page-state";
+import { trackProductEvent } from "@/lib/product-events";
 import { userMessage } from "@/lib/user-messages";
 import * as queryKeys from "@/lib/query-keys";
+import { capMapPoints } from "@/lib/search/map-points";
 
 const LazyMapPanel = dynamic(() => loadMapPanelModule().then((mod) => mod.MapPanel), {
   ssr: false,
@@ -562,7 +565,11 @@ export function SearchPage({
       ).filter(hasCoordinates),
     [center, listIsPublic, localFilterSearch, mapVisible, rawMapSales, rawSales],
   );
-  const mapSales = useMemo(() => mappableSales.slice(0, MAP_POINT_LIMIT), [mappableSales]);
+  // Au plafond, les pépites passent avant les autres ventes : elles ne sont jamais coupées en premier.
+  const mapSales = useMemo(
+    () => capMapPoints(mappableSales, MAP_POINT_LIMIT, pepiteSaleIds),
+    [mappableSales, pepiteSaleIds],
+  );
   const mappablePointsTotal = mappableSales.length;
 
   // The map projection is intentionally lightweight. Fetch the complete row
@@ -747,6 +754,15 @@ export function SearchPage({
     replaceSearch(salesSearchToUrlRecord({ pepite: true, sort: search.sort }), "push");
   }, [replaceSearch, search.sort]);
 
+  // Mesure : « Pépites seulement » passe de faux à vrai (clic sur le filtre, sur le bouton de la liste vide ou
+  // lien partagé suivi ensuite). Une page ouverte déjà filtrée n'est pas comptée.
+  const pepiteOnly = search.pepite === true;
+  const previousPepiteOnlyRef = useRef(pepiteOnly);
+  useEffect(() => {
+    if (pepiteOnly && !previousPepiteOnlyRef.current) trackProductEvent("pepite_filter_used");
+    previousPepiteOnlyRef.current = pepiteOnly;
+  }, [pepiteOnly]);
+
   const previousPageRef = useRef(page);
   useEffect(() => {
     if (previousPageRef.current === page || listBusy || isInitialLoading) return;
@@ -802,6 +818,37 @@ export function SearchPage({
   // par le bouton « Liste » défait cette entrée (au lieu d'en empiler une) quand c'est nous qui
   // l'avons ajoutée ; une adresse ouverte directement sur la carte se referme sans quitter la page.
   const mapOpenedByUsRef = useRef(false);
+
+  // La carte mobile se crée à la première ouverture, puis reste montée (masquée) quand on referme :
+  // chaque chargement de carte Mapbox est facturé, et le style et les tuiles se retéléchargent en 4G.
+  // Un portail la rend dans un élément qui passe du support masqué à la fenêtre ouverte, sans
+  // jamais la démonter. Masquée par `visibility: hidden` (et non `display: none`) : sa taille est
+  // celle de la fenêtre, donc aucun redimensionnement ni changement de zone ne se déclenche.
+  const [mobileMapStarted, setMobileMapStarted] = useState(false);
+  if (mobileMapOpen && !isDesktop && !mobileMapStarted) setMobileMapStarted(true);
+  const keepMobileMapMounted = mobileMapStarted && !isDesktop;
+  const [mobileMapHost] = useState<HTMLDivElement | null>(() => {
+    if (typeof document === "undefined") return null;
+    const host = document.createElement("div");
+    host.className = "h-full";
+    return host;
+  });
+  const mobileMapHolderRef = useRef<HTMLDivElement | null>(null);
+  const holdMobileMap = useCallback(
+    (holder: HTMLDivElement | null) => {
+      mobileMapHolderRef.current = holder;
+      if (holder && mobileMapHost && !mobileMapHost.parentNode) holder.appendChild(mobileMapHost);
+    },
+    [mobileMapHost],
+  );
+  const showMobileMap = useCallback(
+    (slot: HTMLDivElement | null) => {
+      // À la fermeture de la fenêtre, la carte retourne au support avant que la fenêtre disparaisse.
+      if (mobileMapHost) (slot ?? mobileMapHolderRef.current)?.appendChild(mobileMapHost);
+    },
+    [mobileMapHost],
+  );
+
   const openMobileMap = useCallback(() => {
     mapOpenedByUsRef.current = true;
     updateSearch({ map: true }, "push");
@@ -1240,12 +1287,19 @@ export function SearchPage({
                   : `${mapSales.length.toLocaleString("fr-FR")} biens sur la carte`}
               </span>
             </div>
-            <div className="h-full pt-14">
-              <LazyMapPanel {...mapPanelProps} />
-            </div>
+            <div ref={showMobileMap} className="h-full pt-14" />
           </DialogPrimitive.Content>
         </DialogPrimitive.Portal>
       </DialogPrimitive.Root>
+      {keepMobileMapMounted && mobileMapHost ? (
+        <>
+          {createPortal(<LazyMapPanel {...mapPanelProps} />, mobileMapHost)}
+          <div
+            ref={holdMobileMap}
+            className="pointer-events-none invisible fixed inset-x-0 bottom-0 top-14 -z-10"
+          />
+        </>
+      ) : null}
     </main>
   );
 }

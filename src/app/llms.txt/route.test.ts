@@ -4,7 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { COMPANY_DESCRIPTION } from "@/lib/company-description";
 import { RESOURCE_ARTICLES } from "@/lib/resource-articles";
-import { buildLlmsTxt, llmsTxtPages } from "@/lib/llms-txt";
+import {
+  buildLlmsTxt,
+  LLMS_TXT_DESCRIPTION_MAX,
+  LLMS_TXT_PIVOT_ARTICLES,
+  LLMS_TXT_REGROUP_ABOVE_CHARS,
+  llmsTxtPages,
+} from "@/lib/llms-txt";
 import { config, proxy } from "../../proxy";
 import robots from "../robots";
 import { GET, dynamic } from "./route";
@@ -145,10 +151,60 @@ describe("contenu du fichier", () => {
     }
   });
 
-  it("n'a pas de doublon et tient en moins de 10 Ko", () => {
+  it("n'a pas de doublon et tient en moins de 10 000 caractères", () => {
     const pages = llmsTxtPages();
     expect(new Set(pages.map((page) => page.path)).size).toBe(pages.length);
     expect(buildLlmsTxt("https://immojudis.com").length).toBeLessThan(10_000);
+  });
+
+  it("tient aussi en octets : les accents (2) et les apostrophes typographiques (3) pèsent plus", () => {
+    const text = buildLlmsTxt("https://immojudis.com");
+    expect(Buffer.byteLength(text, "utf8")).toBeLessThan(12_000);
+    expect(Buffer.byteLength(text, "utf8")).toBeGreaterThan(text.length);
+  });
+
+  it("plafonne la description des pages principales, des méthodes et des outils", () => {
+    const articlePaths = new Set(RESOURCE_ARTICLES.map((article) => article.href));
+    for (const page of llmsTxtPages().filter((item) => !articlePaths.has(item.path))) {
+      expect(page.description.length, page.path).toBeLessThanOrEqual(LLMS_TXT_DESCRIPTION_MAX);
+    }
+  });
+
+  it("garde tous les articles décrits tant que le fichier reste sous la limite de regroupement", () => {
+    const text = buildLlmsTxt("https://immojudis.com");
+    if (text.length > LLMS_TXT_REGROUP_ABOVE_CHARS) return;
+    expect(text).not.toContain("## Optional");
+    for (const article of RESOURCE_ARTICLES) {
+      expect(text).toContain(`(https://immojudis.com${article.href}): ${article.description}`);
+    }
+  });
+
+  it("regroupe les articles non pivots en titre seul sous « Optional » au-delà de 25 articles", () => {
+    const pivots = LLMS_TXT_PIVOT_ARTICLES.map((path, index) => ({
+      title: `Pivot ${index}`,
+      path,
+      description: `Description du pivot ${index}.`,
+    }));
+    const others = Array.from({ length: 20 }, (_, index) => ({
+      title: `Autre article ${index}`,
+      path: `/ressources/autre-${index}`,
+      description: `Description de l’article ${index}, qui ne doit pas figurer.`,
+    }));
+    const text = buildLlmsTxt("https://immojudis.com", [...others, ...pivots]);
+    const [before, optional] = text.split("## Optional");
+    expect(optional).toBeDefined();
+    // Les pivots gardent leur description, hors de « Optional ».
+    for (const pivot of pivots) {
+      expect(before).toContain(`[${pivot.title}](https://immojudis.com${pivot.path}): `);
+    }
+    // Les autres : titre et adresse seulement, en dernière section.
+    for (const other of others) {
+      expect(optional).toContain(`- [${other.title}](https://immojudis.com${other.path})\n`);
+      expect(text).not.toContain(other.description);
+    }
+    expect(optional).not.toContain("## ");
+    expect(text.length).toBeLessThan(10_000);
+    expect(Buffer.byteLength(text, "utf8")).toBeLessThan(12_000);
   });
 
   it("suit le format llms.txt : un titre, un résumé en citation, des sections de liens", () => {
@@ -161,6 +217,16 @@ describe("contenu du fichier", () => {
     for (const entry of lines.filter((l) => l.startsWith("- "))) {
       expect(entry).toMatch(/^- \[[^\]]+\]\(https:\/\/immojudis\.com[^)]*\): .+/);
     }
+    // « Optional » : liens sans description, permis par llmstxt.org.
+    const regrouped = buildLlmsTxt("https://immojudis.com", [
+      ...llmsTxtPages().filter((page) => page.path.startsWith("/ressources/")),
+      ...Array.from({ length: 5 }, (_, index) => ({
+        title: `Supplément ${index}`,
+        path: `/ressources/supplement-${index}`,
+        description: "Description.",
+      })),
+    ]);
+    expect(regrouped).toMatch(/\n## Optional\n\n- \[[^\]]+\]\(https:\/\/immojudis\.com[^)]*\)\n/);
   });
 });
 

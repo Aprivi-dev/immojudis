@@ -14,6 +14,7 @@ import {
   PEPITE_EXTREME_START_RATIO_MIN,
   PEPITE_FAVOURABLE_EVALUATIONS,
   PEPITE_FREEZE_DAYS,
+  PEPITE_LOW_STARTING_PRICE_SHARE,
   PEPITE_MIN_VALUE_COMPARABLES,
   type PepiteCriterionId,
   type PepiteRegimeKey,
@@ -101,6 +102,14 @@ export const PEPITE_CRITERION_LABELS: Record<PepiteCriterionId, { pass: string; 
     pass: "Occupation connue (libre, occupée ou louée)",
     fail: "Occupation inconnue ou bien squatté",
   },
+  fees_known: {
+    pass: "Honoraires de négociation et frais de publicité lus dans l'annonce ou saisis",
+    fail: "Honoraires de négociation ou frais de publicité non lus (valeur par défaut) : coût d'achat sous-estimé",
+  },
+  low_start_strong_estimate: {
+    pass: `Mise à prix sous ${percent(PEPITE_LOW_STARTING_PRICE_SHARE)} de la valeur : estimation de fiabilité forte`,
+    fail: `Mise à prix sous ${percent(PEPITE_LOW_STARTING_PRICE_SHARE)} de la valeur : une estimation de fiabilité forte est exigée`,
+  },
   flood_risk_known: {
     pass: "Risque d’inondation contrôlé, ou sans objet pour la commune",
     fail: "Risque d’inondation non vérifié (position imprécise dans une commune qui compte un territoire à risque important d’inondation, source indisponible, ou périmètres de PPRi non lus)",
@@ -138,8 +147,8 @@ export const PEPITE_CRITERION_LABELS: Record<PepiteCriterionId, { pass: string; 
     fail: `Chances de l'emporter insuffisantes : moins de ${tenths(PEPITE_CHANCE_MIN_SHARE)} ventes comparables sur 10 adjugées sous l'enchère plafond (ou plafond sous la mise à prix)`,
   },
   test_c_cost: {
-    pass: `Achat probable nettement sous la valeur : coût total, frais compris, d'au plus ${percent(PEPITE_COST_MAX_SHARE_COURT)} de la valeur estimée (${percent(PEPITE_COST_MAX_SHARE_NOTARY)} en vente notariale)`,
-    fail: `Achat probable pas assez sous la valeur : coût total, frais compris, au-dessus de ${percent(PEPITE_COST_MAX_SHARE_COURT)} de la valeur estimée (${percent(PEPITE_COST_MAX_SHARE_NOTARY)} en vente notariale)`,
+    pass: `Coût d'achat estimé nettement sous la valeur : coût total, frais compris, d'au plus ${percent(PEPITE_COST_MAX_SHARE_COURT)} de la valeur estimée (${percent(PEPITE_COST_MAX_SHARE_NOTARY)} en vente notariale)`,
+    fail: `Coût d'achat estimé pas assez sous la valeur : coût total, frais compris, au-dessus de ${percent(PEPITE_COST_MAX_SHARE_COURT)} de la valeur estimée (${percent(PEPITE_COST_MAX_SHARE_NOTARY)} en vente notariale)`,
   },
   ceiling_above_start: {
     pass: "Plafond de référence au moins égal à la mise à prix (vente à la bougie)",
@@ -173,7 +182,7 @@ export function pepiteConfirmLabel(id: PepiteCriterionId, regime?: PepiteRegimeK
       regime && regime !== "tribunal"
         ? PEPITE_COST_EXIT_SHARE_NOTARY
         : PEPITE_COST_EXIT_SHARE_COURT;
-    return `Achat probable toujours sous le seuil de maintien (coût total, frais compris, d'au plus ${percent(exit)} de la valeur estimée), ${later}`;
+    return `Coût d'achat estimé toujours sous le seuil de maintien (coût total, frais compris, d'au plus ${percent(exit)} de la valeur estimée), ${later}`;
   }
   return `Critère proche de son seuil de maintien, ${later}`;
 }
@@ -183,6 +192,7 @@ const STABILITY_LABELS: Record<string, string> = {
   entered: `Publiée : ${PEPITE_FAVOURABLE_EVALUATIONS} évaluations favorables consécutives`,
   exit: "Sortie : la vente ne tient plus aux seuils de sortie",
   exit_blocking: "Sortie immédiate : un signal bloquant est apparu",
+  exit_quality: "Sortie pendant le gel : la qualité de l'estimation ne tient plus",
   frozen: `Résultat gelé : moins de ${PEPITE_FREEZE_DAYS} jours avant la vente`,
   price_changed: "Prix modifié : le gel est levé",
 };

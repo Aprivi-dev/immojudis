@@ -27,6 +27,11 @@ vi.mock("@/components/admin/AdminShell", async (importOriginal) => ({
   ),
 }));
 
+// Le tableau des retours par vente a son propre test (AdminSaleFeedbackPanel.test.tsx).
+vi.mock("@/components/admin/AdminSaleFeedbackPanel", () => ({
+  AdminSaleFeedbackPanel: () => null,
+}));
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -92,6 +97,16 @@ describe("page d'administration des pépites", () => {
     expect(screen.getByText("Observation.")).toBeTruthy();
     // Pas de bouton pour changer de mode.
     expect(screen.queryByRole("button", { name: /mode|activer|ouvrir/i })).toBeNull();
+  });
+
+  it("précise sous les retours à quelle version de règle ils sont rattachés", async () => {
+    renderPage(Response.json(view));
+
+    expect(
+      await screen.findByText(
+        "Les retours sont rattachés à la version de règle en vigueur au moment de la lecture, pas à celle du clic.",
+      ),
+    ).toBeTruthy();
   });
 
   it("affiche une alerte quand la section en porte une", async () => {

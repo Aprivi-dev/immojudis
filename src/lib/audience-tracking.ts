@@ -128,7 +128,7 @@ export async function getAudienceTracking({
 }): Promise<AudienceTrackingResponse> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "workspace.audienceTracking")) {
-    throw new Error("Suivi d'audience réservé au plan Analyse.");
+    throw new Error("Suivi d'audience réservé à l’offre Analyse.");
   }
 
   const workspaceRows = await loadWorkspaceRows(auth, includeArchived);

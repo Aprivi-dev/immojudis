@@ -105,7 +105,7 @@ describe("page « Comment sont classées les annonces ? »", () => {
       "repère calculé automatiquement par Immojudis, sur des critères publics",
     );
     expect(text).toContain(
-      "pour signaler un potentiel d’investissement mesuré par deux conditions chiffrées, calculées sur les données disponibles",
+      "pour signaler les ventes qui remplissent deux conditions chiffrées, calculées sur les données disponibles",
     );
     expect(text).not.toMatch(/nettement sous la valeur|achat probable/);
     expect(text).toContain("ni un conseil, ni une recommandation d’acheter");
@@ -126,7 +126,7 @@ describe("page « Comment sont classées les annonces ? »", () => {
       screen.getByRole("region", { name: /Publicité · Sponsorisé/ }).textContent ?? ""
     ).replace(/\s+/g, " ");
     expect(text).toContain(
-      "Aucune rémunération ne peut obtenir ou améliorer une Pépite : ni les cabinets d’avocats qui achètent une mise en avant, ni les organisateurs, vendeurs ou professionnels qui publient des annonces.",
+      "Aucune rémunération ne peut obtenir ou améliorer une pépite : ni les cabinets d’avocats qui achètent une mise en avant, ni les organisateurs, vendeurs ou professionnels qui publient des annonces.",
     );
     expect(text).toContain("Cet encart est sans lien avec le repère Pépite.");
   });

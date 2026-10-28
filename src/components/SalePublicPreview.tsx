@@ -11,6 +11,7 @@ import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { Terme } from "@/components/ceiling/Terme";
 import { PepiteHeroBadge } from "@/components/PepiteBadge";
 import { PepiteBlockLazy } from "@/components/sale-detail/PepiteBlockLazy";
+import { RentalMarketBlockLazy } from "@/components/sale-detail/RentalMarketBlockLazy";
 import { ListingPhoto } from "@/components/ListingPhoto";
 import { PhotoCredit } from "@/components/PhotoCredit";
 import { SectorAlertCta } from "@/components/SectorAlertCta";
@@ -40,9 +41,9 @@ import {
   salesReturnLabel,
 } from "@/lib/navigation";
 import Link from "next/link";
-import { useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
-import { LAUNCH_OFFER_SHORT_TEXT } from "@/lib/launch-offer";
+import { LAUNCH_OFFER_LABEL, LAUNCH_OFFER_SHORT_TEXT } from "@/lib/launch-offer";
 import { ceilingTermsFor } from "@/lib/fee-regime-labels";
 import { feeRegimeKeysForVenue, type FeeRegimeKey } from "@/lib/fee-regime-open";
 import { freeAccessLine, MONTHLY_SALE_UNLOCKS, unlockedItemsText } from "@/lib/sale-unlocks";
@@ -65,6 +66,8 @@ import {
   tribunalDisplayName,
 } from "@/lib/seo";
 import { tribunalPagePath } from "@/lib/tribunal-pages";
+import type { HousingTension } from "@/lib/housing-tension";
+import type { RentReference } from "@/lib/rent-reference";
 import type { AuctionSale, SaleVenueType } from "@/lib/types";
 import styles from "./SalePublicPreview.module.css";
 
@@ -231,7 +234,7 @@ function TeaserTier({ tier, offerAware }: { tier: string; offerAware?: boolean }
     : pending
       ? "Selon votre compte"
       : active
-        ? "Essai gratuit de 7 jours"
+        ? LAUNCH_OFFER_LABEL
         : tier;
   // Décor : le texte masqué de la ligne dit déjà ce qui débloque la valeur.
   return (
@@ -248,6 +251,8 @@ export function SalePublicPreview({
   requestedHash = "",
   adjudicationStatisticsEnabled = false,
   openFeeRegimes,
+  rentReference = null,
+  housingTension = null,
   verifyingAccount = false,
 }: {
   saleId: string;
@@ -258,12 +263,18 @@ export function SalePublicPreview({
   adjudicationStatisticsEnabled?: boolean;
   /** Fee regimes whose bid ceiling is open (see `parseOpenFeeRegimes`); absent: every regime whose rules are defined. */
   openFeeRegimes?: readonly FeeRegimeKey[];
+  /** Loyer de la commune (carte ANIL) et zonage tendu, lus par le serveur : bloc « Marché locatif de la commune ». */
+  rentReference?: RentReference | null;
+  housingTension?: HousingTension | null;
   /**
    * Une session est détectée et ses droits sont en cours de lecture : l'inscription n'a pas de sens
    * pour ce visiteur, la page dit qu'elle vérifie son compte au lieu de proposer d'en créer un.
    */
   verifyingAccount?: boolean;
 }) {
+  // Le bloc « Pourquoi cette pépite » existe-t-il ? La pastille du haut ne propose « Pourquoi ? » (ancre
+  // `#pepite`) qu'à ce moment, sinon elle renvoie à la méthode.
+  const [pepiteBlockLoaded, setPepiteBlockLoaded] = useState(false);
   const procedure = getSaleProcedure(preview);
   // The ceiling is promised only when the fee regime of the sale is open (the tribunal for now). Only
   // its terms are needed here: the light vocabulary module keeps the fee rules out of this bundle.
@@ -338,6 +349,13 @@ export function SalePublicPreview({
             ) : null}
           </dd>
         </div>
+      ) : procedure.venueType === "notary" ? (
+        // Comme la carte de /sales (« Date à confirmer ») : une vente notariale sans date n'a pas
+        // à laisser un vide dans la synthèse.
+        <div className={styles.saleFact}>
+          <dt>Date de la vente</dt>
+          <dd data-testid="sale-date-to-confirm">À confirmer</dd>
+        </div>
       ) : null}
       {tribunal ? (
         <div className={styles.saleFact}>
@@ -379,7 +397,7 @@ export function SalePublicPreview({
           label: ceilingTerms.ceilingSimulationLabel,
           width: "medium",
           tier: `Offre Analyse, ou ${MONTHLY_SALE_UNLOCKS} déblocages par mois`,
-          visibleWith: "l’offre Analyse, ou en débloquant la vente",
+          visibleWith: "l’offre Analyse, ou avec un déblocage",
           offerAware: true,
         }
       : null,
@@ -503,7 +521,7 @@ export function SalePublicPreview({
 
         <header className={styles.head}>
           <SaleProcedureBadge sale={preview} />
-          {preview.pepite ? <PepiteHeroBadge /> : null}
+          {preview.pepite ? <PepiteHeroBadge blockLoaded={pepiteBlockLoaded} /> : null}
           <h1 id="public-sale-title" className={styles.title}>
             {shortHeading}
             <span className={styles.reference}>Réf. {saleReference(saleId)}</span>
@@ -582,14 +600,27 @@ export function SalePublicPreview({
               <PepiteBlockLazy
                 saleId={saleId}
                 known
+                onLoadedChange={setPepiteBlockLoaded}
                 lockedAction={
                   <Link
                     href={accountLink}
                     className="font-semibold text-gold-text underline underline-offset-4"
                   >
-                    Créez un compte gratuit
+                    Créez un compte gratuit pour voir le détail du calcul
                   </Link>
                 }
+              />
+            ) : null}
+
+            {/* Marché locatif de la commune : chargé à la demande, seulement s'il a quelque chose à dire. */}
+            {rentReference?.source.startsWith("anil_") || housingTension ? (
+              <RentalMarketBlockLazy
+                sale={preview}
+                startingPriceEur={price ? preview.starting_price_eur : null}
+                surfaceM2={preview.app_surface_m2 ?? null}
+                reference={rentReference}
+                tension={housingTension}
+                className=""
               />
             ) : null}
 
@@ -658,8 +689,8 @@ export function SalePublicPreview({
                   </h3>
                   <p>
                     Adresse, photos, description, occupation, dates de visite et contact du dossier,
-                    fourchette de valeur estimée, Street View, météo et risques de la commune. Et
-                    chaque mois, {MONTHLY_SALE_UNLOCKS} déblocages de ventes :{" "}
+                    fourchette de valeur estimée, Street View, météo et risques de la commune. Et{" "}
+                    {MONTHLY_SALE_UNLOCKS} déblocages par mois, chacun ouvrant, pour une vente :{" "}
                     {unlockedItemsText({
                       ceiling: ceilingTerms?.ceilingTermWithArticle ?? null,
                       statistics:

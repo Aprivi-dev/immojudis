@@ -80,6 +80,16 @@ describe("mapbox helpers", () => {
     ).toContain("/styles/v1/mapbox/satellite-v9/static/");
   });
 
+  it("draws a white pin on satellite images and keeps the teal pin on street maps", () => {
+    vi.stubEnv("NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN", "pk.test-token");
+
+    expect(mapboxSatelliteImageUrl({ lat: 45, lng: 1 })).toContain("/static/pin-s+ffffff(1,45)/");
+    expect(mapboxSatelliteImageUrl({ lat: 45, lng: 1, pinColor: "132238" })).toContain(
+      "/static/pin-s+132238(1,45)/",
+    );
+    expect(mapboxStaticImageUrl({ lat: 45, lng: 1 })).toContain("/static/pin-s+0f766e(1,45)/");
+  });
+
   it("requests the satellite placeholder at 1x in WebP", () => {
     vi.stubEnv("NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN", "pk.test-token");
 

@@ -19,6 +19,8 @@ export type ApiRequestContext = {
   requestId: string;
   scope: string;
   startedAt: number;
+  /** Quota du compte après cet appel (`enforceUserRateLimit` avec ce contexte) : `RateLimit-*`. */
+  rateLimit?: { limit: number; remaining: number };
 };
 
 const completedRequests = new WeakSet<ApiRequestContext>();
@@ -63,6 +65,10 @@ export function withApiHeaders<T extends Response>(
   options: ApiHeadersOptions = {},
 ): T {
   if (options.echoRequestId !== false) response.headers.set("x-request-id", context.requestId);
+  if (context.rateLimit) {
+    response.headers.set("ratelimit-limit", String(context.rateLimit.limit));
+    response.headers.set("ratelimit-remaining", String(context.rateLimit.remaining));
+  }
   if (!response.headers.has("cache-control")) response.headers.set("cache-control", "no-store");
   logApiCompletion(context, response.status);
   return response;

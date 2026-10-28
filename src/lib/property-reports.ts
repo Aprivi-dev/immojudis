@@ -19,15 +19,12 @@ import {
   type PlanBilling,
   type PlanCode,
   type PlanStatus,
+  isTrialExtensionRow,
 } from "@/lib/plans";
 import { enforceDailyOperationLimits } from "@/lib/rate-limit";
 import { createTextPdf } from "@/lib/simple-pdf";
 import { REPORT_COMPLIANCE_NOTICE, type SourceTraceEntry } from "@/lib/source-traceability";
-import {
-  hasActiveSignupTrial,
-  isLaunchOfferActive,
-  readSignupTrial,
-} from "@/lib/launch-offer.server";
+import { hasActiveSignupTrial, readSignupTrial } from "@/lib/launch-offer.server";
 import { hasUnlockedSale } from "@/lib/sale-unlocks.server";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import { getPublicationVisibleSaleIds } from "@/lib/sale-publication-guard";
@@ -48,6 +45,8 @@ import {
 } from "./property-report/entitlements";
 import { analysisForOpenRegimes, ceilingForOpenRegimes } from "./property-report/ceiling-switch";
 import { reportToPdfLines, REPORT_PDF_HEADINGS } from "./property-report/pdf";
+import { reportWording } from "./property-report/report-wording";
+import { SharedReportUnavailableError } from "./property-report/share-unavailable";
 import {
   assertReportSourceCurrent,
   reportSourceFingerprint,
@@ -134,6 +133,8 @@ export type PlanEntitlements = {
   launchOffer?: true;
   /** Fin de l'essai en cours (ISO), quand la base la connaît. */
   trialEndsAt?: string;
+  /** L'essai a été prolongé par l'administrateur : `trialEndsAt` est la fin de la prolongation. */
+  trialExtension?: true;
   /** Fin d'un essai terminé (ISO) : le compte est revenu à Découverte. */
   trialEndedAt?: string;
   /** La base refuse l'essai à ce compte (pas le premier de son adresse, adresse jetable). */
@@ -273,7 +274,7 @@ export async function listPropertyReports({
   saleId?: string | null;
 }): Promise<PropertyReportListResponse> {
   const plan = await resolvePlanEntitlements(auth);
-  assertEntitlementIncluded(plan, "property.savedReports", "Rapports réservés au plan Analyse.");
+  assertEntitlementIncluded(plan, "property.savedReports", "Rapports réservés à l’offre Analyse.");
   let query = auth.supabase
     .from("saved_property_reports")
     .select("*")
@@ -309,7 +310,7 @@ export async function getPropertyReport({
   reportId: string;
 }): Promise<PropertyReportDetailResponse> {
   const plan = await resolvePlanEntitlements(auth);
-  assertEntitlementIncluded(plan, "property.savedReports", "Rapports réservés au plan Analyse.");
+  assertEntitlementIncluded(plan, "property.savedReports", "Rapports réservés à l’offre Analyse.");
   const report = await getReport(auth.supabase, auth.userId, reportId);
 
   return {
@@ -329,7 +330,7 @@ export async function savePropertyReport({
   request: Request;
 }): Promise<PropertyReportSaveResponse> {
   const plan = await resolvePlanEntitlements(auth);
-  assertEntitlementIncluded(plan, "property.savedReports", "Rapports réservés au plan Analyse.");
+  assertEntitlementIncluded(plan, "property.savedReports", "Rapports réservés à l’offre Analyse.");
   // Après le droit d'accès : un compte sans droit ne doit pas user les compteurs de son adresse ni
   // le disjoncteur global. Le quota mensuel de l'offre Analyse est illimité, ce plafond est le seul.
   await enforceDailyOperationLimits({
@@ -474,7 +475,7 @@ export async function updatePropertyReport({
   assertEntitlementIncluded(
     plan,
     "property.reportEditing",
-    "Édition des rapports réservée au plan Analyse.",
+    "Édition des rapports réservée à l’offre Analyse.",
   );
   // Resolve and publication-check the owned report before returning its
   // snapshot through the privileged update client.
@@ -526,7 +527,7 @@ export async function exportPropertyReportPdf({
   request: Request;
 }): Promise<PropertyReportExport> {
   const plan = await resolvePlanEntitlements(auth);
-  assertEntitlementIncluded(plan, "property.pdfExport", "Export PDF réservé au plan Analyse.");
+  assertEntitlementIncluded(plan, "property.pdfExport", "Export PDF réservé à l’offre Analyse.");
   await enforceDailyOperationLimits({
     request,
     userId: auth.userId,
@@ -541,8 +542,8 @@ export async function exportPropertyReportPdf({
     title: report.title,
     lines,
     headings: REPORT_PDF_HEADINGS,
-    footer:
-      "Immojudis - rapport indicatif. Vérifiez les pièces officielles et votre conseil avant toute enchère.",
+    // Le régime vient du plafond enregistré : un rapport notarial par offres ne parle pas d'enchère.
+    footer: reportWording(asRecord(report.ceiling_snapshot).regime).footerSentence,
     watermark: pdfWatermarkForPlan(plan),
   });
 
@@ -567,7 +568,7 @@ export async function enablePropertyReportShare({
   expiresAt?: string | null;
 }): Promise<PropertyReportShareResponse> {
   const plan = await resolvePlanEntitlements(auth);
-  assertEntitlementIncluded(plan, "property.savedReports", "Partage réservé au plan Analyse.");
+  assertEntitlementIncluded(plan, "property.savedReports", "Partage réservé à l’offre Analyse.");
   const report = await getReport(auth.supabase, auth.userId, reportId);
   assertReportSourceCurrent(report.report_snapshot, await getSale(auth.supabase, report.sale_id));
   const shareToken = createShareToken();
@@ -608,7 +609,7 @@ export async function disablePropertyReportShare({
   origin?: string | null;
 }): Promise<PropertyReportShareResponse> {
   const plan = await resolvePlanEntitlements(auth);
-  assertEntitlementIncluded(plan, "property.savedReports", "Partage réservé au plan Analyse.");
+  assertEntitlementIncluded(plan, "property.savedReports", "Partage réservé à l’offre Analyse.");
   await getReport(auth.supabase, auth.userId, reportId);
 
   const { data, error } = await supabaseAdmin
@@ -653,13 +654,11 @@ export async function getSharedPropertyReport({
     .maybeSingle();
 
   if (error) throw error;
-  if (!data || shareIsExpired(data.share_expires_at)) {
-    throw new Error("Rapport partagé introuvable ou expiré.");
-  }
+  if (!data) throw new Error("Rapport partagé introuvable ou expiré.");
+  // Lien connu mais fermé (échéance, fin de l'essai du propriétaire) : la page l'explique.
+  if (shareIsExpired(data.share_expires_at)) throw new SharedReportUnavailableError();
   // A link stops working as soon as its owner no longer has an active Analyse plan.
-  if (!(await shareOwnerKeepsSavedReports(data.user_id))) {
-    throw new Error("Rapport partagé introuvable ou expiré.");
-  }
+  if (!(await shareOwnerKeepsSavedReports(data.user_id))) throw new SharedReportUnavailableError();
 
   assertReportSourceCurrent(data.report_snapshot, await getSale(supabaseAdmin, data.sale_id));
 
@@ -687,8 +686,9 @@ export async function shareOwnerKeepsSavedReports(userId: string): Promise<boole
     .maybeSingle();
   if (profileError) throw profileError;
   if (profile?.user_role === "admin" || profile?.account_tier === "premium") return true;
-  // Offre de lancement : les liens partagés par un compte gratuit restent ouverts tant qu'elle dure.
-  if (profile && (await isLaunchOfferActive()) && (await hasActiveSignupTrial(userId))) return true;
+  // Essai gratuit : les liens partagés par un compte gratuit restent ouverts tant qu'il dure (la
+  // lecture de l'essai applique l'interrupteur : un essai commencé avant la coupure continue).
+  if (profile && (await hasActiveSignupTrial(userId))) return true;
 
   const { data: subscription, error } = await supabaseAdmin
     .from("user_subscriptions")
@@ -824,27 +824,43 @@ export async function resolvePlanEntitlements(
 
   const { data, error } = await auth.supabase
     .from("user_subscriptions")
-    .select("plan_code,status,current_period_end,stripe_customer_id")
+    .select(
+      "plan_code,status,current_period_end,stripe_customer_id,stripe_subscription_id,metadata",
+    )
     .eq("user_id", auth.userId)
     .maybeSingle();
 
   if (error) throw error;
-  const plan =
-    data && isPlanPeriodActive(data.status, data.current_period_end)
-      ? normalizePlanCode(data.plan_code)
-      : "decouverte";
+  const planActive = Boolean(data && isPlanPeriodActive(data.status, data.current_period_end));
+  const plan = data && planActive ? normalizePlanCode(data.plan_code) : "decouverte";
+  // Prolongation d'essai par l'administrateur (ligne sans abonnement Stripe) : c'est un essai, pas un
+  // abonnement. Même règle que `app_private.is_admin_trial_extension` (migration 20261108130000).
+  const extension = isTrialExtensionRow(data);
+  if (data && extension && planActive && plan === "analyse") {
+    return buildPlanEntitlements(
+      "analyse",
+      data.current_period_end,
+      PLAN_LIMITS.analyse,
+      // Pas de portail ni de résiliation : un éventuel client Stripe (checkout abandonné) n'est pas
+      // un abonnement à gérer.
+      { status: data.status as PlanStatus, hasStripeCustomer: false, graceEndsAt: null },
+      { launchOffer: true, trialEndsAt: data.current_period_end, trialExtension: true },
+    );
+  }
+  const extensionEndedAt = data && extension && !planActive ? data.current_period_end : null;
   const billing: PlanBilling = {
     status: (data?.status as PlanStatus | undefined) ?? null,
     hasStripeCustomer: Boolean(data?.stripe_customer_id),
     graceEndsAt: data?.status === "past_due" ? pastDueGraceEnd(data.current_period_end) : null,
   };
   // Essai gratuit de 7 jours à l'inscription : pendant son essai, un compte gratuit qui a un
-  // profil reçoit le plan Analyse, avec ses quotas (rapports, PDF, actualisations). L'état vient de
+  // profil reçoit l’offre Analyse, avec ses quotas (rapports, PDF, actualisations). L'état vient de
   // la base, comme pour les fonctions SQL d'accès (`app_private.has_active_analysis_access`) ; rien
   // n'est écrit sur le compte, la fin de l'essai ramène donc le plan Découverte sans nettoyage.
-  if (plan === "decouverte" && auth.hasProfile !== false && (await isLaunchOfferActive())) {
-    // Éligibilité lue dans la base (`app_private.signup_trial_ends_at`) : email confirmé, non
-    // jetable, plus ancien compte confirmé de son adresse canonique, 7 jours après la confirmation.
+  if (plan === "decouverte" && auth.hasProfile !== false) {
+    // Essai lu dans la base (`app_private.signup_trial_ends_at`) : email confirmé, non jetable, plus
+    // ancien compte confirmé de son adresse canonique, 7 jours après la confirmation. La lecture
+    // applique aussi l'interrupteur : couper l'essai ne ferme que les nouveaux essais.
     const trial = await readSignupTrial(auth.userId);
     if (trial.active) {
       return buildPlanEntitlements(
@@ -855,17 +871,28 @@ export async function resolvePlanEntitlements(
         { launchOffer: true, trialEndsAt: trial.endsAt },
       );
     }
-    if (trial.endsAt || trial.denied) {
+    // Fin de l'essai : la plus tardive de la fin naturelle et de la fin d'une prolongation échue.
+    const endedAt = latestIso(trial.endsAt, extensionEndedAt);
+    if (endedAt || trial.denied) {
       return buildPlanEntitlements(
         plan,
         data?.current_period_end ?? null,
         PLAN_LIMITS[plan],
         billing,
-        { trialEndedAt: trial.endsAt, trialDenied: trial.denied === true },
+        { trialEndedAt: endedAt, trialDenied: !endedAt && trial.denied === true },
       );
     }
   }
   return buildPlanEntitlements(plan, data?.current_period_end ?? null, PLAN_LIMITS[plan], billing);
+}
+
+function latestIso(...values: Array<string | null | undefined>): string | null {
+  let latest: string | null = null;
+  for (const value of values) {
+    if (!value || !Number.isFinite(Date.parse(value))) continue;
+    if (latest === null || Date.parse(value) > Date.parse(latest)) latest = value;
+  }
+  return latest;
 }
 
 /** The door that opens a right for a sale: the offer itself, or the unlock of this very sale. */
@@ -911,7 +938,7 @@ export async function featureIncludedForSale(
 export async function assertFeatureEntitlementVia(
   auth: SupabaseAuthContext,
   feature: FeatureKey,
-  message = "Fonctionnalité réservée au plan Analyse.",
+  message = "Fonctionnalité réservée à l’offre Analyse.",
   options: { saleId?: string } = {},
 ): Promise<{ plan: PlanEntitlements; door: SaleFeatureDoor }> {
   const plan = await resolvePlanEntitlements(auth);
@@ -930,7 +957,7 @@ export async function assertFeatureEntitlementVia(
 export async function assertFeatureEntitlement(
   auth: SupabaseAuthContext,
   feature: FeatureKey,
-  message = "Fonctionnalité réservée au plan Analyse.",
+  message = "Fonctionnalité réservée à l’offre Analyse.",
   options: { saleId?: string } = {},
 ): Promise<PlanEntitlements> {
   return (await assertFeatureEntitlementVia(auth, feature, message, options)).plan;

@@ -45,3 +45,18 @@ export const EMAIL_COLOR_TOKENS: Record<Exclude<keyof typeof EMAIL_COLORS, "whit
 
 /** Nom de marque dans les emails : « Immojudis », jamais en capitales (voir la charte). */
 export const EMAIL_BRAND_NAME = "Immojudis";
+
+/**
+ * Pile de polices des emails : Manrope (la police du site) quand le client de messagerie la possède,
+ * sinon une sans empattement système. Manrope n'est pas chargée dans un email : c'est un repli, pas
+ * une faute. Plus de Georgia : le serif était un vestige de l'ancienne marque.
+ */
+export const EMAIL_FONT_STACK = "Manrope, Arial, Helvetica, sans-serif";
+
+/**
+ * En-tête commun des gabarits HTML : barre or de 6 px puis le nom « Immojudis » (sans capitales). Les
+ * deux gabarits React (`emails/`) portent le même en-tête avec leurs propres composants.
+ */
+export function emailBrandHeaderHtml(): string {
+  return `<div style="border-top:6px solid ${EMAIL_COLORS.gold};padding:14px 0 12px;"><span style="font-family:${EMAIL_FONT_STACK};font-size:22px;font-weight:800;letter-spacing:-.01em;color:${EMAIL_COLORS.navy};">${EMAIL_BRAND_NAME}</span></div>`;
+}

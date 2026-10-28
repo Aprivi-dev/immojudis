@@ -196,6 +196,23 @@ describe("useful public discovery", () => {
     expect(EAGER_IMAGE_COUNT).toBe(1);
   });
 
+  it("gives the priority image to the first card that has a photo, not to a card without visual", () => {
+    const withPhoto = (id: string) =>
+      ({
+        ...sale(id),
+        media: [{ type: "image", url: "https://images.example.test/photos/maison.jpg" }],
+      }) as unknown as AuctionSale;
+    renderResults([sale("none-a"), sale("none-b"), withPhoto("photo-c"), withPhoto("photo-d")]);
+    // Les deux cartes sans photo gardent une case de repli : aucune n'est prioritaire.
+    const fallbacks = screen.getAllByTestId("sale-visual").map((visual) => visual.dataset.eager);
+    expect(fallbacks).toEqual(["false", "false"]);
+    // Parmi les photos, seule la première (3e carte) est chargée tout de suite.
+    const photos = Array.from(document.querySelectorAll("img")).map((image) =>
+      image.getAttribute("loading"),
+    );
+    expect(photos).toEqual(["eager", "lazy"]);
+  });
+
   it("keeps the active card synchronized with hover after memoization", () => {
     function HoverableResults() {
       const [hoveredSaleId, setHoveredSaleId] = useState<string | null>(null);
@@ -276,9 +293,7 @@ describe("useful public discovery", () => {
       expect(container.textContent).not.toContain(text);
     }
     expect(container.querySelector('[class*="blur-"]')).toBeNull();
-    expect(
-      screen.getByText("Gratuit, sans carte bancaire · 3 fiches détaillées par mois"),
-    ).toBeTruthy();
+    expect(screen.getByText("Gratuit, sans carte bancaire · 3 déblocages par mois")).toBeTruthy();
   });
 
   it("titles the card with the sale page's short heading, with a clean fallback", () => {
@@ -351,7 +366,7 @@ describe("useful public discovery", () => {
       </QueryClientProvider>,
     );
     expect(screen.getByText("Fiche complète avec un compte gratuit")).toBeTruthy();
-    expect(screen.queryByText(/fiches détaillées par mois/)).toBeNull();
+    expect(screen.queryByText(/déblocages par mois/)).toBeNull();
   });
 
   it("laisse « Annonce bien renseignée » à la fiche : la carte ne la montre plus", () => {
@@ -417,6 +432,39 @@ describe("useful public discovery", () => {
       expect(screen.getByRole("link", { name: "Voir la fiche" }).getAttribute("href")).toBe(
         "/sales/verify-card#points-a-verifier",
       );
+    });
+
+    it("montre le prix au m² de la mise à prix quand la surface est publiée, et seulement alors", () => {
+      renderCard({ starting_price_eur: 60_000, app_surface_m2: 50 });
+      expect(screen.getByText(/1\s?200\s€\/m²/)).toBeTruthy();
+      cleanup();
+      renderCard({ starting_price_eur: 60_000, app_surface_m2: null });
+      expect(screen.queryByText(/€\/m²/)).toBeNull();
+      cleanup();
+      renderCard({ starting_price_eur: 0, app_surface_m2: 50 });
+      expect(screen.queryByText(/€\/m²/)).toBeNull();
+    });
+
+    it("donne à « Comparer » une bordure visible, qui change à la sélection", () => {
+      const onToggle = vi.fn();
+      render(
+        <QueryClientProvider client={new QueryClient()}>
+          <ListingCard
+            sale={cardSale()}
+            returnTo="/sales"
+            locked={false}
+            analysisLocked={false}
+            active={false}
+            onHover={vi.fn()}
+            onSelect={vi.fn()}
+            onToggleComparison={onToggle}
+            comparisonSelected={false}
+          />
+        </QueryClientProvider>,
+      );
+      const button = screen.getByRole("button", { name: /^Comparer / });
+      expect(button.className).toContain("border");
+      expect(button.className).toContain("border-brand-navy/55");
     });
 
     it("n'affiche rien pour une carte complète", () => {
@@ -912,9 +960,7 @@ describe("« 3 déblocages par mois » on the cards of a Découverte account", (
     // La carte entière mène à la fiche : « Voir le détail » ne s'écrit plus en bas de carte.
     expect(cards[1].textContent).not.toContain("Voir le détail");
     expect(cards[0].textContent).not.toContain("Débloquée");
-    expect(cards[0].textContent).toContain(
-      "Gratuit, sans carte bancaire · 3 fiches détaillées par mois",
-    );
+    expect(cards[0].textContent).toContain("Gratuit, sans carte bancaire · 3 déblocages par mois");
     expect(document.body.textContent).not.toContain("Analyse détaillée avec l’offre Analyse");
   });
 
@@ -931,13 +977,9 @@ describe("« 3 déblocages par mois » on the cards of a Découverte account", (
 
     await waitFor(() => expect(testState.unlocksOverview).toHaveBeenCalled());
     const cards = screen.getAllByRole("article");
-    expect(cards[0].textContent).toContain(
-      "Gratuit, sans carte bancaire · 3 fiches détaillées par mois",
-    );
-    expect(cards[1].textContent).toContain(
-      "Gratuit, sans carte bancaire · 3 fiches détaillées par mois",
-    );
-    expect(cards[2].textContent).not.toContain("fiches détaillées par mois");
+    expect(cards[0].textContent).toContain("Gratuit, sans carte bancaire · 3 déblocages par mois");
+    expect(cards[1].textContent).toContain("Gratuit, sans carte bancaire · 3 déblocages par mois");
+    expect(cards[2].textContent).not.toContain("déblocages par mois");
   });
 
   it("does not ask for the unlocks of a visitor or of an Analyse account", async () => {
@@ -960,7 +1002,7 @@ describe("« 3 déblocages par mois » on the cards of a Découverte account", (
     await waitFor(() => expect(testState.unlocksOverview).toHaveBeenCalled());
     expect(screen.queryByText("Débloquée")).toBeNull();
     expect(screen.getByRole("article").textContent).toContain(
-      "Gratuit, sans carte bancaire · 3 fiches détaillées par mois",
+      "Gratuit, sans carte bancaire · 3 déblocages par mois",
     );
   });
 });

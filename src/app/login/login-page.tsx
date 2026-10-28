@@ -32,11 +32,15 @@ import {
   type LoginReason,
 } from "@/lib/navigation";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
-import { resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
-import { LAUNCH_OFFER_VISITOR_TEXT } from "@/lib/launch-offer";
+import { ANALYSIS_TRIAL_DAYS, resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
+import {
+  LAUNCH_OFFER_DURATION_TEXT,
+  LAUNCH_OFFER_SIGNUP_LINE,
+  LAUNCH_OFFER_VISITOR_TEXT,
+} from "@/lib/launch-offer";
 import { postAuthDestination } from "@/lib/onboarding";
 import { PLAN_LIMITS } from "@/lib/plans";
-import { MONTHLY_SALE_UNLOCKS, UNLOCK_HIGHLIGHTS_INLINE_TEXT } from "@/lib/sale-unlocks";
+import { MONTHLY_UNLOCKS_TEXT, UNLOCK_HIGHLIGHTS_INLINE_TEXT } from "@/lib/sale-unlocks";
 import { trackProductEvent } from "@/lib/product-events";
 import { ACCOUNT_EXISTS_MESSAGE, userMessage } from "@/lib/user-messages";
 
@@ -87,8 +91,7 @@ function reasonCopy(reason: LoginReason, launchOffer: boolean): { signup: string
     case "export":
       return launchOffer
         ? {
-            signup:
-              "Créez votre compte gratuit pour exporter ces résultats : l’export fait partie de l’offre Analyse, offerte pendant 7 jours à l’inscription, sans carte bancaire.",
+            signup: `Créez votre compte gratuit pour exporter ces résultats : l’export fait partie de l’offre Analyse, offerte pendant ${ANALYSIS_TRIAL_DAYS} jours à l’inscription, sans carte bancaire.`,
             login: "Connectez-vous pour exporter ces résultats.",
           }
         : {
@@ -99,8 +102,7 @@ function reasonCopy(reason: LoginReason, launchOffer: boolean): { signup: string
     case "offre":
       return launchOffer
         ? {
-            signup:
-              "Créez votre compte gratuit : il bénéficie de l’offre Analyse pendant 7 jours, sans carte bancaire.",
+            signup: `Créez votre compte gratuit : il bénéficie de l’offre Analyse pendant ${ANALYSIS_TRIAL_DAYS} jours, sans carte bancaire.`,
             login: "Connectez-vous pour voir votre offre.",
           }
         : {
@@ -126,9 +128,16 @@ function reasonCopy(reason: LoginReason, launchOffer: boolean): { signup: string
     case "fiche":
       return {
         signup: launchOffer
-          ? "Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente : pendant les 7 jours d’essai, il ouvre aussi les analyses de l’offre Analyse."
-          : `Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente, et en débloquer ${MONTHLY_SALE_UNLOCKS} en détail chaque mois (contenu selon la vente).`,
+          ? `Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente : pendant les ${ANALYSIS_TRIAL_DAYS} jours d’essai, il ouvre aussi les analyses de l’offre Analyse.`
+          : `Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente, avec ${MONTHLY_UNLOCKS_TEXT} pour ouvrir le détail d’une vente (contenu selon la vente).`,
         login: "Connectez-vous pour consulter cette vente.",
+      };
+    case "exemple":
+      return {
+        signup: launchOffer
+          ? `Créez votre compte gratuit pour faire ce calcul sur une vente réelle : il bénéficie de l’offre Analyse pendant ${ANALYSIS_TRIAL_DAYS} jours, sans carte bancaire.`
+          : "Créez votre compte gratuit, sans carte bancaire, pour faire ce calcul sur une vente réelle.",
+        login: "Connectez-vous pour faire ce calcul sur une vente réelle.",
       };
   }
 }
@@ -352,13 +361,15 @@ export function LoginPage() {
       });
       if (error) throw error;
       // Formulaire envoyé, pas encore compte confirmé : `signup_confirmed` part à la confirmation
-      // (`signup-confirmation.ts`).
-      trackProductEvent("signup_submitted");
+      // (`signup-confirmation.ts`). Une adresse déjà inscrite reçoit la même réponse « réussie » :
+      // elle n'est pas comptée.
+      const existingAccount = data?.session === null && isExistingAccountResponse(data);
+      if (!existingAccount) trackProductEvent("signup_submitted", { entry: reason ?? "direct" });
       // Sans session, le compte attend la confirmation de l'adresse : un toast qui disparaît
       // laisserait la personne devant le même formulaire, on le remplace donc par un panneau.
       if (data?.session === null) {
         setResendNotice(null);
-        setAccountExists(isExistingAccountResponse(data));
+        setAccountExists(existingAccount);
         startResendCooldown();
         setPendingEmail(email.trim());
         return;
@@ -398,15 +409,15 @@ export function LoginPage() {
               {launchOffer ? (
                 <>
                   Découverte ouvre gratuitement le catalogue. À l’inscription, l’offre Analyse est
-                  offerte pendant 7 jours : comparables, alertes quotidiennes et exports (contenu
-                  selon la vente).
+                  offerte pendant {ANALYSIS_TRIAL_DAYS} jours : comparables, alertes quotidiennes et
+                  exports (contenu selon la vente).
                 </>
               ) : (
                 <>
-                  Découverte ouvre gratuitement le catalogue et, chaque mois, {MONTHLY_SALE_UNLOCKS}{" "}
-                  ventes en détail ({UNLOCK_HIGHLIGHTS_INLINE_TEXT}). Analyse ouvre toutes les
-                  ventes, avec les comparables, les alertes quotidiennes et les exports (tarif prévu
-                  : {resolveAnalysisOfferLabel()}, pas encore souscriptible).
+                  Découverte ouvre gratuitement le catalogue, avec {MONTHLY_UNLOCKS_TEXT} (
+                  {UNLOCK_HIGHLIGHTS_INLINE_TEXT}). Analyse ouvre toutes les ventes, avec les
+                  comparables, les alertes quotidiennes et les exports (tarif prévu :{" "}
+                  {resolveAnalysisOfferLabel()}, pas encore souscriptible).
                 </>
               )}{" "}
               Les professionnels déposent et suivent leurs annonces dans leur espace.
@@ -507,7 +518,7 @@ export function LoginPage() {
                 <button
                   type="button"
                   onClick={changeAddress}
-                  className="inline-flex min-h-11 items-center justify-center rounded-lg border border-white/15 px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-white/5"
+                  className="inline-flex min-h-11 items-center justify-center rounded-lg border border-line px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-surface-tint"
                 >
                   Changer d'adresse
                 </button>
@@ -515,7 +526,7 @@ export function LoginPage() {
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-3 gap-2 rounded-lg border border-white/10 bg-white/[0.03] p-1">
+              <div className="grid grid-cols-3 gap-2 rounded-lg border border-line bg-surface-tint p-1">
                 <ModeButton active={mode === "login"} onClick={() => switchMode("login")}>
                   Se connecter
                 </ModeButton>
@@ -563,14 +574,26 @@ export function LoginPage() {
               </p>
               {mode === "investor" ? (
                 // The explanation column is hidden below the lg breakpoint: say the promise here.
-                <p
+                <div
                   data-testid="login-free-promise"
-                  className="mt-2 text-sm font-medium leading-relaxed text-foreground lg:hidden"
+                  className="mt-2 text-sm leading-relaxed text-foreground lg:hidden"
                 >
-                  {launchOffer
-                    ? LAUNCH_OFFER_VISITOR_TEXT
-                    : `Gratuit : ${MONTHLY_SALE_UNLOCKS} ventes en détail par mois (${UNLOCK_HIGHLIGHTS_INLINE_TEXT}), sans carte bancaire`}
-                </p>
+                  {launchOffer ? (
+                    <>
+                      <p className="font-medium">{LAUNCH_OFFER_SIGNUP_LINE}</p>
+                      <details className="mt-1">
+                        <summary className="flex min-h-11 cursor-pointer items-center font-semibold text-gold-text underline underline-offset-4">
+                          Conditions de l’essai gratuit
+                        </summary>
+                        <p className="pb-2 text-muted-foreground">{LAUNCH_OFFER_DURATION_TEXT}</p>
+                      </details>
+                    </>
+                  ) : (
+                    <p className="font-medium">
+                      {`Gratuit : ${MONTHLY_UNLOCKS_TEXT} (${UNLOCK_HIGHLIGHTS_INLINE_TEXT}), sans carte bancaire`}
+                    </p>
+                  )}
+                </div>
               ) : null}
               {mode === "investor" && launchOffer ? (
                 <p
@@ -582,7 +605,7 @@ export function LoginPage() {
               ) : null}
 
               {!isSupabaseConfigured ? (
-                <div className="mt-5 rounded-lg border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm leading-relaxed text-red-100">
+                <div className="mt-5 rounded-lg border border-danger/30 bg-danger-tint px-4 py-3 text-sm leading-relaxed text-danger">
                   Connexion temporairement indisponible : les variables Supabase publiques ne sont
                   pas présentes dans ce build.
                 </div>
@@ -759,7 +782,7 @@ export function LoginPage() {
             </>
           )}
 
-          <div className="mt-6 border-t border-white/10 pt-4 text-center text-xs text-muted-foreground">
+          <div className="mt-6 border-t border-line-soft pt-4 text-center text-xs text-muted-foreground">
             <Link href="/" className="hover:text-foreground">
               Retour à la présentation
             </Link>
@@ -813,7 +836,7 @@ function ModeButton({
       className={`min-h-11 rounded-md px-3 py-2 text-sm font-semibold transition ${
         active
           ? "bg-gold text-brand-navy shadow-[0_12px_28px_rgb(242_196_135_/_18%)]"
-          : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
+          : "text-muted-foreground hover:bg-card hover:text-foreground"
       }`}
     >
       {children}

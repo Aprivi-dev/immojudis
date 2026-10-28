@@ -3,7 +3,7 @@ import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
-import { PublicApiError } from "@/lib/api-errors";
+import { PublicApiError, parseApiResponse } from "@/lib/api-errors";
 import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
 import { assertFeatureEntitlementVia } from "@/lib/property-reports";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
@@ -21,6 +21,7 @@ export async function GET(request: Request) {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     await enforceUserRateLimit({
       userId: auth.userId,
+      context,
       bucketKey: "v1.tribunal-listing-statistics",
       ...RATE_LIMIT_POLICIES.compute,
     });
@@ -45,7 +46,8 @@ export async function GET(request: Request) {
       { saleId: z.string().guid().safeParse(query.saleId).data },
     );
     const input = tribunalListingStatisticsQuerySchema.parse(query);
-    const statistics = tribunalListingStatisticsResponseSchema.parse(
+    const statistics = parseApiResponse(
+      tribunalListingStatisticsResponseSchema,
       await getTribunalListingStatistics(input),
     );
     // An unlock opens the statistics of the tribunal, not the list of its other upcoming sales

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildMapboxSaleFeatureCollection, formatMapboxMarkerPrice } from "@/lib/mapbox-sales";
+import {
+  buildMapboxSaleFeatureCollection,
+  formatMapboxMarkerPrice,
+  isApproximatePosition,
+  isMunicipalityCenter,
+} from "@/lib/mapbox-sales";
 import type { AuctionSale } from "@/lib/types";
 
 describe("mapbox sale features", () => {
@@ -42,16 +47,68 @@ describe("mapbox sale features", () => {
         saleId: "sale-geocoded",
         title: "Maison familiale",
         priceLabel: "180K€",
-        markerColor: "#fde047",
-        markerTextColor: "#422006",
         dpeClass: "D",
         city: "Bordeaux",
         tribunal: "Bordeaux",
         saleDate: "2026-10-12",
         priceValue: 180_000,
         pepite: 0,
+        approx: 0,
       },
     });
+  });
+
+  it("n'envoie plus de couleur de marqueur par vente", () => {
+    const [feature] = buildMapboxSaleFeatureCollection([
+      sale({ id: "a", latitude: 44.8, longitude: -0.5 }),
+    ]).features;
+    expect(Object.keys(feature.properties)).not.toContain("markerColor");
+    expect(Object.keys(feature.properties)).not.toContain("markerTextColor");
+  });
+
+  it("ne trace pas un point hors de France ni (0, 0)", () => {
+    const collection = buildMapboxSaleFeatureCollection([
+      sale({ id: "paris", latitude: 48.8566, longitude: 2.3522 }),
+      sale({ id: "zero", latitude: 0, longitude: 0 }),
+      sale({ id: "inverse", latitude: 2.35, longitude: 48.85 }),
+      sale({ id: "maroc", latitude: 33.57, longitude: -7.59 }),
+      sale({ id: "reunion", latitude: -21.11, longitude: 55.53 }),
+    ]);
+    expect(collection.features.map((feature) => feature.properties.saleId)).toEqual([
+      "paris",
+      "reunion",
+    ]);
+  });
+
+  it("marque approx un centre de commune ou un point de source non vérifié", () => {
+    const at = { latitude: 44.8, longitude: -0.5 };
+    const approx = (overrides: Partial<AuctionSale>) =>
+      buildMapboxSaleFeatureCollection([sale({ id: "x", ...at, ...overrides })]).features[0]
+        .properties.approx;
+
+    expect(approx({ location_precision: "municipality" })).toBe(1);
+    expect(approx({ location_precision: " Municipality " })).toBe(1);
+    expect(approx({ quality_flags: ["unverified_source_coordinates"] })).toBe(1);
+    expect(approx({ location_precision: "address" })).toBe(0);
+    expect(approx({ location_precision: "street" })).toBe(0);
+    expect(approx({ location_precision: null, quality_flags: ["probable_duplicate"] })).toBe(0);
+    expect(approx({})).toBe(0);
+  });
+
+  it("distingue le centre de commune d'un simple point douteux", () => {
+    expect(isMunicipalityCenter({ location_precision: "municipality" })).toBe(true);
+    expect(isMunicipalityCenter({ location_precision: "address" })).toBe(false);
+    expect(
+      isApproximatePosition({
+        quality_flags: ["unverified_source_coordinates"],
+        location_precision: "address",
+      }),
+    ).toBe(true);
+    expect(
+      isMunicipalityCenter({
+        location_precision: "address",
+      }),
+    ).toBe(false);
   });
 
   it("formats compact marker price labels", () => {

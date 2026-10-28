@@ -36,7 +36,7 @@ const sale = {
   source_url: "https://www.licitor.com/annonce/109477.html",
 };
 const report = {
-  version: "land-report-v1",
+  version: "land-report-v1.1",
   generatedAt: "2026-10-02T12:00:00Z",
   planning: {
     locationStatus: "unresolved",

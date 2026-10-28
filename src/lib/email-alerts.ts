@@ -14,8 +14,13 @@ import { resolveSiteOrigin } from "@/lib/site-url";
 import { systemAuthForUser } from "@/lib/system-auth";
 import { asRecord, escapeHtml, numberValue, stringValue } from "@/lib/guards";
 import { listPepiteSaleIds, type PepiteIdsClient } from "@/lib/pepite-sale-ids";
-import { EMAIL_COLORS } from "@/lib/email-brand";
-import { PEPITE_LABEL, PEPITE_METHOD_LINK_LABEL, PEPITE_METHOD_PATH } from "@/lib/pepite-copy";
+import { EMAIL_COLORS, EMAIL_FONT_STACK, emailBrandHeaderHtml } from "@/lib/email-brand";
+import {
+  PEPITE_EXPLANATION,
+  PEPITE_LABEL,
+  PEPITE_METHOD_LINK_LABEL,
+  PEPITE_METHOD_PATH,
+} from "@/lib/pepite-copy";
 import {
   ANIL_CURRENT_EDITION,
   RENT_ATTRIBUTION,
@@ -70,6 +75,26 @@ export type ResendEmailMessage = {
   oneClickUnsubscribe?: boolean;
 };
 
+/**
+ * Catégorie d'un envoi, transmise à Resend comme étiquette (`tags`) : elle permet de ventiler rebonds et
+ * plaintes par type de message avant de lire le seuil de chaque catégorie. Valeurs en ASCII (lettres,
+ * chiffres, tirets bas), comme l'exige Resend.
+ */
+export const EMAIL_CATEGORIES = [
+  "alert",
+  "reminder",
+  "weekly",
+  "result",
+  "billing",
+  "acceptance",
+  "opening",
+  "launch_offer_end",
+  "lawyer",
+  "agent",
+  "operations",
+] as const;
+export type EmailCategory = (typeof EMAIL_CATEGORIES)[number];
+
 export type AlertEmailMessage = ResendEmailMessage & {
   unsubscribeUrl: string;
 };
@@ -94,6 +119,23 @@ export function resolveEmailAlertDeliveryConfig(
     appUrl,
     missing,
   };
+}
+
+/**
+ * Configuration d'envoi des messages liés au contrat (facturation, acceptation commerciale) : un
+ * expéditeur à part, `TRANSACTIONAL_EMAIL_FROM` (par exemple `compte@immojudis.com`), pour qu'une
+ * plainte sur les alertes ne dégrade pas la réputation de l'adresse qui porte aussi ces messages.
+ * Absent, le message part de l'expéditeur des alertes, comme avant.
+ */
+export function resolveTransactionalEmailConfig(
+  env: Pick<NodeJS.ProcessEnv, string> = process.env,
+): EmailAlertDeliveryConfig {
+  const config = resolveEmailAlertDeliveryConfig(env);
+  const transactionalFrom = serverEnv(env).email.transactionalFrom;
+  if (!transactionalFrom) return config;
+  // L'expéditeur des alertes n'est plus requis pour ces messages.
+  const missing = config.missing.filter((name) => name !== "ALERT_EMAIL_FROM");
+  return { ...config, from: transactionalFrom, missing, configured: missing.length === 0 };
 }
 
 const MAX_DIGEST_ITEMS = 10;
@@ -403,8 +445,11 @@ async function cancelQueuedEmailNotifications({
 const PEPITE_REASON = "pépite";
 /** Motif écrit par `alertMatchesSale` quand l'alerte filtre sur le rendement. */
 const RENT_YIELD_REASON = "rendement";
-/** Mention de l'email : en texte, jamais un montant (la page de la vente porte le détail, selon le droit du compte). */
-const PEPITE_EMAIL_LINE = "repère calculé automatiquement par Immojudis, ni conseil ni garantie.";
+/**
+ * Mention de l'email : le texte validé et relu par le juridique le 26/10/2026, mot pour mot (`PEPITE_EXPLANATION`),
+ * en texte comme en HTML. Jamais un montant (la page de la vente porte le détail, selon le droit du compte).
+ */
+const PEPITE_EMAIL_LINE = PEPITE_EXPLANATION;
 
 function digestItemFromNotification(notification: NotificationRow): DigestItem {
   const snapshot = asRecord(notification.notification_snapshot);
@@ -447,6 +492,8 @@ export function buildAlertDigestMessage({
   appUrl,
   now = new Date(),
   env,
+  alertActivatedAt,
+  audience = "analyse",
 }: {
   userId: string;
   notifications: Array<
@@ -458,6 +505,13 @@ export function buildAlertDigestMessage({
   appUrl: string;
   now?: Date;
   env?: Pick<NodeJS.ProcessEnv, string>;
+  /** Date d'activation de chaque alerte (identifiant → ISO), pour la raison de réception du pied. */
+  alertActivatedAt?: ReadonlyMap<string, string | null>;
+  /**
+   * Un compte Découverte ne lit pas la liste des notifications (`alerts.advanced`) : « … et N autres »
+   * le mène au catalogue public, pas à `/alertes`.
+   */
+  audience?: "analyse" | "discovery";
 }): AlertEmailMessage {
   const allItems = notifications.map((notification) =>
     digestItemFromNotification(notification as NotificationRow),
@@ -546,16 +600,19 @@ export function buildAlertDigestMessage({
     }
     textLines.push("");
   }
+  const hiddenUrl = audience === "discovery" ? `${appUrl}/sales` : alertsUrl;
+  const hiddenLabel = `… et ${hiddenCount} autre${hiddenCount > 1 ? "s" : ""} vente${hiddenCount > 1 ? "s" : ""}${
+    audience === "discovery" ? " correspondent à vos alertes (catalogue)" : ""
+  }`;
   if (hiddenCount > 0) {
-    textLines.push(
-      `… et ${hiddenCount} autre${hiddenCount > 1 ? "s" : ""} vente${hiddenCount > 1 ? "s" : ""} : ${alertsUrl}`,
-      "",
-    );
+    textLines.push(`${hiddenLabel} : ${hiddenUrl}`, "");
   }
+  const receptionReason = receptionReasonLine([...groups.values()], alertActivatedAt);
   textLines.push(disclaimer);
   if (rentNotice) textLines.push("", rentNotice, `Source : ${RENT_SOURCE_URL}`);
   textLines.push(
     "",
+    receptionReason,
     `Se désinscrire de tous les emails d'alerte : ${unsubscribeUrl}`,
     `Gérer mes alertes : ${alertsUrl}`,
   );
@@ -572,6 +629,13 @@ export function buildAlertDigestMessage({
         items: group.items.map((item) => ({ ...item, url: saleUrl(item) })),
       })),
       hiddenCount,
+      hiddenLink: { url: hiddenUrl, label: hiddenLabel },
+      title: subject,
+      preheader:
+        allItems.length === 1
+          ? (saleFactsLine(items[0]) ?? intro)
+          : "Les ventes qui correspondent à vos alertes, avec leur audience et leur mise à prix.",
+      receptionReason,
       alertsUrl,
       methodUrl: `${appUrl}${PEPITE_METHOD_PATH}`,
       unsubscribeUrl,
@@ -584,6 +648,13 @@ export function buildAlertDigestMessage({
   };
 }
 
+/** La notification porte la mention « pépite » dans les motifs de sa correspondance. */
+export function mentionsPepite(notification: Pick<NotificationRow, "notification_snapshot">) {
+  return arrayOfStrings(
+    asRecord(asRecord(notification.notification_snapshot).match).reasons,
+  ).includes(PEPITE_REASON);
+}
+
 /**
  * Retire la mention « pépite » d'un résumé dont la vente n'est plus une pépite publiable (arrêt d'urgence, sortie de
  * la liste, mode repassé en `shadow`) : le résumé a été écrit quand l'alerte a été évaluée, l'email part plus tard.
@@ -594,10 +665,7 @@ export function buildAlertDigestMessage({
 export async function withCurrentPepiteMentions<
   T extends Pick<NotificationRow, "notification_snapshot">,
 >(notifications: T[]): Promise<T[]> {
-  const mentions = (notification: T) =>
-    arrayOfStrings(asRecord(asRecord(notification.notification_snapshot).match).reasons).includes(
-      PEPITE_REASON,
-    );
+  const mentions = (notification: T) => mentionsPepite(notification);
   if (!notifications.some(mentions)) return notifications;
   let current: ReadonlySet<string>;
   try {
@@ -665,12 +733,12 @@ async function deliverEmailAlertDigest({
     return { outcomes: [], skipped: notifications.length };
   }
 
-  const activeAlertIds = await readActiveAlertIds(userId);
+  const activeAlerts = await readActiveAlerts(userId);
   // A free account only receives the discovery digest; matches queued while it
   // still had Analyse are not sent once the plan has ended.
   const sendable = notifications.filter(
     (notification) =>
-      (!notification.alert_id || activeAlertIds.has(notification.alert_id)) &&
+      (!notification.alert_id || activeAlerts.has(notification.alert_id)) &&
       (eligibility.audience === "analyse" || notificationAudience(notification) === "discovery"),
   );
   const stale = notifications.filter((notification) => !sendable.includes(notification));
@@ -684,14 +752,20 @@ async function deliverEmailAlertDigest({
     return failAll("Aucune adresse email confirmée disponible pour cet utilisateur.", null);
   }
 
+  // Les motifs du résumé d'origine peuvent citer « pépite » pour une vente qui ne l'est plus à l'envoi : le journal
+  // garde ce que le message a réellement dit (`pepiteMentioned`), pas ce que le résumé contenait.
+  const current = await withCurrentPepiteMentions(sendable);
+  const mentioned = new Set(current.filter(mentionsPepite).map((notification) => notification.id));
   const message = buildAlertDigestMessage({
     userId,
-    notifications: await withCurrentPepiteMentions(sendable),
+    notifications: current,
     recipientEmail: recipient,
     from: config.from,
     appUrl: config.appUrl,
     now,
     env,
+    alertActivatedAt: activeAlerts,
+    audience: eligibility.audience,
   });
   const digestKey = createHash("sha256")
     .update(
@@ -709,6 +783,7 @@ async function deliverEmailAlertDigest({
       message,
       idempotencyKey: `immojudis-alert-digest-${userId}-${digestKey}`,
       fetchImpl,
+      category: "alert",
     });
     for (const notification of sendable) {
       await markEmailNotificationSent({
@@ -716,6 +791,7 @@ async function deliverEmailAlertDigest({
         now,
         recipient,
         messageId: sendResult.id,
+        pepiteMentioned: mentioned.has(notification.id),
       });
     }
     return {
@@ -776,14 +852,15 @@ function notificationAudience(notification: { notification_snapshot?: unknown })
     : null;
 }
 
-async function readActiveAlertIds(userId: string): Promise<Set<string>> {
+/** Les alertes actives du compte, avec leur date d'activation (création) : la raison de réception du pied. */
+async function readActiveAlerts(userId: string): Promise<Map<string, string | null>> {
   const { data, error } = await supabaseAdmin
     .from("user_alerts")
-    .select("id")
+    .select("id, created_at")
     .eq("user_id", userId)
     .eq("is_active", true);
   if (error) throw error;
-  return new Set((data ?? []).map((row) => row.id));
+  return new Map((data ?? []).map((row) => [row.id, row.created_at ?? null]));
 }
 
 async function markEmailNotificationCancelled({
@@ -823,11 +900,14 @@ export async function sendResendEmail({
   message,
   idempotencyKey,
   fetchImpl,
+  category,
 }: {
   apiKey: string;
   message: ResendEmailMessage;
   idempotencyKey: string;
   fetchImpl: typeof fetch;
+  /** Type de message : étiquette Resend `category`, obligatoire sur chaque envoi. */
+  category: EmailCategory;
 }): Promise<{ id: string | null }> {
   const payload: Record<string, unknown> = {
     from: message.from,
@@ -835,6 +915,7 @@ export async function sendResendEmail({
     subject: message.subject,
     html: message.html,
     text: message.text,
+    tags: [{ name: "category", value: category }],
   };
   // `replyTo` absent : l'adresse de réponse du site ; `null` : volontairement aucune.
   const replyTo = message.replyTo === undefined ? resolveReplyTo() : message.replyTo;
@@ -887,11 +968,14 @@ async function markEmailNotificationSent({
   now,
   recipient,
   messageId,
+  pepiteMentioned,
 }: {
   notification: NotificationRow;
   now: Date;
   recipient: string;
   messageId: string | null;
+  /** Le message envoyé portait la mention « pépite » pour cette vente (après relecture de la liste publique). */
+  pepiteMentioned: boolean;
 }) {
   const sentAt = now.toISOString();
   const { error } = await supabaseAdmin
@@ -906,6 +990,7 @@ async function markEmailNotificationSent({
         messageId,
         recipient,
         sentAt,
+        pepiteMentioned,
       }),
     })
     .eq("id", notification.id)
@@ -974,9 +1059,38 @@ async function readResendBody(response: Response): Promise<{ id?: string; error?
   }
 }
 
+/**
+ * Pourquoi cet email arrive : le nom de chaque alerte du message et sa date d'activation. Sans date
+ * connue, le nom seul.
+ */
+function receptionReasonLine(
+  groups: Array<{ alertId: string | null; alertName: string }>,
+  activatedAt?: ReadonlyMap<string, string | null>,
+): string {
+  const label = (group: { alertId: string | null; alertName: string }, joiner: string) => {
+    const date = formatHearingDate(
+      group.alertId ? (activatedAt?.get(group.alertId) ?? null) : null,
+    );
+    return `« ${group.alertName} »${date ? ` (${joiner} ${date})` : ""}`;
+  };
+  if (groups.length === 1) {
+    const date = formatHearingDate(
+      groups[0].alertId ? (activatedAt?.get(groups[0].alertId) ?? null) : null,
+    );
+    return `Vous recevez ce message parce que vous avez activé l’alerte « ${groups[0].alertName} »${date ? ` le ${date}` : ""}.`;
+  }
+  return `Vous recevez ce message parce que vous avez activé les alertes ${groups
+    .map((group) => label(group, "le"))
+    .join(", ")}.`;
+}
+
 function buildAlertDigestHtml({
   groups,
   hiddenCount,
+  hiddenLink,
+  title,
+  preheader,
+  receptionReason,
   alertsUrl,
   methodUrl,
   unsubscribeUrl,
@@ -990,6 +1104,14 @@ function buildAlertDigestHtml({
     items: Array<DigestItem & { url: string }>;
   }>;
   hiddenCount: number;
+  /** Lien « … et N autres » : la liste des alertes, ou le catalogue pour un compte Découverte. */
+  hiddenLink: { url: string; label: string };
+  /** Contenu de la balise `<title>` (l'objet du message). */
+  title: string;
+  /** Texte d'aperçu affiché par la messagerie après l'objet, masqué dans le message. */
+  preheader: string;
+  /** Pourquoi le message est reçu (nom et date d'activation de l'alerte). */
+  receptionReason: string;
   alertsUrl: string;
   /** Page « Comment repérons-nous les pépites ? », liée à la mention « Pépite ». */
   methodUrl: string;
@@ -1029,15 +1151,21 @@ function buildAlertDigestHtml({
 
   return `<!doctype html>
 <html lang="fr">
-  <body style="margin:0;background:${EMAIL_COLORS.surface};color:${EMAIL_COLORS.navy};font-family:Arial,sans-serif;">
+  <head>
+    <meta charset="utf-8">
+    <title>${escapeHtml(title)}</title>
+  </head>
+  <body style="margin:0;background:${EMAIL_COLORS.surface};color:${EMAIL_COLORS.navy};font-family:${EMAIL_FONT_STACK};">
+    <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${escapeHtml(preheader)}</div>
     <div style="max-width:620px;margin:0 auto;padding:28px 18px;">
+      ${emailBrandHeaderHtml()}
       <div style="background:#fff;border:1px solid ${EMAIL_COLORS.lineWarm};border-radius:10px;padding:24px;">
         <p style="margin:0 0 8px;font-size:16px;">Bonjour,</p>
         <p style="margin:0 0 18px;color:${EMAIL_COLORS.inkStrong};">${escapeHtml(intro)}</p>
         ${sections}
         ${
           hiddenCount > 0
-            ? `<p style="margin:0 0 16px;"><a href="${escapeAttribute(alertsUrl)}" style="color:${EMAIL_COLORS.navy};font-weight:700;">… et ${hiddenCount} autre${hiddenCount > 1 ? "s" : ""} vente${hiddenCount > 1 ? "s" : ""} sur Immojudis</a></p>`
+            ? `<p style="margin:0 0 16px;"><a href="${escapeAttribute(hiddenLink.url)}" style="color:${EMAIL_COLORS.navy};font-weight:700;">${escapeHtml(hiddenLink.label)}</a></p>`
             : ""
         }
         <p style="margin:12px 0 0;color:${EMAIL_COLORS.inkSoft};font-size:12px;line-height:1.5;">${escapeHtml(disclaimer)}</p>
@@ -1047,7 +1175,8 @@ function buildAlertDigestHtml({
             : ""
         }
       </div>
-      <p style="margin:14px 0 0;text-align:center;color:${EMAIL_COLORS.inkSoft};font-size:12px;">
+      <p style="margin:14px 0 0;text-align:center;color:${EMAIL_COLORS.inkSoft};font-size:12px;line-height:1.5;">${escapeHtml(receptionReason)}</p>
+      <p style="margin:8px 0 0;text-align:center;color:${EMAIL_COLORS.inkSoft};font-size:12px;">
         <a href="${escapeAttribute(alertsUrl)}" style="color:${EMAIL_COLORS.inkSoft};">Gérer mes alertes</a> ·
         <a href="${escapeAttribute(unsubscribeUrl)}" style="color:${EMAIL_COLORS.inkSoft};">Se désinscrire des alertes email</a>
       </p>

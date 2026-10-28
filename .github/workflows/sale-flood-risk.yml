@@ -18,8 +18,11 @@ concurrency:
 
 jobs:
   run:
+    # Receives the production service-role key: only the code of `main` may run with it (a dispatch from another
+    # branch would run that branch's code with the secret). The Vercel route dispatches on `main`.
+    if: github.ref == 'refs/heads/main'
     name: Observe flood risk
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

@@ -5,7 +5,7 @@
 -- les changements d'adresse et ne bloque jamais une inscription (adresse nulle comprise).
 begin;
 
-select plan(47);
+select plan(48);
 
 -- Fixtures -------------------------------------------------------------------------------------
 -- 01 a+1 (confirmé il y a 3 jours) ; 02 a+2 (2 jours) ; 13 a+3 (premium, non confirmé)
@@ -291,8 +291,13 @@ select is(
 update app_private.launch_offer set active = false where singleton;
 select is(
   app_private.has_active_analysis_access('c5400000-0000-4000-8000-000000000001'),
+  true,
+  'cut offer: an eligible account confirmed before the cut keeps its running trial (20261108130100)'
+);
+select is(
+  app_private.has_active_analysis_access('c5400000-0000-4000-8000-000000000002'),
   false,
-  'cut offer: nobody is upgraded, eligible or not'
+  'cut offer: an account that is not eligible is not upgraded either'
 );
 select is(
   app_private.has_active_analysis_access('c5400000-0000-4000-8000-000000000012'),

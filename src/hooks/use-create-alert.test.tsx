@@ -173,7 +173,10 @@ describe("useCreateAlert", () => {
     // Le consentement à l'email n'est jamais donné sans demande explicite.
     expect(mocks.updatePreferences).not.toHaveBeenCalled();
     expect(mocks.toast.success).toHaveBeenCalledWith("Zone surveillée et alerte créées");
-    expect(mocks.track).toHaveBeenCalledWith("alert_created", { email_consent: false });
+    expect(mocks.track).toHaveBeenCalledWith("alert_created", {
+      email_consent: false,
+      pepite_only: false,
+    });
   });
 
   it("n'active l'email récapitulatif que si la case a été cochée", async () => {
@@ -187,7 +190,10 @@ describe("useCreateAlert", () => {
     expect(mocks.toast.success).toHaveBeenCalledWith(
       "Zone surveillée et alerte créées. Email récapitulatif activé.",
     );
-    expect(mocks.track).toHaveBeenCalledWith("alert_created", { email_consent: true });
+    expect(mocks.track).toHaveBeenCalledWith("alert_created", {
+      email_consent: true,
+      pepite_only: false,
+    });
   });
 
   it("garde l'alerte et le dit quand l'email récapitulatif n'a pas pu être activé", async () => {

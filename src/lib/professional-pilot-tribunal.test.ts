@@ -9,7 +9,15 @@ const PV_URL = "https://avoventes.example/vente/123/pv-descriptif.pdf";
 const DIAGNOSTICS_URL = "https://avoventes.example/vente/123/diagnostics.pdf";
 
 it("does not cite a jurisdiction reference as proof of sale-specific payment rules", () => {
-  const pilot = buildTribunalPilot(EXAMPLE_SALE);
+  // The example's evidence now points to its own fictitious documents; this case keeps the generic
+  // reference page as the only "proof", which must never back a sale-specific payment rule.
+  const referenceOnly = JSON.parse(
+    JSON.stringify(EXAMPLE_SALE).replace(
+      /https:\/\/immojudis\.com\/annonce-exemple#[a-z_-]+/g,
+      "/ressources",
+    ),
+  ) as AuctionSale;
+  const pilot = buildTribunalPilot(referenceOnly);
   const guarantee = pilot.facts.find((fact) => fact.label === "Consignation");
   expect(guarantee?.value).toBeNull();
   expect(guarantee?.sourceUrl).toBeNull();

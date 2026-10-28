@@ -20,7 +20,7 @@ export const OFFER_OPENING_REQUESTED_TEXT =
  * version changent ensemble, la version est conservée avec les réponses et la route refuse une
  * requête qui en cite une autre.
  */
-export const OFFER_OPENING_SURVEY_VERSION = "2026-10-28.2";
+export const OFFER_OPENING_SURVEY_VERSION = "2026-10-28.3";
 
 export const OFFER_OPENING_SURVEY_INTRO =
   "Aidez-nous à préparer l’offre : trois questions, toutes facultatives. Vos réponses n’ont aucun effet sur votre demande et sont effacées avec elle.";
@@ -72,7 +72,7 @@ export function offerOpeningInterviewNotice(input: {
   contactEmail: string;
 }): string[] {
   return [
-    "Objectif : comprendre comment vous choisissez les ventes que vous étudiez, pour améliorer l’offre Analyse.",
+    "Objectif : comprendre comment vous choisissez les ventes que vous étudiez et ce que vous pensez de l’accueil du site, du repère « Pépite » et de l’essai gratuit, pour améliorer le site et l’offre Analyse.",
     `Responsable du traitement : ${input.controller}. Base : votre accord, donné par cette case.`,
     `Enregistrement : aucun sans votre accord exprès, demandé au début de l’entretien. Refuser l’enregistrement n’a aucune conséquence. Si vous l’acceptez, il ne sert qu’à rédiger les notes et il est supprimé au plus tard ${OFFER_OPENING_INTERVIEW_RECORDING_RETENTION_DAYS} jours après l’entretien. Les notes sont conservées ${OFFER_OPENING_INTERVIEW_NOTES_RETENTION_MONTHS} mois au plus.`,
     `Retrait : à tout moment, en décochant la case (le retrait prend effet après un clic sur « ${OFFER_OPENING_SURVEY_SUBMIT_LABEL} ») ou en retirant votre demande. Pour faire effacer les notes ou l’enregistrement d’un entretien déjà passé, écrivez à ${input.contactEmail}.`,

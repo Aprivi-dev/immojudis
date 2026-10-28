@@ -60,7 +60,7 @@ describe("AdminLaunchOfferPanel", () => {
 
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText("Couper l’essai gratuit ?")).toBeTruthy();
-    expect(await within(dialog).findByText(/27 comptes perdent les avantages/)).toBeTruthy();
+    expect(await within(dialog).findByText(/27 comptes sont en essai/)).toBeTruthy();
     expect(window.confirm).not.toHaveBeenCalled();
     expect(mocks.setOffer).not.toHaveBeenCalled();
   });
@@ -103,7 +103,7 @@ describe("AdminLaunchOfferPanel", () => {
 
     mocks.pilotage.mockResolvedValue(pilotageWith(1));
     fireEvent.click(screen.getByRole("button", { name: "Couper l’essai gratuit" }));
-    expect(await screen.findByText(/^1 compte perd les avantages/)).toBeTruthy();
+    expect(await screen.findByText(/^1 compte est en essai/)).toBeTruthy();
   });
 
   it("restores the offer without confirmation, since it takes nothing from anyone", async () => {

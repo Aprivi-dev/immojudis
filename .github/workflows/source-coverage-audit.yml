@@ -16,6 +16,9 @@ permissions:
   contents: read
 jobs:
   inventory:
+    # Receives SUPABASE_DB_URL: only the code of `main` may run with it (a dispatch from another branch
+    # would run that branch's code with the production secret).
+    if: github.ref == 'refs/heads/main'
     strategy:
       fail-fast: false
       max-parallel: 2
@@ -24,7 +27,7 @@ jobs:
         # Publiques remains an explicit opt-in so this audit cannot silently
         # imply that its unconfigured access has been certified.
         source: ${{ fromJSON(inputs.audit_kind == 'absent_details' && (inputs.source_group == 'vench' && '["vench"]' || '["licitor"]') || inputs.audit_kind == 'reconciliation' && '["agrasc","avoventes","cessions_etat","info_encheres"]' || inputs.source_group == 'encheres_publiques' && '["encheres_publiques"]' || inputs.source_group == 'notarial' && '["notaires","agrasc"]' || inputs.source_group == 'followup' && '["avoventes","vench","encheres_immobilieres"]' || inputs.source_group == 'cloud' && '["petites_affiches","cessions_etat"]' || '["avoventes","licitor","vench","info_encheres","petites_affiches","cessions_etat","agrasc","encheres_immobilieres","notaires"]') }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
       # Honest, contactable crawler identity; a repository variable overrides it.

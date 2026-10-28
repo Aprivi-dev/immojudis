@@ -4,7 +4,7 @@ import { runSalePepitesBatch } from "@/lib/sale-pepites-batch";
 export const maxDuration = 300;
 
 /**
- * Calcule la pépite des ventes en ligne et la stocke (règle `pepite-v1`, voir
+ * Calcule la pépite des ventes en ligne et la stocke (règle `pepite-v1.1`, voir
  * `src/lib/sale-pepites-batch.ts`). Même protection que les autres routes planifiées : jeton
  * `CRON_SECRET`, supervision par `runMonitoredCron`, reprise sur erreur réseau.
  */

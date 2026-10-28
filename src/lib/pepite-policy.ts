@@ -3,7 +3,8 @@
 // « Comment repérons-nous les pépites ? » (`src/app/methode-pepites/method.ts`) relit : un seuil
 // change ici ou nulle part, et toute modification crée une nouvelle version (`PEPITE_LATEST_RULE_VERSION`).
 //
-// Une pépite est un potentiel d'investissement. Elle combine deux tests :
+// Une pépite est une vente qui remplit deux conditions chiffrées, calculées sur les données
+// disponibles :
 //   B : de bonnes chances de remporter la vente sans dépasser l'enchère plafond de référence
 //       (tribunal seulement : c'est le seul type qui a un historique de prix d'adjudication) ;
 //   C : à ce prix, l'achat est nettement sous la valeur du bien, frais compris.
@@ -15,19 +16,34 @@
 // de profil. `scripts/check-security-invariants.mjs` vérifie que ce module et ceux qui le nourrissent
 // n'importent aucun module d'avocats ou de sponsoring et ne lisent pas `investment_score`.
 import type { AuctionScenario, ScenarioReliability } from "@/lib/auction-scenarios";
-import type { OccupationCase } from "@/lib/bid-ceiling-engine";
+import type { FeeSource, OccupationCase } from "@/lib/bid-ceiling-engine";
 import { ceilingPosition } from "@/lib/ceiling-vs-court";
 import type { FloodVerdict } from "@/lib/flood-risk";
 
 /**
- * Version courante de la règle : `pepite-v2` ajoute le critère éliminatoire du risque d'inondation (module
- * `flood-risk.ts`). `pepite-v1` reste rejouable (`evaluatePepite(input, PEPITE_V1_RULE_VERSION)`) : c'est la
- * règle APPLIQUÉE tant que l'interrupteur serveur `PEPITE_RULE_V2_ENABLED` est fermé
- * (`pepite-rule-switch.server.ts`). Les seuils sont communs aux deux versions : seule l'inondation s'ajoute.
+ * Versions de la règle.
+ *  - `pepite-v1` : la règle d'origine (26/10/2026). Elle reste rejouable à l'identique
+ *    (`evaluatePepite(input, PEPITE_V1_RULE_VERSION)`), jamais modifiée ;
+ *  - `pepite-v1.1` : la règle d'origine corrigée (compte-rendu du 27/10/2026, n° 20 à 23 et 26) : test B réussi
+ *    seulement si la part plancher atteint le seuil, borne basse de Wilson, frais connus en vente notariale,
+ *    décote d'occupation sur la valeur du test C, fiabilité « forte » sous 30 % de la valeur, et qualité de
+ *    l'estimation bloquante pendant le gel. C'est la règle APPLIQUÉE tant que l'interrupteur serveur
+ *    `PEPITE_RULE_V2_ENABLED` est fermé (`pepite-rule-switch.server.ts`) ;
+ *  - `pepite-v2` (version courante) : `pepite-v1.1` plus le critère éliminatoire du risque d'inondation (module
+ *    `flood-risk.ts`). Les seuils sont communs à `pepite-v1.1` et `pepite-v2` : seule l'inondation s'ajoute.
  */
 export const PEPITE_LATEST_RULE_VERSION = "pepite-v2";
 export const PEPITE_V1_RULE_VERSION = "pepite-v1";
-export type PepiteRuleVersion = typeof PEPITE_LATEST_RULE_VERSION | typeof PEPITE_V1_RULE_VERSION;
+export const PEPITE_V1_1_RULE_VERSION = "pepite-v1.1";
+export type PepiteRuleVersion =
+  | typeof PEPITE_LATEST_RULE_VERSION
+  | typeof PEPITE_V1_1_RULE_VERSION
+  | typeof PEPITE_V1_RULE_VERSION;
+
+/** Les versions qui portent les corrections du 27/10/2026 (tout sauf la règle d'origine). */
+export function isCorrectedRule(ruleVersion: PepiteRuleVersion): boolean {
+  return ruleVersion !== PEPITE_V1_RULE_VERSION;
+}
 
 /** Test B, entrée : part minimale des ventes comparables adjugées sous l'enchère plafond. */
 export const PEPITE_CHANCE_MIN_SHARE = 0.7;
@@ -76,6 +92,20 @@ export const PEPITE_HISTORY_YEARS = 3;
 export const PEPITE_COURT_COMPLETE_BELOW_SALES = 30;
 /** Sous ce nombre de ventes du tribunal, on le remplace par le taux national. */
 export const PEPITE_COURT_REPLACE_BELOW_SALES = 10;
+/**
+ * Lissage de la part du test B (SQL `app_private.court_auction_scenarios`, migration 20261101120100) : à partir
+ * de `PEPITE_COURT_REPLACE_BELOW_SALES` ventes du tribunal, la part est (ventes du tribunal + 15 x taux national)
+ * / (ventes du tribunal + 15), quel que soit l'effectif. Sous ce seuil, la part est celle du national seul.
+ */
+export const PEPITE_SMOOTHING_WEIGHT_SALES = 15;
+/** Fourchette de prix (quantiles) : lots du tribunal seuls à partir de ce nombre de ventes, national en dessous. */
+export const PEPITE_PRICE_COURT_ONLY_FROM_SALES = 20;
+/** Ventes nationales comparables minimales : en dessous, aucun chiffre. */
+export const PEPITE_MIN_NATIONAL_SALES = 30;
+/** Test B (pepite-v1.1 et suivantes), entrée : borne basse de l'intervalle de Wilson à 95 % de la part. */
+export const PEPITE_CHANCE_MIN_WILSON_LOW = 0.5;
+/** Quantile de la loi normale pour l'intervalle de Wilson à 95 % (même valeur que les statistiques des tribunaux). */
+const WILSON_Z_95 = 1.959964;
 /** Fiabilité minimale des scénarios d'adjudication : en dessous, le test B n'est pas évaluable. */
 export const PEPITE_MIN_SCENARIO_RELIABILITY: ScenarioReliability = "medium";
 /** Mise à prix inférieure à cette part de la valeur centrale : on retient q75 au lieu de q50. */
@@ -117,6 +147,10 @@ export const PEPITE_CRITERIA = [
   "gap_significant",
   "property_type_supported",
   "occupancy_known",
+  // pepite-v1.1 et suivantes : frais de la vente notariale lus (pas des valeurs par défaut) ; mise à prix sous
+  // 30 % de la valeur : estimation de fiabilité « forte » exigée.
+  "fees_known",
+  "low_start_strong_estimate",
   // Inondation (pepite-v2) : exigée à l'entrée, tolérée au maintien, jamais affichée.
   "flood_risk_known",
   // Signaux bloquants.
@@ -162,6 +196,16 @@ export const PEPITE_BLOCKING_CRITERIA: readonly PepiteCriterionId[] = [
   "no_high_flood_risk",
 ];
 
+/**
+ * Qualité de l'estimation qui, manquée pendant le gel à J-7, fait sortir une pépite publiée (pepite-v1.1 et
+ * suivantes) : la pépite ne reste pas affichée sur une estimation qui ne la justifie plus.
+ */
+export const PEPITE_FREEZE_QUALITY_CRITERIA: readonly PepiteCriterionId[] = [
+  "public_gap_gate",
+  "estimate_reliability",
+  "estimate_actionable",
+];
+
 export type PepiteEstimateInput = {
   /** L'estimation est exploitable (`actionable`). */
   actionable: boolean;
@@ -197,6 +241,19 @@ export type PepiteScenariosInput = {
   nationalSample: number;
 } | null;
 
+/**
+ * Source de chaque poste de frais du coût d'achat (`feesSource` du moteur de plafond) : `defaut` signale un
+ * montant non lu, ni saisi (pepite-v1.1 : refusé en vente notariale, signalé en administration au tribunal).
+ */
+export type PepiteFeesInput = {
+  /** Frais préalables (tribunal) ; `null` : sans objet. */
+  preliminary: FeeSource | null;
+  /** Honoraires de négociation de l'acquéreur (vente interactive) ; `null` : sans objet. */
+  negotiation: FeeSource | null;
+  /** Frais de publicité de l'acquéreur (vente interactive) ; `null` : sans objet. */
+  advertising: FeeSource | null;
+};
+
 export type PepiteSignals = {
   /** Terrain seul ou actif mixte. */
   landOrMixed: boolean;
@@ -230,8 +287,15 @@ export type PepiteInput = {
   ceiling: PepiteCeilingInput | null;
   scenarios: PepiteScenariosInput;
   signals: PepiteSignals;
-  /** Verdict d'inondation ; ignoré par `pepite-v1`. */
+  /** Verdict d'inondation ; ignoré par `pepite-v1` et `pepite-v1.1`. */
   flood: PepiteFloodInput;
+  /** Sources des frais (pepite-v1.1 et suivantes) ; absent : critère `fees_known` non évalué. */
+  fees?: PepiteFeesInput | null;
+  /**
+   * Décote d'occupation de la valeur centrale, en % (0 à 50) : bien loué, `rentedDiscountPct` du moteur de
+   * plafond ; bien libre ou occupé (frais de libération déjà comptés dans le coût), 0. Pepite-v1.1 et suivantes.
+   */
+  occupancyDiscountPct?: number;
 };
 
 export type PepiteMetrics = {
@@ -250,6 +314,14 @@ export type PepiteMetrics = {
   chanceShare: number | null;
   /** La part est un plancher (« au moins »). */
   chanceAtLeast: boolean;
+  /** Effectif sur lequel la part est lissée (tribunal + poids national) ; `null` : sans objet. */
+  chanceSample: number | null;
+  /** Borne basse de l'intervalle de Wilson à 95 % de la part (0 à 1). */
+  chanceWilsonLow: number | null;
+  /** Décote d'occupation appliquée à la valeur centrale du test C, en % (pepite-v1.1 et suivantes). */
+  occupancyDiscountPct: number | null;
+  /** Un frais du coût d'achat est une valeur par défaut (frais préalables, négociation ou publicité). */
+  feesDefault: boolean;
   /** Le plafond est sous la mise à prix : aucune enchère n'est possible. */
   ceilingBelowStart: boolean;
   /** Test C : coût total au prix probable, et ce coût rapporté à la valeur centrale. */
@@ -265,6 +337,8 @@ export type PepiteEvaluation = {
   regime: PepiteRegimeKey | null;
   /** Tous les critères d'entrée sont réussis. */
   favorable: boolean;
+  /** Une porte de qualité de l'estimation est manquée (`PEPITE_FREEZE_QUALITY_CRITERIA`, pepite-v1.1 et suivantes). */
+  frozenQualityMissed: boolean;
   /** La vente tient toujours aux seuils de sortie (hystérésis). */
   holds: boolean;
   /** Au moins un signal bloquant. */
@@ -294,6 +368,10 @@ const EMPTY_METRICS: PepiteMetrics = {
   rangeHighEur: null,
   chanceShare: null,
   chanceAtLeast: false,
+  chanceSample: null,
+  chanceWilsonLow: null,
+  occupancyDiscountPct: null,
+  feesDefault: false,
   ceilingBelowStart: false,
   totalCostEur: null,
   costRatio: null,
@@ -306,7 +384,36 @@ const EMPTY_METRICS: PepiteMetrics = {
  */
 type FloodMode = "entry" | "hold" | "off";
 
-type Thresholds = { chanceMinShare: number; costMaxShare: number; flood: FloodMode };
+type Thresholds = {
+  chanceMinShare: number;
+  /** Borne basse de Wilson exigée de la part ; `null` : non exigée (maintien, règle d'origine). */
+  chanceMinWilsonLow: number | null;
+  costMaxShare: number;
+  flood: FloodMode;
+  /** Corrections du 27/10/2026 (pepite-v1.1 et suivantes). */
+  corrected: boolean;
+};
+
+/** Borne basse de l'intervalle de Wilson à 95 % d'une part observée sur `sample` ventes. */
+export function wilsonLowerBound(share: number, sample: number): number {
+  if (!(sample > 0) || !Number.isFinite(share)) return 0;
+  const p = Math.min(1, Math.max(0, share));
+  const z2 = WILSON_Z_95 ** 2;
+  const denominator = 1 + z2 / sample;
+  const center = p + z2 / (2 * sample);
+  const margin = WILSON_Z_95 * Math.sqrt((p * (1 - p)) / sample + z2 / (4 * sample ** 2));
+  return Math.max(0, (center - margin) / denominator);
+}
+
+/**
+ * Effectif sur lequel la part du test B est calculée par la base : tribunal + poids national dès 10 ventes du
+ * tribunal, sinon les ventes nationales seules.
+ */
+export function chanceSampleSize(courtSample: number, nationalSample: number): number {
+  return courtSample >= PEPITE_COURT_REPLACE_BELOW_SALES
+    ? courtSample + PEPITE_SMOOTHING_WEIGHT_SALES
+    : nationalSample;
+}
 
 /** Seuil du test C à l'entrée : plus strict pour les ventes notariales. */
 function entryCostMaxShare(regime: PepiteRegimeKey): number {
@@ -397,6 +504,24 @@ function runCriteria(
     "occupancy_known",
     signals.occupancy === "libre" || signals.occupancy === "occupe" || signals.occupancy === "loue",
   );
+  // pepite-v1.1 : en vente notariale, des honoraires de négociation ou des frais de publicité « par défaut » ne
+  // sont pas des frais connus (le coût d'achat serait sous-estimé). Au tribunal, les défauts restent admis.
+  const fees = input.fees ?? null;
+  const feesDefault =
+    fees != null &&
+    (fees.preliminary === "defaut" ||
+      fees.negotiation === "defaut" ||
+      fees.advertising === "defaut");
+  if (thresholds.corrected && !court && fees != null) {
+    check("fees_known", fees.negotiation !== "defaut" && fees.advertising !== "defaut");
+  }
+  // pepite-v1.1 : sous 30 % de la valeur, l'écart se confond souvent avec une erreur de valeur ; seule une
+  // estimation de fiabilité « forte » l'admet.
+  if (thresholds.corrected && start != null && central != null) {
+    if (start / central < PEPITE_LOW_STARTING_PRICE_SHARE) {
+      check("low_start_strong_estimate", estimate?.reliability === "forte");
+    }
+  }
 
   // Signaux bloquants.
   check("no_valuation_conflict", !signals.valuationConflict);
@@ -426,7 +551,12 @@ function runCriteria(
     lowValueEur: low,
     referenceCeilingEur: reference,
     startingShareOfValue: start != null && central != null ? start / central : null,
+    feesDefault,
   };
+  const occupancyDiscountPct = thresholds.corrected
+    ? Math.min(50, Math.max(0, input.occupancyDiscountPct ?? 0))
+    : 0;
+  if (thresholds.corrected) metrics.occupancyDiscountPct = occupancyDiscountPct;
 
   // Prix probable : mise à prix × multiplicateur local (tribunal) ; la mise à prix elle-même, ou la
   // première offre possible, pour une vente notariale (aucun historique en base).
@@ -454,12 +584,33 @@ function runCriteria(
     if (position?.kind === "share") {
       metrics.chanceShare = position.share;
       metrics.chanceAtLeast = position.atLeast;
-      // Un plancher (« au moins », au-delà de 3 fois la mise à prix) réussit le test.
-      check(
-        "test_b_chance",
-        Number.isFinite(position.share) &&
-          (position.atLeast || position.share >= thresholds.chanceMinShare),
-      );
+      const sample = chanceSampleSize(scenarios.courtSample, scenarios.nationalSample);
+      const wilsonLow = Number.isFinite(position.share)
+        ? wilsonLowerBound(position.share, sample)
+        : null;
+      if (thresholds.corrected) {
+        metrics.chanceSample = sample;
+        metrics.chanceWilsonLow = wilsonLow;
+      }
+      if (thresholds.corrected) {
+        // Un plancher (« au moins », au-delà de 3 fois la mise à prix) est une part ÉTABLIE au moins égale à
+        // `position.share` : il réussit le test seulement s'il atteint le seuil, comme une part exacte. À
+        // l'entrée, l'effectif doit aussi porter la part (borne basse de Wilson).
+        check(
+          "test_b_chance",
+          Number.isFinite(position.share) &&
+            position.share >= thresholds.chanceMinShare &&
+            (thresholds.chanceMinWilsonLow == null ||
+              (wilsonLow != null && wilsonLow >= thresholds.chanceMinWilsonLow)),
+        );
+      } else {
+        // pepite-v1 (figée) : un plancher réussit le test quelle que soit la part.
+        check(
+          "test_b_chance",
+          Number.isFinite(position.share) &&
+            (position.atLeast || position.share >= thresholds.chanceMinShare),
+        );
+      }
     } else {
       // Plafond sous la mise à prix (ou sans tranche exploitable) : aucune enchère ne tient.
       metrics.ceilingBelowStart = position?.kind === "below_start" || reference <= 0;
@@ -472,7 +623,8 @@ function runCriteria(
     const total = ceiling.totalCostAt(metrics.probablePriceEur);
     if (total != null && Number.isFinite(total)) {
       metrics.totalCostEur = total;
-      metrics.costRatio = total / central;
+      // pepite-v1.1 : la valeur centrale est celle d'un bien libre ; un bien loué se négocie moins cher.
+      metrics.costRatio = total / (central * (1 - occupancyDiscountPct / 100));
       check("test_c_cost", metrics.costRatio <= thresholds.costMaxShare);
     } else {
       // Coût illisible : le test est manqué (jamais réussi par défaut).
@@ -516,6 +668,7 @@ export function evaluatePepite(
   const regime = input.regime;
   const base = { ruleVersion, regime };
   const v2 = ruleVersion === PEPITE_LATEST_RULE_VERSION;
+  const corrected = isCorrectedRule(ruleVersion);
 
   const eligibility: PepiteCriterionId[] = [];
   const ineligible: PepiteCriterionId[] = [];
@@ -526,6 +679,7 @@ export function evaluatePepite(
       ...base,
       status: "not_applicable",
       favorable: false,
+      frozenQualityMissed: false,
       holds: false,
       blocking: false,
       passed: eligibility,
@@ -537,13 +691,18 @@ export function evaluatePepite(
 
   const entry = runCriteria(input, regime, {
     chanceMinShare: PEPITE_CHANCE_MIN_SHARE,
+    chanceMinWilsonLow: corrected ? PEPITE_CHANCE_MIN_WILSON_LOW : null,
     costMaxShare: entryCostMaxShare(regime),
     flood: v2 ? "entry" : "off",
+    corrected,
   });
   const exit = runCriteria(input, regime, {
     chanceMinShare: PEPITE_CHANCE_EXIT_SHARE,
+    // Au maintien, la part seule compte : une pépite dont l'effectif est mince reste « à confirmer ».
+    chanceMinWilsonLow: null,
     costMaxShare: exitCostMaxShare(regime),
     flood: v2 ? "hold" : "off",
+    corrected,
   });
 
   const missed = sortByCatalogue(entry.missed);
@@ -561,6 +720,8 @@ export function evaluatePepite(
     ...base,
     status,
     favorable: status === "pepite",
+    frozenQualityMissed:
+      corrected && missed.some((id) => PEPITE_FREEZE_QUALITY_CRITERIA.includes(id)),
     holds: exit.missed.length === 0,
     blocking,
     passed: sortByCatalogue([...eligibility, ...entry.passed]),
@@ -581,6 +742,8 @@ export type PepiteStoredState = {
   dataMissingSince: string | null;
   /** Mise à prix lue lors de la dernière évaluation. */
   inputStartingPriceEur: number | null;
+  /** Version de la règle qui a produit cet état : une version différente de celle appliquée lève le gel (J-7). */
+  ruleVersion?: string | null;
 };
 
 export type PepiteStability = {
@@ -623,7 +786,9 @@ const RESET: Omit<PepiteStability, "codes"> = {
  *  - donnée manquante (statut « insuffisant ») : une pépite publiée est tolérée `PEPITE_DATA_GRACE_HOURS`
  *    heures sans changer, puis sort ;
  *  - gel à `PEPITE_FREEZE_DAYS` jours de la vente : le résultat ne change plus, sauf signal
- *    bloquant ou changement de prix.
+ *    bloquant, changement de prix, changement de version de la règle (réévaluée une fois, aux seuils de sortie)
+ *    ou (pepite-v1.1 et suivantes) porte de qualité de l'estimation manquée ;
+ *    le traitement planifié ne réécrit pas non plus les détails de l'évaluation publiée (`sale-pepites-batch.ts`).
  * `previous` : l'état stocké, quelle que soit la version de la règle, du moteur ou du régime : un
  * changement de version ne remet rien à zéro, la vente est réévaluée tout de suite et une pépite publiée
  * ne reste publiée que si la nouvelle évaluation passe les seuils de sortie.
@@ -656,7 +821,15 @@ export function applyPepiteStability({
   const saleMs = timestamp(saleDate);
   const frozenWindow =
     saleMs != null && saleMs > nowMs && saleMs - nowMs <= PEPITE_FREEZE_DAYS * DAY_MS;
-  if (frozenWindow && previous && !priceChanged) {
+  // Une évaluation stockée sous une autre version de la règle ne reste pas gelée : ses motifs et ses détails seraient
+  // ceux de l'ancienne règle sous l'étiquette de la nouvelle. Elle est réévaluée une fois, aux seuils de sortie.
+  const ruleChanged =
+    previous?.ruleVersion != null && previous.ruleVersion !== evaluation.ruleVersion;
+  if (frozenWindow && previous && !priceChanged && !ruleChanged) {
+    // pepite-v1.1 : une porte de qualité de l'estimation manquée est bloquante pendant le gel.
+    if (evaluation.frozenQualityMissed && previous.isPepite) {
+      return { ...RESET, codes: ["stab:exit_quality"] };
+    }
     return {
       isPepite: previous.isPepite,
       favorableStreak: previous.favorableStreak,

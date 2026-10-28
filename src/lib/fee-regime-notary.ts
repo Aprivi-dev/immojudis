@@ -8,40 +8,24 @@ import {
   NOTARY_AUCTION_FEE_REGIME_TERMS,
   NOTARY_ONLINE_FEE_REGIME_TERMS,
 } from "@/lib/fee-regime-labels";
-import type { EmolumentBracket } from "@/lib/profitability";
+import {
+  NOTARY_AUCTION_EMOLUMENT_BRACKETS,
+  NOTARY_AUCTION_ORGANIZATION_FEE_RATE,
+  NOTARY_EMOLUMENT_SCALE_DATE,
+  NOTARY_EMOLUMENT_SCALE_REFERENCE,
+  NOTARY_ONLINE_EMOLUMENT_BRACKETS,
+} from "@/lib/fee-regime-notary-scale";
 import type { ConsignationRule, FeeRegime, FeeRegimeLabels } from "@/lib/fee-regime-definitions";
 
 // ─── Barèmes des émoluments du notaire ───────────────────────────────────
-// Tarif des notaires : taux HT appliqués tranche par tranche au prix, mêmes seuils de tranches que
-// le barème de l'avocat poursuivant du tribunal (6 500 €, 17 000 €, 60 000 €). Valeurs relevées sur
-// des sources secondaires concordantes (copies du tarif, arrêtés du 25/02/2026 applicables du
-// 01/03/2026 au 29/02/2028) dans le rapport de recherche du 26/10/2026 ; À CONFIRMER SUR LÉGIFRANCE
-// avant toute évolution. Après le 29/02/2028, le barème est à revérifier.
-export const NOTARY_EMOLUMENT_SCALE_REFERENCE =
-  "tarif des notaires (arrêtés du 25/02/2026, applicables du 01/03/2026 au 29/02/2028)";
-export const NOTARY_EMOLUMENT_SCALE_DATE = "26/10/2026";
-
-/** Barème « adjudication volontaire » : vente à la bougie. 7,74 / 3,192 / 2,129 / 1,597 % HT. */
-export const NOTARY_AUCTION_EMOLUMENT_BRACKETS: readonly EmolumentBracket[] = [
-  { upTo: 6_500, rate: 0.0774 },
-  { upTo: 17_000, rate: 0.03192 },
-  { upTo: 60_000, rate: 0.02129 },
-  { upTo: Infinity, rate: 0.01597 },
-];
-
-/** Barème de gré à gré : vente interactive. 3,870 / 1,596 / 1,064 / 0,799 % HT. */
-export const NOTARY_ONLINE_EMOLUMENT_BRACKETS: readonly EmolumentBracket[] = [
-  { upTo: 6_500, rate: 0.0387 },
-  { upTo: 17_000, rate: 0.01596 },
-  { upTo: 60_000, rate: 0.01064 },
-  { upTo: Infinity, rate: 0.00799 },
-];
-
-/**
- * Frais d'organisation et de publicité d'une vente à la bougie : 2 % HT du prix (TVA en sus). Ils
- * entrent dans la base des droits de mutation (BOFiP).
- */
-export const NOTARY_AUCTION_ORGANIZATION_FEE_RATE = 0.02;
+// Définis dans `fee-regime-notary-scale.ts` (sans textes) et réexportés ici.
+export {
+  NOTARY_AUCTION_EMOLUMENT_BRACKETS,
+  NOTARY_AUCTION_ORGANIZATION_FEE_RATE,
+  NOTARY_EMOLUMENT_SCALE_DATE,
+  NOTARY_EMOLUMENT_SCALE_REFERENCE,
+  NOTARY_ONLINE_EMOLUMENT_BRACKETS,
+} from "@/lib/fee-regime-notary-scale";
 
 /** Garantie à déposer : lue dans l'annonce, sinon 20 % de la mise à prix, montant à confirmer. */
 export const NOTARY_AUCTION_CONSIGNATION_RULE: ConsignationRule = {
@@ -123,7 +107,7 @@ export const NOTARY_AUCTION_FEE_REGIME_LABELS: FeeRegimeLabels = {
 export const NOTARY_ONLINE_FEE_REGIME_LABELS: FeeRegimeLabels = {
   ...NOTARY_ONLINE_FEE_REGIME_TERMS,
   referencePriceTerm: "première offre possible",
-  bidVerb: "offrir",
+  bidVerb: "faire une offre allant",
   byOffers: true,
   ceilingStepLabel: "Offre plafond",
   ceilingStepDetail: `Arrondie aux 500 € inférieurs. Au-delà, l’opération ne respecte plus vos objectifs. ${NOTARY_ONLINE_RESERVE_NOTICE}`,
@@ -193,10 +177,13 @@ export const NOTARY_AUCTION_FEE_REGIME: FeeRegime = {
   labels: NOTARY_AUCTION_FEE_REGIME_LABELS,
 };
 
+// Chaque régime a sa propre version (test d'unicité de `fee-regime.test.ts`) : ".1" vente à la bougie, ".2"
+// tribunal (`fee-regime-definitions.ts`), ".3" vente interactive. Changer le barème d'un seul régime ne rend
+// obsolètes que les évaluations de ce régime (`isObsoleteEvaluation`, par clé de régime).
 export const NOTARY_ONLINE_FEE_REGIME: FeeRegime = {
   key: "notary_online",
   kind: "notarial",
-  version: "2026-10-26.1",
+  version: "2026-10-26.3",
   emolumentScale: {
     reference: NOTARY_EMOLUMENT_SCALE_REFERENCE,
     date: NOTARY_EMOLUMENT_SCALE_DATE,

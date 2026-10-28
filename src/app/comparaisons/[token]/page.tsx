@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { SaleComparisonTable } from "@/components/search/SaleComparisonTable";
 import { formatDate } from "@/lib/format";
@@ -52,6 +53,15 @@ export default async function SharedSaleComparisonPage({
           >
             Explorer le catalogue
           </a>
+          <p>
+            Cette comparaison a été préparée avec Immojudis.{" "}
+            <Link
+              href="/annonce-exemple"
+              className="inline-flex min-h-11 items-center font-bold text-brand-navy underline underline-offset-2"
+            >
+              Voir une analyse exemple
+            </Link>
+          </p>
         </footer>
       </article>
     </main>

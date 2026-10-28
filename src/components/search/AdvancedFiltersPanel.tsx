@@ -214,8 +214,11 @@ export function MobileFilterDrawer({
             </fieldset>
           </AdvancedGroup>
 
-          <AdvancedGroup title="Prix et surface">
+          <AdvancedGroup title="Dates de vente">
             <DateRangeFields draft={draft} setDraft={setDraft} />
+          </AdvancedGroup>
+
+          <AdvancedGroup title="Prix et surface">
             <FilterField label="Surface minimum">
               <Input
                 inputMode="numeric"
@@ -285,7 +288,7 @@ export function MobileFilterDrawer({
                   className="h-10 bg-white"
                 />
               </FilterField>
-              <FilterField label="Rendement min">
+              <FilterField label="Rendement brut min. à la mise à prix">
                 <Input
                   inputMode="numeric"
                   value={draft.minYield}
@@ -297,8 +300,10 @@ export function MobileFilterDrawer({
                 />
               </FilterField>
               <p className="text-xs leading-relaxed text-ink-soft">
-                Ce filtre s’appuie sur un repère de loyer départemental ; les alertes, exports et
-                statistiques utilisent la carte des loyers de l’ANIL (par commune).
+                Rendement brut calculé sur la mise à prix, avec un repère de loyer départemental
+                (indicatif). La fiche, les alertes, les exports et les statistiques utilisent la
+                carte des loyers de l’ANIL (par commune, charges comprises) : une même vente peut
+                donc donner deux chiffres différents.
               </p>
 
               <label className="flex cursor-pointer items-center gap-3 rounded-md border border-line-soft bg-surface-muted px-3 py-2 text-sm font-bold text-brand-navy">

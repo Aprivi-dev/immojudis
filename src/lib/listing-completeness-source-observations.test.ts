@@ -9,6 +9,8 @@ type RoundtripCase = (typeof fixture.cases)[number];
 function saleForCase(example: RoundtripCase): AuctionSale {
   return {
     ...EXAMPLE_SALE,
+    // L'exemple déclare une occupation ; le cas Notaires Bordeaux n'en observe aucune.
+    occupancy_status: "unknown",
     id: `roundtrip-${example.id}`,
     source_name: "info_encheres",
     source_url: example.source_url,

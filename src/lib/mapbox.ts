@@ -3,6 +3,9 @@ const DEFAULT_MAPBOX_STYLE = "mapbox/streets-v12";
 const DEFAULT_STATIC_IMAGE_SIZE = { width: 640, height: 360 };
 const MAPBOX_STATIC_STREETS_STYLE = "mapbox/streets-v12";
 const MAPBOX_STATIC_SATELLITE_STYLE = "mapbox/satellite-v9";
+const DEFAULT_PIN_COLOR = "0f766e";
+/** Repère blanc sur satellite : le sarcelle disparaît sur les parcelles boisées (1,5 à 1,9:1). */
+const SATELLITE_PIN_COLOR = "ffffff";
 
 export const MAPBOX_ATTRIBUTION = "© Mapbox © OpenStreetMap";
 /**
@@ -93,6 +96,7 @@ export function mapboxStaticImageUrl({
   width = DEFAULT_STATIC_IMAGE_SIZE.width,
   height = DEFAULT_STATIC_IMAGE_SIZE.height,
   marker = true,
+  pinColor = DEFAULT_PIN_COLOR,
   style,
   pixelRatio = 2,
   format,
@@ -106,6 +110,8 @@ export function mapboxStaticImageUrl({
   width?: number;
   height?: number;
   marker?: boolean;
+  /** Couleur hexadécimale du repère, sans « # ». */
+  pinColor?: string;
   /** Recouvrement déjà encodé (par exemple `geojson(...)`), tracé sous le repère. */
   overlay?: string;
   style?: string;
@@ -126,7 +132,7 @@ export function mapboxStaticImageUrl({
     camera.push(formatCoordinate(clamp(pitch ?? 0, 0, 85)));
   }
   const center = camera.join(",");
-  const pin = marker ? `pin-s+0f766e(${formatCoordinate(lng)},${formatCoordinate(lat)})` : "";
+  const pin = marker ? `pin-s+${pinColor}(${formatCoordinate(lng)},${formatCoordinate(lat)})` : "";
   const overlays = [extraOverlay, pin].filter(Boolean).join(",");
   const overlay = overlays && `${overlays}/`;
 
@@ -181,6 +187,7 @@ export function mapboxSatelliteImageUrl({
   width = DEFAULT_STATIC_IMAGE_SIZE.width,
   height = DEFAULT_STATIC_IMAGE_SIZE.height,
   marker = true,
+  pinColor = SATELLITE_PIN_COLOR,
   pixelRatio,
   format,
 }: {
@@ -190,6 +197,8 @@ export function mapboxSatelliteImageUrl({
   width?: number;
   height?: number;
   marker?: boolean;
+  /** Couleur hexadécimale du repère, sans « # ». */
+  pinColor?: string;
   pixelRatio?: 1 | 2;
   format?: MapboxStaticImageFormat;
 }) {
@@ -200,6 +209,7 @@ export function mapboxSatelliteImageUrl({
     width,
     height,
     marker,
+    pinColor,
     pixelRatio,
     format,
     style: MAPBOX_STATIC_SATELLITE_STYLE,

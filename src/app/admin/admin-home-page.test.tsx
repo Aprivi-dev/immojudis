@@ -105,6 +105,17 @@ describe("AdminHomePage", () => {
     ]);
   });
 
+  it("points to the weekly feedback views without any extra request", async () => {
+    renderHome();
+    await screen.findByRole("heading", { name: "Aucun échec récent détecté" });
+
+    const card = screen.getByRole("heading", { name: "Retours de la semaine" }).parentElement
+      ?.parentElement as HTMLElement;
+    const hrefs = Array.from(card.querySelectorAll("a")).map((link) => link.getAttribute("href"));
+    expect(hrefs).toEqual(["/admin/pilotage", "/admin/inscriptions", "/admin/pepites"]);
+    expect(mocks.fetchRuns).toHaveBeenCalledTimes(1);
+  });
+
   it("does not report a healthy system while the overview is loading", () => {
     mocks.fetchRuns.mockReturnValue(new Promise(() => {}));
 

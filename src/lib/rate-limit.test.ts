@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RateLimitError } from "@/lib/api-errors";
+import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
 
 const mocks = vi.hoisted(() => ({ rpc: vi.fn() }));
 vi.mock("@/integrations/supabase/client.server", () => ({
@@ -330,5 +331,48 @@ describe("rate limiting", () => {
   it("computes Retry-After from the end of the fixed window", () => {
     expect(secondsUntilWindowEnds(60, new Date("2026-10-09T10:00:15.000Z"))).toBe(45);
     expect(secondsUntilWindowEnds(60, new Date("2026-10-09T10:00:00.000Z"))).toBe(60);
+  });
+});
+
+describe("RateLimit headers", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    installCounter();
+  });
+
+  it("records the quota left on the request context and writes it as RateLimit-* headers", async () => {
+    const context = createApiRequestContext(new Request("https://example.test/api/v1/x"), "test");
+    await enforceUserRateLimit({ ...policy, limit: 5, context });
+    expect(context.rateLimit).toEqual({ limit: 5, remaining: 4 });
+    await enforceUserRateLimit({ ...policy, limit: 5, context });
+    const response = apiJson({ ok: true }, context);
+    expect(response.headers.get("ratelimit-limit")).toBe("5");
+    expect(response.headers.get("ratelimit-remaining")).toBe("3");
+  });
+
+  it("answers the refused call with remaining 0 next to Retry-After", async () => {
+    const context = createApiRequestContext(new Request("https://example.test/api/v1/x"), "test");
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    for (let call = 0; call < 2; call += 1) {
+      await enforceUserRateLimit({ ...policy, limit: 2, context });
+    }
+    const refused = await enforceUserRateLimit({ ...policy, limit: 2, context }).catch(
+      (error: unknown) => error,
+    );
+    expect(refused).toBeInstanceOf(RateLimitError);
+    const response = apiError(refused, context, { fallbackMessage: "Indisponible." });
+    expect(response.status).toBe(429);
+    expect(response.headers.get("ratelimit-limit")).toBe("2");
+    expect(response.headers.get("ratelimit-remaining")).toBe("0");
+    expect(response.headers.get("retry-after")).toBeTruthy();
+  });
+
+  it("adds nothing without a context (routes that do not publish a quota)", async () => {
+    await expect(enforceUserRateLimit({ ...policy, limit: 5 })).resolves.toBe(1);
+    const response = apiJson(
+      { ok: true },
+      createApiRequestContext(new Request("https://x.test"), "t"),
+    );
+    expect(response.headers.has("ratelimit-limit")).toBe(false);
   });
 });
