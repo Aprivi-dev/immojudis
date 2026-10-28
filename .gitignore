@@ -59,3 +59,4 @@ docs/design/annonce-detail/rendered-*.png
 !.claude/skills/
 !.claude/hooks/
 .env*.local
+.flood-risk-runner

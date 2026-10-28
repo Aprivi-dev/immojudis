@@ -1,0 +1,43 @@
+name: Sale flood risk
+
+# Observation horaire du risque d'inondation des ventes à venir (règle pepite-v2). Géorisques refuse les appels de
+# Vercel depuis le 27/10/2026 : la route /api/cron/sale-flood-risk (pg_cron, :25) ne fait que déclencher ce workflow,
+# qui exécute le même code (src/lib/sale-flood-risk-batch.ts) depuis GitHub Actions. Déclenchement manuel ou par la
+# route uniquement (scripts/check-manual-data-collection.mjs). Aucune vente n'est collectée : seules les coordonnées
+# d'une vente partent à Géorisques et à l'API Carto de l'IGN.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Le bail en base (claim_sale_flood_risk_lease) protège déjà d'une double passe ; la file évite d'en lancer une.
+  group: immojudis-sale-flood-risk
+  cancel-in-progress: false
+
+jobs:
+  run:
+    name: Observe flood risk
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Pin npm
+        run: npm install --global npm@11.18.0
+      # Les secrets ne sont pas dans l'environnement du job : npm ci et la construction ne les voient pas.
+      - run: npm ci
+      - name: Build the runner
+        run: npm run flood-risk:build
+      - name: Observe flood risk
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SALE_FLOOD_RISK_BATCH_LIMIT: ${{ vars.SALE_FLOOD_RISK_BATCH_LIMIT }}
+        run: node .flood-risk-runner/runner.mjs
