@@ -157,7 +157,7 @@
 .procedureLead {
   display: grid;
   gap: 6px;
-  margin-top: 22px;
+  margin: 22px 0 18px;
   padding: 18px 20px;
   border: 1px solid var(--line);
   border-left: 4px solid var(--gold-soft);
@@ -227,7 +227,7 @@
 }
 .section {
   min-width: 0;
-  scroll-margin-top: 110px;
+  scroll-margin-top: 8px;
 }
 .card {
   border: 1px solid var(--line-soft);
@@ -622,7 +622,7 @@
   align-items: center;
   padding-top: 11px;
   color: var(--gold-text);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 750;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -661,7 +661,7 @@
 }
 .scenarioBasis {
   margin-top: 4px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--ink-soft);
   line-height: 1.5;
 }
@@ -675,7 +675,7 @@
 }
 .scenarioMetrics span {
   display: block;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.2;
   color: var(--ink-soft);
 }
@@ -691,7 +691,7 @@
 .scenarioNote {
   margin-top: 6px;
   color: var(--ink-soft);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.4;
 }
 @media (max-width: 767px) {
@@ -716,12 +716,12 @@
     font-size: clamp(23px, 6.4vw, 32px);
   }
   .priceLabel {
-    font-size: 11px;
+    font-size: 12px;
   }
   .heroPrices .muted,
   .premiumContext,
   .priceExplanation {
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1.4;
   }
   .overview {
@@ -739,6 +739,18 @@
   .projectCost {
     flex-wrap: wrap;
     gap: 3px 12px;
+  }
+}
+/* Téléphone étroit (360 px) : deux colonnes de prix de 128 px ne laissent pas la place d'un montant
+   à sept chiffres. La mise à prix et le plafond passent l'un sous l'autre. */
+@media (max-width: 480px) {
+  .heroPrices {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .premiumPrice {
+    border-top: 1px solid var(--line-warm);
+    border-left: 0;
+    padding: 12px 0 0;
   }
 }
 @media (min-width: 640px) and (max-width: 767px) {
