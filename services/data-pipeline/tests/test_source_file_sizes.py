@@ -70,6 +70,7 @@ def test_exceptions_are_ceilings_that_only_shrink(path: str) -> None:
     "module",
     [
         "column_sets",
+        "connection_guards",
         "fact_claim_rows",
         "internal_contacts",
         "known_sale_projection",

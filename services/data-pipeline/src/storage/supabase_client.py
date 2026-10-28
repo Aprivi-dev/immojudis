@@ -4,7 +4,6 @@ import hashlib
 import json
 import logging
 import os
-import socket
 import threading
 import time
 import uuid
@@ -69,6 +68,12 @@ from src.storage.column_sets import (
     POSTGRES_JSON_COLUMNS,
     PROPERTY_COLUMNS,  # noqa: F401  (re-exported)
     UPSERT_COLUMNS,
+)
+from src.storage.connection_guards import (
+    POSTGRES_KEEPALIVE_OPTIONS,
+    DatabaseCallTimeout,  # noqa: F401 - re-exported: tests and callers read it here
+    _client_deadline,
+    retry_on_disconnect,
 )
 from src.storage.duplicate_sweep import (
     DedupeScan,
@@ -3065,10 +3070,7 @@ KNOWN_SALE_DETAIL_PAGE_SIZE = 100
 # rejects the connection-level ``statement_timeout`` (startup option), and a session-level
 # ``set`` does not follow the transaction from one backend to the next.
 KNOWN_SALE_DETAIL_STATEMENT_TIMEOUT = "60s"
-# The server-side limit above does not apply while the pooler holds the query without a backend, or after the
-# connection was dropped without a word: the call then waited for the watchdog (45 minutes) and ended the whole
-# run. The client gives up after this delay (four times the server limit's order of magnitude is not needed:
-# a page reads in a few seconds) and the snapshot is read again on a new connection.
+# Client-side limit: the server one does not apply when the pooler holds the query or the connection vanished.
 KNOWN_SALE_DETAIL_CLIENT_DEADLINE_SECONDS = 90.0
 KNOWN_SALE_DETAIL_RETRY_DELAYS = (5.0, 20.0)
 
@@ -3113,31 +3115,17 @@ def _read_known_sales_snapshot(
     include_enrichment_payload: bool,
 ) -> tuple[Any, list[Any]]:
     """One attempt at the known-sales snapshot: ``(relevant_aliases, all_rows)``."""
-    # The publication runner already requires PostgreSQL. Read its
-    # preflight snapshot there too, so a Data API outage cannot stop a
-    # collection before the first source is scraped.
     with _postgres_connect(db_url) as db:
-        # Keep aliases and every keyset page on one MVCC snapshot.  The
-        # previous one-shot SELECT had this property implicitly; setting
-        # REPEATABLE READ before the first read preserves it after the
-        # egress-bounded pagination change.
+        # Aliases and every keyset page are read on one MVCC snapshot.
         db.execute("set transaction isolation level repeatable read")
         db.execute(f"set local statement_timeout = '{KNOWN_SALE_DETAIL_STATEMENT_TIMEOUT}'")
         with track_stage("known_sales.preflight"):
             compact_presence = db.execute(
                 "select to_regclass(%s), to_regprocedure(%s)",
-                (
-                    "app_private.auction_sale_source_presence",
-                    "app_private.auction_sale_source_presence_json(uuid)",
-                ),
+                ("app_private.auction_sale_source_presence", "app_private.auction_sale_source_presence_json(uuid)"),
             ).fetchone()
-        use_compact_presence = bool(
-            compact_presence
-            and compact_presence[0]
-            and compact_presence[1]
-        )
         postgres_select = _known_sale_postgres_select(
-            compact_presence=use_compact_presence,
+            compact_presence=bool(compact_presence and compact_presence[0] and compact_presence[1]),
             include_enrichment_payload=include_enrichment_payload,
         )
         with track_stage("known_sales.reviewed_aliases"):
@@ -3162,20 +3150,13 @@ def _read_known_sales_snapshot(
         page_number = 0
         while True:
             page_number += 1
-            if last_id is None:
-                query = (
-                    f"select to_jsonb(sale) from (select {postgres_select} "
-                    f"from public.auction_sales where {where} "
-                    "order by id limit %s) sale"
-                )
-                params = (*filter_params, KNOWN_SALE_DETAIL_PAGE_SIZE)
-            else:
-                query = (
-                    f"select to_jsonb(sale) from (select {postgres_select} "
-                    f"from public.auction_sales where {where} and id > %s::uuid "
-                    "order by id limit %s) sale"
-                )
-                params = (*filter_params, last_id, KNOWN_SALE_DETAIL_PAGE_SIZE)
+            after = [] if last_id is None else [last_id]
+            query = (
+                f"select to_jsonb(sale) from (select {postgres_select} "
+                f"from public.auction_sales where {where}{' and id > %s::uuid' if after else ''} "
+                "order by id limit %s) sale"
+            )
+            params = (*filter_params, *after, KNOWN_SALE_DETAIL_PAGE_SIZE)
             with track_stage(f"known_sales.page_{page_number}"), _client_deadline(
                 db, KNOWN_SALE_DETAIL_CLIENT_DEADLINE_SECONDS, "known sale detail page"
             ):
@@ -3185,15 +3166,9 @@ def _read_known_sales_snapshot(
             all_rows.extend(row[0] for row in rows)
             if len(rows) < KNOWN_SALE_DETAIL_PAGE_SIZE:
                 break
-            page_ids = [
-                str(row[0].get("id"))
-                for row in rows
-                if isinstance(row[0], dict) and row[0].get("id")
-            ]
+            page_ids = [str(row[0].get("id")) for row in rows if isinstance(row[0], dict) and row[0].get("id")]
             if not page_ids or page_ids[-1] == last_id:
-                raise ReviewedAliasRegistryError(
-                    "Known sale detail snapshot could not advance its id cursor"
-                )
+                raise ReviewedAliasRegistryError("Known sale detail snapshot could not advance its id cursor")
             last_id = page_ids[-1]
     return relevant_aliases, all_rows
 
@@ -3207,28 +3182,14 @@ def _read_known_sales_snapshot_with_retries(
     retry_delays: tuple[float, ...] | None = None,
     sleep: Callable[[float], None] = time.sleep,
 ) -> tuple[Any, list[Any]]:
-    """Read the snapshot again, on a new connection, when the database dropped or stalled the first one.
-
-    A database restart (« terminating connection due to administrator command », « the database system is not
-    accepting connections ») or a silent connection loss used to end the source, or to block it until the
-    watchdog ended the whole run. A snapshot is a pure read: reading it again is safe.
-    """
+    """Read the snapshot again, on a new connection, when the database dropped or stalled the first one."""
     delays = KNOWN_SALE_DETAIL_RETRY_DELAYS if retry_delays is None else retry_delays
-    for attempt, delay in enumerate((*delays, None), start=1):
-        try:
-            return _read_known_sales_snapshot(db_url, source_urls, requested_urls, include_enrichment_payload)
-        except (psycopg.OperationalError, psycopg.InterfaceError, DatabaseCallTimeout) as exc:
-            if delay is None:
-                raise
-            LOGGER.warning(
-                "Known sale detail read interrupted; reading it again attempt=%s/%s in %ss: %s",
-                attempt,
-                len(delays) + 1,
-                delay,
-                type(exc).__name__,
-            )
-            sleep(delay)
-    raise AssertionError("unreachable")
+    return retry_on_disconnect(
+        lambda: _read_known_sales_snapshot(db_url, source_urls, requested_urls, include_enrichment_payload),
+        delays,
+        sleep,
+        what="Known sale detail read",
+    )
 
 
 def fetch_known_sale_details(
@@ -3731,58 +3692,6 @@ def _postgres_upsert(
         with connection.cursor() as cursor:
             cursor.executemany(insert_statement, rows)
     return None
-
-
-# A connection whose peer vanished without a word (a restart of the database or of the pooler, a dropped NAT entry)
-# blocks the client in ``recv`` for as long as the operating system allows, which is hours. These libpq options make
-# the kernel probe an idle connection (20 s idle, then three probes 10 s apart) and drop one whose data stays
-# unacknowledged for 60 s: the call then fails in about a minute instead of waiting for the watchdog.
-POSTGRES_KEEPALIVE_OPTIONS: dict[str, int] = {
-    "keepalives": 1,
-    "keepalives_idle": 20,
-    "keepalives_interval": 10,
-    "keepalives_count": 3,
-    "tcp_user_timeout": 60_000,
-}
-
-
-class DatabaseCallTimeout(TimeoutError):
-    """A database call did not answer within its client-side deadline; the connection was cut."""
-
-
-@contextmanager
-def _client_deadline(connection: Any, seconds: float, what: str):
-    """Cut ``connection`` from the client side when the call it runs does not answer within ``seconds``.
-
-    ``statement_timeout`` is enforced by the server: it does nothing when the query never reached a backend (a
-    pooler that cannot open one) or when the server is gone. A timer shuts the socket down (on a duplicate of the
-    descriptor, so the connection object keeps owning its own); the blocked ``recv`` then fails at once and the
-    caller sees ``DatabaseCallTimeout`` instead of waiting. The connection is unusable afterwards: open a new one.
-    """
-    fired = threading.Event()
-
-    def cut() -> None:
-        fired.set()
-        try:
-            duplicate = socket.socket(fileno=os.dup(connection.fileno()))
-            try:
-                duplicate.shutdown(socket.SHUT_RDWR)
-            finally:
-                duplicate.close()
-        except Exception:  # noqa: BLE001 - the connection may already be closed; nothing more to cut
-            pass
-
-    timer = threading.Timer(seconds, cut)
-    timer.daemon = True
-    timer.start()
-    try:
-        yield
-    except BaseException as exc:
-        if fired.is_set() and isinstance(exc, Exception):
-            raise DatabaseCallTimeout(f"{what} did not answer within {seconds:g}s; connection cut") from exc
-        raise
-    finally:
-        timer.cancel()
 
 
 def _statement_timeout_options(db_url: str, statement_timeout_ms: int | None) -> str | None:
