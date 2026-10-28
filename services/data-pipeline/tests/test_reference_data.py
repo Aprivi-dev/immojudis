@@ -1044,3 +1044,90 @@ def test_the_decree_date_is_read_from_the_csv_header_of_a_file(tmp_path: Path) -
     assert tension.file_decree_date(path) == date(2025, 12, 22)
     path.write_text("CODGEO25;LIBGEO\n01001;A\n", encoding="utf-8")
     assert tension.file_decree_date(path) is None
+
+
+# Extrait du fichier réel v_mvt_commune_2026.csv de l'INSEE (colonnes, séparateur, guillemets et valeurs de MOD).
+MOVEMENTS_HEADER = (
+    '"MOD","DATE_EFF","TYPECOM_AV","COM_AV","TNCC_AV","NCC_AV","NCCENR_AV","LIBELLE_AV",'
+    '"TYPECOM_AP","COM_AP","TNCC_AP","NCC_AP","NCCENR_AP","LIBELLE_AP"\n'
+)
+MOVEMENTS_SAMPLE = MOVEMENTS_HEADER + "\n".join(
+    [
+        '"35","2026-01-01","COMD","02077","0","BERZY LE SEC","Berzy-le-Sec","Berzy-le-Sec","COM","02564","0","B","B","B"',
+        # Le chef-lieu garde son code : pas un changement de code.
+        '"35","2026-01-01","COMD","02564","0","N","N","N","COM","02564","0","B","B","B"',
+        '"34","2026-01-01","COMA","01324","0","RIGNAT","Rignat","Rignat","COM","01245","0","B","B","B"',
+        '"32","2019-01-01","COM","49007","0","A","A","A","COM","49018","0","B","B","B"',
+        # Même passage répété avec une autre modalité du même jour : un seul passage.
+        '"32","2019-01-01","COM","49007","0","A","A","A","COM","49018","0","B","B","B"',
+        '"41","2017-01-01","COM","2B033","0","A","A","A","COM","2A004","0","B","B","B"',
+        # Trop ancien (le code a pu être réutilisé), création, nom, commune déléguée d'arrivée, arrondissement.
+        '"32","2009-01-01","COM","11111","0","A","A","A","COM","22222","0","B","B","B"',
+        '"20","2020-01-01","","","0","","","","COM","33333","0","B","B","B"',
+        '"10","2020-01-01","COM","44444","0","A","A","A","COM","44444","0","B","B","B"',
+        '"32","2020-01-01","COM","55555","0","A","A","A","COMD","55555","0","B","B","B"',
+        '"20","2020-01-01","COM","75056","0","A","A","A","ARM","75101","0","B","B","B"',
+        # Code mal formé : compté, pas écrit.
+        '"32","2020-01-01","COM","9999","0","A","A","A","COM","77777","0","B","B","B"',
+    ]
+) + "\n"
+
+
+def test_commune_code_changes_are_read_from_the_insee_movements_file() -> None:
+    from src.reference_data import commune_history
+
+    rows, stats = commune_history.parse_movements(MOVEMENTS_SAMPLE)
+
+    assert [(row["old_code"], row["new_code"], row["modality"]) for row in rows] == [
+        ("02077", "02564", "35"),
+        ("01324", "01245", "34"),
+        ("49007", "49018", "32"),
+        ("2B033", "2A004", "41"),
+    ]
+    assert rows[0]["effective_on"] == date(2026, 1, 1)
+    assert (stats.lines, stats.kept, stats.duplicates, stats.rejected) == (12, 4, 1, 1)
+    older, _ = commune_history.parse_movements(MOVEMENTS_SAMPLE, since=date(2000, 1, 1))
+    assert ("11111", "22222") in {(row["old_code"], row["new_code"]) for row in older}
+
+
+def test_a_movements_file_without_the_expected_columns_is_refused() -> None:
+    from src.reference_data import commune_history
+
+    with pytest.raises(RuntimeError, match="MOD"):
+        commune_history.parse_movements('"A","B"\n"1","2"\n')
+
+
+def test_the_commune_history_is_a_private_snapshot_outside_all(monkeypatch, tmp_path: Path) -> None:
+    statement = storage.upsert_statement("commune_code_history")
+    assert "insert into app_private.commune_code_history" in statement
+    assert "on conflict (old_code, new_code, effective_on)" in statement and "imported_at = now()" in statement
+    assert "commune_history" not in reference_main.DATASETS and "commune_history" in reference_main.EXTRA_DATASETS
+    assert reference_main.parse_args(["commune_history", "--dry-run"]).dataset == "commune_history"
+    assert "www.insee.fr" in download_module.ALLOWED_HOSTS
+
+    def fake_download(url: str, target: Path, **kwargs) -> Path:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        lines = [
+            f'"32","2019-01-01","COM","{10000 + index:05d}","0","A","A","A","COM","{50000 + index:05d}","0","B","B","B"'
+            for index in range(reference_main.MIN_COMMUNE_CODE_CHANGES)
+        ]
+        target.write_text(MOVEMENTS_HEADER + "\n".join(lines) + "\n", encoding="utf-8")
+        return target
+
+    monkeypatch.setattr(reference_main, "download", fake_download)
+    calls = _fake_storage(monkeypatch, current_rows=0)
+
+    summary = reference_main._import_commune_history(tmp_path, _FakeDatabase())
+
+    assert calls[-1] == ("replace", "commune_code_history", reference_main.MIN_COMMUNE_CODE_CHANGES, None)
+    assert summary["code_changes"] == reference_main.MIN_COMMUNE_CODE_CHANGES
+
+    monkeypatch.setattr(reference_main, "download", lambda url, target, **kw: _write_sample(target))
+    with pytest.raises(RuntimeError, match="partial import"):
+        reference_main._import_commune_history(tmp_path, _FakeDatabase())
+
+
+def _write_sample(target: Path) -> Path:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(MOVEMENTS_SAMPLE, encoding="utf-8")
+    return target

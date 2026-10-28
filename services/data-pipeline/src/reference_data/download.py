@@ -28,6 +28,8 @@ ALLOWED_HOSTS = frozenset(
         # data.gouv.fr API (www), the CSV files from its static host.
         "www.data.gouv.fr",
         "static.data.gouv.fr",
+        # Commune movements file of the COG (code changes), for the commune code history.
+        "www.insee.fr",
     }
 )
 

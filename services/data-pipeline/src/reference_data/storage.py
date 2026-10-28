@@ -98,6 +98,11 @@ TABLES: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = {
             "source_url",
         ),
     ),
+    "commune_code_history": (
+        "old_code text, new_code text, effective_on date, modality text",
+        ("old_code", "new_code", "effective_on"),
+        ("modality",),
+    ),
     "climate_stations": (
         "station_id text, name text, department_code text, latitude double precision,"
         " longitude double precision, altitude_m integer, first_month date, last_month date,"
@@ -136,6 +141,14 @@ TABLES: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = {
 }
 
 
+# Tables outside the public schema (private, never reachable through the Data API).
+PRIVATE_TABLES = frozenset({"commune_code_history"})
+
+
+def _relation(table: str) -> str:
+    return f"{'app_private' if table in PRIVATE_TABLES else 'public'}.{table}"
+
+
 def upsert_statement(table: str) -> str:
     definition, key, updated = TABLES[table]
     columns = [part.strip().split(" ", 1)[0] for part in definition.split(",")]
@@ -143,7 +156,7 @@ def upsert_statement(table: str) -> str:
     if table != "climate_station_months":
         assignments.append("imported_at = now()")
     return (
-        f"insert into public.{table} ({', '.join(columns)}) "
+        f"insert into {_relation(table)} ({', '.join(columns)}) "
         f"select {', '.join(columns)} from jsonb_to_recordset(%s::jsonb) as source({definition}) "
         f"on conflict ({', '.join(key)}) do update set {', '.join(assignments)}"
     )
@@ -174,7 +187,7 @@ def upsert_rows(
     return written
 
 
-SNAPSHOT_TABLES = frozenset({"anil_rents", "commune_housing_tension"})
+SNAPSHOT_TABLES = frozenset({"anil_rents", "commune_housing_tension", "commune_code_history"})
 
 
 def database_now(connection: Any, *, commit: bool = True) -> datetime:
@@ -197,7 +210,7 @@ def purge_untouched(connection: Any, table: str, started_at: datetime, *, commit
         raise ValueError(f"{table} is not a snapshot table")
     with connection.cursor() as cursor:
         cursor.execute(f"set local statement_timeout = '{STATEMENT_TIMEOUT}'")
-        cursor.execute(f"delete from public.{table} where imported_at < %s", (started_at,))
+        cursor.execute(f"delete from {_relation(table)} where imported_at < %s", (started_at,))
         deleted = cursor.rowcount or 0
     if commit:
         connection.commit()
@@ -220,7 +233,7 @@ def row_count(connection: Any, table: str, *, commit: bool = True) -> int:
     if table not in SNAPSHOT_TABLES:
         raise ValueError(f"{table} is not a snapshot table")
     with connection.cursor() as cursor:
-        cursor.execute(f"select count(*) from public.{table}")
+        cursor.execute(f"select count(*) from {_relation(table)}")
         count = int(cursor.fetchone()[0])
     if commit:
         connection.commit()

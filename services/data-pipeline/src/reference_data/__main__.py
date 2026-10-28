@@ -14,16 +14,20 @@ from datetime import date
 from pathlib import Path
 
 from src.config import load_settings
-from src.reference_data import climate, communes, gaspar, rents, storage, tension
+from src.reference_data import climate, commune_history, communes, gaspar, rents, storage, tension
 from src.reference_data.download import download, fetch_json
 from src.storage.supabase_client import connect
 
 DATASETS = ("communes", "risks", "climate", "rents", "tension")
+# Not part of ``all``: its table (migration 20261108120200) must exist, and the file changes once a year.
+EXTRA_DATASETS = ("commune_history",)
 # Refuse to write a source that looks truncated (France has about 34 900 communes, ANIL lines
 # included; the zoning lists 34 875 communes). The absolute floor leaves about 100 communes of
 # slack; the relative floor below follows the table as it grows or shrinks.
 MIN_RENT_COMMUNES = 34_800
 MIN_TENSION_COMMUNES = 34_800
+# Commune code changes since 2015 in the INSEE file of 2026: about 2 300.
+MIN_COMMUNE_CODE_CHANGES = 1_500
 # A new file with fewer rows than this share of what the table holds now is refused: a cut of a
 # few percent passes any fixed floor, and the purge would then delete the communes it lost.
 MIN_SHARE_OF_CURRENT_ROWS = 0.99
@@ -64,7 +68,7 @@ class Database:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Importe les données de référence (communes, risques, climat, loyers, zonage tendu).")
-    parser.add_argument("dataset", choices=(*DATASETS, "all"))
+    parser.add_argument("dataset", choices=(*DATASETS, *EXTRA_DATASETS, "all"))
     parser.add_argument("--dry-run", action="store_true", help="Télécharge et analyse sans écrire en base.")
     parser.add_argument(
         "--check-new-vintage",
@@ -300,12 +304,34 @@ def _import_tension(work_dir: Path, database: Database | None) -> dict[str, obje
     }
 
 
+def _import_commune_history(work_dir: Path, database: Database | None) -> dict[str, object]:
+    target = download(commune_history.MOVEMENTS_URL, work_dir / "commune-history" / "v_mvt_commune.csv")
+    rows, stats = commune_history.parse_movements_file(target)
+    target.unlink(missing_ok=True)
+    if len(rows) < MIN_COMMUNE_CODE_CHANGES:
+        raise RuntimeError(f"Only {len(rows)} commune code changes read; refusing a partial import.")
+    written = purged = 0
+    if database is not None:
+        connection = database.connection()
+        _refuse_shrinking_import("commune_code_history", len(rows), storage.row_count(connection, "commune_code_history"))
+        written, purged = storage.replace_snapshot(connection, "commune_code_history", rows)
+    return {
+        "code_changes": len(rows),
+        "lines": stats.lines,
+        "duplicates": stats.duplicates,
+        "rejected": stats.rejected,
+        "written": written,
+        "purged": purged,
+    }
+
+
 _IMPORTERS = {
     "communes": _import_communes,
     "risks": _import_risks,
     "climate": _import_climate,
     "rents": _import_rents,
     "tension": _import_tension,
+    "commune_history": _import_commune_history,
 }
 
 
