@@ -263,7 +263,9 @@ def build_plan(
         strict_max_group=SWEEP_STRICT_MAX_GROUP,
     )
     protected_urls = reviewed_aliases.protected_source_urls()
-    all_secondary = set(_secondary_source_urls(merged))
+    # Seule une ligne lue est une ligne à supprimer. Une URL absorbée par un passage précédent reste dans les
+    # source_urls de la survivante sans ligne propre : elle ne doit ni ouvrir un groupe ni compter dans le plafond.
+    all_secondary = set(_secondary_source_urls(merged)) & set(summaries)
     kept = 0
     for sale in merged:
         secondary_urls = [

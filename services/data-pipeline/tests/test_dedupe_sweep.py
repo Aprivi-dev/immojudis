@@ -466,6 +466,26 @@ def test_a_read_ceiling_report_says_so(monkeypatch) -> None:
     assert "plafond de lecture atteint" in duplicate_sweep.markdown_summary(plan)
 
 
+def test_an_url_merged_by_an_earlier_pass_neither_opens_a_group_nor_counts_in_the_cap(monkeypatch) -> None:
+    from src.storage import duplicate_sweep
+
+    survivor = _sale("licitor", "https://www.licitor.com/annonce/70.html")
+    secondary = _sale("avoventes", "https://avoventes.fr/enchere/70")
+    already_merged = _sale("licitor", "https://www.licitor.com/annonce/80.html")
+    # Fiches déjà fusionnées : les URL absorbées restent dans source_urls, leurs lignes n'existent plus.
+    already_merged.source_urls = [already_merged.source_url, "https://www.vench.fr/vente-80.html"]
+    survivor.source_urls = [survivor.source_url, secondary.source_url, "https://www.vench.fr/vente-70.html"]
+    monkeypatch.setattr(
+        duplicate_sweep, "merge_duplicate_sales", lambda sales, **kwargs: [already_merged, survivor]
+    )
+
+    plan = duplicate_sweep.build_plan([already_merged, survivor, secondary], _EmptyRegistry(), max_merges=1)
+
+    assert [group.primary.source_url for group in plan.groups] == [survivor.source_url]
+    assert [row.source_url for row in plan.groups[0].secondaries] == [secondary.source_url]
+    assert plan.deferred_rows == 0
+
+
 def test_sweep_cap_defers_whole_groups_beyond_the_per_pass_maximum(monkeypatch) -> None:
     sales = [*_id_pair(100, "Ondres"), *_id_pair(200, "Dax"), *_id_pair(300, "Pau")]
     _configure(monkeypatch, _rows(sales))
