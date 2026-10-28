@@ -20,19 +20,19 @@ les vérifications avant de livrer du code.
 
 Les procédures pas à pas sont dans [`runbooks/`](runbooks/). Les plus utiles :
 
-| Situation | Runbook |
-| --- | --- |
-| Retirer les pépites du public tout de suite | [Arrêt d'urgence des pépites](runbooks/pepites-arret-urgence.md) |
-| Le traitement d'inondation échoue ou produit des « inconnus » | [Pannes Géorisques](runbooks/georisques-pannes-inondation.md) |
-| Ouvrir la règle `pepite-v2` | [Ouverture de `pepite-v2`](runbooks/pepite-v2-ouverture.md) |
-| Charger la carte des loyers de décembre | [Import annuel ANIL](runbooks/import-annuel-anil.md) |
-| Prolonger l'essai de comptes | [Prolongation d'essai](runbooks/prolongation-essai.md) |
-| Couper ou rétablir l'essai de 7 jours | [Essai gratuit à l'inscription](runbooks/offre-de-lancement.md) |
-| Alerte `cron.stale`, santé opérationnelle | [Phase 3 : SLO et runbooks](operations-phase-3.md), [arrêt de la santé opérationnelle](runbooks/operational-health-arret.md) |
-| Collecte arrêtée ou en retard | [`pipeline-scheduler-disabled`](runbooks/pipeline-scheduler-disabled.md), [`pipeline-source-stale-listings`](runbooks/pipeline-source-stale-listings.md), [`pipeline-source-missed`](runbooks/pipeline-source-missed.md) |
-| Alertes email en retard | [`alerts-delivery-late`](runbooks/alerts-delivery-late.md) |
-| Agent d'information | [`information-agent`](runbooks/information-agent.md) |
-| Sécurité Supabase | [`supabase-security-advisors`](runbooks/supabase-security-advisors.md) |
+| Situation                                                     | Runbook                                                                                                                                                                                                                  |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Retirer les pépites du public tout de suite                   | [Arrêt d'urgence des pépites](runbooks/pepites-arret-urgence.md)                                                                                                                                                         |
+| Le traitement d'inondation échoue ou produit des « inconnus » | [Pannes Géorisques](runbooks/georisques-pannes-inondation.md)                                                                                                                                                            |
+| Ouvrir la règle `pepite-v2`                                   | [Ouverture de `pepite-v2`](runbooks/pepite-v2-ouverture.md)                                                                                                                                                              |
+| Charger la carte des loyers de décembre                       | [Import annuel ANIL](runbooks/import-annuel-anil.md)                                                                                                                                                                     |
+| Prolonger l'essai de comptes                                  | [Prolongation d'essai](runbooks/prolongation-essai.md)                                                                                                                                                                   |
+| Couper ou rétablir l'essai de 7 jours                         | [Essai gratuit à l'inscription](runbooks/offre-de-lancement.md)                                                                                                                                                          |
+| Alerte `cron.stale`, santé opérationnelle                     | [Phase 3 : SLO et runbooks](operations-phase-3.md), [arrêt de la santé opérationnelle](runbooks/operational-health-arret.md)                                                                                             |
+| Collecte arrêtée ou en retard                                 | [`pipeline-scheduler-disabled`](runbooks/pipeline-scheduler-disabled.md), [`pipeline-source-stale-listings`](runbooks/pipeline-source-stale-listings.md), [`pipeline-source-missed`](runbooks/pipeline-source-missed.md) |
+| Alertes email en retard                                       | [`alerts-delivery-late`](runbooks/alerts-delivery-late.md)                                                                                                                                                               |
+| Agent d'information                                           | [`information-agent`](runbooks/information-agent.md)                                                                                                                                                                     |
+| Sécurité Supabase                                             | [`supabase-security-advisors`](runbooks/supabase-security-advisors.md)                                                                                                                                                   |
 
 Planification et supervision :
 
