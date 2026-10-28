@@ -92,6 +92,7 @@ const SERVER_KEYS = [
   "OPERATIONS_ALERT_EMAIL_TO",
   "VERCEL_ENV",
   "NODE_ENV",
+  "TRANSACTIONAL_EMAIL_FROM",
 ] as const;
 
 /**
@@ -185,6 +186,8 @@ export function serverEnv(source?: EnvSource) {
     email: {
       resendApiKey: env.RESEND_API_KEY,
       from: firstFilled(env.ALERT_EMAIL_FROM, env.RESEND_FROM_EMAIL),
+      /** Expéditeur des messages liés au contrat (facturation, acceptation) ; absent : `from`. */
+      transactionalFrom: env.TRANSACTIONAL_EMAIL_FROM,
     },
     saleReminders: {
       /** Valeur brute de `SALE_REMINDERS_MODE` ; `saleRemindersMode()` la ramène à off, internal ou on. */

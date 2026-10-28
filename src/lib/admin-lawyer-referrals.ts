@@ -10,7 +10,7 @@ import {
 } from "@/lib/email-alerts";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import { escapeHtml } from "@/lib/guards";
-import { EMAIL_COLORS } from "@/lib/email-brand";
+import { EMAIL_COLORS, EMAIL_FONT_STACK, emailBrandHeaderHtml } from "@/lib/email-brand";
 
 type LawyerReferralMatchingStatus = "unmatched" | "matched" | "manual_review";
 type LawyerReferralRow = Database["public"]["Tables"]["lawyer_referral_requests"]["Row"];
@@ -501,6 +501,7 @@ async function dispatchReferencedLawyerEmailIfNeeded({
       message,
       idempotencyKey: `immojudis-lawyer-referral-${request.id}-${request.requested_lawyer_id}`,
       fetchImpl,
+      category: "lawyer",
     });
     return {
       status: "sent",
@@ -710,8 +711,9 @@ function buildLawyerReferralEmailHtml({
 
   return `<!doctype html>
 <html>
-  <body style="margin:0;background:${EMAIL_COLORS.surface};color:${EMAIL_COLORS.navy};font-family:Arial,sans-serif;">
+  <body style="margin:0;background:${EMAIL_COLORS.surface};color:${EMAIL_COLORS.navy};font-family:${EMAIL_FONT_STACK};">
     <div style="max-width:640px;margin:0 auto;padding:28px 18px;">
+      ${emailBrandHeaderHtml()}
       <div style="background:#fff;border:1px solid ${EMAIL_COLORS.lineWarm};border-radius:10px;padding:24px;">
         <p style="margin:0 0 10px;color:${EMAIL_COLORS.goldText};font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;">Mise en relation Immojudis</p>
         <h1 style="margin:0 0 8px;font-size:22px;line-height:1.25;color:${EMAIL_COLORS.navy};">${escapeHtml(title)}</h1>

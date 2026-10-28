@@ -12,7 +12,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: { from: mocks.from, auth: { admin: { getUserById: mocks.getUserById } } },
 }));
 vi.mock("@/lib/email-alerts", () => ({
-  resolveEmailAlertDeliveryConfig: mocks.resolveConfig,
+  resolveTransactionalEmailConfig: mocks.resolveConfig,
   sendResendEmail: mocks.sendResendEmail,
 }));
 

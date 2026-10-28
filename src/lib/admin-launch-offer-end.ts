@@ -363,6 +363,7 @@ export async function sendLaunchOfferEndTest({
     message,
     idempotencyKey: `immojudis-launch-offer-end-test-${auth.userId}-${now.getTime()}`,
     fetchImpl,
+    category: "launch_offer_end",
   });
   console.info(JSON.stringify({ scope: "admin.launch-offer-end", action: "test" }));
   return { sentTo: email };
@@ -476,6 +477,7 @@ export async function sendLaunchOfferEndBatch({
         message,
         idempotencyKey: launchOfferEndIdempotencyKey(userId, endsOn),
         fetchImpl,
+        category: "launch_offer_end",
       });
       await settle(userId, { status: "sent", message_id: result.id });
       counts.sent += 1;

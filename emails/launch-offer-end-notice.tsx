@@ -11,7 +11,7 @@ import {
   Text,
   render,
 } from "react-email";
-import { EMAIL_BRAND_NAME, EMAIL_COLORS } from "../src/lib/email-brand";
+import { EMAIL_BRAND_NAME, EMAIL_COLORS, EMAIL_FONT_STACK } from "../src/lib/email-brand";
 import {
   LAUNCH_OFFER_END_NEEDS_ANALYSIS,
   LAUNCH_OFFER_END_STAYS,
@@ -123,7 +123,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "24px 10px",
     backgroundColor: EMAIL_COLORS.surface,
     color: EMAIL_COLORS.navy,
-    fontFamily: "Arial, Helvetica, sans-serif",
+    fontFamily: EMAIL_FONT_STACK,
   },
   container: {
     width: "100%",
@@ -139,7 +139,7 @@ const styles: Record<string, React.CSSProperties> = {
   wordmark: {
     margin: 0,
     color: EMAIL_COLORS.navy,
-    fontFamily: "Georgia, 'Times New Roman', serif",
+    fontFamily: EMAIL_FONT_STACK,
     fontSize: "24px",
     fontWeight: 700,
   },
@@ -154,7 +154,7 @@ const styles: Record<string, React.CSSProperties> = {
   heading: {
     margin: "0 0 14px",
     color: EMAIL_COLORS.navy,
-    fontFamily: "Georgia, 'Times New Roman', serif",
+    fontFamily: EMAIL_FONT_STACK,
     fontSize: "24px",
     lineHeight: "30px",
     fontWeight: 600,

@@ -299,6 +299,27 @@ describe("mention « pépite » au moment de l'envoi", () => {
     expect(body.text).not.toMatch(/pépite/i);
   });
 
+  const journalOf = () =>
+    db.updates
+      .filter((update) => update.table === "user_alert_notifications")
+      .map(
+        (update) =>
+          (update.patch.notification_snapshot as { emailDelivery: Row }).emailDelivery
+            .pepiteMentioned,
+      );
+
+  it("journalise la mention réellement envoyée, pas celle du résumé d'origine", async () => {
+    db.pepiteIds = ["sale-1"];
+    await send([pepiteNotification(1), pepiteNotification(2), notification(3)]);
+    expect(journalOf()).toEqual([true, false, false]);
+  });
+
+  it("journalise « sans mention » quand la vente a quitté la liste publique", async () => {
+    db.pepiteIds = [];
+    await send([pepiteNotification(1)]);
+    expect(journalOf()).toEqual([false]);
+  });
+
   it("ne lit pas la liste pour une notification sans mention", async () => {
     await send([notification(1)]);
     expect(db.rpcCalls).toEqual([]);
