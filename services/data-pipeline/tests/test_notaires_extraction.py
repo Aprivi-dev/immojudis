@@ -285,7 +285,21 @@ def test_vni_detail_never_exposes_reserve_price_and_keeps_restricted_inventory()
 
 @pytest.mark.parametrize(
     ("published", "expected"),
-    [(0.045, 0.045), (0.0462, 0.045), (0.0476, 0.05), (0.0125, 0.015), (0.002, None)],
+    [
+        (0.045, 0.045),
+        (0.0462, 0.045),
+        (0.0476, 0.05),
+        (0.0125, 0.015),
+        (0.002, None),
+        (0.007, None),
+        (0.9, None),
+        (0.2, 0.2),
+        (0.21, None),
+        (float("inf"), None),
+        (float("nan"), None),
+        (True, None),
+        ("0.045", None),
+    ],
 )
 def test_operator_page_fee_rate_is_rounded_to_the_half_point_like_the_api_rate(published, expected):
     page = parse_immo_interactif_page(immo_page(fee_rate=published), "9000002")
@@ -294,6 +308,14 @@ def test_operator_page_fee_rate_is_rounded_to_the_half_point_like_the_api_rate(p
         assert "negotiation_fee_rate" not in page
     else:
         assert page["negotiation_fee_rate"] == expected
+
+
+def test_operator_page_keeps_the_rest_of_the_page_when_the_fee_rate_is_absurd():
+    page = parse_immo_interactif_page(immo_page(fee_rate=float("inf")), "9000002")
+
+    assert "negotiation_fee_rate" not in page
+    assert page["office"]["name"] == "Office notarial fictif"
+    assert page["documents_inventory"]
 
 
 def test_fee_text_is_written_from_the_rounded_rate():
@@ -353,6 +375,31 @@ def test_adjudicated_notarial_sale_reports_its_price():
 )
 def test_cadastral_parcels_are_read_only_when_explicit(text, expected):
     assert [ref.label() for ref in cadastral_parcels(text)] == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "starting_price", "expected"),
+    [
+        ("jusqu'à 1 euros", 100000, None),
+        ("jusqu'à 99999999999 euros", 100000, None),
+        ("jusqu'à 1 250 000 euros", 1500000, 1250000),
+        ("jusqu'à 30 000 euros", 100000, 30000),
+        ("jusqu'à 29 999 euros", 100000, None),
+        ("jusqu'à 100 000 euros", 100000, None),
+        ("jusqu'à 90 000 euros", None, None),
+        ("jusqu'à 90 000 euros", 0, None),
+        ("baisse du 1/3 à défaut d'enchères", 100000, None),
+    ],
+)
+def test_floor_price_is_kept_only_between_30_and_100_percent_of_the_starting_price(
+    text, starting_price, expected
+):
+    transaction = {"natureMiseAPrix": "FACULTE_BAISSE", "miseAPrix": starting_price, "detailFaculteBaisse": text}
+
+    conditions = sale_conditions("VAE", transaction)
+
+    assert conditions.get("floor_price_eur") == expected
+    assert conditions["price_reduction"] == text
 
 
 def test_small_text_helpers():
