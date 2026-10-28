@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from src import municipality_location
 from src.dedupe import (
     SWEEP_STRICT_EXCLUDED_SOURCES,
     SWEEP_STRICT_MAX_GROUP,
@@ -24,6 +25,41 @@ HEARING = "mardi 10 novembre 2026 à 14h"
 NICE_INSEE = {"provider": "reference_communes", "accepted": True, "citycode": "06088"}
 VENCH_URL = "https://www.vench.fr/vente-170001-un-appartement-nice.html"
 LICITOR_URL = "https://www.licitor.com/annonce/10/20/30/vente-aux-encheres/un-appartement/nice/06/990001.html"
+
+
+def _commune(code: str, name: str, department: str, postal_codes: list[str]) -> dict[str, object]:
+    return {
+        "code_insee": code,
+        "name_normalized": name,
+        "department_code": department,
+        "postal_codes": postal_codes,
+        "latitude": 43.7,
+        "longitude": 7.26,
+    }
+
+
+def _use_communes(monkeypatch: pytest.MonkeyPatch, rows: list[dict[str, object]]) -> None:
+    monkeypatch.setattr(municipality_location, "_INDEX", municipality_location._Index(rows))
+
+
+@pytest.fixture(autouse=True)
+def _no_commune_reference(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Par défaut, le référentiel des communes est vide : aucune lecture de base, aucun INSEE résolu."""
+    _use_communes(monkeypatch, [])
+
+
+@pytest.fixture
+def communes(monkeypatch: pytest.MonkeyPatch) -> None:
+    _use_communes(
+        monkeypatch,
+        [
+            _commune("06088", "nice", "06", ["06000", "06100", "06200", "06300"]),
+            _commune("06029", "cannes", "06", ["06400"]),
+            # Deux communes de même nom dans un même département : le nom seul ne désigne rien.
+            _commune("27001", "sainte croix", "27", ["27100"]),
+            _commune("27002", "sainte croix", "27", ["27200"]),
+        ],
+    )
 
 
 def _merge(sales, **options: object):
@@ -179,9 +215,62 @@ def test_another_court_attaches_nothing() -> None:
     assert len(_merge([vench(court="justice_tj_1_83"), licitor()])) == 2
 
 
-def test_an_unknown_court_attaches_nothing() -> None:
-    assert len(_merge([vench(court=None), licitor()])) == 2
-    assert len(_merge([vench(), licitor(court="other")])) == 2
+def test_two_unknown_courts_attach_nothing() -> None:
+    assert len(_merge([vench(court=None), licitor(court=None)])) == 2
+
+
+def test_two_known_and_different_courts_attach_nothing_even_with_the_same_insee() -> None:
+    assert len(_merge([vench(court="justice_tj_1_83"), licitor()])) == 2
+
+
+def test_an_unknown_court_on_one_side_is_accepted_when_everything_else_matches_strictly() -> None:
+    assert len(_merge([vench(court=None), licitor()])) == 1
+    assert len(_merge([vench(), licitor(court=None)])) == 1
+    assert len(_merge([vench(), licitor(court="other")])) == 1
+
+
+def test_an_unknown_court_needs_the_price_to_the_euro() -> None:
+    assert len(_merge([vench(court=None, starting_price_eur="60 001 €"), licitor()])) == 2
+    # Avec les deux tribunaux connus, l'écart de 1 % reste accepté.
+    assert len(_merge([vench(starting_price_eur="60 001 €"), licitor()])) == 1
+
+
+def test_an_unknown_court_needs_the_same_insee_not_just_the_name_and_postal_code() -> None:
+    no_insee = vench(court=None, geocode=None, postal_code="06000", address="06000 Nice")
+    assert len(_merge([no_insee, licitor(geocode=None)])) == 2
+    cannes = {"provider": "reference_communes", "accepted": True, "citycode": "06029"}
+    assert len(_merge([vench(court=None, city="Cannes", geocode=cannes), licitor()])) == 2
+
+
+def test_an_unknown_court_needs_a_compatible_type_and_the_same_day() -> None:
+    assert len(_merge([vench(court=None, property_type="house"), licitor()])) == 2
+    assert len(_merge([vench(court=None, sale_date="mercredi 11 novembre 2026 à 14h"), licitor()])) == 2
+
+
+def test_an_unknown_court_does_not_hide_a_second_possible_sale() -> None:
+    other = _sale(
+        "avoventes",
+        "https://avoventes.fr/enchere/78",
+        address="3 rue de France, 06100 Nice",
+        postal_code="06100",
+        court=None,
+        starting_price_eur="60 000 €",
+        geocode={"provider": "ban_geoplateforme", "accepted": True, "citycode": "06088"},
+    )
+
+    # Deux ventes avec adresse concordent avec l'annonce : ambiguïté, rien n'est rattaché à Vench.
+    result = _merge([vench(), licitor(), other])
+    assert len(result) == 3
+    assert all(len(sale.source_urls) == 1 for sale in result)
+
+
+def test_the_listing_without_a_court_still_imports_nothing_but_what_is_missing() -> None:
+    merged = _merge([vench(court=None, quality_flags=["address_missing"]), licitor()])[0]
+
+    assert merged.address == "12 rue Gioffredo, 06000 Nice"
+    assert (merged.latitude, merged.longitude) == (Decimal("43.6998"), Decimal("7.2711"))
+    assert merged.tribunal_code == NICE
+    assert "address_missing" not in merged.quality_flags
 
 
 def test_another_hearing_day_attaches_nothing() -> None:
@@ -319,3 +408,35 @@ def test_a_later_collection_of_the_listing_without_a_street_does_not_erase_the_a
     assert result.address == "12 rue Gioffredo, 06000 Nice"
     assert result.city == "Nice"
     assert (result.latitude, result.longitude) == (Decimal("43.6998"), Decimal("7.2711"))
+
+
+def test_the_insee_missing_on_one_side_is_resolved_from_the_name_and_the_postal_code(communes: None) -> None:
+    # Vench : nom et département seulement (nom unique dans le département) ; Licitor : nom et code postal.
+    streetless = vench(geocode=None)
+    anchor = licitor(geocode=None)
+
+    assert streetless.postal_code is None and anchor.postal_code == "06000"
+    assert len(_merge([streetless, anchor])) == 1
+
+
+def test_an_ambiguous_commune_is_never_resolved(communes: None) -> None:
+    streetless = vench(city="Sainte-Croix", department="27", geocode=None, address="Sainte-Croix")
+    anchor = licitor(city="Sainte-Croix", postal_code="27100", address="1 rue Neuve, 27100 Sainte-Croix", geocode=None)
+
+    # Le code postal tranche côté Licitor (27001), mais « Sainte-Croix » seul dans l'Eure en désigne deux.
+    assert len(_merge([streetless, anchor])) == 2
+
+
+def test_a_resolved_insee_that_differs_attaches_nothing(communes: None) -> None:
+    streetless = vench(city="Cannes", department="06", geocode=None, address="Cannes")
+
+    assert len(_merge([streetless, licitor(geocode=None)])) == 2
+
+
+def test_the_resolution_does_not_replace_the_name_and_postal_code_proof(communes: None) -> None:
+    named = vench(geocode=None, postal_code="06000", address="06000 Nice")
+    assert len(_merge([named, licitor(geocode=None)])) == 1
+
+
+def test_an_unknown_court_with_a_resolved_insee_is_accepted(communes: None) -> None:
+    assert len(_merge([vench(court=None, geocode=None), licitor(geocode=None)])) == 1

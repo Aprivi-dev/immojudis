@@ -9,11 +9,16 @@ ces annonces.
 La règle ci-dessous n'agit que pour une annonce dont l'adresse se réduit à la commune (``street_class`` = ``none``)
 et seulement vers une vente d'une autre source qui a une voie. Tout doit concorder :
 
-* même tribunal (code canonique, connu des deux côtés) ;
+* même tribunal (code canonique) ;
 * même jour d'audience (jour civil à Paris) ;
-* même commune : même code INSEE géocodé, ou même nom de commune normalisé avec le même code postal ;
+* même commune : même code INSEE (géocodé, ou résolu sans ambiguïté par ``find_commune`` à partir du nom et du
+  code postal, ou du nom unique dans le département), ou même nom de commune normalisé avec le même code postal ;
 * mise à prix à 1 % près ;
 * type de bien compatible.
+
+Tribunal inconnu d'un seul côté : la paire reste acceptée si tout le reste concorde strictement, soit même INSEE
+(connu ou résolu), même jour, même mise à prix à l'euro près, type compatible. Deux tribunaux connus doivent être
+égaux ; deux tribunaux inconnus ne rapprochent rien. Cela ne change pas l'attribution du tribunal des ventes.
 
 Un candidat ambigu ne rapproche rien : l'annonce doit avoir un seul candidat, et la vente un seul rapprochement.
 Les gardes de ``src.dedupe`` s'appliquent en plus (annonces Vench / Petites Affiches de numéros différents,
@@ -41,9 +46,11 @@ from src.dedupe import (
     _prices_close,
     _surface_for_comparison,
     _timed_same_day_sale_date,
+    _whole_euros,
     street_class,
 )
 from src.models import AuctionSale
+from src.municipality_location import find_commune
 from src.normalize import clean_text
 from src.reference_data.names import commune_lookup_name
 
@@ -90,10 +97,28 @@ def _commune_name(sale: AuctionSale) -> str:
     return commune_lookup_name(city)
 
 
+def _resolved_insee(sale: AuctionSale) -> str | None:
+    """Code INSEE de la commune d'après le nom et le code postal (ou le nom unique du département).
+
+    ``find_commune`` ne renvoie une commune que si elle est unique : ambigu, le résultat est vide.
+    """
+    commune = find_commune(sale.city, sale.postal_code, sale.department)
+    return str(commune["code_insee"]).strip().upper() if commune else None
+
+
+def _commune_insee(sale: AuctionSale) -> str | None:
+    """Code INSEE géocodé, sinon résolu par le référentiel des communes."""
+    return _insee(sale) or _resolved_insee(sale)
+
+
+def _same_insee(first: AuctionSale, second: AuctionSale) -> bool:
+    first_insee, second_insee = _commune_insee(first), _commune_insee(second)
+    return bool(first_insee and first_insee == second_insee)
+
+
 def same_commune(first: AuctionSale, second: AuctionSale) -> bool:
-    """Même code INSEE géocodé, ou même nom de commune normalisé avec le même code postal (connus des deux côtés)."""
-    first_insee, second_insee = _insee(first), _insee(second)
-    if first_insee and second_insee and first_insee == second_insee:
+    """Même code INSEE (géocodé ou résolu), ou même nom de commune normalisé avec le même code postal."""
+    if _same_insee(first, second):
         return True
     (first_postal, _), (second_postal, _) = _locality(first), _locality(second)
     first_name, second_name = _commune_name(first), _commune_name(second)
@@ -111,16 +136,22 @@ def types_compatible(first: AuctionSale, second: AuctionSale) -> bool:
 
 
 def core_match(streetless: AuctionSale, other: AuctionSale) -> bool:
-    """Les cinq concordances (tribunal, jour, commune, mise à prix, type), sans les gardes d'exclusion."""
-    court = _court(streetless)
-    if court is None or court != _court(other):
-        return False
+    """Les concordances (tribunal, jour, commune, mise à prix, type), sans les gardes d'exclusion."""
     day = _civil_day(streetless.sale_date)
     if day is None or day != _civil_day(other.sale_date):
         return False
     if not _prices_close(streetless.starting_price_eur, other.starting_price_eur, STREETLESS_PRICE_TOLERANCE):
         return False
-    return same_commune(streetless, other) and types_compatible(streetless, other)
+    if not types_compatible(streetless, other):
+        return False
+    first_court, second_court = _court(streetless), _court(other)
+    if first_court and second_court:
+        return first_court == second_court and same_commune(streetless, other)
+    if first_court or second_court:
+        # Tribunal inconnu d'un seul côté : tout le reste doit concorder strictement.
+        price = _whole_euros(streetless.starting_price_eur)
+        return price is not None and price == _whole_euros(other.starting_price_eur) and _same_insee(streetless, other)
+    return False
 
 
 def _vetoed(streetless: AuctionSale, anchor: AuctionSale) -> bool:
