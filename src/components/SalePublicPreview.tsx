@@ -40,7 +40,7 @@ import {
   salesReturnLabel,
 } from "@/lib/navigation";
 import Link from "next/link";
-import { useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
 import { LAUNCH_OFFER_SHORT_TEXT } from "@/lib/launch-offer";
 import { ceilingTermsFor } from "@/lib/fee-regime-labels";
@@ -264,6 +264,9 @@ export function SalePublicPreview({
    */
   verifyingAccount?: boolean;
 }) {
+  // Le bloc « Pourquoi cette pépite » existe-t-il ? La pastille du haut ne propose « Pourquoi ? » (ancre
+  // `#pepite`) qu'à ce moment, sinon elle renvoie à la méthode.
+  const [pepiteBlockLoaded, setPepiteBlockLoaded] = useState(false);
   const procedure = getSaleProcedure(preview);
   // The ceiling is promised only when the fee regime of the sale is open (the tribunal for now). Only
   // its terms are needed here: the light vocabulary module keeps the fee rules out of this bundle.
@@ -379,7 +382,7 @@ export function SalePublicPreview({
           label: ceilingTerms.ceilingSimulationLabel,
           width: "medium",
           tier: `Offre Analyse, ou ${MONTHLY_SALE_UNLOCKS} déblocages par mois`,
-          visibleWith: "l’offre Analyse, ou en débloquant la vente",
+          visibleWith: "l’offre Analyse, ou avec un déblocage",
           offerAware: true,
         }
       : null,
@@ -503,7 +506,7 @@ export function SalePublicPreview({
 
         <header className={styles.head}>
           <SaleProcedureBadge sale={preview} />
-          {preview.pepite ? <PepiteHeroBadge /> : null}
+          {preview.pepite ? <PepiteHeroBadge blockLoaded={pepiteBlockLoaded} /> : null}
           <h1 id="public-sale-title" className={styles.title}>
             {shortHeading}
             <span className={styles.reference}>Réf. {saleReference(saleId)}</span>
@@ -582,12 +585,13 @@ export function SalePublicPreview({
               <PepiteBlockLazy
                 saleId={saleId}
                 known
+                onLoadedChange={setPepiteBlockLoaded}
                 lockedAction={
                   <Link
                     href={accountLink}
                     className="font-semibold text-gold-text underline underline-offset-4"
                   >
-                    Créez un compte gratuit
+                    Créez un compte gratuit pour voir le détail du calcul
                   </Link>
                 }
               />
@@ -658,8 +662,8 @@ export function SalePublicPreview({
                   </h3>
                   <p>
                     Adresse, photos, description, occupation, dates de visite et contact du dossier,
-                    fourchette de valeur estimée, Street View, météo et risques de la commune. Et
-                    chaque mois, {MONTHLY_SALE_UNLOCKS} déblocages de ventes :{" "}
+                    fourchette de valeur estimée, Street View, météo et risques de la commune. Et{" "}
+                    {MONTHLY_SALE_UNLOCKS} déblocages par mois, chacun ouvrant, pour une vente :{" "}
                     {unlockedItemsText({
                       ceiling: ceilingTerms?.ceilingTermWithArticle ?? null,
                       statistics:
