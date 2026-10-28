@@ -31,6 +31,11 @@ from src.reference_data.names import department_from_insee
 
 ANIL_DATASET_ID = "693aa2feed1bf4da603faa49"
 ANIL_DATASET_API_URL = f"https://www.data.gouv.fr/api/1/datasets/{ANIL_DATASET_ID}/"
+# Search used to notice the next edition (the identifier changes with every republication).
+ANIL_SEARCH_URL = (
+    "https://www.data.gouv.fr/api/1/datasets/"
+    "?q=Carte%20des%20loyers%20indicateurs%20de%20loyers%20d%27annonce&page_size=20"
+)
 ANIL_ATTRIBUTION = "Estimations ANIL, à partir des données du Groupe SeLoger et de leboncoin"
 
 SEGMENTS = ("apt_all", "apt_1_2", "apt_3p", "house")
@@ -137,6 +142,29 @@ def dataset_vintage(dataset: Mapping[str, Any]) -> int:
     if match is None:
         raise RuntimeError("Cannot read the vintage of the ANIL rent map from its dataset title")
     return int(match.group(1))
+
+
+@dataclass(frozen=True)
+class NewerVintage:
+    vintage: int
+    title: str
+    identifier: str
+
+
+def newer_vintages(search: Mapping[str, Any], current_vintage: int) -> list[NewerVintage]:
+    """Rent-map datasets of a search result whose title quotes a year after ``current_vintage``."""
+    found: list[NewerVintage] = []
+    for item in search.get("data") or []:
+        if not isinstance(item, Mapping):
+            continue
+        title = str(item.get("title") or "")
+        folded = title.casefold()
+        if "loyer" not in folded or "carte des loyers" not in folded:
+            continue
+        years = [int(year) for year in _VINTAGE.findall(title)]
+        if years and max(years) > current_vintage:
+            found.append(NewerVintage(max(years), title, str(item.get("id") or "")))
+    return found
 
 
 def decode_csv(raw: bytes) -> str:

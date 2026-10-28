@@ -155,14 +155,21 @@ def upsert_rows(
     rows: Iterable[dict[str, object]],
     *,
     batch_size: int = DEFAULT_BATCH_SIZE,
+    single_transaction: bool = False,
 ) -> int:
+    """Upsert ``rows`` by batches; one commit per batch, or none with ``single_transaction``.
+
+    With ``single_transaction`` the caller owns the transaction (commit or rollback): nothing is
+    visible to other sessions until it ends, so a failure halfway leaves the table as it was.
+    """
     statement = upsert_statement(table)
     written = 0
     for batch in _batches(rows, batch_size):
         with connection.cursor() as cursor:
             cursor.execute(f"set local statement_timeout = '{STATEMENT_TIMEOUT}'")
             cursor.execute(statement, (json.dumps(batch, default=_json_default, ensure_ascii=False),))
-        connection.commit()
+        if not single_transaction:
+            connection.commit()
         written += len(batch)
     return written
 
@@ -170,16 +177,21 @@ def upsert_rows(
 SNAPSHOT_TABLES = frozenset({"anil_rents", "commune_housing_tension"})
 
 
-def database_now(connection: Any) -> datetime:
-    """The database clock: rows written afterwards carry a later ``imported_at``."""
+def database_now(connection: Any, *, commit: bool = True) -> datetime:
+    """The database clock: rows written afterwards carry a later ``imported_at``.
+
+    Inside a transaction ``now()`` is the start of that transaction, which is also the
+    ``imported_at`` of every row the transaction writes: they are never purged as untouched.
+    """
     with connection.cursor() as cursor:
         cursor.execute("select now()")
         row = cursor.fetchone()
-    connection.commit()
+    if commit:
+        connection.commit()
     return row[0]
 
 
-def purge_untouched(connection: Any, table: str, started_at: datetime) -> int:
+def purge_untouched(connection: Any, table: str, started_at: datetime, *, commit: bool = True) -> int:
     """Delete the rows an import did not write (communes gone from the source)."""
     if table not in SNAPSHOT_TABLES:
         raise ValueError(f"{table} is not a snapshot table")
@@ -187,29 +199,73 @@ def purge_untouched(connection: Any, table: str, started_at: datetime) -> int:
         cursor.execute(f"set local statement_timeout = '{STATEMENT_TIMEOUT}'")
         cursor.execute(f"delete from public.{table} where imported_at < %s", (started_at,))
         deleted = cursor.rowcount or 0
-    connection.commit()
+    if commit:
+        connection.commit()
     return deleted
 
 
-def vintage_counts(connection: Any, table: str) -> list[tuple[int, int]]:
+def vintage_counts(connection: Any, table: str, *, commit: bool = True) -> list[tuple[int, int]]:
     """``(vintage, rows)`` pairs of a table that carries a vintage."""
     if table != "anil_rents":
         raise ValueError(f"{table} has no vintage")
     with connection.cursor() as cursor:
         cursor.execute("select vintage, count(*) from public.anil_rents group by vintage order by vintage")
         rows = [(int(vintage), int(count)) for vintage, count in cursor.fetchall()]
-    connection.commit()
+    if commit:
+        connection.commit()
     return rows
 
 
-def row_count(connection: Any, table: str) -> int:
+def row_count(connection: Any, table: str, *, commit: bool = True) -> int:
     if table not in SNAPSHOT_TABLES:
         raise ValueError(f"{table} is not a snapshot table")
     with connection.cursor() as cursor:
         cursor.execute(f"select count(*) from public.{table}")
         count = int(cursor.fetchone()[0])
-    connection.commit()
+    if commit:
+        connection.commit()
     return count
+
+
+class SnapshotCheckError(RuntimeError):
+    """The table does not hold what the import wrote: the transaction was rolled back."""
+
+
+def replace_snapshot(
+    connection: Any, table: str, rows: Iterable[dict[str, object]], *, vintage: int | None = None
+) -> tuple[int, int]:
+    """Upsert, purge and check a snapshot table in ONE transaction; ``(written, purged)``.
+
+    The check compares what the table would hold (rows, and the vintage when ``vintage`` is given)
+    with what was written. On any difference, or any failure, the transaction is rolled back: a
+    network failure, a timeout or a CHECK violation halfway never leaves a mix of two editions
+    that the web app would read.
+    """
+    materialized = list(rows)
+    try:
+        started_at = database_now(connection, commit=False)
+        written = upsert_rows(connection, table, materialized, single_transaction=True)
+        purged = purge_untouched(connection, table, started_at, commit=False)
+        if vintage is not None:
+            found = vintage_counts(connection, table, commit=False)
+            if found != [(vintage, len(materialized))]:
+                raise SnapshotCheckError(
+                    f"{table} would hold {found} (vintage, rows) after the import; expected "
+                    f"[({vintage}, {len(materialized)})]. A mix of vintages or a wrong row count: "
+                    "the transaction was rolled back, nothing changed."
+                )
+        else:
+            count = row_count(connection, table, commit=False)
+            if count != len(materialized):
+                raise SnapshotCheckError(
+                    f"{table} would hold {count} rows after the import; expected {len(materialized)}. "
+                    "The transaction was rolled back, nothing changed."
+                )
+    except BaseException:
+        connection.rollback()
+        raise
+    connection.commit()
+    return written, purged
 
 
 def delete_climate_months_before(connection: Any, first_month: date) -> int:

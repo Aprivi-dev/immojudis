@@ -69,8 +69,18 @@ serveur uniquement (`service_role`).
 
 Workflow manuel **Reference data import** (`.github/workflows/reference-data-import.yml`) :
 
-- `dataset` : `rents`, `tension` (ou `all`, qui les inclut) ;
-- `dry_run` : télécharge et analyse sans écrire.
+- `dataset` : `rents`, `tension`, ou `all`, qui lance aussi `communes`, `risks` et `climate` (le climat
+  télécharge 96 fichiers, jusqu'à 90 minutes) ; chaque jeu est isolé (la panne de l'un n'empêche pas les
+  autres, le code de sortie est non nul s'il y en a une) et ouvre sa propre connexion, au moment d'écrire ;
+- `dry_run` : télécharge et analyse sans écrire ;
+- `check_new_vintage` : cherche seulement un millésime ANIL plus récent (aucune écriture). Le même
+  contrôle tourne tout seul le 1er novembre, le 1er décembre et le 1er janvier à 07 h 15 UTC
+  (`python -m src.reference_data rents --check-new-vintage`) : sortie non nulle et `::warning::` si un
+  jeu plus récent que `ANIL_CURRENT_EDITION` est publié. La marche à suivre est dans
+  `docs/runbooks/import-annuel-anil.md`.
+
+Un échec ajoute un résumé à la page du run (étape « Summarize the failure ») et une annotation
+`::error::` par jeu en échec.
 
 Fréquence : la carte des loyers est publiée chaque année en décembre ; le zonage change à chaque décret.
 
@@ -80,23 +90,32 @@ Hôtes autorisés pour le téléchargement : `www.data.gouv.fr` (API) et `static
 Un texte lu est limité à 32 Mo, un fichier téléchargé à 1 Go (taille déclarée contrôlée d'abord).
 Le jeu du zonage est épinglé par son identifiant (`657c88da2947e13be0597058`), pas par son nom.
 
-Gardes contre un import partiel : au moins 34 000 communes par segment (ANIL) ou au total (zonage), les
-quatre segments présents, au plus 0,5 % de lignes rejetées (code, département, loyer hors de 1 à
-100 €/m², type de prédiction ou zonage inconnu). Tout est analysé et contrôlé avant la première écriture.
-Le département de chaque ligne se déduit du code commune (pas de la colonne `DEP`). Les segments des
-fichiers ANIL sont reconnus par leur nom de fichier d'abord, par leur titre ensuite. Le zonage refuse
-l'import si la documentation du jeu n'identifie aucun décret (pas de repli sur un décret connu).
+Gardes contre un import partiel : au moins 34 800 communes par segment (ANIL) ou au total (zonage), un
+fichier d'au moins 99 % du nombre de lignes que la table contient déjà (sinon l'import est refusé : une
+troncature de quelques pour cent passerait un seuil fixe, puis la purge supprimerait les communes
+perdues), les quatre segments présents, au plus 0,5 % de lignes rejetées (code, département, loyer hors de
+1 à 100 €/m², type de prédiction ou zonage inconnu). Le téléchargement compare les octets reçus à
+`Content-Length` (un écart est une erreur, reprise comme les coupures réseau) ; seuls les statuts 5xx et
+429 sont réessayés, pas un 403 ou un 404. Le département de chaque ligne se déduit du code commune (pas
+de la colonne `DEP`). Les segments des fichiers ANIL sont reconnus par leur nom de fichier d'abord, par
+leur titre ensuite. Le zonage refuse l'import si la documentation du jeu n'identifie aucun décret (pas de
+repli sur un décret connu), choisit le décret dont la date est celle de l'en-tête du CSV (et non le
+dernier de la liste) et refuse un fichier dont la date ne correspond à aucun décret.
 
-Après l'écriture, l'import purge les lignes qu'il n'a pas touchées (communes disparues du millésime) puis
-contrôle la table : un seul millésime et le bon nombre de lignes pour `anil_rents`, le bon nombre de lignes
-pour `commune_housing_tension`. Un mélange de millésimes ou un compte inattendu arrête l'import avec une
-erreur claire (rien ne doit lire la table avant d'avoir compris).
+Tout est analysé et contrôlé avant la première écriture ; l'écriture de chaque table instantanée
+(`anil_rents`, `commune_housing_tension`) tient dans **une seule transaction** : upsert, purge des lignes non
+touchées (communes disparues du millésime) et contrôle (un seul millésime et le bon nombre de lignes pour
+`anil_rents`, le bon nombre de lignes pour `commune_housing_tension`). Un échec, une coupure réseau ou un
+contrôle en défaut annule tout : la table garde son édition précédente, l'application ne lit jamais un
+mélange de deux millésimes. (Les jeux `communes`, `risks` et `climate` écrivent encore par paquets.)
 
 **À chaque nouvel import de la carte des loyers**, mettre à jour `ANIL_CURRENT_EDITION`
 (`src/lib/rent-source-notice.ts`) : il sert aux mentions qui ne portent pas sur une vente (emails d'alerte).
 Les écrans qui portent sur une vente affichent le millésime et la date de la ligne réellement utilisée.
-L'import signale tout écart (`web_edition_gap` dans son résumé, y compris en `--dry-run`) et un test du
-pipeline échoue tant que la constante et le millésime lu ne concordent pas.
+L'import compare cette constante au millésime lu et **échoue avant toute écriture** en cas d'écart
+(`web_edition_gap`, y compris en `--dry-run`) : la pull request qui met à jour la constante précède
+l'import. Attention : le test du pipeline qui compare la constante au jeu (`test_the_real_web_edition_…`)
+fige le couple 2025 / 2025-12-11 ; il se met à jour avec la constante, il ne lit pas le jeu réel.
 
 ## Lecture par l'application
 
