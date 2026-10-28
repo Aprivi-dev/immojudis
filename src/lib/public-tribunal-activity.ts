@@ -20,8 +20,8 @@ export type PublicTribunalActivity = {
   medianStartingPriceEur: number | null;
   /**
    * Ventes à venir dont la mise à prix est connue : le « n » des chiffres de prix. Absent quand la
-   * fonction `get_public_tribunal_price_figures` (migration `20261108160000`) n'est pas là : `upcomingCount` en tient
-   * alors lieu (il ne peut que surestimer n, jamais le sous-estimer).
+   * fonction `get_public_tribunal_price_figures` (migration `20261108160000`) n'est pas là : aucun chiffre de prix
+   * n'est alors publié (« — »), `upcomingCount` ne tient pas lieu de « n » (il surestimerait l'échantillon).
    */
   pricedCount?: number | null;
   /** Plus petite et plus grande mise à prix, publiées de 5 à 9 ventes chiffrées seulement. */
@@ -94,8 +94,8 @@ export function mapPublicTribunalActivity(
   /**
    * Chiffres de prix soumis aux seuils de publication (`get_public_tribunal_price_figures`). Fournis,
    * ils remplacent la médiane de `get_public_tribunal_activity` (qui n'a aucun minimum) : un tribunal
-   * sans ligne n'a aucune vente chiffrée. Absents (fonction pas encore déployée) : on garde cette
-   * médiane et `upcomingCount` tient lieu de « n » (voir `PublicTribunalActivity.pricedCount`).
+   * sans ligne n'a aucune vente chiffrée. Absents (fonction pas encore déployée) : aucun chiffre de prix
+   * n'est publié (voir `PublicTribunalActivity.pricedCount` et `tribunalPriceFigure`).
    */
   priceFigures?: PublicTribunalPriceFigureRow[] | null,
 ): PublicTribunalActivity[] {
@@ -164,7 +164,10 @@ export function tribunalPriceFigure(
     | "maxStartingPriceEur"
   >,
 ): TribunalPriceFigure {
-  const sampleSize = Math.max(0, item.pricedCount ?? item.upcomingCount);
+  // Sans les chiffres de prix soumis aux seuils (fonction pas encore déployée), on ne publie rien : ni médiane ni
+  // fourchette, et `upcomingCount` ne tient pas lieu de « n ».
+  if (item.pricedCount == null) return { kind: "none", sampleSize: 0 };
+  const sampleSize = Math.max(0, item.pricedCount);
   if (sampleSize >= TRIBUNAL_STATISTICS_MEDIAN_MIN_SAMPLE && item.medianStartingPriceEur != null) {
     return { kind: "median", sampleSize, median: item.medianStartingPriceEur };
   }

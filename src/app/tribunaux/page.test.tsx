@@ -40,6 +40,7 @@ const ACTIVITY = {
   upcomingCount: 107,
   nextSaleDate: "2026-10-13T00:00:00Z",
   medianStartingPriceEur: 40_500,
+  pricedCount: 107,
   houseCount: 20,
   apartmentCount: 80,
   otherCount: 7,

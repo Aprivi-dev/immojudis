@@ -47,6 +47,7 @@ function activity(searchName: string, overrides: Record<string, unknown> = {}) {
     upcomingCount: 12,
     nextSaleDate: "2026-10-20T10:00:00Z",
     medianStartingPriceEur: 40_500,
+    pricedCount: 12,
     houseCount: 2,
     apartmentCount: 9,
     otherCount: 1,
