@@ -66,7 +66,7 @@ function renderBlock(overrides: Partial<Parameters<typeof RentalMarketBlock>[0]>
   );
 }
 
-describe("bloc « Marché locatif de la commune »", () => {
+describe("bloc « Marché locatif (estimation) »", () => {
   it("montre le loyer, sa fourchette, le nombre d'annonces et la mention ANIL avec son lien", () => {
     renderBlock();
     const block = screen.getByTestId("rental-market-block");
@@ -103,6 +103,30 @@ describe("bloc « Marché locatif de la commune »", () => {
     expect(block.textContent).toContain("maisons");
     expect(block.textContent).toMatch(/entre \d+,\d % et \d+,\d %/);
     expect(block.textContent).not.toMatch(/selon la fourchette de loyer/);
+  });
+
+  it("médiane des arrondissements ou du département : dit que le loyer est calculé par Immojudis, sans parler d'annonces de la commune", () => {
+    const median = {
+      ...RELIABLE,
+      source: "anil_arrondissements_median",
+      reliability: "indicative",
+      observations: undefined,
+      lowPerM2: undefined,
+      highPerM2: undefined,
+    } as RentReference;
+    const { unmount } = renderBlock({ reference: median });
+    let text = screen.getByTestId("rental-market-block").textContent;
+    expect(text).toContain(
+      "Loyer calculé par Immojudis : médiane des estimations ANIL des arrondissements, faute d’estimation propre à celui du bien. Indicatif.",
+    );
+    expect(text).not.toContain("annonces de la commune");
+    unmount();
+    renderBlock({ reference: { ...median, source: "anil_department_median" } });
+    text = screen.getByTestId("rental-market-block").textContent;
+    expect(text).toContain(
+      "Loyer calculé par Immojudis : médiane des estimations ANIL des communes du département, faute d’estimation pour la commune du bien. Indicatif.",
+    );
+    expect(text).not.toContain("annonces observées");
   });
 
   it("zone tendue : ligne neutre avec la mention de source déjà rédigée, sans effet sur le rendement", () => {

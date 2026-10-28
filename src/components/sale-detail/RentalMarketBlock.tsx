@@ -14,7 +14,7 @@ import type { RentReference, RentSegment } from "@/lib/rent-reference";
 import type { AuctionSale } from "@/lib/types";
 
 /** Titre du bloc, et libellé exact du rendement affiché (n° 44). */
-export const RENTAL_MARKET_TITLE = "Marché locatif de la commune";
+export const RENTAL_MARKET_TITLE = "Marché locatif (estimation)";
 export const YIELD_AT_STARTING_PRICE_LABEL = "Rendement brut à la mise à prix (charges comprises)";
 
 const SEGMENT_LABELS: Record<RentSegment, string> = {
@@ -37,8 +37,17 @@ const countFormat = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 })
 const perM2 = (value: number) => `${rentFormat.format(value)} €/m²`;
 const percent = (value: number) => `${percentFormat.format(value)} %`;
 
-/** Ce que le bloc dit de la nature de l'estimation : commune, « loyer de maille », intercommunalité. */
+/**
+ * Ce que le bloc dit de la nature de l'estimation : commune, « loyer de maille », intercommunalité, ou
+ * médiane calculée par Immojudis sur la carte de l'ANIL (arrondissements, département).
+ */
 function rentNature(reference: RentReference): string {
+  if (reference.source === "anil_arrondissements_median") {
+    return "Loyer calculé par Immojudis : médiane des estimations ANIL des arrondissements, faute d’estimation propre à celui du bien. Indicatif.";
+  }
+  if (reference.source === "anil_department_median") {
+    return "Loyer calculé par Immojudis : médiane des estimations ANIL des communes du département, faute d’estimation pour la commune du bien. Indicatif.";
+  }
   if (reference.source === "anil_maille") {
     return "Loyer de maille : estimation commune à un groupe de communes voisines, la commune comptant trop peu d’annonces pour une estimation propre. Indicatif.";
   }
@@ -71,7 +80,7 @@ export function yieldText(range: GrossYieldRange, reliability: RentReference["re
 type MarketSale = Parameters<typeof estimateSaleGrossYieldRange>[0];
 
 /**
- * Bloc « Marché locatif de la commune » de la fiche : loyer d’annonce de la carte de l’ANIL (charges comprises) avec
+ * Bloc « Marché locatif (estimation) » de la fiche : loyer d’annonce de la carte de l’ANIL (charges comprises) avec
  * sa fourchette et le nombre d’annonces, « loyer de maille » quand la source l’est, rendement brut à la mise à prix en
  * fourchette quand la référence est indicative, zonage tendu (TLV) en ligne neutre, et les mentions de source
  * obligatoires. Rien d’autre : aucun conseil, aucune promesse de gain. Chargé à la demande
