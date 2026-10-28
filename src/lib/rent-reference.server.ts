@@ -456,7 +456,11 @@ async function readFallbackReferences(
     ),
   ];
   if (codes.length) {
-    const aliases = await optional("commune code history", () => readCodeAliases(codes), new Map());
+    const aliases = await optional(
+      "commune code history",
+      () => readCodeAliases(codes),
+      new Map<string, string[]>(),
+    );
     const wanted = new Map<string, Set<RentSegment>>();
     for (const sale of pending()) {
       const code = communeCodes.get(sale.id.toLowerCase());
@@ -467,7 +471,11 @@ async function readFallbackReferences(
       }
     }
     const aliasReferences = wanted.size
-      ? await optional("aliased commune rents", () => readAnilReferences(wanted), new Map())
+      ? await optional(
+          "aliased commune rents",
+          () => readAnilReferences(wanted),
+          new Map<string, RentReference | null>(),
+        )
       : new Map<string, RentReference | null>();
     for (const sale of pending()) {
       const code = communeCodes.get(sale.id.toLowerCase());
