@@ -1,21 +1,19 @@
 """Suppression contrôlée des ventes aux informations insuffisantes (données fictives, aucune base de production)."""
 
+import inspect
 import json
-import os
-import re
-import uuid
-from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
 
-from src import recompute_scoring
+from src import insufficient_sales, recompute_scoring
 from src.information_sufficiency import ContactBlocklist
 from src.insufficient_sales import (
-    Candidate,
+    CLEANUP_FUNCTION_MAX,
     build_report,
-    delete_batch,
+    drop_insufficient_sales,
     evaluate_rows,
+    execute_empty_listing_cleanup,
 )
 from src.models import AuctionSale
 
@@ -76,7 +74,7 @@ def test_blocked_contact_makes_the_sale_a_candidate():
     assert [c.sale_id for c in candidates] == ["3"]
 
 
-def test_report_protects_user_linked_sales_and_contains_only_ids_and_counts():
+def test_report_marks_user_linked_sales_and_contains_only_ids_and_counts():
     contact = "me.exemple@cabinet-exemple.test"
     candidates, stats = evaluate_rows(
         [row("a", source_name="licitor", description=f"écrire à {contact}"), row("b"), row("c", primary_source="vench")],
@@ -84,13 +82,12 @@ def test_report_protects_user_linked_sales_and_contains_only_ids_and_counts():
         ContactBlocklist(global_emails=frozenset({contact})),
     )
     links = {"protecting": {"user_favorites": {"b"}}, "informational": {"user_alert_matches": {"a", "b"}}}
-    report = build_report(candidates, stats, links, include_user_linked=False)
+    report = build_report(candidates, stats, links)
     assert report["insufficient_total"] == 3
     assert report["protected_user_linked"] == ["b"]
     assert report["deletable_by_source"] == {"licitor": ["a"], "vench": ["c"]}
     assert report["links_among_candidates"] == {"protecting": {"user_favorites": 1}, "informational": {"user_alert_matches": 2}}
     assert contact not in json.dumps(report) and "Lilas" not in json.dumps(report)
-    assert build_report(candidates, stats, links, include_user_linked=True)["deletable_total"] == 3
 
 
 def test_links_are_read_per_table_in_chunks_of_one_hundred(monkeypatch):
@@ -124,85 +121,82 @@ def test_links_are_read_per_table_in_chunks_of_one_hundred(monkeypatch):
     assert all(len(value.removeprefix("in.(").removesuffix(")").split(",")) <= 100 for _, value in calls)
 
 
-# ------------------------------------------------------------------ ordre des suppressions (connexion simulée)
+# ------------------------------------------------------------------ suppression par la fonction SQL (connexion simulée)
 class FakeResult:
     def __init__(self, rows):
         self.rows = rows
-
-    def fetchall(self):
-        return self.rows
 
     def fetchone(self):
         return self.rows[0] if self.rows else None
 
 
 class FakeConnection:
-    def __init__(self, sales, *, bridge_complete=True):
-        self.sales = sales  # id -> (source_url, updated_at)
-        self.bridge_complete = bridge_complete
-        self.statements: list[str] = []
+    """Base simulée : ``app_private.delete_empty_listings`` rend un compte rendu par mode."""
 
-    def execute(self, sql, params=None):
+    def __init__(self, deletable):
+        self.deletable = deletable
+        self.statements: list[tuple[str, tuple]] = []
+
+    def execute(self, sql, params=()):
         compact = " ".join(sql.split())
-        self.statements.append(compact)
-        if "pg_advisory_xact_lock" in compact:
-            return FakeResult([])
-        if compact.startswith("select id::text"):
-            return FakeResult([(sid, url, updated) for sid, (url, updated) in self.sales.items()])
-        if compact.startswith("select id from public.auction_sales where id <"):
-            return FakeResult([])
-        if "bridge_auction_sales_to_outcome_graph_batch" in compact:
-            return FakeResult([(self.bridge_complete, next(iter(self.sales)))])
+        self.statements.append((compact, tuple(params)))
+        if "delete_empty_listings" in compact:
+            applied = compact.endswith("true)")
+            report = {"deletable": self.deletable, "deleted": self.deletable if applied else 0, "skipped": 0,
+                      "kept_for_user_trace": 1, "kept_for_known_outcome": 0, "set_aside_by_blocking_link": 0,
+                      "kept_after_recheck": 0, "applied": applied}
+            return FakeResult([(report,)])
         return FakeResult([])
 
 
-def candidate(sale_id, updated="2026-10-10T10:00:00+00:00"):
-    return Candidate(sale_id, f"https://example.test/vente/{sale_id}", "licitor", updated, ("missing_surface",))
-
-
-def test_deletion_follows_the_retention_order_without_any_tombstone():
-    sid = str(uuid.uuid4())
-    connection = FakeConnection({sid: (f"https://example.test/vente/{sid}", datetime(2026, 10, 10, 10, tzinfo=UTC))})
-    assert delete_batch(connection, [candidate(sid)]) == (1, 0)
-    statements = connection.statements
-    order = [
-        "pg_advisory_xact_lock",
-        "bridge_auction_sales_to_outcome_graph_batch",
-        "insert into public.sale_retention_storage_queue",
-        "delete from public.valuation_estimates",
-        "delete from public.information_agent_missions",
-        "delete from public.lawyer_placement_events",
-        "delete from public.lawyer_referral_requests",
-        "delete from public.auction_observations",
-        "delete from public.auction_sales",
+def test_execute_drop_goes_through_the_sql_function_after_a_count():
+    connection = FakeConnection(deletable=3)
+    result = execute_empty_listing_cleanup(connection, 100)
+    calls = [(sql, params) for sql, params in connection.statements if "delete_empty_listings" in sql]
+    assert calls == [
+        ("select app_private.delete_empty_listings(%s, false)", (CLEANUP_FUNCTION_MAX,)),
+        ("select app_private.delete_empty_listings(%s, true)", (100,)),
     ]
-    positions = [next(i for i, sql in enumerate(statements) if marker in sql) for marker in order]
-    assert positions == sorted(positions)
-    assert not any("tombstone" in sql for sql in statements)
+    assert result["deleted"] == 3
+    # Aucune suppression directe : ni liste de protection figée, ni delete SQL dans le module.
+    assert not any(sql.startswith("delete from") for sql, _ in connection.statements)
+    assert connection.statements[0][0].startswith("set local lock_timeout")
 
 
-def test_a_sale_updated_since_the_evaluation_is_skipped():
-    sid = str(uuid.uuid4())
-    connection = FakeConnection({sid: (f"https://example.test/vente/{sid}", datetime(2026, 10, 10, 11, tzinfo=UTC))})
-    assert delete_batch(connection, [candidate(sid)]) == (0, 1)
-    assert not any(sql.startswith("delete from public.auction_sales") for sql in connection.statements)
+def test_execute_drop_refuses_above_the_ceiling_and_deletes_nothing():
+    connection = FakeConnection(deletable=101)
+    assert execute_empty_listing_cleanup(connection, 100) is None
+    assert not any(sql.endswith("true)") for sql, _ in connection.statements)
 
 
-def test_an_incomplete_outcome_bridge_keeps_the_sale_and_reports_it():
-    sid = str(uuid.uuid4())
-    connection = FakeConnection(
-        {sid: (f"https://example.test/vente/{sid}", datetime(2026, 10, 10, 10, tzinfo=UTC))}, bridge_complete=False
+@pytest.mark.parametrize("ceiling", [0, -1, CLEANUP_FUNCTION_MAX + 1])
+def test_execute_drop_needs_a_ceiling_the_function_accepts(ceiling):
+    with pytest.raises(ValueError):
+        execute_empty_listing_cleanup(FakeConnection(deletable=0), ceiling)
+
+
+def test_the_module_no_longer_deletes_rows_itself():
+    source = inspect.getsource(insufficient_sales)
+    assert "delete from" not in source
+    assert "delete_batch" not in source and not hasattr(insufficient_sales, "delete_batch")
+
+
+@pytest.mark.parametrize("scope", [{"source": "licitor", "limit": None}, {"source": None, "limit": 10}])
+def test_execute_drop_refuses_a_scope_because_the_sql_function_covers_the_whole_catalogue(scope):
+    assert (
+        drop_insufficient_sales(execute=True, max_deletions=100, report_path=None, **scope) == 1
     )
-    failures: list[dict[str, object]] = []
-    assert delete_batch(connection, [candidate(sid)], failures) == (0, 1)
-    assert not any(sql.startswith("delete from") for sql in connection.statements)
-    assert not any("sale_retention_storage_queue" in sql for sql in connection.statements)
-    assert [failure["sale_id"] for failure in failures] == [sid]
 
 
 # ------------------------------------------------------------------ ligne de commande
 def test_execute_drop_requires_drop_insufficient(monkeypatch):
     monkeypatch.setattr("sys.argv", ["recompute_scoring", "--execute-drop"])
+    with pytest.raises(SystemExit):
+        recompute_scoring.parse_args()
+
+
+def test_include_user_linked_no_longer_exists(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["recompute_scoring", "--drop-insufficient", "--include-user-linked"])
     with pytest.raises(SystemExit):
         recompute_scoring.parse_args()
 
@@ -214,112 +208,3 @@ def test_drop_is_a_dry_run_by_default_and_never_takes_the_catalogue_lock(monkeyp
     assert recompute_scoring._writes_catalogue(args) is False
     monkeypatch.setattr("sys.argv", ["recompute_scoring", "--drop-insufficient", "--execute-drop"])
     assert recompute_scoring._writes_catalogue(recompute_scoring.parse_args()) is True
-
-
-# ------------------------------------------------------------------ PostgreSQL jetable
-SCHEMA = """
-create table public.auction_sales (
-  id uuid primary key, source_url text unique not null, source_name text, updated_at timestamptz not null default now());
-create table public.sale_retention_storage_queue (bucket text, object_path text, primary key (bucket, object_path));
-create table public.information_agent_evidence_assets (
-  sale_id uuid, storage_bucket text, storage_path text, metadata jsonb not null default '{}');
-create table public.auction_documents (source_url text, file_path text, document_url text);
-create table public.valuation_estimates (id serial primary key,
-  auction_sale_id uuid references public.auction_sales(id) on delete set null);
-create table public.information_agent_missions (id serial primary key,
-  sale_id uuid references public.auction_sales(id) on delete set null);
-create table public.lawyer_placement_events (id serial primary key,
-  sale_id uuid references public.auction_sales(id) on delete set null);
-create table public.lawyer_referral_requests (id serial primary key,
-  sale_id uuid references public.auction_sales(id) on delete set null);
-create table public.auction_observations (id serial primary key, source_url text,
-  canonical_source_url text references public.auction_sales(source_url) on delete set null);
-create table public.user_favorites (user_id uuid, sale_id uuid references public.auction_sales(id) on delete cascade);
-create table public.auction_sale_retention_tombstones (source_url text primary key, sale_date timestamptz);
-create table public.auction_sale_outcome_bridges (auction_sale_id uuid);
-create function public.bridge_auction_sales_to_outcome_graph_batch(p_after_id uuid default null, p_limit integer default 25)
-returns table(scanned_count bigint, created_count bigint, reused_count bigint, linked_count bigint,
-              complete boolean, next_cursor uuid, has_more boolean)
-language plpgsql as $$
-declare v_id uuid;
-begin
-  select id into v_id from public.auction_sales where p_after_id is null or id > p_after_id order by id limit 1;
-  insert into public.auction_sale_outcome_bridges(auction_sale_id) values (v_id);
-  return query select 1::bigint, 1::bigint, 0::bigint, 0::bigint, true, v_id, false;
-end $$;
-create function public.require_bridge_before_delete() returns trigger language plpgsql as $$
-begin
-  if not exists (select 1 from public.auction_sale_outcome_bridges where auction_sale_id = old.id) then
-    raise exception 'auction_sales rows must have a complete Outcome Graph bridge before deletion.';
-  end if;
-  return old;
-end $$;
-create trigger require_bridge_before_delete before delete on public.auction_sales
-  for each row execute function public.require_bridge_before_delete();
-"""
-
-
-@pytest.fixture
-def scratch_database():
-    base = os.getenv("PIPELINE_TEST_DB_URL")
-    if not base:
-        pytest.skip("Requires disposable PostgreSQL")
-    import psycopg
-
-    name = f"insufficient_{uuid.uuid4().hex[:10]}"
-    with psycopg.connect(base, autocommit=True) as admin:
-        admin.execute(f'create database "{name}"')
-    url = re.sub(r"/[^/?]+(\?|$)", rf"/{name}\1", base, count=1)
-    try:
-        with psycopg.connect(url) as setup:
-            setup.execute(SCHEMA)
-        yield url
-    finally:
-        with psycopg.connect(base, autocommit=True) as admin:
-            admin.execute(f'drop database if exists "{name}" with (force)')
-
-
-def test_real_postgres_deletion_keeps_other_sales_and_writes_no_tombstone(scratch_database):
-    import psycopg
-
-    keep, drop_a, drop_b = (str(uuid.uuid4()) for _ in range(3))
-    with psycopg.connect(scratch_database) as db:
-        for sid in (keep, drop_a, drop_b):
-            db.execute(
-                "insert into public.auction_sales(id, source_url, source_name, updated_at) values (%s, %s, 'licitor', %s)",
-                (sid, f"https://example.test/vente/{sid}", "2026-10-10T10:00:00+00:00"),
-            )
-        db.execute("insert into public.valuation_estimates(auction_sale_id) values (%s)", (drop_a,))
-        db.execute("insert into public.auction_observations(source_url, canonical_source_url) values (%s, %s)",
-                   (f"https://example.test/vente/{drop_a}", f"https://example.test/vente/{drop_a}"))
-        db.execute("insert into public.user_favorites(user_id, sale_id) values (%s, %s)", (str(uuid.uuid4()), keep))
-        db.execute("insert into public.auction_documents values (%s, %s, %s)",
-                   (f"https://example.test/vente/{drop_b}", f"{drop_b}/pv.pdf",
-                    "https://x.test/storage/v1/object/public/information-agent-approved/pv.pdf"))
-    with psycopg.connect(scratch_database) as db:
-        deleted, skipped = delete_batch(db, [candidate(drop_a), candidate(drop_b)])
-    assert (deleted, skipped) == (2, 0)
-    with psycopg.connect(scratch_database) as db:
-        remaining = {str(r[0]) for r in db.execute("select id from public.auction_sales").fetchall()}
-        assert remaining == {keep}
-        assert db.execute("select count(*) from public.auction_sale_retention_tombstones").fetchone()[0] == 0
-        assert db.execute("select count(*) from public.valuation_estimates").fetchone()[0] == 0
-        assert db.execute("select count(*) from public.auction_observations").fetchone()[0] == 0
-        assert db.execute("select count(*) from public.user_favorites").fetchone()[0] == 1
-        queued = db.execute("select bucket, object_path from public.sale_retention_storage_queue").fetchall()
-        assert queued == [("information-agent-approved", f"{drop_b}/pv.pdf")]
-
-
-def test_real_postgres_skips_a_sale_updated_after_the_evaluation(scratch_database):
-    import psycopg
-
-    sid = str(uuid.uuid4())
-    with psycopg.connect(scratch_database) as db:
-        db.execute(
-            "insert into public.auction_sales(id, source_url, source_name, updated_at) values (%s, %s, 'licitor', %s)",
-            (sid, f"https://example.test/vente/{sid}", "2026-10-10T12:00:00+00:00"),
-        )
-    with psycopg.connect(scratch_database) as db:
-        assert delete_batch(db, [candidate(sid, updated="2026-10-10T10:00:00+00:00")]) == (0, 1)
-    with psycopg.connect(scratch_database) as db:
-        assert db.execute("select count(*) from public.auction_sales").fetchone()[0] == 1

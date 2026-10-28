@@ -932,8 +932,11 @@ relue. Conservation 30 jours (purge au chargement du cache). Actif pour un passa
 - Le miroir Python du résolveur de contacts (`src/information_sufficiency.py`) est gardé identique au résolveur
   TypeScript par `tests/fixtures/information_agent_contact_cases.json`, exécuté par pytest et par vitest.
 - Existant : `supabase/repairs/20261108202100_delete_empty_listings.sql` (comptage par défaut, jamais une vente qui a une
-  trace utilisateur) après la migration `20261108202000_…`. `python -m src.recompute_scoring --drop-insufficient` applique la
-  même règle en Python (rapport sans suppression ; `--execute-drop` supprime, plafond `--max-deletions`).
+  trace utilisateur, un prix d'adjudication ou une issue connue) après la migration `20261108202000_…`. **À lancer APRÈS le
+  balayage de dédoublonnage** (`python -m src.dedupe_candidates`, rapport relu, puis `python -m src.dedupe_apply`) : une
+  annonce Vench ou Petites Affiches dont la vente jumelle est en base se rattache à elle au lieu d'être supprimée. `python -m src.recompute_scoring --drop-insufficient` rend le même constat en Python (rapport sans suppression) ;
+  `--execute-drop` n'a pas de suppression propre : il appelle `app_private.delete_empty_listings` (comptage, puis application, plafond
+  `--max-deletions`) sur tout le catalogue (`--source` et `--limit` refusés), sans liste de protection figée.
 
 ## Rapport Qualité
 

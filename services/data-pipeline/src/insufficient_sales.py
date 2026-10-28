@@ -1,18 +1,18 @@
-"""Rapport et suppression CONTRÔLÉE des ventes sans le minimum d'une annonce déjà en base (src/listing_minimum.py).
+"""Rapport des ventes sans le minimum d'une annonce déjà en base (src/listing_minimum.py), et suppression par la base.
 
-La règle est la même que celle de l'écriture et de la réparation SQL ``supabase/repairs/20261108202100_delete_empty_listings.sql``
-(préférée : elle lit les clés étrangères dans la base). Cette commande reste pour les cas ponctuels.
+La règle est la même que celle de l'écriture. La SUPPRESSION n'est plus faite ici : ``--execute-drop`` appelle
+``app_private.delete_empty_listings`` (migration ``20261108202000``), la même fonction que la réparation
+``supabase/repairs/20261108202100_delete_empty_listings.sql``. Elle lit les clés étrangères vers ``auction_sales`` dans la
+base (une liste figée ici était incomplète : déblocages, événements de compte, avis, rappels, alias revus...), garde
+toute vente qui a une trace utilisateur, un prix d'adjudication ou une issue connue, refait ce contrôle pour chaque vente
+juste avant son delete et complète le pont du graphe des issues. Cette commande n'a donc PLUS de liste de protection
+propre : celle du rapport (``PROTECTING_LINKS``) est indicative.
 
 Utilisé par ``python -m src.recompute_scoring --drop-insufficient``. Rien ne s'exécute seul :
 
 * par défaut c'est un RAPPORT (dry-run) : liste d'identifiants par source, motifs, et liens utilisateurs ;
-* ``--execute-drop`` supprime réellement, par lots, dans l'ordre des dépendances utilisé par la rétention
-  (``purge_expired_auction_sales``) : pont Outcome Graph (exigé par un trigger avant tout DELETE), file de nettoyage
-  du stockage, tables sans cascade, observations, puis la vente. AUCUN tombstone n'est écrit : un tombstone dont
-  ``sale_date`` est nul interdit définitivement la réimportation de l'URL, alors qu'une vente aujourd'hui
-  insuffisante peut le devenir moins demain (extracteur corrigé, e-mail publié) ;
-* les ventes liées à des données d'utilisateur (favoris, rapports, espaces de travail, dossiers de l'agent,
-  demandes d'avocat) sont PROTÉGÉES et jamais supprimées sans ``--include-user-linked``.
+* ``--execute-drop`` applique la fonction SQL à TOUT le catalogue (pas de ``--source`` ni ``--limit``, refusés) après un
+  comptage : plus de ``--max-deletions`` ventes supprimables, rien n'est supprimé. AUCUN tombstone n'est écrit.
 
 Le rapport ne contient que des identifiants techniques, des codes et des compteurs.
 """
@@ -30,11 +30,12 @@ from typing import Any
 from src.information_sufficiency import ContactBlocklist, sufficient_information
 
 LOGGER = logging.getLogger(__name__)
-CATALOGUE_LOCK_KEY = "immojudis:outcome_catalogue_bridge:v1"
-DELETE_BATCH_SIZE = 25
 DEFAULT_MAX_DELETIONS = 100
+#: Plafond de ``p_limit`` de ``app_private.delete_empty_listings``.
+CLEANUP_FUNCTION_MAX = 5000
 
-#: (table, colonne vers auction_sales.id) dont une ligne PROTÈGE la vente de la suppression.
+#: (table, colonne vers auction_sales.id) lues par le RAPPORT seulement (indicatif : la suppression lit les clés
+#: étrangères dans la base, ``app_private.empty_listing_links``).
 PROTECTING_LINKS: tuple[tuple[str, str], ...] = (
     ("user_favorites", "sale_id"),
     ("saved_property_reports", "sale_id"),
@@ -127,12 +128,10 @@ def build_report(
     candidates: Sequence[Candidate],
     stats: Mapping[str, int],
     links: Mapping[str, Mapping[str, set[str]]],
-    *,
-    include_user_linked: bool,
 ) -> dict[str, Any]:
     """Rapport sans donnée personnelle : identifiants techniques, codes et compteurs."""
     protected = set().union(*links.get("protecting", {}).values()) if links.get("protecting") else set()
-    to_delete = [c for c in candidates if include_user_linked or c.sale_id not in protected]
+    to_delete = [c for c in candidates if c.sale_id not in protected]
     by_source: dict[str, list[str]] = defaultdict(list)
     for candidate in to_delete:
         by_source[candidate.source].append(candidate.sale_id)
@@ -151,93 +150,25 @@ def build_report(
     }
 
 
-def _same_instant(left: str | None, right: Any) -> bool:
-    if left is None or right is None:
-        return False
-    try:
-        return datetime.fromisoformat(str(left).replace("Z", "+00:00")) == (
-            right if isinstance(right, datetime) else datetime.fromisoformat(str(right).replace("Z", "+00:00"))
-        )
-    except ValueError:
-        return False
+def execute_empty_listing_cleanup(connection: Any, max_deletions: int) -> dict[str, Any] | None:
+    """Comptage puis suppression par ``app_private.delete_empty_listings``, dans la transaction de ``connection``.
 
-
-_STORAGE_QUEUE_SQL = """
-insert into public.sale_retention_storage_queue(bucket, object_path)
-  select storage_bucket, storage_path
-    from public.information_agent_evidence_assets
-   where sale_id = %(id)s and storage_bucket = 'information-agent-evidence'
-  union
-  select 'information-agent-approved', metadata->>'approved_public_path'
-    from public.information_agent_evidence_assets
-   where sale_id = %(id)s and nullif(metadata->>'approved_public_path', '') is not null
-  union
-  select 'information-agent-approved', file_path
-    from public.auction_documents
-   where source_url = %(url)s and file_path like %(prefix)s
-     and document_url like '%%/storage/v1/object/public/information-agent-approved/%%'
-on conflict (bucket, object_path) do nothing
-"""
-
-
-def delete_batch(
-    connection: Any,
-    batch: Sequence[Candidate],
-    bridge_failures: list[dict[str, object]] | None = None,
-) -> tuple[int, int]:
-    """Supprime un lot dans UNE transaction ; renvoie (supprimées, ignorées car modifiées entre-temps).
-
-    Ordre identique à ``purge_expired_auction_sales`` mais SANS tombstone. Le verrou consultatif est celui de la
-    rétention et des publications : aucune publication ne s'exécute pendant la suppression.
+    Renvoie le compte rendu de la fonction, ou ``None`` (rien supprimé) si le comptage dépasse ``max_deletions``.
     """
-    connection.execute("select pg_advisory_xact_lock(hashtextextended(%s, 0))", (CATALOGUE_LOCK_KEY,))
-    current = {
-        str(row[0]): row
-        for row in connection.execute(
-            "select id::text, source_url, updated_at from public.auction_sales where id = any(%s::uuid[]) for no key update",
-            ([c.sale_id for c in batch],),
-        ).fetchall()
-    }
-    deleted = skipped = 0
-    for candidate in batch:
-        row = current.get(candidate.sale_id)
-        if row is None or not _same_instant(candidate.updated_at, row[2]):
-            skipped += 1  # supprimée ou mise à jour depuis l'évaluation : on ne touche à rien
-            continue
-        sale_id, source_url = candidate.sale_id, str(row[1])
-        previous = connection.execute(
-            "select id from public.auction_sales where id < %s::uuid order by id desc limit 1", (sale_id,)
-        ).fetchone()
-        bridge = connection.execute(
-            "select complete, next_cursor from public.bridge_auction_sales_to_outcome_graph_batch(%s, 1)",
-            (previous[0] if previous else None,),
-        ).fetchone()
-        if not bridge or not bridge[0] or str(bridge[1]) != sale_id:
-            # Never delete a sale whose Outcome Graph lineage is not complete. The
-            # sale is left untouched and reported, the rest of the batch goes on.
-            skipped += 1
-            failure = {
-                "sale_id": sale_id,
-                "previous_id": str(previous[0]) if previous else None,
-                "complete": bool(bridge[0]) if bridge else None,
-                "next_cursor": str(bridge[1]) if bridge and bridge[1] is not None else None,
-            }
-            LOGGER.warning("Incomplete Outcome Graph bridge, sale kept: %s", failure)
-            if bridge_failures is not None:
-                bridge_failures.append(failure)
-            continue
-        connection.execute(_STORAGE_QUEUE_SQL, {"id": sale_id, "url": source_url, "prefix": f"{sale_id}/%"})
-        connection.execute("delete from public.valuation_estimates where auction_sale_id = %s::uuid", (sale_id,))
-        connection.execute("delete from public.information_agent_missions where sale_id = %s::uuid", (sale_id,))
-        connection.execute("delete from public.lawyer_placement_events where sale_id = %s::uuid", (sale_id,))
-        connection.execute("delete from public.lawyer_referral_requests where sale_id = %s::uuid", (sale_id,))
-        connection.execute(
-            "delete from public.auction_observations where canonical_source_url = %s or source_url = %s",
-            (source_url, source_url),
+    if not 1 <= max_deletions <= CLEANUP_FUNCTION_MAX:
+        raise ValueError(f"max_deletions must be between 1 and {CLEANUP_FUNCTION_MAX}")
+    connection.execute("set local lock_timeout = '5s'")
+    connection.execute("set local statement_timeout = '10min'")
+    counted = connection.execute(
+        "select app_private.delete_empty_listings(%s, false)", (CLEANUP_FUNCTION_MAX,)
+    ).fetchone()[0]
+    if int(counted.get("deletable") or 0) > max_deletions:
+        LOGGER.error(
+            "%s sales would be deleted, above --max-deletions=%s; refusing to delete anything",
+            counted.get("deletable"), max_deletions,
         )
-        connection.execute("delete from public.auction_sales where id = %s::uuid", (sale_id,))
-        deleted += 1
-    return deleted, skipped
+        return None
+    return connection.execute("select app_private.delete_empty_listings(%s, true)", (max_deletions,)).fetchone()[0]
 
 
 def drop_insufficient_sales(
@@ -246,7 +177,6 @@ def drop_insufficient_sales(
     limit: int | None,
     execute: bool,
     max_deletions: int,
-    include_user_linked: bool,
     report_path: str | None,
 ) -> int:
     """Rapport (par défaut) ou suppression (``execute``) ; renvoie un code de sortie."""
@@ -255,6 +185,12 @@ def drop_insufficient_sales(
     from src.recompute_scoring import _fetch_sales, _load_env_fallbacks, _sale_from_storage_row
     from src.storage.supabase_client import connect
 
+    if execute and (source or limit):
+        LOGGER.error(
+            "--execute-drop applies app_private.delete_empty_listings to the whole catalogue: "
+            "--source and --limit are refused with it (use the report to read a scope)"
+        )
+        return 1
     _load_env_fallbacks()
     settings = load_settings()
     rows = _fetch_sales(source=source, limit=limit)
@@ -264,44 +200,32 @@ def drop_insufficient_sales(
     blocklist = load_contact_blocklist(settings)
     candidates, stats = evaluate_rows(rows, _sale_from_storage_row, blocklist)
     links = fetch_links(settings, [c.sale_id for c in candidates]) if candidates else {}
-    report = build_report(candidates, stats, links, include_user_linked=include_user_linked)
+    report = build_report(candidates, stats, links)
     report["mode"] = "execute" if execute else "dry-run"
     if report_path:
         with open(report_path, "w", encoding="utf-8") as handle:
             json.dump(report, handle, indent=2, ensure_ascii=False, sort_keys=True)
     _print_report(report, report_path)
     if not execute:
-        print("- dry-run: nothing was deleted. Re-run with --execute-drop after reading the report.")
+        print("- dry-run: nothing was deleted. Re-run with --execute-drop (whole catalogue) after reading the report.")
         return 0
     if stats["unreadable"]:
         LOGGER.error("%s rows could not be evaluated; refusing to delete anything", stats["unreadable"])
-        return 1
-    if report["deletable_total"] > max_deletions:
-        LOGGER.error(
-            "%s sales would be deleted, above --max-deletions=%s; refusing to delete anything",
-            report["deletable_total"], max_deletions,
-        )
         return 1
     db_url = str(settings.get("supabase_db_url") or "")
     if not db_url:
         LOGGER.error("SUPABASE_DB_URL is required for the transactional deletion")
         return 1
-    protected = set(report["protected_user_linked"])
-    todo = [c for c in candidates if include_user_linked or c.sale_id not in protected]
-    deleted = skipped = 0
-    bridge_failures: list[dict[str, object]] = []
-    for start in range(0, len(todo), DELETE_BATCH_SIZE):
-        with connect(db_url) as connection:
-            batch_deleted, batch_skipped = delete_batch(
-                connection, todo[start : start + DELETE_BATCH_SIZE], bridge_failures
-            )
-        deleted += batch_deleted
-        skipped += batch_skipped
-        LOGGER.info("Insufficient-information deletion: %s deleted, %s skipped so far", deleted, skipped)
-    print(f"- deleted: {deleted}; skipped (changed since evaluation or incomplete bridge): {skipped}")
-    print(f"- incomplete Outcome Graph bridges (kept): {len(bridge_failures)}")
-    for failure in bridge_failures[:50]:
-        print(f"  - {failure}")
+    with connect(db_url) as connection:
+        result = execute_empty_listing_cleanup(connection, max_deletions)
+    if result is None:
+        return 1
+    print(
+        f"- deleted: {result['deleted']}; skipped: {result['skipped']}; "
+        f"kept for a user trace: {result['kept_for_user_trace']}; kept for a known outcome: "
+        f"{result['kept_for_known_outcome']}; set aside by a blocking link: {result['set_aside_by_blocking_link']}; "
+        f"kept after the recheck: {result['kept_after_recheck']}"
+    )
     return 0
 
 
