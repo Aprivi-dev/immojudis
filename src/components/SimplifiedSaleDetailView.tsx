@@ -59,6 +59,9 @@ import { maxWorksAtBid } from "@/lib/bid-ceiling-engine";
 import { ceilingTermsFor, feeRegimeKeysForVenue, type FeeRegimeKey } from "@/lib/fee-regime";
 import { estimatedFeeItems } from "@/lib/bid-ceiling-engine";
 import { assessSaleCeilingInputs, computeSaleCeiling } from "@/lib/sale-ceiling";
+import { RentalMarketBlockLazy } from "@/components/sale-detail/RentalMarketBlockLazy";
+import { getSaleSurface } from "@/lib/surface";
+import type { HousingTension } from "@/lib/housing-tension";
 import type { RentReference } from "@/lib/rent-reference";
 import type { CeilingUserChoices } from "@/lib/bid-ceiling-defaults";
 import { ceilingGap, valueGapReason } from "@/lib/bid-ceiling-gaps";
@@ -188,6 +191,8 @@ type SaleDetailProps = {
   openFeeRegimes?: readonly FeeRegimeKey[];
   /** Référence de loyer de la vente (carte ANIL à la commune), résolue par le serveur ; `null` : repli départemental. */
   rentReference?: RentReference | null;
+  /** Zonage « zone tendue » de la commune, lu par le serveur ; `null` : inconnu. */
+  housingTension?: HousingTension | null;
   aiReviewProjections?: readonly AiReviewProjectionReadModel[] | null;
   /** Where the account stands this month; drives the « Débloquer cette vente » panel. */
   unlockStatus?: SaleUnlockStatus | null;
@@ -206,6 +211,7 @@ export function AnalysisSaleDetailView({
   adjudicationStatisticsEnabled = false,
   openFeeRegimes,
   rentReference = null,
+  housingTension = null,
   aiReviewProjections = null,
 }: SaleDetailProps) {
   return (
@@ -220,6 +226,7 @@ export function AnalysisSaleDetailView({
       adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
       openFeeRegimes={openFeeRegimes}
       rentReference={rentReference}
+      housingTension={housingTension}
       aiReviewProjections={aiReviewProjections}
       access="analysis"
     />
@@ -232,6 +239,7 @@ export function FreeSaleDetailView({
   adjudicationStatisticsEnabled = false,
   openFeeRegimes,
   rentReference = null,
+  housingTension = null,
   aiReviewProjections = null,
   unlockStatus = null,
   justUnlocked = false,
@@ -245,6 +253,7 @@ export function FreeSaleDetailView({
       adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
       openFeeRegimes={openFeeRegimes}
       rentReference={rentReference}
+      housingTension={housingTension}
       aiReviewProjections={aiReviewProjections}
       unlockStatus={unlockStatus}
       justUnlocked={justUnlocked}
@@ -261,6 +270,7 @@ export function UnlockedSaleDetailView({
   adjudicationStatisticsEnabled = false,
   openFeeRegimes,
   rentReference = null,
+  housingTension = null,
   aiReviewProjections = null,
   unlockStatus = null,
   justUnlocked = false,
@@ -273,6 +283,7 @@ export function UnlockedSaleDetailView({
       adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
       openFeeRegimes={openFeeRegimes}
       rentReference={rentReference}
+      housingTension={housingTension}
       aiReviewProjections={aiReviewProjections}
       unlockStatus={unlockStatus}
       justUnlocked={justUnlocked}
@@ -296,6 +307,7 @@ function SaleDetailWorkspace({
   adjudicationStatisticsEnabled = false,
   openFeeRegimes,
   rentReference = null,
+  housingTension = null,
   aiReviewProjections = null,
   unlockStatus = null,
   justUnlocked = false,
@@ -790,6 +802,17 @@ function SaleDetailWorkspace({
                   >
                     {adjudicationLine}
                   </p>
+                ) : null}
+                {rentReference?.source.startsWith("anil_") || housingTension ? (
+                  <RentalMarketBlockLazy
+                    sale={displaySale}
+                    startingPriceEur={
+                      priceBlocked ? null : (displaySale.starting_price_eur ?? null)
+                    }
+                    surfaceM2={getSaleSurface(displaySale).value}
+                    reference={rentReference}
+                    tension={housingTension}
+                  />
                 ) : null}
                 <ListingChecks
                   sale={displaySale}

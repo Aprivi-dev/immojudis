@@ -1,6 +1,5 @@
 import { formatDate, formatPrice } from "@/lib/format";
 import {
-  FLOOD_EXPOSED_LONG,
   FLOOD_EXPOSED_SHORT,
   FLOOD_NONE_FOUND_DETAIL,
   FLOOD_NONE_FOUND_LINE,
@@ -10,9 +9,10 @@ import {
   FLOOD_TRI_SOURCE_URL,
   FLOOD_UNKNOWN_LAST_CHECK_PREFIX,
   FLOOD_UNKNOWN_LINE,
-  FLOOD_WARNING,
+  floodExposedLong,
   floodPm1SourceLine,
   floodTriSourceLine,
+  floodWarning,
   type PepiteFloodDisplayVerdict,
 } from "@/lib/pepite-flood-copy";
 import { pepiteConfirmLabel, pepitePassLabel } from "@/lib/pepite-reasons";
@@ -61,8 +61,11 @@ export const PEPITE_TEST_IDS: readonly PepiteCriterionId[] = ["test_b_chance", "
  */
 export type PepiteFloodView = {
   verdict: PepiteFloodDisplayVerdict;
-  /** « check » : coche (rien d'élevé identifié) ; « alert » : pictogramme d'alerte (exposé) ; « neutral » : ligne neutre. */
-  tone: "check" | "alert" | "neutral";
+  /**
+   * « alert » : pictogramme d'alerte (exposé) ; « neutral » : pictogramme d'information. Jamais de coche : même
+   * « aucun risque identifié » reste neutre (n° 38), la carte ne testant qu'une partie des causes d'inondation.
+   */
+  tone: "alert" | "neutral";
   /** La phrase de la ligne d'inondation. */
   line: string;
   /** Texte développé : cartes consultées (replié) ou mention longue « exposé » ; `null` : aucun. */
@@ -338,7 +341,8 @@ function dateText(value: unknown): string | null {
 
 /**
  * Le contrôle d'inondation d'une pépite publiée, d'après le verdict enregistré avec son évaluation
- * (`details.flood`, écrit par le traitement des pépites sous la règle v2). Ne lit que le verdict et deux dates :
+ * (`details.flood`, écrit par le traitement des pépites sous la règle v2). Ne lit que le verdict, deux dates et le
+ * type de vente (pour renvoyer aux bonnes pièces) :
  * aucun montant, aucune coordonnée. `null` : pas de contrôle (règle v1), verdict illisible ou « élevé » (une
  * pépite ne peut pas l'être : rien ne s'affiche).
  */
@@ -347,6 +351,10 @@ export function pepiteFloodView(details: Record<string, unknown>): PepiteFloodVi
   if (!flood || typeof flood !== "object") return null;
   const record = flood as Record<string, unknown>;
   const checkedOn = dateText(record.observedAt);
+  // Date de la carte du TRI (`date_arrete_carte`), quand la source l'a donnée : distincte de la date de consultation.
+  const mapOn = dateText(record.mapDate);
+  const regime = pepiteRegimeOf(details);
+  const warning = floodWarning(regime);
   switch (record.verdict) {
     case "none_found":
       // Périmètres de PPRi non lus : le verdict ne repose que sur les TRI. Ligne neutre, sans coche, sans la phrase
@@ -357,29 +365,29 @@ export function pepiteFloodView(details: Record<string, unknown>): PepiteFloodVi
           tone: "neutral",
           line: FLOOD_TRI_ONLY_LINE,
           details: null,
-          sourceLine: floodTriSourceLine(checkedOn),
+          sourceLine: floodTriSourceLine(checkedOn, mapOn),
           sourceUrl: FLOOD_TRI_SOURCE_URL,
-          warning: FLOOD_WARNING,
+          warning,
         };
       }
       return {
         verdict: "none_found",
-        tone: "check",
+        tone: "neutral",
         line: FLOOD_NONE_FOUND_LINE,
         details: FLOOD_NONE_FOUND_DETAIL,
-        sourceLine: floodTriSourceLine(checkedOn),
+        sourceLine: floodTriSourceLine(checkedOn, mapOn),
         sourceUrl: FLOOD_TRI_SOURCE_URL,
-        warning: FLOOD_WARNING,
+        warning,
       };
     case "exposed":
       return {
         verdict: "exposed",
         tone: "alert",
         line: FLOOD_EXPOSED_SHORT,
-        details: FLOOD_EXPOSED_LONG,
+        details: floodExposedLong(regime),
         sourceLine: floodPm1SourceLine(checkedOn),
         sourceUrl: FLOOD_PM1_SOURCE_URL,
-        warning: FLOOD_WARNING,
+        warning,
       };
     case "no_signal":
       return {
@@ -389,7 +397,7 @@ export function pepiteFloodView(details: Record<string, unknown>): PepiteFloodVi
         details: null,
         sourceLine: null,
         sourceUrl: null,
-        warning: FLOOD_WARNING,
+        warning,
       };
     case "unknown":
       return {
@@ -401,7 +409,7 @@ export function pepiteFloodView(details: Record<string, unknown>): PepiteFloodVi
         details: null,
         sourceLine: null,
         sourceUrl: null,
-        warning: FLOOD_WARNING,
+        warning,
       };
     default:
       return null;

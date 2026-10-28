@@ -352,7 +352,7 @@ describe("contrôle d'inondation d'une pépite (règle v2)", () => {
     expect(views.some((view) => view.state === "confirm")).toBe(false);
   });
 
-  it("aucun risque élevé identifié : coche, source, cartes consultées repliées", () => {
+  it("hors des zones testées : phrase factuelle, icône neutre, date de la carte et de la consultation", () => {
     const view = pepiteFloodView({
       flood: {
         verdict: "none_found",
@@ -360,16 +360,54 @@ describe("contrôle d'inondation d'une pépite (règle v2)", () => {
         mapDate: "2013-12-18",
       },
     });
-    expect(view).toMatchObject({ verdict: "none_found", tone: "check" });
+    expect(view).toMatchObject({ verdict: "none_found", tone: "neutral" });
     expect(view?.line).toBe(
-      "Aucun risque d’inondation élevé identifié à la position connue du bien, d’après les cartes officielles consultées.",
+      "Bien non situé dans la zone de crue fréquente d’un territoire à risque important d’inondation (TRI), ni dans le périmètre d’un plan de prévention des risques d’inondation (PPRi), d’après les cartes consultées.",
     );
     expect(view?.details).toMatch(/^Cartes consultées/);
+    expect(view?.details).toContain("Un plan de prévention seulement prescrit n’apparaît pas");
+    expect(view?.details).toContain("Un risque d’inondation peut exister en dehors de ces zones.");
     expect(view?.sourceLine).toMatch(
-      /^Source : Géorisques .*scénario de crue fréquente ; consulté le 05 novembre 2026\.$/,
+      /^Source : Géorisques .*scénario de crue fréquente ; carte du 18 décembre 2013 ; consulté le 05 novembre 2026\.$/,
     );
     expect(view?.sourceUrl).toBe("https://www.georisques.gouv.fr/");
     expect(view?.warning).toMatch(/sans valeur d’expertise/);
+    expect(view?.warning).toContain("état des risques et pollutions, lorsqu’il est exigé");
+  });
+
+  it("sans date de carte : seule la date de consultation figure", () => {
+    const view = pepiteFloodView({
+      flood: { verdict: "none_found", observedAt: "2026-11-05T09:00:00.000Z", mapDate: null },
+    });
+    expect(view?.sourceLine).toMatch(/crue fréquente ; consulté le 05 novembre 2026\.$/);
+    expect(view?.sourceLine).not.toMatch(/carte du/);
+  });
+
+  it.each([
+    ["tribunal", /cahier des conditions de vente/, /l’avocat poursuivant/],
+    ["notary_auction", /cahier des charges/, /le notaire/],
+    ["notary_online", /avant-contrat/, /le notaire/],
+  ] as const)(
+    "texte propre au type de vente (%s) : pièce annexée et interlocuteur",
+    (regime, document, who) => {
+      const view = pepiteFloodView({ regime, flood: { verdict: "exposed" } });
+      expect(view?.warning).toMatch(document);
+      expect(view?.details).toMatch(document);
+      expect(view?.details).toMatch(who);
+      expect(view?.details).toContain("état des risques et pollutions, lorsqu’il est exigé");
+      if (regime !== "tribunal") {
+        expect(`${view?.warning} ${view?.details}`).not.toMatch(
+          /avocat poursuivant|cahier des conditions de vente/,
+        );
+      }
+    },
+  );
+
+  it("type de vente inconnu : texte neutre qui nomme les trois pièces possibles", () => {
+    const view = pepiteFloodView({ flood: { verdict: "exposed" } });
+    expect(view?.warning).toMatch(
+      /cahier des conditions de vente, cahier des charges ou avant-contrat/,
+    );
   });
 
   it("PPRI non lu : ligne neutre, sans coche et sans la phrase sur les périmètres de PPRi", () => {
@@ -385,8 +423,8 @@ describe("contrôle d'inondation d'une pépite (règle v2)", () => {
     expect(view?.line).toBe(
       "Zone de crue fréquente des TRI consultée ; périmètres de PPRi non contrôlés à ce jour.",
     );
-    // Aucune phrase « aucun risque élevé identifié » ni « cartes consultées … périmètres des PPRi ».
-    expect(JSON.stringify(view)).not.toMatch(/Aucun risque d’inondation élevé/);
+    // Aucune phrase « bien non situé… » ni « cartes consultées … périmètres des PPRi ».
+    expect(JSON.stringify(view)).not.toMatch(/Bien non situé/);
     expect(JSON.stringify(view)).not.toMatch(/Cartes consultées/);
     // La source est celle du TRI seul : le Géoportail n'a pas été lu.
     expect(view?.sourceLine).toMatch(/^Source : Géorisques .*consulté le 05 novembre 2026\.$/);
@@ -394,9 +432,9 @@ describe("contrôle d'inondation d'une pépite (règle v2)", () => {
     expect(view?.warning).toMatch(/sans valeur d’expertise/);
   });
 
-  it("PPRI lu (ou drapeau absent) : la ligne « aucun risque élevé » habituelle", () => {
+  it("PPRI lu (ou drapeau absent) : la ligne habituelle, jamais de coche", () => {
     for (const flood of [{ verdict: "none_found", ppriChecked: true }, { verdict: "none_found" }]) {
-      expect(pepiteFloodView({ flood })).toMatchObject({ verdict: "none_found", tone: "check" });
+      expect(pepiteFloodView({ flood })).toMatchObject({ verdict: "none_found", tone: "neutral" });
     }
   });
 

@@ -12,13 +12,17 @@
 //     · dans la zone du scénario « forte probabilité » (crue fréquente) d'un TRI  -> `high` (exclusion)
 //     · sinon, dans le périmètre d'un PPRi (servitude PM1, aléa inondation)      -> `exposed` (affichage seul)
 //     · sinon                                                                     -> `none_found`
-//   position imprécise (centre de commune, absente, ou drapeau de position douteuse)
+//   parcelle multiple : chaque centroïde est testé (au plus `FLOOD_PARCEL_MAX_PROBES`) ; `high` si tous sont dans
+//   la zone, `unknown` si les résultats divergent (le centroïde moyen peut tomber hors de toute parcelle) ;
+//   position imprécise (centre de commune, absente, drapeau de position douteuse, lieu-dit de la BAN, numéro
+//   de la BAN dont le score est inférieur à `FLOOD_ADDRESS_MIN_SCORE`)
 //     · commune qui a un TRI                                                      -> `unknown` (pas d'entrée)
 //     · commune sans TRI                                                          -> `no_signal` (admissible)
 //     · commune inconnue                                                          -> `unknown`
 //   rue : un tampon est appliqué autour du point (le point et quatre points à `FLOOD_STREET_BUFFER_METERS`) ;
-//   le verdict n'est retenu que si le tampon est ENTIÈREMENT dans la zone (`high`) ou ENTIÈREMENT hors zone ;
-//   sinon `unknown`.
+//   le point BAN d'une rue est au milieu de la voie, parfois à plusieurs centaines de mètres du numéro réel
+//   (mesuré le 27/10/2026 : 766 m) ; un tampon « hors zone » ne dit donc rien du bien. Seul `high` (les cinq points
+//   dans la zone) est retenu ; tout autre résultat donne `unknown` (n° 39).
 //
 // Source indisponible : l'adaptateur n'appelle pas `deriveFloodVerdict` (il n'écrase jamais un verdict connu) ;
 // la dernière valeur valable reste utilisée `FLOOD_VALID_DAYS` jours (`effectiveFloodVerdict`).
@@ -28,7 +32,7 @@
 // c'est une pseudonymisation (une empreinte se recalcule à partir d'une position connue).
 
 /** Version de la dérivation du verdict : une autre version fait réobserver la vente. */
-export const FLOOD_DERIVE_VERSION = "flood-v1";
+export const FLOOD_DERIVE_VERSION = "flood-v2";
 
 export const FLOOD_VERDICTS = ["high", "exposed", "none_found", "no_signal", "unknown"] as const;
 export type FloodVerdict = (typeof FLOOD_VERDICTS)[number];
@@ -45,7 +49,14 @@ export const FLOOD_STREET_PRECISION = "street";
 export const FLOOD_DOUBTFUL_POSITION_FLAGS: readonly string[] = [
   "unverified_source_coordinates",
   "implausible_coordinates",
+  "geocode_outside_department",
 ];
+/** Un numéro de la BAN dont le score est inférieur compte pour approximatif (l'inondation seulement). */
+export const FLOOD_ADDRESS_MIN_SCORE = 0.8;
+/** Type de résultat de la BAN pour un lieu-dit : rangé « rue » par le pipeline, approximatif pour l'inondation. */
+export const FLOOD_LOCALITY_GEOCODE_TYPE = "locality";
+/** Une parcelle multiple est sondée centroïde par centroïde, au plus 5 appels. */
+export const FLOOD_PARCEL_MAX_PROBES = 5;
 /** Rayon du tampon appliqué à une position « rue », en mètres. */
 export const FLOOD_STREET_BUFFER_METERS = 100;
 /** Un verdict est réobservé tous les 90 jours. */
@@ -54,6 +65,8 @@ export const FLOOD_REFRESH_DAYS = 90;
 export const FLOOD_VALID_DAYS = 180;
 /** Une observation en échec (ou sans périmètre PPRi) est retentée après ce délai, en heures. */
 export const FLOOD_RETRY_HOURS = 6;
+
+export type FloodProbePoint = { latitude: number; longitude: number };
 
 export type FloodPositionKind = "point" | "street" | "approximate";
 
@@ -66,6 +79,12 @@ export type FloodPositionInput = {
   flags: readonly string[] | null | undefined;
   /** Code INSEE de la commune pour GASPAR (arrondissements ramenés à la commune). */
   communeInsee: string | null | undefined;
+  /** Type du résultat de la BAN (`raw_payload.geocode.type`) : housenumber, street, locality, municipality. */
+  geocodeType?: string | null;
+  /** Score du résultat de la BAN (`raw_payload.geocode.score`, de 0 à 1) ; absent : non mesurable. */
+  geocodeScore?: number | null;
+  /** Centroïdes des parcelles d'une vente à plusieurs parcelles (résumé cadastral du pipeline). */
+  parcelCentroids?: readonly FloodProbePoint[] | null;
 };
 
 /** Les coordonnées de la position quand elles sont valides, sinon `null`. */
@@ -88,18 +107,55 @@ export function classifyFloodPosition(position: FloodPositionInput): FloodPositi
   const flags = position.flags ?? [];
   if (flags.some((flag) => FLOOD_DOUBTFUL_POSITION_FLAGS.includes(flag))) return "approximate";
   const precision = (position.precision ?? "").trim().toLowerCase();
+  if (precision === "address") {
+    // Un numéro accepté à 0,6 par le géocodage est souvent une autre voie du même nom : pas de point précis.
+    const score = position.geocodeScore;
+    if (typeof score === "number" && Number.isFinite(score) && score < FLOOD_ADDRESS_MIN_SCORE) {
+      return "approximate";
+    }
+  }
   if (FLOOD_POINT_PRECISIONS.includes(precision)) return "point";
-  if (precision === FLOOD_STREET_PRECISION) return "street";
+  if (precision === FLOOD_STREET_PRECISION) {
+    // Un lieu-dit de la BAN (rangé « rue » par le pipeline) est un point incertain à plus de 100 m.
+    if ((position.geocodeType ?? "").trim().toLowerCase() === FLOOD_LOCALITY_GEOCODE_TYPE) {
+      return "approximate";
+    }
+    return "street";
+  }
   return "approximate";
 }
 
-export type FloodProbePoint = { latitude: number; longitude: number };
-
 const EARTH_RADIUS_M = 6_371_000;
 
+/** Les centroïdes valides d'une parcelle multiple (au moins deux, sinon le point de la vente suffit). */
+export function floodParcelCentroids(position: FloodPositionInput): FloodProbePoint[] {
+  if ((position.precision ?? "").trim().toLowerCase() !== "parcel") return [];
+  const centroids = (position.parcelCentroids ?? []).filter(
+    (point) =>
+      validFloodCoordinates({
+        ...position,
+        latitude: point.latitude,
+        longitude: point.longitude,
+      }) !== null,
+  );
+  return centroids.length >= 2 ? centroids : [];
+}
+
 /**
- * Les points à tester : le point lui-même (adresse, parcelle), ou le point et quatre points du tampon (rue) ;
- * aucun pour une position approximative (aucun appel n'est fait).
+ * Vrai quand une parcelle multiple compte plus de `FLOOD_PARCEL_MAX_PROBES` centroïdes : seuls les premiers sont
+ * testés, donc un résultat autre que `high` ne prouve rien pour les autres parcelles.
+ */
+export function isFloodProbeSetPartial(position: FloodPositionInput): boolean {
+  return (
+    classifyFloodPosition(position) === "point" &&
+    floodParcelCentroids(position).length > FLOOD_PARCEL_MAX_PROBES
+  );
+}
+
+/**
+ * Les points à tester : le point lui-même (adresse, parcelle), chaque centroïde d'une parcelle multiple (au plus
+ * `FLOOD_PARCEL_MAX_PROBES`), ou le point et quatre points du tampon (rue) ; aucun pour une position approximative
+ * (aucun appel n'est fait).
  */
 export function floodProbePoints(position: FloodPositionInput): FloodProbePoint[] {
   const kind = classifyFloodPosition(position);
@@ -107,7 +163,10 @@ export function floodProbePoints(position: FloodPositionInput): FloodProbePoint[
   if (kind === "approximate" || !coordinates) return [];
   const { lat, lon } = coordinates;
   const center = { latitude: lat, longitude: lon };
-  if (kind === "point") return [center];
+  if (kind === "point") {
+    const centroids = floodParcelCentroids(position);
+    return centroids.length > 0 ? centroids.slice(0, FLOOD_PARCEL_MAX_PROBES) : [center];
+  }
   const dLat = (FLOOD_STREET_BUFFER_METERS / EARTH_RADIUS_M) * (180 / Math.PI);
   const dLon = dLat / Math.max(Math.cos((lat * Math.PI) / 180), 0.01);
   const round = (value: number) => Math.round(value * 1e6) / 1e6;
@@ -137,6 +196,8 @@ export type FloodRiskObservation = {
   probes: FloodProbeObservation[];
   /** Date de la carte du TRI (`date_arrete_carte`), quand l'API la fournit (AAAA-MM-JJ). */
   mapDate?: string | null;
+  /** Une partie seulement des parcelles a été testée (`isFloodProbeSetPartial`) : seul `high` est retenu. */
+  partial?: boolean;
 };
 
 export type FloodDerivation = {
@@ -163,9 +224,13 @@ export function deriveFloodVerdict(observation: FloodRiskObservation): FloodDeri
   if (probes.length === 0) return { verdict: "unknown", ppriChecked: true };
   const highCount = probes.filter(isHigh).length;
   const ppriChecked = probes.every((probe) => probe.ppri !== null);
-  // Rue : le tampon n'est retenu que s'il est entièrement dans la zone ou entièrement hors zone.
+  // Tous les points dans la zone : `high`. Résultats qui divergent (parcelles, tampon) : `unknown`.
   if (highCount === probes.length) return { verdict: "high", ppriChecked };
   if (highCount > 0) return { verdict: "unknown", ppriChecked };
+  // Rue (le point BAN peut être à plusieurs centaines de mètres du numéro) ou parcelles non toutes testées :
+  // « hors zone » ne dit rien du bien, seul `high` est retenu.
+  if (observation.kind === "street" || observation.partial)
+    return { verdict: "unknown", ppriChecked };
   return {
     verdict: probes.some((probe) => probe.ppri === true) ? "exposed" : "none_found",
     ppriChecked,
@@ -209,6 +274,16 @@ function asVerdict(value: string): FloodVerdict {
 }
 
 /**
+ * Le verdict stocké, lu sous la règle actuelle : pour une position « rue » (clé `street:…`), la règle ne garde que
+ * `high` (n° 39). Un verdict `none_found` ou `exposed` enregistré avant ce changement ne compte plus, sans attendre
+ * la nouvelle observation de la vente.
+ */
+function storedVerdictOf(stored: StoredFloodRisk): FloodVerdict {
+  const verdict = asVerdict(stored.verdict);
+  return stored.positionKey.startsWith("street:") && verdict !== "high" ? "unknown" : verdict;
+}
+
+/**
  * Le verdict que la règle des pépites lit : celui qui est stocké, pour la position ACTUELLE du bien et tant que
  * sa dernière observation réussie a moins de `FLOOD_VALID_DAYS` jours ; sinon « inconnu ». Une panne de la source
  * n'efface donc jamais un verdict connu avant 180 jours.
@@ -223,7 +298,7 @@ export function effectiveFloodVerdict(
   if (observedMs == null || now.getTime() - observedMs >= FLOOD_VALID_DAYS * DAY_MS) {
     return "unknown";
   }
-  return asVerdict(stored.verdict);
+  return storedVerdictOf(stored);
 }
 
 /** Ce que la règle des pépites et la fiche lisent du verdict d'une vente. */
@@ -251,7 +326,7 @@ export function floodFacts(
   if (!stored || stored.positionKey !== currentPositionKey) {
     return { verdict, observedAt: null, mapDate: null, ppriChecked: true };
   }
-  const storedVerdict = asVerdict(stored.verdict);
+  const storedVerdict = storedVerdictOf(stored);
   return {
     verdict,
     observedAt: storedVerdict === "unknown" ? null : stored.observedAt,

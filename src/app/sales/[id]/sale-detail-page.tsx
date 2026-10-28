@@ -17,6 +17,7 @@ import type { AuctionSale } from "@/lib/types";
 import * as queryKeys from "@/lib/query-keys";
 import type { SaleAccessMode } from "@/lib/query-keys";
 import type { FeeRegimeKey } from "@/lib/fee-regime-open";
+import type { HousingTension } from "@/lib/housing-tension";
 import type { RentReference } from "@/lib/rent-reference";
 import type { SaleUnlockResult } from "@/lib/sale-unlocks";
 
@@ -78,6 +79,8 @@ type SaleDetailPageProps = {
    * page ; absente ou `null`, le simulateur retombe sur le loyer départemental.
    */
   rentReference?: RentReference | null;
+  /** Zonage « zone tendue » de la commune, lu par le serveur ; `null` : inconnu (ligne absente de la fiche). */
+  housingTension?: HousingTension | null;
 };
 
 export function SaleDetailPage(props: SaleDetailPageProps) {
@@ -98,6 +101,7 @@ function SaleDetailContent({
   adjudicationStatisticsEnabled = false,
   openFeeRegimes,
   rentReference = null,
+  housingTension = null,
 }: SaleDetailPageProps) {
   // The page is statically generated and cached (ISR): it must not read the URL
   // during rendering (useSearchParams would force client-side rendering and hide
@@ -287,6 +291,8 @@ function SaleDetailContent({
         requestedHash={requestedHash}
         adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
         openFeeRegimes={openFeeRegimes}
+        rentReference={rentReference}
+        housingTension={housingTension}
         verifyingAccount={sessionHinted}
       />
     );
@@ -325,6 +331,7 @@ function SaleDetailContent({
           adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
           openFeeRegimes={openFeeRegimes}
           rentReference={rentReference}
+          housingTension={housingTension}
           unlockStatus={unlockQuery.data ?? null}
           justUnlocked={justUnlocked}
           onSaleUnlocked={handleSaleUnlocked}
@@ -349,6 +356,8 @@ function SaleDetailContent({
         requestedHash={requestedHash}
         adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
         openFeeRegimes={openFeeRegimes}
+        rentReference={rentReference}
+        housingTension={housingTension}
         verifyingAccount
       />
     );
@@ -366,6 +375,8 @@ function SaleDetailContent({
         requestedHash={requestedHash}
         adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
         openFeeRegimes={openFeeRegimes}
+        rentReference={rentReference}
+        housingTension={housingTension}
       />
     );
   }
@@ -401,6 +412,7 @@ function SaleDetailContent({
         adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
         openFeeRegimes={openFeeRegimes}
         rentReference={rentReference}
+        housingTension={housingTension}
         unlockStatus={unlockQuery.data ?? null}
         justUnlocked={justUnlocked}
       />
@@ -434,6 +446,7 @@ function SaleDetailContent({
         adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
         openFeeRegimes={openFeeRegimes}
         rentReference={rentReference}
+        housingTension={housingTension}
         unlockStatus={unlockQuery.data ?? null}
         onSaleUnlocked={handleSaleUnlocked}
       />
@@ -445,6 +458,7 @@ function SaleDetailContent({
       adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
       openFeeRegimes={openFeeRegimes}
       rentReference={rentReference}
+      housingTension={housingTension}
     />
   );
 }

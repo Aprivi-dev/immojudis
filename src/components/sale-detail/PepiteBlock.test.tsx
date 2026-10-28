@@ -256,11 +256,14 @@ describe("PepiteBlock : contrôle du risque d'inondation (règle v2)", () => {
   const withFlood = (verdict: string, observedAt: string | null = "2026-11-05T09:00:00.000Z") =>
     pepiteCriteriaPayload(PASSING, pepiteFloodView({ flood: { verdict, observedAt } }));
 
-  it("aucun risque élevé identifié : coche, source avec lien, cartes consultées repliées, mise en garde", () => {
+  it("hors des zones testées : phrase factuelle, icône neutre sans coche, source avec lien, cartes consultées repliées, mise en garde", () => {
     render(<PepiteBlock payload={withFlood("none_found")} saleId={saleId} />);
     const row = screen.getByRole("group", { name: "Risque d’inondation" });
-    expect(row.textContent).toContain("Aucun risque d’inondation élevé identifié");
-    expect(within(row).getByText("Réussi :", { exact: false })).toBeTruthy();
+    expect(row.textContent).toContain("Bien non situé dans la zone de crue fréquente");
+    expect(row.textContent).not.toContain("Aucun risque d’inondation");
+    expect(within(row).queryByText("Réussi :", { exact: false })).toBeNull();
+    expect(within(row).getByText("Information :", { exact: false })).toBeTruthy();
+    expect(row.textContent).toContain("Un plan de prévention seulement prescrit n’apparaît pas");
     const link = within(row).getByRole("link", { name: /Source : Géorisques/ });
     expect(link.getAttribute("href")).toBe("https://www.georisques.gouv.fr/");
     expect(link.getAttribute("rel")).toContain("noopener");

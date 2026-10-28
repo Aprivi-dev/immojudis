@@ -221,7 +221,7 @@ export type LandProjectAnalysis = {
 };
 
 export type LandReport = {
-  version: "land-report-v1";
+  version: "land-report-v1.1";
   generatedAt: string;
   planning: LandPlanningResult;
   risks: LandRisksResult;

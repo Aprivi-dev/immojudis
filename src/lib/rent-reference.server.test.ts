@@ -8,6 +8,7 @@ const state = vi.hoisted(() => ({
   saleRows: [] as Array<Record<string, unknown>>,
   communeRows: [] as Array<Record<string, unknown>>,
   singleRow: null as Record<string, unknown> | null,
+  tensionRow: null as Record<string, unknown> | null,
   failTable: null as string | null,
   failCode: undefined as string | undefined,
   configured: true,
@@ -72,8 +73,11 @@ vi.mock("@/integrations/supabase/client.server", () => ({
         },
         maybeSingle: async () =>
           state.failTable === table
-            ? { data: null, error: new Error("boom") }
-            : { data: state.singleRow, error: null },
+            ? { data: null, error: Object.assign(new Error("boom"), { code: state.failCode }) }
+            : {
+                data: table === "commune_housing_tension" ? state.tensionRow : state.singleRow,
+                error: null,
+              },
         then: (resolve: (value: unknown) => unknown) => {
           state.running += 1;
           state.maxRunning = Math.max(state.maxRunning, state.running);
@@ -93,6 +97,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
 import {
   createRentLookupSession,
   loadRentLookup,
+  loadSaleHousingTension,
   loadSaleRentReference,
   rentBasisOf,
   resetRentReferenceCachesForTests,
@@ -131,6 +136,7 @@ beforeEach(() => {
   state.communeRows = [];
   state.failCode = undefined;
   state.singleRow = null;
+  state.tensionRow = null;
   state.failTable = null;
   state.configured = true;
   state.rpcCalls = [];
@@ -638,6 +644,41 @@ describe("rent lookup session", () => {
     expect(lookup({ id: "a" })?.communeCode).toBe("33063");
     expect(lookup({ id: "b" })?.communeCode).toBe("69383");
   });
+
+  it("dit « ANIL indisponible » quand la lecture a échoué, et plus une fois la lecture réussie", async () => {
+    const sale = withGeocode("sale-a", "33063");
+    const session = createRentLookupSession();
+    // Rien n'a été lu : la référence d'un logement n'est pas résolue.
+    expect(session.unavailable([sale])).toBe(true);
+
+    state.failTable = "anil_rents";
+    const lookup = await session.load([sale]);
+    expect(lookup({ id: "sale-a" })).toBeNull();
+    expect(session.unavailable([sale])).toBe(true);
+
+    state.failTable = null;
+    state.anilRows = [anil("33063", "apt_1_2")];
+    await session.load([sale]);
+    expect(session.unavailable([sale])).toBe(false);
+  });
+
+  it("n'est jamais « indisponible » pour un bien qui n'est pas un logement, ni pour une liste vide", async () => {
+    const session = createRentLookupSession();
+    const land = withGeocode("land", "33063", { property_type: "land" });
+    expect(session.unavailable([])).toBe(false);
+    expect(session.unavailable([land])).toBe(false);
+    state.failTable = "anil_rents";
+    await session.load([land]);
+    expect(session.unavailable([land])).toBe(false);
+  });
+
+  it("est « indisponible » quand la base de service n'est pas configurée", async () => {
+    state.configured = false;
+    const session = createRentLookupSession();
+    const sale = withGeocode("sale-a", "33063");
+    await session.load([sale]);
+    expect(session.unavailable([sale])).toBe(true);
+  });
 });
 
 describe("loadSaleRentReference", () => {
@@ -736,5 +777,77 @@ describe("rentBasisOf", () => {
     ];
 
     expect(rentBasisOf(sales, rents)).toBe("anil");
+  });
+});
+
+describe("loadSaleHousingTension", () => {
+  const tension = (overrides: Record<string, unknown> = {}) => ({
+    commune_code: "75056",
+    zoning_post_decree: "tendue",
+    decree_reference: "Décret n° 2025-1267 du 22 décembre 2025",
+    source_updated_on: "2026-01-15",
+    source_url: "https://www.data.gouv.fr/datasets/zonage-tlv",
+    ...overrides,
+  });
+  const tensionCalls = () => state.calls.filter((call) => call.table === "commune_housing_tension");
+
+  it.each([
+    ["75108", "75056"],
+    ["75116", "75056"],
+    ["69383", "69123"],
+    ["13208", "13055"],
+    ["33063", "33063"],
+  ])("lit le zonage de la commune parent : %s -> %s", async (code, parent) => {
+    state.tensionRow = tension({ commune_code: parent });
+    const result = await loadSaleHousingTension(withGeocode("sale-a", code));
+    expect(tensionCalls()[0].filters).toEqual([["commune_code", parent]]);
+    expect(result).toEqual({
+      communeCode: parent,
+      zoning: "tendue",
+      decreeReference: "Décret n° 2025-1267 du 22 décembre 2025",
+      sourceUpdatedOn: "2026-01-15",
+      sourceUrl: "https://www.data.gouv.fr/datasets/zonage-tlv",
+    });
+  });
+
+  it("prend le code de la table des communes (parent) avant les champs bruts", async () => {
+    state.saleRows = [
+      { id: "sale-a", postal_code: "13008", citycode: null, accepted: null, commune: null },
+    ];
+    state.communeRows = [
+      { sale_id: "sale-a", commune_insee: "13055", arrondissement_insee: "13208" },
+    ];
+    state.tensionRow = tension({ commune_code: "13055", zoning_post_decree: "touristique_tendue" });
+    const result = await loadSaleHousingTension({
+      id: "sale-a",
+      department: "13",
+      property_type: "apartment",
+    });
+    expect(tensionCalls()[0].filters).toEqual([["commune_code", "13055"]]);
+    expect(result?.zoning).toBe("touristique_tendue");
+  });
+
+  it("rend null sans commune, sans ligne, avec un zonage illisible ou une table absente", async () => {
+    expect(
+      await loadSaleHousingTension({ id: "sale-z", department: "33", property_type: "apartment" }),
+    ).toBeNull();
+    expect(tensionCalls()).toEqual([]);
+    expect(await loadSaleHousingTension(withGeocode("sale-b", "33063"))).toBeNull();
+    state.tensionRow = tension({ zoning_post_decree: "autre" });
+    resetRentReferenceCachesForTests();
+    expect(await loadSaleHousingTension(withGeocode("sale-c", "33063"))).toBeNull();
+    state.failTable = "commune_housing_tension";
+    state.failCode = "42P01";
+    resetRentReferenceCachesForTests();
+    expect(await loadSaleHousingTension(withGeocode("sale-d", "33063"))).toBeNull();
+    state.configured = false;
+    expect(await loadSaleHousingTension(withGeocode("sale-e", "33063"))).toBeNull();
+  });
+
+  it("mémorise le zonage six heures, absence comprise", async () => {
+    state.tensionRow = tension({ commune_code: "33063", zoning_post_decree: "non_tendue" });
+    await loadSaleHousingTension(withGeocode("sale-a", "33063"));
+    await loadSaleHousingTension(withGeocode("sale-b", "33063"));
+    expect(tensionCalls()).toHaveLength(1);
   });
 });

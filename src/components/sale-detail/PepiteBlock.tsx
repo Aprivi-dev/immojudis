@@ -52,10 +52,9 @@ function CriteriaList({
 }
 
 /**
- * La ligne du contrôle d'inondation : coche seulement quand rien d'élevé n'a été identifié (`tone` « check »),
- * pictogramme d'information (de couleur d'alerte, le texte dit « Attention ») pour un bien dans le périmètre d'un
- * PPRi, pictogramme d'information neutre sinon. Le texte dit
- * son état : jamais la couleur ni l'icône seules. Textes écrits côté serveur (`pepite-flood-copy.ts`).
+ * La ligne du contrôle d'inondation : jamais de coche (une coche se lit « c'est bon »), pictogramme
+ * d'information (de couleur d'alerte, le texte dit « Attention ») pour un bien dans le périmètre d'un PPRi,
+ * pictogramme d'information neutre sinon. Le texte dit son état : jamais la couleur ni l'icône seules. Textes écrits côté serveur (`pepite-flood-copy.ts`).
  */
 function FloodRow({ flood }: { flood: PepiteFloodView }) {
   return (
@@ -65,12 +64,7 @@ function FloodRow({ flood }: { flood: PepiteFloodView }) {
       className="mt-3 space-y-1 border-t border-line-soft pt-3 text-sm text-foreground"
     >
       <p className="flex items-start gap-2">
-        {flood.tone === "check" ? (
-          <>
-            <Check className="mt-0.5 size-4 shrink-0 text-success" aria-hidden />
-            <span className="sr-only">Réussi : </span>
-          </>
-        ) : flood.tone === "alert" ? (
+        {flood.tone === "alert" ? (
           <>
             <Info className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
             <span className="sr-only">Attention : </span>

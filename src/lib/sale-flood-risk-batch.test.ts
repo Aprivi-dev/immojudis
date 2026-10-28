@@ -7,6 +7,8 @@ const db = vi.hoisted(() => ({
   sales: [] as Row[],
   /** Réponse de `sync_sale_communes()` (recopie de `raw_payload.commune` faite dans la base). */
   syncCommunes: { n_with_code: 0, n_changed: 0, n_written: 0 },
+  /** Champs de position lus dans `auction_sales.raw_payload` (résultat de la BAN, centroïdes des parcelles). */
+  rawCommunes: [] as Row[],
   floodRows: [] as Row[] | null,
   communeRows: [] as Row[] | null,
   upserts: [] as Array<{ table: string; rows: Row[] }>,
@@ -160,6 +162,8 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
           .sort((left, right) => String(left.id).localeCompare(String(right.id)));
         return { data: rows.slice(0, this.max), error: null };
       }
+      case "auction_sales":
+        return { data: slice(db.rawCommunes), error: null };
       case "auction_sale_flood_risk":
         return db.floodRows == null
           ? { data: null, error: missing }
@@ -326,6 +330,7 @@ const written = () =>
 beforeEach(() => {
   db.sales = [];
   db.syncCommunes = { n_with_code: 0, n_changed: 0, n_written: 0 };
+  db.rawCommunes = [];
   db.salesReads = [];
   db.floodRows = [];
   db.communeRows = [];
@@ -409,6 +414,93 @@ describe("runSaleFloodRiskBatch : observations", () => {
     await run(api);
     expect(api.calls.filter((url) => url.includes("tri_zonage"))).toHaveLength(5);
     expect(written()[0]).toMatchObject({ verdict: "high", position_kind: "street" });
+  });
+
+  it("une rue hors zone : inconnu (le point BAN d'une rue peut être loin du numéro), jamais « aucun risque »", async () => {
+    db.sales = [sale("a", { location_precision: "street" })];
+    await run(makeApi({ ppri: "in" }));
+    expect(written()[0]).toMatchObject({ verdict: "unknown", position_kind: "street" });
+  });
+
+  it("un lieu-dit de la BAN ou un numéro sous 0,8 : position imprécise, aucun appel de position", async () => {
+    db.sales = [
+      sale("lieu-dit", { location_precision: "street" }),
+      sale("score", { location_precision: "address" }),
+    ];
+    db.rawCommunes = [
+      { id: "lieu-dit", geocode_type: "locality", geocode_score: "0.9" },
+      { id: "score", geocode_type: "housenumber", geocode_score: "0.72" },
+    ];
+    db.communeRows = [COMMUNE("lieu-dit"), COMMUNE("score")];
+    const api = makeApi({ communeHasTri: false });
+    await run(api);
+    expect(written().map((row) => [row.sale_id, row.verdict, row.position_kind])).toEqual([
+      ["lieu-dit", "no_signal", "approximate"],
+      ["score", "no_signal", "approximate"],
+    ]);
+    expect(api.calls.some((url) => url.includes("tri_zonage") || url.includes("apicarto"))).toBe(
+      false,
+    );
+  });
+
+  it("un numéro à 0,8 ou plus reste une position précise", async () => {
+    db.sales = [sale("a")];
+    db.rawCommunes = [{ id: "a", geocode_type: "housenumber", geocode_score: "0.8" }];
+    const api = makeApi();
+    await run(api);
+    expect(written()[0]).toMatchObject({ verdict: "none_found", position_kind: "point" });
+  });
+
+  describe("parcelle multiple", () => {
+    const centroids = (count: number) =>
+      Array.from({ length: count }, (_, index) => ({
+        found: true,
+        centroid: [TOURS.lat + index * 0.001, TOURS.lon],
+      }));
+
+    it("chaque centroïde est testé : tous dans la zone, risque élevé", async () => {
+      db.sales = [sale("a", { location_precision: "parcel" })];
+      db.rawCommunes = [{ id: "a", parcels: centroids(3) }];
+      const api = makeApi({ scenarios: ["01For"] });
+      await run(api);
+      expect(api.calls.filter((url) => url.includes("tri_zonage"))).toHaveLength(3);
+      expect(written()[0]).toMatchObject({ verdict: "high", position_kind: "point" });
+    });
+
+    it("au plus cinq centroïdes ; plus de cinq parcelles et rien dans la zone : inconnu", async () => {
+      db.sales = [sale("a", { location_precision: "parcel" })];
+      db.rawCommunes = [{ id: "a", parcels: centroids(8) }];
+      const api = makeApi();
+      await run(api);
+      expect(api.calls.filter((url) => url.includes("tri_zonage"))).toHaveLength(5);
+      expect(written()[0]).toMatchObject({ verdict: "unknown" });
+    });
+
+    it("résultats divergents entre parcelles : inconnu", async () => {
+      db.sales = [sale("a", { location_precision: "parcel" })];
+      db.rawCommunes = [{ id: "a", parcels: centroids(2) }];
+      const api = makeApi({ scenarios: ["01For"] });
+      const base = api.fetcher;
+      let tri = 0;
+      api.fetcher = async (input, init) =>
+        String(input).includes("/tri_zonage") && (tri += 1) === 2
+          ? new Response(JSON.stringify({ results: 0, data: [] }), {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            })
+          : base(input, init);
+      await run(api);
+      expect(written()[0]).toMatchObject({ verdict: "unknown" });
+    });
+
+    it("une parcelle seule : un seul appel, comme avant", async () => {
+      db.sales = [sale("a", { location_precision: "parcel" })];
+      db.rawCommunes = [{ id: "a", parcels: centroids(1) }];
+      const api = makeApi();
+      await run(api);
+      expect(api.calls.filter((url) => url.includes("tri_zonage"))).toHaveLength(1);
+      expect(written()[0]).toMatchObject({ verdict: "none_found" });
+    });
   });
 
   it("position imprécise (centre de commune) dans une commune qui a un TRI : inconnu, sans appel de position", async () => {
@@ -778,7 +870,8 @@ describe("runSaleFloodRiskBatch : code commune du pipeline", () => {
     expect(result.communesWritten).toBe(1);
     expect(result.communesRejected).toBe(0);
     expect(db.rpcCalls.filter((call) => call.name === "sync_sale_communes")).toHaveLength(1);
-    expect(db.tables).not.toContain("auction_sales");
+    // `auction_sales` n'est plus lue que pour les champs de position (une page), plus pour la commune.
+    expect(db.tables.filter((table) => table === "auction_sales")).toHaveLength(1);
   });
 
   it("lit les ventes à venir par curseur sur l'identifiant, filtrées par statut dans la base", async () => {
@@ -907,17 +1000,29 @@ describe("runSaleFloodRiskBatch : périmètre des PPRi illisible", () => {
     expect(db.updates).toEqual([]);
   });
 
-  it("un « exposé » trouvé reste exposé même si un autre point du tampon est illisible", async () => {
-    db.sales = [sale("a", { location_precision: "street" })];
+  it("un « exposé » trouvé reste exposé même si un autre centroïde de parcelle est illisible", async () => {
+    const centroids = [
+      { latitude: TOURS.lat, longitude: TOURS.lon },
+      { latitude: TOURS.lat + 0.001, longitude: TOURS.lon },
+      { latitude: TOURS.lat + 0.002, longitude: TOURS.lon },
+    ];
+    db.sales = [sale("a", { location_precision: "parcel" })];
+    db.rawCommunes = [
+      {
+        id: "a",
+        parcels: centroids.map((c) => ({ found: true, centroid: [c.latitude, c.longitude] })),
+      },
+    ];
     db.floodRows = [
       storedFlood("a", {
         verdict: "exposed",
         position_key: floodPositionKey({
           latitude: TOURS.lat,
           longitude: TOURS.lon,
-          precision: "street",
+          precision: "parcel",
           flags: [],
           communeInsee: null,
+          parcelCentroids: centroids,
         }),
       }),
     ];

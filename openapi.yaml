@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: ImmoJudis Premium Analytics API
-  version: 1.5.0
+  version: 1.5.1
   description: >-
     Contrats de lecture pour l'activité publique des ventes judiciaires, Outcome
     Graph et les statistiques descriptives expérimentales par tribunal. Les
@@ -324,6 +324,9 @@ paths:
       summary: Lire l'analyse du terrain d'une vente (PLU, risques, cadastre)
       description: >-
         Réservé au plan Analyse. `format=pdf` renvoie le rapport en PDF et exige en plus le droit d'export PDF ; `refresh=1` recalcule au lieu d'utiliser le cache (12 appels par minute et par utilisateur).
+
+
+        Version du rapport : `land-report-v1.1` (avant : `land-report-v1`). Changement de sens de la couche des risques d'inondation (TRI) : elle signale désormais l'appartenance du point à la zone d'un scénario de la cartographie des territoires à risque important d'inondation, et non plus la présence d'un TRI dans un rayon de 1 000 m ; quand la position n'est qu'un centre de commune, elle ne renvoie que la commune (`scope: "commune"`). La structure de la réponse ne change pas.
       security:
         - bearerAuth: []
       parameters:

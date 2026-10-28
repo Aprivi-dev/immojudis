@@ -8,18 +8,22 @@ function allFloodTexts(): string[] {
   const constants = (Object.values(copy) as unknown[]).filter(
     (value): value is string => typeof value === "string",
   );
-  const verdicts = [
-    { verdict: "none_found" },
-    { verdict: "none_found", ppriChecked: false },
-    { verdict: "exposed" },
-    { verdict: "no_signal" },
-    { verdict: "unknown" },
-  ].flatMap((flood) => {
-    const view = pepiteFloodView({
-      flood: { ...flood, observedAt: "2026-11-05T09:00:00.000Z", mapDate: "2013-12-18" },
-    });
-    return view ? [view.line, view.details ?? "", view.sourceLine ?? "", view.warning] : [];
-  });
+  const regimes = [undefined, "tribunal", "notary_auction", "notary_online"] as const;
+  const verdicts = regimes.flatMap((regime) =>
+    [
+      { verdict: "none_found" },
+      { verdict: "none_found", ppriChecked: false },
+      { verdict: "exposed" },
+      { verdict: "no_signal" },
+      { verdict: "unknown" },
+    ].flatMap((flood) => {
+      const view = pepiteFloodView({
+        regime,
+        flood: { ...flood, observedAt: "2026-11-05T09:00:00.000Z", mapDate: "2013-12-18" },
+      });
+      return view ? [view.line, view.details ?? "", view.sourceLine ?? "", view.warning] : [];
+    }),
+  );
   const adminLabels = [
     floodPassAdminLabel({ verdict: "none_found", ppriChecked: true }),
     floodPassAdminLabel({ verdict: "none_found", ppriChecked: false }),
@@ -32,6 +36,8 @@ function allFloodTexts(): string[] {
     ...verdicts,
     ...adminLabels,
     copy.floodTriSourceLine("5 novembre 2026"),
+    copy.floodTriSourceLine("5 novembre 2026", "18 décembre 2013"),
+    ...regimes.flatMap((regime) => [copy.floodWarning(regime), copy.floodExposedLong(regime)]),
     copy.floodPm1SourceLine("5 novembre 2026"),
     PEPITE_CRITERION_LABELS.no_high_flood_risk.pass,
     PEPITE_CRITERION_LABELS.no_high_flood_risk.fail,
@@ -58,6 +64,7 @@ describe("textes du contrôle d'inondation", () => {
       "Un bien sans risque",
       "Logement sécurisé",
       "Aucun risque d’inondation",
+      "Aucun risque d’inondation élevé identifié à la position connue du bien, d’après les cartes officielles consultées.",
       "Bien certifié",
       "Crue de dix ans",
     ]) {
@@ -66,7 +73,7 @@ describe("textes du contrôle d'inondation", () => {
         bad,
       ).toBe(true);
     }
-    // La tournure validée n'est pas refusée.
+    // La tournure en vigueur n'est pas refusée.
     expect(
       copy.FLOOD_FORBIDDEN_WORDS.some((pattern) => pattern.test(copy.FLOOD_NONE_FOUND_LINE)),
     ).toBe(false);
@@ -79,9 +86,13 @@ describe("textes du contrôle d'inondation", () => {
   });
 
   it("ne promettent jamais l'absence de risque, et renvoient à l'état des risques", () => {
-    expect(copy.FLOOD_WARNING).toMatch(/ne garantit pas l’absence de risque/);
-    expect(copy.FLOOD_WARNING).toMatch(/état des risques/);
+    expect(copy.floodWarning("tribunal")).toMatch(/ne garantit pas l’absence de risque/);
+    expect(copy.floodWarning("tribunal")).toMatch(
+      /état des risques et pollutions, lorsqu’il est exigé/,
+    );
     expect(copy.FLOOD_NONE_FOUND_DETAIL).toMatch(/Ce n’est pas une garantie d’absence de risque/);
+    expect(copy.FLOOD_NONE_FOUND_DETAIL).toMatch(/seulement prescrit n’apparaît pas/);
+    expect(copy.FLOOD_NONE_FOUND_DETAIL).toMatch(/peut exister en dehors de ces zones/);
     expect(copy.FLOOD_NO_SIGNAL_LINE).toMatch(/ne dit rien du risque propre au bien/);
   });
 
@@ -89,6 +100,6 @@ describe("textes du contrôle d'inondation", () => {
     expect(copy.FLOOD_EXPOSED_SHORT).toBe(
       "Dans le périmètre d’un plan de prévention des risques d’inondation (PPRi) : zonage à vérifier.",
     );
-    expect(copy.FLOOD_EXPOSED_LONG).toMatch(/ne dit pas dans quelle zone du plan/);
+    expect(copy.floodExposedLong("tribunal")).toMatch(/ne dit pas dans quelle zone du plan/);
   });
 });

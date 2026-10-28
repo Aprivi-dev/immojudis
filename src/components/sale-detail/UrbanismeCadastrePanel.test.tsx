@@ -29,7 +29,7 @@ vi.mock("./CadastralNeighborhoodMap", () => ({
 }));
 
 const landReport = vi.hoisted(() => ({
-  version: "land-report-v1",
+  version: "land-report-v1.1",
   generatedAt: "2026-10-02T12:00:00.000Z",
   planning: {
     locationStatus: "references_matched",

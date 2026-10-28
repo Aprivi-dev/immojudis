@@ -1,10 +1,13 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ lookup: vi.fn(), rent: vi.fn() }));
+const mocks = vi.hoisted(() => ({ lookup: vi.fn(), rent: vi.fn(), tension: vi.fn() }));
 
 vi.mock("@/lib/public-sale.server", () => ({ lookupPublicSale: mocks.lookup }));
-vi.mock("@/lib/rent-reference.server", () => ({ loadSaleRentReference: mocks.rent }));
+vi.mock("@/lib/rent-reference.server", () => ({
+  loadSaleRentReference: mocks.rent,
+  loadSaleHousingTension: mocks.tension,
+}));
 vi.mock("next/navigation", () => ({
   notFound: () => {
     throw Object.assign(new Error("NEXT_HTTP_ERROR_FALLBACK;404"), {
@@ -22,11 +25,17 @@ vi.mock("./sale-detail-page", () => ({
   SaleDetailPage: ({
     id,
     rentReference,
+    housingTension,
   }: {
     id: string;
     rentReference?: { source: string } | null;
+    housingTension?: { zoning: string } | null;
   }) => (
-    <div data-testid="detail" data-rent-source={rentReference?.source ?? "none"}>
+    <div
+      data-testid="detail"
+      data-rent-source={rentReference?.source ?? "none"}
+      data-tension={housingTension?.zoning ?? "none"}
+    >
       {id}
     </div>
   ),
@@ -55,6 +64,8 @@ describe("public sale page", () => {
     mocks.lookup.mockReset();
     mocks.rent.mockReset();
     mocks.rent.mockResolvedValue(null);
+    mocks.tension.mockReset();
+    mocks.tension.mockResolvedValue(null);
     process.env.SITE_URL = "https://immojudis.com";
   });
 
@@ -153,10 +164,21 @@ describe("public sale page", () => {
     expect(renderToStaticMarkup(await Page({ params }))).toContain('data-rent-source="none"');
   });
 
+  it("hands the housing tension zoning of the commune to the sale page", async () => {
+    mocks.lookup.mockResolvedValue({ status: "found", sale });
+    mocks.tension.mockResolvedValue({ zoning: "tendue", communeCode: "33063" });
+    const html = renderToStaticMarkup(await Page({ params }));
+    expect(mocks.tension).toHaveBeenCalledWith(sale);
+    expect(html).toContain('data-tension="tendue"');
+    mocks.tension.mockResolvedValue(null);
+    expect(renderToStaticMarkup(await Page({ params }))).toContain('data-tension="none"');
+  });
+
   it("does not read any rent for a sale that is not public", async () => {
     mocks.lookup.mockResolvedValue({ status: "unavailable" });
     renderToStaticMarkup(await Page({ params }));
     expect(mocks.rent).not.toHaveBeenCalled();
+    expect(mocks.tension).not.toHaveBeenCalled();
   });
 
   it("still renders when the server cannot read the sale, without structured data", async () => {

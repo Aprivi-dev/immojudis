@@ -156,6 +156,10 @@ describe("plafonds journaliers de l'export CSV et du flux API", () => {
     // Sans loyer ANIL lu (base de service non configurée ici), les rendements sont départementaux.
     expect(result.meta.rentBasis).toBe("department");
     expect(result.meta.rentAttribution).toContain("Estimations ANIL");
+    // Le sens des rendements a changé : la version du schéma a monté, et la note de changement l'explique.
+    expect(result.meta.schemaVersion).toBe("2026-10-judicial-sales-v1");
+    expect(result.meta.changes.join(" ")).toMatch(/loyers de la carte ANIL/);
+    expect(result.meta.changes.join(" ")).toMatch(/frais du type de vente/);
 
     alreadyExported(SALES_API_FEED_DAILY_ROWS);
     await expect(exportSalesApiFeed({ auth, search, request })).rejects.toBeInstanceOf(

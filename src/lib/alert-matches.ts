@@ -4,7 +4,10 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { isDiscoveryAlertCompatible } from "@/lib/discovery-alerts";
 import { alertMatchesSale } from "@/lib/alerts";
-import { createAlertNotificationsForMatches } from "@/lib/alert-notifications";
+import {
+  createAlertNotificationsForMatches,
+  suppressAlertNotificationsForMatches,
+} from "@/lib/alert-notifications";
 import { extractDpe } from "@/lib/dpe";
 import { errorDetails, errorSummary } from "@/lib/error-details";
 import { estimateSaleGrossYieldPct, pricePerM2 } from "@/lib/geo";
@@ -238,6 +241,16 @@ export function isRentBasisSilentPass(
   return now >= switchAt && now < switchAt + RENT_BASIS_SILENT_WINDOW_MS && last < switchAt;
 }
 
+/** Les loyers de la carte de l'ANIL n'ont pas pu être lus : une alerte à critère de rendement n'avance pas. */
+export class RentReferenceUnavailableError extends Error {
+  constructor() {
+    super(
+      "Loyers de référence (ANIL) indisponibles : l'alerte à critère de rendement est reprise au prochain passage.",
+    );
+    this.name = "RentReferenceUnavailableError";
+  }
+}
+
 export async function evaluateUserAlertMatches({
   auth,
   saleLimit = DEFAULT_ALERT_EVALUATION_SALE_LIMIT,
@@ -389,13 +402,16 @@ async function collectAlertMatches({
   let rents: RentLookup | undefined;
   if (!discovery && alert.min_yield_pct != null) {
     const withoutYield = { ...alert, min_yield_pct: null, min_market_discount_pct: null };
-    rents = await rentSession.load(
-      sales.filter(
-        (sale) =>
-          (isPepiteAlert(alert) || !pepiteOnlySaleIds.has(sale.id)) &&
-          alertMatchesSale(withoutYield, sale, { watchedZone, pepiteSaleIds }).matches,
-      ),
+    const candidates = sales.filter(
+      (sale) =>
+        (isPepiteAlert(alert) || !pepiteOnlySaleIds.has(sale.id)) &&
+        alertMatchesSale(withoutYield, sale, { watchedZone, pepiteSaleIds }).matches,
     );
+    rents = await rentSession.load(candidates);
+    // Lecture de la carte de l'ANIL en échec : la session retombe sur le repère départemental, ce qui calculerait les
+    // correspondances sur une autre base que celle annoncée ET consommerait la fenêtre de la base silencieuse. L'alerte
+    // échoue donc (elle garde sa date d'évaluation) et sera reprise au prochain passage.
+    if (rentSession.unavailable(candidates)) throw new RentReferenceUnavailableError();
   }
   // Base silencieuse du changement de loyers de référence (voir `isRentBasisSilentPass`).
   const silentPass = !discovery && isRentBasisSilentPass(alert, evaluatedAt);
@@ -550,6 +566,21 @@ async function persistAlertEvaluation({
     }
   }
 
+  // Correspondances tues par la base silencieuse : leurs notifications sont créées au statut « cancelled », pour que
+  // la clé d'unicité bloque toute notification au passage suivant (la vente relue correspondrait de nouveau, hors
+  // fenêtre silencieuse). Écrit AVANT que `last_evaluated_at` n'avance : en cas d'échec, l'alerte est rejouée.
+  const silentMatches = matches.filter(
+    (match) => match.id && entry.silentSaleIds?.has(match.saleId),
+  );
+  for (let offset = 0; offset < silentMatches.length; offset += ALERT_MATCH_UPSERT_BATCH_SIZE) {
+    await suppressAlertNotificationsForMatches({
+      auth,
+      matches: silentMatches.slice(offset, offset + ALERT_MATCH_UPSERT_BATCH_SIZE),
+      alerts: [alert],
+      now: new Date(evaluatedAt),
+      discovery,
+    });
+  }
   const persistedMatches = matches.filter(
     (match) => match.id && !entry.silentSaleIds?.has(match.saleId),
   );

@@ -94,9 +94,48 @@ describe("dwellings and the others", () => {
     }
   });
 
-  it("keeps apartments and unknown types as dwellings", () => {
-    for (const type of ["apartment", "appartement", "studio", "house", null, undefined, ""]) {
-      expect(isRentApplicable({ property_type: type })).toBe(true);
+  it("keeps houses and apartments (pipeline codes and French wording) as dwellings", () => {
+    for (const type of [
+      "apartment",
+      "house",
+      "appartement",
+      "Appartement T3",
+      "studio",
+      "duplex",
+    ]) {
+      expect(isRentApplicable({ property_type: type }), type).toBe(true);
+    }
+  });
+
+  it("uses a white list: mixed and other lots, and unrecognised types, have no rent reference", () => {
+    // Codes anglais du pipeline (`normalize_property_type`) : seuls house et apartment sont des logements.
+    const codes: Record<string, boolean> = {
+      house: true,
+      apartment: true,
+      mixed: false,
+      other: false,
+      land: false,
+      building: false,
+      commercial: false,
+      unknown: false,
+    };
+    for (const [type, expected] of Object.entries(codes)) {
+      expect(isRentApplicable({ property_type: type }), type).toBe(expected);
+      // Une surface ne change rien pour un type connu qui n'est pas un logement.
+      expect(isRentApplicable({ property_type: type, app_surface_m2: 60 }), type).toBe(
+        expected || type === "unknown",
+      );
+    }
+    expect(isRentApplicable({ property_type: "lot divers", app_surface_m2: 60 })).toBe(false);
+  });
+
+  it("gives unknown or missing types a reference only when the sale publishes a surface", () => {
+    for (const property_type of ["unknown", "", null, undefined]) {
+      expect(isRentApplicable({ property_type }), String(property_type)).toBe(false);
+      expect(isRentApplicable({ property_type, app_surface_m2: 0 })).toBe(false);
+      expect(isRentApplicable({ property_type, app_surface_m2: 45 })).toBe(true);
+      expect(isRentApplicable({ property_type, habitable_surface_m2: 45 })).toBe(true);
+      expect(isRentApplicable({ property_type, carrez_surface_m2: 45 })).toBe(true);
     }
   });
 });

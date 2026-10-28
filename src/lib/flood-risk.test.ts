@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   FLOOD_DERIVE_VERSION,
+  FLOOD_PARCEL_MAX_PROBES,
   FLOOD_REFRESH_DAYS,
   FLOOD_RETRY_HOURS,
   FLOOD_STREET_BUFFER_METERS,
@@ -11,6 +12,7 @@ import {
   floodFacts,
   floodProbePoints,
   floodRefreshReason,
+  isFloodProbeSetPartial,
   type FloodPositionInput,
   type FloodProbeObservation,
   type FloodRiskObservation,
@@ -42,6 +44,19 @@ describe("classifyFloodPosition", () => {
 
   it("une rue passe par un tampon", () => {
     expect(classifyFloodPosition(position({ precision: "street" }))).toBe("street");
+    expect(classifyFloodPosition(position({ precision: "street", geocodeType: "street" }))).toBe(
+      "street",
+    );
+  });
+
+  it("le score de la BAN n'écarte qu'un numéro : à 0,8 ou sans score, la position reste précise", () => {
+    expect(classifyFloodPosition(position({ geocodeScore: 0.8 }))).toBe("point");
+    expect(classifyFloodPosition(position({ geocodeScore: 0.97 }))).toBe("point");
+    expect(classifyFloodPosition(position({ geocodeScore: null }))).toBe("point");
+    // Une parcelle du cadastre n'a pas de score BAN à juger.
+    expect(classifyFloodPosition(position({ precision: "parcel", geocodeScore: 0.3 }))).toBe(
+      "point",
+    );
   });
 
   it.each([
@@ -53,6 +68,9 @@ describe("classifyFloodPosition", () => {
     ["coordonnées non numériques", { latitude: Number.NaN }],
     ["coordonnées de la source non vérifiées", { flags: ["unverified_source_coordinates"] }],
     ["coordonnées invraisemblables", { flags: ["implausible_coordinates"] }],
+    ["point BAN refusé hors du département", { flags: ["geocode_outside_department"] }],
+    ["lieu-dit de la BAN (rangé « rue »)", { precision: "street", geocodeType: "locality" }],
+    ["numéro de la BAN sous le score de 0,8", { precision: "address", geocodeScore: 0.79 }],
   ] as Array<[string, Partial<FloodPositionInput>]>)("%s : position imprécise", (_name, change) => {
     expect(classifyFloodPosition(position(change))).toBe("approximate");
   });
@@ -80,6 +98,40 @@ describe("floodProbePoints", () => {
     expect(Math.abs(metersNorth - FLOOD_STREET_BUFFER_METERS)).toBeLessThan(1);
     const metersEast = (points[3].longitude - 0.689) * 111_195 * Math.cos((47.399 * Math.PI) / 180);
     expect(Math.abs(metersEast - FLOOD_STREET_BUFFER_METERS)).toBeLessThan(1);
+  });
+
+  describe("parcelle multiple", () => {
+    const centroids = Array.from({ length: 7 }, (_, index) => ({
+      latitude: 47.4 + index * 0.001,
+      longitude: 0.69,
+    }));
+    const parcels = (count: number) =>
+      position({ precision: "parcel", parcelCentroids: centroids.slice(0, count) });
+
+    it("un centroïde par parcelle, au plus cinq", () => {
+      expect(floodProbePoints(parcels(3))).toEqual(centroids.slice(0, 3));
+      expect(floodProbePoints(parcels(7))).toEqual(centroids.slice(0, FLOOD_PARCEL_MAX_PROBES));
+      expect(isFloodProbeSetPartial(parcels(5))).toBe(false);
+      expect(isFloodProbeSetPartial(parcels(7))).toBe(true);
+    });
+
+    it("une seule parcelle (ou aucun centroïde) : le point de la vente", () => {
+      expect(floodProbePoints(parcels(1))).toEqual([{ latitude: 47.399, longitude: 0.689 }]);
+      expect(floodProbePoints(position({ precision: "parcel" }))).toEqual([
+        { latitude: 47.399, longitude: 0.689 },
+      ]);
+    });
+
+    it("les centroïdes invalides sont ignorés, et ne servent qu'à une parcelle", () => {
+      const withBad = position({
+        precision: "parcel",
+        parcelCentroids: [...centroids.slice(0, 2), { latitude: 120, longitude: 0.5 }],
+      });
+      expect(floodProbePoints(withBad)).toEqual(centroids.slice(0, 2));
+      expect(floodProbePoints(position({ parcelCentroids: centroids.slice(0, 3) }))).toEqual([
+        { latitude: 47.399, longitude: 0.689 },
+      ]);
+    });
   });
 });
 
@@ -170,8 +222,8 @@ describe("deriveFloodVerdict (table de décision)", () => {
       expect(deriveFloodVerdict(street(...Array(5).fill(IN_ZONE))).verdict).toBe("high");
     });
 
-    it("entièrement hors zone : pas d'exclusion", () => {
-      expect(deriveFloodVerdict(street(...Array(5).fill(OUT_OF_ZONE))).verdict).toBe("none_found");
+    it("entièrement hors zone : inconnu (le point d'une rue peut être à 766 m du numéro)", () => {
+      expect(deriveFloodVerdict(street(...Array(5).fill(OUT_OF_ZONE))).verdict).toBe("unknown");
     });
 
     it("tampon à cheval sur la limite de la zone : inconnu", () => {
@@ -181,12 +233,41 @@ describe("deriveFloodVerdict (table de décision)", () => {
       ).toBe("unknown");
     });
 
-    it("un point du tampon dans le périmètre d'un PPRi : exposé", () => {
+    it("un point du tampon dans le périmètre d'un PPRi : inconnu, jamais « exposé » ni « aucun risque »", () => {
       const inPerimeter = { triScenarios: [], ppri: true };
       expect(
         deriveFloodVerdict(street(OUT_OF_ZONE, inPerimeter, OUT_OF_ZONE, OUT_OF_ZONE, OUT_OF_ZONE))
           .verdict,
-      ).toBe("exposed");
+      ).toBe("unknown");
+    });
+  });
+
+  describe("parcelle multiple (un sondage par centroïde)", () => {
+    const parcels = (...probes: FloodProbeObservation[]): FloodRiskObservation => ({
+      kind: "point",
+      communeHasTri: null,
+      probes,
+    });
+
+    it("tous les centroïdes dans la zone : élevé", () => {
+      expect(deriveFloodVerdict(parcels(IN_ZONE, IN_ZONE, IN_ZONE)).verdict).toBe("high");
+    });
+
+    it("résultats divergents : inconnu", () => {
+      expect(deriveFloodVerdict(parcels(IN_ZONE, OUT_OF_ZONE)).verdict).toBe("unknown");
+    });
+
+    it("tous hors zone : aucun risque identifié, comme un point unique", () => {
+      expect(deriveFloodVerdict(parcels(OUT_OF_ZONE, OUT_OF_ZONE)).verdict).toBe("none_found");
+    });
+
+    it("parcelles non toutes testées (plus de cinq) : seul « élevé » est retenu", () => {
+      const partial = (...probes: FloodProbeObservation[]): FloodRiskObservation => ({
+        ...parcels(...probes),
+        partial: true,
+      });
+      expect(deriveFloodVerdict(partial(...Array(5).fill(IN_ZONE))).verdict).toBe("high");
+      expect(deriveFloodVerdict(partial(...Array(5).fill(OUT_OF_ZONE))).verdict).toBe("unknown");
     });
   });
 
@@ -240,6 +321,24 @@ describe("effectiveFloodVerdict", () => {
       observedAt: daysAgo(40),
     });
     expect(effectiveFloodVerdict(afterOutage, "point:address:abc", NOW)).toBe("none_found");
+  });
+
+  it("une position « rue » ne garde que « élevé » : un ancien « aucun risque » ou « exposé » compte pour inconnu", () => {
+    const key = "street:street:abc";
+    expect(effectiveFloodVerdict(stored({ positionKey: key, verdict: "high" }), key, NOW)).toBe(
+      "high",
+    );
+    for (const verdict of ["none_found", "exposed", "no_signal"]) {
+      expect(effectiveFloodVerdict(stored({ positionKey: key, verdict }), key, NOW)).toBe(
+        "unknown",
+      );
+    }
+    // Le fait affiché n'a alors ni date de contrôle ni date de carte.
+    expect(floodFacts(stored({ positionKey: key }), key, NOW)).toMatchObject({
+      verdict: "unknown",
+      observedAt: null,
+      mapDate: null,
+    });
   });
 
   it("jamais observée, ou valeur illisible : inconnu", () => {

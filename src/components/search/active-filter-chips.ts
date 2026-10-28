@@ -108,9 +108,15 @@ export function activeFilterChips(search: SalesSearchParams): ActiveFilterChip[]
     search.maxPricePerM2 != null ? `≤ ${plain(search.maxPricePerM2)} €/m²` : null,
     { maxPricePerM2: undefined },
   );
-  add("minYield", search.minYield != null ? `Rendement ≥ ${plain(search.minYield)} %` : null, {
-    minYield: undefined,
-  });
+  add(
+    "minYield",
+    search.minYield != null
+      ? `Rendement brut à la mise à prix ≥ ${plain(search.minYield)} %`
+      : null,
+    {
+      minYield: undefined,
+    },
+  );
   add(
     "minMarketDiscount",
     search.minMarketDiscount != null ? `Décote ≥ ${plain(search.minMarketDiscount)} %` : null,

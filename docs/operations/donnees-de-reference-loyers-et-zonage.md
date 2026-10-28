@@ -7,9 +7,13 @@ Mise à jour : 2026-10-28.
 - **Loyers.** Les rendements affichés (filtre « rendement minimal », alertes, simulateur, rapports,
   exports) reposaient sur une table de loyers codée en dur pour 24 départements
   (`src/lib/rent-reference.ts`). Ils lisent désormais la carte des loyers de l'ANIL, commune par
-  commune, et ne retombent sur cette table que sans donnée ANIL.
-- **Zonage tendu.** La liste des communes selon le zonage TLV est importée et stockée. Aucun écran ne
-  l'affiche encore.
+  commune, et ne retombent sur cette table que sans donnée ANIL. Le rendement brut est calculé sur la mise à
+  prix avec les frais du régime de la vente (tribunal, vente à la bougie, vente interactive :
+  `sale-yield-fees.ts`), comme le rapport ; un bien n'a de loyer de référence que s'il est une maison ou un
+  appartement (ou de type inconnu avec une surface publiée).
+- **Zonage tendu.** La liste des communes selon le zonage TLV est importée et stockée. La fiche de la vente
+  l'affiche en ligne neutre dans le bloc « Marché locatif de la commune » (`RentalMarketBlock`), sans effet sur
+  le rendement.
 
 ## Sources
 
@@ -168,9 +172,14 @@ complément (carte des loyers, millésime, date de mise à jour, Licence Ouverte
 Immojudis sous sa seule responsabilité) et du lien vers la source.
 
 - Fiche de la vente, panneau des hypothèses du plafond (projet « louer ») : `CeilingHypothesesPanel`.
-- Le filtre « rendement minimal » (`AdvancedFiltersPanel`) n'affiche **pas** la mention : il dit « Ce filtre
-  s'appuie sur un repère de loyer départemental ; les alertes, exports et statistiques utilisent la carte
-  des loyers de l'ANIL (par commune). » La mention ne figure qu'à côté de ce qui vient de l'ANIL.
+- Fiche de la vente, bloc « Marché locatif de la commune » (`RentalMarketBlock`, aperçu public et fiche complète) :
+  loyer d'annonce avec sa fourchette et le nombre d'annonces, « loyer de maille » quand la source l'est,
+  « Rendement brut à la mise à prix (charges comprises) » (fourchette seule quand la référence est indicative),
+  zone tendue, et la mention ci-dessus.
+- Le filtre « rendement minimal » (`AdvancedFiltersPanel`, « Rendement brut min. à la mise à prix ») n'affiche
+  **pas** la mention : il dit qu'il s'appuie sur un repère de loyer départemental (indicatif) alors que la
+  fiche, les alertes, exports et statistiques utilisent la carte des loyers de l'ANIL (par commune). La
+  mention ne figure qu'à côté de ce qui vient de l'ANIL.
 - Pied des emails d'alerte dont un motif est « rendement » (`email-alerts.ts`).
 - Rapports : page de partage (`/reports/shared/[token]`) et PDF.
 - Export API des ventes : `opportunity.rentReference` (crédit, détail, lien, `chargesIncluded`) et
@@ -202,6 +211,11 @@ Mécanisme (`isRentBasisSilentPass`, `alert-matches.ts`) :
   correspondances qui n'existaient pas avec le loyer départemental. Les ventes qui correspondaient déjà, les
   alertes sans rendement et les alertes créées ou modifiées depuis (`last_evaluated_at` nul) notifient comme
   avant. Les correspondances tues restent visibles dans la liste des correspondances de l'alerte.
+- Les notifications des correspondances tues sont créées au statut `cancelled` (canaux `in_app` et `email`) : la
+  clé d'unicité (compte, correspondance, genre, canal) bloque toute notification aux passages suivants, même
+  quand la vente est relue hors fenêtre. Une alerte à critère de rendement dont la lecture de l'ANIL échoue
+  (`createRentLookupSession().unavailable(...)`) échoue aussi : elle garde son `last_evaluated_at` et reprend
+  au passage suivant, sans consommer la fenêtre.
 - Retirer la variable ensuite (et redéployer).
 
 **État au 28/10/2026** : la variable est posée en production à `2026-10-27T00:10:00Z` (valeur indiquée par le
@@ -215,8 +229,10 @@ simple `console.error`), et un passage de `smart-alerts` manqué pendant la fen�
 - Le filtre « rendement minimal » de la page de recherche s'exécute dans le navigateur, sur des lignes
   qui n'ont ni le code commune ni accès à `anil_rents` : il utilise encore le loyer départemental. Les
   alertes, statistiques et exports, eux, utilisent la commune. Pour l'aligner : une colonne de loyer de
-  référence dans la vue des ventes (après le stockage du code commune), ou un filtrage côté serveur.
-- Le zonage tendu n'est lu par aucun écran. S'il est affiché, la mention est : « Source : ministère de la
-  Transition écologique, liste des communes selon le zonage TLV (article 232 du code général des impôts),
-  mise à jour du 30 décembre 2025 ; Licence Ouverte 2.0. »
+  référence dans la vue des ventes (après le stockage du code commune), ou un filtrage côté serveur. En
+  attendant, le filtre est étiqueté « à la mise à prix » et sa note dit qu'il peut différer de la fiche.
+- Le zonage tendu s'affiche sur la fiche (`loadSaleHousingTension`, lu au code de la commune parent : 75056,
+  69123, 13055 pour les arrondissements). La mention est : « Source : ministère de la Transition écologique,
+  liste des communes selon le zonage TLV (article 232 du code général des impôts), mise à jour du <date du
+  fichier> ; Licence Ouverte 2.0. »
 - Les sources restent `pending` dans `data_sources` tant qu'une relecture juridique n'est pas enregistrée.

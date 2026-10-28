@@ -11,6 +11,7 @@ import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { Terme } from "@/components/ceiling/Terme";
 import { PepiteHeroBadge } from "@/components/PepiteBadge";
 import { PepiteBlockLazy } from "@/components/sale-detail/PepiteBlockLazy";
+import { RentalMarketBlockLazy } from "@/components/sale-detail/RentalMarketBlockLazy";
 import { ListingPhoto } from "@/components/ListingPhoto";
 import { PhotoCredit } from "@/components/PhotoCredit";
 import { SectorAlertCta } from "@/components/SectorAlertCta";
@@ -65,6 +66,8 @@ import {
   tribunalDisplayName,
 } from "@/lib/seo";
 import { tribunalPagePath } from "@/lib/tribunal-pages";
+import type { HousingTension } from "@/lib/housing-tension";
+import type { RentReference } from "@/lib/rent-reference";
 import type { AuctionSale, SaleVenueType } from "@/lib/types";
 import styles from "./SalePublicPreview.module.css";
 
@@ -248,6 +251,8 @@ export function SalePublicPreview({
   requestedHash = "",
   adjudicationStatisticsEnabled = false,
   openFeeRegimes,
+  rentReference = null,
+  housingTension = null,
   verifyingAccount = false,
 }: {
   saleId: string;
@@ -258,6 +263,9 @@ export function SalePublicPreview({
   adjudicationStatisticsEnabled?: boolean;
   /** Fee regimes whose bid ceiling is open (see `parseOpenFeeRegimes`); absent: every regime whose rules are defined. */
   openFeeRegimes?: readonly FeeRegimeKey[];
+  /** Loyer de la commune (carte ANIL) et zonage tendu, lus par le serveur : bloc « Marché locatif de la commune ». */
+  rentReference?: RentReference | null;
+  housingTension?: HousingTension | null;
   /**
    * Une session est détectée et ses droits sont en cours de lecture : l'inscription n'a pas de sens
    * pour ce visiteur, la page dit qu'elle vérifie son compte au lieu de proposer d'en créer un.
@@ -590,6 +598,18 @@ export function SalePublicPreview({
                     Créez un compte gratuit
                   </Link>
                 }
+              />
+            ) : null}
+
+            {/* Marché locatif de la commune : chargé à la demande, seulement s'il a quelque chose à dire. */}
+            {rentReference?.source.startsWith("anil_") || housingTension ? (
+              <RentalMarketBlockLazy
+                sale={preview}
+                startingPriceEur={price ? preview.starting_price_eur : null}
+                surfaceM2={preview.app_surface_m2 ?? null}
+                reference={rentReference}
+                tension={housingTension}
+                className=""
               />
             ) : null}
 

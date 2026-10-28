@@ -129,14 +129,34 @@ export function rentSegmentFor(sale: {
   return rooms <= 2 ? "apt_1_2" : "apt_3p";
 }
 
+const APARTMENT_PATTERN = /apartment|appart|studio|duplex|triplex|loft|\bflat\b/i;
+const UNKNOWN_TYPE_PATTERN = /^(unknown|inconnu|non pr[eé]cis[eé]?)$/i;
+
+/** Ce que `isRentApplicable` lit d'une vente : son type et, à défaut de type, la surface publiée. */
+export type RentApplicableSale = {
+  property_type?: string | null;
+  app_surface_m2?: number | null;
+  habitable_surface_m2?: number | null;
+  carrez_surface_m2?: number | null;
+};
+
 /**
- * Seul un logement a une référence de loyer : un terrain, un parking, un garage, un local, un
- * bureau ou un immeuble n'en a aucune (« Loyer de référence indisponible »), ni ANIL ni
- * départementale. Un type inconnu reste traité comme un logement.
+ * Seul un logement a une référence de loyer. Liste blanche : une maison ou un appartement (codes du pipeline
+ * `house` et `apartment`, et leurs variantes françaises). Un terrain, un parking, un garage, un local, un bureau ou
+ * un immeuble n'en a aucune (« Loyer de référence indisponible »), ni ANIL ni départementale ; les lots « mixed »
+ * (local mixte) et « other » (annexes, lots divers) non plus. Un type « unknown » ou absent n'a de référence que si la
+ * vente publie une surface (un logement sans type se reconnaît à sa surface, un lot sans rien n'est pas chiffrable).
  */
-export function isRentApplicable(sale: { property_type?: string | null }): boolean {
-  const type = sale.property_type ?? "";
-  return HOUSE_PATTERN.test(type) || !NOT_A_HOME_PATTERN.test(type);
+export function isRentApplicable(sale: RentApplicableSale): boolean {
+  const type = (sale.property_type ?? "").trim();
+  if (HOUSE_PATTERN.test(type)) return true;
+  if (NOT_A_HOME_PATTERN.test(type)) return false;
+  if (APARTMENT_PATTERN.test(type)) return true;
+  if (type === "" || UNKNOWN_TYPE_PATTERN.test(type)) {
+    const surface = sale.app_surface_m2 ?? sale.habitable_surface_m2 ?? sale.carrez_surface_m2;
+    return typeof surface === "number" && Number.isFinite(surface) && surface > 0;
+  }
+  return false;
 }
 
 export function rentReliability(row: {
