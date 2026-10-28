@@ -101,6 +101,23 @@ def test_one_document_is_enough() -> None:
     assert verdict.ok and verdict.basis == ("documents",)
 
 
+def test_a_cadastral_reference_is_enough_without_a_street() -> None:
+    located = sale(
+        source_name="cessions_etat",
+        raw_payload={"cadastre_location": {"candidates": [{"parcels": ["AC 272"]}], "designation": "Parcelle AC 272"}},
+    )
+    assert assess(located).basis == ("cadastre",)
+    in_tree = sale(raw_payload={"source_property_features": {"cadastre_location": {"candidates": [{"parcels": ["B 12"]}]}}})
+    assert assess(in_tree).basis == ("cadastre",)
+    published = sale(raw_payload={"source_blocks": {"reference_cadastrale": "AC 272 et AC 829"}})
+    assert assess(published).basis == ("cadastre",)
+
+
+def test_a_cadastral_block_without_a_parcel_is_not_a_location() -> None:
+    assert not has_listing_minimum(sale(raw_payload={"source_blocks": {"reference_cadastrale": "Ondres"}}))
+    assert not has_listing_minimum(sale(raw_payload={"cadastre_location": {"candidates": [], "designation": "Ondres"}}))
+
+
 def test_another_source_is_enough_by_url_host_or_by_observation() -> None:
     merged = sale(source_urls=[VENCH, PA])
     assert assess(merged).basis == ("other_source",)

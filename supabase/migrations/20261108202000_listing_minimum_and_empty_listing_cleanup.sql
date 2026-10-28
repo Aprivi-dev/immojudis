@@ -3,7 +3,7 @@ begin;
 set local lock_timeout = '5s';
 
 -- Minimum d'une annonce pour exister en base (règle du propriétaire du 28/10/2026) et suppression de celles qui
--- ne l'ont pas. Une annonce qui n'a NI voie ou lieu-dit, NI adresse email de contact, NI pièce, NI autre source
+-- ne l'ont pas. Une annonce qui n'a NI voie ou lieu-dit, NI adresse email de contact, NI parcelle, NI pièce, NI autre source
 -- n'apporte rien. Le pipeline ne l'écrit plus (services/data-pipeline/src/listing_minimum.py, appliqué à
 -- l'écriture, dans resolve_publication_identities) ; cette migration fournit les fonctions SQL qui traduisent la même
 -- règle et qui suppriment l'existant. ELLE NE SUPPRIME RIEN ELLE-MÊME (supabase/README.md, règle 2 : pas de
@@ -20,6 +20,8 @@ set local lock_timeout = '5s';
 --     contact (clé contenant avocat, contact, mail, notaire, gestionnaire, étude ou cabinet). Un nom d'avocat seul, un téléphone seul ne comptent pas (l'agent d'information ne
 --     travaille que par email) ; les adresses que l'agent ne sollicite jamais (juridiction, RPVA, Ordre, CARPA,
 --     noreply, dpo, rgpd) ne comptent pas ;
+--   * cadastre : une ou plusieurs parcelles lisibles (cadastre_location de la fiche, référence cadastrale d'un bloc
+--     source, parcelles de auction_cadastre_parcels trouvées par référence ou à la main) : la vente est localisable à la parcelle, sans voie ;
 --   * pièce : documents (colonne ou raw_payload) non vide ;
 --   * autre source : au moins deux hôtes parmi source_url et source_urls, ou deux sources parmi source_name et
 --     observations, ou une ligne du registre des alias revus ou des fusions.
@@ -174,6 +176,25 @@ as $function$
       ) as block(key, value)
       where block.key ~* '(avocat|contact|mail|notaire|gestionnaire|[ée]tude|cabinet)'
         and app_private.listing_has_contact_email(block.value)
+    )
+    or pg_catalog.jsonb_path_exists(p_sale.raw_payload, '$.cadastre_location.candidates[*].parcels[*]')
+    or pg_catalog.jsonb_path_exists(
+      p_sale.raw_payload, '$.source_property_features.cadastre_location.candidates[*].parcels[*]'
+    )
+    or exists (
+      select 1
+      from pg_catalog.jsonb_each_text(
+        case when pg_catalog.jsonb_typeof(p_sale.raw_payload -> 'source_blocks') = 'object'
+             then p_sale.raw_payload -> 'source_blocks' else '{}'::jsonb end
+      ) as block(key, value)
+      where block.key in ('reference_cadastrale', 'references_cadastrales')
+        and block.value ~* '(^|[^[:alnum:]])[a-z]{1,2}[[:space:]]?[0-9]{1,4}([^[:alnum:]]|$)'
+    )
+    -- Parcelles trouvées par la référence publiée ou à la main. Pas « point_intersection » : une parcelle trouvée sous
+    -- le centre d'une commune (position de repli) n'est pas une localisation du bien.
+    or exists (
+      select 1 from public.auction_cadastre_parcels parcel
+      where parcel.source_url = p_sale.source_url and parcel.match_kind in ('reference_lookup', 'manual')
     )
     or (pg_catalog.jsonb_typeof(p_sale.documents) = 'array' and pg_catalog.jsonb_array_length(p_sale.documents) > 0)
     or (
@@ -428,7 +449,7 @@ comment on function app_private.listing_has_street_or_lieu_dit(text, text) is
 comment on function app_private.listing_has_contact_email(text) is
   'Vrai si le texte contient une adresse email que l''agent d''information peut solliciter (hors juridiction, RPVA, Ordre, CARPA, adresses techniques).';
 comment on function app_private.sale_has_listing_minimum(public.auction_sales) is
-  'Minimum d''une annonce : voie ou lieu-dit, email de contact, pièce, ou autre source. Même règle que services/data-pipeline/src/listing_minimum.py.';
+  'Minimum d''une annonce : voie ou lieu-dit, email de contact, parcelle cadastrale, pièce, ou autre source. Même règle que services/data-pipeline/src/listing_minimum.py.';
 comment on function app_private.delete_empty_listings(integer, boolean) is
   'Supprime les annonces sans voie, sans email de contact, sans pièce et sans autre source, jamais celles qui ont une trace utilisateur. p_apply faux : comptage seul. Lancée par supabase/repairs/20261108202100_delete_empty_listings.sql, jamais par une migration.';
 

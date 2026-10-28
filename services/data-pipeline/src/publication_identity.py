@@ -8,7 +8,7 @@ from itertools import combinations
 
 from psycopg.types.json import Jsonb
 
-from src import listing_minimum
+from src import listing_minimum, rejected_listings
 from src.admission import LICITOR_MULTI_LOT_QUARANTINE, MULTI_LOT_QUARANTINE, quarantine_reason
 from src.collection_evidence import record_sale_decisions
 from src.dedupe import (
@@ -446,8 +446,10 @@ def _record_refusals(connection, refused: list[AuctionSale]) -> None:
     """Décision ``excluded`` des annonces refusées, dans la transaction de publication (jamais bloquante).
 
     ``excluded`` n'est ni en attente ni un échec : la publication du passage reste complète, et l'annonce découverte
-    reste comptée dans l'inventaire de la source.
+    (ou sautée, fiche non relue) reste comptée dans l'inventaire de la source. Les refus après lecture de la fiche
+    sont mémorisés (``rejected_listings``) : la fiche n'est pas relue pendant 7 jours.
     """
+    rejected_listings.remember(connection, [sale for sale in refused if not listing_minimum.assess(sale).detail_unread])
     for run_id, group in listing_minimum.decision_groups(refused).items():
         if not run_id:
             continue

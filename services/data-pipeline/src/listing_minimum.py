@@ -4,7 +4,7 @@ Une annonce qui n'a NI adresse de voie ou de lieu-dit, NI email de contact, NI p
 n'apporte rien : elle n'est pas écrite. Les fonctions de ce module sont pures (aucun réseau, aucune base) ;
 ``assess`` lit une vente normalisée, après l'extraction de sa page de détail.
 
-Quatre preuves, une seule suffit (``ListingMinimum.basis``) :
+Cinq preuves, une seule suffit (``ListingMinimum.basis``) :
 
 * ``street`` : une voie ou un lieu-dit dans ``address``. La voie est celle du géocodage
   (``position_quality.street_name_tokens(..., require_street_type=True)``), le lieu-dit celui de
@@ -15,6 +15,9 @@ Quatre preuves, une seule suffit (``ListingMinimum.basis``) :
   ou un téléphone seul ne suffit pas. Même lecture et mêmes exclusions que l'agent
   (``information_sufficiency.extract_emails`` et ``excluded_contact_reason`` : juridiction, RPVA, Ordre, CARPA,
   adresses techniques ne comptent pas) ;
+* ``cadastre`` : une ou plusieurs parcelles lisibles (``cadastre_location`` de la fiche, ou référence cadastrale
+  publiée dans un bloc source, comme celles de ``cessions_etat`` et des notaires) : la vente est localisable à la
+  parcelle. En base, les parcelles trouvées (``auction_cadastre_parcels``) comptent aussi (règle SQL) ;
 * ``documents`` : au moins une pièce (``documents``) ;
 * ``other_source`` : la vente est rattachée à une autre source (au moins deux hôtes parmi ses URL, ou deux sources
   dans ses observations). Le rattachement à une vente DÉJÀ EN BASE ne se lit pas ici : il se décide à
@@ -64,6 +67,7 @@ from src.information_sufficiency import (
 from src.listing_location import classify_address
 from src.models import AuctionSale
 from src.position_quality import street_name_tokens
+from src.rejected_listings import is_skipped
 from src.source_withdrawal import sale_source_names
 
 LOGGER = logging.getLogger(__name__)
@@ -72,11 +76,14 @@ LOGGER = logging.getLogger(__name__)
 REASON = "insufficient_listing"
 #: Annonce dont la page de détail n'a pas été lue : ni jugée ni écrite, relue au passage suivant.
 REASON_DETAIL_UNREAD = "detail_unread"
+#: Annonce déjà refusée depuis moins de 7 jours dont la fiche n'a pas été relue (src/rejected_listings.py).
+REASON_SKIPPED = "skipped_recently_rejected"
 #: Nombre d'URL d'exemple gardées par source dans le résumé du passage et dans les journaux.
 EXAMPLES_PER_SOURCE = 5
 
 BASIS_STREET = "street"
 BASIS_EMAIL = "email"
+BASIS_CADASTRE = "cadastre"
 BASIS_DOCUMENTS = "documents"
 BASIS_OTHER_SOURCE = "other_source"
 
@@ -149,6 +156,32 @@ def has_contact_email(sale: AuctionSale, blocklist: ContactBlocklist | None = No
     )
 
 
+_CADASTRE_BLOCK_KEYS = ("reference_cadastrale", "references_cadastrales")
+
+
+def _has_parcels(location: object) -> bool:
+    """``cadastre_location`` : au moins une parcelle dans un de ses candidats (cessions, notaires, Avoventes...)."""
+    if not isinstance(location, dict):
+        return False
+    candidates = location.get("candidates")
+    return isinstance(candidates, list) and any(
+        isinstance(candidate, dict) and candidate.get("parcels") for candidate in candidates
+    )
+
+
+def has_cadastral_reference(sale: AuctionSale) -> bool:
+    """Une ou plusieurs parcelles lisibles : la vente se localise à la parcelle, sans voie."""
+    payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
+    features = payload.get("source_property_features")
+    if _has_parcels(payload.get("cadastre_location")) or (
+        isinstance(features, dict) and _has_parcels(features.get("cadastre_location"))
+    ):
+        return True
+    blocks = payload.get("source_blocks") if isinstance(payload.get("source_blocks"), dict) else {}
+    texts = [blocks.get(key) for key in _CADASTRE_BLOCK_KEYS] + [sale.address]
+    return any(classify_address(str(text), sale.city) == "parcel" for text in texts if text)
+
+
 def has_documents(sale: AuctionSale) -> bool:
     return bool(sale.documents)
 
@@ -181,6 +214,7 @@ def assess(sale: AuctionSale, blocklist: ContactBlocklist | None = None) -> List
         for name, found in (
             (BASIS_STREET, has_street_or_lieu_dit(sale.address, sale.city)),
             (BASIS_EMAIL, has_contact_email(sale, blocklist)),
+            (BASIS_CADASTRE, has_cadastral_reference(sale)),
             (BASIS_DOCUMENTS, has_documents(sale)),
             (BASIS_OTHER_SOURCE, has_other_source(sale)),
         )
@@ -221,8 +255,9 @@ class _Tally:
     def reset(self) -> None:
         with self._lock:
             self._seen: set[tuple[str, str]] = set()
-            self._counts: dict[str, Counter[str]] = {REASON: Counter(), REASON_DETAIL_UNREAD: Counter()}
-            self._examples: dict[str, dict[str, list[str]]] = {REASON: {}, REASON_DETAIL_UNREAD: {}}
+            reasons = (REASON, REASON_DETAIL_UNREAD, REASON_SKIPPED)
+            self._counts: dict[str, Counter[str]] = {reason: Counter() for reason in reasons}
+            self._examples: dict[str, dict[str, list[str]]] = {reason: {} for reason in reasons}
 
     def add(self, source: str, url: str, reason: str) -> bool:
         """Compte l'annonce ; vrai si elle est nouvelle pour ce passage ET garde une place parmi les exemples."""
@@ -240,11 +275,13 @@ class _Tally:
     def summary(self) -> dict[str, Any]:
         with self._lock:
             rejected, unread = self._counts[REASON], self._counts[REASON_DETAIL_UNREAD]
+            skipped = self._counts[REASON_SKIPPED]
             return {
                 "total": sum(rejected.values()),
                 "by_source": dict(sorted(rejected.items())),
                 "examples": {source: list(urls) for source, urls in sorted(self._examples[REASON].items())},
                 "detail_unread_not_written": dict(sorted(unread.items())),
+                "skipped_recently_rejected": dict(sorted(skipped.items())),
             }
 
 
@@ -274,7 +311,9 @@ def refuse(sales: Iterable[AuctionSale]) -> list[AuctionSale]:
     """
     refused = list(sales)
     for sale in refused:
-        source, url, reason = _source_of(sale), str(sale.source_url), assess(sale).reason or REASON
+        verdict = assess(sale)
+        source, url = _source_of(sale), str(sale.source_url)
+        reason = REASON_SKIPPED if is_skipped(sale.raw_payload) else verdict.reason or REASON
         if TALLY.add(source, url, reason):  # les premières seulement : l'effectif complet est dans le résumé
             LOGGER.info("Listing not written source=%s url=%s reason=%s", source, url, reason)
     collector = _REJECTED.get()

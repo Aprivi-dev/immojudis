@@ -67,7 +67,22 @@ insert into public.auction_sales (
   ('c7930000-1000-4000-8000-00000000000a', 'listing-793', 'https://www.vench.fr/vente-793-10', 'Manager email block', 'upcoming',
    '2099-01-01 12:00:00Z', '75006 PARIS', 'Paris', '{"source_blocks":{"gestionnaire_email":"gestion@service-exemple.example"}}'),
   ('c7930000-1000-4000-8000-00000000000b', 'listing-793', 'https://www.vench.fr/vente-793-11', 'Email only in the page text', 'upcoming',
-   '2099-01-01 12:00:00Z', '75006 PARIS', 'Paris', '{"source_blocks":{"page_text":"Ecrire a contact@site-exemple.example"}}');
+   '2099-01-01 12:00:00Z', '75006 PARIS', 'Paris', '{"source_blocks":{"page_text":"Ecrire a contact@site-exemple.example"}}'),
+  ('c7930000-1000-4000-8000-00000000000c', 'listing-793', 'https://www.cessions.test/793-12', 'Cadastre location', 'upcoming',
+   '2099-01-01 12:00:00Z', 'Paris', 'Paris', '{"cadastre_location":{"candidates":[{"parcels":["AC 272"]}]}}'),
+  ('c7930000-1000-4000-8000-00000000000d', 'listing-793', 'https://www.cessions.test/793-13', 'Cadastral reference block', 'upcoming',
+   '2099-01-01 12:00:00Z', 'Paris', 'Paris', '{"source_blocks":{"reference_cadastrale":"AC 272 et AC 829"}}'),
+  ('c7930000-1000-4000-8000-00000000000e', 'listing-793', 'https://www.cessions.test/793-14', 'Reference block with a commune only', 'upcoming',
+   '2099-01-01 12:00:00Z', 'Paris', 'Paris', '{"source_blocks":{"reference_cadastrale":"Paris"}}'),
+  ('c7930000-1000-4000-8000-00000000000f', 'listing-793', 'https://www.cessions.test/793-15', 'Parcel found by reference', 'upcoming',
+   '2099-01-01 12:00:00Z', 'Paris', 'Paris', '{}'),
+  ('c7930000-1000-4000-8000-000000000010', 'listing-793', 'https://www.cessions.test/793-16', 'Parcel found under the commune centre', 'upcoming',
+   '2099-01-01 12:00:00Z', 'Paris', 'Paris', '{}');
+
+insert into public.auction_cadastre_parcels (source_url, parcel_key, match_kind)
+values
+  ('https://www.cessions.test/793-15', 'AC272', 'reference_lookup'),
+  ('https://www.cessions.test/793-16', 'AC999', 'point_intersection');
 
 insert into public.user_favorites (user_id, sale_id)
 values ('c7930000-0000-4000-8000-000000000001', 'c7930000-1000-4000-8000-000000000007');
@@ -78,9 +93,10 @@ select is(
   array[
     'c7930000-1000-4000-8000-000000000001', 'c7930000-1000-4000-8000-000000000002',
     'c7930000-1000-4000-8000-000000000007', 'c7930000-1000-4000-8000-000000000008',
-    'c7930000-1000-4000-8000-000000000009', 'c7930000-1000-4000-8000-00000000000b'
+    'c7930000-1000-4000-8000-000000000009', 'c7930000-1000-4000-8000-00000000000b',
+    'c7930000-1000-4000-8000-00000000000e', 'c7930000-1000-4000-8000-000000000010'
   ]::uuid[],
-  'the rule refuses the empty listing, the name and phone one, the favourite, the past one, the same-source twin and an email found only in the page text'
+  'the rule also refuses an email found only in the page text, a commune given as a cadastral reference and a parcel found under the commune centre'
 );
 select is(
   (select array_agg(id order by id) from public.auction_sales s
@@ -88,9 +104,10 @@ select is(
   array[
     'c7930000-1000-4000-8000-000000000003', 'c7930000-1000-4000-8000-000000000004',
     'c7930000-1000-4000-8000-000000000005', 'c7930000-1000-4000-8000-000000000006',
-    'c7930000-1000-4000-8000-00000000000a'
+    'c7930000-1000-4000-8000-00000000000a', 'c7930000-1000-4000-8000-00000000000c',
+    'c7930000-1000-4000-8000-00000000000d', 'c7930000-1000-4000-8000-00000000000f'
   ]::uuid[],
-  'an email, a street, a document or another source is enough, an email in a contact block too'
+  'an email, a street, a document, another source or a cadastral reference (location, block or parcel found by reference) is enough'
 );
 
 -- Suppression ------------------------------------------------------------------------------------------------------
@@ -103,7 +120,7 @@ select is(
 );
 select is(
   (select count(*) from public.auction_sales where source_name = 'listing-793'),
-  11::bigint,
+  16::bigint,
   'the count-only mode deletes nothing'
 );
 select cmp_ok(
@@ -114,7 +131,7 @@ select cmp_ok(
 
 select cmp_ok(
   (app_private.delete_empty_listings(5000, true) ->> 'deleted')::integer,
-  '>=', 5,
+  '>=', 7,
   'the cleanup deletes the empty listings'
 );
 
@@ -123,7 +140,9 @@ select is(
   array[
     'c7930000-1000-4000-8000-000000000003', 'c7930000-1000-4000-8000-000000000004',
     'c7930000-1000-4000-8000-000000000005', 'c7930000-1000-4000-8000-000000000006',
-    'c7930000-1000-4000-8000-000000000007', 'c7930000-1000-4000-8000-00000000000a'
+    'c7930000-1000-4000-8000-000000000007', 'c7930000-1000-4000-8000-00000000000a',
+    'c7930000-1000-4000-8000-00000000000c', 'c7930000-1000-4000-8000-00000000000d',
+    'c7930000-1000-4000-8000-00000000000f'
   ]::uuid[],
   'empty upcoming and past listings are gone; the email, street, document, other-source and favourite ones stay'
 );

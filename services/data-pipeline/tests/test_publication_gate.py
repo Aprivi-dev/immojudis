@@ -98,6 +98,6 @@ def test_run_summary_carries_the_refusal_counters_and_the_old_key_is_gone(monkey
     # L'écriture est simulée ici : le refus lui-même est testé avec la base simulée (test_listing_minimum.py).
     assert upserted
     assert summary["rejected_insufficient_listing"] == {
-        "total": 0, "by_source": {}, "examples": {}, "detail_unread_not_written": {},
+        "total": 0, "by_source": {}, "examples": {}, "detail_unread_not_written": {}, "skipped_recently_rejected": {},
     }
     assert "admission_rejected_insufficient_information" not in summary

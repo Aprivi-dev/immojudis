@@ -911,7 +911,7 @@ sinon une recherche textuelle d'adresse.
 
 Une annonce n'est écrite dans `auction_sales` que si elle a **une voie ou un lieu-dit** dans son adresse, **ou une adresse
 email de contact** (avocat, cabinet, notaire ou étude : l'agent d'information ne travaille que par email, un nom ou un
-téléphone seul ne compte pas), **ou au moins une pièce**, **ou un rattachement à une autre source**. La règle est écrite
+téléphone seul ne compte pas), **ou une ou plusieurs parcelles cadastrales lisibles**, **ou au moins une pièce**, **ou un rattachement à une autre source**. La règle est écrite
 une seule fois, dans `src/listing_minimum.py` (`src/information_sufficiency.py` n'en est que l'accès : interrupteur
 d'urgence, registre de refus de l'agent). Elle s'applique à l'écriture, après la lecture de la fiche de détail, dans
 `publication_identity.resolve_publication_identities` : c'est là qu'on sait si l'annonce se rattache à une ligne
@@ -921,9 +921,12 @@ fait pas disparaître).
 Le run compte les refus dans son résumé (`rejected_insufficient_listing` : total, par source, quelques URL d'exemple,
 et `detail_unread_not_written` pour les fiches non lues). L'annonce refusée reste comptée dans l'inventaire de sa
 source (décision `excluded` dans `auction_collection_items`) : la santé de la source, le ratio de fraîcheur et l'alerte
-de baisse d'inventaire ne bougent pas. **Coût** : une annonce refusée n'étant pas en base, sa fiche de détail est relue
-à chaque passage (aucun cache persistant n'existe dans le pipeline ; le point de contrôle de découverte ne garde que 24 h
-et seulement après un run en échec).
+de baisse d'inventaire ne bougent pas. **Cache de refus** (`src/rejected_listings.py`, table `app_private.rejected_listings`, migration `20261108202200`) : une
+annonce refusée après lecture de sa fiche est mémorisée ; absente de la base, refusée depuis moins de 7 jours et dont la
+vignette (date, prix, statut) n'a pas changé, sa fiche n'est pas relue (`skipped_recently_rejected` dans le résumé). Elle
+reste découverte et garde la décision `excluded` : inventaire et santé de la source inchangés. Après 7 jours elle est
+relue. Conservation 30 jours (purge au chargement du cache). Actif pour un passage autonome, ou avec
+`IMMOJUDIS_REJECTED_LISTING_CACHE=on` ; `off` le coupe. Sans table ni base, les fiches sont relues comme avant.
 
 - `IMMOJUDIS_INFORMATION_SUFFICIENCY_GATE=off` coupe la règle (défaut : active).
 - Le miroir Python du résolveur de contacts (`src/information_sufficiency.py`) est gardé identique au résolveur
