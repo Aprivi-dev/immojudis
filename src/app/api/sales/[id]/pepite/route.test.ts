@@ -132,6 +132,51 @@ describe("GET /api/sales/[id]/pepite", () => {
       mocks.readStored.mockResolvedValue(null);
       expect((await call()).status).toBe(404);
     });
+
+    it("reste ouvert avec un jeton invalide : le niveau « criteria » ne lit pas le compte", async () => {
+      mocks.auth.mockRejectedValue(new Error("Unauthorized: invalid token"));
+      const response = await call("", "jeton-invalide");
+      expect(response.status).toBe(200);
+      expect((await response.json()).access).toBe("criteria");
+      expect(mocks.auth).not.toHaveBeenCalled();
+    });
+
+    it.each(["?view=Detail", "?view=", "?view=criteria", "?view=autre", "?foo=detail"])(
+      "traite %s comme le niveau « criteria » (seul « detail », en minuscules, ouvre le détail)",
+      async (query) => {
+        const response = await call(query);
+        expect(response.status).toBe(200);
+        expect((await response.json()).access).toBe("criteria");
+        expect(mocks.auth).not.toHaveBeenCalled();
+        expect(mocks.assertEntitlement).not.toHaveBeenCalled();
+      },
+    );
+
+    it("lit le premier paramètre view quand il est répété : « detail » d'abord exige un compte", async () => {
+      const detailFirst = await call("?view=detail&view=criteria");
+      expect(detailFirst.status).toBe(401);
+      mocks.auth.mockResolvedValue({ userId: "user-1" });
+      const criteriaFirst = await call("?view=criteria&view=detail");
+      expect(criteriaFirst.status).toBe(200);
+      expect((await criteriaFirst.json()).access).toBe("criteria");
+    });
+
+    it("cherche la vente en minuscules quand l'identifiant est en majuscules", async () => {
+      const response = await GET(new Request("https://example.test/api/sales/x/pepite"), {
+        params: Promise.resolve({ id: saleId.toUpperCase() }),
+      });
+      expect(response.status).toBe(200);
+      expect(mocks.isPublished).toHaveBeenCalledWith(expect.anything(), saleId);
+      expect(mocks.readStored).toHaveBeenCalledWith(saleId);
+    });
+
+    it("répond 404 (pas 500) pour un identifiant non conforme à la RFC 4122 qui n'est pas une pépite", async () => {
+      mocks.isPublished.mockResolvedValue(false);
+      const response = await GET(new Request("https://example.test/api/sales/x/pepite"), {
+        params: Promise.resolve({ id: "11111111-1111-1111-1111-111111111111" }),
+      });
+      expect(response.status).toBe(404);
+    });
   });
 
   describe("niveau « detail » (droit au plafond)", () => {
