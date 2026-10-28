@@ -464,6 +464,30 @@ Après le déploiement :
 5. Optionnel : créer `TRANSACTIONAL_EMAIL_FROM` sur Vercel.
 6. Vérifier la date réelle d'application de `20261103110000` : le repli de l'empreinte des rapports partagés suppose le 03/11/2026 11:00 UTC.
 
+### Mise en production effectuée (28/10/2026)
+
+Faite par le chef d'orchestre, sur délégation du propriétaire.
+
+- **13:30 UTC :** PR #332 fusionnée dans `main` (commit `aa3d92a7`). Le déploiement Vercel de production est prêt à 13:33, avant les migrations. C'est sans effet : les appels du code ont un repli, et la prolongation d'essai n'a pas servi entre-temps.
+- **13:57 UTC :** workflow « Apply Supabase Migrations », une fois la CI de `main` verte. Les 21 migrations `20261108*` sont appliquées en 6 secondes. Une collecte tournait au même moment, sans conflit de verrou.
+- **Contrôles en lecture seule :**
+  - les tables `app_private.trial_extension_notes`, `app_private.manual_grant_notes` et `app_private.commune_code_history` existent ;
+  - les colonnes `estimate_model_version` et `estimate_engine_kind` sont présentes sur `auction_sale_pepites`.
+- **Zonage tendu :** déjà importé (34 875 communes), il n'est pas relancé.
+- **`commune_history` :** le formulaire du workflow d'import ne le proposait pas. L'option est ajoutée (PR #333), et l'import est lancé après sa fusion.
+- **Cache `public-tribunal-activity` :** aucune purge manuelle. La clé v2 repart d'un cache vide, et la collecte invalide l'étiquette à chaque publication.
+- **`ALERT_RENT_BASIS_SWITCH_AT` :** elle n'a plus d'effet passé ses 48 heures. Le propriétaire peut la retirer de Vercel quand il le souhaite, sans urgence.
+- **`/api/health` :** répond 200 mais signale `degraded`. La sonde, plus stricte depuis cette session, voit 5 sources sur 9 sans publication complète depuis plus de 36 heures :
+  - `licitor` : 221 h, 27 échecs ;
+  - `avoventes` : 208 h, délai de requête dépassé ;
+  - `petites_affiches` : 155 h ;
+  - `notaires` : 55 h ;
+  - `vench` : 50 h.
+
+  C'est la panne de collecte décrite ci-dessous, désormais visible.
+
+- **Base Supabase :** après le changement de forfait, la taille de l'instance n'a pas changé (`shared_buffers` 256 Mo, 60 connexions). Le changement de forfait ne modifie pas la puissance de la base, qui se règle à part (Settings → Compute and Disk).
+
 ### Incident relevé pendant l'exécution : redémarrages de la base
 
 Les journaux Supabase (lecture seule) montrent des arrêts brutaux de Postgres (« database system was not properly shut down ») :
