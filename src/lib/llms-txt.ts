@@ -110,7 +110,7 @@ export const LLMS_TXT_DESCRIPTION_MAX = 160;
 /** Au-delà de cette longueur du fichier complet, les articles non pivots passent en titre seul. */
 export const LLMS_TXT_REGROUP_ABOVE_CHARS = 9_500;
 /** Au-delà de ce nombre d'articles, de même. */
-export const LLMS_TXT_REGROUP_ABOVE_ARTICLES = 25;
+const LLMS_TXT_REGROUP_ABOVE_ARTICLES = 25;
 
 /** Les articles pivots, qui gardent leur description : audience, après-adjudication, frais, enchère plafond, cahier des conditions de vente, financement, avocat, types de vente. */
 export const LLMS_TXT_PIVOT_ARTICLES: readonly string[] = [
