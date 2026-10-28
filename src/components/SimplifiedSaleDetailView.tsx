@@ -20,6 +20,7 @@ import {
 import { useSalePepite } from "@/hooks/use-sale-pepite";
 import { adjudicationVersusCeilingLine } from "@/lib/adjudication-vs-ceiling";
 import type { SaleUnlockResult, SaleUnlockStatus } from "@/lib/sale-unlocks";
+import { AuctionScenariosSection } from "@/components/sale-detail/AuctionScenariosSection";
 import { ListingEnvironmentalRisks } from "@/components/sale-detail/ListingEnvironmentalRisks";
 import { ListingWeatherHistory } from "@/components/sale-detail/ListingWeatherHistory";
 import { EXAMPLE_COMMUNE_RISKS } from "@/lib/example-commune-risks";
@@ -62,6 +63,7 @@ import type { RentReference } from "@/lib/rent-reference";
 import type { CeilingUserChoices } from "@/lib/bid-ceiling-defaults";
 import { ceilingGap, valueGapReason } from "@/lib/bid-ceiling-gaps";
 import { buildDpeAnalysis } from "@/lib/dpe-analysis";
+import { CeilingPlanner } from "@/components/ceiling/CeilingPlanner";
 import { LaunchOfferIncludedTag } from "@/components/LaunchOfferIncludedTag";
 import {
   choicesWithoutWorksBreakdown,
@@ -160,26 +162,6 @@ const FinancingSimulator = dynamic(
 );
 const ListingRental = dynamic(() =>
   import("@/components/sale-detail/ListingRental").then((module) => module.ListingRental),
-);
-// Panneau du plafond (onglet « Prix ») et scénarios d'enchères (onglet « Statistiques ») : le plus
-// gros du JavaScript de la fiche, inutile à l'onglet « Aperçu » où l'on arrive. Chargés à l'ouverture
-// de leur onglet ; un lien vers #why-this-ceiling retombe sur #summary le temps du chargement.
-const CeilingPlanner = dynamic(
-  () => import("@/components/ceiling/CeilingPlanner").then((module) => module.CeilingPlanner),
-  {
-    loading: () => <p className="p-6 text-sm text-muted-foreground">Chargement du plafond…</p>,
-  },
-);
-const AuctionScenariosSection = dynamic(
-  () =>
-    import("@/components/sale-detail/AuctionScenariosSection").then(
-      (module) => module.AuctionScenariosSection,
-    ),
-  {
-    loading: () => (
-      <p className="p-6 text-sm text-muted-foreground">Chargement des scénarios d’enchères…</p>
-    ),
-  },
 );
 
 /**
