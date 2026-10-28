@@ -4,6 +4,7 @@ import { pointsToVerify } from "@/lib/search/points-to-verify";
 import { SaleCountdown } from "@/components/SaleCountdown";
 import type * as React from "react";
 import { Fragment, memo, type ComponentProps, useEffect, useMemo, useRef, useState } from "react";
+import { Badge } from "@/components/ui/primitives";
 import { getDisplaySurface } from "@/lib/surface";
 import { SaleVisual } from "@/components/SaleVisual";
 import { ListingPhoto } from "@/components/ListingPhoto";
@@ -36,7 +37,8 @@ import {
   fetchSaleUnlocksOverview,
   removeFavoriteSale as removeFavoriteSaleRequest,
 } from "@/lib/client-api";
-import { occupancyLabel } from "@/lib/format";
+import { formatPricePerM2, occupancyLabel } from "@/lib/format";
+import { pricePerM2 } from "@/lib/geo";
 import { trackProductEvent } from "@/lib/product-events";
 import { stateListingStatus } from "@/lib/property-characteristics";
 import { departmentFromCode } from "@/lib/department-pages";
@@ -382,6 +384,12 @@ export const ListingCard = memo(function ListingCard({
     "property.property_type",
     aiReviewStatus,
   );
+  // Prix au m² de la mise à prix : seulement avec une surface publiée, non estimée et qui n'est pas
+  // celle d'un terrain (le prix d'un terrain au m² ne se compare pas à celui d'un logement).
+  const startingPricePerM2 =
+    !surfaceReviewField && !stateSaleWithoutPrice(sale) && displaySurface.kind === "recorded"
+      ? pricePerM2(sale.starting_price_eur, displaySurface.value)
+      : null;
   const headingSale = {
     ...sale,
     city: cityReview.blocked ? null : sale.city,
@@ -441,7 +449,7 @@ export const ListingCard = memo(function ListingCard({
       onMouseLeave={() => onHover(null)}
       onFocusCapture={() => onHover(sale.id)}
       onBlurCapture={() => onHover(null)}
-      className={`group relative overflow-hidden rounded-lg border bg-white transition-[border-color,box-shadow] [contain-intrinsic-size:none_auto_28rem] [content-visibility:auto] ${active ? "border-gold ring-1 ring-gold" : "border-line hover:border-gold"}`}
+      className={`group relative overflow-hidden rounded-lg border bg-white transition-[border-color,box-shadow] [contain-intrinsic-size:none_auto_28rem] [content-visibility:auto] ${active ? "border-gold-soft ring-1 ring-gold-soft" : "border-line hover:border-gold"}`}
     >
       <Link
         id={`sale-card-${sale.id}`}
@@ -489,16 +497,16 @@ export const ListingCard = memo(function ListingCard({
           <div className="absolute left-3 top-3 z-20 flex flex-wrap items-start gap-1">
             {pepite && <PepiteInfoBadge floodExposed={pepiteFloodExposed} />}
             {unlocked && (
-              <span className="rounded-md bg-gold px-2 py-1 text-[11px] font-bold text-brand-navy shadow-sm">
+              <Badge tone="gold" className="border-gold bg-gold font-bold text-brand-navy">
                 Débloquée
-              </span>
+              </Badge>
             )}
             {/* Deux pastilles au plus sur la photo (docs/design/fondations.md) : « Vu », la moins utile, cède la
                 place quand « Pépite » et « Débloquée » s'appliquent ensemble. */}
             {viewed && !(pepite && unlocked) && (
-              <span className="rounded-md bg-white/95 px-2 py-1 text-[11px] font-bold text-brand-navy shadow-sm">
+              <Badge tone="neutral" className="bg-white/95 font-bold">
                 Vu
-              </span>
+              </Badge>
             )}
           </div>
         )}
@@ -566,6 +574,11 @@ export const ListingCard = memo(function ListingCard({
               </Terme>
             </span>
           )}
+          {startingPricePerM2 != null ? (
+            <span className="text-caption text-ink-soft tabular-nums">
+              · {formatPricePerM2(startingPricePerM2)}
+            </span>
+          ) : null}
         </p>
         <p className="mt-3 flex flex-wrap items-center gap-x-1.5 text-sm text-brand-navy">
           <CalendarDays className="h-3.5 w-3.5 text-ink-soft" aria-hidden />
@@ -612,7 +625,7 @@ export const ListingCard = memo(function ListingCard({
                   event.stopPropagation();
                   onToggleComparison(sale);
                 }}
-                className="relative z-20 min-h-11 rounded px-2 text-xs font-medium hover:bg-surface-tint focus-visible:outline-2 focus-visible:outline-gold-soft disabled:opacity-50"
+                className={`relative z-20 min-h-11 rounded-md border px-3 text-xs font-semibold hover:bg-surface-tint focus-visible:outline-2 focus-visible:outline-gold-soft disabled:opacity-50 ${comparisonSelected ? "border-gold-soft bg-gold/10 text-brand-navy" : "border-brand-navy/55 text-brand-navy"}`}
               >
                 {comparisonSelected ? "Sélectionné ✓" : "Comparer"}
               </button>

@@ -1,8 +1,16 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ComparedSale } from "@/lib/search/sale-comparison";
 
+const signals = vi.hoisted(() => ({
+  pepite: vi.fn(),
+  underRange: vi.fn(),
+}));
+vi.mock("@/lib/search/pepite-filter", () => ({ fetchPepiteSaleIds: () => signals.pepite() }));
+vi.mock("@/lib/search/market-range-filter", () => ({
+  fetchUnderRangeSaleIds: () => signals.underRange(),
+}));
 vi.mock("next/dynamic", () => ({ default: () => () => null }));
 vi.mock("./SavedSaleComparisons", () => ({
   SavedSaleComparisons: () => <div>Comparaisons enregistrées (mock)</div>,
@@ -12,6 +20,10 @@ import { SaleComparisonBar } from "./SaleComparisonBar";
 import SaleComparisonDialog from "./SaleComparisonDialog";
 import { SaleComparisonTable } from "./SaleComparisonTable";
 
+beforeEach(() => {
+  signals.pepite.mockResolvedValue(new Set<string>());
+  signals.underRange.mockResolvedValue(new Set<string>());
+});
 afterEach(cleanup);
 
 function compared(id: string, overrides: Partial<ComparedSale> = {}): ComparedSale {
@@ -60,6 +72,37 @@ describe("SaleComparisonTable", () => {
     expect(occupation.map((cell) => cell.textContent)).toEqual(["Libre", "Occupé"]);
     const department = within(rowOf("Département")).getAllByRole("cell");
     expect(department.map((cell) => cell.textContent)).toEqual(["69", "13"]);
+  });
+
+  it("compare l'écart avec le marché et le repère Pépite, lus dans les listes publiques", async () => {
+    signals.pepite.mockResolvedValue(new Set(["a"]));
+    signals.underRange.mockResolvedValue(new Set(["b"]));
+    render(<SaleComparisonTable returnTo="/sales" items={[compared("A"), compared("B")]} />);
+
+    await waitFor(() =>
+      expect(
+        within(rowOf("Pépite"))
+          .getAllByRole("cell")
+          .map((cell) => cell.textContent),
+      ).toEqual(["Pépite", "Pas de repère"]),
+    );
+    expect(
+      within(rowOf("Écart avec le marché"))
+        .getAllByRole("cell")
+        .map((cell) => cell.textContent),
+    ).toEqual(["Non signalé (voir la fiche)", "Mise à prix sous le marché"]);
+  });
+
+  it("dit « Non disponible » quand les listes publiques ne se lisent pas", async () => {
+    signals.pepite.mockRejectedValue(new Error("503"));
+    signals.underRange.mockRejectedValue(new Error("503"));
+    render(<SaleComparisonTable returnTo="/sales" items={[compared("a")]} />);
+
+    await Promise.resolve();
+    expect(within(rowOf("Pépite")).getAllByRole("cell")[0].textContent).toBe("Non disponible");
+    expect(within(rowOf("Écart avec le marché")).getAllByRole("cell")[0].textContent).toBe(
+      "Non disponible",
+    );
   });
 
   it("reads « Prix non communiqué » for a starting price of 0, never « 0 € »", () => {

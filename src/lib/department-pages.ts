@@ -148,6 +148,41 @@ export function departmentPriceLabel(sale: Pick<DepartmentSale, "venueType">): s
   return isTribunalSale(sale) ? "Mise à prix" : "Prix publié";
 }
 
+/**
+ * Annonces dont la ligne de liste est identique (même commune, type, surface, date, prix et type de
+ * vente) : plusieurs lots d'une même vente, ou des annonces distinctes. La liste publique n'expose ni
+ * numéro de lot ni adresse (fonction `search_auction_sales_preview_v3`) : la page ne dédoublonne rien et
+ * dit seulement « annonce 2 sur 4 de même description », pour que la répétition ne passe pas pour une
+ * erreur. Renvoie, par identifiant, le rang et le nombre d'annonces du groupe (groupes d'au moins 2).
+ */
+export function identicalSaleRanks(
+  sales: ReadonlyArray<
+    Pick<
+      DepartmentSale,
+      "id" | "city" | "propertyType" | "surfaceM2" | "saleDate" | "startingPriceEur" | "venueType"
+    >
+  >,
+): Map<string, { rank: number; of: number }> {
+  const groups = new Map<string, string[]>();
+  for (const sale of sales) {
+    const key = JSON.stringify([
+      sale.city?.trim().toLowerCase() ?? null,
+      sale.propertyType,
+      sale.surfaceM2,
+      sale.saleDate,
+      sale.startingPriceEur,
+      sale.venueType,
+    ]);
+    groups.set(key, [...(groups.get(key) ?? []), sale.id]);
+  }
+  const ranks = new Map<string, { rank: number; of: number }>();
+  for (const ids of groups.values()) {
+    if (ids.length < 2) continue;
+    ids.forEach((id, index) => ranks.set(id, { rank: index + 1, of: ids.length }));
+  }
+  return ranks;
+}
+
 /** Le mot de la date d'une vente, comme `sale-key-facts.ts` (audience, séance, échéance). */
 function saleDateWord(venueType: SaleVenueType | null): string {
   if (venueType === "tribunal") return "audience";

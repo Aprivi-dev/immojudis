@@ -16,6 +16,7 @@ import {
   departmentSaleDateText,
   departmentSearchPath,
   departmentSlug,
+  identicalSaleRanks,
   indexableDepartments,
   isDepartmentPageIndexable,
   medianOf,
@@ -459,5 +460,24 @@ describe("departmentItemListStructuredData", () => {
 
   it("garde l'index à l'adresse annoncée", () => {
     expect(DEPARTMENT_PAGES_PATH).toBe("/ventes-encheres-immobilieres");
+  });
+});
+
+describe("identicalSaleRanks", () => {
+  it("numérote les annonces de même description, sans rien dédoublonner", () => {
+    const same = { city: "Marseille", surfaceM2: 58, startingPriceEur: 40_000 };
+    const sales = [
+      sale("a", same),
+      sale("b", same),
+      sale("c", { ...same, startingPriceEur: 41_000 }),
+      sale("d", same),
+    ];
+    const ranks = identicalSaleRanks(sales);
+
+    expect(ranks.get("a")).toEqual({ rank: 1, of: 3 });
+    expect(ranks.get("b")).toEqual({ rank: 2, of: 3 });
+    expect(ranks.get("d")).toEqual({ rank: 3, of: 3 });
+    expect(ranks.has("c")).toBe(false);
+    expect(sales).toHaveLength(4);
   });
 });

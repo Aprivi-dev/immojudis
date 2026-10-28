@@ -419,6 +419,39 @@ describe("useful public discovery", () => {
       );
     });
 
+    it("montre le prix au m² de la mise à prix quand la surface est publiée, et seulement alors", () => {
+      renderCard({ starting_price_eur: 60_000, app_surface_m2: 50 });
+      expect(screen.getByText(/1\s?200\s€\/m²/)).toBeTruthy();
+      cleanup();
+      renderCard({ starting_price_eur: 60_000, app_surface_m2: null });
+      expect(screen.queryByText(/€\/m²/)).toBeNull();
+      cleanup();
+      renderCard({ starting_price_eur: 0, app_surface_m2: 50 });
+      expect(screen.queryByText(/€\/m²/)).toBeNull();
+    });
+
+    it("donne à « Comparer » une bordure visible, qui change à la sélection", () => {
+      const onToggle = vi.fn();
+      render(
+        <QueryClientProvider client={new QueryClient()}>
+          <ListingCard
+            sale={cardSale()}
+            returnTo="/sales"
+            locked={false}
+            analysisLocked={false}
+            active={false}
+            onHover={vi.fn()}
+            onSelect={vi.fn()}
+            onToggleComparison={onToggle}
+            comparisonSelected={false}
+          />
+        </QueryClientProvider>,
+      );
+      const button = screen.getByRole("button", { name: /^Comparer / });
+      expect(button.className).toContain("border");
+      expect(button.className).toContain("border-brand-navy/55");
+    });
+
     it("n'affiche rien pour une carte complète", () => {
       renderCard({});
       expect(screen.queryByRole("button", { name: /à vérifier/ })).toBeNull();
