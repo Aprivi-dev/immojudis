@@ -114,7 +114,13 @@ OU user_profiles.account_tier = premium
 OU user_subscriptions.plan_code = analyse
    ET status dans {trialing, active}
    ET période non expirée
+OU essai gratuit de 7 jours à l’inscription en cours
+   (interrupteur app_private.launch_offer ouvert
+    ET app_private.launch_offer_account_eligible(compte), c’est-à-dire
+    app_private.signup_trial_ends_at(compte) dans le futur)
 ```
+
+L’accès Analyse est donc **un abonnement OU un essai en cours** (mise à jour du 28/10/2026 : l’instantané du 30 juillet ignorait l’essai ; voir `docs/runbooks/offre-de-lancement.md`). L’essai ne crée aucune ligne d’abonnement ni de profil premium : il est calculé par les fonctions d’accès (`app_private.has_active_analysis_access`, `app_private.current_user_has_premium_access`) et, côté application, par `resolvePlanEntitlements`. Une prolongation par l’administrateur, elle, est écrite comme un abonnement `analyse` en `trialing` (`docs/runbooks/prolongation-essai.md`).
 
 Les points d’intégration sont :
 
