@@ -15620,6 +15620,29 @@ export type Database = {
       };
       release_cron_lease: { Args: { p_name: string; p_token: string }; Returns: boolean };
       release_sale_flood_risk_lease: { Args: { p_token: string }; Returns: boolean };
+      extend_trial_with_note: {
+        Args: {
+          p_ends_at: string;
+          p_expected_updated_at?: string;
+          p_granted_by: string;
+          p_metadata: Json;
+          p_note: string;
+          p_user_id: string;
+        };
+        Returns: string;
+      };
+      grant_manual_subscription: {
+        Args: {
+          p_current_period_end: string | null;
+          p_granted_by: string;
+          p_metadata: Json;
+          p_note?: string;
+          p_plan_code: string;
+          p_status: string;
+          p_user_id: string;
+        };
+        Returns: undefined;
+      };
       record_trial_extension: {
         Args: { p_ends_at: string; p_granted_by: string; p_note: string; p_user_id: string };
         Returns: string;

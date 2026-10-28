@@ -362,10 +362,11 @@ export async function extendAdminSignupTrials({
 }
 
 /**
- * Écrit une prolongation : le motif d'abord, dans la table privée (une prolongation sans motif ne
- * doit jamais exister), puis la ligne d'essai. La mise à jour d'une ligne existante est conditionnée
- * à son `updated_at` lu : un webhook Stripe arrivé entre la lecture et l'écriture n'est pas écrasé
- * (`changed`). L'insertion d'une première ligne échoue si une autre est apparue entre-temps.
+ * Écrit une prolongation : le motif (table privée) et la ligne d'essai dans une même transaction
+ * (`extend_trial_with_note`). La mise à jour d'une ligne existante est conditionnée à son `updated_at`
+ * lu : un webhook Stripe arrivé entre la lecture et l'écriture n'est pas écrasé (`changed`, sans motif
+ * écrit). Tant que la fonction est absente, repli sur l'ancien chemin : motif d'abord (une prolongation
+ * sans motif ne doit jamais exister), puis la ligne.
  */
 async function writeTrialExtension({
   adminId,
@@ -389,14 +390,6 @@ async function writeTrialExtension({
     return "failed" as const;
   };
 
-  const recorded = await supabaseAdmin.rpc("record_trial_extension", {
-    p_user_id: userId,
-    p_granted_by: adminId,
-    p_ends_at: endsAt,
-    p_note: note,
-  });
-  if (recorded.error) return fail("note", recorded.error);
-
   const metadata = asJson(
     withManualGrant(subscription?.metadata, {
       source: TRIAL_EXTENSION_SOURCE,
@@ -409,6 +402,30 @@ async function writeTrialExtension({
       note_recorded: true,
     }),
   );
+
+  // Une seule fonction écrit le motif et la ligne dans la même transaction (aucun motif orphelin si la ligne
+  // échoue, aucun doublon à la relance). Absente (migration 20261108190000 pas encore appliquée) : ancien chemin.
+  const extended = await supabaseAdmin.rpc("extend_trial_with_note", {
+    p_user_id: userId,
+    p_granted_by: adminId,
+    p_ends_at: endsAt,
+    p_note: note,
+    p_metadata: metadata,
+    p_expected_updated_at: subscription?.updated_at ?? undefined,
+  });
+  if (!extended.error) {
+    if (extended.data === "written" || extended.data === "changed") return extended.data;
+    return fail("extend", { message: "Réponse inattendue de extend_trial_with_note." });
+  }
+  if (!isMissingRpcError(extended.error)) return fail("extend", extended.error);
+
+  const recorded = await supabaseAdmin.rpc("record_trial_extension", {
+    p_user_id: userId,
+    p_granted_by: adminId,
+    p_ends_at: endsAt,
+    p_note: note,
+  });
+  if (recorded.error) return fail("note", recorded.error);
 
   if (!subscription) {
     const { error } = await supabaseAdmin.from("user_subscriptions").insert({
