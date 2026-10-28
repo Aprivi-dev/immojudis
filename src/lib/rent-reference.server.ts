@@ -10,12 +10,19 @@ import {
   type RentReference,
   type RentSegment,
 } from "@/lib/rent-reference";
-import { arrondissementCode, normalizeCommuneCode, saleCommuneCode } from "@/lib/sale-commune-code";
+import { HOUSING_ZONINGS, type HousingTension, type HousingZoning } from "@/lib/housing-tension";
+import {
+  arrondissementCode,
+  normalizeCommuneCode,
+  parentCommuneCode,
+  saleCommuneCode,
+} from "@/lib/sale-commune-code";
 import type { AuctionSale } from "@/lib/types";
 
 // Lecture serveur de la carte des loyers de l'ANIL (`anil_rents`, table privée, rôle de service).
 // Jamais importé par le navigateur : il reçoit la référence déjà résolue, en propriété. C'est, avec
-// les types générés et les tests, le seul fichier qui nomme `anil_rents` (invariant de sécurité).
+// les types générés et les tests, le seul fichier qui nomme `anil_rents` (invariant de sécurité) ; il lit aussi
+// le zonage « zone tendue » (`commune_housing_tension`, même règle).
 
 export type RentSaleFacts = Pick<AuctionSale, "id" | "department" | "property_type"> &
   Partial<Pick<AuctionSale, "rooms_count" | "postal_code">> & { raw_payload?: unknown };
@@ -36,10 +43,12 @@ const CACHE_MAX_ENTRIES = 20_000;
 type Cached<T> = { value: T; expiresAt: number };
 const communeCodeCache = new Map<string, Cached<string | null>>();
 const anilReferenceCache = new Map<string, Cached<RentReference | null>>();
+const housingTensionCache = new Map<string, Cached<HousingTension | null>>();
 
 export function resetRentReferenceCachesForTests(): void {
   communeCodeCache.clear();
   anilReferenceCache.clear();
+  housingTensionCache.clear();
 }
 
 function fromCache<T>(cache: Map<string, Cached<T>>, key: string, now: number): Cached<T> | null {
@@ -351,6 +360,67 @@ export async function loadSaleRentReference(
     return (await loadRentLookup([facts]))(facts);
   } catch (error) {
     console.error("[rent-reference] sale rent reference unavailable", error);
+    return null;
+  }
+}
+
+/**
+ * Zonage « zone tendue » (TLV) de la commune d'une vente, pour la fiche. Le code vient de la même résolution que le
+ * loyer (`auction_sale_communes`, puis les champs bruts), ramené à la commune parent : un arrondissement de Paris, Lyon
+ * ou Marseille se lit sur 75056, 69123 ou 13055, les seules lignes de la table. `null` : commune inconnue, absente du
+ * fichier ou base indisponible (la fiche n'affiche alors rien). Mémorisé 6 heures, comme le reste.
+ */
+export async function loadSaleHousingTension(
+  sale: string | RentSaleFacts,
+): Promise<HousingTension | null> {
+  if (!adminConfigured()) return null;
+  try {
+    let facts: RentSaleFacts;
+    if (typeof sale === "string") {
+      const { data, error } = await supabaseAdmin
+        .from("auction_sales")
+        .select("id,department,property_type,rooms_count,postal_code")
+        .eq("id", sale)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) return null;
+      facts = data;
+    } else {
+      facts = sale;
+    }
+    const codes = await resolveCommuneCodes([facts]);
+    const parent = parentCommuneCode(codes.get(facts.id.toLowerCase()));
+    if (!parent) return null;
+    const now = Date.now();
+    const cached = fromCache(housingTensionCache, parent, now);
+    if (cached) return cached.value;
+    const { data, error } = await supabaseAdmin
+      .from("commune_housing_tension")
+      .select("commune_code,zoning_post_decree,decree_reference,source_updated_on,source_url")
+      .eq("commune_code", parent)
+      .maybeSingle();
+    if (error) {
+      // Avant la migration 20261107100100 : pas de zonage, sans bruit.
+      if (error.code === "42P01" || error.code === "PGRST205") return null;
+      throw error;
+    }
+    const zoning = HOUSING_ZONINGS.find(
+      (item): item is HousingZoning => item === data?.zoning_post_decree,
+    );
+    const value: HousingTension | null =
+      data && zoning
+        ? {
+            communeCode: data.commune_code,
+            zoning,
+            decreeReference: data.decree_reference || null,
+            sourceUpdatedOn: data.source_updated_on,
+            sourceUrl: data.source_url || null,
+          }
+        : null;
+    remember(housingTensionCache, parent, value, now);
+    return value;
+  } catch (error) {
+    console.error("[rent-reference] housing tension unavailable", error);
     return null;
   }
 }

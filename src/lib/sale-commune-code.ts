@@ -58,6 +58,21 @@ export function arrondissementCode(
   return communeCode;
 }
 
+/**
+ * Code de la commune « parent » : un arrondissement de Paris (75101 à 75120, dont 75116), de Lyon (69381 à 69389) ou
+ * de Marseille (13201 à 13216) rend 75056, 69123 ou 13055 ; tout autre code est rendu tel quel. Le zonage tendu et
+ * les codes de GASPAR sont tenus à la commune, jamais à l'arrondissement (`commune_housing_tension` ne contient que
+ * les trois parents).
+ */
+export function parentCommuneCode(code: string | null | undefined): string | null {
+  const normalized = normalizeCommuneCode(code);
+  if (!normalized) return null;
+  if (/^751(0[1-9]|1\d|20)$/.test(normalized)) return "75056";
+  if (/^6938[1-9]$/.test(normalized)) return "69123";
+  if (/^132(0[1-9]|1[0-6])$/.test(normalized)) return "13055";
+  return normalized;
+}
+
 export function saleCommuneCode(sale: {
   raw_payload?: unknown;
   postal_code?: string | null;
