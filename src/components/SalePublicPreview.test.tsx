@@ -1097,6 +1097,27 @@ describe("SalePublicPreview : repère « Pépite »", () => {
     expect(pepiteMocks.pepite).not.toHaveBeenCalled();
   });
 
+  it("réserve la place du bloc tant que les critères d'une pépite arrivent", async () => {
+    pepiteMocks.pepite.mockReturnValue(null);
+    pepiteMocks.status = "loading";
+    try {
+      await renderPreview({ pepite: true });
+      expect(screen.getByTestId("pepite-block-loading").className).toContain("min-h-44");
+    } finally {
+      pepiteMocks.status = null;
+    }
+    cleanup();
+    // Plus une pépite (404) : aucune place réservée, la page ne garde aucun trou.
+    pepiteMocks.pepite.mockReturnValue(null);
+    pepiteMocks.status = "absent";
+    try {
+      await renderPreview({ pepite: true });
+      expect(screen.queryByTestId("pepite-block-loading")).toBeNull();
+    } finally {
+      pepiteMocks.status = null;
+    }
+  });
+
   it("pose la pastille et « Pourquoi ? » en tête, puis le bloc verrouillé avec « Créez un compte gratuit »", async () => {
     pepiteMocks.pepite.mockReturnValue(LOCKED);
     await renderPreview({ pepite: true });

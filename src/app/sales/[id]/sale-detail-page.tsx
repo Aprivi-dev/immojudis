@@ -415,6 +415,7 @@ function SaleDetailContent({
         housingTension={housingTension}
         unlockStatus={unlockQuery.data ?? null}
         justUnlocked={justUnlocked}
+        pepiteKnown={serverPreview?.pepite}
       />
     );
   }
@@ -449,6 +450,7 @@ function SaleDetailContent({
         housingTension={housingTension}
         unlockStatus={unlockQuery.data ?? null}
         onSaleUnlocked={handleSaleUnlocked}
+        pepiteKnown={serverPreview?.pepite}
       />
     </>
   ) : (
@@ -459,6 +461,7 @@ function SaleDetailContent({
       openFeeRegimes={openFeeRegimes}
       rentReference={rentReference}
       housingTension={housingTension}
+      pepiteKnown={serverPreview?.pepite}
     />
   );
 }

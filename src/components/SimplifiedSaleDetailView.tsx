@@ -197,6 +197,11 @@ type SaleDetailProps = {
   /** Zonage « zone tendue » de la commune, lu par le serveur ; `null` : inconnu. */
   housingTension?: HousingTension | null;
   aiReviewProjections?: readonly AiReviewProjectionReadModel[] | null;
+  /**
+   * Repère « Pépite » déjà lu par le serveur avec la fiche publique (`preview.pepite`, vrai
+   * seulement pour une pépite) : la liste de toutes les pépites n'est alors pas relue côté client.
+   */
+  pepiteKnown?: boolean;
   /** Where the account stands this month; drives the « Débloquer cette vente » panel. */
   unlockStatus?: SaleUnlockStatus | null;
   /** The sale was unlocked on this page a moment ago: the result takes the focus. */
@@ -217,6 +222,7 @@ export function AnalysisSaleDetailView({
   rentReference = null,
   housingTension = null,
   aiReviewProjections = null,
+  pepiteKnown,
 }: SaleDetailProps) {
   return (
     <SimplifiedSaleDetailView
@@ -233,6 +239,7 @@ export function AnalysisSaleDetailView({
       rentReference={rentReference}
       housingTension={housingTension}
       aiReviewProjections={aiReviewProjections}
+      pepiteKnown={pepiteKnown}
       access="analysis"
     />
   );
@@ -249,6 +256,7 @@ export function FreeSaleDetailView({
   unlockStatus = null,
   justUnlocked = false,
   onSaleUnlocked,
+  pepiteKnown,
 }: SaleDetailProps) {
   return (
     <SimplifiedSaleDetailView
@@ -263,6 +271,7 @@ export function FreeSaleDetailView({
       unlockStatus={unlockStatus}
       justUnlocked={justUnlocked}
       onSaleUnlocked={onSaleUnlocked}
+      pepiteKnown={pepiteKnown}
       access="discovery"
     />
   );
@@ -279,6 +288,7 @@ export function UnlockedSaleDetailView({
   aiReviewProjections = null,
   unlockStatus = null,
   justUnlocked = false,
+  pepiteKnown,
 }: SaleDetailProps) {
   return (
     <SimplifiedSaleDetailView
@@ -292,6 +302,7 @@ export function UnlockedSaleDetailView({
       aiReviewProjections={aiReviewProjections}
       unlockStatus={unlockStatus}
       justUnlocked={justUnlocked}
+      pepiteKnown={pepiteKnown}
       access="unlocked"
     />
   );
@@ -318,6 +329,7 @@ function SaleDetailWorkspace({
   unlockStatus = null,
   justUnlocked = false,
   onSaleUnlocked,
+  pepiteKnown,
   access,
 }: SaleDetailProps & { access: SaleDetailAccess }) {
   const [personalWorksBudget, setPersonalWorksBudget] = useState<number | null>(null);
@@ -339,6 +351,7 @@ function SaleDetailWorkspace({
     saleId: sale.id,
     view: fullData ? "detail" : "criteria",
     userKey: user?.id ?? "guest-demo",
+    known: pepiteKnown,
     enabled: !publicDemo && !authLoading,
   });
   const aiReviewQuery = useQuery({

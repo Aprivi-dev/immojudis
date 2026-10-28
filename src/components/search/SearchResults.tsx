@@ -96,6 +96,16 @@ const LIST_MAP_THUMBNAIL = { width: 320, height: 240, framingWidth: 512 } as con
  */
 export const EAGER_IMAGE_COUNT = 1;
 
+/**
+ * Rang de la carte dont l'image est prioritaire (chargée tout de suite, `fetchPriority="high"`) :
+ * la première qui a une photo, pas forcément la carte 0, qui peut n'avoir qu'une case neutre et
+ * perdrait le seul rang prioritaire. Aucune photo dans la liste : la carte 0, comme avant.
+ */
+export function eagerImageIndex(sales: readonly Pick<AuctionSale, "media">[]): number {
+  const withPhoto = sales.findIndex((sale) => propertyImages(sale.media).length > 0);
+  return withPhoto === -1 ? 0 : withPhoto;
+}
+
 export function SearchResultsList({
   sales,
   sponsoredPlacement,
@@ -159,6 +169,7 @@ export function SearchResultsList({
 }) {
   const { user, loading: authLoading } = useAuth();
   const saleIds = useMemo(() => sales.map(({ id }) => id), [sales]);
+  const firstEagerIndex = useMemo(() => eagerImageIndex(sales), [sales]);
   const favoriteQueryIds = useMemo(() => [...saleIds].sort(), [saleIds]);
   const favoriteQuery = useQuery({
     queryKey: queryKeys.searchFavoriteStatus(user?.id ?? null, favoriteQueryIds),
@@ -247,7 +258,9 @@ export function SearchResultsList({
                   <ListingCard
                     sale={sale}
                     returnTo={returnTo}
-                    eagerImage={index < EAGER_IMAGE_COUNT}
+                    eagerImage={
+                      index >= firstEagerIndex && index < firstEagerIndex + EAGER_IMAGE_COUNT
+                    }
                     locked={locked}
                     verifying={verifying}
                     analysisLocked={analysisLocked}

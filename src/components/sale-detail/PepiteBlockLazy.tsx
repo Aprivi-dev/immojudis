@@ -8,7 +8,17 @@ import { useSalePepiteState } from "@/hooks/use-sale-pepite";
 import { PEPITE_ANCHOR, PEPITE_METHOD_LINK_LABEL, PEPITE_METHOD_PATH } from "@/lib/pepite-copy";
 import { PepiteViewTracker } from "./PepiteViewTracker";
 
-const PepiteBlock = dynamic(() => import("./PepiteBlock").then((module) => module.PepiteBlock));
+/**
+ * Place réservée au bloc (environ 256 px : titre, cinq tests, contrôle d'inondation) tant que ses
+ * critères et son code arrivent : sans elle, il s'insère entre deux cartes et pousse la suite de la page.
+ */
+const RESERVED_SPACE = (
+  <div aria-hidden="true" className="min-h-64" data-testid="pepite-reserved" />
+);
+
+const PepiteBlock = dynamic(() => import("./PepiteBlock").then((module) => module.PepiteBlock), {
+  loading: () => RESERVED_SPACE,
+});
 
 /**
  * Bloc « Pourquoi cette pépite » de l'aperçu public (version verrouillée : les noms des critères, jamais un
