@@ -1,6 +1,8 @@
 import { getMapboxAccessToken } from "@/lib/mapbox";
-import { computeAcquisitionCosts } from "@/lib/profitability";
+import { computeAcquisitionCosts, type AcquisitionCostOptions } from "@/lib/profitability";
 import { defaultRentPerM2, isRentApplicable, type RentReference } from "@/lib/rent-reference";
+import { saleYieldFeeOptions } from "@/lib/sale-yield-fees";
+import type { AuctionSale } from "@/lib/types";
 
 export type GeoPoint = { lat: number; lng: number; label?: string };
 
@@ -114,28 +116,31 @@ async function geocodeAddressWithFrenchApi(q: string): Promise<GeoPoint | null> 
  *
  * `rent` : la référence de loyer de la vente (carte ANIL à la commune, voir `rent-reference.server.ts`) ;
  * absente, le loyer départemental sert de repli.
+ * `fees` : les frais du régime de la vente (`saleYieldFeeOptions`) ; absents, ceux du tribunal.
  */
 export function estimateGrossYieldPct(
   price: number | null | undefined,
   surface: number | null | undefined,
   department: string | null | undefined,
   rent?: RentReference | null,
+  fees?: AcquisitionCostOptions,
 ): number | null {
   if (!price || !surface || price <= 0 || surface <= 0) return null;
   const rentPerM2 = defaultRentPerM2(department, rent);
   if (rentPerM2 == null) return null;
   const annualRent = surface * rentPerM2 * 12;
-  const { totalCost } = computeAcquisitionCosts({ price, department });
+  const { totalCost } = computeAcquisitionCosts({ ...fees, price, department });
   return totalCost > 0 ? (annualRent / totalCost) * 100 : null;
 }
 
 /**
  * Rendement brut indicatif d'une vente : `null` pour un bien qui n'est pas un logement (terrain,
  * parking, local…), sans loyer de référence ; sinon `estimateGrossYieldPct` avec la référence de la
- * vente (carte ANIL à la commune) ou, à défaut, le loyer départemental.
+ * vente (carte ANIL à la commune) ou, à défaut, le loyer départemental, et les frais du RÉGIME de la vente
+ * (tribunal, bougie, vente interactive : `saleYieldFeeOptions`), comme le rapport.
  */
 export function estimateSaleGrossYieldPct(
-  sale: {
+  sale: Partial<AuctionSale> & {
     starting_price_eur?: number | null;
     department?: string | null;
     property_type?: string | null;
@@ -144,7 +149,13 @@ export function estimateSaleGrossYieldPct(
   rent?: RentReference | null,
 ): number | null {
   if (!isRentApplicable(sale)) return null;
-  return estimateGrossYieldPct(sale.starting_price_eur, surface, sale.department, rent);
+  return estimateGrossYieldPct(
+    sale.starting_price_eur,
+    surface,
+    sale.department,
+    rent,
+    saleYieldFeeOptions(sale),
+  );
 }
 
 export function pricePerM2(
