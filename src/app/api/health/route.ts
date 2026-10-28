@@ -2,6 +2,7 @@ import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { errorDetailForLog } from "@/lib/api-errors";
 import { apiJson, createApiRequestContext } from "@/lib/api-observability";
+import { asRecord } from "@/lib/guards";
 import {
   HEALTH_CACHE_SECONDS,
   buildHealthReport,
@@ -18,7 +19,8 @@ export const dynamic = "force-dynamic";
  * `degraded` dans le corps, avec l'âge du dernier succès de `operational-health` (dégradé au-delà de
  * 45 min) et l'état de la collecte des sources ACTIVÉES (dégradé quand l'une d'elles n'a pas de
  * publication complète depuis plus de 36 h, ou n'en a jamais eu) : un retard de collecte ne rend plus la
- * route 503 en permanence. Publique et sans détail sensible (voir `src/lib/health-status.ts`). Voir
+ * route 503 en permanence. `scheduledJobs` donne le nombre de tâches planifiées en retard (alerte `cron.stale`),
+ * sans nom : il distingue la panne d'une tâche du retard ancien d'une source. Publique et sans détail sensible (voir `src/lib/health-status.ts`). Voir
  * docs/operations/supervision-externe.md.
  *
  * La route est publique : le CDN garde la réponse 30 s (`s-maxage`), ce qui borne les lectures de la
@@ -31,7 +33,7 @@ export async function GET(request: Request) {
   const context = createApiRequestContext(request, "api.health");
   const now = new Date();
   try {
-    const [health, sources] = await Promise.all([
+    const [health, sources, staleJobs] = await Promise.all([
       supabaseAdmin
         .from("operational_job_runs")
         .select("finished_at")
@@ -45,14 +47,29 @@ export async function GET(request: Request) {
         .from("auction_source_state")
         .select("last_publication_complete_at")
         .eq("enabled", true),
+      // Les tâches planifiées en retard : l'alerte `cron.stale` (même liste que l'alerte, SQL), son nombre seul.
+      supabaseAdmin
+        .from("operational_alerts")
+        .select("details")
+        .eq("alert_key", "cron.stale")
+        .eq("status", "open")
+        .maybeSingle(),
     ]);
     if (health.error) throw health.error;
     if (sources.error) throw sources.error;
+    if (staleJobs.error) throw staleJobs.error;
+    const staleJobCount = asRecord(staleJobs.data?.details).stale_job_count;
 
     const report = buildHealthReport({
       now,
       lastOperationalHealthSuccessAt: health.data?.finished_at ?? null,
       enabledSourceCompletions: (sources.data ?? []).map((row) => row.last_publication_complete_at),
+      // Alerte ouverte sans nombre lisible : au moins une tâche en retard.
+      staleCronJobCount: staleJobs.data
+        ? typeof staleJobCount === "number"
+          ? staleJobCount
+          : 1
+        : 0,
     });
     return apiJson(
       report,

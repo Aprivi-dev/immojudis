@@ -54,9 +54,11 @@ function ago(milliseconds: number): string {
 function answer({
   healthAt,
   collections,
+  staleJobs,
 }: {
   healthAt: string | null;
   collections: Array<string | null>;
+  staleJobs?: number;
 }) {
   mocks.results.operational_job_runs = {
     data: healthAt ? { finished_at: healthAt } : null,
@@ -66,6 +68,14 @@ function answer({
     data: collections.map((at) => ({ last_publication_complete_at: at })),
     error: null,
   } satisfies Result;
+  // L'alerte `cron.stale` : `staleJobs` tâches en retard (`undefined` : l'alerte n'est pas ouverte).
+  mocks.results.operational_alerts = {
+    data:
+      staleJobs === undefined
+        ? null
+        : { details: { stale_job_count: staleJobs, stale_jobs: ["x"] } },
+    error: null,
+  };
 }
 
 describe("/api/health", () => {
@@ -98,7 +108,43 @@ describe("/api/health", () => {
       checkedAt: NOW.toISOString(),
       operationalHealth: { ageMinutes: 7, maxMinutes: 45, ok: true },
       collection: { ageHours: 5, maxHours: 36, ok: true, enabledSources: 2, lateSources: 0 },
+      scheduledJobs: { lateCount: 0, ok: true },
     });
+  });
+
+  it("dit combien de tâches planifiées sont en retard (alerte cron.stale), sans en donner le nom ni changer le statut", async () => {
+    answer({ healthAt: ago(60_000), collections: [ago(3_600_000)], staleJobs: 2 });
+    const response = await call();
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.scheduledJobs).toEqual({ lateCount: 2, ok: false });
+    expect(body.status).toBe("ok");
+    expect(JSON.stringify(body)).not.toMatch(/stale_jobs|sale-pepites|sale-flood-risk/);
+  });
+
+  it("une alerte cron.stale ouverte sans nombre lisible compte pour une tâche en retard", async () => {
+    answer({ healthAt: ago(60_000), collections: [ago(3_600_000)] });
+    mocks.results.operational_alerts = { data: { details: {} }, error: null };
+    expect((await (await call()).json()).scheduledJobs).toEqual({ lateCount: 1, ok: false });
+  });
+
+  it("lit l'alerte cron.stale ouverte, et rien d'autre dans la table des alertes", async () => {
+    answer({ healthAt: ago(60_000), collections: [ago(3_600_000)] });
+    await call();
+    const reads = mocks.calls.filter((item) => item.table === "operational_alerts");
+    expect(reads.filter((item) => item.method === "eq").map((item) => item.args)).toEqual([
+      ["alert_key", "cron.stale"],
+      ["status", "open"],
+    ]);
+    expect(reads.find((item) => item.method === "select")?.args).toEqual(["details"]);
+  });
+
+  it("est indisponible (503) quand la lecture de l'alerte répond une erreur", async () => {
+    answer({ healthAt: ago(60_000), collections: [ago(3_600_000)] });
+    mocks.results.operational_alerts = { data: null, error: { message: "boom secret" } };
+    const response = await call();
+    expect(response.status).toBe(503);
+    expect(JSON.stringify(await response.json())).not.toContain("secret");
   });
 
   it("lit les deux sources attendues, et seulement les sources activées", async () => {
@@ -106,6 +152,7 @@ describe("/api/health", () => {
     await call();
     expect(mocks.from.mock.calls.map(([table]) => table).sort()).toEqual([
       "auction_source_state",
+      "operational_alerts",
       "operational_job_runs",
     ]);
     expect(
@@ -232,8 +279,10 @@ describe("/api/health", () => {
       "checkedAt",
       "collection",
       "operationalHealth",
+      "scheduledJobs",
       "status",
     ]);
+    expect(Object.keys(body.scheduledJobs).sort()).toEqual(["lateCount", "ok"]);
     expect(Object.keys(body.operationalHealth).sort()).toEqual(["ageMinutes", "maxMinutes", "ok"]);
     expect(Object.keys(body.collection).sort()).toEqual([
       "ageHours",

@@ -44,9 +44,17 @@ Exemple de réponse :
     "ok": true,
     "enabledSources": 7,
     "lateSources": 0
-  }
+  },
+  "scheduledJobs": { "lateCount": 0, "ok": true }
 }
 ```
+
+`scheduledJobs` (ajouté le 27 octobre 2026) donne le nombre de tâches planifiées en retard (pépites,
+inondation, alertes, purges…), sans leur nom : c'est le nombre de l'alerte `cron.stale` ouverte, donc la même
+liste que l'alerte (en SQL, `evaluate_operational_health`). Il ne change pas `status`. C'est lui qu'une sonde
+externe doit surveiller pour la panne d'une tâche (mot-clé `"scheduledJobs":{"lateCount":0`) : `collection`
+reste rouge tant qu'une source ancienne n'est pas réparée ou désactivée, et ne distingue pas une panne
+nouvelle d'un retard ancien.
 
 | Cas                                                                                                                       | Statut HTTP                       | `available` | `status`   |
 | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------- | ----------- | ---------- |
