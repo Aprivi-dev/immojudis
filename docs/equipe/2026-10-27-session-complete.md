@@ -510,4 +510,11 @@ Restent à faire valider par un avocat :
 
 ### Vérifications sur la branche fusionnée
 
-`npx tsc --noEmit`, `npm run lint`, `npm run test:security-invariants` et `npm run check:manual-collection` passent. Ont aussi passé, dans le worktree de la passe serveur : `npm test` (820 fichiers, 10 802 tests) et `pytest` (5 072 tests). La CI de la PR #332 rejoue l'ensemble, dont pgTAP et Playwright.
+- **En local :**
+  - `npx tsc --noEmit`, `npm run lint`, `npm run test:security-invariants` et `npm run check:manual-collection` : OK ;
+  - `npm test` : 822 fichiers, 10 848 tests, 0 échec ;
+  - `npm run build` puis `npm run build:budgets` : OK avec les plafonds relevés. Mesures : favoris 687 937, fiche 384 018, exemple 180 311, total client 6 327 283 octets.
+- **CI de la PR #332, commit `13917a7a` : toute verte.** Cela comprend typecheck, lint, tests unitaires et invariants, build et budgets, audit, pgTAP, pipeline Python 3.11 et 3.12, parcours Playwright sur les 5 navigateurs, et CodeQL.
+- **Deux défauts révélés par les tests e2e, corrigés :**
+  - le bandeau « Vente débloquée, mais le détail n'a pas pu être chargé » passait sous la barre de navigation fixe, qui masquait le bouton « Réessayer » ;
+  - le parcours investisseur attendait l'ancien libellé « Pour 3 ventes par mois ».
