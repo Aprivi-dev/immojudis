@@ -27,6 +27,35 @@ function migrationText(): string {
 /** Routes that are triggered by hand on purpose (see docs/operations/planification.md). */
 const MANUAL_ROUTES = new Set(["cnb-lawyer-directory"]);
 
+/**
+ * Workflows GitHub autorisés à garder un `schedule` (règle de `planification.md` : des contrôles, plus une
+ * exception qui tolère des heures de retard). Les horaires GitHub ne sont pas tenus : une tâche métier est
+ * déclenchée par `workflow_dispatch` depuis l'application ou la base.
+ */
+const SCHEDULED_WORKFLOWS = [
+  "check-pending-supabase-migrations.yml",
+  "codeql.yml",
+  "information-agent-evidence.yml",
+  "pipeline-clock-offset.yml",
+  "production-smoke.yml",
+];
+
+function scheduledWorkflows(): string[] {
+  const directory = join(root, ".github/workflows");
+  return readdirSync(directory)
+    .filter((file) => /\.ya?ml$/.test(file))
+    .filter((file) => /^\s*schedule:\s*$/m.test(readFileSync(join(directory, file), "utf8")))
+    .sort();
+}
+
+/** Planification de rattrapage déclarée par une route (`catchUpSchedule` ou constante dédiée). */
+function routeCatchUpSchedules(route: string): string[] {
+  const source = readFileSync(join(root, `src/app/api/cron/${route}/route.ts`), "utf8");
+  return [...source.matchAll(/(?:catchUpSchedule: |CATCH_UP_SCHEDULE = )"([^"]+)"/g)].map(
+    (match) => match[1],
+  );
+}
+
 describe("scheduled jobs inventory", () => {
   it("planifie chaque route /api/cron/* dans vercel.json ou dans une migration pg_cron", () => {
     const vercel = vercelCronPaths();
@@ -44,6 +73,38 @@ describe("scheduled jobs inventory", () => {
     const document = readFileSync(join(root, "docs/operations/planification.md"), "utf8");
     const undocumented = cronRoutes().filter((route) => !document.includes(`/api/cron/${route}`));
     expect(undocumented).toEqual([]);
+  });
+
+  it("ne laisse un horaire GitHub qu'aux workflows de contrôle listés, tous inventoriés dans planification.md", () => {
+    expect(scheduledWorkflows()).toEqual(SCHEDULED_WORKFLOWS);
+    const document = readFileSync(join(root, "docs/operations/planification.md"), "utf8");
+    const undocumented = SCHEDULED_WORKFLOWS.filter((file) => !document.includes(`\`${file}\``));
+    expect(undocumented).toEqual([]);
+  });
+
+  it("garde chaque planification de rattrapage d'une route en phase avec vercel.json", () => {
+    const vercel = JSON.parse(readFileSync(join(root, "vercel.json"), "utf8")) as {
+      crons: Array<{ path: string; schedule: string }>;
+    };
+    // Un rattrapage absent de vercel.json ne correspondrait jamais à l'en-tête x-vercel-cron-schedule :
+    // le filet s'exécuterait à chaque fois, sans que rien ne casse.
+    const mismatched = cronRoutes().flatMap((route) =>
+      routeCatchUpSchedules(route)
+        .filter(
+          (schedule) =>
+            !vercel.crons.some(
+              (cron) => cron.path === `/api/cron/${route}` && cron.schedule === schedule,
+            ),
+        )
+        .map((schedule) => `${route}: ${schedule}`),
+    );
+    expect(mismatched).toEqual([]);
+  });
+
+  it("fait des filets quotidiens des tâches de pg_cron des rattrapages sans effet si pg_cron a réussi", () => {
+    for (const route of ["listing-completeness", "sale-pepites", "sale-flood-risk"]) {
+      expect(routeCatchUpSchedules(route), route).toHaveLength(1);
+    }
   });
 
   it("place les trois tâches quotidiennes sous un second passage de rattrapage", () => {

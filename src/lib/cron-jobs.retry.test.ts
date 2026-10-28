@@ -3,12 +3,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   recentSuccess: false,
+  eq: [] as Array<[string, unknown]>,
 }));
 
 vi.mock("@/integrations/supabase/client.server", () => {
   const chain: Record<string, unknown> = {
     select: () => chain,
-    eq: () => chain,
+    eq: (column: string, value: unknown) => {
+      mocks.eq.push([column, value]);
+      return chain;
+    },
     gte: () => chain,
     limit: async () => ({ data: mocks.recentSuccess ? [{ id: "run-0" }] : [], error: null }),
   };
@@ -35,6 +39,7 @@ describe("cron retries and catch-up", () => {
   beforeEach(() => {
     process.env.CRON_SECRET = "cron-test-secret";
     mocks.recentSuccess = false;
+    mocks.eq = [];
     vi.spyOn(console, "info").mockImplementation(() => undefined);
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -132,6 +137,37 @@ describe("cron retries and catch-up", () => {
     const response = await runMonitoredCron(cronRequest("15 8 * * *"), "smart-alerts", handler, {
       catchUpSchedule: "15 8 * * *",
       retryDelaysMs: [0],
+    });
+
+    expect(response.status).toBe(200);
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it("le rattrapage peut s'appuyer sur le succès d'une autre tâche (route qui ne fait que déclencher)", async () => {
+    mocks.recentSuccess = true;
+    const handler = vi.fn();
+
+    const response = await runMonitoredCron(
+      cronRequest("35 5 * * *"),
+      "sale-flood-risk-dispatch",
+      handler,
+      { catchUpSchedule: "35 5 * * *", catchUpSuccessJobName: "sale-flood-risk" },
+    );
+
+    expect(await response.json()).toMatchObject({ ok: true, skipped: "already_succeeded" });
+    expect(mocks.eq).toContainEqual(["job_name", "sale-flood-risk"]);
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it("un appel de pg_cron (sans en-tête de planification Vercel) s'exécute toujours", async () => {
+    mocks.recentSuccess = true;
+    mocks.rpc.mockResolvedValue({ data: "run-3", error: null });
+    const handler = vi.fn().mockResolvedValue({ evaluated: 1 });
+
+    const response = await runMonitoredCron(cronRequest(), "sale-pepites", handler, {
+      catchUpSchedule: "42 5 * * *",
+      catchUpSuccessWindowHours: 2,
+      retryDelaysMs: [],
     });
 
     expect(response.status).toBe(200);
