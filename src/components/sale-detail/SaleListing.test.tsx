@@ -823,6 +823,16 @@ describe("SaleDetailHeading", () => {
     ).toBeTruthy();
   });
 
+  it("marque le titre de l'annonce exemple comme fictif, jamais celui d'une vente réelle", () => {
+    const { unmount } = render(<SaleDetailHeading sale={item()} publicDemo />);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
+      "Appartement de 68 m² à Bordeaux (exemple fictif)",
+    );
+    unmount();
+    render(<SaleDetailHeading sale={item()} />);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).not.toContain("fictif");
+  });
+
   it("says the type is to be confirmed instead of showing a blocked type", () => {
     render(
       <SaleDetailHeading sale={item()} aiReviewProjections={[blocked("property.property_type")]} />,

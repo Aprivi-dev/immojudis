@@ -180,29 +180,29 @@ describe("sales CSV export", () => {
     });
     expect(item.documents.items).toEqual([
       expect.objectContaining({
-        label: "Cahier des conditions de vente - exemple",
+        label: "Cahier des conditions de vente - exemple fictif",
         type: "cahier_conditions_vente",
-        url: "https://app.immojudis.test/ressources",
+        url: "https://immojudis.com/annonce-exemple#cahier-des-conditions",
       }),
       expect.objectContaining({
-        label: "PV descriptif - exemple",
+        label: "PV descriptif - exemple fictif",
         type: "pv_descriptif",
-        url: "https://app.immojudis.test/ressources",
+        url: "https://immojudis.com/annonce-exemple#pv-descriptif",
       }),
       expect.objectContaining({
-        label: "Diagnostics techniques - exemple",
+        label: "Diagnostics techniques - exemple fictif",
         type: "diagnostics_techniques",
-        url: "https://app.immojudis.test/ressources",
+        url: "https://immojudis.com/annonce-exemple#diagnostics-techniques",
       }),
     ]);
     expect(item.risks.top).toEqual([
       expect.objectContaining({
         type: "occupation_to_confirm",
-        sourceDocument: "PV descriptif - exemple",
+        sourceDocument: "PV descriptif - exemple fictif",
       }),
       expect.objectContaining({
         type: "works_budget",
-        sourceDocument: "Diagnostics techniques - exemple",
+        sourceDocument: "Diagnostics techniques - exemple fictif",
       }),
     ]);
     expect(item.scoring.factors).toEqual([
