@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Metadata } from "next";
+import { COMPANY_DESCRIPTION } from "@/lib/company-description";
 
 // Only the `metadata` export matters here: the heavy server-side loaders of the pages are
 // replaced so that importing a page does not need a database.
@@ -43,6 +44,35 @@ describe("titles with the site suffix fit in 60 characters", () => {
       expect(text.length + TITLE_SUFFIX.length).toBeLessThanOrEqual(MAX_TITLE_LENGTH);
     },
     // Le premier import d'une page charge tout son graphe : large marge sur une machine chargée.
+    30_000,
+  );
+});
+
+describe("home page", () => {
+  it.each([true, false])(
+    "has its own title and description (notaries and State: %s), with share data",
+    async (pilots) => {
+      vi.stubEnv("NEXT_PUBLIC_NOTARY_STATE_PILOTS_ENABLED", pilots ? "true" : "false");
+      const { generateMetadata } = await import("./page");
+      const metadata = generateMetadata();
+      const { text, absolute } = titleText(metadata);
+      expect(absolute).toBe(true);
+      expect(text).toBe("Ventes immobilières aux enchères judiciaires - Immojudis");
+      expect(text.length).toBeLessThanOrEqual(MAX_TITLE_LENGTH);
+      const description = String(metadata.description);
+      expect(description.length).toBeGreaterThanOrEqual(120);
+      expect(description.length).toBeLessThanOrEqual(155);
+      // Plus la description de /a-propos, ni celle du layout.
+      expect(description).not.toBe(COMPANY_DESCRIPTION);
+      expect(description).not.toMatch(/garantie|conforme|certifi|gratuit|illimit/i);
+      expect(description.includes("notaires")).toBe(pilots);
+      expect(metadata.alternates?.canonical).toBe("/");
+      expect(metadata.openGraph).toMatchObject({
+        url: "/",
+        images: [{ url: "/opengraph-image", width: 1200, height: 630 }],
+      });
+      vi.unstubAllEnvs();
+    },
     30_000,
   );
 });

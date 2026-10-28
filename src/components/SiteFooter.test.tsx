@@ -51,6 +51,27 @@ it("renvoie vers les audiences à venir", () => {
   );
 });
 
+it("groupe les pages de transparence : à propos, guide, simulateur et méthodes", () => {
+  render(<SiteFooter />);
+  const transparency = within(screen.getByRole("navigation", { name: "Transparence" }));
+  expect(
+    transparency.getAllByRole("link").map((link) => [link.textContent, link.getAttribute("href")]),
+  ).toEqual([
+    ["À propos", "/a-propos"],
+    ["Guide des ventes judiciaires", "/ventes-immobilieres-judiciaires"],
+    ["Simulateur de frais", "/simulateur-frais-encheres"],
+    ["Méthode de l’écart avec le marché", "/methode-ecart-marche"],
+    ["Méthode Pépite", "/methode-pepites"],
+  ]);
+});
+
+it("reprend le pictogramme du favicon (le temple) et l'accroche unique", () => {
+  const { container } = render(<SiteFooter />);
+  expect(container.textContent).toContain("Les enchères immobilières, en toute clarté.");
+  expect(container.querySelector("svg path[stroke='#c98d45']")).not.toBeNull();
+  expect(container.querySelector(".lucide")).toBeNull();
+});
+
 it("stays out of the admin console", () => {
   expect(showsSiteFooter("/admin")).toBe(false);
   expect(showsSiteFooter("/admin/operations")).toBe(false);

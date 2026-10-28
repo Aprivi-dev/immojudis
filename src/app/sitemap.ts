@@ -32,18 +32,18 @@ export const maxDuration = 60;
  * source of a redirect of `next.config.ts` (the offers page lives at `/offres`).
  */
 const PUBLIC_ROUTES = [
-  ["", "2026-10-08"],
+  ["", "2026-10-28"],
   // No `lastmod`: the page lists a ranking of the whole catalogue, which changes with any new, changed
   // or withdrawn sale. No reliable date exists for it (the newest `updated_at` of a sale moves with
   // every collection run, and `content_changed_at` is null for a new sale), and a missing date
   // is better than a false one.
   ["/sales", null],
   ["/avocats", "2026-10-08"],
-  ["/offres", "2026-10-20"],
+  ["/offres", "2026-10-28"],
   ["/comment-ca-marche", "2026-10-13"],
-  ["/ressources", "2026-10-19"],
+  ["/ressources", "2026-10-28"],
   ["/tribunaux", "2026-10-19"],
-  ["/annonce-exemple", "2026-10-15"],
+  ["/annonce-exemple", "2026-10-28"],
   ["/ventes-immobilieres-judiciaires", GUIDE_LAST_UPDATED], // same date as the guide page
   ["/simulateur-frais-encheres", "2026-10-13"],
   [PUBLIC_ADJUDICATION_PRICES_PATH, null], // listed only while PUBLIC_ADJUDICATION_PRICES_ENABLED is "true"

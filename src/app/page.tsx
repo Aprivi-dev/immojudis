@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
-import { COMPANY_DESCRIPTION } from "@/lib/company-description";
+import { HOME_TITLE, homeDescription } from "@/lib/home-seo";
+import { pageMetadata } from "@/lib/page-metadata";
+import { notaryAndStatePilotsEnabled } from "@/lib/sale-types";
 import { organizationStructuredData } from "@/lib/seo";
 import { resolveSiteOrigin } from "@/lib/site-url";
 import { HomeHero } from "@/components/home/HomeHero";
@@ -10,6 +12,7 @@ import {
   HomeClosing,
   HomeFaq,
   homeFaqItems,
+  HomeGuides,
   HomeSources,
   HomeStats,
   HomeSteps,
@@ -25,11 +28,15 @@ import { openFeeRegimesFromEnv } from "@/lib/fee-regime.server";
 import { jsonLdString } from "@/lib/json-ld";
 import { unlockHighlightsText } from "@/lib/sale-unlocks";
 
-export const metadata: Metadata = {
-  title: { absolute: "Immojudis - Les enchères immobilières en toute clarté" },
-  description: COMPANY_DESCRIPTION,
-  alternates: { canonical: "/" },
-};
+// Titre et description propres à l'accueil (voir `home-seo.ts`) ; calculés au rendu, comme la page,
+// pour que les notaires et l'État ne soient cités que lorsque ces ventes sont au catalogue.
+export function generateMetadata(): Metadata {
+  return pageMetadata({
+    path: "/",
+    title: { absolute: HOME_TITLE },
+    description: homeDescription(notaryAndStatePilotsEnabled()),
+  });
+}
 
 // La page est générée à l'avance puis rafraîchie par Next.js : sans valeur explicite, un rendu fait
 // pendant une panne (ligne de chiffres absente) resterait jusqu'au prochain déploiement.
@@ -50,7 +57,7 @@ export default async function Page() {
   const faqStructuredData = {
     "@context": "https://schema.org",
     "@type": "FAQPage",
-    mainEntity: homeFaqItems().map((item) => ({
+    mainEntity: homeFaqItems(openFeeRegimes).map((item) => ({
       "@type": "Question",
       name: item.question,
       acceptedAnswer: { "@type": "Answer", text: item.answer },
@@ -71,18 +78,19 @@ export default async function Page() {
         }}
       />
       <main id="contenu" className={homeStyles.page}>
-        <HomeHero summary={summary} departments={departments} />
+        <HomeHero summary={summary} departments={departments} openFeeRegimes={openFeeRegimes} />
         <HomeStats summary={summary} departments={departments} />
         <HomeTryExample data={exampleVerdictData()} />
         <HomeTagline />
         <HomeBenefits />
         <HomeSteps />
         <HomeSources />
+        <HomeGuides />
         <HomeOffers
           unlockHighlights={unlockHighlightsText(openFeeRegimes)}
           ceilingFeature={`${ceilingTerm.charAt(0).toUpperCase()}${ceilingTerm.slice(1)} et travaux`}
         />
-        <HomeFaq />
+        <HomeFaq openFeeRegimes={openFeeRegimes} />
         <HomeClosing summary={summary} departments={departments} />
         <HomeMotion />
       </main>
