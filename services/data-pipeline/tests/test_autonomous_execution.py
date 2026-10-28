@@ -139,13 +139,18 @@ def test_systemic_worker_failure_keeps_nonzero_code_with_exhausted_signal(monkey
     monkeypatch.setattr(autonomous_runner, "_postgres_connect", lambda _url: nullcontext(FakeDb()))
     monkeypatch.setattr(autonomous_runner, "register_run", lambda _run_id: None)
     monkeypatch.setattr(autonomous_runner, "finish_source", lambda _db_url, _run_id: None)
+    commands = []
     monkeypatch.setattr(
         autonomous_runner.subprocess,
         "run",
-        lambda _command, **_kwargs: SimpleNamespace(returncode=7),
+        lambda command, **_kwargs: commands.append(command) or SimpleNamespace(returncode=7),
     )
 
     assert autonomous_runner.execute(run_id) == 7
+    # A failed worker: neither the document reading nor the address positions run (they wait for the next tick).
+    modules = [command[2] for command in commands if len(command) > 2]
+    assert "src.document_reading" not in modules and "src.address_positions" not in modules
+    assert "address_positions_exit_code" not in updates[0][2].obj
     assert updates[0][0] == "failed"
     assert updates[0][1].obj["runner"] == ["Worker exited with status 7"]
     assert updates[0][1].obj["enrichment_jobs"] == [

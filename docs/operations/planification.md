@@ -283,8 +283,10 @@ relus) est créée au premier tick du mois. Son code de sortie est noté dans `a
 Les positions des ventes à venir qui ont une adresse mais seulement le centre de leur commune (ou aucun point) sont
 corrigées le 28/10/2026 de la même façon, sans planification nouvelle : après chaque passage de la file
 d'enrichissement, le lanceur planifié exécute `src.address_positions` (au plus 500 ventes par passage, un envoi CSV au
-géocodage en masse de la Géoplateforme par lot de 250 adresses, 6 minutes au plus, verrou des écritures du catalogue
-pris 2 minutes au plus). Les règles d'acceptation sont celles de `geocode_sale` ; le passage n'écrit que les
+géocodage en masse de la Géoplateforme par lot de 250 adresses, 6 minutes au plus). Le verrou des écritures du
+catalogue n'est PAS tenu pendant les appels à la BAN : il est pris (2 minutes d'attente au plus) seulement pour écrire
+chaque lot de 250 qui vient de répondre, une ligne par point de sauvegarde (une ligne en échec n'annule pas les
+autres, `failed` dans le compte rendu). Le passage ne tourne pas quand la file d'enrichissement a échoué. Les règles d'acceptation sont celles de `geocode_sale` ; le passage n'écrit que les
 coordonnées, les drapeaux de position et les clés `geo_precision`, `geocode` et `commune` de `raw_payload`. Son code
 de sortie est noté dans `auction_runs.summary` (`address_positions_exit_code`) ; `ADDRESS_POSITIONS_ENABLED=false`
 le suspend.

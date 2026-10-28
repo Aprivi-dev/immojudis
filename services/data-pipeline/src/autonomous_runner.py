@@ -678,7 +678,8 @@ def execute(run_id: str) -> int:
         )
     worker_code = code
     reading_code = _run_document_reading(env) if source == 'enrichment-queue' and worker_code == 0 else None
-    positions_code = _run_address_positions(env) if source == 'enrichment-queue' else None
+    # Like the document reading: a failed worker leaves the catalogue in an unknown state, the positions wait for the next tick.
+    positions_code = _run_address_positions(env) if source == 'enrichment-queue' and worker_code == 0 else None
     licitor_history_code = (
         _run_licitor_history_refresh(env)
         if source == 'enrichment-queue' and LICITOR_SOURCE not in withdrawn

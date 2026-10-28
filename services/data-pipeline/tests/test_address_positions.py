@@ -202,16 +202,31 @@ def test_post_batch_raises_on_an_http_error() -> None:
 
 
 class FakeConnection:
-    def __init__(self, rows, rowcounts=None):
+    def __init__(self, rows, rowcounts=None, failing=()):
         self.rows = rows
         self.statements: list[tuple[str, tuple]] = []
+        self.events: list[str] = []  # "savepoint", "release", "rollback", dans l'ordre
         self.rowcounts = rowcounts or {}
+        self.failing = set(failing)
 
     def __enter__(self):
         return self
 
     def __exit__(self, *exc):
         return False
+
+    def transaction(self):
+        connection = self
+
+        class Savepoint:
+            def __enter__(self):
+                connection.events.append("savepoint")
+
+            def __exit__(self, exc_type, *_):
+                connection.events.append("rollback" if exc_type else "release")
+                return False
+
+        return Savepoint()
 
     def execute(self, sql, params=()):
         self.statements.append((sql, params))
@@ -220,6 +235,8 @@ class FakeConnection:
         if "from public.auction_sales" in sql and "select" in sql:
             return SimpleNamespace(fetchall=lambda: self.rows)
         row_id = params[-2]
+        if row_id in self.failing:
+            raise RuntimeError("deadlock detected")
         return SimpleNamespace(rowcount=self.rowcounts.get(row_id, 1))
 
 
@@ -232,7 +249,7 @@ def reference_communes(monkeypatch):
 
 
 def _run(rows, response_text, **kwargs):
-    connection = FakeConnection(rows, kwargs.pop("rowcounts", None))
+    connection = FakeConnection(rows, kwargs.pop("rowcounts", None), kwargs.pop("failing", ()))
     calls = []
 
     def post(url, **post_kwargs):
@@ -317,6 +334,89 @@ def test_a_row_rewritten_since_the_read_is_left_for_the_next_pass() -> None:
     counts, _, _ = _run([_row("a", SEMBAT)], RESPONSE, rowcounts={"a": 0})
 
     assert counts["written"] == 0 and counts["changed_meanwhile"] == 1
+
+
+def test_a_failing_row_is_rolled_back_alone_and_the_others_are_written() -> None:
+    rows = [_row("a", SEMBAT), _row("b", "9 rue Inconnue, Longvic"), _row("f", "5 chemin du Moulin, Longvic")]
+
+    counts, connection, _ = _run(rows, RESPONSE, failing={"b"})
+
+    assert counts["written"] == 2 and counts["failed"] == 1 and counts["changed_meanwhile"] == 0
+    assert [params[-2] for _, params in _writes(connection)] == ["a", "b", "f"]
+    # Un point de sauvegarde par ligne : la ligne en échec est annulée seule.
+    assert connection.events == ["savepoint", "release", "savepoint", "rollback", "savepoint", "release"]
+
+
+def test_every_chunk_is_written_right_after_its_answer_not_at_the_end(monkeypatch) -> None:
+    monkeypatch.setattr(address_positions, "CHUNK_SIZE", 2)
+    rows = [_row(f"r{index}", SEMBAT) for index in range(5)]
+    connection = FakeConnection(rows)
+    journal: list[str] = []
+    original_execute = connection.execute
+
+    def execute(sql, params=()):
+        if sql in {UPDATE_POSITION_SQL, UPDATE_ATTEMPT_SQL}:
+            journal.append("write")
+        return original_execute(sql, params)
+
+    connection.execute = execute
+
+    def post(url, **kwargs):
+        journal.append("post")
+        ids = [row["id"] for row in csv.DictReader(io.StringIO(kwargs["files"]["data"][1].decode("utf-8")))]
+        text = "id,result_status\n" + "".join(f"{row_id},not-found\n" for row_id in ids)
+        return SimpleNamespace(status_code=200, text=text, raise_for_status=lambda: None)
+
+    counts = run_pass(lambda: connection, api_url=API, min_score=0.45, max_sales=5, post=post)
+
+    assert counts["written"] == 5
+    assert journal == ["post", "write", "write", "post", "write", "write", "post", "write"]
+
+
+def test_the_catalogue_lock_is_held_only_while_a_chunk_is_written(monkeypatch) -> None:
+    monkeypatch.setattr(address_positions, "CHUNK_SIZE", 2)
+    rows = [_row(f"r{index}", SEMBAT) for index in range(4)]
+    connection = FakeConnection(rows)
+    held = {"now": False, "acquired": 0, "writes_without_lock": 0, "posts_with_lock": 0}
+
+    class Lock:
+        def __enter__(self):
+            held["now"] = True
+            held["acquired"] += 1
+
+        def __exit__(self, *_):
+            held["now"] = False
+            return False
+
+    original_execute = connection.execute
+
+    def execute(sql, params=()):
+        if sql in {UPDATE_POSITION_SQL, UPDATE_ATTEMPT_SQL} and not held["now"]:
+            held["writes_without_lock"] += 1
+        return original_execute(sql, params)
+
+    connection.execute = execute
+
+    def post(url, **kwargs):
+        held["posts_with_lock"] += int(held["now"])
+        ids = [row["id"] for row in csv.DictReader(io.StringIO(kwargs["files"]["data"][1].decode("utf-8")))]
+        text = "id,result_status\n" + "".join(f"{row_id},not-found\n" for row_id in ids)
+        return SimpleNamespace(status_code=200, text=text, raise_for_status=lambda: None)
+
+    run_pass(lambda: connection, api_url=API, min_score=0.45, max_sales=4, post=post, writer_lock=Lock)
+
+    assert held == {"now": False, "acquired": 2, "writes_without_lock": 0, "posts_with_lock": 0}
+
+
+def test_a_busy_catalogue_lock_stops_the_writes_and_the_pass_still_succeeds() -> None:
+    from src.catalogue_lock import CatalogueLockTimeout
+
+    def busy():
+        raise CatalogueLockTimeout("another job keeps writing the catalogue")
+
+    counts, connection, _ = _run([_row("a", SEMBAT)], RESPONSE, writer_lock=busy)
+
+    assert counts["lock_busy"] == 1 and counts["written"] == 0 and _writes(connection) == []
 
 
 def test_a_dry_run_writes_nothing() -> None:

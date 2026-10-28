@@ -25,10 +25,15 @@ renvoyée ; une requête différente, si. Les ventes jamais essayées passent d'
 Écriture : une ligne à la fois, ``latitude``, ``longitude``, ``quality_flags`` et seulement les clés ``geo_precision``,
 ``geocode`` et ``commune`` de ``raw_payload`` (fusion ``||``, le reste du JSON n'est pas relu ni réécrit). La ligne
 n'est écrite que si ``updated_at`` n'a pas bougé depuis la lecture : une ligne réécrite par une collecte entre-temps est
-laissée au passage suivant. ``updated_at`` n'est pas modifié (comme le point de reprise des pièces), et le verrou des
-écritures du catalogue est pris pour la durée du passage.
+laissée au passage suivant. ``updated_at`` n'est pas modifié (comme le point de reprise des pièces).
 
-Code de sortie : 0 (fait, désactivé ou verrou occupé), 1 (base ou BAN indisponible).
+Verrou et transactions : le verrou des écritures du catalogue n'est PAS tenu pendant les appels HTTP à la BAN (jusqu'à
+120 s chacun) : l'appel et l'application des résultats se font sans verrou, le verrou n'est pris que pour écrire le lot
+de 250 qui vient de répondre, puis relâché. Chaque lot est écrit juste après sa réponse (pas à la fin du passage), avec
+UN POINT DE SAUVEGARDE PAR LIGNE : une ligne en échec est annulée seule, comptée dans ``failed``, les autres sont
+écrites ; ``written`` ne compte que les lignes réellement écrites.
+
+Code de sortie : 0 (fait, désactivé ou verrou occupé : ``lock_busy``), 1 (base ou BAN indisponible).
 """
 
 from __future__ import annotations
@@ -43,12 +48,14 @@ import os
 import sys
 import time
 from collections.abc import Callable
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from typing import Any
 
 import httpx
 from psycopg.types.json import Jsonb
 
+from src.catalogue_lock import CatalogueLockTimeout, catalogue_writer_lock
 from src.commune_insee import record_sale_commune
 from src.config import load_settings
 from src.geocode import (
@@ -317,6 +324,20 @@ def write_candidate(connection: Any, candidate: Candidate) -> bool:
     return bool(getattr(cursor, "rowcount", 0))
 
 
+def write_chunk(connection_factory: Callable[[], Any], pending: list[Candidate], counts: dict[str, int]) -> None:
+    """Écrit un lot, une ligne par point de sauvegarde : une ligne en échec n'annule ni les autres ni le lot."""
+    with connection_factory() as connection:
+        for candidate in pending:
+            try:
+                with connection.transaction():
+                    written = write_candidate(connection, candidate)
+            except Exception as exc:  # une ligne en échec ne bloque pas les autres
+                counts["failed"] += 1
+                LOGGER.warning("Position not written for %s: %s", candidate.sale.source_url, exc)
+                continue
+            counts["written" if written else "changed_meanwhile"] += 1
+
+
 def run_pass(
     connection_factory: Callable[[], Any],
     *,
@@ -327,15 +348,20 @@ def run_pass(
     dry_run: bool = False,
     post: Callable[..., Any] = httpx.post,
     clock: Callable[[], float] = time.monotonic,
+    writer_lock: Callable[[], AbstractContextManager[Any]] | None = None,
 ) -> dict[str, int]:
-    """Un passage : lecture, envoi en lot, application des résultats, écriture. Ne lève pas sur une seule vente."""
+    """Un passage : lecture, puis pour chaque lot envoi à la BAN (sans verrou), application, écriture sous verrou.
+
+    Ne lève pas sur une seule vente. ``writer_lock`` rend le verrou des écritures du catalogue ; il n'est tenu que
+    pendant l'écriture d'un lot. Un verrou occupé arrête les écritures du passage (``lock_busy``) : les résultats non
+    écrits sont redemandés au passage suivant.
+    """
     started = clock()
     with connection_factory() as connection:
         connection.execute("set transaction read only")
         rows = connection.execute(CANDIDATES_SQL, (READ_LIMIT,)).fetchall()
     selected, counts = select_candidates(rows, limit=max_sales)
-    counts.update(selected=len(selected), accepted=0, refused=0, unanswered=0, written=0, changed_meanwhile=0)
-    pending: list[Candidate] = []
+    counts.update(selected=len(selected), accepted=0, refused=0, unanswered=0, written=0, changed_meanwhile=0, failed=0)
     for start in range(0, len(selected), CHUNK_SIZE):
         if clock() - started >= budget_seconds:
             break
@@ -343,18 +369,16 @@ def run_pass(
         results = parse_batch_response(post_batch(chunk, api_url=api_url, post=post), min_score=min_score)
         for key, value in apply_results(chunk, results).items():
             counts[key] += value
-        pending.extend(candidate for candidate in chunk if candidate.row_id in results)
-    if dry_run or not pending:
-        return counts
-    with connection_factory() as connection:
-        for candidate in pending:
-            try:
-                if write_candidate(connection, candidate):
-                    counts["written"] += 1
-                else:
-                    counts["changed_meanwhile"] += 1
-            except Exception as exc:  # une ligne en échec ne bloque pas les autres
-                LOGGER.warning("Position not written for %s: %s", candidate.sale.source_url, exc)
+        pending = [candidate for candidate in chunk if candidate.row_id in results]
+        if dry_run or not pending:
+            continue
+        try:
+            with writer_lock() if writer_lock is not None else nullcontext():
+                write_chunk(connection_factory, pending, counts)
+        except CatalogueLockTimeout as exc:
+            counts["lock_busy"] = 1
+            LOGGER.warning("Address positions: %s; the remaining results are asked again next pass", exc)
+            break
     return counts
 
 
@@ -371,22 +395,20 @@ def main(argv: list[str] | None = None) -> int:
     db_url = str(settings.get("supabase_db_url") or "")
     if not db_url:
         raise RuntimeError("SUPABASE_DB_URL is required for address positions")
-    from src.catalogue_lock import CatalogueLockTimeout, catalogue_writer_lock
     from src.storage.supabase_client import connect
 
     try:
-        with catalogue_writer_lock(db_url, label="address positions", wait_seconds=LOCK_WAIT_SECONDS):
-            counts = run_pass(
-                lambda: connect(db_url),
-                api_url=str(settings["geocode_api_url"]),
-                min_score=float(settings["geocode_min_score"]),
-                max_sales=max(1, min(args.max_sales, MAX_SALES_PER_PASS)),
-                budget_seconds=max(30.0, args.budget_seconds),
-                dry_run=args.dry_run,
-            )
-    except CatalogueLockTimeout as exc:
-        print(json.dumps({"skipped": str(exc)}))
-        return 0
+        counts = run_pass(
+            lambda: connect(db_url),
+            api_url=str(settings["geocode_api_url"]),
+            min_score=float(settings["geocode_min_score"]),
+            max_sales=max(1, min(args.max_sales, MAX_SALES_PER_PASS)),
+            budget_seconds=max(30.0, args.budget_seconds),
+            dry_run=args.dry_run,
+            writer_lock=lambda: catalogue_writer_lock(
+                db_url, label="address positions", wait_seconds=LOCK_WAIT_SECONDS
+            ),
+        )
     except httpx.HTTPError as exc:
         LOGGER.error("Address positions: BAN batch failed: %s", exc)
         return 1
