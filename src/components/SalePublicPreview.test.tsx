@@ -863,6 +863,23 @@ describe("SalePublicPreview", () => {
     expect(screen.queryByRole("button", { name: "Ajouter à mon agenda" })).toBeNull();
   });
 
+  it("écrit « Date de la vente : à confirmer » pour une vente notariale sans date, et pas ailleurs", () => {
+    const notary = renderPreview({ sale_venue_type: "notary", sale_date: null });
+    const fact = screen.getByTestId("sale-date-to-confirm");
+    expect(fact.parentElement?.textContent).toBe("Date de la venteÀ confirmer");
+    notary.unmount();
+
+    const dated = renderPreview({
+      sale_venue_type: "notary",
+      sale_date: "2099-01-20T08:30:00+00:00",
+    });
+    expect(screen.queryByTestId("sale-date-to-confirm")).toBeNull();
+    dated.unmount();
+
+    renderPreview({ sale_venue_type: "tribunal", sale_date: null });
+    expect(screen.queryByTestId("sale-date-to-confirm")).toBeNull();
+  });
+
   it("has no structural accessibility violations", async () => {
     const { container } = renderPreview({
       sale_venue_type: "state",
