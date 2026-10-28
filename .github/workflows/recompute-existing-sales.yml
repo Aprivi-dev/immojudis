@@ -49,7 +49,7 @@ on:
         default: false
         type: boolean
       drop_insufficient_only:
-        description: "Report (dry_run) or delete stored sales with no address, no surface and no contact (e-mail or phone)"
+        description: "Report (dry_run) or delete (whole catalogue, app_private.delete_empty_listings) stored sales with no street, e-mail, parcel, document or second source"
         required: false
         default: false
         type: boolean

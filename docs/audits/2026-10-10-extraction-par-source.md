@@ -158,12 +158,13 @@ Le registre de refus est lu une fois par run (échec **ouvert** : une panne du r
 Conséquence à connaître : une vente déjà publiée qui devient insuffisante n'est plus rafraîchie par le run (elle reste
 en place, non mise à jour, jusqu'à son échéance ou à la suppression contrôlée).
 
-## 5. Rapport SQL (lecture seule) — ids par source
+## 5. Rapport et suppression de l'existant
 
-Fichier : `services/data-pipeline/sql/insufficient_information_report.sql` (un seul `SELECT`, aucune écriture, testé
-contre PostgreSQL 16 : `tests/test_insufficient_report_sql.py` compare ses verdicts à ceux de la règle Python sur 14
-ventes fictives). La dernière colonne `insufficient_ids` liste les identifiants par source. C'est une **approximation
-volontairement permissive** (elle sous-liste plutôt qu'elle ne sur-liste) ; la référence est la commande ci-dessous.
+> **Mise à jour du 2026-10-28** : le rapport SQL `services/data-pipeline/sql/insufficient_information_report.sql` et son
+> test ont été supprimés (la règle est devenue celle de `src/listing_minimum.py`, miroir SQL
+> `app_private.sale_has_listing_minimum`). Le comptage se fait par `supabase/repairs/20261108202100_delete_empty_listings.sql`
+> (mode par défaut, lecture seule), qui lit les clés étrangères dans la base. Ce qui suit décrit l'état d'origine du
+> rapport Python, resté la référence de lecture.
 
 ```text
 python -m src.recompute_scoring --drop-insufficient [--source licitor] [--drop-report rapport.json]
@@ -171,14 +172,12 @@ python -m src.recompute_scoring --drop-insufficient [--source licitor] [--drop-r
 
 Elle rejoue les extracteurs sur les lignes stockées, applique la règle, écrit un JSON d'identifiants et de compteurs
 (sans donnée personnelle) et **ne supprime rien**. Pour supprimer : relire le rapport puis ajouter `--execute-drop`
-(plafond `--max-deletions`, 100 par défaut ; `--include-user-linked` pour lever la protection).
-
-Suppression (`src/insufficient_sales.py`), par lots de 25 dans une transaction, sous le verrou de rétention : pont du
-graphe de résultats (un trigger l'exige avant tout `DELETE`), file de nettoyage du stockage, `valuation_estimates`,
-`information_agent_missions`, `lawyer_placement_events`, `lawyer_referral_requests`, `auction_observations`, puis
-`auction_sales` (les autres tables cascadent ou passent à `NULL`). **Aucun tombstone** : l'URL reste réimportable dès que
-la vente devient suffisante. Une vente modifiée depuis l'évaluation est ignorée. Les ventes liées à des favoris,
-rapports, espaces de travail, annotations, analyses, dossiers/missions de l'agent ou demandes d'avocat sont protégées.
+(plafond `--max-deletions`, 100 par défaut). Depuis le 2026-10-28, `--execute-drop` n'a plus de suppression ni de liste de
+protection propres : il appelle `app_private.delete_empty_listings` (comptage, puis application) sur tout le catalogue
+(`--source` et `--limit` sont refusés avec lui), et `--include-user-linked` n'existe plus. La fonction garde toute vente qui a une trace
+utilisateur (clés étrangères lues dans `pg_constraint`), un prix d'adjudication ou une issue connue, refait ce
+contrôle pour chaque vente juste avant son `DELETE` et complète le pont du graphe de résultats. **Aucun tombstone** :
+l'URL reste réimportable dès que la vente devient suffisante.
 
 ## 6. Effet par source (production 2026-10-10, estimé)
 

@@ -33,6 +33,8 @@ from contextvars import ContextVar
 from datetime import UTC, datetime
 from typing import NamedTuple
 
+from src import listing_minimum
+
 LOGGER = logging.getLogger(__name__)
 
 #: Motif enregistré avec la décision ``expired`` (code, jamais une donnée de la vente).
@@ -130,18 +132,26 @@ def publish_batch(
         retired: list = []
         token = _RETIRED.set(retired)
         try:
-            count += publish(group)
+            with listing_minimum.collecting() as refused:
+                count += publish(group)
         finally:
             _RETIRED.reset(token)
-        gone = {id(sale) for sale in retired}
+        gone = {id(sale) for sale in retired} | {id(sale) for sale in refused}
         done.extend(sale for sale in group if id(sale) not in gone)
         retire(retired)
+        forget_refused(refused)
 
     def retire(group: list) -> None:
         if not group:
             return
         _record(record, run_id, group, decision="expired", reason=RETENTION_TOMBSTONE_REASON)
         if forget is not None:
+            gone = {id(sale) for sale in group}
+            forget[:] = [sale for sale in forget if id(sale) not in gone]
+
+    def forget_refused(group: list) -> None:
+        """Annonces refusées par la règle d'entrée : jamais écrites, hors de la liste du run (ni enrichies ni republiées)."""
+        if group and forget is not None:
             gone = {id(sale) for sale in group}
             forget[:] = [sale for sale in forget if id(sale) not in gone]
 

@@ -657,6 +657,31 @@ describe("AdminInformationAgentMissionsPanel", () => {
     });
   });
 
+  it("n'active la préparation manuelle que pour une adresse email valide", async () => {
+    mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
+    mocks.create.mockRejectedValueOnce(
+      new Error("Aucune adresse email de contact : l'agent ne peut pas écrire."),
+    );
+    mocks.sourceStatus.mockResolvedValue({ ok: true, request: null, history: [] });
+
+    renderPanel({
+      saleId: "11111111-1111-4111-8111-111111111111",
+      title: "Maison à Lille",
+      recipientName: "Cabinet source",
+      recipientContact: "05 56 00 00 01",
+    });
+
+    expect((await screen.findByRole("alert")).textContent).toContain("Aucune adresse email");
+    const field = screen.getByRole("textbox", { name: "Email du destinataire" });
+    const action = screen.getByRole("button", { name: "Préparer avec ce contact" });
+    for (const value of ["05 56 00 00 01", "Maître Dupont", "dupont@cabinet"]) {
+      fireEvent.change(field, { target: { value } });
+      expect((action as HTMLButtonElement).disabled).toBe(true);
+    }
+    fireEvent.change(field, { target: { value: "dupont@cabinet-dupont.test" } });
+    expect((action as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it("queues a refresh for the exact sale and exposes its running status", async () => {
     mocks.create.mockResolvedValue({ ok: true, mission: mission("draft"), gaps: [], facts: [] });
     mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
