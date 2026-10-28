@@ -159,6 +159,39 @@ export function estimateSaleGrossYieldPct(
   );
 }
 
+/** Rendement brut à la mise à prix : valeur centrale et, quand la source donne les bornes du loyer, la fourchette. */
+export type GrossYieldRange = {
+  centralPct: number;
+  /** Rendement au bas de la fourchette de loyer ; `null` : la référence ne donne pas de borne. */
+  lowPct: number | null;
+  /** Rendement en haut de la fourchette de loyer ; `null` : idem. */
+  highPct: number | null;
+};
+
+/**
+ * Rendement brut à la mise à prix d'une vente, avec sa fourchette : le loyer de référence est remplacé par les bornes
+ * de l'intervalle de prédiction de l'ANIL (`lowPerM2`, `highPerM2`), avec les mêmes frais d'acquisition que
+ * `estimateSaleGrossYieldPct`. Rend `null` dans les mêmes cas que lui.
+ */
+export function estimateSaleGrossYieldRange(
+  sale: Parameters<typeof estimateSaleGrossYieldPct>[0],
+  surface: number | null | undefined,
+  rent?: RentReference | null,
+): GrossYieldRange | null {
+  const centralPct = estimateSaleGrossYieldPct(sale, surface, rent);
+  if (centralPct == null || !surface || !sale.starting_price_eur) return null;
+  const { totalCost } = computeAcquisitionCosts({
+    ...saleYieldFeeOptions(sale),
+    price: sale.starting_price_eur,
+    department: sale.department,
+  });
+  const at = (perM2: number | null | undefined) =>
+    perM2 != null && Number.isFinite(perM2) && perM2 > 0 && totalCost > 0
+      ? ((surface * perM2 * 12) / totalCost) * 100
+      : null;
+  return { centralPct, lowPct: at(rent?.lowPerM2), highPct: at(rent?.highPerM2) };
+}
+
 export function pricePerM2(
   price: number | null | undefined,
   surface: number | null | undefined,

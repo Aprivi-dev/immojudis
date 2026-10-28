@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { computeAcquisitionCosts } from "./profitability";
-import { estimateGrossYieldPct, estimateSaleGrossYieldPct, geocodeAdministrativeArea } from "./geo";
+import {
+  estimateGrossYieldPct,
+  estimateSaleGrossYieldPct,
+  estimateSaleGrossYieldRange,
+  geocodeAdministrativeArea,
+} from "./geo";
 import { defaultRentPerM2, rentReferenceFromAnilRow } from "./rent-reference";
 vi.mock("@/lib/mapbox", () => ({ getMapboxAccessToken: () => "public-test-token" }));
 afterEach(() => vi.unstubAllGlobals());
@@ -102,5 +107,37 @@ describe("estimateGrossYieldPct", () => {
     expect(estimateGrossYieldPct(100_000, 50, "33", null)).toBe(
       estimateGrossYieldPct(100_000, 50, "33"),
     );
+  });
+});
+
+describe("estimateSaleGrossYieldRange", () => {
+  const sale = { starting_price_eur: 100_000, department: "33", property_type: "apartment" };
+  const anil = {
+    rentPerM2: 15,
+    lowPerM2: 10,
+    highPerM2: 21,
+    source: "anil_commune" as const,
+    reliability: "reliable" as const,
+  };
+
+  it("donne le rendement central et celui des bornes du loyer, avec les mêmes frais", () => {
+    const range = estimateSaleGrossYieldRange(sale, 50, anil)!;
+    expect(range.centralPct).toBeCloseTo(estimateSaleGrossYieldPct(sale, 50, anil)!, 8);
+    const total = computeAcquisitionCosts({ price: 100_000, department: "33" }).totalCost;
+    expect(range.lowPct).toBeCloseTo(((50 * 10 * 12) / total) * 100, 8);
+    expect(range.highPct).toBeCloseTo(((50 * 21 * 12) / total) * 100, 8);
+    expect(range.lowPct!).toBeLessThan(range.centralPct);
+    expect(range.highPct!).toBeGreaterThan(range.centralPct);
+  });
+
+  it("sans borne de loyer (repère départemental) : pas de fourchette", () => {
+    const range = estimateSaleGrossYieldRange(sale, 50)!;
+    expect(range).toMatchObject({ lowPct: null, highPct: null });
+  });
+
+  it("rend null quand le rendement central l'est (non-logement, surface ou prix absents)", () => {
+    expect(estimateSaleGrossYieldRange({ ...sale, property_type: "land" }, 50, anil)).toBeNull();
+    expect(estimateSaleGrossYieldRange(sale, null, anil)).toBeNull();
+    expect(estimateSaleGrossYieldRange({ ...sale, starting_price_eur: 0 }, 50, anil)).toBeNull();
   });
 });

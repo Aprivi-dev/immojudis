@@ -22,12 +22,13 @@ function renderDrawer(overrides: Partial<Parameters<typeof MobileFilterDrawer>[0
 }
 
 describe("filtre « rendement minimal »", () => {
-  it("dit que le filtre suit un repère départemental, sans mention de l'ANIL à côté", () => {
+  it("est étiqueté « à la mise à prix » et dit qu'il suit un repère départemental, sans mention de l'ANIL à côté", () => {
     renderDrawer();
 
-    const note = screen.getByText(/Ce filtre s’appuie sur un repère de loyer départemental/);
+    expect(screen.getByText("Rendement brut min. à la mise à prix")).toBeTruthy();
+    const note = screen.getByText(/Rendement brut calculé sur la mise à prix/);
     expect(note.textContent).toBe(
-      "Ce filtre s’appuie sur un repère de loyer départemental ; les alertes, exports et statistiques utilisent la carte des loyers de l’ANIL (par commune).",
+      "Rendement brut calculé sur la mise à prix, avec un repère de loyer départemental (indicatif). La fiche, les alertes, les exports et les statistiques utilisent la carte des loyers de l’ANIL (par commune, charges comprises) : une même vente peut donc donner deux chiffres différents.",
     );
     // La mention de la Licence Ouverte n'apparaît qu'à côté de ce qui vient réellement de l'ANIL.
     expect(document.querySelector("[data-rent-source-notice]")).toBeNull();

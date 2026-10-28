@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound, permanentRedirect } from "next/navigation";
 import { openFeeRegimesFromEnv } from "@/lib/fee-regime.server";
 import { lookupPublicSale } from "@/lib/public-sale.server";
-import { loadSaleRentReference } from "@/lib/rent-reference.server";
+import { loadSaleHousingTension, loadSaleRentReference } from "@/lib/rent-reference.server";
 import {
   GENERIC_SALE_SEO_TITLE,
   isIndexablePublicSale,
@@ -108,7 +108,10 @@ export default async function Page({ params }: PageProps) {
   const sale = lookup.status === "found" ? lookup.sale : null;
   // Loyer de référence de la commune (carte ANIL), lu côté serveur : le navigateur ne lit jamais la
   // table. Le rapport enregistré lit la même référence, pour que les deux plafonds restent égaux.
-  const rentReference = sale ? await loadSaleRentReference(sale) : null;
+  // Le zonage « zone tendue » de la commune (fait neutre du bloc « Marché locatif ») se lit au même endroit.
+  const [rentReference, housingTension] = sale
+    ? await Promise.all([loadSaleRentReference(sale), loadSaleHousingTension(sale)])
+    : [null, null];
   const siteOrigin = resolveSiteOrigin(process.env, "http://localhost:3000")!;
   const structuredData = sale
     ? saleStructuredData({ ...sale, id: sale.id.toLowerCase() }, { origin: siteOrigin })
@@ -130,6 +133,7 @@ export default async function Page({ params }: PageProps) {
         adjudicationStatisticsEnabled={process.env.ADJUDICATION_PRICE_STATISTICS_ENABLED === "true"}
         openFeeRegimes={openFeeRegimesFromEnv()}
         rentReference={rentReference}
+        housingTension={housingTension}
       />
     </>
   );

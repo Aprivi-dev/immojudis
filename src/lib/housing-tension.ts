@@ -21,9 +21,14 @@ export type HousingTension = {
   sourceUrl: string | null;
 };
 
-/** Mention de source du zonage (Licence Ouverte 2.0), la même que celle de la page « Mentions légales ». */
-export const TENSION_ATTRIBUTION =
-  "Zonage des communes en zone tendue, ministère de la Transition écologique, Licence Ouverte 2.0.";
+/**
+ * Mention de source du zonage, telle que le dossier d'exploitation l'a rédigée pour l'affichage
+ * (`docs/operations/donnees-de-reference-loyers-et-zonage.md`) ; `updatedOn` : la date de mise à jour du fichier
+ * (« 30 décembre 2025 »), sinon la mention n'en porte pas. Licence Ouverte 2.0.
+ */
+export function tensionAttribution(updatedOn: string | null): string {
+  return `Source : ministère de la Transition écologique, liste des communes selon le zonage TLV (article 232 du code général des impôts)${updatedOn ? `, mise à jour du ${updatedOn}` : ""} ; Licence Ouverte 2.0.`;
+}
 
 /** La ligne neutre de la fiche. */
 export function housingTensionLine(zoning: HousingZoning): string {
