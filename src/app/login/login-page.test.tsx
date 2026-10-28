@@ -31,7 +31,11 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(mocks.search),
 }));
 
-import { LAUNCH_OFFER_VISITOR_TEXT } from "@/lib/launch-offer";
+import {
+  LAUNCH_OFFER_DURATION_TEXT,
+  LAUNCH_OFFER_SIGNUP_LINE,
+  LAUNCH_OFFER_VISITOR_TEXT,
+} from "@/lib/launch-offer";
 import { LoginPage } from "./login-page";
 
 beforeEach(() => {
@@ -320,7 +324,18 @@ describe("login page", () => {
     mocks.launch = { active: true, pending: false };
     render(<LoginPage />);
 
-    expect(screen.getByTestId("login-free-promise").textContent).toBe(LAUNCH_OFFER_VISITOR_TEXT);
+    // Mobile : une ligne visible, les conditions dans un repli (le texte complet précédait le champ).
+    const promise = screen.getByTestId("login-free-promise");
+    expect(LAUNCH_OFFER_SIGNUP_LINE).toBe(
+      "Inscription gratuite : 7 jours d’accès à l’offre Analyse, sans carte bancaire ni prélèvement ensuite.",
+    );
+    expect(promise.querySelector("p")?.textContent).toBe(LAUNCH_OFFER_SIGNUP_LINE);
+    const conditions = promise.querySelector("details");
+    expect(conditions?.open).toBe(false);
+    expect(conditions?.querySelector("summary")?.textContent).toBe("Conditions de l’essai gratuit");
+    expect(conditions?.textContent).toContain(LAUNCH_OFFER_DURATION_TEXT);
+    expect(promise.textContent).not.toBe(LAUNCH_OFFER_VISITOR_TEXT);
+    // Bureau : le texte complet reste inchangé.
     expect(screen.getByTestId("login-launch-offer").textContent).toBe(LAUNCH_OFFER_VISITOR_TEXT);
     expect(screen.getByTestId("login-launch-offer-column").textContent).toBe(
       LAUNCH_OFFER_VISITOR_TEXT,

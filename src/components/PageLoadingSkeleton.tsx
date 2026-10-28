@@ -5,17 +5,10 @@
  * `notFound()` fige le statut HTTP à 200 dès le premier morceau diffusé (c'était le cas de
  * `/comparaisons/<jeton inconnu>`). Ne l'ajouter qu'à des segments sans `notFound()` dynamique ;
  * `/login` en a besoin parce que `useSearchParams()` y exige une frontière Suspense.
- *
- * `cloudBackground={false}` retire l'image des nuages (`cloud-background.webp`, 51 Ko) du fond :
- * `/sales` l'emploie pour ne pas télécharger, sur mobile, une image décorative que le
- * catalogue lui-même n'affiche pas.
  */
-export function PageLoadingSkeleton({ cloudBackground = true }: { cloudBackground?: boolean }) {
+export function PageLoadingSkeleton() {
   return (
-    <main
-      id="contenu"
-      className={`liquid-page${cloudBackground ? "" : " liquid-page-plain"} min-h-screen px-4 py-10 sm:px-6`}
-    >
+    <main id="contenu" className="liquid-page min-h-screen px-4 py-10 sm:px-6">
       <div className="mx-auto max-w-6xl">
         <div className="h-8 w-48 animate-pulse rounded-md bg-white/70" />
         <div className="mt-8 grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
