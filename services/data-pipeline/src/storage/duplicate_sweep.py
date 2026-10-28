@@ -29,7 +29,10 @@ from src.storage.sale_row_builders import _secondary_source_urls
 
 LOGGER = logging.getLogger(__name__)
 
-PAGE_SIZE = 1000
+# Lignes complètes (raw_payload, raw_text...) : 1 000 par page dépassait le statement_timeout (57014, 28/10/2026).
+PAGE_SIZE = 100
+MIN_PAGE_SIZE = 10
+PAGE_SIZE_ENV = "DEDUPE_RECONCILE_PAGE_SIZE"
 _TIMEOUT = httpx.Timeout(120.0, connect=30.0)
 # Un groupe de plus de 5 lignes (la fiche conservée et ses lignes secondaires) n'est jamais fusionné
 # automatiquement : il reste à relire à la main.
@@ -118,6 +121,21 @@ def _summary(sale: AuctionSale) -> DuplicateRowSummary:
     )
 
 
+def _page_size() -> int:
+    """Taille de page demandée : ``DEDUPE_RECONCILE_PAGE_SIZE`` (10 à 1 000), 100 par défaut."""
+    try:
+        requested = int(os.getenv(PAGE_SIZE_ENV, "") or PAGE_SIZE)
+    except ValueError:
+        requested = PAGE_SIZE
+    return min(1000, max(MIN_PAGE_SIZE, requested))
+
+
+def _is_statement_timeout(response: Any) -> bool:
+    """Délai SQL dépassé : code Postgres 57014 (renvoyé en 500 par PostgREST) ou 408 / 504."""
+    text = str(getattr(response, "text", "") or "")
+    return response.status_code in {408, 504} or "57014" in text or "statement timeout" in text.lower()
+
+
 def fetch_candidate_rows(
     supabase_url: str,
     api_key: str,
@@ -129,25 +147,30 @@ def fetch_candidate_rows(
 ) -> list[dict[str, Any]]:
     """Lit toutes les pages jusqu'à ``limit`` lignes (hors lignes protégées par un alias relu).
 
+    Pagination par curseur sur ``id`` (``order=id.asc`` puis ``id=gt.<dernier id>``) : stable même si des
+    lignes changent pendant le balayage, et sans le coût croissant d'un décalage. Les lignes sont lourdes
+    (``raw_payload``, ``raw_text``) : pages de ``DEDUPE_RECONCILE_PAGE_SIZE`` lignes (100 par défaut). Un
+    délai dépassé (code 57014, 408/504, délai réseau) divise la taille de page par deux et relit la même page,
+    jusqu'à ``MIN_PAGE_SIZE`` ; au-delà, ou pour toute autre erreur, le balayage est partiel.
     La fin des données est une page vide : le serveur peut plafonner la taille de page (``max_rows`` de
-    PostgREST) sous ``PAGE_SIZE``, et une page courte ne prouve alors rien. Le décalage suit le nombre de
-    lignes réellement reçues. Une erreur HTTP ou réseau en cours de route, comme le plafond de lecture,
-    rend le balayage partiel (``scan.truncated``).
+    PostgREST) sous la taille demandée, et une page courte ne prouve alors rien. Une erreur HTTP ou réseau
+    en cours de route, comme le plafond de lecture, rend le balayage partiel (``scan.truncated``).
     """
     endpoint = f"{supabase_url.rstrip('/')}/rest/v1/auction_sales"
     rows: list[dict[str, Any]] = []
-    offset = 0
+    cursor: str | None = None
+    page_size = _page_size()
     while True:
         params: dict[str, str] = {
             "select": DEDUPLICATION_SALE_SELECT,
-            # L'identifiant départage les dates égales : sans ordre total, la pagination par décalage
-            # peut répéter ou sauter des lignes d'une page à l'autre.
-            "order": "sale_date.asc.nullslast,updated_at.desc.nullslast,id.asc",
-            "limit": str(PAGE_SIZE),
-            "offset": str(offset),
+            "order": "id.asc",
+            "limit": str(page_size),
         }
+        if cursor is not None:
+            params["id"] = f"gt.{cursor}"
         if statuses:
             params["status"] = _postgrest_in_filter(list(statuses))
+        timed_out = False
         try:
             response = httpx.get(
                 endpoint,
@@ -155,21 +178,26 @@ def fetch_candidate_rows(
                 headers=_rest_headers(api_key, prefer="count=none"),
                 timeout=_TIMEOUT,
             )
+            failure = f"({response.status_code}) {response.text[:300]}" if response.is_error else None
+            timed_out = failure is not None and _is_statement_timeout(response)
         except httpx.HTTPError as exc:
+            failure, timed_out = str(exc), isinstance(exc, httpx.TimeoutException)
+        if failure is not None:
+            if timed_out and page_size > MIN_PAGE_SIZE:
+                smaller = max(MIN_PAGE_SIZE, page_size // 2)
+                LOGGER.warning(
+                    "Supabase duplicate reconciliation page timed out after %s rows (%s rows per page): "
+                    "retrying with %s",
+                    len(rows),
+                    page_size,
+                    smaller,
+                )
+                page_size = smaller
+                continue
             LOGGER.warning(
-                "Supabase duplicate reconciliation fetch failed after %s rows: %s; the scan is partial",
+                "Supabase duplicate reconciliation fetch failed %s after %s rows; the scan is partial",
+                failure,
                 len(rows),
-                exc,
-            )
-            if scan is not None:
-                scan.mark_truncated("fetch_error")
-            break
-        if response.is_error:
-            LOGGER.warning(
-                "Supabase duplicate reconciliation fetch failed (%s) after %s rows: %s; the scan is partial",
-                response.status_code,
-                len(rows),
-                response.text[:300],
             )
             if scan is not None:
                 scan.mark_truncated("fetch_error")
@@ -182,7 +210,13 @@ def fetch_candidate_rows(
             for row in page_rows
             if isinstance(row, dict) and (not row.get("id") or str(row["id"]) not in protected_ids)
         )
-        offset += len(page_rows)
+        last = page_rows[-1]
+        if not isinstance(last, dict) or not last.get("id"):
+            LOGGER.warning("Duplicate reconciliation page without row id after %s rows; the scan is partial", len(rows))
+            if scan is not None:
+                scan.mark_truncated("fetch_error")
+            break
+        cursor = str(last["id"])
         if len(rows) >= limit:
             # Plafond de lecture atteint sans avoir vu la page vide : le balayage est partiel.
             if scan is not None:

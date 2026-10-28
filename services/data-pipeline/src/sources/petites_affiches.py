@@ -248,8 +248,17 @@ def scrape_petites_affiches_aquitaine_result(
                 _save_page_cursor(partition, department, pages, completed_proofs, parsed_urls,
                                   current_page=page_url, resumed=resumed)
                 break
-            pages.observe(html, page_url)
             page_sales = parse_petites_affiches_html(html, page_url=page_url, fallback_department=department)
+            if not page_sales and department is None:
+                # A 200 answer to the POST without any card: the national page can still be read with a GET.
+                alternative = _get_listing_fallback(client, page_url)
+                alternative_sales = (
+                    parse_petites_affiches_html(alternative, page_url=page_url, fallback_department=department)
+                    if alternative else []
+                )
+                if alternative_sales:
+                    html, page_sales = str(alternative), alternative_sales
+            pages.observe(html, page_url)
             pages_parsed += 1
             cards_seen += len(page_sales)
             if not page_sales and empty_page_diagnosis is None:
@@ -369,9 +378,25 @@ def _empty_listing_diagnosis(html: str, page_url: str) -> str:
         if re.search(r"/encheres-immobilieres/vente/", str(anchor.get("href")))
     }
     challenge = bool(re.search(r"just a moment|cf-chl|captcha|access denied", html[:6000], re.I))
+    # The first five sale links (public path) and the classes of their parents: enough to see which markup replaced
+    # the cards, without any personal data.
+    sample: list[str] = []
+    seen_paths: set[str] = set()
+    for anchor in soup.find_all("a", href=True):
+        path = urlparse(urljoin(page_url, str(anchor.get("href")))).path
+        if "/encheres-immobilieres/vente/" not in path or path in seen_paths:
+            continue
+        seen_paths.add(path)
+        parents = [
+            ".".join(str(name) for name in (parent.get("class") or []))[:40] or str(parent.name)
+            for parent in list(anchor.parents)[:3]
+        ]
+        sample.append(f"{path[:120]} parents={'<'.join(parents)}")
+        if len(sample) == 5:
+            break
     return (
         f"url={page_url} bytes={len(html)} title={(title or '')[:80]!r} sale_links={len(sale_links)} "
-        f"annonce_lot_markers={html.count('annonce_lot')} challenge_page={challenge}"
+        f"annonce_lot_markers={html.count('annonce_lot')} challenge_page={challenge} first_links={sample}"
     )
 
 
@@ -402,11 +427,114 @@ def parse_petites_affiches_html(
 ) -> list[dict[str, Any]]:
     soup = parse_html(html, "html.parser")
     sales: list[dict[str, Any]] = []
-    for card in soup.select("div[class*='annonce_lot_']"):
+    cards = soup.select("div[class*='annonce_lot_']")
+    for card in cards:
         sale = _parse_card(card, page_url, fallback_department)
         if sale:
             sales.append(sale)
+    if not cards:
+        # Structure changed (28/10/2026: 107 sale links, no ``annonce_lot_`` block): read the links themselves.
+        return _parse_link_cards(soup, page_url, fallback_department)
     return sales
+
+
+def _get_listing_fallback(client: PoliteHttpClient, page_url: str) -> str | None:
+    """National list by GET when the POST answered without any card; ``None`` when that fails too."""
+    try:
+        return client.get(page_url)
+    except Exception as exc:  # noqa: BLE001 - a fallback never replaces the first answer's diagnosis
+        LOGGER.warning("Petites Affiches GET fallback failed for %s: %s", page_url, exc)
+        return None
+
+
+# Same sale URL shape as the old cards (/vente/immobiliere/<type>/<slug>-<id>.html); category links do not end in .html.
+SALE_LINK_PATH = re.compile(r"/encheres-immobilieres/vente/(?:[^/]+/)+[^/]+\.html$")
+_CARD_DATE_RE = re.compile(r"Date\s+de\s+vente\s*:?\s*(\d{1,2}/\d{1,2}/\d{4})", re.I)
+_CARD_ADDRESS_RE = re.compile(r"Adresse\s*:?\s*([^\n]{2,80})", re.I)
+_CARD_CONTAINER_MAX_CHARS = 1500
+
+
+def _sale_link_url(anchor: Tag, page_url: str) -> str | None:
+    href = str(anchor.get("href") or "").strip()
+    if not href or href.startswith(("#", "javascript:", "mailto:", "tel:")):
+        return None
+    absolute = urljoin(page_url, href).split("#", 1)[0].split("?", 1)[0]
+    parsed = urlparse(absolute)
+    if parsed.netloc != urlparse(BASE_URL).netloc or not SALE_LINK_PATH.search(parsed.path):
+        return None
+    return absolute
+
+
+def _parse_link_cards(soup: BeautifulSoup, page_url: str, fallback_department: str | None) -> list[dict[str, Any]]:
+    """Cards rebuilt from the sale links when the list has no ``annonce_lot_`` block (unknown markup).
+
+    Each distinct sale URL gives one card: its container is the highest ancestor that holds that sale link
+    alone. The URL is the only mandatory field; title, city, date and starting price are kept when the
+    container gives them, the detail page completes the rest.
+    """
+    anchors: dict[str, list[Tag]] = {}
+    for anchor in soup.find_all("a", href=True):
+        url = _sale_link_url(anchor, page_url)
+        if url:
+            anchors.setdefault(url, []).append(anchor)
+
+    def distinct_links(node: Tag) -> set[str]:
+        return {url for a in node.find_all("a", href=True) if (url := _sale_link_url(a, page_url))}
+
+    sales: list[dict[str, Any]] = []
+    for url, links in anchors.items():
+        container: Tag = links[0]
+        while isinstance(container.parent, Tag) and container.parent.name not in {"body", "html", "[document]"}:
+            if distinct_links(container.parent) != {url}:
+                break
+            container = container.parent
+        if len(container.get_text(" ", strip=True)) > _CARD_CONTAINER_MAX_CHARS:
+            container = links[0]
+        label = max((clean_text(a.get_text(" ", strip=True)) or "" for a in links), key=len)
+        sales.append(_card_from_container(container, url, label, page_url, fallback_department))
+    return sales
+
+
+def _card_from_container(
+    container: Tag, source_url: str, label: str, page_url: str, fallback_department: str | None
+) -> dict[str, Any]:
+    raw_text = "\n".join(
+        line for line in (clean_text(part) for part in container.get_text("\n", strip=True).splitlines()) if line
+    )
+    title, reference, property_type = _title_reference_type(label)
+    property_type = _property_type_from_title(title) or property_type
+    date_match = _CARD_DATE_RE.search(raw_text)
+    address_match = _CARD_ADDRESS_RE.search(raw_text)
+    city = (_node_text(container.select_one(".lot-adresse, [class*='adresse'] strong"))
+            or (clean_text(address_match.group(1)) if address_match else None))
+    price = _node_text(container.select_one(".miseAPrix strong")) or _extract_price(raw_text)
+    image = container.select_one("img")
+    image_url = urljoin(page_url, str(image.get("data-src") or image.get("src") or "")) if image else None
+    if image_url and ("default-pic" in image_url.lower() or image_url == page_url):
+        image_url = None
+    match = re.search(r"-(\d+)\.html$", urlparse(source_url).path)
+    return _attach_source_property_features({
+        "source_name": "petites_affiches",
+        "source_url": source_url,
+        "external_id": match.group(1) if match else source_url.rstrip("/").split("/")[-1],
+        "department": fallback_department,
+        "city": city,
+        "property_type": property_type,
+        "title": title or None,
+        "description": title or None,
+        "starting_price_eur": price,
+        "sale_date": date_match.group(1) if date_match else None,
+        "surface_m2": extract_surface(raw_text),
+        "postal_code": _extract_card_postal(container),
+        "lawyer_name": _extract_lawyer(raw_text),
+        "tribunal": _node_text(container.select_one(".lieuVente strong")),
+        "status": "upcoming",
+        "documents": [],
+        "raw_text": raw_text,
+        "raw_image_url": image_url,
+        "source_images": [image_url] if image_url else [],
+        "source_blocks": {"reference": reference, "list_layout": "sale_links"},
+    })
 
 
 def _parse_card(card: Tag, page_url: str, fallback_department: str | None) -> dict[str, Any] | None:

@@ -73,6 +73,7 @@ from src.information_sufficiency import (
     extract_emails,
 )
 from src.information_sufficiency import _string_leaves as string_leaves
+from src.listing_location import _is_named_place_before_commune as is_named_place_before_commune
 from src.listing_location import classify_address
 from src.models import AuctionSale
 from src.position_quality import street_name_tokens
@@ -134,6 +135,9 @@ def has_street_or_lieu_dit(address: str | None, city: str | None = None) -> bool
     if not text:
         return False
     if street_name_tokens(text, require_street_type=True) is not None:
+        return True
+    # Lu AVANT le retrait de la commune : « Le Prieuré, Sossais » sans la commune n'a plus de partie après la virgule.
+    if is_named_place_before_commune(text, city):
         return True
     return classify_address(_remove_commune(text, city), city) in _EXPLOITABLE_LEVELS
 

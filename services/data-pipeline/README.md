@@ -149,7 +149,10 @@ La collecte planifiée lance une seule source à la fois ; or la passe ci-dessus
 `python -m src.dedupe_apply` (workflow GitHub « Dedupe sweep », manuel, groupe de concurrence
 `immojudis-data-pipeline`, environnement Production) l'exécute à part : passerelle du catalogue, puis
 fusion et suppression, au plus 100 lignes par passage et seulement si `DEDUPE_RECONCILE_ENABLED=true`
-(sinon rien n'est écrit, et le mode candidats reste en lecture seule). Dans ce balayage, la clé de repli
+ou si le workflow est lancé avec `apply` coché et `confirm_target` = `production` (pour ce lancement
+seulement) ; sinon rien n'est écrit, et le mode candidats reste en lecture seule. La lecture se fait par
+pages de `DEDUPE_RECONCILE_PAGE_SIZE` lignes (100 par défaut), curseur sur `id`, et réduit la page quand
+un délai SQL est dépassé. Dans ce balayage, la clé de repli
 stricte (tribunal, jour, mise à prix, bien) est permise hors Vench / Petites Affiches, et un (jour, prix)
 partagé par plus de 5 annonces ou un groupe de plus de 5 lignes n'est jamais fusionné. Les données des
 comptes (favoris, notes, alertes, rapports…) des lignes supprimées passent à la fiche conservée dans la
