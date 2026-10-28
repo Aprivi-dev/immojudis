@@ -401,3 +401,113 @@ Les réécritures exactes (avant → après, fichier et ligne) sont dans le rapp
 5. Le caractère personnel des instantanés notariaux et leur durée de 36 mois.
 6. La formule publique sur Licitor dans un communiqué, et le prix de référence montré aux comptes gratuits.
 7. La réutilisation du jeu CNB et la prospection B2B des avocats, le jour où le gel sera levé.
+
+## Bilan de l'exécution (28/10/2026)
+
+Le propriétaire a validé les propositions n° 1 à 99 le 27/10, sauf trois :
+
+- n° 2 (préavis des CGU) : mis de côté ;
+- n° 98 : en attente de l'identité de l'éditeur ;
+- n° 18 : en attente de l'avis juridique (voir plus bas).
+
+Treize chantiers d'exécution ont été lancés en parallèle (W1 à W10, rédacteur, un worktree chacun). Deux limites d'usage et deux redémarrages de la machine les ont interrompus : six worktrees ont été perdus avant leur premier commit et refaits depuis `main`. Les branches ont été fusionnées à la main sur `claude/equipe-session-2026-10-27`.
+
+Trois relectures ont suivi : `code-reviewer` côté serveur, `code-reviewer` côté interface et `juridique-rgpd` sur les textes [JR]. Aucune n'a relevé de point critique. Leurs points importants et mineurs ont été corrigés en une seconde passe (deux chantiers), avec la CI.
+
+### Ce qui est fait, par chantier
+
+| Chantier              | Numéros faits                                    | Partiel ou non fait                                                                                                                                          |
+| --------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| W1 supervision et CI  | 3, 5, 8, 9, 40, 41, 81                           | 82 sans le regroupement « collecte » ni l'escalade à 72 h ; 85 sans horloge fixée par défaut dans les tests                                                  |
+| W2a Postgres          | 6, 51                                            | 33 : quatre petites lectures hors catalogue restent paginées par décalage                                                                                    |
+| W2b pipeline          | 46, 47, 48, 79, 80                               | 4 : client tolérant aux coupures, avoventes débloqué, petites_affiches en erreur diagnostiquée (le parseur ne lit plus aucune carte : décision propriétaire) |
+| W3 essai              | 7, 11, 12, 13, 14, 16, 17, 19, 74 ; 15 (runbook) | `LaunchOfferIncludedTag`, `LaunchOfferNote` et le suivi des changements lisent encore l'interrupteur global                                                  |
+| W4 Pépite             | 20 à 27, 30 à 33 (règle `pepite-v1.1`)           | —                                                                                                                                                            |
+| W5 inondation, loyers | 1, 38, 39, 43, 44, 45, 49, 50, 95                | —                                                                                                                                                            |
+| W6a accueil           | 52, 53, 54, 55, 56, 57, 65, 67, 70, 92           | 71 : LCP non mesuré sur build ; classes du thème sombre restantes (espace-pro, publish, mes-droits, guide, deux pages admin)                                 |
+| W6b accessibilité     | 58, 59, 60, 62, 66, 86                           | 68 sans p25-p75 (changement de schéma) ; 62 sans lot ni adresse sur la page département (vues publiques)                                                     |
+| W7 carte et vitesse   | 61, 96 (existait déjà)                           | 61 : satellite des cartes de liste inactif tant que les vues `*_search` n'exposent pas `location_precision` ; 73 : plafond et scénarios non différés         |
+| W8 PDF, API, tests    | 29, 72, 75, 76, 77                               | 78 : cas `?pepite=true` à l'arrivée sur `/sales` retiré, Firefox et WebKit non joués                                                                         |
+| W9 mesure, emails     | 63, 64, 87, 88, 89, 90, 91, 94, 97, 99           | 93 : pas de tri « plafond calculable » ; 88 : pas de lien « Signaler » dans le bloc Pépite ; 63 : police système dans l'image de partage                     |
+| W10 docs              | 83, 84                                           | —                                                                                                                                                            |
+| Rédacteur             | 28, 42, 52 (article), visibilité IA              | —                                                                                                                                                            |
+
+### Changements de résultat de la règle `pepite-v1.1`
+
+Aucune vente ne gagne le label. Voici les cas qui le perdent ou passent « à confirmer » :
+
+- un plancher « au moins » dont la part est sous 70 % à l'entrée, ou sous 65 % au maintien ;
+- une mise à prix sous 30 % de la référence sans fiabilité « forte » ;
+- un bien loué dont le coût dépasse 75 % de la valeur décotée de 10 % (80 % au maintien) ;
+- une vente notariale dont les frais de négociation ou de publicité ne sont pas lus ;
+- une pépite gelée dont l'estimation se dégrade ;
+- une borne basse de Wilson sous 0,50 à l'entrée.
+
+Pendant le gel à J-7, une pépite évaluée sous une autre version de règle est réévaluée une fois. Pour l'inondation (`flood-v2`), une position à la rue, un lieu-dit ou un numéro au score inférieur à 0,8 ne suffit plus pour « aucune zone trouvée » : il y aura moins de pépites candidates sous la règle v2.
+
+### Décisions prises pendant l'exécution
+
+- **Budgets JavaScript relevés** (décision du fondateur du 28/10) : favoris 690 000, fiche 385 000, annonce exemple 190 000, total client 6 340 000 octets.
+- **Pas de planification pour l'import des données de référence** : la détection d'un nouveau millésime ANIL se lance à la main, car la CI interdit toute planification de collecte.
+- **Motifs d'administration hors de la ligne lisible par le compte** : `app_private.trial_extension_notes` pour les prolongations, `app_private.manual_grant_notes` pour les attributions manuelles. La migration `20261108190000` y reverse les anciens motifs puis les retire de `user_subscriptions`.
+
+### Mise en production : migrations et ordre
+
+Il y a 21 migrations, `20261108100000` à `20261108190000` (aucune appliquée). Les appliquer dans l'ordre des horodatages, puis déployer le code. Chaque appel du code a un repli quand sa fonction manque, sauf deux qui doivent être appliquées avant le code : `20261108130000` à `130200` (prolongation d'essai) et `20261108140000` (colonnes de version de la pépite).
+
+Après le déploiement :
+
+1. Le premier passage horaire réévalue toutes les pépites en `pepite-v1.1`. Le traitement d'inondation réobserve toutes les ventes (`flood-v2`, 150 par passe).
+2. Lancer le workflow `reference-data-import` avec `dataset=commune_history`, puis `tension` s'il n'a jamais été importé.
+3. Purger le cache `public-tribunal-activity` (clé passée en v2).
+4. Retirer `ALERT_RENT_BASIS_SWITCH_AT` de Vercel après le 29/10/2026 à 00:10 UTC, puis redéployer.
+5. Optionnel : créer `TRANSACTIONAL_EMAIL_FROM` sur Vercel.
+6. Vérifier la date réelle d'application de `20261103110000` : le repli de l'empreinte des rapports partagés suppose le 03/11/2026 11:00 UTC.
+
+### Incident relevé pendant l'exécution : redémarrages de la base
+
+Les journaux Supabase (lecture seule) montrent des arrêts brutaux de Postgres (« database system was not properly shut down ») :
+
+- 6 sur les dernières 24 heures, dont le 28/10 à 08:28 et 10:04 UTC ;
+- 3 à 4 par jour depuis le 19/10 ;
+- le premier relevé date du 17/10.
+
+Ils expliquent la collecte bloquée depuis le 19/10 et le 503 de `/api/health` le 28/10 au matin.
+
+Les paramètres de la base (`shared_buffers` 256 Mo, 60 connexions) correspondent à la plus petite instance. L'hypothèse retenue, non confirmée, est un manque de mémoire pendant les lectures JSON volumineuses du pipeline.
+
+Action du propriétaire : regarder la courbe mémoire dans Supabase (Reports → Database) et, si elle sature, passer l'instance à une taille supérieure. Les correctifs W2a et W2b réduisent les blocages et rendent le pipeline tolérant aux coupures, mais ne suppriment pas les redémarrages.
+
+### Retour juridique (résumé)
+
+Aucun point critique. Les points importants dont le texte de remplacement était donné sont appliqués :
+
+- « potentiel d'investissement » retiré ;
+- réserve du prix de référence alignée sur l'écran ;
+- décote d'un bien loué publiée (10 %) ;
+- médianes de loyers attribuées à Immojudis et non à l'ANIL ;
+- procédure de l'étude utilisateurs ;
+- registre RGPD complété.
+
+Restent à faire valider par un avocat :
+
+1. Le support d'annexion de l'état des risques selon le type de vente (cahier des conditions de vente, cahier des charges, avant-contrat) et l'article L. 125-5.
+2. La qualification du repère « Pépite », et son maintien quand le verdict d'inondation est inconnu ou divergent. Pour une parcelle multiple, une seule parcelle en zone forte donne « inconnu » et non « élevé » : choix à trancher.
+3. Le suivi par compte (`account_product_events`) et les liens traçants des emails, absents de `/privacy` (la politique n'a pas été modifiée dans cette session).
+4. L'étude utilisateurs : invitation, relances, gratification.
+5. Le n° 18 : `juridique-rgpd` déconseille de conserver une empreinte de l'adresse après effacement sans abus mesuré. Si elle était retenue : HMAC à clé secrète, 12 mois à partir de la fin de l'essai, information dans `/privacy` et `/mes-droits` avant tout traitement.
+6. L'attribution ANIL des médianes recalculées.
+7. À la prochaine révision des CGU : clause de prolongation gracieuse (art. 13) et « prix probables » (art. 8).
+
+### Restes et suites proposées
+
+- Migration qui ajoute `location_precision` et `quality_flags` aux vues `v_auction_sales_app_search` et `v_auction_sales_discovery_search`, pour rendre le satellite aux cartes de liste (n° 61).
+- Purge à 24 mois des tables `trial_extension_notes` et `manual_grant_notes` dans `run_data_retention`.
+- `readPositionExtras` : une fonction SQL au lieu de relire `raw_payload` à chaque passe.
+- Relecture juridique des textes nouveaux de la carte (légende, « Centre de la commune, position approximative »).
+- Marges de budget faibles après relèvement (fiche et annonce exemple, environ 1 à 1,5 Ko).
+- `supabase_client.py` à 4 526 lignes, exactement son plafond : découper avant tout ajout.
+
+### Vérifications sur la branche fusionnée
+
+`npx tsc --noEmit`, `npm run lint`, `npm run test:security-invariants` et `npm run check:manual-collection` passent. Ont aussi passé, dans le worktree de la passe serveur : `npm test` (820 fichiers, 10 802 tests) et `pytest` (5 072 tests). La CI de la PR #332 rejoue l'ensemble, dont pgTAP et Playwright.
