@@ -1,6 +1,6 @@
 # Données de référence : carte des loyers de l'ANIL et zonage tendu (TLV)
 
-Mise à jour : 2026-10-26.
+Mise à jour : 2026-10-28.
 
 ## Pourquoi
 
@@ -69,10 +69,13 @@ serveur uniquement (`service_role`).
 
 Workflow manuel **Reference data import** (`.github/workflows/reference-data-import.yml`) :
 
-- `dataset` : `rents`, `tension` (ou `all`, qui les inclut) ;
+- `dataset` : `rents`, `tension`, `communes`, `risks`, `climate` ou `all`. **`all` relance les cinq
+  jeux** (`communes`, `risks`, `climate`, `rents`, `tension`, dans cet ordre), pas seulement les deux de cette
+  page : à éviter pour une mise à jour des loyers ou du zonage (le workflow prévoit jusqu'à 90 minutes) ;
 - `dry_run` : télécharge et analyse sans écrire.
 
 Fréquence : la carte des loyers est publiée chaque année en décembre ; le zonage change à chaque décret.
+La checklist de l'import de décembre est dans `docs/runbooks/import-annuel-anil.md`.
 
 En local : `cd services/data-pipeline && python -m src.reference_data rents --dry-run` (idem `tension`).
 
@@ -82,21 +85,28 @@ Le jeu du zonage est épinglé par son identifiant (`657c88da2947e13be0597058`),
 
 Gardes contre un import partiel : au moins 34 000 communes par segment (ANIL) ou au total (zonage), les
 quatre segments présents, au plus 0,5 % de lignes rejetées (code, département, loyer hors de 1 à
-100 €/m², type de prédiction ou zonage inconnu). Tout est analysé et contrôlé avant la première écriture.
+100 €/m², type de prédiction ou zonage inconnu). Tout est **analysé et contrôlé avant la première écriture**,
+mais **l'écriture n'est pas atomique** (voir plus bas).
 Le département de chaque ligne se déduit du code commune (pas de la colonne `DEP`). Les segments des
 fichiers ANIL sont reconnus par leur nom de fichier d'abord, par leur titre ensuite. Le zonage refuse
 l'import si la documentation du jeu n'identifie aucun décret (pas de repli sur un décret connu).
 
-Après l'écriture, l'import purge les lignes qu'il n'a pas touchées (communes disparues du millésime) puis
-contrôle la table : un seul millésime et le bon nombre de lignes pour `anil_rents`, le bon nombre de lignes
-pour `commune_housing_tension`. Un mélange de millésimes ou un compte inattendu arrête l'import avec une
-erreur claire (rien ne doit lire la table avant d'avoir compris).
+**L'écriture n'est pas atomique.** Les lignes sont écrites par paquets de 1 000, avec un commit par paquet
+(`services/data-pipeline/src/reference_data/storage.py`), puis l'import purge les lignes qu'il n'a pas touchées
+(communes disparues du millésime), puis contrôle la table : un seul millésime et le bon nombre de lignes pour
+`anil_rents`, le bon nombre de lignes pour `commune_housing_tension`. Un échec en cours d'écriture laisse donc
+un **mélange de millésimes ou de lignes**, déjà lisible par l'application (cache de 6 heures). Le contrôle final
+lève une erreur **après** l'écriture : il prévient, il n'annule rien. L'import est idempotent : le relancer
+répare. Une restauration complète passe par une sauvegarde Supabase.
 
 **À chaque nouvel import de la carte des loyers**, mettre à jour `ANIL_CURRENT_EDITION`
 (`src/lib/rent-source-notice.ts`) : il sert aux mentions qui ne portent pas sur une vente (emails d'alerte).
 Les écrans qui portent sur une vente affichent le millésime et la date de la ligne réellement utilisée.
-L'import signale tout écart (`web_edition_gap` dans son résumé, y compris en `--dry-run`) et un test du
-pipeline échoue tant que la constante et le millésime lu ne concordent pas.
+L'import signale tout écart (`web_edition_gap` dans son résumé, y compris en `--dry-run`). **Aucun test ne lit
+le jeu réel** : les tests (`src/lib/rent-reference.test.ts` et
+`services/data-pipeline/tests/test_reference_data.py`, `test_the_real_web_edition_matches_...`) figent
+`2025 / 2025-12-11`. Changer la constante fait échouer ces deux tests tant qu'ils ne sont pas édités dans la
+même pull request ; **oublier la constante ne casse rien** et seul `web_edition_gap` le signale.
 
 ## Lecture par l'application
 
@@ -172,14 +182,23 @@ catalogue et trouverait d'un coup toutes les ventes devenues rentables.
 
 Mécanisme (`isRentBasisSilentPass`, `alert-matches.ts`) :
 
-- Au déploiement, poser `ALERT_RENT_BASIS_SWITCH_AT` (date ISO du déploiement, voir `.env.example`). Absente,
-  rien n'est tu.
+- Poser `ALERT_RENT_BASIS_SWITCH_AT` (date ISO UTC, voir `.env.example`) à l'heure où l'application commence à
+  lire les nouveaux loyers. Le changement commence **à l'import** de `anil_rents` (avant l'import, le repli
+  départemental s'applique), plus le cache serveur de 6 heures, et non au déploiement du code. Ordre : importer,
+  poser la variable à l'heure de l'import, redéployer, le tout avant le premier passage de `smart-alerts`
+  (06:15 UTC) qui suit. Absente ou invalide, rien n'est tu, sans message.
 - Pendant les 48 heures suivantes, la première évaluation de chaque alerte à critère de rendement déjà
   évaluée avant ce moment (`last_evaluated_at` renseigné et antérieur) enregistre SANS notification les
   correspondances qui n'existaient pas avec le loyer départemental. Les ventes qui correspondaient déjà, les
   alertes sans rendement et les alertes créées ou modifiées depuis (`last_evaluated_at` nul) notifient comme
   avant. Les correspondances tues restent visibles dans la liste des correspondances de l'alerte.
-- Retirer la variable ensuite.
+- Retirer la variable ensuite (et redéployer).
+
+**État au 28/10/2026** : la variable est posée en production à `2026-10-27T00:10:00Z` (valeur indiquée par le
+compte-rendu du 26/10/2026, non relue sur Vercel). La fenêtre de 48 heures se termine le **29/10/2026 à
+00:10 UTC** ; **la retirer après cette heure** (Vercel, Production, puis redéployer). Les trois cas qui passent
+sans trace sont : variable absente ou date invalide, recherche ANIL en erreur (repli départemental avec un
+simple `console.error`), et un passage de `smart-alerts` manqué pendant la fenêtre (la rafale partirait à l'évaluation suivante).
 
 ## Reste à faire
 
