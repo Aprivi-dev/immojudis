@@ -74,6 +74,7 @@ describe("legal and institutional pages", () => {
     ["conditions-generales", () => import("./conditions-generales/page")],
     ["a-propos", () => import("./a-propos/page")],
     ["classement-des-annonces", () => import("./classement-des-annonces/page")],
+    ["methode-pepites", () => import("./methode-pepites/page")],
   ])("%s has a descriptive, sober description", async (_name, importPage) => {
     const { metadata } = await importPage();
     const description = String(metadata.description);

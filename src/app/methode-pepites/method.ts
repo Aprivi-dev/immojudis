@@ -5,8 +5,6 @@ import {
   PEPITE_COST_EXIT_SHARE_NOTARY,
   PEPITE_COST_MAX_SHARE_COURT,
   PEPITE_COST_MAX_SHARE_NOTARY,
-  PEPITE_COURT_COMPLETE_BELOW_SALES,
-  PEPITE_COURT_REPLACE_BELOW_SALES,
   PEPITE_EXTREME_START_RATIO_MAX,
   PEPITE_EXTREME_START_RATIO_MIN,
   PEPITE_FAVOURABLE_EVALUATIONS,
@@ -18,6 +16,7 @@ import {
   PEPITE_LATEST_RULE_VERSION,
   PEPITE_V1_RULE_VERSION,
 } from "@/lib/pepite-policy";
+import { MIN_COURT_SAMPLE, MIN_NATIONAL_SAMPLE } from "@/lib/auction-scenarios";
 
 /**
  * Adresse et seuils publiés sur « Comment repérons-nous les pépites ? ».
@@ -31,6 +30,23 @@ import {
  * geste. Le module de la règle ne lit ni la base ni le catalogue : la page non plus.
  */
 export { PEPITE_METHOD_PATH } from "@/lib/pepite-copy";
+
+/**
+ * Lissage des ventes comparables, tel que le calcule la base (fonction `app_private.court_auction_scenarios`,
+ * migration `supabase/migrations/20261101120100_auction_scenarios_reliability.sql`). Ces valeurs sont recopiées
+ * du SQL : si la migration change, les changer ici et le texte de la page dans le même geste.
+ * - moins de `minNationalSales` ventes comparables en France : aucun chiffre ;
+ * - moins de `minCourtSales` ventes au tribunal : part nationale seule ; sinon
+ *   (ventes du tribunal + `smoothingWeightSales` x part nationale) / (ventes du tribunal + `smoothingWeightSales`) ;
+ * - fourchette de prix : ventes du tribunal seules à partir de `priceCourtOnlyFromSales`, nationales en dessous.
+ * `minNationalSales` et `minCourtSales` viennent de `src/lib/auction-scenarios.ts` (test de dérive dans la page).
+ */
+export const PEPITE_SMOOTHING = {
+  minNationalSales: MIN_NATIONAL_SAMPLE,
+  minCourtSales: MIN_COURT_SAMPLE,
+  smoothingWeightSales: 15,
+  priceCourtOnlyFromSales: 20,
+} as const;
 
 export { PEPITE_LATEST_RULE_VERSION, PEPITE_V1_RULE_VERSION };
 
@@ -80,10 +96,11 @@ export const PEPITE_RULE_PARAMS = {
   minValueComparables: PEPITE_MIN_VALUE_COMPARABLES,
   /** Historique des ventes comparables, en années. */
   historyYears: PEPITE_HISTORY_YEARS,
-  /** Sous ce nombre de ventes du tribunal, on complète par le taux national. */
-  courtCompleteBelowSales: PEPITE_COURT_COMPLETE_BELOW_SALES,
-  /** Sous ce nombre de ventes du tribunal, on le remplace par le taux national. */
-  courtReplaceBelowSales: PEPITE_COURT_REPLACE_BELOW_SALES,
+  /** Lissage des ventes comparables (voir `PEPITE_SMOOTHING` et la migration citée plus haut). */
+  minNationalSales: PEPITE_SMOOTHING.minNationalSales,
+  minCourtSales: PEPITE_SMOOTHING.minCourtSales,
+  smoothingWeightSales: PEPITE_SMOOTHING.smoothingWeightSales,
+  priceCourtOnlyFromSales: PEPITE_SMOOTHING.priceCourtOnlyFromSales,
   /** Mise à prix inférieure à cette part de la valeur estimée : on retient les trois quarts des ventes. */
   lowStartingPricePct: percent(PEPITE_LOW_STARTING_PRICE_SHARE),
   /** Âge maximal de l'évaluation affichée, en heures. */
