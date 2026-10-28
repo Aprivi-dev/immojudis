@@ -420,19 +420,28 @@ export type RentLookupSession = {
   load(sales: readonly RentSaleFacts[]): Promise<RentLookup>;
   /**
    * « ANIL indisponible » : vrai quand la lecture de la carte des loyers a échoué (ou n'a pas pu être tentée, base de
-   * service non configurée) pour au moins un de ces logements, qui est alors resté sur le repère départemental. Un
-   * bien qui n'est pas un logement n'a pas de référence et n'est jamais « indisponible ». Une panne ne se mémorise
-   * pas : la lecture suivante est retentée.
+   * service non configurée) pour au moins un de ces logements, qui est alors resté sur le repère départemental,
+   * ou quand un repli (code équivalent, médiane des arrondissements ou du département) a échoué pour un logement
+   * resté sans référence de la carte. Un bien qui n'est pas un logement n'a pas de référence et n'est jamais
+   * « indisponible ». Après un premier échec de la lecture principale, la SESSION est marquée indisponible : ses
+   * chargements suivants ne retentent pas la base (une session est courte : une exécution du cron, une requête) ;
+   * une nouvelle session retente.
    */
   unavailable(sales: readonly RentSaleFacts[]): boolean;
 };
 
 /** Un repli facultatif qui échoue ne fait pas perdre les références déjà trouvées : on passe au suivant. */
-async function optional<T>(label: string, read: () => Promise<T>, empty: T): Promise<T> {
+async function optional<T>(
+  label: string,
+  read: () => Promise<T>,
+  empty: T,
+  onFailure: () => void,
+): Promise<T> {
   try {
     return await read();
   } catch (error) {
     console.error(`[rent-reference] ${label} unavailable, trying the next fallback`, error);
+    onFailure();
     return empty;
   }
 }
@@ -450,12 +459,18 @@ function parentOf(code: string): string | null {
  * après une fusion ou un changement de code (`indicative`), (2) la médiane des arrondissements pour Paris, Lyon
  * et Marseille, (3) la médiane du département calculée sur la carte. Au-delà, l'appelant garde la table
  * départementale codée en dur, puis « Loyer de référence indisponible » (Mayotte, absente de la carte).
+ * `degraded` : les ventes restées sans référence alors qu'un repli qui les concernait a échoué (et non parce que la
+ * carte n'a pas de ligne pour elles) : la session les dit « indisponibles ».
  */
 async function readFallbackReferences(
   sales: readonly RentSaleFacts[],
   communeCodes: ReadonlyMap<string, string | null>,
-): Promise<Map<string, RentReference>> {
+): Promise<{ found: Map<string, RentReference>; degraded: Set<string> }> {
   const found = new Map<string, RentReference>();
+  const failedFor = new Set<string>();
+  const failing = (ids: readonly string[]) => () => {
+    for (const id of ids) failedFor.add(id);
+  };
   const pending = () => sales.filter((sale) => !found.has(sale.id.toLowerCase()));
   const cascade = (sale: RentSaleFacts) => segmentsToRead(rentSegmentFor(sale));
 
@@ -468,10 +483,14 @@ async function readFallbackReferences(
     ),
   ];
   if (codes.length) {
+    const withCode = pending()
+      .filter((sale) => communeCodes.get(sale.id.toLowerCase()))
+      .map((sale) => sale.id.toLowerCase());
     const aliases = await optional(
       "commune code history",
       () => readCodeAliases(codes),
       new Map<string, string[]>(),
+      failing(withCode),
     );
     const wanted = new Map<string, Set<RentSegment>>();
     for (const sale of pending()) {
@@ -487,6 +506,7 @@ async function readFallbackReferences(
           "aliased commune rents",
           () => readAnilReferences(wanted),
           new Map<string, RentReference | null>(),
+          failing(withCode),
         )
       : new Map<string, RentReference | null>();
     for (const sale of pending()) {
@@ -511,10 +531,14 @@ async function readFallbackReferences(
     parents.set(parent, segments);
   }
   if (parents.size) {
+    const withParent = pending()
+      .filter((sale) => parentOf(communeCodes.get(sale.id.toLowerCase()) ?? ""))
+      .map((sale) => sale.id.toLowerCase());
     const medians = await optional(
       "arrondissement medians",
       () => readArrondissementMedians(parents),
       new Map<string, RentReference | null>(),
+      failing(withParent),
     );
     for (const sale of pending()) {
       const parent = parentOf(communeCodes.get(sale.id.toLowerCase()) ?? "");
@@ -536,10 +560,14 @@ async function readFallbackReferences(
     ),
   ];
   if (departments.length) {
+    const withDepartment = pending()
+      .filter((sale) => departmentCode(sale.department))
+      .map((sale) => sale.id.toLowerCase());
     const medians = await optional(
       "department medians",
       () => readDepartmentMedians(departments),
       new Map<string, RentReference | null>(),
+      failing(withDepartment),
     );
     for (const sale of pending()) {
       const department = departmentCode(sale.department);
@@ -551,7 +579,7 @@ async function readFallbackReferences(
       if (match) found.set(sale.id.toLowerCase(), match);
     }
   }
-  return found;
+  return { found, degraded: new Set([...failedFor].filter((id) => !found.has(id))) };
 }
 
 /**
@@ -562,6 +590,10 @@ async function readFallbackReferences(
 export function createRentLookupSession(): RentLookupSession {
   const references = new Map<string, RentReference | null>();
   const inflight = new Map<string, Promise<void>>();
+  /** Ventes restées sans référence de la carte parce qu'un repli a échoué (voir `readFallbackReferences`). */
+  const degraded = new Set<string>();
+  /** La lecture principale a échoué dans cette session : on ne retente pas la base à chaque chargement. */
+  let failed = false;
   const lookup: RentLookup = (sale) => references.get(sale.id.toLowerCase()) ?? null;
 
   async function compute(sales: readonly RentSaleFacts[]): Promise<void> {
@@ -593,11 +625,12 @@ export function createRentLookupSession(): RentLookupSession {
       }
     }
     const unresolved = homes.filter((sale) => !fromCommune.has(sale.id.toLowerCase()));
-    const fallbacks = unresolved.length
+    const { found: fallbacks, degraded: degradedIds } = unresolved.length
       ? await readFallbackReferences(unresolved, communeCodes)
-      : new Map<string, RentReference>();
+      : { found: new Map<string, RentReference>(), degraded: new Set<string>() };
     for (const sale of homes) {
       const id = sale.id.toLowerCase();
+      if (degradedIds.has(id)) degraded.add(id);
       references.set(
         id,
         resolveRentReference(fromCommune.get(id) ?? fallbacks.get(id) ?? null, sale.department),
@@ -607,10 +640,14 @@ export function createRentLookupSession(): RentLookupSession {
 
   return {
     unavailable(sales) {
-      return sales.some((sale) => isRentApplicable(sale) && !references.has(sale.id.toLowerCase()));
+      return sales.some((sale) => {
+        if (!isRentApplicable(sale)) return false;
+        const id = sale.id.toLowerCase();
+        return !references.has(id) || degraded.has(id);
+      });
     },
     async load(sales) {
-      if (!sales.length || !adminConfigured()) return lookup;
+      if (!sales.length || !adminConfigured() || failed) return lookup;
       const wanted = new Map<string, RentSaleFacts>();
       for (const sale of sales) {
         const id = sale.id.toLowerCase();
@@ -619,6 +656,7 @@ export function createRentLookupSession(): RentLookupSession {
       if (wanted.size) {
         const batch = compute([...wanted.values()])
           .catch((error: unknown) => {
+            failed = true;
             console.error(
               "[rent-reference] ANIL rents unavailable, falling back to department rents",
               error,

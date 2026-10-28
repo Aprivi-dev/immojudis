@@ -50,6 +50,14 @@ create function pg_temp.evaluate(p_at timestamptz default null) returns void lan
   );
 $$;
 
+-- Une alerte ne se ferme qu'après deux heures sans incident (sync_operational_alert, 20261009184000) : la première
+-- évaluation « calme » note le début du calme, la suivante, deux heures plus tard, ferme l'alerte. Cette fonction
+-- évalue donc à l'instant demandé moins deux heures, puis à l'instant demandé.
+create function pg_temp.evaluate_until_closed(p_at timestamptz default null) returns void language sql as $$
+  select pg_temp.evaluate(coalesce(p_at, (select p_now from pgtap_761_context)) - interval '2 hours');
+  select pg_temp.evaluate(p_at);
+$$;
+
 -- Structure et droits ------------------------------------------------------------------------------
 select has_function(
   'app_private', 'evaluate_flood_pepite_reference_health', array['timestamp with time zone'],
@@ -204,7 +212,7 @@ select is(
   'critical once it has been active for 12 hours'
 );
 select pg_temp.run('success', interval '0 minutes', '{"callsFailed": 0, "callsObserved": 10}');
-select pg_temp.evaluate();
+select pg_temp.evaluate_until_closed();
 select is(
   pg_temp.sev('flood_risk.observation.degraded'), 'none',
   'a successful pass closes the alert'
@@ -301,7 +309,7 @@ select is(
 );
 
 update app_private.sale_pepite_settings set mode = 'on', updated_at = '2026-10-01T00:00:00Z' where singleton;
-select pg_temp.evaluate();
+select pg_temp.evaluate_until_closed();
 select is(pg_temp.sev('pepites.evaluation.stale'), 'none', 'back to on: the alert closes');
 
 insert into public.auction_sales (
@@ -337,7 +345,7 @@ select is(
 );
 
 update public.auction_sale_pepites set evaluated_at = '2026-10-28T11:00:00Z';
-select pg_temp.evaluate();
+select pg_temp.evaluate_until_closed();
 select is(
   pg_temp.sev('pepites.evaluation.stale'), 'none',
   'a fresh evaluation closes the alert'
@@ -373,7 +381,7 @@ select is(
   'sixty days later: critical'
 );
 update public.anil_rents set vintage = 2026;
-select pg_temp.evaluate('2027-03-17T12:00:00Z');
+select pg_temp.evaluate_until_closed('2027-03-17T12:00:00Z');
 select is(
   pg_temp.sev('reference.anil_rents.stale'), 'none',
   'the December 2026 edition (vintage 2026) closes the alert'

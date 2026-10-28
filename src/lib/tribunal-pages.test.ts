@@ -254,6 +254,7 @@ describe("noms et textes", () => {
       upcomingCount: 107,
       nextSaleDate: "2026-11-10T13:00:00Z",
       medianStartingPriceEur: 40_500,
+      pricedCount: 107,
     });
     const text = tribunalPageDescription(full, now);
     expect(text).toContain("107 ventes judiciaires à venir au tribunal judiciaire de Bobigny");
@@ -268,6 +269,7 @@ describe("noms et textes", () => {
       upcomingCount: 12,
       nextSaleDate: "2026-11-10T13:00:00Z",
       medianStartingPriceEur: 123_456,
+      pricedCount: 12,
     });
     expect(tribunalPageDescription(long, now).length).toBeLessThanOrEqual(158);
   });

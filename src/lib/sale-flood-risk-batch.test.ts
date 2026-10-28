@@ -8,6 +8,8 @@ const db = vi.hoisted(() => ({
   sales: [] as Row[],
   /** Réponse de `sync_sale_communes()` (recopie de `raw_payload.commune` faite dans la base). */
   syncCommunes: { n_with_code: 0, n_changed: 0, n_written: 0 },
+  /** Erreur de `sync_sale_communes()` (par exemple un verrou : 55P03). */
+  syncError: null as { code: string; message: string } | null,
   /** Champs de position lus dans `auction_sales.raw_payload` (résultat de la BAN, centroïdes des parcelles). */
   rawCommunes: [] as Row[],
   floodRows: [] as Row[] | null,
@@ -40,7 +42,10 @@ vi.mock("@/integrations/supabase/client.server", () => ({
         }
         return { data: db.leaseHeld ? null : "lease-token", error: null };
       }
-      if (name === "sync_sale_communes") return { data: [db.syncCommunes], error: null };
+      if (name === "sync_sale_communes") {
+        if (db.syncError) return { data: null, error: db.syncError };
+        return { data: [db.syncCommunes], error: null };
+      }
       return { data: true, error: null };
     },
   },
@@ -334,6 +339,7 @@ const written = () =>
 beforeEach(() => {
   db.sales = [];
   db.syncCommunes = { n_with_code: 0, n_changed: 0, n_written: 0 };
+  db.syncError = null;
   db.rawCommunes = [];
   db.salesReads = [];
   db.floodRows = [];
@@ -876,6 +882,23 @@ describe("runSaleFloodRiskBatch : code commune du pipeline", () => {
     expect(db.rpcCalls.filter((call) => call.name === "sync_sale_communes")).toHaveLength(1);
     // `auction_sales` n'est plus lue que pour les champs de position (une page), plus pour la commune.
     expect(db.tables.filter((table) => table === "auction_sales")).toHaveLength(1);
+  });
+
+  it("expose dans le résumé les communes différées et l'arrêt de la recopie par un verrou", async () => {
+    db.sales = [sale("a")];
+    db.syncCommunes = { n_with_code: 10, n_changed: 7, n_written: 4 };
+    expect(await run(makeApi())).toMatchObject({
+      communesWritten: 4,
+      communesDeferred: 3,
+      communesBusy: false,
+    });
+
+    db.syncError = { code: "55P03", message: "lock not available" };
+    expect(await run(makeApi())).toMatchObject({
+      communesWritten: 0,
+      communesDeferred: 0,
+      communesBusy: true,
+    });
   });
 
   it("lit les ventes à venir par curseur sur l'identifiant, filtrées par statut dans la base", async () => {

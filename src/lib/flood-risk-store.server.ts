@@ -81,13 +81,19 @@ function parcelCentroidsFrom(value: unknown): FloodProbePoint[] {
  */
 async function readPositionExtras(): Promise<Map<string, PositionExtras>> {
   const extras = new Map<string, PositionExtras>();
-  for (let from = 0; from < MAX_ROWS; from += PAGE_SIZE) {
-    const { data, error } = await supabaseAdmin
+  let after: string | null = null;
+  for (;;) {
+    if (extras.size >= MAX_ROWS) {
+      throw new Error("Trop de ventes à venir pour le contrôle d'inondation.");
+    }
+    // Curseur sur `id` (comme `readFloodSales`) : un décalage relirait et ferait trier toutes les lignes
+    // précédentes, avec leur `raw_payload`, à chaque page de chaque passe.
+    let query = supabaseAdmin
       .from("auction_sales")
       .select(POSITION_EXTRAS_SELECT)
-      .eq("status", "upcoming")
-      .order("id", { ascending: true })
-      .range(from, from + PAGE_SIZE - 1);
+      .eq("status", "upcoming");
+    if (after) query = query.gt("id", after);
+    const { data, error } = await query.order("id", { ascending: true }).limit(PAGE_SIZE);
     if (error) throw error;
     for (const row of data ?? []) {
       const score = row.geocode_score == null ? NaN : Number(row.geocode_score);
@@ -97,9 +103,10 @@ async function readPositionExtras(): Promise<Map<string, PositionExtras>> {
         parcelCentroids: parcelCentroidsFrom(row.parcels),
       });
     }
-    if ((data?.length ?? 0) < PAGE_SIZE) return extras;
+    const last = data?.at(-1)?.id ?? null;
+    if ((data?.length ?? 0) < PAGE_SIZE || !last) return extras;
+    after = last;
   }
-  throw new Error("Trop de ventes à venir pour le contrôle d'inondation.");
 }
 
 /** Verdicts stockés ; `null` : la table n'existe pas encore. */

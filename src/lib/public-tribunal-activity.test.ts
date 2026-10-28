@@ -129,9 +129,18 @@ describe("tribunalPriceFigure : seuils de publication des prix", () => {
     );
   });
 
-  it("prend le nombre de ventes à venir pour n quand la base ne dit pas combien sont chiffrées", () => {
-    expect(tribunalPriceFigure({ ...base, upcomingCount: 3 }).kind).toBe("none");
-    expect(tribunalPriceFigure({ ...base, upcomingCount: 30 }).kind).toBe("median");
+  it("ne publie rien quand la base ne dit pas combien de ventes sont chiffrées", () => {
+    // Le nombre de ventes à venir ne tient pas lieu de « n » : ni médiane ni fourchette, seulement « — ».
+    for (const upcomingCount of [3, 30, 400]) {
+      expect(tribunalPriceFigure({ ...base, upcomingCount })).toEqual({
+        kind: "none",
+        sampleSize: 0,
+      });
+    }
+    expect(tribunalPriceFigure({ ...base, pricedCount: null })).toEqual({
+      kind: "none",
+      sampleSize: 0,
+    });
   });
 
   it("remplace la médiane sans minimum de l'activité par les chiffres soumis aux seuils", () => {

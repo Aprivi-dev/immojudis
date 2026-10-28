@@ -331,16 +331,24 @@ describe("loadRentLookup", () => {
     expect(lookup({ id: "sale-a" })).toBeNull();
   });
 
-  it("does not remember a failure: the next call tries again", async () => {
+  it("marks the session unavailable after a first failure: it does not read again, a new session does", async () => {
     state.failTable = "anil_rents";
     const session = createRentLookupSession();
     await session.load([withGeocode("sale-a", "33063")]);
+    const callsAfterFailure = state.rpcCalls.length + anilCalls().length;
     state.failTable = null;
     state.anilRows = [anil("33063", "apt_1_2")];
 
-    const lookup = await session.load([withGeocode("sale-a", "33063")]);
+    const lookup = await session.load([
+      withGeocode("sale-a", "33063"),
+      withGeocode("sale-b", "33063"),
+    ]);
 
-    expect(lookup({ id: "sale-a" })?.source).toBe("anil_commune");
+    expect(lookup({ id: "sale-a" })).toBeNull();
+    expect(state.rpcCalls.length + anilCalls().length).toBe(callsAfterFailure);
+
+    const fresh = await createRentLookupSession().load([withGeocode("sale-a", "33063")]);
+    expect(fresh({ id: "sale-a" })?.source).toBe("anil_commune");
   });
 
   it("reads nothing when the service role is not configured or there is no sale", async () => {
@@ -656,10 +664,38 @@ describe("rent lookup session", () => {
     expect(lookup({ id: "sale-a" })).toBeNull();
     expect(session.unavailable([sale])).toBe(true);
 
+    // La session reste indisponible : elle ne retente pas. Une nouvelle session lit et n'est plus indisponible.
     state.failTable = null;
     state.anilRows = [anil("33063", "apt_1_2")];
     await session.load([sale]);
-    expect(session.unavailable([sale])).toBe(false);
+    expect(session.unavailable([sale])).toBe(true);
+    const fresh = createRentLookupSession();
+    await fresh.load([sale]);
+    expect(fresh.unavailable([sale])).toBe(false);
+  });
+
+  it("remonte l'échec d'un repli dans unavailable(), pour les seuls logements restés sans référence de la carte", async () => {
+    state.rpcError = { code: "XX000" };
+    state.anilRows = [anil("33063", "apt_3p")];
+    const found = withGeocode("sale-a", "33063", { rooms_count: 3 });
+    const missing = withGeocode("sale-b", "02077", { rooms_count: 3, department: "02" });
+    const session = createRentLookupSession();
+
+    await session.load([found, missing]);
+
+    expect(session.unavailable([found])).toBe(false);
+    expect(session.unavailable([missing])).toBe(true);
+    expect(session.unavailable([found, missing])).toBe(true);
+  });
+
+  it("ne dit pas « indisponible » quand un repli est absent de la base (migration en attente)", async () => {
+    state.rpcError = { code: "PGRST202" };
+    const missing = withGeocode("sale-b", "02077", { rooms_count: 3, department: "02" });
+    const session = createRentLookupSession();
+
+    await session.load([missing]);
+
+    expect(session.unavailable([missing])).toBe(false);
   });
 
   it("n'est jamais « indisponible » pour un bien qui n'est pas un logement, ni pour une liste vide", async () => {

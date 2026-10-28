@@ -6,7 +6,7 @@
 --   * rien d'identifiant n'est ajouté et les droits restent fermés.
 begin;
 
-select plan(14);
+select plan(13);
 
 insert into public.auction_sales (
   id, source_name, source_url, title, status, sale_date, starting_price_eur, department, property_type,

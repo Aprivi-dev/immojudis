@@ -144,6 +144,10 @@ export function AdminPepitesPage() {
           signals={["pepite"]}
           title="Retours « Pas pertinent » sur le repère Pépite, par vente"
         />
+        <p className="mt-2 text-sm leading-6 text-brand-navy/70">
+          Les retours sont rattachés à la version de règle en vigueur au moment de la lecture, pas à
+          celle du clic.
+        </p>
       </div>
     </AdminShell>
   );

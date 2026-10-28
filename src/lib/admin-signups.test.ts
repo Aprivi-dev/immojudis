@@ -84,10 +84,15 @@ function tables(
 function trialRpc(
   trials: Record<string, { endsAt: string | null; gateOpen?: boolean }> = {},
   recordError: { message: string } | null = null,
+  /** Réponse de `extend_trial_with_note` ; absente : la migration n'est pas appliquée (ancien chemin). */
+  extend: { data: unknown; error: { code?: string; message: string } | null } | null = null,
 ) {
   mocks.rpc.mockImplementation(async (name: string, args: { p_user_id: string }) => {
     if (name === "admin_signup_usage") {
       return { data: null, error: { code: "PGRST202", message: "absent" } };
+    }
+    if (name === "extend_trial_with_note") {
+      return extend ?? { data: null, error: { code: "PGRST202", message: "absent" } };
     }
     if (name === "record_trial_extension") {
       return recordError ? { data: null, error: recordError } : { data: "note-1", error: null };
@@ -637,6 +642,65 @@ describe("extendAdminSignupTrials", () => {
     expect(serialized).not.toContain("Bêta-testeur");
     expect(serialized).not.toContain("target_email");
     expect(serialized).not.toContain("compte1@exemple.fr");
+  });
+
+  it("écrit le motif et la ligne par une seule fonction quand elle existe, sans toucher la table", async () => {
+    const writes = tables({
+      user_profiles: [confirmedProfile(1)],
+      user_subscriptions: [
+        {
+          user_id: id(1),
+          plan_code: "decouverte",
+          status: "expired",
+          current_period_end: null,
+          stripe_subscription_id: null,
+          updated_at: "2026-10-02T00:00:00.123456+00:00",
+          metadata: {},
+        },
+      ],
+    });
+    usersById();
+    trialRpc({}, null, { data: "written", error: null });
+
+    const response = await run();
+
+    expect(response.results[0]).toMatchObject({ outcome: "extended" });
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "extend_trial_with_note",
+      expect.objectContaining({
+        p_user_id: id(1),
+        p_granted_by: ADMIN_ID,
+        p_note: "Bêta-testeur",
+        p_expected_updated_at: "2026-10-02T00:00:00.123456+00:00",
+        p_metadata: expect.objectContaining({
+          manual_grant: expect.objectContaining({ note_recorded: true }),
+        }),
+      }),
+    );
+    expect(JSON.stringify(mocks.rpc.mock.calls.map((call) => call[1]?.p_metadata))).not.toContain(
+      "Bêta-testeur",
+    );
+    expect(mocks.rpc).not.toHaveBeenCalledWith("record_trial_extension", expect.anything());
+    expect(writes.insert).not.toHaveBeenCalled();
+    expect(writes.update).not.toHaveBeenCalled();
+  });
+
+  it("rapporte « changé » sans repli quand la fonction refuse la ligne, et « échec » sur une autre erreur", async () => {
+    const writes = tables({ user_profiles: [confirmedProfile(1)], user_subscriptions: [] });
+    usersById();
+    trialRpc({}, null, { data: "changed", error: null });
+    const changed = await run();
+    expect(changed.results[0]).toMatchObject({
+      outcome: "skipped",
+      reason: expect.stringContaining("a changé"),
+    });
+
+    trialRpc({}, null, { data: null, error: { code: "XX000", message: "boom" } });
+    const failed = await run();
+    expect(failed.results[0]).toMatchObject({ outcome: "skipped", reason: "Écriture impossible." });
+    // Aucun repli : ni motif orphelin, ni écriture de la ligne.
+    expect(mocks.rpc).not.toHaveBeenCalledWith("record_trial_extension", expect.anything());
+    expect(writes.insert).not.toHaveBeenCalled();
   });
 
   it("ajoute à l'historique au lieu d'écraser, sans note ni adresse, 10 entrées au plus", async () => {
