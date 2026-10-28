@@ -21,7 +21,7 @@ const SOURCES = ["geocode", "reference_communes"] as const;
  * Arrondissements valides par commune : exactement la contrainte `auction_sale_communes_arrondissement_check`
  * de la migration 20261106100000 (Paris, Lyon, Marseille, chacun rattaché à SA commune).
  */
-const ARRONDISSEMENT_PATTERNS: Record<string, RegExp> = {
+export const ARRONDISSEMENT_PATTERNS: Record<string, RegExp> = {
   "75056": /^751(0[1-9]|1[0-9]|20)$/,
   "13055": /^132(0[1-9]|1[0-6])$/,
   "69123": /^6938[1-9]$/,
