@@ -50,7 +50,7 @@ import { resolveSiteOrigin } from "@/lib/site-url";
 import type { AuctionSale } from "@/lib/types";
 import { informationAgentContributionUrl } from "@/lib/information-agent-contribution";
 import { informationAgentIdentityKeys } from "@/lib/information-agent/identity";
-import { INFORMATION_AGENT_NO_EMAIL_MESSAGE } from "@/lib/information-agent/email-address";
+import { missingRecipientMessage } from "@/lib/information-agent/email-address";
 import {
   assertInformationAgentContactAllowed,
   contactCandidateSnapshot,
@@ -390,8 +390,6 @@ export async function createAdminInformationAgentDraft({
   input: z.output<typeof informationAgentCreateSchema>;
 }): Promise<InformationAgentAdminResponse> {
   requireInformationAgentAdmin(auth);
-  // L'agent n'écrit que par email : `informationAgentCreateSchema` (analysé par la route avant tout appel,
-  // même validateur que `normalizedEmail`) refuse déjà une saisie qui n'est pas une adresse.
 
   const [sale, emailTemplate] = await Promise.all([
     loadAdminInformationAgentSale({ auth, saleId: input.saleId }),
@@ -447,11 +445,7 @@ export async function createAdminInformationAgentDraft({
     throw new Error(
       candidatesSkippedForOpposition > 0 && !contactCandidates.length
         ? INFORMATION_AGENT_IDENTITY_OPPOSED_MESSAGE
-        : contactCandidates.length > 1
-          ? "Requête invalide : plusieurs contacts sont possibles. Choisissez explicitement l'adresse email du professionnel à contacter."
-          : contactCandidates.length === 1
-            ? `Requête invalide : renseignez l'adresse email du professionnel à contacter.${search.noAddressNote}`
-            : `${INFORMATION_AGENT_NO_EMAIL_MESSAGE}${search.noAddressNote}`,
+        : missingRecipientMessage(contactCandidates.length, search.noAddressNote),
     );
   }
   const selectedByEmail = contactCandidates.find((candidate) => candidate.email === recipientEmail);

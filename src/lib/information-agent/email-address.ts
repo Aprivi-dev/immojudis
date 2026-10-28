@@ -14,6 +14,21 @@ import { z } from "zod";
 export const INFORMATION_AGENT_NO_EMAIL_MESSAGE =
   "Aucune adresse email de contact : l'agent ne peut pas écrire.";
 
+/**
+ * Motif du refus de brouillon quand aucun destinataire n'est retenu, selon le nombre de contacts
+ * candidats (sans email, l'agent ne peut pas écrire). La création est analysée par la route avec le
+ * même validateur : une saisie qui n'est pas une adresse n'arrive jamais jusqu'ici.
+ */
+export function missingRecipientMessage(candidateCount: number, noAddressNote: string): string {
+  if (candidateCount > 1) {
+    return "Requête invalide : plusieurs contacts sont possibles. Choisissez explicitement l'adresse email du professionnel à contacter.";
+  }
+  if (candidateCount === 1) {
+    return `Requête invalide : renseignez l'adresse email du professionnel à contacter.${noAddressNote}`;
+  }
+  return `${INFORMATION_AGENT_NO_EMAIL_MESSAGE}${noAddressNote}`;
+}
+
 const emailSchema = z.string().email();
 
 /** Adresse en minuscules, sans espaces autour ; null si la valeur n'est pas une adresse valide. */
