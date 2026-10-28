@@ -203,6 +203,7 @@ function QueueLine({
   const [decision, setDecision] = useState<"hold" | "publish" | null>(null);
   const [reason, setReason] = useState("");
   const title = item.title || [item.city, item.department].filter(Boolean).join(" — ") || item.id;
+  const blockedReason = item.informationAgentBlockedReason ?? null;
   return (
     <article className="p-5">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -234,12 +235,19 @@ function QueueLine({
           <p className="mt-2 text-xs text-brand-navy/50">
             Contact : {item.lawyerContact || item.lawyerName || "aucun contact détecté"}
           </p>
+          {onPrepareInformationRequest && blockedReason ? (
+            <p id={`information-agent-blocked-${item.id}`} className="mt-1 text-xs text-amber-900">
+              {blockedReason}
+            </p>
+          ) : null}
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
           {onPrepareInformationRequest ? (
             <button
               type="button"
               className="admin-button-primary inline-flex items-center gap-2"
+              disabled={Boolean(blockedReason)}
+              aria-describedby={blockedReason ? `information-agent-blocked-${item.id}` : undefined}
               onClick={() =>
                 onPrepareInformationRequest({
                   saleId: item.id,

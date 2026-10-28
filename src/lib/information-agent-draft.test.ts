@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createAdminInformationAgentDraft } from "@/lib/information-agent";
+import {
+  createAdminInformationAgentDraft,
+  informationAgentCreateSchema,
+} from "@/lib/information-agent";
+import { INFORMATION_AGENT_NO_EMAIL_MESSAGE } from "@/lib/information-agent/email-address";
 import { DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE } from "@/lib/information-agent-email-template";
 import type { AuctionSale } from "@/lib/types";
 
@@ -153,19 +157,59 @@ describe("manual admin draft preparation", () => {
     expect(result.mission.bodyText).not.toContain("Maître Jean Dupont");
   });
 
-  it.each([null, "premier@example.test et second@example.test"])(
-    "requires a manual choice when a recipient cannot be reliably selected (%s)",
-    async (contact) => {
-      const sale = await mocks.sale();
-      mocks.sale.mockResolvedValue({ ...sale, lawyer_contact: contact });
+  it("requires a manual choice when several recipients are possible", async () => {
+    const sale = await mocks.sale();
+    mocks.sale.mockResolvedValue({
+      ...sale,
+      lawyer_contact: "premier@example.test et second@example.test",
+    });
+    await expect(
+      createAdminInformationAgentDraft({ auth: admin, input: { saleId } }),
+    ).rejects.toThrow("Requête invalide");
+    expect(inserted).toBeNull();
+    expect(mocks.rpc).not.toHaveBeenCalled();
+    expect(mocks.send).not.toHaveBeenCalled();
+  });
+
+  // L'agent ne fonctionne que par email : ni brouillon, ni mission, ni dossier sans adresse valide.
+  it.each([
+    ["aucun contact", null, null],
+    ["un champ vide", "   ", ""],
+    ["un téléphone seul", "Tél. : 05 56 00 00 01", "Tél. : 05 56 00 00 01"],
+    ["un nom seul", "Maître Jean Dupont", "Maître Jean Dupont"],
+    ["une adresse sans domaine", "cabinet@", "cabinet@"],
+  ])("refuse de préparer un brouillon quand le contact est %s", async (_label, contact, name) => {
+    const sale = await mocks.sale();
+    mocks.sale.mockResolvedValue({ ...sale, lawyer_contact: contact, lawyer_name: name });
+    await expect(
+      createAdminInformationAgentDraft({ auth: admin, input: { saleId } }),
+    ).rejects.toThrow(INFORMATION_AGENT_NO_EMAIL_MESSAGE);
+    expect(observed).toEqual([]);
+    expect(inserted).toBeNull();
+    expect(mocks.rpc).not.toHaveBeenCalled();
+    expect(mocks.send).not.toHaveBeenCalled();
+  });
+
+  it.each(["05 56 00 00 01", "Maître Jean Dupont", "jean@dupont"])(
+    "refuse un destinataire saisi qui n'est pas une adresse email (%s)",
+    async (recipientEmail) => {
       await expect(
-        createAdminInformationAgentDraft({ auth: admin, input: { saleId } }),
-      ).rejects.toThrow("Requête invalide");
+        createAdminInformationAgentDraft({ auth: admin, input: { saleId, recipientEmail } }),
+      ).rejects.toThrow("adresse email du destinataire invalide");
+      expect(mocks.sale).not.toHaveBeenCalled();
       expect(inserted).toBeNull();
       expect(mocks.rpc).not.toHaveBeenCalled();
-      expect(mocks.send).not.toHaveBeenCalled();
     },
   );
+
+  it("le schéma de création refuse un téléphone, un nom ou un champ vide comme destinataire", () => {
+    for (const recipientEmail of ["05 56 00 00 01", "Maître Jean Dupont", ""]) {
+      expect(informationAgentCreateSchema.safeParse({ saleId, recipientEmail }).success).toBe(
+        false,
+      );
+    }
+    expect(informationAgentCreateSchema.safeParse({ saleId }).success).toBe(true);
+  });
 
   it("ne retient ni ne stocke l'adresse d'un professionnel opposé sous une autre adresse", async () => {
     opposedIdentityKeys = ["lawyer|bordeaux|dupont jean"];
