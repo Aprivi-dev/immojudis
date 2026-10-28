@@ -648,7 +648,7 @@ ${extra}
   it("refuse admin-signups sans assertAdminAuth en tête de la lecture", () => {
     const original = source("src/lib/admin-signups.ts");
     const bad = original.replace(
-      /(export async function listAdminSignups[\s\S]*?\{\n)\s*await assertAdminAuth\(authToken\);/,
+      /(export async function listAdminSignups[\s\S]*?\{\n)\s*(?:const auth = )?await assertAdminAuth\(authToken\);/,
       "$1",
     );
     expect(bad).not.toBe(original);

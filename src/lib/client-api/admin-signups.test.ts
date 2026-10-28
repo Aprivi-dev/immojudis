@@ -34,6 +34,7 @@ describe("client de la vue « Inscriptions »", () => {
       limit: 25,
       q: "marie.dupont@exemple.fr",
       access: "trial",
+      activity: "all",
     });
     expect(init.headers).toMatchObject({
       "Content-Type": "application/json",
@@ -50,7 +51,13 @@ describe("client de la vue « Inscriptions »", () => {
     await fetchAdminSignups();
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(JSON.parse(String(init.body))).toEqual({ offset: 0, limit: 50, q: "", access: "all" });
+    expect(JSON.parse(String(init.body))).toEqual({
+      offset: 0,
+      limit: 50,
+      q: "",
+      access: "all",
+      activity: "all",
+    });
   });
 
   it("prolonge en POST sur la route des inscriptions", async () => {

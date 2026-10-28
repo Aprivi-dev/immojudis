@@ -174,9 +174,9 @@ describe("openapi.yaml", () => {
     for (const name of new Set(referenced)) expect(defined.has(name), name).toBe(true);
   });
 
-  it("annonce la version 1.5.1 et le changement de sens de la couche TRI du rapport foncier (land-report-v1.1)", () => {
+  it("annonce une version au moins 1.5.1 et le changement de sens de la couche TRI du rapport foncier (land-report-v1.1)", () => {
     const text = openApiText();
-    expect(text).toMatch(/^info:\n(?:.*\n)*? {2}version: 1\.5\.1$/m);
+    expect(text).toMatch(/^info:\n(?:.*\n)*? {2}version: 1\.(?:5\.1|[6-9]\.\d+)$/m);
     const landReport = text.slice(text.indexOf("/sales/{saleId}/land-report:"));
     expect(landReport).toContain("land-report-v1.1");
     expect(landReport).toMatch(/appartenance du point à la zone/);

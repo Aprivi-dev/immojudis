@@ -46,6 +46,8 @@ const request = new Request("https://immojudis.com/api/sales/feed");
 const auth = { userId: "user-1", claims: {}, supabase: {} } as unknown as SupabaseAuthContext;
 const catalogue = ["Sale-A", "sale-b", "sale-c"].map((id) => ({
   ...EXAMPLE_SALE,
+  // L'exemple est occupé ; « sous la fourchette » écarte toujours un bien occupé.
+  occupancy_status: "unknown",
   id: id.toLowerCase(),
 }));
 

@@ -38,8 +38,9 @@ describe("description unique de l'entreprise", () => {
     expect(buildLlmsTxt(ORIGIN)).toContain(`> ${COMPANY_DESCRIPTION}`);
   });
 
-  it("est reprise, et non réécrite, par le site, l'accueil et la page À propos", () => {
-    for (const file of ["src/app/layout.tsx", "src/app/page.tsx", "src/app/a-propos/page.tsx"]) {
+  it("est reprise, et non réécrite, par le site et la page À propos", () => {
+    // L'accueil a sa propre description (`home-seo.ts`, n° 70) ; l'Organization reste décrite ici.
+    for (const file of ["src/app/layout.tsx", "src/app/a-propos/page.tsx"]) {
       expect(readFileSync(file, "utf8"), file).toContain("COMPANY_DESCRIPTION");
     }
     // Les anciennes formulations ne reviennent pas.

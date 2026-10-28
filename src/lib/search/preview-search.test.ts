@@ -130,7 +130,8 @@ describe("public preview search", () => {
     });
 
     it("une panne de la liste n'est pas une liste vide : elle est levée, donc jamais gardée en cache", async () => {
-      for (const error of [{ code: "57014" }, { code: "XX000" }, { code: "PGRST205" }]) {
+      // PGRST205 (objet introuvable) vaut « migration absente » (`isMissingDatabaseObject`, règle unique).
+      for (const error of [{ code: "57014" }, { code: "XX000" }, { code: "PGRST301" }]) {
         const { rpc } = client({ data: null, error });
         await expect(runPreviewSearch({ rpc }, { pepite: true })).rejects.toBe(error);
         expect(searchCalls(rpc)).toHaveLength(0);
