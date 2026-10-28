@@ -268,6 +268,13 @@ describe("linkPrefetch", () => {
     expect(linkPrefetch("/annonce-exemple")).toBe(false);
   });
 
+  it("désactive le préchargement des pages juridiques à fond de nuages, ancre comprise", () => {
+    expect(linkPrefetch("/legal")).toBe(false);
+    expect(linkPrefetch("/conditions-generales")).toBe(false);
+    expect(linkPrefetch("/privacy")).toBe(false);
+    expect(linkPrefetch("/privacy#cookies")).toBe(false);
+  });
+
   it("laisse le comportement par défaut aux pages préfabriquées et aux fiches", () => {
     expect(linkPrefetch("/offres")).toBeUndefined();
     expect(linkPrefetch("/ressources")).toBeUndefined();

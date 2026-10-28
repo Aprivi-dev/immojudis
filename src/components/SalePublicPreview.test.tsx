@@ -18,10 +18,14 @@ import { FREE_ACCESS_LINE } from "@/lib/sale-unlocks";
 import { publicSaleVenueCopy, SalePublicPreview } from "./SalePublicPreview";
 import { pepiteCriteriaPayload, pepiteCriteriaViews } from "@/lib/sale-pepite-view";
 
-const pepiteMocks = vi.hoisted(() => ({ pepite: vi.fn() }));
+const pepiteMocks = vi.hoisted(() => ({ pepite: vi.fn(), pending: false }));
 const dynamicLoads = vi.hoisted((): Promise<unknown>[] => []);
 vi.mock("@/hooks/use-sale-pepite", () => ({
   useSalePepite: (args: unknown) => pepiteMocks.pepite(args),
+  useSalePepiteState: (args: unknown) => ({
+    payload: pepiteMocks.pepite(args),
+    pending: pepiteMocks.pending,
+  }),
 }));
 vi.mock("next/dynamic", () => ({
   default: (loader: () => Promise<React.ComponentType<Record<string, unknown>>>) => {
@@ -1066,6 +1070,24 @@ describe("SalePublicPreview : repère « Pépite »", () => {
     expect(screen.queryByTestId("pepite-badge")).toBeNull();
     expect(document.body.textContent).not.toMatch(/pépite/i);
     expect(pepiteMocks.pepite).not.toHaveBeenCalled();
+  });
+
+  it("réserve la place du bloc tant que les critères d'une pépite arrivent", async () => {
+    pepiteMocks.pepite.mockReturnValue(null);
+    pepiteMocks.pending = true;
+    try {
+      await renderPreview({ pepite: true });
+      const reserved = screen.getByTestId("pepite-reserved");
+      expect(reserved.getAttribute("aria-hidden")).toBe("true");
+      expect(reserved.className).toContain("min-h-64");
+    } finally {
+      pepiteMocks.pending = false;
+    }
+    cleanup();
+    // La lecture a échoué (ou 404) : plus de place réservée, la page ne garde aucun trou.
+    pepiteMocks.pepite.mockReturnValue(null);
+    await renderPreview({ pepite: true });
+    expect(screen.queryByTestId("pepite-reserved")).toBeNull();
   });
 
   it("pose la pastille et « Pourquoi ? » en tête, puis le bloc verrouillé avec « Créez un compte gratuit »", async () => {

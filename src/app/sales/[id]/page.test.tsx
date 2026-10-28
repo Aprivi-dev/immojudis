@@ -153,6 +153,26 @@ describe("public sale page", () => {
     expect(renderToStaticMarkup(await Page({ params }))).toContain('data-rent-source="none"');
   });
 
+  it("gives up on the rent reference after 1.5 s and renders with the department fallback", async () => {
+    vi.useFakeTimers();
+    try {
+      mocks.lookup.mockResolvedValue({ status: "found", sale });
+      // A slow database: the read never answers.
+      mocks.rent.mockReturnValue(new Promise(() => undefined));
+      const rendering = Page({ params });
+      await vi.advanceTimersByTimeAsync(1_499);
+      let settled = false;
+      void rendering.then(() => (settled = true));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(renderToStaticMarkup(await rendering)).toContain('data-rent-source="none"');
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("does not read any rent for a sale that is not public", async () => {
     mocks.lookup.mockResolvedValue({ status: "unavailable" });
     renderToStaticMarkup(await Page({ params }));

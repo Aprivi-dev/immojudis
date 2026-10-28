@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({ ids: vi.fn(), fetchPepite: vi.fn() }));
 vi.mock("@/lib/search/pepite-filter", () => ({ fetchPepiteSaleIds: mocks.ids }));
 vi.mock("@/lib/client-api/sale-pepite", () => ({ fetchSalePepite: mocks.fetchPepite }));
 
-import { useSalePepite } from "./use-sale-pepite";
+import { useSalePepite, useSalePepiteState } from "./use-sale-pepite";
 
 const saleId = "11111111-1111-4111-8111-111111111111";
 const PAYLOAD = { access: "criteria", count: 1, criteria: [] };
@@ -49,6 +49,34 @@ describe("useSalePepite", () => {
     );
     await waitFor(() => expect(result.current).toEqual(PAYLOAD));
     expect(mocks.ids).not.toHaveBeenCalled();
+  });
+
+  it("la fiche complète d'une pépite connue du serveur (known) ne relit pas la liste entière", async () => {
+    const { result } = renderHook(
+      () => useSalePepite({ saleId, view: "detail", userKey: "u", known: true }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current).toEqual(PAYLOAD));
+    expect(mocks.ids).not.toHaveBeenCalled();
+    expect(mocks.fetchPepite).toHaveBeenCalledWith(saleId, "detail");
+  });
+
+  it("signale la lecture en cours (place réservée) puis le résultat, ou l'absence de repère", async () => {
+    const { result } = renderHook(
+      () => useSalePepiteState({ saleId, view: "criteria", userKey: "public", known: true }),
+      { wrapper },
+    );
+    expect(result.current).toEqual({ payload: null, pending: true });
+    await waitFor(() => expect(result.current.payload).toEqual(PAYLOAD));
+    expect(result.current.pending).toBe(false);
+
+    mocks.fetchPepite.mockResolvedValue(null);
+    const failed = renderHook(
+      () => useSalePepiteState({ saleId, view: "criteria", userKey: "other", known: true }),
+      { wrapper },
+    );
+    await waitFor(() => expect(failed.result.current.pending).toBe(false));
+    expect(failed.result.current.payload).toBeNull();
   });
 
   it("rend null quand la route répond 404 ou échoue : le repère disparaît, la fiche ne change pas", async () => {

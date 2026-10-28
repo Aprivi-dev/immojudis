@@ -11,9 +11,24 @@ export type SiteLink = { readonly href: string; readonly label: string };
  */
 const DYNAMIC_PAGE_PATHS: ReadonlySet<string> = new Set(["/sales", "/annonce-exemple"]);
 
-/** Valeur de la propriété `prefetch` de `<Link>` : `false` pour une page dynamique, sinon le défaut. */
+/**
+ * Pages juridiques qui placent `CloudBackgroundPreload` : leur contenu précharge `cloud-background.webp`
+ * (52 Ko, priorité haute). Préchargées par les liens du pied de page, elles faisaient télécharger
+ * cette image depuis l'accueil, où aucune section ne l'utilise. Elles se chargent au clic.
+ */
+const CLOUD_BACKGROUND_PAGE_PATHS: ReadonlySet<string> = new Set([
+  "/legal",
+  "/conditions-generales",
+  "/privacy",
+]);
+
+/**
+ * Valeur de la propriété `prefetch` de `<Link>` : `false` pour une page dynamique ou à fond de
+ * nuages (l'ancre `#…` d'un lien n'entre pas en compte), sinon le défaut.
+ */
 export function linkPrefetch(href: string): false | undefined {
-  return DYNAMIC_PAGE_PATHS.has(href) ? false : undefined;
+  const path = href.split("#")[0];
+  return DYNAMIC_PAGE_PATHS.has(path) || CLOUD_BACKGROUND_PAGE_PATHS.has(path) ? false : undefined;
 }
 
 /** Les cinq entrées de l'en-tête, identiques sur toutes les pages. */

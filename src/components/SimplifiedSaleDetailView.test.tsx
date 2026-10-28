@@ -26,6 +26,8 @@ import {
   UnlockedSaleDetailView,
 } from "./SimplifiedSaleDetailView";
 import { PepiteBlock } from "./sale-detail/PepiteBlock";
+import { AuctionScenariosSection } from "./sale-detail/AuctionScenariosSection";
+import { CeilingPlanner } from "./ceiling/CeilingPlanner";
 import {
   pepiteCriteriaPayload,
   pepiteCriteriaViews,
@@ -104,7 +106,14 @@ vi.mock("next/dynamic", () => ({
       payload,
       userCeilingEur,
       lockedAction,
+      hypotheses,
+      enabled,
+      access,
+      ...plannerProps
     }: {
+      hypotheses?: unknown;
+      enabled?: boolean;
+      access?: "discovery" | "unlocked" | "analysis";
       payload?: PepitePayload;
       userCeilingEur?: number | null;
       lockedAction?: React.ReactNode;
@@ -130,6 +139,21 @@ vi.mock("next/dynamic", () => ({
             saleId={saleId ?? ""}
             userCeilingEur={userCeilingEur}
             lockedAction={lockedAction}
+          />
+        );
+      }
+      // Panneau du plafond (onglet « Prix ») : le vrai composant, chargé ici sans attente.
+      if (hypotheses !== undefined) {
+        return <CeilingPlanner hypotheses={hypotheses as never} {...(plannerProps as never)} />;
+      }
+      // Scénarios d'enchères (onglet « Statistiques ») : le vrai composant.
+      if (enabled !== undefined && saleId !== undefined) {
+        return (
+          <AuctionScenariosSection
+            saleId={saleId}
+            enabled={enabled}
+            access={access ?? "analysis"}
+            userKey={userKey}
           />
         );
       }

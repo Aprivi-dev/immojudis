@@ -403,6 +403,7 @@ function SaleDetailContent({
         rentReference={rentReference}
         unlockStatus={unlockQuery.data ?? null}
         justUnlocked={justUnlocked}
+        pepiteKnown={serverPreview?.pepite}
       />
     );
   }
@@ -436,6 +437,7 @@ function SaleDetailContent({
         rentReference={rentReference}
         unlockStatus={unlockQuery.data ?? null}
         onSaleUnlocked={handleSaleUnlocked}
+        pepiteKnown={serverPreview?.pepite}
       />
     </>
   ) : (
@@ -445,6 +447,7 @@ function SaleDetailContent({
       adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
       openFeeRegimes={openFeeRegimes}
       rentReference={rentReference}
+      pepiteKnown={serverPreview?.pepite}
     />
   );
 }

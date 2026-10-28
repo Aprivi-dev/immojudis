@@ -196,6 +196,23 @@ describe("useful public discovery", () => {
     expect(EAGER_IMAGE_COUNT).toBe(1);
   });
 
+  it("gives the priority image to the first card that has a photo, not to a card without visual", () => {
+    const withPhoto = (id: string) =>
+      ({
+        ...sale(id),
+        media: [{ type: "image", url: "https://images.example.test/photos/maison.jpg" }],
+      }) as unknown as AuctionSale;
+    renderResults([sale("none-a"), sale("none-b"), withPhoto("photo-c"), withPhoto("photo-d")]);
+    // Les deux cartes sans photo gardent une case de repli : aucune n'est prioritaire.
+    const fallbacks = screen.getAllByTestId("sale-visual").map((visual) => visual.dataset.eager);
+    expect(fallbacks).toEqual(["false", "false"]);
+    // Parmi les photos, seule la première (3e carte) est chargée tout de suite.
+    const photos = Array.from(document.querySelectorAll("img")).map((image) =>
+      image.getAttribute("loading"),
+    );
+    expect(photos).toEqual(["eager", "lazy"]);
+  });
+
   it("keeps the active card synchronized with hover after memoization", () => {
     function HoverableResults() {
       const [hoveredSaleId, setHoveredSaleId] = useState<string | null>(null);

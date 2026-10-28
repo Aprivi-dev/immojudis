@@ -11,19 +11,29 @@ import type { PepitePayload } from "@/lib/sale-pepite-view";
  * la fiche) évite même cette lecture. En mode « shadow », ou sans la migration : aucune pépite, aucun appel.
  * Une panne ou un 404 donnent `null` : le repère disparaît, la fiche ne change pas.
  */
-export function useSalePepite({
-  saleId,
-  view,
-  userKey,
-  known,
-  enabled = true,
-}: {
+export function useSalePepite(options: SalePepiteOptions): PepitePayload | null {
+  return useSalePepiteState(options).payload;
+}
+
+type SalePepiteOptions = {
   saleId: string;
   view: PepiteView;
   userKey: string;
   known?: boolean;
   enabled?: boolean;
-}): PepitePayload | null {
+};
+
+/**
+ * Comme `useSalePepite`, avec l'état de la lecture : `pending` tant que les critères d'une pépite
+ * connue arrivent (la fiche publique y réserve la place du bloc pour ne pas décaler la page).
+ */
+export function useSalePepiteState({
+  saleId,
+  view,
+  userKey,
+  known,
+  enabled = true,
+}: SalePepiteOptions): { payload: PepitePayload | null; pending: boolean } {
   const ids = useQuery({
     queryKey: queryKeys.pepiteSaleIds(),
     queryFn: () => fetchPepiteSaleIds(),
@@ -40,5 +50,5 @@ export function useSalePepite({
     staleTime: 5 * 60_000,
     retry: false,
   });
-  return query.data ?? null;
+  return { payload: query.data ?? null, pending: query.isLoading };
 }
