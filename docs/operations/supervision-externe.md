@@ -1,6 +1,6 @@
 # Supervision indépendante (`/api/health` et sonde externe)
 
-Mis à jour le 23 octobre 2026.
+Mis à jour le 27 octobre 2026.
 
 ## Pourquoi
 
@@ -9,7 +9,10 @@ Toutes les alertes de l'application sont évaluées par une seule chaîne : Supa
 et les transmet à GitHub Actions (`operational-alert.yml`). Si un maillon de cette chaîne s'arrête
 (site tombé, `pg_cron` désactivé, secret Vault perdu, GitHub qui ne planifie plus), personne n'est
 averti : il n'y a plus de signal du tout, pas même une alerte ouverte. Le test de fumée
-(`production-smoke.yml`, toutes les 30 min) vit lui aussi sur GitHub.
+(`production-smoke.yml`) vit lui aussi sur GitHub, et sa cadence n'est pas tenue : le planning demande
+un passage toutes les 30 minutes, mais GitHub espace les workflows planifiés. Du 20 au 27 octobre 2026,
+44 passages seulement ont eu lieu en 7,4 jours (environ 355 prévus), avec des intervalles de 2 à 6 h. Il
+ne remplace donc pas une sonde externe : une panne peut y rester invisible plusieurs heures.
 
 Il faut donc un regard extérieur à cette chaîne : un service gratuit qui appelle `/api/health` et
 écrit au propriétaire quand la réponse change.
@@ -94,17 +97,29 @@ Aucun secret n'est nécessaire : la route est publique et ne donne que des âges
 
 ## Test de fumée (`scripts/check-production-smoke.mjs`)
 
-Le test de fumée GitHub exige aussi `/api/health` (la route répond 200 même dégradée : le test lit
-`status` et les âges dans le corps) :
+Le test de fumée GitHub lit aussi `/api/health`. Il sépare deux questions. Le corps est lu avant tout
+contrôle, pour que le message d'échec dise toujours ce que la route a rapporté.
 
-- `status: "ok"` (200) : réussi ;
-- `operational-health` plus ancien que 45 min mais pas plus de **60 min**, collecte fraîche : toléré
-  (un tick de 15 min en retard ne doit pas faire échouer le test, qui passe toutes les 30 min) ;
-- tout autre état dégradé (plus de 60 min, une source activée en retard de plus de 36 h, base
-  injoignable (`available: false`), route absente ou répondant 404) : échec ;
-- l'en-tête `cache-control` doit être `no-store` ou ne garder la réponse que 60 s au plus (`s-maxage`) :
-  une garde plus longue masquerait une panne. Le test ne contrôle plus l'écho de `x-request-id` (la
-  réponse gardée ne le répercute pas).
+Disponibilité (échec immédiat) :
+
+- statut HTTP autre que 200 ou 503, réponse qui n'est pas du JSON, contrat du corps invalide ;
+- `available: false` (base injoignable) ;
+- réponse périmée : `checkedAt` à plus de **120 s** de l'heure du test (ou absent). Le CDN de Vercel
+  réécrit `cache-control` pour le client (`public`, sans `s-maxage`), si bien que l'en-tête n'est plus
+  contrôlé : c'est `checkedAt` qui prouve que la réponse vient d'être calculée ;
+- `operational-health` sans succès depuis plus de **60 min** (le seuil de la route est 45 min ; un tick de
+  15 min en retard ne doit réveiller personne).
+
+Fraîcheur de la collecte (échec seulement au-delà d'un seuil durable) :
+
+- `status: "ok"` : réussi ;
+- `status: "degraded"` à cause de la collecte, la source la plus ancienne ayant moins de **72 h** :
+  réussi, avec `health: "degraded-tolerated"` et `collectionAgeHours` / `lateSources` dans le résultat. Un
+  retard de quelques heures ou de quelques jours sur une source, le temps que le propriétaire décide de la
+  réparer ou de la désactiver, ne rend plus le test rouge à chaque passage (un test toujours rouge
+  n'informe plus personne) ; le suivi de ces retards reste porté par les alertes `pipeline.source.*` ;
+- échec si une source activée n'a pas publié depuis plus de **72 h** (`HEALTH_COLLECTION_FAIL_HOURS` dans
+  le script), si aucune publication n'est connue, ou si aucune source n'est activée.
 
 Le test lance tous ses contrôles et les rapporte tous (`Promise.allSettled`) : au premier échec il ne
 s'arrête plus, la sortie JSON liste `failures` (un élément par contrôle en échec) et `checks` (ceux qui
