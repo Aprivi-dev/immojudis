@@ -24,6 +24,7 @@ const baseRow = {
   stability: ["Publiée : 2 évaluations favorables consécutives"],
   evaluatedAt: "2026-11-01T10:00:00Z",
   frozenAt: null,
+  feesDefault: false,
   href: "/sales/sale-1",
 };
 
@@ -44,7 +45,7 @@ function data(overrides: Partial<AdminPepitesResponse> = {}): AdminPepitesRespon
     migrated: true,
     generatedAt: "2026-11-01T12:00:00Z",
     mode: "shadow",
-    ruleVersion: "pepite-v1",
+    ruleVersion: "pepite-v1.1",
     counters: [
       counter("tribunal", "Tribunal", [40, 3, 1, 30, 0, 6, 34, 12]),
       counter("notary", "Vente notariale", [10, 1, 0, 8, 0, 1, 9, 0]),
@@ -86,6 +87,7 @@ function data(overrides: Partial<AdminPepitesResponse> = {}): AdminPepitesRespon
         href: "/sales/sale-2",
       },
     ],
+    feesDefault: { pepites: 1, withDefaultFees: 1, share: 1 },
     independence: {
       evaluatedSales: 43,
       evaluatedSponsored: 9,
@@ -109,14 +111,25 @@ const section = (view: ReturnType<typeof buildAdminPepitesView>, id: string) =>
   view.sections.find((item) => item.id === id)!;
 
 describe("buildAdminPepitesView", () => {
-  it("compose les cinq sections, dans l'ordre", () => {
+  it("compose les six sections, dans l'ordre", () => {
     expect(buildAdminPepitesView(data()).sections.map((item) => item.id)).toEqual([
       "mode",
       "counters",
       "rate",
+      "fees",
       "list",
       "independence",
     ]);
+  });
+
+  it("dit la part des pépites calculées avec des frais par défaut", () => {
+    const fees = section(buildAdminPepitesView(data()), "fees");
+    expect(plain(fees.paragraphs)).toContain("100 % des pépites de la liste (1 sur 1)");
+    const none = section(
+      buildAdminPepitesView(data({ feesDefault: { pepites: 0, withDefaultFees: 0, share: null } })),
+      "fees",
+    );
+    expect(plain(none.paragraphs)).toContain("Aucune pépite dans la liste");
   });
 
   it("dit le mode et que rien n'est visible du public en observation, sans bouton", () => {
@@ -124,7 +137,7 @@ describe("buildAdminPepitesView", () => {
 
     expect(mode.title).toBe("Mode : shadow");
     expect(mode.paragraphs[0]).toContain("rien n’est visible du public");
-    expect(mode.paragraphs[0]).toContain("Règle pepite-v1");
+    expect(mode.paragraphs[0]).toContain("Règle pepite-v1.1");
     expect(mode.paragraphs[0]).toContain("il n’y a pas de bouton ici");
   });
 

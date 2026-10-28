@@ -130,7 +130,7 @@ export function buildAdminPepitesView(data: AdminPepitesResponse): AdminPepitesV
     };
   }
 
-  const { rate, independence } = data;
+  const { rate, independence, feesDefault } = data;
   const counterRows = [...data.counters, { ...data.totals, venue: "total", label: "Total" }];
   const sections: PepitesViewSection[] = [
     {
@@ -188,6 +188,18 @@ export function buildAdminPepitesView(data: AdminPepitesResponse): AdminPepitesV
               : "la règle est peut-être trop large : le repère perdrait son sens."
           }`
         : null,
+      table: null,
+    },
+    {
+      id: "fees",
+      title: "Frais par défaut",
+      paragraphs: [
+        "Pépites (publiées et à confirmer) dont le coût d’achat repose sur au moins un frais par défaut (frais préalables du cahier non lus, honoraires de négociation ou frais de publicité non lus). Au tribunal ces défauts restent admis ; en vente notariale, la règle refuse la pépite tant qu’ils ne sont pas lus.",
+        feesDefault.pepites === 0
+          ? "Aucune pépite dans la liste."
+          : `${percent(feesDefault.share, 1)} des pépites de la liste (${integer.format(feesDefault.withDefaultFees)} sur ${integer.format(feesDefault.pepites)}).`,
+      ],
+      alert: null,
       table: null,
     },
     {

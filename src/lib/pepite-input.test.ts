@@ -668,6 +668,84 @@ describe("buildPepiteInput", () => {
     });
   });
 
+  describe("pepite-v1.1 : frais connus et décote d'occupation", () => {
+    const online = (conditions: Record<string, unknown>) =>
+      source({
+        sale: sale({
+          sale_venue_type: "notary",
+          sale_legal_framework: "voluntary_notarial",
+          sale_conditions: conditions,
+          starting_price_eur: 90_000,
+        }),
+        scenarios: null,
+      });
+
+    it("vente interactive : frais de publicité non indiqués = valeur par défaut, pépite refusée", () => {
+      const { input, evaluation, facts } = evaluateSaleForPepite(online(ONLINE_CONDITIONS));
+      expect(input.fees).toEqual({
+        preliminary: null,
+        negotiation: "document",
+        advertising: "defaut",
+      });
+      expect(facts.fees).toEqual(input.fees);
+      expect(evaluation.missed).toContain("fees_known");
+      expect(evaluation.favorable).toBe(false);
+      expect(evaluation.metrics.feesDefault).toBe(true);
+    });
+
+    it("vente interactive : frais de publicité indiqués et honoraires lus = frais connus", () => {
+      const { input, evaluation } = evaluateSaleForPepite(
+        online({ ...ONLINE_CONDITIONS, advertising_fees_eur: 1_200 }),
+      );
+      expect(input.fees).toEqual({
+        preliminary: null,
+        negotiation: "document",
+        advertising: "document",
+      });
+      expect(evaluation.passed).toContain("fees_known");
+      expect(evaluation.metrics.feesDefault).toBe(false);
+    });
+
+    it("vente interactive : payeur inconnu = honoraires par défaut, refusée ; la règle v1 ne regarde pas", () => {
+      const conditions = {
+        ...ONLINE_CONDITIONS,
+        advertising_fees_eur: 1_200,
+        negotiation_fee_payer: null,
+      };
+      const v11 = evaluateSaleForPepite(online(conditions), "pepite-v1.1");
+      expect(v11.input.fees?.negotiation).toBe("defaut");
+      expect(v11.evaluation.missed).toContain("fees_known");
+      const v1 = evaluateSaleForPepite(online(conditions), "pepite-v1");
+      expect(v1.evaluation.missed).not.toContain("fees_known");
+    });
+
+    it("tribunal : les frais préalables du cahier non lus restent admis, mais sont signalés", () => {
+      const { input, evaluation } = evaluateSaleForPepite(source());
+      expect(input.fees).toEqual({ preliminary: "defaut", negotiation: null, advertising: null });
+      expect(evaluation.passed).not.toContain("fees_known");
+      expect(evaluation.missed).not.toContain("fees_known");
+      expect(evaluation.metrics.feesDefault).toBe(true);
+    });
+
+    it("bien loué : la décote de loyer du moteur s'applique à la valeur du test C ; bien occupé : aucune", () => {
+      const libre = buildPepiteInput(source()).input;
+      const loue = buildPepiteInput(source({ sale: sale({ occupancy_status: "rented" }) })).input;
+      const occupe = buildPepiteInput(
+        source({ sale: sale({ occupancy_status: "occupied" }) }),
+      ).input;
+      expect(libre.occupancyDiscountPct).toBe(0);
+      expect(loue.signals.occupancy).toBe("loue");
+      expect(loue.occupancyDiscountPct).toBe(10);
+      expect(occupe.occupancyDiscountPct).toBe(0);
+      const ratio = (data: PepiteSourceData) =>
+        evaluateSaleForPepite(data).evaluation.metrics.costRatio;
+      const free = ratio(source());
+      const rented = ratio(source({ sale: sale({ occupancy_status: "rented" }) }));
+      expect(free).not.toBeNull();
+      expect(rented! / free!).toBeCloseTo(1 / 0.9, 3);
+    });
+  });
+
   it("retient la mise à prix de la colonne pour la garde de lecture, pas le prix de la règle", () => {
     const { facts } = buildPepiteInput(
       source({

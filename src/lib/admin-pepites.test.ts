@@ -70,6 +70,7 @@ import {
   computePepiteIndependence,
   getAdminPepites,
   parseAdminPepiteRow,
+  pepiteFeesDefaultStat,
   pepiteRate,
   suspendAdminPepites,
   unavailablePepites,
@@ -239,6 +240,35 @@ describe("parseAdminPepiteRow", () => {
     expect(parseAdminPepiteRow({ ...row, is_pepite: false, status: "not_pepite" })?.category).toBe(
       "near",
     );
+  });
+
+  it("lit les frais par défaut du détail et compte leur part parmi les pépites (publiées et à confirmer)", () => {
+    const withDefault = parseAdminPepiteRow({
+      ...row,
+      details: { ...row.details, feesDefault: true },
+    });
+    const read = parseAdminPepiteRow({ ...row, details: { ...row.details, feesDefault: false } });
+    const pending = parseAdminPepiteRow({
+      ...row,
+      sale_id: "sale-3",
+      is_pepite: false,
+      status: "pepite",
+      details: { ...row.details, feesDefault: true },
+    });
+    const near = parseAdminPepiteRow({
+      ...row,
+      sale_id: "sale-4",
+      is_pepite: false,
+      status: "not_pepite",
+      details: { ...row.details, feesDefault: true },
+    });
+    expect(withDefault?.feesDefault).toBe(true);
+    expect(read?.feesDefault).toBe(false);
+    expect(parseAdminPepiteRow(row)?.feesDefault).toBe(false);
+    const rows = [withDefault, read, pending, near].filter((item) => item != null);
+    // Une presque pépite n'entre pas dans la part : elle n'est pas publiée.
+    expect(pepiteFeesDefaultStat(rows)).toEqual({ pepites: 3, withDefaultFees: 2, share: 2 / 3 });
+    expect(pepiteFeesDefaultStat([])).toEqual({ pepites: 0, withDefaultFees: 0, share: null });
   });
 
   it("écrit le critère manqué en clair", () => {
@@ -462,7 +492,7 @@ describe("getAdminPepites", () => {
     });
     expect(result.migrated).toBe(true);
     expect(result.mode).toBe("shadow");
-    expect(result.ruleVersion).toBe("pepite-v1");
+    expect(result.ruleVersion).toBe("pepite-v1.1");
     expect(result.counters.map((counter) => counter.venue)).toEqual([
       "tribunal",
       "notary",
