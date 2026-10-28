@@ -2,9 +2,8 @@ import { PLAN_LIMITS } from "@/lib/plans";
 import { MONTHLY_SALE_UNLOCKS } from "@/lib/sale-unlocks";
 
 /**
- * Ce que devient un compte gratuit quand l'offre de lancement se termine : une seule liste, lue par
- * le bloc de /compte (`AccountLaunchOfferEnd`) et par le préavis par email (`emails/launch-offer-end-notice`),
- * pour que les deux disent la même chose. Les chiffres viennent de `PLAN_LIMITS`.
+ * Ce que devient un compte gratuit quand l'essai gratuit se termine : une seule liste, lue par
+ * le bloc de /compte (`AccountLaunchOfferEnd`). Les chiffres viennent de `PLAN_LIMITS`.
  */
 const free = PLAN_LIMITS.decouverte;
 

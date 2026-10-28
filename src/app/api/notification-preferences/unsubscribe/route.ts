@@ -53,7 +53,7 @@ function confirmationCopy(kind: UnsubscribeScope["kind"]): { question: string; b
     case "launch-offer-end":
       return {
         question:
-          "Voulez-vous ne plus recevoir le préavis de fin de l'offre de lancement ? Votre compte n'est pas modifié.",
+          "Voulez-vous ne plus recevoir de message sur la fin de l'essai gratuit ? Votre compte n'est pas modifié.",
         button: "Ne plus recevoir ce message",
       };
     default:
