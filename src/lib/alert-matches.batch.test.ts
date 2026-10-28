@@ -15,6 +15,12 @@ const state = vi.hoisted(() => ({
   upserts: [] as Row[][],
   /** Alertes dont l'écriture des correspondances échoue (erreur PostgREST, pas une Error). */
   failingAlerts: new Set<string>(),
+  /** Ventes dont la ligne est verrouillée en écriture : `upsert_user_alert_matches` les saute sans attendre. */
+  lockedSaleIds: new Set<string>(),
+  /** Fonction `upsert_user_alert_matches` absente (migration en retard) : repli sur l'upsert de la table. */
+  upsertFunctionMissing: false,
+  /** Appels de `upsert_user_alert_matches` (le reste de `rpcCalls` ne compte que les autres fonctions). */
+  matchRpcCalls: 0,
   /** Liste publique des pépites (`list_public_pepite_sale_ids`) et les lectures faites par le client de service. */
   pepiteIds: [] as string[],
   pepiteError: null as unknown,
@@ -24,7 +30,36 @@ const state = vi.hoisted(() => ({
 
 function fakeClient() {
   return {
-    async rpc(fn: string) {
+    async rpc(fn: string, args?: { p_rows?: Row[] }) {
+      if (fn === "upsert_user_alert_matches") {
+        state.matchRpcCalls += 1;
+        if (state.upsertFunctionMissing) {
+          return {
+            data: null,
+            error: { code: "PGRST202", message: "Could not find the function" },
+          };
+        }
+        const sent = args?.p_rows ?? [];
+        state.upserts.push(sent);
+        if (state.failingAlerts.has(String(sent[0]?.alert_id))) {
+          return {
+            data: null,
+            error: { message: "canceling statement due to statement timeout", code: "57014" },
+          };
+        }
+        // Les ventes verrouillées sont sautées, les autres reviennent avec leur identifiant.
+        return {
+          data: sent
+            .filter((row) => !state.lockedSaleIds.has(String(row.sale_id)))
+            .map((row) => ({
+              ...row,
+              id: `match-${String(row.sale_id)}`,
+              read_at: null,
+              dismissed_at: null,
+            })),
+          error: null,
+        };
+      }
       state.rpcCalls.push(fn);
       return state.pepiteError
         ? { data: null, error: state.pepiteError }
@@ -197,6 +232,9 @@ describe("smart alert batch", () => {
     state.updates = [];
     state.upserts = [];
     state.failingAlerts = new Set();
+    state.lockedSaleIds = new Set();
+    state.upsertFunctionMissing = false;
+    state.matchRpcCalls = 0;
     state.pepiteIds = [];
     state.pepiteError = null;
     state.rpcCalls = [];
@@ -520,6 +558,9 @@ describe("alertes en échec isolées", () => {
     state.updates = [];
     state.upserts = [];
     state.failingAlerts = new Set();
+    state.lockedSaleIds = new Set();
+    state.upsertFunctionMissing = false;
+    state.matchRpcCalls = 0;
     vi.spyOn(console, "error").mockImplementation(() => undefined);
   });
 
@@ -545,6 +586,42 @@ describe("alertes en échec isolées", () => {
     // L'alerte en échec garde son ancienne date d'évaluation : le passage suivant la reprend.
     expect(state.updates.map((update) => update.id).sort()).toEqual(["a", "c"]);
     expect(() => assertSmartAlertBatchComplete(result)).not.toThrow();
+  });
+
+  it("une vente verrouillée en écriture est sautée sans attente : l'alerte est reprise à la passe suivante", async () => {
+    state.salesPool = [{ id: "sale-1" }, { id: "sale-2" }];
+    state.userAlerts = sameUser(["a", "b"]);
+    state.lockedSaleIds = new Set(["sale-2"]);
+
+    const result = await runSmartAlertEvaluationBatch();
+
+    // Les deux alertes ont écrit la vente libre, et aucune n'est marquée évaluée (leur date n'avance pas).
+    expect(state.upserts.flat().map((row) => row.sale_id)).toEqual([
+      "sale-1",
+      "sale-2",
+      "sale-1",
+      "sale-2",
+    ]);
+    expect(result.failedAlertCount).toBe(2);
+    expect(result.alertFailures[0].error).toBe(
+      "1 correspondance(s) différée(s) : vente verrouillée ou disparue (55P03)",
+    );
+    expect(state.updates).toHaveLength(0);
+    // Un seul appel par alerte et par lot : aucun rejeu qui attendrait le verrou.
+    expect(state.matchRpcCalls).toBe(2);
+  });
+
+  it("fonction d'écriture absente (migration en retard) : repli sur l'upsert de la table", async () => {
+    state.salesPool = [{ id: "sale-1" }];
+    state.userAlerts = sameUser(["a"]);
+    state.upsertFunctionMissing = true;
+
+    const result = await runSmartAlertEvaluationBatch();
+
+    expect(result.failedAlertCount).toBe(0);
+    expect(state.matchRpcCalls).toBe(1);
+    expect(state.upserts.flat().map((row) => row.sale_id)).toEqual(["sale-1"]);
+    expect(state.updates.map((update) => update.id)).toEqual(["a"]);
   });
 
   it("journalise le message et le code d'une erreur qui n'est pas une Error", async () => {
@@ -634,6 +711,9 @@ describe("alertes « Seulement les pépites »", () => {
     state.updates = [];
     state.upserts = [];
     state.failingAlerts = new Set();
+    state.lockedSaleIds = new Set();
+    state.upsertFunctionMissing = false;
+    state.matchRpcCalls = 0;
     state.pepiteIds = [];
     state.pepiteError = null;
     state.rpcCalls = [];

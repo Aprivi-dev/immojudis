@@ -471,6 +471,51 @@ async function collectAlertMatches({
   }
 }
 
+/** Écriture bloquée par un verrou : même code que `lock_not_available`, que les rapports d'échec savent lire. */
+const ALERT_MATCHES_DEFERRED_CODE = "55P03";
+
+function isMissingDatabaseObject(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  return code === "PGRST202" || code === "PGRST205" || code === "42883" || code === "42P01";
+}
+
+/**
+ * Écrit un lot de correspondances et rend les lignes enregistrées. Passe par `upsert_user_alert_matches` (migration
+ * 20261108110200), qui SAUTE sans attendre les ventes dont la ligne est verrouillée en écriture par une autre
+ * transaction (publication du pipeline, suppression) ou disparues : avec l'upsert PostgREST, la clé étrangère vers
+ * `auction_sales` attendait le verrou jusqu'au délai de la requête (57014), puis l'alerte entière échouait. Une vente
+ * sautée lève une erreur de code 55P03 APRÈS l'écriture des autres lignes du lot : l'alerte n'est pas marquée évaluée
+ * et est rejouée à la passe suivante sans doublon (upsert), comme pour toute autre erreur d'écriture.
+ *
+ * Sans la migration (fonction absente, déploiement avant migration), repli sur l'upsert d'origine.
+ */
+async function upsertAlertMatchRows(
+  batch: Database["public"]["Tables"]["user_alert_matches"]["Insert"][],
+): Promise<AlertMatchRow[]> {
+  const { data, error } = await supabaseAdmin.rpc("upsert_user_alert_matches", {
+    p_rows: batch as unknown as Json,
+  });
+  if (!error) {
+    const written = (data ?? []) as AlertMatchRow[];
+    if (written.length < batch.length) {
+      throw Object.assign(
+        new Error(
+          `${batch.length - written.length} correspondance(s) différée(s) : vente verrouillée ou disparue`,
+        ),
+        { code: ALERT_MATCHES_DEFERRED_CODE },
+      );
+    }
+    return written;
+  }
+  if (!isMissingDatabaseObject(error)) throw error;
+  const fallback = await supabaseAdmin
+    .from("user_alert_matches")
+    .upsert(batch, { onConflict: "alert_id,sale_id" })
+    .select("*");
+  if (fallback.error) throw fallback.error;
+  return fallback.data ?? [];
+}
+
 /**
  * Enregistre les correspondances d'une alerte par lots (une alerte très large ferait sinon une
  * seule requête de plusieurs milliers de lignes, au-delà du délai d'une requête), crée ses
@@ -490,15 +535,11 @@ async function persistAlertEvaluation({
 }): Promise<void> {
   const { alert, matches, rows } = entry;
   for (let offset = 0; offset < rows.length; offset += ALERT_MATCH_UPSERT_BATCH_SIZE) {
-    const { data, error } = await supabaseAdmin
-      .from("user_alert_matches")
-      .upsert(rows.slice(offset, offset + ALERT_MATCH_UPSERT_BATCH_SIZE), {
-        onConflict: "alert_id,sale_id",
-      })
-      .select("*");
-    if (error) throw error;
+    const data = await upsertAlertMatchRows(
+      rows.slice(offset, offset + ALERT_MATCH_UPSERT_BATCH_SIZE),
+    );
 
-    const persistedBySale = new Map((data ?? []).map((row) => [row.sale_id, row]));
+    const persistedBySale = new Map(data.map((row) => [row.sale_id, row]));
     for (const match of matches.slice(offset, offset + ALERT_MATCH_UPSERT_BATCH_SIZE)) {
       const persistedRow = persistedBySale.get(match.saleId);
       if (persistedRow) {
