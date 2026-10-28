@@ -316,6 +316,7 @@ export function storedStateFor(stored: StoredEvaluation | undefined): PepiteStor
     lastFavorableAt: stored.lastFavorableAt,
     dataMissingSince: stored.dataMissingSince,
     inputStartingPriceEur: stored.inputStartingPriceEur,
+    ruleVersion: stored.ruleVersion,
   };
 }
 

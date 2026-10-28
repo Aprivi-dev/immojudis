@@ -612,6 +612,7 @@ describe("état stocké et stabilité", () => {
       lastFavorableAt: "2026-10-31T08:00:00.000Z",
       dataMissingSince: null,
       inputStartingPriceEur: 80_000,
+      ruleVersion: VERSIONS.rule,
     };
     const current = stored("a", {
       isPepite: true,
@@ -619,7 +620,10 @@ describe("état stocké et stabilité", () => {
       lastFavorableAt: "2026-10-31T08:00:00.000Z",
     });
     expect(storedStateFor(current)).toEqual(expected);
-    expect(storedStateFor({ ...current, ruleVersion: "pepite-v0" })).toEqual(expected);
+    expect(storedStateFor({ ...current, ruleVersion: "pepite-v0" })).toEqual({
+      ...expected,
+      ruleVersion: "pepite-v0",
+    });
     expect(storedStateFor(undefined)).toBeNull();
   });
 
@@ -1380,8 +1384,24 @@ describe("n° 21 : gel à J-7, les détails de l'évaluation publiée ne sont pa
       details: pepiteDetails(publishedEvaluation(), facts() as never),
       reason_codes: ["pass:test_b_chance", "pass:test_c_cost", "stab:entered"],
     });
-    db.evaluations.set("a", { evaluation, facts: facts({ saleDate: FROZEN_SALE }) });
+    // L'évaluation du jour est faite avec la version appliquée, comme `evaluateSaleForPepite(…, versions.rule)`.
+    db.evaluations.set("a", {
+      evaluation: { ...evaluation, ruleVersion: VERSIONS.rule },
+      facts: facts({ saleDate: FROZEN_SALE }),
+    });
   };
+
+  it("ne garde pas les détails d'une évaluation stockée sous une autre version de la règle : réévaluée aux seuils de sortie", async () => {
+    arrange(degraded());
+    db.stored = [published({ ruleVersion: "pepite-v1" })];
+
+    await runSalePepitesBatch({ now: NOW });
+
+    const row = db.upserts.flat()[0];
+    expect(row).toMatchObject({ rule_version: VERSIONS.rule, is_pepite: false, frozen_at: null });
+    expect(row.details).not.toEqual(db.storedDetails.get("a")!.details);
+    expect(row.reason_codes).not.toContain("stab:frozen");
+  });
 
   it("garde les détails et les motifs publiés, met à jour la date d'évaluation, et lit une fiche cohérente", async () => {
     arrange(degraded());

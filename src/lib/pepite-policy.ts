@@ -741,6 +741,8 @@ export type PepiteStoredState = {
   dataMissingSince: string | null;
   /** Mise à prix lue lors de la dernière évaluation. */
   inputStartingPriceEur: number | null;
+  /** Version de la règle qui a produit cet état : une version différente de celle appliquée lève le gel (J-7). */
+  ruleVersion?: string | null;
 };
 
 export type PepiteStability = {
@@ -783,7 +785,8 @@ const RESET: Omit<PepiteStability, "codes"> = {
  *  - donnée manquante (statut « insuffisant ») : une pépite publiée est tolérée `PEPITE_DATA_GRACE_HOURS`
  *    heures sans changer, puis sort ;
  *  - gel à `PEPITE_FREEZE_DAYS` jours de la vente : le résultat ne change plus, sauf signal
- *    bloquant, changement de prix ou (pepite-v1.1 et suivantes) porte de qualité de l'estimation manquée ;
+ *    bloquant, changement de prix, changement de version de la règle (réévaluée une fois, aux seuils de sortie)
+ *    ou (pepite-v1.1 et suivantes) porte de qualité de l'estimation manquée ;
  *    le traitement planifié ne réécrit pas non plus les détails de l'évaluation publiée (`sale-pepites-batch.ts`).
  * `previous` : l'état stocké, quelle que soit la version de la règle, du moteur ou du régime : un
  * changement de version ne remet rien à zéro, la vente est réévaluée tout de suite et une pépite publiée
@@ -817,7 +820,11 @@ export function applyPepiteStability({
   const saleMs = timestamp(saleDate);
   const frozenWindow =
     saleMs != null && saleMs > nowMs && saleMs - nowMs <= PEPITE_FREEZE_DAYS * DAY_MS;
-  if (frozenWindow && previous && !priceChanged) {
+  // Une évaluation stockée sous une autre version de la règle ne reste pas gelée : ses motifs et ses détails seraient
+  // ceux de l'ancienne règle sous l'étiquette de la nouvelle. Elle est réévaluée une fois, aux seuils de sortie.
+  const ruleChanged =
+    previous?.ruleVersion != null && previous.ruleVersion !== evaluation.ruleVersion;
+  if (frozenWindow && previous && !priceChanged && !ruleChanged) {
     // pepite-v1.1 : une porte de qualité de l'estimation manquée est bloquante pendant le gel.
     if (evaluation.frozenQualityMissed && previous.isPepite) {
       return { ...RESET, codes: ["stab:exit_quality"] };
