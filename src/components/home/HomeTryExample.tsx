@@ -27,6 +27,7 @@ import {
   WORKS_LABEL,
 } from "./example-verdict-text";
 import { useCountTo } from "./use-count-to";
+import { useDemoLoop } from "./use-demo-loop";
 import styles from "./HomePage.module.css";
 
 type Choice = { project: ExampleProject; occupation: ExampleOccupation; works: ExampleWorks };
@@ -46,6 +47,7 @@ const DEMO: Choice[] = [
   { project: "louer", occupation: "occupe", works: "confort" },
 ];
 const DEMO_MS = 3_000;
+const DEMO_FIRST_MS = 2_200;
 
 function Segmented<T extends string>({
   label,
@@ -82,45 +84,42 @@ function Segmented<T extends string>({
 /**
  * « Essayez sur un exemple » : les données qu'Immojudis croise pour l'annonce exemple, trois
  * réglages (projet, occupation, travaux) et le verdict, recalculé par le moteur d'enchère plafond
- * (tous les scénarios sont calculés au rendu serveur). Une démonstration défile quand la section
- * apparaît, jusqu'au premier choix du visiteur.
+ * (tous les scénarios sont calculés au rendu serveur). Une démonstration défile une fois quand la
+ * section apparaît ; elle s'arrête au survol, au focus, au toucher, au premier choix du visiteur et
+ * sur le bouton « Mettre en pause l'animation ».
  */
 export function HomeTryExample({ data }: { data: ExampleVerdictData }) {
-  const [choice, setChoice] = useState<Choice>(DEFAULT_CHOICE);
-  const [touched, setTouched] = useState(false);
-  const card = useRef<HTMLDivElement>(null);
+  const [userChoice, setUserChoice] = useState<Choice | null>(null);
+  const [visible, setVisible] = useState(false);
+  const loop = useDemoLoop({
+    steps: DEMO.length,
+    firstMs: DEMO_FIRST_MS,
+    stepMs: DEMO_MS,
+    active: visible,
+  });
+  const choice = userChoice ?? DEMO[loop.step];
+  const touched = userChoice !== null;
 
+  // La démonstration démarre quand la carte est à l'écran.
+  const card = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const element = card.current;
-    if (!element || touched || typeof IntersectionObserver === "undefined") return;
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
-    let interval: number | null = null;
-    let delay: number | null = null;
+    if (!element || typeof IntersectionObserver === "undefined") return;
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (!entry?.isIntersecting) return;
         observer.disconnect();
-        let step = 0;
-        delay = window.setTimeout(() => {
-          interval = window.setInterval(() => {
-            step = (step + 1) % DEMO.length;
-            setChoice(DEMO[step]);
-          }, DEMO_MS);
-        }, 2_200);
+        setVisible(true);
       },
       { threshold: 0.3 },
     );
     observer.observe(element);
-    return () => {
-      observer.disconnect();
-      if (delay) window.clearTimeout(delay);
-      if (interval) window.clearInterval(interval);
-    };
-  }, [touched]);
+    return () => observer.disconnect();
+  }, []);
 
   const choose = (patch: Partial<Choice>) => {
-    setTouched(true);
-    setChoice((current) => ({ ...current, ...patch }));
+    loop.stop();
+    setUserChoice({ ...choice, ...patch });
   };
 
   const scenario =
@@ -169,8 +168,14 @@ export function HomeTryExample({ data }: { data: ExampleVerdictData }) {
     { title: "Portage et marge", detail: "Charges, taxe foncière, financement, marge" },
   ];
 
+  const toConfirm = facts.filter((fact) => fact.warn).length;
+
   return (
-    <section id="essayer" className={styles.section} aria-labelledby="try-title">
+    <section
+      id="essayer"
+      className={`${styles.section} ${styles.tryAnchor}`}
+      aria-labelledby="try-title"
+    >
       <div className={`${styles.container} ${styles.trySplit}`}>
         <div
           ref={card}
@@ -178,6 +183,7 @@ export function HomeTryExample({ data }: { data: ExampleVerdictData }) {
           data-reveal=""
           role="group"
           aria-label={`Exemple fictif : simulateur du verdict pour un T3 à ${data.city}`}
+          {...loop.handlers}
         >
           <div className={styles.tryTop}>
             <div>
@@ -194,7 +200,9 @@ export function HomeTryExample({ data }: { data: ExampleVerdictData }) {
           <div>
             <p className={styles.tryDataHead}>
               <b>Ce qu’Immojudis a croisé</b>
-              <span>{facts.length} données, sources citées</span>
+              <span>
+                {facts.length} données croisées, {toConfirm} à confirmer
+              </span>
             </p>
             <ul className={styles.tryData}>
               {facts.map((fact, position) => (
@@ -234,10 +242,7 @@ export function HomeTryExample({ data }: { data: ExampleVerdictData }) {
               onChange={(works) => choose({ works })}
             />
           </div>
-          <div
-            className={`${styles.tryVerdict} ${styles[`verdict_${verdict}`]}`}
-            aria-live={touched ? "polite" : "off"}
-          >
+          <div className={`${styles.tryVerdict} ${styles[`verdict_${verdict}`]}`}>
             <div className={styles.tryVerdictTop}>
               <small>Votre enchère plafond</small>
               <span className={styles.verdictPill}>
@@ -245,7 +250,14 @@ export function HomeTryExample({ data }: { data: ExampleVerdictData }) {
                 {BID_VERDICT_LABEL[verdict]}
               </span>
             </div>
-            <p className={styles.verdictAmount}>{formatPrice(shown)}</p>
+            <p className={styles.verdictAmount} aria-hidden>
+              {formatPrice(shown)}
+            </p>
+            {/* Annoncé en permanence : la valeur finale, jamais les montants intermédiaires du
+                compteur animé (masqué ci-dessus). */}
+            <p className="sr-only" role="status">
+              Votre enchère plafond : {formatPrice(ceiling)}. {BID_VERDICT_LABEL[verdict]}.
+            </p>
             <p className={styles.verdictText}>{bidVerdictSentence(ceiling, data.startingPrice)}</p>
             <div className={styles.gauge} aria-hidden>
               <span
@@ -272,9 +284,25 @@ export function HomeTryExample({ data }: { data: ExampleVerdictData }) {
             </p>
             {scenario ? <p className={styles.tryWhy}>{scenarioExplanation(scenario)}</p> : null}
           </div>
-          <p className={`${styles.tryHint} ${touched ? styles.tryHintOff : ""}`}>
-            <i aria-hidden />
-            Changez votre projet, l’occupation ou les travaux.
+          <div className={styles.exampleFoot}>
+            <p className={`${styles.tryHint} ${touched ? styles.tryHintOff : ""}`}>
+              <i aria-hidden />
+              Changez votre projet, l’occupation ou les travaux.
+            </p>
+            <button
+              type="button"
+              className={`${styles.pauseButton} ${loop.running ? "" : styles.pauseButtonOff}`}
+              aria-pressed={loop.paused}
+              tabIndex={loop.running ? undefined : -1}
+              onClick={loop.togglePause}
+            >
+              Mettre en pause l’animation
+            </button>
+          </div>
+          <p>
+            <Link href="/annonce-exemple" prefetch={false} className={styles.textLink}>
+              Voir l’analyse complète <ArrowRight aria-hidden size={16} />
+            </Link>
           </p>
         </div>
         <div className={`${styles.head} ${styles.headAside}`} data-reveal="">
@@ -285,6 +313,10 @@ export function HomeTryExample({ data }: { data: ExampleVerdictData }) {
           <p className={styles.lead}>
             Immojudis croise l’estimation, les ventes du quartier, les pièces de la vente et vos
             coûts. Changez un réglage : l’enchère plafond et le verdict se recalculent.
+          </p>
+          <p className={styles.lead}>
+            La mise à prix est le montant à partir duquel démarrent les enchères ; ce n’est pas le
+            prix final.
           </p>
           <ul className={styles.verdictRules}>
             <li className={styles.verdict_go}>

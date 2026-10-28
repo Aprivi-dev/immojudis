@@ -1286,6 +1286,73 @@
   color: #ffffff;
 }
 
+/* Sous les situations de l'exemple : le lien vers l'analyse complète et la pause de l'animation. */
+.exampleFoot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.pauseButton {
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 1px solid var(--home-line);
+  border-radius: 9999px;
+  background: var(--home-surface);
+  color: var(--home-soft);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.pauseButton:hover,
+.pauseButton[aria-pressed="true"] {
+  border-color: var(--home-ink);
+  color: var(--home-ink);
+}
+
+/* Animation terminée ou arrêtée : le bouton garde sa place (pas de saut de page) mais disparaît. */
+.pauseButtonOff {
+  visibility: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pauseButton {
+    display: none;
+  }
+}
+
+/* Pages piliers et repère « Pépite » (maillage interne). */
+.guideLinks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px 32px;
+  margin-top: 32px;
+}
+
+.guideLinks a {
+  min-height: 44px;
+}
+
+.pepiteLine {
+  max-width: 720px;
+  margin-top: 32px;
+  color: var(--home-soft);
+  font-size: 16px;
+  line-height: 24px;
+}
+
+/* Lien « #essayer » : la section arrive sous l'en-tête flottant. */
+.tryAnchor {
+  scroll-margin-top: 104px;
+}
+
 /* Essayez sur un exemple */
 .trySplit {
   display: grid;
@@ -1664,17 +1731,12 @@
   }
 
   .tryHint:not(.tryHintOff) i {
-    animation: home-blink 1200ms ease-in-out infinite;
+    animation: home-blink 1200ms ease-in-out 3;
   }
 
   .heroAnim {
     animation: home-rise 900ms var(--home-ease) both;
     animation-delay: var(--delay, 0ms);
-  }
-
-  .barGrow i {
-    animation: home-grow 1200ms var(--home-ease) both;
-    animation-delay: 500ms;
   }
 
   :global(html[data-home-motion]) .page [data-reveal] {
@@ -1716,12 +1778,6 @@
   from {
     opacity: 0.01;
     transform: translateY(24px);
-  }
-}
-
-@keyframes home-grow {
-  from {
-    transform: scaleX(0);
   }
 }
 

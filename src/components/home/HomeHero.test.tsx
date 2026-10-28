@@ -7,7 +7,7 @@ vi.mock("@/hooks/use-launch-offer", () => ({
 }));
 
 import { HomeHero, catalogueSummaryLine } from "./HomeHero";
-import { HomeClosing, HomeStats, homeFaqItems } from "./HomeSections";
+import { HomeBenefits, HomeClosing, HomeGuides, HomeStats, homeFaqItems } from "./HomeSections";
 
 // Text outside the tags, read character by character (no tag-stripping regex).
 function visibleText(markup: string): string {
@@ -85,6 +85,97 @@ describe("home hero", () => {
     for (const label of ["Y habiter", "Revendre, loué", "Louer après rénovation"]) {
       expect(markup).toMatch(new RegExp(`<button[^>]*>${label}</button>`));
     }
+  });
+});
+
+describe("home texts", () => {
+  it("annonce le plafond pour le tribunal et le notaire, sans promettre l'État", () => {
+    const text = visibleText(renderToStaticMarkup(<HomeHero />));
+    expect(text).toContain(
+      "Pour les ventes au tribunal et chez le notaire : les points clés des pièces, selon la vente, et un plafond estimé à ne pas dépasser.",
+    );
+    expect(text).toContain("réunies sur une carte");
+    // Régimes notariaux fermés : le tribunal seul.
+    const tribunalOnly = visibleText(
+      renderToStaticMarkup(<HomeHero openFeeRegimes={["tribunal"]} />),
+    );
+    expect(tribunalOnly).toContain("Pour les ventes au tribunal : les points clés des pièces");
+    expect(tribunalOnly).not.toContain("chez le notaire");
+  });
+
+  it("compte les points confirmés de l'analyse, sans afficher un « 6 sur 6 » faux", () => {
+    const text = visibleText(renderToStaticMarkup(<HomeHero />));
+    expect(text).toContain("5 sur 6 confirmés");
+    expect(text).not.toContain("6 sur 6");
+  });
+
+  it("mène à l'analyse complète depuis la carte du premier écran", () => {
+    const markup = renderToStaticMarkup(<HomeHero />);
+    expect(markup).toMatch(/<a[^>]*href="\/annonce-exemple"[^>]*>Voir l’analyse complète/);
+  });
+
+  it("annonce la valeur finale en zone permanente et masque le montant animé", () => {
+    const markup = renderToStaticMarkup(<HomeHero />);
+    expect(markup).toMatch(
+      /<p class="sr-only" role="status">Enchère à ne pas dépasser : 135.000.€/,
+    );
+    expect(markup).toMatch(/<p[^>]*aria-hidden="true"[^>]*>135.000.€<\/p>/);
+    expect(markup).not.toContain("aria-live");
+  });
+
+  it("propose le bouton de pause de l'animation", () => {
+    const markup = renderToStaticMarkup(<HomeHero />);
+    expect(markup).toMatch(/<button[^>]*aria-pressed="false"[^>]*>Mettre en pause l’animation/);
+  });
+
+  it("renvoie vers les pages piliers et vers le repère Pépite, sans chiffre", () => {
+    const markup = renderToStaticMarkup(<HomeGuides />);
+    for (const href of [
+      "/ventes-immobilieres-judiciaires",
+      "/simulateur-frais-encheres",
+      "/tribunaux",
+      "/ventes-encheres-immobilieres",
+      "/ressources",
+      "/methode-ecart-marche",
+      "/methode-pepites",
+      "/sales?pepite=true",
+    ]) {
+      expect(markup).toContain(`href="${href}"`);
+    }
+    const text = visibleText(markup);
+    expect(text).toContain("Voir les pépites");
+    expect(text).not.toMatch(/\d/);
+  });
+
+  it("nomme le tribunal et le notaire dans la FAQ du plafond, et définit la mise à prix", () => {
+    const find = (items: ReturnType<typeof homeFaqItems>, start: string) =>
+      items.find((item) => item.question.startsWith(start));
+    const all = find(homeFaqItems(), "Comment est calculée");
+    expect(all?.question).toBe("Comment est calculée l’enchère plafond ou l’offre plafond ?");
+    expect(all?.answer).toContain(
+      "Elle est proposée pour les ventes au tribunal et les ventes notariales ; pour une vente notariale par offres, on parle d’offre plafond.",
+    );
+    const bougieOnly = find(homeFaqItems(["tribunal", "notary_auction"]), "Comment est calculée");
+    expect(bougieOnly?.answer).toContain("tribunal et les ventes notariales.");
+    const tribunal = find(homeFaqItems(["tribunal"]), "Comment est calculée");
+    expect(tribunal?.question).toBe("Comment est calculée l’enchère plafond ?");
+    expect(tribunal?.answer).toContain("Elle est proposée pour les ventes au tribunal.");
+    expect(tribunal?.answer).not.toContain("notarial");
+    expect(find(homeFaqItems(), "Qu’est-ce que la mise à prix")?.answer).toContain(
+      "Ce n’est pas le prix final",
+    );
+  });
+
+  it("suit les nouvelles ventes sans promesse d’exhaustivité", () => {
+    const text = visibleText(renderToStaticMarkup(<HomeBenefits />));
+    expect(text).toContain("Suivez les nouvelles ventes de votre secteur");
+    expect(text).not.toContain("Ne ratez plus");
+    expect(text).toContain("(illustration)");
+  });
+
+  it("promet 7 jours d'accès à l'offre Analyse, sans « complet »", async () => {
+    const { HOME_TRIAL_NOTE } = await import("./HomePrimaryAction");
+    expect(HOME_TRIAL_NOTE).toBe("7 jours d’accès à l’offre Analyse, sans carte bancaire.");
   });
 });
 

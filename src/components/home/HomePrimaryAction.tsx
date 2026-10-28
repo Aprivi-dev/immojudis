@@ -10,7 +10,7 @@ import { ArrowRight, ShieldCheck } from "./HomeIcons";
 import styles from "./HomePage.module.css";
 
 /** Sous le bouton d'inscription, pendant l'essai à l'inscription. */
-export const HOME_TRIAL_NOTE = `${ANALYSIS_TRIAL_DAYS} jours d’accès complet à l’offre Analyse, sans carte bancaire.`;
+export const HOME_TRIAL_NOTE = `${ANALYSIS_TRIAL_DAYS} jours d’accès à l’offre Analyse, sans carte bancaire.`;
 
 /**
  * L'action principale de l'accueil, la même en haut et en bas de page : pour un visiteur, créer son

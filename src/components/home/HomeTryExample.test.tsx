@@ -35,8 +35,39 @@ describe("Essayez sur un exemple", () => {
     expect(text(verdictBox())).toContain("On passe son tour");
     expect(text(verdictBox())).toContain("La mise à prix dépasse déjà votre plafond de 50 500 €.");
     expect(text(verdictBox())).toContain("Louer : le loyer estimé fixe la limite (rendement).");
-    // Le choix du visiteur est annoncé ; la démonstration automatique ne l'est pas.
-    expect(verdictBox().getAttribute("aria-live")).toBe("polite");
+    // La zone annoncée est permanente et porte la valeur finale ; le montant animé est masqué.
+    const status = within(verdictBox()).getByRole("status");
+    expect(text(status)).toContain("Votre enchère plafond : 44 500 €. On passe son tour.");
+    expect(verdictBox().querySelector("[aria-live]")).toBeNull();
+    expect(verdictBox().querySelector('p[aria-hidden="true"]')).not.toBeNull();
+  });
+
+  it("compte les données à confirmer et définit la mise à prix", () => {
+    render(<HomeTryExample data={exampleVerdictData()} />);
+    expect(text(document.body)).toContain("8 données croisées, 1 à confirmer");
+    expect(text(document.body)).not.toContain("sources citées");
+    expect(text(document.body)).toContain(
+      "La mise à prix est le montant à partir duquel démarrent les enchères ; ce n’est pas le prix final.",
+    );
+  });
+
+  it("renvoie vers l'analyse complète depuis la carte et ancre #essayer sous l'en-tête flottant", () => {
+    render(<HomeTryExample data={exampleVerdictData()} />);
+    const card = screen.getByRole("group", { name: /simulateur du verdict/ });
+    expect(
+      within(card)
+        .getByRole("link", { name: /Voir l’analyse complète/ })
+        .getAttribute("href"),
+    ).toBe("/annonce-exemple");
+    expect(document.getElementById("essayer")?.className).toMatch(/tryAnchor/);
+  });
+
+  it("n'a qu'un bouton de pause, qui reste pressé jusqu'à reprise", () => {
+    render(<HomeTryExample data={exampleVerdictData()} />);
+    const pause = screen.getByRole("button", { name: "Mettre en pause l’animation" });
+    expect(pause.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(pause);
+    expect(pause.getAttribute("aria-pressed")).toBe("true");
   });
 
   it("énonce la règle des trois verdicts et renvoie vers l'exemple complet", () => {
