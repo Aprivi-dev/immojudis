@@ -1,12 +1,16 @@
 """Resolve existing catalogue identity under the publication transaction lock."""
 from __future__ import annotations
 
+import logging
+from contextlib import nullcontext
 from datetime import UTC, datetime
 from itertools import combinations
 
 from psycopg.types.json import Jsonb
 
+from src import listing_minimum, rejected_listings
 from src.admission import LICITOR_MULTI_LOT_QUARANTINE, MULTI_LOT_QUARANTINE, quarantine_reason
+from src.collection_evidence import record_sale_decisions
 from src.dedupe import (
     PRIMARY_SOURCE_PRIORITY,
     _address_dedupe_keys,
@@ -17,6 +21,7 @@ from src.dedupe import (
     shared_listing_id,
 )
 from src.freshness import invalidate_analysis
+from src.information_sufficiency import publication_gate
 from src.models import AuctionSale
 from src.retention_tombstones import drop_retired
 from src.reviewed_aliases import (
@@ -24,6 +29,8 @@ from src.reviewed_aliases import (
     ReviewedAliasRegistryError,
     load_reviewed_aliases,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 _REVIEWED_ALIAS_RESOLVED_FLAGS = frozenset({'sale_procedure_conflict'})
 _REVIEWED_ALIAS_IDENTITY_FLAGS = frozenset({
@@ -435,6 +442,27 @@ def _shared_listing_primary(rows: list[AuctionSale], incoming: AuctionSale) -> A
                                       row.source_url or '', row.id or ''))
 
 
+def _record_refusals(connection, refused: list[AuctionSale]) -> None:
+    """Décision ``excluded`` des annonces refusées, dans la transaction de publication (jamais bloquante).
+
+    ``excluded`` n'est ni en attente ni un échec : la publication du passage reste complète, et l'annonce découverte
+    (ou sautée, fiche non relue) reste comptée dans l'inventaire de la source. Les refus après lecture de la fiche
+    sont mémorisés (``rejected_listings``) : la fiche n'est pas relue pendant 7 jours.
+    """
+    rejected_listings.remember(connection, [sale for sale in refused if not listing_minimum.assess(sale).detail_unread])
+    for run_id, group in listing_minimum.decision_groups(refused).items():
+        if not run_id:
+            continue
+        try:
+            savepoint = connection.transaction() if hasattr(connection, "transaction") else nullcontext()
+            with savepoint:
+                record_sale_decisions(
+                    run_id, group, decision="excluded", reason=listing_minimum.REASON, connection=connection
+                )
+        except Exception:  # noqa: BLE001 - un journal de décision ne doit pas faire échouer la publication
+            LOGGER.warning("Unable to record the refusal of %s listings", len(group), exc_info=True)
+
+
 def resolve_publication_identities(connection, sales: list[AuctionSale]) -> list[AuctionSale]:
     if not sales:
         return []
@@ -499,6 +527,7 @@ def resolve_publication_identities(connection, sales: list[AuctionSale]) -> list
         existing_by_key.pop(alias.alias_sale_id, None)
 
     resolved: dict[str, AuctionSale] = {}
+    refused: list[AuctionSale] = []
     for sale in sales:
         reviewed_alias = _reviewed_alias_for_sale(registry, sale)
         if reviewed_alias is not None:
@@ -548,8 +577,14 @@ def resolve_publication_identities(connection, sales: list[AuctionSale]) -> list
             _replace_existing(existing_by_key, matches[0], result)
             resolved[result.source_url] = result
             continue
+        # Annonce nouvelle en base (aucune ligne de même URL, aucun rapprochement) : elle doit avoir le minimum
+        # (voie ou lieu-dit, email de contact, pièce, autre source). Une annonce déjà en base ne passe jamais ici.
+        if not publication_gate(sale).sufficient:
+            refused.append(sale)
+            continue
         ensure_room_bedroom_consistency(sale)
         existing_by_key[sale.id or sale.source_url] = sale
         resolved[sale.source_url] = sale
+    _record_refusals(connection, listing_minimum.refuse(refused))
     # The tombstone trigger sees the resolved url/date, so the check belongs after the resolution.
     return drop_retired(connection, list(resolved.values()), sales)
