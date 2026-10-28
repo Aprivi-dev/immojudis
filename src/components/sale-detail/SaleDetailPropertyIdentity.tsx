@@ -16,7 +16,7 @@ import { AerialOrbitHero } from "@/components/sale-detail/AerialOrbitHero";
 import listingStyles from "@/components/sale-detail/SaleListing.module.css";
 import { propertyTypeLabel } from "@/lib/format";
 import { getMapboxAccessToken } from "@/lib/mapbox";
-import { aerialOrbitTarget } from "@/lib/sale-aerial-orbit";
+import { aerialOrbitTarget, hasReliableBuildingPosition } from "@/lib/sale-aerial-orbit";
 import { listingCoordinates } from "@/lib/sale-listing";
 import { photoCredit } from "@/lib/photo-credit";
 import { photoMirrorForCard, photoMirrorForDetail } from "@/lib/photo-mirror";
@@ -274,7 +274,8 @@ export function PropertyIdentity({
           <SaleVisual
             sale={sale}
             title={title}
-            className="h-[250px] md:h-[440px] [&>span]:bottom-8 md:[&>span]:bottom-2"
+            className="h-[250px] md:h-[440px]"
+            reliablePosition={hasReliableBuildingPosition(sale)}
             eager
           />
         )}

@@ -11,7 +11,6 @@ import {
 import { photoCredit } from "@/lib/photo-credit";
 import { photoMirrorForCard } from "@/lib/photo-mirror";
 import { propertyImages, shouldRejectRenderedPropertyImage } from "@/lib/sale-media";
-import { hasReliableBuildingPosition } from "@/lib/sale-aerial-orbit";
 
 type SaleVisualProps = {
   sale: AuctionSale;
@@ -39,7 +38,21 @@ type SaleVisualProps = {
   sectorMap?: boolean;
   /** Lieu écrit dans la case neutre (ville), quand aucun visuel n'est disponible. */
   placeLabel?: string | null;
+  /**
+   * La position désigne-t-elle un bâtiment de façon fiable (`hasReliableBuildingPosition`) ? Absent :
+   * la vérification se charge à la demande, seulement pour une vente dont la précision est
+   * `address` ou `parcel` ; la fiche, qui a déjà ce code, la passe directement.
+   */
+  reliablePosition?: boolean;
 };
+
+type PositionCheck = (sale: AuctionSale) => boolean;
+
+/** Vrai si la précision laisse espérer un bâtiment : sinon inutile de charger la vérification complète. */
+function precisionMayBeBuilding(precision: AuctionSale["location_precision"]): boolean {
+  const value = typeof precision === "string" ? precision.trim().toLowerCase() : "";
+  return value === "address" || value === "parcel";
+}
 
 type VisualCandidate = {
   kind: "map" | "photo" | "satellite";
@@ -106,13 +119,33 @@ export function SaleVisual({
   mapFramingWidth,
   sectorMap = true,
   placeLabel = null,
+  reliablePosition,
 }: SaleVisualProps) {
   const photos = locked ? [] : propertyImages(sale.media);
   const hasCoordinates = sale.latitude != null && sale.longitude != null;
   // Le satellite pose un repère sur « ce bâtiment-là » : il faut une position d'adresse ou de
   // parcelle, une adresse numérotée et aucun signalement douteux. Sinon (centre de commune, rue,
   // copie probable), la carte du secteur ou la case neutre prend la place.
-  const hasReliablePosition = hasCoordinates && hasReliableBuildingPosition(sale);
+  // La vérification (adresse numérotée, signalements) n'est pas dans le JavaScript des listes : elle
+  // se charge à la demande, et n'a lieu que pour une précision d'adresse ou de parcelle.
+  const needsCheck =
+    reliablePosition === undefined &&
+    !locked &&
+    hasCoordinates &&
+    precisionMayBeBuilding(sale.location_precision);
+  const [positionCheck, setPositionCheck] = useState<PositionCheck | null>(null);
+  useEffect(() => {
+    if (!needsCheck || positionCheck) return;
+    let cancelled = false;
+    void import("@/lib/building-position").then((module) => {
+      if (!cancelled) setPositionCheck(() => module.hasReliableBuildingPosition);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [needsCheck, positionCheck]);
+  const hasReliablePosition =
+    hasCoordinates && (reliablePosition ?? (needsCheck && positionCheck?.(sale) === true));
   // Image plus étroite que la référence : on recule d'autant de niveaux de zoom pour garder la
   // même zone visible (Mapbox arrondit le zoom au centième).
   const zoomOffset =

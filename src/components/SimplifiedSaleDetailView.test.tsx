@@ -2,7 +2,6 @@
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
 import { DEFAULT_OPEN_FEE_REGIMES } from "@/lib/fee-regime-open";
@@ -27,8 +26,6 @@ import {
   UnlockedSaleDetailView,
 } from "./SimplifiedSaleDetailView";
 import { PepiteBlock } from "./sale-detail/PepiteBlock";
-import { AuctionScenariosSection } from "./sale-detail/AuctionScenariosSection";
-import { CeilingPlanner } from "./ceiling/CeilingPlanner";
 import {
   pepiteCriteriaPayload,
   pepiteCriteriaViews,
@@ -107,14 +104,7 @@ vi.mock("next/dynamic", () => ({
       payload,
       userCeilingEur,
       lockedAction,
-      hypotheses,
-      enabled,
-      access,
-      ...plannerProps
     }: {
-      hypotheses?: unknown;
-      enabled?: boolean;
-      access?: "discovery" | "unlocked" | "analysis";
       payload?: PepitePayload;
       userCeilingEur?: number | null;
       lockedAction?: React.ReactNode;
@@ -140,24 +130,6 @@ vi.mock("next/dynamic", () => ({
             saleId={saleId ?? ""}
             userCeilingEur={userCeilingEur}
             lockedAction={lockedAction}
-          />
-        );
-      }
-      // Panneau du plafond (onglet « Prix ») : le vrai composant, chargé ici sans attente.
-      if (hypotheses !== undefined) {
-        const planner = { hypotheses, ...plannerProps } as unknown as ComponentProps<
-          typeof CeilingPlanner
-        >;
-        return <CeilingPlanner {...planner} />;
-      }
-      // Scénarios d'enchères (onglet « Statistiques ») : le vrai composant.
-      if (enabled !== undefined && saleId !== undefined) {
-        return (
-          <AuctionScenariosSection
-            saleId={saleId}
-            enabled={enabled}
-            access={access ?? "analysis"}
-            userKey={userKey}
           />
         );
       }

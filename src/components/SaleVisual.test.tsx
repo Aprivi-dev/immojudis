@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EXAMPLE_SALE } from "@/lib/example-sale";
@@ -25,7 +25,8 @@ describe("SaleVisual", () => {
       />,
     );
 
-    const satellite = screen.getByRole("img", {
+    // La vérification de position se charge à la demande : le satellite arrive juste après.
+    const satellite = await screen.findByRole("img", {
       name: "Vue aérienne de Appartement à Nice",
     });
     expect(satellite.getAttribute("src")).toContain("/mapbox/satellite-v9/static/");
@@ -48,7 +49,7 @@ describe("SaleVisual", () => {
     ["un point douteux", { quality_flags: ["unverified_source_coordinates"] }],
     ["une copie probable", { quality_flags: ["probable_duplicate"] }],
     ["un point hors de France", { latitude: 0, longitude: 0 }],
-  ])("n'affiche pas le satellite pour %s", (_name, override) => {
+  ])("n'affiche pas le satellite pour %s", async (_name, override) => {
     vi.stubEnv("NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN", "pk.test-token");
     vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(false);
 
@@ -67,11 +68,26 @@ describe("SaleVisual", () => {
       />,
     );
 
+    // Laisse la vérification à la demande se charger avant de constater l'absence.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
     expect(screen.queryByRole("img", { name: "Vue aérienne de Maison" })).toBeNull();
     expect(screen.getByText("Aucun visuel fiable")).toBeTruthy();
   });
 
-  it("garde le satellite pour une parcelle sans signalement douteux", () => {
+  it("ne charge pas la vérification de position pour une précision qui n'est pas un bâtiment", () => {
+    vi.stubEnv("NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN", "pk.test-token");
+    const sale = {
+      ...saleWithMedia("https://images.example.test/p.jpg"),
+      media: [],
+      location_precision: "municipality",
+    } as AuctionSale;
+    const html = renderToString(<SaleVisual sale={sale} title="Maison" sectorMap={false} />);
+    expect(html).not.toContain("Vue aérienne");
+  });
+
+  it("garde le satellite pour une parcelle sans signalement douteux", async () => {
     vi.stubEnv("NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN", "pk.test-token");
     vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(false);
 
@@ -88,14 +104,20 @@ describe("SaleVisual", () => {
       />,
     );
 
-    expect(screen.getByRole("img", { name: "Vue aérienne de Maison" })).toBeTruthy();
+    expect(await screen.findByRole("img", { name: "Vue aérienne de Maison" })).toBeTruthy();
   });
 
   it("garde un seul @2x en 896×672 hors vignette de liste", () => {
     vi.stubEnv("NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN", "pk.test-token");
     vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(false);
 
-    render(<SaleVisual sale={saleWithMedia("https://images.example.test/p.jpg")} title="Maison" />);
+    render(
+      <SaleVisual
+        reliablePosition
+        sale={saleWithMedia("https://images.example.test/p.jpg")}
+        title="Maison"
+      />,
+    );
 
     const satellite = screen.getByRole("img", { name: "Vue aérienne de Maison" });
     expect(satellite.getAttribute("src")).toContain(",17/896x672@2x?");
@@ -108,6 +130,7 @@ describe("SaleVisual", () => {
 
     render(
       <SaleVisual
+        reliablePosition
         sale={saleWithMedia("https://images.example.test/p.jpg")}
         title="Maison"
         thumbnail
@@ -174,6 +197,7 @@ describe("SaleVisual", () => {
 
     render(
       <SaleVisual
+        reliablePosition
         sale={{ ...EXAMPLE_SALE, media: [] } as AuctionSale}
         title="Appartement à Bordeaux"
         thumbnail
@@ -194,7 +218,13 @@ describe("SaleVisual", () => {
     vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(false);
 
     const additionalPhoto = "https://images.example.test/photo-annonce.jpg";
-    render(<SaleVisual sale={saleWithMedia(additionalPhoto)} title="Maison à Bordeaux" />);
+    render(
+      <SaleVisual
+        reliablePosition
+        sale={saleWithMedia(additionalPhoto)}
+        title="Maison à Bordeaux"
+      />,
+    );
 
     fireEvent.error(
       screen.getByRole("img", {
@@ -216,6 +246,7 @@ describe("SaleVisual", () => {
 
     render(
       <SaleVisual
+        reliablePosition
         sale={{
           ...saleWithMedia("https://images.example.test/photo-expiree.jpg"),
           latitude: null,
@@ -237,6 +268,7 @@ describe("SaleVisual", () => {
 
       const html = renderToString(
         <SaleVisual
+          reliablePosition
           sale={saleWithMedia("https://images.example.test/p.jpg")}
           title="Maison"
           eager
@@ -255,6 +287,7 @@ describe("SaleVisual", () => {
     it("le HTML serveur d'une photo de source eager reste masqué (logo, bannière, image cassée)", () => {
       const html = renderToString(
         <SaleVisual
+          reliablePosition
           sale={{ ...saleWithMedia("https://www.licitor.com/photos/a.jpg"), latitude: null }}
           title="Maison"
           eager
@@ -288,7 +321,11 @@ describe("SaleVisual", () => {
       vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(false);
 
       const { container } = render(
-        <SaleVisual sale={saleWithMedia("https://images.example.test/p.jpg")} title="Maison" />,
+        <SaleVisual
+          reliablePosition
+          sale={saleWithMedia("https://images.example.test/p.jpg")}
+          title="Maison"
+        />,
       );
 
       const image = screen.getByRole("img", { name: "Vue aérienne de Maison" });
@@ -307,6 +344,7 @@ describe("SaleVisual", () => {
 
       const { container } = render(
         <SaleVisual
+          reliablePosition
           sale={saleWithMedia("https://images.example.test/p.jpg")}
           title="Maison"
           eager
@@ -328,6 +366,7 @@ describe("SaleVisual", () => {
 
       render(
         <SaleVisual
+          reliablePosition
           sale={saleWithMedia("https://images.example.test/photo-annonce.jpg")}
           title="Maison"
           eager
@@ -354,6 +393,7 @@ describe("SaleVisual", () => {
 
       render(
         <SaleVisual
+          reliablePosition
           sale={{ ...saleWithMedia("https://images.example.test/petite.jpg"), latitude: null }}
           title="Maison"
           eager
@@ -371,6 +411,7 @@ describe("SaleVisual", () => {
 
       render(
         <SaleVisual
+          reliablePosition
           sale={{ ...saleWithMedia("https://images.example.test/expiree.jpg"), latitude: null }}
           title="Terrain"
           eager
@@ -387,7 +428,13 @@ describe("SaleVisual", () => {
     it("remplace « Photo du bien » par « Photo · [source] » quand l'hôte est connu", async () => {
       vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(false);
 
-      render(<SaleVisual sale={noMap("https://www.licitor.com/photos/a.jpg")} title="Maison" />);
+      render(
+        <SaleVisual
+          reliablePosition
+          sale={noMap("https://www.licitor.com/photos/a.jpg")}
+          title="Maison"
+        />,
+      );
       fireEvent.load(screen.getByRole("img", { name: "Maison" }));
 
       expect(await screen.findByText("Photo · Licitor")).toBeTruthy();
@@ -397,7 +444,13 @@ describe("SaleVisual", () => {
     it("garde « Photo du bien » quand la source est inconnue", async () => {
       vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(false);
 
-      render(<SaleVisual sale={noMap("https://cdn.exemple.test/a.jpg")} title="Maison" />);
+      render(
+        <SaleVisual
+          reliablePosition
+          sale={noMap("https://cdn.exemple.test/a.jpg")}
+          title="Maison"
+        />,
+      );
       fireEvent.load(screen.getByRole("img", { name: "Maison" }));
 
       expect(await screen.findByText("Photo du bien")).toBeTruthy();
@@ -434,7 +487,7 @@ describe("SaleVisual", () => {
     });
 
     it("affiche d'abord la copie, avec la source de l'URL d'origine", async () => {
-      render(<SaleVisual sale={mirrored()} title="Maison" />);
+      render(<SaleVisual reliablePosition sale={mirrored()} title="Maison" />);
 
       const photo = screen.getByRole("img", { name: "Maison" });
       expect(photo.getAttribute("src")).toBe(MIRROR_URL);
@@ -443,7 +496,7 @@ describe("SaleVisual", () => {
     });
 
     it("si la copie échoue, retombe sur la photo de la source, puis sur le visuel suivant", async () => {
-      render(<SaleVisual sale={mirrored()} title="Maison" />);
+      render(<SaleVisual reliablePosition sale={mirrored()} title="Maison" />);
 
       fireEvent.error(screen.getByRole("img", { name: "Maison" }));
       const source = await screen.findByRole("img", { name: "Maison" });
@@ -454,13 +507,16 @@ describe("SaleVisual", () => {
     });
 
     it("le HTML serveur d'une copie eager est visible, celui de la photo de source ne l'est pas", () => {
-      const withMirror = renderToString(<SaleVisual sale={mirrored()} title="Maison" eager />);
+      const withMirror = renderToString(
+        <SaleVisual reliablePosition sale={mirrored()} title="Maison" eager />,
+      );
       expect(withMirror).toContain(MIRROR_URL);
       expect(withMirror).not.toContain("opacity-0");
       expect(withMirror).not.toContain("animate-pulse");
 
       const withoutMirror = renderToString(
         <SaleVisual
+          reliablePosition
           sale={{ ...mirrored(), media: [{ type: "image", url: ORIGINAL }] }}
           title="Maison"
           eager
@@ -471,7 +527,7 @@ describe("SaleVisual", () => {
     });
 
     it("copie eager en erreur : la photo de la source ne paraît qu'une fois chargée", async () => {
-      render(<SaleVisual sale={mirrored()} title="Maison" eager />);
+      render(<SaleVisual reliablePosition sale={mirrored()} title="Maison" eager />);
       const copy = screen.getByRole("img", { name: "Maison" });
       expect(copy.className).toContain("opacity-100");
 
@@ -484,7 +540,7 @@ describe("SaleVisual", () => {
     });
 
     it("la liste des candidats change après l'échec de la copie : la source reste affichée", async () => {
-      const { rerender } = render(<SaleVisual sale={mirrored()} title="Maison" />);
+      const { rerender } = render(<SaleVisual reliablePosition sale={mirrored()} title="Maison" />);
 
       fireEvent.error(screen.getByRole("img", { name: "Maison" }));
       const source = await screen.findByRole("img", { name: "Maison" });
@@ -493,6 +549,7 @@ describe("SaleVisual", () => {
       // La copie disparaît d'un rafraîchissement : [copie, source] devient [source].
       rerender(
         <SaleVisual
+          reliablePosition
           sale={{ ...mirrored(), media: [{ type: "image", url: ORIGINAL }] }}
           title="Maison"
         />,
@@ -507,10 +564,10 @@ describe("SaleVisual", () => {
 
     it("une copie qui apparaît après coup passe devant la source, sans perdre la photo", async () => {
       const unmirrored = { ...mirrored(), media: [{ type: "image" as const, url: ORIGINAL }] };
-      const { rerender } = render(<SaleVisual sale={unmirrored} title="Maison" />);
+      const { rerender } = render(<SaleVisual reliablePosition sale={unmirrored} title="Maison" />);
       expect(screen.getByRole("img", { name: "Maison" }).getAttribute("src")).toBe(ORIGINAL);
 
-      rerender(<SaleVisual sale={mirrored()} title="Maison" />);
+      rerender(<SaleVisual reliablePosition sale={mirrored()} title="Maison" />);
 
       const copy = screen.getByRole("img", { name: "Maison" });
       expect(copy.getAttribute("src")).toBe(MIRROR_URL);
@@ -524,7 +581,7 @@ describe("SaleVisual", () => {
       vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(640);
       vi.spyOn(HTMLImageElement.prototype, "naturalHeight", "get").mockReturnValue(230);
 
-      render(<SaleVisual sale={mirrored()} title="Maison" />);
+      render(<SaleVisual reliablePosition sale={mirrored()} title="Maison" />);
       fireEvent.load(screen.getByRole("img", { name: "Maison" }));
 
       expect(await screen.findByText("Photo · Licitor")).toBeTruthy();
