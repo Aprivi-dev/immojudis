@@ -71,7 +71,7 @@ describe("page « Comment repérons-nous les pépites ? »", () => {
       "Le coût total estimé au prix de référence, frais compris, représente-t-il au plus 75 % de la valeur estimée (65 % en vente notariale) ?",
     );
     expect(text).toContain(
-      "La valeur estimée est celle d’un bien comparable, d’après les ventes DVF passées ; elle ne tient compte ni de l’état du bien ni de son occupation.",
+      "La valeur estimée est celle d’un bien comparable, d’après les ventes passées de la base DVF (demandes de valeurs foncières) ; elle ne tient compte ni de l’état du bien ni de son occupation.",
     );
     expect(text).not.toMatch(/nettement sous la valeur|achat probable/);
     expect(text).toContain("enchère plafond estimée");

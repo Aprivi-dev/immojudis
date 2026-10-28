@@ -124,13 +124,20 @@ describe("SaleComparisonTable", () => {
     expect(within(rowOf("Occupation")).getByRole("cell").textContent).toBe("Non renseigné");
   });
 
-  it("narrows the criteria column on mobile and fixes the property columns at 180 px", () => {
-    render(<SaleComparisonTable returnTo="/sales" items={[compared("a"), compared("b")]} />);
+  it("narrows the columns on mobile so that two properties fit at 360 px", () => {
+    const { container } = render(
+      <SaleComparisonTable returnTo="/sales" items={[compared("a"), compared("b")]} />,
+    );
     const criteria = screen.getByRole("columnheader", { name: "Critères" });
-    expect(criteria.className).toContain("w-[96px]");
+    expect(criteria.className).toContain("w-[80px]");
     expect(criteria.className).toContain("sm:w-[140px]");
     const property = screen.getByRole("columnheader", { name: /Bien 1/ });
-    expect(property.style.width).toBe("180px");
+    expect(property.className).toContain("w-[140px]");
+    expect(property.className).toContain("sm:w-[180px]");
+    // 80 + 2 x 140 = 360 px, au plus : deux biens se voient sans défilement horizontal.
+    const table = container.querySelector("table")!;
+    expect(table.className).toContain("min-w-[calc(80px+var(--compared-count)*140px)]");
+    expect(table.style.getPropertyValue("--compared-count")).toBe("2");
   });
 });
 

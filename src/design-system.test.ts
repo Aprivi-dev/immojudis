@@ -9,8 +9,8 @@ const ROOT = process.cwd();
 // à abaisser à chaque page migrée, jamais à relever.
 const RAW_PALETTE_CLASSES_MAX = 491;
 const TINY_TEXT_CLASSES_MAX = 109;
-// Déclarations `font-size` de 9 à 11 px des feuilles `.module.css` (accueil et ressources : 5).
-const TINY_TEXT_CSS_MAX = 5;
+// Déclarations `font-size` de 9 à 11 px des feuilles `.module.css` (accueil, ressources, attribution Mapbox du plan cadastral : 6).
+const TINY_TEXT_CSS_MAX = 6;
 
 // Couleurs qui ne peuvent pas passer par une classe ou une variable CSS :
 // e-mails (styles en ligne), image Open Graph, page d'erreur globale (sans feuille de style),
