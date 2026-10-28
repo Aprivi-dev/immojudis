@@ -298,12 +298,14 @@ function SaleDetailContent({
     );
   }
   if (freeViewBeforeUnlock && !authLoading && accessReady && (isLoading || error)) {
+    // Les bandeaux passent sous la barre de navigation fixe (6 rem, comme `scroll-padding-top`) :
+    // en haut de page, elle masquait le bouton « Réessayer ».
     return (
       <>
         {error ? (
           <div
             role="alert"
-            className="mx-auto mt-4 flex max-w-[1260px] flex-wrap items-center gap-3 rounded-lg border border-amber-700/30 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+            className="mx-auto mt-24 flex max-w-[1260px] flex-wrap items-center gap-3 rounded-lg border border-amber-700/30 bg-amber-50 px-4 py-3 text-sm text-amber-900"
           >
             <p className="font-medium">
               Vente débloquée, mais le détail n’a pas pu être chargé. Votre déblocage est conservé.
@@ -320,7 +322,7 @@ function SaleDetailContent({
         ) : (
           <div
             role="status"
-            className="mx-auto mt-4 max-w-[1260px] rounded-lg border border-emerald-700/30 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900"
+            className="mx-auto mt-24 max-w-[1260px] rounded-lg border border-emerald-700/30 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900"
           >
             Vente débloquée. Chargement du détail…
           </div>
