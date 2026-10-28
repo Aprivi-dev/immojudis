@@ -212,7 +212,7 @@ export function LawyerSection({ sale }: { sale: AuctionSale }) {
               </p>
               <p className="mt-1 text-sm text-brand-navy/70">
                 {showLawyerDirectory
-                  ? "Avocats référencés par Immojudis"
+                  ? "Annuaire des avocats du barreau"
                   : hasOrganizerContact
                     ? "Coordonnées mentionnées dans le dossier"
                     : "Coordonnées non renseignées"}

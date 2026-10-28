@@ -144,6 +144,16 @@ describe("investor welcome flow", () => {
       expect(help?.textContent).toContain("à tout moment");
     });
 
+    it("dit quand arrive l'alerte et renvoie vers une fiche pour voir un plafond, une fois la case cochée", () => {
+      render(<InvestorOnboarding />);
+      goToLastStep("33");
+      expect(screen.queryByTestId("first-alert-timing")).toBeNull();
+      fireEvent.click(screen.getByRole("checkbox", { name: ALERT_LABEL }));
+      expect(screen.getByTestId("first-alert-timing").textContent).toBe(
+        "Votre alerte arrive lundi. En attendant, ouvrez une fiche pour voir son plafond.",
+      );
+    });
+
     it("n'écrit rien tant que la case reste décochée", () => {
       render(<InvestorOnboarding />);
       goToLastStep("33");

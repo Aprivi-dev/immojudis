@@ -26,7 +26,11 @@ describe("page /simulateur-frais-encheres", () => {
     expect(html).toMatch(
       /href="\/annonce-exemple"[^>]*>\s*Essayer l’enchère plafond sur un exemple/,
     );
-    expect(html).toMatch(/href="\/offres"[^>]*>\s*Voir les offres/);
+    // Le dernier appel est l'inscription (compte gratuit), plus la page des offres.
+    expect(html).toMatch(
+      /href="\/login\?redirect=%2Fsales&amp;mode=investor"[^>]*>\s*Créer mon compte gratuit/,
+    );
+    expect(html).not.toContain("Voir les offres");
   });
 
   it("dit ce que le compte gratuit et Analyse ouvrent, sans réserver l'enchère plafond à Analyse", () => {

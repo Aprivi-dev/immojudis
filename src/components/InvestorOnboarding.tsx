@@ -261,6 +261,15 @@ export function InvestorOnboarding({
                   {alertUnavailable ??
                     "Facultatif. En cochant cette case, vous acceptez de recevoir par email un récapitulatif hebdomadaire des nouvelles ventes correspondant à ces critères. Vous pourrez le désactiver à tout moment depuis votre compte ou le lien de désinscription de chaque email."}
                 </p>
+                {alertWanted ? (
+                  // Le récapitulatif part le lundi suivant : le premier plafond ne doit pas attendre.
+                  <p
+                    data-testid="first-alert-timing"
+                    className="mt-2 pl-8 text-sm leading-relaxed text-foreground"
+                  >
+                    Votre alerte arrive lundi. En attendant, ouvrez une fiche pour voir son plafond.
+                  </p>
+                ) : null}
               </div>
             </div>
           )}

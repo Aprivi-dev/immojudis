@@ -4,8 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   auth: { user: null as null | { id: string }, loading: false },
+  offer: { active: false, pending: false },
 }));
 vi.mock("@/hooks/use-auth", () => ({ useAuth: () => state.auth }));
+vi.mock("@/hooks/use-launch-offer", () => ({ useLaunchOffer: () => state.offer }));
 // Le formulaire (chargé à la demande) est remplacé par un témoin : il a ses propres tests.
 vi.mock("next/dynamic", () => ({
   default: () =>
@@ -22,6 +24,7 @@ import { SectorAlertCta, SECTOR_ALERT_LABEL } from "./SectorAlertCta";
 
 beforeEach(() => {
   state.auth = { user: null, loading: false };
+  state.offer = { active: false, pending: false };
 });
 afterEach(cleanup);
 
@@ -36,6 +39,17 @@ describe("SectorAlertCta", () => {
     expect(screen.getByText("Le texte d'introduction.")).toBeTruthy();
     expect(screen.queryByRole("checkbox")).toBeNull();
     expect(screen.queryByTestId("sector-alert-form")).toBeNull();
+  });
+
+  it("annonce l'essai gratuit à un visiteur tant qu'il est ouvert, et pas autrement", () => {
+    const { rerender } = render(<SectorAlertCta criteria={{ department: "33" }} />);
+    expect(screen.queryByTestId("sector-alert-trial")).toBeNull();
+
+    state.offer = { active: true, pending: false };
+    rerender(<SectorAlertCta criteria={{ department: "33" }} />);
+    expect(screen.getByTestId("sector-alert-trial").textContent).toBe(
+      "Inscription gratuite : 7 jours d’accès à l’offre Analyse, sans carte bancaire",
+    );
   });
 
   it("garde le lien de connexion pendant la vérification du compte", () => {
