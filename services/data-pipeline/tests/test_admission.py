@@ -215,3 +215,50 @@ def test_explicit_no_auction_conflicts_with_catalogue_scope():
     assert quarantine_reason(sale) == 'fixed_price_sale_conflicts_with_auction_scope'
     sale.raw_payload={'description':'Vente avec un pas d’enchères de 5 000 euros.'}
     assert quarantine_reason(sale) is None
+
+
+def _sale_passed_two_hours_ago() -> AuctionSale:
+    """Vente à heure connue passée depuis 2 h : hors catalogue, mais avant l'échéance de rétention (24 h)."""
+    from datetime import UTC, datetime, timedelta
+
+    return AuctionSale(
+        source_name='avoventes',
+        source_url='https://example.org/passee-depuis-2-h',
+        starting_price_eur=50000,
+        sale_date=datetime.now(UTC) - timedelta(hours=2),
+        raw_payload={'sale_date': 'le jour même à 14 h 00'},
+    )
+
+
+def test_sale_passed_two_hours_ago_is_expired_not_admitted():
+    from src.admission import admit_sales, is_catalogue_expired, is_expired, publication_rejection
+
+    sale = _sale_passed_two_hours_ago()
+    assert is_catalogue_expired(sale) and not is_expired(sale)
+    assert publication_rejection(sale) == 'expired'
+
+    recorded = []
+    admitted = admit_sales([sale], lambda group, **fields: recorded.append((list(group), fields)))
+    assert admitted == []
+    assert recorded == [([sale], {'decision': 'expired', 'reason': 'catalogue_date_passed_not_evidence_of_sale'})]
+
+
+def test_expired_decision_does_not_block_publication_complete():
+    from src.autonomous_runner import PENDING_PUBLICATION_DECISIONS
+
+    assert 'expired' not in PENDING_PUBLICATION_DECISIONS
+    assert 'excluded' not in PENDING_PUBLICATION_DECISIONS
+
+
+def test_what_the_writer_drops_is_what_admission_rejects(monkeypatch):
+    """Aucune vente écartée en silence par l'écriture ne reste « admitted » : même jugement des deux côtés."""
+    from datetime import UTC, datetime, timedelta
+
+    from src.admission import publication_rejection
+
+    monkeypatch.setattr(supabase_client, 'load_settings', lambda: pytest.fail('written sale reached database'))
+    assert supabase_client.upsert_sales_to_supabase([_sale_passed_two_hours_ago()]) == 0
+
+    upcoming = AuctionSale(source_name='avoventes', source_url='https://example.org/a-venir', starting_price_eur=1,
+                           sale_date=datetime.now(UTC) + timedelta(days=10), raw_payload={'sale_date': 'dans 10 jours à 14 h 00'})
+    assert publication_rejection(upcoming) is None

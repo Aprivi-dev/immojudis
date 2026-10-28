@@ -7,11 +7,24 @@ name: Dedupe sweep
 # Guards, all kept in src/dedupe_apply.py:
 #   * nothing is written until the repository variable DEDUPE_RECONCILE_ENABLED is "true"
 #     (read the "Dedupe candidates report" first); DEDUPE_RECONCILE_MODE=candidates keeps it read-only;
+#   * or, for ONE launch only, until it is started with the inputs `apply` = true AND
+#     `confirm_target` = production (exactly): the pass then runs as if the variable were "true", without
+#     touching the repository variable. `apply` alone, or a different `confirm_target`, stops the job before
+#     anything is read; without these inputs the behaviour is the one above;
 #   * at most 100 secondary rows are deleted per pass (run it again for the rest);
 #   * the data of the accounts attached to a deleted row moves to the kept sale in the database
 #     (migration 20261028110000, to apply before the first real run).
 on:
   workflow_dispatch:
+    inputs:
+      apply:
+        description: "Write (merge and delete) for this launch only, as if DEDUPE_RECONCILE_ENABLED were true"
+        type: boolean
+        default: false
+      confirm_target:
+        description: "Must be exactly 'production' when apply is checked"
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -37,9 +50,27 @@ jobs:
     env:
       PYTHONUNBUFFERED: "1"
       # Secrets are not part of the job environment: the pip step must not see them.
-      DEDUPE_RECONCILE_ENABLED: ${{ vars.DEDUPE_RECONCILE_ENABLED || 'false' }}
+      # `apply` + `confirm_target == production` enable the writes for this launch only; the repository variable
+      # is unchanged and still decides every launch without them. The mode variable still applies (candidates).
+      DEDUPE_RECONCILE_ENABLED: ${{ (inputs.apply && inputs.confirm_target == 'production' && 'true') || vars.DEDUPE_RECONCILE_ENABLED || 'false' }}
       DEDUPE_RECONCILE_MODE: ${{ vars.DEDUPE_RECONCILE_MODE || 'apply' }}
     steps:
+      # Inputs go through the environment, never into the script text. No secret in this step.
+      - name: Check the apply confirmation
+        # Runs before the checkout: the job's default directory does not exist yet.
+        working-directory: .
+        env:
+          APPLY: ${{ inputs.apply }}
+          CONFIRM_TARGET: ${{ inputs.confirm_target }}
+        run: |
+          if [ "$APPLY" = "true" ] && [ "$CONFIRM_TARGET" != "production" ]; then
+            echo "::error title=Dedupe sweep::apply needs confirm_target to be exactly 'production'; nothing was run."
+            exit 1
+          fi
+          if [ "$APPLY" = "true" ]; then
+            echo "::warning title=Dedupe sweep::apply=true and confirm_target=production: this launch writes (at most 100 deletions)."
+          fi
+
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

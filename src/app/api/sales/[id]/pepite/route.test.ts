@@ -206,8 +206,9 @@ describe("GET /api/sales/[id]/pepite", () => {
       );
       const response = await call("?view=detail", "token");
       expect(response.status).toBe(403);
-      const text = await response.text();
-      expect(text).not.toMatch(/118|90000|75000|110000/);
+      // L'identifiant de requête est un UUID aléatoire : il peut contenir « 118 » par hasard.
+      const { requestId: _requestId, ...body } = await response.json();
+      expect(JSON.stringify(body)).not.toMatch(/118|90000|75000|110000/);
       // Le droit est vérifié avant la lecture de la table privée.
       expect(mocks.readStored).not.toHaveBeenCalled();
       expect(mocks.isPublished).not.toHaveBeenCalled();

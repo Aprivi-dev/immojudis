@@ -134,6 +134,14 @@ select count(*) filter (where department is null or department = '') as sans_dep
   Le workflow `data-pipeline.yml` le laisse coupé tant que la variable de dépôt GitHub
   `DEDUPE_RECONCILE_ENABLED` (Settings → Secrets and variables → Actions → Variables) ne vaut pas
   `true` : la créer avec `true` après avoir relu la liste ci-dessous.
+  Sans toucher à la variable, le workflow manuel « Dedupe sweep » écrit pour UN lancement quand il est
+  démarré avec l'entrée `apply` cochée et `confirm_target` égal à `production` (exactement) : le passage
+  s'exécute comme si la variable valait `true`, toujours à 100 suppressions au plus. `apply` seul, ou une
+  autre valeur de `confirm_target`, arrête le job avant toute lecture. Sans ces entrées, rien ne change.
+  Lecture du balayage (rapport et écriture, même chemin) : pages de 100 lignes
+  (`DEDUPE_RECONCILE_PAGE_SIZE`, 10 à 1 000), curseur sur `id`. Un délai SQL dépassé (57014, 408, 504, délai
+  réseau) divise la page par deux et relit la même page, jusqu'à 10 lignes ; au-delà le balayage est partiel
+  (`fetch_error`). Les lignes sont lues avec toutes leurs colonnes : la fusion réécrit la ligne entière.
 - Avant (lecture seule) : les paires de même identifiant. Ce sont des candidates : seules celles dont
   le lieu et un fait (jour ou mise à prix) concordent seront fusionnées ; vérifier à la main les
   autres, qui resteront en deux lignes.
@@ -241,7 +249,9 @@ Rien de ce qui suit n'est appliqué : le code est livré, la production n'est pa
 ### 23. Doublons : activer le balayage après relecture
 
 1. Lancer le workflow « Dedupe candidates report » (lecture seule) et relire la liste des paires.
-2. Si elle convient, créer la variable de dépôt `DEDUPE_RECONCILE_ENABLED=true` (au plus
+2. Si elle convient, soit lancer « Dedupe sweep » avec `apply` coché et `confirm_target` = `production`
+   (écriture pour ce lancement seulement, sans variable), soit créer la variable de dépôt
+   `DEDUPE_RECONCILE_ENABLED=true` (au plus
    `DEDUPE_RECONCILE_MAX_MERGES` = 100 lignes supprimées par collecte complète : il en faudra
    plusieurs pour les ~439 paires Vench / Petites Affiches).
 

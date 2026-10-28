@@ -292,6 +292,32 @@ def test_dedupe_sweep_is_manual_serialised_with_the_pipeline_and_gives_secrets_t
     _assert_main_only_without_persisted_credentials(text)
 
 
+def test_dedupe_sweep_can_apply_for_one_launch_only_with_an_exact_production_confirmation() -> None:
+    text = (WORKFLOWS / "dedupe-sweep.yml").read_text(encoding="utf-8")
+    jobs = parse_jobs(text)
+
+    # Two dispatch inputs: a boolean `apply` (off by default) and a text `confirm_target` (empty by default).
+    assert re.search(r"^      apply:\n        description: .*\n        type: boolean\n        default: false$", text, re.M)
+    assert re.search(r"^      confirm_target:\n        description: .*\n        type: string\n        default: \"\"$", text, re.M)
+    # Writes need BOTH `apply` and the exact word; otherwise the repository variable decides, as before.
+    assert (
+        "DEDUPE_RECONCILE_ENABLED: ${{ (inputs.apply && inputs.confirm_target == 'production' && 'true')"
+        " || vars.DEDUPE_RECONCILE_ENABLED || 'false' }}"
+    ) in text
+    # The mode variable is untouched (candidates stays read-only) and nothing in the file schedules a launch.
+    assert "DEDUPE_RECONCILE_MODE: ${{ vars.DEDUPE_RECONCILE_MODE || 'apply' }}" in text
+    assert "schedule" not in text and "cron" not in text
+    # `apply` without the confirmation stops the job first, with no secret; inputs go through env, not the script.
+    check = jobs[0].steps[0]
+    assert check.name == "Check the apply confirmation" and not SECRET.search(check.env)
+    assert "APPLY: ${{ inputs.apply }}" in check.text and "CONFIRM_TARGET: ${{ inputs.confirm_target }}" in check.text
+    assert "${{" not in check.text.split("run:", 1)[1]
+    assert '[ "$APPLY" = "true" ] && [ "$CONFIRM_TARGET" != "production" ]' in check.text and "exit 1" in check.text
+    # The cap of 100 deletions per pass is not an input: it stays in src/merge_guards.py.
+    assert "max_merges" not in text.lower() and "MAX_MERGES" not in text.split("jobs:", 1)[0]
+    assert "100 secondary rows" in text
+
+
 def test_probable_duplicate_flags_is_manual_serialised_and_dry_by_default() -> None:
     text = (WORKFLOWS / "probable-duplicate-flags.yml").read_text(encoding="utf-8")
     jobs = parse_jobs(text)

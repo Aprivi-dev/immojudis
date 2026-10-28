@@ -172,6 +172,9 @@ def refresh(
 ) -> dict[str, object]:
     """One bounded refresh: make sure the month's campaign exists, run one tick, attest.
 
+    Without the collector role nothing is collected or attested, but the scenarios' copy is still
+    refreshed when it is due (the report stays ``collector_role_unavailable``).
+
     Licitor is collected normally. Only when the withdrawal switch is set for it
     (``public.set_catalogue_source_withdrawal``, not the case today) does the refresh answer
     ``skipped`` before opening any connection to the collector.
@@ -185,7 +188,14 @@ def refresh(
             with collector.transaction():
                 pass
         except psycopg.Error as exc:
-            return {"status": "collector_role_unavailable", "error": type(exc).__name__}
+            # Nothing is collected, but the scenarios' copy does not depend on the collector: it needs
+            # the main role only, and its own conditions (stale or forced) decide whether it is copied.
+            # The status stays ``collector_role_unavailable`` (exit code 1): the missing grant must remain visible.
+            return {
+                "status": "collector_role_unavailable",
+                "error": type(exc).__name__,
+                "scenario_snapshot": _refresh_scenario_snapshot(connection, force=_snapshot_is_stale(connection)),
+            }
         store = CloudStore(collector)
         try:
             report["campaign"] = start(store).get("status")
