@@ -1002,6 +1002,16 @@ def test_the_reference_import_workflow_identifies_its_requests() -> None:
     assert "--check-new-vintage" in workflow
 
 
+def test_the_reference_import_workflow_offers_every_dataset_of_the_command() -> None:
+    workflow = (Path(__file__).resolve().parents[3] / ".github" / "workflows" / "reference-data-import.yml").read_text(
+        encoding="utf-8"
+    )
+
+    # A dataset the command accepts but the dispatch form does not list cannot be run in production.
+    for dataset in (*reference_main.DATASETS, *reference_main.EXTRA_DATASETS, "all"):
+        assert f"          - {dataset}\n" in workflow
+
+
 TWO_DECREES = {
     "resources": [
         {"title": "Décret n°2025-1267 du 22 décembre 2025 modifiant le décret n°2013-392", "format": "pdf", "url": "https://static.data.gouv.fr/a/d2.pdf"},
