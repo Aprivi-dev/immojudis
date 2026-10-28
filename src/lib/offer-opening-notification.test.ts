@@ -215,6 +215,8 @@ describe("liste d'attente qualifiée : questions facultatives", () => {
       contactEmail: "contact@example.test",
     }).join(" ");
     expect(notice).toContain("Objectif");
+    // La finalité couvre aussi l'accueil, le repère « Pépite » et l'essai (étude du 27/10/2026).
+    expect(notice).toContain("l’accueil du site, du repère « Pépite » et de l’essai gratuit");
     expect(notice).toContain("Responsable du traitement : Éditeur SAS");
     expect(notice).toContain("Enregistrement : aucun sans votre accord exprès");
     expect(notice).toContain("supprimé au plus tard 30 jours");
@@ -228,7 +230,7 @@ describe("liste d'attente qualifiée : questions facultatives", () => {
       "Vos droits (accès, rectification, effacement, retrait) et la possibilité de saisir la CNIL sont détaillés dans la politique de confidentialité.",
     );
     // Changer le texte impose de changer la version (elle est conservée avec les réponses).
-    expect(OFFER_OPENING_SURVEY_VERSION).toBe("2026-10-28.2");
+    expect(OFFER_OPENING_SURVEY_VERSION).toBe("2026-10-28.3");
   });
 
   it("annonce un entretien d'environ 45 minutes, par un seul email", () => {

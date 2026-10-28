@@ -74,5 +74,14 @@ d'une analyse du texte SQL. À défaut, un rôle Postgres en lecture seule dédi
 même garantie. Le garde-fou du dépôt reste utile en défense en profondeur, mais un filtre sur du
 texte n'est jamais exhaustif.
 
+## Clore une action de supervision
+
+Une action de supervision (relancer une source, corriger un test de fumée, ouvrir une alerte,
+désactiver une collecte…) **n'est close que sur preuve** : la mesure qui l'avait déclenchée est
+relue après l'action, et sa nouvelle valeur et sa date sont notées dans le compte-rendu ou l'incident
+(par exemple `/api/health` à `ok`, `collection.ageHours` sous le seuil, un passage vert du test de
+fumée). Une action « faite » dont la mesure n'a pas bougé reste ouverte : l'action Licitor du 23/10
+(#293) n'avait pas résolu le retard de collecte.
+
 Un spécialiste peut aussi être sollicité directement dans une session :
 « Demande au seo-expert de vérifier la page /tribunaux. »
