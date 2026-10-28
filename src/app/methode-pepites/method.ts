@@ -1,6 +1,7 @@
 import {
   PEPITE_CHANCE_EXIT_SHARE,
   PEPITE_CHANCE_MIN_SHARE,
+  PEPITE_CHANCE_MIN_WILSON_LOW,
   PEPITE_COST_EXIT_SHARE_COURT,
   PEPITE_COST_EXIT_SHARE_NOTARY,
   PEPITE_COST_MAX_SHARE_COURT,
@@ -14,6 +15,7 @@ import {
   PEPITE_MAX_EVALUATION_AGE_HOURS,
   PEPITE_MIN_VALUE_COMPARABLES,
   PEPITE_LATEST_RULE_VERSION,
+  PEPITE_V1_1_RULE_VERSION,
   PEPITE_V1_RULE_VERSION,
 } from "@/lib/pepite-policy";
 import { MIN_COURT_SAMPLE, MIN_NATIONAL_SAMPLE } from "@/lib/auction-scenarios";
@@ -22,7 +24,8 @@ import { MIN_COURT_SAMPLE, MIN_NATIONAL_SAMPLE } from "@/lib/auction-scenarios";
  * Adresse et seuils publiés sur « Comment repérons-nous les pépites ? ».
  *
  * Les seuils sont ceux de la règle `pepite-v1`, validée par le fondateur le 26/10/2026 (compte-rendu
- * `docs/equipe/2026-10-26-plafond-tous-types-et-selection.md`), repris tels quels par `pepite-v2`, qui n'ajoute
+ * `docs/equipe/2026-10-26-plafond-tous-types-et-selection.md`), repris tels quels par `pepite-v1.1` (règle
+ * appliquée, 28/10/2026 : mêmes seuils, critères corrigés) puis par `pepite-v2`, qui n'ajoute à `pepite-v1.1`
  * que le critère éliminatoire du risque d'inondation (aucun seuil chiffré : un verdict). Ils viennent des
  * constantes de la règle (`src/lib/pepite-policy.ts`), le module pur qui sert aussi au calcul : la page ne peut
  * donc pas annoncer un seuil que le calcul n'applique pas. Quand la règle change (nouvelle version), cette
@@ -48,7 +51,7 @@ export const PEPITE_SMOOTHING = {
   priceCourtOnlyFromSales: 20,
 } as const;
 
-export { PEPITE_LATEST_RULE_VERSION, PEPITE_V1_RULE_VERSION };
+export { PEPITE_LATEST_RULE_VERSION, PEPITE_V1_1_RULE_VERSION, PEPITE_V1_RULE_VERSION };
 
 /**
  * Date d'entrée en vigueur de la règle `pepite-v2`, écrite en toutes lettres (« 27 novembre 2026 »), À RENSEIGNER
@@ -67,13 +70,16 @@ export function pepiteV2EffectiveClause(date: string | null = PEPITE_V2_EFFECTIV
 const percent = (share: number) => Math.round(share * 100);
 
 /**
- * Seuils de la règle, communs à `pepite-v1` et `pepite-v2` (la v2 n'en change aucun). Le nom ne porte plus la
+ * Seuils de la règle, communs à `pepite-v1`, `pepite-v1.1` et `pepite-v2` (la v1.1 ajoute une exigence, la borne
+ * basse de Wilson ; la v2 n'en change aucun). Le nom ne porte plus la
  * version : un seuil qui changerait créerait une nouvelle version de règle, et cette table suivrait la règle
  * courante.
  */
 export const PEPITE_RULE_PARAMS = {
   /** Test B (tribunal) : part minimale des ventes comparables adjugées sous l'enchère plafond, en %. */
   chanceMinPct: percent(PEPITE_CHANCE_MIN_SHARE),
+  /** Test B, à l'entrée (pepite-v1.1 et suivantes) : borne basse de l'intervalle de Wilson à 95 % de la part, en %. */
+  chanceMinWilsonLowPct: percent(PEPITE_CHANCE_MIN_WILSON_LOW),
   /** Test C (tribunal) : coût total probable au plus égal à cette part de la valeur centrale, en %. */
   maxCostShareCourtPct: percent(PEPITE_COST_MAX_SHARE_COURT),
   /** Test C (ventes notariales) : même rapport, seuil plus strict, en %. */
