@@ -6,8 +6,11 @@ import { MapboxPreconnect } from "@/components/MapboxPreconnect";
 import Link from "next/link";
 import { SaleDetailSkeleton } from "@/components/SaleDetailFallbacks";
 import { Card, buttonClasses } from "@/components/ui/primitives";
+import { HOME_TRIAL_NOTE } from "@/components/home/HomePrimaryAction";
 import { useAuth } from "@/hooks/use-auth";
+import { useLaunchOffer } from "@/hooks/use-launch-offer";
 import { loginPathWithRedirect } from "@/lib/navigation";
+import { FREE_ACCESS_LINE } from "@/lib/sale-unlocks";
 import type { MarketEstimate } from "@/lib/market.server";
 import type { CeilingUserChoices } from "@/lib/bid-ceiling-defaults";
 import type { AuctionSale } from "@/lib/types";
@@ -18,6 +21,31 @@ const AnalysisSaleDetailView = dynamic(
     import("@/components/SimplifiedSaleDetailView").then((module) => module.AnalysisSaleDetailView),
   { loading: () => <SaleDetailSkeleton /> },
 );
+
+/**
+ * Sous la synthèse de l'exemple, à portée du visiteur convaincu : l'inscription, avec la même
+ * phrase que sous le bouton de l'accueil (l'essai quand il est ouvert, sinon la ligne du compte
+ * gratuit). Rien pour une personne connectée.
+ */
+function ExampleSummarySignup() {
+  const { user } = useAuth();
+  const trialOpen = useLaunchOffer().active;
+  if (user) return null;
+  return (
+    <div
+      className="mt-5 grid gap-2 border-t border-line-soft pt-5"
+      data-testid="example-summary-cta"
+    >
+      <Link
+        href={loginPathWithRedirect("/sales", { reason: "offre" })}
+        className={buttonClasses({ variant: "primary" })}
+      >
+        Créer mon compte gratuit
+      </Link>
+      <p className="text-sm text-ink-soft">{trialOpen ? HOME_TRIAL_NOTE : FREE_ACCESS_LINE}</p>
+    </div>
+  );
+}
 
 /**
  * The example is chosen on the server (`?bien=`), so the page content is part of
@@ -52,8 +80,9 @@ export function ExampleSalePage({
       <AnalysisSaleDetailView
         sale={example.sale}
         marketEstimateOverride={example.marketEstimate}
-        returnTo="/#exemples"
+        returnTo="/#essayer"
         backLabel="Retour aux exemples"
+        summaryFooter={<ExampleSummarySignup />}
         publicDemo
         defaultCeilingChoices={ceilingChoices}
         adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}

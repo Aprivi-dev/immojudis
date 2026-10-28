@@ -2,7 +2,7 @@
 
 import { PremiumFeaturePreview } from "@/components/PremiumFeaturePreview";
 import { useEffect, useMemo, useState } from "react";
-import type { MouseEvent as ReactMouseEvent } from "react";
+import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
 import ArrowLeft from "lucide-react/dist/esm/icons/arrow-left.js";
@@ -184,6 +184,8 @@ type SaleDetailProps = {
   /** Choix de départ de l'enchère plafond (annonce exemple) ; ceux du visiteur passent devant. */
   defaultCeilingChoices?: CeilingUserChoices;
   adjudicationStatisticsEnabled?: boolean;
+  /** Sous la synthèse du haut de page (annonce exemple : le bouton d'inscription). */
+  summaryFooter?: ReactNode;
   /**
    * Fee regimes whose bid ceiling is open (server switch `CEILING_FEE_REGIMES_OPEN`, see
    * `parseOpenFeeRegimes`). Absent: every regime whose rules are defined (the tribunal is always open).
@@ -209,6 +211,7 @@ export function AnalysisSaleDetailView({
   publicDemo = false,
   defaultCeilingChoices,
   adjudicationStatisticsEnabled = false,
+  summaryFooter,
   openFeeRegimes,
   rentReference = null,
   housingTension = null,
@@ -224,6 +227,7 @@ export function AnalysisSaleDetailView({
       publicDemo={publicDemo}
       defaultCeilingChoices={defaultCeilingChoices}
       adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
+      summaryFooter={summaryFooter}
       openFeeRegimes={openFeeRegimes}
       rentReference={rentReference}
       housingTension={housingTension}
@@ -305,6 +309,7 @@ function SaleDetailWorkspace({
   publicDemo = false,
   defaultCeilingChoices,
   adjudicationStatisticsEnabled = false,
+  summaryFooter,
   openFeeRegimes,
   rentReference = null,
   housingTension = null,
@@ -718,6 +723,7 @@ function SaleDetailWorkspace({
                     : null
                 }
               />
+              {summaryFooter}
             </div>
           </div>
           {!publicDemo && user && access !== "analysis" ? (

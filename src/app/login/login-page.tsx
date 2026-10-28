@@ -33,7 +33,11 @@ import {
 } from "@/lib/navigation";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
 import { ANALYSIS_TRIAL_DAYS, resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
-import { LAUNCH_OFFER_VISITOR_TEXT } from "@/lib/launch-offer";
+import {
+  LAUNCH_OFFER_DURATION_TEXT,
+  LAUNCH_OFFER_SIGNUP_LINE,
+  LAUNCH_OFFER_VISITOR_TEXT,
+} from "@/lib/launch-offer";
 import { postAuthDestination } from "@/lib/onboarding";
 import { PLAN_LIMITS } from "@/lib/plans";
 import { MONTHLY_SALE_UNLOCKS, UNLOCK_HIGHLIGHTS_INLINE_TEXT } from "@/lib/sale-unlocks";
@@ -505,7 +509,7 @@ export function LoginPage() {
                 <button
                   type="button"
                   onClick={changeAddress}
-                  className="inline-flex min-h-11 items-center justify-center rounded-lg border border-white/15 px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-white/5"
+                  className="inline-flex min-h-11 items-center justify-center rounded-lg border border-line px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-surface-tint"
                 >
                   Changer d'adresse
                 </button>
@@ -513,7 +517,7 @@ export function LoginPage() {
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-3 gap-2 rounded-lg border border-white/10 bg-white/[0.03] p-1">
+              <div className="grid grid-cols-3 gap-2 rounded-lg border border-line bg-surface-tint p-1">
                 <ModeButton active={mode === "login"} onClick={() => switchMode("login")}>
                   Se connecter
                 </ModeButton>
@@ -561,14 +565,26 @@ export function LoginPage() {
               </p>
               {mode === "investor" ? (
                 // The explanation column is hidden below the lg breakpoint: say the promise here.
-                <p
+                <div
                   data-testid="login-free-promise"
-                  className="mt-2 text-sm font-medium leading-relaxed text-foreground lg:hidden"
+                  className="mt-2 text-sm leading-relaxed text-foreground lg:hidden"
                 >
-                  {launchOffer
-                    ? LAUNCH_OFFER_VISITOR_TEXT
-                    : `Gratuit : ${MONTHLY_SALE_UNLOCKS} ventes en détail par mois (${UNLOCK_HIGHLIGHTS_INLINE_TEXT}), sans carte bancaire`}
-                </p>
+                  {launchOffer ? (
+                    <>
+                      <p className="font-medium">{LAUNCH_OFFER_SIGNUP_LINE}</p>
+                      <details className="mt-1">
+                        <summary className="flex min-h-11 cursor-pointer items-center font-semibold text-gold-text underline underline-offset-4">
+                          Conditions de l’essai gratuit
+                        </summary>
+                        <p className="pb-2 text-muted-foreground">{LAUNCH_OFFER_DURATION_TEXT}</p>
+                      </details>
+                    </>
+                  ) : (
+                    <p className="font-medium">
+                      {`Gratuit : ${MONTHLY_SALE_UNLOCKS} ventes en détail par mois (${UNLOCK_HIGHLIGHTS_INLINE_TEXT}), sans carte bancaire`}
+                    </p>
+                  )}
+                </div>
               ) : null}
               {mode === "investor" && launchOffer ? (
                 <p
@@ -580,7 +596,7 @@ export function LoginPage() {
               ) : null}
 
               {!isSupabaseConfigured ? (
-                <div className="mt-5 rounded-lg border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm leading-relaxed text-red-100">
+                <div className="mt-5 rounded-lg border border-danger/30 bg-danger-tint px-4 py-3 text-sm leading-relaxed text-danger">
                   Connexion temporairement indisponible : les variables Supabase publiques ne sont
                   pas présentes dans ce build.
                 </div>
@@ -757,7 +773,7 @@ export function LoginPage() {
             </>
           )}
 
-          <div className="mt-6 border-t border-white/10 pt-4 text-center text-xs text-muted-foreground">
+          <div className="mt-6 border-t border-line-soft pt-4 text-center text-xs text-muted-foreground">
             <Link href="/" className="hover:text-foreground">
               Retour à la présentation
             </Link>
@@ -811,7 +827,7 @@ function ModeButton({
       className={`min-h-11 rounded-md px-3 py-2 text-sm font-semibold transition ${
         active
           ? "bg-gold text-brand-navy shadow-[0_12px_28px_rgb(242_196_135_/_18%)]"
-          : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
+          : "text-muted-foreground hover:bg-card hover:text-foreground"
       }`}
     >
       {children}

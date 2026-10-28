@@ -9,6 +9,7 @@ import {
 } from "@/lib/example-verdict";
 import { formatNumber } from "@/lib/format";
 import type { HomeCatalogueSummary } from "@/lib/home-catalogue-summary.server";
+import { isFeeRegimeOpen, type FeeRegimeKey } from "@/lib/fee-regime-open";
 import { notaryAndStatePilotsEnabled } from "@/lib/sale-types";
 import { HomeExamplePhoto, type ExamplePhotoProps } from "./HomeExamplePhoto";
 import { HomePrimaryAction } from "./HomePrimaryAction";
@@ -45,10 +46,18 @@ export function catalogueSummaryLine({ count, verifiedAt }: HomeCatalogueSummary
 export function HomeHero({
   summary = null,
   departments = null,
+  openFeeRegimes,
 }: {
   summary?: HomeCatalogueSummary | null;
   departments?: number | null;
+  /** Régimes dont le plafond est ouvert (`CEILING_FEE_REGIMES_OPEN`) ; absent : ceux par défaut. */
+  openFeeRegimes?: readonly FeeRegimeKey[];
 }) {
+  // Le plafond existe pour le tribunal et, quand son régime est ouvert, pour la vente notariale ;
+  // jamais pour les ventes de l'État.
+  const notaryCeiling =
+    isFeeRegimeOpen("notary_auction", openFeeRegimes) ||
+    isFeeRegimeOpen("notary_online", openFeeRegimes);
   return (
     <section className={styles.hero} aria-labelledby="home-title">
       <div className={`${styles.container} ${styles.heroGrid}`}>
@@ -65,7 +74,8 @@ export function HomeHero({
             {notaryAndStatePilotsEnabled()
               ? "Les ventes des tribunaux, des notaires et de l’État réunies sur une carte."
               : "Les ventes des tribunaux réunies sur une carte."}{" "}
-            Pour les ventes au tribunal, les pièces lues et l’enchère à ne pas dépasser.
+            Pour les ventes au tribunal{notaryCeiling ? " et chez le notaire" : ""} : les points
+            clés des pièces, selon la vente, et un plafond estimé à ne pas dépasser.
           </p>
           <div className={styles.heroAnim} style={delay(240)}>
             <HomePrimaryAction browseLink />
@@ -110,8 +120,18 @@ export function HomeHero({
 /** Les trois situations du premier écran, du vert au rouge (calculées par le moteur). */
 function photoProps(): ExamplePhotoProps {
   const data = exampleVerdictData();
-  const ceilingOf = (project: ExampleProject, occupation: ExampleOccupation, works: ExampleWorks) =>
-    findExampleScenario(data.scenarios, project, occupation, works)?.ceiling ?? 0;
+  // Un scénario absent est une erreur de l'exemple (le test de l'accueil la rattrape), pas un
+  // « 0 € » affiché sur le premier écran.
+  const ceilingOf = (
+    project: ExampleProject,
+    occupation: ExampleOccupation,
+    works: ExampleWorks,
+  ): number => {
+    const scenario = findExampleScenario(data.scenarios, project, occupation, works);
+    if (!scenario)
+      throw new Error(`Scénario d’exemple absent : ${project}, ${occupation}, ${works}`);
+    return scenario.ceiling;
+  };
   return {
     photo: data.photo,
     surfaceM2: data.surfaceM2,

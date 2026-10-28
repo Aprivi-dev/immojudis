@@ -683,7 +683,11 @@ export function SaleDetailHeading({
           <span className={styles.demoNote}>Annonce exemple · données fictives</span>
         ) : null}
       </div>
-      <h1 className={styles.title}>{title}</h1>
+      <h1 className={styles.title}>
+        {title}
+        {/* Une page d'exemple ne doit jamais se lire (ni se citer) comme une vente réelle. */}
+        {publicDemo ? " (exemple fictif)" : null}
+      </h1>
       <p className={styles.subtitle}>
         {subtitle}
         {cityBlocked ? " · localisation à confirmer" : null}

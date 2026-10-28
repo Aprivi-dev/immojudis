@@ -2,6 +2,8 @@ import Link from "next/link";
 import type { CSSProperties } from "react";
 import { ANALYSIS_TRIAL_DAYS } from "@/lib/analysis-offer";
 import { exampleHeadlineFigures } from "@/lib/example-sale";
+import { ceilingTermWithArticleText } from "@/lib/fee-regime-labels";
+import { isFeeRegimeOpen, type FeeRegimeKey } from "@/lib/fee-regime-open";
 import { formatNumber, formatPrice } from "@/lib/format";
 import type { HomeCatalogueSummary } from "@/lib/home-catalogue-summary.server";
 import { MONTHLY_SALE_UNLOCKS } from "@/lib/sale-unlocks";
@@ -152,7 +154,7 @@ export function HomeBenefits() {
                 ))}
               </span>
               <span className={styles.visualLegend}>
-                <span>Ventes voisines</span>
+                <span>Ventes voisines (illustration)</span>
                 <span>Mise à prix</span>
               </span>
             </span>
@@ -161,10 +163,10 @@ export function HomeBenefits() {
             <span className={styles.icon} aria-hidden>
               <Bell size={22} />
             </span>
-            <h3>Ne ratez plus une vente de votre secteur</h3>
+            <h3>Suivez les nouvelles ventes de votre secteur</h3>
             <p>
-              Une alerte sur votre zone : les nouvelles ventes et les dates d’audience confirmées
-              arrivent par email.
+              Une alerte sur votre zone : les nouvelles ventes que nous collectons et les dates
+              d’audience confirmées vous sont envoyées par email.
             </p>
             <span className={styles.visual} aria-hidden>
               <span className={styles.toast}>
@@ -322,14 +324,80 @@ function trialFaqItems(
 }
 
 /**
+ * Pages piliers et repère « Pépite » : un bloc de liens pour comprendre avant d'enchérir (maillage
+ * interne du guide, du simulateur, des tribunaux, des départements, des ressources et de la
+ * méthode), puis une ligne factuelle sur le repère. Aucun chiffre promotionnel : le nombre de
+ * pépites varie et n'est pas affiché ici.
+ */
+const GUIDE_LINKS = [
+  { href: "/ventes-immobilieres-judiciaires", label: "Le guide de la vente judiciaire" },
+  { href: "/simulateur-frais-encheres", label: "Le simulateur de frais d’enchères" },
+  { href: "/tribunaux", label: "Les tribunaux et leurs ventes" },
+  { href: "/ventes-encheres-immobilieres", label: "Les ventes par département" },
+  { href: "/ressources", label: "Les ressources et articles" },
+  { href: "/methode-ecart-marche", label: "Comment est calculé l’écart avec le marché" },
+] as const;
+
+export function HomeGuides() {
+  return (
+    <section
+      id="comprendre"
+      className={`${styles.section} ${styles.sectionFlush}`}
+      aria-labelledby="guides-title"
+    >
+      <div className={styles.container}>
+        <div className={styles.head} data-reveal="">
+          <p className={styles.eyebrow}>Pour comprendre avant d’enchérir</p>
+          <h2 id="guides-title" className={styles.h2}>
+            Les guides, les outils et les méthodes.
+          </h2>
+        </div>
+        <ul className={styles.guideLinks} data-reveal="">
+          {GUIDE_LINKS.map((link) => (
+            <li key={link.href}>
+              <Link href={link.href} className={styles.textLink}>
+                {link.label} <ArrowRight aria-hidden size={16} />
+              </Link>
+            </li>
+          ))}
+        </ul>
+        <p className={styles.pepiteLine} data-reveal="">
+          Le repère « Pépite » signale les ventes qui remplissent deux conditions chiffrées et
+          publiques. Il n’est ni un conseil, ni une prévision de prix, ni une garantie.{" "}
+          <Link href="/methode-pepites" className={styles.textLink}>
+            Comment il est calculé
+          </Link>{" "}
+          ·{" "}
+          <Link href="/sales?pepite=true" prefetch={false} className={styles.textLink}>
+            Voir les pépites
+          </Link>
+        </p>
+      </div>
+    </section>
+  );
+}
+
+/**
  * Questions fréquentes : affichées en accordéon et reprises en données structurées (FAQPage).
  * `trialOpen` : l'essai à l'inscription est ouvert, lu par la page serveur (`readLaunchOfferState`) ;
- * absent : état non lu.
+ * absent : état non lu. `openFeeRegimes` : régimes de frais ouverts au plafond.
  */
-export function homeFaqItems({ trialOpen }: { trialOpen?: boolean } = {}): Array<{
+export function homeFaqItems({
+  trialOpen,
+  openFeeRegimes,
+}: { trialOpen?: boolean; openFeeRegimes?: readonly FeeRegimeKey[] } = {}): Array<{
   question: string;
   answer: string;
 }> {
+  // Où le plafond existe : le tribunal toujours, les ventes notariales selon l'interrupteur par
+  // régime (même source que les cartes d'offres). Les ventes domaniales n'en ont pas.
+  const notaryOpen =
+    isFeeRegimeOpen("notary_auction", openFeeRegimes) ||
+    isFeeRegimeOpen("notary_online", openFeeRegimes);
+  const onlineOpen = isFeeRegimeOpen("notary_online", openFeeRegimes);
+  const ceilingScope = notaryOpen
+    ? `Elle est proposée pour les ventes au tribunal et les ventes notariales${onlineOpen ? " ; pour une vente notariale par offres, on parle d’offre plafond" : ""}.`
+    : "Elle est proposée pour les ventes au tribunal.";
   return [
     {
       question: "Combien coûte l’inscription ?",
@@ -344,9 +412,13 @@ export function homeFaqItems({ trialOpen }: { trialOpen?: boolean } = {}): Array
         : "Des annonces publiées pour les ventes des tribunaux judiciaires. La date de la dernière vérification des données est affichée en haut de cette page.",
     },
     {
-      question: "Comment est calculée l’enchère plafond ?",
+      question: `Comment est calculée ${ceilingTermWithArticleText(openFeeRegimes)} ?`,
+      answer: `Valeur estimée du bien, moins les frais de la vente, le budget travaux et votre marge de sécurité. Chaque hypothèse est modifiable. ${ceilingScope}`,
+    },
+    {
+      question: "Qu’est-ce que la mise à prix ?",
       answer:
-        "Valeur estimée du bien, moins les frais de la vente, le budget travaux et votre marge de sécurité. Chaque hypothèse est modifiable. Elle est proposée pour les ventes au tribunal.",
+        "C’est le montant à partir duquel les enchères démarrent. Au tribunal, elle figure dans le cahier des conditions de vente, le document qui décrit le bien et les règles de la vente. Ce n’est pas le prix final : la vente peut se conclure au-dessus. Pour une vente notariale par offres, on parle de première offre possible.",
     },
     {
       question: "Quelle confiance accorder aux estimations ?",
@@ -366,7 +438,10 @@ export function homeFaqItems({ trialOpen }: { trialOpen?: boolean } = {}): Array
   ];
 }
 
-export function HomeFaq({ trialOpen }: { trialOpen?: boolean } = {}) {
+export function HomeFaq({
+  trialOpen,
+  openFeeRegimes,
+}: { trialOpen?: boolean; openFeeRegimes?: readonly FeeRegimeKey[] } = {}) {
   return (
     <section
       id="questions"
@@ -388,7 +463,7 @@ export function HomeFaq({ trialOpen }: { trialOpen?: boolean } = {}) {
           </p>
         </div>
         <div className={styles.faq} data-reveal="">
-          {homeFaqItems({ trialOpen }).map((item) => (
+          {homeFaqItems({ trialOpen, openFeeRegimes }).map((item) => (
             <details key={item.question}>
               <summary>
                 {item.question}

@@ -172,10 +172,16 @@ describe("sitemap.xml (static pages)", () => {
   it("dates the pages that changed after 8 October by their real last change", async () => {
     mocks.loadSitemapSales.mockResolvedValue([]);
     const byUrl = new Map((await sitemap()).map((entry) => [entry.url, entry.lastModified]));
-    expect(byUrl.get("https://immojudis.com/offres")).toBe("2026-10-20");
-    expect(byUrl.get("https://immojudis.com/ressources")).toBe("2026-10-19");
+    expect(byUrl.get("https://immojudis.com/offres")).toBe("2026-10-28");
+    expect(byUrl.get("https://immojudis.com/ressources")).toBe("2026-10-28");
     expect(byUrl.get("https://immojudis.com/tribunaux")).toBe("2026-10-19");
-    expect(byUrl.get("https://immojudis.com/annonce-exemple")).toBe("2026-10-15");
+    expect(byUrl.get("https://immojudis.com/annonce-exemple")).toBe("2026-10-28");
+  });
+
+  it("dates the home page by the 28 October rework (hero, example, pillar links)", async () => {
+    mocks.loadSitemapSales.mockResolvedValue([]);
+    const byUrl = new Map((await sitemap()).map((entry) => [entry.url, entry.lastModified]));
+    expect(byUrl.get("https://immojudis.com")).toBe("2026-10-28");
   });
 
   it("dates the guide with the date it displays (GUIDE_LAST_UPDATED), not its own copy", async () => {

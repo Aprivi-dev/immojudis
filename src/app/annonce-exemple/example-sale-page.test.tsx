@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { cleanup, render, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -16,12 +17,14 @@ vi.mock("@/components/SimplifiedSaleDetailView", () => ({
     publicDemo,
     returnTo,
     adjudicationStatisticsEnabled,
+    summaryFooter,
   }: {
     sale: { city: string; title: string };
     marketEstimateOverride: { actionable?: boolean };
     publicDemo?: boolean;
     returnTo?: string;
     adjudicationStatisticsEnabled?: boolean;
+    summaryFooter?: ReactNode;
   }) => (
     <div
       data-testid="example-detail"
@@ -32,6 +35,7 @@ vi.mock("@/components/SimplifiedSaleDetailView", () => ({
       data-statistics={adjudicationStatisticsEnabled ? "open" : "closed"}
     >
       {sale.title}
+      {summaryFooter}
     </div>
   ),
 }));
@@ -61,12 +65,26 @@ describe("ExampleSalePage", () => {
     expect(block.textContent).not.toMatch(/offre Analyse|abonn|€/i);
   });
 
+  it("propose l'inscription dès la synthèse, avec la phrase de l'accueil", () => {
+    mocks.auth = { user: null, loading: false };
+    render(<ExampleSalePage example={getExampleSaleRecords().bordeaux} />);
+    const cta = screen.getByTestId("example-summary-cta");
+    const link = cta.querySelector("a");
+    expect(link?.textContent).toBe("Créer mon compte gratuit");
+    expect(link?.getAttribute("href")).toBe("/login?redirect=%2Fsales&mode=investor&reason=offre");
+    // Sans offre d'essai lue (aucun fournisseur) : la ligne du compte gratuit.
+    expect(cta.textContent).toContain("Gratuit, sans carte bancaire");
+    // La synthèse est dans la vue de l'exemple, avant le bloc de fin de page.
+    expect(screen.getByTestId("example-detail").contains(cta)).toBe(true);
+  });
+
   it("ne propose plus de créer un compte à une personne connectée", () => {
     mocks.auth = { user: { id: "user-1" }, loading: false };
     render(<ExampleSalePage example={getExampleSaleRecords().bordeaux} />);
     const block = screen.getByTestId("example-next-steps");
     expect(block.textContent).not.toContain("Créer mon compte gratuit");
     expect(block.querySelector('a[href="/sales"]')).not.toBeNull();
+    expect(screen.queryByTestId("example-summary-cta")).toBeNull();
     mocks.auth = { user: null, loading: false };
   });
 
@@ -103,7 +121,8 @@ describe("ExampleSalePage", () => {
     expect(detail.dataset.city).toBe(city);
     expect(detail.dataset.access).toBe("public-analysis");
     expect(detail.dataset.market).toBe("complete");
-    expect(detail.dataset.returnTo).toBe("/#exemples");
+    // L'ancre existe sur l'accueil (`id="essayer"`) ; « #exemples » n'a jamais existé.
+    expect(detail.dataset.returnTo).toBe("/#essayer");
   });
 
   it("annonce clairement que l'exemple est fictif, avant tout chiffre", () => {

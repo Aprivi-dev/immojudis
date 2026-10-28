@@ -1,4 +1,4 @@
-import { BrandMark } from "@/components/BrandLogo";
+import { BrandMark } from "@/components/BrandMark";
 import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
 

@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { CloudBackgroundPreload } from "@/components/CloudBackgroundPreload";
 import { LegalPage } from "@/routes/legal";
 
 export const metadata: Metadata = {
@@ -14,7 +13,6 @@ export default function Page() {
   // sha256 dans `LEGAL_DOCUMENTS` (toute modification demande une nouvelle version du document).
   return (
     <>
-      <CloudBackgroundPreload />
       <LegalPage />
     </>
   );

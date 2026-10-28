@@ -125,4 +125,20 @@ describe("CookieConsentBanner : accessibilité et mise en page", () => {
     const heading = screen.getByRole("heading", { name: "Cookies de mesure d’audience" });
     expect(heading.className).toContain("font-sans");
   });
+
+  it("sur téléphone : une phrase et « En savoir plus », deux boutons de même poids", () => {
+    render(<CookieConsentBanner />);
+    const banner = screen.getByTestId("cookie-consent-banner");
+    const short = banner.querySelector("p.sm\\:hidden");
+    expect(short).not.toBeNull();
+    expect(short?.textContent).toMatch(/^Si vous acceptez, Google Analytics dépose des cookies/);
+    expect(short?.textContent).toMatch(/En savoir plus$/);
+    // Le texte complet n'apparaît qu'à partir de `sm`.
+    expect(banner.querySelector("p.hidden.sm\\:block")?.textContent).toContain(
+      "Nous mesurons déjà la fréquentation sans cookie",
+    );
+    const refuse = screen.getByRole("button", { name: "Refuser" });
+    const accept = screen.getByRole("button", { name: "Accepter" });
+    expect(refuse.className).toBe(accept.className);
+  });
 });

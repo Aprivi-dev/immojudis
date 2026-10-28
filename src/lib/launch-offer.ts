@@ -29,6 +29,13 @@ export const LAUNCH_OFFER_LABEL = `Essai gratuit de ${ANALYSIS_TRIAL_DAYS} jours
 export const LAUNCH_OFFER_SHORT_TEXT = `Inscription gratuite : ${ANALYSIS_TRIAL_DAYS} jours d’accès à l’offre Analyse, sans carte bancaire`;
 
 /**
+ * La ligne visible en tête du formulaire d'inscription sur téléphone, à la place du texte complet
+ * (les conditions sont dans un repli « Conditions de l'essai gratuit », voir
+ * `LAUNCH_OFFER_DURATION_TEXT`).
+ */
+export const LAUNCH_OFFER_SIGNUP_LINE = `${LAUNCH_OFFER_SHORT_TEXT} ni prélèvement ensuite.`;
+
+/**
  * Règles de l'essai, reprises dans l'article « Essai gratuit à l'inscription » des CGV
  * (`src/routes/conditions-generales.tsx`, qui les écrit en toutes lettres : le texte juridique est
  * ancré par empreinte). La clause de retrait anticipé reprend la relecture juridique du 20/10/2026.

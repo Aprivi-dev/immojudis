@@ -17,7 +17,7 @@ describe("saved report source integrity", () => {
   it.each([
     { investment_score: null },
     { carrez_surface_m2: 97.16, property_type: "apartment" },
-    { occupancy_status: "occupied" },
+    { occupancy_status: "vacant" },
     {
       risks: [
         { risk_type: "physical", risk_label: "Contrôle parasitaire incomplet", severity: null },
@@ -65,7 +65,7 @@ describe("saved report source integrity", () => {
     it("still rejects a corrected source on a report saved before the column", () => {
       const before = { sourceFingerprint: reportSourceFingerprint(EXAMPLE_SALE) };
       expect(() =>
-        assertReportSourceCurrent(before, { ...notarial, occupancy_status: "occupied" } as never),
+        assertReportSourceCurrent(before, { ...notarial, occupancy_status: "vacant" } as never),
       ).toThrow(/actualisées/);
     });
 

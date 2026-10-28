@@ -120,7 +120,7 @@ describe("article page", () => {
       name: "Immojudis",
       logo: {
         "@type": "ImageObject",
-        url: "https://immojudis.com/brand/immojudis-mark-transparent.png",
+        url: "https://immojudis.com/icon-512.png",
       },
     });
     expect(graph[1]["@type"]).toBe("BreadcrumbList");

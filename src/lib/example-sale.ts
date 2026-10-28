@@ -172,24 +172,87 @@ function exampleFeatures(
       excerpt: "Le prix est payé dans les deux mois de la vente définitive.",
     },
   ];
-  if (sale.has_garden) {
-    features.push({
+  // Le PV descriptif d'un vrai dossier dit aussi ce que le bien n'a pas : une absence relevée est une
+  // information (« Non »), pas une information manquante.
+  features.push(
+    {
+      field: "occupancy_status",
+      value: "occupied",
+      document: pv,
+      page: 3,
+      excerpt: "Occupant présent lors du constat, qui se déclare occupant ; aucun bail annexé.",
+    },
+    {
       field: "garden",
-      value: true,
+      value: Boolean(sale.has_garden),
       document: pv,
       page: 2,
-      excerpt: "Jardin attenant au bien.",
-    });
-  }
-  if (sale.has_terrace) {
-    features.push({
+      excerpt: sale.has_garden ? "Jardin attenant au bien." : "Pas de jardin.",
+    },
+    {
       field: "terrace",
-      value: true,
+      value: Boolean(sale.has_terrace),
       document: pv,
       page: 2,
-      excerpt: "Terrasse accessible depuis le séjour.",
-    });
-  }
+      excerpt: sale.has_terrace ? "Terrasse accessible depuis le séjour." : "Pas de terrasse.",
+    },
+    {
+      field: "garage",
+      value: Boolean(sale.has_garage),
+      document: pv,
+      page: 2,
+      excerpt: sale.has_garage ? "Garage fermé au rez-de-chaussée." : "Pas de garage ni de box.",
+    },
+    {
+      field: "pool",
+      value: Boolean(sale.has_pool),
+      document: pv,
+      page: 2,
+      excerpt: sale.has_pool ? "Piscine enterrée." : "Pas de piscine.",
+    },
+    {
+      field: "heating_mode",
+      value: "individual_gas",
+      document: "Diagnostics techniques",
+      page: 1,
+      excerpt: "Chauffage individuel au gaz.",
+    },
+    {
+      field: "coownership",
+      value: apartment,
+      document: cahier,
+      page: 2,
+      excerpt: apartment ? "Lot de copropriété." : "Bien en pleine propriété, sans copropriété.",
+    },
+    {
+      field: "ges_class",
+      value: "D",
+      document: "Diagnostics techniques",
+      page: 1,
+      excerpt: "Classe climat : D.",
+    },
+    {
+      field: "energy_consumption_kwh_m2_year",
+      value: 214,
+      document: "Diagnostics techniques",
+      page: 1,
+      excerpt: "Consommation : 214 kWh/m²/an.",
+    },
+    {
+      field: "emissions_kg_co2_m2_year",
+      value: 28,
+      document: "Diagnostics techniques",
+      page: 1,
+      excerpt: "Émissions : 28 kg CO₂/m²/an.",
+    },
+    {
+      field: "dpe_established_at",
+      value: "2025-03-14",
+      document: "Diagnostics techniques",
+      page: 1,
+      excerpt: "Diagnostic établi le 14 mars 2025.",
+    },
+  );
   if (apartment) {
     features.push(
       {
@@ -200,6 +263,8 @@ function exampleFeatures(
         excerpt: "Troisième étage sur quatre.",
       },
       { field: "balcony", value: true, document: pv, page: 2, excerpt: "Balcon donnant sur cour." },
+      { field: "elevator", value: false, document: pv, page: 2, excerpt: "Pas d'ascenseur." },
+      { field: "cellar", value: true, document: pv, page: 2, excerpt: "Cave en sous-sol." },
     );
   }
   return features;
@@ -239,7 +304,8 @@ export const EXAMPLE_SALE = {
   longitude: -0.5792,
   // Exemple fictif : la position est celle de l'adresse, la vue aérienne s'affiche.
   location_precision: "address",
-  occupancy_status: "unknown",
+  // Alignée sur l'accueil : occupant déclaré au PV (p. 3), bail non produit. Le point reste « à confirmer ».
+  occupancy_status: "occupied",
   habitable_surface_m2: 68,
   carrez_surface_m2: 68,
   land_surface_m2: null,
@@ -413,20 +479,20 @@ export const EXAMPLE_SALE = {
   quality_flags: [],
   documents: [
     {
-      url: "/ressources",
-      name: "Cahier des conditions de vente - exemple",
+      url: `${EXAMPLE_EVIDENCE_URL}#cahier-des-conditions`,
+      name: "Cahier des conditions de vente - exemple fictif",
       type: "cahier_conditions_vente",
     },
     {
-      url: "/ressources",
-      name: "PV descriptif - exemple",
+      url: `${EXAMPLE_EVIDENCE_URL}#pv-descriptif`,
+      name: "PV descriptif - exemple fictif",
       type: "pv_descriptif",
     },
   ],
   documents_rich: [
     {
-      url: "/ressources",
-      label: "Cahier des conditions de vente - exemple",
+      url: `${EXAMPLE_EVIDENCE_URL}#cahier-des-conditions`,
+      label: "Cahier des conditions de vente - exemple fictif",
       type: "cahier_conditions_vente",
       document_type: "cahier_conditions_vente",
       extraction_status: "demo",
@@ -435,8 +501,8 @@ export const EXAMPLE_SALE = {
       text_chars: 18_420,
     },
     {
-      url: "/ressources",
-      label: "PV descriptif - exemple",
+      url: `${EXAMPLE_EVIDENCE_URL}#pv-descriptif`,
+      label: "PV descriptif - exemple fictif",
       type: "pv_descriptif",
       document_type: "pv_descriptif",
       extraction_status: "demo",
@@ -445,8 +511,8 @@ export const EXAMPLE_SALE = {
       text_chars: 9_860,
     },
     {
-      url: "/ressources",
-      label: "Diagnostics techniques - exemple",
+      url: `${EXAMPLE_EVIDENCE_URL}#diagnostics-techniques`,
+      label: "Diagnostics techniques - exemple fictif",
       type: "diagnostics_techniques",
       document_type: "diagnostics_techniques",
       extraction_status: "demo",
@@ -493,7 +559,7 @@ export const EXAMPLE_SALE = {
           "La situation d'occupation peut modifier le délai de récupération et la valeur exploitable.",
         why_it_matters:
           "Confirmer l'occupation avant audience évite de surestimer la liquidité du bien.",
-        document_label: "PV descriptif - exemple",
+        document_label: "PV descriptif - exemple fictif",
         document_type: "pv_descriptif",
         page_number: 3,
       },
@@ -504,7 +570,7 @@ export const EXAMPLE_SALE = {
       occurrences: [
         {
           document_url: "/ressources",
-          document_label: "PV descriptif - exemple",
+          document_label: "PV descriptif - exemple fictif",
           document_type: "pv_descriptif",
           page_number: 3,
           excerpt:
@@ -529,7 +595,7 @@ export const EXAMPLE_SALE = {
         reasoning:
           "Le plafond doit intégrer une enveloppe travaux avant toute stratégie offensive.",
         why_it_matters: "Chaque euro de travaux réduit le montant maximum d'enchère acceptable.",
-        document_label: "Diagnostics techniques - exemple",
+        document_label: "Diagnostics techniques - exemple fictif",
         document_type: "diagnostics_techniques",
         page_number: 6,
       },
@@ -540,7 +606,7 @@ export const EXAMPLE_SALE = {
       occurrences: [
         {
           document_url: "/ressources",
-          document_label: "Diagnostics techniques - exemple",
+          document_label: "Diagnostics techniques - exemple fictif",
           document_type: "diagnostics_techniques",
           page_number: 6,
           excerpt:
