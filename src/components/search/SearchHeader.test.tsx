@@ -211,6 +211,37 @@ describe("ResultsSummary", () => {
     }
   });
 
+  it("nomme le département dans le titre et le compteur, au lieu de son code", () => {
+    const { container } = render(
+      <ResultsSummary
+        search={{ department: "13" }}
+        displayCount={28}
+        hasLocalFilters={false}
+        isLoading={false}
+        geocoding={false}
+      />,
+    );
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
+      "Ventes immobilières aux enchères : Bouches-du-Rhône (13)",
+    );
+    expect(container.textContent).toContain("28 annonces · Bouches-du-Rhône (13)");
+  });
+
+  it("garde la ville dans le titre quand elle est donnée avec le département", () => {
+    render(
+      <ResultsSummary
+        search={{ city: "Marseille", department: "13" }}
+        displayCount={3}
+        hasLocalFilters={false}
+        isLoading={false}
+        geocoding={false}
+      />,
+    );
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
+      "Ventes immobilières aux enchères à Marseille",
+    );
+  });
+
   it("n'a plus de surtitre au-dessus du titre des résultats", () => {
     render(
       <ResultsSummary

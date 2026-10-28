@@ -346,6 +346,13 @@ export function SalePublicPreview({
             ) : null}
           </dd>
         </div>
+      ) : procedure.venueType === "notary" ? (
+        // Comme la carte de /sales (« Date à confirmer ») : une vente notariale sans date n'a pas
+        // à laisser un vide dans la synthèse.
+        <div className={styles.saleFact}>
+          <dt>Date de la vente</dt>
+          <dd data-testid="sale-date-to-confirm">À confirmer</dd>
+        </div>
       ) : null}
       {tribunal ? (
         <div className={styles.saleFact}>

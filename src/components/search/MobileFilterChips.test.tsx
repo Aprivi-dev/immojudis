@@ -82,7 +82,7 @@ describe("MobileFilterChips : « sous la fourchette » et « sans point à véri
     });
     const noPoints = screen.getByRole("button", { name: "Sans point à vérifier" });
     expect(below.getAttribute("aria-pressed")).toBe("false");
-    expect(below.textContent).toBe("Sous la fourchette");
+    expect(below.textContent).toBe("Mise à prix sous le marché");
 
     fireEvent.click(below);
     fireEvent.click(noPoints);

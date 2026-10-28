@@ -15324,6 +15324,16 @@ export type Database = {
           upcoming_count: number;
         }[];
       };
+      get_public_tribunal_price_figures: {
+        Args: never;
+        Returns: {
+          max_starting_price_eur: number;
+          median_starting_price_eur: number;
+          min_starting_price_eur: number;
+          priced_count: number;
+          tribunal_code: string;
+        }[];
+      };
       get_public_tribunal_directory: {
         Args: never;
         Returns: {

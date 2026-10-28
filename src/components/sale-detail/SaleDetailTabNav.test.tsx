@@ -76,6 +76,21 @@ describe("SaleDetailTabNav", () => {
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
+  it("has no navigation landmark and points aria-controls at the one rendered panel only", () => {
+    const { container } = render(<Harness />);
+
+    expect(screen.queryByRole("navigation")).toBeNull();
+    expect(container.querySelector("[data-sale-tabs]")?.getAttribute("role")).toBe("presentation");
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs[0].getAttribute("aria-controls")).toBe("sale-detail-panel-apercu");
+    expect(tabs.slice(1).map((tab) => tab.getAttribute("aria-controls"))).toEqual([
+      null,
+      null,
+      null,
+      null,
+    ]);
+  });
+
   it("recalls the two prices beside the tabs, and only the known ones", () => {
     const { rerender, container } = render(
       <SaleDetailTabNav

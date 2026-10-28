@@ -214,8 +214,11 @@ export function MobileFilterDrawer({
             </fieldset>
           </AdvancedGroup>
 
-          <AdvancedGroup title="Prix et surface">
+          <AdvancedGroup title="Dates de vente">
             <DateRangeFields draft={draft} setDraft={setDraft} />
+          </AdvancedGroup>
+
+          <AdvancedGroup title="Prix et surface">
             <FilterField label="Surface minimum">
               <Input
                 inputMode="numeric"

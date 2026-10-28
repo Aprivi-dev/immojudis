@@ -17,29 +17,16 @@ function diffParts(target: number, now: number) {
   return { days, hours, minutes, ms };
 }
 
+/** Jetons de la charte (docs/design/fondations.md) : l'urgent en `danger`, l'échéance proche en `warning`. */
 function tone(days: number | null): {
   bg: string;
   text: string;
   ring: string;
 } {
   if (days == null) return { bg: "bg-muted", text: "text-muted-foreground", ring: "ring-border" };
-  if (days < 7)
-    return {
-      bg: "bg-red-100",
-      text: "text-red-900",
-      ring: "ring-red-300/50",
-    };
-  if (days < 30)
-    return {
-      bg: "bg-amber-100",
-      text: "text-amber-900",
-      ring: "ring-amber-300/50",
-    };
-  return {
-    bg: "bg-emerald-100",
-    text: "text-emerald-900",
-    ring: "ring-emerald-300/50",
-  };
+  if (days < 7) return { bg: "bg-danger-tint", text: "text-danger", ring: "ring-danger/25" };
+  if (days < 30) return { bg: "bg-warning-tint", text: "text-warning", ring: "ring-warning/25" };
+  return { bg: "bg-success-tint", text: "text-success", ring: "ring-success/25" };
 }
 
 export function SaleCountdown({

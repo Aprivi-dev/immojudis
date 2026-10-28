@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useId, useMemo, useState, type ReactNode } from "react";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
 import Info from "lucide-react/dist/esm/icons/info.js";
 import RotateCcw from "lucide-react/dist/esm/icons/rotate-ccw.js";
@@ -32,6 +32,7 @@ import { formatPrice } from "@/lib/format";
 import { dpeRentalNote } from "@/lib/works-guidance";
 import { CeilingHypothesesPanel } from "@/components/ceiling/CeilingHypothesesPanel";
 import { EstimatedFeesBadge } from "@/components/ceiling/EstimatedFeesBadge";
+import { onRadioGroupKeyDown } from "@/components/ceiling/radio-group-keys";
 import { Terme, type TermeKey } from "@/components/ceiling/Terme";
 
 type ChoicesUpdate = (change: (choices: CeilingUserChoices) => CeilingUserChoices) => void;
@@ -59,6 +60,7 @@ export function CeilingPlanner({
   dpeClass?: string | null;
 }) {
   const [hypothesesOpen, setHypothesesOpen] = useState(false);
+  const hypothesesPanelId = useId();
   const confidence = ceilingConfidence(hypotheses);
   // Textes du régime de frais de la vente (ceux du tribunal sans régime).
   const regimeLabels = labelsOf(hypotheses);
@@ -83,7 +85,7 @@ export function CeilingPlanner({
   return (
     <section
       aria-labelledby="ceiling-planner-title"
-      className="overflow-hidden rounded-lg border border-border bg-white shadow-sm"
+      className="overflow-hidden rounded-lg border border-line bg-white"
     >
       <div className="p-5 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -94,14 +96,12 @@ export function CeilingPlanner({
             >
               {labels.title}
             </h2>
-            <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-              {labels.intro}
-            </p>
+            <p className="mt-1 max-w-2xl text-sm leading-relaxed text-ink-soft">{labels.intro}</p>
           </div>
           <button
             type="button"
             onClick={onReset}
-            className="inline-flex min-h-11 items-center gap-2 rounded-full border border-border px-3 text-xs font-semibold text-muted-foreground hover:text-foreground"
+            className="inline-flex min-h-11 items-center gap-2 rounded-full border border-line px-3 text-xs font-semibold text-ink-soft hover:text-foreground"
           >
             <RotateCcw className="h-3.5 w-3.5" />
             Revenir aux hypothèses Immojudis
@@ -141,7 +141,7 @@ export function CeilingPlanner({
             notarial={hypotheses.regime?.kind === "notarial"}
           />
           {estimatedFees.length > 0 || sensitivity != null ? (
-            <div className="mt-3 grid gap-2 text-sm leading-relaxed text-muted-foreground">
+            <div className="mt-3 grid gap-2 text-sm leading-relaxed text-ink-soft">
               <EstimatedFeesBadge items={estimatedFees} />
               {sensitivity != null ? (
                 <p data-testid="fee-sensitivity">
@@ -170,19 +170,26 @@ export function CeilingPlanner({
           </>
         ) : null}
 
-        <button
-          type="button"
-          aria-expanded={hypothesesOpen || !plan.available}
-          onClick={() => setHypothesesOpen((open) => !open)}
-          className="mt-6 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-gold-text"
-        >
-          <ChevronDown
-            className={`h-4 w-4 transition-transform ${hypothesesOpen || !plan.available ? "rotate-180" : ""}`}
-          />
-          {hypothesesOpen || !plan.available ? "Masquer les hypothèses" : "Modifier les hypothèses"}
-        </button>
+        {/* Sans plan, les hypothèses restent ouvertes (il faut les compléter) : un bouton « Masquer »
+            n'aurait aucun effet, il n'est donc pas rendu. */}
+        {plan.available ? (
+          <button
+            type="button"
+            aria-expanded={hypothesesOpen}
+            aria-controls={hypothesesPanelId}
+            onClick={() => setHypothesesOpen((open) => !open)}
+            className="mt-6 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-gold-text"
+          >
+            <ChevronDown
+              aria-hidden
+              className={`h-4 w-4 transition-transform ${hypothesesOpen ? "rotate-180" : ""}`}
+            />
+            {hypothesesOpen ? "Masquer les hypothèses" : "Modifier les hypothèses"}
+          </button>
+        ) : null}
         {hypothesesOpen || !plan.available ? (
           <CeilingHypothesesPanel
+            id={hypothesesPanelId}
             hypotheses={hypotheses}
             choices={choices}
             onChoicesChange={onChoicesChange}
@@ -191,7 +198,7 @@ export function CeilingPlanner({
 
         <Checklist hypotheses={hypotheses} dpeClass={dpeClass} />
 
-        <p className="mt-5 flex items-start gap-2 text-xs leading-relaxed text-muted-foreground">
+        <p className="mt-5 flex items-start gap-2 text-xs leading-relaxed text-ink-soft">
           <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gold-text" />
           {labels.footnote ? (
             <span>{labels.footnote}</span>
@@ -224,10 +231,15 @@ function ProjectPicker({
 }) {
   return (
     <div className="mt-5">
-      <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+      <div className="text-xs font-semibold uppercase tracking-[0.12em] text-ink-soft">
         Votre projet
       </div>
-      <div role="radiogroup" aria-label="Votre projet" className="mt-2 grid gap-2 sm:grid-cols-3">
+      <div
+        role="radiogroup"
+        aria-label="Votre projet"
+        onKeyDown={onRadioGroupKeyDown}
+        className="mt-2 grid gap-2 sm:grid-cols-3"
+      >
         {CEILING_PROJECTS.map((item) => {
           const selected = item.key === project;
           return (
@@ -236,11 +248,12 @@ function ProjectPicker({
               type="button"
               role="radio"
               aria-checked={selected}
+              tabIndex={selected ? 0 : -1}
               onClick={() => onChoicesChange((choices) => ({ ...choices, project: item.key }))}
               className={`rounded-lg border p-3 text-left transition ${
                 selected
-                  ? "border-gold bg-gold/10 text-foreground"
-                  : "border-border text-muted-foreground hover:border-gold/50"
+                  ? "border-gold-soft bg-gold/10 text-foreground"
+                  : "border-line text-ink-soft hover:border-gold/50"
               }`}
             >
               <span className="block text-sm font-semibold text-foreground">{item.label}</span>
@@ -263,15 +276,23 @@ function ProfilePicker({
   onChoicesChange: ChoicesUpdate;
 }) {
   return (
-    <div role="radiogroup" aria-label="Niveau de prudence" className="grid grid-cols-3 gap-1.5">
-      {profiles.map((profile) => {
+    <div
+      role="radiogroup"
+      aria-label="Niveau de prudence"
+      onKeyDown={onRadioGroupKeyDown}
+      className="grid min-w-0 grid-cols-1 gap-1.5 sm:grid-cols-3"
+    >
+      {profiles.map((profile, index) => {
         const active = profile.key === selected;
+        // Un seul arrêt de Tab : le profil coché, ou le premier quand la marge est personnalisée.
+        const stop = selected == null ? index === 0 : active;
         return (
           <button
             key={profile.key}
             type="button"
             role="radio"
             aria-checked={active}
+            tabIndex={stop ? 0 : -1}
             onClick={() =>
               onChoicesChange((choices) => ({
                 ...choices,
@@ -279,14 +300,14 @@ function ProfilePicker({
                 customMarginPct: null,
               }))
             }
-            className={`min-h-14 rounded-lg border px-3 py-2 text-left transition ${
+            className={`flex min-h-14 items-baseline justify-between gap-3 rounded-lg border px-3 py-2 text-left transition sm:block ${
               active
-                ? "border-gold bg-gold text-brand-navy"
-                : "border-border bg-white text-muted-foreground hover:text-foreground"
+                ? "border-gold-soft bg-gold text-brand-navy"
+                : "border-line bg-white text-ink-soft hover:text-foreground"
             }`}
           >
             <span className="block text-xs font-semibold">{profile.label}</span>
-            <span className="block text-sm font-semibold tabular-nums">
+            <span className="block whitespace-nowrap text-sm font-semibold tabular-nums">
               {profile.plan.available && profile.plan.reachable
                 ? formatPrice(profile.plan.maxBid)
                 : "—"}
@@ -312,7 +333,7 @@ function Verdict({
   const limitedByRent = plan.available && plan.reachable && plan.binding === "rendement";
   return (
     <>
-      <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">
+      <p className="mt-3 max-w-xl text-sm leading-relaxed text-ink-soft">
         {!plan.available ? (
           `${plan.reason}. Complétez-la dans les hypothèses ci-dessous pour obtenir votre plafond.`
         ) : !plan.reachable ? (
@@ -361,7 +382,7 @@ function ConfidenceNote({
   notarial: boolean;
 }) {
   return (
-    <p className="mt-5 border-t border-gold/20 pt-4 text-sm leading-relaxed text-muted-foreground">
+    <p className="mt-5 border-t border-gold/20 pt-4 text-sm leading-relaxed text-ink-soft">
       <strong className="text-foreground">Fiabilité : {confidence.label}.</strong>{" "}
       {confidence.gaps.length
         ? `Reste à confirmer : ${confidence.gaps.join(", ")}.`
@@ -377,15 +398,15 @@ function CeilingSteps({ steps }: { steps: CeilingStep[] }) {
     <section
       id="why-this-ceiling"
       aria-labelledby="ceiling-steps-title"
-      className="mt-7 scroll-mt-36"
+      className="mt-7 scroll-mt-2"
     >
       <h3 id="ceiling-steps-title" className="text-lg font-semibold text-brand-navy">
         Le calcul, étape par étape
       </h3>
-      <p className="mt-1 text-sm text-muted-foreground">
+      <p className="mt-1 text-sm text-ink-soft">
         Touchez ou cliquez sur une ligne pour voir d’où vient le chiffre.
       </p>
-      <ol className="mt-4 divide-y divide-border border-y border-border">
+      <ol className="mt-4 divide-y divide-line border-y border-line">
         {steps.map((step) => (
           <li key={step.key}>
             <details className="group">
@@ -397,7 +418,7 @@ function CeilingSteps({ steps }: { steps: CeilingStep[] }) {
                 <span className="flex min-w-0 items-baseline gap-2">
                   <ChevronDown
                     aria-hidden
-                    className="h-4 w-4 shrink-0 translate-y-0.5 text-muted-foreground transition-transform group-open:rotate-180"
+                    className="h-4 w-4 shrink-0 translate-y-0.5 text-ink-soft transition-transform group-open:rotate-180"
                   />
                   <span
                     className={`text-sm sm:text-base ${
@@ -420,9 +441,7 @@ function CeilingSteps({ steps }: { steps: CeilingStep[] }) {
                   {formatPrice(Math.abs(step.amount))}
                 </span>
               </summary>
-              <p className="pb-3 pl-6 text-sm leading-relaxed text-muted-foreground">
-                {step.detail}
-              </p>
+              <p className="pb-3 pl-6 text-sm leading-relaxed text-ink-soft">{step.detail}</p>
             </details>
           </li>
         ))}
@@ -455,20 +474,20 @@ function WorksCeilings({
           </button>
         ) : null}
       </div>
-      <p className="mt-1 text-sm text-muted-foreground">
+      <p className="mt-1 text-sm text-ink-soft">
         Les scénarios incluent 10 % d’imprévus et le portage pendant le chantier ; une rénovation
         complète peut aussi augmenter la valeur du bien.
       </p>
       <div className="mt-3 overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-xs uppercase tracking-[0.08em] text-muted-foreground">
+            <tr className="text-left text-xs uppercase tracking-[0.08em] text-ink-soft">
               <th className="py-2 font-semibold">Travaux</th>
               <th className="py-2 pl-2 text-right font-semibold">Budget</th>
               <th className="py-2 pl-2 text-right font-semibold">Plafond</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-border border-y border-border">
+          <tbody className="divide-y divide-line border-y border-line">
             {rows.map((row) => {
               const selected = row.key === hypotheses.works.key;
               return (
@@ -478,7 +497,7 @@ function WorksCeilings({
                       {row.label}
                     </span>
                     {selected ? (
-                      <span className="ml-2 rounded-full bg-gold/15 px-2 py-0.5 text-[11px] font-semibold text-gold-text">
+                      <span className="ml-2 rounded-full bg-gold/15 px-2 py-0.5 text-xs font-semibold text-gold-text">
                         Retenu
                       </span>
                     ) : null}
@@ -552,7 +571,7 @@ function BidSimulator({ hypotheses, plan }: { hypotheses: CeilingHypotheses; pla
       <h3 id="ceiling-simulator-title" className="text-lg font-semibold text-brand-navy">
         {labels.simulatorTitle}
       </h3>
-      <label className="mt-3 flex max-w-xs items-center gap-2 rounded-lg border border-border px-3 focus-within:border-gold">
+      <label className="mt-3 flex max-w-xs items-center gap-2 rounded-lg border border-brand-navy/55 px-3 focus-within:border-gold-soft">
         <span className="sr-only">{labels.simulatorInputLabel}</span>
         <input
           type="number"
@@ -567,7 +586,7 @@ function BidSimulator({ hypotheses, plan }: { hypotheses: CeilingHypotheses; pla
           onBlur={() => setBidText(null)}
           className="min-h-11 w-full bg-transparent text-lg font-semibold tabular-nums outline-none"
         />
-        <span className="text-sm text-muted-foreground">€</span>
+        <span className="text-sm text-ink-soft">€</span>
       </label>
       <div className="mt-2 flex flex-wrap gap-2 text-xs">
         {ceilingBelowStart ? (
@@ -580,12 +599,12 @@ function BidSimulator({ hypotheses, plan }: { hypotheses: CeilingHypotheses; pla
           <QuickBid label="Plafond" value={plan.maxBid} onPick={pickBid} />
         ) : null}
       </div>
-      <dl className="mt-4 divide-y divide-border border-y border-border text-sm">
+      <dl className="mt-4 divide-y divide-line border-y border-line text-sm">
         {rows
           .filter(([, value]) => value > 0)
           .map(([label, value, term]) => (
             <div key={label} className="flex justify-between gap-4 py-2">
-              <dt className="text-muted-foreground">
+              <dt className="text-ink-soft">
                 {term ? <Terme terme={term}>{label}</Terme> : label}
               </dt>
               <dd className="tabular-nums">{formatPrice(Math.round(value))}</dd>
@@ -597,7 +616,7 @@ function BidSimulator({ hypotheses, plan }: { hypotheses: CeilingHypotheses; pla
         </div>
       </dl>
       {labels.scopeNote ? (
-        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{labels.scopeNote}</p>
+        <p className="mt-2 text-xs leading-relaxed text-ink-soft">{labels.scopeNote}</p>
       ) : null}
       <p
         role="status"
@@ -634,7 +653,7 @@ function QuickBid({
     <button
       type="button"
       onClick={() => onPick(value)}
-      className="min-h-11 rounded-full border border-border px-3 font-semibold text-muted-foreground hover:text-foreground"
+      className="min-h-11 rounded-full border border-line px-3 font-semibold text-ink-soft hover:text-foreground"
     >
       {label} · {formatPrice(value)}
     </button>
@@ -662,7 +681,7 @@ function CashPlan({ hypotheses, plan }: { hypotheses: CeilingHypotheses; plan: C
       <h3 id="ceiling-cash-title" className="text-lg font-semibold text-brand-navy">
         Trésorerie à prévoir
       </h3>
-      <p className="mt-1 text-sm text-muted-foreground">
+      <p className="mt-1 text-sm text-ink-soft">
         {labelsOf(hypotheses).planner.cashIntro(formatPrice(plan.maxBid))}
       </p>
       <ol className="mt-4 space-y-3">
@@ -682,7 +701,7 @@ function CashPlan({ hypotheses, plan }: { hypotheses: CeilingHypotheses; plan: C
                   step.label
                 )}
               </span>
-              <span className="block text-muted-foreground">{step.detail}</span>
+              <span className="block text-ink-soft">{step.detail}</span>
             </span>
             <span className="text-sm font-semibold tabular-nums sm:text-right">
               {step.amount != null ? formatPrice(step.amount) : ""}
@@ -805,7 +824,7 @@ function Checklist({
       <h3 id="ceiling-checklist-title" className="text-lg font-semibold text-brand-navy">
         {regimeLabels.planner.checklistTitle}
       </h3>
-      <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-muted-foreground">
+      <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-ink-soft">
         {items.map((item) => (
           <li key={item.key}>{item.content}</li>
         ))}

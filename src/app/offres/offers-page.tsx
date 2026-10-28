@@ -635,7 +635,7 @@ function DecisionEquation() {
         {items.map((item) => (
           <div key={item.label} className="relative text-center">
             <span
-              className={`mx-auto grid size-14 place-items-center rounded-full border sm:size-16 ${
+              className={`mx-auto grid size-12 place-items-center rounded-full border min-[400px]:size-14 sm:size-16 ${
                 item.result
                   ? "border-brand-navy bg-brand-navy text-white"
                   : "border-white bg-white text-brand-navy shadow-sm"

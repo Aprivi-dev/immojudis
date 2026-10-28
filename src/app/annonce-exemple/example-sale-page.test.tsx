@@ -127,7 +127,7 @@ describe("ExampleSalePage", () => {
 
   it("annonce clairement que l'exemple est fictif, avant tout chiffre", () => {
     const { container } = render(<ExampleSalePage example={getExampleSaleRecords().bordeaux} />);
-    const banner = screen.getByRole("note");
+    const banner = screen.getByRole("complementary", { name: "Exemple fictif" });
     expect(banner.textContent).toMatch(/Exemple fictif/);
     expect(banner.textContent).toMatch(/Aucune vente réelle/);
     // The banner comes first in the page.

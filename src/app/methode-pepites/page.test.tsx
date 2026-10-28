@@ -135,7 +135,7 @@ describe("page « Comment repérons-nous les pépites ? »", () => {
     );
   });
 
-  it("donne les seuils de pepite-v1 à partir des constantes de la règle", () => {
+  it("donne les seuils de pepite-v1.1 à partir des constantes de la règle", () => {
     render(<Page />);
     const text = sectionText("Les critères et les seuils");
     // Interrupteur fermé (défaut) : la page décrit la règle appliquée, pepite-v1.
@@ -151,7 +151,7 @@ describe("page « Comment repérons-nous les pépites ? »", () => {
     );
     expect(text).toContain(`au plus ${PEPITE_RULE_PARAMS.maxCostShareNotaryPct} %`);
     expect(text).toContain(`${PEPITE_RULE_PARAMS.historyYears} dernières années`);
-    expect(text).toContain("Version pepite-v1. Les seuils ci-dessous");
+    expect(text).toContain("Version pepite-v1.1. Les seuils ci-dessous");
     expect(text).toContain("Le repère est affiché depuis le 26 octobre 2026.");
     expect(text).toContain(
       `Il faut au moins ${PEPITE_RULE_PARAMS.minNationalSales} ventes comparables en France, tribunaux confondus.`,

@@ -378,8 +378,9 @@ function PageContent() {
             ))}
           </ul>
           <p>
-            L’estimation de valeur repose sur les ventes passées de la base DVF : elle n’intègre ni
-            l’état du bien ni son occupation. Ses limites sont détaillées sur{" "}
+            L’estimation de valeur repose sur les ventes passées de la base DVF (demandes de valeurs
+            foncières) : elle n’intègre ni l’état du bien ni son occupation. Ses limites sont
+            détaillées sur{" "}
             <Link href={MARKET_GAP_METHOD_PATH} className="font-semibold text-gold-text underline">
               la page de méthode de l’écart avec le marché
             </Link>

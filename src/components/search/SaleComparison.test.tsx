@@ -1,8 +1,16 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ComparedSale } from "@/lib/search/sale-comparison";
 
+const signals = vi.hoisted(() => ({
+  pepite: vi.fn(),
+  underRange: vi.fn(),
+}));
+vi.mock("@/lib/search/pepite-filter", () => ({ fetchPepiteSaleIds: () => signals.pepite() }));
+vi.mock("@/lib/search/market-range-filter", () => ({
+  fetchUnderRangeSaleIds: () => signals.underRange(),
+}));
 vi.mock("next/dynamic", () => ({ default: () => () => null }));
 vi.mock("./SavedSaleComparisons", () => ({
   SavedSaleComparisons: () => <div>Comparaisons enregistrées (mock)</div>,
@@ -12,6 +20,10 @@ import { SaleComparisonBar } from "./SaleComparisonBar";
 import SaleComparisonDialog from "./SaleComparisonDialog";
 import { SaleComparisonTable } from "./SaleComparisonTable";
 
+beforeEach(() => {
+  signals.pepite.mockResolvedValue(new Set<string>());
+  signals.underRange.mockResolvedValue(new Set<string>());
+});
 afterEach(cleanup);
 
 function compared(id: string, overrides: Partial<ComparedSale> = {}): ComparedSale {
@@ -62,6 +74,37 @@ describe("SaleComparisonTable", () => {
     expect(department.map((cell) => cell.textContent)).toEqual(["69", "13"]);
   });
 
+  it("compare l'écart avec le marché et le repère Pépite, lus dans les listes publiques", async () => {
+    signals.pepite.mockResolvedValue(new Set(["a"]));
+    signals.underRange.mockResolvedValue(new Set(["b"]));
+    render(<SaleComparisonTable returnTo="/sales" items={[compared("A"), compared("B")]} />);
+
+    await waitFor(() =>
+      expect(
+        within(rowOf("Pépite"))
+          .getAllByRole("cell")
+          .map((cell) => cell.textContent),
+      ).toEqual(["Pépite", "Pas de repère"]),
+    );
+    expect(
+      within(rowOf("Écart avec le marché"))
+        .getAllByRole("cell")
+        .map((cell) => cell.textContent),
+    ).toEqual(["Non signalé (voir la fiche)", "Mise à prix sous le marché"]);
+  });
+
+  it("dit « Non disponible » quand les listes publiques ne se lisent pas", async () => {
+    signals.pepite.mockRejectedValue(new Error("503"));
+    signals.underRange.mockRejectedValue(new Error("503"));
+    render(<SaleComparisonTable returnTo="/sales" items={[compared("a")]} />);
+
+    await Promise.resolve();
+    expect(within(rowOf("Pépite")).getAllByRole("cell")[0].textContent).toBe("Non disponible");
+    expect(within(rowOf("Écart avec le marché")).getAllByRole("cell")[0].textContent).toBe(
+      "Non disponible",
+    );
+  });
+
   it("reads « Prix non communiqué » for a starting price of 0, never « 0 € »", () => {
     render(
       <SaleComparisonTable
@@ -81,13 +124,20 @@ describe("SaleComparisonTable", () => {
     expect(within(rowOf("Occupation")).getByRole("cell").textContent).toBe("Non renseigné");
   });
 
-  it("narrows the criteria column on mobile and fixes the property columns at 180 px", () => {
-    render(<SaleComparisonTable returnTo="/sales" items={[compared("a"), compared("b")]} />);
+  it("narrows the columns on mobile so that two properties fit at 360 px", () => {
+    const { container } = render(
+      <SaleComparisonTable returnTo="/sales" items={[compared("a"), compared("b")]} />,
+    );
     const criteria = screen.getByRole("columnheader", { name: "Critères" });
-    expect(criteria.className).toContain("w-[96px]");
+    expect(criteria.className).toContain("w-[80px]");
     expect(criteria.className).toContain("sm:w-[140px]");
     const property = screen.getByRole("columnheader", { name: /Bien 1/ });
-    expect(property.style.width).toBe("180px");
+    expect(property.className).toContain("w-[140px]");
+    expect(property.className).toContain("sm:w-[180px]");
+    // 80 + 2 x 140 = 360 px, au plus : deux biens se voient sans défilement horizontal.
+    const table = container.querySelector("table")!;
+    expect(table.className).toContain("min-w-[calc(80px+var(--compared-count)*140px)]");
+    expect(table.style.getPropertyValue("--compared-count")).toBe("2");
   });
 });
 

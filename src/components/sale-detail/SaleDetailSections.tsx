@@ -56,7 +56,7 @@ export function UrbanismeSection({
   });
 
   return (
-    <div id="urbanism" className="mt-6 scroll-mt-36">
+    <div id="urbanism" className="mt-6 scroll-mt-2">
       <div>
         {urbanismQuery.isPending && urbanismQuery.isFetching ? (
           <p role="status" className="mb-4 text-sm text-brand-navy/70">
@@ -111,7 +111,7 @@ export function SaleDocumentsSection({
     <section
       id="documents"
       aria-label="Pièces du dossier"
-      className="mx-auto max-w-[1260px] scroll-mt-36 px-4 pb-8 sm:px-6 lg:px-8"
+      className="mx-auto max-w-[1260px] scroll-mt-2 px-4 pb-8 sm:px-6 lg:px-8"
     >
       <details
         className="group mt-4 rounded-lg border border-brand-navy/12 bg-white shadow-sm"
@@ -181,7 +181,7 @@ export function LawyerSection({ sale }: { sale: AuctionSale }) {
     : `/avocats?city=${encodeURIComponent(sale.city ?? "")}`;
 
   return (
-    <section id="lawyer" className="scroll-mt-36 bg-white">
+    <section id="lawyer" className="scroll-mt-2 bg-white">
       <div className="mx-auto max-w-[1380px] px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
         <div className="grid gap-7 rounded-lg border border-line bg-background p-6 sm:p-8 lg:grid-cols-[minmax(0,0.85fr)_minmax(420px,1.15fr)] lg:items-center">
           <div>

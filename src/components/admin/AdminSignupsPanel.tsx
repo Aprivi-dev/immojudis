@@ -210,7 +210,7 @@ export function AdminSignupsPanel() {
                 setOffset(0);
               }}
               placeholder="prenom@exemple.fr"
-              className="rounded-lg border border-brand-navy/15 bg-white px-3 py-2 text-sm outline-none focus:border-gold"
+              className="rounded-lg border border-brand-navy/55 bg-white px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
             />
           </label>
           <label className="grid gap-1.5 text-sm font-medium text-brand-navy/80">
@@ -221,7 +221,7 @@ export function AdminSignupsPanel() {
                 setAccess(event.target.value as AccessFilter);
                 setOffset(0);
               }}
-              className="rounded-lg border border-brand-navy/15 bg-white px-3 py-2 text-sm outline-none focus:border-gold"
+              className="rounded-lg border border-brand-navy/55 bg-white px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
             >
               <option value="all">Tous{summary ? ` (${summary.total})` : ""}</option>
               {ADMIN_SIGNUP_ACCESS.map((value) => (
@@ -264,7 +264,7 @@ export function AdminSignupsPanel() {
                   required
                   value={endsAt}
                   onChange={(event) => setEndsAt(event.target.value)}
-                  className="rounded-lg border border-brand-navy/15 bg-white px-3 py-2 text-sm outline-none focus:border-gold"
+                  className="rounded-lg border border-brand-navy/55 bg-white px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
                 />
               </label>
               <div className="flex flex-wrap gap-2" role="group" aria-label="Raccourcis de durée">
@@ -289,7 +289,7 @@ export function AdminSignupsPanel() {
                   value={note}
                   onChange={(event) => setNote(event.target.value)}
                   placeholder="Ex. : demande reçue par email, retour d’expérience promis"
-                  className="rounded-lg border border-brand-navy/15 bg-white px-3 py-2 text-sm outline-none focus:border-gold"
+                  className="rounded-lg border border-brand-navy/55 bg-white px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
                 />
               </label>
               <button
@@ -371,7 +371,7 @@ export function AdminSignupsPanel() {
             <tbody>
               {query.isLoading ? (
                 <tr>
-                  <td colSpan={6} className="px-2 py-6 text-center text-brand-navy/60">
+                  <td colSpan={6} className="px-2 py-6 text-center text-ink-soft">
                     <span role="status">Chargement des inscriptions…</span>
                   </td>
                 </tr>
@@ -386,7 +386,7 @@ export function AdminSignupsPanel() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={6} className="px-2 py-6 text-center text-brand-navy/60">
+                  <td colSpan={6} className="px-2 py-6 text-center text-ink-soft">
                     Aucun compte ne correspond.
                   </td>
                 </tr>
