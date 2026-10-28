@@ -26,16 +26,20 @@ réponses de l'agent utilise un autre job Supabase toutes les deux minutes. Les 
 La fonction `public.evaluate_operational_health` est exécutable uniquement par `service_role` et
 maintient des alertes dédupliquées dans `public.operational_alerts`.
 
-| Clé                              | Condition                                                                                                                               |
-| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `cron.stale`                     | aucun succès récent pour un cron attendu                                                                                                |
-| `stripe.webhook.unhealthy`       | webhook échoué depuis moins d'une heure ou bloqué plus de 15 min                                                                        |
-| `pipeline.import.unhealthy`      | 3 imports échoués dans l'heure (ou 1 avec une file qui attend), import actif depuis plus de 3 h ou file âgée de plus de 30 min          |
-| `refresh_queue.stale`            | requête de rafraîchissement en attente depuis plus de 30 min                                                                            |
-| `dvf.freshness`                  | données absentes, import DVF bloqué, vieux de plus de 220 j ou échec plus récent que le dernier import réussi                           |
-| `retention.sale.overdue`         | vente échue depuis plus de 2 h non purgée, ou 6 passages de purge avec des ventes restantes (`docs/runbooks/retention-sale-overdue.md`) |
-| `catalogue.invalidation.backlog` | boîte d'invalidation du cache public : ligne de plus de 2 h ou plus de 1 000 lignes (`docs/runbooks/catalogue-invalidation-backlog.md`) |
-| `alerts.delivery.late`           | notification d'alerte en file dont la date prévue a plus de 26 h (`docs/runbooks/alerts-delivery-late.md`)                              |
+| Clé                               | Condition                                                                                                                                                                                                      |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cron.stale`                      | aucun succès récent pour un cron attendu                                                                                                                                                                       |
+| `stripe.webhook.unhealthy`        | webhook échoué depuis moins d'une heure ou bloqué plus de 15 min                                                                                                                                               |
+| `pipeline.import.unhealthy`       | 3 imports échoués dans l'heure (ou 1 avec une file qui attend), import actif depuis plus de 3 h ou file âgée de plus de 30 min                                                                                 |
+| `refresh_queue.stale`             | requête de rafraîchissement en attente depuis plus de 30 min                                                                                                                                                   |
+| `dvf.freshness`                   | données absentes, import DVF bloqué, vieux de plus de 220 j ou échec plus récent que le dernier import réussi                                                                                                  |
+| `retention.sale.overdue`          | vente échue depuis plus de 2 h non purgée, ou 6 passages de purge avec des ventes restantes (`docs/runbooks/retention-sale-overdue.md`)                                                                        |
+| `catalogue.invalidation.backlog`  | boîte d'invalidation du cache public : ligne de plus de 2 h ou plus de 1 000 lignes (`docs/runbooks/catalogue-invalidation-backlog.md`)                                                                        |
+| `alerts.delivery.late`            | notification d'alerte en file dont la date prévue a plus de 26 h (`docs/runbooks/alerts-delivery-late.md`)                                                                                                     |
+| `flood_risk.observation.degraded` | observation d'inondation : au moins la moitié des appels en échec sur les 3 dernières passes (30 échecs au moins), ou 2 des 3 dernières passes en échec « dégradée » / `source_degraded` ; critique après 12 h |
+| `flood_risk.write_blocked`        | écritures d'inondation bloquées par le verrou de publication (`writeBusy` sur 3 passes) ou reliquat qui ne baisse pas sur 6 passes                                                                             |
+| `pepites.evaluation.stale`        | mode des pépites autre que « on » depuis plus d'une heure, ou dernière évaluation de plus de 6 h ; critique à 24 h                                                                                             |
+| `reference.anil_rents.stale`      | édition ANIL de décembre non chargée au 15 janvier (millésime de l'année précédente) ; critique 60 jours plus tard                                                                                             |
 
 `cron.stale` attend les tâches quotidiennes de Vercel toutes les 27 h (`docs/operations/planification.md`).
 L'observateur du pipeline ajoute `pipeline.scheduler.disabled`, `pipeline.inventory.stale`,

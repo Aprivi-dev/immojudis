@@ -16,7 +16,7 @@ concurrency:
 jobs:
   report:
     name: List duplicate candidates
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Lit la base de production avec la clé service_role : mêmes règles de déploiement que
     # apply-supabase-migrations.yml (environnement « Production », ses protections et ses secrets).
     environment: Production

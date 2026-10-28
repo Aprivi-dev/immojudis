@@ -41,6 +41,7 @@ describe("GET /api/admin/pepites", () => {
       "mode",
       "counters",
       "rate",
+      "flood",
       "list",
       "independence",
     ]);

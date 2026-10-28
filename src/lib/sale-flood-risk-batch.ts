@@ -61,7 +61,16 @@ import { syncSaleCommunes } from "@/lib/sale-communes-sync.server";
  *    écrits par paquets de `WRITE_CHUNK` ventes pendant la passe, non à sa fin ;
  *  - seules les coordonnées de la vente partent aux services de l'État, jamais son adresse ; ni la sortie du
  *    traitement ni ses erreurs ne portent de coordonnée, d'URL ni de réponse de la source ; les appels refusent
- *    toute redirection.
+ *    toute redirection ;
+ *  - une panne partielle ne passe pas pour un succès : quand au moins la moitié des appels échouent, sur au moins
+ *    `FLOOD_DEGRADED_MIN_CALLS` appels, la passe lève une erreur (après avoir écrit ce qu'elle a pu) ; après
+ *    `FLOOD_NETWORK_FAILURE_LIMIT` pannes réseau de suite, elle s'arrête (coupe-circuit) ; `failedByCode` chiffre
+ *    les causes ;
+ *  - une réponse vide n'est pas une preuve d'absence de risque : avant le premier appel de position de la passe, donc
+ *    avant d'écrire le moindre verdict, un point de contrôle connu (`FLOOD_CONTROL_POINT`) doit rendre le scénario
+ *    `01For` ; sinon la passe échoue avec le code `source_degraded` et n'écrit rien ;
+ *  - une ligne refusée par la base est isolée en coupant le paquet par moitiés (comme le calcul des pépites) au
+ *    lieu de bloquer les 24 autres.
  */
 
 /** Intervalle minimal entre deux appels : 400 ms, soit 2,5 appels par seconde. */
@@ -85,6 +94,28 @@ export const FLOOD_MIN_REMAINING_MS = 40_000;
 export const FLOOD_DEFAULT_TIME_BUDGET_MS = FLOOD_MAX_DURATION_MS - FLOOD_MIN_REMAINING_MS;
 /** Délai d'un appel (TRI, GASPAR ou PM1) : 8 s. */
 export const FLOOD_CALL_TIMEOUT_MS = 8_000;
+/** Part d'appels en échec à partir de laquelle la passe est « dégradée » : la moitié. */
+export const FLOOD_DEGRADED_RATE = 0.5;
+/** Nombre d'appels (réussis ou non) en dessous duquel un taux d'échec ne dit rien : 20. */
+export const FLOOD_DEGRADED_MIN_CALLS = 20;
+/** Coupe-circuit : la passe s'arrête après 5 pannes réseau (ou délais dépassés) consécutives. */
+export const FLOOD_NETWORK_FAILURE_LIMIT = 5;
+/** Au-delà de ce nombre de lignes refusées une à une par la base, la panne n'est plus isolée : la passe échoue. */
+export const FLOOD_MAX_REJECTED_ROWS = 5;
+/** Au plus ce nombre de codes d'échec distincts dans `failedByCode` (le reste va sous `other`). */
+const MAX_FAILURE_CODES = 20;
+
+/**
+ * Point de contrôle de la source : sur la Garonne à Toulouse (TRI de Toulouse, `FRF_TRI_TOULOUSE`), en plein lit du
+ * fleuve, `tri_zonage` rend le scénario `01For` (aléa de forte probabilité, carte arrêtée le 03/12/2014). Relevé le
+ * 28/10/2026 : toute la zone autour (environ 130 m sur 90 m) rend `01For` ; ce n'est pas un point de limite. La
+ * cartographie des TRI est stable (arrêtés de 2012 à 2014) : si ce point ne rend plus `01For`, c'est la réponse de
+ * l'API qui a changé (paramètre ignoré ou inversé, réponse vide) et aucun verdict « hors zone » ne doit être écrit.
+ */
+export const FLOOD_CONTROL_POINT = { latitude: 43.6026, longitude: 1.4314 };
+export const FLOOD_CONTROL_SCENARIO = "01For";
+/** Code de l'erreur levée quand le point de contrôle ne répond pas comme prévu. */
+export const FLOOD_SOURCE_DEGRADED_CODE = "source_degraded";
 
 const FLOOD_PACER = createStartPacer(FLOOD_MIN_INTERVAL_MS);
 const COMMUNE_TRI_CACHE = new Map<string, { hasTri: boolean; at: number }>();
@@ -111,6 +142,20 @@ export type SaleFloodRiskBatchResult = {
   communesRejected: number;
   /** L'échéance (`timeBudgetMs`) a arrêté la passe avant la fin de la liste. */
   stoppedByDeadline: boolean;
+  /** Échecs par code (`network_econnreset`, `http_503`, `timeout`…), jamais une URL ni une coordonnée. */
+  failedByCode: Record<string, number>;
+  /** Appels de la source suivis d'une observation réussie (hors ventes servies sans appel, par le cache). */
+  callsObserved: number;
+  /** Appels de la source en échec (hors données invalides, qui ne disent rien de la source). */
+  callsFailed: number;
+  /** Le coupe-circuit des pannes réseau consécutives a arrêté la passe. */
+  circuitOpen: boolean;
+  /** Ventes dont l'écriture est restée bloquée par un verrou de ligne au dernier essai (reprises à la passe suivante). */
+  writeBusy: number;
+  /** Lignes refusées une à une par la base (le reste du paquet a été écrit). */
+  writeRejected: number;
+  /** Ventes à venir en attente de réobservation (`failure_count > 0`) à la fin de la passe. */
+  awaitingReobservation: number;
   /** Codes d'échec (`http_503`, `timeout`…), jamais une URL ni une coordonnée. */
   errors: string[];
 };
@@ -174,6 +219,8 @@ type Outcome =
       observation: FloodRiskObservation;
       scenarios: string[][];
       ppriPerimeter: boolean | null;
+      /** Au moins un appel à la source a été fait pour cette vente (sinon : cache ou aucune donnée à lire). */
+      called: boolean;
     }
   | { kind: "failure"; code: string }
   | { kind: "rate_limited" }
@@ -205,10 +252,12 @@ async function observe(
         observation: { kind, communeHasTri: null, probes: [] },
         scenarios: [],
         ppriPerimeter: null,
+        called: false,
       };
     }
     const cached = communeCache.get(insee);
     let hasTri: boolean;
+    let called = false;
     if (cached && now.getTime() - cached.at < COMMUNE_TRI_CACHE_MS) {
       hasTri = cached.hasTri;
     } else {
@@ -217,6 +266,7 @@ async function observe(
       if (response.kind === "rate_limited") return response;
       if (response.kind === "failure") return response;
       hasTri = response.hasTri;
+      called = true;
       communeCache.set(insee, { hasTri, at: now.getTime() });
     }
     return {
@@ -224,6 +274,7 @@ async function observe(
       observation: { kind, communeHasTri: hasTri, probes: [] },
       scenarios: [],
       ppriPerimeter: null,
+      called,
     };
   }
 
@@ -257,6 +308,7 @@ async function observe(
     observation: { kind, communeHasTri: null, probes, mapDate },
     scenarios,
     ppriPerimeter: anyInPerimeter ? true : allRead ? false : null,
+    called: true,
   };
 }
 
@@ -308,8 +360,36 @@ function emptyResult(): SaleFloodRiskBatchResult {
     communesWritten: 0,
     communesRejected: 0,
     stoppedByDeadline: false,
+    failedByCode: {},
+    callsObserved: 0,
+    callsFailed: 0,
+    circuitOpen: false,
+    writeBusy: 0,
+    writeRejected: 0,
+    awaitingReobservation: 0,
     errors: [],
   };
+}
+
+/** Panne réseau ou délai dépassé : de quoi compter pour le coupe-circuit. */
+function isNetworkFailureCode(code: string): boolean {
+  return code === "network" || code.startsWith("network_") || code === "timeout";
+}
+
+/** Une donnée invalide de la vente ne dit rien de l'état de la source : elle ne compte pas dans le taux d'échec. */
+function isSourceFailureCode(code: string): boolean {
+  return code !== "invalid_position" && code !== "invalid_commune";
+}
+
+/**
+ * Interroge le point de contrôle connu. `null` : la source répond comme prévu (scénario `01For`) ; sinon le code
+ * de ce qu'elle a rendu (`no_scenario`, `rate_limited`, `network_…`, `http_…`), jamais de coordonnée.
+ */
+export async function checkFloodControlPoint(api: FloodApiOptions): Promise<string | null> {
+  const response = await fetchTriZonage(FLOOD_CONTROL_POINT, api);
+  if (response.kind === "rate_limited") return "rate_limited";
+  if (response.kind === "failure") return response.code;
+  return response.scenarios.includes(FLOOD_CONTROL_SCENARIO) ? null : "no_scenario";
 }
 
 /**
@@ -341,6 +421,11 @@ async function runPass({
   const result = emptyResult();
   const fail = (code: string) => {
     result.failed += 1;
+    if (isSourceFailureCode(code)) result.callsFailed += 1;
+    const known = code in result.failedByCode;
+    const key =
+      known || Object.keys(result.failedByCode).length < MAX_FAILURE_CODES ? code : "other";
+    result.failedByCode[key] = (result.failedByCode[key] ?? 0) + 1;
     if (result.errors.length < MAX_REPORTED_ERRORS) result.errors.push(code);
   };
   const apiOptions: FloodApiOptions = {
@@ -363,6 +448,14 @@ async function runPass({
   const stored = new Map(storedRows.map((row) => [row.saleId, row]));
   result.upcoming = sales.filter((sale) => isUpcoming(sale, now)).length;
 
+  /** Ventes à venir en attente de réobservation (`failure_count > 0`), tenues à jour pendant la passe. */
+  const awaiting = new Set<string>();
+  for (const sale of sales) {
+    if (isUpcoming(sale, now) && (stored.get(sale.id)?.failureCount ?? 0) > 0) {
+      awaiting.add(sale.id);
+    }
+  }
+
   const pending = pickFloodPending(sales, stored, communes, now);
   const selected = pending.slice(0, Math.max(1, Math.min(1000, Math.floor(limit))));
   result.pending = pending.length;
@@ -371,20 +464,47 @@ async function runPass({
   /** Paquets bloqués par un verrou de ligne, réessayés en fin de passe. */
   let deferred: FloodRiskInsert[] = [];
   let writtenRows = 0;
+  /** Codes des lignes refusées une à une par la base. */
+  const rejectedCodes = new Set<string>();
+  /** Le point de contrôle a répondu comme prévu (fait une fois par passe, avant la première sonde de position). */
+  let controlPassed = false;
+
+  /**
+   * Écrit un paquet. Verrou de ligne (57014, 55P03, 40P01) : le paquet est différé. Autre refus : le paquet est
+   * coupé par moitiés jusqu'à isoler la ou les lignes fautives, comme `writeRows` du calcul des pépites ; trop de
+   * lignes refusées (`FLOOD_MAX_REJECTED_ROWS`) : la panne n'est plus isolée, la passe échoue. `false` : la table
+   * n'existe pas.
+   */
+  const writeRows = async (rows: FloodRiskInsert[]): Promise<boolean> => {
+    try {
+      const done = await upsertFloodRisks(rows);
+      if (done) writtenRows += rows.length;
+      return done;
+    } catch (error) {
+      const code = storeErrorCode(error);
+      if (BUSY_WRITE_CODES.has(code)) {
+        deferred.push(...rows);
+        return true;
+      }
+      if (rows.length === 1) {
+        result.writeRejected += 1;
+        rejectedCodes.add(code);
+        if (result.errors.length < MAX_REPORTED_ERRORS) result.errors.push(`write_refused_${code}`);
+        if (result.writeRejected > FLOOD_MAX_REJECTED_ROWS) throw error;
+        return true;
+      }
+      const middle = Math.ceil(rows.length / 2);
+      if (!(await writeRows(rows.slice(0, middle)))) return false;
+      return writeRows(rows.slice(middle));
+    }
+  };
+
   /** Écrit le paquet en cours ; `false` si la table n'existe pas. */
   const flush = async (): Promise<boolean> => {
     if (toWrite.length === 0) return true;
     const rows = toWrite;
     toWrite = [];
-    try {
-      const written = await upsertFloodRisks(rows);
-      if (written) writtenRows += rows.length;
-      return written;
-    } catch (error) {
-      if (!BUSY_WRITE_CODES.has(storeErrorCode(error))) throw error;
-      deferred.push(...rows);
-      return true;
-    }
+    return writeRows(rows);
   };
 
   /** Une tentative sans verdict : jamais d'écrasement d'un verdict connu (seule la tentative est consignée). */
@@ -429,6 +549,7 @@ async function runPass({
   };
 
   let done = 0;
+  let networkStreak = 0;
   for (const item of selected) {
     if (deadlineReached()) {
       result.stoppedByDeadline = true;
@@ -438,6 +559,21 @@ async function runPass({
     const position = floodPositionOf(item.sale, commune);
     const key = floodPositionKey(position);
     const kind = classifyFloodPosition(position);
+    if (kind !== "approximate" && !controlPassed) {
+      // Avant le premier appel de position, donc avant toute écriture de verdict : la source répond-elle encore
+      // comme prévu au point de contrôle ? Sinon « hors zone » ne voudrait rien dire (réponse vide, paramètre ignoré).
+      const problem = await checkFloodControlPoint(apiOptions);
+      if (problem === "rate_limited") {
+        result.rateLimited = true;
+        break;
+      }
+      if (problem) {
+        throw new Error(
+          `Source Géorisques dégradée (${FLOOD_SOURCE_DEGRADED_CODE}) : le point de contrôle ne rend pas le scénario ${FLOOD_CONTROL_SCENARIO} (${problem}) ; aucun verdict écrit dans cette passe`,
+        );
+      }
+      controlPassed = true;
+    }
     const outcome = await observe(item.sale, commune, {
       api: apiOptions,
       communeCache,
@@ -458,13 +594,22 @@ async function runPass({
     done += 1;
     if (outcome.kind === "failure") {
       fail(outcome.code);
+      awaiting.add(item.sale.id);
+      networkStreak = isNetworkFailureCode(outcome.code) ? networkStreak + 1 : 0;
       await recordAttempt(item, outcome.code, key, kind, commune);
+      if (networkStreak >= FLOOD_NETWORK_FAILURE_LIMIT) {
+        // Coupe-circuit : la source ne répond plus du tout, inutile d'insister ; la passe suivante reprend.
+        result.circuitOpen = true;
+        break;
+      }
     } else {
+      networkStreak = 0;
       const derived = deriveFloodVerdict(outcome.observation);
       const previous = item.stored;
       if (degradesKnownVerdict(derived, previous, key)) {
         // Périmètre des PPRi illisible : le verdict connu reste, la tentative est consignée comme une panne.
         fail("ppri_unreadable");
+        awaiting.add(item.sale.id);
         await recordAttempt(item, "ppri_unreadable", key, kind, commune);
       } else {
         const unchanged =
@@ -494,6 +639,8 @@ async function runPass({
           updated_at: now.toISOString(),
         });
         result.observed += 1;
+        if (outcome.called) result.callsObserved += 1;
+        awaiting.delete(item.sale.id);
       }
     }
 
@@ -510,6 +657,7 @@ async function runPass({
     deferred = [];
     if (!(await flush())) return { ...result, skipped: "not_migrated" };
     if (deferred.length > 0) {
+      result.writeBusy = deferred.length;
       if (result.errors.length < MAX_REPORTED_ERRORS) {
         result.errors.push(`write_busy_${deferred.length}`);
       }
@@ -521,7 +669,13 @@ async function runPass({
       }
     }
   }
+  if (result.writeRejected > 0 && writtenRows === 0) {
+    throw new Error(
+      `Écriture des verdicts d'inondation impossible : ${result.writeRejected} ligne(s) refusée(s) (code ${[...rejectedCodes].join(", ")})`,
+    );
+  }
   result.remaining = Math.max(0, pending.length - done);
+  result.awaitingReobservation = awaiting.size;
 
   // Aucune observation alors qu'il y en avait à faire : la tâche est en panne (ou limitée), on le signale.
   if (result.observed === 0 && pending.length > 0 && (result.failed > 0 || result.rateLimited)) {
@@ -529,5 +683,21 @@ async function runPass({
       `Observation du risque d'inondation impossible : ${result.rateLimited ? "limite de débit (429)" : result.errors.join(", ")}`,
     );
   }
+  // Panne partielle : la moitié des appels (au moins 20) échouent. Ce qui a pu être observé est écrit, mais la
+  // passe n'est pas un succès : la supervision (`cron.stale`) doit le voir au lieu d'un « vert » trompeur.
+  const calls = result.callsObserved + result.callsFailed;
+  if (calls >= FLOOD_DEGRADED_MIN_CALLS && result.callsFailed / calls >= FLOOD_DEGRADED_RATE) {
+    throw new Error(
+      `Observation du risque d'inondation dégradée : ${result.callsFailed} appel(s) en échec sur ${calls} (seuil ${FLOOD_DEGRADED_RATE * 100} %), par code ${formatFailedByCode(result.failedByCode)}${result.circuitOpen ? ", coupe-circuit ouvert" : ""}`,
+    );
+  }
   return result;
+}
+
+/** `network_econnreset=70, http_503=10` : les codes d'échec chiffrés, plus fréquents d'abord. */
+function formatFailedByCode(failedByCode: Record<string, number>): string {
+  return Object.entries(failedByCode)
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .map(([code, count]) => `${code}=${count}`)
+    .join(", ");
 }

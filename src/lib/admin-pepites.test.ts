@@ -495,6 +495,56 @@ describe("getAdminPepites", () => {
     expect(result.independence).toMatchObject({ evaluatedSales: 0 });
   });
 
+  describe("ventes d'inondation en attente de réobservation", () => {
+    const answerByName = (counter: unknown) =>
+      mocks.rpc.mockImplementation(async (name: string) =>
+        name === "admin_count_flood_reobservation_pending" ? counter : rpcAnswer(),
+      );
+
+    it("lit le nombre par la fonction du compteur (jamais la table d'inondation)", async () => {
+      mocks.requireAuth.mockResolvedValue({ isAdmin: true });
+      mocks.tables.auction_sale_pepites = { error: null, rows: [] };
+      answerByName({ data: 531, error: null });
+
+      const result = await getAdminPepites("jeton", NOW);
+
+      expect(mocks.rpc).toHaveBeenCalledWith("admin_count_flood_reobservation_pending", {
+        p_now: NOW.toISOString(),
+      });
+      expect(result.floodReobservationPending).toBe(531);
+      expect(mocks.reads).not.toContain("auction_sale_flood_risk");
+    });
+
+    it.each([
+      [
+        "fonction absente (migration en retard)",
+        { data: null, error: { code: "PGRST202", message: "absente" } },
+      ],
+      ["erreur de la base", { data: null, error: { code: "XX000", message: "boom" } }],
+      ["réponse inattendue", { data: { pas: "un nombre" }, error: null }],
+    ])("%s : non mesuré, la page s'affiche quand même", async (_label, answer) => {
+      mocks.requireAuth.mockResolvedValue({ isAdmin: true });
+      mocks.tables.auction_sale_pepites = { error: null, rows: [] };
+      answerByName(answer);
+
+      const result = await getAdminPepites("jeton", NOW);
+
+      expect(result.floodReobservationPending).toBeNull();
+      expect(result.rows).toHaveLength(1);
+    });
+
+    it("une exception du client est aussi « non mesuré »", async () => {
+      mocks.requireAuth.mockResolvedValue({ isAdmin: true });
+      mocks.tables.auction_sale_pepites = { error: null, rows: [] };
+      mocks.rpc.mockImplementation(async (name: string) => {
+        if (name === "admin_count_flood_reobservation_pending") throw new Error("réseau");
+        return rpcAnswer();
+      });
+
+      expect((await getAdminPepites("jeton", NOW)).floodReobservationPending).toBeNull();
+    });
+  });
+
   it("une lecture du contrôle d'indépendance en échec ne fait pas tomber la page", async () => {
     mocks.requireAuth.mockResolvedValue({ isAdmin: true });
     mocks.rpc.mockResolvedValue(rpcAnswer());
@@ -553,6 +603,7 @@ describe("getAdminPepites", () => {
       mode: "unknown",
       rows: [],
       independence: null,
+      floodReobservationPending: null,
     });
   });
 

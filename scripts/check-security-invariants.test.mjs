@@ -13,7 +13,11 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
+
+// Chaque test lance le script d'invariants sur un dépôt factice (un processus Node, 2,5 à 5,5 s à vide) : sous
+// charge, le délai par défaut de 5 s est trop juste. 20 s pour tout le fichier.
+vi.setConfig({ testTimeout: 20_000, hookTimeout: 20_000 });
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const sandboxes = [];

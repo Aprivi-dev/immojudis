@@ -9,16 +9,22 @@ const DEFAULT_MIN_SALE_URLS = 100;
 // Sales tried, in the order of the sitemap, before concluding that the listed sales do not answer.
 const SALE_CANDIDATES = 3;
 
-// Independent supervision (src/app/api/health/route.ts). The endpoint turns degraded after 45 minutes
-// without a successful `operational-health` run; the smoke test, which runs every 30 minutes, only
-// fails beyond 60 minutes, so that one late 15-minute tick of the scheduler wakes nobody. Any other
-// degradation (an enabled source without a complete publication for 36 hours, no answer from the
-// database) fails at once. The endpoint is public and kept 30 seconds by the CDN
-// (`Cache-Control: public, s-maxage=30`): it does not echo the request id, and the smoke test accepts
-// any cache lifetime up to HEALTH_MAX_CACHE_SECONDS (a longer one would hide an outage).
+// Independent supervision (src/app/api/health/route.ts). Two separate questions are asked of the endpoint:
+// - availability (a failure at once): the route answers, the database answers, the body is readable and
+//   fresh (`checkedAt` at most HEALTH_MAX_CHECKED_AT_AGE_SECONDS old), and the `operational-health` task,
+//   which evaluates every alert, has run within HEALTH_SMOKE_MAX_AGE_MINUTES (the endpoint turns degraded
+//   after 45 minutes; one late 15-minute tick of the scheduler wakes nobody);
+// - freshness of the collection (a failure only beyond a durable threshold): a source late for a few
+//   hours, or for a few days while the owner decides what to do with it, is reported in the result
+//   (`health: "degraded-tolerated"`) but does not turn the job red every time (a test that is always red
+//   tells nobody anything). The job fails when a source has not published for HEALTH_COLLECTION_FAIL_HOURS
+//   hours, when no publication is known at all, or when no source is enabled.
+// The endpoint is public. Vercel rewrites its `Cache-Control` for the client (`public` without
+// `s-maxage`): the header is not checked, the freshness of the answer is proved by `checkedAt`.
 const HEALTH_PATH = "/api/health";
 const HEALTH_SMOKE_MAX_AGE_MINUTES = 60;
-const HEALTH_MAX_CACHE_SECONDS = 60;
+const HEALTH_MAX_CHECKED_AT_AGE_SECONDS = 120;
+const HEALTH_COLLECTION_FAIL_HOURS = 72;
 
 // Court pages (src/app/tribunaux/[slug]/page.tsx). Addresses are the court code lower-cased
 // (`justice_tj_1_93`, the Bobigny court, gives `justice-tj-1-93`); the old address is the court name.
@@ -258,29 +264,15 @@ async function runCheck({ check, origin, fetchImpl }) {
 }
 
 /**
- * True when a `cache-control` value keeps the answer at most HEALTH_MAX_CACHE_SECONDS: `no-store`, or
- * `s-maxage` / `max-age` directives that are all within the limit. Anything else (no lifetime at all,
- * or a longer one) could serve an old verdict and hide an outage.
+ * Independent supervision of `/api/health` (see the constants above). The body is read before any
+ * check, so that a failure message always carries the state the endpoint reported. The route answers
+ * 200 as soon as the database answers, even when `status` is `degraded`; 503 with `available: false`
+ * means the database does not answer. The page only carries ages, counts and thresholds, nothing
+ * sensitive.
  */
-function isShortLivedCacheControl(value) {
-  if (/no-store/i.test(value)) return true;
-  const lifetimes = [...value.matchAll(/(?:^|[\s,])(s-maxage|max-age)=(\d+)/gi)].map((match) =>
-    Number(match[2]),
-  );
-  return lifetimes.length > 0 && lifetimes.every((seconds) => seconds <= HEALTH_MAX_CACHE_SECONDS);
-}
-
-/**
- * Independent supervision: `/api/health` must be `ok`. The route answers 200 as soon as the database
- * answers, even when `status` is `degraded` (stale collection): the verdict is read in the body. 503
- * with `available: false` means the database does not answer. The only degradation tolerated is a
- * `operational-health` run older than 45 minutes but not older than 60 (HEALTH_SMOKE_MAX_AGE_MINUTES),
- * with every enabled source collected recently. The page only carries ages, counts and thresholds,
- * nothing sensitive.
- */
-async function runHealthCheck({ origin, fetchImpl }) {
+async function runHealthCheck({ origin, fetchImpl, now = () => Date.now() }) {
   const requestId = `smoke-${randomUUID()}`;
-  const startedAt = Date.now();
+  const startedAt = now();
   const response = await fetchImpl(new URL(HEALTH_PATH, origin), {
     headers: {
       accept: "application/json",
@@ -290,46 +282,70 @@ async function runHealthCheck({ origin, fetchImpl }) {
     redirect: "follow",
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
+  // Read first: an unreadable body is a finding in itself, never a reason to skip the other checks.
+  let body = null;
+  try {
+    body = await response.json();
+  } catch {
+    body = null;
+  }
   if (response.status !== 200 && response.status !== 503) {
-    await response.body?.cancel?.();
     throw new Error(`${HEALTH_PATH}: statut HTTP ${response.status} au lieu de 200.`);
   }
   if (!(response.headers.get("content-type") ?? "").includes("application/json")) {
     throw new Error(`${HEALTH_PATH}: réponse JSON attendue.`);
   }
-  // A cached answer carries the request id of the first caller: it is not echoed (see the route).
-  if (!isShortLivedCacheControl(response.headers.get("cache-control") ?? "")) {
-    throw new Error(
-      `${HEALTH_PATH}: cache-control sans s-maxage de ${HEALTH_MAX_CACHE_SECONDS} s au plus (ni no-store).`,
-    );
-  }
-  const body = await response.json();
   if (!body || (body.status !== "ok" && body.status !== "degraded")) {
     throw new Error(`${HEALTH_PATH}: contrat de la réponse invalide.`);
   }
-  // Availability and freshness are separate: the route answers 200 while the database answers (the
-  // freshness verdict is in `status` and the ages), and 503 with `available: false` when it does not.
+
+  // Availability. The answer is not cached for long: `checkedAt` proves it was computed just now (a
+  // stale answer served by a CDN, or a frozen function, would hide an outage).
   if (body.available === false) {
     throw new Error(`${HEALTH_PATH}: base de données injoignable (disponibilité : non).`);
   }
-  if (body.status === "ok" && response.status === 200) {
-    return { path: HEALTH_PATH, status: 200, health: "ok", durationMs: Date.now() - startedAt };
+  const checkedAt = Date.parse(body.checkedAt);
+  const checkedAtSkewSeconds = Number.isFinite(checkedAt)
+    ? Math.abs(now() - checkedAt) / 1000
+    : Number.POSITIVE_INFINITY;
+  if (checkedAtSkewSeconds > HEALTH_MAX_CHECKED_AT_AGE_SECONDS) {
+    throw new Error(
+      `${HEALTH_PATH}: réponse périmée ou sans date de calcul (checkedAt : ${body.checkedAt ?? "absent"}, ${HEALTH_MAX_CHECKED_AT_AGE_SECONDS} s au plus).`,
+    );
+  }
+  const age = body.operationalHealth?.ageMinutes;
+  const collection = body.collection ?? {};
+  const summary = `operational-health : ${age ?? "aucun succès"} min, collecte : ${collection.ageHours ?? "aucune"} h, sources activées en retard : ${collection.lateSources ?? "inconnu"}`;
+  if (typeof age !== "number" || age > HEALTH_SMOKE_MAX_AGE_MINUTES) {
+    throw new Error(`${HEALTH_PATH}: état dégradé (${summary}).`);
   }
 
-  const age = body.operationalHealth?.ageMinutes;
-  const lateTickOnly =
-    typeof age === "number" && age <= HEALTH_SMOKE_MAX_AGE_MINUTES && body.collection?.ok === true;
-  if (!lateTickOnly) {
+  // Freshness of the collection: durable thresholds only.
+  const lateSources = typeof collection.lateSources === "number" ? collection.lateSources : 0;
+  const ageHours = typeof collection.ageHours === "number" ? collection.ageHours : null;
+  if (collection.enabledSources === 0) {
+    throw new Error(`${HEALTH_PATH}: fraîcheur : aucune source activée (${summary}).`);
+  }
+  if (ageHours === null && lateSources > 0) {
+    throw new Error(`${HEALTH_PATH}: fraîcheur : aucune publication connue (${summary}).`);
+  }
+  if (ageHours !== null && ageHours > HEALTH_COLLECTION_FAIL_HOURS) {
     throw new Error(
-      `${HEALTH_PATH}: état dégradé (operational-health : ${age ?? "aucun succès"} min, collecte : ${body.collection?.ageHours ?? "aucune"} h, sources activées en retard : ${body.collection?.lateSources ?? "inconnu"}).`,
+      `${HEALTH_PATH}: fraîcheur : une source n'a pas publié depuis plus de ${HEALTH_COLLECTION_FAIL_HOURS} h (${summary}).`,
     );
+  }
+
+  if (body.status === "ok" && response.status === 200) {
+    return { path: HEALTH_PATH, status: 200, health: "ok", durationMs: now() - startedAt };
   }
   return {
     path: HEALTH_PATH,
     status: response.status,
     health: "degraded-tolerated",
     operationalHealthAgeMinutes: age,
-    durationMs: Date.now() - startedAt,
+    collectionAgeHours: ageHours,
+    lateSources,
+    durationMs: now() - startedAt,
   };
 }
 

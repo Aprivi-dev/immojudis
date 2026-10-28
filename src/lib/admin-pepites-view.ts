@@ -191,6 +191,20 @@ export function buildAdminPepitesView(data: AdminPepitesResponse): AdminPepitesV
       table: null,
     },
     {
+      id: "flood",
+      title: "Inondation : ventes en attente de réobservation",
+      paragraphs: [
+        data.floodReobservationPending == null
+          ? "Non mesuré : lecture impossible, ou migration du compteur pas encore appliquée."
+          : `${integer.format(data.floodReobservationPending)} ${data.floodReobservationPending > 1 ? "ventes à venir dont la dernière observation d’inondation a échoué" : "vente à venir dont la dernière observation d’inondation a échoué"} (panne de la source, reprise à la passe suivante). Une position trop imprécise n’est pas comptée ici : c’est un état stable, pas une panne.`,
+      ],
+      alert:
+        data.floodReobservationPending != null && data.floodReobservationPending > 0
+          ? "La règle v2 n’est pas prête côté inondation tant que ce nombre n’est pas nul."
+          : null,
+      table: null,
+    },
+    {
       id: "list",
       title: "Pépites et presque pépites",
       paragraphs: data.rows.length === 0 ? ["Aucune vente à afficher pour le moment."] : [],

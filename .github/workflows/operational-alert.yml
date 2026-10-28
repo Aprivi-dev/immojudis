@@ -50,7 +50,7 @@ concurrency:
 jobs:
   notify:
     name: ${{ inputs.event_type }} · ${{ inputs.severity }} · ${{ inputs.alert_key }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     env:
       ALERT_KEY: ${{ inputs.alert_key }}
