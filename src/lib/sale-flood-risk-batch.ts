@@ -142,6 +142,10 @@ export type SaleFloodRiskBatchResult = {
   communesWritten: number;
   /** Codes de commune refusés par la base (ligne invalide ignorée). */
   communesRejected: number;
+  /** Codes de commune changés mais pas encore recopiés (la recopie est par lots) : repris à la passe suivante. */
+  communesDeferred: number;
+  /** Un verrou ou un délai a arrêté la recopie des communes : ce n'est pas une panne, elle reprend à la passe suivante. */
+  communesBusy: boolean;
   /** L'échéance (`timeBudgetMs`) a arrêté la passe avant la fin de la liste. */
   stoppedByDeadline: boolean;
   /** Échecs par code (`network_econnreset`, `http_503`, `timeout`…), jamais une URL ni une coordonnée. */
@@ -367,6 +371,8 @@ function emptyResult(): SaleFloodRiskBatchResult {
     verdicts: emptyVerdicts(),
     communesWritten: 0,
     communesRejected: 0,
+    communesDeferred: 0,
+    communesBusy: false,
     stoppedByDeadline: false,
     failedByCode: {},
     callsObserved: 0,
@@ -446,6 +452,8 @@ async function runPass({
   if (synced.notMigrated) return { ...result, skipped: "not_migrated" };
   result.communesWritten = synced.written;
   result.communesRejected = synced.rejected;
+  result.communesDeferred = synced.deferred;
+  result.communesBusy = synced.busy;
 
   const [sales, storedRows, communes] = await Promise.all([
     readFloodSales(),
