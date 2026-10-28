@@ -4049,6 +4049,8 @@ export type Database = {
           data_missing_since: string | null;
           details: Json;
           engine_version: string;
+          estimate_engine_kind: string | null;
+          estimate_model_version: string | null;
           evaluated_at: string;
           favorable_streak: number;
           first_pepite_at: string | null;
@@ -4067,6 +4069,8 @@ export type Database = {
           data_missing_since?: string | null;
           details?: Json;
           engine_version: string;
+          estimate_engine_kind?: string | null;
+          estimate_model_version?: string | null;
           evaluated_at?: string;
           favorable_streak?: number;
           first_pepite_at?: string | null;
@@ -4085,6 +4089,8 @@ export type Database = {
           data_missing_since?: string | null;
           details?: Json;
           engine_version?: string;
+          estimate_engine_kind?: string | null;
+          estimate_model_version?: string | null;
           evaluated_at?: string;
           favorable_streak?: number;
           first_pepite_at?: string | null;

@@ -399,6 +399,9 @@ export function buildPepiteRow({
         ? startingPriceEur
         : null,
     input_estimate_computed_at: facts?.estimateComputedAt ?? null,
+    // Version du modèle de valeur et moteur de l'estimation lue (migration 20261108140000).
+    estimate_model_version: facts?.estimateModelVersion ?? null,
+    estimate_engine_kind: facts?.estimateEngineKind ?? null,
     evaluated_at: now.toISOString(),
     first_pepite_at: stored?.firstPepiteAt ?? (stability.isPepite ? now.toISOString() : null),
   };
@@ -467,6 +470,17 @@ export function buildNotApplicableRow(
 function isMissingDatabaseObject(error: unknown): boolean {
   const code = (error as { code?: unknown } | null)?.code;
   return code === "PGRST202" || code === "PGRST205" || code === "42883" || code === "42P01";
+}
+
+/** Colonne inconnue de la base ou du cache de schéma PostgREST (migration pas encore appliquée). */
+function isUnknownColumn(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  return code === "PGRST204" || code === "42703";
+}
+
+function withoutEstimateVersions(row: PepiteTableInsert): PepiteTableInsert {
+  const { estimate_model_version: _model, estimate_engine_kind: _engine, ...legacy } = row;
+  return legacy;
 }
 
 function errorMessage(error: unknown): string {
@@ -870,15 +884,22 @@ export async function runSalePepitesBatch({
   // Écriture par paquets. Un paquet refusé est réessayé par moitiés pour isoler la ligne fautive : les autres
   // sont écrites, la fautive est consignée (identifiant de la vente et code d'erreur, jamais un montant).
   let written = 0;
+  // Code déployé avant la migration 20261108140000 : les deux colonnes de version de l'estimation n'existent pas
+  // encore. L'écriture est retentée sans elles (rien n'est perdu d'autre que les versions archivées).
+  let legacyColumns = false;
   const writeRows = async (rows: PepiteTableInsert[]): Promise<"missing" | void> => {
     const { error } = await supabaseAdmin
       .from("auction_sale_pepites")
-      .upsert(rows, { onConflict: "sale_id" });
+      .upsert(legacyColumns ? rows.map(withoutEstimateVersions) : rows, { onConflict: "sale_id" });
     if (!error) {
       written += rows.length;
       return;
     }
     if (isMissingDatabaseObject(error)) return "missing";
+    if (!legacyColumns && isUnknownColumn(error)) {
+      legacyColumns = true;
+      return writeRows(rows);
+    }
     if (rows.length === 1) {
       fail(
         1,

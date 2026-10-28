@@ -27,6 +27,8 @@ const db = vi.hoisted(() => ({
   estimateArgs: new Map<string, unknown>(),
   /** Règle de la dernière évaluation et verdict d'inondation reçu, par vente. */
   floodArgs: new Map<string, { flood: unknown; ruleVersion: unknown }>(),
+  /** La base ne connaît pas encore les colonnes de version de l'estimation (migration 20261108140000). */
+  legacyColumns: false,
   /** Détails et motifs stockés des pépites publiées, par vente (lus pendant le gel). */
   storedDetails: new Map<string, { details: unknown; reason_codes: string[] }>(),
   /** Verdicts d'inondation stockés ; `null` : la table n'existe pas (migration non appliquée). */
@@ -148,6 +150,9 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
     db.touched.push(this.table);
     if (this.upsertRows) {
       if (db.upsertError) return { data: null, error: db.upsertError };
+      if (db.legacyColumns && this.upsertRows.some((row) => "estimate_model_version" in row)) {
+        return { data: null, error: { code: "PGRST204", message: "Could not find the column" } };
+      }
       if (this.upsertRows.some((row) => db.upsertRejects.has(row.sale_id as string))) {
         return { data: null, error: { code: "23514", message: "check constraint (80000)" } };
       }
@@ -311,6 +316,8 @@ function facts(overrides: Row = {}) {
     venueType: "notary",
     startingPriceColumnEur: 80_000,
     estimateComputedAt: "2026-10-30T08:00:00.000Z",
+    estimateModelVersion: "model-2026-10",
+    estimateEngineKind: "hybrid_lightgbm",
     saleDate: FUTURE,
     occupancy: "libre",
     conditionStatus: "unknown",
@@ -368,6 +375,7 @@ beforeEach(() => {
   db.floodRows = [];
   db.communeRows = [];
   db.storedDetails = new Map();
+  db.legacyColumns = false;
   vi.unstubAllEnvs();
 });
 
@@ -1364,5 +1372,61 @@ describe("n° 30 : obsolescence par clé de régime", () => {
     expect(Object.keys(current.regimeByKey ?? {})).toEqual(
       expect.arrayContaining(["tribunal", "notary_auction", "notary_online"]),
     );
+  });
+});
+
+describe("n° 25 : version du modèle de valeur et moteur de l'estimation dans la pépite", () => {
+  it("écrit la version du modèle et le moteur de l'estimation lue, et le détail de la mesure", async () => {
+    setSales(["a"]);
+
+    await runSalePepitesBatch({ now: NOW });
+
+    const row = db.upserts.flat()[0];
+    expect(row).toMatchObject({
+      estimate_model_version: "model-2026-10",
+      estimate_engine_kind: "hybrid_lightgbm",
+      input_estimate_computed_at: "2026-10-30T08:00:00.000Z",
+    });
+    expect(row.details).toMatchObject({ feesDefault: false });
+    expect(row.details).toHaveProperty("chanceSample");
+    expect(row.details).toHaveProperty("chanceWilsonLow");
+  });
+
+  it("une vente sans estimation garde ces colonnes nulles", () => {
+    const row = buildPepiteRow({
+      saleId: "a",
+      evaluation: favorableEvaluation(),
+      stability: {
+        isPepite: false,
+        favorableStreak: 0,
+        frozenAt: null,
+        lastFavorableAt: null,
+        dataMissingSince: null,
+        codes: [],
+      },
+      facts: null,
+      stored: undefined,
+      versions: VERSIONS,
+      startingPriceEur: 80_000,
+      now: NOW,
+    });
+    expect(row.estimate_model_version).toBeNull();
+    expect(row.estimate_engine_kind).toBeNull();
+  });
+
+  it("code déployé avant la migration : retente sans les deux colonnes, sans rien perdre d'autre", async () => {
+    setSales(["a", "b"]);
+    db.legacyColumns = true;
+
+    const result = await runSalePepitesBatch({ now: NOW });
+
+    expect(result).toMatchObject({ evaluated: 2, failed: 0, skipped: null });
+    const rows = db.upserts.flat();
+    expect(rows.map((row) => row.sale_id).sort()).toEqual(["a", "b"]);
+    for (const row of rows) {
+      expect(row).not.toHaveProperty("estimate_model_version");
+      expect(row).not.toHaveProperty("estimate_engine_kind");
+      expect(row).toHaveProperty("rule_version");
+    }
   });
 });

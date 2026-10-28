@@ -719,6 +719,21 @@ describe("buildPepiteInput", () => {
       expect(v1.evaluation.missed).not.toContain("fees_known");
     });
 
+    it("garde la version du modèle de valeur et le moteur de l'estimation lue", () => {
+      const withModel = source({
+        estimate: {
+          row: row({ model_version: "model-2026-10", engine_kind: "comparable_ensemble" }),
+          context: context(storedEstimate()),
+        },
+      });
+      const { facts } = buildPepiteInput(withModel);
+      expect(facts.estimateModelVersion).toBe("model-2026-10");
+      expect(facts.estimateEngineKind).toBe("comparable_ensemble");
+      const none = buildPepiteInput(source({ estimate: null })).facts;
+      expect(none.estimateModelVersion).toBeNull();
+      expect(none.estimateEngineKind).toBeNull();
+    });
+
     it("tribunal : les frais préalables du cahier non lus restent admis, mais sont signalés", () => {
       const { input, evaluation } = evaluateSaleForPepite(source());
       expect(input.fees).toEqual({ preliminary: "defaut", negotiation: null, advertising: null });

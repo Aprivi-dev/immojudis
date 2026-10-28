@@ -42,6 +42,8 @@ export type PepiteEstimateRow = {
   value_p90_eur: number | null;
   segment: string | null;
   engine_kind: string | null;
+  /** Version du modèle de valeur de l'estimation (archivée avec l'évaluation, n° 25). */
+  model_version?: string | null;
   computed_at: string | null;
 };
 
@@ -69,6 +71,9 @@ export type PepiteSaleFacts = {
   startingPriceColumnEur: number | null;
   /** `computed_at` de l'estimation utilisée ; `null` sans estimation. */
   estimateComputedAt: string | null;
+  /** Version du modèle de valeur et moteur de l'estimation utilisée ; `null` sans estimation. */
+  estimateModelVersion: string | null;
+  estimateEngineKind: string | null;
   saleDate: string | null;
   occupancy: string;
   conditionStatus: string;
@@ -268,6 +273,8 @@ export function buildPepiteInput(
         ? sale.starting_price_eur
         : null,
     estimateComputedAt: row?.computed_at ?? null,
+    estimateModelVersion: row?.model_version ?? null,
+    estimateEngineKind: row?.engine_kind ?? null,
     saleDate: sale.sale_date ?? null,
     occupancy: hypotheses.occupation.case,
     conditionStatus: renovation.status,
