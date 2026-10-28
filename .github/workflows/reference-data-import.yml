@@ -22,6 +22,8 @@ on:
           - climate
           - rents
           - tension
+          # Not part of `all`: the table comes with migration 20261108120200 (INSEE commune changes).
+          - commune_history
       dry_run:
         description: "Download and parse without writing to Supabase."
         required: false
