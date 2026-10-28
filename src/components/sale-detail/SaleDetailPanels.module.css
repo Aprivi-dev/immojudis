@@ -2,7 +2,8 @@
   max-width: 1360px;
   margin: 0 auto;
   padding: 0 16px 48px;
-  scroll-margin-top: 96px;
+  /* Le début de la zone se place à 96 px du haut : `html` réserve déjà --sale-sticky-offset. */
+  scroll-margin-top: calc(96px - var(--sale-sticky-offset));
 }
 
 .panel {
@@ -11,7 +12,7 @@
 }
 
 .panel:focus-visible {
-  outline: 3px solid rgb(156 100 43 / 40%);
+  outline: 3px solid var(--gold-soft);
   outline-offset: 5px;
   border-radius: var(--radius);
 }
@@ -62,7 +63,7 @@
   border-radius: var(--radius);
   background: #ffffff;
   box-shadow: 0 7px 24px rgb(19 34 56 / 4%);
-  scroll-margin-top: 110px;
+  scroll-margin-top: 8px;
 }
 
 .disclosure > summary {
@@ -245,7 +246,7 @@
 }
 .metricEyebrow {
   display: block;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--ink-soft);
   text-transform: uppercase;

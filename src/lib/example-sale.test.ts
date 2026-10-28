@@ -143,3 +143,37 @@ describe("example photo hosted by the site", () => {
     expect(gallery[0]?.url).toBe(media[0]?.url);
   });
 });
+
+describe("example aligned with the home page", () => {
+  const bordeaux = () => getListingPublicInformation(getExampleSaleRecords().bordeaux.sale);
+
+  it("says what the home page says: occupant declared (PV p. 3), lease not produced", () => {
+    const info = bordeaux();
+    const byId = (id: string) => info.items.find((item) => item.id === id);
+    expect(byId("occupancy_status")?.value).toBe("Occupé");
+    expect(byId("occupancy_status")?.sources[0]?.page).toBe(3);
+    // Le bail, son loyer et son échéance restent à compléter : « bail non produit ».
+    for (const id of ["lease_status", "rent_eur", "lease_end_date"]) {
+      expect(byId(id)?.status, id).toBe("missing");
+    }
+  });
+
+  it("lists the documents the price already cites instead of « Manquante »", () => {
+    const info = bordeaux();
+    for (const id of ["documents", "conditions_sale", "pv_description", "diagnostics_documents"]) {
+      expect(info.items.find((item) => item.id === id)?.status, id).toBe("sourced");
+    }
+  });
+
+  it("keeps a realistic number of pieces of information to complete (not 25)", () => {
+    const info = bordeaux();
+    expect(info.missingCount + info.toConfirmCount).toBeLessThanOrEqual(10);
+    expect(info.sourcedCount).toBeGreaterThanOrEqual(30);
+  });
+
+  it("keeps the home page ceiling whatever the occupancy status says", () => {
+    const { sale } = getExampleSaleRecords().bordeaux;
+    expect(sale.occupancy_status).toBe("occupied");
+    expect(exampleHeadlineFigures().ceiling).toBe(135_000);
+  });
+});

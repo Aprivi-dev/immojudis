@@ -15,7 +15,7 @@ const tribunal = { id: "a", sale_venue_type: "tribunal" } as unknown as AuctionS
 const notary = { id: "b", sale_venue_type: "notary" } as unknown as AuctionSale;
 const state = { id: "c", sale_venue_type: "state" } as unknown as AuctionSale;
 const unknownVenue = { id: "d", sale_venue_type: "unknown" } as unknown as AuctionSale;
-const FREE_LINE = "Gratuit, sans carte bancaire · 3 fiches détaillées par mois";
+const FREE_LINE = "Gratuit, sans carte bancaire · 3 déblocages par mois";
 
 describe("listingAccessLine", () => {
   it("promet un compte gratuit au visiteur sans compte", () => {

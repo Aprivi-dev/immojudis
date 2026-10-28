@@ -111,6 +111,8 @@ describe("land report orchestration", () => {
       },
     );
 
+    // La couche TRI a changé de sens (appartenance à la zone d'un scénario) : version 1.1 du rapport.
+    expect(report.version).toBe("land-report-v1.1");
     expect(report.planning).toEqual(planning);
     expect(report.risks).toEqual(validRisks);
     expect(report.risks.findings).toHaveLength(1);

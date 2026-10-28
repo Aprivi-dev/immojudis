@@ -1,5 +1,6 @@
 import { track } from "@vercel/analytics";
 import { isAudienceOptedOut } from "@/lib/audience-opt-out";
+import { LOGIN_REASONS } from "@/lib/navigation";
 
 /**
  * Mesure du parcours : événements agrégés, sans identifiant de personne ni cookie, envoyés à
@@ -26,14 +27,24 @@ export const PRODUCT_EVENT_NAMES = [
   "checkout_returned",
   "opening_notification_requested",
   "fees_simulator_used",
+  "home_example_used",
+  "pepite_block_viewed",
+  "pepite_filter_used",
 ] as const;
 
 export type ProductEventName = (typeof PRODUCT_EVENT_NAMES)[number];
 
+/**
+ * D'où vient l'inscription : la raison du détour par la page de connexion (`LOGIN_REASONS`, dont
+ * « exemple » pour l'annonce exemple) ou `direct` (page ouverte sans raison). Valeurs fermées.
+ */
+export const SIGNUP_ENTRIES = [...LOGIN_REASONS, "direct"] as const;
+export type SignupEntry = (typeof SIGNUP_ENTRIES)[number];
+
 export type ProductEventProperties = {
-  signup_submitted: undefined;
+  signup_submitted: { entry: SignupEntry };
   signup_confirmed: undefined;
-  alert_created: { email_consent: boolean };
+  alert_created: { email_consent: boolean; pepite_only?: boolean };
   favorite_added: undefined;
   sample_report_viewed: undefined;
   offers_viewed: undefined;
@@ -41,15 +52,19 @@ export type ProductEventProperties = {
   checkout_returned: { status: "success" | "cancelled" };
   opening_notification_requested: undefined;
   fees_simulator_used: undefined;
+  home_example_used: undefined;
+  /** `locked` : noms des critères seuls (visiteur, compte Découverte) ; `detail` : détail ouvert. */
+  pepite_block_viewed: { access: "locked" | "detail" };
+  pepite_filter_used: undefined;
 };
 
 type PropertySpec = { kind: "boolean" } | { kind: "enum"; values: readonly string[] };
 
 /** Propriétés admises par événement, avec leur domaine de valeurs. */
 const PROPERTY_SPECS: { [N in ProductEventName]: Record<string, PropertySpec> } = {
-  signup_submitted: {},
+  signup_submitted: { entry: { kind: "enum", values: SIGNUP_ENTRIES } },
   signup_confirmed: {},
-  alert_created: { email_consent: { kind: "boolean" } },
+  alert_created: { email_consent: { kind: "boolean" }, pepite_only: { kind: "boolean" } },
   favorite_added: {},
   sample_report_viewed: {},
   offers_viewed: {},
@@ -57,6 +72,9 @@ const PROPERTY_SPECS: { [N in ProductEventName]: Record<string, PropertySpec> } 
   checkout_returned: { status: { kind: "enum", values: ["success", "cancelled"] } },
   opening_notification_requested: {},
   fees_simulator_used: {},
+  home_example_used: {},
+  pepite_block_viewed: { access: { kind: "enum", values: ["locked", "detail"] } },
+  pepite_filter_used: {},
 };
 
 type TrackArguments<N extends ProductEventName> = ProductEventProperties[N] extends undefined

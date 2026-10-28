@@ -79,7 +79,7 @@ export async function buildLandReport(
           completeCoverage: false,
         };
   return {
-    version: "land-report-v1",
+    version: "land-report-v1.1",
     generatedAt,
     planning,
     risks,
@@ -113,7 +113,7 @@ export async function getCachedLandReport(
   input: LandLocationInput,
   { refresh = false }: { refresh?: boolean } = {},
 ): Promise<LandReport> {
-  const key = JSON.stringify(["land-report-v1", input]);
+  const key = JSON.stringify(["land-report-v1.1", input]);
   const entry = cache.get(key);
   if (!refresh && entry && entry.expiresAt > Date.now()) return entry.report;
   const running = pending.get(key);

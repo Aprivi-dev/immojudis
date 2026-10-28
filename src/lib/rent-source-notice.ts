@@ -46,7 +46,7 @@ export function rentSourceDetail(
   if (!reference || !reference.source.startsWith("anil_")) return null;
   const updated = formatRentSourceDate(reference.sourceUpdatedOn);
   return (
-    `Carte des loyers${reference.vintage ? ` ${reference.vintage}` : ""} (loyers d’annonce, charges comprises)` +
+    `Carte des loyers${reference.vintage ? ` ${reference.vintage}` : ""} (loyers d’annonce, charges comprises, indicateurs expérimentaux, logements non meublés)` +
     `${updated ? `, mise à jour du ${updated}` : ""}, Licence Ouverte 2.0. ` +
     "Rendement calculé par Immojudis, sous sa seule responsabilité : ni l’ANIL, ni SeLoger, ni leboncoin n’en sont responsables."
   );

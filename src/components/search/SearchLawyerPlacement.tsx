@@ -25,7 +25,8 @@ export type SearchLawyerPlacementProps = {
 };
 
 /**
- * Reserves the fourth-card slot for a geographically scoped lawyer campaign.
+ * Sponsored slot for a geographically scoped lawyer campaign, shown at the end of the results list
+ * on the first page, once it holds at least four sales (see `SearchResultsList`).
  *
  * The slot is an advertisement paid for by the firm (or a free trial of that paid offer) and is
  * labelled « Publicité · Sponsorisé »; it never changes the order of the listings.

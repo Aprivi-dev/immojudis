@@ -347,7 +347,7 @@ describe("organization structured data", () => {
     expect(organization).toMatchObject({
       "@type": "Organization",
       name: "Immojudis",
-      logo: { url: "https://immojudis.com/brand/immojudis-mark-transparent.png" },
+      logo: { url: "https://immojudis.com/icon-512.png" },
     });
     expect(website).toMatchObject({
       "@type": "WebSite",

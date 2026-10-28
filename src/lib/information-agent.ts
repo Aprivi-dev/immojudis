@@ -831,6 +831,7 @@ async function approveAndSendMission({
       apiKey: config.apiKey,
       idempotencyKey: informationAgentIdempotencyKey(approval.case_id),
       fetchImpl,
+      category: "agent",
       message: {
         from: config.from,
         to: edited.recipient_email,

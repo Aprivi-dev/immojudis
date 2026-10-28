@@ -32,6 +32,9 @@ Le dépôt réunit deux briques :
 
 - **Node 24** (`>=24.15.0 <25`, voir [`.nvmrc`](.nvmrc) — `nvm use`) et **npm 11** (`>=11.18.0 <12`) :
   `.npmrc` active `engine-strict=true`, donc `npm install` / `npm ci` refusent une autre version de Node.
+  Le npm livré avec Node peut être plus ancien : `npm install --global npm@11.18.0` (version épinglée par la CI
+  et par `vercel.json`). `npm run check:versions` vérifie que `.nvmrc`, `.node-version`, `engines`, la CI,
+  `vercel.json` et l'image Playwright de la CI concordent.
 - Un projet **Supabase** (URL + clé publishable)
 
 ## Démarrage rapide
@@ -51,8 +54,10 @@ npm run dev:ready -- --warm-path /sales/<uuid>
 
 ## Variables d'environnement
 
-Toutes les variables sont lues par un seul module, [`src/lib/env.ts`](src/lib/env.ts)
-(validé par zod : valeurs nettoyées, une valeur vide vaut « non définie »).
+Le circuit commun de lecture est [`src/lib/env.ts`](src/lib/env.ts) (validé par zod : valeurs nettoyées, une
+valeur vide vaut « non définie »), mais plusieurs modules lisent encore `process.env` directement. La liste des
+variables facultatives, de leurs valeurs par défaut et des constantes qui n'en sont pas (pépites, inondation,
+loyers, essai) est dans [`docs/reference/variables-environnement.md`](docs/reference/variables-environnement.md).
 
 | Variable                               | Requis | Description                                                                                                                                                                                                                                                                                                          |
 | -------------------------------------- | :----: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -63,7 +68,7 @@ Toutes les variables sont lues par un seul module, [`src/lib/env.ts`](src/lib/en
 | `CRON_SECRET`                          |   ✅   | Secret des routes Vercel Cron et de `POST /api/pipeline/revalidate-sale` (invalidation du cache d'une fiche par le pipeline)                                                                                                                                                                                         |
 | `SITE_URL`                             |   ✅   | **Nom canonique.** Origine canonique publique (`https://immojudis.com`). Replis : `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_APP_URL`, `APP_URL`. `VERCEL_URL` n'est plus acceptée seule en production (garde-fou de build)                                                                                                |
 | `RESEND_API_KEY`                       |   ✅   | Clé serveur Resend pour envoyer les alertes email consenties et les emails aux avocats référencés                                                                                                                                                                                                                    |
-| `ALERT_EMAIL_FROM`                     |   ✅   | Expéditeur vérifié Resend, par exemple `Immojudis <alertes@immojudis.com>`                                                                                                                                                                                                                                            |
+| `ALERT_EMAIL_FROM`                     |   ✅   | Expéditeur vérifié Resend, par exemple `Immojudis <alertes@immojudis.com>`                                                                                                                                                                                                                                           |
 | `NEXT_PUBLIC_LEGAL_*`                  |   ✅   | Mentions légales : `ENTITY_NAME`, `ENTITY_FORM`, `ENTITY_ADDRESS`, `REGISTRATION`, `PUBLICATION_DIRECTOR`, `CONTACT_EMAIL`, `CONTACT_PHONE`, `MEDIATOR_NAME`, `MEDIATOR_ADDRESS`, `MEDIATOR_WEBSITE`. Le build de production échoue si l'une manque                                                                  |
 | `ADMIN_MFA_REQUIRED`                   |   ✅   | Doit valoir `true` en production (second facteur obligatoire pour l'administration). Le build de production échoue sinon                                                                                                                                                                                             |
 | `ALLOW_INCOMPLETE_LAUNCH_CONFIG`       |   ➖   | **Échappatoire temporaire.** `true` transforme en avertissements très visibles les erreurs du build de production sur les mentions légales et `ADMIN_MFA_REQUIRED` (jamais l'absence d'origine canonique, toujours bloquante). Le déploiement n'est alors pas conforme : à retirer dès que les valeurs sont fournies |
@@ -121,6 +126,7 @@ Mapbox configurés pour l'application.
 | `npm run env:check:prod`                 | Vérifie les variables nécessaires aux API prod + migrations                                                     |
 | `npm run db:migrate`                     | Applique les migrations Supabase en attente (`SUPABASE_DB_URL`, `POSTGRES_URL_NON_POOLING` ou `POSTGRES_URL`)   |
 | `npm run check:schema-drift`             | Vérifie que le schéma Supabase correspond exactement aux migrations versionnées                                 |
+| `npm run check:versions`                 | Vérifie la cohérence des versions de Node, de npm et de l'image Playwright (CI)                                 |
 | `npm run ops:health-scheduler:configure` | Chiffre dans Vault l'URL et le secret du contrôle de santé toutes les 15 minutes                                |
 | `npm run valuation:publish`              | Publie explicitement les modèles de valorisation                                                                |
 | `npm run release:prepare`                | **ÉCRIT EN PRODUCTION** : applique les migrations, reconfigure Vault, publie les modèles (confirmation requise) |
@@ -141,9 +147,9 @@ immojudis/
 ├─ services/data-pipeline/    # Pipeline Python (scraping → Supabase) — voir son README
 ├─ supabase/migrations/       # Migrations SQL versionnées
 ├─ sql/                       # Scripts d'amorçage à exécuter dans Supabase (vercel_app_setup.sql)
-├─ docs/                      # Documentation déploiement / ops
+├─ docs/                      # Documentation (index : docs/README.md) : déploiement, ops, runbooks, référence
 ├─ scripts/                   # Outils de dev (dev-ready)
-└─ .github/workflows/         # CI : web (typecheck + lint) · pipeline (pytest)
+└─ .github/workflows/         # CI (ci.yml) et workflows d'exploitation, de collecte et de migrations
 ```
 
 ## Base de données (Supabase)
@@ -194,6 +200,25 @@ puis `npm run build` dans l'étape de compilation.
 
 À chaque push / PR sur `main` ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) :
 
-- **Web** : `tsc --noEmit` + `npm run lint` + `npm run test` + `npm run build` (Node 24)
-- **Pipeline** : `ruff check` + `pytest` (Python 3.12)
-- **Migrations** : versions uniques, et sur une PR, chaque migration ajoutée doit être plus récente que la dernière de `main` (`npm run check:migrations -- --base-ref=origin/main` en local, après `git fetch origin main`)
+Les travaux tournent en parallèle ; le travail agrégé « Web (typecheck + lint) » échoue si l'un des travaux web
+échoue ou est annulé.
+
+- **Collecte unique** : `npm run check:manual-collection` (aucune planification concurrente de la collecte)
+- **Web (Node 24)** :
+  - typecheck : `tsc --noEmit` ;
+  - lint : `npm run lint` + `npm run knip` ;
+  - tests : `npm run test` + `npm run test:security-invariants` ;
+  - audit : `npm audit --omit=dev --audit-level=high` + `npm run check:secrets` ;
+  - build : `npm run build` + `npm run build:budgets` (budgets de rendu serveur, de JavaScript et de médias)
+- **Pipeline** (Python 3.12, base Postgres de test) : `ruff check` + `pytest` + `pip-audit` des fichiers de
+  dépendances ; le travail nommé « Data pipeline (Python 3.11) » n'est plus qu'une porte historique de la
+  protection de branche
+- **Base de données** (Supabase local) : versions de migrations uniques et, sur une PR, chaque migration ajoutée
+  plus récente que la dernière de `main` (`npm run check:migrations -- --base-ref=origin/main` en local, après
+  `git fetch origin main`), rejeu depuis zéro, types générés à jour (non bloquant), dérive de schéma, test de
+  concurrence des quotas, tests pgTAP (`supabase test db`), catalogue public en HTTP, intégration de l'agent
+  d'information
+- **Parcours investisseur** : `npm run test:e2e` (Playwright, image officielle du conteneur)
+- **Revue des dépendances** (PR seulement) : échec dès une gravité haute
+
+Les vérifications avant de livrer du code sont dans [`CLAUDE.md`](CLAUDE.md).

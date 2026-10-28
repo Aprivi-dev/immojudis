@@ -26,6 +26,7 @@ repris : la fiche publique ne les affiche pas (prix de réserve du vendeur).
 from __future__ import annotations
 
 import json
+import math
 import re
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
@@ -40,6 +41,9 @@ DISPLAY_SCHEMA_VERSION = "property_characteristics_v1"
 DOCUMENTS_ACCESS_NOTE = (
     "Pièces consultables sur le site de la vente après connexion, agrément de l'office notarial et visite du bien."
 )
+# Un prix plancher lu dans du texte libre n'est retenu qu'entre ces parts de la mise à prix.
+FLOOR_PRICE_MIN_SHARE = 0.30
+FLOOR_PRICE_MAX_SHARE = 1.0
 # Plage plausible d'un taux d'honoraires de négociation (part du prix de référence).
 NEGOTIATION_FEE_RATE_MIN = 0.01
 NEGOTIATION_FEE_RATE_MAX = 0.20
@@ -53,6 +57,19 @@ def round_negotiation_fee_rate(rate: float) -> float:
     """Taux d'honoraires de négociation arrondi au demi-point (0,005), moitiés vers le haut."""
     steps = (Decimal(repr(float(rate))) / NEGOTIATION_FEE_RATE_STEP).quantize(Decimal(1), rounding=ROUND_HALF_UP)
     return float(steps * NEGOTIATION_FEE_RATE_STEP)
+
+
+def bounded_negotiation_fee_rate(value: object) -> float | None:
+    """Taux publié par la page opérateur : ``None`` s'il n'est pas un nombre fini de 1 % à 20 %.
+
+    Même plage que la voie API (``sale_conditions``). Un booléen n'est pas un taux, et ``inf`` ou ``nan``
+    ne doivent ni lever d'exception ni faire perdre le reste de la page.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return None
+    if not NEGOTIATION_FEE_RATE_MIN <= value <= NEGOTIATION_FEE_RATE_MAX:
+        return None
+    return round_negotiation_fee_rate(value)
 
 
 GROUPS = {
@@ -338,6 +355,20 @@ def floor_price_from_text(value: object | None) -> int | None:
     return int(digits) if digits else None
 
 
+def plausible_floor_price(floor: int | None, starting_price: object | None) -> int | None:
+    """Le prix plancher seulement s'il vaut de 30 % de la mise à prix à moins de 100 % de celle-ci.
+
+    Le texte de la faculté de baisse est libre : « jusqu'à 1 euros » ou un montant sans rapport avec la
+    mise à prix n'est pas un prix plancher. Sans mise à prix connue, rien n'est retenu.
+    """
+    start = number(starting_price)
+    if floor is None or not start or start <= 0:
+        return None
+    if start * FLOOR_PRICE_MIN_SHARE <= floor < start * FLOOR_PRICE_MAX_SHARE:
+        return floor
+    return None
+
+
 def virtual_tours(*values: object | None) -> list[str]:
     urls: list[str] = []
     for value in values:
@@ -482,7 +513,9 @@ def sale_conditions(transaction_type: str | None, transaction: dict[str, Any]) -
             "starting_price_eur": number(transaction.get("miseAPrix")),
             "starting_price_nature": nature,
             "price_reduction": clean_text(transaction.get("detailFaculteBaisse")),
-            "floor_price_eur": floor_price_from_text(transaction.get("detailFaculteBaisse")),
+            "floor_price_eur": plausible_floor_price(
+                floor_price_from_text(transaction.get("detailFaculteBaisse")), transaction.get("miseAPrix")
+            ),
             "deposit_eur": number(transaction.get("consignation")),
             "deposit_payment": known(transaction.get("seancePaiement")),
             "deposit_transfer_terms": clean_text(transaction.get("detailVirement")),
@@ -913,11 +946,7 @@ def parse_immo_interactif_page(html: str, expected_id: str | int) -> dict[str, A
             "rate_schedule": {"cumulative": schedule.get("cumulative"), "brackets": brackets} if brackets else None,
         }),
         "seller_type": clean_text(seller.get("type")),
-        "negotiation_fee_rate": (
-            round_negotiation_fee_rate(fee_rate) or None
-            if isinstance(fee_rate, (int, float)) and fee_rate > 0
-            else None
-        ),
+        "negotiation_fee_rate": bounded_negotiation_fee_rate(fee_rate),
         "negotiation_fee_payer": clean_text(ad.get("negotiationFeeOwner")),
         "photos_count": len([item for item in ad.get("pictures") or [] if isinstance(item, dict) and item.get("fileUrl")]),
     }

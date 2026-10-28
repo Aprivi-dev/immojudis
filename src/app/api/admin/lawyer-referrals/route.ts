@@ -39,9 +39,10 @@ async function handleGET(request: Request) {
 
 async function handlePATCH(request: Request) {
   try {
+    const authToken = bearerTokenFromRequest(request);
     const input = adminLawyerReferralUpdateInputSchema.parse(await request.json());
     const response = await updateAdminLawyerReferralRequest({
-      authToken: bearerTokenFromRequest(request),
+      authToken,
       input,
     });
     return NextResponse.json(response);

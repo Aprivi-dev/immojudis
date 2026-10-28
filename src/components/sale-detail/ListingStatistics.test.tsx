@@ -313,6 +313,33 @@ describe("ListingStatistics", () => {
     ).toBeGreaterThan(0);
   });
 
+  it("dessine les parts sans fausse barre de progression, intervalle compris", async () => {
+    const { container } = renderStatistics();
+
+    await screen.findByText(/50 % \(24–76 %\) · 5/);
+    // Une part n'est pas l'avancement d'une tâche : le texte voisin porte la valeur et l'intervalle.
+    expect(screen.queryAllByRole("progressbar")).toHaveLength(0);
+    const tracks = container.querySelectorAll("[class*=progressTrack]");
+    expect(tracks.length).toBeGreaterThan(0);
+    for (const track of tracks) expect(track.getAttribute("aria-hidden")).toBe("true");
+    expect(container.querySelectorAll("[class*=progressInterval]").length).toBeGreaterThan(0);
+  });
+
+  it("dit « Échantillon insuffisant » pour une statistique de prix absente", async () => {
+    mocks.fetchPrices.mockResolvedValue({
+      ...prices,
+      tribunal: {
+        ...prices.tribunal,
+        metrics: { ...prices.tribunal.metrics, medianStartingPriceEur: null },
+      },
+    });
+    const { container } = renderStatistics({ premium: true });
+
+    await screen.findAllByText("Mise à prix médiane");
+    expect(container.textContent).toContain("Échantillon insuffisant");
+    expect(container.textContent).not.toContain("Prix non communiqué");
+  });
+
   it("masque les parts par type de bien sous 20 observations, effectifs conservés", async () => {
     renderStatistics();
 

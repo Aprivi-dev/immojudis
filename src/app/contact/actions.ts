@@ -66,6 +66,7 @@ export async function sendContactMessage(
               replyTo: email.replyTo,
               subject: email.subject,
               text: email.text,
+              tags: [{ name: "category", value: "contact" }],
             });
             return { error };
           }

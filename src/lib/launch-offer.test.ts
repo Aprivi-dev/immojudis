@@ -65,6 +65,11 @@ describe("textes de l'essai gratuit à l'inscription", () => {
       "Votre essai gratuit de l’offre Analyse s’est terminé le 30 octobre 2026 à 10:00 : votre compte est revenu à l’offre Découverte. Pour continuer avec l’offre Analyse, il faudra y souscrire ; l’état de l’abonnement est indiqué ci-dessous.",
     );
     expect(signupTrialStatusText({ trialDenied: true })).toBe(SIGNUP_TRIAL_DENIED_TEXT);
+    expect(
+      signupTrialStatusText({ trialEndsAt: "2026-12-01T13:05:00.000Z", trialExtension: true }),
+    ).toBe(
+      "Essai gratuit prolongé jusqu’au 1er décembre 2026 à 14:05 ; rien ne devient payant automatiquement. À son terme, votre compte revient à l’offre Découverte, gratuite.",
+    );
     expect(signupTrialStatusText({})).toBeNull();
   });
 });
@@ -78,7 +83,7 @@ describe("ligne d'accès commune (FREE_ACCESS_LINE)", () => {
   it("bascule sur les textes de l'offre quand elle est active", () => {
     expect(freeAccessLine({ launchOffer: true })).toBe(LAUNCH_OFFER_VISITOR_TEXT);
     expect(freeAccessLine({ launchOffer: true, signedIn: true })).toBe(LAUNCH_OFFER_ACCOUNT_TEXT);
-    expect(freeAccessLine({ launchOffer: true })).not.toContain("fiches détaillées par mois");
+    expect(freeAccessLine({ launchOffer: true })).not.toContain("déblocages par mois");
   });
 });
 

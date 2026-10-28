@@ -322,7 +322,12 @@ export function BillingActions({
           ) : null}
         </div>
       ) : launchOfferPlan ? (
-        <LaunchOfferNotice audience="account" />
+        // Pendant l'essai, la souscription n'est pas proposée (décision du 27/10/2026) ; tant qu'elle est
+        // fermée, la demande « Me prévenir de l'ouverture » l'est : elle sert justement à la fin de l'essai.
+        <LaunchOfferNotice
+          audience="account"
+          showOpeningRequest={offer.status === "ready" && !offer.open}
+        />
       ) : !userId && !loading && launch.active ? (
         <LaunchOfferNotice audience="visitor" />
       ) : checkingAccount || offer.status === "loading" || (!userId && launch.pending) ? (
@@ -494,10 +499,18 @@ export function BillingActions({
 /**
  * Essai gratuit à l'inscription : à la place du bouton d'achat, pour un compte en essai ou un
  * visiteur. Aucun paiement n'est proposé ; la mention donne les règles de l'essai (textes de
- * `src/lib/launch-offer.ts`). Après l'essai, le compte voit le parcours habituel (souscription, ou
- * « Me prévenir de l'ouverture » tant qu'elle est fermée).
+ * `src/lib/launch-offer.ts`). Un compte en essai peut demander à être prévenu de l'ouverture tant
+ * que la souscription est fermée (`showOpeningRequest`). Après l'essai, le compte voit le parcours
+ * habituel (souscription, ou « Me prévenir de l'ouverture » tant qu'elle est fermée).
  */
-function LaunchOfferNotice({ audience }: { audience: "account" | "visitor" }) {
+function LaunchOfferNotice({
+  audience,
+  showOpeningRequest = false,
+}: {
+  audience: "account" | "visitor";
+  /** Compte en essai, souscription fermée : « Me prévenir de l'ouverture ». */
+  showOpeningRequest?: boolean;
+}) {
   return (
     <div
       role="status"
@@ -505,6 +518,7 @@ function LaunchOfferNotice({ audience }: { audience: "account" | "visitor" }) {
       className="rounded-lg border border-gold/30 bg-gold/10 p-3 text-sm leading-relaxed text-brand-navy"
     >
       <p>{launchOfferText(audience)}</p>
+      {showOpeningRequest ? <OfferOpeningRequest className="mt-3" /> : null}
       {audience === "visitor" ? (
         <Link
           href={loginPathWithRedirect("/sales", { reason: "offre" })}

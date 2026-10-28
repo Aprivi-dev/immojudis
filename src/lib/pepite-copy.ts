@@ -13,4 +13,7 @@ export const PEPITE_METHOD_LINK_LABEL = "Comment repérons-nous les pépites ?";
 /** Ancre du bloc « Pourquoi cette pépite » de la fiche. */
 export const PEPITE_ANCHOR = "pepite";
 export const PEPITE_FILTER_LABEL = "Pépites seulement";
-export const PEPITE_ALERT_LABEL = "Seulement les pépites";
+/** Même libellé que le filtre de recherche : une alerte « Pépites seulement » enregistre ce filtre. */
+/** Motif interne enregistré par les alertes « Pépites seulement » (jamais affiché tel quel : voir `PEPITE_LABEL`). */
+export const PEPITE_ALERT_REASON = "pépite";
+export const PEPITE_ALERT_LABEL = PEPITE_FILTER_LABEL;

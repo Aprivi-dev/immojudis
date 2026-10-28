@@ -144,7 +144,7 @@ export function MarketEvidence({
           : `${sampleCount} vente${sampleCount > 1 ? "s" : ""} comparable${sampleCount > 1 ? "s" : ""}`;
 
   return (
-    <div id="market" className="min-w-0 scroll-mt-36">
+    <div id="market" className="min-w-0 scroll-mt-2">
       <h2 className="font-display text-4xl font-medium text-brand-navy sm:text-5xl">
         Marché local
       </h2>

@@ -49,19 +49,25 @@ function page(path, { canonical, robotsMeta, jsonLd, links = "" } = {}) {
 }
 
 /** The body of /api/health, `ok` unless a field is overridden. */
-function healthBody({ operationalMinutes = 7, collectionHours = 5, lateSources } = {}) {
+function healthBody({
+  operationalMinutes = 7,
+  collectionHours = 5,
+  lateSources,
+  checkedAt = new Date().toISOString(),
+  enabledSources = 7,
+} = {}) {
   const operationalOk = operationalMinutes !== null && operationalMinutes <= 45;
   const late = lateSources ?? (collectionHours === null || collectionHours > 36 ? 1 : 0);
   const collectionOk = late === 0;
   return {
     status: operationalOk && collectionOk ? "ok" : "degraded",
-    checkedAt: "2026-10-20T12:00:00.000Z",
+    checkedAt,
     operationalHealth: { ageMinutes: operationalMinutes, maxMinutes: 45, ok: operationalOk },
     collection: {
       ageHours: collectionHours,
       maxHours: 36,
       ok: collectionOk,
-      enabledSources: 7,
+      enabledSources,
       lateSources: late,
     },
   };
@@ -117,9 +123,9 @@ function fakeSite({
     if (path === "/api/health") {
       return {
         status: health.status,
-        // As the route answers: kept 30 s by the CDN, request id not echoed.
+        // As Vercel serves it: `s-maxage` is rewritten away for the client, request id not echoed.
         headers: makeHeaders("application/json", {
-          "cache-control": "public, s-maxage=30",
+          "cache-control": "public",
           "x-request-id": null,
         }),
         json: async () => health.body,
@@ -331,11 +337,23 @@ describe("production smoke test, supervision and court pages", () => {
     });
 
     const stale = fakeSite({
-      health: { status: 200, body: healthBody({ operationalMinutes: 3, collectionHours: 50 }) },
+      health: { status: 200, body: healthBody({ operationalMinutes: 3, collectionHours: 80 }) },
     });
     await expect(run(stale, { indexing: "closed" })).rejects.toThrow(
-      "/api/health: état dégradé (operational-health : 3 min, collecte : 50 h, sources activées en retard : 1).",
+      "/api/health: fraîcheur : une source n'a pas publié depuis plus de 72 h (operational-health : 3 min, collecte : 80 h, sources activées en retard : 1).",
     );
+  });
+
+  it("tolerates a source late for less than 72 hours but reports it in the result", async () => {
+    const site = fakeSite({
+      health: { status: 200, body: healthBody({ operationalMinutes: 3, collectionHours: 50 }) },
+    });
+    const report = await run(site, { indexing: "closed" });
+    expect(report.checks.find((check) => check.path === "/api/health")).toMatchObject({
+      health: "degraded-tolerated",
+      collectionAgeHours: 50,
+      lateSources: 1,
+    });
   });
 
   it("fails with the availability reason when the route says the database does not answer", async () => {
@@ -382,24 +400,72 @@ describe("production smoke test, supervision and court pages", () => {
     );
   });
 
-  it("fails at once when an enabled source is late, even with a recent operational-health", async () => {
+  it("fails when an enabled source has not published for more than 72 hours", async () => {
     const site = fakeSite({
-      health: { status: 503, body: healthBody({ operationalMinutes: 3, collectionHours: 40 }) },
+      health: { status: 200, body: healthBody({ operationalMinutes: 3, collectionHours: 73 }) },
     });
     await expect(run(site, { indexing: "closed" })).rejects.toThrow(
-      "/api/health: état dégradé (operational-health : 3 min, collecte : 40 h, sources activées en retard : 1).",
+      "/api/health: fraîcheur : une source n'a pas publié depuis plus de 72 h",
     );
   });
 
-  it("fails when one enabled source is late while the others are fresh (the oldest decides)", async () => {
-    const site = fakeSite({
+  it("fails when no publication is known, or when no source is enabled", async () => {
+    const never = fakeSite({
+      health: { status: 200, body: healthBody({ operationalMinutes: 3, collectionHours: null }) },
+    });
+    await expect(run(never, { indexing: "closed" })).rejects.toThrow(
+      "/api/health: fraîcheur : aucune publication connue",
+    );
+    const none = fakeSite({
       health: {
-        status: 503,
-        body: healthBody({ operationalMinutes: 3, collectionHours: 50, lateSources: 1 }),
+        status: 200,
+        body: healthBody({ operationalMinutes: 3, collectionHours: null, enabledSources: 0 }),
+      },
+    });
+    await expect(run(none, { indexing: "closed" })).rejects.toThrow(
+      "/api/health: fraîcheur : aucune source activée",
+    );
+  });
+
+  it("fails when the answer is not fresh (checkedAt too old, in the future, or absent)", async () => {
+    for (const checkedAt of [
+      new Date(Date.now() - 5 * 60_000).toISOString(),
+      new Date(Date.now() + 5 * 60_000).toISOString(),
+      undefined,
+      "n'importe quoi",
+    ]) {
+      const site = fakeSite({
+        health: { status: 200, body: { ...healthBody(), checkedAt } },
+      });
+      await expect(run(site, { indexing: "closed" })).rejects.toThrow(
+        "/api/health: réponse périmée ou sans date de calcul",
+      );
+    }
+  });
+
+  it("keeps the state of the endpoint in the message even when the body is read first", async () => {
+    const site = fakeSite({
+      health: { status: 200, body: healthBody({ operationalMinutes: 90, collectionHours: 100 }) },
+    });
+    await expect(run(site, { indexing: "closed" })).rejects.toThrow(
+      "/api/health: état dégradé (operational-health : 90 min, collecte : 100 h, sources activées en retard : 1).",
+    );
+  });
+
+  it("fails when /api/health answers 200 with a body that is not JSON", async () => {
+    const site = fakeSite({
+      overrides: {
+        "/api/health": (headers) => ({
+          status: 200,
+          headers: headers("application/json"),
+          json: async () => {
+            throw new SyntaxError("Unexpected token <");
+          },
+        }),
       },
     });
     await expect(run(site, { indexing: "closed" })).rejects.toThrow(
-      "sources activées en retard : 1",
+      "/api/health: contrat de la réponse invalide.",
     );
   });
 
@@ -422,26 +488,8 @@ describe("production smoke test, supervision and court pages", () => {
     );
   });
 
-  it.each(["public, s-maxage=3600", "public, max-age=600", "public", ""])(
-    "fails when /api/health can be kept longer than a minute (%j)",
-    async (cacheControl) => {
-      const site = fakeSite({
-        overrides: {
-          "/api/health": (headers) => ({
-            status: 200,
-            headers: headers("application/json", { "cache-control": cacheControl }),
-            json: async () => healthBody(),
-          }),
-        },
-      });
-      await expect(run(site, { indexing: "closed" })).rejects.toThrow(
-        "/api/health: cache-control sans s-maxage de 60 s au plus (ni no-store).",
-      );
-    },
-  );
-
-  it.each(["no-store", "public, s-maxage=30", "public, s-maxage=60"])(
-    "accepts a short-lived /api/health (%s) that does not echo the request id",
+  it.each(["public", "public, s-maxage=3600", "public, max-age=600", "no-store", ""])(
+    "does not check the cache-control of /api/health (%j): Vercel rewrites it, checkedAt proves the freshness",
     async (cacheControl) => {
       const site = fakeSite({
         overrides: {

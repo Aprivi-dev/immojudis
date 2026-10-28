@@ -1,7 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
-  resolveEmailAlertDeliveryConfig,
+  resolveTransactionalEmailConfig,
   sendResendEmail,
   type ResendEmailMessage,
 } from "@/lib/email-alerts";
@@ -85,7 +85,7 @@ export async function sendPaymentFailedNotice({
   invoiceId: string;
   nextAttemptAt?: number | null;
 }): Promise<"sent" | "skipped" | "failed"> {
-  const config = resolveEmailAlertDeliveryConfig();
+  const config = resolveTransactionalEmailConfig();
   if (!config.configured || !config.apiKey || !config.from || !config.appUrl) return "skipped";
   try {
     const { data, error } = await supabaseAdmin.auth.admin.getUserById(userId);
@@ -102,6 +102,7 @@ export async function sendPaymentFailedNotice({
         appUrl: config.appUrl,
         nextAttemptAt,
       }),
+      category: "billing",
     });
     return "sent";
   } catch (error) {
@@ -167,7 +168,7 @@ export async function sendTrialEndingNotice({
   subscriptionId: string;
   trialEnd: number;
 }): Promise<"sent" | "skipped" | "failed"> {
-  const config = resolveEmailAlertDeliveryConfig();
+  const config = resolveTransactionalEmailConfig();
   if (!config.configured || !config.apiKey || !config.from || !config.appUrl) return "skipped";
   try {
     const { data, error } = await supabaseAdmin.auth.admin.getUserById(userId);
@@ -184,6 +185,7 @@ export async function sendTrialEndingNotice({
         appUrl: config.appUrl,
         trialEnd,
       }),
+      category: "billing",
     });
     return "sent";
   } catch (error) {
@@ -267,7 +269,7 @@ export async function sendCancellationConfirmationNotice({
   accessEndsAt: number;
   trialing?: boolean;
 }): Promise<"sent" | "skipped" | "failed"> {
-  const config = resolveEmailAlertDeliveryConfig();
+  const config = resolveTransactionalEmailConfig();
   if (!config.configured || !config.apiKey || !config.from || !config.appUrl) return "skipped";
   try {
     const { data, error } = await supabaseAdmin.auth.admin.getUserById(userId);
@@ -286,6 +288,7 @@ export async function sendCancellationConfirmationNotice({
         accessEndsAt,
         trialing,
       }),
+      category: "billing",
     });
     return "sent";
   } catch (error) {

@@ -18,7 +18,7 @@ concurrency:
 jobs:
   manual-collection:
     name: Single-scheduler data collection invariant
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -26,10 +26,14 @@ jobs:
         with:
           node-version-file: .node-version
       - run: npm run check:manual-collection
+      - name: Pinned versions agree (Node, npm, Playwright image)
+        # .nvmrc, .node-version, engines, the npm pins of the workflows and of vercel.json, and the Playwright
+        # image of the e2e job against @playwright/test (scripts/check-versions.mjs). No install needed.
+        run: npm run check:versions
 
   typecheck:
     name: Web — typecheck
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -45,7 +49,7 @@ jobs:
 
   lint:
     name: Web — lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -64,7 +68,7 @@ jobs:
 
   unit:
     name: Web — unit tests and security invariants
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -82,7 +86,7 @@ jobs:
 
   audit:
     name: Web — dependency audit and secret scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -102,7 +106,7 @@ jobs:
 
   build:
     name: Web — production build and budgets
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -132,7 +136,7 @@ jobs:
     # Aggregate gate under the historical check name, so branch protection that
     # requires "Web (typecheck + lint)" keeps working now that the jobs run in parallel.
     name: Web (typecheck + lint)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     needs: [typecheck, lint, unit, audit, build]
     # `always()`: without it a failed or cancelled dependency leaves this job "skipped", and a
@@ -159,7 +163,7 @@ jobs:
     # gate on the real pipeline job (as `web` does above) until it is removed from the required
     # checks in the repository settings, then delete this job.
     name: Data pipeline (Python 3.11)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     needs: [pipeline]
     # `always()`: without it a failed pipeline leaves this gate "skipped", which branch
@@ -178,7 +182,7 @@ jobs:
 
   pipeline:
     name: Data pipeline (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -262,7 +266,7 @@ jobs:
 
   database:
     name: Supabase migrations + pgTAP
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -354,10 +358,12 @@ jobs:
 
   e2e:
     name: Investor journey (Playwright)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Image officielle de Playwright (même version que @playwright/test) : navigateurs et paquets
     # système déjà installés. `playwright install --with-deps` téléchargeait 142 Mo depuis le miroir
     # Ubuntu, parfois à 40 Ko/s (26/10/2026 : quatre échecs avant le moindre test).
+    # Montée de @playwright/test : changer l'étiquette ET l'empreinte de l'image avec le paquet ; `npm run
+    # check:versions` (job « Single-scheduler data collection invariant ») échoue tant qu'elles diffèrent.
     container:
       image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:47b510dd9230bf0b9bfc9b20102241e577ea7a99334ab4c3ca19f19770e9b8ea
       options: --user 1001
@@ -373,11 +379,20 @@ jobs:
       - run: npm ci
       - name: Run cross-browser journeys and accessibility checks
         run: npm run test:e2e
+      # Traces (first retry) and screenshots (failures) otherwise vanish with the container.
+      - name: Keep the Playwright traces and screenshots of a failed run
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: playwright-results
+          path: test-results/
+          retention-days: 7
+          if-no-files-found: ignore
 
   dependency-review:
     if: github.event_name == 'pull_request'
     name: Dependency review
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read

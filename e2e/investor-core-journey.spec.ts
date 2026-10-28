@@ -165,7 +165,7 @@ test("inscription → recherche → rapport → paiement → partage", async ({ 
       .or(
         page.getByRole("listitem").filter({ hasText: "Enchère plafond ou offre plafond chiffrée" }),
       )
-      .getByText("Pour 3 ventes par mois"),
+      .getByText("3 déblocages par mois"),
   ).toBeVisible();
   await page.getByRole("button", { name: "Souscrire à Analyse" }).click();
   await expect(page.getByRole("heading", { name: "Récapitulatif avant paiement" })).toBeVisible();

@@ -15,6 +15,7 @@ export async function GET(request: Request) {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     await enforceUserRateLimit({
       userId: auth.userId,
+      context,
       bucketKey: "v1.tribunal-auction-summaries",
       ...RATE_LIMIT_POLICIES.compute,
     });

@@ -15,6 +15,12 @@ const state = vi.hoisted(() => ({
   upserts: [] as Row[][],
   /** Alertes dont l'écriture des correspondances échoue (erreur PostgREST, pas une Error). */
   failingAlerts: new Set<string>(),
+  /** Ventes dont la ligne est verrouillée en écriture : `upsert_user_alert_matches` les saute sans attendre. */
+  lockedSaleIds: new Set<string>(),
+  /** Fonction `upsert_user_alert_matches` absente (migration en retard) : repli sur l'upsert de la table. */
+  upsertFunctionMissing: false,
+  /** Appels de `upsert_user_alert_matches` (le reste de `rpcCalls` ne compte que les autres fonctions). */
+  matchRpcCalls: 0,
   /** Liste publique des pépites (`list_public_pepite_sale_ids`) et les lectures faites par le client de service. */
   pepiteIds: [] as string[],
   pepiteError: null as unknown,
@@ -24,7 +30,36 @@ const state = vi.hoisted(() => ({
 
 function fakeClient() {
   return {
-    async rpc(fn: string) {
+    async rpc(fn: string, args?: { p_rows?: Row[] }) {
+      if (fn === "upsert_user_alert_matches") {
+        state.matchRpcCalls += 1;
+        if (state.upsertFunctionMissing) {
+          return {
+            data: null,
+            error: { code: "PGRST202", message: "Could not find the function" },
+          };
+        }
+        const sent = args?.p_rows ?? [];
+        state.upserts.push(sent);
+        if (state.failingAlerts.has(String(sent[0]?.alert_id))) {
+          return {
+            data: null,
+            error: { message: "canceling statement due to statement timeout", code: "57014" },
+          };
+        }
+        // Les ventes verrouillées sont sautées, les autres reviennent avec leur identifiant.
+        return {
+          data: sent
+            .filter((row) => !state.lockedSaleIds.has(String(row.sale_id)))
+            .map((row) => ({
+              ...row,
+              id: `match-${String(row.sale_id)}`,
+              read_at: null,
+              dismissed_at: null,
+            })),
+          error: null,
+        };
+      }
       state.rpcCalls.push(fn);
       return state.pepiteError
         ? { data: null, error: state.pepiteError }
@@ -140,6 +175,8 @@ const rents = vi.hoisted(() => ({
   calls: [] as string[][],
   sessions: 0,
   references: {} as Record<string, unknown>,
+  /** « ANIL indisponible » : la lecture de la carte des loyers a échoué. */
+  unavailable: false,
 }));
 vi.mock("@/lib/rent-reference.server", () => ({
   createRentLookupSession: () => {
@@ -149,10 +186,11 @@ vi.mock("@/lib/rent-reference.server", () => ({
         rents.calls.push(sales.map((sale) => sale.id));
         return (sale: { id: string }) => rents.references[sale.id] ?? null;
       },
+      unavailable: () => rents.unavailable,
     };
   },
 }));
-const notified = vi.hoisted(() => ({ saleIds: [] as string[] }));
+const notified = vi.hoisted(() => ({ saleIds: [] as string[], suppressedSaleIds: [] as string[] }));
 vi.mock("@/lib/alert-notifications", () => ({
   createAlertNotificationsForMatches: async ({
     matches,
@@ -161,6 +199,14 @@ vi.mock("@/lib/alert-notifications", () => ({
   }) => {
     notified.saleIds.push(...matches.map((match) => match.saleId));
     return { notificationCount: matches.length };
+  },
+  suppressAlertNotificationsForMatches: async ({
+    matches,
+  }: {
+    matches: Array<{ saleId: string }>;
+  }) => {
+    notified.suppressedSaleIds.push(...matches.map((match) => match.saleId));
+    return { suppressedCount: matches.length };
   },
 }));
 
@@ -197,6 +243,9 @@ describe("smart alert batch", () => {
     state.updates = [];
     state.upserts = [];
     state.failingAlerts = new Set();
+    state.lockedSaleIds = new Set();
+    state.upsertFunctionMissing = false;
+    state.matchRpcCalls = 0;
     state.pepiteIds = [];
     state.pepiteError = null;
     state.rpcCalls = [];
@@ -205,6 +254,8 @@ describe("smart alert batch", () => {
     rents.sessions = 0;
     rents.references = {};
     notified.saleIds = [];
+    notified.suppressedSaleIds = [];
+    rents.unavailable = false;
     delete process.env.ALERT_RENT_BASIS_SWITCH_AT;
     resetPepiteSaleIdsForAlertsCache();
   });
@@ -450,6 +501,36 @@ describe("smart alert batch", () => {
       ).toEqual(["sale-new", "sale-old"]);
       // Celle qui existait avec le loyer départemental reste notifiée, comme avant.
       expect(notified.saleIds).toEqual(["sale-old"]);
+      // La tue est consignée (notification « cancelled ») pour bloquer toute notification ultérieure.
+      expect(notified.suppressedSaleIds).toEqual(["sale-new"]);
+    });
+
+    it("lecture de l'ANIL en échec : l'alerte à critère de rendement n'avance pas et ne consomme pas la fenêtre", async () => {
+      process.env.ALERT_RENT_BASIS_SWITCH_AT = hoursAgo(1);
+      arrange(alertRow(1, { min_yield_pct: 6, last_evaluated_at: hoursAgo(5) }));
+      rents.unavailable = true;
+
+      const result = await runSmartAlertEvaluationBatch();
+
+      expect(result.failedUserCount).toBe(1);
+      expect(state.updates).toEqual([]);
+      expect(state.upserts).toEqual([]);
+      expect(notified.saleIds).toEqual([]);
+      expect(notified.suppressedSaleIds).toEqual([]);
+
+      // Une fois l'ANIL revenue, l'alerte est toujours dans la fenêtre silencieuse (sa date n'a pas bougé).
+      rents.unavailable = false;
+      await runSmartAlertEvaluationBatch();
+      expect(notified.suppressedSaleIds).toEqual(["sale-new"]);
+      expect(notified.saleIds).toEqual(["sale-old"]);
+    });
+
+    it("une alerte sans critère de rendement ne dépend pas de la lecture de l'ANIL", async () => {
+      arrange(alertRow(1, { last_evaluated_at: hoursAgo(5) }));
+      rents.unavailable = true;
+      const result = await runSmartAlertEvaluationBatch();
+      expect(result.failedUserCount).toBe(0);
+      expect(state.updates).toHaveLength(1);
     });
 
     it("ne tait rien sans le marqueur, hors des 48 heures, ni pour une alerte déjà évaluée depuis", async () => {
@@ -520,6 +601,9 @@ describe("alertes en échec isolées", () => {
     state.updates = [];
     state.upserts = [];
     state.failingAlerts = new Set();
+    state.lockedSaleIds = new Set();
+    state.upsertFunctionMissing = false;
+    state.matchRpcCalls = 0;
     vi.spyOn(console, "error").mockImplementation(() => undefined);
   });
 
@@ -545,6 +629,42 @@ describe("alertes en échec isolées", () => {
     // L'alerte en échec garde son ancienne date d'évaluation : le passage suivant la reprend.
     expect(state.updates.map((update) => update.id).sort()).toEqual(["a", "c"]);
     expect(() => assertSmartAlertBatchComplete(result)).not.toThrow();
+  });
+
+  it("une vente verrouillée en écriture est sautée sans attente : l'alerte est reprise à la passe suivante", async () => {
+    state.salesPool = [{ id: "sale-1" }, { id: "sale-2" }];
+    state.userAlerts = sameUser(["a", "b"]);
+    state.lockedSaleIds = new Set(["sale-2"]);
+
+    const result = await runSmartAlertEvaluationBatch();
+
+    // Les deux alertes ont écrit la vente libre, et aucune n'est marquée évaluée (leur date n'avance pas).
+    expect(state.upserts.flat().map((row) => row.sale_id)).toEqual([
+      "sale-1",
+      "sale-2",
+      "sale-1",
+      "sale-2",
+    ]);
+    expect(result.failedAlertCount).toBe(2);
+    expect(result.alertFailures[0].error).toBe(
+      "1 correspondance(s) différée(s) : vente verrouillée ou disparue (55P03)",
+    );
+    expect(state.updates).toHaveLength(0);
+    // Un seul appel par alerte et par lot : aucun rejeu qui attendrait le verrou.
+    expect(state.matchRpcCalls).toBe(2);
+  });
+
+  it("fonction d'écriture absente (migration en retard) : repli sur l'upsert de la table", async () => {
+    state.salesPool = [{ id: "sale-1" }];
+    state.userAlerts = sameUser(["a"]);
+    state.upsertFunctionMissing = true;
+
+    const result = await runSmartAlertEvaluationBatch();
+
+    expect(result.failedAlertCount).toBe(0);
+    expect(state.matchRpcCalls).toBe(1);
+    expect(state.upserts.flat().map((row) => row.sale_id)).toEqual(["sale-1"]);
+    expect(state.updates.map((update) => update.id)).toEqual(["a"]);
   });
 
   it("journalise le message et le code d'une erreur qui n'est pas une Error", async () => {
@@ -634,6 +754,9 @@ describe("alertes « Seulement les pépites »", () => {
     state.updates = [];
     state.upserts = [];
     state.failingAlerts = new Set();
+    state.lockedSaleIds = new Set();
+    state.upsertFunctionMissing = false;
+    state.matchRpcCalls = 0;
     state.pepiteIds = [];
     state.pepiteError = null;
     state.rpcCalls = [];

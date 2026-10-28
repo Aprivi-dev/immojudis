@@ -1,7 +1,8 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
-import type { FloodPositionInput, StoredFloodRisk } from "@/lib/flood-risk";
+import type { FloodPositionInput, FloodProbePoint, StoredFloodRisk } from "@/lib/flood-risk";
+import { isMissingDatabaseObject } from "@/lib/postgrest-errors";
 
 /**
  * Lectures et écritures du verdict d'inondation par vente : table privée `auction_sale_flood_risk` (service_role
@@ -45,12 +46,67 @@ export type FloodSale = {
   longitude: number | null;
   locationPrecision: string | null;
   qualityFlags: string[];
+  /** Type du résultat de la BAN (`raw_payload.geocode.type`) ; `null` : pas de résultat BAN. */
+  geocodeType: string | null;
+  /** Score du résultat de la BAN (`raw_payload.geocode.score`) ; `null` : inconnu. */
+  geocodeScore: number | null;
+  /** Centroïdes des parcelles trouvées (résumé cadastral du pipeline) ; vide : aucune ou une seule. */
+  parcelCentroids: FloodProbePoint[];
 };
 
-/** Table ou fonction inconnue de la base : la migration n'est pas encore appliquée (déploiement échelonné). */
-export function isMissingDatabaseObject(error: unknown): boolean {
-  const code = (error as { code?: unknown } | null)?.code;
-  return code === "PGRST202" || code === "PGRST205" || code === "42883" || code === "42P01";
+/** Les seuls champs de `raw_payload` lus (jamais l'objet entier) : résultat de la BAN et centroïdes des parcelles. */
+const POSITION_EXTRAS_SELECT =
+  "id,geocode_type:raw_payload->geocode->>type,geocode_score:raw_payload->geocode->>score,parcels:raw_payload->cadastre_location->resolution->parcels";
+
+type PositionExtras = Pick<FloodSale, "geocodeType" | "geocodeScore" | "parcelCentroids">;
+
+function parcelCentroidsFrom(value: unknown): FloodProbePoint[] {
+  if (!Array.isArray(value)) return [];
+  const points: FloodProbePoint[] = [];
+  for (const parcel of value) {
+    const centroid = (parcel as { centroid?: unknown } | null)?.centroid;
+    if (!Array.isArray(centroid) || centroid.length !== 2) continue;
+    const [latitude, longitude] = centroid;
+    if (typeof latitude === "number" && typeof longitude === "number") {
+      points.push({ latitude, longitude });
+    }
+  }
+  return points;
+}
+
+/**
+ * Type et score du résultat de la BAN et centroïdes des parcelles des ventes à venir, par identifiant. Ils
+ * décident si une position « rue » ou « adresse » compte pour précise (`classifyFloodPosition`) : sans eux, la
+ * clé de position serait celle d'un point précis alors que le point est un lieu-dit.
+ */
+async function readPositionExtras(): Promise<Map<string, PositionExtras>> {
+  const extras = new Map<string, PositionExtras>();
+  let after: string | null = null;
+  for (;;) {
+    if (extras.size >= MAX_ROWS) {
+      throw new Error("Trop de ventes à venir pour le contrôle d'inondation.");
+    }
+    // Curseur sur `id` (comme `readFloodSales`) : un décalage relirait et ferait trier toutes les lignes
+    // précédentes, avec leur `raw_payload`, à chaque page de chaque passe.
+    let query = supabaseAdmin
+      .from("auction_sales")
+      .select(POSITION_EXTRAS_SELECT)
+      .eq("status", "upcoming");
+    if (after) query = query.gt("id", after);
+    const { data, error } = await query.order("id", { ascending: true }).limit(PAGE_SIZE);
+    if (error) throw error;
+    for (const row of data ?? []) {
+      const score = row.geocode_score == null ? NaN : Number(row.geocode_score);
+      extras.set(row.id, {
+        geocodeType: typeof row.geocode_type === "string" ? row.geocode_type : null,
+        geocodeScore: Number.isFinite(score) ? score : null,
+        parcelCentroids: parcelCentroidsFrom(row.parcels),
+      });
+    }
+    const last = data?.at(-1)?.id ?? null;
+    if ((data?.length ?? 0) < PAGE_SIZE || !last) return extras;
+    after = last;
+  }
 }
 
 /** Verdicts stockés ; `null` : la table n'existe pas encore. */
@@ -112,17 +168,27 @@ export async function readSaleCommunes(): Promise<Map<string, SaleCommune> | nul
   throw new Error("Trop de communes de ventes stockées.");
 }
 
-/** Les ventes en ligne, avec leur position (vue de la fiche, rôle de service), par pages de 1 000. */
+/**
+ * Les ventes À VENIR, avec leur position (vue de la fiche, rôle de service). Le filtre de statut est fait dans la
+ * base (le traitement d'inondation et la règle de pépite v2 ne regardent que les ventes à venir) et la lecture se fait
+ * par curseur sur `id` (`id > dernier`, par pages de 1 000), sans décalage.
+ */
 export async function readFloodSales(): Promise<FloodSale[]> {
+  const extras = await readPositionExtras();
   const sales: FloodSale[] = [];
-  for (let from = 0; from < MAX_ROWS; from += PAGE_SIZE) {
-    const { data, error } = await supabaseAdmin
+  let after: string | null = null;
+  for (;;) {
+    if (sales.length >= MAX_ROWS) {
+      throw new Error("Trop de ventes en ligne pour le contrôle d'inondation.");
+    }
+    let query = supabaseAdmin
       .from("v_auction_sales_app")
       .select(
         "id, updated_at, status, sale_date, latitude, longitude, location_precision, quality_flags",
       )
-      .order("id", { ascending: true })
-      .range(from, from + PAGE_SIZE - 1);
+      .eq("status", "upcoming");
+    if (after) query = query.gt("id", after);
+    const { data, error } = await query.order("id", { ascending: true }).limit(PAGE_SIZE);
     if (error) throw error;
     for (const row of data ?? []) {
       if (!row.id) continue;
@@ -137,11 +203,15 @@ export async function readFloodSales(): Promise<FloodSale[]> {
         qualityFlags: Array.isArray(row.quality_flags)
           ? row.quality_flags.filter((flag): flag is string => typeof flag === "string")
           : [],
+        geocodeType: extras.get(row.id)?.geocodeType ?? null,
+        geocodeScore: extras.get(row.id)?.geocodeScore ?? null,
+        parcelCentroids: extras.get(row.id)?.parcelCentroids ?? [],
       });
     }
-    if ((data?.length ?? 0) < PAGE_SIZE) return sales;
+    const last = data?.at(-1)?.id ?? null;
+    if ((data?.length ?? 0) < PAGE_SIZE || !last) return sales;
+    after = last;
   }
-  throw new Error("Trop de ventes en ligne pour le contrôle d'inondation.");
 }
 
 /** La position d'une vente telle que `flood-risk.ts` la lit. */
@@ -155,6 +225,9 @@ export function floodPositionOf(
     precision: sale.locationPrecision,
     flags: sale.qualityFlags,
     communeInsee: commune?.communeInsee ?? null,
+    geocodeType: sale.geocodeType,
+    geocodeScore: sale.geocodeScore,
+    parcelCentroids: sale.parcelCentroids,
   };
 }
 

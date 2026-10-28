@@ -2,7 +2,7 @@ import "server-only";
 import { serverEnv, type EnvSource } from "@/lib/env";
 import {
   PEPITE_LATEST_RULE_VERSION,
-  PEPITE_V1_RULE_VERSION,
+  PEPITE_V1_1_RULE_VERSION,
   type PepiteRuleVersion,
 } from "@/lib/pepite-policy";
 
@@ -10,7 +10,8 @@ import {
  * Interrupteur serveur de la règle `pepite-v2` (critère éliminatoire du risque d'inondation).
  *
  * `PEPITE_RULE_V2_ENABLED` : absente ou autre chose que `true` / `1` -> FERMÉ (défaut) : la règle APPLIQUÉE reste
- * `pepite-v1` (le traitement des pépites ne lit pas la table d'inondation, ne change aucun résultat), pendant que
+ * `pepite-v1.1` (la règle d'origine corrigée le 27/10/2026 ; `pepite-v1`, remplacée, reste rejouable). Le
+ * traitement des pépites ne lit alors pas la table d'inondation, pendant que
  * le traitement d'inondation (`/api/cron/sale-flood-risk`) s'alimente et se calibre. Une fois la calibration faite,
  * la bascule est un seul geste : définir `PEPITE_RULE_V2_ENABLED=true` dans l'environnement du serveur et
  * redéployer ; le retour arrière est le même geste inverse (voir `docs/operations/planification.md`).
@@ -26,7 +27,7 @@ export function pepiteV2EnabledFromEnv(env: EnvSource = process.env): boolean {
   return value === "true" || value === "1";
 }
 
-/** La version de la règle appliquée : `pepite-v2` si l'interrupteur est ouvert, sinon `pepite-v1`. */
+/** La version de la règle appliquée : `pepite-v2` si l'interrupteur est ouvert, sinon `pepite-v1.1`. */
 export function activePepiteRuleVersion(env: EnvSource = process.env): PepiteRuleVersion {
-  return pepiteV2EnabledFromEnv(env) ? PEPITE_LATEST_RULE_VERSION : PEPITE_V1_RULE_VERSION;
+  return pepiteV2EnabledFromEnv(env) ? PEPITE_LATEST_RULE_VERSION : PEPITE_V1_1_RULE_VERSION;
 }

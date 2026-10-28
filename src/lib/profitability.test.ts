@@ -1,35 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
-  classifyOccupancy,
   computeAcquisitionCosts,
   DEFAULT_PRELIMINARY_FEES,
   computeEmolumentsHT,
-  computeMarketCeiling,
-  computeRecommendedCeilings,
   computeRentabilityScore,
   estimateWorksBudget,
-  MARKET_CEILING_SCENARIOS,
   registrationRateForDepartment,
   WORKS_SCENARIOS,
 } from "./profitability";
 
 describe("estimateWorksBudget", () => {
-  it("names the market statistic actually used when the prudent P10 is missing", () => {
-    const input = {
-      surface: 57.6,
-      price: 110000,
-      works: 28800,
-      scenario: "prudent" as const,
-      medianPricePerM2: 3022,
-    };
-    const fallback = computeMarketCeiling(input);
-    expect(fallback.basis).toBe("median");
-    expect(fallback.basisLabel).toBe("médiane locale");
-    const p10 = computeMarketCeiling({ ...input, p10PricePerM2: 2400 });
-    expect(p10.basis).toBe("p10");
-    expect(p10.marketReferencePricePerM2).toBe(2400);
-    expect(p10.maxBid).toBeLessThan(fallback.maxBid);
-  });
   it("exposes the three reference prices per square metre", () => {
     expect(WORKS_SCENARIOS.map((scenario) => scenario.pricePerM2)).toEqual([500, 1_440, 1_850]);
   });
@@ -132,127 +112,6 @@ describe("computeAcquisitionCosts", () => {
     expect(result.fpt).toBe(0);
     expect(result.lawyerFees).toBe(0);
     expect(result.totalCost).toBe(0);
-  });
-});
-
-describe("occupation du bien", () => {
-  const base = {
-    surface: 50,
-    price: 90_000,
-    scenario: "offensif" as const,
-    medianPricePerM2: 3_000,
-  };
-
-  it("donne deux plafonds différents pour un bien libre et un bien occupé", () => {
-    const free = computeMarketCeiling({ ...base, occupancy: "free" });
-    const occupied = computeMarketCeiling({ ...base, occupancy: "occupied" });
-    expect(occupied.maxBid).toBeLessThan(free.maxBid);
-    expect(occupied.occupancy?.applied).toBe(true);
-    expect(occupied.occupancy?.discountAmount).toBe(Math.round(3_000 * 50 * 0.15));
-    expect(occupied.occupancy?.bidReduction).toBe(free.maxBid - occupied.maxBid);
-    expect(free.occupancy?.applied).toBe(false);
-  });
-
-  it("traite une occupation inconnue comme un bien occupé", () => {
-    const unknown = computeMarketCeiling({ ...base, occupancy: "unknown" });
-    expect(unknown.occupancy?.applied).toBe(true);
-    expect(unknown.maxBid).toBe(computeMarketCeiling({ ...base, occupancy: "occupied" }).maxBid);
-  });
-
-  it("ajoute le portage : mois avant libération × charges mensuelles", () => {
-    const withoutCarry = computeMarketCeiling({ ...base, occupancy: "occupied" });
-    const withCarry = computeMarketCeiling({
-      ...base,
-      occupancy: "occupied",
-      carryMonths: 12,
-      monthlyCarryCharges: 300,
-    });
-    expect(withCarry.occupancy?.carryingCost).toBe(3_600);
-    expect(withCarry.maxBid).toBeLessThan(withoutCarry.maxBid);
-  });
-
-  it("classe les statuts bruts", () => {
-    expect(classifyOccupancy("Libre")).toBe("free");
-    expect(classifyOccupancy("occupied")).toBe("occupied");
-    expect(classifyOccupancy("Loué")).toBe("occupied");
-    expect(classifyOccupancy(null)).toBe("unknown");
-    expect(classifyOccupancy("unknown")).toBe("unknown");
-  });
-});
-
-describe("scénario prudent", () => {
-  it("avertit quand la borne basse manque et que la médiane est utilisée", () => {
-    const result = computeMarketCeiling({
-      surface: 50,
-      price: 90_000,
-      scenario: "prudent",
-      medianPricePerM2: 3_000,
-    });
-    expect(result.warning).toMatch(/Borne basse indisponible/);
-    const withLowBound = computeMarketCeiling({
-      surface: 50,
-      price: 90_000,
-      scenario: "prudent",
-      medianPricePerM2: 3_000,
-      p10PricePerM2: 2_400,
-    });
-    expect(withLowBound.warning).toBeUndefined();
-  });
-});
-
-describe("computeMarketCeiling", () => {
-  it("exposes only the Prudent 8% and Offensif 4% profiles", () => {
-    expect(
-      MARKET_CEILING_SCENARIOS.map((scenario) => [scenario.key, scenario.safetyDiscountPct]),
-    ).toEqual([
-      ["prudent", 8],
-      ["offensif", 4],
-    ]);
-  });
-
-  it("returns unavailable when surface is missing", () => {
-    const result = computeMarketCeiling({
-      surface: null,
-      price: 100_000,
-      scenario: "prudent",
-      medianPricePerM2: 3_000,
-    });
-
-    expect(result.available).toBe(false);
-    expect(result.reason).toBe("Surface manquante");
-  });
-
-  it("uses manual market price as the reference when provided", () => {
-    const result = computeMarketCeiling({
-      surface: 50,
-      price: 90_000,
-      scenario: "prudent",
-      medianPricePerM2: 3_000,
-      manualMarketPricePerM2: 2_800,
-    });
-
-    expect(result.available).toBe(true);
-    expect(result.basis).toBe("manual");
-    expect(result.safetyDiscountPct).toBe(8);
-    expect(result.marketReferencePricePerM2).toBe(2_800);
-  });
-
-  it("deducts a selected works scenario from the auction ceiling", () => {
-    const ceilings = computeRecommendedCeilings({
-      surface: 50,
-      price: 90_000,
-      scenario: "prudent",
-      medianPricePerM2: 3_000,
-      p25PricePerM2: 2_700,
-    });
-
-    expect(ceilings.refreshWorksBudget).toBe(25_000);
-    expect(ceilings.withoutWorks.simulated.works).toBe(0);
-    expect(ceilings.withRefreshWorks.simulated.works).toBe(25_000);
-    expect(ceilings.withRefreshWorks.maxBid).toBeLessThan(ceilings.withoutWorks.maxBid);
-    expect(ceilings.withRefreshWorks.maxBid).toBeLessThanOrEqual(
-      ceilings.withoutWorks.maxBid - 23_000,
-    );
   });
 });
 

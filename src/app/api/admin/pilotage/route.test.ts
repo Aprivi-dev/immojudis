@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   accuracy: vi.fn(),
   feedback: vi.fn(),
   ceilings: vi.fn(),
+  survey: vi.fn(),
 }));
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
   bearerTokenFromRequest: (request: Request) => {
@@ -25,12 +26,18 @@ vi.mock("@/lib/admin-bid-ceilings", async (importOriginal) => ({
   getAdminBidCeilings: mocks.ceilings,
 }));
 
+vi.mock("@/lib/admin-offer-opening-survey", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/admin-offer-opening-survey")>()),
+  getAdminOfferOpeningSurvey: mocks.survey,
+}));
+
 vi.mock("@/lib/admin-sale-signal-feedback", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/admin-sale-signal-feedback")>()),
   getAdminSaleSignalFeedback: mocks.feedback,
 }));
 
 import { unavailableBidCeilings } from "@/lib/admin-bid-ceilings";
+import { unavailableOfferOpeningSurvey } from "@/lib/admin-offer-opening-survey";
 import { unavailableSaleSignalFeedback } from "@/lib/admin-sale-signal-feedback";
 import { GET } from "./route";
 
@@ -40,6 +47,7 @@ describe("GET /api/admin/pilotage", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mocks.ceilings.mockResolvedValue(unavailableBidCeilings());
+    mocks.survey.mockResolvedValue(unavailableOfferOpeningSurvey());
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     vi.spyOn(console, "error").mockImplementation(() => undefined);
   });
@@ -79,6 +87,7 @@ describe("GET /api/admin/pilotage", () => {
       saleReminders,
       signalFeedback,
       bidCeilings,
+      offerOpeningSurvey: unavailableOfferOpeningSurvey(),
     });
     expect(mocks.ceilings).toHaveBeenCalledWith("admin-token", expect.any(Date));
     expect(mocks.get).toHaveBeenCalledWith("admin-token", expect.any(Date));
@@ -114,6 +123,22 @@ describe("GET /api/admin/pilotage", () => {
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.bidCeilings).toEqual(unavailableBidCeilings());
+    expect(JSON.stringify(body)).not.toContain("failed");
+  });
+
+  it("garde le pilotage quand les réponses du questionnaire sont illisibles : « non mesuré »", async () => {
+    mocks.get.mockResolvedValue(unavailablePilotage());
+    mocks.accuracy.mockResolvedValue(unavailableSaleReminderAccuracy(new Date()));
+    mocks.feedback.mockResolvedValue(unavailableSaleSignalFeedback());
+    mocks.survey.mockRejectedValue(new Error("function admin_offer_opening_survey_summary failed"));
+
+    const response = await GET(
+      new Request(url, { headers: { authorization: "Bearer admin-token" } }),
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.offerOpeningSurvey).toEqual(unavailableOfferOpeningSurvey());
     expect(JSON.stringify(body)).not.toContain("failed");
   });
 

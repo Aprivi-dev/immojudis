@@ -19,6 +19,7 @@
     "test:security-invariants": "node scripts/check-security-invariants.mjs",
     "check:manual-collection": "node scripts/check-manual-data-collection.mjs",
     "flood-risk:build": "esbuild src/jobs/sale-flood-risk-runner.ts --bundle --platform=node --format=esm --target=node24 --conditions=react-server --tsconfig=tsconfig.json --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\" --outfile=.flood-risk-runner/runner.mjs",
+    "check:versions": "node scripts/check-versions.mjs",
     "test:db-concurrency": "node scripts/test-concurrent-db-quotas.mjs && node scripts/test-phase-2-db-concurrency.mjs",
     "check:schema-drift": "node scripts/check-supabase-schema-drift.mjs",
     "test:e2e": "playwright test",

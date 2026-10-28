@@ -4,6 +4,10 @@
 import { z } from "zod/mini";
 import { publishedDay } from "@/lib/listing-evidence";
 import {
+  TRIBUNAL_STATISTICS_MEDIAN_MIN_SAMPLE,
+  TRIBUNAL_STATISTICS_RANGE_MIN_SAMPLE,
+} from "@/lib/tribunal-publication-thresholds";
+import {
   MARKET_GAP_BAND_MAX_INTERVAL_WIDTH_PCT,
   MARKET_GAP_BAND_MIN_COMPARABLES,
   MARKET_GAP_BAND_MIN_COMPARABLES_JACKKNIFE,
@@ -22,14 +26,14 @@ export const TRIBUNAL_LISTING_STATISTICS_SCHEMA_VERSION = "tribunal_listing_stat
  * Observations minimales pour publier une médiane, un taux ou une part. Elles étaient 5 : à 5
  * observations, un taux de 60 % peut aussi bien être 23 % que 88 % (intervalle de Wilson à 95 %).
  */
-export const TRIBUNAL_LISTING_STATISTICS_MIN_SAMPLE = 10;
+export const TRIBUNAL_LISTING_STATISTICS_MIN_SAMPLE = TRIBUNAL_STATISTICS_MEDIAN_MIN_SAMPLE;
 /** Pour un sous-groupe (la répartition par type de bien) : les parts exigent 20 observations. */
 export const TRIBUNAL_LISTING_STATISTICS_MIN_SUBGROUP_SAMPLE = 20;
 /**
  * De 5 observations jusqu'au seuil de publication, une mesure continue (mise à prix, ratio, délai)
  * ne montre que la fourchette observée, minimum et maximum : jamais un point.
  */
-export const TRIBUNAL_LISTING_STATISTICS_RANGE_MIN_SAMPLE = 5;
+export const TRIBUNAL_LISTING_STATISTICS_RANGE_MIN_SAMPLE = TRIBUNAL_STATISTICS_RANGE_MIN_SAMPLE;
 /** Le taux de surenchère n'est publié que si au moins la moitié des annonces ont une réponse connue. */
 export const TRIBUNAL_LISTING_STATISTICS_MIN_OVERBID_COVERAGE = 0.5;
 /** Quantile de la loi normale pour l'intervalle de Wilson à 95 %. */

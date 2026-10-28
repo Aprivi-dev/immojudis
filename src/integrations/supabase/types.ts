@@ -4049,6 +4049,8 @@ export type Database = {
           data_missing_since: string | null;
           details: Json;
           engine_version: string;
+          estimate_engine_kind: string | null;
+          estimate_model_version: string | null;
           evaluated_at: string;
           favorable_streak: number;
           first_pepite_at: string | null;
@@ -4067,6 +4069,8 @@ export type Database = {
           data_missing_since?: string | null;
           details?: Json;
           engine_version: string;
+          estimate_engine_kind?: string | null;
+          estimate_model_version?: string | null;
           evaluated_at?: string;
           favorable_streak?: number;
           first_pepite_at?: string | null;
@@ -4085,6 +4089,8 @@ export type Database = {
           data_missing_since?: string | null;
           details?: Json;
           engine_version?: string;
+          estimate_engine_kind?: string | null;
+          estimate_model_version?: string | null;
           evaluated_at?: string;
           favorable_streak?: number;
           first_pepite_at?: string | null;
@@ -14357,6 +14363,10 @@ export type Database = {
             };
             Returns: string;
           };
+      admin_count_flood_reobservation_pending: {
+        Args: { p_now?: string };
+        Returns: number;
+      };
       admin_lawyer_monthly_statement: {
         Args: { p_month: string };
         Returns: {
@@ -14372,11 +14382,39 @@ export type Database = {
         Args: { p_limit?: number; p_now?: string };
         Returns: Json;
       };
+      admin_pepite_independence_sales: { Args: never; Returns: Json };
+      admin_offer_opening_survey_summary: { Args: { p_now?: string }; Returns: Json };
       admin_pilotage_bid_ceilings: { Args: { p_now?: string }; Returns: Json };
       admin_pilotage_summary: { Args: { p_now?: string }; Returns: Json };
+      admin_sale_signal_feedback_by_sale: {
+        Args: { p_limit?: number; p_now?: string };
+        Returns: Json;
+      };
       admin_sale_signal_feedback_summary: {
         Args: { p_now?: string };
         Returns: Json;
+      };
+      anil_department_medians: {
+        Args: { p_departments: string[] };
+        Returns: {
+          communes: number;
+          department_code: string;
+          rent_per_m2: number;
+          segment: string;
+          source_updated_on: string | null;
+          vintage: number;
+        }[];
+      };
+      admin_signup_usage: {
+        Args: never;
+        Returns: {
+          ceilings: number;
+          favorites: number;
+          sheets_served: number;
+          trial_ends_at: string | null;
+          unlocks: number;
+          user_id: string;
+        }[];
       };
       apply_reviewed_auction_notice_court_assignment: {
         Args: {
@@ -14736,6 +14774,7 @@ export type Database = {
         Args: { p_ends_on: string; p_now?: string; p_user_id: string };
         Returns: boolean;
       };
+      claim_cron_lease: { Args: { p_name: string; p_ttl_seconds: number }; Returns: string };
       claim_operational_alert_notifications: {
         Args: { p_limit?: number; p_now?: string };
         Returns: {
@@ -14885,6 +14924,15 @@ export type Database = {
           isOneToOne: true;
           isSetofReturn: false;
         };
+      };
+      commune_code_aliases: {
+        Args: { p_codes: string[] };
+        Returns: {
+          alias: string;
+          code: string;
+          depth: number;
+          direction: string;
+        }[];
       };
       complete_operational_alert_notification: {
         Args: {
@@ -15292,6 +15340,16 @@ export type Database = {
           upcoming_count: number;
         }[];
       };
+      get_public_tribunal_price_figures: {
+        Args: never;
+        Returns: {
+          max_starting_price_eur: number;
+          median_starting_price_eur: number;
+          min_starting_price_eur: number;
+          priced_count: number;
+          tribunal_code: string;
+        }[];
+      };
       get_public_tribunal_directory: {
         Args: never;
         Returns: {
@@ -15319,6 +15377,10 @@ export type Database = {
       get_sale_passages: { Args: { p_sale_id: string }; Returns: Json };
       get_sale_pepite_mode: { Args: never; Returns: string };
       get_sale_unlock_status: { Args: { p_sale_id?: string }; Returns: Json };
+      get_signup_trial: {
+        Args: { p_user_id: string };
+        Returns: { ends_at: string; gate_open: boolean }[];
+      };
       get_signup_trial_end: { Args: { p_user_id: string }; Returns: string };
       get_withdrawn_catalogue_sources: { Args: never; Returns: string[] };
       gettransactionid: { Args: never; Returns: unknown };
@@ -15556,7 +15618,35 @@ export type Database = {
         Args: { p_checkout_token: string; p_user_id: string };
         Returns: boolean;
       };
+      release_cron_lease: { Args: { p_name: string; p_token: string }; Returns: boolean };
       release_sale_flood_risk_lease: { Args: { p_token: string }; Returns: boolean };
+      extend_trial_with_note: {
+        Args: {
+          p_ends_at: string;
+          p_expected_updated_at?: string;
+          p_granted_by: string;
+          p_metadata: Json;
+          p_note: string;
+          p_user_id: string;
+        };
+        Returns: string;
+      };
+      grant_manual_subscription: {
+        Args: {
+          p_current_period_end: string | null;
+          p_granted_by: string;
+          p_metadata: Json;
+          p_note?: string;
+          p_plan_code: string;
+          p_status: string;
+          p_user_id: string;
+        };
+        Returns: undefined;
+      };
+      record_trial_extension: {
+        Args: { p_ends_at: string; p_granted_by: string; p_note: string; p_user_id: string };
+        Returns: string;
+      };
       remap_archived_catalogue_courts_by_label_batch: {
         Args: { p_after_id?: string; p_limit?: number };
         Returns: {
@@ -16647,6 +16737,10 @@ export type Database = {
         Args: { p_mode?: string; p_user_id?: string };
         Returns: string;
       };
+      sync_sale_communes: {
+        Args: never;
+        Returns: { n_changed: number; n_with_code: number; n_written: number }[];
+      };
       tribunal_outcome_graph_past_hearings: {
         Args: {
           p_as_of: string;
@@ -16673,6 +16767,20 @@ export type Database = {
       };
       unlock_sale: { Args: { p_sale_id: string }; Returns: Json };
       unlockrows: { Args: { "": string }; Returns: number };
+      upsert_user_alert_matches: {
+        Args: { p_rows: Json };
+        Returns: {
+          alert_id: string;
+          dismissed_at: string | null;
+          id: string;
+          match_reasons: string[];
+          match_snapshot: Json;
+          matched_at: string;
+          read_at: string | null;
+          sale_id: string;
+          user_id: string;
+        }[];
+      };
       updategeometrysrid: {
         Args: {
           catalogn_name: string;

@@ -1,7 +1,5 @@
 import { asRecord } from "@/lib/guards";
-import type { RentReference, RentReferenceSource } from "@/lib/rent-reference";
-
-const ANIL_SOURCES: readonly RentReferenceSource[] = ["anil_commune", "anil_maille", "anil_epci"];
+import { ANIL_RENT_SOURCES, type RentReference } from "@/lib/rent-reference";
 
 /**
  * Référence de loyer ANIL enregistrée dans un rapport (`opportunity.rentReference`), ou `null` : un
@@ -11,7 +9,7 @@ export function reportRentReference(
   value: unknown,
 ): Pick<RentReference, "source" | "vintage" | "sourceUpdatedOn"> | null {
   const record = asRecord(value);
-  const source = ANIL_SOURCES.find((item) => item === record.source);
+  const source = ANIL_RENT_SOURCES.find((item) => item === record.source);
   if (!source) return null;
   const reference = {
     source,

@@ -32,6 +32,7 @@ export type AccountProductEvent =
       quota: "unlocks" | "favorites" | "daily" | "daily_account" | "daily_shared";
     }
   | { type: "bid_ceiling_calculated"; saleId: string }
+  | { type: "pepite_detail_served"; saleId: string }
   | { type: "calendar_exported"; saleId: string }
   | { type: "email_clicked"; email: "alert" | "reminder" | "weekly" | "result"; saleId: string };
 
@@ -54,6 +55,7 @@ export function accountProductEventRow(event: AccountProductEvent): {
     }
     case "sale_unlocked":
     case "bid_ceiling_calculated":
+    case "pepite_detail_served":
     case "calendar_exported": {
       const saleId = uuidSchema.safeParse(event.saleId);
       return saleId.success

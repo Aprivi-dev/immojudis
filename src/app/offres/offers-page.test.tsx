@@ -259,13 +259,13 @@ describe("page Offres", () => {
     expect(answer).toContain("l’estimation détaillée et les ventes comparables restent réservés");
   });
 
-  it("montre dans le comparatif « Pour 3 ventes par mois » plutôt que « Non inclus »", () => {
+  it("montre dans le comparatif « 3 déblocages par mois » plutôt que « Non inclus »", () => {
     render(<OffersPage />);
     const table = screen.getByRole("table", { name: /Comparaison des offres/ });
     const ceiling = within(table).getByRole("rowheader", {
       name: /Enchère plafond ou offre plafond chiffrée/,
     }).parentElement!;
-    expect(ceiling.textContent).toContain("Pour 3 ventes par mois");
+    expect(ceiling.textContent).toContain("3 déblocages par mois");
     expect(ceiling.textContent).not.toContain("Non inclus");
     const pdf = within(table).getByRole("rowheader", {
       name: /Rapport PDF du scénario/,

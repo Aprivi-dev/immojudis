@@ -11,7 +11,7 @@ from src.reference_data.names import normalize_commune_name
 
 COMMUNES = [
     {"code_insee": "75056", "name_normalized": "paris", "department_code": "75",
-     "postal_codes": ["75001", "75008", "75016"], "latitude": 48.8566, "longitude": 2.3522},
+     "postal_codes": ["75001", "75008", "75016", "75116"], "latitude": 48.8566, "longitude": 2.3522},
     {"code_insee": "13055", "name_normalized": "marseille", "department_code": "13",
      "postal_codes": ["13001", "13008"], "latitude": 43.2965, "longitude": 5.3698},
     {"code_insee": "69123", "name_normalized": "lyon", "department_code": "69",
@@ -22,6 +22,14 @@ COMMUNES = [
      "postal_codes": ["27100"], "latitude": 49.2656, "longitude": 1.2095},
     {"code_insee": "27691", "name_normalized": "val de reuil", "department_code": "27",
      "postal_codes": ["27100"], "latitude": 49.2689, "longitude": 1.2085},
+    {"code_insee": "97411", "name_normalized": "saint denis", "department_code": "974",
+     "postal_codes": ["97400"], "latitude": -20.88, "longitude": 55.45},
+    {"code_insee": "93066", "name_normalized": "saint denis", "department_code": "93",
+     "postal_codes": ["93200"], "latitude": 48.93, "longitude": 2.35},
+    {"code_insee": "97105", "name_normalized": "basse terre", "department_code": "971",
+     "postal_codes": ["97100"], "latitude": 16.0, "longitude": -61.7},
+    {"code_insee": "49007", "name_normalized": "angers", "department_code": "49",
+     "postal_codes": ["49000", "49100"], "latitude": 47.47, "longitude": -0.55},
     {"code_insee": "01001", "name_normalized": "homonyme", "department_code": "01",
      "postal_codes": ["01000"], "latitude": 46.2, "longitude": 5.2},
     {"code_insee": "01002", "name_normalized": "homonyme", "department_code": "01",
@@ -157,6 +165,103 @@ class TestResolveSaleCommune:
         assert resolve_sale_commune(sale)["insee"] == "37261"
 
 
+class TestDifficultAddresses:
+    """Libellés de ville que le repli par nom ne comprenait pas (rapport donnees-geographiques du 27/10/2026)."""
+
+    @pytest.mark.parametrize(
+        ("city", "postal", "department", "insee", "arrondissement"),
+        [
+            ("Paris 8ème", "75008", "75", "75056", "75108"),
+            ("Paris 16e", "75116", "75", "75056", "75116"),
+            ("Paris XVIème", "75016", "75", "75056", "75116"),
+            ("Marseille 8e", "13008", "13", "13055", "13208"),
+            ("Lyon 3e arrondissement", "69003", "69", "69123", "69383"),
+            ("Lyon 3ème arrondissement", "69003", "69", "69123", "69383"),
+            # Code postal générique : l'arrondissement vient du nombre écrit dans la ville.
+            ("Marseille 8e", "13000", "13", "13055", "13208"),
+            ("Lyon 3e", "69000", "69", "69123", "69383"),
+            ("Paris 12e", "75000", "75", "75056", "75112"),
+            # Cedex : le code postal n'est pas celui de la commune.
+            ("Lyon Cedex 03", "69421", "69", "69123", None),
+            ("Lyon Cedex 03", "69421", None, "69123", None),
+            ("Saint-Denis La Réunion", "97400", "974", "97411", None),
+            ("Saint-Denis (974)", "97400", "974", "97411", None),
+            ("Basse-Terre", "97100", "971", "97105", None),
+        ],
+    )
+    def test_the_commune_is_found_whatever_the_label_adds_to_its_name(
+        self, communes, city, postal, department, insee, arrondissement
+    ):
+        sale = _sale(city=city, postal_code=postal, department=department, address=f"{postal} {city}")
+
+        assert resolve_sale_commune(sale) == {
+            "insee": insee, "arrondissement_insee": arrondissement, "source": "reference_communes",
+        }
+
+    def test_find_commune_cleans_the_name_before_the_search(self, communes):
+        assert municipality_location.find_commune("Paris 8ème", "75008", "75")["code_insee"] == "75056"
+
+    def test_homonyms_stay_ambiguous_without_a_department(self, communes):
+        assert municipality_location.find_commune("Saint-Denis", None, None) is None
+        assert municipality_location.find_commune("Saint-Denis La Réunion", None, "974")["code_insee"] == "97411"
+
+    def test_a_generic_postal_code_does_not_guess_in_another_department(self, communes):
+        assert municipality_location.find_commune("Lyon 3e", "69000", "13") is None
+
+    def test_postal_code_75116_gives_the_16th_arrondissement_like_the_web(self, communes):
+        sale = _sale(city="Paris", postal_code="75116", address="75116 Paris")
+        assert resolve_sale_commune(sale)["arrondissement_insee"] == "75116"
+        assert commune_insee._arrondissement_from_postal_code("75056", "75116") == "75116"
+        assert commune_insee._arrondissement_from_postal_code("75056", "75016") == "75116"
+        assert commune_insee._arrondissement_from_postal_code("75056", "75017") == "75117"
+
+
+class TestGeocodedCodeCrossCheck:
+    def test_a_code_of_another_department_is_discarded_and_flagged(self, communes):
+        sale = _accepted(_sale(city="Tours", postal_code="37000", department="37"), citycode="49007")
+
+        assert resolve_sale_commune(sale) == {
+            "insee": "37261", "arrondissement_insee": None, "source": "reference_communes", "mismatch": True,
+        }
+
+    def test_a_code_of_another_commune_of_the_same_department_is_discarded(self, communes):
+        sale = _accepted(_sale(city="Tours", postal_code="37000", department="37"), citycode="37018")
+
+        resolved = resolve_sale_commune(sale)
+
+        assert resolved["insee"] == "37261" and resolved["mismatch"] is True
+
+    def test_a_discarded_code_with_no_fallback_gives_nothing(self, communes):
+        sale = _accepted(_sale(city="Nulle-Part", postal_code="99999", department="37"), citycode="49007")
+
+        assert resolve_sale_commune(sale) is None
+
+    def test_a_code_that_agrees_is_kept_without_flag(self, communes):
+        sale = _accepted(_sale(city="Tours", postal_code="37000", department="37"), citycode="37261")
+
+        assert resolve_sale_commune(sale) == {
+            "insee": "37261", "arrondissement_insee": None, "source": "geocode",
+        }
+
+    @pytest.mark.parametrize("department", [None, "", "Indre-et-Loire"])
+    def test_an_unknown_department_does_not_discard_a_code(self, communes, department):
+        sale = _accepted(_sale(city="Nulle-Part", postal_code="99999"), citycode="49007")
+        sale.department = department
+
+        assert resolve_sale_commune(sale)["insee"] == "49007"
+
+    def test_an_unreadable_reference_table_keeps_the_geocoded_code(self, communes, monkeypatch):
+        monkeypatch.setattr(municipality_location, "load_communes", lambda: (_ for _ in ()).throw(OSError("down")))
+        municipality_location.reset_cache()
+        sale = _accepted(_sale(city="Tours", postal_code="37000", department="37"), citycode="37261")
+
+        assert resolve_sale_commune(sale)["insee"] == "37261"
+
+    def test_corsica_old_department_20_accepts_2a_and_2b(self, communes):
+        assert commune_insee._same_department("2A004", "20") and commune_insee._same_department("2B033", "20")
+        assert not commune_insee._same_department("33063", "20")
+
+
 class TestRecordSaleCommune:
     def test_it_writes_the_commune_in_the_raw_payload_and_nowhere_else(self, communes):
         sale = _accepted(_sale(city="Paris", postal_code="75008"), citycode="75108")
@@ -201,6 +306,43 @@ class TestGeocodingPlacesTheCommune:
         assert sale.raw_payload["commune"] == {
             "insee": "27701", "arrondissement_insee": None, "source": "reference_communes",
         }
+
+
+class TestLookupNameMirroredInSql:
+    """`app_private.commune_lookup_name` (migration 20261108120000) reproduit `commune_lookup_name` ; son test pgTAP (780)
+    retrouve ces valeurs. La colonne stockée `name_normalized` reste celle de `normalize_commune_name`."""
+
+    @pytest.mark.parametrize(
+        ("label", "expected"),
+        [
+            ("Paris 8ème", "paris"),
+            ("Paris 8e", "paris"),
+            ("Paris 1er", "paris"),
+            ("Paris XVIème", "paris"),
+            ("Paris 15", "paris"),
+            ("Marseille 8e", "marseille"),
+            ("Lyon 3e arrondissement", "lyon"),
+            ("Lyon 3ème arrondissement", "lyon"),
+            ("Lyon Cedex 03", "lyon"),
+            ("Villeurbanne CEDEX", "villeurbanne"),
+            ("Saint-Denis La Réunion", "saint denis"),
+            ("Saint-Denis (974)", "saint denis"),
+            ("Saint-Pierre Martinique", "saint pierre"),
+            ("La Réunion", "la reunion"),
+            ("Les 2 Alpes", "les 2 alpes"),
+            ("Le Mans", "le mans"),
+            ("Basse-Terre", "basse terre"),
+            ("Cedex", "cedex"),
+            ("", ""),
+        ],
+    )
+    def test_the_lookup_name(self, label, expected):
+        from src.reference_data.names import commune_lookup_name
+
+        assert commune_lookup_name(label) == expected
+
+    def test_the_stored_name_is_not_touched(self):
+        assert normalize_commune_name("Paris 8ème") == "paris 8eme"
 
 
 class TestNameNormalisationMirroredInSql:

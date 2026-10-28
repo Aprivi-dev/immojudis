@@ -26,14 +26,23 @@ export const LAUNCH_OFFER_LABEL = `Essai gratuit de ${ANALYSIS_TRIAL_DAYS} jours
  * Résumé d'une ligne pour un visiteur, toujours accompagné du texte complet sur la même page ou d'un
  * lien (bannière repliable de /sales, premier écran de l'accueil).
  */
+/** Sous le bouton d'inscription de l'accueil et de l'annonce exemple, pendant l'essai. */
+export const HOME_TRIAL_NOTE = `${ANALYSIS_TRIAL_DAYS} jours d’accès à l’offre Analyse, sans carte bancaire.`;
+
 export const LAUNCH_OFFER_SHORT_TEXT = `Inscription gratuite : ${ANALYSIS_TRIAL_DAYS} jours d’accès à l’offre Analyse, sans carte bancaire`;
+
+/**
+ * La ligne visible en tête du formulaire d'inscription sur téléphone, à la place du texte complet
+ * (les conditions sont dans un repli « Conditions de l'essai gratuit », voir
+ * `LAUNCH_OFFER_DURATION_TEXT`).
+ */
+export const LAUNCH_OFFER_SIGNUP_LINE = `${LAUNCH_OFFER_SHORT_TEXT} ni prélèvement ensuite.`;
 
 /**
  * Règles de l'essai, reprises dans l'article « Essai gratuit à l'inscription » des CGV
  * (`src/routes/conditions-generales.tsx`, qui les écrit en toutes lettres : le texte juridique est
  * ancré par empreinte). La clause de retrait anticipé reprend la relecture juridique du 20/10/2026.
- */
-/**
+ *
  * La fin de l'essai : retour à Découverte, offre payante ensuite, retrait anticipé limité. Des
  * constantes, sans appel au chargement du module : `client-billing` (chargé sur toutes les pages)
  * importe `parseLaunchOfferResponse` d'ici, et le reste du module doit pouvoir être écarté du paquet.
@@ -79,17 +88,23 @@ export const SIGNUP_TRIAL_DENIED_TEXT =
 
 /**
  * État de l'essai d'un compte dont on connaît les droits (Mon compte) : en cours jusqu'à telle date,
- * terminé, ou refusé. `null` quand le compte n'a pas d'essai connu (abonné, état non lu).
+ * terminé, prolongé par l'administrateur, ou refusé. `null` quand le compte n'a pas d'essai connu (abonné, état non lu).
  */
 export function signupTrialStatusText({
   trialEndsAt,
   trialEndedAt,
   trialDenied,
+  trialExtension,
 }: {
   trialEndsAt?: string | null;
   trialEndedAt?: string | null;
   trialDenied?: boolean;
+  /** L'essai a été prolongé par l'administrateur : `trialEndsAt` est la fin de la prolongation. */
+  trialExtension?: boolean;
 }): string | null {
+  if (trialEndsAt && trialExtension) {
+    return `Essai gratuit prolongé jusqu’au ${signupTrialDateLabel(trialEndsAt)} ; rien ne devient payant automatiquement. À son terme, votre compte revient à l’offre Découverte, gratuite.`;
+  }
   if (trialEndsAt) {
     return `Essai gratuit de l’offre Analyse jusqu’au ${signupTrialDateLabel(trialEndsAt)}. À son terme, votre compte revient à l’offre Découverte, gratuite : rien ne devient payant automatiquement.`;
   }

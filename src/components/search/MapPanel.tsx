@@ -27,22 +27,37 @@ import { formatDate, formatPricePerM2, formatStartingPrice, propertyTypeLabel } 
 import { pricePerM2 } from "@/lib/geo";
 import type { GeographicBoundary } from "@/lib/geographic-boundary";
 import {
-  MAPBOX_ATTRIBUTION,
-  MAPBOX_COPYRIGHT_URL,
   disableMapboxTelemetry,
   getMapboxAccessToken,
+  getMapboxStyleUrl,
   mapboxLocaleFr,
   mapboxSatelliteImageUrl,
 } from "@/lib/mapbox";
 import {
   buildMapboxSaleFeatureCollection,
+  isApproximatePosition,
+  isMunicipalityCenter,
   type MapboxSaleFeatureCollection,
 } from "@/lib/mapbox-sales";
+import { MAP_ACTIVE_FILL, MAP_PALETTE, MAP_PRICE_HALO } from "@/lib/map-palette";
+import {
+  APPROX_RING_ICON_ID,
+  APPROX_RING_SIZE,
+  CLUSTER_GLYPH_OFFSET,
+  CLUSTER_RADIUS,
+  HIT_RADIUS,
+  ACTIVE_RADIUS,
+  PEPITE_GLYPH_OFFSET,
+  PEPITE_ICON_ID,
+  POINT_RADIUS,
+  addApproxRingIcon,
+  addPepiteIcon,
+} from "./map-sales-style";
 import { firstPropertyImage } from "@/lib/sale-media";
 import { saleDisplayTitle } from "@/lib/sale-title";
 import { getDisplaySurface, getSaleSurface } from "@/lib/surface";
 import { hasCoordinates } from "@/lib/search/search-filters";
-import { clusterSalesLabel, framingPoints, isInMetropolitanFrance } from "@/lib/search/map-framing";
+import { framingPoints, isInMetropolitanFrance } from "@/lib/search/map-framing";
 import type { ViewportBounds } from "@/lib/search/search-url-state";
 import type { AuctionSale } from "@/lib/types";
 import {
@@ -74,7 +89,7 @@ const SALE_PRICE_LAYER_ID = "immojudis-sales-price";
 const SALE_HIT_LAYER_ID = "immojudis-sales-hit";
 const SALE_PEPITE_LAYER_ID = "immojudis-sales-pepite";
 const CLUSTER_PEPITE_LAYER_ID = "immojudis-sales-cluster-pepite";
-const PEPITE_ICON_ID = "immojudis-pepite";
+const SALE_APPROX_LAYER_ID = "immojudis-sales-approx";
 
 const DEFAULT_MAP_CENTER: [number, number] = [1.7191, 46.7111];
 const DEFAULT_MAP_ZOOM = 5.7;
@@ -274,7 +289,7 @@ export function MapPanel({
   const [boundaryLoading, setBoundaryLoading] = useState(false);
   const [viewportDirty, setViewportDirty] = useState(false);
   const accessToken = useMemo(() => getMapboxAccessToken(), []);
-  const mapStyle = useMemo(() => "mapbox://styles/mapbox/streets-v12", []);
+  const mapStyle = useMemo(() => getMapboxStyleUrl(), []);
   const displaySales = useMemo(
     () =>
       sales.map((sale) => {
@@ -438,11 +453,16 @@ export function MapPanel({
         });
       };
 
+      // Une erreur n'est bloquante que tant que la carte n'a pas chargé : ensuite, une tuile en
+      // échec (réseau coupé, quota) laisse une carte qui fonctionne, et « load » ne revient pas
+      // pour effacer le bandeau.
+      let loaded = false;
       const handleMapError = (event: mapboxgl.ErrorEvent) => {
-        if (event.error?.message) setMapError(event.error.message);
+        if (!loaded && event.error?.message) setMapError(event.error.message);
       };
 
       map.on("load", () => {
+        loaded = true;
         window.clearTimeout(loadTimeout);
         setMapError(null);
         addSalesLayers(map, featureCollection);
@@ -497,6 +517,8 @@ export function MapPanel({
             ...popupSale,
             pepite: sale.pepite,
             pepiteFloodExposed: sale.pepiteFloodExposed,
+            location_precision: sale.location_precision,
+            quality_flags: sale.quality_flags,
             latitude: sale.latitude,
             longitude: sale.longitude,
           },
@@ -654,7 +676,13 @@ export function MapPanel({
     );
     popup.setHTML(
       buildPopupHtml(
-        { ...reviewedSale, latitude: baseSale.latitude, longitude: baseSale.longitude },
+        {
+          ...reviewedSale,
+          location_precision: baseSale.location_precision,
+          quality_flags: baseSale.quality_flags,
+          latitude: baseSale.latitude,
+          longitude: baseSale.longitude,
+        },
         popupAccessRef.current,
       ),
     );
@@ -871,9 +899,6 @@ export function MapPanel({
                 : ""
             }`}
         <span className="sr-only">
-          {" "}
-          Les ronds dorés regroupent plusieurs ventes ({clusterSalesLabel(2)} ou plus) ; zoomez pour
-          les séparer.
           {pepiteCount > 0
             ? ` Dont ${pepiteCount} pépite${pepiteCount > 1 ? "s" : ""}, repérée${pepiteCount > 1 ? "s" : ""} par un anneau doré épais et un pictogramme.`
             : ""}
@@ -881,24 +906,33 @@ export function MapPanel({
             ? ` Parmi elles, ${pepiteExposedCount} ${pepiteExposedCount > 1 ? "sont" : "est"} dans le périmètre d’un plan de prévention des risques d’inondation : zonage à vérifier.`
             : ""}
         </span>
-        {pepiteCount > 0 ? (
-          <p className="mt-1 flex items-center gap-1.5 font-semibold text-gold-text">
-            <PepiteIcon className="size-4" />
-            <span>
-              {PEPITE_LABEL} ({pepiteCount.toLocaleString("fr-FR")}) · anneau doré
-            </span>
-          </p>
-        ) : null}
+        <ul className="mt-1.5 space-y-1" aria-label="Légende de la carte">
+          <li className="flex items-center gap-2">
+            <span
+              aria-hidden="true"
+              className="inline-block size-4 shrink-0 rounded-full border-2 border-white shadow-[0_0_0_1px_var(--line)]"
+              style={{ backgroundColor: MAP_PALETTE.navy }}
+            />
+            Une vente (mise à prix)
+          </li>
+          <li className="flex items-center gap-2">
+            <span
+              aria-hidden="true"
+              className="inline-block size-4 shrink-0 rounded-full border-2 border-white shadow-[0_0_0_1px_var(--line)]"
+              style={{ backgroundColor: MAP_PALETTE.gold }}
+            />
+            Plusieurs ventes, zoomez
+          </li>
+          {pepiteCount > 0 ? (
+            <li className="flex items-center gap-2 font-semibold text-gold-text">
+              <PepiteIcon className="size-4 shrink-0" />
+              <span>
+                {PEPITE_LABEL} ({pepiteCount.toLocaleString("fr-FR")}) · anneau doré
+              </span>
+            </li>
+          ) : null}
+        </ul>
       </div>
-
-      <a
-        href={MAPBOX_COPYRIGHT_URL}
-        target="_blank"
-        rel="noreferrer"
-        className="absolute bottom-4 right-4 z-30 hidden rounded-md border border-line-soft bg-white/95 px-2 py-1 text-[10px] font-semibold text-ink-strong shadow-lg backdrop-blur transition-colors hover:text-brand-navy md:inline-flex"
-      >
-        {MAPBOX_ATTRIBUTION}
-      </a>
     </div>
   );
 }
@@ -916,7 +950,7 @@ function addBoundaryLayers(map: MapboxMap, boundary: GeographicBoundary | null) 
     type: "fill",
     source: BOUNDARY_SOURCE_ID,
     paint: {
-      "fill-color": "#132238",
+      "fill-color": MAP_PALETTE.navy,
       "fill-opacity": 0.06,
     },
   };
@@ -926,7 +960,7 @@ function addBoundaryLayers(map: MapboxMap, boundary: GeographicBoundary | null) 
     source: BOUNDARY_SOURCE_ID,
     layout: { "line-cap": "round", "line-join": "round" },
     paint: {
-      "line-color": "#132238",
+      "line-color": MAP_PALETTE.navy,
       "line-width": ["interpolate", ["linear"], ["zoom"], 4, 1.5, 10, 2.5, 14, 3.5],
       "line-opacity": 0.88,
       "line-dasharray": [2, 1.5],
@@ -951,6 +985,7 @@ function addSalesLayers(map: MapboxMap, data: MapboxSaleFeatureCollection) {
     generateId: true,
   });
   addPepiteIcon(map);
+  addApproxRingIcon(map);
 
   const clusterLayer: CircleLayerSpecification = {
     id: CLUSTER_LAYER_ID,
@@ -959,9 +994,9 @@ function addSalesLayers(map: MapboxMap, data: MapboxSaleFeatureCollection) {
     filter: ["has", "point_count"],
     paint: {
       // Or : un groupe de ventes se distingue d'une vente isolée (pastille marine avec son prix).
-      "circle-color": "#c98d45",
-      "circle-radius": ["step", ["get", "point_count"], 18, 10, 24, 30, 30],
-      "circle-stroke-color": "#ffffff",
+      "circle-color": MAP_PALETTE.gold,
+      "circle-radius": CLUSTER_RADIUS,
+      "circle-stroke-color": MAP_PALETTE.white,
       "circle-stroke-width": 3,
       "circle-opacity": 0.96,
     },
@@ -979,7 +1014,7 @@ function addSalesLayers(map: MapboxMap, data: MapboxSaleFeatureCollection) {
       "text-ignore-placement": true,
     },
     paint: {
-      "text-color": "#132238",
+      "text-color": MAP_PALETTE.navy,
       "text-halo-width": 0,
     },
   };
@@ -990,13 +1025,18 @@ function addSalesLayers(map: MapboxMap, data: MapboxSaleFeatureCollection) {
     source: SALES_SOURCE_ID,
     filter: ["!", ["has", "point_count"]],
     paint: {
-      "circle-color": "#132238",
+      "circle-color": MAP_PALETTE.navy,
       // The price label sits inside this dark capsule-like circle. Keeping a
       // generous radius at national zoom makes short prices readable without
       // the detached grey text halo that the old map used.
-      "circle-radius": ["interpolate", ["linear"], ["zoom"], 4, 20, 9, 24, 14, 29],
+      "circle-radius": POINT_RADIUS,
       // Pépite : anneau or plus épais (le glyphe en haut à droite le double : jamais la couleur seule).
-      "circle-stroke-color": ["case", ["==", ["get", "pepite"], 1], "#c98d45", "#ffffff"],
+      "circle-stroke-color": [
+        "case",
+        ["==", ["get", "pepite"], 1],
+        MAP_PALETTE.gold,
+        MAP_PALETTE.white,
+      ],
       "circle-stroke-width": ["case", ["==", ["get", "pepite"], 1], 4, 2],
       "circle-opacity": 0.98,
     },
@@ -1009,7 +1049,7 @@ function addSalesLayers(map: MapboxMap, data: MapboxSaleFeatureCollection) {
     filter: ["all", ["!", ["has", "point_count"]], ["==", ["get", "pepite"], 1]],
     layout: {
       "icon-image": PEPITE_ICON_ID,
-      "icon-offset": [16, -16],
+      "icon-offset": PEPITE_GLYPH_OFFSET,
       "icon-allow-overlap": true,
       "icon-ignore-placement": true,
     },
@@ -1022,7 +1062,7 @@ function addSalesLayers(map: MapboxMap, data: MapboxSaleFeatureCollection) {
     filter: ["all", ["has", "point_count"], [">", ["get", "pepites"], 0]],
     layout: {
       "icon-image": PEPITE_ICON_ID,
-      "icon-offset": [18, -18],
+      "icon-offset": CLUSTER_GLYPH_OFFSET,
       "icon-allow-overlap": true,
       "icon-ignore-placement": true,
     },
@@ -1034,10 +1074,25 @@ function addSalesLayers(map: MapboxMap, data: MapboxSaleFeatureCollection) {
     source: SALES_SOURCE_ID,
     filter: EMPTY_ACTIVE_FILTER,
     paint: {
-      "circle-radius": ["interpolate", ["linear"], ["zoom"], 4, 21, 9, 28, 16, 34],
-      "circle-color": "rgba(201,141,69,0.2)",
-      "circle-stroke-color": "#c98d45",
-      "circle-stroke-width": 2,
+      "circle-radius": ACTIVE_RADIUS,
+      "circle-color": MAP_ACTIVE_FILL,
+      "circle-stroke-color": MAP_PALETTE.goldSoft,
+      "circle-stroke-width": 3,
+    },
+  };
+
+  // Centre de commune ou point douteux : anneau en pointillé autour du point (un trait de cercle
+  // Mapbox ne peut pas être pointillé, d'où une icône).
+  const approxRingLayer: SymbolLayerSpecification = {
+    id: SALE_APPROX_LAYER_ID,
+    type: "symbol",
+    source: SALES_SOURCE_ID,
+    filter: ["all", ["!", ["has", "point_count"]], ["==", ["get", "approx"], 1]],
+    layout: {
+      "icon-image": APPROX_RING_ICON_ID,
+      "icon-size": APPROX_RING_SIZE,
+      "icon-allow-overlap": true,
+      "icon-ignore-placement": true,
     },
   };
 
@@ -1048,7 +1103,7 @@ function addSalesLayers(map: MapboxMap, data: MapboxSaleFeatureCollection) {
     filter: ["!", ["has", "point_count"]],
     layout: {
       "text-field": ["get", "priceLabel"],
-      "text-size": ["interpolate", ["linear"], ["zoom"], 4, 10, 9, 11, 14, 12],
+      "text-size": 12,
       "text-anchor": "center",
       "text-offset": [0, 0],
       "text-padding": 2,
@@ -1056,8 +1111,8 @@ function addSalesLayers(map: MapboxMap, data: MapboxSaleFeatureCollection) {
       "text-ignore-placement": true,
     },
     paint: {
-      "text-color": "#ffffff",
-      "text-halo-color": "rgba(19,34,56,0.28)",
+      "text-color": MAP_PALETTE.white,
+      "text-halo-color": MAP_PRICE_HALO,
       "text-halo-width": 1,
       "text-halo-blur": 0,
     },
@@ -1069,8 +1124,8 @@ function addSalesLayers(map: MapboxMap, data: MapboxSaleFeatureCollection) {
     source: SALES_SOURCE_ID,
     filter: ["!", ["has", "point_count"]],
     paint: {
-      "circle-radius": 24,
-      "circle-color": "#132238",
+      "circle-radius": HIT_RADIUS,
+      "circle-color": MAP_PALETTE.navy,
       "circle-opacity": 0.01,
     },
   };
@@ -1079,54 +1134,11 @@ function addSalesLayers(map: MapboxMap, data: MapboxSaleFeatureCollection) {
   map.addLayer(clusterCountLayer);
   map.addLayer(activeLayer);
   map.addLayer(salePointLayer);
+  map.addLayer(approxRingLayer);
   map.addLayer(salePriceLayer);
   map.addLayer(pepiteGlyphLayer);
   map.addLayer(clusterPepiteLayer);
   map.addLayer(hitLayer);
-}
-
-/**
- * Glyphe de pépite (caillou à facettes sur une pastille blanche) pour les couches `symbol` : dessiné une fois
- * dans un canvas de 40 px (ratio 2). Sans canvas (environnement sans 2D) : pas de glyphe, l'anneau reste.
- */
-function addPepiteIcon(map: MapboxMap) {
-  if (map.hasImage(PEPITE_ICON_ID) || typeof document === "undefined") return;
-  const canvas = document.createElement("canvas");
-  canvas.width = 40;
-  canvas.height = 40;
-  const context = canvas.getContext("2d");
-  if (!context) return;
-  context.fillStyle = "#ffffff";
-  context.beginPath();
-  context.arc(20, 20, 19, 0, Math.PI * 2);
-  context.fill();
-  const outline: Array<[number, number]> = [
-    [9, 17],
-    [15, 9],
-    [26, 10],
-    [32, 18],
-    [30, 28],
-    [21, 33],
-    [11, 30],
-    [7, 23],
-  ];
-  context.beginPath();
-  outline.forEach(([x, y], index) => (index ? context.lineTo(x, y) : context.moveTo(x, y)));
-  context.closePath();
-  context.fillStyle = "#c98d45";
-  context.fill();
-  context.strokeStyle = "#132238";
-  context.lineWidth = 1.5;
-  context.lineJoin = "round";
-  context.stroke();
-  context.beginPath();
-  for (const [x, y] of [outline[1], outline[3], outline[5], outline[0]]) {
-    context.moveTo(18, 19);
-    context.lineTo(x, y);
-  }
-  context.lineWidth = 1;
-  context.stroke();
-  map.addImage(PEPITE_ICON_ID, context.getImageData(0, 0, 40, 40), { pixelRatio: 2 });
 }
 
 function updateActiveLayer(map: MapboxMap, activeId: string | null | undefined) {
@@ -1261,6 +1273,11 @@ function buildPopupHtml(
         height: 250,
       }) || firstPropertyImage(sale.media);
   const detailUrl = popupDetailUrl(sale.id);
+  const positionNote = isMunicipalityCenter(sale)
+    ? "Centre de la commune, position approximative"
+    : isApproximatePosition(sale)
+      ? "Position approximative"
+      : "";
   const location = [sale.city, sale.tribunal_city ?? sale.tribunal_name]
     .filter(Boolean)
     .join(" · ");
@@ -1307,7 +1324,7 @@ function buildPopupHtml(
                   dpeTheme?.background ?? "#eef3f5",
                 )};border-color:${escapeAttribute(
                   dpeTheme?.border ?? "transparent",
-                )};color:${escapeAttribute(dpeTheme?.foreground ?? "#132238")}">DPE ${escapeHtml(
+                )};color:${escapeAttribute(dpeTheme?.foreground ?? MAP_PALETTE.navy)}">DPE ${escapeHtml(
                   dpe.class,
                 )}</span>`
               : ""
@@ -1316,6 +1333,11 @@ function buildPopupHtml(
         ${
           access.detailLoading
             ? '<p class="immo-mapbox-popup-location">Chargement des informations complémentaires…</p>'
+            : ""
+        }
+        ${
+          positionNote && !access.preview
+            ? `<p class="immo-mapbox-popup-location">${escapeHtml(positionNote)}</p>`
             : ""
         }
         ${access.preview ? '<p class="immo-mapbox-popup-location">Position approximative · fiche complète avec un compte gratuit</p>' : ""}

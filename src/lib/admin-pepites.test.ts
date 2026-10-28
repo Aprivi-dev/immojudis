@@ -8,8 +8,14 @@ const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   tables: {} as Record<string, { rows: unknown[]; error: DbError }>,
   reads: [] as string[],
-  /** Les lectures de table ne rendent jamais la main (base qui ne répond plus). */
+  /** Les lectures de table et le contrôle d'indépendance ne rendent jamais la main (base qui ne répond plus). */
   hang: false,
+  /** Réponse de `admin_pepite_independence_sales` (une seule fonction agrégée), et nombre d'appels. */
+  independence: { data: { evaluable: 0, pepites: 0, sales: [] }, error: null } as {
+    data: unknown;
+    error: DbError;
+  },
+  independenceCalls: 0,
   revalidateTag: vi.fn(),
   revalidatePath: vi.fn(),
 }));
@@ -62,7 +68,17 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: DbError }> {
 }
 
 vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: { rpc: mocks.rpc, from: (table: string) => new FakeQuery(table) },
+  supabaseAdmin: {
+    rpc: (name: string, args?: unknown) => {
+      if (name === "admin_pepite_independence_sales") {
+        mocks.independenceCalls += 1;
+        if (mocks.hang) return new Promise<never>(() => {});
+        return Promise.resolve(mocks.independence);
+      }
+      return mocks.rpc(name, args);
+    },
+    from: (table: string) => new FakeQuery(table),
+  },
 }));
 
 import {
@@ -70,6 +86,7 @@ import {
   computePepiteIndependence,
   getAdminPepites,
   parseAdminPepiteRow,
+  pepiteFeesDefaultStat,
   pepiteRate,
   suspendAdminPepites,
   unavailablePepites,
@@ -144,6 +161,8 @@ beforeEach(() => {
   mocks.requireAuth.mockReset();
   mocks.rpc.mockReset();
   mocks.tables = {};
+  mocks.independence = { data: { evaluable: 0, pepites: 0, sales: [] }, error: null };
+  mocks.independenceCalls = 0;
   mocks.reads = [];
   mocks.hang = false;
   vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -201,7 +220,7 @@ describe("parseAdminPepiteRow", () => {
       startingPriceEur: 80000,
       href: "/sales/sale-1",
     });
-    expect(parsed?.passed.join(" ")).toContain("Achat probable nettement sous la valeur");
+    expect(parsed?.passed.join(" ")).toContain("Coût d'achat estimé nettement sous la valeur");
     expect(parsed?.passed.join(" ")).toContain("ventes comparables");
     expect(parsed?.stability).toEqual(["Publiée : 2 évaluations favorables consécutives"]);
     expect(parsed?.missed).toEqual([]);
@@ -239,6 +258,35 @@ describe("parseAdminPepiteRow", () => {
     expect(parseAdminPepiteRow({ ...row, is_pepite: false, status: "not_pepite" })?.category).toBe(
       "near",
     );
+  });
+
+  it("lit les frais par défaut du détail et compte leur part parmi les pépites (publiées et à confirmer)", () => {
+    const withDefault = parseAdminPepiteRow({
+      ...row,
+      details: { ...row.details, feesDefault: true },
+    });
+    const read = parseAdminPepiteRow({ ...row, details: { ...row.details, feesDefault: false } });
+    const pending = parseAdminPepiteRow({
+      ...row,
+      sale_id: "sale-3",
+      is_pepite: false,
+      status: "pepite",
+      details: { ...row.details, feesDefault: true },
+    });
+    const near = parseAdminPepiteRow({
+      ...row,
+      sale_id: "sale-4",
+      is_pepite: false,
+      status: "not_pepite",
+      details: { ...row.details, feesDefault: true },
+    });
+    expect(withDefault?.feesDefault).toBe(true);
+    expect(read?.feesDefault).toBe(false);
+    expect(parseAdminPepiteRow(row)?.feesDefault).toBe(false);
+    const rows = [withDefault, read, pending, near].filter((item) => item != null);
+    // Une presque pépite n'entre pas dans la part : elle n'est pas publiée.
+    expect(pepiteFeesDefaultStat(rows)).toEqual({ pepites: 3, withDefaultFees: 2, share: 2 / 3 });
+    expect(pepiteFeesDefaultStat([])).toEqual({ pepites: 0, withDefaultFees: 0, share: null });
   });
 
   it("écrit le critère manqué en clair", () => {
@@ -300,12 +348,39 @@ describe("computePepiteIndependence", () => {
     };
   }
 
+  type Evaluation = { sale_id: string; status: string; is_pepite: boolean };
+
+  /**
+   * La réponse de `admin_pepite_independence_sales` pour ces évaluations et ces ventes : les deux effectifs sur toutes
+   * les ventes évaluables, et les champs de rapprochement des SEULES ventes dont l'avocat poursuivant est nommé
+   * (migration 20261108110300).
+   */
+  function setIndependence(evaluations: Evaluation[], sales: Array<ReturnType<typeof sale>>) {
+    const evaluable = evaluations.filter(
+      (evaluation) => evaluation.status === "pepite" || evaluation.status === "not_pepite",
+    );
+    const pending = (evaluation: Evaluation) =>
+      evaluation.status === "pepite" && !evaluation.is_pepite;
+    mocks.independence = {
+      error: null,
+      data: {
+        evaluable: evaluable.length,
+        pepites: evaluable.filter((evaluation) => evaluation.is_pepite || pending(evaluation))
+          .length,
+        sales: evaluable.flatMap((evaluation) => {
+          const found = sales.find((candidate) => candidate.id === evaluation.sale_id);
+          if (!found || found.lawyer_name == null) return [];
+          return [{ ...found, is_pepite: evaluation.is_pepite, pending: pending(evaluation) }];
+        }),
+      },
+    };
+  }
+
   it("compare la part des pépites sponsorisées à celle de l'ensemble des ventes évaluées", async () => {
     // 10 ventes évaluables : 4 d'un avocat sponsorisé, 2 d'un avocat non sponsorisé, 4 sans avocat rapproché.
     // Les 2 pépites sont toutes deux d'un avocat sponsorisé.
-    mocks.tables.auction_sale_pepites = {
-      error: null,
-      rows: [
+    setIndependence(
+      [
         { sale_id: "s1", status: "pepite", is_pepite: true },
         { sale_id: "s2", status: "pepite", is_pepite: true },
         ...["s3", "s4", "s5", "s6", "s7", "s8", "s9", "s10"].map((sale_id) => ({
@@ -314,10 +389,7 @@ describe("computePepiteIndependence", () => {
           is_pepite: false,
         })),
       ],
-    };
-    mocks.tables.auction_sales = {
-      error: null,
-      rows: [
+      [
         sale("s1", "Jean Dupont"),
         sale("s2", "DUPONT Jean"),
         sale("s3", "Jean Dupont"),
@@ -329,7 +401,7 @@ describe("computePepiteIndependence", () => {
         sale("s9", "Me Dupont"),
         sale("s10", "Paul Durand"),
       ],
-    };
+    );
     mocks.tables.referenced_lawyers = { error: null, rows: [sponsored, free] };
 
     const result = await computePepiteIndependence(NOW);
@@ -348,22 +420,32 @@ describe("computePepiteIndependence", () => {
     expect(result.alert).toBe(false);
   });
 
+  it("une seule fonction agrégée remplace les lectures par pages et par tranches d'identifiants", async () => {
+    setIndependence(
+      [{ sale_id: "s1", status: "pepite", is_pepite: true }],
+      [sale("s1", "Jean Dupont")],
+    );
+    mocks.tables.referenced_lawyers = { error: null, rows: [sponsored] };
+
+    await computePepiteIndependence(NOW);
+
+    expect(mocks.independenceCalls).toBe(1);
+    // Ni les évaluations ni les ventes ne sont plus lues table par table : seuls les avocats le sont.
+    expect(mocks.reads).toEqual(["referenced_lawyers"]);
+  });
+
   it("alerte quand la part des pépites dépasse celle de l'ensemble d'au moins 10 points, sur 10 pépites", async () => {
     const ids = Array.from({ length: 30 }, (_, index) => `s${index}`);
-    mocks.tables.auction_sale_pepites = {
-      error: null,
-      rows: ids.map((sale_id, index) => ({
+    setIndependence(
+      ids.map((sale_id, index) => ({
         sale_id,
         status: index < 10 ? "pepite" : "not_pepite",
         is_pepite: index < 10,
       })),
-    };
-    mocks.tables.auction_sales = {
-      error: null,
-      rows: ids.map((id, index) =>
+      ids.map((id, index) =>
         sale(id, index < 6 || (index >= 10 && index < 13) ? "Jean Dupont" : null),
       ),
-    };
+    );
     mocks.tables.referenced_lawyers = { error: null, rows: [sponsored] };
 
     const result = await computePepiteIndependence(NOW);
@@ -375,17 +457,13 @@ describe("computePepiteIndependence", () => {
   });
 
   it("une période de sponsoring terminée ou pas encore commencée ne compte pas", async () => {
-    mocks.tables.auction_sale_pepites = {
-      error: null,
-      rows: [
+    setIndependence(
+      [
         { sale_id: "s1", status: "pepite", is_pepite: true },
         { sale_id: "s2", status: "not_pepite", is_pepite: false },
       ],
-    };
-    mocks.tables.auction_sales = {
-      error: null,
-      rows: [sale("s1", "Jean Dupont"), sale("s2", "Jean Dupont")],
-    };
+      [sale("s1", "Jean Dupont"), sale("s2", "Jean Dupont")],
+    );
     for (const placement of [
       { paid_placement_ends_at: "2026-10-01T00:00:00Z" },
       { paid_placement_starts_at: "2026-12-01T00:00:00Z" },
@@ -406,8 +484,28 @@ describe("computePepiteIndependence", () => {
     expect((await computePepiteIndependence(NOW)).evaluatedSponsored).toBe(2);
   });
 
-  it("sans vente évaluable : aucune part", async () => {
-    mocks.tables.auction_sale_pepites = { error: null, rows: [] };
+  it("une pépite à confirmer compte parmi les pépites, une pas pépite non", async () => {
+    setIndependence(
+      [
+        { sale_id: "s1", status: "pepite", is_pepite: false },
+        { sale_id: "s2", status: "not_pepite", is_pepite: false },
+        { sale_id: "s3", status: "insufficient", is_pepite: false },
+      ],
+      [sale("s1", "Jean Dupont"), sale("s2", "Jean Dupont"), sale("s3", "Jean Dupont")],
+    );
+    mocks.tables.referenced_lawyers = { error: null, rows: [sponsored] };
+
+    const result = await computePepiteIndependence(NOW);
+
+    expect(result).toMatchObject({
+      evaluatedSales: 2,
+      evaluatedSponsored: 2,
+      pepiteSales: 1,
+      pepiteSponsored: 1,
+    });
+  });
+
+  it("sans vente évaluable : aucune part, et les avocats ne sont même pas lus", async () => {
     const result = await computePepiteIndependence(NOW);
     expect(result).toMatchObject({
       evaluatedSales: 0,
@@ -415,7 +513,13 @@ describe("computePepiteIndependence", () => {
       pepiteShare: null,
       alert: false,
     });
-    expect(mocks.reads).toEqual(["auction_sale_pepites"]);
+    expect(mocks.independenceCalls).toBe(1);
+    expect(mocks.reads).toEqual([]);
+  });
+
+  it("une erreur de la fonction d'indépendance lève (la page affichera « non mesuré »)", async () => {
+    mocks.independence = { data: null, error: { code: "PGRST202", message: "absente" } };
+    await expect(computePepiteIndependence(NOW)).rejects.toMatchObject({ code: "PGRST202" });
   });
 });
 
@@ -451,7 +555,6 @@ describe("getAdminPepites", () => {
   it("rend le mode, les compteurs par type, les totaux, le taux, la liste et le contrôle d'indépendance", async () => {
     mocks.requireAuth.mockResolvedValue({ isAdmin: true });
     mocks.rpc.mockResolvedValue(rpcAnswer());
-    mocks.tables.auction_sale_pepites = { error: null, rows: [] };
 
     const result = await getAdminPepites("jeton", NOW);
 
@@ -462,7 +565,7 @@ describe("getAdminPepites", () => {
     });
     expect(result.migrated).toBe(true);
     expect(result.mode).toBe("shadow");
-    expect(result.ruleVersion).toBe("pepite-v1");
+    expect(result.ruleVersion).toBe("pepite-v1.1");
     expect(result.counters.map((counter) => counter.venue)).toEqual([
       "tribunal",
       "notary",
@@ -495,10 +598,60 @@ describe("getAdminPepites", () => {
     expect(result.independence).toMatchObject({ evaluatedSales: 0 });
   });
 
+  describe("ventes d'inondation en attente de réobservation", () => {
+    const answerByName = (counter: unknown) =>
+      mocks.rpc.mockImplementation(async (name: string) =>
+        name === "admin_count_flood_reobservation_pending" ? counter : rpcAnswer(),
+      );
+
+    it("lit le nombre par la fonction du compteur (jamais la table d'inondation)", async () => {
+      mocks.requireAuth.mockResolvedValue({ isAdmin: true });
+      mocks.tables.auction_sale_pepites = { error: null, rows: [] };
+      answerByName({ data: 531, error: null });
+
+      const result = await getAdminPepites("jeton", NOW);
+
+      expect(mocks.rpc).toHaveBeenCalledWith("admin_count_flood_reobservation_pending", {
+        p_now: NOW.toISOString(),
+      });
+      expect(result.floodReobservationPending).toBe(531);
+      expect(mocks.reads).not.toContain("auction_sale_flood_risk");
+    });
+
+    it.each([
+      [
+        "fonction absente (migration en retard)",
+        { data: null, error: { code: "PGRST202", message: "absente" } },
+      ],
+      ["erreur de la base", { data: null, error: { code: "XX000", message: "boom" } }],
+      ["réponse inattendue", { data: { pas: "un nombre" }, error: null }],
+    ])("%s : non mesuré, la page s'affiche quand même", async (_label, answer) => {
+      mocks.requireAuth.mockResolvedValue({ isAdmin: true });
+      mocks.tables.auction_sale_pepites = { error: null, rows: [] };
+      answerByName(answer);
+
+      const result = await getAdminPepites("jeton", NOW);
+
+      expect(result.floodReobservationPending).toBeNull();
+      expect(result.rows).toHaveLength(1);
+    });
+
+    it("une exception du client est aussi « non mesuré »", async () => {
+      mocks.requireAuth.mockResolvedValue({ isAdmin: true });
+      mocks.tables.auction_sale_pepites = { error: null, rows: [] };
+      mocks.rpc.mockImplementation(async (name: string) => {
+        if (name === "admin_count_flood_reobservation_pending") throw new Error("réseau");
+        return rpcAnswer();
+      });
+
+      expect((await getAdminPepites("jeton", NOW)).floodReobservationPending).toBeNull();
+    });
+  });
+
   it("une lecture du contrôle d'indépendance en échec ne fait pas tomber la page", async () => {
     mocks.requireAuth.mockResolvedValue({ isAdmin: true });
     mocks.rpc.mockResolvedValue(rpcAnswer());
-    mocks.tables.auction_sale_pepites = { error: { message: "lecture impossible" }, rows: [] };
+    mocks.independence = { data: null, error: { message: "lecture impossible" } };
 
     const result = await getAdminPepites("jeton", NOW);
 
@@ -509,13 +662,12 @@ describe("getAdminPepites", () => {
 
   it("lance le contrôle d'indépendance en même temps que la liste, sans l'attendre", async () => {
     mocks.requireAuth.mockResolvedValue({ isAdmin: true });
-    mocks.tables.auction_sale_pepites = { error: null, rows: [] };
     let release: (value: unknown) => void = () => {};
     mocks.rpc.mockReturnValue(new Promise((resolve) => (release = resolve)));
 
     const pending = getAdminPepites("jeton", NOW);
     // La liste n'a pas répondu, et la lecture du contrôle est déjà partie.
-    await vi.waitFor(() => expect(mocks.reads).toContain("auction_sale_pepites"));
+    await vi.waitFor(() => expect(mocks.independenceCalls).toBe(1));
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
 
     release(rpcAnswer());
@@ -537,7 +689,6 @@ describe("getAdminPepites", () => {
   it("le contrôle d'indépendance s'arrête quand le délai de la route est dépassé", async () => {
     const controller = new AbortController();
     controller.abort();
-    mocks.tables.auction_sale_pepites = { error: null, rows: [] };
 
     await expect(computePepiteIndependence(NOW, controller.signal)).rejects.toThrow(/délai/);
   });
@@ -553,6 +704,7 @@ describe("getAdminPepites", () => {
       mode: "unknown",
       rows: [],
       independence: null,
+      floodReobservationPending: null,
     });
   });
 
@@ -566,7 +718,6 @@ describe("getAdminPepites", () => {
   it("un mode inconnu de la base vaut « unknown »", async () => {
     mocks.requireAuth.mockResolvedValue({ isAdmin: true });
     mocks.rpc.mockResolvedValue(rpcAnswer({ mode: "peut-etre" }));
-    mocks.tables.auction_sale_pepites = { error: null, rows: [] };
 
     expect((await getAdminPepites("jeton", NOW)).mode).toBe("unknown");
   });

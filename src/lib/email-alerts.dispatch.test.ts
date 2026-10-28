@@ -280,7 +280,7 @@ describe("mention « pépite » au moment de l'envoi", () => {
   it("garde la mention quand la vente est toujours dans la liste publique des pépites", async () => {
     db.pepiteIds = ["sale-1"];
     const body = await send([pepiteNotification(1)]);
-    expect(body.text).toContain("Pépite : repère calculé automatiquement");
+    expect(body.text).toContain("Pépite : Repère calculé automatiquement");
     expect(db.rpcCalls).toEqual(["list_public_pepite_sale_ids"]);
   });
 
@@ -297,6 +297,27 @@ describe("mention « pépite » au moment de l'envoi", () => {
     db.pepiteError = { code: "57014" };
     const body = await send([pepiteNotification(1)]);
     expect(body.text).not.toMatch(/pépite/i);
+  });
+
+  const journalOf = () =>
+    db.updates
+      .filter((update) => update.table === "user_alert_notifications")
+      .map(
+        (update) =>
+          (update.patch.notification_snapshot as { emailDelivery: Row }).emailDelivery
+            .pepiteMentioned,
+      );
+
+  it("journalise la mention réellement envoyée, pas celle du résumé d'origine", async () => {
+    db.pepiteIds = ["sale-1"];
+    await send([pepiteNotification(1), pepiteNotification(2), notification(3)]);
+    expect(journalOf()).toEqual([true, false, false]);
+  });
+
+  it("journalise « sans mention » quand la vente a quitté la liste publique", async () => {
+    db.pepiteIds = [];
+    await send([pepiteNotification(1)]);
+    expect(journalOf()).toEqual([false]);
   });
 
   it("ne lit pas la liste pour une notification sans mention", async () => {

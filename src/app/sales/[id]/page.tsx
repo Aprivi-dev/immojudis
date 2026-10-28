@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound, permanentRedirect } from "next/navigation";
 import { openFeeRegimesFromEnv } from "@/lib/fee-regime.server";
 import { lookupPublicSale } from "@/lib/public-sale.server";
-import { loadSaleRentReference } from "@/lib/rent-reference.server";
+import { loadSaleHousingTension, loadSaleRentReference } from "@/lib/rent-reference.server";
 import {
   GENERIC_SALE_SEO_TITLE,
   isIndexablePublicSale,
@@ -21,6 +21,28 @@ type PageProps = {
 const NOT_INDEXED = { index: false, follow: false } as const;
 /** A thin page stays out of the index, but its links (to the catalogue, courts…) are followed. */
 const THIN_PAGE = { index: false, follow: true } as const;
+
+/**
+ * Délai maximal de la lecture du loyer de référence dans le rendu de la fiche. Elle fait deux
+ * allers-retours Supabase en série derrière la lecture de la vente : une base lente bloquerait la
+ * première visite. Passé le délai, la fiche part avec le repli départemental (comme si la lecture
+ * avait échoué, voir `loadSaleRentReference`), et la page est régénérée au bout de 5 minutes.
+ */
+const RENT_REFERENCE_TIMEOUT_MS = 1_500;
+
+async function rentReferenceWithinDeadline(
+  sale: Parameters<typeof loadSaleRentReference>[0],
+): Promise<Awaited<ReturnType<typeof loadSaleRentReference>>> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), RENT_REFERENCE_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([loadSaleRentReference(sale), deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 function salePath(saleId: string): string {
   return `/sales/${saleId.toLowerCase()}`;
@@ -108,7 +130,10 @@ export default async function Page({ params }: PageProps) {
   const sale = lookup.status === "found" ? lookup.sale : null;
   // Loyer de référence de la commune (carte ANIL), lu côté serveur : le navigateur ne lit jamais la
   // table. Le rapport enregistré lit la même référence, pour que les deux plafonds restent égaux.
-  const rentReference = sale ? await loadSaleRentReference(sale) : null;
+  // Le zonage « zone tendue » de la commune (fait neutre du bloc « Marché locatif ») se lit au même endroit.
+  const [rentReference, housingTension] = sale
+    ? await Promise.all([rentReferenceWithinDeadline(sale), loadSaleHousingTension(sale)])
+    : [null, null];
   const siteOrigin = resolveSiteOrigin(process.env, "http://localhost:3000")!;
   const structuredData = sale
     ? saleStructuredData({ ...sale, id: sale.id.toLowerCase() }, { origin: siteOrigin })
@@ -130,6 +155,7 @@ export default async function Page({ params }: PageProps) {
         adjudicationStatisticsEnabled={process.env.ADJUDICATION_PRICE_STATISTICS_ENABLED === "true"}
         openFeeRegimes={openFeeRegimesFromEnv()}
         rentReference={rentReference}
+        housingTension={housingTension}
       />
     </>
   );

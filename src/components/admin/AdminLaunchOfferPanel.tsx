@@ -23,14 +23,15 @@ export const LAUNCH_OFFER_QUERY_KEY = ["admin-launch-offer"] as const;
 const LAUNCH_OFFER_ACCOUNTS_QUERY_KEY = ["admin-launch-offer-accounts"] as const;
 
 const CUT_MESSAGE =
-  "Essai gratuit à l’inscription coupé : les comptes en essai reviennent à l’offre Découverte.";
+  "Essai gratuit à l’inscription coupé : les comptes déjà en essai gardent leurs jours, les nouveaux n’en ont pas.";
 const RESTORED_MESSAGE = "Essai gratuit à l’inscription rétabli.";
 
 /**
  * Interrupteur de l'offre de lancement : tant qu'elle est active, tout compte gratuit bénéficie des
- * avantages de l'offre Analyse (aucune écriture sur les comptes). La couper les ramène à leur offre
- * réelle, sans préavis ; la page et l'API suivent en une minute au plus (cache de 30 s + 30 s du CDN).
- * Couper demande une confirmation (boîte de dialogue) qui dit combien de comptes sont touchés ; le
+ * avantages de l'offre Analyse (aucune écriture sur les comptes). La couper ne ferme que les NOUVEAUX
+ * essais : un compte dont l'adresse a été confirmée avant la coupure garde ses 7 jours (CGU, art. 13).
+ * La page et l'API suivent en une minute au plus (cache de 30 s + 30 s du CDN).
+ * Couper demande une confirmation (boîte de dialogue) qui dit combien de comptes sont en essai ; le
  * changement d'état est annoncé dans une zone `role="status"`.
  * Procédure complète : docs/runbooks/offre-de-lancement.md.
  */
@@ -72,8 +73,8 @@ export function AdminLaunchOfferPanel() {
 
   function toggle() {
     if (active === undefined || mutation.isPending) return;
-    // Couper l'offre retire les avantages à tous les comptes gratuits, sans préavis : on demande
-    // confirmation. La rétablir n'enlève rien à personne.
+    // Couper l'essai ferme les nouveaux essais pour de bon : on demande confirmation. La rétablir
+    // n'enlève rien à personne.
     if (active) {
       setConfirmOpen(true);
       return;
@@ -92,10 +93,10 @@ export function AdminLaunchOfferPanel() {
     : accountsAffected == null
       ? "Le nombre de comptes concernés n’est pas disponible."
       : accountsAffected === 0
-        ? "Aucun compte ne bénéficie de l’offre que grâce à elle."
+        ? "Aucun compte n’est en essai en ce moment."
         : accountsAffected === 1
-          ? "1 compte perd les avantages de l’offre Analyse."
-          : `${formatInteger(accountsAffected)} comptes perdent les avantages de l’offre Analyse.`;
+          ? "1 compte est en essai : il garde l’offre Analyse jusqu’à la fin de ses 7 jours."
+          : `${formatInteger(accountsAffected)} comptes sont en essai : ils gardent l’offre Analyse jusqu’à la fin de leurs 7 jours.`;
 
   return (
     <AdminPanel className="mb-6 p-5">
@@ -117,9 +118,9 @@ export function AdminLaunchOfferPanel() {
           <p className="mt-2 text-sm leading-6 text-brand-navy/70">
             Tant qu’il est ouvert, chaque compte gratuit bénéficie de l’offre Analyse pendant 7
             jours après la confirmation de son adresse email, une fois par personne, sans carte
-            bancaire. Aucune écriture dans les comptes ni dans les abonnements : le couper ramène
-            chacun à son offre réelle et ferme l’essai aux nouveaux inscrits. Mention affichée aux
-            utilisateurs :
+            bancaire. Aucune écriture dans les comptes ni dans les abonnements : le couper ferme
+            l’essai aux nouveaux inscrits, sans toucher à ceux dont les 7 jours courent. Mention
+            affichée aux utilisateurs :
           </p>
           <p className="mt-2 rounded-lg bg-gold/10 p-3 text-sm leading-6">
             {LAUNCH_OFFER_ACCOUNT_TEXT}
@@ -158,8 +159,8 @@ export function AdminLaunchOfferPanel() {
           <DialogHeader>
             <DialogTitle>Couper l’essai gratuit ?</DialogTitle>
             <DialogDescription>
-              Les comptes en essai perdent immédiatement l’offre Analyse et les nouveaux inscrits
-              n’ont plus d’essai (la mise à jour peut prendre jusqu’à une minute).
+              Les nouveaux inscrits n’auront plus d’essai (la mise à jour peut prendre jusqu’à une
+              minute). Les comptes dont l’adresse est déjà confirmée gardent leurs 7 jours.
             </DialogDescription>
           </DialogHeader>
           <p className="text-sm font-semibold" data-testid="launch-offer-accounts">

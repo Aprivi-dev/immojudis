@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  parentCommuneCode,
   arrondissementCode,
   communeCodeFromGeocode,
   normalizeCommuneCode,
@@ -81,5 +82,37 @@ describe("saleCommuneCode : le point de raccord", () => {
     // Une autre commune, ou un arrondissement déjà connu, ne bouge pas.
     expect(arrondissementCode("33063", "33000")).toBe("33063");
     expect(arrondissementCode("75108", "75008")).toBe("75108");
+  });
+});
+
+describe("parentCommuneCode", () => {
+  it.each([
+    ["75101", "75056"],
+    ["75108", "75056"],
+    ["75116", "75056"],
+    ["75120", "75056"],
+    ["69381", "69123"],
+    ["69389", "69123"],
+    ["13201", "13055"],
+    ["13216", "13055"],
+    ["75056", "75056"],
+    ["69123", "69123"],
+    ["13055", "13055"],
+    ["33063", "33063"],
+    ["2a004", "2A004"],
+  ])("%s a pour parent %s", (code, parent) => {
+    expect(parentCommuneCode(code)).toBe(parent);
+  });
+
+  it("ne confond pas un code voisin avec un arrondissement", () => {
+    for (const code of ["75121", "69380", "69390", "13217", "13200", "75100"]) {
+      expect(parentCommuneCode(code), code).toBe(code);
+    }
+  });
+
+  it("rend null pour un code absent ou invalide", () => {
+    for (const code of [null, undefined, "", "abc", "7510"]) {
+      expect(parentCommuneCode(code)).toBeNull();
+    }
   });
 });

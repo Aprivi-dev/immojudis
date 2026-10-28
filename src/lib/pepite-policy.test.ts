@@ -1040,6 +1040,27 @@ describe("applyPepiteStability", () => {
       ).toMatchObject({ isPepite: false, favorableStreak: 1, codes: ["stab:frozen"] });
     });
 
+    it("ne garde pas gelée une évaluation stockée sous une autre version de la règle : réévaluée aux seuils de sortie", () => {
+      const old = { ...published, ruleVersion: "pepite-v1" };
+      // Même version : le gel tient, quel que soit le résultat de la nouvelle évaluation.
+      expect(
+        apply(beyond, { ...published, ruleVersion: favorable.ruleVersion }, { now: inFreeze })
+          .codes,
+      ).toEqual(["stab:frozen"]);
+      // Version différente : la pépite sort si elle ne tient plus aux seuils de sortie…
+      expect(apply(beyond, old, { now: inFreeze })).toMatchObject({
+        isPepite: false,
+        frozenAt: null,
+        codes: ["stab:exit"],
+      });
+      // … et reste publiée, sans gel, si elle y tient.
+      expect(apply(tolerated, old, { now: inFreeze })).toMatchObject({
+        isPepite: true,
+        frozenAt: null,
+        codes: [],
+      });
+    });
+
     it("garde la date du gel déjà posée", () => {
       const frozenAt = "2026-12-08T10:00:00Z";
       expect(apply(favorable, { ...published, frozenAt }, { now: inFreeze }).frozenAt).toBe(

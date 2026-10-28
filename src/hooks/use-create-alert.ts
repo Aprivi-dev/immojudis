@@ -235,7 +235,10 @@ export function useCreateAlert({
             "La décote minimale ne s'applique qu'aux biens déclarés libres : les biens occupés ou d'occupation inconnue n'y correspondent pas.",
           );
         }
-        trackProductEvent("alert_created", { email_consent: emailConsent });
+        trackProductEvent("alert_created", {
+          email_consent: emailConsent,
+          pepite_only: search.pepite === true,
+        });
         return { status: "created", emailConsent };
       } catch (saveError) {
         toast.error(userMessage(saveError));

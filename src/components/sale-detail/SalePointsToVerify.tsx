@@ -27,7 +27,7 @@ export function SalePointsToVerify({
     <section
       id={POINTS_TO_VERIFY_ANCHOR}
       aria-labelledby={titleId}
-      className={`scroll-mt-24 rounded-xl border border-line-soft bg-surface-muted p-4 ${className}`}
+      className={`scroll-mt-2 rounded-xl border border-line-soft bg-surface-muted p-4 ${className}`}
     >
       <h2 id={titleId} className="text-base font-semibold text-brand-navy">
         {pointsToVerifyLabel(points.length)}

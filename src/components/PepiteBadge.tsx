@@ -1,7 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useId, useRef, useState } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import { createPortal } from "react-dom";
 import Info from "lucide-react/dist/esm/icons/info.js";
 import { Badge } from "@/components/ui/primitives";
@@ -50,18 +56,33 @@ export function PepitePill({ className }: { className?: string }) {
   );
 }
 
-/** Pastille « Pépite » du haut de la fiche, avec le lien « Pourquoi ? » vers le bloc de la fiche (`#pepite`). */
-export function PepiteHeroBadge({ floodExposed = false }: { floodExposed?: boolean }) {
+/**
+ * Pastille « Pépite » du haut de la fiche, avec le lien « Pourquoi ? » vers le bloc de la fiche (`#pepite`).
+ * `blockLoaded={false}` : le bloc n'existe pas (encore, ou plus : lecture en cours ou en erreur) ; l'ancre
+ * ne mènerait nulle part, le lien renvoie alors à la page de méthode.
+ */
+export function PepiteHeroBadge({
+  floodExposed = false,
+  blockLoaded = true,
+}: {
+  floodExposed?: boolean;
+  blockLoaded?: boolean;
+}) {
+  const link =
+    "inline-flex min-h-11 items-center text-sm font-semibold text-gold-text underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft";
   return (
     <span className="inline-flex flex-wrap items-center gap-x-2">
       <PepitePill />
       {floodExposed ? <FloodExposedNote /> : null}
-      <a
-        href={`#${PEPITE_ANCHOR}`}
-        className="inline-flex min-h-11 items-center text-sm font-semibold text-gold-text underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
-      >
-        Pourquoi ?
-      </a>
+      {blockLoaded ? (
+        <a href={`#${PEPITE_ANCHOR}`} className={link}>
+          Pourquoi ?
+        </a>
+      ) : (
+        <Link href={PEPITE_METHOD_PATH} prefetch={false} className={link}>
+          {PEPITE_METHOD_LINK_LABEL}
+        </Link>
+      )}
     </span>
   );
 }
@@ -138,6 +159,11 @@ export function PepiteInfoBadge({
   const panel = useRef<HTMLDivElement>(null);
 
   const close = () => setPosition(null);
+  /** Ferme la fenêtre et rend le focus à la pastille : le Tab suivant repart de là, dans l'ordre de la page. */
+  const closeToTrigger = () => {
+    setPosition(null);
+    trigger.current?.focus();
+  };
   const toggle = () => {
     if (open) return close();
     const rect = trigger.current?.getBoundingClientRect();
@@ -170,6 +196,28 @@ export function PepiteInfoBadge({
       window.removeEventListener("resize", onViewportChange);
     };
   }, [open]);
+
+  // La fenêtre est dans un portail, en fin de page : sans ce déplacement, Tab depuis la pastille ne
+  // l'atteint jamais. Le focus entre dans la fenêtre à l'ouverture, où Tab mène au lien de la méthode.
+  useEffect(() => {
+    if (open) panel.current?.focus({ preventScroll: true });
+  }, [open]);
+
+  /**
+   * Tab quitte le couple pastille + fenêtre : en avant depuis le dernier lien, en arrière depuis la
+   * fenêtre elle-même. La fenêtre se ferme et le focus revient sur la pastille (sinon il partirait
+   * dans le portail, hors de l'ordre de lecture).
+   */
+  const onPanelKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "Tab") return;
+    const links = Array.from(panel.current?.querySelectorAll<HTMLElement>("a[href]") ?? []);
+    const active = document.activeElement;
+    const leavingForward = !event.shiftKey && (links.length === 0 || active === links.at(-1));
+    const leavingBackward = event.shiftKey && active === panel.current;
+    if (!leavingForward && !leavingBackward) return;
+    event.preventDefault();
+    closeToTrigger();
+  };
 
   const focus =
     "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft";
@@ -212,6 +260,7 @@ export function PepiteInfoBadge({
             <div
               ref={panel}
               tabIndex={-1}
+              onKeyDown={onPanelKeyDown}
               style={{ top: position.top, left: position.left, width: PANEL_WIDTH }}
               className="fixed z-[70] max-w-[calc(100vw-1rem)] rounded-lg border border-line-soft bg-white p-3 text-xs leading-relaxed text-foreground shadow-lg outline-none"
             >

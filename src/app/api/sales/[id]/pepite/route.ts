@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { recordAccountProductEvent } from "@/lib/account-product-events.server";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -48,6 +49,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   try {
     const saleId = saleIdSchema.parse((await context.params).id).toLowerCase();
     const detailRequested = new URL(request.url).searchParams.get("view") === "detail";
+    let accountId: string | null = null;
 
     if (detailRequested) {
       const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
@@ -62,6 +64,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
         "Le détail de la pépite est réservé à l’offre Analyse ou à une vente débloquée.",
         { saleId },
       );
+      accountId = auth.userId;
     } else {
       await enforceIpRateLimit({
         request,
@@ -94,6 +97,10 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       const body: PepitePayload = detail
         ? pepiteDetailPayload(criteria, detail, flood)
         : pepiteCriteriaPayload(criteria, flood);
+      // Mesure par compte : le détail est servi (droit vérifié plus haut). Un par compte, vente et jour ;
+      // la mesure ne gêne jamais la réponse (`recordAccountProductEvent` ne lève pas).
+      if (detail)
+        await recordAccountProductEvent(accountId, { type: "pepite_detail_served", saleId });
       return NextResponse.json(body, { headers: PRIVATE_HEADERS });
     }
     // Le niveau « criteria » ne reçoit JAMAIS le détail : `pepiteCriteriaPayload` ne prend que les critères.

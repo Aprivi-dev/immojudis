@@ -6,6 +6,7 @@ import { formatDateTime, formatInteger, queryErrorMessage } from "@/components/a
 import { AdminPanelLoading, useAdminRefresh } from "@/components/admin/admin-ui";
 import { useAuth } from "@/hooks/use-auth";
 import type { BidCeilingSummary } from "@/lib/admin-bid-ceilings";
+import type { OfferOpeningSurveySummary } from "@/lib/admin-offer-opening-survey";
 import type {
   AdminPilotageResponse,
   PilotageCount,
@@ -132,7 +133,7 @@ const SECTIONS: Section[] = [
         event: true,
       },
       {
-        label: "Plafonds d’enchère calculés",
+        label: "Fiches avec valeur de référence servie",
         value: (p) => p.events.bidCeilings,
         accounts: (p) => p.events.accounts.bidCeilings,
         event: true,
@@ -424,6 +425,8 @@ function PilotageTables({ data }: { data: AdminPilotageResponse }) {
 
       <SignalFeedbackCard summary={data.signalFeedback ?? null} />
 
+      <OfferOpeningSurveyCard summary={data.offerOpeningSurvey ?? null} />
+
       <AdminPanel className="mt-6 p-5">
         <AdminSectionHeading title="Comment lire ces chiffres" />
         <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-6 text-brand-navy/70">
@@ -464,9 +467,11 @@ function PilotageTables({ data }: { data: AdminPilotageResponse }) {
             conservés 90 jours.
           </li>
           <li>
-            « Plafonds d’enchère calculés » compte les ventes pour lesquelles la valeur de référence
-            du plafond a été servie à un compte : le calcul du plafond se fait dans le navigateur. «
-            Exports agenda » ne compte que les comptes connectés (le fichier est public).
+            « Fiches avec valeur de référence servie » compte les ventes pour lesquelles la valeur
+            de référence du plafond a été servie à un compte : le calcul du plafond se fait dans le
+            navigateur, et la valeur est servie à l’ouverture de toute fiche d’un compte Analyse
+            (essai compris), sans que le plafond ait été travaillé. « Exports agenda » ne compte que
+            les comptes connectés (le fichier est public).
           </li>
           <li>
             « Clics d’email » compte les ouvertures des liens suivis des alertes et des rappels. Une
@@ -661,9 +666,98 @@ function SignalFeedbackCard({ summary }: { summary: SaleSignalFeedbackSummary | 
                 </div>
               ))}
             </dl>
+            {signal === "pepite" ? (
+              <RuleVersionsLine versions={summary?.signals.pepite.ruleVersions ?? {}} />
+            ) : null}
           </div>
         ))}
       </div>
+    </AdminPanel>
+  );
+}
+
+/**
+ * Retours « Repère Pépite » par version de la règle de la vente (ligne actuelle, pas la version en vigueur
+ * au moment du retour). Sert à ne pas mêler les retours de la règle v1 et de la v2 à son ouverture.
+ */
+function RuleVersionsLine({ versions }: { versions: Record<string, number> }) {
+  const entries = Object.entries(versions).sort(([left], [right]) => left.localeCompare(right));
+  if (!entries.length) return null;
+  return (
+    <p className="mt-2 text-xs text-brand-navy/70" data-testid="pepite-rule-versions">
+      Par version de la règle :{" "}
+      {entries.map(([version, total]) => `${version} ${formatCount(total)}`).join(" · ")}
+    </p>
+  );
+}
+
+const SURVEY_PROFILES: Array<{ key: keyof OfferOpeningSurveySummary["profiles"]; label: string }> =
+  [
+    { key: "particulier", label: "Particulier" },
+    { key: "marchand_de_biens", label: "Marchand de biens" },
+    { key: "avocat", label: "Avocat" },
+    { key: "autre", label: "Autre" },
+    { key: "unanswered", label: "Profil non renseigné" },
+  ];
+
+/** Médiane d'un repère de prix : « non mesuré », « moins de N réponses » ou le montant. */
+export function formatSurveyMedian(
+  price: { answers: number | null; medianEur: number | null },
+  minAnswers: number,
+): string {
+  if (price.answers == null) return NOT_MEASURED;
+  if (price.medianEur == null) return `moins de ${minAnswers} réponses`;
+  return `${formatInteger(Math.round(price.medianEur))} €`;
+}
+
+/**
+ * Réponses du questionnaire de la liste d'attente : répartition par profil, médiane des deux repères de prix
+ * (masquée sous 10 réponses) et acceptants d'un entretien. Les prix sont déclaratifs, donnés par des personnes
+ * qui se sont inscrites elles-mêmes : ils ne disent pas ce qu'elles paieraient.
+ */
+function OfferOpeningSurveyCard({ summary }: { summary: OfferOpeningSurveySummary | null }) {
+  const minAnswers = summary?.minMedianAnswers ?? 10;
+  const lines = [
+    { label: "Réponses au questionnaire", text: formatCount(summary?.answered ?? null) },
+    ...SURVEY_PROFILES.map(({ key, label }) => ({
+      label,
+      text: formatCount(summary?.profiles[key] ?? null),
+    })),
+    {
+      label: "Médiane du prix jugé trop cher",
+      text: summary ? formatSurveyMedian(summary.priceTooExpensive, minAnswers) : NOT_MEASURED,
+    },
+    {
+      label: "Médiane du prix jugé bon marché",
+      text: summary ? formatSurveyMedian(summary.priceCheap, minAnswers) : NOT_MEASURED,
+    },
+    {
+      label: "Ont accepté un entretien",
+      text: formatCount(summary?.interviewAccepted ?? null),
+    },
+  ];
+  return (
+    <AdminPanel className="mt-6 p-5">
+      <AdminSectionHeading title="Questionnaire de la liste d’attente" />
+      <p className="mt-1 text-sm text-brand-navy/70">
+        Réponses facultatives de ceux qui ont demandé à être prévenus de l’ouverture de l’offre
+        Analyse. Les prix sont déclaratifs et viennent de personnes qui se sont inscrites
+        elles-mêmes : ils ne mesurent pas une intention d’achat. Administrateurs exclus.
+      </p>
+      <dl className="mt-3 grid gap-x-6 gap-y-1.5 text-sm sm:grid-cols-2">
+        {lines.map((line) => (
+          <div key={line.label} className="flex items-baseline justify-between gap-3">
+            <dt className="text-brand-navy/70">{line.label}</dt>
+            <dd
+              className={`tabular-nums ${
+                line.text === NOT_MEASURED ? "text-xs text-brand-navy/70" : "font-semibold"
+              }`}
+            >
+              {line.text}
+            </dd>
+          </div>
+        ))}
+      </dl>
     </AdminPanel>
   );
 }

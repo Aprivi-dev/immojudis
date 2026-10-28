@@ -198,6 +198,25 @@ describe("serverEnv pipeline, alerts and email", () => {
     expect(serverEnv({}).saleFloodRisk.runner).toBeUndefined();
   });
 
+  it("keeps CEILING_FEE_REGIMES_OPEN absent and empty apart, unlike every other variable", () => {
+    // Absente : tous les régimes de frais sont ouverts. Vide : arrêt d'urgence, seul le tribunal reste.
+    expect(serverEnv({}).ceilingFeeRegimes.open).toBeUndefined();
+    expect(serverEnv({ CEILING_FEE_REGIMES_OPEN: "" }).ceilingFeeRegimes.open).toBe("");
+    expect(serverEnv({ CEILING_FEE_REGIMES_OPEN: "notary_online" }).ceilingFeeRegimes.open).toBe(
+      "notary_online",
+    );
+    // Les autres variables, elles, traitent le vide comme l'absence.
+    expect(serverEnv({ PEPITE_RULE_V2_ENABLED: "" }).pepiteRule.v2Enabled).toBeUndefined();
+  });
+
+  it("reads ALERT_RENT_BASIS_SWITCH_AT through the shared configuration, blank as unset", () => {
+    expect(
+      serverEnv({ ALERT_RENT_BASIS_SWITCH_AT: " 2026-11-10T08:00:00Z " }).alertRentBasis,
+    ).toEqual({ switchAt: "2026-11-10T08:00:00Z" });
+    expect(serverEnv({ ALERT_RENT_BASIS_SWITCH_AT: "  " }).alertRentBasis.switchAt).toBeUndefined();
+    expect(serverEnv({}).alertRentBasis.switchAt).toBeUndefined();
+  });
+
   it("reads WEEKLY_DIGEST_MODE and SALE_RESULTS_MODE through the shared configuration, trimmed and blank as unset", () => {
     expect(serverEnv({ WEEKLY_DIGEST_MODE: " internal " }).weeklyDigest.mode).toBe("internal");
     expect(serverEnv({ WEEKLY_DIGEST_MODE: "  " }).weeklyDigest.mode).toBeUndefined();

@@ -42,7 +42,7 @@ export function UnlockedSalesPage() {
       </Link>
       <h1 className="mt-2 font-display text-4xl text-foreground">Mes ventes débloquées</h1>
       <p className="mt-2 text-sm text-muted-foreground">
-        Les ventes dont vous avez ouvert le détail avec vos déblocages mensuels. Elles restent
+        Les ventes dont vous avez ouvert le détail avec vos déblocages par mois. Elles restent
         accessibles tant qu’elles sont en ligne sur Immojudis, dans la limite de 24 mois.
       </p>
       {status && !status.analysisAccess ? (

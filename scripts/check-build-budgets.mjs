@@ -115,12 +115,13 @@ const MAX_CLIENT_CHUNK_BYTES = 335_000;
 // Page /admin/inscriptions (suivi des comptes et prolongation de l'essai, 27/10/2026) : son chunk propre pèse
 // 22 244 octets ; total mesuré 6 270 237 pour 6 245 900 sur main. Décision du fondateur (27/10/2026) :
 // relèvement à 6 275 000.
-const MAX_TOTAL_CLIENT_JS_BYTES = 6_275_000;
+// Session /equipe du 27/10/2026 (13 chantiers fusionnés : carte, Pépite v1.1, essai, mesure) : total mesuré
+// 6 333 040. Décision du fondateur (28/10/2026) : relèvement à 6 340 000.
+const MAX_TOTAL_CLIENT_JS_BYTES = 6_340_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
-// New homepage: lossless panorama for large screens plus editorial photography.
+// Homepage editorial photography (heavier than the default landing image budget).
 const MAX_PUBLIC_MEDIA_BYTES = 5_000_000;
 const HOMEPAGE_IMAGE_BUDGETS = {
-  "public/media/landing/cinematic-bordeaux-lossless.webp": 2_300_000,
   "public/media/landing/gallery-townhouse.webp": 460_000,
   "public/media/landing/gallery-land.webp": 460_000,
 };
@@ -186,7 +187,8 @@ const routeBudgets = [
     // zod 4 puis zod/mini : 660 222 octets (24/10/2026), plafond d'origine rétabli.
     // Décision du fondateur du 26/10/2026 (lot B2, repère « Pépite ») : relevé de 10 000 octets, à 680 000
     // (669 267 avant le lot).
-    maxBytes: 680_000,
+    // Décision du fondateur du 28/10/2026 (session /equipe du 27/10) : 687 798 mesurés, relevé à 690 000.
+    maxBytes: 690_000,
   },
   {
     name: "alerts",
@@ -218,7 +220,8 @@ const routeBudgets = [
     // zod 4 puis zod/mini : 363 784 octets (24/10/2026), plafond d'origine rétabli.
     // Décision du fondateur du 26/10/2026 (lot B2, repère « Pépite ») : relevé de 10 000 octets, à 380 000
     // (368 970 avant le lot).
-    maxBytes: 380_000,
+    // Décision du fondateur du 28/10/2026 (session /equipe du 27/10) : 383 916 mesurés, relevé à 385 000.
+    maxBytes: 385_000,
   },
   {
     name: "tribunals",
@@ -250,6 +253,8 @@ const routeBudgets = [
     manifest: ".next/server/app/annonce-exemple/page_client-reference-manifest.js",
     routeKey: "/annonce-exemple/page",
     entryKey: "[project]/src/app/annonce-exemple/page",
+    // 28/10/2026 : relevé un temps à 190 000 (décision du fondateur), puis rétabli à 185 000 une fois l'import
+    // inutile de `HomePrimaryAction` retiré (180 311 mesurés).
     maxBytes: 185_000,
   },
   {

@@ -647,7 +647,7 @@ function ProsecutedSales({
           {hidden > 1 ? "s" : ""}.
         </p>
       ) : null}
-      <p className="mt-2 text-xs leading-relaxed text-brand-navy/60">
+      <p className="mt-2 text-xs leading-relaxed text-ink-soft">
         Rapprochement automatique d'après le nom indiqué dans les annonces et le barreau du tribunal
         : vérifiez-le sur l'annonce. Cette liste n'est pas une recommandation.
       </p>

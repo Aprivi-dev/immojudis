@@ -115,11 +115,11 @@ describe("SectorAlertForm", () => {
   });
 });
 
-describe("SectorAlertForm : « Seulement les pépites »", () => {
+describe("SectorAlertForm : « Pépites seulement »", () => {
   it("rappelle le critère et le transmet à la création", async () => {
     render(<SectorAlertForm criteria={{ department: "33", pepite: true }} />);
     expect(screen.getByRole("list", { name: "Critères de l'alerte" }).textContent).toContain(
-      "Seulement les pépites",
+      "Pépites seulement",
     );
     fireEvent.click(screen.getByRole("button", { name: "Créer l’alerte" }));
     await waitFor(() => expect(state.create).toHaveBeenCalled());

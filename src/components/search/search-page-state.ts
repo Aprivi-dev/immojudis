@@ -357,7 +357,7 @@ export function buildAlertName(search: SalesSearchParams) {
     search.department ? `Dép. ${search.department}` : null,
     search.homeTypes?.length === 1 ? propertyTypeLabel(search.homeTypes[0]) : null,
     search.maxPrice ? `≤ ${compactPrice(search.maxPrice)}` : null,
-    search.minYield ? `rendement ≥ ${search.minYield}%` : null,
+    search.minYield ? `rendement brut à la mise à prix ≥ ${search.minYield}%` : null,
     search.dpeClasses?.length ? `DPE ${search.dpeClasses.join("/")}` : null,
   ].filter(Boolean);
 

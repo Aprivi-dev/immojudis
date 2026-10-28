@@ -7,7 +7,10 @@ import Link from "next/link";
 import { SaleDetailSkeleton } from "@/components/SaleDetailFallbacks";
 import { Card, buttonClasses } from "@/components/ui/primitives";
 import { useAuth } from "@/hooks/use-auth";
+import { useLaunchOffer } from "@/hooks/use-launch-offer";
+import { HOME_TRIAL_NOTE } from "@/lib/launch-offer";
 import { loginPathWithRedirect } from "@/lib/navigation";
+import { FREE_ACCESS_LINE } from "@/lib/sale-unlocks";
 import type { MarketEstimate } from "@/lib/market.server";
 import type { CeilingUserChoices } from "@/lib/bid-ceiling-defaults";
 import type { AuctionSale } from "@/lib/types";
@@ -18,6 +21,31 @@ const AnalysisSaleDetailView = dynamic(
     import("@/components/SimplifiedSaleDetailView").then((module) => module.AnalysisSaleDetailView),
   { loading: () => <SaleDetailSkeleton /> },
 );
+
+/**
+ * Sous la synthèse de l'exemple, à portée du visiteur convaincu : l'inscription, avec la même
+ * phrase que sous le bouton de l'accueil (l'essai quand il est ouvert, sinon la ligne du compte
+ * gratuit). Rien pour une personne connectée.
+ */
+function ExampleSummarySignup() {
+  const { user } = useAuth();
+  const trialOpen = useLaunchOffer().active;
+  if (user) return null;
+  return (
+    <div
+      className="mt-5 grid gap-2 border-t border-line-soft pt-5"
+      data-testid="example-summary-cta"
+    >
+      <Link
+        href={loginPathWithRedirect("/sales", { reason: "exemple" })}
+        className={buttonClasses({ variant: "primary" })}
+      >
+        Créer mon compte gratuit
+      </Link>
+      <p className="text-sm text-ink-soft">{trialOpen ? HOME_TRIAL_NOTE : FREE_ACCESS_LINE}</p>
+    </div>
+  );
+}
 
 /**
  * The example is chosen on the server (`?bien=`), so the page content is part of
@@ -42,18 +70,20 @@ export function ExampleSalePage({
     <>
       {/* L'image d'attente de la vue aérienne vient de api.mapbox.com : connexion préparée tôt. */}
       <MapboxPreconnect />
-      <div
-        role="note"
+      {/* Un repère `complementary` nommé : un `role="note"` seul reste hors de tout repère (RGAA 9.2). */}
+      <aside
+        aria-label="Exemple fictif"
         className="border-b border-amber-300 bg-amber-50 px-4 py-3 text-center text-sm font-semibold text-amber-950"
       >
         Exemple fictif : ce bien, son adresse et ses chiffres sont inventés pour illustrer
         l’analyse. Aucune vente réelle ne correspond à cette page.
-      </div>
+      </aside>
       <AnalysisSaleDetailView
         sale={example.sale}
         marketEstimateOverride={example.marketEstimate}
-        returnTo="/#exemples"
+        returnTo="/#essayer"
         backLabel="Retour aux exemples"
+        summaryFooter={<ExampleSummarySignup />}
         publicDemo
         defaultCeilingChoices={ceilingChoices}
         adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
@@ -78,7 +108,7 @@ export function ExampleSalePage({
           <div className="flex flex-wrap gap-3">
             {user ? null : (
               <Link
-                href={loginPathWithRedirect("/sales", { reason: "offre" })}
+                href={loginPathWithRedirect("/sales", { reason: "exemple" })}
                 className={buttonClasses({ variant: "primary" })}
               >
                 Créer mon compte gratuit

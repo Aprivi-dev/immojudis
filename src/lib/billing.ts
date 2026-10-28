@@ -151,7 +151,14 @@ export async function createPlanCheckoutSession({
   // Une seule définition de « paiements ouverts » (`analysisCheckoutReadiness`) : configuration
   // Stripe complète, secret de webhook compris (sans lui, un paiement n'ouvrirait aucun accès),
   // identité légale et canal de confirmation. L'essai gratuit à l'inscription (interrupteur de
-  // l'offre de lancement) n'y entre plus : un compte peut s'abonner pendant ou après son essai.
+  // l'offre de lancement) n'y entre pas : ce contrôle serveur ne le lit pas, et il accepterait donc
+  // un checkout demandé pendant l'essai (appel direct à la route).
+  //
+  // Décision retenue (session du 27/10/2026, n° 17) : l'INTERFACE, elle, reste fermée à la souscription
+  // pendant l'essai tant que le paiement n'est pas ouvert. `BillingActions` montre à un compte en
+  // essai la mention de l'essai et « Me prévenir de l'ouverture », jamais le bouton de souscription.
+  // Souscrire en cours d'essai ferait de toute façon perdre les jours restants (l'abonnement
+  // remplace l'essai : `resolvePlanEntitlements` ne donne l'essai qu'à un compte Découverte).
   assertAnalysisCheckoutOpen(process.env);
   const stripe = getStripe();
   const appOrigin = resolveBillingOrigin(origin);

@@ -177,7 +177,7 @@ export async function createLawyerReferralRequest({
 }): Promise<LawyerReferralResponse> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "lawyers.referrals")) {
-    throw new Error("Mise en relation avocat réservée au plan Analyse.");
+    throw new Error("Mise en relation avocat réservée à l’offre Analyse.");
   }
 
   const sale = await getSaleSnapshot(auth.supabase, input.saleId);
@@ -270,7 +270,7 @@ export async function previewLawyerReferralRecipient({
 }): Promise<LawyerReferralPreviewResponse> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "lawyers.referrals")) {
-    throw new Error("Mise en relation avocat réservée au plan Analyse.");
+    throw new Error("Mise en relation avocat réservée à l’offre Analyse.");
   }
 
   const sale = await getSaleSnapshot(auth.supabase, query.saleId);

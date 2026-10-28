@@ -112,7 +112,7 @@ export async function listUserApiKeys({
 }): Promise<ApiKeyListResponse> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "sales.apiAccess")) {
-    throw new Error("Clés API réservées au plan Analyse.");
+    throw new Error("Clés API réservées à l’offre Analyse.");
   }
   const { data, error } = await supabaseAdmin
     .from("user_api_keys")
@@ -140,7 +140,7 @@ export async function createUserApiKey({
 }): Promise<ApiKeyCreateResponse> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "sales.apiAccess")) {
-    throw new Error("Clés API réservées au plan Analyse.");
+    throw new Error("Clés API réservées à l’offre Analyse.");
   }
 
   await assertApiKeyLimit(auth, plan.limits.apiKeys);

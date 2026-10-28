@@ -238,7 +238,10 @@ test("compte Découverte : « Débloquer cette vente » d'un aperçu mène à la
 }) => {
   await setup(page, { initial: status(0) });
   await page.goto(`/sales/${SALE_ID}`);
-  await expect(page.getByRole("heading", { name: "Débloquer cette vente" })).toBeVisible();
+  // Délai explicite : sous charge (plusieurs workers, deux serveurs), le titre mettait plus de 5 s à paraître.
+  await expect(page.getByRole("heading", { name: "Débloquer cette vente" })).toBeVisible({
+    timeout: 15_000,
+  });
 
   const link = page
     .getByRole("link", { name: "Débloquer cette vente (il vous reste 3 sur 3)" })

@@ -87,7 +87,7 @@ describe("investor welcome flow", () => {
     fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
     const text = document.body.textContent ?? "";
     expect(text).toContain(
-      "Chaque mois, vous pouvez débloquer 3 ventes en détail (enchère plafond ou offre plafond, lecture des pièces, historique, selon la vente). L’offre Analyse les ouvre toutes.",
+      "Avec 3 déblocages par mois, vous ouvrez le détail d’une vente (enchère plafond ou offre plafond, lecture des pièces, historique, selon la vente). L’offre Analyse les ouvre toutes.",
     );
     expect(text).not.toContain("nécessitent un accès Analyse");
   });
@@ -98,7 +98,7 @@ describe("investor welcome flow", () => {
     fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
     const text = document.body.textContent ?? "";
     expect(text).toContain(
-      "Chaque mois, vous pouvez débloquer 3 ventes en détail (enchère plafond, lecture des pièces, historique, selon la vente).",
+      "Avec 3 déblocages par mois, vous ouvrez le détail d’une vente (enchère plafond, lecture des pièces, historique, selon la vente).",
     );
     expect(text).not.toContain("offre plafond");
   });
@@ -142,6 +142,16 @@ describe("investor welcome flow", () => {
       const help = document.getElementById(checkbox.getAttribute("aria-describedby")!);
       expect(help?.textContent).toContain("récapitulatif hebdomadaire");
       expect(help?.textContent).toContain("à tout moment");
+    });
+
+    it("dit quand arrive l'alerte et renvoie vers une fiche pour voir un plafond, une fois la case cochée", () => {
+      render(<InvestorOnboarding />);
+      goToLastStep("33");
+      expect(screen.queryByTestId("first-alert-timing")).toBeNull();
+      fireEvent.click(screen.getByRole("checkbox", { name: ALERT_LABEL }));
+      expect(screen.getByTestId("first-alert-timing").textContent).toBe(
+        "Le récapitulatif part le lundi, s’il y a de nouvelles ventes qui correspondent à vos critères. En attendant, ouvrez une fiche pour voir son plafond.",
+      );
     });
 
     it("n'écrit rien tant que la case reste décochée", () => {

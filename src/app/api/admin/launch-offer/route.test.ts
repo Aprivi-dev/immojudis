@@ -56,6 +56,14 @@ describe("/api/admin/launch-offer", () => {
     expect(mocks.set).not.toHaveBeenCalled();
   });
 
+  it("lit le jeton avant de valider le corps : sans jeton, un corps invalide est refusé en 401", async () => {
+    const response = await POST(
+      new Request(url, { method: "POST", body: JSON.stringify({ active: "oui" }) }),
+    );
+    expect(response.status).toBe(401);
+    expect(mocks.set).not.toHaveBeenCalled();
+  });
+
   it("refuse un compte non administrateur", async () => {
     mocks.set.mockRejectedValue(new Error("Forbidden: accès administrateur requis."));
     const response = await POST(

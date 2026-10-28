@@ -21,7 +21,7 @@
 .eyebrow {
   margin: 0 0 5px;
   color: var(--cadastre-accent);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.12em;
   line-height: 1.2;
@@ -53,7 +53,7 @@
   border-radius: 999px;
   background: var(--cadastre-accent-soft);
   color: var(--gold-text);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.06em;
   line-height: 1;
@@ -106,7 +106,7 @@
   border-radius: 6px;
   background: rgb(255 255 255 / 84%);
   color: var(--ink-soft);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .mapFrame :global(.mapboxgl-ctrl-attrib a) {
@@ -178,7 +178,7 @@
   border-radius: 9px;
   background: rgb(255 248 233 / 94%);
   color: var(--gold-text);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.35;
   box-shadow: 0 4px 14px rgb(19 34 56 / 12%);
 }
@@ -188,7 +188,7 @@
   flex-wrap: wrap;
   gap: 8px 16px;
   color: var(--cadastre-muted);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.35;
 }
 
@@ -293,7 +293,7 @@
 
   .sourcePill {
     padding-inline: 7px;
-    font-size: 9px;
+    font-size: 12px;
   }
 
   .mapFrame {

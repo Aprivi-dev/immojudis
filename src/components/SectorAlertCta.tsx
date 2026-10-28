@@ -5,7 +5,9 @@ import Bell from "lucide-react/dist/esm/icons/bell.js";
 import { SectorAlertForm } from "@/components/SectorAlertFormLazy";
 import { Card, buttonClasses } from "@/components/ui/primitives";
 import { useAuth } from "@/hooks/use-auth";
+import { useLaunchOffer } from "@/hooks/use-launch-offer";
 import { alertCreationLoginPath } from "@/lib/discovery-alerts";
+import { LAUNCH_OFFER_SHORT_TEXT } from "@/lib/launch-offer";
 import type { SalesSearchUrlRecord } from "@/lib/search/search-url-state";
 
 // La création elle-même (droits, zone, consentement) n'est chargée que pour une personne
@@ -28,6 +30,8 @@ export function SectorAlertCta({
   intro?: string;
 }) {
   const { user, loading } = useAuth();
+  // L'essai n'est annoncé qu'une fois son ouverture lue (comme sur le reste du site).
+  const launchOffer = useLaunchOffer().active;
   if (user && !loading) {
     return <SectorAlertForm criteria={criteria} intro={intro} actionLabel={SECTOR_ALERT_LABEL} />;
   }
@@ -46,6 +50,11 @@ export function SectorAlertCta({
           {SECTOR_ALERT_LABEL}
         </Link>
       </div>
+      {launchOffer ? (
+        <p data-testid="sector-alert-trial" className="text-sm font-medium">
+          {LAUNCH_OFFER_SHORT_TEXT}
+        </p>
+      ) : null}
       <p className="text-xs text-ink-soft">
         Compte gratuit, sans carte bancaire. Vous retrouvez ce secteur après la connexion ; l’email
         récapitulatif reste facultatif.

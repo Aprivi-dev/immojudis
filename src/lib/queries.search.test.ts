@@ -268,9 +268,16 @@ describe("Supabase sale search query", () => {
     expect(calls).toContainEqual(["order", "id", { ascending: true }]);
     const columns = String(calls.find((call) => call[0] === "select")?.[1]).split(",");
     expect(columns).toEqual(
-      expect.arrayContaining(["id", "latitude", "longitude", "starting_price_eur"]),
+      expect.arrayContaining([
+        "id",
+        "latitude",
+        "longitude",
+        "starting_price_eur",
+        "location_precision",
+        "quality_flags",
+      ]),
     );
-    expect(columns.length).toBeLessThanOrEqual(10);
+    expect(columns.length).toBeLessThanOrEqual(12);
     expect(columns).not.toContain("title");
   });
 

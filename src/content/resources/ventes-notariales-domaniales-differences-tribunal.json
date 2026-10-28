@@ -1,7 +1,7 @@
 {
   "slug": "ventes-notariales-domaniales-differences-tribunal",
   "publishedAt": "2026-10-13",
-  "updatedAt": "2026-10-26",
+  "updatedAt": "2026-10-28",
   "title": "Ventes notariales et ventes domaniales : en quoi elles diffèrent d’une vente au tribunal",
   "seoTitle": "Ventes notariales et domaniales : différences",
   "category": "Les fondamentaux",
@@ -163,6 +163,30 @@
       ]
     },
     {
+      "id": "question-vente-interactive",
+      "title": "Qu’est-ce qu’une vente interactive notariale ?",
+      "paragraphs": [
+        "C’est une vente en ligne organisée par un notaire. Elle fonctionne par offres et non par enchères en salle : pendant une période limitée, des acheteurs déposent des offres, puis l’offre retenue donne lieu à un avant-contrat signé chez le notaire. Il n’y a pas d’adjudication.",
+        "Pour ces ventes, Immojudis parle d’offre plafond plutôt que d’enchère plafond : c’est le montant d’offre maximal que vous vous interdisez de dépasser."
+      ]
+    },
+    {
+      "id": "question-prix-de-reserve",
+      "title": "Qu’est-ce que le prix de réserve ?",
+      "paragraphs": [
+        "Au sens courant, le prix de réserve est le montant minimal en dessous duquel le vendeur n’est pas prêt à vendre. Il n’est pas forcément communiqué aux acheteurs. À titre d’exemple, les conditions d’utilisation de 36h immo prévoient que le vendeur peut refuser l’offre la plus élevée si elle n’atteint pas la valeur qu’il souhaite, communiquée ou non à l’avance (art. 2.6).",
+        "Nous n’avons pas trouvé de page officielle des notaires qui définisse ce prix pour la vente interactive : demandez au notaire s’il existe et ce que vous pouvez en savoir. Immojudis ne le connaît pas : pour une vente par offres, la mention « prix de réserve inconnu » accompagne le repère « Pépite », dont les critères sont publiés sur la page « Comment repérons-nous les pépites ? »."
+      ]
+    },
+    {
+      "id": "question-frais-bougie",
+      "title": "Les frais sont-ils compris dans le prix d’une vente à la bougie ?",
+      "paragraphs": [
+        "Les deux sources consultées ne répondent pas de la même façon. La Chambre des notaires de Paris (page mise à jour le 13 mars 2019) indique que l’acquéreur doit prévoir, en plus du prix d’adjudication, les frais de publicité et d’organisation, les émoluments du notaire et les droits de mutation. Notaires de France (page mise à jour le 29 avril 2021) écrit que « le prix comprend les frais de vente ».",
+        "Ces deux pages sont anciennes : le cahier des charges et le notaire tranchent. Demandez le montant prévisionnel des frais et vérifiez s’ils sont inclus dans le prix annoncé ou s’ils s’ajoutent à lui. Par prudence, les estimations d’Immojudis les ajoutent au prix."
+      ]
+    },
+    {
       "id": "reconnaitre-type",
       "title": "Reconnaître le type de vente dans Immojudis",
       "paragraphs": [
@@ -270,6 +294,10 @@
     {
       "label": "Légifrance — Code général de la propriété des personnes publiques, article L. 3211-12 (amende de l’acquéreur déchu)",
       "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000030254174"
+    },
+    {
+      "label": "Immojudis — Comment repérons-nous les pépites ? (critères du repère « Pépite », dont la mention « prix de réserve inconnu »)",
+      "url": "/methode-pepites"
     }
   ]
 }

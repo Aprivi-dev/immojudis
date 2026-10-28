@@ -164,8 +164,24 @@ describe("trois nouveaux articles du 19/10/2026", () => {
 describe("article sur les ventes notariales", () => {
   const article = getResourceArticle("ventes-notariales-domaniales-differences-tribunal")!;
 
-  it("est daté de sa mise à jour du 26/10/2026", () => {
-    expect(article.updatedAt).toBe("2026-10-26");
+  it("est daté de sa mise à jour du 28/10/2026", () => {
+    expect(article.updatedAt).toBe("2026-10-28");
+  });
+
+  it("répond en trois blocs courts : vente interactive, prix de réserve, frais compris ou en sus", () => {
+    const ids = ["question-vente-interactive", "question-prix-de-reserve", "question-frais-bougie"];
+    for (const id of ids) {
+      const section = article.sections.find((item) => item.id === id)!;
+      expect(section.title, id).toMatch(/\?$/);
+      expect(section.paragraphs.length, id).toBeLessThanOrEqual(2);
+    }
+    const fees = article.sections.find((item) => item.id === "question-frais-bougie")!;
+    const feesText = fees.paragraphs.join(" ");
+    expect(feesText).toContain("Chambre des notaires de Paris");
+    expect(feesText).toContain("Notaires de France");
+    expect(feesText).toContain("« le prix comprend les frais de vente »");
+    expect(visibleText(article)).toContain("offre plafond");
+    expect(article.sources.some((source) => source.url === "/methode-pepites")).toBe(true);
   });
 
   it("distingue la surenchère des créanciers inscrits de la clause de 10 % en 10 jours", () => {
@@ -222,11 +238,14 @@ describe("article sur les ventes notariales", () => {
 describe("article sur l'enchère plafond", () => {
   it("précise où s'affiche l'enchère plafond, sans date ni promesse de gratuité durable", () => {
     const article = getResourceArticle("prix-plafond-encheres-immobilieres")!;
-    expect(article.updatedAt).toBe("2026-10-26");
+    expect(article.updatedAt).toBe("2026-10-28");
     const text = article.sections
       .find((section) => section.id === "assistant-immojudis")!
       .paragraphs.join(" ");
-    expect(text).toContain("s’affiche pour les ventes au tribunal");
+    expect(text).toContain("s’affiche pour les ventes au tribunal et chez le notaire");
+    expect(text).toContain("offre plafond pour une vente notariale interactive");
+    expect(text).toContain("Elle n’est pas proposée pour les ventes domaniales.");
+    expect(article.intro.join(" ")).toContain("on parle d’offre plafond");
     expect(text).toContain("3 ventes par mois");
     expect(text).toContain("offre Analyse");
     expect(text).toContain(
@@ -314,7 +333,8 @@ describe("trois articles du 23/10/2026 : PLU, risques, cadastre", () => {
     const article = getResourceArticle(slug);
     expect(article).toBeDefined();
     expect(article!.publishedAt).toBe("2026-10-23");
-    expect(article!.updatedAt).toBeUndefined();
+    // Les définitions d'inondation (TRI, crue fréquente) datent l'article des risques du 28/10/2026.
+    expect(article!.updatedAt).toBe(slug === RISKS ? "2026-10-28" : undefined);
     expect(article!.category).toBe("Méthode");
     expect(article!.title.length).toBeLessThanOrEqual(48);
     expect(article!.seoTitle).toBeUndefined();
@@ -456,5 +476,38 @@ describe("trois articles du 23/10/2026 : PLU, risques, cadastre", () => {
     ]) {
       expect(hosts(CADASTRE).has(host), host).toBe(true);
     }
+  });
+});
+
+describe("contenus de visibilité du 28/10/2026 : repère, TRI et crue fréquente", () => {
+  it("l'article d'analyse dit ce qu'un repère automatique ne mesure pas, sans promesse, avec un renvoi", () => {
+    const article = getResourceArticle("analyser-opportunite-encheres")!;
+    expect(article.updatedAt).toBe("2026-10-28");
+    const market = article.sections.find((section) => section.id === "lire-le-marche")!;
+    const text = market.paragraphs.join(" ");
+    expect(text).toContain("Un repère automatique, comme le repère « Pépite » d’Immojudis");
+    expect(text).toContain("Il ne mesure pas l’état réel du bien");
+    expect(text).toContain("sa présence ne dispense pas de lire les pièces");
+    expect(text).toContain("« Comment repérons-nous les pépites ? »");
+    expect(article.sources.some((source) => source.url === "/methode-pepites")).toBe(true);
+    expect(visibleText(article)).not.toMatch(/bonne affaire|rendement garanti/i);
+  });
+
+  it("l'article des risques définit TRI et crue fréquente d'après Géorisques, sans parler de la pépite", () => {
+    const article = getResourceArticle("risques-georisques-avant-encherir")!;
+    const section = article.sections.find((item) => item.id === "inondation-tri-crue-frequente")!;
+    const text = section.paragraphs.join(" ");
+    expect(text).toContain("territoire à risque important d’inondation (TRI)");
+    expect(text).toContain("D’après Géorisques");
+    expect(text).toContain(
+      "crue fréquente, correspond à une période de retour comprise entre 10 et 30 ans",
+    );
+    expect(text).toContain("ne sont pas des servitudes d’utilité publique");
+    expect(visibleText(article)).not.toMatch(/pépite/i);
+    expect(
+      article.sources.some((source) =>
+        /georisques\.gouv\.fr\/consulter-les-dossiers-thematiques/.test(source.url),
+      ),
+    ).toBe(true);
   });
 });

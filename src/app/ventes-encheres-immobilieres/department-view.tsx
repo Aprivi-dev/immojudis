@@ -9,6 +9,7 @@ import {
   departmentPriceLabel,
   departmentSaleDateText,
   departmentSearchPath,
+  identicalSaleRanks,
   type DepartmentRef,
   type DepartmentStats,
 } from "@/lib/department-pages";
@@ -47,6 +48,7 @@ export function DepartmentView({
 }) {
   const total = stats?.upcomingCount ?? 0;
   const now = new Date();
+  const identicalSales = identicalSaleRanks(stats?.sales ?? []);
   const nextDate = seoLongDate(stats?.nextSaleDate);
   const updated = seoLongDate(generatedAt);
   const searchHref = departmentSearchPath(department);
@@ -182,6 +184,7 @@ export function DepartmentView({
             </h2>
             <ul className="mt-3 divide-y divide-line">
               {stats.sales.map((sale) => {
+                const identical = identicalSales.get(sale.id);
                 const dateText = departmentSaleDateText(
                   sale,
                   { date: seoLongDate(sale.saleDate), time: saleHearingTime(sale.saleDate) },
@@ -199,7 +202,14 @@ export function DepartmentView({
                           {sale.city || "Commune à confirmer"}
                         </span>
                         <span className="block text-sm text-ink-soft">
-                          {[propertyTypeLabel(sale.propertyType), surface, dateText]
+                          {[
+                            propertyTypeLabel(sale.propertyType),
+                            surface,
+                            dateText,
+                            identical
+                              ? `annonce ${identical.rank} sur ${identical.of} de même description`
+                              : null,
+                          ]
                             .filter(Boolean)
                             .join(" · ")}
                         </span>

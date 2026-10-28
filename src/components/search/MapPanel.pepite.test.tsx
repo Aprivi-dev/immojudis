@@ -178,18 +178,73 @@ describe("carte : repère « Pépite »", () => {
 
     const glyph = mocks.layers.find((layer) => layer.id === "immojudis-sales-pepite")!;
     expect(glyph.type).toBe("symbol");
-    expect((glyph.layout as Record<string, unknown>)["icon-offset"]).toEqual([16, -16]);
+    // Décalage proportionnel au rayon du point (22, 24 puis 29 px) : rayon × 0,71 sur la diagonale.
+    expect((glyph.layout as Record<string, unknown>)["icon-offset"]).toEqual([
+      "interpolate",
+      ["linear"],
+      ["zoom"],
+      4,
+      ["literal", [16, -16]],
+      9,
+      ["literal", [17, -17]],
+      14,
+      ["literal", [21, -21]],
+    ]);
     const clusterGlyph = mocks.layers.find(
       (layer) => layer.id === "immojudis-sales-cluster-pepite",
     )!;
     expect(JSON.stringify(clusterGlyph.filter)).toContain('"pepites"');
-    expect(mocks.images).toEqual([{ id: "immojudis-pepite", options: { pixelRatio: 2 } }]);
+    expect(mocks.images).toEqual([
+      { id: "immojudis-pepite", options: { pixelRatio: 2 } },
+      { id: "immojudis-approx-ring", options: { pixelRatio: 2 } },
+    ]);
   });
 
-  it("garde un rayon de capture d'au moins 48 px (24 px de rayon)", async () => {
+  it("donne à la cible de clic le rayon du point + 4 px, au moins 24 px à chaque zoom", async () => {
     await showMap({ sales: [sale("pepite-1")], pepiteSaleIds: new Set(["pepite-1"]) });
+    const point = mocks.layers.find((layer) => layer.id === "immojudis-sales-points")!;
     const hit = mocks.layers.find((layer) => layer.id === "immojudis-sales-hit")!;
-    expect((hit.paint as Record<string, number>)["circle-radius"]).toBeGreaterThanOrEqual(24);
+    const radius = (layer: { paint?: unknown }) =>
+      (layer.paint as Record<string, unknown[]>)["circle-radius"];
+    const pointRadius = radius(point);
+    const hitRadius = radius(hit);
+    // ["interpolate", ["linear"], ["zoom"], z1, r1, z2, r2, ...]
+    for (let index = 4; index < pointRadius.length; index += 2) {
+      expect(hitRadius[index]).toBe((pointRadius[index] as number) + 4);
+      expect(hitRadius[index] as number).toBeGreaterThanOrEqual(24);
+    }
+  });
+
+  it("dessine l'état sélectionné 6 px au-delà du point, en trait gold-soft de 3 px", async () => {
+    await showMap({ sales: [sale("p1")], pepiteSaleIds: new Set(["p1"]) });
+    const point = mocks.layers.find((layer) => layer.id === "immojudis-sales-points")!;
+    const active = mocks.layers.find((layer) => layer.id === "immojudis-sales-active")!;
+    const pointRadius = (point.paint as Record<string, unknown[]>)["circle-radius"];
+    const paint = active.paint as Record<string, unknown>;
+    const activeRadius = paint["circle-radius"] as unknown[];
+    for (let index = 4; index < pointRadius.length; index += 2) {
+      expect(activeRadius[index]).toBe((pointRadius[index] as number) + 6);
+    }
+    expect(paint["circle-stroke-color"]).toBe("#9c642b");
+    expect(paint["circle-stroke-width"]).toBe(3);
+  });
+
+  it("écrit le prix à 12 px au moins et dessine un anneau pointillé sous les positions approximatives", async () => {
+    await showMap({
+      sales: [
+        sale("centre", { location_precision: "municipality" }),
+        sale("adresse", { location_precision: "address" }),
+      ],
+    });
+    const price = mocks.layers.find((layer) => layer.id === "immojudis-sales-price")!;
+    expect((price.layout as Record<string, unknown>)["text-size"]).toBeGreaterThanOrEqual(12);
+    const ring = mocks.layers.find((layer) => layer.id === "immojudis-sales-approx")!;
+    expect(ring.type).toBe("symbol");
+    expect(JSON.stringify(ring.filter)).toContain('"approx"');
+    const source = mocks.sources.get("immojudis-sales")!;
+    const features = (source.data as { features: Array<{ properties: Record<string, unknown> }> })
+      .features;
+    expect(features.map((feature) => feature.properties.approx)).toEqual([1, 0]);
   });
 
   it("écrit la légende et le texte pour lecteur d'écran « dont N pépites »", async () => {
@@ -228,7 +283,7 @@ describe("carte : repère « Pépite »", () => {
     const html = mocks.setHtml.mock.calls.at(-1)?.[0] as string;
     expect(html).toContain("<strong>Pépite</strong> · repère calculé automatiquement");
     expect(html).not.toContain("<img src=x");
-    expect(html).not.toMatch(/plafond estimée|Prix probable|fourchette/);
+    expect(html).not.toMatch(/plafond estimée|Prix de référence|fourchette/);
   });
 
   it("n'écrit pas la ligne pour une vente qui n'est pas une pépite", async () => {

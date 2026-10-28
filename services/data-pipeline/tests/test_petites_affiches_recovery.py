@@ -252,3 +252,52 @@ def test_finish_source_reports_partial_scope_and_publication_ledger(monkeypatch)
     assert coverage["publication_published"] == 2
     assert coverage["publication_failed"] == 1
     assert coverage["observed_at"]
+
+
+CHANGED_MARKUP_PAGE_1 = (
+    '<html><head><title>Ventes aux enchères immobilières</title></head><body>'
+    '<article class="lot-card"><a href="/encheres-immobilieres/vente/immobiliere/j/bien-a-bordeaux-1.html">Bien</a></article>'
+    '<a href="/encheres-immobilieres/ventes-aux-encheres-immobilieres-p2.html">Page suivante</a></body></html>'
+)
+CHANGED_MARKUP_PAGE_2 = '<html><head><title>Ventes</title></head><body><p>Rien à lire ici</p></body></html>'
+
+
+def test_pages_without_any_readable_card_are_an_error_with_a_diagnosis_not_a_clean_empty_source(monkeypatch) -> None:
+    class ChangedMarkupClient(_Client):
+        def post_form(self, url: str, data: dict[str, str]) -> str:
+            self.calls.append(url)
+            return CHANGED_MARKUP_PAGE_1 if url.endswith("/encheres-immobilieres/") else CHANGED_MARKUP_PAGE_2
+
+    _patch_source(monkeypatch)
+    monkeypatch.setattr(petites_affiches, "PoliteHttpClient", ChangedMarkupClient)
+    monkeypatch.setattr(petites_affiches.source_checkpoint, "save_source_cursor", lambda *args: True)
+    monkeypatch.setattr(petites_affiches, "_source_budget_deadline", lambda: None)
+    monkeypatch.setattr(petites_affiches, "_source_budget_expired", lambda deadline: False)
+
+    result = petites_affiches.scrape_petites_affiches_aquitaine_result()
+
+    assert result.sales == []
+    assert len(result.errors) == 1
+    error = result.errors[0]
+    assert "2 list page(s) fetched but no sale card read" in error
+    # The first page tells markup (links to sales, no card marker) from a blocked page.
+    assert "sale_links=1" in error and "annonce_lot_markers=0" in error and "challenge_page=False" in error
+
+
+def test_a_blocked_page_is_told_apart_from_a_changed_markup() -> None:
+    blocked = "<html><head><title>Just a moment...</title></head><body>Checking your browser</body></html>"
+
+    diagnosis = petites_affiches._empty_listing_diagnosis(blocked, petites_affiches.LIST_URL)
+
+    assert "challenge_page=True" in diagnosis and "sale_links=0" in diagnosis
+
+
+def test_a_catalogue_with_cards_raises_no_such_error(monkeypatch) -> None:
+    _patch_source(monkeypatch)
+    monkeypatch.setattr(petites_affiches.source_checkpoint, "save_source_cursor", lambda *args: True)
+    monkeypatch.setattr(petites_affiches, "_source_budget_deadline", lambda: None)
+    monkeypatch.setattr(petites_affiches, "_source_budget_expired", lambda deadline: False)
+
+    result = petites_affiches.scrape_petites_affiches_aquitaine_result()
+
+    assert len(result.sales) == 2 and result.errors == []

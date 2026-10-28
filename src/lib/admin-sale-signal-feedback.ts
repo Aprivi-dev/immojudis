@@ -27,6 +27,11 @@ export type SignalFeedbackCounts = {
   accounts: FeedbackCount;
   /** Motifs : estimation trop haute ou trop basse (bande), point faux ou manquant (points à vérifier). */
   reasons: Record<string, FeedbackCount>;
+  /**
+   * Retours par version de la règle de la vente à la lecture (signal `pepite` seulement ; `unknown` : vente sans
+   * ligne de pépite). Vide pour les autres signaux ou quand la migration 20261108180100 n'est pas appliquée.
+   */
+  ruleVersions: Record<string, number>;
 };
 
 export type SaleSignalFeedbackSummary = {
@@ -43,6 +48,7 @@ const signalSchema = z.object({
   not_relevant: count,
   accounts: count,
   reasons: z.record(z.string(), count).nullish(),
+  rule_versions: z.record(z.string(), z.number().int().nonnegative()).nullish(),
 });
 const summarySchema = z.object({
   generated_at: z.string().nullish(),
@@ -65,6 +71,7 @@ function unmeasuredCounts(signal: SaleSignal): SignalFeedbackCounts {
     notRelevant: null,
     accounts: null,
     reasons: Object.fromEntries(REASON_KEYS[signal].map((key) => [key, null])),
+    ruleVersions: {},
   };
 }
 
@@ -96,6 +103,7 @@ export function parseSaleSignalFeedbackSummary(raw: unknown): SaleSignalFeedback
       reasons: Object.fromEntries(
         REASON_KEYS[signal].map((key) => [key, orNull(entry.reasons?.[key])]),
       ),
+      ruleVersions: entry.rule_versions ?? {},
     };
   };
   return {
@@ -130,4 +138,93 @@ export async function getAdminSaleSignalFeedback(
     throw error;
   }
   return parseSaleSignalFeedbackSummary(data);
+}
+
+/** Un motif de retour négatif sur une vente : le nombre de « Pas pertinent », jamais un compte. */
+export type SaleFeedbackBySaleRow = {
+  saleId: string;
+  title: string | null;
+  city: string | null;
+  department: string | null;
+  signal: SaleSignal;
+  /** Motif de la liste fermée du signal, ou `none` : « Pas pertinent » sans motif. */
+  reason: string;
+  count: number;
+  lastAt: string | null;
+  /** Version de la règle de la vente à la lecture (signal `pepite`) ; `null` sinon. */
+  ruleVersion: string | null;
+};
+
+export type SaleFeedbackBySale = {
+  generatedAt: string | null;
+  windowDays: number;
+  rows: SaleFeedbackBySaleRow[];
+  /** Faux : la fonction de base est absente (migration pas encore appliquée), rien n'est mesuré. */
+  measured: boolean;
+};
+
+const bySaleSchema = z.object({
+  generated_at: z.string().nullish(),
+  window_days: z.number().int().positive().nullish(),
+  rows: z.array(
+    z.object({
+      sale_id: z.string(),
+      title: z.string().nullish(),
+      city: z.string().nullish(),
+      department: z.string().nullish(),
+      signal: z.enum(["market_gap_band", "points_to_verify", "pepite"]),
+      reason: z.string(),
+      count: z.number().int().positive(),
+      last_at: z.string().nullish(),
+      rule_version: z.string().nullish(),
+    }),
+  ),
+});
+
+export function unavailableSaleFeedbackBySale(): SaleFeedbackBySale {
+  return { generatedAt: null, windowDays: 90, rows: [], measured: false };
+}
+
+/** Lit la réponse JSON de `admin_sale_signal_feedback_by_sale`. */
+export function parseSaleFeedbackBySale(raw: unknown): SaleFeedbackBySale {
+  const parsed = bySaleSchema.parse(raw);
+  return {
+    generatedAt: parsed.generated_at ?? null,
+    windowDays: parsed.window_days ?? 90,
+    measured: true,
+    rows: parsed.rows.map((row) => ({
+      saleId: row.sale_id,
+      title: row.title ?? null,
+      city: row.city ?? null,
+      department: row.department ?? null,
+      signal: row.signal,
+      reason: row.reason,
+      count: row.count,
+      lastAt: row.last_at ?? null,
+      ruleVersion: row.rule_version ?? null,
+    })),
+  };
+}
+
+/**
+ * Retours « Pas pertinent » par vente, signal et motif (`admin_sale_signal_feedback_by_sale`, migration
+ * 20261108180100) : de quoi corriger la fiche en cause. Aucun compte dans la réponse. Même protection que le
+ * reste : jeton vérifié, rôle administrateur, client de service.
+ */
+export async function getAdminSaleFeedbackBySale(
+  authToken: string,
+  now = new Date(),
+): Promise<SaleFeedbackBySale> {
+  const auth = await requireSupabaseAuthContext(authToken);
+  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
+
+  const { data, error } = await supabaseAdmin.rpc("admin_sale_signal_feedback_by_sale", {
+    p_now: now.toISOString(),
+    p_limit: 100,
+  });
+  if (error) {
+    if (isMissingFunction(error)) return unavailableSaleFeedbackBySale();
+    throw error;
+  }
+  return parseSaleFeedbackBySale(data);
 }

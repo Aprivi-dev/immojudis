@@ -7,6 +7,17 @@ type TextPdfInput = {
 };
 
 const PAGE_LINE_LIMIT = 42;
+// A4 (595 pt) moins 50 pt de marge de chaque côté : largeur utile d'une ligne de texte.
+const TEXT_WIDTH_PT = 495;
+const BODY_SIZE = 10;
+const TITLE_SIZE = 16;
+const TITLE_MAX_LINES = 2;
+const TITLE_MAX_CHARS = 200;
+const FOOTER_SIZE = 8;
+// Le numéro de page est écrit à x = 470 (50 + 420) : le pied de page ne doit pas le recouvrir.
+const PAGE_NUMBER_OFFSET_PT = 420;
+const FOOTER_WIDTH_PT = 410;
+const FOOTER_LEADING_PT = 10;
 
 export function createTextPdf({
   title,
@@ -15,13 +26,13 @@ export function createTextPdf({
   watermark,
   headings = [],
 }: TextPdfInput): Uint8Array {
-  const cleanedTitle = sanitizePdfText(title).slice(0, 120);
+  const cleanedTitle = sanitizePdfText(title).slice(0, TITLE_MAX_CHARS);
   const cleanedWatermark = watermark ? sanitizePdfText(watermark).slice(0, 80) : null;
   const pages = paginatePdfLines(lines, headings);
   if (pages.length === 0) pages.push([{ text: "Rapport Immojudis", heading: false }]);
 
   const objects: string[] = [];
-  objects[1] = "<< /Type /Catalog /Pages 2 0 R >>";
+  objects[1] = "<< /Type /Catalog /Pages 2 0 R /Lang (fr-FR) >>";
   objects[3] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>";
 
   objects[4] =
@@ -50,7 +61,12 @@ export function createTextPdf({
     .map((id) => `${id} 0 R`)
     .join(" ")}] >>`;
 
-  return writePdf(objects);
+  // Titre du document (barre de titre et onglet du lecteur). Ni date de création ni producteur
+  // variable : à lignes égales, le fichier reste identique octet pour octet.
+  const infoObjectId = 5 + pages.length * 2;
+  objects[infoObjectId] = `<< /Title ${pdfTextString(cleanedTitle || "Rapport Immojudis")} >>`;
+
+  return writePdf(objects, infoObjectId);
 }
 
 function pageContent({
@@ -82,36 +98,42 @@ function pageContent({
     out.push("0 g");
   }
 
-  out.push(
-    "BT",
-    "/F1 16 Tf",
-    "50 792 Td",
-    `(${escapePdfString(title)}) Tj`,
-    "/F1 10 Tf",
-    "0 -28 Td",
-  );
+  out.push("BT", `/F1 ${TITLE_SIZE} Tf`, "50 792 Td");
+  wrapPdfTitle(title).forEach((titleLine, index) => {
+    if (index > 0) out.push("0 -18 Td");
+    out.push(`(${escapePdfString(titleLine)}) Tj`);
+  });
+  out.push(`/F1 ${BODY_SIZE} Tf`, "0 -28 Td");
 
   lines.forEach((line, index) => {
     if (index > 0) out.push("0 -15 Td");
-    out.push(line.heading ? "/F2 10 Tf" : "/F1 10 Tf");
+    out.push(line.heading ? `/F2 ${BODY_SIZE} Tf` : `/F1 ${BODY_SIZE} Tf`);
     out.push(`(${escapePdfString(line.text)}) Tj`);
   });
 
   out.push("ET");
   out.push("BT");
-  out.push("/F1 8 Tf");
+  out.push(`/F1 ${FOOTER_SIZE} Tf`);
   out.push("50 36 Td");
-  out.push(
-    `(${escapePdfString(footer ?? "Immojudis - rapport indicatif, à vérifier dans les pièces officielles.")}) Tj`,
+  const footerLines = wrapPdfText(
+    footer ?? "Immojudis - rapport indicatif, à vérifier dans les pièces officielles.",
+    FOOTER_SIZE,
+    false,
+    FOOTER_WIDTH_PT,
   );
-  out.push("420 0 Td");
+  footerLines.forEach((footerLine, index) => {
+    if (index > 0) out.push(`0 -${FOOTER_LEADING_PT} Td`);
+    out.push(`(${escapePdfString(footerLine)}) Tj`);
+  });
+  // Retour sur la première ligne du pied de page, puis décalage jusqu'au numéro de page.
+  out.push(`${PAGE_NUMBER_OFFSET_PT} ${(footerLines.length - 1) * FOOTER_LEADING_PT} Td`);
   out.push(`(${pageNumber}/${pageCount}) Tj`);
   out.push("ET");
 
   return out.join("\n");
 }
 
-function writePdf(objects: string[]): Uint8Array {
+function writePdf(objects: string[], infoObjectId: number): Uint8Array {
   let pdf = "%PDF-1.4\n";
   const offsets = [0];
   for (let id = 1; id < objects.length; id += 1) {
@@ -124,7 +146,7 @@ function writePdf(objects: string[]): Uint8Array {
   for (let id = 1; id < objects.length; id += 1) {
     pdf += `${String(offsets[id]).padStart(10, "0")} 00000 n \n`;
   }
-  pdf += `trailer\n<< /Size ${objects.length} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  pdf += `trailer\n<< /Size ${objects.length} /Root 1 0 R /Info ${infoObjectId} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
   return new TextEncoder().encode(pdf);
 }
 
@@ -144,7 +166,11 @@ export function paginatePdfLines(lines: string[], headings: readonly string[] = 
     .map((text) =>
       text === PDF_PAGE_BREAK
         ? { lines: [] as string[], heading: false, pageBreak: true }
-        : { lines: splitLongLine(text), heading: headingSet.has(text), pageBreak: false },
+        : {
+            lines: splitLongLine(text, headingSet.has(text)),
+            heading: headingSet.has(text),
+            pageBreak: false,
+          },
     );
   const pages: PdfLine[][] = [];
   let page: PdfLine[] = [];
@@ -180,32 +206,148 @@ export function paginatePdfLines(lines: string[], headings: readonly string[] = 
   return pages;
 }
 
-function splitLongLine(line: string): string[] {
-  const clean = line.trim();
-  if (clean.length <= 92) return [clean];
-  const parts: string[] = [];
-  let cursor = clean;
-  while (cursor.length > 92) {
-    const cut = cursor.lastIndexOf(" ", 92);
-    const end = cut > 40 ? cut : 92;
-    parts.push(cursor.slice(0, end).trim());
-    cursor = cursor.slice(end).trim();
-  }
-  if (cursor) parts.push(cursor);
-  return parts;
+/** Coupe une ligne de corps de texte selon sa largeur réelle en Helvetica, sur les espaces. */
+function splitLongLine(line: string, bold: boolean): string[] {
+  return wrapPdfText(line, BODY_SIZE, bold, TEXT_WIDTH_PT);
 }
+
+/** Titre : au plus deux lignes, la fin remplacée par « … » si elle ne tient pas. */
+function wrapPdfTitle(title: string): string[] {
+  const lines = wrapPdfText(title, TITLE_SIZE, false, TEXT_WIDTH_PT);
+  if (lines.length <= TITLE_MAX_LINES) return lines;
+  const kept = lines.slice(0, TITLE_MAX_LINES);
+  let last = kept[TITLE_MAX_LINES - 1];
+  while (last && textWidthPt(`${last}…`, TITLE_SIZE, false) > TEXT_WIDTH_PT) {
+    last = last.slice(0, -1).trimEnd();
+  }
+  kept[TITLE_MAX_LINES - 1] = `${last}…`;
+  return kept;
+}
+
+function wrapPdfText(text: string, size: number, bold: boolean, maxWidth: number): string[] {
+  const clean = text.trim();
+  if (!clean) return [clean];
+  const widthOf = (value: string) => textWidthPt(value, size, bold);
+  const lines: string[] = [];
+  let current = "";
+  // Seule l'espace ordinaire (U+0020) autorise une coupure : une espace insécable lie un montant
+  // à son unité.
+  for (const word of clean.split(" ").filter(Boolean)) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (widthOf(candidate) <= maxWidth) {
+      current = candidate;
+      continue;
+    }
+    if (current) lines.push(current);
+    current = word;
+    // Mot plus large qu'une ligne (URL, suite de chiffres) : coupe au caractère.
+    while (widthOf(current) > maxWidth) {
+      let end = current.length - 1;
+      while (end > 1 && widthOf(current.slice(0, end)) > maxWidth) end -= 1;
+      lines.push(current.slice(0, end));
+      current = current.slice(end);
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
+/**
+ * Largeur d'un texte en points, d'après les métriques Helvetica / Helvetica-Bold (AFM Adobe, en
+ * millièmes de corps). Une lettre accentuée a la largeur de sa lettre de base.
+ */
+export function textWidthPt(text: string, size: number, bold: boolean): number {
+  let units = 0;
+  for (const character of text) {
+    units += glyphWidth(character, bold);
+  }
+  return (units * size) / 1000;
+}
+
+function glyphWidth(character: string, bold: boolean): number {
+  const table = bold ? HELVETICA_BOLD_WIDTHS : HELVETICA_WIDTHS;
+  const code = character.charCodeAt(0);
+  if (code >= 0x20 && code <= 0x7e) return table[code - 0x20];
+  const special = SPECIAL_WIDTHS[character];
+  if (special) return special[bold ? 1 : 0];
+  const base = character.normalize("NFD").charCodeAt(0);
+  if (base >= 0x20 && base <= 0x7e) return table[base - 0x20];
+  // Caractère inconnu : largeur d'une capitale large, par prudence.
+  return 778;
+}
+
+// Largeurs des codes 0x20 (espace) à 0x7E (tilde).
+const HELVETICA_WIDTHS: readonly number[] = [
+  278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278, 556, 556, 556,
+  556, 556, 556, 556, 556, 556, 556, 278, 278, 584, 584, 584, 556, 1015, 667, 667, 722, 722, 667,
+  611, 778, 722, 278, 500, 667, 556, 833, 722, 778, 667, 778, 722, 667, 611, 722, 667, 944, 667,
+  667, 611, 278, 278, 278, 469, 556, 333, 556, 556, 500, 556, 556, 278, 556, 556, 222, 222, 500,
+  222, 833, 556, 556, 556, 556, 333, 500, 278, 556, 500, 722, 500, 500, 500, 334, 260, 334, 584,
+];
+const HELVETICA_BOLD_WIDTHS: readonly number[] = [
+  278, 333, 474, 556, 556, 889, 722, 238, 333, 333, 389, 584, 278, 333, 278, 278, 556, 556, 556,
+  556, 556, 556, 556, 556, 556, 556, 333, 333, 584, 584, 584, 611, 975, 722, 722, 722, 722, 667,
+  611, 778, 722, 278, 556, 722, 611, 833, 722, 778, 667, 778, 722, 667, 611, 722, 667, 944, 667,
+  667, 611, 333, 278, 333, 584, 556, 333, 556, 611, 556, 611, 556, 333, 611, 611, 278, 278, 556,
+  278, 889, 611, 611, 611, 611, 389, 556, 333, 611, 556, 778, 556, 556, 500, 389, 280, 389, 584,
+];
+// [Helvetica, Helvetica-Bold] des signes hors ASCII qui n'ont pas de lettre de base.
+const SPECIAL_WIDTHS: Record<string, readonly [number, number]> = {
+  "\u00A0": [278, 278],
+  "€": [556, 556],
+  Œ: [1000, 1000],
+  œ: [944, 944],
+  Æ: [1000, 1000],
+  æ: [889, 889],
+  ß: [611, 611],
+  "‘": [222, 278],
+  "’": [222, 278],
+  "“": [333, 500],
+  "”": [333, 500],
+  "–": [556, 556],
+  "—": [1000, 1000],
+  "…": [1000, 1000],
+  "•": [350, 350],
+  "°": [400, 400],
+  "²": [333, 333],
+  "³": [333, 333],
+  "«": [556, 556],
+  "»": [556, 556],
+  "×": [584, 584],
+  "÷": [584, 584],
+  "±": [584, 584],
+  "©": [737, 737],
+  "®": [737, 737],
+};
 
 function sanitizePdfText(value: string): string {
   return (
     value
       .normalize("NFC")
+      // Les espaces fines et insécables restent liées : U+202F et U+00A0 deviennent U+00A0, qui
+      // existe en WinAnsi (0xA0). Un montant « 123 456 € » ne se coupe plus avant son unité.
+      .replace(/[\u202F\u00A0]/g, "\u00A0")
+      .replace(/\u2011/g, "-")
       // WinAnsi has neither ≤ nor ≥; dropping them would reverse the meaning of « hauteur ≤ 9 m ».
       .replace(/≤\s*/g, "au plus ")
       .replace(/≥\s*/g, "au moins ")
+      .replace(/\s*≠\s*/g, " différent de ")
+      .replace(/\s*≈\s*/g, " environ ")
+      .replace(/\s*→\s*/g, " vers ")
       .replace(/[^\x20-\x7E\u00A0-\u00FF€ŒœŸŠšŽž‘’“”–—…•]/g, " ")
-      .replace(/\s+/g, " ")
-      .trim()
+      // Toute espace sauf l'insécable : seule U+0020 permet une coupure de ligne.
+      .replace(/[^\S\u00A0]+/g, " ")
+      .replace(/^[ \u00A0]+|[ \u00A0]+$/g, "")
   );
+}
+
+/** Chaîne de texte PDF en hexadécimal UTF-16BE avec BOM, pour le dictionnaire /Info. */
+function pdfTextString(value: string): string {
+  let hex = "FEFF";
+  for (let index = 0; index < value.length; index += 1) {
+    hex += value.charCodeAt(index).toString(16).toUpperCase().padStart(4, "0");
+  }
+  return `<${hex}>`;
 }
 
 function escapePdfString(value: string): string {

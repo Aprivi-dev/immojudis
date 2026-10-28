@@ -16,14 +16,17 @@ import {
   PEPITE_TARGET_RATE_MAX,
   PEPITE_TARGET_RATE_MIN,
 } from "@/lib/pepite-policy";
+import { isMissingDatabaseObject } from "@/lib/postgrest-errors";
 
 /**
  * Page d'administration des pépites (`/admin/pepites`) : le mode, les compteurs par type de vente, le taux de
  * pépites parmi les ventes évaluables, la liste des pépites et des « presque pépites » avec leurs critères en
  * clair, et le contrôle d'indépendance vis-à-vis de la publicité.
  *
- * Lecture seule. Jeton de session vérifié et rôle administrateur exigé avant toute lecture ; les lectures se
- * font avec le client de service (`admin_list_sale_pepites`, service_role seul). Avant la migration
+ * Lecture, plus un seul geste d'écriture : l'arrêt d'urgence `suspendAdminPepites` (de « on » vers « shadow » ou
+ * « off », jamais l'inverse ; voir plus bas et `docs/runbooks/pepites-arret-urgence.md`). Jeton de session vérifié et
+ * rôle administrateur exigé avant toute lecture ; les lectures se font avec le client de service
+ * (`admin_list_sale_pepites`, service_role seul). Avant la migration
  * 20261104100000 (fonction ou table absente), la réponse dit « pas migré » au lieu d'échouer.
  *
  * Le contrôle d'indépendance (proposition n° 21) lit les encarts d'avocats pour mesurer la part des pépites
@@ -75,6 +78,8 @@ export type AdminPepiteRow = {
   chanceAtLeast: boolean;
   /** Ratio C (coût total au prix probable / valeur centrale). */
   costRatio: number | null;
+  /** Un frais du coût d'achat (préalables, négociation, publicité) est une valeur par défaut (pepite-v1.1). */
+  feesDefault: boolean;
   passed: string[];
   missed: string[];
   stability: string[];
@@ -103,6 +108,17 @@ export type PepiteIndependence = {
 export const INDEPENDENCE_ALERT_POINTS = 10;
 export const INDEPENDENCE_MIN_PEPITES = 10;
 
+/**
+ * Pépites (publiées et à confirmer) dont le coût d'achat repose sur au moins un frais par défaut (n° 22) : au
+ * tribunal, les frais préalables du cahier non lus restent admis mais sont comptés ici ; en vente notariale, ces
+ * ventes sont refusées par la règle (`fees_known`) et ne devraient pas apparaître.
+ */
+export type PepiteFeesDefaultStat = {
+  pepites: number;
+  withDefaultFees: number;
+  share: number | null;
+};
+
 export type AdminPepitesResponse = {
   /** Faux avant la migration : rien n'est lu. */
   migrated: boolean;
@@ -124,8 +140,15 @@ export type AdminPepitesResponse = {
     targetMax: number;
   };
   rows: AdminPepiteRow[];
+  feesDefault: PepiteFeesDefaultStat;
   /** `null` : le contrôle n'a pas pu être fait (lecture impossible). */
   independence: PepiteIndependence | null;
+  /**
+   * Ventes à venir en attente de réobservation d'inondation (une tentative a échoué : `failure_count > 0`), donc
+   * « inconnu par panne » et non par position imprécise. La règle v2 est prête côté inondation quand il est nul.
+   * `null` : non mesuré (fonction absente avant la migration 20261108100100, ou lecture impossible).
+   */
+  floodReobservationPending: number | null;
 };
 
 const VENUES: readonly PepiteVenue[] = ["tribunal", "notary", "other"];
@@ -216,6 +239,17 @@ export function pepiteRate(
   };
 }
 
+/** Part des pépites (publiées et à confirmer) de la liste dont un frais est une valeur par défaut. */
+export function pepiteFeesDefaultStat(rows: readonly AdminPepiteRow[]): PepiteFeesDefaultStat {
+  const pepites = rows.filter((row) => row.category === "pepite" || row.category === "pending");
+  const withDefaultFees = pepites.filter((row) => row.feesDefault).length;
+  return {
+    pepites: pepites.length,
+    withDefaultFees,
+    share: pepites.length > 0 ? withDefaultFees / pepites.length : null,
+  };
+}
+
 export function parseAdminPepiteRow(raw: unknown): AdminPepiteRow | null {
   const row = asRecordOrNull(raw);
   const saleId = textOrNull(row?.sale_id);
@@ -245,6 +279,7 @@ export function parseAdminPepiteRow(raw: unknown): AdminPepiteRow | null {
     chanceShare: numberOrNull(details.chanceShare),
     chanceAtLeast: details.chanceAtLeast === true,
     costRatio: numberOrNull(details.costRatio),
+    feesDefault: details.feesDefault === true,
     passed: reasons.passed,
     missed: reasons.missed,
     stability: reasons.stability,
@@ -252,16 +287,6 @@ export function parseAdminPepiteRow(raw: unknown): AdminPepiteRow | null {
     frozenAt: textOrNull(row.frozen_at),
     href: `/sales/${encodeURIComponent(saleId)}`,
   };
-}
-
-/** Table ou fonction inconnue de la base : la migration n'est pas encore appliquée. */
-function isMissingDatabaseObject(error: { code?: string } | null): boolean {
-  return (
-    error?.code === "PGRST202" ||
-    error?.code === "PGRST205" ||
-    error?.code === "42883" ||
-    error?.code === "42P01"
-  );
 }
 
 export function unavailablePepites(): AdminPepitesResponse {
@@ -276,37 +301,54 @@ export function unavailablePepites(): AdminPepitesResponse {
     totals,
     rate: pepiteRate(0, 0, 0),
     rows: [],
+    feesDefault: pepiteFeesDefaultStat([]),
     independence: null,
+    floodReobservationPending: null,
   };
 }
 
-const PAGE_SIZE = 1000;
-const IN_CHUNK = 200;
-const MAX_ROWS = 20_000;
-
-type EvaluatedRef = { saleId: string; isPepite: boolean; pending: boolean };
-
-/** Les ventes évaluables (pépites, à confirmer, pas pépites) : l'ensemble sur lequel on compare. */
-async function readEvaluable(): Promise<EvaluatedRef[]> {
-  const refs: EvaluatedRef[] = [];
-  for (let from = 0; from < MAX_ROWS; from += PAGE_SIZE) {
-    const { data, error } = await supabaseAdmin
-      .from("auction_sale_pepites")
-      .select("sale_id, status, is_pepite")
-      .in("status", ["pepite", "not_pepite"])
-      .order("sale_id", { ascending: true })
-      .range(from, from + PAGE_SIZE - 1);
-    if (error) throw error;
-    for (const row of data ?? []) {
-      refs.push({
-        saleId: row.sale_id,
-        isPepite: row.is_pepite,
-        pending: row.status === "pepite" && !row.is_pepite,
-      });
-    }
-    if ((data?.length ?? 0) < PAGE_SIZE) return refs;
+/** Le compteur ne fait jamais tomber la page : fonction absente, erreur ou réponse inattendue valent « non mesuré ». */
+async function readFloodReobservationPending(now: Date): Promise<number | null> {
+  try {
+    const { data, error } = await supabaseAdmin.rpc("admin_count_flood_reobservation_pending", {
+      p_now: now.toISOString(),
+    });
+    if (error) return null;
+    return typeof data === "number" && Number.isFinite(data) ? data : null;
+  } catch {
+    return null;
   }
-  throw new Error("Trop d'évaluations de pépites.");
+}
+
+type IndependenceSale = {
+  id: string;
+  lawyer_name: string | null;
+  tribunal: string | null;
+  sale_date: string | null;
+  is_pepite: boolean;
+  pending: boolean;
+};
+
+/**
+ * Effectifs et ventes du contrôle d'indépendance, en UN appel (`admin_pepite_independence_sales`, migration
+ * 20261108110300) : le nombre de ventes évaluables (pépites, à confirmer, pas pépites), le nombre de pépites (publiées
+ * ou à confirmer) et, pour les seules ventes dont l'avocat poursuivant est nommé, les champs du rapprochement. Avant :
+ * les évaluations par pages de 1 000, puis les ventes par tranches de 200 identifiants (une requête par tranche).
+ */
+async function readIndependenceSales(): Promise<{
+  evaluable: number;
+  pepites: number;
+  sales: IndependenceSale[];
+}> {
+  const { data, error } = await supabaseAdmin.rpc("admin_pepite_independence_sales");
+  if (error) throw error;
+  const record = asRecord(data);
+  const sales = Array.isArray(record.sales) ? (record.sales as IndependenceSale[]) : [];
+  return {
+    evaluable: Number(record.evaluable) || 0,
+    pepites: Number(record.pepites) || 0,
+    sales,
+  };
 }
 
 /**
@@ -324,9 +366,9 @@ export async function computePepiteIndependence(
   const checkpoint = () => {
     if (signal?.aborted) throw new Error("Contrôle d'indépendance interrompu : délai dépassé.");
   };
-  const evaluable = await readEvaluable();
+  const evaluable = await readIndependenceSales();
   checkpoint();
-  if (evaluable.length === 0) {
+  if (evaluable.evaluable === 0) {
     return {
       evaluatedSales: 0,
       evaluatedSponsored: 0,
@@ -341,29 +383,12 @@ export async function computePepiteIndependence(
     };
   }
 
-  const candidates: Array<{
-    id: string;
-    lawyerName: string | null;
-    tribunal: string | null;
-    saleDate: string | null;
-  }> = [];
-  for (let index = 0; index < evaluable.length; index += IN_CHUNK) {
-    checkpoint();
-    const ids = evaluable.slice(index, index + IN_CHUNK).map((ref) => ref.saleId);
-    const { data, error } = await supabaseAdmin
-      .from("auction_sales")
-      .select("id, lawyer_name, tribunal, sale_date")
-      .in("id", ids);
-    if (error) throw error;
-    for (const row of data ?? []) {
-      candidates.push({
-        id: row.id,
-        lawyerName: row.lawyer_name,
-        tribunal: row.tribunal,
-        saleDate: row.sale_date,
-      });
-    }
-  }
+  const candidates = evaluable.sales.map((sale) => ({
+    id: sale.id,
+    lawyerName: sale.lawyer_name,
+    tribunal: sale.tribunal,
+    saleDate: sale.sale_date,
+  }));
 
   checkpoint();
   const { data: lawyerRows, error: lawyerError } = await supabaseAdmin
@@ -407,25 +432,27 @@ export async function computePepiteIndependence(
     }
   }
 
-  const pepites = evaluable.filter((ref) => ref.isPepite || ref.pending);
+  // Une vente sans avocat poursuivant nommé ne peut pas être sponsorisée : seules les lignes rendues comptent au
+  // numérateur, les effectifs complets sont ceux de la fonction.
+  const pepiteRows = evaluable.sales.filter((sale) => sale.is_pepite || sale.pending);
   const share = (count: number, total: number) => (total > 0 ? count / total : null);
-  const evaluatedSponsored = evaluable.filter((ref) => sponsoredSales.has(ref.saleId)).length;
-  const pepiteSponsored = pepites.filter((ref) => sponsoredSales.has(ref.saleId)).length;
-  const evaluatedShare = share(evaluatedSponsored, evaluable.length);
-  const pepiteShare = share(pepiteSponsored, pepites.length);
+  const evaluatedSponsored = evaluable.sales.filter((sale) => sponsoredSales.has(sale.id)).length;
+  const pepiteSponsored = pepiteRows.filter((sale) => sponsoredSales.has(sale.id)).length;
+  const evaluatedShare = share(evaluatedSponsored, evaluable.evaluable);
+  const pepiteShare = share(pepiteSponsored, evaluable.pepites);
   const gapPoints =
     evaluatedShare != null && pepiteShare != null ? (pepiteShare - evaluatedShare) * 100 : null;
   return {
-    evaluatedSales: evaluable.length,
+    evaluatedSales: evaluable.evaluable,
     evaluatedSponsored,
     evaluatedShare,
-    pepiteSales: pepites.length,
+    pepiteSales: evaluable.pepites,
     pepiteSponsored,
     pepiteShare,
     gapPoints,
     alert:
       gapPoints != null &&
-      pepites.length >= INDEPENDENCE_MIN_PEPITES &&
+      evaluable.pepites >= INDEPENDENCE_MIN_PEPITES &&
       gapPoints >= INDEPENDENCE_ALERT_POINTS,
     alertPoints: INDEPENDENCE_ALERT_POINTS,
     minPepites: INDEPENDENCE_MIN_PEPITES,
@@ -478,6 +505,7 @@ export async function getAdminPepites(
     .map(parseAdminPepiteRow)
     .filter((row): row is AdminPepiteRow => row !== null);
 
+  const floodReobservationPending = await readFloodReobservationPending(now);
   const independence = await Promise.race([independenceRead, overrun]);
 
   return {
@@ -489,7 +517,9 @@ export async function getAdminPepites(
     totals,
     rate: pepiteRate(totals.pepites, totals.pending, totals.evaluable),
     rows,
+    feesDefault: pepiteFeesDefaultStat(rows),
     independence,
+    floodReobservationPending,
   };
 }
 

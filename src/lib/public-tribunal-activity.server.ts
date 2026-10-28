@@ -3,6 +3,7 @@ import {
   mapPublicTribunalActivity,
   type PublicTribunalActivity,
   type PublicTribunalActivityRow,
+  type PublicTribunalPriceFigureRow,
 } from "@/lib/public-tribunal-activity";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
 
@@ -13,14 +14,25 @@ export const PUBLIC_TRIBUNAL_ACTIVITY_CACHE_TAG = "public-tribunal-activity";
 async function readPublicTribunalActivity(): Promise<PublicTribunalActivity[]> {
   const client = createPublicSupabaseClient();
   if (!client) return [];
-  const { data, error } = await client.rpc("get_public_tribunal_activity");
-  if (error) throw error;
-  return mapPublicTribunalActivity((data ?? []) as PublicTribunalActivityRow[]);
+  const [activity, figures] = await Promise.all([
+    client.rpc("get_public_tribunal_activity"),
+    client.rpc("get_public_tribunal_price_figures"),
+  ]);
+  if (activity.error) throw activity.error;
+  // Les chiffres de prix soumis aux seuils sont un plus : sans eux (fonction pas encore déployée,
+  // panne passagère), la liste reste servie avec la médiane d'avant, sans fourchette.
+  if (figures.error) {
+    console.warn("[tribunaux] Chiffres de prix indisponibles:", figures.error.message);
+  }
+  return mapPublicTribunalActivity(
+    (activity.data ?? []) as PublicTribunalActivityRow[],
+    figures.error ? null : ((figures.data ?? []) as PublicTribunalPriceFigureRow[]),
+  );
 }
 
 const cachedPublicTribunalActivity = unstable_cache(
   readPublicTribunalActivity,
-  ["public-tribunal-activity", "v1"],
+  ["public-tribunal-activity", "v2"],
   {
     revalidate: PUBLIC_TRIBUNAL_ACTIVITY_REVALIDATE_SECONDS,
     tags: [PUBLIC_TRIBUNAL_ACTIVITY_CACHE_TAG],

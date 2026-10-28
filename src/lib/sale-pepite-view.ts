@@ -1,6 +1,5 @@
 import { formatDate, formatPrice } from "@/lib/format";
 import {
-  FLOOD_EXPOSED_LONG,
   FLOOD_EXPOSED_SHORT,
   FLOOD_NONE_FOUND_DETAIL,
   FLOOD_NONE_FOUND_LINE,
@@ -10,9 +9,10 @@ import {
   FLOOD_TRI_SOURCE_URL,
   FLOOD_UNKNOWN_LAST_CHECK_PREFIX,
   FLOOD_UNKNOWN_LINE,
-  FLOOD_WARNING,
+  floodExposedLong,
   floodPm1SourceLine,
   floodTriSourceLine,
+  floodWarning,
   type PepiteFloodDisplayVerdict,
 } from "@/lib/pepite-flood-copy";
 import { pepiteConfirmLabel, pepitePassLabel } from "@/lib/pepite-reasons";
@@ -20,12 +20,13 @@ import {
   PEPITE_CHANCE_EXIT_SHARE,
   PEPITE_CHANCE_MIN_SHARE,
   PEPITE_COST_EXIT_SHARE_COURT,
+  PEPITE_COST_MAX_SHARE_COURT,
   PEPITE_COST_EXIT_SHARE_NOTARY,
   PEPITE_COST_MAX_SHARE_NOTARY,
-  PEPITE_COURT_COMPLETE_BELOW_SALES,
   PEPITE_COURT_REPLACE_BELOW_SALES,
   PEPITE_CRITERIA,
   PEPITE_BLOCKING_CRITERIA,
+  PEPITE_PRICE_COURT_ONLY_FROM_SALES,
   type PepiteCriterionId,
   type PepiteRegimeKey,
 } from "@/lib/pepite-policy";
@@ -60,8 +61,11 @@ export const PEPITE_TEST_IDS: readonly PepiteCriterionId[] = ["test_b_chance", "
  */
 export type PepiteFloodView = {
   verdict: PepiteFloodDisplayVerdict;
-  /** « check » : coche (rien d'élevé identifié) ; « alert » : pictogramme d'alerte (exposé) ; « neutral » : ligne neutre. */
-  tone: "check" | "alert" | "neutral";
+  /**
+   * « alert » : pictogramme d'alerte (exposé) ; « neutral » : pictogramme d'information. Jamais de coche : même
+   * « aucun risque identifié » reste neutre (n° 38), la carte ne testant qu'une partie des causes d'inondation.
+   */
+  tone: "alert" | "neutral";
   /** La phrase de la ligne d'inondation. */
   line: string;
   /** Texte développé : cartes consultées (replié) ou mention longue « exposé » ; `null` : aucun. */
@@ -77,13 +81,13 @@ export type PepiteCriteriaPayload = {
   access: "criteria";
   /** Contrôle d'inondation (règle v2) ; `null` : pas de contrôle à afficher (règle v1, vente ancienne). */
   flood: PepiteFloodView | null;
-  /** Tests réussis (au tribunal : chances de l'emporter et achat sous la valeur ; en vente notariale : l'achat). */
+  /** Critères remplis parmi les deux critères du repère (au tribunal : chances de l'emporter et coût d'achat ; en vente notariale : le coût). */
   count: number;
-  /** Les tests présents pour ce type de vente, réussis ou à confirmer. */
+  /** Les critères présents pour ce type de vente, remplis ou à confirmer (`tests` : nom historique du champ). */
   tests: PepiteCriterionView[];
   /** Les vérifications de fiabilité (tout le reste), repliées sur la fiche. */
   checks: PepiteCriterionView[];
-  /** Vérifications de fiabilité réussies. */
+  /** Vérifications de fiabilité remplies. */
   checksPassed: number;
 };
 
@@ -97,9 +101,7 @@ export type PepiteDetailView = {
   referenceCeilingEur: number | null;
   /** « Enchère plafond estimée : X € (hypothèses par défaut : …) ». */
   ceilingLine: string | null;
-  /** « 7 ventes comparables sur 10 adjugées sous ce plafond » (au tribunal). */
-  chanceLine: string | null;
-  /** « Prix probable : environ X € (fourchette Y – Z €) », « Mise à prix : X € » ou « Première offre possible : X € ». */
+  /** « Prix de référence : environ X € (fourchette Y – Z €) », « Mise à prix : X € » ou « Première offre possible : X € ». */
   priceLine: string | null;
   /** Mise à prix très basse : on retient le prix atteint par 3 ventes sur 4. */
   priceLowNote: string | null;
@@ -190,31 +192,39 @@ export function pepiteRegimeOf(details: Record<string, unknown>): PepiteRegimeKe
 }
 
 /**
- * D'où viennent les ventes comparables : du tribunal seul (`local`, 30 ventes au moins), du tribunal complété par
- * le taux national (`mixed`, de 10 à 29 ventes) ou du national seul (`national`, moins de 10 ventes du tribunal).
- * Mêmes seuils que la règle (`pepite-policy.ts`).
+ * D'où viennent les ventes comparables, d'après le calcul de la base (`app_private.court_auction_scenarios`, migration
+ * 20261101120100) : à partir de 10 ventes du tribunal, la part est lissée avec la tendance nationale (le tribunal
+ * pèse son effectif, le national 15 ventes) ; en dessous, c'est celle de toute la France. La fourchette de prix, elle,
+ * repose sur les ventes du tribunal seules à partir de 20 ventes, sur celles de toute la France en dessous.
  */
 function cohortOf(scenarios: Record<string, unknown>): {
-  kind: "local" | "mixed" | "national";
-  sample: number;
+  /** La part du critère : `court` (tribunal, complété par la tendance nationale) ou `national`. */
+  kind: "court" | "national";
+  /** Effectif de la fourchette de prix, et son origine. */
+  price: { kind: "court" | "national"; sample: number };
 } {
   const court = numberOrNull(scenarios.courtSample) ?? 0;
-  if (court < PEPITE_COURT_REPLACE_BELOW_SALES) {
-    return { kind: "national", sample: numberOrNull(scenarios.nationalSample) ?? court };
-  }
-  return { kind: court < PEPITE_COURT_COMPLETE_BELOW_SALES ? "mixed" : "local", sample: court };
+  const national = numberOrNull(scenarios.nationalSample) ?? court;
+  return {
+    kind: court < PEPITE_COURT_REPLACE_BELOW_SALES ? "national" : "court",
+    price:
+      court < PEPITE_PRICE_COURT_ONLY_FROM_SALES
+        ? { kind: "national", sample: national }
+        : { kind: "court", sample: court },
+  };
 }
 
 const COHORT_PHRASE = {
-  local: "du tribunal",
-  mixed: "du tribunal, complétées par des ventes de toute la France",
-  national: "de toute la France (le tribunal n'en compte pas assez)",
+  court: "du tribunal, complétées par la tendance nationale",
+  national: "de toute la France",
 } as const;
 
-/** « 7 ventes comparables sur 10 » : arrondi vers le bas, pour ne jamais annoncer plus que la mesure. */
-function chanceSentence(share: number, atLeast: boolean): string {
-  const tenths = Math.max(0, Math.min(10, Math.floor(share * 10 + 1e-9)));
-  return `${atLeast ? "Au moins " : ""}${tenths} vente${tenths > 1 ? "s" : ""} comparable${tenths > 1 ? "s" : ""} sur 10 adjugée${tenths > 1 ? "s" : ""} sous ce plafond`;
+/** La fourchette de prix : « du tribunal » ou « de toute la France » selon l'effectif du tribunal. */
+const PRICE_COHORT_PHRASE = { court: "du tribunal", national: "de toute la France" } as const;
+
+/** La part du critère, arrondie vers le bas pour ne jamais annoncer plus que la mesure. */
+function chancePercent(share: number, atLeast: boolean): string {
+  return `${atLeast ? "au moins " : ""}${Math.floor(share * 100 + 1e-9)} %`;
 }
 
 /**
@@ -240,34 +250,40 @@ export function pepiteDetailView(
   const scenarios = (details.scenarios ?? {}) as Record<string, unknown>;
   const cohort = cohortOf(scenarios);
 
+  const discountPct = numberOrNull(details.occupancyDiscountPct);
+  // Bien loué : la valeur de comparaison est celle d'un bien libre diminuée de la décote d'un bien loué.
+  const valueWord =
+    discountPct != null && discountPct > 0
+      ? `de la valeur estimée, diminuée de la décote d'un bien loué (${percent(discountPct / 100)} %)`
+      : "de la valeur estimée";
+  const chanceShare = numberOrNull(details.chanceShare);
+
   let condition: string;
   if (regime === "tribunal") {
+    const measured =
+      chanceShare == null
+        ? `Sur les ventes comparables passées ${COHORT_PHRASE[cohort.kind]}, la part adjugée sous l'enchère plafond estimée n'est pas disponible.`
+        : `Sur les ventes comparables passées ${COHORT_PHRASE[cohort.kind]}, ${chancePercent(chanceShare, details.chanceAtLeast === true)} ont été adjugées sous l'enchère plafond estimée.`;
     const chance = confirmed("test_b_chance")
-      ? `Au moins ${percent(PEPITE_CHANCE_EXIT_SHARE)} % des ventes comparables passées ${COHORT_PHRASE[cohort.kind]} ont été adjugées sous l'enchère plafond estimée (seuil de maintien, à confirmer à la prochaine mise à jour).`
-      : `Au moins ${percent(PEPITE_CHANCE_MIN_SHARE)} % des ventes comparables passées ${COHORT_PHRASE[cohort.kind]} ont été adjugées sous l'enchère plafond estimée.`;
+      ? `${measured} Le critère est rempli à partir de ${percent(PEPITE_CHANCE_MIN_SHARE)} % ; la mention est maintenue jusqu'à ${percent(PEPITE_CHANCE_EXIT_SHARE)} % (à confirmer à la prochaine mise à jour).`
+      : `${measured} Le critère est rempli à partir de ${percent(PEPITE_CHANCE_MIN_SHARE)} %.`;
     const costPart = confirmed("test_c_cost")
-      ? `Au prix probable, le coût total représente ${cost} de la valeur estimée, sous le seuil de maintien de ${percent(PEPITE_COST_EXIT_SHARE_COURT)} %.`
-      : `Au prix probable, le coût total représente ${cost} de la valeur estimée.`;
+      ? `Au prix de référence, le coût total estimé représente ${cost} ${valueWord} ; le critère est rempli jusqu'à ${percent(PEPITE_COST_MAX_SHARE_COURT)} % et la mention est maintenue jusqu'à ${percent(PEPITE_COST_EXIT_SHARE_COURT)} % (à confirmer à la prochaine mise à jour).`
+      : `Au prix de référence, le coût total estimé représente ${cost} ${valueWord} ; le critère est rempli jusqu'à ${percent(PEPITE_COST_MAX_SHARE_COURT)} %.`;
     condition = `${chance} ${costPart}`;
   } else {
     const threshold = confirmed("test_c_cost")
-      ? `sous le seuil de maintien de ${percent(PEPITE_COST_EXIT_SHARE_NOTARY)} %`
-      : `sous le seuil de ${percent(PEPITE_COST_MAX_SHARE_NOTARY)} %`;
+      ? `le critère est rempli jusqu'à ${percent(PEPITE_COST_MAX_SHARE_NOTARY)} % et la mention est maintenue jusqu'à ${percent(PEPITE_COST_EXIT_SHARE_NOTARY)} % (à confirmer à la prochaine mise à jour)`
+      : `le critère est rempli jusqu'à ${percent(PEPITE_COST_MAX_SHARE_NOTARY)} %`;
     condition = online
-      ? `À la première offre possible, le coût total représente ${cost} de la valeur estimée, ${threshold}. L'offre plafond estimée couvre au moins la première offre possible.`
-      : `Au prix de départ, le coût total représente ${cost} de la valeur estimée, ${threshold}. L'enchère plafond estimée couvre au moins la mise à prix.`;
+      ? `À la première offre possible, le coût total estimé représente ${cost} ${valueWord} ; ${threshold}. L'offre plafond estimée couvre au moins la première offre possible.`
+      : `Au prix de départ, le coût total estimé représente ${cost} ${valueWord} ; ${threshold}. L'enchère plafond estimée couvre au moins la mise à prix.`;
   }
 
   const ceilingLine =
     reference == null
       ? null
       : `${online ? "Offre" : "Enchère"} plafond estimée : ${formatPrice(reference)} (${DEFAULT_HYPOTHESES})`;
-  const chanceShare = numberOrNull(details.chanceShare);
-  const chanceLine =
-    regime === "tribunal" && chanceShare != null
-      ? chanceSentence(chanceShare, details.chanceAtLeast === true)
-      : null;
-
   let priceLine: string | null = null;
   let priceLowNote: string | null = null;
   let priceNote: string | null = null;
@@ -276,7 +292,7 @@ export function pepiteDetailView(
     const low = numberOrNull(details.rangeLowEur);
     const high = numberOrNull(details.rangeHighEur);
     if (probable != null) {
-      priceLine = `Prix probable : environ ${formatPrice(probable)}${
+      priceLine = `Prix de référence : environ ${formatPrice(probable)}${
         low != null && high != null
           ? ` (fourchette ${formatPrice(low)} – ${formatPrice(high)})`
           : ""
@@ -288,14 +304,14 @@ export function pepiteDetailView(
       const reliability =
         RELIABILITY_WORDS[typeof scenarios.reliability === "string" ? scenarios.reliability : ""] ??
         "à confirmer";
-      priceNote = `Repère statistique tiré de ${cohort.sample} ventes comparables passées ${COHORT_PHRASE[cohort.kind]} (fiabilité ${reliability}). La moitié de ces ventes s'est conclue dans la fourchette indiquée, l'autre moitié en dehors. Ce n'est pas une prévision du prix final : les enchères peuvent dépasser ce montant.`;
+      priceNote = `Repère statistique tiré de ${cohort.price.sample} ventes comparables passées ${PRICE_COHORT_PHRASE[cohort.price.kind]} (fiabilité ${reliability}). La moitié de ces ventes s'est conclue dans la fourchette indiquée, l'autre moitié en dehors. Ce n'est pas une prévision du prix final : les enchères peuvent dépasser ce montant.`;
     }
   } else {
     const label = online ? "Première offre possible" : "Mise à prix";
     priceLine = start == null ? null : `${label} : ${formatPrice(start)}`;
     priceNote = online
-      ? "Prix de réserve du vendeur inconnu. Pas de prix probable : aucun historique de prix d'adjudication pour les ventes notariales."
-      : "Pas de prix probable : aucun historique de prix d'adjudication pour les ventes notariales.";
+      ? "Prix de réserve du vendeur inconnu. Pas de prix de référence : aucun historique de prix d'adjudication pour les ventes notariales."
+      : "Pas de prix de référence : aucun historique de prix d'adjudication pour les ventes notariales.";
   }
 
   return {
@@ -304,7 +320,6 @@ export function pepiteDetailView(
     condition,
     referenceCeilingEur: reference,
     ceilingLine,
-    chanceLine,
     priceLine,
     priceLowNote,
     priceNote,
@@ -326,7 +341,8 @@ function dateText(value: unknown): string | null {
 
 /**
  * Le contrôle d'inondation d'une pépite publiée, d'après le verdict enregistré avec son évaluation
- * (`details.flood`, écrit par le traitement des pépites sous la règle v2). Ne lit que le verdict et deux dates :
+ * (`details.flood`, écrit par le traitement des pépites sous la règle v2). Ne lit que le verdict, deux dates et le
+ * type de vente (pour renvoyer aux bonnes pièces) :
  * aucun montant, aucune coordonnée. `null` : pas de contrôle (règle v1), verdict illisible ou « élevé » (une
  * pépite ne peut pas l'être : rien ne s'affiche).
  */
@@ -335,6 +351,10 @@ export function pepiteFloodView(details: Record<string, unknown>): PepiteFloodVi
   if (!flood || typeof flood !== "object") return null;
   const record = flood as Record<string, unknown>;
   const checkedOn = dateText(record.observedAt);
+  // Date de la carte du TRI (`date_arrete_carte`), quand la source l'a donnée : distincte de la date de consultation.
+  const mapOn = dateText(record.mapDate);
+  const regime = pepiteRegimeOf(details);
+  const warning = floodWarning(regime);
   switch (record.verdict) {
     case "none_found":
       // Périmètres de PPRi non lus : le verdict ne repose que sur les TRI. Ligne neutre, sans coche, sans la phrase
@@ -345,29 +365,29 @@ export function pepiteFloodView(details: Record<string, unknown>): PepiteFloodVi
           tone: "neutral",
           line: FLOOD_TRI_ONLY_LINE,
           details: null,
-          sourceLine: floodTriSourceLine(checkedOn),
+          sourceLine: floodTriSourceLine(checkedOn, mapOn),
           sourceUrl: FLOOD_TRI_SOURCE_URL,
-          warning: FLOOD_WARNING,
+          warning,
         };
       }
       return {
         verdict: "none_found",
-        tone: "check",
+        tone: "neutral",
         line: FLOOD_NONE_FOUND_LINE,
         details: FLOOD_NONE_FOUND_DETAIL,
-        sourceLine: floodTriSourceLine(checkedOn),
+        sourceLine: floodTriSourceLine(checkedOn, mapOn),
         sourceUrl: FLOOD_TRI_SOURCE_URL,
-        warning: FLOOD_WARNING,
+        warning,
       };
     case "exposed":
       return {
         verdict: "exposed",
         tone: "alert",
         line: FLOOD_EXPOSED_SHORT,
-        details: FLOOD_EXPOSED_LONG,
+        details: floodExposedLong(regime),
         sourceLine: floodPm1SourceLine(checkedOn),
         sourceUrl: FLOOD_PM1_SOURCE_URL,
-        warning: FLOOD_WARNING,
+        warning,
       };
     case "no_signal":
       return {
@@ -377,7 +397,7 @@ export function pepiteFloodView(details: Record<string, unknown>): PepiteFloodVi
         details: null,
         sourceLine: null,
         sourceUrl: null,
-        warning: FLOOD_WARNING,
+        warning,
       };
     case "unknown":
       return {
@@ -389,7 +409,7 @@ export function pepiteFloodView(details: Record<string, unknown>): PepiteFloodVi
         details: null,
         sourceLine: null,
         sourceUrl: null,
-        warning: FLOOD_WARNING,
+        warning,
       };
     default:
       return null;

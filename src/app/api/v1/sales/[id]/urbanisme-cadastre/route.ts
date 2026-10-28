@@ -23,6 +23,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     await enforceUserRateLimit({
       userId: auth.userId,
+      context,
       bucketKey: "v1.sale-urbanisme-cadastre",
       ...RATE_LIMIT_POLICIES.compute,
     });

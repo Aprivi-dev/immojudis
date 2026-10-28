@@ -2,7 +2,7 @@
 // `pepite-v1` puis écrit en dur, AVANT toute évolution de la règle (compte-rendu
 // `docs/equipe/2026-10-26-pepite-v2-inondation-loyers.md`, proposition n° 1).
 //
-// Une table figée par version de règle (v1 ci-dessous ; v2 plus bas, avec les tests de monotonie) :
+// Une table figée par version de règle (v1 ci-dessous ; v1.1 et v2 plus bas, avec les tests de monotonie) :
 //  - `V1_INPUTS` et `V1_EXPECTED` (verdicts d'évaluation), `V1_STABILITY_INPUTS` et `V1_STABILITY_EXPECTED`
 //    (stabilité : entrée, maintien, gel) : ce que la règle v1 rend pour des ventes représentatives. Ces tables ne
 //    changent JAMAIS : une version publiée reste rejouable telle quelle, quoi qu'il arrive à la règle courante ;
@@ -15,13 +15,16 @@ import type { AuctionScenario } from "@/lib/auction-scenarios";
 import type { FloodVerdict } from "@/lib/flood-risk";
 import {
   PEPITE_LATEST_RULE_VERSION,
+  PEPITE_V1_1_RULE_VERSION,
   PEPITE_V1_RULE_VERSION,
   applyPepiteStability,
   evaluatePepite,
   pepiteReasonCodes,
+  wilsonLowerBound,
   type PepiteEvaluation,
   type PepiteInput,
   type PepiteStability,
+  type PepiteRuleVersion,
   type PepiteStoredState,
 } from "./pepite-policy";
 
@@ -382,14 +385,89 @@ describe("filet pepite-v1 : verdicts figés", () => {
     }
   });
 
-  it("écrit un code de motif par critère évalué (pass: ou fail:)", () => {
-    for (const item of V1_INPUTS) {
-      const evaluation = evaluatePepite(toPepiteInput(item.input), PEPITE_V1_RULE_VERSION);
-      expect(pepiteReasonCodes(evaluation)).toEqual([
-        ...evaluation.passed.map((id) => `pass:${id}`),
-        ...evaluation.missed.map((id) => `fail:${id}`),
-      ]);
-    }
+  // Codes écrits à la main, ventes choisies dans la table ci-dessus : le test ne recalcule rien avec
+  // `pepiteReasonCodes` (une assertion qui recopie la fonction ne pourrait jamais échouer).
+  it.each([
+    {
+      name: "tribunal : chances de 67,5 % (entre les seuils d'entrée et de sortie du test B)",
+      codes: [
+        "pass:regime_open",
+        "pass:sale_upcoming",
+        "pass:starting_price_known",
+        "pass:estimate_actionable",
+        "pass:ceiling_computed",
+        "pass:scenarios_reliable",
+        "pass:estimate_reliability",
+        "pass:estimate_sample",
+        "pass:surface_known",
+        "pass:public_gap_gate",
+        "pass:gap_significant",
+        "pass:property_type_supported",
+        "pass:occupancy_known",
+        "pass:no_valuation_conflict",
+        "pass:no_ai_block",
+        "pass:no_degraded_condition",
+        "pass:verification_not_conflict",
+        "pass:no_probable_duplicate",
+        "pass:risks_qualified",
+        "pass:test_c_cost",
+        "fail:test_b_chance",
+      ],
+    },
+    {
+      name: "notarial interactif : plafond sous la première offre",
+      codes: [
+        "pass:regime_open",
+        "pass:sale_upcoming",
+        "pass:starting_price_known",
+        "pass:estimate_actionable",
+        "pass:estimate_reliability",
+        "pass:estimate_sample",
+        "pass:surface_known",
+        "pass:public_gap_gate",
+        "pass:gap_significant",
+        "pass:property_type_supported",
+        "pass:occupancy_known",
+        "pass:no_valuation_conflict",
+        "pass:no_ai_block",
+        "pass:no_degraded_condition",
+        "pass:verification_not_conflict",
+        "pass:no_probable_duplicate",
+        "pass:risks_qualified",
+        "pass:test_c_cost",
+        "fail:ceiling_computed",
+      ],
+    },
+    {
+      name: "tribunal : signal bloquant et donnée manquante",
+      codes: [
+        "pass:regime_open",
+        "pass:sale_upcoming",
+        "pass:starting_price_known",
+        "pass:ceiling_computed",
+        "pass:scenarios_reliable",
+        "pass:property_type_supported",
+        "pass:occupancy_known",
+        "pass:no_ai_block",
+        "pass:no_degraded_condition",
+        "pass:verification_not_conflict",
+        "pass:no_probable_duplicate",
+        "pass:risks_qualified",
+        "pass:test_b_chance",
+        "fail:estimate_actionable",
+        "fail:estimate_reliability",
+        "fail:estimate_sample",
+        "fail:surface_known",
+        "fail:public_gap_gate",
+        "fail:gap_significant",
+        "fail:no_valuation_conflict",
+      ],
+    },
+  ])("écrit un code de motif par critère évalué : $name", ({ name, codes }) => {
+    const item = V1_INPUTS.find((entry) => entry.name === name);
+    expect(item, name).toBeDefined();
+    const evaluation = evaluatePepite(toPepiteInput(item!.input), PEPITE_V1_RULE_VERSION);
+    expect(pepiteReasonCodes(evaluation)).toEqual(codes);
   });
 });
 
@@ -603,6 +681,7 @@ describe("filet pepite-v1 : stabilité figée", () => {
 // verdict figé sans changer la version fait échouer le test de garde.
 const FINGERPRINTS_BY_RULE_VERSION: Record<string, string> = {
   "pepite-v1": "d86ff3f8992b658c",
+  "pepite-v1.1": "f345ab4fddd9e034",
   "pepite-v2": "1967d0b36c18d134",
 };
 
@@ -631,6 +710,367 @@ describe("garde de version de la règle", () => {
     ).toBe(FINGERPRINTS_BY_RULE_VERSION["pepite-v1"]);
   });
 });
+
+// ---------------------------------------------------------------------------------------------------------
+// pepite-v1.1 : la règle v1 corrigée (compte-rendu du 27/10/2026, n° 20 à 23 et 26). Les tables de la v1 ci-dessus
+// ne bougent pas. La v1.1 reprend les mêmes ventes ; seuls les verdicts listés dans `V1_1_CHANGED` diffèrent, avec
+// la raison de chaque écart, puis viennent des ventes nouvelles qui exercent chaque correction.
+// ---------------------------------------------------------------------------------------------------------
+type LiteVerdict = Pick<
+  Verdict,
+  | "status"
+  | "favorable"
+  | "holds"
+  | "blocking"
+  | "missed"
+  | "holdMissed"
+  | "chanceShare"
+  | "costRatio"
+>;
+const lite = (evaluation: PepiteEvaluation): LiteVerdict => {
+  const { status, favorable, holds, blocking, missed, holdMissed, chanceShare, costRatio } =
+    observed(evaluation);
+  return { status, favorable, holds, blocking, missed, holdMissed, chanceShare, costRatio };
+};
+
+const evaluateV11 = (input: CaseInput) =>
+  evaluatePepite(toPepiteInput(input), PEPITE_V1_1_RULE_VERSION);
+
+// Les seuls verdicts de la v1 qui changent en v1.1 (n° 23) : sous 30 % de la valeur, l'estimation doit être de
+// fiabilité « forte » ; le cas de base est « correcte ». Aucun autre cas de la table ne bouge : le test B de
+// `court()` est à 75 % sur 55 ventes (borne basse de Wilson 0,62), le coût ne dépend pas de l'occupation (aucune
+// décote renseignée) et les frais sont ceux d'avant (aucune source renseignée).
+// prettier-ignore
+const V1_1_CHANGED: Record<string, Verdict> = {
+  "tribunal : mise à prix sous 10 % de la valeur": { status: "not_pepite", favorable: false, holds: false, blocking: false, passed: "regime_open sale_upcoming starting_price_known estimate_actionable ceiling_computed scenarios_reliable estimate_reliability estimate_sample surface_known public_gap_gate property_type_supported occupancy_known no_valuation_conflict no_ai_block no_degraded_condition verification_not_conflict no_probable_duplicate risks_qualified test_b_chance test_c_cost", missed: "gap_significant low_start_strong_estimate", holdMissed: "gap_significant low_start_strong_estimate", chanceShare: 0.9, costRatio: 0.23 },
+  "tribunal : mise à prix sous 30 % de la valeur (q75 retenu)": { status: "not_pepite", favorable: false, holds: false, blocking: false, passed: "regime_open sale_upcoming starting_price_known estimate_actionable ceiling_computed scenarios_reliable estimate_reliability estimate_sample surface_known public_gap_gate gap_significant property_type_supported occupancy_known no_valuation_conflict no_ai_block no_degraded_condition verification_not_conflict no_probable_duplicate risks_qualified test_b_chance test_c_cost", missed: "low_start_strong_estimate", holdMissed: "low_start_strong_estimate", chanceShare: 0.825, costRatio: 0.6133 },
+};
+
+const V1_1_EXPECTED: Record<string, Verdict> = { ...V1_EXPECTED, ...V1_1_CHANGED };
+
+describe("filet pepite-v1.1 : verdicts des ventes de la v1", () => {
+  it("rend le verdict de la v1, sauf pour les ventes listées dans V1_1_CHANGED", () => {
+    for (const item of V1_INPUTS) {
+      expect({ name: item.name, ...observed(evaluateV11(item.input)) }).toEqual({
+        name: item.name,
+        ...V1_1_EXPECTED[item.name],
+      });
+    }
+  });
+
+  it("ne liste que des ventes dont le verdict diffère réellement de la v1", () => {
+    for (const name of Object.keys(V1_1_CHANGED)) {
+      expect(V1_1_CHANGED[name], name).not.toEqual(V1_EXPECTED[name]);
+    }
+  });
+
+  it("n'est jamais plus favorable que la v1", () => {
+    for (const item of V1_INPUTS) {
+      const v1 = evaluatePepite(toPepiteInput(item.input), PEPITE_V1_RULE_VERSION);
+      const v11 = evaluateV11(item.input);
+      expect(v11.favorable && !v1.favorable, item.name).toBe(false);
+      expect(v11.holds && !v1.holds, item.name).toBe(false);
+      for (const id of v1.missed) expect(v11.missed, item.name).toContain(id);
+      for (const id of v1.holdMissed) expect(v11.holdMissed, item.name).toContain(id);
+    }
+  });
+});
+
+// Tranches de la base avec une queue au-delà de 3 fois la mise à prix de `tail` ; le plafond de 450 000 pour une
+// mise à prix de 100 000 (4,5 fois) tombe dans cette tranche ouverte : la part n'est qu'un plancher.
+const tailBuckets = (tail: number): AuctionScenario[] => {
+  const rest = 1 - tail;
+  return [
+    { key: "near_start", lowRatio: 0, highRatio: 1.1, probability: round(rest * 0.2) as number },
+    { key: "up_to_1_5", lowRatio: 1.1, highRatio: 1.5, probability: round(rest * 0.3) as number },
+    { key: "up_to_2", lowRatio: 1.5, highRatio: 2, probability: round(rest * 0.3) as number },
+    { key: "up_to_3", lowRatio: 2, highRatio: 3, probability: round(rest * 0.2) as number },
+    { key: "above_3", lowRatio: 3, highRatio: null, probability: tail },
+  ];
+};
+const withTail = (tail: number, overrides: Partial<CaseInput> = {}): CaseInput =>
+  court({
+    ceiling: ceilingOf(450_000),
+    scenarios: { ...court().scenarios!, buckets: tailBuckets(tail) },
+    ...overrides,
+  });
+const strongEstimate = (input: CaseInput) => withEstimate(input, { reliability: "forte" });
+const withFees = (input: CaseInput, fees: NonNullable<CaseInput["fees"]>): CaseInput => ({
+  ...input,
+  fees,
+});
+const rented = (input: CaseInput, occupancyDiscountPct = 10): CaseInput => ({
+  ...withSignals(input, { occupancy: "loue" }),
+  occupancyDiscountPct,
+});
+
+const V1_1_NEW_INPUTS: VerdictCase[] = [
+  // n° 20 : un plancher ne réussit plus le test B sous le seuil.
+  { name: "v1.1 B : plancher à 60 % (queue de 40 % au-delà de 3 fois)", input: withTail(0.4) },
+  {
+    name: "v1.1 B : plancher à 67 % (entre les seuils d'entrée et de sortie)",
+    input: withTail(0.33),
+  },
+  { name: "v1.1 B : plancher à 72 % (au-dessus du seuil d'entrée)", input: withTail(0.28) },
+  // n° 26 : l'effectif doit porter la part (borne basse de Wilson 0,50 à l'entrée).
+  {
+    name: "v1.1 B : part de 75 % sur 12 ventes seulement (Wilson sous 0,50)",
+    input: court({
+      scenarios: {
+        ...court().scenarios!,
+        reliability: "medium",
+        courtSample: 9,
+        nationalSample: 12,
+      },
+    }),
+  },
+  {
+    name: "v1.1 B : part de 70 % sur 10 ventes du tribunal (25 ventes avec le poids national)",
+    input: court({
+      scenarios: {
+        ...court().scenarios!,
+        reliability: "medium",
+        courtSample: 10,
+        buckets: [
+          { key: "near_start", lowRatio: 0, highRatio: 1.1, probability: 0.2 },
+          { key: "up_to_1_5", lowRatio: 1.1, highRatio: 1.5, probability: 0.3 },
+          { key: "up_to_2", lowRatio: 1.5, highRatio: 2, probability: 0.2 },
+          { key: "up_to_3", lowRatio: 2, highRatio: 3, probability: 0.2 },
+          { key: "above_3", lowRatio: 3, highRatio: null, probability: 0.1 },
+        ],
+      },
+    }),
+  },
+  // n° 23 : décote d'occupation sur la valeur centrale du test C.
+  { name: "v1.1 C : bien loué (décote de 10 %), coût de 57,5 %", input: rented(court()) },
+  {
+    name: "v1.1 C : bien libre, coût à 75 % (seuil d'entrée)",
+    input: court({ ceiling: ceilingOf(200_000, 1.5) }),
+  },
+  {
+    name: "v1.1 C : bien loué, coût de 75 % rapporté à 90 % de la valeur (83 %)",
+    input: rented(court({ ceiling: ceilingOf(200_000, 1.5) })),
+  },
+  {
+    name: "v1.1 C : bien loué, coût de 70 % rapporté à 90 % de la valeur (78 %, entre les seuils)",
+    input: rented(court({ ceiling: ceilingOf(200_000, 1.4) })),
+  },
+  {
+    name: "v1.1 C : bien occupé, aucune décote de valeur (libération déjà dans le coût)",
+    input: {
+      ...withSignals(court({ ceiling: ceilingOf(200_000, 1.5) }), { occupancy: "occupe" }),
+      occupancyDiscountPct: 0,
+    },
+  },
+  // n° 23 : sous 30 % de la valeur, fiabilité « forte » exigée.
+  {
+    name: "v1.1 : mise à prix sous 30 % de la valeur, estimation de fiabilité forte",
+    input: strongEstimate(court({ startingPriceEur: 80_000 })),
+  },
+  {
+    name: "v1.1 : mise à prix à 30 % de la valeur (le seuil est strict), fiabilité correcte",
+    input: court({ startingPriceEur: 90_000 }),
+  },
+  // n° 22 : en vente notariale, des frais « par défaut » ne sont pas des frais connus.
+  {
+    name: "v1.1 frais : vente interactive, honoraires de négociation par défaut",
+    input: withFees(notary("notary_online"), {
+      preliminary: null,
+      negotiation: "defaut",
+      advertising: "document",
+    }),
+  },
+  {
+    name: "v1.1 frais : vente interactive, frais de publicité par défaut",
+    input: withFees(notary("notary_online"), {
+      preliminary: null,
+      negotiation: "document",
+      advertising: "defaut",
+    }),
+  },
+  {
+    name: "v1.1 frais : vente interactive, frais lus ou saisis",
+    input: withFees(notary("notary_online"), {
+      preliminary: null,
+      negotiation: "saisie",
+      advertising: "document",
+    }),
+  },
+  {
+    name: "v1.1 frais : vente à la bougie (aucun honoraire de négociation ni frais de publicité)",
+    input: withFees(notary("notary_auction"), {
+      preliminary: "document",
+      negotiation: null,
+      advertising: null,
+    }),
+  },
+  {
+    name: "v1.1 frais : tribunal, frais préalables par défaut (admis, signalés en administration)",
+    input: withFees(court(), { preliminary: "defaut", negotiation: null, advertising: null }),
+  },
+];
+
+// prettier-ignore
+const V1_1_NEW_EXPECTED: Record<string, LiteVerdict> = {
+  // v1 : pépite (le plancher passait sans calcul) ; v1.1 : 0,60 < 0,70 à l'entrée et 0,60 < 0,65 au maintien.
+  "v1.1 B : plancher à 60 % (queue de 40 % au-delà de 3 fois)": { status: "not_pepite", favorable: false, holds: false, blocking: false, missed: "test_b_chance", holdMissed: "test_b_chance", chanceShare: 0.6, costRatio: 0.575 },
+  // 0,67 : sous l'entrée (0,70), au-dessus du maintien (0,65) : une pépite publiée resterait « à confirmer ».
+  "v1.1 B : plancher à 67 % (entre les seuils d'entrée et de sortie)": { status: "not_pepite", favorable: false, holds: true, blocking: false, missed: "test_b_chance", holdMissed: "", chanceShare: 0.67, costRatio: 0.575 },
+  // 0,72 : le plancher atteint le seuil, comme une part exacte.
+  "v1.1 B : plancher à 72 % (au-dessus du seuil d'entrée)": { status: "pepite", favorable: true, holds: true, blocking: false, missed: "", holdMissed: "", chanceShare: 0.72, costRatio: 0.575 },
+  // Wilson(0,75 ; 12) = 0,47 : sous 0,50 à l'entrée ; au maintien, seule la part compte (0,75 >= 0,65).
+  "v1.1 B : part de 75 % sur 12 ventes seulement (Wilson sous 0,50)": { status: "not_pepite", favorable: false, holds: true, blocking: false, missed: "test_b_chance", holdMissed: "", chanceShare: 0.75, costRatio: 0.575 },
+  // Wilson(0,70 ; 25) = 0,50 : le plus petit effectif possible (10 + 15) tient tout juste.
+  "v1.1 B : part de 70 % sur 10 ventes du tribunal (25 ventes avec le poids national)": { status: "pepite", favorable: true, holds: true, blocking: false, missed: "", holdMissed: "", chanceShare: 0.7, costRatio: 0.575 },
+  // 0,575 / 0,9 = 0,639 : sous 0,75.
+  "v1.1 C : bien loué (décote de 10 %), coût de 57,5 %": { status: "pepite", favorable: true, holds: true, blocking: false, missed: "", holdMissed: "", chanceShare: 0.75, costRatio: 0.6389 },
+  "v1.1 C : bien libre, coût à 75 % (seuil d'entrée)": { status: "pepite", favorable: true, holds: true, blocking: false, missed: "", holdMissed: "", chanceShare: 0.75, costRatio: 0.75 },
+  // v1 : coût 0,75 réussi. v1.1 : 0,75 / 0,9 = 0,833 > 0,80 : manqué à l'entrée et au maintien.
+  "v1.1 C : bien loué, coût de 75 % rapporté à 90 % de la valeur (83 %)": { status: "not_pepite", favorable: false, holds: false, blocking: false, missed: "test_c_cost", holdMissed: "test_c_cost", chanceShare: 0.75, costRatio: 0.8333 },
+  // 0,70 / 0,9 = 0,778 : sous l'entrée manqué (0,75), au maintien tenu (0,80).
+  "v1.1 C : bien loué, coût de 70 % rapporté à 90 % de la valeur (78 %, entre les seuils)": { status: "not_pepite", favorable: false, holds: true, blocking: false, missed: "test_c_cost", holdMissed: "", chanceShare: 0.75, costRatio: 0.7778 },
+  "v1.1 C : bien occupé, aucune décote de valeur (libération déjà dans le coût)": { status: "pepite", favorable: true, holds: true, blocking: false, missed: "", holdMissed: "", chanceShare: 0.75, costRatio: 0.75 },
+  "v1.1 : mise à prix sous 30 % de la valeur, estimation de fiabilité forte": { status: "pepite", favorable: true, holds: true, blocking: false, missed: "", holdMissed: "", chanceShare: 0.825, costRatio: 0.6133 },
+  "v1.1 : mise à prix à 30 % de la valeur (le seuil est strict), fiabilité correcte": { status: "pepite", favorable: true, holds: true, blocking: false, missed: "", holdMissed: "", chanceShare: 0.7833, costRatio: 0.5175 },
+  "v1.1 frais : vente interactive, honoraires de négociation par défaut": { status: "not_pepite", favorable: false, holds: false, blocking: false, missed: "fees_known", holdMissed: "fees_known", chanceShare: null, costRatio: 0.6 },
+  "v1.1 frais : vente interactive, frais de publicité par défaut": { status: "not_pepite", favorable: false, holds: false, blocking: false, missed: "fees_known", holdMissed: "fees_known", chanceShare: null, costRatio: 0.6 },
+  "v1.1 frais : vente interactive, frais lus ou saisis": { status: "pepite", favorable: true, holds: true, blocking: false, missed: "", holdMissed: "", chanceShare: null, costRatio: 0.6 },
+  "v1.1 frais : vente à la bougie (aucun honoraire de négociation ni frais de publicité)": { status: "pepite", favorable: true, holds: true, blocking: false, missed: "", holdMissed: "", chanceShare: null, costRatio: 0.6 },
+  "v1.1 frais : tribunal, frais préalables par défaut (admis, signalés en administration)": { status: "pepite", favorable: true, holds: true, blocking: false, missed: "", holdMissed: "", chanceShare: 0.75, costRatio: 0.575 },
+};
+
+describe("filet pepite-v1.1 : ventes qui exercent les corrections", () => {
+  it("rend, pour chaque vente nouvelle, le verdict figé", () => {
+    for (const item of V1_1_NEW_INPUTS) {
+      expect({ name: item.name, ...lite(evaluateV11(item.input)) }).toEqual({
+        name: item.name,
+        ...V1_1_NEW_EXPECTED[item.name],
+      });
+    }
+  });
+
+  it("la v1 (figée) jugeait pépite un plancher à 60 %, et un bien loué au coût de 75 % : l'écart est voulu", () => {
+    const v1 = (input: CaseInput) => evaluatePepite(toPepiteInput(input), PEPITE_V1_RULE_VERSION);
+    expect(v1(withTail(0.4)).status).toBe("pepite");
+    expect(v1(rented(court({ ceiling: ceilingOf(200_000, 1.5) }))).status).toBe("pepite");
+    expect(
+      v1(
+        withFees(notary("notary_online"), {
+          preliminary: null,
+          negotiation: "defaut",
+          advertising: null,
+        }),
+      ).status,
+    ).toBe("pepite");
+  });
+
+  it("mesure l'effectif, la borne de Wilson, la décote et les frais par défaut", () => {
+    const share = evaluateV11(withTail(0.28));
+    expect(share.metrics.chanceSample).toBe(55);
+    expect(share.metrics.chanceWilsonLow).toBeGreaterThan(0.5);
+    expect(evaluateV11(rented(court())).metrics.occupancyDiscountPct).toBe(10);
+    expect(evaluateV11(court()).metrics.occupancyDiscountPct).toBe(0);
+    const defaults = evaluateV11(
+      withFees(court(), { preliminary: "defaut", negotiation: null, advertising: null }),
+    );
+    expect(defaults.metrics.feesDefault).toBe(true);
+    expect(evaluateV11(court()).metrics.feesDefault).toBe(false);
+  });
+
+  it("calcule la borne basse de Wilson à 95 % (valeurs de référence)", () => {
+    // Intervalle de Wilson de la part 0,7 : [0,40 ; 0,89] sur 10, [0,52 ; 0,83] sur 30, [0,60 ; 0,78] sur 100.
+    expect(wilsonLowerBound(0.7, 10)).toBeCloseTo(0.397, 2);
+    expect(wilsonLowerBound(0.7, 30)).toBeCloseTo(0.522, 2);
+    expect(wilsonLowerBound(0.7, 100)).toBeCloseTo(0.604, 2);
+    expect(wilsonLowerBound(0.7, 25)).toBeGreaterThanOrEqual(0.5);
+    expect(wilsonLowerBound(0.7, 0)).toBe(0);
+  });
+});
+
+// Stabilité de la v1.1 : pendant le gel à J-7, une porte de qualité de l'estimation manquée fait sortir la pépite
+// publiée (n° 21) ; les autres critères (la part B qui s'effondre, par exemple) ne la font pas sortir, mais le
+// traitement planifié ne réécrit alors ni ses détails ni ses motifs (voir `sale-pepites-batch.test.ts`).
+const frozenStability = (input: CaseInput, rule: PepiteRuleVersion = PEPITE_V1_1_RULE_VERSION) =>
+  applyPepiteStability({
+    previous: published({ frozenAt: hoursAgo(10) }),
+    evaluation: evaluatePepite(toPepiteInput(input), rule),
+    startingPriceEur: 100_000,
+    saleDate: daysAhead(5),
+    now: new Date(NOW),
+  });
+
+describe("filet pepite-v1.1 : gel à J-7", () => {
+  it.each([
+    ["porte publique de l'estimation manquée", withEstimate(court(), { publicGatePassed: false })],
+    [
+      "fiabilité de l'estimation tombée à fragile",
+      withEstimate(court(), { reliability: "fragile" }),
+    ],
+    ["estimation devenue non exploitable", withEstimate(court(), { actionable: false })],
+  ])("publiée et gelée, %s : sort", (_name, input) => {
+    expect(frozenStability(input)).toMatchObject({ isPepite: false, codes: ["stab:exit_quality"] });
+  });
+
+  it("publiée et gelée, part B tombée à 50 % : reste publiée (gel), sans sortie de qualité", () => {
+    const input = court({ ceiling: ceilingOf(160_000) });
+    expect(evaluateV11(input).holds).toBe(false);
+    expect(frozenStability(input)).toMatchObject({ isPepite: true, codes: ["stab:frozen"] });
+  });
+
+  it("publiée et gelée, échantillon de l'estimation insuffisant : reste publiée (hors des trois portes)", () => {
+    expect(frozenStability(withEstimate(court(), { effectiveSampleSize: 5 }))).toMatchObject({
+      isPepite: true,
+      codes: ["stab:frozen"],
+    });
+  });
+
+  it("non gelée, une porte manquée suit la sortie ordinaire (pas de sortie de qualité)", () => {
+    const stability = applyPepiteStability({
+      previous: published(),
+      evaluation: evaluateV11(withEstimate(court(), { publicGatePassed: false })),
+      startingPriceEur: 100_000,
+      saleDate: daysAhead(30),
+      now: new Date(NOW),
+    });
+    expect(stability).toMatchObject({ isPepite: false, codes: ["stab:exit"] });
+  });
+
+  it("la v1 (figée) garde sa pépite gelée même quand la porte de qualité est manquée", () => {
+    expect(
+      frozenStability(withEstimate(court(), { publicGatePassed: false }), PEPITE_V1_RULE_VERSION),
+    ).toMatchObject({ isPepite: true, codes: ["stab:frozen"] });
+  });
+
+  it("une vente non publiée n'entre pas et son état gelé ne change pas", () => {
+    const stability = applyPepiteStability({
+      previous: stored({ favorableStreak: 1, lastFavorableAt: hoursAgo(20) }),
+      evaluation: evaluateV11(withEstimate(court(), { publicGatePassed: false })),
+      startingPriceEur: 100_000,
+      saleDate: daysAhead(5),
+      now: new Date(NOW),
+    });
+    expect(stability).toMatchObject({
+      isPepite: false,
+      favorableStreak: 1,
+      codes: ["stab:frozen"],
+    });
+  });
+});
+
+function fingerprintV11(): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        changed: V1_1_CHANGED,
+        verdicts: V1_1_NEW_INPUTS.map((item) => ({
+          ...item,
+          expected: V1_1_NEW_EXPECTED[item.name],
+        })),
+      }),
+    )
+    .digest("hex")
+    .slice(0, 16);
+}
 
 // ---------------------------------------------------------------------------------------------------------
 // pepite-v2 : la règle v1 + le critère éliminatoire du risque d'inondation (`flood-risk.ts`). Table figée des
@@ -932,9 +1372,18 @@ function fingerprintV2(): string {
 }
 
 describe("garde de version de la règle courante", () => {
+  it("pepite-v1.1 a sa table figée (écarts avec la v1 et ventes nouvelles) et son empreinte", () => {
+    expect(
+      fingerprintV11(),
+      `Les verdicts figés de pepite-v1.1 ne correspondent pas à l'empreinte enregistrée. Ne modifiez pas cette ` +
+        `table : créez une nouvelle version de règle, sa table et son empreinte.`,
+    ).toBe(FINGERPRINTS_BY_RULE_VERSION["pepite-v1.1"]);
+  });
+
   it("la règle courante a sa table figée et son empreinte", () => {
     expect(Object.keys(FINGERPRINTS_BY_RULE_VERSION)).toContain(PEPITE_LATEST_RULE_VERSION);
     expect(Object.keys(FINGERPRINTS_BY_RULE_VERSION)).toContain(PEPITE_V1_RULE_VERSION);
+    expect(Object.keys(FINGERPRINTS_BY_RULE_VERSION)).toContain(PEPITE_V1_1_RULE_VERSION);
     expect(
       fingerprintV2(),
       `Les verdicts figés de pepite-v2 ne correspondent pas à l'empreinte enregistrée. Ne modifiez pas cette ` +
@@ -943,13 +1392,15 @@ describe("garde de version de la règle courante", () => {
   });
 });
 
-describe("monotonie : la v2 ne rend jamais favorable ce que la v1 refusait", () => {
-  const cases = V1_INPUTS.flatMap((item) =>
+// La v2 = la v1.1 + l'inondation : elle reprend toutes les corrections du 27/10/2026. La référence de la
+// monotonie est donc la v1.1 (qui n'est elle-même jamais plus favorable que la v1, voir plus haut).
+describe("monotonie : la v2 ne rend jamais favorable ce que la v1.1 refusait", () => {
+  const cases = [...V1_INPUTS, ...V1_1_NEW_INPUTS].flatMap((item) =>
     FLOOD_VERDICTS.map((verdict) => ({ name: `${item.name} / ${verdict}`, item, verdict })),
   );
 
   it.each(cases)("$name", ({ item, verdict }) => {
-    const v1 = evaluatePepite(toPepiteInput(item.input), PEPITE_V1_RULE_VERSION);
+    const v1 = evaluateV11(item.input);
     const v2 = evaluateV2({ input: item.input, verdict });
 
     // Jamais plus favorable : entrée et maintien.

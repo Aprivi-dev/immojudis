@@ -5,7 +5,7 @@ import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { LEGAL_DOCUMENTS, publicLegalPublisher } from "@/lib/legal-documents";
 import { withdrawalInformationLines } from "@/lib/withdrawal-form";
-import { resolveEmailAlertDeliveryConfig, sendResendEmail } from "@/lib/email-alerts";
+import { resolveTransactionalEmailConfig, sendResendEmail } from "@/lib/email-alerts";
 import {
   ANALYSIS_BILLING_MODEL,
   ANALYSIS_OFFER_CODE,
@@ -51,7 +51,7 @@ export type CommercialAcceptanceOffer = {
 export function assertCommercialConfirmationReadiness(
   env: Pick<NodeJS.ProcessEnv, string> = process.env,
 ): void {
-  const config = resolveEmailAlertDeliveryConfig(env);
+  const config = resolveTransactionalEmailConfig(env);
   if (!config.configured) {
     throw new Error(
       `Confirmation contractuelle indisponible: ${config.missing.join(", ")}. Le checkout est suspendu.`,
@@ -134,7 +134,7 @@ export async function sendCommercialConfirmation({
   userId: string;
   paidAt: string;
 }): Promise<"sent" | "failed"> {
-  const config = resolveEmailAlertDeliveryConfig();
+  const config = resolveTransactionalEmailConfig();
   const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.getUserById(userId);
   if (authError) throw authError;
   const recipient = authUser.user?.email?.trim() || null;
@@ -266,6 +266,7 @@ export async function sendCommercialConfirmation({
         text,
         html: `<h1>${isRecurringOffer ? "Abonnement" : "Commande"} Immojudis Analyse confirmé${isRecurringOffer ? "" : "e"}</h1><p><strong>${escapeHtml(offerLabel)}</strong><br>${escapeHtml(offerDescription)}</p><p>Confirmation : ${escapeHtml(paidAt)}<br>Référence : ${escapeHtml(checkoutSessionId)}</p><p>Conditions version ${escapeHtml(accepted.termsVersion)} · Confidentialité version ${escapeHtml(accepted.privacyVersion)}</p><p><a href="${termsUrl}">Conditions générales</a> · <a href="${privacyUrl}">Confidentialité</a> · <a href="${rightsUrl}">Mes droits et rétractation</a></p><pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(withdrawalLines.join("\n"))}</pre><p>Empreinte SHA-256 des conditions acceptées : ${escapeHtml(accepted.termsSha256)}</p>`,
       },
+      category: "acceptance",
     });
     await recordConfirmationDelivery({
       acceptanceId,
@@ -299,7 +300,7 @@ export async function retryFailedCommercialConfirmations({
   limit?: number;
   now?: Date;
 } = {}): Promise<CommercialConfirmationRetrySummary> {
-  const config = resolveEmailAlertDeliveryConfig();
+  const config = resolveTransactionalEmailConfig();
   if (!config.configured) {
     return {
       configured: false,

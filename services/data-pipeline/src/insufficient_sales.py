@@ -196,7 +196,7 @@ def delete_batch(
     current = {
         str(row[0]): row
         for row in connection.execute(
-            "select id::text, source_url, updated_at from public.auction_sales where id = any(%s::uuid[]) for update",
+            "select id::text, source_url, updated_at from public.auction_sales where id = any(%s::uuid[]) for no key update",
             ([c.sale_id for c in batch],),
         ).fetchall()
     }

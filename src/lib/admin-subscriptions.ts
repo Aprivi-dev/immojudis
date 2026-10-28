@@ -6,6 +6,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { normalizeEmail } from "@/lib/account";
 import { normalizePlanCode, type PlanCode, type PlanStatus } from "@/lib/plans";
+import { isMissingRpcError } from "@/lib/postgrest-errors";
 
 type UserSubscriptionRow = Database["public"]["Tables"]["user_subscriptions"]["Row"];
 type UserSubscriptionInsert = Database["public"]["Tables"]["user_subscriptions"]["Insert"];
@@ -131,20 +132,42 @@ export async function grantAdminSubscription({
     grantedBy: auth.userId,
   });
 
-  const { data, error } = await supabaseAdmin
-    .from("user_subscriptions")
-    .upsert(payload, { onConflict: "user_id" })
-    .select("*")
-    .single();
-
-  if (error) throw error;
+  const row = input.note
+    ? await grantWithNote({ payload, userId: user.id, grantedBy: auth.userId, input })
+    : await upsertGrant(payload);
 
   return {
-    subscription: subscriptionToSummary(data, user.email ?? null),
+    subscription: subscriptionToSummary(row, user.email ?? null),
     resolvedUser: {
       id: user.id,
       email: user.email ?? null,
     },
+  };
+}
+
+/** Nombre d'attributions antérieures gardées dans `metadata.manual_grant_history`. */
+export const MANUAL_GRANT_HISTORY_MAX = 10;
+
+/**
+ * Ajoute une attribution manuelle aux métadonnées d'un abonnement SANS écraser les précédentes : la
+ * précédente `manual_grant` passe en tête de `manual_grant_history` (10 entrées au plus, les plus
+ * récentes d'abord). L'historique ne garde ni note ni adresse email : la ligne est lisible par son
+ * titulaire.
+ */
+export function withManualGrant(
+  metadata: Json | null | undefined,
+  grant: Record<string, unknown>,
+): Record<string, unknown> {
+  const base = jsonObject(metadata);
+  const previous = base.manual_grant;
+  const history = Array.isArray(base.manual_grant_history) ? base.manual_grant_history : [];
+  const entries = [...(isRecord(previous) ? [previous] : []), ...history]
+    .filter(isRecord)
+    .map(({ note: _note, target_email: _targetEmail, ...entry }) => entry);
+  return {
+    ...base,
+    manual_grant: grant,
+    manual_grant_history: entries.slice(0, MANUAL_GRANT_HISTORY_MAX),
   };
 }
 
@@ -153,17 +176,14 @@ export function manualSubscriptionPayload({
   user,
   existing,
   grantedBy,
-  source = "admin",
 }: {
   input: AdminSubscriptionGrantPayload;
-  user: Pick<User, "id" | "email">;
+  user: Pick<User, "id">;
   existing?: Pick<
     UserSubscriptionRow,
     "metadata" | "stripe_customer_id" | "stripe_subscription_id"
   > | null;
   grantedBy: string;
-  /** Origine de l'attribution : `admin` (formulaire) ou `admin_trial_extension` (essai prolongé). */
-  source?: "admin" | "admin_trial_extension";
 }): UserSubscriptionInsert {
   return {
     user_id: user.id,
@@ -172,20 +192,71 @@ export function manualSubscriptionPayload({
     current_period_end: input.currentPeriodEnd,
     stripe_customer_id: existing?.stripe_customer_id ?? null,
     stripe_subscription_id: existing?.stripe_subscription_id ?? null,
-    metadata: asJson({
-      ...jsonObject(existing?.metadata),
-      manual_grant: {
-        source,
+    // Pas d'adresse email recopiée ici : aucun lecteur, et elle deviendrait fausse si l'adresse change.
+    metadata: asJson(
+      withManualGrant(existing?.metadata, {
+        source: "admin",
         granted_by: grantedBy,
         granted_at: new Date().toISOString(),
-        target_email: user.email ?? null,
         plan_code: input.planCode,
         status: input.status,
         current_period_end: input.currentPeriodEnd,
-        note: input.note,
-      },
-    }),
+        // Pas de motif ici : la ligne est lisible par son titulaire (il va dans app_private.manual_grant_notes).
+      }),
+    ),
   };
+}
+
+async function upsertGrant(payload: UserSubscriptionInsert): Promise<UserSubscriptionRow> {
+  const { data, error } = await supabaseAdmin
+    .from("user_subscriptions")
+    .upsert(payload, { onConflict: "user_id" })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Attribution avec motif : la ligne et le motif (`app_private.manual_grant_notes`, jamais lisible par le
+ * compte) s'écrivent dans la même transaction (`grant_manual_subscription`). Sans la fonction (migration
+ * 20261108190000 pas encore appliquée), l'attribution est refusée : le motif ne retourne jamais dans la ligne.
+ */
+async function grantWithNote({
+  payload,
+  userId,
+  grantedBy,
+  input,
+}: {
+  payload: UserSubscriptionInsert;
+  userId: string;
+  grantedBy: string;
+  input: AdminSubscriptionGrantPayload;
+}): Promise<UserSubscriptionRow> {
+  const { error } = await supabaseAdmin.rpc("grant_manual_subscription", {
+    p_user_id: userId,
+    p_granted_by: grantedBy,
+    p_plan_code: input.planCode,
+    p_status: input.status,
+    p_current_period_end: input.currentPeriodEnd,
+    p_metadata: payload.metadata ?? {},
+    p_note: input.note ?? undefined,
+  });
+  if (error) {
+    if (isMissingRpcError(error)) {
+      throw new Error(
+        "Le motif ne peut pas encore être enregistré (migration en attente) : attribution non faite. Réessayez sans motif ou après la migration.",
+      );
+    }
+    throw error;
+  }
+  const row = await getSubscriptionByUserId(userId);
+  if (!row) throw new Error("Abonnement introuvable après l'attribution.");
+  return row;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 export async function assertAdminAuth(authToken: string) {

@@ -141,7 +141,8 @@ select is(
     'sale_id', 'rule_version', 'engine_version', 'regime_version', 'status', 'is_pepite',
     'favorable_streak', 'frozen_at', 'last_favorable_at', 'data_missing_since', 'reason_codes',
     'details', 'input_starting_price_eur',
-    'input_estimate_computed_at', 'evaluated_at', 'first_pepite_at'
+    'input_estimate_computed_at', 'evaluated_at', 'first_pepite_at', 'estimate_model_version',
+    'estimate_engine_kind'
   ],
   'the table holds the versions, the status, the published result, the series dates, the reasons, the private details and the inputs'
 );

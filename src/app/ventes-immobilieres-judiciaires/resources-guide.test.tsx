@@ -54,6 +54,7 @@ describe("guide des ventes immobilières judiciaires", () => {
       ["Consignation du prix", "lexique-consignation-du-prix"],
       ["Enchère plafond", "lexique-enchere-plafond"],
       ["Droit de préemption", "lexique-droit-de-preemption"],
+      ["Offre plafond", "lexique-offre-plafond"],
     ])("donne au terme « %s » l'ancre %s", (term, anchor) => {
       expect(lexiqueAnchor(term)).toBe(anchor);
       const { container } = render(<ResourcesPage />);
@@ -120,7 +121,7 @@ describe("guide des ventes immobilières judiciaires", () => {
       expect(structured.dateModified).toBe(GUIDE_LAST_UPDATED);
       expect(time!.getAttribute("datetime")).toBe(structured.dateModified);
       expect(time!.textContent).toBe(formatGuideDate(structured.dateModified!));
-      expect(time!.textContent).toBe("26/10/2026");
+      expect(time!.textContent).toBe("28/10/2026");
     });
 
     it("est une date AAAA-MM-JJ valide, pas postérieure à aujourd'hui", () => {

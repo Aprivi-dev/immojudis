@@ -67,7 +67,14 @@ type SourceRun = {
 type RequestResult =
   | { kind: "success"; payload: unknown; httpStatus: number; paginationMessage?: string }
   | { kind: "empty"; httpStatus: number; message?: string }
-  | { kind: "failure"; message: string; httpStatus?: number; cause?: string };
+  | {
+      kind: "failure";
+      message: string;
+      httpStatus?: number;
+      cause?: string;
+      /** Réponse 200 dont le corps n'est pas du JSON (page HTML d'un pare-feu, défi anti-robot…). */
+      invalidJson?: true;
+    };
 
 type BodyReadResult = { ok: true; text: string } | { ok: false };
 
@@ -276,7 +283,7 @@ export async function fetchLandRisks(
 /** Résultat d'un appel d'inondation : jamais l'URL, ni une coordonnée, ni le corps de la réponse d'erreur. */
 export type FloodApiFailure = {
   kind: "failure";
-  /** `http_<statut>`, `timeout` ou `network` : de quoi journaliser sans donnée de la vente. */
+  /** `http_<statut>`, `invalid_json`, `timeout` ou `network_<cause>` : de quoi journaliser sans donnée de la vente. */
   code: string;
 };
 export type FloodApiRateLimited = { kind: "rate_limited" };
@@ -310,17 +317,36 @@ const TRI_SCENARIO_CODES: readonly string[] = ["01For", "02Moy", "03Mcc", "04Fai
 
 export const FLOOD_API_USER_AGENT = "immojudis-flood-risk/1.0 (+https://immojudis.com)";
 
-/** « 18/12/2013 » (format de l'API) en « 2013-12-18 » ; `null` si illisible. */
+/**
+ * « 18/12/2013 » (format de l'API) en « 2013-12-18 » ; `null` si illisible ou si la date n'existe pas
+ * (« 31/02/2013 ») : la valeur part telle quelle dans une colonne `date`, que la base refuserait (22008).
+ */
 export function isoDateFromFrench(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value.trim());
-  return match ? `${match[3]}-${match[2]}-${match[1]}` : null;
+  if (!match) return null;
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const year = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  // `Date.UTC` reporte les jours en trop sur le mois suivant : une date réelle se retrouve à l'identique.
+  if (
+    year < 1 ||
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return `${match[3]}-${match[2]}-${match[1]}`;
 }
 
 function floodFailure(
   response: Extract<RequestResult, { kind: "failure" }>,
 ): FloodApiFailure | FloodApiRateLimited {
   if (response.httpStatus === 429) return { kind: "rate_limited" };
+  // Un 200 illisible (page HTML d'un pare-feu, défi anti-robot) n'est pas un succès : `http_200` s'y lirait ainsi.
+  if (response.invalidJson) return { kind: "failure", code: "invalid_json" };
   if (response.httpStatus) return { kind: "failure", code: `http_${response.httpStatus}` };
   if (/délai/i.test(response.message)) return { kind: "failure", code: "timeout" };
   return { kind: "failure", code: response.cause ? `network_${response.cause}` : "network" };
@@ -694,6 +720,7 @@ async function requestJson(
         kind: "failure",
         httpStatus: response.status,
         message: "La réponse JSON est invalide",
+        invalidJson: true,
       };
     }
     return {

@@ -16,7 +16,7 @@ describe("HomeOffers free offer card", () => {
     const card = screen.getByRole("heading", { name: "Découverte" }).closest("article")!;
     expect(
       within(card).getByText(
-        "3 ventes débloquées par mois : enchère plafond (ventes au tribunal et ventes notariales à la bougie) ou offre plafond (ventes notariales interactives), lecture des pièces, historique, selon la vente",
+        "3 déblocages par mois : enchère plafond (ventes au tribunal et ventes notariales à la bougie) ou offre plafond (ventes notariales interactives), lecture des pièces, historique, selon la vente",
       ),
     ).toBeTruthy();
     const cta = screen.getByRole("link", { name: /Créer mon compte gratuit/ });
@@ -32,7 +32,7 @@ describe("HomeOffers free offer card", () => {
       />,
     );
     expect(document.body.textContent).toContain(
-      "3 ventes débloquées par mois : enchère plafond (ventes au tribunal), lecture des pièces, historique, selon la vente",
+      "3 déblocages par mois : enchère plafond (ventes au tribunal), lecture des pièces, historique, selon la vente",
     );
     expect(document.body.textContent).not.toContain("offre plafond");
   });

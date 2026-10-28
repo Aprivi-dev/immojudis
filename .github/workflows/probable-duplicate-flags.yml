@@ -26,7 +26,7 @@ concurrency:
 jobs:
   flag:
     name: Flag probable duplicates
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Évalué avant l'environnement : le workflow n'écrit en production que depuis main, jamais depuis une branche.
     if: github.ref == 'refs/heads/main'
     # Lit (et, avec « write », écrit quality_flags dans) la base de production avec la clé service_role : mêmes

@@ -140,7 +140,7 @@ export function financingDossierLines(input: FinancingDossierInput): string[] {
       venueUncertain
         ? `${FINANCING_NOT_PROVIDED} (inconnu ou sources en désaccord : garantie et délai à lire dans l’annonce)`
         : (venueLabel ?? FINANCING_NOT_PROVIDED)
-    } ; tribunal: ${text(sale.tribunal)}`,
+    } ; ${wording.venueLabel.toLowerCase()}: ${text(sale.tribunal)}`,
     ...schedule,
     "",
     "Chiffres du dossier",
@@ -152,7 +152,7 @@ export function financingDossierLines(input: FinancingDossierInput): string[] {
       fees == null ? "" : ` (estimation par défaut : ${wording.feesCoverage})`
     }`,
     "",
-    "Garantie à remettre avant les enchères",
+    wording.guaranteeHeading,
     ...(tribunalRules
       ? [
           `Garantie de 10 % de la mise à prix, minimum 3 000 € (vente au tribunal): ${euros(guarantee)}`,
@@ -200,7 +200,7 @@ export function financingDossierLines(input: FinancingDossierInput): string[] {
     }).`,
     "- Pièces habituelles d’un crédit (identité, revenus, impôts, comptes): selon votre banque.",
     "- Achat par une société ou à plusieurs: prévenir banque et avocat dès le départ.",
-    "- À demander à la banque: accord avant l’audience, chèque de banque ou caution irrévocable (délai, coût, contrepartie), financement du solde dans le délai de paiement du prix (deux mois pour une vente au tribunal en saisie immobilière ; à vérifier dans les autres cas).",
+    `- À demander à la banque: accord ${wording.beforeHearing}, chèque de banque ou caution irrévocable (délai, coût, contrepartie), financement du solde dans le délai de paiement du prix (deux mois pour une vente au tribunal en saisie immobilière ; à vérifier dans les autres cas).`,
     "",
     "Règles du Code des procédures civiles d’exécution pour les ventes au tribunal ; leur application dépend du cahier des conditions de vente : à vérifier avec votre avocat.",
   ];

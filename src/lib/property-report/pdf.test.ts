@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Json } from "@/integrations/supabase/types";
 import { buildPlanEntitlements } from "./entitlements";
 import { REPORT_PDF_HEADINGS, reportToPdfLines } from "./pdf";
+import { reportWording } from "./report-wording";
 import {
   buildReportRentalScenario,
   computeReportRentalScenario,
@@ -199,6 +200,31 @@ describe("property report rental PDF", () => {
     expect(text).toContain("Relire les pièces officielles avant toute offre.");
   });
 
+  it("names neither the court nor the hearing in a report on a sale by offers", () => {
+    const report = reportWithRentalScenario();
+    report.ceiling_snapshot = {
+      available: true,
+      maxBid: 120_000,
+      regime: "notary_online",
+      label: "Offre plafond (simulation)",
+      estimatedFees: [],
+      steps: [],
+    } as Json;
+    const lines = reportToPdfLines(report, buildPlanEntitlements("analyse"));
+    expect(lines.some((line) => line.startsWith("Lieu de la vente: "))).toBe(true);
+    expect(lines.some((line) => line.startsWith("Préparation de la vente: "))).toBe(true);
+    expect(lines.some((line) => line.startsWith("Urgence de la vente: "))).toBe(true);
+    expect(lines).toContain("Préparation de la vente");
+    expect(lines).not.toContain("Préparation audience");
+    expect(lines.some((line) => line.startsWith("Tribunal: "))).toBe(false);
+    expect(REPORT_PDF_HEADINGS).toContain("Préparation de la vente");
+    expect(REPORT_PDF_HEADINGS).toContain("Actions de préparation de la vente");
+    // Footer of the exported PDF: « offre », not « enchère ».
+    expect(reportWording("notary_online").footerSentence).toBe(
+      "Immojudis - rapport indicatif. Vérifiez les pièces officielles et votre conseil avant toute offre.",
+    );
+  });
+
   it("keeps the court wording for a tribunal report and for a report saved before the regimes", () => {
     const before = reportWithRentalScenario();
     before.report_snapshot = {
@@ -242,7 +268,7 @@ describe("property report rental PDF", () => {
     const closed = reportToPdfLines(report, plan, ["tribunal"]);
     const text = closed.join("\n");
     expect(closed).toContain(
-      "Offre plafond (simulation): indisponible (Pas d’enchère plafond pour ce type de vente)",
+      "Offre plafond (simulation): indisponible (Plafond momentanément indisponible)",
     );
     expect(text).not.toMatch(/123\s?000|150\s?000/);
     expect(text).not.toContain("Calcul du plafond");
@@ -275,8 +301,8 @@ describe("property report rental PDF", () => {
     ).toBe(true);
     expect(lines.some((line) => line.includes("Cash-flow mensuel avant impôts: -35"))).toBe(true);
     expect(lines.some((line) => line.includes("Rendement brut potentiel:"))).toBe(false);
-    expect(lines.some((line) => line.includes("Rendement net estime:"))).toBe(false);
-    expect(lines.some((line) => line.includes("Cashflow mensuel estime:"))).toBe(false);
+    expect(lines.some((line) => line.includes("Rendement net estimé :"))).toBe(false);
+    expect(lines.some((line) => line.includes("Cash-flow mensuel estimé :"))).toBe(false);
   });
 
   it("refiltre à la lecture les noms de particuliers d'un rapport enregistré", () => {

@@ -541,3 +541,59 @@ def test_normalize_sale_keeps_ambiguous_avoventes_rooms_null_but_keeps_single_dw
     assert mixed.rooms_count is None
     assert lot_pair.rooms_count is None
     assert single_dwelling.rooms_count == 3
+
+
+def _scrape_with_catalogue(monkeypatch, html: str, *, target_departments: tuple[str, ...]):
+    from src.config import FRANCE_DEPARTMENTS
+    from src.sources import avoventes
+
+    class FakeClient:
+        coverage_metrics = staticmethod(lambda: {})
+
+        def __init__(self, **kwargs) -> None:
+            pass
+
+        def get(self, url: str) -> str:
+            return html
+
+    monkeypatch.setattr(avoventes, "AvoventesClient", FakeClient)
+    monkeypatch.setattr(avoventes, "_enrich_sale_from_detail", lambda client, sale, errors: None)
+    monkeypatch.setattr(avoventes, "TARGET_DEPARTMENTS", target_departments or FRANCE_DEPARTMENTS)
+    return avoventes.scrape_avoventes_aquitaine_result()
+
+
+UNLOCATED_CATALOGUE = """
+<article data-link="/enchere/appartement-cave-a-dijon-3"><h2>Vente aux enchères Appartement</h2>
+<a href="/enchere/appartement-cave-a-dijon-3">Voir la vente</a>
+<p>Dijon</p><p>Mise à prix : 40 000 €</p><p>Date de la vente : jeudi 10 janvier 2027 à 09h00</p></article>
+<article data-link="/enchere/maison-bordeaux-123"><h2>Vente aux enchères Maison</h2>
+<a href="/enchere/maison-bordeaux-123">Voir la vente</a>
+<p>12 rue Test 33000 Bordeaux</p><p>Mise à prix : 120 000 €</p>
+<p>Date de la vente : jeudi 10 janvier 2027 à 09h00</p></article>
+"""
+
+
+def test_a_listing_without_department_is_kept_when_every_department_is_targeted(monkeypatch) -> None:
+    from src.config import FRANCE_DEPARTMENTS
+
+    result = _scrape_with_catalogue(monkeypatch, UNLOCATED_CATALOGUE, target_departments=FRANCE_DEPARTMENTS)
+
+    urls = {sale["source_url"] for sale in result.sales}
+    assert urls == {
+        "https://avoventes.fr/enchere/appartement-cave-a-dijon-3",
+        "https://avoventes.fr/enchere/maison-bordeaux-123",
+    }
+    assert result.coverage["unresolved_location_count"] == 0
+    assert result.coverage["undetermined_department_urls"] == [
+        "https://avoventes.fr/enchere/appartement-cave-a-dijon-3"
+    ]
+    # The catalogue proof no longer lists an announcement as discovered but not emitted.
+    assert result.coverage["certificate"]["discovered_but_not_emitted_count"] == 0
+
+
+def test_a_listing_without_department_still_waits_when_only_some_departments_are_targeted(monkeypatch) -> None:
+    result = _scrape_with_catalogue(monkeypatch, UNLOCATED_CATALOGUE, target_departments=("33",))
+
+    assert {sale["source_url"] for sale in result.sales} == {"https://avoventes.fr/enchere/maison-bordeaux-123"}
+    assert result.coverage["unresolved_location_urls"] == ["https://avoventes.fr/enchere/appartement-cave-a-dijon-3"]
+    assert result.coverage["certificate"]["discovered_but_not_emitted_count"] == 1

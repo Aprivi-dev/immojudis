@@ -75,3 +75,27 @@ export function errorDetailForLog(error: unknown): string {
 export function isUnauthorizedError(error: unknown): boolean {
   return error instanceof Error && error.message.startsWith("Unauthorized");
 }
+
+/**
+ * Raised when what the server built does not match its own published response schema. It is a
+ * server fault, not a client mistake: it is deliberately NOT a zod error (which the API edge turns
+ * into a 400 « Requête invalide »), so the route answers 503 and logs it at error level.
+ */
+export class ResponseSchemaViolationError extends Error {
+  constructor(cause?: unknown) {
+    super("response_schema_violation", { cause });
+    this.name = "ResponseSchemaViolationError";
+  }
+}
+
+/** Validates a response body against its schema; a failure is a 503, never a 400 (see above). */
+export function parseApiResponse<T>(
+  schema: {
+    safeParse(value: unknown): { success: true; data: T } | { success: false; error: unknown };
+  },
+  value: unknown,
+): T {
+  const result = schema.safeParse(value);
+  if (!result.success) throw new ResponseSchemaViolationError(result.error);
+  return result.data;
+}

@@ -130,7 +130,7 @@ export async function listAlertNotifications({
   await assertFeatureEntitlement(
     auth,
     "alerts.advanced",
-    "Notifications d'alertes réservées au plan Analyse.",
+    "Notifications d'alertes réservées à l’offre Analyse.",
   );
 
   let query = auth.supabase
@@ -190,6 +190,50 @@ export async function createAlertNotificationsForMatches({
   return { notificationCount: data?.length ?? 0 };
 }
 
+/**
+ * Enregistre, au statut « cancelled », les notifications des correspondances que la base silencieuse a tues
+ * (`alert-matches.ts`, changement de loyers de référence). La clé d'unicité (compte, correspondance, genre, canal)
+ * bloque alors toute création ultérieure : sans ces lignes, la même vente relue au passage suivant (le pipeline
+ * réécrit `updated_at`) retrouverait une correspondance sans notification et la notifierait. Les deux canaux sont
+ * couverts, consentement aux e-mails ou non, puisque le consentement peut être donné plus tard. Une ligne annulée
+ * n'est ni envoyée ni affichée (seul « sent » s'affiche, seul « queued » part). Jamais d'écrasement : une
+ * notification déjà créée pour la correspondance reste telle quelle.
+ */
+export async function suppressAlertNotificationsForMatches({
+  auth,
+  matches,
+  alerts,
+  now = new Date(),
+  discovery = false,
+}: {
+  auth: SupabaseAuthContext;
+  matches: AlertNotificationMatchInput[];
+  alerts: Pick<UserAlert, "id" | "alert_frequency">[];
+  now?: Date;
+  discovery?: boolean;
+}): Promise<{ suppressedCount: number }> {
+  const rows = buildAlertNotificationRows({
+    userId: auth.userId,
+    matches,
+    alerts,
+    now,
+    includeEmail: true,
+    discovery,
+  }).map((row) => ({ ...row, delivery_status: "cancelled" as const }));
+  if (!rows.length) return { suppressedCount: 0 };
+
+  const { data, error } = await supabaseAdmin
+    .from("user_alert_notifications")
+    .upsert(rows, {
+      onConflict: "user_id,match_id,notification_kind,delivery_channel",
+      ignoreDuplicates: true,
+    })
+    .select("id");
+
+  if (error) throw error;
+  return { suppressedCount: data?.length ?? 0 };
+}
+
 export async function updateAlertNotificationState({
   auth,
   notificationId,
@@ -202,7 +246,7 @@ export async function updateAlertNotificationState({
   await assertFeatureEntitlement(
     auth,
     "alerts.advanced",
-    "Notifications d'alertes réservées au plan Analyse.",
+    "Notifications d'alertes réservées à l’offre Analyse.",
   );
 
   const now = new Date().toISOString();

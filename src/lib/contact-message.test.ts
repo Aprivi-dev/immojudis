@@ -234,6 +234,15 @@ describe("signalement depuis une fiche", () => {
     expect(prefill.message).toContain("Rubrique : Mise à prix");
   });
 
+  it.each([
+    ["pepite", "Repère Pépite"],
+    ["plafond", "Enchère ou offre plafond"],
+  ] as const)("signale une erreur sur la rubrique « %s »", (topic, label) => {
+    const params = new URLSearchParams(contactReportPath(SALE, topic).split("?")[1]);
+    expect(params.get("rubrique")).toBe(topic);
+    expect(contactPrefill(params).message).toContain(`Rubrique : ${label}`);
+  });
+
   it("préremplit le sujet « avocat » d'après le lien de /avocats, et l'accepte à l'envoi", () => {
     const prefill = contactPrefill(new URLSearchParams(LAWYER_CONTACT_HREF.split("?")[1]));
     expect(prefill).toEqual({ subject: "avocat" });

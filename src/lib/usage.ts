@@ -152,7 +152,7 @@ export async function assertUsageLimitAvailable({
   const used = await getUsageQuantity({ auth, eventKey, periodStart, periodEnd });
   if (used >= limit) {
     throw new Error(
-      `Quota ${label} atteint pour le plan ${planLabel}. Passez au plan Analyse pour continuer sans limite.`,
+      `Quota ${label} atteint pour l’offre ${planLabel}. Passez à l’offre Analyse pour continuer sans limite.`,
     );
   }
 }

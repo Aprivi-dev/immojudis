@@ -406,22 +406,22 @@ export function AerialOrbitHero({
           target="_blank"
           rel="noreferrer"
           data-testid="aerial-orbit-attribution"
-          className="absolute bottom-1 right-1 z-10 max-w-[calc(100%-0.5rem)] rounded bg-night/85 px-1.5 py-0.5 text-[10px] font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+          className="absolute bottom-1 right-1 z-10 max-w-[calc(100%-0.5rem)] rounded bg-night/85 px-1.5 py-0.5 text-xs font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
         >
           {MAPBOX_SATELLITE_ATTRIBUTION} · {MAPBOX_SATELLITE_IMAGERY_DATE_NOTICE}
         </a>
       ) : null}
 
       <div className="pointer-events-none absolute left-3 top-3 z-10 flex flex-col gap-1 md:left-4 md:top-4">
-        <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-white/20 bg-night/85 px-2.5 py-1 text-[11px] font-semibold text-white shadow-lg backdrop-blur">
+        <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-white/20 bg-night/85 px-2.5 py-1 text-xs font-semibold text-white shadow-lg backdrop-blur">
           <RotateCw className="h-3 w-3" aria-hidden />
           Vue aérienne 360°
         </span>
-        <span className="w-fit rounded-full bg-night/85 px-2.5 py-0.5 text-[11px] text-white backdrop-blur">
+        <span className="w-fit rounded-full bg-night/85 px-2.5 py-0.5 text-xs text-white backdrop-blur">
           Position approximative
         </span>
         {mapShown ? (
-          <span className="w-fit rounded-full bg-night/85 px-2.5 py-0.5 text-[11px] text-white backdrop-blur">
+          <span className="w-fit rounded-full bg-night/85 px-2.5 py-0.5 text-xs text-white backdrop-blur">
             3D schématique : hauteurs des bâtiments estimées
           </span>
         ) : null}

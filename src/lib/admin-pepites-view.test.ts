@@ -24,6 +24,7 @@ const baseRow = {
   stability: ["Publiée : 2 évaluations favorables consécutives"],
   evaluatedAt: "2026-11-01T10:00:00Z",
   frozenAt: null,
+  feesDefault: false,
   href: "/sales/sale-1",
 };
 
@@ -44,7 +45,7 @@ function data(overrides: Partial<AdminPepitesResponse> = {}): AdminPepitesRespon
     migrated: true,
     generatedAt: "2026-11-01T12:00:00Z",
     mode: "shadow",
-    ruleVersion: "pepite-v1",
+    ruleVersion: "pepite-v1.1",
     counters: [
       counter("tribunal", "Tribunal", [40, 3, 1, 30, 0, 6, 34, 12]),
       counter("notary", "Vente notariale", [10, 1, 0, 8, 0, 1, 9, 0]),
@@ -86,6 +87,7 @@ function data(overrides: Partial<AdminPepitesResponse> = {}): AdminPepitesRespon
         href: "/sales/sale-2",
       },
     ],
+    feesDefault: { pepites: 1, withDefaultFees: 1, share: 1 },
     independence: {
       evaluatedSales: 43,
       evaluatedSponsored: 9,
@@ -98,6 +100,7 @@ function data(overrides: Partial<AdminPepitesResponse> = {}): AdminPepitesRespon
       alertPoints: 10,
       minPepites: 10,
     },
+    floodReobservationPending: 0,
     ...overrides,
   };
 }
@@ -109,14 +112,59 @@ const section = (view: ReturnType<typeof buildAdminPepitesView>, id: string) =>
   view.sections.find((item) => item.id === id)!;
 
 describe("buildAdminPepitesView", () => {
-  it("compose les cinq sections, dans l'ordre", () => {
+  it("compose les six sections, dans l'ordre", () => {
     expect(buildAdminPepitesView(data()).sections.map((item) => item.id)).toEqual([
       "mode",
       "counters",
       "rate",
+      "flood",
+      "fees",
       "list",
       "independence",
     ]);
+  });
+
+  describe("ventes d'inondation en attente de réobservation", () => {
+    it("aucune : le nombre est dit, sans alerte", () => {
+      const flood = section(buildAdminPepitesView(data()), "flood");
+      expect(plain(flood.paragraphs)).toContain("0 vente à venir dont la dernière observation");
+      expect(flood.alert).toBeNull();
+    });
+
+    it("quelques-unes : le nombre est dit et la règle v2 n'est pas prête", () => {
+      const flood = section(
+        buildAdminPepitesView(data({ floodReobservationPending: 531 })),
+        "flood",
+      );
+      expect(plain(flood.paragraphs)).toContain("531 ventes à venir dont la dernière observation");
+      expect(plain(flood.paragraphs)).toContain("pas une panne");
+      expect(flood.alert).toContain("pas prête côté inondation");
+    });
+
+    it("une seule vente : le singulier", () => {
+      const flood = section(buildAdminPepitesView(data({ floodReobservationPending: 1 })), "flood");
+      expect(plain(flood.paragraphs)).toContain("1 vente à venir dont");
+    });
+
+    it("non mesuré : jamais un zéro rassurant", () => {
+      const flood = section(
+        buildAdminPepitesView(data({ floodReobservationPending: null })),
+        "flood",
+      );
+      expect(plain(flood.paragraphs)).toContain("Non mesuré");
+      expect(plain(flood.paragraphs)).not.toMatch(/\b0 vente/);
+      expect(flood.alert).toBeNull();
+    });
+  });
+
+  it("dit la part des pépites calculées avec des frais par défaut", () => {
+    const fees = section(buildAdminPepitesView(data()), "fees");
+    expect(plain(fees.paragraphs)).toContain("100 % des pépites de la liste (1 sur 1)");
+    const none = section(
+      buildAdminPepitesView(data({ feesDefault: { pepites: 0, withDefaultFees: 0, share: null } })),
+      "fees",
+    );
+    expect(plain(none.paragraphs)).toContain("Aucune pépite dans la liste");
   });
 
   it("dit le mode et que rien n'est visible du public en observation, sans bouton", () => {
@@ -124,7 +172,7 @@ describe("buildAdminPepitesView", () => {
 
     expect(mode.title).toBe("Mode : shadow");
     expect(mode.paragraphs[0]).toContain("rien n’est visible du public");
-    expect(mode.paragraphs[0]).toContain("Règle pepite-v1");
+    expect(mode.paragraphs[0]).toContain("Règle pepite-v1.1");
     expect(mode.paragraphs[0]).toContain("il n’y a pas de bouton ici");
   });
 
@@ -144,7 +192,7 @@ describe("buildAdminPepitesView", () => {
       "Évaluées",
       "Pépites",
       "À confirmer",
-      "Pas pépites",
+      "Pas des pépites",
       "Non applicables",
       "Données insuffisantes",
       "Écart aberrant seul",

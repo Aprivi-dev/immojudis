@@ -11,11 +11,11 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/rate-limit", () => ({ enforceDailyOperationLimits: mocks.daily }));
 vi.mock("@/lib/launch-offer.server", () => ({
-  isLaunchOfferActive: mocks.launchOffer,
-  // Essai en cours ou non (`confirmedEmail`), sans date de fin connue.
+  // Essai en cours ou non (`confirmedEmail`), sans date de fin connue ; l'interrupteur coupé ferme
+  // l'essai, comme la vraie lecture.
   hasActiveSignupTrial: mocks.confirmedEmail,
   readSignupTrial: async (userId: string) => ({
-    active: Boolean(await mocks.confirmedEmail(userId)),
+    active: Boolean((await mocks.launchOffer()) && (await mocks.confirmedEmail(userId))),
     endsAt: null,
   }),
 }));
@@ -66,10 +66,10 @@ describe("plafonds journaliers des rapports enregistrés et de leur export PDF",
   it("ne consomme aucun plafond pour un compte qui n'a pas le droit (création et PDF)", async () => {
     const { auth } = account({ isAdmin: false });
     await expect(savePropertyReport({ auth, input, request })).rejects.toThrow(
-      "Rapports réservés au plan Analyse.",
+      "Rapports réservés à l’offre Analyse.",
     );
     await expect(exportPropertyReportPdf({ auth, reportId: "r", request })).rejects.toThrow(
-      "Export PDF réservé au plan Analyse.",
+      "Export PDF réservé à l’offre Analyse.",
     );
     expect(mocks.daily).not.toHaveBeenCalled();
   });

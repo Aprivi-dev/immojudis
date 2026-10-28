@@ -31,7 +31,11 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(mocks.search),
 }));
 
-import { LAUNCH_OFFER_VISITOR_TEXT } from "@/lib/launch-offer";
+import {
+  LAUNCH_OFFER_DURATION_TEXT,
+  LAUNCH_OFFER_SIGNUP_LINE,
+  LAUNCH_OFFER_VISITOR_TEXT,
+} from "@/lib/launch-offer";
 import { LoginPage } from "./login-page";
 
 beforeEach(() => {
@@ -90,7 +94,41 @@ describe("login page", () => {
     expect(options.privacy_version).toMatch(/^\d{4}-\d{2}-\d{2}\.\d+$/);
     expect(typeof options.terms_accepted_at).toBe("string");
     expect(mocks.track).toHaveBeenCalledTimes(1);
-    expect(mocks.track).toHaveBeenCalledWith("signup_submitted");
+    expect(mocks.track).toHaveBeenCalledWith("signup_submitted", { entry: "direct" });
+  });
+
+  it("counts the sign-up with the reason of the detour, and not an address that already exists", async () => {
+    mocks.search = { mode: "investor", reason: "exemple" };
+    mocks.signUp.mockResolvedValueOnce({
+      data: { session: null, user: { identities: [] } },
+      error: null,
+    });
+    render(<LoginPage />);
+    fireEvent.change(screen.getByPlaceholderText("vous@exemple.fr"), {
+      target: { value: "deja.inscrit@example.test" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("12 caractères minimum"), {
+      target: { value: "un-mot-de-passe-solide" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Créer mon compte gratuit/ }));
+    await waitFor(() => expect(mocks.signUp).toHaveBeenCalledTimes(1));
+    await screen.findByText(/Un compte existe déjà avec cette adresse/);
+    expect(mocks.track).not.toHaveBeenCalled();
+  });
+
+  it("sends the reason of the detour as the origin of a new sign-up", async () => {
+    mocks.search = { mode: "investor", reason: "exemple" };
+    mocks.signUp.mockResolvedValue({ error: null });
+    render(<LoginPage />);
+    fireEvent.change(screen.getByPlaceholderText("vous@exemple.fr"), {
+      target: { value: "nouvel.utilisateur@example.test" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("12 caractères minimum"), {
+      target: { value: "un-mot-de-passe-solide" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Créer mon compte gratuit/ }));
+    await waitFor(() => expect(mocks.track).toHaveBeenCalledTimes(1));
+    expect(mocks.track).toHaveBeenCalledWith("signup_submitted", { entry: "exemple" });
   });
 
   it("shows a French error inside the form instead of the raw Supabase message", async () => {
@@ -227,7 +265,7 @@ describe("login page", () => {
     mocks.search = { mode: "investor", reason: "fiche" };
     const { unmount } = render(<LoginPage />);
     expect(screen.getByTestId("login-reason").textContent).toBe(
-      "Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente, et en débloquer 3 en détail chaque mois (contenu selon la vente).",
+      "Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente, avec 3 déblocages par mois pour ouvrir le détail d’une vente (contenu selon la vente).",
     );
     unmount();
 
@@ -243,7 +281,7 @@ describe("login page", () => {
     const { unmount } = render(<LoginPage />);
     const promise = screen.getByTestId("login-free-promise");
     expect(promise.textContent).toBe(
-      "Gratuit : 3 ventes en détail par mois (enchère plafond ou offre plafond, lecture des pièces, historique, selon la vente), sans carte bancaire",
+      "Gratuit : 3 déblocages par mois (enchère plafond ou offre plafond, lecture des pièces, historique, selon la vente), sans carte bancaire",
     );
     // Visible sous le point de rupture « lg », où la colonne d'explication prend le relais.
     expect(promise.className).toContain("lg:hidden");
@@ -320,7 +358,18 @@ describe("login page", () => {
     mocks.launch = { active: true, pending: false };
     render(<LoginPage />);
 
-    expect(screen.getByTestId("login-free-promise").textContent).toBe(LAUNCH_OFFER_VISITOR_TEXT);
+    // Mobile : une ligne visible, les conditions dans un repli (le texte complet précédait le champ).
+    const promise = screen.getByTestId("login-free-promise");
+    expect(LAUNCH_OFFER_SIGNUP_LINE).toBe(
+      "Inscription gratuite : 7 jours d’accès à l’offre Analyse, sans carte bancaire ni prélèvement ensuite.",
+    );
+    expect(promise.querySelector("p")?.textContent).toBe(LAUNCH_OFFER_SIGNUP_LINE);
+    const conditions = promise.querySelector("details");
+    expect(conditions?.open).toBe(false);
+    expect(conditions?.querySelector("summary")?.textContent).toBe("Conditions de l’essai gratuit");
+    expect(conditions?.textContent).toContain(LAUNCH_OFFER_DURATION_TEXT);
+    expect(promise.textContent).not.toBe(LAUNCH_OFFER_VISITOR_TEXT);
+    // Bureau : le texte complet reste inchangé.
     expect(screen.getByTestId("login-launch-offer").textContent).toBe(LAUNCH_OFFER_VISITOR_TEXT);
     expect(screen.getByTestId("login-launch-offer-column").textContent).toBe(
       LAUNCH_OFFER_VISITOR_TEXT,

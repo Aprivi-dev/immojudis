@@ -4,7 +4,7 @@ import {
   type FeeRegimeKey,
 } from "@/lib/fee-regime-open";
 import { asRecord } from "@/lib/guards";
-import { NO_CEILING_REGIME_REASON } from "./ceiling-snapshot";
+import { CEILING_SWITCHED_OFF_REASON } from "./ceiling-snapshot";
 
 /**
  * Interrupteur par régime (`CEILING_FEE_REGIMES_OPEN`) au rendu d'un rapport enregistré.
@@ -34,7 +34,7 @@ export function ceilingForOpenRegimes(
   return {
     ...rest,
     available: false,
-    reason: NO_CEILING_REGIME_REASON,
+    reason: CEILING_SWITCHED_OFF_REASON,
     maxBid: null,
     maxBidWithoutWorks: null,
     maxBidWithRefreshWorks: null,

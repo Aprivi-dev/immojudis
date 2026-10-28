@@ -4,7 +4,7 @@ import { emailClickUrl, isEmailClickSaleId } from "@/lib/email-click-token";
 import { createUnsubscribeToken } from "@/lib/email-unsubscribe-token";
 import { escapeHtml } from "@/lib/guards";
 import { SALE_CALENDAR_DISCLAIMER } from "@/lib/sale-calendar";
-import { EMAIL_COLORS } from "@/lib/email-brand";
+import { EMAIL_COLORS, EMAIL_FONT_STACK, emailBrandHeaderHtml } from "@/lib/email-brand";
 
 /**
  * Email des rappels d'audience (J-7, J-1) et des avertissements graves (date modifiée, vente
@@ -170,8 +170,9 @@ function buildSaleReminderHtml({
 
   return `<!doctype html>
 <html lang="fr">
-  <body style="margin:0;background:${EMAIL_COLORS.surface};color:${EMAIL_COLORS.navy};font-family:Arial,sans-serif;">
+  <body style="margin:0;background:${EMAIL_COLORS.surface};color:${EMAIL_COLORS.navy};font-family:${EMAIL_FONT_STACK};">
     <div style="max-width:620px;margin:0 auto;padding:28px 18px;">
+      ${emailBrandHeaderHtml()}
       <div style="background:#fff;border:1px solid ${EMAIL_COLORS.lineWarm};border-radius:10px;padding:24px;">
         <p style="margin:0 0 8px;font-size:16px;">Bonjour,</p>
         <p style="margin:0 0 18px;color:${EMAIL_COLORS.inkStrong};">${escapeHtml(intro)}</p>

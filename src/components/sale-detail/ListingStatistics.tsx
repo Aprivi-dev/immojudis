@@ -119,6 +119,11 @@ function metricRange(metric: ListingMetric | undefined): { min: number; max: num
 }
 
 /** Intervalle de Wilson à 95 % d'une part publiée, en pourcentages entiers (« 22–55 % »). */
+/** Une statistique absente se dit « Échantillon insuffisant », pas « Prix non communiqué » (qui parle d'une annonce). */
+function formatStatisticPrice(value: number | null | undefined): string {
+  return value == null || !Number.isFinite(value) ? "Échantillon insuffisant" : formatPrice(value);
+}
+
 function formatShareInterval(low: number | null | undefined, high: number | null | undefined) {
   if (low == null || high == null || !Number.isFinite(low) || !Number.isFinite(high)) return null;
   return `${Math.round(low * 100)}–${Math.round(high * 100)} %`;
@@ -241,6 +246,37 @@ const PROPERTY_TYPE_LABELS: Record<"apartment" | "house" | "other", string> = {
   other: "Autres biens",
 };
 
+/**
+ * Piste d'une part : le remplissage va de 0 à la part mesurée, le trait foncé dessiné au milieu de la
+ * piste va de la borne basse à la borne haute de l'intervalle de Wilson (la mesure n'est pas plus
+ * précise que lui). Purement visuelle (`aria-hidden`) : la valeur, son intervalle et l'effectif sont
+ * écrits dans le texte voisin, qui est ce que lit un lecteur d'écran.
+ */
+function ShareTrack({
+  share,
+  low,
+  high,
+}: {
+  share: number | null | undefined;
+  low?: number | null;
+  high?: number | null;
+}) {
+  const width = normalizeShare(share) ?? 0;
+  const from = normalizeShare(low);
+  const to = normalizeShare(high);
+  return (
+    <div className={styles.progressTrack} aria-hidden="true">
+      <span className={styles.progressFill} style={{ width: `${width}%` }} />
+      {from != null && to != null ? (
+        <span
+          className={styles.progressInterval}
+          style={{ left: `${Math.min(from, to)}%`, width: `${Math.abs(to - from)}%` }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
 function ProgressBar({
   label,
   value,
@@ -257,8 +293,6 @@ function ProgressBar({
   low?: number | null;
   high?: number | null;
 }) {
-  const percentage = showShare ? normalizeShare(value) : null;
-  const width = percentage == null ? 0 : Math.max(0, Math.min(100, percentage));
   const interval = showShare ? formatShareInterval(low, high) : null;
   return (
     <li className={styles.progressItem}>
@@ -270,18 +304,7 @@ function ProgressBar({
           {count != null ? ` · ${formatNumber(count)}` : ""}
         </span>
       </div>
-      {showShare ? (
-        <div
-          className={styles.progressTrack}
-          role="progressbar"
-          aria-label={label}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={percentage ?? 0}
-        >
-          <span className={styles.progressFill} style={{ width: `${width}%` }} />
-        </div>
-      ) : null}
+      {showShare ? <ShareTrack share={value} low={low} high={high} /> : null}
     </li>
   );
 }
@@ -342,13 +365,13 @@ function PriceScopeCard({
         <div>
           <span className={styles.metricLabel}>Mise à prix médiane</span>
           <strong className={styles.metricValue}>
-            {formatPrice(scope.metrics.medianStartingPriceEur)}
+            {formatStatisticPrice(scope.metrics.medianStartingPriceEur)}
           </strong>
         </div>
         <div>
           <span className={styles.metricLabel}>Prix d’adjudication médian publié</span>
           <strong className={styles.metricValue}>
-            {formatPrice(scope.metrics.medianHammerPriceEur)}
+            {formatStatisticPrice(scope.metrics.medianHammerPriceEur)}
           </strong>
         </div>
         <div>
@@ -1080,19 +1103,11 @@ export function ListingStatistics({
                         </span>
                       </div>
                       {communeSharesAvailable ? (
-                        <div
-                          className={styles.progressTrack}
-                          role="progressbar"
-                          aria-label={commune.city}
-                          aria-valuemin={0}
-                          aria-valuemax={100}
-                          aria-valuenow={normalizeShare(commune.share) ?? 0}
-                        >
-                          <span
-                            className={styles.progressFill}
-                            style={{ width: `${normalizeShare(commune.share) ?? 0}%` }}
-                          />
-                        </div>
+                        <ShareTrack
+                          share={commune.share}
+                          low={commune.shareLow}
+                          high={commune.shareHigh}
+                        />
                       ) : null}
                     </article>
                   ))}

@@ -37,7 +37,7 @@ describe("POST /api/lawyers/placement-events", () => {
     );
   });
 
-  it("ne dit plus que les avocats référencés sont réservés au plan Analyse", async () => {
+  it("ne dit plus que les avocats référencés sont réservés à l’offre Analyse", async () => {
     mocks.entitlement.mockRejectedValue(
       new Error("Annuaire des avocats indisponible pour ce compte."),
     );
@@ -48,7 +48,7 @@ describe("POST /api/lawyers/placement-events", () => {
       }),
     );
     const body = JSON.stringify(await response.json());
-    expect(body).not.toContain("réservés au plan Analyse");
+    expect(body).not.toContain("réservés à l’offre Analyse");
     expect(mocks.record).not.toHaveBeenCalled();
   });
 });

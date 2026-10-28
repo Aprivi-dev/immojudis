@@ -220,6 +220,7 @@ def test_public_connect_keeps_the_private_connection_behaviour(fake_psycopg) -> 
     assert fake_psycopg.connects[0][1] == {
         "connect_timeout": 3,
         "prepare_threshold": None,
+        **supabase_client.POSTGRES_KEEPALIVE_OPTIONS,
         "options": "-c statement_timeout=0",
     }
 
@@ -262,3 +263,118 @@ def test_no_module_reaches_for_the_private_connect_symbol() -> None:
                 if private_import or private_attribute:
                     offenders.append(f"{path.relative_to(root)}:{node.lineno}")
     assert offenders == []
+
+
+def test_every_connection_probes_a_silent_peer_and_gives_up_on_unacknowledged_data(fake_psycopg) -> None:
+    supabase_client._postgres_connect("postgresql://example/db")
+
+    kwargs = fake_psycopg.connects[0][1]
+    options = supabase_client.POSTGRES_KEEPALIVE_OPTIONS
+    assert kwargs["keepalives"] == 1
+    # Dead peer detected within about a minute: idle delay + probes, and the kernel's own give-up delay.
+    assert kwargs["keepalives_idle"] + kwargs["keepalives_interval"] * kwargs["keepalives_count"] <= 60
+    assert kwargs["tcp_user_timeout"] == options["tcp_user_timeout"] <= 60_000
+
+
+def test_the_keepalive_options_survive_the_pooler_fallback_without_startup_options() -> None:
+    fake = FakePsycopg(reject_options=True)
+    original = supabase_client.psycopg
+    supabase_client.psycopg = fake
+    try:
+        supabase_client._postgres_connect("postgresql://example/db")
+    finally:
+        supabase_client.psycopg = original
+
+    assert "options" not in fake.connects[1][1]
+    assert fake.connects[1][1]["keepalives"] == 1 and fake.connects[1][1]["tcp_user_timeout"] == 60_000
+
+
+def test_a_call_that_never_answers_is_cut_from_the_client_side() -> None:
+    import socket
+    import threading
+
+    server_side, client_side = socket.socketpair()
+
+    class Connection:
+        def fileno(self) -> int:
+            return client_side.fileno()
+
+    outcome: list[BaseException] = []
+
+    def blocked_call() -> None:
+        try:
+            with supabase_client._client_deadline(Connection(), 0.2, "test call"):
+                # The peer never answers: a plain recv would wait for ever.
+                if not client_side.recv(1):
+                    raise OSError("connection closed")
+        except BaseException as exc:  # noqa: BLE001
+            outcome.append(exc)
+
+    thread = threading.Thread(target=blocked_call, daemon=True)
+    thread.start()
+    thread.join(timeout=5)
+
+    try:
+        assert not thread.is_alive(), "the call stayed blocked"
+        assert isinstance(outcome[0], supabase_client.DatabaseCallTimeout)
+        assert "test call did not answer within 0.2s" in str(outcome[0])
+    finally:
+        server_side.close()
+        client_side.close()
+
+
+def test_a_call_that_answers_in_time_is_left_alone() -> None:
+    class Connection:
+        def fileno(self) -> int:
+            raise AssertionError("must not be touched")
+
+    with supabase_client._client_deadline(Connection(), 30.0, "quick call"):
+        value = 1 + 1
+
+    assert value == 2
+
+
+def test_the_known_sales_snapshot_is_read_again_after_a_dropped_connection(monkeypatch) -> None:
+    attempts: list[int] = []
+    sleeps: list[float] = []
+
+    def snapshot(db_url, source_urls, requested_urls, include_payload):
+        attempts.append(1)
+        if len(attempts) < 3:
+            raise psycopg.OperationalError("terminating connection due to administrator command")
+        return ([], [{"id": "a"}])
+
+    monkeypatch.setattr(supabase_client, "_read_known_sales_snapshot", snapshot)
+
+    result = supabase_client._read_known_sales_snapshot_with_retries(
+        "postgresql://example/db", None, [], False, sleep=sleeps.append
+    )
+
+    assert result == ([], [{"id": "a"}])
+    assert len(attempts) == 3 and sleeps == list(supabase_client.KNOWN_SALE_DETAIL_RETRY_DELAYS)
+
+
+def test_the_known_sales_snapshot_gives_up_after_the_last_attempt_and_ignores_other_errors(monkeypatch) -> None:
+    monkeypatch.setattr(
+        supabase_client,
+        "_read_known_sales_snapshot",
+        lambda *args: (_ for _ in ()).throw(supabase_client.DatabaseCallTimeout("stalled")),
+    )
+
+    with pytest.raises(supabase_client.DatabaseCallTimeout):
+        supabase_client._read_known_sales_snapshot_with_retries(
+            "postgresql://example/db", None, [], False, sleep=lambda seconds: None
+        )
+
+    calls: list[int] = []
+
+    def broken(*args):
+        calls.append(1)
+        raise ValueError("a bug, not a connection problem")
+
+    monkeypatch.setattr(supabase_client, "_read_known_sales_snapshot", broken)
+    with pytest.raises(ValueError):
+        supabase_client._read_known_sales_snapshot_with_retries(
+            "postgresql://example/db", None, [], False, sleep=lambda seconds: None
+        )
+    assert calls == [1]

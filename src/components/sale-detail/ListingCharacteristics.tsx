@@ -39,7 +39,7 @@ export function ListingCharacteristics({ sale }: { sale: AuctionSale }) {
   return (
     <section
       id="caracteristiques"
-      className={`${styles.section} scroll-mt-36`}
+      className={`${styles.section} scroll-mt-2`}
       aria-labelledby="caracteristiques-title"
     >
       <div className={styles.header}>

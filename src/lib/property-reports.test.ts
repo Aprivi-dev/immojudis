@@ -212,7 +212,7 @@ describe("property report sharing", () => {
         available: false,
         maxBid: null,
         safetyDiscountPct: null,
-        reason: "Pas d’enchère plafond pour ce type de vente",
+        reason: "Plafond momentanément indisponible",
         estimatedFees: [],
         scopeNote: null,
         reserveNotice: null,

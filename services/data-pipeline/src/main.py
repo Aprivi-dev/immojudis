@@ -484,6 +484,23 @@ def _hydrate_run_payloads(run: _PipelineRun, rows: list[dict[str, object]]) -> N
     )
 
 
+def _publish_progressive_batch(run: _PipelineRun, rows: list[dict[str, object]]) -> None:
+    """Early publication of a batch of collected rows; a database failure here never ends the source.
+
+    The rows stay in the source's own result and in its checkpoints, and the final stages publish them: an early
+    publication that cannot read the known rows (a database restart, a stalled connection) is skipped, as a failed
+    write already is in ``publish_factual_batch``. Letting the error through used to end the whole source scrape,
+    losing the pages it had already read.
+    """
+    try:
+        _hydrate_run_payloads(run, rows)
+    except Exception as exc:  # noqa: BLE001 - reported, then left to the final publication
+        LOGGER.exception("Progressive publication skipped; the rows stay for the final publication")
+        run.errors.setdefault("supabase", []).append(f"progressive publication skipped: {str(exc)[:500]}")
+        return
+    publish_factual_batch(run.run_id, rows, run.known_details, run.errors)
+
+
 def _scrape_sources(run: _PipelineRun) -> dict[str, Callable[..., Any]]:
     """Stage 3: scrape every enabled source in parallel. Returns the scrapers used."""
     options = run.options
@@ -509,8 +526,7 @@ def _scrape_sources(run: _PipelineRun) -> dict[str, Callable[..., Any]]:
     progressive_publisher = None
     if os.getenv("PIPELINE_AUTONOMOUS_RUN_ID") and options.upsert:
         def publish_progressive(rows: list[dict[str, object]]) -> None:
-            _hydrate_run_payloads(run, rows)
-            publish_factual_batch(run_id, rows, known_details, errors)
+            _publish_progressive_batch(run, rows)
 
         progressive_publisher = publish_progressive
     configure_publisher(progressive_publisher)

@@ -69,7 +69,7 @@ export function CadastralPlanDisclosure({
   }, [point, parcels?.confirmed, streetAddress, postalCode, city, lookupDone, lookupKey]);
 
   return (
-    <section className={styles.root} aria-label="Plan cadastral du quartier">
+    <section className={styles.root}>
       <header className={styles.header}>
         <span className={styles.icon} aria-hidden="true">
           <Map size={19} />

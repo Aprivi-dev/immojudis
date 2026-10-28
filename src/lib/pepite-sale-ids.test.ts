@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { isMissingPepiteFunction, listPepiteSaleIds } from "./pepite-sale-ids";
+import { isMissingDatabaseObject } from "./postgrest-errors";
+import { listPepiteSaleIds } from "./pepite-sale-ids";
 
 const client = (result: { data: unknown; error: unknown }) => ({
   rpc: vi.fn().mockResolvedValue(result),
@@ -12,10 +13,13 @@ describe("lecture de la liste des pépites", () => {
     expect(rpc.rpc).toHaveBeenCalledWith("list_public_pepite_sale_ids");
   });
 
-  it.each(["PGRST202", "42883"])("une fonction absente (%s) vaut aucune pépite", async (code) => {
-    expect(isMissingPepiteFunction({ code })).toBe(true);
-    await expect(listPepiteSaleIds(client({ data: null, error: { code } }))).resolves.toEqual([]);
-  });
+  it.each(["PGRST202", "PGRST205", "42883", "42P01"])(
+    "une fonction absente (%s) vaut aucune pépite",
+    async (code) => {
+      expect(isMissingDatabaseObject({ code })).toBe(true);
+      await expect(listPepiteSaleIds(client({ data: null, error: { code } }))).resolves.toEqual([]);
+    },
+  );
 
   it("lève toute autre erreur : une panne n'est jamais prise pour « aucune pépite » en cache", async () => {
     const failure = { code: "57014" };

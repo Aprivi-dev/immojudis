@@ -11,7 +11,7 @@ import {
   isAdminAccount,
   isProfessionalAccount,
 } from "@/lib/account";
-import { BrandMark } from "@/components/BrandLogo";
+import { BrandMark } from "@/components/BrandMark";
 import { AdminMfaGate } from "@/components/admin/AdminMfaGate";
 import { AuthConnectionBanner } from "@/components/AuthConnectionBanner";
 
@@ -94,14 +94,14 @@ export function AuthGate({ children }: { children: ReactNode }) {
             <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
               Cette page est réservée aux comptes connectés.
             </p>
-            <div className="mt-6 h-1.5 overflow-hidden rounded-full bg-white/10">
+            <div className="mt-6 h-1.5 overflow-hidden rounded-full bg-line-soft">
               <div className="h-full w-1/2 animate-pulse rounded-full bg-gold" />
             </div>
           </div>
           <div className="relative hidden min-h-[13rem] overflow-hidden sm:block">
             <div className="cinematic-grid absolute inset-0 opacity-40" />
             <BrandMark
-              variant="transparent"
+              decorative
               className="absolute bottom-8 right-8 h-28 w-28 opacity-35 drop-shadow-[0_26px_52px_rgba(0,0,0,0.48)]"
             />
           </div>

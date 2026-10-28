@@ -12,7 +12,7 @@ import {
   Text,
   render,
 } from "react-email";
-import { EMAIL_BRAND_NAME, EMAIL_COLORS } from "../src/lib/email-brand";
+import { EMAIL_BRAND_NAME, EMAIL_COLORS, EMAIL_FONT_STACK } from "../src/lib/email-brand";
 import { containsInformationAgentAccountInvitation } from "../src/lib/information-agent-email-template";
 import {
   INFORMATION_AGENT_CNIL_COMPLAINT_URL,
@@ -286,7 +286,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "24px 10px",
     backgroundColor: BRAND.canvas,
     color: BRAND.ink,
-    fontFamily: "Arial, Helvetica, sans-serif",
+    fontFamily: EMAIL_FONT_STACK,
   },
   container: {
     width: "100%",
@@ -302,7 +302,7 @@ const styles: Record<string, React.CSSProperties> = {
   wordmark: {
     margin: 0,
     color: BRAND.ink,
-    fontFamily: "Georgia, 'Times New Roman', serif",
+    fontFamily: EMAIL_FONT_STACK,
     fontSize: "24px",
     fontWeight: 700,
     letterSpacing: "0.01em",
@@ -318,7 +318,7 @@ const styles: Record<string, React.CSSProperties> = {
   heading: {
     margin: "0 0 8px",
     color: BRAND.ink,
-    fontFamily: "Georgia, 'Times New Roman', serif",
+    fontFamily: EMAIL_FONT_STACK,
     fontSize: "25px",
     lineHeight: "31px",
     fontWeight: 600,
@@ -363,7 +363,7 @@ const styles: Record<string, React.CSSProperties> = {
   footerBrand: {
     margin: "0 0 4px",
     color: BRAND.ink,
-    fontFamily: "Georgia, 'Times New Roman', serif",
+    fontFamily: EMAIL_FONT_STACK,
     fontSize: "16px",
     fontWeight: 700,
   },

@@ -110,14 +110,12 @@ describe("essai gratuit du compte (7 jours après la confirmation, une fois par 
     data: null,
     error: { code, message: `Could not find the function ${name}` },
   });
-  /** Réponses des deux RPC : la fin de l'essai, puis l'ancienne éligibilité (avant 20261103100000). */
-  const database = (
-    trialEnd: { data: unknown; error: unknown },
-    eligibility: { data: unknown; error: unknown } = { data: false, error: null },
-  ) =>
-    mocks.rpc.mockImplementation(async (name: string) =>
-      name === "get_signup_trial_end" ? trialEnd : eligibility,
-    );
+  const ok = (data: unknown) => ({ data, error: null });
+  const calls = (name: string) => mocks.rpc.mock.calls.filter(([called]) => called === name);
+
+  /** Réponse de `get_signup_trial` : la fin de l'essai et « l'essai est ouvert pour ce compte ». */
+  const database = (endsAt: string | null, gateOpen = true) =>
+    mocks.rpc.mockImplementation(async () => ok([{ ends_at: endsAt, gate_open: gateOpen }]));
 
   beforeEach(() => {
     resetLaunchOfferCache();
@@ -127,51 +125,76 @@ describe("essai gratuit du compte (7 jours après la confirmation, une fois par 
   });
 
   it("lit la fin de l'essai dans la base (RPC), sans interroger l'API Auth d'administration", async () => {
-    database({ data: inTrial, error: null });
+    database(inTrial);
     await expect(readSignupTrial("user-1", now)).resolves.toEqual({
       active: true,
       endsAt: inTrial,
     });
-    expect(mocks.rpc).toHaveBeenCalledWith("get_signup_trial_end", { p_user_id: "user-1" });
+    expect(mocks.rpc).toHaveBeenCalledWith("get_signup_trial", { p_user_id: "user-1" });
     expect(mocks.getUserById).not.toHaveBeenCalled();
   });
 
   it("garde la date d'un essai terminé, sans l'ouvrir", async () => {
-    database({ data: ended, error: null });
+    database(ended);
     await expect(readSignupTrial("user-1", now)).resolves.toEqual({ active: false, endsAt: ended });
     await expect(hasActiveSignupTrial("user-2", now)).resolves.toBe(false);
   });
 
-  it("ne traite qu'une date comme une fin d'essai", async () => {
-    // La base a répondu « pas d'essai » : refus explicite, à la différence d'une erreur.
-    const denied = { active: false, endsAt: null, denied: true };
-    database({ data: true, error: null });
-    await expect(readSignupTrial("user-1", now)).resolves.toEqual(denied);
-    database({ data: null, error: null });
-    await expect(readSignupTrial("user-2", now)).resolves.toEqual(denied);
+  it("distingue un refus explicite de la base d'une réponse illisible", async () => {
+    // La base a répondu « pas d'essai pour ce compte » : refus explicite, à la différence d'une erreur.
+    database(null);
+    await expect(readSignupTrial("user-1", now)).resolves.toEqual({
+      active: false,
+      endsAt: null,
+      denied: true,
+    });
+    // Aucune ligne : rien n'est ouvert, et rien n'est affirmé non plus.
+    mocks.rpc.mockImplementation(async () => ok([]));
+    await expect(readSignupTrial("user-2", now)).resolves.toEqual({ active: false, endsAt: null });
+  });
+
+  it("couper l'interrupteur ne ferme que les nouveaux essais", async () => {
+    // Confirmé avant la coupure : la base garde l'essai ouvert.
+    database(inTrial, true);
+    await expect(readSignupTrial("running", now)).resolves.toEqual({
+      active: true,
+      endsAt: inTrial,
+    });
+    // Confirmé après la coupure : pas d'essai, et pas de « refus » non plus (rien à dire au compte).
+    database(inTrial, false);
+    await expect(readSignupTrial("late", now)).resolves.toEqual({ active: false, endsAt: null });
+    await expect(hasActiveSignupTrial("late", now)).resolves.toBe(false);
+    expect(calls("get_launch_offer_status")).toHaveLength(0);
+  });
+
+  it("ne garde que 30 s une lecture « essai fermé pour ce compte » : rétablir l'essai se voit vite", async () => {
+    database(inTrial, false);
+    await expect(hasActiveSignupTrial("late", now)).resolves.toBe(false);
+    database(inTrial, true);
+    await expect(hasActiveSignupTrial("late", now + 29_000)).resolves.toBe(false);
+    await expect(hasActiveSignupTrial("late", now + 31_000)).resolves.toBe(true);
   });
 
   it("ferme l'essai à l'heure dite, même si la lecture est encore gardée", async () => {
-    const endsAt = new Date(now + 5 * 60_000).toISOString();
-    database({ data: endsAt, error: null });
+    database(new Date(now + 5 * 60_000).toISOString());
     await expect(hasActiveSignupTrial("user-1", now)).resolves.toBe(true);
     await expect(hasActiveSignupTrial("user-1", now + 6 * 60_000)).resolves.toBe(false);
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
   });
 
   it("garde un compte sans essai 30 s (cache négatif), puis relit : il peut confirmer à tout moment", async () => {
-    database({ data: null, error: null });
+    database(null);
     await expect(hasActiveSignupTrial("user-1", now)).resolves.toBe(false);
     await expect(hasActiveSignupTrial("user-1", now + 29_000)).resolves.toBe(false);
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
     // Le compte confirme : l'essai s'ouvre à la lecture qui suit l'expiration du cache négatif.
-    database({ data: inTrial, error: null });
+    database(inTrial);
     await expect(hasActiveSignupTrial("user-1", now + 31_000)).resolves.toBe(true);
     expect(mocks.rpc).toHaveBeenCalledTimes(2);
   });
 
   it("garde une date de fin 10 minutes, puis la relit", async () => {
-    database({ data: inTrial, error: null });
+    database(inTrial);
     await readSignupTrial("user-1", now);
     await expect(hasActiveSignupTrial("user-1", now + 9 * 60_000)).resolves.toBe(true);
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
@@ -180,29 +203,79 @@ describe("essai gratuit du compte (7 jours après la confirmation, une fois par 
   });
 
   it("reste fermé si la base ne répond pas, sans mémoriser l'échec", async () => {
-    database({ data: null, error: new Error("base indisponible") });
+    mocks.rpc.mockImplementation(async () => ({
+      data: null,
+      error: { code: "XX000", message: "base indisponible" },
+    }));
     await expect(readSignupTrial("user-1", now)).resolves.toEqual({ active: false, endsAt: null });
     mocks.rpc.mockRejectedValueOnce(new Error("réseau"));
     await expect(hasActiveSignupTrial("user-1", now)).resolves.toBe(false);
-    database({ data: inTrial, error: null });
+    database(inTrial);
     await expect(hasActiveSignupTrial("user-1", now)).resolves.toBe(true);
   });
 
-  describe("ordre de déploiement : la migration de l'essai n'est pas encore appliquée", () => {
+  describe("ordre de déploiement : les migrations de l'essai ne sont pas encore appliquées", () => {
     const authUser = (confirmedAt: string | null) =>
       mocks.getUserById.mockResolvedValue({
         data: { user: { id: "user-1", email_confirmed_at: confirmedAt } },
         error: null,
+      });
+    /**
+     * Base d'avant 20261108130100 : `get_signup_trial` manque ; l'interrupteur global (`switchOn`)
+     * ferme alors tous les essais, et `get_signup_trial_end` donne la date.
+     */
+    const olderDatabase = ({
+      trialEnd,
+      eligibility = ok(false),
+      switchOn = true,
+    }: {
+      trialEnd: { data: unknown; error: unknown };
+      eligibility?: { data: unknown; error: unknown };
+      switchOn?: boolean;
+    }) =>
+      mocks.rpc.mockImplementation(async (name: string) => {
+        if (name === "get_signup_trial") return missing(name);
+        if (name === "get_launch_offer_status") return ok(switchOn);
+        if (name === "get_signup_trial_end") return trialEnd;
+        return eligibility;
       });
 
     beforeEach(() => {
       vi.spyOn(console, "warn").mockImplementation(() => undefined);
     });
 
+    it("lit la fin de l'essai par l'ancienne fonction, avec l'interrupteur global", async () => {
+      olderDatabase({ trialEnd: ok(inTrial) });
+      await expect(readSignupTrial("user-1", now)).resolves.toEqual({
+        active: true,
+        endsAt: inTrial,
+      });
+      resetLaunchOfferCache();
+      olderDatabase({ trialEnd: ok(inTrial), switchOn: false });
+      await expect(readSignupTrial("user-1", now)).resolves.toEqual({
+        active: false,
+        endsAt: null,
+      });
+    });
+
+    it("applique l'interrupteur global à chaque appel, sans le mettre dans le cache du compte", async () => {
+      const t = Date.now();
+      const farTrial = new Date(t + 3 * DAY).toISOString();
+      olderDatabase({ trialEnd: ok(farTrial) });
+      await expect(hasActiveSignupTrial("user-1", t)).resolves.toBe(true);
+      // 31 s plus tard, l'interrupteur global est coupé : la lecture du compte est gardée, pas l'interrupteur.
+      olderDatabase({ trialEnd: ok(farTrial), switchOn: false });
+      await expect(hasActiveSignupTrial("user-1", t + 31_000)).resolves.toBe(false);
+      expect(calls("get_signup_trial_end")).toHaveLength(1);
+    });
+
     it.each(["PGRST202", "42883"])(
       "lit l'ancienne éligibilité sans durée sur %s, comme la base l'applique encore",
       async (code) => {
-        database(missing("get_signup_trial_end", code), { data: true, error: null });
+        olderDatabase({
+          trialEnd: missing("get_signup_trial_end", code),
+          eligibility: ok(true),
+        });
         await expect(readSignupTrial("user-1", now)).resolves.toEqual({
           active: true,
           endsAt: null,
@@ -214,12 +287,15 @@ describe("essai gratuit du compte (7 jours après la confirmation, une fois par 
     );
 
     it("n'ouvre rien à un compte que l'ancienne règle refuse", async () => {
-      database(missing("get_signup_trial_end"), { data: false, error: null });
+      olderDatabase({ trialEnd: missing("get_signup_trial_end"), eligibility: ok(false) });
       await expect(hasActiveSignupTrial("user-1", now)).resolves.toBe(false);
     });
 
     it("revient à l'adresse confirmée (API Auth) quand l'ancienne fonction manque aussi", async () => {
-      database(missing("get_signup_trial_end"), missing("get_launch_offer_account_eligibility"));
+      olderDatabase({
+        trialEnd: missing("get_signup_trial_end"),
+        eligibility: missing("get_launch_offer_account_eligibility"),
+      });
       authUser("2026-10-01T00:00:00Z");
       await expect(hasActiveSignupTrial("user-1", now)).resolves.toBe(true);
       expect(mocks.getUserById).toHaveBeenCalledWith("user-1");
@@ -229,25 +305,29 @@ describe("essai gratuit du compte (7 jours après la confirmation, une fois par 
     });
 
     it("ne se replie que sur l'absence de la fonction, jamais sur une autre erreur", async () => {
-      database(
-        { data: null, error: { code: "XX000", message: "boom" } },
-        { data: true, error: null },
+      mocks.rpc.mockImplementation(async (name: string) =>
+        name === "get_signup_trial"
+          ? { data: null, error: { code: "XX000", message: "boom" } }
+          : ok(true),
       );
       await expect(hasActiveSignupTrial("user-1", now)).resolves.toBe(false);
       expect(mocks.rpc).toHaveBeenCalledTimes(1);
     });
 
     it("garde 10 minutes une éligibilité lue par l'ancienne règle", async () => {
-      database(missing("get_signup_trial_end"), { data: true, error: null });
+      olderDatabase({ trialEnd: missing("get_signup_trial_end"), eligibility: ok(true) });
       await hasActiveSignupTrial("user-1", now);
       await expect(hasActiveSignupTrial("user-1", now + 9 * 60_000)).resolves.toBe(true);
-      expect(mocks.rpc).toHaveBeenCalledTimes(2);
+      expect(calls("get_launch_offer_account_eligibility")).toHaveLength(1);
     });
 
     it("signale une fois le repli sur l'API Auth, sans donnée personnelle", async () => {
       const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
       warn.mockClear();
-      database(missing("get_signup_trial_end"), missing("get_launch_offer_account_eligibility"));
+      olderDatabase({
+        trialEnd: missing("get_signup_trial_end"),
+        eligibility: missing("get_launch_offer_account_eligibility"),
+      });
       authUser("2026-10-01T00:00:00Z");
       await hasActiveSignupTrial("user-1", now);
       await hasActiveSignupTrial("user-2", now);
@@ -257,7 +337,7 @@ describe("essai gratuit du compte (7 jours après la confirmation, une fois par 
   });
 
   it("évince la plus ancienne lecture quand la mémoire est pleine, sans tout oublier", async () => {
-    database({ data: inTrial, error: null });
+    database(inTrial);
     for (let index = 0; index < 1_000; index += 1) {
       await hasActiveSignupTrial(`user-${index}`, now);
     }

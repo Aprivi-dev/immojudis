@@ -4,8 +4,12 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { isDiscoveryAlertCompatible } from "@/lib/discovery-alerts";
 import { alertMatchesSale } from "@/lib/alerts";
-import { createAlertNotificationsForMatches } from "@/lib/alert-notifications";
+import {
+  createAlertNotificationsForMatches,
+  suppressAlertNotificationsForMatches,
+} from "@/lib/alert-notifications";
 import { extractDpe } from "@/lib/dpe";
+import { serverEnv, type EnvSource } from "@/lib/env";
 import { errorDetails, errorSummary } from "@/lib/error-details";
 import { estimateSaleGrossYieldPct, pricePerM2 } from "@/lib/geo";
 import { resolveMarketGap } from "@/lib/market-gap";
@@ -23,6 +27,7 @@ import { getMarketValuationSurfaces, getSaleSurface } from "@/lib/surface";
 import type { AuctionSale, SaleFilters, UserAlert, UserWatchedZone } from "@/lib/types";
 import { normalizeWatchedZone } from "@/lib/watched-zones";
 import { asRecord, numberValue, stringValue } from "@/lib/guards";
+import { isMissingDatabaseObject } from "@/lib/postgrest-errors";
 
 type AlertMatchRow = Database["public"]["Tables"]["user_alert_matches"]["Row"];
 
@@ -204,11 +209,8 @@ type AlertEvaluationEntry = {
   silentSaleIds?: Set<string>;
 };
 
-/**
- * Variable d'environnement posée AU DÉPLOIEMENT du passage à la carte des loyers de l'ANIL (date ISO).
- * Absente : aucune base silencieuse.
- */
-export const RENT_BASIS_SWITCH_ENV = "ALERT_RENT_BASIS_SWITCH_AT";
+// `ALERT_RENT_BASIS_SWITCH_AT` : variable d'environnement posée AU DÉPLOIEMENT du passage à la carte des
+// loyers de l'ANIL (date ISO), lue par `serverEnv().alertRentBasis.switchAt`. Absente : aucune base silencieuse.
 /** La base silencieuse ne dure que 48 heures après le changement. */
 export const RENT_BASIS_SILENT_WINDOW_MS = 48 * 60 * 60 * 1000;
 
@@ -228,14 +230,24 @@ export const RENT_BASIS_SILENT_WINDOW_MS = 48 * 60 * 60 * 1000;
 export function isRentBasisSilentPass(
   alert: Pick<UserAlert, "min_yield_pct" | "last_evaluated_at">,
   evaluatedAt: string,
-  env: Pick<NodeJS.ProcessEnv, string> = process.env,
+  env?: EnvSource,
 ): boolean {
   if (alert.min_yield_pct == null || !alert.last_evaluated_at) return false;
-  const switchAt = Date.parse(env[RENT_BASIS_SWITCH_ENV] ?? "");
+  const switchAt = Date.parse(serverEnv(env).alertRentBasis.switchAt ?? "");
   const now = Date.parse(evaluatedAt);
   const last = Date.parse(alert.last_evaluated_at);
   if (![switchAt, now, last].every(Number.isFinite)) return false;
   return now >= switchAt && now < switchAt + RENT_BASIS_SILENT_WINDOW_MS && last < switchAt;
+}
+
+/** Les loyers de la carte de l'ANIL n'ont pas pu être lus : une alerte à critère de rendement n'avance pas. */
+export class RentReferenceUnavailableError extends Error {
+  constructor() {
+    super(
+      "Loyers de référence (ANIL) indisponibles : l'alerte à critère de rendement est reprise au prochain passage.",
+    );
+    this.name = "RentReferenceUnavailableError";
+  }
 }
 
 export async function evaluateUserAlertMatches({
@@ -389,13 +401,16 @@ async function collectAlertMatches({
   let rents: RentLookup | undefined;
   if (!discovery && alert.min_yield_pct != null) {
     const withoutYield = { ...alert, min_yield_pct: null, min_market_discount_pct: null };
-    rents = await rentSession.load(
-      sales.filter(
-        (sale) =>
-          (isPepiteAlert(alert) || !pepiteOnlySaleIds.has(sale.id)) &&
-          alertMatchesSale(withoutYield, sale, { watchedZone, pepiteSaleIds }).matches,
-      ),
+    const candidates = sales.filter(
+      (sale) =>
+        (isPepiteAlert(alert) || !pepiteOnlySaleIds.has(sale.id)) &&
+        alertMatchesSale(withoutYield, sale, { watchedZone, pepiteSaleIds }).matches,
     );
+    rents = await rentSession.load(candidates);
+    // Lecture de la carte de l'ANIL en échec : la session retombe sur le repère départemental, ce qui calculerait les
+    // correspondances sur une autre base que celle annoncée ET consommerait la fenêtre de la base silencieuse. L'alerte
+    // échoue donc (elle garde sa date d'évaluation) et sera reprise au prochain passage.
+    if (rentSession.unavailable(candidates)) throw new RentReferenceUnavailableError();
   }
   // Base silencieuse du changement de loyers de référence (voir `isRentBasisSilentPass`).
   const silentPass = !discovery && isRentBasisSilentPass(alert, evaluatedAt);
@@ -471,6 +486,46 @@ async function collectAlertMatches({
   }
 }
 
+/** Écriture bloquée par un verrou : même code que `lock_not_available`, que les rapports d'échec savent lire. */
+const ALERT_MATCHES_DEFERRED_CODE = "55P03";
+
+/**
+ * Écrit un lot de correspondances et rend les lignes enregistrées. Passe par `upsert_user_alert_matches` (migration
+ * 20261108110200), qui SAUTE sans attendre les ventes dont la ligne est verrouillée en écriture par une autre
+ * transaction (publication du pipeline, suppression) ou disparues : avec l'upsert PostgREST, la clé étrangère vers
+ * `auction_sales` attendait le verrou jusqu'au délai de la requête (57014), puis l'alerte entière échouait. Une vente
+ * sautée lève une erreur de code 55P03 APRÈS l'écriture des autres lignes du lot : l'alerte n'est pas marquée évaluée
+ * et est rejouée à la passe suivante sans doublon (upsert), comme pour toute autre erreur d'écriture.
+ *
+ * Sans la migration (fonction absente, déploiement avant migration), repli sur l'upsert d'origine.
+ */
+async function upsertAlertMatchRows(
+  batch: Database["public"]["Tables"]["user_alert_matches"]["Insert"][],
+): Promise<AlertMatchRow[]> {
+  const { data, error } = await supabaseAdmin.rpc("upsert_user_alert_matches", {
+    p_rows: batch as unknown as Json,
+  });
+  if (!error) {
+    const written = (data ?? []) as AlertMatchRow[];
+    if (written.length < batch.length) {
+      throw Object.assign(
+        new Error(
+          `${batch.length - written.length} correspondance(s) différée(s) : vente verrouillée ou disparue`,
+        ),
+        { code: ALERT_MATCHES_DEFERRED_CODE },
+      );
+    }
+    return written;
+  }
+  if (!isMissingDatabaseObject(error)) throw error;
+  const fallback = await supabaseAdmin
+    .from("user_alert_matches")
+    .upsert(batch, { onConflict: "alert_id,sale_id" })
+    .select("*");
+  if (fallback.error) throw fallback.error;
+  return fallback.data ?? [];
+}
+
 /**
  * Enregistre les correspondances d'une alerte par lots (une alerte très large ferait sinon une
  * seule requête de plusieurs milliers de lignes, au-delà du délai d'une requête), crée ses
@@ -490,15 +545,11 @@ async function persistAlertEvaluation({
 }): Promise<void> {
   const { alert, matches, rows } = entry;
   for (let offset = 0; offset < rows.length; offset += ALERT_MATCH_UPSERT_BATCH_SIZE) {
-    const { data, error } = await supabaseAdmin
-      .from("user_alert_matches")
-      .upsert(rows.slice(offset, offset + ALERT_MATCH_UPSERT_BATCH_SIZE), {
-        onConflict: "alert_id,sale_id",
-      })
-      .select("*");
-    if (error) throw error;
+    const data = await upsertAlertMatchRows(
+      rows.slice(offset, offset + ALERT_MATCH_UPSERT_BATCH_SIZE),
+    );
 
-    const persistedBySale = new Map((data ?? []).map((row) => [row.sale_id, row]));
+    const persistedBySale = new Map(data.map((row) => [row.sale_id, row]));
     for (const match of matches.slice(offset, offset + ALERT_MATCH_UPSERT_BATCH_SIZE)) {
       const persistedRow = persistedBySale.get(match.saleId);
       if (persistedRow) {
@@ -509,6 +560,21 @@ async function persistAlertEvaluation({
     }
   }
 
+  // Correspondances tues par la base silencieuse : leurs notifications sont créées au statut « cancelled », pour que
+  // la clé d'unicité bloque toute notification au passage suivant (la vente relue correspondrait de nouveau, hors
+  // fenêtre silencieuse). Écrit AVANT que `last_evaluated_at` n'avance : en cas d'échec, l'alerte est rejouée.
+  const silentMatches = matches.filter(
+    (match) => match.id && entry.silentSaleIds?.has(match.saleId),
+  );
+  for (let offset = 0; offset < silentMatches.length; offset += ALERT_MATCH_UPSERT_BATCH_SIZE) {
+    await suppressAlertNotificationsForMatches({
+      auth,
+      matches: silentMatches.slice(offset, offset + ALERT_MATCH_UPSERT_BATCH_SIZE),
+      alerts: [alert],
+      now: new Date(evaluatedAt),
+      discovery,
+    });
+  }
   const persistedMatches = matches.filter(
     (match) => match.id && !entry.silentSaleIds?.has(match.saleId),
   );

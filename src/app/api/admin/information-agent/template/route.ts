@@ -26,9 +26,10 @@ async function handleGET(request: Request) {
 
 async function handlePOST(request: Request) {
   try {
+    const authToken = bearerTokenFromRequest(request);
     const input = adminInformationAgentEmailTemplateActionSchema.parse(await request.json());
     const response = await runAdminInformationAgentEmailTemplateAction({
-      authToken: bearerTokenFromRequest(request),
+      authToken,
       input,
     });
     return NextResponse.json(response, {

@@ -149,7 +149,7 @@ def test_candidate_lock_query_isolates_the_unindexable_listing_pattern() -> None
     sql, params = _candidate_lock_query(["u"], ["40440"], ["h"], [], ["166526"])
     # Le motif à joker initial vit dans sa propre branche, filtrée par source et limitée.
     assert sql.count(" like any(") == 2 and "union (select" in sql and "limit %s" in sql
-    assert sql.index("union") > sql.index("a.content_hash") and sql.rstrip().endswith("for update")
+    assert sql.index("union") > sql.index("a.content_hash") and sql.rstrip().endswith("for no key update")
     assert params[-1] == 10
     assert ["%/vente-166526-%"] in params and ["%-166526.html%"] in params
     assert "vench" in params and "petites_affiches" in params

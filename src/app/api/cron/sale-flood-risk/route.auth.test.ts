@@ -33,4 +33,21 @@ describe("route planifiée du risque d’inondation : protection", () => {
     expect(response.status).toBe(401);
     expect(mocks.runSaleFloodRiskBatch).not.toHaveBeenCalled();
   });
+
+  it("échoue fermé quand CRON_SECRET n'est pas défini : 401, même avec un jeton vide ou quelconque", async () => {
+    vi.stubEnv("CRON_SECRET", undefined);
+
+    const variants: Record<string, string>[] = [
+      {},
+      { authorization: "Bearer " },
+      { authorization: "Bearer undefined" },
+    ];
+    for (const headers of variants) {
+      const response = await GET(
+        new Request("https://example.test/api/cron/sale-flood-risk", { headers }),
+      );
+      expect(response.status).toBe(401);
+    }
+    expect(mocks.runSaleFloodRiskBatch).not.toHaveBeenCalled();
+  });
 });

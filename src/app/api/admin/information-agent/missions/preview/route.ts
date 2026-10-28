@@ -17,9 +17,10 @@ export const maxDuration = 30;
  */
 async function handlePOST(request: Request) {
   try {
+    const authToken = bearerTokenFromRequest(request);
     const input = adminInformationAgentPreviewSchema.parse(await request.json());
     const response = await previewAdminInformationAgentMissionForToken({
-      authToken: bearerTokenFromRequest(request),
+      authToken,
       input,
     });
     return NextResponse.json(response, {

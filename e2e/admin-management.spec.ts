@@ -122,13 +122,11 @@ test.describe("admin management", () => {
   test("loads only its own data on every management view", async ({ page }) => {
     const state = await prepareAdminManagementPage(page);
     const own: Array<[string, string[]]> = [
-      // /admin/clients porte aussi l'interrupteur de l'offre de lancement, son préavis de fin et la liste
-      // d'attente.
+      // /admin/clients porte aussi l'interrupteur de l'essai gratuit et la liste d'attente.
       [
         "/admin/clients",
         [
           "/api/admin/launch-offer",
-          "/api/admin/launch-offer-end",
           "/api/admin/offer-opening-notifier",
           "/api/admin/subscriptions",
         ],
@@ -290,11 +288,6 @@ async function prepareAdminManagementPage(page: Page): Promise<ManagementState> 
 
     if (path === "/api/admin/launch-offer" && method === "GET") {
       await route.fulfill({ status: 200, json: { active: true } });
-      return;
-    }
-
-    if (path === "/api/admin/launch-offer-end" && method === "GET") {
-      await route.fulfill({ status: 200, json: launchOfferEndPayload() });
       return;
     }
 
@@ -599,28 +592,4 @@ function fakeJwt(payload: Record<string, unknown>) {
     ...payload,
     exp: Math.floor(Date.now() / 1000) + 3600,
   })}.signature`;
-}
-
-/** État du bloc « Fin de l'offre de lancement : préavis » (`LaunchOfferEndState`) : aucune date annoncée. */
-function launchOfferEndPayload() {
-  return {
-    active: true,
-    endsOn: null,
-    endsOnLabel: null,
-    daysLeft: null,
-    minNoticeDays: 30,
-    blocker: "Aucune date de fin annoncée.",
-    audience: {
-      accounts: 0,
-      optedOut: 0,
-      notified: 0,
-      recipients: 0,
-      inProgress: 0,
-      needsReview: 0,
-    },
-    batchSize: 200,
-    configured: true,
-    missing: [],
-    preview: null,
-  };
 }

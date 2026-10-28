@@ -11,19 +11,33 @@ import type { PepitePayload } from "@/lib/sale-pepite-view";
  * la fiche) évite même cette lecture. En mode « shadow », ou sans la migration : aucune pépite, aucun appel.
  * Une panne ou un 404 donnent `null` : le repère disparaît, la fiche ne change pas.
  */
-export function useSalePepite({
-  saleId,
-  view,
-  userKey,
-  known,
-  enabled = true,
-}: {
+export type SalePepiteArgs = {
   saleId: string;
   view: PepiteView;
   userKey: string;
   known?: boolean;
   enabled?: boolean;
-}): PepitePayload | null {
+};
+
+/**
+ * Où en est la lecture du repère : `idle` (pas une pépite, ou la liste publique n'est pas encore lue),
+ * `loading` (la route est en cours), `error` (panne, limite de débit : le repère reste affiché sans son
+ * détail), `absent` (404 : plus une pépite publiable) ou `ready`.
+ */
+export type SalePepiteStatus = "idle" | "loading" | "error" | "absent" | "ready";
+
+export function useSalePepite(args: SalePepiteArgs): PepitePayload | null {
+  return useSalePepiteState(args).payload;
+}
+
+/** `useSalePepite` et l'état de la lecture : pour afficher un emplacement pendant le chargement, une erreur sinon. */
+export function useSalePepiteState({
+  saleId,
+  view,
+  userKey,
+  known,
+  enabled = true,
+}: SalePepiteArgs): { payload: PepitePayload | null; status: SalePepiteStatus } {
   const ids = useQuery({
     queryKey: queryKeys.pepiteSaleIds(),
     queryFn: () => fetchPepiteSaleIds(),
@@ -40,5 +54,13 @@ export function useSalePepite({
     staleTime: 5 * 60_000,
     retry: false,
   });
-  return query.data ?? null;
+  const payload = query.data ?? null;
+  let status: SalePepiteStatus = "idle";
+  if (payload) status = "ready";
+  else if (enabled && isPepite) {
+    if (query.isError) status = "error";
+    else if (query.isPending) status = "loading";
+    else status = "absent";
+  }
+  return { payload, status };
 }

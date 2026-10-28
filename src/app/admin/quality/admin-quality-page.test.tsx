@@ -20,6 +20,10 @@ vi.mock("@/components/admin/AdminShell", () => ({
     </main>
   ),
 }));
+// Le tableau des retours par vente a son propre test (AdminSaleFeedbackPanel.test.tsx).
+vi.mock("@/components/admin/AdminSaleFeedbackPanel", () => ({
+  AdminSaleFeedbackPanel: () => null,
+}));
 afterEach(() => {
   cleanup();
   vi.resetAllMocks();

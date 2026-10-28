@@ -91,4 +91,15 @@ describe("GET /api/v1/tribunals/judicial-activity/directory", () => {
     expect(response.status).toBe(503);
     expect(response.headers.get("cache-control")).toBe("private, no-store");
   });
+
+  it("répond 503 (et non 400) quand la réponse construite ne respecte pas son propre schéma", async () => {
+    // Un défaut côté serveur (ici un effectif incohérent) n'est pas une faute du client.
+    mocks.getDirectory.mockResolvedValue({ ...directory, schemaVersion: "autre" });
+    const response = await request();
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(await response.json()).toMatchObject({ code: "INTERNAL_ERROR" });
+    expect(console.error).toHaveBeenCalled();
+  });
 });

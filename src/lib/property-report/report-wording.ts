@@ -26,6 +26,20 @@ export type ReportWording = {
   feesCoverage: string;
   /** Phrase du plafond inférieur au prix de départ. */
   belowStartSentence: string;
+  /** « Tribunal » (vente judiciaire) ou « Lieu de la vente » (vente notariale). */
+  venueLabel: string;
+  /** « Préparation audience » (tribunal) ou « Préparation de la vente » (vente notariale). */
+  audiencePreparation: string;
+  /** « Actions préparation audience » ou « Actions de préparation de la vente ». */
+  audienceActions: string;
+  /** « Urgence audience » ou « Urgence de la vente ». */
+  audienceUrgency: string;
+  /** « avant l’audience » ou « avant la vente » (dossier de financement). */
+  beforeHearing: string;
+  /** Intertitre de la garantie du dossier de financement : « …avant les enchères » ou « …avant votre offre ». */
+  guaranteeHeading: string;
+  /** Pied de page du PDF : « …avant toute enchère » ou « …avant toute offre ». */
+  footerSentence: string;
 };
 
 const capitalize = (value: string) => `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
@@ -44,6 +58,19 @@ export function reportWording(regimeKey: unknown): ReportWording {
   const byOffers = labels?.byOffers === true;
   const referencePriceLower = labels?.referencePriceTerm ?? "mise à prix";
   return {
+    venueLabel: notarial ? "Lieu de la vente" : "Tribunal",
+    audiencePreparation: notarial ? "Préparation de la vente" : "Préparation audience",
+    audienceActions: notarial
+      ? "Actions de préparation de la vente"
+      : "Actions préparation audience",
+    audienceUrgency: notarial ? "Urgence de la vente" : "Urgence audience",
+    guaranteeHeading: byOffers
+      ? "Garantie à remettre avant votre offre"
+      : "Garantie à remettre avant les enchères",
+    beforeHearing: notarial ? "avant la vente" : "avant l’audience",
+    footerSentence: `Immojudis - rapport indicatif. Vérifiez les pièces officielles et votre conseil ${
+      byOffers ? "avant toute offre" : "avant toute enchère"
+    }.`,
     referencePrice: capitalize(referencePriceLower),
     referencePriceLower,
     ceilingLabel: labels?.ceilingSimulationLabel ?? "Enchère plafond (simulation)",

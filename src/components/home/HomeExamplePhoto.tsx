@@ -1,11 +1,13 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { useState } from "react";
 import { bidVerdict, bidVerdictSentence, BID_VERDICT_LABEL } from "@/lib/bid-verdict";
 import { formatNumber, formatPrice } from "@/lib/format";
-import { Check } from "./HomeIcons";
+import { ArrowRight, Check } from "./HomeIcons";
 import { useCountTo } from "./use-count-to";
+import { useDemoLoop } from "./use-demo-loop";
 import styles from "./HomePage.module.css";
 
 export type ExamplePhotoPreset = { label: string; button: string; ceiling: number };
@@ -32,34 +34,20 @@ export type ExamplePhotoProps = {
 
 const CYCLE_MS = 3_400;
 const FIRST_CYCLE_MS = 4_200;
+const ANALYSIS_HREF = "/annonce-exemple";
 
 /**
  * Premier écran : la fiche de l'annonce exemple sur un panneau blanc (photo en vignette, panneau
  * « Analyse du bien » avec les données croisées), puis l'estimation et l'enchère à ne pas dépasser
- * côte à côte. Trois situations défilent seules, du vert au rouge, tant que le visiteur n'a pas
- * choisi la sienne ; rien ne défile quand il réduit les animations.
+ * côte à côte. Les trois situations défilent une fois, du vert au rouge, tant que le visiteur ne
+ * survole pas la carte, n'y a pas le focus, ne la touche pas et n'a pas choisi la sienne (bouton
+ * « Mettre en pause l'animation » ; rien ne défile quand il réduit les animations).
  */
 export function HomeExamplePhoto(props: ExamplePhotoProps) {
   const { presets, startingPrice } = props;
-  const [index, setIndex] = useState(0);
-  const [chosen, setChosen] = useState(false);
-  const timer = useRef<number | null>(null);
-
-  useEffect(() => {
-    if (chosen || presets.length < 2) return;
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
-    let interval: number | null = null;
-    timer.current = window.setTimeout(() => {
-      interval = window.setInterval(
-        () => setIndex((current) => (current + 1) % presets.length),
-        CYCLE_MS,
-      );
-    }, FIRST_CYCLE_MS);
-    return () => {
-      if (timer.current) window.clearTimeout(timer.current);
-      if (interval) window.clearInterval(interval);
-    };
-  }, [chosen, presets.length]);
+  const loop = useDemoLoop({ steps: presets.length, firstMs: FIRST_CYCLE_MS, stepMs: CYCLE_MS });
+  const [chosenIndex, setChosenIndex] = useState<number | null>(null);
+  const index = chosenIndex ?? loop.step;
 
   const preset = presets[index] ?? presets[0];
   const verdict = bidVerdict(preset.ceiling, startingPrice);
@@ -96,6 +84,7 @@ export function HomeExamplePhoto(props: ExamplePhotoProps) {
       <figure
         className={styles.exampleCard}
         aria-label={`Exemple fictif : analyse et verdict pour un appartement de ${props.surfaceM2} m² à ${props.city}`}
+        {...loop.handlers}
       >
         <div className={styles.exampleHeader}>
           <div className={styles.exampleThumb}>
@@ -128,7 +117,7 @@ export function HomeExamplePhoto(props: ExamplePhotoProps) {
           <p className={styles.analysisHead}>
             <span>Analyse du bien</span>{" "}
             <span>
-              {rows.length} sur {rows.length}
+              {rows.filter((row) => !row.warn).length} sur {rows.length} confirmés
             </span>
           </p>
           <ul>
@@ -147,7 +136,7 @@ export function HomeExamplePhoto(props: ExamplePhotoProps) {
           </ul>
         </div>
 
-        <div aria-live={chosen ? "polite" : "off"}>
+        <div>
           <div className={styles.exampleTiles}>
             <div className={styles.valueTile}>
               <span className={styles.tileLabel}>Estimation</span>{" "}
@@ -156,7 +145,9 @@ export function HomeExamplePhoto(props: ExamplePhotoProps) {
             </div>
             <div className={`${styles.ceilingTile} ${styles[`verdict_${verdict}`]}`}>
               <span className={styles.tileLabel}>Enchère à ne pas dépasser</span>{" "}
-              <p className={styles.verdictAmount}>{formatPrice(shown)}</p>
+              <p className={styles.verdictAmount} aria-hidden>
+                {formatPrice(shown)}
+              </p>
               <span className={styles.verdictPill}>
                 <i aria-hidden />
                 {BID_VERDICT_LABEL[verdict]}
@@ -169,6 +160,12 @@ export function HomeExamplePhoto(props: ExamplePhotoProps) {
               {bidVerdictSentence(preset.ceiling, startingPrice)}
             </span>
           </p>
+          {/* Zone annoncée après un choix du visiteur seulement : pas pendant la démonstration
+              qui défile seule. Jamais les montants intermédiaires du compteur animé (masqués
+              ci-dessus). */}
+          <p className="sr-only" role={chosenIndex !== null ? "status" : undefined}>
+            Enchère à ne pas dépasser : {formatPrice(preset.ceiling)}. {BID_VERDICT_LABEL[verdict]}.
+          </p>
         </div>
         <div className={styles.presetButtons} role="group" aria-label="Situations de l’exemple">
           {presets.map((item, position) => (
@@ -177,13 +174,27 @@ export function HomeExamplePhoto(props: ExamplePhotoProps) {
               type="button"
               aria-pressed={position === index}
               onClick={() => {
-                setChosen(true);
-                setIndex(position);
+                loop.stop();
+                setChosenIndex(position);
               }}
             >
               {item.button}
             </button>
           ))}
+        </div>
+        <div className={styles.exampleFoot}>
+          <Link href={ANALYSIS_HREF} prefetch={false} className={styles.textLink}>
+            Voir l’analyse complète <ArrowRight aria-hidden size={16} />
+          </Link>
+          <button
+            type="button"
+            className={`${styles.pauseButton} ${loop.running ? "" : styles.pauseButtonOff}`}
+            aria-pressed={loop.paused}
+            tabIndex={loop.running ? undefined : -1}
+            onClick={loop.togglePause}
+          >
+            Mettre en pause l’animation
+          </button>
         </div>
       </figure>
     </div>

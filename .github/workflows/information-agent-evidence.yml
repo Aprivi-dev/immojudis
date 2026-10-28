@@ -14,8 +14,11 @@ concurrency:
 
 jobs:
   process:
+    # Receives the production service-role key: only the code of `main` may run with it (a dispatch from another
+    # branch would run that branch's code with the secret).
+    if: github.ref == 'refs/heads/main'
     name: Analyze private information-agent attachments
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
       # Secrets are given only to the steps that call Supabase or Replicate,

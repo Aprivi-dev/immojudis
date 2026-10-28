@@ -96,6 +96,69 @@ describe("AccountPage unlocks", () => {
     expect(mocks.overview).not.toHaveBeenCalled();
   });
 
+  it("dit d'un essai prolongé qu'il est gratuit, sans portail ni résiliation", async () => {
+    mocks.plan.mockResolvedValue({
+      plan: {
+        plan: "analyse",
+        label: "Analyse",
+        hasAnalysisAccess: true,
+        launchOffer: true,
+        trialExtension: true,
+        trialEndsAt: "2026-12-01T13:05:00.000Z",
+        currentPeriodEnd: "2026-12-01T13:05:00.000Z",
+        billing: { status: "trialing", hasStripeCustomer: false, graceEndsAt: null },
+      },
+    });
+    renderPage();
+
+    const status = await screen.findByTestId("account-launch-offer");
+    expect(status.textContent).toBe(
+      "Essai gratuit prolongé jusqu’au 1er décembre 2026 à 14:05 ; rien ne devient payant automatiquement. À son terme, votre compte revient à l’offre Découverte, gratuite.",
+    );
+    expect(screen.getByText("Analyse · essai gratuit prolongé")).toBeTruthy();
+    expect(screen.queryByText(/portail sécurisé Stripe/)).toBeNull();
+    expect(screen.queryByText(/accès jusqu’au/)).toBeNull();
+    expect(screen.getByTestId("account-offer-end")).toBeTruthy();
+    expect(screen.getByTestId("account-offer-end-date").textContent).toBe(
+      "Votre essai gratuit, prolongé, se termine le 1er décembre 2026 à 14:05.",
+    );
+  });
+
+  it("annonce dans l'application la fin de l'essai d'un compte non prolongé, sans email", async () => {
+    mocks.plan.mockResolvedValue({
+      plan: {
+        plan: "analyse",
+        label: "Analyse",
+        hasAnalysisAccess: true,
+        launchOffer: true,
+        trialEndsAt: "2026-11-01T13:05:00.000Z",
+        currentPeriodEnd: null,
+      },
+    });
+    renderPage();
+
+    expect((await screen.findByTestId("account-offer-end-date")).textContent).toBe(
+      "Votre essai gratuit se termine le 1er novembre 2026 à 14:05.",
+    );
+  });
+
+  it("dit la date de fin de la prolongation, et non celle de l'essai d'origine, une fois l'essai fini", async () => {
+    mocks.plan.mockResolvedValue({
+      plan: {
+        plan: "decouverte",
+        label: "Découverte",
+        hasAnalysisAccess: false,
+        trialEndedAt: "2026-11-20T09:00:00.000Z",
+      },
+    });
+    mocks.overview.mockResolvedValue({ status: status(), sales: [] });
+    renderPage();
+
+    expect((await screen.findByTestId("account-trial-ended")).textContent).toContain(
+      "s’est terminé le 20 novembre 2026",
+    );
+  });
+
   it("keeps the subscription actions next to the counter", async () => {
     mocks.plan.mockResolvedValue({
       plan: { plan: "decouverte", label: "Découverte", hasAnalysisAccess: false },

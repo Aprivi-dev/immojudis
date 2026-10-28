@@ -93,7 +93,17 @@ const SERVER_KEYS = [
   "OPERATIONS_ALERT_EMAIL_TO",
   "VERCEL_ENV",
   "NODE_ENV",
+  "CEILING_FEE_REGIMES_OPEN",
+  "ALERT_RENT_BASIS_SWITCH_AT",
+  "TRANSACTIONAL_EMAIL_FROM",
 ] as const;
+
+/**
+ * Variables lues telles quelles, sans le « vide = absent » des autres : pour elles, une valeur vide
+ * n'est pas une valeur absente. `CEILING_FEE_REGIMES_OPEN` absente ouvre tous les régimes de frais ;
+ * présente et vide, elle ferme les régimes notariaux (arrêt d'urgence).
+ */
+const VERBATIM_KEYS: ReadonlySet<string> = new Set(["CEILING_FEE_REGIMES_OPEN"]);
 
 /**
  * zod schema of the server variables, built on first use. It is kept out of module scope
@@ -106,11 +116,11 @@ function buildServerSchema() {
     .string()
     .optional()
     .transform((value) => filled(value));
+  const verbatim = z.string().optional();
   return z.object(
-    Object.fromEntries(SERVER_KEYS.map((key) => [key, text])) as Record<
-      (typeof SERVER_KEYS)[number],
-      typeof text
-    >,
+    Object.fromEntries(
+      SERVER_KEYS.map((key) => [key, VERBATIM_KEYS.has(key) ? verbatim : text]),
+    ) as Record<(typeof SERVER_KEYS)[number], typeof text>,
   );
 }
 
@@ -186,6 +196,8 @@ export function serverEnv(source?: EnvSource) {
     email: {
       resendApiKey: env.RESEND_API_KEY,
       from: firstFilled(env.ALERT_EMAIL_FROM, env.RESEND_FROM_EMAIL),
+      /** Expéditeur des messages liés au contrat (facturation, acceptation) ; absent : `from`. */
+      transactionalFrom: env.TRANSACTIONAL_EMAIL_FROM,
     },
     saleReminders: {
       /** Valeur brute de `SALE_REMINDERS_MODE` ; `saleRemindersMode()` la ramène à off, internal ou on. */
@@ -211,6 +223,18 @@ export function serverEnv(source?: EnvSource) {
        * (défaut) déclenche le workflow GitHub `sale-flood-risk.yml`, Géorisques refusant les appels de Vercel.
        */
       runner: env.SALE_FLOOD_RISK_RUNNER,
+    },
+    ceilingFeeRegimes: {
+      /**
+       * Valeur brute de `CEILING_FEE_REGIMES_OPEN`, SANS la règle « vide = absent » : `undefined`
+       * (variable absente) ouvre tous les régimes, une chaîne même vide n'ouvre que ceux qu'elle liste
+       * (voir `parseOpenFeeRegimes`).
+       */
+      open: env.CEILING_FEE_REGIMES_OPEN,
+    },
+    alertRentBasis: {
+      /** Valeur brute de `ALERT_RENT_BASIS_SWITCH_AT` (date ISO du passage aux loyers ANIL). */
+      switchAt: env.ALERT_RENT_BASIS_SWITCH_AT,
     },
     pipeline: {
       githubToken: firstFilled(

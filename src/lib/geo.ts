@@ -1,6 +1,8 @@
 import { getMapboxAccessToken } from "@/lib/mapbox";
-import { computeAcquisitionCosts } from "@/lib/profitability";
+import { computeAcquisitionCosts, type AcquisitionCostOptions } from "@/lib/profitability";
 import { defaultRentPerM2, isRentApplicable, type RentReference } from "@/lib/rent-reference";
+import { saleYieldFeeOptions } from "@/lib/sale-yield-fees";
+import type { AuctionSale } from "@/lib/types";
 
 export type GeoPoint = { lat: number; lng: number; label?: string };
 
@@ -114,28 +116,31 @@ async function geocodeAddressWithFrenchApi(q: string): Promise<GeoPoint | null> 
  *
  * `rent` : la référence de loyer de la vente (carte ANIL à la commune, voir `rent-reference.server.ts`) ;
  * absente, le loyer départemental sert de repli.
+ * `fees` : les frais du régime de la vente (`saleYieldFeeOptions`) ; absents, ceux du tribunal.
  */
 export function estimateGrossYieldPct(
   price: number | null | undefined,
   surface: number | null | undefined,
   department: string | null | undefined,
   rent?: RentReference | null,
+  fees?: AcquisitionCostOptions,
 ): number | null {
   if (!price || !surface || price <= 0 || surface <= 0) return null;
   const rentPerM2 = defaultRentPerM2(department, rent);
   if (rentPerM2 == null) return null;
   const annualRent = surface * rentPerM2 * 12;
-  const { totalCost } = computeAcquisitionCosts({ price, department });
+  const { totalCost } = computeAcquisitionCosts({ ...fees, price, department });
   return totalCost > 0 ? (annualRent / totalCost) * 100 : null;
 }
 
 /**
  * Rendement brut indicatif d'une vente : `null` pour un bien qui n'est pas un logement (terrain,
  * parking, local…), sans loyer de référence ; sinon `estimateGrossYieldPct` avec la référence de la
- * vente (carte ANIL à la commune) ou, à défaut, le loyer départemental.
+ * vente (carte ANIL à la commune) ou, à défaut, le loyer départemental, et les frais du RÉGIME de la vente
+ * (tribunal, bougie, vente interactive : `saleYieldFeeOptions`), comme le rapport.
  */
 export function estimateSaleGrossYieldPct(
-  sale: {
+  sale: Partial<AuctionSale> & {
     starting_price_eur?: number | null;
     department?: string | null;
     property_type?: string | null;
@@ -143,8 +148,48 @@ export function estimateSaleGrossYieldPct(
   surface: number | null | undefined,
   rent?: RentReference | null,
 ): number | null {
-  if (!isRentApplicable(sale)) return null;
-  return estimateGrossYieldPct(sale.starting_price_eur, surface, sale.department, rent);
+  // Un type inconnu ou absent n'a de loyer de référence que si la vente a une surface (celle passée ici).
+  if (!isRentApplicable({ ...sale, app_surface_m2: sale.app_surface_m2 ?? surface })) return null;
+  return estimateGrossYieldPct(
+    sale.starting_price_eur,
+    surface,
+    sale.department,
+    rent,
+    saleYieldFeeOptions(sale),
+  );
+}
+
+/** Rendement brut à la mise à prix : valeur centrale et, quand la source donne les bornes du loyer, la fourchette. */
+export type GrossYieldRange = {
+  centralPct: number;
+  /** Rendement au bas de la fourchette de loyer ; `null` : la référence ne donne pas de borne. */
+  lowPct: number | null;
+  /** Rendement en haut de la fourchette de loyer ; `null` : idem. */
+  highPct: number | null;
+};
+
+/**
+ * Rendement brut à la mise à prix d'une vente, avec sa fourchette : le loyer de référence est remplacé par les bornes
+ * de l'intervalle de prédiction de l'ANIL (`lowPerM2`, `highPerM2`), avec les mêmes frais d'acquisition que
+ * `estimateSaleGrossYieldPct`. Rend `null` dans les mêmes cas que lui.
+ */
+export function estimateSaleGrossYieldRange(
+  sale: Parameters<typeof estimateSaleGrossYieldPct>[0],
+  surface: number | null | undefined,
+  rent?: RentReference | null,
+): GrossYieldRange | null {
+  const centralPct = estimateSaleGrossYieldPct(sale, surface, rent);
+  if (centralPct == null || !surface || !sale.starting_price_eur) return null;
+  const { totalCost } = computeAcquisitionCosts({
+    ...saleYieldFeeOptions(sale),
+    price: sale.starting_price_eur,
+    department: sale.department,
+  });
+  const at = (perM2: number | null | undefined) =>
+    perM2 != null && Number.isFinite(perM2) && perM2 > 0 && totalCost > 0
+      ? ((surface * perM2 * 12) / totalCost) * 100
+      : null;
+  return { centralPct, lowPct: at(rent?.lowPerM2), highPct: at(rent?.highPerM2) };
 }
 
 export function pricePerM2(

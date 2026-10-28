@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => ({ auth: vi.fn() }));
 vi.mock("@/hooks/use-auth", () => ({ useAuth: () => mocks.auth() }));
 vi.mock("@/lib/client-api-core", () => ({ authHeaders: vi.fn() }));
 
-import { PepiteBlock } from "./PepiteBlock";
+import { PepiteBlock, pepiteTitle } from "./PepiteBlock";
 
 const saleId = "11111111-1111-4111-8111-111111111111";
 
@@ -54,7 +54,7 @@ const open: PepitePayload = pepiteDetailPayload(
   PASSING,
   pepiteDetailView(DETAILS, "2026-11-05T09:00:00.000Z", PASSING)!,
 );
-// Un test à confirmer : la condition parle du seuil de maintien, pas du seuil d'entrée.
+// Un critère à confirmer : la condition parle du seuil de maintien, pas du seuil d'entrée.
 const openConfirm: PepitePayload = pepiteDetailPayload(
   CRITERIA,
   pepiteDetailView(DETAILS, "2026-11-05T09:00:00.000Z", CRITERIA)!,
@@ -70,19 +70,21 @@ describe("PepiteBlock", () => {
   });
 
   describe("version verrouillée (visiteur, compte Découverte non débloqué)", () => {
-    it("annonce les deux tests en tête, avec leur état en texte et en icône, et replie les vérifications", () => {
+    it("annonce les deux critères en tête, avec leur état en texte et en icône, et replie les vérifications", () => {
       render(<PepiteBlock payload={locked} saleId={saleId} />);
-      // Un test réussi (achat sous la valeur), un à confirmer (chances de l'emporter).
-      const section = screen.getByRole("region", { name: "Pépite : 1 test réussi" });
+      // Un critère rempli (coût d'achat sous la valeur), un à confirmer (chances de l'emporter).
+      const section = screen.getByRole("region", {
+        name: "Pépite : 1 critère rempli sur 2, 1 à confirmer",
+      });
       expect(section.id).toBe("pepite");
       expect(section.textContent).not.toMatch(/critères réunis/);
-      const tests = within(screen.getByRole("list", { name: "Tests de la pépite" })).getAllByRole(
-        "listitem",
-      );
+      const tests = within(
+        screen.getByRole("list", { name: "Critères de la pépite" }),
+      ).getAllByRole("listitem");
       expect(tests).toHaveLength(2);
       // Réussi : icône + texte pour lecteur d'écran ; à confirmer : icône + texte visible.
-      const done = tests.find((item) => item.textContent?.includes("Achat probable"))!;
-      expect(done.textContent).toContain("Réussi");
+      const done = tests.find((item) => item.textContent?.includes("Coût d'achat estimé"))!;
+      expect(done.textContent).toContain("Rempli");
       expect(done.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
       const toConfirm = tests.find((item) => item.textContent?.includes("Chances de l'emporter"))!;
       expect(toConfirm.textContent).toContain("À confirmer");
@@ -90,7 +92,7 @@ describe("PepiteBlock", () => {
       expect(toConfirm.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
 
       // Le reste tient en une ligne dépliable.
-      const summary = screen.getByText("Vérifications de fiabilité réussies (3)");
+      const summary = screen.getByText("Vérifications de fiabilité remplies (3 sur 3)");
       const details = summary.closest("details")!;
       expect(details.open).toBe(false);
       expect(within(details).getAllByRole("listitem")).toHaveLength(3);
@@ -98,7 +100,7 @@ describe("PepiteBlock", () => {
       expect(section.textContent).not.toMatch(/Test [BC]|P10|effectif|porte publique|\bIA\b/);
     });
 
-    it("sans aucun test réussi, le titre le dit au lieu de compter à zéro", () => {
+    it("sans aucun critère rempli, le titre le dit au lieu de compter à zéro", () => {
       render(
         <PepiteBlock
           payload={pepiteCriteriaPayload(
@@ -107,17 +109,30 @@ describe("PepiteBlock", () => {
           saleId={saleId}
         />,
       );
-      expect(screen.getByRole("region", { name: "Pépite : tests à confirmer" })).toBeTruthy();
+      expect(screen.getByRole("region", { name: "Pépite : critères à confirmer" })).toBeTruthy();
     });
 
     it("n'affiche aucun montant, aucune valeur, et aucun flou CSS", () => {
       const { container } = render(<PepiteBlock payload={locked} saleId={saleId} />);
       expect(container.textContent).not.toMatch(/€|\b\d{2,3}[\s\u00a0\u202f]\d{3}\b/);
       expect(container.textContent).not.toMatch(
-        /Prix probable|fourchette|Voir avec mes hypothèses/,
+        /Prix de référence|fourchette|Voir avec mes hypothèses/,
       );
       expect(container.innerHTML).not.toMatch(/blur|filter|backdrop/);
       expect(screen.queryByText(/Utile/)).toBeNull();
+    });
+
+    it("dit au visiteur sans compte que le montant est réservé aux comptes, sans parler de déblocage", () => {
+      render(
+        <PepiteBlock
+          payload={locked}
+          saleId={saleId}
+          visitor
+          lockedAction={<a href="#compte">Créez un compte gratuit</a>}
+        />,
+      );
+      expect(screen.getByText("Montant et détail réservés aux comptes")).toBeTruthy();
+      expect(document.body.textContent).not.toContain("débloquez cette vente");
     });
 
     it("pose la ligne avec cadenas qui renvoie au déblocage, et la mention de la méthode", () => {
@@ -162,14 +177,15 @@ describe("PepiteBlock", () => {
   });
 
   describe("version ouverte (Analyse, vente débloquée)", () => {
-    it("écrit la condition, le plafond de référence, le prix probable et sa réserve", () => {
+    it("écrit la condition, le plafond de référence, le prix de référence et sa réserve", () => {
       render(<PepiteBlock payload={open} saleId={saleId} />);
       const text = document.body.textContent ?? "";
-      expect(text).toContain("Au moins 70 % des ventes comparables passées du tribunal");
-      expect(text).toContain("7 ventes comparables sur 10 adjugées sous ce plafond");
+      expect(text).toContain(
+        "Sur les ventes comparables passées du tribunal, complétées par la tendance nationale, 78 % ont été adjugées sous l'enchère plafond estimée. Le critère est rempli à partir de 70 %.",
+      );
       expect(text).toMatch(/Enchère plafond estimée : 118\s000\s€ \(hypothèses par défaut/u);
       expect(text).toMatch(
-        /Prix probable : environ 90\s000\s€ \(fourchette 75\s000\s€ – 110\s000\s€\)/u,
+        /Prix de référence : environ 90\s000\s€ \(fourchette 75\s000\s€ – 110\s000\s€\)/u,
       );
       expect(text).toContain(
         "Repère statistique tiré de 40 ventes comparables passées du tribunal",
@@ -185,12 +201,11 @@ describe("PepiteBlock", () => {
       ).toBe("#calculation");
     });
 
-    it("énonce le seuil de maintien, sans affirmer le seuil d'entrée, quand un test est à confirmer", () => {
+    it("énonce le seuil de maintien à côté du seuil d'entrée quand un critère est à confirmer", () => {
       render(<PepiteBlock payload={openConfirm} saleId={saleId} />);
       const text = document.body.textContent ?? "";
-      expect(text).toContain("Au moins 65 % des ventes comparables");
-      expect(text).toContain("seuil de maintien");
-      expect(text).not.toContain("Au moins 70 %");
+      expect(text).toContain("Le critère est rempli à partir de 70 % ;");
+      expect(text).toContain("la mention est maintenue jusqu'à 65 %");
     });
 
     it("montre les deux plafonds quand celui de l'utilisateur diffère", () => {
@@ -215,7 +230,7 @@ describe("PepiteBlock", () => {
       expect(screen.getByRole("button", { name: "Pas pertinent" })).toBeTruthy();
     });
 
-    it("vente interactive : « offre plafond » et prix de réserve inconnu, pas de prix probable", () => {
+    it("vente interactive : « offre plafond » et prix de réserve inconnu, pas de prix de référence", () => {
       const interactive = pepiteDetailPayload(
         CRITERIA,
         pepiteDetailView(
@@ -233,7 +248,7 @@ describe("PepiteBlock", () => {
       expect(text).toMatch(/Offre plafond estimée : 70\s000\s€/u);
       expect(text).toContain("Première offre possible : 40");
       expect(text).toContain("Prix de réserve du vendeur inconnu");
-      expect(text).not.toContain("Prix probable");
+      expect(text).not.toContain("Prix de référence");
     });
 
     it("n'a pas de défaut d'accessibilité", async () => {
@@ -254,11 +269,14 @@ describe("PepiteBlock : contrôle du risque d'inondation (règle v2)", () => {
   const withFlood = (verdict: string, observedAt: string | null = "2026-11-05T09:00:00.000Z") =>
     pepiteCriteriaPayload(PASSING, pepiteFloodView({ flood: { verdict, observedAt } }));
 
-  it("aucun risque élevé identifié : coche, source avec lien, cartes consultées repliées, mise en garde", () => {
+  it("hors des zones testées : phrase factuelle, icône neutre sans coche, source avec lien, cartes consultées repliées, mise en garde", () => {
     render(<PepiteBlock payload={withFlood("none_found")} saleId={saleId} />);
     const row = screen.getByRole("group", { name: "Risque d’inondation" });
-    expect(row.textContent).toContain("Aucun risque d’inondation élevé identifié");
-    expect(within(row).getByText("Réussi :", { exact: false })).toBeTruthy();
+    expect(row.textContent).toContain("Bien non situé dans la zone de crue fréquente");
+    expect(row.textContent).not.toContain("Aucun risque d’inondation");
+    expect(within(row).queryByText("Réussi :", { exact: false })).toBeNull();
+    expect(within(row).getByText("Information :", { exact: false })).toBeTruthy();
+    expect(row.textContent).toContain("Un plan de prévention seulement prescrit n’apparaît pas");
     const link = within(row).getByRole("link", { name: /Source : Géorisques/ });
     expect(link.getAttribute("href")).toBe("https://www.georisques.gouv.fr/");
     expect(link.getAttribute("rel")).toContain("noopener");
@@ -301,5 +319,27 @@ describe("PepiteBlock : contrôle du risque d'inondation (règle v2)", () => {
       </main>,
     );
     expect((await axe(container)).violations).toEqual([]);
+  });
+});
+
+describe("pepiteTitle", () => {
+  it.each([
+    [2, 2, "Pépite : 2 critères remplis sur 2"],
+    [1, 2, "Pépite : 1 critère rempli sur 2, 1 à confirmer"],
+    [0, 2, "Pépite : critères à confirmer"],
+    [1, 1, "Pépite : critère rempli"],
+    [0, 1, "Pépite : critère à confirmer"],
+    [0, 0, "Pépite : critère à confirmer"],
+  ])("%i rempli(s) sur %i", (filled, total, expected) => {
+    expect(pepiteTitle(filled, total)).toBe(expected);
+  });
+
+  it("en vente notariale, un seul critère s'applique : pas de « 1 sur 1 »", () => {
+    const notarial = pepiteCriteriaPayload(
+      pepiteCriteriaViews(["pass:test_c_cost"], [], "notary_auction"),
+    );
+    render(<PepiteBlock payload={notarial} saleId={saleId} />);
+    expect(screen.getByRole("region", { name: "Pépite : critère rempli" })).toBeTruthy();
+    cleanup();
   });
 });

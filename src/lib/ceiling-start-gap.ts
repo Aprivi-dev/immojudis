@@ -23,7 +23,7 @@ export type CeilingStartGapTerms = {
   ceilingTerm: string;
   /** Le prix de départ, sans article : « mise à prix », « première offre possible ». */
   referencePriceTerm: string;
-  /** Ce que le plafond permet : « enchérir » (enchères) ou « offrir » (offres). */
+  /** Ce que le plafond permet : « enchérir » (enchères) ou « faire une offre allant » (offres). */
   bidVerb: string;
 };
 
@@ -36,7 +36,7 @@ const TRIBUNAL_START_GAP_TERMS: CeilingStartGapTerms = {
 /**
  * `null` quand la comparaison n'a pas de sens : plafond non chiffré ou inatteignable, mise à prix
  * absente ou nulle. `terms` : le vocabulaire du régime de la vente (« offre plafond », « première
- * offre possible », « offrir » pour une vente par offres).
+ * offre possible », « faire une offre allant » pour une vente par offres).
  */
 export function describeCeilingStartGap(
   plan: Pick<CeilingPlan, "available" | "reachable" | "maxBid" | "startingPriceGap">,

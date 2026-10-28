@@ -10,6 +10,10 @@ import {
   subscribeGoogleAnalyticsState,
 } from "@/lib/google-analytics-state";
 
+/** Texte du bandeau sur téléphone (une phrase) ; le texte complet s'affiche dès `sm`. */
+const MOBILE_TEXT =
+  "Si vous acceptez, Google Analytics dépose des cookies de mesure d’audience, sans publicité ; refuser ne change rien à votre navigation.";
+
 /**
  * Demande d'accord aux cookies de Google Analytics, tant qu'aucun choix n'est en cours de validité.
  * Refuser est aussi simple qu'accepter (deux boutons identiques) et le bandeau ne bloque pas la
@@ -90,7 +94,18 @@ export function CookieConsentBanner() {
           <h2 id={headingId} className="font-sans font-semibold text-foreground">
             Cookies de mesure d’audience
           </h2>
-          <p className="mt-1">
+          {/* Sur téléphone, une phrase et « En savoir plus » : un bandeau plus court ne devient pas
+              le plus grand élément du premier écran (LCP). Le texte complet reste dès `sm`. */}
+          <p className="mt-1 sm:hidden">
+            {MOBILE_TEXT}{" "}
+            <Link
+              href="/privacy#cookies"
+              className="font-semibold text-gold-text underline underline-offset-4"
+            >
+              En savoir plus
+            </Link>
+          </p>
+          <p className="mt-1 hidden sm:block">
             Nous mesurons déjà la fréquentation sans cookie. Si vous acceptez, Google Analytics
             dépose des cookies pour nous aider à comprendre l’usage du site, sans publicité. Refuser
             ne change rien à votre navigation.{" "}

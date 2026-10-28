@@ -602,3 +602,67 @@ describe("CeilingPlanner : rendement d'un loyer ANIL", () => {
     expect(document.body.textContent).not.toMatch(/charges comprises\)/);
   });
 });
+
+describe("CeilingPlanner accessibilité", () => {
+  function renderWithChoices(market: MarketEstimate | null = estimate) {
+    const calls: CeilingUserChoices[] = [];
+    const hypotheses = buildCeilingHypotheses(sale, market, {});
+    render(
+      <CeilingPlanner
+        hypotheses={hypotheses}
+        plan={computeCeilingPlan(hypotheses)}
+        choices={{}}
+        onChoicesChange={(change) => calls.push(change({}))}
+        onReset={() => undefined}
+      />,
+    );
+    return calls;
+  }
+
+  it("n'a qu'un arrêt de Tab par groupe de radios, sur le choix coché", () => {
+    renderWithChoices();
+    for (const name of ["Votre projet", "Niveau de prudence"]) {
+      const radios = within(screen.getByRole("radiogroup", { name })).getAllByRole("radio");
+      const stops = radios.filter((radio) => radio.getAttribute("tabindex") === "0");
+      expect(stops).toHaveLength(1);
+      expect(stops[0].getAttribute("aria-checked")).toBe("true");
+    }
+  });
+
+  it("change de projet et de prudence avec les flèches, Début et Fin", () => {
+    const calls = renderWithChoices();
+    const projects = within(screen.getByRole("radiogroup", { name: "Votre projet" })).getAllByRole(
+      "radio",
+    );
+    const current = projects.findIndex((radio) => radio.getAttribute("aria-checked") === "true");
+    fireEvent.keyDown(projects[current], { key: "ArrowRight" });
+    expect(document.activeElement).toBe(projects[(current + 1) % projects.length]);
+    expect(calls.at(-1)?.project).toBeTruthy();
+
+    const profiles = within(
+      screen.getByRole("radiogroup", { name: "Niveau de prudence" }),
+    ).getAllByRole("radio");
+    fireEvent.keyDown(profiles[0], { key: "End" });
+    expect(document.activeElement).toBe(profiles[profiles.length - 1]);
+    fireEvent.keyDown(profiles[profiles.length - 1], { key: "ArrowRight" });
+    expect(document.activeElement).toBe(profiles[0]);
+    expect(calls.at(-1)?.customMarginPct).toBeNull();
+  });
+
+  it("relie le bouton des hypothèses à son panneau", () => {
+    renderWithChoices();
+    const toggle = screen.getByRole("button", { name: "Modifier les hypothèses" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(toggle);
+    const open = screen.getByRole("button", { name: "Masquer les hypothèses" });
+    expect(open.getAttribute("aria-expanded")).toBe("true");
+    expect(document.getElementById(open.getAttribute("aria-controls") ?? "")).not.toBeNull();
+  });
+
+  it("n'offre pas « Masquer les hypothèses » quand le plan est indisponible", () => {
+    renderWithChoices(null);
+    expect(screen.queryByRole("button", { name: /hypothèses$/ })).toBeNull();
+    // Les champs restent ouverts pour compléter le calcul.
+    expect(screen.getByLabelText(/^Prix au m² du bien/)).toBeTruthy();
+  });
+});

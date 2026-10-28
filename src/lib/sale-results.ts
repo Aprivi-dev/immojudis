@@ -463,6 +463,7 @@ export async function runSaleResults({
         message,
         idempotencyKey: `immojudis-sale-results-${userId}-${key}`,
         fetchImpl,
+        category: "result",
       });
       stage = "journal_failed";
       await store.markSent(ids, { messageId: sent.id, at: new Date() });

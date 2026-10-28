@@ -5,4 +5,5 @@
 # Pillow: docling 2.142.1 (docling-core 2.104.0) accepts pillow 13, which fixes the pillow 12
 # advisories (TIFF, GIF, PPM, EPS decoders, PDF append). The CI audits this file without any
 # exception (.github/workflows/ci.yml). The production workflows do not install Docling.
+# The hashed lock is requirements-docling.lock (scripts/compile_locks.sh), constrained by requirements.lock.
 docling==2.142.1

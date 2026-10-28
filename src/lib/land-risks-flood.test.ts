@@ -343,11 +343,91 @@ describe("redirections refusées (TRI, GASPAR, PM1)", () => {
   });
 });
 
+describe("codes de diagnostic des appels d'inondation (panne depuis Vercel)", () => {
+  const point = { longitude: 0.689, latitude: 47.399 };
+
+  it("un 200 illisible (page HTML d'un pare-feu) est `invalid_json`, jamais `http_200`", async () => {
+    const html = async () =>
+      new Response("<html><body>Vérification anti-robot</body></html>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      });
+    expect(await fetchTriZonage(point, { fetcher: html })).toEqual({
+      kind: "failure",
+      code: "invalid_json",
+    });
+    expect(await fetchCommuneTri("37261", { fetcher: html })).toEqual({
+      kind: "failure",
+      code: "invalid_json",
+    });
+  });
+
+  it("un 403 est `http_403` ; un 204 est une réponse vide (hors zone) ; une redirection `network_redirect`", async () => {
+    const forbidden = async () => new Response("Forbidden", { status: 403 });
+    expect(await fetchTriZonage(point, { fetcher: forbidden })).toEqual({
+      kind: "failure",
+      code: "http_403",
+    });
+    const noContent = async () => new Response(null, { status: 204 });
+    expect(await fetchTriZonage(point, { fetcher: noContent })).toEqual({
+      kind: "ok",
+      scenarios: [],
+      mapDate: null,
+    });
+    const redirect: typeof fetch = async () => {
+      throw new TypeError("fetch failed", { cause: new Error("unexpected redirect") });
+    };
+    expect(await fetchTriZonage(point, { fetcher: redirect })).toEqual({
+      kind: "failure",
+      code: "network_redirect",
+    });
+  });
+
+  it("une coupure de socket donne `network_<cause>` sans message ni coordonnée", async () => {
+    const cut: typeof fetch = async () => {
+      throw new TypeError("fetch failed", {
+        cause: Object.assign(new Error("other side closed 0.689,47.399"), {
+          code: "UND_ERR_SOCKET",
+        }),
+      });
+    };
+    const result = await fetchTriZonage(point, { fetcher: cut });
+    expect(result).toEqual({ kind: "failure", code: "network_und_err_socket" });
+    expect(JSON.stringify(result)).not.toMatch(/0\.689|47\.399/);
+  });
+
+  it("chaque appel porte le User-Agent identifiable d'Immojudis (TRI et commune)", async () => {
+    const { calls, fetcher } = recorder(() => json(NOTHING));
+    await fetchTriZonage(point, { fetcher });
+    await fetchCommuneTri("37261", { fetcher });
+    expect(calls).toHaveLength(2);
+    for (const call of calls) {
+      expect(call.headers["User-Agent"]).toBe(FLOOD_API_USER_AGENT);
+      expect(call.headers["User-Agent"]).toContain("immojudis.com");
+    }
+  });
+});
+
 describe("isoDateFromFrench", () => {
   it("lit jj/mm/aaaa", () => {
     expect(isoDateFromFrench("18/12/2013")).toBe("2013-12-18");
     expect(isoDateFromFrench("2013-12-18")).toBeNull();
     expect(isoDateFromFrench(null)).toBeNull();
+  });
+
+  it("refuse une date qui n'existe pas (la colonne `date` de la base la refuserait, 22008)", () => {
+    expect(isoDateFromFrench("31/02/2013")).toBeNull();
+    expect(isoDateFromFrench("29/02/2013")).toBeNull();
+    expect(isoDateFromFrench("31/04/2013")).toBeNull();
+    expect(isoDateFromFrench("00/12/2013")).toBeNull();
+    expect(isoDateFromFrench("18/13/2013")).toBeNull();
+    expect(isoDateFromFrench("18/00/2013")).toBeNull();
+    expect(isoDateFromFrench("18/12/0000")).toBeNull();
+  });
+
+  it("accepte le 29 février d'une année bissextile et le dernier jour d'un mois", () => {
+    expect(isoDateFromFrench("29/02/2016")).toBe("2016-02-29");
+    expect(isoDateFromFrench("31/12/2013")).toBe("2013-12-31");
   });
 });
 

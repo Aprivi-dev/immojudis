@@ -1,3 +1,4 @@
+import { ANALYSIS_TRIAL_DAYS } from "@/lib/analysis-offer";
 import { FLOOD_EXPOSED_SHORT } from "@/lib/pepite-flood-copy";
 import {
   getAiReviewFieldResult,
@@ -66,7 +67,7 @@ export const LISTING_DETAIL_LINE = "Voir le détail";
  * Les règles de l'essai ne sont écrites qu'une fois, dans la bannière repliable au-dessus de la liste
  * (`LaunchOfferListBanner`) : répétées sur 24 cartes, elles noyaient la liste.
  */
-export const LISTING_LAUNCH_OFFER_LINE = "Inscription gratuite : 7 jours d’offre Analyse";
+export const LISTING_LAUNCH_OFFER_LINE = `Inscription gratuite : ${ANALYSIS_TRIAL_DAYS} jours d’offre Analyse`;
 
 /** Mention d'une cession domaniale dont la source ne publie aucun prix. */
 export const STATE_PRICE_NOT_PUBLISHED = "Prix non publié";

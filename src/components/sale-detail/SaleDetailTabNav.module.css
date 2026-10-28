@@ -103,6 +103,15 @@
   }
 }
 
+/* Contraste élevé : le soulignement transparent devient visible sur les cinq onglets, seul l'actif
+   prend la couleur de sélection. */
+@media (forced-colors: active) {
+  .active,
+  .active:hover {
+    border-bottom-color: Highlight;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .tab {
     transition: none;

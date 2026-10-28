@@ -411,7 +411,7 @@ def _candidate_lock_query(urls, postal_codes, hashes, canonical_ids, listing_ids
         params.append(_LISTING_LOOKUP_ROWS_PER_ID * len(listing_ids))
     sql = f"""select s.id from public.auction_sales s
         where s.id in ({indexed}{listing_branch})
-        order by s.id for update"""
+        order by s.id for no key update"""
     return sql, tuple(params)
 
 

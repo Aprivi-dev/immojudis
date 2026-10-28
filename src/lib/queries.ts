@@ -586,6 +586,10 @@ const SALE_MAP_POINT_COLUMNS = [
   "sale_date",
   "sale_venue_type",
   "sale_verification_status",
+  // Précision et signalements de position : un centre de commune ou un point douteux se dessine
+  // en pointillé (voir `isApproximatePosition`). Exposés par les vues de la fiche et « découverte ».
+  "location_precision",
+  "quality_flags",
 ].join(",");
 const MAP_POINT_PAGE_SIZE = 1000;
 /** Garde-fou : le catalogue entier (quelques milliers de ventes) tient largement dessous. */

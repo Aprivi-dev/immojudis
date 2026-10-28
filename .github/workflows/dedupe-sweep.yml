@@ -24,7 +24,7 @@ concurrency:
 jobs:
   sweep:
     name: Merge and delete duplicate sales
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Évalué avant l'environnement : le workflow n'écrit en production que depuis main, jamais depuis une branche.
     if: github.ref == 'refs/heads/main'
     # Writes to the production database with the service_role key: same deployment rules as

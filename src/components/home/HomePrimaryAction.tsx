@@ -4,13 +4,14 @@ import Link from "next/link";
 import { useAuth } from "@/hooks/use-auth";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
 import { ANALYSIS_TRIAL_DAYS } from "@/lib/analysis-offer";
+import { HOME_TRIAL_NOTE } from "@/lib/launch-offer";
 import { loginPathWithRedirect } from "@/lib/navigation";
 import { FREE_ACCESS_LINE } from "@/lib/sale-unlocks";
 import { ArrowRight, ShieldCheck } from "./HomeIcons";
 import styles from "./HomePage.module.css";
 
-/** Sous le bouton d'inscription, pendant l'essai à l'inscription. */
-export const HOME_TRIAL_NOTE = `${ANALYSIS_TRIAL_DAYS} jours d’accès complet à l’offre Analyse, sans carte bancaire.`;
+// Définie dans `@/lib/launch-offer` (la page de l'annonce exemple la lit sans ce composant client).
+export { HOME_TRIAL_NOTE };
 
 /**
  * L'action principale de l'accueil, la même en haut et en bas de page : pour un visiteur, créer son

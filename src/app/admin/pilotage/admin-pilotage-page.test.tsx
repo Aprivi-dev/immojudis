@@ -171,7 +171,7 @@ describe("page admin Pilotage", () => {
     // calendarExports vaut 0 : masqué comme les autres valeurs inférieures à 5.
     expect(cells("Exports agenda (.ics)")[0]).toBe(`${MASKED}${MASKED} comptes`);
     expect(cells("dont déblocages du mois")[0]).toBe(`${MASKED}${MASKED} comptes`);
-    expect(cells("Plafonds d’enchère calculés")[0]).toBe("1421 comptes");
+    expect(cells("Fiches avec valeur de référence servie")[0]).toBe("1421 comptes");
     expect(screen.queryByText(/^[0-4]$/)).toBeNull();
   });
 
@@ -275,7 +275,7 @@ describe("page admin Pilotage", () => {
       "Comptes actifs (au moins une connexion)",
       "Déblocages de ventes",
       "Quotas atteints",
-      "Plafonds d’enchère calculés",
+      "Fiches avec valeur de référence servie",
       "Exports agenda (.ics)",
       "Clics d’email",
       "Alertes créées",
@@ -544,6 +544,90 @@ describe("page admin Pilotage", () => {
 
       await screen.findByRole("heading", { name: "Retours sur les signaux d’une vente" });
       expect(new Set(Object.values(lines("Points à vérifier")))).toEqual(new Set([NOT_MEASURED]));
+    });
+  });
+
+  describe("rule versions of the pepite feedback", () => {
+    it("writes the feedbacks per rule version under the pepite block, masked under 5", async () => {
+      const base = {
+        total: 10,
+        useful: 4,
+        notRelevant: 6,
+        accounts: 6,
+        reasons: { amount_too_high: 4, criterion_wrong: 3, not_interesting: 2 },
+      };
+      const empty = {
+        total: 0,
+        useful: 0,
+        notRelevant: 0,
+        accounts: 0,
+        reasons: {},
+        ruleVersions: {},
+      };
+      mocks.fetchPilotage.mockResolvedValue({
+        ...data,
+        signalFeedback: {
+          generatedAt: "2026-11-10T12:00:00Z",
+          windowDays: 90,
+          signals: {
+            market_gap_band: empty,
+            points_to_verify: empty,
+            pepite: { ...base, ruleVersions: { "pepite-v1": 8, "pepite-v2": 2 } },
+          },
+        },
+      });
+      renderPage();
+
+      const line = await screen.findByTestId("pepite-rule-versions");
+      expect(line.textContent).toBe(`Par version de la règle : pepite-v1 8 · pepite-v2 ${MASKED}`);
+    });
+
+    it("shows no version line when none is reported", async () => {
+      mocks.fetchPilotage.mockResolvedValue({
+        ...data,
+        signalFeedback: unavailableSaleSignalFeedback(),
+      });
+      renderPage();
+
+      await screen.findByRole("heading", { name: "Retours sur les signaux d’une vente" });
+      expect(screen.queryByTestId("pepite-rule-versions")).toBeNull();
+    });
+  });
+
+  describe("carte « Questionnaire de la liste d’attente »", () => {
+    const survey = (overrides: Record<string, unknown> = {}) => ({
+      generatedAt: "2026-11-10T12:00:00Z",
+      answered: 14,
+      profiles: { particulier: 8, marchand_de_biens: 3, avocat: 1, autre: 0, unanswered: 2 },
+      priceTooExpensive: { answers: 12, medianEur: 120 },
+      priceCheap: { answers: 6, medianEur: null },
+      interviewAccepted: 4,
+      minMedianAnswers: 10,
+      ...overrides,
+    });
+    const line = (label: string) => screen.getByText(label).nextElementSibling?.textContent;
+
+    it("shows the profiles, the medians (withheld under 10 answers) and the interviews accepted", async () => {
+      mocks.fetchPilotage.mockResolvedValue({ ...data, offerOpeningSurvey: survey() });
+      renderPage();
+
+      await screen.findByRole("heading", { name: "Questionnaire de la liste d’attente" });
+      expect(line("Réponses au questionnaire")).toBe("14");
+      expect(line("Particulier")).toBe("8");
+      expect(line("Marchand de biens")).toBe(MASKED);
+      expect(line("Médiane du prix jugé trop cher")).toBe("120 €");
+      expect(line("Médiane du prix jugé bon marché")).toBe("moins de 10 réponses");
+      expect(line("Ont accepté un entretien")).toBe(MASKED);
+    });
+
+    it("says « non mesuré » without the aggregate, and warns that the prices are declarative", async () => {
+      mocks.fetchPilotage.mockResolvedValue(data);
+      renderPage();
+
+      await screen.findByRole("heading", { name: "Questionnaire de la liste d’attente" });
+      expect(line("Réponses au questionnaire")).toBe(NOT_MEASURED);
+      expect(line("Médiane du prix jugé trop cher")).toBe(NOT_MEASURED);
+      expect(document.body.textContent).toContain("ne mesurent pas une intention d’achat");
     });
   });
 

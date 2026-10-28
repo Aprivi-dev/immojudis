@@ -14,6 +14,7 @@ PAIRS = [
     ("requirements.txt", "requirements.lock"),
     ("requirements-dev.txt", "requirements-dev.lock"),
     ("requirements-valuation.txt", "requirements-valuation.lock"),
+    ("requirements-docling.txt", "requirements-docling.lock"),
 ]
 
 _PIN = re.compile(r"^([A-Za-z0-9_.\-]+)(?:\[[^\]]*\])?==([^\s;#\\]+)")
@@ -91,6 +92,16 @@ def test_dev_and_valuation_locks_extend_the_runtime_lock_without_drifting() -> N
     for lock in ("requirements-dev.lock", "requirements-valuation.lock"):
         extended = _lock_entries(ROOT / lock)
         assert {name: runtime[name][0] for name in runtime} == {name: extended[name][0] for name in runtime}, lock
+
+
+def test_docling_lock_keeps_the_runtime_versions_of_the_packages_they_share() -> None:
+    runtime = _lock_entries(ROOT / "requirements.lock")
+    docling = _lock_entries(ROOT / "requirements-docling.lock")
+
+    assert "docling" in docling
+    shared = runtime.keys() & docling.keys()
+    assert shared, "the two locks share no package"
+    assert {name: (runtime[name][0], docling[name][0]) for name in shared if runtime[name][0] != docling[name][0]} == {}
 
 
 def test_collector_and_pipeline_use_the_same_pydantic() -> None:

@@ -1,10 +1,10 @@
 .root {
-  --stats-navy: var(--brand-navy, var(--brand-navy));
-  --stats-gold: var(--gold-soft, var(--gold-soft));
+  --stats-navy: var(--brand-navy);
+  --stats-gold: var(--gold-soft);
   --stats-warm: var(--surface);
   --stats-line: rgb(19 34 56 / 13%);
   --stats-muted: rgb(19 34 56 / 67%);
-  scroll-margin-top: 9rem;
+  scroll-margin-top: 8px;
   background: var(--stats-warm);
   color: var(--stats-navy);
 }
@@ -46,7 +46,7 @@
 .metricLabel {
   margin: 0;
   color: var(--stats-gold);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 750;
   letter-spacing: 0.13em;
   line-height: 1.35;
@@ -181,7 +181,7 @@
 }
 
 .section {
-  scroll-margin-top: 9rem;
+  scroll-margin-top: 8px;
   padding-top: 42px;
 }
 
@@ -214,7 +214,7 @@
   border-radius: 999px;
   background: rgb(201 141 69 / 9%);
   color: var(--stats-gold);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 750;
   line-height: 1.2;
   padding: 7px 10px;
@@ -335,18 +335,29 @@
 .progressTrack {
   position: relative;
   width: 100%;
-  height: 7px;
+  height: 8px;
   overflow: hidden;
   border-radius: 999px;
-  background: rgb(19 34 56 / 9%);
+  /* Piste à 18 % de marine (la référence à 100 % se voit) et remplissage plein : l'ancien fond à 9 %
+     tenait à 1,2:1 et le bout du dégradé à 2,9:1 (WCAG 1.4.11). */
+  background: rgb(19 34 56 / 18%);
 }
 
 .progressFill {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--stats-gold), var(--gold));
+  background: var(--stats-gold);
   transition: width 220ms ease;
+}
+
+/* Intervalle de Wilson de la part : un trait foncé, de la borne basse à la borne haute. */
+.progressInterval {
+  position: absolute;
+  top: 50%;
+  height: 2px;
+  transform: translateY(-50%);
+  background: var(--stats-navy);
 }
 
 .emptyData {
@@ -356,7 +367,7 @@
 .progressCaption {
   margin: 14px 0 0;
   color: var(--stats-muted);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.45;
 }
 
@@ -445,7 +456,7 @@
 .metricLabel {
   display: block;
   color: var(--stats-muted);
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.08em;
 }
 
@@ -718,7 +729,7 @@
 .lawyerRowHeader {
   background: var(--stats-warm);
   color: var(--stats-muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 750;
   letter-spacing: 0.08em;
   text-transform: uppercase;

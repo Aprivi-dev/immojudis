@@ -26,7 +26,7 @@ vi.mock("stripe", () => ({
   },
 }));
 vi.mock("@/lib/email-alerts", () => ({
-  resolveEmailAlertDeliveryConfig: mocks.resolveConfig,
+  resolveTransactionalEmailConfig: mocks.resolveConfig,
   sendResendEmail: mocks.sendResendEmail,
 }));
 vi.mock("@/lib/commercial-acceptance", () => ({

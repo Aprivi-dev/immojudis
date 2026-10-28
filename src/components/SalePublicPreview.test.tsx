@@ -18,10 +18,15 @@ import { FREE_ACCESS_LINE } from "@/lib/sale-unlocks";
 import { publicSaleVenueCopy, SalePublicPreview } from "./SalePublicPreview";
 import { pepiteCriteriaPayload, pepiteCriteriaViews } from "@/lib/sale-pepite-view";
 
-const pepiteMocks = vi.hoisted(() => ({ pepite: vi.fn() }));
+const pepiteMocks = vi.hoisted(() => ({ pepite: vi.fn(), status: null as string | null }));
 const dynamicLoads = vi.hoisted((): Promise<unknown>[] => []);
 vi.mock("@/hooks/use-sale-pepite", () => ({
   useSalePepite: (args: unknown) => pepiteMocks.pepite(args),
+  // Le contenu (`pepiteMocks.pepite`) et, quand il manque, l'état de la lecture (`pepiteMocks.status`).
+  useSalePepiteState: (args: unknown) => {
+    const payload = pepiteMocks.pepite(args);
+    return { payload, status: payload ? "ready" : (pepiteMocks.status ?? "idle") };
+  },
 }));
 vi.mock("next/dynamic", () => ({
   default: (loader: () => Promise<React.ComponentType<Record<string, unknown>>>) => {
@@ -72,7 +77,8 @@ describe("SalePublicPreview", () => {
     );
     const intro = (view: typeof closed) =>
       view.container.querySelector("[class*=tierFree]")?.textContent ?? "";
-    expect(intro(closed)).toContain("3 déblocages de ventes");
+    expect(intro(closed)).toContain("3 déblocages par mois");
+    expect(intro(closed)).not.toContain("déblocages de ventes");
     expect(intro(closed)).toContain("l’enchère plafond, la lecture des pièces");
     expect(intro(closed)).not.toContain("statistiques du tribunal");
     closed.unmount();
@@ -657,9 +663,7 @@ describe("SalePublicPreview", () => {
     const spoken = rows.map((row) => row.querySelector(".sr-only")?.textContent);
     expect(spoken[0]).toBe("Valeur masquée, visible avec un compte gratuit");
     expect(spoken[1]).toBe("Valeur masquée, visible avec un compte gratuit");
-    expect(spoken[2]).toBe(
-      "Valeur masquée, visible avec l’offre Analyse, ou en débloquant la vente",
-    );
+    expect(spoken[2]).toBe("Valeur masquée, visible avec l’offre Analyse, ou avec un déblocage");
     expect(spoken[3]).toBe("Valeur masquée, visible avec l’offre Analyse");
     // La barre de remplacement reste un décor : jamais lue, et sans aucun chiffre.
     for (const row of rows) {
@@ -863,6 +867,23 @@ describe("SalePublicPreview", () => {
     expect(screen.queryByRole("button", { name: "Ajouter à mon agenda" })).toBeNull();
   });
 
+  it("écrit « Date de la vente : à confirmer » pour une vente notariale sans date, et pas ailleurs", () => {
+    const notary = renderPreview({ sale_venue_type: "notary", sale_date: null });
+    const fact = screen.getByTestId("sale-date-to-confirm");
+    expect(fact.parentElement?.textContent).toBe("Date de la venteÀ confirmer");
+    notary.unmount();
+
+    const dated = renderPreview({
+      sale_venue_type: "notary",
+      sale_date: "2099-01-20T08:30:00+00:00",
+    });
+    expect(screen.queryByTestId("sale-date-to-confirm")).toBeNull();
+    dated.unmount();
+
+    renderPreview({ sale_venue_type: "tribunal", sale_date: null });
+    expect(screen.queryByTestId("sale-date-to-confirm")).toBeNull();
+  });
+
   it("has no structural accessibility violations", async () => {
     const { container } = renderPreview({
       sale_venue_type: "state",
@@ -978,7 +999,13 @@ describe("essai gratuit à l'inscription sur la fiche publique", () => {
   } as AuctionSale;
 
   function storeWith(state: LaunchOfferState): LaunchOfferStore {
-    return { getSnapshot: () => state, subscribe: () => () => {}, ensure: () => {} };
+    return {
+      getSnapshot: () => state,
+      // Le serveur ne lit pas l'état dans ces tests : « pas encore lu », comme un fournisseur sans valeur initiale.
+      getServerSnapshot: () => ({ active: false, pending: true }),
+      subscribe: () => () => {},
+      ensure: () => {},
+    };
   }
   function withOffer(state: LaunchOfferState) {
     return (
@@ -1018,7 +1045,9 @@ describe("essai gratuit à l'inscription sur la fiche publique", () => {
   it("rendu serveur : l'état est inconnu, le HTML ne promet ni quota ni offre", () => {
     // Le magasin annonce « offre active », mais le serveur ne lit pas l'état : il rend « inconnu ».
     const html = renderToString(withOffer({ active: true, pending: false }));
-    expect(html).not.toContain("fiches détaillées par mois");
+    // Le quota de l'étiquette d'accès (« Offre Analyse, ou 3 déblocages par mois ») dépend de l'état ;
+    // la description fixe de l'offre Découverte (« Et 3 déblocages par mois, chacun ouvrant… ») n'en dépend pas.
+    expect(html).not.toContain("ou 3 déblocages par mois");
     expect(html).not.toContain("offre de lancement");
     expect(html).toContain("Gratuit, sans carte bancaire");
     expect(html).toContain("Selon votre compte");
@@ -1068,6 +1097,27 @@ describe("SalePublicPreview : repère « Pépite »", () => {
     expect(pepiteMocks.pepite).not.toHaveBeenCalled();
   });
 
+  it("réserve la place du bloc tant que les critères d'une pépite arrivent", async () => {
+    pepiteMocks.pepite.mockReturnValue(null);
+    pepiteMocks.status = "loading";
+    try {
+      await renderPreview({ pepite: true });
+      expect(screen.getByTestId("pepite-block-loading").className).toContain("min-h-44");
+    } finally {
+      pepiteMocks.status = null;
+    }
+    cleanup();
+    // Plus une pépite (404) : aucune place réservée, la page ne garde aucun trou.
+    pepiteMocks.pepite.mockReturnValue(null);
+    pepiteMocks.status = "absent";
+    try {
+      await renderPreview({ pepite: true });
+      expect(screen.queryByTestId("pepite-block-loading")).toBeNull();
+    } finally {
+      pepiteMocks.status = null;
+    }
+  });
+
   it("pose la pastille et « Pourquoi ? » en tête, puis le bloc verrouillé avec « Créez un compte gratuit »", async () => {
     pepiteMocks.pepite.mockReturnValue(LOCKED);
     await renderPreview({ pepite: true });
@@ -1077,12 +1127,75 @@ describe("SalePublicPreview : repère « Pépite »", () => {
     expect(pepiteMocks.pepite).toHaveBeenCalledWith(
       expect.objectContaining({ view: "criteria", known: true }),
     );
-    const block = screen.getByRole("region", { name: "Pépite : 1 test réussi" });
-    expect(block.textContent).toContain("Montant et détail : débloquez cette vente");
+    const block = screen.getByRole("region", {
+      name: "Pépite : critère rempli",
+    });
+    expect(block.textContent).toContain("Montant et détail réservés aux comptes");
+    expect(block.textContent).not.toContain("débloquez cette vente");
+    // Le visiteur sans compte lit ce que le compte gratuit lui ouvre, pas un déblocage qu'il n'a pas.
     expect(
-      within(block).getByRole("link", { name: "Créez un compte gratuit" }).getAttribute("href"),
+      within(block)
+        .getByRole("link", { name: "Créez un compte gratuit pour voir le détail du calcul" })
+        .getAttribute("href"),
     ).toMatch(/^\/login\?/);
-    expect(block.textContent).not.toMatch(/€|Prix probable|fourchette/);
+    expect(block.textContent).not.toMatch(/€|Prix de référence|fourchette/);
     expect(block.innerHTML).not.toMatch(/blur/);
+  });
+
+  describe("quand le détail ne s'affiche pas", () => {
+    afterEach(() => {
+      pepiteMocks.status = null;
+    });
+
+    it("pendant la lecture : un emplacement de hauteur fixe, et « Pourquoi ? » mène à la méthode", async () => {
+      pepiteMocks.pepite.mockReturnValue(null);
+      pepiteMocks.status = "loading";
+      await renderPreview({ pepite: true });
+      expect(screen.getByTestId("pepite-block-loading").className).toMatch(/min-h-/);
+      expect(screen.queryByRole("link", { name: "Pourquoi ?" })).toBeNull();
+      expect(document.querySelector("#pepite")).toBeNull();
+      const head = screen.getByTestId("pepite-badge").parentElement!;
+      expect(
+        within(head)
+          .getByRole("link", { name: "Comment repérons-nous les pépites ?" })
+          .getAttribute("href"),
+      ).toBe("/methode-pepites");
+    });
+
+    it("en cas de panne (503, 429, réseau) : une ligne d'erreur, jamais une ancre morte", async () => {
+      pepiteMocks.pepite.mockReturnValue(null);
+      pepiteMocks.status = "error";
+      await renderPreview({ pepite: true });
+      expect(screen.getByTestId("pepite-block-error").textContent).toContain(
+        "n’a pas pu être chargé",
+      );
+      expect(screen.queryByRole("link", { name: "Pourquoi ?" })).toBeNull();
+      expect(document.querySelector("a[href='#pepite']")).toBeNull();
+    });
+
+    it("quand le bloc est chargé : « Pourquoi ? » mène à l'ancre qui existe", async () => {
+      pepiteMocks.pepite.mockReturnValue(LOCKED);
+      await renderPreview({ pepite: true });
+      expect(screen.getByRole("link", { name: "Pourquoi ?" }).getAttribute("href")).toBe("#pepite");
+      expect(document.querySelector("#pepite")).not.toBeNull();
+    });
+  });
+
+  it("n'emploie qu'une formulation pour le déblocage : « N déblocages par mois »", async () => {
+    pepiteMocks.pepite.mockReturnValue(null);
+    render(
+      <SalePublicPreview
+        saleId="sale-1"
+        preview={{ id: "sale-1", sale_venue_type: "tribunal" } as AuctionSale}
+        returnTo="/sales"
+      />,
+    );
+    const text = document.body.textContent ?? "";
+    expect(text).toContain("3 déblocages par mois");
+    expect(text).not.toContain("en débloquant la vente");
+    expect(text).not.toContain("déblocages de ventes");
+    expect(screen.getByRole("region", { name: "L’analyse de cette vente" }).textContent).toContain(
+      "Valeur masquée, visible avec l’offre Analyse, ou avec un déblocage",
+    );
   });
 });

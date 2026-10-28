@@ -21,7 +21,7 @@
 .panelKicker {
   margin: 0;
   color: var(--gold-text, var(--gold-text));
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 750;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -58,7 +58,7 @@
   background: rgb(201 141 69 / 10%);
   color: var(--gold-text, var(--gold-text));
   padding: 7px 11px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
 }
@@ -110,7 +110,7 @@
 
 .costReference > span {
   color: var(--gold-text, var(--gold-text));
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 750;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -125,7 +125,7 @@
 .costReference p,
 .note {
   margin: 0;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.45;
 }
 
@@ -260,7 +260,7 @@
 
 .resultCard > span {
   color: rgb(19 34 56 / 66%);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 750;
   letter-spacing: 0.04em;
   line-height: 1.35;
@@ -277,7 +277,7 @@
 
 .resultCard small {
   color: rgb(19 34 56 / 62%);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.4;
 }
 

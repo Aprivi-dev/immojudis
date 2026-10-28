@@ -2,7 +2,7 @@
 
 import { PremiumFeaturePreview } from "@/components/PremiumFeaturePreview";
 import { useEffect, useMemo, useState } from "react";
-import type { MouseEvent as ReactMouseEvent } from "react";
+import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
 import ArrowLeft from "lucide-react/dist/esm/icons/arrow-left.js";
@@ -10,6 +10,7 @@ import { listingSaleStatus } from "@/lib/listing-evidence";
 import { useAuth } from "@/hooks/use-auth";
 import { salesReturnHref, salesReturnLabel } from "@/lib/navigation";
 import { DocumentReadingSection } from "@/components/sale-detail/DocumentReadingSection";
+import { PepiteViewTracker } from "@/components/sale-detail/PepiteViewTracker";
 import { SalePassagesSection } from "@/components/sale-detail/SalePassagesSection";
 import { SaleUnlockPanel } from "@/components/sale-detail/SaleUnlockPanel";
 import { pointsToVerify } from "@/lib/search/points-to-verify";
@@ -59,6 +60,9 @@ import { maxWorksAtBid } from "@/lib/bid-ceiling-engine";
 import { ceilingTermsFor, feeRegimeKeysForVenue, type FeeRegimeKey } from "@/lib/fee-regime";
 import { estimatedFeeItems } from "@/lib/bid-ceiling-engine";
 import { assessSaleCeilingInputs, computeSaleCeiling } from "@/lib/sale-ceiling";
+import { RentalMarketBlockLazy } from "@/components/sale-detail/RentalMarketBlockLazy";
+import { getSaleSurface } from "@/lib/surface";
+import type { HousingTension } from "@/lib/housing-tension";
 import type { RentReference } from "@/lib/rent-reference";
 import type { CeilingUserChoices } from "@/lib/bid-ceiling-defaults";
 import { ceilingGap, valueGapReason } from "@/lib/bid-ceiling-gaps";
@@ -181,6 +185,8 @@ type SaleDetailProps = {
   /** Choix de départ de l'enchère plafond (annonce exemple) ; ceux du visiteur passent devant. */
   defaultCeilingChoices?: CeilingUserChoices;
   adjudicationStatisticsEnabled?: boolean;
+  /** Sous la synthèse du haut de page (annonce exemple : le bouton d'inscription). */
+  summaryFooter?: ReactNode;
   /**
    * Fee regimes whose bid ceiling is open (server switch `CEILING_FEE_REGIMES_OPEN`, see
    * `parseOpenFeeRegimes`). Absent: every regime whose rules are defined (the tribunal is always open).
@@ -188,7 +194,14 @@ type SaleDetailProps = {
   openFeeRegimes?: readonly FeeRegimeKey[];
   /** Référence de loyer de la vente (carte ANIL à la commune), résolue par le serveur ; `null` : repli départemental. */
   rentReference?: RentReference | null;
+  /** Zonage « zone tendue » de la commune, lu par le serveur ; `null` : inconnu. */
+  housingTension?: HousingTension | null;
   aiReviewProjections?: readonly AiReviewProjectionReadModel[] | null;
+  /**
+   * Repère « Pépite » déjà lu par le serveur avec la fiche publique (`preview.pepite`, vrai
+   * seulement pour une pépite) : la liste de toutes les pépites n'est alors pas relue côté client.
+   */
+  pepiteKnown?: boolean;
   /** Where the account stands this month; drives the « Débloquer cette vente » panel. */
   unlockStatus?: SaleUnlockStatus | null;
   /** The sale was unlocked on this page a moment ago: the result takes the focus. */
@@ -204,9 +217,12 @@ export function AnalysisSaleDetailView({
   publicDemo = false,
   defaultCeilingChoices,
   adjudicationStatisticsEnabled = false,
+  summaryFooter,
   openFeeRegimes,
   rentReference = null,
+  housingTension = null,
   aiReviewProjections = null,
+  pepiteKnown,
 }: SaleDetailProps) {
   return (
     <SimplifiedSaleDetailView
@@ -218,9 +234,12 @@ export function AnalysisSaleDetailView({
       publicDemo={publicDemo}
       defaultCeilingChoices={defaultCeilingChoices}
       adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
+      summaryFooter={summaryFooter}
       openFeeRegimes={openFeeRegimes}
       rentReference={rentReference}
+      housingTension={housingTension}
       aiReviewProjections={aiReviewProjections}
+      pepiteKnown={pepiteKnown}
       access="analysis"
     />
   );
@@ -232,10 +251,12 @@ export function FreeSaleDetailView({
   adjudicationStatisticsEnabled = false,
   openFeeRegimes,
   rentReference = null,
+  housingTension = null,
   aiReviewProjections = null,
   unlockStatus = null,
   justUnlocked = false,
   onSaleUnlocked,
+  pepiteKnown,
 }: SaleDetailProps) {
   return (
     <SimplifiedSaleDetailView
@@ -245,10 +266,12 @@ export function FreeSaleDetailView({
       adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
       openFeeRegimes={openFeeRegimes}
       rentReference={rentReference}
+      housingTension={housingTension}
       aiReviewProjections={aiReviewProjections}
       unlockStatus={unlockStatus}
       justUnlocked={justUnlocked}
       onSaleUnlocked={onSaleUnlocked}
+      pepiteKnown={pepiteKnown}
       access="discovery"
     />
   );
@@ -261,9 +284,11 @@ export function UnlockedSaleDetailView({
   adjudicationStatisticsEnabled = false,
   openFeeRegimes,
   rentReference = null,
+  housingTension = null,
   aiReviewProjections = null,
   unlockStatus = null,
   justUnlocked = false,
+  pepiteKnown,
 }: SaleDetailProps) {
   return (
     <SimplifiedSaleDetailView
@@ -273,9 +298,11 @@ export function UnlockedSaleDetailView({
       adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
       openFeeRegimes={openFeeRegimes}
       rentReference={rentReference}
+      housingTension={housingTension}
       aiReviewProjections={aiReviewProjections}
       unlockStatus={unlockStatus}
       justUnlocked={justUnlocked}
+      pepiteKnown={pepiteKnown}
       access="unlocked"
     />
   );
@@ -294,12 +321,15 @@ function SaleDetailWorkspace({
   publicDemo = false,
   defaultCeilingChoices,
   adjudicationStatisticsEnabled = false,
+  summaryFooter,
   openFeeRegimes,
   rentReference = null,
+  housingTension = null,
   aiReviewProjections = null,
   unlockStatus = null,
   justUnlocked = false,
   onSaleUnlocked,
+  pepiteKnown,
   access,
 }: SaleDetailProps & { access: SaleDetailAccess }) {
   const [personalWorksBudget, setPersonalWorksBudget] = useState<number | null>(null);
@@ -321,6 +351,7 @@ function SaleDetailWorkspace({
     saleId: sale.id,
     view: fullData ? "detail" : "criteria",
     userKey: user?.id ?? "guest-demo",
+    known: pepiteKnown,
     enabled: !publicDemo && !authLoading,
   });
   const aiReviewQuery = useQuery({
@@ -706,6 +737,7 @@ function SaleDetailWorkspace({
                     : null
                 }
               />
+              {summaryFooter}
             </div>
           </div>
           {!publicDemo && user && access !== "analysis" ? (
@@ -771,17 +803,20 @@ function SaleDetailWorkspace({
             {activeTab === "apercu" ? (
               <>
                 {pepite ? (
-                  <PepiteBlock
-                    payload={pepite}
-                    saleId={sale.id}
-                    userCeilingEur={heroCeiling}
-                    lockedAction={
-                      <UnlockCallToAction
-                        offerLabel="Découvrir l’offre Analyse"
-                        primaryClassName="font-semibold text-gold-text underline underline-offset-4"
-                      />
-                    }
-                  />
+                  <>
+                    <PepiteViewTracker payload={pepite} saleId={sale.id} />
+                    <PepiteBlock
+                      payload={pepite}
+                      saleId={sale.id}
+                      userCeilingEur={heroCeiling}
+                      lockedAction={
+                        <UnlockCallToAction
+                          offerLabel="Découvrir l’offre Analyse"
+                          primaryClassName="font-semibold text-gold-text underline underline-offset-4"
+                        />
+                      }
+                    />
+                  </>
                 ) : null}
                 {adjudicationLine ? (
                   <p
@@ -790,6 +825,17 @@ function SaleDetailWorkspace({
                   >
                     {adjudicationLine}
                   </p>
+                ) : null}
+                {rentReference?.source.startsWith("anil_") || housingTension ? (
+                  <RentalMarketBlockLazy
+                    sale={displaySale}
+                    startingPriceEur={
+                      priceBlocked ? null : (displaySale.starting_price_eur ?? null)
+                    }
+                    surfaceM2={getSaleSurface(displaySale).value}
+                    reference={rentReference}
+                    tension={housingTension}
+                  />
                 ) : null}
                 <ListingChecks
                   sale={displaySale}
@@ -898,7 +944,7 @@ function SaleDetailWorkspace({
                     </button>
                   </div>
                 ) : null}
-                <section id="summary" className="scroll-mt-36">
+                <section id="summary" className="scroll-mt-2">
                   {valuationConflict ? (
                     <div role="alert" className={panelStyles.warning}>
                       <div>
@@ -948,7 +994,7 @@ function SaleDetailWorkspace({
                   />
                 ) : null}
                 {fullData && ceilingOpen && !valuationConflict ? (
-                  <div id="calculation" className="scroll-mt-36">
+                  <div id="calculation" className="scroll-mt-2">
                     <LaunchOfferIncludedTag className="mb-2" />
                     <CeilingPlanner
                       hypotheses={ceilingHypotheses}
@@ -1095,7 +1141,7 @@ function SaleDetailWorkspace({
 
             {activeTab === "financement" ? (
               <>
-                <div id="financing" className="scroll-mt-36">
+                <div id="financing" className="scroll-mt-2">
                   <FinancingSimulator
                     sale={displaySale}
                     aiReviewProjections={resolvedAiReviewProjections}

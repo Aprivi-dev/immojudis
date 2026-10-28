@@ -266,7 +266,7 @@ async function assertValuationBacktestAvailable(auth: SupabaseAuthContext) {
       : "decouverte";
 
   if (!featureIncluded(plan, "property.soldComparables")) {
-    throw new Error("Backtest de valorisation réservé au plan Analyse.");
+    throw new Error("Backtest de valorisation réservé à l’offre Analyse.");
   }
 }
 

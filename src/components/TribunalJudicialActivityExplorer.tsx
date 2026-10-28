@@ -23,6 +23,7 @@ import type {
   TribunalJudicialActivityResponse,
 } from "@/lib/tribunal-judicial-activity";
 import * as queryKeys from "@/lib/query-keys";
+import { TRIBUNAL_STATISTICS_RANGE_MIN_SAMPLE } from "@/lib/tribunal-publication-thresholds";
 
 const WINDOWS: TribunalJudicialActivityHistoryMonths[] = [12, 24, 36];
 
@@ -490,7 +491,8 @@ function TribunalProfile({
         <div>
           <p className="text-sm font-semibold">Affiner l’historique observé par type de bien</p>
           <p className="mt-1 text-xs text-brand-navy/65">
-            Les petits groupes restent masqués sous cinq audiences passées.
+            Les petits groupes restent masqués sous {TRIBUNAL_STATISTICS_RANGE_MIN_SAMPLE} audiences
+            passées.
           </p>
         </div>
         <label className="sm:w-72">
@@ -602,20 +604,20 @@ function TribunalProfile({
         </section>
 
         <section
-          className="border border-amber-200 bg-amber-50 p-5"
+          className="border border-warning/30 bg-warning-tint p-5"
           aria-labelledby="outcome-title"
         >
-          <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-amber-900">
+          <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-warning">
             <AlertTriangle className="h-4 w-4" aria-hidden />
             Résultats d’adjudication
           </p>
           <h3
             id="outcome-title"
-            className="mt-2 font-display text-2xl font-semibold text-amber-950"
+            className="mt-2 font-display text-2xl font-semibold text-foreground"
           >
             Issues définitives et délais de décision non publiés
           </h3>
-          <p className="mt-3 text-sm leading-relaxed text-amber-950/75">
+          <p className="mt-3 text-sm leading-relaxed text-ink-soft">
             Les prix déclarés par Licitor sont consultables dans le module Analyse ci-dessus. Ils ne
             prouvent ni la décision judiciaire définitive, ni un délai de décision. Ces indicateurs
             restent indisponibles faute d’un échantillon de décisions vérifiées.
@@ -670,7 +672,7 @@ function ExplorerSkeleton() {
 
 function ExplorerError({ onRetry }: { onRetry: () => void }) {
   return (
-    <div role="alert" className="mt-8 border border-red-200 bg-red-50 p-5 text-red-950">
+    <div role="alert" className="mt-8 border border-danger/30 bg-danger-tint p-5 text-foreground">
       <p className="font-semibold">Statistiques temporairement indisponibles</p>
       <p className="mt-2 text-sm">Aucune valeur de remplacement n’est générée.</p>
       <button type="button" onClick={onRetry} className="mt-4 text-sm font-semibold underline">
@@ -687,7 +689,7 @@ function formatCurrencyMedian(metric: TribunalJudicialActivityRangeMetric): stri
 function formatCurrencyRange(metric: TribunalJudicialActivityRangeMetric): string {
   return metric.status === "published"
     ? `Fourchette centrale ${formatCurrency(metric.p25)} – ${formatCurrency(metric.p75)}`
-    : `${metric.sampleSize} annonces · minimum requis : 5`;
+    : `${metric.sampleSize} annonces · minimum requis : ${TRIBUNAL_STATISTICS_RANGE_MIN_SAMPLE}`;
 }
 
 function formatDaysMedian(metric: TribunalJudicialActivityRangeMetric): string {
@@ -697,7 +699,7 @@ function formatDaysMedian(metric: TribunalJudicialActivityRangeMetric): string {
 function formatDaysRange(metric: TribunalJudicialActivityRangeMetric): string {
   return metric.status === "published"
     ? `Fourchette centrale ${formatNumber(metric.p25)} – ${formatNumber(metric.p75)} jours`
-    : `${metric.sampleSize} délais · minimum requis : 5`;
+    : `${metric.sampleSize} délais · minimum requis : ${TRIBUNAL_STATISTICS_RANGE_MIN_SAMPLE}`;
 }
 
 function formatPercentMetric(

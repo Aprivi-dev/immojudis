@@ -1,7 +1,6 @@
 import Link from "next/link";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import CheckCircle2 from "lucide-react/dist/esm/icons/check-circle-2.js";
-import { CloudBackgroundPreload } from "@/components/CloudBackgroundPreload";
 import { SaleTypesOverview } from "@/components/SaleTypesOverview";
 import ExternalLink from "lucide-react/dist/esm/icons/external-link.js";
 import { jsonLdString } from "@/lib/json-ld";
@@ -198,6 +197,10 @@ const LEXIQUE: Array<{ term: string; def: string }> = [
     def: "Prix de départ de la vente aux enchères. Elle ne doit pas être confondue avec la valeur réelle du bien.",
   },
   {
+    term: "Offre plafond",
+    def: "Pour une vente notariale interactive, qui fonctionne par offres et non par enchères, montant d’offre maximal à ne pas dépasser, calculé comme l’enchère plafond. Il n’y a pas de plafond estimé pour les ventes domaniales.",
+  },
+  {
     term: "Portage",
     def: "Coûts supportés tant que le bien ne sert pas ou ne rapporte rien : intérêts d’emprunt, taxe foncière, charges, assurance.",
   },
@@ -388,7 +391,6 @@ const FAQ_JSON_LD = {
 export function ResourcesPage() {
   return (
     <main id="contenu" className="liquid-page min-h-screen bg-background pb-24 text-foreground">
-      <CloudBackgroundPreload />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: jsonLdString(FAQ_JSON_LD) }}

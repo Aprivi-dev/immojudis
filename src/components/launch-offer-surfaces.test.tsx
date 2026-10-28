@@ -193,16 +193,16 @@ describe("onboarding /bienvenue", () => {
     );
   });
 
-  it("ne promet plus « 3 ventes par mois » au dernier pas pendant l'offre", () => {
+  it("ne promet plus « 3 déblocages par mois » comme acquis au dernier pas pendant l'offre", () => {
     mocks.launch = { active: true, pending: false };
     render(<InvestorOnboarding />);
     fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
     fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
     const text = document.body.textContent ?? "";
     expect(text).toContain(
-      "Pendant votre essai gratuit de 7 jours, votre compte ouvre les outils de l’offre Analyse sur toutes les ventes (contenu selon la vente). Ensuite, vous pourrez débloquer 3 ventes en détail chaque mois.",
+      "Pendant votre essai gratuit de 7 jours, votre compte ouvre les outils de l’offre Analyse sur toutes les ventes (contenu selon la vente). Ensuite, vous aurez 3 déblocages par mois.",
     );
-    expect(text).not.toContain("Chaque mois, vous pouvez débloquer");
+    expect(text).not.toContain("Avec 3 déblocages par mois");
   });
 });
 
@@ -221,7 +221,7 @@ describe("page Mon compte", () => {
     mocks.user = { id: "u1", email: "a@b.test" };
   });
 
-  it("essai gratuit : plan Analyse marqué, fin de l'essai datée, ni période payée ni portail", async () => {
+  it("essai gratuit : offre Analyse marqué, fin de l'essai datée, ni période payée ni portail", async () => {
     mocks.plan.mockResolvedValue({
       plan: {
         plan: "analyse",
@@ -262,9 +262,7 @@ describe("page Mon compte", () => {
     expect(text).toContain("Ce qui reste gratuit");
     expect(text).toContain(`${PLAN_LIMITS.decouverte.favoriteSales} favoris`);
     expect(text).toContain("1 alerte avec un email récapitulatif par semaine");
-    expect(text).toContain(
-      `${PLAN_LIMITS.decouverte.monthlyUnlocks} déblocages de ventes par mois`,
-    );
+    expect(text).toContain(`${PLAN_LIMITS.decouverte.monthlyUnlocks} déblocages par mois`);
     expect(text).toContain("« Mon dossier »");
     expect(text).toContain("Ce qui demandera l’offre Analyse");
     expect(text).toContain("le rapport PDF");

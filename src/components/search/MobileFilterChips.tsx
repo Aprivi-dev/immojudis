@@ -76,7 +76,7 @@ export function MobileFilterChips({
         <>
           <ToggleChip
             pressed={draft.belowRange}
-            label="Sous la fourchette"
+            label="Mise à prix sous le marché"
             title="Mise à prix sous la fourchette des ventes comparables"
             onToggle={() =>
               setDraft((current) => ({ ...current, belowRange: !current.belowRange }))

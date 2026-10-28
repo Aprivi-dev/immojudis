@@ -12,7 +12,7 @@ import {
 import { createUnsubscribeToken } from "@/lib/email-unsubscribe-token";
 import { asRecord, escapeHtml } from "@/lib/guards";
 import { isMissingRpcError } from "@/lib/postgrest-errors";
-import { EMAIL_COLORS } from "@/lib/email-brand";
+import { EMAIL_COLORS, EMAIL_FONT_STACK, emailBrandHeaderHtml } from "@/lib/email-brand";
 
 /**
  * Envoi de l'email d'ouverture à la liste d'attente (`offer_opening_notifications`), depuis
@@ -154,8 +154,9 @@ export function buildOfferOpeningMessage({
   ].join("\n");
   const html = `<!doctype html>
 <html lang="fr">
-  <body style="margin:0;background:${EMAIL_COLORS.surface};color:${EMAIL_COLORS.navy};font-family:Arial,sans-serif;">
+  <body style="margin:0;background:${EMAIL_COLORS.surface};color:${EMAIL_COLORS.navy};font-family:${EMAIL_FONT_STACK};">
     <div style="max-width:620px;margin:0 auto;padding:28px 18px;">
+      ${emailBrandHeaderHtml()}
       <div style="background:#fff;border:1px solid ${EMAIL_COLORS.lineWarm};border-radius:10px;padding:24px;">
         <p style="margin:0 0 12px;font-size:16px;">Bonjour,</p>
         <p style="margin:0 0 14px;color:${EMAIL_COLORS.inkStrong};line-height:1.55;">${escapeHtml(INTRO)}</p>
@@ -321,6 +322,7 @@ export async function sendOfferOpeningTest({
     message,
     idempotencyKey: `immojudis-offer-opening-test-${auth.userId}-${now.getTime()}`,
     fetchImpl,
+    category: "opening",
   });
   console.info(JSON.stringify({ scope: "admin.offer-opening-notifier", action: "test" }));
   return { sentTo: email };
@@ -453,6 +455,7 @@ export async function sendOfferOpeningBatch({
         }),
         idempotencyKey: `immojudis-offer-opening-${userId}`,
         fetchImpl,
+        category: "opening",
       });
       counts.sent += 1;
     } catch (failure) {

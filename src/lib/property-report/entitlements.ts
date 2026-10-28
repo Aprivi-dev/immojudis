@@ -26,6 +26,7 @@ export function buildPlanEntitlements(
     trialEndsAt?: string | null;
     trialEndedAt?: string | null;
     trialDenied?: boolean;
+    trialExtension?: boolean;
   } = {},
 ): PlanEntitlements {
   return {
@@ -38,6 +39,7 @@ export function buildPlanEntitlements(
     // parce que le compte est abonné ou premium), ou l'essai est fini ou refusé.
     ...(options.launchOffer ? { launchOffer: true as const } : {}),
     ...(options.launchOffer && options.trialEndsAt ? { trialEndsAt: options.trialEndsAt } : {}),
+    ...(options.launchOffer && options.trialExtension ? { trialExtension: true as const } : {}),
     ...(!options.launchOffer && options.trialEndedAt ? { trialEndedAt: options.trialEndedAt } : {}),
     ...(!options.launchOffer && options.trialDenied ? { trialDenied: true as const } : {}),
     limits,
@@ -91,7 +93,7 @@ export function featureUnlocked(access: FeatureAccess): boolean {
 
 export function emptyActiveComparableSales(): ActiveComparableSales {
   return {
-    scopeLabel: "Réservé au plan Analyse",
+    scopeLabel: "Réservé à l’offre Analyse",
     sales: [],
   };
 }
@@ -148,10 +150,10 @@ export function lockedUrbanPlanningAnalysis(): ReturnType<typeof buildUrbanPlann
     available: false,
     status: "missing",
     confidence: "low",
-    confidenceLabel: "Réservé au plan Analyse",
+    confidenceLabel: "Réservé à l’offre Analyse",
     items: [],
     missingChecks: [],
-    summary: "Fonctionnalité réservée au plan Analyse.",
+    summary: "Fonctionnalité réservée à l’offre Analyse.",
     decisionImpact: "Débloquez l'analyse pour intégrer urbanisme, permis et servitudes.",
     nextActions: [],
     limitations: [],
@@ -162,16 +164,16 @@ export function lockedStreetFacadeAnalysis(): ReturnType<typeof buildStreetFacad
   return {
     available: false,
     status: "missing",
-    label: "Réservé au plan Analyse",
+    label: "Réservé à l’offre Analyse",
     locationQuality: "missing",
     confidence: "low",
-    confidenceLabel: "Réservé au plan Analyse",
+    confidenceLabel: "Réservé à l’offre Analyse",
     addressLabel: null,
     coordinates: null,
     mapUrl: null,
     streetLevelUrl: null,
     aerial3dUrl: null,
-    summary: "Fonctionnalité réservée au plan Analyse.",
+    summary: "Fonctionnalité réservée à l’offre Analyse.",
     decisionImpact: "Débloquez l'analyse pour contrôler façade, rue et vues externes.",
     nextActions: [],
     limitations: [],
@@ -182,15 +184,15 @@ export function lockedNeighborhoodAnalysis(): ReturnType<typeof buildNeighborhoo
   return {
     available: false,
     status: "missing",
-    label: "Réservé au plan Analyse",
+    label: "Réservé à l’offre Analyse",
     confidence: "low",
-    confidenceLabel: "Réservé au plan Analyse",
+    confidenceLabel: "Réservé à l’offre Analyse",
     dimensions: [],
-    marketPositionLabel: "Réservé au plan Analyse",
-    serviceCoverageLabel: "Réservé au plan Analyse",
-    locationQualityLabel: "Réservé au plan Analyse",
+    marketPositionLabel: "Réservé à l’offre Analyse",
+    serviceCoverageLabel: "Réservé à l’offre Analyse",
+    locationQualityLabel: "Réservé à l’offre Analyse",
     signals: [],
-    summary: "Fonctionnalité réservée au plan Analyse.",
+    summary: "Fonctionnalité réservée à l’offre Analyse.",
     decisionImpact: "Débloquez l'analyse pour croiser marché, services, rue et signaux source.",
     nextActions: [],
     limitations: [],
@@ -204,10 +206,10 @@ export function lockedActiveComparablesAnalysis(): ReturnType<
     available: false,
     status: "missing",
     confidence: "low",
-    confidenceLabel: "Réservé au plan Analyse",
-    scopeLabel: "Réservé au plan Analyse",
+    confidenceLabel: "Réservé à l’offre Analyse",
+    scopeLabel: "Réservé à l’offre Analyse",
     items: [],
-    summary: "Fonctionnalité réservée au plan Analyse.",
+    summary: "Fonctionnalité réservée à l’offre Analyse.",
     decisionImpact: "Débloquez l'analyse pour comparer les biens encore en vente.",
     nextActions: [],
     limitations: [],

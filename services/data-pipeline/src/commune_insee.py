@@ -18,6 +18,9 @@ Forme posée (``raw_payload["commune"]``) :
 * ``source`` : ``geocode`` (code du résultat de géocodage accepté, ``raw_payload["geocode"]["citycode"]``) ou
   ``reference_communes`` (repli : commune retrouvée par code postal et nom, ou centre de commune posé sans réseau).
 
+* ``mismatch`` (seulement s'il est vrai) : le code du géocodage n'était ni du département ni de la ville de la vente ;
+  il a été écarté et le code vient de ``reference_communes``.
+
 Aucun appel réseau ici : le repli lit ``public.reference_communes`` par le même index mémoire que
 ``src.municipality_location`` (une commune sans ambiguïté, jamais une supposition).
 """
@@ -31,6 +34,7 @@ from typing import Any
 from src.models import AuctionSale
 from src.municipality_location import PROVIDER as MUNICIPALITY_PROVIDER
 from src.municipality_location import find_commune
+from src.reference_data.names import arrondissement_number, department_from_insee
 
 LOGGER = logging.getLogger(__name__)
 
@@ -45,6 +49,8 @@ _ARRONDISSEMENTS = (
 # Code postal -> arrondissement, pour le repli par code postal (Paris 750NN, Marseille 130NN, Lyon 6900N).
 _POSTAL_ARRONDISSEMENTS = (
     (re.compile(r"^750(0[1-9]|1[0-9]|20)$"), "75056", lambda m: f"751{m.group(1)}"),
+    # 75116 : second code postal du 16e arrondissement (le web le gère de même, sale-commune-code.ts).
+    (re.compile(r"^75116$"), "75056", lambda m: "75116"),
     (re.compile(r"^130(0[1-9]|1[0-6])$"), "13055", lambda m: f"132{m.group(1)}"),
     (re.compile(r"^6900([1-9])$"), "69123", lambda m: f"6938{m.group(1)}"),
 )
@@ -73,6 +79,52 @@ def _arrondissement_from_postal_code(commune: str, postal_code: object) -> str |
     return None
 
 
+# Arrondissements nommés dans la ville (« Marseille 8e ») : (commune parente, nombre d'arrondissements, préfixe).
+_ARRONDISSEMENT_BY_CITY = {"75056": (20, "751"), "13055": (16, "132"), "69123": (9, "6938")}
+
+
+def _arrondissement_from_city(commune: str, city: object) -> str | None:
+    limit, prefix = _ARRONDISSEMENT_BY_CITY.get(commune, (0, ""))
+    number = arrondissement_number(str(city or "")) if limit else None
+    if number is None or not 1 <= number <= limit:
+        return None
+    return f"{prefix}{number:02d}" if len(prefix) == 3 else f"{prefix}{number}"
+
+
+def _arrondissement(commune: str, sale: AuctionSale) -> str | None:
+    """Arrondissement déduit du code postal, à défaut du nombre écrit dans la ville (« Paris 8ème »)."""
+    return _arrondissement_from_postal_code(commune, sale.postal_code) or _arrondissement_from_city(
+        commune, sale.city
+    )
+
+
+_DEPARTMENT_CODE = re.compile(r"^(?:\d{2}|2[AB]|97\d)$")
+
+
+def _same_department(code: str, declared: object) -> bool:
+    """Le code commune est dans le département de la vente ; vrai quand celui-ci n'est pas connu."""
+    department = str(declared or "").strip().upper()
+    if not _DEPARTMENT_CODE.fullmatch(department):
+        return True
+    actual = department_from_insee(code)
+    # « 20 » : l'ancien département de Corse, avant 2A et 2B.
+    return actual == department or (department == "20" and actual in ("2A", "2B"))
+
+
+def _geocode_agrees_with_sale(codes: tuple[str, str | None], sale: AuctionSale) -> bool:
+    """Le code du géocodage accepté est celui du département de la vente et, quand elle est sans ambiguïté, de sa ville.
+
+    La BAN peut répondre sans code postal, ou avec une rue homonyme : un code d'un autre département ou d'une autre
+    commune que celle de la vente est écarté (la vente retombe sur la table de référence).
+    """
+    commune, arrondissement = codes
+    if not _same_department(commune, sale.department):
+        return False
+    declared = find_commune(sale.city, sale.postal_code, sale.department)
+    declared_codes = commune_codes(declared.get("code_insee")) if declared else None
+    return declared_codes is None or declared_codes[0] == commune
+
+
 def _accepted_evidence(sale: AuctionSale) -> dict[str, Any] | None:
     evidence = sale.raw_payload.get("geocode") if isinstance(sale.raw_payload, dict) else None
     if not isinstance(evidence, dict) or evidence.get("accepted") is not True:
@@ -88,17 +140,20 @@ def resolve_sale_commune(sale: AuctionSale) -> dict[str, Any] | None:
        code postal), seulement si elle est unique.
     """
     evidence = _accepted_evidence(sale)
+    mismatch = False
     if evidence is not None:
         codes = commune_codes(evidence.get("citycode"))
-        if codes is not None:
+        if codes is not None and _geocode_agrees_with_sale(codes, sale):
             commune, arrondissement = codes
             source = "reference_communes" if evidence.get("provider") == MUNICIPALITY_PROVIDER else "geocode"
             return {
                 "insee": commune,
-                "arrondissement_insee": arrondissement
-                or _arrondissement_from_postal_code(commune, sale.postal_code),
+                "arrondissement_insee": arrondissement or _arrondissement(commune, sale),
                 "source": source,
             }
+        mismatch = codes is not None
+        if mismatch:
+            LOGGER.info("Geocoded commune code discarded: not the department or the city of %s", sale.source_url)
     found = find_commune(sale.city, sale.postal_code, sale.department)
     if found is None:
         return None
@@ -106,11 +161,15 @@ def resolve_sale_commune(sale: AuctionSale) -> dict[str, Any] | None:
     if codes is None:
         return None
     commune, arrondissement = codes
-    return {
+    resolved: dict[str, Any] = {
         "insee": commune,
-        "arrondissement_insee": arrondissement or _arrondissement_from_postal_code(commune, sale.postal_code),
+        "arrondissement_insee": arrondissement or _arrondissement(commune, sale),
         "source": "reference_communes",
     }
+    if mismatch:
+        # Le code du géocodage a été écarté : la trace reste pour qui voudrait ne pas s'y fier ailleurs.
+        resolved["mismatch"] = True
+    return resolved
 
 
 def record_sale_commune(sale: AuctionSale) -> bool:

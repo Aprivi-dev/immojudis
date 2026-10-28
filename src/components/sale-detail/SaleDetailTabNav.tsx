@@ -107,7 +107,9 @@ export function SaleDetailTabNav({
   ].filter((item) => item != null);
 
   return (
-    <nav className={styles.nav} aria-label="Navigation de l'annonce">
+    // Pas de repère `navigation` : ce sont des onglets (`tablist`), pas des liens. `data-sale-tabs`
+    // dit à `html` (styles.css) de réserver la hauteur de la barre pour le focus et les ancres.
+    <div className={styles.nav} role="presentation" data-sale-tabs="">
       <div className={styles.inner}>
         <div
           ref={tabListRef}
@@ -127,7 +129,8 @@ export function SaleDetailTabNav({
                 id={saleDetailTabId(tab.id)}
                 type="button"
                 role="tab"
-                aria-controls={saleDetailTabPanelId(tab.id)}
+                // Seul le panneau de l'onglet actif est dans la page : les autres ids n'existent pas.
+                aria-controls={isActive ? saleDetailTabPanelId(tab.id) : undefined}
                 aria-selected={isActive}
                 tabIndex={isActive ? 0 : -1}
                 onClick={() => onTabChange(tab.id)}
@@ -151,6 +154,6 @@ export function SaleDetailTabNav({
           </p>
         ) : null}
       </div>
-    </nav>
+    </div>
   );
 }

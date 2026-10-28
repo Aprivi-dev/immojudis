@@ -119,11 +119,11 @@ describe("alertSalesPath", () => {
   });
 });
 
-describe("critère « Seulement les pépites »", () => {
+describe("critère « Pépites seulement »", () => {
   it("se lit dans les critères avancés, en texte", () => {
     expect(
       alertCriteriaSummary({ ...base, city: "Pau", advanced_criteria: { pepite_only: true } }),
-    ).toEqual(["Lieu : Pau", "Seulement les pépites"]);
+    ).toEqual(["Lieu : Pau", "Pépites seulement"]);
     expect(alertCriteriaSummary({ ...base, advanced_criteria: {} })).toEqual([]);
     expect(alertCriteriaSummary({ ...base, advanced_criteria: { pepite_only: "oui" } })).toEqual(
       [],

@@ -22,17 +22,23 @@ export function secondsUntilWindowEnds(windowSeconds: number, now: Date = new Da
 /**
  * Consumes one unit of a per-user fixed-window bucket and throws a RateLimitError
  * (HTTP 429 + Retry-After) once `limit` calls were made in the window.
+ *
+ * With a request `context` (`createApiRequestContext`), the quota left is recorded on it and
+ * `withApiHeaders` writes it as `RateLimit-Limit` / `RateLimit-Remaining` on the response, 429
+ * included (remaining 0): an API client can slow down before being refused.
  */
 export async function enforceUserRateLimit({
   userId,
   bucketKey,
   limit,
   windowSeconds,
+  context,
 }: {
   userId: string;
   bucketKey: string;
   limit: number;
   windowSeconds: number;
+  context?: { rateLimit?: { limit: number; remaining: number } };
 }): Promise<number> {
   const { data, error } = await supabaseAdmin.rpc("consume_api_rate_limit", {
     p_bucket_key: bucketKey,
@@ -43,12 +49,15 @@ export async function enforceUserRateLimit({
 
   if (error) {
     if (error.message?.includes("Rate limit exceeded")) {
+      if (context) context.rateLimit = { limit, remaining: 0 };
       throw new RateLimitError(undefined, secondsUntilWindowEnds(windowSeconds));
     }
     throw new Error(error.message || "Contrôle de débit indisponible.");
   }
 
-  return Number(data ?? 0);
+  const count = Number(data ?? 0);
+  if (context) context.rateLimit = { limit, remaining: Math.max(0, limit - count) };
+  return count;
 }
 
 /**

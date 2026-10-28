@@ -1,7 +1,13 @@
 import Link from "next/link";
 import { formatPrice } from "@/lib/format";
 import { pathWithSearch } from "@/lib/navigation";
-import { publicTribunalTotals, type PublicTribunalActivity } from "@/lib/public-tribunal-activity";
+import {
+  publicTribunalTotals,
+  tribunalPriceFigure,
+  tribunalSampleLabel,
+  type PublicTribunalActivity,
+  type TribunalPriceFigure,
+} from "@/lib/public-tribunal-activity";
 import { tribunalPages } from "@/lib/tribunal-pages";
 
 /** Busiest courts shown upfront; the others stay one click away. */
@@ -32,6 +38,27 @@ function mix(item: PublicTribunalActivity): string {
     .join(" · ");
 }
 
+/** La mise à prix d'un tribunal : « — » sous 5 ventes chiffrées, fourchette de 5 à 9, médiane dès 10. */
+function PriceCell({ figure }: { figure: TribunalPriceFigure }) {
+  if (figure.kind === "median") return <>{formatPrice(figure.median)}</>;
+  if (figure.kind === "range") {
+    return (
+      <>
+        {formatPrice(figure.min)} – {formatPrice(figure.max)}
+        <span className="block text-xs font-normal text-ink-soft">fourchette observée</span>
+      </>
+    );
+  }
+  return (
+    <>
+      <span aria-label="Non publiée">—</span>
+      <span className="block text-xs font-normal text-ink-soft sm:hidden">
+        {tribunalSampleLabel(figure.sampleSize)}
+      </span>
+    </>
+  );
+}
+
 function Rows({
   items,
   pagePaths,
@@ -40,33 +67,41 @@ function Rows({
   /** Adresse de la page de chaque tribunal (`/tribunaux/[slug]`), par code. */
   pagePaths: ReadonlyMap<string, string>;
 }) {
-  return items.map((item) => (
-    <tr key={item.code} className="border-t border-brand-navy/10">
-      <th scope="row" className="py-3 pr-4 text-left font-semibold">
-        <Link
-          href={pagePaths.get(item.code) ?? pathWithSearch("/sales", { tribunal: item.searchName })}
-          className="underline-offset-4 hover:underline"
-        >
-          {item.name}
-        </Link>
-        {item.department ? (
-          <span className="ml-1 font-normal text-ink-soft">({item.department})</span>
-        ) : null}
-        <span className="block text-xs font-normal text-ink-soft sm:hidden">
-          Audience le {formatShortDate(item.nextSaleDate)} · {mix(item)}
-        </span>
-      </th>
-      {/* Un seul lien par ligne : le nom, vers la page du tribunal (qui renvoie à la recherche). */}
-      <td className="py-3 pr-4 text-right tabular-nums">{formatCount(item.upcomingCount)}</td>
-      <td className="hidden whitespace-nowrap py-3 pr-4 text-right sm:table-cell">
-        {formatShortDate(item.nextSaleDate)}
-      </td>
-      <td className="whitespace-nowrap py-3 text-right tabular-nums sm:pr-4">
-        {item.medianStartingPriceEur != null ? formatPrice(item.medianStartingPriceEur) : "—"}
-      </td>
-      <td className="hidden py-3 text-sm text-brand-navy/70 sm:table-cell">{mix(item)}</td>
-    </tr>
-  ));
+  return items.map((item) => {
+    const figure = tribunalPriceFigure(item);
+    return (
+      <tr key={item.code} className="border-t border-brand-navy/10">
+        <th scope="row" className="py-3 pr-4 text-left font-semibold">
+          <Link
+            href={
+              pagePaths.get(item.code) ?? pathWithSearch("/sales", { tribunal: item.searchName })
+            }
+            className="underline-offset-4 hover:underline"
+          >
+            {item.name}
+          </Link>
+          {item.department ? (
+            <span className="ml-1 font-normal text-ink-soft">({item.department})</span>
+          ) : null}
+          <span className="block text-xs font-normal text-ink-soft sm:hidden">
+            Audience le {formatShortDate(item.nextSaleDate)} · {mix(item)}
+          </span>
+        </th>
+        {/* Un seul lien par ligne : le nom, vers la page du tribunal (qui renvoie à la recherche). */}
+        <td className="py-3 pr-4 text-right tabular-nums">{formatCount(item.upcomingCount)}</td>
+        <td className="hidden whitespace-nowrap py-3 pr-4 text-right sm:table-cell">
+          {formatShortDate(item.nextSaleDate)}
+        </td>
+        <td className="hidden py-3 pr-4 text-right tabular-nums sm:table-cell">
+          {formatCount(figure.sampleSize)}
+        </td>
+        <td className="whitespace-nowrap py-3 text-right tabular-nums sm:pr-4">
+          <PriceCell figure={figure} />
+        </td>
+        <td className="hidden py-3 text-sm text-ink-soft sm:table-cell">{mix(item)}</td>
+      </tr>
+    );
+  });
 }
 
 function Table({
@@ -93,8 +128,11 @@ function Table({
             <th scope="col" className="hidden pb-2 pr-4 text-right font-semibold sm:table-cell">
               Prochaine audience
             </th>
+            <th scope="col" className="hidden pb-2 pr-4 text-right font-semibold sm:table-cell">
+              Ventes chiffrées (n)
+            </th>
             <th scope="col" className="pb-2 text-right font-semibold sm:pr-4">
-              Mise à prix médiane
+              Mise à prix
             </th>
             <th scope="col" className="hidden pb-2 text-left font-semibold sm:table-cell">
               Biens
@@ -143,9 +181,10 @@ export function PublicTribunalActivitySection({
       >
         {heading}
       </h2>
-      <p className="mt-2 max-w-3xl text-sm leading-relaxed text-brand-navy/70">
-        Le volume d’audiences, la prochaine date et la mise à prix médiane des biens annoncés,
-        tribunal par tribunal.
+      <p className="mt-2 max-w-3xl text-sm leading-relaxed text-ink-soft">
+        Le volume d’audiences, la prochaine date et la mise à prix des biens annoncés, tribunal par
+        tribunal. La mise à prix n’est publiée qu’avec assez de ventes chiffrées : « — » sous 5, la
+        fourchette observée (minimum et maximum) de 5 à 9, la médiane à partir de 10.
         {adjudicationStatisticsEnabled
           ? " Les prix d’adjudication et les résultats des ventes passées sont réservés à l’offre Analyse."
           : null}{" "}

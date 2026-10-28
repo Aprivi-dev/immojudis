@@ -28,7 +28,7 @@
 .eyebrow {
   margin: 0 0 7px;
   color: var(--uc-accent);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 750;
   letter-spacing: 0.12em;
   line-height: 1.2;
@@ -82,7 +82,7 @@
 .locationLabel {
   display: block;
   color: var(--uc-muted);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 750;
   letter-spacing: 0.1em;
   line-height: 1.2;
@@ -135,7 +135,7 @@
 .compactSummaryLabel {
   margin: 0;
   color: var(--gold-text);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.08em;
   line-height: 1.3;
@@ -161,7 +161,7 @@
 .locationCaveat {
   margin: 8px 0 0;
   color: var(--uc-muted);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.45;
 }
 
@@ -222,7 +222,7 @@
 
 .detailsSummaryText small {
   color: var(--uc-muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   line-height: 1.35;
 }
@@ -253,7 +253,7 @@
   margin-top: 28px;
   padding-top: 26px;
   border-top: 1px solid var(--uc-border);
-  scroll-margin-top: 110px;
+  scroll-margin-top: 8px;
 }
 
 .sectionHeader {
@@ -353,7 +353,7 @@
 
 .referenceSource {
   color: var(--ink-soft);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .itemAction {
@@ -379,7 +379,7 @@
   border-radius: 999px;
   background: var(--surface-tint);
   color: var(--ink-soft);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 750;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -411,7 +411,7 @@
   border-radius: 999px;
   background: var(--surface-muted);
   color: var(--ink-soft);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 750;
   line-height: 1.2;
 }
@@ -560,7 +560,7 @@
   display: block;
   margin-top: 2px;
   color: var(--uc-muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
 }
 
@@ -598,7 +598,7 @@
 .footnote {
   margin: 20px 0 0;
   color: var(--ink-soft);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.5;
 }
 

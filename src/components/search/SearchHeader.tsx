@@ -18,6 +18,7 @@ import {
   HOME_TYPE_OPTIONS,
   SORT_OPTIONS,
 } from "@/lib/search/search-filters";
+import { departmentFromCode } from "@/lib/department-pages";
 import { resolveFrenchGeoSearch } from "@/lib/search/french-geo-search";
 import type { ResultsView } from "@/lib/search/results-view";
 import type { SalesSearchParams, SearchSortKey } from "@/lib/search/search-url-state";
@@ -728,13 +729,19 @@ export function ResultsSummary({
   /** La liste se met à jour (page, filtre) : un petit indicateur dans la ligne du compteur. */
   refreshing?: boolean;
 }) {
-  const location = search.city || search.department || search.query || "France entière";
+  // Un département seul s'écrit avec son nom (« Bouches-du-Rhône (13) »), pas avec son code.
+  const department = search.city ? null : departmentFromCode(search.department);
+  const departmentName = department ? `${department.name} (${department.code})` : null;
+  const location =
+    search.city || departmentName || search.department || search.query || "France entière";
   return (
     <div className={`min-w-0 px-4 py-4 sm:px-5 ${RESULTS_SUMMARY_MOBILE_MIN_HEIGHT}`}>
       <h1 className="font-display text-[1.65rem] font-medium leading-tight">
         {location === "France entière"
           ? "Ventes immobilières aux enchères"
-          : `Ventes immobilières aux enchères à ${location}`}
+          : departmentName
+            ? `Ventes immobilières aux enchères : ${departmentName}`
+            : `Ventes immobilières aux enchères à ${location}`}
       </h1>
       <p className="mt-1 text-sm text-ink-soft">
         {/* Seul le compteur est annoncé aux lecteurs d'écran, pas tout l'en-tête. */}

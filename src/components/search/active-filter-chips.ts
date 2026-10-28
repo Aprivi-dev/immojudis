@@ -1,4 +1,5 @@
 import { propertyTypeLabel } from "@/lib/format";
+import { PEPITE_FILTER_LABEL } from "@/lib/pepite-copy";
 import { saleTypeFilterLabel } from "@/lib/sale-types";
 import { compactPrice } from "@/lib/search/search-filters";
 import type { SalesSearchParams } from "@/lib/search/search-url-state";
@@ -107,9 +108,15 @@ export function activeFilterChips(search: SalesSearchParams): ActiveFilterChip[]
     search.maxPricePerM2 != null ? `≤ ${plain(search.maxPricePerM2)} €/m²` : null,
     { maxPricePerM2: undefined },
   );
-  add("minYield", search.minYield != null ? `Rendement ≥ ${plain(search.minYield)} %` : null, {
-    minYield: undefined,
-  });
+  add(
+    "minYield",
+    search.minYield != null
+      ? `Rendement brut à la mise à prix ≥ ${plain(search.minYield)} %`
+      : null,
+    {
+      minYield: undefined,
+    },
+  );
   add(
     "minMarketDiscount",
     search.minMarketDiscount != null ? `Décote ≥ ${plain(search.minMarketDiscount)} %` : null,
@@ -136,7 +143,7 @@ export function activeFilterChips(search: SalesSearchParams): ActiveFilterChip[]
   add("noPointsToVerify", search.noPointsToVerify ? "Sans point à vérifier" : null, {
     noPointsToVerify: undefined,
   });
-  add("pepite", search.pepite ? "Pépites seulement" : null, { pepite: undefined });
+  add("pepite", search.pepite ? PEPITE_FILTER_LABEL : null, { pepite: undefined });
   add("visitSoon", search.visitSoon ? "Visite dans les 7 jours" : null, {
     visitSoon: undefined,
   });

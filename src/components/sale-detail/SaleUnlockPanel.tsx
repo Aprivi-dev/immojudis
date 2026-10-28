@@ -104,7 +104,7 @@ export function SaleUnlockPanel({
           as="section"
           id={UNLOCK_PANEL_ID}
           aria-labelledby="sale-unlock-title"
-          className="mt-4 scroll-mt-36 border-gold/40"
+          className="mt-4 scroll-mt-2 border-gold/40"
         >
           <Eyebrow className="flex items-center gap-2">
             <LockKeyholeOpen className="size-4" aria-hidden /> Vente débloquée
@@ -197,7 +197,7 @@ export function SaleUnlockPanel({
           as="section"
           id={UNLOCK_PANEL_ID}
           aria-labelledby="sale-unlock-title"
-          className="mt-4 scroll-mt-36"
+          className="mt-4 scroll-mt-2"
         >
           <Eyebrow className="flex items-center gap-2">
             <LockKeyhole className="size-4" aria-hidden /> {MONTHLY_SALE_UNLOCKS} déblocages par
@@ -219,7 +219,7 @@ export function SaleUnlockPanel({
         as="section"
         id={UNLOCK_PANEL_ID}
         aria-labelledby="sale-unlock-title"
-        className="mt-4 scroll-mt-36"
+        className="mt-4 scroll-mt-2"
       >
         <Eyebrow className="flex items-center gap-2">
           <LockKeyhole className="size-4" aria-hidden /> {MONTHLY_SALE_UNLOCKS} déblocages par mois

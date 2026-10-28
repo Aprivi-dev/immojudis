@@ -268,9 +268,9 @@ describe("repère « Pépite » de la fiche", () => {
     expect(mocks.pepite).toHaveBeenCalledWith(expect.objectContaining({ view: "detail" }));
     expect(screen.getByTestId("pepite-badge").textContent).toBe("Pépite");
     expect(screen.getByRole("link", { name: "Pourquoi ?" }).getAttribute("href")).toBe("#pepite");
-    const block = screen.getByRole("region", { name: "Pépite : 2 tests réussis" });
+    const block = screen.getByRole("region", { name: "Pépite : 2 critères remplis sur 2" });
     expect(block.id).toBe("pepite");
-    expect(block.textContent).toMatch(/Prix probable : environ 90\s000\s€/u);
+    expect(block.textContent).toMatch(/Prix de référence : environ 90\s000\s€/u);
     expect(block.textContent).toMatch(/Enchère plafond estimée : 118\s000\s€/u);
     // En tête de l'Aperçu : avant « À vérifier » (ListingChecks).
     const checks = document.getElementById("points-a-verifier");
@@ -284,9 +284,9 @@ describe("repère « Pépite » de la fiche", () => {
     renderDetail("discovery", EXAMPLE_SALE_RECORDS.bordeaux.sale);
 
     expect(mocks.pepite).toHaveBeenCalledWith(expect.objectContaining({ view: "criteria" }));
-    const block = screen.getByRole("region", { name: "Pépite : 2 tests réussis" });
+    const block = screen.getByRole("region", { name: "Pépite : 2 critères remplis sur 2" });
     expect(block.textContent).toContain("Montant et détail : débloquez cette vente");
-    expect(block.textContent).not.toMatch(/Prix probable|fourchette|Voir avec mes hypothèses/);
+    expect(block.textContent).not.toMatch(/Prix de référence|fourchette|Voir avec mes hypothèses/);
     expect(block.textContent).not.toMatch(/\b\d{2,3}[\s\u00a0\u202f]\d{3}\s€/u);
     expect(within(block).queryByRole("button", { name: "Utile" })).toBeNull();
     expect(block.innerHTML).not.toMatch(/blur/);
