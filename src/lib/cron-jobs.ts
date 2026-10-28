@@ -26,6 +26,11 @@ export type MonitoredCronOptions = {
   catchUpSchedule?: string;
   /** Window in which an earlier success makes the catch-up call a no-op. */
   catchUpSuccessWindowHours?: number;
+  /**
+   * Job whose recent success makes the catch-up call a no-op, when it is not `jobName` (a route that
+   * only dispatches a workflow, which records the actual run under another name).
+   */
+  catchUpSuccessJobName?: string;
   /** Pauses between attempts; tests pass `[0, 0, 0]`. */
   retryDelaysMs?: number[];
 };
@@ -57,7 +62,10 @@ export async function runMonitoredCron(
   if (
     options.catchUpSchedule &&
     schedule === options.catchUpSchedule &&
-    (await succeededRecently(jobName, options.catchUpSuccessWindowHours ?? 20))
+    (await succeededRecently(
+      options.catchUpSuccessJobName ?? jobName,
+      options.catchUpSuccessWindowHours ?? 20,
+    ))
   ) {
     logCron("info", { requestId, jobName, status: 200, outcome: "catch_up_not_needed" });
     return NextResponse.json(

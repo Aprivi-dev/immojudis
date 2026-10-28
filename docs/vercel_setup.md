@@ -145,8 +145,10 @@ npm run ops:health-scheduler:configure
 Le calcul du palier de complétude des annonces (classement de `/sales`, route
 `/api/cron/listing-completeness`) suit le même mécanisme : le job Supabase Cron
 `immojudis-listing-completeness` l'appelle toutes les heures (à :20) avec les mêmes secrets Vault,
-sans nouvelle configuration. `vercel.json` ne garde qu'un filet quotidien (05:50 UTC, décalé du job horaire pour ne pas se chevaucher), compatible
-avec Vercel Hobby. La tâche figure dans la liste de fraîcheur `cron.stale` (3 h).
+sans nouvelle configuration. `vercel.json` ne garde qu'un filet quotidien (05:50 UTC), compatible
+avec Vercel Hobby. Sur ce plan, un cron tombe n'importe quand dans l'heure demandée : le décalage ne garantit pas
+l'absence de chevauchement. Le filet ne fait donc rien si la tâche a réussi dans les deux dernières heures (règle des
+filets : `operations/planification.md`). La tâche figure dans la liste de fraîcheur `cron.stale` (3 h).
 
 L'observation du risque d'inondation des ventes (`/api/cron/sale-flood-risk`, règle `pepite-v2`) suit le même
 mécanisme : le job `immojudis-sale-flood-risk` l'appelle toutes les heures (à :25, avant le calcul des pépites) avec
