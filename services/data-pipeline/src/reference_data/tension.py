@@ -43,12 +43,35 @@ _ZONING = {
 _COLUMN_CODE = "CODGEO25"
 
 
+_MONTHS = {
+    "janvier": 1, "février": 2, "fevrier": 2, "mars": 3, "avril": 4, "mai": 5, "juin": 6, "juillet": 7,
+    "août": 8, "aout": 8, "septembre": 9, "octobre": 10, "novembre": 11, "décembre": 12, "decembre": 12,
+}  # fmt: skip
+
+
+def decree_reference_date(reference: str) -> date | None:
+    """Date of a decree reference (« Décret n° 2025-1267 du 22 décembre 2025 »)."""
+    match = _DECREE.search(reference)
+    if match is None:
+        return None
+    month = _MONTHS.get(match.group(3).casefold())
+    day = re.match(r"\d+", match.group(2))
+    if month is None or day is None:
+        return None
+    try:
+        return date(int(match.group(4)), month, int(day.group()))
+    except ValueError:
+        return None
+
+
 @dataclass(frozen=True)
 class TensionResource:
     title: str
     url: str
     updated_on: date | None
     decree_reference: str
+    # Every decree named by the documentation, whatever the API order: the CSV header decides.
+    decree_candidates: tuple[str, ...] = ()
 
 
 @dataclass
@@ -62,7 +85,7 @@ class TensionParseStats:
 def select_resource(dataset: Mapping[str, Any]) -> TensionResource:
     """The zoning CSV and the decree it applies, from the dataset description."""
     candidates: list[tuple[str, Mapping[str, Any]]] = []
-    decree: str | None = None
+    decrees: list[str] = []
     for resource in dataset.get("resources") or []:
         if not isinstance(resource, Mapping):
             continue
@@ -73,10 +96,12 @@ def select_resource(dataset: Mapping[str, Any]) -> TensionResource:
             continue
         match = _DECREE.search(title)
         if match:
-            decree = f"Décret n° {match.group(1)} du {match.group(2)} {match.group(3).casefold()} {match.group(4)}"
+            reference = f"Décret n° {match.group(1)} du {match.group(2)} {match.group(3).casefold()} {match.group(4)}"
+            if reference not in decrees:
+                decrees.append(reference)
     if not candidates:
         raise RuntimeError("Zonage TLV dataset has no CSV resource")
-    if decree is None:
+    if not decrees:
         # No guess: a zoning stored under the wrong decree would be worse than no import.
         raise RuntimeError("Zonage TLV dataset documentation does not identify the decree")
     modified, resource = max(candidates, key=lambda item: item[0])
@@ -85,7 +110,34 @@ def select_resource(dataset: Mapping[str, Any]) -> TensionResource:
         updated_on = date.fromisoformat(modified[:10])
     except ValueError:
         pass
-    return TensionResource(str(resource.get("title") or ""), str(resource["url"]), updated_on, decree)
+    # The most recent decree by date, not the last one listed; ``choose_decree`` checks it on the CSV.
+    latest = max(decrees, key=lambda reference: decree_reference_date(reference) or date.min)
+    return TensionResource(
+        str(resource.get("title") or ""), str(resource["url"]), updated_on, latest, tuple(decrees)
+    )
+
+
+def choose_decree(resource: TensionResource, header_date: date | None) -> str:
+    """The decree whose date is the one in the CSV header; refuses a header no decree matches."""
+    candidates = resource.decree_candidates or (resource.decree_reference,)
+    if header_date is None:
+        return resource.decree_reference
+    for reference in candidates:
+        if decree_reference_date(reference) == header_date:
+            return reference
+    raise RuntimeError(
+        f"The zoning file is dated {header_date} but the documentation names {', '.join(candidates)}: "
+        "no decree matches, so none is recorded."
+    )
+
+
+def file_decree_date(path: Path) -> date | None:
+    """Date in the header of the « Zonage TLV post décret … » column of the CSV."""
+    header = decode_csv(path.read_bytes()).splitlines()[:1]
+    for name in header[0].split(";") if header else []:
+        if name.strip().startswith("Zonage TLV post"):
+            return _header_date(name)
+    return None
 
 
 def decode_csv(raw: bytes) -> str:
@@ -122,6 +174,12 @@ def parse_tension_csv(
     ):
         raise RuntimeError("Zonage TLV file does not have the expected columns")
     decree_date = _header_date(decree_column)
+    reference_date = decree_reference_date(decree_reference)
+    if decree_date is not None and reference_date is not None and decree_date != reference_date:
+        raise RuntimeError(
+            f"The zoning file is dated {decree_date} but the decree recorded is {decree_reference!r}: "
+            "the decree and the file do not match."
+        )
     stats = TensionParseStats()
     rows: dict[str, dict[str, object]] = {}
     for raw_row in reader:

@@ -39,10 +39,11 @@ modifié un `requirements*.txt`, régénérer les lockfiles avec `pip install uv
 `bash scripts/compile_locks.sh` ; `tests/test_requirements_locks.py` échoue si un
 lockfile n'est plus aligné sur son fichier source.
 
-Pour les audits documentaires ponctuels les plus lourds, installer aussi Docling :
+Pour les audits documentaires ponctuels les plus lourds, installer aussi Docling (après
+`requirements.lock`, avec les mêmes versions pour les dépendances communes) :
 
 ```bash
-pip install -r requirements-docling.txt
+pip install --require-hashes -r requirements-docling.lock
 ```
 
 Le pipeline de production privilégie un mode rapide par défaut : PyMuPDF, cache,
@@ -76,7 +77,7 @@ Docling reste optionnel. Pour l'activer explicitement :
 
 ```bash
 source .venv/bin/activate
-pip install -r requirements-docling.txt
+pip install --require-hashes -r requirements-docling.lock
 ```
 
 ## Configuration Supabase

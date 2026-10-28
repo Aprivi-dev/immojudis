@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  ANIL_RENT_SOURCES,
   defaultRentPerM2,
   isRentApplicable,
+  median,
   rentReference,
+  rentReferenceFromAnilMedian,
   rentReferenceFromAnilRow,
   rentReliability,
   rentSegmentFor,
@@ -211,5 +214,56 @@ describe("source notice", () => {
     expect(rentSourceDetail(older)).toContain("Carte des loyers 2024");
     expect(rentSourceDetail(older)).toContain("mise à jour du 5 décembre 2024");
     expect(ANIL_CURRENT_EDITION).toEqual({ vintage: 2025, sourceUpdatedOn: "2025-12-11" });
+  });
+});
+
+describe("median fallbacks computed on the ANIL map", () => {
+  it("takes the middle value, or the mean of the two middle ones", () => {
+    expect(median([30, 34, 40])).toBe(34);
+    expect(median([30, 34, 36, 40])).toBe(35);
+    expect(median([12])).toBe(12);
+    expect(median([])).toBeNull();
+    expect(median([Number.NaN, 10])).toBe(10);
+  });
+
+  it("builds an indicative reference that keeps the vintage and the date of the map", () => {
+    expect(
+      rentReferenceFromAnilMedian({
+        rentPerM2: 13.123456,
+        source: "anil_department_median",
+        segment: "house",
+        vintage: 2025,
+        sourceUpdatedOn: "2025-12-11",
+      }),
+    ).toEqual({
+      rentPerM2: 13.1235,
+      source: "anil_department_median",
+      reliability: "indicative",
+      segment: "house",
+      communeCode: null,
+      vintage: 2025,
+      sourceUpdatedOn: "2025-12-11",
+    });
+    expect(
+      rentReferenceFromAnilMedian({
+        rentPerM2: Number.NaN,
+        source: "anil_department_median",
+        segment: null,
+        vintage: null,
+        sourceUpdatedOn: null,
+      }),
+    ).toBeNull();
+  });
+
+  it("credits the ANIL for every source derived from its map, and for no other", () => {
+    expect(ANIL_RENT_SOURCES).toContain("anil_arrondissements_median");
+    expect(ANIL_RENT_SOURCES).toContain("anil_department_median");
+    expect(ANIL_RENT_SOURCES).not.toContain("department_estimate");
+    for (const source of ANIL_RENT_SOURCES) {
+      expect(isAnilRentReference({ rentPerM2: 1, source, reliability: "indicative" })).toBe(true);
+    }
+    expect(
+      rentSourceDetail({ source: "anil_department_median", vintage: 2025, sourceUpdatedOn: null }),
+    ).toContain("Carte des loyers 2025");
   });
 });

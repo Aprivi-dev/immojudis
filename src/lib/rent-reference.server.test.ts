@@ -11,6 +11,9 @@ const state = vi.hoisted(() => ({
   failTable: null as string | null,
   failCode: undefined as string | undefined,
   configured: true,
+  rpcCalls: [] as Array<{ name: string; args: Record<string, unknown> }>,
+  rpcRows: {} as Record<string, unknown[]>,
+  rpcError: null as { code?: string } | null,
   /** Lectures en cours en même temps (preuve du parallélisme des lots). */
   running: 0,
   maxRunning: 0,
@@ -26,6 +29,11 @@ vi.mock("@/lib/env", () => ({
 }));
 vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: {
+    rpc: async (name: string, args: Record<string, unknown>) => {
+      state.rpcCalls.push({ name, args });
+      if (state.rpcError) return { data: null, error: state.rpcError };
+      return { data: state.rpcRows[name] ?? [], error: null };
+    },
     from: (table: string) => {
       const call: Call = { table, filters: [], select: "" };
       state.calls.push(call);
@@ -125,10 +133,14 @@ beforeEach(() => {
   state.singleRow = null;
   state.failTable = null;
   state.configured = true;
+  state.rpcCalls = [];
+  state.rpcRows = {};
+  state.rpcError = null;
   state.running = 0;
   state.maxRunning = 0;
   resetRentReferenceCachesForTests();
   vi.spyOn(console, "error").mockImplementation(() => undefined);
+  vi.mocked(console.error).mockClear();
 });
 
 describe("loadRentLookup", () => {
@@ -381,6 +393,225 @@ describe("loadRentLookup", () => {
     // 450 communes = 3 batches of 150, read together.
     expect(anilCalls()).toHaveLength(3);
     expect(state.maxRunning).toBeGreaterThan(1);
+  });
+});
+
+describe("fallbacks before the hard-coded department table", () => {
+  const sale = (id: string, code: string, extra: Record<string, unknown> = {}) =>
+    withGeocode(id, code, { rooms_count: 3, ...extra });
+
+  it("tries the successor code of a merged commune, as an indicative reference", async () => {
+    state.rpcRows.commune_code_aliases = [
+      { code: "02077", alias: "02564", direction: "new", depth: 1 },
+    ];
+    state.anilRows = [anil("02564", "apt_3p", { rent_per_m2: 9.5 })];
+
+    const lookup = await loadRentLookup([sale("sale-a", "02077", { department: "02" })]);
+
+    expect(lookup({ id: "sale-a" })).toMatchObject({
+      source: "anil_commune",
+      communeCode: "02564",
+      rentPerM2: 9.5,
+      reliability: "indicative", // 500 observations and a good R², but not the commune the sale names
+    });
+    expect(state.rpcCalls[0]).toEqual({
+      name: "commune_code_aliases",
+      args: { p_codes: ["02077"] },
+    });
+  });
+
+  it("tries the old code when the sale already carries the new one, new codes first", async () => {
+    state.rpcRows.commune_code_aliases = [
+      { code: "02564", alias: "02077", direction: "old", depth: 1 },
+      { code: "02564", alias: "02999", direction: "new", depth: 1 },
+    ];
+    state.anilRows = [
+      anil("02077", "apt_3p", { rent_per_m2: 8 }),
+      anil("02999", "apt_3p", { rent_per_m2: 12 }),
+    ];
+
+    const lookup = await loadRentLookup([sale("sale-a", "02564", { department: "02" })]);
+    expect(lookup({ id: "sale-a" })?.rentPerM2).toBe(12);
+
+    resetRentReferenceCachesForTests();
+    state.anilRows = [anil("02077", "apt_3p", { rent_per_m2: 8 })];
+    const older = await loadRentLookup([sale("sale-b", "02564", { department: "02" })]);
+    expect(older({ id: "sale-b" })).toMatchObject({ communeCode: "02077", rentPerM2: 8 });
+  });
+
+  it("does not look for an alias when the commune has its own ANIL row", async () => {
+    state.anilRows = [anil("33063", "apt_3p")];
+
+    await loadRentLookup([sale("sale-a", "33063")]);
+
+    expect(state.rpcCalls.map((call) => call.name)).toEqual([]);
+  });
+
+  it("gives Paris, Lyon and Marseille without arrondissement the median of their arrondissements", async () => {
+    state.anilRows = [
+      anil("75101", "apt_3p", { rent_per_m2: 30, vintage: 2025 }),
+      anil("75102", "apt_3p", { rent_per_m2: 34 }),
+      anil("75103", "apt_3p", { rent_per_m2: 40 }),
+      anil("75104", "apt_3p", { rent_per_m2: 36 }),
+    ];
+
+    const lookup = await loadRentLookup([sale("sale-a", "75056", { department: "75" })]);
+
+    expect(lookup({ id: "sale-a" })).toMatchObject({
+      source: "anil_arrondissements_median",
+      rentPerM2: 35,
+      reliability: "indicative",
+      segment: "apt_3p",
+      communeCode: "75056",
+      vintage: 2025,
+      sourceUpdatedOn: "2025-12-11",
+    });
+    const read = anilCalls().at(-1);
+    expect(read?.filters[0]).toEqual([
+      "commune_code",
+      Array.from({ length: 20 }, (_, index) => `751${String(index + 1).padStart(2, "0")}`),
+    ]);
+  });
+
+  it("falls back from the segment to all apartments when computing the median of the arrondissements", async () => {
+    state.anilRows = [
+      anil("13201", "apt_all", { rent_per_m2: 14 }),
+      anil("13202", "apt_all", { rent_per_m2: 16 }),
+    ];
+
+    const lookup = await loadRentLookup([sale("sale-a", "13055", { department: "13" })]);
+
+    expect(lookup({ id: "sale-a" })).toMatchObject({ rentPerM2: 15, segment: "apt_all" });
+  });
+
+  it("computes the department median on the map before the hard-coded table, Corsica included", async () => {
+    state.rpcRows.anil_department_medians = [
+      {
+        department_code: "2A",
+        segment: "apt_3p",
+        rent_per_m2: 13.5,
+        communes: 120,
+        vintage: 2025,
+        source_updated_on: "2025-12-11",
+      },
+    ];
+
+    const lookup = await loadRentLookup([
+      {
+        id: "sale-a",
+        department: "2A",
+        property_type: "apartment",
+        rooms_count: 3,
+        raw_payload: {},
+      },
+    ]);
+
+    expect(lookup({ id: "sale-a" })).toMatchObject({
+      source: "anil_department_median",
+      rentPerM2: 13.5,
+      reliability: "indicative",
+      segment: "apt_3p",
+      vintage: 2025,
+      sourceUpdatedOn: "2025-12-11",
+    });
+    expect(state.rpcCalls).toContainEqual({
+      name: "anil_department_medians",
+      args: { p_departments: ["2A"] },
+    });
+  });
+
+  it("keeps the hard-coded table when the map has no median, and nothing for Mayotte", async () => {
+    const lookup = await loadRentLookup([
+      {
+        id: "sale-a",
+        department: "33",
+        property_type: "apartment",
+        rooms_count: 3,
+        raw_payload: {},
+      },
+      {
+        id: "sale-b",
+        department: "976",
+        property_type: "apartment",
+        rooms_count: 3,
+        raw_payload: {},
+      },
+      {
+        id: "sale-c",
+        department: "23",
+        property_type: "apartment",
+        rooms_count: 3,
+        raw_payload: {},
+      },
+    ]);
+
+    expect(lookup({ id: "sale-a" })).toMatchObject({
+      source: "department_estimate",
+      rentPerM2: 14,
+    });
+    // Mayotte is excluded from the ANIL map and absent from the table: no rent, assumed.
+    expect(lookup({ id: "sale-b" })).toBeNull();
+    expect(lookup({ id: "sale-c" })).toBeNull();
+  });
+
+  it("reads the medians of each department once, whatever the number of sales", async () => {
+    state.rpcRows.anil_department_medians = [
+      {
+        department_code: "23",
+        segment: "apt_all",
+        rent_per_m2: 7,
+        communes: 4,
+        vintage: 2025,
+        source_updated_on: null,
+      },
+    ];
+    const facts = (id: string) => ({
+      id,
+      department: "23",
+      property_type: "apartment",
+      rooms_count: null,
+      raw_payload: {},
+    });
+
+    await loadRentLookup([facts("sale-a"), facts("sale-b"), facts("sale-c")]);
+    await loadRentLookup([facts("sale-d")]);
+
+    expect(state.rpcCalls.filter((call) => call.name === "anil_department_medians")).toHaveLength(
+      1,
+    );
+  });
+
+  it("treats a function that is not migrated yet as no fallback, silently", async () => {
+    state.rpcError = { code: "PGRST202" };
+
+    const lookup = await loadRentLookup([
+      sale("sale-a", "33063"),
+      {
+        id: "sale-b",
+        department: "23",
+        property_type: "apartment",
+        rooms_count: 3,
+        raw_payload: {},
+      },
+    ]);
+
+    expect(lookup({ id: "sale-a" })).toMatchObject({ source: "department_estimate" });
+    expect(lookup({ id: "sale-b" })).toBeNull();
+    expect(console.error).not.toHaveBeenCalled();
+  });
+
+  it("keeps the communes it found when an optional fallback fails", async () => {
+    state.rpcError = { code: "XX000" };
+    state.anilRows = [anil("33063", "apt_3p")];
+
+    const lookup = await loadRentLookup([
+      sale("sale-a", "33063"),
+      sale("sale-b", "02077", { department: "02" }),
+    ]);
+
+    expect(lookup({ id: "sale-a" })?.source).toBe("anil_commune");
+    expect(lookup({ id: "sale-b" })).toBeNull();
+    expect(console.error).toHaveBeenCalled();
   });
 });
 

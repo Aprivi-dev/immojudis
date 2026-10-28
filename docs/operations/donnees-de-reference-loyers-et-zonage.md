@@ -69,10 +69,18 @@ serveur uniquement (`service_role`).
 
 Workflow manuel **Reference data import** (`.github/workflows/reference-data-import.yml`) :
 
-- `dataset` : `rents`, `tension`, `communes`, `risks`, `climate` ou `all`. **`all` relance les cinq
-  jeux** (`communes`, `risks`, `climate`, `rents`, `tension`, dans cet ordre), pas seulement les deux de cette
-  page : à éviter pour une mise à jour des loyers ou du zonage (le workflow prévoit jusqu'à 90 minutes) ;
-- `dry_run` : télécharge et analyse sans écrire.
+- `dataset` : `rents`, `tension`, ou `all`, qui lance aussi `communes`, `risks` et `climate` (le climat
+  télécharge 96 fichiers, jusqu'à 90 minutes) ; chaque jeu est isolé (la panne de l'un n'empêche pas les
+  autres, le code de sortie est non nul s'il y en a une) et ouvre sa propre connexion, au moment d'écrire ;
+- `dry_run` : télécharge et analyse sans écrire ;
+- `check_new_vintage` : cherche seulement un millésime ANIL plus récent (aucune écriture). Le même
+  contrôle tourne tout seul le 1er novembre, le 1er décembre et le 1er janvier à 07 h 15 UTC
+  (`python -m src.reference_data rents --check-new-vintage`) : sortie non nulle et `::warning::` si un
+  jeu plus récent que `ANIL_CURRENT_EDITION` est publié. La marche à suivre est dans
+  `docs/runbooks/import-annuel-anil.md`.
+
+Un échec ajoute un résumé à la page du run (étape « Summarize the failure ») et une annotation
+`::error::` par jeu en échec.
 
 Fréquence : la carte des loyers est publiée chaque année en décembre ; le zonage change à chaque décret.
 La checklist de l'import de décembre est dans `docs/runbooks/import-annuel-anil.md`.
@@ -83,30 +91,32 @@ Hôtes autorisés pour le téléchargement : `www.data.gouv.fr` (API) et `static
 Un texte lu est limité à 32 Mo, un fichier téléchargé à 1 Go (taille déclarée contrôlée d'abord).
 Le jeu du zonage est épinglé par son identifiant (`657c88da2947e13be0597058`), pas par son nom.
 
-Gardes contre un import partiel : au moins 34 000 communes par segment (ANIL) ou au total (zonage), les
-quatre segments présents, au plus 0,5 % de lignes rejetées (code, département, loyer hors de 1 à
-100 €/m², type de prédiction ou zonage inconnu). Tout est **analysé et contrôlé avant la première écriture**,
-mais **l'écriture n'est pas atomique** (voir plus bas).
-Le département de chaque ligne se déduit du code commune (pas de la colonne `DEP`). Les segments des
-fichiers ANIL sont reconnus par leur nom de fichier d'abord, par leur titre ensuite. Le zonage refuse
-l'import si la documentation du jeu n'identifie aucun décret (pas de repli sur un décret connu).
+Gardes contre un import partiel : au moins 34 800 communes par segment (ANIL) ou au total (zonage), un
+fichier d'au moins 99 % du nombre de lignes que la table contient déjà (sinon l'import est refusé : une
+troncature de quelques pour cent passerait un seuil fixe, puis la purge supprimerait les communes
+perdues), les quatre segments présents, au plus 0,5 % de lignes rejetées (code, département, loyer hors de
+1 à 100 €/m², type de prédiction ou zonage inconnu). Le téléchargement compare les octets reçus à
+`Content-Length` (un écart est une erreur, reprise comme les coupures réseau) ; seuls les statuts 5xx et
+429 sont réessayés, pas un 403 ou un 404. Le département de chaque ligne se déduit du code commune (pas
+de la colonne `DEP`). Les segments des fichiers ANIL sont reconnus par leur nom de fichier d'abord, par
+leur titre ensuite. Le zonage refuse l'import si la documentation du jeu n'identifie aucun décret (pas de
+repli sur un décret connu), choisit le décret dont la date est celle de l'en-tête du CSV (et non le
+dernier de la liste) et refuse un fichier dont la date ne correspond à aucun décret.
 
-**L'écriture n'est pas atomique.** Les lignes sont écrites par paquets de 1 000, avec un commit par paquet
-(`services/data-pipeline/src/reference_data/storage.py`), puis l'import purge les lignes qu'il n'a pas touchées
-(communes disparues du millésime), puis contrôle la table : un seul millésime et le bon nombre de lignes pour
-`anil_rents`, le bon nombre de lignes pour `commune_housing_tension`. Un échec en cours d'écriture laisse donc
-un **mélange de millésimes ou de lignes**, déjà lisible par l'application (cache de 6 heures). Le contrôle final
-lève une erreur **après** l'écriture : il prévient, il n'annule rien. L'import est idempotent : le relancer
-répare. Une restauration complète passe par une sauvegarde Supabase.
+Tout est analysé et contrôlé avant la première écriture ; l'écriture de chaque table instantanée
+(`anil_rents`, `commune_housing_tension`) tient dans **une seule transaction** : upsert, purge des lignes non
+touchées (communes disparues du millésime) et contrôle (un seul millésime et le bon nombre de lignes pour
+`anil_rents`, le bon nombre de lignes pour `commune_housing_tension`). Un échec, une coupure réseau ou un
+contrôle en défaut annule tout : la table garde son édition précédente, l'application ne lit jamais un
+mélange de deux millésimes. (Les jeux `communes`, `risks` et `climate` écrivent encore par paquets.)
 
 **À chaque nouvel import de la carte des loyers**, mettre à jour `ANIL_CURRENT_EDITION`
 (`src/lib/rent-source-notice.ts`) : il sert aux mentions qui ne portent pas sur une vente (emails d'alerte).
 Les écrans qui portent sur une vente affichent le millésime et la date de la ligne réellement utilisée.
-L'import signale tout écart (`web_edition_gap` dans son résumé, y compris en `--dry-run`). **Aucun test ne lit
-le jeu réel** : les tests (`src/lib/rent-reference.test.ts` et
-`services/data-pipeline/tests/test_reference_data.py`, `test_the_real_web_edition_matches_...`) figent
-`2025 / 2025-12-11`. Changer la constante fait échouer ces deux tests tant qu'ils ne sont pas édités dans la
-même pull request ; **oublier la constante ne casse rien** et seul `web_edition_gap` le signale.
+L'import compare cette constante au millésime lu et **échoue avant toute écriture** en cas d'écart
+(`web_edition_gap`, y compris en `--dry-run`) : la pull request qui met à jour la constante précède
+l'import. Attention : le test du pipeline qui compare la constante au jeu (`test_the_real_web_edition_…`)
+fige le couple 2025 / 2025-12-11 ; il se met à jour avec la constante, il ne lit pas le jeu réel.
 
 ## Lecture par l'application
 

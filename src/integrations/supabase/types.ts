@@ -14378,6 +14378,17 @@ export type Database = {
         Args: { p_now?: string };
         Returns: Json;
       };
+      anil_department_medians: {
+        Args: { p_departments: string[] };
+        Returns: {
+          communes: number;
+          department_code: string;
+          rent_per_m2: number;
+          segment: string;
+          source_updated_on: string | null;
+          vintage: number;
+        }[];
+      };
       apply_reviewed_auction_notice_court_assignment: {
         Args: {
           p_auction_sale_id: string;
@@ -14885,6 +14896,15 @@ export type Database = {
           isOneToOne: true;
           isSetofReturn: false;
         };
+      };
+      commune_code_aliases: {
+        Args: { p_codes: string[] };
+        Returns: {
+          alias: string;
+          code: string;
+          depth: number;
+          direction: string;
+        }[];
       };
       complete_operational_alert_notification: {
         Args: {

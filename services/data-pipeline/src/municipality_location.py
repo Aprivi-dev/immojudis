@@ -24,7 +24,7 @@ from typing import Any
 
 from src.config import load_settings
 from src.models import AuctionSale
-from src.reference_data.names import normalize_commune_name
+from src.reference_data.names import commune_lookup_name, has_cedex
 
 LOGGER = logging.getLogger(__name__)
 
@@ -37,7 +37,6 @@ COMMUNES_QUERY = """
     where latitude is not null and longitude is not null
 """
 
-_TRAILING_DEPARTMENT = re.compile(r"\s*\((?:\d{2}|2[AB]|97\d)\)\s*$", re.IGNORECASE)
 _LOCK = threading.Lock()
 _INDEX: _Index | None = None
 
@@ -95,16 +94,25 @@ def _index() -> _Index:
 
 def find_commune(city: object, postal_code: object, department: object) -> dict[str, Any] | None:
     """La commune de ``city`` si elle est sans ambiguïté, sinon ``None`` (jamais une supposition)."""
-    name = normalize_commune_name(_TRAILING_DEPARTMENT.sub("", str(city or "")))
+    # The lookup name drops what a sale label adds to the commune name (« Paris 8ème », « Lyon Cedex 03 »,
+    # « Saint-Denis La Réunion »); the stored ``name_normalized`` is untouched.
+    name = commune_lookup_name(str(city or ""))
     if not name:
         return None
     index = _index()
     postal = str(postal_code or "").strip()
-    if re.fullmatch(r"\d{5}", postal):
+    dept = str(department or "").strip().upper()
+    valid_postal = re.fullmatch(r"\d{5}", postal) is not None
+    # A Cedex code (« 69421 Lyon Cedex 03 ») or a generic one (« 69000 Lyon ») is not among the postal codes of its
+    # commune: the department and the name decide, as they do without postal code.
+    by_department = not valid_postal or has_cedex(str(city or "")) or postal.endswith("000")
+    if not dept and valid_postal and by_department:
+        dept = postal[:3] if postal.startswith("97") else postal[:2]
+    matches: list[dict[str, Any]] = []
+    if valid_postal:
         matches = [row for row in index.by_postal_code.get(postal, []) if row["name_normalized"] == name]
-    else:
-        dept = str(department or "").strip().upper()
-        matches = index.by_department_name.get((dept, name), []) if dept else []
+    if not matches and by_department and dept:
+        matches = index.by_department_name.get((dept, name), [])
     return matches[0] if len(matches) == 1 else None
 
 
