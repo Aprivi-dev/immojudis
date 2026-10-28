@@ -59,6 +59,20 @@ describe("classifyFloodPosition", () => {
     );
   });
 
+  it("un point de la source promu par le pipeline (précision address, ni type ni score BAN) : position précise", () => {
+    // Preuve `raw_payload.geocode = { provider: "source_coordinates", accepted: true, ... }` : aucun type ni score.
+    const promoted = position({ precision: "address", geocodeType: null, geocodeScore: null });
+
+    expect(classifyFloodPosition(promoted)).toBe("point");
+    expect(floodProbePoints(promoted)).toEqual([{ latitude: 47.399, longitude: 0.689 }]);
+    // Sans la promotion (point de la source resté sans précision) : imprécis, comme avant.
+    expect(classifyFloodPosition(position({ precision: null }))).toBe("approximate");
+    // Un doute sur la position l'emporte toujours sur la promotion.
+    expect(classifyFloodPosition({ ...promoted, flags: ["unverified_source_coordinates"] })).toBe(
+      "approximate",
+    );
+  });
+
   it.each([
     ["centre de commune", { precision: "municipality" }],
     ["précision absente", { precision: null }],

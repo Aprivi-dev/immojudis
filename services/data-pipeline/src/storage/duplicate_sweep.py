@@ -42,6 +42,7 @@ REASON_LABELS = {
     "content_hash": "même contenu (hash)",
     "source_url": "même URL source",
     "strict_key": "clé de repli stricte (même tribunal, même jour, même mise à prix, même bien), hors Vench / Petites Affiches",
+    "streetless": "annonce sans voie rattachée à la vente qui a l'adresse (même tribunal, même audience, même commune, mise à prix à 1 % près)",
 }
 
 # Mention du rapport quand le balayage est partiel : des doublons peuvent exister hors des lignes lues.

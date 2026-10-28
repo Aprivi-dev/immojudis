@@ -22,6 +22,7 @@ import {
   runAdminInformationAgentMissionAction,
 } from "@/lib/client-api";
 import type { AdminSourceRefreshResponse } from "@/lib/admin-source-refresh";
+import { isValidInformationAgentEmail } from "@/lib/information-agent/email-address";
 import type {
   InformationAgentMission,
   InformationAgentPreviewResponse,
@@ -383,7 +384,7 @@ export function AdminInformationAgentMissionsPanel({
   // le clavier ni le tactile ne voient.
   const sendDisabledReason = runAction.isPending
     ? null
-    : !looksLikeEmail(recipientEmail)
+    : !isValidInformationAgentEmail(recipientEmail)
       ? "Renseignez une adresse email valide pour activer l’envoi."
       : subject.trim().length < 3 || bodyText.trim().length < 20
         ? "Renseignez un objet et un message (20 caractères au moins) pour activer l’envoi."
@@ -570,8 +571,8 @@ export function AdminInformationAgentMissionsPanel({
               className="admin-button-primary mt-4"
               disabled={
                 createDraft.isPending ||
-                !looksLikeEmail(recipientEmail) ||
-                (recipientEmail.trim().length > 0 && !looksLikeEmail(recipientEmail))
+                !isValidInformationAgentEmail(recipientEmail) ||
+                (recipientEmail.trim().length > 0 && !isValidInformationAgentEmail(recipientEmail))
               }
               onClick={() =>
                 prepareDraft(selection, {
@@ -697,7 +698,7 @@ export function AdminInformationAgentMissionsPanel({
                 loading={previewMutation.isPending}
                 onShow={showPreview}
                 disabled={
-                  !looksLikeEmail(recipientEmail) ||
+                  !isValidInformationAgentEmail(recipientEmail) ||
                   subject.trim().length < 3 ||
                   bodyText.trim().length < 20
                 }
@@ -769,7 +770,7 @@ export function AdminInformationAgentMissionsPanel({
                   disabled={
                     runAction.isPending ||
                     !previewAllowsSend ||
-                    !looksLikeEmail(recipientEmail) ||
+                    !isValidInformationAgentEmail(recipientEmail) ||
                     subject.trim().length < 3 ||
                     bodyText.trim().length < 20
                   }
@@ -1228,10 +1229,6 @@ const STALE_DRAFT_DAYS = 3;
 function isStaleDraft(createdAt: string, now = Date.now()): boolean {
   const created = Date.parse(createdAt);
   return Number.isFinite(created) && now - created > STALE_DRAFT_DAYS * 24 * 60 * 60 * 1000;
-}
-
-function looksLikeEmail(value: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
 
 function missionStatusLabel(status: string): string {

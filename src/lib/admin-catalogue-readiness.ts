@@ -6,6 +6,9 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { adminPageQueryShape } from "@/lib/admin-page-query";
 import { ADMIN_PAGE_MAX_LIMIT, ADMIN_PAGE_SIZE } from "@/lib/admin-pagination";
 import type { Json } from "@/integrations/supabase/types";
+import { loadAdminInformationAgentEmailAvailability } from "@/lib/admin-information-agent-sale";
+import { isInformationAgentAddressSearchEnabled } from "@/lib/information-agent/address-search";
+import { INFORMATION_AGENT_NO_EMAIL_MESSAGE } from "@/lib/information-agent/email-address";
 
 const ACTIVE_SALE_STATUSES = ["upcoming", "unknown", "postponed"];
 
@@ -24,6 +27,11 @@ export type CatalogueReadinessQueueItem = {
   sourceName: string | null;
   lawyerName: string | null;
   lawyerContact: string | null;
+  /**
+   * Motif pour lequel l'agent ne peut pas préparer de brouillon (aucune adresse email connue), ou
+   * null quand il le peut. Absent d'une réponse d'une version plus ancienne : traité comme null.
+   */
+  informationAgentBlockedReason?: string | null;
   scoreConfidence: number | null;
   readinessScore: number | null;
   readinessStatus: CatalogueReadinessStatus;
@@ -110,8 +118,23 @@ export async function getAdminCatalogueReadinessOverview(
   if (policyError) throw policyError;
   if (salesError) throw salesError;
 
-  const contacts = await loadSaleContactDetails((sales ?? []).map((sale) => sale.id));
-  const items = (sales ?? []).map((sale) => toQueueItem(sale, contacts.get(sale.id)));
+  const saleIds = (sales ?? []).map((sale) => sale.id);
+  const [contacts, emailAvailability] = await Promise.all([
+    loadSaleContactDetails(saleIds),
+    loadAdminInformationAgentEmailAvailability(saleIds),
+  ]);
+  // La recherche automatique d'adresse (coupée par défaut) peut retrouver un email pour une vente
+  // qui n'en publie pas : tant qu'elle est active, aucune vente n'est écartée d'avance.
+  const addressSearchEnabled = isInformationAgentAddressSearchEnabled();
+  const items = (sales ?? []).map((sale) =>
+    toQueueItem(
+      sale,
+      contacts.get(sale.id),
+      emailAvailability.get(sale.id) === true || addressSearchEnabled
+        ? null
+        : INFORMATION_AGENT_NO_EMAIL_MESSAGE,
+    ),
+  );
   const pendingEvaluations = await countPendingEvaluations(policy.policy_version);
   const counts: Record<CatalogueReadinessStatus, number> = {
     unassessed: statusCounts[0],
@@ -245,6 +268,7 @@ function toQueueItem(
     premium_readiness_override_expires_at: string | null;
   },
   contact?: SaleContactDetails,
+  informationAgentBlockedReason: string | null = null,
 ): CatalogueReadinessQueueItem {
   return {
     id: row.id,
@@ -255,6 +279,7 @@ function toQueueItem(
     sourceName: row.source_name,
     lawyerName: contact?.lawyer_name ?? null,
     lawyerContact: contact?.lawyer_contact ?? null,
+    informationAgentBlockedReason,
     scoreConfidence: contact?.score_confidence ?? null,
     readinessScore: row.premium_readiness_score,
     readinessStatus: normalizeStatus(row.premium_readiness_status),

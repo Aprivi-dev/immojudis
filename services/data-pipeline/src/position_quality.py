@@ -110,7 +110,39 @@ _TITLES = frozenset(
         "ingenieur", "maitre", "me", "dr", "pr", "gal", "mal", "cdt", "cne", "lt", "col",
     }
 )
-_ABBREVIATIONS = {"st": "saint", "ste": "sainte"}
+# Abréviations courantes des adresses (« Av. », « Bd », « Chem. », « St »…) ramenées au mot entier : « Av. Foch » et
+# « Avenue Foch » donnent les mêmes mots. « Col » (col de montagne) n'y figure pas exprès.
+_ABBREVIATIONS = {
+    "st": "saint",
+    "ste": "sainte",
+    "av": "avenue",
+    "ave": "avenue",
+    "bd": "boulevard",
+    "bld": "boulevard",
+    "bvd": "boulevard",
+    "boul": "boulevard",
+    "pl": "place",
+    "rte": "route",
+    "chem": "chemin",
+    "ch": "chemin",
+    "imp": "impasse",
+    "all": "allee",
+    "fbg": "faubourg",
+    "fg": "faubourg",
+    "pass": "passage",
+    "sq": "square",
+    "esp": "esplanade",
+    "crs": "cours",
+    "mal": "marechal",
+    "gal": "general",
+    "dr": "docteur",
+    "pr": "professeur",
+    "cdt": "commandant",
+    "cne": "capitaine",
+}
+# « Maréchal de France » est un grade, pas une partie du nom de la voie (« Av. Koenig Maréchal de France » est
+# l'avenue du Maréchal Koenig).
+_RANK_SUFFIX_AFTER = frozenset({"marechal"})
 _LEADING_NUMBERS = re.compile(
     r"^\s*(?:n[°o]\s*)?\d+\s*(?:bis|ter|quater|[a-d])?\b(?:\s*(?:,|et|-|/|à|a)\s*\d+\s*(?:bis|ter|quater|[a-d])?\b)*[\s,.-]*",
     re.IGNORECASE,
@@ -127,6 +159,24 @@ def _words(text: str) -> list[str]:
     return [_ABBREVIATIONS.get(word, word) for word in re.findall(r"[a-z0-9]+", _fold(text))]
 
 
+def _drop_rank_suffix(words: list[str]) -> list[str]:
+    """Retire « de France » quand il suit « Maréchal » (« Av. Koenig Maréchal de France »)."""
+    kept: list[str] = []
+    index = 0
+    while index < len(words):
+        word = words[index]
+        if kept and kept[-1] in _RANK_SUFFIX_AFTER:
+            if word == "france":
+                index += 1
+                continue
+            if word == "de" and index + 1 < len(words) and words[index + 1] == "france":
+                index += 2
+                continue
+        kept.append(word)
+        index += 1
+    return kept
+
+
 def street_name_tokens(text: str | None, *, require_street_type: bool) -> frozenset[str] | None:
     """Mots significatifs du nom de voie, ou ``None`` quand il n'y a pas de voie à comparer.
 
@@ -139,7 +189,7 @@ def street_name_tokens(text: str | None, *, require_street_type: bool) -> frozen
     segment = _POSTAL_CODE.split(str(text), maxsplit=1)[0]
     segment = _LEADING_NUMBERS.sub("", segment, count=1)
     segment = segment.split(",", 1)[0]
-    words = _words(segment)
+    words = _drop_rank_suffix(_words(segment))
     if require_street_type and (not words or words[0] not in _LEADING_STREET_TYPES):
         return None
     tokens = frozenset(word for word in words if word not in _STREET_TYPES and word not in _STOP_WORDS)

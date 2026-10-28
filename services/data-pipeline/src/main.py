@@ -14,8 +14,8 @@ from datetime import UTC, datetime
 from threading import Lock
 from typing import Any
 
-from src import retention_tombstones, source_withdrawal
-from src.admission import admit_sales, has_price_or_surface, is_expired, publication_rejection, split_insufficient
+from src import listing_minimum, retention_tombstones, source_withdrawal
+from src.admission import admit_sales, has_price_or_surface, is_expired, publication_rejection
 from src.asset_normalization import normalize_asset_features
 from src.cadastre import enrich_cadastre_sales
 from src.catalogue_readiness import apply_catalogue_readiness
@@ -438,6 +438,7 @@ def _open_run(options: PipelineOptions) -> _PipelineRun:
         require_encheres_publiques_access(settings)
     run_id = create_run_in_supabase(options.source, options.use_llm, run_id=options.run_id) if options.upsert else None
     register_run(run_id)
+    listing_minimum.reset_tally()
     if options.upsert:  # e-mails refusés par l'agent d'information : jamais comptés comme contact exploitable
         set_active_blocklist(load_contact_blocklist(settings))
     return _PipelineRun(options=options, settings=settings, run_id=run_id)
@@ -978,8 +979,9 @@ def _apply_admission_and_reports(run: _PipelineRun) -> None:
         LOGGER.info("Collection admission rejected source=%s url=%s reason=missing_price_and_surface",
                     sale.source_name, sale.source_url)
     run.expired_rejected = len(run.expired_before_enrichment) + sum(is_expired(sale) for sale in app_ready)
-    run.app_ready, run.insufficient_summary = split_insufficient(
-        [sale for sale in app_ready if has_price_or_surface(sale) and not is_expired(sale)], LOGGER)
+    run.app_ready = [sale for sale in app_ready if has_price_or_surface(sale) and not is_expired(sale)]
+    # Le minimum d'une annonce est jugé à l'écriture (listing_minimum) : les refus sont déjà sortis de app_ready.
+    run.insufficient_summary = listing_minimum.summary()
     admitted_urls = {sale.source_url for sale in run.app_ready}
     run.cadastre_rows = [row for row in run.cadastre_rows if row.get("source_url") in admitted_urls]
     run.dpe_rows = [row for row in run.dpe_rows if row.get("source_url") in admitted_urls]
@@ -993,7 +995,7 @@ def _apply_admission_and_reports(run: _PipelineRun) -> None:
     run.summary = {
         "admission_rejected_expired": run.expired_rejected,
         "admission_rejected_missing_price_and_surface": len(run.admission_rejected),
-        "admission_rejected_insufficient_information": run.insufficient_summary,
+        "rejected_insufficient_listing": run.insufficient_summary,
         "collected": len(run.raw_sales),
         "collected_by_source": run.raw_by_source,
         "scrape_coverage": run.scrape_coverage,
@@ -1073,6 +1075,7 @@ def _publish_run(run: _PipelineRun) -> None:
             timings["supabase_seconds"] = round(time.perf_counter() - started, 2)
             summary.update(
                 {
+                    "rejected_insufficient_listing": listing_minimum.summary(),
                     "upserted": run.upserted,
                     "observations_upserted": run.observations_upserted,
                     "early_upserted": run.early_upserted,
@@ -1140,7 +1143,7 @@ def _print_run_summary(run: _PipelineRun) -> None:
     print(f"- reconciled_duplicate_sales: {run.supabase_reconciled_duplicates}")
     print(f"- marked_past_in_supabase: {run.supabase_cleaned_past}")
     print(f"- deleted_expired_sales: {run.supabase_deleted_expired}")
-    print(f"- insufficient_information (not published): {run.insufficient_summary}")
+    print(f"- rejected_insufficient_listing (not written): {listing_minimum.summary()}")
     print(f"- json: {run.json_path}")
     print(f"- csv: {run.csv_path}")
     for line in format_quality_report(run.quality_report):

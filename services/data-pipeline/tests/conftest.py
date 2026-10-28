@@ -76,7 +76,6 @@ def _information_sufficiency_gate_off_by_default(monkeypatch):
     from src import information_sufficiency
 
     monkeypatch.setenv(information_sufficiency.GATE_ENV, "off")
-    monkeypatch.delenv(information_sufficiency.MIN_ADDRESS_ENV, raising=False)
     information_sufficiency.set_active_blocklist(information_sufficiency.NO_BLOCKLIST)
 
 

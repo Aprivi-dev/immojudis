@@ -1,32 +1,23 @@
-"""Règle de rétention « informations suffisantes » (fonction pure ``sufficient_information``).
+"""Résolveur d'adresses email de l'agent d'information, registre de refus et porte « minimum d'une annonce ».
 
-Règle du propriétaire (12/10/2026, toutes sources) : une vente sans superficie,
-sans adresse ET sans aucune information de contact ne pourra jamais être
-enrichie ; elle n'entre pas en base. Donc :
+La règle de minimum n'est écrite qu'à UN endroit : ``src/listing_minimum.py`` (règle du propriétaire, 28/10/2026 :
+voie ou lieu-dit, OU adresse email de contact, OU pièce, OU autre source). Ce module la sert au reste du pipeline :
 
-* CONSERVÉE si une adresse exploitable OU une superficie OU un contact (e-mail
-  exploitable ou numéro de téléphone) existe ;
-* NON CONSERVÉE seulement si les trois manquent.
+* ``sufficient_information`` applique la règle à une vente (sans accès base) ; l'ancienne règle du 12/10/2026
+  (adresse OU superficie OU email OU téléphone, la commune suffisant) est retirée : la superficie, la commune seule
+  et le téléphone ne comptent plus ;
+* ``publication_gate`` y ajoute l'interrupteur d'urgence ``IMMOJUDIS_INFORMATION_SUFFICIENCY_GATE`` et le registre
+  de refus de l'agent ; elle est appelée à l'écriture de la vente, là où l'on sait si elle se rattache à une ligne
+  existante (``publication_identity.resolve_publication_identities``), pas à l'admission.
 
-(Avant le 12/10/2026 : conservée si adresse ET superficie, ou un e-mail.)
+Ce qui reste ici est le MIROIR du résolveur de contacts de l'agent (``discoverInformationAgentContacts`` dans
+``src/lib/information-agent.ts``) : un contact ne compte que s'il est une adresse email que l'agent peut solliciter,
+car l'agent ne travaille que par email.
 
-Définitions (voir ``docs/audits/2026-10-10-extraction-par-source.md``) :
-
-* **adresse exploitable** = la commune (ou le code postal) suffit, décision du
-  propriétaire du 2026-10-11 ; ``IMMOJUDIS_SUFFICIENCY_MIN_ADDRESS=street`` exige
-  en plus une désignation du bien (voie, lieu-dit ou parcelle cadastrale) ;
-* **superficie** = surface bâtie/habitable/Carrez connue ; pour un terrain la
-  surface du terrain compte ; un parking/garage n'a pas besoin de superficie ;
-* **e-mail exploitable** = une adresse que le résolveur de l'agent
-  (``discoverInformationAgentContacts`` dans ``src/lib/information-agent.ts``)
-  trouve dans la vente, et qui n'est pas refusée (opposition, rebond permanent).
-  Le résolveur n'existe qu'en TypeScript : ce module en est un MIROIR, gardé
-  identique par les cas partagés de ``tests/fixtures/information_agent_contact_cases.json``,
-  exécutés des deux côtés (pytest et vitest). Toute évolution du résolveur doit
-  mettre à jour ces cas.
-* **exemptions** : statut terminé (past/adjudicated/cancelled/withdrawn) ou en
-  quarantaine : ces lignes servent aux statistiques / à la revue, elles ne sont
-  jamais jugées sur la complétude.
+* **e-mail exploitable** = une adresse que le résolveur de l'agent trouve dans la vente, et qui n'est pas refusée
+  (opposition, rebond permanent). Le résolveur n'existe qu'en TypeScript : ce module en est un MIROIR, gardé
+  identique par les cas partagés de ``tests/fixtures/information_agent_contact_cases.json``, exécutés des deux côtés
+  (pytest et vitest). Toute évolution du résolveur doit mettre à jour ces cas.
 
 Aucune donnée personnelle n'est journalisée : seuls des codes et des compteurs.
 """
@@ -39,35 +30,13 @@ import re
 from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from src.listing_location import classify_address, extract_designation
 from src.models import AuctionSale
 
 LOGGER = logging.getLogger(__name__)
 
 GATE_ENV = "IMMOJUDIS_INFORMATION_SUFFICIENCY_GATE"
-MIN_ADDRESS_ENV = "IMMOJUDIS_SUFFICIENCY_MIN_ADDRESS"
-
-#: Statuts pour lesquels une vente n'est pas jugée (statistiques / revue).
-EXEMPT_STATUSES = frozenset({"past", "adjudicated", "cancelled", "withdrawn", "quarantined"})
-#: Types de bien sans superficie requise (lots annexes).
-SURFACE_OPTIONAL_TYPES = frozenset({"parking"})
-#: Types pour lesquels la surface du terrain vaut superficie.
-LAND_SURFACE_TYPES = frozenset({"land", "mixed", "other", "unknown"})
-#: Sources dont le texte libre est propre au bien (pas de bloc avocat / tribunal / bandeau d'actualités).
-PROPERTY_SCOPED_TEXT_SOURCES = frozenset(
-    {"cessions_etat", "avoventes", "licitor", "notaires", "agrasc", "encheres_publiques", "info_encheres"}
-)
-EXPLOITABLE_ADDRESS_LEVELS = frozenset({"street", "lieu_dit", "parcel"})
-
-REASON_MISSING_ADDRESS = "missing_address"
-REASON_MISSING_SURFACE = "missing_surface"
-REASON_MISSING_CONTACT = "missing_contact"
-
-#: Numéro de téléphone français (fixe ou mobile, +33 ou 0), séparateurs espace, point ou tiret.
-_PHONE_RE = re.compile(r"(?<![\d+])(?:\+33\s?(?:\(0\)\s?)?|0)[1-9](?:[\s.\-]?\d{2}){4}(?!\d)")
 
 # --------------------------------------------------------------------------
 # Miroir du résolveur de contacts de l'agent (src/lib/information-agent.ts)
@@ -153,17 +122,6 @@ def _contact_texts(sale: AuctionSale) -> list[object]:
     return texts
 
 
-def contact_phones(sale: AuctionSale) -> set[str]:
-    """Numéros de téléphone trouvés dans les mêmes textes que les e-mails (chiffres seuls)."""
-    phones: set[str] = set()
-    for text in _contact_texts(sale):
-        if isinstance(text, str):
-            for match in _PHONE_RE.findall(text):
-                digits = re.sub(r"\D", "", match)
-                phones.add("0" + digits[-9:])
-    return phones
-
-
 _COURT_REGISTRY_DOMAIN_RE = re.compile(r"(?:^|\.)justice\.(?:fr|gouv\.fr)$")
 _RPVA_DOMAIN_RE = re.compile(r"(?:^|\.)avocat-conseil\.fr$")
 _BAR_OR_CARPA_DOMAIN_RE = re.compile(
@@ -230,120 +188,38 @@ def usable_contact_emails(sale: AuctionSale, blocklist: ContactBlocklist = NO_BL
 
 
 # --------------------------------------------------------------------------
-# Adresse et superficie
-# --------------------------------------------------------------------------
-def _positive(value: object) -> bool:
-    if value is None:
-        return False
-    try:
-        number = Decimal(str(value))
-    except (InvalidOperation, ValueError):
-        return False
-    return number.is_finite() and number > 0
-
-
-def has_surface(sale: AuctionSale) -> bool:
-    """Superficie connue (voir les exemptions du module)."""
-    if any(_positive(getattr(sale, name, None)) for name in
-           ("surface_m2", "habitable_surface_m2", "carrez_surface_m2", "app_surface_m2")):
-        return True
-    property_type = (sale.property_type or "unknown").lower()
-    return property_type in LAND_SURFACE_TYPES and _positive(sale.land_surface_m2)
-
-
-def _surface_required(sale: AuctionSale) -> bool:
-    return (sale.property_type or "").lower() not in SURFACE_OPTIONAL_TYPES
-
-
-def _commune_context(sale: AuctionSale) -> bool:
-    return bool((sale.city or "").strip() or (sale.postal_code or "").strip())
-
-
-def _property_texts(sale: AuctionSale) -> list[str]:
-    payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
-    blocks = payload.get("source_blocks") if isinstance(payload.get("source_blocks"), dict) else {}
-    values = [sale.title, sale.description, blocks.get("description"), blocks.get("titre_detail")]
-    return [value for value in values if isinstance(value, str) and value.strip()]
-
-
-def address_level(sale: AuctionSale) -> tuple[str | None, str | None]:
-    """(niveau, origine) de la meilleure localisation lisible du bien.
-
-    Niveaux : ``street``, ``lieu_dit``, ``parcel``, ``commune``, ``None``.
-    L'origine est une étiquette technique (``address``, ``cadastral_reference``,
-    ``description``), jamais le texte lui-même.
-    """
-    level = classify_address(sale.address, sale.city)
-    if level in EXPLOITABLE_ADDRESS_LEVELS and _commune_context(sale):
-        return level, "address"
-    payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
-    blocks = payload.get("source_blocks") if isinstance(payload.get("source_blocks"), dict) else {}
-    if _commune_context(sale):
-        for key in ("reference_cadastrale", "references_cadastrales"):
-            if classify_address(str(blocks.get(key) or "")) == "parcel":
-                return "parcel", "cadastral_reference"
-        source = (sale.primary_source or sale.source_name or "").lower()
-        if source in PROPERTY_SCOPED_TEXT_SOURCES:
-            for text in _property_texts(sale):
-                designation = extract_designation(text)
-                if designation:
-                    return designation, "description"
-    if level == "commune" or _commune_context(sale):
-        return "commune", "address" if level else "city_or_postal_code"
-    return None, None
-
-
-def _min_address_levels() -> frozenset[str]:
-    # The commune alone is enough by default (owner decision, 2026-10-11).
-    configured = (os.getenv(MIN_ADDRESS_ENV) or "commune").strip().lower()
-    if configured == "street":
-        return EXPLOITABLE_ADDRESS_LEVELS
-    return EXPLOITABLE_ADDRESS_LEVELS | {"commune"}
-
-
-# --------------------------------------------------------------------------
-# Verdict
+# Verdict : la règle est celle de src/listing_minimum.py
 # --------------------------------------------------------------------------
 @dataclass(frozen=True)
 class SufficiencyVerdict:
     sufficient: bool
-    reasons: tuple[str, ...] = ()
-    address_level: str | None = None
-    address_basis: str | None = None
-    has_surface: bool = False
-    contact_count: int = 0
+    #: Preuves trouvées (``street``, ``email``, ``documents``, ``other_source``) ; vide : refusée.
+    basis: tuple[str, ...] = ()
+    #: Code du refus (``insufficient_listing`` ou ``detail_unread``), ``None`` si suffisante.
+    reason: str | None = None
+    #: Interrupteur coupé : aucune règle appliquée.
     exemption: str | None = None
-    phone_count: int = 0
+
+    @property
+    def reasons(self) -> tuple[str, ...]:
+        return (self.reason,) if self.reason else ()
 
     @property
     def reason_code(self) -> str:
         """Motif court pour le journal et le résumé de run (sans donnée personnelle)."""
-        return "insufficient_information:" + "+".join(self.reasons) if self.reasons else ""
+        return self.reason or ""
 
 
 def sufficient_information(
     sale: AuctionSale,
     *,
     blocklist: ContactBlocklist = NO_BLOCKLIST,
-    accepted_address_levels: frozenset[str] | None = None,
 ) -> SufficiencyVerdict:
-    """Applique la règle de rétention à une vente normalisée (pure, sans accès base)."""
-    status = (sale.status or "").lower()
-    level, basis = address_level(sale)
-    surface = has_surface(sale)
-    emails = usable_contact_emails(sale, blocklist)
-    phones = contact_phones(sale)
-    if status in EXEMPT_STATUSES:
-        return SufficiencyVerdict(
-            True, (), level, basis, surface, len(emails), exemption=f"status:{status}", phone_count=len(phones)
-        )
-    accepted = accepted_address_levels or _min_address_levels()
-    address_ok = level in accepted
-    surface_ok = surface or not _surface_required(sale)
-    if address_ok or surface_ok or emails or phones:
-        return SufficiencyVerdict(True, (), level, basis, surface, len(emails), phone_count=len(phones))
-    reasons = (REASON_MISSING_ADDRESS, REASON_MISSING_SURFACE, REASON_MISSING_CONTACT)
-    return SufficiencyVerdict(False, reasons, level, basis, surface, 0)
+    """Applique la règle de minimum à une vente normalisée (pure, sans accès base)."""
+    from src.listing_minimum import assess  # import tardif : listing_minimum lit ce module
+
+    verdict = assess(sale, blocklist=blocklist)
+    return SufficiencyVerdict(verdict.ok, verdict.basis, verdict.reason)
 
 
 def gate_enabled() -> bool:
@@ -364,6 +240,10 @@ def publication_gate(sale: AuctionSale, *, blocklist: ContactBlocklist | None = 
     if not gate_enabled():
         return SufficiencyVerdict(True, exemption="gate_disabled")
     return sufficient_information(sale, blocklist=_ACTIVE_BLOCKLIST if blocklist is None else blocklist)
+
+
+def active_blocklist() -> ContactBlocklist:
+    return _ACTIVE_BLOCKLIST
 
 
 def summarize_verdicts(verdicts: Iterable[tuple[str, SufficiencyVerdict]]) -> dict[str, Any]:

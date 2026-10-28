@@ -1,5 +1,4 @@
 import "server-only";
-import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import type { AuctionSale } from "@/lib/types";
@@ -7,12 +6,14 @@ import type {
   InformationAgentAddressObserver,
   InformationAgentAddressSourceKind,
 } from "@/lib/information-agent-compliance";
+import { normalizedEmail } from "@/lib/information-agent/email-address";
 import { findEmailsInText, replaceEmailsInText } from "@/lib/information-agent/email-in-text";
 import {
   INFORMATION_AGENT_EXCLUDED_ADDRESS_MESSAGE,
   isInformationAgentExcludedAddress,
 } from "@/lib/information-agent/excluded-addresses";
 
+export { normalizedEmail };
 export {
   INFORMATION_AGENT_EXCLUDED_ADDRESS_MESSAGE,
   informationAgentExcludedAddressReason,
@@ -730,12 +731,6 @@ function safeSourceUrl(value: string): string | null {
 
 function stripDiacritics(value: string): string {
   return value.normalize("NFD").replace(/\p{Diacritic}/gu, "");
-}
-
-export function normalizedEmail(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const normalized = value.trim().toLowerCase();
-  return z.string().email().safeParse(normalized).success ? normalized : null;
 }
 
 function cleanContactValue(value: unknown): string | null {

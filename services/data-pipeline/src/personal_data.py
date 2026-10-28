@@ -39,6 +39,8 @@ import unicodedata
 from collections.abc import Callable
 from typing import Any
 
+from src.rejected_listings import persistable_observations, persistable_payload
+
 # --- Briques de motifs (identiques dans le miroir TypeScript) -------------------------------------
 _UP = "A-ZÀ-ÖØ-ÞŒ"
 _LOW = "a-zß-öø-ÿœ"
@@ -654,7 +656,11 @@ def _redact_observation(observation: Any) -> Any:
 
 
 def redact_storage_row(row: dict[str, Any]) -> dict[str, Any]:
-    """Filtre, en place, une ligne destinée à `auction_sales` (ou à ses copies normalisées)."""
+    """Filtre, en place, une ligne destinée à `auction_sales` (ou à ses copies normalisées).
+
+    Retire aussi les clés techniques du passage de collecte (`rejected_listings.TECHNICAL_KEYS`) de `raw_payload` et des
+    observations : elles ne sont jamais écrites en base.
+    """
     for column in SALE_TEXT_COLUMNS:
         if isinstance(row.get(column), str):
             row[column] = redact_personal_text(row[column])
@@ -664,4 +670,8 @@ def redact_storage_row(row: dict[str, Any]) -> dict[str, Any]:
         row["raw_payload"] = redact_payload(row["raw_payload"])
     if isinstance(row.get("observations"), list):
         row["observations"] = [_redact_observation(item) for item in row["observations"]]
+    # Clés techniques du passage (_list_signature, _recently_rejected, _known_unchanged) : jamais en base.
+    for column, clean in (("raw_payload", persistable_payload), ("observations", persistable_observations)):
+        if column in row:
+            row[column] = clean(row[column])
     return row

@@ -257,7 +257,7 @@ describe("brouillon sans adresse dans l'annonce : recherche autonome", () => {
 
   it("A : une adresse de l'autre annonce qui ne rappelle ni le nom ni le cabinet n'est pas réemployée", async () => {
     db.otherSales = [{ ...otherListing, lawyer_contact: "Tél.: 05.56.00.00.01 | archives@x.test" }];
-    await expect(draft()).rejects.toThrow("renseignez l'adresse email");
+    await expect(draft()).rejects.toThrow("Aucune adresse email de contact");
     expect(db.observed).toEqual([]);
     expect(db.inserted).toBeNull();
   });
@@ -345,7 +345,9 @@ describe("brouillon sans adresse dans l'annonce : recherche autonome", () => {
       host: "cabinet-dupont.test",
       pagesFetched: 0,
     });
-    await expect(draft()).rejects.toThrow(/renseignez l'adresse email.*recherche automatique/s);
+    await expect(draft()).rejects.toThrow(
+      /Aucune adresse email de contact.*recherche automatique/s,
+    );
     expect(db.observed).toEqual([]);
     expect(db.inserted).toBeNull();
     expect(mocks.rpc).not.toHaveBeenCalled();
@@ -357,7 +359,7 @@ describe("brouillon sans adresse dans l'annonce : recherche autonome", () => {
       host: "cabinet-dupont.test",
       pagesFetched: 3,
     });
-    await expect(draft()).rejects.toThrow("renseignez l'adresse email");
+    await expect(draft()).rejects.toThrow("Aucune adresse email de contact");
     expect(db.observed).toEqual([]);
   });
 });

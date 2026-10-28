@@ -839,14 +839,15 @@ def should_fetch_detail(sale: dict[str, Any], known: dict[str, str] | None) -> b
     in DB whose list-page price/date are unchanged. Marks the sale so the
     pipeline can drop it before normalization/enrichment. Sources that only
     expose price/date on the detail page (no list signature) always fetch."""
+    from src.rejected_listings import skip_detail
     from src.source_checkpoint import restore_detail
+
     if restore_detail(sale):
         return False
-    if not known:
-        return True
     source_url = str(sale.get("source_url") or "")
-    if not source_url or source_url not in known:
-        return True
+    if not known or not source_url or source_url not in known:
+        # Absente de la base : relue, sauf si elle a été refusée il y a moins de 7 jours (src/rejected_listings.py).
+        return not skip_detail(sale)
     signature = listing_signature(sale)
     if signature is not None and signature == known[source_url]:
         sale["_known_unchanged"] = True

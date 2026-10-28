@@ -50,6 +50,7 @@ import { resolveSiteOrigin } from "@/lib/site-url";
 import type { AuctionSale } from "@/lib/types";
 import { informationAgentContributionUrl } from "@/lib/information-agent-contribution";
 import { informationAgentIdentityKeys } from "@/lib/information-agent/identity";
+import { missingRecipientMessage } from "@/lib/information-agent/email-address";
 import {
   assertInformationAgentContactAllowed,
   contactCandidateSnapshot,
@@ -444,9 +445,7 @@ export async function createAdminInformationAgentDraft({
     throw new Error(
       candidatesSkippedForOpposition > 0 && !contactCandidates.length
         ? INFORMATION_AGENT_IDENTITY_OPPOSED_MESSAGE
-        : contactCandidates.length > 1
-          ? "Requête invalide : plusieurs contacts sont possibles. Choisissez explicitement l'adresse email du professionnel à contacter."
-          : `Requête invalide : renseignez l'adresse email du professionnel à contacter.${search.noAddressNote}`,
+        : missingRecipientMessage(contactCandidates.length, search.noAddressNote),
     );
   }
   const selectedByEmail = contactCandidates.find((candidate) => candidate.email === recipientEmail);

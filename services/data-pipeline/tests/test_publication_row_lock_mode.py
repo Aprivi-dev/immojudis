@@ -15,7 +15,6 @@ import uuid
 
 import pytest
 
-from src import insufficient_sales
 from src.publication_identity import _candidate_lock_query
 from src.storage import supabase_client as storage
 from src.storage.supabase_client import _postgres_connect
@@ -35,7 +34,6 @@ def test_candidate_lock_query_uses_the_weak_row_lock() -> None:
     [
         storage._guard_enrichment_revision,
         storage._persist_pdf_document_checkpoint_with_connection,
-        insufficient_sales.delete_batch,
     ],
 )
 def test_publication_selects_never_take_the_strong_row_lock(function) -> None:

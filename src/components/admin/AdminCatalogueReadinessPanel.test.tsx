@@ -40,9 +40,35 @@ describe("AdminCatalogueReadinessPanel", () => {
       recipientContact: "cabinet@example.test · 01 02 03",
     });
   });
+
+  it("désactive « Ouvrir le message » avec le motif quand aucune adresse email n'est connue", async () => {
+    mocks.fetch.mockResolvedValue(
+      overview({
+        informationAgentBlockedReason:
+          "Aucune adresse email de contact : l'agent ne peut pas écrire.",
+      }),
+    );
+    const onPrepareInformationRequest = vi.fn();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    render(
+      <QueryClientProvider client={client}>
+        <AdminCatalogueReadinessPanel onPrepareInformationRequest={onPrepareInformationRequest} />
+      </QueryClientProvider>,
+    );
+
+    const button = await screen.findByRole("button", { name: "Ouvrir le message" });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    const reasonId = button.getAttribute("aria-describedby");
+    expect(document.getElementById(reasonId ?? "")?.textContent).toBe(
+      "Aucune adresse email de contact : l'agent ne peut pas écrire.",
+    );
+    fireEvent.click(button);
+    expect(onPrepareInformationRequest).not.toHaveBeenCalled();
+  });
 });
 
-function overview() {
+function overview(item: Record<string, unknown> = {}) {
   return {
     policy: {
       enforcementEnabled: true,
@@ -84,6 +110,7 @@ function overview() {
         override: null,
         overrideReason: null,
         overrideExpiresAt: null,
+        ...item,
       },
     ],
   };

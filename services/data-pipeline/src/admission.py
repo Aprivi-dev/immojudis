@@ -303,38 +303,15 @@ def display_job_block_reason(sale: AuctionSale, now: datetime | None = None) -> 
 def publication_rejection(sale: AuctionSale, now=None) -> str | None:
     """Motif pour lequel une vente n'est pas publiée, ou ``None`` si elle l'est.
 
-    Codes : ``expired``, ``missing_price_and_surface`` et
-    ``insufficient_information:<motifs>`` (règle de rétention, voir
-    ``information_sufficiency``). Ce sont des codes, jamais des données de la vente.
+    Codes : ``expired`` et ``missing_price_and_surface``. Le minimum d'une annonce (voie ou lieu-dit, email de
+    contact, pièce, autre source) n'est PAS jugé ici : il l'est à l'écriture, quand on sait si la vente se
+    rattache à une ligne existante (``src/listing_minimum.py``). Ce sont des codes, jamais des données de la vente.
     """
-    from src.information_sufficiency import publication_gate
-
     if is_expired(sale, now):
         return "expired"
     if not has_price_or_surface(sale):
         return "missing_price_and_surface"
-    verdict = publication_gate(sale)
-    return None if verdict.sufficient else verdict.reason_code
-
-
-def split_insufficient(sales: list[AuctionSale], logger) -> tuple[list[AuctionSale], dict]:
-    """Retire les ventes aux informations insuffisantes ; renvoie (conservées, compteurs du run).
-
-    Le journal ne contient que la source, l'URL publique de l'annonce et le motif.
-    """
-    from src.information_sufficiency import publication_gate, summarize_verdicts
-
-    kept: list[AuctionSale] = []
-    rejected: list[tuple[str, object]] = []
-    for sale in sales:
-        verdict = publication_gate(sale)
-        if verdict.sufficient:
-            kept.append(sale)
-            continue
-        rejected.append((str(sale.primary_source or sale.source_name), verdict))
-        logger.info("Collection admission rejected source=%s url=%s reason=%s",
-                    sale.source_name, sale.source_url, verdict.reason_code)
-    return kept, summarize_verdicts(rejected)
+    return None
 
 
 def admit_sales(sales: list[AuctionSale], record) -> list[AuctionSale]:

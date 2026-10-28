@@ -100,10 +100,12 @@ def merge_duplicate_sales(
     strict_fallback: bool = True,
     strict_excluded_sources: frozenset[str] = frozenset(),
     strict_max_group: int | None = None,
+    streetless_fallback: bool = True,
 ) -> list[AuctionSale]:
     """Fusionne les observations d'un même bien.
 
     ``strict_fallback=False`` désactive la clé de repli stricte (tribunal, jour, prix, signal fort).
+    ``streetless_fallback=False`` désactive le rattachement d'une annonce sans voie (``src.dedupe_streetless``).
     Le balayage qui relit les lignes déjà publiées la restreint plutôt que de la couper :
     ``strict_excluded_sources`` écarte les annonces de ces sources de la clé stricte, et
     ``strict_max_group`` écarte les (jour, prix) partagés par plus d'annonces que ce plafond.
@@ -160,9 +162,15 @@ def merge_duplicate_sales(
     survivors = _merge_by_address([*by_hash.values(), *passthrough])
     if not strict_fallback:
         return survivors
-    return _merge_by_strict_key(
+    survivors = _merge_by_strict_key(
         survivors, excluded_sources=strict_excluded_sources, max_group=strict_max_group
     )
+    if not streetless_fallback:
+        return survivors
+    # Import tardif : ce module s'appuie sur les clés et les gardes de celui-ci.
+    from src.dedupe_streetless import merge_streetless_sales
+
+    return merge_streetless_sales(survivors)
 
 
 def _is_richer(candidate: AuctionSale, current: AuctionSale) -> bool:
@@ -201,7 +209,14 @@ def _field_authority(sale: AuctionSale, field: str) -> tuple[int, str]:
     return documentary, checked
 
 
+# Position et lieu : une annonce sans voie (« Nice », « 06000 Nice ») ne les écrase jamais sur une vente qui a
+# une voie, et n'apporte jamais de coordonnées (un centre de commune n'est pas l'adresse de la vente).
+_LOCATION_FIELDS = frozenset({"address", "postal_code", "city", "department", "latitude", "longitude"})
+_POSITION_FIELDS = frozenset({"latitude", "longitude"})
+
+
 def _merge_into(target: AuctionSale, source: AuctionSale, confidence: str) -> AuctionSale:
+    keep_location = street_class(target) == "street" and street_class(source) == "none"
     target.primary_source = target.primary_source or target.source_name
     target.dedupe_confidence = confidence
     for url in [source.source_url, *source.source_urls]:
@@ -218,6 +233,8 @@ def _merge_into(target: AuctionSale, source: AuctionSale, confidence: str) -> Au
     for field in _mergeable_fields():
         current = getattr(target, field)
         incoming = getattr(source, field)
+        if keep_location and field in _LOCATION_FIELDS and (field in _POSITION_FIELDS or not _is_empty(current)):
+            continue
         if _is_empty(current) and not _is_empty(incoming):
             setattr(target, field, incoming)
         elif (
@@ -392,6 +409,54 @@ def _address_dedupe_keys(sale: AuctionSale) -> list[str]:
     if city:
         localities.append(_normalize_street_text(city))
     return [f"{street_key}|{locality}" for locality in _unique_values(localities) if locality]
+
+
+_ARRONDISSEMENT_RE = re.compile(r"\b\d{1,2}\s?(?:er|ere|e|eme)\b|\barrondissement\b")
+_STREET_WORD_RE = re.compile(
+    r"\b(?:rue|avenue|boulevard|chemin|route|impasse|allee|place|quai|cours|faubourg|passage|square|voie|"
+    r"lotissement|hameau|lieu dit|lieudit|residence|domaine|villa|cite|clos|sentier|rond point|parvis|esplanade|"
+    r"mail|port|cote|ruelle|traverse|chaussee|promenade|zone|za|zi|zac)\b"
+)
+
+
+def _street_remainder(sale: AuctionSale) -> str:
+    """Ce qui reste de l'adresse une fois retirés code postal, commune, département et Cedex (normalisé)."""
+    address = clean_text(sale.address)
+    if not address:
+        return ""
+    postal_code = clean_text(sale.postal_code) or _postal_code_from_text(address)
+    city = clean_text(sale.city) or _city_from_address(address, postal_code)
+    street = _TRAILING_DEPARTMENT_RE.sub(" ", address)
+    department = clean_text(sale.department)
+    if department:
+        street = re.sub(rf"(?:,|\()\s*{re.escape(department)}\s*\)?\s*$", " ", street, flags=re.I)
+    for token in (postal_code, city):
+        if token:
+            street = re.sub(re.escape(token), " ", street, flags=re.IGNORECASE)
+    street = re.sub(r"\b\d{5}\b", " ", street)
+    remainder = _normalize_street_text(street)
+    if city:
+        # Accents et ponctuation différents entre l'adresse et la commune (« Nimes » / « Nîmes »).
+        city_key = _normalize_street_text(city)
+        if city_key:
+            remainder = re.sub(rf"\b{re.escape(city_key)}\b", " ", remainder)
+    remainder = _ARRONDISSEMENT_RE.sub(" ", remainder)
+    return re.sub(r"\s+", " ", remainder).strip()
+
+
+def street_class(sale: AuctionSale) -> str:
+    """``street`` (voie reconnue), ``none`` (ni voie ni lieu-dit : la commune seule) ou ``other`` (doute).
+
+    Seule la classe ``none`` peut être absorbée par la règle des annonces sans voie : tout reste d'adresse
+    qui n'est pas une voie reconnue (un lieu-dit, un nom de résidence) classe la vente en ``other``, pour ne
+    jamais perdre cette information.
+    """
+    if _address_dedupe_keys(sale):
+        return "street"
+    remainder = _street_remainder(sale)
+    if not remainder or not re.search(r"[a-z]", remainder):
+        return "none"
+    return "street" if _STREET_WORD_RE.search(remainder) else "other"
 
 
 def _postal_code_from_text(value: str) -> str | None:

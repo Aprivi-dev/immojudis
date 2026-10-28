@@ -10,7 +10,8 @@ Ici, le centre de la commune vient de la table ``reference_communes`` (geo.api.g
 sans ambiguïté : le nom de la commune parmi celles du code postal, ou, sans code postal, un nom unique dans le
 département. Le point est marqué ``geo_precision = municipality`` (approximatif pour l'application) et sa preuve
 est écrite dans ``raw_payload['geocode']`` (fournisseur ``reference_communes``). Une adresse précise obtenue
-ensuite par la BAN le remplace (voir ``src.geocode.geocode_sale``).
+ensuite par la BAN le remplace (voir ``src.geocode.geocode_sale``). Les ventes qui ont une voie ou un lieu-dit dans
+leur adresse sont reprises en lot par ``src.address_positions`` (passage borné du lanceur planifié).
 """
 
 from __future__ import annotations
