@@ -46,7 +46,10 @@ describe("validateUpsert", () => {
   });
 
   it("refuse en 23502 une colonne NOT NULL à défaut absente d'une ligne de l'envoi (missing=null)", () => {
-    const rows = [{ ...known, ppri_checked: true }, { ...known, sale_id: "other" }];
+    const rows = [
+      { ...known, ppri_checked: true },
+      { ...known, sale_id: "other" },
+    ];
     expect(validateUpsert(flood, rows)?.code).toBe("23502");
     // `defaultToNull: false` (Prefer: missing=default) : la valeur par défaut s'applique.
     expect(validateUpsert(flood, rows, { defaultToNull: false })).toBeNull();

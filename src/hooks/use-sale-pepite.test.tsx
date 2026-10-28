@@ -77,11 +77,11 @@ describe("useSalePepiteState", () => {
     mocks.ids.mockReset().mockResolvedValue(new Set());
     mocks.fetchPepite.mockReset().mockResolvedValue(PAYLOAD);
   });
-  const known = () =>
+  const useKnown = () =>
     useSalePepiteState({ saleId, view: "criteria", userKey: "public", known: true });
 
   it("passe de loading à ready", async () => {
-    const { result } = renderHook(known, { wrapper });
+    const { result } = renderHook(useKnown, { wrapper });
     expect(result.current.status).toBe("loading");
     await waitFor(() => expect(result.current.status).toBe("ready"));
     expect(result.current.payload).toEqual(PAYLOAD);
@@ -89,14 +89,14 @@ describe("useSalePepiteState", () => {
 
   it("dit error quand la route échoue (503, 429, réseau)", async () => {
     mocks.fetchPepite.mockRejectedValue(new Error("503"));
-    const { result } = renderHook(known, { wrapper });
+    const { result } = renderHook(useKnown, { wrapper });
     await waitFor(() => expect(result.current.status).toBe("error"));
     expect(result.current.payload).toBeNull();
   });
 
   it("dit absent quand la route répond 404", async () => {
     mocks.fetchPepite.mockResolvedValue(null);
-    const { result } = renderHook(known, { wrapper });
+    const { result } = renderHook(useKnown, { wrapper });
     await waitFor(() => expect(result.current.status).toBe("absent"));
   });
 

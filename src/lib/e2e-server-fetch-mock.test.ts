@@ -57,6 +57,34 @@ describe("E2E server fetch mock", () => {
     expect(network).not.toHaveBeenCalled();
   });
 
+  it("serves the varied sales of the public sale page spec, and the pépite mark of one only", async () => {
+    const supabase = client();
+    resetWithdrawnSources();
+    const read = async (id: string) => {
+      const result = await fetchPublicSaleSummary(supabase, id, { withIndexability: true });
+      if (result.kind !== "found") throw new Error(`${id} should be served`);
+      return result.sale;
+    };
+    expect(await read("77000000-0000-4000-8000-000000000002")).toMatchObject({
+      city: "Bordeaux",
+      pepite: true,
+    });
+    expect(await read("77000000-0000-4000-8000-000000000003")).toMatchObject({
+      sale_venue_type: "notary",
+      city: null,
+      starting_price_eur: null,
+    });
+    expect(await read("77000000-0000-4000-8000-000000000004")).toMatchObject({
+      sale_date: "2020-03-04T09:00:00.000Z",
+    });
+    expect(await read("77000000-0000-4000-8000-000000000005")).toMatchObject({
+      sale_venue_type: "state",
+      starting_price_eur: null,
+    });
+    expect(await read(SALE_ID)).not.toHaveProperty("pepite");
+    expect(network).not.toHaveBeenCalled();
+  });
+
   it("lets other requests through", async () => {
     const url = "https://ci.supabase.co/rest/v1/v_auction_sales_discovery?select=id";
     await expect(fetch(url)).rejects.toThrow("reached the network");

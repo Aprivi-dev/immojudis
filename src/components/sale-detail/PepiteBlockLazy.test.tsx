@@ -26,7 +26,9 @@ describe("PepiteBlockLazy", () => {
   it("rend le bloc et dit à la fiche qu'il existe", () => {
     mocks.state.mockReturnValue({ payload: PAYLOAD, status: "ready" });
     const onLoadedChange = vi.fn();
-    render(<PepiteBlockLazy saleId="s" known lockedAction={null} onLoadedChange={onLoadedChange} />);
+    render(
+      <PepiteBlockLazy saleId="s" known lockedAction={null} onLoadedChange={onLoadedChange} />,
+    );
     expect(document.querySelector("#pepite")).not.toBeNull();
     expect(onLoadedChange).toHaveBeenLastCalledWith(true);
   });
@@ -34,7 +36,9 @@ describe("PepiteBlockLazy", () => {
   it("pendant la lecture, tient la place du bloc avec un squelette de hauteur fixe", () => {
     mocks.state.mockReturnValue({ payload: null, status: "loading" });
     const onLoadedChange = vi.fn();
-    render(<PepiteBlockLazy saleId="s" known lockedAction={null} onLoadedChange={onLoadedChange} />);
+    render(
+      <PepiteBlockLazy saleId="s" known lockedAction={null} onLoadedChange={onLoadedChange} />,
+    );
     const skeleton = screen.getByTestId("pepite-block-loading");
     expect(skeleton.getAttribute("aria-busy")).toBe("true");
     expect(skeleton.className).toMatch(/min-h-44/);
