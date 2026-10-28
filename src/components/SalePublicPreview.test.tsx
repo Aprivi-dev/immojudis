@@ -978,7 +978,13 @@ describe("essai gratuit à l'inscription sur la fiche publique", () => {
   } as AuctionSale;
 
   function storeWith(state: LaunchOfferState): LaunchOfferStore {
-    return { getSnapshot: () => state, subscribe: () => () => {}, ensure: () => {} };
+    return {
+      getSnapshot: () => state,
+      // Le serveur ne lit pas l'état dans ces tests : « pas encore lu », comme un fournisseur sans valeur initiale.
+      getServerSnapshot: () => ({ active: false, pending: true }),
+      subscribe: () => () => {},
+      ensure: () => {},
+    };
   }
   function withOffer(state: LaunchOfferState) {
     return (

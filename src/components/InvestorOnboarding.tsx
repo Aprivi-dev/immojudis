@@ -7,6 +7,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useCreateAlert } from "@/hooks/use-create-alert";
 import { useHasAnalysisAccess } from "@/hooks/use-has-analysis-access";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
+import { ANALYSIS_TRIAL_DAYS } from "@/lib/analysis-offer";
 import { LAUNCH_OFFER_ACCOUNT_TEXT } from "@/lib/launch-offer";
 import { pathWithSearch } from "@/lib/navigation";
 import { firstSearchToUrl, type FirstSearch } from "@/lib/onboarding";
@@ -219,9 +220,10 @@ export function InvestorOnboarding({
                 bien.{" "}
                 {launchOffer ? (
                   <>
-                    Pendant votre essai gratuit de 7 jours, votre compte ouvre les outils de l’offre
-                    Analyse sur toutes les ventes (contenu selon la vente). Ensuite, vous pourrez
-                    débloquer {MONTHLY_SALE_UNLOCKS} ventes en détail chaque mois.
+                    Pendant votre essai gratuit de {ANALYSIS_TRIAL_DAYS} jours, votre compte ouvre
+                    les outils de l’offre Analyse sur toutes les ventes (contenu selon la vente).
+                    Ensuite, vous pourrez débloquer {MONTHLY_SALE_UNLOCKS} ventes en détail chaque
+                    mois.
                   </>
                 ) : (
                   <>

@@ -26,6 +26,7 @@ export function buildPlanEntitlements(
     trialEndsAt?: string | null;
     trialEndedAt?: string | null;
     trialDenied?: boolean;
+    trialExtension?: boolean;
   } = {},
 ): PlanEntitlements {
   return {
@@ -38,6 +39,7 @@ export function buildPlanEntitlements(
     // parce que le compte est abonné ou premium), ou l'essai est fini ou refusé.
     ...(options.launchOffer ? { launchOffer: true as const } : {}),
     ...(options.launchOffer && options.trialEndsAt ? { trialEndsAt: options.trialEndsAt } : {}),
+    ...(options.launchOffer && options.trialExtension ? { trialExtension: true as const } : {}),
     ...(!options.launchOffer && options.trialEndedAt ? { trialEndedAt: options.trialEndedAt } : {}),
     ...(!options.launchOffer && options.trialDenied ? { trialDenied: true as const } : {}),
     limits,

@@ -12,8 +12,10 @@ import { AdminPagination } from "@/components/admin/AdminPagination";
 import { AdminPanel, AdminSectionHeading } from "@/components/admin/AdminShell";
 import { formatInteger } from "@/components/admin/admin-format";
 import { AdminQueryErrorNotice, OverviewMetric } from "@/components/admin/admin-ui";
+import { ANALYSIS_TRIAL_DAYS } from "@/lib/analysis-offer";
 import { extendAdminSignupTrials, fetchAdminSignups } from "@/lib/client-api/admin-signups";
 import { dateTimeLocalToUtcIso, formatDateTimeLocalInput } from "@/lib/admin-subscription-datetime";
+import { TRIAL_EXTENSION_MAX_ACCOUNTS, TRIAL_EXTENSION_MAX_DAYS } from "@/lib/admin-signups-format";
 import {
   ADMIN_SIGNUP_ACCESS,
   ADMIN_SIGNUP_ACCESS_LABELS,
@@ -65,6 +67,10 @@ export function AdminSignupsPanel() {
     mutationFn: () => {
       const iso = dateTimeLocalToUtcIso(endsAt);
       if (!iso) throw new Error("Choisissez une date de fin valide.");
+      if (selected.size > TRIAL_EXTENSION_MAX_ACCOUNTS) {
+        throw new Error(`Une prolongation vise ${TRIAL_EXTENSION_MAX_ACCOUNTS} comptes au plus.`);
+      }
+      if (note.trim().length < 3) throw new Error("Indiquez le motif de la prolongation.");
       return extendAdminSignupTrials({ userIds: [...selected], endsAt: iso, note });
     },
     onSuccess: async (response) => {
@@ -154,7 +160,7 @@ export function AdminSignupsPanel() {
             icon={<Clock />}
             tone="copper"
             value={inTrial == null ? "—" : formatInteger(inTrial)}
-            label="En essai (7 jours ou prolongé)"
+            label={`En essai (${ANALYSIS_TRIAL_DAYS} jours ou prolongé)`}
           />
         </AdminPanel>
         <AdminPanel>
@@ -182,8 +188,9 @@ export function AdminSignupsPanel() {
 
         {data && !data.launchOfferActive ? (
           <p className="mt-4 rounded-lg border border-warning/25 bg-warning-tint p-3 text-sm text-warning">
-            L’essai gratuit à l’inscription est coupé : les comptes dans leur 7 premiers jours sont
-            en Découverte. Une prolongation, elle, reste active jusqu’à sa date.
+            L’essai gratuit à l’inscription est coupé : les comptes qui confirment leur adresse
+            maintenant n’ont pas d’essai. Ceux confirmés avant la coupure gardent leurs 7 jours, et
+            une prolongation reste active jusqu’à sa date.
           </p>
         ) : null}
         {data?.truncated ? (
@@ -273,19 +280,21 @@ export function AdminSignupsPanel() {
                 ))}
               </div>
               <label className="grid flex-1 gap-1.5 text-sm font-medium text-brand-navy/80">
-                Note interne (facultative)
+                Motif (obligatoire, gardé en privé)
                 <input
                   type="text"
+                  required
+                  minLength={3}
                   maxLength={500}
                   value={note}
                   onChange={(event) => setNote(event.target.value)}
-                  placeholder="Ex. : bêta-testeur, retour d’expérience promis"
+                  placeholder="Ex. : demande reçue par email, retour d’expérience promis"
                   className="rounded-lg border border-brand-navy/15 bg-white px-3 py-2 text-sm outline-none focus:border-gold"
                 />
               </label>
               <button
                 type="submit"
-                disabled={extension.isPending}
+                disabled={extension.isPending || selected.size > TRIAL_EXTENSION_MAX_ACCOUNTS}
                 className="inline-flex items-center justify-center gap-2 rounded-lg bg-gold-soft px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-gold-text disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <CalendarPlus className="size-4" />
@@ -294,8 +303,10 @@ export function AdminSignupsPanel() {
             </div>
             <p className="text-xs text-brand-navy/62">
               Les comptes gardent l’accès Analyse jusqu’à cette date, puis reviennent seuls en
-              Découverte. Un accès déjà plus long, un compte premium ou un abonnement Stripe ne sont
-              jamais modifiés.
+              Découverte ; rien ne devient payant. Au plus {TRIAL_EXTENSION_MAX_ACCOUNTS} comptes et{" "}
+              {TRIAL_EXTENSION_MAX_DAYS} jours par prolongation. Un accès déjà plus long, une fin
+              antérieure à celle de l’essai, un compte non confirmé, un compte premium ou un abonné
+              Stripe ne sont jamais prolongés. Le motif n’est pas visible par la personne.
             </p>
           </form>
         ) : null}
@@ -476,7 +487,7 @@ function accessDetail(account: AdminSignupAccount): string {
   if (account.trialEndsAt && Date.parse(account.trialEndsAt) <= Date.now()) {
     return `Essai terminé le ${formatDate(account.trialEndsAt)}`;
   }
-  if (account.trialEndsAt) return `Essai suspendu jusqu’au ${formatDate(account.trialEndsAt)}`;
+  if (account.trialEndsAt) return "Sans essai (adresse confirmée après la coupure de l’essai)";
   return "Sans essai (adresse déjà utilisée ou jetable)";
 }
 

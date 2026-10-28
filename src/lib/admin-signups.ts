@@ -3,10 +3,16 @@ import { z } from "zod";
 import type { User } from "@supabase/supabase-js";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
-import { ADMIN_SIGNUP_ACCESS, type AdminSignupAccess } from "@/lib/admin-signups-format";
-import { assertAdminAuth, manualSubscriptionPayload } from "@/lib/admin-subscriptions";
+import {
+  ADMIN_SIGNUP_ACCESS,
+  TRIAL_EXTENSION_MAX_ACCOUNTS,
+  TRIAL_EXTENSION_MAX_DAYS,
+  type AdminSignupAccess,
+} from "@/lib/admin-signups-format";
+import { assertAdminAuth, withManualGrant } from "@/lib/admin-subscriptions";
+import { signupTrialDateLabel } from "@/lib/launch-offer";
 import { readLaunchOfferState } from "@/lib/launch-offer.server";
-import { isPlanPeriodActive } from "@/lib/plans";
+import { isPlanPeriodActive, TRIAL_EXTENSION_SOURCE } from "@/lib/plans";
 import { isMissingRpcError } from "@/lib/postgrest-errors";
 
 /**
@@ -18,18 +24,23 @@ import { isMissingRpcError } from "@/lib/postgrest-errors";
  * authentification), puis lecture avec le client de service. Les comptes administrateurs ne sont
  * pas listés (comme dans le pilotage).
  *
- * Prolonger un essai, c'est une attribution manuelle de l'offre Analyse (statut « Essai », fin de
- * période à la date choisie) dans `user_subscriptions`, le mécanisme déjà lu par les droits en base :
- * aucune migration, et l'accès se ferme seul à la date dite. Elle ne raccourcit jamais un accès plus
- * long et ne touche pas un compte premium ni un abonnement Stripe en cours.
+ * Prolonger un essai, c'est écrire dans `user_subscriptions` une ligne d'ESSAI (statut « Essai », fin de
+ * période à la date choisie, source `admin_trial_extension`, aucun abonnement Stripe) : la base et
+ * l'application la traitent comme l'essai qu'elle prolonge (migration 20261108130000), et l'accès se
+ * ferme seul à la date dite. Garde-fous : compte confirmé, jamais un abonné Stripe (identifiant
+ * présent) ni un compte premium, jamais une fin antérieure à la fin naturelle de l'essai ni à un
+ * accès plus long, 90 jours et 25 comptes au plus par appel, motif obligatoire. Le motif est
+ * enregistré dans `app_private.trial_extension_notes` (jamais lisible par le compte) ; la ligne ne
+ * garde que l'attribution et un historique de 10 entrées.
  */
 
-export { ADMIN_SIGNUP_ACCESS, type AdminSignupAccess };
-
-export const TRIAL_EXTENSION_SOURCE = "admin_trial_extension";
-
-/** Durée maximale d'une prolongation, à compter de maintenant. */
-export const TRIAL_EXTENSION_MAX_DAYS = 366;
+export {
+  ADMIN_SIGNUP_ACCESS,
+  TRIAL_EXTENSION_MAX_ACCOUNTS,
+  TRIAL_EXTENSION_MAX_DAYS,
+  TRIAL_EXTENSION_SOURCE,
+  type AdminSignupAccess,
+};
 
 export type AdminSignupAccount = {
   userId: string;
@@ -72,7 +83,7 @@ export type AdminSignupListResponse = {
 };
 
 export const adminSignupListQuerySchema = z.object({
-  offset: z.coerce.number().int().min(0).default(0),
+  offset: z.coerce.number().int().min(0).max(100_000).default(0),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   q: z.string().trim().max(320).default(""),
   access: z.enum(["all", ...ADMIN_SIGNUP_ACCESS]).default("all"),
@@ -80,7 +91,7 @@ export const adminSignupListQuerySchema = z.object({
 export type AdminSignupListQuery = z.input<typeof adminSignupListQuerySchema>;
 
 export const adminTrialExtensionInputSchema = z.object({
-  userIds: z.array(z.string().uuid()).min(1).max(100),
+  userIds: z.array(z.string().guid()).min(1).max(TRIAL_EXTENSION_MAX_ACCOUNTS),
   endsAt: z
     .string()
     .trim()
@@ -88,12 +99,12 @@ export const adminTrialExtensionInputSchema = z.object({
       message: "La nouvelle date de fin doit être une date valide.",
     })
     .transform((value) => new Date(value).toISOString()),
+  /** Motif de la prolongation : obligatoire, gardé hors de la ligne lisible par le compte. */
   note: z
     .string()
     .trim()
-    .max(500)
-    .optional()
-    .transform((value) => (value ? value : null)),
+    .min(3, "Indiquez le motif de la prolongation (3 caractères au moins).")
+    .max(500),
 });
 export type AdminTrialExtensionInput = z.input<typeof adminTrialExtensionInputSchema>;
 export type AdminTrialExtensionPayload = z.output<typeof adminTrialExtensionInputSchema>;
@@ -121,9 +132,9 @@ type SubscriptionRow = Pick<
   | "plan_code"
   | "status"
   | "current_period_end"
-  | "stripe_customer_id"
   | "stripe_subscription_id"
   | "metadata"
+  | "updated_at"
 >;
 type AuthAccount = Pick<
   User,
@@ -145,7 +156,7 @@ export async function listAdminSignups(
   query: z.output<typeof adminSignupListQuerySchema>,
   now: Date = new Date(),
 ): Promise<AdminSignupListResponse> {
-  await assertAdminAuth(authToken);
+  const auth = await assertAdminAuth(authToken);
   const [{ users, truncated }, profiles, subscriptions, launchOffer] = await Promise.all([
     listAuthAccounts(),
     readAllProfiles(),
@@ -171,15 +182,19 @@ export async function listAdminSignups(
       .map((user) => user.id),
   );
 
-  const classify = (user: AuthAccount): AdminSignupAccount =>
-    toSignupAccount({
+  const classify = (user: AuthAccount): AdminSignupAccount => {
+    const trial = trialEnds.get(user.id);
+    return toSignupAccount({
       user,
       profile: profileByUser.get(user.id) ?? null,
       subscription: subscriptionByUser.get(user.id) ?? null,
-      trialEndsAt: trialEnds.get(user.id) ?? null,
-      launchOfferActive: launchOffer.active,
+      trialEndsAt: trial?.endsAt ?? null,
+      // L'essai est ouvert pour ce compte : interrupteur actif, ou adresse confirmée avant la coupure
+      // (la base le dit ; avant la migration 20261108130100, l'interrupteur seul).
+      trialOpen: trial?.gateOpen ?? launchOffer.active,
       now,
     });
+  };
 
   const classified = accounts.map(classify);
   const summary = summarize(classified, now);
@@ -197,9 +212,14 @@ export async function listAdminSignups(
   const missing = page.filter((account) => !trialEnds.has(account.userId));
   if (missing.length) {
     const more = await readTrialEnds(missing.map((account) => account.userId));
-    for (const [userId, endsAt] of more) trialEnds.set(userId, endsAt);
+    for (const [userId, trial] of more) trialEnds.set(userId, trial);
   }
   const userById = new Map(accounts.map((user) => [user.id, user]));
+
+  // Trace de la consultation : qui, combien de lignes. Jamais d'adresse, de nom ni de recherche.
+  console.info(
+    JSON.stringify({ scope: "admin.signups.view", adminId: auth.userId, rows: page.length }),
+  );
 
   return {
     accounts: page.map((account) => classify(userById.get(account.userId)!)),
@@ -231,12 +251,16 @@ export async function extendAdminSignupTrials({
   if (endsAt > now.getTime() + TRIAL_EXTENSION_MAX_DAYS * DAY_MS) {
     throw new Error(`Une prolongation ne peut pas dépasser ${TRIAL_EXTENSION_MAX_DAYS} jours.`);
   }
+  if (input.userIds.length > TRIAL_EXTENSION_MAX_ACCOUNTS) {
+    throw new Error(`Une prolongation vise ${TRIAL_EXTENSION_MAX_ACCOUNTS} comptes au plus.`);
+  }
 
   const userIds = Array.from(new Set(input.userIds));
-  const [profiles, subscriptions, users] = await Promise.all([
+  const [profiles, subscriptions, users, trialEnds] = await Promise.all([
     readProfiles(userIds),
     readSubscriptions(userIds),
     Promise.all(userIds.map(readAuthAccount)),
+    readTrialEnds(userIds),
   ]);
   const profileByUser = new Map(profiles.map((row) => [row.user_id, row]));
   const subscriptionByUser = new Map(subscriptions.map((row) => [row.user_id, row]));
@@ -250,6 +274,7 @@ export async function extendAdminSignupTrials({
       user,
       profile: profileByUser.get(userId) ?? null,
       subscription,
+      trialEndsAt: trialEnds.get(userId)?.endsAt ?? null,
       endsAt,
       now,
     });
@@ -258,33 +283,110 @@ export async function extendAdminSignupTrials({
       continue;
     }
 
-    const payload = manualSubscriptionPayload({
-      input: {
-        target: userId,
-        planCode: "analyse",
-        status: "trialing",
-        currentPeriodEnd: input.endsAt,
-        note: input.note,
-      },
-      user: { id: userId, email: email ?? undefined },
-      existing: subscription,
-      grantedBy: auth.userId,
-      source: TRIAL_EXTENSION_SOURCE,
+    const written = await writeTrialExtension({
+      adminId: auth.userId,
+      userId,
+      subscription,
+      endsAt: input.endsAt,
+      note: input.note,
+      now,
     });
-    const { error } = await supabaseAdmin
-      .from("user_subscriptions")
-      .upsert(payload, { onConflict: "user_id" });
-    if (error) {
-      console.error(
-        JSON.stringify({ scope: "admin.trial-extension", userId, error: error.message }),
-      );
-      results.push({ userId, email, outcome: "skipped", reason: "Écriture impossible." });
+    if (written !== "written") {
+      results.push({
+        userId,
+        email,
+        outcome: "skipped",
+        reason:
+          written === "changed"
+            ? "Le compte a changé pendant l’opération : relancez la prolongation."
+            : "Écriture impossible.",
+      });
       continue;
     }
+    // Journal de chaque prolongation : qui, pour quel compte, jusqu'à quand. Ni adresse ni motif.
+    console.info(
+      JSON.stringify({
+        scope: "admin.trial-extension",
+        adminId: auth.userId,
+        userId,
+        endsAt: input.endsAt,
+        hasNote: true,
+      }),
+    );
     results.push({ userId, email, outcome: "extended", reason: null });
   }
 
   return { endsAt: input.endsAt, results };
+}
+
+/**
+ * Écrit une prolongation : le motif d'abord, dans la table privée (une prolongation sans motif ne
+ * doit jamais exister), puis la ligne d'essai. La mise à jour d'une ligne existante est conditionnée
+ * à son `updated_at` lu : un webhook Stripe arrivé entre la lecture et l'écriture n'est pas écrasé
+ * (`changed`). L'insertion d'une première ligne échoue si une autre est apparue entre-temps.
+ */
+async function writeTrialExtension({
+  adminId,
+  userId,
+  subscription,
+  endsAt,
+  note,
+  now,
+}: {
+  adminId: string;
+  userId: string;
+  subscription: SubscriptionRow | null;
+  endsAt: string;
+  note: string;
+  now: Date;
+}): Promise<"written" | "changed" | "failed"> {
+  const fail = (step: string, error: { message: string }) => {
+    console.error(
+      JSON.stringify({ scope: "admin.trial-extension", userId, step, error: error.message }),
+    );
+    return "failed" as const;
+  };
+
+  const recorded = await supabaseAdmin.rpc("record_trial_extension", {
+    p_user_id: userId,
+    p_granted_by: adminId,
+    p_ends_at: endsAt,
+    p_note: note,
+  });
+  if (recorded.error) return fail("note", recorded.error);
+
+  const metadata = asJson(
+    withManualGrant(subscription?.metadata, {
+      source: TRIAL_EXTENSION_SOURCE,
+      granted_by: adminId,
+      granted_at: now.toISOString(),
+      plan_code: "analyse",
+      status: "trialing",
+      current_period_end: endsAt,
+      // Le motif n'est pas dans cette ligne, lisible par le compte : il est dans la table privée.
+      note_recorded: true,
+    }),
+  );
+
+  if (!subscription) {
+    const { error } = await supabaseAdmin.from("user_subscriptions").insert({
+      user_id: userId,
+      plan_code: "analyse",
+      status: "trialing",
+      current_period_end: endsAt,
+      metadata,
+    });
+    return error ? fail("insert", error) : "written";
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("user_subscriptions")
+    .update({ plan_code: "analyse", status: "trialing", current_period_end: endsAt, metadata })
+    .eq("user_id", userId)
+    .eq("updated_at", subscription.updated_at)
+    .select("user_id");
+  if (error) return fail("update", error);
+  return data && data.length > 0 ? "written" : "changed";
 }
 
 /** L'accès du compte à cet instant, avec la même priorité que les droits en base. */
@@ -292,7 +394,7 @@ export function resolveSignupAccess({
   profile,
   subscription,
   trialEndsAt,
-  launchOfferActive,
+  trialOpen,
   now,
 }: {
   profile: Pick<ProfileRow, "account_tier"> | null;
@@ -301,7 +403,8 @@ export function resolveSignupAccess({
     "plan_code" | "status" | "current_period_end" | "stripe_subscription_id" | "metadata"
   > | null;
   trialEndsAt: string | null;
-  launchOfferActive: boolean;
+  /** L'essai est ouvert pour ce compte (interrupteur actif, ou adresse confirmée avant la coupure). */
+  trialOpen: boolean;
   now: Date;
 }): { access: AdminSignupAccess; accessEndsAt: string | null } {
   if (profile?.account_tier === "premium") return { access: "premium", accessEndsAt: null };
@@ -314,7 +417,7 @@ export function resolveSignupAccess({
     if (subscription.stripe_subscription_id) return { access: "analyse_paid", accessEndsAt };
     return { access: "analyse_manual", accessEndsAt };
   }
-  if (launchOfferActive && trialEndsAt && Date.parse(trialEndsAt) > now.getTime()) {
+  if (trialOpen && trialEndsAt && Date.parse(trialEndsAt) > now.getTime()) {
     return { access: "trial", accessEndsAt: trialEndsAt };
   }
   return { access: "decouverte", accessEndsAt: null };
@@ -337,7 +440,9 @@ function isTrialExtension(
   );
 }
 
-function hasLiveStripeSubscription(subscription: SubscriptionRow | null): boolean {
+function hasLiveStripeSubscription(
+  subscription: Pick<SubscriptionRow, "status" | "stripe_subscription_id"> | null,
+): boolean {
   return Boolean(
     subscription?.stripe_subscription_id && LIVE_STRIPE_STATUSES.includes(subscription.status),
   );
@@ -347,20 +452,37 @@ export function extensionRefusal({
   user,
   profile,
   subscription,
+  trialEndsAt,
   endsAt,
   now,
 }: {
   user: AuthAccount | null;
   profile: Pick<ProfileRow, "account_tier" | "user_role"> | null;
-  subscription: SubscriptionRow | null;
+  subscription: Pick<
+    SubscriptionRow,
+    "plan_code" | "status" | "current_period_end" | "stripe_subscription_id"
+  > | null;
+  /** Fin naturelle de l'essai du compte (même passée), `null` s'il n'y a pas droit. */
+  trialEndsAt?: string | null;
   endsAt: number;
   now: Date;
 }): string | null {
   if (!user) return "Compte introuvable.";
   if (profile?.user_role === "admin") return "Compte administrateur.";
   if (profile?.account_tier === "premium") return "Compte premium : accès complet sans fin.";
+  if (!user.email_confirmed_at) return "Adresse email non confirmée : rien à prolonger.";
   if (hasLiveStripeSubscription(subscription)) {
     return "Abonnement Stripe en cours : à gérer depuis Stripe.";
+  }
+  if (subscription?.stripe_subscription_id) {
+    return "Ancien abonné Stripe : utilisez l’attribution manuelle d’un accès, pas la prolongation d’essai.";
+  }
+  if (
+    trialEndsAt &&
+    Number.isFinite(Date.parse(trialEndsAt)) &&
+    endsAt <= Date.parse(trialEndsAt)
+  ) {
+    return `Cette fin n’est pas postérieure à la fin naturelle de l’essai (${signupTrialDateLabel(trialEndsAt)}).`;
   }
   if (
     subscription?.plan_code === "analyse" &&
@@ -379,21 +501,21 @@ function toSignupAccount({
   profile,
   subscription,
   trialEndsAt,
-  launchOfferActive,
+  trialOpen,
   now,
 }: {
   user: AuthAccount;
   profile: ProfileRow | null;
   subscription: SubscriptionRow | null;
   trialEndsAt: string | null;
-  launchOfferActive: boolean;
+  trialOpen: boolean;
   now: Date;
 }): AdminSignupAccount {
   const { access, accessEndsAt } = resolveSignupAccess({
     profile,
     subscription,
     trialEndsAt,
-    launchOfferActive,
+    trialOpen,
     now,
   });
   return {
@@ -451,8 +573,9 @@ async function readAuthAccount(userId: string): Promise<AuthAccount | null> {
 }
 
 const PROFILE_COLUMNS = "user_id, account_tier, user_role, account_type, full_name";
+// Pas de `stripe_customer_id` : ni la liste ni la prolongation n'en ont besoin.
 const SUBSCRIPTION_COLUMNS =
-  "user_id, plan_code, status, current_period_end, stripe_customer_id, stripe_subscription_id, metadata";
+  "user_id, plan_code, status, current_period_end, stripe_subscription_id, metadata, updated_at";
 
 async function readAllProfiles(): Promise<ProfileRow[]> {
   return readAllPages<ProfileRow>((from, to) =>
@@ -504,35 +627,56 @@ async function readAllPages<T>(
   }
 }
 
+type TrialInfo = {
+  endsAt: string | null;
+  /** L'essai est ouvert pour ce compte ; `null` : la base ne le dit pas (migration absente). */
+  gateOpen: boolean | null;
+};
+
 /**
- * Fin de l'essai de chaque compte (`get_signup_trial_end`, même règle que les droits en base). Une
+ * Fin de l'essai de chaque compte et « l'essai est ouvert pour lui » (`get_signup_trial`, même règle
+ * que les droits en base ; avant la migration 20261108130100, `get_signup_trial_end` seule). Une
  * lecture en échec laisse le compte sans essai connu, sans faire échouer la page.
  */
-async function readTrialEnds(userIds: string[]): Promise<Map<string, string | null>> {
-  const ends = new Map<string, string | null>();
+async function readTrialEnds(userIds: string[]): Promise<Map<string, TrialInfo>> {
+  const ends = new Map<string, TrialInfo>();
   for (let start = 0; start < userIds.length; start += TRIAL_READ_CONCURRENCY) {
     const batch = userIds.slice(start, start + TRIAL_READ_CONCURRENCY);
     const reads = await Promise.all(
-      batch.map(async (userId) => {
-        const { data, error } = await supabaseAdmin.rpc("get_signup_trial_end", {
-          p_user_id: userId,
-        });
-        if (error) {
-          if (!isMissingRpcError(error)) {
-            console.error(
-              JSON.stringify({ scope: "admin.signups.trial", userId, error: error.message }),
-            );
-          }
-          return [userId, null] as const;
-        }
-        return [userId, typeof data === "string" && data ? data : null] as const;
-      }),
+      batch.map(async (userId) => [userId, await readTrialInfo(userId)] as const),
     );
-    for (const [userId, endsAt] of reads) ends.set(userId, endsAt);
+    for (const [userId, trial] of reads) ends.set(userId, trial);
   }
   return ends;
 }
 
+async function readTrialInfo(userId: string): Promise<TrialInfo> {
+  const unknown: TrialInfo = { endsAt: null, gateOpen: null };
+  const trialWindow = await supabaseAdmin.rpc("get_signup_trial", { p_user_id: userId });
+  if (!trialWindow.error) {
+    const row = Array.isArray(trialWindow.data) ? trialWindow.data[0] : null;
+    return { endsAt: row?.ends_at || null, gateOpen: row ? row.gate_open === true : null };
+  }
+  if (!isMissingRpcError(trialWindow.error)) {
+    return logTrialReadError(userId, trialWindow.error, unknown);
+  }
+
+  const { data, error } = await supabaseAdmin.rpc("get_signup_trial_end", { p_user_id: userId });
+  if (error) {
+    return isMissingRpcError(error) ? unknown : logTrialReadError(userId, error, unknown);
+  }
+  return { endsAt: typeof data === "string" && data ? data : null, gateOpen: null };
+}
+
+function logTrialReadError(userId: string, error: { message: string }, fallback: TrialInfo) {
+  console.error(JSON.stringify({ scope: "admin.signups.trial", userId, error: error.message }));
+  return fallback;
+}
+
 function jsonObject(value: Json | null | undefined): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? { ...value } : {};
+}
+
+function asJson(value: unknown): Json {
+  return JSON.parse(JSON.stringify(value ?? null)) as Json;
 }

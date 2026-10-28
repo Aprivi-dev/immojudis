@@ -15345,6 +15345,10 @@ export type Database = {
       get_sale_passages: { Args: { p_sale_id: string }; Returns: Json };
       get_sale_pepite_mode: { Args: never; Returns: string };
       get_sale_unlock_status: { Args: { p_sale_id?: string }; Returns: Json };
+      get_signup_trial: {
+        Args: { p_user_id: string };
+        Returns: { ends_at: string; gate_open: boolean }[];
+      };
       get_signup_trial_end: { Args: { p_user_id: string }; Returns: string };
       get_withdrawn_catalogue_sources: { Args: never; Returns: string[] };
       gettransactionid: { Args: never; Returns: unknown };
@@ -15584,6 +15588,10 @@ export type Database = {
       };
       release_cron_lease: { Args: { p_name: string; p_token: string }; Returns: boolean };
       release_sale_flood_risk_lease: { Args: { p_token: string }; Returns: boolean };
+      record_trial_extension: {
+        Args: { p_ends_at: string; p_granted_by: string; p_note: string; p_user_id: string };
+        Returns: string;
+      };
       remap_archived_catalogue_courts_by_label_batch: {
         Args: { p_after_id?: string; p_limit?: number };
         Returns: {

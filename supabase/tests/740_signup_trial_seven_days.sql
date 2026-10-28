@@ -84,8 +84,8 @@ select ok(
 
 update app_private.launch_offer set active = false where singleton;
 select ok(
-  not app_private.has_active_analysis_access('c7400000-0000-4000-8000-000000000001'),
-  'the switch still closes every trial'
+  app_private.has_active_analysis_access('c7400000-0000-4000-8000-000000000001'),
+  'cutting the switch keeps a trial that was already running (20261108130100)'
 );
 update app_private.launch_offer set active = true where singleton;
 

@@ -11,11 +11,11 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/rate-limit", () => ({ enforceDailyOperationLimits: mocks.daily }));
 vi.mock("@/lib/launch-offer.server", () => ({
-  isLaunchOfferActive: mocks.launchOffer,
-  // Essai en cours ou non (`confirmedEmail`), sans date de fin connue.
+  // Essai en cours ou non (`confirmedEmail`), sans date de fin connue ; l'interrupteur coupé ferme
+  // l'essai, comme la vraie lecture.
   hasActiveSignupTrial: mocks.confirmedEmail,
   readSignupTrial: async (userId: string) => ({
-    active: Boolean(await mocks.confirmedEmail(userId)),
+    active: Boolean((await mocks.launchOffer()) && (await mocks.confirmedEmail(userId))),
     endsAt: null,
   }),
 }));

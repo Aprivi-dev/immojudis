@@ -65,6 +65,11 @@ describe("textes de l'essai gratuit à l'inscription", () => {
       "Votre essai gratuit de l’offre Analyse s’est terminé le 30 octobre 2026 à 10:00 : votre compte est revenu à l’offre Découverte. Pour continuer avec l’offre Analyse, il faudra y souscrire ; l’état de l’abonnement est indiqué ci-dessous.",
     );
     expect(signupTrialStatusText({ trialDenied: true })).toBe(SIGNUP_TRIAL_DENIED_TEXT);
+    expect(
+      signupTrialStatusText({ trialEndsAt: "2026-12-01T13:05:00.000Z", trialExtension: true }),
+    ).toBe(
+      "Essai gratuit prolongé jusqu’au 1er décembre 2026 à 14:05 ; rien ne devient payant automatiquement. À son terme, votre compte revient à l’offre Découverte, gratuite.",
+    );
     expect(signupTrialStatusText({})).toBeNull();
   });
 });

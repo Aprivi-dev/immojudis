@@ -286,14 +286,29 @@ export function HomeSources() {
   );
 }
 
-/** Questions fréquentes : affichées en accordéon et reprises en données structurées (FAQPage). */
-export function homeFaqItems(): Array<{ question: string; answer: string }> {
+/**
+ * Les deux questions sur l'essai gratuit, selon l'état de l'essai à l'inscription lu par le serveur :
+ * ouvert (`true`), fermé (`false`, elles disparaissent : ni la FAQ visible ni les données structurées
+ * n'annoncent un essai qui n'existe plus) ou non lu (`undefined`, réponses vraies dans les deux états).
+ */
+function trialFaqItems(
+  trialOpen: boolean | undefined,
+): Array<{ question: string; answer: string }> {
+  if (trialOpen === false) return [];
+  if (trialOpen === undefined) {
+    return [
+      {
+        question: "Et après l’essai gratuit ?",
+        answer:
+          "Votre compte revient à l’offre Découverte. Rien n’est prélevé. L’offre Analyse est ensuite proposée sur abonnement ; son tarif figure sur la page Offres.",
+      },
+      {
+        question: "Quand commence l’essai gratuit ?",
+        answer: `Quand l’essai est ouvert à l’inscription, il commence à la confirmation de votre adresse email, dure ${ANALYSIS_TRIAL_DAYS} jours et n’est proposé qu’une fois par personne.`,
+      },
+    ];
+  }
   return [
-    {
-      question: "Combien coûte l’inscription ?",
-      answer:
-        "Rien. Aucune carte bancaire n’est demandée, et l’offre Découverte reste gratuite sans limite de durée.",
-    },
     {
       question: `Et après les ${ANALYSIS_TRIAL_DAYS} jours d’essai ?`,
       answer:
@@ -303,6 +318,25 @@ export function homeFaqItems(): Array<{ question: string; answer: string }> {
       question: "Quand commence l’essai ?",
       answer: `À la confirmation de votre adresse email. Il dure ${ANALYSIS_TRIAL_DAYS} jours et n’est proposé qu’une fois par personne.`,
     },
+  ];
+}
+
+/**
+ * Questions fréquentes : affichées en accordéon et reprises en données structurées (FAQPage).
+ * `trialOpen` : l'essai à l'inscription est ouvert, lu par la page serveur (`readLaunchOfferState`) ;
+ * absent : état non lu.
+ */
+export function homeFaqItems({ trialOpen }: { trialOpen?: boolean } = {}): Array<{
+  question: string;
+  answer: string;
+}> {
+  return [
+    {
+      question: "Combien coûte l’inscription ?",
+      answer:
+        "Rien. Aucune carte bancaire n’est demandée, et l’offre Découverte reste gratuite sans limite de durée.",
+    },
+    ...trialFaqItems(trialOpen),
     {
       question: "D’où viennent les ventes ?",
       answer: notaryAndStatePilotsEnabled()
@@ -332,7 +366,7 @@ export function homeFaqItems(): Array<{ question: string; answer: string }> {
   ];
 }
 
-export function HomeFaq() {
+export function HomeFaq({ trialOpen }: { trialOpen?: boolean } = {}) {
   return (
     <section
       id="questions"
@@ -354,7 +388,7 @@ export function HomeFaq() {
           </p>
         </div>
         <div className={styles.faq} data-reveal="">
-          {homeFaqItems().map((item) => (
+          {homeFaqItems({ trialOpen }).map((item) => (
             <details key={item.question}>
               <summary>
                 {item.question}

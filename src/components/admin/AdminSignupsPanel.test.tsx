@@ -129,7 +129,7 @@ describe("AdminSignupsPanel", () => {
     fireEvent.change(screen.getByLabelText("Essai prolongé jusqu’au"), {
       target: { value: "2026-11-10T23:59" },
     });
-    fireEvent.change(screen.getByLabelText("Note interne (facultative)"), {
+    fireEvent.change(screen.getByLabelText("Motif (obligatoire, gardé en privé)"), {
       target: { value: "Bêta-testeur" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Prolonger l’essai" }));

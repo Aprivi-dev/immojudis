@@ -42,7 +42,7 @@ import {
 import Link from "next/link";
 import { useSyncExternalStore } from "react";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
-import { LAUNCH_OFFER_SHORT_TEXT } from "@/lib/launch-offer";
+import { LAUNCH_OFFER_LABEL, LAUNCH_OFFER_SHORT_TEXT } from "@/lib/launch-offer";
 import { ceilingTermsFor } from "@/lib/fee-regime-labels";
 import { feeRegimeKeysForVenue, type FeeRegimeKey } from "@/lib/fee-regime-open";
 import { freeAccessLine, MONTHLY_SALE_UNLOCKS, unlockedItemsText } from "@/lib/sale-unlocks";
@@ -231,7 +231,7 @@ function TeaserTier({ tier, offerAware }: { tier: string; offerAware?: boolean }
     : pending
       ? "Selon votre compte"
       : active
-        ? "Essai gratuit de 7 jours"
+        ? LAUNCH_OFFER_LABEL
         : tier;
   // Décor : le texte masqué de la ligne dit déjà ce qui débloque la valeur.
   return (

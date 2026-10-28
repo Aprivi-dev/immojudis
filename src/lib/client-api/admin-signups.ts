@@ -11,15 +11,20 @@ import type {
 export async function fetchAdminSignups(
   input: AdminSignupListQuery = {},
 ): Promise<AdminSignupListResponse> {
-  const search = new URLSearchParams({
-    offset: String(input.offset ?? 0),
-    limit: String(input.limit ?? 50),
-    q: input.q ?? "",
-    access: input.access ?? "all",
-  });
-  const response = await fetch("/api/admin/signups?" + search.toString(), {
+  // En POST : l'adresse ou le nom cherché ne doit pas figurer dans l'URL (journaux de l'hébergeur).
+  const response = await fetch("/api/admin/signups/search", {
+    method: "POST",
     signal: AbortSignal.timeout(30_000),
-    headers: await authHeaders(),
+    headers: {
+      "Content-Type": "application/json",
+      ...(await authHeaders()),
+    },
+    body: JSON.stringify({
+      offset: input.offset ?? 0,
+      limit: input.limit ?? 50,
+      q: input.q ?? "",
+      access: input.access ?? "all",
+    }),
   });
 
   return readJson<AdminSignupListResponse>(response);

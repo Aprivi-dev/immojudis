@@ -104,6 +104,16 @@ describe("GET /api/admin/pepites", () => {
       }
     });
 
+    it("répond 401 sans jeton avant même de valider le corps, et ne lit rien", async () => {
+      for (const body of [{}, { mode: "on" }, { mode: "autre" }]) {
+        expect((await post(body, {})).status).toBe(401);
+      }
+      expect((await POST(new Request(url, { method: "POST", body: "pas du JSON" }))).status).toBe(
+        401,
+      );
+      expect(mocks.suspend).not.toHaveBeenCalled();
+    });
+
     it("refuse sans jeton et un compte non administrateur", async () => {
       expect((await post({}, {})).status).toBe(401);
       mocks.suspend.mockRejectedValue(new Error("Forbidden: accès administrateur requis."));
