@@ -47,9 +47,9 @@ select is(
   'the empty listing with only an automatic estimate is deleted'
 );
 select is(
-  (select count(*) from public.valuation_estimates where engine_version = 'test' and auction_sale_id is null),
-  1::bigint,
-  'its estimate is detached, not deleted (on delete set null)'
+  (select count(*) from public.valuation_estimates where auction_sale_id = 'c8000000-1000-4000-8000-000000000001'),
+  0::bigint,
+  'its estimate goes with it (removed first, as the retention does)'
 );
 
 select is(
