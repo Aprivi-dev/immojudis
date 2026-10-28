@@ -14376,6 +14376,7 @@ export type Database = {
         Args: { p_limit?: number; p_now?: string };
         Returns: Json;
       };
+      admin_pepite_independence_sales: { Args: never; Returns: Json };
       admin_pilotage_bid_ceilings: { Args: { p_now?: string }; Returns: Json };
       admin_pilotage_summary: { Args: { p_now?: string }; Returns: Json };
       admin_sale_signal_feedback_summary: {
@@ -14751,6 +14752,7 @@ export type Database = {
         Args: { p_ends_on: string; p_now?: string; p_user_id: string };
         Returns: boolean;
       };
+      claim_cron_lease: { Args: { p_name: string; p_ttl_seconds: number }; Returns: string };
       claim_operational_alert_notifications: {
         Args: { p_limit?: number; p_now?: string };
         Returns: {
@@ -15580,6 +15582,7 @@ export type Database = {
         Args: { p_checkout_token: string; p_user_id: string };
         Returns: boolean;
       };
+      release_cron_lease: { Args: { p_name: string; p_token: string }; Returns: boolean };
       release_sale_flood_risk_lease: { Args: { p_token: string }; Returns: boolean };
       remap_archived_catalogue_courts_by_label_batch: {
         Args: { p_after_id?: string; p_limit?: number };
@@ -16671,6 +16674,10 @@ export type Database = {
         Args: { p_mode?: string; p_user_id?: string };
         Returns: string;
       };
+      sync_sale_communes: {
+        Args: never;
+        Returns: { n_changed: number; n_with_code: number; n_written: number }[];
+      };
       tribunal_outcome_graph_past_hearings: {
         Args: {
           p_as_of: string;
@@ -16697,6 +16704,20 @@ export type Database = {
       };
       unlock_sale: { Args: { p_sale_id: string }; Returns: Json };
       unlockrows: { Args: { "": string }; Returns: number };
+      upsert_user_alert_matches: {
+        Args: { p_rows: Json };
+        Returns: {
+          alert_id: string;
+          dismissed_at: string | null;
+          id: string;
+          match_reasons: string[];
+          match_snapshot: Json;
+          matched_at: string;
+          read_at: string | null;
+          sale_id: string;
+          user_id: string;
+        }[];
+      };
       updategeometrysrid: {
         Args: {
           catalogn_name: string;
