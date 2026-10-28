@@ -46,6 +46,17 @@ describe("listing completeness cron route", () => {
     expect(mocks.runListingCompletenessBatch).toHaveBeenCalledWith({ limit: 300 });
   });
 
+  it("fait du passage quotidien de vercel.json un filet, sans effet si pg_cron a réussi dans les 2 h", async () => {
+    mocks.runListingCompletenessBatch.mockResolvedValueOnce({});
+
+    await runHandler();
+
+    expect(mocks.runMonitoredCron.mock.calls[0][3]).toEqual({
+      catchUpSchedule: "50 5 * * *",
+      catchUpSuccessWindowHours: 2,
+    });
+  });
+
   it("lit la taille du lot dans l'environnement", async () => {
     process.env.LISTING_COMPLETENESS_BATCH_LIMIT = "120";
     mocks.runListingCompletenessBatch.mockResolvedValueOnce({});

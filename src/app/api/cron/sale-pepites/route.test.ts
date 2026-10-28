@@ -51,7 +51,19 @@ describe("sale pepites cron route", () => {
 
     await runHandler();
 
-    expect(mocks.runMonitoredCron.mock.calls[0][3]).toEqual({ retryDelaysMs: [] });
+    expect(mocks.runMonitoredCron.mock.calls[0][3]).toMatchObject({ retryDelaysMs: [] });
+  });
+
+  it("fait du passage quotidien de vercel.json un filet, sans effet si pg_cron a réussi dans les 2 h", async () => {
+    mocks.runSalePepitesBatch.mockResolvedValueOnce({});
+
+    await runHandler();
+
+    expect(mocks.runMonitoredCron.mock.calls[0][3]).toEqual({
+      retryDelaysMs: [],
+      catchUpSchedule: "42 5 * * *",
+      catchUpSuccessWindowHours: 2,
+    });
   });
 
   it("lit la taille du lot dans l'environnement", async () => {

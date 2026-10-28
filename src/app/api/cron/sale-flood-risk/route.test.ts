@@ -66,7 +66,7 @@ describe("sale flood risk cron route", () => {
 
     await runHandler();
 
-    expect(mocks.runMonitoredCron.mock.calls[0][3]).toEqual({ retryDelaysMs: [] });
+    expect(mocks.runMonitoredCron.mock.calls[0][3]).toMatchObject({ retryDelaysMs: [] });
   });
 
   it("lit la taille du lot dans l'environnement", async () => {
@@ -101,6 +101,28 @@ describe("sale flood risk cron route", () => {
     expect(mocks.runMonitoredCron.mock.calls[0][1]).toBe("sale-flood-risk-dispatch");
     expect(mocks.runSaleFloodRiskBatch).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ["déclenchement GitHub (défaut)", undefined],
+    ["passe dans la route", "vercel"],
+  ])(
+    "%s : le filet quotidien ne fait rien si la passe « sale-flood-risk » a réussi dans les 2 h",
+    async (_label, runner) => {
+      if (runner) process.env.SALE_FLOOD_RISK_RUNNER = runner;
+      else delete process.env.SALE_FLOOD_RISK_RUNNER;
+      mocks.dispatchSaleFloodRiskWorkflow.mockResolvedValueOnce({ dispatched: true });
+      mocks.runSaleFloodRiskBatch.mockResolvedValueOnce({});
+
+      await runHandler();
+
+      // Le déclenchement réussit même quand le workflow échoue : c'est la passe, écrite par le workflow, qui compte.
+      expect(mocks.runMonitoredCron.mock.calls[0][3]).toMatchObject({
+        catchUpSchedule: "35 5 * * *",
+        catchUpSuccessWindowHours: 2,
+        catchUpSuccessJobName: "sale-flood-risk",
+      });
+    },
+  );
 
   it("laisse cinq minutes à l'exécution", () => {
     expect(maxDuration).toBe(300);

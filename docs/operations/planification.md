@@ -1,29 +1,57 @@
 # Inventaire des tâches planifiées
 
-Mis à jour le 28 octobre 2026 (observation du risque d'inondation depuis GitHub Actions, règle `pepite-v2`, runbooks). Toute route `src/app/api/cron/*` doit figurer ici, dans `vercel.json`
-ou dans une migration `pg_cron` ; le test `src/lib/scheduled-jobs.test.ts` le vérifie.
+Mis à jour le 28 octobre 2026 (règle de répartition entre les trois planificateurs, filets quotidiens sans effet
+quand `pg_cron` a réussi, inventaire des workflows GitHub planifiés). Toute route `src/app/api/cron/*` doit figurer
+ici, dans `vercel.json` ou dans une migration `pg_cron`, et tout workflow GitHub qui a un `schedule` doit figurer
+dans le tableau des workflows ; le test `src/lib/scheduled-jobs.test.ts` le vérifie.
+
+## Qui déclenche quoi : la règle
+
+Trois systèmes savent lancer une tâche. Chacun a un rôle, et une nouvelle tâche suit cette règle (à vérifier en
+revue) :
+
+| Système                     | Rôle                                                                                                                                                                                                                                       | Pourquoi                                                                                                                  |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| Supabase `pg_cron`          | **Horloge** de tout ce qui tourne plusieurs fois par jour ou dépend d'un ordre précis (toutes les 2, 5 ou 15 min, chaque heure à une minute donnée). Il appelle une route `/api/cron/*` avec les secrets de Vault.                         | Seul planificateur gratuit précis à la minute et sans limite de fréquence.                                                |
+| Vercel Cron (`vercel.json`) | Tâches **quotidiennes** (emails, purge) et **filets** quotidiens des tâches de `pg_cron`.                                                                                                                                                  | Le plan Hobby n'autorise qu'un passage par jour et par entrée, à n'importe quel moment de l'heure demandée.               |
+| GitHub Actions              | Travail **long** (plus de 5 min : collecte, imports, entraînement) ou que la source refuse depuis Vercel (Géorisques). Lancé **sur demande** (`workflow_dispatch`) par l'application ou la base, jamais sur horaire pour une tâche métier. | Les horaires GitHub ne sont pas tenus : 44 passages au lieu d'environ 355 du 20 au 27/10/2026 (`supervision-externe.md`). |
+
+Un **filet** est un second déclencheur de la même tâche par un autre chemin. Il ne fait rien quand le chemin
+principal a réussi récemment (`catchUpSchedule` de `runMonitoredCron`, qui lit l'en-tête
+`x-vercel-cron-schedule` envoyé par Vercel) : il ne sert que si ce chemin est en panne (secret Vault perdu, `pg_cron`
+arrêté). Un appel de `pg_cron` n'a pas cet en-tête et s'exécute toujours.
+
+Les workflows GitHub qui gardent un `schedule` sont des **contrôles** (test de fumée, migrations en attente,
+CodeQL, horloge décalée du pipeline), à une exception près, l'analyse des pièces jointes de l'agent
+d'information, qui tolère un retard de plusieurs heures. La liste est figée dans `scheduled-jobs.test.ts` : en
+ajouter un demande de modifier ce test, donc une décision explicite.
+
+La supervision de toute cette chaîne passe elle-même par `pg_cron` → Vercel → GitHub
+(`operational-health`) : seule une sonde extérieure à ces trois services voit sa panne. Elle est à poser par le
+propriétaire (`supervision-externe.md`, « Poser la sonde ») ; tant qu'elle n'existe pas, une panne de cette chaîne
+reste silencieuse.
 
 ## Tâches applicatives (routes `/api/cron/*`)
 
-| Tâche                                                      | Système            | Horaire (UTC)           | Route / script                        | Supervisée                                           | Seuil d'alerte (`cron.stale`) |
-| ---------------------------------------------------------- | ------------------ | ----------------------- | ------------------------------------- | ---------------------------------------------------- | ----------------------------- |
-| Évaluation des alertes                                     | Vercel Cron        | 06:15, rattrapage 08:15 | `/api/cron/smart-alerts`              | oui                                                  | pas de succès depuis 27 h     |
-| Envoi des alertes                                          | Vercel Cron        | 07:30, rattrapage 09:30 | `/api/cron/alert-notifications`       | oui                                                  | 27 h                          |
-| Suivi des changements                                      | Vercel Cron        | 06:45, rattrapage 08:45 | `/api/cron/sale-change-monitor`       | oui                                                  | 27 h                          |
-| Rappels d'audience et avertissements graves                | Vercel Cron        | 07:15, rattrapage 09:15 | `/api/cron/sale-reminders`            | oui                                                  | 27 h                          |
-| Alertes de résultat ou de remise en vente                  | Vercel Cron        | 10:15                   | `/api/cron/sale-results`              | journal d'exécution seulement                        | pas encore                    |
-| Récapitulatif hebdomadaire « Ma semaine »                  | Vercel Cron        | 11:30                   | `/api/cron/weekly-digest`             | journal d'exécution seulement                        | pas encore                    |
-| Rétention des données                                      | Vercel Cron        | dimanche 04:15          | `/api/cron/data-retention`            | oui                                                  | 8 jours                       |
-| Complétude des annonces (palier de classement de /sales)   | Supabase `pg_cron` | toutes les heures à :20 | `/api/cron/listing-completeness`      | oui                                                  | 3 h                           |
-| Complétude des annonces (filet quotidien)                  | Vercel Cron        | 05:50 tous les jours    | `/api/cron/listing-completeness`      | oui (même tâche, même seuil)                         | 3 h                           |
-| Risque d'inondation des ventes (règle `pepite-v2`)         | Supabase `pg_cron` | toutes les heures à :25 | `/api/cron/sale-flood-risk`           | oui                                                  | 3 h                           |
-| Risque d'inondation des ventes (filet quotidien)           | Vercel Cron        | 05:35 tous les jours    | `/api/cron/sale-flood-risk`           | oui (même tâche, même seuil)                         | 3 h                           |
-| Pépites des ventes (règle `pepite-v1.1` ou `pepite-v2`)      | Supabase `pg_cron` | toutes les heures à :35 | `/api/cron/sale-pepites`              | oui                                                  | 3 h                           |
-| Pépites des ventes (filet quotidien)                       | Vercel Cron        | 05:42 tous les jours    | `/api/cron/sale-pepites`              | oui (même tâche, même seuil)                         | 3 h                           |
-| Santé opérationnelle                                       | Supabase `pg_cron` | toutes les 15 min       | `/api/cron/operational-health`        | oui                                                  | 45 min                        |
-| Purge des ventes                                           | Supabase `pg_cron` | toutes les 5 min        | `/api/cron/sale-retention`            | oui                                                  | 20 min                        |
-| Pré-calcul des valorisations                               | Supabase `pg_cron` | toutes les 5 min        | `/api/cron/precompute-valuations`     | non (déclenchement géré par la file de valorisation) | —                             |
-| Réponses de l'agent (lecture seule, n'envoie aucun e-mail) | Supabase `pg_cron` | toutes les 2 min        | `/api/cron/information-agent-inbound` | oui                                                  | 10 min                        |
+| Tâche                                                      | Système            | Horaire (UTC)                                        | Route / script                        | Supervisée                                           | Seuil d'alerte (`cron.stale`) |
+| ---------------------------------------------------------- | ------------------ | ---------------------------------------------------- | ------------------------------------- | ---------------------------------------------------- | ----------------------------- |
+| Évaluation des alertes                                     | Vercel Cron        | 06:15, rattrapage 08:15                              | `/api/cron/smart-alerts`              | oui                                                  | pas de succès depuis 27 h     |
+| Envoi des alertes                                          | Vercel Cron        | 07:30, rattrapage 09:30                              | `/api/cron/alert-notifications`       | oui                                                  | 27 h                          |
+| Suivi des changements                                      | Vercel Cron        | 06:45, rattrapage 08:45                              | `/api/cron/sale-change-monitor`       | oui                                                  | 27 h                          |
+| Rappels d'audience et avertissements graves                | Vercel Cron        | 07:15, rattrapage 09:15                              | `/api/cron/sale-reminders`            | oui                                                  | 27 h                          |
+| Alertes de résultat ou de remise en vente                  | Vercel Cron        | 10:15                                                | `/api/cron/sale-results`              | journal d'exécution seulement                        | pas encore                    |
+| Récapitulatif hebdomadaire « Ma semaine »                  | Vercel Cron        | 11:30                                                | `/api/cron/weekly-digest`             | journal d'exécution seulement                        | pas encore                    |
+| Rétention des données                                      | Vercel Cron        | dimanche 04:15                                       | `/api/cron/data-retention`            | oui                                                  | 8 jours                       |
+| Complétude des annonces (palier de classement de /sales)   | Supabase `pg_cron` | toutes les heures à :20                              | `/api/cron/listing-completeness`      | oui                                                  | 3 h                           |
+| Complétude des annonces (filet quotidien)                  | Vercel Cron        | 05:50, sans effet si `pg_cron` a réussi dans les 2 h | `/api/cron/listing-completeness`      | oui (même tâche, même seuil)                         | 3 h                           |
+| Risque d'inondation des ventes (règle `pepite-v2`)         | Supabase `pg_cron` | toutes les heures à :25                              | `/api/cron/sale-flood-risk`           | oui                                                  | 3 h                           |
+| Risque d'inondation des ventes (filet quotidien)           | Vercel Cron        | 05:35, sans effet si la passe a réussi dans les 2 h  | `/api/cron/sale-flood-risk`           | oui (même tâche, même seuil)                         | 3 h                           |
+| Pépites des ventes (règle `pepite-v1.1` ou `pepite-v2`)    | Supabase `pg_cron` | toutes les heures à :35                              | `/api/cron/sale-pepites`              | oui                                                  | 3 h                           |
+| Pépites des ventes (filet quotidien)                       | Vercel Cron        | 05:42, sans effet si `pg_cron` a réussi dans les 2 h | `/api/cron/sale-pepites`              | oui (même tâche, même seuil)                         | 3 h                           |
+| Santé opérationnelle                                       | Supabase `pg_cron` | toutes les 15 min                                    | `/api/cron/operational-health`        | oui                                                  | 45 min                        |
+| Purge des ventes                                           | Supabase `pg_cron` | toutes les 5 min                                     | `/api/cron/sale-retention`            | oui                                                  | 20 min                        |
+| Pré-calcul des valorisations                               | Supabase `pg_cron` | toutes les 5 min                                     | `/api/cron/precompute-valuations`     | non (déclenchement géré par la file de valorisation) | —                             |
+| Réponses de l'agent (lecture seule, n'envoie aucun e-mail) | Supabase `pg_cron` | toutes les 2 min                                     | `/api/cron/information-agent-inbound` | oui                                                  | 10 min                        |
 
 La complétude des annonces est recalculée par lots de 300 ventes (variable
 `LISTING_COMPLETENESS_BATCH_LIMIT`) : 24 passages par jour couvrent 7 200 évaluations pour environ
@@ -113,14 +141,14 @@ d'inondation, lui, tourne :
     `http_503`, `timeout`, `ppri_unreadable`…) ; la table ne copie aucune coordonnée : la position n'y figure que sous
     la forme d'une empreinte tronquée, c'est une pseudonymisation (pas une anonymisation).
 - **depuis le 27/10/2026, les appels partent de GitHub Actions** : Géorisques coupe les connexions qui viennent de
-  Vercel (`network_econnreset` sur toutes les ventes). La route `/api/cron/sale-flood-risk` (pg_cron à :25, filet
+  Vercel (`network_econnreset` sur toutes les ventes). La route `/api/cron/sale-flood-risk` (pg*cron à :25, filet
   de 05:35) ne fait plus que **déclencher** le workflow `sale-flood-risk.yml` (`workflow_dispatch`, même jeton
   GitHub que le pipeline), suivi sous le nom `sale-flood-risk-dispatch`. Le workflow exécute
   `src/jobs/sale-flood-risk-runner.ts` (`npm run flood-risk:build`), qui appelle le même `runSaleFloodRiskBatch`
   (bail, cadence, paquets) et se supervise sous le nom `sale-flood-risk`, celui de `cron.stale`. La taille de lot
   est la variable de dépôt GitHub `SALE_FLOOD_RISK_BATCH_LIMIT`. `SALE_FLOOD_RISK_RUNNER=vercel` (Vercel,
-  redéploiement) rétablit les appels depuis la route. Diagnostic des pannes (table des codes `network_*`,
-  `http_*`, `timeout`, `ppri_unreadable`, `write_busy_N`) : `docs/runbooks/georisques-pannes-inondation.md` ;
+  redéploiement) rétablit les appels depuis la route. Diagnostic des pannes (table des codes `network*_`,
+`http\__`, `timeout`, `ppri_unreadable`, `write_busy_N`) : `docs/runbooks/georisques-pannes-inondation.md` ;
 - le code commune de chaque vente (`auction_sale_communes`, migrations `20261106100000` et `20261106100100`) vient du
   pipeline (`raw_payload.commune`, `services/data-pipeline/src/commune_insee.py`) et est recopié par le même
   traitement ; les arrondissements de Paris, Lyon et Marseille sont ramenés à 75056, 69123 et 13055 pour GASPAR, le
@@ -148,7 +176,7 @@ configuration commun (`src/lib/env.ts`, comme `SALE_REMINDERS_MODE`). Tant que l
 appliquée est `pepite-v1.1`. À la bascule :
 
 - le calcul des pépites lit le verdict stocké de chaque vente (sans table ou sans communes : `skipped:
-  not_migrated`, rien n'est écrit) ; toutes les ventes sont réévaluées (la version de règle change), les pépites déjà
+not_migrated`, rien n'est écrit) ; toutes les ventes sont réévaluées (la version de règle change), les pépites déjà
   publiées en premier, et une pépite publiée dont le verdict change passe en priorité 0 ;
 - un risque **élevé** est un signal bloquant : il fait sortir une pépite publiée immédiatement, même gelée à J-7 ;
 - un verdict **inconnu** empêche l'entrée d'une nouvelle pépite mais **ne fait jamais sortir** une pépite publiée
@@ -282,15 +310,17 @@ relus) est créée au premier tick du mois. Son code de sortie est noté dans `a
 
 ## Workflows GitHub Actions
 
-| Workflow                                  | Déclencheur                                               | Supervision                                                          |
-| ----------------------------------------- | --------------------------------------------------------- | -------------------------------------------------------------------- |
-| Immojudis Data Pipeline (`data-pipeline`) | planifié + répartition par l'application                  | alertes `pipeline.source.*`, `pipeline.import.unhealthy`             |
-| Recompute des ventes existantes           | manuel                                                    | verrou `immojudis-recompute` + verrou en base                        |
-| DVF import                                | **manuel** (`workflow_dispatch`, aucun planning)          | alerte `dvf.freshness` (donnée de plus de 220 jours)                 |
-| Information Agent Evidence                | planifié toutes les 30 min + manuel                       | analyse des pièces jointes privées de l'agent (OCR), lecture seule   |
-| Sale flood risk                           | déclenché par `/api/cron/sale-flood-risk` + manuel        | observation du risque d'inondation depuis GitHub Actions ; `cron.stale` (3 h) ; voir `docs/runbooks/georisques-pannes-inondation.md` |
-| Production smoke                          | planifié `*/30` (en pratique toutes les 2 à 6 h) + manuel | échec du workflow ; voir `docs/operations/supervision-externe.md`    |
-| Immojudis Operational Alert               | déclenché par l'application                               | échec = incident ouvert ; avertissement = rappel ; vert = résolution |
-| Entraînement du modèle de valorisation    | manuel                                                    | rapport JSON + tableau de synthèse                                   |
-| Apply Supabase Migrations                 | manuel depuis `main`                                      | refuse si le CI du commit n'est pas vert ; contrôle de dérive        |
-| Check Pending Supabase Migrations         | `push` sur `main` (migrations) + tous les jours 07:10 UTC | échec = migrations de `main` non appliquées en production            |
+| Workflow                                                                    | Déclencheur                                                                                                                                                                            | Supervision                                                                                                                          |
+| --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Immojudis Data Pipeline (`data-pipeline.yml`)                               | aucun horaire GitHub : la base fixe les échéances (`claim_autonomous_pipeline_run`) et l'application déclenche le workflow à chaque passage d'`operational-health` (15 min) ; + manuel | alertes `pipeline.source.*`, `pipeline.import.unhealthy`                                                                             |
+| Recompute des ventes existantes                                             | manuel                                                                                                                                                                                 | verrou `immojudis-recompute` + verrou en base                                                                                        |
+| DVF import                                                                  | **manuel** (`workflow_dispatch`, aucun planning)                                                                                                                                       | alerte `dvf.freshness` (donnée de plus de 220 jours)                                                                                 |
+| Information Agent Evidence (`information-agent-evidence.yml`)               | planifié toutes les 30 min + manuel (exception à la règle : tolère un retard de plusieurs heures)                                                                                      | analyse des pièces jointes privées de l'agent (OCR), lecture seule                                                                   |
+| Sale flood risk (`sale-flood-risk.yml`)                                     | déclenché par `/api/cron/sale-flood-risk` + manuel                                                                                                                                     | observation du risque d'inondation depuis GitHub Actions ; `cron.stale` (3 h) ; voir `docs/runbooks/georisques-pannes-inondation.md` |
+| Production smoke (`production-smoke.yml`)                                   | planifié `*/30` (en pratique toutes les 2 à 6 h) + manuel                                                                                                                              | échec du workflow ; voir `docs/operations/supervision-externe.md`                                                                    |
+| Immojudis Operational Alert                                                 | déclenché par l'application                                                                                                                                                            | échec = incident ouvert ; avertissement = rappel ; vert = résolution                                                                 |
+| Entraînement du modèle de valorisation                                      | manuel                                                                                                                                                                                 | rapport JSON + tableau de synthèse                                                                                                   |
+| Apply Supabase Migrations                                                   | manuel depuis `main`                                                                                                                                                                   | refuse si le CI du commit n'est pas vert ; contrôle de dérive                                                                        |
+| Check Pending Supabase Migrations (`check-pending-supabase-migrations.yml`) | `push` sur `main` (migrations) + tous les jours 07:10 UTC                                                                                                                              | échec = migrations de `main` non appliquées en production                                                                            |
+| Pipeline tests, clock +60 days (`pipeline-clock-offset.yml`)                | lundi 05:17 UTC + manuel                                                                                                                                                               | échec du workflow (informatif : détecte les dates écrites en dur dans les tests du pipeline, sans base ni secret)                    |
+| CodeQL (`codeql.yml`)                                                       | pull requests, `push` sur `main` + lundi 03:25 UTC                                                                                                                                     | alertes d'analyse de code de GitHub                                                                                                  |
