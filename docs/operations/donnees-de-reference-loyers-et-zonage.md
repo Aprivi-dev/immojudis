@@ -77,9 +77,9 @@ Workflow manuel **Reference data import** (`.github/workflows/reference-data-imp
   télécharge 96 fichiers, jusqu'à 90 minutes) ; chaque jeu est isolé (la panne de l'un n'empêche pas les
   autres, le code de sortie est non nul s'il y en a une) et ouvre sa propre connexion, au moment d'écrire ;
 - `dry_run` : télécharge et analyse sans écrire ;
-- `check_new_vintage` : cherche seulement un millésime ANIL plus récent (aucune écriture). Le même
-  contrôle tourne tout seul le 1er novembre, le 1er décembre et le 1er janvier à 07 h 15 UTC
-  (`python -m src.reference_data rents --check-new-vintage`) : sortie non nulle et `::warning::` si un
+- `check_new_vintage` : cherche seulement un millésime ANIL plus récent (aucune écriture), à lancer à la
+  main début novembre, début décembre et début janvier (aucune planification automatique : contrôle
+  « Single-scheduler » de la CI) (`python -m src.reference_data rents --check-new-vintage`) : sortie non nulle et `::warning::` si un
   jeu plus récent que `ANIL_CURRENT_EDITION` est publié. La marche à suivre est dans
   `docs/runbooks/import-annuel-anil.md`.
 

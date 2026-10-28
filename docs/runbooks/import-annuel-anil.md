@@ -14,8 +14,9 @@ millésime 2025). À dater après l'import de décembre 2026.
 ## 1. Constater la nouvelle édition
 
 Tant que `ANIL_DATASET_ID` n'est pas changé, l'import relit l'ancien millésime sans erreur. Le contrôle
-`rents --check-new-vintage` (workflow **Reference data import**, les 1er novembre, décembre et janvier à
-07:15 UTC, ou à la demande avec `check_new_vintage`) le signale par un `::warning::` et un échec. Le warning
+`rents --check-new-vintage` (workflow **Reference data import** lancé à la main avec `check_new_vintage`, à faire
+début novembre, début décembre et début janvier) le signale par un `::warning::` et un échec. Le dépôt
+n'autorise aucune planification automatique des workflows de collecte (contrôle « Single-scheduler »). Le warning
 donne le millésime, le titre et l'identifiant du nouveau jeu.
 
 Vérifier sur data.gouv.fr que les quatre fichiers (`pred-app-mef-dhup.csv`, `pred-app12-mef-dhup.csv`,

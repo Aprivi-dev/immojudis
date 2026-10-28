@@ -5,12 +5,9 @@ name: Reference data import
 # (Géorisques) and Météo-France monthly climatology, plus the ANIL rent map
 # (`rents`, yearly in December) and the rental-tension zoning (`tension`, after a
 # decree). Sources refresh at most monthly, so the import stays manual like every
-# other collection workflow. The only scheduled run writes nothing: from November to
-# January it looks for the next ANIL edition (`rents --check-new-vintage`).
+# other collection workflow (single-scheduler invariant). From November to January, run it
+# by hand with `check_new_vintage` to look for the next ANIL edition (writes nothing).
 on:
-  schedule:
-    # 07:15 UTC on the 1st of November, December and January.
-    - cron: "15 7 1 11,12,1 *"
   workflow_dispatch:
     inputs:
       dataset:
@@ -69,13 +66,13 @@ jobs:
         run: python -m pip install --require-hashes -r requirements.lock
 
       - name: Check for a new ANIL vintage
-        if: github.event_name == 'schedule' || github.event.inputs.check_new_vintage == 'true'
+        if: github.event.inputs.check_new_vintage == 'true'
         env:
           AUCTION_USER_AGENT: ${{ vars.AUCTION_USER_AGENT || 'ImmojudisBot/1.0 (+https://immojudis.com/contact)' }}
         run: python -m src.reference_data rents --check-new-vintage
 
       - name: Import reference data
-        if: github.event_name != 'schedule' && github.event.inputs.check_new_vintage != 'true'
+        if: github.event.inputs.check_new_vintage != 'true'
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           AUCTION_USER_AGENT: ${{ vars.AUCTION_USER_AGENT || 'ImmojudisBot/1.0 (+https://immojudis.com/contact)' }}
