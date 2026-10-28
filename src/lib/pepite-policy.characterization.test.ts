@@ -24,6 +24,7 @@ import {
   type PepiteEvaluation,
   type PepiteInput,
   type PepiteStability,
+  type PepiteRuleVersion,
   type PepiteStoredState,
 } from "./pepite-policy";
 
@@ -914,7 +915,7 @@ describe("filet pepite-v1.1 : ventes qui exercent les corrections", () => {
 // Stabilité de la v1.1 : pendant le gel à J-7, une porte de qualité de l'estimation manquée fait sortir la pépite
 // publiée (n° 21) ; les autres critères (la part B qui s'effondre, par exemple) ne la font pas sortir, mais le
 // traitement planifié ne réécrit alors ni ses détails ni ses motifs (voir `sale-pepites-batch.test.ts`).
-const frozenStability = (input: CaseInput, rule = PEPITE_V1_1_RULE_VERSION) =>
+const frozenStability = (input: CaseInput, rule: PepiteRuleVersion = PEPITE_V1_1_RULE_VERSION) =>
   applyPepiteStability({
     previous: published({ frozenAt: hoursAgo(10) }),
     evaluation: evaluatePepite(toPepiteInput(input), rule),
