@@ -262,9 +262,7 @@ describe("page Mon compte", () => {
     expect(text).toContain("Ce qui reste gratuit");
     expect(text).toContain(`${PLAN_LIMITS.decouverte.favoriteSales} favoris`);
     expect(text).toContain("1 alerte avec un email récapitulatif par semaine");
-    expect(text).toContain(
-      `${PLAN_LIMITS.decouverte.monthlyUnlocks} déblocages par mois`,
-    );
+    expect(text).toContain(`${PLAN_LIMITS.decouverte.monthlyUnlocks} déblocages par mois`);
     expect(text).toContain("« Mon dossier »");
     expect(text).toContain("Ce qui demandera l’offre Analyse");
     expect(text).toContain("le rapport PDF");

@@ -276,9 +276,7 @@ describe("useful public discovery", () => {
       expect(container.textContent).not.toContain(text);
     }
     expect(container.querySelector('[class*="blur-"]')).toBeNull();
-    expect(
-      screen.getByText("Gratuit, sans carte bancaire · 3 déblocages par mois"),
-    ).toBeTruthy();
+    expect(screen.getByText("Gratuit, sans carte bancaire · 3 déblocages par mois")).toBeTruthy();
   });
 
   it("titles the card with the sale page's short heading, with a clean fallback", () => {
@@ -945,9 +943,7 @@ describe("« 3 déblocages par mois » on the cards of a Découverte account", (
     // La carte entière mène à la fiche : « Voir le détail » ne s'écrit plus en bas de carte.
     expect(cards[1].textContent).not.toContain("Voir le détail");
     expect(cards[0].textContent).not.toContain("Débloquée");
-    expect(cards[0].textContent).toContain(
-      "Gratuit, sans carte bancaire · 3 déblocages par mois",
-    );
+    expect(cards[0].textContent).toContain("Gratuit, sans carte bancaire · 3 déblocages par mois");
     expect(document.body.textContent).not.toContain("Analyse détaillée avec l’offre Analyse");
   });
 
@@ -964,12 +960,8 @@ describe("« 3 déblocages par mois » on the cards of a Découverte account", (
 
     await waitFor(() => expect(testState.unlocksOverview).toHaveBeenCalled());
     const cards = screen.getAllByRole("article");
-    expect(cards[0].textContent).toContain(
-      "Gratuit, sans carte bancaire · 3 déblocages par mois",
-    );
-    expect(cards[1].textContent).toContain(
-      "Gratuit, sans carte bancaire · 3 déblocages par mois",
-    );
+    expect(cards[0].textContent).toContain("Gratuit, sans carte bancaire · 3 déblocages par mois");
+    expect(cards[1].textContent).toContain("Gratuit, sans carte bancaire · 3 déblocages par mois");
     expect(cards[2].textContent).not.toContain("déblocages par mois");
   });
 
