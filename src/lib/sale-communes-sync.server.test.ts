@@ -164,6 +164,15 @@ describe("syncSaleCommunes", () => {
     expect(await syncSaleCommunes(NOW)).toMatchObject({ notMigrated: true, written: 0 });
   });
 
+  it("lève une erreur quand la lecture atteint sa borne au lieu de s'arrêter en silence", async () => {
+    // 20 000 ventes sans commune : la borne de la boucle est atteinte sans page incomplète.
+    db.sales = Array.from({ length: 20_000 }, (_, index) => ({
+      id: `sale-${index}`,
+      commune: null,
+    }));
+    await expect(syncSaleCommunes(NOW)).rejects.toThrow("Trop de ventes");
+  });
+
   it("n'écrit pas ce qui est déjà à jour", async () => {
     db.sales = [
       { id: "a", commune: { insee: "75056", arrondissement_insee: "75108", source: "geocode" } },

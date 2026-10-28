@@ -382,14 +382,89 @@ describe("filet pepite-v1 : verdicts figés", () => {
     }
   });
 
-  it("écrit un code de motif par critère évalué (pass: ou fail:)", () => {
-    for (const item of V1_INPUTS) {
-      const evaluation = evaluatePepite(toPepiteInput(item.input), PEPITE_V1_RULE_VERSION);
-      expect(pepiteReasonCodes(evaluation)).toEqual([
-        ...evaluation.passed.map((id) => `pass:${id}`),
-        ...evaluation.missed.map((id) => `fail:${id}`),
-      ]);
-    }
+  // Codes écrits à la main, ventes choisies dans la table ci-dessus : le test ne recalcule rien avec
+  // `pepiteReasonCodes` (une assertion qui recopie la fonction ne pourrait jamais échouer).
+  it.each([
+    {
+      name: "tribunal : chances de 67,5 % (entre les seuils d'entrée et de sortie du test B)",
+      codes: [
+        "pass:regime_open",
+        "pass:sale_upcoming",
+        "pass:starting_price_known",
+        "pass:estimate_actionable",
+        "pass:ceiling_computed",
+        "pass:scenarios_reliable",
+        "pass:estimate_reliability",
+        "pass:estimate_sample",
+        "pass:surface_known",
+        "pass:public_gap_gate",
+        "pass:gap_significant",
+        "pass:property_type_supported",
+        "pass:occupancy_known",
+        "pass:no_valuation_conflict",
+        "pass:no_ai_block",
+        "pass:no_degraded_condition",
+        "pass:verification_not_conflict",
+        "pass:no_probable_duplicate",
+        "pass:risks_qualified",
+        "pass:test_c_cost",
+        "fail:test_b_chance",
+      ],
+    },
+    {
+      name: "notarial interactif : plafond sous la première offre",
+      codes: [
+        "pass:regime_open",
+        "pass:sale_upcoming",
+        "pass:starting_price_known",
+        "pass:estimate_actionable",
+        "pass:estimate_reliability",
+        "pass:estimate_sample",
+        "pass:surface_known",
+        "pass:public_gap_gate",
+        "pass:gap_significant",
+        "pass:property_type_supported",
+        "pass:occupancy_known",
+        "pass:no_valuation_conflict",
+        "pass:no_ai_block",
+        "pass:no_degraded_condition",
+        "pass:verification_not_conflict",
+        "pass:no_probable_duplicate",
+        "pass:risks_qualified",
+        "pass:test_c_cost",
+        "fail:ceiling_computed",
+      ],
+    },
+    {
+      name: "tribunal : signal bloquant et donnée manquante",
+      codes: [
+        "pass:regime_open",
+        "pass:sale_upcoming",
+        "pass:starting_price_known",
+        "pass:ceiling_computed",
+        "pass:scenarios_reliable",
+        "pass:property_type_supported",
+        "pass:occupancy_known",
+        "pass:no_ai_block",
+        "pass:no_degraded_condition",
+        "pass:verification_not_conflict",
+        "pass:no_probable_duplicate",
+        "pass:risks_qualified",
+        "pass:test_b_chance",
+        "fail:estimate_actionable",
+        "fail:estimate_reliability",
+        "fail:estimate_sample",
+        "fail:surface_known",
+        "fail:public_gap_gate",
+        "fail:gap_significant",
+        "fail:no_valuation_conflict",
+      ],
+    },
+  ])("écrit un code de motif par critère évalué : $name", ({ name, codes }) => {
+    const item = V1_INPUTS.find((entry) => entry.name === name);
+    expect(item, name).toBeDefined();
+    const evaluation = evaluatePepite(toPepiteInput(item!.input), PEPITE_V1_RULE_VERSION);
+    expect(pepiteReasonCodes(evaluation)).toEqual(codes);
   });
 });
 

@@ -1,6 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { serverEnv } from "@/lib/env";
+import { isMissingDatabaseObject } from "@/lib/postgrest-errors";
 import {
   isRentApplicable,
   rentReferenceFromAnilRow,
@@ -83,7 +84,7 @@ async function readStoredSaleCommunes(
     .in("sale_id", [...ids]);
   if (error) {
     // Avant la migration 20261106100000 : on garde la lecture des champs bruts.
-    if (error.code === "42P01" || error.code === "PGRST205") return stored;
+    if (isMissingDatabaseObject(error)) return stored;
     throw error;
   }
   for (const row of data ?? []) {

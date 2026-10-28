@@ -1,6 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { isMissingDatabaseObject, readSaleCommunes } from "@/lib/flood-risk-store.server";
+import { readSaleCommunes } from "@/lib/flood-risk-store.server";
+import { isMissingDatabaseObject } from "@/lib/postgrest-errors";
 
 /**
  * Recopie le code commune que le pipeline pose sur chaque vente (`raw_payload.commune`, voir
@@ -86,6 +87,7 @@ export async function syncSaleCommunes(now: Date = new Date()): Promise<SaleComm
     source: string;
     resolved_at: string;
   }> = [];
+  let exhausted = false;
   for (let from = 0; from < MAX_ROWS; from += PAGE_SIZE) {
     const { data, error } = await supabaseAdmin
       .from("auction_sales")
@@ -114,8 +116,14 @@ export async function syncSaleCommunes(now: Date = new Date()): Promise<SaleComm
         resolved_at: now.toISOString(),
       });
     }
-    if ((data?.length ?? 0) < PAGE_SIZE) break;
+    if ((data?.length ?? 0) < PAGE_SIZE) {
+      exhausted = true;
+      break;
+    }
   }
+  // Comme les lectures de flood-risk-store : une borne atteinte n'est pas une fin de liste, sinon les
+  // ventes au-delà ne recevraient jamais de commune, sans que personne ne le sache.
+  if (!exhausted) throw new Error("Trop de ventes à rattacher à une commune.");
 
   for (let index = 0; index < pending.length; index += WRITE_CHUNK) {
     const chunk = pending.slice(index, index + WRITE_CHUNK);

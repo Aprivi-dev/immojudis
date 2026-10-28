@@ -553,3 +553,133 @@ describe("invariants de sécurité : risque d'inondation", () => {
     expect(result.stderr).toContain(`${file} must not define SECURITY DEFINER functions`);
   });
 });
+
+describe("invariants de sécurité : surfaces ajoutées après le 03/11/2026", () => {
+  const source = (path) => readFileSync(join(repo, path), "utf8");
+  const table = (name, extra = "") => `
+create table if not exists public.${name} (
+  id uuid primary key default gen_random_uuid()
+);
+${extra}
+`;
+
+  it("accepte une table récente en RLS, accessible au seul rôle de service", () => {
+    const result = runInvariants({
+      "99990101000000_ok_table.sql": table(
+        "demo_private",
+        "alter table public.demo_private enable row level security;\ngrant select on table public.demo_private to service_role;",
+      ),
+    });
+    expect(result.stderr).toBe("");
+    expect(result.status).toBe(0);
+  });
+
+  it("refuse une table récente sans row level security", () => {
+    const result = runInvariants({ "99990101000000_no_rls.sql": table("demo_open") });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "99990101000000_no_rls.sql creates public.demo_open without enabling row level security",
+    );
+  });
+
+  it.each(["anon", "authenticated", "public", "service_role, authenticated"])(
+    "refuse un droit donné à %s sur une table récente",
+    (role) => {
+      const result = runInvariants({
+        "99990101000000_client_grant.sql": table(
+          "demo_grant",
+          `alter table public.demo_grant enable row level security;\ngrant select on table public.demo_grant to ${role};`,
+        ),
+      });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("grants a right on public.demo_grant");
+    },
+  );
+
+  it("refuse un droit donné plus tard, dans une autre migration", () => {
+    const result = runInvariants({
+      "99990101000000_late_table.sql": table(
+        "demo_late",
+        "alter table public.demo_late enable row level security;",
+      ),
+      "99990102000000_late_grant.sql": "grant select on public.demo_late to anon;",
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "99990102000000_late_grant.sql grants a right on public.demo_late",
+    );
+  });
+
+  it("ne reproche pas aux tables antérieures au 04/11/2026 leurs droits historiques", () => {
+    const result = runInvariants({
+      "20261103999999_old_table.sql": table(
+        "demo_old",
+        "grant select on public.demo_old to authenticated;",
+      ),
+    });
+    expect(result.stderr).toBe("");
+    expect(result.status).toBe(0);
+  });
+
+  it("refuse une route de cron sans authentification", () => {
+    const result = runInvariants({}, [], {
+      "src/app/api/cron/rogue/route.ts":
+        "export async function GET() {\n  return Response.json({ ok: true });\n}\n",
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "src/app/api/cron/rogue/route.ts does not authenticate: call runMonitoredCron( or cronRequestAuthorized(",
+    );
+  });
+
+  it("accepte une route de cron qui appelle cronRequestAuthorized(", () => {
+    const result = runInvariants({}, [], {
+      "src/app/api/cron/guarded/route.ts":
+        "export async function GET(request: Request) {\n  if (!cronRequestAuthorized(request)) return new Response(null, { status: 401 });\n  return Response.json({ ok: true });\n}\n",
+    });
+    expect(result.stderr).toBe("");
+    expect(result.status).toBe(0);
+  });
+
+  it("refuse admin-signups sans assertAdminAuth en tête de la lecture", () => {
+    const original = source("src/lib/admin-signups.ts");
+    const bad = original.replace(
+      /(export async function listAdminSignups[\s\S]*?\{\n)\s*await assertAdminAuth\(authToken\);/,
+      "$1",
+    );
+    expect(bad).not.toBe(original);
+    const result = runInvariants({}, [], { "src/lib/admin-signups.ts": bad });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("listAdminSignups does not call assertAdminAuth");
+  });
+
+  it("refuse admin-signups qui lit des données avant assertAdminAuth", () => {
+    const original = source("src/lib/admin-signups.ts");
+    const bad = original.replace(
+      /(export async function extendAdminSignupTrials[\s\S]*?\{\n)(\s*const auth = await assertAdminAuth)/,
+      '$1  await supabaseAdmin.from("user_subscriptions").select("user_id");\n$2',
+    );
+    expect(bad).not.toBe(original);
+    const result = runInvariants({}, [], { "src/lib/admin-signups.ts": bad });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("extendAdminSignupTrials reads data before assertAdminAuth");
+  });
+
+  it("refuse une fin d'essai qui lit les métadonnées du compte", () => {
+    const result = runInvariants({
+      "99990101000000_trial_metadata.sql": `
+create or replace function app_private.signup_trial_ends_at(p_user_id uuid)
+returns timestamptz
+language sql
+stable
+security definer
+set search_path to ''
+as $function$
+  select (u.raw_user_meta_data ->> 'trial_ends_at')::timestamptz from auth.users u where u.id = p_user_id;
+$function$;
+`,
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("signup_trial_ends_at reads user metadata");
+  });
+});

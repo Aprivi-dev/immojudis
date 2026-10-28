@@ -27,6 +27,7 @@ import {
   type SaleCommune,
   type StoredFloodRow,
 } from "@/lib/flood-risk-store.server";
+import { isMissingDatabaseObject } from "@/lib/postgrest-errors";
 import { evaluateSaleForPepite, type PepiteSaleFacts } from "@/lib/pepite-input";
 import { activePepiteRuleVersion } from "@/lib/pepite-rule-switch.server";
 import {
@@ -414,12 +415,6 @@ export function buildNotApplicableRow(
     startingPriceEur: null,
     now,
   });
-}
-
-/** Table ou fonction inconnue de la base : la migration n'est pas encore appliquée (déploiement échelonné). */
-function isMissingDatabaseObject(error: unknown): boolean {
-  const code = (error as { code?: unknown } | null)?.code;
-  return code === "PGRST202" || code === "PGRST205" || code === "42883" || code === "42P01";
 }
 
 function errorMessage(error: unknown): string {

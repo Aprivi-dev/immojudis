@@ -2,6 +2,7 @@ import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
 import type { FloodPositionInput, StoredFloodRisk } from "@/lib/flood-risk";
+import { isMissingDatabaseObject } from "@/lib/postgrest-errors";
 
 /**
  * Lectures et écritures du verdict d'inondation par vente : table privée `auction_sale_flood_risk` (service_role
@@ -46,12 +47,6 @@ export type FloodSale = {
   locationPrecision: string | null;
   qualityFlags: string[];
 };
-
-/** Table ou fonction inconnue de la base : la migration n'est pas encore appliquée (déploiement échelonné). */
-export function isMissingDatabaseObject(error: unknown): boolean {
-  const code = (error as { code?: unknown } | null)?.code;
-  return code === "PGRST202" || code === "PGRST205" || code === "42883" || code === "42P01";
-}
 
 /** Verdicts stockés ; `null` : la table n'existe pas encore. */
 export async function readStoredFloodRisks(): Promise<StoredFloodRow[] | null> {
