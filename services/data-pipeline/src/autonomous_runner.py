@@ -553,6 +553,24 @@ def _run_document_reading(env: dict[str, str]) -> int:
         return 1
 
 
+ADDRESS_POSITIONS_BUDGET_SECONDS = 6 * 60
+
+
+def _run_address_positions(env: dict[str, str]) -> int:
+    """Bounded « positions » pass after the enrichment queue (src.address_positions).
+
+    Batch BAN geocoding (one CSV request per 250 addresses, 500 sales at most) of the upcoming sales that have a street
+    or a locality in their address but only a commune centre or no point. Optional like the document reading: its exit
+    code is reported in the run summary and never changes the run status.
+    """
+    command = [sys.executable, '-m', 'src.address_positions', '--max-sales', '500', '--budget-seconds', '170']
+    try:
+        result = subprocess.run(command, env=env, timeout=ADDRESS_POSITIONS_BUDGET_SECONDS, check=False)
+        return int(result.returncode)
+    except Exception:
+        return 1
+
+
 LICITOR_HISTORY_BUDGET_SECONDS = 330
 # Copie des lots pour les scénarios d'enchères, seule, quand le tick a épuisé son budget (60 s de SQL au plus).
 LICITOR_SNAPSHOT_ONLY_SECONDS = 90
@@ -660,6 +678,7 @@ def execute(run_id: str) -> int:
         )
     worker_code = code
     reading_code = _run_document_reading(env) if source == 'enrichment-queue' and worker_code == 0 else None
+    positions_code = _run_address_positions(env) if source == 'enrichment-queue' else None
     licitor_history_code = (
         _run_licitor_history_refresh(env)
         if source == 'enrichment-queue' and LICITOR_SOURCE not in withdrawn
@@ -679,6 +698,8 @@ def execute(run_id: str) -> int:
             summary["source_warning"] = True
         if reading_code is not None:
             summary["document_reading_exit_code"] = reading_code
+        if positions_code is not None:
+            summary["address_positions_exit_code"] = positions_code
         if licitor_history_code is not None:
             summary["licitor_history_exit_code"] = licitor_history_code
         elif source == 'enrichment-queue' and LICITOR_SOURCE in withdrawn:

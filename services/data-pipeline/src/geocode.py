@@ -13,6 +13,7 @@ from src.cadastre_references import resolve_sale_cadastre
 from src.commune_insee import record_sale_commune
 from src.config import load_settings
 from src.department_bounds import coordinates_in_department
+from src.geocode_query import build_geocode_query, clean_address_for_geocoding, geocode_postcode, has_street_or_place
 from src.models import AuctionSale
 from src.municipality_location import PROVIDER as MUNICIPALITY_PROVIDER
 from src.municipality_location import (
@@ -34,6 +35,12 @@ from src.position_quality import (
     remove_flags,
     street_name_tokens,
     street_names_match,
+)
+from src.source_coordinates import (
+    ban_attempt_view,
+    is_source_coordinates_evidence,
+    promote_source_coordinates,
+    reset_source_promotion,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -89,6 +96,9 @@ def restore_accepted_geocode(sale: AuctionSale) -> bool:
     ):
         # Les coordonnées d'une adresse écartée (prix, bloc de cabinet) ont été retirées exprès.
         return False
+    if _municipality_result_has_richer_query(sale, evidence):
+        # Un centre de commune trouvé avec une requête sans la rue ne vaut plus : le géocodage est à refaire.
+        return False
     department = sale.department or extract_department(sale.postal_code)
     if not (Decimal(-90) <= latitude <= Decimal(90) and Decimal(-180) <= longitude <= Decimal(180)):
         return False
@@ -124,7 +134,11 @@ def _geocode_sale(sale: AuctionSale) -> AuctionSale:
         clear_position_flags(sale)
         return sale
     restore_accepted_geocode(sale)
-    if coordinates_are_verified(sale) and _coordinates_match_department(sale):
+    if (
+        coordinates_are_verified(sale)
+        and _coordinates_match_department(sale)
+        and not _municipality_result_has_richer_query(sale, sale.raw_payload.get("geocode"))
+    ):
         clear_position_flags(sale)
         return sale
     verify_source_coordinates(sale)
@@ -143,7 +157,7 @@ def _geocode_sale(sale: AuctionSale) -> AuctionSale:
     min_score = float(settings["geocode_min_score"])
     street_mismatch = False
     try:
-        result = geocode_address(query=query, api_url=api_url, min_score=min_score, postcode=sale.postal_code)
+        result = geocode_address(query=query, api_url=api_url, min_score=min_score, postcode=geocode_postcode(sale))
         if result is not None and not _result_street_matches(sale, result):
             # Un score de 0,6 suffit à la BAN pour une autre voie du même nom (« rue du Château » -> « Château d'Eau »).
             LOGGER.info("Ignoring BAN result on another street for %s: %s", sale.source_url, result.label)
@@ -170,10 +184,19 @@ def _geocode_sale(sale: AuctionSale) -> AuctionSale:
         _store_negative_geocode_cache(sale, query=query, reason="street_mismatch" if street_mismatch else "no_result")
         return sale
 
+    if not _accept_result(sale, query=query, result=result):
+        return sale
+    # The commune code found by BAN completes cadastral references published without one.
+    resolve_sale_cadastre(sale, settings=settings)
+    return sale
+
+
+def _accept_result(sale: AuctionSale, *, query: str, result: GeocodeResult) -> bool:
+    """Pose le point d'un résultat BAN déjà jugé acceptable (score, rue) ; refuse un point hors du département."""
     department = sale.department or extract_department(sale.postal_code) or extract_department(result.postcode)
     if department and not _coordinates_in_department(result.latitude, result.longitude, department):
         _reject_outside_department(sale, query=query, result=result)
-        return sale
+        return False
 
     sale.latitude = result.latitude
     sale.longitude = result.longitude
@@ -185,9 +208,26 @@ def _geocode_sale(sale: AuctionSale) -> AuctionSale:
     _store_geocode_evidence(sale, query=query, result=result, accepted=True)
     # Le point vient d'être corrigé par un résultat accepté : les drapeaux de l'ancienne position n'ont plus lieu d'être.
     clear_position_flags(sale)
-    # The commune code found by BAN completes cadastral references published without one.
-    resolve_sale_cadastre(sale, settings=settings)
-    return sale
+    return True
+
+
+def apply_address_result(sale: AuctionSale, *, query: str, result: GeocodeResult | None) -> bool:
+    """Résultat BAN d'une adresse obtenu hors de ``geocode_sale`` (géocodage en lot) ; vrai si le point est posé.
+
+    Mêmes règles d'acceptation que ``geocode_sale`` (score minimal, rue concordante, département), en plus strict sur un
+    point : un résultat au niveau de la commune ne remplace jamais le point que la vente a déjà (centre de commune,
+    point de la source) ; il compte pour « rien de mieux ». Sans résultat, le cache négatif est posé pour cette requête.
+    """
+    reason = "no_result"
+    if result is not None and GEO_PRECISION_BY_TYPE.get(result.result_type or "") in {None, "municipality"}:
+        result, reason = None, "municipality_only"
+    elif result is not None and not _result_street_matches(sale, result):
+        LOGGER.info("Ignoring BAN result on another street for %s: %s", sale.source_url, result.label)
+        result, reason = None, "street_mismatch"
+    if result is None:
+        _store_negative_geocode_cache(sale, query=query, reason=reason)
+        return False
+    return _accept_result(sale, query=query, result=result)
 
 
 def locate_sale_by_cadastre(sale: AuctionSale) -> AuctionSale:
@@ -253,6 +293,8 @@ def verify_source_coordinates(sale: AuctionSale) -> str | None:
     Un point confirmé par la BAN ou le cadastre, ou un centre de commune, n'est pas une coordonnée de la source.
     """
     _restore_precision_from_evidence(sale)
+    # La précision d'un point de la source est recalculée à chaque contrôle (src.source_coordinates).
+    reset_source_promotion(sale)
     if sale.latitude is None or sale.longitude is None or not isinstance(sale.raw_payload, dict):
         return None
     if coordinates_are_verified(sale) or sale.raw_payload.get("geo_precision") == "parcel":
@@ -266,6 +308,8 @@ def verify_source_coordinates(sale: AuctionSale) -> str | None:
     department = sale.department or extract_department(sale.postal_code)
     status: str | None = None
     detail: dict[str, object] = {}
+    commune: dict | None = None
+    kilometres = 0.0
     if not _coordinates_in_department(sale.latitude, sale.longitude, department or ""):
         status = "implausible"
         detail = {"reason": "outside_department", "department": department}
@@ -287,6 +331,10 @@ def verify_source_coordinates(sale: AuctionSale) -> str | None:
     elif status == "unverified":
         add_position_flag(flags, UNVERIFIED_SOURCE_COORDINATES)
     sale.quality_flags = flags
+    if status is None and commune is not None and department:
+        # Point cohérent, dans le département et à moins de 12 km de sa commune : s'il n'est pas sur le centre de la
+        # commune, c'est un vrai point, que l'application peut classer précis.
+        promote_source_coordinates(sale, distance_km=kilometres, commune_code=commune["code_insee"])
     return status
 
 
@@ -294,13 +342,15 @@ def _result_street_matches(sale: AuctionSale, result: GeocodeResult) -> bool:
     """Le nom de voie trouvé est celui de l'adresse (vrai quand l'un des deux est introuvable ou sans voie)."""
     if result.result_type not in ADDRESS_RESULT_TYPES:
         return True
-    wanted = street_name_tokens(sale.address, require_street_type=True)
+    wanted = street_name_tokens(clean_address_for_geocoding(sale.address), require_street_type=True)
     found = street_name_tokens(result.street, require_street_type=False)
     return street_names_match(wanted, found, result.score)
 
 
 def _reject_outside_department(sale: AuctionSale, *, query: str, result: GeocodeResult) -> None:
     LOGGER.warning("Ignoring BAN result outside department for %s", sale.source_url)
+    # Le drapeau pose un doute sur la position : la précision d'un point de la source ne tient plus.
+    reset_source_promotion(sale)
     add_position_flag(sale.quality_flags, GEOCODE_OUTSIDE_DEPARTMENT)
     _store_geocode_evidence(
         sale,
@@ -374,6 +424,26 @@ def _fetch_features(
         response = httpx.get(api_url, params=params, timeout=10)
     response.raise_for_status()
     return response.json().get("features") or []
+
+
+def result_from_feature(feature: dict, min_score: float) -> GeocodeResult | None:
+    """Résultat d'une entité de la BAN (GeoJSON), ou ``None`` sous le score minimal : la règle de ``geocode_sale``."""
+    return _result_from_feature(feature, min_score)
+
+
+def geocode_attempt_is_cached(sale: AuctionSale, query: str) -> bool:
+    """Une tentative BAN pour cette même requête date de moins de 14 jours (sans résultat, refusée ou au niveau commune)."""
+    return _has_recent_negative_geocode_cache(sale, query) or _has_recent_commune_result(sale, query)
+
+
+def _has_recent_commune_result(sale: AuctionSale, query: str) -> bool:
+    geocode = sale.raw_payload.get("geocode") if isinstance(sale.raw_payload, dict) else None
+    if not isinstance(geocode, dict) or geocode.get("provider") != "ban_geoplateforme":
+        return False
+    if geocode.get("accepted") is not True or geocode.get("query") != query:
+        return False
+    attempted_at = _parse_datetime(geocode.get("attempted_at"))
+    return attempted_at is not None and _utc_now() - attempted_at <= NEGATIVE_GEOCODE_CACHE_TTL
 
 
 def _result_from_feature(feature: dict, min_score: float) -> GeocodeResult | None:
@@ -464,15 +534,25 @@ def _result_matches_department(result: GeocodeResult, sale: AuctionSale) -> bool
 
 
 def _build_query(sale: AuctionSale) -> str | None:
-    address = sale.address or ""
-    address_lower = address.lower()
-    parts = [sale.address]
-    if sale.postal_code and sale.postal_code not in address:
-        parts.append(sale.postal_code)
-    if sale.city and sale.city.lower() not in address_lower:
-        parts.append(sale.city)
-    query = clean_text(" ".join(part for part in parts if part))
-    return query
+    return build_geocode_query(sale)
+
+
+def _municipality_result_has_richer_query(sale: AuctionSale, evidence: object) -> bool:
+    """Le résultat BAN accepté est un centre de commune, et l'adresse actuelle donne une autre requête avec une voie.
+
+    C'est le cas d'un géocodage fait avant l'arrivée de la rue (« 30000 Nîmes » pour « 2 rue des Chapeliers, 30000
+    NÎMES ») ou avant le nettoyage de la requête : il est à refaire, pas à figer.
+    """
+    if not isinstance(evidence, dict) or evidence.get("provider") != "ban_geoplateforme":
+        return False
+    if evidence.get("accepted") is not True:
+        return False
+    if GEO_PRECISION_BY_TYPE.get(str(evidence.get("type") or "")) != "municipality":
+        return False
+    if not has_street_or_place(sale.address):
+        return False
+    query = _build_query(sale)
+    return bool(query) and evidence.get("query") != query
 
 
 def _coordinates_match_department(sale: AuctionSale) -> bool:
@@ -512,17 +592,28 @@ def _store_geocode_evidence(
 
 
 def _store_negative_geocode_cache(sale: AuctionSale, *, query: str, reason: str) -> None:
+    attempted_at = _utc_now().isoformat().replace("+00:00", "Z")
+    current = sale.raw_payload.get("geocode")
+    if is_source_coordinates_evidence(current):
+        # Le point de la source garde sa preuve : la tentative BAN s'y ajoute (cache négatif de 14 jours).
+        current.update(ban_query=query, ban_attempted_at=attempted_at, ban_rejection_reason=reason)
+        return
     sale.raw_payload["geocode"] = {
         "provider": "ban_geoplateforme",
         "query": query,
         "accepted": False,
-        "attempted_at": _utc_now().isoformat().replace("+00:00", "Z"),
+        "attempted_at": attempted_at,
         "rejection_reason": reason,
     }
 
 
 def _has_recent_negative_geocode_cache(sale: AuctionSale, query: str) -> bool:
+    """Une tentative BAN sans résultat pour cette même requête date de moins de 14 jours.
+
+    Une requête différente (adresse corrigée, texte parasite retiré) n'est jamais couverte par le cache.
+    """
     geocode = sale.raw_payload.get("geocode") if isinstance(sale.raw_payload, dict) else None
+    geocode = ban_attempt_view(geocode) or geocode
     if not isinstance(geocode, dict):
         return False
     if geocode.get("provider") != "ban_geoplateforme":

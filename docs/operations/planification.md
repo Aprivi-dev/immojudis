@@ -280,6 +280,15 @@ session : le pooler en mode transaction transmettrait le rôle à d'autres clien
 relus) est créée au premier tick du mois. Son code de sortie est noté dans `auction_runs.summary`
 (`licitor_history_exit_code`).
 
+Les positions des ventes à venir qui ont une adresse mais seulement le centre de leur commune (ou aucun point) sont
+corrigées le 28/10/2026 de la même façon, sans planification nouvelle : après chaque passage de la file
+d'enrichissement, le lanceur planifié exécute `src.address_positions` (au plus 500 ventes par passage, un envoi CSV au
+géocodage en masse de la Géoplateforme par lot de 250 adresses, 6 minutes au plus, verrou des écritures du catalogue
+pris 2 minutes au plus). Les règles d'acceptation sont celles de `geocode_sale` ; le passage n'écrit que les
+coordonnées, les drapeaux de position et les clés `geo_precision`, `geocode` et `commune` de `raw_payload`. Son code
+de sortie est noté dans `auction_runs.summary` (`address_positions_exit_code`) ; `ADDRESS_POSITIONS_ENABLED=false`
+le suspend.
+
 ## Workflows GitHub Actions
 
 | Workflow                                  | Déclencheur                                               | Supervision                                                          |

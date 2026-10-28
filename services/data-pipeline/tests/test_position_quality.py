@@ -198,6 +198,49 @@ def test_street_names_compare_on_normalised_words() -> None:
     assert street_names_match(None, chateau_eau, 0.6)
 
 
+# --- abréviations et ordre des mots ----------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("wanted", "found", "same"),
+    [
+        # L'exemple du brief : abréviation, ordre des mots, « de France » (grade).
+        ("13 Av. Koenig Maréchal de France", "Avenue du Maréchal Koenig", True),
+        ("4 Bd Gambetta", "Boulevard Gambetta", True),
+        ("4 Bld Gambetta", "Boulevard Gambetta", True),
+        ("2 Pl. de la République", "Place de la République", True),
+        ("7 Rte de Lyon", "Route de Lyon", True),
+        ("7 Chem. des Vignes", "Chemin des Vignes", True),
+        ("9 Imp. des Lilas", "Impasse des Lilas", True),
+        ("5 Fbg Saint-Honoré", "Rue du Faubourg Saint-Honoré", True),
+        ("5 Rue St Michel", "Rue Saint-Michel", True),
+        ("5 Rue Ste Anne", "Rue Sainte-Anne", True),
+        ("5 Av. du Mal Foch", "Avenue du Maréchal Foch", True),
+        ("12 Gal de Gaulle Avenue", "Avenue du Général de Gaulle", True),
+        # Une autre voie n'est jamais acceptée.
+        ("13 Av. Foch", "Avenue Kléber", False),
+        ("4 Bd Gambetta", "Boulevard Victor Hugo", False),
+        ("2 Pl. de la République", "Place de France", False),
+        ("7 Rte de Lyon", "Route de Paris", False),
+        ("5 Rue St Michel", "Rue Saint-Pierre", False),
+    ],
+)
+def test_street_names_survive_abbreviations_and_word_order(wanted: str, found: str, same: bool) -> None:
+    wanted_tokens = street_name_tokens(wanted, require_street_type=False)
+    found_tokens = street_name_tokens(found, require_street_type=False)
+
+    assert street_names_match(wanted_tokens, found_tokens, 0.6) is same
+
+
+def test_an_abbreviated_street_type_still_counts_as_a_street() -> None:
+    for address in ("13 Av. Koenig", "4 Bd Gambetta", "7 Rte de Lyon", "7 Chem. des Vignes", "2 Pl. Foch"):
+        assert street_name_tokens(address, require_street_type=True) is not None
+
+
+def test_place_de_france_keeps_its_name() -> None:
+    assert street_name_tokens("2 place de France", require_street_type=True) == frozenset({"france"})
+
+
 def test_titles_and_typos_do_not_change_the_street() -> None:
     wanted = street_name_tokens("4 rue du Général Leclerc", require_street_type=True)
 
