@@ -73,10 +73,13 @@ d'inondation, lui, tourne :
   `SALE_FLOOD_RISK_BATCH_LIMIT`) observe les ventes à venir et écrit un verdict par vente dans la table privée
   `auction_sale_flood_risk` (migration `20261106100200`) :
   - position précise (adresse, parcelle) : API Géorisques `tri_zonage` au point, puis périmètre d'un PPRi (servitude
-    PM1 du Géoportail de l'urbanisme, API Carto, `code_alea` 11). Une rue : le point et quatre points d'un tampon de
-    100 m (verdict retenu seulement si le tampon est entièrement dans la zone ou entièrement hors zone) ;
-  - position imprécise (centre de commune, précision absente, drapeau `unverified_source_coordinates` ou
-    `implausible_coordinates`) : **aucun appel de position**, seulement « la commune compte-t-elle un TRI ? » (GASPAR,
+    PM1 du Géoportail de l'urbanisme, API Carto, `code_alea` 11). Parcelle multiple : chaque centroïde est testé
+    (au plus 5) ; `high` si tous sont dans la zone, `unknown` si les résultats divergent. Une rue : le point et
+    quatre points d'un tampon de 100 m, mais **seul `high` est retenu** (le point BAN d'une rue peut être à plus de
+    700 m du numéro), tout autre résultat donne `unknown` (règle `flood-v2`, n° 39) ;
+  - position imprécise (centre de commune, précision absente, drapeau `unverified_source_coordinates`,
+    `implausible_coordinates` ou `geocode_outside_department`, lieu-dit de la BAN, numéro de la BAN dont le score
+    est inférieur à 0,8) : **aucun appel de position**, seulement « la commune compte-t-elle un TRI ? » (GASPAR,
     gardé par commune 24 h) ; commune avec TRI : `unknown` (aucune nouvelle pépite) ; sans TRI : `no_signal` ;
   - cadence de 2 à 3 appels par seconde, tous services confondus ; **un 429 arrête la passe** (coupe-circuit) ; une
     passe qui n'obtient aucune observation échoue (donc `cron.stale` après 3 h) ;

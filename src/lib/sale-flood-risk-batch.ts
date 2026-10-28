@@ -5,6 +5,7 @@ import {
   deriveFloodVerdict,
   floodProbePoints,
   floodRefreshReason,
+  isFloodProbeSetPartial,
   type FloodProbeObservation,
   type FloodRefreshReason,
   type FloodRiskObservation,
@@ -44,8 +45,9 @@ import { syncSaleCommunes } from "@/lib/sale-communes-sync.server";
  *    tentative a échoué (retentée après `FLOOD_RETRY_HOURS` h), quand la dérivation change de version, et tous les
  *    `FLOOD_REFRESH_DAYS` jours (`floodRefreshReason`) ;
  *  - position précise (adresse, parcelle) : `tri_zonage` au point (Géorisques) puis le périmètre PPRi (servitude
- *    PM1, API Carto) ; une rue : le point et quatre points du tampon ; position approximative (centre de commune,
- *    absente, drapeau douteux) : AUCUN appel de position, seulement la question « la commune compte-t-elle un TRI ? »
+ *    PM1, API Carto) ; une parcelle multiple : chaque centroïde (au plus 5) ; une rue : le point et quatre points du
+ *    tampon (seul `high` est retenu, voir `flood-risk.ts`) ; position approximative (centre de commune,
+ *    absente, drapeau douteux, lieu-dit ou numéro peu sûr de la BAN) : AUCUN appel de position, seulement la question « la commune compte-t-elle un TRI ? »
  *    (GASPAR, mise en cache par commune) ;
  *  - cadence de 2 à 3 appels par seconde (`FLOOD_MIN_INTERVAL_MS`), tous services confondus ; un 429 arrête la
  *    passe (coupe-circuit) ;
@@ -254,7 +256,13 @@ async function observe(
   const allRead = probes.every((probe) => probe.ppri !== null);
   return {
     kind: "observed",
-    observation: { kind, communeHasTri: null, probes, mapDate },
+    observation: {
+      kind,
+      communeHasTri: null,
+      probes,
+      mapDate,
+      partial: isFloodProbeSetPartial(position),
+    },
     scenarios,
     ppriPerimeter: anyInPerimeter ? true : allRead ? false : null,
   };
