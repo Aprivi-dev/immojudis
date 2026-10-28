@@ -23,6 +23,19 @@ const db = vi.hoisted(() => ({
   missingInputs: new Set<string>(),
   /** Ventes dont l'écriture est refusée par la base (contrainte), même seule. */
   upsertRejects: new Set<string>(),
+  /** Envois successifs de lignes : `true` = refusé comme bloqué par un verrou de ligne (57014). */
+  busyUpserts: [] as boolean[],
+  /** Tout envoi est refusé comme bloqué par un verrou de ligne. */
+  alwaysBusy: false,
+  /** Nombre d'envois tentés (réussis ou non). */
+  upsertAttempts: 0,
+  /** Bail du traitement : `"held"` = une autre passe le tient ; `"missing"` = fonction absente. */
+  lease: "free" as "free" | "held" | "missing",
+  /** Appelé après chaque évaluation (tests : faire avancer l'horloge). */
+  afterEvaluate: null as (() => void) | null,
+  leaseCalls: [] as string[],
+  /** Lectures de `v_auction_sales_app` (hors lecture complète) : filtre de statut et curseur. */
+  onlineReads: [] as Array<{ status: string | null; notUpcoming: boolean; after: string | null }>,
   /** Ce que le calcul a reçu comme estimation, par vente. */
   estimateArgs: new Map<string, unknown>(),
   /** Règle de la dernière évaluation et verdict d'inondation reçu, par vente. */
@@ -37,6 +50,17 @@ vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: {
     from: (table: string) => new FakeQuery(table),
     rpc: async (name: string) => {
+      if (name === "claim_cron_lease") {
+        db.leaseCalls.push(name);
+        if (db.lease === "missing") {
+          return { data: null, error: { code: "PGRST202", message: "absente" } };
+        }
+        return { data: db.lease === "held" ? null : "lease-token", error: null };
+      }
+      if (name === "release_cron_lease") {
+        db.leaseCalls.push(name);
+        return { data: true, error: null };
+      }
       db.touched.push(`rpc:${name}`);
       if (db.modeError) return { data: null, error: db.modeError };
       return { data: db.mode, error: null };
@@ -69,6 +93,7 @@ vi.mock("@/lib/pepite-input", () => ({
   ) => {
     db.estimateArgs.set(sale.id, estimate ?? null);
     db.floodArgs.set(sale.id, { flood, ruleVersion });
+    db.afterEvaluate?.();
     if (db.evaluateError.has(sale.id)) throw new Error(`boom ${sale.id}`);
     const entry = db.evaluations.get(sale.id) as
       | { evaluation: PepiteEvaluation; input?: PepiteInput; facts: Row }
@@ -91,6 +116,7 @@ import {
   pepiteDetails,
   pickPendingSales,
   runSalePepitesBatch,
+  SALE_PEPITES_WRITE_DEADLINE_MS,
   storedStateFor,
   type OnlineSale,
   type StoredEvaluation,
@@ -105,6 +131,10 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
   private page: [number, number] = [0, 999];
   private upsertRows: Row[] | null = null;
   private columns = "";
+  private statusEq: string | null = null;
+  private notUpcoming = false;
+  private after: string | null = null;
+  private max = 1000;
 
   constructor(private readonly table: string) {}
 
@@ -115,7 +145,20 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
   order() {
     return this;
   }
-  eq() {
+  eq(column: string, value: string) {
+    if (column === "status") this.statusEq = value;
+    return this;
+  }
+  or() {
+    this.notUpcoming = true;
+    return this;
+  }
+  gt(_column: string, value: string) {
+    this.after = value;
+    return this;
+  }
+  limit(count: number) {
+    this.max = count;
     return this;
   }
   range(from: number, to: number) {
@@ -144,6 +187,10 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
     db.touched.push(this.table);
     if (this.upsertRows) {
       if (db.upsertError) return { data: null, error: db.upsertError };
+      db.upsertAttempts += 1;
+      if (db.alwaysBusy || db.busyUpserts.shift()) {
+        return { data: null, error: { code: "57014", message: "statement timeout" } };
+      }
       if (this.upsertRows.some((row) => db.upsertRejects.has(row.sale_id as string))) {
         return { data: null, error: { code: "23514", message: "check constraint (80000)" } };
       }
@@ -165,7 +212,24 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
             error: null,
           };
         }
-        return { data: db.online.slice(this.page[0], this.page[1] + 1), error: null };
+        // Lecture par curseur sur `id`, filtrée par statut dans la base.
+        db.onlineReads.push({
+          status: this.statusEq,
+          notUpcoming: this.notUpcoming,
+          after: this.after,
+        });
+        return {
+          data: db.online
+            .filter((row) =>
+              this.notUpcoming
+                ? row.status !== "upcoming"
+                : this.statusEq == null || row.status === this.statusEq,
+            )
+            .filter((row) => this.after == null || String(row.id) > this.after)
+            .sort((left, right) => String(left.id).localeCompare(String(right.id)))
+            .slice(0, this.max),
+          error: null,
+        };
       case "auction_sale_flood_risk":
         if (db.floodRows == null) {
           return { data: null, error: { code: "PGRST205", message: "Could not find the table" } };
@@ -351,6 +415,13 @@ beforeEach(() => {
   db.scenarioCalls = [];
   db.missingInputs = new Set();
   db.upsertRejects = new Set();
+  db.busyUpserts = [];
+  db.alwaysBusy = false;
+  db.upsertAttempts = 0;
+  db.lease = "free";
+  db.afterEvaluate = null;
+  db.leaseCalls = [];
+  db.onlineReads = [];
   db.estimateArgs = new Map();
   db.floodArgs = new Map();
   db.floodRows = [];
@@ -811,6 +882,69 @@ describe("runSalePepitesBatch", () => {
     expect(JSON.stringify(result)).not.toContain("80000");
   });
 
+  it("une écriture bloquée par un verrou n'est pas coupée en deux : paquet différé puis réessayé une fois", async () => {
+    setSales(["a", "b", "c", "d", "e", "f"]);
+    db.busyUpserts = [true];
+
+    const result = await runSalePepitesBatch({ now: NOW });
+
+    // Un envoi bloqué, un seul réessai : pas de descente par moitiés (chaque niveau attendrait le délai).
+    expect(db.upsertAttempts).toBe(2);
+    expect(result).toMatchObject({ evaluated: 6, failed: 0, deferred: 0, errors: [] });
+  });
+
+  it("des ventes verrouillées pendant toute la passe : rien n'est écrit, la passe échoue (supervision)", async () => {
+    setSales(["a", "b", "c"]);
+    db.alwaysBusy = true;
+
+    await expect(runSalePepitesBatch({ now: NOW })).rejects.toThrow(
+      /ventes verrouillées pendant toute la passe/,
+    );
+    // L'envoi initial et un seul réessai, jamais un nouvel essai par moitié.
+    expect(db.upsertAttempts).toBe(2);
+    expect(db.leaseCalls).toEqual(["claim_cron_lease", "release_cron_lease"]);
+  });
+
+  it("un paquet encore bloqué au réessai reste en attente : les autres sont écrites, la passe réussit", async () => {
+    const ids = Array.from({ length: 201 }, (_, index) => `s${String(index).padStart(3, "0")}`);
+    setSales(ids);
+    // Paquet 1 bloqué, paquet 2 écrit, réessai du paquet 1 encore bloqué.
+    db.busyUpserts = [true, false, true];
+
+    const result = await runSalePepitesBatch({ now: NOW });
+
+    expect(db.upsertAttempts).toBe(3);
+    expect(result).toMatchObject({ evaluated: 1, failed: 0, deferred: 200, remaining: 200 });
+    expect(result.errors).toEqual(["write_busy_200"]);
+  });
+
+  it("une ligne invalide reste isolée par moitiés, même si un autre paquet a été bloqué", async () => {
+    setSales(["a", "b", "c", "d", "e", "f"]);
+    db.upsertRejects.add("d");
+    db.busyUpserts = [true];
+
+    const result = await runSalePepitesBatch({ now: NOW });
+
+    expect(result).toMatchObject({ evaluated: 5, failed: 1, deferred: 0 });
+    expect(result.errors).toEqual(["Écriture refusée pour la vente d (code 23514)"]);
+  });
+
+  it("passé le délai d'écriture, plus aucun paquet n'est tenté : tout est différé", async () => {
+    setSales(["a", "b"]);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+    // Le temps saute au-delà du délai d'écriture pendant les évaluations (lectures lentes).
+    db.afterEvaluate = () => vi.setSystemTime(NOW.getTime() + SALE_PEPITES_WRITE_DEADLINE_MS + 1);
+
+    try {
+      await expect(runSalePepitesBatch({ now: NOW })).rejects.toThrow(/verrouillées/);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(db.upsertAttempts).toBe(0);
+    expect(db.upserts).toEqual([]);
+  });
+
   it("les ventes qui ne sont pas à venir sont « non applicables » sans lire leur ligne complète", async () => {
     setSales(["past"], { status: "past" });
 
@@ -931,6 +1065,84 @@ describe("pickPendingSales : verdict d'inondation (règle v2)", () => {
         floodChangedAt,
       ),
     ).toEqual([]);
+  });
+});
+
+describe("runSalePepitesBatch : un seul traitement à la fois (bail)", () => {
+  it("rend le bail à la fin de la passe", async () => {
+    setSales(["a"]);
+    await runSalePepitesBatch({ now: NOW });
+    expect(db.leaseCalls).toEqual(["claim_cron_lease", "release_cron_lease"]);
+  });
+
+  it("une seconde passe simultanée rend « busy » sans rien lire ni écrire ni rendre", async () => {
+    setSales(["a"]);
+    db.lease = "held";
+
+    const result = await runSalePepitesBatch({ now: NOW });
+
+    expect(result).toMatchObject({ skipped: "busy", evaluated: 0, pending: 0, deferred: 0 });
+    expect(db.touched).toEqual([]);
+    expect(db.upserts).toEqual([]);
+    expect(db.leaseCalls).toEqual(["claim_cron_lease"]);
+  });
+
+  it("rend le bail même quand la passe échoue", async () => {
+    setSales(["a"]);
+    db.readError = { message: "lecture impossible" };
+
+    await expect(runSalePepitesBatch({ now: NOW })).rejects.toThrow();
+    expect(db.leaseCalls).toEqual(["claim_cron_lease", "release_cron_lease"]);
+  });
+
+  it("fonction de bail absente (migration en retard) : la passe continue sans verrou", async () => {
+    setSales(["a"]);
+    db.lease = "missing";
+
+    const result = await runSalePepitesBatch({ now: NOW });
+
+    expect(result).toMatchObject({ evaluated: 1, skipped: null });
+    expect(db.leaseCalls).toEqual(["claim_cron_lease"]);
+  });
+});
+
+describe("runSalePepitesBatch : lecture des ventes en ligne", () => {
+  it("lit les ventes à venir par curseur sur l'identifiant, filtrées par statut dans la base", async () => {
+    const ids = Array.from({ length: 1500 }, (_, index) => `s${String(index).padStart(5, "0")}`);
+    setSales(ids);
+
+    const result = await runSalePepitesBatch({ now: NOW, limit: 1 });
+
+    const upcoming = db.onlineReads.filter((read) => !read.notUpcoming);
+    expect(upcoming).toHaveLength(2);
+    expect(upcoming.every((read) => read.status === "upcoming")).toBe(true);
+    expect(upcoming[0].after).toBeNull();
+    expect(upcoming[1].after).toBe("s00999");
+    expect(result.online).toBe(1500);
+  });
+
+  it("les rares ventes en ligne qui ne sont pas à venir sont lues à part et restent « non applicables »", async () => {
+    setSales(["a"]);
+    db.online.push({
+      id: "z-unknown",
+      updated_at: BEFORE,
+      status: "unknown",
+      sale_date: FUTURE,
+      sale_venue_type: "notary",
+      starting_price_eur: 80_000,
+    });
+    db.stored = [
+      storedRow("z-unknown", { isPepite: true, status: "pepite", dataMissingSince: BEFORE }),
+    ];
+
+    const result = await runSalePepitesBatch({ now: NOW });
+
+    expect(db.onlineReads.some((read) => read.notUpcoming)).toBe(true);
+    expect(result.online).toBe(2);
+    expect(db.upserts.flat().find((row) => row.sale_id === "z-unknown")).toMatchObject({
+      status: "not_applicable",
+      is_pepite: false,
+    });
   });
 });
 

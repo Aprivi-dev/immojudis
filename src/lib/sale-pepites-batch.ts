@@ -14,6 +14,7 @@ import {
 import type { AiReviewProjectionReadModel } from "@/lib/ai-review-guard";
 import { getAuctionScenarios } from "@/lib/auction-scenarios.server";
 import { CEILING_ENGINE_VERSION } from "@/lib/bid-ceiling-engine";
+import { claimCronLease, releaseCronLease } from "@/lib/cron-lease.server";
 import { FEE_REGIMES } from "@/lib/fee-regime";
 import { openFeeRegimesFromEnv } from "@/lib/fee-regime.server";
 import { floodFacts, type FloodVerdict } from "@/lib/flood-risk";
@@ -47,6 +48,7 @@ import {
   saleValuationFingerprint,
 } from "@/lib/sale-market-estimates";
 import type { AuctionSale } from "@/lib/types";
+import { isBusyWriteError } from "@/lib/write-busy";
 
 /**
  * Calcule la pépite des ventes en ligne et la stocke (table `auction_sale_pepites`, voir la migration
@@ -79,6 +81,13 @@ const MAX_ONLINE_SALES = 20_000;
 /** Lignes complètes lues par requête (une ligne pèse plusieurs dizaines de ko). */
 const READ_CHUNK_SIZE = 25;
 const MAX_REPORTED_ERRORS = 5;
+/** Durée du bail : au-delà de `maxDuration` (300 s) de la route, il expire seul si la passe meurt. */
+export const SALE_PEPITES_LEASE_SECONDS = 360;
+/**
+ * Passé ce délai depuis le début de la passe, l'écriture n'attend plus de verrou : les paquets restants sont différés
+ * (la route est coupée à 300 s, et chaque attente de verrou peut durer jusqu'au délai de la requête).
+ */
+export const SALE_PEPITES_WRITE_DEADLINE_MS = 250_000;
 /** Part d'évaluations tentées en échec à partir de laquelle la passe est déclarée en échec. */
 export const SALE_PEPITES_FAILURE_RATE_THRESHOLD = 0.2;
 /** Une évaluation plus ancienne est refaite : la fiche lit aussi des tables liées (documents, scénarios…). */
@@ -131,7 +140,7 @@ export function currentPepiteVersions(
 
 export type SalePepitesBatchResult = {
   mode: string;
-  skipped: "mode_off" | "not_migrated" | null;
+  skipped: "mode_off" | "not_migrated" | "busy" | null;
   ruleVersion: string;
   online: number;
   pending: number;
@@ -142,6 +151,11 @@ export type SalePepitesBatchResult = {
   insufficient: number;
   failed: number;
   remaining: number;
+  /**
+   * Évaluations calculées mais non écrites car la ligne de leur vente était verrouillée (publication du pipeline) :
+   * elles restent à évaluer et reprennent à la passe suivante.
+   */
+  deferred: number;
   /** Verdicts d'inondation lus pour les ventes évaluées (règle v2 seulement) ; `null` sous la règle v1. */
   floodVerdicts: Record<FloodVerdict, number> | null;
   errors: string[];
@@ -440,30 +454,64 @@ async function readMode(): Promise<string | null> {
   return typeof data === "string" ? data : "off";
 }
 
+const ONLINE_SALE_COLUMNS =
+  "id, updated_at, status, sale_date, sale_venue_type, starting_price_eur";
+
+type OnlineSaleRow = {
+  id: string | null;
+  updated_at: string | null;
+  status: string | null;
+  sale_date: string | null;
+  sale_venue_type: string | null;
+  starting_price_eur: number | null;
+};
+
+function onlineSaleOf(row: OnlineSaleRow): OnlineSale | null {
+  if (!row.id) return null;
+  return {
+    id: row.id,
+    updatedAt: row.updated_at,
+    status: row.status,
+    saleDate: row.sale_date,
+    venueType: row.sale_venue_type,
+    startingPriceEur: row.starting_price_eur,
+  };
+}
+
+/**
+ * Les ventes en ligne, lues par curseur sur `id` (`id > dernier`, pas de décalage : un décalage relit et jette toutes
+ * les lignes précédentes à chaque page) :
+ *  - les ventes À VENIR, filtrées dans la base (c'est l'immense majorité, la seule que la règle évalue) ;
+ *  - puis, séparément, les rares ventes en ligne qui ne le sont pas (statut « inconnu »), pour que leur évaluation
+ *    soit toujours ramenée à « non applicable » (une pépite publiée dont la vente perd son statut ne reste pas
+ *    publiée). Cette seconde lecture est vide ou minuscule.
+ */
 async function readOnlineSales(): Promise<OnlineSale[]> {
   const sales: OnlineSale[] = [];
-  for (let from = 0; from < MAX_ONLINE_SALES; from += PAGE_SIZE) {
-    const { data, error } = await supabaseAdmin
-      .from("v_auction_sales_app")
-      .select("id, updated_at, status, sale_date, sale_venue_type, starting_price_eur")
-      .order("id", { ascending: true })
-      .range(from, from + PAGE_SIZE - 1);
-    if (error) throw error;
-    for (const row of data ?? []) {
-      if (row.id) {
-        sales.push({
-          id: row.id,
-          updatedAt: row.updated_at,
-          status: row.status,
-          saleDate: row.sale_date,
-          venueType: row.sale_venue_type,
-          startingPriceEur: row.starting_price_eur,
-        });
+  for (const upcoming of [true, false]) {
+    let after: string | null = null;
+    for (;;) {
+      if (sales.length >= MAX_ONLINE_SALES) {
+        throw new Error("Trop de ventes en ligne pour l'évaluation des pépites.");
       }
+      let query = supabaseAdmin.from("v_auction_sales_app").select(ONLINE_SALE_COLUMNS);
+      query = upcoming
+        ? query.eq("status", "upcoming")
+        : query.or("status.is.null,status.neq.upcoming");
+      if (after) query = query.gt("id", after);
+      const { data, error } = await query.order("id", { ascending: true }).limit(PAGE_SIZE);
+      if (error) throw error;
+      const rows = (data ?? []) as OnlineSaleRow[];
+      for (const row of rows) {
+        const sale = onlineSaleOf(row);
+        if (sale) sales.push(sale);
+      }
+      const last = rows.at(-1)?.id ?? null;
+      if (rows.length < PAGE_SIZE || !last) break;
+      after = last;
     }
-    if ((data?.length ?? 0) < PAGE_SIZE) return sales;
   }
-  throw new Error("Trop de ventes en ligne pour l'évaluation des pépites.");
+  return sales;
 }
 
 /** Évaluations stockées ; `null` : la table n'existe pas encore. */
@@ -596,19 +644,35 @@ async function activeModelIds(estimates: readonly EstimateRow[]): Promise<Set<st
 
 const AUCTION_SALE_SELECT = `${SALE_INPUT_SELECT},score_status:raw_payload->>score_status` as const;
 
-export async function runSalePepitesBatch({
-  limit = 300,
-  now = new Date(),
-  timeBudgetMs = 240_000,
-}: {
+type SalePepitesBatchOptions = {
   limit?: number;
   now?: Date;
   /** Temps au-delà duquel on ne lit plus de nouveau lot (la prochaine exécution reprend). */
   timeBudgetMs?: number;
-} = {}): Promise<SalePepitesBatchResult> {
-  const startedAt = Date.now();
-  const versions = currentPepiteVersions();
-  const result: SalePepitesBatchResult = {
+};
+
+/**
+ * Une passe, sous bail : une seconde passe simultanée (pg_cron à :35 et filet quotidien de Vercel, ou rejeu manuel)
+ * rend `skipped: "busy"` sans rien lire ni écrire. Le bail est rendu à la fin, même en cas d'erreur ; il expire seul
+ * au bout de `SALE_PEPITES_LEASE_SECONDS` si la passe meurt. Sans la migration (fonction de bail absente), la passe
+ * continue sans verrou.
+ */
+export async function runSalePepitesBatch(
+  options: SalePepitesBatchOptions = {},
+): Promise<SalePepitesBatchResult> {
+  const lease = await claimCronLease("sale-pepites", SALE_PEPITES_LEASE_SECONDS);
+  if (lease.kind === "busy") {
+    return { ...emptyPepitesResult(currentPepiteVersions()), skipped: "busy" };
+  }
+  try {
+    return await runPass(options);
+  } finally {
+    if (lease.kind === "held") await releaseCronLease("sale-pepites", lease.token);
+  }
+}
+
+function emptyPepitesResult(versions: PepiteVersions): SalePepitesBatchResult {
+  return {
     mode: "unknown",
     skipped: null,
     ruleVersion: versions.rule,
@@ -621,9 +685,20 @@ export async function runSalePepitesBatch({
     insufficient: 0,
     failed: 0,
     remaining: 0,
+    deferred: 0,
     floodVerdicts: null,
     errors: [],
   };
+}
+
+async function runPass({
+  limit = 300,
+  now = new Date(),
+  timeBudgetMs = 240_000,
+}: SalePepitesBatchOptions): Promise<SalePepitesBatchResult> {
+  const startedAt = Date.now();
+  const versions = currentPepiteVersions();
+  const result = emptyPepitesResult(versions);
   const fail = (count: number, error: unknown) => {
     result.failed += count;
     if (result.errors.length < MAX_REPORTED_ERRORS) result.errors.push(errorMessage(error));
@@ -785,10 +860,22 @@ export async function runSalePepitesBatch({
     }
   }
 
-  // Écriture par paquets. Un paquet refusé est réessayé par moitiés pour isoler la ligne fautive : les autres
-  // sont écrites, la fautive est consignée (identifiant de la vente et code d'erreur, jamais un montant).
+  // Écriture par paquets. Deux sortes de refus :
+  //  - une écriture BLOQUÉE par un verrou (57014, 55P03, 40P01 : la publication du pipeline tient la vente) : le
+  //    paquet n'est pas coupé en deux (chaque niveau attendrait le délai complet), il est différé, réessayé une fois
+  //    en fin de passe, puis laissé à la passe suivante (ces ventes restent à évaluer) ;
+  //  - une ligne INVALIDE (contrainte, type) : le paquet refusé est réessayé par moitiés pour isoler la ligne
+  //    fautive. Les autres sont écrites, la fautive est consignée (identifiant de la vente et code d'erreur, jamais
+  //    un montant).
+  // Passé `SALE_PEPITES_WRITE_DEADLINE_MS`, plus aucun paquet n'est tenté : tout est différé.
   let written = 0;
+  let deferred: PepiteTableInsert[] = [];
+  const writeDeadlineReached = () => Date.now() - startedAt > SALE_PEPITES_WRITE_DEADLINE_MS;
   const writeRows = async (rows: PepiteTableInsert[]): Promise<"missing" | void> => {
+    if (writeDeadlineReached()) {
+      deferred.push(...rows);
+      return;
+    }
     const { error } = await supabaseAdmin
       .from("auction_sale_pepites")
       .upsert(rows, { onConflict: "sale_id" });
@@ -797,6 +884,10 @@ export async function runSalePepitesBatch({
       return;
     }
     if (isMissingDatabaseObject(error)) return "missing";
+    if (isBusyWriteError(error)) {
+      deferred.push(...rows);
+      return;
+    }
     if (rows.length === 1) {
       fail(
         1,
@@ -813,8 +904,30 @@ export async function runSalePepitesBatch({
       return { ...result, skipped: "not_migrated" };
     }
   }
+  if (deferred.length > 0) {
+    // Dernier essai des paquets bloqués ; s'ils le sont encore, la passe suivante reprend ces ventes.
+    const retry = deferred;
+    deferred = [];
+    for (let index = 0; index < retry.length; index += 200) {
+      if ((await writeRows(retry.slice(index, index + 200))) === "missing") {
+        return { ...result, skipped: "not_migrated" };
+      }
+    }
+  }
+  result.deferred = deferred.length;
+  if (deferred.length > 0 && result.errors.length < MAX_REPORTED_ERRORS) {
+    result.errors.push(`write_busy_${deferred.length}`);
+  }
   result.evaluated = written;
   result.remaining = Math.max(0, pending.length - written);
+
+  // Rien n'a pu être écrit de toute la passe alors que des évaluations étaient prêtes : ventes verrouillées pendant
+  // toute la passe. La tâche est en panne, la supervision doit le voir (comme pour le traitement d'inondation).
+  if (written === 0 && deferred.length > 0) {
+    throw new Error(
+      "Écriture des évaluations de pépites impossible : ventes verrouillées pendant toute la passe",
+    );
+  }
 
   // Aucune évaluation alors qu'il y en avait à faire : la tâche est en panne, on la signale.
   if (result.evaluated === 0 && result.failed > 0) {

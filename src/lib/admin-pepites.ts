@@ -280,33 +280,35 @@ export function unavailablePepites(): AdminPepitesResponse {
   };
 }
 
-const PAGE_SIZE = 1000;
-const IN_CHUNK = 200;
-const MAX_ROWS = 20_000;
+type IndependenceSale = {
+  id: string;
+  lawyer_name: string | null;
+  tribunal: string | null;
+  sale_date: string | null;
+  is_pepite: boolean;
+  pending: boolean;
+};
 
-type EvaluatedRef = { saleId: string; isPepite: boolean; pending: boolean };
-
-/** Les ventes évaluables (pépites, à confirmer, pas pépites) : l'ensemble sur lequel on compare. */
-async function readEvaluable(): Promise<EvaluatedRef[]> {
-  const refs: EvaluatedRef[] = [];
-  for (let from = 0; from < MAX_ROWS; from += PAGE_SIZE) {
-    const { data, error } = await supabaseAdmin
-      .from("auction_sale_pepites")
-      .select("sale_id, status, is_pepite")
-      .in("status", ["pepite", "not_pepite"])
-      .order("sale_id", { ascending: true })
-      .range(from, from + PAGE_SIZE - 1);
-    if (error) throw error;
-    for (const row of data ?? []) {
-      refs.push({
-        saleId: row.sale_id,
-        isPepite: row.is_pepite,
-        pending: row.status === "pepite" && !row.is_pepite,
-      });
-    }
-    if ((data?.length ?? 0) < PAGE_SIZE) return refs;
-  }
-  throw new Error("Trop d'évaluations de pépites.");
+/**
+ * Effectifs et ventes du contrôle d'indépendance, en UN appel (`admin_pepite_independence_sales`, migration
+ * 20261108110300) : le nombre de ventes évaluables (pépites, à confirmer, pas pépites), le nombre de pépites (publiées
+ * ou à confirmer) et, pour les seules ventes dont l'avocat poursuivant est nommé, les champs du rapprochement. Avant :
+ * les évaluations par pages de 1 000, puis les ventes par tranches de 200 identifiants (une requête par tranche).
+ */
+async function readIndependenceSales(): Promise<{
+  evaluable: number;
+  pepites: number;
+  sales: IndependenceSale[];
+}> {
+  const { data, error } = await supabaseAdmin.rpc("admin_pepite_independence_sales");
+  if (error) throw error;
+  const record = asRecord(data);
+  const sales = Array.isArray(record.sales) ? (record.sales as IndependenceSale[]) : [];
+  return {
+    evaluable: Number(record.evaluable) || 0,
+    pepites: Number(record.pepites) || 0,
+    sales,
+  };
 }
 
 /**
@@ -324,9 +326,9 @@ export async function computePepiteIndependence(
   const checkpoint = () => {
     if (signal?.aborted) throw new Error("Contrôle d'indépendance interrompu : délai dépassé.");
   };
-  const evaluable = await readEvaluable();
+  const evaluable = await readIndependenceSales();
   checkpoint();
-  if (evaluable.length === 0) {
+  if (evaluable.evaluable === 0) {
     return {
       evaluatedSales: 0,
       evaluatedSponsored: 0,
@@ -341,29 +343,12 @@ export async function computePepiteIndependence(
     };
   }
 
-  const candidates: Array<{
-    id: string;
-    lawyerName: string | null;
-    tribunal: string | null;
-    saleDate: string | null;
-  }> = [];
-  for (let index = 0; index < evaluable.length; index += IN_CHUNK) {
-    checkpoint();
-    const ids = evaluable.slice(index, index + IN_CHUNK).map((ref) => ref.saleId);
-    const { data, error } = await supabaseAdmin
-      .from("auction_sales")
-      .select("id, lawyer_name, tribunal, sale_date")
-      .in("id", ids);
-    if (error) throw error;
-    for (const row of data ?? []) {
-      candidates.push({
-        id: row.id,
-        lawyerName: row.lawyer_name,
-        tribunal: row.tribunal,
-        saleDate: row.sale_date,
-      });
-    }
-  }
+  const candidates = evaluable.sales.map((sale) => ({
+    id: sale.id,
+    lawyerName: sale.lawyer_name,
+    tribunal: sale.tribunal,
+    saleDate: sale.sale_date,
+  }));
 
   checkpoint();
   const { data: lawyerRows, error: lawyerError } = await supabaseAdmin
@@ -407,25 +392,27 @@ export async function computePepiteIndependence(
     }
   }
 
-  const pepites = evaluable.filter((ref) => ref.isPepite || ref.pending);
+  // Une vente sans avocat poursuivant nommé ne peut pas être sponsorisée : seules les lignes rendues comptent au
+  // numérateur, les effectifs complets sont ceux de la fonction.
+  const pepiteRows = evaluable.sales.filter((sale) => sale.is_pepite || sale.pending);
   const share = (count: number, total: number) => (total > 0 ? count / total : null);
-  const evaluatedSponsored = evaluable.filter((ref) => sponsoredSales.has(ref.saleId)).length;
-  const pepiteSponsored = pepites.filter((ref) => sponsoredSales.has(ref.saleId)).length;
-  const evaluatedShare = share(evaluatedSponsored, evaluable.length);
-  const pepiteShare = share(pepiteSponsored, pepites.length);
+  const evaluatedSponsored = evaluable.sales.filter((sale) => sponsoredSales.has(sale.id)).length;
+  const pepiteSponsored = pepiteRows.filter((sale) => sponsoredSales.has(sale.id)).length;
+  const evaluatedShare = share(evaluatedSponsored, evaluable.evaluable);
+  const pepiteShare = share(pepiteSponsored, evaluable.pepites);
   const gapPoints =
     evaluatedShare != null && pepiteShare != null ? (pepiteShare - evaluatedShare) * 100 : null;
   return {
-    evaluatedSales: evaluable.length,
+    evaluatedSales: evaluable.evaluable,
     evaluatedSponsored,
     evaluatedShare,
-    pepiteSales: pepites.length,
+    pepiteSales: evaluable.pepites,
     pepiteSponsored,
     pepiteShare,
     gapPoints,
     alert:
       gapPoints != null &&
-      pepites.length >= INDEPENDENCE_MIN_PEPITES &&
+      evaluable.pepites >= INDEPENDENCE_MIN_PEPITES &&
       gapPoints >= INDEPENDENCE_ALERT_POINTS,
     alertPoints: INDEPENDENCE_ALERT_POINTS,
     minPepites: INDEPENDENCE_MIN_PEPITES,
