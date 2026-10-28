@@ -346,6 +346,11 @@ def admit_sales(sales: list[AuctionSale], record) -> list[AuctionSale]:
     rejected: dict[str, list[AuctionSale]] = {}
     for sale in sales:
         reason = publication_rejection(sale)
+        if reason is None and is_catalogue_expired(sale):
+            # ``upsert_sales_to_supabase`` drops it without a word: the catalogue cutoff (the sale instant, or the
+            # end of its Paris day) comes up to 24 h before the retention deadline. Left ``admitted``, it would stay a
+            # pending decision and block ``last_publication_complete_at`` of its source at every run.
+            reason = "catalogue_expired"
         if reason is None:
             admitted.append(sale)
         else:
@@ -353,6 +358,8 @@ def admit_sales(sales: list[AuctionSale], record) -> list[AuctionSale]:
     for reason, group in rejected.items():
         if reason == "expired":
             record(group, decision="expired", reason="retention_deadline_reached_not_evidence_of_sale")
+        elif reason == "catalogue_expired":
+            record(group, decision="expired", reason="catalogue_deadline_reached_not_evidence_of_sale")
         else:
             record(group, decision="excluded", reason=reason)
     return admitted

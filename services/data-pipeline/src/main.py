@@ -494,11 +494,12 @@ def _publish_progressive_batch(run: _PipelineRun, rows: list[dict[str, object]])
     """
     try:
         _hydrate_run_payloads(run, rows)
+        # Its evidence writes (``record_items``, ``record_source_checks``, decisions) are not covered by the
+        # publication's own error handling: a statement timeout or a restart there used to end the source too.
+        publish_factual_batch(run.run_id, rows, run.known_details, run.errors)
     except Exception as exc:  # noqa: BLE001 - reported, then left to the final publication
         LOGGER.exception("Progressive publication skipped; the rows stay for the final publication")
         run.errors.setdefault("supabase", []).append(f"progressive publication skipped: {str(exc)[:500]}")
-        return
-    publish_factual_batch(run.run_id, rows, run.known_details, run.errors)
 
 
 def _scrape_sources(run: _PipelineRun) -> dict[str, Callable[..., Any]]:

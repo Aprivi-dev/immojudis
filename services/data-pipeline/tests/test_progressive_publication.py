@@ -45,3 +45,18 @@ def test_a_failed_hydration_skips_the_early_publication_and_keeps_the_source_run
 
     assert published == []
     assert run.errors["supabase"] == ["progressive publication skipped: terminating connection due to administrator command"]
+
+
+def test_a_failed_evidence_write_skips_the_early_publication_and_keeps_the_source_running(monkeypatch) -> None:
+    run = _run()
+
+    def timed_out(run_id, rows, known, errors):
+        raise RuntimeError("canceling statement due to statement timeout")
+
+    monkeypatch.setattr(main, "_hydrate_run_payloads", lambda run_, rows: None)
+    monkeypatch.setattr(main, "publish_factual_batch", timed_out)
+
+    # Used to end the source (« avoventes source batch callback failed: canceling statement due to statement timeout »).
+    main._publish_progressive_batch(run, [{"source_url": "https://example.test/a"}])
+
+    assert run.errors["supabase"] == ["progressive publication skipped: canceling statement due to statement timeout"]

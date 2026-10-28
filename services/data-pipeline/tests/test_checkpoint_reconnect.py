@@ -1,4 +1,4 @@
-"""The checkpoint connection of a scrape is kept for its whole duration: a dropped one is replaced once."""
+"""The checkpoint connection of a scrape is kept for its whole duration: a dropped one is replaced after a pause."""
 
 from __future__ import annotations
 
@@ -50,6 +50,8 @@ def connections(monkeypatch):
     monkeypatch.setattr(source_checkpoint.CheckpointSales, "_write_checkpoint", write)
     monkeypatch.setattr(source_checkpoint, "_connections", [])
     monkeypatch.setattr(source_checkpoint, "_publisher", None)
+    monkeypatch.setattr(source_checkpoint.time, "sleep", lambda seconds: plan["slept"].append(seconds))
+    plan["slept"] = []
     return opened, plan
 
 
@@ -66,15 +68,27 @@ def test_a_dropped_connection_is_replaced_once_and_the_write_goes_through(connec
     assert opened[1].writes == 2  # the replaced connection serves the following writes too
 
 
-def test_a_second_failure_in_a_row_is_raised(connections) -> None:
+def test_a_database_restart_is_waited_for_before_a_new_connection(connections) -> None:
     opened, plan = connections
-    plan["failures"] = [1, 1]
+    plan["failures"] = [1, 1]  # the first new connection still meets the restarting database
+    sales = source_checkpoint.CheckpointSales()
+
+    sales.append(_sale("https://example.test/a"))
+
+    assert len(sales) == 1
+    assert [context.name for context in opened] == ["c1", "c2", "c3"]
+    assert plan["slept"] == [5.0, 20.0]
+
+
+def test_a_failure_after_every_pause_is_raised(connections) -> None:
+    opened, plan = connections
+    plan["failures"] = [1, 1, 1]
     sales = source_checkpoint.CheckpointSales()
 
     with pytest.raises(psycopg.OperationalError):
         sales.append(_sale("https://example.test/a"))
 
-    assert len(opened) == 2 and all(context.closed for context in opened)
+    assert len(opened) == 3 and all(context.closed for context in opened)
     assert len(sales) == 0
 
 

@@ -52,6 +52,36 @@ def test_admit_sales_records_every_rejection_by_code_only():
     assert recorded == [(1, "excluded", "insufficient_information:missing_address+missing_surface+missing_contact")]
 
 
+def test_admit_sales_records_a_sale_past_its_catalogue_cutoff_but_within_retention_as_expired():
+    """Le dépôt l'écarterait sans décision : restée ``admitted``, elle bloquerait la publication de la source."""
+    from datetime import UTC, datetime, timedelta
+
+    from src.admission import is_catalogue_expired, is_expired
+
+    recorded: list[tuple[int, str, str | None]] = []
+
+    def record(group, decision, reason=None):
+        recorded.append((len(group), decision, reason))
+
+    ended = sale(
+        address="3 rue des Lilas, 59000 Exempleville",
+        surface_m2=Decimal("40"),
+        sale_date=(datetime.now(UTC) - timedelta(hours=5)).isoformat(),
+    )
+    postponed = sale(
+        source_url="https://example.test/reportee",
+        address="3 rue des Lilas, 59000 Exempleville",
+        surface_m2=Decimal("40"),
+        status="postponed",
+        sale_date=(datetime.now(UTC) - timedelta(days=7)).isoformat(),
+    )
+    for case in (ended, postponed):
+        assert not is_expired(case) and is_catalogue_expired(case)
+
+    assert admit_sales([ended, postponed], record) == []
+    assert recorded == [(2, "expired", "catalogue_deadline_reached_not_evidence_of_sale")]
+
+
 def test_a_blocked_contact_does_not_keep_the_sale():
     contact = "me.exemple@cabinet-exemple.test"
     with_contact = sale(lawyer_contact=contact, id="sale-1")
