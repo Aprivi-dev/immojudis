@@ -51,7 +51,7 @@ const PUBLIC_ROUTES = [
   ["/contact", "2026-10-08"],
   ["/classement-des-annonces", "2026-10-26"],
   ["/methode-ecart-marche", "2026-10-15"],
-  ["/methode-pepites", "2026-10-26"],
+  ["/methode-pepites", "2026-10-28"],
   ["/legal", "2026-10-26"],
   ["/conditions-generales", "2026-10-26"],
   ["/privacy", "2026-10-21"],

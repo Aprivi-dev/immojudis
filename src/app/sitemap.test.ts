@@ -229,7 +229,7 @@ describe("sitemap.xml (static pages)", () => {
   it("lists the pepite method page, and dates the pages changed on 26 October by their real last change", async () => {
     mocks.loadSitemapSales.mockResolvedValue([]);
     const byUrl = new Map((await sitemap()).map((entry) => [entry.url, entry.lastModified]));
-    expect(byUrl.get("https://immojudis.com/methode-pepites")).toBe("2026-10-26");
+    expect(byUrl.get("https://immojudis.com/methode-pepites")).toBe("2026-10-28");
     expect(byUrl.get("https://immojudis.com/classement-des-annonces")).toBe("2026-10-26");
     expect(byUrl.get("https://immojudis.com/a-propos")).toBe("2026-10-26");
     expect(byUrl.get("https://immojudis.com/legal")).toBe("2026-10-26");
@@ -357,9 +357,9 @@ describe("/ressources/sitemap.xml (articles)", () => {
 
   it("dates an article by its last change (updatedAt), else by its publication", () => {
     const byUrl = new Map(resourcesSitemap().map((entry) => [entry.url, entry.lastModified]));
-    // Published on 05/10, updated on 26/10.
+    // Published on 05/10, updated on 28/10 (offre plafond, plafond chez le notaire).
     expect(byUrl.get("https://immojudis.com/ressources/prix-plafond-encheres-immobilieres")).toBe(
-      "2026-10-26",
+      "2026-10-28",
     );
     // Published on 13/10, updated on 26/10 (droits de mutation computed on the price alone).
     expect(byUrl.get("https://immojudis.com/ressources/frais-vente-encheres-judiciaire")).toBe(

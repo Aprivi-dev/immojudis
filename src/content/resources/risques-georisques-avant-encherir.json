@@ -7,7 +7,7 @@
   "seoDescription": "État des risques, plans de prévention (PPR), Géorisques : ce qu’on peut vérifier sur les risques d’un bien avant d’enchérir, et les limites de ces données.",
   "intro": [
     "Inondation, sécheresse qui fissure les murs, séisme, pollution des sols : les risques auxquels un bien est exposé peuvent limiter ce qu’on a le droit d’y construire, imposer des travaux et compter dans le choix de l’enchère. Dans une vente par autorité de justice, la garantie des vices cachés ne s’applique pas (art. 1649 du Code civil) : mieux vaut vérifier avant l’audience.",
-    "Cet article explique le document qui informe l’acheteur sur les risques, l’état des risques, puis les plans de prévention des risques (PPR), l’usage du site Géorisques, trois risques qui méritent une question de plus et les limites de ces données. Il ne mesure pas le risque d’un bien précis. Pour le reste du dossier, voir « Lire le cahier des conditions de vente et préparer la visite » et « Lire le PLU d’un bien vendu aux enchères »."
+    "Cet article explique le document qui informe l’acheteur sur les risques, l’état des risques, puis les plans de prévention des risques (PPR), l’usage du site Géorisques, deux notions des cartes d’inondation (territoire à risque important et crue fréquente), trois risques qui méritent une question de plus et les limites de ces données. Il ne mesure pas le risque d’un bien précis. Pour le reste du dossier, voir « Lire le cahier des conditions de vente et préparer la visite » et « Lire le PLU d’un bien vendu aux enchères »."
   ],
   "takeaways": [
     "Quand un bien se trouve dans une zone listée par le Code de l’environnement (plan de prévention des risques prescrit ou approuvé, sismicité de niveau 2 à 5, potentiel radon de niveau 3, recul du trait de côte, débroussaillement), un état des risques doit être établi (art. L. 125-5 et R. 125-23). Il indique la date, les parcelles et les zones concernées (art. R. 125-24).",
@@ -111,6 +111,15 @@
         "Pour les constructions existantes, un plan de prévention peut définir des mesures de prévention, de protection et de sauvegarde. Elles peuvent être rendues obligatoires dans un délai de cinq ans, qui peut être réduit en cas d’urgence. À défaut de mise en conformité dans le délai prescrit, le préfet peut, après mise en demeure non suivie d’effet, ordonner la réalisation des mesures aux frais du propriétaire, de l’exploitant ou de l’utilisateur (art. L. 562-1, III).",
         "La loi encadre ces obligations. Pour un bien construit ou aménagé conformément au Code de l’urbanisme avant l’approbation du plan, les travaux de prévention imposés ne peuvent porter que sur des aménagements limités, dont le coût est inférieur à 10 % de la valeur vénale ou estimée du bien à la date d’approbation du plan (art. R. 562-5). Le plan ne peut pas interdire les travaux d’entretien et de gestion courants, sauf s’ils augmentent les risques ou en créent de nouveaux, ou s’ils conduisent à une augmentation de la population exposée.",
         "Construire dans une zone interdite par un plan approuvé, ou ne pas respecter les conditions qu’il prescrit, est puni des peines prévues à l’article L. 480-4 du Code de l’urbanisme (art. L. 562-5). Lisez donc, dans l’état des risques, l’extrait du règlement et l’information sur les travaux prescrits : elle indique s’ils ont été réalisés (art. R. 125-24)."
+      ]
+    },
+    {
+      "id": "inondation-tri-crue-frequente",
+      "title": "Inondation : territoire à risque important et crue fréquente",
+      "paragraphs": [
+        "Deux expressions reviennent dans les cartes d’inondation. D’après Géorisques, un territoire à risque important d’inondation (TRI) est un secteur identifié dans le cadre de la directive européenne « Inondation » parce qu’il concentre des enjeux majeurs (population, emplois, bâti) susceptibles d’être inondés. Ces territoires font l’objet d’études et de cartographies qui représentent les emprises inondables, les hauteurs d’eau possibles et les enjeux présents.",
+        "Trois types d’événements sont étudiés sur chaque TRI. Selon Géorisques, l’événement fréquent, ou crue fréquente, correspond à une période de retour comprise entre 10 et 30 ans ; l’événement moyen correspond généralement à la crue de référence des plans de prévention (au moins centennale) ; l’événement exceptionnel est de l’ordre de la crue millénale. Une période de retour est une moyenne statistique : elle ne veut pas dire qu’une telle crue revient à intervalles réguliers.",
+        "À la différence d’un plan de prévention approuvé, ces cartes ne sont pas des servitudes d’utilité publique, et leur objectif premier n’est pas de réglementer l’usage des sols. Géorisques indique que leur précision est de l’ordre du 1/25 000 : elles aident à situer un secteur, pas à conclure pour une parcelle. Pour un bien précis, l’état des risques et le plan de prévention applicable restent les documents à lire."
       ]
     },
     {
@@ -272,6 +281,11 @@
     {
       "label": "Immojudis — Les offres d’accès, dont le dossier « PLU et risques »",
       "url": "/offres"
+    },
+    {
+      "label": "Géorisques — Dossier expert sur les inondations (territoires à risque important d’inondation, événements fréquent, moyen et exceptionnel ; page consultée le 28/10/2026)",
+      "url": "https://www.georisques.gouv.fr/consulter-les-dossiers-thematiques/dossier-expert-sur-les-inondations"
     }
-  ]
+  ],
+  "updatedAt": "2026-10-28"
 }
