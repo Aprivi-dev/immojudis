@@ -53,7 +53,20 @@ const EXPORT_SOURCE_LIMIT = 1_000;
 const EXPORT_ROW_LIMIT = 500;
 const API_SOURCE_LIMIT = 500;
 const API_ROW_LIMIT = 100;
-const API_FEED_SCHEMA_VERSION = "2026-07-judicial-sales-v1";
+/**
+ * Version du schéma du flux. Montée le 27/10/2026 : le SENS de `opportunity.grossYieldPct` et de `rentability.*`
+ * change (loyers de la carte ANIL à la commune, charges comprises, au lieu du repère départemental ; frais du régime
+ * de la vente au lieu de ceux du tribunal ; plus de rendement pour un bien qui n'est pas un logement). Les champs et
+ * leurs types ne changent pas ; la note est dans `meta.changes`.
+ */
+const API_FEED_SCHEMA_VERSION = "2026-10-judicial-sales-v1";
+
+/** Changements de sens depuis la version précédente du schéma (`2026-07-judicial-sales-v1`), pour le client. */
+const API_FEED_CHANGES: readonly string[] = [
+  "2026-10 : opportunity.grossYieldPct et rentability.* partent des loyers de la carte ANIL à la commune (loyers d'annonce, charges comprises) et non plus du repère départemental ; opportunity.rentReference et meta.rentBasis disent quelle source a servi.",
+  "2026-10 : le rendement est calculé avec les frais du type de vente (tribunal, vente à la bougie, vente interactive) et non plus avec ceux du tribunal pour toutes les ventes.",
+  "2026-10 : un bien qui n'est pas un logement (terrain, parking, local, lot mixte ou divers) n'a plus de rendement (null) ; un type inconnu n'en a que si la vente publie une surface.",
+];
 
 export type SalesCsvExport = {
   content: string;
@@ -201,6 +214,8 @@ export type SalesApiFeed = {
     rentSourceUrl: string;
     /** Ce que les rendements des lignes utilisent : carte de l'ANIL, repère départemental, ou les deux. */
     rentBasis: RentBasis;
+    /** Changements de sens des champs depuis la version précédente du schéma. */
+    changes: string[];
   };
 };
 
@@ -331,6 +346,7 @@ export async function exportSalesApiFeed({
       rentAttribution: RENT_ATTRIBUTION,
       rentSourceUrl: RENT_SOURCE_URL,
       rentBasis: rentBasisOf(rows, rents),
+      changes: [...API_FEED_CHANGES],
     },
   };
 }

@@ -17,7 +17,7 @@ function check(key: string, status: "available" | "empty" | "unavailable") {
 
 function makeReport(overrides: Partial<LandReport["planning"]> = {}): LandReport {
   return {
-    version: "land-report-v1",
+    version: "land-report-v1.1",
     generatedAt: CHECKED_AT,
     planning: {
       locationStatus: "point_candidate",
