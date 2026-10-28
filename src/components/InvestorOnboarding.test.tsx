@@ -150,7 +150,7 @@ describe("investor welcome flow", () => {
       expect(screen.queryByTestId("first-alert-timing")).toBeNull();
       fireEvent.click(screen.getByRole("checkbox", { name: ALERT_LABEL }));
       expect(screen.getByTestId("first-alert-timing").textContent).toBe(
-        "Votre alerte arrive lundi. En attendant, ouvrez une fiche pour voir son plafond.",
+        "Le récapitulatif part le lundi, s’il y a de nouvelles ventes qui correspondent à vos critères. En attendant, ouvrez une fiche pour voir son plafond.",
       );
     });
 

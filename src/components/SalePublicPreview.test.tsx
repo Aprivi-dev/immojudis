@@ -1130,7 +1130,8 @@ describe("SalePublicPreview : repère « Pépite »", () => {
     const block = screen.getByRole("region", {
       name: "Pépite : critère rempli",
     });
-    expect(block.textContent).toContain("Montant et détail : débloquez cette vente");
+    expect(block.textContent).toContain("Montant et détail réservés aux comptes");
+    expect(block.textContent).not.toContain("débloquez cette vente");
     // Le visiteur sans compte lit ce que le compte gratuit lui ouvre, pas un déblocage qu'il n'a pas.
     expect(
       within(block)

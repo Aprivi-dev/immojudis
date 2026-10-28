@@ -6,7 +6,7 @@ import { ceilingTermWithArticleText } from "@/lib/fee-regime-labels";
 import { isFeeRegimeOpen, type FeeRegimeKey } from "@/lib/fee-regime-open";
 import { formatNumber, formatPrice } from "@/lib/format";
 import type { HomeCatalogueSummary } from "@/lib/home-catalogue-summary.server";
-import { MONTHLY_SALE_UNLOCKS } from "@/lib/sale-unlocks";
+import { MONTHLY_SALE_UNLOCKS, MONTHLY_UNLOCKS_LABEL } from "@/lib/sale-unlocks";
 import { notaryAndStatePilotsEnabled } from "@/lib/sale-types";
 import { ArrowRight, Bank, Bell, ChartBar, FileText, MapPin, Target } from "./HomeIcons";
 import {
@@ -57,7 +57,7 @@ export function HomeStats({
   }
   stats.push({
     value: formatNumber(MONTHLY_SALE_UNLOCKS),
-    label: "fiches détaillées gratuites chaque mois",
+    label: MONTHLY_UNLOCKS_LABEL,
   });
   return (
     <section className={styles.statsBand} aria-label="Le catalogue en chiffres">

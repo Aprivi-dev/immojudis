@@ -83,7 +83,7 @@ export function SaleProcedurePanel({ sale }: { sale: AuctionSale }) {
   return (
     <section
       id="participation"
-      className="mt-8 scroll-mt-36 overflow-hidden rounded-[20px] border border-slate-200 bg-white"
+      className="mt-8 scroll-mt-2 overflow-hidden rounded-[20px] border border-slate-200 bg-white"
       aria-labelledby="sale-procedure-title"
     >
       <div className="border-b border-slate-200 bg-slate-50/60 px-5 py-6 sm:px-7 lg:px-8">

@@ -2,6 +2,7 @@
 import { readFileSync } from "node:fs";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DEFAULT_RENTED_DISCOUNT_PCT } from "@/lib/bid-ceiling-defaults";
 import { MARKET_GAP_METHOD_PATH } from "@/lib/market-gap";
 import { FLOOD_ADDRESS_MIN_SCORE, FLOOD_PARCEL_MAX_PROBES } from "@/lib/flood-risk";
 import { FLOOD_FORBIDDEN_WORDS, floodWarning } from "@/lib/pepite-flood-copy";
@@ -209,7 +210,10 @@ describe("page « Comment repérons-nous les pépites ? »", () => {
     );
     // Décote d'un bien loué.
     expect(sectionText("Ce qu’est le repère « Pépite »")).toContain(
-      "la valeur estimée d’un bien vendu loué est toutefois diminuée de la décote d’un bien loué",
+      `la valeur estimée d’un bien vendu loué est toutefois diminuée de la décote d’un bien loué (${DEFAULT_RENTED_DISCOUNT_PCT} %, fixée dans les hypothèses par défaut) : un bien loué se vend en général moins cher qu’un bien libre.`,
+    );
+    expect(sectionText("Ce que le repère ne mesure pas")).toContain(
+      "à la seule exception de la décote d’un bien loué, appliquée au second critère",
     );
     // Fiabilité forte sous 30 % : dans le garde-fou sur l'estimation.
     expect(sectionText("Les garde-fous")).toContain(
@@ -269,7 +273,7 @@ describe("page « Comment repérons-nous les pépites ? »", () => {
     const text = sectionText("Le prix de référence et ses limites");
     expect(text).not.toMatch(/prix probable|probable/);
     expect(text).toContain(
-      "« Repère statistique tiré de N ventes comparables passées du tribunal (fiabilité X). La moitié de ces ventes s’est conclue dans la fourchette indiquée, l’autre moitié en dehors. Ce n’est pas une prévision : le prix final peut être inférieur ou supérieur. »",
+      "« Repère statistique tiré de N ventes comparables passées du tribunal ou de toute la France (fiabilité bonne ou moyenne). La moitié de ces ventes s’est conclue dans la fourchette indiquée, l’autre moitié en dehors. Ce n’est pas une prévision du prix final : les enchères peuvent dépasser ce montant. »",
     );
     expect(text).toContain("Lorsqu’il est affiché, le prix de référence l’est avec cette réserve");
     expect(text).toContain(
@@ -315,7 +319,9 @@ describe("page « Comment repérons-nous les pépites ? »", () => {
     const text = sectionText("Mise à jour et retrait");
     expect(text).toContain(`moins de ${PEPITE_RULE_PARAMS.maxEvaluationAgeHours} heures`);
     expect(text).toContain("Immojudis peut suspendre le repère pour l’ensemble du site");
-    expect(text).toContain("Le repère est recalculé régulièrement, au moins une fois par jour.");
+    expect(text).toContain(
+      `Le repère est recalculé régulièrement, au moins une fois par jour (sous réserve du gel de ${PEPITE_RULE_PARAMS.freezeDaysBeforeSale} jours, voir « La stabilité du repère »).`,
+    );
     expect(text).toContain("Il disparaît quand une condition n’est plus remplie");
     expect(text).not.toMatch(/serait|pourrait|disparaîtrait/);
   });
@@ -530,6 +536,12 @@ describe("page de méthode : règle pepite-v2 (interrupteur PEPITE_RULE_V2_ENABL
       `inférieur à ${String(FLOOD_ADDRESS_MIN_SCORE).replace(".", ",")} sur 1, donne une position approximative`,
     );
     expect(text).toContain(`chacune est testée (au plus ${FLOOD_PARCEL_MAX_PROBES})`);
+    // Sans résultat : pas de nouveau repère, le repère déjà attribué est conservé et la fiche l'indique.
+    expect(
+      text.match(
+        /aucun nouveau repère n’est attribué ; un repère déjà attribué est conservé jusqu’à la vente, et la fiche l’indique/g,
+      ),
+    ).toHaveLength(2);
     expect(text).toContain("périmètres de PPRi n’ont pas pu être consultés");
     expect(text).toContain("Cette règle reprend tous les critères de la version 1.1");
   });

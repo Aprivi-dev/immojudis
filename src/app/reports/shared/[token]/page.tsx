@@ -1004,7 +1004,11 @@ export default async function SharedReportPage({ params }: PageParams) {
         ) : null}
 
         <footer className="mt-4 rounded-lg border border-info/15 bg-info/8 p-4 text-sm leading-relaxed text-info">
-          {report.disclaimer}
+          {/* L'avertissement enregistré dit « avant toute enchère » : pour une vente par offres, « avant
+              toute offre ». */}
+          {typeof report.disclaimer === "string"
+            ? report.disclaimer.replaceAll("avant toute enchère", wording.beforeAnyBid)
+            : report.disclaimer}
         </footer>
         <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
           Cette analyse a été préparée avec Immojudis.{" "}

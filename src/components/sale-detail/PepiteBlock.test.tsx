@@ -122,6 +122,19 @@ describe("PepiteBlock", () => {
       expect(screen.queryByText(/Utile/)).toBeNull();
     });
 
+    it("dit au visiteur sans compte que le montant est réservé aux comptes, sans parler de déblocage", () => {
+      render(
+        <PepiteBlock
+          payload={locked}
+          saleId={saleId}
+          visitor
+          lockedAction={<a href="#compte">Créez un compte gratuit</a>}
+        />,
+      );
+      expect(screen.getByText("Montant et détail réservés aux comptes")).toBeTruthy();
+      expect(document.body.textContent).not.toContain("débloquez cette vente");
+    });
+
     it("pose la ligne avec cadenas qui renvoie au déblocage, et la mention de la méthode", () => {
       render(
         <PepiteBlock

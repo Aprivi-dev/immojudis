@@ -3,7 +3,8 @@
 // « Comment repérons-nous les pépites ? » (`src/app/methode-pepites/method.ts`) relit : un seuil
 // change ici ou nulle part, et toute modification crée une nouvelle version (`PEPITE_LATEST_RULE_VERSION`).
 //
-// Une pépite est un potentiel d'investissement. Elle combine deux tests :
+// Une pépite est une vente qui remplit deux conditions chiffrées, calculées sur les données
+// disponibles :
 //   B : de bonnes chances de remporter la vente sans dépasser l'enchère plafond de référence
 //       (tribunal seulement : c'est le seul type qui a un historique de prix d'adjudication) ;
 //   C : à ce prix, l'achat est nettement sous la valeur du bien, frais compris.

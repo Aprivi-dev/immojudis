@@ -236,7 +236,7 @@ describe("source notice", () => {
     );
     const anil = rentReferenceFromAnilRow(row);
     expect(rentSourceDetail(anil)).toBe(
-      "Carte des loyers 2025 (loyers d’annonce, charges comprises), mise à jour du 11 décembre 2025, Licence Ouverte 2.0. " +
+      "Carte des loyers 2025 (loyers d’annonce, charges comprises, indicateurs expérimentaux, logements non meublés), mise à jour du 11 décembre 2025, Licence Ouverte 2.0. " +
         "Rendement calculé par Immojudis, sous sa seule responsabilité : ni l’ANIL, ni SeLoger, ni leboncoin n’en sont responsables.",
     );
     expect(rentSourceNotice(anil)).toBe(`${RENT_ATTRIBUTION} ${rentSourceDetail(anil)}`);

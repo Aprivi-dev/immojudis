@@ -33,7 +33,7 @@ export function SaleNotFoundComponent() {
       className="flex min-h-screen items-center justify-center bg-white px-4 py-16 text-center"
     >
       <div className="max-w-2xl rounded-lg border border-border bg-white p-8 shadow-xl shadow-slate-900/10">
-        <BrandMark className="mx-auto h-14 w-14" />
+        <BrandMark decorative className="mx-auto h-14 w-14" />
         <h1 className="mt-5 font-sans text-2xl font-semibold text-foreground">
           Annonce introuvable
         </h1>

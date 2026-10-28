@@ -255,9 +255,10 @@ export function HomeTryExample({ data }: { data: ExampleVerdictData }) {
             <p className={styles.verdictAmount} aria-hidden>
               {formatPrice(shown)}
             </p>
-            {/* Annoncé en permanence : la valeur finale, jamais les montants intermédiaires du
-                compteur animé (masqué ci-dessus). */}
-            <p className="sr-only" role="status">
+            {/* Annoncé après un choix du visiteur seulement : pas pendant la démonstration qui
+                défile seule. Jamais les montants intermédiaires du compteur animé (masqué
+                ci-dessus). */}
+            <p className="sr-only" role={touched ? "status" : undefined}>
               Votre enchère plafond : {formatPrice(ceiling)}. {BID_VERDICT_LABEL[verdict]}.
             </p>
             <p className={styles.verdictText}>{bidVerdictSentence(ceiling, data.startingPrice)}</p>

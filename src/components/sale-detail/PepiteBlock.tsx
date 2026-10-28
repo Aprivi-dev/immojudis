@@ -139,6 +139,7 @@ export function PepiteBlock({
   saleId,
   userCeilingEur = null,
   lockedAction,
+  visitor = false,
   className = "mx-auto w-full max-w-[1380px] px-4 sm:px-6 lg:px-8",
 }: {
   /** Mise en page du conteneur (les pages qui ont déjà leur colonne passent `""`). */
@@ -149,6 +150,8 @@ export function PepiteBlock({
   userCeilingEur?: number | null;
   /** L'action qui ouvre le détail : « Débloquer cette vente » (compte), « Créez un compte gratuit » (visiteur). */
   lockedAction?: ReactNode;
+  /** Le lecteur n'a pas de compte : il n'a aucune vente à débloquer, la ligne verrouillée le dit. */
+  visitor?: boolean;
 }) {
   if (!payload) return null;
   const detail = payload.access === "detail" ? payload.detail : null;
@@ -165,7 +168,7 @@ export function PepiteBlock({
     <section
       id={PEPITE_ANCHOR}
       aria-labelledby="pepite-title"
-      className={`scroll-mt-36 ${className}`}
+      className={`scroll-mt-2 ${className}`}
     >
       <div className="rounded-lg border border-gold bg-white p-4 sm:p-5">
         <h2
@@ -228,7 +231,9 @@ export function PepiteBlock({
             <p className="flex flex-wrap items-center gap-x-3 gap-y-1 font-semibold text-brand-navy">
               <span className="inline-flex items-center gap-2">
                 <Lock className="size-4 shrink-0" aria-hidden />
-                Montant et détail : débloquez cette vente
+                {visitor
+                  ? "Montant et détail réservés aux comptes"
+                  : "Montant et détail : débloquez cette vente"}
               </span>
               {lockedAction}
             </p>

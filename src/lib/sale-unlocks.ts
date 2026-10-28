@@ -17,7 +17,10 @@ export const MONTHLY_SALE_UNLOCKS = PLAN_LIMITS.decouverte.monthlyUnlocks;
  * « ventes en détail » ni « ventes débloquées par mois »). Les conditions générales et la politique de
  * confidentialité, dont le texte est ancré par empreinte, gardent « déblocages mensuels ».
  */
-export const MONTHLY_UNLOCKS_TEXT = `${MONTHLY_SALE_UNLOCKS} déblocages par mois`;
+/** Le libellé seul, pour un chiffre affiché à part (« 3 » puis « déblocages par mois »). */
+export const MONTHLY_UNLOCKS_LABEL = "déblocages par mois";
+
+export const MONTHLY_UNLOCKS_TEXT = `${MONTHLY_SALE_UNLOCKS} ${MONTHLY_UNLOCKS_LABEL}`;
 
 /** Ce qu'est un déblocage, à dire à la première occurrence d'un écran. */
 export const UNLOCK_DEFINITION_TEXT = "Débloquer une vente, c’est ouvrir son détail complet.";

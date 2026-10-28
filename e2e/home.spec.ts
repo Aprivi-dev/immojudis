@@ -62,12 +62,12 @@ test.describe("« Essayez sur un exemple »", () => {
     await page.goto("/");
     const section = page.locator("#essayer");
     await section.scrollIntoViewIfNeeded();
-    const verdict = section.locator("[class*=tryVerdict]").first();
-    await expect(verdict).toHaveAttribute("aria-live", "off");
+    const announcement = section.getByRole("status");
+    await expect(announcement).toHaveCount(0);
 
     await expect(async () => {
       await tryGroup(page, "Projet").getByRole("button", { name: PROJECT_LABEL.revendre }).click();
-      await expect(verdict).toHaveAttribute("aria-live", "polite", { timeout: 1000 });
+      await expect(announcement).toHaveCount(1, { timeout: 1000 });
     }).toPass();
 
     // Rien ne bouge plus tout seul : le réglage du visiteur reste celui affiché.

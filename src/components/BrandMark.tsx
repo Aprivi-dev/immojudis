@@ -6,13 +6,21 @@ import { cn } from "@/lib/utils";
  * marine `brand-navy`, or `gold`, fond crème `surface`, qui valent celles du fichier). Un seul
  * pictogramme pour l'en-tête, le pied de page, le favicon et les données structurées. Il ne prend
  * pas la teinte du texte voisin (`currentColor`).
+ *
+ * `decorative` : le pictogramme n'ajoute rien au texte voisin (écran d'attente, page d'erreur) ; il
+ * est alors masqué aux lecteurs d'écran au lieu d'être annoncé comme une image « Immojudis ».
  */
-export function BrandMark({ className }: { className?: string }) {
+export function BrandMark({
+  className,
+  decorative = false,
+}: {
+  className?: string;
+  decorative?: boolean;
+}) {
   return (
     <svg
       viewBox="0 0 256 256"
-      role="img"
-      aria-label="Immojudis"
+      {...(decorative ? { "aria-hidden": true } : { role: "img", "aria-label": "Immojudis" })}
       className={cn("shrink-0", className)}
     >
       <rect width="256" height="256" rx="52" className="fill-surface" />

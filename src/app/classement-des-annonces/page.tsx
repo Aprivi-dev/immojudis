@@ -132,11 +132,11 @@ function PageContent() {
           <div className="mt-3 space-y-3 text-ink-soft">
             <p>
               « Pépite » est un repère calculé automatiquement par Immojudis, sur des critères
-              publics, pour signaler un potentiel d’investissement mesuré par deux conditions
-              chiffrées, calculées sur les données disponibles : des ventes comparables passées le
-              plus souvent adjugées sous l’enchère plafond estimée, et un coût total estimé, frais
-              compris, d’au plus une part fixée de la valeur estimée. Ce n’est ni un conseil, ni une
-              recommandation d’acheter, ni une garantie de prix, de rendement ou d’adjudication.
+              publics, pour signaler les ventes qui remplissent deux conditions chiffrées, calculées
+              sur les données disponibles : des ventes comparables passées le plus souvent adjugées
+              sous l’enchère plafond estimée, et un coût total estimé, frais compris, d’au plus une
+              part fixée de la valeur estimée. Ce n’est ni un conseil, ni une recommandation
+              d’acheter, ni une garantie de prix, de rendement ou d’adjudication.
             </p>
             <p>
               Ce repère ne change pas l’ordre par défaut des annonces, ni les autres tris. L’absence

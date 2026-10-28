@@ -6,9 +6,9 @@ import { MapboxPreconnect } from "@/components/MapboxPreconnect";
 import Link from "next/link";
 import { SaleDetailSkeleton } from "@/components/SaleDetailFallbacks";
 import { Card, buttonClasses } from "@/components/ui/primitives";
-import { HOME_TRIAL_NOTE } from "@/components/home/HomePrimaryAction";
 import { useAuth } from "@/hooks/use-auth";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
+import { HOME_TRIAL_NOTE } from "@/lib/launch-offer";
 import { loginPathWithRedirect } from "@/lib/navigation";
 import { FREE_ACCESS_LINE } from "@/lib/sale-unlocks";
 import type { MarketEstimate } from "@/lib/market.server";
@@ -37,7 +37,7 @@ function ExampleSummarySignup() {
       data-testid="example-summary-cta"
     >
       <Link
-        href={loginPathWithRedirect("/sales", { reason: "offre" })}
+        href={loginPathWithRedirect("/sales", { reason: "exemple" })}
         className={buttonClasses({ variant: "primary" })}
       >
         Créer mon compte gratuit

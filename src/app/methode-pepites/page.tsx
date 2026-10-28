@@ -8,6 +8,7 @@ import {
   FLOOD_STREET_BUFFER_METERS,
 } from "@/lib/flood-risk";
 import { publicLegalPublisher } from "@/lib/legal-documents";
+import { DEFAULT_RENTED_DISCOUNT_PCT } from "@/lib/bid-ceiling-defaults";
 import { MARKET_GAP_METHOD_PATH } from "@/lib/market-gap";
 import { pageMetadata } from "@/lib/page-metadata";
 import { activePepiteRuleVersion, pepiteV2EnabledFromEnv } from "@/lib/pepite-rule-switch.server";
@@ -163,8 +164,8 @@ function PageContent() {
             celle d’un bien comparable, d’après les ventes passées de la base Demande de valeurs
             foncières (DVF) ; elle ne tient compte ni de l’état du bien ni de son occupation. Pour
             le second critère, la valeur estimée d’un bien vendu loué est toutefois diminuée de la
-            décote d’un bien loué, retenue dans les hypothèses par défaut : un bien occupé par un
-            locataire se négocie moins cher qu’un bien libre.
+            décote d’un bien loué ({DEFAULT_RENTED_DISCOUNT_PCT} %, fixée dans les hypothèses par
+            défaut) : un bien loué se vend en général moins cher qu’un bien libre.
           </p>
           <p>
             L’<strong>enchère plafond estimée</strong> est le montant maximal calculé par Immojudis
@@ -313,10 +314,12 @@ function PageContent() {
               compte une position par parcelle : chacune est testée (au plus{" "}
               {FLOOD_PARCEL_MAX_PROBES}), et le bien n’est retenu dans la zone de crue fréquente que
               si toutes les parcelles testées s’y trouvent ; si les résultats divergent, ou si
-              certaines parcelles n’ont pas pu être testées, le contrôle reste sans résultat. Un
-              lieu-dit, ou un numéro que le géocodage n’a retrouvé qu’avec un score de fiabilité
-              inférieur à {String(FLOOD_ADDRESS_MIN_SCORE).replace(".", ",")} sur 1, donne une
-              position approximative.
+              certaines parcelles n’ont pas pu être testées, le contrôle reste sans résultat, et
+              aucun nouveau repère n’est attribué ; un repère déjà attribué est conservé jusqu’à la
+              vente, et la fiche l’indique. Un lieu-dit, ou un numéro que le géocodage n’a retrouvé
+              qu’avec un score de fiabilité inférieur à{" "}
+              {String(FLOOD_ADDRESS_MIN_SCORE).replace(".", ",")} sur 1, donne une position
+              approximative.
             </p>
             <p>
               Quand seule la rue est connue, le point de la rue se situe au milieu de la voie,
@@ -326,11 +329,13 @@ function PageContent() {
               tampon est dans la zone de crue fréquente. Dans tous les autres cas, y compris un
               tampon entièrement en dehors de la zone, le résultat est « inconnu » et le contrôle
               reste sans résultat, car l’absence de zone autour d’un point de rue ne dit rien du
-              bien. Quand la position n’est qu’approximative : si la commune compte un TRI, la vente
-              ne reçoit pas le repère ; si elle n’en compte pas, le contrôle n’a pas d’objet et le
-              repère reste possible, sans vérification du risque d’inondation du bien. Un bien déjà
-              repéré dont le contrôle devient impossible (position retirée, source indisponible)
-              garde son repère jusqu’à la vente ; la fiche l’indique.
+              bien : aucun nouveau repère n’est attribué ; un repère déjà attribué est conservé
+              jusqu’à la vente, et la fiche l’indique. Quand la position n’est qu’approximative : si
+              la commune compte un TRI, la vente ne reçoit pas le repère ; si elle n’en compte pas,
+              le contrôle n’a pas d’objet et le repère reste possible, sans vérification du risque
+              d’inondation du bien. Un bien déjà repéré dont le contrôle devient impossible
+              (position retirée, source indisponible) garde son repère jusqu’à la vente ; la fiche
+              l’indique.
             </p>
             <p>
               Quand le bien se trouve dans le périmètre d’un plan de prévention des risques
@@ -398,14 +403,14 @@ function PageContent() {
           </p>
           <p>
             Lorsqu’il est affiché, le prix de référence l’est avec cette réserve : « Repère
-            statistique tiré de N ventes comparables passées du tribunal (fiabilité X). La moitié de
-            ces ventes s’est conclue dans la fourchette indiquée, l’autre moitié en dehors. Ce n’est
-            pas une prévision : le prix final peut être inférieur ou supérieur. » Il n’est montré
-            qu’aux comptes qui ont accès à l’enchère plafond (offre Analyse ou déblocage de la
-            vente). Pour une vente notariale, Immojudis affiche le prix de départ (la première offre
-            possible, pour une vente par offres) et, pour une vente par offres, indique que le prix
-            de réserve du vendeur est inconnu ; il ne donne pas de prix de référence, faute
-            d’historique des résultats.
+            statistique tiré de N ventes comparables passées du tribunal ou de toute la France
+            (fiabilité bonne ou moyenne). La moitié de ces ventes s’est conclue dans la fourchette
+            indiquée, l’autre moitié en dehors. Ce n’est pas une prévision du prix final : les
+            enchères peuvent dépasser ce montant. » Il n’est montré qu’aux comptes qui ont accès à
+            l’enchère plafond (offre Analyse ou déblocage de la vente). Pour une vente notariale,
+            Immojudis affiche le prix de départ (la première offre possible, pour une vente par
+            offres) et, pour une vente par offres, indique que le prix de réserve du vendeur est
+            inconnu ; il ne donne pas de prix de référence, faute d’historique des résultats.
           </p>
           <p>
             Les limites sont celles de toute statistique : des ventes comparables ne sont jamais
@@ -437,8 +442,8 @@ function PageContent() {
           </ul>
           <p>
             L’estimation de valeur repose sur les ventes passées de la base DVF (demandes de valeurs
-            foncières) : elle n’intègre ni l’état du bien ni son occupation. Ses limites sont
-            détaillées sur{" "}
+            foncières) : elle n’intègre ni l’état du bien ni son occupation, à la seule exception de
+            la décote d’un bien loué, appliquée au second critère. Ses limites sont détaillées sur{" "}
             <Link href={MARKET_GAP_METHOD_PATH} className="font-semibold text-gold-text underline">
               la page de méthode de l’écart avec le marché
             </Link>
@@ -449,9 +454,11 @@ function PageContent() {
         <Section id="mise-a-jour" title="Mise à jour et retrait">
           <ul className="list-disc space-y-2 pl-5">
             <li>
-              Le repère est recalculé régulièrement, au moins une fois par jour. Il n’est affiché
-              que si le prix de la vente et l’estimation n’ont pas changé depuis le dernier calcul,
-              et si ce calcul date de moins de {PEPITE_RULE_PARAMS.maxEvaluationAgeHours} heures.
+              Le repère est recalculé régulièrement, au moins une fois par jour (sous réserve du gel
+              de {PEPITE_RULE_PARAMS.freezeDaysBeforeSale} jours, voir « La stabilité du repère »).
+              Il n’est affiché que si le prix de la vente et l’estimation n’ont pas changé depuis le
+              dernier calcul, et si ce calcul date de moins de{" "}
+              {PEPITE_RULE_PARAMS.maxEvaluationAgeHours} heures.
             </li>
             <li>
               Il disparaît quand une condition n’est plus remplie, quand la vente n’est plus
