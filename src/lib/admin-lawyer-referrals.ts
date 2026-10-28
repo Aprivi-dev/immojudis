@@ -603,7 +603,7 @@ export function buildLawyerReferralEmailMessage({
       ? null
       : `Financement prêt: ${request.financing_ready ? "oui" : "non"}`,
     request.message ? `Message: ${request.message}` : null,
-    request.admin_notes ? `Note Immojudis: ${request.admin_notes}` : null,
+    request.admin_notes ? `Note Immojudis : ${request.admin_notes}` : null,
     "",
     "Les coordonnées et éléments transmis proviennent de la demande utilisateur Immojudis. Merci de vérifier votre disponibilité et les règles applicables avant toute prise en charge.",
   ].filter((line): line is string => typeof line === "string");

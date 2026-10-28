@@ -69,6 +69,14 @@ describe("vocabulaire uniforme", () => {
     ).toEqual([]);
   });
 
+  it("dit « offre Analyse » et non « plan Analyse »", () => {
+    expect(offenders(/plan Analyse/)).toEqual([]);
+  });
+
+  it("dit « faire une offre allant jusqu'à », jamais « offrir jusqu'à »", () => {
+    expect(offenders(/offrir jusqu/)).toEqual([]);
+  });
+
   it("dit « favoris » et non « ventes suivies »", () => {
     expect(offenders(/Mes ventes suivies/)).toEqual([]);
   });

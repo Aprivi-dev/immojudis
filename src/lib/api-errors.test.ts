@@ -14,7 +14,7 @@ describe("isPublicErrorMessage", () => {
   it("lets short French business messages through", () => {
     expect(isPublicErrorMessage("Vente introuvable.")).toBe(true);
     expect(isPublicErrorMessage("Cette invitation n'est plus disponible.")).toBe(true);
-    expect(isPublicErrorMessage("Estimation de marché réservée au plan Analyse.")).toBe(true);
+    expect(isPublicErrorMessage("Estimation de marché réservée à l’offre Analyse.")).toBe(true);
   });
 
   it("blocks driver, database and runtime messages", () => {
@@ -77,7 +77,7 @@ describe("apiRouteError", () => {
   it("keeps French business messages and maps them to meaningful statuses", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const forbidden = apiRouteError(
-      new Error("Export PDF réservé au plan Analyse."),
+      new Error("Export PDF réservé à l’offre Analyse."),
       request(),
       "test.scope",
       { fallbackMessage: "Export impossible." },
@@ -93,7 +93,7 @@ describe("apiRouteError", () => {
     );
 
     expect(forbidden.status).toBe(403);
-    expect((await forbidden.json()).error).toBe("Export PDF réservé au plan Analyse.");
+    expect((await forbidden.json()).error).toBe("Export PDF réservé à l’offre Analyse.");
     expect(missing.status).toBe(404);
     expect(business.status).toBe(400);
     expect((await business.json()).error).toBe("Cette invitation n'est plus disponible.");

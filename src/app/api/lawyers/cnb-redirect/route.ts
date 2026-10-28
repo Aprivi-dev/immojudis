@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { EMAIL_COLORS, EMAIL_FONT_STACK } from "@/lib/email-brand";
 import {
   CNB_DIRECTORY_URL,
   CNB_REAL_ESTATE_SPECIALIZATION_CODE,
@@ -20,9 +21,9 @@ export async function GET(request: Request) {
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Ouverture de l'annuaire du CNB</title>
     <style>
-      body { display: grid; min-height: 100vh; margin: 0; place-items: center; background: #fbf9f5; color: #132c48; font: 16px/1.5 system-ui, sans-serif; }
+      body { display: grid; min-height: 100vh; margin: 0; place-items: center; background: ${EMAIL_COLORS.surface}; color: ${EMAIL_COLORS.navy}; font: 16px/1.5 ${EMAIL_FONT_STACK}; }
       main { max-width: 34rem; padding: 2rem; text-align: center; }
-      button { min-height: 44px; border: 0; border-radius: 6px; padding: 0 18px; background: #132c48; color: white; cursor: pointer; font: inherit; font-weight: 700; }
+      button { min-height: 44px; border: 0; border-radius: 6px; padding: 0 18px; background: ${EMAIL_COLORS.navy}; color: ${EMAIL_COLORS.white}; cursor: pointer; font: inherit; font-weight: 700; }
     </style>
   </head>
   <body>

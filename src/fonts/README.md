@@ -20,3 +20,10 @@ paquet).
 
 Pour mettre à jour la police : remplacer le fichier par la nouvelle version `latin` variable, sans
 changer son nom, puis relancer `npm run build` et comparer le rendu.
+
+## Image de partage (`src/app/opengraph-image.tsx`)
+
+`ImageResponse` n'accepte que le TTF, l'OTF et le WOFF (pas le WOFF2 variable ci-dessus). Aucun TTF
+statique de Manrope n'était disponible hors ligne (ni dans `node_modules`, ni dans le dépôt) au
+28/10/2026 : l'image utilise la police système par défaut. Pour passer à Manrope 800/500, ajouter ici
+les deux TTF statiques (licence : `OFL-manrope.txt`) et les passer à l'option `fonts` de l'image.

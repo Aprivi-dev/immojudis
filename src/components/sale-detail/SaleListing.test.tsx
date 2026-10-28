@@ -458,7 +458,7 @@ describe("readable listing sections", () => {
           terms: {
             ceilingTerm: "offre plafond",
             referencePriceTerm: "première offre possible",
-            bidVerb: "offrir",
+            bidVerb: "faire une offre allant",
           },
           byOffers: true,
           reserveNotice:
@@ -474,7 +474,7 @@ describe("readable listing sections", () => {
     expect(screen.queryByText("Mise à prix")).toBeNull();
     expect(
       screen.getByText(
-        /^Selon vos hypothèses, vous pouvez offrir jusqu’à 160\s000\s€, soit 60\s000\s€ au-dessus de la première offre possible\.$/,
+        /^Selon vos hypothèses, vous pouvez faire une offre allant jusqu’à 160\s000\s€, soit 60\s000\s€ au-dessus de la première offre possible\.$/,
       ),
     ).toBeTruthy();
     expect(

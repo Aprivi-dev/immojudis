@@ -78,7 +78,7 @@ describe("ligne d'accès commune (FREE_ACCESS_LINE)", () => {
   it("bascule sur les textes de l'offre quand elle est active", () => {
     expect(freeAccessLine({ launchOffer: true })).toBe(LAUNCH_OFFER_VISITOR_TEXT);
     expect(freeAccessLine({ launchOffer: true, signedIn: true })).toBe(LAUNCH_OFFER_ACCOUNT_TEXT);
-    expect(freeAccessLine({ launchOffer: true })).not.toContain("fiches détaillées par mois");
+    expect(freeAccessLine({ launchOffer: true })).not.toContain("déblocages par mois");
   });
 });
 

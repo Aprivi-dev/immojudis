@@ -275,8 +275,8 @@ describe("property report rental PDF", () => {
     ).toBe(true);
     expect(lines.some((line) => line.includes("Cash-flow mensuel avant impôts: -35"))).toBe(true);
     expect(lines.some((line) => line.includes("Rendement brut potentiel:"))).toBe(false);
-    expect(lines.some((line) => line.includes("Rendement net estime:"))).toBe(false);
-    expect(lines.some((line) => line.includes("Cashflow mensuel estime:"))).toBe(false);
+    expect(lines.some((line) => line.includes("Rendement net estimé :"))).toBe(false);
+    expect(lines.some((line) => line.includes("Cash-flow mensuel estimé :"))).toBe(false);
   });
 
   it("refiltre à la lecture les noms de particuliers d'un rapport enregistré", () => {

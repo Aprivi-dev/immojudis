@@ -108,7 +108,7 @@ export async function getSaleHistory({
 }): Promise<SaleHistoryResponse> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "property.saleHistory")) {
-    throw new Error("Historique des ventes passées réservé au plan Analyse.");
+    throw new Error("Historique des ventes passées réservé à l’offre Analyse.");
   }
 
   const referenceSale = input.saleId ? await getReferenceSale(auth, input.saleId) : null;

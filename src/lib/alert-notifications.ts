@@ -130,7 +130,7 @@ export async function listAlertNotifications({
   await assertFeatureEntitlement(
     auth,
     "alerts.advanced",
-    "Notifications d'alertes réservées au plan Analyse.",
+    "Notifications d'alertes réservées à l’offre Analyse.",
   );
 
   let query = auth.supabase
@@ -202,7 +202,7 @@ export async function updateAlertNotificationState({
   await assertFeatureEntitlement(
     auth,
     "alerts.advanced",
-    "Notifications d'alertes réservées au plan Analyse.",
+    "Notifications d'alertes réservées à l’offre Analyse.",
   );
 
   const now = new Date().toISOString();

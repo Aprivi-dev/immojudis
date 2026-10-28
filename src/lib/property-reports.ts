@@ -273,7 +273,7 @@ export async function listPropertyReports({
   saleId?: string | null;
 }): Promise<PropertyReportListResponse> {
   const plan = await resolvePlanEntitlements(auth);
-  assertEntitlementIncluded(plan, "property.savedReports", "Rapports réservés au plan Analyse.");
+  assertEntitlementIncluded(plan, "property.savedReports", "Rapports réservés à l’offre Analyse.");
   let query = auth.supabase
     .from("saved_property_reports")
     .select("*")
@@ -309,7 +309,7 @@ export async function getPropertyReport({
   reportId: string;
 }): Promise<PropertyReportDetailResponse> {
   const plan = await resolvePlanEntitlements(auth);
-  assertEntitlementIncluded(plan, "property.savedReports", "Rapports réservés au plan Analyse.");
+  assertEntitlementIncluded(plan, "property.savedReports", "Rapports réservés à l’offre Analyse.");
   const report = await getReport(auth.supabase, auth.userId, reportId);
 
   return {
@@ -329,7 +329,7 @@ export async function savePropertyReport({
   request: Request;
 }): Promise<PropertyReportSaveResponse> {
   const plan = await resolvePlanEntitlements(auth);
-  assertEntitlementIncluded(plan, "property.savedReports", "Rapports réservés au plan Analyse.");
+  assertEntitlementIncluded(plan, "property.savedReports", "Rapports réservés à l’offre Analyse.");
   // Après le droit d'accès : un compte sans droit ne doit pas user les compteurs de son adresse ni
   // le disjoncteur global. Le quota mensuel de l'offre Analyse est illimité, ce plafond est le seul.
   await enforceDailyOperationLimits({
@@ -474,7 +474,7 @@ export async function updatePropertyReport({
   assertEntitlementIncluded(
     plan,
     "property.reportEditing",
-    "Édition des rapports réservée au plan Analyse.",
+    "Édition des rapports réservée à l’offre Analyse.",
   );
   // Resolve and publication-check the owned report before returning its
   // snapshot through the privileged update client.
@@ -526,7 +526,7 @@ export async function exportPropertyReportPdf({
   request: Request;
 }): Promise<PropertyReportExport> {
   const plan = await resolvePlanEntitlements(auth);
-  assertEntitlementIncluded(plan, "property.pdfExport", "Export PDF réservé au plan Analyse.");
+  assertEntitlementIncluded(plan, "property.pdfExport", "Export PDF réservé à l’offre Analyse.");
   await enforceDailyOperationLimits({
     request,
     userId: auth.userId,
@@ -567,7 +567,7 @@ export async function enablePropertyReportShare({
   expiresAt?: string | null;
 }): Promise<PropertyReportShareResponse> {
   const plan = await resolvePlanEntitlements(auth);
-  assertEntitlementIncluded(plan, "property.savedReports", "Partage réservé au plan Analyse.");
+  assertEntitlementIncluded(plan, "property.savedReports", "Partage réservé à l’offre Analyse.");
   const report = await getReport(auth.supabase, auth.userId, reportId);
   assertReportSourceCurrent(report.report_snapshot, await getSale(auth.supabase, report.sale_id));
   const shareToken = createShareToken();
@@ -608,7 +608,7 @@ export async function disablePropertyReportShare({
   origin?: string | null;
 }): Promise<PropertyReportShareResponse> {
   const plan = await resolvePlanEntitlements(auth);
-  assertEntitlementIncluded(plan, "property.savedReports", "Partage réservé au plan Analyse.");
+  assertEntitlementIncluded(plan, "property.savedReports", "Partage réservé à l’offre Analyse.");
   await getReport(auth.supabase, auth.userId, reportId);
 
   const { data, error } = await supabaseAdmin
@@ -839,7 +839,7 @@ export async function resolvePlanEntitlements(
     graceEndsAt: data?.status === "past_due" ? pastDueGraceEnd(data.current_period_end) : null,
   };
   // Essai gratuit de 7 jours à l'inscription : pendant son essai, un compte gratuit qui a un
-  // profil reçoit le plan Analyse, avec ses quotas (rapports, PDF, actualisations). L'état vient de
+  // profil reçoit l’offre Analyse, avec ses quotas (rapports, PDF, actualisations). L'état vient de
   // la base, comme pour les fonctions SQL d'accès (`app_private.has_active_analysis_access`) ; rien
   // n'est écrit sur le compte, la fin de l'essai ramène donc le plan Découverte sans nettoyage.
   if (plan === "decouverte" && auth.hasProfile !== false && (await isLaunchOfferActive())) {
@@ -911,7 +911,7 @@ export async function featureIncludedForSale(
 export async function assertFeatureEntitlementVia(
   auth: SupabaseAuthContext,
   feature: FeatureKey,
-  message = "Fonctionnalité réservée au plan Analyse.",
+  message = "Fonctionnalité réservée à l’offre Analyse.",
   options: { saleId?: string } = {},
 ): Promise<{ plan: PlanEntitlements; door: SaleFeatureDoor }> {
   const plan = await resolvePlanEntitlements(auth);
@@ -930,7 +930,7 @@ export async function assertFeatureEntitlementVia(
 export async function assertFeatureEntitlement(
   auth: SupabaseAuthContext,
   feature: FeatureKey,
-  message = "Fonctionnalité réservée au plan Analyse.",
+  message = "Fonctionnalité réservée à l’offre Analyse.",
   options: { saleId?: string } = {},
 ): Promise<PlanEntitlements> {
   return (await assertFeatureEntitlementVia(auth, feature, message, options)).plan;

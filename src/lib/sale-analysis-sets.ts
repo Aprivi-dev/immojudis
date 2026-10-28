@@ -561,7 +561,7 @@ async function assertSaleAnalysisAvailable(
 ) {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "sales.multiPropertyAnalysis")) {
-    throw new Error("Analyse multi-biens réservée au plan Analyse.");
+    throw new Error("Analyse multi-biens réservée à l’offre Analyse.");
   }
   if (analysisKind) assertAnalysisKindAvailable(plan.plan, analysisKind);
   return plan;
@@ -572,7 +572,7 @@ function assertAnalysisKindAvailable(
   analysisKind: (typeof SALE_ANALYSIS_KINDS)[number],
 ) {
   if (plan === "decouverte" && analysisKind !== "comparison") {
-    throw new Error("Les listes de suivi et portefeuilles sont réservés au plan Analyse.");
+    throw new Error("Les listes de suivi et portefeuilles sont réservés à l’offre Analyse.");
   }
 }
 

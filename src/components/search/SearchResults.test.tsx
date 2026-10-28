@@ -277,7 +277,7 @@ describe("useful public discovery", () => {
     }
     expect(container.querySelector('[class*="blur-"]')).toBeNull();
     expect(
-      screen.getByText("Gratuit, sans carte bancaire · 3 fiches détaillées par mois"),
+      screen.getByText("Gratuit, sans carte bancaire · 3 déblocages par mois"),
     ).toBeTruthy();
   });
 
@@ -351,7 +351,7 @@ describe("useful public discovery", () => {
       </QueryClientProvider>,
     );
     expect(screen.getByText("Fiche complète avec un compte gratuit")).toBeTruthy();
-    expect(screen.queryByText(/fiches détaillées par mois/)).toBeNull();
+    expect(screen.queryByText(/déblocages par mois/)).toBeNull();
   });
 
   it("laisse « Annonce bien renseignée » à la fiche : la carte ne la montre plus", () => {
@@ -913,7 +913,7 @@ describe("« 3 déblocages par mois » on the cards of a Découverte account", (
     expect(cards[1].textContent).not.toContain("Voir le détail");
     expect(cards[0].textContent).not.toContain("Débloquée");
     expect(cards[0].textContent).toContain(
-      "Gratuit, sans carte bancaire · 3 fiches détaillées par mois",
+      "Gratuit, sans carte bancaire · 3 déblocages par mois",
     );
     expect(document.body.textContent).not.toContain("Analyse détaillée avec l’offre Analyse");
   });
@@ -932,12 +932,12 @@ describe("« 3 déblocages par mois » on the cards of a Découverte account", (
     await waitFor(() => expect(testState.unlocksOverview).toHaveBeenCalled());
     const cards = screen.getAllByRole("article");
     expect(cards[0].textContent).toContain(
-      "Gratuit, sans carte bancaire · 3 fiches détaillées par mois",
+      "Gratuit, sans carte bancaire · 3 déblocages par mois",
     );
     expect(cards[1].textContent).toContain(
-      "Gratuit, sans carte bancaire · 3 fiches détaillées par mois",
+      "Gratuit, sans carte bancaire · 3 déblocages par mois",
     );
-    expect(cards[2].textContent).not.toContain("fiches détaillées par mois");
+    expect(cards[2].textContent).not.toContain("déblocages par mois");
   });
 
   it("does not ask for the unlocks of a visitor or of an Analyse account", async () => {
@@ -960,7 +960,7 @@ describe("« 3 déblocages par mois » on the cards of a Découverte account", (
     await waitFor(() => expect(testState.unlocksOverview).toHaveBeenCalled());
     expect(screen.queryByText("Débloquée")).toBeNull();
     expect(screen.getByRole("article").textContent).toContain(
-      "Gratuit, sans carte bancaire · 3 fiches détaillées par mois",
+      "Gratuit, sans carte bancaire · 3 déblocages par mois",
     );
   });
 });

@@ -29,7 +29,7 @@ export type CashStepText = { when: string; label: string; detail: string };
 export type FeeRegimeLabels = FeeRegimeTerms & {
   /** Le prix de départ de la vente, sans article : « mise à prix », « première offre possible ». */
   referencePriceTerm: string;
-  /** Le verbe de ce que le montant permet : « enchérir » (enchères) ou « offrir » (offres). */
+  /** Le verbe de ce que le montant permet : « enchérir » (enchères) ou « faire une offre allant » (offres). */
   bidVerb: string;
   /** Une vente par offres : ni enchère ni adjudication dans aucun titre ni aucune étape. */
   byOffers: boolean;

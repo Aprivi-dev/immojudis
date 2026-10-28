@@ -13,7 +13,7 @@ import { firstSearchToUrl, type FirstSearch } from "@/lib/onboarding";
 import { HOME_TYPE_OPTIONS, countActiveSearchFilters } from "@/lib/search/search-filters";
 import { validateSalesSearch } from "@/lib/search/search-url-state";
 import { formatPrice } from "@/lib/format";
-import { MONTHLY_SALE_UNLOCKS, UNLOCK_HIGHLIGHTS_INLINE_TEXT } from "@/lib/sale-unlocks";
+import { MONTHLY_UNLOCKS_TEXT, UNLOCK_HIGHLIGHTS_INLINE_TEXT } from "@/lib/sale-unlocks";
 
 const steps = ["Votre secteur", "Vos critères", "Votre première recherche"];
 const inputClass =
@@ -220,12 +220,12 @@ export function InvestorOnboarding({
                 {launchOffer ? (
                   <>
                     Pendant votre essai gratuit de 7 jours, votre compte ouvre les outils de l’offre
-                    Analyse sur toutes les ventes (contenu selon la vente). Ensuite, vous pourrez
-                    débloquer {MONTHLY_SALE_UNLOCKS} ventes en détail chaque mois.
+                    Analyse sur toutes les ventes (contenu selon la vente). Ensuite, vous aurez{" "}
+                    {MONTHLY_UNLOCKS_TEXT}.
                   </>
                 ) : (
                   <>
-                    Chaque mois, vous pouvez débloquer {MONTHLY_SALE_UNLOCKS} ventes en détail (
+                    Avec {MONTHLY_UNLOCKS_TEXT}, vous ouvrez le détail d’une vente (
                     {unlockHighlights}). L’offre Analyse les ouvre toutes.
                   </>
                 )}

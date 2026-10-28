@@ -87,7 +87,7 @@ describe("investor welcome flow", () => {
     fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
     const text = document.body.textContent ?? "";
     expect(text).toContain(
-      "Chaque mois, vous pouvez débloquer 3 ventes en détail (enchère plafond ou offre plafond, lecture des pièces, historique, selon la vente). L’offre Analyse les ouvre toutes.",
+      "Avec 3 déblocages par mois, vous ouvrez le détail d’une vente (enchère plafond ou offre plafond, lecture des pièces, historique, selon la vente). L’offre Analyse les ouvre toutes.",
     );
     expect(text).not.toContain("nécessitent un accès Analyse");
   });
@@ -98,7 +98,7 @@ describe("investor welcome flow", () => {
     fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
     const text = document.body.textContent ?? "";
     expect(text).toContain(
-      "Chaque mois, vous pouvez débloquer 3 ventes en détail (enchère plafond, lecture des pièces, historique, selon la vente).",
+      "Avec 3 déblocages par mois, vous ouvrez le détail d’une vente (enchère plafond, lecture des pièces, historique, selon la vente).",
     );
     expect(text).not.toContain("offre plafond");
   });
