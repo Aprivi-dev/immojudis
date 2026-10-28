@@ -112,17 +112,26 @@ export async function readSaleCommunes(): Promise<Map<string, SaleCommune> | nul
   throw new Error("Trop de communes de ventes stockées.");
 }
 
-/** Les ventes en ligne, avec leur position (vue de la fiche, rôle de service), par pages de 1 000. */
+/**
+ * Les ventes À VENIR, avec leur position (vue de la fiche, rôle de service). Le filtre de statut est fait dans la
+ * base (le traitement d'inondation et la règle de pépite v2 ne regardent que les ventes à venir) et la lecture se fait
+ * par curseur sur `id` (`id > dernier`, par pages de 1 000), sans décalage.
+ */
 export async function readFloodSales(): Promise<FloodSale[]> {
   const sales: FloodSale[] = [];
-  for (let from = 0; from < MAX_ROWS; from += PAGE_SIZE) {
-    const { data, error } = await supabaseAdmin
+  let after: string | null = null;
+  for (;;) {
+    if (sales.length >= MAX_ROWS) {
+      throw new Error("Trop de ventes en ligne pour le contrôle d'inondation.");
+    }
+    let query = supabaseAdmin
       .from("v_auction_sales_app")
       .select(
         "id, updated_at, status, sale_date, latitude, longitude, location_precision, quality_flags",
       )
-      .order("id", { ascending: true })
-      .range(from, from + PAGE_SIZE - 1);
+      .eq("status", "upcoming");
+    if (after) query = query.gt("id", after);
+    const { data, error } = await query.order("id", { ascending: true }).limit(PAGE_SIZE);
     if (error) throw error;
     for (const row of data ?? []) {
       if (!row.id) continue;
@@ -139,9 +148,10 @@ export async function readFloodSales(): Promise<FloodSale[]> {
           : [],
       });
     }
-    if ((data?.length ?? 0) < PAGE_SIZE) return sales;
+    const last = data?.at(-1)?.id ?? null;
+    if ((data?.length ?? 0) < PAGE_SIZE || !last) return sales;
+    after = last;
   }
-  throw new Error("Trop de ventes en ligne pour le contrôle d'inondation.");
 }
 
 /** La position d'une vente telle que `flood-risk.ts` la lit. */

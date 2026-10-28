@@ -5,8 +5,8 @@ type Row = Record<string, unknown>;
 const db = vi.hoisted(() => ({
   /** Lignes de `v_auction_sales_app` (ventes en ligne). */
   sales: [] as Row[],
-  /** Lignes de `auction_sales` lues pour recopier `raw_payload.commune`. */
-  rawCommunes: [] as Row[],
+  /** Réponse de `sync_sale_communes()` (recopie de `raw_payload.commune` faite dans la base). */
+  syncCommunes: { n_with_code: 0, n_changed: 0, n_written: 0 },
   floodRows: [] as Row[] | null,
   communeRows: [] as Row[] | null,
   upserts: [] as Array<{ table: string; rows: Row[] }>,
@@ -17,6 +17,8 @@ const db = vi.hoisted(() => ({
   /** Erreur de la seule mise à jour d'une ligne existante (les insertions passent). */
   updateError: null as { code?: string; message: string } | null,
   tables: [] as string[],
+  /** Lectures de `v_auction_sales_app` : filtres d'égalité et curseur. */
+  salesReads: [] as Array<{ filters: Record<string, unknown>; after: string | null }>,
   /** Bail du traitement : `true` = une autre passe le tient ; `"missing"` = fonction absente (migration en retard). */
   leaseHeld: false as boolean | "missing",
   rpcCalls: [] as Array<{ name: string; args: unknown }>,
@@ -33,6 +35,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
         }
         return { data: db.leaseHeld ? null : "lease-token", error: null };
       }
+      if (name === "sync_sale_communes") return { data: [db.syncCommunes], error: null };
       return { data: true, error: null };
     },
   },
@@ -54,6 +57,9 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
   private upsertRows: Row[] | null = null;
   private changes: Row | null = null;
   private eqValue: unknown = null;
+  private eqFilters: Record<string, unknown> = {};
+  private after: string | null = null;
+  private max = 1000;
   private defaultToNull = true;
 
   constructor(private readonly table: string) {}
@@ -64,8 +70,17 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
   order() {
     return this;
   }
-  eq(_column: string, value: unknown) {
+  eq(column: string, value: unknown) {
     this.eqValue = value;
+    this.eqFilters[column] = value;
+    return this;
+  }
+  gt(_column: string, value: string) {
+    this.after = value;
+    return this;
+  }
+  limit(count: number) {
+    this.max = count;
     return this;
   }
   range(from: number, to: number) {
@@ -125,10 +140,15 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
     }
     const slice = (rows: Row[]) => rows.slice(this.page[0], this.page[1] + 1);
     switch (this.table) {
-      case "v_auction_sales_app":
-        return { data: slice(db.sales), error: null };
-      case "auction_sales":
-        return { data: slice(db.rawCommunes), error: null };
+      case "v_auction_sales_app": {
+        // Lecture par curseur sur `id`, filtrée par statut dans la base.
+        db.salesReads.push({ filters: { ...this.eqFilters }, after: this.after });
+        const rows = db.sales
+          .filter((row) => !("status" in this.eqFilters) || row.status === this.eqFilters.status)
+          .filter((row) => this.after == null || String(row.id) > this.after)
+          .sort((left, right) => String(left.id).localeCompare(String(right.id)));
+        return { data: rows.slice(0, this.max), error: null };
+      }
       case "auction_sale_flood_risk":
         return db.floodRows == null
           ? { data: null, error: missing }
@@ -259,7 +279,8 @@ const written = () =>
 
 beforeEach(() => {
   db.sales = [];
-  db.rawCommunes = [];
+  db.syncCommunes = { n_with_code: 0, n_changed: 0, n_written: 0 };
+  db.salesReads = [];
   db.floodRows = [];
   db.communeRows = [];
   db.upserts = [];
@@ -700,20 +721,27 @@ describe("runSaleFloodRiskBatch : avant les migrations", () => {
 describe("runSaleFloodRiskBatch : code commune du pipeline", () => {
   it("recopie raw_payload.commune dans la table des communes, puis s'en sert dans la même passe", async () => {
     db.sales = [sale("a", { location_precision: "municipality" })];
-    db.rawCommunes = [
-      { id: "a", commune: { insee: "75056", arrondissement_insee: "75108", source: "geocode" } },
-    ];
+    // La recopie se fait dans la base (`sync_sale_communes()`, migration 20261108110100) : la passe l'appelle une
+    // fois et en reporte le compte, sans relire `raw_payload`.
+    db.syncCommunes = { n_with_code: 1, n_changed: 1, n_written: 1 };
     const api = makeApi();
     const result = await run(api);
     expect(result.communesWritten).toBe(1);
-    expect(
-      db.upserts.find((upsert) => upsert.table === "auction_sale_communes")?.rows[0],
-    ).toMatchObject({
-      sale_id: "a",
-      commune_insee: "75056",
-      arrondissement_insee: "75108",
-      source: "geocode",
-    });
+    expect(result.communesRejected).toBe(0);
+    expect(db.rpcCalls.filter((call) => call.name === "sync_sale_communes")).toHaveLength(1);
+    expect(db.tables).not.toContain("auction_sales");
+  });
+
+  it("lit les ventes à venir par curseur sur l'identifiant, filtrées par statut dans la base", async () => {
+    db.sales = [
+      ...Array.from({ length: 1500 }, (_, index) => sale(`s${String(index).padStart(5, "0")}`)),
+      sale("past-sale", { status: "past" }),
+    ];
+    await run(makeApi());
+    expect(db.salesReads).toHaveLength(2);
+    expect(db.salesReads.every((read) => read.filters.status === "upcoming")).toBe(true);
+    expect(db.salesReads[0].after).toBeNull();
+    expect(db.salesReads[1].after).toBe("s00999");
   });
 });
 
@@ -1086,10 +1114,11 @@ describe("runSaleFloodRiskBatch : une seule passe à la fois", () => {
     await run(makeApi());
     expect(db.rpcCalls.map((call) => call.name)).toEqual([
       "claim_sale_flood_risk_lease",
+      "sync_sale_communes",
       "release_sale_flood_risk_lease",
     ]);
     expect(db.rpcCalls[0].args).toEqual({ p_ttl_seconds: 360 });
-    expect(db.rpcCalls[1].args).toEqual({ p_token: "lease-token" });
+    expect(db.rpcCalls[2].args).toEqual({ p_token: "lease-token" });
   });
 
   it("une seconde passe simultanée rend « busy » sans rien lire, appeler ni rendre", async () => {
@@ -1110,6 +1139,7 @@ describe("runSaleFloodRiskBatch : une seule passe à la fois", () => {
     await expect(run(makeApi({ triStatus: 503 }))).rejects.toThrow();
     expect(db.rpcCalls.map((call) => call.name)).toEqual([
       "claim_sale_flood_risk_lease",
+      "sync_sale_communes",
       "release_sale_flood_risk_lease",
     ]);
   });
@@ -1119,7 +1149,10 @@ describe("runSaleFloodRiskBatch : une seule passe à la fois", () => {
     db.leaseHeld = "missing";
     const result = await run(makeApi());
     expect(result.observed).toBe(1);
-    expect(db.rpcCalls.map((call) => call.name)).toEqual(["claim_sale_flood_risk_lease"]);
+    expect(db.rpcCalls.map((call) => call.name)).toEqual([
+      "claim_sale_flood_risk_lease",
+      "sync_sale_communes",
+    ]);
   });
 });
 

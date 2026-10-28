@@ -1,6 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { isMissingDatabaseObject, readSaleCommunes } from "@/lib/flood-risk-store.server";
+import { isMissingDatabaseObject } from "@/lib/flood-risk-store.server";
+import { isBusyWriteError } from "@/lib/write-busy";
 
 /**
  * Recopie le code commune que le pipeline pose sur chaque vente (`raw_payload.commune`, voir
@@ -9,12 +10,16 @@ import { isMissingDatabaseObject, readSaleCommunes } from "@/lib/flood-risk-stor
  * ligne sont écrites. Les ventes déjà présentes à la pose de la migration ont été remplies par SQL
  * (`20261106100100_auction_sale_communes_backfill.sql`).
  *
+ * Tout se passe DANS la base, en une instruction : la fonction `sync_sale_communes()` (migration 20261108110100, rôle
+ * de service) lit `raw_payload->commune` des ventes à venir, applique les règles de `pipelineCommuneOf` ci-dessous
+ * (que la fonction reproduit et que les tests de ce fichier et `771_sync_sale_communes.sql` figent), compare au
+ * stocké et n'écrit que les lignes nouvelles ou modifiées. Avant, la passe relisait chaque heure le `raw_payload` de
+ * toutes les ventes à venir (plusieurs Mo décompressés) pour comparer en JavaScript. Les ventes verrouillées en
+ * écriture par une autre transaction sont sautées sans attente et reprises à la passe suivante.
+ *
  * Aucune coordonnée, aucune adresse : un code commune, un code d'arrondissement et la provenance.
  */
 
-const PAGE_SIZE = 1000;
-const MAX_ROWS = 20_000;
-const WRITE_CHUNK = 200;
 const CODE_PATTERN = /^[0-9][0-9AB][0-9]{3}$/;
 const SOURCES = ["geocode", "reference_communes"] as const;
 /**
@@ -28,12 +33,19 @@ const ARRONDISSEMENT_PATTERNS: Record<string, RegExp> = {
 };
 
 export type SaleCommuneSyncResult = {
-  /** Ventes lues avec un code commune posé par le pipeline. */
+  /** Ventes à venir avec un code commune posé par le pipeline. */
   withCode: number;
   /** Lignes écrites (nouvelles ou modifiées). */
   written: number;
-  /** Lignes que la base a refusées (une ligne invalide est ignorée, la passe continue). */
+  /**
+   * Lignes à écrire mais sautées car la vente était verrouillée en écriture par une autre transaction : reprises à la
+   * passe suivante.
+   */
+  deferred: number;
+  /** Toujours 0 : la fonction SQL applique les contraintes de la table, elle ne produit pas de ligne refusée. */
   rejected: number;
+  /** La synchronisation n'a pas pu s'exécuter (base occupée, délai dépassé) : elle reprend à la passe suivante. */
+  busy: boolean;
   /** La table n'existe pas encore (migration non appliquée). */
   notMigrated: boolean;
 };
@@ -69,84 +81,46 @@ export function pipelineCommuneOf(value: unknown): PipelineCommune | null {
   };
 }
 
-export async function syncSaleCommunes(now: Date = new Date()): Promise<SaleCommuneSyncResult> {
+type SyncRow = { n_with_code: number; n_changed: number; n_written: number };
+
+/**
+ * Lance la recopie. Avant la migration 20261108110100 (fonction absente), elle est sautée sans erreur tant que la table
+ * est lisible : les codes posés par le remplissage initial restent utilisables. `now` n'est plus utilisé : la date de
+ * pose est celle de la base.
+ */
+export async function syncSaleCommunes(_now: Date = new Date()): Promise<SaleCommuneSyncResult> {
   const result: SaleCommuneSyncResult = {
     withCode: 0,
     written: 0,
+    deferred: 0,
     rejected: 0,
+    busy: false,
     notMigrated: false,
   };
-  const stored = await readSaleCommunes();
-  if (stored == null) return { ...result, notMigrated: true };
-
-  const pending: Array<{
-    sale_id: string;
-    commune_insee: string;
-    arrondissement_insee: string | null;
-    source: string;
-    resolved_at: string;
-  }> = [];
-  for (let from = 0; from < MAX_ROWS; from += PAGE_SIZE) {
-    const { data, error } = await supabaseAdmin
-      .from("auction_sales")
-      .select("id, commune:raw_payload->commune")
-      .eq("status", "upcoming")
-      .order("id", { ascending: true })
-      .range(from, from + PAGE_SIZE - 1);
-    if (error) throw error;
-    for (const row of data ?? []) {
-      const commune = pipelineCommuneOf(row.commune);
-      if (!commune) continue;
-      result.withCode += 1;
-      const current = stored.get(row.id);
-      if (
-        current &&
-        current.communeInsee === commune.insee &&
-        current.arrondissementInsee === commune.arrondissementInsee
-      ) {
-        continue;
+  const { data, error } = await supabaseAdmin.rpc("sync_sale_communes");
+  if (error) {
+    if (isMissingDatabaseObject(error)) {
+      const probe = await supabaseAdmin.from("auction_sale_communes").select("sale_id").limit(1);
+      if (probe.error) {
+        if (isMissingDatabaseObject(probe.error)) return { ...result, notMigrated: true };
+        throw new Error(
+          `Lecture des communes de ventes refusée (code ${probe.error.code ?? "inconnu"})`,
+        );
       }
-      pending.push({
-        sale_id: row.id,
-        commune_insee: commune.insee,
-        arrondissement_insee: commune.arrondissementInsee,
-        source: commune.source,
-        resolved_at: now.toISOString(),
-      });
+      return result;
     }
-    if ((data?.length ?? 0) < PAGE_SIZE) break;
+    // Verrou ou délai dépassé : ce n'est pas une panne, la recopie reprend à la passe suivante.
+    if (isBusyWriteError(error)) return { ...result, busy: true };
+    // Le message d'erreur peut citer une ligne : seul le code remonte.
+    throw new Error(`Synchronisation des communes refusée (code ${error.code ?? "inconnu"})`);
   }
-
-  for (let index = 0; index < pending.length; index += WRITE_CHUNK) {
-    const chunk = pending.slice(index, index + WRITE_CHUNK);
-    try {
-      const { error } = await supabaseAdmin
-        .from("auction_sale_communes")
-        .upsert(chunk, { onConflict: "sale_id" });
-      if (!error) {
-        result.written += chunk.length;
-        continue;
-      }
-      if (isMissingDatabaseObject(error)) return { ...result, notMigrated: true };
-    } catch {
-      // Le paquet entier est refusé : on retente ligne par ligne ci-dessous.
-    }
-    // Une ligne invalide ne doit pas annuler la passe : chaque ligne du paquet refusé est retentée seule.
-    for (const row of chunk) {
-      try {
-        const { error } = await supabaseAdmin
-          .from("auction_sale_communes")
-          .upsert(row, { onConflict: "sale_id" });
-        if (error) {
-          if (isMissingDatabaseObject(error)) return { ...result, notMigrated: true };
-          result.rejected += 1;
-        } else {
-          result.written += 1;
-        }
-      } catch {
-        result.rejected += 1;
-      }
-    }
-  }
-  return result;
+  const row = (Array.isArray(data) ? data[0] : data) as SyncRow | null | undefined;
+  if (!row) return result;
+  const written = Number(row.n_written) || 0;
+  return {
+    ...result,
+    withCode: Number(row.n_with_code) || 0,
+    written,
+    deferred: Math.max(0, (Number(row.n_changed) || 0) - written),
+  };
 }
