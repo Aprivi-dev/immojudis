@@ -115,7 +115,7 @@ export function buildCeilingHypotheses(
     : null;
   const referenceRent = surface && reference ? Math.round(surface * reference.rentPerM2) : null;
   // Charges récupérables comprises dans le loyer d'annonce : saisies par l'utilisateur, jamais inventées.
-  // Elles s'ajoutent au loyer d'annonce estimé (ANIL, charges comprises) : le loyer retenu est hors charges.
+  // Elles sont retirées du loyer d'annonce estimé (ANIL, charges comprises) : le loyer retenu est hors charges.
   const recoverableCharges = positive(choices.recoverableCharges);
   const estimatedRent =
     referenceRent && recoverableCharges

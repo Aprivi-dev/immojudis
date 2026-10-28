@@ -22,8 +22,10 @@ import {
  * pépites parmi les ventes évaluables, la liste des pépites et des « presque pépites » avec leurs critères en
  * clair, et le contrôle d'indépendance vis-à-vis de la publicité.
  *
- * Lecture seule. Jeton de session vérifié et rôle administrateur exigé avant toute lecture ; les lectures se
- * font avec le client de service (`admin_list_sale_pepites`, service_role seul). Avant la migration
+ * Lecture, plus un seul geste d'écriture : l'arrêt d'urgence `suspendAdminPepites` (de « on » vers « shadow » ou
+ * « off », jamais l'inverse ; voir plus bas et `docs/runbooks/pepites-arret-urgence.md`). Jeton de session vérifié et
+ * rôle administrateur exigé avant toute lecture ; les lectures se font avec le client de service
+ * (`admin_list_sale_pepites`, service_role seul). Avant la migration
  * 20261104100000 (fonction ou table absente), la réponse dit « pas migré » au lieu d'échouer.
  *
  * Le contrôle d'indépendance (proposition n° 21) lit les encarts d'avocats pour mesurer la part des pépites
