@@ -11,6 +11,7 @@ import {
 import { photoCredit } from "@/lib/photo-credit";
 import { photoMirrorForCard } from "@/lib/photo-mirror";
 import { propertyImages, shouldRejectRenderedPropertyImage } from "@/lib/sale-media";
+import { hasReliableBuildingPosition } from "@/lib/sale-aerial-orbit";
 
 type SaleVisualProps = {
   sale: AuctionSale;
@@ -32,7 +33,7 @@ type SaleVisualProps = {
    */
   mapFramingWidth?: number;
   /**
-   * Sans adresse précise, carte du secteur Mapbox (par défaut). La liste des ventes la remplace par
+   * Sans position fiable d'un bâtiment, carte du secteur Mapbox (par défaut). La liste des ventes la remplace par
    * une case neutre (décision du 24/10/2026) : la grande carte montre déjà le secteur.
    */
   sectorMap?: boolean;
@@ -108,28 +109,28 @@ export function SaleVisual({
 }: SaleVisualProps) {
   const photos = locked ? [] : propertyImages(sale.media);
   const hasCoordinates = sale.latitude != null && sale.longitude != null;
-  const hasPreciseAddress = Boolean(sale.address?.trim());
+  // Le satellite pose un repère sur « ce bâtiment-là » : il faut une position d'adresse ou de
+  // parcelle, une adresse numérotée et aucun signalement douteux. Sinon (centre de commune, rue,
+  // copie probable), la carte du secteur ou la case neutre prend la place.
+  const hasReliablePosition = hasCoordinates && hasReliableBuildingPosition(sale);
   // Image plus étroite que la référence : on recule d'autant de niveaux de zoom pour garder la
   // même zone visible (Mapbox arrondit le zoom au centième).
   const zoomOffset =
     mapFramingWidth && mapFramingWidth !== mapWidth ? Math.log2(mapWidth / mapFramingWidth) : 0;
   const framedZoom = (zoom: number) => Math.round((zoom + zoomOffset) * 100) / 100;
-  const satelliteImage = mapboxImage(
-    !locked && hasCoordinates && hasPreciseAddress,
-    thumbnail,
-    (pixelRatio) =>
-      mapboxSatelliteImageUrl({
-        lat: sale.latitude as number,
-        lng: sale.longitude as number,
-        zoom: framedZoom(17),
-        width: mapWidth,
-        height: mapHeight,
-        pixelRatio,
-        format: thumbnail ? MAPBOX_LIST_THUMBNAIL_FORMAT : undefined,
-      }),
+  const satelliteImage = mapboxImage(!locked && hasReliablePosition, thumbnail, (pixelRatio) =>
+    mapboxSatelliteImageUrl({
+      lat: sale.latitude as number,
+      lng: sale.longitude as number,
+      zoom: framedZoom(17),
+      width: mapWidth,
+      height: mapHeight,
+      pixelRatio,
+      format: thumbnail ? MAPBOX_LIST_THUMBNAIL_FORMAT : undefined,
+    }),
   );
   const sectorMapImage = mapboxImage(
-    sectorMap && !locked && hasCoordinates && !hasPreciseAddress,
+    sectorMap && !locked && hasCoordinates && !hasReliablePosition,
     thumbnail,
     (pixelRatio) =>
       mapboxStaticImageUrl({
@@ -284,7 +285,7 @@ export function SaleVisual({
         }`}
       />
       {candidateIsReady ? (
-        <span className="pointer-events-none absolute bottom-2 left-2 whitespace-nowrap rounded-md bg-white/95 px-2 py-0.5 text-caption font-medium text-brand-navy">
+        <span className="pointer-events-none absolute left-2 top-2 whitespace-nowrap rounded-md bg-white/95 px-2 py-0.5 text-caption font-medium text-brand-navy">
           {candidate.label}
         </span>
       ) : null}

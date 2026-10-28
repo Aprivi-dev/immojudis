@@ -44,13 +44,6 @@ export function hasNumberedStreetAddress(address: string): boolean {
 }
 
 /**
- * Précisions de géocodage (`location_precision`, issue de `raw_payload.geo_precision` côté pipeline)
- * qui désignent un bâtiment ou une parcelle. Une précision de rue, de commune ou absente ne l'est
- * pas : la vue qui tourne autour d'un repère ne serait pas honnête.
- */
-const BUILDING_LOCATION_PRECISIONS = new Set(["address", "parcel"]);
-
-/**
  * Rayon d'incertitude, en mètres, selon la précision : un point d'adresse (numéro interpolé le long
  * de la voie) peut être décalé de quelques dizaines de mètres, le centre d'une parcelle cadastrale
  * désigne le terrain à une quinzaine de mètres près.
@@ -68,23 +61,31 @@ export type AerialOrbitTarget = {
   accuracyMeters: number;
 };
 
+type BuildingPositionSale = Pick<
+  AuctionSale,
+  "latitude" | "longitude" | "address" | "quality_flags"
+> &
+  Partial<Pick<AuctionSale, "location_precision">>;
+
+type OrbitSale = BuildingPositionSale &
+  Pick<AuctionSale, "postal_code" | "city"> &
+  Partial<Pick<AuctionSale, "property_type">>;
+
 /**
- * Point autour duquel la fiche peut faire tourner la vue aérienne, ou null si la position n'est pas
- * assez sûre : précision `address` ou `parcel` exigée (absente = pas de vue), adresse numérotée,
- * aucun signalement de position douteuse, bien qui n'est ni un parking ni un terrain.
+ * Position d'un bâtiment ou d'une parcelle assez sûre pour y poser un repère sur une image
+ * aérienne : précision `address` ou `parcel` exigée (une précision de rue, de commune ou absente
+ * ne désigne aucun bâtiment), point en France, adresse numérotée, aucun signalement de position
+ * douteuse. Renvoie la précision retenue, ou null.
  */
-export function aerialOrbitTarget(
-  sale: Pick<
-    AuctionSale,
-    "latitude" | "longitude" | "address" | "postal_code" | "city" | "quality_flags"
-  > &
-    Partial<Pick<AuctionSale, "location_precision" | "property_type">>,
-): AerialOrbitTarget | null {
+function reliableBuildingPosition(sale: BuildingPositionSale): {
+  precision: "address" | "parcel";
+  lat: number;
+  lng: number;
+  street: string;
+} | null {
   const precision =
     typeof sale.location_precision === "string" ? sale.location_precision.trim().toLowerCase() : "";
-  if (!BUILDING_LOCATION_PRECISIONS.has(precision)) return null;
-  const propertyType = typeof sale.property_type === "string" ? sale.property_type.trim() : "";
-  if (NO_BUILDING_PROPERTY_TYPES.has(propertyType.toLowerCase())) return null;
+  if (precision !== "address" && precision !== "parcel") return null;
   const coordinates = listingCoordinates(sale as AuctionSale);
   if (!coordinates) return null;
   const street = sale.address?.trim();
@@ -93,13 +94,40 @@ export function aerialOrbitTarget(
   if (flags.some((flag) => typeof flag === "string" && DOUBTFUL_LOCATION_FLAGS.has(flag))) {
     return null;
   }
+  return { precision, ...coordinates, street };
+}
+
+/**
+ * Vrai si le point de la vente désigne un bâtiment ou une parcelle de façon fiable : seule une
+ * telle position justifie un repère sur une image satellite. Partagée par la vue 360° de la fiche
+ * (`aerialOrbitTarget`) et par la vignette satellite de la liste.
+ */
+export function hasReliableBuildingPosition(sale: BuildingPositionSale): boolean {
+  return reliableBuildingPosition(sale) !== null;
+}
+
+/**
+ * Point autour duquel la fiche peut faire tourner la vue aérienne, ou null si la position n'est pas
+ * assez sûre : position fiable d'un bâtiment (voir `hasReliableBuildingPosition`), bien qui n'est
+ * ni un parking ni un terrain.
+ */
+export function aerialOrbitTarget(sale: OrbitSale): AerialOrbitTarget | null {
+  const position = reliableBuildingPosition(sale);
+  if (!position) return null;
+  const propertyType = typeof sale.property_type === "string" ? sale.property_type.trim() : "";
+  if (NO_BUILDING_PROPERTY_TYPES.has(propertyType.toLowerCase())) return null;
   // L'adresse des sources contient souvent déjà le code postal et la commune.
-  const lower = street.toLowerCase();
+  const lower = position.street.toLowerCase();
   const extras = [sale.postal_code, sale.city]
     .map((part) => part?.trim())
     .filter((part): part is string => !!part && !lower.includes(part.toLowerCase()));
-  const address = [street, ...extras].join(", ");
-  return { ...coordinates, address, accuracyMeters: ACCURACY_METERS[precision] };
+  const address = [position.street, ...extras].join(", ");
+  return {
+    lat: position.lat,
+    lng: position.lng,
+    address,
+    accuracyMeters: ACCURACY_METERS[position.precision],
+  };
 }
 
 /**

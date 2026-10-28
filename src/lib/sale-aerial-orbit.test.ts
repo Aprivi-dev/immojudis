@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { aerialOrbitTarget, hasNumberedStreetAddress } from "./sale-aerial-orbit";
+import {
+  aerialOrbitTarget,
+  hasNumberedStreetAddress,
+  hasReliableBuildingPosition,
+} from "./sale-aerial-orbit";
 
 const base = {
   latitude: 44.8378,
@@ -124,6 +128,29 @@ describe("aerialOrbitTarget", () => {
 
   it("ignore les autres signalements", () => {
     expect(aerialOrbitTarget({ ...base, quality_flags: ["dpe_enrichment_failed"] })).not.toBeNull();
+  });
+});
+
+describe("hasReliableBuildingPosition", () => {
+  it("accepte une adresse ou une parcelle numérotée sans signalement, même pour un parking", () => {
+    expect(hasReliableBuildingPosition(base)).toBe(true);
+    expect(hasReliableBuildingPosition({ ...base, location_precision: "parcel" })).toBe(true);
+    // La vue 360° écarte les parkings et terrains ; la vignette satellite, non.
+    expect(aerialOrbitTarget({ ...base, property_type: "parking" })).toBeNull();
+    expect(hasReliableBuildingPosition({ ...base, property_type: "parking" })).toBe(true);
+  });
+
+  it.each([
+    ["rue", { location_precision: "street" }],
+    ["commune", { location_precision: "municipality" }],
+    ["absente", { location_precision: null }],
+    ["non chargée", { location_precision: undefined }],
+    ["sans numéro", { address: "rue Sainte-Catherine" }],
+    ["hors de France", { latitude: 0, longitude: 0 }],
+    ["douteuse", { quality_flags: ["unverified_source_coordinates"] }],
+    ["copie probable", { quality_flags: ["probable_duplicate"] }],
+  ])("refuse une position %s", (_name, override) => {
+    expect(hasReliableBuildingPosition({ ...base, ...override })).toBe(false);
   });
 });
 

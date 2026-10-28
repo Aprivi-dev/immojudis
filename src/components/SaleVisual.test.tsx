@@ -31,7 +31,64 @@ describe("SaleVisual", () => {
     expect(satellite.getAttribute("src")).toContain("/mapbox/satellite-v9/static/");
 
     fireEvent.load(satellite);
-    expect(await screen.findByText("Vue aérienne Mapbox")).toBeTruthy();
+    const label = await screen.findByText("Vue aérienne Mapbox");
+    expect(label).toBeTruthy();
+    // En haut à gauche : le logo Mapbox, incrusté dans l'image, est en bas à gauche.
+    expect(label.className).toContain("top-2");
+    expect(label.className).toContain("left-2");
+    expect(label.className).not.toContain("bottom-2");
+  });
+
+  it.each([
+    ["une précision de commune", { location_precision: "municipality" }],
+    ["une précision de rue", { location_precision: "street" }],
+    ["une précision inconnue", { location_precision: null }],
+    ["une précision non chargée", { location_precision: undefined }],
+    ["une adresse sans numéro", { address: "rue de l'Exemple" }],
+    ["un point douteux", { quality_flags: ["unverified_source_coordinates"] }],
+    ["une copie probable", { quality_flags: ["probable_duplicate"] }],
+    ["un point hors de France", { latitude: 0, longitude: 0 }],
+  ])("n'affiche pas le satellite pour %s", (_name, override) => {
+    vi.stubEnv("NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN", "pk.test-token");
+    vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(false);
+
+    render(
+      <SaleVisual
+        sale={
+          {
+            ...saleWithMedia("https://images.example.test/p.jpg"),
+            media: [],
+            ...override,
+          } as AuctionSale
+        }
+        title="Maison"
+        sectorMap={false}
+        placeLabel="Nice"
+      />,
+    );
+
+    expect(screen.queryByRole("img", { name: "Vue aérienne de Maison" })).toBeNull();
+    expect(screen.getByText("Aucun visuel fiable")).toBeTruthy();
+  });
+
+  it("garde le satellite pour une parcelle sans signalement douteux", () => {
+    vi.stubEnv("NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN", "pk.test-token");
+    vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(false);
+
+    render(
+      <SaleVisual
+        sale={
+          {
+            ...saleWithMedia("https://images.example.test/p.jpg"),
+            location_precision: "parcel",
+            quality_flags: ["some_text_quality_flag"],
+          } as AuctionSale
+        }
+        title="Maison"
+      />,
+    );
+
+    expect(screen.getByRole("img", { name: "Vue aérienne de Maison" })).toBeTruthy();
   });
 
   it("garde un seul @2x en 896×672 hors vignette de liste", () => {
@@ -479,6 +536,8 @@ function saleWithMedia(url: string): AuctionSale {
   return {
     ...EXAMPLE_SALE,
     id: `sale-${url}`,
+    location_precision: "address",
+    quality_flags: [],
     media: [{ type: "image", url }],
   } as AuctionSale;
 }
