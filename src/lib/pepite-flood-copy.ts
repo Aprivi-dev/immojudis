@@ -8,8 +8,12 @@
  *  - jamais de coche pour « exposé », « aucun signal » ou « inconnu » ;
  *  - la crue fréquente n'est jamais chiffrée en public (jamais « dix ans ») ;
  *  - mots interdits partout (`FLOOD_FORBIDDEN_WORDS`, vérifiés par un test) : « hors zone inondable »,
- *    « zone non inondable », « sans risque », « sécurisé », « aucun risque d’inondation » (seule la tournure
- *    « Aucun risque d’inondation élevé identifié… » est admise), « certifié ».
+ *    « zone non inondable », « sans risque », « sécurisé », « aucun risque d’inondation », « certifié ».
+ *
+ * Révision du 27/10/2026 (n° 38, à relire par `juridique-rgpd`) : la ligne « Aucun risque d’inondation élevé
+ * identifié… » avec coche disait plus que ce qui est testé (crue fréquente des TRI et périmètres de PPRi
+ * seulement). Elle devient une phrase factuelle, sans coche ; les renvois à l’état des risques et aux pièces de
+ * la vente suivent le type de vente (`FloodSaleRegime`).
  */
 
 /** Verdicts affichables : `high` ne l'est jamais (la vente n'est pas une pépite). */
@@ -20,10 +24,37 @@ export type PepiteFloodDisplayVerdict =
   | "no_signal"
   | "unknown";
 
+/** Type de vente (régime de la règle) qui fixe le document à lire et la personne à qui le demander. */
+export type FloodSaleRegime = "tribunal" | "notary_auction" | "notary_online";
+
 export const FLOOD_NONE_FOUND_LINE =
-  "Aucun risque d’inondation élevé identifié à la position connue du bien, d’après les cartes officielles consultées.";
+  "Bien non situé dans la zone de crue fréquente d’un territoire à risque important d’inondation (TRI), ni dans le périmètre d’un plan de prévention des risques d’inondation (PPRi), d’après les cartes consultées.";
 export const FLOOD_NONE_FOUND_DETAIL =
-  "Cartes consultées : zone inondée par une crue fréquente des territoires à risque important d’inondation (TRI) et périmètres des plans de prévention des risques d’inondation (PPRi). Ces cartes ne couvrent pas tout le territoire ni toutes les causes d’inondation. Ce n’est pas une garantie d’absence de risque.";
+  "Cartes consultées : zone inondée par une crue fréquente des territoires à risque important d’inondation (TRI) et périmètres des plans de prévention des risques d’inondation (PPRi). Ces cartes ne couvrent pas tout le territoire ni toutes les causes d’inondation. Un plan de prévention seulement prescrit n’apparaît pas dans ces cartes. Un risque d’inondation peut exister en dehors de ces zones. Ce n’est pas une garantie d’absence de risque.";
+
+/** Document d’information annexé à la vente et interlocuteur à qui le demander, selon le type de vente. */
+function floodDocuments(regime: FloodSaleRegime | null | undefined): {
+  annexedTo: string;
+  askTo: string;
+} {
+  switch (regime) {
+    case "tribunal":
+      return {
+        annexedTo: "au cahier des conditions de vente",
+        askTo: "l’avocat poursuivant",
+      };
+    case "notary_auction":
+      return { annexedTo: "au cahier des charges", askTo: "le notaire" };
+    case "notary_online":
+      return { annexedTo: "à l’avant-contrat", askTo: "le notaire" };
+    default:
+      return {
+        annexedTo:
+          "aux pièces de la vente (cahier des conditions de vente, cahier des charges ou avant-contrat)",
+        askTo: "l’avocat poursuivant ou le notaire",
+      };
+  }
+}
 export const FLOOD_NO_SIGNAL_LINE =
   "Risque d’inondation non vérifié au niveau du bien : sa position n’est pas assez précise. La commune ne compte aucun territoire à risque important d’inondation (TRI), ce qui ne dit rien du risque propre au bien.";
 export const FLOOD_UNKNOWN_LINE =
@@ -33,8 +64,11 @@ export const FLOOD_UNKNOWN_LAST_CHECK_PREFIX = "Dernier contrôle réussi le";
 /** Mention courte « exposé » : partout où le badge Pépite apparaît (fiche, cartes, carte, texte accessible). */
 export const FLOOD_EXPOSED_SHORT =
   "Dans le périmètre d’un plan de prévention des risques d’inondation (PPRi) : zonage à vérifier.";
-export const FLOOD_EXPOSED_LONG =
-  "Ce bien se trouve dans le périmètre d’un plan de prévention des risques d’inondation (PPRi), d’après le Géoportail de l’urbanisme. Ce périmètre ne dit pas dans quelle zone du plan (rouge, bleue ou autre) se situe le bien, ni quelles règles s’y appliquent. Vérifiez-le dans l’état des risques et les diagnostics annexés au cahier des conditions de vente (demandez-les à l’avocat poursuivant s’ils manquent), et auprès de la mairie.";
+/** Mention longue « exposé » : le renvoi aux pièces suit le type de vente. */
+export function floodExposedLong(regime?: FloodSaleRegime | null): string {
+  const { annexedTo, askTo } = floodDocuments(regime);
+  return `Ce bien se trouve dans le périmètre d’un plan de prévention des risques d’inondation (PPRi), d’après le Géoportail de l’urbanisme. Ce périmètre ne dit pas dans quelle zone du plan (rouge, bleue ou autre) se situe le bien, ni quelles règles s’y appliquent. Vérifiez-le dans l’état des risques et pollutions, lorsqu’il est exigé, et dans les diagnostics annexés ${annexedTo} (demandez-les à ${askTo} s’ils manquent), et auprès de la mairie.`;
+}
 /**
  * « Aucun risque élevé identifié » qui ne repose que sur les TRI : les périmètres de PPRi n'ont pas pu être lus.
  * Ligne neutre, sans coche et sans la phrase sur les périmètres de PPRi.
@@ -42,15 +76,20 @@ export const FLOOD_EXPOSED_LONG =
 export const FLOOD_TRI_ONLY_LINE =
   "Zone de crue fréquente des TRI consultée ; périmètres de PPRi non contrôlés à ce jour.";
 /** Mise en garde sous le bloc Pépite de la fiche, quand un contrôle d'inondation y figure. */
-export const FLOOD_WARNING =
-  "Contrôle automatique d’après des cartes officielles, sans valeur d’expertise. Ce n’est ni un état des risques, ni un certificat : il ne garantit pas l’absence de risque d’inondation et ne remplace pas l’état des risques annexé au cahier des conditions de vente.";
+export function floodWarning(regime?: FloodSaleRegime | null): string {
+  const { annexedTo } = floodDocuments(regime);
+  return `Contrôle automatique d’après des cartes officielles, sans valeur d’expertise. Ce n’est ni un état des risques, ni un certificat : il ne garantit pas l’absence de risque d’inondation et ne remplace pas l’état des risques et pollutions, lorsqu’il est exigé, annexé ${annexedTo}.`;
+}
 
 export const FLOOD_TRI_SOURCE_URL = "https://www.georisques.gouv.fr/";
 export const FLOOD_PM1_SOURCE_URL = "https://www.geoportail-urbanisme.gouv.fr/";
 
-/** « Source : Géorisques …, scénario de crue fréquente ; consulté le [date] ». */
-export function floodTriSourceLine(checkedOn: string | null): string {
-  return `Source : Géorisques (ministère de la Transition écologique, BRGM), cartographie des territoires à risque important d’inondation (TRI), scénario de crue fréquente${checkedOn ? ` ; consulté le ${checkedOn}` : ""}.`;
+/** « Source : Géorisques …, scénario de crue fréquente ; carte du [date de la carte] ; consulté le [date] ». */
+export function floodTriSourceLine(
+  checkedOn: string | null,
+  mapDate: string | null = null,
+): string {
+  return `Source : Géorisques (ministère de la Transition écologique, BRGM), cartographie des territoires à risque important d’inondation (TRI), scénario de crue fréquente${mapDate ? ` ; carte du ${mapDate}` : ""}${checkedOn ? ` ; consulté le ${checkedOn}` : ""}.`;
 }
 
 /** « Source : Géoportail de l’urbanisme …, servitude PM1 ; consulté le [date] ». */
@@ -60,8 +99,9 @@ export function floodPm1SourceLine(checkedOn: string | null): string {
 
 /**
  * Mots et tournures qu'aucun texte du contrôle d'inondation ne doit contenir (test : `pepite-flood-copy.test.ts`).
- * « aucun risque d’inondation » n'est refusé que seul : « Aucun risque d’inondation élevé identifié… » est la
- * tournure validée.
+ * « aucun risque d’inondation » n'est refusé que seul : la tournure « Aucun risque d’inondation élevé identifié »
+ * ne subsiste que dans les libellés internes de l'administration (`pepite-reasons.ts`), jamais dans un texte public ;
+ * la ligne publique qui la portait (coche verte) est retirée (n° 38) et ne doit pas revenir.
  */
 export const FLOOD_FORBIDDEN_WORDS: readonly RegExp[] = [
   /hors zone inondable/i,
@@ -69,6 +109,7 @@ export const FLOOD_FORBIDDEN_WORDS: readonly RegExp[] = [
   /sans risque/i,
   /sécurisé/i,
   /aucun risque d[’']inondation(?! élevé)/i,
+  /aucun risque d[’']inondation élevé identifié à la position connue/i,
   /certifié/i,
   /dix ans/i,
   /10 ans/i,
