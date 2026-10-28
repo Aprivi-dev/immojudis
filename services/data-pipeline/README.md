@@ -299,6 +299,40 @@ Cette commande requiert `SUPABASE_DB_URL` et écrit dans `dvf_import_batches` et
 plan-gatées ; elles ne doivent pas être ré-exposées directement ni indexées par
 des moteurs externes.
 
+## Données de référence (`reference_data`)
+
+Jeux ouverts qui alimentent les blocs « Risques environnementaux » et « Historique météo » d'une annonce, les
+rendements (carte des loyers) et, à venir, le zonage tendu. Import manuel, jamais planifié :
+
+```bash
+cd services/data-pipeline
+python -m src.reference_data {communes,risks,climate,rents,tension,all} [--dry-run] [--work-dir DIR]
+```
+
+- **Sans `--dry-run`, l'import écrit en production** : `SUPABASE_DB_URL` est obligatoire (l'import s'arrête sans
+  elle). Avec `--dry-run`, il télécharge et analyse sans rien écrire et affiche le résumé (par exemple
+  `web_edition_gap` pour `rents`).
+- Jeux et tables : `communes` (geo.api.gouv.fr, `reference_communes`), `risks` (GASPAR, `commune_risk_profiles`),
+  `climate` (Météo-France, `climate_stations` et `climate_station_months`), `rents` (carte des loyers de l'ANIL,
+  `anil_rents`) et `tension` (zonage TLV, `commune_housing_tension`). `all` les relance **tous les cinq**, dans cet
+  ordre.
+- Gardes contre une source tronquée : au moins 30 000 communes pour `communes` et `risks`, au moins 90
+  départements de fichiers pour `climate`, au moins 34 000 communes par segment pour `rents` et au total pour
+  `tension` ; pour `rents` et `tension`, au plus 0,5 % de lignes rejetées. Un refus lève une erreur avant toute
+  écriture.
+- L'écriture se fait par paquets de 1 000 lignes, avec un commit par paquet : elle n'est **pas atomique**. Pour
+  `rents` et `tension`, l'import purge ensuite les lignes non touchées puis contrôle la table (un seul millésime
+  et le bon nombre de lignes pour `anil_rents`) ; un échec laisse un mélange, que le même import relancé répare
+  (il est idempotent).
+- Dans GitHub Actions : workflow **Reference data import** (manuel, entrées `dataset` et `dry_run`, 90 minutes au
+  plus, secret `SUPABASE_DB_URL`).
+- Rythme : `rents` chaque décembre (checklist : `docs/runbooks/import-annuel-anil.md`), `tension` après un décret,
+  `communes`, `risks` et `climate` rarement (les sources se renouvellent au plus tous les mois), `all` à éviter
+  pour une mise à jour ciblée.
+- Détail des sources, des formats et de la lecture par l'application :
+  `docs/operations/donnees-de-reference-loyers-et-zonage.md` et
+  `docs/operations/donnees-de-reference-environnement.md`.
+
 ## Entraînement de l'estimation immobilière
 
 Le modèle de valorisation est entraîné hors ligne à partir de la table DVF
