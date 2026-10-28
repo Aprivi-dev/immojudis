@@ -907,7 +907,7 @@ def _guard_enrichment_revision(connection, sales: list[AuctionSale]) -> list[Auc
     retained = []
     for sale in sorted(sales, key=lambda item: item.source_url):
         current = connection.execute(
-            "select updated_at from public.auction_sales where source_url=%s for update",
+            "select updated_at from public.auction_sales where source_url=%s for no key update",
             (sale.source_url,),
         ).fetchone()
         if current is None or sale.updated_at is None or current[0] != sale.updated_at:
@@ -2034,7 +2034,7 @@ def _persist_pdf_document_checkpoint_with_connection(
     source_url = clean_text(sale.source_url)
     expected_updated_at = sale.updated_at
     current = connection.execute(
-        "select updated_at from public.auction_sales where source_url=%s for update",
+        "select updated_at from public.auction_sales where source_url=%s for no key update",
         (source_url,),
     ).fetchone()
     if current is None or current[0] != expected_updated_at:
