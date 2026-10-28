@@ -29,11 +29,14 @@ function mainVisual(page: Page, view: "photos" | "vue") {
     : page.getByRole("button", { name: "Ouvrir la galerie photos" });
 }
 
-/** Hauteur du visuel une fois la fiche affichée (la mise en page n'existe pas avant l'hydratation). */
+/**
+ * Hauteur du visuel une fois la fiche affichée (la mise en page n'existe pas avant l'hydratation),
+ * arrondie au pixel : Firefox rend 500 px en 499,99997.
+ */
 async function heightOf(page: Page, view: "photos" | "vue") {
   const visual = mainVisual(page, view);
   await expect.poll(async () => (await visual.boundingBox())?.height ?? 0).toBeGreaterThan(0);
-  return (await visual.boundingBox())?.height ?? 0;
+  return Math.round((await visual.boundingBox())?.height ?? 0);
 }
 
 /** Tailles du cadre de la vue aérienne, de son conteneur Mapbox et de son canevas (s'il existe). */
