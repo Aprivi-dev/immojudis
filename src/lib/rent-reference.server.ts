@@ -257,6 +257,13 @@ export type RentLookupSession = {
    * et l'appelant applique le repli départemental.
    */
   load(sales: readonly RentSaleFacts[]): Promise<RentLookup>;
+  /**
+   * « ANIL indisponible » : vrai quand la lecture de la carte des loyers a échoué (ou n'a pas pu être tentée, base de
+   * service non configurée) pour au moins un de ces logements, qui est alors resté sur le repère départemental. Un
+   * bien qui n'est pas un logement n'a pas de référence et n'est jamais « indisponible ». Une panne ne se mémorise
+   * pas : la lecture suivante est retentée.
+   */
+  unavailable(sales: readonly RentSaleFacts[]): boolean;
 };
 
 /**
@@ -299,6 +306,9 @@ export function createRentLookupSession(): RentLookupSession {
   }
 
   return {
+    unavailable(sales) {
+      return sales.some((sale) => isRentApplicable(sale) && !references.has(sale.id.toLowerCase()));
+    },
     async load(sales) {
       if (!sales.length || !adminConfigured()) return lookup;
       const wanted = new Map<string, RentSaleFacts>();

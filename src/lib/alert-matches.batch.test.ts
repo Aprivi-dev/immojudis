@@ -140,6 +140,8 @@ const rents = vi.hoisted(() => ({
   calls: [] as string[][],
   sessions: 0,
   references: {} as Record<string, unknown>,
+  /** « ANIL indisponible » : la lecture de la carte des loyers a échoué. */
+  unavailable: false,
 }));
 vi.mock("@/lib/rent-reference.server", () => ({
   createRentLookupSession: () => {
@@ -149,10 +151,11 @@ vi.mock("@/lib/rent-reference.server", () => ({
         rents.calls.push(sales.map((sale) => sale.id));
         return (sale: { id: string }) => rents.references[sale.id] ?? null;
       },
+      unavailable: () => rents.unavailable,
     };
   },
 }));
-const notified = vi.hoisted(() => ({ saleIds: [] as string[] }));
+const notified = vi.hoisted(() => ({ saleIds: [] as string[], suppressedSaleIds: [] as string[] }));
 vi.mock("@/lib/alert-notifications", () => ({
   createAlertNotificationsForMatches: async ({
     matches,
@@ -161,6 +164,14 @@ vi.mock("@/lib/alert-notifications", () => ({
   }) => {
     notified.saleIds.push(...matches.map((match) => match.saleId));
     return { notificationCount: matches.length };
+  },
+  suppressAlertNotificationsForMatches: async ({
+    matches,
+  }: {
+    matches: Array<{ saleId: string }>;
+  }) => {
+    notified.suppressedSaleIds.push(...matches.map((match) => match.saleId));
+    return { suppressedCount: matches.length };
   },
 }));
 
@@ -205,6 +216,8 @@ describe("smart alert batch", () => {
     rents.sessions = 0;
     rents.references = {};
     notified.saleIds = [];
+    notified.suppressedSaleIds = [];
+    rents.unavailable = false;
     delete process.env.ALERT_RENT_BASIS_SWITCH_AT;
     resetPepiteSaleIdsForAlertsCache();
   });
@@ -450,6 +463,36 @@ describe("smart alert batch", () => {
       ).toEqual(["sale-new", "sale-old"]);
       // Celle qui existait avec le loyer départemental reste notifiée, comme avant.
       expect(notified.saleIds).toEqual(["sale-old"]);
+      // La tue est consignée (notification « cancelled ») pour bloquer toute notification ultérieure.
+      expect(notified.suppressedSaleIds).toEqual(["sale-new"]);
+    });
+
+    it("lecture de l'ANIL en échec : l'alerte à critère de rendement n'avance pas et ne consomme pas la fenêtre", async () => {
+      process.env.ALERT_RENT_BASIS_SWITCH_AT = hoursAgo(1);
+      arrange(alertRow(1, { min_yield_pct: 6, last_evaluated_at: hoursAgo(5) }));
+      rents.unavailable = true;
+
+      const result = await runSmartAlertEvaluationBatch();
+
+      expect(result.failedUserCount).toBe(1);
+      expect(state.updates).toEqual([]);
+      expect(state.upserts).toEqual([]);
+      expect(notified.saleIds).toEqual([]);
+      expect(notified.suppressedSaleIds).toEqual([]);
+
+      // Une fois l'ANIL revenue, l'alerte est toujours dans la fenêtre silencieuse (sa date n'a pas bougé).
+      rents.unavailable = false;
+      await runSmartAlertEvaluationBatch();
+      expect(notified.suppressedSaleIds).toEqual(["sale-new"]);
+      expect(notified.saleIds).toEqual(["sale-old"]);
+    });
+
+    it("une alerte sans critère de rendement ne dépend pas de la lecture de l'ANIL", async () => {
+      arrange(alertRow(1, { last_evaluated_at: hoursAgo(5) }));
+      rents.unavailable = true;
+      const result = await runSmartAlertEvaluationBatch();
+      expect(result.failedUserCount).toBe(0);
+      expect(state.updates).toHaveLength(1);
     });
 
     it("ne tait rien sans le marqueur, hors des 48 heures, ni pour une alerte déjà évaluée depuis", async () => {

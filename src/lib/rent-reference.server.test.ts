@@ -413,6 +413,41 @@ describe("rent lookup session", () => {
     expect(lookup({ id: "a" })?.communeCode).toBe("33063");
     expect(lookup({ id: "b" })?.communeCode).toBe("69383");
   });
+
+  it("dit « ANIL indisponible » quand la lecture a échoué, et plus une fois la lecture réussie", async () => {
+    const sale = withGeocode("sale-a", "33063");
+    const session = createRentLookupSession();
+    // Rien n'a été lu : la référence d'un logement n'est pas résolue.
+    expect(session.unavailable([sale])).toBe(true);
+
+    state.failTable = "anil_rents";
+    const lookup = await session.load([sale]);
+    expect(lookup({ id: "sale-a" })).toBeNull();
+    expect(session.unavailable([sale])).toBe(true);
+
+    state.failTable = null;
+    state.anilRows = [anil("33063", "apt_1_2")];
+    await session.load([sale]);
+    expect(session.unavailable([sale])).toBe(false);
+  });
+
+  it("n'est jamais « indisponible » pour un bien qui n'est pas un logement, ni pour une liste vide", async () => {
+    const session = createRentLookupSession();
+    const land = withGeocode("land", "33063", { property_type: "land" });
+    expect(session.unavailable([])).toBe(false);
+    expect(session.unavailable([land])).toBe(false);
+    state.failTable = "anil_rents";
+    await session.load([land]);
+    expect(session.unavailable([land])).toBe(false);
+  });
+
+  it("est « indisponible » quand la base de service n'est pas configurée", async () => {
+    state.configured = false;
+    const session = createRentLookupSession();
+    const sale = withGeocode("sale-a", "33063");
+    await session.load([sale]);
+    expect(session.unavailable([sale])).toBe(true);
+  });
 });
 
 describe("loadSaleRentReference", () => {
