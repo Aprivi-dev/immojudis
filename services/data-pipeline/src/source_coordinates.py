@@ -9,6 +9,9 @@ commune (mesure du 28/10/2026 : 7 sur 209 à moins de 150 m) : ce sont de vrais 
 Règle (``promote_source_coordinates``, appelée par ``src.geocode.verify_source_coordinates``) : un point de la source
 est promu quand
 
+* l'adresse de la vente contient une voie ou un lieu-dit (``has_street_or_place``). Une vente dont l'adresse se réduit
+  à la commune garde une position approximative, quelle que soit la distance : un point publié par la source pour une
+  commune seule n'est pas la preuve d'une adresse ;
 * il a passé le contrôle de cohérence (dans le département de la vente, à moins de 12 km du centre de sa commune) ;
 * aucun résultat BAN ni parcelle ne le remplace (aucune preuve acceptée), et aucun drapeau de position douteuse ;
 * il est à plus de ``MIN_DISTANCE_FROM_COMMUNE_M`` mètres du centre de sa commune (``reference_communes``). Plus près,
@@ -30,6 +33,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.geocode_query import has_street_or_place
 from src.models import AuctionSale
 from src.position_quality import POSITION_FLAGS
 
@@ -82,6 +86,8 @@ def promote_source_coordinates(sale: AuctionSale, *, distance_km: float, commune
     if sale.latitude is None or sale.longitude is None or not isinstance(payload, dict):
         return False
     if distance_km * 1000 <= MIN_DISTANCE_FROM_COMMUNE_M or payload.get("geo_precision"):
+        return False
+    if not has_street_or_place(sale.address):
         return False
     if any(flag in POSITION_FLAGS for flag in sale.quality_flags):
         return False

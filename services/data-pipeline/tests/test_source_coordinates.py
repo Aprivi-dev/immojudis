@@ -190,6 +190,28 @@ def test_a_non_numbered_source_point_is_promoted_like_any_other(communes) -> Non
     assert sale.raw_payload["geo_precision"] == "address"
 
 
+@pytest.mark.parametrize("address", ["06130 Grasse", "Grasse", "06130 GRASSE", None])
+def test_an_address_reduced_to_the_commune_keeps_an_approximate_position(communes, address) -> None:
+    sale = _sale("43.6620", "6.9290", address=address)  # loin du centre, mais aucune voie ni lieu-dit
+
+    assert verify_source_coordinates(sale) is None
+
+    assert "geo_precision" not in sale.raw_payload
+    assert sale.raw_payload.get("geocode", {}).get("provider") != PROVIDER
+    assert (sale.latitude, sale.longitude) == (Decimal("43.6620"), Decimal("6.9290"))
+
+
+def test_the_promotion_is_withdrawn_when_the_address_loses_its_street(communes) -> None:
+    sale = _sale("43.6620", "6.9290")
+    verify_source_coordinates(sale)
+    assert sale.raw_payload["geo_precision"] == "address"
+
+    sale.address = "06130 Grasse"
+    verify_source_coordinates(sale)
+
+    assert "geo_precision" not in sale.raw_payload and "geocode" not in sale.raw_payload
+
+
 # --- avec la BAN ------------------------------------------------------------------------------------------
 
 
