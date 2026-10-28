@@ -1,4 +1,7 @@
-"""Rapport et suppression CONTRÔLÉE des ventes aux informations insuffisantes déjà en base.
+"""Rapport et suppression CONTRÔLÉE des ventes sans le minimum d'une annonce déjà en base (src/listing_minimum.py).
+
+La règle est la même que celle de l'écriture et de la réparation SQL ``supabase/repairs/20261108202100_delete_empty_listings.sql``
+(préférée : elle lit les clés étrangères dans la base). Cette commande reste pour les cas ponctuels.
 
 Utilisé par ``python -m src.recompute_scoring --drop-insufficient``. Rien ne s'exécute seul :
 
@@ -76,12 +79,7 @@ def evaluate_rows(
             stats["unreadable"] += 1
             LOGGER.warning("Insufficient-information check skipped a row (%s)", type(exc).__name__)
             continue
-        stored_status = str(row.get("status") or "").lower()
-        if stored_status:
-            sale.status = stored_status  # le statut stocké fait foi pour les exemptions
         verdict = sufficient_information(sale, blocklist=blocklist)
-        if verdict.exemption:
-            stats["exempt"] += 1
         if verdict.sufficient:
             stats["kept"] += 1
             continue

@@ -22,12 +22,6 @@ from src.models import AuctionSale
 GOOD_ADDRESS = "3 rue des Lilas, 59000 Exempleville"
 
 
-@pytest.fixture(autouse=True)
-def _street_level_address(monkeypatch):
-    # Reason lists below are written for the stricter street-level mode.
-    monkeypatch.setenv("IMMOJUDIS_SUFFICIENCY_MIN_ADDRESS", "street")
-
-
 def row(sale_id: str, **fields) -> dict:
     base = {
         "id": sale_id,
@@ -50,26 +44,21 @@ def to_sale(stored: dict) -> AuctionSale:
 
 
 # ------------------------------------------------------------------ évaluation et rapport
-def test_evaluate_rows_keeps_exempt_and_complete_sales_and_lists_the_rest():
+def test_evaluate_rows_keeps_listings_with_the_minimum_and_lists_the_rest():
     rows = [
         row("1", address=GOOD_ADDRESS, surface_m2=50),
         row("2", address=GOOD_ADDRESS),
         row("3", lawyer_contact="me.exemple@cabinet-exemple.test"),
         row("4", status="past"),
-        row("5"),
+        row("5", lawyer_name="Maître Exemple", lawyer_contact="04 00 00 00 00"),
     ]
     candidates, stats = evaluate_rows(rows, to_sale, ContactBlocklist())
-    # An address alone keeps sale 2 (owner rule of 12/10/2026).
+    # Un nom d'avocat ou un téléphone seul ne suffit pas, ni une vente passée sans le minimum.
     assert [(c.sale_id, c.reasons) for c in candidates] == [
-        ("5", ("missing_address", "missing_surface", "missing_contact")),
+        ("4", ("insufficient_listing",)),
+        ("5", ("insufficient_listing",)),
     ]
-    assert stats["evaluated"] == 5 and stats["kept"] == 4 and stats["exempt"] == 1 and stats["insufficient"] == 1
-
-
-def test_stored_status_wins_over_a_status_recomputed_by_normalisation():
-    candidates, stats = evaluate_rows([row("9", status="adjudicated")], lambda r: to_sale({**r, "status": "upcoming"}),
-                                      ContactBlocklist())
-    assert candidates == [] and stats["exempt"] == 1
+    assert stats["evaluated"] == 5 and stats["kept"] == 3 and stats["insufficient"] == 2
 
 
 def test_an_unreadable_row_is_counted_and_never_proposed_for_deletion():
