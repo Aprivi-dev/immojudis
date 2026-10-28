@@ -25,19 +25,19 @@ function tone(days: number | null): {
   if (days == null) return { bg: "bg-muted", text: "text-muted-foreground", ring: "ring-border" };
   if (days < 7)
     return {
-      bg: "bg-red-100 dark:bg-red-900/30",
-      text: "text-red-900 dark:text-red-200",
+      bg: "bg-red-100",
+      text: "text-red-900",
       ring: "ring-red-300/50",
     };
   if (days < 30)
     return {
-      bg: "bg-amber-100 dark:bg-amber-900/30",
-      text: "text-amber-900 dark:text-amber-200",
+      bg: "bg-amber-100",
+      text: "text-amber-900",
       ring: "ring-amber-300/50",
     };
   return {
-    bg: "bg-emerald-100 dark:bg-emerald-900/30",
-    text: "text-emerald-900 dark:text-emerald-200",
+    bg: "bg-emerald-100",
+    text: "text-emerald-900",
     ring: "ring-emerald-300/50",
   };
 }

@@ -242,21 +242,6 @@
   border-radius: 50%;
 }
 
-.checklistComplete {
-  border-color: var(--line-warm) !important;
-  background: var(--success-tint);
-}
-
-.checklistComplete .checkMark {
-  width: 17px;
-  height: 17px;
-  margin-top: 0;
-  border: 0;
-  color: var(--success);
-  font-weight: 800;
-  line-height: 17px;
-}
-
 .noteLabel {
   display: grid;
   gap: 3px;

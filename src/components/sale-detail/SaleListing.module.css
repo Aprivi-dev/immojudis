@@ -51,12 +51,6 @@
   background: #ffffff;
   padding: 22px 24px;
 }
-.heroDetails {
-  display: grid;
-  align-items: start;
-  gap: 24px;
-  margin-top: 28px;
-}
 .lower {
   margin-top: 32px;
 }
@@ -495,17 +489,6 @@
   line-height: 1.3;
   margin-top: 4px;
 }
-.analysisHeading {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 36px 0 18px;
-  border-top: 1px solid var(--line-soft);
-  margin-top: 36px;
-}
-.analysisHeading .heading {
-  margin-bottom: 3px;
-}
 .page :is(button, a, summary, input):focus-visible {
   outline: 2px solid var(--gold-soft);
   outline-offset: 4px;
@@ -564,10 +547,6 @@
   .lower {
     grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.9fr);
     gap: 28px;
-  }
-  .heroDetails {
-    grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.85fr);
-    gap: 40px;
   }
   .heading {
     font-size: 24px;
@@ -753,10 +732,6 @@
     padding-right: 24px;
   }
 }
-.discoveryBilling > button {
-  color: var(--night);
-}
-
 /* Vue aérienne 360° en tête de fiche : mêmes hauteurs que la photo principale. */
 .orbitMain {
   height: clamp(15rem, 65vw, 22rem);

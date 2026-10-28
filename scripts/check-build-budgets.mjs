@@ -117,10 +117,9 @@ const MAX_CLIENT_CHUNK_BYTES = 335_000;
 // relèvement à 6 275 000.
 const MAX_TOTAL_CLIENT_JS_BYTES = 6_275_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
-// New homepage: lossless panorama for large screens plus editorial photography.
+// Homepage editorial photography (heavier than the default landing image budget).
 const MAX_PUBLIC_MEDIA_BYTES = 5_000_000;
 const HOMEPAGE_IMAGE_BUDGETS = {
-  "public/media/landing/cinematic-bordeaux-lossless.webp": 2_300_000,
   "public/media/landing/gallery-townhouse.webp": 460_000,
   "public/media/landing/gallery-land.webp": 460_000,
 };

@@ -79,14 +79,9 @@ export const DEFAULT_PRELIMINARY_FEES = 5_000;
 export const DEFAULTS = {
   fpt: DEFAULT_PRELIMINARY_FEES,
   works: 0,
-  safetyDiscountPct: 8,
   /** Honoraires de l'avocat enchérisseur, hors émoluments tarifés (TTC). */
   lawyerFees: 1_500,
-  occupancyDiscountPct: 15,
-  occupancyCarryMonths: 12,
 };
-
-const DEFAULT_MARKET_CEILING_SCENARIO = "prudent" as const;
 
 export const REFRESH_WORKS_PRICE_PER_M2 = 500;
 
@@ -258,109 +253,6 @@ function clampRate(value: number): number {
   return Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0;
 }
 
-export const MARKET_CEILING_SCENARIOS = [
-  {
-    key: "prudent",
-    label: "Prudent",
-    basis: "p10",
-    basisLabel: "prix bas du secteur",
-    safetyDiscountPct: 8,
-    description:
-      "Profil par défaut : référence = les 10 % des ventes comparables les moins chères, puis marge de sécurité de 8 %.",
-  },
-  {
-    key: "offensif",
-    label: "Offensif",
-    basis: "median",
-    basisLabel: "médiane locale",
-    safetyDiscountPct: 4,
-    description: "Marge de sécurité de 4 %, à réserver aux dossiers très lisibles.",
-  },
-] as const;
-
-export type MarketCeilingScenarioKey = (typeof MARKET_CEILING_SCENARIOS)[number]["key"];
-export type MarketCeilingBasis = (typeof MARKET_CEILING_SCENARIOS)[number]["basis"];
-
-export type OccupancyKind = "free" | "occupied" | "unknown";
-
-/** Range un statut d'occupation brut (`occupancy_status`) dans trois cas. */
-export function classifyOccupancy(status: string | null | undefined): OccupancyKind {
-  const value = (status ?? "").trim().toLowerCase();
-  if (!value || value === "unknown" || value === "inconnu") return "unknown";
-  if (value.includes("libre") || value === "vacant" || value === "free") return "free";
-  return "occupied";
-}
-
-export type OccupancyInputs = {
-  /** Un bien occupé ou d'occupation inconnue subit une décote et un portage. */
-  occupancy?: OccupancyKind;
-  occupancyDiscountPct?: number;
-  carryMonths?: number;
-  monthlyCarryCharges?: number;
-};
-
-export type MarketCeilingInputs = AcquisitionCostOptions &
-  OccupancyInputs & {
-    surface: number | null;
-    price: number;
-    scenario: MarketCeilingScenarioKey | "custom";
-    customSafetyDiscountPct?: number;
-    medianPricePerM2?: number | null;
-    p10PricePerM2?: number | null;
-    p25PricePerM2?: number | null;
-    p75PricePerM2?: number | null;
-    p90PricePerM2?: number | null;
-    manualMarketPricePerM2?: number | null;
-  };
-
-export type OccupancyAdjustment = {
-  applied: boolean;
-  status: OccupancyKind;
-  discountPct: number;
-  discountAmount: number;
-  carryMonths: number;
-  carryingCost: number;
-  /** Baisse de la mise plafond causée par l'occupation, en euros. */
-  bidReduction: number;
-};
-
-export type MarketCeilingResult = {
-  available: boolean;
-  reason?: string;
-  /** Avertissement affiché à côté du plafond (ex. scénario prudent sans borne basse). */
-  warning?: string;
-  occupancy?: OccupancyAdjustment;
-  surface: number;
-  scenario: MarketCeilingScenarioKey | "custom";
-  basis: MarketCeilingBasis | "manual" | "p25";
-  basisLabel: string;
-  marketReferencePricePerM2: number;
-  safetyDiscountPct: number;
-  safetyDiscountPerM2: number;
-  maxAllInPricePerM2: number;
-  targetTotalCost: number;
-  maxBid: number;
-  maxBidPricePerM2: number;
-  maxBidIsReachable: boolean;
-  simulated: AcquisitionCostResult;
-  simulatedBidPricePerM2: number;
-  simulatedAllInPricePerM2: number;
-  marginTotal: number;
-  marginPerM2: number;
-  maxWorksAtSimulatedPrice: number;
-  p10PricePerM2: number | null;
-  p25PricePerM2: number | null;
-  medianPricePerM2: number | null;
-  p75PricePerM2: number | null;
-  p90PricePerM2: number | null;
-};
-
-export type RecommendedCeilings = {
-  withoutWorks: MarketCeilingResult;
-  withRefreshWorks: MarketCeilingResult;
-  refreshWorksBudget: number;
-};
-
 export type RentabilityScoreFactor = {
   key: string;
   label: string;
@@ -443,128 +335,6 @@ function costOptionsOf(inputs: AcquisitionCostOptions): AcquisitionCostOptions {
     registrationRate: inputs.registrationRate,
     taxRegime: inputs.taxRegime,
     emolumentBrackets: inputs.emolumentBrackets,
-  };
-}
-
-function occupancyAdjustment(
-  inputs: OccupancyInputs,
-  marketReferenceTotal: number,
-): Omit<OccupancyAdjustment, "bidReduction"> {
-  const status = inputs.occupancy ?? "free";
-  const applied = status !== "free";
-  const discountPct = clamp(inputs.occupancyDiscountPct ?? DEFAULTS.occupancyDiscountPct, 0, 60);
-  const carryMonths = Math.max(0, Math.round(inputs.carryMonths ?? DEFAULTS.occupancyCarryMonths));
-  return {
-    applied,
-    status,
-    discountPct,
-    discountAmount: applied ? Math.round(marketReferenceTotal * (discountPct / 100)) : 0,
-    carryMonths,
-    carryingCost: applied
-      ? Math.round(carryMonths * Math.max(0, inputs.monthlyCarryCharges ?? 0))
-      : 0,
-  };
-}
-
-export function computeMarketCeiling(inputs: MarketCeilingInputs): MarketCeilingResult {
-  const surface = Math.max(0, inputs.surface || 0);
-  const costOptions = costOptionsOf(inputs);
-  const simulated = computeAcquisitionCosts({ price: inputs.price, ...costOptions });
-
-  if (surface <= 0) {
-    return unavailableResult("Surface manquante", surface, inputs, simulated);
-  }
-
-  const manualMarket = cleanPositive(inputs.manualMarketPricePerM2);
-  const scenarioConfig =
-    MARKET_CEILING_SCENARIOS.find((item) => item.key === inputs.scenario) ??
-    MARKET_CEILING_SCENARIOS.find((item) => item.key === DEFAULT_MARKET_CEILING_SCENARIO)!;
-  const references = {
-    manual: manualMarket,
-    median: cleanPositive(inputs.medianPricePerM2),
-    p10: cleanPositive(inputs.p10PricePerM2),
-    p25: cleanPositive(inputs.p25PricePerM2),
-  };
-  const basis = (["manual", scenarioConfig.basis, "median", "p10", "p25"] as const).find(
-    (candidate) => references[candidate] != null,
-  );
-  const marketReference = basis ? references[basis] : null;
-
-  if (!marketReference || !basis) {
-    return unavailableResult("Prix de marché local insuffisant", surface, inputs, simulated);
-  }
-
-  const safetyDiscountPct =
-    inputs.scenario === "custom"
-      ? clamp(inputs.customSafetyDiscountPct ?? DEFAULTS.safetyDiscountPct, 0, 40)
-      : scenarioConfig.safetyDiscountPct;
-  const maxAllInPricePerM2 = marketReference * (1 - safetyDiscountPct / 100);
-  const occupancy = occupancyAdjustment(inputs, marketReference * surface);
-  const targetBeforeOccupancy = Math.max(0, maxAllInPricePerM2 * surface);
-  const targetTotalCost = Math.max(
-    0,
-    targetBeforeOccupancy - occupancy.discountAmount - occupancy.carryingCost,
-  );
-  const maxBid = solveMaxBid(targetTotalCost, costOptions);
-  const maxBidFree = occupancy.applied ? solveMaxBid(targetBeforeOccupancy, costOptions) : maxBid;
-  const maxBidCosts = computeAcquisitionCosts({ price: maxBid, ...costOptions });
-  const maxBidIsReachable = maxBid > 0 && maxBidCosts.totalCost <= targetTotalCost + 1;
-  // Le scénario prudent suppose une borne basse ; sans elle il retombe sur la
-  // médiane, ce qui n'a plus rien de prudent et doit se voir.
-  const prudentWithoutLowBound =
-    inputs.scenario === "prudent" && basis !== "p10" && basis !== "manual";
-
-  return {
-    available: true,
-    warning: prudentWithoutLowBound
-      ? "Borne basse indisponible sur cet échantillon : le profil prudent s’appuie sur la médiane locale, seule la marge de sécurité protège ce plafond."
-      : undefined,
-    occupancy: { ...occupancy, bidReduction: Math.max(0, maxBidFree - maxBid) },
-    surface,
-    scenario: inputs.scenario,
-    basis,
-    basisLabel: {
-      manual: "prix marché saisi",
-      median: "médiane locale",
-      p10: "prix bas du secteur",
-      p25: "quart le moins cher du secteur",
-    }[basis],
-    marketReferencePricePerM2: Math.round(marketReference),
-    safetyDiscountPct,
-    safetyDiscountPerM2: Math.round(marketReference - maxAllInPricePerM2),
-    maxAllInPricePerM2: Math.round(maxAllInPricePerM2),
-    targetTotalCost: Math.round(targetTotalCost),
-    maxBid,
-    maxBidPricePerM2: maxBid > 0 ? maxBid / surface : 0,
-    maxBidIsReachable,
-    simulated,
-    simulatedBidPricePerM2: simulated.price / surface,
-    simulatedAllInPricePerM2: simulated.totalCost / surface,
-    marginTotal: Math.round(targetTotalCost - simulated.totalCost),
-    marginPerM2: Math.round(targetTotalCost / surface - simulated.totalCost / surface),
-    maxWorksAtSimulatedPrice: Math.max(
-      0,
-      Math.round(
-        targetTotalCost -
-          computeAcquisitionCosts({ price: simulated.price, ...costOptions, works: 0 }).totalCost,
-      ),
-    ),
-    p10PricePerM2: cleanPositive(inputs.p10PricePerM2),
-    p25PricePerM2: cleanPositive(inputs.p25PricePerM2),
-    medianPricePerM2: cleanPositive(inputs.medianPricePerM2),
-    p75PricePerM2: cleanPositive(inputs.p75PricePerM2),
-    p90PricePerM2: cleanPositive(inputs.p90PricePerM2),
-  };
-}
-
-export function computeRecommendedCeilings(
-  inputs: Omit<MarketCeilingInputs, "works">,
-): RecommendedCeilings {
-  const refreshWorksBudget = estimateWorksBudget(inputs.surface, "rafraichissement");
-  return {
-    withoutWorks: computeMarketCeiling({ ...inputs, works: 0 }),
-    withRefreshWorks: computeMarketCeiling({ ...inputs, works: refreshWorksBudget }),
-    refreshWorksBudget,
   };
 }
 
@@ -689,22 +459,6 @@ export function computeRentabilityScore(inputs: RentabilityScoreInputs): Rentabi
     assumptions,
     factors,
   };
-}
-
-function solveMaxBid(targetTotalCost: number, options: AcquisitionCostOptions): number {
-  if (targetTotalCost <= 0) return 0;
-  const fixedCosts = computeAcquisitionCosts({ price: 0, ...options }).totalCost;
-  if (fixedCosts >= targetTotalCost) return 0;
-
-  let low = 0;
-  let high = targetTotalCost;
-  for (let index = 0; index < 48; index += 1) {
-    const mid = (low + high) / 2;
-    const total = computeAcquisitionCosts({ price: mid, ...options }).totalCost;
-    if (total <= targetTotalCost) low = mid;
-    else high = mid;
-  }
-  return Math.max(0, Math.floor(low / 100) * 100);
 }
 
 function rentabilityAssumptions(inputs: RentabilityScoreInputs) {
@@ -893,41 +647,6 @@ function unavailableRentabilityResult(
     totalCost: Math.round(totalCost),
     assumptions,
     factors: [],
-  };
-}
-
-function unavailableResult(
-  reason: string,
-  surface: number,
-  inputs: MarketCeilingInputs,
-  simulated: AcquisitionCostResult,
-): MarketCeilingResult {
-  return {
-    available: false,
-    reason,
-    surface,
-    scenario: inputs.scenario,
-    basis: "manual",
-    basisLabel: "à compléter",
-    marketReferencePricePerM2: 0,
-    safetyDiscountPct: inputs.customSafetyDiscountPct ?? DEFAULTS.safetyDiscountPct,
-    safetyDiscountPerM2: 0,
-    maxAllInPricePerM2: 0,
-    targetTotalCost: 0,
-    maxBid: 0,
-    maxBidPricePerM2: 0,
-    maxBidIsReachable: false,
-    simulated,
-    simulatedBidPricePerM2: surface > 0 ? simulated.price / surface : 0,
-    simulatedAllInPricePerM2: surface > 0 ? simulated.totalCost / surface : 0,
-    marginTotal: 0,
-    marginPerM2: 0,
-    maxWorksAtSimulatedPrice: 0,
-    p10PricePerM2: cleanPositive(inputs.p10PricePerM2),
-    p25PricePerM2: cleanPositive(inputs.p25PricePerM2),
-    medianPricePerM2: cleanPositive(inputs.medianPricePerM2),
-    p75PricePerM2: cleanPositive(inputs.p75PricePerM2),
-    p90PricePerM2: cleanPositive(inputs.p90PricePerM2),
   };
 }
 
