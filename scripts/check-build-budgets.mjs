@@ -253,8 +253,9 @@ const routeBudgets = [
     manifest: ".next/server/app/annonce-exemple/page_client-reference-manifest.js",
     routeKey: "/annonce-exemple/page",
     entryKey: "[project]/src/app/annonce-exemple/page",
-    // Décision du fondateur du 28/10/2026 (session /equipe du 27/10) : 188 531 mesurés, relevé à 190 000.
-    maxBytes: 190_000,
+    // 28/10/2026 : relevé un temps à 190 000 (décision du fondateur), puis rétabli à 185 000 une fois l'import
+    // inutile de `HomePrimaryAction` retiré (180 311 mesurés).
+    maxBytes: 185_000,
   },
   {
     name: "pricing",

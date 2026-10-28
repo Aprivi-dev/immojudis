@@ -447,7 +447,7 @@ Pendant le gel à J-7, une pépite évaluée sous une autre version de règle es
 
 ### Décisions prises pendant l'exécution
 
-- **Budgets JavaScript relevés** (décision du fondateur du 28/10) : favoris 690 000, fiche 385 000, annonce exemple 190 000, total client 6 340 000 octets.
+- **Budgets JavaScript relevés** (décision du fondateur du 28/10) : favoris 690 000, fiche 385 000, total client 6 340 000 octets (annonce exemple relevée puis rétablie à 185 000 : 180 311 mesurés après correction).
 - **Pas de planification pour l'import des données de référence** : la détection d'un nouveau millésime ANIL se lance à la main, car la CI interdit toute planification de collecte.
 - **Motifs d'administration hors de la ligne lisible par le compte** : `app_private.trial_extension_notes` pour les prolongations, `app_private.manual_grant_notes` pour les attributions manuelles. La migration `20261108190000` y reverse les anciens motifs puis les retire de `user_subscriptions`.
 
