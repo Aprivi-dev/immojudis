@@ -35,11 +35,12 @@ describe("route planifiée des pépites : protection", () => {
   it("échoue fermé quand CRON_SECRET n'est pas défini : 401, même avec un jeton vide ou quelconque", async () => {
     vi.stubEnv("CRON_SECRET", undefined);
 
-    for (const headers of [
+    const variants: Record<string, string>[] = [
       {},
       { authorization: "Bearer " },
       { authorization: "Bearer undefined" },
-    ]) {
+    ];
+    for (const headers of variants) {
       const response = await GET(
         new Request("https://example.test/api/cron/sale-pepites", { headers }),
       );
