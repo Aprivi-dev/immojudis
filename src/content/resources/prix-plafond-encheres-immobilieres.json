@@ -1,7 +1,7 @@
 {
   "slug": "prix-plafond-encheres-immobilieres",
   "publishedAt": "2026-10-05",
-  "updatedAt": "2026-10-26",
+  "updatedAt": "2026-10-28",
   "title": "Fixer son enchère plafond : raisonner par le coût complet avant d’enchérir",
   "seoTitle": "Enchère plafond : raisonner par le coût complet",
   "category": "Budget",
@@ -89,7 +89,7 @@
       "paragraphs": [
         "Sur une fiche, l’assistant rapproche la surface et les références disponibles, puis affiche une enchère plafond selon un profil de sécurité. Vous pouvez comparer une variante sans travaux, choisir un rafraîchissement, saisir un prix au m² si les comparables manquent et ajuster les frais ou travaux.",
         "Le rapport détaille marché, marge de sécurité, frais estimés, travaux et, lorsque le dossier le prévoit, portage. Si la surface ou le marché sont fragiles, le produit le signale et laisse l’enchère plafond à compléter.",
-        "L’enchère plafond (simulation) s’affiche pour les ventes au tribunal. Avec le compte gratuit, vous la débloquez pour 3 ventes par mois ; avec l’offre Analyse, elle est disponible pour toutes les ventes au tribunal. Pendant les 7 jours d’essai gratuit qui suivent la confirmation de l’adresse email, elle est aussi disponible pour toutes les ventes au tribunal : la page Offres indique ce qui s’applique au moment où vous la consultez. Pour une vente chez un notaire ou de l’État, l’article « Ventes notariales et ventes domaniales » explique pourquoi les règles diffèrent."
+        "L’enchère plafond (simulation) s’affiche pour les ventes au tribunal et chez le notaire ; pour une vente notariale par offres, on parle d’offre plafond. Les ventes de l’État n’ont pas de plafond. Avec le compte gratuit, vous la débloquez pour 3 ventes par mois ; avec l’offre Analyse, elle est disponible pour toutes ces ventes. Pendant les 7 jours d’essai gratuit qui suivent la confirmation de l’adresse email, elle est aussi disponible pour toutes ces ventes : la page Offres indique ce qui s’applique au moment où vous la consultez. L’article « Ventes notariales et ventes domaniales » explique pourquoi les règles diffèrent selon le type de vente."
       ],
       "bullets": [
         "Comparez deux profils et modifiez une hypothèse à la fois.",

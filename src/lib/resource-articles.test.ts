@@ -222,11 +222,15 @@ describe("article sur les ventes notariales", () => {
 describe("article sur l'enchère plafond", () => {
   it("précise où s'affiche l'enchère plafond, sans date ni promesse de gratuité durable", () => {
     const article = getResourceArticle("prix-plafond-encheres-immobilieres")!;
-    expect(article.updatedAt).toBe("2026-10-26");
+    expect(article.updatedAt).toBe("2026-10-28");
     const text = article.sections
       .find((section) => section.id === "assistant-immojudis")!
       .paragraphs.join(" ");
-    expect(text).toContain("s’affiche pour les ventes au tribunal");
+    // Tribunal et notaire (offre plafond pour une vente notariale par offres) ; rien pour l'État.
+    expect(text).toContain("s’affiche pour les ventes au tribunal et chez le notaire");
+    expect(text).toContain("on parle d’offre plafond");
+    expect(text).toContain("Les ventes de l’État n’ont pas de plafond");
+    expect(text).not.toContain("disponible pour toutes les ventes au tribunal");
     expect(text).toContain("3 ventes par mois");
     expect(text).toContain("offre Analyse");
     expect(text).toContain(

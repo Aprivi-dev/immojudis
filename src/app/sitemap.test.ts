@@ -363,9 +363,9 @@ describe("/ressources/sitemap.xml (articles)", () => {
 
   it("dates an article by its last change (updatedAt), else by its publication", () => {
     const byUrl = new Map(resourcesSitemap().map((entry) => [entry.url, entry.lastModified]));
-    // Published on 05/10, updated on 26/10.
+    // Published on 05/10, updated on 28/10 (plafond ouvert aux ventes notariales, pas à celles de l'État).
     expect(byUrl.get("https://immojudis.com/ressources/prix-plafond-encheres-immobilieres")).toBe(
-      "2026-10-26",
+      "2026-10-28",
     );
     // Published on 13/10, updated on 26/10 (droits de mutation computed on the price alone).
     expect(byUrl.get("https://immojudis.com/ressources/frais-vente-encheres-judiciaire")).toBe(
