@@ -390,11 +390,8 @@ export async function createAdminInformationAgentDraft({
   input: z.output<typeof informationAgentCreateSchema>;
 }): Promise<InformationAgentAdminResponse> {
   requireInformationAgentAdmin(auth);
-  // L'agent n'écrit que par email : une saisie qui n'en est pas une (téléphone, nom) est refusée
-  // avant toute lecture ; un champ vide revient à ne rien saisir.
-  if (input.recipientEmail?.trim() && !normalizedEmail(input.recipientEmail)) {
-    throw new Error("Requête invalide : adresse email du destinataire invalide.");
-  }
+  // L'agent n'écrit que par email : `informationAgentCreateSchema` (analysé par la route avant tout appel,
+  // même validateur que `normalizedEmail`) refuse déjà une saisie qui n'est pas une adresse.
 
   const [sale, emailTemplate] = await Promise.all([
     loadAdminInformationAgentSale({ auth, saleId: input.saleId }),

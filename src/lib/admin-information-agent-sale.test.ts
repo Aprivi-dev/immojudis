@@ -537,6 +537,30 @@ describe("loadAdminInformationAgentEmailAvailability", () => {
     expect(availability.get(missingId)).toBe(false);
   });
 
+  it("ne grise pas le bouton à tort quand le registre est illisible : l'absence d'email est inconnue", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    setupList(
+      [sale(phoneOnlyId, { lawyer_contact: "Tél. : 05 56 00 00 01" }), sale(emptyId, {})],
+      [],
+      { code: "42501" },
+    );
+    const availability = await loadAdminInformationAgentEmailAvailability([
+      phoneOnlyId,
+      emptyId,
+      missingId,
+    ]);
+    expect(availability.get(phoneOnlyId)).toBe(true);
+    expect(availability.get(emptyId)).toBe(true);
+    // Une vente introuvable reste sans email, registre lisible ou non.
+    expect(availability.get(missingId)).toBe(false);
+
+    // Registre lisible et vide : le bouton reste grisé pour une vente sans email.
+    setupList([sale(phoneOnlyId, { lawyer_contact: "Tél. : 05 56 00 00 01" })], []);
+    expect((await loadAdminInformationAgentEmailAvailability([phoneOnlyId])).get(phoneOnlyId)).toBe(
+      false,
+    );
+  });
+
   it("garde les adresses de l'annonce quand le registre est illisible, et propage l'erreur des ventes", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     setupList([sale(saleId, { lawyer_contact: "dupont@cabinet-dupont.test" })], [], {

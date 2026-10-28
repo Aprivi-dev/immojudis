@@ -190,20 +190,8 @@ describe("manual admin draft preparation", () => {
     expect(mocks.send).not.toHaveBeenCalled();
   });
 
-  it.each(["05 56 00 00 01", "Maître Jean Dupont", "jean@dupont"])(
-    "refuse un destinataire saisi qui n'est pas une adresse email (%s)",
-    async (recipientEmail) => {
-      await expect(
-        createAdminInformationAgentDraft({ auth: admin, input: { saleId, recipientEmail } }),
-      ).rejects.toThrow("adresse email du destinataire invalide");
-      expect(mocks.sale).not.toHaveBeenCalled();
-      expect(inserted).toBeNull();
-      expect(mocks.rpc).not.toHaveBeenCalled();
-    },
-  );
-
   it("le schéma de création refuse un téléphone, un nom ou un champ vide comme destinataire", () => {
-    for (const recipientEmail of ["05 56 00 00 01", "Maître Jean Dupont", ""]) {
+    for (const recipientEmail of ["05 56 00 00 01", "Maître Jean Dupont", "jean@dupont", ""]) {
       expect(informationAgentCreateSchema.safeParse({ saleId, recipientEmail }).success).toBe(
         false,
       );

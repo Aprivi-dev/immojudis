@@ -209,7 +209,9 @@ const EMAIL_AVAILABILITY_CHUNK = 50;
  * Pour chaque vente, vrai si l'agent connaît au moins une adresse email valide à qui écrire : le
  * même résolveur que la préparation du brouillon (`discoverInformationAgentContacts`, exclusions et
  * registre interne compris). Un numéro de téléphone, un nom ou un champ vide ne comptent pas. Une
- * vente introuvable vaut faux ; une erreur de lecture des ventes est propagée.
+ * vente introuvable vaut faux ; une erreur de lecture des ventes est propagée. Quand le REGISTRE
+ * est illisible, une vente sans email dans l'annonce vaut vrai (inconnu) : le bouton n'est pas grisé
+ * à tort, et la création du brouillon refuse de toute façon s'il n'y a pas d'adresse.
  */
 export async function loadAdminInformationAgentEmailAvailability(
   saleIds: readonly string[],
@@ -239,19 +241,22 @@ export async function loadAdminInformationAgentEmailAvailability(
           [],
           null,
         ),
-        registry_contacts: registry.get(id) ?? [],
+        registry_contacts: registry.contacts.get(id) ?? [],
       };
-      result.set(id, discoverInformationAgentContacts(sale).length > 0);
+      result.set(id, discoverInformationAgentContacts(sale).length > 0 || !registry.readable);
     }
   }
   for (const id of ids) if (!result.has(id)) result.set(id, false);
   return result;
 }
 
-/** Même lecture du registre interne que `loadAdminInformationAgentRegistryContacts`, pour plusieurs ventes. */
+/**
+ * Même lecture du registre interne que `loadAdminInformationAgentRegistryContacts`, pour plusieurs
+ * ventes. `readable` est faux quand la lecture a échoué : l'absence de contact est alors inconnue.
+ */
 async function loadRegistryContactsBySale(
   saleIds: readonly string[],
-): Promise<Map<string, InformationAgentRegistryContact[]>> {
+): Promise<{ contacts: Map<string, InformationAgentRegistryContact[]>; readable: boolean }> {
   const bySale = new Map<string, InformationAgentRegistryContact[]>();
   const { data, error } = await supabaseAdmin
     .from("information_agent_contacts")
@@ -265,7 +270,7 @@ async function loadRegistryContactsBySale(
     .limit(1000);
   if (error) {
     console.warn("Registre des contacts de l'agent illisible", { code: error.code ?? null });
-    return bySale;
+    return { contacts: bySale, readable: false };
   }
   for (const row of data ?? []) {
     if (!row.scope_sale_id) continue;
@@ -280,7 +285,7 @@ async function loadRegistryContactsBySale(
     });
     bySale.set(row.scope_sale_id, list);
   }
-  return bySale;
+  return { contacts: bySale, readable: true };
 }
 
 export function requireAdminInformationAgentSaleAccess(auth: AdminInformationAgentSaleAuth): void {
