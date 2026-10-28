@@ -14357,6 +14357,10 @@ export type Database = {
             };
             Returns: string;
           };
+      admin_count_flood_reobservation_pending: {
+        Args: { p_now?: string };
+        Returns: number;
+      };
       admin_lawyer_monthly_statement: {
         Args: { p_month: string };
         Returns: {

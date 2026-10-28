@@ -126,6 +126,12 @@ export type AdminPepitesResponse = {
   rows: AdminPepiteRow[];
   /** `null` : le contrôle n'a pas pu être fait (lecture impossible). */
   independence: PepiteIndependence | null;
+  /**
+   * Ventes à venir en attente de réobservation d'inondation (une tentative a échoué : `failure_count > 0`), donc
+   * « inconnu par panne » et non par position imprécise. La règle v2 est prête côté inondation quand il est nul.
+   * `null` : non mesuré (fonction absente avant la migration 20261108100100, ou lecture impossible).
+   */
+  floodReobservationPending: number | null;
 };
 
 const VENUES: readonly PepiteVenue[] = ["tribunal", "notary", "other"];
@@ -277,7 +283,21 @@ export function unavailablePepites(): AdminPepitesResponse {
     rate: pepiteRate(0, 0, 0),
     rows: [],
     independence: null,
+    floodReobservationPending: null,
   };
+}
+
+/** Le compteur ne fait jamais tomber la page : fonction absente, erreur ou réponse inattendue valent « non mesuré ». */
+async function readFloodReobservationPending(now: Date): Promise<number | null> {
+  try {
+    const { data, error } = await supabaseAdmin.rpc("admin_count_flood_reobservation_pending", {
+      p_now: now.toISOString(),
+    });
+    if (error) return null;
+    return typeof data === "number" && Number.isFinite(data) ? data : null;
+  } catch {
+    return null;
+  }
 }
 
 const PAGE_SIZE = 1000;
@@ -478,6 +498,7 @@ export async function getAdminPepites(
     .map(parseAdminPepiteRow)
     .filter((row): row is AdminPepiteRow => row !== null);
 
+  const floodReobservationPending = await readFloodReobservationPending(now);
   const independence = await Promise.race([independenceRead, overrun]);
 
   return {
@@ -490,6 +511,7 @@ export async function getAdminPepites(
     rate: pepiteRate(totals.pepites, totals.pending, totals.evaluable),
     rows,
     independence,
+    floodReobservationPending,
   };
 }
 

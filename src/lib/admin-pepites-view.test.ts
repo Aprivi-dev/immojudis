@@ -98,6 +98,7 @@ function data(overrides: Partial<AdminPepitesResponse> = {}): AdminPepitesRespon
       alertPoints: 10,
       minPepites: 10,
     },
+    floodReobservationPending: 0,
     ...overrides,
   };
 }
@@ -109,14 +110,48 @@ const section = (view: ReturnType<typeof buildAdminPepitesView>, id: string) =>
   view.sections.find((item) => item.id === id)!;
 
 describe("buildAdminPepitesView", () => {
-  it("compose les cinq sections, dans l'ordre", () => {
+  it("compose les six sections, dans l'ordre", () => {
     expect(buildAdminPepitesView(data()).sections.map((item) => item.id)).toEqual([
       "mode",
       "counters",
       "rate",
+      "flood",
       "list",
       "independence",
     ]);
+  });
+
+  describe("ventes d'inondation en attente de réobservation", () => {
+    it("aucune : le nombre est dit, sans alerte", () => {
+      const flood = section(buildAdminPepitesView(data()), "flood");
+      expect(plain(flood.paragraphs)).toContain("0 vente à venir dont la dernière observation");
+      expect(flood.alert).toBeNull();
+    });
+
+    it("quelques-unes : le nombre est dit et la règle v2 n'est pas prête", () => {
+      const flood = section(
+        buildAdminPepitesView(data({ floodReobservationPending: 531 })),
+        "flood",
+      );
+      expect(plain(flood.paragraphs)).toContain("531 ventes à venir dont la dernière observation");
+      expect(plain(flood.paragraphs)).toContain("pas une panne");
+      expect(flood.alert).toContain("pas prête côté inondation");
+    });
+
+    it("une seule vente : le singulier", () => {
+      const flood = section(buildAdminPepitesView(data({ floodReobservationPending: 1 })), "flood");
+      expect(plain(flood.paragraphs)).toContain("1 vente à venir dont");
+    });
+
+    it("non mesuré : jamais un zéro rassurant", () => {
+      const flood = section(
+        buildAdminPepitesView(data({ floodReobservationPending: null })),
+        "flood",
+      );
+      expect(plain(flood.paragraphs)).toContain("Non mesuré");
+      expect(plain(flood.paragraphs)).not.toMatch(/\b0 vente/);
+      expect(flood.alert).toBeNull();
+    });
   });
 
   it("dit le mode et que rien n'est visible du public en observation, sans bouton", () => {
