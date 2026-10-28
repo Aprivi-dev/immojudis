@@ -122,6 +122,29 @@ def skip_detail(sale: dict[str, Any], *, now: datetime | None = None) -> bool:
     return True
 
 
+#: Clés posées dans la vente brute par le collecteur pour le seul passage en cours : jamais écrites en base.
+TECHNICAL_KEYS = ("_list_signature", "_recently_rejected", "_known_unchanged")
+
+
+def persistable_payload(payload: Any) -> Any:
+    """``payload`` sans les clés techniques du passage (copie de surface ; l'original, lu ensuite, n'est pas modifié)."""
+    if not isinstance(payload, dict) or not any(key in payload for key in TECHNICAL_KEYS):
+        return payload
+    return {key: value for key, value in payload.items() if key not in TECHNICAL_KEYS}
+
+
+def persistable_observations(observations: Any) -> Any:
+    """``observations`` dont chaque ``raw_payload`` est passé par ``persistable_payload``."""
+    if not isinstance(observations, list):
+        return observations
+    return [
+        {**item, "raw_payload": persistable_payload(item["raw_payload"])}
+        if isinstance(item, dict) and isinstance(item.get("raw_payload"), dict)
+        else item
+        for item in observations
+    ]
+
+
 def is_skipped(payload: object) -> bool:
     return isinstance(payload, dict) and bool(payload.get("_recently_rejected"))
 

@@ -166,3 +166,71 @@ def test_the_cache_table_is_purged_after_30_days_by_the_loader() -> None:
 
     source = inspect.getsource(rejected_listings)
     assert "purge_rejected_listings" in source
+
+
+# ------------------------------------------------- clés techniques : jamais écrites en base
+TECHNICAL = {"_list_signature": "sig", "_recently_rejected": True, "_known_unchanged": True}
+
+
+def test_the_technical_keys_are_not_in_the_persistable_payload_and_the_original_is_untouched() -> None:
+    payload = {"title": "Une maison", **TECHNICAL}
+
+    assert rejected_listings.persistable_payload(payload) == {"title": "Une maison"}
+    assert payload["_list_signature"] == "sig" and payload["_known_unchanged"] is True  # lus ensuite (refus, cache)
+    clean = {"title": "x"}
+    assert rejected_listings.persistable_payload(clean) is clean
+    assert rejected_listings.persistable_payload(None) is None
+    assert set(rejected_listings.TECHNICAL_KEYS) == set(TECHNICAL)
+
+
+def test_observations_lose_the_technical_keys_of_their_payload() -> None:
+    observations = [{"source_url": URL, "raw_payload": {"title": "x", **TECHNICAL}}, {"source_url": "u"}, "autre"]
+
+    assert rejected_listings.persistable_observations(observations) == [
+        {"source_url": URL, "raw_payload": {"title": "x"}},
+        {"source_url": "u"},
+        "autre",
+    ]
+
+
+def test_the_publication_never_writes_the_technical_keys(monkeypatch) -> None:
+    from src.storage import supabase_client as storage
+
+    sale = AuctionSale(
+        source_name="vench", source_url=URL, city="Ondres", address="12 rue des Lilas 40440 Ondres",
+        raw_payload={"title": "x", **TECHNICAL},
+        observations=[{"source_name": "vench", "source_url": URL, "raw_payload": {"title": "x", **TECHNICAL}}],
+    )
+    written: list[dict] = []
+    monkeypatch.setattr(storage, "tribunal_reference_rows", lambda _: [])
+    monkeypatch.setattr(storage, "_upsert_with_rest", lambda _url, _key, rows: written.extend(rows))
+    for name in ("_sync_normalized_sale_tables_with_rest", "_upsert_asset_tables_with_rest", "_enqueue_due_enrichment"):
+        monkeypatch.setattr(storage, name, lambda *args, **kwargs: None)
+    monkeypatch.setattr(storage, "_write_fact_claims_rest", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(storage.internal_contacts, "write_safely", lambda *args, **kwargs: None)
+
+    storage._write_sale_revisions([sale], {"supabase_url": "https://db.test", "supabase_service_role_key": "k"},
+                                  refresh_last_seen=True)
+
+    assert len(written) == 1
+    assert not set(TECHNICAL) & set(written[0]["raw_payload"])
+    assert not any(set(TECHNICAL) & set(item["raw_payload"]) for item in written[0].get("observations", []))
+    # La vente en mémoire garde ses clés : le refus et le cache les lisent après l'écriture.
+    assert sale.raw_payload["_known_unchanged"] is True
+
+
+def test_the_observation_rows_never_carry_the_technical_keys(monkeypatch) -> None:
+    from src.storage import supabase_client as storage
+
+    sale = AuctionSale(
+        source_name="vench", source_url=URL, city="Ondres", address="12 rue des Lilas 40440 Ondres",
+        starting_price_eur=50000, raw_payload={"title": "x", **TECHNICAL},
+    )
+    written: list[dict] = []
+    monkeypatch.setattr(storage, "load_settings", lambda: {
+        "supabase_url": "https://db.test", "supabase_service_role_key": "k", "supabase_db_url": "postgresql://test"})
+    monkeypatch.setattr(storage, "_postgres_upsert", lambda _db, _table, rows, **_kw: written.extend(rows) or len(rows))
+
+    assert storage.upsert_observations_to_supabase([sale]) == 1
+    assert written and not set(TECHNICAL) & set(written[0]["raw_payload"])
+    assert sale.raw_payload["_list_signature"] == "sig"

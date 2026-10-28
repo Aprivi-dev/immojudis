@@ -53,7 +53,7 @@ from src.pdf_progress import (
     is_modern_payload,
     modern_progress_entries,
 )
-from src.personal_data import redact_storage_row
+from src.personal_data import persistable_payload, redact_storage_row
 from src.reviewed_aliases import (
     ReviewedAliasRegistry,
     ReviewedAliasRegistryError,
@@ -2650,7 +2650,7 @@ def upsert_observations_to_supabase(sales: list[AuctionSale]) -> int:
             if not isinstance(observation, dict) or not observation.get("source_url"):
                 continue
             source_url = str(observation.get("source_url"))
-            content = observation.get("raw_payload") or observation
+            content = persistable_payload(observation.get("raw_payload") or observation)
             # Keep the column's ingest/explicit observation meaning; checkpoint
             # evidence ranks duplicates but is not relabeled as observed_at.
             observed_at = _as_utc(observation.get("observed_at"))
