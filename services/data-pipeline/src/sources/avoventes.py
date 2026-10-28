@@ -8,7 +8,7 @@ from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup, Tag
 
 from src.catalogue_proof import CatalogueEvidence, canonical
-from src.config import TARGET_DEPARTMENTS, load_settings
+from src.config import FRANCE_DEPARTMENTS, TARGET_DEPARTMENTS, load_settings
 from src.listing_location import classify_address
 from src.normalize import clean_text, extract_department, parse_surface, strip_accents
 from src.raw_models import validate_raw_sales
@@ -80,6 +80,12 @@ def scrape_avoventes_aquitaine_result(known: dict[str, str] | None = None) -> Sc
     seen_urls: set[str] = set()
     parsed_count = 0
     unresolved_locations: list[str] = []
+    undetermined_department_urls: list[str] = []
+    # With every department targeted there is nothing to filter: a listing whose department the list card and the
+    # detail page do not give is kept (the department is inferred later, from its city or its geocoding) instead
+    # of being "discovered but not emitted", which left the catalogue inventory incomplete and failed every run of
+    # the source while that single listing stayed online.
+    keeps_unlocated = set(FRANCE_DEPARTMENTS) <= set(TARGET_DEPARTMENTS)
     # Avoventes ignore le paramètre ?departement= et sert la liste nationale
     # complète sur une seule page : on la récupère une fois et on filtre les
     # départements en local (au lieu de re-télécharger la même page par dépt).
@@ -112,13 +118,16 @@ def scrape_avoventes_aquitaine_result(known: dict[str, str] | None = None) -> Sc
                 _enrich_sale_from_detail(client, sale, errors)
                 detail_checked = True
                 department = sale.get("department") or extract_department(sale.get("postal_code"))
-            if not department:
+            if not department and not keeps_unlocated:
                 unresolved_locations.append(str(sale["source_url"]))
                 continue
-            if department not in TARGET_DEPARTMENTS:
+            if department and department not in TARGET_DEPARTMENTS:
                 exclusions[source_url] = "department_filter"
                 continue
-            sale["department"] = department
+            if department:
+                sale["department"] = department
+            else:
+                undetermined_department_urls.append(str(sale["source_url"]))
             if sale["source_url"] in seen_urls:
                 continue
             seen_urls.add(sale["source_url"])
@@ -141,6 +150,8 @@ def scrape_avoventes_aquitaine_result(known: dict[str, str] | None = None) -> Sc
          "inventory_before_department_filter": parsed_count,
          "unresolved_location_count": len(unresolved_locations),
          "unresolved_location_urls": unresolved_locations,
+         "undetermined_department_count": len(undetermined_department_urls),
+         "undetermined_department_urls": undetermined_department_urls,
          **catalogue_metrics},
     )
 

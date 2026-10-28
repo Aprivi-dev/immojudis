@@ -201,6 +201,9 @@ def scrape_petites_affiches_aquitaine_result(
     seen_sales: set[str] = set()
     budget_exhausted = False
     resumed_partitions: set[str] = set()
+    cards_seen = 0
+    pages_parsed = 0
+    empty_page_diagnosis: str | None = None
     departments = _department_filters()
     for department_index, department in enumerate(departments):
         partition = f"department:{department or 'all'}"
@@ -247,6 +250,10 @@ def scrape_petites_affiches_aquitaine_result(
                 break
             pages.observe(html, page_url)
             page_sales = parse_petites_affiches_html(html, page_url=page_url, fallback_department=department)
+            pages_parsed += 1
+            cards_seen += len(page_sales)
+            if not page_sales and empty_page_diagnosis is None:
+                empty_page_diagnosis = _empty_listing_diagnosis(html, page_url)
             # Certify every department POST before the global URL deduplication.
             # A URL repeated by two department partitions is still evidence in
             # both public catalogues and must not hide a partial partition.
@@ -319,6 +326,13 @@ def scrape_petites_affiches_aquitaine_result(
         "cursor_resumed_partitions": sorted(resumed_partitions),
         "cursor_revalidated": not resumed_partitions,
     }
+    if pages_parsed and not cards_seen and not errors:
+        # Pages answered (HTTP 200) but not a single card was read: a changed markup or a blocked page, never a
+        # catalogue without sale. Said as an error, with what the first empty page looked like, instead of a clean
+        # "0 listing" that only shows up later as an opaque « Collection incomplete ».
+        message = f"{pages_parsed} list page(s) fetched but no sale card read; first empty page: {empty_page_diagnosis}"
+        LOGGER.error("Petites Affiches: %s", message)
+        errors.append(message)
     validated_sales = validate_raw_sales("petites_affiches", unique_dicts(raw_sales, "source_url"), errors)
     catalogue_metrics = catalogue.metrics(
         validated_sales,
@@ -343,6 +357,22 @@ def scrape_petites_affiches_aquitaine_result(
         result.coverage["stop_reason"] = "source_budget_exhausted"
         result.coverage["budget_exhausted"] = True
     return result
+
+
+def _empty_listing_diagnosis(html: str, page_url: str) -> str:
+    """What a list page without any readable card looks like (no personal data): to tell markup from blocking."""
+    soup = parse_html(html, "html.parser")
+    title = clean_text(soup.title.get_text(" ", strip=True)) if soup.title else None
+    sale_links = {
+        str(anchor.get("href"))
+        for anchor in soup.find_all("a", href=True)
+        if re.search(r"/encheres-immobilieres/vente/", str(anchor.get("href")))
+    }
+    challenge = bool(re.search(r"just a moment|cf-chl|captcha|access denied", html[:6000], re.I))
+    return (
+        f"url={page_url} bytes={len(html)} title={(title or '')[:80]!r} sale_links={len(sale_links)} "
+        f"annonce_lot_markers={html.count('annonce_lot')} challenge_page={challenge}"
+    )
 
 
 def _department_filters() -> tuple[str | None, ...]:

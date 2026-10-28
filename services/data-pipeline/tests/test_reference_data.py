@@ -747,7 +747,7 @@ def test_the_zoning_dataset_is_pinned_by_identifier() -> None:
 
 def test_the_new_datasets_are_registered() -> None:
     assert {"rents", "tension"} <= set(reference_main.DATASETS)
-    assert set(reference_main.DATASETS) == set(reference_main._IMPORTERS)
+    assert set(reference_main.DATASETS) | set(reference_main.EXTRA_DATASETS) == set(reference_main._IMPORTERS)
 
 
 class _RecordingConnection:
