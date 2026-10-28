@@ -440,3 +440,82 @@ def test_the_resolution_does_not_replace_the_name_and_postal_code_proof(communes
 
 def test_an_unknown_court_with_a_resolved_insee_is_accepted(communes: None) -> None:
     assert len(_merge([vench(court=None, geocode=None), licitor(geocode=None)])) == 1
+
+
+# ------------------------------------------------- Paris, Lyon, Marseille : un seul INSEE pour tous les arrondissements
+@pytest.fixture
+def arrondissements(monkeypatch: pytest.MonkeyPatch) -> None:
+    _use_communes(
+        monkeypatch,
+        [
+            _commune("75056", "paris", "75", ["75008", "75016"]),
+            _commune("69123", "lyon", "69", ["69002", "69003"]),
+            _commune("13055", "marseille", "13", ["13006", "13014"]),
+        ],
+    )
+
+
+def _paris_pair(streetless_postal: str | None, anchor_postal: str | None, **overrides: object):
+    fields = {"city": "Paris", "department": "75", "court": "justice_tj_1_75", "geocode": None, **overrides}
+    streetless = vench(
+        address=f"{streetless_postal} Paris" if streetless_postal else "Paris",
+        postal_code=streetless_postal,
+        **fields,
+    )
+    anchor = licitor(
+        address=f"31 rue de Miromesnil, {anchor_postal} Paris" if anchor_postal else "31 rue de Miromesnil, Paris",
+        postal_code=anchor_postal,
+        **fields,
+    )
+    return streetless, anchor
+
+
+def test_two_arrondissements_of_paris_attach_nothing_even_with_the_same_insee(arrondissements: None) -> None:
+    streetless, anchor = _paris_pair("75016", "75008")
+
+    assert not core_match(streetless, anchor)
+    assert len(_merge([streetless, anchor])) == 2
+
+
+def test_the_same_arrondissement_still_attaches(arrondissements: None) -> None:
+    streetless, anchor = _paris_pair("75008", "75008")
+
+    assert core_match(streetless, anchor)
+    assert len(_merge([streetless, anchor])) == 1
+
+
+@pytest.mark.parametrize("postals", [(None, "75008"), ("75008", None), (None, None), ("75000", "75000")])
+def test_a_missing_or_generic_postal_code_refuses_paris(arrondissements: None, postals: tuple[str | None, str | None]) -> None:
+    streetless, anchor = _paris_pair(*postals)
+
+    assert not core_match(streetless, anchor)
+    assert len(_merge([streetless, anchor])) == 2
+
+
+def test_the_unknown_court_path_also_requires_the_same_arrondissement(arrondissements: None) -> None:
+    # Le tribunal ne manque que d'un côté.
+    for streetless_postal, anchor_postal, expected in (("75016", "75008", False), (None, "75008", False), ("75008", "75008", True)):
+        pair = _paris_pair(streetless_postal, anchor_postal)
+        pair[0].tribunal_code = None
+        assert core_match(*pair) is expected, (streetless_postal, anchor_postal)
+
+
+def test_a_geocoded_insee_does_not_replace_the_arrondissement(arrondissements: None) -> None:
+    paris = {"provider": "ban_geoplateforme", "accepted": True, "citycode": "75056"}
+    streetless, anchor = _paris_pair("75016", "75008", geocode=paris)
+
+    assert not core_match(streetless, anchor)
+
+
+@pytest.mark.parametrize(
+    ("city", "department", "first", "second"),
+    [("Lyon", "69", "69002", "69003"), ("Marseille", "13", "13006", "13014")],
+)
+def test_lyon_and_marseille_follow_the_same_rule(
+    arrondissements: None, city: str, department: str, first: str, second: str
+) -> None:
+    kwargs = {"city": city, "department": department, "court": "justice_tj_1_69"}
+    streetless, anchor = _paris_pair(first, second, **kwargs)
+    assert not core_match(streetless, anchor)
+    streetless, anchor = _paris_pair(first, first, **kwargs)
+    assert core_match(streetless, anchor)

@@ -41,6 +41,12 @@ Une annonce DÉJÀ EN BASE (même URL, ou rattachée à une vente existante) n'e
 minimum (email retiré de la fiche, par exemple), elle reste, continue de se rafraîchir et n'est pas supprimée.
 Seule la réparation ``supabase/repairs/20261108202100_delete_empty_listings.sql`` nettoie l'existant, une fois.
 
+Limite connue : une annonce sans voie (Vench, Petites Affiches) dont la vente jumelle (Licitor...) est déjà en base
+n'est pas rattachée à l'écriture (la correspondance « sans voie » de ``dedupe_streetless`` exige de charger et de
+verrouiller les ventes du même jour, ce que la requête de ``resolve_publication_identities`` ne fait pas) : elle est
+refusée, puis rattachée par le balayage de dédoublonnage quand les deux lignes sont en base. Ce balayage (rapport
+``candidates``, puis application) passe AVANT la réparation des annonces vides.
+
 Une annonce dont la page de détail n'a pas pu être lue (échec réseau) n'est pas jugée : elle n'est pas écrite
 non plus (``detail_unread``) et se relit au passage suivant. Elle est comptée à part.
 

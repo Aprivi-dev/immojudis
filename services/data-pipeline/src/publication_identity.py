@@ -579,6 +579,9 @@ def resolve_publication_identities(connection, sales: list[AuctionSale]) -> list
             continue
         # Annonce nouvelle en base (aucune ligne de même URL, aucun rapprochement) : elle doit avoir le minimum
         # (voie ou lieu-dit, email de contact, pièce, autre source). Une annonce déjà en base ne passe jamais ici.
+        # Limite connue : une annonce sans voie (Vench, Petites Affiches) dont la vente jumelle (Licitor...) est déjà en
+        # base est refusée ici, la requête de verrouillage ne charge pas les ventes du même jour. Le rattachement est fait par
+        # le balayage de dédoublonnage (dedupe_streetless.py), qui doit passer AVANT la réparation des annonces vides.
         if not publication_gate(sale).sufficient:
             refused.append(sale)
             continue

@@ -12,7 +12,10 @@ et seulement vers une vente d'une autre source qui a une voie. Tout doit concord
 * même tribunal (code canonique) ;
 * même jour d'audience (jour civil à Paris) ;
 * même commune : même code INSEE (géocodé, ou résolu sans ambiguïté par ``find_commune`` à partir du nom et du
-  code postal, ou du nom unique dans le département), ou même nom de commune normalisé avec le même code postal ;
+  code postal, ou du nom unique dans le département), ou même nom de commune normalisé avec le même code postal.
+  Paris, Lyon et Marseille (75056, 69123, 13055) : ``find_commune`` renvoie le même code pour tout arrondissement,
+  le code INSEE ne prouve donc rien ; les deux côtés doivent porter le MÊME code postal d'arrondissement, et la paire
+  est refusée s'il manque d'un côté (aussi sur le chemin « tribunal inconnu ») ;
 * mise à prix à 1 % près ;
 * type de bien compatible.
 
@@ -30,6 +33,7 @@ qui manque (avocat, contact, pièces, heure d'audience, ...), jamais de coordonn
 
 from __future__ import annotations
 
+import re
 from copy import deepcopy
 from typing import Any
 
@@ -58,6 +62,9 @@ STREETLESS_CONFIDENCE = "streetless"
 STREETLESS_PRICE_TOLERANCE = 0.01
 _SURFACE_VETO = 0.2
 _UNKNOWN_COURTS = frozenset({"", "other", "unknown"})
+#: Communes à arrondissements : un seul code INSEE pour des codes postaux (et des quartiers) différents.
+_ARRONDISSEMENT_COMMUNES = frozenset({"75056", "69123", "13055"})
+_ARRONDISSEMENT_NAMES = frozenset({"paris", "lyon", "marseille"})
 _GENERIC_TYPES = frozenset({"", "other", "unknown", "autre", "mixed"})
 
 # Ce que l'annonce sans voie n'apporte jamais : position (un centre de commune n'est pas l'adresse) et valeurs
@@ -111,9 +118,22 @@ def _commune_insee(sale: AuctionSale) -> str | None:
     return _insee(sale) or _resolved_insee(sale)
 
 
+def _arrondissement_postal_code(sale: AuctionSale) -> str | None:
+    """Code postal d'arrondissement connu, ni absent ni générique (« 75000 », « 69000 », « 13000 »)."""
+    postal_code = _locality(sale)[0]
+    if not postal_code or not re.fullmatch(r"\d{5}", postal_code) or postal_code.endswith("000"):
+        return None
+    return postal_code
+
+
 def _same_insee(first: AuctionSale, second: AuctionSale) -> bool:
     first_insee, second_insee = _commune_insee(first), _commune_insee(second)
-    return bool(first_insee and first_insee == second_insee)
+    if not first_insee or first_insee != second_insee:
+        return False
+    if first_insee in _ARRONDISSEMENT_COMMUNES:
+        first_postal = _arrondissement_postal_code(first)
+        return first_postal is not None and first_postal == _arrondissement_postal_code(second)
+    return True
 
 
 def same_commune(first: AuctionSale, second: AuctionSale) -> bool:
@@ -122,6 +142,8 @@ def same_commune(first: AuctionSale, second: AuctionSale) -> bool:
         return True
     (first_postal, _), (second_postal, _) = _locality(first), _locality(second)
     first_name, second_name = _commune_name(first), _commune_name(second)
+    if first_name in _ARRONDISSEMENT_NAMES and first_postal and first_postal.endswith("000"):
+        return False  # « 75000 Paris » : un code générique ne désigne aucun arrondissement
     return bool(first_postal and first_postal == second_postal and first_name and first_name == second_name)
 
 
