@@ -11,7 +11,7 @@ import {
   isAdminAccount,
   isProfessionalAccount,
 } from "@/lib/account";
-import { BrandMark } from "@/components/BrandLogo";
+import { BrandMark } from "@/components/BrandMark";
 import { AdminMfaGate } from "@/components/admin/AdminMfaGate";
 import { AuthConnectionBanner } from "@/components/AuthConnectionBanner";
 
@@ -100,10 +100,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
           </div>
           <div className="relative hidden min-h-[13rem] overflow-hidden sm:block">
             <div className="cinematic-grid absolute inset-0 opacity-40" />
-            <BrandMark
-              variant="transparent"
-              className="absolute bottom-8 right-8 h-28 w-28 opacity-35 drop-shadow-[0_26px_52px_rgba(0,0,0,0.48)]"
-            />
+            <BrandMark className="absolute bottom-8 right-8 h-28 w-28 opacity-35 drop-shadow-[0_26px_52px_rgba(0,0,0,0.48)]" />
           </div>
         </div>
       </main>

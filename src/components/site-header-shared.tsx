@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BrandMark } from "@/components/BrandLogo";
+import { BrandMark } from "@/components/BrandMark";
 import { cn } from "@/lib/utils";
 
 /** Éléments communs à l'en-tête et aux menus qu'il charge à la demande. */
@@ -92,7 +92,7 @@ export function HeaderLogo({
       className="inline-flex shrink-0 items-center gap-2 rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
     >
       <span aria-hidden className="inline-flex">
-        <BrandMark variant="transparent" className="size-7" />
+        <BrandMark className="size-7" />
       </span>
       <span className="flex flex-col leading-none">
         <span className="font-display text-2xl font-semibold tracking-tight text-foreground">
@@ -104,7 +104,7 @@ export function HeaderLogo({
             aria-hidden
             className="mt-1 hidden text-xs font-normal text-muted-foreground min-[480px]:block"
           >
-            Les ventes immobilières en toute clarté
+            Les enchères immobilières, en toute clarté
           </span>
         ) : null}
       </span>
