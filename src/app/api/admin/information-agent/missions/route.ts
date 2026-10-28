@@ -36,9 +36,10 @@ async function handleGET(request: Request) {
 
 async function handlePOST(request: Request) {
   try {
+    const authToken = bearerTokenFromRequest(request);
     const input = adminInformationAgentCreateSchema.parse(await request.json());
     const response = await createAdminInformationAgentMissionForToken({
-      authToken: bearerTokenFromRequest(request),
+      authToken,
       input,
     });
     return NextResponse.json(response, {
@@ -52,9 +53,10 @@ async function handlePOST(request: Request) {
 
 async function handlePATCH(request: Request) {
   try {
+    const authToken = bearerTokenFromRequest(request);
     const input = adminInformationAgentActionSchema.parse(await request.json());
     const response = await runAdminInformationAgentMissionActionForToken({
-      authToken: bearerTokenFromRequest(request),
+      authToken,
       input,
     });
     return NextResponse.json(response, {

@@ -31,9 +31,10 @@ async function handleGET(request: Request) {
 
 async function handlePATCH(request: Request) {
   try {
+    const authToken = bearerTokenFromRequest(request);
     const input = adminInformationAgentReviewSchema.parse(await request.json());
     const response = await reviewAdminInformationAgentFact({
-      authToken: bearerTokenFromRequest(request),
+      authToken,
       input,
     });
     return NextResponse.json(response, {
@@ -47,9 +48,10 @@ async function handlePATCH(request: Request) {
 /** Action sur une réponse reçue : opposition du professionnel ou réponse traitée. */
 async function handlePOST(request: Request) {
   try {
+    const authToken = bearerTokenFromRequest(request);
     const input = adminInformationAgentMessageActionSchema.parse(await request.json());
     const response = await runAdminInformationAgentMessageAction({
-      authToken: bearerTokenFromRequest(request),
+      authToken,
       input,
     });
     return NextResponse.json(response, {
