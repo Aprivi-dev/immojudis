@@ -14,7 +14,7 @@ import { firstSearchToUrl, type FirstSearch } from "@/lib/onboarding";
 import { HOME_TYPE_OPTIONS, countActiveSearchFilters } from "@/lib/search/search-filters";
 import { validateSalesSearch } from "@/lib/search/search-url-state";
 import { formatPrice } from "@/lib/format";
-import { MONTHLY_SALE_UNLOCKS, UNLOCK_HIGHLIGHTS_INLINE_TEXT } from "@/lib/sale-unlocks";
+import { MONTHLY_UNLOCKS_TEXT, UNLOCK_HIGHLIGHTS_INLINE_TEXT } from "@/lib/sale-unlocks";
 
 const steps = ["Votre secteur", "Vos critères", "Votre première recherche"];
 const inputClass =
@@ -222,12 +222,11 @@ export function InvestorOnboarding({
                   <>
                     Pendant votre essai gratuit de {ANALYSIS_TRIAL_DAYS} jours, votre compte ouvre
                     les outils de l’offre Analyse sur toutes les ventes (contenu selon la vente).
-                    Ensuite, vous pourrez débloquer {MONTHLY_SALE_UNLOCKS} ventes en détail chaque
-                    mois.
+                    Ensuite, vous aurez {MONTHLY_UNLOCKS_TEXT}.
                   </>
                 ) : (
                   <>
-                    Chaque mois, vous pouvez débloquer {MONTHLY_SALE_UNLOCKS} ventes en détail (
+                    Avec {MONTHLY_UNLOCKS_TEXT}, vous ouvrez le détail d’une vente (
                     {unlockHighlights}). L’offre Analyse les ouvre toutes.
                   </>
                 )}
@@ -263,6 +262,15 @@ export function InvestorOnboarding({
                   {alertUnavailable ??
                     "Facultatif. En cochant cette case, vous acceptez de recevoir par email un récapitulatif hebdomadaire des nouvelles ventes correspondant à ces critères. Vous pourrez le désactiver à tout moment depuis votre compte ou le lien de désinscription de chaque email."}
                 </p>
+                {alertWanted ? (
+                  // Le récapitulatif part le lundi suivant : le premier plafond ne doit pas attendre.
+                  <p
+                    data-testid="first-alert-timing"
+                    className="mt-2 pl-8 text-sm leading-relaxed text-foreground"
+                  >
+                    Votre alerte arrive lundi. En attendant, ouvrez une fiche pour voir son plafond.
+                  </p>
+                ) : null}
               </div>
             </div>
           )}

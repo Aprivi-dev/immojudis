@@ -7,6 +7,7 @@ import {
   buildAlertDigestMessage,
   resolveEmailAlertDeliveryConfig,
   resolveReplyTo,
+  resolveTransactionalEmailConfig,
   sendResendEmail,
 } from "@/lib/email-alerts";
 
@@ -27,6 +28,40 @@ describe("email alerts", () => {
       configured: true,
       appUrl: "https://immojudis.example",
     });
+  });
+
+  it("sends billing and acceptance messages from TRANSACTIONAL_EMAIL_FROM, falling back to the alerts sender", () => {
+    const base = {
+      RESEND_API_KEY: "re_test",
+      NEXT_PUBLIC_APP_URL: "https://immojudis.example",
+    };
+    // Sans variable dédiée : l'expéditeur des alertes, comme avant.
+    expect(
+      resolveTransactionalEmailConfig({
+        ...base,
+        ALERT_EMAIL_FROM: "Immojudis <alertes@immojudis.fr>",
+      }).from,
+    ).toBe("Immojudis <alertes@immojudis.fr>");
+    // Avec elle : l'expéditeur séparé, et l'expéditeur des alertes n'est plus requis.
+    const separate = resolveTransactionalEmailConfig({
+      ...base,
+      TRANSACTIONAL_EMAIL_FROM: "Immojudis <compte@immojudis.fr>",
+    });
+    expect(separate).toMatchObject({
+      configured: true,
+      from: "Immojudis <compte@immojudis.fr>",
+      missing: [],
+    });
+    // Les alertes, elles, gardent leur expéditeur.
+    expect(
+      resolveEmailAlertDeliveryConfig({
+        ...base,
+        ALERT_EMAIL_FROM: "Immojudis <alertes@immojudis.fr>",
+        TRANSACTIONAL_EMAIL_FROM: "Immojudis <compte@immojudis.fr>",
+      }).from,
+    ).toBe("Immojudis <alertes@immojudis.fr>");
+    // Sans aucun des deux : non configuré, l'expéditeur des alertes est cité.
+    expect(resolveTransactionalEmailConfig(base).missing).toContain("ALERT_EMAIL_FROM");
   });
 
   it("prefers SITE_URL and keeps NEXT_PUBLIC_APP_URL as a fallback", () => {
@@ -296,6 +331,110 @@ describe("email alerts", () => {
     expect(message.text).not.toContain("Vente 13");
   });
 
+  it("tells the recipient why the digest arrives: alert name and activation date, title and preheader", () => {
+    const message = buildAlertDigestMessage({
+      userId,
+      from: "Immojudis <alertes@immojudis.fr>",
+      recipientEmail: "client@example.test",
+      appUrl: "https://immojudis.example",
+      env,
+      alertActivatedAt: new Map([[alertA, "2026-10-12T08:00:00Z"]]),
+      notifications: [
+        notification("6b6b42a1-b719-48cc-9c9f-f0c9f707e17d", "sale-1", "Maison judiciaire", {
+          saleDate: "2026-11-12T13:00:00Z",
+          startingPriceEur: 95_000,
+        }),
+      ],
+    });
+    const reason =
+      "Vous recevez ce message parce que vous avez activé l’alerte « Bordeaux décoté » le 12 octobre 2026.";
+    expect(message.text).toContain(reason);
+    expect(message.html).toContain(reason);
+    expect(message.html).toContain(`<title>${message.subject}</title>`);
+    // Le pré-en-tête est masqué dans le message et reprend l'audience et la mise à prix.
+    expect(message.html).toMatch(/display:none[^>]*>Audience : 12 novembre 2026 · Mise à prix/);
+    // En-tête de marque et plus de Georgia.
+    expect(message.html).toContain("Immojudis</span>");
+    expect(message.html).not.toContain("Georgia");
+    expect(message.html).toContain("Manrope");
+  });
+
+  it("names every alert of a digest, and keeps the name alone when its date is unknown", () => {
+    const message = buildAlertDigestMessage({
+      userId,
+      from: "Immojudis <alertes@immojudis.fr>",
+      recipientEmail: "client@example.test",
+      appUrl: "https://immojudis.example",
+      env,
+      notifications: [
+        notification("6b6b42a1-b719-48cc-9c9f-f0c9f707e17d", "sale-1", "Maison judiciaire"),
+        {
+          ...notification("6b6b42a1-b719-48cc-9c9f-f0c9f707e17e", "sale-2", "Studio"),
+          alert_id: "22222222-2222-4333-8444-555555555555",
+          notification_snapshot: {
+            alert: { id: "22222222-2222-4333-8444-555555555555", name: "Lyon" },
+            sale: { id: "sale-2", title: "Studio", city: "Lyon", department: "69" },
+            match: { reasons: [] },
+          },
+        },
+      ],
+      alertActivatedAt: new Map([[alertA, "2026-10-12T08:00:00Z"]]),
+    });
+    expect(message.text).toContain(
+      "parce que vous avez activé les alertes « Bordeaux décoté » (le 12 octobre 2026), « Lyon ».",
+    );
+  });
+
+  it("does not send a Discovery account to the alerts list for « … et N autres »", () => {
+    const many = Array.from({ length: 12 }, (_, index) =>
+      notification(
+        `6b6b42a1-b719-48cc-9c9f-f0c9f707e1${(index + 10).toString(16).padStart(2, "0").slice(-2)}`,
+        `sale-${index}`,
+        `Vente ${index}`,
+      ),
+    );
+    const input = {
+      userId,
+      from: "Immojudis <alertes@immojudis.fr>",
+      recipientEmail: "client@example.test",
+      appUrl: "https://immojudis.example",
+      env,
+      notifications: many,
+    };
+    const discovery = buildAlertDigestMessage({ ...input, audience: "discovery" });
+    expect(discovery.text).toContain(
+      "… et 2 autres ventes correspondent à vos alertes (catalogue) : https://immojudis.example/sales",
+    );
+    expect(discovery.text).not.toContain(
+      "… et 2 autres ventes : https://immojudis.example/alertes",
+    );
+    expect(discovery.html).toContain('href="https://immojudis.example/sales"');
+    // Un compte Analyse garde la liste de ses alertes.
+    const analysis = buildAlertDigestMessage({ ...input, audience: "analyse" });
+    expect(analysis.text).toContain("… et 2 autres ventes : https://immojudis.example/alertes");
+  });
+
+  it("tags every Resend send with its category", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      Response.json({ id: "email_tag" }),
+    );
+    await sendResendEmail({
+      apiKey: "re_test",
+      idempotencyKey: "tag-1",
+      fetchImpl: fetchMock as unknown as typeof fetch,
+      category: "billing",
+      message: {
+        from: "Immojudis <compte@immojudis.fr>",
+        to: "client@example.test",
+        subject: "Paiement",
+        html: "<p>x</p>",
+        text: "x",
+      },
+    });
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(body.tags).toEqual([{ name: "category", value: "billing" }]);
+  });
+
   it("sends the one-click unsubscribe headers to Resend", async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
       Response.json({ id: "email_2" }),
@@ -304,6 +443,7 @@ describe("email alerts", () => {
       apiKey: "re_test",
       idempotencyKey: "digest-1",
       fetchImpl: fetchMock as unknown as typeof fetch,
+      category: "alert",
       message: {
         from: "Immojudis <alertes@immojudis.fr>",
         to: "client@example.test",
@@ -332,6 +472,7 @@ describe("email alerts", () => {
         apiKey: "re_test",
         idempotencyKey: "reply-to",
         fetchImpl: fetchMock as unknown as typeof fetch,
+        category: "alert",
         message: {
           from: "Immojudis <alertes@immojudis.fr>",
           to: "client@example.test",
@@ -392,6 +533,7 @@ describe("email alerts", () => {
       apiKey: "re_test",
       idempotencyKey: "mission-1",
       fetchImpl: fetchMock as unknown as typeof fetch,
+      category: "alert",
       message: {
         from: "Assistant Immojudis <assistant@immojudis.fr>",
         to: "cabinet@example.test",

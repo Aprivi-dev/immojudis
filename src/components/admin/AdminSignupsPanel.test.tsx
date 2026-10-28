@@ -37,6 +37,7 @@ function account(overrides: Partial<AdminSignupAccount>): AdminSignupAccount {
     accessEndsAt: "2026-11-01T09:05:00.000Z",
     trialEndsAt: "2026-11-01T09:05:00.000Z",
     extendable: true,
+    usage: { unlocks: 0, ceilings: 1, favorites: 2, sheetsServed: 3 },
     ...overrides,
   };
 }
@@ -57,6 +58,7 @@ function listResponse(accounts: AdminSignupAccount[]): AdminSignupListResponse {
         premium: 1,
         decouverte: 0,
       },
+      trialEndedIdle: 2,
     },
     filteredCount: accounts.length,
     offset: 0,
@@ -64,6 +66,7 @@ function listResponse(accounts: AdminSignupAccount[]): AdminSignupListResponse {
     hasMore: false,
     launchOfferActive: true,
     truncated: false,
+    usageAvailable: true,
     generatedAt: "2026-10-27T12:00:00.000Z",
   };
 }
@@ -118,6 +121,44 @@ describe("AdminSignupsPanel", () => {
     const premium = screen.getByRole("checkbox", { name: "Sélectionner premium@exemple.fr" });
     expect((premium as HTMLInputElement).disabled).toBe(true);
     expect(screen.queryByRole("form", { name: /Prolonger/ })).toBeNull();
+  });
+
+  it("montre l'usage de chaque compte, et « non mesuré » quand il n'est pas lu", async () => {
+    mocks.list.mockResolvedValue(
+      listResponse([
+        account({}),
+        account({
+          userId: "00000000-0000-4000-8000-000000000003",
+          email: "sans-usage@exemple.fr",
+          usage: null,
+        }),
+      ]),
+    );
+    renderPanel();
+
+    await screen.findByText("investisseur@exemple.fr");
+    for (const name of ["Déblocages", "Plafonds", "Favoris", "Fiches"]) {
+      expect(screen.getByRole("columnheader", { name })).toBeTruthy();
+    }
+    const rows = screen.getAllByRole("row");
+    const cells = (row: HTMLElement) =>
+      Array.from(row.querySelectorAll("td")).map((cell) => cell.textContent);
+    expect(cells(rows[1]).slice(-4)).toEqual(["0", "1", "2", "3"]);
+    expect(cells(rows[2]).slice(-4)).toEqual(Array(4).fill("non mesuré"));
+  });
+
+  it("filtre les comptes dont l'essai est fini sans activité", async () => {
+    renderPanel();
+
+    await screen.findByText("investisseur@exemple.fr");
+    fireEvent.change(screen.getByLabelText("Activité"), { target: { value: "trial_ended_idle" } });
+
+    await waitFor(() =>
+      expect(mocks.list).toHaveBeenLastCalledWith(
+        expect.objectContaining({ activity: "trial_ended_idle" }),
+      ),
+    );
+    expect(screen.getByRole("option", { name: /Essai fini sans activité \(2\)/ })).toBeTruthy();
   });
 
   it("prolonge l'essai des comptes cochés jusqu'à la date choisie", async () => {

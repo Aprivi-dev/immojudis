@@ -48,7 +48,7 @@ type RowSpec = {
 };
 
 const UNLOCKS_PER_MONTH = PLAN_LIMITS.decouverte.monthlyUnlocks;
-const UNLOCK_CELL_TEXT = `Pour ${UNLOCKS_PER_MONTH} ventes par mois`;
+const UNLOCK_CELL_TEXT = `${UNLOCKS_PER_MONTH} déblocages par mois`;
 /**
  * Les lignes du comparatif. Le montant plafond, son nom (« enchère plafond », « offre plafond ») et
  * les ventes qui en ont un dépendent des régimes de frais ouverts (`open`, lus côté serveur dans

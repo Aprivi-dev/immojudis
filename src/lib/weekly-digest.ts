@@ -531,6 +531,7 @@ export async function runWeeklyDigest({
         message,
         idempotencyKey: `immojudis-weekly-digest-${userId}-${weekKey}`,
         fetchImpl,
+        category: "weekly",
       });
       stage = "journal_failed";
       await store.markSent(id, { messageId: result.id, at: new Date() });

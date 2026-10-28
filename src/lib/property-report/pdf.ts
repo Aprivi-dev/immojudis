@@ -274,7 +274,7 @@ export function reportToPdfLines(
     `Lecture comparables: ${stringOrNumberValue(marketComparables.summary, "comparables à compléter")}`,
     ...(canShowNeighborhood
       ? [
-          `Analyse quartier: ${stringOrNumberValue(neighborhoodAnalysis.summary, "quartier à qualifier")}`,
+          `Analyse quartier : ${stringOrNumberValue(neighborhoodAnalysis.summary, "quartier à qualifier")}`,
           `Confiance quartier: ${stringOrNumberValue(neighborhoodAnalysis.confidenceLabel, "à vérifier")}`,
           `Position marché quartier: ${stringOrNumberValue(
             neighborhoodAnalysis.marketPositionLabel,
@@ -282,7 +282,7 @@ export function reportToPdfLines(
           )}`,
         ]
       : []),
-    `Analyse démographique: ${stringOrNumberValue(
+    `Analyse démographique : ${stringOrNumberValue(
       demographicAnalysis.summary,
       "données démographiques à enrichir",
     )}`,
@@ -380,14 +380,14 @@ export function reportToPdfLines(
           "Estimation locative indicative",
           "Hypothèses: loyer estimé par défaut et paramètres de vacance, charges, taxe foncière, assurance et financement du modèle.",
           rentabilityScore.score != null
-            ? `Score de rentabilité: ${rentabilityScore.score}/100 - ${stringOrNumberValue(rentabilityScore.label, "à qualifier")}`
-            : `Score de rentabilité: indisponible (${stringOrNumberValue(rentabilityScore.reason, "données incomplètes")})`,
+            ? `Score de rentabilité : ${rentabilityScore.score}/100 - ${stringOrNumberValue(rentabilityScore.label, "à qualifier")}`
+            : `Score de rentabilité : indisponible (${stringOrNumberValue(rentabilityScore.reason, "données incomplètes")})`,
           rentabilityScore.netYieldPct != null
-            ? `${rentNotice ? "Rendement estimé, charges comprises" : "Rendement net estimé"}: ${formatPercent(rentabilityScore.netYieldPct)}`
-            : `${rentNotice ? "Rendement estimé, charges comprises" : "Rendement net estimé"}: à compléter`,
+            ? `${rentNotice ? "Rendement estimé, charges comprises" : "Rendement net estimé"} : ${formatPercent(rentabilityScore.netYieldPct)}`
+            : `${rentNotice ? "Rendement estimé, charges comprises" : "Rendement net estimé"} : à compléter`,
           rentabilityScore.cashflowMonthly != null
-            ? `Cash-flow mensuel estimé: ${formatPrice(numberValue(rentabilityScore.cashflowMonthly))}`
-            : "Cash-flow mensuel estimé: à compléter",
+            ? `Cash-flow mensuel estimé : ${formatPrice(numberValue(rentabilityScore.cashflowMonthly))}`
+            : "Cash-flow mensuel estimé : à compléter",
         ]),
     `${wording.feesHeading}: ${stringOrNumberValue(
       auctionCostAnalysis.summary,

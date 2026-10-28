@@ -1,7 +1,7 @@
 {
   "name": "Immojudis",
   "short_name": "Immojudis",
-  "description": "Les enchères immobilières, en toute clarté : annonces, procédures expliquées et enchère plafond chiffrée.",
+  "description": "Les enchères immobilières, en toute clarté",
   "lang": "fr",
   "start_url": "/",
   "scope": "/",

@@ -4,6 +4,7 @@ import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middlew
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { asRecord, stringValue } from "@/lib/guards";
 import type { BidCeilingSummary } from "@/lib/admin-bid-ceilings";
+import type { OfferOpeningSurveySummary } from "@/lib/admin-offer-opening-survey";
 import type { SaleSignalFeedbackSummary } from "@/lib/admin-sale-signal-feedback";
 import { parisDateKey } from "@/lib/sale-countdown";
 
@@ -108,6 +109,8 @@ export type AdminPilotageResponse = AdminPilotage & {
   signalFeedback?: SaleSignalFeedbackSummary;
   /** Plafonds d'enchère calculés sur 7 et 30 jours : l'usage réel pendant l'offre de lancement. */
   bidCeilings?: BidCeilingSummary;
+  /** Réponses du questionnaire de la liste d'attente : profils, repères de prix, entretiens acceptés. */
+  offerOpeningSurvey?: OfferOpeningSurveySummary;
 };
 
 const count = z.number().int().nonnegative().nullish();

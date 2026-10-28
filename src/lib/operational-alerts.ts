@@ -254,6 +254,7 @@ async function sendOperationalAlertEmail(
           ),
         fetchImpl: (input, init) => fetchImpl(input, { ...init, signal: controller.signal }),
         message: buildOperationalAlertEmail(alert, environment, { from: config.from, to }),
+        category: "operations",
       });
     }
   } finally {

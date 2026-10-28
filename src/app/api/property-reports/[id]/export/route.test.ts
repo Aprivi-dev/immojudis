@@ -17,14 +17,14 @@ beforeEach(() => {
   mocks.enforceUser.mockResolvedValue(1);
 });
 it("returns 403 and prevents caching when the plan does not include PDF export", async () => {
-  mocks.exportPdf.mockRejectedValue(new Error("Export PDF réservé au plan Analyse."));
+  mocks.exportPdf.mockRejectedValue(new Error("Export PDF réservé à l’offre Analyse."));
   const response = await POST(request(), params);
   expect(response.status).toBe(403);
   expect(response.headers.get("cache-control")).toBe("private, no-store");
   expect(response.headers.get("vary")).toBe("authorization");
   expect(await response.json()).toMatchObject({
     ok: false,
-    error: "Export PDF réservé au plan Analyse.",
+    error: "Export PDF réservé à l’offre Analyse.",
     code: "FORBIDDEN",
   });
 });

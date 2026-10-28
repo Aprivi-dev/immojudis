@@ -86,6 +86,9 @@ function trialRpc(
   recordError: { message: string } | null = null,
 ) {
   mocks.rpc.mockImplementation(async (name: string, args: { p_user_id: string }) => {
+    if (name === "admin_signup_usage") {
+      return { data: null, error: { code: "PGRST202", message: "absent" } };
+    }
     if (name === "record_trial_extension") {
       return recordError ? { data: null, error: recordError } : { data: "note-1", error: null };
     }
@@ -368,6 +371,62 @@ describe("listAdminSignups", () => {
     });
     expect(response.filteredCount).toBe(3);
     expect(response.launchOfferActive).toBe(true);
+    // Fonction d'usage absente (migration pas appliquée) : « non mesuré », la page reste utilisable.
+    expect(response.usageAvailable).toBe(false);
+    expect(response.accounts.every((account) => account.usage === null)).toBe(true);
+    expect(response.summary.trialEndedIdle).toBeNull();
+  });
+
+  it("joint l'usage de chaque compte et filtre « essai fini sans activité »", async () => {
+    mocks.listUsers.mockResolvedValue({
+      data: { users: [authUser(1, 40), authUser(2, 30), authUser(3, 2), authUser(4, 20)] },
+      error: null,
+    });
+    tables({ user_profiles: [], user_subscriptions: [] });
+    const usageRow = (n: number, usage: Partial<Record<string, number>>, trial: string | null) => ({
+      user_id: id(n),
+      unlocks: 0,
+      ceilings: 0,
+      favorites: 0,
+      sheets_served: 0,
+      trial_ends_at: trial,
+      ...usage,
+    });
+    mocks.rpc.mockImplementation(async (name: string) =>
+      name === "admin_signup_usage"
+        ? {
+            data: [
+              // 1 : essai fini, rien fait.
+              usageRow(1, {}, "2026-09-24T12:00:00.000Z"),
+              // 2 : essai fini, un favori.
+              usageRow(2, { favorites: 1 }, "2026-10-04T12:00:00.000Z"),
+              // 3 : essai en cours.
+              usageRow(3, {}, "2026-11-01T12:00:00.000Z"),
+              // 4 : jamais eu droit à l'essai (adresse jetable) : pas un essai fini.
+              usageRow(4, {}, null),
+            ],
+            error: null,
+          }
+        : { data: null, error: null },
+    );
+
+    const all = await listAdminSignups("token", adminSignupListQuerySchema.parse({}), NOW);
+    expect(all.usageAvailable).toBe(true);
+    expect(all.accounts.find((account) => account.userId === id(2))?.usage).toEqual({
+      unlocks: 0,
+      ceilings: 0,
+      favorites: 1,
+      sheetsServed: 0,
+    });
+    expect(all.summary.trialEndedIdle).toBe(1);
+
+    const idle = await listAdminSignups(
+      "token",
+      adminSignupListQuerySchema.parse({ activity: "trial_ended_idle" }),
+      NOW,
+    );
+    expect(idle.accounts.map((account) => account.userId)).toEqual([id(1)]);
+    expect(idle.filteredCount).toBe(1);
   });
 
   it("filtre par type d'accès et par email, puis pagine", async () => {

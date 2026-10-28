@@ -7,6 +7,11 @@ const mocks = vi.hoisted(() => ({
   assertEntitlement: vi.fn(),
   isPublished: vi.fn(),
   readStored: vi.fn(),
+  record: vi.fn(),
+}));
+
+vi.mock("@/lib/account-product-events.server", () => ({
+  recordAccountProductEvent: mocks.record,
 }));
 
 vi.mock("@/integrations/supabase/auth-middleware", async (importOriginal) => ({
@@ -69,6 +74,7 @@ describe("GET /api/sales/[id]/pepite", () => {
     mocks.assertEntitlement.mockResolvedValue({ plan: { plan: "analyse" }, door: "plan" });
     mocks.isPublished.mockResolvedValue(true);
     mocks.readStored.mockResolvedValue(STORED);
+    mocks.record.mockResolvedValue(true);
   });
 
   it("refuse un identifiant qui n'est pas une vente (400), sans rien lire", async () => {
@@ -228,6 +234,19 @@ describe("GET /api/sales/[id]/pepite", () => {
       expect(body.detail.priceNote).toContain("Ce n'est pas une prévision");
       expect(response.headers.get("cache-control")).toBe("private, no-store");
       expect(response.headers.get("vary")).toBe("authorization");
+    });
+
+    it("enregistre pour le compte que le détail a été servi, et seulement à ce niveau", async () => {
+      await call("", "token");
+      expect(mocks.record).not.toHaveBeenCalled();
+      await call("?view=detail", "token");
+      expect(mocks.record).toHaveBeenCalledWith("user-1", { type: "pepite_detail_served", saleId });
+    });
+
+    it("n'enregistre rien quand le droit est refusé", async () => {
+      mocks.assertEntitlement.mockRejectedValue(new Error("refusé"));
+      await call("?view=detail", "token");
+      expect(mocks.record).not.toHaveBeenCalled();
     });
 
     it("garde le 404 d'une vente qui n'est pas (ou plus) une pépite, même avec le droit", async () => {

@@ -38,6 +38,28 @@ function sale(overrides: Partial<AuctionSale> = {}): AuctionSale {
   };
 }
 
+describe("signalement depuis la fiche complète", () => {
+  const SALE_ID = "4655881c-249d-4eab-beba-f2624d8a1af0";
+
+  it("propose de signaler une erreur sur la fiche et sur le plafond, avec l'identifiant de la vente", () => {
+    render(<ListingChecks sale={sale()} points={[]} saleId={SALE_ID} />);
+
+    const fiche = screen.getByRole("link", { name: "Signaler une erreur sur cette fiche" });
+    expect(fiche.getAttribute("href")).toBe(
+      `/contact?sujet=erreur&vente=${SALE_ID}&rubrique=fiche`,
+    );
+    const plafond = screen.getByRole("link", { name: "Signaler une erreur sur le plafond" });
+    expect(plafond.getAttribute("href")).toBe(
+      `/contact?sujet=erreur&vente=${SALE_ID}&rubrique=plafond`,
+    );
+  });
+
+  it("ne propose rien sans identifiant de vente", () => {
+    render(<ListingChecks sale={sale()} points={[]} />);
+    expect(screen.queryByRole("link", { name: /Signaler/ })).toBeNull();
+  });
+});
+
 describe("ListingPreparation", () => {
   it("exposes the real missing-field checklist without changing sale data", () => {
     const item = sale({

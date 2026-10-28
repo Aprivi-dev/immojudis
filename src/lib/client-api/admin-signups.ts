@@ -24,6 +24,7 @@ export async function fetchAdminSignups(
       limit: input.limit ?? 50,
       q: input.q ?? "",
       access: input.access ?? "all",
+      activity: input.activity ?? "all",
     }),
   });
 

@@ -66,10 +66,10 @@ describe("plafonds journaliers des rapports enregistrés et de leur export PDF",
   it("ne consomme aucun plafond pour un compte qui n'a pas le droit (création et PDF)", async () => {
     const { auth } = account({ isAdmin: false });
     await expect(savePropertyReport({ auth, input, request })).rejects.toThrow(
-      "Rapports réservés au plan Analyse.",
+      "Rapports réservés à l’offre Analyse.",
     );
     await expect(exportPropertyReportPdf({ auth, reportId: "r", request })).rejects.toThrow(
-      "Export PDF réservé au plan Analyse.",
+      "Export PDF réservé à l’offre Analyse.",
     );
     expect(mocks.daily).not.toHaveBeenCalled();
   });

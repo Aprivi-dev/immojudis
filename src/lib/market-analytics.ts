@@ -165,7 +165,7 @@ export async function getMarketAnalytics({
 }): Promise<MarketAnalyticsResponse> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "market.priceDistribution")) {
-    throw new Error("Analyse de marché avancée réservée au plan Analyse.");
+    throw new Error("Analyse de marché avancée réservée à l’offre Analyse.");
   }
 
   const referenceSale = input.saleId ? await getReferenceSale(auth, input.saleId) : null;

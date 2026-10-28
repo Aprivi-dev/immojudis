@@ -32,6 +32,7 @@ const PAGE_SIZE = 50;
 const EXTENSION_SHORTCUTS = [7, 14, 30] as const;
 
 type AccessFilter = "all" | AdminSignupAccess;
+type ActivityFilter = "all" | "trial_ended_idle";
 
 /**
  * Liste des comptes inscrits (gratuits compris) : date d'inscription, ancienneté, confirmation de
@@ -44,6 +45,7 @@ export function AdminSignupsPanel() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [access, setAccess] = useState<AccessFilter>("all");
+  const [activity, setActivity] = useState<ActivityFilter>("all");
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [endsAt, setEndsAt] = useState(() => formatDateTimeLocalInput(endOfDayInDays(14)));
   const [note, setNote] = useState("");
@@ -55,8 +57,9 @@ export function AdminSignupsPanel() {
   }, [search]);
 
   const query = useQuery({
-    queryKey: [...SIGNUPS_QUERY_KEY, offset, debouncedSearch, access],
-    queryFn: () => fetchAdminSignups({ offset, limit: PAGE_SIZE, q: debouncedSearch, access }),
+    queryKey: [...SIGNUPS_QUERY_KEY, offset, debouncedSearch, access, activity],
+    queryFn: () =>
+      fetchAdminSignups({ offset, limit: PAGE_SIZE, q: debouncedSearch, access, activity }),
     staleTime: 30_000,
     placeholderData: keepPreviousData,
   });
@@ -232,7 +235,30 @@ export function AdminSignupsPanel() {
               ))}
             </select>
           </label>
+          <label className="grid gap-1.5 text-sm font-medium text-brand-navy/80">
+            Activité
+            <select
+              value={activity}
+              onChange={(event) => {
+                setActivity(event.target.value as ActivityFilter);
+                setOffset(0);
+              }}
+              className="rounded-lg border border-brand-navy/15 bg-white px-3 py-2 text-sm outline-none focus:border-gold"
+            >
+              <option value="all">Toutes</option>
+              <option value="trial_ended_idle">
+                Essai fini sans activité
+                {summary?.trialEndedIdle != null ? ` (${summary.trialEndedIdle})` : ""}
+              </option>
+            </select>
+          </label>
         </div>
+        {data && !data.usageAvailable ? (
+          <p className="mt-3 text-xs text-brand-navy/70">
+            Usage par compte non mesuré (migration non appliquée ou lecture impossible) : le filtre
+            « essai fini sans activité » ne rend rien.
+          </p>
+        ) : null}
 
         {selected.size > 0 ? (
           <form
@@ -338,7 +364,7 @@ export function AdminSignupsPanel() {
         ) : null}
 
         <div className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-[52rem] text-left text-sm">
+          <table className="w-full min-w-[64rem] text-left text-sm">
             <caption className="sr-only">Comptes inscrits sur Immojudis</caption>
             <thead>
               <tr className="border-b border-brand-navy/12 text-xs uppercase text-brand-navy/70">
@@ -366,12 +392,24 @@ export function AdminSignupsPanel() {
                 <th scope="col" className="px-2 py-2 font-semibold">
                   Accès
                 </th>
+                <th scope="col" className="px-2 py-2 font-semibold">
+                  Déblocages
+                </th>
+                <th scope="col" className="px-2 py-2 font-semibold">
+                  Plafonds
+                </th>
+                <th scope="col" className="px-2 py-2 font-semibold">
+                  Favoris
+                </th>
+                <th scope="col" className="px-2 py-2 font-semibold">
+                  Fiches
+                </th>
               </tr>
             </thead>
             <tbody>
               {query.isLoading ? (
                 <tr>
-                  <td colSpan={6} className="px-2 py-6 text-center text-ink-soft">
+                  <td colSpan={10} className="px-2 py-6 text-center text-ink-soft">
                     <span role="status">Chargement des inscriptions…</span>
                   </td>
                 </tr>
@@ -386,7 +424,7 @@ export function AdminSignupsPanel() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={6} className="px-2 py-6 text-center text-ink-soft">
+                  <td colSpan={10} className="px-2 py-6 text-center text-ink-soft">
                     Aucun compte ne correspond.
                   </td>
                 </tr>
@@ -458,7 +496,20 @@ function SignupRow({
         <AccessPill access={account.access} />
         <span className="mt-1 block text-xs text-brand-navy/62">{accessDetail(account)}</span>
       </td>
+      <UsageCell value={account.usage?.unlocks} />
+      <UsageCell value={account.usage?.ceilings} />
+      <UsageCell value={account.usage?.favorites} />
+      <UsageCell value={account.usage?.sheetsServed} />
     </tr>
+  );
+}
+
+/** Un nombre d'usage ; « non mesuré » quand la lecture d'usage n'est pas disponible. */
+function UsageCell({ value }: { value: number | undefined }) {
+  return (
+    <td className="px-2 py-3 tabular-nums">
+      {value == null ? <span className="text-xs text-brand-navy/62">non mesuré</span> : value}
+    </td>
   );
 }
 

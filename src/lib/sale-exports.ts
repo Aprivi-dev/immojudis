@@ -234,7 +234,7 @@ export async function exportSalesCsv({
 }): Promise<SalesCsvExport> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "sales.csvExport")) {
-    throw new Error("Export CSV réservé au plan Analyse.");
+    throw new Error("Export CSV réservé à l’offre Analyse.");
   }
   await enforceUserRateLimit({
     userId: auth.userId,
@@ -289,7 +289,7 @@ export async function exportSalesApiFeed({
 }): Promise<SalesApiFeed> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "sales.apiAccess")) {
-    throw new Error("API ventes réservée au plan Analyse.");
+    throw new Error("API ventes réservée à l’offre Analyse.");
   }
   await enforceUserRateLimit({
     userId: auth.userId,

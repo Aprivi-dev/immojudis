@@ -95,6 +95,7 @@ const SERVER_KEYS = [
   "NODE_ENV",
   "CEILING_FEE_REGIMES_OPEN",
   "ALERT_RENT_BASIS_SWITCH_AT",
+  "TRANSACTIONAL_EMAIL_FROM",
 ] as const;
 
 /**
@@ -195,6 +196,8 @@ export function serverEnv(source?: EnvSource) {
     email: {
       resendApiKey: env.RESEND_API_KEY,
       from: firstFilled(env.ALERT_EMAIL_FROM, env.RESEND_FROM_EMAIL),
+      /** Expéditeur des messages liés au contrat (facturation, acceptation) ; absent : `from`. */
+      transactionalFrom: env.TRANSACTIONAL_EMAIL_FROM,
     },
     saleReminders: {
       /** Valeur brute de `SALE_REMINDERS_MODE` ; `saleRemindersMode()` la ramène à off, internal ou on. */

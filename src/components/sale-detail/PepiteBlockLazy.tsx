@@ -6,6 +6,7 @@ import { useEffect, type ReactNode } from "react";
 import { PepiteIcon } from "@/components/PepiteBadge";
 import { useSalePepiteState } from "@/hooks/use-sale-pepite";
 import { PEPITE_ANCHOR, PEPITE_METHOD_LINK_LABEL, PEPITE_METHOD_PATH } from "@/lib/pepite-copy";
+import { PepiteViewTracker } from "./PepiteViewTracker";
 
 const PepiteBlock = dynamic(() => import("./PepiteBlock").then((module) => module.PepiteBlock));
 
@@ -43,7 +44,10 @@ export function PepiteBlockLazy({
 
   if (payload) {
     return (
-      <PepiteBlock payload={payload} saleId={saleId} lockedAction={lockedAction} className="" />
+      <>
+        <PepiteViewTracker payload={payload} saleId={saleId} />
+        <PepiteBlock payload={payload} saleId={saleId} lockedAction={lockedAction} className="" />
+      </>
     );
   }
   if (status === "loading") {

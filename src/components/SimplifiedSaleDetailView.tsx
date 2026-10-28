@@ -10,6 +10,7 @@ import { listingSaleStatus } from "@/lib/listing-evidence";
 import { useAuth } from "@/hooks/use-auth";
 import { salesReturnHref, salesReturnLabel } from "@/lib/navigation";
 import { DocumentReadingSection } from "@/components/sale-detail/DocumentReadingSection";
+import { PepiteViewTracker } from "@/components/sale-detail/PepiteViewTracker";
 import { SalePassagesSection } from "@/components/sale-detail/SalePassagesSection";
 import { SaleUnlockPanel } from "@/components/sale-detail/SaleUnlockPanel";
 import { pointsToVerify } from "@/lib/search/points-to-verify";
@@ -789,17 +790,20 @@ function SaleDetailWorkspace({
             {activeTab === "apercu" ? (
               <>
                 {pepite ? (
-                  <PepiteBlock
-                    payload={pepite}
-                    saleId={sale.id}
-                    userCeilingEur={heroCeiling}
-                    lockedAction={
-                      <UnlockCallToAction
-                        offerLabel="Découvrir l’offre Analyse"
-                        primaryClassName="font-semibold text-gold-text underline underline-offset-4"
-                      />
-                    }
-                  />
+                  <>
+                    <PepiteViewTracker payload={pepite} saleId={sale.id} />
+                    <PepiteBlock
+                      payload={pepite}
+                      saleId={sale.id}
+                      userCeilingEur={heroCeiling}
+                      lockedAction={
+                        <UnlockCallToAction
+                          offerLabel="Découvrir l’offre Analyse"
+                          primaryClassName="font-semibold text-gold-text underline underline-offset-4"
+                        />
+                      }
+                    />
+                  </>
                 ) : null}
                 {adjudicationLine ? (
                   <p

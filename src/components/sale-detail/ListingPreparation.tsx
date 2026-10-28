@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import FileText from "lucide-react/dist/esm/icons/file-text.js";
 import {
@@ -14,6 +15,7 @@ import {
   getListingPublicInformation,
   type PublicListingFact,
 } from "@/lib/listing-public-information";
+import { contactReportPath } from "@/lib/contact-message";
 import { getSaleProcedure } from "@/lib/sale-procedure";
 import { collectSaleDocuments } from "@/lib/sale-documents";
 import { riskEvidence } from "@/lib/risk-evidence";
@@ -329,6 +331,16 @@ export function ListingChecks({
         {documentCount > 0 ? `${documentCount} pièce(s) consultable(s)` : "Aucune pièce attachée"}
         {" · "}
         <a href="#documents">Consulter les pièces du dossier</a>
+        {saleId ? (
+          <>
+            {" · "}
+            <Link href={contactReportPath(saleId)}>Signaler une erreur sur cette fiche</Link>
+            {" · "}
+            <Link href={contactReportPath(saleId, "plafond")}>
+              Signaler une erreur sur le plafond
+            </Link>
+          </>
+        ) : null}
       </p>
 
       {risks.length ? (

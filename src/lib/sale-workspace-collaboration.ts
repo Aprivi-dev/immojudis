@@ -306,7 +306,7 @@ async function assertWorkspaceCollaborationAvailable(
 ): Promise<PlanEntitlements> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "workspace.collaboration") && !auth.isAdmin) {
-    throw new Error("La collaboration de dossier est réservée au plan Analyse.");
+    throw new Error("La collaboration de dossier est réservée à l’offre Analyse.");
   }
   return plan;
 }

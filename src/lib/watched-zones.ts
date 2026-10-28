@@ -233,7 +233,7 @@ export function normalizeWatchedZone(row: WatchedZoneRow): UserWatchedZone {
 async function assertWatchedZonesAvailable(auth: SupabaseAuthContext) {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "alerts.watchedZones")) {
-    throw new Error("Zones surveillées réservées au plan Analyse.");
+    throw new Error("Zones surveillées réservées à l’offre Analyse.");
   }
   return plan;
 }

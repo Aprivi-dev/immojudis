@@ -107,7 +107,7 @@ export const NOTARY_AUCTION_FEE_REGIME_LABELS: FeeRegimeLabels = {
 export const NOTARY_ONLINE_FEE_REGIME_LABELS: FeeRegimeLabels = {
   ...NOTARY_ONLINE_FEE_REGIME_TERMS,
   referencePriceTerm: "première offre possible",
-  bidVerb: "offrir",
+  bidVerb: "faire une offre allant",
   byOffers: true,
   ceilingStepLabel: "Offre plafond",
   ceilingStepDetail: `Arrondie aux 500 € inférieurs. Au-delà, l’opération ne respecte plus vos objectifs. ${NOTARY_ONLINE_RESERVE_NOTICE}`,

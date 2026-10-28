@@ -1045,7 +1045,7 @@ describe("essai gratuit à l'inscription sur la fiche publique", () => {
   it("rendu serveur : l'état est inconnu, le HTML ne promet ni quota ni offre", () => {
     // Le magasin annonce « offre active », mais le serveur ne lit pas l'état : il rend « inconnu ».
     const html = renderToString(withOffer({ active: true, pending: false }));
-    expect(html).not.toContain("fiches détaillées par mois");
+    expect(html).not.toContain("déblocages par mois");
     expect(html).not.toContain("offre de lancement");
     expect(html).toContain("Gratuit, sans carte bancaire");
     expect(html).toContain("Selon votre compte");

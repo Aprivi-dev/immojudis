@@ -1,6 +1,12 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { EMAIL_BRAND_NAME, EMAIL_COLORS, EMAIL_COLOR_TOKENS } from "./email-brand";
+import {
+  EMAIL_BRAND_NAME,
+  EMAIL_COLORS,
+  EMAIL_COLOR_TOKENS,
+  EMAIL_FONT_STACK,
+  emailBrandHeaderHtml,
+} from "./email-brand";
 
 const css = readFileSync("src/styles.css", "utf8");
 
@@ -20,6 +26,18 @@ describe("palette des emails", () => {
 
   it("nomme la marque « Immojudis », pas en capitales", () => {
     expect(EMAIL_BRAND_NAME).toBe("Immojudis");
+  });
+
+  it("écrit en Manrope puis en sans empattement, jamais en Georgia", () => {
+    expect(EMAIL_FONT_STACK).toBe("Manrope, Arial, Helvetica, sans-serif");
+    expect(EMAIL_FONT_STACK).not.toMatch(/georgia|serif'|times/i);
+  });
+
+  it("ouvre les gabarits HTML par une barre or de 6 px et le nom « Immojudis »", () => {
+    const header = emailBrandHeaderHtml();
+    expect(header).toContain(`border-top:6px solid ${EMAIL_COLORS.gold}`);
+    expect(header).toContain(`>${EMAIL_BRAND_NAME}</span>`);
+    expect(header).not.toMatch(/IMMOJUDIS|text-transform/);
   });
 
   it("garde un texte doré lisible (au moins 4,5:1 sur blanc)", () => {

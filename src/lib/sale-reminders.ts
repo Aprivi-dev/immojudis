@@ -601,6 +601,7 @@ export async function runSaleReminders({
           message,
           idempotencyKey: `immojudis-sale-reminders-${userId}-${key}`,
           fetchImpl,
+          category: "reminder",
         });
         stage = "journal_failed";
         await store.markSent(ids, { messageId: result.id, at: new Date() });

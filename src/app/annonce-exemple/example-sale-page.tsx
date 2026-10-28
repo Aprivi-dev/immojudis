@@ -108,7 +108,7 @@ export function ExampleSalePage({
           <div className="flex flex-wrap gap-3">
             {user ? null : (
               <Link
-                href={loginPathWithRedirect("/sales", { reason: "offre" })}
+                href={loginPathWithRedirect("/sales", { reason: "exemple" })}
                 className={buttonClasses({ variant: "primary" })}
               >
                 Créer mon compte gratuit
