@@ -19,6 +19,18 @@ describe("reportRentReference", () => {
     });
   });
 
+  it("keeps the credit for a rent computed from the map (median of arrondissements or of the department)", () => {
+    for (const source of ["anil_arrondissements_median", "anil_department_median"]) {
+      expect(reportRentReference({ source, vintage: 2025, sourceUpdatedOn: "2025-12-11" })).toEqual(
+        {
+          source,
+          vintage: 2025,
+          sourceUpdatedOn: "2025-12-11",
+        },
+      );
+    }
+  });
+
   it("gives no ANIL credit to an old report, a department rent or an unreadable value", () => {
     expect(reportRentReference(undefined)).toBeNull();
     expect(reportRentReference(null)).toBeNull();

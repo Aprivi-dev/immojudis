@@ -19,7 +19,20 @@ export type RentReferenceSource =
   | "anil_commune"
   | "anil_maille"
   | "anil_epci"
+  /** Paris, Lyon ou Marseille sans arrondissement connu : médiane de leurs arrondissements. */
+  | "anil_arrondissements_median"
+  /** Médiane des communes du département, calculée sur la carte (repli avant la table codée en dur). */
+  | "anil_department_median"
   | "department_estimate";
+
+/** Sources tirées de la carte de l'ANIL : leur affichage demande le crédit et le millésime. */
+export const ANIL_RENT_SOURCES: readonly RentReferenceSource[] = [
+  "anil_commune",
+  "anil_maille",
+  "anil_epci",
+  "anil_arrondissements_median",
+  "anil_department_median",
+];
 
 /**
  * `reliable` : estimation calculée sur la commune elle-même (`TYPPRED` = commune) avec au moins 30
@@ -163,6 +176,38 @@ export function rentReferenceFromAnilRow(row: AnilRentRow): RentReference | null
     observations: optional(row.observations_commune),
     vintage: row.vintage,
     sourceUpdatedOn: row.source_updated_on,
+  };
+}
+
+/** Médiane d'une liste de nombres (moyenne des deux valeurs centrales si le compte est pair) ; `null` si vide. */
+export function median(values: readonly number[]): number | null {
+  const sorted = values.filter((value) => Number.isFinite(value)).sort((a, b) => a - b);
+  if (!sorted.length) return null;
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+/**
+ * Référence calculée sur la carte de l'ANIL sans ligne pour la commune elle-même (médiane des arrondissements
+ * ou du département) : toujours `indicative`, avec le millésime et la date de la carte utilisée.
+ */
+export function rentReferenceFromAnilMedian(input: {
+  rentPerM2: number;
+  source: "anil_arrondissements_median" | "anil_department_median";
+  segment: RentSegment | null;
+  communeCode?: string | null;
+  vintage: number | null;
+  sourceUpdatedOn: string | null;
+}): RentReference | null {
+  if (!Number.isFinite(input.rentPerM2) || input.rentPerM2 <= 0) return null;
+  return {
+    rentPerM2: Math.round(input.rentPerM2 * 10_000) / 10_000,
+    source: input.source,
+    reliability: "indicative",
+    segment: input.segment,
+    communeCode: input.communeCode ?? null,
+    vintage: input.vintage,
+    sourceUpdatedOn: input.sourceUpdatedOn,
   };
 }
 
