@@ -675,6 +675,27 @@ describe("BillingActions : offre de lancement", () => {
     expect(mocks.openBillingPortal).not.toHaveBeenCalled();
   });
 
+  it("ne propose ni portail ni résiliation à un essai prolongé par l'administrateur", async () => {
+    mocks.launch = { active: true, pending: false };
+    mocks.legalPublisherConfigurationStatus.mockReturnValue({ ready: true, missing: [] });
+    mocks.fetchAccessPlan.mockResolvedValue({
+      plan: {
+        plan: "analyse",
+        currentPeriodEnd: "2026-12-01T13:05:00.000Z",
+        launchOffer: true,
+        trialExtension: true,
+        trialEndsAt: "2026-12-01T13:05:00.000Z",
+        billing: { status: "trialing", hasStripeCustomer: false, graceEndsAt: null },
+      },
+    });
+    renderActions();
+
+    expect(await screen.findByTestId("launch-offer-notice")).toBeTruthy();
+    expect(screen.queryByText(/Gérer mon abonnement|Résilier|Voir mes paiements/)).toBeNull();
+    expect(mocks.openBillingPortal).not.toHaveBeenCalled();
+    expect(mocks.openSubscriptionCancellation).not.toHaveBeenCalled();
+  });
+
   it("laisse le portail à un ancien abonné dont le paiement a échoué, même pendant l'offre", async () => {
     mocks.fetchAccessPlan.mockResolvedValue({
       plan: {

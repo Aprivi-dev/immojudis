@@ -9,14 +9,19 @@ const mocks = vi.hoisted(() => ({
   adminRows: vi.fn(),
 }));
 vi.mock("@/lib/launch-offer.server", () => ({
-  isLaunchOfferActive: mocks.launchOffer,
-  // Essai en cours ou non (`confirmedEmail`), sans date de fin connue.
-  hasActiveSignupTrial: mocks.confirmedEmail,
-  readSignupTrial: async (userId: string) =>
-    (await mocks.trial(userId)) ?? {
-      active: Boolean(await mocks.confirmedEmail(userId)),
-      endsAt: null,
-    },
+  // Essai en cours ou non (`confirmedEmail`), sans date de fin connue. La vraie lecture applique
+  // l'interrupteur (`launchOffer`) : coupé, aucun essai, et aucun « refus » à signaler au compte.
+  hasActiveSignupTrial: async (userId: string) =>
+    Boolean((await mocks.launchOffer()) && (await mocks.confirmedEmail(userId))),
+  readSignupTrial: async (userId: string) => {
+    if (!(await mocks.launchOffer())) return { active: false, endsAt: null };
+    return (
+      (await mocks.trial(userId)) ?? {
+        active: Boolean(await mocks.confirmedEmail(userId)),
+        endsAt: null,
+      }
+    );
+  },
 }));
 vi.mock("@/lib/sale-unlocks.server", () => ({ hasUnlockedSale: vi.fn() }));
 vi.mock("@/integrations/supabase/client.server", () => ({
@@ -32,7 +37,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
   },
 }));
 
-import { PLAN_LIMITS } from "@/lib/plans";
+import { hasStandingAnalysisAccess, PLAN_LIMITS } from "@/lib/plans";
 import {
   assertFeatureEntitlement,
   resolvePlanEntitlements,
@@ -44,6 +49,8 @@ type Subscription = {
   status: string;
   current_period_end: string | null;
   stripe_customer_id: string | null;
+  stripe_subscription_id?: string | null;
+  metadata?: Record<string, unknown>;
 } | null;
 
 function account({
@@ -239,6 +246,96 @@ describe("plan effectif pendant l'offre de lancement", () => {
     await expect(
       assertFeatureEntitlement(account(), "property.pdfExport", "Export réservé."),
     ).rejects.toThrow("Export réservé.");
+  });
+
+  describe("prolongation d'essai par l'administrateur (ligne sans abonnement Stripe)", () => {
+    const extensionEnd = new Date(Date.now() + 30 * 86_400_000).toISOString();
+    const extensionRow = (overrides: Partial<NonNullable<Subscription>> = {}): Subscription => ({
+      plan_code: "analyse",
+      status: "trialing",
+      current_period_end: extensionEnd,
+      stripe_customer_id: null,
+      stripe_subscription_id: null,
+      metadata: { manual_grant: { source: "admin_trial_extension" } },
+      ...overrides,
+    });
+
+    it("est traitée comme un essai : marqueur, fin de la prolongation, aucun abonnement à gérer", async () => {
+      mocks.launchOffer.mockResolvedValue(true);
+      // Même un ancien client Stripe (checkout abandonné) n'ouvre ni portail ni résiliation.
+      const plan = await resolvePlanEntitlements(
+        account({ hasProfile: true, subscription: extensionRow({ stripe_customer_id: "cus_1" }) }),
+      );
+      expect(plan).toMatchObject({
+        plan: "analyse",
+        hasAnalysisAccess: true,
+        launchOffer: true,
+        trialExtension: true,
+        trialEndsAt: extensionEnd,
+        currentPeriodEnd: extensionEnd,
+        billing: { status: "trialing", hasStripeCustomer: false, graceEndsAt: null },
+      });
+      expect(plan.limits).toEqual(PLAN_LIMITS.analyse);
+      expect(hasStandingAnalysisAccess(plan)).toBe(false);
+      expect(mocks.trial).not.toHaveBeenCalled();
+    });
+
+    it("ne dépend pas de l'interrupteur de l'essai : l'administrateur a décidé de la fin", async () => {
+      mocks.launchOffer.mockResolvedValue(false);
+      const plan = await resolvePlanEntitlements(
+        account({ hasProfile: true, subscription: extensionRow() }),
+      );
+      expect(plan).toMatchObject({ plan: "analyse", launchOffer: true, trialExtension: true });
+    });
+
+    it("redevient Découverte à son terme, avec la date de fin de la prolongation et non celle de l'essai", async () => {
+      mocks.launchOffer.mockResolvedValue(true);
+      const naturalEnd = new Date(Date.now() - 20 * 86_400_000).toISOString();
+      const extensionEnded = new Date(Date.now() - 2 * 86_400_000).toISOString();
+      mocks.trial.mockResolvedValueOnce({ active: false, endsAt: naturalEnd });
+      const plan = await resolvePlanEntitlements(
+        account({
+          hasProfile: true,
+          subscription: extensionRow({ current_period_end: extensionEnded }),
+        }),
+      );
+      expect(plan).toMatchObject({ plan: "decouverte", trialEndedAt: extensionEnded });
+      expect(plan).not.toHaveProperty("launchOffer");
+      expect(plan).not.toHaveProperty("trialExtension");
+    });
+
+    it("reste un abonnement ordinaire dès qu'un abonnement Stripe est rattaché", async () => {
+      mocks.launchOffer.mockResolvedValue(true);
+      const plan = await resolvePlanEntitlements(
+        account({
+          hasProfile: true,
+          subscription: extensionRow({
+            status: "active",
+            stripe_customer_id: "cus_1",
+            stripe_subscription_id: "sub_1",
+          }),
+        }),
+      );
+      expect(plan.plan).toBe("analyse");
+      expect(plan).not.toHaveProperty("launchOffer");
+      expect(plan.billing).toMatchObject({ hasStripeCustomer: true });
+      expect(hasStandingAnalysisAccess(plan)).toBe(true);
+    });
+
+    it("ne confond pas une attribution manuelle ordinaire avec un essai", async () => {
+      mocks.launchOffer.mockResolvedValue(true);
+      const plan = await resolvePlanEntitlements(
+        account({
+          hasProfile: true,
+          subscription: extensionRow({
+            status: "active",
+            metadata: { manual_grant: { source: "admin" } },
+          }),
+        }),
+      );
+      expect(plan).not.toHaveProperty("launchOffer");
+      expect(hasStandingAnalysisAccess(plan)).toBe(true);
+    });
   });
 });
 

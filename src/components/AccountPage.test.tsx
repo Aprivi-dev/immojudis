@@ -96,6 +96,31 @@ describe("AccountPage unlocks", () => {
     expect(mocks.overview).not.toHaveBeenCalled();
   });
 
+  it("dit d'un essai prolongé qu'il est gratuit, sans portail ni résiliation", async () => {
+    mocks.plan.mockResolvedValue({
+      plan: {
+        plan: "analyse",
+        label: "Analyse",
+        hasAnalysisAccess: true,
+        launchOffer: true,
+        trialExtension: true,
+        trialEndsAt: "2026-12-01T13:05:00.000Z",
+        currentPeriodEnd: "2026-12-01T13:05:00.000Z",
+        billing: { status: "trialing", hasStripeCustomer: false, graceEndsAt: null },
+      },
+    });
+    renderPage();
+
+    const status = await screen.findByTestId("account-launch-offer");
+    expect(status.textContent).toBe(
+      "Essai gratuit prolongé jusqu’au 1er décembre 2026 à 14:05 ; rien ne devient payant automatiquement. À son terme, votre compte revient à l’offre Découverte, gratuite.",
+    );
+    expect(screen.getByText("Analyse · essai gratuit prolongé")).toBeTruthy();
+    expect(screen.queryByText(/portail sécurisé Stripe/)).toBeNull();
+    expect(screen.queryByText(/accès jusqu’au/)).toBeNull();
+    expect(screen.getByTestId("account-offer-end")).toBeTruthy();
+  });
+
   it("keeps the subscription actions next to the counter", async () => {
     mocks.plan.mockResolvedValue({
       plan: { plan: "decouverte", label: "Découverte", hasAnalysisAccess: false },

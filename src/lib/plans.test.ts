@@ -4,6 +4,7 @@ import {
   hasLiveStripeSubscription,
   hasStandingAnalysisAccess,
   isPlanPeriodActive,
+  isTrialExtensionRow,
   pastDueGraceEnd,
   normalizePlanCode,
   PLAN_FEATURES,
@@ -164,5 +165,39 @@ describe("hasStandingAnalysisAccess", () => {
     expect(hasStandingAnalysisAccess({ hasAnalysisAccess: false })).toBe(false);
     expect(hasStandingAnalysisAccess(null)).toBe(false);
     expect(hasStandingAnalysisAccess(undefined)).toBe(false);
+  });
+});
+
+describe("isTrialExtensionRow", () => {
+  const grant = (source: string) => ({ manual_grant: { source } });
+
+  it("reconnaît une prolongation d'essai sans abonnement Stripe", () => {
+    expect(
+      isTrialExtensionRow({
+        stripe_subscription_id: null,
+        metadata: grant("admin_trial_extension"),
+      }),
+    ).toBe(true);
+    expect(isTrialExtensionRow({ metadata: grant("admin_trial_extension") })).toBe(true);
+  });
+
+  it("n'y voit ni un abonnement Stripe, ni une attribution ordinaire, ni une ligne vide", () => {
+    expect(
+      isTrialExtensionRow({
+        stripe_subscription_id: "sub_1",
+        metadata: grant("admin_trial_extension"),
+      }),
+    ).toBe(false);
+    expect(isTrialExtensionRow({ metadata: grant("admin") })).toBe(false);
+    expect(isTrialExtensionRow({ metadata: {} })).toBe(false);
+    expect(isTrialExtensionRow({ metadata: [] })).toBe(false);
+    expect(isTrialExtensionRow({ metadata: { manual_grant: "admin_trial_extension" } })).toBe(
+      false,
+    );
+    expect(isTrialExtensionRow(null)).toBe(false);
+  });
+
+  it("n'est pas un droit durable : la prolongation est un essai", () => {
+    expect(hasStandingAnalysisAccess({ hasAnalysisAccess: true, launchOffer: true })).toBe(false);
   });
 });

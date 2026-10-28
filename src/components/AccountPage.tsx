@@ -160,7 +160,11 @@ export function AccountPage() {
           <p className="mt-2 text-sm text-muted-foreground">
             Offre actuelle :{" "}
             <strong className="text-foreground">
-              {plan ? (launchOffer ? `${plan.label} · essai gratuit` : plan.label) : "Chargement…"}
+              {plan
+                ? launchOffer
+                  ? `${plan.label} · essai gratuit${plan.trialExtension ? " prolongé" : ""}`
+                  : plan.label
+                : "Chargement…"}
             </strong>
             {plan?.hasAnalysisAccess && periodEnd && !launchOffer ? (
               <> · accès jusqu’au {periodEnd}</>

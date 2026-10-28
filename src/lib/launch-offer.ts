@@ -79,17 +79,23 @@ export const SIGNUP_TRIAL_DENIED_TEXT =
 
 /**
  * État de l'essai d'un compte dont on connaît les droits (Mon compte) : en cours jusqu'à telle date,
- * terminé, ou refusé. `null` quand le compte n'a pas d'essai connu (abonné, état non lu).
+ * terminé, prolongé par l'administrateur, ou refusé. `null` quand le compte n'a pas d'essai connu (abonné, état non lu).
  */
 export function signupTrialStatusText({
   trialEndsAt,
   trialEndedAt,
   trialDenied,
+  trialExtension,
 }: {
   trialEndsAt?: string | null;
   trialEndedAt?: string | null;
   trialDenied?: boolean;
+  /** L'essai a été prolongé par l'administrateur : `trialEndsAt` est la fin de la prolongation. */
+  trialExtension?: boolean;
 }): string | null {
+  if (trialEndsAt && trialExtension) {
+    return `Essai gratuit prolongé jusqu’au ${signupTrialDateLabel(trialEndsAt)} ; rien ne devient payant automatiquement. À son terme, votre compte revient à l’offre Découverte, gratuite.`;
+  }
   if (trialEndsAt) {
     return `Essai gratuit de l’offre Analyse jusqu’au ${signupTrialDateLabel(trialEndsAt)}. À son terme, votre compte revient à l’offre Découverte, gratuite : rien ne devient payant automatiquement.`;
   }

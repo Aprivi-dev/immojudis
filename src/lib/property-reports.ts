@@ -19,15 +19,12 @@ import {
   type PlanBilling,
   type PlanCode,
   type PlanStatus,
+  isTrialExtensionRow,
 } from "@/lib/plans";
 import { enforceDailyOperationLimits } from "@/lib/rate-limit";
 import { createTextPdf } from "@/lib/simple-pdf";
 import { REPORT_COMPLIANCE_NOTICE, type SourceTraceEntry } from "@/lib/source-traceability";
-import {
-  hasActiveSignupTrial,
-  isLaunchOfferActive,
-  readSignupTrial,
-} from "@/lib/launch-offer.server";
+import { hasActiveSignupTrial, readSignupTrial } from "@/lib/launch-offer.server";
 import { hasUnlockedSale } from "@/lib/sale-unlocks.server";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import { getPublicationVisibleSaleIds } from "@/lib/sale-publication-guard";
@@ -134,6 +131,8 @@ export type PlanEntitlements = {
   launchOffer?: true;
   /** Fin de l'essai en cours (ISO), quand la base la connaît. */
   trialEndsAt?: string;
+  /** L'essai a été prolongé par l'administrateur : `trialEndsAt` est la fin de la prolongation. */
+  trialExtension?: true;
   /** Fin d'un essai terminé (ISO) : le compte est revenu à Découverte. */
   trialEndedAt?: string;
   /** La base refuse l'essai à ce compte (pas le premier de son adresse, adresse jetable). */
@@ -687,8 +686,9 @@ export async function shareOwnerKeepsSavedReports(userId: string): Promise<boole
     .maybeSingle();
   if (profileError) throw profileError;
   if (profile?.user_role === "admin" || profile?.account_tier === "premium") return true;
-  // Offre de lancement : les liens partagés par un compte gratuit restent ouverts tant qu'elle dure.
-  if (profile && (await isLaunchOfferActive()) && (await hasActiveSignupTrial(userId))) return true;
+  // Essai gratuit : les liens partagés par un compte gratuit restent ouverts tant qu'il dure (la
+  // lecture de l'essai applique l'interrupteur : un essai commencé avant la coupure continue).
+  if (profile && (await hasActiveSignupTrial(userId))) return true;
 
   const { data: subscription, error } = await supabaseAdmin
     .from("user_subscriptions")
@@ -824,15 +824,30 @@ export async function resolvePlanEntitlements(
 
   const { data, error } = await auth.supabase
     .from("user_subscriptions")
-    .select("plan_code,status,current_period_end,stripe_customer_id")
+    .select(
+      "plan_code,status,current_period_end,stripe_customer_id,stripe_subscription_id,metadata",
+    )
     .eq("user_id", auth.userId)
     .maybeSingle();
 
   if (error) throw error;
-  const plan =
-    data && isPlanPeriodActive(data.status, data.current_period_end)
-      ? normalizePlanCode(data.plan_code)
-      : "decouverte";
+  const planActive = Boolean(data && isPlanPeriodActive(data.status, data.current_period_end));
+  const plan = data && planActive ? normalizePlanCode(data.plan_code) : "decouverte";
+  // Prolongation d'essai par l'administrateur (ligne sans abonnement Stripe) : c'est un essai, pas un
+  // abonnement. Même règle que `app_private.is_admin_trial_extension` (migration 20261108130000).
+  const extension = isTrialExtensionRow(data);
+  if (data && extension && planActive && plan === "analyse") {
+    return buildPlanEntitlements(
+      "analyse",
+      data.current_period_end,
+      PLAN_LIMITS.analyse,
+      // Pas de portail ni de résiliation : un éventuel client Stripe (checkout abandonné) n'est pas
+      // un abonnement à gérer.
+      { status: data.status as PlanStatus, hasStripeCustomer: false, graceEndsAt: null },
+      { launchOffer: true, trialEndsAt: data.current_period_end, trialExtension: true },
+    );
+  }
+  const extensionEndedAt = data && extension && !planActive ? data.current_period_end : null;
   const billing: PlanBilling = {
     status: (data?.status as PlanStatus | undefined) ?? null,
     hasStripeCustomer: Boolean(data?.stripe_customer_id),
@@ -842,9 +857,10 @@ export async function resolvePlanEntitlements(
   // profil reçoit le plan Analyse, avec ses quotas (rapports, PDF, actualisations). L'état vient de
   // la base, comme pour les fonctions SQL d'accès (`app_private.has_active_analysis_access`) ; rien
   // n'est écrit sur le compte, la fin de l'essai ramène donc le plan Découverte sans nettoyage.
-  if (plan === "decouverte" && auth.hasProfile !== false && (await isLaunchOfferActive())) {
-    // Éligibilité lue dans la base (`app_private.signup_trial_ends_at`) : email confirmé, non
-    // jetable, plus ancien compte confirmé de son adresse canonique, 7 jours après la confirmation.
+  if (plan === "decouverte" && auth.hasProfile !== false) {
+    // Essai lu dans la base (`app_private.signup_trial_ends_at`) : email confirmé, non jetable, plus
+    // ancien compte confirmé de son adresse canonique, 7 jours après la confirmation. La lecture
+    // applique aussi l'interrupteur : couper l'essai ne ferme que les nouveaux essais.
     const trial = await readSignupTrial(auth.userId);
     if (trial.active) {
       return buildPlanEntitlements(
@@ -855,17 +871,28 @@ export async function resolvePlanEntitlements(
         { launchOffer: true, trialEndsAt: trial.endsAt },
       );
     }
-    if (trial.endsAt || trial.denied) {
+    // Fin de l'essai : la plus tardive de la fin naturelle et de la fin d'une prolongation échue.
+    const endedAt = latestIso(trial.endsAt, extensionEndedAt);
+    if (endedAt || trial.denied) {
       return buildPlanEntitlements(
         plan,
         data?.current_period_end ?? null,
         PLAN_LIMITS[plan],
         billing,
-        { trialEndedAt: trial.endsAt, trialDenied: trial.denied === true },
+        { trialEndedAt: endedAt, trialDenied: !endedAt && trial.denied === true },
       );
     }
   }
   return buildPlanEntitlements(plan, data?.current_period_end ?? null, PLAN_LIMITS[plan], billing);
+}
+
+function latestIso(...values: Array<string | null | undefined>): string | null {
+  let latest: string | null = null;
+  for (const value of values) {
+    if (!value || !Number.isFinite(Date.parse(value))) continue;
+    if (latest === null || Date.parse(value) > Date.parse(latest)) latest = value;
+  }
+  return latest;
 }
 
 /** The door that opens a right for a sale: the offer itself, or the unlock of this very sale. */
