@@ -90,12 +90,16 @@ def test_exhausted_enrichment_job_keeps_run_partial_when_worker_completed_jobs(
     assert updates[0][2].obj["completion_status"] == "partial_success"
     assert subprocess_calls[0][1]["env"]["PIPELINE_ENRICHMENT_BUDGET_SECONDS"] == "1200"
     assert subprocess_calls[0][1]["env"]["PIPELINE_ENRICHMENT_MAX_JOBS"] == "180"
-    # After the queue: the document reading, then one tick of the Licitor history collector.
+    # After the queue: the document reading, the batch positions, then one tick of the Licitor history collector.
     assert [call[0][2] for call in subprocess_calls[1:]] == [
         "src.document_reading",
+        "src.address_positions",
         "src.sources.licitor_history_refresh",
     ]
-    assert subprocess_calls[2][1]["timeout"] == autonomous_runner.LICITOR_HISTORY_BUDGET_SECONDS
+    assert subprocess_calls[2][0][3:] == ["--max-sales", "500", "--budget-seconds", "170"]
+    assert subprocess_calls[2][1]["timeout"] == autonomous_runner.ADDRESS_POSITIONS_BUDGET_SECONDS
+    assert subprocess_calls[3][1]["timeout"] == autonomous_runner.LICITOR_HISTORY_BUDGET_SECONDS
+    assert updates[0][2].obj["address_positions_exit_code"] == 0
     assert updates[0][2].obj["licitor_history_exit_code"] == 0
     if exhausted:
         assert updates[0][1].obj["enrichment_jobs"] == [
@@ -287,3 +291,12 @@ def test_licitor_history_snapshot_only_failure_does_not_raise(monkeypatch) -> No
     monkeypatch.setattr(autonomous_runner.subprocess, "run", run)
 
     assert autonomous_runner._run_licitor_history_refresh({}) == 1
+
+
+def test_address_positions_failure_is_reported_and_never_raises(monkeypatch) -> None:
+    def run(command, **kwargs):
+        raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+
+    monkeypatch.setattr(autonomous_runner.subprocess, "run", run)
+
+    assert autonomous_runner._run_address_positions({}) == 1
