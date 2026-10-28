@@ -228,7 +228,7 @@ describe("carte : repère « Pépite »", () => {
     const html = mocks.setHtml.mock.calls.at(-1)?.[0] as string;
     expect(html).toContain("<strong>Pépite</strong> · repère calculé automatiquement");
     expect(html).not.toContain("<img src=x");
-    expect(html).not.toMatch(/plafond estimée|Prix probable|fourchette/);
+    expect(html).not.toMatch(/plafond estimée|Prix de référence|fourchette/);
   });
 
   it("n'écrit pas la ligne pour une vente qui n'est pas une pépite", async () => {

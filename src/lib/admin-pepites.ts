@@ -77,6 +77,8 @@ export type AdminPepiteRow = {
   chanceAtLeast: boolean;
   /** Ratio C (coût total au prix probable / valeur centrale). */
   costRatio: number | null;
+  /** Un frais du coût d'achat (préalables, négociation, publicité) est une valeur par défaut (pepite-v1.1). */
+  feesDefault: boolean;
   passed: string[];
   missed: string[];
   stability: string[];
@@ -105,6 +107,17 @@ export type PepiteIndependence = {
 export const INDEPENDENCE_ALERT_POINTS = 10;
 export const INDEPENDENCE_MIN_PEPITES = 10;
 
+/**
+ * Pépites (publiées et à confirmer) dont le coût d'achat repose sur au moins un frais par défaut (n° 22) : au
+ * tribunal, les frais préalables du cahier non lus restent admis mais sont comptés ici ; en vente notariale, ces
+ * ventes sont refusées par la règle (`fees_known`) et ne devraient pas apparaître.
+ */
+export type PepiteFeesDefaultStat = {
+  pepites: number;
+  withDefaultFees: number;
+  share: number | null;
+};
+
 export type AdminPepitesResponse = {
   /** Faux avant la migration : rien n'est lu. */
   migrated: boolean;
@@ -126,6 +139,7 @@ export type AdminPepitesResponse = {
     targetMax: number;
   };
   rows: AdminPepiteRow[];
+  feesDefault: PepiteFeesDefaultStat;
   /** `null` : le contrôle n'a pas pu être fait (lecture impossible). */
   independence: PepiteIndependence | null;
   /**
@@ -224,6 +238,17 @@ export function pepiteRate(
   };
 }
 
+/** Part des pépites (publiées et à confirmer) de la liste dont un frais est une valeur par défaut. */
+export function pepiteFeesDefaultStat(rows: readonly AdminPepiteRow[]): PepiteFeesDefaultStat {
+  const pepites = rows.filter((row) => row.category === "pepite" || row.category === "pending");
+  const withDefaultFees = pepites.filter((row) => row.feesDefault).length;
+  return {
+    pepites: pepites.length,
+    withDefaultFees,
+    share: pepites.length > 0 ? withDefaultFees / pepites.length : null,
+  };
+}
+
 export function parseAdminPepiteRow(raw: unknown): AdminPepiteRow | null {
   const row = asRecordOrNull(raw);
   const saleId = textOrNull(row?.sale_id);
@@ -253,6 +278,7 @@ export function parseAdminPepiteRow(raw: unknown): AdminPepiteRow | null {
     chanceShare: numberOrNull(details.chanceShare),
     chanceAtLeast: details.chanceAtLeast === true,
     costRatio: numberOrNull(details.costRatio),
+    feesDefault: details.feesDefault === true,
     passed: reasons.passed,
     missed: reasons.missed,
     stability: reasons.stability,
@@ -284,6 +310,7 @@ export function unavailablePepites(): AdminPepitesResponse {
     totals,
     rate: pepiteRate(0, 0, 0),
     rows: [],
+    feesDefault: pepiteFeesDefaultStat([]),
     independence: null,
     floodReobservationPending: null,
   };
@@ -499,6 +526,7 @@ export async function getAdminPepites(
     totals,
     rate: pepiteRate(totals.pepites, totals.pending, totals.evaluable),
     rows,
+    feesDefault: pepiteFeesDefaultStat(rows),
     independence,
     floodReobservationPending,
   };

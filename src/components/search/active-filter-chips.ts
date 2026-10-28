@@ -1,4 +1,5 @@
 import { propertyTypeLabel } from "@/lib/format";
+import { PEPITE_FILTER_LABEL } from "@/lib/pepite-copy";
 import { saleTypeFilterLabel } from "@/lib/sale-types";
 import { compactPrice } from "@/lib/search/search-filters";
 import type { SalesSearchParams } from "@/lib/search/search-url-state";
@@ -136,7 +137,7 @@ export function activeFilterChips(search: SalesSearchParams): ActiveFilterChip[]
   add("noPointsToVerify", search.noPointsToVerify ? "Sans point à vérifier" : null, {
     noPointsToVerify: undefined,
   });
-  add("pepite", search.pepite ? "Pépites seulement" : null, { pepite: undefined });
+  add("pepite", search.pepite ? PEPITE_FILTER_LABEL : null, { pepite: undefined });
   add("visitSoon", search.visitSoon ? "Visite dans les 7 jours" : null, {
     visitSoon: undefined,
   });

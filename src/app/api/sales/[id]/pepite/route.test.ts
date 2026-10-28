@@ -85,7 +85,7 @@ describe("GET /api/sales/[id]/pepite", () => {
       expect(response.status).toBe(200);
       const body = await response.json();
       expect(body.access).toBe("criteria");
-      // Deux tests réussis, puis les vérifications de fiabilité à part.
+      // Deux critères remplis, puis les vérifications de fiabilité à part.
       expect(body.count).toBe(2);
       expect(body.tests.map((criterion: { id: string }) => criterion.id)).toEqual([
         "test_b_chance",
@@ -179,7 +179,7 @@ describe("GET /api/sales/[id]/pepite", () => {
       expect(body.access).toBe("detail");
       expect(body.count).toBe(2);
       expect(body.detail.referenceCeilingEur).toBe(118_000);
-      expect(body.detail.priceLine).toMatch(/Prix probable : environ 90\s000/u);
+      expect(body.detail.priceLine).toMatch(/Prix de référence : environ 90\s000/u);
       expect(body.detail.priceNote).toContain("Ce n'est pas une prévision");
       expect(response.headers.get("cache-control")).toBe("private, no-store");
       expect(response.headers.get("vary")).toBe("authorization");

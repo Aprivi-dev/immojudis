@@ -193,10 +193,13 @@ export const NOTARY_AUCTION_FEE_REGIME: FeeRegime = {
   labels: NOTARY_AUCTION_FEE_REGIME_LABELS,
 };
 
+// Chaque régime a sa propre version (test d'unicité de `fee-regime.test.ts`) : ".1" vente à la bougie, ".2"
+// tribunal (`fee-regime-definitions.ts`), ".3" vente interactive. Changer le barème d'un seul régime ne rend
+// obsolètes que les évaluations de ce régime (`isObsoleteEvaluation`, par clé de régime).
 export const NOTARY_ONLINE_FEE_REGIME: FeeRegime = {
   key: "notary_online",
   kind: "notarial",
-  version: "2026-10-26.1",
+  version: "2026-10-26.3",
   emolumentScale: {
     reference: NOTARY_EMOLUMENT_SCALE_REFERENCE,
     date: NOTARY_EMOLUMENT_SCALE_DATE,

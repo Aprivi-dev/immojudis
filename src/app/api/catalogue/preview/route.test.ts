@@ -416,6 +416,20 @@ describe("GET /api/catalogue/preview", () => {
       expect(body.count).toBe(1);
     });
 
+    it("une panne de la liste des pépites répond 503 sans cache, jamais « aucune pépite »", async () => {
+      mocks.rpc.mockImplementation((name: string) =>
+        Promise.resolve(
+          name === "list_public_pepite_sale_ids"
+            ? { data: null, error: { code: "57014", message: "statement timeout" } }
+            : { data: searchRows, error: null },
+        ),
+      );
+      const response = await GET(request("/api/catalogue/preview?pepite=true"));
+      expect(response.status).toBe(503);
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      expect(JSON.stringify(await response.json())).not.toContain("statement timeout");
+    });
+
     it("répond 400 « recherche trop large » au lieu de tronquer, au-delà de 3 000 lignes", async () => {
       mocks.rpc.mockImplementation((name: string) =>
         Promise.resolve(

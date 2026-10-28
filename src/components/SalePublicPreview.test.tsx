@@ -1083,12 +1083,14 @@ describe("SalePublicPreview : repère « Pépite »", () => {
     expect(pepiteMocks.pepite).toHaveBeenCalledWith(
       expect.objectContaining({ view: "criteria", known: true }),
     );
-    const block = screen.getByRole("region", { name: "Pépite : 1 test réussi" });
+    const block = screen.getByRole("region", {
+      name: "Pépite : critère rempli",
+    });
     expect(block.textContent).toContain("Montant et détail : débloquez cette vente");
     expect(
       within(block).getByRole("link", { name: "Créez un compte gratuit" }).getAttribute("href"),
     ).toMatch(/^\/login\?/);
-    expect(block.textContent).not.toMatch(/€|Prix probable|fourchette/);
+    expect(block.textContent).not.toMatch(/€|Prix de référence|fourchette/);
     expect(block.innerHTML).not.toMatch(/blur/);
   });
 });

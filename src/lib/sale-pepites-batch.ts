@@ -112,6 +112,8 @@ export type StoredEvaluation = {
   ruleVersion: string;
   engineVersion: string;
   regimeVersion: string | null;
+  /** Clé du régime de la vente (`details.regime`) ; `null` : inconnue ou sans régime (vente non applicable). */
+  regimeKey?: string | null;
   isPepite: boolean;
   favorableStreak: number;
   frozenAt: string | null;
@@ -125,7 +127,10 @@ export type StoredEvaluation = {
 export type PepiteVersions = {
   rule: PepiteRuleVersion;
   engine: string;
+  /** Les versions des régimes de frais. */
   regimes: readonly string[];
+  /** La version de chaque régime, par clé : l'obsolescence se juge régime par régime (n° 30). */
+  regimeByKey?: Readonly<Record<string, string>>;
 };
 
 export function currentPepiteVersions(
@@ -135,6 +140,11 @@ export function currentPepiteVersions(
     rule: activePepiteRuleVersion(env),
     engine: CEILING_ENGINE_VERSION,
     regimes: Object.values(FEE_REGIMES).flatMap((regime) => (regime ? [regime.version] : [])),
+    regimeByKey: Object.fromEntries(
+      Object.entries(FEE_REGIMES).flatMap(([key, regime]) =>
+        regime ? [[key, regime.version]] : [],
+      ),
+    ),
   };
 }
 
@@ -167,13 +177,36 @@ function time(value: string | null): number | null {
   return Number.isNaN(parsed) ? null : parsed;
 }
 
-/** Une évaluation faite avec une autre version de la règle, du moteur ou d'un régime est obsolète. */
+/**
+ * Une évaluation faite avec une autre version de la règle, du moteur ou du régime DE LA VENTE est obsolète. Quand la
+ * clé du régime est connue, la version est comparée à celle de CE régime : le barème d'un régime qui change ne
+ * laisse pas passer pour à jour l'évaluation d'un autre régime qui avait la même version.
+ */
 export function isObsoleteEvaluation(evaluation: StoredEvaluation, versions: PepiteVersions) {
-  return (
-    evaluation.ruleVersion !== versions.rule ||
-    evaluation.engineVersion !== versions.engine ||
-    (evaluation.regimeVersion != null && !versions.regimes.includes(evaluation.regimeVersion))
-  );
+  if (evaluation.ruleVersion !== versions.rule || evaluation.engineVersion !== versions.engine) {
+    return true;
+  }
+  if (evaluation.regimeVersion == null) return false;
+  const expected = evaluation.regimeKey ? versions.regimeByKey?.[evaluation.regimeKey] : undefined;
+  if (expected !== undefined) return evaluation.regimeVersion !== expected;
+  return !versions.regimes.includes(evaluation.regimeVersion);
+}
+
+/**
+ * Vente dont la date d'audience est passée mais que le pipeline n'a pas encore fait sortir du statut « à venir » :
+ * l'instantané d'estimation (`app_private.snapshot_sale_market_estimate`) est pris à cette sortie de statut et lit
+ * alors l'évaluation de la pépite. Réécrire l'évaluation en « non applicable » avant lui archiverait un
+ * « non applicable » au lieu de la dernière évaluation avant l'audience : on la garde (n° 24). Une vente sans
+ * évaluation, ou déjà « non applicable », n'a rien à garder.
+ */
+export function keepsLastEvaluation(
+  sale: { status: string | null; saleDate: string | null },
+  evaluation: { status: string } | undefined,
+  now: Date,
+): boolean {
+  if (!evaluation || evaluation.status === "not_applicable") return false;
+  const saleTime = time(sale.saleDate);
+  return sale.status === "upcoming" && saleTime != null && saleTime <= now.getTime();
 }
 
 /**
@@ -210,6 +243,8 @@ export function pickPendingSales(
       missing.push(sale);
       continue;
     }
+    // Audience passée, instantané pas encore pris : l'évaluation est gardée telle quelle (n° 24).
+    if (keepsLastEvaluation(sale, evaluation, now)) continue;
     const evaluatedAt = time(evaluation.evaluatedAt) ?? 0;
     const obsolete = isObsoleteEvaluation(evaluation, versions);
     const updatedAt = time(sale.updatedAt);
@@ -307,6 +342,13 @@ export function pepiteDetails(evaluation: PepiteEvaluation, facts: PepiteSaleFac
     rangeHighEur: roundEuro(metrics.rangeHighEur),
     chanceShare: roundRatio(metrics.chanceShare),
     chanceAtLeast: metrics.chanceAtLeast,
+    // Effectif sur lequel la part est lissée et borne basse de Wilson (pepite-v1.1 et suivantes).
+    chanceSample: metrics.chanceSample,
+    chanceWilsonLow: roundRatio(metrics.chanceWilsonLow),
+    occupancyDiscountPct: metrics.occupancyDiscountPct,
+    // Sources des frais : sert au compteur « frais par défaut » de /admin/pepites.
+    fees: facts?.fees ?? null,
+    feesDefault: metrics.feesDefault,
     ceilingBelowStart: metrics.ceilingBelowStart,
     totalCostEur: roundEuro(metrics.totalCostEur),
     costRatio: roundRatio(metrics.costRatio),
@@ -371,6 +413,9 @@ export function buildPepiteRow({
         ? startingPriceEur
         : null,
     input_estimate_computed_at: facts?.estimateComputedAt ?? null,
+    // Version du modèle de valeur et moteur de l'estimation lue (migration 20261108140000).
+    estimate_model_version: facts?.estimateModelVersion ?? null,
+    estimate_engine_kind: facts?.estimateEngineKind ?? null,
     evaluated_at: now.toISOString(),
     first_pepite_at: stored?.firstPepiteAt ?? (stability.isPepite ? now.toISOString() : null),
   };
@@ -388,6 +433,7 @@ export function buildNotApplicableRow(
     status: "not_applicable",
     regime: null,
     favorable: false,
+    frozenQualityMissed: false,
     holds: false,
     blocking: false,
     passed: [],
@@ -405,6 +451,10 @@ export function buildNotApplicableRow(
       rangeHighEur: null,
       chanceShare: null,
       chanceAtLeast: false,
+      chanceSample: null,
+      chanceWilsonLow: null,
+      occupancyDiscountPct: null,
+      feesDefault: false,
       ceilingBelowStart: false,
       totalCostEur: null,
       costRatio: null,
@@ -434,6 +484,17 @@ export function buildNotApplicableRow(
 function isMissingDatabaseObject(error: unknown): boolean {
   const code = (error as { code?: unknown } | null)?.code;
   return code === "PGRST202" || code === "PGRST205" || code === "42883" || code === "42P01";
+}
+
+/** Colonne inconnue de la base ou du cache de schéma PostgREST (migration pas encore appliquée). */
+function isUnknownColumn(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  return code === "PGRST204" || code === "42703";
+}
+
+function withoutEstimateVersions(row: PepiteTableInsert): PepiteTableInsert {
+  const { estimate_model_version: _model, estimate_engine_kind: _engine, ...legacy } = row;
+  return legacy;
 }
 
 function errorMessage(error: unknown): string {
@@ -521,7 +582,7 @@ async function readStoredEvaluations(): Promise<StoredEvaluation[] | null> {
     const { data, error } = await supabaseAdmin
       .from("auction_sale_pepites")
       .select(
-        "sale_id, status, evaluated_at, rule_version, engine_version, regime_version, is_pepite, favorable_streak, frozen_at, last_favorable_at, data_missing_since, input_starting_price_eur, first_pepite_at",
+        "sale_id, status, evaluated_at, rule_version, engine_version, regime_version, regime_key:details->>regime, is_pepite, favorable_streak, frozen_at, last_favorable_at, data_missing_since, input_starting_price_eur, first_pepite_at",
       )
       .order("sale_id", { ascending: true })
       .range(from, from + PAGE_SIZE - 1);
@@ -537,6 +598,7 @@ async function readStoredEvaluations(): Promise<StoredEvaluation[] | null> {
         ruleVersion: row.rule_version,
         engineVersion: row.engine_version,
         regimeVersion: row.regime_version,
+        regimeKey: typeof row.regime_key === "string" ? row.regime_key : null,
         isPepite: row.is_pepite,
         favorableStreak: row.favorable_streak,
         frozenAt: row.frozen_at,
@@ -549,6 +611,26 @@ async function readStoredEvaluations(): Promise<StoredEvaluation[] | null> {
     if ((data?.length ?? 0) < PAGE_SIZE) return rows;
   }
   throw new Error("Trop d'évaluations de pépites stockées.");
+}
+
+/**
+ * Détails et motifs de l'évaluation déjà stockée de ces ventes (pépites publiées seulement : une poignée de
+ * lignes), pour les garder tels quels pendant le gel à J-7.
+ */
+async function readStoredDetails(
+  saleIds: readonly string[],
+): Promise<Map<string, { details: Json; reasonCodes: string[] }>> {
+  const kept = new Map<string, { details: Json; reasonCodes: string[] }>();
+  if (!saleIds.length) return kept;
+  const { data, error } = await supabaseAdmin
+    .from("auction_sale_pepites")
+    .select("sale_id, details, reason_codes")
+    .in("sale_id", [...saleIds]);
+  if (error) throw error;
+  for (const row of data ?? []) {
+    kept.set(row.sale_id, { details: row.details, reasonCodes: row.reason_codes ?? [] });
+  }
+  return kept;
 }
 
 async function readEstimateDates(): Promise<Map<string, string | null>> {
@@ -761,6 +843,7 @@ async function runPass({
     const sale = onlineBySale.get(id);
     if (!sale) continue;
     if (isUpcomingSale(sale, now)) readable.push(id);
+    else if (keepsLastEvaluation(sale, storedBySale.get(id), now)) continue;
     else
       evaluate(buildNotApplicableRow(sale, storedBySale.get(id), versions, now), "not_applicable");
   }
@@ -783,9 +866,11 @@ async function runPass({
       const estimateBySale = new Map(
         (estimatesRead.data ?? []).map((row) => [row.auction_sale_id, row]),
       );
-      const [projections, modelIds] = await Promise.all([
+      const [projections, modelIds, storedDetails] = await Promise.all([
         loadAiReviewProjections(sales),
         activeModelIds(estimatesRead.data ?? []),
+        // Pépites publiées de ce lot : leurs détails sont gardés si la vente est dans la fenêtre de gel.
+        readStoredDetails(ids.filter((id) => storedBySale.get(id)?.isPepite)),
       ]);
 
       for (const sale of sales) {
@@ -837,19 +922,30 @@ async function runPass({
             saleDate: sale.sale_date,
             now,
           });
-          evaluate(
-            buildPepiteRow({
-              saleId: sale.id,
-              evaluation,
-              stability,
-              facts,
-              stored: previous,
-              versions,
-              startingPriceEur: facts.startingPriceColumnEur,
-              now,
-            }),
-            evaluation.status,
-          );
+          const row = buildPepiteRow({
+            saleId: sale.id,
+            evaluation,
+            stability,
+            facts,
+            stored: previous,
+            versions,
+            startingPriceEur: facts.startingPriceColumnEur,
+            now,
+          });
+          // Gel à J-7 (n° 21) : le résultat publié ne change plus, ses détails et ses motifs non plus. Réécrire
+          // ceux de la nouvelle évaluation afficherait des seuils contredits par les chiffres (« au moins 70 % »
+          // à côté de « 5 ventes sur 10 »). La date d'évaluation, la mise à prix et l'estimation lues continuent
+          // d'être mises à jour : la lecture publique en dépend. Le statut reste celui de l'évaluation publiée.
+          const frozen = previous?.isPepite && stability.codes.includes("stab:frozen");
+          const keep = frozen ? storedDetails.get(sale.id) : undefined;
+          if (keep && previous) {
+            row.details = keep.details;
+            row.reason_codes = keep.reasonCodes.includes("stab:frozen")
+              ? keep.reasonCodes
+              : [...keep.reasonCodes, "stab:frozen"];
+            row.status = previous.status;
+          }
+          evaluate(row, row.status as PepiteStatus);
         } catch (evaluationError) {
           fail(1, evaluationError);
         }
@@ -871,6 +967,9 @@ async function runPass({
   let written = 0;
   let deferred: PepiteTableInsert[] = [];
   const writeDeadlineReached = () => Date.now() - startedAt > SALE_PEPITES_WRITE_DEADLINE_MS;
+  // Code déployé avant la migration 20261108140000 : les deux colonnes de version de l'estimation n'existent pas
+  // encore. L'écriture est retentée sans elles (rien n'est perdu d'autre que les versions archivées).
+  let legacyColumns = false;
   const writeRows = async (rows: PepiteTableInsert[]): Promise<"missing" | void> => {
     if (writeDeadlineReached()) {
       deferred.push(...rows);
@@ -878,7 +977,7 @@ async function runPass({
     }
     const { error } = await supabaseAdmin
       .from("auction_sale_pepites")
-      .upsert(rows, { onConflict: "sale_id" });
+      .upsert(legacyColumns ? rows.map(withoutEstimateVersions) : rows, { onConflict: "sale_id" });
     if (!error) {
       written += rows.length;
       return;
@@ -887,6 +986,10 @@ async function runPass({
     if (isBusyWriteError(error)) {
       deferred.push(...rows);
       return;
+    }
+    if (!legacyColumns && isUnknownColumn(error)) {
+      legacyColumns = true;
+      return writeRows(rows);
     }
     if (rows.length === 1) {
       fail(

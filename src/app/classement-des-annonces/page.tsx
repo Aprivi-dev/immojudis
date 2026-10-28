@@ -167,7 +167,7 @@ function PageContent() {
               Les annonces ne sont ni avancées ni reculées par cet encart.
             </p>
             <p>
-              Aucune rémunération ne peut obtenir ou améliorer une Pépite : ni les cabinets
+              Aucune rémunération ne peut obtenir ou améliorer une pépite : ni les cabinets
               d’avocats qui achètent une mise en avant, ni les organisateurs, vendeurs ou
               professionnels qui publient des annonces. Cet encart est sans lien avec le repère
               Pépite.

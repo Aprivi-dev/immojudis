@@ -40,6 +40,10 @@ const db = vi.hoisted(() => ({
   estimateArgs: new Map<string, unknown>(),
   /** Règle de la dernière évaluation et verdict d'inondation reçu, par vente. */
   floodArgs: new Map<string, { flood: unknown; ruleVersion: unknown }>(),
+  /** La base ne connaît pas encore les colonnes de version de l'estimation (migration 20261108140000). */
+  legacyColumns: false,
+  /** Détails et motifs stockés des pépites publiées, par vente (lus pendant le gel). */
+  storedDetails: new Map<string, { details: unknown; reason_codes: string[] }>(),
   /** Verdicts d'inondation stockés ; `null` : la table n'existe pas (migration non appliquée). */
   floodRows: [] as Row[] | null,
   /** Codes commune des ventes ; `null` : la table n'existe pas. */
@@ -113,6 +117,7 @@ import {
   currentPepiteVersions,
   isObsoleteEvaluation,
   isUpcomingSale,
+  keepsLastEvaluation,
   pepiteDetails,
   pickPendingSales,
   runSalePepitesBatch,
@@ -125,6 +130,7 @@ import { CEILING_ENGINE_VERSION } from "./bid-ceiling-engine";
 import { FLOOD_DERIVE_VERSION } from "./flood-risk";
 import { floodPositionKey } from "./flood-risk-position.server";
 import { evaluatePepite } from "./pepite-policy";
+import { pepiteCriteriaViews, pepiteDetailView } from "./sale-pepite-view";
 
 class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
   private ids: string[] | null = null;
@@ -191,6 +197,9 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
       if (db.alwaysBusy || db.busyUpserts.shift()) {
         return { data: null, error: { code: "57014", message: "statement timeout" } };
       }
+      if (db.legacyColumns && this.upsertRows.some((row) => "estimate_model_version" in row)) {
+        return { data: null, error: { code: "PGRST204", message: "Could not find the column" } };
+      }
       if (this.upsertRows.some((row) => db.upsertRejects.has(row.sale_id as string))) {
         return { data: null, error: { code: "23514", message: "check constraint (80000)" } };
       }
@@ -200,6 +209,14 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
     switch (this.table) {
       case "auction_sale_pepites":
         if (db.storedError) return { data: null, error: db.storedError };
+        if (this.ids && this.columns.includes("details")) {
+          return {
+            data: this.ids.flatMap((id) =>
+              db.storedDetails.has(id) ? [{ sale_id: id, ...db.storedDetails.get(id)! }] : [],
+            ),
+            error: null,
+          };
+        }
         return { data: db.stored.slice(this.page[0], this.page[1] + 1), error: null };
       case "v_auction_sales_app":
         if (this.columns === "*") {
@@ -363,6 +380,8 @@ function facts(overrides: Row = {}) {
     venueType: "notary",
     startingPriceColumnEur: 80_000,
     estimateComputedAt: "2026-10-30T08:00:00.000Z",
+    estimateModelVersion: "model-2026-10",
+    estimateEngineKind: "hybrid_lightgbm",
     saleDate: FUTURE,
     occupancy: "libre",
     conditionStatus: "unknown",
@@ -426,6 +445,8 @@ beforeEach(() => {
   db.floodArgs = new Map();
   db.floodRows = [];
   db.communeRows = [];
+  db.storedDetails = new Map();
+  db.legacyColumns = false;
   vi.unstubAllEnvs();
 });
 
@@ -483,22 +504,32 @@ describe("pickPendingSales", () => {
     expect(isObsoleteEvaluation(stored("a", { regimeVersion: null }), VERSIONS)).toBe(false);
   });
 
-  it("une évaluation stockée « pepite-v1 » (valeur littérale) n'est obsolète que si l'interrupteur v2 est ouvert", () => {
-    const evaluation = stored("a", { ruleVersion: "pepite-v1" });
+  it("une évaluation stockée « pepite-v1.1 » (valeur littérale) n'est obsolète que si l'interrupteur v2 est ouvert", () => {
+    const evaluation = stored("a", { ruleVersion: "pepite-v1.1" });
     const closed = currentPepiteVersions({});
     const open = currentPepiteVersions({ PEPITE_RULE_V2_ENABLED: "true" });
-    expect(closed.rule).toBe("pepite-v1");
+    expect(closed.rule).toBe("pepite-v1.1");
     expect(open.rule).toBe("pepite-v2");
-    // Interrupteur absent : la règle v1 reste appliquée, rien à refaire.
+    // Interrupteur absent : la règle v1.1 reste appliquée, rien à refaire.
     expect(isObsoleteEvaluation(evaluation, closed)).toBe(false);
     expect(pickPendingSales([online("a")], [evaluation], dates, closed, NOW)).toEqual([]);
-    // Interrupteur ouvert : l'évaluation v1 est obsolète et la vente est réévaluée.
+    // Interrupteur ouvert : l'évaluation v1.1 est obsolète et la vente est réévaluée.
     expect(isObsoleteEvaluation(evaluation, open)).toBe(true);
     expect(pickPendingSales([online("a")], [evaluation], dates, open, NOW)).toEqual(["a"]);
     // Et réciproquement : une évaluation « pepite-v2 » est obsolète une fois l'interrupteur refermé (retour arrière).
     const v2 = stored("a", { ruleVersion: "pepite-v2" });
     expect(isObsoleteEvaluation(v2, closed)).toBe(true);
     expect(isObsoleteEvaluation(v2, open)).toBe(false);
+  });
+
+  it("une évaluation « pepite-v1 » est réévaluée par le changement de version, pépites publiées en premier (n° 20 à 26)", () => {
+    const closed = currentPepiteVersions({});
+    const old = stored("old", { ruleVersion: "pepite-v1" });
+    const published = stored("published", { ruleVersion: "pepite-v1", isPepite: true });
+    expect(isObsoleteEvaluation(old, closed)).toBe(true);
+    expect(
+      pickPendingSales([online("old"), online("published")], [old, published], dates, closed, NOW),
+    ).toEqual(["published", "old"]);
   });
 
   it("passe les pépites déjà publiées modifiées avant les ventes jamais évaluées", () => {
@@ -800,7 +831,7 @@ describe("runSalePepitesBatch", () => {
       first_pepite_at: NOW.toISOString(),
       input_starting_price_eur: 80_000,
       input_estimate_computed_at: "2026-10-30T08:00:00.000Z",
-      rule_version: "pepite-v1",
+      rule_version: "pepite-v1.1",
       engine_version: CEILING_ENGINE_VERSION,
     });
     expect(rows.second.reason_codes).toEqual(
@@ -1182,15 +1213,15 @@ describe("runSalePepitesBatch : interrupteur de la règle pepite-v2", () => {
     };
   }
 
-  it("fermé (défaut) : la règle appliquée est pepite-v1 et la table d'inondation n'est jamais lue", async () => {
+  it("fermé (défaut) : la règle appliquée est pepite-v1.1 et la table d'inondation n'est jamais lue", async () => {
     setPositioned(["a"]);
     const result = await runSalePepitesBatch({ now: NOW });
 
-    expect(result).toMatchObject({ ruleVersion: "pepite-v1", evaluated: 1, floodVerdicts: null });
+    expect(result).toMatchObject({ ruleVersion: "pepite-v1.1", evaluated: 1, floodVerdicts: null });
     expect(db.touched).not.toContain("auction_sale_flood_risk");
     expect(db.touched).not.toContain("auction_sale_communes");
-    expect(db.floodArgs.get("a")?.ruleVersion).toBe("pepite-v1");
-    expect(db.upserts.flat()[0]).toMatchObject({ rule_version: "pepite-v1" });
+    expect(db.floodArgs.get("a")?.ruleVersion).toBe("pepite-v1.1");
+    expect(db.upserts.flat()[0]).toMatchObject({ rule_version: "pepite-v1.1" });
     expect((db.upserts.flat()[0].details as Row).flood).toBeNull();
   });
 
@@ -1303,5 +1334,312 @@ describe("runSalePepitesBatch : interrupteur de la règle pepite-v2", () => {
 
     expect(result.evaluated).toBe(1);
     expect(db.upserts.flat()[0].sale_id).toBe("published");
+  });
+});
+
+describe("n° 21 : gel à J-7, les détails de l'évaluation publiée ne sont pas réécrits", () => {
+  const FROZEN_SALE = new Date(NOW.getTime() + 5 * 86_400_000).toISOString();
+  const published = (overrides: Partial<StoredEvaluation> = {}) =>
+    storedRow("a", {
+      status: "pepite",
+      isPepite: true,
+      favorableStreak: 2,
+      lastFavorableAt: "2026-10-30T00:00:00.000Z",
+      frozenAt: "2026-10-31T00:00:00.000Z",
+      evaluatedAt: "2026-10-31T06:00:00.000Z",
+      ...overrides,
+    });
+  // Ce que l'évaluation qui a publié la vente avait écrit : 7 ventes sur 10 sous le plafond.
+  const publishedEvaluation = () => {
+    const base = favorableEvaluation();
+    return {
+      ...base,
+      regime: "tribunal" as const,
+      metrics: { ...base.metrics, chanceShare: 0.75, chanceAtLeast: false, costRatio: 0.57 },
+    };
+  };
+  const degraded = () => {
+    const evaluation = publishedEvaluation();
+    return {
+      ...evaluation,
+      status: "not_pepite" as const,
+      favorable: false,
+      holds: false,
+      passed: evaluation.passed.filter((id) => id !== "test_c_cost"),
+      missed: ["test_b_chance" as const],
+      holdMissed: ["test_b_chance" as const],
+      metrics: { ...evaluation.metrics, chanceShare: 0.5 },
+    };
+  };
+  const arrange = (evaluation: PepiteEvaluation) => {
+    setSales(["a"]);
+    db.fullRows = new Map([["a", { id: "a", sale_date: FROZEN_SALE, tribunal_code: null }]]);
+    db.online = db.online.map((row) => ({ ...row, sale_date: FROZEN_SALE }));
+    db.stored = [published()];
+    db.storedDetails.set("a", {
+      details: pepiteDetails(publishedEvaluation(), facts() as never),
+      reason_codes: ["pass:test_b_chance", "pass:test_c_cost", "stab:entered"],
+    });
+    db.evaluations.set("a", { evaluation, facts: facts({ saleDate: FROZEN_SALE }) });
+  };
+
+  it("garde les détails et les motifs publiés, met à jour la date d'évaluation, et lit une fiche cohérente", async () => {
+    arrange(degraded());
+
+    const result = await runSalePepitesBatch({ now: NOW });
+
+    expect(result).toMatchObject({ evaluated: 1, failed: 0 });
+    const row = db.upserts.flat()[0];
+    expect(row).toMatchObject({
+      sale_id: "a",
+      is_pepite: true,
+      status: "pepite",
+      evaluated_at: NOW.toISOString(),
+      frozen_at: "2026-10-31T00:00:00.000Z",
+    });
+    expect(row.details).toEqual(db.storedDetails.get("a")!.details);
+    expect(row.reason_codes).toEqual([
+      "pass:test_b_chance",
+      "pass:test_c_cost",
+      "stab:entered",
+      "stab:frozen",
+    ]);
+    // Rendu : la fiche lit l'évaluation publiée, pas la dégradation (aucun « 5 sur 10 » à côté de « 70 % »).
+    const details = row.details as Record<string, unknown>;
+    const criteria = pepiteCriteriaViews(
+      row.reason_codes as string[],
+      (details.holdMissed as string[]) ?? [],
+      "tribunal",
+    );
+    expect(criteria.every((criterion) => criterion.state === "pass")).toBe(true);
+    const view = pepiteDetailView(details, row.evaluated_at as string, criteria);
+    // La valeur mesurée (75 %) est celle de l'évaluation publiée : jamais 50 % à côté du seuil de 70 %.
+    expect(view?.condition).toContain("75 % ont été adjugées");
+    expect(view?.condition).toContain("Le critère est rempli à partir de 70 %");
+    expect(view?.condition).not.toContain("50 %");
+  });
+
+  it("hors gel, l'évaluation du jour est écrite (détails compris)", async () => {
+    arrange(degraded());
+    db.fullRows = new Map([["a", { id: "a", sale_date: FUTURE, tribunal_code: null }]]);
+    db.online = db.online.map((row) => ({ ...row, sale_date: FUTURE }));
+
+    await runSalePepitesBatch({ now: NOW });
+
+    const row = db.upserts.flat()[0];
+    expect((row.details as Record<string, unknown>).chanceShare).toBe(0.5);
+    expect(row.reason_codes).toContain("fail:test_b_chance");
+  });
+
+  it("gel puis porte de qualité manquée : la pépite sort, l'évaluation du jour est écrite et la fiche n'affiche rien", async () => {
+    const base = publishedEvaluation();
+    arrange({
+      ...base,
+      status: "not_pepite",
+      favorable: false,
+      holds: false,
+      frozenQualityMissed: true,
+      passed: base.passed.filter((id) => id !== "public_gap_gate"),
+      missed: ["public_gap_gate"],
+      holdMissed: ["public_gap_gate"],
+    });
+
+    await runSalePepitesBatch({ now: NOW });
+
+    const row = db.upserts.flat()[0];
+    expect(row).toMatchObject({ is_pepite: false, frozen_at: null });
+    expect(row.reason_codes).toEqual(
+      expect.arrayContaining(["fail:public_gap_gate", "stab:exit_quality"]),
+    );
+    expect((row.details as Record<string, unknown>).holds).toBe(false);
+  });
+});
+
+describe("n° 24 : l'évaluation d'avant l'audience est gardée jusqu'à l'instantané", () => {
+  const AUDIENCE = "2026-11-02T10:00:00.000Z";
+  const AFTER_AUDIENCE = new Date("2026-11-02T10:35:00.000Z");
+  const BEFORE_AUDIENCE = new Date("2026-11-02T08:35:00.000Z");
+  const dates = new Map<string, string | null>();
+
+  it("keepsLastEvaluation : date passée, statut encore « à venir » et évaluation utile", () => {
+    const sale = { status: "upcoming", saleDate: AUDIENCE };
+    expect(keepsLastEvaluation(sale, { status: "pepite" }, AFTER_AUDIENCE)).toBe(true);
+    expect(keepsLastEvaluation(sale, { status: "not_pepite" }, AFTER_AUDIENCE)).toBe(true);
+    // Rien à garder : pas d'évaluation, ou déjà « non applicable ».
+    expect(keepsLastEvaluation(sale, undefined, AFTER_AUDIENCE)).toBe(false);
+    expect(keepsLastEvaluation(sale, { status: "not_applicable" }, AFTER_AUDIENCE)).toBe(false);
+    // Audience à venir, ou statut sorti de « à venir » : l'instantané est pris ou ne se prendra plus.
+    expect(keepsLastEvaluation(sale, { status: "pepite" }, BEFORE_AUDIENCE)).toBe(false);
+    expect(
+      keepsLastEvaluation({ ...sale, status: "past" }, { status: "pepite" }, AFTER_AUDIENCE),
+    ).toBe(false);
+    expect(
+      keepsLastEvaluation(
+        { status: "upcoming", saleDate: null },
+        { status: "pepite" },
+        AFTER_AUDIENCE,
+      ),
+    ).toBe(false);
+  });
+
+  it("séquence audience, lot, instantané : l'instantané lit la dernière évaluation, pas « non applicable »", async () => {
+    setSales(["a"], { saleDate: AUDIENCE });
+    const lastEvaluation = storedRow("a", {
+      status: "pepite",
+      isPepite: true,
+      favorableStreak: 2,
+      evaluatedAt: "2026-11-02T07:35:00.000Z",
+    });
+    db.stored = [lastEvaluation];
+    // L'instantané (déclencheur du passage de statut) lit la ligne telle qu'elle est à cet instant.
+    const snapshotAt = () => structuredClone(db.stored[0]);
+
+    // 1. Avant l'audience : rien à refaire.
+    expect(await runSalePepitesBatch({ now: BEFORE_AUDIENCE })).toMatchObject({
+      evaluated: 0,
+      pending: 0,
+    });
+
+    // 2. L'audience est passée, le pipeline n'a pas encore changé le statut : le lot ne réécrit rien.
+    const lot = await runSalePepitesBatch({ now: AFTER_AUDIENCE });
+    expect(lot).toMatchObject({ evaluated: 0, pending: 0, notApplicable: 0, failed: 0 });
+    expect(db.upserts).toEqual([]);
+
+    // 3. Le pipeline passe la vente à « past » : l'instantané lit la dernière évaluation avant l'audience.
+    const snapshot = snapshotAt();
+    expect(snapshot).toMatchObject({ status: "pepite", is_pepite: true });
+
+    // 4. Le lot suivant (l'évaluation a plus de 24 h) voit une vente « past » : « non applicable » peut être écrit, l'instantané est pris.
+    db.online = db.online.map((row) => ({ ...row, status: "past" }));
+    const after = await runSalePepitesBatch({
+      now: new Date(AFTER_AUDIENCE.getTime() + 25 * 3_600_000),
+    });
+    expect(after).toMatchObject({ notApplicable: 1 });
+    expect(db.upserts.flat()[0]).toMatchObject({ status: "not_applicable", is_pepite: false });
+  });
+
+  it("pickPendingSales ne reprend pas, tour après tour, une vente dont on garde l'évaluation", () => {
+    const sale = online("a", { saleDate: AUDIENCE, updatedAt: "2026-11-02T10:20:00.000Z" });
+    const evaluation = stored("a", {
+      status: "pepite",
+      isPepite: true,
+      ruleVersion: "pepite-v1",
+      evaluatedAt: "2026-11-02T07:35:00.000Z",
+    });
+    expect(pickPendingSales([sale], [evaluation], dates, VERSIONS, AFTER_AUDIENCE)).toEqual([]);
+  });
+});
+
+describe("n° 30 : obsolescence par clé de régime", () => {
+  const versions = {
+    ...VERSIONS,
+    regimes: ["R.1", "R.3"],
+    regimeByKey: { notary_auction: "R.1", notary_online: "R.3" },
+  };
+
+  it("compare la version stockée à celle du régime de la vente, pas à toutes les versions", () => {
+    const online = stored("a", { regimeKey: "notary_online", regimeVersion: "R.1" });
+    // « R.1 » existe, mais c'est la version de la vente à la bougie : l'évaluation de la vente interactive est obsolète.
+    expect(isObsoleteEvaluation(online, versions)).toBe(true);
+    expect(isObsoleteEvaluation({ ...online, regimeVersion: "R.3" }, versions)).toBe(false);
+    expect(
+      isObsoleteEvaluation(
+        stored("b", { regimeKey: "notary_auction", regimeVersion: "R.1" }),
+        versions,
+      ),
+    ).toBe(false);
+  });
+
+  it("sans clé de régime lisible, retombe sur la liste des versions", () => {
+    expect(
+      isObsoleteEvaluation(stored("a", { regimeKey: null, regimeVersion: "R.1" }), versions),
+    ).toBe(false);
+    expect(
+      isObsoleteEvaluation(stored("a", { regimeKey: null, regimeVersion: "R.9" }), versions),
+    ).toBe(true);
+    expect(
+      isObsoleteEvaluation(
+        stored("a", { regimeKey: "regime_futur", regimeVersion: "R.1" }),
+        versions,
+      ),
+    ).toBe(false);
+  });
+
+  it("un seul régime qui change ne rend obsolètes que ses évaluations", () => {
+    const next = {
+      ...versions,
+      regimeByKey: { notary_auction: "R.1", notary_online: "R.4" },
+      regimes: ["R.1", "R.4"],
+    };
+    const auction = stored("a", { regimeKey: "notary_auction", regimeVersion: "R.1" });
+    const onlineSale = stored("b", { regimeKey: "notary_online", regimeVersion: "R.3" });
+    expect(isObsoleteEvaluation(auction, next)).toBe(false);
+    expect(isObsoleteEvaluation(onlineSale, next)).toBe(true);
+  });
+
+  it("les versions de régime de l'application sont uniques et lues par clé", () => {
+    const current = currentPepiteVersions({});
+    const values = Object.values(current.regimeByKey ?? {});
+    expect(values.length).toBeGreaterThanOrEqual(3);
+    expect(new Set(values).size).toBe(values.length);
+    expect(Object.keys(current.regimeByKey ?? {})).toEqual(
+      expect.arrayContaining(["tribunal", "notary_auction", "notary_online"]),
+    );
+  });
+});
+
+describe("n° 25 : version du modèle de valeur et moteur de l'estimation dans la pépite", () => {
+  it("écrit la version du modèle et le moteur de l'estimation lue, et le détail de la mesure", async () => {
+    setSales(["a"]);
+
+    await runSalePepitesBatch({ now: NOW });
+
+    const row = db.upserts.flat()[0];
+    expect(row).toMatchObject({
+      estimate_model_version: "model-2026-10",
+      estimate_engine_kind: "hybrid_lightgbm",
+      input_estimate_computed_at: "2026-10-30T08:00:00.000Z",
+    });
+    expect(row.details).toMatchObject({ feesDefault: false });
+    expect(row.details).toHaveProperty("chanceSample");
+    expect(row.details).toHaveProperty("chanceWilsonLow");
+  });
+
+  it("une vente sans estimation garde ces colonnes nulles", () => {
+    const row = buildPepiteRow({
+      saleId: "a",
+      evaluation: favorableEvaluation(),
+      stability: {
+        isPepite: false,
+        favorableStreak: 0,
+        frozenAt: null,
+        lastFavorableAt: null,
+        dataMissingSince: null,
+        codes: [],
+      },
+      facts: null,
+      stored: undefined,
+      versions: VERSIONS,
+      startingPriceEur: 80_000,
+      now: NOW,
+    });
+    expect(row.estimate_model_version).toBeNull();
+    expect(row.estimate_engine_kind).toBeNull();
+  });
+
+  it("code déployé avant la migration : retente sans les deux colonnes, sans rien perdre d'autre", async () => {
+    setSales(["a", "b"]);
+    db.legacyColumns = true;
+
+    const result = await runSalePepitesBatch({ now: NOW });
+
+    expect(result).toMatchObject({ evaluated: 2, failed: 0, skipped: null });
+    const rows = db.upserts.flat();
+    expect(rows.map((row) => row.sale_id).sort()).toEqual(["a", "b"]);
+    for (const row of rows) {
+      expect(row).not.toHaveProperty("estimate_model_version");
+      expect(row).not.toHaveProperty("estimate_engine_kind");
+      expect(row).toHaveProperty("rule_version");
+    }
   });
 });

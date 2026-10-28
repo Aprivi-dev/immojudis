@@ -43,6 +43,7 @@ import {
   sortClientSearchResults,
 } from "@/lib/search/search-filters";
 import { salesSearchToUrlRecord, type SalesSearchParams } from "@/lib/search/search-url-state";
+import { listPepiteSaleIds } from "@/lib/pepite-sale-ids";
 import { getSaleSurface } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
 import { recordFeatureUsageEvent } from "@/lib/usage";
@@ -400,6 +401,20 @@ export function buildSalesApiFeedItems(
   return sales.map((sale) => saleToApiFeedItem(sale, origin, rents));
 }
 
+/**
+ * Identifiants des ventes dont la mise à prix est sous la fourchette (`list_public_sale_ids_under_market_range`,
+ * liste publique). Une panne est levée : le flux ne répond jamais « aucune vente » à la place de la liste.
+ */
+async function listUnderRangeSaleIds(): Promise<Set<string>> {
+  const { data, error } = await supabaseAdmin.rpc("list_public_sale_ids_under_market_range");
+  if (error) throw error;
+  return new Set(
+    (Array.isArray(data) ? data : [])
+      .filter((id): id is string => typeof id === "string")
+      .map((id) => id.toLowerCase()),
+  );
+}
+
 async function resolveFilteredSales({
   auth,
   search,
@@ -431,8 +446,21 @@ async function resolveFilteredSales({
   // Loyers de la carte ANIL à la commune, lus avant le filtre « rendement minimal » (côté serveur : le
   // navigateur n'en reçoit pas).
   const rents = search.minYield != null ? await rentSession.load(visibleSourceSales) : undefined;
+  // « Pépites seulement » et « sous la fourchette » se croisent avec leur liste publique d'identifiants, comme la
+  // recherche : sans elle, le filtre ne passe aucune vente (`applyClientSearchFilters`) et le flux répondait 200 vide.
+  // Une liste illisible lève au lieu de rendre « aucune vente ».
+  const [pepiteSaleIds, underRangeSaleIds] = await Promise.all([
+    search.pepite
+      ? listPepiteSaleIds({ rpc: (fn) => supabaseAdmin.rpc(fn) }).then((ids) => new Set(ids))
+      : null,
+    search.belowRange ? listUnderRangeSaleIds() : null,
+  ]);
   const sales = sortClientSearchResults(
-    applyClientSearchFilters(visibleSourceSales, search, center, { rents }),
+    applyClientSearchFilters(visibleSourceSales, search, center, {
+      rents,
+      pepiteSaleIds,
+      underRangeSaleIds,
+    }),
     search,
     center,
   );
