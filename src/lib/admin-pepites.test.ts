@@ -202,7 +202,7 @@ describe("parseAdminPepiteRow", () => {
       startingPriceEur: 80000,
       href: "/sales/sale-1",
     });
-    expect(parsed?.passed.join(" ")).toContain("Achat probable nettement sous la valeur");
+    expect(parsed?.passed.join(" ")).toContain("Coût d'achat estimé nettement sous la valeur");
     expect(parsed?.passed.join(" ")).toContain("ventes comparables");
     expect(parsed?.stability).toEqual(["Publiée : 2 évaluations favorables consécutives"]);
     expect(parsed?.missed).toEqual([]);

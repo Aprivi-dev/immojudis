@@ -147,8 +147,8 @@ export const PEPITE_CRITERION_LABELS: Record<PepiteCriterionId, { pass: string; 
     fail: `Chances de l'emporter insuffisantes : moins de ${tenths(PEPITE_CHANCE_MIN_SHARE)} ventes comparables sur 10 adjugées sous l'enchère plafond (ou plafond sous la mise à prix)`,
   },
   test_c_cost: {
-    pass: `Achat probable nettement sous la valeur : coût total, frais compris, d'au plus ${percent(PEPITE_COST_MAX_SHARE_COURT)} de la valeur estimée (${percent(PEPITE_COST_MAX_SHARE_NOTARY)} en vente notariale)`,
-    fail: `Achat probable pas assez sous la valeur : coût total, frais compris, au-dessus de ${percent(PEPITE_COST_MAX_SHARE_COURT)} de la valeur estimée (${percent(PEPITE_COST_MAX_SHARE_NOTARY)} en vente notariale)`,
+    pass: `Coût d'achat estimé nettement sous la valeur : coût total, frais compris, d'au plus ${percent(PEPITE_COST_MAX_SHARE_COURT)} de la valeur estimée (${percent(PEPITE_COST_MAX_SHARE_NOTARY)} en vente notariale)`,
+    fail: `Coût d'achat estimé pas assez sous la valeur : coût total, frais compris, au-dessus de ${percent(PEPITE_COST_MAX_SHARE_COURT)} de la valeur estimée (${percent(PEPITE_COST_MAX_SHARE_NOTARY)} en vente notariale)`,
   },
   ceiling_above_start: {
     pass: "Plafond de référence au moins égal à la mise à prix (vente à la bougie)",
@@ -182,7 +182,7 @@ export function pepiteConfirmLabel(id: PepiteCriterionId, regime?: PepiteRegimeK
       regime && regime !== "tribunal"
         ? PEPITE_COST_EXIT_SHARE_NOTARY
         : PEPITE_COST_EXIT_SHARE_COURT;
-    return `Achat probable toujours sous le seuil de maintien (coût total, frais compris, d'au plus ${percent(exit)} de la valeur estimée), ${later}`;
+    return `Coût d'achat estimé toujours sous le seuil de maintien (coût total, frais compris, d'au plus ${percent(exit)} de la valeur estimée), ${later}`;
   }
   return `Critère proche de son seuil de maintien, ${later}`;
 }

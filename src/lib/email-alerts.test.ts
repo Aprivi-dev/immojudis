@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { escapeHtml } from "@/lib/guards";
+import { PEPITE_EXPLANATION } from "@/lib/pepite-copy";
 import { emailClickPath, readEmailClickToken } from "@/lib/email-click-token";
 import { verifyUnsubscribeToken } from "@/lib/email-unsubscribe-token";
 import {
@@ -128,7 +130,9 @@ describe("email alerts", () => {
       notifications: [pepiteNotification],
     });
 
-    expect(message.text).toContain("repère calculé automatiquement par Immojudis");
+    // Le texte validé le 26/10, mot pour mot, dans le texte comme dans le HTML.
+    expect(message.text).toContain(`Pépite : ${PEPITE_EXPLANATION}`);
+    expect(message.html).toContain(escapeHtml(PEPITE_EXPLANATION));
     expect(message.text).toContain(
       "Comment repérons-nous les pépites ? https://immojudis.example/methode-pepites",
     );

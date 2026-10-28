@@ -1201,9 +1201,10 @@ describe("n° 21 : gel à J-7, les détails de l'évaluation publiée ne sont pa
     );
     expect(criteria.every((criterion) => criterion.state === "pass")).toBe(true);
     const view = pepiteDetailView(details, row.evaluated_at as string, criteria);
-    expect(view?.condition).toContain("Au moins 70 %");
-    expect(view?.chanceLine).toContain("7 ventes comparables sur 10");
-    expect(view?.chanceLine).not.toContain("5 ventes");
+    // La valeur mesurée (75 %) est celle de l'évaluation publiée : jamais 50 % à côté du seuil de 70 %.
+    expect(view?.condition).toContain("75 % ont été adjugées");
+    expect(view?.condition).toContain("Le critère est rempli à partir de 70 %");
+    expect(view?.condition).not.toContain("50 %");
   });
 
   it("hors gel, l'évaluation du jour est écrite (détails compris)", async () => {

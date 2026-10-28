@@ -126,7 +126,7 @@ describe("page « Comment sont classées les annonces ? »", () => {
       screen.getByRole("region", { name: /Publicité · Sponsorisé/ }).textContent ?? ""
     ).replace(/\s+/g, " ");
     expect(text).toContain(
-      "Aucune rémunération ne peut obtenir ou améliorer une Pépite : ni les cabinets d’avocats qui achètent une mise en avant, ni les organisateurs, vendeurs ou professionnels qui publient des annonces.",
+      "Aucune rémunération ne peut obtenir ou améliorer une pépite : ni les cabinets d’avocats qui achètent une mise en avant, ni les organisateurs, vendeurs ou professionnels qui publient des annonces.",
     );
     expect(text).toContain("Cet encart est sans lien avec le repère Pépite.");
   });

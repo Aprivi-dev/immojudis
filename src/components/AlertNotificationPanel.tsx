@@ -8,6 +8,7 @@ import { toast } from "@/lib/toast";
 import Link from "next/link";
 import { updateAlertNotification } from "@/lib/client-api";
 import { AlertEmailRecapToggle } from "@/components/AlertEmailRecapToggle";
+import { PEPITE_ALERT_REASON, PEPITE_LABEL } from "@/lib/pepite-copy";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import type { AlertNotificationSummary } from "@/lib/alert-notifications";
 import { userMessage } from "@/lib/user-messages";
@@ -178,12 +179,12 @@ function NotificationItem({
                 key={reason}
                 className="rounded-full bg-gold/10 px-2 py-0.5 text-[11px] font-semibold text-gold-text"
               >
-                {reason}
+                {reason === PEPITE_ALERT_REASON ? PEPITE_LABEL : reason}
               </span>
             ))}
             {notification.marketDiscountPct != null ? (
               <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
-                {Math.round(notification.marketDiscountPct)} % décote
+                {Math.round(notification.marketDiscountPct)} % sous la référence DVF
               </span>
             ) : null}
           </div>

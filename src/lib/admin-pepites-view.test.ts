@@ -157,7 +157,7 @@ describe("buildAdminPepitesView", () => {
       "Évaluées",
       "Pépites",
       "À confirmer",
-      "Pas pépites",
+      "Pas des pépites",
       "Non applicables",
       "Données insuffisantes",
       "Écart aberrant seul",

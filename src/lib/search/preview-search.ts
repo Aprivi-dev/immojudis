@@ -169,17 +169,18 @@ export const PEPITE_SCAN_TOO_WIDE_MESSAGE =
  * « Pépites seulement » pour un visiteur, première étape : la liste publique des identifiants (un appel) croisée
  * avec TOUTES les lignes de la recherche, lues par pages de 100 dans leur ordre (mêmes lignes et même ordre que
  * sans le filtre), 4 pages à la fois au plus. Le résultat (sans pagination) est celui que le serveur garde en cache
- * (`public-catalogue.server.ts`). Sans pépite (mode pas « on », fonction absente, erreur de lecture de la liste) :
- * aucune ligne et aucune lecture du catalogue, jamais « toutes les ventes » à la place de la liste. Plus de
- * `MAX_PEPITE_SCAN_ROWS` lignes : erreur « recherche trop large ».
+ * (`public-catalogue.server.ts`). Sans pépite (mode pas « on », fonction absente) :
+ * aucune ligne et aucune lecture du catalogue, jamais « toutes les ventes » à la place de la liste. Une erreur de lecture de la liste est
+ * levée (jamais une liste vide). Plus de `MAX_PEPITE_SCAN_ROWS` lignes : erreur « recherche trop large ».
  */
 export async function readPepiteScan(
   client: PreviewRpcClient,
   search: SalesSearchParams,
 ): Promise<PreviewSearchRow[]> {
-  const pepiteIds = new Set(
-    await listPepiteSaleIds({ rpc: (fn) => client.rpc(fn, {}) }).catch((): string[] => []),
-  );
+  // Seule une fonction absente (migration pas appliquée) vaut « aucune pépite » (`listPepiteSaleIds`) : une panne
+  // est levée, pour qu'elle ne soit jamais gardée en cache comme une liste vide (`unstable_cache` ne garde pas un
+  // rejet) et que la recherche réponde par une erreur.
+  const pepiteIds = new Set(await listPepiteSaleIds({ rpc: (fn) => client.rpc(fn, {}) }));
   if (pepiteIds.size === 0) return [];
   const scan = { ...search, pepite: undefined, page: 1, limit: PEPITE_SCAN_PAGE_SIZE };
   const first = await readPreviewRows(client, scan);

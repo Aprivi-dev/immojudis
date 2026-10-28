@@ -15,7 +15,12 @@ import { systemAuthForUser } from "@/lib/system-auth";
 import { asRecord, escapeHtml, numberValue, stringValue } from "@/lib/guards";
 import { listPepiteSaleIds, type PepiteIdsClient } from "@/lib/pepite-sale-ids";
 import { EMAIL_COLORS } from "@/lib/email-brand";
-import { PEPITE_LABEL, PEPITE_METHOD_LINK_LABEL, PEPITE_METHOD_PATH } from "@/lib/pepite-copy";
+import {
+  PEPITE_EXPLANATION,
+  PEPITE_LABEL,
+  PEPITE_METHOD_LINK_LABEL,
+  PEPITE_METHOD_PATH,
+} from "@/lib/pepite-copy";
 import {
   ANIL_CURRENT_EDITION,
   RENT_ATTRIBUTION,
@@ -403,8 +408,11 @@ async function cancelQueuedEmailNotifications({
 const PEPITE_REASON = "pépite";
 /** Motif écrit par `alertMatchesSale` quand l'alerte filtre sur le rendement. */
 const RENT_YIELD_REASON = "rendement";
-/** Mention de l'email : en texte, jamais un montant (la page de la vente porte le détail, selon le droit du compte). */
-const PEPITE_EMAIL_LINE = "repère calculé automatiquement par Immojudis, ni conseil ni garantie.";
+/**
+ * Mention de l'email : le texte validé et relu par le juridique le 26/10/2026, mot pour mot (`PEPITE_EXPLANATION`),
+ * en texte comme en HTML. Jamais un montant (la page de la vente porte le détail, selon le droit du compte).
+ */
+const PEPITE_EMAIL_LINE = PEPITE_EXPLANATION;
 
 function digestItemFromNotification(notification: NotificationRow): DigestItem {
   const snapshot = asRecord(notification.notification_snapshot);
