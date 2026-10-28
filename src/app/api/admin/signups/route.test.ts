@@ -66,11 +66,15 @@ function database({ writeError = null as { message: string } | null } = {}) {
     },
     error: null,
   }));
-  mocks.rpc.mockImplementation(async (name: string) =>
-    name === "record_trial_extension"
+  mocks.rpc.mockImplementation(async (name: string) => {
+    // Migration 20261108190000 pas encore appliquée : la prolongation prend l'ancien chemin.
+    if (name === "extend_trial_with_note") {
+      return { data: null, error: { code: "PGRST202", message: "absent" } };
+    }
+    return name === "record_trial_extension"
       ? { data: "note-1", error: null }
-      : { data: [{ ends_at: "2026-10-08T00:00:00.000Z", gate_open: true }], error: null },
-  );
+      : { data: [{ ends_at: "2026-10-08T00:00:00.000Z", gate_open: true }], error: null };
+  });
   return writes;
 }
 
