@@ -40,7 +40,7 @@ import {
 } from "@/lib/launch-offer";
 import { postAuthDestination } from "@/lib/onboarding";
 import { PLAN_LIMITS } from "@/lib/plans";
-import { MONTHLY_SALE_UNLOCKS, UNLOCK_HIGHLIGHTS_INLINE_TEXT } from "@/lib/sale-unlocks";
+import { MONTHLY_UNLOCKS_TEXT, UNLOCK_HIGHLIGHTS_INLINE_TEXT } from "@/lib/sale-unlocks";
 import { trackProductEvent } from "@/lib/product-events";
 import { ACCOUNT_EXISTS_MESSAGE, userMessage } from "@/lib/user-messages";
 
@@ -129,13 +129,13 @@ function reasonCopy(reason: LoginReason, launchOffer: boolean): { signup: string
       return {
         signup: launchOffer
           ? `Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente : pendant les ${ANALYSIS_TRIAL_DAYS} jours d’essai, il ouvre aussi les analyses de l’offre Analyse.`
-          : `Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente, et en débloquer ${MONTHLY_SALE_UNLOCKS} en détail chaque mois (contenu selon la vente).`,
+          : `Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente, avec ${MONTHLY_UNLOCKS_TEXT} pour ouvrir le détail d’une vente (contenu selon la vente).`,
         login: "Connectez-vous pour consulter cette vente.",
       };
     case "exemple":
       return {
         signup: launchOffer
-          ? "Créez votre compte gratuit pour faire ce calcul sur une vente réelle : il bénéficie de l’offre Analyse pendant 7 jours, sans carte bancaire."
+          ? `Créez votre compte gratuit pour faire ce calcul sur une vente réelle : il bénéficie de l’offre Analyse pendant ${ANALYSIS_TRIAL_DAYS} jours, sans carte bancaire.`
           : "Créez votre compte gratuit, sans carte bancaire, pour faire ce calcul sur une vente réelle.",
         login: "Connectez-vous pour faire ce calcul sur une vente réelle.",
       };
@@ -414,10 +414,10 @@ export function LoginPage() {
                 </>
               ) : (
                 <>
-                  Découverte ouvre gratuitement le catalogue et, chaque mois, {MONTHLY_SALE_UNLOCKS}{" "}
-                  ventes en détail ({UNLOCK_HIGHLIGHTS_INLINE_TEXT}). Analyse ouvre toutes les
-                  ventes, avec les comparables, les alertes quotidiennes et les exports (tarif prévu
-                  : {resolveAnalysisOfferLabel()}, pas encore souscriptible).
+                  Découverte ouvre gratuitement le catalogue, avec {MONTHLY_UNLOCKS_TEXT} (
+                  {UNLOCK_HIGHLIGHTS_INLINE_TEXT}). Analyse ouvre toutes les ventes, avec les
+                  comparables, les alertes quotidiennes et les exports (tarif prévu :{" "}
+                  {resolveAnalysisOfferLabel()}, pas encore souscriptible).
                 </>
               )}{" "}
               Les professionnels déposent et suivent leurs annonces dans leur espace.
@@ -590,7 +590,7 @@ export function LoginPage() {
                     </>
                   ) : (
                     <p className="font-medium">
-                      {`Gratuit : ${MONTHLY_SALE_UNLOCKS} ventes en détail par mois (${UNLOCK_HIGHLIGHTS_INLINE_TEXT}), sans carte bancaire`}
+                      {`Gratuit : ${MONTHLY_UNLOCKS_TEXT} (${UNLOCK_HIGHLIGHTS_INLINE_TEXT}), sans carte bancaire`}
                     </p>
                   )}
                 </div>

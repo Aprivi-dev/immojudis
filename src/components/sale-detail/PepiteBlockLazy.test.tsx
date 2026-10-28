@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { pepiteCriteriaPayload, pepiteCriteriaViews } from "@/lib/sale-pepite-view";
 
@@ -41,6 +41,7 @@ describe("PepiteBlockLazy", () => {
     );
     const skeleton = screen.getByTestId("pepite-block-loading");
     expect(skeleton.getAttribute("aria-busy")).toBe("true");
+    expect(skeleton.hasAttribute("aria-label")).toBe(false);
     expect(skeleton.className).toMatch(/min-h-44/);
     expect(document.querySelector("#pepite")).toBeNull();
     expect(onLoadedChange).toHaveBeenLastCalledWith(false);
@@ -51,6 +52,7 @@ describe("PepiteBlockLazy", () => {
     render(<PepiteBlockLazy saleId="s" known lockedAction={null} />);
     const line = screen.getByTestId("pepite-block-error");
     expect(line.textContent).toContain("n’a pas pu être chargé");
+    expect(within(line).getByRole("alert")).toBeTruthy();
     expect(screen.getByRole("link", { name: /Comment repérons-nous/ }).getAttribute("href")).toBe(
       "/methode-pepites",
     );

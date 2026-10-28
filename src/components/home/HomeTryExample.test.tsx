@@ -18,6 +18,8 @@ describe("Essayez sur un exemple", () => {
     expect(text(verdictBox())).toContain("135 000 €");
     expect(text(verdictBox())).toContain("On enchérit");
     expect(text(verdictBox())).toContain("Occupé : 3 000 € et 12 mois pour libérer le bien.");
+    // La démonstration qui défile seule n'est pas annoncée : la zone ne l'est qu'après un choix.
+    expect(within(verdictBox()).queryByRole("status")).toBeNull();
     const card = screen.getByRole("group", { name: /simulateur du verdict/ });
     expect(text(card)).toContain("12 ventes à moins de 100 m");
     expect(text(card)).toContain("Même immeuble : 226 000 €");
@@ -35,7 +37,7 @@ describe("Essayez sur un exemple", () => {
     expect(text(verdictBox())).toContain("On passe son tour");
     expect(text(verdictBox())).toContain("La mise à prix dépasse déjà votre plafond de 50 500 €.");
     expect(text(verdictBox())).toContain("Louer : le loyer estimé fixe la limite (rendement).");
-    // La zone annoncée est permanente et porte la valeur finale ; le montant animé est masqué.
+    // Après un choix, la zone annoncée porte la valeur finale ; le montant animé est masqué.
     const status = within(verdictBox()).getByRole("status");
     expect(text(status)).toContain("Votre enchère plafond : 44 500 €. On passe son tour.");
     expect(verdictBox().querySelector("[aria-live]")).toBeNull();

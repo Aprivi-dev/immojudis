@@ -46,7 +46,13 @@ export function PepiteBlockLazy({
     return (
       <>
         <PepiteViewTracker payload={payload} saleId={saleId} />
-        <PepiteBlock payload={payload} saleId={saleId} lockedAction={lockedAction} className="" />
+        <PepiteBlock
+          payload={payload}
+          saleId={saleId}
+          lockedAction={lockedAction}
+          visitor
+          className=""
+        />
       </>
     );
   }
@@ -54,7 +60,6 @@ export function PepiteBlockLazy({
     return (
       <section
         aria-busy="true"
-        aria-label="Pépite : chargement du détail"
         data-testid="pepite-block-loading"
         className="min-h-44 rounded-lg border border-gold bg-white p-4 sm:p-5"
       >
@@ -78,7 +83,7 @@ export function PepiteBlockLazy({
         data-testid="pepite-block-error"
         className="rounded-lg border border-gold bg-white p-4 text-sm text-foreground sm:p-5"
       >
-        <p role="status">
+        <p role="alert">
           Le détail du repère « Pépite » n’a pas pu être chargé. Réessayez dans un instant.{" "}
           <Link
             href={PEPITE_METHOD_PATH}

@@ -192,8 +192,8 @@ export function AdminSignupsPanel() {
         {data && !data.launchOfferActive ? (
           <p className="mt-4 rounded-lg border border-warning/25 bg-warning-tint p-3 text-sm text-warning">
             L’essai gratuit à l’inscription est coupé : les comptes qui confirment leur adresse
-            maintenant n’ont pas d’essai. Ceux confirmés avant la coupure gardent leurs 7 jours, et
-            une prolongation reste active jusqu’à sa date.
+            maintenant n’ont pas d’essai. Ceux confirmés avant la coupure gardent leurs{" "}
+            {ANALYSIS_TRIAL_DAYS} jours, et une prolongation reste active jusqu’à sa date.
           </p>
         ) : null}
         {data?.truncated ? (
@@ -243,7 +243,7 @@ export function AdminSignupsPanel() {
                 setActivity(event.target.value as ActivityFilter);
                 setOffset(0);
               }}
-              className="rounded-lg border border-brand-navy/15 bg-white px-3 py-2 text-sm outline-none focus:border-gold"
+              className="rounded-lg border border-brand-navy/55 bg-white px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
             >
               <option value="all">Toutes</option>
               <option value="trial_ended_idle">

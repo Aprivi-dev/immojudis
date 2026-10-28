@@ -265,7 +265,7 @@ describe("login page", () => {
     mocks.search = { mode: "investor", reason: "fiche" };
     const { unmount } = render(<LoginPage />);
     expect(screen.getByTestId("login-reason").textContent).toBe(
-      "Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente, et en débloquer 3 en détail chaque mois (contenu selon la vente).",
+      "Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente, avec 3 déblocages par mois pour ouvrir le détail d’une vente (contenu selon la vente).",
     );
     unmount();
 
@@ -281,7 +281,7 @@ describe("login page", () => {
     const { unmount } = render(<LoginPage />);
     const promise = screen.getByTestId("login-free-promise");
     expect(promise.textContent).toBe(
-      "Gratuit : 3 ventes en détail par mois (enchère plafond ou offre plafond, lecture des pièces, historique, selon la vente), sans carte bancaire",
+      "Gratuit : 3 déblocages par mois (enchère plafond ou offre plafond, lecture des pièces, historique, selon la vente), sans carte bancaire",
     );
     // Visible sous le point de rupture « lg », où la colonne d'explication prend le relais.
     expect(promise.className).toContain("lg:hidden");

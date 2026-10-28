@@ -71,7 +71,9 @@ describe("ExampleSalePage", () => {
     const cta = screen.getByTestId("example-summary-cta");
     const link = cta.querySelector("a");
     expect(link?.textContent).toBe("Créer mon compte gratuit");
-    expect(link?.getAttribute("href")).toBe("/login?redirect=%2Fsales&mode=investor&reason=offre");
+    expect(link?.getAttribute("href")).toBe(
+      "/login?redirect=%2Fsales&mode=investor&reason=exemple",
+    );
     // Sans offre d'essai lue (aucun fournisseur) : la ligne du compte gratuit.
     expect(cta.textContent).toContain("Gratuit, sans carte bancaire");
     // La synthèse est dans la vue de l'exemple, avant le bloc de fin de page.

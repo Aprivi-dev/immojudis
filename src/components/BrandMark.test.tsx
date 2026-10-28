@@ -28,6 +28,13 @@ describe("BrandMark", () => {
     expect(markup).toContain('aria-label="Immojudis"');
   });
 
+  it("se masque aux lecteurs d'écran quand il est décoratif", () => {
+    const markup = renderToStaticMarkup(<BrandMark decorative />);
+    expect(markup).toContain('aria-hidden="true"');
+    expect(markup).not.toContain("aria-label");
+    expect(markup).not.toContain('role="img"');
+  });
+
   it("sert à l'en-tête avec l'accroche unique, sans icône de bibliothèque", () => {
     const markup = renderToStaticMarkup(<HeaderLogo showTagline />);
     expect(markup).toContain("Les enchères immobilières, en toute clarté");

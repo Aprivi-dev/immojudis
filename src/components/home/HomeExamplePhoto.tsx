@@ -160,9 +160,10 @@ export function HomeExamplePhoto(props: ExamplePhotoProps) {
               {bidVerdictSentence(preset.ceiling, startingPrice)}
             </span>
           </p>
-          {/* Zone annoncée en permanence : la valeur finale, jamais les montants intermédiaires
-              du compteur animé (masqués ci-dessus). */}
-          <p className="sr-only" role="status">
+          {/* Zone annoncée après un choix du visiteur seulement : pas pendant la démonstration
+              qui défile seule. Jamais les montants intermédiaires du compteur animé (masqués
+              ci-dessus). */}
+          <p className="sr-only" role={chosenIndex !== null ? "status" : undefined}>
             Enchère à ne pas dépasser : {formatPrice(preset.ceiling)}. {BID_VERDICT_LABEL[verdict]}.
           </p>
         </div>

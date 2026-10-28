@@ -97,7 +97,7 @@ function OutcomeForecastReady({
     <section
       id="outcome-forecast"
       aria-labelledby="outcome-forecast-title"
-      className="scroll-mt-36 border-b border-brand-navy/10 bg-background"
+      className="scroll-mt-2 border-b border-brand-navy/10 bg-background"
     >
       <div className="mx-auto max-w-[1410px] px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
         <h2

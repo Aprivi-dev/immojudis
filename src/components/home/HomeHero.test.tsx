@@ -114,11 +114,10 @@ describe("home texts", () => {
     expect(markup).toMatch(/<a[^>]*href="\/annonce-exemple"[^>]*>Voir l’analyse complète/);
   });
 
-  it("annonce la valeur finale en zone permanente et masque le montant animé", () => {
+  it("prépare l'annonce de la valeur finale, sans la lire pendant la démonstration, et masque le montant animé", () => {
     const markup = renderToStaticMarkup(<HomeHero />);
-    expect(markup).toMatch(
-      /<p class="sr-only" role="status">Enchère à ne pas dépasser : 135.000.€/,
-    );
+    expect(markup).toMatch(/<p class="sr-only">Enchère à ne pas dépasser : 135.000.€/);
+    expect(markup).not.toContain('role="status"');
     expect(markup).toMatch(/<p[^>]*aria-hidden="true"[^>]*>135.000.€<\/p>/);
     expect(markup).not.toContain("aria-live");
   });
@@ -198,7 +197,7 @@ describe("home figures band", () => {
     expect(markup).toMatch(
       /<dt>lieux de vente réunis : tribunal, notaire, État<\/dt><dd[^>]*>3<\/dd>/,
     );
-    expect(markup).toMatch(/<dt>fiches détaillées gratuites chaque mois<\/dt><dd[^>]*>3<\/dd>/);
+    expect(markup).toMatch(/<dt>déblocages par mois<\/dt><dd[^>]*>3<\/dd>/);
   });
 
   it("leaves out the departments when that figure is unknown", () => {
