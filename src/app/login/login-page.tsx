@@ -32,7 +32,7 @@ import {
   type LoginReason,
 } from "@/lib/navigation";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
-import { resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
+import { ANALYSIS_TRIAL_DAYS, resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
 import { LAUNCH_OFFER_VISITOR_TEXT } from "@/lib/launch-offer";
 import { postAuthDestination } from "@/lib/onboarding";
 import { PLAN_LIMITS } from "@/lib/plans";
@@ -87,8 +87,7 @@ function reasonCopy(reason: LoginReason, launchOffer: boolean): { signup: string
     case "export":
       return launchOffer
         ? {
-            signup:
-              "Créez votre compte gratuit pour exporter ces résultats : l’export fait partie de l’offre Analyse, offerte pendant 7 jours à l’inscription, sans carte bancaire.",
+            signup: `Créez votre compte gratuit pour exporter ces résultats : l’export fait partie de l’offre Analyse, offerte pendant ${ANALYSIS_TRIAL_DAYS} jours à l’inscription, sans carte bancaire.`,
             login: "Connectez-vous pour exporter ces résultats.",
           }
         : {
@@ -99,8 +98,7 @@ function reasonCopy(reason: LoginReason, launchOffer: boolean): { signup: string
     case "offre":
       return launchOffer
         ? {
-            signup:
-              "Créez votre compte gratuit : il bénéficie de l’offre Analyse pendant 7 jours, sans carte bancaire.",
+            signup: `Créez votre compte gratuit : il bénéficie de l’offre Analyse pendant ${ANALYSIS_TRIAL_DAYS} jours, sans carte bancaire.`,
             login: "Connectez-vous pour voir votre offre.",
           }
         : {
@@ -126,7 +124,7 @@ function reasonCopy(reason: LoginReason, launchOffer: boolean): { signup: string
     case "fiche":
       return {
         signup: launchOffer
-          ? "Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente : pendant les 7 jours d’essai, il ouvre aussi les analyses de l’offre Analyse."
+          ? `Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente : pendant les ${ANALYSIS_TRIAL_DAYS} jours d’essai, il ouvre aussi les analyses de l’offre Analyse.`
           : `Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente, et en débloquer ${MONTHLY_SALE_UNLOCKS} en détail chaque mois (contenu selon la vente).`,
         login: "Connectez-vous pour consulter cette vente.",
       };
@@ -398,8 +396,8 @@ export function LoginPage() {
               {launchOffer ? (
                 <>
                   Découverte ouvre gratuitement le catalogue. À l’inscription, l’offre Analyse est
-                  offerte pendant 7 jours : comparables, alertes quotidiennes et exports (contenu
-                  selon la vente).
+                  offerte pendant {ANALYSIS_TRIAL_DAYS} jours : comparables, alertes quotidiennes et
+                  exports (contenu selon la vente).
                 </>
               ) : (
                 <>

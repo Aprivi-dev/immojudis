@@ -3,6 +3,8 @@
  * par `admin-signups.ts`).
  */
 
+import { ANALYSIS_TRIAL_DAYS } from "@/lib/analysis-offer";
+
 export const ADMIN_SIGNUP_ACCESS = [
   "trial",
   "trial_extended",
@@ -14,7 +16,7 @@ export const ADMIN_SIGNUP_ACCESS = [
 export type AdminSignupAccess = (typeof ADMIN_SIGNUP_ACCESS)[number];
 
 export const ADMIN_SIGNUP_ACCESS_LABELS: Record<AdminSignupAccess, string> = {
-  trial: "Essai 7 jours",
+  trial: `Essai ${ANALYSIS_TRIAL_DAYS} jours`,
   trial_extended: "Essai prolongé",
   analyse_paid: "Analyse (payant)",
   analyse_manual: "Analyse (attribué)",

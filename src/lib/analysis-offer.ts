@@ -107,6 +107,11 @@ export function analysisOfferLabelMatchesPrice(
   return amounts.length > 0 && amounts.every((amount) => amount === priceCents);
 }
 
-export const ANALYSIS_TRIAL_LABEL = `Essai gratuit de ${ANALYSIS_TRIAL_DAYS} jours avec carte bancaire`;
+/**
+ * Libellé de la période d'essai du checkout Stripe, avec carte bancaire. Inactif tant que
+ * `STRIPE_CHECKOUT_TRIAL_OFFERED` est faux ; il ne doit pas être confondu avec l'essai gratuit sans
+ * carte de l'inscription (`LAUNCH_OFFER_LABEL`).
+ */
+export const ANALYSIS_TRIAL_LABEL = "Période d’essai Stripe (avec carte)";
 export const ANALYSIS_RECURRING_LABEL = "Puis abonnement récurrent résiliable depuis Mon compte";
 export const ANALYSIS_SUBSCRIPTION_ONLY_LABEL = "Abonnement récurrent résiliable depuis Mon compte";

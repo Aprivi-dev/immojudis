@@ -9,6 +9,7 @@ import { fetchSaleLandReport, downloadSaleLandReport } from "@/lib/land-report-c
 import { LAND_SCOPE_LABELS, LAND_SOURCE_STATUS_LABELS } from "@/lib/land-report-export";
 import { safeExternalHttpUrl } from "@/lib/external-url";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
+import { ANALYSIS_TRIAL_DAYS } from "@/lib/analysis-offer";
 import type {
   LandProjectKind,
   LandReport,
@@ -178,7 +179,7 @@ export function LandPotentialPanel({
             {launchOffer.pending
               ? "L’accès au dossier PLU et risques de chaque annonce dépend de votre offre."
               : launchOffer.active
-                ? "L’offre Analyse donne accès au dossier PLU et risques de chaque annonce. Elle est offerte pendant 7 jours à l’inscription, une fois par personne."
+                ? `L’offre Analyse donne accès au dossier PLU et risques de chaque annonce. Elle est offerte pendant ${ANALYSIS_TRIAL_DAYS} jours à l’inscription, une fois par personne.`
                 : "L’offre Analyse donne accès au dossier PLU et risques de chaque annonce."}
           </p>
           <a href="/offres">

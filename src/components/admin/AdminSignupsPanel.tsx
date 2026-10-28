@@ -12,6 +12,7 @@ import { AdminPagination } from "@/components/admin/AdminPagination";
 import { AdminPanel, AdminSectionHeading } from "@/components/admin/AdminShell";
 import { formatInteger } from "@/components/admin/admin-format";
 import { AdminQueryErrorNotice, OverviewMetric } from "@/components/admin/admin-ui";
+import { ANALYSIS_TRIAL_DAYS } from "@/lib/analysis-offer";
 import { extendAdminSignupTrials, fetchAdminSignups } from "@/lib/client-api/admin-signups";
 import { dateTimeLocalToUtcIso, formatDateTimeLocalInput } from "@/lib/admin-subscription-datetime";
 import {
@@ -154,7 +155,7 @@ export function AdminSignupsPanel() {
             icon={<Clock />}
             tone="copper"
             value={inTrial == null ? "—" : formatInteger(inTrial)}
-            label="En essai (7 jours ou prolongé)"
+            label={`En essai (${ANALYSIS_TRIAL_DAYS} jours ou prolongé)`}
           />
         </AdminPanel>
         <AdminPanel>
