@@ -1,5 +1,7 @@
 import type { AuctionSale } from "@/lib/types";
-import { listingCoordinates } from "@/lib/sale-listing";
+// `isInFrance` plutôt que `listingCoordinates` (sale-listing) : ce module est importé par les vignettes
+// de la liste, qui ne doivent pas charger tout `sale-listing` (budgets de JavaScript).
+import { isInFrance } from "@/lib/france-bounds";
 import { STREET_TYPE_END, streetTypePattern } from "@/lib/street-types";
 
 /**
@@ -86,15 +88,15 @@ function reliableBuildingPosition(sale: BuildingPositionSale): {
   const precision =
     typeof sale.location_precision === "string" ? sale.location_precision.trim().toLowerCase() : "";
   if (precision !== "address" && precision !== "parcel") return null;
-  const coordinates = listingCoordinates(sale as AuctionSale);
-  if (!coordinates) return null;
+  const { latitude: lat, longitude: lng } = sale;
+  if (lat == null || lng == null || !isInFrance(lat, lng)) return null;
   const street = sale.address?.trim();
   if (!street || !hasNumberedStreetAddress(street)) return null;
   const flags = Array.isArray(sale.quality_flags) ? sale.quality_flags : [];
   if (flags.some((flag) => typeof flag === "string" && DOUBTFUL_LOCATION_FLAGS.has(flag))) {
     return null;
   }
-  return { precision, ...coordinates, street };
+  return { precision, lat, lng, street };
 }
 
 /**
