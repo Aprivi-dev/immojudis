@@ -19,9 +19,9 @@ levés.
   « Essayez sur un exemple » sans consigne ; trouver une vente de son département et ouvrir la
   fiche ; repérer prix, date et points à vérifier ; créer une alerte.
 - **Volet B** : 6 à 8 entretiens de 45 minutes avec des personnes de la liste d'attente ou de
-  l'essai (particuliers novices et aguerris, marchands de biens, un avocat ; au moins 3 sur
-  mobile), plus deux relances écrites consenties pour juger les 7 jours. Il donne des signaux
-  qualitatifs : **aucun pourcentage**.
+  l'essai **qui ont coché la case** (particuliers novices et aguerris, marchands de biens, un avocat ; au moins 3 sur
+  mobile). Aucune relance écrite : le texte de la case promet « une seule fois ». Il donne des
+  signaux qualitatifs : **aucun pourcentage**.
 
 Séances sur les fiches publiques et `/annonce-exemple` (pas d'écriture dans la production) ; deux
 comptes de séance prolongés via la vue Inscriptions si une fiche complète est nécessaire.
@@ -33,16 +33,27 @@ Notes sous pseudonyme (P1 à P8), enregistrement supprimé à 30 jours, notes à
 1. **Finalité du consentement.** Le texte de la case « entretien » couvre désormais le choix des
    ventes étudiées, **l'accueil du site, le repère « Pépite » et l'essai gratuit**
    (`offerOpeningInterviewNotice`, version du texte `OFFER_OPENING_SURVEY_VERSION` =
-   `2026-10-28.3`). Ce texte [JR] est à relire par `juridique-rgpd`. Tant que la version change,
-   les accords donnés avec l'ancienne version ne couvrent pas ces séances.
+   `2026-10-28.3`). Ce texte [JR] est à relire par `juridique-rgpd`. La version `2026-10-28.3`
+   **ne sert pas aux anciens accords** : une personne qui a coché la case avec une version
+   antérieure n'est pas invitée, son accord ne couvrant pas ces séances. Seules sont contactées les
+   personnes dont l'accord porte cette version (ou une version ultérieure qui garde la finalité).
 2. **La case est masquée** tant que l'identité de l'éditeur (nom et email de contact) n'est pas
    renseignée (`offerOpeningInterviewAvailable`). Le propriétaire la renseigne et complète la
    politique de confidentialité (qui ne cite aujourd'hui que la demande « Me prévenir ») avant
    tout envoi.
-3. **Points à trancher par `juridique-rgpd`** : base légale pour inviter les inscrits de l'essai
-   qui n'ont pas coché la case ; invitation dans le produit plutôt que par email ; formulaire de
-   consentement distinct pour les participants recrutés hors produit ; les deux relances écrites
-   (le texte promet « une seule fois ») ; gratification éventuelle.
+3. **Règles retenues après la relecture `juridique-rgpd`** :
+   - **Aucun email** aux inscrits de l'essai qui n'ont pas coché la case : ils ne sont pas
+     contactés par email. Seule voie ouverte, une invitation dans le produit, à faire valider avant
+     usage ;
+   - **un seul email** par personne ayant coché la case, **aucune relance** (le texte promet « une
+     seule fois ») ;
+   - **gratification** : si elle existe, elle est annoncée **avant** le consentement, dans le texte
+     de la case et dans l'invitation, jamais après coup ;
+   - **outil de visioconférence** : il est cité (nom de l'outil) dans l'information donnée avec la
+     case et dans la politique de confidentialité avant tout entretien ; le nom est à renseigner par
+     le propriétaire ;
+   - reste à trancher par `juridique-rgpd` : formulaire de consentement distinct pour les
+     participants recrutés hors produit (volet A).
 4. **Indicateur** : nombre de personnes qui ont coché la case, lu en base par le propriétaire.
    Il décide du plan A (6 volontaires ou plus), du plan B (mélange avec des gens hors produit) ou de
    l'attente.
@@ -62,13 +73,13 @@ autre) : ces deux questions donnent la différence entre novice et aguerri, et l
 
 ## Calendrier visé
 
-| Période        | Étape                                         |
-| -------------- | --------------------------------------------- |
-| 28/10 au 03/11 | Avis juridique, matériel, comptes de séance   |
-| 04 au 13/11    | Prise de contact (un seul email par personne) |
-| 10 au 21/11    | Séances, 2 par semaine au plus                |
-| 24 au 28/11    | Synthèse                                      |
-| 29/11          | Décisions (le préavis des CGU tombe le 01/12) |
+| Période        | Étape                                          |
+| -------------- | ---------------------------------------------- |
+| 28/10 au 03/11 | Avis juridique, matériel, comptes de séance    |
+| 04 au 13/11    | Prise de contact (un seul email, sans relance) |
+| 10 au 21/11    | Séances, 2 par semaine au plus                 |
+| 24 au 28/11    | Synthèse                                       |
+| 29/11          | Décisions (le préavis des CGU tombe le 01/12)  |
 
 ## Critères de décision (des signaux, jamais des statistiques)
 
