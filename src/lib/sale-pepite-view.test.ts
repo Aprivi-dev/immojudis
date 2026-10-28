@@ -421,10 +421,10 @@ describe("contrôle d'inondation d'une pépite (règle v2)", () => {
     });
     expect(view).toMatchObject({ verdict: "tri_only", tone: "neutral", details: null });
     expect(view?.line).toBe(
-      "Zone de crue fréquente des TRI consultée ; périmètres de PPRi non contrôlés à ce jour.",
+      "Bien non situé dans la zone de crue fréquente d’un TRI, d’après la carte consultée ; périmètres de PPRi non contrôlés à ce jour.",
     );
-    // Aucune phrase « bien non situé… » ni « cartes consultées … périmètres des PPRi ».
-    expect(JSON.stringify(view)).not.toMatch(/Bien non situé/);
+    // Aucune phrase « … ni dans le périmètre d’un PPRi » ni « cartes consultées … périmètres des PPRi ».
+    expect(JSON.stringify(view)).not.toMatch(/ni dans le périmètre/);
     expect(JSON.stringify(view)).not.toMatch(/Cartes consultées/);
     // La source est celle du TRI seul : le Géoportail n'a pas été lu.
     expect(view?.sourceLine).toMatch(/^Source : Géorisques .*consulté le 05 novembre 2026\.$/);

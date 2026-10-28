@@ -74,7 +74,7 @@ export function floodExposedLong(regime?: FloodSaleRegime | null): string {
  * Ligne neutre, sans coche et sans la phrase sur les périmètres de PPRi.
  */
 export const FLOOD_TRI_ONLY_LINE =
-  "Zone de crue fréquente des TRI consultée ; périmètres de PPRi non contrôlés à ce jour.";
+  "Bien non situé dans la zone de crue fréquente d’un TRI, d’après la carte consultée ; périmètres de PPRi non contrôlés à ce jour.";
 /** Mise en garde sous le bloc Pépite de la fiche, quand un contrôle d'inondation y figure. */
 export function floodWarning(regime?: FloodSaleRegime | null): string {
   const { annexedTo } = floodDocuments(regime);

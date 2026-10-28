@@ -77,7 +77,7 @@ describe("shared personal simulation", () => {
 });
 
 describe("shared report of a sale by offers", () => {
-  async function offersMarkup(ceiling: Record<string, unknown>) {
+  async function offersMarkup(ceiling: Record<string, unknown>, disclaimer?: string) {
     mocks.report.mockResolvedValue({
       title: "Rapport vente interactive",
       updatedAt: "2026-10-26",
@@ -89,6 +89,7 @@ describe("shared report of a sale by offers", () => {
       },
       sourceTrace: [],
       limitations: [],
+      disclaimer,
       ceiling: {
         available: true,
         maxBid: 120000,
@@ -121,6 +122,15 @@ describe("shared report of a sale by offers", () => {
     expect(html).not.toContain("Miseàprix");
     expect(html).not.toContain("avantenchère");
     expect(html).not.toContain("Enchèreplafond");
+  });
+
+  it("says « avant toute offre » in the footer of a sale by offers, « avant toute enchère » otherwise", async () => {
+    const disclaimer = "Vérifiez les pièces officielles et votre conseil avant toute enchère.";
+    const offers = await offersMarkup({}, disclaimer);
+    expect(offers).toContain("votreconseilavanttouteoffre.");
+    expect(offers).not.toContain("avanttouteenchère");
+    const court = await offersMarkup({ regime: "tribunal", label: undefined }, disclaimer);
+    expect(court).toContain("votreconseilavanttouteenchère.");
   });
 
   it("keeps the court wording for a report without a regime and does not invent a notice", async () => {

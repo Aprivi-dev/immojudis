@@ -50,9 +50,9 @@ describe("AlertNotificationPanel : libellés", () => {
     expect(screen.getByText("DPE C")).toBeTruthy();
   });
 
-  it("écrit « N % sous la référence DVF » et non « décote »", () => {
+  it("écrit « N % sous la valeur estimée (base DVF) » et non « décote »", () => {
     renderPanel([notification({ marketDiscountPct: 24.6 })]);
-    expect(screen.getByText("25 % sous la référence DVF")).toBeTruthy();
+    expect(screen.getByText("25 % sous la valeur estimée (base DVF)")).toBeTruthy();
     expect(document.body.textContent).not.toContain("décote");
   });
 });

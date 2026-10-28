@@ -268,7 +268,8 @@ export function InvestorOnboarding({
                     data-testid="first-alert-timing"
                     className="mt-2 pl-8 text-sm leading-relaxed text-foreground"
                   >
-                    Votre alerte arrive lundi. En attendant, ouvrez une fiche pour voir son plafond.
+                    Le récapitulatif part le lundi, s’il y a de nouvelles ventes qui correspondent à
+                    vos critères. En attendant, ouvrez une fiche pour voir son plafond.
                   </p>
                 ) : null}
               </div>

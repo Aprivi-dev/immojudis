@@ -184,7 +184,7 @@ function NotificationItem({
             ))}
             {notification.marketDiscountPct != null ? (
               <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
-                {Math.round(notification.marketDiscountPct)} % sous la référence DVF
+                {Math.round(notification.marketDiscountPct)} % sous la valeur estimée (base DVF)
               </span>
             ) : null}
           </div>

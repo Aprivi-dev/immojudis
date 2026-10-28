@@ -165,7 +165,7 @@ export async function POST(request: Request) {
       if (claims.scope.kind === "launch-offer-end") {
         await revokeLaunchOfferEndNotice({ userId: claims.userId });
         return htmlResponse(
-          "Préavis désactivé",
+          "Message désactivé",
           "Vous ne recevrez plus ce message. Votre compte et vos alertes email ne sont pas modifiés.",
           200,
           { href: "/compte", label: "Voir mon compte" },
