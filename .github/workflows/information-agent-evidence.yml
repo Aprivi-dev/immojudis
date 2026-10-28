@@ -15,7 +15,7 @@ concurrency:
 jobs:
   process:
     name: Analyze private information-agent attachments
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
       # Secrets are given only to the steps that call Supabase or Replicate,

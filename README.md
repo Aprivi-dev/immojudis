@@ -32,6 +32,9 @@ Le dépôt réunit deux briques :
 
 - **Node 24** (`>=24.15.0 <25`, voir [`.nvmrc`](.nvmrc) — `nvm use`) et **npm 11** (`>=11.18.0 <12`) :
   `.npmrc` active `engine-strict=true`, donc `npm install` / `npm ci` refusent une autre version de Node.
+  Le npm livré avec Node peut être plus ancien : `npm install --global npm@11.18.0` (version épinglée par la CI
+  et par `vercel.json`). `npm run check:versions` vérifie que `.nvmrc`, `.node-version`, `engines`, la CI,
+  `vercel.json` et l'image Playwright de la CI concordent.
 - Un projet **Supabase** (URL + clé publishable)
 
 ## Démarrage rapide
@@ -63,7 +66,7 @@ Toutes les variables sont lues par un seul module, [`src/lib/env.ts`](src/lib/en
 | `CRON_SECRET`                          |   ✅   | Secret des routes Vercel Cron et de `POST /api/pipeline/revalidate-sale` (invalidation du cache d'une fiche par le pipeline)                                                                                                                                                                                         |
 | `SITE_URL`                             |   ✅   | **Nom canonique.** Origine canonique publique (`https://immojudis.com`). Replis : `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_APP_URL`, `APP_URL`. `VERCEL_URL` n'est plus acceptée seule en production (garde-fou de build)                                                                                                |
 | `RESEND_API_KEY`                       |   ✅   | Clé serveur Resend pour envoyer les alertes email consenties et les emails aux avocats référencés                                                                                                                                                                                                                    |
-| `ALERT_EMAIL_FROM`                     |   ✅   | Expéditeur vérifié Resend, par exemple `Immojudis <alertes@immojudis.com>`                                                                                                                                                                                                                                            |
+| `ALERT_EMAIL_FROM`                     |   ✅   | Expéditeur vérifié Resend, par exemple `Immojudis <alertes@immojudis.com>`                                                                                                                                                                                                                                           |
 | `NEXT_PUBLIC_LEGAL_*`                  |   ✅   | Mentions légales : `ENTITY_NAME`, `ENTITY_FORM`, `ENTITY_ADDRESS`, `REGISTRATION`, `PUBLICATION_DIRECTOR`, `CONTACT_EMAIL`, `CONTACT_PHONE`, `MEDIATOR_NAME`, `MEDIATOR_ADDRESS`, `MEDIATOR_WEBSITE`. Le build de production échoue si l'une manque                                                                  |
 | `ADMIN_MFA_REQUIRED`                   |   ✅   | Doit valoir `true` en production (second facteur obligatoire pour l'administration). Le build de production échoue sinon                                                                                                                                                                                             |
 | `ALLOW_INCOMPLETE_LAUNCH_CONFIG`       |   ➖   | **Échappatoire temporaire.** `true` transforme en avertissements très visibles les erreurs du build de production sur les mentions légales et `ADMIN_MFA_REQUIRED` (jamais l'absence d'origine canonique, toujours bloquante). Le déploiement n'est alors pas conforme : à retirer dès que les valeurs sont fournies |
@@ -121,6 +124,7 @@ Mapbox configurés pour l'application.
 | `npm run env:check:prod`                 | Vérifie les variables nécessaires aux API prod + migrations                                                     |
 | `npm run db:migrate`                     | Applique les migrations Supabase en attente (`SUPABASE_DB_URL`, `POSTGRES_URL_NON_POOLING` ou `POSTGRES_URL`)   |
 | `npm run check:schema-drift`             | Vérifie que le schéma Supabase correspond exactement aux migrations versionnées                                 |
+| `npm run check:versions`                 | Vérifie la cohérence des versions de Node, de npm et de l'image Playwright (CI)                                 |
 | `npm run ops:health-scheduler:configure` | Chiffre dans Vault l'URL et le secret du contrôle de santé toutes les 15 minutes                                |
 | `npm run valuation:publish`              | Publie explicitement les modèles de valorisation                                                                |
 | `npm run release:prepare`                | **ÉCRIT EN PRODUCTION** : applique les migrations, reconfigure Vault, publie les modèles (confirmation requise) |

@@ -18,7 +18,7 @@ concurrency:
 jobs:
   validate:
     name: Validate production migration target
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     # Read-only. `checks: read` lets the GITHUB_TOKEN list the CI check runs of the commit; this job
     # has no secret and no environment. A job-level block replaces the workflow-level one, hence
@@ -69,7 +69,7 @@ jobs:
     name: Apply audited migrations
     needs: validate
     if: needs.validate.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: Production
     timeout-minutes: 45
     env:
