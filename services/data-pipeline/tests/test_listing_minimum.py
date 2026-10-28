@@ -1,15 +1,22 @@
 """Minimum d'une annonce pour entrer en base : voie ou lieu-dit, email de contact, pièce, autre source."""
 
+import re
+from pathlib import Path
+
 import pytest
 
 from src import listing_minimum
 from src.autonomous_runner import PENDING_PUBLICATION_DECISIONS, STUCK_PUBLICATION_DECISIONS
 from src.listing_minimum import assess, has_contact_email, has_listing_minimum, has_street_or_lieu_dit
 from src.models import AuctionSale
+from src.position_quality import _ABBREVIATIONS, _LEADING_STREET_TYPES
 from src.publication_identity import resolve_publication_identities
 from src.retention_tombstones import publish_batch
 from src.reviewed_aliases import registry_from_rows
 from src.source_health import failed_sources
+from src.sources.avoventes_extraction import extract_avoventes_html_extras
+from src.sources.info_encheres_extraction import _cadastre as info_encheres_cadastre
+from src.sources.notaires_extraction import cadastre_location
 
 VENCH = "https://www.vench.fr/vente-165184-une-maison-ondres.html"
 PA = "https://www.petitesaffiches.fr/encheres-immobilieres/vente/immobiliere/j/une-maison-a-ondres-165184.html"
@@ -96,6 +103,23 @@ def test_the_email_may_sit_in_the_lawyer_source_block() -> None:
     assert has_contact_email(found)
 
 
+def test_the_email_is_found_in_nested_contact_blocks_like_the_agent_does() -> None:
+    nested_dict = sale(raw_payload={"source_blocks": {"contact_avocat": {"phone": "05 00 00 00 15", "email": "contact@cabinet-modele.example"}}})
+    nested_list = sale(raw_payload={"source_blocks": {"contacts": [{"role": "avocat", "mail": "contact@cabinet-modele.example"}]}})
+    deep = sale(raw_payload={"source_blocks": {"cabinet": {"coordonnees": [{"detail": {"email": "contact@cabinet-modele.example"}}]}}})
+    assert has_contact_email(nested_dict) and has_contact_email(nested_list) and has_contact_email(deep)
+    assert assess(nested_dict).basis == ("email",)
+
+
+def test_a_nested_block_is_read_like_the_agent_reads_it() -> None:
+    # Une chaîne directement dans une liste est ignorée par l'agent (information_sufficiency._string_leaves).
+    assert not has_contact_email(sale(raw_payload={"source_blocks": {"contacts": ["contact@cabinet-modele.example"]}}))
+    # Un bloc de texte de la page n'est pas un bloc de contact, imbriqué ou non.
+    assert not has_contact_email(sale(raw_payload={"source_blocks": {"page_text": {"footer": "contact@site-exemple.example"}}}))
+    # Une adresse que l'agent n'écrit jamais ne compte pas, même imbriquée.
+    assert not has_contact_email(sale(raw_payload={"source_blocks": {"contact": {"email": "greffe@tj-bordeaux.justice.fr"}}}))
+
+
 def test_one_document_is_enough() -> None:
     verdict = assess(sale(documents=[{"label": "Cahier des conditions", "url": "https://example.test/c.pdf"}]))
     assert verdict.ok and verdict.basis == ("documents",)
@@ -111,6 +135,49 @@ def test_a_cadastral_reference_is_enough_without_a_street() -> None:
     assert assess(in_tree).basis == ("cadastre",)
     published = sale(raw_payload={"source_blocks": {"reference_cadastrale": "AC 272 et AC 829"}})
     assert assess(published).basis == ("cadastre",)
+
+
+@pytest.mark.parametrize(
+    "address",
+    ["Section AB n° 123 Autreville", "AB 123", "Cadastre AB 123 18150 Autreville"],
+)
+def test_an_address_that_is_a_cadastral_reference_is_enough(address: str) -> None:
+    verdict = assess(sale(city="Autreville", address=address))
+    assert verdict.ok and verdict.basis == ("cadastre",)
+
+
+def test_every_cadastre_location_form_of_every_source_counts() -> None:
+    """Cessions/notaires/Petites Affiches (candidates), Avoventes (parcels), Info-Enchères (references)."""
+    notaires = cadastre_location("Parcelle cadastrée section AB n° 12", "33999", "Exempleville")
+    avoventes = extract_avoventes_html_extras(
+        '''<script>var geojsonFeature = [{"type":"Feature","properties":{"numero":"0695","section":"0D",
+        "code_insee":"60000","nom_com":"Exempleville","idu":"600000000D0695","contenance":592}}];
+        </script>'''
+    )["cadastre"]
+    info_encheres = info_encheres_cadastre("Un appartement. Cadastré section BY 69 : UN APPARTEMENT", "Autreville")
+    assert notaires and "candidates" in notaires
+    assert avoventes and "parcels" in avoventes and "candidates" not in avoventes
+    assert info_encheres and "references" in info_encheres and "candidates" not in info_encheres
+    for location in (notaires, avoventes, info_encheres):
+        in_tree = sale(raw_payload={"source_property_features": {"cadastre_location": location}})
+        at_root = sale(raw_payload={"cadastre_location": location})
+        assert assess(in_tree).basis == ("cadastre",), location
+        assert assess(at_root).basis == ("cadastre",), location
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        {"parcels": [], "designation": "Parcelle"},
+        {"references": [], "designation": "Parcelle", "raw": "Cadastré"},
+        {"candidates": [{"parcels": []}], "parcels": None, "references": None},
+        {"parcels": "AB 12"},
+        "AB 12",
+    ],
+)
+def test_a_cadastre_location_without_a_parcel_is_not_a_location(location) -> None:
+    assert not has_listing_minimum(sale(raw_payload={"cadastre_location": location}))
+    assert not has_listing_minimum(sale(raw_payload={"source_property_features": {"cadastre_location": location}}))
 
 
 def test_a_cadastral_block_without_a_parcel_is_not_a_location() -> None:
@@ -246,3 +313,44 @@ def test_the_decision_given_to_a_refusal_never_blocks_publication_or_counts_as_a
 def test_a_source_whose_listings_are_all_refused_is_not_reported_broken() -> None:
     # Le refus intervient après la collecte : le nombre d'annonces collectées de la source ne change pas.
     assert failed_sources(["vench"], {"vench": 326}, {"vench": []}) == {}
+
+
+# ------------------------------------------------------- parité avec la règle SQL (suppression définitive)
+MIGRATION = (
+    Path(__file__).resolve().parents[3]
+    / "supabase/migrations/20261108202000_listing_minimum_and_empty_listing_cleanup.sql"
+)
+
+
+def _sql_leading_street_types() -> set[str]:
+    text = MIGRATION.read_text(encoding="utf-8")
+    block = text[text.index("v_leading constant text :="):]
+    block = block[: block.index(";")]
+    return set("".join(re.findall(r"'([^']*)'", block)).split("|"))
+
+
+def test_the_sql_street_types_cover_everything_the_python_rule_reads() -> None:
+    """La suppression SQL est définitive : elle garde au moins tout ce que garde le Python.
+
+    Le Python ramène les abréviations au mot entier (``position_quality._ABBREVIATIONS``) avant de chercher le
+    type de voie : « Bvd Foch » est une voie. Chaque mot que le Python accepte en tête doit figurer dans la liste SQL.
+    """
+    accepted = set(_LEADING_STREET_TYPES) | {
+        abbreviation for abbreviation, full in _ABBREVIATIONS.items() if full in _LEADING_STREET_TYPES
+    }
+    assert accepted - _sql_leading_street_types() == set()
+
+
+@pytest.mark.parametrize(
+    "address",
+    ["12 Bvd Foch 75001 Paris", "5 Esp. de la Paix 40440 Ondres", "Crs Gambetta 33000 Bordeaux", "3 Boul. Gambetta 33000 Bordeaux"],
+)
+def test_the_python_rule_reads_the_abbreviations_the_sql_rule_must_keep(address: str) -> None:
+    assert has_street_or_lieu_dit(address, "Ville")
+
+
+def test_the_sql_rule_reads_the_three_cadastre_location_forms() -> None:
+    text = MIGRATION.read_text(encoding="utf-8")
+    for path in ("$.candidates[*].parcels[*]", "$.parcels[*]", "$.references[*]"):
+        assert path in text
+    assert tuple(listing_minimum._FLAT_PARCEL_KEYS) == ("parcels", "references")

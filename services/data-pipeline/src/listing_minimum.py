@@ -15,9 +15,11 @@ Cinq preuves, une seule suffit (``ListingMinimum.basis``) :
   ou un téléphone seul ne suffit pas. Même lecture et mêmes exclusions que l'agent
   (``information_sufficiency.extract_emails`` et ``excluded_contact_reason`` : juridiction, RPVA, Ordre, CARPA,
   adresses techniques ne comptent pas) ;
-* ``cadastre`` : une ou plusieurs parcelles lisibles (``cadastre_location`` de la fiche, ou référence cadastrale
-  publiée dans un bloc source, comme celles de ``cessions_etat`` et des notaires) : la vente est localisable à la
-  parcelle. En base, les parcelles trouvées (``auction_cadastre_parcels``) comptent aussi (règle SQL) ;
+* ``cadastre`` : une ou plusieurs parcelles lisibles (``cadastre_location`` de la fiche ou de
+  ``source_property_features``, sous les trois formes que les sources écrivent ; référence cadastrale publiée dans un
+  bloc source, comme celles de ``cessions_etat`` et des notaires ; adresse qui EST une référence cadastrale) : la
+  vente est localisable à la parcelle. En base, les parcelles trouvées (``auction_cadastre_parcels``) comptent aussi
+  (règle SQL) ;
 * ``documents`` : au moins une pièce (``documents``) ;
 * ``other_source`` : la vente est rattachée à une autre source (au moins deux hôtes parmi ses URL, ou deux sources
   dans ses observations). Le rattachement à une vente DÉJÀ EN BASE ne se lit pas ici : il se décide à
@@ -64,6 +66,7 @@ from src.information_sufficiency import (
     excluded_contact_reason,
     extract_emails,
 )
+from src.information_sufficiency import _string_leaves as string_leaves
 from src.listing_location import classify_address
 from src.models import AuctionSale
 from src.position_quality import street_name_tokens
@@ -137,9 +140,18 @@ _CONTACT_BLOCK_KEY = re.compile(r"avocat|contact|mail|notaire|gestionnaire|[ée]
 
 
 def contact_email_texts(sale: AuctionSale) -> list[object]:
+    """``lawyer_contact`` et les textes des blocs de contact, blocs imbriqués (dict, liste) parcourus comme l'agent.
+
+    Une valeur chaîne est lue telle quelle ; un dict ou une liste est parcouru par ``_string_leaves`` (les chaînes
+    qui sont la valeur d'une clé), comme ``contact_emails`` de l'agent d'information.
+    """
     payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
     blocks = payload.get("source_blocks") if isinstance(payload.get("source_blocks"), dict) else {}
-    return [sale.lawyer_contact, *(value for key, value in blocks.items() if _CONTACT_BLOCK_KEY.search(str(key)))]
+    texts: list[object] = [sale.lawyer_contact]
+    for key, value in blocks.items():
+        if _CONTACT_BLOCK_KEY.search(str(key)):
+            texts.extend([value] if isinstance(value, str) else string_leaves(value))
+    return texts
 
 
 def has_contact_email(sale: AuctionSale, blocklist: ContactBlocklist | None = None) -> bool:
@@ -157,15 +169,28 @@ def has_contact_email(sale: AuctionSale, blocklist: ContactBlocklist | None = No
 
 
 _CADASTRE_BLOCK_KEYS = ("reference_cadastrale", "references_cadastrales")
+#: Clés des formes plates de ``cadastre_location`` : ``parcels`` (Avoventes), ``references`` (Info-Enchères).
+_FLAT_PARCEL_KEYS = ("parcels", "references")
 
 
 def _has_parcels(location: object) -> bool:
-    """``cadastre_location`` : au moins une parcelle dans un de ses candidats (cessions, notaires, Avoventes...)."""
+    """``cadastre_location`` : au moins une parcelle, sous l'une des trois formes que les sources écrivent.
+
+    * ``{candidates: [{parcels: [...]}], ...}`` : cessions de l'État, notaires, Petites Affiches ;
+    * ``{insee_code, parcels: [{section, number, ...}], designation}`` : Avoventes (``sources/avoventes_extraction.py``) ;
+    * ``{references: [...], designation, raw}`` : Info-Enchères (``sources/info_encheres_extraction.py``).
+
+    Miroir de ``app_private.listing_location_has_parcels`` (SQL) : la même lecture des deux côtés.
+    """
     if not isinstance(location, dict):
         return False
     candidates = location.get("candidates")
-    return isinstance(candidates, list) and any(
+    if isinstance(candidates, list) and any(
         isinstance(candidate, dict) and candidate.get("parcels") for candidate in candidates
+    ):
+        return True
+    return any(
+        isinstance(location.get(key), list) and any(location[key]) for key in _FLAT_PARCEL_KEYS
     )
 
 
