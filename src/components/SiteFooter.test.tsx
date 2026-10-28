@@ -68,7 +68,7 @@ it("groupe les pages de transparence : à propos, guide, simulateur et méthodes
 it("reprend le pictogramme du favicon (le temple) et l'accroche unique", () => {
   const { container } = render(<SiteFooter />);
   expect(container.textContent).toContain("Les enchères immobilières, en toute clarté.");
-  expect(container.querySelector("svg path[stroke='#c98d45']")).not.toBeNull();
+  expect(container.querySelector("svg path.stroke-gold")).not.toBeNull();
   expect(container.querySelector(".lucide")).toBeNull();
 });
 

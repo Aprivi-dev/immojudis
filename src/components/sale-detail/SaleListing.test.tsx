@@ -584,6 +584,7 @@ describe("readable listing sections", () => {
           sale_date: null,
           starting_price_eur: null,
           rooms_count: null,
+          occupancy_status: null,
           app_surface_m2: null,
           habitable_surface_m2: null,
           carrez_surface_m2: null,

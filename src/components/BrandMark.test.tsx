@@ -14,9 +14,16 @@ describe("BrandMark", () => {
     const markup = renderToStaticMarkup(<BrandMark />);
     // Les attributs de tracé du favicon : même géométrie, mêmes couleurs.
     for (const path of svg.match(/d="[^"]+"/g) ?? []) expect(markup).toContain(path);
-    for (const color of ["#132238", "#c98d45", "#fffaf2"]) {
+    // Les couleurs du fichier sont celles des jetons que le composant emploie.
+    const styles = readFileSync(join(process.cwd(), "src", "styles.css"), "utf8");
+    for (const [color, token, utility] of [
+      ["#132238", "--brand-navy", "stroke-brand-navy"],
+      ["#c98d45", "--gold", "stroke-gold"],
+      ["#fffaf2", "--surface", "fill-surface"],
+    ] as const) {
       expect(svg).toContain(color);
-      expect(markup).toContain(color);
+      expect(styles).toContain(`${token}: ${color}`);
+      expect(markup).toContain(utility);
     }
     expect(markup).toContain('aria-label="Immojudis"');
   });
@@ -24,7 +31,7 @@ describe("BrandMark", () => {
   it("sert à l'en-tête avec l'accroche unique, sans icône de bibliothèque", () => {
     const markup = renderToStaticMarkup(<HeaderLogo showTagline />);
     expect(markup).toContain("Les enchères immobilières, en toute clarté");
-    expect(markup).toContain("#c98d45");
+    expect(markup).toContain("stroke-gold");
     expect(markup).not.toContain("lucide");
   });
 

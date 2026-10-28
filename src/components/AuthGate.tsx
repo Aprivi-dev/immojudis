@@ -94,7 +94,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
             <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
               Cette page est réservée aux comptes connectés.
             </p>
-            <div className="mt-6 h-1.5 overflow-hidden rounded-full bg-white/10">
+            <div className="mt-6 h-1.5 overflow-hidden rounded-full bg-line-soft">
               <div className="h-full w-1/2 animate-pulse rounded-full bg-gold" />
             </div>
           </div>
