@@ -46,6 +46,7 @@ import { MAX_COMPARED_SALES } from "@/lib/search/sale-comparison";
 import type { ActiveFilterChip } from "./active-filter-chips";
 import { ErrorState, NoResultsState } from "./SearchFilters";
 import { LaunchOfferListBanner } from "./LaunchOfferListBanner";
+import { LaunchOfferTrialEnd } from "./LaunchOfferTrialEnd";
 import { SearchResultsSkeleton } from "./SearchResultsSkeleton";
 import { SearchResultsTable } from "./SearchResultsTable";
 import {
@@ -194,6 +195,7 @@ export function SearchResultsList({
   return (
     <div className="px-3 pb-24 pt-3 sm:px-5 lg:pb-6">
       <LaunchOfferListBanner />
+      <LaunchOfferTrialEnd />
       {error ? <ErrorState error={error} onRetry={onRetry} /> : null}
 
       {/* Les titres des cartes sont des h3 : sans h2 devant eux, la page saute du h1 au h3. */}

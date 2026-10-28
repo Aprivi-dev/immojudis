@@ -188,8 +188,9 @@ export function AdminSignupsPanel() {
 
         {data && !data.launchOfferActive ? (
           <p className="mt-4 rounded-lg border border-warning/25 bg-warning-tint p-3 text-sm text-warning">
-            L’essai gratuit à l’inscription est coupé : les comptes dans leur 7 premiers jours sont
-            en Découverte. Une prolongation, elle, reste active jusqu’à sa date.
+            L’essai gratuit à l’inscription est coupé : les comptes qui confirment leur adresse
+            maintenant n’ont pas d’essai. Ceux confirmés avant la coupure gardent leurs 7 jours, et
+            une prolongation reste active jusqu’à sa date.
           </p>
         ) : null}
         {data?.truncated ? (
@@ -486,7 +487,7 @@ function accessDetail(account: AdminSignupAccount): string {
   if (account.trialEndsAt && Date.parse(account.trialEndsAt) <= Date.now()) {
     return `Essai terminé le ${formatDate(account.trialEndsAt)}`;
   }
-  if (account.trialEndsAt) return `Essai suspendu jusqu’au ${formatDate(account.trialEndsAt)}`;
+  if (account.trialEndsAt) return "Sans essai (adresse confirmée après la coupure de l’essai)";
   return "Sans essai (adresse déjà utilisée ou jetable)";
 }
 

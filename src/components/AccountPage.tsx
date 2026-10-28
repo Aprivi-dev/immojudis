@@ -222,7 +222,12 @@ export function AccountPage() {
         ) : null}
       </section>
 
-      {launchOffer && !manageableSubscription ? <AccountLaunchOfferEnd /> : null}
+      {launchOffer && !manageableSubscription ? (
+        <AccountLaunchOfferEnd
+          endsAt={plan?.trialEndsAt}
+          extended={plan?.trialExtension === true}
+        />
+      ) : null}
 
       <section
         className="mt-6 rounded-xl border border-border bg-card p-5"

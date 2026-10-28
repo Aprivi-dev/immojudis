@@ -675,6 +675,36 @@ describe("BillingActions : offre de lancement", () => {
     expect(mocks.openBillingPortal).not.toHaveBeenCalled();
   });
 
+  it("propose « Me prévenir de l'ouverture » pendant l'essai tant que la souscription est fermée, sans achat", async () => {
+    mocks.launch = { active: true, pending: false };
+    mocks.fetchBillingOffer.mockResolvedValue({
+      configured: false,
+      trialDays: 7,
+      label: "59 € TTC / mois",
+    });
+    mocks.fetchAccessPlan.mockResolvedValue({
+      plan: { plan: "analyse", currentPeriodEnd: null, launchOffer: true },
+    });
+    renderActions();
+
+    expect(await screen.findByRole("button", { name: "Me prévenir de l’ouverture" })).toBeTruthy();
+    expect(screen.getByTestId("launch-offer-notice")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Démarrer l’essai|Souscrire/ })).toBeNull();
+    expect(screen.queryByText(/Gérer mon abonnement|Résilier/)).toBeNull();
+  });
+
+  it("ne propose pas la demande d'ouverture à un compte en essai une fois la souscription ouverte", async () => {
+    mocks.launch = { active: true, pending: false };
+    mocks.legalPublisherConfigurationStatus.mockReturnValue({ ready: true, missing: [] });
+    mocks.fetchAccessPlan.mockResolvedValue({
+      plan: { plan: "analyse", currentPeriodEnd: null, launchOffer: true },
+    });
+    renderActions();
+
+    await screen.findByTestId("launch-offer-notice");
+    expect(screen.queryByRole("button", { name: "Me prévenir de l’ouverture" })).toBeNull();
+  });
+
   it("ne propose ni portail ni résiliation à un essai prolongé par l'administrateur", async () => {
     mocks.launch = { active: true, pending: false };
     mocks.legalPublisherConfigurationStatus.mockReturnValue({ ready: true, missing: [] });
