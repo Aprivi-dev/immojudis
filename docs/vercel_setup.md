@@ -19,34 +19,37 @@ npm run dev        # http://localhost:3000
 
 ## 2. Variables d'environnement
 
-| Variable                             | Requis   | Description                                                                                                                                                         |
-| ------------------------------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `VITE_SUPABASE_URL`                  | ✅       | URL du projet Supabase (`https://xxx.supabase.co`)                                                                                                                  |
-| `VITE_SUPABASE_PUBLISHABLE_KEY`      | ✅       | Clé `anon` / `publishable` (publique, safe côté client)                                                                                                             |
-| `SUPABASE_URL`                       | ✅ prod  | URL Supabase côté serveur. Repli possible sur `NEXT_PUBLIC_SUPABASE_URL`, mais il est préférable de la poser explicitement.                                         |
-| `SUPABASE_SECRET_KEY`                | ✅ prod  | Clé serveur Supabase nouvelle génération, ou utiliser `SUPABASE_SERVICE_ROLE_KEY` pour les projets legacy.                                                          |
-| `SUPABASE_SERVICE_ROLE_KEY`          | ✅ prod  | Clé serveur legacy Supabase, acceptée en repli de `SUPABASE_SECRET_KEY`.                                                                                            |
-| `SUPABASE_DB_URL`                    | ✅ ops   | URL Postgres directe pour appliquer les migrations. Repli accepté : `POSTGRES_URL_NON_POOLING` ou `POSTGRES_URL`.                                                   |
-| `GITHUB_SCROLL_TOKEN`                | ❌       | Token GitHub finement scopé pour déclencher immédiatement le workflow de scroll depuis `/admin`.                                                                    |
-| `GITHUB_SCROLL_REPOSITORY`           | ❌       | Repo cible du workflow. Défaut : `Aprivi-dev/immojudis`.                                                                                                            |
-| `GITHUB_SCROLL_WORKFLOW`             | ❌       | Workflow cible. Défaut : `data-pipeline.yml`.                                                                                                                       |
-| `GITHUB_SCROLL_REF`                  | ❌       | Branche cible. Défaut : `main`.                                                                                                                                     |
-| `CRON_SECRET`                        | ✅ prod  | Secret Vercel Cron envoyé en `Authorization: Bearer <secret>` pour `/api/cron/smart-alerts`.                                                                        |
-| `OPERATIONS_ALERT_WEBHOOK_URL`       | ❌       | Webhook HTTPS externe prioritaire pour les incidents opérationnels.                                                                                                 |
-| `OPERATIONS_ALERT_WEBHOOK_SECRET`    | ❌       | Bearer token associé au webhook opérationnel.                                                                                                                       |
-| `OPERATIONS_ALERT_GITHUB_REPOSITORY` | ❌       | Repo du workflow d'alerte. Défaut : `Aprivi-dev/immojudis`.                                                                                                         |
-| `SMART_ALERT_CRON_USER_LIMIT`        | ❌       | Nombre max d'utilisateurs Analyse évalués par exécution. Défaut : `25`.                                                                                             |
-| `SMART_ALERT_CRON_SALE_LIMIT`        | ❌       | Nombre max de ventes actives/à venir évaluées par utilisateur. Défaut : `160`.                                                                                      |
-| `ALERT_NOTIFICATION_CRON_LIMIT`      | ❌       | Nombre max de notifications d'alertes planifiées libérées par exécution. Défaut : `200`.                                                                            |
-| `STRIPE_SECRET_KEY`                  | ✅ prod  | Clé serveur Stripe : abonnement récurrent Analyse de 59 € TTC / mois, essai de 7 jours. Price récurrent obligatoire (`STRIPE_ANALYSIS_PRICE_ID`).                   |
-| `STRIPE_WEBHOOK_SECRET`              | ✅ prod  | Secret de signature du webhook Stripe qui met à jour l'accès Analyse.                                                                                               |
-| `RESEND_API_KEY`                     | ✅ prod  | Clé serveur Resend pour envoyer les alertes email consenties et les emails aux avocats référencés.                                                                  |
-| `ALERT_EMAIL_FROM`                   | ✅ prod  | Expéditeur vérifié Resend, par exemple `Immojudis <alertes@immojudis.com>`.                                                                                         |
-| `NEXT_PUBLIC_LEGAL_*`                | ✅ vente | Identité publique, contact, directeur de publication et médiateur ; le checkout reste bloqué et le build de production échoue si une valeur requise manque.         |
-| `SITE_URL`                           | ✅ prod  | Origine canonique publique (`https://immojudis.com`). Replis : `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_APP_URL`, `APP_URL`. `VERCEL_URL` ne suffit plus en production. |
-| `SEO_INDEXING_ENABLED`               | ❌       | Interrupteur d'indexation, **fermé par défaut** : seule la valeur `true` ouvre le site aux moteurs de recherche (voir « Indexation et référencement »).             |
-| `ADMIN_MFA_REQUIRED`                 | ✅ prod  | Doit valoir `true` : second facteur obligatoire pour l'administration.                                                                                              |
-| `ALLOW_INCOMPLETE_LAUNCH_CONFIG`     | ❌       | Échappatoire temporaire du build de production (voir ci-dessous).                                                                                                   |
+| Variable                             | Requis   | Description                                                                                                                                                                                                    |
+| ------------------------------------ | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `VITE_SUPABASE_URL`                  | ✅       | URL du projet Supabase (`https://xxx.supabase.co`)                                                                                                                                                             |
+| `VITE_SUPABASE_PUBLISHABLE_KEY`      | ✅       | Clé `anon` / `publishable` (publique, safe côté client)                                                                                                                                                        |
+| `SUPABASE_URL`                       | ✅ prod  | URL Supabase côté serveur. Repli possible sur `NEXT_PUBLIC_SUPABASE_URL`, mais il est préférable de la poser explicitement.                                                                                    |
+| `SUPABASE_SECRET_KEY`                | ✅ prod  | Clé serveur Supabase nouvelle génération, ou utiliser `SUPABASE_SERVICE_ROLE_KEY` pour les projets legacy.                                                                                                     |
+| `SUPABASE_SERVICE_ROLE_KEY`          | ✅ prod  | Clé serveur legacy Supabase, acceptée en repli de `SUPABASE_SECRET_KEY`.                                                                                                                                       |
+| `SUPABASE_DB_URL`                    | ✅ ops   | URL Postgres directe pour appliquer les migrations. Repli accepté : `POSTGRES_URL_NON_POOLING` ou `POSTGRES_URL`.                                                                                              |
+| `GITHUB_SCROLL_TOKEN`                | ❌       | Token GitHub finement scopé pour déclencher immédiatement le workflow de scroll depuis `/admin`.                                                                                                               |
+| `GITHUB_SCROLL_REPOSITORY`           | ❌       | Repo cible du workflow. Défaut : `Aprivi-dev/immojudis`.                                                                                                                                                       |
+| `GITHUB_SCROLL_WORKFLOW`             | ❌       | Workflow cible. Défaut : `data-pipeline.yml`.                                                                                                                                                                  |
+| `GITHUB_SCROLL_REF`                  | ❌       | Branche cible. Défaut : `main`.                                                                                                                                                                                |
+| `CRON_SECRET`                        | ✅ prod  | Secret Vercel Cron envoyé en `Authorization: Bearer <secret>` pour `/api/cron/smart-alerts`.                                                                                                                   |
+| `OPERATIONS_ALERT_WEBHOOK_URL`       | ❌       | Webhook HTTPS externe prioritaire pour les incidents opérationnels.                                                                                                                                            |
+| `OPERATIONS_ALERT_WEBHOOK_SECRET`    | ❌       | Bearer token associé au webhook opérationnel.                                                                                                                                                                  |
+| `OPERATIONS_ALERT_GITHUB_REPOSITORY` | ❌       | Repo du workflow d'alerte. Défaut : `Aprivi-dev/immojudis`.                                                                                                                                                    |
+| `SMART_ALERT_CRON_SALE_LIMIT`        | ❌       | Plafond de ventes chargées par compte à chaque évaluation des alertes. Défaut : `6000`, maximum `20000`. Le lot évalue tous les comptes qui ont une alerte active, sans plafond de comptes.                    |
+| `ALERT_NOTIFICATION_CRON_LIMIT`      | ❌       | Nombre max de notifications d'alertes planifiées libérées par exécution. Défaut : `200`.                                                                                                                       |
+| `STRIPE_SECRET_KEY`                  | ✅ prod  | Clé serveur Stripe : abonnement récurrent Analyse de 59 € TTC / mois, sans essai Stripe (l'essai de 7 jours est celui de l'inscription, sans carte). Price récurrent obligatoire (`STRIPE_ANALYSIS_PRICE_ID`). |
+| `STRIPE_WEBHOOK_SECRET`              | ✅ prod  | Secret de signature du webhook Stripe qui met à jour l'accès Analyse.                                                                                                                                          |
+| `RESEND_API_KEY`                     | ✅ prod  | Clé serveur Resend pour envoyer les alertes email consenties et les emails aux avocats référencés.                                                                                                             |
+| `ALERT_EMAIL_FROM`                   | ✅ prod  | Expéditeur vérifié Resend, par exemple `Immojudis <alertes@immojudis.com>`.                                                                                                                                    |
+| `NEXT_PUBLIC_LEGAL_*`                | ✅ vente | Identité publique, contact, directeur de publication et médiateur ; le checkout reste bloqué et le build de production échoue si une valeur requise manque.                                                    |
+| `SITE_URL`                           | ✅ prod  | Origine canonique publique (`https://immojudis.com`). Replis : `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_APP_URL`, `APP_URL`. `VERCEL_URL` ne suffit plus en production.                                            |
+| `SEO_INDEXING_ENABLED`               | ❌       | Interrupteur d'indexation, **fermé par défaut** : seule la valeur `true` ouvre le site aux moteurs de recherche (voir « Indexation et référencement »).                                                        |
+| `ADMIN_MFA_REQUIRED`                 | ✅ prod  | Doit valoir `true` : second facteur obligatoire pour l'administration.                                                                                                                                         |
+| `ALLOW_INCOMPLETE_LAUNCH_CONFIG`     | ❌       | Échappatoire temporaire du build de production (voir ci-dessous).                                                                                                                                              |
+
+Le tableau ci-dessus est celui du déploiement. La liste complète des variables facultatives, de leurs valeurs
+par défaut et des constantes qui n'en sont pas se trouve dans
+[`reference/variables-environnement.md`](reference/variables-environnement.md).
 
 Avant un déploiement production complet, vérifier les variables serveur :
 
@@ -92,7 +95,9 @@ n'est envoyé.
 ### Offre payante Stripe
 
 Le checkout `/api/billing/checkout` crée un abonnement récurrent de 59 € TTC / mois pour le plan
-`analyse`, avec un essai de 7 jours (`ANALYSIS_TRIAL_DAYS`, `src/lib/analysis-offer.ts`). Un **Price Stripe
+`analyse`, **sans essai Stripe** : le checkout n'ajoute plus d'essai (`STRIPE_CHECKOUT_TRIAL_OFFERED = false`
+dans `src/lib/analysis-offer.ts`, `trialDays = 0` dans `billing.ts`). L'essai de 7 jours est celui de
+l'inscription, sans carte bancaire (`ANALYSIS_TRIAL_DAYS`, voir `docs/runbooks/offre-de-lancement.md`). Un **Price Stripe
 récurrent est obligatoire** (`STRIPE_ANALYSIS_PRICE_ID`) : la route le valide côté serveur et refuse tout autre
 Price ; sans lui, la souscription reste fermée (« Tarif prévu, pas encore souscriptible »). Le webhook vérifie
 la signature, traite les événements du Checkout et de l'abonnement (création, mise à jour, résiliation,
@@ -147,7 +152,10 @@ L'observation du risque d'inondation des ventes (`/api/cron/sale-flood-risk`, r�
 mécanisme : le job `immojudis-sale-flood-risk` l'appelle toutes les heures (à :25, avant le calcul des pépites) avec
 les mêmes secrets Vault ; `vercel.json` garde un filet quotidien (05:35 UTC). La tâche figure dans la liste de
 fraîcheur `cron.stale` (3 h). La règle `pepite-v2` n'est appliquée que si la variable `PEPITE_RULE_V2_ENABLED` vaut
-`true` (fermée par défaut) : voir `operations/planification.md`.
+`true` (fermée par défaut) : voir `operations/planification.md`. Depuis le 27/10/2026, Géorisques refusant les appels
+de Vercel, la route ne fait que déclencher le workflow GitHub `sale-flood-risk.yml` (même jeton `GITHUB_SCROLL_TOKEN`
+que le pipeline) ; `SALE_FLOOD_RISK_RUNNER=vercel` ramène les appels dans la route. Voir
+`runbooks/georisques-pannes-inondation.md`.
 
 Le calcul des pépites (`/api/cron/sale-pepites`) suit le même mécanisme : le job `immojudis-sale-pepites`
 l'appelle toutes les heures (à :35) avec les mêmes secrets Vault ; `vercel.json` garde un filet quotidien

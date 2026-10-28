@@ -51,8 +51,10 @@ npm run dev:ready -- --warm-path /sales/<uuid>
 
 ## Variables d'environnement
 
-Toutes les variables sont lues par un seul module, [`src/lib/env.ts`](src/lib/env.ts)
-(validé par zod : valeurs nettoyées, une valeur vide vaut « non définie »).
+Le circuit commun de lecture est [`src/lib/env.ts`](src/lib/env.ts) (validé par zod : valeurs nettoyées, une
+valeur vide vaut « non définie »), mais plusieurs modules lisent encore `process.env` directement. La liste des
+variables facultatives, de leurs valeurs par défaut et des constantes qui n'en sont pas (pépites, inondation,
+loyers, essai) est dans [`docs/reference/variables-environnement.md`](docs/reference/variables-environnement.md).
 
 | Variable                               | Requis | Description                                                                                                                                                                                                                                                                                                          |
 | -------------------------------------- | :----: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -141,9 +143,9 @@ immojudis/
 ├─ services/data-pipeline/    # Pipeline Python (scraping → Supabase) — voir son README
 ├─ supabase/migrations/       # Migrations SQL versionnées
 ├─ sql/                       # Scripts d'amorçage à exécuter dans Supabase (vercel_app_setup.sql)
-├─ docs/                      # Documentation déploiement / ops
+├─ docs/                      # Documentation (index : docs/README.md) : déploiement, ops, runbooks, référence
 ├─ scripts/                   # Outils de dev (dev-ready)
-└─ .github/workflows/         # CI : web (typecheck + lint) · pipeline (pytest)
+└─ .github/workflows/         # CI (ci.yml) et workflows d'exploitation, de collecte et de migrations
 ```
 
 ## Base de données (Supabase)
@@ -194,6 +196,25 @@ puis `npm run build` dans l'étape de compilation.
 
 À chaque push / PR sur `main` ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) :
 
-- **Web** : `tsc --noEmit` + `npm run lint` + `npm run test` + `npm run build` (Node 24)
-- **Pipeline** : `ruff check` + `pytest` (Python 3.12)
-- **Migrations** : versions uniques, et sur une PR, chaque migration ajoutée doit être plus récente que la dernière de `main` (`npm run check:migrations -- --base-ref=origin/main` en local, après `git fetch origin main`)
+Les travaux tournent en parallèle ; le travail agrégé « Web (typecheck + lint) » échoue si l'un des travaux web
+échoue ou est annulé.
+
+- **Collecte unique** : `npm run check:manual-collection` (aucune planification concurrente de la collecte)
+- **Web (Node 24)** :
+  - typecheck : `tsc --noEmit` ;
+  - lint : `npm run lint` + `npm run knip` ;
+  - tests : `npm run test` + `npm run test:security-invariants` ;
+  - audit : `npm audit --omit=dev --audit-level=high` + `npm run check:secrets` ;
+  - build : `npm run build` + `npm run build:budgets` (budgets de rendu serveur, de JavaScript et de médias)
+- **Pipeline** (Python 3.12, base Postgres de test) : `ruff check` + `pytest` + `pip-audit` des fichiers de
+  dépendances ; le travail nommé « Data pipeline (Python 3.11) » n'est plus qu'une porte historique de la
+  protection de branche
+- **Base de données** (Supabase local) : versions de migrations uniques et, sur une PR, chaque migration ajoutée
+  plus récente que la dernière de `main` (`npm run check:migrations -- --base-ref=origin/main` en local, après
+  `git fetch origin main`), rejeu depuis zéro, types générés à jour (non bloquant), dérive de schéma, test de
+  concurrence des quotas, tests pgTAP (`supabase test db`), catalogue public en HTTP, intégration de l'agent
+  d'information
+- **Parcours investisseur** : `npm run test:e2e` (Playwright, image officielle du conteneur)
+- **Revue des dépendances** (PR seulement) : échec dès une gravité haute
+
+Les vérifications avant de livrer du code sont dans [`CLAUDE.md`](CLAUDE.md).

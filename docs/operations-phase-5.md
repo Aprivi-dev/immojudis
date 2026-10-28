@@ -61,7 +61,9 @@ encore `running` ne sont pas comptées dans le dénominateur.
 les visites et les Web Vitals réels sans bloquer le rendu. Les Runtime Logs Vercel restent la source
 primaire pour corréler une erreur serveur à son `x-request-id`.
 
-Le workflow GitHub **Production smoke** appelle toutes les 30 minutes cinq surfaces publiques :
+Le workflow GitHub **Production smoke** (planifié `*/30 * * * *`, mais GitHub espace en pratique les exécutions
+planifiées de 2 à 6 heures : mesuré du 20 au 27/10/2026, soit quelques exécutions par jour, pas 48) appelle cinq
+surfaces publiques :
 accueil, liste des ventes, annonce exemple, mentions légales et annuaire d'avocats. Il vérifie le
 statut HTTP, le type de contenu, le contrat JSON, les URL canoniques et la conservation du
 `x-request-id`. Il contrôle aussi `/login` (balise `noindex`), un 404 réel pour une vente inconnue et

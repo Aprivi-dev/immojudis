@@ -111,6 +111,10 @@ where jobname like 'immojudis-operational%'
 2. Ouvrir les Runtime Logs Vercel sur la route correspondante et contrôler son dernier statut.
 3. Corriger la cause, puis déclencher manuellement la route avec `CRON_SECRET`.
 4. Vérifier au passage suivant que l’alerte est `resolved` et sa notification `delivered`.
+5. Runbooks propres à certains jobs : `sale-flood-risk` (depuis le 27/10/2026, la route déclenche un workflow
+   GitHub Actions) dans `docs/runbooks/georisques-pannes-inondation.md` ; `sale-pepites` et l'arrêt d'urgence dans
+   `docs/runbooks/pepites-arret-urgence.md` ; ouverture de la règle `pepite-v2` dans
+   `docs/runbooks/pepite-v2-ouverture.md`.
 
 ### Réponses de l'agent en attente
 

@@ -32,8 +32,7 @@ export const LAUNCH_OFFER_SHORT_TEXT = `Inscription gratuite : ${ANALYSIS_TRIAL_
  * Règles de l'essai, reprises dans l'article « Essai gratuit à l'inscription » des CGV
  * (`src/routes/conditions-generales.tsx`, qui les écrit en toutes lettres : le texte juridique est
  * ancré par empreinte). La clause de retrait anticipé reprend la relecture juridique du 20/10/2026.
- */
-/**
+ *
  * La fin de l'essai : retour à Découverte, offre payante ensuite, retrait anticipé limité. Des
  * constantes, sans appel au chargement du module : `client-billing` (chargé sur toutes les pages)
  * importe `parseLaunchOfferResponse` d'ici, et le reste du module doit pouvoir être écarté du paquet.

@@ -9,7 +9,9 @@ Toutes les alertes de l'application sont évaluées par une seule chaîne : Supa
 et les transmet à GitHub Actions (`operational-alert.yml`). Si un maillon de cette chaîne s'arrête
 (site tombé, `pg_cron` désactivé, secret Vault perdu, GitHub qui ne planifie plus), personne n'est
 averti : il n'y a plus de signal du tout, pas même une alerte ouverte. Le test de fumée
-(`production-smoke.yml`, toutes les 30 min) vit lui aussi sur GitHub.
+(`production-smoke.yml`, planifié toutes les 30 min mais exécuté en pratique toutes les 2 à 6 heures, GitHub
+réduisant la fréquence des tâches planifiées) vit lui aussi sur GitHub : une panne peut y rester invisible
+jusqu'à 6 heures.
 
 Il faut donc un regard extérieur à cette chaîne : un service gratuit qui appelle `/api/health` et
 écrit au propriétaire quand la réponse change.
@@ -99,7 +101,8 @@ Le test de fumée GitHub exige aussi `/api/health` (la route répond 200 même d
 
 - `status: "ok"` (200) : réussi ;
 - `operational-health` plus ancien que 45 min mais pas plus de **60 min**, collecte fraîche : toléré
-  (un tick de 15 min en retard ne doit pas faire échouer le test, qui passe toutes les 30 min) ;
+  (un tick de 15 min en retard ne doit pas faire échouer le test, qui passe au mieux toutes les 30 min et en
+  pratique toutes les 2 à 6 heures) ;
 - tout autre état dégradé (plus de 60 min, une source activée en retard de plus de 36 h, base
   injoignable (`available: false`), route absente ou répondant 404) : échec ;
 - l'en-tête `cache-control` doit être `no-store` ou ne garder la réponse que 60 s au plus (`s-maxage`) :
