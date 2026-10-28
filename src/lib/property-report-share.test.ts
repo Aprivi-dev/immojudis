@@ -21,6 +21,7 @@ import {
   shareOwnerKeepsSavedReports,
 } from "./property-reports";
 import { hashShareToken } from "./property-report/serialization";
+import { SharedReportUnavailableError } from "./property-report/share-unavailable";
 
 const TOKEN = "abcDEF123_-abcDEF123_-abcDEF123";
 const OWNER = "owner-1";
@@ -142,6 +143,28 @@ describe("shared property report tokens", () => {
     await expect(getSharedPropertyReport({ token: TOKEN, countView: false })).rejects.toThrow(
       "introuvable ou expiré",
     );
+    // Lien connu mais fermé : la page l'explique au destinataire au lieu d'un 404.
+    await expect(
+      getSharedPropertyReport({ token: TOKEN, countView: false }),
+    ).rejects.toBeInstanceOf(SharedReportUnavailableError);
+  });
+
+  it("tells an expired link from an unknown one", async () => {
+    installTables({
+      saved_property_reports: table({
+        data: sharedRow({ share_expires_at: "2020-01-01T00:00:00.000Z" }),
+      }),
+    });
+    await expect(
+      getSharedPropertyReport({ token: TOKEN, countView: false }),
+    ).rejects.toBeInstanceOf(SharedReportUnavailableError);
+
+    installTables({ saved_property_reports: table({ data: null }) });
+    const unknown = await getSharedPropertyReport({ token: TOKEN, countView: false }).catch(
+      (error: unknown) => error,
+    );
+    expect(unknown).toBeInstanceOf(Error);
+    expect(unknown).not.toBeInstanceOf(SharedReportUnavailableError);
   });
 
   it("keeps the link while the owner has an active plan, a premium tier or the admin role", async () => {

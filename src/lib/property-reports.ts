@@ -48,6 +48,8 @@ import {
 } from "./property-report/entitlements";
 import { analysisForOpenRegimes, ceilingForOpenRegimes } from "./property-report/ceiling-switch";
 import { reportToPdfLines, REPORT_PDF_HEADINGS } from "./property-report/pdf";
+import { reportWording } from "./property-report/report-wording";
+import { SharedReportUnavailableError } from "./property-report/share-unavailable";
 import {
   assertReportSourceCurrent,
   reportSourceFingerprint,
@@ -541,8 +543,8 @@ export async function exportPropertyReportPdf({
     title: report.title,
     lines,
     headings: REPORT_PDF_HEADINGS,
-    footer:
-      "Immojudis - rapport indicatif. Vérifiez les pièces officielles et votre conseil avant toute enchère.",
+    // Le régime vient du plafond enregistré : un rapport notarial par offres ne parle pas d'enchère.
+    footer: reportWording(asRecord(report.ceiling_snapshot).regime).footerSentence,
     watermark: pdfWatermarkForPlan(plan),
   });
 
@@ -653,13 +655,11 @@ export async function getSharedPropertyReport({
     .maybeSingle();
 
   if (error) throw error;
-  if (!data || shareIsExpired(data.share_expires_at)) {
-    throw new Error("Rapport partagé introuvable ou expiré.");
-  }
+  if (!data) throw new Error("Rapport partagé introuvable ou expiré.");
+  // Lien connu mais fermé (échéance, fin de l'essai du propriétaire) : la page l'explique.
+  if (shareIsExpired(data.share_expires_at)) throw new SharedReportUnavailableError();
   // A link stops working as soon as its owner no longer has an active Analyse plan.
-  if (!(await shareOwnerKeepsSavedReports(data.user_id))) {
-    throw new Error("Rapport partagé introuvable ou expiré.");
-  }
+  if (!(await shareOwnerKeepsSavedReports(data.user_id))) throw new SharedReportUnavailableError();
 
   assertReportSourceCurrent(data.report_snapshot, await getSale(supabaseAdmin, data.sale_id));
 

@@ -446,7 +446,8 @@ describe("dans le PDF", () => {
     // « Garantie à remettre avant les enchères », « Synthèse », « € », « l’adjudication ».
     expect(text).toContain("Garantie \\340 remettre avant les ench\\350res");
     expect(text).toContain("Synth\\350se \\340 remettre");
-    expect(text).toContain("9 200 \\200");
+    // Espace insécable (0xA0) entre les milliers et avant l'euro.
+    expect(text).toContain("9\\240200\\240\\200");
     expect(text).toContain("l\\222adjudication d\\351finitive");
     expect([...text].every((character) => character.charCodeAt(0) < 128)).toBe(true);
   });
