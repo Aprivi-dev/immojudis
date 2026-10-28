@@ -54,7 +54,7 @@ describe("ExampleSalePage", () => {
       link.getAttribute("href"),
     ]);
     expect(hrefs).toEqual([
-      ["Créer mon compte gratuit", "/login?redirect=%2Fsales&mode=investor&reason=offre"],
+      ["Créer mon compte gratuit", "/login?redirect=%2Fsales&mode=investor&reason=exemple"],
       ["Explorer les ventes", "/sales"],
     ]);
     expect(block.innerHTML).not.toContain("/offres");

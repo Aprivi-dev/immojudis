@@ -108,6 +108,7 @@ import {
   useMediaQuery,
   useResultsView,
 } from "./search-page-state";
+import { trackProductEvent } from "@/lib/product-events";
 import { userMessage } from "@/lib/user-messages";
 import * as queryKeys from "@/lib/query-keys";
 
@@ -746,6 +747,15 @@ export function SearchPage({
     setDraft({ ...emptySearchDraft(), pepite: true });
     replaceSearch(salesSearchToUrlRecord({ pepite: true, sort: search.sort }), "push");
   }, [replaceSearch, search.sort]);
+
+  // Mesure : « Pépites seulement » passe de faux à vrai (clic sur le filtre, sur le bouton de la liste vide ou
+  // lien partagé suivi ensuite). Une page ouverte déjà filtrée n'est pas comptée.
+  const pepiteOnly = search.pepite === true;
+  const previousPepiteOnlyRef = useRef(pepiteOnly);
+  useEffect(() => {
+    if (pepiteOnly && !previousPepiteOnlyRef.current) trackProductEvent("pepite_filter_used");
+    previousPepiteOnlyRef.current = pepiteOnly;
+  }, [pepiteOnly]);
 
   const previousPageRef = useRef(page);
   useEffect(() => {

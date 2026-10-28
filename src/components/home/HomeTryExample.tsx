@@ -19,6 +19,7 @@ import {
   type ExampleWorks,
 } from "@/lib/example-verdict-shared";
 import { formatNumber, formatPrice } from "@/lib/format";
+import { trackProductEvent } from "@/lib/product-events";
 import { ArrowRight, Check } from "./HomeIcons";
 import {
   OCCUPATION_LABEL,
@@ -119,6 +120,7 @@ export function HomeTryExample({ data }: { data: ExampleVerdictData }) {
   }, [touched]);
 
   const choose = (patch: Partial<Choice>) => {
+    if (!touched) trackProductEvent("home_example_used");
     setTouched(true);
     setChoice((current) => ({ ...current, ...patch }));
   };

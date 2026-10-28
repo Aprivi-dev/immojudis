@@ -130,6 +130,13 @@ function reasonCopy(reason: LoginReason, launchOffer: boolean): { signup: string
           : `Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente, et en débloquer ${MONTHLY_SALE_UNLOCKS} en détail chaque mois (contenu selon la vente).`,
         login: "Connectez-vous pour consulter cette vente.",
       };
+    case "exemple":
+      return {
+        signup: launchOffer
+          ? "Créez votre compte gratuit pour faire ce calcul sur une vente réelle : il bénéficie de l’offre Analyse pendant 7 jours, sans carte bancaire."
+          : "Créez votre compte gratuit, sans carte bancaire, pour faire ce calcul sur une vente réelle.",
+        login: "Connectez-vous pour faire ce calcul sur une vente réelle.",
+      };
   }
 }
 
@@ -352,13 +359,15 @@ export function LoginPage() {
       });
       if (error) throw error;
       // Formulaire envoyé, pas encore compte confirmé : `signup_confirmed` part à la confirmation
-      // (`signup-confirmation.ts`).
-      trackProductEvent("signup_submitted");
+      // (`signup-confirmation.ts`). Une adresse déjà inscrite reçoit la même réponse « réussie » :
+      // elle n'est pas comptée.
+      const existingAccount = data?.session === null && isExistingAccountResponse(data);
+      if (!existingAccount) trackProductEvent("signup_submitted", { entry: reason ?? "direct" });
       // Sans session, le compte attend la confirmation de l'adresse : un toast qui disparaît
       // laisserait la personne devant le même formulaire, on le remplace donc par un panneau.
       if (data?.session === null) {
         setResendNotice(null);
-        setAccountExists(isExistingAccountResponse(data));
+        setAccountExists(existingAccount);
         startResendCooldown();
         setPendingEmail(email.trim());
         return;

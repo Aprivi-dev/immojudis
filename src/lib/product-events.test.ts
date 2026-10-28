@@ -24,7 +24,7 @@ afterEach(() => {
 
 describe("product events", () => {
   it("does nothing in the test environment", () => {
-    trackProductEvent("signup_submitted");
+    trackProductEvent("signup_submitted", { entry: "direct" });
     expect(track).not.toHaveBeenCalled();
   });
 
@@ -41,7 +41,6 @@ describe("product events", () => {
     });
 
     it("sends every event without property by its name only", () => {
-      trackProductEvent("signup_submitted");
       trackProductEvent("signup_confirmed");
       trackProductEvent("favorite_added");
       trackProductEvent("sample_report_viewed");
@@ -49,8 +48,9 @@ describe("product events", () => {
       trackProductEvent("checkout_started");
       trackProductEvent("opening_notification_requested");
       trackProductEvent("fees_simulator_used");
+      trackProductEvent("home_example_used");
+      trackProductEvent("pepite_filter_used");
       expect(track.mock.calls).toEqual([
-        ["signup_submitted"],
         ["signup_confirmed"],
         ["favorite_added"],
         ["sample_report_viewed"],
@@ -58,6 +58,39 @@ describe("product events", () => {
         ["checkout_started"],
         ["opening_notification_requested"],
         ["fees_simulator_used"],
+        ["home_example_used"],
+        ["pepite_filter_used"],
+      ]);
+    });
+
+    it("sends the origin of a sign-up from the closed list, and nothing else", () => {
+      trackProductEvent("signup_submitted", { entry: "exemple" });
+      trackProductEvent("signup_submitted", { entry: "direct" });
+      // @ts-expect-error Only a login reason or `direct` is an origin, never a free address.
+      trackProductEvent("signup_submitted", { entry: "/sales?q=Bordeaux" });
+      expect(track.mock.calls).toEqual([
+        ["signup_submitted", { entry: "exemple" }],
+        ["signup_submitted", { entry: "direct" }],
+        ["signup_submitted"],
+      ]);
+    });
+
+    it("sends the access level of the pepite block, from the closed list only", () => {
+      trackProductEvent("pepite_block_viewed", { access: "locked" });
+      trackProductEvent("pepite_block_viewed", { access: "detail" });
+      // @ts-expect-error `criteria` is the payload name, not an event value.
+      trackProductEvent("pepite_block_viewed", { access: "criteria" });
+      expect(track.mock.calls).toEqual([
+        ["pepite_block_viewed", { access: "locked" }],
+        ["pepite_block_viewed", { access: "detail" }],
+        ["pepite_block_viewed"],
+      ]);
+    });
+
+    it("tells apart the alerts created from the pepite filter", () => {
+      trackProductEvent("alert_created", { email_consent: false, pepite_only: true });
+      expect(track.mock.calls).toEqual([
+        ["alert_created", { email_consent: false, pepite_only: true }],
       ]);
     });
 
@@ -102,13 +135,13 @@ describe("product events", () => {
 
     it("sends nothing once the visitor has opposed the audience measurement", () => {
       setAudienceOptOut(true);
-      trackProductEvent("signup_submitted");
+      trackProductEvent("signup_submitted", { entry: "direct" });
       trackProductEvent("alert_created", { email_consent: true });
       expect(track).not.toHaveBeenCalled();
 
       setAudienceOptOut(false);
-      trackProductEvent("signup_submitted");
-      expect(track.mock.calls).toEqual([["signup_submitted"]]);
+      trackProductEvent("signup_submitted", { entry: "direct" });
+      expect(track.mock.calls).toEqual([["signup_submitted", { entry: "direct" }]]);
     });
 
     it("honours an opposition stored by an earlier visit", () => {
@@ -158,6 +191,9 @@ describe("product events", () => {
       "checkout_returned",
       "opening_notification_requested",
       "fees_simulator_used",
+      "home_example_used",
+      "pepite_block_viewed",
+      "pepite_filter_used",
     ]);
     expect(sanitizeProductEventProperties("alert_created", null)).toBeUndefined();
   });

@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import type { ReactNode } from "react";
 import { useSalePepite } from "@/hooks/use-sale-pepite";
+import { PepiteViewTracker } from "./PepiteViewTracker";
 
 const PepiteBlock = dynamic(() => import("./PepiteBlock").then((module) => module.PepiteBlock));
 
@@ -22,6 +23,9 @@ export function PepiteBlockLazy({
 }) {
   const payload = useSalePepite({ saleId, view: "criteria", userKey: "public", known });
   return payload ? (
-    <PepiteBlock payload={payload} saleId={saleId} lockedAction={lockedAction} className="" />
+    <>
+      <PepiteViewTracker payload={payload} saleId={saleId} />
+      <PepiteBlock payload={payload} saleId={saleId} lockedAction={lockedAction} className="" />
+    </>
   ) : null;
 }

@@ -74,6 +74,7 @@ export function accountLinksFor(hasAnalysisAccess: boolean | undefined): SiteLin
  * Pourquoi la personne arrive sur la page de connexion : sert au bandeau d'explication.
  * `mes-favoris` et `mes-alertes` : une page de l'espace personnel demandée sans être connecté
  * (à la différence de `favori` et `alerte`, qui suivent un clic sur un cœur ou une cloche).
+ * `exemple` : l'inscription proposée à la fin de l'annonce exemple (`/annonce-exemple`).
  */
 export const LOGIN_REASONS = [
   "alerte",
@@ -84,6 +85,7 @@ export const LOGIN_REASONS = [
   "fiche",
   "mes-favoris",
   "mes-alertes",
+  "exemple",
 ] as const;
 export type LoginReason = (typeof LOGIN_REASONS)[number];
 

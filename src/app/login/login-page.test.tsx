@@ -90,7 +90,41 @@ describe("login page", () => {
     expect(options.privacy_version).toMatch(/^\d{4}-\d{2}-\d{2}\.\d+$/);
     expect(typeof options.terms_accepted_at).toBe("string");
     expect(mocks.track).toHaveBeenCalledTimes(1);
-    expect(mocks.track).toHaveBeenCalledWith("signup_submitted");
+    expect(mocks.track).toHaveBeenCalledWith("signup_submitted", { entry: "direct" });
+  });
+
+  it("counts the sign-up with the reason of the detour, and not an address that already exists", async () => {
+    mocks.search = { mode: "investor", reason: "exemple" };
+    mocks.signUp.mockResolvedValueOnce({
+      data: { session: null, user: { identities: [] } },
+      error: null,
+    });
+    render(<LoginPage />);
+    fireEvent.change(screen.getByPlaceholderText("vous@exemple.fr"), {
+      target: { value: "deja.inscrit@example.test" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("12 caractères minimum"), {
+      target: { value: "un-mot-de-passe-solide" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Créer mon compte gratuit/ }));
+    await waitFor(() => expect(mocks.signUp).toHaveBeenCalledTimes(1));
+    await screen.findByText(/Un compte existe déjà avec cette adresse/);
+    expect(mocks.track).not.toHaveBeenCalled();
+  });
+
+  it("sends the reason of the detour as the origin of a new sign-up", async () => {
+    mocks.search = { mode: "investor", reason: "exemple" };
+    mocks.signUp.mockResolvedValue({ error: null });
+    render(<LoginPage />);
+    fireEvent.change(screen.getByPlaceholderText("vous@exemple.fr"), {
+      target: { value: "nouvel.utilisateur@example.test" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("12 caractères minimum"), {
+      target: { value: "un-mot-de-passe-solide" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Créer mon compte gratuit/ }));
+    await waitFor(() => expect(mocks.track).toHaveBeenCalledTimes(1));
+    expect(mocks.track).toHaveBeenCalledWith("signup_submitted", { entry: "exemple" });
   });
 
   it("shows a French error inside the form instead of the raw Supabase message", async () => {
