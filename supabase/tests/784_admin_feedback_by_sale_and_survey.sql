@@ -126,7 +126,7 @@ select is(
   'a « not relevant » without reason is counted under « none »'
 );
 select is(
-  (select coalesce(sum((r ->> 'count')::bigint), 0)
+  (select coalesce(sum((r ->> 'count')::bigint), 0)::bigint
      from pgtap_781_rows t, jsonb_array_elements(t.body -> 'rows') r
     where r ->> 'sale_id' = 'c7810000-1000-4000-8000-00000000000b'),
   1::bigint,
