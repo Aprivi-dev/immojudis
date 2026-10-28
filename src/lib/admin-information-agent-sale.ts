@@ -4,6 +4,7 @@ import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middlewar
 import type { AuctionSale, SaleDocumentRich, SaleMedia } from "@/lib/types";
 import type { InformationAgentInventorySignals } from "@/lib/information-agent-inventory";
 import {
+  discoverInformationAgentContacts,
   INFORMATION_AGENT_PIPELINE_CHANNEL,
   type InformationAgentRegistryContact,
 } from "@/lib/information-agent/contacts";
@@ -186,6 +187,100 @@ async function loadAdminInformationAgentRegistryContacts(
     sourceUrl: row.source_url,
     observedAt: row.observed_at,
   }));
+}
+
+/** Colonnes lues pour savoir si une adresse email est connue (blocs et descriptions, sans le reste). */
+const EMAIL_AVAILABILITY_SELECT = [
+  "id",
+  "lawyer_name",
+  "lawyer_contact",
+  "description",
+  "source_name",
+  "primary_source",
+  "source_url",
+  "source_urls",
+  "observations",
+  "source_blocks:raw_payload->source_blocks",
+  "source_description:raw_payload->>source_description",
+].join(",");
+const EMAIL_AVAILABILITY_CHUNK = 50;
+
+/**
+ * Pour chaque vente, vrai si l'agent connaît au moins une adresse email valide à qui écrire : le
+ * même résolveur que la préparation du brouillon (`discoverInformationAgentContacts`, exclusions et
+ * registre interne compris). Un numéro de téléphone, un nom ou un champ vide ne comptent pas. Une
+ * vente introuvable vaut faux ; une erreur de lecture des ventes est propagée.
+ */
+export async function loadAdminInformationAgentEmailAvailability(
+  saleIds: readonly string[],
+): Promise<Map<string, boolean>> {
+  const result = new Map<string, boolean>();
+  const ids = [...new Set(saleIds)];
+  for (let index = 0; index < ids.length; index += EMAIL_AVAILABILITY_CHUNK) {
+    const chunk = ids.slice(index, index + EMAIL_AVAILABILITY_CHUNK);
+    const [salesResponse, registry] = await Promise.all([
+      supabaseAdmin.from("auction_sales").select(EMAIL_AVAILABILITY_SELECT).in("id", chunk),
+      loadRegistryContactsBySale(chunk),
+    ]);
+    if (salesResponse.error) throw salesResponse.error;
+    for (const value of salesResponse.data ?? []) {
+      const row = asSaleRow(value);
+      const id = nullableString(row?.id);
+      if (!row || !id) continue;
+      const sale = {
+        ...toInformationAgentSale(
+          {
+            ...row,
+            raw_payload: {
+              source_blocks: row.source_blocks ?? null,
+              source_description: row.source_description ?? null,
+            },
+          },
+          [],
+          null,
+        ),
+        registry_contacts: registry.get(id) ?? [],
+      };
+      result.set(id, discoverInformationAgentContacts(sale).length > 0);
+    }
+  }
+  for (const id of ids) if (!result.has(id)) result.set(id, false);
+  return result;
+}
+
+/** Même lecture du registre interne que `loadAdminInformationAgentRegistryContacts`, pour plusieurs ventes. */
+async function loadRegistryContactsBySale(
+  saleIds: readonly string[],
+): Promise<Map<string, InformationAgentRegistryContact[]>> {
+  const bySale = new Map<string, InformationAgentRegistryContact[]>();
+  const { data, error } = await supabaseAdmin
+    .from("information_agent_contacts")
+    .select("scope_sale_id,email,display_name,role,source_name,source_url,observed_at")
+    .in("scope_sale_id", [...saleIds])
+    .eq("source_kind", "sale_listing")
+    .eq("metadata->>observation_channel", INFORMATION_AGENT_PIPELINE_CHANNEL)
+    .neq("opposition_status", "opposed")
+    .neq("bounce_status", "permanent")
+    .order("observed_at", { ascending: false })
+    .limit(1000);
+  if (error) {
+    console.warn("Registre des contacts de l'agent illisible", { code: error.code ?? null });
+    return bySale;
+  }
+  for (const row of data ?? []) {
+    if (!row.scope_sale_id) continue;
+    const list = bySale.get(row.scope_sale_id) ?? [];
+    list.push({
+      email: row.email,
+      displayName: row.display_name,
+      role: row.role,
+      sourceName: row.source_name,
+      sourceUrl: row.source_url,
+      observedAt: row.observed_at,
+    });
+    bySale.set(row.scope_sale_id, list);
+  }
+  return bySale;
 }
 
 export function requireAdminInformationAgentSaleAccess(auth: AdminInformationAgentSaleAuth): void {

@@ -7,6 +7,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
 }));
 
 import {
+  loadAdminInformationAgentEmailAvailability,
   loadAdminInformationAgentSale,
   requireAdminInformationAgentSaleAccess,
 } from "./admin-information-agent-sale";
@@ -419,5 +420,136 @@ describe("admin information-agent sale loader", () => {
     expect(() => requireAdminInformationAgentSaleAccess({ isAdmin: false })).toThrow(
       "accès administrateur requis",
     );
+  });
+});
+
+describe("loadAdminInformationAgentEmailAvailability", () => {
+  const phoneOnlyId = "22222222-2222-4222-8222-222222222222";
+  const nameOnlyId = "33333333-3333-4333-8333-333333333333";
+  const emptyId = "44444444-4444-4444-8444-444444444444";
+  const blockEmailId = "55555555-5555-4555-8555-555555555555";
+  const registryId = "66666666-6666-4666-8666-666666666666";
+  const missingId = "77777777-7777-4777-8777-777777777777";
+
+  function sale(id: string, extra: Record<string, unknown>) {
+    return {
+      id,
+      lawyer_name: null,
+      lawyer_contact: null,
+      description: null,
+      source_name: "licitor",
+      source_url: "https://example.test/annonce",
+      source_urls: null,
+      observations: [],
+      source_blocks: null,
+      source_description: null,
+      ...extra,
+    };
+  }
+
+  function listQuery(data: unknown[], error: unknown = null) {
+    const query = { select: vi.fn(), in: vi.fn() };
+    query.select.mockReturnValue(query);
+    query.in.mockResolvedValue({ data, error });
+    return query;
+  }
+
+  function registryListQuery(data: unknown[], error: unknown = null) {
+    const query = {
+      select: vi.fn(),
+      in: vi.fn(),
+      eq: vi.fn(),
+      neq: vi.fn(),
+      order: vi.fn(),
+      limit: vi.fn(),
+    };
+    for (const name of ["select", "in", "eq", "neq", "order"] as const) {
+      query[name].mockReturnValue(query);
+    }
+    query.limit.mockResolvedValue({ data, error });
+    return query;
+  }
+
+  function setupList(sales: unknown[], registry: unknown[] = [], registryError: unknown = null) {
+    const salesQuery = listQuery(sales);
+    const contactsQuery = registryListQuery(registry, registryError);
+    mocks.from.mockImplementation((table: string) => {
+      if (table === "auction_sales") return salesQuery;
+      if (table === "information_agent_contacts") return contactsQuery;
+      throw new Error(`unexpected table ${table}`);
+    });
+    return { salesQuery, contactsQuery };
+  }
+
+  it("ne compte que les adresses email valides : ni téléphone, ni nom, ni champ vide", async () => {
+    setupList([
+      sale(phoneOnlyId, { lawyer_contact: "Tél. : 05 56 00 00 01", lawyer_name: "Me Dupont" }),
+      sale(nameOnlyId, { lawyer_name: "Maître Jean Dupont", lawyer_contact: "Cabinet Dupont" }),
+      sale(emptyId, { lawyer_contact: "  " }),
+      sale(saleId, { lawyer_contact: "Maître Dupont <dupont@cabinet-dupont.test> 05 56 00 00 01" }),
+      sale(blockEmailId, { source_blocks: { contact_avocat: "contact@cabinet-bloc.test" } }),
+    ]);
+
+    const availability = await loadAdminInformationAgentEmailAvailability([
+      phoneOnlyId,
+      nameOnlyId,
+      emptyId,
+      saleId,
+      blockEmailId,
+    ]);
+
+    expect(Object.fromEntries(availability)).toEqual({
+      [phoneOnlyId]: false,
+      [nameOnlyId]: false,
+      [emptyId]: false,
+      [saleId]: true,
+      [blockEmailId]: true,
+    });
+  });
+
+  it("ignore l'adresse d'une juridiction, comme la préparation du brouillon", async () => {
+    setupList([sale(saleId, { lawyer_contact: "greffe@tj-bordeaux.justice.fr | 05 56 00 00 01" })]);
+
+    const availability = await loadAdminInformationAgentEmailAvailability([saleId]);
+
+    expect(availability.get(saleId)).toBe(false);
+  });
+
+  it("compte une adresse du registre interne et traite une vente introuvable comme sans email", async () => {
+    setupList(
+      [sale(registryId, { lawyer_contact: "Tél. : 05 56 00 00 01" })],
+      [
+        {
+          scope_sale_id: registryId,
+          email: "licitor@cabinet-registre.test",
+          display_name: "Me Registre",
+          role: "lawyer",
+          source_name: "licitor",
+          source_url: "https://example.test/annonce",
+          observed_at: "2026-10-20T10:00:00Z",
+        },
+      ],
+    );
+
+    const availability = await loadAdminInformationAgentEmailAvailability([registryId, missingId]);
+
+    expect(availability.get(registryId)).toBe(true);
+    expect(availability.get(missingId)).toBe(false);
+  });
+
+  it("garde les adresses de l'annonce quand le registre est illisible, et propage l'erreur des ventes", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    setupList([sale(saleId, { lawyer_contact: "dupont@cabinet-dupont.test" })], [], {
+      code: "42501",
+    });
+    expect((await loadAdminInformationAgentEmailAvailability([saleId])).get(saleId)).toBe(true);
+
+    const failing = listQuery([], { code: "XX000", message: "boom" });
+    mocks.from.mockImplementation((table: string) =>
+      table === "auction_sales" ? failing : registryListQuery([]),
+    );
+    await expect(loadAdminInformationAgentEmailAvailability([saleId])).rejects.toMatchObject({
+      code: "XX000",
+    });
   });
 });
