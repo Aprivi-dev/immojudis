@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { normalizedEmail as normalizedEmailFromContacts } from "@/lib/information-agent/contacts";
 import {
+  INFORMATION_AGENT_EMAIL_PATTERN,
   INFORMATION_AGENT_NO_EMAIL_MESSAGE,
   isValidInformationAgentEmail,
   normalizedEmail,
@@ -37,6 +39,30 @@ describe("validateur d'adresse email de l'agent", () => {
   ])("refuse %s", (_label, value) => {
     expect(normalizedEmail(value)).toBeNull();
     expect(isValidInformationAgentEmail(value)).toBe(false);
+  });
+
+  it("accepte et refuse exactement ce que z.email() accepte et refuse", () => {
+    const zodEmail = z.string().email();
+    for (const value of [
+      "cabinet.dupont@example.test",
+      "me+ventes@etude-martin.fr",
+      "o'brien@cabinet.test",
+      "a.b.c@sous.domaine.example.fr",
+      ".dupont@cabinet.test",
+      "dupont.@cabinet.test",
+      "du..pont@cabinet.test",
+      "dupont@-cabinet.test",
+      "dupont@cabinet.f",
+      "dupont@cabinet",
+      "dupont@",
+      "05 56 00 00 01",
+      "Me Dupont, avocat",
+      "a@cabinet.test b@cabinet.test",
+    ]) {
+      expect(INFORMATION_AGENT_EMAIL_PATTERN.test(value), value).toBe(
+        zodEmail.safeParse(value).success,
+      );
+    }
   });
 
   it("est le même validateur que celui du résolveur de contacts", () => {

@@ -1,5 +1,3 @@
-import { z } from "zod";
-
 /**
  * Validateur d'adresse email unique de l'agent d'information, partagé par le serveur, l'interface
  * d'administration et les schémas de requête. L'agent ne fonctionne que par email : un numéro de
@@ -29,13 +27,19 @@ export function missingRecipientMessage(candidateCount: number, noAddressNote: s
   return `${INFORMATION_AGENT_NO_EMAIL_MESSAGE}${noAddressNote}`;
 }
 
-const emailSchema = z.string().email();
+/**
+ * Même expression que `z.email()` (zod 4, `zod/v4/core/regexes`), sans importer zod : ce
+ * module est chargé par l'interface d'administration, et zod alourdirait le JavaScript du navigateur.
+ * Un test vérifie qu'elle reste identique à celle de zod.
+ */
+export const INFORMATION_AGENT_EMAIL_PATTERN =
+  /^(?:[A-Za-z0-9_'+-]+\.)*[A-Za-z0-9_'+-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9-]*\.)+[A-Za-z]{2,}$/;
 
 /** Adresse en minuscules, sans espaces autour ; null si la valeur n'est pas une adresse valide. */
 export function normalizedEmail(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const normalized = value.trim().toLowerCase();
-  return emailSchema.safeParse(normalized).success ? normalized : null;
+  return INFORMATION_AGENT_EMAIL_PATTERN.test(normalized) ? normalized : null;
 }
 
 export function isValidInformationAgentEmail(value: unknown): boolean {
