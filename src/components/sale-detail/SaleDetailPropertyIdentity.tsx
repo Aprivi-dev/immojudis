@@ -274,7 +274,7 @@ export function PropertyIdentity({
           <SaleVisual
             sale={sale}
             title={title}
-            className="h-[250px] md:h-[440px]"
+            className={listingStyles.visualMain}
             reliablePosition={hasReliableBuildingPosition(sale)}
             eager
           />

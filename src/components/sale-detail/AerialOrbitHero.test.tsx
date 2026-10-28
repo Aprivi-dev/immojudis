@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
     rotateTo: ReturnType<typeof vi.fn>;
     addLayer: ReturnType<typeof vi.fn>;
     addSource: ReturnType<typeof vi.fn>;
+    resize: ReturnType<typeof vi.fn>;
     bearing: number;
   }>,
   pins: [] as HTMLElement[],
@@ -32,6 +33,7 @@ vi.mock("mapbox-gl", () => {
     });
     addLayer = vi.fn();
     addSource = vi.fn();
+    resize = vi.fn();
     options: Record<string, unknown>;
     constructor(options: Record<string, unknown>) {
       this.options = options;
@@ -50,7 +52,6 @@ vi.mock("mapbox-gl", () => {
       return undefined;
     }
     setTerrain() {}
-    resize() {}
   }
   class FakeMarker {
     constructor(options: { element: HTMLElement }) {
@@ -291,6 +292,39 @@ describe("AerialOrbitHero", () => {
 
       await waitFor(() => expect(mocks.maps).toHaveLength(1));
     });
+  });
+
+  it("redimensionne la carte à chaque changement de taille de son conteneur, y compris au retour d'un masquage", async () => {
+    const observed: Array<{ element: Element; callback: () => void }> = [];
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        callback: () => void;
+        constructor(callback: () => void) {
+          this.callback = callback;
+        }
+        observe(element: Element) {
+          observed.push({ element, callback: this.callback });
+        }
+        disconnect() {}
+        unobserve() {}
+      },
+    );
+    const { unmount } = render(<AerialOrbitHero target={target} title="Appartement" />);
+    const map = await showMap();
+
+    // Le conteneur de la carte est celui qui est suivi : le visuel parent peut passer en `hidden`
+    // (0 x 0), puis redevenir visible (onglet « Photos » puis « Vue 360° »), sans toucher à la carte.
+    expect(observed).toHaveLength(1);
+    expect(observed[0].element).toBe(screen.getByTestId("aerial-orbit-map"));
+    expect(map.resize).not.toHaveBeenCalled();
+
+    act(() => observed[0].callback());
+    act(() => observed[0].callback());
+    expect(map.resize).toHaveBeenCalledTimes(2);
+
+    unmount();
+    expect(map.remove).toHaveBeenCalledTimes(1);
   });
 
   it("plafonne la rotation à 30 images par seconde", async () => {

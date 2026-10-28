@@ -528,21 +528,6 @@
   }
 }
 @media (min-width: 1024px) {
-  .upper {
-    align-items: stretch;
-  }
-  .heroGallery {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-  }
-  .heroGallery > .photo {
-    flex: 1 1 auto;
-  }
-  .galleryMain {
-    height: 100%;
-    min-height: 490px;
-  }
   .upper,
   .lower {
     grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.9fr);
@@ -753,10 +738,23 @@
     height: 500px;
   }
 }
+/* Image satellite ou case neutre, quand la vente n'a pas de photo. */
+.visualMain {
+  height: 250px;
+}
+@media (min-width: 768px) {
+  .visualMain {
+    height: 440px;
+  }
+}
+/* Sur ordinateur, le visuel garde une hauteur propre, bornée (490 à 560 px) : elle ne suit pas celle
+   de la colonne de droite, qui change avec les chargements et les blocs repliés (la vue 360° et la
+   photo se redimensionnaient avec elle, et la mise en page sautait à chaque changement). */
 @media (min-width: 1024px) {
-  .orbitMain {
-    height: 100%;
-    min-height: 490px;
+  .galleryMain,
+  .orbitMain,
+  .visualMain {
+    height: clamp(490px, 38vw, 560px);
   }
 }
 
