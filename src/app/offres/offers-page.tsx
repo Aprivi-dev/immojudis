@@ -109,6 +109,8 @@ const analysisFeatures = (open?: readonly FeeRegimeKey[]) =>
 type FaqContext = {
   offer: BillingOfferState;
   launchActive: boolean;
+  /** L'état de l'essai n'est pas encore lu : les réponses disent ce qui est vrai dans les deux états. */
+  launchPending: boolean;
   subscriptionOpen: boolean;
   /** « l’enchère plafond », « l’offre plafond » ou les deux, selon les régimes ouverts. */
   ceilingWithArticle: string;
@@ -132,8 +134,15 @@ const FAQ: { question: string; answer: (context: FaqContext) => ReactNode }[] = 
   },
   {
     question: "Y a-t-il un essai gratuit ?",
-    answer: ({ launchActive, subscriptionOpen }) =>
-      launchActive ? (
+    answer: ({ launchActive, launchPending, subscriptionOpen }) =>
+      launchPending ? (
+        // État non lu (lecture en erreur côté serveur) : jamais « Pas pour le moment » à tort.
+        <>
+          Un essai gratuit de {ANALYSIS_TRIAL_DAYS} jours, sans carte bancaire, est proposé à
+          l’inscription tant que l’essai est ouvert ; l’état en cours s’affiche une fois la page
+          chargée. {LAUNCH_OFFER_DURATION_TEXT}
+        </>
+      ) : launchActive ? (
         <>
           Oui. Une fois votre adresse email confirmée, votre compte bénéficie gratuitement de
           l’offre Analyse pendant {ANALYSIS_TRIAL_DAYS} jours, sans carte bancaire.{" "}
@@ -209,9 +218,15 @@ const FAQ: { question: string; answer: (context: FaqContext) => ReactNode }[] = 
 
 export function OffersPage({
   openFeeRegimes,
+  initialSubscriptionOpen,
 }: {
   /** Régimes de frais ouverts (`openFeeRegimesFromEnv`) ; absent : tous ceux dont les règles sont définies. */
   openFeeRegimes?: readonly FeeRegimeKey[];
+  /**
+   * La souscription est-elle ouverte, telle que le serveur le sait (`analysisCheckoutReadiness`) ?
+   * Sert au rendu serveur et au premier rendu, avant la lecture de l'offre par le navigateur.
+   */
+  initialSubscriptionOpen?: boolean;
 } = {}) {
   useEffect(() => {
     trackProductEvent("offers_viewed");
@@ -224,17 +239,18 @@ export function OffersPage({
   // Essai gratuit de 7 jours à l'inscription : indépendant de la souscription, qui s'ouvre avec le
   // paiement (Stripe et identité légale).
   const launchActive = launch.active;
-  const subscriptionOpen = offer.status === "ready" && offer.open;
-  // Le rendu serveur et le premier rendu du navigateur ignorent l'état de la souscription : tant
-  // qu'il n'est pas lu, la page ne dit pas « Analyse coûte ».
-  const offerKnown = offer.status === "ready";
+  // L'état lu par le navigateur prime ; avant lui, celui que le serveur a donné à la page. Tant qu'aucun
+  // des deux n'est connu, la page ne dit pas « Analyse coûte ».
+  const subscriptionKnownOpen = offer.status === "ready" ? offer.open : initialSubscriptionOpen;
+  const subscriptionOpen = subscriptionKnownOpen === true;
+  const offerKnown = subscriptionKnownOpen !== undefined;
   // Sous le prix : le 59 € n'est qu'un tarif prévu tant que rien ne se souscrit.
   const priceNote =
-    offer.status === "ready" && !offer.open ? "Tarif prévu, pas encore souscriptible" : undefined;
+    subscriptionKnownOpen === false ? "Tarif prévu, pas encore souscriptible" : undefined;
   const trialLine =
-    offer.status !== "ready"
+    subscriptionKnownOpen === undefined
       ? null
-      : !offer.open
+      : !subscriptionKnownOpen
         ? `Tarif prévu : ${price}. Pas encore souscriptible.`
         : "Abonnement mensuel, résiliable à tout moment.";
   // L'invitation à l'essai s'adresse au visiteur : un compte voit son offre dans Mon compte.
@@ -311,7 +327,7 @@ export function OffersPage({
         <p className="mt-2 max-w-3xl text-ink-soft">
           Découverte est gratuite, sans limite de durée ; elle comprend {MONTHLY_SALE_UNLOCKS}{" "}
           déblocages par mois, chacun ouvrant, pour une vente, {unlockedItems(openFeeRegimes)}.{" "}
-          {offer.status === "ready" && !offer.open
+          {subscriptionKnownOpen === false
             ? `Analyse : tarif prévu ${price}, pas encore souscriptible.`
             : offerKnown
               ? `Analyse coûte ${price}, résiliable à tout moment.`
@@ -421,6 +437,7 @@ export function OffersPage({
                 {item.answer({
                   offer,
                   launchActive,
+                  launchPending: launch.pending,
                   subscriptionOpen,
                   ceilingWithArticle: ceilingTermWithArticleText(openFeeRegimes),
                 })}

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { COMPANY_DESCRIPTION } from "@/lib/company-description";
 import { organizationStructuredData } from "@/lib/seo";
 import { resolveSiteOrigin } from "@/lib/site-url";
+import { LaunchOfferProvider } from "@/components/LaunchOfferProvider";
 import { HomeHero } from "@/components/home/HomeHero";
 import { HomeMotion } from "@/components/home/HomeMotion";
 import { HomeOffers } from "@/components/home/HomeOffers";
@@ -23,6 +24,7 @@ import { loadHomeDepartmentCount } from "@/lib/home-departments.server";
 import { ceilingTermText } from "@/lib/fee-regime-labels";
 import { openFeeRegimesFromEnv } from "@/lib/fee-regime.server";
 import { jsonLdString } from "@/lib/json-ld";
+import { readLaunchOfferState } from "@/lib/launch-offer.server";
 import { unlockHighlightsText } from "@/lib/sale-unlocks";
 
 export const metadata: Metadata = {
@@ -38,10 +40,15 @@ export const metadata: Metadata = {
 export const revalidate = 300;
 
 export default async function Page() {
-  const [summary, departments] = await Promise.all([
+  const [summary, departments, launchOffer] = await Promise.all([
     loadHomeCatalogueSummary(),
     loadHomeDepartmentCount(),
+    readLaunchOfferState(),
   ]);
+  // L'état de l'essai à l'inscription, lu dans la base avec la page (rafraîchie toutes les 5 minutes) :
+  // le HTML serveur, la FAQ et ses données structurées disent la même chose que l'écran. Une lecture en
+  // erreur (`degraded`) n'est pas un « essai fermé » : état non lu, textes vrais dans les deux cas.
+  const trialOpen = launchOffer.degraded ? undefined : launchOffer.active;
   // Le terme du plafond des cartes d'offres suit l'interrupteur par régime (CEILING_FEE_REGIMES_OPEN).
   const openFeeRegimes = openFeeRegimesFromEnv();
   const ceilingTerm = ceilingTermText(openFeeRegimes);
@@ -50,7 +57,7 @@ export default async function Page() {
   const faqStructuredData = {
     "@context": "https://schema.org",
     "@type": "FAQPage",
-    mainEntity: homeFaqItems().map((item) => ({
+    mainEntity: homeFaqItems({ trialOpen }).map((item) => ({
       "@type": "Question",
       name: item.question,
       acceptedAnswer: { "@type": "Answer", text: item.answer },
@@ -70,22 +77,24 @@ export default async function Page() {
           __html: jsonLdString(faqStructuredData),
         }}
       />
-      <main id="contenu" className={homeStyles.page}>
-        <HomeHero summary={summary} departments={departments} />
-        <HomeStats summary={summary} departments={departments} />
-        <HomeTryExample data={exampleVerdictData()} />
-        <HomeTagline />
-        <HomeBenefits />
-        <HomeSteps />
-        <HomeSources />
-        <HomeOffers
-          unlockHighlights={unlockHighlightsText(openFeeRegimes)}
-          ceilingFeature={`${ceilingTerm.charAt(0).toUpperCase()}${ceilingTerm.slice(1)} et travaux`}
-        />
-        <HomeFaq />
-        <HomeClosing summary={summary} departments={departments} />
-        <HomeMotion />
-      </main>
+      <LaunchOfferProvider initialActive={trialOpen}>
+        <main id="contenu" className={homeStyles.page}>
+          <HomeHero summary={summary} departments={departments} />
+          <HomeStats summary={summary} departments={departments} />
+          <HomeTryExample data={exampleVerdictData()} />
+          <HomeTagline />
+          <HomeBenefits />
+          <HomeSteps />
+          <HomeSources />
+          <HomeOffers
+            unlockHighlights={unlockHighlightsText(openFeeRegimes)}
+            ceilingFeature={`${ceilingTerm.charAt(0).toUpperCase()}${ceilingTerm.slice(1)} et travaux`}
+          />
+          <HomeFaq trialOpen={trialOpen} />
+          <HomeClosing summary={summary} departments={departments} />
+          <HomeMotion />
+        </main>
+      </LaunchOfferProvider>
     </>
   );
 }
