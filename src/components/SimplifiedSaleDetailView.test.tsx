@@ -2,6 +2,7 @@
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
 import { DEFAULT_OPEN_FEE_REGIMES } from "@/lib/fee-regime-open";
@@ -144,7 +145,10 @@ vi.mock("next/dynamic", () => ({
       }
       // Panneau du plafond (onglet « Prix ») : le vrai composant, chargé ici sans attente.
       if (hypotheses !== undefined) {
-        return <CeilingPlanner hypotheses={hypotheses as never} {...(plannerProps as never)} />;
+        const planner = { hypotheses, ...plannerProps } as unknown as ComponentProps<
+          typeof CeilingPlanner
+        >;
+        return <CeilingPlanner {...planner} />;
       }
       // Scénarios d'enchères (onglet « Statistiques ») : le vrai composant.
       if (enabled !== undefined && saleId !== undefined) {

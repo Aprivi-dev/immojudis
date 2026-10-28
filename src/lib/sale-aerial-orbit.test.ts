@@ -136,8 +136,9 @@ describe("hasReliableBuildingPosition", () => {
     expect(hasReliableBuildingPosition(base)).toBe(true);
     expect(hasReliableBuildingPosition({ ...base, location_precision: "parcel" })).toBe(true);
     // La vue 360° écarte les parkings et terrains ; la vignette satellite, non.
-    expect(aerialOrbitTarget({ ...base, property_type: "parking" })).toBeNull();
-    expect(hasReliableBuildingPosition({ ...base, property_type: "parking" })).toBe(true);
+    const parking = { ...base, property_type: "parking" };
+    expect(aerialOrbitTarget(parking)).toBeNull();
+    expect(hasReliableBuildingPosition(parking)).toBe(true);
   });
 
   it.each([
