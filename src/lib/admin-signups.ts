@@ -31,6 +31,25 @@ export const TRIAL_EXTENSION_SOURCE = "admin_trial_extension";
 /** Durée maximale d'une prolongation, à compter de maintenant. */
 export const TRIAL_EXTENSION_MAX_DAYS = 366;
 
+/**
+ * Usage d'un compte (`admin_signup_usage`, migration 20261108180300) : de quoi voir qui a essayé sans
+ * rien faire. Aucune vente, aucun contenu.
+ */
+export type AdminSignupUsage = {
+  /** Ventes débloquées (l'essai n'en consomme aucun). */
+  unlocks: number;
+  /** Plafonds enregistrés dans « Mon dossier » : le travail délibéré. */
+  ceilings: number;
+  favorites: number;
+  /** Ventes dont la valeur de référence a été servie au compte (90 jours seulement). */
+  sheetsServed: number;
+};
+
+/** Un compte sans la moindre trace d'usage. */
+export function isIdleUsage(usage: AdminSignupUsage): boolean {
+  return usage.unlocks + usage.ceilings + usage.favorites + usage.sheetsServed === 0;
+}
+
 export type AdminSignupAccount = {
   userId: string;
   email: string | null;
@@ -46,6 +65,8 @@ export type AdminSignupAccount = {
   trialEndsAt: string | null;
   /** Faux pour un compte premium ou un abonnement Stripe en cours : rien à prolonger ici. */
   extendable: boolean;
+  /** Usage du compte ; `null` : non mesuré (migration pas encore appliquée, panne). */
+  usage: AdminSignupUsage | null;
 };
 
 export type AdminSignupSummary = {
@@ -54,6 +75,8 @@ export type AdminSignupSummary = {
   last7Days: number;
   last30Days: number;
   byAccess: Record<AdminSignupAccess, number>;
+  /** Comptes en Découverte dont l'essai est fini sans aucune activité ; `null` : usage non mesuré. */
+  trialEndedIdle: number | null;
 };
 
 export type AdminSignupListResponse = {
@@ -68,6 +91,8 @@ export type AdminSignupListResponse = {
   launchOfferActive: boolean;
   /** Vrai si la lecture des comptes a atteint sa limite : la liste est incomplète. */
   truncated: boolean;
+  /** Faux : l'usage par compte n'a pas pu être lu (colonnes « non mesuré », filtre vide). */
+  usageAvailable: boolean;
   generatedAt: string;
 };
 
@@ -76,6 +101,8 @@ export const adminSignupListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
   q: z.string().trim().max(320).default(""),
   access: z.enum(["all", ...ADMIN_SIGNUP_ACCESS]).default("all"),
+  /** `trial_ended_idle` : essai fini sans activité (Découverte, aucun déblocage, plafond, favori ni fiche). */
+  activity: z.enum(["all", "trial_ended_idle"]).default("all"),
 });
 export type AdminSignupListQuery = z.input<typeof adminSignupListQuerySchema>;
 
@@ -146,12 +173,15 @@ export async function listAdminSignups(
   now: Date = new Date(),
 ): Promise<AdminSignupListResponse> {
   await assertAdminAuth(authToken);
-  const [{ users, truncated }, profiles, subscriptions, launchOffer] = await Promise.all([
-    listAuthAccounts(),
-    readAllProfiles(),
-    readAllSubscriptions(),
-    readLaunchOfferState(now.getTime()),
-  ]);
+  const [{ users, truncated }, profiles, subscriptions, launchOffer, usageRows] = await Promise.all(
+    [
+      listAuthAccounts(),
+      readAllProfiles(),
+      readAllSubscriptions(),
+      readLaunchOfferState(now.getTime()),
+      readSignupUsage(),
+    ],
+  );
   const profileByUser = new Map(profiles.map((row) => [row.user_id, row]));
   const subscriptionByUser = new Map(subscriptions.map((row) => [row.user_id, row]));
 
@@ -171,12 +201,21 @@ export async function listAdminSignups(
       .map((user) => user.id),
   );
 
+  // La fin d'essai de chaque compte vient aussi de la lecture d'usage (même règle en base) : les comptes
+  // dont l'essai est fini depuis plus de 8 jours n'ont pas à être relus un par un.
+  if (usageRows) {
+    for (const [userId, row] of usageRows) {
+      if (!trialEnds.has(userId)) trialEnds.set(userId, row.trialEndsAt);
+    }
+  }
+
   const classify = (user: AuthAccount): AdminSignupAccount =>
     toSignupAccount({
       user,
       profile: profileByUser.get(user.id) ?? null,
       subscription: subscriptionByUser.get(user.id) ?? null,
       trialEndsAt: trialEnds.get(user.id) ?? null,
+      usage: usageRows ? (usageRows.get(user.id)?.usage ?? EMPTY_USAGE) : null,
       launchOfferActive: launchOffer.active,
       now,
     });
@@ -187,6 +226,7 @@ export async function listAdminSignups(
   const filtered = classified.filter(
     (account) =>
       (query.access === "all" || account.access === query.access) &&
+      (query.activity === "all" || isTrialEndedIdle(account, now)) &&
       (!search ||
         (account.email ?? "").toLowerCase().includes(search) ||
         (account.fullName ?? "").toLowerCase().includes(search)),
@@ -210,6 +250,7 @@ export async function listAdminSignups(
     hasMore: query.offset + page.length < filtered.length,
     launchOfferActive: launchOffer.active,
     truncated,
+    usageAvailable: usageRows !== null,
     generatedAt: now.toISOString(),
   };
 }
@@ -379,6 +420,7 @@ function toSignupAccount({
   profile,
   subscription,
   trialEndsAt,
+  usage,
   launchOfferActive,
   now,
 }: {
@@ -386,6 +428,7 @@ function toSignupAccount({
   profile: ProfileRow | null;
   subscription: SubscriptionRow | null;
   trialEndsAt: string | null;
+  usage: AdminSignupUsage | null;
   launchOfferActive: boolean;
   now: Date;
 }): AdminSignupAccount {
@@ -409,7 +452,21 @@ function toSignupAccount({
     accessEndsAt,
     trialEndsAt,
     extendable: access !== "premium" && !hasLiveStripeSubscription(subscription),
+    usage,
   };
+}
+
+const EMPTY_USAGE: AdminSignupUsage = { unlocks: 0, ceilings: 0, favorites: 0, sheetsServed: 0 };
+
+/** Essai fini, compte revenu en Découverte, et aucune trace d'usage : un compte à appeler (avec son accord). */
+export function isTrialEndedIdle(account: AdminSignupAccount, now: Date): boolean {
+  return (
+    account.access === "decouverte" &&
+    account.usage != null &&
+    account.trialEndsAt != null &&
+    Date.parse(account.trialEndsAt) <= now.getTime() &&
+    isIdleUsage(account.usage)
+  );
 }
 
 export function summarize(accounts: AdminSignupAccount[], now: Date): AdminSignupSummary {
@@ -427,7 +484,10 @@ export function summarize(accounts: AdminSignupAccount[], now: Date): AdminSignu
     if (age < 7 * DAY_MS) last7Days += 1;
     if (age < 30 * DAY_MS) last30Days += 1;
   }
-  return { total: accounts.length, confirmed, last7Days, last30Days, byAccess };
+  const trialEndedIdle = accounts.some((account) => account.usage == null)
+    ? null
+    : accounts.filter((account) => isTrialEndedIdle(account, now)).length;
+  return { total: accounts.length, confirmed, last7Days, last30Days, byAccess, trialEndedIdle };
 }
 
 async function listAuthAccounts(): Promise<{ users: AuthAccount[]; truncated: boolean }> {
@@ -531,6 +591,51 @@ async function readTrialEnds(userIds: string[]): Promise<Map<string, string | nu
     for (const [userId, endsAt] of reads) ends.set(userId, endsAt);
   }
   return ends;
+}
+
+/**
+ * Usage et fin d'essai de chaque compte (`admin_signup_usage`, une lecture). Une lecture en échec, ou la
+ * fonction absente (migration pas encore appliquée), rend `null` : les colonnes disent « non mesuré » et la
+ * page reste utilisable.
+ */
+async function readSignupUsage(): Promise<Map<
+  string,
+  { usage: AdminSignupUsage; trialEndsAt: string | null }
+> | null> {
+  let result;
+  try {
+    result = await supabaseAdmin.rpc("admin_signup_usage");
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        scope: "admin.signups.usage",
+        error: error instanceof Error ? error.message : "lecture impossible",
+      }),
+    );
+    return null;
+  }
+  const { data, error } = result;
+  if (error) {
+    if (!isMissingRpcError(error)) {
+      console.error(JSON.stringify({ scope: "admin.signups.usage", error: error.message }));
+    }
+    return null;
+  }
+  if (!Array.isArray(data)) return null;
+  return new Map(
+    data.map((row) => [
+      row.user_id,
+      {
+        usage: {
+          unlocks: row.unlocks,
+          ceilings: row.ceilings,
+          favorites: row.favorites,
+          sheetsServed: row.sheets_served,
+        },
+        trialEndsAt: row.trial_ends_at ?? null,
+      },
+    ]),
+  );
 }
 
 function jsonObject(value: Json | null | undefined): Record<string, unknown> {

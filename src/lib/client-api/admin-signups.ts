@@ -16,6 +16,7 @@ export async function fetchAdminSignups(
     limit: String(input.limit ?? 50),
     q: input.q ?? "",
     access: input.access ?? "all",
+    activity: input.activity ?? "all",
   });
   const response = await fetch("/api/admin/signups?" + search.toString(), {
     signal: AbortSignal.timeout(30_000),

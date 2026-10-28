@@ -20,6 +20,7 @@ async function handleGET(request: Request) {
       limit: url.searchParams.get("limit") ?? undefined,
       q: url.searchParams.get("q") ?? undefined,
       access: url.searchParams.get("access") ?? undefined,
+      activity: url.searchParams.get("activity") ?? undefined,
     });
     const response = await listAdminSignups(bearerTokenFromRequest(request), query);
     return NextResponse.json(response, {

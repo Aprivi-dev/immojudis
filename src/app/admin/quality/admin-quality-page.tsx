@@ -10,6 +10,7 @@ import FileText from "lucide-react/dist/esm/icons/file-text.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import Sparkles from "lucide-react/dist/esm/icons/sparkles.js";
 import type { ReactElement } from "react";
+import { AdminSaleFeedbackPanel } from "@/components/admin/AdminSaleFeedbackPanel";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { saleDisplayTitle } from "@/lib/sale-title";
 import { fetchAdminDataQuality, fetchValuationAdminOverview } from "@/lib/client-api";
@@ -266,6 +267,12 @@ export function AdminQualityPage() {
             ))}
           </div>
         </section>
+        <div className="mt-6">
+          <AdminSaleFeedbackPanel
+            signals={["points_to_verify", "market_gap_band"]}
+            title="Retours « Pas pertinent » par vente : points à vérifier et écart au marché"
+          />
+        </div>
       </div>
     </AdminShell>
   );

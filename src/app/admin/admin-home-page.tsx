@@ -239,6 +239,33 @@ export function AdminHomePage() {
           </AdminPanel>
         </div>
 
+        <AdminPanel className="p-5">
+          <AdminSectionHeading
+            title="Retours de la semaine"
+            description="Ce que disent les comptes, à lire chaque lundi (30 minutes)."
+          />
+          <ul className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
+            <li>
+              <Link href="/admin/pilotage" className="font-semibold text-gold-text underline">
+                Pilotage
+              </Link>{" "}
+              : retours « Utile / Pas pertinent », questionnaire de la liste d’attente, parcours.
+            </li>
+            <li>
+              <Link href="/admin/inscriptions" className="font-semibold text-gold-text underline">
+                Inscriptions
+              </Link>{" "}
+              : nouveaux comptes, essais qui finissent, essais finis sans activité.
+            </li>
+            <li>
+              <Link href="/admin/pepites" className="font-semibold text-gold-text underline">
+                Pépites
+              </Link>{" "}
+              : compteurs, presque-pépites, retours négatifs par vente.
+            </li>
+          </ul>
+        </AdminPanel>
+
         <nav aria-label="Vues de l’administration">
           <AdminSectionHeading
             title="Accès aux vues"

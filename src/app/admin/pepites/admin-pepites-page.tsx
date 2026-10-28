@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { AdminSaleFeedbackPanel } from "@/components/admin/AdminSaleFeedbackPanel";
 import { AdminPanel, AdminSectionHeading, AdminShell } from "@/components/admin/AdminShell";
 import { useAuth } from "@/hooks/use-auth";
 import type { AdminPepitesView, PepitesViewCell } from "@/lib/admin-pepites-view";
@@ -139,6 +140,10 @@ export function AdminPepitesPage() {
             ) : null}
           </AdminPanel>
         ))}
+        <AdminSaleFeedbackPanel
+          signals={["pepite"]}
+          title="Retours « Pas pertinent » sur le repère Pépite, par vente"
+        />
       </div>
     </AdminShell>
   );

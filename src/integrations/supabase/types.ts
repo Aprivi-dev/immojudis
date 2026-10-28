@@ -14372,11 +14372,27 @@ export type Database = {
         Args: { p_limit?: number; p_now?: string };
         Returns: Json;
       };
+      admin_offer_opening_survey_summary: { Args: { p_now?: string }; Returns: Json };
       admin_pilotage_bid_ceilings: { Args: { p_now?: string }; Returns: Json };
       admin_pilotage_summary: { Args: { p_now?: string }; Returns: Json };
+      admin_sale_signal_feedback_by_sale: {
+        Args: { p_limit?: number; p_now?: string };
+        Returns: Json;
+      };
       admin_sale_signal_feedback_summary: {
         Args: { p_now?: string };
         Returns: Json;
+      };
+      admin_signup_usage: {
+        Args: never;
+        Returns: {
+          ceilings: number;
+          favorites: number;
+          sheets_served: number;
+          trial_ends_at: string | null;
+          unlocks: number;
+          user_id: string;
+        }[];
       };
       apply_reviewed_auction_notice_court_assignment: {
         Args: {
