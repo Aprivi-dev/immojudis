@@ -1643,6 +1643,111 @@ function functionSignature(schema, name, argumentText) {
   }
 }
 
+// Invariants génériques sur les surfaces ajoutées après le 03/11/2026 (revue de sécurité du 27/10) :
+// 1. toute table `public.*` créée par une migration 20261104 ou postérieure active la RLS et ne reçoit
+//    aucun droit pour anon, authenticated ni public (accès par le rôle de service seulement) ;
+// 2. toute route `src/app/api/cron/*/route.ts` s'authentifie (`runMonitoredCron(` ou
+//    `cronRequestAuthorized(`) ;
+// 3. `admin-signups.ts` appelle `assertAdminAuth` avant toute lecture ;
+// 4. `app_private.signup_trial_ends_at` ne lit jamais `user_metadata` (modifiable par la personne).
+{
+  const stripSql = (text) => text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--[^\n]*/g, "");
+  const recent = [...migrationSources]
+    .filter(([name]) => name >= "20261104")
+    .map(([name, source]) => [name, stripSql(source)]);
+  const created = [];
+  for (const [name, sql] of recent) {
+    for (const match of sql.matchAll(
+      /create\s+table\s+(?:if\s+not\s+exists\s+)?public\.([a-z0-9_]+)/gi,
+    )) {
+      created.push({ name, table: match[1].toLowerCase() });
+    }
+  }
+  for (const { name, table } of created) {
+    const enablesRls = recent.some(([, sql]) =>
+      new RegExp(
+        `alter\\s+table\\s+(?:only\\s+)?public\\.${table}\\s+enable\\s+row\\s+level\\s+security`,
+        "i",
+      ).test(sql),
+    );
+    if (!enablesRls) {
+      failures.push(`${name} creates public.${table} without enabling row level security`);
+    }
+    for (const [grantFile, sql] of recent) {
+      for (const statement of sql.split(";")) {
+        if (!/^\s*grant\s/i.test(statement)) continue;
+        if (!new RegExp(`\\bpublic\\.${table}\\b`, "i").test(statement)) continue;
+        // Le rôle vient après `to` ; le schéma `public.` du nom de table n'est pas le rôle `public`.
+        const roles = statement
+          .replace(/^[\s\S]*?\bto\b/i, "")
+          .replace(/\bpublic\.[a-z0-9_]+/gi, "");
+        if (/\b(?:anon|authenticated|public)\b/i.test(roles)) {
+          failures.push(
+            `${grantFile} grants a right on public.${table} to anon, authenticated or public (table created by ${name})`,
+          );
+        }
+      }
+    }
+  }
+
+  const cronDirectory = new URL("../src/app/api/cron/", import.meta.url);
+  for (const entry of (await readdir(cronDirectory, { withFileTypes: true })).filter((item) =>
+    item.isDirectory(),
+  )) {
+    let source;
+    try {
+      source = await readFile(new URL(`${entry.name}/route.ts`, cronDirectory), "utf8");
+    } catch {
+      continue;
+    }
+    if (!/\b(?:runMonitoredCron|cronRequestAuthorized)\(/.test(source)) {
+      failures.push(
+        `src/app/api/cron/${entry.name}/route.ts does not authenticate: call runMonitoredCron( or cronRequestAuthorized(`,
+      );
+    }
+  }
+
+  const adminSignups = await readFile(
+    new URL("../src/lib/admin-signups.ts", import.meta.url),
+    "utf8",
+  );
+  for (const fn of ["listAdminSignups", "extendAdminSignupTrials"]) {
+    const start = adminSignups.search(new RegExp(`export\\s+async\\s+function\\s+${fn}\\b`));
+    if (start < 0) {
+      failures.push(`src/lib/admin-signups.ts no longer exports ${fn}`);
+      continue;
+    }
+    const rest = adminSignups.slice(start + 10);
+    const next = rest.search(/\nexport\s/);
+    const body = next < 0 ? rest : rest.slice(0, next);
+    const auth = body.search(/\bassertAdminAuth\(/);
+    if (auth < 0) {
+      failures.push(`src/lib/admin-signups.ts: ${fn} does not call assertAdminAuth`);
+      continue;
+    }
+    // Avant l'appel, ni lecture de données ni attente (hors la signature de la fonction).
+    const before = body
+      .slice(0, auth)
+      .replace(/^[\s\S]*?\)\s*:\s*Promise<[^{]*\{/, "")
+      .replace(/(?:const\s+\w+\s*=\s*)?await\s*$/, "");
+    if (/\bawait\b|supabaseAdmin|\.from\(|\.rpc\(/.test(before)) {
+      failures.push(`src/lib/admin-signups.ts: ${fn} reads data before assertAdminAuth`);
+    }
+  }
+
+  for (const [name, source] of migrationSources) {
+    for (const definition of stripSql(source).matchAll(
+      /create\s+(?:or\s+replace\s+)?function\s+app_private\.signup_trial_ends_at\b[\s\S]*?(\$[a-z_]*\$)[\s\S]*?\1/gi,
+    )) {
+      if (/user_metadata|raw_user_meta_data|raw_app_meta_data/i.test(definition[0])) {
+        failures.push(
+          `${name}: signup_trial_ends_at reads user metadata (editable by the account holder)`,
+        );
+      }
+    }
+  }
+}
+
 if (failures.length) {
   console.error(JSON.stringify({ ok: false, failures }, null, 2));
   process.exit(1);
@@ -1686,6 +1791,10 @@ console.log(
       "launch-offer-switch-and-access-functions",
       "invoker-functions-callees-granted-to-service-role",
       "private-reference-tables-only-in-server-module",
+      "new-public-tables-rls-and-no-client-grants",
+      "cron-routes-authenticated",
+      "admin-signups-asserts-admin-first",
+      "signup-trial-end-ignores-user-metadata",
     ],
   }),
 );

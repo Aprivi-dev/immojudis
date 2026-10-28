@@ -16,6 +16,7 @@ import {
   PEPITE_TARGET_RATE_MAX,
   PEPITE_TARGET_RATE_MIN,
 } from "@/lib/pepite-policy";
+import { isMissingDatabaseObject } from "@/lib/postgrest-errors";
 
 /**
  * Page d'administration des pépites (`/admin/pepites`) : le mode, les compteurs par type de vente, le taux de
@@ -286,16 +287,6 @@ export function parseAdminPepiteRow(raw: unknown): AdminPepiteRow | null {
     frozenAt: textOrNull(row.frozen_at),
     href: `/sales/${encodeURIComponent(saleId)}`,
   };
-}
-
-/** Table ou fonction inconnue de la base : la migration n'est pas encore appliquée. */
-function isMissingDatabaseObject(error: { code?: string } | null): boolean {
-  return (
-    error?.code === "PGRST202" ||
-    error?.code === "PGRST205" ||
-    error?.code === "42883" ||
-    error?.code === "42P01"
-  );
 }
 
 export function unavailablePepites(): AdminPepitesResponse {

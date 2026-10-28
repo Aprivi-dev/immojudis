@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getSharedPropertyReport } from "@/lib/property-reports";
 import { ReportSourceChangedError } from "@/lib/property-report/source-integrity";
+import { SharedReportUnavailableError } from "@/lib/property-report/share-unavailable";
 import { formatDate, formatPrice, formatPricePerM2, formatStartingPrice } from "@/lib/format";
 import { reportSaleSchedule } from "@/lib/report-sale-schedule";
 import { describeReportSimulation, isCurrentReportSimulation } from "@/lib/report-simulation";
@@ -25,9 +27,32 @@ export const metadata: Metadata = {
 export default async function SharedReportPage({ params }: PageParams) {
   const { token } = await params;
   const report = await getSharedPropertyReport({ token }).catch((error: unknown) =>
-    error instanceof ReportSourceChangedError ? error : null,
+    error instanceof ReportSourceChangedError || error instanceof SharedReportUnavailableError
+      ? error
+      : null,
   );
   if (!report) notFound();
+  if (report instanceof SharedReportUnavailableError) {
+    return (
+      <main id="contenu" className="mx-auto max-w-2xl px-6 py-16">
+        <h1 className="text-3xl font-semibold">Ce rapport n’est plus partagé</h1>
+        <p className="mt-4 text-slate-700">
+          Le lien que vous avez ouvert n’est plus actif : la personne qui vous l’a transmis ne le
+          partage plus, ou son accès a pris fin. Vous pouvez lui demander un nouveau lien.
+        </p>
+        <p className="mt-4 text-slate-700">
+          Immojudis aide à préparer l’achat d’un bien vendu aux enchères. Vous pouvez voir à quoi
+          ressemble une analyse sur un exemple fictif.
+        </p>
+        <Link
+          href="/annonce-exemple"
+          className="mt-6 inline-flex min-h-11 items-center font-semibold text-brand-navy underline underline-offset-2"
+        >
+          Voir une analyse exemple
+        </Link>
+      </main>
+    );
+  }
   if (report instanceof ReportSourceChangedError) {
     return (
       <main id="contenu" className="mx-auto max-w-2xl px-6 py-16">
@@ -147,14 +172,14 @@ export default async function SharedReportPage({ params }: PageParams) {
             value={joinValues(sale.address, sale.city, sale.department)}
           />
           <SharedMetric
-            label="Tribunal"
+            label={wording.venueLabel}
             value={stringOrNumberValue(sale.tribunal, "À confirmer")}
           />
           {reportSaleSchedule(sale).map(({ label, value }) => (
             <SharedMetric key={label} label={label} value={value} />
           ))}
           <SharedMetric
-            label="Préparation audience"
+            label={wording.audiencePreparation}
             value={stringOrNumberValue(audienceReadinessAnalysis.summary, "À compléter")}
           />
           <SharedMetric
@@ -191,7 +216,9 @@ export default async function SharedReportPage({ params }: PageParams) {
           <SharedMetric
             label={stringOrNumberValue(ceiling.label, wording.ceilingLabel)}
             value={
-              ceiling.available ? formatPrice(numberValue(ceiling.maxBid)) : "Données insuffisantes"
+              ceiling.available
+                ? formatPrice(numberValue(ceiling.maxBid))
+                : stringOrNumberValue(ceiling.reason, "Plafond indisponible")
             }
           />
           <SharedMetric
@@ -390,7 +417,7 @@ export default async function SharedReportPage({ params }: PageParams) {
         {audienceReadinessAnalysis.available ? (
           <section className="border-b border-border py-5">
             <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
-              Préparation audience
+              {wording.audiencePreparation}
             </p>
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <SharedMetric
@@ -979,6 +1006,15 @@ export default async function SharedReportPage({ params }: PageParams) {
         <footer className="mt-4 rounded-lg border border-info/15 bg-info/8 p-4 text-sm leading-relaxed text-info">
           {report.disclaimer}
         </footer>
+        <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
+          Cette analyse a été préparée avec Immojudis.{" "}
+          <Link
+            href="/annonce-exemple"
+            className="inline-flex min-h-11 items-center font-semibold text-brand-navy underline underline-offset-2"
+          >
+            Voir une analyse exemple
+          </Link>
+        </p>
       </article>
     </main>
   );

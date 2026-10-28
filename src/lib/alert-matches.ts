@@ -9,6 +9,7 @@ import {
   suppressAlertNotificationsForMatches,
 } from "@/lib/alert-notifications";
 import { extractDpe } from "@/lib/dpe";
+import { serverEnv, type EnvSource } from "@/lib/env";
 import { errorDetails, errorSummary } from "@/lib/error-details";
 import { estimateSaleGrossYieldPct, pricePerM2 } from "@/lib/geo";
 import { resolveMarketGap } from "@/lib/market-gap";
@@ -26,6 +27,7 @@ import { getMarketValuationSurfaces, getSaleSurface } from "@/lib/surface";
 import type { AuctionSale, SaleFilters, UserAlert, UserWatchedZone } from "@/lib/types";
 import { normalizeWatchedZone } from "@/lib/watched-zones";
 import { asRecord, numberValue, stringValue } from "@/lib/guards";
+import { isMissingDatabaseObject } from "@/lib/postgrest-errors";
 
 type AlertMatchRow = Database["public"]["Tables"]["user_alert_matches"]["Row"];
 
@@ -207,11 +209,8 @@ type AlertEvaluationEntry = {
   silentSaleIds?: Set<string>;
 };
 
-/**
- * Variable d'environnement posée AU DÉPLOIEMENT du passage à la carte des loyers de l'ANIL (date ISO).
- * Absente : aucune base silencieuse.
- */
-export const RENT_BASIS_SWITCH_ENV = "ALERT_RENT_BASIS_SWITCH_AT";
+// `ALERT_RENT_BASIS_SWITCH_AT` : variable d'environnement posée AU DÉPLOIEMENT du passage à la carte des
+// loyers de l'ANIL (date ISO), lue par `serverEnv().alertRentBasis.switchAt`. Absente : aucune base silencieuse.
 /** La base silencieuse ne dure que 48 heures après le changement. */
 export const RENT_BASIS_SILENT_WINDOW_MS = 48 * 60 * 60 * 1000;
 
@@ -231,10 +230,10 @@ export const RENT_BASIS_SILENT_WINDOW_MS = 48 * 60 * 60 * 1000;
 export function isRentBasisSilentPass(
   alert: Pick<UserAlert, "min_yield_pct" | "last_evaluated_at">,
   evaluatedAt: string,
-  env: Pick<NodeJS.ProcessEnv, string> = process.env,
+  env?: EnvSource,
 ): boolean {
   if (alert.min_yield_pct == null || !alert.last_evaluated_at) return false;
-  const switchAt = Date.parse(env[RENT_BASIS_SWITCH_ENV] ?? "");
+  const switchAt = Date.parse(serverEnv(env).alertRentBasis.switchAt ?? "");
   const now = Date.parse(evaluatedAt);
   const last = Date.parse(alert.last_evaluated_at);
   if (![switchAt, now, last].every(Number.isFinite)) return false;
@@ -489,11 +488,6 @@ async function collectAlertMatches({
 
 /** Écriture bloquée par un verrou : même code que `lock_not_available`, que les rapports d'échec savent lire. */
 const ALERT_MATCHES_DEFERRED_CODE = "55P03";
-
-function isMissingDatabaseObject(error: unknown): boolean {
-  const code = (error as { code?: unknown } | null)?.code;
-  return code === "PGRST202" || code === "PGRST205" || code === "42883" || code === "42P01";
-}
 
 /**
  * Écrit un lot de correspondances et rend les lignes enregistrées. Passe par `upsert_user_alert_matches` (migration

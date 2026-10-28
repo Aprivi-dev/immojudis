@@ -2,6 +2,7 @@ import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { serverEnv } from "@/lib/env";
 import { departmentCode } from "@/lib/department-code";
+import { isMissingDatabaseObject } from "@/lib/postgrest-errors";
 import {
   isRentApplicable,
   median,
@@ -113,7 +114,7 @@ async function readStoredSaleCommunes(
     .in("sale_id", [...ids]);
   if (error) {
     // Avant la migration 20261106100000 : on garde la lecture des champs bruts.
-    if (error.code === "42P01" || error.code === "PGRST205") return stored;
+    if (isMissingDatabaseObject(error)) return stored;
     throw error;
   }
   for (const row of data ?? []) {
@@ -245,11 +246,6 @@ async function readAnilReferences(
     }
   });
   return references;
-}
-
-/** Une fonction ou une table encore absente en base (avant sa migration) n'est pas une panne. */
-function isMissingDatabaseObject(error: { code?: string }): boolean {
-  return error.code === "42883" || error.code === "42P01" || error.code === "PGRST202";
 }
 
 /**

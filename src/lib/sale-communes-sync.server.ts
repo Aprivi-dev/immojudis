@@ -1,6 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { isMissingDatabaseObject } from "@/lib/flood-risk-store.server";
+import { isMissingDatabaseObject } from "@/lib/postgrest-errors";
 import { isBusyWriteError } from "@/lib/write-busy";
 
 /**

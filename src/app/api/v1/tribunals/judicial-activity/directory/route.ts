@@ -2,6 +2,7 @@ import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
+import { parseApiResponse } from "@/lib/api-errors";
 import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
 import { assertFeatureEntitlement } from "@/lib/property-reports";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
@@ -18,6 +19,7 @@ export async function GET(request: Request) {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     await enforceUserRateLimit({
       userId: auth.userId,
+      context,
       bucketKey: "v1.tribunal-judicial-activity-directory",
       ...RATE_LIMIT_POLICIES.compute,
     });
@@ -30,7 +32,8 @@ export async function GET(request: Request) {
     const input = tribunalJudicialActivityDirectoryQuerySchema.parse(
       Object.fromEntries(url.searchParams.entries()),
     );
-    const directory = tribunalJudicialActivityDirectoryResponseSchema.parse(
+    const directory = parseApiResponse(
+      tribunalJudicialActivityDirectoryResponseSchema,
       await getTribunalJudicialActivityDirectory(input),
     );
     return apiJson(directory, context, {

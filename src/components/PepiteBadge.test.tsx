@@ -51,6 +51,18 @@ describe("pastille « Pépite »", () => {
   });
 });
 
+describe("« Pourquoi ? » seulement quand le bloc existe", () => {
+  it("renvoie à la méthode, sans « Pourquoi ? », tant que le bloc n'est pas chargé", () => {
+    render(<PepiteHeroBadge blockLoaded={false} />);
+    expect(screen.queryByRole("link", { name: "Pourquoi ?" })).toBeNull();
+    expect(
+      screen
+        .getByRole("link", { name: "Comment repérons-nous les pépites ?" })
+        .getAttribute("href"),
+    ).toBe("/methode-pepites");
+  });
+});
+
 describe("explication accessible au clavier et au toucher", () => {
   it("ouvre le texte validé et le lien vers la méthode, referme avec Échap", () => {
     render(<PepiteInfoBadge />);
@@ -99,6 +111,55 @@ describe("explication accessible au clavier et au toucher", () => {
     expect((await axe(container)).violations).toEqual([]);
     fireEvent.click(screen.getByRole("button", { name: "Pépite" }));
     expect((await axe(container)).violations).toEqual([]);
+  });
+});
+
+describe("fenêtre d'aide : le clavier y entre et en sort", () => {
+  function setup() {
+    render(
+      <div>
+        <PepiteInfoBadge />
+        <button type="button">Ailleurs</button>
+      </div>,
+    );
+    const trigger = screen.getByRole("button", { name: "Pépite" });
+    fireEvent.click(trigger);
+    return {
+      trigger,
+      panel: screen.getByRole("note").parentElement as HTMLElement,
+      link: screen.getByRole("link", { name: "Comment repérons-nous les pépites ?" }),
+    };
+  }
+
+  it("déplace le focus dans la fenêtre à l'ouverture : le lien est atteignable au clavier", () => {
+    const { panel } = setup();
+    expect(document.activeElement).toBe(panel);
+  });
+
+  it("Tab depuis le dernier lien ferme la fenêtre et rend le focus à la pastille", () => {
+    const { trigger, link } = setup();
+    link.focus();
+    fireEvent.keyDown(link, { key: "Tab" });
+    expect(screen.queryByRole("note")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it("Maj+Tab depuis la fenêtre ferme aussi, mais depuis le lien il revient dans la fenêtre", () => {
+    const { trigger, panel, link } = setup();
+    link.focus();
+    fireEvent.keyDown(link, { key: "Tab", shiftKey: true });
+    expect(screen.queryByRole("note")).not.toBeNull();
+    panel.focus();
+    fireEvent.keyDown(panel, { key: "Tab", shiftKey: true });
+    expect(screen.queryByRole("note")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it("Échap la ferme et rend le focus à la pastille", () => {
+    const { trigger } = setup();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("note")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
   });
 });
 

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { readTableSchema, validateUpsert } from "@/test/fake-postgrest";
 
 type Row = Record<string, unknown>;
 
@@ -45,16 +46,17 @@ vi.mock("@/integrations/supabase/client.server", () => ({
   },
 }));
 
-/** Colonnes NOT NULL à valeur par défaut de `auction_sale_flood_risk` (migration 20261106100200). */
-const FLOOD_NOT_NULL_WITH_DEFAULT = [
-  "tri_scenarios",
-  "ppri_checked",
-  "attempted_at",
-  "failure_count",
-  "verdict_changed_at",
-  "created_at",
-  "updated_at",
-];
+/** Schémas lus dans les migrations : le faux client refuse ce que la base refuserait. */
+const SCHEMAS = {
+  auction_sale_flood_risk: readTableSchema(
+    "20261106100200_sale_flood_risk.sql",
+    "auction_sale_flood_risk",
+  ),
+  auction_sale_communes: readTableSchema(
+    "20261106100000_auction_sale_communes.sql",
+    "auction_sale_communes",
+  ),
+} as const;
 
 class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
   private page: [number, number] = [0, 999];
@@ -65,6 +67,7 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
   private after: string | null = null;
   private max = 1000;
   private defaultToNull = true;
+  private onConflict: string | undefined;
 
   constructor(private readonly table: string) {}
 
@@ -91,9 +94,10 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
     this.page = [from, to];
     return this;
   }
-  upsert(rows: Row[], options?: { defaultToNull?: boolean }) {
+  upsert(rows: Row[], options?: { defaultToNull?: boolean; onConflict?: string }) {
     this.upsertRows = rows;
     this.defaultToNull = options?.defaultToNull ?? true;
+    this.onConflict = options?.onConflict;
     return this;
   }
   update(changes: Row) {
@@ -127,14 +131,14 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
       if (this.table === "auction_sale_flood_risk" && db.busyFloodUpserts.shift()) {
         return { data: null, error: { code: "57014", message: "statement timeout" } };
       }
-      // Comme PostgREST : dans un envoi groupé, une colonne absente d'une ligne mais présente dans une autre vaut
-      // NULL, pas sa valeur par défaut, sauf avec `defaultToNull: false` (« Prefer: missing=default »).
-      if (this.table === "auction_sale_flood_risk" && this.defaultToNull) {
-        const columns = new Set(this.upsertRows.flatMap((row) => Object.keys(row)));
-        const nullsNotNull = FLOOD_NOT_NULL_WITH_DEFAULT.some(
-          (column) => columns.has(column) && this.upsertRows!.some((row) => row[column] == null),
-        );
-        if (nullsNotNull) return { data: null, error: { code: "23502", message: "not-null" } };
+      // Comme la base : union des clés, NOT NULL, CHECK, clé en double (src/test/fake-postgrest.ts).
+      const schema = SCHEMAS[this.table as keyof typeof SCHEMAS];
+      if (schema) {
+        const refused = validateUpsert(schema, this.upsertRows, {
+          defaultToNull: this.defaultToNull,
+          onConflict: this.onConflict,
+        });
+        if (refused) return { data: null, error: refused };
       }
       if (
         (this.table === "auction_sale_flood_risk" && db.floodRows == null) ||

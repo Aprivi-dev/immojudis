@@ -2,6 +2,7 @@ import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
 import type { FloodPositionInput, FloodProbePoint, StoredFloodRisk } from "@/lib/flood-risk";
+import { isMissingDatabaseObject } from "@/lib/postgrest-errors";
 
 /**
  * Lectures et écritures du verdict d'inondation par vente : table privée `auction_sale_flood_risk` (service_role
@@ -99,12 +100,6 @@ async function readPositionExtras(): Promise<Map<string, PositionExtras>> {
     if ((data?.length ?? 0) < PAGE_SIZE) return extras;
   }
   throw new Error("Trop de ventes à venir pour le contrôle d'inondation.");
-}
-
-/** Table ou fonction inconnue de la base : la migration n'est pas encore appliquée (déploiement échelonné). */
-export function isMissingDatabaseObject(error: unknown): boolean {
-  const code = (error as { code?: unknown } | null)?.code;
-  return code === "PGRST202" || code === "PGRST205" || code === "42883" || code === "42P01";
 }
 
 /** Verdicts stockés ; `null` : la table n'existe pas encore. */

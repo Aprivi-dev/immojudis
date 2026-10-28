@@ -55,6 +55,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const sale = await getSale(auth.supabase, id);
     await enforceUserRateLimit({
       userId: auth.userId,
+      context,
       bucketKey: "land-report",
       limit: 12,
       windowSeconds: 60,

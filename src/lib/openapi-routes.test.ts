@@ -1,6 +1,13 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { tribunalJudicialActivityQuerySchema } from "@/lib/tribunal-judicial-activity";
+import { tribunalJudicialActivityDirectoryQuerySchema } from "@/lib/tribunal-judicial-activity-directory";
+import { tribunalListingStatisticsQuerySchema } from "@/lib/tribunal-listing-statistics";
+import { tribunalStatisticsQuerySchema } from "@/lib/tribunal-statistics-repository";
+
+// `tribunal-statistics-repository` crée le client de base à l'import : ici on ne lit que son schéma.
+vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: {} }));
 
 const root = process.cwd();
 const base = join(root, "src/app/api/v1");
@@ -65,6 +72,41 @@ function codesFromSource(source: string): { codes: string[]; secured: boolean } 
   return { codes: [...codes].sort(), secured };
 }
 
+/** Paramètres `in: query` déclarés par le contrat pour chaque chemin. */
+function openApiQueryParameters(): Map<string, string[]> {
+  const result = new Map<string, string[]>();
+  for (const chunk of pathsSection()
+    .split(/\n(?= {2}\/)/)
+    .slice(1)) {
+    const path = chunk.match(/^ {2}(\/[^\s:]*):/)![1];
+    result.set(
+      path,
+      [...chunk.matchAll(/- name: (\w+)\n\s+in: query/g)].map((match) => match[1]).sort(),
+    );
+  }
+  return result;
+}
+
+/** Clés d'un schéma d'objet zod (classique ou mini). */
+function schemaKeys(schema: unknown): string[] {
+  return Object.keys((schema as { shape: Record<string, unknown> }).shape).sort();
+}
+
+/** Schémas de requête exportés par les modules des routes; les autres sont lus dans la route. */
+const QUERY_SCHEMAS: Record<string, unknown> = {
+  "/tribunals/judicial-activity": tribunalJudicialActivityQuerySchema,
+  "/tribunals/judicial-activity/directory": tribunalJudicialActivityDirectoryQuerySchema,
+  "/tribunals/listing-statistics": tribunalListingStatisticsQuerySchema,
+  "/tribunals/statistics": tribunalStatisticsQuerySchema,
+};
+
+/** Clés du `querySchema` local d'une route (`const querySchema = z.object({ ... })`), sinon aucune. */
+function localQueryKeys(source: string): string[] {
+  const block = source.match(/const querySchema = z\.\w+\(\{([\s\S]*?)\n\}\)/);
+  if (!block) return [];
+  return [...block[1].matchAll(/^ {2}(\w+):/gm)].map((match) => match[1]).sort();
+}
+
 describe("openapi.yaml", () => {
   const routes = routeFiles(base).map((file) => ({
     path: documentedPath("/" + relative(base, join(file, "..")).split(sep).join("/")),
@@ -93,6 +135,30 @@ describe("openapi.yaml", () => {
         codesFromSource(route.source).secured,
       );
     }
+  });
+
+  it("déclare exactement les paramètres de requête que lisent les schémas de chaque route", () => {
+    const declared = openApiQueryParameters();
+    for (const route of routes) {
+      const expected =
+        route.path in QUERY_SCHEMAS
+          ? schemaKeys(QUERY_SCHEMAS[route.path])
+          : localQueryKeys(route.source);
+      expect(declared.get(route.path), `paramètres de requête de ${route.path}`).toEqual(expected);
+    }
+  });
+
+  it("déclare les en-têtes RateLimit-* de toute route qui limite le débit par compte", () => {
+    const text = openApiText();
+    for (const route of routes) {
+      const chunk = pathsSection()
+        .split(/\n(?= {2}\/)/)
+        .find((part) => part.startsWith(`  ${route.path}:`))!;
+      const limited = /enforceUserRateLimit\(\{[^}]*\bcontext\b/.test(route.source);
+      expect(limited, `${route.path} passe son contexte à enforceUserRateLimit`).toBe(true);
+      expect(chunk, route.path).toContain("RateLimit-Remaining");
+    }
+    expect(text).toMatch(/headers:\n {4}RateLimitLimit:/);
   });
 
   it("définit chaque réponse partagée qu'il référence", () => {

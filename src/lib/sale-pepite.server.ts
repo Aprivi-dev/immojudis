@@ -1,7 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { asRecord } from "@/lib/guards";
-import { isMissingPepiteFunction } from "@/lib/pepite-sale-ids";
+import { isMissingDatabaseObject } from "@/lib/postgrest-errors";
 import type { PublicSupabaseClient } from "@/lib/supabase-public.server";
 
 /**
@@ -19,7 +19,7 @@ export async function isPublishedPepite(
   const { data, error } = await client.rpc("get_public_sale_pepite", { p_sale_id: saleId });
   if (error) {
     // Fonction absente (migration pas encore appliquée) : « pas de pépite ».
-    if (isMissingPepiteFunction(error)) return false;
+    if (isMissingDatabaseObject(error)) return false;
     throw error;
   }
   return data === true;
@@ -39,7 +39,7 @@ export async function readStoredPepite(saleId: string): Promise<StoredPepite | n
     .eq("is_pepite", true)
     .maybeSingle();
   if (error) {
-    if (isMissingPepiteFunction(error) || error.code === "42P01") return null;
+    if (isMissingDatabaseObject(error)) return null;
     throw error;
   }
   if (!data) return null;

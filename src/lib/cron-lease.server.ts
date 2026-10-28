@@ -1,5 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { isMissingDatabaseObject } from "@/lib/postgrest-errors";
 
 /**
  * Bail nommé d'un traitement planifié (table `cron_lease`, fonctions `claim_cron_lease` et `release_cron_lease`,
@@ -16,11 +17,6 @@ export type CronLease =
   | { kind: "busy" }
   /** La fonction de bail n'existe pas encore (migration en retard) : le traitement continue sans verrou. */
   | { kind: "unavailable" };
-
-function isMissingDatabaseObject(error: unknown): boolean {
-  const code = (error as { code?: unknown } | null)?.code;
-  return code === "PGRST202" || code === "PGRST205" || code === "42883" || code === "42P01";
-}
 
 /**
  * Prend le bail `name` pour `ttlSeconds` (au-delà de `maxDuration` de la route : il expire seul si la passe

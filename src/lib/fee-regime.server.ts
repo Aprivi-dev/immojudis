@@ -1,4 +1,5 @@
 import "server-only";
+import { serverEnv, type EnvSource } from "@/lib/env";
 import { parseOpenFeeRegimes } from "@/lib/fee-regime";
 import { ceilingScopeNoteText } from "@/lib/fee-regime-labels";
 import type { FeeRegimeKey } from "@/lib/fee-regime-open";
@@ -9,10 +10,9 @@ import type { FeeRegimeKey } from "@/lib/fee-regime-open";
  * (voir `parseOpenFeeRegimes` : variable absente, tous les régimes définis ; présente, ceux qu'elle
  * liste, le tribunal toujours).
  */
-export function openFeeRegimesFromEnv(
-  env: Record<string, string | undefined> = process.env,
-): FeeRegimeKey[] {
-  return parseOpenFeeRegimes(env.CEILING_FEE_REGIMES_OPEN);
+export function openFeeRegimesFromEnv(env?: EnvSource): FeeRegimeKey[] {
+  // Lecture par `env.ts`, qui garde la différence entre variable absente et variable vide.
+  return parseOpenFeeRegimes(serverEnv(env).ceilingFeeRegimes.open);
 }
 
 /**
@@ -21,7 +21,7 @@ export function openFeeRegimesFromEnv(
  * Lu sur le serveur et passé à `FeeRegimesProvider` ; le texte est composé ici pour ne pas embarquer
  * le vocabulaire des régimes dans le navigateur.
  */
-export function feeRegimesSettingsFromEnv(env: Record<string, string | undefined> = process.env): {
+export function feeRegimesSettingsFromEnv(env?: EnvSource): {
   open: FeeRegimeKey[];
   scopeNote: string;
 } {

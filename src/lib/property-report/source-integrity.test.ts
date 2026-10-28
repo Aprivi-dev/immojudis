@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { EXAMPLE_SALE } from "../example-sale";
-import { assertReportSourceCurrent, reportSourceFingerprint } from "./source-integrity";
+import {
+  assertReportSourceCurrent,
+  legacyFingerprint,
+  reportSourceFingerprint,
+  ReportSourceChangedError,
+} from "./source-integrity";
 
 describe("saved report source integrity", () => {
   const snapshot = () => ({ sourceFingerprint: reportSourceFingerprint(EXAMPLE_SALE) });
@@ -39,20 +44,37 @@ describe("saved report source integrity", () => {
   describe("sale_conditions (migration 20261103110000)", () => {
     const conditions = { procedure: "online_tender", first_offer_eur: 200_000 };
     const notarial = { ...EXAMPLE_SALE, sale_conditions: conditions } as typeof EXAMPLE_SALE;
+    const BEFORE_MIGRATION = "2026-10-01T08:00:00.000Z";
+    const AFTER_MIGRATION = "2026-11-10T08:00:00.000Z";
+
+    it("writes a v2 fingerprint that includes the column even when it is empty", () => {
+      expect(reportSourceFingerprint(EXAMPLE_SALE)).toMatch(/^v2:[0-9a-f]{64}$/);
+      expect(reportSourceFingerprint(notarial)).not.toBe(reportSourceFingerprint(EXAMPLE_SALE));
+      expect(reportSourceFingerprint({ ...EXAMPLE_SALE, sale_conditions: null })).toBe(
+        reportSourceFingerprint(EXAMPLE_SALE),
+      );
+    });
 
     it("keeps valid a notarial report saved before the column existed", () => {
-      // Saved before the migration: fingerprint of the sale without the column.
-      const before = { sourceFingerprint: reportSourceFingerprint(EXAMPLE_SALE) };
+      // Saved before the migration: v1 fingerprint of the sale without the column.
+      const before = {
+        generatedAt: BEFORE_MIGRATION,
+        sourceFingerprint: legacyFingerprint(EXAMPLE_SALE),
+      };
       expect(() => assertReportSourceCurrent(before, notarial)).not.toThrow();
       // The same fingerprint written with an explicit null column.
       const withNull = {
-        sourceFingerprint: reportSourceFingerprint({ ...EXAMPLE_SALE, sale_conditions: null }),
+        generatedAt: BEFORE_MIGRATION,
+        sourceFingerprint: legacyFingerprint({ ...EXAMPLE_SALE, sale_conditions: null }),
       };
       expect(() => assertReportSourceCurrent(withNull, notarial)).not.toThrow();
     });
 
     it("reads a report saved with the conditions as current, and rejects changed conditions", () => {
-      const after = { sourceFingerprint: reportSourceFingerprint(notarial) };
+      const after = {
+        generatedAt: AFTER_MIGRATION,
+        sourceFingerprint: reportSourceFingerprint(notarial),
+      };
       expect(() => assertReportSourceCurrent(after, notarial)).not.toThrow();
       expect(() =>
         assertReportSourceCurrent(after, {
@@ -62,17 +84,51 @@ describe("saved report source integrity", () => {
       ).toThrow(/actualisées/);
     });
 
+    it("rejects a v2 report saved with empty conditions once the conditions are filled", () => {
+      const saved = {
+        generatedAt: AFTER_MIGRATION,
+        sourceFingerprint: reportSourceFingerprint(EXAMPLE_SALE),
+      };
+      expect(() => assertReportSourceCurrent(saved, notarial)).toThrow(ReportSourceChangedError);
+      const explicitNull = {
+        generatedAt: AFTER_MIGRATION,
+        sourceFingerprint: reportSourceFingerprint({ ...EXAMPLE_SALE, sale_conditions: null }),
+      };
+      expect(() => assertReportSourceCurrent(explicitNull, notarial)).toThrow(
+        ReportSourceChangedError,
+      );
+    });
+
+    it("refuses the v1 fallback for a v1 report saved after the migration", () => {
+      const lateLegacy = {
+        generatedAt: AFTER_MIGRATION,
+        sourceFingerprint: legacyFingerprint(EXAMPLE_SALE),
+      };
+      expect(() => assertReportSourceCurrent(lateLegacy, notarial)).toThrow(
+        ReportSourceChangedError,
+      );
+      expect(() =>
+        assertReportSourceCurrent({ sourceFingerprint: legacyFingerprint(EXAMPLE_SALE) }, notarial),
+      ).toThrow(ReportSourceChangedError);
+    });
+
+    it("still accepts an unchanged v1 report, whatever its date", () => {
+      expect(() =>
+        assertReportSourceCurrent(
+          { generatedAt: AFTER_MIGRATION, sourceFingerprint: legacyFingerprint(EXAMPLE_SALE) },
+          EXAMPLE_SALE,
+        ),
+      ).not.toThrow();
+    });
+
     it("still rejects a corrected source on a report saved before the column", () => {
-      const before = { sourceFingerprint: reportSourceFingerprint(EXAMPLE_SALE) };
+      const before = {
+        generatedAt: BEFORE_MIGRATION,
+        sourceFingerprint: legacyFingerprint(EXAMPLE_SALE),
+      };
       expect(() =>
         assertReportSourceCurrent(before, { ...notarial, occupancy_status: "vacant" } as never),
       ).toThrow(/actualisées/);
-    });
-
-    it("gives a tribunal sale the same fingerprint with or without an empty column", () => {
-      expect(reportSourceFingerprint({ ...EXAMPLE_SALE, sale_conditions: null })).toBe(
-        reportSourceFingerprint(EXAMPLE_SALE),
-      );
     });
   });
 });

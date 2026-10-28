@@ -290,6 +290,64 @@ describe("computeCeilingPlan on representative tribunal sales (characterization)
   });
 });
 
+// Cas recalculés À LA MAIN, sans passer par le moteur de frais : les chiffres du tableau ci-dessus
+// viennent du moteur, ceux-ci viennent d'une arithmétique écrite en commentaire (barème de l'avocat
+// poursuivant : 7,256 % jusqu'à 6 500 €, 2,993 % jusqu'à 17 000 €, 1,995 % jusqu'à 60 000 €, 1,497 %
+// au-delà, HT ; TVA 20 % ; droits de mutation 6,32 % du prix ; CSI 0,10 % du prix ; honoraires de
+// l'avocat enchérisseur 1 500 € ; frais préalables lus dans l'annonce : 4 250 €).
+describe("computeCeilingPlan : frais recalculés à la main", () => {
+  const byName = (name: string) => {
+    const found = cases.find((item) => item.name === name);
+    if (!found) throw new Error(name);
+    return found;
+  };
+  const plan = (name: string) => {
+    const { sale, estimate, choices } = byName(name);
+    return computeCeilingPlan(buildCeilingHypotheses(sale, estimate, choices));
+  };
+
+  it("33, appartement libre, mise de 176 500 €", () => {
+    // Émoluments HT : 6 500 × 7,256 % = 471,64 ; 10 500 × 2,993 % = 314,265 ; 43 000 × 1,995 % =
+    // 857,85 ; 116 500 × 1,497 % = 1 744,005 ; soit 3 387,76 HT et 4 065,312 TTC.
+    // Droits : 176 500 × 6,32 % = 11 154,80. CSI : 176,50.
+    // Frais : 4 065,312 + 11 154,80 + 176,50 + 1 500 + 4 250 = 21 146,612.
+    const result = plan("33, appartement libre, frais préalables lus, habiter");
+    expect(result.maxBid).toBe(176_500);
+    expect(result.feesAtMaxBid.acquisitionFeesTotal).toBeCloseTo(21_146.612, 2);
+    // Budget de 198 000 € : 176 500 + 21 146,61 = 197 646,61 y tient.
+    expect(result.budget).toBe(198_000);
+    expect(176_500 + 21_146.612).toBeLessThanOrEqual(198_000);
+    // Le pas suivant (177 000 €) ajoute 500 × 1,497 % × 1,2 = 8,982 d'émoluments, 31,60 de droits et
+    // 0,50 de CSI : 177 000 + 21 187,694 = 198 187,694 > 198 000, il ne tient pas.
+    expect(177_000 + 21_146.612 + 8.982 + 31.6 + 0.5).toBeGreaterThan(198_000);
+  });
+
+  it("75, appartement libre, mise de 343 000 €", () => {
+    // Émoluments HT : 471,64 + 314,265 + 857,85 = 1 643,755 pour les 60 000 premiers euros, puis
+    // 283 000 × 1,497 % = 4 236,51 ; soit 5 880,265 HT et 7 056,318 TTC.
+    // Droits : 343 000 × 6,32 % = 21 677,60. CSI : 343.
+    // Frais : 7 056,318 + 21 677,60 + 343 + 1 500 + 4 250 = 34 826,918.
+    const result = plan("75, appartement libre, frais préalables lus, habiter");
+    expect(result.maxBid).toBe(343_000);
+    expect(result.feesAtMaxBid.acquisitionFeesTotal).toBeCloseTo(34_826.918, 2);
+    // Budget de 378 000 € : 343 000 + 34 826,92 = 377 826,92 y tient ; le pas suivant ajoute 8,982 +
+    // 31,60 + 0,50 de frais, soit 343 500 + 34 868,00 = 378 368,00 > 378 000.
+    expect(result.budget).toBe(378_000);
+    expect(343_000 + 34_826.918).toBeLessThanOrEqual(378_000);
+    expect(343_500 + 34_826.918 + 8.982 + 31.6 + 0.5).toBeGreaterThan(378_000);
+  });
+
+  it("aucun prix ne tient quand les travaux dépassent le budget", () => {
+    // Budget de 144 000 € (valeur 180 000 €, marge comprise) moins 160 000 € de travaux : négatif.
+    // Même une mise nulle coûte 1 500 (avocat) + 5 000 (frais préalables par défaut) = 6 500 €, sans
+    // émoluments ni droits puisque le prix est nul : rien ne tient.
+    const result = plan("75, appartement occupé, travaux lourds : aucun prix ne tient");
+    expect(result.maxBid).toBe(0);
+    expect(result.budget - 160_000).toBeLessThan(0);
+    expect(result.feesAtMaxBid.acquisitionFeesTotal).toBeCloseTo(6_500, 6);
+  });
+});
+
 // Empreinte de la table ci-dessus (ventes, hypothèses et résultats figés), enregistrée par version du
 // moteur. Elle n'est pas recalculée depuis le moteur : changer un résultat figé sans changer
 // CEILING_ENGINE_VERSION fait échouer le test de garde.

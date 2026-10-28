@@ -17,6 +17,12 @@ import type { AuctionSale } from "@/lib/types";
 export const NO_CEILING_REGIME_REASON = "Pas d’enchère plafond pour ce type de vente";
 
 /**
+ * Pourquoi un rapport enregistré n'affiche plus son plafond quand l'exploitant a fermé le régime
+ * (`CEILING_FEE_REGIMES_OPEN`) : une décision d'exploitation, pas une règle de la vente.
+ */
+export const CEILING_SWITCHED_OFF_REASON = "Plafond momentanément indisponible";
+
+/**
  * The bid ceiling saved in a report, computed with the same engine and the
  * same defaults as the sale page so the two never show different amounts.
  *

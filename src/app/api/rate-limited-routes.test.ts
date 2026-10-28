@@ -415,11 +415,13 @@ describe("rate limit on every /api/v1 route", () => {
       const response = await call();
       expect(response.status).toBe(429);
       expect(response.headers.get("retry-after")).toBe("17");
+      // Avec le contexte de requête, qui porte le quota vers les en-têtes RateLimit-*.
       expect(mocks.enforceUser).toHaveBeenCalledWith({
         userId: "user-1",
         bucketKey,
         limit: 30,
         windowSeconds: 60,
+        context: expect.objectContaining({ requestId: expect.any(String) }),
       });
       expect(mocks.entitlement).not.toHaveBeenCalled();
     },
