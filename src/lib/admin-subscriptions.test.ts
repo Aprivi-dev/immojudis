@@ -48,7 +48,7 @@ describe("admin subscriptions", () => {
 
     const payload = manualSubscriptionPayload({
       input,
-      user: { id: "b8d4f60a-9e58-4a4c-83d7-30874062a395", email: "investisseur@example.test" },
+      user: { id: "b8d4f60a-9e58-4a4c-83d7-30874062a395" },
       grantedBy: "3f1a1d80-8163-46b8-84de-fcfef5875652",
       existing: {
         stripe_customer_id: "cus_existing",
