@@ -148,7 +148,8 @@ export function estimateSaleGrossYieldPct(
   surface: number | null | undefined,
   rent?: RentReference | null,
 ): number | null {
-  if (!isRentApplicable(sale)) return null;
+  // Un type inconnu ou absent n'a de loyer de référence que si la vente a une surface (celle passée ici).
+  if (!isRentApplicable({ ...sale, app_surface_m2: sale.app_surface_m2 ?? surface })) return null;
   return estimateGrossYieldPct(
     sale.starting_price_eur,
     surface,

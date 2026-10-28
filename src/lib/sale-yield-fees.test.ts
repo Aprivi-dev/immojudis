@@ -38,7 +38,7 @@ const ONLINE = sale({
 });
 
 /** Le rendement brut recalculé à la main avec des frais donnés. */
-function yieldWith(target: AuctionSale, fees: object): number {
+function yieldWith(fees: object): number {
   const total = computeAcquisitionCosts({ price: 60_000, department: "33", ...fees }).totalCost;
   return ((50 * (defaultRentPerM2("33") as number) * 12) / total) * 100;
 }
@@ -46,7 +46,7 @@ function yieldWith(target: AuctionSale, fees: object): number {
 describe("frais du rendement brut selon le régime de la vente", () => {
   it("tribunal : frais du tribunal par défaut (comportement inchangé)", () => {
     expect(saleYieldFeeOptions(TRIBUNAL)).toEqual({});
-    expect(estimateSaleGrossYieldPct(TRIBUNAL, 50)).toBeCloseTo(yieldWith(TRIBUNAL, {}), 8);
+    expect(estimateSaleGrossYieldPct(TRIBUNAL, 50)).toBeCloseTo(yieldWith({}), 8);
   });
 
   it("régime inconnu ou vente domaniale : frais du tribunal, comme le plafond sans régime", () => {
@@ -57,7 +57,7 @@ describe("frais du rendement brut selon le régime de la vente", () => {
   it("vente à la bougie : barème du notaire, frais d'organisation, ni frais préalables ni avocat", () => {
     const options = saleYieldFeeOptions(CANDLE);
     expect(options).toMatchObject({ fpt: 0, lawyerFees: 0, organizationFeeRate: 0.02 });
-    expect(estimateSaleGrossYieldPct(CANDLE, 50)).toBeCloseTo(yieldWith(CANDLE, options), 8);
+    expect(estimateSaleGrossYieldPct(CANDLE, 50)).toBeCloseTo(yieldWith(options), 8);
     // Sans les 5 000 € de frais préalables du tribunal, le rendement est plus élevé.
     expect(estimateSaleGrossYieldPct(CANDLE, 50)!).toBeGreaterThan(
       estimateSaleGrossYieldPct(TRIBUNAL, 50)!,
@@ -72,7 +72,7 @@ describe("frais du rendement brut selon le régime de la vente", () => {
       negotiationFeeRate: 0.05,
       advertisingFees: 900,
     });
-    expect(estimateSaleGrossYieldPct(ONLINE, 50)).toBeCloseTo(yieldWith(ONLINE, options), 8);
+    expect(estimateSaleGrossYieldPct(ONLINE, 50)).toBeCloseTo(yieldWith(options), 8);
   });
 
   it("vente interactive dont le vendeur paie les honoraires : aucun honoraire de négociation", () => {

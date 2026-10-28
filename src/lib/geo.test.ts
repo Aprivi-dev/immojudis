@@ -26,6 +26,22 @@ describe("estimateSaleGrossYieldPct", () => {
     expect(estimateSaleGrossYieldPct({ ...sale, property_type: null }, 50)).not.toBeNull();
   });
 
+  it("codes anglais du pipeline : seuls house et apartment ont un rendement, unknown seulement avec une surface", () => {
+    for (const property_type of ["house", "apartment"]) {
+      expect(
+        estimateSaleGrossYieldPct({ ...sale, property_type }, 50),
+        property_type,
+      ).not.toBeNull();
+    }
+    for (const property_type of ["mixed", "other", "land", "building", "commercial"]) {
+      expect(estimateSaleGrossYieldPct({ ...sale, property_type }, 50), property_type).toBeNull();
+    }
+    for (const property_type of ["unknown", "", null]) {
+      expect(estimateSaleGrossYieldPct({ ...sale, property_type }, 50)).not.toBeNull();
+      expect(estimateSaleGrossYieldPct({ ...sale, property_type }, null)).toBeNull();
+    }
+  });
+
   it("ne donne aucun rendement à un bien qui n'est pas un logement", () => {
     for (const property_type of [
       "land",
