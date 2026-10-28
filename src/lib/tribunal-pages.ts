@@ -8,6 +8,7 @@ import {
 import {
   courtShortName,
   isRawTribunalCode,
+  tribunalPriceFigure,
   type PublicTribunalActivity,
 } from "@/lib/public-tribunal-activity";
 import type { PublicTribunalDirectoryEntry } from "@/lib/public-tribunal-directory";
@@ -296,7 +297,14 @@ function priceLabel(value: number): string {
 export function tribunalPageDescription(
   activity: Pick<
     PublicTribunalActivity,
-    "name" | "searchName" | "upcomingCount" | "nextSaleDate" | "medianStartingPriceEur"
+    | "name"
+    | "searchName"
+    | "upcomingCount"
+    | "nextSaleDate"
+    | "medianStartingPriceEur"
+    | "pricedCount"
+    | "minStartingPriceEur"
+    | "maxStartingPriceEur"
   >,
   now: Date = new Date(),
 ): string {
@@ -310,10 +318,10 @@ export function tribunalPageDescription(
       ? longDate(activity.nextSaleDate)
       : null;
   const nextText = next ? `prochaine audience le ${next}` : null;
+  // La médiane n'est écrite qu'avec assez de ventes chiffrées (mêmes seuils que la page).
+  const figure = tribunalPriceFigure(activity);
   const median =
-    activity.medianStartingPriceEur != null
-      ? `mise à prix médiane ${priceLabel(activity.medianStartingPriceEur)}`
-      : null;
+    figure.kind === "median" ? `mise à prix médiane ${priceLabel(figure.median)}` : null;
   for (const details of [[nextText, median], [nextText], []]) {
     const text = [head, details.filter(Boolean).join(", ")].filter(Boolean).join(" : ");
     const sentence = `${text}.`;

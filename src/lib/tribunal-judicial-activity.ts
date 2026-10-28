@@ -3,6 +3,7 @@
 // `strictObject`, `.refine` devenu `.check(z.refine(...))`), avec bien moins de code envoyé.
 import { z } from "zod/mini";
 import { publishedDay } from "@/lib/listing-evidence";
+import { TRIBUNAL_STATISTICS_RANGE_MIN_SAMPLE } from "@/lib/tribunal-publication-thresholds";
 import { labelFingerprint, parisDayKey } from "@/lib/tribunal-hearing-identity";
 import { mergeDuplicateJudicialAnnouncements } from "@/lib/tribunal-judicial-activity-dedup";
 
@@ -14,7 +15,7 @@ export class TribunalCourtUnresolvedError extends Error {
 }
 
 export const TRIBUNAL_JUDICIAL_ACTIVITY_BUILDER_VERSION = "tribunal_judicial_activity_v3" as const;
-export const TRIBUNAL_JUDICIAL_ACTIVITY_MIN_SAMPLE = 5;
+export const TRIBUNAL_JUDICIAL_ACTIVITY_MIN_SAMPLE = TRIBUNAL_STATISTICS_RANGE_MIN_SAMPLE;
 
 const isoDateTimeSchema = z.string().check(z.iso.datetime({ offset: true }));
 // Entier positif ou nul ; entier strictement positif ; part entre 0 et 1 ; libellé non vide.

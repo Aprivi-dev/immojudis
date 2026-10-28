@@ -13,7 +13,11 @@ import {
 import { departmentIn } from "@/lib/department-grammar";
 import { formatStartingPrice, propertyTypeLabel } from "@/lib/format";
 import { pathWithSearch } from "@/lib/navigation";
-import type { PublicTribunalActivity } from "@/lib/public-tribunal-activity";
+import {
+  tribunalPriceFigure,
+  tribunalSampleLabel,
+  type PublicTribunalActivity,
+} from "@/lib/public-tribunal-activity";
 import { understandingResources } from "@/lib/resource-related";
 import { saleHearingTime, seoLongDate, seoSurface } from "@/lib/seo";
 import {
@@ -60,6 +64,7 @@ export function TribunalView({
   generatedAt: Date;
 }) {
   const total = tribunal.upcomingCount;
+  const priceFigure = tribunalPriceFigure(tribunal);
   const place = tribunalPlaceName(tribunal.searchName || tribunal.name);
   const longName = tribunalLongName(tribunal);
   const updated = seoLongDate(generatedAt.toISOString());
@@ -136,12 +141,33 @@ export function TribunalView({
             </div>
             <div>
               <dt className="text-sm text-ink-soft">
-                <Terme terme="mise-a-prix">Mise à prix médiane</Terme>
+                <Terme terme="mise-a-prix">
+                  {priceFigure.kind === "median"
+                    ? "Mise à prix médiane"
+                    : priceFigure.kind === "range"
+                      ? "Mise à prix observée"
+                      : "Mise à prix"}
+                </Terme>
               </dt>
               <dd className="mt-1 text-lg font-semibold tabular-nums">
-                {tribunal.medianStartingPriceEur != null
-                  ? formatStartingPrice(tribunal.medianStartingPriceEur)
-                  : "Non communiquée"}
+                {priceFigure.kind === "median" ? (
+                  formatStartingPrice(priceFigure.median)
+                ) : priceFigure.kind === "range" ? (
+                  <>
+                    {formatStartingPrice(priceFigure.min)} – {formatStartingPrice(priceFigure.max)}
+                    <span className="block text-sm font-normal text-ink-soft">
+                      fourchette sur {tribunalSampleLabel(priceFigure.sampleSize)} (médiane dès 10)
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    —
+                    <span className="block text-sm font-normal text-ink-soft">
+                      {tribunalSampleLabel(priceFigure.sampleSize)} : trop peu pour un chiffre
+                      (fourchette dès 5, médiane dès 10)
+                    </span>
+                  </>
+                )}
               </dd>
             </div>
           </dl>
@@ -166,11 +192,6 @@ export function TribunalView({
           {countMayIncludeDuplicates ? (
             <p className="mt-3 text-sm text-ink-soft">
               Le total peut compter une même vente publiée par deux sources.
-            </p>
-          ) : null}
-          {total > 0 && total < 3 ? (
-            <p className="mt-3 text-sm text-ink-soft">
-              Avec si peu de ventes, la mise à prix médiane n’est qu’un repère très approximatif.
             </p>
           ) : null}
           <div className="mt-5 flex flex-wrap gap-3">
