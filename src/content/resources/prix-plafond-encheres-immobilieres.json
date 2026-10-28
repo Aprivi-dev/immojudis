@@ -1,17 +1,17 @@
 {
   "slug": "prix-plafond-encheres-immobilieres",
   "publishedAt": "2026-10-05",
-  "updatedAt": "2026-10-26",
+  "updatedAt": "2026-10-28",
   "title": "Fixer son enchère plafond : raisonner par le coût complet avant d’enchérir",
   "seoTitle": "Enchère plafond : raisonner par le coût complet",
   "category": "Budget",
   "description": "Une méthode simple pour passer de la mise à prix à une enchère plafond défendable, en intégrant marché local, frais, travaux et marge de sécurité.",
   "intro": [
     "Une mise à prix basse attire l’attention, mais elle ne dit pas jusqu’où il est raisonnable d’aller. La mise à prix est le montant à partir duquel les enchères démarrent à l’audience. Le chiffre utile se construit à l’envers : partir d’une valeur comparable, retirer une marge de sécurité, puis déduire tout ce qui sera engagé autour de l’enchère.",
-    "Ce montant maximal, que nous appelons l’enchère plafond, est la limite que vous vous interdisez de dépasser. Cette méthode ne promet ni décote ni résultat. Elle rend votre décision lisible avant l’audience. Immojudis reprend cette logique dans son assistant, à partir des références et des hypothèses que vous pouvez corriger."
+    "Ce montant maximal, que nous appelons l’enchère plafond, est la limite que vous vous interdisez de dépasser. Cette méthode ne promet ni décote ni résultat. Elle rend votre décision lisible avant l’audience. Immojudis reprend cette logique dans son assistant, à partir des références et des hypothèses que vous pouvez corriger. Dans une vente notariale interactive, qui fonctionne par offres et non par enchères, on parle d’offre plafond : c’est le montant d’offre maximal que vous vous interdisez de dépasser, calculé de la même façon."
   ],
   "takeaways": [
-    "La mise à prix est le départ de l’audience ; l’enchère plafond est votre limite, après déduction des autres coûts.",
+    "La mise à prix est le départ de l’audience ; l’enchère plafond est votre limite, après déduction des autres coûts. Pour une vente notariale par offres, on parle d’offre plafond.",
     "Une référence DVF doit ressembler au bien par sa surface, son type, son secteur et sa période.",
     "Frais, travaux, financement, occupation et marge de sécurité se déduisent avant de retenir une enchère plafond.",
     "Dans l’exemple de cet article, les frais pèsent environ 13 % du prix : un ordre de grandeur à vérifier sur le cahier des conditions de vente, pas un tarif.",
@@ -89,7 +89,7 @@
       "paragraphs": [
         "Sur une fiche, l’assistant rapproche la surface et les références disponibles, puis affiche une enchère plafond selon un profil de sécurité. Vous pouvez comparer une variante sans travaux, choisir un rafraîchissement, saisir un prix au m² si les comparables manquent et ajuster les frais ou travaux.",
         "Le rapport détaille marché, marge de sécurité, frais estimés, travaux et, lorsque le dossier le prévoit, portage. Si la surface ou le marché sont fragiles, le produit le signale et laisse l’enchère plafond à compléter.",
-        "L’enchère plafond (simulation) s’affiche pour les ventes au tribunal. Avec le compte gratuit, vous la débloquez pour 3 ventes par mois ; avec l’offre Analyse, elle est disponible pour toutes les ventes au tribunal. Pendant les 7 jours d’essai gratuit qui suivent la confirmation de l’adresse email, elle est aussi disponible pour toutes les ventes au tribunal : la page Offres indique ce qui s’applique au moment où vous la consultez. Pour une vente chez un notaire ou de l’État, l’article « Ventes notariales et ventes domaniales » explique pourquoi les règles diffèrent."
+        "L’enchère plafond (simulation) s’affiche pour les ventes au tribunal et chez le notaire : enchère plafond pour une vente au tribunal ou à la bougie, offre plafond pour une vente notariale interactive. Elle n’est pas proposée pour les ventes domaniales. Avec le compte gratuit, vous la débloquez pour 3 ventes par mois ; avec l’offre Analyse, elle est disponible pour toutes les ventes concernées. Pendant les 7 jours d’essai gratuit qui suivent la confirmation de l’adresse email, elle est aussi disponible pour toutes ces ventes : la page Offres indique ce qui s’applique au moment où vous la consultez. Pour une vente chez un notaire ou de l’État, l’article « Ventes notariales et ventes domaniales » explique pourquoi les règles diffèrent."
       ],
       "bullets": [
         "Comparez deux profils et modifiez une hypothèse à la fois.",

@@ -1,7 +1,7 @@
 {
   "slug": "analyser-opportunite-encheres",
   "publishedAt": "2026-10-05",
-  "updatedAt": "2026-10-13",
+  "updatedAt": "2026-10-28",
   "title": "Analyser une opportunité aux enchères : la méthode Immojudis en sept contrôles",
   "seoTitle": "Analyser une opportunité aux enchères : méthode",
   "category": "Méthode",
@@ -34,7 +34,8 @@
       "title": "Lire le marché sans confondre repère et promesse",
       "paragraphs": [
         "La base Demande de valeurs foncières (DVF) du ministère de l’Économie permet d’examiner des mutations issues d’actes notariés et d’informations cadastrales. Constituez un ensemble de ventes ressemblant au bien : même type, surfaces proches, secteur comparable et période cohérente. Une médiane ou une fourchette n’est utile qu’une fois ces choix expliqués.",
-        "Sur Immojudis, observez nombre de comparables, rayon, niveau géographique et confiance. Un historique d’adresse peut concerner des lots différents ; il ne prouve pas la valeur du logement. Si l’échantillon est faible, une saisie manuelle reste un scénario provisoire."
+        "Sur Immojudis, observez nombre de comparables, rayon, niveau géographique et confiance. Un historique d’adresse peut concerner des lots différents ; il ne prouve pas la valeur du logement. Si l’échantillon est faible, une saisie manuelle reste un scénario provisoire.",
+        "Un repère automatique, comme le repère « Pépite » d’Immojudis, résume quelques calculs faits sur les données disponibles. Il ne mesure pas l’état réel du bien, les travaux, les charges de copropriété, les servitudes, les risques juridiques de la procédure, la concurrence le jour de la vente ni votre situation. Son absence ne dit rien du bien, et sa présence ne dispense pas de lire les pièces. Les critères et les limites du repère sont publiés sur la page « Comment repérons-nous les pépites ? »."
       ],
       "bullets": [
         "Écartez les comparables de nature ou de surface différente.",
@@ -133,6 +134,10 @@
     {
       "label": "Légifrance — Code des procédures civiles d’exécution, article R322-42",
       "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939159"
+    },
+    {
+      "label": "Immojudis — Comment repérons-nous les pépites ?",
+      "url": "/methode-pepites"
     }
   ]
 }

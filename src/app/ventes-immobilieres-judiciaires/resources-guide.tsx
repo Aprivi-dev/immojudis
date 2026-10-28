@@ -198,6 +198,10 @@ const LEXIQUE: Array<{ term: string; def: string }> = [
     def: "Prix de départ de la vente aux enchères. Elle ne doit pas être confondue avec la valeur réelle du bien.",
   },
   {
+    term: "Offre plafond",
+    def: "Pour une vente notariale interactive, qui fonctionne par offres et non par enchères, montant d’offre maximal à ne pas dépasser, calculé comme l’enchère plafond. Il n’y a pas de plafond estimé pour les ventes domaniales.",
+  },
+  {
     term: "Portage",
     def: "Coûts supportés tant que le bien ne sert pas ou ne rapporte rien : intérêts d’emprunt, taxe foncière, charges, assurance.",
   },
