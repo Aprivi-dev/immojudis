@@ -61,8 +61,13 @@ function Harness({
   );
 }
 
+/** Le nom d'un champ est « libellé (unité) » : l'unité suit le libellé dans le texte masqué. */
+function withUnit(label: string): RegExp {
+  return new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\(`);
+}
+
 function input(label: string): HTMLInputElement {
-  return screen.getByLabelText(label) as HTMLInputElement;
+  return screen.getByLabelText(withUnit(label)) as HTMLInputElement;
 }
 
 describe("CeilingHypothesesPanel number fields", () => {
@@ -205,7 +210,7 @@ describe("CeilingHypothesesPanel rent", () => {
     expect(
       input("Loyer d’annonce estimé, charges comprises (le loyer hors charges est plus bas)").value,
     ).toBe("1120");
-    expect(screen.queryByLabelText("Loyer mensuel hors charges")).toBeNull();
+    expect(screen.queryByLabelText(withUnit("Loyer mensuel hors charges"))).toBeNull();
     expect(screen.getByText(/non constaté et non garanti/)).toBeTruthy();
     // La mention est chargée à la demande (un seul morceau partagé).
     await waitFor(() => expect(document.querySelector("[data-rent-source-notice]")).not.toBeNull());
@@ -288,9 +293,9 @@ describe("CeilingHypothesesPanel : ventes notariales", () => {
 
   it("n'a ni frais préalables ni honoraires d'avocat, et lit honoraires de négociation et publicité (vente interactive)", () => {
     render(<Harness saleOverride={online} regime={NOTARY_ONLINE_FEE_REGIME} />);
-    expect(screen.queryByLabelText("Frais préalables")).toBeNull();
-    expect(screen.queryByLabelText("Honoraires de votre avocat")).toBeNull();
-    expect(screen.queryByLabelText("Garantie à déposer")).toBeNull();
+    expect(screen.queryByLabelText(withUnit("Frais préalables"))).toBeNull();
+    expect(screen.queryByLabelText(withUnit("Honoraires de votre avocat"))).toBeNull();
+    expect(screen.queryByLabelText(withUnit("Garantie à déposer"))).toBeNull();
     expect(input("Honoraires de négociation").value).toBe("4.5");
     expect(input("Frais de publicité").value).toBe("1200");
     expect(screen.getByText("Taux lu dans l’annonce, à la charge de l’acquéreur.")).toBeTruthy();
@@ -331,8 +336,8 @@ describe("CeilingHypothesesPanel : ventes notariales", () => {
     render(<Harness saleOverride={auction} regime={NOTARY_AUCTION_FEE_REGIME} />);
     expect(input("Garantie à déposer").value).toBe("6000");
     expect(screen.getByText(/Valeur par défaut \(20 % de la mise à prix\)/)).toBeTruthy();
-    expect(screen.queryByLabelText("Honoraires de négociation")).toBeNull();
-    expect(screen.queryByLabelText("Frais préalables")).toBeNull();
+    expect(screen.queryByLabelText(withUnit("Honoraires de négociation"))).toBeNull();
+    expect(screen.queryByLabelText(withUnit("Frais préalables"))).toBeNull();
     fireEvent.change(input("Garantie à déposer"), { target: { value: "7500" } });
     expect(seen.choices.consignation).toBe(7_500);
     expect(screen.getByText("Montant que vous avez saisi.")).toBeTruthy();
@@ -366,7 +371,7 @@ describe("CeilingHypothesesPanel : charges récupérables et rendement", () => {
     vintage: 2025,
     sourceUpdatedOn: "2025-12-11",
   };
-  const CHARGES = "Charges récupérables comprises dans le loyer (€/mois)";
+  const CHARGES = "Charges récupérables comprises dans le loyer";
 
   it("offers an empty, editable field for the recoverable charges, with no invented amount", () => {
     render(<Harness initial={{ project: "louer" }} rentReference={anil} />);
@@ -395,27 +400,49 @@ describe("CeilingHypothesesPanel : charges récupérables et rendement", () => {
   it("does not call a charges-included yield « net », and says so only while the charges are empty", () => {
     render(<Harness initial={{ project: "louer" }} rentReference={anil} />);
 
-    expect(screen.getByLabelText("Rendement brut visé, charges comprises")).toBeTruthy();
-    expect(screen.queryByLabelText("Rendement net visé")).toBeNull();
+    expect(screen.getByLabelText(withUnit("Rendement brut visé, charges comprises"))).toBeTruthy();
+    expect(screen.queryByLabelText(withUnit("Rendement net visé"))).toBeNull();
 
     fireEvent.change(input(CHARGES), { target: { value: "120" } });
 
-    expect(screen.getByLabelText("Rendement net visé")).toBeTruthy();
-    expect(screen.queryByLabelText("Rendement brut visé, charges comprises")).toBeNull();
+    expect(screen.getByLabelText(withUnit("Rendement net visé"))).toBeTruthy();
+    expect(screen.queryByLabelText(withUnit("Rendement brut visé, charges comprises"))).toBeNull();
   });
 
   it("keeps « net » for the department rent and for a typed rent", () => {
     render(<Harness initial={{ project: "louer" }} />);
-    expect(screen.getByLabelText("Rendement net visé")).toBeTruthy();
+    expect(screen.getByLabelText(withUnit("Rendement net visé"))).toBeTruthy();
     cleanup();
 
     render(<Harness initial={{ project: "louer", monthlyRent: 900 }} rentReference={anil} />);
-    expect(screen.getByLabelText("Rendement net visé")).toBeTruthy();
+    expect(screen.getByLabelText(withUnit("Rendement net visé"))).toBeTruthy();
   });
 
   it("does not claim that every charge is withdrawn from the rent", () => {
     render(<Harness initial={{ project: "louer" }} rentReference={anil} />);
 
     expect(document.body.textContent).not.toMatch(/retire lui-même|toutes les charges/i);
+  });
+
+  it("relie l'aide au champ et met l'unité dans son nom", () => {
+    render(<Harness />);
+    const field = screen.getByLabelText(/^Marge de sécurité \(%\)$/) as HTMLInputElement;
+    const hint = document.getElementById(field.getAttribute("aria-describedby") ?? "");
+    expect(hint?.textContent).toBe("Remplace celle du profil choisi.");
+  });
+
+  it("dit qu'un montant négatif est refusé au lieu de le corriger en silence", () => {
+    render(<Harness />);
+    const field = input("Prix au m² du bien");
+
+    fireEvent.change(field, { target: { value: "-5" } });
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent).toBe("Saisissez un montant positif.");
+    expect(field.getAttribute("aria-invalid")).toBe("true");
+    expect(field.getAttribute("aria-describedby")).toContain(alert.id);
+
+    fireEvent.change(field, { target: { value: "2500" } });
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(field.getAttribute("aria-invalid")).toBeNull();
   });
 });

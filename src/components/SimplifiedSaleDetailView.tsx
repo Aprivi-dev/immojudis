@@ -898,7 +898,7 @@ function SaleDetailWorkspace({
                     </button>
                   </div>
                 ) : null}
-                <section id="summary" className="scroll-mt-36">
+                <section id="summary" className="scroll-mt-2">
                   {valuationConflict ? (
                     <div role="alert" className={panelStyles.warning}>
                       <div>
@@ -948,7 +948,7 @@ function SaleDetailWorkspace({
                   />
                 ) : null}
                 {fullData && ceilingOpen && !valuationConflict ? (
-                  <div id="calculation" className="scroll-mt-36">
+                  <div id="calculation" className="scroll-mt-2">
                     <LaunchOfferIncludedTag className="mb-2" />
                     <CeilingPlanner
                       hypotheses={ceilingHypotheses}
@@ -1095,7 +1095,7 @@ function SaleDetailWorkspace({
 
             {activeTab === "financement" ? (
               <>
-                <div id="financing" className="scroll-mt-36">
+                <div id="financing" className="scroll-mt-2">
                   <FinancingSimulator
                     sale={displaySale}
                     aiReviewProjections={resolvedAiReviewProjections}

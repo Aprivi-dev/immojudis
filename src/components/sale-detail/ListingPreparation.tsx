@@ -160,7 +160,11 @@ export function ListingPreparation({
         </a>
       </div>
 
-      <div className={styles.coverageSummary} aria-label="Bilan des informations du bien">
+      <div
+        className={styles.coverageSummary}
+        role="group"
+        aria-label="Bilan des informations du bien"
+      >
         <p>{information.total} informations pertinentes pour ce bien</p>
         <ul>
           <li>

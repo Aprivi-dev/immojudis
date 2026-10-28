@@ -42,13 +42,14 @@ export function ExampleSalePage({
     <>
       {/* L'image d'attente de la vue aérienne vient de api.mapbox.com : connexion préparée tôt. */}
       <MapboxPreconnect />
-      <div
-        role="note"
+      {/* Un repère `complementary` nommé : un `role="note"` seul reste hors de tout repère (RGAA 9.2). */}
+      <aside
+        aria-label="Exemple fictif"
         className="border-b border-amber-300 bg-amber-50 px-4 py-3 text-center text-sm font-semibold text-amber-950"
       >
         Exemple fictif : ce bien, son adresse et ses chiffres sont inventés pour illustrer
         l’analyse. Aucune vente réelle ne correspond à cette page.
-      </div>
+      </aside>
       <AnalysisSaleDetailView
         sale={example.sale}
         marketEstimateOverride={example.marketEstimate}

@@ -87,7 +87,7 @@ export function CourtAuctionSummaryTable() {
               d’adjudication médians, part des ventes adjugées à au moins 2 fois la mise à prix et
               adjudications DVF
             </caption>
-            <thead className="text-xs uppercase tracking-wide text-brand-navy/60">
+            <thead className="text-xs uppercase tracking-wide text-ink-soft">
               <tr>
                 <th scope="col" className="sticky left-0 z-10 bg-white py-2 pr-4">
                   Tribunal
@@ -135,7 +135,7 @@ export function CourtAuctionSummaryTable() {
           </table>
         </div>
       )}
-      <p className="mt-3 text-xs text-brand-navy/60">
+      <p className="mt-3 text-xs text-ink-soft">
         Valeurs du milieu (médianes), que quelques ventes très disputées ne tirent pas vers le haut.
         Un tribunal apparaît à partir de 10 ventes.
       </p>

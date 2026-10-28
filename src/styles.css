@@ -269,6 +269,38 @@
   }
 }
 
+/*
+ * Barres collantes : l'en-tête flottant (24 px + 58 px) recouvre le haut de la page, et sur la fiche la
+ * barre d'onglets (48 px) s'y ajoute. `scroll-padding-top` de `html` garde l'élément focalisé (Shift+Tab)
+ * ou atteint par une ancre sous ces barres (WCAG 2.4.11). Sur la fiche, `--sale-sticky-offset` (88 px
+ * + 48 px + jeu) remplace la valeur de base, et les cibles d'ancre n'ajoutent que `scroll-mt-2` : les
+ * deux valeurs s'additionnent, il ne faut donc pas les cumuler.
+ */
+:root {
+  --sale-sticky-offset: 9rem;
+}
+
+html {
+  scroll-padding-top: 6rem;
+}
+
+html:has([data-sale-tabs]) {
+  scroll-padding-top: var(--sale-sticky-offset);
+}
+
+/*
+ * Contraste élevé (Windows) : les fonds et bordures de couleur disparaissent, l'état sélectionné
+ * (onglet, carte de projet, profil de prudence, réglage) ne doit pas en dépendre.
+ */
+@media (forced-colors: active) {
+  [aria-selected="true"],
+  [aria-checked="true"],
+  [aria-pressed="true"] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+}
+
 /* Un titre passé en police de texte (`font-sans`) garde la taille de Manrope, sans l'ajustement
    des titres (`--font-display-adjust`, posé sur h1-h4 par la couche de base). */
 @layer utilities {

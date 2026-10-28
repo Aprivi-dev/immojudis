@@ -137,8 +137,8 @@ function PageContent() {
           </ol>
           <p>
             Le prix de référence est le prix probable décrit plus bas. La valeur estimée est celle
-            d’un bien comparable, d’après les ventes DVF passées ; elle ne tient compte ni de l’état
-            du bien ni de son occupation.
+            d’un bien comparable, d’après les ventes passées de la base DVF (demandes de valeurs
+            foncières) ; elle ne tient compte ni de l’état du bien ni de son occupation.
           </p>
           <p>
             L’<strong>enchère plafond estimée</strong> est le montant maximal calculé par Immojudis
@@ -353,8 +353,9 @@ function PageContent() {
             ))}
           </ul>
           <p>
-            L’estimation de valeur repose sur les ventes passées de la base DVF : elle n’intègre ni
-            l’état du bien ni son occupation. Ses limites sont détaillées sur{" "}
+            L’estimation de valeur repose sur les ventes passées de la base DVF (demandes de valeurs
+            foncières) : elle n’intègre ni l’état du bien ni son occupation. Ses limites sont
+            détaillées sur{" "}
             <Link href={MARKET_GAP_METHOD_PATH} className="font-semibold text-gold-text underline">
               la page de méthode de l’écart avec le marché
             </Link>

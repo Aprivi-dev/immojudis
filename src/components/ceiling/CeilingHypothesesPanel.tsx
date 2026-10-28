@@ -21,10 +21,13 @@ const OCCUPATION_OPTIONS: Array<{ value: OccupationCase; label: string }> = [
 ];
 
 export function CeilingHypothesesPanel({
+  id,
   hypotheses: h,
   choices,
   onChoicesChange,
 }: {
+  /** Identifiant du panneau, pour `aria-controls` du bouton qui l'ouvre. */
+  id?: string;
   hypotheses: CeilingHypotheses;
   choices: CeilingUserChoices;
   onChoicesChange: ChoicesUpdate;
@@ -47,7 +50,7 @@ export function CeilingHypothesesPanel({
     : "Selon le département du bien. Les émoluments de l’avocat poursuivant suivent le barème réglementé.";
 
   return (
-    <div className="mt-4 grid gap-5 rounded-lg border border-border bg-muted/30 p-4 sm:p-5">
+    <div id={id} className="mt-4 grid gap-5 rounded-lg border border-line bg-muted/30 p-4 sm:p-5">
       <Group title="Valeur et marge">
         <NumberField
           label="Prix au m² du bien"
@@ -83,7 +86,7 @@ export function CeilingHypothesesPanel({
                 occupation: event.target.value as OccupationCase,
               }))
             }
-            className="min-h-11 rounded-lg border border-border bg-white px-3"
+            className="min-h-11 rounded-lg border border-brand-navy/55 bg-white px-3"
           >
             {OCCUPATION_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
@@ -243,8 +246,8 @@ export function CeilingHypothesesPanel({
             onChange={(value) => set("monthlyRent", value)}
           />
           <NumberField
-            label="Charges récupérables comprises dans le loyer (€/mois)"
-            suffix="€"
+            label="Charges récupérables comprises dans le loyer"
+            suffix="€/mois"
             value={h.rent.recoverableCharges ?? null}
             zeroMeansEmpty
             hint={
@@ -314,10 +317,19 @@ function NumberField({
   onChange: (value: number | null) => void;
 }) {
   const id = useId();
+  const hintId = `${id}-hint`;
+  const errorId = `${id}-error`;
   const [draft, setDraft] = useState<string | null>(null);
+  // Un montant négatif est refusé : le message reste jusqu'à la prochaine saisie valide, au lieu
+  // de ramener le champ à sa valeur par défaut sans rien dire.
+  const [negative, setNegative] = useState(false);
   const commit = (raw: string) => {
     const number = Number(raw);
-    if (raw.trim() === "" || !Number.isFinite(number)) return onChange(null);
+    if (raw.trim() === "" || !Number.isFinite(number)) {
+      setNegative(false);
+      return onChange(null);
+    }
+    setNegative(number < 0);
     const clean = Math.max(0, number);
     onChange(zeroMeansEmpty && clean === 0 ? null : clean);
   };
@@ -325,12 +337,19 @@ function NumberField({
     if (draft != null) commit(draft);
     setDraft(null);
   };
+  const describedBy = [hint ? hintId : null, negative ? errorId : null].filter(Boolean).join(" ");
   return (
     <div className="grid content-start gap-1 text-sm">
       <label htmlFor={id} className="font-medium text-foreground">
         {label}
+        {/* L'unité fait partie du nom du champ : « Marge de sécurité (%) ». */}
+        <span className="sr-only"> ({suffix})</span>
       </label>
-      <div className="flex items-center gap-2 rounded-lg border border-border bg-white px-3 focus-within:border-gold">
+      <div
+        className={`flex items-center gap-2 rounded-lg border bg-white px-3 focus-within:border-gold-soft focus-within:ring-1 focus-within:ring-gold-soft ${
+          negative ? "border-danger" : "border-brand-navy/55"
+        }`}
+      >
         <input
           id={id}
           type="number"
@@ -339,6 +358,8 @@ function NumberField({
           step={step}
           value={draft ?? value ?? ""}
           placeholder={value != null ? String(value) : undefined}
+          aria-describedby={describedBy || undefined}
+          aria-invalid={negative || undefined}
           onChange={(event) => {
             setDraft(event.target.value);
             commit(event.target.value);
@@ -349,9 +370,20 @@ function NumberField({
           }}
           className="min-h-11 w-full bg-transparent tabular-nums outline-none"
         />
-        <span className="shrink-0 text-xs text-muted-foreground">{suffix}</span>
+        <span aria-hidden className="shrink-0 text-xs text-ink-soft">
+          {suffix}
+        </span>
       </div>
-      {hint ? <div className="text-xs leading-relaxed text-muted-foreground">{hint}</div> : null}
+      {negative ? (
+        <p id={errorId} role="alert" className="text-xs font-semibold leading-relaxed text-danger">
+          Saisissez un montant positif.
+        </p>
+      ) : null}
+      {hint ? (
+        <div id={hintId} className="text-xs leading-relaxed text-ink-soft">
+          {hint}
+        </div>
+      ) : null}
     </div>
   );
 }
