@@ -1,6 +1,6 @@
 # Inventaire des tâches planifiées
 
-Mis à jour le 26 octobre 2026 (observation du risque d'inondation et règle `pepite-v2`). Toute route `src/app/api/cron/*` doit figurer ici, dans `vercel.json`
+Mis à jour le 28 octobre 2026 (observation du risque d'inondation depuis GitHub Actions, règle `pepite-v2`, runbooks). Toute route `src/app/api/cron/*` doit figurer ici, dans `vercel.json`
 ou dans une migration `pg_cron` ; le test `src/lib/scheduled-jobs.test.ts` le vérifie.
 
 ## Tâches applicatives (routes `/api/cron/*`)
@@ -47,7 +47,8 @@ une autre version de la règle, du moteur de plafond ou d'un régime, ou évalu�
 `on` depuis le 26/10/2026 (migration `20261105100000`, décision du fondateur) : les fonctions publiques rendent les
 pépites publiables. `off` arrête le calcul ; `shadow` calcule et stocke sans rien montrer ; l'ouverture se fait par
 une migration dédiée. Un administrateur peut repasser de `on` à `shadow` avec le bouton « Suspendre les pépites » de
-`/admin/pepites` (fonction `suspend_sale_pepites`, qui ne sait jamais ouvrir).
+`/admin/pepites` (fonction `suspend_sale_pepites`, qui ne sait jamais ouvrir ; procédure :
+`docs/runbooks/pepites-arret-urgence.md`).
 Avant la migration, la route se termine sans rien faire (`skipped: not_migrated`). Même mécanisme Vault que la
 complétude, sans nouveau secret. Ordre de mise en production : code, puis migrations. La migration
 `20261104100100` lance elle-même le premier calcul à sa dernière instruction
@@ -102,6 +103,15 @@ d'inondation, lui, tourne :
   - rien n'est journalisé qui contienne une coordonnée, une URL d'appel ou une réponse de la source (seuls des codes :
     `http_503`, `timeout`, `ppri_unreadable`…) ; la table ne copie aucune coordonnée : la position n'y figure que sous
     la forme d'une empreinte tronquée, c'est une pseudonymisation (pas une anonymisation).
+- **depuis le 27/10/2026, les appels partent de GitHub Actions** : Géorisques coupe les connexions qui viennent de
+  Vercel (`network_econnreset` sur toutes les ventes). La route `/api/cron/sale-flood-risk` (pg_cron à :25, filet
+  de 05:35) ne fait plus que **déclencher** le workflow `sale-flood-risk.yml` (`workflow_dispatch`, même jeton
+  GitHub que le pipeline), suivi sous le nom `sale-flood-risk-dispatch`. Le workflow exécute
+  `src/jobs/sale-flood-risk-runner.ts` (`npm run flood-risk:build`), qui appelle le même `runSaleFloodRiskBatch`
+  (bail, cadence, paquets) et se supervise sous le nom `sale-flood-risk`, celui de `cron.stale`. La taille de lot
+  est la variable de dépôt GitHub `SALE_FLOOD_RISK_BATCH_LIMIT`. `SALE_FLOOD_RISK_RUNNER=vercel` (Vercel,
+  redéploiement) rétablit les appels depuis la route. Diagnostic des pannes (table des codes `network_*`,
+  `http_*`, `timeout`, `ppri_unreadable`, `write_busy_N`) : `docs/runbooks/georisques-pannes-inondation.md` ;
 - le code commune de chaque vente (`auction_sale_communes`, migrations `20261106100000` et `20261106100100`) vient du
   pipeline (`raw_payload.commune`, `services/data-pipeline/src/commune_insee.py`) et est recopié par le même
   traitement ; les arrondissements de Paris, Lyon et Marseille sont ramenés à 75056, 69123 et 13055 pour GASPAR, le
@@ -123,7 +133,7 @@ mélange pas les deux versions), quelle que soit la position. Le contrôle des p
 (`auction_sale_flood_risk` joint à `auction_sale_pepites`, lectures bornées et indexées) et relire à la main une
 quarantaine de ventes à position précise sur Géorisques et le Géoportail de l'urbanisme (proposition n° 7).
 
-**Étape 3 : bascule.** Un seul geste : définir **`PEPITE_RULE_V2_ENABLED=true`** dans l'environnement du serveur
+**Étape 3 : bascule** (procédure et prérequis mesurés : `docs/runbooks/pepite-v2-ouverture.md`). Un seul geste : définir **`PEPITE_RULE_V2_ENABLED=true`** dans l'environnement du serveur
 (Vercel, Production), puis redéployer. La variable, comme `SALE_FLOOD_RISK_BATCH_LIMIT`, est lue par le circuit de
 configuration commun (`src/lib/env.ts`, comme `SALE_REMINDERS_MODE`). Tant que la variable est absente ou autre chose que `true` / `1`, la règle
 appliquée est `pepite-v1`. À la bascule :
@@ -269,7 +279,8 @@ relus) est créée au premier tick du mois. Son code de sortie est noté dans `a
 | Recompute des ventes existantes           | manuel                                                    | verrou `immojudis-recompute` + verrou en base                        |
 | DVF import                                | **manuel** (`workflow_dispatch`, aucun planning)          | alerte `dvf.freshness` (donnée de plus de 220 jours)                 |
 | Information Agent Evidence                | planifié toutes les 30 min + manuel                       | analyse des pièces jointes privées de l'agent (OCR), lecture seule   |
-| Production smoke                          | planifié toutes les 30 min + manuel                       | échec du workflow ; voir `docs/operations/supervision-externe.md`    |
+| Sale flood risk                           | déclenché par `/api/cron/sale-flood-risk` + manuel        | observation du risque d'inondation depuis GitHub Actions ; `cron.stale` (3 h) ; voir `docs/runbooks/georisques-pannes-inondation.md` |
+| Production smoke                          | planifié `*/30` (en pratique toutes les 2 à 6 h) + manuel | échec du workflow ; voir `docs/operations/supervision-externe.md`    |
 | Immojudis Operational Alert               | déclenché par l'application                               | échec = incident ouvert ; avertissement = rappel ; vert = résolution |
 | Entraînement du modèle de valorisation    | manuel                                                    | rapport JSON + tableau de synthèse                                   |
 | Apply Supabase Migrations                 | manuel depuis `main`                                      | refuse si le CI du commit n'est pas vert ; contrôle de dérive        |
