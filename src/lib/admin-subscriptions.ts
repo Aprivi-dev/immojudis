@@ -148,22 +148,45 @@ export async function grantAdminSubscription({
   };
 }
 
+/** Nombre d'attributions antérieures gardées dans `metadata.manual_grant_history`. */
+export const MANUAL_GRANT_HISTORY_MAX = 10;
+
+/**
+ * Ajoute une attribution manuelle aux métadonnées d'un abonnement SANS écraser les précédentes : la
+ * précédente `manual_grant` passe en tête de `manual_grant_history` (10 entrées au plus, les plus
+ * récentes d'abord). L'historique ne garde ni note ni adresse email : la ligne est lisible par son
+ * titulaire.
+ */
+export function withManualGrant(
+  metadata: Json | null | undefined,
+  grant: Record<string, unknown>,
+): Record<string, unknown> {
+  const base = jsonObject(metadata);
+  const previous = base.manual_grant;
+  const history = Array.isArray(base.manual_grant_history) ? base.manual_grant_history : [];
+  const entries = [...(isRecord(previous) ? [previous] : []), ...history]
+    .filter(isRecord)
+    .map(({ note: _note, target_email: _targetEmail, ...entry }) => entry);
+  return {
+    ...base,
+    manual_grant: grant,
+    manual_grant_history: entries.slice(0, MANUAL_GRANT_HISTORY_MAX),
+  };
+}
+
 export function manualSubscriptionPayload({
   input,
   user,
   existing,
   grantedBy,
-  source = "admin",
 }: {
   input: AdminSubscriptionGrantPayload;
-  user: Pick<User, "id" | "email">;
+  user: Pick<User, "id">;
   existing?: Pick<
     UserSubscriptionRow,
     "metadata" | "stripe_customer_id" | "stripe_subscription_id"
   > | null;
   grantedBy: string;
-  /** Origine de l'attribution : `admin` (formulaire) ou `admin_trial_extension` (essai prolongé). */
-  source?: "admin" | "admin_trial_extension";
 }): UserSubscriptionInsert {
   return {
     user_id: user.id,
@@ -172,20 +195,23 @@ export function manualSubscriptionPayload({
     current_period_end: input.currentPeriodEnd,
     stripe_customer_id: existing?.stripe_customer_id ?? null,
     stripe_subscription_id: existing?.stripe_subscription_id ?? null,
-    metadata: asJson({
-      ...jsonObject(existing?.metadata),
-      manual_grant: {
-        source,
+    // Pas d'adresse email recopiée ici : aucun lecteur, et elle deviendrait fausse si l'adresse change.
+    metadata: asJson(
+      withManualGrant(existing?.metadata, {
+        source: "admin",
         granted_by: grantedBy,
         granted_at: new Date().toISOString(),
-        target_email: user.email ?? null,
         plan_code: input.planCode,
         status: input.status,
         current_period_end: input.currentPeriodEnd,
         note: input.note,
-      },
-    }),
+      }),
+    ),
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 export async function assertAdminAuth(authToken: string) {

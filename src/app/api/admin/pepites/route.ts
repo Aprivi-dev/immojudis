@@ -31,8 +31,10 @@ async function handleGET(request: Request) {
 /** Arrêt d'urgence : « on » vers « shadow » ou « off » seulement (jamais l'ouverture). */
 async function handlePOST(request: Request) {
   try {
+    // Le jeton d'abord : sans session, la réponse est 401, que le corps soit valide ou non.
+    const authToken = bearerTokenFromRequest(request);
     const input = adminPepitesSuspendSchema.parse(await request.json().catch(() => ({})));
-    const result = await suspendAdminPepites(bearerTokenFromRequest(request), input);
+    const result = await suspendAdminPepites(authToken, input);
     return NextResponse.json(result, { headers: { "cache-control": "private, no-store" } });
   } catch (error) {
     return adminErrorResponse(error, {

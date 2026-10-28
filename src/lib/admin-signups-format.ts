@@ -24,6 +24,11 @@ export const ADMIN_SIGNUP_ACCESS_LABELS: Record<AdminSignupAccess, string> = {
   decouverte: "Découverte",
 };
 
+/** Durée maximale d'une prolongation d'essai, à compter de maintenant. */
+export const TRIAL_EXTENSION_MAX_DAYS = 90;
+/** Nombre maximal de comptes prolongés par appel. */
+export const TRIAL_EXTENSION_MAX_ACCOUNTS = 25;
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Ancienneté d'un compte : « aujourd’hui », « 3 jours », « 2 mois », « 1 an et 2 mois ». */

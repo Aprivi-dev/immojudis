@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Json } from "@/integrations/supabase/types";
 
 const mocks = vi.hoisted(() => ({
   requireAuth: vi.fn(),
@@ -19,7 +20,9 @@ vi.mock("@/integrations/supabase/client.server", () => ({
 import {
   adminSubscriptionGrantInputSchema,
   listAdminSubscriptions,
+  MANUAL_GRANT_HISTORY_MAX,
   manualSubscriptionPayload,
+  withManualGrant,
 } from "@/lib/admin-subscriptions";
 
 afterEach(() => vi.resetAllMocks());
@@ -67,12 +70,60 @@ describe("admin subscriptions", () => {
       manual_grant: {
         source: "admin",
         granted_by: "3f1a1d80-8163-46b8-84de-fcfef5875652",
-        target_email: "investisseur@example.test",
         plan_code: "analyse",
         status: "trialing",
         note: "Accès pilote",
       },
     });
+  });
+
+  it("ne recopie pas l'adresse email et garde l'attribution précédente en historique", () => {
+    const input = adminSubscriptionGrantInputSchema.parse({
+      target: "investisseur@example.test",
+      planCode: "analyse",
+      status: "active",
+      note: "Deuxième accès",
+    });
+    const payload = manualSubscriptionPayload({
+      input,
+      user: { id: "b8d4f60a-9e58-4a4c-83d7-30874062a395" },
+      grantedBy: "3f1a1d80-8163-46b8-84de-fcfef5875652",
+      existing: {
+        stripe_customer_id: null,
+        stripe_subscription_id: null,
+        metadata: {
+          manual_grant: {
+            source: "admin",
+            note: "Premier accès",
+            target_email: "investisseur@example.test",
+            status: "trialing",
+          },
+        },
+      },
+    });
+
+    const metadata = payload.metadata as {
+      manual_grant: Record<string, unknown>;
+      manual_grant_history: Array<Record<string, unknown>>;
+    };
+    expect(metadata.manual_grant).not.toHaveProperty("target_email");
+    expect(metadata.manual_grant).toMatchObject({ note: "Deuxième accès", status: "active" });
+    expect(metadata.manual_grant_history).toEqual([{ source: "admin", status: "trialing" }]);
+    expect(JSON.stringify(payload.metadata)).not.toContain("investisseur@example.test");
+  });
+
+  it("garde dix attributions au plus, les plus récentes d'abord", () => {
+    let metadata: Json = {};
+    for (let index = 1; index <= 13; index += 1) {
+      metadata = withManualGrant(metadata, { source: "admin", sequence: index }) as Json;
+    }
+    const { manual_grant: current, manual_grant_history: history } = metadata as unknown as {
+      manual_grant: { sequence: number };
+      manual_grant_history: Array<{ sequence: number }>;
+    };
+    expect(current.sequence).toBe(13);
+    expect(history).toHaveLength(MANUAL_GRANT_HISTORY_MAX);
+    expect(history.map((entry) => entry.sequence)).toEqual([12, 11, 10, 9, 8, 7, 6, 5, 4, 3]);
   });
 
   it("resolves every email on a 100-row admin page", async () => {
