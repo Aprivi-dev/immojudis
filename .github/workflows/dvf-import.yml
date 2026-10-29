@@ -212,3 +212,11 @@ jobs:
 
           sys.exit(0)
           PY
+
+      # Marché local par commune (règle de pépite pepite-v1.2, migration 20261109120100) : recalculé une fois, à la
+      # suite de l'import, depuis dvf_transactions. Même déclenchement manuel que l'import : aucune planification.
+      - name: Refresh commune market trends
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: python -m src.dvf_market_trends
