@@ -47,6 +47,19 @@ const operations = Object.freeze([
     keyColumns: ["run_id", "canonical_source_url"],
     expectedFragments: ["auction_collection_items", "run_id", "canonical_source_url"],
   }),
+  // Règle de pépite pepite-v1.2 (migration 20261109130000) : marché local par commune et type de logement.
+  // dvf_transactions compte 6,26 millions de lignes.
+  Object.freeze({
+    operationKey: "20261109130000:dvf_transactions_insee_type_sale_date_idx",
+    schemaName: "public",
+    tableName: "dvf_transactions",
+    indexName: "dvf_transactions_insee_type_sale_date_idx",
+    createSql:
+      'create index concurrently if not exists "dvf_transactions_insee_type_sale_date_idx" on "public"."dvf_transactions" ("insee_code", "property_type", "sale_date")',
+    accessMethod: "btree",
+    keyColumns: ["insee_code", "property_type", "sale_date"],
+    expectedFragments: ["dvf_transactions", "insee_code", "property_type", "sale_date"],
+  }),
 ]);
 
 function connectionUrl() {
@@ -244,10 +257,12 @@ async function runConcurrentIndexOperations({
       connect_timeout: Number.parseInt(process.env.PGCONNECT_TIMEOUT || "60", 10),
       ssl: resolveSslOptions(sessionUrl),
     });
+    // Toutes les lignes enregistrées par les migrations (clé « horodatage:index ») : seules les opérations de la
+    // liste blanche ci-dessus sont exécutées, une ligne inconnue de la liste est ignorée.
     const rows = await sql`
       select operation_key, schema_name, table_name, index_name, create_sql, status
         from app_private.concurrent_index_operations
-       where operation_key like '20261008102334:%'
+       where operation_key ~ '^[0-9]{14}:[a-z0-9_]+$'
     `;
     const byKey = new Map(rows.map((row) => [String(row.operation_key), row]));
     for (const operation of operations) {

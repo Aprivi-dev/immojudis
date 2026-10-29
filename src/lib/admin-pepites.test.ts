@@ -251,6 +251,62 @@ describe("parseAdminPepiteRow", () => {
     expect(withFlood(undefined)).toBe("Aucun risque d’inondation élevé identifié");
   });
 
+  it("lit le DPE, le coût énergétique, le marché local et les badges du détail (pepite-v1.2)", () => {
+    const parsed = parseAdminPepiteRow({
+      ...row,
+      reason_codes: [
+        "pass:size_value_supported",
+        "pass:market_liquid",
+        "fail:market_not_declining",
+        "fail:no_copro_distress",
+      ],
+      details: {
+        ...(row.details as Record<string, unknown>),
+        dpeClass: "G",
+        energyRenovationEur: 24_000,
+        market: {
+          propertyType: "Maison",
+          aggregateAbsent: false,
+          sales12Months: 41,
+          trendEvaluated: true,
+          declinePct: 18.5,
+        },
+        badges: [{ key: "double_exit", label: "Double sortie" }, { key: "x" }, null],
+      },
+    });
+    expect(parsed).toMatchObject({
+      dpeClass: "G",
+      energyRenovationEur: 24_000,
+      badges: ["Double sortie"],
+      marketNote:
+        "Marché local (Maison) : 41 ventes sur 12 mois, prix médian au m² en baisse de 18.5 % en 3 ans",
+    });
+    expect(parsed?.passed.some((label) => /au plus 250 m² habitables/.test(label))).toBe(true);
+    expect(parsed?.passed.some((label) => /Marché local liquide/.test(label))).toBe(true);
+    expect(parsed?.missed.some((label) => /baisse de plus de 15 %/.test(label))).toBe(true);
+    expect(parsed?.missed.some((label) => /Copropriété en difficulté/.test(label))).toBe(true);
+  });
+
+  it("note l'absence de DPE, de marché et de badge pour une évaluation d'une version antérieure", () => {
+    const parsed = parseAdminPepiteRow(row);
+    expect(parsed).toMatchObject({
+      dpeClass: null,
+      energyRenovationEur: null,
+      marketNote: null,
+      badges: [],
+    });
+    const absent = parseAdminPepiteRow({
+      ...row,
+      details: {
+        ...(row.details as Record<string, unknown>),
+        market: { propertyType: "Maison", aggregateAbsent: true },
+      },
+    });
+    expect(absent?.marketNote).toBe(
+      "Marché local : aucune donnée DVF pour la commune (Maison), critères réussis faute de donnée",
+    );
+  });
+
   it("classe : publiée, à confirmer, presque pépite", () => {
     expect(parseAdminPepiteRow({ ...row, is_pepite: false, status: "pepite" })?.category).toBe(
       "pending",
@@ -565,7 +621,7 @@ describe("getAdminPepites", () => {
     });
     expect(result.migrated).toBe(true);
     expect(result.mode).toBe("shadow");
-    expect(result.ruleVersion).toBe("pepite-v1.1");
+    expect(result.ruleVersion).toBe("pepite-v1.2");
     expect(result.counters.map((counter) => counter.venue)).toEqual([
       "tribunal",
       "notary",

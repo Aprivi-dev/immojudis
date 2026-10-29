@@ -1,0 +1,46 @@
+name: Refresh commune market trends
+
+# Recalcule app_private.commune_market_trends (marché local de la règle de pépite pepite-v1.2) depuis
+# dvf_transactions, sans réimporter DVF : premier calcul après la migration 20261109130100, ou nouveau calcul à la
+# demande. L'import DVF (dvf-import.yml) le recalcule déjà à la fin de son étape d'import. Aucune planification.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: immojudis-dvf-import
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    # Receives SUPABASE_DB_URL: only the code of `main` may run with it (a dispatch from another branch
+    # would run that branch's code with the production secret).
+    if: github.ref == 'refs/heads/main'
+    name: Refresh commune market trends
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: services/data-pipeline
+    env:
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/data-pipeline/requirements.lock
+
+      - name: Install Python dependencies
+        run: python -m pip install --require-hashes -r requirements.lock
+
+      - name: Refresh commune market trends
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: python -m src.dvf_market_trends

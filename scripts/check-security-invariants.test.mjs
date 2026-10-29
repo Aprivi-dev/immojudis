@@ -558,6 +558,90 @@ describe("invariants de sécurité : risque d'inondation", () => {
   });
 });
 
+describe("invariants de sécurité : marché local de la règle pepite-v1.2", () => {
+  const file = "20261109130100_commune_market_trends.sql";
+
+  it("passe sur les sources et la migration du dépôt", () => {
+    const result = runInvariants();
+    expect(result.stderr).toBe("");
+    expect(result.status).toBe(0);
+  });
+
+  it("refuse un module qui nomme l'agrégat privé hors du module de lecture de la règle", () => {
+    const result = runInvariants({}, [], {
+      "src/lib/rogue-market-reader.ts": 'export const table = "commune_market_trends";\n',
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "src/lib/rogue-market-reader.ts names the private commune_market_trends aggregate",
+    );
+  });
+
+  it("refuse que les nouveaux modules de la règle lisent un avocat, un sponsoring ou investment_score", () => {
+    for (const [module, column] of [
+      ["src/lib/pepite-badges.ts", "investment_score"],
+      ["src/lib/pepite-copro.ts", "lawyer_name"],
+      ["src/lib/pepite-energy.ts", "paid_placement_status"],
+      ["src/lib/pepite-market.ts", "sponsored"],
+      ["src/lib/pepite-context.server.ts", "referenced_lawyers"],
+    ]) {
+      const result = runInvariants({}, [], {
+        [module]: `export const column = "${column}";\n`,
+      });
+      expect(result.status, module).toBe(1);
+      expect(result.stderr, module).toContain(module);
+    }
+  });
+
+  it("refuse la migration de l'agrégat sans row level security", () => {
+    const bad = migration(file).replace(
+      /alter table app_private\.commune_market_trends enable row level security;/i,
+      "",
+    );
+    expect(bad).not.toBe(migration(file));
+    const result = runInvariants({ [file]: bad }, [file]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(`${file} does not enable row level security on the aggregate`);
+  });
+
+  it("refuse un droit donné à anon, authenticated ou public sur l'agrégat ou ses fonctions", () => {
+    for (const role of ["anon", "authenticated", "public"]) {
+      const bad = `${migration(file)}\ngrant select on table app_private.commune_market_trends to ${role};\n`;
+      const result = runInvariants({ [file]: bad }, [file]);
+      expect(result.status, role).toBe(1);
+      expect(result.stderr).toContain(
+        `${file} grants a right on the commune market trends objects to anon, authenticated or public`,
+      );
+    }
+  });
+
+  it("refuse un recalcul qui n'est pas SECURITY DEFINER à chemin de recherche vide", () => {
+    const bad = migration(file).replace(
+      /(create or replace function app_private\.refresh_commune_market_trends[\s\S]*?)security definer\n/,
+      "$1",
+    );
+    expect(bad).not.toBe(migration(file));
+    const result = runInvariants({ [file]: bad }, [file]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "app_private.refresh_commune_market_trends must be SECURITY DEFINER with an empty search_path",
+    );
+  });
+
+  it("refuse la lecture publique en SECURITY DEFINER", () => {
+    const bad = migration(file).replace(
+      /(create or replace function public\.get_commune_market_trends[\s\S]*?)security invoker/,
+      "$1security definer",
+    );
+    expect(bad).not.toBe(migration(file));
+    const result = runInvariants({ [file]: bad }, [file]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "public.get_commune_market_trends must not be SECURITY DEFINER",
+    );
+  });
+});
+
 describe("invariants de sécurité : surfaces ajoutées après le 03/11/2026", () => {
   const source = (path) => readFileSync(join(repo, path), "utf8");
   const table = (name, extra = "") => `

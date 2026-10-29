@@ -10,7 +10,7 @@ export const maxDuration = 300;
 const CATCH_UP_SCHEDULE = "42 5 * * *";
 
 /**
- * Calcule la pépite des ventes en ligne et la stocke (règle `pepite-v1.1`, voir
+ * Calcule la pépite des ventes en ligne et la stocke (règle `pepite-v1.2`, ou `pepite-v2.1` interrupteur ouvert, voir
  * `src/lib/sale-pepites-batch.ts`). Même protection que les autres routes planifiées : jeton
  * `CRON_SECRET`, supervision par `runMonitoredCron`, reprise sur erreur réseau.
  */
