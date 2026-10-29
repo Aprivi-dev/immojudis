@@ -90,10 +90,11 @@ def test_urls_and_sales_of_a_withdrawn_source_are_recognised(monkeypatch) -> Non
     assert source_withdrawal.source_of_url("https://www.licitor.com/photos/1.jpg") == "licitor"
     assert source_withdrawal.source_of_url("https://cdn.licitor.com/x.pdf") == "licitor"
     assert source_withdrawal.source_of_url("https://notlicitor.com/x.pdf") is None
-    assert source_withdrawal.source_of_url("https://www.vench.fr/x") is None
+    assert source_withdrawal.source_of_url("https://avoventes.fr/x") is None
+    assert source_withdrawal.source_of_url("https://document.vench.fr/x.pdf") == "vench"
     assert source_withdrawal.source_of_url(None) is None
     assert source_withdrawal.is_withdrawn_source_url("https://www.licitor.com/doc.pdf")
-    assert not source_withdrawal.is_withdrawn_source_url("https://www.vench.fr/doc.pdf")
+    assert not source_withdrawal.is_withdrawn_source_url("https://avoventes.fr/doc.pdf")
 
     only = SimpleNamespace(source_name="licitor", observations=[{"source_name": "licitor"}])
     no_observation = SimpleNamespace(source_name="Licitor", observations=[])

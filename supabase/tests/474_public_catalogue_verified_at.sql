@@ -31,7 +31,7 @@ select is(
 -- sources ACTIVES qui ont au moins une vente visible à venir (et non plus le MAX de toutes les sources) ;
 -- depuis 20261031100200 (point 3 de la relecture), une source du périmètre sans publication complète rend
 -- la date inconnue (NULL). Les cas de périmètre sont dans les tests 590 et 652 ; ici, les valeurs de base.
-update public.auction_source_state set enabled = false, last_publication_complete_at = null;
+update public.auction_source_state set enabled = false, catalogue_withdrawn = false, last_publication_complete_at = null;
 
 -- Une vente à venir par source du périmètre : licitor, vench, notaires, avoventes, agrasc.
 insert into public.auction_sales (id, source_name, source_url, title, status, sale_date, raw_payload)
