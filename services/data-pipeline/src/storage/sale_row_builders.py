@@ -26,6 +26,15 @@ def _secondary_source_urls(sales: list[AuctionSale]) -> list[str]:
     return urls
 
 
+def _projection_payload(quarantine: str | None) -> dict[str, object]:
+    """``raw_payload`` of properties and judicial_sales: the quarantine marker only.
+
+    Nothing reads the rest there (the app, the views and the pipeline read auction_sales): copying the whole payload
+    made every publication write it three times. The marker stays, the rows being readable under RLS.
+    """
+    return {"publication_quarantine": quarantine} if quarantine else {}
+
+
 def _property_rows_for_sales(
     sales: list[AuctionSale],
     now: str,
@@ -44,7 +53,7 @@ def _property_rows_for_sales(
         row = {column: data.get(column) for column in PROPERTY_COLUMNS}
         row["primary_source"] = row.get("primary_source") or row.get("source_name")
         row["source_urls"] = _normalized_source_urls(sale, data)
-        row["raw_payload"] = data.get("raw_payload") if isinstance(data.get("raw_payload"), dict) else {}
+        row["raw_payload"] = _projection_payload(reason)
         row["last_seen_at"] = now if refresh_last_seen else data.get("last_seen_at") or now
         rows.append(redact_storage_row(row))
     return rows
@@ -77,7 +86,7 @@ def _judicial_sale_rows_for_sales(
         row["documents_count"] = len(documents) if isinstance(documents, list) else 0
         row["score_factors"] = data.get("score_factors") if isinstance(data.get("score_factors"), list) else []
         row["quality_flags"] = data.get("quality_flags") if isinstance(data.get("quality_flags"), list) else []
-        row["raw_payload"] = data.get("raw_payload") if isinstance(data.get("raw_payload"), dict) else {}
+        row["raw_payload"] = _projection_payload(reason)
         row["last_seen_at"] = now if refresh_last_seen else data.get("last_seen_at") or now
         rows.append(redact_storage_row(row))
     return rows

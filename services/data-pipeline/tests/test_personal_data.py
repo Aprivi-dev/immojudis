@@ -153,8 +153,10 @@ def test_normalized_tables_and_risk_excerpts_are_redacted() -> None:
     properties = sale_row_builders._property_rows_for_sales([sale], "2026-07-06T10:00:00+00:00")
     judicial = sale_row_builders._judicial_sale_rows_for_sales([sale], "2026-07-06T10:00:00+00:00")
     assert properties[0]["description"] == "Appartement occupé par un occupant suivant bail."
-    assert properties[0]["raw_payload"]["source_description"] == "À la requête du créancier poursuivant."
-    assert judicial[0]["raw_payload"]["source_blocks"] == {"detail": {"Occupation": "Locataire"}}
+    # The projections no longer copy the source payload: no name can leak through it.
+    assert set(properties[0]["raw_payload"]) <= {"publication_quarantine"}
+    assert set(judicial[0]["raw_payload"]) <= {"publication_quarantine"}
+    assert "DUPONT" not in str(properties[0]) and "FAURE" not in str(judicial[0])
 
     occurrence = sale_row_builders._public_occurrence_row(
         {

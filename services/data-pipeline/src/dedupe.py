@@ -302,7 +302,7 @@ def _merge_into(target: AuctionSale, source: AuctionSale, confidence: str) -> Au
             ):
                 current["superseded_analysis"] = deepcopy(incoming["superseded_analysis"])
             current.setdefault("merged_sources", [])
-            summary = _observation_summary(source)
+            summary = _observation_summary(source, slim_payload=True)
             current["merged_sources"] = _with_merged_source(current["merged_sources"], summary)
 
     if source.raw_text and source.raw_text not in (target.raw_text or ""):
@@ -348,7 +348,24 @@ def _new_observations(target: AuctionSale, source: AuctionSale) -> list[dict[str
     return [item for item in observations if isinstance(item, dict) and item.get("source_url") not in existing_urls]
 
 
-def _observation_summary(sale: AuctionSale) -> dict[str, Any]:
+# What a ``merged_sources`` copy keeps of the source payload: what enrichment reads from it
+# (``extract_structured._source_payloads_for_sale``: identity, text blocks, page text and the description keys
+# ``SOURCE_DESCRIPTION_KEYS``, kept in step by a test). Derived analyses (asset normalisation, scores, conflicts,
+# observations…) are recomputed on the merged sale itself; copying them made each copy about 85 KB.
+MERGED_SOURCE_PAYLOAD_KEYS = frozenset({
+    "source_name", "source_url", "external_id", "source_blocks", "raw_text",
+    "source_description", "description", "descriptif", "designation", "désignation",
+    "renseignements_de_vente", "criteres_resume", "complement", "body",
+})
+
+
+def _merged_source_payload(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {}
+    return deepcopy({key: value for key, value in payload.items() if key in MERGED_SOURCE_PAYLOAD_KEYS})
+
+
+def _observation_summary(sale: AuctionSale, *, slim_payload: bool = False) -> dict[str, Any]:
     return {
         "source_name": sale.source_name,
         "source_url": sale.source_url,
@@ -362,7 +379,7 @@ def _observation_summary(sale: AuctionSale) -> dict[str, Any]:
         # A summary becomes part of the primary payload. Copy the source
         # graph so merging two models that share a raw_payload cannot create a
         # back-reference from merged_sources to the payload being built.
-        "raw_payload": deepcopy(sale.raw_payload),
+        "raw_payload": _merged_source_payload(sale.raw_payload) if slim_payload else deepcopy(sale.raw_payload),
     }
 
 
