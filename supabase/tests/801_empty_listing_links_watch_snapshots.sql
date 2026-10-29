@@ -1,4 +1,4 @@
--- 20261108204300 : un cliché de surveillance né d'une correspondance d'alerte ne protège pas une annonce vide
+-- 20261109110000 : un cliché de surveillance né d'une correspondance d'alerte ne protège pas une annonce vide
 -- (comme user_alert_matches) ; un favori la protège toujours, par sa propre table.
 begin;
 
