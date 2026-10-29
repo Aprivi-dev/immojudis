@@ -146,6 +146,30 @@
   justify-self: end;
   white-space: nowrap;
 }
+/* Rappel sur le prix de départ, en tête de « L'essentiel à savoir ». */
+.infoRow strong {
+  color: var(--info);
+}
+.todo {
+  color: var(--brand-navy) !important;
+  font-weight: 600;
+}
+.todo > span {
+  color: var(--ink-soft);
+  font-weight: 400;
+}
+.missingLine {
+  margin: 14px 0 0;
+  color: var(--ink-strong);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.checksNote {
+  margin: 12px 0 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.5;
+}
 .checksEmpty {
   margin: 16px 0 0;
   color: var(--ink-soft);

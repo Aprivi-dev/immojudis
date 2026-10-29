@@ -322,7 +322,7 @@ describe("CeilingPlanner readability", () => {
     renderPlanner();
     const simulator = screen
       .getByRole("heading", { name: "Si vous l’emportez à…" })
-      .closest("section")!;
+      .closest("details")!;
 
     for (const name of ["adjudication", "émoluments"]) {
       expect(within(simulator).getByRole("button", { name: `Définition : ${name}` })).toBeTruthy();
@@ -368,7 +368,7 @@ describe("CeilingPlanner : vocabulaire du plafond", () => {
     ).toBeTruthy();
     const simulator = screen
       .getByRole("heading", { name: "Si vous l’emportez à…" })
-      .closest("section")!;
+      .closest("details")!;
     expect(
       within(simulator).getByRole("button", { name: "Définition : frais préalables" }),
     ).toBeTruthy();
@@ -424,7 +424,7 @@ describe("CeilingPlanner : simulateur d'enchère", () => {
     renderPlanner();
     const simulator = screen
       .getByRole("heading", { name: "Si vous l’emportez à…" })
-      .closest("section")!;
+      .closest("details")!;
     const before = simulator.textContent;
     fireEvent.change(field(), { target: { value: "" } });
     expect(field().value).toBe("");
@@ -502,7 +502,7 @@ describe("CeilingPlanner : ventes notariales", () => {
       /ench[èe]re|adjudication/i,
     );
     const cash = within(
-      screen.getByRole("heading", { name: "Trésorerie à prévoir" }).parentElement!,
+      screen.getByRole("heading", { name: "Trésorerie à prévoir" }).closest("details")!,
     );
     expect(cash.getByText("Avant-contrat")).toBeTruthy();
     expect(cash.queryByText(/surenchère|Honoraires de votre avocat|Garantie/)).toBeNull();
@@ -516,7 +516,7 @@ describe("CeilingPlanner : ventes notariales", () => {
     expect(screen.getByRole("heading", { name: "À vérifier avant la vente" })).toBeTruthy();
     expect(screen.getByRole("button", { name: /^Mise à prix · / })).toBeTruthy();
     const cash = within(
-      screen.getByRole("heading", { name: "Trésorerie à prévoir" }).parentElement!,
+      screen.getByRole("heading", { name: "Trésorerie à prévoir" }).closest("details")!,
     );
     expect(cash.getByText("Garantie à déposer")).toBeTruthy();
     expect(cash.getByText("Fin du délai de surenchère")).toBeTruthy();

@@ -209,11 +209,10 @@ describe("integrated scenario workspace", () => {
     expect(screen.queryByRole("button", { name: /Copier le message/i })).toBeNull();
   });
 
-  it("propagates the works total of « Détail de vos travaux » to the hero, financing and the bid ceiling", async () => {
+  it("propagates the works total of « Détail de vos travaux » to financing and the bid ceiling", async () => {
     renderDetail();
     await addWorksPoste({ kind: "peinture", quantity: "2", unitCost: "1100" });
 
-    await waitFor(() => expect(screen.getByText("Votre scénario")).toBeTruthy());
     const expectedProjectCost = computeAcquisitionCosts({
       price: sale.starting_price_eur!,
       works: 2_200,

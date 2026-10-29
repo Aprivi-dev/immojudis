@@ -11,6 +11,7 @@ export type SaleDetailTab =
   | "statistiques"
   | "travaux"
   | "financement"
+  | "quartier"
   | "demarches";
 
 export const SALE_DETAIL_TABS: ReadonlyArray<{
@@ -22,6 +23,7 @@ export const SALE_DETAIL_TABS: ReadonlyArray<{
   { id: "statistiques", label: "Statistiques" },
   { id: "travaux", label: "Travaux" },
   { id: "financement", label: "Financement" },
+  { id: "quartier", label: "Quartier" },
   { id: "demarches", label: "Démarches" },
 ];
 

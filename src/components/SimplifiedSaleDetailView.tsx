@@ -22,8 +22,6 @@ import { useSalePepite } from "@/hooks/use-sale-pepite";
 import { adjudicationVersusCeilingLine } from "@/lib/adjudication-vs-ceiling";
 import type { SaleUnlockResult, SaleUnlockStatus } from "@/lib/sale-unlocks";
 import { AuctionScenariosSection } from "@/components/sale-detail/AuctionScenariosSection";
-import { ListingEnvironmentalRisks } from "@/components/sale-detail/ListingEnvironmentalRisks";
-import { ListingWeatherHistory } from "@/components/sale-detail/ListingWeatherHistory";
 import { EXAMPLE_COMMUNE_RISKS } from "@/lib/example-commune-risks";
 import { SaleProcedurePanel } from "@/components/SaleProcedurePanel";
 import { ProfessionalPilotLauncher } from "@/components/ProfessionalPilotLauncher";
@@ -33,12 +31,35 @@ import { buildStatePilot } from "@/lib/professional-pilot-state";
 import {
   ListingActions,
   ListingOverview,
+  isPersistedSaleId,
   type CeilingWording,
+  type OverviewAction,
   SaleDetailHeading,
   ListingPracticalDetails,
   ListingDescription,
   ListingLocation,
 } from "@/components/sale-detail/SaleListing";
+import { FavoriteButton } from "@/components/FavoriteButton";
+import { MarketReference } from "@/components/sale-detail/MarketReference";
+import {
+  FIRST_AUCTION_GUIDE_TITLE_ID,
+  FirstAuctionGuide,
+  useFirstAuctionGuide,
+} from "@/components/sale-detail/FirstAuctionGuide";
+import { SaleTimeline } from "@/components/sale-detail/SaleTimeline";
+import {
+  PriceSummaryCard,
+  type PriceSummaryCeiling,
+  type PriceSummaryValue,
+} from "@/components/sale-detail/PriceSummaryCard";
+import { MobileActionBar } from "@/components/sale-detail/MobileActionBar";
+import overviewStyles from "@/components/sale-detail/SaleOverview.module.css";
+import { Terme } from "@/components/ceiling/Terme";
+import { buildValuePreview, type ValuePreview } from "@/lib/value-preview";
+import { marketGapWithheldReason } from "@/lib/market-gap-band";
+import { loginPathWithRedirect, saleDetailPath } from "@/lib/navigation";
+import { POINTS_TO_VERIFY_ANCHOR } from "@/lib/search/points-to-verify";
+import { focusUnlockPanel, UNLOCK_PANEL_ID } from "@/components/sale-detail/UnlockCallToAction";
 import { ListingBudget } from "@/components/sale-detail/ListingBudget";
 import { ListingCharacteristics } from "@/components/sale-detail/ListingCharacteristics";
 import { ListingChecks, ListingPreparation } from "@/components/sale-detail/ListingPreparation";
@@ -52,20 +73,20 @@ import {
   fetchPrecomputedMarketEstimate,
   fetchSaleAiReviewProjections,
   fetchSaleFactReliabilities,
+  fetchValuePreview,
 } from "@/lib/client-api";
 import type { MarketEstimate } from "@/lib/market.server";
 import { isDetailedMarketEstimate } from "@/lib/market-estimate-ceiling";
 import { computeAcquisitionCosts } from "@/lib/profitability";
-import { maxWorksAtBid } from "@/lib/bid-ceiling-engine";
+import { ceilingConfidence, maxWorksAtBid } from "@/lib/bid-ceiling-engine";
 import { ceilingTermsFor, feeRegimeKeysForVenue, type FeeRegimeKey } from "@/lib/fee-regime";
-import { estimatedFeeItems } from "@/lib/bid-ceiling-engine";
 import { assessSaleCeilingInputs, computeSaleCeiling } from "@/lib/sale-ceiling";
 import { RentalMarketBlockLazy } from "@/components/sale-detail/RentalMarketBlockLazy";
 import { getSaleSurface } from "@/lib/surface";
 import type { HousingTension } from "@/lib/housing-tension";
 import type { RentReference } from "@/lib/rent-reference";
 import type { CeilingUserChoices } from "@/lib/bid-ceiling-defaults";
-import { ceilingGap, valueGapReason } from "@/lib/bid-ceiling-gaps";
+import { ceilingGap, UNPROFITABLE_HEADLINE, valueGapReason } from "@/lib/bid-ceiling-gaps";
 import { buildDpeAnalysis } from "@/lib/dpe-analysis";
 import { CeilingPlanner } from "@/components/ceiling/CeilingPlanner";
 import { LaunchOfferIncludedTag } from "@/components/LaunchOfferIncludedTag";
@@ -113,7 +134,6 @@ import {
   LawyerSection,
   PanelIntro,
   SaleDocumentsSection,
-  UrbanismeSection,
 } from "@/components/sale-detail/SaleDetailSections";
 
 const ListingStatistics = dynamic(
@@ -163,6 +183,27 @@ const FinancingSimulator = dynamic(
   {
     loading: () => <p className="p-6 text-sm text-muted-foreground">Chargement du financement…</p>,
   },
+);
+// Onglet Quartier : chargé à la demande, hors du JavaScript initial de la fiche (il n'est pas
+// l'onglet d'arrivée).
+const UrbanismeSection = dynamic(
+  () =>
+    import("@/components/sale-detail/UrbanismeSection").then((module) => module.UrbanismeSection),
+  {
+    loading: () => (
+      <p className="p-6 text-sm text-muted-foreground">Chargement de l’urbanisme et du cadastre…</p>
+    ),
+  },
+);
+const ListingEnvironmentalRisks = dynamic(() =>
+  import("@/components/sale-detail/ListingEnvironmentalRisks").then(
+    (module) => module.ListingEnvironmentalRisks,
+  ),
+);
+const ListingWeatherHistory = dynamic(() =>
+  import("@/components/sale-detail/ListingWeatherHistory").then(
+    (module) => module.ListingWeatherHistory,
+  ),
 );
 const ListingRental = dynamic(() =>
   import("@/components/sale-detail/ListingRental").then((module) => module.ListingRental),
@@ -495,19 +536,13 @@ function SaleDetailWorkspace({
     ],
   );
   const { enabled: ceilingEnabled, hypotheses: ceilingHypotheses, plan: ceilingPlan } = ceiling;
-  // Le vocabulaire du plafond de cette vente (« offre plafond », « première offre possible »…) et
-  // les frais importants qui viennent d'une valeur par défaut, pour le hero et le panneau de prix.
-  const estimatedFees = useMemo(
-    () => (ceilingEnabled ? estimatedFeeItems(ceilingHypotheses) : []),
-    [ceilingEnabled, ceilingHypotheses],
-  );
+  // Le vocabulaire du plafond de cette vente (« offre plafond », « première offre possible »…), pour
+  // le haut de page et le panneau de prix.
   const ceilingWording: CeilingWording | null = feeRegime
     ? {
         label: feeRegime.labels.ceilingSimulationLabel,
         terms: feeRegime.labels,
         byOffers: feeRegime.labels.byOffers,
-        reserveNotice: feeRegime.labels.planner.reserveNotice ?? null,
-        estimatedFees,
       }
     : venueCeilingTerms
       ? { label: venueCeilingTerms.ceilingSimulationLabel }
@@ -595,21 +630,129 @@ function SaleDetailWorkspace({
     ceilingTerm: feeRegime?.labels.ceilingTerm,
     byOffers: feeRegime?.labels.byOffers,
   });
-  const ceilingContext =
-    heroCeiling != null
+  // Repère marché et carte « Le prix » : la fourchette de valeur du même aperçu que le panneau de
+  // prix (clé de requête partagée). Un visiteur n'y a pas droit ; l'annonce exemple la calcule sur
+  // son estimation fictive. Rien tant que la valeur ou le prix sont en cours de vérification.
+  const valuePreviewQuery = useQuery({
+    queryKey: ["value-preview", sale.id],
+    queryFn: () => fetchValuePreview(sale.id),
+    enabled: Boolean(user) && !publicDemo,
+    staleTime: 60 * 60_000,
+    retry: false,
+  });
+  const valueGuarded = Boolean(valuationConflict || criticalAnalysisInputsBlocked || priceBlocked);
+  const startingPrice =
+    priceBlocked || !((displaySale.starting_price_eur ?? 0) > 0)
+      ? null
+      : displaySale.starting_price_eur!;
+  const rawValuePreview = valueGuarded
+    ? null
+    : publicDemo
+      ? marketEstimateOverride
+        ? buildValuePreview(marketEstimateOverride, startingPrice, displaySale.occupancy_status)
+        : null
+      : user && valuePreviewQuery.data?.available
+        ? valuePreviewQuery.data
+        : null;
+  // Le serveur retient l'écart sur l'occupation brute ; la fiche le retient aussi quand l'occupation
+  // affichée n'est pas un bien libre connu (relecture IA en cours : `displaySale` la met à `null`).
+  const occupancyGapWithheld = marketGapWithheldReason(displaySale.occupancy_status);
+  const valuePreview: ValuePreview | null =
+    rawValuePreview && occupancyGapWithheld && !rawValuePreview.gapWithheld
       ? {
-          worksAmount: ceilingHypotheses.works.amount,
-          worksPriced: ceilingChoices.choices.works != null || personalWorksBudget != null,
-          marginPct: ceilingPlan.marginPct + ceilingPlan.dataMarginPct,
-          valueAmount: ceilingHypotheses.value.amount,
-          valueSource:
-            ceilingHypotheses.value.source === "saisie"
-              ? "votre prix au m²"
-              : (marketEstimate?.source ?? "DVF"),
-          valueDate:
-            ceilingHypotheses.value.source === "saisie"
-              ? null
-              : (marketEstimate?.sourceUpdatedAt ?? marketQuery.data?.computedAt ?? null),
+          ...rawValuePreview,
+          gapWithheld: occupancyGapWithheld,
+          discountPct: null,
+          discountNotSignificant: false,
+          startingPricePerM2: null,
+        }
+      : rawValuePreview;
+  const signupHref =
+    !user && !publicDemo && !authLoading
+      ? loginPathWithRedirect(saleDetailPath(sale.id), { reason: "fiche" })
+      : null;
+  // Action principale du haut de page et de la barre mobile : créer un compte (visiteur), débloquer
+  // le plafond (compte Découverte qui peut débloquer cette vente), sinon préparer l'enchère.
+  const heroAction: OverviewAction = signupHref
+    ? { href: signupHref, label: "Créer un compte gratuit" }
+    : access === "discovery" &&
+        user &&
+        !publicDemo &&
+        ceilingPromised &&
+        unlockStatus?.unlockable &&
+        !unlockStatus.unlocked &&
+        (unlockStatus.remaining ?? 0) > 0
+      ? {
+          href: `#${UNLOCK_PANEL_ID}`,
+          label: `Débloquer ${ceilingTerms?.ceilingTermWithArticle ?? "le plafond"}`,
+        }
+      : preparation;
+  const ceilingSummaryLabel =
+    ceilingTerms?.ceilingSimulationLabel ?? "Enchère plafond (simulation)";
+  const priceSummaryValue: PriceSummaryValue | null = valueGuarded
+    ? null
+    : fullData && marketEstimate?.actionable && (marketEstimate.estimatedValueEur ?? 0) > 0
+      ? {
+          kind: "amount",
+          amount: Math.round(marketEstimate.estimatedValueEur! / 1000) * 1000,
+          note: marketEstimate.sampleSize
+            ? `d’après ${marketEstimate.sampleSize} ventes comparables`
+            : "d’après des ventes comparables",
+        }
+      : valuePreview?.lowEur != null && valuePreview.highEur != null
+        ? { kind: "range", low: valuePreview.lowEur, high: valuePreview.highEur }
+        : signupHref
+          ? { kind: "signup", href: signupHref }
+          : (user && valuePreviewQuery.isLoading) || marketPending
+            ? { kind: "pending" }
+            : null;
+  const priceSummaryCeiling: PriceSummaryCeiling | null = !ceilingPromised
+    ? null
+    : fullData
+      ? valuationConflict || criticalAnalysisInputsBlocked
+        ? { kind: "note", note: "En cours de vérification" }
+        : heroCeiling != null
+          ? {
+              kind: "amount",
+              amount: heroCeiling,
+              note: "selon vos hypothèses",
+              reliability: ceilingConfidence(ceilingHypotheses).label,
+            }
+          : heroCeilingUnreachable
+            ? { kind: "note", note: UNPROFITABLE_HEADLINE }
+            : ceilingEnabled && marketPending
+              ? { kind: "note", note: "Calcul…" }
+              : ceilingMissing
+                ? { kind: "note", note: `À compléter : ${ceilingMissing.reason}` }
+                : null
+      : signupHref
+        ? {
+            kind: "locked",
+            action: (
+              <>
+                <Link href={signupHref}>Créez un compte gratuit</Link>, puis débloquez la vente ou
+                choisissez l’offre Analyse
+              </>
+            ),
+          }
+        : {
+            kind: "locked",
+            action: (
+              <>
+                Avec l’offre Analyse ou en débloquant cette vente{" "}
+                <UnlockCallToAction offerLabel="Découvrir l’offre Analyse" />
+              </>
+            ),
+          };
+  const guide = useFirstAuctionGuide();
+  const ceilingDetailHref =
+    fullData && ceilingOpen && !valuationConflict ? "#calculation" : "#summary";
+  const startingPriceSignal =
+    isTribunalSale && startingPrice != null && !listingSaleStatus(displaySale)
+      ? {
+          title: "La mise à prix est un prix de départ",
+          text: "Les enchères partent de ce montant : le prix final dépendra des enchères.",
+          todo: "fixez votre plafond avant l’audience.",
         }
       : null;
 
@@ -656,6 +799,11 @@ function SaleDetailWorkspace({
     const link = origin.closest<HTMLAnchorElement>('a[href^="#"]');
     const anchor = link?.getAttribute("href")?.slice(1);
     if (!anchor) return;
+    // La carte de déblocage est au-dessus des onglets : on y va sans toucher à l'onglet ni à l'adresse.
+    if (anchor === UNLOCK_PANEL_ID) {
+      if (focusUnlockPanel()) event.preventDefault();
+      return;
+    }
     const tab = knownTabForAnchor(anchor, statisticsAvailable);
     if (!tab) return;
     const detail = legacyDetailForAnchor(anchor, budgetTarget);
@@ -691,7 +839,7 @@ function SaleDetailWorkspace({
               <ArrowLeft className="h-4 w-4" aria-hidden />
               {backLabel ?? salesReturnLabel(returnTo)}
             </Link>
-            <ListingActions sale={displaySale} publicDemo={publicDemo} />
+            <ListingActions sale={displaySale} publicDemo={publicDemo} showFavorite={false} />
           </div>
           <SaleDetailHeading
             sale={displaySale}
@@ -712,29 +860,29 @@ function SaleDetailWorkspace({
             <div className={listingStyles.heroSummary}>
               <ListingOverview
                 sale={displaySale}
-                preparation={preparation}
-                premiumCeiling={heroCeiling}
-                startingPriceGap={ceilingPlan.startingPriceGap}
-                ceilingUnreachable={heroCeilingUnreachable}
-                ceilingContext={ceilingContext}
+                preparation={heroAction}
                 ceilingWording={ceilingWording}
-                showPremiumTeaser={access === "discovery" && ceilingPromised}
                 factReliabilities={factReliabilities}
                 aiReviewProjections={resolvedAiReviewProjections}
                 aiReviewStatus={aiReviewStatus}
-                scenarioSummary={
-                  projectCosts
-                    ? {
-                        purchasePrice: projectCosts.price,
-                        works: projectCosts.works,
-                        totalCost: projectCosts.totalCost,
-                        marketValue: marketEstimate?.actionable
-                          ? (marketEstimate.estimatedValueEur ?? null)
-                          : null,
-                        personalized:
-                          ceilingChoices.choices.works != null || personalWorksBudget != null,
+                marketReference={
+                  valueGuarded ? null : (
+                    <MarketReference
+                      startingPrice={startingPrice}
+                      preview={valuePreview}
+                      loading={Boolean(user) && !publicDemo && valuePreviewQuery.isLoading}
+                      signupHref={signupHref}
+                      startLabel={
+                        ceilingWording?.byOffers ? "La première offre possible" : "La mise à prix"
                       }
-                    : null
+                    />
+                  )
+                }
+                showSecondaryAction={!summaryFooter}
+                followAction={
+                  !publicDemo && isPersistedSaleId(sale.id) ? (
+                    <FavoriteButton saleId={sale.id} className="min-h-11 w-full px-4 text-sm" />
+                  ) : null
                 }
               />
               {summaryFooter}
@@ -826,15 +974,17 @@ function SaleDetailWorkspace({
                     {adjudicationLine}
                   </p>
                 ) : null}
-                {rentReference?.source.startsWith("anil_") || housingTension ? (
-                  <RentalMarketBlockLazy
-                    sale={displaySale}
-                    startingPriceEur={
-                      priceBlocked ? null : (displaySale.starting_price_eur ?? null)
-                    }
-                    surfaceM2={getSaleSurface(displaySale).value}
-                    reference={rentReference}
-                    tension={housingTension}
+                {isTribunalSale && guide.visible && !listingSaleStatus(displaySale) ? (
+                  <FirstAuctionGuide
+                    ceilingHref={ceilingDetailHref}
+                    eligibleBar={getSaleProcedure(displaySale).eligibleBar}
+                    onHide={() => {
+                      guide.hide();
+                      // Le focus passe au bloc suivant au lieu de se perdre avec le bouton.
+                      window.requestAnimationFrame(() =>
+                        document.getElementById(`${POINTS_TO_VERIFY_ANCHOR}-title`)?.focus(),
+                      );
+                    }}
                   />
                 ) : null}
                 <ListingChecks
@@ -844,68 +994,98 @@ function SaleDetailWorkspace({
                   saleId={sale.id}
                   ownerId={user?.id ?? "guest-demo"}
                   preparation={preparation}
-                  factReliabilities={factReliabilities}
-                  aiReviewProjections={resolvedAiReviewProjections}
-                  aiReviewStatus={aiReviewStatus}
-                />
-                <ListingPreparation
-                  sale={displaySale}
-                  publicDemo={publicDemo}
+                  startingPriceSignal={startingPriceSignal}
                   factReliabilities={factReliabilities}
                   aiReviewProjections={resolvedAiReviewProjections}
                   aiReviewStatus={aiReviewStatus}
                 />
                 <div className={panelStyles.twoColumns}>
-                  <ListingDescription
-                    sale={displaySale}
-                    aiReviewProjections={resolvedAiReviewProjections}
-                    aiReviewStatus={aiReviewStatus}
-                  />
-                  <ListingLocation
-                    sale={displaySale}
-                    aiReviewProjections={resolvedAiReviewProjections}
-                    aiReviewStatus={aiReviewStatus}
-                  />
+                  <div className="min-w-0">
+                    <ListingDescription
+                      sale={displaySale}
+                      aiReviewProjections={resolvedAiReviewProjections}
+                      aiReviewStatus={aiReviewStatus}
+                    />
+                    <ListingPreparation
+                      sale={displaySale}
+                      publicDemo={publicDemo}
+                      factReliabilities={factReliabilities}
+                      aiReviewProjections={resolvedAiReviewProjections}
+                      aiReviewStatus={aiReviewStatus}
+                      compactSources
+                    />
+                  </div>
+                  <div className={`min-w-0 ${overviewStyles.firstOnMobile}`}>
+                    {startingPrice != null || priceSummaryValue || priceSummaryCeiling ? (
+                      <PriceSummaryCard
+                        startLabel={
+                          getSaleProcedure(displaySale).venueType === "state" ? (
+                            "Prix publié"
+                          ) : ceilingWording?.byOffers ? (
+                            <Terme terme="premiere-offre">Première offre possible</Terme>
+                          ) : (
+                            <Terme terme="mise-a-prix">Mise à prix</Terme>
+                          )
+                        }
+                        startingPrice={startingPrice}
+                        value={priceSummaryValue}
+                        ceilingLabel={
+                          <Terme
+                            terme={ceilingWording?.byOffers ? "offre-plafond" : "enchere-plafond"}
+                          >
+                            {ceilingSummaryLabel}
+                          </Terme>
+                        }
+                        ceiling={priceSummaryCeiling}
+                        detailHref={ceilingDetailHref}
+                      />
+                    ) : null}
+                    <SaleTimeline
+                      sale={displaySale}
+                      priceBlocked={priceBlocked}
+                      dateBlocked={
+                        getAiReviewFieldResult(
+                          resolvedAiReviewProjections,
+                          "sale.sale_date",
+                          aiReviewStatus,
+                        ).blocked
+                      }
+                    />
+                  </div>
                 </div>
                 <ListingCharacteristics sale={displaySale} />
-                <LaunchOfferIncludedTag />
-                <DocumentReadingSection
-                  saleId={sale.id}
-                  enabled={!publicDemo && !authLoading && Boolean(user)}
-                  access={access}
-                  userKey={user?.id}
-                />
-                <SalePassagesSection
-                  saleId={sale.id}
-                  startingPrice={displaySale.starting_price_eur ?? null}
-                  enabled={!publicDemo && !authLoading && Boolean(user)}
-                  access={access}
-                  userKey={user?.id}
-                />
-                <UrbanismeSection
+                <ListingLocation
                   sale={displaySale}
-                  mapLocation={sale}
-                  loadStructuredUrbanism={
-                    access === "analysis" && !publicDemo && !authLoading && Boolean(user)
-                  }
+                  aiReviewProjections={resolvedAiReviewProjections}
+                  aiReviewStatus={aiReviewStatus}
                 />
-                <ListingEnvironmentalRisks
-                  saleId={sale.id}
-                  demoProfile={publicDemo ? EXAMPLE_COMMUNE_RISKS : undefined}
-                  enabled={
-                    !getAiReviewFieldResult(
-                      resolvedAiReviewProjections,
-                      "property.city",
-                      aiReviewStatus,
-                    ).blocked &&
-                    Boolean(
-                      displaySale.city ||
-                      displaySale.postal_code ||
-                      listingCoordinates(displaySale),
-                    )
-                  }
-                />
-                {!publicDemo ? <ListingWeatherHistory saleId={sale.id} /> : null}
+                <p className={overviewStyles.footLine}>
+                  <a
+                    href="#quartier"
+                    className="font-semibold text-gold-text underline underline-offset-4"
+                  >
+                    Urbanisme, risques de la commune et marché locatif
+                  </a>
+                  {isTribunalSale && guide.hidden ? (
+                    <>
+                      {" · "}
+                      <button
+                        type="button"
+                        className={overviewStyles.reshow}
+                        onClick={() => {
+                          guide.show();
+                          window.requestAnimationFrame(() => {
+                            const title = document.getElementById(FIRST_AUCTION_GUIDE_TITLE_ID);
+                            title?.scrollIntoView?.({ block: "center" });
+                            title?.focus({ preventScroll: true });
+                          });
+                        }}
+                      >
+                        Réafficher le guide de première vente
+                      </button>
+                    </>
+                  ) : null}
+                </p>
               </>
             ) : null}
 
@@ -1071,6 +1251,13 @@ function SaleDetailWorkspace({
                     onOpenChange={(open) => setDetailOpen("tribunal-perspective", open)}
                   />
                 ) : null}
+                <SalePassagesSection
+                  saleId={sale.id}
+                  startingPrice={displaySale.starting_price_eur ?? null}
+                  enabled={!publicDemo && !authLoading && Boolean(user)}
+                  access={access}
+                  userKey={user?.id}
+                />
               </>
             ) : null}
 
@@ -1165,6 +1352,52 @@ function SaleDetailWorkspace({
               </>
             ) : null}
 
+            {activeTab === "quartier" ? (
+              <>
+                <PanelIntro
+                  eyebrow="Quartier"
+                  title="Quartier, urbanisme et risques"
+                  description="Le marché locatif, les règles d’urbanisme et les risques connus de la commune."
+                />
+                {rentReference?.source.startsWith("anil_") || housingTension ? (
+                  <RentalMarketBlockLazy
+                    sale={displaySale}
+                    startingPriceEur={startingPrice}
+                    surfaceM2={getSaleSurface(displaySale).value}
+                    reference={rentReference}
+                    tension={housingTension}
+                  />
+                ) : null}
+                {/* L'ancre `#urbanism` existe avant le chargement du bloc, pour `revealAnchor`. */}
+                <div id="urbanism" className="mt-6 scroll-mt-2">
+                  <UrbanismeSection
+                    sale={displaySale}
+                    mapLocation={sale}
+                    loadStructuredUrbanism={
+                      access === "analysis" && !publicDemo && !authLoading && Boolean(user)
+                    }
+                  />
+                </div>
+                <ListingEnvironmentalRisks
+                  saleId={sale.id}
+                  demoProfile={publicDemo ? EXAMPLE_COMMUNE_RISKS : undefined}
+                  enabled={
+                    !getAiReviewFieldResult(
+                      resolvedAiReviewProjections,
+                      "property.city",
+                      aiReviewStatus,
+                    ).blocked &&
+                    Boolean(
+                      displaySale.city ||
+                      displaySale.postal_code ||
+                      listingCoordinates(displaySale),
+                    )
+                  }
+                />
+                {!publicDemo ? <ListingWeatherHistory saleId={sale.id} /> : null}
+              </>
+            ) : null}
+
             {activeTab === "demarches" ? (
               <>
                 <PanelIntro
@@ -1191,6 +1424,13 @@ function SaleDetailWorkspace({
                     </li>
                   </ol>
                 </div>
+                <LaunchOfferIncludedTag />
+                <DocumentReadingSection
+                  saleId={sale.id}
+                  enabled={!publicDemo && !authLoading && Boolean(user)}
+                  access={access}
+                  userKey={user?.id}
+                />
                 <SaleDocumentsSection
                   sale={displaySale}
                   open={Boolean(expandedDetails.documents)}
@@ -1240,6 +1480,19 @@ function SaleDetailWorkspace({
             ) : null}
           </div>
         </div>
+        <MobileActionBar
+          priceLabel={
+            getSaleProcedure(displaySale).venueType === "state"
+              ? "Prix publié"
+              : ceilingWording?.byOffers
+                ? "Première offre possible"
+                : "Mise à prix"
+          }
+          price={startingPrice}
+          action={
+            activeTab === "estimation" && heroAction.href === "#calculation" ? null : heroAction
+          }
+        />
       </main>
     </SaleUnlockOfferProvider>
   );
