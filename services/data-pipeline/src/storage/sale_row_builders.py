@@ -44,7 +44,9 @@ def _property_rows_for_sales(
         row = {column: data.get(column) for column in PROPERTY_COLUMNS}
         row["primary_source"] = row.get("primary_source") or row.get("source_name")
         row["source_urls"] = _normalized_source_urls(sale, data)
-        row["raw_payload"] = data.get("raw_payload") if isinstance(data.get("raw_payload"), dict) else {}
+        # Nothing reads the projections' raw_payload (the app, the views and the pipeline read auction_sales):
+        # copying the whole payload made every publication write it three times.
+        row["raw_payload"] = {}
         row["last_seen_at"] = now if refresh_last_seen else data.get("last_seen_at") or now
         rows.append(redact_storage_row(row))
     return rows
@@ -77,7 +79,7 @@ def _judicial_sale_rows_for_sales(
         row["documents_count"] = len(documents) if isinstance(documents, list) else 0
         row["score_factors"] = data.get("score_factors") if isinstance(data.get("score_factors"), list) else []
         row["quality_flags"] = data.get("quality_flags") if isinstance(data.get("quality_flags"), list) else []
-        row["raw_payload"] = data.get("raw_payload") if isinstance(data.get("raw_payload"), dict) else {}
+        row["raw_payload"] = {}  # see _property_rows_for_sales
         row["last_seen_at"] = now if refresh_last_seen else data.get("last_seen_at") or now
         rows.append(redact_storage_row(row))
     return rows

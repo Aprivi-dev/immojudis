@@ -123,6 +123,28 @@ def test_merging_the_same_pair_again_keeps_one_copy_per_source_url() -> None:
     assert len(copies) == 1
 
 
+def test_a_merged_copy_keeps_only_what_enrichment_reads() -> None:
+    from src.dedupe import MERGED_SOURCE_PAYLOAD_KEYS
+    from src.enrichment.extract_structured import SOURCE_DESCRIPTION_KEYS
+
+    assert set(SOURCE_DESCRIPTION_KEYS) <= MERGED_SOURCE_PAYLOAD_KEYS
+    avoventes = _make("https://avoventes.fr/enchere/slim", address="12 av. de la République 33000 Bordeaux")
+    licitor = _make("https://www.licitor.com/annonce/slim.html", source_name="licitor")
+    licitor.raw_payload.update(
+        source_blocks={"descriptif": "Appartement"},
+        raw_text="Page",
+        asset_normalization={"heavy": "x" * 1000},
+        score_factors=[{"heavy": True}],
+    )
+
+    merged = dedupe_sales([avoventes, licitor])[0]
+
+    copy = merged.raw_payload["merged_sources"][0]["raw_payload"]
+    assert copy["source_blocks"] == {"descriptif": "Appartement"}
+    assert copy["raw_text"] == "Page"
+    assert "asset_normalization" not in copy and "score_factors" not in copy
+
+
 def test_the_latest_copy_of_a_source_url_wins() -> None:
     from src.dedupe import _with_merged_source
 
@@ -146,7 +168,7 @@ def test_stacked_copies_heal_at_the_next_merge() -> None:
 def test_dedupe_breaks_shared_raw_payload_alias_before_recording_merged_source() -> None:
     first = _make("https://avoventes.fr/enchere/shared-1")
     second = _make("https://licitor.com/annonce/shared-1", source_name="licitor")
-    shared_payload = {"source": "shared"}
+    shared_payload = {"source_blocks": {"description": "shared"}}
     first.raw_payload = shared_payload
     second.raw_payload = shared_payload
 
@@ -154,9 +176,10 @@ def test_dedupe_breaks_shared_raw_payload_alias_before_recording_merged_source()
 
     assert len(result) == 1
     merged_payload = result[0].raw_payload["merged_sources"][0]["raw_payload"]
-    assert merged_payload["source"] == "shared"
-    assert merged_payload["merged_sources"] == []
+    assert merged_payload["source_blocks"] == {"description": "shared"}
+    assert "merged_sources" not in merged_payload
     assert merged_payload is not result[0].raw_payload
+    assert merged_payload["source_blocks"] is not result[0].raw_payload["source_blocks"]
     json.dumps(result[0].raw_payload)
 
 
