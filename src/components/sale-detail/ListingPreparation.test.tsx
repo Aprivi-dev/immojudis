@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { EXAMPLE_SALE } from "@/lib/example-sale";
 import type { AuctionSale } from "@/lib/types";
@@ -83,7 +83,7 @@ describe("ListingPreparation", () => {
     expect(screen.queryByLabelText(/Niveau de détail/)).toBeNull();
     expect(container.textContent).not.toContain("130 critères");
     expect(container.textContent).not.toContain("12 informations essentielles");
-    expect(screen.getByRole("heading", { name: "À vérifier avant d’enchérir" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "L’essentiel à savoir" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Voir les .* informations à compléter/ }));
     const dialog = screen.getByRole("dialog");
     expect(dialog.textContent).toMatch(/Surface.*information manquante/);
@@ -188,7 +188,7 @@ describe("ListingPreparation", () => {
       />,
     );
 
-    const block = screen.getByRole("region", { name: "À vérifier avant d’enchérir" });
+    const block = screen.getByRole("region", { name: "L’essentiel à savoir" });
     expect(block.id).toBe("points-a-verifier");
     // Le point relevé dans les pièces dit déjà ce que dit la pastille : pas de doublon.
     expect(screen.getAllByText("Occupation à confirmer").length).toBeGreaterThan(0);
@@ -197,6 +197,29 @@ describe("ListingPreparation", () => {
     expect(screen.getByRole("link", { name: "Préparer mon enchère" }).getAttribute("href")).toBe(
       "#calculation",
     );
+  });
+
+  it("leads with the starting price reminder and gathers the missing information on one line", () => {
+    render(
+      <ListingChecks
+        sale={sale({ occupancy_status: "occupied" })}
+        points={[]}
+        startingPriceSignal={{
+          title: "La mise à prix est un prix de départ",
+          text: "Les enchères partent de ce montant : le prix final dépendra des enchères.",
+          todo: "fixez votre plafond avant l’audience.",
+        }}
+      />,
+    );
+
+    const block = screen.getByRole("region", { name: "L’essentiel à savoir" });
+    const rows = within(block).getAllByRole("listitem");
+    expect(rows[0].textContent).toContain("La mise à prix est un prix de départ");
+    expect(rows[0].textContent).toContain("Que faire : fixez votre plafond avant l’audience.");
+    // Aucune ligne « Manquante » : les informations absentes tiennent dans une seule mention.
+    expect(within(block).queryByText("Manquante")).toBeNull();
+    const missing = within(block).getByText(/^\d+ informations? absentes? du dossier$/);
+    expect(missing.closest("p")?.textContent).toMatch(/absentes du dossier .+ · .+\. À demander/);
   });
 
   it("keeps the file's points to the Analyse offer", () => {

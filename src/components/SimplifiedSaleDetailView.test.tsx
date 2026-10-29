@@ -393,12 +393,10 @@ describe("example page ceiling", () => {
         />
       </QueryClientProvider>,
     );
-    const hero = (document.body.textContent ?? "").match(
-      /Enchère plafond \(simulation\)[^C]*/,
-    )?.[0];
-    expect(hero).toContain(formatPrice(exampleHeadlineFigures().ceiling));
-    expect(hero).toContain("Travaux");
-    expect(hero).not.toContain("Plafond hors travaux");
+    // Le plafond de l'accueil (travaux de l'exemple compris) est celui de la carte « Le prix ».
+    const summary = screen.getByRole("region", { name: "Le prix" });
+    expect(summary.textContent).toContain(formatPrice(exampleHeadlineFigures().ceiling));
+    expect(summary.textContent).toContain("selon vos hypothèses");
   });
 });
 
@@ -468,7 +466,7 @@ describe("integrated listing", () => {
   it("mounts one panel at a time and supports keyboard tab navigation", () => {
     const { container } = renderDetail("analysis", undefined, true, true);
 
-    expect(screen.getAllByRole("tab")).toHaveLength(6);
+    expect(screen.getAllByRole("tab")).toHaveLength(7);
     expect(screen.getByRole("tab", { name: "Aperçu" }).getAttribute("aria-selected")).toBe("true");
     expectActivePanel(container, "apercu");
 
@@ -625,7 +623,7 @@ describe("integrated listing", () => {
   );
 
   it.each(["calculation", "why-this-ceiling"])(
-    "lands #%s on the always visible bid ceiling planner",
+    "lands #%s on the bid ceiling planner, with its detail opened",
     (anchor) => {
       window.history.replaceState(null, "", `#${anchor}`);
       const { container } = renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
@@ -635,7 +633,8 @@ describe("integrated listing", () => {
       ).toBe("true");
       const target = container.querySelector(`#${anchor}`);
       expect(target).not.toBeNull();
-      expect(target?.closest("details")).toBeNull();
+      // « Le calcul, étape par étape » est replié par défaut : l'ancre l'ouvre.
+      expect(target?.closest("details:not([open])")).toBeNull();
       expect(screen.getByRole("heading", { name: "Votre enchère plafond" })).toBeTruthy();
     },
   );
@@ -736,6 +735,8 @@ describe("integrated listing", () => {
     });
 
     const live = renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
+    // L'urbanisme et le cadastre sont dans l'onglet Quartier.
+    selectTab("Quartier");
     expect(await screen.findByText("Section AB n° 123")).toBeTruthy();
     expect(screen.getByText("Référence cadastrale à recouper")).toBeTruthy();
     expect(screen.getByText("Point géocodé · à recouper")).toBeTruthy();
@@ -744,6 +745,7 @@ describe("integrated listing", () => {
 
     mocks.fetchUrbanism.mockClear();
     renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, true);
+    selectTab("Quartier");
     expect(mocks.fetchUrbanism).not.toHaveBeenCalled();
   });
 
@@ -798,6 +800,7 @@ describe("integrated listing", () => {
     const line = screen.getByText(/localisation à confirmer/);
     expect(line.textContent).not.toContain("Bordeaux");
     expect(line.textContent).not.toContain("Gironde");
+    selectTab("Quartier");
     const map = screen.getByTestId("cadastral-map");
     expect(map.getAttribute("data-lat")).toBe(String(EXAMPLE_SALE_RECORDS.bordeaux.sale.latitude));
     expect(map.getAttribute("data-lng")).toBe(String(EXAMPLE_SALE_RECORDS.bordeaux.sale.longitude));
@@ -1023,9 +1026,9 @@ describe("integrated listing", () => {
         name: "Les comparables et les travaux avec l’offre Analyse ; l’enchère plafond aussi en débloquant cette vente",
       }),
     ).toBeTruthy();
-    expect((await screen.findByRole("status")).textContent).toContain(
-      "environ 32 % sous la valeur estimée",
-    );
+    expect(
+      (await screen.findByText(/environ 32 % sous la valeur estimée/)).getAttribute("role"),
+    ).toBe("status");
     selectTab("Travaux");
     expect(
       screen.getByRole("heading", { name: "Estimez vos travaux avec l’offre Analyse" }),
@@ -1088,7 +1091,7 @@ describe("integrated listing", () => {
       const { container } = renderDetail(access);
 
       expect(screen.queryByRole("tab", { name: "Statistiques" })).toBeNull();
-      expect(screen.getAllByRole("tab")).toHaveLength(5);
+      expect(screen.getAllByRole("tab")).toHaveLength(6);
       expect(container.textContent).not.toContain(
         "Prix d’adjudication accessibles avec l’offre Analyse",
       );

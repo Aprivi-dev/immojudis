@@ -798,6 +798,95 @@
 }
 
 /* Synthèse : une liste de lignes (date, visite, lieu, surface, pièces, occupation). */
+/* Haut de page allégé : prix, repère marché, quatre faits en grille 2 × 2, deux actions. */
+.heroPrice {
+  min-width: 0;
+}
+
+.heroMarket {
+  min-width: 0;
+}
+
+.heroFacts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 18px 0 0;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+}
+
+.heroFact {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  min-width: 0;
+  padding: 11px 13px;
+}
+
+/* Lignes de la grille 2 × 2 : un trait au-dessus des cases de la deuxième ligne, un entre les colonnes. */
+.heroFact:nth-child(n + 3) {
+  border-top: 1px solid var(--line-soft);
+}
+
+.heroFact:nth-child(odd) {
+  border-right: 1px solid var(--line-soft);
+}
+
+.heroFact:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+  border-right: 0;
+}
+
+.heroFact dt {
+  display: flex;
+  align-items: center;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.heroFact dd {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  margin: 0;
+}
+
+.heroFactValue {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+  color: var(--brand-navy);
+  font-size: 15px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.heroFact dd.factMissing .heroFactValue {
+  color: var(--ink-soft);
+  font-weight: 400;
+}
+
+.heroFactNote {
+  color: var(--ink-soft);
+  font-size: var(--text-caption);
+  line-height: 1.4;
+}
+
+@media (max-width: 380px) {
+  .heroFacts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .heroFact:nth-child(odd) {
+    border-right: 0;
+  }
+
+  .heroFact:nth-child(n + 2) {
+    border-top: 1px solid var(--line-soft);
+  }
+}
+
 .summaryFacts {
   display: grid;
   margin: 18px -24px 0;

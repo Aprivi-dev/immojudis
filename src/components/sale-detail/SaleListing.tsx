@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
+import Link from "next/link";
 import {
   listingOccupation,
   listingValuationConflict,
@@ -25,21 +26,18 @@ import { MapboxPreviewButton } from "@/components/MapboxPreviewButton";
 import { SaleCalendarButton } from "@/components/SaleCalendarButton";
 import { StreetViewDialog } from "@/components/StreetViewDialog";
 import { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
-import { EstimatedFeesBadge } from "@/components/ceiling/EstimatedFeesBadge";
 import { Terme } from "@/components/ceiling/Terme";
 import { safeExternalHttpUrl } from "@/lib/external-url";
 import { saleSourceLinks } from "@/lib/sale-source-links";
-import { formatDate, formatPrice } from "@/lib/format";
-import { UNPROFITABLE_EXPLANATION, UNPROFITABLE_HEADLINE } from "@/lib/bid-ceiling-gaps";
+import { formatPrice } from "@/lib/format";
 import type { EstimatedFee } from "@/lib/bid-ceiling-engine";
-import { describeCeilingStartGap, type CeilingStartGapTerms } from "@/lib/ceiling-start-gap";
+import type { CeilingStartGapTerms } from "@/lib/ceiling-start-gap";
 import { buildStructuredDescription } from "@/lib/sale-description";
 import {
   listingContactLinks,
   listingAddress,
   listingCoordinates,
   listingDate,
-  listingSurface,
   listingVisits,
   positiveListingNumber,
 } from "@/lib/sale-listing";
@@ -64,7 +62,6 @@ import {
   type FactReliabilityMap,
 } from "@/lib/fact-reliability";
 import { AiReviewField } from "./AiReviewField";
-import { UnlockCallToAction } from "./UnlockCallToAction";
 import { getListingPublicInformation } from "@/lib/listing-public-information";
 import {
   AI_REVIEW_ENERGY_FIELD_KEYS,
@@ -75,17 +72,23 @@ import {
   type AiReviewRequestStatus,
 } from "@/lib/ai-review-guard";
 
+/** Une vente enregistrée (identifiant UUID) : les ventes d'exemple n'ont pas de favori. */
+export function isPersistedSaleId(saleId: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(saleId);
+}
+
 export function ListingActions({
   sale,
   publicDemo = false,
+  showFavorite = true,
 }: {
   sale: AuctionSale;
   publicDemo?: boolean;
+  /** Faux quand le bouton favori est placé ailleurs (seconde action du haut de page). */
+  showFavorite?: boolean;
 }) {
   const [sharing, setSharing] = useState(false);
-  const persistedSale = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-    sale.id,
-  );
+  const persistedSale = showFavorite && isPersistedSaleId(sale.id);
   async function share() {
     setSharing(true);
     try {
@@ -126,41 +129,10 @@ export function ListingActions({
   );
 }
 
-/** What the displayed ceiling rests on, shown under the amount. */
-export type CeilingContext = {
-  /** Works retained in the ceiling, in euros. */
-  worksAmount: number;
-  /** False until the user (or a scenario) has priced the works: the ceiling is then before works. */
-  worksPriced: boolean;
-  /** Safety margin, in percent (the extra prudence points are included). */
-  marginPct: number;
-  valueAmount: number | null;
-  /** « DVF normalisé », « votre prix au m² »… */
-  valueSource: string;
-  valueDate: string | null;
-};
-
-function ceilingContextItems(context: CeilingContext): string[] {
-  const works = !context.worksPriced
-    ? `Travaux : ${formatPrice(context.worksAmount)} (à chiffrer)`
-    : context.worksAmount > 0
-      ? `Travaux : ${formatPrice(context.worksAmount)}`
-      : "Travaux : aucun";
-  const source = [context.valueSource, context.valueDate ? formatDate(context.valueDate) : null]
-    .filter(Boolean)
-    .join(", ");
-  return [
-    works,
-    `Marge : ${context.marginPct.toLocaleString("fr-FR")} %`,
-    context.valueAmount != null
-      ? `Valeur : ${formatPrice(context.valueAmount)}${source ? ` (${source})` : ""}`
-      : "Valeur : à compléter",
-  ];
-}
-
 /**
- * Le vocabulaire du plafond de la vente (régime de frais), tel que le hero l'écrit : absent, celui
- * du tribunal.
+ * Le vocabulaire du plafond de la vente (régime de frais) : absent, celui du tribunal. Le haut de
+ * page n'en lit que `byOffers` (le prix de départ d'une vente par offres) ; le reste sert aux
+ * panneaux de prix.
  */
 export type CeilingWording = {
   /** « Enchère plafond (simulation) » ou « Offre plafond (simulation) ». */
@@ -175,52 +147,45 @@ export type CeilingWording = {
   estimatedFees?: readonly EstimatedFee[];
 };
 
-const TRIBUNAL_CEILING_LABEL = "Enchère plafond (simulation)";
+/** L'action principale du haut de page : un lien interne (onglet, ancre) ou une page du site. */
+export type OverviewAction = { href: string; label: string };
 
+/**
+ * Le haut de page de la fiche : le prix de départ, un repère marché, quatre faits (date, visite,
+ * garantie pour enchérir ou lieu, occupation) et deux actions. L'enchère plafond et ses hypothèses
+ * sont dans l'Aperçu et l'onglet Prix : le visiteur qui découvre la fiche n'a pas à les lire ici.
+ */
 export function ListingOverview({
   sale,
-  premiumCeiling = null,
-  startingPriceGap,
-  ceilingUnreachable = false,
-  showPremiumTeaser = false,
   factReliabilities = null,
   aiReviewProjections = null,
   aiReviewStatus = "ready",
-  scenarioSummary = null,
-  ceilingContext = null,
   ceilingWording = null,
   preparation = null,
+  marketReference = null,
+  followAction = null,
+  showSecondaryAction = true,
 }: {
   sale: AuctionSale;
   /** Vocabulaire du plafond de la vente ; absent : celui du tribunal. */
   ceilingWording?: CeilingWording | null;
-  /** Action principale de la synthèse (« Préparer mon enchère »), qui ouvre l'onglet concerné. */
-  preparation?: { href: string; label: string } | null;
-  premiumCeiling?: number | null;
-  /** `startingPriceGap` of the ceiling plan: where the ceiling stands against the starting price. */
-  startingPriceGap?: number | null;
-  /** The ceiling is computed but no price holds: the hero says so instead of staying empty. */
-  ceilingUnreachable?: boolean;
-  ceilingContext?: CeilingContext | null;
-  showPremiumTeaser?: boolean;
+  /** Action principale (« Préparer mon enchère », « Débloquer le plafond »…). */
+  preparation?: OverviewAction | null;
+  /** Repère marché sous le prix (`MarketReference`), selon les droits du compte. */
+  marketReference?: ReactNode;
+  /** Seconde action : suivre la vente (favori). Absente : les rendez-vous et contacts. */
+  followAction?: ReactNode;
+  /** Faux quand la page ajoute sa propre action sous la synthèse (annonce exemple). */
+  showSecondaryAction?: boolean;
   factReliabilities?: FactReliabilityMap | null;
   aiReviewProjections?: readonly AiReviewProjectionReadModel[] | null;
   aiReviewStatus?: AiReviewRequestStatus;
-  scenarioSummary?: {
-    purchasePrice: number;
-    totalCost: number;
-    works: number;
-    marketValue: number | null;
-    personalized: boolean;
-  } | null;
 }) {
   const publicInformation = useMemo(
     () => getListingPublicInformation(sale, factReliabilities),
     [sale, factReliabilities],
   );
   const publicFactsById = new Map(publicInformation.items.map((fact) => [fact.id, fact]));
-  const surface = listingSurface(sale);
-  const valuationConflict = listingValuationConflict(sale);
   const price = positiveListingNumber(sale.starting_price_eur);
   const procedure = getSaleProcedure(sale);
   const schedule = saleWindow(sale) ?? saleSession(sale);
@@ -228,6 +193,7 @@ export function ListingOverview({
   const sourceLink = saleSourceLinks(sale)[0];
   const notary = procedure.venueType === "notary";
   const state = procedure.venueType === "state";
+  const tribunal = procedure.venueType === "tribunal";
   const stateListing = state ? stateListingStatus(sale) : null;
   const eventDate = state
     ? (schedule?.closes_at ?? sale.sale_date)
@@ -236,7 +202,7 @@ export function ListingOverview({
     ? "Échéance annoncée"
     : notary
       ? "Séance annoncée"
-      : procedure.venueType === "tribunal"
+      : tribunal
         ? "Audience annoncée"
         : "Date annoncée";
   const priceReview = getAiReviewFieldResult(
@@ -250,14 +216,6 @@ export function ListingOverview({
     "property.occupancy_status",
     aiReviewStatus,
   );
-  const surfaceReviewField = firstBlockedAiReviewField(
-    aiReviewProjections,
-    AI_REVIEW_SURFACE_FIELD_KEYS,
-    aiReviewStatus,
-  );
-  const surfaceReview = surfaceReviewField
-    ? getAiReviewFieldResult(aiReviewProjections, surfaceReviewField, aiReviewStatus)
-    : null;
   const hasVisibleEvent = Boolean(
     !saleStatus && !dateReview.blocked && eventDate && !saleTimeConflict(sale),
   );
@@ -268,127 +226,20 @@ export function ListingOverview({
     factReliabilities,
   );
   const showDateFact = Boolean(eventDate || saleStatus || dateReliability.status !== "observed");
-  const rooms = positiveListingNumber(sale.rooms_count);
-  const roomsReview = getAiReviewFieldResult(
-    aiReviewProjections,
-    "property.rooms_count",
-    aiReviewStatus,
-  );
-  const bedrooms = roomsReview.blocked ? null : positiveListingNumber(sale.bedrooms_count);
-  const propertyTypeReview = getAiReviewFieldResult(
-    aiReviewProjections,
-    "property.property_type",
-    aiReviewStatus,
-  );
-  const guardedSurface = surfaceReviewField
-    ? { ...surface, label: "Surface à confirmer", formatted: "À confirmer", helperText: null }
-    : surface;
   const keyFacts = saleKeyFacts(sale);
-  const analysisDataBlocked =
-    propertyTypeReview.blocked ||
-    priceReview.blocked ||
-    surfaceReview?.blocked === true ||
-    roomsReview.blocked;
-  const guardedPremiumCeiling = analysisDataBlocked ? null : premiumCeiling;
-  const guardedCeilingUnreachable = !analysisDataBlocked && ceilingUnreachable;
-  const ceilingStartGap =
-    guardedPremiumCeiling != null
-      ? describeCeilingStartGap(
-          {
-            available: true,
-            reachable: true,
-            maxBid: guardedPremiumCeiling,
-            // The engine's gap when the caller has it; the same difference otherwise.
-            startingPriceGap:
-              startingPriceGap !== undefined
-                ? startingPriceGap
-                : price != null
-                  ? guardedPremiumCeiling - price
-                  : null,
-          },
-          price,
-          ceilingWording?.terms,
-        )
-      : null;
-  const ceilingLabel = ceilingWording?.label ?? TRIBUNAL_CEILING_LABEL;
-  const guardedScenarioSummary = analysisDataBlocked ? null : scenarioSummary;
-  const publicSurfaceFact = surfaceReview?.blocked ? null : publicFactsById.get("surface");
+  // La garantie pour enchérir (tribunal) : ce qu'il faut avoir en main avant l'audience. Elle se
+  // calcule sur la mise à prix : pas de montant tant que celle-ci est en cours de vérification.
+  const guarantee =
+    tribunal && !priceReview.blocked && !saleStatus ? procedure.guaranteeAmountEur : null;
   const publicOccupancyFact = occupancyReview.blocked
     ? null
     : publicFactsById.get("occupancy_status");
   const publicPriceFact = priceReview.blocked ? null : publicFactsById.get("starting_price_eur");
   const publicDateFact = dateReview.blocked ? null : publicFactsById.get("sale_date");
-  const facts = [
-    {
-      label: valuationConflict ? "Surface enregistrée · à vérifier" : guardedSurface.label,
-      value: surfaceReview ? (
-        <AiReviewField
-          fieldKey={surfaceReviewField!}
-          projections={aiReviewProjections}
-          reviewStatus={aiReviewStatus}
-          fallback="À confirmer"
-          sourceName={sale.source_name}
-          sourceUrl={sale.source_url}
-        >
-          {surface.formatted}
-        </AiReviewField>
-      ) : (
-        guardedSurface.formatted
-      ),
-      field: "surface" as const,
-    },
-    {
-      label: "Pièces",
-      value: (
-        <AiReviewField
-          fieldKey="property.rooms_count"
-          projections={aiReviewProjections}
-          reviewStatus={aiReviewStatus}
-          sourceName={sale.source_name}
-          sourceUrl={sale.source_url}
-        >
-          {rooms == null ? "Non renseigné" : String(rooms)}
-        </AiReviewField>
-      ),
-      field: null,
-    },
-    ...(bedrooms != null
-      ? [
-          {
-            label: "Chambres",
-            value: (
-              <AiReviewField
-                fieldKey="property.rooms_count"
-                projections={aiReviewProjections}
-                reviewStatus={aiReviewStatus}
-                sourceName={sale.source_name}
-                sourceUrl={sale.source_url}
-              >
-                {String(bedrooms)}
-              </AiReviewField>
-            ),
-            field: null,
-          },
-        ]
-      : []),
-    {
-      label: "Occupation",
-      value: (
-        <AiReviewField
-          fieldKey="property.occupancy_status"
-          projections={aiReviewProjections}
-          reviewStatus={aiReviewStatus}
-          sourceName={sale.source_name}
-          sourceUrl={sale.source_url}
-        >
-          {listingOccupation(sale)}
-        </AiReviewField>
-      ),
-      field: "occupancy_status" as const,
-    },
-  ];
+  const occupancyMissing =
+    getFactPresentation(sale, "occupancy_status", undefined, factReliabilities).kind === "missing";
   return (
-    <aside className={styles.overview} aria-label="Synthèse de la vente">
+    <section className={styles.overview} aria-label="Synthèse de la vente">
       {notary || state ? (
         <div className={styles.procedureLead}>
           <p className={styles.procedureLeadEyebrow}>
@@ -409,114 +260,62 @@ export function ListingOverview({
         </div>
       ) : null}
       {price != null || !state ? (
-        <div className={styles.heroPrices}>
-          <div>
-            <div className={styles.priceLabel}>
-              {state ? (
-                "Prix publié"
-              ) : ceilingWording?.byOffers ? (
-                <Terme terme="premiere-offre">Première offre possible</Terme>
-              ) : (
-                <Terme terme="mise-a-prix">Mise à prix</Terme>
-              )}
-              {publicPriceFact ? <PublicListingFactSource fact={publicPriceFact} /> : null}
-            </div>
-            <p className={styles.price}>
-              <AiReviewField
-                fieldKey="sale.starting_price_eur"
-                projections={aiReviewProjections}
-                reviewStatus={aiReviewStatus}
-                fallback="À confirmer"
-                sourceName={sale.source_name}
-                sourceUrl={sale.source_url}
-              >
-                {price == null ? "Non renseigné" : formatPrice(price)}
-              </AiReviewField>
-            </p>
-            <p className={styles.muted}>
-              {state
-                ? "Conditions et frais à vérifier dans l'annonce officielle"
-                : "Prix de départ, hors frais"}
-            </p>
+        <div className={styles.heroPrice}>
+          <div className={styles.priceLabel}>
+            {state ? (
+              "Prix publié"
+            ) : ceilingWording?.byOffers ? (
+              <Terme terme="premiere-offre">Première offre possible</Terme>
+            ) : (
+              <Terme terme="mise-a-prix">Mise à prix</Terme>
+            )}
+            {publicPriceFact ? <PublicListingFactSource fact={publicPriceFact} compact /> : null}
           </div>
-          {guardedPremiumCeiling != null ? (
-            <div className={styles.premiumPrice}>
-              <p className={styles.priceLabel}>{ceilingLabel}</p>
-              <p className={styles.premiumPriceValue}>{formatPrice(guardedPremiumCeiling)}</p>
-              {ceilingContext ? (
-                <p className={styles.premiumContext}>
-                  {ceilingContextItems(ceilingContext).join(" · ")}
-                  {ceilingContext.worksPriced ? null : (
-                    <>
-                      {" "}
-                      <strong>Plafond hors travaux.</strong>
-                    </>
-                  )}
-                </p>
-              ) : null}
-              {ceilingStartGap ? (
-                <p className={styles.premiumContext}>
-                  <strong>{ceilingStartGap.text}</strong>
-                </p>
-              ) : null}
-              {ceilingWording?.estimatedFees?.length ? (
-                <p className={styles.premiumContext}>
-                  <EstimatedFeesBadge items={ceilingWording.estimatedFees} />
-                </p>
-              ) : null}
-              {ceilingWording?.reserveNotice ? (
-                <p className={styles.premiumContext}>
-                  <strong>{ceilingWording.reserveNotice}</strong>
-                </p>
-              ) : null}
-              <a href="#why-this-ceiling" className={styles.priceExplanation}>
-                Comprendre le calcul
-              </a>
-            </div>
-          ) : guardedCeilingUnreachable ? (
-            <div className={styles.premiumPrice}>
-              <p className={styles.priceLabel}>{ceilingLabel}</p>
-              <p className={styles.premiumPriceValue}>{UNPROFITABLE_HEADLINE}</p>
-              <p className={styles.premiumContext}>{UNPROFITABLE_EXPLANATION}</p>
-              <a href="#why-this-ceiling" className={styles.priceExplanation}>
-                Comprendre le calcul
-              </a>
-            </div>
-          ) : showPremiumTeaser ? (
-            <div className={styles.premiumPrice}>
-              <p className={styles.priceLabel}>{ceilingLabel}</p>
-              <p className={styles.premiumTeaser}>
-                Disponible avec l’offre Analyse ou en débloquant cette vente
-              </p>
-              <UnlockCallToAction
-                offerLabel="Découvrir l’analyse"
-                primaryClassName={styles.priceExplanation}
-                messageClassName={styles.premiumContext}
-              />
-            </div>
-          ) : null}
+          <p className={styles.price}>
+            <AiReviewField
+              fieldKey="sale.starting_price_eur"
+              projections={aiReviewProjections}
+              reviewStatus={aiReviewStatus}
+              fallback="À confirmer"
+              sourceName={sale.source_name}
+              sourceUrl={sale.source_url}
+            >
+              {price == null ? "Non renseigné" : formatPrice(price)}
+            </AiReviewField>
+          </p>
+          <p className={styles.muted}>
+            {state
+              ? "Conditions et frais à vérifier dans l'annonce officielle"
+              : ceilingWording?.byOffers
+                ? "Plus bas montant que l’on peut proposer, hors frais"
+                : "Prix de départ des enchères, hors frais"}
+          </p>
         </div>
       ) : (
         <div className={`${styles.muted} mt-5`}>
           Prix non publié : consultez les conditions de cession.
-          {publicPriceFact ? <PublicListingFactSource fact={publicPriceFact} /> : null}
+          {publicPriceFact ? <PublicListingFactSource fact={publicPriceFact} compact /> : null}
         </div>
       )}
-      <dl className={styles.summaryFacts}>
+      {marketReference ? <div className={styles.heroMarket}>{marketReference}</div> : null}
+      <dl className={styles.heroFacts}>
         {showDateFact ? (
-          <div className={styles.summaryFact}>
+          <div className={styles.heroFact}>
             <dt>{eventLabel}</dt>
             <dd>
-              <AiReviewField
-                fieldKey="sale.sale_date"
-                projections={aiReviewProjections}
-                reviewStatus={aiReviewStatus}
-                fallback="Date à confirmer"
-                sourceName={sale.source_name}
-                sourceUrl={sale.source_url}
-              >
-                {listingDate(eventDate)}
-              </AiReviewField>
+              <span className={styles.heroFactValue}>
+                <AiReviewField
+                  fieldKey="sale.sale_date"
+                  projections={aiReviewProjections}
+                  reviewStatus={aiReviewStatus}
+                  fallback="Date à confirmer"
+                  sourceName={sale.source_name}
+                  sourceUrl={sale.source_url}
+                >
+                  {listingDate(eventDate)}
+                </AiReviewField>
+                {publicDateFact ? <PublicListingFactSource fact={publicDateFact} compact /> : null}
+              </span>
               {saleStatus ? (
                 <span role="status" className={styles.summaryNote}>
                   {saleStatus}
@@ -525,53 +324,77 @@ export function ListingOverview({
               {keyFacts.timeConflict && !saleStatus && !dateReview.blocked ? (
                 <span className={styles.summaryNote}>Horaire à faire confirmer</span>
               ) : null}
-              {publicDateFact ? <PublicListingFactSource fact={publicDateFact} /> : null}
             </dd>
           </div>
         ) : null}
         {keyFacts.nextVisit && !dateReview.blocked ? (
-          <div className={styles.summaryFact}>
+          <div className={styles.heroFact}>
             <dt>Prochaine visite</dt>
-            <dd>{keyFacts.nextVisit}</dd>
+            <dd>
+              <span className={styles.heroFactValue}>{keyFacts.nextVisit}</span>
+            </dd>
           </div>
         ) : null}
-        {keyFacts.venueName ? (
-          <div className={styles.summaryFact}>
+        {guarantee != null ? (
+          <div className={styles.heroFact}>
+            <dt>
+              <Terme terme="garantie-encherir">Garantie pour enchérir</Terme>
+            </dt>
+            <dd>
+              <span className={styles.heroFactValue}>{formatPrice(guarantee)}</span>
+              <span className={styles.heroFactNote}>chèque de banque remis à votre avocat</span>
+            </dd>
+          </div>
+        ) : keyFacts.venueName ? (
+          <div className={styles.heroFact}>
             <dt>{keyFacts.venueLabel}</dt>
-            <dd>{keyFacts.venueName}</dd>
+            <dd>
+              <span className={styles.heroFactValue}>{keyFacts.venueName}</span>
+            </dd>
           </div>
         ) : null}
-        {facts.map(({ label, value, field }) => {
-          const missing = field
-            ? getFactPresentation(sale, field, undefined, factReliabilities).kind === "missing"
-            : rooms == null;
-          return (
-            <div key={label} className={styles.summaryFact}>
-              <dt>{label}</dt>
-              <dd className={missing ? styles.factMissing : undefined}>
-                {value}
-                {field === "surface" && publicSurfaceFact ? (
-                  <PublicListingFactSource fact={publicSurfaceFact} />
-                ) : field === "occupancy_status" && publicOccupancyFact ? (
-                  <PublicListingFactSource fact={publicOccupancyFact} />
-                ) : null}
-              </dd>
-            </div>
-          );
-        })}
+        <div className={styles.heroFact}>
+          <dt>Occupation</dt>
+          <dd className={occupancyMissing ? styles.factMissing : undefined}>
+            <span className={styles.heroFactValue}>
+              <AiReviewField
+                fieldKey="property.occupancy_status"
+                projections={aiReviewProjections}
+                reviewStatus={aiReviewStatus}
+                sourceName={sale.source_name}
+                sourceUrl={sale.source_url}
+              >
+                {listingOccupation(sale)}
+              </AiReviewField>
+              {publicOccupancyFact ? (
+                <PublicListingFactSource fact={publicOccupancyFact} compact />
+              ) : null}
+            </span>
+          </dd>
+        </div>
       </dl>
-      {guardedSurface.estimated ? (
-        <p className={`${styles.muted} ${styles.summaryHelper}`}>{guardedSurface.helperText}</p>
-      ) : null}
-      <div className={styles.summaryActions}>
+      <div className={styles.summaryActions} data-hero-actions="">
         {preparation ? (
-          <a href={preparation.href} className={styles.primaryAction}>
-            {preparation.label}
-          </a>
+          preparation.href.startsWith("#") ? (
+            <a href={preparation.href} className={styles.primaryAction}>
+              {preparation.label}
+            </a>
+          ) : (
+            <Link href={preparation.href} className={styles.primaryAction}>
+              {preparation.label}
+            </Link>
+          )
         ) : null}
-        <a href={state ? "#participation" : "#rendez-vous"} className={styles.secondaryAction}>
-          {state ? "Voir la procédure de cession" : "Rendez-vous et contacts"}
-        </a>
+        {!showSecondaryAction
+          ? null
+          : (followAction ?? (
+              <a
+                href={state ? "#participation" : "#rendez-vous"}
+                className={styles.secondaryAction}
+              >
+                {state ? "Voir la procédure de cession" : "Rendez-vous et contacts"}
+              </a>
+            ))}
         {sourceLink ? (
           <a
             href={sourceLink.href}
@@ -583,50 +406,7 @@ export function ListingOverview({
           </a>
         ) : null}
       </div>
-      {guardedScenarioSummary ? (
-        <details className={styles.scenarioSummary} aria-label="Résumé du scénario">
-          <summary className={styles.scenarioSummaryToggle}>
-            <span>Voir le scénario de prix</span>
-            <ChevronDown className="h-4 w-4 shrink-0" aria-hidden />
-          </summary>
-          <div className={styles.scenarioSummaryContent}>
-            <div className={styles.scenarioHeading}>
-              <span>
-                {guardedScenarioSummary.personalized ? "Votre scénario" : "Scénario de départ"}
-              </span>
-              <a href="#calculation">
-                Ajuster <ArrowRight className="h-3.5 w-3.5" aria-hidden />
-              </a>
-            </div>
-            <div className={styles.projectCost}>
-              <span>Coût du projet estimé</span>
-              <strong>{formatPrice(guardedScenarioSummary.totalCost)}</strong>
-            </div>
-            <p className={styles.scenarioBasis}>
-              Achat simulé à {formatPrice(guardedScenarioSummary.purchasePrice)} · frais et travaux
-              inclus
-            </p>
-            <div className={styles.scenarioMetrics}>
-              <div>
-                <span>Budget travaux</span>
-                <strong>{formatPrice(guardedScenarioSummary.works)}</strong>
-              </div>
-              <div>
-                <span>Valeur de marché estimée</span>
-                <strong>
-                  {guardedScenarioSummary.marketValue == null
-                    ? "À compléter"
-                    : formatPrice(guardedScenarioSummary.marketValue)}
-                </strong>
-              </div>
-            </div>
-            <p className={styles.scenarioNote}>
-              Hors financement et fiscalité. Le prix final dépendra des enchères.
-            </p>
-          </div>
-        </details>
-      ) : null}
-    </aside>
+    </section>
   );
 }
 
