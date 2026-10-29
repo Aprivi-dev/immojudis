@@ -11,8 +11,12 @@ import {
   PEPITE_METHOD_PATH,
   PEPITE_RULE_PARAMS,
   PEPITE_LATEST_RULE_VERSION,
+  PEPITE_V12_RULE_PARAMS,
   PEPITE_V1_1_RULE_VERSION,
+  PEPITE_V1_2_RULE_VERSION,
   PEPITE_V1_RULE_VERSION,
+  PEPITE_V2_1_RULE_VERSION,
+  pepiteV12EffectiveClause,
   pepiteV2EffectiveClause,
 } from "./method";
 import Page, { metadata } from "./page";
@@ -139,13 +143,15 @@ describe("page « Comment repérons-nous les pépites ? »", () => {
     );
   });
 
-  it("donne les seuils de pepite-v1.1 à partir des constantes de la règle", () => {
+  it("donne les seuils de pepite-v1.2 à partir des constantes de la règle", () => {
     render(<Page />);
     const text = sectionText("Les critères et les seuils");
-    // Interrupteur fermé (défaut) : la page décrit la règle appliquée, pepite-v1.1.
+    // Interrupteur fermé (défaut) : la page décrit la règle appliquée, pepite-v1.2.
     expect(PEPITE_V1_RULE_VERSION).toBe("pepite-v1");
     expect(PEPITE_V1_1_RULE_VERSION).toBe("pepite-v1.1");
-    expect(text).toContain(`Version ${PEPITE_V1_1_RULE_VERSION}.`);
+    expect(PEPITE_V1_2_RULE_VERSION).toBe("pepite-v1.2");
+    expect(PEPITE_V2_1_RULE_VERSION).toBe("pepite-v2.1");
+    expect(text).toContain(`Version ${PEPITE_V1_2_RULE_VERSION}.`);
     expect(text).not.toContain("indiquée sur cette page");
     expect(PEPITE_RULE_PARAMS.chanceMinPct).toBe(70);
     expect(PEPITE_RULE_PARAMS.maxCostShareCourtPct).toBe(75);
@@ -156,8 +162,8 @@ describe("page « Comment repérons-nous les pépites ? »", () => {
     );
     expect(text).toContain(`au plus ${PEPITE_RULE_PARAMS.maxCostShareNotaryPct} %`);
     expect(text).toContain(`${PEPITE_RULE_PARAMS.historyYears} dernières années`);
-    expect(text).toContain("Version pepite-v1.1. Les seuils ci-dessous");
-    expect(text).not.toMatch(/Version pepite-v1\.(?!1)/);
+    expect(text).toContain("Version pepite-v1.2. Les seuils ci-dessous");
+    expect(text).not.toMatch(/Version pepite-v1\.(?!2)/);
     expect(text).toContain("Le repère est affiché depuis le 26 octobre 2026.");
     expect(text).toContain(
       `Il faut au moins ${PEPITE_RULE_PARAMS.minNationalSales} ventes comparables en France, tribunaux confondus.`,
@@ -222,7 +228,69 @@ describe("page « Comment repérons-nous les pépites ? »", () => {
     expect(sectionText("Les garde-fous")).toContain("seule une fiabilité forte est alors admise");
   });
 
-  it("règle pepite-v2 fermée (défaut) : aucune trace du risque d'inondation sur la page", () => {
+  it("reprend les seuils de la version 1.2 des constantes de la règle", () => {
+    expect(PEPITE_V12_RULE_PARAMS).toEqual({
+      energyRenovationFEurPerM2: policy.PEPITE_ENERGY_RENOVATION_EUR_PER_M2.F,
+      energyRenovationGEurPerM2: policy.PEPITE_ENERGY_RENOVATION_EUR_PER_M2.G,
+      dpeMinConfidence: policy.PEPITE_DPE_MIN_CONFIDENCE,
+      marketMinSales: policy.PEPITE_MARKET_MIN_SALES_12_MONTHS,
+      marketWindowMonths: policy.PEPITE_MARKET_WINDOW_MONTHS,
+      marketMaxDeclinePct: policy.PEPITE_MARKET_MAX_DECLINE_SHARE * 100,
+      marketTrendYears: policy.PEPITE_MARKET_TREND_YEARS,
+      marketTrendMinSalesPerYear: policy.PEPITE_MARKET_TREND_MIN_SALES_PER_YEAR,
+      maxHabitableSurfaceM2: policy.PEPITE_MAX_HABITABLE_SURFACE_M2,
+      maxCentralValueEur: policy.PEPITE_MAX_CENTRAL_VALUE_EUR,
+    });
+    // Valeurs validées le 29/10/2026.
+    expect(PEPITE_V12_RULE_PARAMS).toMatchObject({
+      energyRenovationFEurPerM2: 250,
+      energyRenovationGEurPerM2: 400,
+      dpeMinConfidence: 0.8,
+      marketMinSales: 20,
+      marketWindowMonths: 12,
+      marketMaxDeclinePct: 15,
+      marketTrendYears: 3,
+      marketTrendMinSalesPerYear: 10,
+      maxHabitableSurfaceM2: 250,
+      maxCentralValueEur: 1_500_000,
+    });
+  });
+
+  it("décrit ce que la version 1.2 ajoute avec les constantes de la règle, sans parler d'inondation", () => {
+    render(<Page />);
+    const text = sectionText("Ce que la version 1.2 ajoute");
+    expect(text).toContain("une donnée manquante n’exclut pas la vente");
+    expect(text).toContain(
+      "250 € par m² habitable pour un diagnostic de performance énergétique (DPE) de classe F, 400 € par m² pour la classe G",
+    );
+    expect(text).toContain("confiance d’au moins 0,8");
+    expect(text).toContain("Sans DPE connu, aucun coût n’est ajouté, et le calcul le signale.");
+    expect(text).toContain("il n’entre pas dans l’enchère plafond estimée");
+    expect(text).toContain(
+      "au moins 20 ventes de logements du même type (maison ou appartement) sur les 12 derniers mois disponibles de la base DVF",
+    );
+    expect(text).toContain(
+      "n’a pas baissé de plus de 15 % entre l’année la plus récente disponible et 3 ans plus tôt",
+    );
+    expect(text).toContain("chacune des deux années compte au moins 10 ventes");
+    expect(text).toContain("ni ce contrôle ni le précédent n’excluent la vente");
+    expect(text).toContain("ne dépasse pas 250 m² habitables");
+    expect(text).toContain("ne dépasse pas 1 500 000 €");
+    expect(text).toContain(
+      "un administrateur provisoire, un plan de sauvegarde, un mandataire ad hoc ou une carence (une carence d’enchères n’est pas concernée). Ce signal est bloquant.",
+    );
+    expect(text).toContain("l’absence de mention ne prouve pas l’absence de difficulté");
+    expect(text).toContain("ne retirent pas à eux seuls un repère figé 7 jours avant la vente");
+    expect(text).not.toMatch(/inondation|Géorisques|PPRi/);
+    // Pas de date réservée tant qu'elle n'est pas renseignée.
+    expect(pepiteV12EffectiveClause(null)).toBe("");
+    expect(pepiteV12EffectiveClause("29 octobre 2026")).toBe(" (en vigueur le 29 octobre 2026)");
+    expect(sectionText("Les critères et les seuils")).toContain(
+      "Version 1.2 : les seuils des deux",
+    );
+  });
+
+  it("règle pepite-v2.1 fermée (défaut) : aucune trace du risque d'inondation sur la page", () => {
     const { container } = render(<Page />);
     const text = plain(container.textContent ?? "");
     expect(screen.queryByRole("region", { name: "Le risque d’inondation" })).toBeNull();
@@ -401,13 +469,13 @@ describe("page « Comment repérons-nous les pépites ? »", () => {
   });
 });
 
-describe("page de méthode : règle pepite-v2 (interrupteur PEPITE_RULE_V2_ENABLED ouvert)", () => {
+describe("page de méthode : règle pepite-v2.1 (interrupteur PEPITE_RULE_V2_ENABLED ouvert)", () => {
   beforeEach(() => vi.stubEnv("PEPITE_RULE_V2_ENABLED", "true"));
 
-  it("annonce la version pepite-v2 et garde les mêmes seuils que la v1", () => {
+  it("annonce la version pepite-v2.1 et garde les mêmes seuils que la v1", () => {
     render(<Page />);
     const text = sectionText("Les critères et les seuils");
-    expect(text).toContain("Version pepite-v2.");
+    expect(text).toContain("Version pepite-v2.1.");
     expect(text).toContain(`Au moins ${PEPITE_RULE_PARAMS.chanceMinPct} % des ventes comparables`);
   });
 
@@ -415,7 +483,7 @@ describe("page de méthode : règle pepite-v2 (interrupteur PEPITE_RULE_V2_ENABL
     render(<Page />);
     const text = sectionText("Le risque d’inondation");
     expect(text).toContain(
-      "Depuis la version pepite-v2, le repère n’est pas attribué à un bien dont la position connue se trouve dans la zone que la crue fréquente d’un territoire à risque important d’inondation (TRI) inonderait.",
+      "Depuis la version pepite-v2.1, le repère n’est pas attribué à un bien dont la position connue se trouve dans la zone que la crue fréquente d’un territoire à risque important d’inondation (TRI) inonderait.",
     );
     expect(text).toContain(
       "Immojudis consulte pour cela la cartographie officielle des TRI diffusée par Géorisques, à partir des coordonnées du bien.",
@@ -492,8 +560,9 @@ describe("page de méthode : règle pepite-v2 (interrupteur PEPITE_RULE_V2_ENABL
     render(<Page />);
     const text = sectionText("Historique des versions");
     expect(text).toContain(
-      "pepite-v2 : ajout du contrôle du risque d’inondation à la version 1.1.",
+      "pepite-v2.1 : ajout du contrôle du risque d’inondation à la version 1.2.",
     );
+    expect(text).toContain("pepite-v1.2 : mêmes seuils pour les deux critères chiffrés");
     expect(text).toContain("pepite-v1.1 (28 octobre 2026) : mêmes seuils");
     expect(text).toContain("pepite-v1 (depuis le 26 octobre 2026) : version initiale.");
   });
@@ -543,7 +612,7 @@ describe("page de méthode : règle pepite-v2 (interrupteur PEPITE_RULE_V2_ENABL
       ),
     ).toHaveLength(2);
     expect(text).toContain("périmètres de PPRi n’ont pas pu être consultés");
-    expect(text).toContain("Cette règle reprend tous les critères de la version 1.1");
+    expect(text).toContain("Cette règle reprend tous les critères de la version 1.2");
   });
 
   it("garde un seul titre de niveau 1 et reste sobre", () => {
