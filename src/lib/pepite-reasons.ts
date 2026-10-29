@@ -15,6 +15,12 @@ import {
   PEPITE_FAVOURABLE_EVALUATIONS,
   PEPITE_FREEZE_DAYS,
   PEPITE_LOW_STARTING_PRICE_SHARE,
+  PEPITE_MARKET_MAX_DECLINE_SHARE,
+  PEPITE_MARKET_MIN_SALES_12_MONTHS,
+  PEPITE_MARKET_TREND_MIN_SALES_PER_YEAR,
+  PEPITE_MARKET_TREND_YEARS,
+  PEPITE_MAX_CENTRAL_VALUE_EUR,
+  PEPITE_MAX_HABITABLE_SURFACE_M2,
   PEPITE_MIN_VALUE_COMPARABLES,
   type PepiteCriterionId,
   type PepiteRegimeKey,
@@ -28,6 +34,8 @@ const FLOOD_HIGH_ADMIN_LABEL =
   "Exclue : bien situé dans la zone inondée par une crue fréquente (territoire à risque important d’inondation, scénario « forte probabilité »).";
 
 const percent = (share: number) => `${Math.round(share * 100)} %`;
+/** Un montant rond en euros, avec une espace insécable entre les milliers : 1 500 000 donne « 1 500 000 € ». */
+const euros = (amount: number) => `${new Intl.NumberFormat("fr-FR").format(amount)} €`;
 /** Une part (0 à 1) en dixièmes : 0,7 donne 7 (« 7 ventes sur 10 »). */
 const tenths = (share: number) => Math.round(share * 10);
 
@@ -110,6 +118,18 @@ export const PEPITE_CRITERION_LABELS: Record<PepiteCriterionId, { pass: string; 
     pass: `Mise à prix sous ${percent(PEPITE_LOW_STARTING_PRICE_SHARE)} de la valeur : estimation de fiabilité forte`,
     fail: `Mise à prix sous ${percent(PEPITE_LOW_STARTING_PRICE_SHARE)} de la valeur : une estimation de fiabilité forte est exigée`,
   },
+  size_value_supported: {
+    pass: `Bien d’au plus ${PEPITE_MAX_HABITABLE_SURFACE_M2} m² habitables et de valeur estimée d’au plus ${euros(PEPITE_MAX_CENTRAL_VALUE_EUR)}`,
+    fail: `Bien de plus de ${PEPITE_MAX_HABITABLE_SURFACE_M2} m² habitables, ou de valeur estimée supérieure à ${euros(PEPITE_MAX_CENTRAL_VALUE_EUR)} : hors du périmètre où l’estimation est fiable`,
+  },
+  market_liquid: {
+    pass: `Marché local liquide : au moins ${PEPITE_MARKET_MIN_SALES_12_MONTHS} ventes de logements du même type dans la commune sur 12 mois (ou aucune donnée de marché pour la commune)`,
+    fail: `Marché local peu liquide : moins de ${PEPITE_MARKET_MIN_SALES_12_MONTHS} ventes de logements du même type dans la commune sur 12 mois`,
+  },
+  market_not_declining: {
+    pass: `Prix du marché local sans baisse de plus de ${percent(PEPITE_MARKET_MAX_DECLINE_SHARE)} en ${PEPITE_MARKET_TREND_YEARS} ans (ou tendance non évaluable : moins de ${PEPITE_MARKET_TREND_MIN_SALES_PER_YEAR} ventes une des deux années, ou aucune donnée)`,
+    fail: `Prix du marché local en baisse de plus de ${percent(PEPITE_MARKET_MAX_DECLINE_SHARE)} en ${PEPITE_MARKET_TREND_YEARS} ans (prix médian au m² de la commune)`,
+  },
   flood_risk_known: {
     pass: "Risque d’inondation contrôlé, ou sans objet pour la commune",
     fail: "Risque d’inondation non vérifié (position imprécise dans une commune qui compte un territoire à risque important d’inondation, source indisponible, ou périmètres de PPRi non lus)",
@@ -141,6 +161,10 @@ export const PEPITE_CRITERION_LABELS: Record<PepiteCriterionId, { pass: string; 
   risks_qualified: {
     pass: "Aucun risque signalé laissé sans précision",
     fail: "Risque signalé laissé sans précision",
+  },
+  no_copro_distress: {
+    pass: "Aucune copropriété en difficulté mentionnée dans les pièces lues",
+    fail: "Copropriété en difficulté mentionnée dans une pièce lue (administrateur provisoire, plan de sauvegarde, mandataire ad hoc ou carence)",
   },
   test_b_chance: {
     pass: `Chances de l'emporter : au moins ${tenths(PEPITE_CHANCE_MIN_SHARE)} ventes comparables sur 10 adjugées sous l'enchère plafond`,

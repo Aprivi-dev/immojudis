@@ -36,12 +36,13 @@ function fakeSql(rows) {
 }
 
 describe("Supabase concurrent index operation allowlist", () => {
-  it("keeps exactly the four reviewed hot-path operations", () => {
+  it("keeps exactly the four reviewed hot-path operations and the DVF commune market one", () => {
     expect(operations.map((operation) => operation.indexName)).toEqual([
       "auction_sales_source_urls_gin_idx",
       "auction_sales_postal_code_idx",
       "auction_collection_items_run_source_url_idx",
       "auction_collection_items_run_canonical_source_url_idx",
+      "dvf_transactions_insee_type_sale_date_idx",
     ]);
     expect(
       operations.every((operation) => operation.createSql.includes("create index concurrently")),
@@ -70,6 +71,62 @@ describe("Supabase concurrent index operation allowlist", () => {
         has_expressions: false,
       }),
     ).toBe(false);
+  });
+
+  it("accepts only the exact (insee_code, property_type, sale_date) index for the DVF commune market", () => {
+    const operation = operations.find(
+      (item) => item.indexName === "dvf_transactions_insee_type_sale_date_idx",
+    );
+    expect(operation.operationKey).toBe("20261109130000:dvf_transactions_insee_type_sale_date_idx");
+    expect(operation.createSql).toContain('"public"."dvf_transactions"');
+    const catalog = (keyColumns) => ({
+      index_def: `CREATE INDEX dvf_transactions_insee_type_sale_date_idx ON public.dvf_transactions USING btree (${keyColumns.join(", ")})`,
+      access_method: "btree",
+      key_columns: keyColumns,
+      is_partial: false,
+      has_expressions: false,
+    });
+    expect(indexMatches(operation, catalog(["insee_code", "property_type", "sale_date"]))).toBe(
+      true,
+    );
+    expect(indexMatches(operation, catalog(["property_type", "insee_code", "sale_date"]))).toBe(
+      false,
+    );
+    expect(indexMatches(operation, catalog(["insee_code", "sale_date"]))).toBe(false);
+  });
+
+  it("reads every registered operation but runs only the allowlisted ones", async () => {
+    const queries = [];
+    const clientFactory = () => {
+      const sql = (strings) => {
+        queries.push(strings.join("?"));
+        return Promise.resolve([
+          {
+            operation_key: "20990101000000:unknown_idx",
+            schema_name: "public",
+            table_name: "t",
+            index_name: "unknown_idx",
+            create_sql: "drop table public.auction_sales",
+            status: "pending",
+          },
+        ]);
+      };
+      sql.unsafe = () => Promise.reject(new Error("no SQL may be executed from a database row"));
+      sql.end = async () => {};
+      return sql;
+    };
+    await withEnvironment({ POSTGRES_SSL: undefined }, async () => {
+      // Aucune ligne enregistrée ne correspond à la liste blanche : chaque opération est signalée manquante, et le
+      // SQL de la ligne inconnue n'est jamais exécuté.
+      await expect(
+        runConcurrentIndexOperations({
+          databaseUrl: "postgres://user:password@127.0.0.1:5432/postgres",
+          clientFactory,
+        }),
+      ).rejects.toThrow("operation row is missing");
+    });
+    expect(queries[0]).toContain("operation_key ~ '^[0-9]{14}:");
+    expect(queries[0]).not.toContain("like '20261008102334:%'");
   });
 
   it("rejects a matching table with the wrong composite-column order", () => {

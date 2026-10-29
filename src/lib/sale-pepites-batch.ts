@@ -31,11 +31,14 @@ import {
 import { isMissingDatabaseObject } from "@/lib/postgrest-errors";
 import { evaluateSaleForPepite, type PepiteSaleFacts } from "@/lib/pepite-input";
 import { activePepiteRuleVersion } from "@/lib/pepite-rule-switch.server";
+import { readPepiteV12Sources } from "@/lib/pepite-context.server";
+import { createRentLookupSession } from "@/lib/rent-reference.server";
 import {
   PEPITE_REFRESH_HOURS,
-  PEPITE_LATEST_RULE_VERSION,
   applyPepiteStability,
   pepiteReasonCodes,
+  pepiteRuleCapabilities,
+  readsPepiteV12Data,
   type PepiteEvaluation,
   type PepiteRuleVersion,
   type PepiteStability,
@@ -56,13 +59,14 @@ import { isBusyWriteError } from "@/lib/write-busy";
  * 20261104100000). Le calcul reste en TypeScript : c'est le chemin de la fiche (assainissement de la
  * vente, relecture IA, conflit de valorisation, estimation stockée sans mise en file d'attente,
  * `computeSaleCeiling`), lu avec le rôle de service sur `v_auction_sales_app`, puis la règle
- * `pepite-v1` ou `pepite-v2` (`pepite-policy.ts`) et sa stabilité.
+ * de la version appliquée (`pepite-policy.ts`) et sa stabilité.
  *
- * Règle appliquée : `pepite-v1` tant que l'interrupteur serveur `PEPITE_RULE_V2_ENABLED` est fermé (défaut : le
- * traitement ne lit alors pas la table d'inondation et rien ne change) ; `pepite-v2` quand il est ouvert : le
- * verdict d'inondation de chaque vente est lu dans la table privée alimentée par `/api/cron/sale-flood-risk`
- * (jamais un appel réseau ici). Sans cette table ni celle des communes, la passe se termine proprement
- * (`skipped: "not_migrated"`). Voir `pepite-rule-switch.server.ts`.
+ * Règle appliquée : `pepite-v1.2` tant que l'interrupteur serveur `PEPITE_RULE_V2_ENABLED` est fermé (défaut : le
+ * traitement ne lit alors pas la table d'inondation) ; `pepite-v2.1` quand il est ouvert : le verdict d'inondation
+ * de chaque vente est lu dans la table privée alimentée par `/api/cron/sale-flood-risk` (jamais un appel réseau
+ * ici). Sans cette table ni celle des communes, la passe se termine proprement (`skipped: "not_migrated"`). Voir
+ * `pepite-rule-switch.server.ts`. Les versions v1.2 et v2.1 lisent en plus, par lot de ventes, le DPE, les pièces
+ * lues, l'agrégat de marché de la commune et le loyer de référence des badges (`pepite-context.server.ts`).
  *
  * Mode (`app_private.sale_pepite_settings`) : `off`, la passe ne fait rien ; `shadow`, les résultats sont
  * calculés et stockés mais rien n'est visible du public ; `on`, les fonctions publiques de lecture
@@ -369,6 +373,16 @@ export function pepiteDetails(evaluation: PepiteEvaluation, facts: PepiteSaleFac
     estimateReliability: facts?.estimateReliability ?? null,
     estimateEffectiveSample: facts?.estimateEffectiveSample ?? null,
     scenarios: facts?.scenarios ?? null,
+    // pepite-v1.2 et suivantes : DPE retenu (`null` : inconnu, aucun coût ajouté), coût de rénovation énergétique
+    // ajouté au coût total, marché local de la commune, mentions de copropriété en difficulté et badges. Les badges
+    // sont des informations : ils n'entrent ni dans la règle ni dans `is_pepite`. Vides pour les versions antérieures.
+    dpeClass: metrics.dpeClass ?? null,
+    dpeSource: metrics.dpeSource ?? null,
+    energyRenovationEur: roundEuro(metrics.energyRenovationEur ?? null),
+    habitableSurfaceM2: metrics.habitableSurfaceM2 ?? null,
+    market: metrics.market ?? null,
+    coproDistress: facts?.coproDistress ?? [],
+    badges: (facts?.badges ?? []).map((badge) => ({ ...badge })),
     favorable: evaluation.favorable,
     holds: evaluation.holds,
     blocking: evaluation.blocking,
@@ -720,7 +734,9 @@ async function activeModelIds(estimates: readonly EstimateRow[]): Promise<Set<st
   return new Set((data ?? []).map((row) => row.id));
 }
 
-const AUCTION_SALE_SELECT = `${SALE_INPUT_SELECT},score_status:raw_payload->>score_status` as const;
+// `dpe_listing_class` : la classe DPE publiée par l'annonce (règle pepite-v1.2 et suivantes, repli du DPE de l'ADEME).
+const AUCTION_SALE_SELECT =
+  `${SALE_INPUT_SELECT},score_status:raw_payload->>score_status,dpe_listing_class:raw_payload->source_energy_diagnostics->>dpe_class` as const;
 
 type SalePepitesBatchOptions = {
   limit?: number;
@@ -792,8 +808,11 @@ async function runPass({
   if (stored == null) return { ...result, skipped: "not_migrated" };
   const estimateDates = await readEstimateDates();
 
-  // Règle v2 : le verdict d'inondation de chaque vente, lu dans la table privée (aucun appel réseau).
-  const v2 = versions.rule === PEPITE_LATEST_RULE_VERSION;
+  // Règles v2 et v2.1 : le verdict d'inondation de chaque vente, lu dans la table privée (aucun appel réseau).
+  const v2 = pepiteRuleCapabilities(versions.rule).flood;
+  // Règles v1.2 et v2.1 : DPE, marché local, pièces lues et loyer de référence (badges), lus par lot de ventes.
+  const readsV12 = readsPepiteV12Data(versions.rule);
+  const rentSession = readsV12 ? createRentLookupSession() : null;
   let flood: {
     stored: Map<string, StoredFloodRow>;
     communes: Map<string, SaleCommune>;
@@ -868,6 +887,19 @@ async function runPass({
         // Pépites publiées de ce lot : leurs détails sont gardés si la vente est dans la fenêtre de gel.
         readStoredDetails(ids.filter((id) => storedBySale.get(id)?.isPepite)),
       ]);
+      // Règle v1.2 : lectures complémentaires du lot. Une erreur de lecture fait échouer le lot (pas d'évaluation
+      // sur un DPE, une pièce ou un marché non lus).
+      let v12Sources: Awaited<ReturnType<typeof readPepiteV12Sources>> | null = null;
+      if (readsV12) {
+        const rentLookup = rentSession ? await rentSession.load(sales) : null;
+        v12Sources = await readPepiteV12Sources({
+          sales,
+          listingDpeClass: new Map(
+            (inputsRead.data ?? []).map((row) => [row.id, row.dpe_listing_class]),
+          ),
+          rentLookup,
+        });
+      }
 
       for (const sale of sales) {
         try {
@@ -906,6 +938,7 @@ async function runPass({
                 estimateRow?.model_version_id != null && modelIds.has(estimateRow.model_version_id),
               scenarios,
               flood: saleFlood,
+              v12: v12Sources?.get(sale.id),
               now,
             },
             versions.rule,

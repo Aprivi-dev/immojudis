@@ -87,6 +87,19 @@ CREATE INDEX auction_sales_source_urls_gin_idx ON public.auction_sales USING gin
     ).toBe("");
   });
 
+  it("ignores the exact reviewed DVF commune market index and nothing close to it", () => {
+    expect(
+      normalizeDiff(
+        "CREATE INDEX dvf_transactions_insee_type_sale_date_idx ON public.dvf_transactions (insee_code, property_type, sale_date);",
+      ),
+    ).toBe("");
+    expect(
+      normalizeDiff(
+        "CREATE INDEX dvf_transactions_insee_type_sale_date_idx ON public.dvf_transactions (insee_code, sale_date);",
+      ),
+    ).toContain("dvf_transactions_insee_type_sale_date_idx");
+  });
+
   it("keeps altered definitions and indexes outside the allowlist", () => {
     expect(
       normalizeDiff(

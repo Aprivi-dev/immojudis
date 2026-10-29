@@ -93,6 +93,32 @@ première passe horaire, à :35, prend le relais. `cron.stale` signale la tâche
 garder `('sale-pepites', interval '3 hours')` **et** `('sale-flood-risk', interval '3 hours')` dans sa liste de tâches
 attendues (la seconde, ajoutée par la migration `20261106100300`, ne doit pas être perdue par une redéfinition ultérieure).
 
+## Règle `pepite-v1.2` : marché local, coût énergétique, taille et copropriété (validée le 29/10/2026)
+
+La règle `pepite-v1.2` remplace `pepite-v1.1` comme règle appliquée interrupteur fermé ; `PEPITE_RULE_V2_ENABLED` ouvre
+désormais `pepite-v2.1` (= `pepite-v1.2` + le critère d'inondation de `pepite-v2`). `pepite-v1`, `pepite-v1.1` et
+`pepite-v2` restent rejouables. Les seuils des tests B et C ne changent pas. Elle lit en plus le DPE
+(`auction_dpe_diagnostics`, puis l'annonce), les pièces lues (`auction_document_readings`) et l'agrégat du marché local
+`app_private.commune_market_trends`, recalculé depuis `dvf_transactions`.
+
+**Ordre de mise en production** (aucune étape n'est automatique) :
+
+1. Appliquer les migrations `20261109130000` (enregistre la construction de l'index
+   `dvf_transactions_insee_type_sale_date_idx`) et `20261109130100` (table, recalcul et lecture de l'agrégat), puis
+   construire l'index : `npm run db:indexes:concurrent` (aussi lancé par le workflow « Apply Supabase Migrations »),
+   hors collecte en cours.
+2. Premier calcul de l'agrégat : `select app_private.refresh_commune_market_trends();` (précédé de
+   `set local statement_timeout = '10min'` dans la même transaction). Ensuite, le workflow manuel « Immojudis DVF
+   Import » le recalcule à la fin de son étape d'import (`python -m src.dvf_market_trends`), sans nouvelle planification.
+3. Déployer le code : la version appliquée devient `pepite-v1.2`, chaque pépite publiée est réévaluée en priorité au
+   premier passage horaire et sort si elle ne remplit plus les critères (DPE F ou G, marché peu liquide ou en baisse,
+   bien de plus de 250 m² ou de plus de 1 500 000 €, copropriété en difficulté). Renseigner alors
+   `PEPITE_V1_2_EFFECTIVE_DATE` (`src/app/methode-pepites/method.ts`).
+
+Sans agrégat (migration absente, commune sans vente), les critères de marché sont réussis : déployer avant l'étape 2
+n'exclut rien. Un import DVF « replace_existing » remplace la table et supprime l'index : relancer
+`npm run db:indexes:concurrent` ensuite.
+
 ## Règle `pepite-v2` : risque d'inondation, mise en production en deux temps
 
 La règle `pepite-v2` ajoute à `pepite-v1.1` un critère éliminatoire : un bien dont la position précise est dans la zone
