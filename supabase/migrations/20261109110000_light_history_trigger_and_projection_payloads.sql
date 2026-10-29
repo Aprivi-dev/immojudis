@@ -11,7 +11,8 @@ set local lock_timeout = '5s';
 --    journal reste identique (mêmes colonnes comparées, mêmes empreintes), sans recopier quelques centaines de Ko
 --    de JSON deux fois par écriture.
 -- 2. properties et judicial_sales recopiaient raw_payload d'auction_sales à chaque publication. Rien ne le lit
---    (ni l'application, ni les vues, ni le pipeline, qui ne l'écrit plus : sale_row_builders) : il est vidé.
+--    (ni l'application, ni les vues, ni le pipeline, qui ne l'écrit plus : sale_row_builders) : il ne garde que la
+--    marque de quarantaine.
 
 create or replace function public.log_auction_sale_change()
 returns trigger
@@ -70,7 +71,21 @@ begin
 end;
 $function$;
 
-update public.properties set raw_payload = '{}'::jsonb where raw_payload <> '{}'::jsonb;
-update public.judicial_sales set raw_payload = '{}'::jsonb where raw_payload <> '{}'::jsonb;
+-- Seule la marque de quarantaine reste (les deux tables sont lisibles sous RLS par les comptes Analyse).
+update public.properties
+set raw_payload = case
+  when raw_payload ? 'publication_quarantine'
+    then jsonb_build_object('publication_quarantine', raw_payload->'publication_quarantine')
+  else '{}'::jsonb
+end
+where raw_payload - 'publication_quarantine' <> '{}'::jsonb;
+
+update public.judicial_sales
+set raw_payload = case
+  when raw_payload ? 'publication_quarantine'
+    then jsonb_build_object('publication_quarantine', raw_payload->'publication_quarantine')
+  else '{}'::jsonb
+end
+where raw_payload - 'publication_quarantine' <> '{}'::jsonb;
 
 commit;
