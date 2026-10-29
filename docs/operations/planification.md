@@ -116,8 +116,10 @@ désormais `pepite-v2.1` (= `pepite-v1.2` + le critère d'inondation de `pepite-
    `PEPITE_V1_2_EFFECTIVE_DATE` (`src/app/methode-pepites/method.ts`).
 
 Sans agrégat (migration absente, commune sans vente), les critères de marché sont réussis : déployer avant l'étape 2
-n'exclut rien. Un import DVF « replace_existing » remplace la table et supprime l'index : relancer
-`npm run db:indexes:concurrent` ensuite.
+n'exclut rien. Un import DVF « replace_existing » remplace la table : l'importeur construit l'index sur la table de
+chargement avant l'échange (`services/data-pipeline/src/dvf_import.py`, `STAGING_INDEX_SUFFIXES`), il survit donc au
+remplacement. Un test vérifie que tout index de `dvf_transactions` construit par le script d'index l'est aussi par
+l'importeur.
 
 ## Règle `pepite-v2` : risque d'inondation, mise en production en deux temps
 
