@@ -16,8 +16,14 @@ vi.mock("@/lib/sale-market-estimates", () => ({
 }));
 
 import { FLOOD_VERDICTS } from "@/lib/flood-risk";
+import { parseMarketTrendRow } from "@/lib/pepite-market";
 import {
   PEPITE_COURT_REPLACE_BELOW_SALES,
+  PEPITE_MARKET_PRICE_PER_M2_MAX,
+  PEPITE_MARKET_PRICE_PER_M2_MIN,
+  PEPITE_MARKET_PROPERTY_TYPES,
+  PEPITE_MARKET_TREND_YEARS,
+  PEPITE_MARKET_WINDOW_MONTHS,
   PEPITE_MAX_EVALUATION_AGE_HOURS,
   PEPITE_MIN_NATIONAL_SALES,
   PEPITE_PRICE_COURT_ONLY_FROM_SALES,
@@ -175,5 +181,60 @@ describe("motifs d'arrondissement : TypeScript, SQL et Python", () => {
   it("écrit le même motif pour chaque commune en TypeScript, en SQL et en Python", () => {
     expect(sqlPatterns).toEqual(tsPatterns);
     expect(pythonPatterns).toEqual(tsPatterns);
+  });
+});
+
+describe("marché local de la règle pepite-v1.2 (TypeScript et SQL)", () => {
+  const { name, body } = latestDefinition("app_private.refresh_commune_market_trends");
+  const typeList = PEPITE_MARKET_PROPERTY_TYPES.map((type) => `'${type}'`).join(", ");
+
+  it("le recalcul de l'agrégat reprend les bornes de prix, la fenêtre, l'écart d'années et les types de la règle", () => {
+    expect(body, name).toContain(
+      `dvf.price_per_m2 between ${PEPITE_MARKET_PRICE_PER_M2_MIN} and ${PEPITE_MARKET_PRICE_PER_M2_MAX}`,
+    );
+    expect(body, name).toContain(`interval '${PEPITE_MARKET_WINDOW_MONTHS} months'`);
+    expect(body, name).toContain(
+      `pg_catalog.make_date(v_year - ${PEPITE_MARKET_TREND_YEARS}, 1, 1)`,
+    );
+    expect(body, name).toContain(
+      `pg_catalog.make_date(v_year - ${PEPITE_MARKET_TREND_YEARS}, 12, 31)`,
+    );
+    expect(body, name).toContain("dvf.mutation_nature = 'Vente'");
+    expect(body, name).toContain(`dvf.property_type in (${typeList})`);
+  });
+
+  it("la table n'accepte que les types de logement de la règle", () => {
+    const migration = migrations.find((item) => item.name === name)!.sql;
+    expect(migration).toContain(`check (property_type in (${typeList}))`);
+  });
+
+  it("les colonnes lues par l'application sont celles que la fonction publique rend", () => {
+    const { body: reader } = latestDefinition("public.get_commune_market_trends");
+    for (const key of [
+      "insee_code",
+      "property_type",
+      "reference_year",
+      "sales_12_months",
+      "median_recent_eur_m2",
+      "median_baseline_eur_m2",
+      "sales_recent_year",
+      "sales_baseline_year",
+    ]) {
+      expect(reader, key).toContain(`'${key}'`);
+    }
+  });
+
+  it("une ligne rendue par la fonction publique est lue par la règle", () => {
+    const parsed = parseMarketTrendRow({
+      insee_code: "33063",
+      property_type: "Maison",
+      reference_year: 2026,
+      sales_12_months: 41,
+      median_recent_eur_m2: 3200.5,
+      median_baseline_eur_m2: 3500,
+      sales_recent_year: 30,
+      sales_baseline_year: 33,
+    });
+    expect(parsed?.aggregate).toMatchObject({ sales12Months: 41, medianRecentEurM2: 3200.5 });
   });
 });

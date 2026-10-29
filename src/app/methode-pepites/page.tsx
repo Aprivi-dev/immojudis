@@ -12,7 +12,15 @@ import { DEFAULT_RENTED_DISCOUNT_PCT } from "@/lib/bid-ceiling-defaults";
 import { MARKET_GAP_METHOD_PATH } from "@/lib/market-gap";
 import { pageMetadata } from "@/lib/page-metadata";
 import { activePepiteRuleVersion, pepiteV2EnabledFromEnv } from "@/lib/pepite-rule-switch.server";
-import { PEPITE_METHOD_PATH, PEPITE_RULE_PARAMS, pepiteV2EffectiveClause } from "./method";
+import {
+  PEPITE_METHOD_PATH,
+  PEPITE_RULE_PARAMS,
+  PEPITE_V12_RULE_PARAMS,
+  pepiteV12EffectiveClause,
+  pepiteV2EffectiveClause,
+} from "./method";
+
+const euros = new Intl.NumberFormat("fr-FR");
 
 const PAGE_TITLE = "Comment repérons-nous les pépites ?";
 
@@ -24,13 +32,14 @@ export const metadata: Metadata = pageMetadata({
 });
 
 /**
- * Cette page décrit la règle appliquée, `pepite-v1.1` (`pepite-v2` quand l'interrupteur est ouvert) : seuils dans
+ * Cette page décrit la règle appliquée, `pepite-v1.2` (`pepite-v2.1` quand l'interrupteur est ouvert) : seuils dans
  * `./method.ts`, qui vient des constantes de la règle, et lissage recopié du SQL. Le repère est affiché depuis le
  * 26 octobre 2026 : ce qui est en vigueur s'écrit au présent de l'indicatif. Le conditionnel est réservé à ce qui
  * est seulement prévu (archivage des résultats des ventes notariales). La page ne dit toujours pas combien de
  * pépites sont affichées. Rédaction relue par `juridique-rgpd` le 26/10/2026, reprise le 28/10/2026 (présent,
  * lissage d'après la base, « prix de référence », questions fréquentes), puis mise en accord avec `pepite-v1.1`
- * et le contrôle d'inondation corrigé (n° 28, suite) : à relire à nouveau.
+ * et le contrôle d'inondation corrigé (n° 28, suite), puis avec `pepite-v1.2` (29/10/2026 : section « Ce que la
+ * version 1.2 ajoute », qui ne cite jamais l'inondation, réservée à l'interrupteur ouvert) : à relire à nouveau.
  */
 const NOT_LIST = [
   "Ce n’est pas un conseil en investissement, ni un conseil juridique ou financier.",
@@ -55,9 +64,9 @@ const NOT_MEASURED = [
 ] as const;
 
 /**
- * Règle `pepite-v2` (risque d'inondation) : ces textes ne s'affichent que si l'interrupteur serveur
- * `PEPITE_RULE_V2_ENABLED` est ouvert (`pepiteV2EnabledFromEnv`). Fermé, la page décrit `pepite-v1.1`, la règle
- * appliquée. `pepite-v2` = `pepite-v1.1` + ce contrôle. Rédaction validée par `juridique-rgpd` le 26/10/2026, tampon de
+ * Règle `pepite-v2.1` (risque d'inondation) : ces textes ne s'affichent que si l'interrupteur serveur
+ * `PEPITE_RULE_V2_ENABLED` est ouvert (`pepiteV2EnabledFromEnv`). Fermé, la page décrit `pepite-v1.2`, la règle
+ * appliquée. `pepite-v2.1` = `pepite-v1.2` + ce contrôle. Rédaction validée par `juridique-rgpd` le 26/10/2026, tampon de
  * rue, parcelles et renvoi à l'état des risques mis à jour le 28/10/2026 (n° 28, suite) : à relire à nouveau.
  */
 const NOT_LIST_V2 = [
@@ -115,10 +124,12 @@ export default function Page() {
 
 function PageContent() {
   const contactEmail = publicLegalPublisher().contactEmail;
-  // Interrupteur serveur de la règle pepite-v2 : fermé (défaut), la page décrit pepite-v1.1, la règle appliquée.
+  // Interrupteur serveur de la règle pepite-v2.1 : fermé (défaut), la page décrit pepite-v1.2, la règle appliquée.
   const v2 = pepiteV2EnabledFromEnv();
   const version = activePepiteRuleVersion();
   const effectiveClause = pepiteV2EffectiveClause();
+  const v12Clause = pepiteV12EffectiveClause();
+  const v12 = PEPITE_V12_RULE_PARAMS;
   const notList = v2 ? [...NOT_LIST, ...NOT_LIST_V2] : [...NOT_LIST];
   const guardrails = v2 ? [...GUARDRAILS, GUARDRAIL_FLOOD_V2] : [...GUARDRAILS];
   const absenceText = v2 ? <strong>{ABSENCE_V2}</strong> : ABSENCE_V1;
@@ -213,6 +224,12 @@ function PageContent() {
             {PEPITE_RULE_PARAMS.freezeDaysBeforeSale} derniers jours avant la vente, une estimation
             qui se dégrade fait sortir le repère.
           </p>
+          <p>
+            <strong>Version 1.2{v12Clause} :</strong> les seuils des deux critères chiffrés ne
+            changent pas. Le second critère inclut désormais un coût de rénovation énergétique, et
+            quatre contrôles s’ajoutent : le marché local, la taille et la valeur du bien, et la
+            copropriété (voir « Ce que la version 1.2 ajoute »).
+          </p>
           <h3 className="font-semibold text-foreground">Les ventes comparables</h3>
           <p>
             Les chances de l’emporter se mesurent sur les ventes passées des{" "}
@@ -299,13 +316,65 @@ function PageContent() {
           </p>
         </Section>
 
+        <Section id="version-1-2" title="Ce que la version 1.2 ajoute">
+          <p>
+            Ces contrôles s’ajoutent aux deux critères chiffrés. Sauf indication contraire, une
+            donnée manquante n’exclut pas la vente.
+          </p>
+          <ul className="list-disc space-y-2 pl-5">
+            <li>
+              <strong>Rénovation énergétique.</strong> Le coût total du second critère inclut un
+              coût de rénovation énergétique estimé : {v12.energyRenovationFEurPerM2} € par m²
+              habitable pour un diagnostic de performance énergétique (DPE) de classe F,{" "}
+              {v12.energyRenovationGEurPerM2} € par m² pour la classe G. Les autres classes
+              n’ajoutent aucun coût. La classe retenue est celle du diagnostic de l’ADEME rapproché
+              du bien, quand ce rapprochement est assez fiable (confiance d’au moins{" "}
+              {String(v12.dpeMinConfidence).replace(".", ",")}), sinon celle de l’annonce. Sans DPE
+              connu, aucun coût n’est ajouté, et le calcul le signale. Ce coût est forfaitaire : il
+              ne remplace ni un audit énergétique ni un devis, et il n’entre pas dans l’enchère
+              plafond estimée.
+            </li>
+            <li>
+              <strong>Marché local actif.</strong> La commune compte au moins {v12.marketMinSales}{" "}
+              ventes de logements du même type (maison ou appartement) sur les{" "}
+              {v12.marketWindowMonths} derniers mois disponibles de la base DVF.
+            </li>
+            <li>
+              <strong>Prix du marché local.</strong> Le prix médian au m² de la commune, pour ce
+              type de logement, n’a pas baissé de plus de {v12.marketMaxDeclinePct} % entre l’année
+              la plus récente disponible et {v12.marketTrendYears} ans plus tôt. Ce contrôle n’est
+              évalué que si chacune des deux années compte au moins {v12.marketTrendMinSalesPerYear}{" "}
+              ventes. Sans donnée de marché pour la commune, ni ce contrôle ni le précédent
+              n’excluent la vente.
+            </li>
+            <li>
+              <strong>Taille et valeur.</strong> Le bien ne dépasse pas {v12.maxHabitableSurfaceM2}{" "}
+              m² habitables et sa valeur estimée ne dépasse pas{" "}
+              {euros.format(v12.maxCentralValueEur)} €.
+            </li>
+            <li>
+              <strong>Copropriété.</strong> Aucune pièce du dossier lue par Immojudis ne mentionne
+              explicitement, pour la copropriété, un administrateur provisoire, un plan de
+              sauvegarde, un mandataire ad hoc ou une carence (une carence d’enchères n’est pas
+              concernée). Ce signal est bloquant. Toutes les pièces ne sont pas lues : l’absence de
+              mention ne prouve pas l’absence de difficulté.
+            </li>
+          </ul>
+          <p>
+            Les contrôles de marché et de taille jouent à chaque recalcul normal ; ils ne retirent
+            pas à eux seuls un repère figé {PEPITE_RULE_PARAMS.freezeDaysBeforeSale} jours avant la
+            vente. Le signal sur la copropriété, comme les autres signaux bloquants, retire le
+            repère aussitôt.
+          </p>
+        </Section>
+
         {v2 ? (
           <Section id="risque-inondation" title="Le risque d’inondation">
             <p>
-              Depuis la version pepite-v2{effectiveClause}, le repère n’est pas attribué à un bien
+              Depuis la version pepite-v2.1{effectiveClause}, le repère n’est pas attribué à un bien
               dont la position connue se trouve dans la zone que la crue fréquente d’un territoire à
               risque important d’inondation (TRI) inonderait. Cette règle reprend tous les critères
-              de la version 1.1 et y ajoute ce contrôle. Immojudis consulte pour cela la
+              de la version 1.2 et y ajoute ce contrôle. Immojudis consulte pour cela la
               cartographie officielle des TRI diffusée par Géorisques, à partir des coordonnées du
               bien.
             </p>
@@ -503,8 +572,13 @@ function PageContent() {
             <Section id="historique" title="Historique des versions">
               <ul className="list-disc space-y-1 pl-5">
                 <li>
-                  pepite-v2{effectiveClause} : ajout du contrôle du risque d’inondation à la version
-                  1.1.
+                  pepite-v2.1{effectiveClause} : ajout du contrôle du risque d’inondation à la
+                  version 1.2.
+                </li>
+                <li>
+                  pepite-v1.2{v12Clause} : mêmes seuils pour les deux critères chiffrés, avec le
+                  coût de rénovation énergétique, le marché local, la taille et la valeur du bien et
+                  la copropriété (voir « Ce que la version 1.2 ajoute »).
                 </li>
                 <li>
                   pepite-v1.1 (28 octobre 2026) : mêmes seuils, critères appliqués plus strictement

@@ -11,12 +11,23 @@ import {
   PEPITE_FAVOURABLE_EVALUATIONS,
   PEPITE_FREEZE_DAYS,
   PEPITE_HISTORY_YEARS,
+  PEPITE_DPE_MIN_CONFIDENCE,
+  PEPITE_ENERGY_RENOVATION_EUR_PER_M2,
   PEPITE_LOW_STARTING_PRICE_SHARE,
+  PEPITE_MARKET_MAX_DECLINE_SHARE,
+  PEPITE_MARKET_MIN_SALES_12_MONTHS,
+  PEPITE_MARKET_TREND_MIN_SALES_PER_YEAR,
+  PEPITE_MARKET_TREND_YEARS,
+  PEPITE_MARKET_WINDOW_MONTHS,
+  PEPITE_MAX_CENTRAL_VALUE_EUR,
   PEPITE_MAX_EVALUATION_AGE_HOURS,
+  PEPITE_MAX_HABITABLE_SURFACE_M2,
   PEPITE_MIN_VALUE_COMPARABLES,
   PEPITE_LATEST_RULE_VERSION,
   PEPITE_V1_1_RULE_VERSION,
+  PEPITE_V1_2_RULE_VERSION,
   PEPITE_V1_RULE_VERSION,
+  PEPITE_V2_1_RULE_VERSION,
 } from "@/lib/pepite-policy";
 import { MIN_COURT_SAMPLE, MIN_NATIONAL_SAMPLE } from "@/lib/auction-scenarios";
 
@@ -25,8 +36,9 @@ import { MIN_COURT_SAMPLE, MIN_NATIONAL_SAMPLE } from "@/lib/auction-scenarios";
  *
  * Les seuils sont ceux de la règle `pepite-v1`, validée par le fondateur le 26/10/2026 (compte-rendu
  * `docs/equipe/2026-10-26-plafond-tous-types-et-selection.md`), repris tels quels par `pepite-v1.1` (règle
- * appliquée, 28/10/2026 : mêmes seuils, critères corrigés) puis par `pepite-v2`, qui n'ajoute à `pepite-v1.1`
- * que le critère éliminatoire du risque d'inondation (aucun seuil chiffré : un verdict). Ils viennent des
+ * 28/10/2026 : mêmes seuils, critères corrigés) puis par `pepite-v1.2` (règle appliquée, 29/10/2026 : mêmes seuils
+ * pour les deux critères chiffrés, plus les seuils de `PEPITE_V12_RULE_PARAMS`) et `pepite-v2.1`, qui n'ajoute à
+ * `pepite-v1.2` que le critère éliminatoire du risque d'inondation (aucun seuil chiffré : un verdict). Ils viennent des
  * constantes de la règle (`src/lib/pepite-policy.ts`), le module pur qui sert aussi au calcul : la page ne peut
  * donc pas annoncer un seuil que le calcul n'applique pas. Quand la règle change (nouvelle version), cette
  * page change avec elle, et le test de la page (`page.test.tsx`) doit être mis à jour dans le même
@@ -51,18 +63,35 @@ export const PEPITE_SMOOTHING = {
   priceCourtOnlyFromSales: 20,
 } as const;
 
-export { PEPITE_LATEST_RULE_VERSION, PEPITE_V1_1_RULE_VERSION, PEPITE_V1_RULE_VERSION };
+export {
+  PEPITE_LATEST_RULE_VERSION,
+  PEPITE_V1_1_RULE_VERSION,
+  PEPITE_V1_2_RULE_VERSION,
+  PEPITE_V1_RULE_VERSION,
+  PEPITE_V2_1_RULE_VERSION,
+};
 
 /**
- * Date d'entrée en vigueur de la règle `pepite-v2`, écrite en toutes lettres (« 27 novembre 2026 »), À RENSEIGNER
- * À LA BASCULE (voir `docs/operations/planification.md`, « Règle pepite-v2 »), en même temps que l'ouverture de
- * l'interrupteur `PEPITE_RULE_V2_ENABLED`. Tant qu'elle est `null`, la page qui décrit la v2 (interrupteur ouvert)
- * n'écrit pas de date : jamais d'espace réservé visible du public.
+ * Date d'entrée en vigueur du contrôle du risque d'inondation (règle `pepite-v2.1`, avant elle `pepite-v2`, jamais
+ * appliquée), écrite en toutes lettres (« 27 novembre 2026 »), À RENSEIGNER À LA BASCULE (voir
+ * `docs/operations/planification.md`, « Règle pepite-v2 »), en même temps que l'ouverture de l'interrupteur
+ * `PEPITE_RULE_V2_ENABLED`. Tant qu'elle est `null`, la page qui décrit la v2.1 (interrupteur ouvert) n'écrit pas de
+ * date : jamais d'espace réservé visible du public.
  */
 export const PEPITE_V2_EFFECTIVE_DATE: string | null = null;
 
 /** « (en vigueur le 27 novembre 2026) » ou rien quand la date n'est pas encore renseignée. */
 export function pepiteV2EffectiveClause(date: string | null = PEPITE_V2_EFFECTIVE_DATE): string {
+  return date ? ` (en vigueur le ${date})` : "";
+}
+
+/**
+ * Date d'entrée en vigueur de la règle `pepite-v1.2` (validée le 29/10/2026), écrite en toutes lettres, À RENSEIGNER
+ * À LA MISE EN PRODUCTION de la règle. Tant qu'elle est `null`, la page n'écrit pas de date.
+ */
+export const PEPITE_V1_2_EFFECTIVE_DATE: string | null = null;
+
+export function pepiteV12EffectiveClause(date: string | null = PEPITE_V1_2_EFFECTIVE_DATE): string {
   return date ? ` (en vigueur le ${date})` : "";
 }
 
@@ -111,4 +140,29 @@ export const PEPITE_RULE_PARAMS = {
   lowStartingPricePct: percent(PEPITE_LOW_STARTING_PRICE_SHARE),
   /** Âge maximal de l'évaluation affichée, en heures. */
   maxEvaluationAgeHours: PEPITE_MAX_EVALUATION_AGE_HOURS,
+} as const;
+
+/**
+ * Seuils ajoutés par la règle `pepite-v1.2` (et repris par `pepite-v2.1`), relus des constantes de la règle comme
+ * `PEPITE_RULE_PARAMS`. Les seuils des tests B et C ne changent pas : ils restent dans `PEPITE_RULE_PARAMS`. Les
+ * bornes de prix au m² de l'agrégat de marché (300 et 25 000) ne sont pas publiées : elles écartent des erreurs de
+ * saisie de la base DVF.
+ */
+export const PEPITE_V12_RULE_PARAMS = {
+  /** Coût de rénovation énergétique ajouté au coût total du second critère, en euros par m² habitable. */
+  energyRenovationFEurPerM2: PEPITE_ENERGY_RENOVATION_EUR_PER_M2.F,
+  energyRenovationGEurPerM2: PEPITE_ENERGY_RENOVATION_EUR_PER_M2.G,
+  /** Confiance minimale du rapprochement du diagnostic de l'ADEME pour qu'il prime sur l'annonce. */
+  dpeMinConfidence: PEPITE_DPE_MIN_CONFIDENCE,
+  /** Marché local : ventes minimales sur la fenêtre, et taille de la fenêtre en mois. */
+  marketMinSales: PEPITE_MARKET_MIN_SALES_12_MONTHS,
+  marketWindowMonths: PEPITE_MARKET_WINDOW_MONTHS,
+  /** Baisse maximale du prix médian au m², en %, sur `marketTrendYears` ans. */
+  marketMaxDeclinePct: percent(PEPITE_MARKET_MAX_DECLINE_SHARE),
+  marketTrendYears: PEPITE_MARKET_TREND_YEARS,
+  /** Ventes minimales de chacune des deux années pour évaluer la tendance. */
+  marketTrendMinSalesPerYear: PEPITE_MARKET_TREND_MIN_SALES_PER_YEAR,
+  /** Taille et valeur : surface habitable maximale (m²) et valeur estimée maximale (euros). */
+  maxHabitableSurfaceM2: PEPITE_MAX_HABITABLE_SURFACE_M2,
+  maxCentralValueEur: PEPITE_MAX_CENTRAL_VALUE_EUR,
 } as const;

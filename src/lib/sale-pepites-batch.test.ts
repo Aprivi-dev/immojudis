@@ -48,6 +48,15 @@ const db = vi.hoisted(() => ({
   floodRows: [] as Row[] | null,
   /** Codes commune des ventes ; `null` : la table n'existe pas. */
   communeRows: [] as Row[] | null,
+  /** Règle v1.2 : diagnostics ADEME, lectures de pièces, classe DPE de l'annonce et agrégats de marché. */
+  dpeRows: [] as Row[],
+  dpeError: null as unknown,
+  readingRows: [] as Row[],
+  listingDpe: new Map<string, string>(),
+  marketRows: [] as Row[],
+  marketError: null as unknown,
+  /** Lectures de la règle v1.2 reçues par le calcul, par vente. */
+  v12Args: new Map<string, unknown>(),
 }));
 
 vi.mock("@/integrations/supabase/client.server", () => ({
@@ -64,6 +73,10 @@ vi.mock("@/integrations/supabase/client.server", () => ({
       if (name === "release_cron_lease") {
         db.leaseCalls.push(name);
         return { data: true, error: null };
+      }
+      if (name === "get_commune_market_trends") {
+        db.touched.push(`rpc:${name}`);
+        return { data: db.marketError ? null : db.marketRows, error: db.marketError };
       }
       db.touched.push(`rpc:${name}`);
       if (db.modeError) return { data: null, error: db.modeError };
@@ -92,21 +105,30 @@ vi.mock("@/lib/sale-market-estimates", () => ({
 }));
 vi.mock("@/lib/pepite-input", () => ({
   evaluateSaleForPepite: (
-    { sale, estimate, flood }: { sale: { id: string }; estimate?: unknown; flood?: unknown },
+    {
+      sale,
+      estimate,
+      flood,
+      v12,
+    }: { sale: { id: string }; estimate?: unknown; flood?: unknown; v12?: unknown },
     ruleVersion?: unknown,
   ) => {
     db.estimateArgs.set(sale.id, estimate ?? null);
     db.floodArgs.set(sale.id, { flood, ruleVersion });
+    db.v12Args.set(sale.id, v12);
     db.afterEvaluate?.();
     if (db.evaluateError.has(sale.id)) throw new Error(`boom ${sale.id}`);
     const entry = db.evaluations.get(sale.id) as
       | { evaluation: PepiteEvaluation; input?: PepiteInput; facts: Row }
       | undefined;
     if (!entry) throw new Error(`pas d'évaluation prévue pour ${sale.id}`);
-    // Comme la vraie fonction : les faits portent le verdict d'inondation sous la règle v2 seulement.
+    // Comme la vraie fonction : les faits portent le verdict d'inondation sous les règles v2 et v2.1 seulement.
     return {
       ...entry,
-      facts: { ...entry.facts, flood: ruleVersion === "pepite-v2" ? flood : null },
+      facts: {
+        ...entry.facts,
+        flood: ruleVersion === "pepite-v2" || ruleVersion === "pepite-v2.1" ? flood : null,
+      },
     };
   },
 }));
@@ -261,7 +283,19 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
         return {
           data: (this.ids ?? [])
             .filter((id) => !db.missingInputs.has(id))
-            .map((id) => ({ id, score_status: null })),
+            .map((id) => ({
+              id,
+              score_status: null,
+              dpe_listing_class: db.listingDpe.get(id) ?? null,
+            })),
+          error: null,
+        };
+      case "auction_dpe_diagnostics":
+        if (db.dpeError) return { data: null, error: db.dpeError };
+        return { data: db.dpeRows, error: null };
+      case "auction_document_readings":
+        return {
+          data: db.readingRows.filter((row) => (this.ids ?? []).includes(row.sale_id as string)),
           error: null,
         };
       case "auction_sale_market_estimates":
@@ -447,6 +481,13 @@ beforeEach(() => {
   db.communeRows = [];
   db.storedDetails = new Map();
   db.legacyColumns = false;
+  db.dpeRows = [];
+  db.dpeError = null;
+  db.readingRows = [];
+  db.listingDpe = new Map();
+  db.marketRows = [];
+  db.marketError = null;
+  db.v12Args = new Map();
   vi.unstubAllEnvs();
 });
 
@@ -504,22 +545,43 @@ describe("pickPendingSales", () => {
     expect(isObsoleteEvaluation(stored("a", { regimeVersion: null }), VERSIONS)).toBe(false);
   });
 
-  it("une évaluation stockée « pepite-v1.1 » (valeur littérale) n'est obsolète que si l'interrupteur v2 est ouvert", () => {
-    const evaluation = stored("a", { ruleVersion: "pepite-v1.1" });
+  it("une évaluation stockée « pepite-v1.2 » (valeur littérale) n'est obsolète que si l'interrupteur v2 est ouvert", () => {
+    const evaluation = stored("a", { ruleVersion: "pepite-v1.2" });
     const closed = currentPepiteVersions({});
     const open = currentPepiteVersions({ PEPITE_RULE_V2_ENABLED: "true" });
-    expect(closed.rule).toBe("pepite-v1.1");
-    expect(open.rule).toBe("pepite-v2");
-    // Interrupteur absent : la règle v1.1 reste appliquée, rien à refaire.
+    expect(closed.rule).toBe("pepite-v1.2");
+    expect(open.rule).toBe("pepite-v2.1");
+    // Interrupteur absent : la règle v1.2 reste appliquée, rien à refaire.
     expect(isObsoleteEvaluation(evaluation, closed)).toBe(false);
     expect(pickPendingSales([online("a")], [evaluation], dates, closed, NOW)).toEqual([]);
-    // Interrupteur ouvert : l'évaluation v1.1 est obsolète et la vente est réévaluée.
+    // Interrupteur ouvert : l'évaluation v1.2 est obsolète et la vente est réévaluée.
     expect(isObsoleteEvaluation(evaluation, open)).toBe(true);
     expect(pickPendingSales([online("a")], [evaluation], dates, open, NOW)).toEqual(["a"]);
-    // Et réciproquement : une évaluation « pepite-v2 » est obsolète une fois l'interrupteur refermé (retour arrière).
-    const v2 = stored("a", { ruleVersion: "pepite-v2" });
-    expect(isObsoleteEvaluation(v2, closed)).toBe(true);
-    expect(isObsoleteEvaluation(v2, open)).toBe(false);
+    // Et réciproquement : une évaluation « pepite-v2.1 » est obsolète une fois l'interrupteur refermé (retour arrière).
+    const v21 = stored("a", { ruleVersion: "pepite-v2.1" });
+    expect(isObsoleteEvaluation(v21, closed)).toBe(true);
+    expect(isObsoleteEvaluation(v21, open)).toBe(false);
+  });
+
+  it("les évaluations des règles antérieures (v1.1 et v2) sont obsolètes, sous l'un comme sous l'autre interrupteur, et réévaluées pépites publiées d'abord", () => {
+    const closed = currentPepiteVersions({});
+    const open = currentPepiteVersions({ PEPITE_RULE_V2_ENABLED: "true" });
+    for (const ruleVersion of ["pepite-v1.1", "pepite-v2"]) {
+      const old = stored("old", { ruleVersion });
+      const published = stored("published", { ruleVersion, isPepite: true });
+      for (const versions of [closed, open]) {
+        expect(isObsoleteEvaluation(old, versions)).toBe(true);
+        expect(
+          pickPendingSales(
+            [online("old"), online("published")],
+            [old, published],
+            dates,
+            versions,
+            NOW,
+          ),
+        ).toEqual(["published", "old"]);
+      }
+    }
   });
 
   it("une évaluation « pepite-v1 » est réévaluée par le changement de version, pépites publiées en premier (n° 20 à 26)", () => {
@@ -835,7 +897,7 @@ describe("runSalePepitesBatch", () => {
       first_pepite_at: NOW.toISOString(),
       input_starting_price_eur: 80_000,
       input_estimate_computed_at: "2026-10-30T08:00:00.000Z",
-      rule_version: "pepite-v1.1",
+      rule_version: "pepite-v1.2",
       engine_version: CEILING_ENGINE_VERSION,
     });
     expect(rows.second.reason_codes).toEqual(
@@ -1217,15 +1279,15 @@ describe("runSalePepitesBatch : interrupteur de la règle pepite-v2", () => {
     };
   }
 
-  it("fermé (défaut) : la règle appliquée est pepite-v1.1 et la table d'inondation n'est jamais lue", async () => {
+  it("fermé (défaut) : la règle appliquée est pepite-v1.2 et la table d'inondation n'est jamais lue", async () => {
     setPositioned(["a"]);
     const result = await runSalePepitesBatch({ now: NOW });
 
-    expect(result).toMatchObject({ ruleVersion: "pepite-v1.1", evaluated: 1, floodVerdicts: null });
+    expect(result).toMatchObject({ ruleVersion: "pepite-v1.2", evaluated: 1, floodVerdicts: null });
     expect(db.touched).not.toContain("auction_sale_flood_risk");
-    expect(db.touched).not.toContain("auction_sale_communes");
-    expect(db.floodArgs.get("a")?.ruleVersion).toBe("pepite-v1.1");
-    expect(db.upserts.flat()[0]).toMatchObject({ rule_version: "pepite-v1.1" });
+    // La table des communes est lue par lot (code DVF du marché local), jamais en entier pour l'inondation.
+    expect(db.floodArgs.get("a")?.ruleVersion).toBe("pepite-v1.2");
+    expect(db.upserts.flat()[0]).toMatchObject({ rule_version: "pepite-v1.2" });
     expect((db.upserts.flat()[0].details as Row).flood).toBeNull();
   });
 
@@ -1237,7 +1299,7 @@ describe("runSalePepitesBatch : interrupteur de la règle pepite-v2", () => {
     expect(db.floodArgs.get("a")?.flood).toMatchObject({ verdict: "unknown" });
   });
 
-  it("ouvert : la règle appliquée est pepite-v2, le verdict stocké est lu et gardé dans le détail", async () => {
+  it("ouvert : la règle appliquée est pepite-v2.1, le verdict stocké est lu et gardé dans le détail", async () => {
     vi.stubEnv("PEPITE_RULE_V2_ENABLED", "true");
     setPositioned(["a"]);
     db.floodRows = [floodRow("a")];
@@ -1245,12 +1307,12 @@ describe("runSalePepitesBatch : interrupteur de la règle pepite-v2", () => {
     const result = await runSalePepitesBatch({ now: NOW });
 
     expect(result).toMatchObject({
-      ruleVersion: "pepite-v2",
+      ruleVersion: "pepite-v2.1",
       evaluated: 1,
       floodVerdicts: { exposed: 1, high: 0, none_found: 0, no_signal: 0, unknown: 0 },
     });
     expect(db.floodArgs.get("a")).toEqual({
-      ruleVersion: "pepite-v2",
+      ruleVersion: "pepite-v2.1",
       flood: {
         verdict: "exposed",
         observedAt: "2026-10-20T08:00:00.000Z",
@@ -1259,7 +1321,7 @@ describe("runSalePepitesBatch : interrupteur de la règle pepite-v2", () => {
       },
     });
     const row = db.upserts.flat()[0];
-    expect(row.rule_version).toBe("pepite-v2");
+    expect(row.rule_version).toBe("pepite-v2.1");
     // Le détail ne garde que le verdict, deux dates et le drapeau des PPRi : ni coordonnée, ni commune.
     expect((row.details as Row).flood).toEqual({
       verdict: "exposed",
@@ -1324,13 +1386,13 @@ describe("runSalePepitesBatch : interrupteur de la règle pepite-v2", () => {
     setPositioned(["fresh", "published"]);
     db.stored = [
       storedRow("published", {
-        ruleVersion: "pepite-v2",
+        ruleVersion: "pepite-v2.1",
         isPepite: true,
         favorableStreak: 2,
         status: "pepite",
         evaluatedAt: EVALUATED,
       }),
-      storedRow("fresh", { ruleVersion: "pepite-v2", evaluatedAt: EVALUATED }),
+      storedRow("fresh", { ruleVersion: "pepite-v2.1", evaluatedAt: EVALUATED }),
     ];
     db.floodRows = [floodRow("published", { verdict_changed_at: AFTER })];
 
@@ -1661,5 +1723,300 @@ describe("n° 25 : version du modèle de valeur et moteur de l'estimation dans l
       expect(row).not.toHaveProperty("estimate_engine_kind");
       expect(row).toHaveProperty("rule_version");
     }
+  });
+});
+
+describe("pepite-v1.2 : lectures complémentaires du lot et détails stockés", () => {
+  function setV12Sale(id: string) {
+    setSales([id]);
+    db.fullRows.set(id, {
+      id,
+      sale_date: FUTURE,
+      tribunal_code: null,
+      source_url: `https://source.example/${id}`,
+      property_type: "apartment",
+    });
+  }
+
+  /** Une vente en vente notariale interactive qui remplit tous les critères de la v1.2. */
+  function v12Input(overrides: Record<string, unknown> = {}) {
+    return {
+      regime: "notary_online" as const,
+      upcoming: true,
+      startingPriceEur: 80_000,
+      estimate: {
+        actionable: true,
+        reliability: "forte",
+        effectiveSampleSize: 12,
+        surfaceEstimated: false,
+        publicGatePassed: true,
+        centralValueEur: 200_000,
+        lowValueEur: 180_000,
+      },
+      ceiling: {
+        available: true,
+        referenceEur: 120_000,
+        totalCostAt: (price: number) => price * 1.2,
+      },
+      scenarios: null,
+      signals: {
+        landOrMixed: false,
+        occupancy: "libre" as const,
+        degradedCondition: false,
+        valuationConflict: false,
+        aiBlocked: false,
+        verificationConflict: false,
+        probableDuplicate: false,
+        unqualifiedRisks: false,
+        coproDistress: false,
+      },
+      flood: { verdict: "none_found" as const, ppriChecked: true },
+      habitableSurfaceM2: 60,
+      ...overrides,
+    };
+  }
+
+  it("lit par lot le DPE de l'ADEME et de l'annonce, les pièces terminées, le code commune DVF et l'agrégat de marché", async () => {
+    setV12Sale("a");
+    db.listingDpe.set("a", "G");
+    db.dpeRows = [
+      {
+        source_url: "https://source.example/a",
+        diagnostic_number: "2026A1",
+        dpe_class: "E",
+        established_at: "2025-02-01",
+        confidence: 0.92,
+      },
+    ];
+    db.readingRows = [
+      {
+        sale_id: "a",
+        status: "completed",
+        points: [
+          {
+            theme: "copropriete",
+            importance: "alerte",
+            title: "Plan de sauvegarde",
+            quote: "La copropriété est sous plan de sauvegarde.",
+            page: 4,
+          },
+        ],
+        documents: [],
+        generated_at: "2026-10-30T00:00:00.000Z",
+        input_truncated: false,
+      },
+    ];
+    db.communeRows = [{ sale_id: "a", commune_insee: "75056", arrondissement_insee: "75111" }];
+    db.marketRows = [
+      {
+        insee_code: "75111",
+        property_type: "Appartement",
+        reference_year: 2025,
+        sales_12_months: 310,
+        median_recent_eur_m2: 10_200,
+        median_baseline_eur_m2: 10_900,
+        sales_recent_year: 300,
+        sales_baseline_year: 290,
+      },
+      // Une autre commune et un autre type : jamais attribués à cette vente.
+      {
+        insee_code: "33063",
+        property_type: "Appartement",
+        reference_year: 2025,
+        sales_12_months: 1,
+        sales_recent_year: 1,
+        sales_baseline_year: 1,
+      },
+      {
+        insee_code: "75111",
+        property_type: "Maison",
+        reference_year: 2025,
+        sales_12_months: 9,
+        sales_recent_year: 3,
+        sales_baseline_year: 2,
+      },
+    ];
+
+    const result = await runSalePepitesBatch({ now: NOW });
+
+    expect(result).toMatchObject({ evaluated: 1, failed: 0, ruleVersion: "pepite-v1.2" });
+    expect(db.touched).toEqual(
+      expect.arrayContaining([
+        "auction_dpe_diagnostics",
+        "auction_document_readings",
+        "auction_sale_communes",
+        "rpc:get_commune_market_trends",
+      ]),
+    );
+    const read = db.v12Args.get("a") as {
+      dpeDiagnostics: Array<{ dpeClass: string; confidence: number }>;
+      listingDpeClass: unknown;
+      readingPoints: Array<{ theme: string; title: string }> | null;
+      marketAggregates: Record<string, unknown>;
+      rent: unknown;
+    };
+    expect(read.dpeDiagnostics).toMatchObject([{ dpeClass: "E", confidence: 0.92 }]);
+    expect(read.listingDpeClass).toBe("G");
+    expect(read.readingPoints).toMatchObject([
+      { theme: "copropriete", title: "Plan de sauvegarde" },
+    ]);
+    // L'arrondissement prime sur la commune (DVF écrit 75111, pas 75056).
+    expect(read.marketAggregates.Appartement).toEqual({
+      referenceYear: 2025,
+      sales12Months: 310,
+      medianRecentEurM2: 10_200,
+      medianBaselineEurM2: 10_900,
+      salesRecentYear: 300,
+      salesBaselineYear: 290,
+    });
+    expect(read.marketAggregates.Maison).toMatchObject({ sales12Months: 9 });
+    expect(read.rent).toBeNull();
+  });
+
+  it("ne tient pas compte d'une lecture de pièces non terminée, et rend des lectures vides sans donnée", async () => {
+    setV12Sale("a");
+    db.readingRows = [
+      {
+        sale_id: "a",
+        status: "failed",
+        points: [
+          {
+            theme: "copropriete",
+            importance: "alerte",
+            title: "Carence",
+            quote: "carence",
+            page: 1,
+          },
+        ],
+        documents: [],
+        generated_at: null,
+        input_truncated: false,
+      },
+    ];
+
+    await runSalePepitesBatch({ now: NOW });
+
+    expect(db.v12Args.get("a")).toMatchObject({
+      dpeDiagnostics: [],
+      listingDpeClass: null,
+      readingPoints: null,
+      marketAggregates: {},
+    });
+    // Sans code commune, la fonction de marché n'est pas appelée.
+    expect(db.touched).not.toContain("rpc:get_commune_market_trends");
+  });
+
+  it("une fonction d'agrégat absente (migration pas encore appliquée) vaut « aucun agrégat », jamais une panne", async () => {
+    setV12Sale("a");
+    db.communeRows = [{ sale_id: "a", commune_insee: "33063", arrondissement_insee: null }];
+    db.marketError = { code: "PGRST202", message: "Could not find the function" };
+
+    const result = await runSalePepitesBatch({ now: NOW });
+
+    expect(result).toMatchObject({ evaluated: 1, failed: 0, skipped: null });
+    expect(db.v12Args.get("a")).toMatchObject({ marketAggregates: {} });
+  });
+
+  it("une erreur de lecture du marché autre qu'un objet absent fait échouer le lot, sans écrire d'évaluation", async () => {
+    setV12Sale("a");
+    db.communeRows = [{ sale_id: "a", commune_insee: "33063", arrondissement_insee: null }];
+    db.marketError = { code: "57014", message: "statement timeout" };
+
+    await expect(runSalePepitesBatch({ now: NOW })).rejects.toThrow(
+      "Évaluation des pépites impossible",
+    );
+    expect(db.upserts).toEqual([]);
+  });
+
+  it("une erreur de lecture du DPE fait échouer le lot : un DPE non lu ne passe pas pour un DPE inconnu", async () => {
+    setV12Sale("a");
+    db.dpeError = { code: "XX000", message: "boom" };
+
+    await expect(runSalePepitesBatch({ now: NOW })).rejects.toThrow(
+      "Évaluation des pépites impossible",
+    );
+    expect(db.upserts).toEqual([]);
+    expect(db.v12Args.has("a")).toBe(false);
+  });
+
+  it("stocke dans les détails le DPE, le coût énergétique, le marché local, la copropriété et les badges", () => {
+    const evaluation = evaluatePepite(
+      v12Input({
+        energy: { dpeClass: "F", dpeSource: "ademe" },
+        market: {
+          propertyType: "Appartement",
+          aggregate: {
+            referenceYear: 2025,
+            sales12Months: 55,
+            medianRecentEurM2: 3_000,
+            medianBaselineEurM2: 3_300,
+            salesRecentYear: 50,
+            salesBaselineYear: 45,
+          },
+        },
+      }),
+      "pepite-v1.2",
+    );
+    expect(evaluation.status).toBe("pepite");
+    const badge = {
+      key: "double_exit",
+      label: "Double sortie",
+      grossYieldPct: 9.1,
+      monthlyRentEur: 900,
+      totalCostEur: 118_800,
+      rentSource: "anil_commune",
+      rentReliability: "reliable",
+    };
+    const details = pepiteDetails(
+      evaluation,
+      facts({ coproDistress: [], badges: [badge] }) as never,
+    ) as Row;
+
+    expect(details).toMatchObject({
+      dpeClass: "F",
+      dpeSource: "ademe",
+      energyRenovationEur: 15_000,
+      habitableSurfaceM2: 60,
+      totalCostEur: 96_000 + 15_000,
+      coproDistress: [],
+      market: {
+        propertyType: "Appartement",
+        aggregateAbsent: false,
+        sales12Months: 55,
+        trendEvaluated: true,
+        declinePct: 9.09,
+      },
+      badges: [badge],
+    });
+  });
+
+  it("un DPE inconnu est signalé par dpeClass nul dans les détails, sans coût ajouté", () => {
+    const evaluation = evaluatePepite(
+      v12Input({ energy: { dpeClass: null, dpeSource: null } }),
+      "pepite-v1.2",
+    );
+    const details = pepiteDetails(evaluation, facts() as never) as Row;
+    expect(details).toMatchObject({
+      dpeClass: null,
+      dpeSource: null,
+      energyRenovationEur: null,
+      totalCostEur: 96_000,
+      badges: [],
+      coproDistress: [],
+    });
+    expect(details.market).toMatchObject({ aggregateAbsent: true });
+  });
+
+  it("les détails d'une évaluation des versions antérieures n'ont ni DPE, ni marché, ni badge", () => {
+    const details = pepiteDetails(favorableEvaluation(), facts() as never) as Row;
+    expect(details).toMatchObject({
+      dpeClass: null,
+      dpeSource: null,
+      energyRenovationEur: null,
+      habitableSurfaceM2: null,
+      market: null,
+      coproDistress: [],
+      badges: [],
+    });
   });
 });

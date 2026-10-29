@@ -1,4 +1,4 @@
-// Entrée de la règle `pepite` (v1 et v2) pour une vente : la même chaîne que la fiche (assainissement de la
+// Entrée de la règle `pepite` (v1 à v2.1) pour une vente : la même chaîne que la fiche (assainissement de la
 // vente, relecture IA, conflit de valorisation, estimation stockée, `computeSaleCeiling`), avec les
 // hypothèses par défaut de la fiche (habiter, équilibré, sans travaux, frais du régime de la vente,
 // libération incluse si le bien est occupé) et la valeur BASSE (P10) de l'estimation. Les lectures
@@ -11,6 +11,7 @@ import type { AuctionScenariosResponse } from "@/lib/auction-scenarios";
 import type { AiReviewProjectionReadModel, AiReviewRequestStatus } from "@/lib/ai-review-guard";
 import { evaluateBid } from "@/lib/bid-ceiling-engine";
 import type { FeeRegimeKey } from "@/lib/fee-regime-open";
+import type { StructuredDpeDiagnostic } from "@/lib/dpe";
 import type { FloodFacts } from "@/lib/flood-risk";
 import { sanitizeAuctionSaleForDisplay } from "@/lib/listing-data-cleanup";
 import { marketDiscountPct } from "@/lib/market-gap";
@@ -18,10 +19,26 @@ import { passesPublicMarketGapGate } from "@/lib/market-gap-band";
 import { ceilingMarketEstimate } from "@/lib/market-estimate-ceiling";
 import type { MarketContext } from "@/lib/market-server/types";
 import {
-  PEPITE_LATEST_RULE_VERSION,
+  badgeRentInputs,
+  computePepiteBadges,
+  type PepiteBadge,
+  type PepiteRentFacts,
+} from "@/lib/pepite-badges";
+import {
+  coproDistressKinds,
+  type CoproDistressKind,
+  type CoproReadingPoint,
+} from "@/lib/pepite-copro";
+import { selectPepiteDpe } from "@/lib/pepite-energy";
+import { marketPropertyType } from "@/lib/pepite-market";
+import {
   evaluatePepite,
+  pepiteRuleCapabilities,
+  readsPepiteV12Data,
   type PepiteEvaluation,
   type PepiteInput,
+  type PepiteMarketAggregate,
+  type PepiteMarketPropertyType,
   type PepiteRegimeKey,
   type PepiteRuleVersion,
   type PepiteScenariosInput,
@@ -61,8 +78,15 @@ export type PepiteFloodFacts = FloodFacts;
 export type PepiteSaleFacts = {
   /** Source de chaque poste de frais du coût d'achat (`defaut` : montant non lu). */
   fees: NonNullable<PepiteInput["fees"]>;
-  /** Verdict d'inondation lu pour cette évaluation (règle v2 seulement) ; `null` sous la règle v1. */
+  /** Verdict d'inondation lu pour cette évaluation (règles v2 et v2.1 seulement) ; `null` sinon. */
   flood: PepiteFloodFacts | null;
+  /** Mentions de copropriété en difficulté lues dans les pièces (pepite-v1.2 et suivantes) ; vide : aucune. */
+  coproDistress?: CoproDistressKind[];
+  /**
+   * Badges (pepite-v1.2 et suivantes) : informations stockées avec l'évaluation, calculées APRÈS elle. Ils n'entrent
+   * ni dans la règle ni dans `is_pepite`.
+   */
+  badges?: PepiteBadge[];
   regimeKey: PepiteRegimeKey | null;
   regimeVersion: string | null;
   /** Type de vente lu comme la fiche le lit (`getSaleProcedure`). */
@@ -104,9 +128,31 @@ export type PepiteSourceData = {
   /** Le modèle LightGBM de l'estimation est actif (ignoré pour un autre moteur). */
   modelActive: boolean;
   scenarios: AuctionScenariosResponse | null;
-  /** Verdict d'inondation de la vente (jamais un appel réseau) ; ignoré sous la règle v1. */
+  /** Verdict d'inondation de la vente (jamais un appel réseau) ; ignoré sauf sous les règles v2 et v2.1. */
   flood: PepiteFloodFacts;
+  /** Lectures de la règle v1.2 ; absentes : DPE inconnu, aucun agrégat de marché, aucune pièce lue. */
+  v12?: PepiteV12Source;
   now: Date;
+};
+
+/**
+ * Ce que la règle pepite-v1.2 et suivantes lit en plus (`pepite-context.server.ts`) : jamais un appel réseau, et
+ * rien d'un avocat ni de la publicité.
+ */
+export type PepiteV12Source = {
+  /** Diagnostics ADEME rapprochés de la vente, toutes confiances (la règle ne retient que ceux de 0,8 et plus). */
+  dpeDiagnostics: readonly StructuredDpeDiagnostic[];
+  /** `raw_payload.source_energy_diagnostics.dpe_class` de la vente. */
+  listingDpeClass: unknown;
+  /** Agrégats DVF de la commune de la vente, par type de logement ; le type absent n'a pas d'agrégat. */
+  marketAggregates: Readonly<Partial<Record<PepiteMarketPropertyType, PepiteMarketAggregate>>>;
+  /** Points de la lecture des pièces ; `null` : aucune lecture. */
+  readingPoints: readonly CoproReadingPoint[] | null;
+  /**
+   * Loyer de référence de la vente (carte des loyers de l'ANIL), pour les badges seulement ; `null` : aucun. Le
+   * plafond de la pépite se calcule sans lui.
+   */
+  rent: PepiteRentFacts | null;
 };
 
 function scenariosInput(response: AuctionScenariosResponse | null): PepiteScenariosInput {
@@ -130,8 +176,12 @@ export function buildPepiteInput(
 ): {
   input: PepiteInput;
   facts: PepiteSaleFacts;
+  /** Loyer estimé du bien et sa référence, pour les badges (jamais pour la règle). */
+  badgeInputs: { monthlyRentEur: number | null; rent: PepiteRentFacts | null };
 } {
   const { sale, now } = source;
+  const capabilities = pepiteRuleCapabilities(ruleVersion);
+  const v12 = readsPepiteV12Data(ruleVersion) ? (source.v12 ?? null) : null;
   const readable = sanitizeAuctionSaleForDisplay(sale);
   const inputs = assessSaleCeilingInputs({
     sale: readable,
@@ -200,6 +250,9 @@ export function buildPepiteInput(
     sale.status === "upcoming" && Number.isFinite(saleTime) && saleTime > now.getTime();
   const flags = Array.isArray(sale.quality_flags) ? (sale.quality_flags as unknown[]) : [];
   const propertyType = inputs.displaySale.property_type;
+  const marketType = marketPropertyType(propertyType);
+  const coproKinds: CoproDistressKind[] =
+    capabilities.coproDistress && v12?.readingPoints ? coproDistressKinds(v12.readingPoints) : [];
 
   const input: PepiteInput = {
     regime: regimeKey,
@@ -241,8 +294,31 @@ export function buildPepiteInput(
         sale.sale_verification_status === "conflict" || procedure.verificationStatus === "conflict",
       probableDuplicate: flags.includes("probable_duplicate"),
       unqualifiedRisks: source.scoreStatus === "withheld_unqualified_risks",
+      // pepite-v1.2 : une copropriété en difficulté lue dans une pièce (bloquant).
+      ...(capabilities.coproDistress ? { coproDistress: coproKinds.length > 0 } : {}),
     },
     flood: { verdict: source.flood.verdict, ppriChecked: source.flood.ppriChecked },
+    // pepite-v1.2 et suivantes : surface habitable (coût énergétique et plafond de taille), DPE retenu et marché
+    // local. Une version antérieure ne reçoit rien de tout cela.
+    ...(capabilities.energyCost || capabilities.sizeValueCap
+      ? { habitableSurfaceM2: surfaces.builtSurfaceM2 }
+      : {}),
+    ...(capabilities.energyCost
+      ? {
+          energy: selectPepiteDpe({
+            diagnostics: v12?.dpeDiagnostics ?? [],
+            listingClass: v12?.listingDpeClass ?? null,
+          }),
+        }
+      : {}),
+    ...(capabilities.localMarket
+      ? {
+          market: {
+            propertyType: marketType,
+            aggregate: (marketType ? v12?.marketAggregates[marketType] : null) ?? null,
+          },
+        }
+      : {}),
     // Sources des frais : `defaut` = montant non lu (refusé en vente notariale par pepite-v1.1).
     fees: {
       preliminary: regimeKey === "tribunal" ? hypotheses.feesSource.fpt : null,
@@ -258,7 +334,8 @@ export function buildPepiteInput(
 
   const scenarioSet = source.scenarios?.scenarios;
   const facts: PepiteSaleFacts = {
-    flood: ruleVersion === PEPITE_LATEST_RULE_VERSION ? source.flood : null,
+    flood: capabilities.flood ? source.flood : null,
+    ...(capabilities.coproDistress ? { coproDistress: coproKinds } : {}),
     fees: {
       preliminary: regimeKey === "tribunal" ? hypotheses.feesSource.fpt : null,
       negotiation: hypotheses.feesSource.negotiation ?? null,
@@ -292,10 +369,16 @@ export function buildPepiteInput(
           }
         : null,
   };
-  return { input, facts };
+  // Loyer estimé pour les badges : un logement seulement, surface habitable x loyer ANIL de la vente.
+  const badgeInputs = badgeRentInputs(sale, surfaces.builtSurfaceM2, v12?.rent);
+  return { input, facts, badgeInputs };
 }
 
-/** Évalue une vente : l'entrée, la règle, et les faits à stocker. */
+/**
+ * Évalue une vente : l'entrée, la règle, et les faits à stocker. Les badges (pepite-v1.2 et suivantes) sont calculés
+ * APRÈS l'évaluation, à partir de son coût total : `evaluatePepite` ne les voit jamais, et ils ne changent ni le
+ * statut ni `is_pepite`.
+ */
 export function evaluateSaleForPepite(
   source: PepiteSourceData,
   ruleVersion: PepiteRuleVersion,
@@ -304,6 +387,13 @@ export function evaluateSaleForPepite(
   input: PepiteInput;
   facts: PepiteSaleFacts;
 } {
-  const { input, facts } = buildPepiteInput(source, ruleVersion);
-  return { evaluation: evaluatePepite(input, ruleVersion), input, facts };
+  const { input, facts, badgeInputs } = buildPepiteInput(source, ruleVersion);
+  const evaluation = evaluatePepite(input, ruleVersion);
+  if (readsPepiteV12Data(ruleVersion)) {
+    facts.badges = computePepiteBadges({
+      ...badgeInputs,
+      totalCostEur: evaluation.metrics.totalCostEur,
+    });
+  }
+  return { evaluation, input, facts };
 }

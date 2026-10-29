@@ -88,6 +88,10 @@ function rowCells(row: AdminPepiteRow): PepitesViewCell[] {
         row.venueLabel,
         row.city,
         row.saleDate ? when(row.saleDate) : null,
+        row.dpeClass
+          ? `DPE ${row.dpeClass}${row.energyRenovationEur ? ` (+${euro(row.energyRenovationEur)} de rénovation)` : ""}`
+          : null,
+        ...row.badges,
       ]
         .filter(Boolean)
         .join(" · "),
@@ -105,7 +109,7 @@ function rowCells(row: AdminPepiteRow): PepitesViewCell[] {
     {
       t: `${row.passed.length} réussi${row.passed.length > 1 ? "s" : ""}, ${row.missed.length} manqué${row.missed.length > 1 ? "s" : ""}`,
       bad: row.missed.map((label) => `Manqué : ${label}`),
-      l: [...row.passed, ...row.stability],
+      l: [...row.passed, ...row.stability, ...(row.marketNote ? [row.marketNote] : [])],
     },
     { t: when(row.evaluatedAt || null) },
   ];

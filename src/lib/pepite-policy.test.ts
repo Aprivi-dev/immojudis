@@ -22,6 +22,7 @@ import {
   PEPITE_MIN_VALUE_COMPARABLES,
   PEPITE_LATEST_RULE_VERSION,
   PEPITE_V1_RULE_VERSION,
+  PEPITE_V2_RULE_VERSION,
   applyPepiteStability,
   evaluatePepite as evaluatePepiteVersioned,
   pepiteReasonCodes,
@@ -32,10 +33,13 @@ import {
   type PepiteStoredState,
 } from "./pepite-policy";
 
-/** La version est obligatoire dans la règle : ces tests évaluent la règle courante sauf indication contraire. */
+/**
+ * La version est obligatoire dans la règle : ces tests évaluent `pepite-v2` (la règle d'avant la v1.2, rejouée à
+ * l'identique) sauf indication contraire. Les règles v1.2 et v2.1 ont leurs tests dans `pepite-policy.v12.test.ts`.
+ */
 const evaluatePepite = (
   input: PepiteInput,
-  ruleVersion: PepiteRuleVersion = PEPITE_LATEST_RULE_VERSION,
+  ruleVersion: PepiteRuleVersion = PEPITE_V2_RULE_VERSION,
 ) => evaluatePepiteVersioned(input, ruleVersion);
 
 // Les tranches de la base (`app_private.court_auction_scenarios`) : 0-1,1 / 1,1-1,5 / 1,5-2 / 2-3 / 3+.
@@ -123,7 +127,8 @@ function missedOf(evaluation: PepiteEvaluation): PepiteCriterionId[] {
 
 describe("constantes de la règle pepite", () => {
   it("reprennent les seuils du compte-rendu", () => {
-    expect(PEPITE_LATEST_RULE_VERSION).toBe("pepite-v2");
+    expect(PEPITE_LATEST_RULE_VERSION).toBe("pepite-v2.1");
+    expect(PEPITE_V2_RULE_VERSION).toBe("pepite-v2");
     expect(PEPITE_V1_RULE_VERSION).toBe("pepite-v1");
     expect(PEPITE_CHANCE_MIN_SHARE).toBe(0.7);
     expect(PEPITE_CHANCE_EXIT_SHARE).toBe(0.65);

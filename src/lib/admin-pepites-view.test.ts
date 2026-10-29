@@ -25,6 +25,10 @@ const baseRow = {
   evaluatedAt: "2026-11-01T10:00:00Z",
   frozenAt: null,
   feesDefault: false,
+  dpeClass: null,
+  energyRenovationEur: null,
+  marketNote: null,
+  badges: [],
   href: "/sales/sale-1",
 };
 
@@ -299,6 +303,42 @@ describe("buildAdminPepitesView", () => {
       ).table!.rows[0];
       expect(row[4].t).toBe("≥ 74 %");
       expect(row[4].s).toBe("plancher");
+    });
+
+    it("pepite-v1.2 : le DPE, son coût, les badges et le marché local s'écrivent dans la ligne", () => {
+      const row = section(
+        buildAdminPepitesView(
+          data({
+            rows: [
+              {
+                ...baseRow,
+                dpeClass: "F",
+                energyRenovationEur: 15_000,
+                badges: ["Double sortie"],
+                marketNote: "Marché local (Appartement) : 55 ventes sur 12 mois",
+              },
+            ],
+          }),
+        ),
+        "list",
+      ).table!.rows[0];
+      expect(row[0].s?.replace(/\s/g, " ")).toContain("DPE F (+15 000 € de rénovation)");
+      expect(row[0].s).toContain("Double sortie");
+      expect(row[6].l).toContain("Marché local (Appartement) : 55 ventes sur 12 mois");
+      // Sans ces informations, la ligne reste celle d'avant la v1.2.
+      const plain = section(buildAdminPepitesView(data()), "list").table!.rows[0];
+      expect(plain[0].s).not.toMatch(/DPE|Double sortie/);
+    });
+
+    it("un DPE connu sans coût (classe A à E) n'écrit pas de rénovation", () => {
+      const row = section(
+        buildAdminPepitesView(
+          data({ rows: [{ ...baseRow, dpeClass: "D", energyRenovationEur: 0 }] }),
+        ),
+        "list",
+      ).table!.rows[0];
+      expect(row[0].s).toContain("DPE D");
+      expect(row[0].s).not.toContain("rénovation");
     });
 
     it("une part B ordinaire n'est pas un plancher", () => {

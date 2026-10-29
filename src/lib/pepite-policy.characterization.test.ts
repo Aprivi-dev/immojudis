@@ -14,7 +14,7 @@ import { describe, expect, it } from "vitest";
 import type { AuctionScenario } from "@/lib/auction-scenarios";
 import type { FloodVerdict } from "@/lib/flood-risk";
 import {
-  PEPITE_LATEST_RULE_VERSION,
+  PEPITE_V2_RULE_VERSION,
   PEPITE_V1_1_RULE_VERSION,
   PEPITE_V1_RULE_VERSION,
   applyPepiteStability,
@@ -1125,7 +1125,7 @@ const evaluateV2 = (item: {
       ...toPepiteInput(item.input),
       flood: { verdict: item.verdict, ppriChecked: item.ppriChecked ?? true },
     },
-    PEPITE_LATEST_RULE_VERSION,
+    PEPITE_V2_RULE_VERSION,
   );
 
 // Verdicts de la règle pepite-v2, calculés à sa livraison et figés.
@@ -1381,7 +1381,7 @@ describe("garde de version de la règle courante", () => {
   });
 
   it("la règle courante a sa table figée et son empreinte", () => {
-    expect(Object.keys(FINGERPRINTS_BY_RULE_VERSION)).toContain(PEPITE_LATEST_RULE_VERSION);
+    expect(Object.keys(FINGERPRINTS_BY_RULE_VERSION)).toContain(PEPITE_V2_RULE_VERSION);
     expect(Object.keys(FINGERPRINTS_BY_RULE_VERSION)).toContain(PEPITE_V1_RULE_VERSION);
     expect(Object.keys(FINGERPRINTS_BY_RULE_VERSION)).toContain(PEPITE_V1_1_RULE_VERSION);
     expect(

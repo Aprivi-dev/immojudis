@@ -932,6 +932,14 @@ if (
     "src/lib/pepite-policy.ts",
     "src/lib/pepite-input.ts",
     "src/lib/pepite-reasons.ts",
+    // Règle pepite-v1.2 (29/10/2026) : DPE, marché local, pièces lues (copropriété), badges et leurs lectures.
+    // Chacun est un point d'entrée du contrôle (son propre texte et tout ce qu'il importe) : aucun ne lit d'avocat,
+    // de sponsoring ni `investment_score`.
+    "src/lib/pepite-energy.ts",
+    "src/lib/pepite-market.ts",
+    "src/lib/pepite-copro.ts",
+    "src/lib/pepite-badges.ts",
+    "src/lib/pepite-context.server.ts",
     "src/lib/flood-risk.ts",
     "src/lib/sale-pepites-batch.ts",
     "src/app/api/cron/sale-pepites/route.ts",
@@ -1126,6 +1134,26 @@ if (
     }
   }
 
+  // (4 bis bis) Marché local de la règle pepite-v1.2 : l'agrégat `commune_market_trends` (table privée de
+  // `app_private`, lue par `get_commune_market_trends`) n'est nommé que par le module de lecture de la règle
+  // (`pepite-context.server.ts`) et les types générés. Ni le navigateur, ni une route publique, ni l'administration
+  // ne le lisent.
+  const marketTableAllowed = new Set([
+    "src/lib/pepite-context.server.ts",
+    "src/integrations/supabase/types.ts",
+  ]);
+  for (const entry of sourceFiles) {
+    const name = String(entry);
+    if (!/\.(?:ts|tsx|mjs|cjs)$/.test(name) || /\.test\.[cm]?[jt]sx?$/.test(name)) continue;
+    const relativePath = `src/${name}`;
+    if (marketTableAllowed.has(relativePath)) continue;
+    if ((await read(relativePath)).includes("commune_market_trends")) {
+      failures.push(
+        `${relativePath} names the private commune_market_trends aggregate: only the pepite context reader may`,
+      );
+    }
+  }
+
   // (4 ter) Liste blanche des modules qui importent le magasin de la table d'inondation : le traitement planifié,
   // la recopie des communes et le calcul des pépites (lecture des verdicts) ; rien d'autre, ni le navigateur, ni
   // une route publique, ni l'administration.
@@ -1206,6 +1234,49 @@ if (
       failures.push(
         "20261106100500_sale_flood_risk_lease.sql must not define SECURITY DEFINER functions",
       );
+    }
+
+    // Marché local (règle pepite-v1.2) : l'agrégat est privé (RLS, aucun droit pour anon, authenticated ni public),
+    // son recalcul est un SECURITY DEFINER à chemin de recherche vide, et la lecture publique ne l'est jamais.
+    const trendsFile = "20261109130100_commune_market_trends.sql";
+    const trends = await sql(trendsFile);
+    if (trends == null) {
+      failures.push(`${trendsFile} is missing: the commune market trends migration must exist`);
+    } else {
+      if (
+        !/alter\s+table\s+app_private\.commune_market_trends\s+enable\s+row\s+level\s+security/i.test(
+          trends,
+        )
+      ) {
+        failures.push(`${trendsFile} does not enable row level security on the aggregate`);
+      }
+      if (/\bgrant\b[^;]*\bto\b[^;]*\b(?:anon|authenticated|public)\b/i.test(trends)) {
+        failures.push(
+          `${trendsFile} grants a right on the commune market trends objects to anon, authenticated or public`,
+        );
+      }
+      const refresh =
+        /create\s+or\s+replace\s+function\s+app_private\.refresh_commune_market_trends\s*\([^)]*\)([\s\S]*?)\$function\$/i.exec(
+          trends,
+        );
+      if (
+        !refresh ||
+        !/security\s+definer/i.test(refresh[1]) ||
+        !/set\s+search_path\s*=\s*''/i.test(refresh[1])
+      ) {
+        failures.push(
+          "app_private.refresh_commune_market_trends must be SECURITY DEFINER with an empty search_path",
+        );
+      }
+      const wrapper =
+        /create\s+or\s+replace\s+function\s+public\.get_commune_market_trends\s*\([^)]*\)([\s\S]*?)\$function\$/i.exec(
+          trends,
+        );
+      if (!wrapper) {
+        failures.push("public.get_commune_market_trends is not defined in its migration");
+      } else if (/security\s+definer/i.test(wrapper[1])) {
+        failures.push("public.get_commune_market_trends must not be SECURITY DEFINER");
+      }
     }
   }
 

@@ -80,6 +80,14 @@ export type AdminPepiteRow = {
   costRatio: number | null;
   /** Un frais du coût d'achat (préalables, négociation, publicité) est une valeur par défaut (pepite-v1.1). */
   feesDefault: boolean;
+  /** DPE retenu (pepite-v1.2 et suivantes) ; `null` : inconnu, aucun coût de rénovation énergétique ajouté. */
+  dpeClass: string | null;
+  /** Coût de rénovation énergétique ajouté au coût total du test C ; `null` : DPE ou surface inconnus. */
+  energyRenovationEur: number | null;
+  /** Marché local de la commune (pepite-v1.2 et suivantes), en une phrase ; `null` : version sans ce critère. */
+  marketNote: string | null;
+  /** Badges (informations, hors règle) : libellés. */
+  badges: string[];
   passed: string[];
   missed: string[];
   stability: string[];
@@ -250,6 +258,26 @@ export function pepiteFeesDefaultStat(rows: readonly AdminPepiteRow[]): PepiteFe
   };
 }
 
+/** Le marché local d'une évaluation (`details.market`), en une phrase pour l'administration. */
+export function describeMarketNote(market: Record<string, unknown> | null): string | null {
+  if (!market) return null;
+  const propertyType = textOrNull(market.propertyType);
+  if (market.aggregateAbsent === true) {
+    return propertyType
+      ? `Marché local : aucune donnée DVF pour la commune (${propertyType}), critères réussis faute de donnée`
+      : "Marché local : type de bien sans agrégat, critères réussis faute de donnée";
+  }
+  const sales = numberOrNull(market.sales12Months);
+  const decline = numberOrNull(market.declinePct);
+  const parts = [`${sales ?? "?"} vente${sales === 1 ? "" : "s"} sur 12 mois`];
+  parts.push(
+    market.trendEvaluated === true && decline != null
+      ? `prix médian au m² ${decline > 0 ? `en baisse de ${decline} %` : `en hausse de ${Math.abs(decline)} %`} en 3 ans`
+      : "tendance non évaluée (moins de 10 ventes une des deux années)",
+  );
+  return `Marché local${propertyType ? ` (${propertyType})` : ""} : ${parts.join(", ")}`;
+}
+
 export function parseAdminPepiteRow(raw: unknown): AdminPepiteRow | null {
   const row = asRecordOrNull(raw);
   const saleId = textOrNull(row?.sale_id);
@@ -280,6 +308,15 @@ export function parseAdminPepiteRow(raw: unknown): AdminPepiteRow | null {
     chanceAtLeast: details.chanceAtLeast === true,
     costRatio: numberOrNull(details.costRatio),
     feesDefault: details.feesDefault === true,
+    dpeClass: textOrNull(details.dpeClass),
+    energyRenovationEur: numberOrNull(details.energyRenovationEur),
+    marketNote: describeMarketNote(asRecordOrNull(details.market)),
+    badges: Array.isArray(details.badges)
+      ? details.badges.flatMap((badge) => {
+          const label = textOrNull(asRecordOrNull(badge)?.label);
+          return label ? [label] : [];
+        })
+      : [],
     passed: reasons.passed,
     missed: reasons.missed,
     stability: reasons.stability,

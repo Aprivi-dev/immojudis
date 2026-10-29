@@ -1,4 +1,4 @@
-// Règles « pepite-v1 » et « pepite-v2 » : ce qu'est une pépite, et comment un résultat devient publiable. Module pur :
+// Règles « pepite » (v1 à v2.1) : ce qu'est une pépite, et comment un résultat devient publiable. Module pur :
 // aucune donnée, aucun import serveur. Les seuils sont des constantes exportées, que la page
 // « Comment repérons-nous les pépites ? » (`src/app/methode-pepites/method.ts`) relit : un seuil
 // change ici ou nulle part, et toute modification crée une nouvelle version (`PEPITE_LATEST_RULE_VERSION`).
@@ -18,31 +18,91 @@
 import type { AuctionScenario, ScenarioReliability } from "@/lib/auction-scenarios";
 import type { FeeSource, OccupationCase } from "@/lib/bid-ceiling-engine";
 import { ceilingPosition } from "@/lib/ceiling-vs-court";
+import type { DpeClass } from "@/lib/dpe";
 import type { FloodVerdict } from "@/lib/flood-risk";
 
 /**
- * Versions de la règle.
- *  - `pepite-v1` : la règle d'origine (26/10/2026). Elle reste rejouable à l'identique
- *    (`evaluatePepite(input, PEPITE_V1_RULE_VERSION)`), jamais modifiée ;
+ * Versions de la règle. Chacune reste rejouable à l'identique (`evaluatePepite(input, version)`) et ne change
+ * jamais une fois publiée ; ce qu'elle ajoute à la précédente est décrit par `PEPITE_RULE_CAPABILITIES`.
+ *  - `pepite-v1` : la règle d'origine (26/10/2026) ;
  *  - `pepite-v1.1` : la règle d'origine corrigée (compte-rendu du 27/10/2026, n° 20 à 23 et 26) : test B réussi
  *    seulement si la part plancher atteint le seuil, borne basse de Wilson, frais connus en vente notariale,
  *    décote d'occupation sur la valeur du test C, fiabilité « forte » sous 30 % de la valeur, et qualité de
- *    l'estimation bloquante pendant le gel. C'est la règle APPLIQUÉE tant que l'interrupteur serveur
- *    `PEPITE_RULE_V2_ENABLED` est fermé (`pepite-rule-switch.server.ts`) ;
- *  - `pepite-v2` (version courante) : `pepite-v1.1` plus le critère éliminatoire du risque d'inondation (module
- *    `flood-risk.ts`). Les seuils sont communs à `pepite-v1.1` et `pepite-v2` : seule l'inondation s'ajoute.
+ *    l'estimation bloquante pendant le gel ;
+ *  - `pepite-v2` : `pepite-v1.1` plus le critère éliminatoire du risque d'inondation (module `flood-risk.ts`) ;
+ *  - `pepite-v1.2` (validée le 29/10/2026) : `pepite-v1.1` plus le coût de rénovation énergétique dans le test C
+ *    (DPE F ou G), le marché local (liquidité et tendance des prix de la commune, d'après les ventes DVF), le
+ *    plafond de taille et de valeur, et la copropriété en difficulté (bloquant). Les seuils des tests B et C ne
+ *    changent pas. C'est la règle APPLIQUÉE tant que l'interrupteur serveur `PEPITE_RULE_V2_ENABLED` est fermé
+ *    (`pepite-rule-switch.server.ts`) ;
+ *  - `pepite-v2.1` (version courante) : `pepite-v1.2` plus le critère d'inondation de `pepite-v2`. Appliquée
+ *    quand l'interrupteur est ouvert.
  */
-export const PEPITE_LATEST_RULE_VERSION = "pepite-v2";
 export const PEPITE_V1_RULE_VERSION = "pepite-v1";
 export const PEPITE_V1_1_RULE_VERSION = "pepite-v1.1";
+export const PEPITE_V2_RULE_VERSION = "pepite-v2";
+export const PEPITE_V1_2_RULE_VERSION = "pepite-v1.2";
+export const PEPITE_V2_1_RULE_VERSION = "pepite-v2.1";
+export const PEPITE_LATEST_RULE_VERSION = PEPITE_V2_1_RULE_VERSION;
 export type PepiteRuleVersion =
-  | typeof PEPITE_LATEST_RULE_VERSION
+  | typeof PEPITE_V1_RULE_VERSION
   | typeof PEPITE_V1_1_RULE_VERSION
-  | typeof PEPITE_V1_RULE_VERSION;
+  | typeof PEPITE_V2_RULE_VERSION
+  | typeof PEPITE_V1_2_RULE_VERSION
+  | typeof PEPITE_V2_1_RULE_VERSION;
 
-/** Les versions qui portent les corrections du 27/10/2026 (tout sauf la règle d'origine). */
-export function isCorrectedRule(ruleVersion: PepiteRuleVersion): boolean {
-  return ruleVersion !== PEPITE_V1_RULE_VERSION;
+/** Ce que chaque version de la règle évalue : une capacité absente, la version se comporte comme avant elle. */
+export type PepiteRuleCapabilities = {
+  /** Corrections du 27/10/2026 (pepite-v1.1 et suivantes). */
+  corrected: boolean;
+  /** Critère éliminatoire du risque d'inondation. */
+  flood: boolean;
+  /** Coût de rénovation énergétique (DPE F ou G) ajouté au coût total du test C. */
+  energyCost: boolean;
+  /** Marché local : `market_liquid` et `market_not_declining`. */
+  localMarket: boolean;
+  /** Plafond de taille et de valeur : `size_value_supported`. */
+  sizeValueCap: boolean;
+  /** Copropriété en difficulté : `no_copro_distress` (bloquant). */
+  coproDistress: boolean;
+};
+
+const NO_CAPABILITY: PepiteRuleCapabilities = {
+  corrected: false,
+  flood: false,
+  energyCost: false,
+  localMarket: false,
+  sizeValueCap: false,
+  coproDistress: false,
+};
+const CORRECTED: PepiteRuleCapabilities = { ...NO_CAPABILITY, corrected: true };
+const V1_2: PepiteRuleCapabilities = {
+  ...CORRECTED,
+  energyCost: true,
+  localMarket: true,
+  sizeValueCap: true,
+  coproDistress: true,
+};
+
+/** Table de capacités par version : c'est elle, et elle seule, qui décide de ce qu'une version évalue. */
+export const PEPITE_RULE_CAPABILITIES: Readonly<
+  Record<PepiteRuleVersion, Readonly<PepiteRuleCapabilities>>
+> = {
+  "pepite-v1": NO_CAPABILITY,
+  "pepite-v1.1": CORRECTED,
+  "pepite-v2": { ...CORRECTED, flood: true },
+  "pepite-v1.2": V1_2,
+  "pepite-v2.1": { ...V1_2, flood: true },
+};
+
+export function pepiteRuleCapabilities(ruleVersion: PepiteRuleVersion): PepiteRuleCapabilities {
+  return PEPITE_RULE_CAPABILITIES[ruleVersion];
+}
+
+/** La version lit des données de la règle v1.2 (DPE, marché local, pièces, loyer) : le traitement les charge. */
+export function readsPepiteV12Data(ruleVersion: PepiteRuleVersion): boolean {
+  const capabilities = pepiteRuleCapabilities(ruleVersion);
+  return capabilities.energyCost || capabilities.localMarket || capabilities.coproDistress;
 }
 
 /** Test B, entrée : part minimale des ventes comparables adjugées sous l'enchère plafond. */
@@ -120,6 +180,38 @@ export const PEPITE_TARGET_RATE_MAX = 0.1;
 export const PEPITE_RATE_ALERT_MIN = 0.02;
 export const PEPITE_RATE_ALERT_MAX = 0.15;
 
+// --- pepite-v1.2 (validée le 29/10/2026) : les seuils des tests B et C ne changent pas. -----------------------------
+
+/**
+ * Coût de rénovation énergétique (pepite-v1.2), en euros par m² habitable, ajouté au coût total du test C : DPE F
+ * 250 EUR/m², DPE G 400 EUR/m². Aucune autre classe n'ajoute de coût.
+ */
+export const PEPITE_ENERGY_RENOVATION_EUR_PER_M2: Readonly<Record<"F" | "G", number>> = {
+  F: 250,
+  G: 400,
+};
+/** Confiance minimale du rapprochement ADEME (`auction_dpe_diagnostics.confidence`) pour que son DPE prime sur celui de l'annonce. */
+export const PEPITE_DPE_MIN_CONFIDENCE = 0.8;
+/** Marché local, liquidité : ventes DVF minimales de logements du même type dans la commune sur les 12 derniers mois disponibles. */
+export const PEPITE_MARKET_MIN_SALES_12_MONTHS = 20;
+/** Marché local, tendance : baisse maximale admise du prix médian au m² entre l'année la plus récente et trois ans plus tôt. */
+export const PEPITE_MARKET_MAX_DECLINE_SHARE = 0.15;
+/** Marché local, tendance : écart en années entre l'année la plus récente et l'année de comparaison. */
+export const PEPITE_MARKET_TREND_YEARS = 3;
+/** Marché local, tendance : ventes minimales de CHACUNE des deux années pour évaluer la tendance (sinon réussie). */
+export const PEPITE_MARKET_TREND_MIN_SALES_PER_YEAR = 10;
+/** Ventes DVF retenues pour l'agrégat de marché : prix au m² entre ces bornes (écarte les erreurs de saisie). */
+export const PEPITE_MARKET_PRICE_PER_M2_MIN = 300;
+export const PEPITE_MARKET_PRICE_PER_M2_MAX = 25_000;
+/** Fenêtre de liquidité, en mois, comptée depuis la dernière vente disponible de `dvf_transactions`. */
+export const PEPITE_MARKET_WINDOW_MONTHS = 12;
+/** Types de logement de l'agrégat de marché (valeurs de `dvf_transactions.property_type`). */
+export const PEPITE_MARKET_PROPERTY_TYPES = ["Maison", "Appartement"] as const;
+export type PepiteMarketPropertyType = (typeof PEPITE_MARKET_PROPERTY_TYPES)[number];
+/** Taille et valeur : au-delà de cette surface habitable (m²) ou de cette valeur centrale (EUR), le bien est écarté. */
+export const PEPITE_MAX_HABITABLE_SURFACE_M2 = 250;
+export const PEPITE_MAX_CENTRAL_VALUE_EUR = 1_500_000;
+
 export type PepiteRegimeKey = "tribunal" | "notary_auction" | "notary_online";
 /**
  * `pepite` : la vente remplit tous les critères d'entrée à cette évaluation (pas encore publiable :
@@ -151,7 +243,12 @@ export const PEPITE_CRITERIA = [
   // 30 % de la valeur : estimation de fiabilité « forte » exigée.
   "fees_known",
   "low_start_strong_estimate",
-  // Inondation (pepite-v2) : exigée à l'entrée, tolérée au maintien, jamais affichée.
+  // pepite-v1.2 : éliminatoires, non bloquants. Taille et valeur du bien ; marché local de la commune (une donnée
+  // de marché absente ne les fait pas échouer).
+  "size_value_supported",
+  "market_liquid",
+  "market_not_declining",
+  // Inondation (pepite-v2 et v2.1) : exigée à l'entrée, tolérée au maintien, jamais affichée.
   "flood_risk_known",
   // Signaux bloquants.
   "no_valuation_conflict",
@@ -160,7 +257,9 @@ export const PEPITE_CRITERIA = [
   "verification_not_conflict",
   "no_probable_duplicate",
   "risks_qualified",
-  // Inondation (pepite-v2) : bloquant, évalué seulement quand le verdict est connu.
+  // pepite-v1.2 : copropriété en difficulté lue dans une pièce du dossier (bloquant).
+  "no_copro_distress",
+  // Inondation (pepite-v2 et v2.1) : bloquant, évalué seulement quand le verdict est connu.
   "no_high_flood_risk",
   // Tests.
   "test_b_chance",
@@ -192,6 +291,10 @@ export const PEPITE_BLOCKING_CRITERIA: readonly PepiteCriterionId[] = [
   "no_probable_duplicate",
   "risks_qualified",
   "occupancy_known",
+  // pepite-v1.2 : une copropriété en difficulté (administrateur provisoire, plan de sauvegarde, mandataire ad hoc,
+  // carence) fait sortir une pépite publiée, même gelée à J-7. Les critères de marché et de taille ne sont PAS
+  // bloquants : ils ne jouent qu'au recalcul normal.
+  "no_copro_distress",
   // Seul un risque d'inondation ÉLEVÉ fait sortir une pépite publiée, même gelée à J-7.
   "no_high_flood_risk",
 ];
@@ -268,6 +371,44 @@ export type PepiteSignals = {
   probableDuplicate: boolean;
   /** `score_status = withheld_unqualified_risks`. */
   unqualifiedRisks: boolean;
+  /**
+   * Une pièce lue du dossier mentionne explicitement une copropriété en difficulté (`pepite-copro.ts`) ; pepite-v1.2
+   * et suivantes. Absent : aucune pièce lue, ou règle sans ce critère.
+   */
+  coproDistress?: boolean;
+};
+
+/**
+ * DPE retenu pour le coût de rénovation énergétique (pepite-v1.2) : la classe de l'ADEME quand son rapprochement a
+ * une confiance d'au moins `PEPITE_DPE_MIN_CONFIDENCE`, sinon celle de l'annonce (`pepite-energy.ts`). `dpeClass`
+ * nul : DPE inconnu, aucun coût ajouté, signalé dans les détails.
+ */
+export type PepiteEnergyInput = {
+  dpeClass: DpeClass | null;
+  dpeSource: "ademe" | "listing" | null;
+};
+
+/**
+ * Agrégat DVF de la commune pour le type de logement de la vente (`app_private.commune_market_trends`). Les ventes
+ * sont celles de `dvf_transactions` (`mutation_nature = 'Vente'`, prix au m² entre 300 et 25 000).
+ */
+export type PepiteMarketAggregate = {
+  /** Année la plus récente disponible. */
+  referenceYear: number;
+  /** Ventes sur les 12 derniers mois disponibles. */
+  sales12Months: number;
+  /** Prix médian au m² de l'année la plus récente et de trois ans plus tôt ; `null` sans vente. */
+  medianRecentEurM2: number | null;
+  medianBaselineEurM2: number | null;
+  /** Ventes de chacune des deux années. */
+  salesRecentYear: number;
+  salesBaselineYear: number;
+};
+
+/** Le marché local de la vente. `aggregate` nul : aucun agrégat pour cette commune et ce type (critères réussis). */
+export type PepiteMarketInput = {
+  propertyType: PepiteMarketPropertyType | null;
+  aggregate: PepiteMarketAggregate | null;
 };
 
 /**
@@ -296,6 +437,29 @@ export type PepiteInput = {
    * plafond ; bien libre ou occupé (frais de libération déjà comptés dans le coût), 0. Pepite-v1.1 et suivantes.
    */
   occupancyDiscountPct?: number;
+  /** Surface habitable (m²) : sert au coût énergétique et au plafond de taille (pepite-v1.2 et suivantes). */
+  habitableSurfaceM2?: number | null;
+  /** DPE retenu (pepite-v1.2 et suivantes) ; absent : DPE inconnu. */
+  energy?: PepiteEnergyInput | null;
+  /** Marché local (pepite-v1.2 et suivantes) ; absent : aucun agrégat, critères de marché réussis. */
+  market?: PepiteMarketInput | null;
+};
+
+/** Ce que le marché local a donné pour cette vente, stocké dans `details.market`. */
+export type PepiteMarketMetrics = {
+  propertyType: PepiteMarketPropertyType | null;
+  /** Aucun agrégat pour la commune et ce type : les deux critères sont réussis, faute de donnée. */
+  aggregateAbsent: boolean;
+  referenceYear: number | null;
+  sales12Months: number | null;
+  salesRecentYear: number | null;
+  salesBaselineYear: number | null;
+  medianRecentEurM2: number | null;
+  medianBaselineEurM2: number | null;
+  /** La tendance a pu être évaluée (au moins 10 ventes chacune des deux années, deux médianes). */
+  trendEvaluated: boolean;
+  /** Baisse du prix médian au m² entre les deux années, en % (négatif : hausse) ; `null` si non évaluée. */
+  declinePct: number | null;
 };
 
 export type PepiteMetrics = {
@@ -329,6 +493,18 @@ export type PepiteMetrics = {
   costRatio: number | null;
   /** Mise à prix rapportée à la valeur centrale. */
   startingShareOfValue: number | null;
+  /**
+   * pepite-v1.2 et suivantes (absents des versions antérieures) : DPE retenu (`null` : inconnu, aucun coût ajouté),
+   * sa source, et le coût de rénovation énergétique ajouté au coût total du test C (0 hors F et G ; `null` : DPE
+   * inconnu ou surface habitable inconnue).
+   */
+  dpeClass?: DpeClass | null;
+  dpeSource?: "ademe" | "listing" | null;
+  energyRenovationEur?: number | null;
+  /** Surface habitable lue pour le coût énergétique et le plafond de taille. */
+  habitableSurfaceM2?: number | null;
+  /** Marché local (pepite-v1.2 et suivantes). */
+  market?: PepiteMarketMetrics | null;
 };
 
 export type PepiteEvaluation = {
@@ -385,6 +561,8 @@ const EMPTY_METRICS: PepiteMetrics = {
 type FloodMode = "entry" | "hold" | "off";
 
 type Thresholds = {
+  /** Ce que la version évalue (table de capacités). */
+  capabilities: PepiteRuleCapabilities;
   chanceMinShare: number;
   /** Borne basse de Wilson exigée de la part ; `null` : non exigée (maintien, règle d'origine). */
   chanceMinWilsonLow: number | null;
@@ -413,6 +591,69 @@ export function chanceSampleSize(courtSample: number, nationalSample: number): n
   return courtSample >= PEPITE_COURT_REPLACE_BELOW_SALES
     ? courtSample + PEPITE_SMOOTHING_WEIGHT_SALES
     : nationalSample;
+}
+
+/**
+ * Coût de rénovation énergétique ajouté au test C (pepite-v1.2) : `PEPITE_ENERGY_RENOVATION_EUR_PER_M2` x surface
+ * habitable pour un DPE F ou G, 0 pour les autres classes. `null` : DPE inconnu (aucun ajout, signalé dans les
+ * détails), ou DPE F/G sans surface habitable connue.
+ */
+export function energyRenovationCostEur(
+  dpeClass: DpeClass | null | undefined,
+  habitableSurfaceM2: number | null | undefined,
+): number | null {
+  if (dpeClass == null) return null;
+  if (dpeClass !== "F" && dpeClass !== "G") return 0;
+  const surface = positive(habitableSurfaceM2);
+  return surface == null
+    ? null
+    : Math.round(PEPITE_ENERGY_RENOVATION_EUR_PER_M2[dpeClass] * surface);
+}
+
+/**
+ * Marché local de la commune (pepite-v1.2). Donnée manquante, pas d'exclusion :
+ *  - `market_liquid` échoue seulement si l'agrégat existe et compte moins de `PEPITE_MARKET_MIN_SALES_12_MONTHS`
+ *    ventes sur 12 mois ; sans agrégat il est réussi (et `aggregateAbsent` le note) ;
+ *  - `market_not_declining` n'est évalué que si chacune des deux années a au moins
+ *    `PEPITE_MARKET_TREND_MIN_SALES_PER_YEAR` ventes et une médiane ; il échoue si le prix médian au m² a baissé de
+ *    plus de `PEPITE_MARKET_MAX_DECLINE_SHARE` ; sinon il est réussi (`trendEvaluated` le note).
+ */
+export function evaluateLocalMarket(market: PepiteMarketInput | null | undefined): {
+  liquid: boolean;
+  notDeclining: boolean;
+  metrics: PepiteMarketMetrics;
+} {
+  const aggregate = market?.aggregate ?? null;
+  const metrics: PepiteMarketMetrics = {
+    propertyType: market?.propertyType ?? null,
+    aggregateAbsent: aggregate == null,
+    referenceYear: aggregate?.referenceYear ?? null,
+    sales12Months: aggregate?.sales12Months ?? null,
+    salesRecentYear: aggregate?.salesRecentYear ?? null,
+    salesBaselineYear: aggregate?.salesBaselineYear ?? null,
+    medianRecentEurM2: aggregate?.medianRecentEurM2 ?? null,
+    medianBaselineEurM2: aggregate?.medianBaselineEurM2 ?? null,
+    trendEvaluated: false,
+    declinePct: null,
+  };
+  if (!aggregate) return { liquid: true, notDeclining: true, metrics };
+
+  const liquid = aggregate.sales12Months >= PEPITE_MARKET_MIN_SALES_12_MONTHS;
+  const recent = positive(aggregate.medianRecentEurM2);
+  const baseline = positive(aggregate.medianBaselineEurM2);
+  const trendEvaluated =
+    aggregate.salesRecentYear >= PEPITE_MARKET_TREND_MIN_SALES_PER_YEAR &&
+    aggregate.salesBaselineYear >= PEPITE_MARKET_TREND_MIN_SALES_PER_YEAR &&
+    recent != null &&
+    baseline != null;
+  metrics.trendEvaluated = trendEvaluated;
+  if (!trendEvaluated || recent == null || baseline == null) {
+    return { liquid, notDeclining: true, metrics };
+  }
+  const decline = (baseline - recent) / baseline;
+  metrics.declinePct = Math.round(decline * 10_000) / 100;
+  // Une baisse d'exactement 15 % est admise : seule une baisse de plus de 15 % exclut.
+  return { liquid, notDeclining: !(decline > PEPITE_MARKET_MAX_DECLINE_SHARE + 1e-9), metrics };
 }
 
 /** Seuil du test C à l'entrée : plus strict pour les ventes notariales. */
@@ -522,6 +763,23 @@ function runCriteria(
       check("low_start_strong_estimate", estimate?.reliability === "forte");
     }
   }
+  const { capabilities } = thresholds;
+  // pepite-v1.2 : un très grand bien ou une très forte valeur sort du périmètre où l'estimation est fiable. Une
+  // surface inconnue ne l'écarte pas ici (`surface_known` et `estimate_actionable` s'en chargent).
+  const habitableSurface = positive(input.habitableSurfaceM2);
+  if (capabilities.sizeValueCap) {
+    check(
+      "size_value_supported",
+      !(habitableSurface != null && habitableSurface > PEPITE_MAX_HABITABLE_SURFACE_M2) &&
+        !(central != null && central > PEPITE_MAX_CENTRAL_VALUE_EUR),
+    );
+  }
+  // pepite-v1.2 : marché local. Pas d'agrégat = pas d'exclusion (voir `evaluateLocalMarket`).
+  const localMarket = capabilities.localMarket ? evaluateLocalMarket(input.market) : null;
+  if (localMarket) {
+    check("market_liquid", localMarket.liquid);
+    check("market_not_declining", localMarket.notDeclining);
+  }
 
   // Signaux bloquants.
   check("no_valuation_conflict", !signals.valuationConflict);
@@ -530,6 +788,7 @@ function runCriteria(
   check("verification_not_conflict", !signals.verificationConflict);
   check("no_probable_duplicate", !signals.probableDuplicate);
   check("risks_qualified", !signals.unqualifiedRisks);
+  if (capabilities.coproDistress) check("no_copro_distress", signals.coproDistress !== true);
 
   // Inondation (pepite-v2). Le verdict inconnu (position imprécise dans une commune qui a un TRI, source
   // indisponible) ne passe pas à l'entrée mais est toléré au maintien ; `no_high_flood_risk` n'est évalué que
@@ -557,6 +816,19 @@ function runCriteria(
     ? Math.min(50, Math.max(0, input.occupancyDiscountPct ?? 0))
     : 0;
   if (thresholds.corrected) metrics.occupancyDiscountPct = occupancyDiscountPct;
+  // pepite-v1.2 : coût de rénovation énergétique. DPE inconnu : aucun ajout, `dpeClass: null` le signale.
+  let energyRenovationEur: number | null = null;
+  if (capabilities.energyCost) {
+    const dpeClass = input.energy?.dpeClass ?? null;
+    energyRenovationEur = energyRenovationCostEur(dpeClass, habitableSurface);
+    metrics.dpeClass = dpeClass;
+    metrics.dpeSource = dpeClass ? (input.energy?.dpeSource ?? null) : null;
+    metrics.energyRenovationEur = energyRenovationEur;
+    metrics.habitableSurfaceM2 = habitableSurface;
+  } else if (capabilities.sizeValueCap) {
+    metrics.habitableSurfaceM2 = habitableSurface;
+  }
+  if (localMarket) metrics.market = localMarket.metrics;
 
   // Prix probable : mise à prix × multiplicateur local (tribunal) ; la mise à prix elle-même, ou la
   // première offre possible, pour une vente notariale (aucun historique en base).
@@ -620,7 +892,12 @@ function runCriteria(
 
   // Test C : coût total au prix probable, rapporté à la valeur centrale.
   if (ceiling && central != null && metrics.probablePriceEur != null && reference != null) {
-    const total = ceiling.totalCostAt(metrics.probablePriceEur);
+    const purchaseCost = ceiling.totalCostAt(metrics.probablePriceEur);
+    // pepite-v1.2 : la rénovation énergétique (DPE F ou G) s'ajoute au coût total ; DPE inconnu : rien.
+    const total =
+      purchaseCost != null && Number.isFinite(purchaseCost)
+        ? purchaseCost + (energyRenovationEur ?? 0)
+        : purchaseCost;
     if (total != null && Number.isFinite(total)) {
       metrics.totalCostEur = total;
       // pepite-v1.1 : la valeur centrale est celle d'un bien libre ; un bien loué se négocie moins cher.
@@ -644,10 +921,10 @@ const sortByCatalogue = (ids: PepiteCriterionId[]) =>
   [...ids].sort((left, right) => PEPITE_CRITERIA.indexOf(left) - PEPITE_CRITERIA.indexOf(right));
 
 /**
- * Évalue une vente avec la règle `pepite-v2` (ou `pepite-v1` : même règle sans le critère d'inondation, voir
- * `PEPITE_V1_RULE_VERSION`), à cet instant et sans mémoire : la stabilité (deux
- * évaluations favorables, hystérésis, gel) est appliquée ensuite par `applyPepiteStability`. La version est
- * OBLIGATOIRE : aucun appelant ne peut contourner l'interrupteur `PEPITE_RULE_V2_ENABLED` en l'oubliant.
+ * Évalue une vente avec la règle de la version donnée (`PEPITE_RULE_CAPABILITIES` dit ce que chacune évalue), à cet
+ * instant et sans mémoire : la stabilité (deux évaluations favorables, hystérésis, gel) est appliquée ensuite par
+ * `applyPepiteStability`. La version est OBLIGATOIRE : aucun appelant ne peut contourner l'interrupteur
+ * `PEPITE_RULE_V2_ENABLED` en l'oubliant.
  *
  *  - ventes couvertes : tribunal, vente notariale à la bougie et vente notariale interactive, quand
  *    le régime est ouvert (`openFeeRegimesFromEnv`) ; rien pour les autres ;
@@ -659,7 +936,10 @@ const sortByCatalogue = (ids: PepiteCriterionId[]) =>
  *    J-7) ; `flood_risk_known` manque à l'entrée quand le verdict est inconnu (aucune nouvelle pépite) mais
  *    n'est pas exigé au maintien (une pépite publiée reste affichée) ; il manque aussi à l'entrée quand « aucun
  *    risque élevé » ne repose que sur les TRI (périmètre des PPRi non lu) ; un verdict inconnu n'est PAS une donnée
- *    manquante (pas de sortie par délai de grâce). La v2 ne rend jamais favorable ce que la v1 refusait.
+ *    manquante (pas de sortie par délai de grâce). La v2 ne rend jamais favorable ce que la v1 refusait ;
+ *  - pepite-v1.2 et v2.1 : le coût de rénovation énergétique s'ajoute au coût du test C ; `size_value_supported`,
+ *    `market_liquid` et `market_not_declining` sont éliminatoires mais non bloquants (ils ne jouent qu'aux
+ *    recalculs normaux) ; `no_copro_distress` est bloquant. Les badges (`pepite-badges.ts`) n'entrent pas ici.
  */
 export function evaluatePepite(
   input: PepiteInput,
@@ -667,8 +947,8 @@ export function evaluatePepite(
 ): PepiteEvaluation {
   const regime = input.regime;
   const base = { ruleVersion, regime };
-  const v2 = ruleVersion === PEPITE_LATEST_RULE_VERSION;
-  const corrected = isCorrectedRule(ruleVersion);
+  const capabilities = pepiteRuleCapabilities(ruleVersion);
+  const { corrected, flood } = capabilities;
 
   const eligibility: PepiteCriterionId[] = [];
   const ineligible: PepiteCriterionId[] = [];
@@ -690,18 +970,20 @@ export function evaluatePepite(
   }
 
   const entry = runCriteria(input, regime, {
+    capabilities,
     chanceMinShare: PEPITE_CHANCE_MIN_SHARE,
     chanceMinWilsonLow: corrected ? PEPITE_CHANCE_MIN_WILSON_LOW : null,
     costMaxShare: entryCostMaxShare(regime),
-    flood: v2 ? "entry" : "off",
+    flood: flood ? "entry" : "off",
     corrected,
   });
   const exit = runCriteria(input, regime, {
+    capabilities,
     chanceMinShare: PEPITE_CHANCE_EXIT_SHARE,
     // Au maintien, la part seule compte : une pépite dont l'effectif est mince reste « à confirmer ».
     chanceMinWilsonLow: null,
     costMaxShare: exitCostMaxShare(regime),
-    flood: v2 ? "hold" : "off",
+    flood: flood ? "hold" : "off",
     corrected,
   });
 

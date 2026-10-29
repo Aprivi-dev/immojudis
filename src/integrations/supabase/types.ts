@@ -15233,6 +15233,7 @@ export type Database = {
         Returns: boolean;
       };
       geomfromewkt: { Args: { "": string }; Returns: unknown };
+      get_commune_market_trends: { Args: { p_insee_codes: string[] }; Returns: Json };
       get_court_auction_scenarios: {
         Args: {
           p_court_code: string;

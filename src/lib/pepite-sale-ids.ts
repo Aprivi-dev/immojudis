@@ -37,7 +37,7 @@ export async function listPepiteSaleIds(client: PepiteIdsClient): Promise<string
  * Identifiants, parmi les pépites publiables, de celles dont le bien est dans le périmètre d'un plan de prévention
  * des risques d'inondation (`list_public_pepite_flood_exposed_ids`) : un fait public, sans montant, qui sert à
  * afficher la mention courte « zonage à vérifier » partout où le badge Pépite apparaît. Vide quand la fonction est
- * absente (migration pas encore appliquée), en mode « shadow » ou sous une règle sans inondation (`pepite-v1`, `pepite-v1.1`).
+ * absente (migration pas encore appliquée), en mode « shadow » ou sous une règle sans inondation (`pepite-v1`, `pepite-v1.1`, `pepite-v1.2`).
  */
 export async function listPepiteFloodExposedIds(client: PepiteFloodIdsClient): Promise<string[]> {
   const { data, error } = await client.rpc("list_public_pepite_flood_exposed_ids");

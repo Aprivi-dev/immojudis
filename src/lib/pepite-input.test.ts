@@ -10,18 +10,21 @@ import {
   type PepiteEstimateRow,
   type PepiteSourceData,
 } from "@/lib/pepite-input";
-import { PEPITE_LATEST_RULE_VERSION, type PepiteRuleVersion } from "@/lib/pepite-policy";
+import { PEPITE_V2_RULE_VERSION, type PepiteRuleVersion } from "@/lib/pepite-policy";
 import { computeSaleCeiling } from "@/lib/sale-ceiling";
 import type { AuctionSale } from "@/lib/types";
 
-/** La version de la règle est obligatoire : ces tests évaluent la règle courante sauf indication contraire. */
+/**
+ * La version de la règle est obligatoire : ces tests évaluent `pepite-v2` (la règle d'avant la v1.2) sauf indication
+ * contraire. Les règles v1.2 et v2.1 ont leurs tests dans `pepite-input.v12.test.ts`.
+ */
 const buildPepiteInput = (
   data: PepiteSourceData,
-  ruleVersion: PepiteRuleVersion = PEPITE_LATEST_RULE_VERSION,
+  ruleVersion: PepiteRuleVersion = PEPITE_V2_RULE_VERSION,
 ) => buildPepiteInputVersioned(data, ruleVersion);
 const evaluateSaleForPepite = (
   data: PepiteSourceData,
-  ruleVersion: PepiteRuleVersion = PEPITE_LATEST_RULE_VERSION,
+  ruleVersion: PepiteRuleVersion = PEPITE_V2_RULE_VERSION,
 ) => evaluateSaleForPepiteVersioned(data, ruleVersion);
 
 const NOW = new Date("2026-11-01T12:00:00Z");
