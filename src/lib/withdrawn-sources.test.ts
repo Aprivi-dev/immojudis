@@ -137,6 +137,18 @@ describe("source retirée par l'interrupteur (usage futur)", () => {
   });
 });
 
+describe("Vench retirée (29/10/2026)", () => {
+  afterEach(() => resetWithdrawnSources());
+
+  it("les pages, photos et pièces hébergées par Vench sont reconnues", () => {
+    setWithdrawnSources(["vench"]);
+    expect(isWithdrawnSourceUrl("https://www.vench.fr/vente/1")).toBe(true);
+    expect(isWithdrawnSourceUrl(OTHER_PHOTO)).toBe(true);
+    expect(isWithdrawnSourceUrl("https://document.vench.fr/cahier.pdf")).toBe(true);
+    expect(isWithdrawnSourceUrl("https://www.licitor.com/annonce/1.html")).toBe(false);
+  });
+});
+
 describe("photo copiée par Immojudis d'une source retirée", () => {
   const MIRROR = {
     path640: "11111111-1111-1111-1111-111111111111/abc-640.webp",

@@ -2,14 +2,15 @@ begin;
 
 select plan(10);
 
--- Interrupteur de retrait d'une source (migration 20261021110000) : livré SANS aucune source retirée
--- (Licitor reste collecté et affiché). Une fois posé, un seul interrupteur arrête la collecte et masque
+-- Interrupteur de retrait d'une source (migration 20261021110000) : livré SANS aucune source retirée ;
+-- depuis 20261109153217, seule Vench l'est (Licitor reste collecté et affiché). Une fois posé, un seul interrupteur arrête la collecte et masque
 -- les ventes de la seule source retirée, sans rien supprimer ; il se lève d'un seul geste. Les lignes de
 -- test sont annulées en fin de fichier.
 
-select ok(
-  not exists (select 1 from public.auction_source_state where catalogue_withdrawn),
-  'delivered state: no source is withdrawn'
+select is(
+  array(select source_name from public.auction_source_state where catalogue_withdrawn order by 1),
+  array['vench'],
+  'current state: only Vench is withdrawn'
 );
 
 select ok(
@@ -27,8 +28,8 @@ select ok(
 
 select ok(
   has_function_privilege('anon', 'public.get_withdrawn_catalogue_sources()', 'execute')
-  and cardinality(public.get_withdrawn_catalogue_sources()) = 0,
-  'visitors can read which sources are withdrawn, and none is'
+  and public.get_withdrawn_catalogue_sources() = array['vench'],
+  'visitors can read which sources are withdrawn: only Vench'
 );
 
 insert into public.auction_sales (source_name, source_url, observations, raw_payload)
@@ -82,7 +83,7 @@ select ok(
   (select enabled and not catalogue_withdrawn from public.auction_source_state where source_name = 'licitor')
   and (select coalesce(raw_payload ->> 'publication_quarantine', '') = '' from public.auction_sales
         where source_url = 'https://www.licitor.com/pgtap-seul')
-  and cardinality(public.get_withdrawn_catalogue_sources()) = 0,
+  and public.get_withdrawn_catalogue_sources() = array['vench'],
   'lifting the switch re-enables the source and restores the sale'
 );
 

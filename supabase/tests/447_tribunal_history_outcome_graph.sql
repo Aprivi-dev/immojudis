@@ -183,7 +183,7 @@ insert into public.auction_sales(
   id, source_name, source_url, tribunal, tribunal_code, sale_venue_type, department, city,
   address, postal_code, property_type, sale_date, status, starting_price_eur, raw_payload
 ) values (
-  'c4470000-0000-4000-8000-000000000010', 'vench', 'https://example.test/447/live',
+  'c4470000-0000-4000-8000-000000000010', 'licitor', 'https://example.test/447/live',
   'TJ Testville sur Mer', null, 'tribunal', '99', 'Testville-sur-Mer',
   '10 rue du Test', '99000', 'apartment', statement_timestamp() + interval '20 days', 'upcoming', 90000, '{}'::jsonb
 );

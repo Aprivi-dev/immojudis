@@ -287,8 +287,22 @@ jobs:
           # A migration added by a pull request must be newer than the latest one on its base.
           MIGRATIONS_BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || '' }}
         run: npm run check:migrations
+      # Images Docker de Supabase gardées d'un run à l'autre : le registre public (public.ecr.aws)
+      # refuse des téléchargements anonymes aux machines partagées de GitHub (29/10/2026 :
+      # « toomanyrequests: Rate exceeded », types générés par une autre version de postgres-meta).
+      # Montée du CLI Supabase : changer la version dans la clé avec celle des commandes.
+      - name: Restore the Supabase images
+        id: supabase-images
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/supabase-images.tar
+          key: supabase-images-2.110.0-v1
+      - name: Load the Supabase images
+        if: steps.supabase-images.outputs.cache-hit == 'true'
+        run: docker load --input "$RUNNER_TEMP/supabase-images.tar"
       - name: Start local Supabase
-        run: npx --yes supabase@2.110.0 start
+        # Seuls la base, l'API (kong, postgrest), auth, storage et postgres-meta (types) servent ici.
+        run: npx --yes supabase@2.110.0 start --exclude studio,edge-runtime,logflare,vector,mailpit,imgproxy,realtime,supavisor
       - name: Replay migrations from zero
         run: npx --yes supabase@2.110.0 db reset --local --no-seed --log-level error
       - name: Check generated database types are up to date
@@ -355,6 +369,21 @@ jobs:
       - name: Stop local Supabase
         if: always()
         run: npx --yes supabase@2.110.0 stop --no-backup
+      # Enregistrées depuis main seulement (un cache de PR ne sert qu'à sa branche), après les tests :
+      # pg_prove (supabase test db) et l'outil de diff (dérive du schéma) sont alors téléchargés aussi.
+      - name: Save the Supabase images
+        if: success() && github.ref == 'refs/heads/main' && steps.supabase-images.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mapfile -t images < <(docker image ls --format '{{.Repository}}:{{.Tag}}' | grep -E '(^|/)supabase/' | grep -v '<none>')
+          test "${#images[@]}" -gt 0
+          docker save --output "$RUNNER_TEMP/supabase-images.tar" "${images[@]}"
+      - name: Upload the Supabase images to the cache
+        if: success() && github.ref == 'refs/heads/main' && steps.supabase-images.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/supabase-images.tar
+          key: supabase-images-2.110.0-v1
 
   e2e:
     name: Investor journey (Playwright)
