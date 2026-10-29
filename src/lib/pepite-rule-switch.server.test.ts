@@ -22,8 +22,8 @@ describe("interrupteur de la règle pepite-v2", () => {
     }
   });
 
-  it("la règle appliquée est pepite-v1.1 tant qu'il est fermé, pepite-v2 une fois ouvert", () => {
-    expect(activePepiteRuleVersion({})).toBe("pepite-v1.1");
-    expect(activePepiteRuleVersion({ [PEPITE_RULE_V2_ENV]: "true" })).toBe("pepite-v2");
+  it("la règle appliquée est pepite-v1.2 tant qu'il est fermé, pepite-v2.1 une fois ouvert", () => {
+    expect(activePepiteRuleVersion({})).toBe("pepite-v1.2");
+    expect(activePepiteRuleVersion({ [PEPITE_RULE_V2_ENV]: "true" })).toBe("pepite-v2.1");
   });
 });
