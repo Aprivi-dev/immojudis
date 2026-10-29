@@ -26,8 +26,8 @@ responsable de traitement.
    contradictoires (cahier des conditions de vente, procès-verbal descriptif, diagnostics, dates de
    visite, mise à prix, garantie exigée pour enchérir, audience). Alternatives examinées : pièces publiques, greffe,
    téléphone. **À chiffrer :** part des ventes dont la fiche reste incomplète sans réponse du professionnel,
-   avec `services/data-pipeline/sql/insufficient_information_report.sql` (à exécuter par le
-   propriétaire), pour établir pourquoi les alternatives ne suffisent pas.
+   avec le comptage de `supabase/repairs/20261108202100_delete_empty_listings.sql` (mode par défaut, lecture
+   seule, à exécuter par le propriétaire), pour établir pourquoi les alternatives ne suffisent pas.
 3. **Attentes raisonnables.** L’adresse est publiée par la personne pour être contactée sur cette
    vente (annonce), sur une autre annonce de ses ventes ou sur son activité (site de son cabinet ou de son étude, cité par l’annonce). Le
    message concerne exactement la vente qu’elle mène et ne contient aucune promotion. La CNIL

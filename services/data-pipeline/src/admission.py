@@ -303,38 +303,21 @@ def display_job_block_reason(sale: AuctionSale, now: datetime | None = None) -> 
 def publication_rejection(sale: AuctionSale, now=None) -> str | None:
     """Motif pour lequel une vente n'est pas publiée, ou ``None`` si elle l'est.
 
-    Codes : ``expired``, ``missing_price_and_surface`` et
-    ``insufficient_information:<motifs>`` (règle de rétention, voir
-    ``information_sufficiency``). Ce sont des codes, jamais des données de la vente.
+    Codes : ``expired`` et ``missing_price_and_surface``. ``expired`` couvre l'échéance de rétention (date de vente
+    + 24 h) ET la sortie du catalogue (date de vente passée) : ``upsert_sales_to_supabase`` utilise ce même jugement
+    et écarte en silence ce qu'il rejette. Une vente passée depuis moins de 24 h restait ``admitted`` pour toujours
+    et bloquait la « publication complète » de sa source. Le minimum d'une annonce (voie ou lieu-dit, email de
+    contact, pièce, autre source) n'est PAS jugé ici : il l'est à l'écriture, quand on sait si la vente se
+    rattache à une ligne existante (``src/listing_minimum.py``). Ce sont des codes, jamais des données de la vente.
     """
-    from src.information_sufficiency import publication_gate
-
-    if is_expired(sale, now):
+    if is_expired(sale, now) or is_catalogue_expired(sale, now):
         return "expired"
     if not has_price_or_surface(sale):
         return "missing_price_and_surface"
-    verdict = publication_gate(sale)
-    return None if verdict.sufficient else verdict.reason_code
+    return None
 
 
-def split_insufficient(sales: list[AuctionSale], logger) -> tuple[list[AuctionSale], dict]:
-    """Retire les ventes aux informations insuffisantes ; renvoie (conservées, compteurs du run).
-
-    Le journal ne contient que la source, l'URL publique de l'annonce et le motif.
-    """
-    from src.information_sufficiency import publication_gate, summarize_verdicts
-
-    kept: list[AuctionSale] = []
-    rejected: list[tuple[str, object]] = []
-    for sale in sales:
-        verdict = publication_gate(sale)
-        if verdict.sufficient:
-            kept.append(sale)
-            continue
-        rejected.append((str(sale.primary_source or sale.source_name), verdict))
-        logger.info("Collection admission rejected source=%s url=%s reason=%s",
-                    sale.source_name, sale.source_url, verdict.reason_code)
-    return kept, summarize_verdicts(rejected)
+CATALOGUE_EXPIRED_REASON = "catalogue_date_passed_not_evidence_of_sale"
 
 
 def admit_sales(sales: list[AuctionSale], record) -> list[AuctionSale]:
@@ -346,20 +329,17 @@ def admit_sales(sales: list[AuctionSale], record) -> list[AuctionSale]:
     rejected: dict[str, list[AuctionSale]] = {}
     for sale in sales:
         reason = publication_rejection(sale)
-        if reason is None and is_catalogue_expired(sale):
-            # ``upsert_sales_to_supabase`` drops it without a word: the catalogue cutoff (the sale instant, or the
-            # end of its Paris day) comes up to 24 h before the retention deadline. Left ``admitted``, it would stay a
-            # pending decision and block ``last_publication_complete_at`` of its source at every run.
-            reason = "catalogue_expired"
         if reason is None:
             admitted.append(sale)
-        else:
-            rejected.setdefault(reason, []).append(sale)
+            continue
+        if reason == "expired" and not is_expired(sale):
+            reason = "catalogue_expired"
+        rejected.setdefault(reason, []).append(sale)
     for reason, group in rejected.items():
         if reason == "expired":
             record(group, decision="expired", reason="retention_deadline_reached_not_evidence_of_sale")
         elif reason == "catalogue_expired":
-            record(group, decision="expired", reason="catalogue_deadline_reached_not_evidence_of_sale")
+            record(group, decision="expired", reason=CATALOGUE_EXPIRED_REASON)
         else:
             record(group, decision="excluded", reason=reason)
     return admitted

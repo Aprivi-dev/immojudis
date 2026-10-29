@@ -73,7 +73,7 @@ class _Response:
 
 def _run_sweep(monkeypatch, sales):
     monkeypatch.setattr(merge_guards, "merge_trigger_deployed", lambda db_url: True)
-    rows = [{**sale.to_storage_dict(exclude_none=False), "status": "upcoming"} for sale in sales]
+    rows = _rows(sales)
     captured: dict[str, object] = {}
     monkeypatch.setattr(
         supabase_client,
@@ -224,7 +224,7 @@ def _id_pair(listing_id: int, city: str = "Ondres"):
 
 
 class _PagedGet:
-    """Sert les lignes par pages comme PostgREST (limit/offset) et note chaque appel."""
+    """Sert les lignes par pages comme PostgREST (order=id.asc, id=gt.<curseur>, limit) et note chaque appel."""
 
     def __init__(self, rows):
         self.rows = rows
@@ -232,8 +232,9 @@ class _PagedGet:
 
     def __call__(self, endpoint, params, headers, timeout):
         self.calls.append(dict(params))
-        offset, limit = int(params["offset"]), int(params["limit"])
-        return _Response(self.rows[offset : offset + limit])
+        assert "offset" not in params and params["order"] == "id.asc"
+        after = params.get("id", "gt.")[len("gt.") :]
+        return _Response([row for row in self.rows if str(row["id"]) > after][: int(params["limit"])])
 
 
 def _configure(monkeypatch, rows, **settings):
@@ -249,7 +250,11 @@ def _configure(monkeypatch, rows, **settings):
 
 
 def _rows(sales):
-    return [{**sale.to_storage_dict(exclude_none=False), "status": "upcoming"} for sale in sales]
+    # Identifiants croissants : le balayage pagine par curseur sur ``id``.
+    return [
+        {**sale.to_storage_dict(exclude_none=False), "id": f"00000000-0000-4000-8000-{index:012d}", "status": "upcoming"}
+        for index, sale in enumerate(sales)
+    ]
 
 
 def test_sweep_reads_past_the_old_two_thousand_row_window(monkeypatch) -> None:
@@ -262,8 +267,9 @@ def test_sweep_reads_past_the_old_two_thousand_row_window(monkeypatch) -> None:
     assert plan is not None
     assert plan.scanned == 2_302
     assert not plan.truncated
-    assert len(paged.calls) == 4  # 1 000 + 1 000 + 302, puis la page vide qui prouve la fin
-    assert all(call["order"].endswith("id.asc") for call in paged.calls)
+    assert len(paged.calls) == 25  # 23 pages de 100 + 1 de 2, puis la page vide qui prouve la fin
+    assert all(call["limit"] == "100" and call["order"] == "id.asc" for call in paged.calls)
+    assert "id" not in paged.calls[0] and paged.calls[1]["id"] == "gt.00000000-0000-4000-8000-000000000099"
     assert len(plan.groups) == 1
     assert plan.groups[0].reason == "listing_id"
 
@@ -295,7 +301,7 @@ def test_sweep_flags_a_partial_scan_when_a_page_fails_midway(monkeypatch, tmp_pa
     paged = _configure(monkeypatch, _rows(sales), dedupe_reconcile_max_rows=20_000)
 
     def failing_second_page(endpoint, params, headers, timeout):
-        if int(params["offset"]) > 0:
+        if "id" in params:
             return _FailingResponse([])
         return paged(endpoint, params, headers, timeout)
 
@@ -308,7 +314,7 @@ def test_sweep_flags_a_partial_scan_when_a_page_fails_midway(monkeypatch, tmp_pa
         plan = dedupe_candidates.report_duplicate_candidates(output=output)
 
     assert plan is not None
-    assert plan.scanned == 1_000
+    assert plan.scanned == 100  # la première page ; une erreur autre qu'un délai n'est pas réessayée
     assert plan.truncated
     assert plan.truncation_reason == "fetch_error"
     assert "the scan is partial" in caplog.text
@@ -325,7 +331,7 @@ def test_sweep_flags_a_partial_scan_when_the_connection_drops_midway(monkeypatch
     paged = _configure(monkeypatch, _rows(sales), dedupe_reconcile_max_rows=20_000)
 
     def dropping_second_page(endpoint, params, headers, timeout):
-        if int(params["offset"]) > 0:
+        if "id" in params:
             raise httpx.ReadTimeout("timeout")
         return paged(endpoint, params, headers, timeout)
 
@@ -336,16 +342,107 @@ def test_sweep_flags_a_partial_scan_when_the_connection_drops_midway(monkeypatch
     assert plan is not None and plan.truncated and plan.truncation_reason == "fetch_error"
 
 
+class _TimeoutResponse(_Response):
+    is_error = True
+    status_code = 500
+    text = '{"code":"57014","message":"canceling statement due to statement timeout"}'
+
+
+def test_a_statement_timeout_halves_the_page_size_and_rereads_the_same_page(monkeypatch) -> None:
+    sales = [_filler(index) for index in range(130)]
+    paged = _configure(monkeypatch, _rows(sales), dedupe_reconcile_max_rows=20_000)
+
+    def heavy_pages(endpoint, params, headers, timeout):
+        if int(params["limit"]) > 30:  # 57014 tant que la page dépasse 30 lignes
+            paged.calls.append(dict(params))
+            return _TimeoutResponse([])
+        return paged(endpoint, params, headers, timeout)
+
+    monkeypatch.setattr(supabase_client.httpx, "get", heavy_pages)
+
+    plan = supabase_client.plan_duplicate_reconciliation()
+
+    assert plan is not None
+    assert plan.scanned == 130 and not plan.truncated and plan.truncation_reason is None
+    limits = [call["limit"] for call in paged.calls]
+    assert limits[:3] == ["100", "50", "25"]  # même page relue avec 100, 50 puis 25 lignes
+    assert set(limits[2:]) == {"25"}  # la taille réduite reste pour la suite
+    assert "id" not in paged.calls[1] and "id" not in paged.calls[2]  # curseur inchangé pendant la réduction
+
+
+def test_a_read_timeout_also_halves_the_page_size(monkeypatch) -> None:
+    import httpx
+
+    paged = _configure(monkeypatch, _rows([_filler(index) for index in range(60)]), dedupe_reconcile_max_rows=20_000)
+    attempts: list[str] = []
+
+    def flaky(endpoint, params, headers, timeout):
+        attempts.append(params["limit"])
+        if params["limit"] == "100":
+            raise httpx.ReadTimeout("timeout")
+        return paged(endpoint, params, headers, timeout)
+
+    monkeypatch.setattr(supabase_client.httpx, "get", flaky)
+
+    plan = supabase_client.plan_duplicate_reconciliation()
+
+    assert plan is not None and plan.scanned == 60 and not plan.truncated
+    assert attempts[:2] == ["100", "50"]
+
+
+def test_a_timeout_below_the_minimum_page_size_ends_the_scan_as_partial(monkeypatch) -> None:
+    from src.storage import duplicate_sweep
+
+    _configure(monkeypatch, _rows([_filler(index) for index in range(60)]), dedupe_reconcile_max_rows=20_000)
+    limits: list[str] = []
+
+    def always_timing_out(endpoint, params, headers, timeout):
+        limits.append(params["limit"])
+        return _TimeoutResponse([])
+
+    monkeypatch.setattr(supabase_client.httpx, "get", always_timing_out)
+
+    plan = supabase_client.plan_duplicate_reconciliation()
+
+    assert plan is not None and plan.scanned == 0
+    assert plan.truncated and plan.truncation_reason == "fetch_error"
+    assert limits == ["100", "50", "25", "12", "10"]  # s'arrête à MIN_PAGE_SIZE, ne boucle pas
+    assert duplicate_sweep.MIN_PAGE_SIZE == 10
+
+
+def test_the_page_size_is_adjustable_and_bounded(monkeypatch) -> None:
+    from src.storage import duplicate_sweep
+
+    monkeypatch.delenv(duplicate_sweep.PAGE_SIZE_ENV, raising=False)
+    assert duplicate_sweep._page_size() == 100
+    for raw, expected in (("40", 40), ("1", 10), ("5000", 1000), ("abc", 100)):
+        monkeypatch.setenv(duplicate_sweep.PAGE_SIZE_ENV, raw)
+        assert duplicate_sweep._page_size() == expected
+
+
+def test_the_write_sweep_reads_through_the_same_paged_path(monkeypatch) -> None:
+    paged = _configure(monkeypatch, _rows(_id_pair(166526)), dedupe_reconcile_max_merges=100)
+    monkeypatch.setattr(supabase_client, "_upsert_with_rest", lambda *args, **kwargs: None)
+    monkeypatch.setattr(supabase_client, "_delete_secondary_sale_rows", lambda url, key, sales, **kw: 1)
+    monkeypatch.setattr(supabase_client, "_sync_normalized_sale_tables_with_rest", lambda *a, **k: None)
+    monkeypatch.setattr(supabase_client, "_upsert_asset_tables_with_rest", lambda *a, **k: None)
+    monkeypatch.setattr(merge_guards, "merge_trigger_deployed", lambda db_url: True)
+
+    assert supabase_client.reconcile_duplicate_sales_in_supabase() == 1
+    assert paged.calls and all(call["limit"] == "100" and call["order"] == "id.asc" for call in paged.calls)
+
+
 def test_sweep_keeps_reading_when_the_server_caps_the_page_size(monkeypatch) -> None:
     # PostgREST (max_rows) peut renvoyer moins de lignes que demandé : une page courte n'est pas la fin.
     sales = [*(_filler(index) for index in range(700)), *_id_pair(166526)]
     paged = _configure(monkeypatch, _rows(sales), dedupe_reconcile_max_rows=20_000)
-    server_cap = 250
+    server_cap = 40
 
     def capped(endpoint, params, headers, timeout):
         paged.calls.append(dict(params))
-        offset = int(params["offset"])
-        return _Response(paged.rows[offset : offset + min(int(params["limit"]), server_cap)])
+        after = params.get("id", "gt.")[len("gt.") :]
+        page = [row for row in paged.rows if str(row["id"]) > after]
+        return _Response(page[: min(int(params["limit"]), server_cap)])
 
     monkeypatch.setattr(supabase_client.httpx, "get", capped)
 
@@ -354,7 +451,7 @@ def test_sweep_keeps_reading_when_the_server_caps_the_page_size(monkeypatch) -> 
     assert plan is not None
     assert plan.scanned == 702
     assert not plan.truncated and plan.truncation_reason is None
-    assert [call["offset"] for call in paged.calls] == ["0", "250", "500", "702"]  # 250 + 250 + 202, puis vide
+    assert len(paged.calls) == 19  # 17 pages de 40 + 1 de 22, puis la page vide qui prouve la fin
     assert len(plan.groups) == 1
 
 
@@ -367,6 +464,26 @@ def test_a_read_ceiling_report_says_so(monkeypatch) -> None:
 
     assert plan is not None and plan.truncation_reason == "read_ceiling"
     assert "plafond de lecture atteint" in duplicate_sweep.markdown_summary(plan)
+
+
+def test_an_url_merged_by_an_earlier_pass_neither_opens_a_group_nor_counts_in_the_cap(monkeypatch) -> None:
+    from src.storage import duplicate_sweep
+
+    survivor = _sale("licitor", "https://www.licitor.com/annonce/70.html")
+    secondary = _sale("avoventes", "https://avoventes.fr/enchere/70")
+    already_merged = _sale("licitor", "https://www.licitor.com/annonce/80.html")
+    # Fiches déjà fusionnées : les URL absorbées restent dans source_urls, leurs lignes n'existent plus.
+    already_merged.source_urls = [already_merged.source_url, "https://www.vench.fr/vente-80.html"]
+    survivor.source_urls = [survivor.source_url, secondary.source_url, "https://www.vench.fr/vente-70.html"]
+    monkeypatch.setattr(
+        duplicate_sweep, "merge_duplicate_sales", lambda sales, **kwargs: [already_merged, survivor]
+    )
+
+    plan = duplicate_sweep.build_plan([already_merged, survivor, secondary], _EmptyRegistry(), max_merges=1)
+
+    assert [group.primary.source_url for group in plan.groups] == [survivor.source_url]
+    assert [row.source_url for row in plan.groups[0].secondaries] == [secondary.source_url]
+    assert plan.deferred_rows == 0
 
 
 def test_sweep_cap_defers_whole_groups_beyond_the_per_pass_maximum(monkeypatch) -> None:

@@ -27,7 +27,7 @@ except ModuleNotFoundError:  # pragma: no cover - GitHub Actions installs psycop
     sql = None
     Jsonb = None
 
-from src.admission import has_price_or_surface, is_catalogue_expired, is_expired, quarantine_reason
+from src.admission import has_price_or_surface, is_expired, publication_rejection, quarantine_reason
 from src.asset_normalization import (
     build_auction_features_row,
     build_auction_risk_rows_from_occurrences,
@@ -53,7 +53,7 @@ from src.pdf_progress import (
     is_modern_payload,
     modern_progress_entries,
 )
-from src.personal_data import redact_storage_row
+from src.personal_data import persistable_payload, redact_storage_row
 from src.reviewed_aliases import (
     ReviewedAliasRegistry,
     ReviewedAliasRegistryError,
@@ -492,13 +492,8 @@ def upsert_sales_to_supabase(
     *,
     refresh_last_seen: bool = True,
 ) -> int:
-    sales = [
-        sale
-        for sale in sales
-        if has_price_or_surface(sale)
-        and not is_expired(sale)
-        and not is_catalogue_expired(sale)
-    ]
+    # Même règle que l'admission (publication_rejection) : une vente écartée ici l'a déjà été, avec sa décision.
+    sales = [sale for sale in sales if publication_rejection(sale) is None]
     for sale in sales:
         apply_catalogue_readiness(sale)
     if not sales:
@@ -2650,7 +2645,7 @@ def upsert_observations_to_supabase(sales: list[AuctionSale]) -> int:
             if not isinstance(observation, dict) or not observation.get("source_url"):
                 continue
             source_url = str(observation.get("source_url"))
-            content = observation.get("raw_payload") or observation
+            content = persistable_payload(observation.get("raw_payload") or observation)
             # Keep the column's ingest/explicit observation meaning; checkpoint
             # evidence ranks duplicates but is not relabeled as observed_at.
             observed_at = _as_utc(observation.get("observed_at"))

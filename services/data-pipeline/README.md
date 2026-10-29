@@ -149,7 +149,10 @@ La collecte planifiée lance une seule source à la fois ; or la passe ci-dessus
 `python -m src.dedupe_apply` (workflow GitHub « Dedupe sweep », manuel, groupe de concurrence
 `immojudis-data-pipeline`, environnement Production) l'exécute à part : passerelle du catalogue, puis
 fusion et suppression, au plus 100 lignes par passage et seulement si `DEDUPE_RECONCILE_ENABLED=true`
-(sinon rien n'est écrit, et le mode candidats reste en lecture seule). Dans ce balayage, la clé de repli
+ou si le workflow est lancé avec `apply` coché et `confirm_target` = `production` (pour ce lancement
+seulement) ; sinon rien n'est écrit, et le mode candidats reste en lecture seule. La lecture se fait par
+pages de `DEDUPE_RECONCILE_PAGE_SIZE` lignes (100 par défaut), curseur sur `id`, et réduit la page quand
+un délai SQL est dépassé. Dans ce balayage, la clé de repli
 stricte (tribunal, jour, mise à prix, bien) est permise hors Vench / Petites Affiches, et un (jour, prix)
 partagé par plus de 5 annonces ou un groupe de plus de 5 lignes n'est jamais fusionné. Les données des
 comptes (favoris, notes, alertes, rapports…) des lignes supprimées passent à la fiche conservée dans la
@@ -907,20 +910,36 @@ le libellé retourné, le type de résultat, le code commune et la décision
 coordonnées. L'enrichissement DPE utilise les coordonnées quand elles existent,
 sinon une recherche textuelle d'adresse.
 
-## Règle « informations suffisantes »
+## Règle « minimum d'une annonce »
 
-Une vente est publiée si (adresse exploitable **et** superficie) **ou** si l'agent IA d'information dispose d'un e-mail
-exploitable. Sinon elle n'est pas écrite dans `auction_sales` : le run compte les rejets
-(`admission_rejected_insufficient_information` : total, motifs, sources) sans journaliser de donnée de la vente.
-Définitions, exemptions et chiffres par source : `docs/audits/2026-10-10-extraction-par-source.md`.
+Une annonce n'est écrite dans `auction_sales` que si elle a **une voie ou un lieu-dit** dans son adresse, **ou une adresse
+email de contact** (avocat, cabinet, notaire ou étude : l'agent d'information ne travaille que par email, un nom ou un
+téléphone seul ne compte pas), **ou une ou plusieurs parcelles cadastrales lisibles**, **ou au moins une pièce**, **ou un rattachement à une autre source**. La règle est écrite
+une seule fois, dans `src/listing_minimum.py` (`src/information_sufficiency.py` n'en est que l'accès : interrupteur
+d'urgence, registre de refus de l'agent). Elle s'applique à l'écriture, après la lecture de la fiche de détail, dans
+`publication_identity.resolve_publication_identities` : c'est là qu'on sait si l'annonce se rattache à une ligne
+existante. Une annonce déjà en base n'est jamais refusée ni supprimée par cette règle (un email retiré de la fiche ne la
+fait pas disparaître).
 
-- `IMMOJUDIS_INFORMATION_SUFFICIENCY_GATE=off` coupe la porte (défaut : active).
-- Par défaut (décision du 2026-10-11), la commune ou le code postal suffit comme adresse ; `IMMOJUDIS_SUFFICIENCY_MIN_ADDRESS=street` exige en plus une voie, un lieu-dit ou une parcelle.
+Le run compte les refus dans son résumé (`rejected_insufficient_listing` : total, par source, quelques URL d'exemple,
+et `detail_unread_not_written` pour les fiches non lues). L'annonce refusée reste comptée dans l'inventaire de sa
+source (décision `excluded` dans `auction_collection_items`) : la santé de la source, le ratio de fraîcheur et l'alerte
+de baisse d'inventaire ne bougent pas. **Cache de refus** (`src/rejected_listings.py`, table `app_private.rejected_listings`, migration `20261108202200`) : une
+annonce refusée après lecture de sa fiche est mémorisée ; absente de la base, refusée depuis moins de 7 jours et dont la
+vignette (date, prix, statut) n'a pas changé, sa fiche n'est pas relue (`skipped_recently_rejected` dans le résumé). Elle
+reste découverte et garde la décision `excluded` : inventaire et santé de la source inchangés. Après 7 jours elle est
+relue. Conservation 30 jours (purge au chargement du cache). Actif pour un passage autonome, ou avec
+`IMMOJUDIS_REJECTED_LISTING_CACHE=on` ; `off` le coupe. Sans table ni base, les fiches sont relues comme avant.
+
+- `IMMOJUDIS_INFORMATION_SUFFICIENCY_GATE=off` coupe la règle (défaut : active).
 - Le miroir Python du résolveur de contacts (`src/information_sufficiency.py`) est gardé identique au résolveur
   TypeScript par `tests/fixtures/information_agent_contact_cases.json`, exécuté par pytest et par vitest.
-- Existant : `python -m src.recompute_scoring --drop-insufficient` produit un rapport d'identifiants sans rien supprimer ;
-  `--execute-drop` supprime (sans tombstone, ventes liées à des utilisateurs protégées, plafond `--max-deletions`).
-  Une requête SQL en lecture seule équivalente est dans `sql/insufficient_information_report.sql`.
+- Existant : `supabase/repairs/20261108202100_delete_empty_listings.sql` (comptage par défaut, jamais une vente qui a une
+  trace utilisateur, un prix d'adjudication ou une issue connue) après la migration `20261108202000_…`. **À lancer APRÈS le
+  balayage de dédoublonnage** (`python -m src.dedupe_candidates`, rapport relu, puis `python -m src.dedupe_apply`) : une
+  annonce Vench ou Petites Affiches dont la vente jumelle est en base se rattache à elle au lieu d'être supprimée. `python -m src.recompute_scoring --drop-insufficient` rend le même constat en Python (rapport sans suppression) ;
+  `--execute-drop` n'a pas de suppression propre : il appelle `app_private.delete_empty_listings` (comptage, puis application, plafond
+  `--max-deletions`) sur tout le catalogue (`--source` et `--limit` refusés), sans liste de protection figée.
 
 ## Rapport Qualité
 

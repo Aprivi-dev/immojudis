@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from src import source_checkpoint
 from src.autonomous_runner import finish_source
@@ -256,7 +257,7 @@ def test_finish_source_reports_partial_scope_and_publication_ledger(monkeypatch)
 
 CHANGED_MARKUP_PAGE_1 = (
     '<html><head><title>Ventes aux enchères immobilières</title></head><body>'
-    '<article class="lot-card"><a href="/encheres-immobilieres/vente/immobiliere/j/bien-a-bordeaux-1.html">Bien</a></article>'
+    '<article class="lot-card"><a href="/encheres-immobilieres/vente/immobiliere/j/bien-a-bordeaux-1">Bien</a></article>'
     '<a href="/encheres-immobilieres/ventes-aux-encheres-immobilieres-p2.html">Page suivante</a></body></html>'
 )
 CHANGED_MARKUP_PAGE_2 = '<html><head><title>Ventes</title></head><body><p>Rien à lire ici</p></body></html>'
@@ -282,6 +283,122 @@ def test_pages_without_any_readable_card_are_an_error_with_a_diagnosis_not_a_cle
     assert "2 list page(s) fetched but no sale card read" in error
     # The first page tells markup (links to sales, no card marker) from a blocked page.
     assert "sale_links=1" in error and "annonce_lot_markers=0" in error and "challenge_page=False" in error
+
+
+FIXTURES = Path(__file__).parent / "fixtures"
+UNKNOWN_CARDS = (FIXTURES / "petites_affiches_liste_cartes_inconnues.html").read_text(encoding="utf-8")
+SALE_PREFIX = "https://www.petitesaffiches.fr/encheres-immobilieres/vente/immobiliere"
+
+
+def test_sale_links_in_cards_of_unknown_class_give_one_card_per_sale() -> None:
+    sales = petites_affiches.parse_petites_affiches_html(UNKNOWN_CARDS, fallback_department=None)
+
+    assert [sale["source_url"] for sale in sales] == [
+        f"{SALE_PREFIX}/j/bien-immobilier-a-lescure-d-albigeois-165802.html",
+        f"{SALE_PREFIX}/j/une-maison-a-les-fins-165816.html",
+        f"{SALE_PREFIX}/n/un-appartement-a-bordeaux-165870.html",
+    ]
+    first, second, third = sales
+    assert first["external_id"] == "165802"
+    assert first["title"] == "Bien immobilier à Lescure-d'Albigeois"
+    assert first["starting_price_eur"] == "65 000"
+    assert first["sale_date"] == "24/11/2026"
+    assert first["city"] == "Lescure-d'Albigeois"
+    assert second["title"] == "Une maison à Les Fins" and second["property_type"] == "Maison"
+    assert second["raw_image_url"] is None  # image générique
+    # Only the URL is mandatory: a card with a title alone is kept.
+    assert third["title"] == "Un appartement à Bordeaux" and third["starting_price_eur"] is None
+    assert third["property_type"] == "Appartement"
+    # The card text stays within its own container (no bleed from the neighbouring sale).
+    assert "Les Fins" not in first["raw_text"] and "65 000" not in second["raw_text"]
+
+
+def test_menu_category_and_external_links_are_not_sales() -> None:
+    sales = petites_affiches.parse_petites_affiches_html(UNKNOWN_CARDS)
+    urls = {sale["source_url"] for sale in sales}
+
+    assert not any("exemple-externe" in url or url.endswith("/vente/immobiliere/") for url in urls)
+    assert len(urls) == len(sales)  # image link and title link of a sale give a single card
+
+
+def test_the_old_structure_is_read_exactly_as_before() -> None:
+    sales = petites_affiches.parse_petites_affiches_html(CARD)
+
+    assert len(sales) == 1
+    assert sales[0]["starting_price_eur"] == "80 000" and sales[0]["sale_date"] == "24/06/2099"
+    assert "list_layout" not in sales[0]["source_blocks"]
+
+
+def test_a_list_of_unknown_cards_is_collected_without_error(monkeypatch) -> None:
+    class UnknownCardsClient(_Client):
+        def post_form(self, url: str, data: dict[str, str]) -> str:
+            self.calls.append(url)
+            return UNKNOWN_CARDS
+
+    _patch_source(monkeypatch)
+    monkeypatch.setattr(petites_affiches, "PoliteHttpClient", UnknownCardsClient)
+    monkeypatch.setattr(petites_affiches.source_checkpoint, "save_source_cursor", lambda *args: True)
+    monkeypatch.setattr(petites_affiches, "_source_budget_deadline", lambda: None)
+    monkeypatch.setattr(petites_affiches, "_source_budget_expired", lambda deadline: False)
+
+    result = petites_affiches.scrape_petites_affiches_aquitaine_result()
+
+    assert len(result.sales) == 3
+    assert not any("no sale card read" in error for error in result.errors)
+
+
+def test_a_post_answering_200_without_card_falls_back_to_a_national_get(monkeypatch) -> None:
+    class GetFallbackClient(_Client):
+        def post_form(self, url: str, data: dict[str, str]) -> str:
+            self.calls.append("POST " + url)
+            return "<html><head><title>Ventes</title></head><body><p>Aucune vente</p></body></html>"
+
+        def get(self, url: str) -> str:
+            self.calls.append("GET " + url)
+            return UNKNOWN_CARDS
+
+    _patch_source(monkeypatch, departments=petites_affiches.FRANCE_DEPARTMENTS)
+    monkeypatch.setattr(petites_affiches, "PoliteHttpClient", GetFallbackClient)
+    monkeypatch.setattr(petites_affiches.source_checkpoint, "save_source_cursor", lambda *args: True)
+    monkeypatch.setattr(petites_affiches, "_source_budget_deadline", lambda: None)
+    monkeypatch.setattr(petites_affiches, "_source_budget_expired", lambda deadline: False)
+
+    result = petites_affiches.scrape_petites_affiches_aquitaine_result()
+
+    assert len(result.sales) == 3 and not any("no sale card read" in error for error in result.errors)
+
+
+def test_a_failing_get_fallback_keeps_the_diagnosis_of_the_first_answer(monkeypatch) -> None:
+    class BrokenGetClient(_Client):
+        def post_form(self, url: str, data: dict[str, str]) -> str:
+            return "<html><head><title>Ventes</title></head><body><p>Rien</p></body></html>"
+
+        def get(self, url: str) -> str:
+            raise RuntimeError("403")
+
+    _patch_source(monkeypatch, departments=petites_affiches.FRANCE_DEPARTMENTS)
+    monkeypatch.setattr(petites_affiches, "PoliteHttpClient", BrokenGetClient)
+    monkeypatch.setattr(petites_affiches.source_checkpoint, "save_source_cursor", lambda *args: True)
+    monkeypatch.setattr(petites_affiches, "_source_budget_deadline", lambda: None)
+    monkeypatch.setattr(petites_affiches, "_source_budget_expired", lambda deadline: False)
+
+    result = petites_affiches.scrape_petites_affiches_aquitaine_result()
+
+    assert result.sales == [] and any("no sale card read" in error for error in result.errors)
+
+
+def test_the_diagnosis_lists_the_first_five_sale_links_and_their_parent_classes() -> None:
+    page = "<html><body>" + "".join(
+        f'<div class="carte-x{i}"><a href="/encheres-immobilieres/vente/immobiliere/j/bien-{i}">Bien</a></div>'
+        for i in range(8)
+    ) + "</body></html>"
+
+    diagnosis = petites_affiches._empty_listing_diagnosis(page, petites_affiches.LIST_URL)
+
+    assert "sale_links=8" in diagnosis
+    assert diagnosis.count("/encheres-immobilieres/vente/immobiliere/j/bien-") == 5
+    assert "parents=carte-x0<body<html" in diagnosis
+    assert "carte-x5" not in diagnosis
 
 
 def test_a_blocked_page_is_told_apart_from_a_changed_markup() -> None:

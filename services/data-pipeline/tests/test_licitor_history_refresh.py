@@ -267,6 +267,42 @@ def test_a_missing_role_grant_is_reported_without_collecting() -> None:
     assert all(statement != refresh_module.ATTEST_SQL for _, statement in connection.statements)
 
 
+def test_the_copy_is_refreshed_even_without_the_collector_role() -> None:
+    """28/10/2026: the copy depends on its own conditions, not on a role unrelated to it."""
+    connection = FakeConnection(refuse_role=True, snapshot_age_seconds=30 * 3600)
+    report = refresh_module.refresh(
+        "postgresql://test",
+        connect=lambda _url: nullcontext(connection),
+        tick=lambda _store: pytest.fail("nothing is collected without the role"),
+        start=lambda _store: pytest.fail("nothing is collected without the role"),
+    )
+    assert report["status"] == "collector_role_unavailable"  # the exit code stays 1: the grant is missing
+    assert report["scenario_snapshot"] == {"status": "refreshed", "lots": 3783}
+    assert connection.params[-1] == (True,)
+    # The copy runs as the main role, in its own transaction, never under the collector role.
+    refresh_tx = next(tx for tx, statement in connection.statements if statement == refresh_module.SCENARIO_SNAPSHOT_SQL)
+    assert refresh_tx and (refresh_tx, SET_LOCAL) not in connection.statements
+
+
+def test_a_fresh_copy_is_left_alone_without_the_collector_role() -> None:
+    connection = FakeConnection(refuse_role=True, snapshot_age_seconds=3600)
+    report = refresh_module.refresh(
+        "postgresql://test", connect=lambda _url: nullcontext(connection), tick=lambda _s: {}, start=lambda _s: {}
+    )
+    assert report["scenario_snapshot"] == {"status": "skipped"}
+    assert connection.params[-1] == (False,)
+
+
+def test_a_refused_copy_without_the_collector_role_is_reported_not_raised() -> None:
+    refused = psycopg.errors.ObjectNotInPrerequisiteState("Scenario snapshot refresh refused")
+    connection = FakeConnection(refuse_role=True, snapshot_error=refused, snapshot_age_seconds=30 * 3600)
+    report = refresh_module.refresh(
+        "postgresql://test", connect=lambda _url: nullcontext(connection), tick=lambda _s: {}, start=lambda _s: {}
+    )
+    assert report["status"] == "collector_role_unavailable"
+    assert report["scenario_snapshot"] == {"status": "refused", "error": "ObjectNotInPrerequisiteState"}
+
+
 def test_the_role_never_outlives_a_statement_on_a_real_connection() -> None:
     url = os.getenv("PIPELINE_TEST_DB_URL")
     if not url:

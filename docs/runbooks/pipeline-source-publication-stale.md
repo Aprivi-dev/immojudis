@@ -27,7 +27,7 @@ from auction_source_state where source_name = '<source>';`
      `normalized` et `admitted` se résorbent quand un run va jusqu'au bout. Exception corrigée le 28/10/2026 : une
      vente terminée depuis moins de 24 h (ou reportée avec une date passée) restait `admitted` à chaque run, car le
      dépôt l'écartait sans décision (coupure du catalogue plus tôt que la rétention) ; elle est désormais notée
-     `expired` (`catalogue_deadline_reached_not_evidence_of_sale`). Un `admitted` qui revient run après run sur la
+     `expired` (`catalogue_date_passed_not_evidence_of_sale`). Un `admitted` qui revient run après run sur la
      même annonce est donc un nouveau cas à signaler.
    - `run_not_succeeded` : le run s'est terminé en échec (budget, `CollectionIncompleteError`).
 4. Les deux dates anciennes : voir `docs/runbooks/pipeline-source-missed.md`.

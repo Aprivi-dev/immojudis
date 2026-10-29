@@ -1,14 +1,13 @@
-"""Porte de publication « informations suffisantes » : intégration dans l'admission et dans le run (données fictives)."""
+"""Porte de publication : le minimum d'une annonce se juge à l'écriture, pas à l'admission (données fictives)."""
 
-import logging
 from decimal import Decimal
 
 import pytest
 from test_main import _fake_geocode, _raw_sale, _settings
 
-from src import main
-from src.admission import admit_sales, publication_rejection, split_insufficient
-from src.information_sufficiency import GATE_ENV, MIN_ADDRESS_ENV, ContactBlocklist, set_active_blocklist
+from src import listing_minimum, main
+from src.admission import admit_sales, publication_rejection
+from src.information_sufficiency import GATE_ENV, ContactBlocklist, publication_gate, set_active_blocklist
 from src.models import AuctionSale
 from src.sources.common import ScrapeResult
 
@@ -16,13 +15,6 @@ from src.sources.common import ScrapeResult
 @pytest.fixture(autouse=True)
 def gate_on(monkeypatch):
     monkeypatch.setenv(GATE_ENV, "on")
-    # These cases exercise the stricter street-level mode; the default accepts the commune.
-    monkeypatch.setenv(MIN_ADDRESS_ENV, "street")
-
-
-def test_a_commune_and_a_surface_are_published_by_default(monkeypatch):
-    monkeypatch.delenv(MIN_ADDRESS_ENV, raising=False)
-    assert publication_rejection(sale(postal_code="60000", surface_m2=Decimal("40"))) is None
 
 
 def sale(**fields) -> AuctionSale:
@@ -32,24 +24,23 @@ def sale(**fields) -> AuctionSale:
     return AuctionSale(**base)
 
 
-def test_publication_rejection_codes_are_ordered_expired_then_price_then_information():
-    assert publication_rejection(sale(address="3 rue des Lilas, 59000 Exempleville", surface_m2=Decimal("40"))) is None
-    assert publication_rejection(sale()) == "insufficient_information:missing_address+missing_surface+missing_contact"
+def test_admission_codes_are_expired_then_price_and_never_the_minimum():
+    assert publication_rejection(sale()) is None  # le minimum se juge à l'écriture, avec la base
     assert publication_rejection(AuctionSale(source_name="x", source_url="https://example.test/y")) == (
         "missing_price_and_surface"
     )
 
 
-def test_admit_sales_records_every_rejection_by_code_only():
-    recorded: list[tuple[int, str, str | None]] = []
+def test_admit_sales_does_not_refuse_a_listing_for_its_minimum():
+    recorded = []
+    kept = admit_sales([sale()], lambda group, decision, reason=None: recorded.append((decision, reason)))
+    assert len(kept) == 1 and recorded == []
 
-    def record(group, decision, reason=None):
-        recorded.append((len(group), decision, reason))
 
-    good = sale(address="3 rue des Lilas, 59000 Exempleville", surface_m2=Decimal("40"))
-    bad = sale(source_url="https://example.test/bad")
-    assert admit_sales([good, bad], record) == [good]
-    assert recorded == [(1, "excluded", "insufficient_information:missing_address+missing_surface+missing_contact")]
+def test_the_gate_judges_a_new_sale_with_the_one_minimum_rule():
+    assert not publication_gate(sale()).sufficient
+    assert publication_gate(sale(address="3 rue des Lilas, 59000 Exempleville")).sufficient
+    assert publication_gate(sale(lawyer_contact="me.exemple@cabinet-exemple.test")).sufficient
 
 
 def test_admit_sales_records_a_sale_past_its_catalogue_cutoff_but_within_retention_as_expired():
@@ -79,49 +70,24 @@ def test_admit_sales_records_a_sale_past_its_catalogue_cutoff_but_within_retenti
         assert not is_expired(case) and is_catalogue_expired(case)
 
     assert admit_sales([ended, postponed], record) == []
-    assert recorded == [(2, "expired", "catalogue_deadline_reached_not_evidence_of_sale")]
+    assert recorded == [(2, "expired", "catalogue_date_passed_not_evidence_of_sale")]
 
 
 def test_a_blocked_contact_does_not_keep_the_sale():
     contact = "me.exemple@cabinet-exemple.test"
     with_contact = sale(lawyer_contact=contact, id="sale-1")
-    assert publication_rejection(with_contact) is None
+    assert publication_gate(with_contact).sufficient
     set_active_blocklist(ContactBlocklist(global_emails=frozenset({contact})))
     try:
-        assert publication_rejection(with_contact) == "insufficient_information:missing_address+missing_surface+missing_contact"
+        assert not publication_gate(with_contact).sufficient
+        assert listing_minimum.assess(with_contact).reason == "insufficient_listing"
     finally:
         set_active_blocklist(ContactBlocklist())
 
 
-def test_split_insufficient_counts_by_reason_and_source_and_logs_no_personal_data(caplog):
-    contact = "me.exemple@cabinet-exemple.test"
-    sales = [
-        sale(source_url="https://example.test/a", lawyer_contact=contact),
-        sale(source_url="https://example.test/b", address="3 rue des Lilas, 59000 Exempleville"),
-        sale(source_url="https://example.test/c", source_name="vench", primary_source="vench"),
-    ]
-    with caplog.at_level(logging.INFO):
-        kept, summary = split_insufficient(sales, logging.getLogger("test"))
-    # An address alone keeps a sale (owner rule of 12/10/2026).
-    assert [item.source_url for item in kept] == ["https://example.test/a", "https://example.test/b"]
-    assert summary == {
-        "total": 1,
-        "by_reason": {"insufficient_information:missing_address+missing_surface+missing_contact": 1},
-        "by_source": {"vench": 1},
-    }
-    assert contact not in caplog.text and "Lilas" not in caplog.text
-
-
-def test_gate_off_restores_the_previous_admission(monkeypatch):
+def test_gate_off_lets_every_sale_through(monkeypatch):
     monkeypatch.setenv(GATE_ENV, "off")
-    assert publication_rejection(sale()) is None
-
-
-def test_paid_llm_and_checkpoint_follow_the_same_gate(monkeypatch):
-    assert main._can_use_paid_llm(sale()) is False
-    assert main._can_use_paid_llm(sale(address="3 rue des Lilas, 59000 Exempleville", surface_m2=Decimal("40")))
-    monkeypatch.setattr(main, "upsert_sales_to_supabase", lambda *args, **kwargs: pytest.fail("published"))
-    assert main._checkpoint_enrichment(sale()) is False
+    assert publication_gate(sale()).sufficient
 
 
 def _run_pipeline(monkeypatch, raw_sales):
@@ -157,22 +123,11 @@ def _run_pipeline(monkeypatch, raw_sales):
     return captured["summary"], upserted
 
 
-def test_run_pipeline_does_not_publish_an_insufficient_sale_and_reports_why(monkeypatch):
-    insufficient = _raw_sale()  # prix et commune, mais ni adresse précise, ni superficie, ni contact
-    insufficient["address"] = None
-    summary, upserted = _run_pipeline(monkeypatch, [insufficient])
-    assert upserted == []
-    assert summary["admission_rejected_insufficient_information"] == {
-        "total": 1,
-        "by_reason": {"insufficient_information:missing_address+missing_surface+missing_contact": 1},
-        "by_source": {"avoventes": 1},
+def test_run_summary_carries_the_refusal_counters_and_the_old_key_is_gone(monkeypatch):
+    summary, upserted = _run_pipeline(monkeypatch, [_raw_sale()])
+    # L'écriture est simulée ici : le refus lui-même est testé avec la base simulée (test_listing_minimum.py).
+    assert upserted
+    assert summary["rejected_insufficient_listing"] == {
+        "total": 0, "by_source": {}, "examples": {}, "detail_unread_not_written": {}, "skipped_recently_rejected": {},
     }
-
-
-def test_run_pipeline_publishes_the_same_sale_when_a_usable_contact_exists(monkeypatch):
-    with_contact = _raw_sale()
-    with_contact["address"] = None
-    with_contact["lawyer_contact"] = "me.exemple@cabinet-exemple.test"
-    summary, upserted = _run_pipeline(monkeypatch, [with_contact])
-    assert upserted and all(urls == ["https://example.test/vente"] for urls in upserted)
-    assert summary["admission_rejected_insufficient_information"]["total"] == 0
+    assert "admission_rejected_insufficient_information" not in summary
