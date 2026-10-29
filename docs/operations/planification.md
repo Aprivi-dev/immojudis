@@ -103,8 +103,8 @@ désormais `pepite-v2.1` (= `pepite-v1.2` + le critère d'inondation de `pepite-
 
 **Ordre de mise en production** (aucune étape n'est automatique) :
 
-1. Appliquer les migrations `20261109120000` (enregistre la construction de l'index
-   `dvf_transactions_insee_type_sale_date_idx`) et `20261109120100` (table, recalcul et lecture de l'agrégat), puis
+1. Appliquer les migrations `20261109130000` (enregistre la construction de l'index
+   `dvf_transactions_insee_type_sale_date_idx`) et `20261109130100` (table, recalcul et lecture de l'agrégat), puis
    construire l'index : `npm run db:indexes:concurrent` (aussi lancé par le workflow « Apply Supabase Migrations »),
    hors collecte en cours.
 2. Premier calcul de l'agrégat : `select app_private.refresh_commune_market_trends();` (précédé de

@@ -559,7 +559,7 @@ describe("invariants de sécurité : risque d'inondation", () => {
 });
 
 describe("invariants de sécurité : marché local de la règle pepite-v1.2", () => {
-  const file = "20261109120100_commune_market_trends.sql";
+  const file = "20261109130100_commune_market_trends.sql";
 
   it("passe sur les sources et la migration du dépôt", () => {
     const result = runInvariants();

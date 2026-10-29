@@ -3,7 +3,7 @@ begin;
 set local lock_timeout = '5s';
 
 -- Règle de pépite pepite-v1.2 (validée le 29/10/2026) : le marché local de la commune se lit dans
--- app_private.commune_market_trends (migration 20261109120100), recalculée depuis public.dvf_transactions
+-- app_private.commune_market_trends (migration 20261109130100), recalculée depuis public.dvf_transactions
 -- (6,26 millions de lignes). Cet index sert ce calcul et toute lecture par commune et type de logement :
 -- (insee_code, property_type, sale_date).
 --
@@ -22,7 +22,7 @@ insert into app_private.concurrent_index_operations (
   operation_key, schema_name, table_name, index_name, create_sql
 )
 values (
-  '20261109120000:dvf_transactions_insee_type_sale_date_idx',
+  '20261109130000:dvf_transactions_insee_type_sale_date_idx',
   'public',
   'dvf_transactions',
   'dvf_transactions_insee_type_sale_date_idx',

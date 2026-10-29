@@ -1,4 +1,4 @@
--- Règle de pépite pepite-v1.2 (migration 20261109120000) : l'index de dvf_transactions (insee_code, property_type,
+-- Règle de pépite pepite-v1.2 (migration 20261109130000) : l'index de dvf_transactions (insee_code, property_type,
 -- sale_date) est enregistré comme construction différée, comme les index de 20261008121940 : la migration ne prend
 -- aucun verrou sur la table de 6,26 millions de lignes ; le script d'index concurrents le construit hors transaction.
 begin;
@@ -8,7 +8,7 @@ select is(
   (
     select count(*)::integer
       from app_private.concurrent_index_operations
-     where operation_key = '20261109120000:dvf_transactions_insee_type_sale_date_idx'
+     where operation_key = '20261109130000:dvf_transactions_insee_type_sale_date_idx'
   ),
   1,
   'the commune market index has one deferred operation'
@@ -18,7 +18,7 @@ select is(
   (
     select create_sql
       from app_private.concurrent_index_operations
-     where operation_key = '20261109120000:dvf_transactions_insee_type_sale_date_idx'
+     where operation_key = '20261109130000:dvf_transactions_insee_type_sale_date_idx'
   ),
   'create index concurrently if not exists "dvf_transactions_insee_type_sale_date_idx" on "public"."dvf_transactions" ("insee_code", "property_type", "sale_date")',
   'the operation is the reviewed concurrent build on (insee_code, property_type, sale_date)'
@@ -31,7 +31,7 @@ select ok(
        and index_name = 'dvf_transactions_insee_type_sale_date_idx'
        and status in ('pending', 'applied')
       from app_private.concurrent_index_operations
-     where operation_key = '20261109120000:dvf_transactions_insee_type_sale_date_idx'
+     where operation_key = '20261109130000:dvf_transactions_insee_type_sale_date_idx'
   ),
   'the operation targets the reviewed table and index, and is never silently left failed'
 );
@@ -40,7 +40,7 @@ select ok(
   not exists (
     select 1
       from app_private.concurrent_index_operations operation_row
-     where operation_key = '20261109120000:dvf_transactions_insee_type_sale_date_idx'
+     where operation_key = '20261109130000:dvf_transactions_insee_type_sale_date_idx'
        and status = 'applied'
        and not exists (
          select 1

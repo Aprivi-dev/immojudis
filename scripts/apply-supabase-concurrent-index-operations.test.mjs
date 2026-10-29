@@ -77,7 +77,7 @@ describe("Supabase concurrent index operation allowlist", () => {
     const operation = operations.find(
       (item) => item.indexName === "dvf_transactions_insee_type_sale_date_idx",
     );
-    expect(operation.operationKey).toBe("20261109120000:dvf_transactions_insee_type_sale_date_idx");
+    expect(operation.operationKey).toBe("20261109130000:dvf_transactions_insee_type_sale_date_idx");
     expect(operation.createSql).toContain('"public"."dvf_transactions"');
     const catalog = (keyColumns) => ({
       index_def: `CREATE INDEX dvf_transactions_insee_type_sale_date_idx ON public.dvf_transactions USING btree (${keyColumns.join(", ")})`,

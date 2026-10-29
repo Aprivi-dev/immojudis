@@ -1,6 +1,6 @@
 """Recalcule le marché local par commune (``app_private.commune_market_trends``) après l'import DVF.
 
-L'agrégat alimente les critères de marché de la règle de pépite ``pepite-v1.2`` (migration 20261109120100) : ventes
+L'agrégat alimente les critères de marché de la règle de pépite ``pepite-v1.2`` (migration 20261109130100) : ventes
 sur 12 mois, prix médian au m² de l'année la plus récente et de trois ans plus tôt, par commune et type de logement.
 Il est recalculé par ``app_private.refresh_commune_market_trends()`` depuis ``dvf_transactions``.
 
@@ -25,7 +25,7 @@ LOGGER = logging.getLogger(__name__)
 
 # Le délai de la requête en cours est déjà armé quand la fonction le règle elle-même : on le pose avant l'appel
 # (``set local`` : il prend fin avec la transaction). Le recalcul prend quelques secondes avec l'index de la
-# migration 20261109120000, plus sans lui (table remplacée par l'import DVF).
+# migration 20261109130000, plus sans lui (table remplacée par l'import DVF).
 STATEMENT_TIMEOUT_SQL = "set local statement_timeout = '10min'"
 REFRESH_SQL = "select app_private.refresh_commune_market_trends()"
 UNDEFINED_FUNCTION_SQLSTATE = "42883"
@@ -60,7 +60,7 @@ def main() -> int:
     with _postgres_connect(str(db_url)) as connection:
         written = refresh_commune_market_trends(connection)
     if written is None:
-        print("::warning::Commune market trends were not refreshed: apply the migration 20261109120100 first.")
+        print("::warning::Commune market trends were not refreshed: apply the migration 20261109130100 first.")
         return 0
     print("Commune market trends refresh summary")
     print(f"- rows: {written}")

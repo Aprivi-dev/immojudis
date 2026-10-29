@@ -24,7 +24,7 @@ set local lock_timeout = '5s';
 --
 -- Qui l'appelle : le workflow « Immojudis DVF Import » (manuel), après l'import DVF, par
 -- services/data-pipeline/src/dvf_market_trends.py ; aucune planification n'est créée. L'ordre de mise en
--- production est : cette migration, l'index de 20261109120000 (npm run db:indexes:concurrent), un premier calcul
+-- production est : cette migration, l'index de 20261109130000 (npm run db:indexes:concurrent), un premier calcul
 -- (select app_private.refresh_commune_market_trends()), PUIS la règle pepite-v1.2.
 --
 -- RETOUR ARRIÈRE (migration de retour arrière revue) : drop function public.get_commune_market_trends(text[]);
@@ -71,7 +71,7 @@ create policy commune_market_trends_service_role
 --     de moins de la moitié des lignes précédentes est refusé (55000) sauf p_allow_shrink.
 --   * statement_timeout porté à 10 minutes pour ce recalcul ; l'appelant doit aussi le poser avant l'appel
 --     (`set local statement_timeout`), car le délai de la requête en cours est déjà armé. Avec l'index de
---     20261109120000 le calcul prend quelques secondes ; sans lui (table remplacée par l'import DVF), il balaie
+--     20261109130000 le calcul prend quelques secondes ; sans lui (table remplacée par l'import DVF), il balaie
 --     toute la table.
 create or replace function app_private.refresh_commune_market_trends(
   p_allow_shrink boolean default false

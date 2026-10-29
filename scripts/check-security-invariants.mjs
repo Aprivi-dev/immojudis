@@ -1238,7 +1238,7 @@ if (
 
     // Marché local (règle pepite-v1.2) : l'agrégat est privé (RLS, aucun droit pour anon, authenticated ni public),
     // son recalcul est un SECURITY DEFINER à chemin de recherche vide, et la lecture publique ne l'est jamais.
-    const trendsFile = "20261109120100_commune_market_trends.sql";
+    const trendsFile = "20261109130100_commune_market_trends.sql";
     const trends = await sql(trendsFile);
     if (trends == null) {
       failures.push(`${trendsFile} is missing: the commune market trends migration must exist`);

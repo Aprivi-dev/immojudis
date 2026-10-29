@@ -1,4 +1,4 @@
--- Règle de pépite pepite-v1.2 (migration 20261109120100) : le marché local de la commune est lu dans
+-- Règle de pépite pepite-v1.2 (migration 20261109130100) : le marché local de la commune est lu dans
 -- app_private.commune_market_trends, recalculée depuis public.dvf_transactions par
 -- app_private.refresh_commune_market_trends(), et lue par public.get_commune_market_trends(text[]).
 -- Les communes d'essai portent des codes 99901 à 99903, qui n'existent pas.

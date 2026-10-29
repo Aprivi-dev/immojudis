@@ -47,10 +47,10 @@ const operations = Object.freeze([
     keyColumns: ["run_id", "canonical_source_url"],
     expectedFragments: ["auction_collection_items", "run_id", "canonical_source_url"],
   }),
-  // Règle de pépite pepite-v1.2 (migration 20261109120000) : marché local par commune et type de logement.
+  // Règle de pépite pepite-v1.2 (migration 20261109130000) : marché local par commune et type de logement.
   // dvf_transactions compte 6,26 millions de lignes.
   Object.freeze({
-    operationKey: "20261109120000:dvf_transactions_insee_type_sale_date_idx",
+    operationKey: "20261109130000:dvf_transactions_insee_type_sale_date_idx",
     schemaName: "public",
     tableName: "dvf_transactions",
     indexName: "dvf_transactions_insee_type_sale_date_idx",
