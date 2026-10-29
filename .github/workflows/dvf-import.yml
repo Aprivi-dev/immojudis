@@ -210,13 +210,12 @@ jobs:
           print("+", " ".join(statistics_command))
           subprocess.run(statistics_command, check=True)
 
+          # Marché local par commune (règle de pépite pepite-v1.2, migration 20261109130100) : recalculé une fois,
+          # à la suite de l'import, depuis dvf_transactions. Dans cette étape, seule à recevoir le secret.
+          if not dry_run:
+            trends_command = ["python", "-m", "src.dvf_market_trends"]
+            print("+", " ".join(trends_command))
+            subprocess.run(trends_command, check=True)
+
           sys.exit(0)
           PY
-
-      # Marché local par commune (règle de pépite pepite-v1.2, migration 20261109130100) : recalculé une fois, à la
-      # suite de l'import, depuis dvf_transactions. Même déclenchement manuel que l'import : aucune planification.
-      - name: Refresh commune market trends
-        if: ${{ github.event.inputs.dry_run != 'true' }}
-        env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-        run: python -m src.dvf_market_trends

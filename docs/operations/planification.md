@@ -109,7 +109,7 @@ désormais `pepite-v2.1` (= `pepite-v1.2` + le critère d'inondation de `pepite-
    hors collecte en cours.
 2. Premier calcul de l'agrégat : `select app_private.refresh_commune_market_trends();` (précédé de
    `set local statement_timeout = '10min'` dans la même transaction). Ensuite, le workflow manuel « Immojudis DVF
-   Import » le recalcule à sa dernière étape (« Refresh commune market trends »), sans nouvelle planification.
+   Import » le recalcule à la fin de son étape d'import (`python -m src.dvf_market_trends`), sans nouvelle planification.
 3. Déployer le code : la version appliquée devient `pepite-v1.2`, chaque pépite publiée est réévaluée en priorité au
    premier passage horaire et sort si elle ne remplit plus les critères (DPE F ou G, marché peu liquide ou en baisse,
    bien de plus de 250 m² ou de plus de 1 500 000 €, copropriété en difficulté). Renseigner alors
