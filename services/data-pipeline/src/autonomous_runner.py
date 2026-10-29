@@ -640,6 +640,8 @@ def execute(run_id: str) -> int:
            # A scheduled unit must not sit on the catalogue writer lock for
            # long (its budget is minutes); a busy catalogue fails the unit fast.
            'PIPELINE_LOCK_WAIT_SECONDS':'300'}
+    # A native crash (« Worker exited with status -11 ») otherwise leaves no Python stack in the job log.
+    env['PYTHONFAULTHANDLER'] = '1'
     if source == 'enrichment-queue':
         command = [sys.executable,'-m','src.queued_runner','--enrichment-only']
         budget = 25 * 60

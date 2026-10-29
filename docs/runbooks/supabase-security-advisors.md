@@ -1,6 +1,6 @@
 # Supabase Security Advisor triage
 
-Last reviewed: 2026-08-26 on the production project.
+Last reviewed: 2026-10-28 on the production project (findings listed below; nothing new to fix).
 
 This runbook records the advisor findings that cannot be resolved safely with a
 mechanical schema change. Re-run the Security Advisor after every database or
@@ -70,6 +70,31 @@ Each derives the reviewer from `auth.uid()`, requires a current admin profile,
 uses an empty `search_path`, and denies `anon` and `service_role`. Keeping the
 human JWT is required for reviewer attribution. Preserve pgTAP coverage for the
 ACLs, ordinary-user rejection, admin success, and stamped reviewer identity.
+
+### Admin switches and the unlock RPC
+
+The Advisor also reports these owner-executed functions as executable by `authenticated`
+(lint 0029). Each is intentional:
+
+- `public.set_launch_offer`, `public.set_catalogue_readiness_enforcement`,
+  `public.set_auction_sale_readiness_override` and `public.clear_auction_sale_readiness_override`
+  start with `if not public.is_admin() then raise ... '42501'` and stamp `auth.uid()`; `anon` and
+  `public` have no `EXECUTE`.
+- `public.unlock_sale` is the Découverte unlock ("3 déblocages par mois"): it acts for `auth.uid()`
+  only, under its own quota.
+- `public.catalogue_readiness_allows_premium` is a stable SQL predicate over its arguments; it reads
+  only the global switch `catalogue_readiness_policy.enforcement_enabled` and returns a boolean.
+
+The third owner-executed view, `public.v_auction_sales_discovery_search`, is the search projection of
+the discovery view and follows the same rules (explicit columns, `security_barrier`, `anon` denied);
+`supabase/tests/442_auction_sales_column_grants.sql` lists it with the two others.
+
+### Informational findings (no action)
+
+- `rls_enabled_no_policy` (INFO, about 120 tables): deny-all by design. These tables are read and
+  written by the service role or by owner-executed functions only; no client role has a policy.
+- Performance Advisor `unused_index` and `unindexed_foreign_keys` (INFO): pre-launch traffic does not
+  exercise most indexes yet. Revisit after launch with real usage before dropping or adding any.
 
 ## Supabase-managed extension boundaries
 
