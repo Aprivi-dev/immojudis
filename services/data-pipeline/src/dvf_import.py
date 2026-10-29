@@ -1034,6 +1034,13 @@ def _dvf_index_statements(*, table: str, prefix: str) -> list[str]:
           on public.{table} (latitude, longitude)
           where latitude is not null and longitude is not null
         """,
+        # Marché local par commune (règle de pépite pepite-v1.2) : sert app_private.refresh_commune_market_trends().
+        # Créé d'abord par la migration 20261109130000 (construction concurrente) ; le refaire ici le garde après un
+        # remplacement complet de la table.
+        f"""
+        create index if not exists {prefix}insee_type_sale_date_idx
+          on public.{table} (insee_code, property_type, sale_date)
+        """,
     ]
 
 
@@ -1042,6 +1049,7 @@ STAGING_INDEX_SUFFIXES = (
     "sale_date_idx",
     "department_sale_date_idx",
     "lat_lng_idx",
+    "insee_type_sale_date_idx",
     "pkey",
 )
 
