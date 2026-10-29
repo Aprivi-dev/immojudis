@@ -357,6 +357,7 @@ def test_information_agent_always_runs_main_with_secrets_on_its_two_business_ste
 def test_dvf_and_training_secrets_reach_only_their_python_step() -> None:
     for name, step_name in (
         ("dvf-import.yml", "Download and import DVF resources"),
+        ("refresh-commune-market-trends.yml", "Refresh commune market trends"),
         ("reference-data-import.yml", "Import reference data"),
         ("valuation-model-training.yml", "Train, validate and publish"),
         ("photo-mirror-backfill.yml", "Copy main photos"),
