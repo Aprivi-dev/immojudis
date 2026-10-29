@@ -1,4 +1,4 @@
--- 20261109120000 : le journal des ventes vide les colonnes non comparées avant de convertir la ligne en jsonb ;
+-- 20261109140000 : le journal des ventes vide les colonnes non comparées avant de convertir la ligne en jsonb ;
 -- il enregistre toujours les mêmes changements.
 begin;
 
