@@ -116,6 +116,13 @@ describe("SaleTimeline", () => {
     expect(screen.getByRole("button", { name: "Définition : surenchère" })).toBeTruthy();
   });
 
+  it("leaves the guarantee amount out while the starting price is under review", () => {
+    render(<SaleTimeline sale={upcoming()} priceBlocked />);
+    const lawyer = screen.getByText("Mandater un avocat").closest("li")!;
+    expect(lawyer.textContent).not.toMatch(/9.500/);
+    expect(lawyer.textContent).not.toContain("garantie");
+  });
+
   it("says nothing for a past hearing or a blocked date", () => {
     const past = render(
       <SaleTimeline sale={upcoming({ sale_date: "2020-01-15T09:30:00+01:00" })} />,

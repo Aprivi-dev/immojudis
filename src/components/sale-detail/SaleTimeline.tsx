@@ -35,10 +35,13 @@ function shortDate(value: string): { day: string; time: string } | null {
 export function SaleTimeline({
   sale,
   dateBlocked = false,
+  priceBlocked = false,
 }: {
   sale: AuctionSale;
   /** La date est en cours de vérification (relecture IA) : pas de déroulé daté. */
   dateBlocked?: boolean;
+  /** La mise à prix est en cours de vérification : la garantie, qui en dépend, n'est pas chiffrée. */
+  priceBlocked?: boolean;
 }) {
   if (!saleIsTribunalVenue(sale) || dateBlocked || listingSaleStatus(sale)) return null;
   if (!sale.sale_date || saleTimeConflict(sale)) return null;
@@ -46,7 +49,7 @@ export function SaleTimeline({
   if (!hearing) return null;
   const procedure = getSaleProcedure(sale);
   const keyFacts = saleKeyFacts(sale);
-  const guarantee = procedure.guaranteeAmountEur;
+  const guarantee = priceBlocked ? null : procedure.guaranteeAmountEur;
   const overbidDays = procedure.overbidAllowed === false ? null : procedure.overbidWindowDays;
   const paymentDays = procedure.paymentDeadlineDays;
 

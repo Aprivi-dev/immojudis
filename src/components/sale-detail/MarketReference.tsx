@@ -29,8 +29,11 @@ export function MarketReference({
   preview,
   loading = false,
   signupHref = null,
+  startLabel = "La mise à prix",
 }: {
   startingPrice: number | null;
+  /** Le nom du prix de départ en début de phrase (« La première offre possible »…). */
+  startLabel?: string;
   preview: ValuePreview | null;
   loading?: boolean;
   /** Visiteur : lien d'inscription à la place de la fourchette. */
@@ -92,7 +95,7 @@ export function MarketReference({
       </p>
       <p className={styles.muted}>
         {showScale
-          ? "La mise à prix n’est pas le prix d’achat probable : les enchères partent de ce montant."
+          ? `${startLabel} n’est pas le prix d’achat probable : c’est un point de départ.`
           : gapSentence}
       </p>
     </div>

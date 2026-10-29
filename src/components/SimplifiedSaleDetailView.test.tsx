@@ -26,6 +26,7 @@ import {
   UnlockedSaleDetailView,
 } from "./SimplifiedSaleDetailView";
 import { PepiteBlock } from "./sale-detail/PepiteBlock";
+import { UrbanismeSection } from "./sale-detail/UrbanismeSection";
 import {
   pepiteCriteriaPayload,
   pepiteCriteriaViews,
@@ -104,7 +105,16 @@ vi.mock("next/dynamic", () => ({
       payload,
       userCeilingEur,
       lockedAction,
+      mapLocation,
+      loadStructuredUrbanism,
+      enabled,
     }: {
+      mapLocation?: Pick<
+        AuctionSale,
+        "address" | "postal_code" | "city" | "latitude" | "longitude"
+      >;
+      loadStructuredUrbanism?: boolean;
+      enabled?: boolean;
       payload?: PepitePayload;
       userCeilingEur?: number | null;
       lockedAction?: React.ReactNode;
@@ -122,6 +132,17 @@ vi.mock("next/dynamic", () => ({
       propertyTypeVerified?: boolean;
       onOpenWorkspace?: () => void;
     }) {
+      // Onglet Quartier : le vrai bloc urbanisme et cadastre ; les risques de la commune, rien.
+      if (mapLocation !== undefined && sale) {
+        return (
+          <UrbanismeSection
+            sale={sale}
+            mapLocation={mapLocation}
+            loadStructuredUrbanism={loadStructuredUrbanism}
+          />
+        );
+      }
+      if (enabled !== undefined) return null;
       // Bloc « Pourquoi cette pépite » (chargé à la demande) : le vrai composant.
       if (payload !== undefined) {
         return (
@@ -773,7 +794,7 @@ describe("integrated listing", () => {
     );
   });
 
-  it("does not reuse a blocked city in the property title or photo alt text", () => {
+  it("does not reuse a blocked city in the property title or photo alt text", async () => {
     mocks.authUser = { id: "user-1" };
     const projections: AiReviewProjectionReadModel[] = AI_REVIEW_FIELD_KEYS.map((fieldKey) => ({
       auction_sale_id: EXAMPLE_SALE_RECORDS.bordeaux.sale.id,
@@ -801,7 +822,7 @@ describe("integrated listing", () => {
     expect(line.textContent).not.toContain("Bordeaux");
     expect(line.textContent).not.toContain("Gironde");
     selectTab("Quartier");
-    const map = screen.getByTestId("cadastral-map");
+    const map = await screen.findByTestId("cadastral-map");
     expect(map.getAttribute("data-lat")).toBe(String(EXAMPLE_SALE_RECORDS.bordeaux.sale.latitude));
     expect(map.getAttribute("data-lng")).toBe(String(EXAMPLE_SALE_RECORDS.bordeaux.sale.longitude));
     expect(map.closest("details")).toBeNull();
@@ -1008,6 +1029,46 @@ describe("integrated listing", () => {
     expect(screen.getByText("Voir les sources et actions à confirmer")).toBeTruthy();
     selectTab("Prix et plafond");
     expect(screen.getByText("Voir les références de marché")).toBeTruthy();
+  });
+
+  it("never places the starting price against the value while the occupancy is under review", async () => {
+    mocks.authUser = { id: "user-1" };
+    // Le serveur juge l'écart montrable sur l'occupation brute (« libre ») ; la relecture IA la bloque.
+    mocks.fetchValuePreview.mockResolvedValue({
+      available: true,
+      lowEur: 215_000,
+      highEur: 247_000,
+      discountPct: 59,
+      discountNotSignificant: false,
+      startingPricePerM2: null,
+      reliability: "forte",
+      gapWithheld: null,
+    });
+    renderDetail(
+      "analysis",
+      { ...EXAMPLE_SALE_RECORDS.bordeaux.sale, occupancy_status: "vacant" },
+      false,
+      false,
+      undefined,
+      {
+        projections: [
+          {
+            auction_sale_id: EXAMPLE_SALE_RECORDS.bordeaux.sale.id,
+            field_key: "property.occupancy_status",
+            review_state: "unresolved",
+            citation_status: "not_required",
+            is_publishable: false,
+            source_name: "AGRASC",
+            source_url: "https://example.test/source/1",
+          },
+        ],
+      },
+    );
+
+    const reference = await screen.findByTestId("market-reference");
+    await waitFor(() => expect(reference.textContent).toMatch(/215.000/));
+    expect(within(reference).queryByRole("img")).toBeNull();
+    expect(reference.textContent).toContain("Occupation du bien non précisée");
   });
 
   it("shows Premium previews without loading analyses or mounting the works and statistics tools", async () => {

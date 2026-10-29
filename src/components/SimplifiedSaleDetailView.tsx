@@ -22,8 +22,6 @@ import { useSalePepite } from "@/hooks/use-sale-pepite";
 import { adjudicationVersusCeilingLine } from "@/lib/adjudication-vs-ceiling";
 import type { SaleUnlockResult, SaleUnlockStatus } from "@/lib/sale-unlocks";
 import { AuctionScenariosSection } from "@/components/sale-detail/AuctionScenariosSection";
-import { ListingEnvironmentalRisks } from "@/components/sale-detail/ListingEnvironmentalRisks";
-import { ListingWeatherHistory } from "@/components/sale-detail/ListingWeatherHistory";
 import { EXAMPLE_COMMUNE_RISKS } from "@/lib/example-commune-risks";
 import { SaleProcedurePanel } from "@/components/SaleProcedurePanel";
 import { ProfessionalPilotLauncher } from "@/components/ProfessionalPilotLauncher";
@@ -57,10 +55,11 @@ import {
 import { MobileActionBar } from "@/components/sale-detail/MobileActionBar";
 import overviewStyles from "@/components/sale-detail/SaleOverview.module.css";
 import { Terme } from "@/components/ceiling/Terme";
-import { buildValuePreview } from "@/lib/value-preview";
+import { buildValuePreview, type ValuePreview } from "@/lib/value-preview";
+import { marketGapWithheldReason } from "@/lib/market-gap-band";
 import { loginPathWithRedirect, saleDetailPath } from "@/lib/navigation";
 import { POINTS_TO_VERIFY_ANCHOR } from "@/lib/search/points-to-verify";
-import { UNLOCK_PANEL_ID } from "@/components/sale-detail/UnlockCallToAction";
+import { focusUnlockPanel, UNLOCK_PANEL_ID } from "@/components/sale-detail/UnlockCallToAction";
 import { ListingBudget } from "@/components/sale-detail/ListingBudget";
 import { ListingCharacteristics } from "@/components/sale-detail/ListingCharacteristics";
 import { ListingChecks, ListingPreparation } from "@/components/sale-detail/ListingPreparation";
@@ -81,7 +80,6 @@ import { isDetailedMarketEstimate } from "@/lib/market-estimate-ceiling";
 import { computeAcquisitionCosts } from "@/lib/profitability";
 import { ceilingConfidence, maxWorksAtBid } from "@/lib/bid-ceiling-engine";
 import { ceilingTermsFor, feeRegimeKeysForVenue, type FeeRegimeKey } from "@/lib/fee-regime";
-import { estimatedFeeItems } from "@/lib/bid-ceiling-engine";
 import { assessSaleCeilingInputs, computeSaleCeiling } from "@/lib/sale-ceiling";
 import { RentalMarketBlockLazy } from "@/components/sale-detail/RentalMarketBlockLazy";
 import { getSaleSurface } from "@/lib/surface";
@@ -136,7 +134,6 @@ import {
   LawyerSection,
   PanelIntro,
   SaleDocumentsSection,
-  UrbanismeSection,
 } from "@/components/sale-detail/SaleDetailSections";
 
 const ListingStatistics = dynamic(
@@ -186,6 +183,27 @@ const FinancingSimulator = dynamic(
   {
     loading: () => <p className="p-6 text-sm text-muted-foreground">Chargement du financement…</p>,
   },
+);
+// Onglet Quartier : chargé à la demande, hors du JavaScript initial de la fiche (il n'est pas
+// l'onglet d'arrivée).
+const UrbanismeSection = dynamic(
+  () =>
+    import("@/components/sale-detail/UrbanismeSection").then((module) => module.UrbanismeSection),
+  {
+    loading: () => (
+      <p className="p-6 text-sm text-muted-foreground">Chargement de l’urbanisme et du cadastre…</p>
+    ),
+  },
+);
+const ListingEnvironmentalRisks = dynamic(() =>
+  import("@/components/sale-detail/ListingEnvironmentalRisks").then(
+    (module) => module.ListingEnvironmentalRisks,
+  ),
+);
+const ListingWeatherHistory = dynamic(() =>
+  import("@/components/sale-detail/ListingWeatherHistory").then(
+    (module) => module.ListingWeatherHistory,
+  ),
 );
 const ListingRental = dynamic(() =>
   import("@/components/sale-detail/ListingRental").then((module) => module.ListingRental),
@@ -518,19 +536,13 @@ function SaleDetailWorkspace({
     ],
   );
   const { enabled: ceilingEnabled, hypotheses: ceilingHypotheses, plan: ceilingPlan } = ceiling;
-  // Le vocabulaire du plafond de cette vente (« offre plafond », « première offre possible »…) et
-  // les frais importants qui viennent d'une valeur par défaut, pour le hero et le panneau de prix.
-  const estimatedFees = useMemo(
-    () => (ceilingEnabled ? estimatedFeeItems(ceilingHypotheses) : []),
-    [ceilingEnabled, ceilingHypotheses],
-  );
+  // Le vocabulaire du plafond de cette vente (« offre plafond », « première offre possible »…), pour
+  // le haut de page et le panneau de prix.
   const ceilingWording: CeilingWording | null = feeRegime
     ? {
         label: feeRegime.labels.ceilingSimulationLabel,
         terms: feeRegime.labels,
         byOffers: feeRegime.labels.byOffers,
-        reserveNotice: feeRegime.labels.planner.reserveNotice ?? null,
-        estimatedFees,
       }
     : venueCeilingTerms
       ? { label: venueCeilingTerms.ceilingSimulationLabel }
@@ -633,7 +645,7 @@ function SaleDetailWorkspace({
     priceBlocked || !((displaySale.starting_price_eur ?? 0) > 0)
       ? null
       : displaySale.starting_price_eur!;
-  const valuePreview = valueGuarded
+  const rawValuePreview = valueGuarded
     ? null
     : publicDemo
       ? marketEstimateOverride
@@ -642,6 +654,19 @@ function SaleDetailWorkspace({
       : user && valuePreviewQuery.data?.available
         ? valuePreviewQuery.data
         : null;
+  // Le serveur retient l'écart sur l'occupation brute ; la fiche le retient aussi quand l'occupation
+  // affichée n'est pas un bien libre connu (relecture IA en cours : `displaySale` la met à `null`).
+  const occupancyGapWithheld = marketGapWithheldReason(displaySale.occupancy_status);
+  const valuePreview: ValuePreview | null =
+    rawValuePreview && occupancyGapWithheld && !rawValuePreview.gapWithheld
+      ? {
+          ...rawValuePreview,
+          gapWithheld: occupancyGapWithheld,
+          discountPct: null,
+          discountNotSignificant: false,
+          startingPricePerM2: null,
+        }
+      : rawValuePreview;
   const signupHref =
     !user && !publicDemo && !authLoading
       ? loginPathWithRedirect(saleDetailPath(sale.id), { reason: "fiche" })
@@ -650,7 +675,13 @@ function SaleDetailWorkspace({
   // le plafond (compte Découverte qui peut débloquer cette vente), sinon préparer l'enchère.
   const heroAction: OverviewAction = signupHref
     ? { href: signupHref, label: "Créer un compte gratuit" }
-    : access === "discovery" && user && !publicDemo && ceilingPromised && unlockStatus?.unlockable
+    : access === "discovery" &&
+        user &&
+        !publicDemo &&
+        ceilingPromised &&
+        unlockStatus?.unlockable &&
+        !unlockStatus.unlocked &&
+        (unlockStatus.remaining ?? 0) > 0
       ? {
           href: `#${UNLOCK_PANEL_ID}`,
           label: `Débloquer ${ceilingTerms?.ceilingTermWithArticle ?? "le plafond"}`,
@@ -678,29 +709,41 @@ function SaleDetailWorkspace({
   const priceSummaryCeiling: PriceSummaryCeiling | null = !ceilingPromised
     ? null
     : fullData
-      ? heroCeiling != null && !criticalAnalysisInputsBlocked
+      ? valuationConflict || criticalAnalysisInputsBlocked
+        ? { kind: "note", note: "En cours de vérification" }
+        : heroCeiling != null
+          ? {
+              kind: "amount",
+              amount: heroCeiling,
+              note: "selon vos hypothèses",
+              reliability: ceilingConfidence(ceilingHypotheses).label,
+            }
+          : heroCeilingUnreachable
+            ? { kind: "note", note: UNPROFITABLE_HEADLINE }
+            : ceilingEnabled && marketPending
+              ? { kind: "note", note: "Calcul…" }
+              : ceilingMissing
+                ? { kind: "note", note: `À compléter : ${ceilingMissing.reason}` }
+                : null
+      : signupHref
         ? {
-            kind: "amount",
-            amount: heroCeiling,
-            note: "selon vos hypothèses",
-            reliability: ceilingConfidence(ceilingHypotheses).label,
+            kind: "locked",
+            action: (
+              <>
+                <Link href={signupHref}>Créez un compte gratuit</Link>, puis débloquez la vente ou
+                choisissez l’offre Analyse
+              </>
+            ),
           }
-        : heroCeilingUnreachable
-          ? { kind: "note", note: UNPROFITABLE_HEADLINE }
-          : ceilingEnabled && marketPending
-            ? { kind: "note", note: "Calcul…" }
-            : ceilingMissing
-              ? { kind: "note", note: `À compléter : ${ceilingMissing.reason}` }
-              : null
-      : {
-          kind: "locked",
-          action: (
-            <>
-              Avec l’offre Analyse ou en débloquant cette vente{" "}
-              <UnlockCallToAction onlyWithUnlockCard offerLabel="Découvrir l’offre Analyse" />
-            </>
-          ),
-        };
+        : {
+            kind: "locked",
+            action: (
+              <>
+                Avec l’offre Analyse ou en débloquant cette vente{" "}
+                <UnlockCallToAction offerLabel="Découvrir l’offre Analyse" />
+              </>
+            ),
+          };
   const guide = useFirstAuctionGuide();
   const ceilingDetailHref =
     fullData && ceilingOpen && !valuationConflict ? "#calculation" : "#summary";
@@ -756,6 +799,11 @@ function SaleDetailWorkspace({
     const link = origin.closest<HTMLAnchorElement>('a[href^="#"]');
     const anchor = link?.getAttribute("href")?.slice(1);
     if (!anchor) return;
+    // La carte de déblocage est au-dessus des onglets : on y va sans toucher à l'onglet ni à l'adresse.
+    if (anchor === UNLOCK_PANEL_ID) {
+      if (focusUnlockPanel()) event.preventDefault();
+      return;
+    }
     const tab = knownTabForAnchor(anchor, statisticsAvailable);
     if (!tab) return;
     const detail = legacyDetailForAnchor(anchor, budgetTarget);
@@ -824,6 +872,9 @@ function SaleDetailWorkspace({
                       preview={valuePreview}
                       loading={Boolean(user) && !publicDemo && valuePreviewQuery.isLoading}
                       signupHref={signupHref}
+                      startLabel={
+                        ceilingWording?.byOffers ? "La première offre possible" : "La mise à prix"
+                      }
                     />
                   )
                 }
@@ -991,6 +1042,7 @@ function SaleDetailWorkspace({
                     ) : null}
                     <SaleTimeline
                       sale={displaySale}
+                      priceBlocked={priceBlocked}
                       dateBlocked={
                         getAiReviewFieldResult(
                           resolvedAiReviewProjections,
@@ -1316,13 +1368,16 @@ function SaleDetailWorkspace({
                     tension={housingTension}
                   />
                 ) : null}
-                <UrbanismeSection
-                  sale={displaySale}
-                  mapLocation={sale}
-                  loadStructuredUrbanism={
-                    access === "analysis" && !publicDemo && !authLoading && Boolean(user)
-                  }
-                />
+                {/* L'ancre `#urbanism` existe avant le chargement du bloc, pour `revealAnchor`. */}
+                <div id="urbanism" className="mt-6 scroll-mt-2">
+                  <UrbanismeSection
+                    sale={displaySale}
+                    mapLocation={sale}
+                    loadStructuredUrbanism={
+                      access === "analysis" && !publicDemo && !authLoading && Boolean(user)
+                    }
+                  />
+                </div>
                 <ListingEnvironmentalRisks
                   saleId={sale.id}
                   demoProfile={publicDemo ? EXAMPLE_COMMUNE_RISKS : undefined}
@@ -1426,7 +1481,13 @@ function SaleDetailWorkspace({
           </div>
         </div>
         <MobileActionBar
-          priceLabel={ceilingWording?.byOffers ? "Première offre possible" : "Mise à prix"}
+          priceLabel={
+            getSaleProcedure(displaySale).venueType === "state"
+              ? "Prix publié"
+              : ceilingWording?.byOffers
+                ? "Première offre possible"
+                : "Mise à prix"
+          }
           price={startingPrice}
           action={
             activeTab === "estimation" && heroAction.href === "#calculation" ? null : heroAction

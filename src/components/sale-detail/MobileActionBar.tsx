@@ -31,7 +31,19 @@ export function MobileActionBar({
     return () => observer.disconnect();
   }, []);
 
-  if (!action || heroActionsVisible) return null;
+  const visible = Boolean(action) && !heroActionsVisible;
+  // Un élément pris au clavier en bas d'écran ne passe pas sous la barre (WCAG 2.4.11).
+  useEffect(() => {
+    if (!visible) return;
+    const root = document.documentElement;
+    const previous = root.style.scrollPaddingBottom;
+    root.style.scrollPaddingBottom = "88px";
+    return () => {
+      root.style.scrollPaddingBottom = previous;
+    };
+  }, [visible]);
+
+  if (!action || !visible) return null;
   return (
     <>
       {/* Réserve la hauteur de la barre en bas de page : elle ne recouvre pas le pied de page. */}

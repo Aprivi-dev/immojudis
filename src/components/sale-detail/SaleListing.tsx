@@ -30,7 +30,6 @@ import { Terme } from "@/components/ceiling/Terme";
 import { safeExternalHttpUrl } from "@/lib/external-url";
 import { saleSourceLinks } from "@/lib/sale-source-links";
 import { formatPrice } from "@/lib/format";
-import type { EstimatedFee } from "@/lib/bid-ceiling-engine";
 import type { CeilingStartGapTerms } from "@/lib/ceiling-start-gap";
 import { buildStructuredDescription } from "@/lib/sale-description";
 import {
@@ -141,10 +140,6 @@ export type CeilingWording = {
   terms?: CeilingStartGapTerms;
   /** Une vente par offres : le prix de départ est la « première offre possible ». */
   byOffers?: boolean;
-  /** Mention d'une vente par offres : le vendeur n'est pas tenu de retenir la meilleure offre. */
-  reserveNotice?: string | null;
-  /** Postes importants dont le montant vient d'une valeur par défaut. */
-  estimatedFees?: readonly EstimatedFee[];
 };
 
 /** L'action principale du haut de page : un lien interne (onglet, ancre) ou une page du site. */
