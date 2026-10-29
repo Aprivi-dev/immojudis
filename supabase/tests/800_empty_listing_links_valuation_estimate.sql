@@ -1,8 +1,8 @@
--- 20261108204200 : une estimation automatique (valuation_estimates, user_id vide) ne protège pas une annonce vide ;
--- un événement de compte (account_product_events, avec un utilisateur) la protège toujours.
+-- 20261108204200 : une estimation automatique (valuation_estimates, user_id vide) ne protège pas une annonce vide.
+-- 20261109120000 : un événement de compte (account_product_events) non plus ; il reste, détaché de la vente.
 begin;
 
-select plan(5);
+select plan(6);
 
 insert into auth.users (
   id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at,
@@ -33,9 +33,9 @@ insert into public.account_product_events (user_id, event_type, detail, sale_id)
 values ('c8000000-0000-4000-8000-000000000001', 'sale_unlocked', null, 'c8000000-1000-4000-8000-000000000002');
 
 select is(
-  (select link_kind from app_private.empty_listing_links(array['c8000000-1000-4000-8000-000000000002']::uuid[])),
-  'user_trace',
-  'an account event still protects the listing'
+  (select count(*) from app_private.empty_listing_links(array['c8000000-1000-4000-8000-000000000002']::uuid[])),
+  0::bigint,
+  'an account event no longer protects the listing'
 );
 
 -- La suppression ne touche qu'aux ventes de ce test : les autres ventes de la base de test ne sont pas vides.
@@ -54,8 +54,14 @@ select is(
 
 select is(
   (select count(*) from public.auction_sales where id = 'c8000000-1000-4000-8000-000000000002'),
+  0::bigint,
+  'the empty listing with an account event is deleted'
+);
+select is(
+  (select count(*) from public.account_product_events
+    where user_id = 'c8000000-0000-4000-8000-000000000001' and event_type = 'sale_unlocked' and sale_id is null),
   1::bigint,
-  'the empty listing with an account event is kept'
+  'the account event stays, detached from the deleted sale'
 );
 
 select * from finish();
