@@ -117,7 +117,11 @@ const MAX_CLIENT_CHUNK_BYTES = 335_000;
 // relèvement à 6 275 000.
 // Session /equipe du 27/10/2026 (13 chantiers fusionnés : carte, Pépite v1.1, essai, mesure) : total mesuré
 // 6 333 040. Décision du fondateur (28/10/2026) : relèvement à 6 340 000.
-const MAX_TOTAL_CLIENT_JS_BYTES = 6_340_000;
+// Fiche vente allégée (29/10/2026) : repère marché, guide de première vente, carte « Le prix », déroulé,
+// barre d'action mobile et onglet Quartier chargé à la demande. Total mesuré 6 367 909 pour 6 327 709 sur
+// main ; la fiche elle-même ne charge que 667 octets de plus. Décision du fondateur (29/10/2026) :
+// relèvement à 6 375 000.
+const MAX_TOTAL_CLIENT_JS_BYTES = 6_375_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 // Homepage editorial photography (heavier than the default landing image budget).
 const MAX_PUBLIC_MEDIA_BYTES = 5_000_000;

@@ -39,11 +39,16 @@ export function SaleUnlockOfferProvider({
  * (an unknown hash makes the page fall back to the first tab).
  */
 function goToUnlockPanel(event: MouseEvent<HTMLAnchorElement>) {
+  if (focusUnlockPanel()) event.preventDefault();
+}
+
+/** The same move for any link to `#debloquer` (hero, mobile bar); false without the card. */
+export function focusUnlockPanel(): boolean {
   const panel = document.getElementById(UNLOCK_PANEL_ID);
-  if (!panel) return;
-  event.preventDefault();
-  panel.scrollIntoView({ block: "start" });
+  if (!panel) return false;
+  panel.scrollIntoView?.({ block: "start" });
   panel.querySelector<HTMLElement>("button")?.focus({ preventScroll: true });
+  return true;
 }
 
 type Classes = {

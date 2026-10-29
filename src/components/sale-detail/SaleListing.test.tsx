@@ -162,116 +162,41 @@ describe("readable listing sections", () => {
     expect(details?.querySelector("p")?.textContent).toContain("CONDITIONS DE LA VENTE");
   });
 
-  it("leads with the starting price and known essential facts", () => {
-    render(<ListingOverview sale={item()} />);
-    expect(screen.getByRole("complementary", { name: "Synthèse de la vente" })).toBeTruthy();
-    expect(screen.getByText("68 m²")).toBeTruthy();
-    expect(screen.getByText("Surface Carrez")).toBeTruthy();
-    expect(screen.getByText("Chambres")).toBeTruthy();
-    expect(screen.getByText("2", { exact: true })).toBeTruthy();
+  it("leads with the starting price and four essential facts", () => {
+    // Une audience à venir : la garantie n'est pas rappelée pour une vente passée.
+    render(<ListingOverview sale={item({ sale_date: "2099-06-15T09:30:00+02:00" })} />);
+    expect(screen.getByRole("region", { name: "Synthèse de la vente" })).toBeTruthy();
     const terms = screen.getAllByRole("term").map((term) => term.textContent);
     expect(terms).toEqual(
-      expect.arrayContaining([
-        "Audience annoncée",
-        "Tribunal",
-        "Surface Carrez",
-        "Pièces",
-        "Chambres",
-        "Occupation",
-      ]),
+      expect.arrayContaining(["Audience annoncée", "Garantie pour enchérir", "Occupation"]),
     );
-    expect(screen.getByText("Tribunal judiciaire de Bordeaux")).toBeTruthy();
+    expect(terms.length).toBeLessThanOrEqual(4);
+    // La garantie pour enchérir de l'exemple : 10 % de la mise à prix (règles de la procédure).
+    expect(screen.getByText("9 500 €")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Définition : garantie pour enchérir" }),
+    ).toBeTruthy();
     expect(screen.getByRole("button", { name: "Définition : mise à prix" })).toBeTruthy();
-    expect(screen.queryByText("Mise à prix au m²")).toBeNull();
-    expect(screen.getByText("Prix de départ, hors frais")).toBeTruthy();
+    expect(screen.getByText("Prix de départ des enchères, hors frais")).toBeTruthy();
     expect(screen.getByRole("link", { name: /rendez-vous/i }).getAttribute("href")).toBe(
       "#rendez-vous",
     );
   });
-  it("only adds the bedrooms fact when the count is a positive finite value", () => {
-    const { container } = render(
-      <ListingOverview sale={item({ bedrooms_count: 0, rooms_count: 2 })} />,
-    );
+  it("keeps the bid ceiling, the price scenario and the surface out of the hero", () => {
+    const { container } = render(<ListingOverview sale={item()} />);
 
-    expect(within(container).queryByText("Chambres", { exact: true })).toBeNull();
-    const terms = screen.getAllByRole("term").map((term) => term.textContent);
-    expect(terms).toContain("Pièces");
-    expect(terms).not.toContain("Chambres");
-  });
-  it("keeps AI-blocked room data from reappearing as bedrooms", () => {
-    const projection: AiReviewProjectionReadModel = {
-      auction_sale_id: "sale-1",
-      field_key: "property.rooms_count",
-      review_state: "unresolved",
-      citation_status: "not_required",
-      is_publishable: false,
-      source_name: "Avoventes",
-      source_url: "https://avoventes.fr/vente/1",
-    };
-
-    render(
-      <ListingOverview
-        sale={item({ rooms_count: 4, bedrooms_count: 2 })}
-        aiReviewProjections={[projection]}
-      />,
-    );
-
-    expect(screen.queryByText("4", { exact: true })).toBeNull();
-    expect(screen.queryByText("2", { exact: true })).toBeNull();
+    expect(container.textContent).not.toMatch(/plafond/i);
+    expect(screen.queryByText("Voir le scénario de prix")).toBeNull();
     expect(screen.queryByText("Chambres", { exact: true })).toBeNull();
+    expect(screen.queryByText("Surface Carrez")).toBeNull();
   });
-  it("keeps the pricing scenario secondary and collapsed by default", () => {
-    render(
-      <ListingOverview
-        sale={item()}
-        scenarioSummary={{
-          purchasePrice: 92_000,
-          totalCost: 124_000,
-          works: 20_000,
-          marketValue: 150_000,
-          personalized: false,
-        }}
-      />,
-    );
+  it("shows the venue instead of the guarantee outside the court", () => {
+    render(<ListingOverview sale={notary()} />);
 
-    const summary = screen.getByText("Voir le scénario de prix");
-    const details = summary.closest("details");
-    expect(details).toBeTruthy();
-    expect(details?.open).toBe(false);
-    expect(
-      screen.getByText("Chambres").compareDocumentPosition(summary) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    expect(
-      screen.getByText("15 octobre 2026", { exact: false }).compareDocumentPosition(summary) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-
-    fireEvent.click(summary);
-    expect(details?.open).toBe(true);
-    expect(screen.getByText("Coût du projet estimé")).toBeTruthy();
-    expect(screen.getByText("Scénario de départ")).toBeTruthy();
+    const terms = screen.getAllByRole("term").map((term) => term.textContent);
+    expect(terms).not.toContain("Garantie pour enchérir");
   });
-  it("uses the same collapsed disclosure for a personalized scenario", () => {
-    render(
-      <ListingOverview
-        sale={item()}
-        scenarioSummary={{
-          purchasePrice: 100_000,
-          totalCost: 132_000,
-          works: 25_000,
-          marketValue: null,
-          personalized: true,
-        }}
-      />,
-    );
-
-    const summary = screen.getByText("Voir le scénario de prix");
-    expect(summary.closest("details")?.open).toBe(false);
-    fireEvent.click(summary);
-    expect(screen.getByText("Votre scénario")).toBeTruthy();
-  });
-  it("shows a source explanation beside each key value without upgrading an unverified value", () => {
+  it("shows a source icon beside each key value without upgrading an unverified value", () => {
     render(
       <ListingOverview
         sale={item({
@@ -287,70 +212,16 @@ describe("readable listing sections", () => {
     expect(
       screen.getByRole("button", { name: "Source à préciser pour Date de vente" }),
     ).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Source à préciser pour Mise à prix" })).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: "Source à préciser pour Surface Carrez" }),
-    ).toBeTruthy();
+    const price = screen.getByRole("button", { name: "Source à préciser pour Mise à prix" });
+    // L'icône seule : le nom de la pièce passe dans le nom accessible et la bulle du survol.
+    expect(price.textContent).toBe("");
+    expect(price.getAttribute("title")).toBe("Source à préciser");
     expect(screen.getByRole("button", { name: "Source à préciser pour Occupation" })).toBeTruthy();
   });
-
-  it("labels a provisional surface as inferred in the real listing summary", () => {
-    render(
-      <ListingOverview
-        sale={item({
-          app_surface_m2: null,
-          habitable_surface_m2: null,
-          carrez_surface_m2: null,
-          surface_evidence: null,
-          rooms_count: 1,
-        })}
-      />,
-    );
-
-    expect(screen.getByText("Surface estimée")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Voir l’origine de Surface Carrez" })).toBeTruthy();
-  });
-
-  it("suppresses AI-blocked type and rooms while retaining source provenance", () => {
-    const projections: AiReviewProjectionReadModel[] = [
-      {
-        auction_sale_id: "sale-1",
-        field_key: "property.property_type",
-        review_state: "unresolved",
-        citation_status: "not_required",
-        is_publishable: false,
-        source_name: "Avoventes",
-        source_url: "https://avoventes.fr/vente/1",
-      },
-      {
-        auction_sale_id: "sale-1",
-        field_key: "property.rooms_count",
-        review_state: "unverified",
-        citation_status: "unverified",
-        is_publishable: false,
-        source_name: "Avoventes",
-        source_url: "https://avoventes.fr/vente/1",
-      },
-    ];
-
-    render(
-      <ListingOverview
-        sale={item({ property_type: "apartment", rooms_count: 4 })}
-        aiReviewProjections={projections}
-      />,
-    );
-
-    expect(screen.queryByText("Appartement", { exact: false })).toBeNull();
-    expect(screen.getByText("À confirmer")).toBeTruthy();
-    // Le type bloqué sort de la synthèse (le titre le dit « à confirmer ») ; les pièces gardent
-    // leur provenance.
-    expect(screen.getAllByRole("link", { name: /Source : Avoventes/ }).length).toBeGreaterThan(0);
-    expect(screen.queryByText("4", { exact: true })).toBeNull();
-  });
-  it("suppresses a blocked surface even when another raw surface field is present", () => {
+  it("keeps a blocked occupancy behind its review, with its source", () => {
     const projection: AiReviewProjectionReadModel = {
       auction_sale_id: "sale-1",
-      field_key: "property.carrez_surface_m2",
+      field_key: "property.occupancy_status",
       review_state: "unresolved",
       citation_status: "not_required",
       is_publishable: false,
@@ -360,18 +231,16 @@ describe("readable listing sections", () => {
 
     render(
       <ListingOverview
-        sale={item({ app_surface_m2: null, habitable_surface_m2: null, carrez_surface_m2: 42.6 })}
+        sale={item({ occupancy_status: "occupied" })}
         aiReviewProjections={[projection]}
       />,
     );
 
-    expect(screen.getAllByText("À confirmer").length).toBeGreaterThan(0);
-    expect(screen.queryByText("42,6 m²")).toBeNull();
-    expect(screen.getByText(/Source : Avoventes/)).toBeTruthy();
-    expect(screen.queryByRole("note", { name: /Surface :/ })).toBeNull();
-    expect(screen.queryByRole("button", { name: /Surface/ })).toBeNull();
+    expect(screen.queryByText("Occupé", { exact: false })).toBeNull();
+    expect(screen.getAllByRole("link", { name: /Source : Avoventes/ }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: /Occupation/ })).toBeNull();
   });
-  it("suppresses the price reliability badge when the AI review blocks the price", () => {
+  it("suppresses the price reliability badge and the guarantee when the AI review blocks the price", () => {
     const projection: AiReviewProjectionReadModel = {
       auction_sale_id: "sale-1",
       field_key: "sale.starting_price_eur",
@@ -387,174 +256,46 @@ describe("readable listing sections", () => {
     expect(screen.getByText("À confirmer")).toBeTruthy();
     expect(screen.queryByRole("note", { name: /Mise à prix :/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /Mise à prix/ })).toBeNull();
+    expect(screen.queryByText("Garantie pour enchérir")).toBeNull();
   });
-  it("explains what the ceiling rests on, and says so when the works are not priced", () => {
-    const context = {
-      worksAmount: 0,
-      worksPriced: false,
-      marginPct: 13,
-      valueAmount: 200_000,
-      valueSource: "DVF normalisé",
-      valueDate: "2026-10-01T08:00:00Z",
-    };
-    const { rerender } = render(
-      <ListingOverview sale={item()} premiumCeiling={120_000} ceilingContext={context} />,
-    );
-
-    expect(screen.getByText("Enchère plafond (simulation)")).toBeTruthy();
-    const line = screen.getByText(/Travaux : .*\(à chiffrer\)/);
-    expect(line.textContent).toMatch(/Marge : 13 %/);
-    expect(line.textContent).toMatch(/Valeur : 200\s000\s€ \(DVF normalisé, 01 octobre 2026\)/);
-    expect(line.textContent).toContain("Plafond hors travaux.");
-
-    rerender(
-      <ListingOverview
-        sale={item()}
-        premiumCeiling={120_000}
-        ceilingContext={{ ...context, worksAmount: 25_000, worksPriced: true }}
-      />,
-    );
-    const priced = screen.getByText(/Travaux : /);
-    expect(priced.textContent).not.toContain("à chiffrer");
-    expect(priced.textContent).not.toContain("hors travaux");
-
-    rerender(<ListingOverview sale={item()} premiumCeiling={120_000} />);
-    expect(screen.queryByText(/Marge : /)).toBeNull();
-  });
-  it("says in words where the ceiling stands against the starting price", () => {
-    const sale = item({ starting_price_eur: 100_000 });
-    const { rerender } = render(
-      <ListingOverview sale={sale} premiumCeiling={160_000} startingPriceGap={60_000} />,
-    );
-    expect(
-      screen.getByText(
-        /^Selon vos hypothèses, vous pouvez enchérir jusqu’à 160\s000\s€, soit 60\s000\s€ au-dessus/,
-      ),
-    ).toBeTruthy();
-
-    rerender(<ListingOverview sale={sale} premiumCeiling={103_000} startingPriceGap={3_000} />);
-    expect(
-      screen.getByText(
-        /^Peu d’écart avec la mise à prix : selon vos hypothèses, vous pouvez enchérir jusqu’à 103\s000\s€/,
-      ),
-    ).toBeTruthy();
-
-    rerender(<ListingOverview sale={sale} premiumCeiling={80_000} startingPriceGap={-20_000} />);
-    expect(
-      screen.getByText(
-        /^Avec ces hypothèses, votre enchère plafond \(80\s000\s€\) est 20\s000\s€ \(20\s%\) sous la mise à prix : le bien ne tient pas à son prix de départ\.$/,
-      ),
-    ).toBeTruthy();
-  });
-  it("writes « offre plafond » and « première offre possible » for a sale by offers, with the seller mention and the estimated fees", () => {
-    const sale = item({ starting_price_eur: 100_000 });
+  it("writes « première offre possible » for a sale by offers", () => {
     render(
       <ListingOverview
-        sale={sale}
-        premiumCeiling={160_000}
-        startingPriceGap={60_000}
-        ceilingWording={{
-          label: "Offre plafond (simulation)",
-          terms: {
-            ceilingTerm: "offre plafond",
-            referencePriceTerm: "première offre possible",
-            bidVerb: "faire une offre allant",
-          },
-          byOffers: true,
-          reserveNotice:
-            "Le vendeur n’est pas tenu de retenir la meilleure offre ; prix de réserve inconnu.",
-          estimatedFees: [{ key: "negotiation", label: "Honoraires de négociation", amount: null }],
-        }}
+        sale={item({ starting_price_eur: 100_000 })}
+        ceilingWording={{ label: "Offre plafond (simulation)", byOffers: true }}
       />,
     );
 
-    expect(screen.getByText("Offre plafond (simulation)")).toBeTruthy();
-    expect(screen.queryByText("Enchère plafond (simulation)")).toBeNull();
     expect(screen.getByText("Première offre possible")).toBeTruthy();
     expect(screen.queryByText("Mise à prix")).toBeNull();
-    expect(
-      screen.getByText(
-        /^Selon vos hypothèses, vous pouvez faire une offre allant jusqu’à 160\s000\s€, soit 60\s000\s€ au-dessus de la première offre possible\.$/,
-      ),
-    ).toBeTruthy();
-    expect(
-      screen.getByText(
-        "Le vendeur n’est pas tenu de retenir la meilleure offre ; prix de réserve inconnu.",
-      ),
-    ).toBeTruthy();
-    // La pastille dit « Frais estimés, à confirmer » avec une icône et du texte.
-    const badge = screen.getByText("Frais estimés, à confirmer");
-    expect(badge.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
-    expect(badge.parentElement?.textContent).toContain("honoraires de négociation");
-    const heroText = document.body.textContent ?? "";
-    expect(heroText).not.toMatch(/enchérir/);
+    expect(screen.getByText("Plus bas montant que l’on peut proposer, hors frais")).toBeTruthy();
+    expect(document.body.textContent ?? "").not.toMatch(/enchérir jusqu/);
   });
-
-  it("shows no estimated-fees badge when every important fee is read or entered", () => {
+  it("places the market reference under the price and the follow action next to the preparation", () => {
     render(
       <ListingOverview
         sale={item()}
-        premiumCeiling={160_000}
-        ceilingWording={{
-          label: "Enchère plafond (simulation)",
-          terms: {
-            ceilingTerm: "enchère plafond",
-            referencePriceTerm: "mise à prix",
-            bidVerb: "enchérir",
-          },
-          estimatedFees: [],
-        }}
+        preparation={{ href: "/login?reason=fiche", label: "Créer un compte gratuit" }}
+        marketReference={<p>Repère marché fourni</p>}
+        followAction={<button type="button">Suivre cette vente</button>}
       />,
     );
-    expect(screen.queryByText("Frais estimés, à confirmer")).toBeNull();
-  });
 
-  it("says that no price holds, with the reason, instead of an empty hero", () => {
-    render(<ListingOverview sale={item()} ceilingUnreachable showPremiumTeaser />);
-
-    expect(screen.getByText("Enchère plafond (simulation)")).toBeTruthy();
-    expect(screen.getByText("Aucun prix ne tient")).toBeTruthy();
+    const reference = screen.getByText("Repère marché fourni");
     expect(
-      screen.getByText(
-        "Les frais, les travaux et la libération dépassent déjà le budget que permettent la valeur du bien et vos objectifs.",
-      ),
+      screen
+        .getByText("Prix de départ des enchères, hors frais")
+        .compareDocumentPosition(reference) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
-    expect(screen.queryByText(/Disponible avec l’offre Analyse/)).toBeNull();
-  });
-  it("names the ceiling a simulation in the premium teaser too", () => {
-    render(<ListingOverview sale={item()} showPremiumTeaser />);
-
-    expect(screen.getByText("Enchère plafond (simulation)")).toBeTruthy();
-    expect(screen.queryByText("Enchère plafond")).toBeNull();
-  });
-  it("does not expose premium or scenario values while a pricing input is protected", () => {
-    const projection: AiReviewProjectionReadModel = {
-      auction_sale_id: "sale-1",
-      field_key: "sale.starting_price_eur",
-      review_state: "unresolved",
-      citation_status: "not_required",
-      is_publishable: false,
-      source_name: "Avoventes",
-      source_url: "https://avoventes.fr/vente/1",
-    };
-
-    render(
-      <ListingOverview
-        sale={item()}
-        premiumCeiling={120_000}
-        aiReviewProjections={[projection]}
-        scenarioSummary={{
-          purchasePrice: 92_000,
-          totalCost: 124_000,
-          works: 20_000,
-          marketValue: 150_000,
-          personalized: false,
-        }}
-      />,
+    expect(screen.getByRole("link", { name: "Créer un compte gratuit" }).getAttribute("href")).toBe(
+      "/login?reason=fiche",
     );
-
-    expect(screen.queryByText("Enchère plafond (simulation)")).toBeNull();
-    expect(screen.queryByText("Voir le scénario de prix")).toBeNull();
+    expect(screen.getByRole("button", { name: "Suivre cette vente" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /rendez-vous/i })).toBeNull();
+  });
+  it("leaves the second action out when the page adds its own", () => {
+    render(<ListingOverview sale={item()} showSecondaryAction={false} />);
+    expect(screen.queryByRole("link", { name: /rendez-vous/i })).toBeNull();
   });
   it("does not show zero or invalid amounts as known property facts", () => {
     const { container } = render(
@@ -569,7 +310,9 @@ describe("readable listing sections", () => {
         })}
       />,
     );
-    expect(screen.getAllByText("Non renseigné").length).toBeGreaterThanOrEqual(2);
+    // Le prix et l'occupation : les deux faits que garde le haut de page.
+    expect(screen.getByText("Non renseigné")).toBeTruthy();
+    expect(screen.getByText("Non renseignée")).toBeTruthy();
     expect(container.textContent).not.toContain("0 €");
     expect(container.textContent).not.toContain("NaN");
   });
@@ -592,9 +335,10 @@ describe("readable listing sections", () => {
         })}
       />,
     );
-    expect(screen.getAllByText("Non renseignée").length).toBeGreaterThanOrEqual(2);
-    expect(screen.getAllByText("Non renseigné").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText("Non renseignée")).toBeTruthy();
+    expect(screen.getByText("Non renseigné")).toBeTruthy();
     expect(screen.getByText("Date non renseignée")).toBeTruthy();
+    expect(screen.queryByText(/en cours de vérification|à confirmer/i)).toBeNull();
   });
   it("offers the preparation first, then the appointments, from the summary", () => {
     render(

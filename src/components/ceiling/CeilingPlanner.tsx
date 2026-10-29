@@ -393,17 +393,58 @@ function ConfidenceNote({
   );
 }
 
+/**
+ * Un bloc de détail du calcul, replié par défaut : l'onglet Prix montre le résultat d'abord, le
+ * détail à la demande. Une ancre vers le bloc (`#why-this-ceiling`) l'ouvre (`revealAnchor`).
+ */
+function PlannerFold({
+  id,
+  titleId,
+  title,
+  meta,
+  first = false,
+  children,
+}: {
+  id?: string;
+  titleId: string;
+  title: ReactNode;
+  meta: string;
+  /** Le premier bloc de la liste : un trait au-dessus. */
+  first?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <details
+      id={id}
+      className={`group/fold scroll-mt-2 border-b border-line ${first ? "mt-7 border-t" : ""}`}
+    >
+      <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 py-3 [&::-webkit-details-marker]:hidden">
+        <span className="min-w-0">
+          <h3 id={titleId} className="text-lg font-semibold text-brand-navy">
+            {title}
+          </h3>
+          <span className="block text-sm text-ink-soft">{meta}</span>
+        </span>
+        <ChevronDown
+          aria-hidden
+          className="h-5 w-5 shrink-0 text-ink-soft transition-transform group-open/fold:rotate-180"
+        />
+      </summary>
+      <div className="pb-5">{children}</div>
+    </details>
+  );
+}
+
 function CeilingSteps({ steps }: { steps: CeilingStep[] }) {
   return (
-    <section
+    <PlannerFold
       id="why-this-ceiling"
-      aria-labelledby="ceiling-steps-title"
-      className="mt-7 scroll-mt-2"
+      titleId="ceiling-steps-title"
+      title="Le calcul, étape par étape"
+      meta="De la valeur du bien au plafond"
+      first
     >
-      <h3 id="ceiling-steps-title" className="text-lg font-semibold text-brand-navy">
-        Le calcul, étape par étape
-      </h3>
-      <p className="mt-1 text-sm text-ink-soft">
+      <p className="text-sm text-ink-soft">
         Touchez ou cliquez sur une ligne pour voir d’où vient le chiffre.
       </p>
       <ol className="mt-4 divide-y divide-line border-y border-line">
@@ -446,7 +487,7 @@ function CeilingSteps({ steps }: { steps: CeilingStep[] }) {
           </li>
         ))}
       </ol>
-    </section>
+    </PlannerFold>
   );
 }
 
@@ -459,21 +500,20 @@ function WorksCeilings({
 }) {
   const rows = useMemo(() => ceilingsByWorks(hypotheses), [hypotheses]);
   return (
-    <section aria-labelledby="ceiling-works-title" className="mt-8">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 id="ceiling-works-title" className="text-lg font-semibold text-brand-navy">
-          Votre plafond selon les travaux
-        </h3>
-        {onEditWorks ? (
-          <button
-            type="button"
-            onClick={onEditWorks}
-            className="inline-flex min-h-11 items-center text-sm font-semibold text-gold-text underline-offset-4 hover:underline"
-          >
-            Choisir les travaux
-          </button>
-        ) : null}
-      </div>
+    <PlannerFold
+      titleId="ceiling-works-title"
+      title="Votre plafond selon les travaux"
+      meta="Sans travaux, rafraîchissement, rénovation"
+    >
+      {onEditWorks ? (
+        <button
+          type="button"
+          onClick={onEditWorks}
+          className="inline-flex min-h-11 items-center text-sm font-semibold text-gold-text underline-offset-4 hover:underline"
+        >
+          Choisir les travaux
+        </button>
+      ) : null}
       <p className="mt-1 text-sm text-ink-soft">
         Les scénarios incluent 10 % d’imprévus et le portage pendant le chantier ; une rénovation
         complète peut aussi augmenter la valeur du bien.
@@ -514,7 +554,7 @@ function WorksCeilings({
           </tbody>
         </table>
       </div>
-    </section>
+    </PlannerFold>
   );
 }
 
@@ -567,11 +607,12 @@ function BidSimulator({ hypotheses, plan }: { hypotheses: CeilingHypotheses; pla
     ["Portage", plan.carryingFixed + evaluation.financing, "portage"],
   ];
   return (
-    <section aria-labelledby="ceiling-simulator-title" className="mt-8">
-      <h3 id="ceiling-simulator-title" className="text-lg font-semibold text-brand-navy">
-        {labels.simulatorTitle}
-      </h3>
-      <label className="mt-3 flex max-w-xs items-center gap-2 rounded-lg border border-brand-navy/55 px-3 focus-within:border-gold-soft">
+    <PlannerFold
+      titleId="ceiling-simulator-title"
+      title={labels.simulatorTitle}
+      meta="Le coût total de l’opération à un prix donné"
+    >
+      <label className="flex max-w-xs items-center gap-2 rounded-lg border border-brand-navy/55 px-3 focus-within:border-gold-soft">
         <span className="sr-only">{labels.simulatorInputLabel}</span>
         <input
           type="number"
@@ -636,7 +677,7 @@ function BidSimulator({ hypotheses, plan }: { hypotheses: CeilingHypotheses; pla
           ? ` Bénéfice avant impôt à la revente : ${formatPrice(evaluation.resaleProfit)}.`
           : ""}
       </p>
-    </section>
+    </PlannerFold>
   );
 }
 
@@ -677,11 +718,12 @@ function CashPlan({ hypotheses, plan }: { hypotheses: CeilingHypotheses; plan: C
   const steps = buildCashPlan(hypotheses, plan, plan.maxBid);
   const terms = cashStepTerms(hypotheses);
   return (
-    <section aria-labelledby="ceiling-cash-title" className="mt-8">
-      <h3 id="ceiling-cash-title" className="text-lg font-semibold text-brand-navy">
-        Trésorerie à prévoir
-      </h3>
-      <p className="mt-1 text-sm text-ink-soft">
+    <PlannerFold
+      titleId="ceiling-cash-title"
+      title="Trésorerie à prévoir"
+      meta="Ce que vous payez, et quand"
+    >
+      <p className="text-sm text-ink-soft">
         {labelsOf(hypotheses).planner.cashIntro(formatPrice(plan.maxBid))}
       </p>
       <ol className="mt-4 space-y-3">
@@ -709,7 +751,7 @@ function CashPlan({ hypotheses, plan }: { hypotheses: CeilingHypotheses; plan: C
           </li>
         ))}
       </ol>
-    </section>
+    </PlannerFold>
   );
 }
 

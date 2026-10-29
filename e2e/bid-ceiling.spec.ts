@@ -26,12 +26,16 @@ test("l'enchère plafond de l'exemple est chiffrée, avec ses lignes dépliables
   await expect(calculation).not.toContainText("Marge de sécurité non tenue");
   await expect(calculation.getByText(/\d.*€/).first()).toBeVisible();
 
-  // Chaque ligne du calcul se déplie.
-  const firstStep = calculation.locator("#why-this-ceiling summary").first();
+  // Le détail du calcul est replié derrière le résultat ; ouvert, chaque ligne se déplie.
+  const steps = calculation.locator("#why-this-ceiling");
+  await steps.locator(":scope > summary").click();
+  await expect(steps).toHaveJSProperty("open", true);
+  const firstStep = steps.locator("ol summary").first();
   await firstStep.click();
   await expect(firstStep.locator("xpath=..")).toHaveJSProperty("open", true);
 
-  // Un terme du métier s'explique et renvoie vers le guide.
+  // Un terme du métier s'explique et renvoie vers le guide (simulation « Si vous l'emportez à… »).
+  await calculation.getByRole("heading", { name: "Si vous l’emportez à…" }).click();
   await calculation.getByRole("button", { name: "Définition : adjudication" }).click();
   const definition = calculation.getByRole("note");
   await expect(definition).toContainText("Attribution du bien au meilleur enchérisseur");
