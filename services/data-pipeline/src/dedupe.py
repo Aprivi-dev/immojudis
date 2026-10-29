@@ -302,7 +302,8 @@ def _merge_into(target: AuctionSale, source: AuctionSale, confidence: str) -> Au
             ):
                 current["superseded_analysis"] = deepcopy(incoming["superseded_analysis"])
             current.setdefault("merged_sources", [])
-            current["merged_sources"].append(_observation_summary(source))
+            summary = _observation_summary(source)
+            current["merged_sources"] = _with_merged_source(current["merged_sources"], summary)
 
     if source.raw_text and source.raw_text not in (target.raw_text or ""):
         target.raw_text = clean_text(f"{target.raw_text or ''}\n\n--- SOURCE {source.source_name.upper()} ---\n{source.raw_text}")
@@ -363,6 +364,26 @@ def _observation_summary(sale: AuctionSale) -> dict[str, Any]:
         # back-reference from merged_sources to the payload being built.
         "raw_payload": deepcopy(sale.raw_payload),
     }
+
+
+def _with_merged_source(entries: Any, summary: dict[str, Any]) -> list[Any]:
+    """``merged_sources`` with ``summary`` as the only copy of its source URL, and one copy per other URL.
+
+    The same pair of listings is merged again at every run: appending used to stack a full copy of the source
+    payload each time (150 copies, 12.8 MB in one row on 2026-10-29), and every write of such a row ran the
+    ``auction_sales`` triggers over the whole JSON. Older duplicates heal at the next merge: the last copy of
+    each URL is kept.
+    """
+    latest: dict[str, Any] = {}
+    kept: list[Any] = []
+    for entry in [*(entries if isinstance(entries, list) else []), summary]:
+        url = entry.get("source_url") if isinstance(entry, dict) else None
+        if url:
+            latest.pop(url, None)
+            latest[url] = entry
+        else:
+            kept.append(entry)
+    return [*kept, *latest.values()]
 
 
 def _has_strong_dedupe_signal(sale: AuctionSale) -> bool:

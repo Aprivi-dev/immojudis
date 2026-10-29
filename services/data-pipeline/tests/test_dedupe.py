@@ -109,6 +109,40 @@ def test_dedupe_merges_same_address_across_sources_when_date_and_price_match() -
     assert result[0].raw_payload["merged_sources"][0]["source_name"] == "licitor"
 
 
+def test_merging_the_same_pair_again_keeps_one_copy_per_source_url() -> None:
+    """Each run merged the same listings again and stacked a full payload copy (150 copies in production)."""
+    avoventes = _make("https://avoventes.fr/enchere/repeat", address="12 av. de la République 33000 Bordeaux")
+    licitor_url = "https://www.licitor.com/annonce/repeat.html"
+    merged = dedupe_sales([avoventes, _make(licitor_url, source_name="licitor")])[0]
+    for _ in range(3):
+        result = dedupe_sales([merged, _make(licitor_url, source_name="licitor")])
+        assert len(result) == 1
+        merged = result[0]
+
+    copies = [entry for entry in merged.raw_payload["merged_sources"] if entry["source_url"] == licitor_url]
+    assert len(copies) == 1
+
+
+def test_the_latest_copy_of_a_source_url_wins() -> None:
+    from src.dedupe import _with_merged_source
+
+    old = {"source_url": "https://www.licitor.com/annonce/1.html", "starting_price_eur": 1.0}
+    new = {"source_url": "https://www.licitor.com/annonce/1.html", "starting_price_eur": 2.0}
+
+    assert _with_merged_source([old], new) == [new]
+
+
+def test_stacked_copies_heal_at_the_next_merge() -> None:
+    target = _make("https://avoventes.fr/enchere/healed", address="12 av. de la République 33000 Bordeaux")
+    stale = {"source_name": "licitor", "source_url": "https://www.licitor.com/annonce/old.html", "raw_payload": {}}
+    target.raw_payload["merged_sources"] = [stale, dict(stale), {"note": "sans adresse"}, dict(stale)]
+
+    merged = dedupe_sales([target, _make("https://www.licitor.com/annonce/new.html", source_name="licitor")])[0]
+
+    urls = [entry.get("source_url") for entry in merged.raw_payload["merged_sources"]]
+    assert urls == [None, "https://www.licitor.com/annonce/old.html", "https://www.licitor.com/annonce/new.html"]
+
+
 def test_dedupe_breaks_shared_raw_payload_alias_before_recording_merged_source() -> None:
     first = _make("https://avoventes.fr/enchere/shared-1")
     second = _make("https://licitor.com/annonce/shared-1", source_name="licitor")
