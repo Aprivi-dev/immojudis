@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import gzip
 import hashlib
+import re
 import zipfile
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
@@ -544,6 +546,21 @@ def test_staging_indexes_are_built_before_the_swap_with_staging_names() -> None:
     assert "dvf_transactions_old" not in joined
 
 
+def test_every_concurrent_dvf_index_is_rebuilt_on_the_staging_table() -> None:
+    # Un index de dvf_transactions construit hors de l'importeur (scripts/apply-supabase-concurrent-index-operations.mjs)
+    # disparaît au remplacement complet de la table s'il n'est pas aussi construit sur la table de chargement.
+    script = (
+        Path(__file__).resolve().parents[3] / "scripts" / "apply-supabase-concurrent-index-operations.mjs"
+    ).read_text(encoding="utf-8")
+    names = re.findall(r'indexName: "(dvf_transactions_[a-z0-9_]+)"', script)
+    assert names, "no dvf_transactions index found in the concurrent index operations"
+    for name in names:
+        suffix = name.removeprefix("dvf_transactions_")
+        assert suffix in dvf_import.STAGING_INDEX_SUFFIXES, name
+        statements = " ".join(" ".join(s.split()).lower() for s in dvf_import.build_staging_index_statements())
+        assert f"dvf_transactions_staging_{suffix}" in statements, name
+
+
 def test_swap_rolls_back_and_never_commits_when_a_statement_fails() -> None:
     cursor = RollbackProbeCursor(fail_on="drop table public.dvf_transactions_old")
     connection = RecordingConnection(cursor)
@@ -610,11 +627,12 @@ def test_restore_dvf_indexes_builds_integrity_and_query_indexes() -> None:
 
     dvf_import._restore_dvf_indexes(connection)
 
-    assert len(cursor.calls) == 5
+    assert len(cursor.calls) == 6
     statements = " ".join(str(statement) for statement, _ in cursor.calls)
     assert "create unique index" in statements.lower()
     assert "one canonical dvf transaction" in statements.lower()
     assert "dvf_transactions_lat_lng_idx" in statements
+    assert "dvf_transactions_insee_type_sale_date_idx" in statements
 
 
 def test_finalize_failed_import_reconnects_after_administrator_restart(monkeypatch) -> None:
