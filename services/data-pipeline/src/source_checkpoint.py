@@ -6,6 +6,7 @@ import copy
 import hashlib
 import json
 import os
+import time
 from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 from typing import Any
@@ -26,6 +27,9 @@ MAX_CHECKPOINT_REUSE_AGE = timedelta(hours=24)
 CURSOR_PREFIX = "__source_cursor__:"
 CHECKPOINT_CONNECT_TIMEOUT = 5
 CHECKPOINT_RETRY_DELAYS: tuple[float, ...] = ()
+# Pauses before a new connection when a checkpoint write loses its own: a database restart takes from one to about
+# ten seconds, and an immediate second try fails with it (« connection failed … 6543 »), ending the source.
+CHECKPOINT_WRITE_RETRY_DELAYS: tuple[float, ...] = (5.0, 20.0)
 CHECKPOINT_LOCK_TIMEOUT = "5s"
 CHECKPOINT_STATEMENT_TIMEOUT = "15s"
 
@@ -220,7 +224,7 @@ class CheckpointSales(list):
             observed = datetime.now(UTC)
             # Les adresses internes (registre de l'agent) ne sont jamais écrites dans la table de reprise.
             payload = json.loads(json.dumps({k: v for k, v in sale.items() if k != INTERNAL_CONTACTS_KEY}, default=str))
-            for attempt in (1, 2):
+            for delay in (*CHECKPOINT_WRITE_RETRY_DELAYS, None):
                 try:
                     if self._db is None:
                         connection_context = _checkpoint_connect(context[0])
@@ -231,10 +235,12 @@ class CheckpointSales(list):
                     break
                 except (psycopg.OperationalError, psycopg.InterfaceError):
                     # The connection is kept for the whole scrape: a database restart or a dropped connection
-                    # would otherwise end the source on its next checkpoint. One new connection, then the error.
+                    # would otherwise end the source on its next checkpoint. A new connection after each pause,
+                    # then the error.
                     self._drop_connection()
-                    if attempt == 2:
+                    if delay is None:
                         raise
+                    time.sleep(delay)
         super().append(sale)
         if _publisher:
             _pending.append(copy.deepcopy(sale))
