@@ -21,23 +21,24 @@ function Harness({ showStatistics = false }: { showStatistics?: boolean }) {
 describe("SaleDetailTabNav", () => {
   it("adds the tribunal statistics section to the keyboard navigation", () => {
     render(<Harness showStatistics />);
-    expect(screen.getAllByRole("tab")).toHaveLength(6);
+    expect(screen.getAllByRole("tab")).toHaveLength(7);
     fireEvent.keyDown(screen.getByRole("tab", { name: "Prix et plafond" }), { key: "ArrowRight" });
     expect(screen.getByRole("tab", { name: "Statistiques" }).getAttribute("aria-selected")).toBe(
       "true",
     );
     expect(document.activeElement).toBe(screen.getByRole("tab", { name: "Statistiques" }));
   });
-  it("exposes a single selected tab with the five primary sections", () => {
+  it("exposes a single selected tab with the six primary sections", () => {
     render(<Harness />);
 
     const tabs = screen.getAllByRole("tab");
-    expect(tabs).toHaveLength(5);
+    expect(tabs).toHaveLength(6);
     expect(tabs.map((tab) => tab.textContent)).toEqual([
       "Aperçu",
       "Prix et plafond",
       "Travaux",
       "Financement",
+      "Quartier",
       "Démarches",
     ]);
     expect(tabs.filter((tab) => tab.getAttribute("aria-selected") === "true")).toHaveLength(1);
@@ -56,16 +57,16 @@ describe("SaleDetailTabNav", () => {
     expect(document.activeElement).toBe(tabs[1]);
 
     fireEvent.keyDown(tabs[1], { key: "End" });
-    expect(tabs[4].getAttribute("aria-selected")).toBe("true");
-    expect(document.activeElement).toBe(tabs[4]);
+    expect(tabs[5].getAttribute("aria-selected")).toBe("true");
+    expect(document.activeElement).toBe(tabs[5]);
 
-    fireEvent.keyDown(tabs[4], { key: "Home" });
+    fireEvent.keyDown(tabs[5], { key: "Home" });
     expect(tabs[0].getAttribute("aria-selected")).toBe("true");
     expect(document.activeElement).toBe(tabs[0]);
 
     fireEvent.keyDown(tabs[0], { key: "ArrowLeft" });
-    expect(tabs[4].getAttribute("aria-selected")).toBe("true");
-    expect(document.activeElement).toBe(tabs[4]);
+    expect(tabs[5].getAttribute("aria-selected")).toBe("true");
+    expect(document.activeElement).toBe(tabs[5]);
   });
 
   it("keeps one row of tabs on every screen, with no separate menu", () => {
@@ -84,6 +85,7 @@ describe("SaleDetailTabNav", () => {
     const tabs = screen.getAllByRole("tab");
     expect(tabs[0].getAttribute("aria-controls")).toBe("sale-detail-panel-apercu");
     expect(tabs.slice(1).map((tab) => tab.getAttribute("aria-controls"))).toEqual([
+      null,
       null,
       null,
       null,

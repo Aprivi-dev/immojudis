@@ -125,8 +125,14 @@ const POINT_INFORMATION_IDS: Record<string, readonly string[]> = {
 export function ListingPreparation({
   publicDemo = false,
   onNavigate,
+  compactSources = false,
   ...props
-}: ListingInformationProps & { publicDemo?: boolean; onNavigate?: (href: string) => void }) {
+}: ListingInformationProps & {
+  publicDemo?: boolean;
+  onNavigate?: (href: string) => void;
+  /** Sources en icône à côté de chaque valeur, au lieu du nom de la pièce sous la valeur. */
+  compactSources?: boolean;
+}) {
   const information = useListingInformation(props);
 
   const navigateTo = (href: string) => {
@@ -186,16 +192,21 @@ export function ListingPreparation({
         sale={props.sale}
         factReliabilities={props.factReliabilities ?? null}
         publicInformation={information}
+        compactSources={compactSources}
       />
     </section>
   );
 }
 
+/** Le rappel neutre sur le prix de départ, en tête de « L'essentiel à savoir » (vente aux enchères). */
+export type StartingPriceSignal = { title: string; text: string; todo: string };
+
 /**
- * « À vérifier avant d'enchérir » : un seul bloc pour ce qui reste ouvert, cible de l'ancre
- * `#points-a-verifier` de la pastille de la liste. Il réunit les points relevés dans le dossier
- * (offre Analyse), les points de la pastille et les informations prioritaires qui manquent ou sont
- * à confirmer, sans doublon, avec la liste complète et une note personnelle dans une fenêtre.
+ * « L'essentiel à savoir » : un seul bloc pour ce qui reste ouvert, cible de l'ancre
+ * `#points-a-verifier` de la pastille de la liste. Il réunit le rappel sur le prix de départ, les
+ * points relevés dans le dossier (offre Analyse), les points de la pastille et les informations
+ * prioritaires à confirmer, sans doublon. Celles qui manquent tiennent en une ligne. La liste
+ * complète et une note personnelle sont dans une fenêtre.
  */
 export function ListingChecks({
   points,
@@ -203,8 +214,11 @@ export function ListingChecks({
   saleId,
   ownerId = "guest-demo",
   preparation = null,
+  startingPriceSignal = null,
   ...props
 }: ListingInformationProps & {
+  /** Rappel sur le prix de départ (vente aux enchères avec une mise à prix lisible). */
+  startingPriceSignal?: StartingPriceSignal | null;
   points: readonly PointToVerify[];
   /** Points relevés dans les pièces (`sale.risks`) : réservés à l'offre Analyse. */
   showRisks?: boolean;
@@ -231,13 +245,21 @@ export function ListingChecks({
   const priorities = information.priorityItems
     .slice(0, 3)
     .filter((item) => !coveredIds.has(item.id));
+  // Les informations absentes tiennent en une ligne ; seules celles à départager ou à confirmer
+  // gardent la leur.
+  const missingPriorities = priorities.filter((item) => item.status === "missing");
+  const openPriorities = priorities.filter((item) => item.status !== "missing");
   const [checklistOpen, setChecklistOpen] = useState(false);
   const [personalNote, setPersonalNote] = useState("");
   const [noteStatus, setNoteStatus] = useState<"idle" | "saved" | "error">("idle");
   const checklistTriggerRef = useRef<HTMLButtonElement>(null);
   const storageOwner = ownerId.trim() || "guest-demo";
   const titleId = `${POINTS_TO_VERIFY_ANCHOR}-title`;
-  const empty = risks.length === 0 && shownPoints.length === 0 && priorities.length === 0;
+  const empty =
+    risks.length === 0 &&
+    shownPoints.length === 0 &&
+    priorities.length === 0 &&
+    !startingPriceSignal;
 
   useEffect(() => {
     setPersonalNote("");
@@ -267,12 +289,14 @@ export function ListingChecks({
     <section id={POINTS_TO_VERIFY_ANCHOR} className={styles.section} aria-labelledby={titleId}>
       <div className={styles.header}>
         <div>
-          <h2 id={titleId}>
-            {procedure.venueType === "state"
-              ? "À vérifier avant de vous positionner"
-              : "À vérifier avant d’enchérir"}
+          <h2 id={titleId} tabIndex={-1}>
+            L’essentiel à savoir
           </h2>
-          <p className={styles.summaryIntro}>{POINTS_TO_VERIFY_NOTE}</p>
+          <p className={styles.summaryIntro}>
+            {procedure.venueType === "state"
+              ? "Ce qu’il faut vérifier avant de vous positionner."
+              : "Ce qu’il faut vérifier avant d’enchérir."}
+          </p>
         </div>
         <button
           ref={checklistTriggerRef}
@@ -293,6 +317,19 @@ export function ListingChecks({
         </p>
       ) : (
         <ul id="risks" className={styles.checkList}>
+          {startingPriceSignal ? (
+            <li key="starting-price" className={styles.infoRow}>
+              <div>
+                <strong>{startingPriceSignal.title}</strong>
+                <span>{startingPriceSignal.text}</span>
+                <span className={styles.todo}>
+                  <span>Que faire : </span>
+                  {startingPriceSignal.todo}
+                </span>
+              </div>
+              <Badge tone="info">Repère</Badge>
+            </li>
+          ) : null}
           {risks.map((risk) => (
             <li key={`risk-${risk.risk_type}-${risk.risk_label}`}>
               <div>
@@ -312,7 +349,7 @@ export function ListingChecks({
               <Badge tone="warning">À vérifier</Badge>
             </li>
           ))}
-          {priorities.map((item) => {
+          {openPriorities.map((item) => {
             const status = statusTone(item);
             return (
               <li key={`info-${item.id}`}>
@@ -326,6 +363,20 @@ export function ListingChecks({
           })}
         </ul>
       )}
+
+      {missingPriorities.length ? (
+        <p className={styles.missingLine}>
+          <Badge tone="neutral">
+            {missingPriorities.length === 1
+              ? "1 information absente du dossier"
+              : `${missingPriorities.length} informations absentes du dossier`}
+          </Badge>{" "}
+          {missingPriorities.map((item) => item.label).join(" · ")}. À demander à l’interlocuteur du
+          dossier.
+        </p>
+      ) : null}
+
+      <p className={styles.checksNote}>{POINTS_TO_VERIFY_NOTE}</p>
 
       <p className={styles.checksDocuments}>
         {documentCount > 0 ? `${documentCount} pièce(s) consultable(s)` : "Aucune pièce attachée"}

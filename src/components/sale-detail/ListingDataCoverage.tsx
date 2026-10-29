@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import FileText from "lucide-react/dist/esm/icons/file-text.js";
 import {
   Dialog,
   DialogContent,
@@ -100,6 +101,8 @@ export type ListingDataCoverageProps = {
   factReliabilities?: FactReliabilityMap | null;
   coverage?: ListingDataCoverageResult;
   publicInformation?: PublicListingInformation;
+  /** Sources en icône à côté de la valeur (voir `PublicListingFactSource`) au lieu d'une ligne. */
+  compactSources?: boolean;
 };
 
 /**
@@ -448,9 +451,14 @@ function SourceDialog({ fact, onOpenChange, returnFocusRef }: SourceDialogProps)
 
 export type PublicListingFactSourceProps = {
   fact: PublicListingFact;
+  /**
+   * Une petite icône de document à la place du nom de la pièce : la fiche reste lisible quand chaque
+   * valeur a sa source. Le nom accessible et la fenêtre de détail sont les mêmes.
+   */
+  compact?: boolean;
 };
 
-export function PublicListingFactSource({ fact }: PublicListingFactSourceProps) {
+export function PublicListingFactSource({ fact, compact = false }: PublicListingFactSourceProps) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const badgeLabel = statusBadgeLabel(fact);
@@ -474,12 +482,13 @@ export function PublicListingFactSource({ fact }: PublicListingFactSourceProps) 
         <button
           ref={triggerRef}
           type="button"
-          className={styles.sourceButton}
+          className={compact ? styles.sourceIcon : styles.sourceButton}
           onClick={() => setOpen(true)}
           aria-haspopup="dialog"
           aria-label={factActionAriaLabel(fact, actionLabel)}
+          title={compact ? actionLabel : undefined}
         >
-          {actionLabel}
+          {compact ? <FileText aria-hidden className="h-4 w-4" /> : actionLabel}
         </button>
       ) : null}
       <SourceDialog
@@ -496,9 +505,14 @@ export function PublicListingFactSource({ fact }: PublicListingFactSourceProps) 
 type PublicInformationSectionProps = {
   section: PublicListingInformation["sections"][number];
   defaultOpen: boolean;
+  compactSources?: boolean;
 };
 
-function PublicInformationSection({ section, defaultOpen }: PublicInformationSectionProps) {
+function PublicInformationSection({
+  section,
+  defaultOpen,
+  compactSources = false,
+}: PublicInformationSectionProps) {
   const [open, setOpen] = useState(defaultOpen);
 
   return (
@@ -517,10 +531,19 @@ function PublicInformationSection({ section, defaultOpen }: PublicInformationSec
         {section.items.map((fact) => (
           <li className={styles.factCard} key={fact.id}>
             <p className={styles.factLabel}>{fact.label}</p>
-            <p className={styles.factValue}>{factValue(fact)}</p>
-            <div className={styles.factMeta}>
-              <PublicListingFactSource fact={fact} />
-            </div>
+            {compactSources ? (
+              <div className={styles.factValueRow}>
+                <p className={styles.factValue}>{factValue(fact)}</p>
+                <PublicListingFactSource fact={fact} compact />
+              </div>
+            ) : (
+              <>
+                <p className={styles.factValue}>{factValue(fact)}</p>
+                <div className={styles.factMeta}>
+                  <PublicListingFactSource fact={fact} />
+                </div>
+              </>
+            )}
           </li>
         ))}
       </ul>
@@ -572,6 +595,7 @@ export function ListingDataCoverage({
   className,
   factReliabilities,
   publicInformation: providedPublicInformation,
+  compactSources = false,
 }: ListingDataCoverageProps) {
   const information =
     providedPublicInformation ?? getListingPublicInformation(sale, factReliabilities);
@@ -595,6 +619,7 @@ export function ListingDataCoverage({
               key={section.id}
               section={section}
               defaultOpen={index === 0}
+              compactSources={compactSources}
             />
           ))}
           {notCommunicated.length > 0 ? <NotCommunicatedBlock items={notCommunicated} /> : null}

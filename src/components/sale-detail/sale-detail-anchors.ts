@@ -6,6 +6,7 @@ const SALE_DETAIL_TABS = [
   "statistiques",
   "travaux",
   "financement",
+  "quartier",
   "demarches",
 ] as const;
 export type LegacyDetail =
@@ -59,6 +60,8 @@ export function knownTabForAnchor(anchor: string, allowStatistics = true): SaleD
   }
   if (anchor === "tribunal-perspective") return "estimation";
   if (anchor === "works") return "travaux";
+  // Urbanisme, risques de la commune, météo et marché locatif sont dans l'onglet Quartier.
+  if (anchor === "urbanism") return "quartier";
   if (anchor === "financing") return "financement";
   if (["rendez-vous", "participation", "documents", "lawyer"].includes(anchor)) {
     return "demarches";
@@ -68,7 +71,6 @@ export function knownTabForAnchor(anchor: string, allowStatistics = true): SaleD
       "description-ia",
       "localisation",
       "caracteristiques",
-      "urbanism",
       "risks",
       // Bloc « Pourquoi cette pépite » : en tête de l'onglet Aperçu.
       "pepite",
@@ -90,9 +92,11 @@ export function revealAnchor(anchor: string, budgetTarget: string) {
           ? "sale-detail-panel-travaux"
           : tabForAnchor(anchor) === "statistiques"
             ? "sale-detail-panel-statistiques"
-            : tabForAnchor(anchor) === "demarches"
-              ? "sale-detail-panel-demarches"
-              : null;
+            : tabForAnchor(anchor) === "quartier"
+              ? "sale-detail-panel-quartier"
+              : tabForAnchor(anchor) === "demarches"
+                ? "sale-detail-panel-demarches"
+                : null;
   const target = document.getElementById(anchor) ?? (fallback && document.getElementById(fallback));
   if (!target) return;
   let parent = target.closest("details");
