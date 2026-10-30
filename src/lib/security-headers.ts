@@ -60,7 +60,8 @@ const BASE_CONNECT_SOURCES = [
   "https://api.mapbox.com",
   "https://events.mapbox.com",
   "https://*.tiles.mapbox.com",
-  // Google Analytics, chargé seulement après l'accord du visiteur (src/lib/google-analytics.ts).
+  // Google Tag Manager et Google Analytics, chargés seulement après l'accord du visiteur
+  // (src/lib/google-analytics.ts).
   // `https://www.google.com` n'y est volontairement pas : gtag.js y double certaines mesures pour
   // les fonctions publicitaires de Google, désactivées ici ; ces envois sont bloqués (erreur CSP
   // en console, sans effet sur les rapports Google Analytics).
@@ -69,7 +70,12 @@ const BASE_CONNECT_SOURCES = [
   "https://*.googletagmanager.com",
 ];
 
-/** Script de la balise Google Analytics (`gtag.js`), voir src/lib/google-analytics.ts. */
+/**
+ * Conteneur Google Tag Manager (`gtm.js`) et balise Google qu'il charge (`gtag/js`), voir
+ * src/lib/google-analytics.ts. Les variables « JavaScript personnalisé » de GTM exigent
+ * `'unsafe-eval'`, refusé en production ; une nouvelle balise ajoutée dans GTM peut demander
+ * d'autres sources ici (docs/runbooks/google-tag-manager.md).
+ */
 const GOOGLE_TAG_SCRIPT_SOURCE = "https://www.googletagmanager.com";
 
 /** Historical policy: wildcard Supabase hosts and `'unsafe-inline'` scripts. */

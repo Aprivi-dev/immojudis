@@ -30,7 +30,7 @@ vi.mock("next/script", () => ({
 
 import { setAnalyticsConsent } from "@/lib/analytics-consent";
 import { setAudienceOptOut } from "@/lib/audience-opt-out";
-import { GA_SCRIPT_URL } from "@/lib/google-analytics";
+import { GTM_PAGE_VIEW_EVENT, GTM_SCRIPT_URL } from "@/lib/google-analytics";
 import { CookieConsentBanner } from "./CookieConsentBanner";
 import { DeferredGoogleAnalytics } from "./DeferredGoogleAnalytics";
 import { GoogleAnalytics } from "./GoogleAnalytics";
@@ -39,10 +39,11 @@ async function becomeIdle() {
   await act(async () => mocks.idle.splice(0).forEach((callback) => callback()));
 }
 
-function pageViews(): unknown[][] {
-  return (window.dataLayer ?? [])
-    .map((entry) => Array.from(entry as ArrayLike<unknown>))
-    .filter((call) => call[0] === "event" && call[1] === "page_view");
+function pageViews(): Array<Record<string, unknown>> {
+  return (window.dataLayer ?? []).filter(
+    (entry): entry is Record<string, unknown> =>
+      (entry as { event?: unknown }).event === GTM_PAGE_VIEW_EVENT,
+  );
 }
 
 beforeEach(() => {
@@ -82,7 +83,7 @@ describe("GoogleAnalytics", () => {
     setAnalyticsConsent("granted");
     const view = render(<GoogleAnalytics />);
 
-    expect(screen.getByTestId("gtag-script").getAttribute("data-src")).toBe(GA_SCRIPT_URL);
+    expect(screen.getByTestId("gtag-script").getAttribute("data-src")).toBe(GTM_SCRIPT_URL);
     // La page vue attend à son tour l'inactivité (titre de la page posé).
     expect(pageViews()).toHaveLength(0);
     await becomeIdle();
@@ -94,7 +95,7 @@ describe("GoogleAnalytics", () => {
     await becomeIdle();
     const views = pageViews();
     expect(views).toHaveLength(2);
-    expect(views[1]![2]).toMatchObject({
+    expect(views[1]).toMatchObject({
       page_location: `${window.location.origin}/tribunaux?utm_source=lettre`,
     });
   });
