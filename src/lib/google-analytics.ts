@@ -1,21 +1,27 @@
 /**
- * Google Analytics 4 (balise `gtag.js`), chargé seulement après l'accord du visiteur (voir
- * `analytics-consent.ts` et `GoogleAnalytics`).
+ * Google Tag Manager (conteneur `GTM_CONTAINER_ID`), qui porte la balise Google Analytics 4,
+ * chargé seulement après l'accord du visiteur (voir `analytics-consent.ts` et `GoogleAnalytics`).
+ * La configuration du conteneur est décrite dans `docs/runbooks/google-tag-manager.md`.
  *
- * Réglages volontaires :
- * - aucune page vue automatique (`send_page_view: false`) : `GoogleAnalytics` envoie chaque page
- *   vue avec une adresse nettoyée par `sanitizeAnalyticsUrl`, qui ne transmet ni jeton de partage,
- *   ni code de connexion, ni paramètre de recherche ; seuls les paramètres `utm_*` restent, sans
- *   ceux qui contiennent une arobase (adresse email glissée dans une campagne), et sans les
- *   identifiants publicitaires `gclid`, `gbraid` et `wbraid`, propres à une personne ou un clic ;
- *   cette adresse est aussi donnée à `config` : la configuration n'envoie jamais l'adresse brute ;
- * - ni signaux Google ni personnalisation publicitaire ; stockage publicitaire refusé (Consent
- *   Mode), seul le stockage de mesure est accordé, puisque la personne l'a accepté ;
- * - cookies limités à 13 mois, sans prolongation à chaque visite (`cookie_expires`,
- *   `cookie_update: false`), comme le demande la CNIL ; Google les garde sinon deux ans ;
+ * Partage des rôles :
+ * - le code charge le conteneur, pose le Consent Mode et publie dans `dataLayer` une page vue
+ *   (`GTM_PAGE_VIEW_EVENT`) à chaque changement de chemin, avec une adresse nettoyée par
+ *   `sanitizeAnalyticsUrl`, qui ne transmet ni jeton de partage, ni code de connexion, ni
+ *   paramètre de recherche ; seuls les paramètres `utm_*` restent, sans ceux qui contiennent une
+ *   arobase (adresse email glissée dans une campagne), et sans les identifiants publicitaires
+ *   `gclid`, `gbraid` et `wbraid`, propres à une personne ou un clic ;
+ * - le conteneur déclenche la balise Google (`GA_MEASUREMENT_ID`) et l'événement `page_view` sur
+ *   cette page vue seulement, avec les valeurs nettoyées : aucune page vue automatique
+ *   (`send_page_view: false`), ni signaux Google ni personnalisation publicitaire, cookies limités
+ *   à 13 mois sans prolongation à chaque visite (`cookie_expires`, `cookie_update: false`), comme
+ *   le demande la CNIL ; ces réglages vivent dans GTM et se vérifient avec le runbook.
+ *
+ * Gardes tenues par le code, quel que soit le contenu du conteneur :
+ * - stockage publicitaire refusé (Consent Mode), seul le stockage de mesure est accordé, puisque la
+ *   personne l'a accepté ;
  * - l'opposition à la mesure d'audience (`audience-opt-out.ts`) l'emporte sur l'accord ; elle
  *   efface aussi l'accord, que le bandeau redemande après son retrait ;
- * - jamais montée sur les pages de `ANALYTICS_EXCLUDED_PATHS` (`google-analytics-state.ts`).
+ * - jamais monté sur les pages de `ANALYTICS_EXCLUDED_PATHS` (`google-analytics-state.ts`).
  *
  * À régler dans Google Analytics (Administration > Flux de données > Mesure améliorée) : désactiver
  * « Changements de page basés sur l'historique de navigation » (sinon chaque navigation compte
@@ -23,10 +29,12 @@
  * liens des pièces peuvent porter un jeton d'accès).
  */
 
+export const GTM_CONTAINER_ID = "GTM-M2MWWPJQ";
+export const GTM_SCRIPT_URL = `https://www.googletagmanager.com/gtm.js?id=${GTM_CONTAINER_ID}`;
+/** Flux Google Analytics 4 configuré dans le conteneur ; sert ici à couper les envois. */
 export const GA_MEASUREMENT_ID = "G-FVY2EYX5MP";
-export const GA_SCRIPT_URL = `https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`;
-/** Durée de vie des cookies `_ga` : 13 mois (en secondes), plafond fixé par la CNIL. */
-const GA_COOKIE_MAX_AGE_SECONDS = 13 * 30 * 24 * 60 * 60;
+/** Événement `dataLayer` qui déclenche, dans GTM, la balise Google et la page vue GA4. */
+export const GTM_PAGE_VIEW_EVENT = "immojudis_page_view";
 
 /**
  * Paramètres d'adresse conservés : ceux qui attribuent la visite à une campagne. Les identifiants
@@ -90,30 +98,25 @@ declare global {
 
 const DISABLE_FLAG = `ga-disable-${GA_MEASUREMENT_ID}`;
 let configured = false;
+/** Stockage de mesure refusé par `revokeGoogleAnalytics` depuis le chargement du conteneur. */
+let storageRevoked = false;
 
 function setDisabled(disabled: boolean): void {
   (window as unknown as Record<string, unknown>)[DISABLE_FLAG] = disabled;
 }
 
-/** Page affichée, avec l'adresse et la provenance nettoyées par `sanitizeAnalyticsUrl`. */
-function currentPage(): Record<string, string> {
-  const origin = window.location.origin;
-  const referrer = document.referrer ? sanitizeAnalyticsUrl(document.referrer, origin) : null;
-  return {
-    // Repli sur l'origine seule : jamais l'adresse brute si le nettoyage échoue.
-    page_location: sanitizeAnalyticsUrl(window.location.href, origin) ?? `${origin}/`,
-    page_referrer: referrer ?? "",
-    page_title: document.title,
-  };
-}
-
-/** Prépare `gtag` (une seule fois par chargement de page) et lève une suspension éventuelle. */
+/** Prépare `dataLayer` (une seule fois par chargement de page) et lève une suspension éventuelle. */
 export function enableGoogleAnalytics(): void {
   setDisabled(false);
-  if (configured) return;
+  if (configured) {
+    // Accord redonné sans recharger la page : le conteneur déjà chargé reprend la mesure.
+    if (storageRevoked) window.gtag?.("consent", "update", { analytics_storage: "granted" });
+    storageRevoked = false;
+    return;
+  }
   configured = true;
   window.dataLayer = window.dataLayer ?? [];
-  // gtag.js attend l'objet `arguments` lui-même, pas un tableau.
+  // GTM et la balise Google attendent l'objet `arguments` lui-même, pas un tableau.
   window.gtag = function gtag() {
     // eslint-disable-next-line prefer-rest-params
     window.dataLayer!.push(arguments);
@@ -124,30 +127,24 @@ export function enableGoogleAnalytics(): void {
     ad_personalization: "denied",
     analytics_storage: "granted",
   });
+  // Démarrage du conteneur (extrait d'installation de GTM). Aucune `config` ici : la balise Google
+  // ne part qu'à la première page vue publiée par `trackGooglePageView`, avec l'adresse nettoyée.
   window.gtag("js", new Date());
-  // L'adresse nettoyée est donnée dès `config` : un `set` posé après lui laisserait une fenêtre où
-  // les premiers envois (début de session, première visite) partiraient avec l'adresse brute.
-  window.gtag("config", GA_MEASUREMENT_ID, {
-    ...currentPage(),
-    send_page_view: false,
-    cookie_expires: GA_COOKIE_MAX_AGE_SECONDS,
-    cookie_update: false,
-    allow_google_signals: false,
-    allow_ad_personalization_signals: false,
-  });
 }
 
+/**
+ * Page vue publiée dans `dataLayer` pour GTM. La balise Google y est redéclenchée avec les mêmes
+ * valeurs : les événements suivants (défilement, engagement) reprennent l'adresse nettoyée, jamais
+ * l'adresse complète du navigateur.
+ */
 export function trackGooglePageView(location: string, referrer: string | null): void {
-  if (!configured || !window.gtag) return;
-  const page = {
+  if (!configured || !window.dataLayer) return;
+  window.dataLayer.push({
+    event: GTM_PAGE_VIEW_EVENT,
     page_location: location,
     page_referrer: referrer ?? "",
     page_title: document.title,
-  };
-  // `set` vaut aussi pour les événements suivants (défilement, clics) : aucun ne reprend
-  // l'adresse complète du navigateur.
-  window.gtag("set", page);
-  window.gtag("event", "page_view", page);
+  });
 }
 
 /** Suspend les envois sans effacer les cookies (page où la mesure est exclue, puis retour). */
@@ -156,13 +153,18 @@ export function suspendGoogleAnalytics(): void {
 }
 
 /**
- * Retrait ou absence d'accord : plus aucun envoi si la balise est déjà chargée, et suppression des
- * cookies Google Analytics (`_ga`, `_ga_<flux>`, anciens `_gid` / `_gat`) sur ce domaine et ses
- * domaines parents, où `gtag.js` les dépose.
+ * Retrait ou absence d'accord : plus aucun envoi si le conteneur est déjà chargé (flux coupé et
+ * stockage de mesure refusé dans le Consent Mode), et suppression des cookies Google Analytics
+ * (`_ga`, `_ga_<flux>`, anciens `_gid` / `_gat`) sur ce domaine et ses domaines parents, où la
+ * balise Google les dépose.
  */
 export function revokeGoogleAnalytics(): void {
   if (typeof document === "undefined") return;
-  if (configured) setDisabled(true);
+  if (configured) {
+    setDisabled(true);
+    if (!storageRevoked) window.gtag?.("consent", "update", { analytics_storage: "denied" });
+    storageRevoked = true;
+  }
   const names = document.cookie
     .split(";")
     .map((pair) => pair.split("=")[0]!.trim())

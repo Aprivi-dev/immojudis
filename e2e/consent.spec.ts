@@ -9,7 +9,7 @@ import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 test.use({ storageState: { cookies: [], origins: [] } });
 
 const CONSENT_KEY = "immojudis:analytics-consent";
-const GTAG_URL = /googletagmanager\.com\/gtag\/js\?id=G-FVY2EYX5MP/;
+const GTM_URL = /googletagmanager\.com\/gtm\.js\?id=GTM-M2MWWPJQ/;
 
 type Tracker = { urls: string[] };
 
@@ -65,21 +65,33 @@ test("Refuser : aucune requête Google, le choix est mémorisé et le bandeau ne
   expect(google.urls).toEqual([]);
 });
 
-test("Accepter : la balise gtag est chargée, puis plus de bandeau au rechargement", async ({
+test("Accepter : le conteneur GTM est chargé, puis plus de bandeau au rechargement", async ({
   page,
 }) => {
   const google = await trackGoogle(page);
   await page.goto("/");
-  const gtagRequest = page.waitForRequest(GTAG_URL, { timeout: 15_000 });
+  const gtmRequest = page.waitForRequest(GTM_URL, { timeout: 15_000 });
   await page.getByRole("button", { name: "Accepter" }).click({ timeout: 15_000 });
-  await gtagRequest;
+  await gtmRequest;
 
   await expect(banner(page)).toHaveCount(0);
   expect(await storedChoice(page)).toMatchObject({ choice: "granted", version: 1 });
+  // La page vue destinée à GTM part dans dataLayer.
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() =>
+          ((window as unknown as { dataLayer?: unknown[] }).dataLayer ?? []).some(
+            (entry) => (entry as { event?: unknown }).event === "immojudis_page_view",
+          ),
+        ),
+      { timeout: 10_000 },
+    )
+    .toBe(true);
 
-  const reloadedGtag = page.waitForRequest(GTAG_URL, { timeout: 15_000 });
+  const reloadedGtm = page.waitForRequest(GTM_URL, { timeout: 15_000 });
   await page.reload();
-  await reloadedGtag;
+  await reloadedGtm;
   await page.waitForTimeout(1_500);
   await expect(banner(page)).toHaveCount(0);
   expect(google.urls.length).toBeGreaterThanOrEqual(2);
@@ -98,10 +110,10 @@ test("le focus revient au contenu principal après le choix, pas sur body", asyn
 
 async function acceptThenOpenPrivacy(page: Page, context: BrowserContext) {
   await page.goto("/");
-  const gtagRequest = page.waitForRequest(GTAG_URL, { timeout: 15_000 });
+  const gtmRequest = page.waitForRequest(GTM_URL, { timeout: 15_000 });
   await page.getByRole("button", { name: "Accepter" }).click({ timeout: 15_000 });
-  await gtagRequest;
-  // Le script intercepté ne dépose rien : on simule le cookie qu'aurait posé la vraie balise.
+  await gtmRequest;
+  // Le conteneur intercepté ne dépose rien : on simule le cookie qu'aurait posé la vraie balise.
   await context.addCookies([
     { name: "_ga", value: "GA1.1.123.456", url: new URL(page.url()).origin },
   ]);

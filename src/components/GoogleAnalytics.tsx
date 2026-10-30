@@ -5,7 +5,7 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
 import { usePublicPathname } from "@/hooks/use-public-pathname";
 import {
   enableGoogleAnalytics,
-  GA_SCRIPT_URL,
+  GTM_SCRIPT_URL,
   revokeGoogleAnalytics,
   sanitizeAnalyticsUrl,
   trackGooglePageView,
@@ -18,9 +18,10 @@ import {
 import { whenIdle } from "@/lib/when-idle";
 
 /**
- * Google Analytics, seulement après l'accord donné dans le bandeau (`CookieConsentBanner`) ou sur
- * la politique de confidentialité. Sans accord, aucun script n'est chargé ni aucun cookie déposé ;
- * au retrait de l'accord, les envois cessent et les cookies sont effacés.
+ * Google Tag Manager et la balise Google Analytics qu'il porte, seulement après l'accord donné dans
+ * le bandeau (`CookieConsentBanner`) ou sur la politique de confidentialité. Sans accord, aucun
+ * script n'est chargé ni aucun cookie déposé ; au retrait de l'accord, les envois cessent et les
+ * cookies sont effacés.
  *
  * Rendu une fois le navigateur inactif, et seulement après l'accord (`DeferredGoogleAnalytics`
  * n'importe même pas ce module sans accord, ni sur les pages exclues). Une page vue est envoyée à
@@ -59,5 +60,5 @@ export function GoogleAnalytics() {
   }, [state, pathname]);
 
   if (state !== "granted") return null;
-  return <Script id="google-analytics" src={GA_SCRIPT_URL} strategy="afterInteractive" />;
+  return <Script id="google-tag-manager" src={GTM_SCRIPT_URL} strategy="afterInteractive" />;
 }

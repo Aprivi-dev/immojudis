@@ -1,27 +1,32 @@
 # Réglages Google Analytics 4 à vérifier dans la console
 
-Le site charge Google Analytics 4 (flux `G-FVY2EYX5MP`) **seulement après l'accord du visiteur** (bandeau de
-consentement ou politique de confidentialité). Sans accord, aucun script Google n'est chargé et aucun cookie
-n'est déposé ; au retrait de l'accord, les envois cessent et les cookies `_ga*` sont effacés
-(`src/lib/google-analytics.ts`, `src/components/GoogleAnalytics.tsx`).
+Le site charge Google Analytics 4 (flux `G-FVY2EYX5MP`) par le conteneur Google Tag Manager `GTM-M2MWWPJQ`,
+**seulement après l'accord du visiteur** (bandeau de consentement ou politique de confidentialité). Sans
+accord, aucun script Google n'est chargé et aucun cookie n'est déposé ; au retrait de l'accord, les envois
+cessent et les cookies `_ga*` sont effacés (`src/lib/google-analytics.ts`, `src/components/GoogleAnalytics.tsx`).
 
-Une partie de la configuration vit **dans le code**, l'autre **dans la console Google Analytics**, que le
-dépôt ne peut pas lire. Ce runbook liste ce que le propriétaire doit contrôler dans la console. **Il ne dit
-pas que ces réglages sont faits** : cocher chaque ligne après l'avoir regardée à l'écran, puis consigner la
-date et la personne (voir « Consigner »).
+La configuration vit à trois endroits : **le code**, **le conteneur GTM** (voir
+`docs/runbooks/google-tag-manager.md`) et **la console Google Analytics**, que le dépôt ne peut pas lire. Ce
+runbook liste ce que le propriétaire doit contrôler dans la console. **Il ne dit pas que ces réglages sont
+faits** : cocher chaque ligne après l'avoir regardée à l'écran, puis consigner la date et la personne (voir
+« Consigner »).
 
 ## Ce que le code fait déjà (aucune action)
 
-- Pas de page vue automatique (`send_page_view: false`) : chaque page vue part avec une adresse nettoyée par
+- Chaque page vue est publiée dans `dataLayer` (`immojudis_page_view`) avec une adresse nettoyée par
   `sanitizeAnalyticsUrl` (ni jeton de partage, ni code de connexion, ni paramètre de recherche ; seuls les
-  paramètres de campagne `utm_*`, `gclid`, `gbraid`, `wbraid` restent).
+  paramètres de campagne `utm_*` sans arobase restent).
 - Consent Mode : stockage publicitaire refusé (`ad_storage`, `ad_user_data`, `ad_personalization` à
   `denied`), seul le stockage de mesure est accordé puisque la personne l'a accepté.
-- `allow_google_signals: false` et `allow_ad_personalization_signals: false`.
-- Cookies de 13 mois au plus, sans prolongation à chaque visite (`cookie_expires`, `cookie_update: false`).
 - L'opposition à la mesure d'audience l'emporte sur l'accord.
 
-Le code ne peut pas empêcher ce que la console réactive : d'où la liste suivante.
+## Ce que porte le conteneur GTM (à vérifier dans GTM)
+
+Pas de page vue automatique (`send_page_view: false`), `allow_google_signals: false`,
+`allow_ad_personalization_signals: false`, cookies de 13 mois au plus sans prolongation à chaque visite
+(`cookie_expires`, `cookie_update: false`). Détail et contrôle : `docs/runbooks/google-tag-manager.md`.
+
+Ni le code ni GTM ne peuvent empêcher ce que la console réactive : d'où la liste suivante.
 
 ## À vérifier dans la console (Administration)
 
@@ -79,7 +84,7 @@ améliorée suffit), et ce qui a été changé. Ne pas écrire « conforme » sa
 ## Vérifier côté site
 
 Rien à lancer en production. Les tests du dépôt couvrent l'absence de requête Google avant accord, le refus
-sans requête, et le chargement après accord : `src/lib/google-analytics.test.ts`,
+sans requête, et le chargement du conteneur après accord : `src/lib/google-analytics.test.ts`,
 `src/components/GoogleAnalytics.test.tsx`, `src/lib/security-headers.test.ts`. Pour un contrôle manuel,
 ouvrir le site dans une fenêtre privée : tant que le bandeau n'a pas été accepté, l'onglet Réseau ne montre
 aucune requête vers `googletagmanager.com` ni `google-analytics.com`, et aucun cookie `_ga` n'existe.
