@@ -4,7 +4,8 @@ import type { AuctionSale } from "@/lib/types";
  * Sources retirées du catalogue (interrupteur `auction_source_state.catalogue_withdrawn`, posé et levé
  * par `public.set_catalogue_source_withdrawal`, voir `docs/roadmaps/conditions-de-lancement-2026-10-10.md`).
  *
- * Vench est retirée depuis le 29/10/2026 (migration 20261109153217_withdraw_vench_source.sql).
+ * Vench est retirée depuis le 29/10/2026 (migration 20261109153217_withdraw_vench_source.sql), Petites Affiches
+ * depuis le 30/10/2026 (20261110093117_withdraw_petites_affiches_source.sql).
  * La base masque les ventes dont TOUTES les sources sont retirées. Ce module couvre le reste : une vente
  * fusionnée avec une autre source reste visible, mais ses liens, photos et pièces hébergés par une source
  * retirée ne s'affichent pas. L'état par défaut est « aucune source retirée » : si la base ne répond pas ou
@@ -16,6 +17,7 @@ export const DEFAULT_WITHDRAWN_SOURCES: readonly string[] = [];
 const SOURCE_HOSTS: Record<string, readonly string[]> = {
   licitor: ["licitor.com"],
   vench: ["vench.fr"],
+  petites_affiches: ["petitesaffiches.fr"],
 };
 
 const CACHE_MS = 60_000;

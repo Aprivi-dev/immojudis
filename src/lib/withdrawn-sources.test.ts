@@ -149,6 +149,25 @@ describe("Vench retirée (29/10/2026)", () => {
   });
 });
 
+describe("Petites Affiches retirée (30/10/2026)", () => {
+  afterEach(() => resetWithdrawnSources());
+
+  it("les fiches et photos hébergées par Petites Affiches sont reconnues", () => {
+    setWithdrawnSources(["petites_affiches", "vench"]);
+    expect(
+      isWithdrawnSourceUrl(
+        "https://www.petitesaffiches.fr/encheres-immobilieres/vente/immobiliere/j/un-appartement-a-nancy-166831.html",
+      ),
+    ).toBe(true);
+    expect(
+      isWithdrawnSourceUrl(
+        "https://www.petitesaffiches.fr/encheres-immobilieres/upload/lots/166672/v74458.jpg",
+      ),
+    ).toBe(true);
+    expect(isWithdrawnSourceUrl("https://avoventes.fr/enchere/1")).toBe(false);
+  });
+});
+
 describe("photo copiée par Immojudis d'une source retirée", () => {
   const MIRROR = {
     path640: "11111111-1111-1111-1111-111111111111/abc-640.webp",
