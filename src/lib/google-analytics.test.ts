@@ -11,7 +11,6 @@ import { setAudienceOptOut } from "@/lib/audience-opt-out";
 import {
   enableGoogleAnalytics,
   GA_MEASUREMENT_ID,
-  GTM_PAGE_VIEW_EVENT,
   revokeGoogleAnalytics,
   sanitizeAnalyticsUrl,
   suspendGoogleAnalytics,
@@ -168,10 +167,11 @@ function gtagCalls(): unknown[][] {
 }
 
 describe("Google Tag Manager", () => {
-  it("démarre le conteneur avec le stockage publicitaire refusé et sans aucune configuration", () => {
+  it("pose les réglages avant de démarrer le conteneur : ni page vue automatique ni adresse brute", () => {
     window.dataLayer = [];
     window.history.pushState({}, "", "/sales?q=secret&gclid=G1&utm_source=lettre#access_token=x");
     enableGoogleAnalytics();
+    window.history.pushState({}, "", "/");
     const calls = gtagCalls();
     expect(calls[0]).toEqual([
       "consent",
@@ -183,26 +183,34 @@ describe("Google Tag Manager", () => {
         analytics_storage: "granted",
       },
     ]);
-    expect(calls[1]![0]).toBe("js");
-    // La balise Google et ses réglages vivent dans le conteneur : le code n'envoie ni `config` ni
-    // adresse, seulement les pages vues nettoyées.
+    // Le conteneur configure la destination GA4 dès `js` : les réglages doivent le précéder.
+    expect(calls[1]![0]).toBe("set");
+    expect(calls[1]![1]).toMatchObject({
+      page_location: `${ORIGIN}/sales?utm_source=lettre`,
+      send_page_view: false,
+      cookie_update: false,
+      allow_google_signals: false,
+      allow_ad_personalization_signals: false,
+    });
+    // 13 mois au plus (plafond CNIL).
+    expect((calls[1]![1] as { cookie_expires: number }).cookie_expires).toBeLessThanOrEqual(
+      13 * 31 * 24 * 60 * 60,
+    );
+    expect(calls[2]![0]).toBe("js");
     expect(calls.some((call) => call[0] === "config" || call[0] === "event")).toBe(false);
     expect(JSON.stringify(window.dataLayer)).not.toContain("secret");
-    window.history.pushState({}, "", "/");
   });
 
-  it("publie chaque page vue dans dataLayer avec l'adresse nettoyée", () => {
+  it("envoie chaque page vue avec l'adresse nettoyée, aussi pour les événements suivants", () => {
     enableGoogleAnalytics();
     window.dataLayer = [];
-    document.title = "Ventes - Immojudis";
     trackGooglePageView(`${ORIGIN}/sales`, null);
-    expect(window.dataLayer).toEqual([
-      {
-        event: GTM_PAGE_VIEW_EVENT,
-        page_location: `${ORIGIN}/sales`,
-        page_referrer: "",
-        page_title: "Ventes - Immojudis",
-      },
+    const sent = gtagCalls();
+    expect(sent[0]).toEqual(["set", expect.objectContaining({ page_location: `${ORIGIN}/sales` })]);
+    expect(sent[1]).toEqual([
+      "event",
+      "page_view",
+      expect.objectContaining({ page_location: `${ORIGIN}/sales`, page_referrer: "" }),
     ]);
   });
 
