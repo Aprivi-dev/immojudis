@@ -1533,9 +1533,26 @@ def _hydrate_known_unchanged_sales(
             continue
         _backfill_raw_sale_from_known_detail(sale, known)
         restore_known_detail_blocks(sale, known_details)  # every source keeps the blocks of its stored detail
-        if sale.get("_detail_fetch_failed") and len(str(known.get("description") or "")) > len(str(sale.get("description") or "")):
+        _restore_known_detail_gallery(sale, known)
+        # A list card carries the short text: the stored detail keeps its full description (notaires, 30/10/2026).
+        if len(str(known.get("description") or "")) > len(str(sale.get("description") or "")):
             sale["description"] = known["description"]
     return skipped
+
+
+def _restore_known_detail_gallery(sale: dict[str, object], known: dict[str, object]) -> None:
+    """Keep the gallery of the stored detail when the card was not re-read in detail.
+
+    A list card carries the main photo only (notaires: ``urlPhotoPrincipale``). Backfill fills empty fields
+    only, so that one photo replaced the detail's gallery at every collection that skipped the detail page:
+    on 30/10/2026, 179 of the 200 Immo-Interactif sales showed one photo out of 15 to 19.
+    """
+    known_payload = known.get("raw_payload")
+    stored = known_payload.get("source_images") if isinstance(known_payload, dict) else None
+    card = sale.get("source_images")
+    card_images = card if isinstance(card, list) else []
+    if isinstance(stored, list) and len(stored) > len(card_images):
+        sale["source_images"] = list(stored)
 
 
 def _preserve_known_enrichment_payloads(
