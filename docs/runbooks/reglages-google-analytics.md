@@ -13,19 +13,17 @@ faits** : cocher chaque ligne après l'avoir regardée à l'écran, puis consign
 
 ## Ce que le code fait déjà (aucune action)
 
-- Chaque page vue est publiée dans `dataLayer` (`immojudis_page_view`) avec une adresse nettoyée par
-  `sanitizeAnalyticsUrl` (ni jeton de partage, ni code de connexion, ni paramètre de recherche ; seuls les
-  paramètres de campagne `utm_*` sans arobase restent).
+- Les réglages sont posés par `gtag('set')` avant le démarrage du conteneur GTM : pas de page vue
+  automatique (`send_page_view: false`), `allow_google_signals: false`,
+  `allow_ad_personalization_signals: false`, cookies de 13 mois au plus sans prolongation à chaque visite
+  (`cookie_expires`, `cookie_update: false`).
+- Chaque page vue part avec une adresse nettoyée par `sanitizeAnalyticsUrl` (ni jeton de partage, ni code
+  de connexion, ni paramètre de recherche ; seuls les paramètres de campagne `utm_*` sans arobase restent).
 - Consent Mode : stockage publicitaire refusé (`ad_storage`, `ad_user_data`, `ad_personalization` à
   `denied`), seul le stockage de mesure est accordé puisque la personne l'a accepté.
 - L'opposition à la mesure d'audience l'emporte sur l'accord.
 
-## Ce que porte le conteneur GTM (à vérifier dans GTM)
-
-Pas de page vue automatique (`send_page_view: false`), `allow_google_signals: false`,
-`allow_ad_personalization_signals: false`, cookies de 13 mois au plus sans prolongation à chaque visite
-(`cookie_expires`, `cookie_update: false`). Détail et contrôle : `docs/runbooks/google-tag-manager.md`.
-
+Le conteneur GTM ne doit porter aucune balise Google Analytics (`docs/runbooks/google-tag-manager.md`).
 Ni le code ni GTM ne peuvent empêcher ce que la console réactive : d'où la liste suivante.
 
 ## À vérifier dans la console (Administration)
@@ -58,19 +56,28 @@ de libellé.
 
 _Administration > Flux de données > flux Web > Mesure améliorée_ (engrenage) :
 
-- [ ] **Changements de page basés sur l'historique de navigation : désactivé.** Sinon chaque navigation
+- [ ] **Changements de page basés sur l'historique de navigation : désactivé** (contrôlé le 30/10/2026 :
+      **activé**). Sinon chaque navigation
       compte deux pages vues, la seconde avec l'adresse complète (raison inscrite dans `google-analytics.ts`).
 - [ ] **Téléchargements de fichiers : désactivé** (les liens des pièces peuvent porter un jeton d'accès).
 - [ ] **Clics sortants : désactivé.**
 - [ ] **Interactions avec les formulaires : désactivé.**
-- [ ] **Recherche sur le site : désactivé** (les recherches du site vont dans l'adresse et le code ne les
-      transmet pas).
+- [ ] **Recherche sur le site : désactivé.** Contrôlé le 30/10/2026 : elle est **activée** et envoie un
+      événement `view_search_results` avec le paramètre `q` de l'adresse en clair (`search_term`), ce que
+      le nettoyage des adresses du code ne peut pas empêcher.
 - [ ] Défilement et engagement vidéo : noter le choix fait (ils n'envoient pas d'adresse complète).
 
 Une case de la mesure améliorée réactivée par erreur contourne le nettoyage des adresses du code : c'est le
 réglage le plus risqué de la liste.
 
-### 4. Accès
+### 4. Données fournies par l'utilisateur
+
+- [ ] _Collecte et modification des données > Collecte des données fournies par l'utilisateur_ :
+      **désactivée**. Contrôlé le 30/10/2026 : la détection automatique des adresses email, numéros de
+      téléphone et adresses postales est **activée** sur le flux. Elle n'a pas de raison d'être sur un
+      site sans publicité, et la politique de confidentialité ne l'annonce pas.
+
+### 5. Accès
 
 - [ ] _Gestion des accès au compte et à la propriété_ : seules les personnes habilitées y figurent.
 - [ ] Les exports et rapports ne sont pas partagés par un lien public.
