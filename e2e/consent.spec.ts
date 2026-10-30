@@ -76,14 +76,15 @@ test("Accepter : le conteneur GTM est chargé, puis plus de bandeau au rechargem
 
   await expect(banner(page)).toHaveCount(0);
   expect(await storedChoice(page)).toMatchObject({ choice: "granted", version: 1 });
-  // La page vue destinée à GTM part dans dataLayer.
+  // La page vue part dans dataLayer, avec l'adresse nettoyée.
   await expect
     .poll(
       () =>
         page.evaluate(() =>
-          ((window as unknown as { dataLayer?: unknown[] }).dataLayer ?? []).some(
-            (entry) => (entry as { event?: unknown }).event === "immojudis_page_view",
-          ),
+          ((window as unknown as { dataLayer?: unknown[] }).dataLayer ?? []).some((entry) => {
+            const call = Array.from(entry as ArrayLike<unknown>);
+            return call[0] === "event" && call[1] === "page_view";
+          }),
         ),
       { timeout: 10_000 },
     )

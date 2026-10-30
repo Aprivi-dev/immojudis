@@ -1,83 +1,40 @@
 # Google Tag Manager, Google Analytics 4 et Search Console
 
-Le site charge le conteneur Google Tag Manager `GTM-M2MWWPJQ`, qui porte la balise Google Analytics 4
-(flux `G-FVY2EYX5MP`). Comme avant, **rien n'est chargé sans l'accord du visiteur** (bandeau ou
-politique de confidentialité) : sans accord, ni `gtm.js` ni `gtag/js` ne sont demandés et aucun cookie
-n'est déposé (`src/lib/google-analytics.ts`, `src/components/GoogleAnalytics.tsx`).
+Le site charge le conteneur Google Tag Manager `GTM-M2MWWPJQ`, auquel le flux Google Analytics 4
+`G-FVY2EYX5MP` est relié comme destination. Comme avant, **rien n'est chargé sans l'accord du visiteur**
+(bandeau ou politique de confidentialité) : sans accord, `gtm.js` n'est pas demandé et aucun cookie n'est
+déposé (`src/lib/google-analytics.ts`, `src/components/GoogleAnalytics.tsx`).
 
 ## Qui fait quoi
 
-| Où                       | Quoi                                                                                                                                                                                                                                                   |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Code (dépôt)             | Charge `gtm.js` après accord ; pose le Consent Mode (stockage publicitaire refusé, stockage de mesure accordé) ; publie une page vue `immojudis_page_view` à chaque changement de chemin, avec l'adresse nettoyée ; coupe tout au retrait de l'accord. |
-| Conteneur GTM            | Déclenche la balise Google `G-FVY2EYX5MP` et l'événement GA4 `page_view` **sur `immojudis_page_view` seulement**, avec les réglages de confidentialité ci-dessous.                                                                                     |
-| Console Google Analytics | Conservation, signaux Google, mesure améliorée : `docs/runbooks/reglages-google-analytics.md`.                                                                                                                                                         |
-| Search Console           | Propriété Domaine vérifiée par DNS ; liaison avec Google Analytics (section dédiée).                                                                                                                                                                   |
+| Où                       | Quoi                                                                                                                                                                                                                           |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Code (dépôt)             | Charge `gtm.js` après accord ; pose le Consent Mode et **tous les réglages GA4** par `gtag('set')` avant `gtag('js')` ; envoie chaque page vue (`gtag('event', 'page_view')`) avec l'adresse nettoyée ; coupe tout au retrait. |
+| Conteneur GTM            | Relie la destination GA4 `G-FVY2EYX5MP`. **Aucune balise Google Analytics à ajouter** (voir plus bas).                                                                                                                         |
+| Console Google Analytics | Conservation, signaux Google, mesure améliorée, collecte des données fournies : `docs/runbooks/reglages-google-analytics.md`.                                                                                                  |
+| Search Console           | Propriété Domaine vérifiée par DNS ; liaison avec Google Analytics (section dédiée).                                                                                                                                           |
 
-Ce que le code publie dans `dataLayer`, à chaque page :
+Réglages posés par le code, avant le démarrage du conteneur : `send_page_view: false`, `page_location`
+nettoyée, `cookie_expires` de 13 mois, `cookie_update: false`, `allow_google_signals: false`,
+`allow_ad_personalization_signals: false` ; Consent Mode : `ad_storage`, `ad_user_data` et
+`ad_personalization` refusés, `analytics_storage` accordé.
 
-```js
-{ event: "immojudis_page_view", page_location: "https://immojudis.com/sales?utm_source=…", page_referrer: "…", page_title: "…" }
-```
+### Pourquoi `set` avant `js`, et pas `config`
 
-`page_location` ne contient ni jeton de partage, ni code de connexion, ni paramètre de recherche (seuls les
-`utm_*` sans arobase restent). Les pages `/admin`, `/compte`, `/contribuer`, `/login` et `/mes-droits` ne
-publient rien.
+Le conteneur configure la destination GA4 dès son démarrage (`gtag('js')`). Contrôlé le 30/10/2026 contre
+le conteneur publié : sans réglage préalable, il envoie aussitôt une page vue avec l'adresse brute du
+navigateur (paramètres de recherche, jetons) et des cookies de 400 jours ; un `gtag('config', …)`, même
+envoyé juste après `js`, ne l'empêche pas. Les mêmes réglages posés par `gtag('set', …)` **avant** `js`
+suppriment cette page vue et ramènent les cookies à 13 mois.
 
-## Configuration du conteneur
+## Ce qu'il ne faut pas faire dans GTM
 
-Deux façons équivalentes. Dans les deux cas, terminer par « Vérifier » puis « Publier ».
-
-### A. Import (le plus rapide)
-
-GTM → Administration → **Importer un conteneur** → fichier `docs/runbooks/google-tag-manager-conteneur.json`
-→ espace de travail par défaut → **Fusionner** → **Renommer les éléments en conflit**. Relire ensuite
-chaque élément avec la liste B : l'import doit donner exactement cela.
-
-### B. À la main
-
-**Variables** (Variables → Variables définies par l'utilisateur → Nouvelle → _Variable de couche de
-données_, version 2) :
-
-- `DLV - page_location` : nom `page_location`
-- `DLV - page_referrer` : nom `page_referrer`
-- `DLV - page_title` : nom `page_title`
-
-**Déclencheur** : `CE - immojudis_page_view`, type _Événement personnalisé_, nom de l'événement
-`immojudis_page_view`, « Tous les événements personnalisés ».
-
-**Balise 1 : `Google tag - GA4 G-FVY2EYX5MP`**, type _Balise Google_, ID de balise `G-FVY2EYX5MP`,
-déclencheur `CE - immojudis_page_view` (**pas** « Initialisation - Toutes les pages » : la balise
-partirait avec l'adresse complète du navigateur). Paramètres de configuration :
-
-| Paramètre                          | Valeur                    | Pourquoi                                                    |
-| ---------------------------------- | ------------------------- | ----------------------------------------------------------- |
-| `send_page_view`                   | `false`                   | La page vue part par la balise 2, une seule fois            |
-| `page_location`                    | `{{DLV - page_location}}` | Adresse nettoyée, reprise aussi par les événements suivants |
-| `page_referrer`                    | `{{DLV - page_referrer}}` | Provenance nettoyée                                         |
-| `page_title`                       | `{{DLV - page_title}}`    |                                                             |
-| `cookie_expires`                   | `33696000`                | 13 mois (plafond CNIL) au lieu de 2 ans                     |
-| `cookie_update`                    | `false`                   | Pas de prolongation à chaque visite                         |
-| `allow_google_signals`             | `false`                   | Pas de recoupement avec les comptes Google                  |
-| `allow_ad_personalization_signals` | `false`                   | Pas de personnalisation publicitaire                        |
-
-Paramètres avancés → Priorité de déclenchement : `10` (elle passe avant la balise 2).
-
-**Balise 2 : `GA4 - page_view`**, type _Google Analytics : événement GA4_, ID de mesure `G-FVY2EYX5MP`, nom
-d'événement `page_view`, paramètres `page_location`, `page_referrer`, `page_title` (mêmes variables),
-déclencheur `CE - immojudis_page_view`.
-
-**Paramètres de consentement** : laisser « Non défini » sur les deux balises ; les balises Google lisent
-d'elles-mêmes le Consent Mode posé par le code.
-
-### Ce qu'il ne faut pas faire dans GTM
-
-- Ne pas ajouter de déclencheur « Toutes les pages », « Initialisation » ou « Modification de l'historique »
-  aux balises Google : elles enverraient l'adresse brute (jetons, recherches) ou compteraient chaque page
-  deux fois.
-- Ne pas créer de variable « JavaScript personnalisé » ni de « Variable JavaScript » lisant l'adresse
-  (`{{Page URL}}`, `{{Page Path}}`) dans une balise : la première est bloquée en production par la CSP
-  (`'unsafe-eval'` refusé), la seconde contourne le nettoyage des adresses.
+- **N'ajouter aucune balise « Balise Google » ni « Événement GA4 » pour `G-FVY2EYX5MP`** : le site envoie
+  déjà les pages vues ; une balise de plus les doublerait, et une balise sur « Toutes les pages » ou
+  « Initialisation » les enverrait avec l'adresse brute.
+- Ne pas créer de variable « JavaScript personnalisé » (bloquée en production par la CSP, `'unsafe-eval'`
+  refusé) ni de variable qui lit l'adresse (`{{Page URL}}`, `{{Page Path}}`) dans une balise : elle
+  contournerait le nettoyage des adresses.
 - Ne pas ajouter de balise publicitaire (Google Ads, Meta, etc.) : la politique de confidentialité et le
   bandeau annoncent une mesure d'audience sans publicité. Toute nouvelle balise demande une revue (finalité,
   texte du bandeau, sources `connect-src` de `src/lib/security-headers.ts`), puisqu'une publication GTM ne
@@ -85,34 +42,39 @@ d'elles-mêmes le Consent Mode posé par le code.
 - Garder la liste des utilisateurs du conteneur (Administration → Gestion des utilisateurs) réduite aux
   personnes habilitées : publier dans GTM revient à mettre du code en production.
 
+## Le diagnostic GTM « Taux de consentement de 0 % »
+
+GTM signale un taux de consentement de 0 % parce que les trois signaux **publicitaires** (`ad_storage`,
+`ad_user_data`, `ad_personalization`) sont toujours refusés : c'est voulu, le site n'a aucune publicité ni
+remarketing. Le signal de **mesure** (`analytics_storage`) est accordé pour chaque visiteur qui accepte
+(paramètre `gcs=G101` des requêtes Google Analytics) : la mesure d'audience n'est pas affectée. Ce
+diagnostic vise les annonceurs ; il n'y a rien à corriger.
+
 ## Search Console
 
 - **Vérification : déjà faite par DNS, rien à changer.** `immojudis.com` porte l'enregistrement TXT
   `google-site-verification=…` (propriété _Domaine_, voir `docs/vercel_setup.md`, étape 5). Elle couvre
   `www`, `http` et les sous-domaines et ne dépend d'aucun script.
 - **Ne pas utiliser la méthode de vérification « Google Tag Manager »** : le conteneur n'est chargé
-  qu'après l'accord du visiteur, et le robot de Google ne donne jamais cet accord ; la vérification
-  échouerait ou sauterait plus tard.
-- **Liaison avec Google Analytics** (à faire une fois, dans la console, pas dans GTM) : Google Analytics →
-  Administration → Liens vers les produits → **Associations à Search Console** → Associer → choisir la
-  propriété `immojudis.com` → flux Web `G-FVY2EYX5MP` → Envoyer. Il faut être propriétaire vérifié dans
-  Search Console et éditeur dans Google Analytics. Les rapports « Search Console » apparaissent ensuite
-  dans Google Analytics (Rapports → Bibliothèque → publier la collection « Search Console »).
+  qu'après l'accord du visiteur, et le robot de Google ne donne jamais cet accord.
+- **Liaison avec Google Analytics** (une fois, dans la console) : Google Analytics → Administration →
+  Liens vers les produits → **Associations à Search Console** → Associer → propriété `immojudis.com` → flux
+  Web `G-FVY2EYX5MP` → Envoyer. Il faut être propriétaire vérifié dans Search Console et éditeur dans
+  Google Analytics.
 
 ## Vérifier
 
-1. GTM → **Prévisualiser** → `https://immojudis.com`. Dans l'onglet ouvert, **accepter le bandeau** : sans
-   accord, le conteneur n'est pas chargé et Tag Assistant ne se connecte pas (c'est voulu).
-2. Dans Tag Assistant, chaque page doit montrer un événement `immojudis_page_view` avec les deux balises
-   déclenchées. Aucune balise ne doit partir sur `Container Loaded`, `DOM Ready` ou `Window Loaded`.
-3. Ouvrir une adresse avec un paramètre de recherche (`/sales?departement=75&utm_source=test`) : la
-   variable `DLV - page_location` doit valoir `…/sales?utm_source=test`.
-4. Google Analytics → Rapports → Temps réel : la visite apparaît avec l'adresse nettoyée.
-5. Fenêtre privée sans accepter le bandeau : l'onglet Réseau ne montre aucune requête vers
-   `googletagmanager.com` ni `google-analytics.com`, et aucun cookie `_ga` n'existe.
+1. Fenêtre privée, `https://immojudis.com/sales?departement=75&utm_source=test` : tant que le bandeau n'a
+   pas été accepté, l'onglet Réseau ne montre aucune requête vers `googletagmanager.com` ni
+   `google-analytics.com`, et aucun cookie `_ga` n'existe.
+2. Accepter : une requête `g/collect` part avec `en=page_view` et `dl=…/sales?utm_source=test` (sans
+   `departement`). Aucune autre page vue ne doit porter l'adresse complète.
+3. Les cookies `_ga` et `_ga_FVY2EYX5MP` expirent dans environ 13 mois (pas 2 ans ni 400 jours).
+4. Google Analytics → Rapports → Temps réel : la visite apparaît.
 
 Les tests du dépôt couvrent le comportement du code (`src/lib/google-analytics.test.ts`,
-`src/components/GoogleAnalytics.test.tsx`) ; le contenu du conteneur, lui, ne se vérifie que dans GTM.
+`src/components/GoogleAnalytics.test.tsx`, `e2e/consent.spec.ts`) ; le contenu du conteneur, lui, ne se
+vérifie que dans GTM.
 
 ## Consigner
 
