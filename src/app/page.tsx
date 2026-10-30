@@ -42,9 +42,9 @@ export function generateMetadata(): Metadata {
 
 // La page est générée à l'avance puis rafraîchie par Next.js : sans valeur explicite, un rendu fait
 // pendant une panne (ligne de chiffres absente) resterait jusqu'au prochain déploiement.
-// 5 minutes, comme la première page du catalogue (FIRST_PAGE_REVALIDATE_SECONDS) ; Next.js veut
-// ici un littéral.
-export const revalidate = 300;
+// Une heure (30/10/2026, écritures ISR du forfait Vercel) : les chiffres de l'accueil bougent peu d'une
+// heure à l'autre ; Next.js veut ici un littéral.
+export const revalidate = 3600;
 
 export default async function Page() {
   const [summary, departments, launchOffer] = await Promise.all([

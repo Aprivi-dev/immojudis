@@ -8,9 +8,9 @@ import { PricesUnavailable, PricesView } from "./prices-view";
 
 // Aucune lecture ne se fait tant que `PUBLIC_ADJUDICATION_PRICES_ENABLED` n'est pas exactement
 // « true » : la page répond alors 404 (avant tout envoi, donc avec un vrai statut 404 et
-// `noindex`). Ouverte, elle est rafraîchie toutes les 5 minutes (Next.js veut un littéral ici) :
+// `noindex`). Ouverte, elle est rafraîchie toutes les heures (Next.js veut un littéral ici) :
 // une lecture ratée pendant une panne ne reste donc pas jusqu'au prochain déploiement.
-export const revalidate = 300;
+export const revalidate = 3600;
 
 const NOT_INDEXED = { index: false, follow: false } as const;
 

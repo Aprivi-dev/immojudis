@@ -340,8 +340,8 @@ describe("public sale lookup", () => {
       await lookupPublicSale(ID.toUpperCase());
       expect(publicSaleCacheTag(ID.toUpperCase())).toBe(`sale-${ID}`);
       expect([...mocks.store.values()][0].tags).toEqual([`sale-${ID}`, "public-sales"]);
-      expect(mocks.revalidateSeconds).toEqual([300]);
-      expect(PUBLIC_SALE_REVALIDATE_SECONDS).toBe(300);
+      expect(mocks.revalidateSeconds).toEqual([3600]);
+      expect(PUBLIC_SALE_REVALIDATE_SECONDS).toBe(3600);
     });
 
     it("never stores a database error nor the unavailable answer", async () => {

@@ -208,8 +208,8 @@ describe("public sale page", () => {
     expect((await generateMetadata({ params })).robots).toEqual({ index: false, follow: false });
   });
 
-  it("is generated on demand and refreshed at most every five minutes", async () => {
-    expect(revalidate).toBe(300);
+  it("is generated on demand and refreshed at most every hour", async () => {
+    expect(revalidate).toBe(3600);
     expect(await generateStaticParams()).toEqual([]);
   });
 });

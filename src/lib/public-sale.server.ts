@@ -81,7 +81,7 @@ async function fetchMergedSaleTarget(
  * re-read. The same value drives `export const revalidate` on `app/sales/[id]/page.tsx`
  * (Next.js requires a literal there, so the page restates it and a test keeps them equal).
  */
-export const PUBLIC_SALE_REVALIDATE_SECONDS = 300;
+export const PUBLIC_SALE_REVALIDATE_SECONDS = 3600;
 
 /**
  * Cache tag of one sale. The pipeline invalidates it through
