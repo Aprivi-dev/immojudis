@@ -38,7 +38,7 @@ describe("browser security headers", () => {
     expect(values["Strict-Transport-Security"]).toBeUndefined();
   });
 
-  it("lets the historical CSP load Google Analytics (gtag.js) and reach its collection hosts", () => {
+  it("lets the historical CSP load Google Tag Manager, Google Analytics and their collection hosts", () => {
     const policy = headerMap(buildSecurityHeaders({ isProduction: true }))[
       "Content-Security-Policy"
     ]!;

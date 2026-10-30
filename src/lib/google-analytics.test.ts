@@ -11,6 +11,7 @@ import { setAudienceOptOut } from "@/lib/audience-opt-out";
 import {
   enableGoogleAnalytics,
   GA_MEASUREMENT_ID,
+  GTM_PAGE_VIEW_EVENT,
   revokeGoogleAnalytics,
   sanitizeAnalyticsUrl,
   suspendGoogleAnalytics,
@@ -160,13 +161,19 @@ describe("sanitizeAnalyticsUrl", () => {
   });
 });
 
-describe("gtag", () => {
-  it("se configure sans page vue automatique, ni signaux Google, ni stockage publicitaire", () => {
+function gtagCalls(): unknown[][] {
+  return (window.dataLayer ?? [])
+    .filter((entry) => !Array.isArray(entry) && typeof entry === "object" && "length" in entry!)
+    .map((entry) => Array.from(entry as ArrayLike<unknown>));
+}
+
+describe("Google Tag Manager", () => {
+  it("démarre le conteneur avec le stockage publicitaire refusé et sans aucune configuration", () => {
+    window.dataLayer = [];
     window.history.pushState({}, "", "/sales?q=secret&gclid=G1&utm_source=lettre#access_token=x");
     enableGoogleAnalytics();
-    window.history.pushState({}, "", "/");
-    const calls = (window.dataLayer ?? []).map((entry) => Array.from(entry as ArrayLike<unknown>));
-    expect(calls).toContainEqual([
+    const calls = gtagCalls();
+    expect(calls[0]).toEqual([
       "consent",
       "default",
       {
@@ -176,29 +183,26 @@ describe("gtag", () => {
         analytics_storage: "granted",
       },
     ]);
-    const config = calls.find((call) => call[0] === "config");
-    expect(config?.[1]).toBe(GA_MEASUREMENT_ID);
-    // L'adresse nettoyée part avec `config` lui-même, jamais l'adresse brute du navigateur.
-    expect(config?.[2]).toMatchObject({
-      page_location: `${ORIGIN}/sales?utm_source=lettre`,
-      send_page_view: false,
-      cookie_update: false,
-      allow_google_signals: false,
-      allow_ad_personalization_signals: false,
-    });
-    // 13 mois au plus (plafond CNIL).
-    expect((config?.[2] as { cookie_expires: number }).cookie_expires).toBeLessThanOrEqual(
-      13 * 31 * 24 * 60 * 60,
-    );
+    expect(calls[1]![0]).toBe("js");
+    // La balise Google et ses réglages vivent dans le conteneur : le code n'envoie ni `config` ni
+    // adresse, seulement les pages vues nettoyées.
+    expect(calls.some((call) => call[0] === "config" || call[0] === "event")).toBe(false);
+    expect(JSON.stringify(window.dataLayer)).not.toContain("secret");
+    window.history.pushState({}, "", "/");
+  });
 
+  it("publie chaque page vue dans dataLayer avec l'adresse nettoyée", () => {
+    enableGoogleAnalytics();
     window.dataLayer = [];
+    document.title = "Ventes - Immojudis";
     trackGooglePageView(`${ORIGIN}/sales`, null);
-    const sent = window.dataLayer.map((entry) => Array.from(entry as ArrayLike<unknown>));
-    expect(sent[0]).toEqual(["set", expect.objectContaining({ page_location: `${ORIGIN}/sales` })]);
-    expect(sent[1]).toEqual([
-      "event",
-      "page_view",
-      expect.objectContaining({ page_location: `${ORIGIN}/sales`, page_referrer: "" }),
+    expect(window.dataLayer).toEqual([
+      {
+        event: GTM_PAGE_VIEW_EVENT,
+        page_location: `${ORIGIN}/sales`,
+        page_referrer: "",
+        page_title: "Ventes - Immojudis",
+      },
     ]);
   });
 
@@ -221,17 +225,22 @@ describe("gtag", () => {
     document.cookie = "_ga_FVY2EYX5MP=GS1.1.456; path=/";
     document.cookie = "immojudis_pref=1; path=/";
 
+    window.dataLayer = [];
     revokeGoogleAnalytics();
 
     expect((window as unknown as Record<string, unknown>)[`ga-disable-${GA_MEASUREMENT_ID}`]).toBe(
       true,
     );
+    expect(gtagCalls()).toEqual([["consent", "update", { analytics_storage: "denied" }]]);
     expect(document.cookie).not.toMatch(/_ga/);
     expect(document.cookie).toContain("immojudis_pref=1");
 
+    window.dataLayer = [];
     enableGoogleAnalytics();
     expect((window as unknown as Record<string, unknown>)[`ga-disable-${GA_MEASUREMENT_ID}`]).toBe(
       false,
     );
+    // Accord redonné sans recharger la page : le conteneur déjà chargé reprend la mesure.
+    expect(gtagCalls()).toEqual([["consent", "update", { analytics_storage: "granted" }]]);
   });
 });
