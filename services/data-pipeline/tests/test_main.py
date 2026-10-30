@@ -1498,6 +1498,42 @@ def test_known_unchanged_detail_is_hydrated_from_known_sale() -> None:
     assert raw["source_blocks"] == {"visites": "Sur rendez-vous"}
 
 
+def test_unchanged_card_keeps_the_stored_detail_gallery_and_description() -> None:
+    # Immo-Interactif (30/10/2026): the list card has the main photo and a short text; the detail read by the
+    # detail job has the whole gallery and the full description. A collection that skips the detail must not
+    # shrink either.
+    url = "https://www.immo-interactif.fr/encheres-en-ligne/appartement/aix-en-provence-13/2085732"
+    main_photo = "https://media.immobilier.notaires.fr/inotr/media/1/13041/2085732/2817b0a9_VGA.jpg"
+    gallery = [f"https://media.immobilier.notaires.fr/inotr/media/1/13041/2085732/{n:08x}_QXGA.jpg" for n in range(15)]
+    raw = {
+        "_known_unchanged": True,
+        "source_url": url,
+        "source_name": "notaires",
+        "description": "Appartement 4 pièces",
+        "raw_image_url": main_photo,
+        "source_images": [main_photo],
+    }
+    known = {url: {"description": "Appartement 4 pièces de 85 m², balcon, cave. " * 5,
+                   "raw_payload": {"source_images": gallery}}}
+
+    main._hydrate_known_unchanged_sales([raw], known)
+
+    assert raw["source_images"] == gallery
+    assert raw["raw_image_url"] == main_photo
+    assert raw["description"] == known[url]["description"]
+
+
+def test_a_card_with_more_photos_than_the_stored_detail_keeps_its_own() -> None:
+    url = "https://example.test/vente"
+    raw = {"_known_unchanged": True, "source_url": url, "source_name": "vench",
+           "source_images": ["https://example.test/1.jpg", "https://example.test/2.jpg"]}
+    known = {url: {"raw_payload": {"source_images": ["https://example.test/1.jpg"]}}}
+
+    main._hydrate_known_unchanged_sales([raw], known)
+
+    assert raw["source_images"] == ["https://example.test/1.jpg", "https://example.test/2.jpg"]
+
+
 def test_unchanged_card_keeps_the_stored_detail_blocks_for_every_source() -> None:
     # A list card always carries ``listing_completeness``: without an explicit
     # restore, every pass without a re-read dropped the blocks of the stored
