@@ -46,8 +46,8 @@ describe("/prix-encheres-immobilieres", () => {
     vi.unstubAllEnvs();
   });
 
-  it("est rafraîchie toutes les 5 minutes (littéral exigé par Next.js)", () => {
-    expect(revalidate).toBe(300);
+  it("est rafraîchie toutes les heures (littéral exigé par Next.js)", () => {
+    expect(revalidate).toBe(3600);
   });
 
   describe("drapeau éteint (défaut)", () => {
