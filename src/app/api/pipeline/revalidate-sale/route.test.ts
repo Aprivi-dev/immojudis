@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({
   revalidatePath: vi.fn(),
   after: vi.fn(),
   warmSalePages: vi.fn(),
-  tribunalRows: vi.fn(),
+  from: vi.fn(),
 }));
 
 // `after()` only exists inside a request: the test keeps the callbacks and runs them by hand.
@@ -17,17 +17,8 @@ vi.mock("@/lib/sale-page-warmup", async () => ({
   ...(await vi.importActual<typeof import("@/lib/sale-page-warmup")>("@/lib/sale-page-warmup")),
   warmSalePages: mocks.warmSalePages,
 }));
-// Lecture du tribunal des ventes (clé de service) : `from("auction_sales").select(…).in("id", ids)`.
-vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
-    from: (table: string) => ({
-      select: (columns: string) => ({
-        in: (column: string, values: string[]) =>
-          mocks.tribunalRows(table, columns, column, values),
-      }),
-    }),
-  },
-}));
+// The route reads nothing from the database: any read would be a regression of the warm-up below.
+vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: { from: mocks.from } }));
 
 vi.mock("next/cache", () => ({
   revalidateTag: mocks.revalidateTag,
@@ -49,8 +40,6 @@ import { maxDuration, POST } from "./route";
 const SECRET = "cron-secret-for-tests";
 const ID = "005a914d-563c-427b-88a4-740cbf851afb";
 const OTHER_ID = "11111111-2222-4333-8444-555555555555";
-/** Pages de ventes que le plafond laisse après les pages fixes et les pages tribunal (12). */
-const MAX_SALES_PER_CALL_WARMED = 20;
 
 function request(body: unknown, authorization?: string, raw = false) {
   return new Request("https://example.test/api/pipeline/revalidate-sale", {
@@ -75,7 +64,7 @@ describe("POST /api/pipeline/revalidate-sale", () => {
     mocks.revalidatePath.mockReset();
     mocks.after.mockReset();
     mocks.warmSalePages.mockReset().mockResolvedValue({ requested: 0, warmed: 0, failed: 0 });
-    mocks.tribunalRows.mockReset().mockResolvedValue({ data: [], error: null });
+    mocks.from.mockReset();
   });
   afterEach(() => vi.unstubAllEnvs());
 
@@ -182,7 +171,7 @@ describe("POST /api/pipeline/revalidate-sale", () => {
     expect(mocks.revalidatePath).toHaveBeenCalledWith(`/sales/${OTHER_ID}`);
   });
 
-  it("schedules one warm-up of the invalidated pages after the response, without running it", async () => {
+  it("schedules one warm-up of the list pages after the response, without running it", async () => {
     const response = await POST(
       request({ saleIds: [ID, OTHER_ID, ID.toUpperCase()] }, `Bearer ${SECRET}`),
     );
@@ -194,84 +183,15 @@ describe("POST /api/pipeline/revalidate-sale", () => {
     const [callback] = mocks.after.mock.calls[0] as [() => unknown];
     await callback();
 
+    // Only the public `/sales`, its static pages 2 and 3 (rewritten to the variants that were just
+    // expired) and the upcoming hearings: the sale and court pages are left to their first visitor
+    // (Vercel ISR writes and active CPU, 30/10/2026), so no court is read either.
     expect(mocks.warmSalePages).toHaveBeenCalledTimes(1);
-    // The sale pages, then the public `/sales` and its static pages 2 and 3 (rewritten to the variants
-    // that were just expired), the upcoming hearings and the tribunal pages (here none: no row read).
-    expect(mocks.warmSalePages).toHaveBeenCalledWith([ID, OTHER_ID], {
+    expect(mocks.warmSalePages).toHaveBeenCalledWith([], {
       requestId: response.headers.get("x-request-id"),
       extraPaths: ["/sales", "/sales?page=2", "/sales?page=3", "/audiences-a-venir"],
     });
-  });
-
-  it("warms the tribunal page of each sale concerned, read with the service key in the same after()", async () => {
-    mocks.tribunalRows.mockResolvedValue({
-      data: [
-        { tribunal_code: "justice_tj_1_93" },
-        { tribunal_code: "justice_tj_2_33" },
-        { tribunal_code: "justice_tj_1_93" },
-        { tribunal_code: null },
-        { tribunal_code: "  " },
-      ],
-      error: null,
-    });
-
-    const response = await POST(request({ saleIds: [ID, OTHER_ID] }, `Bearer ${SECRET}`));
-    expect(response.status).toBe(200);
-    // Nothing is read before the response: the lookup belongs to the deferred work.
-    expect(mocks.tribunalRows).not.toHaveBeenCalled();
-
-    const [callback] = mocks.after.mock.calls[0] as [() => unknown];
-    await callback();
-
-    expect(mocks.tribunalRows).toHaveBeenCalledWith("auction_sales", "tribunal_code", "id", [
-      ID,
-      OTHER_ID,
-    ]);
-    expect(mocks.warmSalePages).toHaveBeenCalledWith([ID, OTHER_ID], {
-      requestId: response.headers.get("x-request-id"),
-      extraPaths: [
-        "/sales",
-        "/sales?page=2",
-        "/sales?page=3",
-        "/audiences-a-venir",
-        "/tribunaux/justice-tj-1-93",
-        "/tribunaux/justice-tj-2-33",
-      ],
-    });
-  });
-
-  it("warms at most eight tribunal pages, so the sale pages keep room under the page cap", async () => {
-    mocks.tribunalRows.mockResolvedValue({
-      data: Array.from({ length: 20 }, (_, index) => ({
-        tribunal_code: `justice_tj_${String(index).padStart(2, "0")}_33`,
-      })),
-      error: null,
-    });
-
-    await POST(request({ saleIds: [ID] }, `Bearer ${SECRET}`));
-    const [callback] = mocks.after.mock.calls[0] as [() => unknown];
-    await callback();
-
-    const { extraPaths } = mocks.warmSalePages.mock.calls[0][1] as { extraPaths: string[] };
-    expect(extraPaths.filter((path) => path.startsWith("/tribunaux/"))).toHaveLength(8);
-    // 4 fixed pages + 8 tribunal pages, and the sale pages of a full batch still fit.
-    expect(extraPaths).toHaveLength(12);
-    expect(extraPaths.length + MAX_SALES_PER_CALL_WARMED).toBeLessThanOrEqual(MAX_WARMUP_PAGES);
-  });
-
-  it("still warms the other pages when the tribunal lookup fails, and never throws", async () => {
-    vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    mocks.tribunalRows.mockResolvedValue({ data: null, error: { message: "boom" } });
-
-    const response = await POST(request({ saleIds: [ID] }, `Bearer ${SECRET}`));
-    expect(response.status).toBe(200);
-    const [callback] = mocks.after.mock.calls[0] as [() => unknown];
-    await expect(Promise.resolve(callback())).resolves.not.toThrow();
-
-    expect(mocks.warmSalePages).toHaveBeenCalledWith([ID], {
-      requestId: response.headers.get("x-request-id"),
-      extraPaths: ["/sales", "/sales?page=2", "/sales?page=3", "/audiences-a-venir"],
-    });
+    expect(mocks.from).not.toHaveBeenCalled();
   });
 
   it.each([

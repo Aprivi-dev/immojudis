@@ -26,7 +26,7 @@ const THIN_PAGE = { index: false, follow: true } as const;
  * Délai maximal de la lecture du loyer de référence dans le rendu de la fiche. Elle fait deux
  * allers-retours Supabase en série derrière la lecture de la vente : une base lente bloquerait la
  * première visite. Passé le délai, la fiche part avec le repli départemental (comme si la lecture
- * avait échoué, voir `loadSaleRentReference`), et la page est régénérée au bout de 5 minutes.
+ * avait échoué, voir `loadSaleRentReference`), et la page est régénérée au bout d'une heure.
  */
 const RENT_REFERENCE_TIMEOUT_MS = 1_500;
 
@@ -49,7 +49,7 @@ function salePath(saleId: string): string {
 }
 
 // The public page of a sale is identical for every visitor: it is generated on
-// first request, served from the cache, and refreshed at most every 5 minutes. The database
+// first request, served from the cache, and refreshed at most every hour. The database
 // read itself is cached and tagged `sale-<id>` in `lookupPublicSale`; the pipeline expires
 // the tag and this page through `POST /api/pipeline/revalidate-sale` (P6-06). The value below
 // must equal PUBLIC_SALE_REVALIDATE_SECONDS (a test checks it): Next.js wants a literal.
@@ -62,7 +62,10 @@ function salePath(saleId: string): string {
 // the fallback first and turn the status into a 200: those `loading.tsx` files would then have
 // to go. There is deliberately no root `app/loading.tsx` (it made `/comparaisons/<unknown>` a
 // 200), and `scripts/check-production-smoke.mjs` checks that an unknown identifier answers 404.
-export const revalidate = 300;
+// An hour, not 5 minutes (30/10/2026): the pipeline expires a sale as soon as it changes, and the
+// periodic regenerations of ~1 000 pages, mostly requested by crawlers, exceeded the ISR writes of
+// the Vercel plan.
+export const revalidate = 3600;
 
 export async function generateStaticParams() {
   return [];
