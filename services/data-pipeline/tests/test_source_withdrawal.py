@@ -92,6 +92,7 @@ def test_urls_and_sales_of_a_withdrawn_source_are_recognised(monkeypatch) -> Non
     assert source_withdrawal.source_of_url("https://notlicitor.com/x.pdf") is None
     assert source_withdrawal.source_of_url("https://avoventes.fr/x") is None
     assert source_withdrawal.source_of_url("https://document.vench.fr/x.pdf") == "vench"
+    assert source_withdrawal.source_of_url("https://www.petitesaffiches.fr/encheres-immobilieres/upload/lots/1/v1.jpg") == "petites_affiches"
     assert source_withdrawal.source_of_url(None) is None
     assert source_withdrawal.is_withdrawn_source_url("https://www.licitor.com/doc.pdf")
     assert not source_withdrawal.is_withdrawn_source_url("https://avoventes.fr/doc.pdf")

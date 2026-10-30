@@ -1,7 +1,8 @@
 """Retrait d'une source du catalogue : l'interrupteur vu du pipeline.
 
-Vench est retirée depuis le 29/10/2026 (migration ``20261109153217_withdraw_vench_source.sql``) ; Licitor est
-collecté et affiché normalement. L'interrupteur unique est la colonne ``public.auction_source_state.catalogue_withdrawn``,
+Vench est retirée depuis le 29/10/2026 (migration ``20261109153217_withdraw_vench_source.sql``) et Petites Affiches
+depuis le 30/10/2026 (``20261110093117_withdraw_petites_affiches_source.sql``) ; Licitor est collecté et affiché
+normalement. L'interrupteur unique est la colonne ``public.auction_source_state.catalogue_withdrawn``,
 posée et levée par ``select public.set_catalogue_source_withdrawal('<source>', true|false)`` (migration
 ``20261021110000_licitor_source_withdrawal.sql``). Le planificateur SQL ne lance déjà pas une source
 ``enabled = false``, et une source retirée l'est toujours ; ce module couvre les autres chemins :
@@ -29,7 +30,11 @@ DEFAULT_WITHDRAWN: frozenset[str] = frozenset()
 
 #: Hôtes propres à une source retirée (images, pièces, fiches), pour reconnaître son contenu dans une
 #: vente fusionnée.
-SOURCE_HOSTS: dict[str, tuple[str, ...]] = {"licitor": ("licitor.com",), "vench": ("vench.fr",)}
+SOURCE_HOSTS: dict[str, tuple[str, ...]] = {
+    "licitor": ("licitor.com",),
+    "vench": ("vench.fr",),
+    "petites_affiches": ("petitesaffiches.fr",),
+}
 
 CACHE_SECONDS = 60.0
 QUERY = "select lower(source_name) from public.auction_source_state where catalogue_withdrawn"
