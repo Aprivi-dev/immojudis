@@ -15,7 +15,7 @@ import { departmentFromSearchQuery } from "@/lib/alerts";
 import { ALERT_CREATION_PATH } from "@/lib/discovery-alerts";
 import type { GeoPoint } from "@/lib/geo";
 import { OFFERS_PATH, loginPathWithRedirect } from "@/lib/navigation";
-import { trackProductEvent } from "@/lib/product-events";
+import { trackProductEvent, type AlertSurface } from "@/lib/product-events";
 import * as queryKeys from "@/lib/query-keys";
 import { savePendingAlert } from "@/lib/pending-alert";
 import { createAlert } from "@/lib/queries";
@@ -49,6 +49,20 @@ export type CreateAlertResult =
   | { status: "login" }
   | { status: "blocked" }
   | { status: "failed" };
+
+/**
+ * D'où vient la création d'une alerte, lu dans l'adresse de la page où elle a lieu (jamais envoyée
+ * telle quelle : `product-events.ts` n'accepte que cette liste fermée). Depuis la page de
+ * confirmation (`/alertes/creer`) ou l'accueil du compte, l'origine n'est plus connue : `search`.
+ */
+export function alertSurfaceFromPath(pathname: string): AlertSurface {
+  const [first, second] = pathname.split("/").filter(Boolean);
+  if (first === "ventes-encheres-immobilieres") return "department";
+  if (first === "tribunaux") return "tribunal";
+  if (first === "audiences-a-venir") return "hearings";
+  if ((first === "sales" || first === "properties") && second) return "sale";
+  return "search";
+}
 
 /**
  * Création d'une alerte à partir d'une recherche : partagée par le catalogue, l'étape finale de
@@ -238,6 +252,7 @@ export function useCreateAlert({
         trackProductEvent("alert_created", {
           email_consent: emailConsent,
           pepite_only: search.pepite === true,
+          surface: alertSurfaceFromPath(window.location.pathname),
         });
         return { status: "created", emailConsent };
       } catch (saveError) {

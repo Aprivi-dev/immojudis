@@ -10,6 +10,7 @@ import { UNLOCK_PANEL_ID } from "@/components/sale-detail/UnlockCallToAction";
 import { useAnalysisCheckoutOpen } from "@/hooks/use-analysis-checkout-open";
 import { SaleUnlockQuotaReachedError, unlockSaleRequest } from "@/lib/client-api";
 import { resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
+import { trackProductEvent } from "@/lib/product-events";
 import { ceilingTermText, ceilingTermWithArticleText } from "@/lib/fee-regime-labels";
 import {
   MONTHLY_SALE_UNLOCKS,
@@ -169,6 +170,7 @@ export function SaleUnlockPanel({
   const exhausted = (current.remaining ?? 0) <= 0;
 
   async function confirmUnlock() {
+    trackProductEvent("sale_unlock_confirmed");
     setStep("pending");
     setError(null);
     setLive("Déblocage en cours…");

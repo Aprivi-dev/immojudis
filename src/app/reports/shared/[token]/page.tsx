@@ -3,7 +3,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getSharedPropertyReport } from "@/lib/property-reports";
 import { ReportSourceChangedError } from "@/lib/property-report/source-integrity";
-import { SharedReportUnavailableError } from "@/lib/property-report/share-unavailable";
+import {
+  SharedReportUnavailableError,
+  type SharedReportUnavailableReason,
+} from "@/lib/property-report/share-unavailable";
+import { SharedReportSignup } from "@/components/SharedReportSignup";
 import { formatDate, formatPrice, formatPricePerM2, formatStartingPrice } from "@/lib/format";
 import { reportSaleSchedule } from "@/lib/report-sale-schedule";
 import { describeReportSimulation, isCurrentReportSimulation } from "@/lib/report-simulation";
@@ -24,6 +28,17 @@ export const metadata: Metadata = {
   },
 };
 
+/**
+ * Ce que la page dit d'un lien fermé, selon la vraie raison. Le rapport n'est pas supprimé quand
+ * l'offre de son propriétaire prend fin : le texte le dit, et dit ce que le destinataire peut faire.
+ */
+const UNAVAILABLE_REASON_TEXT: Record<SharedReportUnavailableReason, string> = {
+  expired:
+    "Ce lien a expiré : la personne qui vous l’a transmis l’avait limité dans le temps. Vous pouvez lui demander un nouveau lien.",
+  owner_plan_ended:
+    "Ce lien ne s’ouvre plus parce que l’offre de la personne qui vous l’a transmis a pris fin : le partage de rapports en fait partie. Le rapport n’est pas supprimé de son compte ; elle pourra de nouveau le partager si elle retrouve l’accès, ou vous l’envoyer autrement.",
+};
+
 export default async function SharedReportPage({ params }: PageParams) {
   const { token } = await params;
   const report = await getSharedPropertyReport({ token }).catch((error: unknown) =>
@@ -36,10 +51,7 @@ export default async function SharedReportPage({ params }: PageParams) {
     return (
       <main id="contenu" className="mx-auto max-w-2xl px-6 py-16">
         <h1 className="text-3xl font-semibold">Ce rapport n’est plus partagé</h1>
-        <p className="mt-4 text-slate-700">
-          Le lien que vous avez ouvert n’est plus actif : la personne qui vous l’a transmis ne le
-          partage plus, ou son accès a pris fin. Vous pouvez lui demander un nouveau lien.
-        </p>
+        <p className="mt-4 text-slate-700">{UNAVAILABLE_REASON_TEXT[report.reason]}</p>
         <p className="mt-4 text-slate-700">
           Immojudis aide à préparer l’achat d’un bien vendu aux enchères. Vous pouvez voir à quoi
           ressemble une analyse sur un exemple fictif.
@@ -50,6 +62,7 @@ export default async function SharedReportPage({ params }: PageParams) {
         >
           Voir une analyse exemple
         </Link>
+        <SharedReportSignup state="unavailable" />
       </main>
     );
   }
@@ -1019,6 +1032,7 @@ export default async function SharedReportPage({ params }: PageParams) {
             Voir une analyse exemple
           </Link>
         </p>
+        <SharedReportSignup state="open" />
       </article>
     </main>
   );

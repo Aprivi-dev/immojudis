@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
+import { getAdminActivation, unavailableActivation } from "@/lib/admin-activation";
 import { getAdminBidCeilings, unavailableBidCeilings } from "@/lib/admin-bid-ceilings";
 import {
   getAdminOfferOpeningSurvey,
@@ -27,7 +28,7 @@ async function handleGET(request: Request) {
     const now = new Date();
     // La mesure des rappels ne doit pas faire tomber le reste du pilotage : en cas d'échec, elle vaut
     // « non mesuré » (le contrôle du rôle administrateur est fait par `getAdminPilotage`).
-    const [pilotage, saleReminders, signalFeedback, bidCeilings, offerOpeningSurvey] =
+    const [pilotage, saleReminders, signalFeedback, bidCeilings, offerOpeningSurvey, activation] =
       await Promise.all([
         getAdminPilotage(token, now),
         getAdminSaleReminderAccuracy(token, now).catch(() => {
@@ -49,9 +50,14 @@ async function handleGET(request: Request) {
           console.error("[admin-pilotage] réponses du questionnaire d'ouverture indisponibles");
           return unavailableOfferOpeningSurvey();
         }),
+        // Et pour l'activation (indépendante du quota) et la part des comptes Découverte à 3 déblocages.
+        getAdminActivation(token, now).catch(() => {
+          console.error("[admin-pilotage] activation et seuil de déblocages indisponibles");
+          return unavailableActivation();
+        }),
       ]);
     return NextResponse.json(
-      { ...pilotage, saleReminders, signalFeedback, bidCeilings, offerOpeningSurvey },
+      { ...pilotage, saleReminders, signalFeedback, bidCeilings, offerOpeningSurvey, activation },
       { headers: { "cache-control": "private, no-store" } },
     );
   } catch (error) {

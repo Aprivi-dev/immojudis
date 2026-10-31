@@ -139,6 +139,12 @@ function reasonCopy(reason: LoginReason, launchOffer: boolean): { signup: string
           : "Créez votre compte gratuit, sans carte bancaire, pour faire ce calcul sur une vente réelle.",
         login: "Connectez-vous pour faire ce calcul sur une vente réelle.",
       };
+    case "rapport":
+      return {
+        signup:
+          "Créez votre compte gratuit, sans carte bancaire, pour suivre des ventes et être prévenu des nouvelles annonces.",
+        login: "Connectez-vous pour suivre des ventes et retrouver vos alertes.",
+      };
   }
 }
 
