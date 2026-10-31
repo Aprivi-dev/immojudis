@@ -79,6 +79,11 @@ export type RentLookup = (sale: { id: string }) => RentReference | null;
 // Ce ne sont que des ordres de grandeur pour les grandes agglomérations. Un département absent n'a
 // PAS de référence : on n'affiche alors aucun rendement plutôt que d'inventer un loyer (l'ancien
 // repli à 11 €/m² faussait les ventes de Creuse, de Corrèze, etc.).
+//
+// Statut (31/10/2026) : cette table n'a PAS de source. Elle ne sert qu'à afficher un loyer et un
+// rendement « indicatifs », toujours étiquetés `department_estimate` / `indicative`. Elle ne doit
+// alimenter aucun autre montant : la taxe foncière par défaut du plafond en dépendait, elle n'existe
+// plus (`bid-ceiling-defaults.ts` : le champ est « à renseigner »).
 const RENT_BY_DEPARTMENT: Record<string, number> = {
   "75": 32,
   "92": 26,
