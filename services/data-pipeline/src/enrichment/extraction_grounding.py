@@ -33,16 +33,33 @@ _OCCUPATION_KEYWORDS: dict[str, re.Pattern[str]] = {
     "squatted": re.compile(r"squat|sans droit ni titre|occupation illicite|occupation sans titre"),
 }
 _PROPERTY_TYPE_KEYWORDS: dict[str, re.Pattern[str]] = {
-    "apartment": re.compile(r"appartement|studio|duplex|triplex|\bf\s?\d\b|\bt\s?\d\b|logement"),
-    "house": re.compile(r"maison|villa|pavillon|chalet|habitation|longere"),
+    "apartment": re.compile(r"appartement|studio|duplex|triplex|\bf\s?\d\b|\bt\s?\d\b"),
+    "house": re.compile(r"maison|villa|pavillon|chalet|longere"),
     "building": re.compile(r"immeuble|batiment|ensemble immobilier"),
-    "land": re.compile(r"terrain|parcelle|cadastr|foncier|a batir|lotissement"),
-    "commercial": re.compile(r"local|commerc|bureau|boutique|magasin|entrepot|atelier|hotel|restaurant"),
-    "parking": re.compile(r"parking|garage|stationnement|\bbox\b|emplacement"),
-    "mixed": re.compile(r"mixte|usage\s+professionnel|habitation.*commerc|commerc.*habitation"),
+    "land": re.compile(r"terrain|parcelle|a batir|lotissement"),
+    "commercial": re.compile(r"\blocal\b|\blocaux\b|commerc|bureau|boutique|magasin|entrepot|atelier|hotel|restaurant"),
+    "parking": re.compile(r"parking|garage|stationnement|\bbox\b"),
+    "mixed": re.compile(r"mixte|habitation.*commerc|commerc.*habitation"),
 }
-_ROOMS_KEYWORDS = re.compile(r"pieces?|\bf\s?\d\b|\bt\s?\d\b|studio")
-_BEDROOMS_KEYWORDS = re.compile(r"chambre|bedroom")
+_NUMBER_WORDS = {
+    "un": 1, "une": 1, "deux": 2, "trois": 3, "quatre": 4, "cinq": 5, "six": 6, "sept": 7,
+    "huit": 8, "neuf": 9, "dix": 10, "onze": 11, "douze": 12,
+}  # fmt: skip
+
+
+def _count_forms(value: int) -> str:
+    """Regex alternatives for a count written as digits or as a French number word."""
+    forms = [str(value), *(word for word, number in _NUMBER_WORDS.items() if number == value)]
+    return "(?:" + "|".join(forms) + ")"
+
+
+def _quote_states_count(text: str, value: int, noun: str) -> bool:
+    """The quote writes ``value`` right next to the noun (« 3 pièces », « deux chambres »)."""
+    number = _count_forms(value)
+    return bool(
+        re.search(rf"(?<![\d,.]){number}\s+(?:[a-z]+\s+)?{noun}", text)
+        or re.search(rf"{noun}\s*(?:n°|no|:|=)?\s*{number}(?!\d)", text)
+    )
 
 
 def _normalized(text: str) -> str:
@@ -90,14 +107,23 @@ def property_type_is_supported(context: str, property_type: str | None, evidence
     return bool(pattern and pattern.search(_normalized(excerpt)))
 
 
-def rooms_count_is_supported(context: str, evidence: Mapping[str, Any] | None) -> bool:
+def rooms_count_is_supported(context: str, evidence: Mapping[str, Any] | None, value: int) -> bool:
+    """The quote exists and states this very count (« 3 pièces », « T3 », « studio » for 1)."""
     excerpt = grounded_field_quote(context, evidence, "rooms_count")
-    return bool(excerpt and _ROOMS_KEYWORDS.search(_normalized(excerpt)))
+    if not excerpt:
+        return False
+    text = _normalized(excerpt)
+    return bool(
+        _quote_states_count(text, value, r"pieces?")
+        or re.search(rf"\b[tf]\s?{value}(?!\d)", text)
+        or (value == 1 and "studio" in text)
+    )
 
 
-def bedrooms_count_is_supported(context: str, evidence: Mapping[str, Any] | None) -> bool:
+def bedrooms_count_is_supported(context: str, evidence: Mapping[str, Any] | None, value: int) -> bool:
+    """The quote exists and states this very number of bedrooms."""
     excerpt = grounded_field_quote(context, evidence, "bedrooms_count")
-    return bool(excerpt and _BEDROOMS_KEYWORDS.search(_normalized(excerpt)))
+    return bool(excerpt and _quote_states_count(_normalized(excerpt), value, r"chambres?"))
 
 
 def cited_items(context: str, values: list[str], evidence: Mapping[str, Any] | None, field: str) -> list[str]:
@@ -109,8 +135,4 @@ def cited_items(context: str, values: list[str], evidence: Mapping[str, Any] | N
         for index, value in enumerate(values)
         if index < len(quotes) and cited_excerpt(context, quotes[index], min_chars=MIN_QUOTE_CHARS)
     ]
-
-
-def has_cited_quote(context: str, evidence: Mapping[str, Any] | None, field: str) -> bool:
-    return grounded_field_quote(context, evidence, field) is not None
 

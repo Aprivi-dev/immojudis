@@ -310,3 +310,53 @@ def test_invalid_output_cooldown_counts_as_an_attempt() -> None:
     result = reading.read_sale_documents(documents, generate_json=cooling)
 
     assert result.status == "failed" and result.attempt_counted is True
+
+
+NAMED_MANIFEST = [
+    {
+        "label": "Bail consenti à Monsieur Jean DUPONT",
+        "document_type": "pv_huissier",
+        "pages": [
+            {
+                "page": 1,
+                "text": "Le logement est occupé par Monsieur Jean DUPONT suivant bail verbal depuis 2019.",
+            }
+        ],
+    }
+]
+
+
+def test_names_are_filtered_before_the_model_reads_and_quotes_are_checked_on_the_filtered_text() -> None:
+    documents = reading.documents_from_manifest(NAMED_MANIFEST)
+    prompts: list[str] = []
+
+    def generator(_system: str, user: str):
+        prompts.append(user)
+        return {
+            "points": [
+                {
+                    "theme": "occupation",
+                    "title": "Bien occupé",
+                    "document": "D1",
+                    "page": 1,
+                    "quote": "occupé par un occupant suivant bail verbal depuis 2019",
+                },
+                {
+                    # The raw name is not in the text the model was given: not a quote of it.
+                    "theme": "occupation",
+                    "title": "Nom recopié",
+                    "document": "D1",
+                    "page": 1,
+                    "quote": "occupé par Monsieur Jean DUPONT suivant bail verbal",
+                },
+            ]
+        }
+
+    result = reading.read_sale_documents(documents, generate_json=generator)
+
+    assert "DUPONT" not in prompts[0]
+    assert [point["title"] for point in result.points] == ["Bien occupé"]
+    assert "DUPONT" not in str(result.points)
+    assert "DUPONT" not in str(reading._documents_payload(documents))
+    # The fingerprint is still computed on the stored pages: no dossier is read again.
+    assert reading.input_fingerprint(NAMED_MANIFEST) == reading.input_fingerprint(NAMED_MANIFEST)

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from src.config import load_settings
 from src.document_reading import MAX_DOCUMENT_LABEL_CHARS, build_reading_prompt, documents_from_manifest
 from src.enrichment import extract_structured as extraction
 from src.enrichment.extract_structured import (
@@ -267,3 +268,153 @@ def test_reading_prompt_neutralizes_markup_in_label_and_type_and_bounds_them() -
     opening = prompt.split("\n")[1]
     assert "\n" not in opening
     assert len(opening) < MAX_DOCUMENT_LABEL_CHARS + 120
+
+
+def test_works_needed_stays_out_of_risk_notes_even_with_a_real_quote() -> None:
+    # Assumed choice: the prompt asks for no quote for works_needed, so it cannot be verified.
+    sale = _apply(
+        {
+            "works_needed": "Réfection complète de la toiture",
+            "evidence": {"works_needed": _quote("Le bien est loué suivant bail")},
+        },
+        CONTEXT,
+    )
+
+    assert sale.risk_notes is None
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "quote", "kept"),
+    [
+        ("rooms_count", 3, "Appartement de trois pièces", True),
+        ("rooms_count", 5, "Appartement de trois pièces", False),  # wrong value, right noun
+        ("rooms_count", 5, "Appartement de 3 pièces au 5e étage", False),  # 5 is not the count
+        ("rooms_count", 3, "Appartement T3 de 52 m2", True),
+        ("rooms_count", 1, "Studio de 20 m2", True),
+        ("bedrooms_count", 2, "3 pièces dont 2 chambres", True),
+        ("bedrooms_count", 3, "3 pièces dont 2 chambres", False),
+        ("bedrooms_count", 1, "une chambre et un séjour", True),
+    ],
+)
+def test_counts_need_the_value_in_the_quote(field: str, value: int, quote: str, kept: bool) -> None:
+    context = f"{quote}. Vente au tribunal."
+
+    sale = _apply({field: value, "confidence": {field: 0.95}, "evidence": {field: _quote(quote)}}, context)
+
+    assert (getattr(sale, field) == value) is kept
+
+
+def test_property_type_keywords_are_not_too_wide() -> None:
+    context = "Maison avec jardin, parcelle cadastrée AB 12, habitation principale."
+    land = _apply(
+        {
+            "property_type": "land",
+            "confidence": {"property_type": 0.9},
+            "evidence": {"property_type": _quote("parcelle cadastrée AB 12")},
+        },
+        context,
+    )
+    house = _apply(
+        {
+            "property_type": "house",
+            "confidence": {"property_type": 0.9},
+            "evidence": {"property_type": _quote("habitation principale")},
+        },
+        context,
+    )
+
+    assert land.property_type == "land"  # « parcelle » says it
+    assert house.property_type in (None, "unknown", "other")  # « habitation » alone does not
+
+
+def test_cadastral_word_alone_does_not_make_a_land() -> None:
+    context = "Maison de ville, référence cadastrale AB 12."
+    sale = _apply(
+        {
+            "property_type": "land",
+            "confidence": {"property_type": 0.9},
+            "evidence": {"property_type": _quote("référence cadastrale AB 12")},
+        },
+        context,
+    )
+
+    assert sale.property_type in (None, "unknown", "other")
+
+
+def test_empty_risk_entries_take_their_citation_with_them() -> None:
+    parsed = LLMExtraction.model_validate(
+        {
+            "legal_risks": ["", "bail en cours"],
+            "evidence": {
+                "legal_risks": [_quote("citation de l'entrée vide"), _quote("Le bien est loué suivant bail")]
+            },
+        }
+    )
+
+    assert parsed.legal_risks == ["bail en cours"]
+    assert [item["quote"] for item in parsed.evidence["legal_risks"]] == ["Le bien est loué suivant bail"]
+    sale = AuctionSale(source_name="test", source_url="https://example.test/sale")
+    extraction._apply_extraction_to_sale(sale, parsed, LLMEnrichmentStats(), CONTEXT)
+    assert sale.risk_notes == "Risques juridiques: bail en cours"
+
+
+def test_cached_reapplication_checks_quotes_against_every_fragment(monkeypatch: pytest.MonkeyPatch) -> None:
+    late = "Le bien est loué suivant bail conclu en 2019."
+    chunks = ["Premier fragment sans intérêt. " * 400, late]
+    monkeypatch.setattr(extraction, "load_llm_fact_context_chunks_for_sale", lambda *_a, **_kw: chunks)
+    monkeypatch.setattr(extraction, "load_llm_context_for_sale", lambda *_a, **_kw: chunks[0][:12000])
+    settings = load_settings()
+    sale = AuctionSale(source_name="test", source_url="https://example.test/sale")
+    sale.raw_payload["llm_fact_context_coverage"] = {"complete": True}
+    seen: list[str] = []
+    monkeypatch.setattr(
+        extraction,
+        "_apply_extraction_to_sale",
+        lambda _sale, _extraction, _stats, context="", **_kw: seen.append(context),
+    )
+    sale.raw_payload.update(
+        llm_prompt_version=str(settings["llm_prompt_version"]),
+        llm_display_prompt_version=str(settings.get("llm_display_prompt_version") or settings["llm_prompt_version"]),
+        llm_extraction={"occupancy_status": "rented"},
+    )
+
+    extraction.apply_cached_llm_extraction_to_sale(sale)
+
+    assert seen and late in seen[0]
+    assert sale.raw_payload["llm_fact_context_coverage"] == {"complete": True}
+
+
+def test_refused_display_is_not_paid_for_again_on_the_same_input(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("LLM_ENABLED", "true")
+    monkeypatch.setenv("INCREMENTAL_ENRICHMENT", "true")
+    context = "Maison à Bordeaux. Le bien est occupé suivant bail."
+    monkeypatch.setattr(extraction, "load_llm_context_for_sale", lambda *_a, **_kw: context)
+    store: dict[tuple[str, str], dict] = {}
+    monkeypatch.setattr(extraction, "load_cached_result", lambda key, *, stage: store.get((key, stage)))
+    monkeypatch.setattr(
+        extraction,
+        "save_cached_result",
+        lambda key, payload, *, stage, model: store.update({(key, stage): payload}),
+    )
+
+    class RefusingClient:
+        model = "test-model"
+        calls = 0
+
+        def is_available(self) -> bool:
+            return True
+
+        def generate_json(self, system_prompt: str, user_prompt: str) -> dict[str, object]:
+            self.calls += 1
+            return {"display_description": None}
+
+    client = RefusingClient()
+    for _ in range(2):
+        sale = AuctionSale(source_name="test", source_url="https://example.test/sale", raw_text=context)
+        enrich_sale_with_llm(sale, client=client, output_dir=tmp_path, extraction_mode="display_description")
+
+    assert client.calls == 1
+    assert {stage for _key, stage in store} == {"display_refused"}
+    assert sale.raw_payload["llm_display_status"] in {"fallback", "rejected"}

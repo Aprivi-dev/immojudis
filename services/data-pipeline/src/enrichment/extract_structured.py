@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from src.config import LLM_EXTRACTIONS_DIR, PDF_TEXTS_DIR, load_settings
 from src.encheres_publiques_guard import (
@@ -29,7 +29,6 @@ from src.enrichment.extraction_grounding import (
     bedrooms_count_is_supported,
     cited_items,
     grounded_field_quote,
-    has_cited_quote,
     occupancy_is_supported,
     property_type_is_supported,
     rooms_count_is_supported,
@@ -177,6 +176,8 @@ DISPLAY_DESCRIPTION_MAX_WORDS = 125
 DISPLAY_DESCRIPTION_MAX_CHARS = 850
 DISPLAY_DESCRIPTION_MIN_CONFIDENCE = 0.55
 FACT_FAILURE_STAGE = "facts_failure"
+# An empty or refused display answer is not paid for again on the same input for a day.
+DISPLAY_REFUSED_STAGE = "display_refused"
 FACT_FAILURE_RETRY_HOURS = 24
 _MISSING = object()
 REJECTED_DISPLAY_MAX_CHARS = 2000
@@ -219,6 +220,27 @@ class LLMExtraction(BaseModel):
     contradictions: list[dict[str, Any]] = Field(default_factory=list)
     analysis_questions: list[dict[str, Any]] = Field(default_factory=list)
     scoring_guidance: list[dict[str, Any]] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def align_cited_lists(cls, data: Any) -> Any:
+        """Drop the citation of every empty risk entry, so values and quotes keep their positions."""
+        if not isinstance(data, dict) or not isinstance(data.get("evidence"), dict):
+            return data
+        data, evidence = dict(data), dict(data["evidence"])
+        for name in ("legal_risks", "physical_risks", "servitudes"):
+            values, quotes = data.get(name), evidence.get(name)
+            if not isinstance(values, list) or not isinstance(quotes, list):
+                continue
+            pairs = [
+                (value, quotes[index] if index < len(quotes) else {})
+                for index, value in enumerate(values)
+                if _stringify_llm_value(value)
+            ]
+            data[name] = [value for value, _quote in pairs]
+            evidence[name] = [quote for _value, quote in pairs]
+        data["evidence"] = evidence
+        return data
 
     @field_validator("property_type", mode="before")
     @classmethod
@@ -618,21 +640,32 @@ def enrich_sale_with_llm(
             sale.raw_payload["llm_extraction"] = display_extraction.model_dump(mode="json")
             sale.raw_payload["llm_cache_hit"] = True
             return stats
-        if not client.is_available():
+        refused_until = _load_fact_failure_retry_after(display_key, DISPLAY_REFUSED_STAGE)
+        if refused_until is None and not client.is_available():
             stats.unavailable = True
             return stats
         stats.analyzed = 1
         try:
-            with _llm_request_context(sale, stage="display", reason="cache_miss"):
-                raw = client.generate_json(
-                    DISPLAY_DESCRIPTION_SYSTEM_PROMPT,
-                    build_display_description_prompt(display_context),
-                )
+            if refused_until is None:
+                with _llm_request_context(sale, stage="display", reason="cache_miss"):
+                    raw = client.generate_json(
+                        DISPLAY_DESCRIPTION_SYSTEM_PROMPT,
+                        build_display_description_prompt(display_context),
+                    )
+            else:
+                raw = {}  # refused on this exact input less than a day ago: deterministic fallback
             extraction = _validated_llm_extraction(raw)
             sale.raw_payload["llm_display_prompt_version"] = display_prompt_version
             if not _normalize_display_description(extraction.display_description):
                 stats.errors += 1
                 stats.error_messages.append("Model returned an empty display description; derived fallback only")
+                if refused_until is None:
+                    _save_fact_failure_marker(
+                        display_key,
+                        model=model_name,
+                        error=ValueError("empty display description"),
+                        stage=DISPLAY_REFUSED_STAGE,
+                    )
             elif incremental:
                 _save_display_cache(display_key, extraction, output_dir, model_name)
         except PipelineBudgetExhausted:
@@ -863,10 +896,13 @@ def enrich_sale_with_llm(
                 ]
             sale.raw_payload["llm_display_prompt_version"] = display_prompt_version
         else:
-            if not client.is_available():
+            refused_until = _load_fact_failure_retry_after(display_key, DISPLAY_REFUSED_STAGE)
+            if refused_until is None and not client.is_available():
                 stats.unavailable = True
                 return stats
             try:
+                if refused_until is not None:
+                    raise ValueError("Display synthesis refused on this exact input; deterministic fallback only")
                 with _llm_request_context(sale, stage="display", reason="cache_miss"):
                     display_raw = client.generate_json(
                         DISPLAY_DESCRIPTION_SYSTEM_PROMPT,
@@ -874,6 +910,12 @@ def enrich_sale_with_llm(
                     )
                 display_extraction = _validated_llm_extraction(display_raw)
                 if not _normalize_display_description(display_extraction.display_description):
+                    _save_fact_failure_marker(
+                        display_key,
+                        model=model_name,
+                        error=ValueError("empty display description"),
+                        stage=DISPLAY_REFUSED_STAGE,
+                    )
                     raise ValueError("Model returned an empty display description")
                 extraction.display_description = display_extraction.display_description
                 if "display_description" in display_extraction.confidence:
@@ -976,11 +1018,30 @@ def apply_cached_llm_extraction_to_sale(sale: AuctionSale, *, prompt_version: st
         sale,
         extraction,
         stats,
-        context=_provider_safe_text(load_llm_context_for_sale(sale) or ""),
+        context=_provider_safe_text(_full_fact_context(sale, settings)),
         prompt_version=prompt_version,
     )
     after = clean_text(sale.raw_payload.get("llm_display_description"))
     return bool(after and after != before)
+
+
+def _full_fact_context(sale: AuctionSale, settings: dict[str, Any]) -> str:
+    """Whole text the facts were read from (all fragments), not only its first characters.
+
+    The citations of a stored extraction are checked against it; a quote taken from a later
+    fragment would otherwise be refused. The coverage marker the loader writes is put back.
+    """
+    previous = sale.raw_payload.get("llm_fact_context_coverage", _MISSING)
+    try:
+        chunks = load_llm_fact_context_chunks_for_sale(
+            sale, chunk_chars=int(settings.get("llm_fact_chunk_chars") or 12000), max_chunks=0
+        )
+    finally:
+        if previous is _MISSING:
+            sale.raw_payload.pop("llm_fact_context_coverage", None)
+        else:
+            sale.raw_payload["llm_fact_context_coverage"] = previous
+    return "\n\n".join(chunk for chunk in chunks if chunk) or load_llm_context_for_sale(sale) or ""
 
 
 def _cached_extraction_matches_current_contract(
@@ -1703,10 +1764,10 @@ def _save_durable_cache(
     save_cached_result(cache_key, redact_personal_data(payload), stage=stage, model=model)
 
 
-def _load_fact_failure_retry_after(cache_key: str) -> datetime | None:
-    """Return the active deterministic-failure cooldown for one exact chunk."""
+def _load_fact_failure_retry_after(cache_key: str, stage: str = FACT_FAILURE_STAGE) -> datetime | None:
+    """Return the active deterministic-failure cooldown for one exact chunk (or display input)."""
 
-    payload = _load_durable_cache(cache_key, stage=FACT_FAILURE_STAGE)
+    payload = _load_durable_cache(cache_key, stage=stage)
     if not isinstance(payload, dict) or payload.get("kind") != "deterministic_failure":
         return None
     retry_after = payload.get("retry_after")
@@ -1722,7 +1783,9 @@ def _load_fact_failure_retry_after(cache_key: str) -> datetime | None:
     return parsed if parsed > datetime.now(UTC) else None
 
 
-def _save_fact_failure_marker(cache_key: str, *, model: str, error: Exception) -> datetime:
+def _save_fact_failure_marker(
+    cache_key: str, *, model: str, error: Exception, stage: str = FACT_FAILURE_STAGE
+) -> datetime:
     """Persist only deterministic model-output failures, never provider errors."""
 
     retry_after = datetime.now(UTC) + timedelta(hours=FACT_FAILURE_RETRY_HOURS)
@@ -1735,7 +1798,7 @@ def _save_fact_failure_marker(cache_key: str, *, model: str, error: Exception) -
         # source/prompt content for a failed response.
         "error_fingerprint": hashlib.sha256(str(error).encode("utf-8")).hexdigest(),
     }
-    _save_durable_cache(cache_key, payload, stage=FACT_FAILURE_STAGE, model=model)
+    _save_durable_cache(cache_key, payload, stage=stage, model=model)
     return retry_after
 
 
@@ -2530,7 +2593,7 @@ def _apply_extraction_to_sale(
     if sale.rooms_count is None and extraction.rooms_count is not None:
         if _rooms_count_is_corroborated(context, extraction.rooms_count) or (
             confidence.get("rooms_count", 0) >= 0.7
-            and rooms_count_is_supported(context, extraction.evidence)
+            and rooms_count_is_supported(context, extraction.evidence, extraction.rooms_count)
         ):
             sale.rooms_count = extraction.rooms_count
             stats.rooms_extracted += 1
@@ -2538,7 +2601,7 @@ def _apply_extraction_to_sale(
     if sale.bedrooms_count is None and extraction.bedrooms_count is not None:
         if _bedrooms_count_is_corroborated(context, extraction.bedrooms_count) or (
             confidence.get("bedrooms_count", 0) >= 0.7
-            and bedrooms_count_is_supported(context, extraction.evidence)
+            and bedrooms_count_is_supported(context, extraction.evidence, extraction.bedrooms_count)
         ):
             sale.bedrooms_count = extraction.bedrooms_count
             stats.bedrooms_extracted += 1
@@ -2723,7 +2786,9 @@ def _format_risk_notes(extraction: LLMExtraction, context: str) -> str | None:
     """Risk notes made only of entries whose quote exists in the text that was read.
 
     ``risk_notes`` is read back as evidence by the analyses, so free model text has no place in it:
-    the investor notes stay out, and every other entry needs a verified citation.
+    the investor notes stay out, and every other entry needs a verified citation. ``works_needed``
+    is out as well: the prompt asks for no quote for it (changing the prompt means a new version),
+    so it cannot be verified. It stays in the extraction and in the deterministic display fallback.
     """
     parts = []
     for label, field_name, values in (
@@ -2734,8 +2799,6 @@ def _format_risk_notes(extraction: LLMExtraction, context: str) -> str | None:
         cited = cited_items(context, values, extraction.evidence, field_name)
         if cited:
             parts.append(f"{label}: " + "; ".join(cited))
-    if extraction.works_needed and has_cited_quote(context, extraction.evidence, "works_needed"):
-        parts.append("Travaux: " + extraction.works_needed)
     return " | ".join(parts) if parts else None
 
 
