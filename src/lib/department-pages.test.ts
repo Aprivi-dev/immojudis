@@ -20,6 +20,7 @@ import {
   indexableDepartments,
   isDepartmentPageIndexable,
   medianOf,
+  topCities,
   type DepartmentSaleInput,
 } from "./department-pages";
 import { departmentCode } from "./department-code";
@@ -352,6 +353,50 @@ describe("aggregateDepartments", () => {
   it("date la lecture avec l'horloge fournie", () => {
     const now = new Date("2026-10-15T08:00:00Z");
     expect(aggregateDepartments([], now).generatedAt).toBe("2026-10-15T08:00:00.000Z");
+  });
+});
+
+describe("communes les plus présentes", () => {
+  it("compte toutes les ventes du département, pas seulement celles de la liste", () => {
+    const rows = [
+      ...Array.from({ length: DEPARTMENT_PAGE_LISTED_SALES + 3 }, (_, index) =>
+        sale(`m-${String(index).padStart(3, "0")}`, { city: "Mérignac" }),
+      ),
+      sale("b1", { city: "Bordeaux" }),
+    ];
+    const stats = aggregateDepartments(rows, NOW).departments["33"];
+    expect(stats.cities).toEqual([
+      { city: "Mérignac", count: DEPARTMENT_PAGE_LISTED_SALES + 3 },
+      { city: "Bordeaux", count: 1 },
+    ]);
+  });
+
+  it("reconnaît une commune malgré la casse et les espaces, et ignore les ventes sans commune", () => {
+    expect(
+      topCities([
+        { city: "Bordeaux" },
+        { city: " bordeaux " },
+        { city: "BORDEAUX" },
+        { city: "Pessac" },
+        { city: null },
+        { city: "  " },
+      ]),
+    ).toEqual([
+      { city: "Bordeaux", count: 3 },
+      { city: "Pessac", count: 1 },
+    ]);
+  });
+
+  it("départage à égalité par ordre alphabétique et se limite à cinq communes", () => {
+    const cities = ["Talence", "Arcachon", "Libourne", "Pessac", "Bègles", "Cenon", "Gradignan"];
+    const top = topCities(cities.map((city) => ({ city })));
+    expect(top.map((entry) => entry.city)).toEqual([
+      "Arcachon",
+      "Bègles",
+      "Cenon",
+      "Gradignan",
+      "Libourne",
+    ]);
   });
 });
 

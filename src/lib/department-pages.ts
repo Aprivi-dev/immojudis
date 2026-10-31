@@ -87,6 +87,12 @@ export type DepartmentSaleInput = DepartmentSale & { department: string | null }
 
 type DepartmentTypeCount = { label: string; count: number };
 
+/** Une commune et le nombre de ventes à venir qui s'y trouvent. */
+export type DepartmentCityCount = { city: string; count: number };
+
+/** Nombre de communes présentées dans « Communes les plus présentes ». */
+export const DEPARTMENT_TOP_CITIES = 5;
+
 export type DepartmentStats = {
   code: string;
   /** Ventes à venir distinctes (un identifiant compte une fois). */
@@ -109,6 +115,12 @@ export type DepartmentStats = {
   medianSampleSize: number;
   /** Répartition par type de bien, la plus nombreuse d'abord. */
   types: DepartmentTypeCount[];
+  /**
+   * Les communes qui comptent le plus de ventes à venir (toutes les ventes du département, pas
+   * seulement celles listées), la plus présente d'abord. Absent d'un catalogue mis en cache avant
+   * l'ajout de ce champ : la page s'en passe.
+   */
+  cities?: DepartmentCityCount[];
   /** Les prochaines ventes, par date d'audience croissante. */
   sales: DepartmentSale[];
 };
@@ -123,6 +135,29 @@ function timestamp(value: string | null): number | null {
   if (!value) return null;
   const time = new Date(value).getTime();
   return Number.isFinite(time) ? time : null;
+}
+
+/**
+ * Les communes les plus présentes parmi des ventes : une commune se reconnaît à son nom sans tenir
+ * compte de la casse ni des espaces en trop ; le nom affiché est celui de la première vente
+ * rencontrée. Une vente sans commune n'est comptée nulle part. Égalité : ordre alphabétique.
+ */
+export function topCities(
+  sales: ReadonlyArray<Pick<DepartmentSale, "city">>,
+  limit: number = DEPARTMENT_TOP_CITIES,
+): DepartmentCityCount[] {
+  const byKey = new Map<string, DepartmentCityCount>();
+  for (const { city } of sales) {
+    const label = city?.trim().replace(/\s+/g, " ");
+    if (!label) continue;
+    const key = label.toLocaleLowerCase("fr");
+    const entry = byKey.get(key);
+    if (entry) entry.count += 1;
+    else byKey.set(key, { city: label, count: 1 });
+  }
+  return [...byKey.values()]
+    .sort((a, b) => b.count - a.count || a.city.localeCompare(b.city, "fr"))
+    .slice(0, limit);
 }
 
 export function medianOf(values: number[]): number | null {
@@ -265,6 +300,7 @@ export function aggregateDepartments(
       types: [...typeCounts]
         .map(([label, count]) => ({ label, count }))
         .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, "fr")),
+      cities: topCities(sorted),
       sales: sorted.slice(0, DEPARTMENT_PAGE_LISTED_SALES),
     };
   }

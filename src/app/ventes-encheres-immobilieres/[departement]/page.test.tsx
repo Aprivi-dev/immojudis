@@ -364,6 +364,28 @@ describe("page d'un département : contenu", () => {
     expect(new Set(ordered).size).toBe(ordered.length);
   });
 
+  it("génère « Communes les plus présentes » à partir des ventes, avec un lien vers la recherche", async () => {
+    mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE, NOW));
+    render(await Page(params("gironde")));
+    const block = screen.getByRole("region", { name: "Communes les plus présentes" });
+    expect(
+      within(block)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual(["Bordeaux2 ventes", "Mérignac1 vente"]);
+    expect(within(block).getByRole("link", { name: "Mérignac" }).getAttribute("href")).toBe(
+      "/sales?department=33&city=M%C3%A9rignac",
+    );
+    // Des données, pas une affirmation juridique.
+    expect(block.textContent).not.toMatch(/doit|obligatoire|garanti/i);
+  });
+
+  it("n'affiche pas ce bloc quand une seule commune est concernée", async () => {
+    mocks.catalogue.mockResolvedValue(aggregateDepartments([sale("a"), sale("b")], NOW));
+    render(await Page(params("gironde")));
+    expect(screen.queryByRole("region", { name: "Communes les plus présentes" })).toBeNull();
+  });
+
   it("met les trois chiffres sur une seule ligne", async () => {
     mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE, NOW));
     render(await Page(params("gironde")));

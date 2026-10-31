@@ -109,6 +109,7 @@ export function DepartmentView({
   const identicalSales = identicalSaleRanks(stats?.sales ?? []);
   const nextSales = (stats?.sales ?? []).slice(0, NEXT_SALES_SHOWN);
   const laterSales = (stats?.sales ?? []).slice(NEXT_SALES_SHOWN);
+  const cities = stats?.cities ?? [];
   const nextDate = seoLongDate(stats?.nextSaleDate);
   const updated = seoLongDate(generatedAt);
   const searchHref = departmentSearchPath(department);
@@ -244,6 +245,35 @@ export function DepartmentView({
                   <span>{type.label}</span>
                   <span className="font-semibold tabular-nums text-foreground">
                     {count.format(type.count)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        ) : null}
+
+        {cities.length > 1 ? (
+          <Card as="section" aria-labelledby="communes">
+            <h2 id="communes" className="font-display text-2xl font-semibold">
+              Communes les plus présentes
+            </h2>
+            <p className="mt-2 text-sm text-ink-soft">
+              Les communes qui comptent le plus de ventes à venir référencées {where}.
+            </p>
+            <ul className="mt-3 grid gap-1 sm:grid-cols-2">
+              {cities.map((entry) => (
+                <li key={entry.city} className="flex justify-between gap-3">
+                  <Link
+                    href={pathWithSearch("/sales", {
+                      department: department.code,
+                      city: entry.city,
+                    })}
+                    className="font-semibold text-gold-text underline"
+                  >
+                    {entry.city}
+                  </Link>
+                  <span className="tabular-nums text-ink-soft">
+                    {count.format(entry.count)} {saleWord(entry.count)}
                   </span>
                 </li>
               ))}
