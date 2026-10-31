@@ -31,6 +31,22 @@ function field(name: string) {
 }
 
 describe("FeesSimulator", () => {
+  it("dit que la hausse à 5 % est temporaire, hors primo-accédants, et liste les départements à 5,81 %", () => {
+    render(<FeesSimulator />);
+    const hint = (screen.getByLabelText("Département du bien") as HTMLSelectElement).getAttribute(
+      "aria-describedby",
+    )!;
+    const text = (document.getElementById(hint)?.textContent ?? "").replace(/[\u00a0\u202f]/g, " ");
+    expect(text).toContain("Taux de 6,32 % par défaut");
+    expect(text).toContain("10 départements (05, 06, 07, 16, 26, 48, 60, 65, 71 et 971)");
+    expect(text).toContain("restent à 5,81 %");
+    expect(text).toContain("l’Indre et Mayotte sont à 5,09 %");
+    expect(text).toContain("tableau DGFiP au 01/06/2026");
+    expect(text).toContain("temporaire (actes passés jusqu’au 31/03/2028)");
+    expect(text).toContain("ne s’applique pas aux primo-accédants");
+    expect(text).not.toMatch(/garanti|certain/i);
+  });
+
   it("mesure l'usage une seule fois, au premier changement d'un champ", () => {
     render(<FeesSimulator />);
     expect(mocks.track).not.toHaveBeenCalled();
