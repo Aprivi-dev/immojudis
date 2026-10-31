@@ -19,6 +19,7 @@ import type { AuctionScenario, ScenarioReliability } from "@/lib/auction-scenari
 import type { FeeSource, OccupationCase } from "@/lib/bid-ceiling-engine";
 import { ceilingPosition } from "@/lib/ceiling-vs-court";
 import type { DpeClass } from "@/lib/dpe";
+import { wilsonInterval95 } from "@/lib/stats";
 import type { FloodVerdict } from "@/lib/flood-risk";
 
 /**
@@ -164,8 +165,6 @@ export const PEPITE_PRICE_COURT_ONLY_FROM_SALES = 20;
 export const PEPITE_MIN_NATIONAL_SALES = 30;
 /** Test B (pepite-v1.1 et suivantes), entrée : borne basse de l'intervalle de Wilson à 95 % de la part. */
 export const PEPITE_CHANCE_MIN_WILSON_LOW = 0.5;
-/** Quantile de la loi normale pour l'intervalle de Wilson à 95 % (même valeur que les statistiques des tribunaux). */
-const WILSON_Z_95 = 1.959964;
 /** Fiabilité minimale des scénarios d'adjudication : en dessous, le test B n'est pas évaluable. */
 export const PEPITE_MIN_SCENARIO_RELIABILITY: ScenarioReliability = "medium";
 /** Mise à prix inférieure à cette part de la valeur centrale : on retient q75 au lieu de q50. */
@@ -574,13 +573,7 @@ type Thresholds = {
 
 /** Borne basse de l'intervalle de Wilson à 95 % d'une part observée sur `sample` ventes. */
 export function wilsonLowerBound(share: number, sample: number): number {
-  if (!(sample > 0) || !Number.isFinite(share)) return 0;
-  const p = Math.min(1, Math.max(0, share));
-  const z2 = WILSON_Z_95 ** 2;
-  const denominator = 1 + z2 / sample;
-  const center = p + z2 / (2 * sample);
-  const margin = WILSON_Z_95 * Math.sqrt((p * (1 - p)) / sample + z2 / (4 * sample ** 2));
-  return Math.max(0, (center - margin) / denominator);
+  return wilsonInterval95(share, sample)?.low ?? 0;
 }
 
 /**
