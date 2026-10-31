@@ -18,6 +18,7 @@ import {
   SaleUnlockOfferProvider,
   UnlockCallToAction,
 } from "@/components/sale-detail/UnlockCallToAction";
+import { useInvestorProfile } from "@/hooks/use-investor-profile";
 import { useSalePepite } from "@/hooks/use-sale-pepite";
 import { adjudicationVersusCeilingLine } from "@/lib/adjudication-vs-ceiling";
 import type { SaleUnlockResult, SaleUnlockStatus } from "@/lib/sale-unlocks";
@@ -82,6 +83,7 @@ import { ceilingConfidence, maxWorksAtBid } from "@/lib/bid-ceiling-engine";
 import { ceilingTermsFor, feeRegimeKeysForVenue, type FeeRegimeKey } from "@/lib/fee-regime";
 import { assessSaleCeilingInputs, computeSaleCeiling } from "@/lib/sale-ceiling";
 import { RentalMarketBlockLazy } from "@/components/sale-detail/RentalMarketBlockLazy";
+import { investorProfileFinancingDraft, investorProfileToChoices } from "@/lib/investor-profile";
 import { getSaleSurface } from "@/lib/surface";
 import type { HousingTension } from "@/lib/housing-tension";
 import type { RentReference } from "@/lib/rent-reference";
@@ -378,10 +380,22 @@ function SaleDetailWorkspace({
   const [financingResult, setFinancingResult] = useState<FinancingResult | null>(null);
   const [rentalDraft, setRentalDraft] = useState<ListingRentalDraft | null>(null);
   const { user, loading: authLoading } = useAuth();
+  // Profil d'investisseur du compte (n° 93) : les hypothèses de départ du plafond de chaque vente,
+  // que le visiteur modifie ensuite vente par vente.
+  const investor = useInvestorProfile(user?.id);
+  const profileChoices = useMemo(
+    () => investorProfileToChoices(investor.profile, { surfaceM2: getSaleSurface(sale).value }),
+    [investor.profile, sale],
+  );
+  const profileFinancingDraft = useMemo(
+    () => investorProfileFinancingDraft(investor.profile),
+    [investor.profile],
+  );
   const ceilingChoices = useCeilingChoices(
     user?.id ?? "guest-demo",
     sale.id,
     defaultCeilingChoices,
+    profileChoices,
   );
   // The sale rows are open (Analyse, or a sale this account unlocked). Everything below that
   // only Analyse has stays on `access === "analysis"`.
@@ -1334,7 +1348,7 @@ function SaleDetailWorkspace({
                     aiReviewProjections={resolvedAiReviewProjections}
                     aiReviewStatus={aiReviewStatus}
                     projectPriceOverride={projectCosts?.totalCost ?? null}
-                    initialDraft={financingDraft}
+                    initialDraft={financingDraft ?? profileFinancingDraft}
                     onDraftChange={setFinancingDraft}
                     onResultChange={setFinancingResult}
                     initialInsuranceRate={0.3}

@@ -94,22 +94,40 @@ export function worksChoiceForAmount(
 }
 
 /**
- * Per user and per sale, the choices survive a reload; storage failures are ignored. `defaults`
- * (the example page's works level) fill in whatever the visitor has not chosen yet.
+ * Per user and per sale, the choices survive a reload; storage failures are ignored.
+ *
+ * Starting hypotheses, from the weakest to the strongest source:
+ * 1. `profile`: the account's investor profile (n° 93), already turned into choices for this sale;
+ * 2. `defaults`: the example page's works level;
+ * 3. what the visitor chose on this sale, which always wins (« modifiable par vente »).
+ *
+ * Nothing is written to the browser until the visitor changes something (`update`, `reset`): looking
+ * at a sale must not freeze the profile into it, so a profile edited later still reaches the sales
+ * the visitor only looked at. The profile may arrive after the first render (it is read from the
+ * account): while the visitor has touched nothing, it is applied as soon as it is there.
  */
 export function useCeilingChoices(
   ownerId: string,
   saleId: string,
   defaults: CeilingUserChoices = NO_DEFAULTS,
+  profile: CeilingUserChoices = NO_DEFAULTS,
 ) {
   const key = ceilingStorageKey(ownerId, saleId);
-  const [state, setState] = useState<{ key: string; choices: CeilingUserChoices }>(() => ({
+  const profileSignature = JSON.stringify(profile);
+  const initialState = (): ChoicesState => ({
     key,
-    choices: { ...defaults, ...readChoices(key) },
-  }));
-  if (state.key !== key) setState({ key, choices: { ...defaults, ...readChoices(key) } });
+    profileSignature,
+    profile,
+    touched: false,
+    choices: { ...profile, ...defaults, ...readChoices(key) },
+  });
+  const [state, setState] = useState<ChoicesState>(initialState);
+  if (state.key !== key || (state.profileSignature !== profileSignature && !state.touched)) {
+    setState(initialState());
+  }
 
   useEffect(() => {
+    if (!state.touched) return;
     try {
       window.localStorage.setItem(state.key, JSON.stringify(state.choices));
     } catch {
@@ -119,15 +137,18 @@ export function useCeilingChoices(
 
   const update = useCallback(
     (change: (choices: CeilingUserChoices) => CeilingUserChoices) =>
-      setState((current) => ({ ...current, choices: change(current.choices) })),
+      setState((current) => ({ ...current, touched: true, choices: change(current.choices) })),
     [],
   );
   const reset = useCallback(
     () =>
       setState((current) => ({
         ...current,
-        // Le budget travaux et son détail sont des saisies de l'utilisateur, pas des hypothèses.
+        touched: true,
+        // Le budget travaux et son détail sont des saisies de l'utilisateur, pas des hypothèses ; le
+        // profil, lui, est l'hypothèse de départ : « réinitialiser » y revient.
         choices: {
+          ...current.profile,
           works: current.choices.works,
           ...(current.choices.worksBreakdown
             ? { worksBreakdown: current.choices.worksBreakdown }
@@ -138,6 +159,16 @@ export function useCeilingChoices(
   );
   return { choices: state.choices, update, reset };
 }
+
+type ChoicesState = {
+  key: string;
+  profileSignature: string;
+  /** Le profil à l'origine de ces choix : « réinitialiser » y revient. */
+  profile: CeilingUserChoices;
+  /** Vrai dès que le visiteur a changé quelque chose sur cette vente : seul cas où l'on écrit. */
+  touched: boolean;
+  choices: CeilingUserChoices;
+};
 
 const NO_DEFAULTS: CeilingUserChoices = {};
 
