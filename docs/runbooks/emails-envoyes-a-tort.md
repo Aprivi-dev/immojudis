@@ -58,14 +58,20 @@ set delivery_status = 'cancelled', updated_at = now()
 where delivery_channel = 'email' and delivery_status = 'queued';
 ```
 
-Si les emails sont corrects mais arrivent en retard après une longue coupure, laisser partir la file : le
-récapitulatif regroupe les ventes par personne, un seul email par passage et par compte.
+Si les emails sont corrects, ils partent au retour de `on`, regroupés par personne (un seul email par passage et
+par compte). Garde d'ancienneté : un email en file dont l'échéance (`scheduled_for`) remonte à plus de 48 h est
+annulé au lieu d'être envoyé. Elle ne vérifie pas la date de la vente : un email de moins de 48 h dont la vente est
+passée partirait quand même.
 
 ## Reprise
 
 1. Corriger la cause (règle d'alerte, contenu, consentement).
-2. Passer à `internal` pour un passage : seuls les administrateurs reçoivent l'email, à relire.
-3. Passer à `on` (ou supprimer la variable, ce qui revient à `on`), puis redéployer.
+2. Annuler l'arriéré avant de réactiver (requête de « Traiter la file ») : tout ce qui est en file et de moins de
+   48 h part d'un coup au retour de `on`. À défaut, lire au moins le nombre de lignes et leurs dates.
+3. Passer à `internal` pour un passage : seuls les administrateurs reçoivent l'email, à relire. Ce mode ne lit
+   que leurs emails en file : ceux des autres comptes restent `queued` jusqu'au retour de `on` (ou jusqu'à leur
+   annulation).
+4. Passer à `on` (ou supprimer la variable, ce qui revient à `on`), puis redéployer.
 
 ## À savoir
 

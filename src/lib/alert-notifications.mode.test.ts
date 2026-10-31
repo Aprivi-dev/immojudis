@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   dispatchEmails: vi.fn(),
   resolveConfig: vi.fn(),
   channelFilters: [] as string[],
+  orFilters: [] as string[],
 }));
 
 vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: { from: mocks.from } }));
@@ -31,22 +32,62 @@ function row(id: string, userId: string, channel: "email" | "in_app") {
     scheduled_for: "2026-10-31T07:00:00.000Z",
     alert_id: "alert-1",
     notification_snapshot: {},
-  } as never;
+  } as Record<string, unknown>;
 }
 
-/** Chaîne de requête minimale : `await` rend les lignes du tableau lu ou mis à jour. */
-function installTables(queue: unknown[]) {
+/**
+ * Chaîne de requête minimale : `await` rend les lignes du tableau lu ou mis à jour. À la lecture
+ * des notifications, le filtre de canal (`eq`), le filtre `or` du mode internal, l'ordre et la
+ * limite sont appliqués comme le ferait la base.
+ */
+function installTables(queue: Array<Record<string, unknown>>, adminUserIds: string[] = []) {
   mocks.from.mockImplementation((table: string) => {
     const builder: Record<string, unknown> = {};
-    for (const method of ["select", "lte", "order", "limit", "update", "in"]) {
+    let channel: string | null = null;
+    let allowedEmailUsers: string[] | null = null;
+    let max = Infinity;
+    let updating = false;
+    for (const method of ["select", "lte", "order", "in"]) {
       builder[method] = () => builder;
     }
-    builder.eq = (column: string, value: string) => {
-      if (column === "delivery_channel") mocks.channelFilters.push(value);
+    builder.update = () => {
+      updating = true;
       return builder;
     };
-    builder.then = (resolve: (value: unknown) => unknown) =>
-      resolve({ data: table === "user_alert_notifications" ? queue : [], error: null });
+    builder.limit = (value: number) => {
+      max = value;
+      return builder;
+    };
+    builder.eq = (column: string, value: string) => {
+      if (column === "delivery_channel") {
+        mocks.channelFilters.push(value);
+        channel = value;
+      }
+      return builder;
+    };
+    builder.or = (expression: string) => {
+      mocks.orFilters.push(expression);
+      const list = /user_id\.in\.\(([^)]*)\)/.exec(expression)?.[1] ?? "";
+      allowedEmailUsers = list ? list.split(",") : [];
+      return builder;
+    };
+    builder.then = (resolve: (value: unknown) => unknown) => {
+      if (table === "user_profiles") {
+        return resolve({ data: adminUserIds.map((user_id) => ({ user_id })), error: null });
+      }
+      if (table !== "user_alert_notifications") return resolve({ data: [], error: null });
+      if (updating) return resolve({ data: queue, error: null });
+      const rows = queue
+        .filter((item) => channel === null || item.delivery_channel === channel)
+        .filter(
+          (item) =>
+            allowedEmailUsers === null ||
+            item.delivery_channel === "in_app" ||
+            allowedEmailUsers.includes(item.user_id as string),
+        )
+        .slice(0, max);
+      return resolve({ data: rows, error: null });
+    };
     return builder;
   });
 }
@@ -58,7 +99,7 @@ describe("filterEmailNotificationsByMode", () => {
     const loadAdminUserIds = vi.fn();
     const result = await filterEmailNotificationsByMode({
       mode: "on",
-      notifications: emails,
+      notifications: emails as never,
       loadAdminUserIds,
     });
     expect(result.allowed).toHaveLength(2);
@@ -70,7 +111,7 @@ describe("filterEmailNotificationsByMode", () => {
     const loadAdminUserIds = vi.fn();
     const result = await filterEmailNotificationsByMode({
       mode: "off",
-      notifications: emails,
+      notifications: emails as never,
       loadAdminUserIds,
     });
     expect(result).toEqual({ allowed: [], heldBackCount: 2 });
@@ -81,7 +122,7 @@ describe("filterEmailNotificationsByMode", () => {
     const loadAdminUserIds = vi.fn().mockResolvedValue(new Set(["admin-1"]));
     const result = await filterEmailNotificationsByMode({
       mode: "internal",
-      notifications: emails,
+      notifications: emails as never,
       loadAdminUserIds,
     });
     expect(result.allowed.map((notification) => notification.id)).toEqual(["n1"]);
@@ -94,6 +135,7 @@ describe("dispatchDueAlertNotifications selon ALERT_NOTIFICATIONS_MODE", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mocks.channelFilters = [];
+    mocks.orFilters = [];
     mocks.dispatchEmails.mockResolvedValue({
       configured: true,
       missing: [],
@@ -131,6 +173,45 @@ describe("dispatchDueAlertNotifications selon ALERT_NOTIFICATIONS_MODE", () => {
       emailDispatchedCount: 1,
       emailHeldBackCount: 0,
     });
+  });
+
+  it("en mode internal, 200 anciens emails non administrateurs ne cachent pas l'email d'un administrateur", async () => {
+    const olderUserEmails = Array.from({ length: 200 }, (_, index) => ({
+      ...row(`old-${index}`, `user-${index}`, "email"),
+      scheduled_for: "2026-10-30T07:00:00.000Z",
+    }));
+    installTables(
+      [
+        ...olderUserEmails,
+        row("admin-email", "admin-1", "email"),
+        row("n-app", "user-9", "in_app"),
+      ],
+      ["admin-1"],
+    );
+
+    const result = await dispatchDueAlertNotifications({
+      now: NOW,
+      limit: 200,
+      emailMode: "internal",
+    });
+
+    expect(mocks.orFilters).toHaveLength(1);
+    expect(mocks.orFilters[0]).toContain("user_id.in.(admin-1)");
+    expect(mocks.dispatchEmails).toHaveBeenCalledTimes(1);
+    expect(
+      mocks.dispatchEmails.mock.calls[0][0].notifications.map((item: { id: string }) => item.id),
+    ).toEqual(["admin-email"]);
+    expect(result).toMatchObject({ emailMode: "internal", emailHeldBackCount: 0 });
+  });
+
+  it("en mode internal sans administrateur, ne lit que les notifications dans l'application", async () => {
+    installTables([row("n1", "user-1", "email"), row("n2", "user-2", "in_app")], []);
+
+    await dispatchDueAlertNotifications({ now: NOW, emailMode: "internal" });
+
+    expect(mocks.channelFilters).toContain("in_app");
+    expect(mocks.orFilters).toHaveLength(0);
+    expect(mocks.dispatchEmails.mock.calls[0][0].notifications).toHaveLength(0);
   });
 
   it("par défaut (variable absente) le mode est on", async () => {
