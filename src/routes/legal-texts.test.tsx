@@ -451,7 +451,7 @@ describe("politique de confidentialité", () => {
       "Événements de parcours du navigateur, agrégés et à valeurs fermées, sans identifiant de personne ni de compte",
     );
     expect(text).not.toContain("Événements d’usage et de parcours agrégés");
-    expect(text).toContain("Événements d’usage et journaux applicatifs : 24 mois au plus");
+    expect(text).toContain("Journaux applicatifs et données techniques : 24 mois au plus");
   });
 
   it("décrit les rappels d'audience : consentement, retrait en un clic, journal, Resend, durée du journal", () => {
@@ -580,13 +580,16 @@ describe("politique de confidentialité", () => {
 
   it("dit que l'interrupteur de mesure d'audience ne couvre pas les événements par compte, et que l'opposition se fait par écrit", () => {
     const text = pageText(<PrivacyPage />);
-    expect(text).toContain("ne couvre pas ces événements : vous pouvez vous y opposer par écrit");
+    expect(text).toContain(
+      "ne couvre pas ces événements : vous pouvez vous y opposer depuis /mes-droits (demande d’opposition) ou par écrit",
+    );
     expect(text).toContain(
       "L’interrupteur ci-dessous ne couvre pas les événements liés à votre compte",
     );
-    expect(text).toContain("écrivez à contact@immojudis.example");
+    expect(text).toContain("(demande d’opposition) ou écrivez à contact@immojudis.example");
+    expect(text).toContain("indiquez le lien de l’annonce dans votre demande");
     expect(text).toContain(
-      "arrêter un repère dont la précision se dégrade. Vous pouvez vous y opposer par écrit",
+      "arrêter un repère dont la précision se dégrade. Vous pouvez vous y opposer depuis /mes-droits (demande d’opposition) ou par écrit",
     );
     expect(text).toContain("Elles sont traitées comme des données personnelles");
     expect(text).not.toContain("Ces informations ne désignent pas une personne");
