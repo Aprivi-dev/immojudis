@@ -48,7 +48,9 @@ function subscription(overrides: Partial<Stripe.Subscription> = {}): Stripe.Subs
     customer: "cus_1",
     metadata: { user_id: USER_ID },
     created: 1_790_000_000,
-    items: { data: [{ current_period_end: PERIOD_END, price: { id: "price_a" } }] },
+    items: {
+      data: [{ current_period_end: PERIOD_END, price: { id: "price_a", unit_amount: 5_900 } }],
+    },
     ...overrides,
   } as unknown as Stripe.Subscription;
 }
@@ -344,5 +346,250 @@ describe("robustesse du webhook et de la synchronisation", () => {
     expect(rpcCalls("apply_stripe_subscription_state")[0][1]).toMatchObject({
       p_status: "cancelled",
     });
+  });
+});
+
+describe("chemins permissifs fermés (n° 47)", () => {
+  beforeEach(() => {
+    vi.stubEnv("STRIPE_SECRET_KEY", "sk_test_sync");
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_sync");
+    vi.stubEnv("STRIPE_ANALYSIS_PRICE_ID", "price_a");
+    vi.stubEnv("STRIPE_ANALYSIS_LEGACY_PRICE_IDS", "");
+    mocks.rpc.mockReset();
+    mocks.from.mockReset();
+    mocks.constructEvent.mockReset();
+    mocks.subscriptionsRetrieve.mockReset();
+    mocks.sendCommercialConfirmation.mockReset();
+    mocks.from.mockImplementation((table: string) =>
+      tableAnswer({
+        data: table === "stripe_webhook_events" ? { processing_status: "processed" } : [],
+        error: null,
+      }),
+    );
+    vi.restoreAllMocks();
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  });
+
+  function withPrice(price: Record<string, unknown>) {
+    return subscription({
+      id: "sub_new",
+      status: "active",
+      items: {
+        data: [{ current_period_end: PERIOD_END, price }],
+      } as unknown as Stripe.Subscription["items"],
+    });
+  }
+
+  it("n'écrit pas « active » quand la session d'abonnement n'a pas d'objet abonnement", async () => {
+    stubRpc({ applied: true, reason: "applied" });
+    const upsert = vi.fn();
+    mocks.from.mockImplementation((table: string) => ({
+      ...tableAnswer({
+        data: table === "stripe_webhook_events" ? { processing_status: "processed" } : [],
+        error: null,
+      }),
+      upsert,
+    }));
+    const session = {
+      id: "cs_1",
+      mode: "subscription",
+      customer: "cus_1",
+      subscription: null,
+      metadata: { user_id: USER_ID, commercial_acceptance_id: "acc_1" },
+    };
+
+    const result = await deliver("checkout.session.completed", session);
+
+    expect(result.handled).toBe(false);
+    expect(completionStatus()).toMatchObject({ p_processing_status: "ignored" });
+    expect(upsert).not.toHaveBeenCalled();
+    expect(rpcCalls("apply_stripe_subscription_state")).toHaveLength(0);
+    expect(mocks.sendCommercialConfirmation).not.toHaveBeenCalled();
+  });
+
+  it("refuse l'accès au Price courant quand son montant n'est pas 59 €", async () => {
+    stubRpc({ applied: true, reason: "applied" });
+    const wrongAmount = withPrice({ id: "price_a", unit_amount: 3_000 });
+    mocks.subscriptionsRetrieve.mockResolvedValue(wrongAmount);
+
+    await deliver("customer.subscription.updated", wrongAmount);
+
+    expect(rpcCalls("apply_stripe_subscription_state")[0][1]).toMatchObject({
+      p_plan_code: "decouverte",
+    });
+  });
+
+  it("accepte le Price courant à 59 €", async () => {
+    stubRpc({ applied: true, reason: "applied" });
+    const good = withPrice({ id: "price_a", unit_amount: 5_900 });
+    mocks.subscriptionsRetrieve.mockResolvedValue(good);
+
+    await deliver("customer.subscription.updated", good);
+
+    expect(rpcCalls("apply_stripe_subscription_state")[0][1]).toMatchObject({
+      p_plan_code: "analyse",
+    });
+  });
+
+  it("n'ouvre aucun accès tant qu'aucun Price n'est configuré", async () => {
+    vi.stubEnv("STRIPE_ANALYSIS_PRICE_ID", "");
+    stubRpc({ applied: true, reason: "applied" });
+    const active = withPrice({ id: "price_a", unit_amount: 5_900 });
+    mocks.subscriptionsRetrieve.mockResolvedValue(active);
+
+    await deliver("customer.subscription.updated", active);
+
+    expect(rpcCalls("apply_stripe_subscription_state")[0][1]).toMatchObject({
+      p_plan_code: "decouverte",
+    });
+  });
+
+  it("n'ouvre aucun accès à un abonnement sans Price lisible", async () => {
+    stubRpc({ applied: true, reason: "applied" });
+    const noPrice = subscription({
+      id: "sub_new",
+      status: "active",
+      items: {
+        data: [{ current_period_end: PERIOD_END }],
+      } as unknown as Stripe.Subscription["items"],
+    });
+    mocks.subscriptionsRetrieve.mockResolvedValue(noPrice);
+
+    await deliver("customer.subscription.updated", noPrice);
+
+    expect(rpcCalls("apply_stripe_subscription_state")[0][1]).toMatchObject({
+      p_plan_code: "decouverte",
+    });
+  });
+});
+
+describe("litiges Stripe : accès rendu à la clôture (n° 46)", () => {
+  const ROW = {
+    current_period_end: "2026-12-01T00:00:00.000Z",
+    stripe_subscription_id: "sub_live",
+    stripe_event_created: 1_800_000_900,
+  };
+
+  function dispute(status: string) {
+    return {
+      id: "dp_1",
+      status,
+      charge: { id: "ch_1", payment_intent: "pi_1", metadata: { user_id: USER_ID } },
+    };
+  }
+
+  function stubDatabase(row: Record<string, unknown> | null) {
+    mocks.from.mockImplementation((table: string) =>
+      tableAnswer({
+        data:
+          table === "stripe_webhook_events"
+            ? { processing_status: "processed" }
+            : table === "user_subscriptions"
+              ? row
+              : [],
+        error: null,
+      }),
+    );
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "begin_stripe_webhook_event") return { data: true, error: null };
+      if (name === "record_stripe_payment_state") {
+        return { data: [{ recorded: true, entitlement_updated: true }], error: null };
+      }
+      if (name === "apply_stripe_subscription_state") {
+        return { data: [{ applied: true, reason: "applied" }], error: null };
+      }
+      return { data: null, error: null };
+    });
+  }
+
+  beforeEach(() => {
+    vi.stubEnv("STRIPE_SECRET_KEY", "sk_test_sync");
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_sync");
+    vi.stubEnv("STRIPE_ANALYSIS_PRICE_ID", "price_a");
+    vi.stubEnv("STRIPE_ANALYSIS_LEGACY_PRICE_IDS", "");
+    mocks.rpc.mockReset();
+    mocks.from.mockReset();
+    mocks.constructEvent.mockReset();
+    mocks.subscriptionsRetrieve.mockReset();
+    vi.restoreAllMocks();
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  });
+
+  it.each(["won", "warning_closed", "prevented"])(
+    "relit l'abonnement chez Stripe et le synchronise quand le litige est %s",
+    async (status) => {
+      stubDatabase(ROW);
+      // Chez Stripe l'abonnement est actif : c'est cet état qui s'applique, pas une date en base.
+      mocks.subscriptionsRetrieve.mockResolvedValue(
+        subscription({ id: "sub_live", status: "active" }),
+      );
+
+      const result = await deliver("charge.dispute.closed", dispute(status), 1_800_000_500);
+
+      expect(result.handled).toBe(true);
+      expect(rpcCalls("record_stripe_payment_state")[0][1]).toMatchObject({
+        p_state: "cleared",
+        p_entitlement_status: "paused",
+        p_revoke_immediately: false,
+      });
+      expect(mocks.subscriptionsRetrieve).toHaveBeenCalledWith("sub_live");
+      expect(rpcCalls("apply_stripe_subscription_state")[0][1]).toMatchObject({
+        p_stripe_subscription_id: "sub_live",
+        p_status: "active",
+        p_plan_code: "analyse",
+        // Le dernier état appliqué (…900) est plus récent que l'événement (…500) : la relecture ne
+        // doit pas être écartée comme périmée.
+        p_event_created: 1_800_000_900,
+      });
+    },
+  );
+
+  it("ne rend pas l'accès si Stripe dit que l'abonnement est annulé", async () => {
+    stubDatabase(ROW);
+    mocks.subscriptionsRetrieve.mockResolvedValue(
+      subscription({ id: "sub_live", status: "canceled" }),
+    );
+
+    await deliver("charge.dispute.closed", dispute("won"));
+
+    expect(rpcCalls("apply_stripe_subscription_state")[0][1]).toMatchObject({
+      p_status: "cancelled",
+    });
+  });
+
+  it("garde l'accès suspendu et rejoue le webhook quand Stripe ne répond pas", async () => {
+    stubDatabase(ROW);
+    mocks.subscriptionsRetrieve.mockRejectedValue(new Error("stripe down"));
+
+    await expect(deliver("charge.dispute.closed", dispute("won"))).rejects.toThrow("stripe down");
+    expect(completionStatus()).toMatchObject({ p_processing_status: "failed" });
+    expect(rpcCalls("apply_stripe_subscription_state")).toHaveLength(0);
+  });
+
+  it("laisse un litige encore ouvert suspendre l'accès, sans relecture", async () => {
+    stubDatabase(ROW);
+
+    await deliver("charge.dispute.created", dispute("needs_response"));
+
+    expect(rpcCalls("record_stripe_payment_state")[0][1]).toMatchObject({
+      p_state: "disputed",
+      p_entitlement_status: "paused",
+    });
+    expect(mocks.subscriptionsRetrieve).not.toHaveBeenCalled();
+    expect(rpcCalls("apply_stripe_subscription_state")).toHaveLength(0);
+  });
+
+  it("pour une ligne sans abonnement Stripe, garde la déduction par la date de fin en base", async () => {
+    stubDatabase({ current_period_end: "2099-01-01T00:00:00.000Z", stripe_subscription_id: null });
+
+    await deliver("charge.dispute.closed", dispute("warning_closed"));
+
+    expect(rpcCalls("record_stripe_payment_state")[0][1]).toMatchObject({
+      p_state: "cleared",
+      p_entitlement_status: "active",
+    });
+    expect(mocks.subscriptionsRetrieve).not.toHaveBeenCalled();
   });
 });

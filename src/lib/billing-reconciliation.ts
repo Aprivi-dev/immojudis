@@ -103,16 +103,16 @@ export function compareStripeWithDatabase({
   for (const subscription of stripeSubscriptions) {
     if (!ACCESS_STRIPE_STATUSES.has(subscription.stripeStatus)) continue;
     const row = rowsBySubscription.get(subscription.id);
+    // Fermé par défaut (n° 47), comme `isAnalysisSubscriptionPrice` : sans Price configuré ou sans
+    // Price sur l'abonnement, rien n'est reconnu et l'écart est signalé.
     const priceKnown =
-      acceptedPriceIds.length === 0 ||
-      !subscription.priceId ||
-      acceptedPriceIds.includes(subscription.priceId);
+      Boolean(subscription.priceId) && acceptedPriceIds.includes(subscription.priceId!);
     if (!priceKnown) {
       discrepancies.push({
         kind: "unknown_price",
         stripeSubscriptionId: subscription.id,
         userId: row?.user_id ?? subscription.userId,
-        detail: `Price ${subscription.priceId} absent de STRIPE_ANALYSIS_PRICE_ID et STRIPE_ANALYSIS_LEGACY_PRICE_IDS : l'accès est refusé à ce client.`,
+        detail: `Price ${subscription.priceId ?? "(aucun)"} absent de STRIPE_ANALYSIS_PRICE_ID et STRIPE_ANALYSIS_LEGACY_PRICE_IDS : l'accès est refusé à ce client.`,
       });
     }
     if (!row) {
@@ -214,6 +214,11 @@ export async function reconcileBillingReadOnly(
   if (!auth.isAdmin) {
     throw new Error("Forbidden: ce compte n'a pas les droits administrateur Immojudis.");
   }
+  return reconcileBillingNow();
+}
+
+/** Le rapprochement sans contrôle d'accès : réservé à la tâche planifiée et à `reconcileBillingReadOnly`. */
+async function reconcileBillingNow(): Promise<BillingReconciliationReport> {
   const [stripeResult, rowsResult] = await Promise.all([
     listStripeSubscriptions(),
     supabaseAdmin
@@ -235,5 +240,62 @@ export async function reconcileBillingReadOnly(
       rows,
       acceptedPriceIds: analysisSubscriptionPriceIds(),
     }),
+  };
+}
+
+/** Écarts nommés dans l'alerte : le détail complet reste dans le rapport de la tâche (journal des exécutions). */
+const ALERT_SAMPLE_SIZE = 10;
+
+/** Stripe est-il configuré pour le rapprochement : clé secrète et au moins un Price de l'offre ? */
+export function billingReconciliationConfigured(
+  env: Pick<NodeJS.ProcessEnv, string> = process.env,
+): boolean {
+  return Boolean(env.STRIPE_SECRET_KEY?.trim()) && analysisSubscriptionPriceIds(env).length > 0;
+}
+
+/**
+ * Rapprochement quotidien (n° 48), lancé par `/api/cron/billing-reconciliation` sous
+ * `runMonitoredCron`. Lecture seule côté Stripe et côté abonnements : il ne corrige rien. Un écart
+ * ouvre (ou maintient) une alerte opérationnelle, livrée par le canal d'alerte existant à la
+ * prochaine passe de `operational-health` ; un rapprochement sans écart la referme (la base ne la
+ * résout qu'après deux heures calmes). Sans Stripe configuré (clé ou Price absent), la tâche ne fait
+ * rien et n'alerte pas.
+ */
+export async function runBillingReconciliationJob(): Promise<Record<string, unknown>> {
+  if (!billingReconciliationConfigured()) return { skipped: "stripe_not_configured" };
+  const report = await reconcileBillingNow();
+  const kinds: Record<string, number> = {};
+  for (const discrepancy of report.discrepancies) {
+    kinds[discrepancy.kind] = (kinds[discrepancy.kind] ?? 0) + 1;
+  }
+  const active = report.discrepancies.length > 0;
+  const { error } = await supabaseAdmin.rpc("sync_billing_reconciliation_alert", {
+    p_active: active,
+    p_details: {
+      checked_at: report.checkedAt,
+      discrepancy_count: report.discrepancies.length,
+      kinds,
+      truncated: report.truncated,
+      stripe_subscription_count: report.stripeSubscriptionCount,
+      database_row_count: report.databaseRowCount,
+      // Identifiants d'abonnement Stripe et de compte seulement : ni email ni nom.
+      sample: report.discrepancies.slice(0, ALERT_SAMPLE_SIZE).map((discrepancy) => ({
+        kind: discrepancy.kind,
+        subscription: discrepancy.stripeSubscriptionId,
+        user: discrepancy.userId,
+      })),
+    },
+  });
+  // Un écart que l'alerte ne peut pas porter ne doit pas rester silencieux : la tâche échoue.
+  if (error) {
+    throw new Error(error.message || "Alerte de rapprochement Stripe impossible à écrire.");
+  }
+  return {
+    stripeSubscriptionCount: report.stripeSubscriptionCount,
+    databaseRowCount: report.databaseRowCount,
+    truncated: report.truncated,
+    discrepancyCount: report.discrepancies.length,
+    kinds,
+    alert: active ? "open" : "clear",
   };
 }
