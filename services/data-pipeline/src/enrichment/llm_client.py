@@ -1163,12 +1163,15 @@ def _display_description_payload_from_text(system_prompt: str, raw_response: str
     if not _is_display_description_prompt(system_prompt):
         return None
     text = _display_description_text_from_jsonish(raw_response) or _plain_display_description_text(raw_response)
-    if not text:
-        return None
-    return {
-        "display_description": text,
-        "confidence": {"display_description": 0.58},
-    }
+    if text:
+        # No confidence is invented for a recovered text: the evidence checks that every generated
+        # description goes through are the only gate.
+        return {"display_description": text}
+    if _is_unfinished_display_response(raw_response):
+        # Truncated, unclosed or introduced by a preamble: not published, and the empty description
+        # sends the sale to the deterministic fallback instead of failing the whole enrichment.
+        return {"display_description": None}
+    return None
 
 
 def _is_display_description_prompt(system_prompt: str) -> bool:
@@ -1262,18 +1265,42 @@ def _display_description_text_from_jsonish(raw_response: str) -> str | None:
         candidates.append(candidates[0].replace('\\"', '"'))
 
     for candidate in candidates:
+        # The string must be closed: a value cut off by the output limit is not a synthesis.
         match = re.search(
             r'"display_description"\s*:\s*"(?P<value>.*?)(?:"\s*(?:[,}]|$))',
             candidate,
             re.S,
-        ) or re.search(r'"display_description"\s*:\s*"(?P<value>.+)', candidate, re.S)
+        )
         if not match:
             continue
         value = _decode_json_string_fragment(match.group("value"))
         text = _clean_display_description_candidate(value)
-        if text:
+        if text and _has_final_punctuation(text):
             return text
     return None
+
+
+_DISPLAY_FINAL_PUNCTUATION = (".", "!", "?", "…")
+_DISPLAY_PREAMBLE_RE = re.compile(
+    r"^\s*(?:voici|voil[aà]|ci-dessous|bien s[uû]r|certainement|d['’]accord|here\s+is|sure)\b",
+    re.I,
+)
+
+
+def _has_final_punctuation(text: str) -> bool:
+    return text.rstrip().endswith(_DISPLAY_FINAL_PUNCTUATION)
+
+
+def _is_unfinished_display_response(raw_response: str) -> bool:
+    """A display answer that carried a text but is cut off, unclosed or preceded by a preamble."""
+    if '"display_description"' in raw_response or '\\"display_description\\"' in raw_response:
+        return True
+    text = raw_response.strip()
+    if not text or "{" in text or "}" in text:
+        return False
+    return len(text.split()) >= 8 and (
+        _DISPLAY_PREAMBLE_RE.match(text) is not None or not _has_final_punctuation(text.rstrip("`\"' \n"))
+    )
 
 
 def _decode_json_string_fragment(value: str) -> str:
@@ -1293,7 +1320,10 @@ def _plain_display_description_text(raw_response: str) -> str | None:
     if text.startswith("```"):
         text = re.sub(r"^```(?:text|markdown)?", "", text, flags=re.I).strip()
         text = re.sub(r"```$", "", text).strip()
-    return _clean_display_description_candidate(text)
+    if _DISPLAY_PREAMBLE_RE.match(text):
+        return None
+    cleaned = _clean_display_description_candidate(text)
+    return cleaned if cleaned and _has_final_punctuation(cleaned) else None
 
 
 def _clean_display_description_candidate(text: str) -> str | None:
