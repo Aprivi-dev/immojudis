@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  alertNotificationsMode,
   saleResultsMode,
   saleResultsOfferedTo,
   weeklyDigestMode,
@@ -58,5 +59,35 @@ describe("weeklyDigestOfferedTo et saleResultsOfferedTo", () => {
   it("la proposent à tout le monde en mode on", () => {
     expect(weeklyDigestOfferedTo({ isAdmin: false, env: { WEEKLY_DIGEST_MODE: "on" } })).toBe(true);
     expect(saleResultsOfferedTo({ isAdmin: false, env: { SALE_RESULTS_MODE: "on" } })).toBe(true);
+  });
+});
+
+describe("alertNotificationsMode", () => {
+  it("vaut on quand la variable est absente ou vide : l'existant ne change pas", () => {
+    expect(alertNotificationsMode({})).toBe("on");
+    expect(alertNotificationsMode({ ALERT_NOTIFICATIONS_MODE: "" })).toBe("on");
+    expect(alertNotificationsMode({ ALERT_NOTIFICATIONS_MODE: "   " })).toBe("on");
+  });
+
+  it("reconnaît off, internal et on, sans tenir compte de la casse ni des espaces", () => {
+    expect(alertNotificationsMode({ ALERT_NOTIFICATIONS_MODE: "off" })).toBe("off");
+    expect(alertNotificationsMode({ ALERT_NOTIFICATIONS_MODE: " Internal " })).toBe("internal");
+    expect(alertNotificationsMode({ ALERT_NOTIFICATIONS_MODE: "ON" })).toBe("on");
+  });
+
+  it("ferme l'envoi sur une valeur présente mais inconnue (une faute de frappe ne rouvre rien)", () => {
+    for (const value of ["of", "false", "0", "non", "disabled", "internal-only"]) {
+      expect(alertNotificationsMode({ ALERT_NOTIFICATIONS_MODE: value }), value).toBe("off");
+    }
+  });
+
+  it("ne lit aucune des variables des autres emails", () => {
+    expect(
+      alertNotificationsMode({
+        WEEKLY_DIGEST_MODE: "off",
+        SALE_RESULTS_MODE: "off",
+        SALE_REMINDERS_MODE: "off",
+      }),
+    ).toBe("on");
   });
 });

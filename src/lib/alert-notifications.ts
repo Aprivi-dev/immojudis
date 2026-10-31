@@ -2,7 +2,11 @@ import "server-only";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
-import { dispatchQueuedEmailAlertNotifications } from "@/lib/email-alerts";
+import {
+  dispatchQueuedEmailAlertNotifications,
+  resolveEmailAlertDeliveryConfig,
+} from "@/lib/email-alerts";
+import { alertNotificationsMode, type EmailFeatureMode } from "@/lib/email-feature-mode";
 import { emailAlertConsentEnabled } from "@/lib/notification-preferences";
 import { assertFeatureEntitlement } from "@/lib/property-reports";
 import { cleanSaleTitle } from "@/lib/sale-title";
@@ -74,6 +78,10 @@ export type AlertNotificationDispatchResult = {
   emailProviderConfigured: boolean;
   /** Variables d'environnement manquantes quand l'envoi d'e-mails n'est pas configuré. */
   emailMissingConfig: string[];
+  /** Interrupteur `ALERT_NOTIFICATIONS_MODE` appliqué à ce passage. */
+  emailMode: EmailFeatureMode;
+  /** E-mails dus laissés en file par l'interrupteur (`off` : tous, `internal` : ceux des non-administrateurs). */
+  emailHeldBackCount: number;
 };
 
 /** Part d'e-mails dus en échec à partir de laquelle le passage est déclaré en échec. */
@@ -274,21 +282,66 @@ export async function updateAlertNotificationState({
   return { notification: notificationRowToSummary(data) };
 }
 
+async function readAdminUserIds(userIds: string[]): Promise<Set<string>> {
+  const admins = new Set<string>();
+  for (let from = 0; from < userIds.length; from += 200) {
+    const { data, error } = await supabaseAdmin
+      .from("user_profiles")
+      .select("user_id")
+      .eq("user_role", "admin")
+      .in("user_id", userIds.slice(from, from + 200));
+    if (error) throw error;
+    for (const row of data ?? []) admins.add(row.user_id);
+  }
+  return admins;
+}
+
+/**
+ * Applique l'interrupteur `ALERT_NOTIFICATIONS_MODE` aux e-mails dus : `on` les laisse tous partir,
+ * `internal` ne garde que ceux des administrateurs, `off` n'en garde aucun. Les e-mails écartés
+ * restent en file (`queued`), ni envoyés ni annulés.
+ */
+export async function filterEmailNotificationsByMode({
+  mode,
+  notifications,
+  loadAdminUserIds = readAdminUserIds,
+}: {
+  mode: EmailFeatureMode;
+  notifications: NotificationRow[];
+  loadAdminUserIds?: (userIds: string[]) => Promise<Set<string>>;
+}): Promise<{ allowed: NotificationRow[]; heldBackCount: number }> {
+  if (mode === "on") return { allowed: notifications, heldBackCount: 0 };
+  if (mode === "off" || !notifications.length) {
+    return { allowed: [], heldBackCount: notifications.length };
+  }
+  const admins = await loadAdminUserIds([
+    ...new Set(notifications.map((notification) => notification.user_id)),
+  ]);
+  const allowed = notifications.filter((notification) => admins.has(notification.user_id));
+  return { allowed, heldBackCount: notifications.length - allowed.length };
+}
+
 export async function dispatchDueAlertNotifications({
   now = new Date(),
   limit = DEFAULT_ALERT_NOTIFICATION_DISPATCH_LIMIT,
+  emailMode = alertNotificationsMode(),
 }: {
   now?: Date;
   limit?: number;
+  emailMode?: EmailFeatureMode;
 } = {}): Promise<AlertNotificationDispatchResult> {
   const startedAt = new Date().toISOString();
   const dueAt = now.toISOString();
   const dispatchLimit = clampLimit(limit, MAX_ALERT_NOTIFICATION_DISPATCH_LIMIT);
-  const { data: candidates, error: selectError } = await supabaseAdmin
+  let candidateQuery = supabaseAdmin
     .from("user_alert_notifications")
     .select("*")
     .eq("delivery_status", "queued")
-    .lte("scheduled_for", dueAt)
+    .lte("scheduled_for", dueAt);
+  // Emails coupés : leur file ne doit pas occuper la fenêtre de lecture au détriment des
+  // notifications dans l'application.
+  if (emailMode === "off") candidateQuery = candidateQuery.eq("delivery_channel", "in_app");
+  const { data: candidates, error: selectError } = await candidateQuery
     .order("scheduled_for", { ascending: true })
     .limit(dispatchLimit);
 
@@ -325,10 +378,15 @@ export async function dispatchDueAlertNotifications({
     dispatchedRows = data ?? [];
   }
 
-  const emailDispatch = await dispatchQueuedEmailAlertNotifications({
+  const { allowed: emailsToSend, heldBackCount } = await filterEmailNotificationsByMode({
+    mode: emailMode,
     notifications: emailCandidates,
-    now,
   });
+  // Mode `off` : rien n'est envoyé et la configuration d'envoi n'est pas exigée (le passage reste vert).
+  const emailDispatch =
+    emailMode === "off"
+      ? { candidateCount: 0, sentCount: 0, failedCount: 0, skippedCount: 0, ...emailConfigStatus() }
+      : await dispatchQueuedEmailAlertNotifications({ notifications: emailsToSend, now });
   const notifications = (dispatchedRows ?? []).map(notificationRowToSummary);
   return {
     ok: true,
@@ -343,7 +401,14 @@ export async function dispatchDueAlertNotifications({
     emailSkippedCount: emailDispatch.skippedCount,
     emailProviderConfigured: emailDispatch.configured,
     emailMissingConfig: emailDispatch.missing,
+    emailMode,
+    emailHeldBackCount: heldBackCount,
   };
+}
+
+function emailConfigStatus() {
+  const config = resolveEmailAlertDeliveryConfig();
+  return { configured: config.configured, missing: config.missing };
 }
 
 export function buildAlertNotificationRows({
