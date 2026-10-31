@@ -12,13 +12,12 @@ let counted = false;
  * fiche (`bid_ceiling_calculated`, côté serveur), qui part avant tout calcul. Une fois par
  * chargement de page (le planificateur peut être remonté en changeant d'onglet) ; l'événement ne
  * porte ni l'identifiant de la vente ni celui de la personne (liste fermée de `product-events.ts`).
- * Ne rend rien : monté par `CeilingPlanner`, le bloc de calcul.
+ * Appelé par `CeilingPlanner`, le bloc de calcul.
  */
-export function CeilingViewTracker({ computed }: { computed: boolean }) {
+export function useCeilingViewEvent(computed: boolean): void {
   useEffect(() => {
     if (!computed || counted) return;
     counted = true;
     trackProductEvent("ceiling_viewed");
   }, [computed]);
-  return null;
 }
