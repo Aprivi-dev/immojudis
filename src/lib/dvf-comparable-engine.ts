@@ -167,8 +167,10 @@ export function buildDvfComparableAnalysis({
         surfaceTolerancePct,
       }),
     )
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit);
+    .sort((a, b) => b.score - a.score);
+  // Médiane, quartiles et confiance portent sur TOUT l'échantillon retenu : `limit` ne borne que la
+  // liste affichée (n° 23). Avant, la médiane changeait avec le nombre de lignes demandées.
+  const displayed = scored.slice(0, limit);
   const sortedPrices = scored.map((candidate) => candidate.pricePerM2).sort((a, b) => a - b);
   const p25 = percentileRounded(sortedPrices, 0.25);
   const median = percentileRounded(sortedPrices, 0.5);
@@ -219,7 +221,7 @@ export function buildDvfComparableAnalysis({
     p25PricePerM2: p25,
     p75PricePerM2: p75,
     ...valueRange,
-    comparables: scored,
+    comparables: displayed,
     warnings,
     summary: summary({
       sampleSize: scored.length,
