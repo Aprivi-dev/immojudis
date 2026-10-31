@@ -8,7 +8,7 @@ import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middlewar
  *
  * Les droits d'un compte sont calculés deux fois : par `resolvePlanEntitlements` (TypeScript) et par
  * `app_private.has_active_analysis_access` / `has_standing_analysis_access` (SQL, qui ouvre les
- * lignes et les fonctions de la base). Ce test rejoue ici les cas des tests pgTAP 740, 774 et 775
+ * lignes et les fonctions de la base). Ce test rejoue ici les cas des tests pgTAP 740, 774, 775 et 850
  * (`supabase/tests/`) contre la fonction TypeScript, avec les mêmes dates et les mêmes lignes
  * d'abonnement. Chaque cas cite la phrase du test pgTAP dont il reprend le verdict : si cette phrase
  * disparaît ou change, le test échoue et force à revoir les deux côtés ensemble.
@@ -75,6 +75,7 @@ type ParityCase = {
 const TRIAL_740 = "740_signup_trial_seven_days.sql";
 const EXTENSION_774 = "774_trial_extension_is_a_trial.sql";
 const CLOSE_775 = "775_launch_offer_close_keeps_running_trials.sql";
+const PERIOD_END_850 = "850_subscription_access_requires_period_end.sql";
 
 const open2DaysAgo: TrialState = { confirmedAt: daysFromNow(-2), switchOpen: true };
 const open8DaysAgo: TrialState = { confirmedAt: daysFromNow(-8), switchOpen: true };
@@ -263,6 +264,56 @@ const CASES: ParityCase[] = [
     trial: { confirmedAt: daysFromNow(-1), switchOpen: true },
     access: true,
   },
+  // 850 : un statut d'accès sans fin de période n'ouvre rien (n° 47)
+  {
+    name: "850 : abonnement actif sans fin de période",
+    pgtap: [
+      {
+        file: PERIOD_END_850,
+        description: "a subscription row without a period end gives no Analyse access",
+      },
+    ],
+    trial: open20DaysAgo,
+    subscription: subscriber({ current_period_end: null }),
+    access: false,
+  },
+  {
+    name: "850 : essai « trialing » sans fin de période",
+    pgtap: [
+      {
+        file: PERIOD_END_850,
+        description: "a trialing row without a period end gives no Analyse access",
+      },
+    ],
+    trial: open20DaysAgo,
+    subscription: subscriber({ status: "trialing", current_period_end: null }),
+    access: false,
+  },
+  {
+    name: "850 : abonnement actif avec une fin de période future",
+    pgtap: [
+      {
+        file: PERIOD_END_850,
+        description: "a subscription with a future period end keeps the Analyse access",
+      },
+    ],
+    trial: open20DaysAgo,
+    subscription: subscriber(),
+    access: true,
+    standing: true,
+  },
+  {
+    name: "850 : renouvellement échoué, dans la grâce de sept jours",
+    pgtap: [
+      {
+        file: PERIOD_END_850,
+        description: "a failed renewal keeps the access during the grace",
+      },
+    ],
+    trial: open20DaysAgo,
+    subscription: subscriber({ status: "past_due", current_period_end: daysFromNow(-3) }),
+    access: true,
+  },
 ];
 
 function account(subscription: Subscription | undefined): SupabaseAuthContext {
@@ -286,7 +337,7 @@ function pgtapSource(file: string): string {
   return readFileSync(resolve(process.cwd(), "supabase/tests", file), "utf8");
 }
 
-describe("parité TypeScript / SQL de l'accès Analyse (pgTAP 740, 774, 775)", () => {
+describe("parité TypeScript / SQL de l'accès Analyse (pgTAP 740, 774, 775, 850)", () => {
   beforeEach(() => {
     mocks.trialState.current = null;
   });
