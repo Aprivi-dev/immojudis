@@ -36,6 +36,9 @@ vi.mock("@/lib/upcoming-hearings.server", () => ({
   tryLoadUpcomingHearings: mocks.hearings,
   mustFailOnHearingsReadError: mocks.mustFail,
 }));
+vi.mock("@/lib/public-tribunal-directory.server", () => ({
+  tryLoadPublicTribunalDirectory: async () => ({ status: "ok", items: [] }),
+}));
 vi.mock("@/lib/public-tribunal-activity.server", () => ({
   loadPublicTribunalActivity: mocks.activity,
   PUBLIC_TRIBUNAL_ACTIVITY_REVALIDATE_SECONDS: 3600,

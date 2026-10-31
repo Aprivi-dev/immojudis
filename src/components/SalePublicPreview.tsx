@@ -65,7 +65,7 @@ import {
   seoSurface,
   tribunalDisplayName,
 } from "@/lib/seo";
-import { tribunalPagePath } from "@/lib/tribunal-pages";
+import { tribunalCodePagePath } from "@/lib/tribunal-code-path";
 import type { HousingTension } from "@/lib/housing-tension";
 import type { RentReference } from "@/lib/rent-reference";
 import type { AuctionSale, SaleVenueType } from "@/lib/types";
@@ -362,7 +362,7 @@ export function SalePublicPreview({
           <dt>Tribunal</dt>
           <dd>
             {preview.tribunal_code ? (
-              <Link href={tribunalPagePath(preview.tribunal_code)} className="underline">
+              <Link href={tribunalCodePagePath(preview.tribunal_code)} className="underline">
                 {tribunal}
               </Link>
             ) : (
