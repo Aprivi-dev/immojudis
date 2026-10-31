@@ -62,9 +62,15 @@ describe("conditions générales", () => {
       `Prix de l’abonnement Analyse : ${DEFAULT_ANALYSIS_OFFER_LABEL}. La souscription n’est pas encore ouverte.`,
     );
     cleanup();
-    // Only a label stating the billed price passes the build (scripts/verify-required-env.mjs).
+    // Only a label stating the billed price (scripts/verify-required-env.mjs) and « TTC »
+    // (resolveAnalysisOfferLabel) is shown; one without « TTC » gives way to the approved label.
+    vi.stubEnv("NEXT_PUBLIC_ANALYSIS_OFFER_LABEL", "59 € TTC par mois");
+    expect(pageText(<TermsPage />)).toContain("Prix de l’abonnement Analyse : 59 € TTC par mois");
+    cleanup();
     vi.stubEnv("NEXT_PUBLIC_ANALYSIS_OFFER_LABEL", "59 € / mois");
-    expect(pageText(<TermsPage />)).toContain("Prix de l’abonnement Analyse : 59 € / mois");
+    expect(pageText(<TermsPage />)).toContain(
+      `Prix de l’abonnement Analyse : ${DEFAULT_ANALYSIS_OFFER_LABEL}`,
+    );
   });
 
   it("décrivent un seul chemin de résiliation, aligné sur le bouton réel du compte", () => {
