@@ -24,6 +24,8 @@ const allowedVercelCronPaths = new Set([
   // Alerte de résultat et récapitulatif hebdomadaire par email (SALE_RESULTS_MODE et WEEKLY_DIGEST_MODE=off par défaut) : ne collectent aucune donnée.
   "/api/cron/sale-results",
   "/api/cron/weekly-digest",
+  // Email unique de fin d'essai (TRIAL_END_EMAIL_MODE=off par défaut) : lit les comptes, ne collecte aucune donnée.
+  "/api/cron/trial-end-email",
   "/api/cron/data-retention",
   // Calcul dérivé (palier de complétude des annonces déjà en base) : ne collecte aucune donnée.
   "/api/cron/listing-completeness",

@@ -97,6 +97,7 @@ const EXPECTED_CRONS = [
   "/api/cron/sale-reminders",
   "/api/cron/sale-results",
   "/api/cron/weekly-digest",
+  "/api/cron/trial-end-email",
   "/api/cron/precompute-valuations",
   "/api/cron/data-retention",
   "/api/cron/operational-health",
