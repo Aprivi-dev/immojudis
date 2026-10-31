@@ -401,10 +401,11 @@ describe("page Offres", () => {
     render(<OffersPage />);
 
     const banner = screen.getByTestId("launch-offer-banner");
+    // Le texte complet des conditions reste dans la page (masqué tant qu'on ne l'ouvre pas).
     expect(banner.textContent).toContain(LAUNCH_OFFER_VISITOR_TEXT);
-    // Le bandeau précède le titre de la page.
+    // Le titre passe d'abord : le bandeau le suit.
     expect(
-      banner.compareDocumentPosition(screen.getByRole("heading", { level: 1 })) &
+      screen.getByRole("heading", { level: 1 }).compareDocumentPosition(banner) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(
@@ -419,6 +420,58 @@ describe("page Offres", () => {
     );
     expect(await within(panel).findByText(/Abonnement mensuel, résiliable/)).toBeTruthy();
     expect(within(panel).getByRole("link", { name: "Commencer l’essai gratuit" })).toBeTruthy();
+  });
+
+  it("essai gratuit : le bandeau tient en deux lignes et ouvre le texte complet à un tap", () => {
+    mocks.launch.mockReturnValue({ active: true, pending: false });
+    render(<OffersPage />);
+
+    const banner = screen.getByTestId("launch-offer-banner");
+    const conditions = screen.getByTestId("launch-offer-conditions");
+    expect(banner.textContent).toContain("Essai gratuit de 7 jours, sans carte bancaire.");
+    expect(conditions.hidden).toBe(true);
+
+    const toggle = within(banner).getByRole("button", { name: "Voir les conditions" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(toggle);
+    expect(conditions.hidden).toBe(false);
+    expect(conditions.textContent).toBe(LAUNCH_OFFER_VISITOR_TEXT);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(toggle.textContent).toBe("Masquer les conditions");
+  });
+
+  it("un seul bouton primaire dans l'en-tête, même avec l'essai ouvert", () => {
+    mocks.launch.mockReturnValue({ active: true, pending: false });
+    const { container } = render(<OffersPage />);
+    const header = container.querySelector("section")!;
+    const primary = Array.from(header.querySelectorAll("a, button")).filter((node) =>
+      node.className.includes("bg-gold text-brand-navy"),
+    );
+    expect(primary.map((node) => node.textContent)).toEqual(["Voir une analyse exemple"]);
+  });
+
+  it("dit le prix dans l'en-tête, avec le tarif prévu tant que rien ne se souscrit", async () => {
+    mocks.offer.mockResolvedValue({ configured: false, trialAvailable: true, label: "59 €" });
+    render(<OffersPage initialSubscriptionOpen={false} />);
+    const line = screen.getByTestId("offers-price-line");
+    expect(line.textContent).toBe(
+      "Découverte gratuite · Analyse 59 € TTC / mois, pas encore souscriptible",
+    );
+    expect(screen.getByRole("heading", { level: 1 }).parentElement?.contains(line)).toBe(true);
+  });
+
+  it("le bandeau et son emplacement réservé ont la même hauteur minimale", () => {
+    mocks.launch.mockReturnValue({ active: false, pending: true });
+    render(<OffersPage />);
+    const reserved = screen.getByTestId("launch-offer-banner-placeholder").className;
+    cleanup();
+    mocks.launch.mockReturnValue({ active: true, pending: false });
+    render(<OffersPage />);
+    const banner = screen.getByTestId("launch-offer-banner").className;
+    const heights = (classes: string) =>
+      classes.split(" ").filter((name) => name.includes("min-h-"));
+    expect(heights(reserved)).toEqual(heights(banner));
+    expect(heights(banner).length).toBeGreaterThan(0);
   });
 
   it("essai gratuit : un compte connecté n'a pas l'invitation, mais son parcours d'abonnement", () => {
