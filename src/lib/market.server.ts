@@ -242,8 +242,8 @@ async function buildEstimate(input: BuildEstimateInput): Promise<MarketEstimate>
       median = hybrid.p50PricePerM2;
       p10 = hybrid.p10PricePerM2;
       p90 = hybrid.p90PricePerM2;
+      // Pas de `coverageTarget` : la couverture du mélange modèle + comparables n'est pas mesurée (n° 21).
       predictionInterval = {
-        coverageTarget: hybrid.coverageTarget,
         method: `hybrid_${hybrid.calibrationMethod}`,
         p10PricePerM2: p10,
         p50PricePerM2: median,

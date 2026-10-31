@@ -78,7 +78,7 @@ export function MarketSnapshot({
   return (
     <section className={panelStyles.marketSnapshot} aria-label="Repères de marché">
       <div>
-        <span className={panelStyles.metricEyebrow}>Fourchette de marché</span>
+        <span className={panelStyles.metricEyebrow}>Fourchette indicative de marché</span>
         <strong>
           {hasRange
             ? `${formatPrice(estimate.estimatedValueLowEur!)} – ${formatPrice(estimate.estimatedValueHighEur!)}`
