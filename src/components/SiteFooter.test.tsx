@@ -72,6 +72,15 @@ it("reprend le pictogramme du favicon (le temple) et l'accroche unique", () => {
   expect(container.querySelector(".lucide")).toBeNull();
 });
 
+it("donne à chaque lien du pied de page une cible tactile d'au moins 44 px", () => {
+  render(<SiteFooter />);
+  const links = within(screen.getByRole("contentinfo")).getAllByRole("link");
+  expect(links.length).toBeGreaterThan(15);
+  for (const link of links) {
+    expect(link.className, link.textContent ?? "").toContain("min-h-11");
+  }
+});
+
 it("stays out of the admin console", () => {
   expect(showsSiteFooter("/admin")).toBe(false);
   expect(showsSiteFooter("/admin/operations")).toBe(false);

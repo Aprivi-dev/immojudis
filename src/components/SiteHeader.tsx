@@ -279,7 +279,7 @@ function MenuButton({
       aria-controls={open ? "site-mobile-navigation" : undefined}
       aria-describedby={signedIn ? MOBILE_MENU_UNREAD_ID : undefined}
       onClick={onOpen}
-      className="relative inline-grid size-10 shrink-0 cursor-pointer place-items-center rounded-full text-foreground transition-colors hover:bg-gold/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft lg:hidden"
+      className="relative inline-grid size-11 shrink-0 cursor-pointer place-items-center rounded-full text-foreground transition-colors hover:bg-gold/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft lg:hidden"
     >
       <MenuBars open={open} />
       {signedIn ? <MobileMenuUnreadBadge /> : null}
@@ -299,7 +299,7 @@ export function SitePillFallback() {
       actions={<VisitorActions />}
       signup
       menu={
-        <span className="inline-grid size-10 place-items-center" aria-hidden>
+        <span className="inline-grid size-11 place-items-center" aria-hidden>
           <MenuBars />
         </span>
       }
