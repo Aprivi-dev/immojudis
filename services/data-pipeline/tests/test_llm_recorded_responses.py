@@ -51,4 +51,6 @@ def test_recorded_reading_responses(case: dict) -> None:
 
     assert [point["title"] for point in points] == case["expect_titles"]
     for point in points:
-        assert "<" not in str(point["quote"]) or str(point["quote"]) in documents[0].pages[int(point["page"])]
+        page = " ".join(documents[int(point["document_index"]) - 1].pages[int(point["page"])].split())
+        assert str(point["quote"]) in page  # a kept quote is a verbatim extract of its page
+        assert "<" not in str(point["quote"]) and ">" not in str(point["quote"])

@@ -31,6 +31,7 @@ from typing import Any
 from src.config import load_settings
 from src.dpe_reading_guard import checked_energy_point, is_energy_point
 from src.normalize import clean_text, strip_accents
+from src.personal_data import redact_personal_text
 
 LOGGER = logging.getLogger(__name__)
 
@@ -199,6 +200,25 @@ def documents_from_manifest(manifest: object) -> list[ReadingDocument]:
             )
         )
     return documents
+
+
+def filtered_for_model(documents: Sequence[ReadingDocument]) -> list[ReadingDocument]:
+    """Copy of the documents with the names of private persons replaced by a role.
+
+    The persisted ``pdf_text`` pages are raw: nothing filters them at storage. The model reads the
+    filtered text and its quotes are checked against that same text (so the stored quote is
+    filtered too). The fingerprint stays computed on the raw pages: no dossier is read again.
+    """
+    return [
+        ReadingDocument(
+            index=doc.index,
+            label=redact_personal_text(doc.label) or doc.label,
+            url=doc.url,
+            document_type=doc.document_type,
+            pages={number: redact_personal_text(text) or text for number, text in doc.pages.items()},
+        )
+        for doc in documents
+    ]
 
 
 def _page_score(text: str) -> int:
@@ -392,6 +412,7 @@ def read_sale_documents(
         return ReadingResult("no_text", model=model)
     if generate_json is None:
         return ReadingResult("unavailable", error_code="READING_PROVIDER_NOT_CONFIGURED", model=model)
+    documents = filtered_for_model(documents)
     prompt, truncated = build_reading_prompt(documents)
     try:
         from src.llm_task_deadline import llm_task_deadline_scope
@@ -498,7 +519,12 @@ def _connect(db_url: str) -> Any:
 
 def _documents_payload(documents: Sequence[ReadingDocument]) -> list[dict[str, object]]:
     return [
-        {"index": doc.index, "label": doc.label, "url": doc.url, "document_type": doc.document_type}
+        {
+            "index": doc.index,
+            "label": redact_personal_text(doc.label) or doc.label,
+            "url": doc.url,
+            "document_type": doc.document_type,
+        }
         for doc in documents
     ]
 
