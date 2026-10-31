@@ -4,21 +4,52 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
+import { useAccessPlan } from "@/hooks/use-access-plan";
 import { useCreateAlert } from "@/hooks/use-create-alert";
 import { useHasAnalysisAccess } from "@/hooks/use-has-analysis-access";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
 import { ANALYSIS_TRIAL_DAYS } from "@/lib/analysis-offer";
-import { LAUNCH_OFFER_ACCOUNT_TEXT } from "@/lib/launch-offer";
+import {
+  LAUNCH_OFFER_ACCOUNT_TEXT,
+  SIGNUP_TRIAL_DENIED_TEXT,
+  signupTrialDateLabel,
+} from "@/lib/launch-offer";
 import { pathWithSearch } from "@/lib/navigation";
 import { firstSearchToUrl, type FirstSearch } from "@/lib/onboarding";
 import { HOME_TYPE_OPTIONS, countActiveSearchFilters } from "@/lib/search/search-filters";
 import { validateSalesSearch } from "@/lib/search/search-url-state";
 import { formatPrice } from "@/lib/format";
+import type { PlanEntitlements } from "@/lib/property-reports";
 import { MONTHLY_UNLOCKS_TEXT, UNLOCK_HIGHLIGHTS_INLINE_TEXT } from "@/lib/sale-unlocks";
 
 const steps = ["Votre secteur", "Vos critères", "Votre première recherche"];
 const inputClass =
   "w-full rounded-lg border border-border bg-background px-4 py-3 text-base text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold";
+
+/**
+ * Ce que le compte ouvre, d'après ses propres droits et non d'après l'interrupteur de l'essai :
+ * « votre compte ouvre les outils Analyse » n'est dit que si l'essai de ce compte est en cours
+ * (`trialEndsAt` dans le futur). Droits non lus (chargement, erreur) : rien n'est annoncé.
+ */
+function accessSentence(
+  plan: PlanEntitlements | undefined,
+  unlockHighlights: string,
+  now: number,
+): string | null {
+  if (!plan) return null;
+  if (plan.launchOffer && plan.trialEndsAt && Date.parse(plan.trialEndsAt) > now) {
+    return `Votre essai gratuit de ${ANALYSIS_TRIAL_DAYS} jours court jusqu’au ${signupTrialDateLabel(plan.trialEndsAt)} : votre compte ouvre les outils de l’offre Analyse sur toutes les ventes (contenu selon la vente). Ensuite, vous aurez ${MONTHLY_UNLOCKS_TEXT}.`;
+  }
+  if (plan.hasAnalysisAccess) {
+    return "Votre compte a l’offre Analyse : elle ouvre toutes les ventes (contenu selon la vente).";
+  }
+  const unlocks = `Avec ${MONTHLY_UNLOCKS_TEXT}, vous ouvrez le détail d’une vente (${unlockHighlights}). L’offre Analyse les ouvre toutes.`;
+  if (plan.trialEndedAt) {
+    return `Votre essai gratuit s’est terminé le ${signupTrialDateLabel(plan.trialEndedAt)} : votre compte est revenu à l’offre Découverte. ${unlocks}`;
+  }
+  if (plan.trialDenied) return `${SIGNUP_TRIAL_DENIED_TEXT} ${unlocks}`;
+  return unlocks;
+}
 
 export function InvestorOnboarding({
   returnTo,
@@ -40,6 +71,7 @@ export function InvestorOnboarding({
   const heading = useRef<HTMLHeadingElement>(null);
   const { user } = useAuth();
   const hasAnalysisAccess = useHasAnalysisAccess(user?.id);
+  const plan = useAccessPlan(user?.id);
   const { createAlertFromSearch, saving } = useCreateAlert({ returnTo: "/bienvenue" });
 
   useEffect(() => {
@@ -217,19 +249,7 @@ export function InvestorOnboarding({
               </dl>
               <p className="text-sm leading-relaxed text-muted-foreground">
                 Ouvrez une fiche pour vérifier la date, la localisation et les caractéristiques du
-                bien.{" "}
-                {launchOffer ? (
-                  <>
-                    Pendant votre essai gratuit de {ANALYSIS_TRIAL_DAYS} jours, votre compte ouvre
-                    les outils de l’offre Analyse sur toutes les ventes (contenu selon la vente).
-                    Ensuite, vous aurez {MONTHLY_UNLOCKS_TEXT}.
-                  </>
-                ) : (
-                  <>
-                    Avec {MONTHLY_UNLOCKS_TEXT}, vous ouvrez le détail d’une vente (
-                    {unlockHighlights}). L’offre Analyse les ouvre toutes.
-                  </>
-                )}
+                bien. {accessSentence(plan, unlockHighlights, Date.now())}
               </p>
               <Link
                 href="/annonce-exemple"
@@ -273,6 +293,14 @@ export function InvestorOnboarding({
                   </p>
                 ) : null}
               </div>
+              <p
+                data-testid="onboarding-next-action"
+                className="rounded-lg border border-gold/25 bg-gold/10 px-4 py-3 text-sm font-medium leading-relaxed text-foreground"
+              >
+                Pour finir : ouvrez une vente{" "}
+                {criteria.department ? "de votre département" : "du catalogue"} et voyez le plafond
+                (contenu selon la vente).
+              </p>
             </div>
           )}
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-5">
