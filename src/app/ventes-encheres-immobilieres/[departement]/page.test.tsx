@@ -376,6 +376,7 @@ describe("page d'un département : contenu", () => {
     expect(within(block).getByRole("link", { name: "Mérignac" }).getAttribute("href")).toBe(
       "/sales?department=33&city=M%C3%A9rignac",
     );
+    expect(block.textContent).toContain("Les nombres sont indicatifs");
     // Des données, pas une affirmation juridique.
     expect(block.textContent).not.toMatch(/doit|obligatoire|garanti/i);
   });

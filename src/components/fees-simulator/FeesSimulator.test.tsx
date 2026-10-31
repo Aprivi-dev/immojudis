@@ -158,6 +158,8 @@ describe("FeesSimulator", () => {
     expect(bar.textContent).toContain(`Coût total ${live.textContent}`);
     expect(bar.textContent).toMatch(/dont \d+(,\d)? % de frais/);
     expect(bar.querySelector("[aria-live]")).toBeNull();
+    // Le total principal reste annoncé ; la barre répétée est masquée aux lecteurs d'écran.
+    expect(bar.getAttribute("aria-hidden")).toBe("true");
 
     fireEvent.change(field("Prix d’adjudication"), { target: { value: "" } });
     expect(screen.getByTestId("simulateur-total-collant").textContent).not.toContain("% de frais");

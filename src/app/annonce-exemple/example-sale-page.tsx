@@ -2,7 +2,6 @@
 
 import { useEffect } from "react";
 import dynamic from "next/dynamic";
-import { DepartmentAlertProposal } from "@/components/DepartmentAlertProposal";
 import { MapboxPreconnect } from "@/components/MapboxPreconnect";
 import Link from "next/link";
 import { SaleDetailSkeleton } from "@/components/SaleDetailFallbacks";
@@ -16,6 +15,13 @@ import type { MarketEstimate } from "@/lib/market.server";
 import type { CeilingUserChoices } from "@/lib/bid-ceiling-defaults";
 import type { AuctionSale } from "@/lib/types";
 import { trackProductEvent } from "@/lib/product-events";
+
+// Chargée à la demande : la proposition d'alerte est en bas de page, hors du JavaScript initial.
+const DepartmentAlertProposal = dynamic(
+  () =>
+    import("@/components/DepartmentAlertProposal").then((module) => module.DepartmentAlertProposal),
+  { loading: () => null },
+);
 
 const AnalysisSaleDetailView = dynamic(
   () =>

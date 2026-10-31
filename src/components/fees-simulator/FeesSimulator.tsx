@@ -164,6 +164,7 @@ function CostMode({
           (au-dessus du bandeau des cookies quand il est ouvert). */}
       <div
         data-testid="simulateur-total-collant"
+        aria-hidden="true"
         className="sticky bottom-[var(--cookie-banner-height,0px)] z-20 -mx-4 border-t border-line bg-white/95 px-4 py-3 text-sm shadow-[0_-10px_28px_rgba(19,34,56,0.1)] backdrop-blur sm:mx-0 sm:rounded-lg sm:border md:col-span-2 lg:hidden"
       >
         <span className="font-semibold">Coût total</span>{" "}

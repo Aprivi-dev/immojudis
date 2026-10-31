@@ -18,7 +18,7 @@ describe("ResourcesNextStep", () => {
       screen.getByRole("heading", { name: "Être prévenu des ventes de mon département" }),
     ).toBeTruthy();
     // Aucun email par défaut : la case n'apparaît qu'après la création, et décochée.
-    expect(document.body.textContent).toContain("Elle n’envoie aucun email par défaut");
+    expect(document.body.textContent).toContain("L’email récapitulatif est facultatif");
     expect(screen.queryByRole("checkbox")).toBeNull();
   });
 });

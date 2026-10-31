@@ -43,7 +43,7 @@ describe("page /simulateur-frais-encheres", () => {
   it("propose d'être prévenu des ventes de son département, en plus de l'inscription", () => {
     const html = renderToString(<Page />);
     expect(html).toContain("Être prévenu des ventes de mon département");
-    expect(html).toContain("Elle n’envoie aucun email par défaut");
+    expect(html).toContain("L’email récapitulatif est facultatif");
     expect(html).not.toContain('type="checkbox"');
   });
 
