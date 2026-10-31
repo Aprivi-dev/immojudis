@@ -40,11 +40,11 @@ describe("page /simulateur-frais-encheres", () => {
     expect(html).toContain("les droits de mutation");
   });
 
-  it("propose d'être prévenu des ventes de son département, en plus de l'inscription", () => {
-    const html = renderToString(<Page />);
-    expect(html).toContain("Être prévenu des ventes de mon département");
-    expect(html).toContain("L’email récapitulatif est facultatif");
-    expect(html).not.toContain('type="checkbox"');
+  it("propose d'être prévenu des ventes de son département, chargé à la demande", async () => {
+    const { readFileSync } = await import("node:fs");
+    const source = readFileSync("src/app/simulateur-frais-encheres/page.tsx", "utf8");
+    expect(source).toContain('from "@/components/DepartmentAlertProposalLazy"');
+    expect(source).toContain("<DepartmentAlertProposal");
   });
 
   it("dit ce que le compte gratuit et Analyse ouvrent, sans réserver l'enchère plafond à Analyse", () => {

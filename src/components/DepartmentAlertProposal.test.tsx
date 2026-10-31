@@ -6,13 +6,6 @@ const state = vi.hoisted(() => ({
   auth: { user: null as null | { id: string }, loading: false },
 }));
 vi.mock("@/hooks/use-auth", () => ({ useAuth: () => state.auth }));
-// Le formulaire (chargé à la demande) est remplacé par un témoin : il a ses propres tests.
-vi.mock("next/dynamic", () => ({
-  default: () =>
-    function FormStub(props: { criteria: Record<string, unknown> }) {
-      return <div data-testid="sector-alert-form" data-criteria={JSON.stringify(props.criteria)} />;
-    },
-}));
 
 import { DEPARTMENT_ALERT_LABEL, DepartmentAlertProposal } from "./DepartmentAlertProposal";
 
@@ -47,18 +40,17 @@ describe("DepartmentAlertProposal", () => {
     expect(link.getAttribute("href")).toBe(
       "/login?redirect=%2Falertes%2Fcreer%3Fdepartment%3D33&mode=investor&reason=alerte",
     );
-    expect(screen.queryByTestId("sector-alert-form")).toBeNull();
   });
 
-  it("montre le formulaire de création à une personne connectée une fois le département choisi", () => {
+  it("envoie une personne connectée directement à la confirmation de l'alerte", () => {
     state.auth = { user: { id: "u1" }, loading: false };
     render(<DepartmentAlertProposal />);
-    expect(screen.queryByTestId("sector-alert-form")).toBeNull();
     expect(screen.queryByRole("link", { name: DEPARTMENT_ALERT_LABEL })).toBeNull();
     fireEvent.change(screen.getByLabelText("Département"), { target: { value: "75" } });
-    expect(screen.getByTestId("sector-alert-form").getAttribute("data-criteria")).toBe(
-      '{"department":"75"}',
+    expect(screen.getByRole("link", { name: DEPARTMENT_ALERT_LABEL }).getAttribute("href")).toBe(
+      "/alertes/creer?department=75",
     );
+    expect(screen.queryByRole("checkbox")).toBeNull();
   });
 
   it("n'affiche ni bouton de connexion ni formulaire pendant la vérification du compte", () => {
@@ -67,6 +59,5 @@ describe("DepartmentAlertProposal", () => {
     fireEvent.change(screen.getByLabelText("Département"), { target: { value: "75" } });
     expect(screen.queryByRole("link", { name: DEPARTMENT_ALERT_LABEL })).toBeNull();
     expect(screen.queryByRole("button", { name: DEPARTMENT_ALERT_LABEL })).toBeNull();
-    expect(screen.queryByTestId("sector-alert-form")).toBeNull();
   });
 });

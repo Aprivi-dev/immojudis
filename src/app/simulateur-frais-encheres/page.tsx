@@ -5,7 +5,7 @@ import { FeesSimulator } from "@/components/fees-simulator/FeesSimulator";
 import { formatScaleDate } from "@/components/fees-simulator/scale-date";
 import { Card, PageShell, buttonClasses } from "@/components/ui/primitives";
 import { BreadcrumbJsonLd } from "@/components/BreadcrumbJsonLd";
-import { DepartmentAlertProposal } from "@/components/DepartmentAlertProposal";
+import { DepartmentAlertProposal } from "@/components/DepartmentAlertProposalLazy";
 import { LaunchOfferNote } from "@/components/LaunchOfferNote";
 import { loginPathWithRedirect } from "@/lib/navigation";
 import { pageMetadata } from "@/lib/page-metadata";
