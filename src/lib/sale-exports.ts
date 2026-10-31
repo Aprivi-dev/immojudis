@@ -22,7 +22,7 @@ import {
 import { cleanDateForListing } from "@/lib/listing-data-cleanup";
 import { featureIncluded } from "@/lib/plans";
 import { computeAcquisitionCosts, computeRentabilityScore } from "@/lib/profitability";
-import { resolvePlanEntitlements } from "@/lib/property-reports";
+import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import { getSales } from "@/lib/queries";
 import { RateLimitError } from "@/lib/api-errors";
 import {

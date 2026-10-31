@@ -38,7 +38,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
     },
   },
 }));
-vi.mock("@/lib/property-reports", () => ({ resolvePlanEntitlements: mocks.plan }));
+vi.mock("@/lib/entitlements.server", () => ({ resolvePlanEntitlements: mocks.plan }));
 vi.mock("@/lib/rate-limit", () => ({ enforceDailyOperationLimits: mocks.daily }));
 
 import { createUserApiKey } from "@/lib/api-keys";

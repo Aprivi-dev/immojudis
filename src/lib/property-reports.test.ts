@@ -3,8 +3,8 @@ import {
   buildOpportunityAnalysis,
   buildPropertyReportShare,
   buildPublicSharedPropertyReport,
-  resolvePlanEntitlements,
 } from "@/lib/property-reports";
+import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import type { Json } from "@/integrations/supabase/types";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { EXAMPLE_SALE } from "@/lib/example-sale";

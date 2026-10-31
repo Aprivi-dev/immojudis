@@ -38,11 +38,8 @@ vi.mock("@/integrations/supabase/client.server", () => ({
 }));
 
 import { hasStandingAnalysisAccess, PLAN_LIMITS } from "@/lib/plans";
-import {
-  assertFeatureEntitlement,
-  resolvePlanEntitlements,
-  shareOwnerKeepsSavedReports,
-} from "@/lib/property-reports";
+import { resolvePlanEntitlements } from "@/lib/entitlements.server";
+import { assertFeatureEntitlement, shareOwnerKeepsSavedReports } from "@/lib/property-reports";
 
 type Subscription = {
   plan_code: string;

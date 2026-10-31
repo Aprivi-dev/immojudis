@@ -30,7 +30,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
     },
   },
 }));
-vi.mock("@/lib/property-reports", () => ({ resolvePlanEntitlements: mocks.plan }));
+vi.mock("@/lib/entitlements.server", () => ({ resolvePlanEntitlements: mocks.plan }));
 vi.mock("@/lib/rate-limit", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/rate-limit")>()),
   enforceUserRateLimit: mocks.userLimit,
