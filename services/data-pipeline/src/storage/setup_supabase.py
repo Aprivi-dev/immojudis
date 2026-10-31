@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 import psycopg
 
 from src.config import ROOT_DIR, load_settings
+from src.storage.connection_guards import postgres_ssl_options
 
 
 def apply_schema(schema_path: Path | None = None) -> None:
@@ -21,7 +22,7 @@ def apply_schema(schema_path: Path | None = None) -> None:
         )
 
     schema_sql = (schema_path or ROOT_DIR / "sql" / "schema.sql").read_text(encoding="utf-8")
-    with psycopg.connect(str(db_url)) as connection:
+    with psycopg.connect(str(db_url), **postgres_ssl_options(str(db_url))) as connection:
         with connection.cursor() as cursor:
             cursor.execute(schema_sql)
         connection.commit()
