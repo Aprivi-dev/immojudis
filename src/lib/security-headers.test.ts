@@ -57,6 +57,65 @@ describe("browser security headers", () => {
     );
   });
 
+  describe("historical CSP", () => {
+    const legacyPolicy = (extraFrameSources?: string) =>
+      headerMap(
+        buildSecurityHeaders({
+          isProduction: true,
+          supabaseUrl: "https://project.supabase.co",
+          extraFrameSources,
+        }),
+      )["Content-Security-Policy"]!;
+    const sources = (policy: string, name: string) =>
+      policy
+        .split("; ")
+        .find((entry) => entry.startsWith(`${name} `))
+        ?.split(" ")
+        .slice(1) ?? [];
+
+    it("limits connect-src to the exact Supabase project instead of *.supabase.co", () => {
+      const connect = sources(legacyPolicy(), "connect-src");
+      expect(connect).toContain("https://project.supabase.co");
+      expect(connect).toContain("wss://project.supabase.co");
+      expect(connect.some((source) => source.includes("*.supabase.co"))).toBe(false);
+    });
+
+    it("allows no Supabase host at all when the project URL is unknown", () => {
+      const policy = headerMap(buildSecurityHeaders({ isProduction: true }))[
+        "Content-Security-Policy"
+      ]!;
+      expect(policy).not.toContain("supabase.co");
+    });
+
+    it("lists the framed services instead of allowing any https: frame", () => {
+      const frames = sources(legacyPolicy(), "frame-src");
+      expect(frames).not.toContain("https:");
+      expect(frames).toEqual([
+        "'self'",
+        "https://js.stripe.com",
+        "https://hooks.stripe.com",
+        "https://www.google.com",
+        "https://project.supabase.co",
+      ]);
+    });
+
+    it("accepts extra frame hosts only as https origins", () => {
+      const frames = sources(
+        legacyPolicy("https://documents.example.test/path, http://insecure.test javascript:x"),
+        "frame-src",
+      );
+      expect(frames).toContain("https://documents.example.test");
+      expect(frames.join(" ")).not.toContain("insecure.test");
+      expect(frames.join(" ")).not.toContain("javascript:");
+    });
+
+    it("keeps images and media open to https for listing photos", () => {
+      const policy = legacyPolicy();
+      expect(sources(policy, "img-src")).toContain("https:");
+      expect(sources(policy, "media-src")).toContain("https:");
+    });
+  });
+
   it("drops the historical CSP once the strict policy is enforced", () => {
     const values = headerMap(buildSecurityHeaders({ isProduction: true, includeLegacyCsp: false }));
     expect(values["Content-Security-Policy"]).toBeUndefined();
