@@ -132,7 +132,14 @@ class PdfEnrichmentStats:
 
 
 class PermanentDocumentFailure(ValueError):
-    """A document URL is known not to be usable by the PDF extractor."""
+    """A document URL is known not to be usable by the PDF extractor.
+
+    Raised by the download (HTTP 404, access denied, not a document) and by the extraction when the piece itself
+    can never be read: ``too_many_pages``, ``document_too_large``, ``encrypted_document`` or ``corrupt_document``.
+    Retrying such a piece only repeats the same failure until the job is dead-lettered
+    (``pipeline.enrichment.exhausted``); it is recorded in ``permanent_document_failures`` instead, the job
+    succeeds and the piece is revoked.
+    """
 
     def __init__(self, reason: str, message: str | None = None) -> None:
         super().__init__(message or reason)
@@ -251,6 +258,18 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
             )
             checkpoint_partial_pdf_progress(file_path, document, error=exc, total_pages=exc.total_pages, cache_root=PDF_DOCUMENT_TEXTS_DIR, manifest_path=PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json", current_texts=pdf_texts, sale=sale, analysis=sale.raw_payload.get("document_analysis"), documents=sale.documents, downloaded_documents=downloaded_documents, ocr_enabled=bool(load_settings()["pdf_ocr_enabled"]), ocr_language=str(load_settings()["pdf_ocr_language"]), merge_cache=merge_pdf_cache, write_cache=_write_pdf_text_cache, store_status=_store_document_analysis_status)
             raise
+        except PermanentDocumentFailure as exc:
+            # A piece that can never be read (too many pages, too heavy, encrypted, corrupt) is settled like a
+            # document that answers 404: no error, so the job succeeds and the piece is revoked below.
+            _log_pdf_document_transition(
+                document,
+                status="permanent_failure",
+                started_at=document_started_at,
+                error_type=exc.reason,
+            )
+            LOGGER.info("Skipping permanently unusable document %s: %s", file_path, exc.reason)
+            stats.permanent_document_failures.append({"url": str(document.get("url") or ""), "reason": exc.reason})
+            continue
         except Exception as exc:
             _log_pdf_document_transition(
                 document,
@@ -839,7 +858,9 @@ def extract_pdf_document(file: str | Path, document: dict[str, str] | None = Non
     settings = load_settings()
     max_bytes = int(settings["pdf_max_download_mb"]) * 1024 * 1024
     if path.stat().st_size > max_bytes:
-        raise ValueError(f"document exceeds the {max_bytes}-byte extraction limit")
+        raise PermanentDocumentFailure(
+            "document_too_large", f"document exceeds the {max_bytes}-byte extraction limit"
+        )
     pages = extract_pdf_pages(path)
     page_text = clean_text("\n".join(str(page["text"]) for page in pages if page.get("text"))) or ""
     text = page_text
@@ -1075,9 +1096,16 @@ def extract_pdf_pages(file: str | Path) -> list[dict[str, object]]:
     settings = load_settings()
     max_pages = int(settings["pdf_max_extract_pages"])
     hard_limit = int(settings.get("pdf_max_total_pages", 300))
-    with pdf_document_ocr_budget_scope(_pdf_ocr_document_budget_seconds(settings)), fitz.open(file) as document:
+    try:
+        opened = fitz.open(file)
+    except (fitz.FileDataError, fitz.EmptyFileError) as exc:
+        # The message of the library carries the path of the file: only the reason is kept.
+        raise PermanentDocumentFailure("corrupt_document", "PDF cannot be opened (corrupt or empty file)") from exc
+    with pdf_document_ocr_budget_scope(_pdf_ocr_document_budget_seconds(settings)), opened as document:
+        if document.needs_pass and not document.authenticate(""):
+            raise PermanentDocumentFailure("encrypted_document", "PDF is protected by a password")
         if document.page_count > hard_limit:
-            raise ValueError(f"PDF exceeds the {hard_limit}-page safety limit")
+            raise PermanentDocumentFailure("too_many_pages", f"PDF exceeds the {hard_limit}-page safety limit")
         # Long text PDFs are inexpensive. Only OCR consumes the per-pass budget.
         cache_key = hashlib.sha256(Path(file).read_bytes() + str((settings["pdf_ocr_enabled"], settings["pdf_ocr_language"], PDF_TEXT_CACHE_VERSION)).encode()).hexdigest()
         cache_dir = PDF_DOCUMENT_TEXTS_DIR / "pages" / cache_key
