@@ -65,10 +65,11 @@ export type TribunalPage = {
 };
 
 /**
- * Adresse stable d'un tribunal : son code, ramené à des minuscules, chiffres et tirets
- * (« justice_tj_1_93 » donne « justice-tj-1-93 »). Elle ne dépend ni du nom (qui peut être
- * corrigé), ni des autres tribunaux, ni de la présence de ventes à venir : une adresse publiée ne
- * change plus et ne désigne jamais deux tribunaux.
+ * Adresse de repli d'un tribunal : son code, ramené à des minuscules, chiffres et tirets
+ * (« justice_tj_1_93 » donne « justice-tj-1-93 »). C'était l'adresse publiée avant les adresses
+ * lisibles : elle redirige (308) vers l'adresse lisible (voir `legacyTribunalRedirectPath`) et ne
+ * reste l'adresse du tribunal que s'il n'a pas de nom lisible ou si son nom est partagé par un autre
+ * tribunal (voir `tribunalSlug`).
  */
 export function tribunalCodeSlug(code: string): string {
   return normalizeFrenchSearchText(code).replaceAll(" ", "-");
@@ -89,21 +90,84 @@ export function normalizeTribunalSlug(raw: string): string {
   return tribunalCodeSlug(text);
 }
 
-export function tribunalPagePath(code: string): string {
-  return `${TRIBUNAL_PAGES_PATH}/${tribunalCodeSlug(code)}`;
+type TribunalNames = Pick<PublicTribunalDirectoryEntry, "name" | "searchName">;
+type TribunalIdentity = TribunalNames & Pick<PublicTribunalDirectoryEntry, "code">;
+
+/**
+ * Adresse lisible d'un tribunal, tirée de son nom : « tribunal-judiciaire-grasse »,
+ * « tribunal-judiciaire-le-puy-en-velay », « tribunal-de-premiere-instance-papeete ». `null` quand
+ * le référentiel ne nomme pas le tribunal (le « nom » est son code brut) : l'adresse par code reste
+ * alors la seule.
+ */
+export function tribunalReadableSlug(entry: TribunalIdentity): string | null {
+  const raw = (entry.searchName || entry.name || "").trim();
+  if (!raw || raw === entry.code || isRawTribunalCode(raw)) return null;
+  const place = tribunalSlugBase(raw);
+  if (!place) return null;
+  const kind = /tribunal de premi[èe]re instance/i.test(raw)
+    ? "tribunal-de-premiere-instance"
+    : "tribunal-judiciaire";
+  return `${kind}-${place}`;
+}
+
+/**
+ * Les tribunaux dont l'adresse lisible est aussi celle d'un autre tribunal. Aucun d'eux n'a
+ * d'adresse lisible : un même nom ne doit jamais désigner deux pages. Ils gardent leur adresse par
+ * code. Les tribunaux sont comptés une fois par code, quelle que soit la liste d'où ils viennent.
+ */
+export function ambiguousTribunalCodes(entries: readonly TribunalIdentity[]): Set<string> {
+  const bySlug = new Map<string, Set<string>>();
+  for (const entry of entries) {
+    const slug = tribunalReadableSlug(entry);
+    if (!slug) continue;
+    const codes = bySlug.get(slug) ?? new Set<string>();
+    codes.add(entry.code);
+    bySlug.set(slug, codes);
+  }
+  const ambiguous = new Set<string>();
+  for (const codes of bySlug.values()) {
+    if (codes.size > 1) for (const code of codes) ambiguous.add(code);
+  }
+  return ambiguous;
+}
+
+/** L'adresse d'un tribunal : lisible quand elle existe et n'est pas partagée, sinon par code. */
+export function tribunalSlug(
+  entry: TribunalIdentity,
+  ambiguous: ReadonlySet<string> = new Set(),
+): string {
+  return (
+    (ambiguous.has(entry.code) ? null : tribunalReadableSlug(entry)) ?? tribunalCodeSlug(entry.code)
+  );
+}
+
+/**
+ * Chemin de la page d'un tribunal. Avec son nom, l'adresse lisible ; sans nom, l'adresse par code
+ * (qui redirige en 308 vers la lisible). Un lien interne devrait passer le nom.
+ */
+export function tribunalPagePath(code: string, names?: Partial<TribunalNames>): string {
+  const slug = tribunalSlug({ code, name: names?.name ?? "", searchName: names?.searchName ?? "" });
+  return `${TRIBUNAL_PAGES_PATH}/${slug}`;
 }
 
 function departmentSuffix(activity: PublicTribunalActivity): string {
   return normalizeFrenchSearchText(activity.department ?? "").replaceAll(" ", "-");
 }
 
-/** Une page par tribunal, à l'adresse stable tirée de son code (voir `tribunalCodeSlug`). */
-export function tribunalPages(items: readonly PublicTribunalActivity[]): TribunalPage[] {
-  return items.map((activity) => ({
-    activity,
-    slug: tribunalCodeSlug(activity.code),
-    path: tribunalPagePath(activity.code),
-  }));
+/**
+ * Une page par tribunal, à son adresse lisible (voir `tribunalSlug`). Un nom partagé par deux
+ * tribunaux de la liste ôte l'adresse lisible aux deux ; `ambiguous` ajoute ceux que seul le
+ * référentiel complet révèle (voir `ambiguousTribunalCodes`).
+ */
+export function tribunalPages(
+  items: readonly PublicTribunalActivity[],
+  ambiguous: ReadonlySet<string> = new Set(),
+): TribunalPage[] {
+  const shared = new Set([...ambiguousTribunalCodes(items), ...ambiguous]);
+  return items.map((activity) => {
+    const slug = tribunalSlug(activity, shared);
+    return { activity, slug, path: `${TRIBUNAL_PAGES_PATH}/${slug}` };
+  });
 }
 
 /**
@@ -132,30 +196,47 @@ export function legacyTribunalPages(items: readonly PublicTribunalActivity[]): T
 }
 
 /**
- * La nouvelle adresse d'un tribunal publié sous son ancienne adresse (nom), ou `null`. D'abord les
- * tribunaux à ventes à venir, avec l'algorithme d'origine (collisions comprises) ; ensuite le
- * référentiel complet pour un tribunal qui n'a plus de vente, seulement quand le nom désigne un
- * tribunal et un seul.
+ * La nouvelle adresse d'un tribunal publié sous une ancienne adresse, ou `null`. Deux anciennes
+ * formes existent :
+ * - l'adresse par code (« justice-tj-1-93 »), redirigée vers l'adresse lisible du tribunal, sauf
+ *   quand celle-ci n'existe pas (nom illisible ou partagé) : l'adresse par code est alors la bonne
+ *   et `null` est rendu ;
+ * - l'adresse par nom (« bobigny »). D'abord les tribunaux à ventes à venir, avec l'algorithme
+ *   d'origine (collisions comprises) ; ensuite le référentiel complet pour un tribunal qui n'a plus
+ *   de vente, seulement quand le nom désigne un tribunal et un seul.
+ * Le référentiel peut être vide (lecture en échec) : les tribunaux à ventes suffisent alors aux
+ * redirections de leurs propres adresses.
  */
 export function legacyTribunalRedirectPath(
   items: readonly PublicTribunalActivity[],
   directory: readonly PublicTribunalDirectoryEntry[],
   slug: string,
 ): string | null {
+  const known = [...items, ...directory];
+  const ambiguous = ambiguousTribunalCodes(known);
+  const canonicalPath = (entry: TribunalIdentity) =>
+    `${TRIBUNAL_PAGES_PATH}/${tribunalSlug(entry, ambiguous)}`;
+
+  const byCode = known.find((entry) => tribunalCodeSlug(entry.code) === slug);
+  if (byCode) {
+    const path = canonicalPath(byCode);
+    return path === `${TRIBUNAL_PAGES_PATH}/${slug}` ? null : path;
+  }
   const active = legacyTribunalPages(items).find((page) => page.slug === slug);
-  if (active) return tribunalPagePath(active.activity.code);
+  if (active) return canonicalPath(active.activity);
   const named = directory.filter(
     (entry) => (tribunalSlugBase(entry.searchName || entry.name) || entry.code) === slug,
   );
-  return named.length === 1 ? tribunalPagePath(named[0].code) : null;
+  return named.length === 1 ? canonicalPath(named[0]) : null;
 }
 
-/** Le tribunal connu du référentiel qui porte cette adresse, ou `null`. */
+/** Le tribunal connu du référentiel qui porte cette adresse (lisible, ou par code), ou `null`. */
 export function knownTribunalFromSlug(
   directory: readonly PublicTribunalDirectoryEntry[],
   slug: string,
+  ambiguous: ReadonlySet<string> = ambiguousTribunalCodes(directory),
 ): PublicTribunalDirectoryEntry | null {
-  return directory.find((entry) => tribunalCodeSlug(entry.code) === slug) ?? null;
+  return directory.find((entry) => tribunalSlug(entry, ambiguous) === slug) ?? null;
 }
 
 /** Un tribunal du référentiel sans vente à venir, sous la forme des chiffres d'une page. */
@@ -179,16 +260,20 @@ export function emptyTribunalActivity(entry: PublicTribunalDirectoryEntry): Publ
 export function tribunalPageFromSlug(
   items: readonly PublicTribunalActivity[],
   slug: string,
+  ambiguous: ReadonlySet<string> = new Set(),
 ): TribunalPage | null {
-  return tribunalPages(items).find((page) => page.slug === slug) ?? null;
+  return tribunalPages(items, ambiguous).find((page) => page.slug === slug) ?? null;
 }
 
 /**
  * Les tribunaux dont la page est indexable, par nombre de ventes décroissant. Un tribunal sans nom
  * lisible (code brut à la place du nom) n'y est pas : sa page est en `noindex`.
  */
-export function indexableTribunalPages(items: readonly PublicTribunalActivity[]): TribunalPage[] {
-  return tribunalPages(items).filter(
+export function indexableTribunalPages(
+  items: readonly PublicTribunalActivity[],
+  ambiguous: ReadonlySet<string> = new Set(),
+): TribunalPage[] {
+  return tribunalPages(items, ambiguous).filter(
     (page) =>
       isTribunalPageIndexable(page.activity.upcomingCount) &&
       hasReadableTribunalName(page.activity),

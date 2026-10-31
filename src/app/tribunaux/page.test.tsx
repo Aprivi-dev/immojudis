@@ -138,7 +138,7 @@ describe("/tribunaux", () => {
     });
     // Un seul lien par ligne : le nom, vers la page du tribunal (qui renvoie à la recherche filtrée).
     expect(screen.getByRole("link", { name: "Bobigny" }).getAttribute("href")).toBe(
-      "/tribunaux/bobigny",
+      "/tribunaux/tribunal-judiciaire-bobigny",
     );
     const row = screen.getByRole("link", { name: "Bobigny" }).closest("tr");
     expect(row?.querySelectorAll("a")).toHaveLength(1);

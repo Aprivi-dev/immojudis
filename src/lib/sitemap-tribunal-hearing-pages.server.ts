@@ -1,6 +1,7 @@
 import "server-only";
 import { loadPublicTribunalActivity } from "@/lib/public-tribunal-activity.server";
-import { indexableTribunalPages } from "@/lib/tribunal-pages";
+import { tryLoadPublicTribunalDirectory } from "@/lib/public-tribunal-directory.server";
+import { ambiguousTribunalCodes, indexableTribunalPages } from "@/lib/tribunal-pages";
 import {
   HEARINGS_PATH,
   dedupeHearings,
@@ -19,13 +20,19 @@ import { tryLoadUpcomingHearings } from "@/lib/upcoming-hearings.server";
  */
 export async function loadTribunalAndHearingPaths(): Promise<string[]> {
   try {
-    const [tribunals, hearings] = await Promise.all([
+    const [tribunals, directory, hearings] = await Promise.all([
       loadPublicTribunalActivity(),
+      tryLoadPublicTribunalDirectory(),
       tryLoadUpcomingHearings(),
     ]);
     const paths: string[] = [];
     if (tribunals.status === "ok") {
-      paths.push(...indexableTribunalPages(tribunals.items).map((page) => page.path));
+      // Même règle d'adresse que la page : deux tribunaux de même nom gardent leur adresse par code.
+      const ambiguous = ambiguousTribunalCodes([
+        ...tribunals.items,
+        ...(directory.status === "ok" ? directory.items : []),
+      ]);
+      paths.push(...indexableTribunalPages(tribunals.items, ambiguous).map((page) => page.path));
     }
     if (hearings.status === "ok") {
       const windows = windowHearings(dedupeHearings(hearings.hearings));

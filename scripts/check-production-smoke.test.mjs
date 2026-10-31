@@ -12,12 +12,12 @@ function sitemapXml(urls) {
 }
 
 const PAGE_URLS = Array.from({ length: 16 }, (_, index) => `${ORIGIN}/page-${index}`);
-// Pages of courts listed in the pages sitemap (code-based addresses).
+// Pages of courts listed in the pages sitemap (readable addresses).
 const TRIBUNAL_URLS = Array.from(
   { length: 12 },
-  (_, index) => `${ORIGIN}/tribunaux/justice-tj-${index + 1}-93`,
+  (_, index) => `${ORIGIN}/tribunaux/tribunal-judiciaire-ville-${index + 1}`,
 );
-const KNOWN_TRIBUNAL = "/tribunaux/justice-tj-1-93";
+const KNOWN_TRIBUNAL = "/tribunaux/tribunal-judiciaire-bobigny";
 const LEGACY_TRIBUNAL = "/tribunaux/bobigny";
 const UNKNOWN_TRIBUNAL = "/tribunaux/tribunal-inexistant-test-de-fumee";
 const SALE_URLS = [
@@ -525,8 +525,8 @@ describe("production smoke test, supervision and court pages", () => {
 
   it("takes the known court from the option", async () => {
     const site = fakeSite();
-    await run(site, { indexing: "closed", tribunalPath: "/tribunaux/justice-tj-2-93" });
-    expect(site.calls).toContain("/tribunaux/justice-tj-2-93");
+    await run(site, { indexing: "closed", tribunalPath: "/tribunaux/tribunal-judiciaire-nantes" });
+    expect(site.calls).toContain("/tribunaux/tribunal-judiciaire-nantes");
   });
 
   it("fails when the old court address is not a 308", async () => {
@@ -544,7 +544,7 @@ describe("production smoke test, supervision and court pages", () => {
     );
   });
 
-  it("fails when the old court address does not lead to a code-based address", async () => {
+  it("fails when the old court address does not lead to a readable court address", async () => {
     const site = fakeSite({
       overrides: {
         [LEGACY_TRIBUNAL]: (headers) => ({
@@ -558,7 +558,7 @@ describe("production smoke test, supervision and court pages", () => {
   });
 
   it("fails when the redirect takes more than one hop", async () => {
-    const intermediate = "/tribunaux/justice-tj-9-93";
+    const intermediate = "/tribunaux/tribunal-judiciaire-ancien";
     const site = fakeSite({
       overrides: {
         [LEGACY_TRIBUNAL]: (headers) => ({
@@ -691,7 +691,7 @@ describe("production smoke test, indexing open", () => {
   it("fails when /sitemap.xml lists too few court pages", async () => {
     const site = fakeSite({ indexing: "open" });
     await expect(run(site, { indexing: "open", minTribunalUrls: 13 })).rejects.toThrow(
-      "/sitemap.xml: 12 page(s) /tribunaux/justice-tj-… au lieu d'au moins 13.",
+      "/sitemap.xml: 12 page(s) /tribunaux/tribunal-… au lieu d'au moins 13.",
     );
   });
 
