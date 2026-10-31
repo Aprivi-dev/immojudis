@@ -51,8 +51,8 @@ describe("registrationRateForDepartment", () => {
     expect(registrationRateForDepartment("36")).toBeCloseTo(0.0509, 4);
   });
 
-  it("applique 5,81 % aux dix départements restés à 4,50 % de part départementale", () => {
-    for (const code of ["05", "06", "07", "16", "26", "48", "60", "65", "71", "971"]) {
+  it("applique 5,81 % aux onze départements restés à 4,50 % de part départementale (Mayotte comprise)", () => {
+    for (const code of ["05", "06", "07", "16", "26", "48", "60", "65", "71", "971", "976"]) {
       expect(registrationRateForDepartment(code), code).toBe(0.0581);
     }
     // Les noms et les codes voisins ne basculent pas par erreur.
@@ -62,9 +62,9 @@ describe("registrationRateForDepartment", () => {
     }
   });
 
-  it("applique 5,09 % à l'Indre et à Mayotte, comme le calcul de l'Indre (3,80 + 1,20 + 2,37 % de 3,80)", () => {
+  it("applique 5,09 % à l'Indre seule (3,80 + 1,20 + 2,37 % de 3,80)", () => {
     expect(registrationRateForDepartment("36")).toBe(0.0509);
-    expect(registrationRateForDepartment("976")).toBe(0.0509);
+    expect(registrationRateForDepartment("976")).toBe(0.0581);
     // Les trois taux se déduisent de la part départementale : 5,00 %, 4,50 % et 3,80 %.
     const global = (departmental: number) => departmental + 1.2 + departmental * 0.0237;
     expect(global(5) / 100).toBeCloseTo(DMTO_DEFAULT_RATE, 4);
@@ -77,7 +77,7 @@ describe("registrationRateForDepartment", () => {
       computeAcquisitionCosts({ price: 100_000, department: "06" }).registrationDuties,
     ).toBeCloseTo(5_810, 2);
     expect(
-      computeAcquisitionCosts({ price: 100_000, department: "976" }).registrationDuties,
+      computeAcquisitionCosts({ price: 100_000, department: "36" }).registrationDuties,
     ).toBeCloseTo(5_090, 2);
     expect(
       computeAcquisitionCosts({ price: 100_000, department: "33" }).registrationDuties,

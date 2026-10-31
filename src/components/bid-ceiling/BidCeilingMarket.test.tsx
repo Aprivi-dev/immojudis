@@ -6,7 +6,7 @@ import { dvfPeriodLabel, MarketPriceDistribution } from "./BidCeilingMarket";
 
 afterEach(cleanup);
 
-const plain = (text: string | null) => (text ?? "").replace(/[  ]/g, " ");
+const plain = (text: string | null) => (text ?? "").replace(/[\u00a0\u202f]/g, " ");
 
 function estimate(overrides: Partial<MarketEstimate> = {}): MarketEstimate {
   return {
