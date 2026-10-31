@@ -35,7 +35,8 @@ Le dépôt réunit deux briques :
   Le npm livré avec Node peut être plus ancien : `npm install --global npm@11.18.0` (version épinglée par la CI
   et par `vercel.json`). `npm run check:versions` vérifie que `.nvmrc`, `.node-version`, `engines`, la CI,
   `vercel.json` et l'image Playwright de la CI concordent.
-- Un projet **Supabase** (URL + clé publishable)
+- Un projet **Supabase** (URL + clé publishable) pour l'application, **ou** une base locale jetable
+  (voir « Base de données locale ») : elle demande **Docker** (Docker Desktop ou un démon Docker).
 
 ## Démarrage rapide
 
@@ -122,11 +123,17 @@ Mapbox configurés pour l'application.
 | `npm run build`                          | Build de production pur (validation des variables puis compilation Next.js)                                     |
 | `npm run preview`                        | Smoke-test du build                                                                                             |
 | `npm run test`                           | Tests unitaires Vitest                                                                                          |
+| `npm run test:security-invariants`       | Invariants de sécurité (schéma, droits, routes sensibles) : à passer avant de livrer                            |
+| `npm run test:e2e`                       | Parcours investisseur Playwright (navigateur ; en CI, dans l'image officielle du conteneur)                     |
 | `npm run lint`                           | ESLint (flat config)                                                                                            |
+| `npm run knip`                           | Code mort et dépendances inutilisées : **non bloquant** (informatif en CI), à relire sans l'imposer             |
 | `npm run env:check:prod`                 | Vérifie les variables nécessaires aux API prod + migrations                                                     |
-| `npm run db:migrate`                     | Applique les migrations Supabase en attente (`SUPABASE_DB_URL`, `POSTGRES_URL_NON_POOLING` ou `POSTGRES_URL`)   |
+| `npm run db:migrate`                     | **ÉCRIT EN PRODUCTION** si la base visée est distante : passer par le workflow « Apply Supabase Migrations »    |
+| `npm run check:migrations`               | Vérifie les migrations sans rien appliquer (versions uniques, historique) ; ajouter `-- --base-ref=origin/main` |
 | `npm run check:schema-drift`             | Vérifie que le schéma Supabase correspond exactement aux migrations versionnées                                 |
+| `npm run db:types`                       | Régénère `src/integrations/supabase/types.ts` depuis la base **locale** (Docker, migrations rejouées)           |
 | `npm run check:versions`                 | Vérifie la cohérence des versions de Node, de npm et de l'image Playwright (CI)                                 |
+| `npm run ops:smoke`                      | Test de fumée en lecture seule d'un site déployé (`--origin`, par défaut la production) : pages, sitemap, santé |
 | `npm run ops:health-scheduler:configure` | Chiffre dans Vault l'URL et le secret du contrôle de santé toutes les 15 minutes                                |
 | `npm run valuation:publish`              | Publie explicitement les modèles de valorisation                                                                |
 | `npm run release:prepare`                | **ÉCRIT EN PRODUCTION** : applique les migrations, reconfigure Vault, publie les modèles (confirmation requise) |
@@ -146,9 +153,9 @@ immojudis/
 │  └─ types/                  # Types partagés
 ├─ services/data-pipeline/    # Pipeline Python (scraping → Supabase) — voir son README
 ├─ supabase/migrations/       # Migrations SQL versionnées
-├─ sql/                       # Scripts d'amorçage à exécuter dans Supabase (vercel_app_setup.sql)
+├─ sql/                       # Script d'amorçage historique (vercel_app_setup.sql), OBSOLÈTE : ne plus l'exécuter
 ├─ docs/                      # Documentation (index : docs/README.md) : déploiement, ops, runbooks, référence
-├─ scripts/                   # Outils de dev (dev-ready)
+├─ scripts/                   # Outils de dev, de CI et d'exploitation (dev-ready, contrôles de migrations, test de fumée)
 └─ .github/workflows/         # CI (ci.yml) et workflows d'exploitation, de collecte et de migrations
 ```
 
@@ -157,11 +164,37 @@ immojudis/
 Le front lit `public.v_auction_sales_app_preview` pour l'aperçu public limité,
 puis `public.v_auction_sales_app` pour les comptes connectés. Les détails
 d'annonce, documents, risques, cartes et tables `user_favorites` / `user_alerts`
-sont protégés par RLS. L'amorçage d'un nouveau projet se fait via
-[`sql/vercel_app_setup.sql`](sql/vercel_app_setup.sql) ; l'historique des
-évolutions vit dans [`supabase/migrations/`](supabase/migrations/) et s'applique
-avec le workflow GitHub `Apply Supabase Migrations` ou `npm run db:migrate`.
+sont protégés par RLS. **La seule source de vérité du schéma est
+[`supabase/migrations/`](supabase/migrations/)** (plus de quatre cents migrations, rejouables depuis zéro).
+[`sql/vercel_app_setup.sql`](sql/vercel_app_setup.sql) est obsolète et ne doit plus être exécuté : il ne
+reflète plus la base. Les règles d'écriture d'une migration sont dans [`supabase/README.md`](supabase/README.md).
 Les droits admin reposent sur `auth.users.raw_app_meta_data.role = admin`.
+
+### Base de données locale
+
+Pour développer ou tester contre une base jetable, avec **Docker** démarré :
+
+```bash
+npx supabase@2.110.0 start                       # lance Postgres, l'API et Auth en local
+npx supabase@2.110.0 db reset --local --no-seed  # rejoue toutes les migrations depuis zéro
+npm run check:schema-drift                       # le schéma local correspond aux migrations
+npm run db:types                                 # régénère les types TypeScript si le schéma a changé
+npx supabase@2.110.0 stop                        # arrête la base locale
+```
+
+`--local` est indispensable : `db reset` ne se lance **jamais** sans lui ni avec `--linked`, qui viserait la
+production. La version `2.110.0` du CLI est celle de la CI. Les variables d'environnement de l'application
+pointent alors vers l'URL et les clés affichées par `npx supabase@2.110.0 status`.
+
+### Migrations en production
+
+Une migration distante ne s'applique **que** par le workflow GitHub **« Apply Supabase Migrations »**
+(Actions, depuis `main`, `confirm_target` = `production`), une fois la CI verte. Il applique les fichiers en
+attente puis contrôle l'absence de dérive. Ne pas lancer `npm run db:migrate` ni `npm run release:prepare` à
+la main depuis un poste de développement : ils écrivent en production. Le contrôle quotidien
+« Check Pending Supabase Migrations » signale les migrations en attente. Procédure, ordre de publication et
+diagnostic : [`docs/vercel_setup.md`](docs/vercel_setup.md) ; retour arrière :
+[`docs/runbooks/retour-arriere.md`](docs/runbooks/retour-arriere.md).
 
 ## Pipeline de données
 
@@ -206,7 +239,7 @@ Les travaux tournent en parallèle ; le travail agrégé « Web (typecheck + lin
 - **Collecte unique** : `npm run check:manual-collection` (aucune planification concurrente de la collecte)
 - **Web (Node 24)** :
   - typecheck : `tsc --noEmit` ;
-  - lint : `npm run lint` + `npm run knip` ;
+  - lint : `npm run lint` (bloquant) + `npm run knip` (informatif, non bloquant) ;
   - tests : `npm run test` + `npm run test:security-invariants` ;
   - audit : `npm audit --omit=dev --audit-level=high` + `npm run check:secrets` ;
   - build : `npm run build` + `npm run build:budgets` (budgets de rendu serveur, de JavaScript et de médias)
