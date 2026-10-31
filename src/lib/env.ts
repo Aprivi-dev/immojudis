@@ -73,6 +73,7 @@ const SERVER_KEYS = [
   "SALE_REMINDERS_MODE",
   "WEEKLY_DIGEST_MODE",
   "SALE_RESULTS_MODE",
+  "ALERT_NOTIFICATIONS_MODE",
   "PEPITE_RULE_V2_ENABLED",
   "SALE_FLOOD_RISK_BATCH_LIMIT",
   "SALE_FLOOD_RISK_RUNNER",
@@ -213,6 +214,10 @@ export function serverEnv(source?: EnvSource) {
     saleResults: {
       /** Valeur brute de `SALE_RESULTS_MODE` ; `saleResultsMode()` la ramène à off, internal ou on. */
       mode: env.SALE_RESULTS_MODE,
+    },
+    alertNotifications: {
+      /** Valeur brute de `ALERT_NOTIFICATIONS_MODE` ; `alertNotificationsMode()` la ramène à off, internal ou on. */
+      mode: env.ALERT_NOTIFICATIONS_MODE,
     },
     pepiteRule: {
       /** Valeur brute de `PEPITE_RULE_V2_ENABLED` ; `pepiteV2EnabledFromEnv()` la ramène à vrai ou faux. */
