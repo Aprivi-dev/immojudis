@@ -43,6 +43,8 @@ MAX_POINTS = 14
 MAX_QUOTE_CHARS = 320
 MIN_QUOTE_CHARS = 12
 MAX_TITLE_CHARS = 100
+MAX_DOCUMENT_LABEL_CHARS = 120
+MAX_DOCUMENT_TYPE_CHARS = 40
 MAX_EXPLANATION_CHARS = 320
 READING_MAX_OUTPUT_TOKENS = 3_000
 READING_TIMEOUT_SECONDS = 90
@@ -231,6 +233,16 @@ def select_pages(documents: Sequence[ReadingDocument], budget: int = MAX_PROMPT_
     return {index: sorted(pages) for index, pages in selected.items()}, True
 
 
+def _prompt_attribute(value: str, maximum: int) -> str:
+    """Third-party label or type, safe inside a quoted attribute of our delimiters.
+
+    ``<`` and ``>`` are neutralised like the page text (a label holding ``</document>`` must not
+    close the block), quotes and line breaks are flattened and the length is bounded.
+    """
+    text = re.sub(r"\s+", " ", value).replace('"', "'").replace("<", "‹").replace(">", "›").strip()
+    return text[:maximum].rstrip()
+
+
 def build_reading_prompt(documents: Sequence[ReadingDocument]) -> tuple[str, bool]:
     selected, truncated = select_pages(documents)
     sections: list[str] = []
@@ -238,8 +250,9 @@ def build_reading_prompt(documents: Sequence[ReadingDocument]) -> tuple[str, boo
         numbers = selected.get(doc.index)
         if not numbers:
             continue
-        label = doc.label.replace('"', "'")
-        sections.append(f'<document ref="{doc.ref}" titre="{label}" type="{doc.document_type}">')
+        label = _prompt_attribute(doc.label, MAX_DOCUMENT_LABEL_CHARS)
+        document_type = _prompt_attribute(doc.document_type, MAX_DOCUMENT_TYPE_CHARS)
+        sections.append(f'<document ref="{doc.ref}" titre="{label}" type="{document_type}">')
         for number in numbers:
             # Third-party text cannot close our delimiters.
             text = doc.pages[number][:MAX_PAGE_CHARS].replace("<", "‹").replace(">", "›")
@@ -273,10 +286,10 @@ def _normalize_quote(value: str) -> str:
     return re.sub(r"\s+", " ", text).strip().strip('"').strip().casefold()
 
 
-def grounded_quote(page_text: str, quote: str) -> str | None:
+def grounded_quote(page_text: str, quote: str, *, min_chars: int = MIN_QUOTE_CHARS) -> str | None:
     """The quote as written in the page, or None when the page does not contain it."""
     candidate = _normalize_quote(quote)
-    if len(candidate) < MIN_QUOTE_CHARS:
+    if len(candidate) < min_chars:
         return None
     source = page_text.replace("’", "'").replace("‘", "'").replace("«", '"').replace("»", '"')
     normalized, offsets = _normalized_with_offsets(source)
