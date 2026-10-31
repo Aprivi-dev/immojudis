@@ -473,6 +473,29 @@ describe("readable listing sections", () => {
     expect(screen.getByText("Carte")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Explorer le quartier" })).toBeTruthy();
     expect(screen.getByText(/Localisation indicative/)).toBeTruthy();
+    // Position à l'adresse et sans signalement : rien de plus à dire.
+    expect(screen.queryByTestId("location-position-note")).toBeNull();
+  });
+  it("dit « Centre de la commune » quand la position n'est que celle de la commune", () => {
+    render(<ListingLocation sale={item({ location_precision: "municipality" })} />);
+    expect(screen.getByTestId("location-position-note").textContent).toBe("Centre de la commune");
+  });
+  it("dit « Position à vérifier » quand la position n'a pas pu être recoupée avec la source", () => {
+    render(<ListingLocation sale={item({ quality_flags: ["unverified_source_coordinates"] })} />);
+    expect(screen.getByTestId("location-position-note").textContent).toBe("Position à vérifier");
+  });
+  it("cumule les deux mentions, et n'en ajoute pas sans coordonnées", () => {
+    const flagged = item({
+      location_precision: "municipality",
+      quality_flags: ["unverified_source_coordinates"],
+    });
+    const view = render(<ListingLocation sale={flagged} />);
+    expect(screen.getByTestId("location-position-note").textContent).toBe(
+      "Centre de la commune · Position à vérifier",
+    );
+    view.unmount();
+    render(<ListingLocation sale={{ ...flagged, latitude: NaN }} />);
+    expect(screen.queryByTestId("location-position-note")).toBeNull();
   });
 });
 
