@@ -48,6 +48,7 @@ type RowSpec = {
 };
 
 const UNLOCKS_PER_MONTH = PLAN_LIMITS.decouverte.monthlyUnlocks;
+const REFERRAL_NOT_OPEN_TEXT = "Pas encore disponible";
 const UNLOCK_CELL_TEXT = `${UNLOCKS_PER_MONTH} déblocages par mois`;
 /**
  * Les lignes du comparatif. Le montant plafond, son nom (« enchère plafond », « offre plafond ») et
@@ -199,12 +200,26 @@ function cell(plan: PlanCode, spec: RowSpec): OfferCell {
   return { included, text: included ? (spec.includedText ?? "Inclus") : "Non inclus" };
 }
 
-export function offerComparisonRows(open?: readonly FeeRegimeKey[]): OfferRow[] {
-  return specs(open).map((spec) => ({
-    id: spec.id,
-    label: spec.label,
-    hint: spec.hint,
-    decouverte: cell("decouverte", spec),
-    analyse: cell("analyse", spec),
-  }));
+/**
+ * `analysisOpen` : l'offre Analyse se souscrit pour de bon (état lu). Tant qu'il ne l'est pas, la
+ * mise en relation avec un avocat, que seule Analyse donne, n'est pas promise : le tableau ne la
+ * décrit pas comme « Inclus » pour une offre que l'on ne peut pas acheter.
+ */
+export function offerComparisonRows(
+  open?: readonly FeeRegimeKey[],
+  { analysisOpen = false }: { analysisOpen?: boolean } = {},
+): OfferRow[] {
+  return specs(open).map((spec) => {
+    const analyse = cell("analyse", spec);
+    return {
+      id: spec.id,
+      label: spec.label,
+      hint: spec.hint,
+      decouverte: cell("decouverte", spec),
+      analyse:
+        spec.id === "referrals" && analyse.included && !analysisOpen
+          ? { included: false, text: REFERRAL_NOT_OPEN_TEXT }
+          : analyse,
+    };
+  });
 }

@@ -406,7 +406,7 @@ export function OffersPage({
               {LAUNCH_OFFER_FREE_PLAN_NOTE}
             </p>
           ) : null}
-          <ComparisonTable open={openFeeRegimes} />
+          <ComparisonTable open={openFeeRegimes} analysisOpen={subscriptionOpen} />
           <p className="mt-4 text-sm text-ink-soft">
             Les scénarios d’enchères s’appuient sur les adjudications des trois dernières années
             publiées par Licitor (source tierce, non officielle) et sur les prix DVF ; les
@@ -455,8 +455,14 @@ export function OffersPage({
   );
 }
 
-function ComparisonTable({ open }: { open?: readonly FeeRegimeKey[] }) {
-  const rows = offerComparisonRows(open);
+function ComparisonTable({
+  open,
+  analysisOpen,
+}: {
+  open?: readonly FeeRegimeKey[];
+  analysisOpen: boolean;
+}) {
+  const rows = offerComparisonRows(open, { analysisOpen });
   return (
     <>
       <ComparisonList rows={rows} />

@@ -22,6 +22,16 @@ describe("offerComparisonRows", () => {
     expect(row("csv").analyse.included).toBe(true);
   });
 
+  it("ne promet pas la mise en relation avec un avocat tant qu'Analyse n'est pas souscriptible", () => {
+    expect(row("referrals").analyse).toEqual({ included: false, text: "Pas encore disponible" });
+    expect(row("referrals").label).toBe("Mise en relation avec un avocat référencé");
+    const open = offerComparisonRows(undefined, { analysisOpen: true });
+    expect(open.find((candidate) => candidate.id === "referrals")!.analyse).toEqual({
+      included: true,
+      text: "Inclus",
+    });
+  });
+
   it("chiffre les quotas à partir des limites du plan", () => {
     expect(row("favorites").decouverte.text).toBe("10 favoris");
     // Le plafond n'existe que pour les ventes dont un régime de frais est ouvert : la ligne dit
