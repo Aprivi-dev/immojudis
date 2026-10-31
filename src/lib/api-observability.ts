@@ -5,15 +5,20 @@ import { $ZodError } from "zod/v4/core";
 import { PublicApiError, RateLimitError, isPublicErrorMessage } from "@/lib/api-errors";
 import { resolveRequestId } from "@/lib/request-id";
 
-export type ApiErrorCode =
-  | "AUTH_REQUIRED"
-  | "FORBIDDEN"
-  | "NOT_FOUND"
-  | "CONFLICT"
-  | "INVALID_REQUEST"
-  | "RATE_LIMITED"
-  | "CONFIGURATION_ERROR"
-  | "INTERNAL_ERROR";
+/** Codes d'erreur de l'API ; la liste de `components.schemas.ApiError.code` d'openapi.yaml doit être identique. */
+export const API_ERROR_CODES = [
+  "AUTH_REQUIRED",
+  "FORBIDDEN",
+  "NOT_FOUND",
+  "CONFLICT",
+  "INVALID_REQUEST",
+  "COURT_UNRESOLVED",
+  "RATE_LIMITED",
+  "CONFIGURATION_ERROR",
+  "INTERNAL_ERROR",
+] as const;
+
+export type ApiErrorCode = (typeof API_ERROR_CODES)[number];
 
 export type ApiRequestContext = {
   requestId: string;
@@ -182,7 +187,9 @@ export function classifyApiError(
             ? "FORBIDDEN"
             : error.status === 409
               ? "CONFLICT"
-              : "INVALID_REQUEST",
+              : error.status >= 500
+                ? "INTERNAL_ERROR"
+                : "INVALID_REQUEST",
       status: error.status,
       message: error.message,
     };

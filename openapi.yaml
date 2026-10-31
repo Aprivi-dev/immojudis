@@ -702,6 +702,7 @@ components:
             - AUTH_REQUIRED
             - FORBIDDEN
             - NOT_FOUND
+            - CONFLICT
             - INVALID_REQUEST
             - COURT_UNRESOLVED
             - RATE_LIMITED
