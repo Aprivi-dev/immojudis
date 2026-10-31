@@ -2,6 +2,7 @@
 
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { CeilingUserChoices } from "@/lib/bid-ceiling-defaults";
 import type { WorksBreakdownItem } from "@/lib/works-breakdown";
 import {
   ceilingStorageKey,
@@ -160,7 +161,7 @@ describe("useCeilingChoices with defaults", () => {
 });
 
 describe("useCeilingChoices with an investor profile", () => {
-  const profile = { project: "revendre" as const, customMarginPct: 18 };
+  const profile: CeilingUserChoices = { project: "revendre", customMarginPct: 18 };
   const key = ceilingStorageKey("account-a", "sale-1");
 
   it("starts from the profile when the visitor has chosen nothing on this sale", () => {
@@ -199,11 +200,12 @@ describe("useCeilingChoices with an investor profile", () => {
 
   it("does not overwrite what the visitor changed when the profile changes later", () => {
     const { result, rerender } = renderHook(
-      ({ current }) => useCeilingChoices("account-a", "sale-1", {}, current),
+      ({ current }: { current: CeilingUserChoices }) =>
+        useCeilingChoices("account-a", "sale-1", {}, current),
       { initialProps: { current: profile } },
     );
     act(() => result.current.update((choices) => ({ ...choices, customMarginPct: 25 })));
-    rerender({ current: { project: "louer" as const, customMarginPct: 5 } });
+    rerender({ current: { project: "louer", customMarginPct: 5 } });
     expect(result.current.choices).toEqual({ project: "revendre", customMarginPct: 25 });
     expect(JSON.parse(window.localStorage.getItem(key) ?? "null")).toEqual({
       project: "revendre",

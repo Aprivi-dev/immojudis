@@ -12,8 +12,9 @@ import {
 } from "@/lib/investor-profile-store";
 
 // Profil d'investisseur du compte (n° 93) : apport, marge cible, travaux au m², stratégie. Donnée
-// personnelle de nature financière : lue et écrite avec le client du compte (RLS « propriétaire
-// seul »), jamais mise en cache, jamais envoyée par email.
+// personnelle de nature financière : lue et écrite avec le client service-role, chaque requête
+// filtrée sur le compte authentifié (`auth.userId`, voir `investor-profile-store`), jamais mise en
+// cache, jamais envoyée par email.
 
 const PRIVATE_HEADERS = { "cache-control": "private, no-store" };
 

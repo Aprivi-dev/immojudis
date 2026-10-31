@@ -383,10 +383,14 @@ function SaleDetailWorkspace({
   // Profil d'investisseur du compte (n° 93) : les hypothèses de départ du plafond de chaque vente,
   // que le visiteur modifie ensuite vente par vente.
   const investor = useInvestorProfile(user?.id);
-  const profileChoices = useMemo(
-    () => investorProfileToChoices(investor.profile, { surfaceM2: getSaleSurface(sale).value }),
-    [investor.profile, sale],
-  );
+  const profileChoices = useMemo(() => {
+    // Une surface estimée (20 m² d'un studio sans surface publiée) ne sert jamais à chiffrer les
+    // travaux du profil : on ne multiplie pas par une surface inventée.
+    const surface = getSaleSurface(sale);
+    return investorProfileToChoices(investor.profile, {
+      surfaceM2: surface.estimated ? null : surface.value,
+    });
+  }, [investor.profile, sale]);
   const profileFinancingDraft = useMemo(
     () => investorProfileFinancingDraft(investor.profile),
     [investor.profile],
@@ -1343,16 +1347,22 @@ function SaleDetailWorkspace({
             {activeTab === "financement" ? (
               <>
                 <div id="financing" className="scroll-mt-2">
-                  <FinancingSimulator
-                    sale={displaySale}
-                    aiReviewProjections={resolvedAiReviewProjections}
-                    aiReviewStatus={aiReviewStatus}
-                    projectPriceOverride={projectCosts?.totalCost ?? null}
-                    initialDraft={financingDraft ?? profileFinancingDraft}
-                    onDraftChange={setFinancingDraft}
-                    onResultChange={setFinancingResult}
-                    initialInsuranceRate={0.3}
-                  />
+                  {/* Le simulateur ne lit `initialDraft` qu'au montage : on attend le compte et son
+                      profil pour que l'apport du profil le préremplisse. */}
+                  {authLoading || investor.loading ? (
+                    <p className="p-6 text-sm text-muted-foreground">Chargement du financement…</p>
+                  ) : (
+                    <FinancingSimulator
+                      sale={displaySale}
+                      aiReviewProjections={resolvedAiReviewProjections}
+                      aiReviewStatus={aiReviewStatus}
+                      projectPriceOverride={projectCosts?.totalCost ?? null}
+                      initialDraft={financingDraft ?? profileFinancingDraft}
+                      onDraftChange={setFinancingDraft}
+                      onResultChange={setFinancingResult}
+                      initialInsuranceRate={0.3}
+                    />
+                  )}
                   <ListingRental
                     saleId={sale.id}
                     acquisitionCost={
