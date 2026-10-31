@@ -3,6 +3,8 @@ type SecurityHeaderOptions = {
   includeLegacyCsp?: boolean;
   isProduction: boolean;
   supabaseUrl?: string;
+  /** Extra https origins allowed to be framed, space or comma separated. */
+  extraFrameSources?: string;
 };
 
 export type SecurityHeader = { key: string; value: string };
@@ -78,15 +80,38 @@ const BASE_CONNECT_SOURCES = [
  */
 const GOOGLE_TAG_SCRIPT_SOURCE = "https://www.googletagmanager.com";
 
-/** Historical policy: wildcard Supabase hosts and `'unsafe-inline'` scripts. */
-function legacyContentSecurityPolicy(options: SecurityHeaderOptions): string {
-  const connectSources = new Set([
-    ...BASE_CONNECT_SOURCES,
-    "https://*.supabase.co",
-    "wss://*.supabase.co",
+/**
+ * Framed services shared by both policies, plus extra https origins (`CSP_FRAME_SRC_EXTRA`). The
+ * only frames are Stripe, the Street View embed and the private previews served by Supabase
+ * Storage.
+ */
+function frameSourceList(supabaseOrigin: string | null, extraFrameSources?: string): string[] {
+  const frameSources = new Set([
+    "'self'",
+    "https://js.stripe.com",
+    "https://hooks.stripe.com",
+    // Google Maps Embed (Street View dialog).
+    "https://www.google.com",
+    ...(supabaseOrigin ? [supabaseOrigin] : []),
   ]);
+  for (const candidate of (extraFrameSources ?? "").split(/[\s,]+/)) {
+    const origin = safeOrigin(candidate);
+    if (origin) frameSources.add(origin);
+  }
+  return Array.from(frameSources);
+}
+
+/**
+ * Historical policy: `'unsafe-inline'` scripts. Supabase is limited to the exact project origin
+ * (https and wss) and `frame-src` lists the framed services instead of any `https:` page.
+ */
+function legacyContentSecurityPolicy(options: SecurityHeaderOptions): string {
+  const connectSources = new Set(BASE_CONNECT_SOURCES);
   const origin = safeOrigin(options.supabaseUrl);
-  if (origin) connectSources.add(origin);
+  if (origin) {
+    connectSources.add(origin);
+    connectSources.add(origin.replace(/^https:/, "wss:"));
+  }
 
   const scriptSources = [
     "'self'",
@@ -103,7 +128,7 @@ function legacyContentSecurityPolicy(options: SecurityHeaderOptions): string {
     "img-src 'self' data: blob: https:",
     "font-src 'self' data:",
     `connect-src ${Array.from(connectSources).join(" ")}`,
-    "frame-src 'self' https://js.stripe.com https://hooks.stripe.com https:",
+    `frame-src ${frameSourceList(origin, options.extraFrameSources).join(" ")}`,
     "worker-src 'self' blob:",
     "media-src 'self' blob: https:",
     "object-src 'none'",
@@ -176,18 +201,7 @@ export function buildStrictContentSecurityPolicy(options: StrictCspOptions): str
   ];
   if (!options.isProduction) scriptSources.push("'unsafe-eval'");
 
-  const frameSources = new Set([
-    "'self'",
-    "https://js.stripe.com",
-    "https://hooks.stripe.com",
-    // Google Maps Embed (Street View dialog).
-    "https://www.google.com",
-    ...(supabaseOrigin ? [supabaseOrigin] : []),
-  ]);
-  for (const candidate of (options.extraFrameSources ?? "").split(/[\s,]+/)) {
-    const origin = safeOrigin(candidate);
-    if (origin) frameSources.add(origin);
-  }
+  const frameSources = frameSourceList(supabaseOrigin, options.extraFrameSources);
 
   const directives = [
     "default-src 'self'",
@@ -196,7 +210,7 @@ export function buildStrictContentSecurityPolicy(options: StrictCspOptions): str
     "img-src 'self' data: blob: https:",
     "font-src 'self' data:",
     `connect-src ${connectSources.join(" ")}`,
-    `frame-src ${Array.from(frameSources).join(" ")}`,
+    `frame-src ${frameSources.join(" ")}`,
     "worker-src 'self' blob:",
     "media-src 'self' blob: https:",
     "object-src 'none'",
