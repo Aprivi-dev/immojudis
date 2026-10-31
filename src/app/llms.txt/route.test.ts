@@ -61,8 +61,13 @@ describe("/llms.txt (site ouvert)", () => {
     ]) {
       expect(text).toContain(`](${pathname}):`);
     }
+    // Au-delà de la limite de regroupement, les articles non pivots passent en titre seul (« Optional ») :
+    // tous restent listés, seuls les pivots gardent leur description.
     for (const article of RESOURCE_ARTICLES) {
-      expect(text).toContain(`](https://immojudis.com/ressources/${article.slug}):`);
+      expect(text).toContain(`](https://immojudis.com/ressources/${article.slug})`);
+    }
+    for (const path of LLMS_TXT_PIVOT_ARTICLES) {
+      expect(text).toContain(`](https://immojudis.com${path}):`);
     }
   });
 
@@ -172,7 +177,8 @@ describe("contenu du fichier", () => {
 
   it("garde tous les articles décrits tant que le fichier reste sous la limite de regroupement", () => {
     const text = buildLlmsTxt("https://immojudis.com");
-    if (text.length > LLMS_TXT_REGROUP_ABOVE_CHARS) return;
+    // Fichier complet trop long, ou trop d'articles : le regroupement sous « Optional » s'applique.
+    if (text.length > LLMS_TXT_REGROUP_ABOVE_CHARS || text.includes("## Optional")) return;
     expect(text).not.toContain("## Optional");
     for (const article of RESOURCE_ARTICLES) {
       expect(text).toContain(`(https://immojudis.com${article.href}): ${article.description}`);
@@ -214,7 +220,10 @@ describe("contenu du fichier", () => {
     expect(lines.filter((l) => l.startsWith("# "))).toHaveLength(1);
     expect(lines.filter((l) => l.startsWith("> "))).toHaveLength(1);
     expect(lines.filter((l) => l.startsWith("## ")).length).toBeGreaterThanOrEqual(3);
-    for (const entry of lines.filter((l) => l.startsWith("- "))) {
+    // Avant « Optional », chaque lien a sa description ; dans « Optional », titre et adresse seulement.
+    const optionalAt = lines.indexOf("## Optional");
+    const described = optionalAt === -1 ? lines : lines.slice(0, optionalAt);
+    for (const entry of described.filter((l) => l.startsWith("- "))) {
       expect(entry).toMatch(/^- \[[^\]]+\]\(https:\/\/immojudis\.com[^)]*\): .+/);
     }
     // « Optional » : liens sans description, permis par llmstxt.org.

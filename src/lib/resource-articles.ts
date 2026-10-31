@@ -20,6 +20,9 @@ import marketGapArticle from "@/content/resources/mise-a-prix-valeur-de-marche-d
 import planningArticle from "@/content/resources/lire-plu-bien-vendu-encheres.json";
 import risksArticle from "@/content/resources/risques-georisques-avant-encherir.json";
 import cadastreArticle from "@/content/resources/adresse-parcelle-cadastre-encheres.json";
+import taxationArticle from "@/content/resources/fiscalite-achat-encheres-occuper-louer-revendre.json";
+import glossaryArticle from "@/content/resources/glossaire-encheres-immobilieres.json";
+import energyArticle from "@/content/resources/dpe-diagnostics-travaux-bien-energivore-plafond.json";
 import { GUIDE_READING_MINUTES } from "@/lib/guide-dates";
 
 /** Un terme défini dans un glossaire : une phrase, un renvoi vers l'article détaillé et la source. */
@@ -144,6 +147,9 @@ export const RESOURCE_ARTICLES: ResourceArticle[] = [
   defineArticle(planningArticle, "/media/landing/gallery-land.webp"),
   defineArticle(risksArticle, "/media/landing/auction-lyon.webp"),
   defineArticle(cadastreArticle, "/media/landing/dossier-apartment.webp"),
+  defineArticle(taxationArticle, "/media/landing/home-favorites.webp"),
+  defineArticle(glossaryArticle, "/media/landing/judicial-candle.webp"),
+  defineArticle(energyArticle, "/media/landing/home-bordeaux-twilight.webp"),
 ];
 
 export const EXISTING_GUIDE: ResourceSummary = {
