@@ -168,7 +168,9 @@ function CostMode({
       >
         <span className="font-semibold">Coût total</span>{" "}
         <span className="font-semibold tabular-nums">{euroWhole.format(costs.totalCost)}</span>
-        {costs.price > 0 ? <span className="text-ink-soft"> · dont {feesPct} % de frais</span> : null}
+        {costs.price > 0 ? (
+          <span className="text-ink-soft"> · dont {feesPct} % de frais</span>
+        ) : null}
       </div>
     </div>
   );

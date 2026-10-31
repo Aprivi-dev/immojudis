@@ -26,7 +26,7 @@ import { hasReadableTribunalName, tribunalPagePath } from "@/lib/tribunal-pages"
 const count = new Intl.NumberFormat("fr-FR");
 
 /** Les ventes montrées tout de suite après les chiffres ; les suivantes viennent plus bas. */
-export const NEXT_SALES_SHOWN = 5;
+const NEXT_SALES_SHOWN = 5;
 
 function saleWord(total: number): string {
   return total > 1 ? "ventes" : "vente";
