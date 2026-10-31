@@ -536,6 +536,11 @@
   outline-offset: 4px;
 }
 
+/* Le titre est un <span> dans le <summary> : il reste un bloc, comme l'était le <h2>. */
+.foldSummary .cardTitle {
+  display: block;
+}
+
 .foldHint {
   display: block;
   margin-top: 4px;

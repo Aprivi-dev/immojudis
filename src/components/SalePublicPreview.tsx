@@ -682,14 +682,13 @@ export function SalePublicPreview({
                 garde « indicatif » (écart au marché, simulations) sont ailleurs, jamais repliées. */}
             <details className={styles.fold}>
               <summary className={styles.foldSummary}>
-                <div>
-                  <h2 id="public-procedure-title" className={styles.cardTitle}>
-                    Cette vente en clair
-                  </h2>
+                {/* Dans un <summary> : des <span> (contenu de phrase), ni <div> ni titre <h2>. */}
+                <span>
+                  <span className={styles.cardTitle}>Cette vente en clair</span>
                   <span className={styles.foldHint}>
                     Le déroulement de la vente et ce que chaque accès ouvre
                   </span>
-                </div>
+                </span>
                 <ChevronDown className={styles.foldIcon} aria-hidden />
               </summary>
               <div className={styles.foldBody}>
