@@ -98,6 +98,12 @@ export {
 } from "@/lib/client-api/sale-workspace";
 
 export {
+  fetchInvestorProfile,
+  saveInvestorProfile,
+  deleteInvestorProfile,
+} from "@/lib/client-api/investor-profile";
+
+export {
   fetchAlertMatches,
   evaluateAlertMatches,
   fetchAlertNotifications,
