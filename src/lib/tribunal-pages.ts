@@ -13,6 +13,7 @@ import {
 } from "@/lib/public-tribunal-activity";
 import type { PublicTribunalDirectoryEntry } from "@/lib/public-tribunal-directory";
 import { normalizeFrenchSearchText } from "@/lib/search/french-geo-search";
+import { TRIBUNAL_PAGES_PATH, tribunalCodeSlug } from "@/lib/tribunal-code-path";
 
 /**
  * Pages « Ventes judiciaires au tribunal de X » (`/tribunaux/[slug]`), sur le modèle des pages
@@ -21,7 +22,7 @@ import { normalizeFrenchSearchText } from "@/lib/search/french-geo-search";
  * les ventes de `get_public_tribunal_sales` ; la lecture de la base est dans
  * `tribunal-pages.server.ts`.
  */
-export const TRIBUNAL_PAGES_PATH = "/tribunaux";
+export { TRIBUNAL_PAGES_PATH, tribunalCodeSlug };
 
 /** Ventes détaillées sur la page d'un tribunal : comme celle d'un département. */
 export const TRIBUNAL_PAGE_LISTED_SALES = DEPARTMENT_PAGE_LISTED_SALES;
@@ -63,17 +64,6 @@ export type TribunalPage = {
   slug: string;
   path: string;
 };
-
-/**
- * Adresse de repli d'un tribunal : son code, ramené à des minuscules, chiffres et tirets
- * (« justice_tj_1_93 » donne « justice-tj-1-93 »). C'était l'adresse publiée avant les adresses
- * lisibles : elle redirige (308) vers l'adresse lisible (voir `legacyTribunalRedirectPath`) et ne
- * reste l'adresse du tribunal que s'il n'a pas de nom lisible ou si son nom est partagé par un autre
- * tribunal (voir `tribunalSlug`).
- */
-export function tribunalCodeSlug(code: string): string {
-  return normalizeFrenchSearchText(code).replaceAll(" ", "-");
-}
 
 /**
  * L'adresse reçue ramenée à la forme des adresses publiées : « JUSTICE-TJ-1-210 » et

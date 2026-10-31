@@ -87,7 +87,11 @@ async function resolveExactSlug(slug: string): Promise<Resolved> {
   const activity = await loadPublicTribunalActivity();
   if (activity.status === "error") throw new Error("Activité publique des tribunaux indisponible.");
   const directory = await tryLoadPublicTribunalDirectory();
-  const entries = directory.status === "ok" ? directory.items : [];
+  // Sans le référentiel complet, on ne sait pas si un nom est partagé par un autre tribunal : ni page
+  // servie, ni redirection définitive (308) vers une adresse lisible peut-être ambiguë. La réponse
+  // n'est pas mise en cache et une version déjà produite reste servie.
+  if (directory.status === "error") throw new Error("Référentiel des tribunaux indisponible.");
+  const entries = directory.items;
   // Deux tribunaux de même nom n'ont pas d'adresse lisible : le référentiel complet le révèle.
   const ambiguous = ambiguousTribunalCodes([...activity.items, ...entries]);
   const page = tribunalPageFromSlug(activity.items, slug, ambiguous);
@@ -107,10 +111,8 @@ async function resolveExactSlug(slug: string): Promise<Resolved> {
       ambiguous,
     };
   }
-  // Les tribunaux à ventes redirigent leurs anciennes adresses même si le référentiel est en panne.
   const path = legacyTribunalRedirectPath(activity.items, entries, slug);
   if (path) return { kind: "redirect", path };
-  if (directory.status === "error") throw new Error("Référentiel des tribunaux indisponible.");
   return { kind: "unknown" };
 }
 

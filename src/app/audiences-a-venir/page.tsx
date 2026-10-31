@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { BreadcrumbJsonLd } from "@/components/BreadcrumbJsonLd";
 import { pageMetadata } from "@/lib/page-metadata";
 import { loadPublicTribunalActivity } from "@/lib/public-tribunal-activity.server";
+import { loadAmbiguousTribunalCodes } from "@/lib/tribunal-ambiguity.server";
 import { tribunalPages } from "@/lib/tribunal-pages";
 import {
   HEARINGS_PATH,
@@ -63,9 +64,13 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function Page() {
   const [data, activity] = await Promise.all([loadWindows(), loadPublicTribunalActivity()]);
   // Sans l'activité des tribunaux, les tribunaux restent nommés, sans lien vers leur page.
+  const ambiguous =
+    activity.status === "ok" ? await loadAmbiguousTribunalCodes(activity.items) : undefined;
   const tribunalPaths = new Map(
     activity.status === "ok"
-      ? tribunalPages(activity.items).map((page) => [page.activity.code, page.path] as const)
+      ? tribunalPages(activity.items, ambiguous).map(
+          (page) => [page.activity.code, page.path] as const,
+        )
       : [],
   );
   const now = data?.now ?? new Date();

@@ -164,10 +164,10 @@ describe("page d'un tribunal : génération", () => {
     await expect(Page(params("justice-tj-1-09"))).rejects.toMatchObject({
       digest: "NEXT_REDIRECT;replace;/tribunaux/tribunal-judiciaire-foix;308;",
     });
+    // Référentiel en panne : ni redirection définitive ni page vers une adresse peut-être ambiguë.
     mocks.directory.mockResolvedValue({ status: "error" });
-    await expect(Page(params("justice-tj-1-113"))).rejects.toMatchObject({
-      digest: "NEXT_REDIRECT;replace;/tribunaux/tribunal-judiciaire-le-puy-en-velay;308;",
-    });
+    await expect(Page(params("justice-tj-1-113"))).rejects.toThrow("indisponible");
+    mocks.directory.mockResolvedValue({ status: "ok", items: directoryOf(FOIX) });
     // L'ancienne adresse n'entre pas dans l'index : seule l'adresse lisible est le canonical.
     const metadata = await generateMetadata(params("justice-tj-1-93"));
     expect(metadata.robots).toEqual({ index: false, follow: false });
@@ -272,9 +272,11 @@ describe("page d'un tribunal : génération", () => {
     });
     mocks.directory.mockResolvedValue({ status: "error" });
     await expect(Page(params("justice-tj-9-99"))).rejects.toThrow("indisponible");
-    // Un tribunal qui a des ventes n'a pas besoin du référentiel.
-    const { container } = render(await Page(params("tribunal-judiciaire-bobigny")));
-    expect(container.querySelector("h1")?.textContent).toContain("Bobigny");
+    // Même un tribunal qui a des ventes : sans référentiel, son adresse lisible peut être ambiguë.
+    await expect(Page(params("tribunal-judiciaire-bobigny"))).rejects.toThrow("indisponible");
+    await expect(generateMetadata(params("tribunal-judiciaire-bobigny"))).rejects.toThrow(
+      "indisponible",
+    );
   });
 
   it("garde un tribunal inconnu hors de l'index sans lire ses ventes", async () => {
