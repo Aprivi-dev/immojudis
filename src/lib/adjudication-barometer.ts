@@ -22,7 +22,33 @@ export function distributionRates(distribution: AdjudicationDistribution) {
   };
 }
 
-export type TribunalSort = "sample" | "ratio" | "hammer" | "name";
+/** Quantile 0,975 de la loi normale : intervalle de Wilson à 95 %. */
+const WILSON_Z_95 = 1.959964;
+
+/** Une part (0 à 1) et son intervalle de confiance de Wilson à 95 %, bornes comprises entre 0 et 1. */
+export type ShareInterval = { low: number; high: number };
+
+/**
+ * Intervalle de Wilson à 95 % d'une part observée sur `total` résultats. Il reste correct pour de
+ * petits effectifs et près de 0 ou de 1. `null` sans dénominateur ou pour une part hors de 0 à 1.
+ */
+export function wilsonShareInterval(share: number, total: number): ShareInterval | null {
+  if (!Number.isFinite(share) || !Number.isFinite(total) || total <= 0) return null;
+  if (share < 0 || share > 1) return null;
+  const z2 = WILSON_Z_95 * WILSON_Z_95;
+  const denominator = 1 + z2 / total;
+  const centre = (share + z2 / (2 * total)) / denominator;
+  const margin =
+    (WILSON_Z_95 * Math.sqrt((share * (1 - share)) / total + z2 / (4 * total * total))) /
+    denominator;
+  return { low: Math.max(0, centre - margin), high: Math.min(1, centre + margin) };
+}
+
+/**
+ * Tris proposés pour comparer les tribunaux. Il n'y a volontairement pas de tri par multiple médian : sur
+ * 10 à 29 résultats, l'ordre des médianes est du bruit, et il serait lu comme un classement des tribunaux.
+ */
+export type TribunalSort = "sample" | "hammer" | "name";
 export function filterAdjudicationTribunals(
   tribunals: AdjudicationPriceStatisticsScope[],
   filters: { search: string; region: string; minimumSample: number; sort: TribunalSort },
@@ -47,11 +73,9 @@ export function filterAdjudicationTribunals(
       const numeric =
         filters.sort === "sample"
           ? b.sampleSize - a.sampleSize
-          : filters.sort === "ratio"
-            ? b.metrics.medianHammerToStartingRatio - a.metrics.medianHammerToStartingRatio
-            : filters.sort === "hammer"
-              ? b.metrics.medianHammerPriceEur - a.metrics.medianHammerPriceEur
-              : 0;
+          : filters.sort === "hammer"
+            ? b.metrics.medianHammerPriceEur - a.metrics.medianHammerPriceEur
+            : 0;
       return numeric || a.label.localeCompare(b.label, "fr");
     });
 }

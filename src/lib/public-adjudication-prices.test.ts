@@ -95,13 +95,46 @@ describe("buildPublicAdjudicationPrices", () => {
 
   it("répartit les prix par tranche sous forme de parts, sans effectif", () => {
     const result = buildPublicAdjudicationPrices(adjudicationDirectoryFixture());
-    expect(result?.bands).toEqual([
+    expect(result?.bands.map(({ label, share }) => ({ label, share }))).toEqual([
       { label: "Sous la mise à prix", share: 0.2 },
       { label: "À la mise à prix", share: 0.1 },
       { label: "Au-dessus de la mise, moins de × 1,5", share: 0.3 },
       { label: "De × 1,5 à moins de × 2", share: 0.2 },
       { label: "Au moins × 2", share: 0.2 },
     ]);
+    // Chaque part porte son intervalle de Wilson (effectif national : 200).
+    for (const band of result?.bands ?? []) {
+      expect(band.interval).not.toBeNull();
+      expect(band.interval!.low).toBeLessThan(band.share);
+      expect(band.interval!.high).toBeGreaterThan(band.share);
+    }
+  });
+
+  it("porte la moitié centrale des multiples et l'intervalle de Wilson de chaque part (n° 20)", () => {
+    const result = buildPublicAdjudicationPrices(adjudicationDirectoryFixture())!;
+    expect(result.ratioMiddle50).toEqual({ p25: 1, p75: 1.8 });
+    // 0,7 sur 200 prix : Wilson à 95 % de 63,3 % à 76,0 %.
+    expect(result.aboveStartingInterval!.low).toBeCloseTo(0.6334, 3);
+    expect(result.aboveStartingInterval!.high).toBeCloseTo(0.7596, 3);
+    expect(result.atLeastDoubleInterval!.low).toBeLessThan(0.2);
+    expect(result.atLeastDoubleInterval!.high).toBeGreaterThan(0.2);
+    // Par type de bien : l'effectif de la cellule (80 appartements), pas l'effectif national.
+    const apartment = result.propertyTypes[0];
+    expect(apartment.ratioMiddle50).toEqual({ p25: 1, p75: 1.8 });
+    const smallCell = result.propertyTypes.find((item) => item.propertyType === "parking")!;
+    const width = (interval: { low: number; high: number } | null) =>
+      interval!.high - interval!.low;
+    expect(width(smallCell.aboveStartingInterval)).toBeGreaterThan(
+      width(apartment.aboveStartingInterval),
+    );
+  });
+
+  it("n'invente pas de moitié centrale quand le snapshot national n'a pas de distribution", () => {
+    const directory = adjudicationDirectoryFixture();
+    delete directory.national.distribution;
+    const result = buildPublicAdjudicationPrices(directory)!;
+    expect(result.ratioMiddle50).toBeNull();
+    expect(result.bands).toEqual([]);
   });
 
   it("compte les tribunaux suffisamment fournis sans jamais les nommer", () => {
@@ -124,7 +157,9 @@ describe("buildPublicAdjudicationPrices", () => {
     expect(serialized).not.toContain("333333");
     expect(Object.keys(result ?? {}).sort()).toEqual(
       [
+        "aboveStartingInterval",
         "aboveStartingRate",
+        "atLeastDoubleInterval",
         "atLeastDoubleRate",
         "bands",
         "builtAt",
@@ -134,6 +169,7 @@ describe("buildPublicAdjudicationPrices", () => {
         "periodEnd",
         "periodStart",
         "propertyTypes",
+        "ratioMiddle50",
         "reliability",
         "reviewedAt",
         "sampleSize",

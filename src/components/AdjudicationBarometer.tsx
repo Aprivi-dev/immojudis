@@ -19,6 +19,7 @@ import {
   filterAdjudicationTribunals,
   propertyTypeLabels,
   tribunalComparisonCsv,
+  wilsonShareInterval,
   type TribunalSort,
 } from "@/lib/adjudication-barometer";
 import styles from "./AdjudicationBarometer.module.css";
@@ -35,6 +36,11 @@ const ratio = new Intl.NumberFormat("fr-FR", {
   maximumFractionDigits: 2,
 });
 const multiple = (value: number) => `${ratio.format(value)}×`;
+/** « de 63 % à 76 % » : l'intervalle de Wilson à 95 % d'une part observée sur `total` résultats. */
+function intervalText(share: number, total: number): string | null {
+  const interval = wilsonShareInterval(share, total);
+  return interval ? `de ${percent.format(interval.low)} à ${percent.format(interval.high)}` : null;
+}
 const date = (value: string) =>
   new Intl.DateTimeFormat("fr-FR", {
     day: "numeric",
@@ -125,8 +131,12 @@ export function AdjudicationBarometer({
               {scope?.label ?? "Tribunal sans résultats publiables"}
             </h3>
             <p>
-              Prix adjugés hors frais ·{" "}
+              Prix adjugé publié (hors frais, avant surenchère) ·{" "}
               {selectedType ? propertyTypeLabels[propertyType] : "Tous types de biens"}
+            </p>
+            <p>
+              Périmètre : lots adjugés dont le prix est publié. Les lots non adjugés, retirés ou
+              sans prix publié ne sont pas comptés.
             </p>
           </div>
           <label className={styles.control}>
@@ -175,15 +185,16 @@ export function AdjudicationBarometer({
               <div className={styles.interpretation}>
                 <strong>La moitié centrale des résultats</strong>
                 <p>
-                  50 % des prix adjugés se situent entre{" "}
+                  50 % des prix adjugés publiés se situent entre{" "}
                   <b>{euro.format(distribution.hammerPriceMiddle50Eur.p25)}</b> et{" "}
                   <b>{euro.format(distribution.hammerPriceMiddle50Eur.p75)}</b>, et 50 % des
                   multiples entre <b>{multiple(distribution.ratioMiddle50.p25)}</b> et{" "}
                   <b>{multiple(distribution.ratioMiddle50.p75)}</b> la mise à prix.
                 </p>
                 <p>
-                  Ces intervalles décrivent des biens différents. Ils ne constituent pas une
-                  estimation du bien que vous préparez.
+                  Le multiple reflète la mise à prix choisie : une mise à prix basse donne
+                  mécaniquement un multiple élevé. Ces intervalles décrivent des biens différents.
+                  Ils ne constituent pas une estimation du bien que vous préparez.
                 </p>
               </div>
             ) : null}
@@ -242,8 +253,8 @@ export function AdjudicationBarometer({
                     <th scope="col">Type de bien</th>
                     <th scope="col">Résultats</th>
                     <th scope="col">Multiple médian</th>
-                    <th scope="col">Prix adjugé médian</th>
-                    <th scope="col">50 % des prix adjugés</th>
+                    <th scope="col">Prix adjugé publié médian</th>
+                    <th scope="col">50 % des prix adjugés publiés</th>
                     <th scope="col">Au-dessus de la mise</th>
                   </tr>
                 </thead>
@@ -288,7 +299,10 @@ export function AdjudicationBarometer({
                           {euro.format(item.distribution.hammerPriceMiddle50Eur.p75)}
                         </td>
                         <td>
-                          {percent.format(distributionRates(item.distribution).aboveStartingRate)}
+                          <RateWithInterval
+                            share={distributionRates(item.distribution).aboveStartingRate}
+                            total={item.distribution.sampleSize}
+                          />
                         </td>
                       </tr>
                     ))}
@@ -370,8 +384,7 @@ export function AdjudicationBarometer({
             Trier par
             <select value={sort} onChange={(event) => setSort(event.target.value as TribunalSort)}>
               <option value="sample">Nombre de résultats</option>
-              <option value="ratio">Multiple médian décroissant</option>
-              <option value="hammer">Prix adjugé décroissant</option>
+              <option value="hammer">Prix adjugé publié décroissant</option>
               <option value="name">Nom du tribunal</option>
             </select>
           </label>
@@ -400,12 +413,10 @@ export function AdjudicationBarometer({
                   <th scope="col" aria-sort={sort === "sample" ? "descending" : undefined}>
                     Résultats
                   </th>
-                  <th scope="col" aria-sort={sort === "ratio" ? "descending" : undefined}>
-                    Multiple médian
-                  </th>
+                  <th scope="col">Multiple médian</th>
                   <th scope="col">Mise à prix médiane</th>
                   <th scope="col" aria-sort={sort === "hammer" ? "descending" : undefined}>
-                    Prix adjugé médian
+                    Prix adjugé publié médian
                   </th>
                   <th scope="col">Au-dessus de la mise</th>
                 </tr>
@@ -435,7 +446,12 @@ export function AdjudicationBarometer({
                     <td>{multiple(item.metrics.medianHammerToStartingRatio)}</td>
                     <td>{euro.format(item.metrics.medianStartingPriceEur)}</td>
                     <td>{euro.format(item.metrics.medianHammerPriceEur)}</td>
-                    <td>{percent.format(item.metrics.aboveStartingRate)}</td>
+                    <td>
+                      <RateWithInterval
+                        share={item.metrics.aboveStartingRate}
+                        total={item.sampleSize}
+                      />
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -457,8 +473,10 @@ export function AdjudicationBarometer({
           </p>
         )}
         <p className={styles.footnote}>
-          Le multiple varie aussi avec les types de biens et les mises à prix pratiquées. Ce tableau
-          ne mesure ni la performance des tribunaux ni une probabilité de gagner une enchère.
+          Le multiple reflète la mise à prix choisie : il varie avec les types de biens et les mises
+          à prix pratiquées, et un écart entre deux tribunaux peut n’être que du bruit sur un petit
+          effectif (les tribunaux ne sont donc pas classés par multiple). Ce tableau ne mesure ni la
+          performance des tribunaux ni une probabilité de gagner une enchère.
         </p>
       </section>
 
@@ -473,17 +491,20 @@ export function AdjudicationBarometer({
           <div>
             <h4>Un périmètre documenté</h4>
             <p>
-              {data.meta.sourceLabel}. Résultats contrôlés, dédoublonnés et rattachés à un tribunal
-              identifié pour les vues locales. La couverture dépend des résultats publiés par la
-              source et ne représente pas toutes les ventes françaises.
+              {data.meta.sourceLabel}. Lots adjugés dont le prix est publié, contrôlés, dédoublonnés
+              et rattachés à un tribunal identifié pour les vues locales. Les lots non adjugés,
+              retirés ou sans prix publié ne sont pas comptés. Le prix est le prix adjugé publié,
+              hors frais et avant une éventuelle surenchère. La couverture dépend des résultats
+              publiés par la source et ne représente pas toutes les ventes françaises.
             </p>
           </div>
           <div>
             <h4>Des calculs vente par vente</h4>
             <p>
-              Multiple = prix adjugé ÷ mise à prix de la même vente. Le multiple médian est la
-              médiane de ces rapports, et non le rapport des deux prix médians. Les parts utilisent
-              l’effectif indiqué comme dénominateur.
+              Multiple = prix adjugé publié ÷ mise à prix de la même vente. Le multiple médian est
+              la médiane de ces rapports, et non le rapport des deux prix médians. Le multiple
+              reflète la mise à prix choisie. Les parts utilisent l’effectif indiqué comme
+              dénominateur et sont accompagnées de leur intervalle de confiance de Wilson à 95 %.
             </p>
           </div>
           <div>
@@ -567,7 +588,11 @@ function ScopeMetrics({
       <Metric
         label="Au-dessus de la mise à prix"
         value={percent.format(rates.aboveStartingRate)}
-        detail={`Sur ${integer.format(count)} prix connus`}
+        detail={withInterval(
+          `Sur ${integer.format(count)} prix connus`,
+          rates.aboveStartingRate,
+          count,
+        )}
       />
       <Metric
         label="Résultats analysés"
@@ -577,9 +602,13 @@ function ScopeMetrics({
         }
       />
       <Metric
-        label="Prix adjugé médian"
+        label="Prix adjugé publié médian"
         value={summary ? euro.format(summary.medianHammerPriceEur) : "—"}
-        detail={summary ? "Prix au marteau, hors frais" : "Médiane non disponible pour ce type"}
+        detail={
+          summary
+            ? "Prix adjugé publié, hors frais, avant surenchère"
+            : "Médiane non disponible pour ce type"
+        }
       />
       <Metric
         label="Mise à prix médiane"
@@ -589,9 +618,26 @@ function ScopeMetrics({
       <Metric
         label="Au moins le double de la mise"
         value={percent.format(rates.atLeastDoubleRate)}
-        detail="Prix adjugé supérieur ou égal à 2×"
+        detail={withInterval("Prix adjugé supérieur ou égal à 2×", rates.atLeastDoubleRate, count)}
       />
     </dl>
+  );
+}
+
+/** Complète une légende par l'intervalle de Wilson à 95 % de la part. */
+function withInterval(detail: string, share: number, total: number): string {
+  const interval = intervalText(share, total);
+  return interval ? `${detail} · intervalle à 95 % : ${interval}` : detail;
+}
+
+/** Une part affichée avec son intervalle de Wilson à 95 % sur la ligne suivante. */
+function RateWithInterval({ share, total }: { share: number; total: number }) {
+  const interval = intervalText(share, total);
+  return (
+    <>
+      {percent.format(share)}
+      {interval ? <span className={styles.rowDetail}>{interval}</span> : null}
+    </>
   );
 }
 
@@ -629,14 +675,18 @@ function DistributionChart({ distribution }: { distribution: AdjudicationDistrib
                 <div style={{ width: `${bin.share * 100}%` }} />
               </div>
               <strong>{percent.format(bin.share)}</strong>
-              <span className={styles.binCount}>{integer.format(bin.count)} ventes</span>
+              <span className={styles.binCount}>
+                {integer.format(bin.count)} ventes
+                <span className="block">{intervalText(bin.share, distribution.sampleSize)}</span>
+              </span>
             </div>
           );
         })}
       </div>
       <p className={styles.footnote}>
-        Base : {integer.format(distribution.sampleSize)} résultats. Les pourcentages arrondis
-        peuvent ne pas totaliser exactement 100 %.{" "}
+        Base : {integer.format(distribution.sampleSize)} résultats (lots adjugés dont le prix est
+        publié). Sous chaque part, l’intervalle de confiance de Wilson à 95 %. Les pourcentages
+        arrondis peuvent ne pas totaliser exactement 100 %.{" "}
         {!detailed
           ? "Les résultats à partir de 2× sont regroupés dans la publication disponible."
           : ""}

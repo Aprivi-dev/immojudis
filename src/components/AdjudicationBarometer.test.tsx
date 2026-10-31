@@ -83,6 +83,35 @@ describe("AdjudicationBarometer", () => {
     expect(screen.getByRole("list", { name: "Répartition de 20 adjudications" })).toBeTruthy();
     expect(screen.getByText(/DVF · non disponible/)).toBeTruthy();
   });
+  it("n'offre pas de tri par multiple médian et trie par effectif par défaut (n° 20)", () => {
+    render(<AdjudicationBarometer data={directory} initialCourtCode={null} />);
+    const sort = screen.getByRole("combobox", { name: "Trier par" }) as HTMLSelectElement;
+    expect(sort.value).toBe("sample");
+    const options = Array.from(sort.options).map((option) => option.textContent);
+    expect(options).toEqual([
+      "Nombre de résultats",
+      "Prix adjugé publié décroissant",
+      "Nom du tribunal",
+    ]);
+    expect(options.join(" ")).not.toMatch(/multiple/i);
+  });
+  it("énonce le périmètre, le prix adjugé publié et l'intervalle de Wilson de chaque part (n° 20)", () => {
+    render(<AdjudicationBarometer data={directory} initialCourtCode={null} />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Type de bien" }), {
+      target: { value: "house" },
+    });
+    const summary = screen.getByRole("region", { name: "France entière" });
+    const text = (summary.textContent ?? "").replace(/[\u00a0\u202f]/g, " ");
+    expect(text).toContain("Prix adjugé publié (hors frais, avant surenchère)");
+    expect(text).toContain("Périmètre : lots adjugés dont le prix est publié");
+    expect(text).toContain("Le multiple reflète la mise à prix choisie");
+    // 60 % sur 20 prix (12 sur 20 au-dessus de la mise) : Wilson à 95 % de 38,7 % à 78,1 %.
+    expect(text).toContain("intervalle à 95 % : de 38,7 % à 78,1 %");
+    // La moitié centrale des multiples (interquartile) reste affichée.
+    expect(text).toContain("50 % des multiples entre 1,00× et 2,00×");
+    // Chaque tranche de la répartition porte aussi son intervalle (20 % sur 20 : 8,1 % à 41,6 %).
+    expect(screen.getAllByText("de 8,1 % à 41,6 %").length).toBeGreaterThan(0);
+  });
   it("affiche les vraies médianes de type quand une nouvelle publication les fournit", () => {
     const enriched = structuredClone(directory);
     enriched.national.propertyTypes![0].distribution.summary = {
