@@ -25,6 +25,38 @@ function candidate(
 }
 
 describe("dvf comparable engine", () => {
+  it("calcule la médiane et les quartiles sur tout l'échantillon, `limit` ne borne que l'affichage", () => {
+    // 30 appartements voisins dont le prix croît avec la distance : les plus proches sont les moins chers.
+    const candidates = Array.from({ length: 30 }, (_, index) =>
+      candidate(`c${index}`, {
+        totalPriceEur: 50 * (3_000 + index * 100),
+        distanceM: 50 + index * 5,
+      }),
+    );
+    const analyze = (limit: number) =>
+      buildDvfComparableAnalysis({
+        subject: { surfaceM2: 50, propertyType: "Appartement", startingPriceEur: 100_000 },
+        candidates,
+        options: { now: NOW, maxAgeMonths: 36, maxRadiusM: 1_000, limit },
+      });
+
+    const short = analyze(3);
+    const long = analyze(50);
+
+    expect(short.comparables).toHaveLength(3);
+    expect(long.comparables).toHaveLength(30);
+    expect(short.sampleSize).toBe(30);
+    expect(short.sampleSize).toBe(long.sampleSize);
+    expect(short.medianPricePerM2).toBe(long.medianPricePerM2);
+    expect(short.p25PricePerM2).toBe(long.p25PricePerM2);
+    expect(short.p75PricePerM2).toBe(long.p75PricePerM2);
+    expect(short.weightedAveragePricePerM2).toBe(long.weightedAveragePricePerM2);
+    expect(short.medianValueEur).toBe(long.medianValueEur);
+    // La médiane est celle des 30 prix (3 000 à 5 900 EUR/m2), pas celle des 3 lignes les mieux notées.
+    expect(short.medianPricePerM2).toBeGreaterThan(4_300);
+    expect(short.medianPricePerM2).toBeLessThan(4_700);
+  });
+
   it("ranks strict comparables and computes a defensible value range", () => {
     const analysis = buildDvfComparableAnalysis({
       subject: {
