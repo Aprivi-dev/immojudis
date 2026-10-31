@@ -4,6 +4,7 @@ import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middlew
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
 import {
+  ANALYSIS_RECURRING_PRICE_CENTS,
   analysisSubscriptionPriceIds,
   getStripe,
   stripeAccessPeriodEndIso,
@@ -39,6 +40,8 @@ export type StripeSubscriptionView = {
   planStatus: string;
   currentPeriodEnd: string | null;
   priceId: string | null;
+  /** Montant unitaire du Price en centimes (`null` : inconnu ou tarification à paliers). */
+  priceAmountCents?: number | null;
 };
 
 export type BillingDiscrepancyKind =
@@ -74,6 +77,7 @@ export function stripeSubscriptionView(subscription: Stripe.Subscription): Strip
     planStatus,
     currentPeriodEnd: stripeAccessPeriodEndIso(subscription, planStatus),
     priceId: subscription.items.data[0]?.price?.id ?? null,
+    priceAmountCents: subscription.items.data[0]?.price?.unit_amount ?? null,
   };
 }
 
@@ -82,11 +86,17 @@ export function compareStripeWithDatabase({
   stripeSubscriptions,
   rows,
   acceptedPriceIds,
+  currentPriceId = null,
+  listComplete = true,
   now = new Date(),
 }: {
   stripeSubscriptions: StripeSubscriptionView[];
   rows: SubscriptionRow[];
   acceptedPriceIds: string[];
+  /** Price courant (`STRIPE_ANALYSIS_PRICE_ID`) : son montant doit valoir 59 € (comme `isRecognisedAnalysisPrice`). */
+  currentPriceId?: string | null;
+  /** Faux quand la liste Stripe est tronquée : un abonnement absent de la liste n'est alors pas « inconnu de Stripe ». */
+  listComplete?: boolean;
   now?: Date;
 }): BillingDiscrepancy[] {
   const discrepancies: BillingDiscrepancy[] = [];
@@ -106,7 +116,10 @@ export function compareStripeWithDatabase({
     // Fermé par défaut (n° 47), comme `isAnalysisSubscriptionPrice` : sans Price configuré ou sans
     // Price sur l'abonnement, rien n'est reconnu et l'écart est signalé.
     const priceKnown =
-      Boolean(subscription.priceId) && acceptedPriceIds.includes(subscription.priceId!);
+      Boolean(subscription.priceId) &&
+      acceptedPriceIds.includes(subscription.priceId!) &&
+      (subscription.priceId !== currentPriceId ||
+        subscription.priceAmountCents === ANALYSIS_RECURRING_PRICE_CENTS);
     if (!priceKnown) {
       discrepancies.push({
         kind: "unknown_price",
@@ -156,6 +169,8 @@ export function compareStripeWithDatabase({
     if (!isPlanPeriodActive(row.status, row.current_period_end, now)) continue;
     const subscription = stripeById.get(subscriptionId);
     if (!subscription) {
+      // Liste tronquée : l'abonnement peut exister au-delà de la dernière page lue.
+      if (!listComplete) continue;
       discrepancies.push({
         kind: "database_access_stripe_missing",
         stripeSubscriptionId: subscriptionId,
@@ -239,6 +254,8 @@ async function reconcileBillingNow(): Promise<BillingReconciliationReport> {
       stripeSubscriptions: stripeResult.subscriptions,
       rows,
       acceptedPriceIds: analysisSubscriptionPriceIds(),
+      currentPriceId: process.env.STRIPE_ANALYSIS_PRICE_ID?.trim() || null,
+      listComplete: !stripeResult.truncated,
     }),
   };
 }
