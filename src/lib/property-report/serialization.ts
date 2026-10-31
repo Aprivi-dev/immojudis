@@ -17,7 +17,7 @@ import {
   SavedReportRow,
 } from "../property-reports";
 import { asRecord, numberValue, stringOrNumberValue } from "@/lib/guards";
-import { redactSaleTexts } from "@/lib/personal-data-filter";
+import { redactPersonalText, redactSaleTexts } from "@/lib/personal-data-filter";
 export function pdfWatermarkForPlan(plan: PlanEntitlements): string | null {
   return plan.features.pdfExport === "limited" ? "VERSION DECOUVERTE - EXTRAIT LIMITE" : null;
 }
@@ -511,6 +511,19 @@ export function slugify(value: string): string {
       .replace(/^-+|-+$/g, "")
       .slice(0, 80) || "rapport-immojudis"
   );
+}
+
+/**
+ * Titre et nom de fichier d'un PDF de rapport. Un rapport enregistré avant le durcissement du filtre
+ * peut porter un nom de particulier dans son titre : il reviendrait sinon sur chaque page, dans
+ * `/Info /Title` et dans le nom du fichier téléchargé.
+ */
+export function reportPdfIdentity(report: Pick<SavedReportRow, "id" | "title">): {
+  title: string;
+  filename: string;
+} {
+  const title = redactPersonalText(report.title);
+  return { title, filename: `${slugify(title)}-${report.id.slice(0, 8)}.pdf` };
 }
 
 export function createShareToken(): string {

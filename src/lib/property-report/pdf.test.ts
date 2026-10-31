@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { Json } from "@/integrations/supabase/types";
+import { createTextPdf } from "../simple-pdf";
 import { buildPlanEntitlements } from "./entitlements";
 import { REPORT_PDF_HEADINGS, reportToPdfLines } from "./pdf";
 import { reportWording } from "./report-wording";
+import { reportPdfIdentity } from "./serialization";
 import {
   buildReportRentalScenario,
   computeReportRentalScenario,
@@ -366,5 +368,42 @@ describe("property report rental PDF", () => {
       ),
     ).toBe(true);
     expect(lines.some((line) => line.includes("Assurance propriétaire: 0"))).toBe(true);
+  });
+});
+
+describe("titre, métadonnées et nom de fichier du PDF", () => {
+  const withTitle = (title: string): SavedReportRow => ({
+    ...reportWithRentalScenario(),
+    id: "12345678-aaaa-bbbb-cccc-1234567890ab",
+    title,
+  });
+
+  it("expurge le nom d'un particulier du titre et du nom de fichier", () => {
+    const { title, filename } = reportPdfIdentity(withTitle("Maison occupée par Pierre Martin"));
+
+    expect(title).toBe("Maison occupée par un occupant");
+    expect(filename).toBe("maison-occupee-par-un-occupant-12345678.pdf");
+    expect(filename).not.toMatch(/martin|pierre/i);
+  });
+
+  it("n'écrit le nom ni sur les pages ni dans /Info /Title", () => {
+    const { title } = reportPdfIdentity(withTitle("Maison occupée par Pierre Martin"));
+    const bytes = createTextPdf({ title, lines: ["Bien", "Titre: Maison"] });
+    const raw = Buffer.from(bytes).toString("latin1");
+    // /Info /Title est écrit en UTF-16BE hexadécimal : on compare aussi sous cette forme.
+    const hex = (text: string) =>
+      Array.from(text, (char) => char.charCodeAt(0).toString(16).padStart(4, "0"))
+        .join("")
+        .toUpperCase();
+
+    expect(raw).not.toContain("Martin");
+    expect(raw.toUpperCase()).not.toContain(hex("Martin"));
+    expect(raw.toUpperCase()).toContain(hex("un occupant"));
+  });
+
+  it("garde un titre sans nom de personne tel quel", () => {
+    const { title, filename } = reportPdfIdentity(withTitle("Appartement Bordeaux 33"));
+    expect(title).toBe("Appartement Bordeaux 33");
+    expect(filename).toBe("appartement-bordeaux-33-12345678.pdf");
   });
 });
