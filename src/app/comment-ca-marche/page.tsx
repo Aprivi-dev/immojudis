@@ -64,7 +64,7 @@ const SURPRISES = [
   },
   {
     title: "Des frais en plus du prix",
-    text: "Les frais de poursuite taxés par le juge, les droits de mutation et les émoluments des avocats s’ajoutent au prix d’adjudication (art. R. 322-58).",
+    text: "Les frais de poursuite taxés par le juge, les droits de mutation et les émoluments des avocats s’ajoutent au prix d’adjudication (art. R. 322-58 du Code des procédures civiles d’exécution pour les frais taxés et les droits de mutation ; art. A. 444-191 du Code de commerce pour les émoluments).",
     href: "/ressources/frais-vente-encheres-judiciaire",
     label: "Le guide des frais",
   },

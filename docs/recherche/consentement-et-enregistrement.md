@@ -45,11 +45,37 @@ propositions, pas des décisions.
 > l'entretien ; les notes pseudonymisées sont gardées [24 mois] ; vos coordonnées sont gardées [12 mois] au plus,
 > sauf si vous acceptez d'être recontacté.
 >
+> **D'où viennent vos coordonnées** (si vous n'avez pas demandé cet entretien) : [annuaire public de votre barreau /
+> > annuaire du Conseil national des barreaux / site de votre cabinet / introduction par une personne que vous
+> > connaissez], consulté le [date]. Je n'utilise que votre nom, votre barreau et votre adresse professionnelle, pour vous
+> proposer cet entretien. Base juridique de cette prise de contact : [intérêt légitime à mener une recherche
+> > auprès des professionnels concernés, à valider] ; l'entretien lui-même repose sur votre accord. Si vous ne répondez
+> pas, vos coordonnées sont supprimées sous [1 mois] et ne sont pas réutilisées.
+>
 > **Vos droits** : vous pouvez, à tout moment, retirer votre accord, vous opposer, demander l'accès, la
 > rectification ou la suppression de vos données, en écrivant à [adresse du responsable du traitement]. Vous pouvez
 > saisir la CNIL (cnil.fr/fr/plaintes).
 >
 > **Responsable du traitement** : [dénomination, adresse] (à renseigner).
+
+## Information des personnes contactées sans l'avoir demandé (art. 14 du RGPD)
+
+Les avocats et les marchands de biens recrutés par annuaire ou par introduction n'ont pas fourni eux-mêmes leurs
+coordonnées. L'article 14 impose de leur donner, **au plus tard lors du premier message et dans un délai d'un mois**,
+les informations suivantes. Elles figurent dans la notice ci-dessus, qui doit être jointe ou rappelée dans le premier
+message :
+
+| Information                        | Où la trouver dans la notice                                                   |
+| ---------------------------------- | ------------------------------------------------------------------------------ |
+| Identité et contact du responsable | « Responsable du traitement » (à renseigner)                                   |
+| Finalité et base légale            | « À quoi cela sert » et « D'où viennent vos coordonnées » (base à valider)     |
+| Catégories de données              | nom, barreau ou activité, adresse professionnelle ; réponses à l'entretien     |
+| Source des coordonnées             | « D'où viennent vos coordonnées » (annuaire, site, introduction), avec la date |
+| Durée de conservation              | « Combien de temps » ; 1 mois sans réponse (proposition)                       |
+| Droits, retrait, réclamation CNIL  | « Vos droits »                                                                 |
+
+Le premier message ne contient aucune offre commerciale. Une personne qui s'oppose ou ne répond pas n'est pas
+relancée au-delà d'un rappel, et son adresse est effacée.
 
 ## Recueil de l'accord
 

@@ -42,6 +42,11 @@ Hypothèses à confirmer ou infirmer :
 - Message d'invitation type : « Je construis un site d'information sur les ventes immobilières aux enchères. Pour
   ne pas le faire de travers, je souhaite comprendre comment vous recevez et préparez un enchérisseur. Quarante
   minutes, sans rien à vendre ; je ne vous poserai aucune question sur un client. »
+- **Information de l'article 14 du RGPD** : l'avocat n'a pas fourni lui-même ses coordonnées. Le premier message
+  indique d'où elles viennent (annuaire du barreau, site du cabinet ou introduction, avec la date), pourquoi on le
+  contacte, qui est le responsable du traitement, la durée de conservation (coordonnées effacées sous un mois sans
+  réponse) et ses droits, avec la notice complète en pièce jointe ou en lien
+  ([modèle](consentement-et-enregistrement.md#information-des-personnes-contactees-sans-lavoir-demande-art-14-du-rgpd)).
 
 ## Déroulé (40 minutes)
 
