@@ -16802,6 +16802,7 @@ export type Database = {
         path: number[] | null;
         geom: unknown;
       };
+      user_id_for_email: { Args: { p_email: string }; Returns: string };
       valid_detail: {
         valid: boolean | null;
         reason: string | null;
