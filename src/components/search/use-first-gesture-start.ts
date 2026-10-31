@@ -41,9 +41,12 @@ export function runAfterNextPaint(callback: () => void): () => void {
 
 /**
  * Déclenche `onStart` une seule fois, au premier geste de la personne : `pointerdown`, `wheel` ou
- * `touchstart` n'importe où dans la page (pas `keydown`). Sert à ne télécharger ni initialiser la
- * carte Mapbox GL (513 Ko, plus d'une seconde de calcul sur le fil principal) pour une visite où
- * personne n'interagit : aucun minuteur ni moment d'inactivité ne la lance à la place.
+ * `touchstart` (pas `keydown`). Avec `zoneId`, seul un geste fait DANS cet élément compte : le
+ * défilement ou un clic ailleurs dans la page (la liste des résultats, les filtres) ne démarre pas
+ * une carte, que Mapbox facture à chaque chargement. Sans `zoneId`, n'importe où dans la page.
+ * Sert à ne télécharger ni initialiser la carte Mapbox GL (513 Ko, plus d'une seconde de calcul sur
+ * le fil principal) pour une visite où personne n'interagit : aucun minuteur ni moment
+ * d'inactivité ne la lance à la place.
  *
  * `onStart` est différé après la peinture du geste (`runAfterNextPaint`) : le clic, le défilement
  * ou le toucher qui l'a provoqué répond d'abord, la carte se charge ensuite. Un geste sur un
@@ -52,15 +55,18 @@ export function runAfterNextPaint(callback: () => void): () => void {
  *
  * Rien n'est écouté tant que `enabled` est faux ; une fois `onStart` appelé, l'appelant désactive
  * le hook (`enabled` repasse à faux) pour ne pas le déclencher de nouveau. Un démarrage différé
- * encore en attente est annulé si le hook est désactivé ou démonté. Le survol de la zone de carte
- * et le bouton démarrent aussi la carte : voir `MapPreview`.
+ * encore en attente est annulé si le hook est désactivé ou démonté. Le survol ne démarre jamais la
+ * carte ; le bouton la démarre aussi : voir `MapPreview`.
  */
 export function useFirstGestureStart({
   enabled,
   onStart,
+  zoneId,
 }: {
   enabled: boolean;
   onStart: () => void;
+  /** Identifiant de l'élément dont les gestes comptent (la zone de la carte). Absent : toute la page. */
+  zoneId?: string;
 }) {
   const onStartRef = useRef(onStart);
   useEffect(() => {
@@ -74,6 +80,10 @@ export function useFirstGestureStart({
     let done = false;
     const start = (event: Event) => {
       if (done) return;
+      if (zoneId !== undefined) {
+        const zone = document.getElementById(zoneId);
+        if (!zone || !(event.target instanceof Node) || !zone.contains(event.target)) return;
+      }
       // La molette sur le bouton reste un geste de carte ; l'appui ou le toucher, une demande
       // explicite que le bouton traite lui-même.
       if (
@@ -101,5 +111,5 @@ export function useFirstGestureStart({
       removeListeners();
       cancelPending?.();
     };
-  }, [enabled]);
+  }, [enabled, zoneId]);
 }

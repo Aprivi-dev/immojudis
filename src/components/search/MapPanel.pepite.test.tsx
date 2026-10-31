@@ -200,6 +200,29 @@ describe("carte : repère « Pépite »", () => {
     ]);
   });
 
+  it("dessine un regroupement en disque blanc liseré marine, l'or étant réservé aux pépites", async () => {
+    await showMap({ sales: [sale("a"), sale("b")] });
+    const cluster = mocks.layers.find((layer) => layer.id === "immojudis-sales-clusters")!;
+    const paint = cluster.paint as Record<string, unknown>;
+    expect(paint["circle-color"]).toBe("#ffffff");
+    expect(paint["circle-stroke-color"]).toBe("#132238");
+    const count = mocks.layers.find((layer) => layer.id === "immojudis-sales-cluster-count")!;
+    expect((count.paint as Record<string, unknown>)["text-color"]).toBe("#132238");
+    // Aucune couleur or dans le style des regroupements (ni disque, ni liseré, ni nombre).
+    expect(JSON.stringify([cluster.paint, count.paint]).toLowerCase()).not.toContain("#c98d45");
+  });
+
+  it("agrandit les regroupements par paliers : 18, 24, 30 px, puis 36 px à partir de 100 ventes", async () => {
+    await showMap({ sales: [sale("a")] });
+    const cluster = mocks.layers.find((layer) => layer.id === "immojudis-sales-clusters")!;
+    const radius = (cluster.paint as Record<string, unknown>)["circle-radius"];
+    expect(radius).toEqual(["step", ["get", "point_count"], 18, 10, 24, 30, 30, 100, 36]);
+    const glyph = mocks.layers.find((layer) => layer.id === "immojudis-sales-cluster-pepite")!;
+    const offsets = (glyph.layout as Record<string, unknown>)["icon-offset"] as unknown[];
+    // Un palier de glyphe par palier de taille.
+    expect((offsets.length - 3) / 2).toBe(((radius as unknown[]).length - 3) / 2);
+  });
+
   it("donne à la cible de clic le rayon du point + 4 px, au moins 24 px à chaque zoom", async () => {
     await showMap({ sales: [sale("pepite-1")], pepiteSaleIds: new Set(["pepite-1"]) });
     const point = mocks.layers.find((layer) => layer.id === "immojudis-sales-points")!;

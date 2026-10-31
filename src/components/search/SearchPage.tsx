@@ -22,7 +22,7 @@ import {
   fetchSalesAiReviewProjections,
   fetchSalesStatistics,
 } from "@/lib/client-api";
-import { getSaleById } from "@/lib/queries";
+import { getAlerts, getSaleById } from "@/lib/queries";
 import { applyPhotoMirrors, isPhotoMirrorEnabled, mirrorsFromSales } from "@/lib/photo-mirror";
 import type { AuctionSale, SaleMediaMirror } from "@/lib/types";
 import { OFFERS_PATH, loginPathWithRedirect, pathWithSearch } from "@/lib/navigation";
@@ -75,25 +75,27 @@ import { FiltersLoadingFallback } from "./FiltersLoadingFallback";
 import { SALES_PAGINATION_ID, SearchPagination } from "./SearchPagination";
 import { scrollToSaleCard } from "./scroll-to-sale-card";
 import { DESKTOP_MAP_ZONE_ID, DesktopMapZone } from "./DesktopMapZone";
-import { loadMapPanelModule, preloadMapModules } from "./preload-map";
+import { LazyMapPanel } from "./LazyMapPanel";
+import { preloadMapModules } from "./preload-map";
 import { useRestoreSaleCard } from "./use-restore-sale-card";
 import { useFirstGestureStart } from "./use-first-gesture-start";
 import { WHOLE_FRANCE_PATCH, activeFilterChips, hasGeographicFilter } from "./active-filter-chips";
-import { Footer, MapPanelSkeleton, MobileMapToggle } from "./SearchFilters";
+import { Footer, MobileMapToggle } from "./SearchFilters";
 import {
   CsvExportButton,
+  FREE_ALERT_LIMIT,
   ResultsSummary,
   ResultsViewToggle,
   SearchHeader,
+  SortAndSaleTypeControl,
   SortDropdown,
   type SaveSearchOptions,
 } from "./SearchHeader";
-import { HearingsWeekBanner } from "./HearingsWeekBanner";
-import { RankingExplanation } from "./RankingExplanation";
+import { ResultsHelp } from "./ResultsHelp";
 import { SearchResultsList } from "./SearchResults";
 import { FEW_RESULTS_ALERT_THRESHOLD, SectorAlertPrompt } from "./SectorAlertPrompt";
 import { SaleComparisonBar } from "./SaleComparisonBar";
-import { SaleTypeFilter } from "./SaleTypeFilter";
+import { SaleTypeSelect } from "./SaleTypeFilter";
 import { SearchLawyerPlacement } from "./SearchLawyerPlacement";
 import {
   SearchDraft,
@@ -113,11 +115,6 @@ import { trackProductEvent } from "@/lib/product-events";
 import { userMessage } from "@/lib/user-messages";
 import * as queryKeys from "@/lib/query-keys";
 import { capMapPoints } from "@/lib/search/map-points";
-
-const LazyMapPanel = dynamic(() => loadMapPanelModule().then((mod) => mod.MapPanel), {
-  ssr: false,
-  loading: () => <MapPanelSkeleton />,
-});
 
 /** The map draws at most this many points: more would make clusters and popups sluggish. */
 const MAP_POINT_LIMIT = 500;
@@ -240,11 +237,12 @@ export function SearchPage({
   const [locationCenter, setLocationCenter] = useState<(GeoPoint & { zoom?: number }) | null>(null);
   const isDesktop = useMediaQuery("(min-width: 1024px)");
   // Sur bureau, la carte (mapbox-gl + points) ne se télécharge ni ne s'initialise qu'au premier
-  // geste (appui, molette, toucher), au survol continu de sa zone ou au bouton « Afficher la carte »
-  // (voir `useFirstGestureStart`, `MapPreview`, `DesktopMapZone`) ; son cadre est réservé dès que
-  // l'écran est large.
+  // geste fait DANS sa zone (appui, molette, toucher) ou au bouton « Afficher la carte » (voir
+  // `useFirstGestureStart`, `MapPreview`, `DesktopMapZone`) : ni le défilement de la liste, ni le
+  // survol ne la démarrent, car chaque chargement est facturé. Son cadre est réservé dès que l'écran
+  // est large. Sur mobile, elle suit l'ouverture de la fenêtre de carte (`?map=true`).
   const [desktopMapStarted, setDesktopMapStarted] = useState(false);
-  const mapVisible = mobileMapOpen || (isDesktop && desktopMapStarted);
+  const mapVisible = isDesktop ? desktopMapStarted : mobileMapOpen;
   // Le tableau n'existe que sur écran large : en dessous, toujours les cartes.
   const displayedView = effectiveResultsView(resultsView, isDesktop);
   const geographicLabel = search.city || search.department || search.query || "";
@@ -648,6 +646,7 @@ export function SearchPage({
   useFirstGestureStart({
     enabled: isDesktop && !desktopMapStarted,
     onStart: startDesktopMap,
+    zoneId: DESKTOP_MAP_ZONE_ID,
   });
   const activeFiltersCount = countActiveSearchFilters(search);
   const activeFilters = useMemo(() => activeFilterChips(search), [search]);
@@ -661,6 +660,17 @@ export function SearchPage({
   const hasPrevious = page > 1;
   // La pagination s'affiche dès qu'il y a une page à parcourir ou des résultats (voir SearchPagination).
   const paginationVisible = hasMore || hasPrevious || filteredCount > 0;
+  // Total connu et nul, première page, pas d'erreur : le premier écran ne montre que l'état vide et ses
+  // actions (critères à retirer, élargir la zone), sans réglages de tri ni liens d'aide à lire avant.
+  const noResults =
+    !isInitialLoading &&
+    !listBusy &&
+    !isCountLoading &&
+    !publicTotalMissing &&
+    !error &&
+    page === 1 &&
+    displayCount === 0 &&
+    filteredCount === 0;
   // Total annoncé par le bouton de la fenêtre des filtres (« Afficher 1 646 annonces ») : seulement
   // quand les critères saisis sont déjà ceux de la liste et que celle-ci est à jour. Sinon le
   // bouton garde son libellé neutre plutôt que d'annoncer le total d'une autre recherche.
@@ -702,6 +712,24 @@ export function SearchPage({
     retry: false,
   });
   const emailRecapEnabled = notificationPreferences?.preferences.alertEmailEnabled === true;
+  // Alerte gratuite : l'usage (« 0/1 utilisée ») n'est lu qu'à l'ouverture de la fenêtre de création,
+  // pour un compte qui n'a pas l'offre Analyse. Même clé que la page « Mes alertes ».
+  const [alertDialogOpened, setAlertDialogOpened] = useState(false);
+  const { data: savedAlerts } = useQuery({
+    queryKey: queryKeys.savedAlerts(user?.id ?? "anonymous"),
+    queryFn: () => getAlerts(user!.id),
+    enabled:
+      alertDialogOpened &&
+      Boolean(user) &&
+      !authLoading &&
+      entitlementsData?.plan.hasAnalysisAccess === false,
+    staleTime: 30_000,
+    retry: false,
+  });
+  const freeAlertUsage = savedAlerts
+    ? { used: savedAlerts.filter((alert) => alert.is_active).length, limit: FREE_ALERT_LIMIT }
+    : null;
+  const openAlertDialog = useCallback(() => setAlertDialogOpened(true), []);
   const { data: salesStatisticsData, isFetching: salesStatisticsLoading } = useQuery({
     queryKey: queryKeys.salesStatistics(searchKeySignature),
     queryFn: () => fetchSalesStatistics({ search }),
@@ -884,6 +912,9 @@ export function SearchPage({
         current && areMapViewportsClose(current, viewport) ? current : viewport,
       );
 
+      // Cadrage de départ de la carte (zone de l'adresse restaurée, ou France) : pas un déplacement de
+      // la personne, l'adresse de la recherche n'est pas réécrite.
+      if (viewport.initial) return;
       if (isPreview || !searchRef.current.searchAsMove) return;
       if (viewportTimerRef.current != null) window.clearTimeout(viewportTimerRef.current);
       viewportTimerRef.current = window.setTimeout(() => {
@@ -910,6 +941,7 @@ export function SearchPage({
       if (!isPreview && mapViewport) updateSearch({ viewport: mapViewport.bounds });
     },
     locationCenter,
+    initialViewport: search.viewport ?? null,
     totalCount,
     mappablePointsTotal,
     hoveredSaleId,
@@ -954,8 +986,32 @@ export function SearchPage({
   }
 
   async function saveSearch(options?: SaveSearchOptions) {
-    await createAlertFromSearch(search, options);
+    const result = await createAlertFromSearch(search, options);
+    // Le décompte de l'alerte gratuite (« 1/1 utilisée ») doit refléter celle qui vient d'être créée.
+    if (result.status === "created" && user) {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.savedAlerts(user.id) });
+    }
   }
+
+  // Visiteur : les pastilles réservées aux comptes mènent à l'inscription, qui le ramène sur cette
+  // recherche (critères saisis compris) avec le filtre qu'il vient de choisir.
+  const signupLinkWith = (patch: Partial<SalesSearchParams>) =>
+    loginPathWithRedirect(
+      pathWithSearch(
+        pathname,
+        withResultsView(
+          salesSearchToUrlRecord(mergeSalesSearch(draftToSearch(draft, search), patch)),
+          resultsView,
+        ),
+      ),
+      { mode: "investor" },
+    );
+  const signupLinks = isPreview
+    ? {
+        belowRange: signupLinkWith({ belowRange: true }),
+        noPointsToVerify: signupLinkWith({ noPointsToVerify: true }),
+      }
+    : undefined;
 
   async function exportCsv() {
     if (authLoading) {
@@ -1018,6 +1074,9 @@ export function SearchPage({
         dailyAlertsAllowed={entitlementsData?.plan.hasAnalysisAccess === true}
         emailRecapEnabled={emailRecapEnabled}
         pepitesActive={pepitesActive}
+        signupLinks={signupLinks}
+        freeAlertUsage={freeAlertUsage}
+        onAlertDialogOpen={openAlertDialog}
         wideMap={wideMap}
         isDesktop={isDesktop}
         onFiltersOpenChange={setFiltersOpen}
@@ -1040,64 +1099,56 @@ export function SearchPage({
           aria-label="Résultats de recherche"
           aria-busy={listBusy}
         >
-          {/* En-tête des résultats (maquette /sales du 24/10/2026) : titre et compteur, une rangée de
-              réglages (tri, cartes ou tableau, type de vente), puis une ligne de liens d'aide. */}
+          {/* En-tête des résultats : titre et compteur, puis UNE rangée de réglages (tri et type de vente
+              joints, cartes ou tableau, export). Les liens d'aide sont au pied de la liste (`ResultsHelp`).
+              Sans résultat, seul le titre reste : l'état vide et ses actions montent au premier écran. */}
           <div className="border-b border-line-soft bg-white">
-            <div className="flex flex-wrap items-center justify-between gap-1 pr-4">
-              <ResultsSummary
-                search={search}
-                displayCount={displayCount}
-                hasLocalFilters={hasLocalFilters}
-                isLoading={
-                  isInitialLoading || publicTotalMissing || (isCountLoading && !publicListShown)
-                }
-                hasError={Boolean(error) && !pageOutOfRange && rawSales.length === 0}
-                geocoding={geocoding}
-                refreshing={listBusy && !isInitialLoading}
-              />
-
-              <div className="flex flex-wrap items-center gap-2 px-4 pb-2 sm:px-0">
-                <SortDropdown
-                  preview={isPreview}
-                  hasCenter={Boolean(center)}
-                  investmentScore={investmentSortAllowed}
-                  sort={visibleSearchSort(search.sort, {
-                    allowInvestmentScore: investmentSortAllowed,
-                  })}
-                  onChange={(sort) => chooseSearch({ sort })}
-                />
+            <ResultsSummary
+              search={search}
+              displayCount={displayCount}
+              hasLocalFilters={hasLocalFilters}
+              isLoading={
+                isInitialLoading || publicTotalMissing || (isCountLoading && !publicListShown)
+              }
+              hasError={Boolean(error) && !pageOutOfRange && rawSales.length === 0}
+              geocoding={geocoding}
+              refreshing={listBusy && !isInitialLoading}
+            />
+            {noResults ? null : (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 pb-3 sm:px-5">
+                <SortAndSaleTypeControl>
+                  <SortDropdown
+                    bare
+                    preview={isPreview}
+                    hasCenter={Boolean(center)}
+                    investmentScore={investmentSortAllowed}
+                    sort={visibleSearchSort(search.sort, {
+                      allowInvestmentScore: investmentSortAllowed,
+                    })}
+                    onChange={(sort) => chooseSearch({ sort })}
+                  />
+                  <SaleTypeSelect
+                    value={draft.saleType}
+                    onChange={(saleType) =>
+                      setDraft((current) => ({
+                        ...current,
+                        saleType,
+                        tribunal: !saleType || saleType === "tribunal" ? current.tribunal : "",
+                      }))
+                    }
+                  />
+                </SortAndSaleTypeControl>
                 <ResultsViewToggle view={resultsView} onChange={changeResultsView} />
+                {/* Export réservé au grand écran, comme avant dans la barre de filtres. */}
+                <span className="hidden text-xs lg:inline-flex">
+                  <CsvExportButton
+                    exporting={exportingCsv}
+                    locked={csvExportLocked}
+                    onClick={exportCsv}
+                  />
+                </span>
               </div>
-            </div>
-            <div className="px-4 pb-1 sm:px-5">
-              <SaleTypeFilter
-                compact
-                value={draft.saleType}
-                onChange={(saleType) =>
-                  setDraft((current) => ({
-                    ...current,
-                    saleType,
-                    tribunal: !saleType || saleType === "tribunal" ? current.tribunal : "",
-                  }))
-                }
-              />
-            </div>
-            <div className="flex flex-wrap items-start gap-x-5 px-4 pb-2 text-xs text-ink-soft sm:px-5">
-              <HearingsWeekBanner inline />
-              <RankingExplanation
-                investmentScore={investmentSortAllowed}
-                pepites={pepitesActive}
-                inline
-              />
-              {/* Export réservé au grand écran, comme avant dans la barre de filtres. */}
-              <span className="hidden lg:inline-flex">
-                <CsvExportButton
-                  exporting={exportingCsv}
-                  locked={csvExportLocked}
-                  onClick={exportCsv}
-                />
-              </span>
-            </div>
+            )}
           </div>
           <SaleComparisonBar
             key={comparisonScope ?? "loading"}
@@ -1171,6 +1222,8 @@ export function SearchPage({
               signedIn={Boolean(user)}
               dailyAllowed={entitlementsData?.plan.hasAnalysisAccess === true}
               emailRecapEnabled={emailRecapEnabled}
+              freeAlertUsage={freeAlertUsage}
+              onAlertDialogOpen={openAlertDialog}
               onSaveSearch={saveSearch}
             />
           ) : null}
@@ -1194,6 +1247,10 @@ export function SearchPage({
             firstHref={pageHref(1)}
             outOfRange={outOfRange}
           />
+
+          {noResults || isInitialLoading ? null : (
+            <ResultsHelp investmentScore={investmentSortAllowed} pepites={pepitesActive} />
+          )}
 
           <details
             className="mx-4 mt-3 rounded-lg border border-line-soft bg-white sm:mx-5"
