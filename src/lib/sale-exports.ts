@@ -20,7 +20,7 @@ import {
   type RentLookupSession,
 } from "@/lib/rent-reference.server";
 import { cleanDateForListing } from "@/lib/listing-data-cleanup";
-import { featureIncluded } from "@/lib/plans";
+import { apiAccessAllowed, featureIncluded } from "@/lib/plans";
 import { computeAcquisitionCosts, computeRentabilityScore } from "@/lib/profitability";
 import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import { getSales } from "@/lib/queries";
@@ -288,8 +288,8 @@ export async function exportSalesApiFeed({
   request: Request;
 }): Promise<SalesApiFeed> {
   const plan = await resolvePlanEntitlements(auth);
-  if (!featureIncluded(plan.plan, "sales.apiAccess")) {
-    throw new Error("API ventes réservée à l’offre Analyse.");
+  if (!apiAccessAllowed(auth, plan.plan)) {
+    throw new Error("API ventes réservée à l’administration.");
   }
   await enforceUserRateLimit({
     userId: auth.userId,

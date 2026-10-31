@@ -38,7 +38,17 @@ export async function resolvePlanEntitlements(
   auth: SupabaseAuthContext,
 ): Promise<PlanEntitlements> {
   if (auth.isAdmin) {
-    return buildPlanEntitlements("analyse", null, ADMIN_PLAN_LIMITS);
+    const admin = buildPlanEntitlements("analyse", null, ADMIN_PLAN_LIMITS);
+    // Les clés d'API et la collaboration ne sont plus dans l'offre Analyse (n° 97) : l'administrateur
+    // les garde.
+    return {
+      ...admin,
+      features: {
+        ...admin.features,
+        salesApiAccess: "included",
+        workspaceCollaboration: "included",
+      },
+    };
   }
   if (auth.accountTier === "premium") {
     return buildPlanEntitlements("analyse", null);
