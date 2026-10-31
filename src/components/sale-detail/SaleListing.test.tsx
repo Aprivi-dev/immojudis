@@ -584,7 +584,7 @@ describe("SaleDetailHeading", () => {
   it("gives the same short title and line as the public page", () => {
     render(<SaleDetailHeading sale={item()} />);
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
-      "Appartement de 68 m² à Bordeaux",
+      "Appartement de 68\u00a0m² à Bordeaux",
     );
     expect(
       screen.getByText(/^Vente au tribunal · Gironde \(33\) · audience le 15 octobre 2026/),
@@ -594,7 +594,7 @@ describe("SaleDetailHeading", () => {
   it("marque le titre de l'annonce exemple comme fictif, jamais celui d'une vente réelle", () => {
     const { unmount } = render(<SaleDetailHeading sale={item()} publicDemo />);
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
-      "Appartement de 68 m² à Bordeaux (exemple fictif)",
+      "Appartement de 68\u00a0m² à Bordeaux (exemple fictif)",
     );
     unmount();
     render(<SaleDetailHeading sale={item()} />);
@@ -617,7 +617,7 @@ describe("SaleDetailHeading", () => {
         aiReviewProjections={[blocked("property.city"), blocked("sale.sale_date")]}
       />,
     );
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Appartement de 68 m²");
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Appartement de 68\u00a0m²");
     const line = screen.getByText(/^Vente au tribunal ·/).textContent ?? "";
     expect(line).not.toContain("octobre");
     expect(line).toContain("localisation à confirmer");
