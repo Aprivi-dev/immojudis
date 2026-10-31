@@ -23,7 +23,7 @@ language sql as $$
   from unnest(array[
     'operational-health', 'smart-alerts', 'alert-notifications', 'sale-change-monitor',
     'data-retention', 'sale-retention', 'information-agent-inbound', 'listing-completeness',
-    'sale-pepites', 'sale-flood-risk', 'sale-reminders'
+    'sale-pepites', 'sale-flood-risk', 'sale-reminders', 'sale-results', 'weekly-digest'
   ]) as job_name
   where not (job_name = any (skipped));
 $$;
@@ -66,10 +66,10 @@ select ok(
     from unnest(array[
       'operational-health', 'smart-alerts', 'alert-notifications', 'sale-change-monitor',
       'data-retention', 'sale-retention', 'information-agent-inbound', 'listing-completeness',
-      'sale-pepites', 'sale-flood-risk', 'sale-reminders'
+      'sale-pepites', 'sale-flood-risk', 'sale-reminders', 'sale-results', 'weekly-digest'
     ]) as job_name
   ),
-  'les onze tâches attendues sont toujours dans la liste'
+  'les treize tâches attendues sont toujours dans la liste'
 );
 
 select ok(
@@ -179,8 +179,9 @@ select ok(
 );
 
 -- ---------------------------------------------------------------------------------------------
--- cron.stale pour sale-flood-risk (20261106100300) : seuil de 3 heures (trois passages horaires manqués).
--- Un succès terminé il y a 2 h 59 passe, un succès de 3 h 01 est périmé et nommé par l'alerte.
+-- cron.stale pour sale-flood-risk (20261106100300) : seuil de 3 heures, porté à 5 heures par 20261110120100
+-- (cadence réelle de 2 h : deux passages manqués + la durée d'un passage). Un succès terminé il y a 4 h 59 passe, un
+-- succès de 5 h 01 est périmé et nommé par l'alerte.
 -- ---------------------------------------------------------------------------------------------
 delete from public.operational_alerts;
 delete from public.operational_job_runs;
@@ -190,7 +191,7 @@ insert into public.operational_job_runs (job_name, status, started_at, finished_
 values (
   'sale-flood-risk', 'success',
   '2026-10-20T10:00:00Z'::timestamptz - interval '3 hours',
-  '2026-10-20T10:00:00Z'::timestamptz - interval '2 hours 59 minutes'
+  '2026-10-20T10:00:00Z'::timestamptz - interval '4 hours 59 minutes'
 );
 
 select is(
@@ -199,15 +200,15 @@ select is(
       ->'stale_cron_jobs'
   ),
   '[]'::jsonb,
-  'un succès de sale-flood-risk il y a 2 h 59 n''est pas périmé'
+  'un succès de sale-flood-risk il y a 4 h 59 n''est pas périmé'
 );
 
 delete from public.operational_job_runs where job_name = 'sale-flood-risk';
 insert into public.operational_job_runs (job_name, status, started_at, finished_at)
 values (
   'sale-flood-risk', 'success',
-  '2026-10-20T10:00:00Z'::timestamptz - interval '3 hours 5 minutes',
-  '2026-10-20T10:00:00Z'::timestamptz - interval '3 hours 1 minute'
+  '2026-10-20T10:00:00Z'::timestamptz - interval '5 hours 5 minutes',
+  '2026-10-20T10:00:00Z'::timestamptz - interval '5 hours 1 minute'
 );
 
 select is(
@@ -216,7 +217,7 @@ select is(
       ->'stale_cron_jobs'
   ),
   '["sale-flood-risk"]'::jsonb,
-  'un succès de sale-flood-risk il y a 3 h 01 est périmé'
+  'un succès de sale-flood-risk il y a 5 h 01 est périmé'
 );
 
 select ok(

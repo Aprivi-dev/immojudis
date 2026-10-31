@@ -1,11 +1,14 @@
 # La tâche `operational-health` ne réussit plus (`/api/health` dégradé, `cron.stale`)
 
 `operational-health` évalue toutes les alertes et répartit la collecte : si elle ne passe plus, plus aucune
-alerte ne s'ouvre ni ne se ferme. `/api/health` devient `degraded` au-delà de 45 minutes sans succès ;
+alerte ne s'ouvre ni ne se ferme. `/api/health` devient `degraded` au-delà de 65 minutes sans succès (deux passages de 30 minutes plus la
+durée d'un passage) ;
 la sonde externe (`docs/operations/supervision-externe.md`) et le test de fumée s'en aperçoivent même si
 GitHub et Supabase ne disent plus rien.
 
-Chaîne : Supabase `pg_cron` (`immojudis-operational-health`, toutes les 15 min) → fonction
+Chaîne : Supabase `pg_cron` (`immojudis-operational-health`, tick toutes les 15 min ; depuis le 30/10/2026 la
+fonction d'appel ne contacte Vercel que si aucun passage n'a commencé depuis 25 min, soit un passage toutes les
+30 min ; un passage `failed` ne compte pas : il est relancé au tick suivant, 15 min plus tard) → fonction
 `app_private.invoke_*` (Vault : `immojudis_operational_health_url` et `_secret`) → `GET
 /api/cron/operational-health` sur Vercel → `evaluate_operational_health`, `evaluate_market_valuation_health`,
 `observe_autonomous_pipeline`, puis envoi des alertes ouvertes à GitHub Actions.
@@ -26,7 +29,9 @@ where job_name = 'operational-health' order by started_at desc limit 10;`
 
 - Secret ou origine périmés : `npm run ops:health-scheduler:configure` avec l'origine HTTPS de production et
   le `CRON_SECRET` courant (action du propriétaire).
-- Job désactivé : le réactiver dans Supabase Cron (cadence `*/15 * * * *`).
+- Job désactivé : le réactiver dans Supabase Cron (cadence `*/15 * * * *` ; ne pas la changer, les seuils
+  de `cron.stale` et de `/api/health` sont calculés sur ce tick et sa garde, voir
+  `docs/operations/planification.md`, « Cadences réelles »).
 - Canal d'alerte absent ou en échec : variables du workflow `operational-alert.yml` (voir
   `docs/operations-phase-5.md`, « Notification externe en échec »).
 
