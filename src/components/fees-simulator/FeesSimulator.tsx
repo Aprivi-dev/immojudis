@@ -6,7 +6,7 @@ import { trackProductEvent } from "@/lib/product-events";
 import { computeAcquisitionCosts } from "@/lib/profitability";
 import type { SurenchereReminder } from "@/lib/surenchere-reminder";
 import { BudgetMode, DEFAULT_SIMULATOR_BUDGET } from "./BudgetMode";
-import { AmountField, CostLines, euro, toAmount } from "./fields";
+import { AmountField, CostLines, euroWhole, toAmount } from "./fields";
 import { DEFAULT_HYPOTHESES, HypothesesFields, type Hypotheses } from "./hypotheses";
 import { ModeSelector, type SimulatorMode } from "./ModeSelector";
 import { DEFAULT_SURENCHERE_PRICE, SurenchereMode } from "./SurenchereMode";
@@ -96,6 +96,7 @@ function CostMode({
       }),
     [price, hypotheses],
   );
+  const feesPct = costs.acquisitionFeesPct.toLocaleString("fr-FR", { maximumFractionDigits: 1 });
 
   return (
     <div className="grid min-w-0 gap-6 md:grid-cols-2">
@@ -127,9 +128,6 @@ function CostMode({
         <h2 id="simulateur-resultat" className="font-display text-2xl font-semibold">
           Détail du coût
         </h2>
-        <div className="mt-4">
-          <CostLines costs={costs} />
-        </div>
         <div className="mt-4 rounded-lg border border-gold/40 bg-white p-4">
           <p className="text-sm font-semibold">Coût total</p>
           <p
@@ -137,13 +135,12 @@ function CostMode({
             aria-atomic="true"
             className="mt-1 break-words font-display text-3xl font-semibold tabular-nums"
           >
-            {euro.format(costs.totalCost)}
+            {euroWhole.format(costs.totalCost)}
           </p>
           {costs.price > 0 ? (
             <p className="mt-1 text-sm text-ink-soft">
-              dont {euro.format(costs.acquisitionFeesTotal)} de frais d’acquisition, soit{" "}
-              {costs.acquisitionFeesPct.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} % du
-              prix d’adjudication.
+              dont {euroWhole.format(costs.acquisitionFeesTotal)} de frais d’acquisition, soit{" "}
+              {feesPct} % du prix d’adjudication.
             </p>
           ) : (
             <p className="mt-1 text-sm text-ink-soft">
@@ -155,7 +152,24 @@ function CostMode({
             charges tant que le bien ne rapporte rien) ne sont pas inclus.
           </p>
         </div>
+        <p className="mt-4 text-xs text-ink-soft">
+          Le total est arrondi à l’euro ; le détail ci-dessous est au centime.
+        </p>
+        <div className="mt-1">
+          <CostLines costs={costs} />
+        </div>
       </Card>
+
+      {/* Sous le point de rupture « lg », le total reste visible pendant la saisie des hypothèses
+          (au-dessus du bandeau des cookies quand il est ouvert). */}
+      <div
+        data-testid="simulateur-total-collant"
+        className="sticky bottom-[var(--cookie-banner-height,0px)] z-20 -mx-4 border-t border-line bg-white/95 px-4 py-3 text-sm shadow-[0_-10px_28px_rgba(19,34,56,0.1)] backdrop-blur sm:mx-0 sm:rounded-lg sm:border md:col-span-2 lg:hidden"
+      >
+        <span className="font-semibold">Coût total</span>{" "}
+        <span className="font-semibold tabular-nums">{euroWhole.format(costs.totalCost)}</span>
+        {costs.price > 0 ? <span className="text-ink-soft"> · dont {feesPct} % de frais</span> : null}
+      </div>
     </div>
   );
 }
