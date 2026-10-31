@@ -320,6 +320,46 @@ describe("login page", () => {
     expect(description).toContain(alert.id);
   });
 
+  it("affiche le refus de la base quand l'inscription est rejetée faute de prénom ou de nom", async () => {
+    mocks.search = { mode: "investor" };
+    const refusal = Object.assign(new Error("Database error saving new user"), {
+      status: 500,
+      code: "unexpected_failure",
+    });
+    mocks.signUp.mockResolvedValue({ data: null, error: refusal });
+    render(<LoginPage />);
+    fireEvent.change(screen.getByPlaceholderText("vous@exemple.fr"), {
+      target: { value: "a@example.test" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("12 caractères minimum"), {
+      target: { value: "un-mot-de-passe-solide" },
+    });
+    fillName();
+    fireEvent.click(screen.getByRole("button", { name: /Créer mon compte gratuit/ }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Vérifiez votre prénom et votre nom");
+    expect(alert.textContent).not.toContain("Database error");
+  });
+
+  it("affiche tel quel le message détaillé du déclencheur quand l'API le renvoie", async () => {
+    mocks.search = { mode: "investor" };
+    const detailed = "Le prénom et le nom sont obligatoires pour créer un compte.";
+    mocks.signUp.mockResolvedValue({
+      data: null,
+      error: Object.assign(new Error(detailed), { status: 500 }),
+    });
+    render(<LoginPage />);
+    fireEvent.change(screen.getByPlaceholderText("vous@exemple.fr"), {
+      target: { value: "a@example.test" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("12 caractères minimum"), {
+      target: { value: "un-mot-de-passe-solide" },
+    });
+    fillName();
+    fireEvent.click(screen.getByRole("button", { name: /Créer mon compte gratuit/ }));
+    expect((await screen.findByRole("alert")).textContent).toContain(detailed);
+  });
+
   it("propose l'autocomplétion du nom et de l'organisation à l'inscription", () => {
     mocks.search = { mode: "professional" };
     render(<LoginPage />);

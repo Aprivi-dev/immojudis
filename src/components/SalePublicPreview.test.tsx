@@ -414,10 +414,14 @@ describe("SalePublicPreview", () => {
 
     it("replie « Cette vente en clair » et garde l'explication dans la page", () => {
       renderPreview({ sale_venue_type: "tribunal", starting_price_eur: 59_000 });
-      const heading = screen.getByRole("heading", { name: "Cette vente en clair" });
-      const fold = heading.closest("details") as HTMLDetailsElement;
+      // Le titre est dans le <summary> (cliquable), en <span> : ni <h2> ni <div> dans un <summary>.
+      const title = screen.getByText("Cette vente en clair");
+      const fold = title.closest("details") as HTMLDetailsElement;
       expect(fold.open).toBe(false);
-      expect(fold.querySelector("summary")?.contains(heading)).toBe(true);
+      const summary = fold.querySelector("summary")!;
+      expect(summary.contains(title)).toBe(true);
+      expect(title.tagName).toBe("SPAN");
+      expect(summary.querySelector("h1, h2, h3, h4, h5, h6, div, p")).toBeNull();
       expect(within(fold).getByText(/Visible maintenant/)).toBeTruthy();
       // « Continuer ma recherche » reste hors du repli.
       const next = screen.getByRole("link", { name: "Continuer ma recherche" });

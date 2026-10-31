@@ -42,7 +42,11 @@ import { PLAN_LIMITS } from "@/lib/plans";
 import { MONTHLY_UNLOCKS_TEXT, UNLOCK_HIGHLIGHTS_INLINE_TEXT } from "@/lib/sale-unlocks";
 import { trackProductEvent } from "@/lib/product-events";
 import { nonBreakingUnits } from "@/lib/non-breaking-units";
-import { SIGNUP_NAME_MAX_LENGTH, validateSignupName } from "@/lib/signup-name";
+import {
+  SIGNUP_NAME_MAX_LENGTH,
+  signupRefusalMessage,
+  validateSignupName,
+} from "@/lib/signup-name";
 import { ACCOUNT_EXISTS_MESSAGE, userMessage } from "@/lib/user-messages";
 
 type LoginSearch = {
@@ -413,10 +417,9 @@ export function LoginPage() {
           : "Compte Découverte créé. Vous pouvez poursuivre.",
       );
     } catch (err: unknown) {
-      const message = userMessage(
-        err,
-        "Impossible de continuer. Vérifiez vos informations puis réessayez.",
-      );
+      const message =
+        (isSignup ? signupRefusalMessage(err) : null) ??
+        userMessage(err, "Impossible de continuer. Vérifiez vos informations puis réessayez.");
       // Une seule annonce : l'alerte du formulaire (reliée aux champs), pas l'alerte et un toast.
       setFormError(message);
     } finally {

@@ -46,3 +46,15 @@ export function validateSignupName(firstName: string, lastName: string): SignupN
   }
   return { ok: true, name: { firstName: first, lastName: last, fullName: `${first} ${last}` } };
 }
+
+/**
+ * Le déclencheur d'inscription de la base refuse un compte sans prénom ni nom (20261110110000).
+ * Selon sa version, l'API d'authentification renvoie le message du déclencheur (en français, déjà
+ * affichable) ou seulement « Database error saving new user » : ce second cas est traduit ici.
+ */
+export function signupRefusalMessage(error: unknown): string | null {
+  const message = error instanceof Error ? error.message : "";
+  return /database error saving new user/i.test(message)
+    ? "Votre compte n'a pas pu être créé. Vérifiez votre prénom et votre nom, puis réessayez."
+    : null;
+}
