@@ -34,7 +34,9 @@ function stripeSubscription(overrides: Record<string, unknown> = {}) {
     status: "active",
     customer: "cus_1",
     metadata: { user_id: "user-1" },
-    items: { data: [{ current_period_end: PERIOD_END, price: { id: "price_a" } }] },
+    items: {
+      data: [{ current_period_end: PERIOD_END, price: { id: "price_a", unit_amount: 5_900 } }],
+    },
     ...overrides,
   };
 }
