@@ -527,13 +527,15 @@ function saleToApiFeedItem(
   const ppm = pricePerM2(sale.starting_price_eur, surface.value);
   const dpe = extractDpe(sale).class;
   const grossYieldPct = estimateSaleGrossYieldPct(sale, surface.value, rentReference);
+  // Sans mise à prix, aucun prix n'est envoyé (ni 0 : le coût se réduirait aux frais fixes).
+  const startingPrice = (sale.starting_price_eur ?? 0) > 0 ? sale.starting_price_eur : null;
   const rentability = computeRentabilityScore({
     surface: surface.value,
-    price: Math.max(0, sale.starting_price_eur ?? 0),
+    price: startingPrice,
     // Frais du régime de la vente (comme le rendement brut et le rapport), non ceux du tribunal.
     acquisition: computeAcquisitionCosts({
       ...saleYieldFeeOptions(sale),
-      price: Math.max(0, sale.starting_price_eur ?? 0),
+      price: startingPrice ?? 0,
       department: isRentApplicable(sale) ? sale.department : null,
     }),
     // Un bien qui n'est pas un logement n'a aucun loyer de référence : « indisponible ».

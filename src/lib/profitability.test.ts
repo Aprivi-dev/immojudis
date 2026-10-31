@@ -206,4 +206,30 @@ describe("computeRentabilityScore", () => {
     expect(result.reason).toBe("Surface manquante");
     expect(result.score).toBeNull();
   });
+
+  it.each([null, 0, -5, Number.NaN])(
+    "returns unavailable, never a yield on the fixed fees alone, when the price is %s",
+    (price) => {
+      const result = computeRentabilityScore({ surface: 50, price, department: "75" });
+
+      expect(result.available).toBe(false);
+      expect(result.reason).toBe("Prix manquant");
+      expect(result.score).toBeNull();
+      expect(result.grossYieldPct).toBeNull();
+      expect(result.netYieldPct).toBeNull();
+      expect(result.totalCost).toBe(0);
+    },
+  );
+
+  it("stays unavailable with a ready-made acquisition cost whose price is 0", () => {
+    const result = computeRentabilityScore({
+      surface: 50,
+      price: 0,
+      acquisition: computeAcquisitionCosts({ price: 0 }),
+      department: "75",
+    });
+
+    expect(result.reason).toBe("Prix manquant");
+    expect(result.grossYieldPct).toBeNull();
+  });
 });

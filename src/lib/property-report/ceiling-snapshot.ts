@@ -63,8 +63,12 @@ export function buildCeilingSnapshot(
   const computed = !noRegime && plan.available;
   const available = computed && plan.reachable;
   const byWorks = computed ? ceilingsByWorks(hypotheses) : [];
+  // Sans mise à prix connue, on n'évalue pas « une enchère à 0 € » : la marge au prix de départ
+  // serait le budget entier. Le coût d'acquisition ci-dessous garde 0 (type numérique du calcul) ;
+  // `buildOpportunityAnalysis` le lit comme « prix inconnu » et n'en tire ni coût complet ni rendement.
   const startingPrice = Math.max(0, sale.starting_price_eur ?? 0);
-  const atStart = computed ? evaluateBid(hypotheses, plan, startingPrice) : null;
+  const atStart =
+    computed && startingPrice > 0 ? evaluateBid(hypotheses, plan, startingPrice) : null;
   const surface = hypotheses.surface ?? 0;
   const ceilingFor = (key: string) => {
     const row = byWorks.find((item) => item.key === key);

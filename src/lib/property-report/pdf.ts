@@ -13,10 +13,14 @@ import { featureUnlocked, sanitizeReportSnapshotForPlan } from "./entitlements";
 import { reportWording } from "./report-wording";
 import { RENT_SOURCE_URL, rentSourceNotice } from "@/lib/rent-source-notice";
 import { reportRentReference } from "./rent-notice";
-import { FINANCING_DOSSIER_HEADINGS, financingDossierLines } from "./financing-dossier";
+import {
+  FINANCING_DOSSIER_HEADINGS,
+  FINANCING_NOT_PROVIDED,
+  financingDossierLines,
+} from "./financing-dossier";
 import { PlanEntitlements, SavedReportRow } from "../property-reports";
 import {
-  formatPercent,
+  formatPercent as formatKnownPercent,
   formatRenovationBudgetRange,
   normalizeActiveComparableItems,
   normalizeAudienceChecklistItems,
@@ -88,6 +92,33 @@ export const REPORT_PDF_HEADINGS = [
   "Garantie à remettre avant votre offre",
   ...FINANCING_DOSSIER_HEADINGS,
 ] as const;
+
+/**
+ * Une valeur absente du rapport s'écrit « non renseigné », jamais « null % », « 0/100 » ou
+ * « Prix non communiqué / mois » : un 0 imprimé se lit comme une mesure. Un 0 réel reste un 0.
+ */
+const NOT_PROVIDED = FINANCING_NOT_PROVIDED;
+
+function formatPercent(value: unknown): string {
+  return numberValue(value) != null ? formatKnownPercent(value) : NOT_PROVIDED;
+}
+
+/** Montant en euros, avec son unité (« / mois », « / an »), ou « non renseigné ». */
+function formatAmount(value: unknown, unit = ""): string {
+  const amount = numberValue(value);
+  return amount != null ? `${formatPrice(amount)}${unit}` : NOT_PROVIDED;
+}
+
+/** Nombre entier ou texte du rapport suivi d'un suffixe (« /100 », « % »), ou « non renseigné ». */
+function formatCount(value: unknown, suffix = ""): string {
+  const text = stringOrNumberValue(value, "");
+  return text ? `${text}${suffix}` : NOT_PROVIDED;
+}
+
+/** Ligne « libellé: valeur », ou aucune ligne quand la valeur manque. */
+function lineIfProvided(label: string, value: string | null): string[] {
+  return value ? [`${label}: ${value}`] : [];
+}
 
 export function reportToPdfLines(
   report: SavedReportRow,
@@ -162,6 +193,14 @@ export function reportToPdfLines(
       : "Postes de charges à 0 €: valeurs saisies explicitement"
     : "Origine des postes à 0 €: non conservée pour ce rapport antérieur";
   const acquisitionCosts = asRecord(opportunity.acquisitionCosts);
+  // Une étape sans montant ne s'écrit pas : « - 0 € » se lirait comme un calcul sans effet.
+  const calculationSteps = (Array.isArray(ceiling.steps) ? ceiling.steps : []).flatMap((step) => {
+    const item = asRecord(step);
+    const amount = numberValue(item.amount);
+    if (amount == null) return [];
+    const sign = item.kind === "minus" ? "- " : item.kind === "add" ? "+ " : "";
+    return [`  ${stringOrNumberValue(item.label, "")} : ${sign}${formatPrice(Math.abs(amount))}`];
+  });
   const legalAttentionPoints = Array.isArray(analysis.legalAttentionPoints)
     ? analysis.legalAttentionPoints
     : [];
@@ -255,7 +294,7 @@ export function reportToPdfLines(
     market.radiusM ? `Rayon DVF: ${market.radiusM} m` : "Rayon DVF: à compléter",
     `Confiance DVF: ${stringOrNumberValue(marketComparables.confidenceLabel, "à vérifier")}`,
     `Audit estimation: ${stringOrNumberValue(valuationAudit.summary, "audit estimation à construire")}`,
-    `Score audit: ${stringOrNumberValue(valuationAudit.score, "0")}/100`,
+    `Score audit: ${formatCount(valuationAudit.score, "/100")}`,
     `Impact audit: ${stringOrNumberValue(valuationAudit.decisionImpact, "estimation à recouper")}`,
     ...(canShowSoldComparables
       ? [
@@ -266,7 +305,7 @@ export function reportToPdfLines(
           `Erreur médiane observée: ${formatPercent(
             valuationBacktestSummary.medianAbsoluteErrorPct,
           )}`,
-          `Tests utilisables: ${stringOrNumberValue(valuationBacktestSummary.usableTests, "0")}`,
+          `Tests utilisables: ${formatCount(valuationBacktestSummary.usableTests)}`,
           `Prédictions à moins de 20%: ${formatPercent(valuationBacktestSummary.within20Pct)}`,
         ]
       : []),
@@ -338,7 +377,12 @@ export function reportToPdfLines(
     "",
     "Lecture opportunité",
     `Score du dossier, distinct du scénario personnel: ${opportunity.score != null ? `${opportunity.score}/100 - ${stringOrNumberValue(opportunity.label, "à qualifier")}` : "à compléter"}`,
-    `Décote apparente: ${formatPercent(opportunity.apparentDiscountPct)}`,
+    // Écart absent : la phrase de la fiche (bien occupé, écart non significatif) plutôt qu'un tiret.
+    `Décote apparente: ${
+      numberValue(opportunity.apparentDiscountPct) != null
+        ? formatPercent(opportunity.apparentDiscountPct)
+        : stringOrNumberValue(opportunity.apparentDiscountNote, NOT_PROVIDED)
+    }`,
     opportunity.estimatedMarketValue
       ? `Valeur médiane estimée: ${formatPrice(numberValue(opportunity.estimatedMarketValue))}`
       : "Valeur médiane estimée: à compléter",
@@ -359,21 +403,21 @@ export function reportToPdfLines(
     ...(hasPersonalRentalScenario
       ? [
           "Scénario locatif personnel",
-          `Coût complet retenu: ${formatPrice(numberValue(personalRentalInputs.acquisitionCost))}`,
-          `Loyer hors charges: ${formatPrice(numberValue(personalRentalInputs.monthlyRent))} / mois`,
+          `Coût complet retenu: ${formatAmount(personalRentalInputs.acquisitionCost)}`,
+          `Loyer hors charges: ${formatAmount(personalRentalInputs.monthlyRent, " / mois")}`,
           `Vacance locative: ${formatPercent(personalRentalInputs.vacancyRatePct)}`,
           personalRentalExpenseStatus,
-          `Charges non récupérables: ${formatPrice(numberValue(personalRentalInputs.annualNonRecoverableCharges))} / an`,
-          `Taxe foncière: ${formatPrice(numberValue(personalRentalInputs.annualPropertyTax))} / an`,
-          `Assurance propriétaire: ${formatPrice(numberValue(personalRentalInputs.annualLandlordInsurance))} / an`,
-          personalRentalInputs.monthlyDebtService != null
-            ? `Mensualité de financement: ${formatPrice(numberValue(personalRentalInputs.monthlyDebtService))} / mois`
+          `Charges non récupérables: ${formatAmount(personalRentalInputs.annualNonRecoverableCharges, " / an")}`,
+          `Taxe foncière: ${formatAmount(personalRentalInputs.annualPropertyTax, " / an")}`,
+          `Assurance propriétaire: ${formatAmount(personalRentalInputs.annualLandlordInsurance, " / an")}`,
+          numberValue(personalRentalInputs.monthlyDebtService) != null
+            ? `Mensualité de financement: ${formatAmount(personalRentalInputs.monthlyDebtService, " / mois")}`
             : "Financement: aucune mensualité saisie",
-          `Revenu net d'exploitation avant impôts: ${formatPrice(numberValue(personalRentalResult.annualOperatingIncome))} / an`,
+          `Revenu net d'exploitation avant impôts: ${formatAmount(personalRentalResult.annualOperatingIncome, " / an")}`,
           `Rendement brut du scénario: ${formatPercent(personalRentalResult.grossYieldPct)}`,
           `Rendement net d'exploitation du scénario: ${formatPercent(personalRentalResult.netOperatingYieldPct)}`,
-          personalRentalResult.monthlyCashFlow != null
-            ? `Cash-flow mensuel avant impôts: ${formatPrice(numberValue(personalRentalResult.monthlyCashFlow))}`
+          numberValue(personalRentalResult.monthlyCashFlow) != null
+            ? `Cash-flow mensuel avant impôts: ${formatAmount(personalRentalResult.monthlyCashFlow)}`
             : "Cash-flow mensuel avant impôts: non calculable sans mensualité de financement",
         ]
       : [
@@ -418,20 +462,18 @@ export function reportToPdfLines(
       ? [
           "Scénario personnel sauvegardé",
           ...personalSimulation.map(([label, value]) => `${label}: ${value}`),
-          `Marge de sécurité: ${numberValue(ceiling.safetyDiscountPct)} %`,
+          // Sans marge enregistrée, la ligne n'est pas écrite (jamais « null % »).
+          ...lineIfProvided(
+            "Marge de sécurité",
+            numberValue(ceiling.safetyDiscountPct) != null
+              ? `${numberValue(ceiling.safetyDiscountPct)} %`
+              : null,
+          ),
           `Base retenue: ${stringOrNumberValue(ceiling.basisLabel, "à confirmer")}`,
         ]
       : []),
-    ...(Array.isArray(ceiling.steps) && ceiling.available
-      ? [
-          "Calcul du plafond :",
-          ...ceiling.steps.map((step) => {
-            const item = asRecord(step);
-            const amount = numberValue(item.amount) ?? 0;
-            const sign = item.kind === "minus" ? "- " : item.kind === "add" ? "+ " : "";
-            return `  ${stringOrNumberValue(item.label, "")} : ${sign}${formatPrice(Math.abs(amount))}`;
-          }),
-        ]
+    ...(Array.isArray(ceiling.steps) && ceiling.available && calculationSteps.length
+      ? ["Calcul du plafond :", ...calculationSteps]
       : []),
     ceiling.available
       ? `${ceilingLabel}: ${formatPrice(numberValue(ceiling.maxBid))}`
@@ -466,11 +508,8 @@ export function reportToPdfLines(
     wording.audiencePreparation,
     `Synthèse: ${stringOrNumberValue(audienceReadinessAnalysis.summary, "préparation à compléter")}`,
     `Statut: ${stringOrNumberValue(audienceReadinessAnalysis.label, "à vérifier")}`,
-    `Progression: ${stringOrNumberValue(audienceReadinessAnalysis.progressPct, "0")} %`,
-    `Points prioritaires ouverts: ${stringOrNumberValue(
-      audienceReadinessAnalysis.highPriorityOpenCount,
-      "0",
-    )}`,
+    `Progression: ${formatCount(audienceReadinessAnalysis.progressPct, " %")}`,
+    `Points prioritaires ouverts: ${formatCount(audienceReadinessAnalysis.highPriorityOpenCount)}`,
     ...(audienceChecklistItems.length
       ? audienceChecklistItems.slice(0, 8).map((item) => `- ${item}`)
       : ["- Checklist à compléter dans le dossier."]),

@@ -65,6 +65,23 @@ describe("sales API feed rents", () => {
     }
   });
 
+  it.each([null, 0])(
+    "gives no rentability, not a yield on the fixed fees alone, when the starting price is %s",
+    (starting_price_eur) => {
+      const [item] = buildSalesApiFeedItems([{ ...sale, department: "33", starting_price_eur }]);
+
+      expect(item.opportunity.rentability).toMatchObject({
+        score: null,
+        label: "Rentabilité à compléter",
+        confidencePct: 0,
+        netYieldPct: null,
+        cashflowMonthly: null,
+        breakEvenOccupancyPct: null,
+      });
+      expect(item.opportunity.grossYieldPct).toBeNull();
+    },
+  );
+
   it("falls back to the department rent without any ANIL credit", () => {
     const [covered] = buildSalesApiFeedItems([{ ...sale, department: "33" }]);
     expect(covered.opportunity.rentReference).toBeNull();

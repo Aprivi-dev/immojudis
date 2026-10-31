@@ -407,3 +407,84 @@ describe("titre, métadonnées et nom de fichier du PDF", () => {
     expect(filename).toBe("appartement-bordeaux-33-12345678.pdf");
   });
 });
+
+describe("rapport au snapshot clairsemé", () => {
+  const sparse = (): SavedReportRow => ({
+    ...reportWithRentalScenario(),
+    report_snapshot: {
+      generatedAt: "2026-10-02T10:00:00.000Z",
+      sale: { title: "Maison test" },
+      analysis: {
+        valuationAudit: {},
+        audienceReadinessAnalysis: {},
+        opportunity: { score: null, apparentDiscountPct: null },
+      },
+    } as Json,
+    ceiling_snapshot: {
+      available: true,
+      personalSimulation: { version: 2, choices: {} },
+      steps: [
+        { key: "sans-montant", label: "Étape sans montant", kind: "minus" },
+        { key: "montant-nul", label: "Étape à montant nul", amount: null, kind: "add" },
+        { key: "reel", label: "Étape réelle", amount: 12_000, kind: "add" },
+      ],
+      personalRentalScenario: {
+        inputs: { vacancyRatePct: 5 },
+        result: { monthlyCashFlow: null },
+      },
+    } as Json,
+  });
+  const text = () => reportToPdfLines(sparse(), buildPlanEntitlements("analyse")).join("\n");
+
+  it("n'écrit ni null, ni undefined, ni NaN, ni « - 0 € »", () => {
+    expect(text()).not.toMatch(/\bnull\b|undefined|NaN|- 0\s€/);
+  });
+
+  it("écrit « non renseigné » au lieu d'un score, d'une progression ou d'un montant inventés", () => {
+    const out = text();
+    expect(out).toContain("Score audit: non renseigné");
+    expect(out).toContain("Progression: non renseigné");
+    expect(out).toContain("Points prioritaires ouverts: non renseigné");
+    expect(out).toContain("Loyer hors charges: non renseigné");
+    expect(out).toContain("Taxe foncière: non renseigné");
+    expect(out).not.toMatch(/0\/100|\b0 point|Prix non communiqué \/ /);
+  });
+
+  it("n'écrit ni la marge de sécurité ni l'étape du plafond sans donnée", () => {
+    const out = text();
+    expect(out).not.toContain("Marge de sécurité");
+    expect(out).not.toContain("Étape sans montant");
+    expect(out).not.toContain("Étape à montant nul");
+    expect(out).toContain("Étape réelle : + 12");
+  });
+
+  it("garde un zéro réel : un score d'audit et un nombre de points à 0 sont des mesures", () => {
+    const report = sparse();
+    report.report_snapshot = {
+      sale: { title: "Maison test" },
+      analysis: {
+        valuationAudit: { score: 0 },
+        audienceReadinessAnalysis: { highPriorityOpenCount: 0, progressPct: 0 },
+      },
+    } as Json;
+    const out = reportToPdfLines(report, buildPlanEntitlements("analyse")).join("\n");
+    expect(out).toContain("Score audit: 0/100");
+    expect(out).toContain("Points prioritaires ouverts: 0");
+    expect(out).toContain("Progression: 0 %");
+  });
+
+  it("dit pourquoi la décote manque au lieu d'un tiret", () => {
+    const report = sparse();
+    report.report_snapshot = {
+      sale: { title: "Maison test" },
+      analysis: {
+        opportunity: {
+          apparentDiscountPct: null,
+          apparentDiscountNote: "Bien occupé : l’écart n’est pas indiqué.",
+        },
+      },
+    } as Json;
+    const lines = reportToPdfLines(report, buildPlanEntitlements("analyse"));
+    expect(lines).toContain("Décote apparente: Bien occupé : l’écart n’est pas indiqué.");
+  });
+});
