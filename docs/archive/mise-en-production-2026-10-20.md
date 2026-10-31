@@ -1,5 +1,12 @@
 # Mise en production de la branche du 20/10/2026 (migrations, déploiement, réparations)
 
+> **Exécuté : les 415 migrations sont appliquées au 31/10/2026, ne plus suivre.**
+> Ce document est conservé pour l'historique (il était rangé dans `docs/runbooks/` jusqu'au 31/10/2026).
+> Il annonce 37 migrations et cite une branche qui n'existe plus : ne pas le rejouer. Pour appliquer une
+> migration aujourd'hui, voir [`supabase/README.md`](../../supabase/README.md) et le workflow GitHub
+> « Apply Supabase Migrations » ; pour revenir en arrière,
+> [`docs/runbooks/retour-arriere.md`](../runbooks/retour-arriere.md).
+
 Ce document est la marche à suivre pour mettre en production la branche `claude/laughing-ramanujan-vv6y9w`
 (chantiers du 20/10/2026 et corrections de la relecture, chantier R1). Il est destiné au propriétaire, qui
 applique les migrations et lance les réparations : **aucun agent n'écrit en production**. Compte-rendu

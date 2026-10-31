@@ -1,10 +1,10 @@
 # Immojudis Data Pipeline
 
-Configuration de production mise à jour le 10 septembre 2026 : voir [le suivi et la reprise des collectes](../../docs/pipeline-reliability.md).
+Dernière revue de ce document : 31/10/2026 (sources actives, Petites Affiches, Licitor). Le reste du texte date de la configuration de production du 10 septembre 2026, complétée au fil des changements ; en cas de doute, le code et `supabase/migrations/` font foi. Voir aussi [le suivi et la reprise des collectes](../../docs/pipeline-reliability.md).
 
 Socle technique minimal pour collecter, normaliser, dédupliquer, exporter et insérer dans Supabase des annonces de ventes aux enchères immobilières judiciaires en France.
 
-La source prioritaire est Avoventes. Licitor est disponible comme source optionnelle de benchmark/croisement, pas comme source primaire de vérité.
+La source prioritaire est Avoventes. Licitor est collecté normalement (source de croisement, affichée au catalogue), mais n'est pas la source primaire de vérité. **Petites Affiches a été retirée du catalogue le 30/10/2026** (voir plus bas).
 
 ## Périmètre
 
@@ -12,11 +12,11 @@ La source prioritaire est Avoventes. Licitor est disponible comme source optionn
 - Tribunaux : normalisation explicite quand la source les fournit ; inférence locale conservée quand elle est connue.
 - Sources prévues :
   - `src/sources/avoventes.py` : scraper Avoventes.
-  - `src/sources/licitor.py` : scraper Licitor optionnel pour benchmark de couverture.
+  - `src/sources/licitor.py` : scraper Licitor, collecté normalement (source de croisement) ; sert aussi au benchmark de couverture.
   - `src/sources/info_encheres.py` : scraper Info Enchères avec fiches détail et PDF publics.
   - `src/sources/vench.py` : scraper Vench pour couverture/listings publics, sans contourner les contenus abonnés.
   - `src/sources/encheres_publiques.py` : scraper Enchères-Publiques.com via les pages SEO publiques.
-  - `src/sources/petites_affiches.py` : scraper Petites Affiches via le formulaire public par département.
+  - `src/sources/petites_affiches.py` : scraper Petites Affiches, **retiré du catalogue le 30/10/2026** (décision du propriétaire : même catalogue que Vench et fiches illisibles depuis le changement de présentation du site). Le code est conservé, la collecte est arrêtée par l'interrupteur de retrait (migration `20261110093117_withdraw_petites_affiches_source.sql`, réversible) ; ne pas la relancer sans lever ce retrait.
   - `src/sources/cessions_etat.py` : scraper Cessions immobilières de l'Etat via les cartes HTML publiques.
   - `src/sources/agrasc.py` : scraper AGRASC via les cartes immobilières publiques.
   - `src/sources/encheres_immobilieres.py` : scraper Enchères Immobilières via les données Next publiques.
@@ -207,7 +207,7 @@ En CI, les backfills IA sont volontairement bornés par petits lots et les
 prédictions Replicate démarrent avec `REPLICATE_WAIT_SECONDS=1` pour éviter
 d'ajouter le temps de génération à l'intervalle minimal entre deux requêtes.
 
-Activer Licitor uniquement pour un benchmark :
+Réglages de la collecte Licitor (la source est collectée normalement ; ces variables bornent le benchmark de couverture) :
 
 ```bash
 ENABLE_LICITOR_BENCHMARK=true
@@ -225,7 +225,8 @@ ENABLE_ENCHERES_PUBLIQUES_BENCHMARK=true
 ENCHERES_PUBLIQUES_MAX_PAGES=10
 # Optionnel. Vide = page nationale /ventes/immobilier.
 ENCHERES_PUBLIQUES_PLACES=
-ENABLE_PETITES_AFFICHES_BENCHMARK=true
+# Petites Affiches est retirée du catalogue depuis le 30/10/2026 : ne pas l'activer (voir plus haut).
+ENABLE_PETITES_AFFICHES_BENCHMARK=false
 ENABLE_CESSIONS_ETAT_BENCHMARK=true
 CESSIONS_ETAT_MAX_PAGES=3
 ENABLE_AGRASC_BENCHMARK=true
@@ -775,9 +776,10 @@ Règle de sûreté : le LLM ne remplace pas une valeur déterministe déjà fiab
 > (jamais publiés) mais aucune adresse n'est décodée ni écrite au registre de l'agent. En production : variable de
 > dépôt GitHub `LICITOR_DECODE_PROTECTED_EMAILS` (absente = désactivé). Procédure complète : `docs/runbooks/information-agent.md`.
 
-> **Licitor est collecté et affiché normalement.** Aucune source n'est retirée du catalogue à ce jour. Le dépôt
-> garde toutefois un **interrupteur de retrait** pour un usage futur (par exemple si une source devait être
-> retirée pour un motif juridique).
+> **Licitor est collecté et affiché normalement.** Une seule source est retirée du catalogue à ce jour :
+> Petites Affiches (30/10/2026, migration `20261110093117_withdraw_petites_affiches_source.sql`). Le dépôt
+> garde l'**interrupteur de retrait** pour d'autres usages (par exemple si une source devait être retirée pour
+> un motif juridique).
 >
 > **Un seul interrupteur**, en base : `auction_source_state.catalogue_withdrawn`, posé et levé par la fonction
 > `public.set_catalogue_source_withdrawal` (service_role, une transaction, rien n'est supprimé).
