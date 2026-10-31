@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import faulthandler
 import json
 import logging
 import os
@@ -19,6 +18,7 @@ from src.admission import admit_sales, has_price_or_surface, is_expired, publica
 from src.asset_normalization import normalize_asset_features
 from src.cadastre import enrich_cadastre_sales
 from src.catalogue_readiness import apply_catalogue_readiness
+from src.collection_evidence import identity as collection_identity
 from src.collection_evidence import record_items, record_sale_decisions
 from src.config import (
     EncheresPubliquesAccessNotAuthorized,
@@ -1806,6 +1806,9 @@ def _report_collection_progress(run_id, phase, counts, coverage, timings, errors
 
 def publish_factual_batch(run_id: str, raws: list, known: dict, errors: dict) -> None:
     """Publish bounded, admissible facts while source collection is still running."""
+    # One write per announcement: a sale met twice in a batch (a list page that shifted while it was read)
+    # made the ON CONFLICT insert of record_items fail and the whole batch was skipped. The last reading wins.
+    raws = list({collection_identity(raw): raw for raw in raws}.values())
     record_items(run_id, raws)
     _hydrate_known_unchanged_sales(raws, known)
     _preserve_known_enrichment_payloads(raws, known)
@@ -2219,8 +2222,9 @@ if __name__ == "__main__":
     # Guard against a call that never returns (see src/stage_watchdog.py); the collectors
     # run in their own session, so they are stopped before the process ends.
     arm_from_env(label="src.main", on_fire=kill_live_source_processes)
-    if os.getenv("PIPELINE_TRACEBACK_SECONDS"):
-        faulthandler.dump_traceback_later(max(60, int(os.environ["PIPELINE_TRACEBACK_SECONDS"])), repeat=True)
+    # No periodic faulthandler.dump_traceback_later: dumping the stacks of running threads from its timer
+    # thread is unsafe, and it crashed 14 collections in October 2026 (SIGSEGV, exit 245) exactly on its
+    # 5-minute ticks. The stage watchdog above still dumps the stacks once, when a step is really stuck.
     pipeline_options = parse_args()
     if pipeline_options.upsert:
         # Writers of the catalogue (this pipeline, the queue worker, the manual

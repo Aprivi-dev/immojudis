@@ -29,6 +29,10 @@ from src.sources.cloud_transport import configured_transport
 LOGGER = logging.getLogger(__name__)
 REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
 MAX_SAFE_REDIRECTS = 5
+# Read failures worth another attempt. A server that closes a kept-alive connection answers the next
+# request with "Server disconnected without sending a response" (RemoteProtocolError, not a
+# NetworkError): Licitor did so on 30/10/2026 and one list page left the inventory incomplete.
+TRANSIENT_TRANSPORT_ERRORS = (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError)
 MAX_SOURCE_HTML_CHARS = 4_000_000
 SOURCE_PARSE_TIMEOUT_SECONDS = 10.0
 
@@ -516,7 +520,7 @@ class PoliteHttpClient:
                             "requesting robots policy",
                         ),
                     )
-            except (httpx.TimeoutException, httpx.NetworkError) as exc:
+            except TRANSIENT_TRANSPORT_ERRORS as exc:
                 ensure_source_task_deadline("handling failed robots policy request")
                 raise RobotsUnavailableError(
                     f"robots.txt could not be verified for {current_url}: {exc}",
@@ -746,7 +750,7 @@ class PoliteHttpClient:
                 ensure_source_task_deadline(f"receiving source HTTP attempt {attempt + 1}")
             except SourceTaskDeadlineExceeded:
                 raise
-            except (httpx.TimeoutException, httpx.NetworkError) as exc:
+            except TRANSIENT_TRANSPORT_ERRORS as exc:
                 ensure_source_task_deadline(f"handling failed source HTTP attempt {attempt + 1}")
                 if attempt == attempts - 1 or "CERTIFICATE_VERIFY_FAILED" in str(exc):
                     raise

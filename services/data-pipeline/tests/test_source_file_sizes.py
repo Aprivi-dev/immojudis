@@ -32,7 +32,6 @@ TEMPORARY_EXCEPTIONS: dict[str, tuple[int, date]] = {
     "src/main.py": (2254, date(2027, 3, 31)),
     "src/normalize.py": (2120, date(2027, 3, 31)),
     "src/extraction_profiles.py": (1836, date(2027, 3, 31)),
-    "src/sources/notaires.py": (1736, date(2027, 3, 31)),
     "src/information_agent_evidence.py": (1650, date(2027, 3, 31)),
     "src/queued_runner.py": (1586, date(2027, 3, 31)),
 }

@@ -166,6 +166,47 @@ def test_source_task_deadline_recalculates_timeout_after_retry_backoff(monkeypat
     assert clock["now"] == 102
 
 
+def test_server_disconnect_on_a_reused_connection_is_retried(monkeypatch) -> None:
+    # Licitor, 30/10/2026: one list page answered "Server disconnected without sending a response" and,
+    # without a retry, the whole inventory was marked incomplete.
+    _freeze_source_clock(monkeypatch)
+    clients = _patch_http_client(
+        monkeypatch,
+        [[
+            _Response(200, text="User-agent: *\nAllow: /"),
+            httpx.RemoteProtocolError("Server disconnected without sending a response."),
+            _Response(200, text="catalogue"),
+        ]],
+    )
+    client = common.PoliteHttpClient(
+        base_url="https://source.example",
+        user_agent="immojudis-test",
+        delay_seconds=0,
+        timeout_seconds=30,
+    )
+
+    assert client.get("https://source.example/catalogue") == "catalogue"
+    assert [url for _method, url in clients[0].calls].count("https://source.example/catalogue") == 2
+
+
+def test_a_server_that_keeps_disconnecting_still_fails_the_page(monkeypatch) -> None:
+    _freeze_source_clock(monkeypatch)
+    disconnect = httpx.RemoteProtocolError("Server disconnected without sending a response.")
+    _patch_http_client(
+        monkeypatch,
+        [[_Response(200, text="User-agent: *\nAllow: /"), disconnect, disconnect, disconnect, disconnect]],
+    )
+    client = common.PoliteHttpClient(
+        base_url="https://source.example",
+        user_agent="immojudis-test",
+        delay_seconds=0,
+        timeout_seconds=30,
+    )
+
+    with pytest.raises(httpx.RemoteProtocolError):
+        client.get("https://source.example/catalogue")
+
+
 def test_source_task_deadline_stops_during_request_cadence_wait(monkeypatch) -> None:
     clock = _freeze_source_clock(monkeypatch)
     clients = _patch_http_client(

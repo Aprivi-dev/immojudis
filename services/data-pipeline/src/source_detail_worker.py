@@ -13,7 +13,6 @@ from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
-import httpx
 from psycopg.types.json import Jsonb
 
 from src.config import load_settings
@@ -28,7 +27,7 @@ from src.source_task_deadline import (
     ensure_source_task_deadline,
     source_task_deadline_scope,
 )
-from src.sources.common import is_allowed_origin_url
+from src.sources.common import TRANSIENT_TRANSPORT_ERRORS, is_allowed_origin_url
 from src.storage import supabase_client as storage
 from src.storage.supabase_client import (
     fetch_sale_for_data_refresh,
@@ -638,7 +637,7 @@ def _classify_detail_failure(
     status_code = status_code if status_code is not None else _http_status_code(exc)
     if status_code in _TRANSIENT_STATUS_CODES:
         return "transient"
-    if isinstance(exc, (httpx.TimeoutException, httpx.NetworkError, TimeoutError, ConnectionError)):
+    if isinstance(exc, (*TRANSIENT_TRANSPORT_ERRORS, TimeoutError, ConnectionError)):
         return "transient"
     message = str(exc).casefold()
     if any(marker in message for marker in _TRANSIENT_MARKERS):

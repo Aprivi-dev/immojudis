@@ -2092,3 +2092,36 @@ def test_superseded_enrichment_checkpoint_is_skipped(monkeypatch):
     monkeypatch.setattr(main, "upsert_sales_to_supabase", lambda sales, **kwargs: 0)
 
     assert main._checkpoint_enrichment(sale) is False
+
+
+def test_progressive_batch_writes_each_announcement_once(monkeypatch) -> None:
+    # Notaires, 30/10/2026: a sale met twice in one batch of 25 (shifted list page) made the ON CONFLICT insert of
+    # the collection journal fail with « cannot affect row a second time » and the batch was skipped.
+    journal_calls: list[list[str]] = []
+
+    def record_items(run_id, raws, **kwargs):
+        urls = [raw["source_url"] for raw in raws]
+        assert len(urls) == len(set(urls)), "the same announcement twice in one insert"
+        journal_calls.append(urls)
+
+    monkeypatch.setattr(main, "record_items", record_items)
+    monkeypatch.setattr(main, "_hydrate_known_unchanged_sales", lambda *a, **k: None)
+    monkeypatch.setattr(main, "_preserve_known_enrichment_payloads", lambda *a, **k: None)
+    monkeypatch.setattr(main, "record_source_checks", lambda *a, **k: None)
+    normalized: list[str] = []
+
+    def normalize_sale(raw):
+        normalized.append(raw["price"])
+        raise ValueError("stops the batch after the journal")
+
+    monkeypatch.setattr(main, "normalize_sale", normalize_sale)
+
+    first = {"source_url": "https://notaires.example/vente-1", "price": "first reading"}
+    other = {"source_url": "https://notaires.example/vente-2", "price": "other"}
+    again = {"source_url": "https://notaires.example/vente-1", "price": "second reading"}
+    errors: dict[str, list[str]] = {}
+    main.publish_factual_batch("run-1", [first, other, again], {}, errors)
+
+    assert journal_calls[0] == ["https://notaires.example/vente-1", "https://notaires.example/vente-2"]
+    assert sorted(normalized) == ["other", "second reading"]
+    assert errors == {}
