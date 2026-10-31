@@ -178,7 +178,7 @@
 }
 .distributionRow {
   display: grid;
-  grid-template-columns: minmax(12rem, 1.2fr) minmax(4rem, 1fr) 4.5rem 6rem;
+  grid-template-columns: minmax(12rem, 1.2fr) minmax(4rem, 1fr) 4.5rem 9rem;
   align-items: center;
   gap: 1rem;
   padding: 0.9rem 0;

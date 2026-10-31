@@ -5,7 +5,12 @@ import {
   detailedBidBands,
   type AdjudicationDistribution,
 } from "@/lib/adjudication-distributions";
-import { distributionRates, propertyTypeLabels } from "@/lib/adjudication-barometer";
+import {
+  distributionRates,
+  propertyTypeLabels,
+  wilsonShareInterval,
+  type ShareInterval,
+} from "@/lib/adjudication-barometer";
 import type {
   AdjudicationPriceStatisticsDirectoryResponse,
   AdjudicationPriceStatisticsScope,
@@ -47,16 +52,25 @@ type PublicAdjudicationPriceBand = {
   label: string;
   /** Part des prix publiés dans la tranche (0 à 1). Jamais d'effectif brut. */
   share: number;
+  /** Intervalle de Wilson à 95 % de la part ; `null` sans effectif exploitable. */
+  interval: ShareInterval | null;
 };
+
+/** Les deux quartiles du rapport prix adjugé publié / mise à prix : la moitié centrale des ventes. */
+type PublicRatioRange = { p25: number; p75: number };
 
 type PublicAdjudicationPropertyType = {
   propertyType: string;
   label: string;
   /** Effectif de la cellule, toujours au moins {@link PUBLIC_ADJUDICATION_MIN_SAMPLE}. */
   sampleSize: number;
-  /** Médiane du rapport prix final / mise à prix ; `null` quand le snapshot ne la porte pas. */
+  /** Médiane du rapport prix adjugé publié / mise à prix ; `null` quand le snapshot ne la porte pas. */
   medianRatio: number | null;
+  /** Moitié centrale des multiples (interquartile) du type de bien. */
+  ratioMiddle50: PublicRatioRange;
   aboveStartingRate: number;
+  /** Intervalle de Wilson à 95 % de la part au-dessus de la mise à prix (effectif de la cellule). */
+  aboveStartingInterval: ShareInterval | null;
 };
 
 /**
@@ -74,8 +88,16 @@ export type PublicAdjudicationPrices = {
   /** Nombre de tribunaux ayant au moins {@link PUBLIC_ADJUDICATION_MIN_SAMPLE} prix publiés. */
   tribunalCount: number;
   medianRatio: number;
+  /**
+   * Moitié centrale des multiples (interquartile `ratioMiddle50`) ; `null` quand le snapshot national
+   * ne porte pas la distribution.
+   */
+  ratioMiddle50: PublicRatioRange | null;
   aboveStartingRate: number;
+  /** Intervalles de Wilson à 95 % des deux parts nationales (effectif national). */
+  aboveStartingInterval: ShareInterval | null;
   atLeastDoubleRate: number;
+  atLeastDoubleInterval: ShareInterval | null;
   medianHammerPriceEur: number;
   medianStartingPriceEur: number;
   propertyTypes: PublicAdjudicationPropertyType[];
@@ -84,19 +106,30 @@ export type PublicAdjudicationPrices = {
   warning: string;
 };
 
-function publicBands(distribution: AdjudicationDistribution | null | undefined) {
+function publicBands(
+  distribution: AdjudicationDistribution | null | undefined,
+): PublicAdjudicationPriceBand[] {
   if (!distribution) return [];
+  const withInterval = (label: string, share: number) => ({
+    label,
+    share,
+    interval: wilsonShareInterval(share, distribution.sampleSize),
+  });
   const detailed = distribution.detailedBidDistribution;
   if (detailed) {
-    return detailedBidBands.map((band) => ({
-      label: detailedBidBandLabels[band],
-      share: detailed.find((item) => item.band === band)?.share ?? 0,
-    }));
+    return detailedBidBands.map((band) =>
+      withInterval(
+        detailedBidBandLabels[band],
+        detailed.find((item) => item.band === band)?.share ?? 0,
+      ),
+    );
   }
-  return bidBands.map((band) => ({
-    label: bidBandLabels[band],
-    share: distribution.bidDistribution.find((item) => item.band === band)?.share ?? 0,
-  }));
+  return bidBands.map((band) =>
+    withInterval(
+      bidBandLabels[band],
+      distribution.bidDistribution.find((item) => item.band === band)?.share ?? 0,
+    ),
+  );
 }
 
 /**
@@ -116,13 +149,21 @@ export function buildPublicAdjudicationPrices(
 
   const propertyTypes = (national.propertyTypes ?? [])
     .filter((item) => item.distribution.sampleSize >= PUBLIC_ADJUDICATION_MIN_SAMPLE)
-    .map((item) => ({
-      propertyType: item.propertyType,
-      label: propertyTypeLabels[item.propertyType] ?? item.propertyType,
-      sampleSize: item.distribution.sampleSize,
-      medianRatio: item.distribution.summary?.medianHammerToStartingRatio ?? null,
-      aboveStartingRate: distributionRates(item.distribution).aboveStartingRate,
-    }))
+    .map((item) => {
+      const { aboveStartingRate } = distributionRates(item.distribution);
+      return {
+        propertyType: item.propertyType,
+        label: propertyTypeLabels[item.propertyType] ?? item.propertyType,
+        sampleSize: item.distribution.sampleSize,
+        medianRatio: item.distribution.summary?.medianHammerToStartingRatio ?? null,
+        ratioMiddle50: {
+          p25: item.distribution.ratioMiddle50.p25,
+          p75: item.distribution.ratioMiddle50.p75,
+        },
+        aboveStartingRate,
+        aboveStartingInterval: wilsonShareInterval(aboveStartingRate, item.distribution.sampleSize),
+      };
+    })
     .sort((a, b) => b.sampleSize - a.sampleSize || a.label.localeCompare(b.label, "fr"));
 
   return {
@@ -136,8 +177,22 @@ export function buildPublicAdjudicationPrices(
       (tribunal) => tribunal.sampleSize >= PUBLIC_ADJUDICATION_MIN_SAMPLE,
     ).length,
     medianRatio: national.metrics.medianHammerToStartingRatio,
+    ratioMiddle50: national.distribution
+      ? {
+          p25: national.distribution.ratioMiddle50.p25,
+          p75: national.distribution.ratioMiddle50.p75,
+        }
+      : null,
     aboveStartingRate: national.metrics.aboveStartingRate,
+    aboveStartingInterval: wilsonShareInterval(
+      national.metrics.aboveStartingRate,
+      national.sampleSize,
+    ),
     atLeastDoubleRate: national.metrics.atLeastDoubleRate,
+    atLeastDoubleInterval: wilsonShareInterval(
+      national.metrics.atLeastDoubleRate,
+      national.sampleSize,
+    ),
     medianHammerPriceEur: national.metrics.medianHammerPriceEur,
     medianStartingPriceEur: national.metrics.medianStartingPriceEur,
     propertyTypes,
