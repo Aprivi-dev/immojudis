@@ -62,6 +62,7 @@ const SERVER_KEYS = [
   "POSTGRES_URL_NON_POOLING",
   "POSTGRES_URL",
   "CRON_SECRET",
+  "PIPELINE_CALLBACK_SECRET",
   "STRIPE_SECRET_KEY",
   "STRIPE_WEBHOOK_SECRET",
   "REPLICATE_API_TOKEN",
@@ -187,6 +188,8 @@ export function serverEnv(source?: EnvSource) {
       databaseUrl: firstFilled(env.SUPABASE_DB_URL, env.POSTGRES_URL_NON_POOLING, env.POSTGRES_URL),
     },
     cronSecret: env.CRON_SECRET,
+    /** Secret dédié aux rappels du pipeline (`/api/pipeline/revalidate-sale`) ; absent : repli sur `cronSecret`. */
+    pipelineCallbackSecret: env.PIPELINE_CALLBACK_SECRET,
     stripe: {
       secretKey: env.STRIPE_SECRET_KEY,
       webhookSecret: env.STRIPE_WEBHOOK_SECRET,
