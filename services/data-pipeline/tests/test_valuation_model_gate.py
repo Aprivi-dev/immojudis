@@ -244,12 +244,39 @@ def test_dump_evaluation_strict_inequality_average_output_and_unsupported_splits
 # --- activation gate ----------------------------------------------------------
 
 
-def _report(candidate: float, naive: float, active: dict | None = None, coverage: float | None = 80.0) -> dict:
+def _gap(ci_low: float = -3.0, ci_high: float = -1.0) -> dict:
+    return {
+        "metric": "median_ape_pct",
+        "gap_pp": (ci_low + ci_high) / 2,
+        "ci_low_pp": ci_low,
+        "ci_high_pp": ci_high,
+        "confidence_pct": 95.0,
+        "resamples": 1000,
+        "rows": 400,
+    }
+
+
+def _report(
+    candidate: float,
+    naive: float,
+    active: dict | None = None,
+    coverage: float | None = 80.0,
+    test_rows: int = 400,
+    gap_vs_naive: dict | None = None,
+    gap_vs_active: dict | None = None,
+) -> dict:
+    active = active or {"status": "none"}
     return {
         "candidate": {"median_ape_pct": candidate},
         "naive": {"gate_median_ape_pct": naive},
-        "active": active or {"status": "none"},
+        "active": active,
         "coverage": {"served_interval_pct": coverage} if coverage is not None else {},
+        "split": {"test_rows": test_rows},
+        "error_gap": {
+            "metric": "median_ape_pct",
+            "vs_naive": gap_vs_naive or _gap(),
+            "vs_active": (gap_vs_active or _gap()) if active.get("status") == "evaluated" else None,
+        },
     }
 
 
@@ -325,6 +352,110 @@ def test_a_coverage_that_was_not_measured_blocks_activation() -> None:
     assert decision.activate is False
     assert "not measured" in decision.reasons[0]
     assert decide_activation({k: v for k, v in _report(5.0, 12.0).items() if k != "coverage"}, requested=True).activate is False
+
+
+# --- sample size and paired bootstrap gate (n° 22) ------------------------------------
+
+
+def test_the_minimum_number_of_test_sales_to_activate_is_300() -> None:
+    assert vt.MIN_ACTIVATION_TEST_ROWS == 300
+    assert decide_activation(_report(9.0, 12.0, test_rows=300), requested=True).activate is True
+    decision = decide_activation(_report(9.0, 12.0, test_rows=299), requested=True)
+    assert decision.activate is False
+    assert "299 chronological test sales" in decision.reasons[0]
+    assert "300" in decision.reasons[0]
+
+
+def test_a_report_without_the_number_of_test_sales_never_activates() -> None:
+    report = _report(9.0, 12.0)
+    del report["split"]
+    decision = decide_activation(report, requested=True)
+    assert decision.activate is False
+    assert "unknown number" in decision.reasons[0]
+
+
+def test_an_interval_that_touches_zero_against_the_naive_reference_blocks_activation() -> None:
+    decision = decide_activation(_report(9.0, 12.0, gap_vs_naive=_gap(-4.0, 0.2)), requested=True)
+
+    assert decision.activate is False
+    assert len(decision.reasons) == 1
+    assert "naive local reference" in decision.reasons[0]
+    assert "does not lie entirely below zero" in decision.reasons[0]
+
+
+def test_an_interval_that_touches_zero_against_the_active_model_blocks_activation() -> None:
+    decision = decide_activation(
+        _report(9.0, 12.0, _evaluated("v1", 10.0), gap_vs_active=_gap(-2.0, 0.0)), requested=True
+    )
+
+    assert decision.activate is False
+    assert "active model v1" in decision.reasons[0]
+    assert "[-2.0, 0.0]" in decision.reasons[0]
+
+
+def test_a_missing_interval_blocks_activation_like_a_missing_coverage() -> None:
+    report = _report(9.0, 12.0, _evaluated("v1", 10.0))
+    report["error_gap"] = None
+    decision = decide_activation(report, requested=True)
+
+    assert decision.activate is False
+    assert len(decision.reasons) == 2
+    assert all("was not computed" in reason for reason in decision.reasons)
+    # No active model: only the naive reference needs its interval.
+    no_active = _report(9.0, 12.0)
+    no_active["error_gap"]["vs_active"] = None
+    assert decide_activation(no_active, requested=True).activate is True
+
+
+def test_paired_bootstrap_proves_a_consistent_improvement_even_on_noisy_sales() -> None:
+    rng = np.random.default_rng(3)
+    base = rng.gamma(2.0, 6.0, size=400)  # noisy errors shared by both models
+    gap = vt.paired_bootstrap_error_gap(base - 1.5, base, resamples=300)
+
+    assert gap["rows"] == 400 and gap["resamples"] == 300 and gap["confidence_pct"] == 95.0
+    assert gap["gap_pp"] == pytest.approx(-1.5, abs=1e-9)
+    assert gap["ci_low_pp"] <= gap["gap_pp"] <= gap["ci_high_pp"] < 0
+
+
+def test_paired_bootstrap_does_not_prove_identical_or_unrelated_models_apart() -> None:
+    rng = np.random.default_rng(4)
+    errors = rng.gamma(2.0, 6.0, size=400)
+    same = vt.paired_bootstrap_error_gap(errors, errors, resamples=200)
+    assert same["gap_pp"] == 0.0 and same["ci_high_pp"] == 0.0  # not < 0: no activation
+
+    other = rng.gamma(2.0, 6.0, size=400)  # same distribution, different sales: pure noise
+    noise = vt.paired_bootstrap_error_gap(errors, other, resamples=300)
+    assert noise["ci_low_pp"] < 0 < noise["ci_high_pp"]
+
+
+def test_a_model_ten_percent_worse_on_75_sales_is_never_proven_better() -> None:
+    """The simulation behind n° 22: 75 sales, a model 10 % worse than the active one."""
+    proven_better = 0
+    for trial in range(40):
+        rng = np.random.default_rng(100 + trial)
+        reference = rng.gamma(2.0, 6.0, size=75)
+        candidate = np.abs(reference * 1.10 + rng.normal(0, 4.0, size=75))
+        gap = vt.paired_bootstrap_error_gap(candidate, reference, resamples=200)
+        proven_better += gap["ci_high_pp"] < 0
+    assert proven_better == 0
+
+
+def test_paired_bootstrap_rejects_unpaired_or_empty_errors() -> None:
+    with pytest.raises(ValueError, match="same length"):
+        vt.paired_bootstrap_error_gap(np.array([1.0, 2.0]), np.array([1.0]))
+    with pytest.raises(ValueError, match="non-empty"):
+        vt.paired_bootstrap_error_gap(np.array([]), np.array([]))
+    with pytest.raises(ValueError, match="finite"):
+        vt.paired_bootstrap_error_gap(np.array([1.0, np.nan]), np.array([1.0, 2.0]))
+
+
+def test_the_javascript_publication_gate_uses_the_same_numbers() -> None:
+    script = (
+        Path(__file__).resolve().parents[3] / "scripts" / "lib" / "valuation-promotion-gate.mjs"
+    ).read_text(encoding="utf-8")
+
+    assert f"MIN_ACTIVATION_TEST_ROWS = {vt.MIN_ACTIVATION_TEST_ROWS};" in script
+    assert f"MIN_COVERAGE_PCT = {int(vt.MIN_PROMOTION_COVERAGE_PCT)};" in script
 
 
 def test_the_coverage_floor_is_below_nominal_and_not_below_the_absolute_reject_threshold() -> None:
@@ -422,7 +553,7 @@ def test_force_bypasses_absolute_thresholds_but_never_the_relative_gate(tmp_path
     metrics = vt.TrainingMetrics(500, 100, 100, 60.0, 55.0, 70.0, 10.0, 300.0, 0.8)  # fails every threshold
     bundle = vt.ModelBundle(
         "apartment", "v", vt.FEATURE_NAMES, {}, {}, metrics, 700, "2024-01-01", "2025-01-01",
-        report=_report(55.0, 12.0, _evaluated("v1", 10.0)) | {"split": {}},
+        report=_report(55.0, 12.0, _evaluated("v1", 10.0)),
     )
     monkeypatch.setattr(vt, "train_segment_model", lambda frame, **kwargs: bundle)
     monkeypatch.setattr(vt, "write_model_bundle", lambda *a, **k: tmp_path / "bundle.json")
@@ -470,7 +601,7 @@ def test_activation_still_publishes_when_the_gate_agrees(tmp_path, monkeypatch) 
     metrics = vt.TrainingMetrics(500, 100, 100, 12.0, 9.0, 14.0, 80.0, 30.0, 0.8)
     bundle = vt.ModelBundle(
         "apartment", "v", vt.FEATURE_NAMES, {}, {}, metrics, 700, "2024-01-01", "2025-01-01",
-        report=_report(9.0, 12.0, _evaluated("v1", 11.0)) | {"split": {"test_rows": 100}},
+        report=_report(9.0, 12.0, _evaluated("v1", 11.0)),
     )
     published: list[bool] = []
     monkeypatch.setattr(vt, "valuation_database_url", lambda: "postgresql://example/db")
@@ -510,6 +641,58 @@ def test_active_model_is_scored_on_the_same_sales_as_the_candidate() -> None:
     assert result["version"] == "v1"
     assert result["reported_test_mape_pct"] == 21.5
     assert result["median_ape_pct"] == pytest.approx(np.median([0, 9.09, 11.11, 50]), abs=0.01)
+
+
+def _active_with_export(local_mean: float, *, with_export: bool = True) -> ActiveModel:
+    """An active model whose only variable is the local median: 5 000 above log 8.0, 2 000 below."""
+    tree = _split(0, 8.0, _leaf(math.log(2000.0)), _leaf(math.log(5000.0)))
+    artifact: dict = {
+        "format": "lightgbm-json-v1",
+        "featureNames": ["local_median_log"],
+        "models": {"p50": {"tree_info": [{"tree_structure": tree}]}},
+    }
+    if with_export:
+        cell = FakeH3.latlng_to_cell(44.84, -0.58, 9)
+        artifact["localMarket"] = {
+            "formatVersion": vt.LOCAL_MARKET_FORMAT_VERSION,
+            "resolutions": [9, 8, 7],
+            "fallback": {"mean": 7.0, "spread": 0.9},
+            "cells": {"9": {cell: [40, local_mean, 0.2]}},
+        }
+    return ActiveModel("v1", artifact, {})
+
+
+def test_active_model_is_scored_with_its_own_local_variables_not_the_candidates() -> None:
+    # The candidate's past-only variables say 7.0 (-> 2 000 EUR/m2); the active model's own export says 9.0 (-> 5 000).
+    features = pd.DataFrame(
+        {"latitude": [44.84, 44.84], "longitude": [-0.58, -0.58], "local_median_log": [7.0, 7.0]}
+    )
+    actual = np.array([5000.0, 5000.0])
+
+    result = vt.evaluate_active_model(_active_with_export(9.0), features, actual, h3_module=FakeH3)
+
+    assert result["status"] == "evaluated"
+    assert result["local_features_source"] == "own_export"
+    assert result["median_ape_pct"] == 0.0  # scored on 9.0, the candidate's 7.0 would give 60 %
+    own = vt.active_model_own_local_features(_active_with_export(9.0).artifact, features, h3_module=FakeH3)
+    assert own is not None and own["local_median_log"].tolist() == [9.0, 9.0]
+    assert features["local_median_log"].tolist() == [7.0, 7.0]  # the candidate's frame is left untouched
+
+
+def test_an_active_model_older_than_the_export_keeps_the_approximation_and_says_so() -> None:
+    features = pd.DataFrame(
+        {"latitude": [44.84], "longitude": [-0.58], "local_median_log": [7.0]}
+    )
+    legacy = _active_with_export(9.0, with_export=False)
+
+    result = vt.evaluate_active_model(legacy, features, np.array([2000.0]), h3_module=FakeH3)
+
+    assert result["local_features_source"] == "candidate_past_only_approximation"
+    assert result["median_ape_pct"] == 0.0
+    assert vt.active_model_own_local_features(legacy.artifact, features, h3_module=FakeH3) is None
+    malformed = _active_with_export(9.0)
+    malformed.artifact["localMarket"]["formatVersion"] = 2
+    assert vt.active_model_own_local_features(malformed.artifact, features, h3_module=FakeH3) is None
 
 
 def test_active_model_that_cannot_be_scored_is_reported_not_ignored() -> None:
@@ -581,6 +764,7 @@ def test_training_report_and_registry_metrics_carry_the_comparison(tmp_path) -> 
         "naive_median_ape_pct": 12.0,
         "served_interval_coverage_pct": 80.0,
         "activated": True,
+        "error_gap": report["error_gap"],
     }
     summary = vt.format_step_summary([bundle])
     assert "| apartment | 9.0% | 11.0% (v1) | 12.0% | 80.0% | 100 | yes | - |" in summary
@@ -690,8 +874,11 @@ def test_dump_evaluation_matches_the_booster_it_was_dumped_from(small_models) ->
 
 def test_end_to_end_gate_with_a_weak_and_an_identical_active_model(small_models, tmp_path) -> None:
     pytest.importorskip("h3")
-    frame = _training_frame()
+    frame = _training_frame(rows=2600)  # about 390 test sales: enough to be allowed to activate
     first = vt.train_segment_model(frame, segment="apartment", version="t1")
+    assert first.report["split"]["test_rows"] >= vt.MIN_ACTIVATION_TEST_ROWS
+    assert first.report["error_gap"]["vs_active"] is None
+    assert first.report["error_gap"]["vs_naive"]["rows"] == first.report["split"]["test_rows"]
 
     weak = ActiveModel(
         "weak",
@@ -707,7 +894,16 @@ def test_end_to_end_gate_with_a_weak_and_an_identical_active_model(small_models,
     assert against_weak is not None
     assert against_weak.report["active"]["status"] == "evaluated"
     assert against_weak.report["active"]["median_ape_pct"] > against_weak.report["candidate"]["median_ape_pct"]
-    assert vt.bundle_is_activated(against_weak) is True
+    assert against_weak.report["active"]["local_features_source"] == "candidate_past_only_approximation"
+    assert against_weak.report["error_gap"]["vs_active"]["ci_high_pp"] < 0
+    # The weak active model is beaten for sure; whether the candidate is also proven better than the
+    # naive reference (paired bootstrap, ~390 sales, 25-tree test models) is up to the data.
+    proven_vs_naive = against_weak.report["error_gap"]["vs_naive"]["ci_high_pp"] < 0
+    assert vt.bundle_is_activated(against_weak) is (
+        proven_vs_naive and against_weak.report["candidate"]["median_ape_pct"] < against_weak.report["naive"]["gate_median_ape_pct"]
+    )
+    if not proven_vs_naive:
+        assert "naive local reference" in " ".join(against_weak.report["promotion"]["reasons"])
 
     identical = ActiveModel("same", first.artifact, first.metrics.__dict__)
     against_same = vt.train_frame_if_eligible(
@@ -716,9 +912,15 @@ def test_end_to_end_gate_with_a_weak_and_an_identical_active_model(small_models,
     assert against_same is not None
     report = against_same.report
     assert report["active"]["status"] == "evaluated"
-    # Whatever the scores, the decision follows the rule: strictly better than both references.
-    expected = report["candidate"]["median_ape_pct"] < min(
-        report["naive"]["gate_median_ape_pct"], report["active"]["median_ape_pct"]
+    assert report["active"]["local_features_source"] == "own_export"
+    # Whatever the scores, the decision follows the rule: strictly better than both references, with
+    # a paired bootstrap interval of each gap entirely below zero.
+    gaps = report["error_gap"]
+    expected = (
+        report["candidate"]["median_ape_pct"]
+        < min(report["naive"]["gate_median_ape_pct"], report["active"]["median_ape_pct"])
+        and gaps["vs_naive"]["ci_high_pp"] < 0
+        and gaps["vs_active"]["ci_high_pp"] < 0
     )
     assert vt.bundle_is_activated(against_same) is expected
     assert (tmp_path / "apartment-t3.report.json").exists()

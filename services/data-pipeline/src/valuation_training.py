@@ -39,6 +39,17 @@ CONFIDENCE_LEVEL = 0.8
 # ("sous / dans / au-dessus de la fourchette") would not mean what the method page says. The floor
 # applies to --activate whatever --force says, like the other relative checks of decide_activation.
 MIN_PROMOTION_COVERAGE_PCT = 70.0
+# Activation gate (n° 22). A median APE measured on a few dozen sales is noise: with 75 test sales a
+# model that is 10 % worse than the active one was activated about one time in four in simulation.
+# So (1) at least MIN_ACTIVATION_TEST_ROWS chronological test sales are needed to activate (a model
+# below that is still published as a draft), and (2) the candidate must beat the active model and the
+# naive reference with a paired bootstrap interval of the median-APE gap lying entirely below zero.
+# scripts/lib/valuation-promotion-gate.mjs applies the same rule to the report before publication
+# (a test reads both files and fails if the numbers differ).
+MIN_ACTIVATION_TEST_ROWS = 300
+GAP_BOOTSTRAP_RESAMPLES = 1000
+GAP_BOOTSTRAP_CONFIDENCE = 0.95
+GAP_BOOTSTRAP_SEED = 42
 FEATURE_NAMES = (
     "surface_m2",
     "log_surface_m2",
@@ -906,6 +917,7 @@ def train_segment_model(
         active_model=active_model,
         h3_resolutions=local_market_resolutions(segment),
         h3_module=h3_module,
+        candidate_predicted=predicted,
     )
     report["coverage"] = {
         "nominal_pct": rounded(CONFIDENCE_LEVEL * 100),
@@ -988,13 +1000,34 @@ def build_comparison_report(
     active_model: ActiveModel | None,
     h3_resolutions: Sequence[int],
     h3_module: Any = None,
+    candidate_predicted: np.ndarray | None = None,
 ) -> dict[str, Any]:
-    """Candidate vs active model vs naive references, on the same newest sales."""
-    local_reference = _ape_summary(np.exp(test_features["local_median_log"].to_numpy(dtype=float)), actual)
-    cell_median = _ape_summary(
-        static_cell_median_reference(train, test, resolutions=h3_resolutions, h3_module=h3_module), actual
-    )
+    """Candidate vs active model vs naive references, on the same newest sales.
+
+    With ``candidate_predicted`` the report also carries, under ``error_gap``, the paired bootstrap
+    interval of the median-APE gap between the candidate and each reference (negative = candidate
+    better), which ``decide_activation`` requires.
+    """
+    local_predicted = np.exp(test_features["local_median_log"].to_numpy(dtype=float))
+    cell_predicted = static_cell_median_reference(train, test, resolutions=h3_resolutions, h3_module=h3_module)
+    local_reference = _ape_summary(local_predicted, actual)
+    cell_median = _ape_summary(cell_predicted, actual)
     naive_gate = min(local_reference["median_ape_pct"], cell_median["median_ape_pct"])
+    active, active_predicted = score_active_model(active_model, test_features, actual, h3_module=h3_module)
+    error_gap: dict[str, Any] | None = None
+    if candidate_predicted is not None:
+        candidate_errors = ape_errors(candidate_predicted, actual)
+        # The strictest naive reference: the one with the lowest median error.
+        naive_predicted = local_predicted if local_reference["median_ape_pct"] <= cell_median["median_ape_pct"] else cell_predicted
+        error_gap = {
+            "metric": "median_ape_pct",
+            "vs_naive": paired_bootstrap_error_gap(candidate_errors, ape_errors(naive_predicted, actual)),
+            "vs_active": (
+                paired_bootstrap_error_gap(candidate_errors, ape_errors(active_predicted, actual))
+                if active_predicted is not None
+                else None
+            ),
+        }
     return {
         "segment": segment,
         "version": version,
@@ -1010,29 +1043,44 @@ def build_comparison_report(
             "coverage_pct": metrics.interval_coverage_pct,
             "interval_width_pct": metrics.interval_mean_width_pct,
         },
-        "active": evaluate_active_model(active_model, test_features, actual),
+        "active": active,
         "naive": {
             "local_geometric_mean": local_reference,
             "train_cell_median": cell_median,
             "gate_median_ape_pct": naive_gate,
         },
+        "error_gap": error_gap,
     }
 
 
 def decide_activation(report: dict[str, Any], *, requested: bool) -> PromotionDecision:
     """Activate only a model that beats the active model and the naive reference and whose interval holds.
 
-    Accuracy: the median APE must beat both the active model and the naive local reference.
+    Sample: at least ``MIN_ACTIVATION_TEST_ROWS`` chronological test sales; below that the model can
+    only be published as a draft.
+    Accuracy: the median APE must beat both the active model and the naive local reference, and the
+    paired bootstrap interval of each gap (``report["error_gap"]``) must lie entirely below zero.
     Interval: at least ``MIN_PROMOTION_COVERAGE_PCT`` of the newest validation sales must fall
     inside the served interval (nominal 80 %). ``--force`` bypasses none of this.
     """
     if not requested:
         return PromotionDecision(False, ("activation not requested",))
     reasons: list[str] = []
+    test_rows = (report.get("split") or {}).get("test_rows")
+    if not isinstance(test_rows, (int, float)) or test_rows < MIN_ACTIVATION_TEST_ROWS:
+        reasons.append(
+            f"only {test_rows if isinstance(test_rows, (int, float)) else 'an unknown number of'} chronological "
+            f"test sales, fewer than the {MIN_ACTIVATION_TEST_ROWS} needed to activate a model"
+        )
     candidate = float(report["candidate"]["median_ape_pct"])
     naive = float(report["naive"]["gate_median_ape_pct"])
+    error_gap = report.get("error_gap") or {}
     if not candidate < naive:
         reasons.append(f"median APE {candidate}% does not beat the naive local reference ({naive}%)")
+    else:
+        reason = _gap_interval_reason(error_gap.get("vs_naive"), "the naive local reference")
+        if reason:
+            reasons.append(reason)
     active = report.get("active", {})
     if active.get("status") == "evaluated":
         active_ape = float(active["median_ape_pct"])
@@ -1040,6 +1088,10 @@ def decide_activation(report: dict[str, Any], *, requested: bool) -> PromotionDe
             reasons.append(
                 f"median APE {candidate}% does not beat the active model {active.get('version')} ({active_ape}%)"
             )
+        else:
+            reason = _gap_interval_reason(error_gap.get("vs_active"), f"the active model {active.get('version')}")
+            if reason:
+                reasons.append(reason)
     elif active.get("status") != "none":
         reasons.append(
             f"the active model {active.get('version')} could not be evaluated "
@@ -1054,6 +1106,64 @@ def decide_activation(report: dict[str, Any], *, requested: bool) -> PromotionDe
             f"{MIN_PROMOTION_COVERAGE_PCT}% floor (nominal {rounded(CONFIDENCE_LEVEL * 100)}%)"
         )
     return PromotionDecision(not reasons, tuple(reasons))
+
+
+def _gap_interval_reason(gap: Any, reference: str) -> str | None:
+    """Why the paired bootstrap interval does not prove the candidate better than ``reference``."""
+    if not isinstance(gap, dict) or gap.get("ci_high_pp") is None:
+        return f"the paired bootstrap interval of the error gap with {reference} was not computed"
+    if not float(gap["ci_high_pp"]) < 0:
+        return (
+            f"the {gap.get('confidence_pct', rounded(GAP_BOOTSTRAP_CONFIDENCE * 100))}% bootstrap interval of the "
+            f"median APE gap with {reference} is [{gap.get('ci_low_pp')}, {gap['ci_high_pp']}] points, "
+            "which does not lie entirely below zero"
+        )
+    return None
+
+
+def ape_errors(predicted: np.ndarray, actual: np.ndarray) -> np.ndarray:
+    """Absolute percentage error of each sale."""
+    predicted = np.asarray(predicted, dtype=float)
+    actual = np.asarray(actual, dtype=float)
+    return np.abs(predicted - actual) / actual * 100
+
+
+def paired_bootstrap_error_gap(
+    candidate_errors: np.ndarray,
+    reference_errors: np.ndarray,
+    *,
+    resamples: int = GAP_BOOTSTRAP_RESAMPLES,
+    confidence: float = GAP_BOOTSTRAP_CONFIDENCE,
+    seed: int = GAP_BOOTSTRAP_SEED,
+) -> dict[str, Any]:
+    """Paired bootstrap interval of ``median(candidate error) - median(reference error)`` (points of APE).
+
+    The same resampled sales are used for both models, so the interval measures the gap on identical
+    sales rather than two independent noisy medians. Negative = the candidate is more accurate.
+    """
+    candidate = np.asarray(candidate_errors, dtype=float)
+    reference = np.asarray(reference_errors, dtype=float)
+    if candidate.shape != reference.shape or candidate.ndim != 1 or len(candidate) == 0:
+        raise ValueError("The paired bootstrap needs two non-empty error vectors of the same length.")
+    if not (np.isfinite(candidate).all() and np.isfinite(reference).all()):
+        raise ValueError("The paired bootstrap needs finite errors.")
+    rows = len(candidate)
+    rng = np.random.default_rng(seed)
+    gaps = np.empty(resamples)
+    for index in range(resamples):
+        picked = rng.integers(0, rows, rows)
+        gaps[index] = np.median(candidate[picked]) - np.median(reference[picked])
+    tail = (1 - confidence) / 2
+    low, high = np.quantile(gaps, [tail, 1 - tail])
+    return {
+        "metric": "median_ape_pct",
+        "gap_pp": rounded(np.median(candidate) - np.median(reference)),
+        "ci_low_pp": rounded(low),
+        "ci_high_pp": rounded(high),
+        "confidence_pct": rounded(confidence * 100),
+        "resamples": resamples,
+        "rows": rows,
+    }
 
 
 # --------------------------------------------------------------------------- active model
@@ -1124,17 +1234,55 @@ def _walk_tree(node: Any, matrix: np.ndarray, rows: np.ndarray, out: np.ndarray)
     _walk_tree(node.get("right_child"), matrix, rows[~go_left], out)
 
 
-def evaluate_active_model(
-    active_model: ActiveModel | None, features: pd.DataFrame, actual: np.ndarray
-) -> dict[str, Any]:
-    """Median/mean APE of the active model's p50 on the validation sales.
+LOCAL_MARKET_FEATURES = ("local_median_log", "local_spread_log", "local_sample_size_log")
 
-    The active model is fed the candidate's past-only local features. Its own
-    training used static cell statistics with the same definitions, so this is
-    an approximation of its production inputs, identical for both models.
+
+def active_model_own_local_features(
+    artifact: dict[str, Any], features: pd.DataFrame, *, h3_module: Any = None
+) -> pd.DataFrame | None:
+    """The three local-market variables as the active model itself computes them in production.
+
+    Serving rebuilds them from the ``localMarket`` export of the artifact (cell statistics fitted
+    through ``fittedThrough``), not from the candidate's past-only statistics. Scoring the active
+    model on the candidate's variables measured a model nobody serves (n° 22). ``None`` when the
+    artifact has no usable export (a model older than the export, whose production variables come
+    from the engine's comparables and cannot be rebuilt here).
+    """
+    local_market = artifact.get("localMarket")
+    if (
+        not isinstance(local_market, dict)
+        or local_market.get("formatVersion") != LOCAL_MARKET_FORMAT_VERSION
+        or not isinstance(local_market.get("cells"), dict)
+        or not isinstance(local_market.get("resolutions"), list)
+        or not isinstance(local_market.get("fallback"), dict)
+    ):
+        return None
+    if h3_module is None:
+        import h3 as h3_module
+
+    rows = [
+        lookup_exported_local_market(local_market, latitude, longitude, h3_module=h3_module)
+        for latitude, longitude in zip(features["latitude"], features["longitude"], strict=True)
+    ]
+    return pd.DataFrame(rows, index=features.index, columns=list(LOCAL_MARKET_FEATURES))
+
+
+def score_active_model(
+    active_model: ActiveModel | None,
+    features: pd.DataFrame,
+    actual: np.ndarray,
+    *,
+    h3_module: Any = None,
+) -> tuple[dict[str, Any], np.ndarray | None]:
+    """Median/mean APE of the active model's p50 on the validation sales, and its predictions.
+
+    The active model is fed its OWN local-market variables, rebuilt from the export in its artifact
+    exactly like production does (``local_features_source`` = ``own_export``). Only a model older
+    than that export, whose production variables cannot be rebuilt here, is still fed the
+    candidate's past-only variables (``candidate_past_only_approximation``): the report says so.
     """
     if active_model is None:
-        return {"status": "none"}
+        return {"status": "none"}, None
     artifact = active_model.artifact
     base = {
         "version": active_model.version,
@@ -1143,19 +1291,44 @@ def evaluate_active_model(
     names = artifact.get("featureNames")
     dump = (artifact.get("models") or {}).get("p50")
     if artifact.get("format") != "lightgbm-json-v1" or not isinstance(names, list) or not isinstance(dump, dict):
-        return {**base, "status": "unevaluable", "reason": "artifact is not a lightgbm-json-v1 quantile model"}
+        return {**base, "status": "unevaluable", "reason": "artifact is not a lightgbm-json-v1 quantile model"}, None
+    own_local = active_model_own_local_features(artifact, features, h3_module=h3_module)
+    scored = features
+    source = "candidate_past_only_approximation"
+    if own_local is not None:
+        scored = features.copy()
+        for name in LOCAL_MARKET_FEATURES:
+            scored[name] = own_local[name]
+        source = "own_export"
     matrix = np.column_stack(
         [
-            pd.to_numeric(features[name], errors="coerce").to_numpy(dtype=float)
-            if name in features
-            else np.full(len(features), np.nan)
+            pd.to_numeric(scored[name], errors="coerce").to_numpy(dtype=float)
+            if name in scored
+            else np.full(len(scored), np.nan)
             for name in names
         ]
     )
     predicted_log = predict_lightgbm_dump(dump, matrix)
     if not np.isfinite(predicted_log).all():
-        return {**base, "status": "unevaluable", "reason": "the p50 model returned non-finite predictions"}
-    return {**base, "status": "evaluated", **_ape_summary(np.exp(predicted_log), actual)}
+        return {**base, "status": "unevaluable", "reason": "the p50 model returned non-finite predictions"}, None
+    predicted = np.exp(predicted_log)
+    return {
+        **base,
+        "status": "evaluated",
+        "local_features_source": source,
+        **_ape_summary(predicted, actual),
+    }, predicted
+
+
+def evaluate_active_model(
+    active_model: ActiveModel | None,
+    features: pd.DataFrame,
+    actual: np.ndarray,
+    *,
+    h3_module: Any = None,
+) -> dict[str, Any]:
+    """Report of ``score_active_model`` without the predictions."""
+    return score_active_model(active_model, features, actual, h3_module=h3_module)[0]
 
 
 def market_cells(frame: pd.DataFrame, *, resolution: int, h3_module: Any) -> list[str | None]:
@@ -1250,6 +1423,9 @@ def published_training_metrics(bundle: ModelBundle) -> dict[str, Any]:
             "served_interval_coverage_pct": (report.get("coverage") or {}).get("served_interval_pct"),
             "activated": bundle_is_activated(bundle),
         }
+        error_gap = report.get("error_gap")
+        if error_gap:
+            metrics["comparison"]["error_gap"] = error_gap
     return metrics
 
 
