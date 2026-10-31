@@ -1,8 +1,12 @@
 name: Dependabot auto-merge (patch)
 
 # Enables auto-merge on Dependabot pull requests that only bump patch versions (a single bump, or a
-# grouped pull request whose every bump is a patch).
-# GitHub merges them once every required check is green; minor and major bumps stay manual.
+# grouped pull request whose every bump is a patch) AND that touch development tooling only: the
+# "development-dependencies" npm group and the GitHub Actions. Runtime fixes (the
+# "production-dependencies" npm group, which carries next, supabase, stripe…) and the Python
+# pipeline (hashed lock files to refresh by hand) are left for a manual review.
+# GitHub merges the eligible ones once every required check is green; minor and major bumps stay
+# manual. The group is read from the branch Dependabot names after it (dependabot/<ecosystem>/…).
 on:
   pull_request:
     types: [opened, reopened, synchronize]
@@ -24,10 +28,18 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
         run: |
           set -euo pipefail
+          case "$PR_BRANCH" in
+            dependabot/github_actions/* | dependabot/npm_and_yarn/development-dependencies-*) ;;
+            *)
+              echo "Not a development-tooling update ($PR_BRANCH): left for manual review."
+              exit 0
+              ;;
+          esac
           PR_BODY="${PR_BODY//$'\r'/}"
           # One bump: the title names it ("Bump x from 1.2.3 to 1.2.4"). Grouped PRs ("Bump the
           # python-dependencies group with 5 updates") name none: every bump is then a row of the
