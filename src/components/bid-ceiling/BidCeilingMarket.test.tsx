@@ -16,6 +16,7 @@ function estimate(overrides: Partial<MarketEstimate> = {}): MarketEstimate {
     areaKind: "urban",
     commune: "Bordeaux",
     sampleSize: 18,
+    samplePeriod: { from: "2023-11-20", to: "2026-05-04" },
     parcelSampleSize: 18,
     totalNearbySampleSize: 40,
     outliersRemoved: 1,
@@ -89,20 +90,24 @@ describe("MarketPriceDistribution (n° 24)", () => {
     expect(container.querySelector(".bg-foreground\\/35")).not.toBeNull();
   });
 
-  it("retombe sur la profondeur d'historique sans date de vente listée", () => {
-    expect(dvfPeriodLabel(estimate({ recentTransactions: [] }))).toBe("sur les 3 dernières années");
-    const single = estimate({
-      recentTransactions: [
-        {
-          date: "2025-02-03",
-          pricePerM2: 4_000,
-          surface: 50,
-          totalPrice: 200_000,
-          type: "Appartement",
-          distanceM: 10,
-        },
-      ],
-    });
+  it("affiche la période de tout l'échantillon, pas celle des seules ventes listées", () => {
+    const wide = estimate({ samplePeriod: { from: "2021-03-02", to: "2026-05-04" } });
+    // Les ventes listées (2023 à 2026) ne couvrent qu'une partie de l'échantillon (2021 à 2026).
+    const label = plain(dvfPeriodLabel(wide));
+    expect(label).toMatch(/^du .*2021.* au .*2026/);
+    expect(label).not.toContain("2023");
+    const single = estimate({ samplePeriod: { from: "2025-02-03", to: "2025-02-03" } });
     expect(dvfPeriodLabel(single)).toMatch(/^le /);
+  });
+
+  it("retombe sur la profondeur d'historique sans période d'échantillon", () => {
+    // Même avec des ventes listées : elles ne dateraient que les meilleurs comparables.
+    expect(dvfPeriodLabel(estimate({ samplePeriod: undefined }))).toBe(
+      "sur les 3 dernières années",
+    );
+    expect(dvfPeriodLabel(estimate({ samplePeriod: null }))).toBe("sur les 3 dernières années");
+    expect(dvfPeriodLabel(estimate({ samplePeriod: { from: "x", to: "y" } }))).toBe(
+      "sur les 3 dernières années",
+    );
   });
 });

@@ -92,6 +92,8 @@ export type MarketEstimate = {
   areaKind: "urban" | "rural";
   commune: string | null;
   sampleSize: number; // nombre de parcelles comparables retenues
+  /** Dates (ISO) de la vente la plus ancienne et de la plus récente de tout l'échantillon retenu. */
+  samplePeriod?: { from: string; to: string } | null;
   effectiveSampleSize?: number;
   parcelSampleSize: number;
   totalNearbySampleSize: number;

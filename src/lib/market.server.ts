@@ -33,6 +33,7 @@ import {
 import { analyzeAtRadius } from "@/lib/market-server/radius-analysis";
 import { shouldWidenRadius } from "@/lib/market-server/radius-widening";
 import { buildParkingEstimate, isParkingProperty } from "@/lib/market-server/parking";
+import { salesSamplePeriod } from "@/lib/market-server/sample-period";
 
 export { officialDvfCommuneCode } from "@/lib/market-server/sources";
 
@@ -306,6 +307,7 @@ async function buildEstimate(input: BuildEstimateInput): Promise<MarketEstimate>
     areaKind,
     commune: commune?.nom ?? null,
     sampleSize: engineResult?.sampleSize ?? 0,
+    samplePeriod: salesSamplePeriod((engineResult?.comparables ?? []).map((item) => item.date)),
     effectiveSampleSize: engineResult?.effectiveSampleSize ?? 0,
     parcelSampleSize: analysis.candidates.length,
     totalNearbySampleSize: analysis.totalNearby,

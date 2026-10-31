@@ -35,14 +35,12 @@ const VAT = 0.2;
 // Taux global (part départementale + part communale de 1,20 % + frais d'assiette de
 // 2,37 % de la part départementale) pour une vente d'immeuble ancien.
 //
-// Source : tableau des taux de droits de mutation publié par la DGFiP, état au
-// 01/06/2026 (liste publique des départements) ; recoupé le 31/10/2026 par la
-// synthèse de recherche de l'équipe, sans relecture du document original.
+// Source : fiche DGFiP des taux de droits de mutation (impots.gouv.fr), dont la date de mise à
+// jour indiquée est le 01/06/2026 ; consultée le 31/10/2026.
 //   - 5,00 % de part départementale (taux plein) : 6,32 % au total. C'est le défaut.
 //   - 4,50 % (le taux d'avant la hausse) : 5,81 % au total, pour 11 départements :
 //     05, 06, 07, 16, 26, 48, 60, 65, 71, 971 et 976 (Mayotte).
 //   - 3,80 % : 5,09 % au total, pour l'Indre (36) seule (3,80 + 1,20 + 3,80 x 2,37 %).
-// Fiche DGFiP du 01/06/2026 (impots.gouv.fr, dmto_2026-06.pdf), relue par le rédacteur le 31/10/2026.
 // La hausse à 5 % de la part départementale est TEMPORAIRE (loi de finances 2025, art. 116 :
 // actes passés du 01/04/2025 au 31/03/2028) et ne vaut pas pour les primo-accédants d'une
 // résidence principale. Pour une vente judiciaire, le taux s'applique au prix d'adjudication.
