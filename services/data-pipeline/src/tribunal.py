@@ -52,6 +52,10 @@ CITY_TO_TRIBUNAL = {
 }
 
 LABEL_ASSIGNMENT_KEY = "tribunal_label_assignment"
+# Libellé de tribunal donné par la source, gardé quand le tribunal déduit du code INSEE le remplace.
+SOURCE_LABEL_KEY = "tribunal_source_label"
+# Désaccord entre le tribunal nommé par la source et celui que le code INSEE désigne.
+LABEL_CONFLICT_KEY = "tribunal_label_conflict"
 
 TRIBUNAL_CODES = {
     "TJ Bordeaux": "bordeaux",
@@ -225,11 +229,13 @@ def _fill_tribunal_fields(sale: AuctionSale) -> AuctionSale:
     verified_insee_code = verified_sale_insee_code(sale)
     competent_court = resolve_competent_court(sale)
     if competent_court is not None:
+        # Le libellé de la source est lu avant d'être remplacé : il reste tracé, et un désaccord est signalé.
+        source_label = _source_label_before_replacement(sale)
         sale.tribunal = competent_court.court_name
         sale.tribunal_code = competent_court.court_code
         sale.raw_payload["tribunal_assignment"] = competent_court.evidence()
         sale.raw_payload.pop(LABEL_ASSIGNMENT_KEY, None)
-        _remove_quality_flag(sale, "tribunal_inconsistent")
+        _record_source_label(sale, source_label, competent_court)
         _remove_quality_flag(sale, "tribunal_competence_unresolved")
         _remove_quality_flag(sale, "tribunal_competence_unverified")
         return sale
@@ -294,6 +300,55 @@ def _fill_tribunal_fields(sale: AuctionSale) -> AuctionSale:
     if had_invalid_source_tribunal:
         _add_quality_flag(sale, "tribunal_inconsistent")
     return sale
+
+
+def _source_label_before_replacement(sale: AuctionSale) -> str | None:
+    """Le libellé de tribunal que la source a donné, avant que le tribunal du code INSEE ne le remplace.
+
+    Au premier passage, c'est ``sale.tribunal``. Aux suivants, ``sale.tribunal`` est déjà le tribunal déduit (celui de
+    ``tribunal_assignment``) : le libellé de la source est alors celui gardé dans ``tribunal_source_label``.
+    """
+    payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
+    current = clean_text(sale.tribunal)
+    assignment = payload.get("tribunal_assignment")
+    already_derived = isinstance(assignment, dict) and clean_text(assignment.get("court_name")) == current
+    if current and not already_derived:
+        return current
+    return clean_text(payload.get(SOURCE_LABEL_KEY))
+
+
+def _record_source_label(sale: AuctionSale, source_label: str | None, competent: object) -> None:
+    """Garde le libellé de la source et lève ``tribunal_inconsistent`` si son tribunal n'est pas celui du code INSEE.
+
+    Le tribunal déduit du code INSEE reste le tribunal affiché (décision par défaut) ; un libellé qui ne désigne aucun
+    tribunal du référentiel (« Paris », un lieu de vente) ne peut pas être comparé et ne signale rien.
+    """
+    payload = sale.raw_payload
+    competent_code = str(getattr(competent, "court_code", ""))
+    if source_label and source_label != sale.tribunal:
+        payload[SOURCE_LABEL_KEY] = source_label
+    else:
+        payload.pop(SOURCE_LABEL_KEY, None)
+    source_court = _source_label_court(source_label) if source_label else None
+    if source_court is not None and source_court.court_code != competent_code:
+        payload[LABEL_CONFLICT_KEY] = {
+            "source_label": source_label,
+            "source_court_code": source_court.court_code,
+            "source_court_name": source_court.court_name,
+            "competent_court_code": competent_code,
+            "competent_court_name": sale.tribunal,
+        }
+        _add_quality_flag(sale, "tribunal_inconsistent")
+    else:
+        payload.pop(LABEL_CONFLICT_KEY, None)
+        _remove_quality_flag(sale, "tribunal_inconsistent")
+
+
+def _source_label_court(label: str) -> OfficialCourt | None:
+    court = _resolve_label_court(label) or _resolve_label_court(canonicalize_tribunal(label))
+    if court is None:
+        court, _ = _resolve_polluted_label_court(label)
+    return court
 
 
 def _resolve_label_court(label: str | None) -> OfficialCourt | None:
