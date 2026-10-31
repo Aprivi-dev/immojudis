@@ -286,3 +286,58 @@ def test_a_new_surface_selection_replaces_stale_reasoning_markers() -> None:
 
     assert "surface_contradiction" not in sale.quality_flags
     assert "surface_unit_or_consistency_warning" not in sale.quality_flags
+
+
+# --- Total explicite que la somme des pièces ne retrouve pas : la surface écrite est conservée --------------------
+
+
+@pytest.mark.parametrize(
+    ("property_type", "text", "expected"),
+    [
+        (
+            "house",
+            "Maison comprenant au rez-de-chaussée un séjour de 30 m², une cuisine de 15 m², une chambre de 14 m² "
+            "et une chambre de 12 m². Surface habitable de 120 m².",
+            Decimal("120"),
+        ),
+        (
+            "apartment",
+            "Appartement : séjour de 25 m², cuisine de 10 m², chambre de 12 m². Surface habitable de 85 m².",
+            Decimal("85"),
+        ),
+    ],
+)
+def test_explicit_total_that_the_room_sum_does_not_match_keeps_the_surface(
+    property_type: str, text: str, expected: Decimal
+) -> None:
+    sale = _house(text, property_type=property_type)
+    asset = extract_surface_facts_from_text(text)
+    assert asset is not None
+    result = apply_surface_reasoning_to_sale(sale, [asset], context=text, source="test")
+    normalize_asset_features(sale)
+
+    assert [item["kind"] for item in result.contradictions] == ["explicit_total_vs_room_sum"]
+    assert result.selected is not None and result.selected.kind.startswith("explicit_")
+    assert "surface_contradiction" in sale.quality_flags
+    assert "surface_unit_or_consistency_warning" in sale.quality_flags
+    assert sale.app_surface_m2 == expected
+    assert "app_surface_withheld" not in sale.raw_payload
+
+
+def test_explicit_total_with_another_contradiction_is_still_withheld() -> None:
+    text = (
+        "Une maison de 120 m² et un bâtiment de 80 m² sur la parcelle. "
+        "Séjour de 30 m², cuisine de 15 m², chambre de 14 m²."
+    )
+    sale = _house(text)
+    asset = extract_surface_facts_from_text(text)
+    assert asset is not None
+    result = apply_surface_reasoning_to_sale(sale, [asset], context=text, source="test")
+    sale.app_surface_m2 = Decimal("120")
+    sale.app_surface_kind = "habitable"
+
+    assert any(item["kind"] == MULTIPLE_BUILDINGS_CONTRADICTION for item in result.contradictions)
+    withhold_ambiguous_app_surface(sale)
+
+    assert sale.app_surface_m2 is None
+    assert "surface_contradiction" in sale.raw_payload["app_surface_withheld"]["markers"]
