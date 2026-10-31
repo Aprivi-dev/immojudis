@@ -527,12 +527,61 @@ if (
 // raw_payload / observations / lawyer_contact feed v_auction_sales_app (security_invoker) and the
 // fiche displays the lawyer line: revoking them from `authenticated` without turning that view into
 // a definer view (stage 2 of 20261010003000) breaks the whole catalogue for connected users.
+// Stage 2 was applied by 20261110120000 (compte-rendu du 31/10/2026, n° 1): the three columns are no
+// longer readable by `authenticated` and v_auction_sales_app is a guarded definer view. Three rules keep it
+// that way:
+//   1. a migration that revokes them also makes the view a definer view with a security barrier, guarded by
+//      the predicate of the read policy (is_admin / has_analysis_access / readiness / quarantine);
+//   2. the stage is actually executed: a migration other than the one that created the function calls
+//      `set_catalogue_raw_columns_hidden(true)`;
+//   3. no later migration gives the columns back or turns the view back into an invoker view (the revert
+//      branch of the function itself, inside the migrations up to the applying one, is the only way back).
+const rawColumnHidingMigration = "20261110120000_hide_catalogue_raw_columns.sql";
+const rawColumnRevoke =
+  /revoke\s+select\s*\([^)]*\b(?:raw_payload|observations|lawyer_contact)\b[^)]*\)\s+on\s+(?:table\s+)?(?:public\.)?auction_sales\s+from\s+[^;]*\bauthenticated\b/i;
+const rawColumnRegrant =
+  /grant\s+select\s*\([^)]*\b(?:raw_payload|observations|lawyer_contact)\b[^)]*\)\s+on\s+(?:table\s+)?(?:public\.)?auction_sales\s+to\s+[^;]*\bauthenticated\b/i;
+const appViewAsInvoker =
+  /create\s+(?:or\s+replace\s+)?view\s+public\.v_auction_sales_app\b[^;]*security_invoker\s*=\s*true/i;
 for (const [name, migration] of migrationSources) {
-  const rawColumnRevoke =
-    /revoke\s+select\s*\([^)]*\b(?:raw_payload|observations|lawyer_contact)\b[^)]*\)\s+on\s+(?:table\s+)?(?:public\.)?auction_sales\s+from\s+[^;]*\bauthenticated\b/i;
-  if (rawColumnRevoke.test(migration) && !/security_invoker\s*=\s*false/i.test(migration)) {
+  const sql = migration.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--[^\n]*/g, "");
+  if (rawColumnRevoke.test(sql)) {
+    // The dormant function of 20261010003000 read the quarantine in raw_payload; the guard text of the
+    // applying migration reads the materialized column.
+    const guardedByReadPolicy =
+      /security_barrier\s*=\s*true/i.test(sql) &&
+      /is_admin\(\)/i.test(sql) &&
+      /has_analysis_access\(\)/i.test(sql) &&
+      /catalogue_readiness_allows_premium\(/i.test(sql) &&
+      (name < rawColumnHidingMigration || /catalogue_quarantined/i.test(sql));
+    if (!/security_invoker\s*=\s*false/i.test(sql) || !guardedByReadPolicy) {
+      failures.push(
+        `${name} revokes raw_payload/observations/lawyer_contact from authenticated without making v_auction_sales_app a definer view guarded by the read policy predicate`,
+      );
+    }
+  }
+  if (name > rawColumnHidingMigration) {
+    if (rawColumnRegrant.test(sql)) {
+      failures.push(
+        `${name} grants raw_payload/observations/lawyer_contact back to authenticated after ${rawColumnHidingMigration}`,
+      );
+    }
+    if (appViewAsInvoker.test(sql)) {
+      failures.push(
+        `${name} redefines v_auction_sales_app as an invoker view after ${rawColumnHidingMigration} (the raw columns are no longer readable by authenticated)`,
+      );
+    }
+  }
+}
+{
+  const hidingSource = (migrationSources.get(rawColumnHidingMigration) ?? "")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/--[^\n]*/g, "");
+  if (
+    !/select\s+app_private\.set_catalogue_raw_columns_hidden\(\s*true\s*\)\s*;/i.test(hidingSource)
+  ) {
     failures.push(
-      `${name} revokes raw_payload/observations/lawyer_contact from authenticated without making v_auction_sales_app a definer view`,
+      `${rawColumnHidingMigration} must execute app_private.set_catalogue_raw_columns_hidden(true) (raw columns still readable by authenticated)`,
     );
   }
 }
