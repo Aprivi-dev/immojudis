@@ -266,7 +266,7 @@ describe("SaleUnlockPanel", () => {
       "Vous avez utilisé vos 3 déblocages d’octobre. Ils reviennent le 1er novembre.",
     );
     expect(text).toContain(
-      "Analyse ouvre toutes les ventes sans limite : 59 € TTC / mois, résiliable à tout moment.",
+      "Analyse ouvre toutes les ventes sans limite : 59\u00a0€\u00a0TTC / mois, résiliable à tout moment.",
     );
     expect(screen.getByRole("link", { name: "Voir l’offre Analyse" }).getAttribute("href")).toBe(
       "/offres",
@@ -287,7 +287,7 @@ describe("SaleUnlockPanel", () => {
     );
     const text = container.textContent ?? "";
     expect(text).toContain("L’offre Analyse n’est pas encore ouverte à la souscription.");
-    expect(text).not.toMatch(/souscrire|59 €|résiliable/);
+    expect(text).not.toMatch(/souscrire|59[ \u00a0]€|résiliable/);
     expect(text).toContain("Ils reviennent le 1er novembre.");
     // The primary action is the opening request (loaded on demand), not a link to a page that
     // cannot sell it yet.
@@ -306,7 +306,7 @@ describe("SaleUnlockPanel", () => {
       />,
     );
     const text = container.textContent ?? "";
-    expect(text).not.toMatch(/souscri|59 €|résiliable|pas encore ouverte/);
+    expect(text).not.toMatch(/souscri|59[ \u00a0]€|résiliable|pas encore ouverte/);
     expect(screen.getByRole("link", { name: "Voir l’offre Analyse" })).toBeTruthy();
   });
 
