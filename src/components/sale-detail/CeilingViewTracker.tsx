@@ -3,21 +3,22 @@
 import { useEffect } from "react";
 import { trackProductEvent } from "@/lib/product-events";
 
-/** Ventes dont le plafond a déjà été compté dans cette page : un seul événement chacune. */
-const counted = new Set<string>();
+/** Le plafond a déjà été compté dans cette page : un seul événement par chargement de page. */
+let counted = false;
 
 /**
- * Mesure `ceiling_viewed` : le plafond d'enchère de la vente est calculé et affiché à la personne.
+ * Mesure `ceiling_viewed` : l'enchère plafond de la vente est calculée et affichée à la personne.
  * C'est le vrai usage de la fonction, à la différence de l'estimation servie à l'ouverture de la
- * fiche (`bid_ceiling_calculated`, côté serveur), qui part avant tout calcul. Une fois par vente
- * dans la page ; l'événement ne porte ni l'identifiant de la vente ni celui de la personne (liste
- * fermée de `product-events.ts`). Ne rend rien : monté à côté du bloc de calcul.
+ * fiche (`bid_ceiling_calculated`, côté serveur), qui part avant tout calcul. Une fois par
+ * chargement de page (le planificateur peut être remonté en changeant d'onglet) ; l'événement ne
+ * porte ni l'identifiant de la vente ni celui de la personne (liste fermée de `product-events.ts`).
+ * Ne rend rien : monté par `CeilingPlanner`, le bloc de calcul.
  */
-export function CeilingViewTracker({ saleId, computed }: { saleId: string; computed: boolean }) {
+export function CeilingViewTracker({ computed }: { computed: boolean }) {
   useEffect(() => {
-    if (!computed || counted.has(saleId)) return;
-    counted.add(saleId);
+    if (!computed || counted) return;
+    counted = true;
     trackProductEvent("ceiling_viewed");
-  }, [computed, saleId]);
+  }, [computed]);
   return null;
 }

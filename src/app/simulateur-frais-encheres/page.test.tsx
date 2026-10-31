@@ -28,7 +28,7 @@ describe("page /simulateur-frais-encheres", () => {
     );
     // Le dernier appel est l'inscription (compte gratuit), plus la page des offres.
     expect(html).toMatch(
-      /href="\/login\?redirect=%2Fsales&amp;mode=investor"[^>]*>\s*Créer mon compte gratuit/,
+      /href="\/login\?redirect=%2Fsales&amp;mode=investor&amp;reason=simulateur"[^>]*>\s*Créer mon compte gratuit/,
     );
     expect(html).not.toContain("Voir les offres");
   });

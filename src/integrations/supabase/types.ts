@@ -8134,6 +8134,7 @@ export type Database = {
           created_at: string;
           ends_on: string;
           error: string | null;
+          kind: string;
           message_id: string | null;
           sent_at: string | null;
           status: string;
@@ -8145,6 +8146,7 @@ export type Database = {
           created_at?: string;
           ends_on: string;
           error?: string | null;
+          kind?: string;
           message_id?: string | null;
           sent_at?: string | null;
           status?: string;
@@ -8156,6 +8158,7 @@ export type Database = {
           created_at?: string;
           ends_on?: string;
           error?: string | null;
+          kind?: string;
           message_id?: string | null;
           sent_at?: string | null;
           status?: string;
@@ -14816,6 +14819,10 @@ export type Database = {
       };
       claim_trial_card: {
         Args: { p_fingerprint_hash: string; p_user_id: string };
+        Returns: boolean;
+      };
+      claim_trial_end_notice: {
+        Args: { p_ends_on: string; p_now?: string; p_user_id: string };
         Returns: boolean;
       };
       claim_weekly_digest: {

@@ -21,12 +21,19 @@ import { buildTrialEndMessage } from "@/lib/trial-end-email";
  * - `on` : aux comptes de la file `get_trial_end_notice_queue` (essai qui se termine dans les deux
  *   jours, pas encore prévenus, non désinscrits).
  *
- * Un compte n'est prévenu qu'une fois par fin d'essai : la réservation `claim_launch_offer_end_notice`
- * (journal `launch_offer_end_notices`, clé compte + jour de fin) est prise AVANT l'envoi, comme celle du
- * récapitulatif hebdomadaire. Un échec reste dans le journal (`failed`, code fermé) et la file le
- * reprend dans les 23 heures, trois essais au plus ; la clé d'idempotence de Resend évite le doublon si
- * la réponse s'est perdue. La désinscription (lien du message) ajoute le compte à
- * `launch_offer_end_notice_optouts`, que la file exclut.
+ * Un compte n'est prévenu qu'une fois par fin d'essai : la réservation `claim_trial_end_notice`
+ * (journal `launch_offer_end_notices`, clé compte + jour de fin + type `trial_end`) est prise AVANT
+ * l'envoi, comme celle du récapitulatif hebdomadaire. Le type garde ce journal distinct du préavis
+ * global de fin de l'offre (lignes `launch_offer_end`) : les deux messages d'un même jour ne se bloquent
+ * pas. Un échec reste dans le journal (`failed`, code fermé) et la file le reprend dans les 23 heures du
+ * premier essai, trois essais au plus : le cron repasse à 14:30 le même jour quand son passage de 12:30
+ * a échoué (rattrapage, voir la route). Passé ce délai la ligne n'est plus rejouée (la clé d'idempotence
+ * de Resend ne protège d'un doublon que 24 heures) : elle est comptée dans `needsReview`, qui remonte
+ * dans le compte rendu du passage. La clé d'idempotence évite le doublon si une réponse s'est perdue.
+ *
+ * La désinscription (lien du message) est COMMUNE avec le préavis global : elle ajoute le compte à
+ * `launch_offer_end_notice_optouts`, que les deux files excluent. Un compte désinscrit de l'un ne reçoit
+ * pas l'autre, voulu (une seule liste, un seul geste).
  *
  * Le passage échoue (donc la supervision le voit) quand des envois ont échoué, que le délai l'a
  * interrompu, ou qu'un envoi est dû alors que Resend n'est pas configuré.
@@ -126,7 +133,8 @@ async function markNotice(
     .from("launch_offer_end_notices")
     .update({ ...patch, updated_at: now.toISOString() })
     .eq("user_id", recipient.userId)
-    .eq("ends_on", recipient.endsOn);
+    .eq("ends_on", recipient.endsOn)
+    .eq("kind", "trial_end");
   if (error) {
     // Le message est parti (ou a échoué) : on ne le rejoue pas pour autant, la réservation reste.
     console.warn(
@@ -174,7 +182,7 @@ export async function runTrialEndNotices({
     }
     try {
       const { data: claimed, error: claimError } = await supabaseAdmin.rpc(
-        "claim_launch_offer_end_notice",
+        "claim_trial_end_notice",
         { p_user_id: recipient.userId, p_ends_on: recipient.endsOn, p_now: now.toISOString() },
       );
       if (claimError) throw claimError;
@@ -201,7 +209,9 @@ export async function runTrialEndNotices({
         const result = await sendResendEmail({
           apiKey: config.apiKey,
           message,
-          idempotencyKey: `immojudis-launch-offer-end-${recipient.userId}-${recipient.endsOn}`,
+          // Préfixe `trial-end-` : le préavis global de fin de l'offre garde sa propre clé, sans quoi
+          // Resend prendrait l'un des deux messages d'un même jour pour un doublon de l'autre.
+          idempotencyKey: `trial-end-immojudis-launch-offer-end-${recipient.userId}-${recipient.endsOn}`,
           fetchImpl,
           category: "launch_offer_end",
         });

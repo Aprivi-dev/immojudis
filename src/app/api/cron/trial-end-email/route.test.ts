@@ -39,6 +39,12 @@ describe("trial end email cron route", () => {
     expect(mocks.runMonitoredCron.mock.calls[0][1]).toBe("trial-end-email");
   });
 
+  it("déclare le rattrapage de 14:30, qui ne repart que si le passage de 12:30 a échoué", async () => {
+    mocks.run.mockResolvedValueOnce({ mode: "off", due: 0 });
+    await runHandler();
+    expect(mocks.runMonitoredCron.mock.calls[0][3]).toEqual({ catchUpSchedule: "30 14 * * *" });
+  });
+
   it("lance le passage et vérifie qu'il est complet", async () => {
     mocks.run.mockResolvedValueOnce({ mode: "on", due: 1, sent: 1 });
     await runHandler();

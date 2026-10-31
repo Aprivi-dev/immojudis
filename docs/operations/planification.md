@@ -41,7 +41,7 @@ reste silencieuse.
 | Rappels d'audience et avertissements graves                | Vercel Cron        | 07:15, rattrapage 09:15                              | `/api/cron/sale-reminders`            | oui                                                  | 27 h                          |
 | Alertes de résultat ou de remise en vente                  | Vercel Cron        | 10:15                                                | `/api/cron/sale-results`              | journal d'exécution seulement                        | pas encore                    |
 | Récapitulatif hebdomadaire « Ma semaine »                  | Vercel Cron        | 11:30                                                | `/api/cron/weekly-digest`             | journal d'exécution seulement                        | pas encore                    |
-| Email de fin d'essai gratuit (J+5)                         | Vercel Cron        | 12:30                                                | `/api/cron/trial-end-email`           | journal d'exécution seulement                        | pas encore                    |
+| Email de fin d'essai gratuit (J+5)                         | Vercel Cron        | 12:30, rattrapage 14:30                              | `/api/cron/trial-end-email`           | journal d'exécution seulement                        | pas encore                    |
 | Rétention des données                                      | Vercel Cron        | dimanche 04:15                                       | `/api/cron/data-retention`            | oui                                                  | 8 jours                       |
 | Complétude des annonces (palier de classement de /sales)   | Supabase `pg_cron` | toutes les heures à :20                              | `/api/cron/listing-completeness`      | oui                                                  | 3 h                           |
 | Complétude des annonces (filet quotidien)                  | Vercel Cron        | 05:50, sans effet si `pg_cron` a réussi dans les 2 h | `/api/cron/listing-completeness`      | oui (même tâche, même seuil)                         | 3 h                           |
@@ -275,8 +275,13 @@ politique de confidentialité et du registre des traitements.
   aussi en `List-Unsubscribe`). Valeurs : `off` (défaut, rien n'est lu ni envoyé), `internal` (un message
   d'exemple « [Test interne] » par administrateur et par jour, aucun compte réel), `on`. À n'ouvrir
   qu'après relecture du texte et du registre des traitements par `juridique-rgpd`. Le passage échoue quand
-  un envoi est dû et que Resend n'est pas configuré, ou quand des envois échouent ; celui du lendemain
-  reprend (la file garde un compte tant que sa fin d'essai est à plus de 6 heures).
+  un envoi est dû et que Resend n'est pas configuré, ou quand des envois échouent ; le rattrapage de 14:30
+  (le même jour, seulement si le passage de 12:30 a échoué) reprend les envois en échec. La file ne
+  reprend un envoi que dans les 23 heures de son premier essai (la clé d'idempotence de Resend ne protège
+  d'un doublon que 24 heures) : passé ce délai, la ligne reste en `failed` et est comptée dans
+  `needsReview` du compte rendu du passage, à reprendre à la main. Le journal porte un type
+  (`kind = 'trial_end'`) qui le distingue du préavis global de fin de l'offre (`launch_offer_end`) : les
+  deux messages d'un même jour ne se bloquent pas. La désinscription reste commune aux deux.
 
 Les journaux des deux emails sont purgés à 180 jours par `run_data_retention` (cron hebdomadaire),
 même quand l'envoi est fermé. Les deux tâches ne sont pas encore dans la liste attendue de
@@ -284,8 +289,8 @@ même quand l'envoi est fermé. Les deux tâches ne sont pas encore dans la list
 elles réussissent sans rien faire ; les ajouter à la liste est une décision à prendre à l'ouverture
 (procédure plus bas).
 
-Les quatre tâches Vercel quotidiennes ont un second passage deux heures plus tard : il ne fait rien
-si la tâche a déjà réussi dans les 20 dernières heures (`catchUpSchedule` de `runMonitoredCron`).
+Les quatre tâches Vercel quotidiennes, et l'email de fin d'essai, ont un second passage deux heures plus
+tard : il ne fait rien si la tâche a déjà réussi dans les 20 dernières heures (`catchUpSchedule` de `runMonitoredCron`).
 Chaque passage réessaie 3 fois (5 s, 20 s, 60 s) sur une erreur réseau ou 5xx.
 
 ## Plan Vercel Hobby : ordre des tâches et seuil de `cron.stale`

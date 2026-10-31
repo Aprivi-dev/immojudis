@@ -72,7 +72,7 @@ function PageContent() {
             Essayer l’enchère plafond sur un exemple
           </Link>
           <Link
-            href={loginPathWithRedirect("/sales")}
+            href={loginPathWithRedirect("/sales", { reason: "simulateur" })}
             className={buttonClasses({ variant: "secondary", size: "md" })}
           >
             Créer mon compte gratuit
