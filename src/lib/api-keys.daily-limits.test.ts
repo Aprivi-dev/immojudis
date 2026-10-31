@@ -45,7 +45,12 @@ import { createUserApiKey } from "@/lib/api-keys";
 
 const request = new Request("https://immojudis.com/api/api-keys", { method: "POST" });
 // Les clés d'API sont réservées à l'administration (n° 97) : une clé n'a pas `isAdmin`, le rôle du titulaire compte.
-const auth = { userId: "user-1", claims: {}, userRole: "admin" } as unknown as SupabaseAuthContext;
+const auth = {
+  userId: "user-1",
+  claims: {},
+  userRole: "admin",
+  isAdmin: true,
+} as unknown as SupabaseAuthContext;
 const subscriber = {
   userId: "user-2",
   claims: {},

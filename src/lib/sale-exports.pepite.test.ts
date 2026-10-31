@@ -46,7 +46,7 @@ const request = new Request("https://immojudis.com/api/sales/feed");
 // Le flux API est réservé à l’administration (n° 97) : le rôle du titulaire compte (une clé n’a pas isAdmin).
 const auth = {
   userId: "user-1",
-  claims: {},
+  claims: { api_key_id: "key-1" },
   supabase: {},
   userRole: "admin",
 } as unknown as SupabaseAuthContext;

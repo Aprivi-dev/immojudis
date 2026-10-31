@@ -232,16 +232,21 @@ export function isSaleUnlockFeature(feature: FeatureKey): feature is SaleUnlockF
 }
 
 /**
- * Les clés d'API et le flux `/api/sales/feed` sont réservés à l'administration (n° 97). Une clé ne
- * porte jamais les droits d'administrateur (`isAdmin` faux) : le rôle du titulaire (`userRole`) est
- * donc lu aussi. Le droit `sales.apiAccess` de la matrice ouvrirait l'accès à un plan qui l'inclurait.
+ * Les clés d'API et le flux `/api/sales/feed` sont réservés à l'administration (n° 97).
+ * - Contexte de session : `isAdmin` est exigé (il impose aal2) ; le seul rôle `admin` du profil ne suffit pas.
+ * - Contexte de clé d'API (`claims.api_key_id`) : une clé ne porte jamais `isAdmin`, le rôle du titulaire
+ *   (`userRole`) est donc lu.
+ * Le droit `sales.apiAccess` de la matrice ouvrirait l'accès à un plan qui l'inclurait.
  */
 export function apiAccessAllowed(
-  auth: { isAdmin?: boolean; userRole?: string },
+  auth: { isAdmin?: boolean; userRole?: string; claims?: { api_key_id?: unknown } },
   plan: PlanCode,
 ): boolean {
+  const apiKeyContext = typeof auth.claims?.api_key_id === "string";
   return (
-    auth.isAdmin === true || auth.userRole === "admin" || featureIncluded(plan, "sales.apiAccess")
+    auth.isAdmin === true ||
+    (apiKeyContext && auth.userRole === "admin") ||
+    featureIncluded(plan, "sales.apiAccess")
   );
 }
 

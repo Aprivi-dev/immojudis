@@ -54,7 +54,7 @@ const auth = { userId: "user-1", claims: {}, supabase: {} } as unknown as Supaba
 // Le flux API est réservé à l'administration (n° 97) : une clé n'a pas `isAdmin`, le rôle du titulaire compte.
 const adminAuth = {
   userId: "user-1",
-  claims: {},
+  claims: { api_key_id: "key-1" },
   supabase: {},
   userRole: "admin",
 } as unknown as SupabaseAuthContext;
