@@ -106,7 +106,7 @@ describe("/api/health", () => {
       available: true,
       status: "ok",
       checkedAt: NOW.toISOString(),
-      operationalHealth: { ageMinutes: 7, maxMinutes: 45, ok: true },
+      operationalHealth: { ageMinutes: 7, maxMinutes: 65, ok: true },
       collection: { ageHours: 5, maxHours: 36, ok: true, enabledSources: 2, lateSources: 0 },
       scheduledJobs: { lateCount: 0, ok: true },
     });
@@ -160,19 +160,19 @@ describe("/api/health", () => {
     ).toEqual([{ table: "auction_source_state", method: "eq", args: ["enabled", true] }]);
   });
 
-  it("reste disponible (200) mais dégradée au-delà de 45 minutes sans succès de operational-health", async () => {
-    answer({ healthAt: ago(46 * 60_000), collections: [ago(3_600_000)] });
+  it("reste disponible (200) mais dégradée au-delà de 65 minutes sans succès de operational-health", async () => {
+    answer({ healthAt: ago(66 * 60_000), collections: [ago(3_600_000)] });
     const response = await call();
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.status).toBe("degraded");
     expect(body.available).toBe(true);
-    expect(body.operationalHealth).toMatchObject({ ageMinutes: 46, ok: false });
+    expect(body.operationalHealth).toMatchObject({ ageMinutes: 66, ok: false });
     expect(body.collection.ok).toBe(true);
   });
 
-  it("tolère exactement 45 minutes", async () => {
-    answer({ healthAt: ago(45 * 60_000), collections: [ago(3_600_000)] });
+  it("tolère exactement 65 minutes", async () => {
+    answer({ healthAt: ago(65 * 60_000), collections: [ago(3_600_000)] });
     expect((await call()).status).toBe(200);
   });
 

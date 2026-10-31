@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
  * Supervision indépendante, en deux niveaux. Disponibilité : 200 tant que le site et la base répondent
  * (`available: true`), 503 seulement quand la base ne répond pas. Fraîcheur : `status` vaut `ok` ou
  * `degraded` dans le corps, avec l'âge du dernier succès de `operational-health` (dégradé au-delà de
- * 45 min) et l'état de la collecte des sources ACTIVÉES (dégradé quand l'une d'elles n'a pas de
+ * 65 min) et l'état de la collecte des sources ACTIVÉES (dégradé quand l'une d'elles n'a pas de
  * publication complète depuis plus de 36 h, ou n'en a jamais eu) : un retard de collecte ne rend plus la
  * route 503 en permanence. `scheduledJobs` donne le nombre de tâches planifiées en retard (alerte `cron.stale`),
  * sans nom : il distingue la panne d'une tâche du retard ancien d'une source. Publique et sans détail sensible (voir `src/lib/health-status.ts`). Voir

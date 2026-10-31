@@ -1,11 +1,11 @@
 # Supervision indépendante (`/api/health` et sonde externe)
 
-Mis à jour le 27 octobre 2026.
+Mis à jour le 31 octobre 2026 (seuil d'`operational-health` porté à 65 min).
 
 ## Pourquoi
 
 Toutes les alertes de l'application sont évaluées par une seule chaîne : Supabase `pg_cron`
-(toutes les 15 min) appelle `/api/cron/operational-health` sur Vercel, qui évalue les alertes en base
+(tick de 15 min, passage effectif toutes les 30 min depuis le 30/10/2026) appelle `/api/cron/operational-health` sur Vercel, qui évalue les alertes en base
 et les transmet à GitHub Actions (`operational-alert.yml`). Si un maillon de cette chaîne s'arrête
 (site tombé, `pg_cron` désactivé, secret Vault perdu, GitHub qui ne planifie plus), personne n'est
 averti : il n'y a plus de signal du tout, pas même une alerte ouverte. Le test de fumée
@@ -58,8 +58,8 @@ nouvelle d'un retard ancien.
 
 | Cas                                                                                                                       | Statut HTTP                       | `available` | `status`   |
 | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------- | ----------- | ---------- |
-| `operational-health` a réussi il y a 45 min ou moins ET chaque source activée a une publication complète de moins de 36 h | 200                               | `true`      | `ok`       |
-| dernier succès de `operational-health` de plus de 45 min (ou jamais)                                                      | 200                               | `true`      | `degraded` |
+| `operational-health` a réussi il y a 65 min ou moins ET chaque source activée a une publication complète de moins de 36 h | 200                               | `true`      | `ok`       |
+| dernier succès de `operational-health` de plus de 65 min (ou jamais)                                                      | 200                               | `true`      | `degraded` |
 | une source activée sans publication complète depuis plus de 36 h (ou jamais), ou aucune source activée                    | 200                               | `true`      | `degraded` |
 | base de données injoignable                                                                                               | 503                               | `false`     | `degraded` |
 | site ou route injoignable                                                                                                 | pas de réponse, 5xx (côté Vercel) |             |            |
@@ -74,8 +74,9 @@ plus bas).
 Le détail d'une erreur reste dans les journaux Vercel (`scope: "api.health"`), jamais dans la
 réponse.
 
-Les seuils sont dans `src/lib/health-status.ts` (45 min, 36 h). Le premier suit celui de `cron.stale`
-(`operational-health` : 45 min). Le second est plus large que l'alerte `pipeline.source.<source>.missed`
+Les seuils sont dans `src/lib/health-status.ts` (65 min, 36 h). Le premier suit celui de `cron.stale`
+(`operational-health` : 65 min, soit deux passages de 30 min plus la durée d'un passage ; voir
+`docs/operations/planification.md`, « Cadences réelles »). Le second est plus large que l'alerte `pipeline.source.<source>.missed`
 (18 h) : la sonde publique ne doit pas osciller sur un cycle de collecte un peu long.
 
 ## Poser la sonde (une fois, par le propriétaire)
@@ -96,8 +97,9 @@ dépend ni de Vercel, ni de Supabase, ni de GitHub.
      adresse : mot-clé `"status":"ok"`, alerte quand il est **absent** (sensible à la casse).
    - Délai maximal : 30 secondes. Contacts d'alerte : ceux de l'étape 1.
 3. Régler « alerte après 2 échecs consécutifs » (si l'option existe) : un passage tardif de
-   `operational-health` d'un quart d'heure ne doit réveiller personne, mais 45 minutes sans succès
-   oui. La route elle-même ne devient `degraded` qu'au-delà de 45 minutes (monitor Keyword).
+   `operational-health` d'un quart d'heure ne doit réveiller personne (le passage normal est toutes les
+   30 minutes), mais 65 minutes sans succès oui. La route elle-même ne devient `degraded` qu'au-delà de
+   65 minutes (monitor Keyword).
 4. Vérifier : couper le monitor 1 minute et le relancer, ou appeler l'URL à la main
    (`curl -si https://immojudis.com/api/health`) et lire `status`.
 
@@ -115,8 +117,10 @@ Disponibilité (échec immédiat) :
 - réponse périmée : `checkedAt` à plus de **120 s** de l'heure du test (ou absent). Le CDN de Vercel
   réécrit `cache-control` pour le client (`public`, sans `s-maxage`), si bien que l'en-tête n'est plus
   contrôlé : c'est `checkedAt` qui prouve que la réponse vient d'être calculée ;
-- `operational-health` sans succès depuis plus de **60 min** (le seuil de la route est 45 min ; un tick de
-  15 min en retard ne doit réveiller personne).
+- `operational-health` sans succès depuis plus de **60 min** (seuil du script, inchangé : celui de la route est
+  désormais 65 min, le test échoue donc 5 min avant que la route ne devienne `degraded` ; un passage normal
+  est toutes les 30 min, donc 60 min sans succès sont deux passages manqués. À relever si des faux échecs
+  apparaissent).
 
 Fraîcheur de la collecte (échec seulement au-delà d'un seuil durable) :
 
