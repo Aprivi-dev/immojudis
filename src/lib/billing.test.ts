@@ -13,9 +13,11 @@ import {
   buildAnalysisCheckoutSessionParams,
   canReleaseCheckoutReservationAfterFailure,
   isAnalysisSubscriptionPrice,
+  isRecognisedAnalysisPrice,
   resolveBillingOrigin,
   resolveCheckoutPlanCode,
   resolveStripePlanCode,
+  stripeDisputeIsCleared,
   stripeDisputeStatusToPaymentState,
   stripeDisputeStatusToPlanStatus,
   stripeRefundRequiresAccessRevocation,
@@ -139,6 +141,23 @@ describe("billing helpers", () => {
     );
     expect(stripeDisputeStatusToPlanStatus("won", "2026-08-01T00:00:00.000Z", now)).toBe("active");
     expect(stripeDisputeStatusToPlanStatus("won", "2026-07-01T00:00:00.000Z", now)).toBe("expired");
+    // n° 46 : un litige qui n'a jamais abouti rend l'accès, il ne reste pas suspendu à vie.
+    for (const cleared of ["warning_closed", "prevented"]) {
+      expect(stripeDisputeIsCleared(cleared)).toBe(true);
+      expect(stripeDisputeStatusToPlanStatus(cleared, "2026-08-01T00:00:00.000Z", now)).toBe(
+        "active",
+      );
+      expect(stripeDisputeStatusToPaymentState(cleared)).toBe("cleared");
+    }
+    for (const open of [
+      "needs_response",
+      "under_review",
+      "warning_needs_response",
+      "warning_under_review",
+    ]) {
+      expect(stripeDisputeIsCleared(open)).toBe(false);
+      expect(stripeDisputeStatusToPaymentState(open)).toBe("disputed");
+    }
     expect(stripeDisputeStatusToPaymentState("under_review")).toBe("disputed");
     expect(stripeDisputeStatusToPaymentState("lost")).toBe("dispute_lost");
     expect(stripeDisputeStatusToPaymentState("won")).toBe("cleared");
@@ -225,8 +244,25 @@ describe("billing helpers", () => {
     expect(isAnalysisSubscriptionPrice("price_ok", { STRIPE_ANALYSIS_PRICE_ID: "price_ok" })).toBe(
       true,
     );
-    // Before the price is configured nothing can be compared.
-    expect(isAnalysisSubscriptionPrice("price_other", {})).toBe(true);
-    expect(isAnalysisSubscriptionPrice(null, { STRIPE_ANALYSIS_PRICE_ID: "price_ok" })).toBe(true);
+    // Fermé par défaut (n° 47) : sans Price configuré, ou sans Price sur l'abonnement, rien n'est reconnu.
+    expect(isAnalysisSubscriptionPrice("price_other", {})).toBe(false);
+    expect(isAnalysisSubscriptionPrice(null, { STRIPE_ANALYSIS_PRICE_ID: "price_ok" })).toBe(false);
+    expect(
+      isAnalysisSubscriptionPrice("price_old", { STRIPE_ANALYSIS_LEGACY_PRICE_IDS: "price_old" }),
+    ).toBe(true);
+  });
+
+  it("compares the current Price amount with 59 EUR, but trusts the declared legacy Prices", () => {
+    const env = {
+      STRIPE_ANALYSIS_PRICE_ID: "price_ok",
+      STRIPE_ANALYSIS_LEGACY_PRICE_IDS: "price_old",
+    };
+    expect(isRecognisedAnalysisPrice({ id: "price_ok", unit_amount: 5_900 }, env)).toBe(true);
+    expect(isRecognisedAnalysisPrice({ id: "price_ok", unit_amount: 3_000 }, env)).toBe(false);
+    expect(isRecognisedAnalysisPrice({ id: "price_ok", unit_amount: null }, env)).toBe(false);
+    expect(isRecognisedAnalysisPrice({ id: "price_old", unit_amount: 4_900 }, env)).toBe(true);
+    expect(isRecognisedAnalysisPrice({ id: "price_other", unit_amount: 5_900 }, env)).toBe(false);
+    expect(isRecognisedAnalysisPrice({ id: "price_ok", unit_amount: 5_900 }, {})).toBe(false);
+    expect(isRecognisedAnalysisPrice(undefined, env)).toBe(false);
   });
 });

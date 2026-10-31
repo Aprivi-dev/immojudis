@@ -88,10 +88,10 @@ insert into auth.users (
     '{}'::jsonb, '{}'::jsonb
   );
 
-insert into public.user_subscriptions (user_id, plan_code, status)
+insert into public.user_subscriptions (user_id, plan_code, status, current_period_end)
 values
-  ('76000000-0000-4000-8000-000000000001', 'analyse', 'active'),
-  ('76000000-0000-4000-8000-000000000003', 'decouverte', 'active');
+  ('76000000-0000-4000-8000-000000000001', 'analyse', 'active', now() + interval '30 days'),
+  ('76000000-0000-4000-8000-000000000003', 'decouverte', 'active', null);
 
 insert into public.auction_sales (id, source_name, source_url, title)
 values
