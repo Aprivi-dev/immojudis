@@ -173,6 +173,41 @@ describe("alert yield criterion", () => {
   });
 });
 
+describe("département de l'alerte", () => {
+  const match = (alertDepartment: string | null, saleDepartment: string | null) =>
+    alertMatchesSale(
+      // Sans critère de rendement : le loyer de référence dépend du département et masquerait le test.
+      makeAlert({ department: alertDepartment, min_yield_pct: null }),
+      makeSale({ department: saleDepartment }),
+      { marketDiscountPct: 30 },
+    );
+
+  it("compare les codes des deux côtés : le catalogue contient parfois le nom du département", () => {
+    expect(match("33", "Gironde").matches).toBe(true);
+    expect(match("Gironde", "33").matches).toBe(true);
+    expect(match("33", "33").matches).toBe(true);
+    expect(match("2A", "Corse-du-Sud").matches).toBe(true);
+    expect(match("31", "Haute-Garonne").matches).toBe(true);
+  });
+
+  it("ne confond pas deux départements", () => {
+    const result = match("33", "Landes");
+    expect(result).toMatchObject({ matches: false, reasons: ["département différent"] });
+    expect(match("33", "40").matches).toBe(false);
+    expect(match("33", "Dordogne").matches).toBe(false);
+  });
+
+  it("ne retient pas une vente sans département quand l'alerte en demande un", () => {
+    expect(match("33", null).matches).toBe(false);
+    expect(match("33", "").matches).toBe(false);
+  });
+
+  it("ne compare tel quel (sans casse ni accents) qu'un texte qui n'est pas un département connu", () => {
+    expect(match("Zone Test", "zone test").matches).toBe(true);
+    expect(match("Zone Test", "33").matches).toBe(false);
+  });
+});
+
 describe("smart alert matching", () => {
   it("respects the saved sale family, including judicial-origin notarial sales", () => {
     const alert = makeAlert({ advanced_criteria: { sale_type: "notary" } });
