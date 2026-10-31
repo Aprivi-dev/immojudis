@@ -87,7 +87,8 @@ def test_geocode_sale_replaces_coordinates_outside_department(monkeypatch) -> No
 
     def fake_geocode_address(**kwargs):
         assert kwargs["query"] == "21 Boulevard Jean Sarrailh 64000 PAU"
-        assert kwargs["postcode"] == "64000"
+        # 64000 est un code postal générique (fini par 000) : la BAN ne le prend pas en filtre.
+        assert kwargs["postcode"] is None
         return GeocodeResult(
             latitude=Decimal("43.308358"),
             longitude=Decimal("-0.37106"),

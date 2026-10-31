@@ -9,6 +9,8 @@ Drapeaux de position (``quality_flags``), exposés à la garde de la vue aérien
 * ``unverified_source_coordinates`` : les coordonnées de la source sont possibles mais suspectes (à plus de
   ``SUSPECT_DISTANCE_KM`` du centre de leur commune) et aucune adresse n'a pu les confirmer ; le point reste.
 * ``geocode_outside_department`` : le géocodage a trouvé un point hors du département de la vente ; il a été refusé.
+* ``geocode_commune_mismatch`` : le géocodage a trouvé un point dans une autre commune que celle de la vente (rue
+  homonyme) ; il a été refusé.
 
 Un drapeau décrit la position actuelle : dès qu'une position vérifiée remplace ou confirme le point, ils sont retirés
 (``clear_position_flags``). Le recalcul des ventes repart d'une liste vide et ne garde que ces trois drapeaux, et
@@ -32,7 +34,10 @@ from difflib import SequenceMatcher
 IMPLAUSIBLE_COORDINATES = "implausible_coordinates"
 UNVERIFIED_SOURCE_COORDINATES = "unverified_source_coordinates"
 GEOCODE_OUTSIDE_DEPARTMENT = "geocode_outside_department"
-POSITION_FLAGS = frozenset({IMPLAUSIBLE_COORDINATES, UNVERIFIED_SOURCE_COORDINATES, GEOCODE_OUTSIDE_DEPARTMENT})
+GEOCODE_COMMUNE_MISMATCH = "geocode_commune_mismatch"
+POSITION_FLAGS = frozenset(
+    {IMPLAUSIBLE_COORDINATES, UNVERIFIED_SOURCE_COORDINATES, GEOCODE_OUTSIDE_DEPARTMENT, GEOCODE_COMMUNE_MISMATCH}
+)
 PROBABLE_DUPLICATE = "probable_duplicate"
 # Ce que le recalcul d'une ligne garde de la liste lue en base (il ne peut pas le redéduire du texte de la vente).
 PRESERVED_FLAGS = POSITION_FLAGS | {PROBABLE_DUPLICATE}

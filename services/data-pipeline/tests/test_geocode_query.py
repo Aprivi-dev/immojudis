@@ -71,7 +71,9 @@ def test_a_clean_address_keeps_the_historical_query() -> None:
         == "21 Boulevard Jean Sarrailh 64000 PAU"
     )
     assert build_geocode_query(_sale("10 rue Exemple", "33000", "Bordeaux")) == "10 rue Exemple 33000 Bordeaux"
-    assert geocode_postcode(_sale("10 rue Exemple", "33000", "Bordeaux")) == "33000"
+    # 33000 est un code postal générique (fini par 000) : la BAN ne le prend pas en filtre.
+    assert geocode_postcode(_sale("10 rue Exemple", "33000", "Bordeaux")) is None
+    assert geocode_postcode(_sale("10 rue Exemple", "33100", "Bordeaux")) == "33100"
 
 
 def test_the_sale_postal_code_is_kept_when_the_address_has_none() -> None:
