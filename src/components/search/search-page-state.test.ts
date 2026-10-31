@@ -7,6 +7,7 @@ import {
   historyModeForDraftChange,
   priceRangeError,
   searchToDraft,
+  surfaceRangeError,
 } from "./search-page-state";
 
 describe("saisie des nombres", () => {
@@ -59,6 +60,22 @@ describe("priceRangeError", () => {
 
   it("compare les montants tels qu'ils seront cherchés (plafonnés)", () => {
     expect(range("1e30", "1e31")).toBeNull();
+  });
+});
+
+describe("surfaceRangeError", () => {
+  const range = (minSqft: string, maxSqft: string) => surfaceRangeError({ minSqft, maxSqft });
+
+  it("dit que la surface minimum dépasse le maximum", () => {
+    expect(range("120", "60")).toBe("La surface minimum dépasse le maximum");
+  });
+
+  it("se tait quand les surfaces sont cohérentes, égales ou incomplètes", () => {
+    expect(range("60", "120")).toBeNull();
+    expect(range("60", "60")).toBeNull();
+    expect(range("60", "")).toBeNull();
+    expect(range("", "60")).toBeNull();
+    expect(range("abc", "60")).toBeNull();
   });
 });
 

@@ -239,6 +239,15 @@ export function priceRangeError(draft: Pick<SearchDraft, "minPrice" | "maxPrice"
   return min != null && max != null && min > max ? MIN_PRICE_ABOVE_MAX_MESSAGE : null;
 }
 
+const MIN_SURFACE_ABOVE_MAX_MESSAGE = "La surface minimum dépasse le maximum";
+
+/** Message à afficher quand la surface minimum saisie dépasse le maximum, sinon `null`. */
+export function surfaceRangeError(draft: Pick<SearchDraft, "minSqft" | "maxSqft">): string | null {
+  const min = draftNumber(draft.minSqft);
+  const max = draftNumber(draft.maxSqft);
+  return min != null && max != null && min > max ? MIN_SURFACE_ABOVE_MAX_MESSAGE : null;
+}
+
 export function cleanString(value: string) {
   return value.trim() || undefined;
 }

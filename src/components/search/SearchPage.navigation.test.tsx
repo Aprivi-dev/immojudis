@@ -329,6 +329,24 @@ describe("/sales : adresse nettoyée", () => {
     await waitFor(() => expect(window.location.search).toBe("?maxPrice=100000000"));
   });
 
+  it("échange les bornes inversées d'une adresse ouverte (mise à prix et surface)", async () => {
+    renderSales("/sales?minPrice=500000&maxPrice=100000&minSqft=120&maxSqft=40");
+    await waitFor(() =>
+      expect(window.location.search).toBe(
+        "?minPrice=100000&maxPrice=500000&minSqft=40&maxSqft=120",
+      ),
+    );
+  });
+
+  it("n'échange pas les champs pendant la saisie : le minimum provisoirement au-dessus du maximum reste", async () => {
+    renderSales("/sales?maxPrice=100000");
+    await act(async () => {
+      window.history.replaceState(null, "", "/sales?minPrice=500000&maxPrice=100000");
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(window.location.search).toBe("?minPrice=500000&maxPrice=100000");
+  });
+
   it("ne touche pas à une adresse déjà claire", () => {
     renderSales("/sales?city=Pau&sort=price_asc");
     // Seul l'appel qui pose l'adresse du test : la page ne la réécrit pas.
