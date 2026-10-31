@@ -607,3 +607,111 @@ describe("réponse directe et FAQ des articles clés (n° 82)", () => {
     expect(article.faq).toHaveLength(5);
   });
 });
+
+describe("trois articles du 31/10/2026 : fiscalité, glossaire, DPE (n° 83)", () => {
+  const TAXATION = "fiscalite-achat-encheres-occuper-louer-revendre";
+  const GLOSSARY = "glossaire-encheres-immobilieres";
+  const ENERGY = "dpe-diagnostics-travaux-bien-energivore-plafond";
+  const SLUGS = [TAXATION, GLOSSARY, ENERGY] as const;
+
+  it.each(SLUGS)(
+    "%s : publié le 31/10/2026, titre de l'onglet sous 60 caractères, sources officielles",
+    (slug) => {
+      const article = getResourceArticle(slug)!;
+      expect(article).toBeDefined();
+      expect(article.publishedAt).toBe("2026-10-31");
+      expect(article.sources.length).toBeGreaterThanOrEqual(3);
+      expect(article.seoDescription).toBeDefined();
+      const hosts = article.sources.flatMap((source) =>
+        source.url.startsWith("https://") ? [new URL(source.url).hostname] : [],
+      );
+      expect(hosts.some((host) => /legifrance\.gouv\.fr|service-public\.gouv\.fr/.test(host))).toBe(
+        true,
+      );
+    },
+  );
+
+  it.each(SLUGS)("%s : aucune promesse de gain ni conseil d'enchérir", (slug) => {
+    expect(visibleText(getResourceArticle(slug)!), slug).not.toMatch(
+      /garanti[es]? de gagner|rendement garanti|sans risque|bonne affaire|nous vous conseillons d’enchérir/i,
+    );
+  });
+
+  it("fiscalité : plus-value, revenus fonciers, marchand de biens, avec renvoi à un professionnel", () => {
+    const article = getResourceArticle(TAXATION)!;
+    const text = visibleText(article);
+    for (const fragment of [
+      "19 %",
+      "17,2 %",
+      "15 000 €",
+      "7,5 %",
+      "22 ans",
+      "30 ans",
+      "art. 35 du Code général des impôts",
+      "article 1115",
+      "cinq ans",
+      "expert-comptable",
+    ]) {
+      expect(text, fragment).toContain(fragment);
+    }
+    expect(text).toContain("Rien ici n’est un conseil fiscal personnalisé");
+    expect(article.sources.some((source) => /article 1115/.test(source.label))).toBe(true);
+    expect(article.sources.some((source) => /BOI-ENR-DMTOI-10-50/.test(source.label))).toBe(true);
+    expect(article.faq!.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("glossaire : 40 à 60 termes, une phrase chacun, avec un renvoi vers un article qui existe et une source", () => {
+    const article = getResourceArticle(GLOSSARY)!;
+    const entries = article.sections.flatMap((section) => section.glossary ?? []);
+    expect(entries.length).toBeGreaterThanOrEqual(40);
+    expect(entries.length).toBeLessThanOrEqual(60);
+    const terms = entries.map((entry) => entry.term);
+    expect(new Set(terms).size).toBe(terms.length);
+    const known = new Set(["/methode-pepites", ...RESOURCE_ARTICLES.map((item) => item.href)]);
+    for (const entry of entries) {
+      expect(sentenceCount(entry.definition), entry.term).toBe(1);
+      expect(entry.definition.trim().endsWith("."), entry.term).toBe(true);
+      expect(entry.source?.trim(), entry.term).toBeTruthy();
+      expect(entry.href, entry.term).toBeDefined();
+      expect(known.has(entry.href!), `${entry.term} -> ${entry.href}`).toBe(true);
+    }
+    expect(terms).toEqual(
+      expect.arrayContaining(["Adjudication", "Surenchère", "Mise à prix", "Émoluments"]),
+    );
+  });
+
+  it("glossaire : reprend les mêmes chiffres que les articles (garantie de 10 %, 3 000 €, dix jours)", () => {
+    const entries = getResourceArticle(GLOSSARY)!.sections.flatMap(
+      (section) => section.glossary ?? [],
+    );
+    const guarantee = entries.find((entry) => entry.term === "Garantie pour enchérir")!;
+    expect(guarantee.definition).toContain("10 % de la mise à prix");
+    expect(guarantee.definition).toContain("3 000 €");
+    expect(entries.find((entry) => entry.term === "Surenchère")!.definition).toContain(
+      "un dixième du prix principal",
+    );
+    expect(entries.find((entry) => entry.term === "Surenchère")!.definition).toContain("dix jours");
+  });
+
+  it("DPE : calendrier des interdictions de location sourcé (2025, 2028, 2034) et renvoi vers le plafond", () => {
+    const article = getResourceArticle(ENERGY)!;
+    const calendar = article.sections.find((section) => section.id === "calendrier")!;
+    const rows = calendar.table!.rows;
+    expect(rows.map((row) => row[0])).toEqual([
+      "En 2023 et 2024",
+      "De 2025 à 2027",
+      "De 2028 à 2033",
+      "À partir de 2034",
+    ]);
+    expect(rows[0][1]).toContain("450 kWh");
+    expect(rows[1][1]).toBe("Classe A à F");
+    expect(rows[2][1]).toBe("Classe A à E");
+    expect(rows[3][1]).toBe("Classe A à D");
+    const text = visibleText(article);
+    expect(text).toContain("art. L. 271-4 du Code de la construction et de l’habitation");
+    expect(text).toContain("Service-Public");
+    expect(text).toContain("enchère plafond");
+    expect(article.sources.some((source) => /vosdroits\/F2042$/.test(source.url))).toBe(true);
+    expect(article.sources.some((source) => /L\. 271-4/.test(source.label))).toBe(true);
+  });
+});

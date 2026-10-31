@@ -172,4 +172,27 @@ describe("article page", () => {
       name: "Immojudis",
     });
   });
+  it("rend le glossaire en liste de définitions avec lien vers l'article détaillé et source", async () => {
+    const glossary = Promise.resolve({ slug: "glossaire-encheres-immobilieres" });
+    const html = renderToStaticMarkup(await Page({ params: glossary }));
+    expect(html).toContain("<dl");
+    expect(html).toContain("<dt>Adjudication</dt>");
+    expect(html).toContain("Pour approfondir");
+    expect(html).toContain("Source : ");
+    expect(html).toContain('href="/ressources/jour-audience-encheres-role-avocat"');
+    expect(html).not.toContain("Questions fréquentes");
+  });
+
+  it("rend les trois nouveaux articles sans erreur, avec FAQPage pour la fiscalité et le DPE", async () => {
+    for (const slug of [
+      "fiscalite-achat-encheres-occuper-louer-revendre",
+      "dpe-diagnostics-travaux-bien-energivore-plafond",
+    ]) {
+      const html = renderToStaticMarkup(await Page({ params: Promise.resolve({ slug }) }));
+      const types = structuredData(html)["@graph"].map(
+        (node: { "@type": string }) => node["@type"],
+      );
+      expect(types, slug).toEqual(["BlogPosting", "BreadcrumbList", "FAQPage"]);
+    }
+  });
 });

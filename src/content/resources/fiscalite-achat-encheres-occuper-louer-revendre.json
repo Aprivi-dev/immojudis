@@ -1,0 +1,173 @@
+{
+  "slug": "fiscalite-achat-encheres-occuper-louer-revendre",
+  "publishedAt": "2026-10-31",
+  "title": "Fiscalité d’un achat aux enchères : occuper, louer ou revendre",
+  "seoTitle": "Fiscalité d’un achat aux enchères immobilières",
+  "category": "Investissement",
+  "description": "Les impôts qui suivent une adjudication selon votre projet : habiter le bien, le louer ou le revendre. Des repères prudents, avec leurs sources officielles, à faire valider par un professionnel.",
+  "seoDescription": "Habiter, louer ou revendre un bien acheté aux enchères : taxe foncière, revenus fonciers, plus-value, marchand de biens. Repères sourcés, sans conseil fiscal.",
+  "directAnswer": "L’impôt qui suit une adjudication dépend de ce que vous faites du bien. Si vous l’habitez, vous payez la taxe foncière et la plus-value d’une revente future est exonérée ; si vous le louez, les loyers sont imposés (revenus fonciers pour une location nue) ; si vous le revendez, la plus-value est en principe taxée à 19 % d’impôt sur le revenu et 17,2 % de prélèvements sociaux, avec des abattements selon la durée de détention. Ces repères sont généraux : faites valider votre projet par un expert-comptable ou un avocat fiscaliste.",
+  "intro": [
+    "L’adjudication, c’est-à-dire l’attribution du bien au dernier enchérisseur, fixe le prix, pas votre fiscalité. Ce que vous paierez ensuite comme impôts dépend de l’usage que vous ferez du bien : l’habiter, le louer ou le revendre. Chaque projet relève de règles différentes, et un même bien peut passer de l’un à l’autre.",
+    "Cet article donne des repères sur la fiscalité d’un particulier. Les règles citées ont été relues le 31 octobre 2026 sur service-public.fr, impots.gouv.fr, le BOFiP (la doctrine de l’administration fiscale) et Légifrance. Les lois de finances les modifient souvent. Rien ici n’est un conseil fiscal personnalisé : un expert-comptable, un avocat fiscaliste ou le notaire doivent confirmer le régime qui s’applique à votre situation, avant d’enchérir."
+  ],
+  "takeaways": [
+    "Trois projets, trois régimes : habiter (taxe foncière, plus-value exonérée à la revente), louer (revenus fonciers ou, en meublé, bénéfices industriels et commerciaux) et revendre (plus-value des particuliers, ou bénéfices professionnels pour un marchand de biens).",
+    "La plus-value d’un particulier est imposée à 19 % d’impôt sur le revenu et 17,2 % de prélèvements sociaux, avec des abattements selon la durée de détention.",
+    "Les frais d’acquisition réellement payés (droits de mutation, émoluments) peuvent majorer le prix d’acquisition à la place du forfait de 7,5 % : gardez les justificatifs.",
+    "Acheter de façon habituelle pour revendre peut faire de vous un marchand de biens, avec un régime fiscal propre.",
+    "Les règles changent d’une année à l’autre : vérifiez-les à la date de votre achat, avec un professionnel."
+  ],
+  "sections": [
+    {
+      "id": "trois-projets",
+      "title": "Trois projets, trois régimes",
+      "paragraphs": [
+        "Le tableau résume l’essentiel pour un particulier. Les sections suivantes détaillent chaque ligne. Un revenu foncier est un loyer tiré d’un logement loué nu, c’est-à-dire vide de meubles."
+      ],
+      "table": {
+        "headers": ["Projet", "Impôts principaux", "Où vérifier"],
+        "rows": [
+          [
+            "Habiter le bien",
+            "Taxe foncière due par le propriétaire. À la revente, la plus-value est exonérée si le bien est votre résidence principale.",
+            "Service-Public (plus-value immobilière)"
+          ],
+          [
+            "Le louer vide",
+            "Revenus fonciers : micro-foncier jusqu’à 15 000 € de loyers par an, régime réel au-delà. Prélèvements sociaux de 17,2 %. Taxe foncière.",
+            "Service-Public (revenus fonciers), art. 14 CGI"
+          ],
+          [
+            "Le louer meublé",
+            "Règles propres à la location meublée (bénéfices industriels et commerciaux), différentes des revenus fonciers.",
+            "Service-Public (location meublée)"
+          ],
+          [
+            "Le revendre en tant que particulier",
+            "Impôt sur la plus-value : 19 % d’impôt sur le revenu et 17,2 % de prélèvements sociaux, avec abattements selon la durée de détention.",
+            "Service-Public (plus-value immobilière), art. 150 U CGI"
+          ],
+          [
+            "L’acheter pour le revendre de façon habituelle",
+            "Bénéfices industriels et commerciaux (marchand de biens) ; régime spécial des droits de mutation si engagement de revendre dans les cinq ans.",
+            "Art. 35 et 1115 CGI, BOFiP"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "occuper",
+      "title": "Habiter le bien : taxe foncière et résidence principale",
+      "paragraphs": [
+        "Le propriétaire paie chaque année la taxe foncière sur les propriétés bâties. Son montant dépend de la commune : demandez-le à la mairie, au vendeur du bien ou aux impôts avant d’enchérir, car il entre dans votre budget de portage, c’est-à-dire les coûts que vous supportez tant que le bien ne vous rapporte rien.",
+        "Si le bien devient votre résidence principale, la plus-value que vous réaliserez à la revente est totalement exonérée d’impôt sur le revenu et de prélèvements sociaux, d’après Service-Public (page vérifiée le 15 avril 2026). Les conditions précises, par exemple en cas de vente peu après l’achat, sont à faire confirmer par le notaire.",
+        "Rappelons un point lié à l’adjudication : tant que le délai de surenchère n’est pas écoulé, l’achat n’est pas définitif, et le bien n’est pas libre si un occupant a un droit opposable. Voir l’article « Acheter un bien occupé aux enchères : sécuriser son analyse avant de miser »."
+      ]
+    },
+    {
+      "id": "louer",
+      "title": "Le louer : revenus fonciers ou location meublée",
+      "paragraphs": [
+        "Pour un logement loué nu, les loyers sont imposés comme revenus fonciers, avec les prélèvements sociaux de 17,2 %. Jusqu’à 15 000 € de loyers bruts par an, le micro-foncier s’applique automatiquement : l’administration retient un abattement forfaitaire de 30 % et vous ne déduisez ni travaux ni charges. Au-delà, ou sur option, le régime réel déduit les dépenses justifiées : réparations, assurance, intérêts d’emprunt, certaines taxes. D’après Service-Public, l’option pour le réel engage pour trois ans.",
+        "En régime réel, un déficit foncier peut venir en déduction. La part qui ne provient pas des intérêts d’emprunt s’impute sur le revenu global dans la limite de 10 700 € par an ; le reste se reporte sur les revenus fonciers des années suivantes. Service-Public indique aussi qu’une rénovation énergétique qui fait passer un logement de la classe E, F ou G à une classe A à D relève ce plafond à 21 400 €, sous réserve de délais qui se terminent au 31 décembre 2027. Ces avantages sont soumis à des conditions de durée de location : demandez-les à votre conseil.",
+        "Une location meublée suit d’autres règles, celles des bénéfices industriels et commerciaux, avec un régime simplifié ou réel selon les recettes. Ces règles ont été modifiées récemment et dépendent de la nature de la location : demandez à un expert-comptable quel régime s’applique, avant de bâtir votre plan de rendement.",
+        "Louer suppose aussi que le logement respecte le calendrier de performance énergétique. Voir l’article « DPE, diagnostics et travaux : ce qu’un bien énergivore change à votre plafond »."
+      ]
+    },
+    {
+      "id": "revendre",
+      "title": "Le revendre : la plus-value des particuliers",
+      "paragraphs": [
+        "Lorsqu’un particulier revend un bien qui n’est pas sa résidence principale, la plus-value (la différence entre le prix de vente et le prix d’acquisition) est imposée à 19 % d’impôt sur le revenu, auxquels s’ajoutent 17,2 % de prélèvements sociaux, soit 36,2 % avant abattements. Une taxe supplémentaire de 2 % à 6 % s’ajoute si la plus-value imposable dépasse 50 000 € (Service-Public, page vérifiée le 15 avril 2026).",
+        "Des abattements tiennent compte de la durée de détention. Pour l’impôt sur le revenu, l’abattement est de 6 % par an de la sixième à la vingt et unième année, puis de 4 % la vingt-deuxième année : le bien est exonéré après 22 ans. Pour les prélèvements sociaux, l’exonération n’intervient qu’après 30 ans. Le notaire calcule l’impôt, établit la déclaration et le règle lors de la vente.",
+        "Pour calculer la plus-value, vous pouvez majorer le prix d’acquisition de vos frais d’acquisition, soit au forfait de 7,5 % du prix, soit à leur montant réel justifié. Vous pouvez aussi ajouter les travaux, au forfait de 15 % du prix si vous détenez le bien depuis plus de cinq ans, ou à leur montant réel. Dans un achat aux enchères, les droits de mutation et les émoluments d’avocat représentent déjà plus de 7,5 % du prix dans l’exemple chiffré de l’article « Frais d’une vente aux enchères judiciaire » : conservez la facture de votre avocat et les justificatifs de paiement des frais."
+      ]
+    },
+    {
+      "id": "marchand-de-biens",
+      "title": "L’acheter pour le revendre : le cas du marchand de biens",
+      "paragraphs": [
+        "Les personnes qui achètent de façon habituelle des immeubles pour les revendre relèvent des bénéfices industriels et commerciaux (art. 35 du Code général des impôts). Le BOFiP retient trois conditions réunies : des opérations habituelles, des achats suivis de reventes, et des immeubles, fonds de commerce ou parts de sociétés immobilières. L’intention de revendre s’apprécie au moment de l’achat. Une seule opération n’est pas nécessairement habituelle, mais l’achat d’un immeuble entier revendu par lots peut suffire.",
+        "Ces acheteurs peuvent bénéficier du régime spécial de l’article 1115 du Code général des impôts. L’achat est exonéré des droits de mutation de droit commun si l’acquéreur, assujetti à la TVA, s’engage à revendre dans un délai de cinq ans, réduit à deux ans pour certaines reventes par lots. Le BOFiP précise que la taxe de publicité foncière s’applique alors à un taux réduit, de 0,715 %. À défaut de revente dans le délai, la déchéance est encourue et les droits sont dus, avec intérêts de retard.",
+        "Ce régime suppose de s’engager avant l’achat, donc avant l’audience, et il se prépare avec l’avocat et un expert-comptable. Il ne s’applique pas à un acheteur final qui occupe le bien."
+      ]
+    },
+    {
+      "id": "societe",
+      "title": "Acheter par une société",
+      "paragraphs": [
+        "Un achat par une société civile immobilière (SCI) ou une autre société change le régime : l’impôt sur le revenu ou l’impôt sur les sociétés selon le cas, la comptabilité, la sortie des associés. En saisie immobilière, le Code impose à l’avocat de déclarer l’identité de son mandant et, pour une société, sa dénomination et son numéro SIREN : la structure doit donc exister avant l’audience. Voir l’article « Enchérir au tribunal : l’avocat obligatoire, comment le choisir, quel mandat lui donner ».",
+        "Le choix d’une société relève d’un conseil personnalisé : consultez un expert-comptable ou un avocat fiscaliste avant de l’acter."
+      ]
+    },
+    {
+      "id": "avant-d-encherir",
+      "title": "Les questions à poser avant d’enchérir",
+      "paragraphs": [
+        "Posez-les à votre expert-comptable, à votre notaire ou à votre avocat avant d’arrêter votre enchère plafond. Les impôts d’un projet locatif ou d’une revente se comptent dans le rendement, pas dans le prix."
+      ],
+      "bullets": [
+        "Ce bien sera-t-il ma résidence principale, une location nue, une location meublée ou une revente ?",
+        "Quel est le montant de la taxe foncière, et à quelle date est-elle due ?",
+        "Le projet de revente est-il à moins de cinq ans, et ai-je gardé les justificatifs des frais d’acquisition ?",
+        "Dois-je acheter en nom propre ou par une société ?",
+        "Un régime spécial (marchand de biens, déficit foncier) s’applique-t-il, et quel engagement faut-il prendre avant l’audience ?"
+      ],
+      "links": [
+        {
+          "label": "Chiffrer les frais de la vente avec le simulateur",
+          "href": "/simulateur-frais-encheres"
+        }
+      ]
+    }
+  ],
+  "faq": [
+    {
+      "question": "Un achat aux enchères est-il imposé différemment d’un achat classique ?",
+      "answer": "Non. Les impôts qui suivent l’achat (taxe foncière, revenus fonciers, plus-value) dépendent de ce que vous faites du bien, pas de la manière dont vous l’avez acquis. Ce qui change, ce sont les frais d’acquisition, que vous pouvez conserver pour calculer une plus-value future."
+    },
+    {
+      "question": "Quelle est l’imposition d’une plus-value à la revente d’un bien acheté aux enchères ?",
+      "answer": "Pour un particulier, 19 % d’impôt sur le revenu et 17,2 % de prélèvements sociaux, avec des abattements selon la durée de détention : exonération d’impôt sur le revenu après 22 ans et de prélèvements sociaux après 30 ans. La résidence principale est exonérée."
+    },
+    {
+      "question": "Qu’est-ce que le régime de marchand de biens ?",
+      "answer": "C’est le régime des personnes qui achètent de façon habituelle des immeubles pour les revendre. Elles relèvent des bénéfices industriels et commerciaux et peuvent bénéficier de droits de mutation réduits si elles s’engagent à revendre dans les cinq ans (art. 35 et 1115 du Code général des impôts)."
+    }
+  ],
+  "sources": [
+    {
+      "label": "Service-Public — Plus-value immobilière des particuliers (page vérifiée le 15 avril 2026)",
+      "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F10864"
+    },
+    {
+      "label": "Service-Public — Revenus fonciers : location non meublée (micro-foncier, régime réel, déficit foncier)",
+      "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F1991"
+    },
+    {
+      "label": "Service-Public — Location meublée (page vérifiée le 15 avril 2026)",
+      "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F32744"
+    },
+    {
+      "label": "Légifrance — Code général des impôts, article 35 (marchands de biens)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000033817773"
+    },
+    {
+      "label": "Légifrance — Code général des impôts, article 1115 (achats en vue de la revente)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000024188977"
+    },
+    {
+      "label": "BOFiP-Impôts — Régime spécial des achats destinés à la revente (BOI-ENR-DMTOI-10-50)",
+      "url": "https://bofip.impots.gouv.fr/bofip/3290-PGP.html/identifiant=BOI-ENR-DMTOI-10-50-20140429"
+    },
+    {
+      "label": "BOFiP-Impôts — Profits réalisés par les marchands de biens : opérations imposables (BOI-BIC-CHAMP-20-10-10)",
+      "url": "https://bofip.impots.gouv.fr/bofip/4712-PGP.html/identifiant=BOI-BIC-CHAMP-20-10-10-20170104"
+    },
+    {
+      "label": "Immojudis — Simulateur de frais d’enchères",
+      "url": "/simulateur-frais-encheres"
+    }
+  ]
+}
