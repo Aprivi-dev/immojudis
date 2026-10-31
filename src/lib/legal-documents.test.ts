@@ -94,15 +94,18 @@ describe("versions précédentes archivées", () => {
     },
   );
 
-  it("garde aussi l'archive des mentions légales plus anciennes, à l'empreinte déclarée", () => {
-    for (const earlier of PREVIOUS_LEGAL_DOCUMENTS.legal.earlier) {
-      const digest = createHash("sha256")
-        .update(readFileSync(resolve(earlier.archive)))
-        .digest("hex");
-      expect(digest).toBe(earlier.sha256);
-      expect(earlier.sha256).not.toBe(PREVIOUS_LEGAL_DOCUMENTS.legal.sha256);
-    }
-  });
+  it.each(["legal", "privacy"] as const)(
+    "garde aussi l'archive des versions plus anciennes (%s), à l'empreinte déclarée",
+    (document) => {
+      for (const earlier of PREVIOUS_LEGAL_DOCUMENTS[document].earlier) {
+        const digest = createHash("sha256")
+          .update(readFileSync(resolve(earlier.archive)))
+          .digest("hex");
+        expect(digest).toBe(earlier.sha256);
+        expect(earlier.sha256).not.toBe(PREVIOUS_LEGAL_DOCUMENTS[document].sha256);
+      }
+    },
+  );
 
   it("ancre les versions courantes à l'empreinte du fichier qui les porte (politique, mentions légales)", () => {
     for (const [document, file] of [
