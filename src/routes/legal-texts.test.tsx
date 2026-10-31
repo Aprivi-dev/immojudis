@@ -442,7 +442,10 @@ describe("politique de confidentialité", () => {
     expect(text).toContain(
       "journal des fonctions utilisées (compte, vente ou tribunal concerné, date), par exemple pour l’historique ou la valeur d’une vente débloquée",
     );
-    expect(text).toContain("le journal d’usage est conservé 24 mois au plus");
+    expect(text).toContain(
+      "le journal d’usage (quotas et fonctions utilisées) est conservé 24 mois au plus",
+    );
+    expect(text).toContain("distinct des événements de parcours par compte, conservés 90 jours");
     // Les mesures agrégées ne sont plus décrites comme « d'usage » sans personne.
     expect(text).toContain(
       "Événements de parcours du navigateur, agrégés et à valeurs fermées, sans identifiant de personne ni de compte",
@@ -573,6 +576,20 @@ describe("politique de confidentialité", () => {
     expect(text).toContain("Instantanés d’estimation de marché avant l’audience");
     expect(text).toContain("36 mois après la date d’audience");
     expect(text).toContain("Aucun texte libre, aucune adresse IP");
+  });
+
+  it("dit que l'interrupteur de mesure d'audience ne couvre pas les événements par compte, et que l'opposition se fait par écrit", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).toContain("ne couvre pas ces événements : vous pouvez vous y opposer par écrit");
+    expect(text).toContain(
+      "L’interrupteur ci-dessous ne couvre pas les événements liés à votre compte",
+    );
+    expect(text).toContain("écrivez à contact@immojudis.example");
+    expect(text).toContain(
+      "arrêter un repère dont la précision se dégrade. Vous pouvez vous y opposer par écrit",
+    );
+    expect(text).toContain("Elles sont traitées comme des données personnelles");
+    expect(text).not.toContain("Ces informations ne désignent pas une personne");
   });
 
   it("n'affirme aucun réglage Google Analytics non vérifié (paramètre de recherche, 14 mois)", () => {

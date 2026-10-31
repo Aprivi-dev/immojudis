@@ -81,7 +81,7 @@ const FAQ: Array<{ q: string; a: string }> = [
   },
   {
     q: "Quels frais s’ajoutent au prix d’adjudication ?",
-    a: "Les frais de poursuite taxés et les droits de mutation sont payés en sus du prix (art. R. 322-58) ; s’y ajoutent les émoluments d’avocat (art. A. 444-191 du Code de commerce) et les honoraires convenus avec votre avocat. À titre d’ordre de grandeur, les hypothèses par défaut du simulateur Immojudis donnent environ 12\u00a0% du prix pour un bien à 150\u202f000\u00a0€ ; ces valeurs sont à vérifier sur le cahier des conditions de vente et auprès de l’avocat. Voir l’article « Frais d’une vente aux enchères judiciaire ».",
+    a: "Les frais de poursuite taxés et les droits de mutation sont payés en sus du prix (art. R. 322-58) ; s’y ajoutent les émoluments d’avocat (art. A. 444-191 du Code de commerce) et les honoraires convenus avec votre avocat. À titre d’ordre de grandeur, les hypothèses par défaut du simulateur Immojudis donnent environ 13\u00a0% du prix pour un bien à 150\u202f000\u00a0€ ; ces valeurs sont à vérifier sur le cahier des conditions de vente et auprès de l’avocat. Voir l’article « Frais d’une vente aux enchères judiciaire ».",
   },
   {
     q: "Immojudis remplace-t-il un avocat ?",
