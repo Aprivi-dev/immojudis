@@ -6,6 +6,7 @@ import { resolveEmailAlertDeliveryConfig } from "@/lib/email-alerts";
 import { firstFilled, serverEnv } from "@/lib/env";
 import { resolveSiteOrigin } from "@/lib/site-url";
 import { legalConfigurationStatus } from "@/lib/legal-documents";
+import { EXPECTED_LLM_PROMPT_VERSION } from "@/lib/llm-versions";
 import { resolveExpectedLatestMigrationVersion } from "@/lib/migration-manifest";
 
 export type ReadinessStatus = "ready" | "warning" | "blocked";
@@ -86,7 +87,6 @@ export type AdminOperationalReadinessResponse = {
 };
 
 export const EXPECTED_LATEST_MIGRATION_VERSION = "20261003170000";
-export const EXPECTED_LLM_PROMPT_VERSION = "auction_llm_v10_structured_display";
 export const OPERATIONAL_HEALTH_SLO_TARGET_PERCENT = 99.5;
 export const OPERATIONAL_HEALTH_SLO_WINDOW_DAYS = 30;
 

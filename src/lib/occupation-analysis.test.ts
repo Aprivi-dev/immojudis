@@ -171,4 +171,15 @@ describe("occupation analysis", () => {
     });
     expect(analysis.limitations[0]).toContain("ne permet pas encore");
   });
+
+  it("does not read the pipeline's own risk notes back as occupation evidence", () => {
+    const analysis = buildOccupancyAnalysis({
+      ...cleanSale,
+      occupancy_status: "unknown",
+      risk_notes: "Risques juridiques: bien loué, bail en cours, locataire en place.",
+    });
+
+    expect(analysis.status).toBe("to_confirm");
+    expect(analysis.evidence.map((item) => item.source)).not.toContain("Notes de risques");
+  });
 });
