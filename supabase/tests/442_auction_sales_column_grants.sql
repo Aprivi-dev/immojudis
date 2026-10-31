@@ -92,8 +92,9 @@ select ok(
   pg_get_viewdef('public.v_auction_sales_app'::regclass) ~ 'is_admin\(\)'
   and pg_get_viewdef('public.v_auction_sales_app'::regclass) ~ 'has_analysis_access\(\)'
   and pg_get_viewdef('public.v_auction_sales_app'::regclass) ~ 'catalogue_readiness_allows_premium\('
-  and pg_get_viewdef('public.v_auction_sales_app'::regclass) ~ 'catalogue_quarantined',
-  'the catalogue view carries the predicate of the authenticated read policy'
+  and pg_get_viewdef('public.v_auction_sales_app'::regclass) ~ 'catalogue_quarantined'
+  and pg_get_viewdef('public.v_auction_sales_app'::regclass) ~ 'rolbypassrls',
+  'the catalogue view carries the predicate of the authenticated read policy and the clause of the roles that bypass row security'
 );
 
 select is(

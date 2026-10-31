@@ -17,8 +17,9 @@ set local lock_timeout = '5s';
 --      de is_admin() et has_analysis_access() encapsulés dans un sous-select, donc évalués une seule fois par
 --      requête et non par ligne). L'ancienne fonction appelait ces deux fonctions ligne par ligne ;
 --   2. elle l'exécute (`true`) : v_auction_sales_app devient une vue SECURITY DEFINER (security_barrier), dont
---      le WHERE reprend exactement la politique de lecture ; puis elle retire les trois colonnes à
---      `authenticated`. La vue lit alors la table avec les droits de son propriétaire, mais ne rend que les
+--      le WHERE reprend la politique de lecture (plus les rôles qui contournent la sécurité par ligne : service_role,
+--      superutilisateur, BYPASSRLS, qui lisaient toutes les lignes sous l'ancienne vue invoker) ; puis elle retire
+--      les trois colonnes à `authenticated`. La vue lit alors la table avec les droits de son propriétaire, mais ne rend que les
 --      lignes que la politique aurait rendues ; les fonctions qu'elle appelle restent contrôlées pour le
 --      compte appelant.
 --
@@ -61,9 +62,15 @@ declare
   matches integer;
   already_definer boolean;
   -- Même condition que la politique auction_sales_authenticated_read (20261029170200), appels de fonctions en
-  -- sous-select (InitPlan), la quarantaine lue sur la colonne matérialisée (20261027100200).
+  -- sous-select (InitPlan), la quarantaine lue sur la colonne matérialisée (20261027100200). Plus la clause des
+  -- rôles qui contournent la sécurité par ligne (service_role, superutilisateur, BYPASSRLS) : sous l'ancienne vue
+  -- security_invoker ils voyaient toutes les lignes, et le code serveur (supabaseAdmin) lit cette vue en service_role.
+  -- CURRENT_USER reste le rôle de l'appelant dans une vue definer (seul le contrôle des droits sur les tables passe
+  -- au propriétaire).
   predicate constant text :=
-    '((SELECT public.is_admin()) OR ((SELECT public.has_analysis_access()) '
+    '((SELECT COALESCE((SELECT r.rolbypassrls OR r.rolsuper FROM pg_catalog.pg_roles r '
+    || 'WHERE r.rolname = CURRENT_USER), false)) OR (SELECT public.is_admin()) '
+    || 'OR ((SELECT public.has_analysis_access()) '
     || 'AND public.catalogue_readiness_allows_premium(s.premium_readiness_status, '
     || 's.premium_readiness_override, s.premium_readiness_override_expires_at) '
     || 'AND COALESCE(s.status, ''unknown''::text) <> ''quarantined''::text '

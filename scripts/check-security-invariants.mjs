@@ -531,7 +531,8 @@ if (
 // longer readable by `authenticated` and v_auction_sales_app is a guarded definer view. Three rules keep it
 // that way:
 //   1. a migration that revokes them also makes the view a definer view with a security barrier, guarded by
-//      the predicate of the read policy (is_admin / has_analysis_access / readiness / quarantine);
+//      the predicate of the read policy (is_admin / has_analysis_access / readiness / quarantine) and by the
+//      rows-for-everything clause of the roles that bypass row security (service_role reads this view server-side);
 //   2. the stage is actually executed: a migration other than the one that created the function calls
 //      `set_catalogue_raw_columns_hidden(true)`;
 //   3. no later migration gives the columns back or turns the view back into an invoker view (the revert
@@ -553,7 +554,8 @@ for (const [name, migration] of migrationSources) {
       /is_admin\(\)/i.test(sql) &&
       /has_analysis_access\(\)/i.test(sql) &&
       /catalogue_readiness_allows_premium\(/i.test(sql) &&
-      (name < rawColumnHidingMigration || /catalogue_quarantined/i.test(sql));
+      (name < rawColumnHidingMigration ||
+        (/catalogue_quarantined/i.test(sql) && /rolbypassrls/i.test(sql)));
     if (!/security_invoker\s*=\s*false/i.test(sql) || !guardedByReadPolicy) {
       failures.push(
         `${name} revokes raw_payload/observations/lawyer_contact from authenticated without making v_auction_sales_app a definer view guarded by the read policy predicate`,
