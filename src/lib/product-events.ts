@@ -30,6 +30,10 @@ export const PRODUCT_EVENT_NAMES = [
   "home_example_used",
   "pepite_block_viewed",
   "pepite_filter_used",
+  "sale_unlock_confirmed",
+  "home_cta_clicked",
+  "ceiling_viewed",
+  "shared_report_viewed",
 ] as const;
 
 export type ProductEventName = (typeof PRODUCT_EVENT_NAMES)[number];
@@ -41,10 +45,26 @@ export type ProductEventName = (typeof PRODUCT_EVENT_NAMES)[number];
 export const SIGNUP_ENTRIES = [...LOGIN_REASONS, "direct"] as const;
 export type SignupEntry = (typeof SIGNUP_ENTRIES)[number];
 
+/**
+ * D'où vient une alerte créée : la page de département, la page d'un tribunal, la liste des
+ * audiences à venir, une fiche de vente, ou la recherche (catalogue, accueil du compte, tout le
+ * reste). Valeurs fermées : jamais l'adresse de la page.
+ */
+export const ALERT_SURFACES = ["department", "tribunal", "hearings", "sale", "search"] as const;
+export type AlertSurface = (typeof ALERT_SURFACES)[number];
+
+/** Le bouton ou le lien cliqué en haut de l'accueil : créer un compte, ou explorer sans compte. */
+export const HOME_CTA_TARGETS = ["signup", "browse"] as const;
+export type HomeCtaTarget = (typeof HOME_CTA_TARGETS)[number];
+
+/** État de la page d'un rapport partagé quand son destinataire l'ouvre. */
+export const SHARED_REPORT_STATES = ["open", "unavailable"] as const;
+export type SharedReportState = (typeof SHARED_REPORT_STATES)[number];
+
 export type ProductEventProperties = {
   signup_submitted: { entry: SignupEntry };
   signup_confirmed: undefined;
-  alert_created: { email_consent: boolean; pepite_only?: boolean };
+  alert_created: { email_consent: boolean; pepite_only?: boolean; surface?: AlertSurface };
   favorite_added: undefined;
   sample_report_viewed: undefined;
   offers_viewed: undefined;
@@ -56,6 +76,13 @@ export type ProductEventProperties = {
   /** `locked` : noms des critères seuls (visiteur, compte Découverte) ; `detail` : détail ouvert. */
   pepite_block_viewed: { access: "locked" | "detail" };
   pepite_filter_used: undefined;
+  /** Le déblocage d'une vente est confirmé (second clic du panneau), avant la réponse du serveur. */
+  sale_unlock_confirmed: undefined;
+  home_cta_clicked: { target: HomeCtaTarget };
+  /** Le plafond d'enchère d'une vente est calculé et affiché (pas seulement l'estimation servie). */
+  ceiling_viewed: undefined;
+  /** Un rapport partagé est ouvert par son destinataire : `open` (lisible) ou `unavailable` (lien fermé). */
+  shared_report_viewed: { state: SharedReportState };
 };
 
 type PropertySpec = { kind: "boolean" } | { kind: "enum"; values: readonly string[] };
@@ -64,7 +91,11 @@ type PropertySpec = { kind: "boolean" } | { kind: "enum"; values: readonly strin
 const PROPERTY_SPECS: { [N in ProductEventName]: Record<string, PropertySpec> } = {
   signup_submitted: { entry: { kind: "enum", values: SIGNUP_ENTRIES } },
   signup_confirmed: {},
-  alert_created: { email_consent: { kind: "boolean" }, pepite_only: { kind: "boolean" } },
+  alert_created: {
+    email_consent: { kind: "boolean" },
+    pepite_only: { kind: "boolean" },
+    surface: { kind: "enum", values: ALERT_SURFACES },
+  },
   favorite_added: {},
   sample_report_viewed: {},
   offers_viewed: {},
@@ -75,6 +106,10 @@ const PROPERTY_SPECS: { [N in ProductEventName]: Record<string, PropertySpec> } 
   home_example_used: {},
   pepite_block_viewed: { access: { kind: "enum", values: ["locked", "detail"] } },
   pepite_filter_used: {},
+  sale_unlock_confirmed: {},
+  home_cta_clicked: { target: { kind: "enum", values: HOME_CTA_TARGETS } },
+  ceiling_viewed: {},
+  shared_report_viewed: { state: { kind: "enum", values: SHARED_REPORT_STATES } },
 };
 
 type TrackArguments<N extends ProductEventName> = ProductEventProperties[N] extends undefined

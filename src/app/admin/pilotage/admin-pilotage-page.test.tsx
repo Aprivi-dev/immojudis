@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -15,13 +15,17 @@ import {
 import { unavailableSaleSignalFeedback } from "@/lib/admin-sale-signal-feedback";
 import {
   AdminPilotagePage,
+  formatShare,
   MASKED,
   NOT_MEASURED,
   REMINDER_VERDICT_LABELS,
 } from "./admin-pilotage-page";
 
-const mocks = vi.hoisted(() => ({ fetchPilotage: vi.fn() }));
-vi.mock("@/lib/client-api/admin", () => ({ fetchAdminPilotage: mocks.fetchPilotage }));
+const mocks = vi.hoisted(() => ({ fetchPilotage: vi.fn(), fetchInterviewees: vi.fn() }));
+vi.mock("@/lib/client-api/admin", () => ({
+  fetchAdminPilotage: mocks.fetchPilotage,
+  fetchAdminOfferOpeningInterviewees: mocks.fetchInterviewees,
+}));
 vi.mock("@/hooks/use-auth", () => ({ useAuth: () => ({ user: { email: "admin@example.test" } }) }));
 vi.mock("@/components/admin/AdminShell", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/components/admin/AdminShell")>()),
@@ -188,11 +192,11 @@ describe("page admin Pilotage", () => {
     });
     renderPage();
 
-    await screen.findByRole("heading", { name: "Plafonds calculés" });
+    await screen.findByRole("heading", { name: "Estimations servies" });
     const line = (days: string, label: string) =>
       within(document.querySelector(`[data-window="${days}"]`) as HTMLElement).getByText(label)
         .nextSibling?.textContent;
-    expect(line("7", "Comptes ayant calculé au moins un plafond")).toBe("12");
+    expect(line("7", "Comptes ayant reçu au moins une estimation")).toBe("12");
     expect(line("7", "Ventes concernées")).toBe(MASKED);
     expect(line("30", "Ventes concernées")).toBe("22");
   });
@@ -201,7 +205,7 @@ describe("page admin Pilotage", () => {
     mocks.fetchPilotage.mockResolvedValue(data);
     renderPage();
 
-    await screen.findByRole("heading", { name: "Plafonds calculés" });
+    await screen.findByRole("heading", { name: "Estimations servies" });
     const values = Array.from(document.querySelectorAll("[data-window] dd")).map(
       (value) => value.textContent,
     );
@@ -628,6 +632,150 @@ describe("page admin Pilotage", () => {
       expect(line("Réponses au questionnaire")).toBe(NOT_MEASURED);
       expect(line("Médiane du prix jugé trop cher")).toBe(NOT_MEASURED);
       expect(document.body.textContent).toContain("ne mesurent pas une intention d’achat");
+    });
+  });
+
+  describe("activation, unlock threshold and interviews", () => {
+    const activation = {
+      generatedAt: "2026-11-10T12:00:00Z",
+      windows: [
+        {
+          days: 7 as const,
+          signups: 20,
+          confirmed: 16,
+          activated: 8,
+          openedDetail: 6,
+          addedFavorite: 4,
+          createdAlert: 3,
+        },
+        {
+          days: 30 as const,
+          signups: 80,
+          confirmed: 60,
+          activated: 33,
+          openedDetail: 25,
+          addedFavorite: 14,
+          createdAlert: 10,
+        },
+      ],
+      unlockThreshold: {
+        discoveryAccounts: 120,
+        months: [
+          {
+            monthStart: "2026-10-31T23:00:00Z",
+            partial: true,
+            unlockedOne: 18,
+            reachedThree: 6,
+          },
+          {
+            monthStart: "2026-09-30T22:00:00Z",
+            partial: false,
+            unlockedOne: 30,
+            reachedThree: 3,
+          },
+        ],
+      },
+    };
+    const inside = (selector: string, label: string) =>
+      within(document.querySelector(selector) as HTMLElement).getByText(label).nextElementSibling
+        ?.textContent;
+
+    it("shows the activation, defined without the unlock quota, with the share of confirmed accounts", async () => {
+      mocks.fetchPilotage.mockResolvedValue({ ...data, activation });
+      renderPage();
+
+      await screen.findByRole("heading", { name: "Activation des nouveaux comptes" });
+      expect(document.body.textContent).toContain("ne dépend pas du quota de déblocages");
+      const week = '[data-activation-window="7"]';
+      expect(inside(week, "Comptes créés")).toBe("20");
+      expect(inside(week, "Comptes activés")).toBe("8");
+      expect(inside(week, "Part des comptes confirmés qui sont activés")).toBe("50 %");
+      expect(inside(week, "ont créé une alerte")).toBe(MASKED);
+      expect(inside('[data-activation-window="30"]', "ont ouvert une fiche en détail")).toBe("25");
+    });
+
+    it("says « non mesuré » for the activation without the aggregate", async () => {
+      mocks.fetchPilotage.mockResolvedValue(data);
+      renderPage();
+
+      await screen.findByRole("heading", { name: "Activation des nouveaux comptes" });
+      const values = Array.from(document.querySelectorAll("[data-activation-window] dd")).map(
+        (value) => value.textContent,
+      );
+      expect(values).toEqual(Array(14).fill(NOT_MEASURED));
+    });
+
+    it("shows the share of Discovery accounts that reached 3 unlocks, month by month", async () => {
+      mocks.fetchPilotage.mockResolvedValue({ ...data, activation });
+      renderPage();
+
+      await screen.findByRole("heading", { name: "Comptes Découverte à 3 déblocages" });
+      const current = '[data-threshold-month="current"]';
+      expect(inside(current, "ont débloqué au moins une vente")).toBe("18");
+      expect(inside(current, "ont atteint 3 déblocages")).toBe("6");
+      expect(inside(current, "Part des comptes Découverte à 3 déblocages")).toBe("5 %");
+      expect(inside(current, "Part de ceux qui ont débloqué une vente")).toBe("33 %");
+      expect(inside('[data-threshold-month="previous"]', "ont atteint 3 déblocages")).toBe(MASKED);
+    });
+
+    it("computes shares without ever turning a missing figure into 0 %", () => {
+      expect(formatShare(6, 120)).toBe("5 %");
+      expect(formatShare(0, 20)).toBe("0 %");
+      expect(formatShare(null, 20)).toBe(NOT_MEASURED);
+      expect(formatShare(3, null)).toBe(NOT_MEASURED);
+      expect(formatShare(3, 0)).toBe(NOT_MEASURED);
+      expect(formatShare(2, 4)).toBe(MASKED);
+    });
+
+    it("loads the people who accepted an interview only when the administrator asks", async () => {
+      mocks.fetchPilotage.mockResolvedValue({ ...data, offerOpeningSurvey: undefined });
+      mocks.fetchInterviewees.mockResolvedValue({
+        total: 2,
+        interviewees: [
+          {
+            consentedAt: "2026-11-07T09:00:00Z",
+            profile: "marchand_de_biens",
+            email: "m@example.test",
+          },
+          { consentedAt: "2026-11-05T09:00:00Z", profile: null, email: "a@example.test" },
+        ],
+      });
+      renderPage();
+
+      await screen.findByRole("heading", { name: "Questionnaire de la liste d’attente" });
+      expect(mocks.fetchInterviewees).not.toHaveBeenCalled();
+      expect(document.body.textContent).not.toContain("m@example.test");
+
+      fireEvent.click(screen.getByRole("button", { name: "Afficher la liste" }));
+      const table = await screen.findByTestId("interviewees");
+      expect(mocks.fetchInterviewees).toHaveBeenCalledTimes(1);
+      const rows = within(table)
+        .getAllByRole("row")
+        .slice(1)
+        .map((row) =>
+          within(row)
+            .getAllByRole("cell")
+            .map((cell) => cell.textContent),
+        );
+      expect(rows[0][1]).toBe("Marchand de biens");
+      expect(rows[0][2]).toBe("m@example.test");
+      expect(rows[1].slice(1)).toEqual(["Profil non renseigné", "a@example.test"]);
+    });
+
+    it("says so when nobody accepted an interview, and when the list cannot be loaded", async () => {
+      mocks.fetchPilotage.mockResolvedValue(data);
+      mocks.fetchInterviewees.mockResolvedValueOnce({ total: 0, interviewees: [] });
+      renderPage();
+      await screen.findByRole("heading", { name: "Questionnaire de la liste d’attente" });
+      fireEvent.click(screen.getByRole("button", { name: "Afficher la liste" }));
+      expect(await screen.findByText("Personne n’a encore accepté d’entretien.")).toBeTruthy();
+      cleanup();
+
+      mocks.fetchInterviewees.mockRejectedValue(new Error("Liste indisponible"));
+      renderPage();
+      await screen.findByRole("heading", { name: "Questionnaire de la liste d’attente" });
+      fireEvent.click(screen.getByRole("button", { name: "Afficher la liste" }));
+      expect((await screen.findByRole("alert")).textContent).toContain("Liste indisponible");
     });
   });
 

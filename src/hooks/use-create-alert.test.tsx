@@ -34,7 +34,7 @@ vi.mock("@/lib/search/analysis-offer-open", () => ({ isAnalysisOfferOpen: mocks.
 vi.mock("@/lib/toast", () => ({ toast: mocks.toast }));
 
 import { peekPendingAlert, clearPendingAlert } from "@/lib/pending-alert";
-import { useCreateAlert } from "./use-create-alert";
+import { alertSurfaceFromPath, useCreateAlert } from "./use-create-alert";
 
 function freePlan() {
   return {
@@ -176,6 +176,7 @@ describe("useCreateAlert", () => {
     expect(mocks.track).toHaveBeenCalledWith("alert_created", {
       email_consent: false,
       pepite_only: false,
+      surface: "search",
     });
   });
 
@@ -193,6 +194,7 @@ describe("useCreateAlert", () => {
     expect(mocks.track).toHaveBeenCalledWith("alert_created", {
       email_consent: true,
       pepite_only: false,
+      surface: "search",
     });
   });
 
@@ -446,5 +448,17 @@ describe("useCreateAlert : « Seulement les pépites »", () => {
     });
     expect(peekPendingAlert()?.search).toMatchObject({ pepite: true });
     expect(mocks.push).toHaveBeenCalledWith(expect.stringContaining("/login"));
+  });
+});
+
+describe("alertSurfaceFromPath", () => {
+  it("ramène l'adresse de la page à une origine de la liste fermée", () => {
+    expect(alertSurfaceFromPath("/ventes-encheres-immobilieres/gironde")).toBe("department");
+    expect(alertSurfaceFromPath("/tribunaux/bordeaux")).toBe("tribunal");
+    expect(alertSurfaceFromPath("/audiences-a-venir")).toBe("hearings");
+    expect(alertSurfaceFromPath("/sales/0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d")).toBe("sale");
+    expect(alertSurfaceFromPath("/sales")).toBe("search");
+    expect(alertSurfaceFromPath("/alertes/creer")).toBe("search");
+    expect(alertSurfaceFromPath("/")).toBe("search");
   });
 });

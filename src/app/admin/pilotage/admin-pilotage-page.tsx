@@ -1,10 +1,12 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { AdminPanel, AdminSectionHeading, AdminShell } from "@/components/admin/AdminShell";
 import { formatDateTime, formatInteger, queryErrorMessage } from "@/components/admin/admin-format";
 import { AdminPanelLoading, useAdminRefresh } from "@/components/admin/admin-ui";
 import { useAuth } from "@/hooks/use-auth";
+import type { AdminActivation, UnlockThreshold } from "@/lib/admin-activation";
 import type { BidCeilingSummary } from "@/lib/admin-bid-ceilings";
 import type { OfferOpeningSurveySummary } from "@/lib/admin-offer-opening-survey";
 import type {
@@ -18,7 +20,7 @@ import type {
   SaleSignalFeedbackSummary,
   SignalFeedbackCounts,
 } from "@/lib/admin-sale-signal-feedback";
-import { fetchAdminPilotage } from "@/lib/client-api/admin";
+import { fetchAdminOfferOpeningInterviewees, fetchAdminPilotage } from "@/lib/client-api/admin";
 import { SALE_SIGNAL_REASON_LABELS, type SaleSignal } from "@/lib/sale-signal-feedback";
 
 export const PILOTAGE_QUERY_KEY = ["admin-pilotage"] as const;
@@ -237,7 +239,7 @@ export function AdminPilotagePage() {
     <AdminShell
       activeSection="pilotage"
       title="Pilotage"
-      description="Chiffres exacts des 7 et 30 derniers jours, sans liste de personnes."
+      description="Chiffres exacts des 7 et 30 derniers jours. Aucune liste de personnes, sauf, à la demande, celles qui ont accepté un entretien."
       adminEmail={user?.email}
       onRefresh={() => void refresh()}
       isRefreshing={isRefreshing}
@@ -421,6 +423,10 @@ function PilotageTables({ data }: { data: AdminPilotageResponse }) {
 
       <ReminderAccuracyCard accuracy={data.saleReminders ?? null} />
 
+      <ActivationCard activation={data.activation ?? null} />
+
+      <UnlockThresholdCard threshold={data.activation?.unlockThreshold ?? null} />
+
       <BidCeilingCard summary={data.bidCeilings ?? null} />
 
       <SignalFeedbackCard summary={data.signalFeedback ?? null} />
@@ -536,28 +542,35 @@ function ReminderAccuracyCard({ accuracy }: { accuracy: SaleReminderAccuracy | n
 
 /** Les signaux dont la page lit les retours, avec leur libellé et leurs motifs (dans cet ordre). */
 /**
- * Plafonds d'enchère calculés : l'indicateur d'usage de la fonction payante qui reste lisible pendant
- * l'offre de lancement, où « Déblocages de ventes » et « dont déblocages du mois » valent 0 faute de
- * déblocage consommé (tous les comptes ont alors l'accès Analyse).
+ * Estimations servies (événement `bid_ceiling_calculated`, nom conservé pour les données déjà
+ * enregistrées) : l'indicateur d'usage qui reste lisible pendant l'offre de lancement, où « Déblocages
+ * de ventes » et « dont déblocages du mois » valent 0 faute de déblocage consommé (tous les comptes
+ * ont alors l'accès Analyse). L'estimation part à l'ouverture de la fiche, avant tout calcul : elle ne
+ * dit pas qu'un plafond a été travaillé (le calcul se fait dans le navigateur, mesuré à part par
+ * l'événement d'audience `ceiling_viewed`).
  */
 function BidCeilingCard({ summary }: { summary: BidCeilingSummary | null }) {
   const windows = [7, 30].map((days) => summary?.windows.find((window) => window.days === days));
   return (
     <AdminPanel className="mt-6 p-5">
-      <AdminSectionHeading title="Plafonds calculés" />
+      <AdminSectionHeading title="Estimations servies" />
       <p className="mt-1 text-sm text-brand-navy/70">
-        Comptes ayant calculé au moins une enchère plafond et ventes concernées. Pendant l’offre de
-        lancement, aucun déblocage n’est consommé : les lignes « Déblocages » ci-dessus valent 0 et
-        ne disent rien de l’usage ; celle-ci, si. Administrateurs exclus.
+        Comptes ayant reçu l’estimation de marché d’au moins une fiche et ventes concernées. Elle
+        est servie à l’ouverture de la fiche, avant tout calcul : ce n’est pas un plafond calculé.
+        Pendant l’offre de lancement, aucun déblocage n’est consommé : les lignes « Déblocages »
+        ci-dessus valent 0 et ne disent rien de l’usage ; celle-ci, si. Administrateurs exclus.
       </p>
       <div className="mt-4 grid gap-6 sm:grid-cols-2">
         {[7, 30].map((days, index) => {
           const window = windows[index];
           const lines = [
-            { label: "Comptes ayant calculé au moins un plafond", value: window?.accounts ?? null },
+            {
+              label: "Comptes ayant reçu au moins une estimation",
+              value: window?.accounts ?? null,
+            },
             { label: "Ventes concernées", value: window?.sales ?? null },
             {
-              label: "Plafonds calculés (un par compte, vente et jour)",
+              label: "Estimations servies (une par compte, vente et jour)",
               value: window?.occurrences ?? null,
             },
           ];
@@ -691,6 +704,218 @@ function RuleVersionsLine({ versions }: { versions: Record<string, number> }) {
   );
 }
 
+/**
+ * Part en pourcentage entier, ou « non mesuré » (une valeur inconnue, un dénominateur nul), ou
+ * « moins de 5 » quand le dénominateur est trop petit pour ne pas désigner des personnes.
+ */
+export function formatShare(numerator: number | null, denominator: number | null): string {
+  if (numerator == null || denominator == null || denominator <= 0) return NOT_MEASURED;
+  if (denominator < PILOTAGE_MASK_BELOW) return MASKED;
+  return `${Math.round((numerator / denominator) * 100)} %`;
+}
+
+/**
+ * Activation, définie sans le quota de déblocages (qui vaut 0 pendant l'essai) : parmi les comptes créés
+ * dans la fenêtre, ceux qui ont ouvert une fiche en détail, posé un favori ou créé une alerte.
+ */
+function ActivationCard({ activation }: { activation: AdminActivation | null }) {
+  return (
+    <AdminPanel className="mt-6 p-5">
+      <AdminSectionHeading title="Activation des nouveaux comptes" />
+      <p className="mt-1 text-sm text-brand-navy/70">
+        Un compte est activé quand, depuis sa création, il a ouvert une fiche en détail, posé un
+        favori ou créé une alerte. Cette définition ne dépend pas du quota de déblocages. Comptes
+        créés dans la fenêtre, administrateurs exclus.
+      </p>
+      <div className="mt-4 grid gap-6 sm:grid-cols-2">
+        {[7, 30].map((days) => {
+          const window = activation?.windows.find((entry) => entry.days === days);
+          const lines = [
+            { label: "Comptes créés", text: formatCount(window?.signups ?? null) },
+            { label: "dont adresse confirmée", text: formatCount(window?.confirmed ?? null) },
+            { label: "Comptes activés", text: formatCount(window?.activated ?? null) },
+            {
+              label: "Part des comptes confirmés qui sont activés",
+              text: formatShare(window?.activated ?? null, window?.confirmed ?? null),
+            },
+            {
+              label: "ont ouvert une fiche en détail",
+              text: formatCount(window?.openedDetail ?? null),
+            },
+            { label: "ont posé un favori", text: formatCount(window?.addedFavorite ?? null) },
+            { label: "ont créé une alerte", text: formatCount(window?.createdAlert ?? null) },
+          ];
+          return (
+            <div key={days} data-activation-window={days}>
+              <h3 className="text-sm font-semibold text-brand-navy">{days} jours</h3>
+              <dl className="mt-2 grid gap-y-1.5 text-sm">
+                {lines.map((line) => (
+                  <div key={line.label} className="flex items-baseline justify-between gap-3">
+                    <dt className="text-brand-navy/70">{line.label}</dt>
+                    <dd
+                      className={`tabular-nums ${
+                        line.text === NOT_MEASURED ? "text-xs text-brand-navy/70" : "font-semibold"
+                      }`}
+                    >
+                      {line.text}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          );
+        })}
+      </div>
+    </AdminPanel>
+  );
+}
+
+/**
+ * Part des comptes Découverte qui atteignent les 3 déblocages du mois : la mesure à lire avant toute
+ * décision sur le prix ou sur un pass (n° 97). Pendant l'essai, aucun déblocage n'est consommé : les
+ * chiffres ne commencent à compter qu'à la fin des premiers essais.
+ */
+function UnlockThresholdCard({ threshold }: { threshold: UnlockThreshold | null }) {
+  const discovery = threshold?.discoveryAccounts ?? null;
+  return (
+    <AdminPanel className="mt-6 p-5">
+      <AdminSectionHeading title="Comptes Découverte à 3 déblocages" />
+      <p className="mt-1 text-sm text-brand-navy/70">
+        Parmi les comptes Découverte (adresse confirmée, sans accès Analyse ni essai en cours) :
+        ceux qui ont débloqué au moins une vente dans le mois de Paris, et ceux qui ont atteint les
+        3 déblocages. Le nombre de comptes Découverte est celui d’aujourd’hui pour les deux mois.
+        Administrateurs exclus.
+      </p>
+      <p className="mt-2 text-sm">
+        <span className="text-brand-navy/70">Comptes Découverte aujourd’hui : </span>
+        <span className="font-semibold tabular-nums">{formatCount(discovery)}</span>
+      </p>
+      <div className="mt-4 grid gap-6 sm:grid-cols-2">
+        {(threshold?.months ?? [null, null]).map((month, index) => {
+          const lines = [
+            {
+              label: "ont débloqué au moins une vente",
+              text: formatCount(month?.unlockedOne ?? null),
+            },
+            { label: "ont atteint 3 déblocages", text: formatCount(month?.reachedThree ?? null) },
+            {
+              label: "Part des comptes Découverte à 3 déblocages",
+              text: formatShare(month?.reachedThree ?? null, discovery),
+            },
+            {
+              label: "Part de ceux qui ont débloqué une vente",
+              text: formatShare(month?.reachedThree ?? null, month?.unlockedOne ?? null),
+            },
+          ];
+          return (
+            <div key={index} data-threshold-month={index === 0 ? "current" : "previous"}>
+              <h3 className="text-sm font-semibold text-brand-navy">
+                {index === 0 ? "Mois en cours (depuis le 1er)" : "Mois précédent"}
+                {month?.monthStart ? ` · ${formatDay(month.monthStart)}` : ""}
+              </h3>
+              <dl className="mt-2 grid gap-y-1.5 text-sm">
+                {lines.map((line) => (
+                  <div key={line.label} className="flex items-baseline justify-between gap-3">
+                    <dt className="text-brand-navy/70">{line.label}</dt>
+                    <dd
+                      className={`tabular-nums ${
+                        line.text === NOT_MEASURED ? "text-xs text-brand-navy/70" : "font-semibold"
+                      }`}
+                    >
+                      {line.text}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          );
+        })}
+      </div>
+    </AdminPanel>
+  );
+}
+
+/**
+ * Personnes qui ont accepté un entretien : date de leur accord, profil déclaré et adresse du compte.
+ * Chargée seulement quand l'administrateur la demande (elle porte des adresses email), lecture seule.
+ */
+function OfferOpeningInterviewees() {
+  const [shown, setShown] = useState(false);
+  const query = useQuery({
+    queryKey: ["admin-offer-opening-interviewees"],
+    queryFn: fetchAdminOfferOpeningInterviewees,
+    enabled: shown,
+    staleTime: 60_000,
+  });
+  const profileLabel = (profile: string | null) =>
+    SURVEY_PROFILES.find((entry) => entry.key === profile)?.label ?? "Profil non renseigné";
+  return (
+    <div className="mt-4 border-t border-brand-navy/10 pt-4">
+      <h3 className="text-sm font-semibold text-brand-navy">
+        Personnes ayant accepté un entretien
+      </h3>
+      <p className="mt-1 text-sm text-brand-navy/70">
+        Liste en lecture seule, réservée à l’administrateur : elle sert à proposer un entretien à
+        ceux qui l’ont accepté (case non cochée par défaut). Une personne qui retire sa demande
+        disparaît de la liste.
+      </p>
+      {shown ? null : (
+        <button
+          type="button"
+          onClick={() => setShown(true)}
+          className="mt-2 rounded-md border border-brand-navy/20 px-3 py-1.5 text-sm font-semibold text-brand-navy hover:bg-brand-navy/5"
+        >
+          Afficher la liste
+        </button>
+      )}
+      {shown && query.isPending ? (
+        <p className="mt-2 text-sm text-brand-navy/70">Chargement de la liste…</p>
+      ) : null}
+      {shown && query.isError ? (
+        <p role="alert" className="mt-2 text-sm text-red-800">
+          {queryErrorMessage(query.error, "La liste n’a pas pu être chargée.")}
+        </p>
+      ) : null}
+      {query.data ? (
+        query.data.interviewees.length === 0 ? (
+          <p className="mt-2 text-sm text-brand-navy/70">
+            {query.data.total == null ? NOT_MEASURED : "Personne n’a encore accepté d’entretien."}
+          </p>
+        ) : (
+          <div className="mt-2 overflow-x-auto">
+            <table className="w-full text-left text-sm" data-testid="interviewees">
+              <thead className="text-xs text-brand-navy/70">
+                <tr>
+                  <th className="py-1 pr-4 font-medium">Accord donné le</th>
+                  <th className="py-1 pr-4 font-medium">Profil</th>
+                  <th className="py-1 font-medium">Adresse email</th>
+                </tr>
+              </thead>
+              <tbody>
+                {query.data.interviewees.map((person) => (
+                  <tr
+                    key={`${person.email}-${person.consentedAt}`}
+                    className="border-t border-brand-navy/10"
+                  >
+                    <td className="py-1 pr-4 tabular-nums">{formatDateTime(person.consentedAt)}</td>
+                    <td className="py-1 pr-4">{profileLabel(person.profile)}</td>
+                    <td className="py-1">{person.email}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {query.data.total != null && query.data.total > query.data.interviewees.length ? (
+              <p className="mt-2 text-xs text-brand-navy/70">
+                {query.data.interviewees.length} personnes affichées sur {query.data.total}.
+              </p>
+            ) : null}
+          </div>
+        )
+      ) : null}
+    </div>
+  );
+}
+
 const SURVEY_PROFILES: Array<{ key: keyof OfferOpeningSurveySummary["profiles"]; label: string }> =
   [
     { key: "particulier", label: "Particulier" },
@@ -758,6 +983,7 @@ function OfferOpeningSurveyCard({ summary }: { summary: OfferOpeningSurveySummar
           </div>
         ))}
       </dl>
+      <OfferOpeningInterviewees />
     </AdminPanel>
   );
 }
