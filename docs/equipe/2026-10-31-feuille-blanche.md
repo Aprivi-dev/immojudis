@@ -8,7 +8,9 @@ priorités. Les comptes-rendus précédents de `docs/equipe/` n'ont été lus pa
 travaillé en lecture seule, par vagues de 20 (limite de la plateforme). `redacteur-contenu`
 n'intervenait qu'en mode proposition. Aucun fichier du dépôt n'a été modifié (`git status` vide)
 et aucune écriture n'a eu lieu en base. `qualite-donnees` a lancé des requêtes SELECT légères sur la
-production pour mesurer ce que les autres agents ne pouvaient que lire dans le code.
+production pour mesurer ce que les autres agents ne pouvaient que lire dans le code. Un
+56ᵉ spécialiste, `optimisation-interface`, a été créé et lancé ensuite à la demande du propriétaire
+(section 4 K, n° 103 à 110) ; il a lu ce compte-rendu pour ne rien reproposer.
 
 **Relecture du chef d'orchestre.** Les constats les plus graves ont été rouverts dans le code ou
 mesurés en production avant d'être retenus. Ils sont marqués **[vérifié]** quand le chef l'a fait
@@ -230,6 +232,34 @@ passent quand on les relance seuls.
 | 97  | analyste-prix          | Garder 59 € ; mesurer la part des comptes qui atteignent 3 déblocages ; étudier ensuite un pass de 30 jours ou un déblocage à l'unité. Retirer d'Analyse les clés d'API et les 25 collaborateurs, qui n'ont pas d'écran | Haute    | S-M    | garder (mesure d'abord)            |
 | 98  | strategie-entreprise   | Viser d'abord les marchands de biens (jalon 0 de l'offre Pro : 10 à 12 entretiens, 5 pilotes payants), vendre une seule promesse : « jusqu'où enchérir »                                                                | Haute    | M      | discutable : choix du propriétaire |
 
+### K. Optimisation de l'interface (agent `optimisation-interface`, ajouté le 31/10/2026)
+
+L'agent a été créé et lancé à la demande du propriétaire après la première synthèse.
+
+**Mesures.** Captures Playwright de la production, en visiteur, aux largeurs 360 × 740 et
+390 × 844 (plus 1280 et 320 px pour certaines pages), sur 7 pages : accueil, `/sales`, une fiche,
+`/offres`, le simulateur, `/ventes-encheres-immobilieres/gironde` et `/login`. Les captures sont
+dans le scratchpad de la session, hors dépôt. Aucun débordement horizontal à 320, 360 et 390 px.
+
+**Mesures qui chiffrent des points déjà listés :**
+
+- n° 61 : à 360 px, aucune annonce n'apparaît au premier écran. La première carte commence à
+  y = 618 et la barre fixe à y = 679. Avec le bandeau cookies (218 px), il reste 62 % de l'écran
+  pour le contenu. **[vérifié sur capture]**
+- n° 52 : le bouton « Créer une alerte » est une cloche seule, sans libellé.
+- n° 53-54 : les 4 lignes verrouillées de la fiche visiteur ne sont pas cliquables (voir n° 104).
+
+| N°  | Agent                  | Proposition                                                                                                                                                                                                                                                                                                                                                                                                                               | Priorité | Effort | Avis du chef                                                         |
+| --- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------ | -------------------------------------------------------------------- |
+| 103 | optimisation-interface | Inscription : le bouton « Créer mon compte gratuit » est 105 px sous la ligne de flottaison à 360 px (261 px à 320 px), et le libellé de l'onglet « Professionnel » déborde de son bouton de 10 à 34 px selon la largeur. Retirer « Nom complet » de l'inscription (il est facultatif, `login-page.tsx:351`, mais rien ne le signale) pour le demander plus tard, fusionner l'en-tête et la ligne d'essai, corriger la grille des onglets | Haute    | S      | garder (minimisation du nom : avis `juridique-rgpd`)                 |
+| 104 | optimisation-interface | Fiche visiteur : le seul bouton d'inscription est à y = 1 212 et le bloc verrouillé (y = 2 122 à 3 345) n'a aucune action. Ajouter le bouton sous les lignes verrouillées, remonter celui du résumé sous la date d'audience, replier « Cette vente en clair » (environ 780 px, redondant) en gardant visibles les avertissements « indicatif »                                                                                            | Haute    | M      | garder (`redacteur-contenu`, `juridique-rgpd`)                       |
+| 105 | optimisation-interface | Simulateur de frais : le total est 1 049 px sous le champ du prix et s'affiche avec des centimes (« 137 254,35 € »). Barre collante du coût total sur mobile, encadré du total avant le détail, introduction repliée, arrondi à l'euro                                                                                                                                                                                                    | Haute    | M      | garder (arrondi : avis `statisticien`)                               |
+| 106 | optimisation-interface | `/sales` : 14 cartes sur 24 (58 %) sans visuel occupent chacune 273 px de zone grise (format 4/3, `SearchResults.module.css`). Bande compacte de 56 px à la place, mise à prix et date remontées : environ 3 000 px de moins sur la première page                                                                                                                                                                                         | Haute    | S-M    | discutable : écart avec la « case neutre » de `fondations.md`        |
+| 107 | optimisation-interface | `/sales` : les commandes occupent 570 px sur 740 avant la première carte (tri, 5 pastilles de type déjà présentes dans « Filtres », 3 liens d'aide). Regrouper les liens d'aide, fusionner le tri et le type ; avec 0 résultat, ne montrer que l'état vide et ses actions, aujourd'hui sous la ligne de flottaison                                                                                                                        | Haute    | M      | garder (avec `ux-designer` ; complète le n° 61)                      |
+| 108 | optimisation-interface | `/offres` : le bandeau d'essai (8 lignes) repousse le titre à y = 523 et le prix « 59 € TTC / mois » à y ≈ 3 045 ; deux boutons primaires de destinations différentes ; le titre saute de 23 px au chargement. Titre d'abord, bandeau réduit avec le texte complet à un tap, une ligne de prix dans l'en-tête, un seul bouton primaire                                                                                                    | Moyenne  | M      | garder (`redacteur-contenu`, `juridique-rgpd` pour le texte d'essai) |
+| 109 | optimisation-interface | Page département : le bouton « Voir les 22 ventes » est juste sous la ligne de flottaison (y = 844) et la première vente à y = 1 610. Fil d'Ariane au-dessus du titre, chiffres sur une ligne, les 5 prochaines ventes avant l'alerte et la répartition par type                                                                                                                                                                          | Moyenne  | S-M    | garder (`seo-expert` pour le texte visible)                          |
+| 110 | optimisation-interface | Cibles tactiles et unités : 52 cibles de moins de 44 px sur l'accueil à 390 px, dont le bouton principal (249 × 40 px, `HomePage.module.css`), « S'inscrire » et le menu (40 px) ; espace ordinaire au lieu d'insécable entre le chiffre et « € », « m² » ou « €/m² » (« 59 € TTC / mois », titres, `/sales`). Passer à `min-h-11` et ajouter une aide de formatage avec espace insécable                                                 | Moyenne  | S      | garder (`audit-accessibilite`)                                       |
+
 ---
 
 ## 5. Conflits entre agents et arbitrages
@@ -287,6 +317,8 @@ passent quand on les relance seuls.
 3. Quel tribunal doit primer en cas de désaccord entre la source et le code INSEE ? (n° 33)
 4. Les clés d'API sont-elles un produit au lancement ? (n° 74 et 97)
 5. Combien de personnes sont inscrites à la liste d'attente, et combien ont accepté un entretien ? (n° 92 et 96)
+6. Le nom complet est-il utile dès l'inscription, ou peut-il être demandé plus tard ? (n° 103)
+7. Pour les cartes sans photo de `/sales`, une bande compacte peut-elle remplacer la « case neutre » de `fondations.md` ? (n° 106)
 
 ---
 
