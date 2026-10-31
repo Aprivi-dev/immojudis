@@ -72,7 +72,7 @@ describe("PepiteBlock", () => {
   describe("version verrouillée (visiteur, compte Découverte non débloqué)", () => {
     it("annonce les deux critères en tête, avec leur état en texte et en icône, et replie les vérifications", () => {
       render(<PepiteBlock payload={locked} saleId={saleId} />);
-      // Un critère rempli (coût d'achat sous la valeur), un à confirmer (chances de l'emporter).
+      // Un critère rempli (coût d'achat sous la valeur), un à confirmer (part adjugée sous le plafond).
       const section = screen.getByRole("region", {
         name: "Pépite : 1 critère rempli sur 2, 1 à confirmer",
       });
@@ -86,7 +86,7 @@ describe("PepiteBlock", () => {
       const done = tests.find((item) => item.textContent?.includes("Coût d'achat estimé"))!;
       expect(done.textContent).toContain("Rempli");
       expect(done.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
-      const toConfirm = tests.find((item) => item.textContent?.includes("Chances de l'emporter"))!;
+      const toConfirm = tests.find((item) => item.textContent?.includes("Part des ventes comparables adjugées"))!;
       expect(toConfirm.textContent).toContain("À confirmer");
       expect(toConfirm.textContent).toContain("seuil de maintien");
       expect(toConfirm.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");

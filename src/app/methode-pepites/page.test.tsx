@@ -143,6 +143,20 @@ describe("page « Comment repérons-nous les pépites ? »", () => {
     );
   });
 
+  it("décrit ce que le premier critère mesure, sans parler de « chances de l’emporter » (n° 19)", () => {
+    const { container } = render(<Page />);
+    const text = container.textContent ?? "";
+    expect(text).not.toMatch(/chances? de l.emporter/i);
+    const criteria = sectionText("Les critères et les seuils");
+    expect(criteria).toContain(
+      "la part des ventes comparables adjugées au tribunal sous l’enchère plafond estimée, hors lots non adjugés",
+    );
+    expect(criteria).toContain("Ce n’est donc pas une probabilité de remporter une vente");
+    expect(criteria).toContain(
+      `au moins ${PEPITE_RULE_PARAMS.minNationalSales} ventes comparables`,
+    );
+  });
+
   it("donne les seuils de pepite-v1.2 à partir des constantes de la règle", () => {
     render(<Page />);
     const text = sectionText("Les critères et les seuils");
