@@ -5,10 +5,14 @@ import {
   SALE_HEARING_DEFAULT_DURATION_HOURS,
   buildSaleCalendarFile,
   buildSalesCalendarFile,
+  SALE_VISIT_DISCLAIMER,
   saleCalendarSequence,
   saleCalendarUid,
+  saleVisitEvents,
   type SaleCalendarRow,
 } from "./sale-calendar";
+import { buildIcsCalendarMany } from "./ical";
+import type { VisitSlot } from "./visit-slots";
 
 const origin = "https://www.immojudis.example";
 const now = new Date("2026-10-15T10:00:00Z");
@@ -242,5 +246,86 @@ describe("buildSalesCalendarFile (toutes les audiences suivies)", () => {
     const single = buildSaleCalendarFile(row(), { origin, now })!;
     const many = buildSalesCalendarFile([row()], { origin, now })!;
     expect(many.body).toBe(single.body);
+  });
+});
+
+describe("visites des ventes suivies (créneaux de l'annonce)", () => {
+  const timed: VisitSlot = { kind: "instant", at: new Date("2026-10-18T12:00:00Z") };
+  const allDay: VisitSlot = { kind: "day", isoDay: "2026-10-19" };
+  const slotsFor = (...slots: VisitSlot[]) => new Map([[lowerId, slots]]);
+  const unfoldedMany = (file: { body: string }) => file.body.replace(/\r\n /g, "");
+
+  it("écrit un événement par créneau à venir, à côté de l'audience, dans l'ordre des dates", () => {
+    const file = buildSalesCalendarFile([row()], {
+      origin,
+      now,
+      visitSlots: slotsFor(allDay, timed),
+    })!;
+    const ics = unfoldedMany(file);
+    expect(file.exportedIds).toEqual([lowerId]);
+    expect(ics.match(/BEGIN:VEVENT/g)).toHaveLength(3);
+    expect(ics).toContain("SUMMARY:Visite – Appartement à Bordeaux");
+    expect(ics).toContain("DTSTART:20261018T120000Z");
+    expect(ics).toContain("DTEND:20261018T130000Z");
+    expect(ics).toContain("DTSTART;VALUE=DATE:20261019");
+    expect(ics.indexOf("DTSTART:20261018")).toBeLessThan(
+      ics.indexOf("DTSTART;VALUE=DATE:20261019"),
+    );
+    expect(ics.indexOf("DTSTART;VALUE=DATE:20261019")).toBeLessThan(
+      ics.indexOf("DTSTART:20261020"),
+    );
+  });
+
+  it("est à confirmer, sans lieu ni adresse, et renvoie à la fiche", () => {
+    const events = saleVisitEvents(row(), [timed], { origin, now });
+    const ics = buildIcsCalendarMany(events, "-//test//").replace(/\r\n /g, "");
+    expect(ics).toContain("STATUS:TENTATIVE");
+    expect(ics).toContain(escapeIcsText(SALE_VISIT_DISCLAIMER));
+    expect(ics).toContain(escapeIcsText(`voir la fiche de la vente, ${origin}/sales/${lowerId}`));
+    expect(ics).toContain("Durée indicative : 1 h");
+    expect(ics).not.toContain("LOCATION");
+  });
+
+  it("rappelle la veille : à l'heure du créneau, ou à 9 h pour un créneau sur la journée", () => {
+    const [timedEvent, dayEvent] = saleVisitEvents(row(), [timed, allDay], { origin, now });
+    expect(timedEvent.alarms).toEqual([
+      { trigger: "-P1D", description: "Visite – Appartement à Bordeaux (demain)" },
+    ]);
+    expect(dayEvent.alarms?.[0].trigger).toBe("-PT15H");
+  });
+
+  it("ne garde pas un créneau passé, mais garde celui du jour même", () => {
+    const past: VisitSlot = { kind: "instant", at: new Date("2026-10-14T12:00:00Z") };
+    const pastDay: VisitSlot = { kind: "day", isoDay: "2026-10-14" };
+    const today: VisitSlot = { kind: "day", isoDay: "2026-10-15" };
+    expect(saleVisitEvents(row(), [past, pastDay], { origin, now })).toEqual([]);
+    expect(saleVisitEvents(row(), [today], { origin, now })).toHaveLength(1);
+  });
+
+  it("n'écrit aucune visite pour une audience non exportable (reportée, contradictoire)", () => {
+    expect(
+      saleVisitEvents(row({ exportable: false, sale_date: null }), [timed], { origin, now }),
+    ).toEqual([]);
+    expect(
+      buildSalesCalendarFile([row({ exportable: false, sale_date: null })], {
+        origin,
+        now,
+        visitSlots: slotsFor(timed),
+      }),
+    ).toBeNull();
+  });
+
+  it("donne à chaque créneau un identifiant stable, distinct de celui de l'audience", () => {
+    const first = saleVisitEvents(row(), [timed, allDay], { origin, now });
+    const again = saleVisitEvents(row(), [timed, allDay], { origin, now });
+    expect(first.map((event) => event.uid)).toEqual(again.map((event) => event.uid));
+    expect(new Set(first.map((event) => event.uid)).size).toBe(2);
+    expect(first[0].uid).not.toBe(saleCalendarUid(saleId, origin));
+  });
+
+  it("garde le fichier d'avant quand aucune visite n'est fournie", () => {
+    const without = buildSalesCalendarFile([row()], { origin, now })!;
+    const empty = buildSalesCalendarFile([row()], { origin, now, visitSlots: new Map() })!;
+    expect(empty.body).toBe(without.body);
   });
 });

@@ -6,7 +6,9 @@ import {
   type SaleCalendarRow,
 } from "@/lib/sale-calendar";
 import { PLANNING_CALENDAR_MAX_SALES } from "@/lib/favorite-planning";
+import { DETAIL_VIEW } from "@/lib/sale-views";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
+import { visitSlots, type VisitSlot } from "@/lib/visit-slots";
 
 /**
  * Export `.ics` de toutes les audiences suivies, en un fichier (« Mon planning », `/favoris`).
@@ -85,6 +87,30 @@ async function readCalendarRows(saleIds: readonly string[]): Promise<SaleCalenda
   return rows;
 }
 
+/**
+ * Les créneaux de visite des ventes exportées, lus avec la vue du compte (la plus restreinte, celle
+ * d'un compte Découverte : les créneaux y sont déjà publiés, aucune pièce ni adresse n'est lue ici).
+ * Une panne de lecture n'empêche pas l'export des audiences : le fichier sort alors sans visites.
+ */
+async function readVisitSlots(
+  auth: SupabaseAuthContext,
+  saleIds: readonly string[],
+): Promise<Map<string, VisitSlot[]>> {
+  const slots = new Map<string, VisitSlot[]>();
+  if (saleIds.length === 0) return slots;
+  const { data, error } = await auth.supabase
+    .from("v_auction_sales_discovery" as typeof DETAIL_VIEW)
+    .select("id, visit_dates")
+    .in("id", [...saleIds]);
+  if (error || !Array.isArray(data)) return slots;
+  for (const row of data as unknown as Array<{ id: string; visit_dates: unknown }>) {
+    if (typeof row?.id !== "string") continue;
+    const parsed = visitSlots(row.visit_dates);
+    if (parsed.length > 0) slots.set(row.id.toLowerCase(), parsed);
+  }
+  return slots;
+}
+
 export async function exportFollowedCalendar({
   auth,
   saleIds,
@@ -102,7 +128,12 @@ export async function exportFollowedCalendar({
   );
   const followed = await followedSaleIds(auth, requested);
   const rows = followed.length > 0 ? await readCalendarRows(followed) : [];
-  const file = buildSalesCalendarFile(rows, { origin, now });
+  // Les visites ne concernent que les ventes dont l'audience est exportable.
+  const visits = await readVisitSlots(
+    auth,
+    rows.filter((row) => row.exportable).map((row) => row.id.toLowerCase()),
+  );
+  const file = buildSalesCalendarFile(rows, { origin, now, visitSlots: visits });
   return {
     file,
     followed: followed.length,
