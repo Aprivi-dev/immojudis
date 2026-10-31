@@ -56,6 +56,8 @@ export function alertCriteriaSummary(
   }
   const saleType = parseSaleType(advanced.sale_type);
   if (saleType) criteria.push(`Vente : ${saleTypeFilterLabel(saleType).toLowerCase()}`);
+  const tribunal = text(advanced.tribunal);
+  if (tribunal) criteria.push(`Tribunal : ${tribunal}`);
   if (alert.property_type) criteria.push(`Bien : ${propertyTypeLabel(alert.property_type)}`);
   if (alert.max_price_eur != null) {
     criteria.push(`Mise à prix maximale : ${formatPrice(alert.max_price_eur)}`);
@@ -133,6 +135,7 @@ export function alertToSalesSearch(alert: AlertSearchCriteria): SalesSearchParam
     houseWithLand: alert.require_house_with_land ? true : undefined,
     minSaleDate: text(advanced.min_sale_date) ?? undefined,
     maxSaleDate: text(advanced.max_sale_date) ?? undefined,
+    tribunal: text(advanced.tribunal) ?? undefined,
     saleType: parseSaleType(advanced.sale_type),
     query: text(advanced.query) ?? undefined,
     aroundAddress: text(advanced.around_address) ?? undefined,

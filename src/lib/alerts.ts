@@ -1,7 +1,12 @@
 import { saleDateBoundary, validSaleDate } from "./search/sale-date-range";
 import { dpeMatches, extractDpe } from "@/lib/dpe";
 import { getSaleProcedure } from "@/lib/sale-procedure";
-import { matchesFrenchGeoSearch, resolveFrenchGeoSearch } from "@/lib/search/french-geo-search";
+import {
+  frenchSearchTerms,
+  matchesFrenchGeoSearch,
+  normalizeFrenchSearchText,
+  resolveFrenchGeoSearch,
+} from "@/lib/search/french-geo-search";
 import { parseSaleType, saleVenueMatchesType } from "@/lib/sale-types";
 import { estimateSaleGrossYieldPct, pricePerM2 } from "@/lib/geo";
 import type { RentLookup } from "@/lib/rent-reference";
@@ -68,6 +73,9 @@ export function alertMatchesSale(
   if (!matchesAlertQueryScope(sale, alert.advanced_criteria?.query)) {
     return noMatch("secteur différent");
   }
+  if (!matchesAlertTribunal(sale, alert.advanced_criteria?.tribunal)) {
+    return noMatch("tribunal différent");
+  }
   if (
     alert.advanced_criteria?.pepite_only === true &&
     !context.pepiteSaleIds?.has(sale.id.toLowerCase())
@@ -130,8 +138,30 @@ export function alertMatchesSale(
   if (context.watchedZone) reasons.push(watchedZoneSummary(context.watchedZone));
   // Texte seulement : jamais un montant dans une alerte (voir `email-alerts.ts`).
   if (alert.advanced_criteria?.pepite_only === true) reasons.push("pépite");
+  if (alertTribunalTerms(alert.advanced_criteria?.tribunal).length) reasons.push("tribunal");
 
   return { matches: true, reasons };
+}
+
+function alertTribunalTerms(tribunal: unknown): string[] {
+  return typeof tribunal === "string" ? frenchSearchTerms(tribunal) : [];
+}
+
+/**
+ * Critère « tribunal » (`advanced_criteria.tribunal`) : la même règle que le filtre « tribunal » du
+ * catalogue, pour que l'alerte et la recherche qu'elle ouvre désignent les mêmes ventes. Chaque mot
+ * du texte doit se trouver dans le tribunal, son nom, sa ville ou son code. Une vente dont le
+ * tribunal n'est pas renseigné ne correspond pas : on ne devine jamais un rattachement.
+ */
+function matchesAlertTribunal(sale: AuctionSale, tribunal: unknown): boolean {
+  const terms = alertTribunalTerms(tribunal);
+  if (!terms.length) return true;
+  const haystack = normalizeFrenchSearchText(
+    [sale.tribunal, sale.tribunal_name, sale.tribunal_city, sale.tribunal_code]
+      .filter(Boolean)
+      .join(" "),
+  );
+  return terms.every((term) => haystack.includes(term));
 }
 
 /**

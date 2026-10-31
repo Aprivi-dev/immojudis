@@ -385,3 +385,52 @@ describe("alerte « Seulement les pépites »", () => {
     ).toBe(false);
   });
 });
+
+describe("alerte par tribunal (advanced_criteria.tribunal)", () => {
+  const tribunalAlert = (tribunal: unknown) =>
+    makeAlert({
+      city: null,
+      department: null,
+      property_type: null,
+      max_price_eur: null,
+      min_surface_m2: null,
+      occupancy_status: null,
+      min_investment_score: null,
+      max_price_per_m2: null,
+      min_yield_pct: null,
+      min_market_discount_pct: null,
+      dpe_classes: [],
+      require_house_with_land: false,
+      advanced_criteria: { tribunal },
+    });
+  const bobigny = makeSale({
+    tribunal: "TJ Bobigny",
+    tribunal_name: "Tribunal judiciaire de Bobigny",
+    tribunal_city: "Bobigny",
+    tribunal_code: "justice_tj_1_93",
+  });
+
+  it("retient les ventes du tribunal, sans tenir compte de la casse ni des accents", () => {
+    const hit = alertMatchesSale(tribunalAlert("TJ Bobigny"), bobigny);
+    expect(hit.matches).toBe(true);
+    // Un mot, jamais un montant.
+    expect(hit.reasons).toContain("tribunal");
+    expect(alertMatchesSale(tribunalAlert("bóbigny"), bobigny).matches).toBe(true);
+    expect(alertMatchesSale(tribunalAlert("BOBIGNY"), bobigny).matches).toBe(true);
+  });
+
+  it("écarte les ventes d'un autre tribunal et celles sans tribunal renseigné", () => {
+    const other = makeSale({ tribunal: "TJ Nanterre", tribunal_name: null, tribunal_code: null });
+    expect(alertMatchesSale(tribunalAlert("TJ Bobigny"), other).matches).toBe(false);
+    const unknown = makeSale({ tribunal: null, tribunal_name: null, tribunal_city: null });
+    expect(alertMatchesSale(tribunalAlert("TJ Bobigny"), unknown).matches).toBe(false);
+  });
+
+  it("ignore un critère vide ou qui n'est pas du texte", () => {
+    for (const value of [undefined, null, "", "  ", 42, { nom: "Bobigny" }]) {
+      const result = alertMatchesSale(tribunalAlert(value), makeSale({ tribunal: "TJ Nanterre" }));
+      expect(result.matches).toBe(true);
+      expect(result.reasons).not.toContain("tribunal");
+    }
+  });
+});
