@@ -524,7 +524,7 @@ function saleToApiFeedItem(
 ): SalesApiFeedItem {
   const rentReference = isRentApplicable(sale) ? (rents?.(sale) ?? null) : null;
   const surface = getSaleSurface(sale);
-  const ppm = pricePerM2(sale.starting_price_eur, surface.value);
+  const ppm = pricePerM2(sale.starting_price_eur, surface.value, surface.kind);
   const dpe = extractDpe(sale).class;
   const grossYieldPct = estimateSaleGrossYieldPct(sale, surface.value, rentReference);
   // Sans mise à prix, aucun prix n'est envoyé (ni 0 : le coût se réduirait aux frais fixes).
@@ -773,8 +773,9 @@ function cleanString(value: unknown): string | null {
 }
 
 function saleToCsvRow(sale: AuctionSale, origin?: string | null): Array<string | number | null> {
-  const surface = getSaleSurface(sale).value;
-  const ppm = pricePerM2(sale.starting_price_eur, surface);
+  const saleSurface = getSaleSurface(sale);
+  const surface = saleSurface.value;
+  const ppm = pricePerM2(sale.starting_price_eur, surface, saleSurface.kind);
   const dpe = extractDpe(sale).class;
 
   return [

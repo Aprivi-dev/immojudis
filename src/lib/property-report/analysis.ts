@@ -28,7 +28,7 @@ import { isAnilRentReference } from "@/lib/rent-source-notice";
 import { buildCeilingSnapshot } from "./ceiling-snapshot";
 import { buildReportTraceability } from "@/lib/source-traceability";
 import { buildStreetFacadeAnalysis } from "@/lib/street-facade-analysis";
-import { getSaleSurface } from "@/lib/surface";
+import { getSaleSurface, type SaleSurface } from "@/lib/surface";
 import {
   buildUrbanPlanningAnalysis,
   type StructuredUrbanPlanningSignal,
@@ -65,12 +65,15 @@ export { buildCeilingSnapshot };
 export function buildOpportunityAnalysis({
   sale,
   surfaceM2,
+  surfaceKind,
   marketEstimate,
   ceilingSnapshot,
   rentReference: givenRentReference = null,
 }: {
   sale: AuctionSale;
   surfaceM2: number | null;
+  /** Nature de la surface (`getSaleSurface(sale).kind`) : une surface estimée ne donne pas de prix au m². */
+  surfaceKind?: SaleSurface["kind"] | null;
   marketEstimate: MarketEstimate | null;
   ceilingSnapshot: ReturnType<typeof buildCeilingSnapshot>;
   /** Référence de loyer de la vente (carte ANIL à la commune) ; absente, repli départemental. */
@@ -80,7 +83,7 @@ export function buildOpportunityAnalysis({
   const rentReference = isRentApplicable(sale) ? givenRentReference : null;
   const startingPrice = positiveNumber(sale.starting_price_eur);
   const surface = positiveNumber(surfaceM2);
-  const startingPricePerM2 = roundedNumber(pricePerM2(startingPrice, surface));
+  const startingPricePerM2 = roundedNumber(pricePerM2(startingPrice, surface, surfaceKind));
   const medianPricePerM2 = positiveNumber(marketEstimate?.medianPricePerM2);
   const p25PricePerM2 = positiveNumber(marketEstimate?.p25PricePerM2);
   const p75PricePerM2 = positiveNumber(marketEstimate?.p75PricePerM2);
@@ -383,6 +386,7 @@ export function buildReportSnapshot({
       opportunity: buildOpportunityAnalysis({
         sale,
         surfaceM2: surface.value,
+        surfaceKind: surface.kind,
         marketEstimate,
         ceilingSnapshot,
         rentReference,

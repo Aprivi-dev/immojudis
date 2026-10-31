@@ -74,8 +74,9 @@ export function alertMatchesSale(
   ) {
     return noMatch("pas une pépite");
   }
-  const surface = getSaleSurface(sale).value;
-  const ppm2 = pricePerM2(sale.starting_price_eur, surface);
+  const saleSurface = getSaleSurface(sale);
+  const surface = saleSurface.value;
+  const ppm2 = pricePerM2(sale.starting_price_eur, surface, saleSurface.kind);
   const yieldPct = estimateSaleGrossYieldPct(sale, surface, context.rents?.(sale));
   const dpe = extractDpe(sale).class;
   const acceptedDpeClasses = alert.dpe_classes ?? [];

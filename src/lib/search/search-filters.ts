@@ -276,7 +276,8 @@ export function applyClientSearchFilters(
     if (search.transactionType === "for_rent") return false;
     if (search.transactionType === "sold" && !isSoldLike(sale)) return false;
 
-    const surface = getSaleSurface(sale).value;
+    const saleSurface = getSaleSurface(sale);
+    const surface = saleSurface.value;
 
     if (search.minPrice != null && (sale.starting_price_eur ?? 0) < search.minPrice) return false;
     if (search.maxPrice != null && (sale.starting_price_eur ?? Infinity) > search.maxPrice) {
@@ -297,7 +298,7 @@ export function applyClientSearchFilters(
     if (search.query && !matchesFrenchGeoSearch(sale, search.query)) return false;
     if (search.keywords && !matchesFrenchSearchText(sale, search.keywords)) return false;
     if (search.maxPricePerM2 != null) {
-      const ppm = pricePerM2(sale.starting_price_eur, surface);
+      const ppm = pricePerM2(sale.starting_price_eur, surface, saleSurface.kind);
       if (ppm == null || ppm > search.maxPricePerM2) return false;
     }
     if (search.minYield != null) {

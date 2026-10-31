@@ -960,7 +960,8 @@ export function buildAlertMatchSnapshot({
       },
     };
   }
-  const surface = getSaleSurface(sale).value;
+  const saleSurface = getSaleSurface(sale);
+  const surface = saleSurface.value;
   const dpe = extractDpe(sale).class;
   const yieldPct = estimateSaleGrossYieldPct(sale, surface, rents?.(sale));
   const documents = documentSignatureParts(sale);
@@ -1007,7 +1008,7 @@ export function buildAlertMatchSnapshot({
       saleDate: sale.sale_date,
       status: sale.status,
       surfaceM2: surface,
-      pricePerM2: roundNumber(pricePerM2(sale.starting_price_eur, surface)),
+      pricePerM2: roundNumber(pricePerM2(sale.starting_price_eur, surface, saleSurface.kind)),
       investmentScore: sale.investment_score,
       documentCount: documents.count,
       documentSignature: documents.signature,
