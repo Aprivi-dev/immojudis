@@ -34,6 +34,7 @@ const LEGAL_LINKS = [
   { href: "/privacy#cookies", label: "Gérer les cookies" },
   { href: "/classement-des-annonces", label: "Classement des annonces" },
   { href: "/mes-droits", label: "Mes droits" },
+  { href: "/accessibilite", label: "Accessibilité : non évalué" },
 ] as const;
 
 /** Console pages bring their own shell and must not show the public footer. */
