@@ -4,14 +4,17 @@
 -- comparés à un relevé pris avant les données de test (écarts).
 begin;
 
-select plan(9);
+select plan(11);
 
 -- Structure et droits ------------------------------------------------------------------------------
 select ok(
   not has_function_privilege('anon', 'public.get_trial_end_notice_queue(integer, timestamptz)', 'EXECUTE')
   and not has_function_privilege('authenticated', 'public.get_trial_end_notice_queue(integer, timestamptz)', 'EXECUTE')
-  and has_function_privilege('service_role', 'public.get_trial_end_notice_queue(integer, timestamptz)', 'EXECUTE'),
-  'the queue is for the server (service role) only'
+  and has_function_privilege('service_role', 'public.get_trial_end_notice_queue(integer, timestamptz)', 'EXECUTE')
+  and not has_function_privilege('anon', 'public.claim_trial_end_notice(uuid, date, timestamptz)', 'EXECUTE')
+  and not has_function_privilege('authenticated', 'public.claim_trial_end_notice(uuid, date, timestamptz)', 'EXECUTE')
+  and has_function_privilege('service_role', 'public.claim_trial_end_notice(uuid, date, timestamptz)', 'EXECUTE'),
+  'the queue and the claim are for the server (service role) only'
 );
 select is(
   (select p.prosecdef and p.provolatile = 's' and p.proconfig = array['search_path=""']
@@ -77,11 +80,11 @@ values ('c8620000-0000-4000-8000-000000000004');
 insert into public.user_subscriptions (user_id, plan_code, status, current_period_end)
 values ('c8620000-0000-4000-8000-000000000005', 'analyse', 'active', now() + interval '30 days');
 
-insert into public.launch_offer_end_notices (user_id, ends_on, status, attempts, sent_at)
+insert into public.launch_offer_end_notices (user_id, ends_on, kind, status, attempts, sent_at)
 values (
   'c8620000-0000-4000-8000-000000000006',
   (app_private.signup_trial_ends_at('c8620000-0000-4000-8000-000000000006') at time zone 'Europe/Paris')::date,
-  'sent', 1, now()
+  'trial_end', 'sent', 1, now()
 );
 
 create temporary table pgtap_862_after on commit drop as
@@ -116,13 +119,40 @@ select is(
   'the journal key is the Paris day of the end of the trial of the account'
 );
 
+-- Le préavis global du même jour ne bloque pas la fin d'essai, ni l'inverse (le type entre dans la clé) ---
+-- Le compte 1 a déjà reçu le préavis global, daté du jour de sa fin d'essai : il reste dans la file.
+insert into public.launch_offer_end_notices (user_id, ends_on, kind, status, attempts, sent_at)
+values (
+  'c8620000-0000-4000-8000-000000000001',
+  (app_private.signup_trial_ends_at('c8620000-0000-4000-8000-000000000001') at time zone 'Europe/Paris')::date,
+  'launch_offer_end', 'sent', 1, now()
+);
+select is(
+  (select count(*)::integer
+     from jsonb_array_elements(public.get_trial_end_notice_queue(200) -> 'recipients') r
+    where (r ->> 'user_id') = 'c8620000-0000-4000-8000-000000000001'),
+  1,
+  'a global notice sent the same day does not take the account out of the trial-end queue'
+);
+select ok(
+  public.claim_trial_end_notice(
+    'c8620000-0000-4000-8000-000000000002',
+    (app_private.signup_trial_ends_at('c8620000-0000-4000-8000-000000000001') at time zone 'Europe/Paris')::date
+  )
+  and public.claim_launch_offer_end_notice(
+    'c8620000-0000-4000-8000-000000000002',
+    (app_private.signup_trial_ends_at('c8620000-0000-4000-8000-000000000001') at time zone 'Europe/Paris')::date
+  ),
+  'a trial-end claim and a global notice claim for the same account and day do not block each other'
+);
+
 -- Une fois réservé, le compte sort de la file (même clé que le journal) ----------------------------------
 select ok(
-  public.claim_launch_offer_end_notice(
+  public.claim_trial_end_notice(
     'c8620000-0000-4000-8000-000000000001',
     (app_private.signup_trial_ends_at('c8620000-0000-4000-8000-000000000001') at time zone 'Europe/Paris')::date
   ),
-  'the notice can be claimed once'
+  'the notice can be claimed once, even though the global notice of the same day was sent'
 );
 select is(
   (select count(*)::integer

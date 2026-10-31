@@ -19,10 +19,12 @@ vi.mock("@/integrations/supabase/client.server", () => ({
       return {
         update: (patch: Record<string, unknown>) => ({
           eq: (_column: string, userId: string) => ({
-            eq: async (_column2: string, endsOn: string) => {
-              mocks.update(table, patch, userId, endsOn);
-              return { error: null };
-            },
+            eq: (_column2: string, endsOn: string) => ({
+              eq: async (_column3: string, kind: string) => {
+                mocks.update(table, patch, userId, endsOn, kind);
+                return { error: null };
+              },
+            }),
           }),
         }),
       };
@@ -81,7 +83,7 @@ beforeEach(() => {
   }));
   mocks.send.mockResolvedValue({ id: "msg-1" });
   mocks.rpc.mockImplementation(async (name: string) =>
-    name === "claim_launch_offer_end_notice" ? { data: true, error: null } : queue(A, B),
+    name === "claim_trial_end_notice" ? { data: true, error: null } : queue(A, B),
   );
 });
 
@@ -103,14 +105,14 @@ describe("runTrialEndNotices", () => {
       p_limit: 200,
       p_now: now.toISOString(),
     });
-    expect(mocks.rpc).toHaveBeenCalledWith("claim_launch_offer_end_notice", {
+    expect(mocks.rpc).toHaveBeenCalledWith("claim_trial_end_notice", {
       p_user_id: A,
       p_ends_on: "2026-11-11",
       p_now: now.toISOString(),
     });
     expect(mocks.send.mock.calls[0][0]).toMatchObject({
       apiKey: "re_test",
-      idempotencyKey: `immojudis-launch-offer-end-${A}-2026-11-11`,
+      idempotencyKey: `trial-end-immojudis-launch-offer-end-${A}-2026-11-11`,
       category: "launch_offer_end",
     });
     expect(mocks.build.mock.calls[0][0]).toMatchObject({ userId: A, internal: false });
@@ -119,12 +121,13 @@ describe("runTrialEndNotices", () => {
       expect.objectContaining({ status: "sent", message_id: "msg-1" }),
       A,
       "2026-11-11",
+      "trial_end",
     );
   });
 
   it("ne réécrit pas un compte déjà réservé ou désinscrit entre-temps", async () => {
     mocks.rpc.mockImplementation(async (name: string) =>
-      name === "claim_launch_offer_end_notice" ? { data: false, error: null } : queue(A),
+      name === "claim_trial_end_notice" ? { data: false, error: null } : queue(A),
     );
     const summary = await run({ mode: "on" });
     expect(summary).toMatchObject({ due: 1, sent: 0, skipped: 1, failed: 0 });
@@ -142,6 +145,7 @@ describe("runTrialEndNotices", () => {
       expect.objectContaining({ status: "failed", error: "send_failed" }),
       A,
       "2026-11-11",
+      "trial_end",
     );
     expect(() => assertTrialEndNoticesComplete(summary)).toThrow(/1 envoi\(s\) en échec/);
   });
@@ -156,6 +160,7 @@ describe("runTrialEndNotices", () => {
       expect.objectContaining({ status: "failed", error: "email_unavailable" }),
       A,
       "2026-11-11",
+      "trial_end",
     );
   });
 
@@ -165,7 +170,7 @@ describe("runTrialEndNotices", () => {
       config: { ...config, configured: false, apiKey: null, missing: ["RESEND_API_KEY"] },
     });
     expect(summary).toMatchObject({ due: 2, sent: 0, configured: false });
-    expect(mocks.rpc).not.toHaveBeenCalledWith("claim_launch_offer_end_notice", expect.anything());
+    expect(mocks.rpc).not.toHaveBeenCalledWith("claim_trial_end_notice", expect.anything());
     expect(() => assertTrialEndNoticesComplete(summary)).toThrow(/Resend n'est pas configuré/);
   });
 
@@ -196,7 +201,7 @@ describe("runTrialEndNotices", () => {
     const summary = await run({ mode: "internal" });
     expect(summary).toMatchObject({ mode: "internal", due: 1, sent: 1 });
     expect(mocks.rpc).not.toHaveBeenCalledWith("get_trial_end_notice_queue", expect.anything());
-    expect(mocks.rpc).toHaveBeenCalledWith("claim_launch_offer_end_notice", {
+    expect(mocks.rpc).toHaveBeenCalledWith("claim_trial_end_notice", {
       p_user_id: A,
       p_ends_on: "2026-11-09",
       p_now: now.toISOString(),

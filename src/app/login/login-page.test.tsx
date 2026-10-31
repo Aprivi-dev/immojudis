@@ -131,6 +131,22 @@ describe("login page", () => {
     expect(mocks.track).toHaveBeenCalledWith("signup_submitted", { entry: "exemple" });
   });
 
+  it("explains the detour from the fees simulator and counts it as the origin of the sign-up", async () => {
+    mocks.search = { mode: "investor", reason: "simulateur" };
+    mocks.signUp.mockResolvedValue({ error: null });
+    render(<LoginPage />);
+    expect(screen.getByText(/pour chiffrer une vente réelle/)).toBeTruthy();
+    fireEvent.change(screen.getByPlaceholderText("vous@exemple.fr"), {
+      target: { value: "nouvel.utilisateur@example.test" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("12 caractères minimum"), {
+      target: { value: "un-mot-de-passe-solide" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Créer mon compte gratuit/ }));
+    await waitFor(() => expect(mocks.track).toHaveBeenCalledTimes(1));
+    expect(mocks.track).toHaveBeenCalledWith("signup_submitted", { entry: "simulateur" });
+  });
+
   it("shows a French error inside the form instead of the raw Supabase message", async () => {
     mocks.signIn.mockResolvedValue({ error: new Error("Invalid login credentials") });
     render(<LoginPage />);

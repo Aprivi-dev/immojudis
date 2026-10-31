@@ -145,6 +145,11 @@ function reasonCopy(reason: LoginReason, launchOffer: boolean): { signup: string
           "Créez votre compte gratuit, sans carte bancaire, pour suivre des ventes et être prévenu des nouvelles annonces.",
         login: "Connectez-vous pour suivre des ventes et retrouver vos alertes.",
       };
+    case "simulateur":
+      return {
+        signup: "Créez votre compte gratuit, sans carte bancaire, pour chiffrer une vente réelle.",
+        login: "Connectez-vous pour chiffrer une vente réelle.",
+      };
   }
 }
 

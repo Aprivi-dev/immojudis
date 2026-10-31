@@ -10,7 +10,6 @@ import { listingSaleStatus } from "@/lib/listing-evidence";
 import { useAuth } from "@/hooks/use-auth";
 import { salesReturnHref, salesReturnLabel } from "@/lib/navigation";
 import { DocumentReadingSection } from "@/components/sale-detail/DocumentReadingSection";
-import { CeilingViewTracker } from "@/components/sale-detail/CeilingViewTracker";
 import { PepiteViewTracker } from "@/components/sale-detail/PepiteViewTracker";
 import { SalePassagesSection } from "@/components/sale-detail/SalePassagesSection";
 import { SaleUnlockPanel } from "@/components/sale-detail/SaleUnlockPanel";
@@ -1176,10 +1175,6 @@ function SaleDetailWorkspace({
                 ) : null}
                 {fullData && ceilingOpen && !valuationConflict ? (
                   <div id="calculation" className="scroll-mt-2">
-                    <CeilingViewTracker
-                      saleId={sale.id}
-                      computed={ceilingEnabled && ceilingPlan.available}
-                    />
                     <LaunchOfferIncludedTag className="mb-2" />
                     <CeilingPlanner
                       hypotheses={ceilingHypotheses}

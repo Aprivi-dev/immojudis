@@ -79,7 +79,7 @@ export type ProductEventProperties = {
   /** Le déblocage d'une vente est confirmé (second clic du panneau), avant la réponse du serveur. */
   sale_unlock_confirmed: undefined;
   home_cta_clicked: { target: HomeCtaTarget };
-  /** Le plafond d'enchère d'une vente est calculé et affiché (pas seulement l'estimation servie). */
+  /** L'enchère plafond d'une vente est calculée et affichée (pas seulement l'estimation servie). */
   ceiling_viewed: undefined;
   /** Un rapport partagé est ouvert par son destinataire : `open` (lisible) ou `unavailable` (lien fermé). */
   shared_report_viewed: { state: SharedReportState };

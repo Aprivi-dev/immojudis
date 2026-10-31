@@ -34,6 +34,7 @@ import { CeilingHypothesesPanel } from "@/components/ceiling/CeilingHypothesesPa
 import { EstimatedFeesBadge } from "@/components/ceiling/EstimatedFeesBadge";
 import { onRadioGroupKeyDown } from "@/components/ceiling/radio-group-keys";
 import { Terme, type TermeKey } from "@/components/ceiling/Terme";
+import { CeilingViewTracker } from "@/components/sale-detail/CeilingViewTracker";
 
 type ChoicesUpdate = (change: (choices: CeilingUserChoices) => CeilingUserChoices) => void;
 
@@ -87,6 +88,7 @@ export function CeilingPlanner({
       aria-labelledby="ceiling-planner-title"
       className="overflow-hidden rounded-lg border border-line bg-white"
     >
+      <CeilingViewTracker computed={plan.available} />
       <div className="p-5 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
