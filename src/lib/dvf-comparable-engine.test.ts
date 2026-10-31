@@ -57,7 +57,8 @@ describe("dvf comparable engine", () => {
     expect(analysis.medianPricePerM2).toBeGreaterThanOrEqual(3_900);
     expect(analysis.medianPricePerM2).toBeLessThanOrEqual(4_100);
     expect(analysis.medianValueEur).toBeGreaterThan(190_000);
-    expect(analysis.apparentDiscountPct).toBeGreaterThan(20);
+    // La décote n'est plus calculée ici : une seule règle, `resolveMarketGap` (market-gap.ts).
+    expect(analysis).not.toHaveProperty("apparentDiscountPct");
     expect(analysis.comparables[0].id).toBe("nearest_recent");
     expect(analysis.comparables[0].reasons).toEqual(
       expect.arrayContaining(["très proche", "vente récente", "même type", "surface comparable"]),

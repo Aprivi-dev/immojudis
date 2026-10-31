@@ -25,6 +25,21 @@ describe("buildCeilingSnapshot", () => {
     expect(snapshot.refreshWorksBudget).not.toBe(77_000);
   });
 
+  it("evaluates no bid at 0 € when the starting price is missing", () => {
+    const withoutPrice = { ...sale, starting_price_eur: null };
+    const snapshot = buildCeilingSnapshot(
+      withoutPrice,
+      null,
+      { manualPricePerM2: 3_000 },
+      DEFAULT_OPEN_FEE_REGIMES,
+    );
+
+    // Pas de marge « au prix de départ » : elle vaudrait le budget entier d'une enchère à 0 €.
+    expect(snapshot.marginTotal).toBeNull();
+    expect(snapshot.marginPerM2).toBeNull();
+    expect(snapshot.acquisition.price).toBe(0);
+  });
+
   it("derives no amount from the plan of a sale without a fee regime, whatever the choices", () => {
     const stateSale = {
       ...sale,

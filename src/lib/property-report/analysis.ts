@@ -12,6 +12,8 @@ import { type EnvironmentalContext } from "@/lib/environmental-context";
 import { estimateSaleGrossYieldPct, pricePerM2 } from "@/lib/geo";
 import { buildLegalAttentionAnalysis } from "@/lib/legal-attention-analysis";
 import type { MarketEstimate } from "@/lib/market.server";
+import { describeMarketGap, resolveMarketGap } from "@/lib/market-gap";
+import { marketGapWithheldReason } from "@/lib/market-gap-band";
 import { buildMarketComparablesAnalysis } from "@/lib/market-comparables-analysis";
 import { buildNearbyServicesAnalysis } from "@/lib/nearby-services";
 import { buildNeighborhoodAnalysis } from "@/lib/neighborhood-analysis";
@@ -98,9 +100,28 @@ export function buildOpportunityAnalysis({
     : surface && p75PricePerM2
       ? Math.round(surface * p75PricePerM2)
       : null;
+  // Même règle que la fiche (`buildValuePreview`) : écart borné, arrondi à l'entier et jamais donné
+  // pour un bien occupé ou d'occupation inconnue (la valeur s'appuie sur des ventes de biens libres).
+  const gapWithheld = marketGapWithheldReason(sale.occupancy_status);
+  const marketGap = resolveMarketGap({
+    estimatedValueEur: estimatedMarketValue,
+    startingPriceEur: startingPrice,
+    surfaceM2: surface,
+  });
   const apparentDiscountPct =
-    startingPrice && estimatedMarketValue
-      ? roundPercent(((estimatedMarketValue - startingPrice) / estimatedMarketValue) * 100)
+    !gapWithheld && marketGap.status === "gap" ? marketGap.discountPct : null;
+  // Phrase à la place du pourcentage, pour le dire au lieu de laisser un trou dans le rapport.
+  const apparentDiscountNote =
+    apparentDiscountPct == null && marketGap.status !== "unavailable"
+      ? describeMarketGap({
+          discountPct: null,
+          discountNotSignificant: !gapWithheld && marketGap.status === "not_significant",
+          startingPricePerM2:
+            !gapWithheld && marketGap.status === "not_significant"
+              ? marketGap.startingPricePerM2
+              : null,
+          gapWithheld,
+        })
       : null;
   const grossYieldPct = roundPercent(
     estimateSaleGrossYieldPct(
@@ -115,10 +136,13 @@ export function buildOpportunityAnalysis({
     score != null && typeof sale.score_confidence === "number" ? sale.score_confidence * 100 : null,
   );
   const acquisition = ceilingSnapshot.acquisition;
-  const totalCostPerM2 = surface ? roundedNumber(acquisition.totalCost / surface) : null;
+  // `acquisition.price` vaut 0 sans mise à prix : le coût complet se réduirait aux frais fixes.
+  const priceKnown = acquisition.price > 0;
+  const totalCostPerM2 =
+    surface && priceKnown ? roundedNumber(acquisition.totalCost / surface) : null;
   const rentabilityScore = computeRentabilityScore({
     surface,
-    price: acquisition.price,
+    price: priceKnown ? acquisition.price : null,
     works: acquisition.works,
     fpt: acquisition.fpt,
     // Un bien qui n'est pas un logement n'a aucun loyer de référence : « indisponible ».
@@ -147,6 +171,7 @@ export function buildOpportunityAnalysis({
       ? "Fourchette de valeur estimée"
       : "Repère P25-P75 des comparables appliqué à la surface",
     apparentDiscountPct,
+    apparentDiscountNote,
     grossYieldPct,
     // Source du loyer derrière le rendement : la mention ANIL s'affiche avec lui (rapport, PDF).
     rentReference: isAnilRentReference(rentReference)
@@ -160,10 +185,10 @@ export function buildOpportunityAnalysis({
       : null,
     rentabilityScore,
     acquisitionCosts: {
-      price: acquisition.price,
-      acquisitionFeesTotal: Math.round(acquisition.acquisitionFeesTotal),
-      acquisitionFeesPct: roundPercent(acquisition.acquisitionFeesPct),
-      totalCost: Math.round(acquisition.totalCost),
+      price: priceKnown ? acquisition.price : null,
+      acquisitionFeesTotal: priceKnown ? Math.round(acquisition.acquisitionFeesTotal) : null,
+      acquisitionFeesPct: priceKnown ? roundPercent(acquisition.acquisitionFeesPct) : null,
+      totalCost: priceKnown ? Math.round(acquisition.totalCost) : null,
       totalCostPerM2,
       fpt: Math.round(acquisition.fpt),
       works: Math.round(acquisition.works),
