@@ -184,7 +184,8 @@ def test_failed_address_falls_back_to_the_commune_centroid(monkeypatch):
 
     assert [call.get("result_type") for call in calls] == [None, "municipality"]
     assert calls[1]["query"] == "Bordeaux"
-    assert calls[1]["postcode"] == "33000"
+    # 33000 est un code postal générique (fini par 000) : pas de filtre ``postcode``.
+    assert calls[1]["postcode"] is None
     assert (sale.latitude, sale.longitude) == (Decimal("44.8378"), Decimal("-0.5792"))
     assert sale.raw_payload["geo_precision"] == "municipality"
     assert sale.raw_payload["geocode"]["accepted"] is True

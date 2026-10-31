@@ -8,11 +8,14 @@ sur le département voisin et le tracé simplifié rentre un peu dans les terres
 
 Une boîte ne sert qu'à écarter une erreur grossière (un point en Angleterre pour une vente à Grasse), pas à
 décider du département d'un point. Un département absent de la table (collectivités d'outre-mer 975, 977 et
-suivants) n'est jamais contrôlé.
+suivants) n'est contrôlé que par les boîtes de la France entière (``FRANCE_BOUNDS``), qui s'appliquent aussi quand
+le département de la vente est vide : (0, 0), une latitude et une longitude inversées ou un point à l'étranger sont
+refusés.
 """
 
 from __future__ import annotations
 
+import math
 from decimal import Decimal
 
 DEPARTMENT_BOUNDS: dict[str, tuple[float, float, float, float]] = {
@@ -120,8 +123,42 @@ DEPARTMENT_BOUNDS: dict[str, tuple[float, float, float, float]] = {
 }
 
 
+# Boîtes de la France entière (latitude min, latitude max, longitude min, longitude max), marge comprise :
+# métropole et Corse, Antilles (Guadeloupe, Martinique, Saint-Martin, Saint-Barthélemy), Guyane, La Réunion, Mayotte,
+# Saint-Pierre-et-Miquelon, Wallis-et-Futuna, Polynésie française, Nouvelle-Calédonie.
+FRANCE_BOUNDS: tuple[tuple[float, float, float, float], ...] = (
+    (41.2, 51.3, -5.4, 9.8),
+    (14.2, 18.2, -63.4, -60.7),
+    (2.0, 5.9, -54.8, -51.5),
+    (-21.5, -20.7, 55.1, 55.95),
+    (-13.2, -12.5, 44.9, 45.4),
+    (46.7, 47.2, -56.5, -56.0),
+    (-14.5, -13.1, -178.3, -176.1),
+    (-27.8, -7.8, -152.9, -134.3),
+    (-23.0, -19.5, 163.4, 168.3),
+)
+
+
+def coordinates_in_france(latitude: Decimal | float, longitude: Decimal | float) -> bool:
+    """Vrai si le point est dans l'une des boîtes de la France entière (métropole et outre-mer)."""
+    try:
+        lat, lon = float(latitude), float(longitude)
+    except (TypeError, ValueError):
+        return False
+    if not (math.isfinite(lat) and math.isfinite(lon)):
+        return False
+    return any(
+        min_lat <= lat <= max_lat and min_lon <= lon <= max_lon for min_lat, max_lat, min_lon, max_lon in FRANCE_BOUNDS
+    )
+
+
 def coordinates_in_department(latitude: Decimal | float, longitude: Decimal | float, department: str | None) -> bool:
-    """Vrai si le point est dans la boîte du département, ou si le département n'a pas de boîte."""
+    """Vrai si le point est en France et dans la boîte du département (si le département en a une).
+
+    La boîte de la France entière s'applique même quand le département est vide ou sans boîte.
+    """
+    if not coordinates_in_france(latitude, longitude):
+        return False
     bounds = DEPARTMENT_BOUNDS.get(str(department or "").strip().upper())
     if not bounds:
         return True
