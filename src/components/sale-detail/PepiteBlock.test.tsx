@@ -86,7 +86,9 @@ describe("PepiteBlock", () => {
       const done = tests.find((item) => item.textContent?.includes("Coût d'achat estimé"))!;
       expect(done.textContent).toContain("Rempli");
       expect(done.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
-      const toConfirm = tests.find((item) => item.textContent?.includes("Part des ventes comparables adjugées"))!;
+      const toConfirm = tests.find((item) =>
+        item.textContent?.includes("Part des ventes comparables adjugées"),
+      )!;
       expect(toConfirm.textContent).toContain("À confirmer");
       expect(toConfirm.textContent).toContain("seuil de maintien");
       expect(toConfirm.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");

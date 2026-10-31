@@ -39,10 +39,10 @@ const VAT = 0.2;
 // 01/06/2026 (liste publique des départements) ; recoupé le 31/10/2026 par la
 // synthèse de recherche de l'équipe, sans relecture du document original.
 //   - 5,00 % de part départementale (taux plein) : 6,32 % au total. C'est le défaut.
-//   - 4,50 % (le taux d'avant la hausse) : 5,81 % au total, pour 10 départements :
-//     05, 06, 07, 16, 26, 48, 60, 65, 71 et 971.
-//   - 3,80 % : 5,09 % au total, pour l'Indre (36) et Mayotte (976). Mayotte est calculée
-//     comme l'Indre (3,80 + 1,20 + 3,80 x 2,37 %) : à confirmer sur le tableau original.
+//   - 4,50 % (le taux d'avant la hausse) : 5,81 % au total, pour 11 départements :
+//     05, 06, 07, 16, 26, 48, 60, 65, 71, 971 et 976 (Mayotte).
+//   - 3,80 % : 5,09 % au total, pour l'Indre (36) seule (3,80 + 1,20 + 3,80 x 2,37 %).
+// Fiche DGFiP du 01/06/2026 (impots.gouv.fr, dmto_2026-06.pdf), relue par le rédacteur le 31/10/2026.
 // La hausse à 5 % de la part départementale est TEMPORAIRE (loi de finances 2025, art. 116 :
 // actes passés du 01/04/2025 au 31/03/2028) et ne vaut pas pour les primo-accédants d'une
 // résidence principale. Pour une vente judiciaire, le taux s'applique au prix d'adjudication.
@@ -54,7 +54,7 @@ export const DMTO_TEMPORARY_INCREASE_END = "31/03/2028";
 export const DMTO_DEFAULT_RATE = 0.0632;
 /** Taux global des départements restés à 4,50 % de part départementale. */
 export const DMTO_RATE_UNCHANGED_DEPARTMENT = 0.0581;
-/** Taux global des départements à 3,80 % de part départementale (Indre, Mayotte). */
+/** Taux global des départements à 3,80 % de part départementale (l'Indre seule). */
 export const DMTO_RATE_REDUCED_DEPARTMENT = 0.0509;
 export const DMTO_RATE_BY_DEPARTMENT: Readonly<Record<string, number>> = {
   "05": DMTO_RATE_UNCHANGED_DEPARTMENT,
@@ -68,7 +68,7 @@ export const DMTO_RATE_BY_DEPARTMENT: Readonly<Record<string, number>> = {
   "65": DMTO_RATE_UNCHANGED_DEPARTMENT,
   "71": DMTO_RATE_UNCHANGED_DEPARTMENT,
   "971": DMTO_RATE_UNCHANGED_DEPARTMENT,
-  "976": DMTO_RATE_REDUCED_DEPARTMENT,
+  "976": DMTO_RATE_UNCHANGED_DEPARTMENT,
 };
 /** Contribution de sécurité immobilière : 0,10 % de la base taxable. */
 export const CSI_RATE = 0.001;

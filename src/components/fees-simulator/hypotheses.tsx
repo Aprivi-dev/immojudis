@@ -27,7 +27,7 @@ const UNCHANGED_DEPARTMENTS = Object.entries(DMTO_RATE_BY_DEPARTMENT)
  * Texte d'aide du département. Les taux viennent de `profitability.ts` (source et date y sont
  * écrites) ; la hausse à 5 % y est dite temporaire et sans effet pour un primo-accédant.
  */
-const DEPARTMENT_HINT = `Taux de ${dutyRate(DMTO_DEFAULT_RATE)} par défaut. ${UNCHANGED_DEPARTMENTS.length} départements (${UNCHANGED_DEPARTMENTS.slice(0, -1).join(", ")} et ${UNCHANGED_DEPARTMENTS.at(-1)}) restent à ${dutyRate(DMTO_RATE_UNCHANGED_DEPARTMENT)}, et l’Indre et Mayotte sont à ${dutyRate(DMTO_RATE_REDUCED_DEPARTMENT)} (tableau DGFiP au ${DMTO_TABLE_DATE}). La hausse à 5 % de la part départementale est temporaire (actes passés jusqu’au ${DMTO_TEMPORARY_INCREASE_END}) et ne s’applique pas aux primo-accédants d’une résidence principale : vérifiez le taux avec votre avocat.`;
+const DEPARTMENT_HINT = `Taux de ${dutyRate(DMTO_DEFAULT_RATE)} par défaut. ${UNCHANGED_DEPARTMENTS.length} départements (${UNCHANGED_DEPARTMENTS.slice(0, -1).join(", ")} et ${UNCHANGED_DEPARTMENTS.at(-1)}) restent à ${dutyRate(DMTO_RATE_UNCHANGED_DEPARTMENT)}, et l’Indre est à ${dutyRate(DMTO_RATE_REDUCED_DEPARTMENT)} (tableau DGFiP au ${DMTO_TABLE_DATE}). La hausse à 5 % de la part départementale est temporaire (actes passés jusqu’au ${DMTO_TEMPORARY_INCREASE_END}) et ne s’applique pas aux primo-accédants d’une résidence principale : vérifiez le taux avec votre avocat.`;
 
 /** Hypothèses de frais communes aux deux sens du calcul (valeurs saisies, telles quelles). */
 export type Hypotheses = {
