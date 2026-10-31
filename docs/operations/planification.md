@@ -41,6 +41,7 @@ reste silencieuse.
 | Rappels d'audience et avertissements graves                | Vercel Cron        | 07:15, rattrapage 09:15                              | `/api/cron/sale-reminders`            | oui                                                  | 27 h                          |
 | Alertes de résultat ou de remise en vente                  | Vercel Cron        | 10:15                                                | `/api/cron/sale-results`              | journal d'exécution seulement                        | pas encore                    |
 | Récapitulatif hebdomadaire « Ma semaine »                  | Vercel Cron        | 11:30                                                | `/api/cron/weekly-digest`             | journal d'exécution seulement                        | pas encore                    |
+| Email de fin d'essai gratuit (J+5)                         | Vercel Cron        | 12:30                                                | `/api/cron/trial-end-email`           | journal d'exécution seulement                        | pas encore                    |
 | Rétention des données                                      | Vercel Cron        | dimanche 04:15                                       | `/api/cron/data-retention`            | oui                                                  | 8 jours                       |
 | Complétude des annonces (palier de classement de /sales)   | Supabase `pg_cron` | toutes les heures à :20                              | `/api/cron/listing-completeness`      | oui                                                  | 3 h                           |
 | Complétude des annonces (filet quotidien)                  | Vercel Cron        | 05:50, sans effet si `pg_cron` a réussi dans les 2 h | `/api/cron/listing-completeness`      | oui (même tâche, même seuil)                         | 3 h                           |
@@ -175,8 +176,8 @@ d'inondation, lui, tourne :
   `src/jobs/sale-flood-risk-runner.ts` (`npm run flood-risk:build`), qui appelle le même `runSaleFloodRiskBatch`
   (bail, cadence, paquets) et se supervise sous le nom `sale-flood-risk`, celui de `cron.stale`. La taille de lot
   est la variable de dépôt GitHub `SALE_FLOOD_RISK_BATCH_LIMIT`. `SALE_FLOOD_RISK_RUNNER=vercel` (Vercel,
-  redéploiement) rétablit les appels depuis la route. Diagnostic des pannes (table des codes `network*_`,
-`http\__`, `timeout`, `ppri_unreadable`, `write_busy_N`) : `docs/runbooks/georisques-pannes-inondation.md` ;
+  redéploiement) rétablit les appels depuis la route. Diagnostic des pannes (table des codes `network*\_`,
+`http\_\_`, `timeout`, `ppri_unreadable`, `write_busy_N`) : `docs/runbooks/georisques-pannes-inondation.md` ;
 - le code commune de chaque vente (`auction_sale_communes`, migrations `20261106100000` et `20261106100100`) vient du
   pipeline (`raw_payload.commune`, `services/data-pipeline/src/commune_insee.py`) et est recopié par le même
   traitement ; les arrondissements de Paris, Lyon et Marseille sont ramenés à 75056, 69123 et 13055 pour GASPAR, le
@@ -264,6 +265,18 @@ politique de confidentialité et du registre des traitements.
   le récapitulatif n'est pas fusionné avec lui, il est reporté au lendemain, puis au surlendemain, et
   la semaine est sautée au-delà. Journal `weekly_digest_dispatches` (unique par compte et semaine ISO).
   Le passage échoue quand un envoi est dû et que Resend n'est pas configuré.
+
+- **Email de fin d'essai gratuit** (`TRIAL_END_EMAIL_MODE`, `/api/cron/trial-end-email`, 12:30) : un seul
+  email par compte, à J+5 après la confirmation de l'adresse (l'essai dure 7 jours), sans pression : ce qui
+  reste gratuit, ce qui se ferme, rien ne devient payant, lien « Être prévenu de l'ouverture ». Ni email à J+1
+  ni rappel. La file est `get_trial_end_notice_queue` (essai qui se termine dans les 2 jours, hors
+  administrateurs, abonnés et désinscrits) ; le journal est `launch_offer_end_notices` (clé : compte et jour
+  de Paris de la fin d'essai), la désinscription `launch_offer_end_notice_optouts` (lien signé en un clic,
+  aussi en `List-Unsubscribe`). Valeurs : `off` (défaut, rien n'est lu ni envoyé), `internal` (un message
+  d'exemple « [Test interne] » par administrateur et par jour, aucun compte réel), `on`. À n'ouvrir
+  qu'après relecture du texte et du registre des traitements par `juridique-rgpd`. Le passage échoue quand
+  un envoi est dû et que Resend n'est pas configuré, ou quand des envois échouent ; celui du lendemain
+  reprend (la file garde un compte tant que sa fin d'essai est à plus de 6 heures).
 
 Les journaux des deux emails sont purgés à 180 jours par `run_data_retention` (cron hebdomadaire),
 même quand l'envoi est fermé. Les deux tâches ne sont pas encore dans la liste attendue de

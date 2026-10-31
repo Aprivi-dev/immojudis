@@ -226,6 +226,12 @@ describe("serverEnv pipeline, alerts and email", () => {
     expect(serverEnv({}).saleResults.mode).toBeUndefined();
   });
 
+  it("reads TRIAL_END_EMAIL_MODE through the shared configuration, trimmed and blank as unset", () => {
+    expect(serverEnv({ TRIAL_END_EMAIL_MODE: " internal " }).trialEndEmail.mode).toBe("internal");
+    expect(serverEnv({ TRIAL_END_EMAIL_MODE: "  " }).trialEndEmail.mode).toBeUndefined();
+    expect(serverEnv({}).trialEndEmail.mode).toBeUndefined();
+  });
+
   it("treats whitespace-only secrets as unset", () => {
     const env = serverEnv({
       STRIPE_SECRET_KEY: "   ",

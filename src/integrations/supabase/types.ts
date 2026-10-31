@@ -14383,9 +14383,12 @@ export type Database = {
         Returns: Json;
       };
       admin_pepite_independence_sales: { Args: never; Returns: Json };
+      admin_offer_opening_interviewees: { Args: { p_limit?: number }; Returns: Json };
       admin_offer_opening_survey_summary: { Args: { p_now?: string }; Returns: Json };
+      admin_pilotage_activation: { Args: { p_now?: string }; Returns: Json };
       admin_pilotage_bid_ceilings: { Args: { p_now?: string }; Returns: Json };
       admin_pilotage_summary: { Args: { p_now?: string }; Returns: Json };
+      admin_pilotage_unlock_threshold: { Args: { p_now?: string }; Returns: Json };
       admin_sale_signal_feedback_by_sale: {
         Args: { p_limit?: number; p_now?: string };
         Returns: Json;
@@ -15253,6 +15256,7 @@ export type Database = {
         Returns: Json;
       };
       get_launch_offer_status: { Args: never; Returns: boolean };
+      get_trial_end_notice_queue: { Args: { p_limit?: number; p_now?: string }; Returns: Json };
       get_merged_sale_target: { Args: { p_sale_id: string }; Returns: string };
       get_offer_opening_queue: {
         Args: { p_limit?: number; p_now?: string };

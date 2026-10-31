@@ -71,6 +71,7 @@ const SERVER_KEYS = [
   "RESEND_FROM_EMAIL",
   "SALE_REMINDERS_MODE",
   "WEEKLY_DIGEST_MODE",
+  "TRIAL_END_EMAIL_MODE",
   "SALE_RESULTS_MODE",
   "PEPITE_RULE_V2_ENABLED",
   "SALE_FLOOD_RISK_BATCH_LIMIT",
@@ -206,6 +207,10 @@ export function serverEnv(source?: EnvSource) {
     weeklyDigest: {
       /** Valeur brute de `WEEKLY_DIGEST_MODE` ; `weeklyDigestMode()` la ramène à off, internal ou on. */
       mode: env.WEEKLY_DIGEST_MODE,
+    },
+    trialEndEmail: {
+      /** Valeur brute de `TRIAL_END_EMAIL_MODE` ; `trialEndEmailMode()` la ramène à off, internal ou on. */
+      mode: env.TRIAL_END_EMAIL_MODE,
     },
     saleResults: {
       /** Valeur brute de `SALE_RESULTS_MODE` ; `saleResultsMode()` la ramène à off, internal ou on. */
