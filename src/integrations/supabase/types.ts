@@ -11733,6 +11733,7 @@ export type Database = {
           city: string | null;
           department: string | null;
           expires_at: string;
+          final_price_eur: number | null;
           id: string;
           lawyer_name: string | null;
           personal_status: string | null;
@@ -11758,6 +11759,7 @@ export type Database = {
           city?: string | null;
           department?: string | null;
           expires_at: string;
+          final_price_eur?: number | null;
           id?: string;
           lawyer_name?: string | null;
           personal_status?: string | null;
@@ -11783,6 +11785,7 @@ export type Database = {
           city?: string | null;
           department?: string | null;
           expires_at?: string;
+          final_price_eur?: number | null;
           id?: string;
           lawyer_name?: string | null;
           personal_status?: string | null;
@@ -11798,6 +11801,36 @@ export type Database = {
           title?: string | null;
           tribunal_name?: string | null;
           user_id?: string;
+        };
+        Relationships: [];
+      };
+      user_investor_profiles: {
+        Row: {
+          created_at: string;
+          down_payment_eur: number | null;
+          strategy: string | null;
+          target_margin_pct: number | null;
+          updated_at: string;
+          user_id: string;
+          works_per_m2_eur: number | null;
+        };
+        Insert: {
+          created_at?: string;
+          down_payment_eur?: number | null;
+          strategy?: string | null;
+          target_margin_pct?: number | null;
+          updated_at?: string;
+          user_id: string;
+          works_per_m2_eur?: number | null;
+        };
+        Update: {
+          created_at?: string;
+          down_payment_eur?: number | null;
+          strategy?: string | null;
+          target_margin_pct?: number | null;
+          updated_at?: string;
+          user_id?: string;
+          works_per_m2_eur?: number | null;
         };
         Relationships: [];
       };

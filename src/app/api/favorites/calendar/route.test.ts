@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   followed: vi.fn(),
   inFilter: vi.fn(),
   visits: vi.fn(),
+  snapshot: vi.fn(),
+  assertFavorites: vi.fn(),
 }));
 
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
@@ -19,6 +21,7 @@ vi.mock("@/lib/rate-limit", () => ({ enforceUserRateLimit: mocks.enforce }));
 vi.mock("@/lib/account-product-events.server", () => ({
   recordAccountProductEvent: mocks.record,
 }));
+vi.mock("@/lib/favorites", () => ({ assertSaleFavoritesAvailable: mocks.assertFavorites }));
 vi.mock("@/lib/supabase-public.server", () => ({
   createPublicSupabaseClient: mocks.client,
 }));
@@ -73,10 +76,22 @@ function accountClient() {
       return Promise.resolve(result);
     },
   };
+  /** Instantané du compte (échéancier d'une vente passée remportée). */
+  const snapshotQuery = {
+    select: () => snapshotQuery,
+    eq: () => snapshotQuery,
+    gt: () => snapshotQuery,
+    maybeSingle: () => Promise.resolve(mocks.snapshot() as { data: unknown; error: unknown }),
+  };
   return {
     userId: "user-1",
     supabase: {
-      from: (table: string) => (table === "user_favorites" ? query : visitsQuery),
+      from: (table: string) =>
+        table === "user_favorites"
+          ? query
+          : table === "user_followed_sale_snapshots"
+            ? snapshotQuery
+            : visitsQuery,
     },
   };
 }
@@ -92,6 +107,7 @@ describe("POST /api/favorites/calendar", () => {
     mocks.followed.mockReturnValue([A, B]);
     mocks.client.mockReturnValue({ rpc: mocks.rpc });
     mocks.visits.mockReturnValue({ data: [], error: null });
+    mocks.assertFavorites.mockResolvedValue({ plan: "decouverte" });
     mocks.rpc.mockImplementation(async (_name: string, { p_sale_id }: { p_sale_id: string }) => ({
       data: [row(p_sale_id, p_sale_id === B ? { sale_date: "2026-10-30T13:00:00Z" } : {})],
       error: null,
@@ -238,5 +254,67 @@ describe("POST /api/favorites/calendar", () => {
       expect(response.status).toBeLessThan(500);
     }
     expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  describe("échéancier d'une vente passée remportée", () => {
+    const SNAPSHOT = "44444444-4444-4444-8444-444444444444";
+    const snapshotRow = (overrides: Record<string, unknown> = {}) => ({
+      sale_id: A,
+      sale_date: "2026-10-14T12:00:00Z",
+      sale_venue_type: "tribunal",
+      sale_legal_framework: "judicial_seizure",
+      property_type: "house",
+      city: "Bordeaux",
+      personal_status: "won",
+      ...overrides,
+    });
+
+    it("rend un .ics de deux dates à confirmer, sans mesure d'audience exportée", async () => {
+      mocks.snapshot.mockReturnValue({ data: snapshotRow(), error: null });
+      const response = await post({ deadlinesSnapshotId: SNAPSHOT });
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toContain("text/calendar");
+      expect(response.headers.get("content-disposition")).toContain("immojudis-echeancier-");
+      expect(response.headers.get("cache-control")).toBe("private, no-store");
+      const body = (await response.text()).replace(/\r\n /g, "");
+      expect(body.match(/BEGIN:VEVENT/g)).toHaveLength(2);
+      expect(body).toContain("DTSTART;VALUE=DATE:20261024");
+      expect(body).toContain("À confirmer avec votre avocat.");
+      expect(mocks.record).not.toHaveBeenCalled();
+      expect(mocks.rpc).not.toHaveBeenCalled();
+    });
+
+    it("répond 409 pour une vente non marquée « Remporté »", async () => {
+      mocks.snapshot.mockReturnValue({
+        data: snapshotRow({ personal_status: "lost" }),
+        error: null,
+      });
+      const response = await post({ deadlinesSnapshotId: SNAPSHOT });
+      expect(response.status).toBe(409);
+      expect(response.headers.get("content-type")).not.toContain("text/calendar");
+    });
+
+    it("répond 409 hors saisie immobilière : d'autres délais s'appliquent", async () => {
+      mocks.snapshot.mockReturnValue({
+        data: snapshotRow({ sale_legal_framework: "insolvency" }),
+        error: null,
+      });
+      const response = await post({ deadlinesSnapshotId: SNAPSHOT });
+      expect(response.status).toBe(409);
+    });
+
+    it("répond 404 pour un instantané qui n'est pas au compte ou qui est échu", async () => {
+      mocks.snapshot.mockReturnValue({ data: null, error: null });
+      const response = await post({ deadlinesSnapshotId: SNAPSHOT });
+      expect(response.status).toBe(404);
+    });
+
+    it("refuse un identifiant invalide", async () => {
+      const response = await post({ deadlinesSnapshotId: "nope" });
+      expect(response.status).toBeGreaterThanOrEqual(400);
+      expect(response.status).toBeLessThan(500);
+      expect(mocks.snapshot).not.toHaveBeenCalled();
+    });
   });
 });

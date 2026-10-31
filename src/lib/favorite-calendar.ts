@@ -1,11 +1,15 @@
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import {
+  buildSaleDeadlinesCalendarFile,
   buildSalesCalendarFile,
   type SaleCalendarFile,
   type SaleCalendarRow,
 } from "@/lib/sale-calendar";
 import { PLANNING_CALENDAR_MAX_SALES } from "@/lib/favorite-planning";
+import { assertSaleFavoritesAvailable } from "@/lib/favorites";
+import { PublicApiError } from "@/lib/api-errors";
+import { saleDeadlines } from "@/lib/sale-deadlines";
 import { DETAIL_VIEW } from "@/lib/sale-views";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
 import { visitSlots, type VisitSlot } from "@/lib/visit-slots";
@@ -25,9 +29,11 @@ const FAVORITE_CALENDAR_MAX_SALES = PLANNING_CALENDAR_MAX_SALES;
 /** Lectures simultanées de la fonction publique : assez pour 50 ventes sans saturer la base. */
 const RPC_BATCH_SIZE = 10;
 
-export const favoriteCalendarInputSchema = z.object({
-  saleIds: z.array(z.string().guid()).min(1).max(FAVORITE_CALENDAR_MAX_SALES),
-});
+export const favoriteCalendarInputSchema = z.union([
+  z.object({ saleIds: z.array(z.string().guid()).min(1).max(FAVORITE_CALENDAR_MAX_SALES) }),
+  /** L'échéancier indicatif d'une vente passée remportée (un instantané du compte). */
+  z.object({ deadlinesSnapshotId: z.string().guid() }),
+]);
 
 type FavoriteCalendarResult = {
   /** Le fichier, ou `null` quand aucune des ventes suivies n'est exportable. */
@@ -139,4 +145,72 @@ export async function exportFollowedCalendar({
     followed: followed.length,
     skipped: followed.length - (file?.exportedIds.length ?? 0),
   };
+}
+
+type SnapshotDeadlinesRow = {
+  sale_id: string;
+  sale_date: string | null;
+  sale_venue_type: string | null;
+  sale_legal_framework: string | null;
+  property_type: string | null;
+  city: string | null;
+  personal_status: string | null;
+};
+
+/**
+ * L'échéancier indicatif (fin du délai de surenchère, paiement du prix) d'une vente passée que le
+ * compte a marquée « Remporté » : un fichier `.ics` de deux dates à confirmer avec son avocat.
+ *
+ * Lu dans l'instantané du compte (la RLS ne rend que ses lignes, le filtre `user_id` en est la même
+ * règle côté application), pas dans le catalogue : la vente en est partie à l'heure de l'audience. Le
+ * fichier ne porte ni prix ni adresse. Refus (409) pour une vente non remportée ou d'une procédure
+ * autre que la saisie immobilière, dont les délais ne sont pas ceux des articles cités.
+ */
+export async function exportSnapshotDeadlines({
+  auth,
+  snapshotId,
+  origin,
+  now = new Date(),
+}: {
+  auth: SupabaseAuthContext;
+  snapshotId: string;
+  origin: string;
+  now?: Date;
+}): Promise<SaleCalendarFile> {
+  await assertSaleFavoritesAvailable(auth);
+  const { data, error } = await auth.supabase
+    .from("user_followed_sale_snapshots")
+    .select(
+      "sale_id,sale_date,sale_venue_type,sale_legal_framework,property_type,city,personal_status",
+    )
+    .eq("user_id", auth.userId)
+    .eq("id", snapshotId)
+    .gt("expires_at", now.toISOString())
+    .maybeSingle();
+  if (error) throw error;
+  const row = data as SnapshotDeadlinesRow | null;
+  if (!row) throw new PublicApiError("Vente passée introuvable.", 404);
+  if (row.personal_status !== "won") {
+    throw new PublicApiError(
+      "L’échéancier concerne une vente que vous avez marquée « Remporté ».",
+      409,
+    );
+  }
+  const deadlines = saleDeadlines({
+    saleDate: row.sale_date,
+    venueType: row.sale_venue_type,
+    legalFramework: row.sale_legal_framework,
+    now,
+  });
+  const file = buildSaleDeadlinesCalendarFile(
+    { saleId: row.sale_id, deadlines, propertyType: row.property_type, city: row.city },
+    { origin, now },
+  );
+  if (!file) {
+    throw new PublicApiError(
+      "Nous ne calculons pas d’échéancier pour cette vente : il ne vise que les saisies immobilières au tribunal, et d’autres délais peuvent s’appliquer. Demandez-les à votre avocat.",
+      409,
+    );
+  }
+  return file;
 }
