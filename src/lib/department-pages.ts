@@ -91,7 +91,7 @@ type DepartmentTypeCount = { label: string; count: number };
 export type DepartmentCityCount = { city: string; count: number };
 
 /** Nombre de communes présentées dans « Communes les plus présentes ». */
-export const DEPARTMENT_TOP_CITIES = 5;
+const DEPARTMENT_TOP_CITIES = 5;
 
 export type DepartmentStats = {
   code: string;

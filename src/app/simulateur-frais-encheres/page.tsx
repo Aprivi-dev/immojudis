@@ -47,9 +47,9 @@ function PageContent() {
               Le prix d’adjudication n’est qu’une partie de la dépense. S’y ajoutent les émoluments
               proportionnels de vente (répartis entre l’avocat poursuivant et l’avocat de
               l’adjudicataire), les droits de mutation, les frais préalables de la procédure, les
-              honoraires de votre avocat et, le cas échéant, les travaux. Vous pouvez aussi partir de
-              votre budget pour trouver le prix d’adjudication maximal, ou calculer une surenchère
-              du dixième.
+              honoraires de votre avocat et, le cas échéant, les travaux. Vous pouvez aussi partir
+              de votre budget pour trouver le prix d’adjudication maximal, ou calculer une
+              surenchère du dixième.
             </p>
           </details>
         </>

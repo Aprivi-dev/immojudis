@@ -72,6 +72,8 @@ export function InvestorOnboarding({
   const { user } = useAuth();
   const hasAnalysisAccess = useHasAnalysisAccess(user?.id);
   const plan = useAccessPlan(user?.id);
+  // L'heure de l'ouverture de la page suffit pour juger si l'essai est en cours.
+  const [now] = useState(() => Date.now());
   const { createAlertFromSearch, saving } = useCreateAlert({ returnTo: "/bienvenue" });
 
   useEffect(() => {
@@ -249,7 +251,7 @@ export function InvestorOnboarding({
               </dl>
               <p className="text-sm leading-relaxed text-muted-foreground">
                 Ouvrez une fiche pour vérifier la date, la localisation et les caractéristiques du
-                bien. {accessSentence(plan, unlockHighlights, Date.now())}
+                bien. {accessSentence(plan, unlockHighlights, now)}
               </p>
               <Link
                 href="/annonce-exemple"

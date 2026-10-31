@@ -149,9 +149,7 @@ describe("FeesSimulator", () => {
     render(<FeesSimulator />);
     const live = screen.getByText(/€/, { selector: "[aria-live='polite']" });
     const firstLine = screen.getAllByRole("definition")[0];
-    expect(
-      live.compareDocumentPosition(firstLine) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    expect(live.compareDocumentPosition(firstLine) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
     const bar = screen.getByTestId("simulateur-total-collant");
     expect(bar.className).toContain("sticky");
