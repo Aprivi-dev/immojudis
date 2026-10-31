@@ -15420,6 +15420,7 @@ export type Database = {
       };
       has_analysis_access: { Args: never; Returns: boolean };
       increment_property_report_share_view: { Args: { p_report_id: string }; Returns: number };
+      user_id_for_email: { Args: { p_email: string }; Returns: string };
       is_admin: { Args: never; Returns: boolean };
       list_public_pepite_flood_exposed_ids: { Args: never; Returns: string[] };
       list_public_pepite_sale_ids: { Args: never; Returns: string[] };
@@ -16802,7 +16803,6 @@ export type Database = {
         path: number[] | null;
         geom: unknown;
       };
-      user_id_for_email: { Args: { p_email: string }; Returns: string };
       valid_detail: {
         valid: boolean | null;
         reason: string | null;
