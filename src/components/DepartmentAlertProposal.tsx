@@ -4,10 +4,9 @@ import Link from "next/link";
 import { useId, useState } from "react";
 import Bell from "lucide-react/dist/esm/icons/bell.js";
 import { FEES_SIMULATOR_DEPARTMENTS } from "@/components/fees-simulator/departments";
-import { SectorAlertForm } from "@/components/SectorAlertFormLazy";
 import { Button, Card, buttonClasses } from "@/components/ui/primitives";
 import { useAuth } from "@/hooks/use-auth";
-import { alertCreationLoginPath } from "@/lib/discovery-alerts";
+import { alertCreationLoginPath, alertCreationPath } from "@/lib/discovery-alerts";
 
 // Même aspect que les champs du simulateur ; recopié ici car `fields.tsx` importe le moteur de frais
 // (`profitability`), trop lourd pour le JavaScript initial de l'annonce exemple.
@@ -67,12 +66,16 @@ export function DepartmentAlertProposal({ className }: { className?: string }) {
               ))}
             </select>
           </div>
-          {connected || loading ? null : (
+          {loading ? null : (
             <>
               <div>
                 {department ? (
                   <Link
-                    href={alertCreationLoginPath({ department })}
+                    href={
+                      connected
+                        ? alertCreationPath({ department })
+                        : alertCreationLoginPath({ department })
+                    }
                     className={buttonClasses({ variant: "primary" })}
                   >
                     {DEPARTMENT_ALERT_LABEL}
@@ -84,21 +87,15 @@ export function DepartmentAlertProposal({ className }: { className?: string }) {
                 )}
               </div>
               <p id={hintId} className="text-xs text-ink-soft">
-                {department
-                  ? "Compte gratuit, sans carte bancaire. Après la connexion, vous confirmez l’alerte et choisissez si vous voulez aussi l’email récapitulatif : la case est décochée par défaut."
-                  : "Choisissez d’abord un département."}
+                {!department
+                  ? "Choisissez d’abord un département."
+                  : connected
+                    ? "Vous confirmez l’alerte sur la page suivante et y choisissez si vous voulez aussi l’email récapitulatif : la case est décochée par défaut."
+                    : "Compte gratuit, sans carte bancaire. Après la connexion, vous confirmez l’alerte et choisissez si vous voulez aussi l’email récapitulatif : la case est décochée par défaut."}
               </p>
             </>
           )}
         </Card>
-        {connected && department ? (
-          <SectorAlertForm
-            key={department}
-            criteria={{ department }}
-            title="Votre alerte pour ce département"
-            actionLabel="Créer l’alerte"
-          />
-        ) : null}
       </div>
     </section>
   );

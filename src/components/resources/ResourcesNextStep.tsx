@@ -1,6 +1,6 @@
 import Link from "next/link";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
-import { DepartmentAlertProposal } from "@/components/DepartmentAlertProposal";
+import { DepartmentAlertProposal } from "@/components/DepartmentAlertProposalLazy";
 import styles from "./Resources.module.css";
 
 export function ResourcesNextStep() {
