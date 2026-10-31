@@ -1,4 +1,5 @@
 import { saleDateBoundary, validSaleDate } from "./search/sale-date-range";
+import { departmentCode } from "@/lib/department-code";
 import { dpeMatches, extractDpe } from "@/lib/dpe";
 import { getSaleProcedure } from "@/lib/sale-procedure";
 import { matchesFrenchGeoSearch, resolveFrenchGeoSearch } from "@/lib/search/french-geo-search";
@@ -84,7 +85,7 @@ export function alertMatchesSale(
     return noMatch("hors zone surveillée");
   }
   if (alert.city && !sameText(sale.city, alert.city)) return noMatch("ville différente");
-  if (alert.department && sale.department !== alert.department) {
+  if (alert.department && !sameDepartment(sale.department, alert.department)) {
     return noMatch("département différent");
   }
   if (alert.property_type && !matchesText(sale.property_type, alert.property_type)) {
@@ -173,6 +174,21 @@ function noMatch(reason: string): AlertMatchResult {
 
 function sameText(a: string | null | undefined, b: string | null | undefined): boolean {
   return normalize(a) === normalize(b);
+}
+
+/**
+ * Même département des deux côtés : le catalogue stocke le code (« 33 », « 2A ») mais parfois le nom
+ * (« Gironde »), comme la recherche qui compare les codes. Un texte qui n'est pas un département
+ * connu ne se compare que tel quel (sans tenir compte de la casse ni des accents).
+ */
+function sameDepartment(
+  saleDepartment: string | null | undefined,
+  alertDepartment: string,
+): boolean {
+  const wanted = departmentCode(alertDepartment);
+  const actual = departmentCode(saleDepartment);
+  if (wanted && actual) return wanted === actual;
+  return sameText(saleDepartment, alertDepartment);
 }
 
 function matchesText(value: string | null | undefined, expected: string): boolean {
