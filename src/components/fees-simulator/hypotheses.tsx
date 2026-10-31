@@ -1,33 +1,14 @@
 "use client";
 
 import { useId, type ReactNode } from "react";
-import {
-  DEFAULTS,
-  DMTO_DEFAULT_RATE,
-  DMTO_RATE_BY_DEPARTMENT,
-  DMTO_RATE_REDUCED_DEPARTMENT,
-  DMTO_RATE_UNCHANGED_DEPARTMENT,
-  DMTO_TABLE_DATE,
-  DMTO_TEMPORARY_INCREASE_END,
-} from "@/lib/profitability";
+import { DEFAULTS } from "@/lib/profitability";
 import { FEES_SIMULATOR_DEPARTMENTS } from "./departments";
 import { AmountField, Field, FIELD_CLASSES, euro } from "./fields";
 
-/** « 6,32 % » : un taux de droits de mutation (fraction) écrit à la française. */
-const dutyRate = (rate: number) =>
-  `${(rate * 100).toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} %`;
-
-/** Les codes des départements restés à 4,50 % de part départementale, pour le texte d'aide. */
-const UNCHANGED_DEPARTMENTS = Object.entries(DMTO_RATE_BY_DEPARTMENT)
-  .filter(([, rate]) => rate === DMTO_RATE_UNCHANGED_DEPARTMENT)
-  .map(([code]) => code)
-  .sort();
-
-/**
- * Texte d'aide du département. Les taux viennent de `profitability.ts` (source et date y sont
- * écrites) ; la hausse à 5 % y est dite temporaire et sans effet pour un primo-accédant.
- */
-const DEPARTMENT_HINT = `Taux de ${dutyRate(DMTO_DEFAULT_RATE)} par défaut. ${UNCHANGED_DEPARTMENTS.length} départements (${UNCHANGED_DEPARTMENTS.slice(0, -1).join(", ")} et ${UNCHANGED_DEPARTMENTS.at(-1)}) restent à ${dutyRate(DMTO_RATE_UNCHANGED_DEPARTMENT)}, et l’Indre est à ${dutyRate(DMTO_RATE_REDUCED_DEPARTMENT)} (tableau DGFiP au ${DMTO_TABLE_DATE}). La hausse à 5 % de la part départementale est temporaire (actes passés jusqu’au ${DMTO_TEMPORARY_INCREASE_END}) et ne s’applique pas aux primo-accédants d’une résidence principale : vérifiez le taux avec votre avocat.`;
+// Texte figé, pour ne pas embarquer côté client le calcul d'un libellé à partir du tableau DMTO ;
+// FeesSimulator.test.tsx vérifie qu'il reste aligné sur `DMTO_RATE_BY_DEPARTMENT` (profitability.ts).
+const DEPARTMENT_HINT =
+  "Taux de 6,32 % par défaut. 11 départements (05, 06, 07, 16, 26, 48, 60, 65, 71, 971 et 976) restent à 5,81 %, et l’Indre est à 5,09 % (tableau DGFiP au 01/06/2026). La hausse à 5 % de la part départementale est temporaire (actes passés jusqu’au 31/03/2028) et ne s’applique pas aux primo-accédants d’une résidence principale : vérifiez le taux avec votre avocat.";
 
 /** Hypothèses de frais communes aux deux sens du calcul (valeurs saisies, telles quelles). */
 export type Hypotheses = {

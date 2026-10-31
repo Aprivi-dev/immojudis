@@ -22,6 +22,7 @@ export function distributionRates(distribution: AdjudicationDistribution) {
   };
 }
 
+// TODO: utiliser src/lib/stats.ts après fusion du lot 4a
 /** Quantile 0,975 de la loi normale : intervalle de Wilson à 95 %. */
 const WILSON_Z_95 = 1.959964;
 

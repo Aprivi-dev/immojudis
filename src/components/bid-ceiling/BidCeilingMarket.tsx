@@ -5,17 +5,19 @@ const fmt = (value: number) => formatPrice(Math.round(value || 0));
 const ppm2 = (value: number | null | undefined) => formatPricePerM2(value);
 
 /**
- * La période des ventes DVF retenues : de la plus ancienne à la plus récente des ventes listées,
- * sinon la profondeur d'historique demandée (`yearsBack`).
+ * La période de tout l'échantillon de ventes DVF retenu (`samplePeriod`, calculée côté serveur),
+ * sinon la profondeur d'historique demandée (`yearsBack`). Les ventes listées (`recentTransactions`)
+ * ne sont que les meilleurs comparables : elles ne donnent pas la période de l'échantillon.
  */
 export function dvfPeriodLabel(estimate: DvfMarketEstimate): string {
-  const dates = (estimate.recentTransactions ?? [])
-    .map((transaction) => transaction.date)
-    .filter((date) => Number.isFinite(Date.parse(date)))
-    .sort();
-  if (dates.length) {
-    const first = formatDate(dates[0]);
-    const last = formatDate(dates[dates.length - 1]);
+  const period = estimate.samplePeriod;
+  if (
+    period &&
+    Number.isFinite(Date.parse(period.from)) &&
+    Number.isFinite(Date.parse(period.to))
+  ) {
+    const first = formatDate(period.from);
+    const last = formatDate(period.to);
     return first === last ? `le ${first}` : `du ${first} au ${last}`;
   }
   return `sur les ${estimate.yearsBack} dernières années`;

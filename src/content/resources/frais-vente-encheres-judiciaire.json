@@ -84,7 +84,7 @@
       "id": "droits-de-mutation",
       "title": "Les droits de mutation : le poste le plus lourd",
       "paragraphs": [
-        "Pour un bien ancien, les droits de mutation additionnent une part départementale, une part communale de 1,20 % et des frais d’assiette. Notaires de France indique, sur une page mise à jour le 05/12/2025, un taux global de 6,31 % du prix, la part départementale étant passée de 4,5 % à 5 % en 2025 dans la plupart des départements. Le calcul est : 5 % de part départementale + 1,20 % de part communale + 2,37 % de la part départementale, soit 6,3185 %, arrondi à 6,32 %. Le simulateur Immojudis applique 6,32 % partout, sauf dans l’Indre (5,09 %). Une dizaine de départements étaient restés à 5,81 % au 01/06/2026 (non intégrés au simulateur) : leurs droits sont inférieurs d’environ 770 € pour 150 000 €. Ces taux dépendent du département et de la nature du bien (ancien, neuf ou soumis à TVA) : ils sont à vérifier.",
+        "Pour un bien ancien, les droits de mutation additionnent une part départementale, une part communale de 1,20 % et des frais d’assiette. Notaires de France indique, sur une page mise à jour le 05/12/2025, un taux global de 6,31 % du prix, la part départementale étant passée de 4,5 % à 5 % en 2025 dans la plupart des départements. Le calcul est : 5 % de part départementale + 1,20 % de part communale + 2,37 % de la part départementale, soit 6,3185 %, arrondi à 6,32 %. Le simulateur Immojudis applique 6,32 % par défaut, 5,09 % dans l’Indre et 5,81 % dans les onze départements restés à 4,5 % de part départementale au 01/06/2026 (05, 06, 07, 16, 26, 48, 60, 65, 71, 971 et 976) : dans ces derniers, les droits sont inférieurs d’environ 770 € pour 150 000 €. Ces taux dépendent du département et de la nature du bien (ancien, neuf ou soumis à TVA) : ils sont à vérifier.",
         "Quelle est l’assiette, c’est-à-dire la somme sur laquelle le taux s’applique ? En principe, c’est le prix augmenté des charges que l’acquéreur supporte au profit du vendeur (art. 683 du Code général des impôts). Pour une vente après saisie, la doctrine fiscale (BOFiP, BOI-ENR-DMTOI-10-10-30-20, § 50) précise que les frais ordinaires de poursuite, que l’adjudicataire paie en plus du prix, n’entrent pas dans cette assiette. Cette position reprend une réponse ministérielle au Sénat de 1997 ; le BOFiP la mentionne toujours, mais elle repose sur une solution ancienne, et la lettre de l’article 683 vise les charges augmentatives du prix. Cette position ne vise que les frais ordinaires de poursuite.",
         "Le simulateur Immojudis retient le prix seul pour les droits de mutation et pour la contribution de sécurité immobilière. Si l’administration fiscale ou votre avocat retenait une autre base, les droits seraient un peu plus élevés : à 6,32 %, 5 000 € de frais préalables ajouteraient environ 320 € de droits et de contribution. À faire confirmer avant l’audience."
       ]
@@ -106,7 +106,7 @@
       },
       "bullets": [
         "La part des frais est plus élevée sur les petits prix, car certains frais sont fixes.",
-        "Dans un département resté à 5,81 % (non intégré au simulateur), les droits de mutation sont inférieurs d’environ 770 € pour 150 000 €.",
+        "Dans un département resté à 5,81 % (le simulateur applique les taux par département), les droits de mutation sont inférieurs d’environ 770 € pour 150 000 €.",
         "Les travaux, le financement et le portage (intérêts, taxe foncière, charges tant que le bien ne rapporte rien) ne sont pas inclus."
       ]
     },
