@@ -135,6 +135,63 @@ function blend(rgba: [number, number, number, number], background: string): stri
   return `#${[r, g, b].map((value) => value.toString(16).padStart(2, "0")).join("")}`;
 }
 
+describe("anneau de focus (ring-ring, --ring)", () => {
+  it("--ring est l'or foncé (gold-soft), pas l'or clair de 2,85:1", () => {
+    expect(css).toMatch(/--ring:\s*var\(--gold-soft\);/);
+    expect(css).not.toMatch(/--ring:\s*var\(--gold\);/);
+  });
+
+  it("l'anneau tient 3:1 sur le blanc, le fond du site, la crème et le sable (WCAG 1.4.11)", () => {
+    for (const background of [
+      "#ffffff",
+      token("background"),
+      token("surface"),
+      token("secondary"),
+    ]) {
+      expect(contrastRatio(token("gold-soft"), background), background).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it("les composants qui l'utilisent (ring-ring) le tirent de ce jeton", () => {
+    const users = [
+      "src/components/ui/dialog.tsx",
+      "src/components/bid-ceiling/BidCeilingWorks.tsx",
+    ];
+    for (const file of users) {
+      expect(readFileSync(join(process.cwd(), file), "utf8"), file).toContain("ring-ring");
+    }
+  });
+});
+
+describe("bordure des champs hors .form-input (border-field-border)", () => {
+  const formInputBorder = () => {
+    const base = css.match(/\.form-input,\s*\.form-textarea \{([^}]*)\}/)![1];
+    return /border: 1px solid (rgb\(\d+ \d+ \d+ \/ \d+%\))/.exec(base)![1];
+  };
+
+  it("reprend exactement la bordure de .form-input (3:1 sur fond clair)", () => {
+    const token = /--color-field-border:\s*(rgb\(\d+ \d+ \d+ \/ \d+%\));/.exec(css);
+    expect(token, "jeton --color-field-border").not.toBeNull();
+    expect(token![1]).toBe(formInputBorder());
+  });
+
+  it("est posée sur les champs du simulateur, de la recherche et de l'activité des tribunaux", () => {
+    const fields = [
+      "src/components/fees-simulator/fields.tsx",
+      "src/components/search/SearchHeader.tsx",
+      "src/components/TribunalJudicialActivityExplorer.tsx",
+    ];
+    for (const file of fields) {
+      expect(readFileSync(join(process.cwd(), file), "utf8"), file).toContain(
+        "border-field-border",
+      );
+    }
+    // L'ancienne bordure de 1,54:1 ne reste pas sur le champ du simulateur.
+    const simulator = readFileSync(join(process.cwd(), fields[0]), "utf8");
+    expect(simulator).not.toMatch(/FIELD_CLASSES =\s*"[^"]*border-line/);
+  });
+});
+
 describe("champs de formulaire (.form-input)", () => {
   const rule = (selector: string) => {
     const match = css.match(
