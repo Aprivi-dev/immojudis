@@ -15,6 +15,7 @@ import {
 import type { FeeRegime } from "@/lib/fee-regime-definitions";
 import { readNotarySaleConditions } from "@/lib/notary-sale-conditions";
 import type { CeilingMarketEstimate } from "@/lib/market-estimate-ceiling";
+import { isOccupiedOccupancyStatus, isVacantOccupancyStatus } from "@/lib/market-gap-band";
 import type { WorksBreakdownItem } from "@/lib/works-breakdown";
 import {
   DEFAULT_PRELIMINARY_FEES,
@@ -99,12 +100,18 @@ export type CeilingUserChoices = {
   sellingCostsPct?: number | null;
 };
 
+/**
+ * Cas d'occupation du plafond pour un `occupancy_status`. Mêmes règles que l'écart au marché
+ * (`isVacantOccupancyStatus`, `isOccupiedOccupancyStatus`) : « inoccupé » est un bien libre (aucun
+ * coût de libération), pas un bien occupé. Une valeur qu'aucune règle ne reconnaît est « inconnu ».
+ */
 export function occupationCaseForStatus(status: string | null | undefined): OccupationCase {
-  const value = (status ?? "").trim().toLowerCase();
+  const value = (status ?? "").trim().toLocaleLowerCase("fr-FR");
   if (!value || value === "unknown" || value === "inconnu") return "inconnu";
-  if (value === "vacant" || value === "free" || value.includes("libre")) return "libre";
-  if (value === "rented" || value === "tenant_occupied" || value.includes("lou")) return "loue";
-  if (value === "squatted" || value.includes("squat")) return "squat";
+  if (isVacantOccupancyStatus(value) || value === "free") return "libre";
+  if (!isOccupiedOccupancyStatus(value)) return "inconnu";
+  if (/squat/.test(value)) return "squat";
+  if (value === "rented" || value === "tenant_occupied" || /lou[eé]/.test(value)) return "loue";
   return "occupe";
 }
 

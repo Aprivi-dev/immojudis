@@ -6,6 +6,7 @@ import {
   preliminaryFeesFromSale,
 } from "@/lib/bid-ceiling-defaults";
 import { computeCeilingPlan } from "@/lib/bid-ceiling-engine";
+import { isOccupiedOccupancyStatus, isVacantOccupancyStatus } from "@/lib/market-gap-band";
 import type { MarketEstimate } from "@/lib/market.server";
 import type { RentReference } from "@/lib/rent-reference";
 import { DEFAULTS } from "@/lib/profitability";
@@ -54,8 +55,46 @@ describe("occupationCaseForStatus", () => {
     ["squatted", "squat"],
     [null, "inconnu"],
     ["unknown", "inconnu"],
+    // « inoccupé » est un bien libre : il ne doit pas porter de coût de libération.
+    ["inoccupé", "libre"],
+    ["Inoccupé", "libre"],
+    ["libre", "libre"],
+    ["free", "libre"],
+    ["loué", "loue"],
+    ["Occupé par le propriétaire", "occupe"],
+    ["inconnu", "inconnu"],
+    ["", "inconnu"],
+    ["en cours de vérification", "inconnu"],
   ])("maps %s to %s", (status, expected) => {
     expect(occupationCaseForStatus(status)).toBe(expected);
+  });
+
+  it("reads every status of the SQL constraint the way the market gap and the label do", () => {
+    // Contrainte `occupancy_status` : vacant, occupied, rented, owner_occupied, squatted, unknown.
+    const expected = {
+      vacant: ["libre", false, true],
+      occupied: ["occupe", true, false],
+      rented: ["loue", true, false],
+      owner_occupied: ["occupe", true, false],
+      squatted: ["squat", true, false],
+      unknown: ["inconnu", false, false],
+    } as const;
+    for (const [status, [ceilingCase, occupied, vacant]] of Object.entries(expected)) {
+      expect(occupationCaseForStatus(status), status).toBe(ceilingCase);
+      expect(isOccupiedOccupancyStatus(status), status).toBe(occupied);
+      expect(isVacantOccupancyStatus(status), status).toBe(vacant);
+    }
+  });
+
+  it("gives an « inoccupé » property the same ceiling as a « vacant » one", () => {
+    const withStatus = (occupancy_status: string) =>
+      computeCeilingPlan(
+        buildCeilingHypotheses({ ...sale, occupancy_status } as unknown as AuctionSale, estimate),
+      ).maxBid;
+
+    // Avant : « inoccupé » comptait comme occupé et retirait ~11 000 € au plafond.
+    expect(withStatus("inoccupé")).toBe(withStatus("vacant"));
+    expect(withStatus("occupied")).toBeLessThan(withStatus("vacant"));
   });
 });
 
