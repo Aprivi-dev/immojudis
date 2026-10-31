@@ -55,6 +55,8 @@ Planification et supervision :
 - [Comptes-rendus de l'équipe d'agents](equipe/README.md) : un fichier par mission, décisions du propriétaire
   incluses.
 - [Audits](audits/) (sources, extraction, performance) et [archives](archive/).
+- [Recherche utilisateurs](recherche/README.md) : guides d'entretien (marchands de biens, avocats), protocole du
+  test d'utilisabilité de l'enchère plafond, projet de consentement (à valider par `juridique-rgpd`).
 - Audits récents : [DVF et valorisation](dvf-valuation-audit-2026-07-12.md),
   [préparation des statistiques](statistics-pilot-readiness-2026-08-24.md),
   [feuille de route d'enrichissement](statistics-data-enrichment-roadmap.md).
