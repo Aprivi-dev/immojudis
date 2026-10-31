@@ -74,9 +74,9 @@ import {
   normalizeSourceTrace,
   normalizeStringList,
   pdfWatermarkForPlan,
+  reportPdfIdentity,
   saleLocation,
   shareIsExpired,
-  slugify,
 } from "./property-report/serialization";
 import { asRecord, numberValue, stringOrNumberValue } from "@/lib/guards";
 export type SupabaseClient = SupabaseAuthContext["supabase"];
@@ -538,8 +538,9 @@ export async function exportPropertyReportPdf({
   const report = await getReport(auth.supabase, auth.userId, reportId);
   assertReportSourceCurrent(report.report_snapshot, await getSale(auth.supabase, report.sale_id));
   const lines = reportToPdfLines(report, plan, openFeeRegimesFromEnv());
+  const { title, filename } = reportPdfIdentity(report);
   const bytes = createTextPdf({
-    title: report.title,
+    title,
     lines,
     headings: REPORT_PDF_HEADINGS,
     // Le régime vient du plafond enregistré : un rapport notarial par offres ne parle pas d'enchère.
@@ -551,7 +552,7 @@ export async function exportPropertyReportPdf({
 
   return {
     bytes,
-    filename: `${slugify(report.title)}-${report.id.slice(0, 8)}.pdf`,
+    filename,
     contentType: "application/pdf",
   };
 }
