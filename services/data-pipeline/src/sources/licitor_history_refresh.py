@@ -26,6 +26,7 @@ import psycopg
 from src import source_withdrawal
 from src.sources.licitor_cloud import run_tick, start_monthly
 from src.sources.licitor_cloud_store import CloudStore
+from src.storage.connection_guards import postgres_ssl_options
 
 LOGGER = logging.getLogger(__name__)
 COLLECTOR_ROLE = "licitor_collector"
@@ -53,6 +54,7 @@ def _connect(db_url: str) -> psycopg.Connection:
         prepare_threshold=None,
         connect_timeout=10,
         options="-c statement_timeout=15000 -c lock_timeout=3000",
+        **postgres_ssl_options(db_url),
     )
 
 

@@ -2299,6 +2299,7 @@ def test_postgres_connect_disables_prepared_statements_for_pooler(monkeypatch) -
         "prepare_threshold": None,
         "options": "-c statement_timeout=120000",
         **supabase_client.POSTGRES_KEEPALIVE_OPTIONS,
+        "sslmode": "require",
     }
 
 
@@ -2342,6 +2343,7 @@ def test_postgres_connect_can_skip_retries_for_optional_telemetry(monkeypatch) -
             "prepare_threshold": None,
             "options": "-c statement_timeout=120000",
             **supabase_client.POSTGRES_KEEPALIVE_OPTIONS,
+            "sslmode": "require",
         }
     ]
 

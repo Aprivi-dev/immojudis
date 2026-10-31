@@ -110,6 +110,42 @@ Quand `SUPABASE_DB_URL` est présent, l'upsert principal des ventes passe par
 Postgres direct, puis les tables dérivées (`auction_risks`, documents, score
 factors, surfaces, etc.) sont synchronisées via l'API REST service-role.
 
+#### Chiffrement de la connexion Postgres
+
+La connexion directe est chiffrée : si l'URL ne porte pas de `sslmode`, le
+pipeline ajoute `sslmode=require` (`src/storage/connection_guards.py`,
+`postgres_ssl_options`). Sans cela, libpq retombe sur `prefer` et accepte un
+serveur non chiffré.
+
+- Une URL qui porte son propre `sslmode` (`?sslmode=verify-full`), ou la variable
+  d'environnement libpq `PGSSLMODE`, garde la main : rien n'est ajouté.
+- `POSTGRES_SSL` (même nom que pour les scripts de migration) choisit le mode :
+  non définie ou `require` (défaut), `verify-ca`, `verify-full`, ou `disable`.
+  Toute autre valeur est refusée.
+- Exception pour le Postgres local de la CI : une base locale (`localhost`,
+  `127.0.0.1`, `::1`, socket Unix) n'est pas forcée en `require`, car le service
+  Postgres de la CI n'a pas de TLS. `POSTGRES_SSL=disable` désactive le
+  chiffrement explicitement, **uniquement** pour une base locale ; sur un autre
+  hôte (par exemple un service Docker nommé `postgres`), le pipeline refuse de se
+  connecter plutôt que d'envoyer des données en clair.
+- La même règle s'applique à l'audit (`src.storage.audit_database`) et au
+  rafraîchissement de l'historique Licitor.
+
+#### Contrat entre le pipeline et le schéma migré
+
+`tests/test_schema_contract.py` (marqueur `schema_contract`) vérifie que chaque
+colonne écrite par le pipeline (`src/storage/column_sets.py` et constructeurs de
+ligne) existe dans la base rejouée depuis zéro, avec un type compatible. Il
+n'est pas lancé par `pytest` seul : le job « Supabase migrations + pgTAP » de la CI
+l'exécute sur la base Supabase locale.
+
+```bash
+SCHEMA_CONTRACT_DB_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres \
+  python -m pytest -m schema_contract tests/test_schema_contract.py
+```
+
+Le test ne lit que `information_schema` et refuse une base qui n'est pas locale.
+
 Le pipeline conserve `auction_sales` comme table de compatibilité historique,
 mais alimente aussi le modèle produit normalisé demandé pour l'offre Pro :
 `properties` décrit le bien immobilier et `judicial_sales` décrit le contexte
