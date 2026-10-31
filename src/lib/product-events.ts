@@ -85,31 +85,24 @@ export type ProductEventProperties = {
   shared_report_viewed: { state: SharedReportState };
 };
 
-type PropertySpec = { kind: "boolean" } | { kind: "enum"; values: readonly string[] };
+/** Domaine d'une propriété : un booléen, ou la liste fermée de ses valeurs. */
+type PropertySpec = "boolean" | readonly string[];
 
-/** Propriétés admises par événement, avec leur domaine de valeurs. */
-const PROPERTY_SPECS: { [N in ProductEventName]: Record<string, PropertySpec> } = {
-  signup_submitted: { entry: { kind: "enum", values: SIGNUP_ENTRIES } },
-  signup_confirmed: {},
+/**
+ * Propriétés admises par événement, avec leur domaine de valeurs. Un événement sans propriété n'y
+ * figure pas (le code client reste léger) : `sanitizeProductEventProperties` n'en transmet aucune.
+ */
+const PROPERTY_SPECS: { [N in ProductEventName]?: Record<string, PropertySpec> } = {
+  signup_submitted: { entry: SIGNUP_ENTRIES },
   alert_created: {
-    email_consent: { kind: "boolean" },
-    pepite_only: { kind: "boolean" },
-    surface: { kind: "enum", values: ALERT_SURFACES },
+    email_consent: "boolean",
+    pepite_only: "boolean",
+    surface: ALERT_SURFACES,
   },
-  favorite_added: {},
-  sample_report_viewed: {},
-  offers_viewed: {},
-  checkout_started: {},
-  checkout_returned: { status: { kind: "enum", values: ["success", "cancelled"] } },
-  opening_notification_requested: {},
-  fees_simulator_used: {},
-  home_example_used: {},
-  pepite_block_viewed: { access: { kind: "enum", values: ["locked", "detail"] } },
-  pepite_filter_used: {},
-  sale_unlock_confirmed: {},
-  home_cta_clicked: { target: { kind: "enum", values: HOME_CTA_TARGETS } },
-  ceiling_viewed: {},
-  shared_report_viewed: { state: { kind: "enum", values: SHARED_REPORT_STATES } },
+  checkout_returned: { status: ["success", "cancelled"] },
+  pepite_block_viewed: { access: ["locked", "detail"] },
+  home_cta_clicked: { target: HOME_CTA_TARGETS },
+  shared_report_viewed: { state: SHARED_REPORT_STATES },
 };
 
 type TrackArguments<N extends ProductEventName> = ProductEventProperties[N] extends undefined
@@ -144,9 +137,12 @@ export function sanitizeProductEventProperties(
   const clean: Record<string, string | boolean> = {};
   for (const [key, spec] of Object.entries(specs)) {
     const value = (properties as Record<string, unknown>)[key];
-    if (spec.kind === "boolean" && typeof value === "boolean") clean[key] = value;
-    if (spec.kind === "enum" && typeof value === "string" && spec.values.includes(value)) {
-      clean[key] = value;
+    if (
+      spec === "boolean"
+        ? typeof value === "boolean"
+        : typeof value === "string" && spec.includes(value)
+    ) {
+      clean[key] = value as string | boolean;
     }
   }
   return Object.keys(clean).length ? clean : undefined;
