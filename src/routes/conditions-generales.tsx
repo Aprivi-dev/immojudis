@@ -4,11 +4,11 @@ import type { ReactNode } from "react";
 import { createFileRoute, Link } from "@/lib/router-compat";
 import {
   LEGAL_DOCUMENTS,
-  PREVIOUS_LEGAL_DOCUMENTS,
   legalValue,
   publicLegalPublisher,
   type LegalPublisher,
 } from "@/lib/legal-documents";
+import { PREVIOUS_LEGAL_DOCUMENTS } from "@/lib/legal-documents-previous";
 import { ANALYSIS_TRIAL_DAYS, resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
 import { PAST_DUE_GRACE_DAYS, PLAN_LIMITS } from "@/lib/plans";
 import { MONTHLY_SALE_UNLOCKS } from "@/lib/sale-unlocks";

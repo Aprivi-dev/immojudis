@@ -5,12 +5,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   assertPaidOfferLegalReadiness,
   LEGAL_DOCUMENTS,
-  PREVIOUS_LEGAL_DOCUMENTS,
   legalConfigurationStatus,
   legalPublisherConfigurationStatus,
   publicLegalPublisher,
   type LegalPublisher,
 } from "./legal-documents";
+import { PREVIOUS_LEGAL_DOCUMENTS } from "./legal-documents-previous";
 
 const COMPLETE_ENVIRONMENT = {
   NEXT_PUBLIC_LEGAL_ENTITY_NAME: "ImmoJudis SAS",
