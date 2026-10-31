@@ -17,7 +17,7 @@ import { buildPlanEntitlements } from "@/lib/property-report/entitlements";
  * Résolution serveur des droits d'un compte (plan, essai, offre de lancement, administrateur).
  * Déplacée depuis `property-reports.ts` sans changement de comportement. Les règles d'accès Analyse
  * ont un miroir SQL (`app_private.has_active_analysis_access`) : `entitlements.server.parity.test.ts`
- * rejoue les cas des tests pgTAP 740, 774 et 775 contre cette fonction.
+ * rejoue les cas des tests pgTAP 740, 774, 775 et 850 contre cette fonction.
  */
 
 const ADMIN_PLAN_LIMITS: PlanEntitlements["limits"] = {
