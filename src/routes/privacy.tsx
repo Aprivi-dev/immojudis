@@ -141,13 +141,13 @@ const processingRows = [
     data: "Événements de parcours du navigateur, agrégés et à valeurs fermées, sans identifiant de personne ni de compte (mesurés avec Vercel Analytics, sans cookie) ; performances, identifiants techniques, erreurs et état des traitements",
     basis: "Intérêt légitime à améliorer, sécuriser et maintenir Immojudis",
     retention:
-      "Événements d’usage et journaux applicatifs : 24 mois au plus, conformément à la matrice de conservation ; données de mesure conservées par Vercel selon sa propre durée",
+      "Journaux applicatifs et données techniques : 24 mois au plus, conformément à la matrice de conservation ; données de mesure conservées par Vercel selon sa propre durée",
   },
   {
     purpose: "Mesure du parcours des personnes connectées",
     data: "Identifiant de compte, type d’événement (vente débloquée, quota atteint, valeur de référence servie pour une vente, export vers un calendrier, détail d’un repère « Pépite » servi, clic sur un lien d’un email d’alerte ou de rappel), détail à valeurs fermées, vente concernée et date. Aucun texte libre, aucune adresse IP. L’équipe ne les consulte qu’en chiffres agrégés. Les liens des emails d’alertes et de rappels passent par une adresse d’Immojudis qui note le clic, puis vous envoie vers la vente ou le fichier de calendrier ; un antivirus ou l’aperçu d’une messagerie peut ouvrir le lien et compter comme un clic",
     basis:
-      "Intérêt légitime à comprendre quelles fonctions servent et à améliorer le service. L’interrupteur de mesure d’audience de cette page ne couvre pas ces événements : vous pouvez vous y opposer par écrit, à l’adresse de contact indiquée en tête de cette page",
+      "Intérêt légitime à comprendre quelles fonctions servent et à améliorer le service. L’interrupteur de mesure d’audience de cette page ne couvre pas ces événements : vous pouvez vous y opposer depuis /mes-droits (demande d’opposition) ou par écrit, à l’adresse de contact indiquée en tête de cette page",
     retention:
       "90 jours après l’événement (purge hebdomadaire : au plus environ 97 jours) ; suppression avec le compte. Cette durée est propre à ces événements : le journal d’usage des quotas est conservé 24 mois",
   },
@@ -155,15 +155,15 @@ const processingRows = [
     purpose: "Retours « Utile » ou « Pas pertinent » sur les signaux d’une vente",
     data: "Identifiant de compte, vente, signal concerné (écart au marché, points à vérifier ou repère « Pépite »), réponse « Utile » ou « Pas pertinent », motif choisi dans une liste fermée, date. Aucun texte libre, aucune adresse IP. Sans compte, rien n’est enregistré",
     basis:
-      "Intérêt légitime à vérifier que les signaux affichés sont pertinents et à arrêter un repère dont la précision se dégrade. Vous pouvez vous y opposer par écrit, à l’adresse de contact indiquée en tête de cette page",
+      "Intérêt légitime à vérifier que les signaux affichés sont pertinents et à arrêter un repère dont la précision se dégrade. Vous pouvez vous y opposer depuis /mes-droits (demande d’opposition) ou par écrit, à l’adresse de contact indiquée en tête de cette page",
     retention:
       "90 jours après le retour ; suppression avec le compte ; si la vente est supprimée du site, le lien avec la vente est coupé et la ligne est gardée jusqu’à ses 90 jours",
   },
   {
     purpose: "Instantanés d’estimation de marché avant l’audience",
-    data: "Type de vente, tribunal, département, type de bien, mise à prix, jour d’audience, estimation de marché et indicateurs de qualité, résultat du repère « Pépite » à cet instant ; pour une vente notariale dont la source a publié le résultat, prix d’adjudication. Ni adresse, ni identifiant de vente en clair, ni donnée de compte : ces informations sont pseudonymisées, mais elles peuvent permettre, par recoupement avec l’annonce publique, de retrouver une vente et donc, parfois, un vendeur particulier. Elles sont traitées comme des données personnelles",
+    data: "Type de vente, tribunal, département, type de bien, mise à prix, jour d’audience, estimation de marché et indicateurs de qualité, résultat du repère « Pépite » à cet instant ; pour une vente notariale dont la source a publié le résultat, prix d’adjudication. Ni adresse, ni identifiant de vente en clair, ni donnée de compte : ces informations sont pseudonymisées, mais elles peuvent permettre, par recoupement avec l’annonce publique, de retrouver une vente et donc, parfois, un vendeur particulier. Elles sont traitées comme des données personnelles : pour exercer vos droits sur un instantané, indiquez le lien de l’annonce dans votre demande",
     basis:
-      "Intérêt légitime à mesurer la précision des estimations et du repère « Pépite » face aux prix d’adjudication. Vous pouvez vous y opposer par écrit, à l’adresse de contact indiquée en tête de cette page",
+      "Intérêt légitime à mesurer la précision des estimations et du repère « Pépite » face aux prix d’adjudication. Vous pouvez vous y opposer depuis /mes-droits (demande d’opposition) ou par écrit, à l’adresse de contact indiquée en tête de cette page",
     retention:
       "36 mois après la date d’audience, puis suppression à la purge hebdomadaire (jusqu’à 7 jours de plus)",
   },
@@ -352,14 +352,19 @@ export function PrivacyPage() {
               annonces consultées, ou vos choix sur la mesure d’audience. Nous mesurons la
               fréquentation avec Vercel Analytics et Speed Insights, sans cookie et sans suivi entre
               sites, et des événements de parcours agrégés, sans identifiant de personne. Lorsque
-              vous êtes connecté, quelques événements d’usage sont en outre rattachés à votre compte
-              (voir « Mesure du parcours des personnes connectées » dans le tableau), conservés 90
-              jours. Les données ne servent qu’à des statistiques de notre service. Vous pouvez vous
-              opposer à la mesure d’audience depuis cette page (votre choix est mémorisé dans ce
-              navigateur) ou en nous écrivant à {legalValue(publisher.contactEmail)}. L’interrupteur
-              ci-dessous ne couvre pas les événements liés à votre compte : pour vous opposer à
-              ceux-ci, ainsi qu’aux retours « Utile » ou « Pas pertinent » et aux instantanés
-              d’estimation décrits dans le tableau, écrivez à {legalValue(publisher.contactEmail)}.
+              vous êtes connecté, quelques événements de parcours sont en outre rattachés à votre
+              compte (voir « Mesure du parcours des personnes connectées » dans le tableau),
+              conservés 90 jours. Les données ne servent qu’à des statistiques de notre service.
+              Vous pouvez vous opposer à la mesure d’audience depuis cette page (votre choix est
+              mémorisé dans ce navigateur) ou en nous écrivant à{" "}
+              {legalValue(publisher.contactEmail)}. L’interrupteur ci-dessous ne couvre pas les
+              événements liés à votre compte : pour vous opposer à ceux-ci, ainsi qu’aux retours «
+              Utile » ou « Pas pertinent » et aux instantanés d’estimation décrits dans le tableau,
+              utilisez{" "}
+              <Link to="/mes-droits" className="text-gold underline">
+                Mes droits
+              </Link>{" "}
+              (demande d’opposition) ou écrivez à {legalValue(publisher.contactEmail)}.
             </p>
             <AudienceOptOutSwitch />
             <p className="mt-4">
