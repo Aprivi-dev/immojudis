@@ -4,11 +4,15 @@ import Link from "next/link";
 import { useId, useState } from "react";
 import Bell from "lucide-react/dist/esm/icons/bell.js";
 import { FEES_SIMULATOR_DEPARTMENTS } from "@/components/fees-simulator/departments";
-import { FIELD_CLASSES } from "@/components/fees-simulator/fields";
 import { SectorAlertForm } from "@/components/SectorAlertFormLazy";
 import { Button, Card, buttonClasses } from "@/components/ui/primitives";
 import { useAuth } from "@/hooks/use-auth";
 import { alertCreationLoginPath } from "@/lib/discovery-alerts";
+
+// Même aspect que les champs du simulateur ; recopié ici car `fields.tsx` importe le moteur de frais
+// (`profitability`), trop lourd pour le JavaScript initial de l'annonce exemple.
+const FIELD_CLASSES =
+  "min-h-11 w-full min-w-0 rounded-lg border border-line bg-white px-3 text-base focus-visible:border-gold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft";
 
 export const DEPARTMENT_ALERT_LABEL = "Être prévenu des ventes de mon département";
 
@@ -39,9 +43,11 @@ export function DepartmentAlertProposal({ className }: { className?: string }) {
           </h2>
           <p className="max-w-2xl text-sm text-ink-soft">
             Choisissez votre département : l’alerte vous prévient, dans votre compte, des nouvelles
-            ventes référencées dans ce département. Elle n’envoie aucun email par défaut ; un email
-            récapitulatif (un par semaine avec le compte gratuit) n’est envoyé que si vous cochez la
-            case prévue à cet effet, que vous pouvez décocher à tout moment.
+            ventes référencées dans ce département. L’email récapitulatif est facultatif : il n’est
+            activé que si vous cochez la case prévue à cet effet (décochée par défaut) ; il est
+            hebdomadaire avec l’offre Découverte, quotidien avec l’offre Analyse, essai gratuit
+            compris. Si vous l’avez déjà activé dans votre compte, il s’applique aussi à cette
+            alerte.
           </p>
           <div className="grid max-w-sm gap-1">
             <label htmlFor={selectId} className="text-sm font-semibold">
@@ -61,7 +67,7 @@ export function DepartmentAlertProposal({ className }: { className?: string }) {
               ))}
             </select>
           </div>
-          {connected ? null : (
+          {connected || loading ? null : (
             <>
               <div>
                 {department ? (

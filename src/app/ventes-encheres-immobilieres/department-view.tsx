@@ -258,7 +258,9 @@ export function DepartmentView({
               Communes les plus présentes
             </h2>
             <p className="mt-2 text-sm text-ink-soft">
-              Les communes qui comptent le plus de ventes à venir référencées {where}.
+              Les communes qui comptent le plus de ventes à venir référencées {where}. Les nombres
+              sont indicatifs : la recherche d’une commune peut afficher d’autres ventes dont le nom
+              lui ressemble.
             </p>
             <ul className="mt-3 grid gap-1 sm:grid-cols-2">
               {cities.map((entry) => (

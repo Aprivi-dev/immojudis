@@ -33,8 +33,10 @@ describe("DepartmentAlertProposal", () => {
   it("dit ce qui sera envoyé : rien par email sans la case dédiée", () => {
     render(<DepartmentAlertProposal />);
     const text = document.body.textContent ?? "";
-    expect(text).toContain("Elle n’envoie aucun email par défaut");
+    expect(text).toContain("L’email récapitulatif est facultatif");
     expect(text).toContain("que si vous cochez la case");
+    expect(text).toContain("hebdomadaire avec l’offre Découverte, quotidien avec l’offre Analyse");
+    expect(text).toContain("Si vous l’avez déjà activé dans votre compte");
     expect(screen.queryByRole("checkbox")).toBeNull();
   });
 
@@ -59,11 +61,12 @@ describe("DepartmentAlertProposal", () => {
     );
   });
 
-  it("garde le parcours visiteur pendant la vérification du compte", () => {
+  it("n'affiche ni bouton de connexion ni formulaire pendant la vérification du compte", () => {
     state.auth = { user: { id: "u1" }, loading: true };
     render(<DepartmentAlertProposal />);
     fireEvent.change(screen.getByLabelText("Département"), { target: { value: "75" } });
-    expect(screen.getByRole("link", { name: DEPARTMENT_ALERT_LABEL })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: DEPARTMENT_ALERT_LABEL })).toBeNull();
+    expect(screen.queryByRole("button", { name: DEPARTMENT_ALERT_LABEL })).toBeNull();
     expect(screen.queryByTestId("sector-alert-form")).toBeNull();
   });
 });
