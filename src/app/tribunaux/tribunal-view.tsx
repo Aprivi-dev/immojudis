@@ -49,6 +49,7 @@ export function TribunalView({
   department,
   siblings,
   generatedAt,
+  pagePath,
 }: {
   tribunal: PublicTribunalActivity;
   /** Prochaine audience hors vente reportée (voir `nextAudienceDate`). */
@@ -62,6 +63,8 @@ export function TribunalView({
   /** Autres tribunaux du département, avec l'adresse de leur page. */
   siblings: readonly { activity: PublicTribunalActivity; path: string }[];
   generatedAt: Date;
+  /** Adresse de la page (celle du canonical) ; à défaut, l'adresse déduite du nom du tribunal. */
+  pagePath?: string;
 }) {
   const total = tribunal.upcomingCount;
   const priceFigure = tribunalPriceFigure(tribunal);
@@ -230,7 +233,7 @@ export function TribunalView({
                   <li key={sale.id} className="py-3">
                     <SaleDetailLink
                       saleId={sale.id.toLowerCase()}
-                      returnTo={tribunalPagePath(tribunal.code)}
+                      returnTo={pagePath ?? tribunalPagePath(tribunal.code, tribunal)}
                       className="grid gap-1 sm:grid-cols-[1fr_auto] sm:items-baseline sm:gap-4"
                     >
                       <span className="min-w-0">

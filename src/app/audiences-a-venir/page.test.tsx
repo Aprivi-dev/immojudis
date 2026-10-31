@@ -207,7 +207,7 @@ describe("/audiences-a-venir : contenu", () => {
       .map((link) => link.getAttribute("href"));
     // La page du tribunal, puis les deux fiches (la plus tôt dans la journée d'abord).
     expect(links).toEqual([
-      "/tribunaux/bobigny",
+      "/tribunaux/tribunal-judiciaire-bobigny",
       "/sales/00000000-0000-4000-8000-000000000002",
       "/sales/00000000-0000-4000-8000-000000000001",
     ]);
