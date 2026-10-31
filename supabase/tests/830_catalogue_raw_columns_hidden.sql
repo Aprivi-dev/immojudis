@@ -12,7 +12,7 @@ begin;
 -- ce test vérifie les règles d'un compte gratuit, il la coupe (annulé par le rollback).
 update app_private.launch_offer set active = false where singleton;
 
-select plan(13);
+select plan(15);
 
 insert into auth.users (
   id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -66,6 +66,24 @@ select ok(
   and has_table_privilege('authenticated', 'public.v_auction_sales_app', 'select'),
   'anon holds nothing on the raw columns or the catalogue view, authenticated keeps the view'
 );
+
+-- Les rôles qui contournent la sécurité par ligne (le code serveur lit la vue en service_role) --------------
+
+select is(
+  (select count(*)::integer from public.v_auction_sales_app where id = 'c8300000-1000-4000-8000-000000000001'),
+  1,
+  'the test role (BYPASSRLS) still reads the sale through the guarded view, as it did through the invoker view'
+);
+
+set local role service_role;
+
+select is(
+  (select count(*)::integer from public.v_auction_sales_app where id = 'c8300000-1000-4000-8000-000000000001'),
+  1,
+  'service_role still reads the sale through the guarded view (server-side code reads it with the service key)'
+);
+
+reset role;
 
 -- Un compte Analyse ------------------------------------------------------------------------------------
 
