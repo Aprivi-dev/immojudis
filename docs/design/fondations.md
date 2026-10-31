@@ -87,6 +87,28 @@ Composant `Badge` (`tone` : `neutral`, `gold`, `success`, `warning`, `danger`, `
 | Pépite                                       | `pepite` avec le logo de pépite (`PepiteIcon`) | Photo des cartes (haut gauche), tableau (icône), fiche |
 | Qualité de l'annonce                         | —                                              | **Fiche seulement** (retirée des cartes de /sales)     |
 
+## Annonce sans photo
+
+Décision du propriétaire du 31/10/2026, qui remplace la « case neutre » du 24/10/2026 (zone grise
+de format 4/3, icône et mention « Aucun visuel fiable ») : 14 cartes sur 24 de `/sales` n'ont pas
+de photo, et chacune occupait 273 px de gris.
+
+- Une carte de `/sales` sans photo ni vue aérienne fiable montre une **illustration générique** du
+  type de bien (`src/components/PropertyIllustration.tsx`) : maison, appartement, immeuble ou terrain.
+  Tout autre type (garage, local commercial, bien mixte, type inconnu) prend la maison, qui est le
+  repli. Dessin sobre : traits marine `brand-navy`, sol or `gold`, fond beige `surface-tint` ; jamais
+  une couleur brute.
+- Elle est **toujours signalée** : pastille visible « Illustration » en haut à gauche (même style que
+  l'étiquette d'une photo), et nom accessible « Illustration générique de <type> : aucune photo du
+  bien n'est disponible ». Elle ne doit jamais passer pour une photo du bien : le même dessin sert
+  à tous les biens d'un même type.
+- La ville s'écrit sous le dessin quand elle est connue.
+- **Hauteur réduite** : cadre 5/2 au lieu de 4/3 (146 px au lieu de 273 px sur un écran de 364 px).
+  Le cadre est choisi sur les seules données de la vente (`listingMediaFrameClass`) : 4/3 dès qu'une
+  photo ou une vue aérienne du bâtiment (position d'adresse ou de parcelle) est possible, pour que la
+  hauteur ne change pas quand l'image arrive ou échoue.
+- Un visuel **réservé** garde le fond beige et le cadenas « Visuel réservé » (visiteur sans droit).
+
 ## Migration
 
 Page par page, dans cet ordre : fiche vente, /sales, accueil ; le reste du site suit au fil des

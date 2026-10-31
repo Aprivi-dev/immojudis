@@ -11,7 +11,7 @@ import {
   buildAlertName,
 } from "./search-page-state";
 
-import { SaleTypeFilter } from "./SaleTypeFilter";
+import { SaleTypeFilter, SaleTypeSelect } from "./SaleTypeFilter";
 
 function FilterHarness() {
   const [value, setValue] = useState<SaleTypeValue | "">("");
@@ -77,5 +77,35 @@ describe("sale type search controls", () => {
     });
     expect(draftToSearch(emptySearchDraft(), search).saleType).toBeUndefined();
     expect(buildAlertName(search)).toContain("Chez le notaire");
+  });
+});
+
+describe("SaleTypeSelect", () => {
+  afterEach(cleanup);
+
+  it("propose « Toutes les ventes » et les types, et prévient du choix", () => {
+    const onChange = vi.fn();
+    render(<SaleTypeSelect value="" onChange={onChange} />);
+    const select = screen.getByRole("combobox", { name: "Type de vente" }) as HTMLSelectElement;
+    expect([...select.options].map((option) => [option.value, option.textContent])).toEqual([
+      ["", "Toutes les ventes"],
+      ["tribunal", "Au tribunal"],
+      ["notary", "Chez le notaire"],
+      ["state", "Domaniales"],
+      ["unknown", "À préciser"],
+    ]);
+    fireEvent.change(select, { target: { value: "state" } });
+    expect(onChange).toHaveBeenCalledWith("state");
+    fireEvent.change(select, { target: { value: "" } });
+    expect(onChange).toHaveBeenLastCalledWith("");
+  });
+
+  it("reflète la valeur choisie et cache les types pilotes quand ils sont désactivés", () => {
+    vi.stubEnv("NEXT_PUBLIC_NOTARY_STATE_PILOTS_ENABLED", "false");
+    render(<SaleTypeSelect value="tribunal" onChange={() => undefined} />);
+    const select = screen.getByRole("combobox", { name: "Type de vente" }) as HTMLSelectElement;
+    expect(select.value).toBe("tribunal");
+    expect([...select.options].map((option) => option.value)).not.toContain("notary");
+    vi.unstubAllEnvs();
   });
 });

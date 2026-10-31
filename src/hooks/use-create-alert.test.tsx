@@ -172,11 +172,32 @@ describe("useCreateAlert", () => {
     );
     // Le consentement à l'email n'est jamais donné sans demande explicite.
     expect(mocks.updatePreferences).not.toHaveBeenCalled();
-    expect(mocks.toast.success).toHaveBeenCalledWith("Zone surveillée et alerte créées");
+    expect(mocks.toast.success).toHaveBeenCalledWith("Zone surveillée et alerte créées", {
+      action: { label: "Voir mes alertes", onClick: expect.any(Function) },
+    });
     expect(mocks.track).toHaveBeenCalledWith("alert_created", {
       email_consent: false,
       pepite_only: false,
     });
+  });
+
+  it("annonce « Alerte créée » avec l'action « Voir mes alertes », qui ouvre la page des alertes", async () => {
+    mocks.plan.mockResolvedValue({
+      plan: {
+        hasAnalysisAccess: false,
+        features: { smartAlerts: "limited", watchedZones: "locked" },
+      },
+    });
+    const hook = setup();
+    await create(hook, { department: "33" });
+    expect(mocks.createZone).not.toHaveBeenCalled();
+    expect(mocks.toast.success).toHaveBeenCalledWith("Alerte créée", {
+      action: { label: "Voir mes alertes", onClick: expect.any(Function) },
+    });
+    expect(mocks.toast.success).not.toHaveBeenCalledWith("Recherche enregistrée");
+    const [, options] = mocks.toast.success.mock.calls[0];
+    options.action.onClick();
+    expect(mocks.push).toHaveBeenCalledWith("/alertes");
   });
 
   it("n'active l'email récapitulatif que si la case a été cochée", async () => {
@@ -189,6 +210,7 @@ describe("useCreateAlert", () => {
     });
     expect(mocks.toast.success).toHaveBeenCalledWith(
       "Zone surveillée et alerte créées. Email récapitulatif activé.",
+      { action: { label: "Voir mes alertes", onClick: expect.any(Function) } },
     );
     expect(mocks.track).toHaveBeenCalledWith("alert_created", {
       email_consent: true,

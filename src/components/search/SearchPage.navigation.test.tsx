@@ -162,7 +162,9 @@ describe("/sales : « Retour » défait la carte, la page et les filtres validé
     });
     expect(pushStateCalls()).toEqual(["/sales?sort=price_asc"]);
 
-    fireEvent.click(screen.getByRole("button", { name: "Au tribunal" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Type de vente" }), {
+      target: { value: "tribunal" },
+    });
     await waitFor(() => expect(pushStateCalls().at(-1)).toContain("saleType=tribunal"), {
       timeout: 3000,
     });

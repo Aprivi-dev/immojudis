@@ -366,7 +366,7 @@ test.describe("compte gratuit connecté", () => {
 
     // Sans la case : l'alerte est créée, aucun consentement n'est enregistré.
     await page.getByRole("button", { name: "Créer l’alerte" }).click();
-    await expect(toastMessage(page, "Recherche enregistrée", { exact: true })).toBeVisible();
+    await expect(toastMessage(page, "Alerte créée", { exact: true })).toBeVisible();
     expect(consents).toEqual([]);
 
     await page.getByRole("button", { name: "Créer une alerte" }).first().click();

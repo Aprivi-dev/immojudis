@@ -4,9 +4,9 @@
  * jeton modifié ne laisse pas la carte sur l'ancienne couleur.
  */
 export const MAP_PALETTE = {
-  /** `--brand-navy` : vente isolée, texte des regroupements, contours. */
+  /** `--brand-navy` : vente isolée, liseré et nombre des regroupements, contours. */
   navy: "#132238",
-  /** `--gold` : regroupements, anneau et pictogramme de pépite. */
+  /** `--gold` : anneau et pictogramme de pépite, et rien d'autre (les regroupements sont blancs liserés marine). */
   gold: "#c98d45",
   /** `--gold-soft` : trait de l'état sélectionné (4,92:1 sur blanc, contre 2,85:1 pour `--gold`). */
   goldSoft: "#9c642b",
