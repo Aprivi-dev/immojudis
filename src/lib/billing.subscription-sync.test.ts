@@ -568,6 +568,22 @@ describe("litiges Stripe : accès rendu à la clôture (n° 46)", () => {
     expect(rpcCalls("apply_stripe_subscription_state")).toHaveLength(0);
   });
 
+  it("litige clos dont l'abonnement est introuvable chez Stripe : applique la règle de la date de fin, pas « paused » à vie", async () => {
+    stubDatabase({ ...ROW, current_period_end: "2099-01-01T00:00:00.000Z" });
+    mocks.subscriptionsRetrieve.mockRejectedValue(
+      Object.assign(new Error("No such subscription"), { code: "resource_missing" }),
+    );
+
+    const result = await deliver("charge.dispute.closed", dispute("won"));
+
+    expect(result.handled).toBe(true);
+    const records = rpcCalls("record_stripe_payment_state");
+    expect(records).toHaveLength(2);
+    expect(records[0][1]).toMatchObject({ p_entitlement_status: "paused" });
+    expect(records[1][1]).toMatchObject({ p_state: "cleared", p_entitlement_status: "active" });
+    expect(rpcCalls("apply_stripe_subscription_state")).toHaveLength(0);
+  });
+
   it("laisse un litige encore ouvert suspendre l'accès, sans relecture", async () => {
     stubDatabase(ROW);
 

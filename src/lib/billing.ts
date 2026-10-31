@@ -944,8 +944,20 @@ async function handleChargeDispute(dispute: Stripe.Dispute, event: Stripe.Event)
     try {
       current = await getStripe().subscriptions.retrieve(subscriptionId);
     } catch (retrieveError) {
-      // Abonnement disparu chez Stripe : ses événements d'annulation règlent l'accès.
       if (!isStripeMissingOrCancelled(retrieveError)) throw retrieveError;
+    }
+    if (!current) {
+      // Abonnement introuvable chez Stripe (404) : rien à relire. On ne laisse pas « paused » à vie ;
+      // on applique la règle des lignes sans abonnement (date de fin en base). Même événement, donc
+      // l'enregistrement est rejoué sans effet de bord sur l'état du paiement.
+      await recordStripePaymentState({
+        userId,
+        paymentIntentId,
+        state: stripeDisputeStatusToPaymentState(dispute.status),
+        status: stripeDisputeStatusToPlanStatus(dispute.status, data?.current_period_end ?? null),
+        event,
+        revokeImmediately: false,
+      });
     }
     if (current) {
       // Le litige n'est plus « ouvert » (état « cleared » enregistré ci-dessus). La relecture vient
