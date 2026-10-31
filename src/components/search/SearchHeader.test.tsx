@@ -4,6 +4,7 @@ import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CsvExportButton,
+  FREE_ALERT_LIMIT,
   HomeTypeFilter,
   PriceFilter,
   ResultsSummary,
@@ -13,6 +14,7 @@ import {
   SortAndSaleTypeControl,
   SortDropdown,
 } from "./SearchHeader";
+import { PLAN_LIMITS } from "@/lib/plans";
 import { emptySearchDraft, type SearchDraft } from "./search-page-state";
 
 vi.mock("next/navigation", () => ({ usePathname: () => "/sales" }));
@@ -22,6 +24,13 @@ vi.mock("@/hooks/use-auth", () => ({
 vi.mock("@/integrations/supabase/client", () => ({ supabase: { auth: { signOut: vi.fn() } } }));
 
 afterEach(cleanup);
+
+describe("FREE_ALERT_LIMIT", () => {
+  it("reprend la limite de zones surveillées de l'offre Découverte", () => {
+    expect(PLAN_LIMITS.decouverte.watchedZones).not.toBeNull();
+    expect(FREE_ALERT_LIMIT).toBe(PLAN_LIMITS.decouverte.watchedZones);
+  });
+});
 
 describe("SaveSearchButton", () => {
   it("n'affiche ni cadenas ni mention de l'offre Analyse : la première alerte est gratuite", () => {

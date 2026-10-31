@@ -240,8 +240,10 @@ export function SearchPage({
   // geste fait DANS sa zone (appui, molette, toucher) ou au bouton « Afficher la carte » (voir
   // `useFirstGestureStart`, `MapPreview`, `DesktopMapZone`) : ni le défilement de la liste, ni le
   // survol ne la démarrent, car chaque chargement est facturé. Son cadre est réservé dès que l'écran
-  // est large. Sur mobile, elle suit l'ouverture de la fenêtre de carte (`?map=true`).
-  const [desktopMapStarted, setDesktopMapStarted] = useState(false);
+  // est large. Sur mobile, elle suit l'ouverture de la fenêtre de carte (`?map=true`). Une adresse
+  // qui arrive avec `?map=true` est une demande explicite (lien partagé) : sur bureau, la carte
+  // démarre alors sans attendre un geste.
+  const [desktopMapStarted, setDesktopMapStarted] = useState(() => Boolean(search.map));
   const mapVisible = isDesktop ? desktopMapStarted : mobileMapOpen;
   // Le tableau n'existe que sur écran large : en dessous, toujours les cartes.
   const displayedView = effectiveResultsView(resultsView, isDesktop);

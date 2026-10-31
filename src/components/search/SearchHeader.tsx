@@ -19,6 +19,7 @@ import {
   SORT_OPTIONS,
 } from "@/lib/search/search-filters";
 import { departmentFromCode } from "@/lib/department-pages";
+import { PLAN_LIMITS } from "@/lib/plans";
 import { resolveFrenchGeoSearch } from "@/lib/search/french-geo-search";
 import type { ResultsView } from "@/lib/search/results-view";
 import type { SalesSearchParams, SearchSortKey } from "@/lib/search/search-url-state";
@@ -570,10 +571,11 @@ export function ResultsViewToggle({
 export type AlertFrequencyChoice = "daily" | "weekly";
 
 /**
- * Alertes actives d'un compte gratuit : une seule (la base refuse la seconde, voir
- * `20260909121656_discovery_geographic_alerts.sql`).
+ * Alertes actives d'un compte gratuit : celles de l'offre Découverte (`PLAN_LIMITS`, une seule ; la
+ * base refuse la suivante, voir `20260909121656_discovery_geographic_alerts.sql`). Le repli `1` ne
+ * sert qu'au typage (`null` voudrait dire « sans limite ») ; un test garde les deux d'accord.
  */
-export const FREE_ALERT_LIMIT = 1;
+export const FREE_ALERT_LIMIT = PLAN_LIMITS.decouverte.watchedZones ?? 1;
 
 export type FreeAlertUsage = { used: number; limit: number };
 

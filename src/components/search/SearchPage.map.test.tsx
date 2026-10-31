@@ -132,8 +132,8 @@ async function flushPaint() {
 }
 
 describe("/sales sur ordinateur : la carte ne démarre que sur un geste dans sa zone", () => {
-  it("ne démarre pas, et ne lit aucun point, au défilement de la page ni au survol de la zone, même avec ?map=true", async () => {
-    renderPage({ map: true });
+  it("ne démarre pas, et ne lit aucun point, au défilement de la page ni au survol de la zone", async () => {
+    renderPage({});
     await waitFor(() => expect(screen.getAllByRole("article")).toHaveLength(rows.length));
     const zone = document.getElementById("sales-map")!;
     expect(zone).toBeTruthy();
@@ -148,6 +148,13 @@ describe("/sales sur ordinateur : la carte ne démarre que sur un geste dans sa 
     expect(screen.queryByTestId("map-panel")).toBeNull();
     expect(screen.getByTestId("map-preview")).toBeTruthy();
     expect(state.fetchSearchMapResults).not.toHaveBeenCalled();
+  });
+
+  it("démarre d'emblée quand l'adresse arrive avec ?map=true (demande explicite)", async () => {
+    renderPage({ map: true });
+    expect(await screen.findByTestId("map-panel")).toBeTruthy();
+    expect(screen.queryByTestId("map-preview")).toBeNull();
+    await waitFor(() => expect(state.fetchSearchMapResults).toHaveBeenCalled());
   });
 
   it("démarre à la molette sur la zone, puis lit les points de la carte", async () => {
