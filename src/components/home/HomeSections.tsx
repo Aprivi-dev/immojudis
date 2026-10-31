@@ -388,6 +388,8 @@ export function homeFaqItems({
 }: { trialOpen?: boolean; openFeeRegimes?: readonly FeeRegimeKey[] } = {}): Array<{
   question: string;
   answer: string;
+  /** Guide qui détaille la réponse : lien affiché sous la réponse (hors balisage FAQPage). */
+  guide?: { href: string; label: string };
 }> {
   // Où le plafond existe : le tribunal toujours, les ventes notariales selon l'interrupteur par
   // régime (même source que les cartes d'offres). Les ventes domaniales n'en ont pas.
@@ -431,6 +433,42 @@ export function homeFaqItems({
         "Au tribunal judiciaire, les enchères sont portées par un avocat inscrit au barreau de ce tribunal. Immojudis vous aide à préparer la vente ; il ne porte pas d’enchères.",
     },
     {
+      question: "Faut-il verser une garantie pour enchérir ?",
+      answer:
+        "Oui, pour une vente au tribunal. Avant l’audience, l’avocat qui porte vos enchères se fait remettre un chèque de banque ou une caution bancaire de 10 % de la mise à prix, avec un minimum de 3 000 € (art. R. 322-41 du Code des procédures civiles d’exécution). Elle est rendue à l’issue de l’audience à celui qui ne gagne pas.",
+      guide: {
+        href: "/ressources/garantie-10-pourcent-cheque-banque-caution-encheres",
+        label: "Lire le guide de la garantie",
+      },
+    },
+    {
+      question: "Les frais s’ajoutent-ils au prix d’adjudication ?",
+      answer:
+        "Oui. Les frais de poursuite fixés par le juge et les droits de mutation sont payés en plus du prix (art. R. 322-58), et les émoluments et honoraires des avocats s’y ajoutent. Avec les hypothèses du simulateur Immojudis, le total représente environ 13 % du prix pour un bien adjugé 150 000 €.",
+      guide: {
+        href: "/ressources/frais-vente-encheres-judiciaire",
+        label: "Lire le guide des frais",
+      },
+    },
+    {
+      question: "Y a-t-il une condition suspensive de prêt ?",
+      answer:
+        "En principe non, pour une vente au tribunal : la procédure ne prévoit pas de sortie en cas de refus de prêt. Le prix et les frais se paient dans les deux mois de l’adjudication définitive, sinon le bien est remis en vente. Le financement se prépare donc avant l’audience.",
+      guide: {
+        href: "/ressources/financer-achat-encheres-pret-delais",
+        label: "Lire le guide du financement",
+      },
+    },
+    {
+      question: "Qu’est-ce que la surenchère du dixième ?",
+      answer:
+        "Pendant dix jours après l’adjudication au tribunal, toute personne peut faire une offre supérieure d’au moins un dixième du prix principal, par l’intermédiaire d’un avocat (art. R. 322-50 et R. 322-51). Si elle est valable, le bien est remis aux enchères : l’achat n’est donc définitif qu’à l’issue de ce délai.",
+      guide: {
+        href: "/ressources/apres-adjudication-surenchere-paiement-titre-vente",
+        label: "Lire le guide après l’adjudication",
+      },
+    },
+    {
       question: "Comment être prévenu des nouvelles ventes ?",
       answer:
         "Créez une alerte sur votre secteur : les nouvelles ventes qui y correspondent vous sont envoyées par email.",
@@ -470,6 +508,13 @@ export function HomeFaq({
                 <span className={styles.plus} aria-hidden />
               </summary>
               <p className={styles.answer}>{item.answer}</p>
+              {item.guide ? (
+                <p className={styles.answer}>
+                  <Link href={item.guide.href} className={styles.textLink}>
+                    {item.guide.label} <ArrowRight aria-hidden size={16} />
+                  </Link>
+                </p>
+              ) : null}
             </details>
           ))}
         </div>
