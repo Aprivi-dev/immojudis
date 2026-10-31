@@ -267,7 +267,7 @@ jobs:
   database:
     name: Supabase migrations + pgTAP
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -366,6 +366,22 @@ jobs:
           } >> "$GITHUB_ENV"
       - name: Run information-agent local integration
         run: npx vitest run src/lib/information-agent-local.integration.test.ts --reporter=verbose
+      # Contrat entre le pipeline Python et le schéma migré : chaque colonne que le pipeline écrit
+      # (services/data-pipeline/src/storage/column_sets.py et constructeurs de ligne) existe dans la base
+      # rejouée depuis zéro, avec un type compatible. Lecture seule, base locale uniquement.
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/data-pipeline/requirements-dev.lock
+      - name: Install the data pipeline test dependencies
+        working-directory: services/data-pipeline
+        run: python -m pip install --require-hashes -r requirements-dev.lock
+      - name: Check the columns written by the data pipeline against the migrated schema
+        working-directory: services/data-pipeline
+        env:
+          SCHEMA_CONTRACT_REQUIRED: "1"
+        run: SCHEMA_CONTRACT_DB_URL="$SUPABASE_DB_URL" python -m pytest -m schema_contract tests/test_schema_contract.py -q
       - name: Stop local Supabase
         if: always()
         run: npx --yes supabase@2.110.0 stop --no-backup
