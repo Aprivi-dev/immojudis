@@ -663,12 +663,23 @@ export async function getSharedPropertyReport({
   assertReportSourceCurrent(data.report_snapshot, await getSale(supabaseAdmin, data.sale_id));
 
   if (countView) {
-    const nextViewCount = data.share_view_count + 1;
-    const { error: updateError } = await supabaseAdmin
-      .from("saved_property_reports")
-      .update({ share_view_count: nextViewCount })
-      .eq("id", data.id);
-    if (!updateError) data.share_view_count = nextViewCount;
+    // Incrément atomique en base : deux visiteurs simultanés comptent deux vues. Un échec du
+    // compteur ne doit pas empêcher d'afficher le rapport.
+    const { data: nextViewCount, error: countError } = await supabaseAdmin.rpc(
+      "increment_property_report_share_view",
+      { p_report_id: data.id },
+    );
+    if (countError) {
+      console.warn(
+        JSON.stringify({
+          scope: "property-reports.share",
+          event: "view_count_failed",
+          message: String(countError.message ?? "").slice(0, 200),
+        }),
+      );
+    } else if (typeof nextViewCount === "number") {
+      data.share_view_count = nextViewCount;
+    }
   }
 
   return buildPublicSharedPropertyReport(data, openFeeRegimesFromEnv());
