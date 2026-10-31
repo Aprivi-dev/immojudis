@@ -210,6 +210,77 @@ def test_changing_total_or_duplicate_urls_cannot_certify_partition(monkeypatch) 
         assert "unique_source_url_count_mismatch" in partition["reasons"]
 
 
+def test_inventory_that_moved_during_the_scan_is_read_once_more(monkeypatch) -> None:
+    # VNI, 30/10/2026: a sale added while the ~800 online sales were read shifted the pages, one sale came back
+    # twice and the partition could not be certified. A second read of the settled inventory certifies it.
+    calls: list[tuple[str, int]] = []
+    details: list[str] = []
+
+    class Client:
+        def __init__(self, **kwargs):
+            pass
+
+        def get(self, url: str) -> str:
+            query = parse_qs(urlparse(url).query)
+            transaction_type = query["typeTransactions"][0]
+            page = int(query["page"][0])
+            calls.append((transaction_type, page))
+            first_pass = calls.count((transaction_type, 1)) == 1
+            if first_pass and page == 2:
+                # A new sale was put on line between the two pages: sale 2 slides onto page 2.
+                rows, total = [_row(transaction_type, 2), _row(transaction_type, 3)], 4
+            elif first_pass:
+                rows, total = [_row(transaction_type, 1), _row(transaction_type, 2)], 3
+            else:
+                number = {1: (0, 1), 2: (2, 3)}[page]
+                rows, total = [_row(transaction_type, n) for n in number], 4
+            return json.dumps({"nbTotalAnnonces": total, "nbPages": 2, "annonceResumeDto": rows})
+
+    _configure(monkeypatch, Client)
+    monkeypatch.setattr(
+        notaires,
+        "_enrich_sale_from_detail",
+        lambda client, sale, errors: details.append(sale["source_url"]) or True,
+    )
+    result = notaires.scrape_notaires_aquitaine_result(max_pages=2)
+
+    certificate = result.coverage["certificate"]
+    assert certificate["public_inventory_certified"] is True
+    assert result.coverage["coverage_complete"] is True
+    urls = [sale["source_url"] for sale in result.sales]
+    assert len(urls) == len(set(urls)) == 8
+    # Each detail is read once: the second pass only reads the sale that appeared (vni-0).
+    assert len(details) == len(set(details))
+    assert details[-1].endswith("/vni-0")
+    assert [page for transaction_type, page in calls if transaction_type == "VNI"] == [1, 2, 1, 2]
+
+
+def test_a_shifted_page_never_emits_the_same_sale_twice(monkeypatch) -> None:
+    emitted: list[str] = []
+
+    class Client:
+        def __init__(self, **kwargs):
+            pass
+
+        def get(self, url: str) -> str:
+            query = parse_qs(urlparse(url).query)
+            transaction_type = query["typeTransactions"][0]
+            page = int(query["page"][0])
+            rows = [_row(transaction_type, 1)] if page == 1 else [_row(transaction_type, 1), _row(transaction_type, 2)]
+            return json.dumps({"nbTotalAnnonces": 3, "nbPages": 2, "annonceResumeDto": rows})
+
+    _configure(monkeypatch, Client)
+    original_append = notaires.CheckpointSales.append
+    monkeypatch.setattr(
+        notaires.CheckpointSales,
+        "append",
+        lambda self, sale: emitted.append(sale["source_url"]) or original_append(self, sale),
+    )
+    notaires.scrape_notaires_aquitaine_result(max_pages=2)
+
+    assert len(emitted) == len(set(emitted)) == 4
+
+
 def test_validation_failure_cannot_be_counted_as_a_successful_exclusion(monkeypatch) -> None:
     class Client:
         def __init__(self, **kwargs):
