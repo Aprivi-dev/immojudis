@@ -1,4 +1,6 @@
 import "server-only";
+import { z } from "zod";
+import { PublicApiError } from "@/lib/api-errors";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
@@ -242,6 +244,15 @@ export async function suppressAlertNotificationsForMatches({
   return { suppressedCount: data?.length ?? 0 };
 }
 
+export const ALERT_NOTIFICATION_ACTIONS = ["read", "unread", "dismiss", "restore"] as const;
+export type AlertNotificationAction = (typeof ALERT_NOTIFICATION_ACTIONS)[number];
+
+/** Corps de `PATCH /api/alerts/notifications` : une action hors de la liste est refusée, jamais devinée. */
+export const alertNotificationUpdateSchema = z.object({
+  notificationId: z.string().uuid(),
+  action: z.enum(ALERT_NOTIFICATION_ACTIONS),
+});
+
 export async function updateAlertNotificationState({
   auth,
   notificationId,
@@ -249,7 +260,7 @@ export async function updateAlertNotificationState({
 }: {
   auth: SupabaseAuthContext;
   notificationId: string;
-  action: "read" | "unread" | "dismiss" | "restore";
+  action: AlertNotificationAction;
 }): Promise<{ notification: AlertNotificationSummary }> {
   await assertFeatureEntitlement(
     auth,
@@ -258,14 +269,24 @@ export async function updateAlertNotificationState({
   );
 
   const now = new Date().toISOString();
-  const patch =
-    action === "read"
-      ? { read_at: now }
-      : action === "unread"
-        ? { read_at: null }
-        : action === "dismiss"
-          ? { dismissed_at: now }
-          : { dismissed_at: null };
+  let patch: { read_at: string | null } | { dismissed_at: string | null };
+  switch (action) {
+    case "read":
+      patch = { read_at: now };
+      break;
+    case "unread":
+      patch = { read_at: null };
+      break;
+    case "dismiss":
+      patch = { dismissed_at: now };
+      break;
+    case "restore":
+      patch = { dismissed_at: null };
+      break;
+    default:
+      // Défense en profondeur : l'appelant valide déjà l'action ; une valeur inconnue ne touche à rien.
+      throw new PublicApiError("Action de notification invalide.", 400);
+  }
 
   const { data, error } = await auth.supabase
     .from("user_alert_notifications")
@@ -276,9 +297,11 @@ export async function updateAlertNotificationState({
     .eq("id", notificationId)
     .eq("user_id", auth.userId)
     .select("*")
-    .single();
+    .maybeSingle();
 
   if (error) throw error;
+  // Notification inconnue ou d'un autre compte : 404, pas une erreur du serveur.
+  if (!data) throw new PublicApiError("Notification introuvable.", 404);
   return { notification: notificationRowToSummary(data) };
 }
 
