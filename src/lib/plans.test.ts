@@ -116,9 +116,19 @@ describe("plan matrix", () => {
 
   it("reserves the API keys and the sales feed to administrators, whatever the key's own rights", () => {
     expect(apiAccessAllowed({ isAdmin: true }, "analyse")).toBe(true);
+    // Session : le seul rôle « admin » du profil ne suffit pas (isAdmin impose aal2).
+    expect(apiAccessAllowed({ isAdmin: false, userRole: "admin" }, "analyse")).toBe(false);
+    expect(apiAccessAllowed({ isAdmin: false, userRole: "admin", claims: {} }, "analyse")).toBe(
+      false,
+    );
     // Une clé d'API ne porte jamais isAdmin : le rôle de son titulaire compte.
-    expect(apiAccessAllowed({ isAdmin: false, userRole: "admin" }, "analyse")).toBe(true);
-    expect(apiAccessAllowed({ isAdmin: false, userRole: "user" }, "analyse")).toBe(false);
+    const key = { api_key_id: "key-1" };
+    expect(apiAccessAllowed({ isAdmin: false, userRole: "admin", claims: key }, "analyse")).toBe(
+      true,
+    );
+    expect(apiAccessAllowed({ isAdmin: false, userRole: "user", claims: key }, "analyse")).toBe(
+      false,
+    );
     expect(apiAccessAllowed({}, "decouverte")).toBe(false);
   });
 
