@@ -43,7 +43,13 @@ vi.mock("@/lib/usage", () => ({ recordFeatureUsageEvent: vi.fn() }));
 import { exportSalesApiFeed } from "@/lib/sale-exports";
 
 const request = new Request("https://immojudis.com/api/sales/feed");
-const auth = { userId: "user-1", claims: {}, supabase: {} } as unknown as SupabaseAuthContext;
+// Le flux API est réservé à l’administration (n° 97) : le rôle du titulaire compte (une clé n’a pas isAdmin).
+const auth = {
+  userId: "user-1",
+  claims: {},
+  supabase: {},
+  userRole: "admin",
+} as unknown as SupabaseAuthContext;
 const catalogue = ["Sale-A", "sale-b", "sale-c"].map((id) => ({
   ...EXAMPLE_SALE,
   // L'exemple est occupé ; « sous la fourchette » écarte toujours un bien occupé.

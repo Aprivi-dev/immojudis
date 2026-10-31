@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   featureIncluded,
+  apiAccessAllowed,
   hasLiveStripeSubscription,
   hasStandingAnalysisAccess,
   isPlanPeriodActive,
@@ -93,16 +94,32 @@ describe("plan matrix", () => {
     }
   });
 
-  it("unlocks all analysis and collaboration capabilities for Analyse", () => {
-    expect(Object.values(PLAN_FEATURES.analyse).every((access) => access === "included")).toBe(
-      true,
-    );
+  it("unlocks every analysis capability for Analyse, except the API keys and collaborators removed by n° 97", () => {
+    const locked = Object.entries(PLAN_FEATURES.analyse)
+      .filter(([, access]) => access !== "included")
+      .map(([feature]) => feature)
+      .sort();
+    // Aucun écran ne présente les clés d'API ni la collaboration : ils ne font plus partie de l'offre.
+    expect(locked).toEqual(["sales.apiAccess", "workspace.collaboration"]);
     expect(featureIncluded("analyse", "property.valueEstimate")).toBe(true);
     expect(featureIncluded("analyse", "alerts.realtimeChanges")).toBe(true);
-    expect(featureIncluded("analyse", "workspace.collaboration")).toBe(true);
     expect(featureIncluded("analyse", "property.outcomeGraph")).toBe(true);
     expect(featureIncluded("analyse", "property.weatherHistory")).toBe(true);
-    expect(PLAN_LIMITS.analyse.workspaceCollaborators).toBeGreaterThan(0);
+    expect(featureIncluded("analyse", "sales.apiAccess")).toBe(false);
+    expect(featureIncluded("analyse", "workspace.collaboration")).toBe(false);
+    expect(PLAN_LIMITS.analyse.apiKeys).toBe(0);
+    expect(PLAN_LIMITS.analyse.workspaceCollaborators).toBe(0);
+    // Un droit retiré n'a pas de quota : les limites suivent la matrice.
+    expect(PLAN_LIMITS.decouverte.apiKeys).toBe(0);
+    expect(PLAN_LIMITS.decouverte.workspaceCollaborators).toBe(0);
+  });
+
+  it("reserves the API keys and the sales feed to administrators, whatever the key's own rights", () => {
+    expect(apiAccessAllowed({ isAdmin: true }, "analyse")).toBe(true);
+    // Une clé d'API ne porte jamais isAdmin : le rôle de son titulaire compte.
+    expect(apiAccessAllowed({ isAdmin: false, userRole: "admin" }, "analyse")).toBe(true);
+    expect(apiAccessAllowed({ isAdmin: false, userRole: "user" }, "analyse")).toBe(false);
+    expect(apiAccessAllowed({}, "decouverte")).toBe(false);
   });
 
   it("expires paid access at the end of its 30-day period", () => {
@@ -110,7 +127,10 @@ describe("plan matrix", () => {
     expect(isPlanPeriodActive("active", "2026-07-11T10:00:00.000Z", now)).toBe(true);
     expect(isPlanPeriodActive("active", "2026-07-09T10:00:00.000Z", now)).toBe(false);
     expect(isPlanPeriodActive("expired", "2026-07-11T10:00:00.000Z", now)).toBe(false);
-    expect(isPlanPeriodActive("active", null, now)).toBe(true);
+    // Sans fin de période, aucun accès (miroir de app_private.subscription_grants_access).
+    expect(isPlanPeriodActive("active", null, now)).toBe(false);
+    expect(isPlanPeriodActive("trialing", null, now)).toBe(false);
+    expect(isPlanPeriodActive("active", "", now)).toBe(false);
   });
 
   it("keeps access for seven days after a failed renewal, then stops", () => {
