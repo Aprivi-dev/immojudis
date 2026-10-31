@@ -26,6 +26,7 @@ function visibleText(article: ResourceArticle): string {
     article.title,
     article.seoTitle ?? "",
     article.description,
+    article.directAnswer ?? "",
     ...article.intro,
     ...article.takeaways,
     ...article.sections.flatMap((section) => [
@@ -36,7 +37,9 @@ function visibleText(article: ResourceArticle): string {
       ...(section.table?.rows.flat() ?? []),
       section.callout?.title ?? "",
       section.callout?.text ?? "",
+      ...(section.glossary ?? []).flatMap((entry) => [entry.term, entry.definition]),
     ]),
+    ...(article.faq ?? []).flatMap((item) => [item.question, item.answer]),
     ...article.sources.map((source) => source.label),
   ].join(" ");
 }
@@ -164,8 +167,8 @@ describe("trois nouveaux articles du 19/10/2026", () => {
 describe("article sur les ventes notariales", () => {
   const article = getResourceArticle("ventes-notariales-domaniales-differences-tribunal")!;
 
-  it("est daté de sa mise à jour du 28/10/2026", () => {
-    expect(article.updatedAt).toBe("2026-10-28");
+  it("est daté de sa mise à jour du 31/10/2026 (réponse directe et FAQ)", () => {
+    expect(article.updatedAt).toBe("2026-10-31");
   });
 
   it("répond en trois blocs courts : vente interactive, prix de réserve, frais compris ou en sus", () => {
@@ -261,9 +264,50 @@ describe("article sur l'enchère plafond", () => {
 describe("article sur les frais d'une vente judiciaire", () => {
   const article = getResourceArticle("frais-vente-encheres-judiciaire")!;
 
-  it("est daté de sa mise à jour du 26/10/2026 (droits de mutation sur le prix seul)", () => {
+  it("est daté de sa mise à jour du 31/10/2026 (droits de mutation à 6,32 % temporaires, exemple complet)", () => {
     expect(article.publishedAt).toBe("2026-10-13");
-    expect(article.updatedAt).toBe("2026-10-26");
+    expect(article.updatedAt).toBe("2026-10-31");
+  });
+
+  it("n'a plus de « à vérifier » ni d'avertissement sur des barèmes non validés", () => {
+    const text = visibleText(article);
+    expect(text).not.toMatch(/à vérifier\b/);
+    expect(text).not.toMatch(/pas encore été validés/);
+    expect(text).not.toContain("relevé au 09/10/2026");
+  });
+
+  it("dit que la hausse des droits de mutation est temporaire et exclut les primo-accédants", () => {
+    const text = visibleText(article);
+    expect(text).toContain("Cette hausse est temporaire");
+    expect(text).toContain("entre le 1er avril 2025 et le 31 mars 2028");
+    expect(text).toContain("loi n° 2025-127 du 14 février 2025, art. 116");
+    expect(text).toContain("première propriété destinée à la résidence principale");
+    expect(text).toContain("BOI-ENR-DMTOI-10-20");
+    expect(text).toContain("6,3185 %");
+  });
+
+  it("nomme les dix départements restés à 4,50 % et l'Indre à 3,80 % (fiche DGFiP au 1er juin 2026)", () => {
+    const text = visibleText(article);
+    for (const code of ["05", "06", "07", "16", "26", "48", "60", "65", "71", "971"]) {
+      expect(text, code).toContain(`(${code})`);
+    }
+    expect(text).toContain("L’Indre est le seul département au taux de 3,80 %");
+    expect(article.sources.some((source) => /dmto_2026-06\.pdf$/.test(source.url))).toBe(true);
+  });
+
+  it("donne l'exemple complet à 150 000 € et renvoie au simulateur", () => {
+    const section = article.sections.find((item) => item.id === "ordres-de-grandeur")!;
+    const rows = section.table!.rows;
+    expect(rows).toContainEqual(["Droits de mutation", "6,32 % × 150 000 €", "9 480 €"]);
+    expect(rows.at(-2)).toEqual([
+      "Total des frais",
+      "Somme des lignes ci-dessus, hors prix",
+      "environ 19 719 €",
+    ]);
+    expect(section.links).toContainEqual({
+      label: expect.stringContaining("simulateur de frais d’enchères"),
+      href: "/simulateur-frais-encheres",
+    });
   });
 
   it("présente la règle du BOFiP sur les frais de poursuite et cite sa source", () => {
@@ -276,7 +320,7 @@ describe("article sur les frais d'une vente judiciaire", () => {
   });
 
   it("garde le même ordre de grandeur que l'article sur l'enchère plafond (environ 13 % à 150 000 €)", () => {
-    const table = article.sections.find((section) => section.id === "ordres-de-grandeur")!.table!;
+    const table = article.sections.find((section) => section.id === "selon-le-prix")!.table!;
     expect(table.rows).toContainEqual(["150 000 €", "environ 19 700 €", "environ 13 %"]);
     const ceiling = visibleText(getResourceArticle("prix-plafond-encheres-immobilieres")!);
     expect(ceiling).toContain("environ 19 600 € pour une enchère d’environ 147 900 €");
@@ -306,7 +350,7 @@ describe("relecture juridique du 19/10/2026", () => {
     expect(licitation.sources.some((source) => /article R\. 322-42/.test(source.label))).toBe(true);
     // Corrigé à nouveau le 23/10/2026 : report du délai de dix jours (art. 641 et 642 CPC).
     const afterAward = getResourceArticle("apres-adjudication-surenchere-paiement-titre-vente")!;
-    expect(afterAward.updatedAt).toBe("2026-10-23");
+    expect(afterAward.updatedAt).toBe("2026-10-31");
     const text = visibleText(afterAward);
     expect(text).toContain("prorogé au premier jour ouvrable suivant (art. 642");
     expect(text).toContain("art. 641 et 642 CPC");
@@ -509,5 +553,57 @@ describe("contenus de visibilité du 28/10/2026 : repère, TRI et crue fréquent
         /georisques\.gouv\.fr\/consulter-les-dossiers-thematiques/.test(source.url),
       ),
     ).toBe(true);
+  });
+});
+
+const KEY_ARTICLES = [
+  "avocat-obligatoire-encherir-tribunal-choisir-mandat-cout",
+  "frais-vente-encheres-judiciaire",
+  "apres-adjudication-surenchere-paiement-titre-vente",
+  "ventes-notariales-domaniales-differences-tribunal",
+  "acheter-bien-occupe-encheres",
+] as const;
+
+/** Nombre de phrases d'un texte (fin de phrase = point suivi d'une espace et d'une majuscule). */
+function sentenceCount(text: string): number {
+  const withoutAbbreviations = text
+    .replace(/\b(art|arts)\.\s/g, "art ")
+    .replace(/\b[A-Z]\.\s/g, "X ");
+  return withoutAbbreviations.split(/(?<=[.!?])\s+(?=[A-ZÀÂÉÈÊÎÔÛÇ])/).length;
+}
+
+describe("réponse directe et FAQ des articles clés (n° 82)", () => {
+  it.each(KEY_ARTICLES)(
+    "%s : réponse directe en 2 ou 3 phrases, FAQ visible de 3 à 5 questions",
+    (slug) => {
+      const article = getResourceArticle(slug)!;
+      expect(article.directAnswer, slug).toBeDefined();
+      expect(sentenceCount(article.directAnswer!), slug).toBeGreaterThanOrEqual(2);
+      expect(sentenceCount(article.directAnswer!), slug).toBeLessThanOrEqual(3);
+      expect(article.faq!.length, slug).toBeGreaterThanOrEqual(3);
+      expect(article.faq!.length, slug).toBeLessThanOrEqual(5);
+      for (const item of article.faq!) {
+        expect(item.question.trim(), slug).toMatch(/\?$/);
+        expect(item.answer.trim().length, slug).toBeGreaterThan(40);
+      }
+      const questions = article.faq!.map((item) => item.question);
+      expect(new Set(questions).size, slug).toBe(questions.length);
+    },
+  );
+
+  it.each(KEY_ARTICLES)("%s : aucun auteur nommé, aucune promesse de gain", (slug) => {
+    const article = getResourceArticle(slug)!;
+    expect(visibleText(article), slug).not.toMatch(
+      /garanti[es]? de gagner|rendement garanti|sans risque|bonne affaire/i,
+    );
+    expect(article).not.toHaveProperty("author");
+  });
+
+  it("ne duplique plus la section « Questions fréquentes » de l'article sur l'avocat", () => {
+    const article = getResourceArticle("avocat-obligatoire-encherir-tribunal-choisir-mandat-cout")!;
+    expect(article.sections.some((section) => /Questions fréquentes/.test(section.title))).toBe(
+      false,
+    );
+    expect(article.faq).toHaveLength(5);
   });
 });

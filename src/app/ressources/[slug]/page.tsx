@@ -99,6 +99,20 @@ export default async function Page({ params }: Props) {
           },
         ],
       },
+      // FAQPage : exactement les questions et réponses affichées dans la section « Questions
+      // fréquentes » de la page (même tableau `faq`), jamais un texte propre au balisage.
+      ...(article.faq && article.faq.length > 0
+        ? [
+            {
+              "@type": "FAQPage",
+              mainEntity: article.faq.map((item) => ({
+                "@type": "Question",
+                name: item.question,
+                acceptedAnswer: { "@type": "Answer", text: item.answer },
+              })),
+            },
+          ]
+        : []),
     ],
   };
   // Sujets puis catégorie en commun ; l'ordre du registre départage (voir resource-related.ts).
@@ -170,9 +184,19 @@ export default async function Page({ params }: Props) {
                     <a href={`#${section.id}`}>{section.title}</a>
                   </li>
                 ))}
+                {article.faq && article.faq.length > 0 && (
+                  <li>
+                    <a href="#questions-frequentes">Questions fréquentes</a>
+                  </li>
+                )}
               </ol>
             </nav>
             <div className={styles.articleBody}>
+              {article.directAnswer && (
+                <p className={styles.directAnswer}>
+                  <strong>La réponse en bref</strong> {article.directAnswer}
+                </p>
+              )}
               {article.intro.map((paragraph) => (
                 <p key={paragraph}>{paragraph}</p>
               ))}
@@ -232,8 +256,52 @@ export default async function Page({ params }: Props) {
                       <p>{section.callout.text}</p>
                     </aside>
                   )}
+                  {section.glossary && (
+                    <dl className={styles.glossaryList}>
+                      {section.glossary.map((entry) => (
+                        <div key={entry.term}>
+                          <dt>{entry.term}</dt>
+                          <dd>
+                            {entry.definition}
+                            {(entry.href || entry.source) && (
+                              <span className={styles.glossaryMeta}>
+                                {entry.href && (
+                                  <>
+                                    <Link href={entry.href}>Pour approfondir</Link>
+                                    {entry.source ? " · " : ""}
+                                  </>
+                                )}
+                                {entry.source && <>Source : {entry.source}</>}
+                              </span>
+                            )}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  )}
+                  {section.links && section.links.length > 0 && (
+                    <p className={styles.sectionLinks}>
+                      {section.links.map((link, index) => (
+                        <span key={link.href}>
+                          {index > 0 ? " · " : ""}
+                          <Link href={link.href}>{link.label}</Link>
+                        </span>
+                      ))}
+                    </p>
+                  )}
                 </section>
               ))}
+              {article.faq && article.faq.length > 0 && (
+                <section id="questions-frequentes" className={styles.faq}>
+                  <h2>Questions fréquentes</h2>
+                  {article.faq.map((item) => (
+                    <div key={item.question}>
+                      <h3>{item.question}</h3>
+                      <p>{item.answer}</p>
+                    </div>
+                  ))}
+                </section>
+              )}
               <section className={styles.sources} aria-labelledby="sources-title">
                 <h2 id="sources-title">Sources et repères utiles</h2>
                 <p>
