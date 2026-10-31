@@ -197,8 +197,16 @@ export function SearchPage({
   // Une adresse qui porte une valeur ignorée (`minPrice=-5`, `maxPrice=1e30`, `page=1`) est
   // ramenée à ce que la recherche retient réellement : l'adresse partagée dit la même chose que
   // la liste affichée.
+  // Bornes inversées (`minPrice=500000&maxPrice=100000`) : échangées à l'arrivée sur la page seulement.
+  // Pendant la saisie, l'adresse suit les champs tels qu'ils sont tapés (un minimum provisoirement
+  // au-dessus du maximum) et le message de la fourchette le dit : on n'échange pas les champs sous les doigts.
+  const canonicalChecked = useRef(false);
   useEffect(() => {
-    const canonical = canonicalSalesQuery(new URLSearchParams(queryString));
+    const arrival = !canonicalChecked.current;
+    canonicalChecked.current = true;
+    const canonical = canonicalSalesQuery(new URLSearchParams(queryString), {
+      swapInvertedRanges: arrival,
+    });
     if (!canonical) return;
     const next = canonical.toString();
     window.history.replaceState(

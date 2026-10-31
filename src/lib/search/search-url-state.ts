@@ -327,19 +327,37 @@ const NUMERIC_URL_KEYS: ReadonlyArray<readonly [canonical: string, ...aliases: s
   ["limit"],
 ];
 
+/** Une fourchette dont le minimum dépasse le maximum ne donnerait rien : les bornes sont échangées. */
+function swapInvertedRange(record: SalesSearchUrlRecord, minKey: string, maxKey: string) {
+  const min = record[minKey];
+  const max = record[maxKey];
+  if (typeof min === "number" && typeof max === "number" && min > max) {
+    record[minKey] = max;
+    record[maxKey] = min;
+  }
+}
+
 /**
  * Adresse canonique d'une adresse dont un critère numérique n'est pas pris tel quel : valeur
  * négative ou illisible (retirée), notation scientifique ou montant au-dessus du plafond (ramené à
- * la valeur retenue), `page=1` (retiré). Renvoie `null` quand rien ne change. Les autres paramètres
+ * la valeur retenue), `page=1` (retiré), mise à prix ou surface dont le minimum dépasse le maximum
+ * (bornes échangées, sauf avec `swapInvertedRanges: false`). Renvoie `null` quand rien ne change. Les autres paramètres
  * (`view`, `utm_*`, critères textuels) sont conservés tels quels : l'adresse ne garde jamais une
  * valeur que la recherche ignore.
  */
-export function canonicalSalesQuery(params: URLSearchParams): URLSearchParams | null {
+export function canonicalSalesQuery(
+  params: URLSearchParams,
+  { swapInvertedRanges = true }: { swapInvertedRanges?: boolean } = {},
+): URLSearchParams | null {
   const record: Record<string, string> = {};
   params.forEach((value, key) => {
     record[key] = value;
   });
   const canonicalRecord = salesSearchToUrlRecord(validateSalesSearch(record));
+  if (swapInvertedRanges) {
+    swapInvertedRange(canonicalRecord, "minPrice", "maxPrice");
+    swapInvertedRange(canonicalRecord, "minSqft", "maxSqft");
+  }
 
   let changed = false;
   const next = new URLSearchParams(params);
