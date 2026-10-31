@@ -235,4 +235,10 @@ describe("serverEnv pipeline, alerts and email", () => {
     expect(env.stripe).toEqual({ secretKey: undefined, webhookSecret: undefined });
     expect(env.cronSecret).toBeUndefined();
   });
+
+  it("reads PIPELINE_CALLBACK_SECRET trimmed, blank as unset", () => {
+    expect(serverEnv({ PIPELINE_CALLBACK_SECRET: " abc " }).pipelineCallbackSecret).toBe("abc");
+    expect(serverEnv({ PIPELINE_CALLBACK_SECRET: "  " }).pipelineCallbackSecret).toBeUndefined();
+    expect(serverEnv({}).pipelineCallbackSecret).toBeUndefined();
+  });
 });

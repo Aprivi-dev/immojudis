@@ -84,6 +84,40 @@ describe("POST /api/pipeline/revalidate-sale", () => {
     expect(mocks.revalidatePath).not.toHaveBeenCalled();
   });
 
+  describe("dedicated PIPELINE_CALLBACK_SECRET", () => {
+    const DEDICATED = "pipeline-callback-secret-for-tests";
+
+    it("accepts the dedicated secret", async () => {
+      vi.stubEnv("PIPELINE_CALLBACK_SECRET", DEDICATED);
+      const response = await POST(request({ saleId: ID }, `Bearer ${DEDICATED}`));
+      expect(response.status).toBe(200);
+    });
+
+    it("no longer accepts CRON_SECRET once the dedicated secret is set", async () => {
+      vi.stubEnv("PIPELINE_CALLBACK_SECRET", DEDICATED);
+      const response = await POST(request({ saleId: ID }, `Bearer ${SECRET}`));
+      expect(response.status).toBe(401);
+      expect(mocks.revalidateTag).not.toHaveBeenCalled();
+    });
+
+    it("falls back on CRON_SECRET, with a warning, while the dedicated secret is unset", async () => {
+      vi.stubEnv("PIPELINE_CALLBACK_SECRET", "");
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      const response = await POST(request({ saleId: ID }, `Bearer ${SECRET}`));
+      expect(response.status).toBe(200);
+      expect(warn.mock.calls.some(([line]) => String(line).includes("cron_secret_fallback"))).toBe(
+        true,
+      );
+      warn.mockRestore();
+    });
+
+    it("refuses the dedicated secret value as a bearer when only CRON_SECRET is configured", async () => {
+      vi.stubEnv("PIPELINE_CALLBACK_SECRET", "");
+      const response = await POST(request({ saleId: ID }, `Bearer ${DEDICATED}`));
+      expect(response.status).toBe(401);
+    });
+  });
+
   it("refuses every request when no secret is configured (fails closed)", async () => {
     vi.stubEnv("CRON_SECRET", "");
     const response = await POST(request({ saleId: ID }, "Bearer "));

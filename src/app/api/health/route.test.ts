@@ -9,7 +9,10 @@ const mocks = vi.hoisted(() => ({
   results: {} as Record<string, unknown>,
   from: vi.fn(),
   calls: [] as Array<{ table: string; method: string; args: unknown[] }>,
+  enforceIp: vi.fn(),
 }));
+
+vi.mock("@/lib/rate-limit", () => ({ enforceIpRateLimit: mocks.enforceIp }));
 
 vi.mock("@/integrations/supabase/client.server", () => {
   // Une chaîne de requête qui rend le résultat de la table à la fin (`maybeSingle`).
@@ -42,6 +45,7 @@ vi.mock("@/integrations/supabase/client.server", () => {
   };
 });
 
+import { RateLimitError } from "@/lib/api-errors";
 import { GET } from "./route";
 
 const NOW = new Date("2026-10-20T12:00:00.000Z");
@@ -85,6 +89,7 @@ describe("/api/health", () => {
     mocks.results = {};
     mocks.from.mockReset();
     mocks.calls = [];
+    mocks.enforceIp.mockReset().mockResolvedValue(undefined);
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     vi.spyOn(console, "info").mockImplementation(() => undefined);
   });
@@ -293,5 +298,30 @@ describe("/api/health", () => {
     ]);
     // Aucun nom de source.
     expect(JSON.stringify(body)).not.toMatch(/licitor|vench|notaires|source_name/i);
+  });
+
+  it("limite les appels par adresse (60 par minute) avant toute lecture en base", async () => {
+    answer({ healthAt: ago(60_000), collections: [ago(3_600_000)] });
+    await call();
+    expect(mocks.enforceIp).toHaveBeenCalledWith(
+      expect.objectContaining({ bucketKey: "health", limit: 60, windowSeconds: 60 }),
+    );
+
+    mocks.from.mockClear();
+    mocks.enforceIp.mockRejectedValue(new RateLimitError(undefined, 12));
+    const limited = await call();
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("retry-after")).toBe("12");
+    expect(limited.headers.get("cache-control")).toBe("no-store");
+    expect(mocks.from).not.toHaveBeenCalled();
+  });
+
+  it("redirige une adresse avec paramètre vers la clé de cache fixe, sans lire la base ni compter", async () => {
+    const response = await GET(new Request("https://example.test/api/health?bust=123&x=1"));
+    expect(response.status).toBe(308);
+    expect(response.headers.get("location")).toBe("https://example.test/api/health");
+    expect(response.headers.get("cache-control")).toBe("public, s-maxage=30");
+    expect(mocks.from).not.toHaveBeenCalled();
+    expect(mocks.enforceIp).not.toHaveBeenCalled();
   });
 });
