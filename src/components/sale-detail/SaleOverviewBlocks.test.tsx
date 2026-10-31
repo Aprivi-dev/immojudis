@@ -46,6 +46,13 @@ describe("MarketReference", () => {
     expect(screen.getByText(/La mise à prix n’est pas le prix d’achat probable/)).toBeTruthy();
   });
 
+  it("présente la valeur comme une fourchette indicative, sans couverture annoncée (n° 21)", () => {
+    const { container } = render(<MarketReference startingPrice={95_000} preview={preview()} />);
+
+    expect(container.textContent).toContain("Fourchette indicative de la valeur du bien");
+    expect(container.textContent).not.toMatch(/80\s?%/);
+  });
+
   it("never compares an occupied property with the sales of vacant ones", () => {
     render(
       <MarketReference
@@ -204,6 +211,23 @@ describe("PriceSummaryCard", () => {
     expect(card.textContent).toContain("fiabilité : à consolider");
     expect(screen.getByRole("link", { name: "Voir le calcul" }).getAttribute("href")).toBe(
       "#calculation",
+    );
+  });
+
+  it("annonce la fourchette de valeur comme indicative (n° 21)", () => {
+    render(
+      <PriceSummaryCard
+        startLabel="Mise à prix"
+        startingPrice={95_000}
+        value={{ kind: "range", low: 215_000, high: 247_000 }}
+        ceilingLabel="Enchère plafond (simulation)"
+        ceiling={{ kind: "locked", action: <span>Avec l’offre Analyse</span> }}
+        detailHref="#summary"
+      />,
+    );
+
+    expect(screen.getByRole("region", { name: "Le prix" }).textContent).toContain(
+      "fourchette indicative, ventes comparables",
     );
   });
 

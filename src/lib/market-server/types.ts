@@ -126,7 +126,8 @@ export type MarketEstimate = {
   annualMarketTrendPct?: number;
   marketCell?: string | null;
   predictionInterval?: {
-    coverageTarget: number;
+    /** Absent pour l'estimation hybride : la couverture du mélange modèle + comparables n'est pas mesurée. */
+    coverageTarget?: number;
     method: string;
     p10PricePerM2: number;
     p50PricePerM2: number;

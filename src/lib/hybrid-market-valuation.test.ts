@@ -75,6 +75,13 @@ describe("variables locales du modèle hybride", () => {
     expect(features.local_median_log).not.toBeCloseTo(Math.log(9_000), 3);
   });
 
+  it("ne transmet pas la couverture cible du modèle : celle du mélange avec les comparables n'est pas mesurée", async () => {
+    loadActiveValuationModel.mockResolvedValue(model({ localMarket: localMarket() }));
+    const result = await applyActiveHybridModel(input);
+    expect(result).not.toBeNull();
+    expect(result).not.toHaveProperty("coverageTarget");
+  });
+
   it("n'applique pas le modèle quand l'export est d'un format inconnu", async () => {
     loadActiveValuationModel.mockResolvedValue(
       model({ localMarket: localMarket({ formatVersion: 2 }) }),
