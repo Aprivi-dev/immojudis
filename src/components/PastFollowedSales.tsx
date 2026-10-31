@@ -1,12 +1,24 @@
 "use client";
 
 import Link from "next/link";
+import { useId, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import CalendarPlus from "lucide-react/dist/esm/icons/calendar-plus.js";
 import { Terme } from "@/components/ceiling/Terme";
 import { Badge, Button, Card } from "@/components/ui/primitives";
 import { useAuth } from "@/hooks/use-auth";
-import { deleteFollowedSaleSnapshot, fetchFollowedSaleSnapshots } from "@/lib/client-api";
-import { favoriteDossierStatusLabel } from "@/lib/favorite-dossier-shared";
+import {
+  deleteFollowedSaleSnapshot,
+  downloadSnapshotDeadlines,
+  fetchFollowedSaleSnapshots,
+  updateFollowedSaleSnapshot,
+} from "@/lib/client-api";
+import {
+  FAVORITE_DOSSIER_STATUSES,
+  favoriteDossierStatusLabel,
+  formatBidCeilingInput,
+  normalizeFavoriteDossierStatus,
+} from "@/lib/favorite-dossier-shared";
 import { formatDate, formatPrice, propertyTypeLabel } from "@/lib/format";
 import type {
   FollowedSaleSnapshot,
@@ -14,6 +26,15 @@ import type {
 } from "@/lib/followed-sale-snapshots-shared";
 import { tribunalBarAssociation } from "@/lib/lawyer-bar";
 import * as queryKeys from "@/lib/query-keys";
+import { DEADLINES_CONFIRM_NOTICE, saleDeadlines } from "@/lib/sale-deadlines";
+import {
+  buildSnapshotBalance,
+  gapWithCeiling,
+  parseFinalPriceInput,
+  statusAllowsFinalPrice,
+  type BalanceGroup,
+  type CeilingGap,
+} from "@/lib/snapshot-balance";
 import type { SurenchereWindow } from "@/lib/surenchere-window";
 import { toast } from "@/lib/toast";
 import { userMessage } from "@/lib/user-messages";
@@ -68,6 +89,7 @@ export function PastFollowedSales() {
         Les ventes que vous suiviez, dont l’audience est passée. Immojudis en garde ici un résumé
         pendant 6 mois au plus, puis l’efface ; vous pouvez le retirer à tout moment.
       </p>
+      <BalanceSummary snapshots={snapshots} />
       <ul className="mt-4 grid gap-4 lg:grid-cols-2">
         {snapshots.map((snapshot) => (
           <li key={snapshot.id} className="min-w-0">
@@ -127,12 +149,6 @@ function SnapshotCard({
         <Fact label="Mise à prix" value={formatPrice(snapshot.startingPriceEur)} />
         <Fact label="Avocat" value={snapshot.lawyerName ?? "Non renseigné"} />
         <Fact
-          label="Mon statut"
-          value={
-            snapshot.personalStatus ? favoriteDossierStatusLabel(snapshot.personalStatus) : "Aucun"
-          }
-        />
-        <Fact
           label="Mon plafond"
           value={
             snapshot.bidCeilingEur != null
@@ -152,6 +168,9 @@ function SnapshotCard({
       </div>
 
       <SurenchereBlock info={snapshot.surenchere} tribunalName={snapshot.tribunalName} />
+
+      <PersonalResult snapshot={snapshot} />
+      {snapshot.personalStatus === "won" ? <DeadlinesBlock snapshot={snapshot} /> : null}
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-ink-soft">
         <span>Gardé jusqu’au {formatDate(snapshot.expiresAt)}</span>
@@ -248,6 +267,267 @@ function SurenchereBlock({
         <p className="mt-1 text-ink-soft">
           Non déterminée pour ce type de vente. Vérifiez le cahier des charges avec l’avocat ou le
           notaire.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** « 12 000 € de plus que votre plafond (+7 %) », « 5 000 € de moins… » ou « égal à votre plafond ». */
+export function gapText(gap: CeilingGap): string {
+  if (gap.eur === 0) return "égal à votre plafond";
+  const amount = formatPrice(Math.abs(gap.eur));
+  const pct = `${gap.pct > 0 ? "+" : gap.pct < 0 ? "−" : ""}${Math.abs(gap.pct)} %`;
+  return `${amount} de ${gap.eur > 0 ? "plus" : "moins"} que votre plafond (${pct})`;
+}
+
+/** « 7 % au-dessus de votre plafond », « 3 % en dessous… » ou « égal à votre plafond ». */
+export function averageGapText(pct: number): string {
+  if (pct === 0) return "égal à votre plafond";
+  return `${Math.abs(pct)} % ${pct > 0 ? "au-dessus de" : "en dessous de"} votre plafond`;
+}
+
+/**
+ * Bilan après adjudication (n° 94) : de petits chiffres tirés de ce que la personne a elle-même noté
+ * (statut, enchère plafond, prix final) sur ses ventes passées encore conservées. Ni prévision ni
+ * comparaison avec d'autres comptes ; rien n'est affiché tant qu'aucune vente n'est marquée
+ * « Remporté » ou « Non remporté ».
+ */
+function BalanceSummary({ snapshots }: { snapshots: readonly FollowedSaleSnapshot[] }) {
+  const balance = buildSnapshotBalance(snapshots);
+  if (balance.won.count + balance.lost.count === 0) return null;
+  const line = (label: string, group: BalanceGroup) =>
+    group.count === 0 ? null : (
+      <li>
+        <span className="font-semibold text-brand-navy">{label} :</span> {group.count}
+        {group.averageGapPct != null
+          ? ` · prix final en moyenne ${averageGapText(group.averageGapPct)}, sur ${group.compared} vente${
+              group.compared > 1 ? "s" : ""
+            } avec prix final et plafond`
+          : " · aucun prix final noté avec un plafond : pas d’écart à calculer"}
+        {group.aboveCeiling > 0 ? ` (${group.aboveCeiling} au-dessus de votre plafond)` : null}.
+      </li>
+    );
+  return (
+    <div
+      className="mt-4 rounded-lg border border-line bg-surface-tint p-3 text-sm"
+      data-testid="snapshot-balance"
+    >
+      <h3 className="font-semibold text-brand-navy">Mon bilan</h3>
+      <ul className="mt-1 grid gap-1">
+        {line("Ventes remportées", balance.won)}
+        {line("Ventes non remportées", balance.lost)}
+      </ul>
+      <p className="mt-2 text-xs text-ink-soft">
+        Calculé à partir de ce que vous avez noté (statut, enchère plafond, prix final) sur vos
+        ventes passées encore conservées. Ce n’est pas une prévision et cela ne dit rien du prix à
+        proposer pour une autre vente.
+      </p>
+    </div>
+  );
+}
+
+/**
+ * « Mon résultat » : le statut de la personne et, pour « Remporté » ou « Non remporté », le prix
+ * final de l'adjudication, facultatif. Stocké sur son compte seulement (jamais envoyé par email),
+ * conservé aussi longtemps que l'instantané. L'écart avec son plafond n'apparaît que si les deux
+ * valeurs sont notées.
+ */
+function PersonalResult({ snapshot }: { snapshot: FollowedSaleSnapshot }) {
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const statusId = useId();
+  const priceId = useId();
+  const priceErrorId = `${priceId}-error`;
+  const [draft, setDraft] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const key = queryKeys.followedSaleSnapshots(user?.id ?? null);
+  const save = useMutation({
+    mutationFn: (changes: {
+      personalStatus?: FollowedSaleSnapshot["personalStatus"];
+      finalPriceEur?: number | null;
+    }) => updateFollowedSaleSnapshot({ data: { id: snapshot.id, ...changes } }),
+    onSuccess: () => {
+      setDraft(null);
+      setError(null);
+      toast.success("Votre résultat est enregistré.");
+      return queryClient.invalidateQueries({ queryKey: key });
+    },
+    onError: (failure: unknown) =>
+      toast.error(userMessage(failure, "Impossible d’enregistrer votre résultat.")),
+  });
+
+  const withPrice = statusAllowsFinalPrice(snapshot.personalStatus);
+  const value =
+    draft ?? (snapshot.finalPriceEur != null ? formatBidCeilingInput(snapshot.finalPriceEur) : "");
+  const gap = gapWithCeiling(snapshot.finalPriceEur, snapshot.bidCeilingEur);
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (save.isPending) return;
+    const parsed = parseFinalPriceInput(value);
+    if (!parsed.ok) {
+      setError(parsed.message);
+      return;
+    }
+    setError(null);
+    save.mutate({ finalPriceEur: parsed.value });
+  }
+
+  return (
+    <div className="mt-3 text-sm" data-testid="snapshot-personal-result">
+      <label htmlFor={statusId} className="font-semibold text-brand-navy">
+        Mon résultat
+      </label>
+      <select
+        id={statusId}
+        className="form-input mt-1 min-h-11 w-full"
+        value={snapshot.personalStatus ?? ""}
+        aria-busy={save.isPending}
+        onChange={(event) => {
+          if (save.isPending) return;
+          save.mutate({ personalStatus: normalizeFavoriteDossierStatus(event.target.value) });
+        }}
+      >
+        <option value="">Aucun statut</option>
+        {FAVORITE_DOSSIER_STATUSES.map((status) => (
+          <option key={status} value={status}>
+            {favoriteDossierStatusLabel(status)}
+          </option>
+        ))}
+      </select>
+
+      {withPrice ? (
+        <form onSubmit={submit} noValidate className="mt-2" aria-busy={save.isPending}>
+          <label htmlFor={priceId} className="font-semibold text-brand-navy">
+            Prix final de l’adjudication (facultatif)
+          </label>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <input
+                id={priceId}
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="Ex. 185 000"
+                value={value}
+                onChange={(event) => {
+                  setDraft(event.target.value);
+                  setError(null);
+                }}
+                aria-invalid={error ? true : undefined}
+                aria-describedby={error ? priceErrorId : undefined}
+                className="form-input min-h-11 w-full min-w-0 tabular-nums"
+              />
+              <span aria-hidden className="shrink-0 text-ink-soft">
+                €
+              </span>
+            </div>
+            <Button type="submit" variant="primary" size="sm" disabled={save.isPending}>
+              Enregistrer
+            </Button>
+            {snapshot.finalPriceEur != null ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={save.isPending}
+                onClick={() => save.mutate({ finalPriceEur: null })}
+              >
+                Retirer mon prix final
+              </Button>
+            ) : null}
+          </div>
+          {error ? (
+            <p id={priceErrorId} role="alert" className="mt-1 text-xs font-semibold text-red-700">
+              {error}
+            </p>
+          ) : null}
+          <p className="mt-1 text-xs text-ink-soft">
+            Noté pour vous seul, sur votre compte : il n’est jamais envoyé par email ni partagé. Il
+            est effacé avec cette vente.
+          </p>
+        </form>
+      ) : null}
+
+      {withPrice ? (
+        <p className="mt-2" data-testid="snapshot-gap">
+          {gap
+            ? `Écart avec mon plafond : prix final ${gapText(gap)}.`
+            : snapshot.finalPriceEur != null
+              ? "Écart avec mon plafond : aucun plafond n’était enregistré sur cette vente."
+              : "Écart avec mon plafond : notez le prix final pour le voir."}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Échéancier indicatif d'une vente remportée : fin du délai de surenchère et paiement du prix, avec
+ * l'article de chaque règle et « à confirmer avec votre avocat ». Seulement pour une saisie
+ * immobilière au tribunal ; exportable en `.ics` (deux dates sur la journée, sans rappel, sans prix).
+ */
+function DeadlinesBlock({ snapshot }: { snapshot: FollowedSaleSnapshot }) {
+  const [pending, setPending] = useState(false);
+  const deadlines = saleDeadlines({
+    saleDate: snapshot.saleDate,
+    venueType: snapshot.saleVenueType,
+    legalFramework: snapshot.saleLegalFramework,
+  });
+
+  async function download() {
+    setPending(true);
+    try {
+      const file = await downloadSnapshotDeadlines({ snapshotId: snapshot.id });
+      const url = URL.createObjectURL(file.blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = file.filename;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (failure) {
+      toast.error(userMessage(failure, "L’export de l’échéancier est indisponible."));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className="mt-3 text-sm" data-testid="snapshot-deadlines">
+      <p className="font-semibold text-brand-navy">Échéancier indicatif</p>
+      {deadlines ? (
+        <>
+          <ul className="mt-1 grid gap-2">
+            {deadlines.map((deadline) => (
+              <li key={deadline.key}>
+                <span className="font-semibold">{deadline.label} :</span>{" "}
+                {formatDate(deadline.isoDay)}
+                <span className="block text-xs text-ink-soft">{deadline.source}</span>
+                <span className="block text-xs text-ink-soft">{deadline.caveat}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 font-semibold text-brand-navy">{DEADLINES_CONFIRM_NOTICE}</p>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="mt-2"
+            disabled={pending}
+            aria-busy={pending}
+            onClick={() => void download()}
+          >
+            <CalendarPlus className="size-4" aria-hidden />
+            {pending ? "Préparation…" : "Ajouter l’échéancier à mon agenda (.ics)"}
+          </Button>
+        </>
+      ) : (
+        <p className="mt-1 text-ink-soft">
+          Nous ne calculons pas d’échéancier pour cette vente : il ne vise que les saisies
+          immobilières au tribunal, et d’autres délais peuvent s’appliquer.{" "}
+          {DEADLINES_CONFIRM_NOTICE}
         </p>
       )}
     </div>

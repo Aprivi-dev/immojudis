@@ -7,11 +7,16 @@ import {
 import {
   deleteFollowedSaleSnapshot,
   listFollowedSaleSnapshots,
+  updateFollowedSaleSnapshot,
 } from "@/lib/followed-sale-snapshots";
-import { followedSaleSnapshotDeleteSchema } from "@/lib/followed-sale-snapshots-shared";
+import {
+  followedSaleSnapshotDeleteSchema,
+  followedSaleSnapshotUpdateSchema,
+} from "@/lib/followed-sale-snapshots-shared";
 
 // Après l'audience (point 70) : instantanés des ventes suivies, gardés 6 mois au plus dans l'espace
-// du compte. Lecture et suppression par le propriétaire seul (RLS) ; aucune écriture par l'API.
+// du compte. Lecture, suppression et bilan (statut, prix final) par le propriétaire seul (RLS) ;
+// l'API ne crée jamais d'instantané.
 
 export async function GET(request: Request) {
   try {
@@ -40,6 +45,21 @@ export async function DELETE(request: Request) {
   } catch (error) {
     return apiRouteError(error, request, "favorite-snapshots", {
       fallbackMessage: "Retrait impossible",
+    });
+  }
+}
+
+export async function PUT(request: Request) {
+  try {
+    const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
+    const input = followedSaleSnapshotUpdateSchema.parse(await request.json());
+    const response = await updateFollowedSaleSnapshot({ auth, input });
+    return NextResponse.json(response, {
+      headers: { "cache-control": "private, no-store" },
+    });
+  } catch (error) {
+    return apiRouteError(error, request, "favorite-snapshots", {
+      fallbackMessage: "Enregistrement du bilan impossible",
     });
   }
 }

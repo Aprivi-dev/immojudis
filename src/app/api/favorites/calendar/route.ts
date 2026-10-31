@@ -6,7 +6,11 @@ import {
 import { recordAccountProductEvent } from "@/lib/account-product-events.server";
 import { PublicApiError } from "@/lib/api-errors";
 import { apiRouteError } from "@/lib/api-observability";
-import { exportFollowedCalendar, favoriteCalendarInputSchema } from "@/lib/favorite-calendar";
+import {
+  exportFollowedCalendar,
+  exportSnapshotDeadlines,
+  favoriteCalendarInputSchema,
+} from "@/lib/favorite-calendar";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import { resolveSiteOrigin } from "@/lib/site-url";
@@ -19,6 +23,11 @@ import { resolveSiteOrigin } from "@/lib/site-url";
  * ses favoris) ; le serveur ne garde que celles que le compte suit vraiment, puis applique à chacune
  * la règle de l'export d'une seule audience (`get_public_sale_calendar_event`, voir
  * `exportFollowedCalendar`). Jamais mis en cache ; aucune adresse de bien dans le fichier.
+ *
+ * Visites : le fichier reprend aussi les créneaux de visite datés des annonces (voir
+ * `visit-slots.ts`), à venir seulement, sans lieu ni adresse. Échéancier : le corps
+ * `{ deadlinesSnapshotId }` rend à la place l'échéancier indicatif d'une vente passée marquée
+ * « Remporté » (`exportSnapshotDeadlines`).
  *
  * Mesure (point 65) : un événement `calendar_exported` par vente écrite dans le fichier, comme
  * l'export d'une seule audience ; la base en garde un par compte, vente et jour, et au plus 50 par
@@ -36,6 +45,25 @@ export async function POST(request: Request) {
 
     // Jamais déduite de la requête : le fichier porte des adresses absolues vers les fiches.
     const origin = resolveSiteOrigin(process.env, "http://localhost:3000")!;
+    if ("deadlinesSnapshotId" in input) {
+      // Échéancier indicatif d'une vente passée remportée : deux dates à confirmer avec l'avocat. Ni
+      // mesure « calendar_exported » (réservée aux audiences), ni prix, ni adresse dans le fichier.
+      const file = await exportSnapshotDeadlines({
+        auth,
+        snapshotId: input.deadlinesSnapshotId,
+        origin,
+      });
+      return new NextResponse(file.body, {
+        headers: {
+          "content-type": "text/calendar; charset=utf-8",
+          "content-disposition": `attachment; filename="${file.filename}"`,
+          "cache-control": "private, no-store",
+          "x-robots-tag": "noindex, nofollow",
+          "x-exported-count": "2",
+          "x-skipped-count": "0",
+        },
+      });
+    }
     const { file, followed, skipped } = await exportFollowedCalendar({
       auth,
       saleIds: input.saleIds,

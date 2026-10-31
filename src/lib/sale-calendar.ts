@@ -1,5 +1,6 @@
 import { buildIcsCalendar, buildIcsCalendarMany, formatIcsUtc, type IcsEvent } from "@/lib/ical";
 import { parisDateKey } from "@/lib/sale-countdown";
+import { DEADLINES_CONFIRM_NOTICE, type SaleDeadline } from "@/lib/sale-deadlines";
 import { saleHearingTime, saleReference, seoPropertyLabel, tribunalDisplayName } from "@/lib/seo";
 import type { VisitSlot } from "@/lib/visit-slots";
 
@@ -258,5 +259,47 @@ export function buildSalesCalendarFile(
     filename: FOLLOWED_CALENDAR_FILENAME,
     body: buildIcsCalendarMany(events, PROD_ID),
     exportedIds: entries.map((entry) => entry.row.id.toLowerCase()),
+  };
+}
+
+/**
+ * Le fichier `.ics` de l'échéancier indicatif d'une vente remportée (fin du délai de surenchère,
+ * paiement du prix). Deux événements sur la journée, « à confirmer avec votre avocat », sans rappel
+ * (une alarme donnerait à une date indicative l'allure d'une échéance ferme), sans prix, sans
+ * adresse ni lien (la fiche de la vente n'est plus au catalogue). `null` sans échéance.
+ */
+export function buildSaleDeadlinesCalendarFile(
+  {
+    saleId,
+    deadlines,
+    propertyType,
+    city,
+  }: {
+    saleId: string;
+    deadlines: readonly SaleDeadline[] | null;
+    propertyType: string | null | undefined;
+    city: string | null | undefined;
+  },
+  { origin, now = new Date() }: { origin: string; now?: Date },
+): SaleCalendarFile | null {
+  if (!deadlines?.length) return null;
+  const cleanCity = city?.replace(/\s+/g, " ").trim();
+  const property = `${seoPropertyLabel(propertyType)}${cleanCity ? ` à ${cleanCity}` : ""}`;
+  const id = saleId.toLowerCase();
+  const events: IcsEvent[] = deadlines.map((deadline) => ({
+    uid: `deadline-${deadline.key}-${id}@${new URL(origin).hostname}`,
+    stamp: now,
+    start: { kind: "day", isoDay: deadline.isoDay },
+    summary: `${deadline.label} – ${property}`,
+    description: [
+      `${deadline.source}`,
+      deadline.caveat,
+      `Date indicative calculée à partir de l’audience connue d’Immojudis. ${DEADLINES_CONFIRM_NOTICE}`,
+    ].join("\n"),
+    status: "TENTATIVE",
+  }));
+  return {
+    filename: `immojudis-echeancier-${saleReference(id)}.ics`,
+    body: buildIcsCalendarMany(events, "-//Immojudis//Échéancier indicatif//FR"),
   };
 }

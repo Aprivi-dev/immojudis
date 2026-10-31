@@ -137,7 +137,9 @@ export {
   saveFavoriteDossier,
   fetchFollowedSaleSnapshots,
   deleteFollowedSaleSnapshot,
+  updateFollowedSaleSnapshot,
   downloadFollowedCalendar,
+  downloadSnapshotDeadlines,
 } from "@/lib/client-api/favorites";
 
 export {
