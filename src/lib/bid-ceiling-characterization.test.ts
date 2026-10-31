@@ -7,7 +7,12 @@
 // de la base des droits de mutation et de la CSI (BOFiP BOI-ENR-DMTOI-10-10-30-20 (Adjudication), § 50) ; les
 // émoluments, le budget et le mode limitant ne changent pas, les frais baissent de
 // frais préalables × (taux de droits + 0,10 % de CSI), et le plafond peut gagner 500 € (un pas
-// d'enchère). Les valeurs de la version précédente sont gardées dans `PREVIOUS_EXPECTED`.
+// d'enchère). Les valeurs de cette version sont gardées dans `PREVIOUS_EXPECTED`.
+// Version « 2026-10-26.3 » (lot 4a, n° 28 et 100) : la taxe foncière n'est plus devinée (sans montant
+// saisi elle vaut 0 et n'est pas comptée dans le portage), et l'occupation « inoccupé » est un bien
+// libre. Le plafond ne peut que monter ou rester égal ; il monte surtout quand le rendement limite
+// (projet « louer » : +15 500 € pour le 33, +25 500 € pour le 75). Les valeurs de la version « .2 »
+// sont gardées dans `MAX_BID_2026_10_26_2`.
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { buildCeilingHypotheses, type CeilingUserChoices } from "@/lib/bid-ceiling-defaults";
@@ -94,7 +99,7 @@ const cases: Case[] = [
     }),
     estimate: estimateFor(220_000, 62),
     choices: { project: "louer" },
-    expected: { maxBid: 132500, budget: 163062, acquisitionFeesTotal: 18281, binding: "rendement" },
+    expected: { maxBid: 148000, budget: 179722, acquisitionFeesTotal: 19555, binding: "rendement" },
   },
   {
     name: "33, appartement loué, frais préalables lus, revendre",
@@ -118,14 +123,14 @@ const cases: Case[] = [
     }),
     estimate: estimateFor(120_000, 110, "correcte", 12),
     choices: { project: "revendre", works: { key: "confort", amount: 33_000 } },
-    expected: { maxBid: 50500, budget: 100800, acquisitionFeesTotal: 10116, binding: "valeur" },
+    expected: { maxBid: 51500, budget: 100800, acquisitionFeesTotal: 10192, binding: "valeur" },
   },
   {
     name: "36, maison occupée, frais préalables par défaut, habiter",
     sale: tribunalSale({ ...house36, starting_price_eur: 25_000, occupancy_status: "occupied" }),
     estimate: estimateFor(120_000, 110, "correcte", 12),
     choices: {},
-    expected: { maxBid: 86000, budget: 108000, acquisitionFeesTotal: 13403, binding: "valeur" },
+    expected: { maxBid: 87000, budget: 108000, acquisitionFeesTotal: 13473, binding: "valeur" },
   },
   {
     name: "36, maison louée, frais préalables par défaut, habiter, estimation fragile",
@@ -162,7 +167,7 @@ const cases: Case[] = [
     }),
     estimate: estimateFor(420_000, 45),
     choices: { project: "revendre", profile: "offensif" },
-    expected: { maxBid: 300000, budget: 357000, acquisitionFeesTotal: 32044, binding: "valeur" },
+    expected: { maxBid: 301500, budget: 357000, acquisitionFeesTotal: 32167, binding: "valeur" },
   },
   {
     name: "75, appartement loué, frais préalables lus, louer",
@@ -174,7 +179,7 @@ const cases: Case[] = [
     }),
     estimate: estimateFor(420_000, 45),
     choices: { project: "louer" },
-    expected: { maxBid: 246000, budget: 272888, acquisitionFeesTotal: 26857, binding: "rendement" },
+    expected: { maxBid: 271500, budget: 300528, acquisitionFeesTotal: 28952, binding: "rendement" },
   },
   {
     name: "75, appartement libre, mise à prix proche de la valeur, habiter",
@@ -196,23 +201,22 @@ const cases: Case[] = [
   },
 ];
 
-// Taxe foncière des anciennes valeurs par défaut (8 % du loyer départemental de la table sans source,
-// ou 12 € par m² hors table), figée ici : le lot 4a (n° 28) a retiré cette valeur par défaut (sans
-// montant saisi, la taxe vaut 0 et le champ est « à renseigner »). Ce filet caractérise le moteur
-// (`computeCeilingPlan`), pas ce défaut : il saisit donc la taxe d'avant, et reste valable sans toucher
-// à `cases`, dont l'empreinte est enregistrée plus bas.
-const HISTORICAL_PROPERTY_TAX_BY_DEPARTMENT: Record<string, number> = {
-  "33": 833, // 62 m² × 14 €/m² × 12 mois × 8 %
-  "36": 1_320, // hors table : 110 m² × 12 €
-  "75": 1_382, // 45 m² × 32 €/m² × 12 mois × 8 %
+/** Mises maximales de la version « 2026-10-26.2 » (taxe foncière devinée), par cas. */
+const MAX_BID_2026_10_26_2: Record<string, number> = {
+  "33, appartement libre, frais préalables lus, habiter": 176500,
+  "33, appartement libre, frais préalables par défaut, habiter": 176000,
+  "33, appartement occupé, frais préalables par défaut, louer": 132500,
+  "33, appartement loué, frais préalables lus, revendre": 100500,
+  "36, maison libre, frais préalables lus, revendre avec travaux": 50500,
+  "36, maison occupée, frais préalables par défaut, habiter": 86000,
+  "36, maison louée, frais préalables par défaut, habiter, estimation fragile": 80500,
+  "36, maison libre, frais préalables par défaut, louer": 88000,
+  "75, appartement libre, frais préalables lus, habiter": 343000,
+  "75, appartement occupé, frais préalables par défaut, revendre": 300000,
+  "75, appartement loué, frais préalables lus, louer": 246000,
+  "75, appartement libre, mise à prix proche de la valeur, habiter": 342000,
+  "75, appartement occupé, travaux lourds : aucun prix ne tient": 0,
 };
-
-function hypothesesOf({ sale, estimate, choices }: Pick<Case, "sale" | "estimate" | "choices">) {
-  return buildCeilingHypotheses(sale, estimate, {
-    annualPropertyTax: HISTORICAL_PROPERTY_TAX_BY_DEPARTMENT[sale.department ?? ""],
-    ...choices,
-  });
-}
 
 /** Résultats de la version « 2026-10-26.1 » (droits calculés sur prix + frais préalables), par cas. */
 const PREVIOUS_EXPECTED: Record<string, { maxBid: number; acquisitionFeesTotal: number }> = {
@@ -272,7 +276,7 @@ const PREVIOUS_EXPECTED: Record<string, { maxBid: number; acquisitionFeesTotal: 
 
 describe("computeCeilingPlan on representative tribunal sales (characterization)", () => {
   it.each(cases)("$name", ({ sale, estimate, choices, expected }) => {
-    const plan = computeCeilingPlan(hypothesesOf({ sale, estimate, choices }));
+    const plan = computeCeilingPlan(buildCeilingHypotheses(sale, estimate, choices));
 
     const actual = {
       maxBid: plan.maxBid,
@@ -288,7 +292,7 @@ describe("computeCeilingPlan on representative tribunal sales (characterization)
   it.each(cases.filter((item) => PREVIOUS_EXPECTED[item.name]?.maxBid === item.expected.maxBid))(
     "$name : à mise égale, les frais baissent de frais préalables × (droits + CSI)",
     ({ name, sale, estimate, choices, expected }) => {
-      const fees = hypothesesOf({ sale, estimate, choices }).fees;
+      const fees = buildCeilingHypotheses(sale, estimate, choices).fees;
       const drop = PREVIOUS_EXPECTED[name].acquisitionFeesTotal - expected.acquisitionFeesTotal;
       expect(drop).toBeGreaterThan(0);
       expect(
@@ -297,13 +301,26 @@ describe("computeCeilingPlan on representative tribunal sales (characterization)
     },
   );
 
-  it("garde le budget et le mode limitant des résultats d'avant (seuls les frais et le pas d'enchère bougent)", () => {
+  it("ne baisse jamais la mise par rapport aux versions d'avant (taxe foncière non comptée, frais préalables hors base)", () => {
     for (const item of cases) {
-      const previous = PREVIOUS_EXPECTED[item.name];
-      expect(previous, item.name).toBeDefined();
-      // Le plafond ne bouge que d'un pas d'enchère (500 €), vers le haut : les frais baissent.
-      expect(item.expected.maxBid - previous.maxBid).toBeGreaterThanOrEqual(0);
-      expect(item.expected.maxBid - previous.maxBid).toBeLessThanOrEqual(500);
+      expect(PREVIOUS_EXPECTED[item.name], item.name).toBeDefined();
+      expect(MAX_BID_2026_10_26_2[item.name], item.name).toBeDefined();
+      expect(item.expected.maxBid, item.name).toBeGreaterThanOrEqual(
+        PREVIOUS_EXPECTED[item.name].maxBid,
+      );
+      expect(item.expected.maxBid, item.name).toBeGreaterThanOrEqual(
+        MAX_BID_2026_10_26_2[item.name],
+      );
+    }
+  });
+
+  it("projet « louer » limité par le rendement : le plafond monte quand la taxe foncière n’est plus comptée", () => {
+    // Version « .2 » : 132 500 € (33) et 246 000 € (75), avec la taxe foncière devinée (833 € et 1 382 €
+    // par an, retirés du rendement). Sans elle, le rendement net monte et le plafond avec.
+    const louer = cases.filter((item) => item.choices.project === "louer");
+    expect(louer.length).toBeGreaterThan(0);
+    for (const item of louer.filter((entry) => entry.expected.binding === "rendement")) {
+      expect(item.expected.maxBid, item.name).toBeGreaterThan(MAX_BID_2026_10_26_2[item.name]);
     }
   });
 });
@@ -320,7 +337,8 @@ describe("computeCeilingPlan : frais recalculés à la main", () => {
     return found;
   };
   const plan = (name: string) => {
-    return computeCeilingPlan(hypothesesOf(byName(name)));
+    const { sale, estimate, choices } = byName(name);
+    return computeCeilingPlan(buildCeilingHypotheses(sale, estimate, choices));
   };
 
   it("33, appartement libre, mise de 176 500 €", () => {
@@ -372,6 +390,7 @@ const FINGERPRINTS_BY_ENGINE_VERSION: Record<string, string> = {
   // Table d'avant le lot A2 (droits sur prix + frais préalables) : gardée, jamais recalculée.
   "2026-10-26.1": "ef301937dabe1dc0",
   "2026-10-26.2": "486a42258e49b43b",
+  "2026-10-26.3": "2cb0d1e59e6c551e",
 };
 
 function fingerprint(): string {

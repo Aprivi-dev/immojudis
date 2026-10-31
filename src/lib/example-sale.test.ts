@@ -174,6 +174,7 @@ describe("example aligned with the home page", () => {
   it("keeps the home page ceiling whatever the occupancy status says", () => {
     const { sale } = getExampleSaleRecords().bordeaux;
     expect(sale.occupancy_status).toBe("occupied");
-    expect(exampleHeadlineFigures().ceiling).toBe(135_000);
+    // Sans taxe foncière devinée (lot 4a, n° 28) : 135 000 € avec les 914 € par an d'avant.
+    expect(exampleHeadlineFigures().ceiling).toBe(136_000);
   });
 });

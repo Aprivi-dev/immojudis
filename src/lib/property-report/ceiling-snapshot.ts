@@ -5,6 +5,7 @@ import {
   ceilingsByWorks,
   estimatedFeeItems,
   evaluateBid,
+  propertyTaxMissing,
 } from "@/lib/bid-ceiling-engine";
 import type { FeeRegimeKey } from "@/lib/fee-regime-open";
 import { assessSaleCeilingInputs, computeSaleCeiling } from "@/lib/sale-ceiling";
@@ -100,6 +101,8 @@ export function buildCeilingSnapshot(
     reserveNotice: inputs.regime?.labels.planner.reserveNotice ?? null,
     /** Fees that come from a default value and must be confirmed. */
     estimatedFees: noRegime ? [] : estimatedFeeItems(hypotheses),
+    /** Taxe foncière non renseignée : pas comptée, le plafond est plus élevé qu'avec elle. */
+    propertyTaxMissing: computed && propertyTaxMissing(hypotheses),
     maxBid: available ? plan.maxBid : null,
     maxBidWithoutWorks: ceilingFor("aucun"),
     maxBidWithRefreshWorks: ceilingFor("rafraichissement"),

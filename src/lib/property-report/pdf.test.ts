@@ -408,6 +408,31 @@ describe("titre, métadonnées et nom de fichier du PDF", () => {
   });
 });
 
+describe("mention de la taxe foncière non comptée", () => {
+  const lines = (ceiling: Record<string, unknown>) =>
+    reportToPdfLines(
+      { ...reportWithRentalScenario(), ceiling_snapshot: ceiling as Json },
+      buildPlanEntitlements("analyse"),
+    );
+
+  it("l'écrit sous le plafond quand la taxe foncière n'est pas renseignée", () => {
+    const out = lines({ available: true, maxBid: 120_000, propertyTaxMissing: true });
+    const ceilingIndex = out.findIndex((line) => line.startsWith("Enchère plafond (simulation):"));
+    expect(ceilingIndex).toBeGreaterThan(-1);
+    expect(out.slice(ceilingIndex + 1, ceilingIndex + 3)).toContain("Taxe foncière non comptée");
+  });
+
+  it("ne l'écrit pas quand la taxe est renseignée, absente du rapport enregistré ou le plafond indisponible", () => {
+    for (const ceiling of [
+      { available: true, maxBid: 120_000, propertyTaxMissing: false },
+      { available: true, maxBid: 120_000 },
+      { available: false, reason: "Aucune enchère rentable", propertyTaxMissing: true },
+    ]) {
+      expect(lines(ceiling)).not.toContain("Taxe foncière non comptée");
+    }
+  });
+});
+
 describe("rapport au snapshot clairsemé", () => {
   const sparse = (): SavedReportRow => ({
     ...reportWithRentalScenario(),
