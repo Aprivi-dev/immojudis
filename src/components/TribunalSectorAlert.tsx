@@ -6,8 +6,9 @@ import { Card } from "@/components/ui/primitives";
 import { FEES_SIMULATOR_DEPARTMENTS } from "@/components/fees-simulator/departments";
 
 /**
- * « Recevoir les nouvelles ventes de ce secteur » sur `/tribunaux`. Une alerte suit un
- * département (pas un tribunal) : la personne choisit le sien, puis passe par le bouton commun.
+ * « Recevoir les nouvelles ventes de ce secteur » sur `/tribunaux`. Cette alerte suit un département
+ * (tous tribunaux confondus) : la personne choisit le sien, puis passe par le bouton commun. L'alerte
+ * d'un seul tribunal se crée depuis la page du tribunal (« Suivre ce tribunal »).
  */
 export function TribunalSectorAlert() {
   const selectId = useId();
@@ -20,7 +21,8 @@ export function TribunalSectorAlert() {
           Être prévenu des nouvelles ventes d’un département
         </h2>
         <p className="text-sm text-ink-soft">
-          Les alertes suivent un département, pas un tribunal : choisissez celui qui vous intéresse.
+          Choisissez un département : l’alerte porte sur tous ses tribunaux. Pour ne suivre qu’un
+          seul tribunal, ouvrez sa page et utilisez « Suivre ce tribunal ».
         </p>
         <label htmlFor={selectId} className="text-sm font-semibold">
           Département

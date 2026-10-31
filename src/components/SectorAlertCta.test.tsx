@@ -41,6 +41,20 @@ describe("SectorAlertCta", () => {
     expect(screen.queryByTestId("sector-alert-form")).toBeNull();
   });
 
+  it("accepte un titre et un libellé de bouton propres (alerte d'un tribunal)", () => {
+    render(
+      <SectorAlertCta
+        criteria={{ tribunal: "TJ Bobigny" }}
+        title="Suivre ce tribunal"
+        label="Suivre ce tribunal"
+      />,
+    );
+    expect(screen.getByRole("region", { name: "Suivre ce tribunal" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Suivre ce tribunal" }).getAttribute("href")).toContain(
+      "tribunal%3DTJ%2BBobigny",
+    );
+  });
+
   it("annonce l'essai gratuit à un visiteur tant qu'il est ouvert, et pas autrement", () => {
     const { rerender } = render(<SectorAlertCta criteria={{ department: "33" }} />);
     expect(screen.queryByTestId("sector-alert-trial")).toBeNull();

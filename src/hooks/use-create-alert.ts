@@ -200,6 +200,7 @@ export function useCreateAlert({
             min_sale_date: search.minSaleDate ?? null,
             max_sale_date: search.maxSaleDate ?? null,
             sale_type: search.saleType ?? null,
+            ...(search.tribunal ? { tribunal: search.tribunal } : {}),
             query: residualQuery ?? null,
             around_address: search.aroundAddress ?? null,
             around_radius_km: search.aroundRadius ?? null,
