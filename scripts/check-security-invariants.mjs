@@ -1719,6 +1719,7 @@ function functionSignature(schema, name, argumentText) {
 //    aucun droit pour anon, authenticated ni public (accès par le rôle de service seulement) ;
 // 2. toute route `src/app/api/cron/*/route.ts` s'authentifie (`runMonitoredCron(` ou
 //    `cronRequestAuthorized(`) ;
+// 2 bis. toute route `src/app/api/admin/**/route.ts` lit le jeton et appelle un garde administrateur ;
 // 3. `admin-signups.ts` appelle `assertAdminAuth` avant toute lecture ;
 // 4. `app_private.signup_trial_ends_at` ne lit jamais `user_metadata` (modifiable par la personne).
 {
@@ -1775,6 +1776,55 @@ function functionSignature(schema, name, argumentText) {
       failures.push(
         `src/app/api/cron/${entry.name}/route.ts does not authenticate: call runMonitoredCron( or cronRequestAuthorized(`,
       );
+    }
+  }
+
+  // 2 bis. toute route `src/app/api/admin/**/route.ts` lit le jeton (`bearerTokenFromRequest(`) ET appelle
+  //    un garde administrateur : un `requireAdmin(`, `assertAdmin…(` ou `!auth.isAdmin` dans la route
+  //    elle-même ou dans un module `@/lib/...` qu'elle importe. Une nouvelle route sans garde échoue ici.
+  //    Contrôle statique : il ne prouve pas que le garde passe avant toute lecture (voir les tests de
+  //    routes et `token-before-body.test.ts`), il empêche d'en oublier un.
+  {
+    const adminGuard =
+      /\b(?:requireAdmin|assertAdmin\w*|requireAdminContext)\(|!\s*[\w.]+\.isAdmin\b/;
+    const adminRoutes = [];
+    const walkAdmin = async (directory) => {
+      for (const entry of await readdir(directory, { withFileTypes: true })) {
+        const entryUrl = new URL(`${entry.name}${entry.isDirectory() ? "/" : ""}`, directory);
+        if (entry.isDirectory()) await walkAdmin(entryUrl);
+        else if (entry.name === "route.ts") adminRoutes.push(entryUrl);
+      }
+    };
+    await walkAdmin(new URL("../src/app/api/admin/", import.meta.url));
+    if (adminRoutes.length === 0) failures.push("src/app/api/admin has no route to check");
+    for (const routeUrl of adminRoutes) {
+      const routePath = routeUrl.pathname.slice(
+        routeUrl.pathname.indexOf("/src/app/api/admin/") + 1,
+      );
+      const source = await readFile(routeUrl, "utf8");
+      if (!/\bbearerTokenFromRequest\(/.test(source)) {
+        failures.push(`${routePath} does not read the bearer token (bearerTokenFromRequest)`);
+        continue;
+      }
+      let guarded = adminGuard.test(source);
+      for (const imported of guarded ? [] : source.matchAll(/from\s+"@\/lib\/([^"]+)"/g)) {
+        for (const candidate of [`${imported[1]}.ts`, `${imported[1]}/index.ts`]) {
+          try {
+            const library = await readFile(
+              new URL(`../src/lib/${candidate}`, import.meta.url),
+              "utf8",
+            );
+            if (adminGuard.test(library)) guarded = true;
+          } catch {
+            // Module introuvable à cet emplacement : l'autre candidat ou l'import suivant.
+          }
+        }
+      }
+      if (!guarded) {
+        failures.push(
+          `${routePath} calls no administrator guard: use requireAdmin( / assertAdmin…( / !auth.isAdmin in the route or in a @/lib module it imports`,
+        );
+      }
     }
   }
 
@@ -1864,6 +1914,7 @@ console.log(
       "private-reference-tables-only-in-server-module",
       "new-public-tables-rls-and-no-client-grants",
       "cron-routes-authenticated",
+      "admin-routes-read-token-and-call-an-admin-guard",
       "admin-signups-asserts-admin-first",
       "signup-trial-end-ignores-user-metadata",
     ],

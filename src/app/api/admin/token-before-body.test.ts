@@ -34,6 +34,9 @@ const ROUTES: Array<[string, () => Promise<Record<string, unknown>>, string]> = 
     "POST",
   ],
   ["information-agent/template", () => import("./information-agent/template/route"), "POST"],
+  ["privacy-requests (mise à jour)", () => import("./privacy-requests/route"), "PATCH"],
+  ["privacy-requests (effacement)", () => import("./privacy-requests/route"), "POST"],
+  ["privacy-requests/withdrawal", () => import("./privacy-requests/withdrawal/route"), "POST"],
 ];
 
 describe("routes admin : le jeton avant le corps", () => {
