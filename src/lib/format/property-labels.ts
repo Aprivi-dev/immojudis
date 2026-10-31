@@ -1,4 +1,4 @@
-import { isOccupiedOccupancyStatus, isVacantOccupancyStatus } from "@/lib/market-gap-band";
+import { isOccupiedOccupancyStatus, isVacantOccupancyStatus } from "@/lib/occupancy-status";
 
 /**
  * Libellé français de `occupancy_status` (contrainte SQL : vacant, occupied, rented, owner_occupied,

@@ -545,6 +545,14 @@ describe("pickPendingSales", () => {
     expect(isObsoleteEvaluation(stored("a", { regimeVersion: null }), VERSIONS)).toBe(false);
   });
 
+  it("une évaluation calculée par le moteur « 2026-10-26.2 » (taxe foncière devinée) est obsolète", () => {
+    const old = stored("a", { engineVersion: "2026-10-26.2" });
+    expect(VERSIONS.engine).toBe(CEILING_ENGINE_VERSION);
+    expect(VERSIONS.engine).not.toBe("2026-10-26.2");
+    expect(isObsoleteEvaluation(old, VERSIONS)).toBe(true);
+    expect(pickPendingSales([online("a")], [old], dates, VERSIONS, NOW)).toEqual(["a"]);
+  });
+
   it("une évaluation stockée « pepite-v1.2 » (valeur littérale) n'est obsolète que si l'interrupteur v2 est ouvert", () => {
     const evaluation = stored("a", { ruleVersion: "pepite-v1.2" });
     const closed = currentPepiteVersions({});

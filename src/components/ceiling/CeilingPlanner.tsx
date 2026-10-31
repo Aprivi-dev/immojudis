@@ -15,6 +15,8 @@ import {
   estimatedFeeItems,
   evaluateBid,
   feeSensitivity,
+  PROPERTY_TAX_NOT_COUNTED,
+  propertyTaxMissing,
   targetYieldPct,
   type CeilingHypotheses,
   type CeilingPlan,
@@ -128,6 +130,14 @@ export function CeilingPlanner({
                     : `À compléter : ${gap.reason}`}
                 </div>
               )}
+              {gap == null && plan.available && propertyTaxMissing(hypotheses) ? (
+                <p
+                  data-testid="property-tax-missing"
+                  className="mt-2 text-xs font-semibold text-ink-soft"
+                >
+                  {PROPERTY_TAX_NOT_COUNTED}
+                </p>
+              ) : null}
               <Verdict hypotheses={hypotheses} plan={plan} labels={regimeLabels} />
             </div>
             <ProfilePicker

@@ -24,9 +24,10 @@ import {
  *
  * Historique : « 2026-10-26.1 » (tests de caractérisation), « 2026-10-26.2 » (les frais préalables
  * du tribunal sortent de la base des droits de mutation et de la CSI, BOFiP § 50 ; régimes
- * notariaux).
+ * notariaux), « 2026-10-26.3 » (lot 4a, n° 28 et 100 : plus de taxe foncière par défaut, elle vaut 0
+ * tant qu'aucun montant n'est saisi ; « inoccupé » est un bien libre, sans coût de libération).
  */
-export const CEILING_ENGINE_VERSION = "2026-10-26.2";
+export const CEILING_ENGINE_VERSION = "2026-10-26.3";
 
 export type CeilingProject = "habiter" | "louer" | "revendre";
 export type CeilingProfile = "prudent" | "equilibre" | "offensif";
@@ -831,6 +832,18 @@ export type EstimatedFee = {
 
 /** Sous ce montant, un poste estimé n'est pas assez important pour être signalé. */
 export const IMPORTANT_ESTIMATED_FEE_EUR = 1_000;
+
+/** Mention affichée près du plafond (fiche, rapport PDF) tant que la taxe foncière n'est pas renseignée. */
+export const PROPERTY_TAX_NOT_COUNTED = "Taxe foncière non comptée";
+
+/**
+ * La taxe foncière n'est pas renseignée : elle n'est pas comptée dans le portage et le plafond est
+ * plus élevé qu'avec elle. Des hypothèses enregistrées avant cette source (champ absent) sont lues
+ * comme renseignées.
+ */
+export function propertyTaxMissing(h: CeilingHypotheses): boolean {
+  return h.carrying.annualPropertyTaxSource === "absente";
+}
 
 /**
  * Les postes importants dont le montant vient d'une valeur par défaut (source `defaut`) : frais

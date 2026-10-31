@@ -653,6 +653,7 @@ describe("property report sharing", () => {
         scopeNote: null,
         reserveNotice: null,
         estimatedFees: [],
+        propertyTaxMissing: false,
         maxBid: 130_000,
         maxBidWithoutWorks: 160_000,
         maxBidWithRefreshWorks: 130_000,

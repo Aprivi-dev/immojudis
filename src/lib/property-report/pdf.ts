@@ -7,6 +7,7 @@ import {
   describeReportSimulation,
   REPORT_RENTAL_EXPENSE_FIELD_LABELS,
 } from "@/lib/report-simulation";
+import { PROPERTY_TAX_NOT_COUNTED } from "@/lib/bid-ceiling-engine";
 import { DEFAULT_OPEN_FEE_REGIMES, type FeeRegimeKey } from "@/lib/fee-regime-open";
 import { analysisForOpenRegimes, ceilingForOpenRegimes } from "./ceiling-switch";
 import { featureUnlocked, sanitizeReportSnapshotForPlan } from "./entitlements";
@@ -478,6 +479,9 @@ export function reportToPdfLines(
     ceiling.available
       ? `${ceilingLabel}: ${formatPrice(numberValue(ceiling.maxBid))}`
       : `${ceilingLabel}: indisponible (${stringOrNumberValue(ceiling.reason, "données incomplètes")})`,
+    // Taxe foncière non renseignée : le plafond est plus élevé qu'avec elle (absent des rapports
+    // enregistrés avant cette mention : aucune ligne).
+    ...(ceiling.available && ceiling.propertyTaxMissing === true ? [PROPERTY_TAX_NOT_COUNTED] : []),
     // Vente notariale : ce que le calcul ne couvre pas, la mention d'une vente par offres et les
     // frais qui viennent d'une valeur par défaut.
     ...(typeof ceiling.scopeNote === "string" && ceiling.available ? [ceiling.scopeNote] : []),

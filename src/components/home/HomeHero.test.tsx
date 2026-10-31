@@ -73,12 +73,12 @@ describe("home hero", () => {
     expect(text).toMatch(/Mise à prix 95.000.€/);
     // L'estimation et sa fourchette, à côté de l'enchère à ne pas dépasser.
     expect(text).toMatch(/Estimation 230.000.€ ?Fourchette : 215.000 – 247.000.€/);
-    expect(text).toMatch(/Enchère à ne pas dépasser 135.000.€/);
+    expect(text).toMatch(/Enchère à ne pas dépasser 136.000.€/);
     expect(text).toMatch(/Même immeuble, 2024 226.000.€/);
     expect(text).toContain("Occupation À confirmer");
     // Premier rendu : la situation de /annonce-exemple, et son verdict.
     expect(text).toContain("Pour y habiter, occupé, rafraîchissement");
-    expect(text).toMatch(/135.000.€/);
+    expect(text).toMatch(/136.000.€/);
     expect(text).toContain("On enchérit");
     expect(markup).toContain("dossier-apartment.webp");
     // Les trois situations, dont celle qui fait passer son tour.
@@ -116,9 +116,9 @@ describe("home texts", () => {
 
   it("prépare l'annonce de la valeur finale, sans la lire pendant la démonstration, et masque le montant animé", () => {
     const markup = renderToStaticMarkup(<HomeHero />);
-    expect(markup).toMatch(/<p class="sr-only">Enchère à ne pas dépasser : 135.000.€/);
+    expect(markup).toMatch(/<p class="sr-only">Enchère à ne pas dépasser : 136.000.€/);
     expect(markup).not.toContain('role="status"');
-    expect(markup).toMatch(/<p[^>]*aria-hidden="true"[^>]*>135.000.€<\/p>/);
+    expect(markup).toMatch(/<p[^>]*aria-hidden="true"[^>]*>136.000.€<\/p>/);
     expect(markup).not.toContain("aria-live");
   });
 
