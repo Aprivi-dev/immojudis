@@ -239,10 +239,11 @@ export function isSaleUnlockFeature(feature: FeatureKey): feature is SaleUnlockF
  * Le droit `sales.apiAccess` de la matrice ouvrirait l'accès à un plan qui l'inclurait.
  */
 export function apiAccessAllowed(
-  auth: { isAdmin?: boolean; userRole?: string; claims?: { api_key_id?: unknown } },
+  auth: { isAdmin?: boolean; userRole?: string; claims?: object },
   plan: PlanCode,
 ): boolean {
-  const apiKeyContext = typeof auth.claims?.api_key_id === "string";
+  const apiKeyContext =
+    typeof (auth.claims as { api_key_id?: unknown } | undefined)?.api_key_id === "string";
   return (
     auth.isAdmin === true ||
     (apiKeyContext && auth.userRole === "admin") ||
