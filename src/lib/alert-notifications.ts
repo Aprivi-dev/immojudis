@@ -319,6 +319,19 @@ async function readAdminUserIds(userIds: string[]): Promise<Set<string>> {
   return admins;
 }
 
+/** Les administrateurs (peu nombreux) : borne de lecture pour la file d'emails du mode `internal`. */
+const MAX_INTERNAL_ADMIN_USER_IDS = 200;
+
+async function readAllAdminUserIds(): Promise<string[]> {
+  const { data, error } = await supabaseAdmin
+    .from("user_profiles")
+    .select("user_id")
+    .eq("user_role", "admin")
+    .limit(MAX_INTERNAL_ADMIN_USER_IDS);
+  if (error) throw error;
+  return (data ?? []).map((row) => row.user_id);
+}
+
 /**
  * Applique l'interrupteur `ALERT_NOTIFICATIONS_MODE` aux e-mails dus : `on` les laisse tous partir,
  * `internal` ne garde que ceux des administrateurs, `off` n'en garde aucun. Les e-mails écartés
@@ -364,6 +377,17 @@ export async function dispatchDueAlertNotifications({
   // Emails coupés : leur file ne doit pas occuper la fenêtre de lecture au détriment des
   // notifications dans l'application.
   if (emailMode === "off") candidateQuery = candidateQuery.eq("delivery_channel", "in_app");
+  if (emailMode === "internal") {
+    // Seuls les emails des administrateurs peuvent partir : on ne lit qu'eux (avec les notifications
+    // dans l'application, pour tous), sinon les emails écartés, restés `queued`, bloqueraient la
+    // fenêtre de lecture.
+    const adminUserIds = await readAllAdminUserIds();
+    candidateQuery = adminUserIds.length
+      ? candidateQuery.or(
+          `delivery_channel.eq.in_app,and(delivery_channel.eq.email,user_id.in.(${adminUserIds.join(",")}))`,
+        )
+      : candidateQuery.eq("delivery_channel", "in_app");
+  }
   const { data: candidates, error: selectError } = await candidateQuery
     .order("scheduled_for", { ascending: true })
     .limit(dispatchLimit);

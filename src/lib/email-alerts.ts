@@ -694,6 +694,14 @@ export async function withCurrentPepiteMentions<
   });
 }
 
+/** Âge maximal d'un email d'alerte en file : au-delà, il est annulé plutôt qu'envoyé (reprise après coupure). */
+const MAX_EMAIL_ALERT_AGE_MS = 48 * 60 * 60 * 1000;
+
+function isTooOldForEmail(notification: { scheduled_for?: string | null }, now: Date): boolean {
+  const scheduledAt = Date.parse(notification.scheduled_for ?? "");
+  return Number.isFinite(scheduledAt) && now.getTime() - scheduledAt > MAX_EMAIL_ALERT_AGE_MS;
+}
+
 async function deliverEmailAlertDigest({
   userId,
   notifications,
@@ -738,6 +746,7 @@ async function deliverEmailAlertDigest({
   // still had Analyse are not sent once the plan has ended.
   const sendable = notifications.filter(
     (notification) =>
+      !isTooOldForEmail(notification, now) &&
       (!notification.alert_id || activeAlerts.has(notification.alert_id)) &&
       (eligibility.audience === "analyse" || notificationAudience(notification) === "discovery"),
   );
