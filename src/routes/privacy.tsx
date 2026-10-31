@@ -107,7 +107,7 @@ const processingRows = [
   },
   {
     purpose: "Annonces de ventes et pièces publiques",
-    data: "Informations sur les biens, parfois sur les personnes citées (noms remplacés par leur rôle)",
+    data: "Informations sur les biens, parfois sur les personnes citées (noms remplacés par leur rôle autant que possible ; en cas d’oubli, écrivez-nous pour demander le retrait)",
     basis: "Intérêt légitime à informer le public",
     retention:
       "Tant que la vente est consultable, puis archivage ; opposition et demande de retrait par email, sans compte",
@@ -138,18 +138,42 @@ const processingRows = [
   },
   {
     purpose: "Mesure, qualité et exploitation",
-    data: "Événements de parcours agrégés, sans identifiant de personne, performances, identifiants techniques, erreurs et état des traitements",
+    data: "Événements de parcours du navigateur, agrégés et à valeurs fermées, sans identifiant de personne ni de compte (mesurés avec Vercel Analytics, sans cookie) ; performances, identifiants techniques, erreurs et état des traitements",
     basis: "Intérêt légitime à améliorer, sécuriser et maintenir Immojudis",
     retention:
       "Événements d’usage et journaux applicatifs : 24 mois au plus, conformément à la matrice de conservation ; données de mesure conservées par Vercel selon sa propre durée",
   },
   {
+    purpose: "Mesure du parcours des personnes connectées",
+    data: "Identifiant de compte, type d’événement (vente débloquée, quota atteint, valeur de référence servie pour une vente, export vers un calendrier, détail d’un repère « Pépite » servi, clic sur un lien d’un email d’alerte ou de rappel), détail à valeurs fermées, vente concernée et date. Aucun texte libre, aucune adresse IP. L’équipe ne les consulte qu’en chiffres agrégés. Les liens des emails d’alertes et de rappels passent par une adresse d’Immojudis qui note le clic, puis vous envoie vers la vente ou le fichier de calendrier ; un antivirus ou l’aperçu d’une messagerie peut ouvrir le lien et compter comme un clic",
+    basis:
+      "Intérêt légitime à comprendre quelles fonctions servent et à améliorer le service. Vous pouvez vous y opposer en nous écrivant",
+    retention:
+      "90 jours après l’événement (purge hebdomadaire : au plus environ 97 jours) ; suppression avec le compte",
+  },
+  {
+    purpose: "Retours « Utile » ou « Pas pertinent » sur les signaux d’une vente",
+    data: "Identifiant de compte, vente, signal concerné (écart au marché, points à vérifier ou repère « Pépite »), réponse « Utile » ou « Pas pertinent », motif choisi dans une liste fermée, date. Aucun texte libre, aucune adresse IP. Sans compte, rien n’est enregistré",
+    basis:
+      "Intérêt légitime à vérifier que les signaux affichés sont pertinents et à arrêter un repère dont la précision se dégrade",
+    retention:
+      "90 jours après le retour ; suppression avec le compte ; si la vente est supprimée du site, le lien avec la vente est coupé et la ligne est gardée jusqu’à ses 90 jours",
+  },
+  {
+    purpose: "Instantanés d’estimation de marché avant l’audience",
+    data: "Type de vente, tribunal, département, type de bien, mise à prix, jour d’audience, estimation de marché et indicateurs de qualité, résultat du repère « Pépite » à cet instant ; pour une vente notariale dont la source a publié le résultat, prix d’adjudication. Ni adresse ni identifiant de vente en clair, aucune donnée de compte. Ces informations ne désignent pas une personne, mais elles peuvent permettre de retrouver l’annonce publique d’une vente par recoupement",
+    basis:
+      "Intérêt légitime à mesurer la précision des estimations et du repère « Pépite » face aux prix d’adjudication",
+    retention:
+      "36 mois après la date d’audience, puis suppression à la purge hebdomadaire (jusqu’à 7 jours de plus)",
+  },
+  {
     purpose: "Mesure d’audience par Google Analytics (avec votre accord)",
-    data: "Identifiant aléatoire déposé en cookie, pages consultées (adresse sans jeton ni paramètre de recherche), provenance de la visite, appareil et navigateur, ville approximative ; aucun signal publicitaire ni recoupement avec un compte Google",
+    data: "Identifiant aléatoire déposé en cookie, pages consultées (adresse nettoyée par le site avant envoi : sans jeton de partage ni code de connexion), provenance de la visite, appareil et navigateur, ville approximative ; aucun signal publicitaire ni recoupement avec un compte Google",
     basis:
       "Consentement, demandé par le bandeau et retirable à tout moment sur cette page ; sans accord, Google Analytics n’est pas chargé",
     retention:
-      "Cookies : 13 mois au plus, sans prolongation à chaque visite ; choix d’accord ou de refus : 6 mois dans le navigateur ; données conservées par Google 14 mois au plus",
+      "Cookies : 13 mois au plus, sans prolongation à chaque visite ; choix d’accord ou de refus : 6 mois dans le navigateur ; données conservées par Google selon la durée réglée dans notre compte Google Analytics",
   },
   {
     purpose: "Repère « Pépite » : contrôle du risque d’inondation d’une vente",
@@ -260,9 +284,10 @@ export function PrivacyPage() {
             <p>
               Les annonces de vente et leurs pièces publiques concernent des biens, mais peuvent
               citer des personnes. Dans les textes affichés, les noms de particuliers sont remplacés
-              par leur rôle. Si vous êtes cité dans une annonce, vous pouvez demander la
-              rectification ou le retrait à {legalValue(publisher.contactEmail)}, sans créer de
-              compte.
+              par leur rôle autant que possible : ce remplacement est automatique et peut laisser
+              passer un nom. Si vous êtes cité dans une annonce, en cas d’oubli notamment, écrivez à{" "}
+              {legalValue(publisher.contactEmail)} pour demander la rectification ou le retrait,
+              sans créer de compte.
             </p>
           </PrivacySection>
 
@@ -326,10 +351,12 @@ export function PrivacyPage() {
               conserver des préférences fonctionnelles, comme des paramètres de simulation ou les
               annonces consultées, ou vos choix sur la mesure d’audience. Nous mesurons la
               fréquentation avec Vercel Analytics et Speed Insights, sans cookie et sans suivi entre
-              sites, et des événements de parcours agrégés, sans identifiant de personne. Les
-              données ne servent qu’à des statistiques de notre service. Vous pouvez vous opposer à
-              la mesure d’audience depuis cette page (votre choix est mémorisé dans ce navigateur)
-              ou en nous écrivant à {legalValue(publisher.contactEmail)}.
+              sites, et des événements de parcours agrégés, sans identifiant de personne. Lorsque
+              vous êtes connecté, quelques événements d’usage sont en outre rattachés à votre compte
+              (voir « Mesure du parcours des personnes connectées » dans le tableau), conservés 90
+              jours. Les données ne servent qu’à des statistiques de notre service. Vous pouvez vous
+              opposer à la mesure d’audience depuis cette page (votre choix est mémorisé dans ce
+              navigateur) ou en nous écrivant à {legalValue(publisher.contactEmail)}.
             </p>
             <AudienceOptOutSwitch />
             <p className="mt-4">
@@ -337,12 +364,12 @@ export function PrivacyPage() {
               cookies (« _ga » et « _ga_ » suivi de l’identifiant du flux) pour compter les visites
               et comprendre l’usage du site. Le bandeau affiché à la première visite permet
               d’accepter ou de refuser aussi simplement ; sans réponse, rien n’est chargé. Les
-              adresses transmises ne contiennent ni jeton de partage ni paramètre de recherche ; les
-              signaux Google et la personnalisation publicitaire sont désactivés. Votre choix est
-              mémorisé 6 mois dans ce navigateur, puis redemandé ; vous pouvez le modifier à tout
-              moment ci-dessous ou par le lien « Gérer les cookies » du pied de page. Retirer votre
-              accord arrête les envois et efface ces cookies. L’opposition à la mesure d’audience
-              ci-dessus coupe aussi Google Analytics.
+              adresses transmises sont nettoyées par le site (ni jeton de partage ni code de
+              connexion) ; les signaux Google et la personnalisation publicitaire sont désactivés.
+              Votre choix est mémorisé 6 mois dans ce navigateur, puis redemandé ; vous pouvez le
+              modifier à tout moment ci-dessous ou par le lien « Gérer les cookies » du pied de
+              page. Retirer votre accord arrête les envois et efface ces cookies. L’opposition à la
+              mesure d’audience ci-dessus coupe aussi Google Analytics.
             </p>
             <AnalyticsConsentSwitch />
             <p className="mt-4">

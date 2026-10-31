@@ -38,6 +38,16 @@ const PEPITE_LEGAL_EFFECTIVE_DATE = "26 octobre 2026";
 const FLOOD_LEGAL_EFFECTIVE_DATE = "26 octobre 2026";
 
 /**
+ * Politique de confidentialité 2026-10-31.1 : complète le tableau des traitements (événements d'usage
+ * par compte et clics des emails, retours « Utile / Pas pertinent », instantanés d'estimation) et
+ * corrige « sans identifiant de personne », « noms remplacés par leur rôle » et les réglages Google
+ * Analytics non vérifiés. Relecture `juridique-rgpd` à faire ; en vigueur à la mise en ligne, sans
+ * préavis (aucun traitement nouveau, seulement une description plus complète). Date à décaler à la
+ * date réelle de mise en ligne si elle diffère (elle n'entre pas dans l'empreinte du texte).
+ */
+const PRIVACY_COMPLETION_EFFECTIVE_DATE = "31 octobre 2026";
+
+/**
  * Versions précédentes encore applicables ou à produire sur demande. Le code source exact de
  * chacune est archivé dans `docs/legal-archives/` (extension `.txt`, jamais modifié) et son
  * empreinte contrôlée par `legal-documents.test.ts`.
@@ -68,11 +78,21 @@ export const PREVIOUS_LEGAL_DOCUMENTS = {
     ],
   },
   privacy: {
-    version: "2026-10-25.1",
-    sha256: "f4eb47491d7ba15e83868156e2a084698d765166479c730b29c089a4f834bf60",
-    effectiveDate: "25 octobre 2026",
-    applicableUntil: FLOOD_LEGAL_EFFECTIVE_DATE,
-    archive: "docs/legal-archives/privacy-2026-10-25.1.tsx.txt",
+    version: "2026-10-26.1",
+    sha256: "e3860fd8c06ffad5896fb6821d0abb4dd61a6d18bd9eb62afa1d25955fb532bb",
+    effectiveDate: FLOOD_LEGAL_EFFECTIVE_DATE,
+    applicableUntil: PRIVACY_COMPLETION_EFFECTIVE_DATE,
+    archive: "docs/legal-archives/privacy-2026-10-26.1.tsx.txt",
+    /** Versions plus anciennes, archivées elles aussi. */
+    earlier: [
+      {
+        version: "2026-10-25.1",
+        sha256: "f4eb47491d7ba15e83868156e2a084698d765166479c730b29c089a4f834bf60",
+        effectiveDate: "25 octobre 2026",
+        applicableUntil: FLOOD_LEGAL_EFFECTIVE_DATE,
+        archive: "docs/legal-archives/privacy-2026-10-25.1.tsx.txt",
+      },
+    ],
   },
 } as const;
 
@@ -90,9 +110,9 @@ export const LEGAL_DOCUMENTS = {
     path: "/conditions-generales",
   },
   privacy: {
-    version: "2026-10-26.1",
-    sha256: "e3860fd8c06ffad5896fb6821d0abb4dd61a6d18bd9eb62afa1d25955fb532bb",
-    effectiveDate: FLOOD_LEGAL_EFFECTIVE_DATE,
+    version: "2026-10-31.1",
+    sha256: "4f89cffa35c79d232b5dae73a0694dd8d2c29cbd1df4f2146e1dee52f9f6367c",
+    effectiveDate: PRIVACY_COMPLETION_EFFECTIVE_DATE,
     path: "/privacy",
   },
 } as const;
