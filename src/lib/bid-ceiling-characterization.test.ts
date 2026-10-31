@@ -196,6 +196,24 @@ const cases: Case[] = [
   },
 ];
 
+// Taxe foncière des anciennes valeurs par défaut (8 % du loyer départemental de la table sans source,
+// ou 12 € par m² hors table), figée ici : le lot 4a (n° 28) a retiré cette valeur par défaut (sans
+// montant saisi, la taxe vaut 0 et le champ est « à renseigner »). Ce filet caractérise le moteur
+// (`computeCeilingPlan`), pas ce défaut : il saisit donc la taxe d'avant, et reste valable sans toucher
+// à `cases`, dont l'empreinte est enregistrée plus bas.
+const HISTORICAL_PROPERTY_TAX_BY_DEPARTMENT: Record<string, number> = {
+  "33": 833, // 62 m² × 14 €/m² × 12 mois × 8 %
+  "36": 1_320, // hors table : 110 m² × 12 €
+  "75": 1_382, // 45 m² × 32 €/m² × 12 mois × 8 %
+};
+
+function hypothesesOf({ sale, estimate, choices }: Pick<Case, "sale" | "estimate" | "choices">) {
+  return buildCeilingHypotheses(sale, estimate, {
+    annualPropertyTax: HISTORICAL_PROPERTY_TAX_BY_DEPARTMENT[sale.department ?? ""],
+    ...choices,
+  });
+}
+
 /** Résultats de la version « 2026-10-26.1 » (droits calculés sur prix + frais préalables), par cas. */
 const PREVIOUS_EXPECTED: Record<string, { maxBid: number; acquisitionFeesTotal: number }> = {
   "33, appartement libre, frais préalables lus, habiter": {
@@ -254,7 +272,7 @@ const PREVIOUS_EXPECTED: Record<string, { maxBid: number; acquisitionFeesTotal: 
 
 describe("computeCeilingPlan on representative tribunal sales (characterization)", () => {
   it.each(cases)("$name", ({ sale, estimate, choices, expected }) => {
-    const plan = computeCeilingPlan(buildCeilingHypotheses(sale, estimate, choices));
+    const plan = computeCeilingPlan(hypothesesOf({ sale, estimate, choices }));
 
     const actual = {
       maxBid: plan.maxBid,
@@ -270,7 +288,7 @@ describe("computeCeilingPlan on representative tribunal sales (characterization)
   it.each(cases.filter((item) => PREVIOUS_EXPECTED[item.name]?.maxBid === item.expected.maxBid))(
     "$name : à mise égale, les frais baissent de frais préalables × (droits + CSI)",
     ({ name, sale, estimate, choices, expected }) => {
-      const fees = buildCeilingHypotheses(sale, estimate, choices).fees;
+      const fees = hypothesesOf({ sale, estimate, choices }).fees;
       const drop = PREVIOUS_EXPECTED[name].acquisitionFeesTotal - expected.acquisitionFeesTotal;
       expect(drop).toBeGreaterThan(0);
       expect(
@@ -302,8 +320,7 @@ describe("computeCeilingPlan : frais recalculés à la main", () => {
     return found;
   };
   const plan = (name: string) => {
-    const { sale, estimate, choices } = byName(name);
-    return computeCeilingPlan(buildCeilingHypotheses(sale, estimate, choices));
+    return computeCeilingPlan(hypothesesOf(byName(name)));
   };
 
   it("33, appartement libre, mise de 176 500 €", () => {

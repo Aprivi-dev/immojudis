@@ -136,6 +136,11 @@ export type CeilingHypotheses = {
   carrying: {
     monthlyCharges: number;
     annualPropertyTax: number;
+    /**
+     * `absente` : aucun montant saisi, la taxe foncière n'est pas comptée et le champ est à renseigner.
+     * Absent du type pour les hypothèses déjà enregistrées : lu comme `saisie`.
+     */
+    annualPropertyTaxSource?: "saisie" | "absente";
     monthlyInsurance: number;
     financingRatePct: number;
     resaleMonths: number;
