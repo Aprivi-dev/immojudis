@@ -12,9 +12,10 @@
 -- reserve_analyse_checkout (corps de 20261108130000, seule la condition « fin NULL » change) : une
 -- ligne « active » sans fin ne bloque plus une souscription, puisqu'elle n'ouvre plus d'accès.
 --
--- À VÉRIFIER AVANT D'APPLIQUER : des lignes « analyse » trialing/active sans fin de période perdraient
--- leur accès à l'application de cette migration (attributions manuelles de /admin/subscriptions
--- sans date, le champ étant facultatif). Requête de contrôle, en lecture seule :
+-- GARDE : des lignes « analyse » trialing/active sans fin de période perdraient leur accès à
+-- l'application de cette migration (attributions manuelles sans date, le champ étant facultatif jusqu'ici).
+-- La migration s'arrête (raise exception, avec le nombre de lignes) tant qu'il en reste ; contrôle fait en
+-- production le 31/10/2026 : 0 ligne. Pour les lister, en lecture seule :
 --   select user_id, status, stripe_subscription_id, metadata -> 'manual_grant' ->> 'source' as source
 --   from public.user_subscriptions
 --   where plan_code = 'analyse' and status in ('trialing', 'active') and current_period_end is null;
@@ -24,6 +25,26 @@
 begin;
 
 set local lock_timeout = '5s';
+
+do $guard$
+declare
+  open_ended_count bigint;
+begin
+  select count(*) into open_ended_count
+  from public.user_subscriptions subscription
+  where subscription.plan_code = 'analyse'
+    and subscription.status in ('trialing', 'active')
+    and subscription.current_period_end is null;
+  if open_ended_count > 0 then
+    raise exception using
+      errcode = '23514',
+      message = format(
+        '%s abonnement(s) analyse trialing/active sans current_period_end perdraient leur accès : donner une date de fin avant cette migration.',
+        open_ended_count
+      );
+  end if;
+end;
+$guard$;
 
 create or replace function app_private.subscription_grants_access(
   p_status text,
