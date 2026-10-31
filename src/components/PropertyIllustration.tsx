@@ -8,34 +8,38 @@ import { cn } from "@/lib/utils";
  * personne qui lit est prévenue deux fois (pastille visible « Illustration » dans `SaleVisual`, et
  * nom accessible qui le dit). Règle : docs/design/fondations.md, « Annonce sans photo ».
  */
-export type IllustrationKind = "house" | "apartment" | "building" | "land";
+export type IllustrationKind = "house" | "apartment" | "building" | "land" | "generic";
 
+/** Le complément de « Illustration générique », avec sa préposition (« d'une », « d'un »). */
 const KIND_LABELS: Record<IllustrationKind, string> = {
-  house: "une maison",
-  apartment: "un appartement",
-  building: "un immeuble",
-  land: "un terrain",
+  house: "d'une maison",
+  apartment: "d'un appartement",
+  building: "d'un immeuble",
+  land: "d'un terrain",
+  generic: "d'un bien immobilier",
 };
 
 /**
  * Le dessin d'un type de bien (mêmes mots que `propertyTypeLabel`). Tout ce qui n'a pas son dessin
- * (garage, local commercial, bien mixte, type inconnu ou à qualifier) prend la maison, le repli
- * générique.
+ * (garage, local commercial, bien mixte, type inconnu ou à qualifier) prend `generic` : le dessin
+ * de la maison (repli voulu par le propriétaire), mais un nom accessible neutre, pour ne pas
+ * annoncer « une maison » pour un garage.
  */
 export function illustrationKind(propertyType: string | null | undefined): IllustrationKind {
   const type = (propertyType ?? "").toLowerCase();
   if (type === "unknown" || type === "other" || type === "mixed" || type.includes("mixte")) {
-    return "house";
+    return "generic";
   }
   if (type.includes("apart") || type.includes("apt") || type.includes("studio")) return "apartment";
   if (type.includes("building") || type.includes("immeuble")) return "building";
   if (type.includes("land") || type.includes("terrain")) return "land";
-  return "house";
+  if (type.includes("house") || type.includes("maison")) return "house";
+  return "generic";
 }
 
 /** Nom accessible : ce que c'est, et que ce n'est pas le bien. */
 function illustrationLabel(kind: IllustrationKind): string {
-  return `Illustration générique de ${KIND_LABELS[kind]} : aucune photo du bien n’est disponible`;
+  return `Illustration générique ${KIND_LABELS[kind]} : aucune photo du bien n’est disponible`;
 }
 
 const STROKE = "fill-none stroke-brand-navy [stroke-linecap:round] [stroke-linejoin:round]";
@@ -144,6 +148,7 @@ const DRAWINGS: Record<IllustrationKind, () => ReactElement> = {
   apartment: Apartment,
   building: Building,
   land: Land,
+  generic: House,
 };
 
 export function PropertyIllustration({

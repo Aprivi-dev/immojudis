@@ -616,22 +616,27 @@ describe("SaleVisual : illustration d'une annonce sans photo", () => {
     }) as unknown as AuctionSale;
 
   it.each([
-    ["house", "house", "une maison"],
-    ["apartment", "apartment", "un appartement"],
-    ["building", "building", "un immeuble"],
-    ["land", "land", "un terrain"],
-    ["Studio", "apartment", "un appartement"],
-    ["terrain", "land", "un terrain"],
-    ["garage", "house", "une maison"],
-    ["commercial", "house", "une maison"],
-    ["unknown", "house", "une maison"],
-    [null, "house", "une maison"],
+    ["house", "house", "d'une maison"],
+    ["Maison", "house", "d'une maison"],
+    ["apartment", "apartment", "d'un appartement"],
+    ["building", "building", "d'un immeuble"],
+    ["land", "land", "d'un terrain"],
+    ["Studio", "apartment", "d'un appartement"],
+    ["terrain", "land", "d'un terrain"],
+    ["garage", "generic", "d'un bien immobilier"],
+    ["parking", "generic", "d'un bien immobilier"],
+    ["commercial", "generic", "d'un bien immobilier"],
+    ["mixed", "generic", "d'un bien immobilier"],
+    ["bien mixte", "generic", "d'un bien immobilier"],
+    ["other", "generic", "d'un bien immobilier"],
+    ["unknown", "generic", "d'un bien immobilier"],
+    [null, "generic", "d'un bien immobilier"],
   ])("type %s : dessin « %s », signalé comme illustration", (propertyType, kind, words) => {
     const { container } = render(
       <SaleVisual sale={bare(propertyType)} title="Bien" sectorMap={false} placeLabel="Pau" />,
     );
     const drawing = screen.getByRole("img", {
-      name: `Illustration générique de ${words} : aucune photo du bien n’est disponible`,
+      name: `Illustration générique ${words} : aucune photo du bien n’est disponible`,
     });
     expect(drawing.getAttribute("data-illustration")).toBe(kind);
     // Pastille visible « Illustration », et jamais une vraie image ni l'ancienne case grise.
@@ -639,6 +644,18 @@ describe("SaleVisual : illustration d'une annonce sans photo", () => {
     expect(container.querySelector("img")).toBeNull();
     expect(screen.queryByText("Aucun visuel fiable")).toBeNull();
     expect(screen.getByText("Pau")).toBeTruthy();
+  });
+
+  it("garde le dessin de la maison pour un type sans dessin, avec un nom neutre", () => {
+    const draw = (propertyType: string) => {
+      const { container } = render(
+        <SaleVisual sale={bare(propertyType)} title="Bien" sectorMap={false} />,
+      );
+      const html = container.querySelector("svg")!.innerHTML;
+      cleanup();
+      return html;
+    };
+    expect(draw("garage")).toBe(draw("house"));
   });
 
   it("sans ville, n'écrit rien sous le dessin", () => {
