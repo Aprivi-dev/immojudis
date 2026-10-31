@@ -3,7 +3,7 @@ import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middlewar
 import type { Database } from "@/integrations/supabase/types";
 import { pricePerM2 } from "@/lib/geo";
 import { featureIncluded } from "@/lib/plans";
-import { resolvePlanEntitlements } from "@/lib/property-reports";
+import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import { getSaleSurface } from "@/lib/surface";
 import type { SelectedRow } from "@/lib/supabase-select";
 import { recordFeatureUsageEvent } from "@/lib/usage";

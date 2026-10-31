@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
   tables: {} as Record<string, Array<Record<string, unknown>>>,
 }));
 vi.mock("@/lib/launch-offer.server", () => ({ isLaunchOfferActive: mocks.launchOffer }));
-vi.mock("@/lib/property-reports", () => ({ resolvePlanEntitlements: vi.fn() }));
+vi.mock("@/lib/entitlements.server", () => ({ resolvePlanEntitlements: vi.fn() }));
 vi.mock("@/lib/usage", () => ({ recordFeatureUsageEvent: vi.fn() }));
 vi.mock("@/integrations/supabase/client.server", () => {
   function table(name: string) {

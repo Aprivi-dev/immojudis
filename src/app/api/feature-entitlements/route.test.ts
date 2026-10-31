@@ -6,7 +6,7 @@ vi.mock("@/integrations/supabase/auth-middleware", () => ({
   bearerTokenFromRequest: () => "test-token",
   requireSupabaseAuthContext: mocks.auth,
 }));
-vi.mock("@/lib/property-reports", () => ({ resolvePlanEntitlements: mocks.plan }));
+vi.mock("@/lib/entitlements.server", () => ({ resolvePlanEntitlements: mocks.plan }));
 vi.mock("@/lib/usage", () => ({ getPlanUsageSummary: mocks.usage }));
 afterEach(() => vi.resetAllMocks());
 

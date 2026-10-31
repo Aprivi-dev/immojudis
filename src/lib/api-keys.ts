@@ -5,7 +5,7 @@ import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
 import { featureIncluded } from "@/lib/plans";
-import { resolvePlanEntitlements } from "@/lib/property-reports";
+import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import { enforceDailyOperationLimits } from "@/lib/rate-limit";
 
 type ApiKeyRow = Database["public"]["Tables"]["user_api_keys"]["Row"];

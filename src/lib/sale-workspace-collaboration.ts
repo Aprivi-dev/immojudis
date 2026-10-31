@@ -4,7 +4,8 @@ import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
 import { featureIncluded } from "@/lib/plans";
-import { resolvePlanEntitlements, type PlanEntitlements } from "@/lib/property-reports";
+import { resolvePlanEntitlements } from "@/lib/entitlements.server";
+import type { PlanEntitlements } from "@/lib/property-reports";
 
 type SaleWorkspaceRow = Database["public"]["Tables"]["sale_workspaces"]["Row"];
 type CollaboratorRow = Database["public"]["Tables"]["sale_workspace_collaborators"]["Row"];
