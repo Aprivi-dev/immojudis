@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   client: vi.fn(),
   followed: vi.fn(),
   inFilter: vi.fn(),
+  visits: vi.fn(),
 }));
 
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
@@ -64,7 +65,20 @@ function accountClient() {
       });
     },
   };
-  return { userId: "user-1", supabase: { from: () => query } };
+  /** Vue du compte : les créneaux de visite (`visit_dates`) des ventes demandées. */
+  const visitsQuery = {
+    select: () => visitsQuery,
+    in: (_column: string, ids: string[]) => {
+      const result = mocks.visits(ids) as { data: unknown; error: unknown };
+      return Promise.resolve(result);
+    },
+  };
+  return {
+    userId: "user-1",
+    supabase: {
+      from: (table: string) => (table === "user_favorites" ? query : visitsQuery),
+    },
+  };
 }
 
 describe("POST /api/favorites/calendar", () => {
@@ -77,10 +91,43 @@ describe("POST /api/favorites/calendar", () => {
     mocks.record.mockResolvedValue(true);
     mocks.followed.mockReturnValue([A, B]);
     mocks.client.mockReturnValue({ rpc: mocks.rpc });
+    mocks.visits.mockReturnValue({ data: [], error: null });
     mocks.rpc.mockImplementation(async (_name: string, { p_sale_id }: { p_sale_id: string }) => ({
       data: [row(p_sale_id, p_sale_id === B ? { sale_date: "2026-10-30T13:00:00Z" } : {})],
       error: null,
     }));
+  });
+
+  it("ajoute au fichier les créneaux de visite datés, sans adresse ni texte brut", async () => {
+    mocks.visits.mockReturnValue({
+      data: [
+        { id: A, visit_dates: ["2099-10-02 à 14:00", "sur rendez-vous", "mardi 20 octobre"] },
+        { id: B, visit_dates: null },
+      ],
+      error: null,
+    });
+    const response = await post({ saleIds: [A, B] });
+
+    expect(response.status).toBe(200);
+    // Les mesures et les compteurs restent ceux des audiences, pas des visites.
+    expect(response.headers.get("x-exported-count")).toBe("2");
+    expect(mocks.record).toHaveBeenCalledTimes(2);
+    const body = (await response.text()).replace(/\r\n /g, "");
+    expect(body.match(/BEGIN:VEVENT/g)).toHaveLength(3);
+    expect(body).toContain("SUMMARY:Visite – Appartement à Bobigny");
+    // 14 h à Paris en octobre (UTC+2) : 12 h UTC.
+    expect(body).toContain("DTSTART:20991002T120000Z");
+    expect(body).not.toContain("sur rendez-vous");
+    expect(body).not.toContain("LOCATION:Visite");
+    expect(mocks.visits).toHaveBeenCalledWith([A, B]);
+  });
+
+  it("exporte quand même les audiences quand la lecture des visites échoue", async () => {
+    mocks.visits.mockReturnValue({ data: null, error: { message: "boom" } });
+    const response = await post({ saleIds: [A] });
+
+    expect(response.status).toBe(200);
+    expect((await response.text()).match(/BEGIN:VEVENT/g)).toHaveLength(1);
   });
 
   it("rend un seul fichier .ics des audiences suivies, jamais mis en cache", async () => {
