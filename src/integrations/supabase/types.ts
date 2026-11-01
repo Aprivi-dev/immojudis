@@ -7668,6 +7668,63 @@ export type Database = {
           },
         ];
       };
+      information_agent_unrouted_messages: {
+        Row: {
+          attachment_count: number;
+          created_at: string;
+          excerpt: string | null;
+          handled_at: string | null;
+          handled_by: string | null;
+          id: string;
+          opposition_recorded: boolean;
+          provider_email_id: string;
+          reason: string;
+          received_at: string;
+          sender: string;
+          sender_authentication: string | null;
+          sender_email: string | null;
+          sender_known: boolean;
+          status: string;
+          subject: string;
+        };
+        Insert: {
+          attachment_count?: number;
+          created_at?: string;
+          excerpt?: string | null;
+          handled_at?: string | null;
+          handled_by?: string | null;
+          id?: string;
+          opposition_recorded?: boolean;
+          provider_email_id: string;
+          reason: string;
+          received_at: string;
+          sender?: string;
+          sender_authentication?: string | null;
+          sender_email?: string | null;
+          sender_known?: boolean;
+          status?: string;
+          subject?: string;
+        };
+        Update: {
+          attachment_count?: number;
+          created_at?: string;
+          excerpt?: string | null;
+          handled_at?: string | null;
+          handled_by?: string | null;
+          id?: string;
+          opposition_recorded?: boolean;
+          provider_email_id?: string;
+          reason?: string;
+          received_at?: string;
+          sender?: string;
+          sender_authentication?: string | null;
+          sender_email?: string | null;
+          sender_known?: boolean;
+          status?: string;
+          subject?: string;
+        };
+        Relationships: [];
+      };
       ingestion_jobs: {
         Row: {
           attempts: number;

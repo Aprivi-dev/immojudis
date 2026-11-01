@@ -75,6 +75,7 @@ const SERVER_KEYS = [
   "TRIAL_END_EMAIL_MODE",
   "SALE_RESULTS_MODE",
   "ALERT_NOTIFICATIONS_MODE",
+  "REPLIES_REVIEW_DIGEST_MODE",
   "PEPITE_RULE_V2_ENABLED",
   "SALE_FLOOD_RISK_BATCH_LIMIT",
   "SALE_FLOOD_RISK_RUNNER",
@@ -223,6 +224,10 @@ export function serverEnv(source?: EnvSource) {
     alertNotifications: {
       /** Valeur brute de `ALERT_NOTIFICATIONS_MODE` ; `alertNotificationsMode()` la ramène à off, internal ou on. */
       mode: env.ALERT_NOTIFICATIONS_MODE,
+    },
+    repliesReviewDigest: {
+      /** Valeur brute de `REPLIES_REVIEW_DIGEST_MODE` ; `repliesReviewDigestMode()` la ramène à off, preview ou on. */
+      mode: env.REPLIES_REVIEW_DIGEST_MODE,
     },
     pepiteRule: {
       /** Valeur brute de `PEPITE_RULE_V2_ENABLED` ; `pepiteV2EnabledFromEnv()` la ramène à vrai ou faux. */

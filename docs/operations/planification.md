@@ -51,6 +51,7 @@ reste silencieuse.
 | Pépites des ventes (règle `pepite-v1.1` ou `pepite-v2`)    | Supabase `pg_cron` | toutes les heures à :35                                   | `/api/cron/sale-pepites`              | oui                                                  | 3 h                           |
 | Pépites des ventes (filet quotidien)                       | Vercel Cron        | 05:42, sans effet si `pg_cron` a réussi dans les 2 h      | `/api/cron/sale-pepites`              | oui (même tâche, même seuil)                         | 3 h                           |
 | Rapprochement Stripe / droits (lecture seule)              | Vercel Cron        | 05:20, sans effet si Stripe n'est pas configuré           | `/api/cron/billing-reconciliation`    | journal d'exécution, alerte dédiée à chaque écart    | pas encore                    |
+| Résumé quotidien des réponses à relire                     | Vercel Cron        | 07:05, sans rattrapage                                    | `/api/cron/replies-review-digest`     | journal d'exécution seulement                        | pas encore                    |
 | Santé opérationnelle                                       | Supabase `pg_cron` | tick toutes les 15 min, passage toutes les 30 min         | `/api/cron/operational-health`        | oui                                                  | 65 min                        |
 | Purge des ventes                                           | Supabase `pg_cron` | tick toutes les 5 min, passage toutes les 15 min          | `/api/cron/sale-retention`            | oui                                                  | 35 min                        |
 | Pré-calcul des valorisations                               | Supabase `pg_cron` | tick toutes les 5 min, passage si dossier dû, sinon 1 h   | `/api/cron/precompute-valuations`     | non (déclenchement géré par la file de valorisation) | —                             |
@@ -308,6 +309,18 @@ politique de confidentialité et du registre des traitements.
   `needsReview` du compte rendu du passage, à reprendre à la main. Le journal porte un type
   (`kind = 'trial_end'`) qui le distingue du préavis global de fin de l'offre (`launch_offer_end`) : les
   deux messages d'un même jour ne se bloquent pas. La désinscription reste commune aux deux.
+
+- **Résumé quotidien « N réponses à relire »** (`REPLIES_REVIEW_DIGEST_MODE`, `/api/cron/replies-review-digest`,
+  07:05, sans rattrapage) : un email d'exploitation aux adresses de `OPERATIONS_ALERT_EMAIL_TO` (trois au plus,
+  même canal Resend que les incidents) qui compte les réponses de l'agent en relecture (traitement à l'état
+  `review`, non marquées comme traitées) et les messages non rattachés à traiter (reçus à l'adresse de réponse
+  sans dossier ouvert, table `information_agent_unrouted_messages`). Il liste au plus dix expéditeurs et objets
+  par catégorie, jamais le corps d'un message, et renvoie vers `/admin/agent-ia`. Rien à relire, pas d'email.
+  Valeurs : `off` (défaut, rien n'est lu ni envoyé), `preview` (les nombres sont lus et rendus dans le compte
+  rendu du passage, aucun email), `on`. Ce n'est pas un message de l'agent d'information : il n'écrit jamais à
+  l'expéditeur d'un message. Un seul email par jour de Paris (clé d'idempotence de Resend). Le passage échoue
+  quand un résumé est dû et que le canal email n'est pas configuré, ou quand un envoi échoue. Non supervisé par
+  `cron.stale` (journal d'exécution seulement), comme `trial-end-email`.
 
 Les journaux des deux emails sont purgés à 180 jours par `run_data_retention` (cron hebdomadaire),
 même quand l'envoi est fermé. Les deux tâches sont dans la liste attendue de `cron.stale`
