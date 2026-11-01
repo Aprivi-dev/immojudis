@@ -5,7 +5,8 @@ import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { LEGAL_DOCUMENTS, publicLegalPublisher } from "@/lib/legal-documents";
 import { withdrawalInformationLines } from "@/lib/withdrawal-form";
-import { resolveTransactionalEmailConfig, sendResendEmail } from "@/lib/email-alerts";
+import { resolveTransactionalEmailConfig } from "@/lib/email-alerts";
+import { sendTrackedEmail } from "@/lib/send-tracked-email";
 import {
   ANALYSIS_BILLING_MODEL,
   ANALYSIS_OFFER_CODE,
@@ -261,9 +262,11 @@ export async function sendCommercialConfirmation({
   ].join("\n");
 
   try {
-    const result = await sendResendEmail({
+    const result = await sendTrackedEmail({
       apiKey: config.apiKey,
       idempotencyKey: `immojudis-contract-${acceptanceId}`,
+      templateKey: "commercial_confirmation",
+      userId,
       fetchImpl: fetch,
       message: {
         from: config.from,

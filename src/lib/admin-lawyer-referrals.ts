@@ -3,11 +3,8 @@ import { z } from "zod";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
-import {
-  resolveEmailAlertDeliveryConfig,
-  sendResendEmail,
-  type ResendEmailMessage,
-} from "@/lib/email-alerts";
+import { resolveEmailAlertDeliveryConfig, type ResendEmailMessage } from "@/lib/email-alerts";
+import { sendTrackedEmail } from "@/lib/send-tracked-email";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import { escapeHtml } from "@/lib/guards";
 import {
@@ -503,12 +500,13 @@ async function dispatchReferencedLawyerEmailIfNeeded({
   });
 
   try {
-    const sendResult = await sendResendEmail({
+    const sendResult = await sendTrackedEmail({
       apiKey: config.apiKey,
       message,
       idempotencyKey: `immojudis-lawyer-referral-${request.id}-${request.requested_lawyer_id}`,
       fetchImpl,
       category: "lawyer",
+      templateKey: "lawyer_referral",
     });
     return {
       status: "sent",

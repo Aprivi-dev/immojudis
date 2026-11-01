@@ -1,7 +1,8 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import { errorDetailForLog } from "@/lib/api-errors";
-import { resolveEmailAlertDeliveryConfig, sendResendEmail } from "@/lib/email-alerts";
+import { resolveEmailAlertDeliveryConfig } from "@/lib/email-alerts";
+import { sendTrackedEmail } from "@/lib/send-tracked-email";
 import { saleResultsMode, type EmailFeatureMode } from "@/lib/email-feature-mode";
 import {
   isSourceAbsenceChange,
@@ -458,12 +459,15 @@ export async function runSaleResults({
         .digest("hex")
         .slice(0, 24);
       stage = "send_failed";
-      const sent = await sendResendEmail({
+      const sent = await sendTrackedEmail({
         apiKey,
         message,
         idempotencyKey: `immojudis-sale-results-${userId}-${key}`,
         fetchImpl,
         category: "result",
+        templateKey: "sale_result",
+        mode: sendMode,
+        userId,
       });
       stage = "journal_failed";
       await store.markSent(ids, { messageId: sent.id, at: new Date() });

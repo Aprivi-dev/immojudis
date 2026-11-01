@@ -1,7 +1,8 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import { errorDetailForLog } from "@/lib/api-errors";
-import { resolveEmailAlertDeliveryConfig, sendResendEmail } from "@/lib/email-alerts";
+import { resolveEmailAlertDeliveryConfig } from "@/lib/email-alerts";
+import { sendTrackedEmail } from "@/lib/send-tracked-email";
 import {
   describeSaleChange,
   GRAVE_SALE_STATUSES,
@@ -596,12 +597,15 @@ export async function runSaleReminders({
           .digest("hex")
           .slice(0, 24);
         stage = "send_failed";
-        const result = await sendResendEmail({
+        const result = await sendTrackedEmail({
           apiKey,
           message,
           idempotencyKey: `immojudis-sale-reminders-${userId}-${key}`,
           fetchImpl,
           category: "reminder",
+          templateKey: "sale_reminder",
+          mode: sendMode,
+          userId,
         });
         stage = "journal_failed";
         await store.markSent(ids, { messageId: result.id, at: new Date() });

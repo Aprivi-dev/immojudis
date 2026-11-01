@@ -8,6 +8,7 @@ import {
   revokeWeeklyDigestConsent,
 } from "@/lib/email-alerts";
 import { informationAgentSenderAddress } from "@/lib/information-agent-inbound/delivery-events";
+import { captureFailure, recordEmailDeliveryEvent } from "@/lib/email-delivery-log";
 
 /**
  * Rebonds et plaintes des emails envoyés aux comptes (alertes, rappels d'audience, récapitulatif,
@@ -24,6 +25,11 @@ import { informationAgentSenderAddress } from "@/lib/information-agent-inbound/d
  * - Rebond passager ou indéterminé : ignoré (la boîte était pleine ou le serveur indisponible).
  * - Emails de l'agent d'information (`INFORMATION_AGENT_EMAIL_FROM`) : ignorés ici, l'autre webhook
  *   les traite (registre de contacts, pas comptes).
+ *
+ * - Tous les évènements de livraison (remis, différé, échec, rebond, plainte) sont d'abord écrits au
+ *   journal des envois (`email_send_log`), AVANT la logique ci-dessus, qui ne le lit jamais. Une panne du
+ *   journal ne retarde pas les retraits de consentement : elle remonte après eux, le fournisseur rejoue
+ *   l'évènement.
  *
  * Les journaux ne portent aucune adresse.
  */
@@ -137,11 +143,13 @@ export async function processAccountEmailDeliveryWebhook({
   env = process.env,
   findAccount = findAccountId,
   revoke = revokeAllEmailConsents,
+  recordDelivery = recordEmailDeliveryEvent,
 }: {
   request: Request;
   env?: Readonly<Record<string, string | undefined>>;
   findAccount?: (email: string) => Promise<string | null>;
   revoke?: (userId: string) => Promise<void>;
+  recordDelivery?: (event: { type: string; created_at?: string; data?: unknown }) => Promise<void>;
 }): Promise<AccountEmailWebhookResult> {
   const webhookSecret = env.RESEND_ACCOUNT_WEBHOOK_SECRET?.trim();
   if (!webhookSecret) throw new Error("Configuration du webhook des emails de compte incomplète.");
@@ -163,8 +171,13 @@ export async function processAccountEmailDeliveryWebhook({
     throw new InvalidAccountEmailWebhookSignatureError();
   }
 
+  const logFailure = await captureFailure(() => recordDelivery(event));
+
   const action = accountEmailActionOf(event, informationAgentSenderAddress(env));
-  if (!action) return { accepted: true, ignored: true };
+  if (!action) {
+    if (logFailure) throw logFailure.error;
+    return { accepted: true, ignored: true };
+  }
 
   const accounts = new Set<string>();
   for (const email of action.emails) {
@@ -182,5 +195,6 @@ export async function processAccountEmailDeliveryWebhook({
       revokedAccounts: accounts.size,
     }),
   );
+  if (logFailure) throw logFailure.error;
   return { accepted: true, kind: action.kind, revokedAccounts: accounts.size };
 }
