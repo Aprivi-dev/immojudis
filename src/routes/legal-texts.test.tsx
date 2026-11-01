@@ -199,14 +199,15 @@ describe("conditions générales : classement, référencement et mise en avant"
     for (const link of links) expect(link.getAttribute("href")).toBe("/methode-pepites");
   });
 
-  it("la politique de confidentialité est en version 2026-11-01.1 (demandes aux greffes) ; les 2026-10-31.1, 2026-10-26.1 et 2026-10-25.1 sont archivées", () => {
-    expect(LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-01.1");
+  it("la politique de confidentialité est en version 2026-11-01.2 (messages sans dossier ouvert) ; les 2026-11-01.1, 2026-10-31.1, 2026-10-26.1 et 2026-10-25.1 sont archivées", () => {
+    expect(LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-01.2");
     expect(LEGAL_DOCUMENTS.privacy.effectiveDate).toBe("1er novembre 2026");
-    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.version).toBe("2026-10-31.1");
+    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-01.1");
     expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.applicableUntil).toBe(
       LEGAL_DOCUMENTS.privacy.effectiveDate,
     );
     expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.earlier.map((item) => item.version)).toEqual([
+      "2026-10-31.1",
       "2026-10-26.1",
       "2026-10-25.1",
     ]);
@@ -449,6 +450,13 @@ describe("politique de confidentialité", () => {
       "au plus 1 message par jour",
     );
     expect(pageText(<PrivacyPage />)).toContain("au plus 3 messages par jour");
+  });
+
+  it("informe de la conservation des messages écrits à l’adresse de réponse sans dossier ouvert", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).toContain(
+      "Si vous écrivez à l’adresse de réponse d’Immojudis sans qu’un dossier soit ouvert, nous conservons votre adresse, votre nom, l’objet, la date et un extrait de votre message, pour le lire et vous répondre ou enregistrer votre demande. Base : intérêt légitime. Conservation : 12 mois si nous vous avions écrit, 21 jours sinon. Droits et opposition : ",
+    );
   });
 
   it("décrit le traitement des déblocages : base contractuelle et conservation de 24 mois au plus", () => {

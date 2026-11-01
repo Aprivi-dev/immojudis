@@ -4,6 +4,7 @@ import {
   PEPITE_TERMS_EFFECTIVE_DATE,
   PRIVACY_COMPLETION_EFFECTIVE_DATE,
   PRIVACY_COURT_REGISTRY_EFFECTIVE_DATE,
+  PRIVACY_UNROUTED_MESSAGES_EFFECTIVE_DATE,
 } from "@/lib/legal-documents";
 
 // Module à part de `legal-documents.ts` : ces versions n'intéressent que les pages de textes
@@ -41,13 +42,20 @@ export const PREVIOUS_LEGAL_DOCUMENTS = {
     ],
   },
   privacy: {
-    version: "2026-10-31.1",
-    sha256: "bed0e6a032d3131b0041641d810eeda53a2a27b27b080e3f6a5b10c9b29891d5",
-    effectiveDate: PRIVACY_COMPLETION_EFFECTIVE_DATE,
-    applicableUntil: PRIVACY_COURT_REGISTRY_EFFECTIVE_DATE,
-    archive: "docs/legal-archives/privacy-2026-10-31.1.tsx.txt",
+    version: "2026-11-01.1",
+    sha256: "45fa8eb7d62a3a19333a88516fdcfff4e1678a288f4eab7b9b3d07773c5d18b9",
+    effectiveDate: PRIVACY_COURT_REGISTRY_EFFECTIVE_DATE,
+    applicableUntil: PRIVACY_UNROUTED_MESSAGES_EFFECTIVE_DATE,
+    archive: "docs/legal-archives/privacy-2026-11-01.1.tsx.txt",
     /** Versions plus anciennes, archivées elles aussi. */
     earlier: [
+      {
+        version: "2026-10-31.1",
+        sha256: "bed0e6a032d3131b0041641d810eeda53a2a27b27b080e3f6a5b10c9b29891d5",
+        effectiveDate: PRIVACY_COMPLETION_EFFECTIVE_DATE,
+        applicableUntil: PRIVACY_COURT_REGISTRY_EFFECTIVE_DATE,
+        archive: "docs/legal-archives/privacy-2026-10-31.1.tsx.txt",
+      },
       {
         version: "2026-10-26.1",
         sha256: "e3860fd8c06ffad5896fb6821d0abb4dd61a6d18bd9eb62afa1d25955fb532bb",
