@@ -16,6 +16,10 @@ set local lock_timeout = '5s';
 --    app_private.delete_empty_listings) connaît la preuve `court_email` du pipeline
 --    (services/data-pipeline/src/listing_minimum.py) : sinon la réparation supprimerait des ventes au tribunal que le
 --    pipeline accepte désormais. La règle ne fait que GARDER plus (comme le reste de la fonction) ; elle ne supprime rien.
+--    ATTENTION : la migration 20261108202000, déjà appliquée et immuable, ne lit PAS la preuve `court_email`. Elle est
+--    ajoutée ici : cette migration renomme sale_has_listing_minimum en sale_has_listing_minimum_without_court_email et
+--    la rappelle depuis une nouvelle sale_has_listing_minimum. Pour lire la règle complète, lire cette migration-là,
+--    pas seulement 20261108202000.
 
 -- ---------------------------------------------------------------------------
 -- 1. Origine d'une adresse de greffe
