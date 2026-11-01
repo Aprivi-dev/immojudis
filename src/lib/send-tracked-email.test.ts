@@ -199,6 +199,14 @@ describe("garde statique : un seul chemin d'envoi", () => {
     expect(alerts).toMatch(/export async function sendResendEmail\(/);
   });
 
+  it("n'envoie rien depuis la lecture d'administration : admin-emails/resend.ts ne fait que des GET", () => {
+    const source = readFileSync(path.join(ROOT, "src/lib/admin-emails/resend.ts"), "utf8");
+    expect(source).not.toMatch(/method:\s*"(?:POST|PUT|PATCH|DELETE)"/);
+    const methods = [...source.matchAll(/method:\s*"([A-Z]+)"/g)].map((match) => match[1]);
+    expect(methods.length).toBeGreaterThan(0);
+    expect(new Set(methods)).toEqual(new Set(["GET"]));
+  });
+
   it("n'écrit nulle part ailleurs à api.resend.com/emails", () => {
     const direct = files.filter((file) =>
       /api\.resend\.com\/emails/.test(readFileSync(path.join(ROOT, file), "utf8")),

@@ -13,7 +13,7 @@ import { fetchAdminEmailHistory } from "@/lib/client-api/admin-emails";
  * Le serveur compose toutes les lignes ; ce composant ne formate rien.
  */
 export function EmailHistoryPanel() {
-  const [box, setBox] = useState("sent");
+  const [box, setBox] = useState<"sent" | "received">("sent");
   const [typed, setTyped] = useState("");
   const [address, setAddress] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
@@ -22,10 +22,9 @@ export function EmailHistoryPanel() {
     queryKey: ["admin-emails-history", box, address],
     initialPageParam: "",
     queryFn: ({ pageParam }) => {
-      const params = new URLSearchParams({ box, address, cursor: pageParam });
-      if (refresh.current && !pageParam) params.set("refresh", "1");
+      const refreshNow = refresh.current && !pageParam;
       refresh.current = false;
-      return fetchAdminEmailHistory(params);
+      return fetchAdminEmailHistory({ box, address, cursor: pageParam, refresh: refreshNow });
     },
     getNextPageParam: (last) => last.next ?? undefined,
     staleTime: 60_000,

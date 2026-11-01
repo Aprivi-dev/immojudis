@@ -20,8 +20,32 @@ export const fetchAdminEmailAddresses = (refresh = false) =>
 
 export const fetchAdminEmailTemplates = () => getAdminEmails<EmailListView>("templates");
 
-export const fetchAdminEmailHistory = (query: URLSearchParams) =>
-  getAdminEmails<HistoryList>(`history?${query}`);
+export type AdminEmailHistoryQuery = {
+  box: "sent" | "received";
+  address: string;
+  cursor: string;
+  refresh: boolean;
+};
+
+/**
+ * Avec une adresse : POST, l'adresse dans le corps. Elle ne figure jamais dans l'URL, qui finit dans les
+ * journaux de requêtes et l'historique du navigateur. Sans adresse : GET (pagination et actualisation).
+ */
+export async function fetchAdminEmailHistory(query: AdminEmailHistoryQuery): Promise<HistoryList> {
+  if (query.address) {
+    const response = await fetch("/api/admin/emails/history", {
+      method: "POST",
+      signal: AbortSignal.timeout(30_000),
+      headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+      cache: "no-store",
+      body: JSON.stringify(query),
+    });
+    return readJson<HistoryList>(response);
+  }
+  const params = new URLSearchParams({ box: query.box, cursor: query.cursor });
+  if (query.refresh) params.set("refresh", "1");
+  return getAdminEmails<HistoryList>(`history?${params}`);
+}
 
 export const fetchAdminEmailMessage = (id: string) =>
   getAdminEmails<HistoryMessage>(`history/${encodeURIComponent(id)}`);

@@ -83,17 +83,32 @@ export async function recordEmailDeliveryEvent(event: DeliveryLogEvent): Promise
   if (error) throw error;
 }
 
+/** Délai maximal d'une écriture du journal depuis un webhook. */
+export const DELIVERY_LOG_TIMEOUT_MS = 3_000;
+
 /**
- * Exécute l'écriture du journal sans qu'une panne puisse interrompre la suite du traitement : l'erreur est
- * rendue (`{ error }`) pour être relancée à la fin, une fois les retraits de consentement faits.
+ * Exécute l'écriture du journal, bornée à 3 s : une panne ou une lenteur est rendue (`{ error }`) au lieu d'être
+ * levée, pour que l'appelant la relance à la fin, une fois les retraits de consentement faits.
  */
 export async function captureFailure(
   write: () => Promise<void>,
+  timeoutMs = DELIVERY_LOG_TIMEOUT_MS,
 ): Promise<{ error: unknown } | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    await write();
+    await Promise.race([
+      write(),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error("Journal des envois : délai dépassé.")),
+          timeoutMs,
+        );
+      }),
+    ]);
     return null;
   } catch (error) {
     return { error: error ?? new Error("Journal des envois indisponible.") };
+  } finally {
+    clearTimeout(timer);
   }
 }

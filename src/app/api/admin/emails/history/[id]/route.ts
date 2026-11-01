@@ -16,11 +16,14 @@ async function handleGET(request: Request, context: { params: Promise<{ id: stri
   try {
     const auth = await requireAdmin(bearerTokenFromRequest(request));
     const { id } = await context.params;
-    const message = await readEmailMessage({
-      adminUserId: auth.userId,
-      id: decodeURIComponent(id),
-    });
-    if (!message) return NextResponse.json({ error: "Message introuvable." }, { status: 404 });
+    // Next décode déjà le segment : aucun second décodage.
+    const message = await readEmailMessage({ adminUserId: auth.userId, id });
+    if (!message) {
+      return NextResponse.json(
+        { error: "Message introuvable." },
+        { status: 404, headers: { "cache-control": "private, no-store" } },
+      );
+    }
     return NextResponse.json(message, { headers: { "cache-control": "private, no-store" } });
   } catch (error) {
     return adminErrorResponse(error);
