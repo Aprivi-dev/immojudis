@@ -37,6 +37,9 @@ select throws_ok(
   'a signed-in account cannot read the unlock threshold'
 );
 reset role;
+-- Sans compte connecté pour la suite : sinon auth.uid() reste le compte 1 et les déclencheurs des
+-- favoris et des alertes refusent d'écrire pour un autre (« Favorite owner mismatch. »).
+set local "request.jwt.claims" = '';
 
 -- Relevé avant les données de test ---------------------------------------------------------------------
 create temporary table pgtap_861_summary (label text, activation jsonb, threshold jsonb) on commit drop;
