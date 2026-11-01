@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { apiRouteError } from "@/lib/api-observability";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
 import { disablePropertyReportShare, enablePropertyReportShare } from "@/lib/property-reports";
+
+const shareBodySchema = z.object({ expiresAt: z.string().nullable().optional() });
 
 type RouteParams = {
   params: Promise<{ id: string }>;
@@ -15,7 +18,10 @@ export async function POST(request: Request, { params }: RouteParams) {
     const { id } = await params;
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const url = new URL(request.url);
-    const payload = (await request.json().catch(() => ({}))) as { expiresAt?: string | null };
+    // Corps facultatif : absent ou vide, la durée par défaut s'applique. Un JSON mal formé ou `null`
+    // est une erreur de l'appelant (400), pas une panne.
+    const rawBody = await request.text();
+    const payload = shareBodySchema.parse(rawBody.trim() ? JSON.parse(rawBody) : {});
     const response = await enablePropertyReportShare({
       auth,
       reportId: id,

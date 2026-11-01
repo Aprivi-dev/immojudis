@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { apiRouteError } from "@/lib/api-observability";
 import {
   bearerTokenFromRequest,
@@ -10,6 +11,11 @@ import {
   listUserAlertMatches,
   type PublicAlertEvaluationResponse,
 } from "@/lib/alert-matches";
+
+const evaluateBodySchema = z.object({
+  saleLimit: z.number().int().positive().optional(),
+  persist: z.boolean().optional(),
+});
 
 export async function GET(request: Request) {
   try {
@@ -32,10 +38,10 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
-    const body = (await request.json().catch(() => ({}))) as {
-      saleLimit?: number;
-      persist?: boolean;
-    };
+    // Corps facultatif : absent ou vide, les valeurs par défaut s'appliquent. Un JSON mal formé ou
+    // `null` est une erreur de l'appelant (400), pas une panne.
+    const rawBody = await request.text();
+    const body = evaluateBodySchema.parse(rawBody.trim() ? JSON.parse(rawBody) : {});
     const response = await evaluateUserAlertMatches({
       auth,
       saleLimit: body.saleLimit,

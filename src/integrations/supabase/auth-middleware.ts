@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import type { AccountTier, UserRole } from "@/lib/account";
 import { isAdminMfaRequired, sessionAssuranceLevel } from "@/lib/admin-mfa";
+import { PublicApiError } from "@/lib/api-errors";
 import type { Database } from "./types";
 
 type Claims = Record<string, unknown> & {
@@ -91,14 +92,19 @@ export async function requireSupabaseAuthContext(token: string): Promise<Supabas
     .maybeSingle();
 
   if (profileError) {
-    // Keep the database detail in the server logs; callers only see a generic 401.
+    // Keep the database detail in the server logs. The token is valid: a failed read of the
+    // profile is an outage (503, retryable), not an expired session (401) that would sign the
+    // user out.
     console.error(
       JSON.stringify({
         scope: "auth.profile",
         error: profileError.message ?? String(profileError),
       }),
     );
-    throw new Error("Unauthorized: User access profile unavailable");
+    throw new PublicApiError(
+      "Service temporairement indisponible. Réessayez dans un instant.",
+      503,
+    );
   }
 
   const accountTier: AccountTier = profile?.account_tier === "premium" ? "premium" : "free";

@@ -11,6 +11,7 @@ const securityHeaders = buildSecurityHeaders({
   includeLegacyCsp: !resolveCspMode().enforced,
   isProduction: process.env.NODE_ENV === "production",
   supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.VITE_SUPABASE_URL,
+  extraFrameSources: process.env.CSP_FRAME_SRC_EXTRA,
 });
 
 const nextConfig: NextConfig = {
