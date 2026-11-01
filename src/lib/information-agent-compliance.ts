@@ -229,9 +229,10 @@ function originForKind({
         automated,
       };
     case "court_registry_fallback": {
-      const court = sourceName?.trim();
+      // Texte validé mot pour mot (relecture juridique du 01/11/2026) : ni « publique », ni le nom du
+      // tribunal, « adresse » en minuscule (la phrase suit « Origine : » dans le pied).
       return {
-        text: `Adresse de contact publique de votre juridiction${court ? ` (${court})` : ""}, issue du référentiel des tribunaux tenu par Immojudis${observedOn ? `, relevée le ${observedOn}` : ""} ; l’annonce ne donne aucune adresse d’avocat.`,
+        text: `adresse de contact de votre juridiction, issue du référentiel des tribunaux tenu par Immojudis${observedOn ? `, relevée le ${observedOn}` : ""} ; l’annonce ne donne aucune adresse d’avocat.`,
         url: null,
         automated,
         courtRegistry: true,
@@ -318,7 +319,7 @@ export function informationAgentLegalFooterLines(footer: InformationAgentLegalFo
   return [
     ...informationAgentLegalFooterSections(footer).map(({ label, text }) => `${label} ${text}`),
     `Politique de confidentialité et vos droits : ${footer.privacyUrl}`,
-    `Ne plus être contacté (un clic) : ${footer.optOutUrl}`,
+    `Ne plus être contacté : ${footer.optOutUrl}`,
   ];
 }
 

@@ -88,7 +88,7 @@ describe("email du récapitulatif hebdomadaire", () => {
     );
     expect(message.text).toContain("Maison à Pessac - Département 33");
     expect(message.html).toContain("Vos audiences des 14 prochains jours");
-    expect(message.html).toContain("Voir l'annonce");
+    expect(message.html).toContain("Voir l’annonce");
   });
 
   it("n'affiche ni prix, ni montant, ni adresse", () => {

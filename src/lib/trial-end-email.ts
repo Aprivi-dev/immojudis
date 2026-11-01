@@ -85,6 +85,7 @@ export async function buildTrialEndMessage({
     settingsUrl,
     unsubscribeUrl,
     internal,
+    title: trialEndSubject(endsAt, internal),
   });
 
   const text = [
