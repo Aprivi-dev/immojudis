@@ -12,13 +12,13 @@ lancer à la main le workflow « Apply Supabase Auth Config » (section « Appli
 
 ## Ce que contient le dépôt
 
-| Pièce                                                                        | Rôle                                                                                                                                                                                                  |
-| ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `supabase/templates/*.html` (6 gabarits)                                     | Gabarits finaux. Le bouton mène à `{{ .SiteURL }}/auth/confirmer?token_hash={{ .TokenHash }}&type=…&redirect_to={{ .RedirectTo }}`. Déclarés dans `supabase/config.toml` (`[auth.email.template.*]`). |
-| `docs/runbooks/emails-authentification/retour-arriere/*.html` (6 gabarits)   | Mêmes gabarits avec `{{ .ConfirmationURL }}` : le lien de vérification de Supabase, qui marche sans la page. Étape 3 de la bascule et retour arrière.                                                 |
-| `src/app/auth/confirmer/page.tsx`, `src/components/AuthLinkConfirmation.tsx` | Page d'arrivée du lien. Elle ne vérifie rien à l'ouverture (les passerelles anti-hameçonnage ouvrent les liens) : `verifyOtp` ne part qu'au clic. Hors mesure d'audience, `noindex`.                  |
-| `src/lib/auth-email-templates.ts`                                            | Source des 12 fichiers HTML. `UPDATE_AUTH_EMAIL_TEMPLATES=1 npx vitest run src/lib/auth-email-templates.test.ts` les réécrit ; sans cette variable, le test échoue s'ils s'en écartent.               |
-| `src/lib/email-layout.ts`, `public/brand/email/immojudis-logo-email*-v1.png` | Modèle unique et logos (288×64, moins de 10 Ko) : les mêmes que les emails envoyés par l'application.                                                                                                 |
+| Pièce                                                                        | Rôle                                                                                                                                                                                                         |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `supabase/templates/*.html` (6 gabarits)                                     | Gabarits finaux. Le bouton mène à `https://immojudis.com/auth/confirmer?token_hash={{ .TokenHash }}&type=…&redirect_to={{ .RedirectTo }}`. Déclarés dans `supabase/config.toml` (`[auth.email.template.*]`). |
+| `docs/runbooks/emails-authentification/retour-arriere/*.html` (6 gabarits)   | Mêmes gabarits avec `{{ .ConfirmationURL }}` : le lien de vérification de Supabase, qui marche sans la page. Étape 3 de la bascule et retour arrière.                                                        |
+| `src/app/auth/confirmer/page.tsx`, `src/components/AuthLinkConfirmation.tsx` | Page d'arrivée du lien. Elle ne vérifie rien à l'ouverture (les passerelles anti-hameçonnage ouvrent les liens) : `verifyOtp` ne part qu'au clic. Hors mesure d'audience, `noindex`.                         |
+| `src/lib/auth-email-templates.ts`                                            | Source des 12 fichiers HTML. `UPDATE_AUTH_EMAIL_TEMPLATES=1 npx vitest run src/lib/auth-email-templates.test.ts` les réécrit ; sans cette variable, le test échoue s'ils s'en écartent.                      |
+| `src/lib/email-layout.ts`, `public/brand/email/immojudis-logo-email*-v1.png` | Modèle unique et logos (288×64, moins de 10 Ko) : les mêmes que les emails envoyés par l'application.                                                                                                        |
 
 Objets (aussi dans `config.toml`) :
 

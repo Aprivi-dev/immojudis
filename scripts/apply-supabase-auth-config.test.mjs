@@ -201,6 +201,26 @@ describe("contrôles des gabarits", () => {
     );
   });
 
+  it("refuse {{ .SiteURL }} et la double barre : l'origine est écrite en clair", async () => {
+    const template = await good("recovery");
+    const withSiteUrl = {
+      ...template,
+      content: template.content.replaceAll("https://immojudis.com/auth", "{{ .SiteURL }}/auth"),
+    };
+    const siteUrlProblems = templateProblems(withSiteUrl, "principal").join("\n");
+    expect(siteUrlProblems).toContain("variable inconnue {{ .SiteURL }}");
+    expect(siteUrlProblems).toContain("lien /auth/confirmer absent");
+    const doubleSlash = {
+      ...template,
+      content: template.content.replaceAll(
+        "https://immojudis.com/auth",
+        "https://immojudis.com//auth",
+      ),
+    };
+    expect(templateProblems(doubleSlash, "principal").join("\n")).toContain("//auth");
+    expect(template.content).toContain("https://immojudis.com/auth/confirmer?token_hash=");
+  });
+
   it("la réauthentification n'a pas de lien mais exige le code", async () => {
     const template = await good("reauthentication");
     expect(templateProblems(template, "principal")).toEqual([]);

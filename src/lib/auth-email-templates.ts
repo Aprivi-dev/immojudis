@@ -1,4 +1,4 @@
-import { EMAIL_COLORS } from "./email-brand";
+import { EMAIL_COLORS, EMAIL_SITE_URL } from "./email-brand";
 import {
   emailButton,
   emailHeading,
@@ -21,13 +21,14 @@ import {
  * Emails). Voir `docs/runbooks/emails-authentification.md`.
  *
  * Deux variantes de lien :
- * - `token-hash` (production visée) : `{{ .SiteURL }}/auth/confirmer?token_hash=…&type=…&redirect_to=…`,
+ * - `token-hash` (production visée) : `https://immojudis.com/auth/confirmer?token_hash=…&type=…&redirect_to=…`
+ *   (origine fixe `EMAIL_SITE_URL` : `{{ .SiteURL }}` porte une barre finale et donnait `//auth/confirmer`),
  *   page d'Immojudis qui ne vérifie qu'au clic (les passerelles anti-hameçonnage ouvrent les liens) ;
  * - `confirmation-url` (retour arrière) : `{{ .ConfirmationURL }}`, le lien de vérification de Supabase,
  *   qui fonctionne sans la page.
  *
- * Variables Go de Supabase employées : `.SiteURL`, `.TokenHash`, `.RedirectTo`, `.ConfirmationURL`,
- * `.Email`, `.NewEmail`, `.Token`. Aucun contenu commercial.
+ * Variables Go de Supabase employées : `.TokenHash`, `.RedirectTo`, `.ConfirmationURL`, `.Email`,
+ * `.NewEmail`, `.Token`. Aucun contenu commercial.
  */
 
 export type AuthEmailTemplateId =
@@ -149,7 +150,7 @@ export function authEmailLink(
   type: NonNullable<AuthEmailTemplateDefinition["button"]>["type"],
 ): string {
   return variant === "token-hash"
-    ? `{{ .SiteURL }}/auth/confirmer?token_hash={{ .TokenHash }}&type=${type}&redirect_to={{ .RedirectTo }}`
+    ? `${EMAIL_SITE_URL}/auth/confirmer?token_hash={{ .TokenHash }}&type=${type}&redirect_to={{ .RedirectTo }}`
     : "{{ .ConfirmationURL }}";
 }
 
