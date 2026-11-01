@@ -155,7 +155,9 @@ describe("gabarits des emails d'authentification Supabase", () => {
 
     it("n'a pas de couleur de texte blanche ou noire hors bouton", () => {
       for (const { html } of templates) {
-        const body = html.replace(/<style[\s\S]*?<\/style>/, "");
+        // Le seul bloc <style> est dans <head> : on ne contrôle que le corps du message.
+        expect(html.indexOf("<style")).toBeLessThan(html.indexOf("<body"));
+        const body = html.slice(html.indexOf("<body"));
         const withoutButton = body.replace(/<a [^>]*class="ej-btn-a"[^>]*>/g, "");
         const colors = [...withoutButton.matchAll(/[^-]color:\s*(#[0-9a-f]{3,6})/gi)].map((match) =>
           match[1].toLowerCase(),
