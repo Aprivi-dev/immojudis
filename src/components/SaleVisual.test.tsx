@@ -5,6 +5,7 @@ import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EXAMPLE_SALE } from "@/lib/example-sale";
 import type { AuctionSale } from "@/lib/types";
+import { mayShowBuildingView } from "./building-view";
 import { SaleVisual } from "./SaleVisual";
 
 describe("SaleVisual", () => {
@@ -73,7 +74,7 @@ describe("SaleVisual", () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
     });
     expect(screen.queryByRole("img", { name: "Vue aérienne de Maison" })).toBeNull();
-    expect(screen.getByText("Aucun visuel fiable")).toBeTruthy();
+    expect(screen.getByText("Illustration")).toBeTruthy();
   });
 
   it("ne charge pas la vérification de position pour une précision qui n'est pas un bâtiment", () => {
@@ -186,8 +187,9 @@ describe("SaleVisual", () => {
       />,
     );
 
-    expect(screen.queryByRole("img")).toBeNull();
-    expect(screen.getByText("Aucun visuel fiable")).toBeTruthy();
+    // L'illustration est un dessin (svg), jamais une image du bien.
+    expect(document.querySelector("img")).toBeNull();
+    expect(screen.getByText("Illustration")).toBeTruthy();
     expect(screen.getByText("Lyon")).toBeTruthy();
   });
 
@@ -257,9 +259,10 @@ describe("SaleVisual", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("Aucun visuel fiable")).toBeTruthy();
+      expect(screen.getByText("Illustration")).toBeTruthy();
     });
-    expect(screen.queryByRole("img")).toBeNull();
+    // L'illustration est un dessin (svg), jamais une image du bien.
+    expect(document.querySelector("img")).toBeNull();
   });
 
   describe("visuel prioritaire affiché sans attendre le JavaScript", () => {
@@ -382,8 +385,9 @@ describe("SaleVisual", () => {
       expect(photo.className).toContain("opacity-100");
 
       fireEvent.error(photo);
-      expect(await screen.findByText("Aucun visuel fiable")).toBeTruthy();
-      expect(screen.queryByRole("img")).toBeNull();
+      expect(await screen.findByText("Illustration")).toBeTruthy();
+      // L'illustration est un dessin (svg), jamais une image du bien.
+      expect(document.querySelector("img")).toBeNull();
     });
 
     it("écarte une photo rejetée par le contrôle de taille, même eager", async () => {
@@ -401,7 +405,7 @@ describe("SaleVisual", () => {
       );
       fireEvent.load(screen.getByRole("img", { name: "Maison" }));
 
-      expect(await screen.findByText("Aucun visuel fiable")).toBeTruthy();
+      expect(await screen.findByText("Illustration")).toBeTruthy();
     });
 
     it("récupère aussi une erreur survenue avant l'hydratation d'un visuel eager", async () => {
@@ -418,7 +422,7 @@ describe("SaleVisual", () => {
         />,
       );
 
-      await waitFor(() => expect(screen.getByText("Aucun visuel fiable")).toBeTruthy());
+      await waitFor(() => expect(screen.getByText("Illustration")).toBeTruthy());
     });
   });
 
@@ -503,7 +507,7 @@ describe("SaleVisual", () => {
       expect(source.getAttribute("src")).toBe(ORIGINAL);
 
       fireEvent.error(source);
-      expect(await screen.findByText("Aucun visuel fiable")).toBeTruthy();
+      expect(await screen.findByText("Illustration")).toBeTruthy();
     });
 
     it("le HTML serveur d'une copie eager est visible, celui de la photo de source ne l'est pas", () => {
@@ -557,7 +561,7 @@ describe("SaleVisual", () => {
 
       const still = screen.getByRole("img", { name: "Maison" });
       expect(still.getAttribute("src")).toBe(ORIGINAL);
-      expect(screen.queryByText("Aucun visuel fiable")).toBeNull();
+      expect(screen.queryByText("Illustration")).toBeNull();
       fireEvent.load(still);
       expect(await screen.findByText("Photo · Licitor")).toBeTruthy();
     });
@@ -598,3 +602,97 @@ function saleWithMedia(url: string): AuctionSale {
     media: [{ type: "image", url }],
   } as AuctionSale;
 }
+
+describe("SaleVisual : illustration d'une annonce sans photo", () => {
+  afterEach(cleanup);
+
+  const bare = (propertyType: string | null) =>
+    ({
+      ...EXAMPLE_SALE,
+      media: [],
+      latitude: null,
+      longitude: null,
+      property_type: propertyType,
+    }) as unknown as AuctionSale;
+
+  it.each([
+    ["house", "house", "d'une maison"],
+    ["Maison", "house", "d'une maison"],
+    ["apartment", "apartment", "d'un appartement"],
+    ["building", "building", "d'un immeuble"],
+    ["land", "land", "d'un terrain"],
+    ["Studio", "apartment", "d'un appartement"],
+    ["terrain", "land", "d'un terrain"],
+    ["garage", "generic", "d'un bien immobilier"],
+    ["parking", "generic", "d'un bien immobilier"],
+    ["commercial", "generic", "d'un bien immobilier"],
+    ["mixed", "generic", "d'un bien immobilier"],
+    ["bien mixte", "generic", "d'un bien immobilier"],
+    ["other", "generic", "d'un bien immobilier"],
+    ["unknown", "generic", "d'un bien immobilier"],
+    [null, "generic", "d'un bien immobilier"],
+  ])("type %s : dessin « %s », signalé comme illustration", (propertyType, kind, words) => {
+    const { container } = render(
+      <SaleVisual sale={bare(propertyType)} title="Bien" sectorMap={false} placeLabel="Pau" />,
+    );
+    const drawing = screen.getByRole("img", {
+      name: `Illustration générique ${words} : aucune photo du bien n’est disponible`,
+    });
+    expect(drawing.getAttribute("data-illustration")).toBe(kind);
+    // Pastille visible « Illustration », et jamais une vraie image ni l'ancienne case grise.
+    expect(screen.getByText("Illustration")).toBeTruthy();
+    expect(container.querySelector("img")).toBeNull();
+    expect(screen.queryByText("Aucun visuel fiable")).toBeNull();
+    expect(screen.getByText("Pau")).toBeTruthy();
+  });
+
+  it("garde le dessin de la maison pour un type sans dessin, avec un nom neutre", () => {
+    const draw = (propertyType: string) => {
+      const { container } = render(
+        <SaleVisual sale={bare(propertyType)} title="Bien" sectorMap={false} />,
+      );
+      const html = container.querySelector("svg")!.innerHTML;
+      cleanup();
+      return html;
+    };
+    expect(draw("garage")).toBe(draw("house"));
+  });
+
+  it("sans ville, n'écrit rien sous le dessin", () => {
+    render(<SaleVisual sale={bare("house")} title="Bien" sectorMap={false} />);
+    expect(screen.getByText("Illustration")).toBeTruthy();
+    expect(screen.getByTestId("sale-visual-illustration").textContent).toBe("Illustration");
+  });
+
+  it("garde le cadenas « Visuel réservé » pour un visuel réservé, sans illustration", () => {
+    render(<SaleVisual sale={bare("house")} title="Bien" locked />);
+    expect(screen.getByText("Visuel réservé")).toBeTruthy();
+    expect(screen.queryByText("Illustration")).toBeNull();
+    expect(screen.queryByTestId("sale-visual-illustration")).toBeNull();
+  });
+
+  it("n'utilise que les couleurs de la marque (jetons), sans photo ni couleur brute", () => {
+    const { container } = render(
+      <SaleVisual sale={bare("house")} title="Bien" sectorMap={false} />,
+    );
+    const classes = [...container.querySelectorAll("svg, svg *")]
+      .map((node) => node.getAttribute("class") ?? "")
+      .join(" ");
+    expect(classes).toContain("stroke-brand-navy");
+    expect(classes).toContain("stroke-gold");
+    expect(container.innerHTML).not.toMatch(/#[0-9a-f]{3,6}/i);
+  });
+});
+
+describe("mayShowBuildingView", () => {
+  it("n'espère une vue du bâtiment que pour une position d'adresse ou de parcelle", () => {
+    const at = { latitude: 44.8, longitude: -0.6 };
+    expect(mayShowBuildingView({ ...at, location_precision: "address" })).toBe(true);
+    expect(mayShowBuildingView({ ...at, location_precision: "parcel" })).toBe(true);
+    expect(mayShowBuildingView({ ...at, location_precision: "municipality" })).toBe(false);
+    expect(mayShowBuildingView({ ...at, location_precision: null })).toBe(false);
+    expect(
+      mayShowBuildingView({ latitude: null, longitude: null, location_precision: "address" }),
+    ).toBe(false);
+  });
+});

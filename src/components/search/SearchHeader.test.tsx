@@ -4,14 +4,17 @@ import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CsvExportButton,
+  FREE_ALERT_LIMIT,
   HomeTypeFilter,
   PriceFilter,
   ResultsSummary,
   ResultsViewToggle,
   SaveSearchButton,
   SearchHeader,
+  SortAndSaleTypeControl,
   SortDropdown,
 } from "./SearchHeader";
+import { PLAN_LIMITS } from "@/lib/plans";
 import { emptySearchDraft, type SearchDraft } from "./search-page-state";
 
 vi.mock("next/navigation", () => ({ usePathname: () => "/sales" }));
@@ -21,6 +24,13 @@ vi.mock("@/hooks/use-auth", () => ({
 vi.mock("@/integrations/supabase/client", () => ({ supabase: { auth: { signOut: vi.fn() } } }));
 
 afterEach(cleanup);
+
+describe("FREE_ALERT_LIMIT", () => {
+  it("reprend la limite de zones surveillées de l'offre Découverte", () => {
+    expect(PLAN_LIMITS.decouverte.watchedZones).not.toBeNull();
+    expect(FREE_ALERT_LIMIT).toBe(PLAN_LIMITS.decouverte.watchedZones);
+  });
+});
 
 describe("SaveSearchButton", () => {
   it("n'affiche ni cadenas ni mention de l'offre Analyse : la première alerte est gratuite", () => {
@@ -33,9 +43,53 @@ describe("SaveSearchButton", () => {
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
-  it("garde un nom accessible en version compacte", () => {
+  it("garde un nom accessible en version compacte, avec le mot « Alerte » à côté de l'icône", () => {
     render(<SaveSearchButton compact saving={false} onClick={() => undefined} />);
-    expect(screen.getByRole("button", { name: "Créer une alerte" })).toBeTruthy();
+    const button = screen.getByRole("button", { name: "Créer une alerte" });
+    expect(button.textContent).toBe("Alerte");
+    expect(button.querySelector("svg")).toBeTruthy();
+    expect(button.className).toContain("h-11");
+  });
+});
+
+describe("SaveSearchButton : alerte gratuite", () => {
+  it("rappelle la limite gratuite dans la fenêtre de création", () => {
+    render(
+      <SaveSearchButton
+        signedIn
+        saving={false}
+        freeAlertUsage={{ used: 0, limit: 1 }}
+        onClick={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Créer une alerte" }));
+    expect(screen.getByTestId("free-alert-usage").textContent).toBe(
+      "1 alerte gratuite (0/1 utilisée)",
+    );
+  });
+
+  it("dit comment en créer une autre quand l'alerte gratuite est déjà utilisée", () => {
+    render(
+      <SaveSearchButton
+        signedIn
+        saving={false}
+        freeAlertUsage={{ used: 1, limit: 1 }}
+        onClick={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Créer une alerte" }));
+    const line = screen.getByTestId("free-alert-usage");
+    expect(line.textContent).toContain("1 alerte gratuite (1/1 utilisée)");
+    expect(line.textContent).toContain("modifiez ou supprimez votre alerte");
+  });
+
+  it("n'affiche rien quand l'usage n'est pas connu, et signale l'ouverture de la fenêtre", () => {
+    const onOpen = vi.fn();
+    render(<SaveSearchButton signedIn saving={false} onOpen={onOpen} onClick={vi.fn()} />);
+    expect(onOpen).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Créer une alerte" }));
+    expect(onOpen).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId("free-alert-usage")).toBeNull();
   });
 });
 
@@ -120,6 +174,31 @@ describe("SortDropdown", () => {
     expect(select.className).toContain("min-w-0");
     expect(select.className).toContain("w-full");
     expect(select.className).toContain("text-ellipsis");
+  });
+});
+
+describe("SortAndSaleTypeControl : tri et type de vente en un seul élément", () => {
+  it("joint les deux listes dans un groupe nommé, sans cadre propre pour le tri", () => {
+    render(
+      <SortAndSaleTypeControl>
+        <SortDropdown bare sort="relevance" onChange={vi.fn()} />
+        <select aria-label="Type de vente" />
+      </SortAndSaleTypeControl>,
+    );
+    const group = screen.getByRole("group", { name: "Tri et type de vente" });
+    expect(group.className).toContain("border");
+    const sort = screen.getByRole("combobox", { name: "Tri" });
+    expect(group.contains(sort)).toBe(true);
+    const label = sort.closest("label")!;
+    expect(label.className).not.toContain("border");
+    expect(label.className).toContain("min-h-11");
+    expect(label.querySelector("svg.lucide-arrow-up-down")).toBeNull();
+  });
+
+  it("garde le tri autonome (cadre et icône) hors du contrôle joint", () => {
+    render(<SortDropdown sort="relevance" onChange={vi.fn()} />);
+    const label = screen.getByRole("combobox", { name: "Tri" }).closest("label")!;
+    expect(label.className).toContain("border");
   });
 });
 

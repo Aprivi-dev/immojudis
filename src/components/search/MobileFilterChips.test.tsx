@@ -104,12 +104,72 @@ describe("MobileFilterChips : « sous la fourchette » et « sans point à véri
     ).toBe("true");
   });
 
-  it("ne les propose pas à un visiteur sans compte", () => {
+  it("les montre à un visiteur sans compte, grisées « avec un compte gratuit », en liens vers l'inscription", () => {
+    render(
+      <MobileFilterChips
+        draft={emptySearchDraft()}
+        setDraft={() => undefined}
+        preview
+        signupLinks={{
+          belowRange: "/login?redirect=%2Fsales%3FbelowRange%3Dtrue&mode=investor",
+          noPointsToVerify: "/login?redirect=%2Fsales%3FnoPointsToVerify%3Dtrue&mode=investor",
+        }}
+      />,
+    );
+
+    const below = screen.getByRole("link", { name: /Mise à prix sous le marché/ });
+    expect(below.textContent).toContain("avec un compte gratuit");
+    expect(below.getAttribute("href")).toBe(
+      "/login?redirect=%2Fsales%3FbelowRange%3Dtrue&mode=investor",
+    );
+    const noPoints = screen.getByRole("link", { name: /Sans point à vérifier/ });
+    expect(noPoints.textContent).toContain("avec un compte gratuit");
+    expect(noPoints.getAttribute("href")).toContain("noPointsToVerify");
+    // Ce ne sont pas des bascules : aucun état à lire, et une pastille de 44 px comme les autres.
+    expect(noPoints.getAttribute("aria-pressed")).toBeNull();
+    expect(below.className).toContain("h-11");
+    expect(screen.getByRole("button", { name: /Mise à prix max/ })).toBeTruthy();
+  });
+
+  it("sans adresse fournie, un visiteur est tout de même mené à l'inscription", () => {
     render(<Harness preview />);
 
-    expect(screen.queryByRole("button", { name: /Sans point à vérifier/ })).toBeNull();
-    expect(screen.queryByRole("button", { name: /sous la fourchette/ })).toBeNull();
-    expect(screen.getByRole("button", { name: /Mise à prix max/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Sans point à vérifier/ }).getAttribute("href")).toBe(
+      "/login?mode=investor",
+    );
+  });
+
+  it("dit que ces filtres ne sont pas inclus dans l'alerte : description de la pastille, puis ligne visible une fois actifs", () => {
+    render(<Harness />);
+    const noPoints = screen.getByRole("button", { name: "Sans point à vérifier" });
+    const description = document.getElementById(noPoints.getAttribute("aria-describedby")!)!;
+    expect(description.textContent).toBe("Ce filtre n’est pas inclus dans l’alerte.");
+    expect(
+      screen
+        .getByRole("button", {
+          name: "Mise à prix sous la fourchette des ventes comparables",
+        })
+        .getAttribute("aria-describedby"),
+    ).toBe(noPoints.getAttribute("aria-describedby"));
+    expect(
+      screen.queryByText("Ce filtre n’est pas inclus dans l’alerte.", { selector: "p" }),
+    ).toBeNull();
+
+    fireEvent.click(noPoints);
+    expect(
+      screen.getByText("Ce filtre n’est pas inclus dans l’alerte.", { selector: "p" }),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /sous la fourchette/ }));
+    expect(screen.getByText("Ces deux filtres ne sont pas inclus dans l’alerte.")).toBeTruthy();
+  });
+
+  it("fige la largeur de la pastille « Type de bien » : elle ne bouge pas au choix d'un type", () => {
+    render(<Harness />);
+    const select = screen.getByRole("combobox", { name: "Type de bien" });
+    const chip = select.closest("label")!;
+    expect(chip.className).toContain("w-48");
+    fireEvent.change(select, { target: { value: "commercial" } });
+    expect(select.closest("label")!.className).toContain("w-48");
   });
 
   it("garde chaque pastille à 44 px de haut", () => {
@@ -156,8 +216,9 @@ describe("MobileFilterChips : « Pépites seulement »", () => {
     const chip = screen.getByRole("button", { name: "Pépites seulement" });
     expect(chip.getAttribute("aria-pressed")).toBe("false");
     expect(chip.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
-    // Les deux autres repères restent réservés aux comptes.
-    expect(screen.queryByRole("button", { name: /Sous la fourchette/ })).toBeNull();
+    // Les deux autres repères restent réservés aux comptes : des liens vers l'inscription, pas des bascules.
+    expect(screen.queryByRole("button", { name: /Sans point à vérifier/ })).toBeNull();
+    expect(screen.getByRole("link", { name: /Sans point à vérifier/ })).toBeTruthy();
   });
 
   it("bascule le brouillon et montre l'état par une coche, pas seulement par la couleur", () => {

@@ -10,6 +10,7 @@ import {
   ListingCard,
   ListingMediaCarousel,
   SearchResultsList,
+  listingMediaFrameClass,
 } from "./SearchResults";
 import { SearchStatisticsPanel } from "./SearchStatisticsPanel";
 import { buildSearchStatistics } from "./search-page-state";
@@ -864,6 +865,50 @@ describe("listing media gallery", () => {
   });
 });
 
+describe("cadre du visuel : hauteur réduite quand il n'y aura qu'une illustration", () => {
+  const photo = [{ type: "photo", url: "https://images.example.test/p.jpg" }];
+
+  it("4/3 pour une vente avec photo, 5/2 sans photo ni vue aérienne possible", () => {
+    expect(listingMediaFrameClass({ media: photo as never })).toBe("aspect-[4/3]");
+    expect(listingMediaFrameClass({ media: [] })).toBe("aspect-[5/2]");
+    expect(listingMediaFrameClass({ media: null })).toBe("aspect-[5/2]");
+    expect(
+      listingMediaFrameClass({
+        media: [],
+        latitude: 44.8,
+        longitude: -0.6,
+        location_precision: "municipality",
+      }),
+    ).toBe("aspect-[5/2]");
+  });
+
+  it("garde le 4/3 quand une vue aérienne du bâtiment reste possible (adresse ou parcelle)", () => {
+    for (const location_precision of ["address", "parcel"]) {
+      expect(
+        listingMediaFrameClass({ media: [], latitude: 44.8, longitude: -0.6, location_precision }),
+      ).toBe("aspect-[4/3]");
+    }
+  });
+
+  it("applique le cadre à la carte, repérable par son identifiant", () => {
+    renderResults([
+      sale("sans-photo"),
+      { ...sale("avec-photo"), media: photo } as unknown as AuctionSale,
+    ]);
+    expect(screen.getByTestId("sale-media-frame-sans-photo").className).toContain("aspect-[5/2]");
+    expect(screen.getByTestId("sale-media-frame-sans-photo").className).not.toContain(
+      "aspect-[4/3]",
+    );
+    expect(screen.getByTestId("sale-media-frame-avec-photo").className).toContain("aspect-[4/3]");
+  });
+
+  it("réserve la hauteur de la pastille de compte à rebours (écrite après l'hydratation)", () => {
+    const { container } = renderResults([sale("sale-chip")]);
+    const row = container.querySelector("article .mt-2.flex.flex-wrap")!;
+    expect(row.className).toContain("min-h-5");
+  });
+});
+
 describe("structure et noms de la liste des résultats", () => {
   it("place un h2 masqué « Résultats » avant les cartes (h1, h2, puis h3)", () => {
     const { container } = renderResults([sale("sale-a")]);
@@ -1260,7 +1305,7 @@ describe("repère « Pépite » des cartes", () => {
     expect(overlay?.className).toMatch(/left-3/);
     expect(overlay?.className).toMatch(/top-3/);
     // Sur la photo (zone d'image), pas dans le corps de la carte.
-    expect(overlay?.parentElement?.className).toMatch(/aspect-\[4\/3\]/);
+    expect(overlay?.parentElement?.className).toMatch(/aspect-\[(4\/3|5\/2)\]/);
     const links = container.querySelectorAll("a[id^='sale-card-']");
     expect(links[0].getAttribute("aria-label")).toMatch(/, pépite$/);
     expect(links[1].getAttribute("aria-label")).not.toMatch(/pépite/);

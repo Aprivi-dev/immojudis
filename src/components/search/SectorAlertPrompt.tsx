@@ -1,4 +1,4 @@
-import { SaveSearchButton, type SaveSearchOptions } from "./SearchHeader";
+import { SaveSearchButton, type FreeAlertUsage, type SaveSearchOptions } from "./SearchHeader";
 
 /** En dessous de ce nombre de ventes, la recherche propose d'être prévenu des nouvelles. */
 export const FEW_RESULTS_ALERT_THRESHOLD = 5;
@@ -15,6 +15,8 @@ export function SectorAlertPrompt({
   signedIn,
   dailyAllowed,
   emailRecapEnabled,
+  freeAlertUsage = null,
+  onAlertDialogOpen,
   onSaveSearch,
 }: {
   resultCount: number;
@@ -22,6 +24,9 @@ export function SectorAlertPrompt({
   signedIn: boolean;
   dailyAllowed: boolean;
   emailRecapEnabled: boolean;
+  /** Alerte gratuite : usage rappelé dans la fenêtre de création (voir `SaveSearchButton`). */
+  freeAlertUsage?: FreeAlertUsage | null;
+  onAlertDialogOpen?: () => void;
   onSaveSearch: (options?: SaveSearchOptions) => void;
 }) {
   return (
@@ -44,6 +49,8 @@ export function SectorAlertPrompt({
           signedIn={signedIn}
           dailyAllowed={dailyAllowed}
           emailRecapEnabled={emailRecapEnabled}
+          freeAlertUsage={dailyAllowed ? null : freeAlertUsage}
+          onOpen={onAlertDialogOpen}
           label="Recevoir les nouvelles ventes de ce secteur"
           onClick={onSaveSearch}
         />

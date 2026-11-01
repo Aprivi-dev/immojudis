@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MAP_HOVER_DELAY_MS, MapPreview } from "./MapPreview";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { MapPreview } from "./MapPreview";
 import { MapPanelSkeleton } from "./SearchFilters";
 
 afterEach(() => {
@@ -47,93 +47,30 @@ describe("MapPreview", () => {
     expect(onExplicitStart).not.toHaveBeenCalled();
   });
 
-  describe("survol", () => {
-    beforeEach(() => vi.useFakeTimers());
-
-    it("démarre après 300 ms de survol continu, une seule fois, après la peinture", () => {
-      const onStart = vi.fn();
-      render(<MapPreview onStart={onStart} />);
-      fireEvent.pointerEnter(screen.getByTestId("map-preview"));
-      act(() => {
-        vi.advanceTimersByTime(MAP_HOVER_DELAY_MS - 1);
-      });
-      expect(onStart).not.toHaveBeenCalled();
-      act(() => {
-        vi.advanceTimersByTime(1);
-      });
-      // Différé après la peinture, comme tout geste (image, puis setTimeout(0)).
-      expect(onStart).not.toHaveBeenCalled();
-      act(() => {
-        vi.advanceTimersByTime(100);
-      });
-      expect(onStart).toHaveBeenCalledTimes(1);
-      act(() => {
-        vi.advanceTimersByTime(5_000);
-      });
-      expect(onStart).toHaveBeenCalledTimes(1);
+  it("ne démarre pas au survol, quelle que soit sa durée : une carte facturée demande un geste", () => {
+    vi.useFakeTimers();
+    const onStart = vi.fn();
+    const onExplicitStart = vi.fn();
+    render(<MapPreview onStart={onStart} onExplicitStart={onExplicitStart} />);
+    const zone = screen.getByTestId("map-preview");
+    fireEvent.pointerEnter(zone, { pointerType: "mouse" });
+    fireEvent.pointerOver(zone, { pointerType: "mouse" });
+    fireEvent.mouseEnter(zone);
+    fireEvent.mouseMove(zone);
+    act(() => {
+      vi.advanceTimersByTime(10_000);
     });
-
-    it("ne démarre pas quand la souris ne fait que traverser la zone", () => {
-      const onStart = vi.fn();
-      render(<MapPreview onStart={onStart} />);
-      const zone = screen.getByTestId("map-preview");
-      fireEvent.pointerEnter(zone);
-      act(() => {
-        vi.advanceTimersByTime(MAP_HOVER_DELAY_MS - 50);
-      });
-      fireEvent.pointerLeave(zone);
-      act(() => {
-        vi.advanceTimersByTime(5_000);
-      });
-      expect(onStart).not.toHaveBeenCalled();
-      expect(vi.getTimerCount()).toBe(0);
-    });
-
-    it("repart de zéro à chaque entrée, et ne démarre pas pour un doigt", () => {
-      const onStart = vi.fn();
-      render(<MapPreview onStart={onStart} />);
-      const zone = screen.getByTestId("map-preview");
-      fireEvent.pointerEnter(zone, { pointerType: "touch" });
-      act(() => {
-        vi.advanceTimersByTime(5_000);
-      });
-      expect(onStart).not.toHaveBeenCalled();
-
-      fireEvent.pointerEnter(zone, { pointerType: "mouse" });
-      act(() => {
-        vi.advanceTimersByTime(200);
-      });
-      fireEvent.pointerLeave(zone);
-      fireEvent.pointerEnter(zone, { pointerType: "mouse" });
-      act(() => {
-        vi.advanceTimersByTime(200);
-      });
-      expect(onStart).not.toHaveBeenCalled();
-      act(() => {
-        vi.advanceTimersByTime(200);
-      });
-      expect(onStart).toHaveBeenCalledTimes(1);
-    });
-
-    it("annule le survol en attente au démontage", () => {
-      const onStart = vi.fn();
-      const { unmount } = render(<MapPreview onStart={onStart} />);
-      fireEvent.pointerEnter(screen.getByTestId("map-preview"));
-      unmount();
-      act(() => {
-        vi.advanceTimersByTime(5_000);
-      });
-      expect(onStart).not.toHaveBeenCalled();
-      expect(vi.getTimerCount()).toBe(0);
-    });
+    expect(onStart).not.toHaveBeenCalled();
+    expect(onExplicitStart).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("explique ce qui se passe réellement : clic, défilement, survol arrêté, rien au clavier", () => {
+  it("explique ce qui se passe réellement : clic ou molette sur le cadre, ni survol ni page", () => {
     render(<MapPreview onStart={vi.fn()} />);
     const help = screen.getByText(/Elle s’affiche aussi/);
-    expect(help.textContent).toMatch(/cliquez ou faites défiler/);
-    expect(help.textContent).toMatch(/arrêtez la souris/);
-    expect(help.textContent).not.toMatch(/utilisez la page/);
+    expect(help.textContent).toMatch(/cliquez ou faites défiler la molette sur ce cadre/);
+    expect(help.textContent).not.toMatch(/souris/);
+    expect(help.textContent).not.toMatch(/défiler la page/);
   });
 
   it("garde le quadrillage décoratif hors de l'arbre d'accessibilité", () => {

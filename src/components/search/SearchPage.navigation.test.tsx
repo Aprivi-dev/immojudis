@@ -162,7 +162,9 @@ describe("/sales : « Retour » défait la carte, la page et les filtres validé
     });
     expect(pushStateCalls()).toEqual(["/sales?sort=price_asc"]);
 
-    fireEvent.click(screen.getByRole("button", { name: "Au tribunal" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Type de vente" }), {
+      target: { value: "tribunal" },
+    });
     await waitFor(() => expect(pushStateCalls().at(-1)).toContain("saleType=tribunal"), {
       timeout: 3000,
     });
@@ -327,6 +329,24 @@ describe("/sales : adresse nettoyée", () => {
   it("ramène un montant démesuré au plafond, sans notation scientifique", async () => {
     renderSales("/sales?maxPrice=1e%2B30");
     await waitFor(() => expect(window.location.search).toBe("?maxPrice=100000000"));
+  });
+
+  it("échange les bornes inversées d'une adresse ouverte (mise à prix et surface)", async () => {
+    renderSales("/sales?minPrice=500000&maxPrice=100000&minSqft=120&maxSqft=40");
+    await waitFor(() =>
+      expect(window.location.search).toBe(
+        "?minPrice=100000&maxPrice=500000&minSqft=40&maxSqft=120",
+      ),
+    );
+  });
+
+  it("n'échange pas les champs pendant la saisie : le minimum provisoirement au-dessus du maximum reste", async () => {
+    renderSales("/sales?maxPrice=100000");
+    await act(async () => {
+      window.history.replaceState(null, "", "/sales?minPrice=500000&maxPrice=100000");
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(window.location.search).toBe("?minPrice=500000&maxPrice=100000");
   });
 
   it("ne touche pas à une adresse déjà claire", () => {
