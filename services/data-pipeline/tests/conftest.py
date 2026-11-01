@@ -77,6 +77,7 @@ def _information_sufficiency_gate_off_by_default(monkeypatch):
 
     monkeypatch.setenv(information_sufficiency.GATE_ENV, "off")
     information_sufficiency.set_active_blocklist(information_sufficiency.NO_BLOCKLIST)
+    information_sufficiency.set_active_court_registry(information_sufficiency.NO_COURT_REGISTRY)
 
 
 @pytest.fixture(autouse=True)

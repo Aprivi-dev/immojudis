@@ -19,6 +19,15 @@ car l'agent ne travaille que par email.
   identique par les cas partagés de ``tests/fixtures/information_agent_contact_cases.json``, exécutés des deux côtés
   (pytest et vitest). Toute évolution du résolveur doit mettre à jour ces cas.
 
+* **contact de secours d'une vente au tribunal** : quand une vente au tribunal (saisie immobilière ou autre vente judiciaire,
+  confirmée par l'annonce, jamais notaires, cessions de l'État ni AGRASC) n'a aucun email de contact exploitable, l'email de
+  SON tribunal dans le référentiel ``court_registry_contacts`` (``CourtRegistry``, chargé une fois par passage comme le
+  registre de refus : ``load_court_registry`` / ``set_active_court_registry``) sert de secours. ``is_court_sale`` et
+  ``court_registry_fallback_emails`` en sont la règle, MIROIR de ``src/lib/information-agent/court-registry-fallback.ts`` (cas
+  partagés de ``tests/fixtures/court_registry_fallback_cases.json``, pytest et vitest) ; ``listing_minimum.assess`` en tire la
+  preuve ``court_email``. L'exclusion « juridiction » des adresses LUES dans une annonce ne change pas : seule l'adresse du
+  référentiel sert, et elle reste soumise aux autres exclusions et au registre de refus.
+
 Aucune donnée personnelle n'est journalisée : seuls des codes et des compteurs.
 """
 
@@ -188,12 +197,78 @@ def usable_contact_emails(sale: AuctionSale, blocklist: ContactBlocklist = NO_BL
 
 
 # --------------------------------------------------------------------------
+# Contact de secours d'une vente au tribunal : l'adresse du greffe (référentiel des tribunaux)
+# --------------------------------------------------------------------------
+#: Origine de l'adresse d'un greffe dans le registre des contacts de l'agent (``source_kind``), miroir de
+#: ``INFORMATION_AGENT_COURT_REGISTRY_FALLBACK`` (``src/lib/information-agent/court-registry-fallback.ts``).
+COURT_REGISTRY_FALLBACK = "court_registry_fallback"
+#: Sources qui ne sont jamais une vente au tribunal : notaires, cessions de l'État, AGRASC.
+COURT_FALLBACK_EXCLUDED_SOURCES = frozenset({"notaires", "cessions_etat", "agrasc"})
+#: Une vente au tribunal doit être CONFIRMÉE par l'annonce (``sale_verification_status``) : un tribunal seulement déduit
+#: de l'adresse (``pending``) ne suffit pas.
+COURT_FALLBACK_VERIFIED_STATUSES = frozenset({"verified", "cross_checked"})
+#: Le tribunal nommé par la source contredit celui du code INSEE : pas de contact de secours.
+COURT_FALLBACK_INCONSISTENT_FLAG = "tribunal_inconsistent"
+
+
+@dataclass(frozen=True)
+class CourtRegistry:
+    """Référentiel des tribunaux (``court_registry_contacts``) : adresses email par code de juridiction.
+
+    ``emails_by_court`` ne garde que les juridictions qui ont au moins une adresse valide.
+    """
+
+    emails_by_court: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+
+    def emails(self, court_code: str | None) -> tuple[str, ...]:
+        return self.emails_by_court.get(str(court_code or "").strip(), ())
+
+
+NO_COURT_REGISTRY = CourtRegistry()
+
+
+def is_court_sale(sale: AuctionSale) -> bool:
+    """Vente au tribunal (saisie immobilière ou autre vente judiciaire) confirmée par l'annonce.
+
+    Jamais une vente de notaire, une cession de l'État ni l'AGRASC. Miroir de ``isCourtRegistryFallbackSale``
+    (``src/lib/information-agent/court-registry-fallback.ts``), gardé identique par les cas partagés de
+    ``tests/fixtures/court_registry_fallback_cases.json``.
+    """
+    if sale.sale_venue_type != "tribunal" or sale.sale_verification_status not in COURT_FALLBACK_VERIFIED_STATUSES:
+        return False
+    sources = {str(value or "").strip().lower() for value in (sale.source_name, sale.primary_source)}
+    if sources & COURT_FALLBACK_EXCLUDED_SOURCES:
+        return False
+    return COURT_FALLBACK_INCONSISTENT_FLAG not in (sale.quality_flags or [])
+
+
+def court_registry_fallback_emails(
+    sale: AuctionSale,
+    registry: CourtRegistry,
+    blocklist: ContactBlocklist = NO_BLOCKLIST,
+) -> tuple[str, ...]:
+    """Adresses du greffe de SON tribunal que l'agent peut solliciter pour cette vente, sinon rien.
+
+    Seule la vente au tribunal reconnue (``is_court_sale``, tribunal du référentiel) en a. L'exclusion ``court`` ne
+    s'applique pas à ces adresses (c'est leur raison d'être) ; toute autre exclusion (RPVA, Ordre, CARPA, technique) et le
+    registre de refus (opposition, rebond permanent) s'appliquent.
+    """
+    if not is_court_sale(sale):
+        return ()
+    return tuple(
+        email
+        for email in registry.emails(sale.tribunal_code)
+        if excluded_contact_reason(email) in (None, "court") and not blocklist.blocks(email, sale.id)
+    )
+
+
+# --------------------------------------------------------------------------
 # Verdict : la règle est celle de src/listing_minimum.py
 # --------------------------------------------------------------------------
 @dataclass(frozen=True)
 class SufficiencyVerdict:
     sufficient: bool
-    #: Preuves trouvées (``street``, ``email``, ``documents``, ``other_source``) ; vide : refusée.
+    #: Preuves trouvées (``street``, ``email``, ``court_email``, ``cadastre``, ``documents``, ``other_source``) ; vide : refusée.
     basis: tuple[str, ...] = ()
     #: Code du refus (``insufficient_listing`` ou ``detail_unread``), ``None`` si suffisante.
     reason: str | None = None
@@ -214,11 +289,15 @@ def sufficient_information(
     sale: AuctionSale,
     *,
     blocklist: ContactBlocklist = NO_BLOCKLIST,
+    court_registry: CourtRegistry | None = None,
 ) -> SufficiencyVerdict:
-    """Applique la règle de minimum à une vente normalisée (pure, sans accès base)."""
+    """Applique la règle de minimum à une vente normalisée (pure, sans accès base).
+
+    ``court_registry`` vaut le référentiel des tribunaux du passage quand il n'est pas donné.
+    """
     from src.listing_minimum import assess  # import tardif : listing_minimum lit ce module
 
-    verdict = assess(sale, blocklist=blocklist)
+    verdict = assess(sale, blocklist=blocklist, court_registry=court_registry)
     return SufficiencyVerdict(verdict.ok, verdict.basis, verdict.reason)
 
 
@@ -244,6 +323,19 @@ def publication_gate(sale: AuctionSale, *, blocklist: ContactBlocklist | None = 
 
 def active_blocklist() -> ContactBlocklist:
     return _ACTIVE_BLOCKLIST
+
+
+_ACTIVE_COURT_REGISTRY: CourtRegistry = NO_COURT_REGISTRY
+
+
+def set_active_court_registry(registry: CourtRegistry) -> None:
+    """Référentiel des tribunaux chargé une fois par run (``_open_run``), comme le registre de refus."""
+    global _ACTIVE_COURT_REGISTRY
+    _ACTIVE_COURT_REGISTRY = registry
+
+
+def active_court_registry() -> CourtRegistry:
+    return _ACTIVE_COURT_REGISTRY
 
 
 def summarize_verdicts(verdicts: Iterable[tuple[str, SufficiencyVerdict]]) -> dict[str, Any]:
@@ -279,6 +371,51 @@ def build_blocklist(rows: Iterable[Mapping[str, Any]]) -> ContactBlocklist:
         else:
             by_sale.setdefault(str(scope), set()).add(email)
     return ContactBlocklist(frozenset(global_emails), {key: frozenset(value) for key, value in by_sale.items()})
+
+
+def build_court_registry(rows: Iterable[Mapping[str, Any]]) -> CourtRegistry:
+    """Construit le référentiel depuis des lignes ``court_registry_contacts`` (``court_code``, ``emails``).
+
+    Les adresses sont normalisées comme celles de l'agent ; une adresse invalide est ignorée, une juridiction sans
+    adresse valide n'est pas gardée.
+    """
+    by_court: dict[str, tuple[str, ...]] = {}
+    for row in rows:
+        court_code = str(row.get("court_code") or "").strip()
+        emails = row.get("emails")
+        if not court_code or not isinstance(emails, list):
+            continue
+        valid = tuple(dict.fromkeys(email for email in map(normalized_email, emails) if email))
+        if valid:
+            by_court[court_code] = valid
+    return CourtRegistry(by_court)
+
+
+def load_court_registry(settings: Mapping[str, Any]) -> CourtRegistry:
+    """Lit le référentiel des tribunaux ; en cas d'erreur renvoie un référentiel vide (échec ouvert).
+
+    Sans référentiel, aucune vente ne reçoit la preuve ``court_email`` : une panne ne fait jamais accepter une annonce,
+    elle retrouve seulement la règle d'avant (écartée faute d'email, relue au passage suivant).
+    """
+    import httpx
+
+    url = str(settings.get("supabase_url") or "").rstrip("/")
+    key = str(settings.get("supabase_service_role_key") or "")
+    if not url or not key:
+        return NO_COURT_REGISTRY
+    try:
+        response = httpx.get(
+            f"{url}/rest/v1/court_registry_contacts",
+            params={"select": "court_code,emails", "limit": "1000"},
+            headers={"apikey": key, "Authorization": f"Bearer {key}", "Accept": "application/json"},
+            timeout=30,
+        )
+        response.raise_for_status()
+        rows = response.json()
+        return build_court_registry(rows if isinstance(rows, list) else [])
+    except Exception as exc:  # noqa: BLE001 - échec ouvert volontaire, voir docstring
+        LOGGER.warning("Court registry unavailable; treating it as empty (%s)", type(exc).__name__)
+        return NO_COURT_REGISTRY
 
 
 def load_contact_blocklist(settings: Mapping[str, Any]) -> ContactBlocklist:
