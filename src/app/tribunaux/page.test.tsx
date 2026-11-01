@@ -17,6 +17,9 @@ const mocks = vi.hoisted(() => ({
   loadPublicActivity: vi.fn(),
 }));
 
+vi.mock("@/lib/public-tribunal-directory.server", () => ({
+  tryLoadPublicTribunalDirectory: async () => ({ status: "ok", items: [] }),
+}));
 vi.mock("@/lib/public-tribunal-activity.server", () => ({
   loadPublicTribunalActivity: mocks.loadPublicActivity,
   PUBLIC_TRIBUNAL_ACTIVITY_FAILURE_RETRY_MS: 5 * 60_000,
@@ -138,7 +141,7 @@ describe("/tribunaux", () => {
     });
     // Un seul lien par ligne : le nom, vers la page du tribunal (qui renvoie à la recherche filtrée).
     expect(screen.getByRole("link", { name: "Bobigny" }).getAttribute("href")).toBe(
-      "/tribunaux/bobigny",
+      "/tribunaux/tribunal-judiciaire-bobigny",
     );
     const row = screen.getByRole("link", { name: "Bobigny" }).closest("tr");
     expect(row?.querySelectorAll("a")).toHaveLength(1);

@@ -112,11 +112,35 @@ describe("sale title", () => {
     }
   });
 
-  it("keeps the most informative variant that fits", () => {
-    expect(saleSeoTitle(sale())).toBe("Appartement 50 m² à Romainville (93) – tribunal");
-    expect(saleSeoTitle(sale({ city: "Saint-Germain-en-Laye" }))).toBe(
-      "Appartement à Saint-Germain-en-Laye – tribunal",
+  it("keeps the most informative variant that fits, always with a search word", () => {
+    expect(saleSeoTitle(sale())).toBe("Appartement à Romainville – vente au tribunal");
+    expect(saleSeoTitle(sale({ city: "Pau", department: "64", app_surface_m2: 80 }))).toBe(
+      "Appartement 80 m² à Pau (64) – vente au tribunal",
     );
+    expect(saleSeoTitle(sale({ city: "Saint-Germain-en-Laye" }))).toBe(
+      "Appartement à Saint-Germain-en-Laye – enchères",
+    );
+  });
+
+  it("puts « enchères » or « vente » in the title of every kind of sale", () => {
+    const tokens: [Partial<AuctionSale>, string][] = [
+      [{ sale_venue_type: "tribunal" }, "vente au tribunal"],
+      [{ sale_venue_type: "notary" }, "enchères notaire"],
+      [{ sale_venue_type: "state" }, "vente par l’État"],
+      [{ sale_venue_type: "online" }, "enchères en ligne"],
+    ];
+    for (const [overrides, token] of tokens) {
+      const title = saleSeoTitle(sale({ city: "Pau", department: "64", ...overrides }));
+      expect(title, token).toContain(token);
+      expect(title.length).toBeLessThanOrEqual(SALE_TITLE_MAX_LENGTH);
+    }
+    for (const candidate of [
+      sale({ city: null }),
+      sale({ city: "Saint-Rémy-lès-Chevreuse-sur-Mer-de-la-Vallée", department: "78" }),
+      sale({ sale_venue_type: "notary", city: "Collonges-sous-Salève", department: "74" }),
+    ]) {
+      expect(saleSeoTitle(candidate)).toMatch(/enchères|vente/);
+    }
   });
 
   it("does not repeat the tribunal wording", () => {

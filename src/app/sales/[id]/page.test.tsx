@@ -97,7 +97,7 @@ describe("public sale page", () => {
   it("builds per-sale metadata without repeating the site name", async () => {
     mocks.lookup.mockResolvedValue({ status: "found", sale });
     const metadata = await generateMetadata({ params });
-    expect(metadata.title).toBe("Appartement 50 m² à Romainville (93) – tribunal");
+    expect(metadata.title).toBe("Appartement à Romainville – vente au tribunal");
     expect(String(metadata.title)).not.toMatch(/immojudis/i);
     expect(metadata.description).toMatch(
       /^Appartement 50 m² à Romainville \(93\), vente au tribunal/,

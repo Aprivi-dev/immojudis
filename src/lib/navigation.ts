@@ -144,7 +144,7 @@ const RETURN_BASE = "http://immojudis.local";
 
 /**
  * Pages privées ou de liste, sans paramètre, d'où l'on ouvre une fiche et où « Retour » ramène.
- * La page du tribunal (`/tribunaux/<code>`) est reconnue à part (voir `TRIBUNAL_RETURN_PATH`).
+ * La page du tribunal (`/tribunaux/<adresse>`) est reconnue à part (voir `TRIBUNAL_RETURN_PATH`).
  */
 const FIXED_RETURN_PATHS: ReadonlySet<string> = new Set([
   "/favoris",
@@ -153,7 +153,7 @@ const FIXED_RETURN_PATHS: ReadonlySet<string> = new Set([
   "/audiences-a-venir",
 ]);
 
-/** Code du tribunal en adresse : minuscules, chiffres et tirets (voir `tribunalCodeSlug`). */
+/** Adresse du tribunal : minuscules, chiffres et tirets (voir `tribunalSlug`). */
 const TRIBUNAL_RETURN_PATH = /^\/tribunaux\/[a-z0-9][a-z0-9-]*$/;
 
 /**
