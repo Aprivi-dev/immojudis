@@ -7,7 +7,8 @@ vi.mock("@/lib/public-catalogue.server", () => ({ loadInitialCatalogue: vi.fn() 
 vi.mock("@/lib/public-tribunal-activity.server", () => ({
   loadPublicTribunalActivity: vi.fn(async () => ({ status: "ok", items: [{ code: "pau" }] })),
 }));
-vi.mock("@/lib/legal-documents", () => ({
+vi.mock("@/lib/legal-documents", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/legal-documents")>()),
   publicLegalPublisher: vi.fn(),
   legalPublisherConfigurationStatus: vi.fn(() => ({ ready: false, missing: [] })),
   legalConfigurationStatus: vi.fn(() => ({ ready: false, missing: [] })),

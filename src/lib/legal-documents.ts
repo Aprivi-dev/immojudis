@@ -56,7 +56,7 @@ export const LEGAL_DOCUMENTS = {
   },
   terms: {
     version: "2026-10-26.1",
-    sha256: "b7edb825c5e4e1626b85bfe09eeb746a557925b8739cda410665898c0de0d866",
+    sha256: "745ef0eacc7edc8dd02a63e36f6a0f0f9a18b07eeef2644abec806d4b0fd83e0",
     effectiveDate: PEPITE_TERMS_EFFECTIVE_DATE,
     path: "/conditions-generales",
   },

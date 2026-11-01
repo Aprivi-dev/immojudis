@@ -6,7 +6,11 @@ import { COMPANY_DESCRIPTION } from "@/lib/company-description";
 // replaced so that importing a page does not need a database.
 vi.mock("@/lib/public-catalogue.server", () => ({ loadInitialCatalogue: vi.fn() }));
 vi.mock("@/lib/public-tribunal-activity.server", () => ({ loadPublicTribunalActivity: vi.fn() }));
-vi.mock("@/lib/legal-documents", () => ({ publicLegalPublisher: vi.fn() }));
+// Les constantes de dates (importées par `legal-documents-previous`) restent réelles.
+vi.mock("@/lib/legal-documents", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/legal-documents")>()),
+  publicLegalPublisher: vi.fn(),
+}));
 
 const TITLE_SUFFIX = " - Immojudis"; // `title.template` of app/layout.tsx
 const MAX_TITLE_LENGTH = 60;
