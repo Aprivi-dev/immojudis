@@ -137,6 +137,27 @@ describe("aucune mention commerciale dans le message de l'agent (cadrage juridiq
     }
   });
 
+  it("n'admet le logo que dans le `src` d'un <img>, jamais dans un lien ni dans un texte", () => {
+    const logo = "https://immojudis.com/brand/email/immojudis-logo-email-v1.png";
+    const options = { appOrigin: "https://immojudis.com" };
+    expect(
+      findInformationAgentCommercialMentions(`<img src="${logo}" width="144">`, options),
+    ).toEqual([]);
+    expect(
+      findInformationAgentCommercialMentions(`<img class="a" alt="x" src="${logo}">`, options),
+    ).toEqual([]);
+    for (const refused of [
+      `<a href="${logo}">logo</a>`,
+      `<a href="${logo}"><img src="${logo}"></a> <a href="${logo}">x</a>`,
+      `Le logo : ${logo}`,
+      `<img data-x="${logo}">`,
+      `<img src="${logo}" onerror="location='https://evil.example'">`,
+    ]) {
+      const rules = findInformationAgentCommercialMentions(refused, options).map((m) => m.rule);
+      expect(rules, refused).toContain("link");
+    }
+  });
+
   it("le courrier rendu passe la garde même sans origine de site (préproduction) : style, logo et préheader compris", async () => {
     const { bodyText, subject } = renderInformationAgentEmailContent({
       template: DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE,

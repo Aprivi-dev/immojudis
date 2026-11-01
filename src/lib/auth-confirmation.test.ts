@@ -105,6 +105,48 @@ describe("postConfirmationPath", () => {
     expect(postConfirmationPath(link({ type: "email_change" }), ORIGIN)).toBe("/bienvenue");
   });
 
+  it("garde les pages du site demandées par l'inscription (alerte à créer, fiche)", () => {
+    for (const path of ["/alertes/creer?department=62", "/sales/12", "/alertes/creer?x=1#haut"]) {
+      expect(postConfirmationPath(link({ redirectTo: path }), ORIGIN)).toBe(path);
+      expect(postConfirmationPath(link({ redirectTo: `${ORIGIN}${path}` }), ORIGIN)).toBe(path);
+    }
+  });
+
+  it("propriété : quelle que soit l'entrée, le chemin retourné reste sur le site", () => {
+    const pieces = [
+      "/",
+      "\\",
+      ".",
+      "..",
+      "%2e",
+      "%2f",
+      "%5c",
+      "a",
+      "evil.example",
+      "?",
+      "#",
+      "https:",
+      "\t",
+      "@",
+      ":",
+      "auth",
+      "confirmer",
+    ];
+    let seed = 12345;
+    const next = () => (seed = (seed * 1103515245 + 12345) % 2147483648);
+    for (let i = 0; i < 4000; i += 1) {
+      const length = 1 + (next() % 8);
+      let candidate = next() % 2 ? "/" : "";
+      for (let j = 0; j < length; j += 1) candidate += pieces[next() % pieces.length];
+      for (const redirectTo of [candidate, `${ORIGIN}${candidate}`]) {
+        const path = postConfirmationPath(link({ redirectTo }), ORIGIN);
+        expect(new URL(path, ORIGIN).origin, redirectTo).toBe(ORIGIN);
+        expect(path.startsWith("//"), redirectTo).toBe(false);
+        expect(path.startsWith("/\\"), redirectTo).toBe(false);
+      }
+    }
+  });
+
   it.each([
     "https://evil.example/phishing",
     "https://immojudis.com.evil.example/",
@@ -119,6 +161,17 @@ describe("postConfirmationPath", () => {
     "/auth/confirmer?token_hash=x",
     "/auth/confirmer",
     "https://immojudis.com/auth/confirmer/",
+    "/AUTH/confirmer",
+    "/auth//confirmer",
+    "/Auth///Confirmer/x",
+    // Redirections ouvertes : normalisés par URL, ces chemins deviennent « //evil.example… ».
+    "/.//evil.example/x",
+    "/a/..//evil.example/x",
+    "/..//evil.example",
+    "/%2e//evil.example",
+    "/./\\evil.example",
+    "https://immojudis.com//evil.example",
+    "https://immojudis.com/\\evil.example",
     "",
   ])("refuse l'adresse de retour %j (autre origine, boucle ou schéma)", (redirectTo) => {
     expect(postConfirmationPath(link({ redirectTo }), ORIGIN)).toBe("/bienvenue");

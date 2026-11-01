@@ -105,4 +105,33 @@ describe("AudienceMeasurement", () => {
     expect(analytics.beforeSend(pageview)).toBeNull();
     expect(speedInsights.beforeSend(pageview)).toBeNull();
   });
+
+  it("n'envoie rien depuis une page exclue de la mesure, jeton de /auth/confirmer compris", async () => {
+    await renderMeasured();
+    await waitFor(() => expect(mocks.analytics).toHaveBeenCalled());
+    const analytics = mocks.analytics.mock.calls[0]![0] as {
+      beforeSend: (event: unknown) => unknown;
+    };
+    const speedInsights = mocks.speedInsights.mock.calls[0]![0] as {
+      beforeSend: (event: unknown) => unknown;
+    };
+    for (const url of [
+      "https://immojudis.test/auth/confirmer?token_hash=abcdef123456&type=signup",
+      "https://immojudis.test/auth/confirmer",
+      "https://immojudis.test/compte",
+      "https://immojudis.test/login?mode=investor",
+      "https://immojudis.test/admin/clients",
+      "https://immojudis.test/contribuer/jeton",
+      "https://immojudis.test/mes-droits",
+    ]) {
+      const event = { type: "pageview", url };
+      expect(analytics.beforeSend(event), url).toBeNull();
+      expect(speedInsights.beforeSend(event), url).toBeNull();
+    }
+    for (const url of ["https://immojudis.test/sales/12", "https://immojudis.test/authors"]) {
+      const event = { type: "pageview", url };
+      expect(analytics.beforeSend(event), url).toBe(event);
+      expect(speedInsights.beforeSend(event), url).toBe(event);
+    }
+  });
 });

@@ -411,7 +411,7 @@ describe("textes juridiques du courrier de l'agent d'information : inchangés mo
     });
     const courtLegal = [
       "Base : intérêt légitime à obtenir des informations exactes sur les ventes aux enchères (art. 6.1.f RGPD). Nous écrivons au plus une fois par vente et, pour un même tribunal, au plus 3 messages par jour, sans relance.",
-      "l’adresse de contact de votre greffe et, si vous répondez, le nom, la fonction et les coordonnées de la personne qui répond, ainsi que nos échanges. Origine : Adresse de contact publique de votre juridiction (Tribunal judiciaire de Bordeaux), issue du référentiel des tribunaux tenu par Immojudis, relevée le 14/10/2026 ; l’annonce ne donne aucune adresse d’avocat.",
+      "l’adresse de contact de votre greffe et, si vous répondez, le nom, la fonction et les coordonnées de la personne qui répond, ainsi que nos échanges. Origine : adresse de contact de votre juridiction, issue du référentiel des tribunaux tenu par Immojudis, relevée le 14/10/2026 ; l’annonce ne donne aucune adresse d’avocat.",
       "Vous pouvez vous opposer à tout moment, sans motif, à ce que nous vous contactions",
       "Ne plus être contacté",
     ];
@@ -427,6 +427,6 @@ describe("textes juridiques du courrier de l'agent d'information : inchangés mo
       expect(output).not.toContain("Quelques points à vérifier");
     }
     // L'origine du greffe n'est pas répétée en ouverture : elle figure une seule fois, dans « Vos données ».
-    expect(message.text.match(/Adresse de contact publique de votre juridiction/g)).toHaveLength(1);
+    expect(message.text.match(/adresse de contact de votre juridiction/g)).toHaveLength(1);
   });
 });

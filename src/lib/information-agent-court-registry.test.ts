@@ -577,7 +577,7 @@ describe("message au greffe", () => {
       observedBy: "agent",
     });
     expect(origin).toEqual({
-      text: "Adresse de contact publique de votre juridiction (Tribunal judiciaire d'Agen), issue du référentiel des tribunaux tenu par Immojudis, relevée le 14/10/2026 ; l’annonce ne donne aucune adresse d’avocat.",
+      text: "adresse de contact de votre juridiction, issue du référentiel des tribunaux tenu par Immojudis, relevée le 14/10/2026 ; l’annonce ne donne aucune adresse d’avocat.",
       url: null,
       automated: false,
       courtRegistry: true,
@@ -651,7 +651,9 @@ describe("aperçu et envoi d'une demande au greffe", () => {
     const result = await previewAdminInformationAgentMission({ auth: admin, input: content });
     expect(result.blockers).toEqual([]);
     expect(result.addressOrigin).toEqual({
-      text: expect.stringContaining("Adresse de contact publique de votre juridiction"),
+      text: expect.stringContaining(
+        "adresse de contact de votre juridiction, issue du référentiel",
+      ),
       url: null,
       automated: false,
       courtRegistry: true,
@@ -748,7 +750,9 @@ describe("aperçu et envoi d'une demande au greffe", () => {
     expect(mocks.send).toHaveBeenCalledOnce();
     expect(mocks.send.mock.calls[0]![0].message).toMatchObject({
       to: COURT_EMAIL,
-      text: expect.stringContaining("Adresse de contact publique de votre juridiction"),
+      text: expect.stringContaining(
+        "adresse de contact de votre juridiction, issue du référentiel",
+      ),
     });
     expect(db.messages[0]).toMatchObject({
       to_email: COURT_EMAIL,
