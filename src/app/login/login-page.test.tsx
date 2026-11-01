@@ -265,13 +265,14 @@ describe("login page", () => {
     mocks.search = { mode: "investor", reason: "simulateur" };
     mocks.signUp.mockResolvedValue({ error: null });
     render(<LoginPage />);
-    expect(screen.getByText(/pour chiffrer une vente réelle/)).toBeTruthy();
+    expect(screen.getByText(/pour appliquer ce calcul de frais à une vente réelle/)).toBeTruthy();
     fireEvent.change(screen.getByPlaceholderText("vous@exemple.fr"), {
       target: { value: "nouvel.utilisateur@example.test" },
     });
     fireEvent.change(screen.getByPlaceholderText("12 caractères minimum"), {
       target: { value: "un-mot-de-passe-solide" },
     });
+    fillName();
     fireEvent.click(screen.getByRole("button", { name: /Créer mon compte gratuit/ }));
     await waitFor(() => expect(mocks.track).toHaveBeenCalledTimes(1));
     expect(mocks.track).toHaveBeenCalledWith("signup_submitted", { entry: "simulateur" });
