@@ -146,4 +146,26 @@ describe("renovation analysis", () => {
     });
     expect(analysis.limitations[0]).toContain("Aucun état fiable");
   });
+
+  it("does not read the pipeline's own risk notes back as works evidence", () => {
+    const analysis = buildRenovationAnalysis({
+      sale: {
+        ...EXAMPLE_SALE,
+        description: null,
+        source_description: null,
+        llm_display_description: null,
+        about_description: null,
+        investment_summary: null,
+        risk_notes: "Travaux: réfection complète de la toiture, gros travaux de rénovation.",
+        source_blocks: null,
+        source_blocks_by_source: null,
+        score_factors: [],
+        documents_rich: [],
+        risks: [],
+      },
+      surfaceM2: 42,
+    });
+
+    expect(analysis).toMatchObject({ available: false, status: "unknown" });
+  });
 });
