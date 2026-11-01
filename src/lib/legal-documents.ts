@@ -70,6 +70,17 @@ export const PRIVACY_COURT_REGISTRY_EFFECTIVE_DATE = "1er novembre 2026";
  */
 export const PRIVACY_UNROUTED_MESSAGES_EFFECTIVE_DATE = "1er novembre 2026";
 
+/**
+ * Politique de confidentialité 2026-11-01.3 : ajoute le journal des emails envoyés par Immojudis (ligne du
+ * tableau des traitements : intérêt légitime, 90 jours, suppression avec le compte), Resend comme
+ * sous-traitant (30 jours, États-Unis), les consultations tracées 6 mois, l'adresse et l'objet dans le journal
+ * pour les professionnels contactés, et l'effacement du compte. La version 2026-11-01.2 est archivée. Aucun
+ * consentement n'est redemandé : la version n'est qu'enregistrée avec l'acceptation d'une inscription ou d'un
+ * achat, aucun contrôle n'impose de la ré-accepter. En vigueur à la mise en ligne, sans préavis. Date à décaler
+ * à la date réelle de mise en ligne si elle diffère (elle n'entre pas dans l'empreinte du texte).
+ */
+export const PRIVACY_EMAIL_LOG_EFFECTIVE_DATE = "1er novembre 2026";
+
 export const LEGAL_DOCUMENTS = {
   legal: {
     version: "2026-10-26.2",
@@ -84,9 +95,9 @@ export const LEGAL_DOCUMENTS = {
     path: "/conditions-generales",
   },
   privacy: {
-    version: "2026-11-01.2",
-    sha256: "5ae544af26146742c9be3bc585baa596397425c098addf38914c2b6da42c2e6b",
-    effectiveDate: PRIVACY_UNROUTED_MESSAGES_EFFECTIVE_DATE,
+    version: "2026-11-01.3",
+    sha256: "7bafa3d9a9cfed003fc49c50eb2759ceef8f8b6aa395e157538fe245b5cd6824",
+    effectiveDate: PRIVACY_EMAIL_LOG_EFFECTIVE_DATE,
     path: "/privacy",
   },
 } as const;

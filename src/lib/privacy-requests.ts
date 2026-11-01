@@ -290,6 +290,7 @@ export const ERASURE_TABLES: ReadonlyArray<readonly [table: string, column: stri
   ["user_api_keys", "user_id"],
   ["user_notification_preferences", "user_id"],
   ["offer_opening_notifications", "user_id"],
+  ["email_send_log", "user_id"],
   ["information_agent_messages", "user_id"],
   ["information_agent_missions", "user_id"],
   ["information_agent_case_subscribers", "user_id"],
@@ -300,12 +301,14 @@ export const ERASURE_TABLES: ReadonlyArray<readonly [table: string, column: stri
 ];
 
 /**
- * Tables créées par les migrations 20261030110100, 20261030120100, 20261030120200 et 20261102140000. Tant qu'une
+ * Tables créées par les migrations 20261030110100, 20261030120100, 20261030120200, 20261102140000 et
+ * 20261110210000 (journal des envois). Tant qu'une
  * migration n'est pas appliquée (code déployé avant elle), sa table n'existe pas : il n'y a alors aucune
  * donnée à effacer, et l'effacement ne doit pas échouer pour autant. Pour toute autre table, une table
  * absente reste une erreur (liste d'effacement fausse ou schéma incomplet).
  */
 const ERASURE_TABLES_FROM_RECENT_MIGRATIONS: ReadonlySet<string> = new Set([
+  "email_send_log",
   "sale_signal_feedback",
   "weekly_digest_dispatches",
   "sale_result_dispatches",
@@ -401,6 +404,22 @@ export async function executePrivacyErasure({
     }
     deletedRows[`${table}.${column}`] = count ?? 0;
   }
+
+  // Journal des emails envoyés : les lignes liées au compte sont parties ci-dessus (user_id) ; celles qui
+  // n'y sont pas liées (envoi avant la création du compte, lien perdu) se retrouvent par l'adresse, en
+  // minuscules, que la personne a confirmée ci-dessus. Avant la suppression Auth : l'adresse y est encore.
+  const { count: emailLogByAddress, error: emailLogError } = await (
+    supabaseAdmin as unknown as DeleteBuilder
+  )
+    .from("email_send_log")
+    .delete({ count: "exact" })
+    .eq("to_address", request.requester_email.trim().toLowerCase());
+  if (emailLogError && !isMissingTableError(emailLogError)) {
+    throw new Error(
+      `Effacement impossible dans email_send_log: ${emailLogError.message ?? "erreur"}`,
+    );
+  }
+  deletedRows["email_send_log.to_address"] = emailLogError ? 0 : (emailLogByAddress ?? 0);
 
   let storageObjectsRemoved = 0;
   for (const bucket of ERASURE_STORAGE_BUCKETS) {
