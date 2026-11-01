@@ -6,18 +6,22 @@
 -- (app_private.handle_new_user_profile, 20260612100158) refuse donc l'inscription publique par email
 -- dont raw_user_meta_data.first_name ou .last_name est vide une fois les espaces retirés.
 --
--- Périmètre du contrôle : l'inscription publique par email et mot de passe, et elle seule.
---   * raw_app_meta_data.provider = 'email' (valeur posée par l'API d'inscription ; absente des
---     comptes créés par les tests et scripts SQL, qui passent '{}') ;
---   * invited_at est nul : une invitation (inviteUserByEmail) n'a pas de métadonnées saisies par la
---     personne invitée ;
---   * email_confirmed_at est nul à l'INSERT : une inscription publique n'est jamais confirmée à la
---     création (« Confirm email » actif, supabase/config.toml), alors qu'un compte créé par un
---     administrateur (tableau de bord, auth.admin.createUser avec email_confirm) l'est d'emblée.
---     Le public ne peut pas poser cette date.
--- Aucun autre chemin de création de compte n'existe dans le dépôt (pas d'OAuth, pas de lien magique,
--- pas d'invitation ni de createUser dans le code, les scripts ou les tests e2e, qui simulent
--- /auth/v1/signup). Les comptes existants ne sont pas touchés : le déclencheur ne se lance qu'à l'INSERT.
+-- Périmètre du contrôle : tout compte créé avec raw_app_meta_data.provider = 'email' (valeur posée
+-- par l'API d'authentification pour l'email et mot de passe ; absente des comptes créés par les tests
+-- et scripts SQL, qui passent '{}'). Il n'existe pas de critère plus fin : à l'INSERT, l'inscription
+-- publique (/signup), la création par un administrateur (auth.admin.createUser, tableau de bord) et
+-- l'invitation (inviteUserByEmail) construisent le même enregistrement (supabase/auth, internal/api :
+-- signup.go ToUserModel + signupNewUser, admin.go adminUserCreate, invite.go). email_confirmed_at,
+-- invited_at et confirmation_sent_at sont nuls dans les trois cas : GoTrue les pose par un UPDATE
+-- ultérieur (Confirm, sendConfirmation, sendInvite). Une exemption fondée sur eux ne distingue donc
+-- rien. L'exigence vaut pour tous ces chemins.
+--
+-- Conséquence pour l'administration : un compte créé par auth.admin.createUser, par le tableau de
+-- bord ou par une invitation avec provider 'email' doit fournir first_name et last_name dans
+-- user_metadata (data pour l'invitation), faute de quoi la création échoue (« Database error
+-- creating new user »). Aucun autre chemin de création n'existe dans le dépôt hors fixtures SQL
+-- sans fournisseur (pas d'OAuth ni de lien magique ; les tests e2e simulent /auth/v1/signup).
+-- Les comptes existants ne sont pas touchés : le déclencheur ne se lance qu'à l'INSERT.
 --
 -- Le reste de la fonction est inchangé (reprise exacte de 20260612100158). Le refus lève une
 -- exception : l'INSERT dans auth.users est annulé avec le reste de l'inscription. Selon sa version,
@@ -52,8 +56,6 @@ declare
   trimmed_chars constant text := E' \t\r\n\f\v ';
 begin
   if new.raw_app_meta_data ->> 'provider' = 'email'
-    and new.invited_at is null
-    and new.email_confirmed_at is null
     and (
       nullif(btrim(coalesce(new.raw_user_meta_data ->> 'first_name', ''), trimmed_chars), '') is null
       or nullif(btrim(coalesce(new.raw_user_meta_data ->> 'last_name', ''), trimmed_chars), '') is null
