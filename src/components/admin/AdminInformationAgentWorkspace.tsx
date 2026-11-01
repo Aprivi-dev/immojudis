@@ -9,6 +9,7 @@ import { AdminAuctionFactClaimReviewPanel } from "@/components/admin/AdminAuctio
 import { AdminInformationAgentMissionsPanel } from "@/components/admin/AdminInformationAgentMissionsPanel";
 import { AdminInformationAgentReviewPanel } from "@/components/admin/AdminInformationAgentReviewPanel";
 import { AdminInformationAgentTemplatePanel } from "@/components/admin/AdminInformationAgentTemplatePanel";
+import { AdminInformationAgentUnroutedPanel } from "@/components/admin/AdminInformationAgentUnroutedPanel";
 
 export function AdminInformationAgentWorkspace() {
   const [selection, setSelection] = useState<InformationRequestSelection | null>(null);
@@ -21,6 +22,7 @@ export function AdminInformationAgentWorkspace() {
       />
       <AdminAuctionFactClaimReviewPanel />
       <AdminInformationAgentReviewPanel />
+      <AdminInformationAgentUnroutedPanel />
       <AdminInformationAgentTemplatePanel />
     </div>
   );
