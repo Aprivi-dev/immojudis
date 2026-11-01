@@ -449,7 +449,12 @@ def _record_refusals(connection, refused: list[AuctionSale]) -> None:
     (ou sautée, fiche non relue) reste comptée dans l'inventaire de la source. Les refus après lecture de la fiche
     sont mémorisés (``rejected_listings``) : la fiche n'est pas relue pendant 7 jours.
     """
-    rejected_listings.remember(connection, [sale for sale in refused if not listing_minimum.assess(sale).detail_unread])
+    verdicts = [(sale, listing_minimum.assess(sale)) for sale in refused]
+    # Ni fiche non lue, ni vente au tribunal refusée faute de référentiel lisible : ces refus ne se mémorisent pas.
+    rejected_listings.remember(
+        connection,
+        [sale for sale, verdict in verdicts if not verdict.detail_unread and not verdict.court_registry_unavailable],
+    )
     for run_id, group in listing_minimum.decision_groups(refused).items():
         if not run_id:
             continue

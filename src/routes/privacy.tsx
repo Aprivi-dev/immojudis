@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { createFileRoute, Link } from "@/lib/router-compat";
 import { AnalyticsConsentSwitch } from "@/components/AnalyticsConsentSwitch";
 import { AudienceOptOutSwitch } from "@/components/AudienceOptOutSwitch";
+import { COURT_REGISTRY_DAILY_CAP_DEFAULT } from "@/lib/information-agent/court-registry-fallback";
 import { LEGAL_DOCUMENTS, legalValue, publicLegalPublisher } from "@/lib/legal-documents";
 
 export const Route = createFileRoute("/privacy")({
@@ -190,7 +191,12 @@ const processingRows = [
   },
 ] as const;
 
-export function PrivacyPage() {
+export function PrivacyPage({
+  courtRegistryDailyCap = COURT_REGISTRY_DAILY_CAP_DEFAULT,
+}: {
+  /** Plafond quotidien de messages aux greffes par tribunal, lu dans la configuration par la page serveur. */
+  courtRegistryDailyCap?: number;
+} = {}) {
   const publisher = publicLegalPublisher();
 
   return (
@@ -277,6 +283,16 @@ export function PrivacyPage() {
               opposition est enregistrée et vaut pour tous nos canaux. Vous pouvez aussi demander
               l’accès, la rectification ou l’effacement, et saisir la CNIL. Pour exercer ces droits,
               écrivez à {legalValue(publisher.contactEmail)} ; aucun compte n’est nécessaire.
+            </p>
+            <p className="mt-3">
+              Lorsqu’une vente judiciaire n’indique aucune adresse d’avocat, Immojudis peut, après
+              validation manuelle de chaque message, écrire à l’adresse de contact du greffe du
+              tribunal concerné, tirée de son référentiel des tribunaux, pour demander l’identité de
+              l’avocat poursuivant ou les pièces publiques communicables. Nous envoyons au plus un
+              message par vente et, par tribunal, au plus {courtRegistryDailyCap} message
+              {courtRegistryDailyCap > 1 ? "s" : ""} par jour, sans relance. Base légale : intérêt
+              légitime. Conservation : 12 mois sans réponse, 24 mois après le dernier échange.
+              Opposition : lien dans chaque message ou {legalValue(publisher.contactEmail)}.
             </p>
           </PrivacySection>
 

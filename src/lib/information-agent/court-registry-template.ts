@@ -12,7 +12,7 @@ import type { InformationAgentEmailTemplateContent } from "@/lib/information-age
  * question). Aucun nom de personne : « Madame, Monsieur, ».
  */
 export const COURT_REGISTRY_QUESTION =
-  "Pouvez-vous nous indiquer l’avocat poursuivant de cette vente, ou nous transmettre les pièces publiques du dossier (cahier des conditions de vente, procès-verbal descriptif) lorsqu’elles sont communicables à tout candidat acquéreur ?";
+  "Pouvez-vous nous indiquer l’avocat poursuivant de cette vente ou, à défaut, les pièces publiques du dossier (cahier des conditions de vente, procès-verbal descriptif) que vous pouvez communiquer à tout candidat acquéreur, et selon quelles modalités ?";
 
 export const COURT_REGISTRY_EMAIL_TEMPLATE: InformationAgentEmailTemplateContent = {
   name: "Demande à un greffe : avocat poursuivant ou pièces publiques — version 1",
@@ -43,7 +43,7 @@ export const COURT_REGISTRY_EMAIL_TEMPLATE: InformationAgentEmailTemplateContent
       kind: "fixed",
       label: "Introduction de la demande",
       content:
-        "Nous savons que le greffe n’a pas à détailler les ventes et que les enchères sont portées par l’avocat poursuivant. L’annonce ne nous donne pas son adresse : notre demande se limite donc à ceci.",
+        "L’annonce publique de cette vente ne mentionne pas l’adresse de l’avocat poursuivant. Notre demande se limite donc à ceci.",
     },
     {
       id: "questions",
@@ -56,7 +56,7 @@ export const COURT_REGISTRY_EMAIL_TEMPLATE: InformationAgentEmailTemplateContent
       kind: "fixed",
       label: "Consignes de réponse",
       content:
-        "Répondre est facultatif. Le plus simple : un retour à cet email. Vous pouvez aussi le transférer au service concerné. Aucun compte n’est nécessaire.\n\nNe communiquez que ce qui est communicable à tout candidat acquéreur : les règles de communication de la juridiction priment sur notre demande.",
+        "Répondre est facultatif : un simple retour à cet email suffit, et vous pouvez le transmettre au service concerné. Nous écrivons au plus une fois par vente. Ne communiquez que ce qui est communicable à tout candidat acquéreur : les règles de votre juridiction priment sur notre demande.",
     },
     {
       id: "closing",

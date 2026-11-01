@@ -215,16 +215,20 @@ COURT_FALLBACK_INCONSISTENT_FLAG = "tribunal_inconsistent"
 class CourtRegistry:
     """Référentiel des tribunaux (``court_registry_contacts``) : adresses email par code de juridiction.
 
-    ``emails_by_court`` ne garde que les juridictions qui ont au moins une adresse valide.
+    ``emails_by_court`` ne garde que les juridictions qui ont au moins une adresse valide. ``unavailable`` : le référentiel
+    n'a pas pu être lu (il est vide faute de lecture, pas parce qu'il ne contient rien) : une vente au tribunal
+    refusée dans ce cas n'est pas mémorisée comme refusée (``listing_minimum``), elle sera réexaminée.
     """
 
     emails_by_court: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+    unavailable: bool = False
 
     def emails(self, court_code: str | None) -> tuple[str, ...]:
         return self.emails_by_court.get(str(court_code or "").strip(), ())
 
 
 NO_COURT_REGISTRY = CourtRegistry()
+UNAVAILABLE_COURT_REGISTRY = CourtRegistry(unavailable=True)
 
 
 def is_court_sale(sale: AuctionSale) -> bool:
@@ -395,7 +399,9 @@ def load_court_registry(settings: Mapping[str, Any]) -> CourtRegistry:
     """Lit le référentiel des tribunaux ; en cas d'erreur renvoie un référentiel vide (échec ouvert).
 
     Sans référentiel, aucune vente ne reçoit la preuve ``court_email`` : une panne ne fait jamais accepter une annonce,
-    elle retrouve seulement la règle d'avant (écartée faute d'email, relue au passage suivant).
+    elle retrouve seulement la règle d'avant (écartée faute d'email). Le référentiel rendu est alors marqué
+    ``unavailable`` : le refus d'une vente au tribunal n'est pas mémorisé (``rejected_listings``), comme pour une page
+    non lue, pour qu'elle soit relue au passage suivant.
     """
     import httpx
 
@@ -412,10 +418,13 @@ def load_court_registry(settings: Mapping[str, Any]) -> CourtRegistry:
         )
         response.raise_for_status()
         rows = response.json()
-        return build_court_registry(rows if isinstance(rows, list) else [])
+        if not isinstance(rows, list):
+            LOGGER.warning("Court registry unavailable; unexpected response shape")
+            return UNAVAILABLE_COURT_REGISTRY
+        return build_court_registry(rows)
     except Exception as exc:  # noqa: BLE001 - échec ouvert volontaire, voir docstring
         LOGGER.warning("Court registry unavailable; treating it as empty (%s)", type(exc).__name__)
-        return NO_COURT_REGISTRY
+        return UNAVAILABLE_COURT_REGISTRY
 
 
 def load_contact_blocklist(settings: Mapping[str, Any]) -> ContactBlocklist:

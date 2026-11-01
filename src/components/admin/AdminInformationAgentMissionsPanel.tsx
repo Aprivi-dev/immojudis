@@ -1159,6 +1159,15 @@ function PreviewPanel({
               <dt className="inline font-medium">Origine de l’adresse : </dt>
               <dd className="inline">{preview.addressOrigin.text}</dd>
             </div>
+            {preview.addressOrigin.courtRegistry ? (
+              <div role="note" className="rounded-lg border border-sky-200 bg-sky-50 p-2">
+                <dt className="inline font-medium">Greffe : </dt>
+                <dd className="inline">
+                  cette demande est adressée au greffe du tribunal (aucun avocat trouvé), pas à un
+                  avocat.
+                </dd>
+              </div>
+            ) : null}
             {preview.addressOrigin.automated ? (
               <div role="note" className="rounded-lg border border-amber-200 bg-amber-50 p-2">
                 <dt className="inline font-medium">Adresse retrouvée automatiquement : </dt>
