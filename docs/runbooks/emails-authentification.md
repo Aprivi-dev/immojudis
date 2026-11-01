@@ -5,9 +5,10 @@ oublié, changement d'adresse) de leur version par défaut (anglais, lien brut `
 expéditeur « ImmoJudis <assistant@immojudis.com> ») aux gabarits français d'Immojudis, avec un lien qui ne
 consomme pas le jeton avant le clic. Public : le propriétaire (accès Supabase, Vercel, Resend).
 
-**Rien de ceci n'est appliqué par le dépôt.** `supabase/config.toml` n'est pas appliqué à la production
-(`docs/runbooks/offre-de-lancement.md`) et il ne faut jamais lancer `supabase config push`. Le propriétaire
-colle chaque gabarit et son objet dans Supabase > Authentication > Emails.
+**Rien de ceci n'est appliqué automatiquement.** `supabase/config.toml` n'est pas appliqué à la production
+(`docs/runbooks/offre-de-lancement.md`) et il ne faut jamais lancer `supabase config push`. Deux voies, au
+choix du propriétaire : coller chaque gabarit et son objet dans Supabase > Authentication > Emails, ou
+lancer à la main le workflow « Apply Supabase Auth Config » (section « Appliquer par le workflow »).
 
 ## Ce que contient le dépôt
 
@@ -67,6 +68,59 @@ tant que ces parcours n'existent pas.
 Pas de désinscription ni de `List-Unsubscribe` sur ces messages : ce sont des messages de sécurité liés à une
 action de la personne, sans contenu commercial.
 
+## Appliquer par le workflow (alternative au tableau de bord)
+
+Le workflow « Apply Supabase Auth Config » (`.github/workflows/apply-supabase-auth-config.yml`, qui lance
+`scripts/apply-supabase-auth-config.mjs`) fait à la place du propriétaire ce que décrivent les étapes 3 à 5 : il lit les gabarits et leurs objets dans le dépôt
+(`supabase/config.toml` et les fichiers HTML qu'il désigne, ou ceux de `retour-arriere/`), les compare à la
+configuration d'authentification de la production (projet `sgpakxtyvenlpeihuucm`) par l'API de gestion de
+Supabase, et ne les écrit qu'à la demande. Les étapes 1 et 2 de la bascule (code déployé, expéditeur de
+l'agent séparé) restent à faire avant.
+
+**Créer le jeton** (une fois) :
+
+1. Supabase > avatar du compte > Account Preferences > Access Tokens
+   (`https://supabase.com/dashboard/account/tokens`) > Generate new token. Nom conseillé
+   `immojudis-github-auth-config`, expiration la plus courte possible (quelques jours). Le jeton est
+   **personnel** : il a les droits du compte du propriétaire sur tous ses projets Supabase, pas seulement sur
+   Immojudis. Il ne s'affiche qu'une fois ; ne le coller que dans le secret GitHub ci-dessous.
+2. GitHub > dépôt > Settings > Secrets and variables > Actions > New repository secret (ou secret de
+   l'environnement `Production`, que le workflow utilise) : nom exactement **`SUPABASE_ACCESS_TOKEN`**.
+3. Une fois la bascule terminée et testée : supprimer le secret et révoquer le jeton dans Supabase.
+
+Sans le secret, le workflow s'arrête avec l'erreur « Secret SUPABASE_ACCESS_TOKEN manquant ».
+
+**Lancer** : GitHub > Actions > « Apply Supabase Auth Config » > Run workflow, sur la branche `main` (toute
+autre branche est refusée).
+
+| Entrée           | Valeurs                                                                                              |
+| ---------------- | ---------------------------------------------------------------------------------------------------- |
+| `mode`           | `plan` (par défaut : affiche le diff, n'écrit rien) ou `apply` (écrit en production)                 |
+| `confirm_target` | `production`, obligatoire pour `apply`, ignoré par `plan`                                            |
+| `variant`        | `principal` (lien `/auth/confirmer`, par défaut) ou `retour-arriere` (lien `{{ .ConfirmationURL }}`) |
+| `sender_email`   | facultatif, en `@immojudis.com` (par exemple `compte@immojudis.com`) ; vide = SMTP non modifié       |
+| `sender_name`    | facultatif (par exemple `Immojudis`) ; vide = SMTP non modifié                                       |
+
+**Toujours lancer d'abord en `plan`** : le journal de l'étape « Plan or apply the auth configuration » montre,
+pour chacun des six gabarits, l'objet et le contenu actuels de Supabase (`-`) et ceux du dépôt (`+`), puis
+l'expéditeur si demandé. Relire, puis relancer avec `mode=apply` et `confirm_target=production`.
+
+Ce que fait `apply` : contrôles locaux (gabarits en français, variables prévues, lien attendu de la variante,
+adresse en `@immojudis.com`), lecture de la configuration actuelle, **enregistrement de cette configuration
+(sans aucun secret) dans l'artefact de sauvegarde**, écriture des seuls champs qui diffèrent, puis relecture
+pour vérifier. Il ne touche jamais à `smtp_host`, `smtp_user`, `smtp_pass` ni `smtp_port` et n'affiche ni le
+jeton ni aucun mot de passe. Il applique les **six** gabarits d'un coup, y compris `invite`, `magic_link` et
+`reauthentication` (voir « Ce qui reste à relire »).
+
+Correspondance avec l'ordre de bascule : étapes 3 et 4 = un lancement `variant=retour-arriere` avec
+`sender_email=compte@immojudis.com` et `sender_name=Immojudis`, puis les tests de l'étape 4 ; étape 5 = un
+lancement `variant=principal`, puis les tests de l'étape 5. Chaque lancement est précédé de son `plan`.
+
+Limite connue : le script n'a été éprouvé qu'avec une API simulée. Si Supabase refuse de modifier seulement
+l'adresse ou le nom de l'expéditeur sans renvoyer tout le SMTP, l'écriture échoue sans rien changer
+(l'échec le dit, avec le code HTTP) : changer alors l'expéditeur dans le tableau de bord (étape 3) et relancer
+sans `sender_email` ni `sender_name`.
+
 ## Sécurité du lien `/auth/confirmer`
 
 - **`{{ .RedirectTo }}` est inséré brut** dans les gabarits : le dépôt n'a pas de preuve que les gabarits
@@ -109,13 +163,34 @@ les alertes ni avec l'agent. Les rebonds de ces emails arrivent au webhook des e
 
 ## Retour arrière
 
+0. **Si le workflow a appliqué la configuration (`mode=apply`)** : la configuration d'avant est dans
+   l'artefact `immojudis-supabase-auth-config-backup-<numéro du run>` du run concerné (GitHub > Actions > le
+   run > Artifacts, conservé 90 jours). Dézipper : `immojudis-supabase-auth-config-backup.json` contient,
+   sous `config`, les six objets, les six gabarits (le texte d'origine de Supabase), `smtp_admin_email` et
+   `smtp_sender_name`, sans aucun secret. Pour les remettre par l'API (jeton saisi sans écho, jamais écrit
+   dans un fichier ni dans l'historique) :
+
+   ```bash
+   read -rs SUPABASE_ACCESS_TOKEN && export SUPABASE_ACCESS_TOKEN
+   jq '.config' immojudis-supabase-auth-config-backup.json \
+     | curl -sS --fail -o /dev/null -w "%{http_code}\n" -X PATCH \
+         -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "Content-Type: application/json" \
+         --data @- "https://api.supabase.com/v1/projects/sgpakxtyvenlpeihuucm/config/auth"
+   ```
+
+   `200` = restauré. Une valeur `null` dans la sauvegarde veut dire « gabarit par défaut de Supabase » ; si
+   l'API la refuse (non éprouvé), retirer ces clés du JSON et rétablir ces gabarits à la main. Sans jeton, on
+   peut aussi recoller les textes du JSON dans Authentication > Emails. Pour seulement rétablir un parcours
+   qui fonctionne (en français, lien de Supabase) sans le texte d'origine : relancer le workflow avec
+   `variant=retour-arriere` (point 1).
+
 1. Dans Supabase > Authentication > Emails > Templates, recoller pour chaque gabarit le contenu de
    `docs/runbooks/emails-authentification/retour-arriere/` (lien `{{ .ConfirmationURL }}`, qui fonctionne sans
    la page `/auth/confirmer` : l'ancien parcours par fragment `#access_token` est celui de
    `PasswordRecovery` et de `detectSessionInUrl`). Les liens déjà envoyés avec `token_hash` restent valables
    tant que la page est déployée.
 2. Le texte d'origine de Supabase (anglais) n'est pas conservé dans le dépôt : le relever dans le tableau de
-   bord AVANT l'étape 4 de la bascule si l'on veut pouvoir le restaurer à l'identique. Les gabarits de
+   bord AVANT l'étape 4 de la bascule si l'on veut pouvoir le restaurer à l'identique (le mode `apply` du workflow le garde dans son artefact de sauvegarde). Les gabarits de
    `retour-arriere/` suffisent à rétablir un parcours qui fonctionne.
 3. L'expéditeur se rétablit dans SMTP Settings (`assistant@immojudis.com`) ; ne le faire qu'avec l'étape 2 de la
    bascule annulée en même temps (voir plus haut).
