@@ -1,10 +1,10 @@
 import "server-only";
-import { escapeAttribute, type ResendEmailMessage } from "@/lib/email-alerts";
+import type { ResendEmailMessage } from "@/lib/email-alerts";
 import { emailClickUrl, isEmailClickSaleId } from "@/lib/email-click-token";
 import { createUnsubscribeToken } from "@/lib/email-unsubscribe-token";
 import { escapeHtml } from "@/lib/guards";
 import { SALE_CALENDAR_DISCLAIMER } from "@/lib/sale-calendar";
-import { EMAIL_COLORS, EMAIL_FONT_STACK, emailBrandHeaderHtml } from "@/lib/email-brand";
+import { emailLayout, emailParagraph, emailSaleCard } from "@/lib/email-layout";
 
 /**
  * Email des rappels d'audience (J-7, J-1) et des avertissements graves (date modifiée, vente
@@ -85,6 +85,7 @@ export function buildSaleReminderMessage({
       "calendar",
       `/api/sales/${encodeURIComponent(item.saleId.toLowerCase())}/calendar`,
     );
+  const subject = saleReminderSubject(items, internal);
   const intro =
     items.length === 1
       ? "Une vente que vous suivez sur Immojudis demande votre attention :"
@@ -116,9 +117,10 @@ export function buildSaleReminderMessage({
   return {
     from,
     to: recipientEmail,
-    subject: saleReminderSubject(items, internal),
+    subject,
     text: textLines.join("\n"),
     html: buildSaleReminderHtml({
+      title: subject,
       intro,
       items: items.map((item) => ({
         ...item,
@@ -134,57 +136,66 @@ export function buildSaleReminderMessage({
 }
 
 function buildSaleReminderHtml({
+  title,
   intro,
   items,
   unsubscribeUrl,
   settingsUrl,
 }: {
+  /** L'objet du message, repris dans `<title>`. */
+  title: string;
   intro: string;
   items: Array<SaleReminderItem & { url: string; calendarUrl: string | null }>;
   unsubscribeUrl: string;
   settingsUrl: string;
 }): string {
-  const sections = items
-    .map(
-      (
-        item,
-      ) => `<div style="margin:0 0 18px;padding:0 0 16px;border-bottom:1px solid ${EMAIL_COLORS.lineWarm};">
-          <p style="margin:0 0 6px;color:${EMAIL_COLORS.goldText};font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;">${escapeHtml(item.headline)}</p>
-          <h2 style="margin:0 0 4px;font-size:18px;line-height:1.3;color:${EMAIL_COLORS.navy};">${escapeHtml(item.title)}</h2>
-          ${item.location ? `<p style="margin:0 0 8px;color:${EMAIL_COLORS.inkSoft};">${escapeHtml(item.location)}</p>` : ""}
-          ${item.detail ? `<p style="margin:0 0 8px;font-weight:700;color:${EMAIL_COLORS.navy};">${escapeHtml(item.detail)}</p>` : ""}
-          ${
-            item.detail && AUDIENCE_KINDS.has(item.kind)
-              ? `<p style="margin:0 0 12px;color:${EMAIL_COLORS.inkStrong};font-size:13px;">${escapeHtml(SALE_CALENDAR_DISCLAIMER)}</p>`
-              : ""
-          }
-          <a href="${escapeAttribute(item.url)}" style="display:inline-block;background:${EMAIL_COLORS.navy};color:#fff;text-decoration:none;border-radius:8px;padding:10px 14px;font-weight:700;">Voir l'annonce</a>
-          ${
-            item.calendarUrl
-              ? ` <a href="${escapeAttribute(item.calendarUrl)}" style="display:inline-block;color:${EMAIL_COLORS.navy};text-decoration:underline;padding:10px 6px;font-weight:700;">Ajouter à mon agenda</a>`
-              : ""
-          }
-        </div>`,
+  const cards = items
+    .map((item) =>
+      emailSaleCard({
+        eyebrow: item.headline,
+        title: item.title,
+        location: item.location,
+        facts: item.detail ? [{ value: item.detail }] : [],
+        notesHtml:
+          item.detail && AUDIENCE_KINDS.has(item.kind)
+            ? emailParagraph(escapeHtml(SALE_CALENDAR_DISCLAIMER), {
+                tone: "muted",
+                size: "caption",
+                marginBottom: 12,
+              })
+            : "",
+        action: { href: item.url, text: "Voir l’annonce" },
+        secondaryLink: item.calendarUrl
+          ? { href: item.calendarUrl, text: "Ajouter à mon agenda" }
+          : null,
+      }),
     )
     .join("");
+  const [first] = items;
+  const preheader =
+    items.length === 1
+      ? [first.headline, first.detail].filter(Boolean).join(" · ")
+      : intro.replace(/\s*:$/, ".");
 
-  return `<!doctype html>
-<html lang="fr">
-  <body style="margin:0;background:${EMAIL_COLORS.surface};color:${EMAIL_COLORS.navy};font-family:${EMAIL_FONT_STACK};">
-    <div style="max-width:620px;margin:0 auto;padding:28px 18px;">
-      ${emailBrandHeaderHtml()}
-      <div style="background:#fff;border:1px solid ${EMAIL_COLORS.lineWarm};border-radius:10px;padding:24px;">
-        <p style="margin:0 0 8px;font-size:16px;">Bonjour,</p>
-        <p style="margin:0 0 18px;color:${EMAIL_COLORS.inkStrong};">${escapeHtml(intro)}</p>
-        ${sections}
-        <p style="margin:12px 0 0;color:${EMAIL_COLORS.inkSoft};font-size:12px;line-height:1.5;">${escapeHtml(SALE_REMINDER_DISCLAIMER)}</p>
-      </div>
-      <p style="margin:14px 0 0;text-align:center;color:${EMAIL_COLORS.inkSoft};font-size:12px;line-height:1.5;">
-        Vous recevez ce message parce que vous avez activé les rappels d'audience.<br />
-        <a href="${escapeAttribute(settingsUrl)}" style="color:${EMAIL_COLORS.inkSoft};">Gérer mes notifications</a> ·
-        <a href="${escapeAttribute(unsubscribeUrl)}" style="color:${EMAIL_COLORS.inkSoft};">Se désinscrire des rappels</a>
-      </p>
-    </div>
-  </body>
-</html>`;
+  return emailLayout({
+    title,
+    preheader,
+    content: [
+      emailParagraph("Bonjour,", { marginBottom: 8 }),
+      emailParagraph(escapeHtml(intro), { marginBottom: 20 }),
+      cards,
+      emailParagraph(escapeHtml(SALE_REMINDER_DISCLAIMER), {
+        tone: "muted",
+        size: "caption",
+        marginBottom: 0,
+      }),
+    ].join(""),
+    footer: {
+      reason: "Vous recevez ce message parce que vous avez activé les rappels d’audience.",
+      links: [
+        { text: "Gérer mes notifications", href: settingsUrl },
+        { text: "Se désinscrire des rappels", href: unsubscribeUrl },
+      ],
+    },
+  });
 }

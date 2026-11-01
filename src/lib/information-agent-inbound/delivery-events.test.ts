@@ -31,7 +31,7 @@ import {
   processDeliveryEvent,
 } from "./delivery-events";
 
-const ENV = { INFORMATION_AGENT_EMAIL_FROM: "Assistant Immojudis <assistant@immojudis.com>" };
+const ENV = { INFORMATION_AGENT_EMAIL_FROM: "Immojudis <enquete@reponses.immojudis.com>" };
 
 function bounced(
   type: string,
@@ -44,7 +44,7 @@ function bounced(
       created_at: "2026-10-23T10:00:00.000Z",
       email_id: "email-1",
       message_id: "message-1",
-      from: "Assistant Immojudis <assistant@immojudis.com>",
+      from: "Immojudis <enquete@reponses.immojudis.com>",
       to: ["Cabinet <Contact@Example.test>"],
       subject: "Informations complémentaires",
       bounce: { message: "mailbox does not exist", subType: "General", type },
@@ -61,7 +61,7 @@ function complained(overrides: Partial<EmailComplainedEvent["data"]> = {}): Emai
       created_at: "2026-10-23T11:00:00.000Z",
       email_id: "email-2",
       message_id: "message-2",
-      from: "assistant@immojudis.com",
+      from: "enquete@reponses.immojudis.com",
       to: ["contact@example.test"],
       subject: "Informations complémentaires",
       ...overrides,
@@ -81,7 +81,7 @@ describe("deliveryActionOf", () => {
   const agent = informationAgentSenderAddress(ENV);
 
   it("lit l'adresse d'expéditeur de l'agent, sans le nom affiché", () => {
-    expect(agent).toBe("assistant@immojudis.com");
+    expect(agent).toBe("enquete@reponses.immojudis.com");
     expect(informationAgentSenderAddress({})).toBeNull();
     expect(informationAgentSenderAddress({ INFORMATION_AGENT_EMAIL_FROM: "pas une adresse" })).toBe(
       null,
@@ -164,6 +164,42 @@ describe("processDeliveryEvent", () => {
       opposition_status: "opposed",
       opposed_at: "2026-10-23T11:00:00.000Z",
     });
+  });
+
+  it("ne prend jamais un rebond ou une plainte d'un email d'authentification pour un évènement de l'agent", async () => {
+    // Les emails de confirmation, de mot de passe et de changement d'adresse partent du compte
+    // (« Immojudis <compte@immojudis.com> ») ; l'agent a son propre expéditeur, sur reponses.immojudis.com.
+    const authSenders = [
+      "Immojudis <compte@immojudis.com>",
+      "compte@immojudis.com",
+      "Immojudis <assistant@immojudis.com>",
+      "Immojudis <alertes@immojudis.com>",
+      // Même nom affiché, autre domaine : seule l'adresse compte.
+      "Immojudis <enquete@immojudis.com>",
+      "Immojudis <enquete@reponses.immojudis.com.example.test>",
+    ];
+    const agent = informationAgentSenderAddress(ENV);
+    for (const from of authSenders) {
+      expect(deliveryActionOf(bounced("Permanent", { from }), agent), from).toBeNull();
+      expect(deliveryActionOf(complained({ from }), agent), from).toBeNull();
+      expect(
+        await processDeliveryEvent(bounced("Permanent", { from }), ENV),
+        `${from} (rebond)`,
+      ).toEqual({ accepted: true, ignored: true });
+      expect(await processDeliveryEvent(complained({ from }), ENV), `${from} (plainte)`).toEqual({
+        accepted: true,
+        ignored: true,
+      });
+    }
+    // Aucune adresse de compte n'entre dans le registre de contacts de l'agent (ni rebond, ni opposition).
+    expect(db.upserts).toEqual([]);
+    // Et l'expéditeur de l'agent, lui, est bien reconnu, avec son nom affiché.
+    expect(
+      deliveryActionOf(
+        bounced("Permanent", { from: "Immojudis <enquete@reponses.immojudis.com>" }),
+        agent,
+      ),
+    ).toMatchObject({ kind: "bounce", status: "permanent" });
   });
 
   it("ne touche à rien pour un autre expéditeur, et le dit sans écrire", async () => {

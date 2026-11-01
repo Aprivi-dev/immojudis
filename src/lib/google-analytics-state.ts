@@ -35,11 +35,13 @@ export function subscribeGoogleAnalyticsState(onChange: () => void): () => void 
 
 /**
  * Pages sur lesquelles ni Google Analytics ni son bandeau ne sont montés (ni leurs sous-chemins) :
- * espaces de la personne connectée, administration, dépôt d'informations par lien personnel et
- * exercice des droits. Le test `DeferredGoogleAnalytics.test.tsx` échoue si l'un d'eux y est monté.
+ * espaces de la personne connectée, administration, dépôt d'informations par lien personnel,
+ * exercice des droits et confirmation d'un lien d'email d'authentification (`/auth/confirmer`, dont
+ * l'adresse porte un jeton à usage unique). Le test `DeferredGoogleAnalytics.test.tsx` échoue si l'un d'eux y est monté.
  */
 export const ANALYTICS_EXCLUDED_PATHS = [
   "/admin",
+  "/auth",
   "/compte",
   "/contribuer",
   "/login",
