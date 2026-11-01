@@ -23,6 +23,11 @@ AGORA_MARKETPLACE_ORIGIN = "https://www.agorastore.fr"
 AGORA_IMMO_ORIGINS = ("https://www.agorastore-immo.fr", "https://agorastore-immo.fr")
 AGORA_SELLER_PATH = "/ventes-occasions/vendeur/agrascimmo"
 AGORA_IMMO_SELLER_PATH = "/ventes-immobilieres/vendeur/agrascimmo"
+# Page vendeur AGRASC d'Agorastore, rendue côté serveur : repli de découverte quand agrasc.gouv.fr est en panne.
+# URL nue uniquement : le robots.txt d'Agorastore interdit les paramètres de tri et de filtre (``sort=``, ``r=``...).
+AGORA_IMMO_SELLER_URL = f"https://www.agorastore-immo.fr{AGORA_IMMO_SELLER_PATH}"
+AGORA_IMMO_SELLER_SLUG = "agrascimmo"
+AGORA_IMMO_SELLER_NAME = "AGRASC"
 # Legacy AGRASC links include category segments before the product slug, e.g.
 # ``/vente-occasion/immobilier/appartement/appartement-115-m-paris-75-407453.aspx``.
 AGORA_PRODUCT_PATH_RE = re.compile(r"/vente-occasion/(?:[^/]+/)*[^/]+-\d+\.aspx$", re.I)

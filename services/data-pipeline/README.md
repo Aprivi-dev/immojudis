@@ -19,6 +19,19 @@ La source prioritaire est Avoventes. Licitor est collecté normalement (source d
   - `src/sources/petites_affiches.py` : scraper Petites Affiches, **retiré du catalogue le 30/10/2026** (décision du propriétaire : même catalogue que Vench et fiches illisibles depuis le changement de présentation du site). Le code est conservé, la collecte est arrêtée par l'interrupteur de retrait (migration `20261110093117_withdraw_petites_affiches_source.sql`, réversible) ; ne pas la relancer sans lever ce retrait.
   - `src/sources/cessions_etat.py` : scraper Cessions immobilières de l'Etat via les cartes HTML publiques.
   - `src/sources/agrasc.py` : scraper AGRASC via les cartes immobilières publiques.
+    **Repli (01/11/2026, décision du propriétaire)** : si la page 0 d'agrasc.gouv.fr échoue (5xx ou erreur réseau, après
+    les réessais de `PoliteHttpClient` ; ni 4xx, ni refus d'accès, ni chaîne TLS invalide), le collecteur lit la page
+    vendeur d'Agorastore (`https://www.agorastore-immo.fr/ventes-immobilieres/vendeur/agrascimmo`, URL nue : son
+    robots.txt interdit `?sort=` et `?r=`, aucune pagination n'est devinée) et enrichit chaque produit AGRASC par sa
+    fiche `.aspx` (`src/sources/agrasc_operators.py`, `discover_agora_seller_products`). Seuls les produits dont
+    `sellerName == "AGRASC"` et dont l'URL est une fiche Agorastore sont gardés ; le prix courant de la liste n'est
+    jamais une mise à prix (elle vient de la fiche) ; `upcoming` seulement si `saleStatus == 0` et `endDate` future.
+    L'erreur d'origine reste dans `errors` et `coverage.fallback.trigger_error` : le run reste en échec (code 1) et les
+    ventes trouvées sont publiées. La couverture est explicitement non certifiée (`coverage_complete` et
+    `scoped_inventory_complete` faux, `discovery_channel = agorastore_seller`) : le repli ne fait jamais avancer
+    `last_inventory_complete_at` ni `last_publication_complete_at` et ne déclenche aucun retrait par absence. Si
+    `countTotal` ne correspond pas au nombre de produits lus, l'écart est signalé dans `errors` et
+    `coverage.fallback.incomplete_reasons`.
   - `src/sources/encheres_immobilieres.py` : scraper Enchères Immobilières via les données Next publiques.
   - `src/sources/notaires.py` : scraper Immobilier.notaires.fr via l'API publique des annonces VAE/VNI.
   - `src/sources/cabinet_generic.py` : point d'extension pour les pages de cabinets locaux.
