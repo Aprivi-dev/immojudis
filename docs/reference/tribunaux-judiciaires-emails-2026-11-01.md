@@ -2,9 +2,10 @@
 
 ## Provenance
 
-`tribunaux-judiciaires-emails-2026-11-01.csv` : **fourni par le propriétaire d'Immojudis le 01/11/2026**. Le dépôt ne
-connaît pas la source d'origine du fichier ; il est conservé tel quel (168 lignes, colonnes `ville`, `nom`, `emails`,
-`adresse`). Plusieurs adresses d'un même tribunal sont séparées par un point-virgule (Cayenne en a deux).
+`tribunaux-judiciaires-emails-2026-11-01.csv` : **fourni par le propriétaire d'Immojudis le 01/11/2026**, tiré de
+l'annuaire officiel de l'administration (Annuaire de l'administration, `lannuaire.service-public.gouv.fr`), d'après le
+propriétaire (précision du 01/11/2026). C'est là qu'il faut revérifier une adresse avant de la corriger. Le fichier est
+conservé tel quel (168 lignes, colonnes `ville`, `nom`, `emails`, `adresse`). Plusieurs adresses d'un même tribunal sont séparées par un point-virgule (Cayenne en a deux).
 
 Contenu : 168 juridictions, 162 avec au moins une adresse (toutes en `@justice.fr`), 6 sans adresse (Angoulême, Argentan,
 Béziers, Sarreguemines, Verdun, Saint-Pierre-et-Miquelon).
