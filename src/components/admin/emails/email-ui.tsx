@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import type { UseQueryResult } from "@tanstack/react-query";
 import { AdminPanel } from "@/components/admin/AdminShell";
 import type { EmailViewTone } from "@/lib/admin-emails/views";
 
@@ -31,7 +30,16 @@ export function Pill({
  * Chargement ou erreur d'une requête de l'onglet, ou `null` quand les données sont là. Écrit ici plutôt
  * que repris de `admin-ui.tsx` : ce module entrait en double dans le JavaScript de la route.
  */
-export function queryProblem(query: UseQueryResult<unknown>, loading: string): ReactNode {
+export function queryProblem(
+  query: {
+    data: unknown;
+    isLoading: boolean;
+    isFetching: boolean;
+    error: unknown;
+    refetch: () => unknown;
+  },
+  loading: string,
+): ReactNode {
   if (query.data) return null;
   if (query.isLoading) {
     return (

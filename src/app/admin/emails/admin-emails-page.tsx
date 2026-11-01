@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AdminPanel, AdminShell } from "@/components/admin/AdminShell";
+import { AdminShell } from "@/components/admin/AdminShell";
 import { useAuth } from "@/hooks/use-auth";
 // Imports statiques, sans `dynamic()` par onglet : mesuré le 01/11/2026, trois chargements différés
 // faisaient passer le JavaScript client total de +19 Ko à +124 Ko (les modules communs sont recopiés
 // dans chaque groupe de chargement). Le code des onglets pèse moins de 15 Ko.
 import { AdminEmailDesignsTab } from "@/components/admin/emails/AdminEmailDesignsTab";
 import { AdminEmailListTab } from "@/components/admin/emails/AdminEmailListTab";
+import { EmailHistoryPanel } from "@/components/admin/emails/EmailHistoryPanel";
 import { toggle } from "@/components/admin/emails/email-ui";
 import { fetchAdminEmailAddresses, fetchAdminEmailTemplates } from "@/lib/client-api/admin-emails";
 
@@ -89,11 +90,7 @@ export function AdminEmailsPage() {
               fetchView={fetchAdminEmailTemplates}
             />
           ) : null}
-          {tab === "historique" ? (
-            <AdminPanel className="p-6 text-sm">
-              Historique des envois : bientôt disponible.
-            </AdminPanel>
-          ) : null}
+          {tab === "historique" ? <EmailHistoryPanel /> : null}
         </div>
       </div>
     </AdminShell>
