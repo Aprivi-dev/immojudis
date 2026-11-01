@@ -431,6 +431,20 @@ describe("mentions légales : repère « Pépite »", () => {
 });
 
 describe("politique de confidentialité", () => {
+  it("annonce les demandes aux greffes, une fois par vente, avec le plafond quotidien de la configuration", () => {
+    const text = pageText(<PrivacyPage courtRegistryDailyCap={2} />);
+    expect(text).toContain(
+      "Lorsqu’une vente judiciaire n’indique aucune adresse d’avocat, Immojudis peut, après validation manuelle de chaque message, écrire à l’adresse de contact du greffe du tribunal concerné",
+    );
+    expect(text).toContain(
+      "Nous envoyons au plus un message par vente et, par tribunal, au plus 2 messages par jour, sans relance.",
+    );
+    expect(pageText(<PrivacyPage courtRegistryDailyCap={1} />)).toContain(
+      "au plus 1 message par jour",
+    );
+    expect(pageText(<PrivacyPage />)).toContain("au plus 3 messages par jour");
+  });
+
   it("décrit le traitement des déblocages : base contractuelle et conservation de 24 mois au plus", () => {
     const text = pageText(<PrivacyPage />);
     expect(text).toContain("Déblocages mensuels de ventes (offre Découverte)");

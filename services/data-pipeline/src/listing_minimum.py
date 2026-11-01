@@ -64,6 +64,10 @@ verrouiller les ventes du même jour, ce que la requête de ``resolve_publicatio
 refusée, puis rattachée par le balayage de dédoublonnage quand les deux lignes sont en base. Ce balayage (rapport
 ``candidates``, puis application) passe AVANT la réparation des annonces vides.
 
+Une vente au tribunal sans email refusée parce que le référentiel des tribunaux n'a pas pu être lu
+(``CourtRegistry.unavailable``) n'est pas mémorisée dans le cache des refus (``rejected_listings``), comme une page non lue :
+elle est réexaminée au passage suivant.
+
 Une annonce dont la page de détail n'a pas pu être lue (échec réseau) n'est pas jugée : elle n'est pas écrite
 non plus (``detail_unread``) et se relit au passage suivant. Elle est comptée à part.
 
@@ -91,6 +95,7 @@ from src.information_sufficiency import (
     court_registry_fallback_emails,
     excluded_contact_reason,
     extract_emails,
+    is_court_sale,
 )
 from src.information_sufficiency import _string_leaves as string_leaves
 from src.listing_location import _is_named_place_before_commune as is_named_place_before_commune
@@ -127,6 +132,8 @@ class ListingMinimum:
 
     basis: tuple[str, ...] = ()
     detail_unread: bool = False
+    #: Vente au tribunal sans email refusée parce que le référentiel des tribunaux n'a pas pu être lu : à ne pas mémoriser.
+    court_registry_unavailable: bool = False
 
     @property
     def ok(self) -> bool:
@@ -281,20 +288,26 @@ def assess(
 ) -> ListingMinimum:
     """Les preuves que la vente porte déjà ; vide : elle n'a pas le minimum."""
     has_email = has_contact_email(sale, blocklist)
+    registry = active_court_registry() if court_registry is None else court_registry
     basis = tuple(
         name
         for name, found in (
             (BASIS_STREET, has_street_or_lieu_dit(sale.address, sale.city)),
             (BASIS_EMAIL, has_email),
             # Secours : seulement quand l'annonce ne donne aucun email exploitable.
-            (BASIS_COURT_EMAIL, not has_email and has_court_email(sale, blocklist, court_registry)),
+            (BASIS_COURT_EMAIL, not has_email and has_court_email(sale, blocklist, registry)),
             (BASIS_CADASTRE, has_cadastral_reference(sale)),
             (BASIS_DOCUMENTS, has_documents(sale)),
             (BASIS_OTHER_SOURCE, has_other_source(sale)),
         )
         if found
     )
-    return ListingMinimum(basis=basis, detail_unread=not basis and detail_unread(sale))
+    return ListingMinimum(
+        basis=basis,
+        detail_unread=not basis and detail_unread(sale),
+        # Refus d'une vente au tribunal qu'un référentiel illisible n'a pas pu sauver : à réexaminer, pas à mémoriser.
+        court_registry_unavailable=not basis and registry.unavailable and is_court_sale(sale),
+    )
 
 
 def has_listing_minimum(

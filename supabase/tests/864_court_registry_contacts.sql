@@ -64,8 +64,9 @@ select is(
 select ok(
   not exists (
     select 1
-    from public.court_registry_contacts contact, unnest(contact.emails) as address
-    where address <> lower(address) or address !~ '@justice\.fr$'
+    from public.court_registry_contacts contact, unnest(contact.emails) as found(email_address)
+    where found.email_address <> lower(found.email_address)
+       or found.email_address !~ '@justice\.fr$'
   ),
   'every address is lower case and ends with @justice.fr'
 );

@@ -36,13 +36,22 @@ export async function assertInformationAgentRecipientCooldown({
   identityKeys = [],
   approvedAt,
   now = new Date(),
+  courtRegistryFallback = false,
 }: {
   email: string;
   missionId?: string | null;
   identityKeys?: readonly string[];
   approvedAt?: string | null;
   now?: Date;
+  /**
+   * Message au greffe du référentiel des tribunaux (origine `court_registry_fallback`) : le délai de 30
+   * jours par adresse est levé (décision du propriétaire du 01/11/2026). Le greffe est limité à un message
+   * par vente et par tribunal et à un plafond par tribunal et par jour (`court-registry.ts`). Ne jamais
+   * passer ce paramètre pour un avocat ou un autre professionnel.
+   */
+  courtRegistryFallback?: boolean;
 }): Promise<void> {
+  if (courtRegistryFallback) return;
   const normalized = normalizedEmail(email);
   if (!normalized) throw new Error("Adresse email du contact invalide.");
   const since = new Date(

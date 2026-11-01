@@ -6,6 +6,7 @@ import {
   informationAgentPreviewFingerprint,
 } from "@/lib/information-agent";
 import { assertInformationAgentContactAllowed } from "@/lib/information-agent/contacts";
+import { assertInformationAgentRecipientCooldown } from "@/lib/information-agent/recipient-cooldown";
 import {
   assertCourtRegistryFallbackLimits,
   courtRegistryFallbackOfMission,
@@ -24,7 +25,11 @@ import {
   renderInformationAgentEmailContent,
 } from "@/lib/information-agent-email-template";
 import { assertNoInformationAgentCommercialMention } from "@/lib/information-agent-commercial-guard";
-import { informationAgentAddressOrigin } from "@/lib/information-agent-compliance";
+import {
+  informationAgentAddressOrigin,
+  informationAgentLegalFooterLines,
+  type informationAgentLegalFooterSections,
+} from "@/lib/information-agent-compliance";
 import type { AuctionSale } from "@/lib/types";
 
 /**
@@ -48,6 +53,7 @@ const db = vi.hoisted(() => ({
   courtMissionsForSale: [] as Array<Record<string, unknown>>,
   courtMissionsToday: [] as Array<Record<string, unknown>>,
   courtMissionsUnverified: [] as Array<Record<string, unknown>>,
+  cooldownMissions: [] as Array<Record<string, unknown>>,
   mission: null as Record<string, unknown> | null,
   inserted: null as Record<string, unknown> | null,
   observed: [] as Array<Record<string, unknown>>,
@@ -170,6 +176,8 @@ vi.mock("@/integrations/supabase/client.server", () => {
             : has("sale_id")
               ? db.courtMissionsForSale
               : db.courtMissionsToday;
+      } else if (this.table === "information_agent_missions") {
+        data = db.cooldownMissions;
       }
       return Promise.resolve({ data, error: null }).then(onFulfilled);
     }
@@ -231,6 +239,7 @@ beforeEach(() => {
   db.courtMissionsForSale = [];
   db.courtMissionsToday = [];
   db.courtMissionsUnverified = [];
+  db.cooldownMissions = [];
   db.mission = null;
   db.inserted = null;
   db.observed = [];
@@ -568,9 +577,10 @@ describe("message au greffe", () => {
       observedBy: "agent",
     });
     expect(origin).toEqual({
-      text: "Il s’agit de l’adresse de contact de votre juridiction (Tribunal judiciaire d'Agen), reprise du référentiel des tribunaux d’Immojudis le 14/10/2026 : l’annonce de cette vente ne donne aucune adresse de l’avocat poursuivant.",
+      text: "Adresse de contact publique de votre juridiction (Tribunal judiciaire d'Agen), issue du référentiel des tribunaux tenu par Immojudis, relevée le 14/10/2026 ; l’annonce ne donne aucune adresse d’avocat.",
       url: null,
       automated: false,
+      courtRegistry: true,
     });
   });
 });
@@ -606,7 +616,7 @@ describe("aperçu et envoi d'une demande au greffe", () => {
   const content = {
     missionId: MISSION_ID,
     recipientEmail: COURT_EMAIL,
-    recipientName: null,
+    recipientName: "Prénom Nom du greffier",
     subject: "Maison à Agen, date à confirmer : avocat poursuivant ou pièces publiques",
     bodyText: `Madame, Monsieur,\n\n- ${COURT_REGISTRY_QUESTION}`,
   };
@@ -641,13 +651,20 @@ describe("aperçu et envoi d'une demande au greffe", () => {
     const result = await previewAdminInformationAgentMission({ auth: admin, input: content });
     expect(result.blockers).toEqual([]);
     expect(result.addressOrigin).toEqual({
-      text: expect.stringContaining("adresse de contact de votre juridiction"),
+      text: expect.stringContaining("Adresse de contact publique de votre juridiction"),
       url: null,
       automated: false,
+      courtRegistry: true,
       known: true,
     });
     expect(result.preview.text).toContain("Madame, Monsieur,");
-    expect(result.preview.text).toContain("référentiel des tribunaux d’Immojudis");
+    expect(result.preview.text).toContain("issue du référentiel des tribunaux tenu par Immojudis");
+    // Pied de la variante « greffe » : une fois par vente et plafond du tribunal, jamais « 30 jours ».
+    expect(result.preview.text).toContain("Nous écrivons au plus une fois par vente");
+    expect(result.preview.text).toContain("au plus 3 messages par jour, sans relance");
+    expect(result.preview.text).toContain("l’adresse de contact de votre greffe");
+    expect(result.preview.text).not.toContain("30 jours");
+    expect(result.preview.text).not.toContain("votre adresse professionnelle");
     expect(result.preview.text).not.toContain("retrouvée automatiquement");
     expect(result.fingerprint).toMatch(/^[a-f0-9]{64}$/);
   });
@@ -696,20 +713,22 @@ describe("aperçu et envoi d'une demande au greffe", () => {
   });
 
   it("envoie la demande au greffe, journalise son origine et revérifie les limites après l'approbation", async () => {
-    mocks.rpc.mockImplementation(async (name: string) =>
-      name === "approve_information_agent_mission_admin"
-        ? {
-            data: [
-              {
-                case_id: "33333333-3333-4333-8333-333333333333",
-                should_send: true,
-                inbound_token: "44444444-4444-4444-8444-444444444444",
-              },
-            ],
-            error: null,
-          }
-        : { data: null, error: null },
-    );
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name !== "approve_information_agent_mission_admin") return { data: null, error: null };
+      Object.assign(db.mission!, { approved_at: "2026-10-14T12:00:00.000Z" });
+      return {
+        data: [
+          {
+            case_id: "33333333-3333-4333-8333-333333333333",
+            should_send: true,
+            inbound_token: "44444444-4444-4444-8444-444444444444",
+          },
+        ],
+        error: null,
+      };
+    });
+    // Le délai de 30 jours par adresse est levé pour le greffe : un envoi récent à la même adresse ne bloque pas.
+    db.cooldownMissions = [{ id: "autre", approved_at: "2026-10-10T10:00:00.000Z" }];
     mocks.send.mockResolvedValue({ id: "provider-message-id" });
     const fingerprint = informationAgentPreviewFingerprint(
       { adminId: ADMIN_ID, ...content },
@@ -729,7 +748,7 @@ describe("aperçu et envoi d'une demande au greffe", () => {
     expect(mocks.send).toHaveBeenCalledOnce();
     expect(mocks.send.mock.calls[0]![0].message).toMatchObject({
       to: COURT_EMAIL,
-      text: expect.stringContaining("adresse de contact de votre juridiction"),
+      text: expect.stringContaining("Adresse de contact publique de votre juridiction"),
     });
     expect(db.messages[0]).toMatchObject({
       to_email: COURT_EMAIL,
@@ -740,15 +759,16 @@ describe("aperçu et envoi d'une demande au greffe", () => {
       }),
     });
     expect(db.mission).toMatchObject({ status: "sent", recipient_kind: "source_contact" });
-    // Avant l'approbation, puis après (avec la date d'approbation), pour les 4 requêtes de limites.
+    // Jamais de nom de greffier dans un champ structuré, même saisi à la main.
+    expect(db.mission).toMatchObject({ recipient_name: null, recipient_identity_keys: [] });
+    // Les 4 requêtes de limites avant l'approbation, puis les 4 après (seules les approbations plus
+    // anciennes comptent : les approbations concurrentes se départagent).
+    const isOlderOnly = (filters: Filter[]) =>
+      filters.some(([op, column]) => op === "lte" && column === "approved_at");
     expect(db.courtQueries).toHaveLength(8);
-    expect(
-      db.courtQueries
-        .slice(4)
-        .every((filters) =>
-          filters.some(([op, column]) => op === "lte" && column === "approved_at"),
-        ),
-    ).toBe(false);
+    expect(db.courtQueries.slice(0, 4).some(isOlderOnly)).toBe(false);
+    expect(db.courtQueries.slice(4).every(isOlderOnly)).toBe(true);
+    expect(mocks.send.mock.calls[0]![0].message.text).toContain("au plus 3 messages par jour");
   });
 
   it("n'envoie rien quand le plafond du jour est atteint", async () => {
@@ -771,5 +791,155 @@ describe("aperçu et envoi d'une demande au greffe", () => {
     ).rejects.toThrow("Plafond atteint");
     expect(mocks.send).not.toHaveBeenCalled();
     expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+});
+
+describe("délai de 30 jours : levé pour le greffe seulement", () => {
+  const recent = [{ id: "autre", approved_at: "2026-10-10T10:00:00.000Z" }];
+
+  it("un avocat déjà sollicité récemment reste bloqué", async () => {
+    mocks.sale.mockResolvedValue(courtSale({ lawyer_contact: "cabinet@example.test" }));
+    db.cooldownMissions = recent;
+    await expect(draft()).rejects.toThrow("déjà été sollicité");
+  });
+
+  it("le greffe n'est pas bloqué par un envoi récent à la même adresse, mais par ses limites", async () => {
+    db.cooldownMissions = recent;
+    await expect(draft()).resolves.toBeDefined();
+    db.courtMissionsForSale = [{ id: "a", approved_at: "2026-10-01T10:00:00.000Z" }];
+    await expect(draft()).rejects.toThrow("une seule demande est autorisée");
+  });
+
+  it("le paramètre n'est passé que pour l'origine greffe", async () => {
+    db.cooldownMissions = recent;
+    await expect(
+      assertInformationAgentRecipientCooldown({ email: COURT_EMAIL, courtRegistryFallback: true }),
+    ).resolves.toBeUndefined();
+    await expect(assertInformationAgentRecipientCooldown({ email: COURT_EMAIL })).rejects.toThrow(
+      "déjà été sollicité",
+    );
+  });
+
+  it("le pied d'un avocat garde les 30 jours, celui d'un greffe annonce le plafond configuré", () => {
+    const base = {
+      controllerName: "Immojudis SAS",
+      controllerAddress: "1 rue de la Paix",
+      contactEmail: "contact@immojudis.example",
+      saleReference: null,
+      addressOrigin: "Origine",
+      aiProvider: { name: "Replicate", country: "États-Unis" },
+      privacyUrl: "https://immojudis.example/privacy",
+      optOutUrl: "https://immojudis.example/opt-out",
+    } as unknown as Parameters<typeof informationAgentLegalFooterSections>[0];
+    const lawyer = informationAgentLegalFooterLines(base).join("\n");
+    expect(lawyer).toContain("une fois par période de 30 jours");
+    expect(lawyer).toContain("votre adresse professionnelle");
+    const court = informationAgentLegalFooterLines({ ...base, courtRegistryDailyCap: 2 }).join(
+      "\n",
+    );
+    expect(court).toContain(
+      "Nous écrivons au plus une fois par vente et, pour un même tribunal, au plus 2 messages par jour, sans relance.",
+    );
+    expect(court).toContain("le nom, la fonction et les coordonnées de la personne qui répond");
+    expect(court).not.toContain("30 jours");
+    expect(
+      informationAgentLegalFooterLines({ ...base, courtRegistryDailyCap: 1 }).join("\n"),
+    ).toContain("au plus 1 message par jour");
+  });
+});
+
+describe("vente relue à l'aperçu et à l'envoi d'une demande au greffe", () => {
+  const content = {
+    missionId: MISSION_ID,
+    recipientEmail: COURT_EMAIL,
+    recipientName: null,
+    subject: "Maison à Agen, date à confirmer : avocat poursuivant ou pièces publiques",
+    bodyText: `Madame, Monsieur,\n\n- ${COURT_REGISTRY_QUESTION}`,
+  };
+
+  beforeEach(() => {
+    db.mission = {
+      id: MISSION_ID,
+      user_id: ADMIN_ID,
+      sale_id: SALE_ID,
+      case_id: "33333333-3333-4333-8333-333333333333",
+      status: "draft",
+      created_at: "2026-10-13T09:30:00Z",
+      recipient_email: COURT_EMAIL,
+      recipient_identity_keys: [],
+      sale_snapshot: { title: "Maison à Agen" },
+      metadata: {
+        contact_discovery: { method: "court_registry_fallback" },
+        court_registry_fallback: { court_code: "agen", court_name: "Tribunal judiciaire d'Agen" },
+      },
+    };
+    db.contacts = [
+      {
+        normalized_email: COURT_EMAIL,
+        scope_sale_id: SALE_ID,
+        source_kind: "court_registry_fallback",
+        source_name: "Tribunal judiciaire d'Agen",
+        observed_at: "2026-10-13T09:30:00Z",
+        observed_by: "agent",
+        opposition_status: "unknown",
+        bounce_status: "none",
+      },
+    ];
+    vi.stubEnv("INFORMATION_AGENT_PORTAL_SECRET", PORTAL_SECRET);
+    vi.stubEnv("INFORMATION_AGENT_OUTBOUND_ENABLED", "true");
+    vi.stubEnv("INFORMATION_AGENT_OUTBOUND_CANARY_ONLY", "false");
+    vi.stubEnv("RESEND_API_KEY", "test-resend-key");
+    vi.stubEnv("INFORMATION_AGENT_EMAIL_FROM", "agent@example.test");
+    vi.stubEnv("INFORMATION_AGENT_INBOUND_DOMAIN", "reply.example.test");
+    vi.stubEnv("NEXT_PUBLIC_LEGAL_ENTITY_NAME", "Immojudis SAS");
+    vi.stubEnv("NEXT_PUBLIC_LEGAL_ENTITY_ADDRESS", "1 rue de la Paix, 33000 Bordeaux");
+    vi.stubEnv("NEXT_PUBLIC_LEGAL_CONTACT_EMAIL", "contact@immojudis.example");
+  });
+
+  const blockers = async () =>
+    (await previewAdminInformationAgentMission({ auth: admin, input: content })).blockers;
+
+  it("sans changement, aucun motif de blocage", async () => {
+    expect(await blockers()).toEqual([]);
+  });
+
+  it.each([
+    ["le tribunal a changé", { tribunal_code: "bordeaux" }, "le tribunal de la vente a changé"],
+    [
+      "la vente n'est plus confirmée",
+      { sale_verification_status: "pending" },
+      "vente non confirmée",
+    ],
+    ["la vente est incohérente", { quality_flags: ["tribunal_inconsistent"] }, "incohérente"],
+    ["la vente est une vente de notaire", { sale_venue_type: "notary" }, "hors tribunal"],
+    [
+      "l'annonce donne un email d'avocat",
+      { lawyer_contact: "cabinet@example.test" },
+      "adresse d’avocat",
+    ],
+  ] as const)("refuse quand %s", async (_name, change, reason) => {
+    mocks.sale.mockResolvedValue(courtSale(change as Partial<AuctionSale>));
+    expect(await blockers()).toEqual([expect.stringContaining(reason)]);
+  });
+
+  it("refuse l'envoi lui-même, avant toute approbation", async () => {
+    mocks.sale.mockResolvedValue(courtSale({ lawyer_contact: "cabinet@example.test" }));
+    const fingerprint = informationAgentPreviewFingerprint(
+      { adminId: ADMIN_ID, ...content },
+      { INFORMATION_AGENT_PORTAL_SECRET: PORTAL_SECRET },
+    )!;
+    await expect(
+      runAdminInformationAgentAction({
+        auth: admin,
+        input: {
+          action: "approve_and_send",
+          approvalConfirmed: true,
+          ...content,
+          previewFingerprint: fingerprint,
+        },
+      }),
+    ).rejects.toThrow("adresse d’avocat");
+    expect(mocks.rpc).not.toHaveBeenCalled();
+    expect(mocks.send).not.toHaveBeenCalled();
   });
 });

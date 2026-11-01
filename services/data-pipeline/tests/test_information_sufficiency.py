@@ -269,6 +269,14 @@ def test_an_unavailable_court_registry_is_empty_and_never_raises(monkeypatch):
 
     monkeypatch.setattr("httpx.get", failing_get)
     settings = {"supabase_url": "https://project.example.test", "supabase_service_role_key": "cle-exemple"}
-    assert load_court_registry(settings) is NO_COURT_REGISTRY
-    assert load_court_registry({}) is NO_COURT_REGISTRY
+    unavailable = load_court_registry(settings)
+    assert unavailable.unavailable and unavailable.emails("agen") == ()
+    # Sans identifiants il n'y a pas de base à lire : ni lecture tentée, ni échec à signaler.
+    assert load_court_registry({}) is NO_COURT_REGISTRY and not NO_COURT_REGISTRY.unavailable
+
+
+def test_a_malformed_court_registry_response_is_unavailable_too(monkeypatch):
+    monkeypatch.setattr("httpx.get", lambda url, **kwargs: _Response({"message": "erreur"}))
+    settings = {"supabase_url": "https://project.example.test", "supabase_service_role_key": "cle-exemple"}
+    assert load_court_registry(settings).unavailable
 

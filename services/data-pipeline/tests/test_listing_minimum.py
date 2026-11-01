@@ -9,6 +9,7 @@ from src import listing_minimum
 from src.autonomous_runner import PENDING_PUBLICATION_DECISIONS, STUCK_PUBLICATION_DECISIONS
 from src.information_sufficiency import (
     COURT_FALLBACK_EXCLUDED_SOURCES,
+    UNAVAILABLE_COURT_REGISTRY,
     ContactBlocklist,
     build_court_registry,
     set_active_blocklist,
@@ -433,6 +434,37 @@ def test_a_court_sale_with_another_proof_is_not_counted_as_a_court_fallback() ->
     assert listing_minimum.summary()["court_email_fallback"] == {"total": 0, "by_source": {}}
 
 
+def test_a_court_sale_refused_because_the_registry_was_unreadable_is_not_remembered(monkeypatch) -> None:
+    remembered: list[list[str]] = []
+    monkeypatch.setattr(
+        "src.publication_identity.rejected_listings.remember",
+        lambda connection, sales: remembered.append([item.source_url for item in sales]),
+    )
+    set_active_court_registry(UNAVAILABLE_COURT_REGISTRY)
+    court, plain = court_sale(), sale("https://www.vench.fr/vente-9-une-maison-ondres.html")
+    notary = court_sale("https://www.vench.fr/vente-8-une-maison-ondres.html", sale_venue_type="notary")
+    assert assess(court).court_registry_unavailable and not assess(court).ok
+    assert not assess(plain).court_registry_unavailable and not assess(notary).court_registry_unavailable
+    with listing_minimum.collecting() as refused:
+        resolve_publication_identities(_Connection(), [court, plain, notary])
+    assert len(refused) == 3
+    # La vente au tribunal sera réexaminée ; les autres refus restent mémorisés comme avant.
+    assert remembered == [[plain.source_url, notary.source_url]]
+
+
+def test_a_court_sale_refused_with_a_readable_registry_is_remembered(monkeypatch) -> None:
+    remembered: list[list[str]] = []
+    monkeypatch.setattr(
+        "src.publication_identity.rejected_listings.remember",
+        lambda connection, sales: remembered.append([item.source_url for item in sales]),
+    )
+    with_registry(pau=["accueil.exemple-pau@justice.fr"])  # lisible, mais sans l'adresse de son tribunal
+    court = court_sale()
+    assert not assess(court).court_registry_unavailable
+    resolve_publication_identities(_Connection(), [court])
+    assert remembered == [[court.source_url]]
+
+
 def test_a_listing_already_in_the_database_is_never_refused_even_if_the_registry_is_empty() -> None:
     existing = stored(VENCH, lawyer_contact="contact@cabinet-modele.example")
     with listing_minimum.collecting() as refused:
@@ -501,3 +533,12 @@ def test_the_sql_rule_reads_the_three_cadastre_location_forms() -> None:
     for path in ("$.candidates[*].parcels[*]", "$.parcels[*]", "$.references[*]"):
         assert path in text
     assert tuple(listing_minimum._FLAT_PARCEL_KEYS) == ("parcels", "references")
+
+
+def test_a_migration_resets_the_rejected_cache_for_court_sales_but_keeps_the_sources_that_have_none() -> None:
+    text = (
+        SUPPORT_MIGRATION.parent / "20261110190200_rejected_listings_reset_for_court_sales.sql"
+    ).read_text(encoding="utf-8")
+    assert "delete from app_private.rejected_listings" in text
+    for source in COURT_FALLBACK_EXCLUDED_SOURCES:
+        assert f"'{source}'" in text
