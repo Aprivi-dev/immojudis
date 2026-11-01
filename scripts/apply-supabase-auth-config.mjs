@@ -43,6 +43,8 @@ export const TEMPLATE_IDS = [
 export const VARIANTS = ["principal", "retour-arriere"];
 export const RETOUR_ARRIERE_DIRECTORY = "docs/runbooks/emails-authentification/retour-arriere";
 export const SENDER_DOMAIN = "immojudis.com";
+// Origine fixe de la page d'arrivée du lien (EMAIL_SITE_URL dans src/lib/email-brand.ts).
+export const CONFIRMATION_PAGE = "https://immojudis.com/auth/confirmer";
 
 // Gabarit sans lien : la réauthentification n'envoie qu'un code ({{ .Token }}).
 const CODE_ONLY_TEMPLATES = new Set(["reauthentication"]);
@@ -71,7 +73,6 @@ const MAX_DIFF_COLUMNS = 160;
 // ---------------------------------------------------------------------------------------------
 
 export const ALLOWED_VARIABLES = new Set([
-  "{{ .SiteURL }}",
   "{{ .TokenHash }}",
   "{{ .RedirectTo }}",
   "{{ .ConfirmationURL }}",
@@ -132,6 +133,10 @@ export function templateProblems({ id, subject, content }, variant) {
     problems.push(`${id} : « {{ » ou « }} » mal formé`);
   }
 
+  // `{{ .SiteURL }}` porte une barre finale : il donnait `https://immojudis.com//auth/confirmer`. Les
+  // gabarits écrivent l'origine en clair ; ni la variable ni la double barre ne sont acceptées.
+  if (content.includes("//auth")) problems.push(`${id} : « //auth » dans le lien (double barre)`);
+
   if (CODE_ONLY_TEMPLATES.has(id)) {
     if (!content.includes("{{ .Token }}")) problems.push(`${id} : code {{ .Token }} absent`);
     if (content.includes("{{ .ConfirmationURL }}") || content.includes("/auth/confirmer")) {
@@ -145,7 +150,11 @@ export function templateProblems({ id, subject, content }, variant) {
       problems.push(`${id} : la variante retour-arriere ne doit pas mener à /auth/confirmer`);
     }
   } else {
-    if (!content.includes("/auth/confirmer")) problems.push(`${id} : lien /auth/confirmer absent`);
+    if (!content.includes(`${CONFIRMATION_PAGE}?token_hash=`)) {
+      problems.push(
+        `${id} : lien /auth/confirmer absent (attendu : ${CONFIRMATION_PAGE}?token_hash=…)`,
+      );
+    }
     if (!content.includes("{{ .TokenHash }}")) problems.push(`${id} : {{ .TokenHash }} absent`);
     if (content.includes("{{ .ConfirmationURL }}")) {
       problems.push(`${id} : la variante principale ne doit pas employer {{ .ConfirmationURL }}`);
