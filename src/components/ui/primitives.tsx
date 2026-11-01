@@ -145,6 +145,7 @@ const SHELL_WIDTHS = {
  * hauteur : aucun décalage supérieur codé en dur.
  */
 export function PageShell({
+  breadcrumb,
   eyebrow,
   title,
   description,
@@ -153,6 +154,8 @@ export function PageShell({
   className,
   children,
 }: {
+  /** Fil d'Ariane (`<nav>`), posé au-dessus de l'en-tête de la page. */
+  breadcrumb?: ReactNode;
   eyebrow?: string;
   title: string;
   description?: ReactNode;
@@ -166,6 +169,7 @@ export function PageShell({
       id="contenu"
       className={cn("mx-auto w-full px-4 py-8 sm:px-6 sm:py-12", SHELL_WIDTHS[width], className)}
     >
+      {breadcrumb}
       <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
         <div className="min-w-0">
           {eyebrow ? <Eyebrow className="mb-2">{eyebrow}</Eyebrow> : null}

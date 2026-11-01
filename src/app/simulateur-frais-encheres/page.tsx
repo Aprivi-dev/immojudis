@@ -5,6 +5,7 @@ import { FeesSimulator } from "@/components/fees-simulator/FeesSimulator";
 import { formatScaleDate } from "@/components/fees-simulator/scale-date";
 import { Card, PageShell, buttonClasses } from "@/components/ui/primitives";
 import { BreadcrumbJsonLd } from "@/components/BreadcrumbJsonLd";
+import { DepartmentAlertProposal } from "@/components/DepartmentAlertProposalLazy";
 import { LaunchOfferNote } from "@/components/LaunchOfferNote";
 import { loginPathWithRedirect } from "@/lib/navigation";
 import { pageMetadata } from "@/lib/page-metadata";
@@ -35,7 +36,24 @@ function PageContent() {
     <PageShell
       eyebrow="Simulateur de frais"
       title="Combien coûte vraiment un bien adjugé ?"
-      description="Le prix d’adjudication n’est qu’une partie de la dépense. S’y ajoutent les émoluments proportionnels de vente (répartis entre l’avocat poursuivant et l’avocat de l’adjudicataire), les droits de mutation, les frais préalables de la procédure, les honoraires de votre avocat et, le cas échéant, les travaux. Saisissez vos hypothèses : le total se met à jour en direct. Vous pouvez aussi partir de votre budget pour trouver le prix d’adjudication maximal, ou calculer une surenchère du dixième."
+      description={
+        <>
+          <p>Saisissez vos hypothèses : le coût total se met à jour en direct.</p>
+          <details className="mt-3 text-sm">
+            <summary className="min-h-11 cursor-pointer py-2 font-semibold text-foreground">
+              Ce qui est inclus
+            </summary>
+            <p className="mt-1">
+              Le prix d’adjudication n’est qu’une partie de la dépense. S’y ajoutent les émoluments
+              proportionnels de vente (répartis entre l’avocat poursuivant et l’avocat de
+              l’adjudicataire), les droits de mutation, les frais préalables de la procédure, les
+              honoraires de votre avocat et, le cas échéant, les travaux. Vous pouvez aussi partir
+              de votre budget pour trouver le prix d’adjudication maximal, ou calculer une
+              surenchère du dixième.
+            </p>
+          </details>
+        </>
+      }
     >
       <Card as="section" aria-label="Précisions sur l’estimation" className="mb-6 bg-surface-muted">
         <p className="font-semibold">
@@ -72,13 +90,15 @@ function PageContent() {
             Essayer l’enchère plafond sur un exemple
           </Link>
           <Link
-            href={loginPathWithRedirect("/sales")}
+            href={loginPathWithRedirect("/sales", { reason: "simulateur" })}
             className={buttonClasses({ variant: "secondary", size: "md" })}
           >
             Créer mon compte gratuit
           </Link>
         </div>
       </section>
+
+      <DepartmentAlertProposal className="mt-8" />
     </PageShell>
   );
 }

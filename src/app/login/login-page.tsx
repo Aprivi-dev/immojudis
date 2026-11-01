@@ -150,6 +150,13 @@ function reasonCopy(reason: LoginReason, launchOffer: boolean): { signup: string
           : "Créez votre compte gratuit, sans carte bancaire, pour faire ce calcul sur une vente réelle.",
         login: "Connectez-vous pour faire ce calcul sur une vente réelle.",
       };
+    case "simulateur":
+      return {
+        signup: launchOffer
+          ? `Créez votre compte gratuit pour appliquer ce calcul de frais à une vente réelle : il bénéficie de l’offre Analyse pendant ${ANALYSIS_TRIAL_DAYS} jours, sans carte bancaire.`
+          : "Créez votre compte gratuit, sans carte bancaire, pour appliquer ce calcul de frais à une vente réelle.",
+        login: "Connectez-vous pour appliquer ce calcul de frais à une vente réelle.",
+      };
   }
 }
 

@@ -31,6 +31,14 @@ const euro = new Intl.NumberFormat("fr-FR", {
   maximumFractionDigits: 2,
 });
 
+// Le total s'affiche arrondi à l'euro (le calcul, lui, garde les centimes).
+const euroWhole = new Intl.NumberFormat("fr-FR", {
+  style: "currency",
+  currency: "EUR",
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
+});
+
 function total() {
   return screen.getByText(/€/, { selector: "[aria-live='polite']" }).textContent;
 }
@@ -88,7 +96,7 @@ describe("FeesSimulator", () => {
     });
     expect(field("Prix d’adjudication").value).toBe("100000");
     expect(field("Travaux").value).toBe("0");
-    expect(total()).toBe(euro.format(expected.totalCost));
+    expect(total()).toBe(euroWhole.format(expected.totalCost));
     expect(screen.getAllByText(/Valeur d’exemple/)).toHaveLength(2);
   });
 
@@ -110,7 +118,7 @@ describe("FeesSimulator", () => {
       works: 30_000,
       department: code,
     });
-    expect(total()).toBe(euro.format(expected.totalCost));
+    expect(total()).toBe(euroWhole.format(expected.totalCost));
     for (const amount of [
       expected.emolumentsTTC,
       expected.registrationDuties,
@@ -143,7 +151,7 @@ describe("FeesSimulator", () => {
       lawyerFees: DEFAULTS.lawyerFees,
       works: 0,
     });
-    expect(total()).toBe(euro.format(expected.totalCost));
+    expect(total()).toBe(euroWhole.format(expected.totalCost));
     expect(total()).not.toBe(withExample);
   });
 
@@ -158,7 +166,41 @@ describe("FeesSimulator", () => {
       lawyerFees: DEFAULTS.lawyerFees,
       works: 0,
     });
-    expect(total()).toBe(euro.format(expected.totalCost));
+    expect(total()).toBe(euroWhole.format(expected.totalCost));
+  });
+
+  it("arrondit le total à l'euro à l'affichage et garde les centimes dans le détail", () => {
+    render(<FeesSimulator />);
+    const expected = computeAcquisitionCosts({
+      price: DEFAULT_SIMULATOR_PRICE,
+      fpt: DEFAULTS.fpt,
+      lawyerFees: DEFAULTS.lawyerFees,
+      works: 0,
+    });
+    expect(Number.isInteger(expected.totalCost)).toBe(false);
+    expect(total()).not.toContain(",");
+    const shown = screen.getAllByRole("definition").map((node) => node.textContent);
+    expect(shown).toContain(euro.format(expected.registrationDuties));
+  });
+
+  it("place le total avant le détail et le répète dans une barre collante sur mobile", () => {
+    render(<FeesSimulator />);
+    const live = screen.getByText(/€/, { selector: "[aria-live='polite']" });
+    const firstLine = screen.getAllByRole("definition")[0];
+    expect(live.compareDocumentPosition(firstLine) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    const bar = screen.getByTestId("simulateur-total-collant");
+    expect(bar.className).toContain("sticky");
+    expect(bar.className).toContain("bottom-[var(--cookie-banner-height,0px)]");
+    expect(bar.className).toContain("lg:hidden");
+    expect(bar.textContent).toContain(`Coût total ${live.textContent}`);
+    expect(bar.textContent).toMatch(/dont \d+(,\d)? % de frais/);
+    expect(bar.querySelector("[aria-live]")).toBeNull();
+    // Le total principal reste annoncé ; la barre répétée est masquée aux lecteurs d'écran.
+    expect(bar.getAttribute("aria-hidden")).toBe("true");
+
+    fireEvent.change(field("Prix d’adjudication"), { target: { value: "" } });
+    expect(screen.getByTestId("simulateur-total-collant").textContent).not.toContain("% de frais");
   });
 
   it("annonce le total dans une région aria-live polie", () => {

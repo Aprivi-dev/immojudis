@@ -82,4 +82,15 @@ describe("primitives", () => {
     expect(main.className).not.toMatch(/pt-28/);
     expect(container.querySelectorAll("h1")).toHaveLength(1);
   });
+
+  it("PageShell pose le fil d'Ariane au-dessus du titre quand il est fourni", () => {
+    const { container } = render(
+      <PageShell breadcrumb={<nav aria-label="Fil d’Ariane">Accueil</nav>} title="Gironde">
+        <p>contenu</p>
+      </PageShell>,
+    );
+    const nav = container.querySelector("nav")!;
+    const h1 = container.querySelector("h1")!;
+    expect(nav.compareDocumentPosition(h1) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
 });

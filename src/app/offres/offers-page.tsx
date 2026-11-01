@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import BadgeEuro from "lucide-react/dist/esm/icons/badge-euro.js";
 import Bell from "lucide-react/dist/esm/icons/bell.js";
@@ -24,6 +24,7 @@ import { useLaunchOffer } from "@/hooks/use-launch-offer";
 import {
   LAUNCH_OFFER_DATA_TEXT,
   LAUNCH_OFFER_DURATION_TEXT,
+  LAUNCH_OFFER_LABEL,
   launchOfferText,
 } from "@/lib/launch-offer";
 import { offerComparisonRows, type OfferCell } from "@/lib/offer-comparison";
@@ -253,13 +254,18 @@ export function OffersPage({
       : !subscriptionKnownOpen
         ? `Tarif prévu : ${price}. Pas encore souscriptible.`
         : "Abonnement mensuel, résiliable à tout moment.";
+  // Une ligne de prix dès l'en-tête ; le 59 € n'est qu'un tarif prévu tant que rien ne se souscrit.
+  const priceLine =
+    subscriptionKnownOpen === false
+      ? `Découverte gratuite · Analyse ${price}, pas encore souscriptible`
+      : subscriptionKnownOpen
+        ? `Découverte gratuite · Analyse ${price}, résiliable à tout moment`
+        : `Découverte gratuite · Analyse : ${price}`;
   // L'invitation à l'essai s'adresse au visiteur : un compte voit son offre dans Mon compte.
   const visitorTrial = launchActive && !user;
 
   return (
     <main id="contenu" className="min-h-screen bg-white text-brand-navy">
-      {launch.pending && !user ? <LaunchOfferBannerPlaceholder /> : null}
-      {visitorTrial ? <LaunchOfferBanner /> : null}
       <section className="border-b border-brand-navy/10 bg-background">
         <div className="mx-auto grid max-w-[1460px] gap-10 px-4 py-10 sm:px-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(500px,0.85fr)] lg:items-center lg:px-8 lg:py-12">
           <div>
@@ -271,7 +277,13 @@ export function OffersPage({
               Immojudis réunit les comparables disponibles, les frais et les travaux pour vous aider
               à fixer une limite selon votre projet et vos hypothèses.
             </p>
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+            <p data-testid="offers-price-line" className="mt-4 text-sm font-semibold">
+              {priceLine}
+            </p>
+            {/* Après le titre : l'essai tient en deux lignes, ses conditions complètes à un tap. */}
+            {launch.pending && !user ? <LaunchOfferBannerPlaceholder /> : null}
+            {visitorTrial ? <LaunchOfferBanner /> : null}
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
               <Link
                 href="/annonce-exemple"
                 className={buttonClasses({ variant: "primary", size: "lg" })}
@@ -555,45 +567,62 @@ function ComparisonCell({ cell }: { cell: OfferCell }) {
   );
 }
 
-/** En tête de page pour un visiteur, tant que l'essai à l'inscription est ouvert. */
+/**
+ * Hauteur commune au bandeau et à son emplacement réservé : le bandeau tient dans cette hauteur
+ * (texte sur deux lignes au plus, puis le lien des conditions), donc rien ne bouge quand l'état de
+ * l'essai est lu. Les conditions complètes, une fois ouvertes, agrandissent le bandeau sur demande.
+ */
+const TRIAL_BOX_CLASSES =
+  "mt-5 min-h-[7.25rem] rounded-lg border border-gold/40 bg-gold/10 px-3 py-3 sm:min-h-[4.5rem]";
+
+/**
+ * Sous le titre pour un visiteur, tant que l'essai à l'inscription est ouvert : deux lignes au plus,
+ * et le texte complet des conditions à un tap (« Voir les conditions »), jamais retiré de la page.
+ */
 function LaunchOfferBanner() {
+  const [open, setOpen] = useState(false);
+  const conditionsId = useId();
   return (
     <section
       aria-label="Essai gratuit"
       data-testid="launch-offer-banner"
-      className="border-b border-gold/40 bg-gold/10"
+      className={TRIAL_BOX_CLASSES}
     >
-      <div className="mx-auto flex max-w-[1460px] flex-col gap-4 px-4 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
-        <p className="flex max-w-4xl items-start gap-3 text-sm font-medium leading-relaxed text-brand-navy sm:text-base">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <p className="flex items-start gap-2 text-sm font-medium leading-relaxed text-brand-navy">
           <Gift className="mt-0.5 size-5 shrink-0 text-gold-text" aria-hidden />
-          <span>{launchOfferText("visitor")}</span>
+          <span>{LAUNCH_OFFER_LABEL}, sans carte bancaire.</span>
         </p>
-        <Link
-          href={pathWithSearch("/login", { mode: "investor", redirect: "/sales" })}
-          className={buttonClasses({ variant: "primary", size: "lg" })}
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={conditionsId}
+          onClick={() => setOpen((current) => !current)}
+          className="inline-flex min-h-11 shrink-0 items-center self-start text-sm font-semibold text-gold-text underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft sm:self-auto"
         >
-          Créer mon compte gratuit
-          <ArrowRight className="size-4" aria-hidden />
-        </Link>
+          {open ? "Masquer les conditions" : "Voir les conditions"}
+        </button>
       </div>
+      <p
+        id={conditionsId}
+        hidden={!open}
+        data-testid="launch-offer-conditions"
+        className="mt-1 text-sm leading-relaxed text-ink-soft"
+      >
+        {launchOfferText("visitor")}
+      </p>
     </section>
   );
 }
 
 /**
- * Tant que l'état de l'offre n'est pas lu : une hauteur réservée à la place du bandeau, pour que le
- * titre ne descende pas quand il apparaît (décalage de mise en page mesuré à 0,19). Hauteurs
- * approximatives du bandeau selon la largeur (texte sur 5 à 6 lignes sur mobile, 2 à 3 sur grand
- * écran) : le bandeau n'est jamais rendu côté serveur, la coupure de l'offre doit se voir en moins
- * de 60 s.
+ * Tant que l'état de l'offre n'est pas lu : la même hauteur que le bandeau (`TRIAL_BOX_CLASSES`),
+ * pour que les boutons ne descendent pas quand il apparaît. Le bandeau n'est jamais rendu côté
+ * serveur sans état lu : la coupure de l'offre doit se voir en moins de 60 s.
  */
 function LaunchOfferBannerPlaceholder() {
   return (
-    <div
-      aria-hidden
-      data-testid="launch-offer-banner-placeholder"
-      className="min-h-[15.5rem] border-b border-gold/40 bg-gold/10 sm:min-h-[13rem] lg:min-h-[7.5rem]"
-    />
+    <div aria-hidden data-testid="launch-offer-banner-placeholder" className={TRIAL_BOX_CLASSES} />
   );
 }
 
