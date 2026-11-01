@@ -30,6 +30,9 @@ Les procédures pas à pas sont dans [`runbooks/`](runbooks/). Les plus utiles :
 | Couper ou rétablir l'essai de 7 jours                         | [Essai gratuit à l'inscription](runbooks/offre-de-lancement.md)                                                                                                                                                          |
 | Alerte `cron.stale`, santé opérationnelle                     | [Phase 3 : SLO et runbooks](operations-phase-3.md), [arrêt de la santé opérationnelle](runbooks/operational-health-arret.md)                                                                                             |
 | Collecte arrêtée ou en retard                                 | [`pipeline-scheduler-disabled`](runbooks/pipeline-scheduler-disabled.md), [`pipeline-source-stale-listings`](runbooks/pipeline-source-stale-listings.md), [`pipeline-source-missed`](runbooks/pipeline-source-missed.md) |
+| Un secret ou des données ont fuité | [Fuite de secret ou de données](runbooks/fuite-secret-ou-donnees.md) |
+| Un déploiement ou une migration pose problème | [Retour arrière](runbooks/retour-arriere.md) |
+| Un plafond de fournisseur approche (Mapbox, Resend, Supabase, Vercel) | [Quotas](runbooks/quotas.md) |
 | Alertes email en retard                                       | [`alerts-delivery-late`](runbooks/alerts-delivery-late.md)                                                                                                                                                               |
 | Agent d'information                                           | [`information-agent`](runbooks/information-agent.md)                                                                                                                                                                     |
 | Sécurité Supabase                                             | [`supabase-security-advisors`](runbooks/supabase-security-advisors.md)                                                                                                                                                   |
@@ -55,6 +58,8 @@ Planification et supervision :
 - [Comptes-rendus de l'équipe d'agents](equipe/README.md) : un fichier par mission, décisions du propriétaire
   incluses.
 - [Audits](audits/) (sources, extraction, performance) et [archives](archive/).
+- [Recherche utilisateurs](recherche/README.md) : guides d'entretien (marchands de biens, avocats), protocole du
+  test d'utilisabilité de l'enchère plafond, projet de consentement (à valider par `juridique-rgpd`).
 - Audits récents : [DVF et valorisation](dvf-valuation-audit-2026-07-12.md),
   [préparation des statistiques](statistics-pilot-readiness-2026-08-24.md),
   [feuille de route d'enrichissement](statistics-data-enrichment-roadmap.md).

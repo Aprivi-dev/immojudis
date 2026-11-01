@@ -47,6 +47,36 @@ describe("alert notifications", () => {
     expect(scheduledForFrequency("weekly", now)).toBe("2026-07-13T07:00:00.000Z");
   });
 
+  it("schedules a match detected before 07:00 UTC the same day, otherwise the next day", () => {
+    // Passage smart-alerts de 06:15 UTC : échu pour le passage de 07:30 du jour même.
+    const morning = new Date("2026-07-07T06:15:00.000Z");
+    expect(scheduledForFrequency("daily", morning)).toBe("2026-07-07T07:00:00.000Z");
+    expect(scheduledForFrequency("instant", morning)).toBe("2026-07-07T07:00:00.000Z");
+    expect(scheduledForFrequency("daily", new Date("2026-07-07T00:00:00.000Z"))).toBe(
+      "2026-07-07T07:00:00.000Z",
+    );
+    // À 07:00 pile et au rattrapage de 08:15 : le lendemain.
+    expect(scheduledForFrequency("daily", new Date("2026-07-07T07:00:00.000Z"))).toBe(
+      "2026-07-08T07:00:00.000Z",
+    );
+    expect(scheduledForFrequency("daily", new Date("2026-07-07T08:15:00.000Z"))).toBe(
+      "2026-07-08T07:00:00.000Z",
+    );
+  });
+
+  it("keeps the weekly digest on Monday, the same day only when Monday starts before 07:00 UTC", () => {
+    // Mardi 06:15 : lundi suivant. Lundi 06:15 : le jour même. Lundi 08:15 : lundi suivant.
+    expect(scheduledForFrequency("weekly", new Date("2026-07-07T06:15:00.000Z"))).toBe(
+      "2026-07-13T07:00:00.000Z",
+    );
+    expect(scheduledForFrequency("weekly", new Date("2026-07-06T06:15:00.000Z"))).toBe(
+      "2026-07-06T07:00:00.000Z",
+    );
+    expect(scheduledForFrequency("weekly", new Date("2026-07-06T08:15:00.000Z"))).toBe(
+      "2026-07-13T07:00:00.000Z",
+    );
+  });
+
   it("builds idempotent notification insert rows from persisted matches", () => {
     const rows = buildAlertNotificationRows({
       userId: "user-1",

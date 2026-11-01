@@ -45,7 +45,7 @@ const siteOrigin = resolveSiteOrigin(process.env, "http://localhost:3000")!;
 export const metadata: Metadata = {
   metadataBase: new URL(siteOrigin),
   title: {
-    default: "Immojudis - Les enchères immobilières en toute clarté",
+    default: "Immojudis - Les enchères immobilières, en toute clarté",
     template: "%s - Immojudis",
   },
   description: COMPANY_DESCRIPTION,
@@ -59,7 +59,7 @@ export const metadata: Metadata = {
     apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
   },
   openGraph: {
-    title: "Immojudis - Les enchères immobilières en toute clarté",
+    title: "Immojudis - Les enchères immobilières, en toute clarté",
     description: COMPANY_DESCRIPTION,
     type: "website",
     // Pas d'`url` ici : cet objet est hérité par toutes les pages, et fixer l'accueil comme

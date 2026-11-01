@@ -1,4 +1,5 @@
 import Link from "next/link";
+import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
 import { visibleSaleTypeOptions, type SaleTypeFilter as SaleTypeValue } from "@/lib/sale-types";
 
 export function SaleTypeFilter({
@@ -45,5 +46,36 @@ export function SaleTypeFilter({
         </Link>
       </div>
     </fieldset>
+  );
+}
+
+/**
+ * Le type de vente en liste déroulante, segment du contrôle « Tri et type de vente » de /sales
+ * (`SortAndSaleTypeControl`) : « Toutes » ou l'un des types, comme les pastilles de `SaleTypeFilter`.
+ */
+export function SaleTypeSelect({
+  value,
+  onChange,
+}: {
+  value: SaleTypeValue | "";
+  onChange: (value: SaleTypeValue | "") => void;
+}) {
+  return (
+    <label className="relative inline-flex min-h-11 min-w-0 flex-[2] items-center focus-within:outline-2 focus-within:-outline-offset-2 focus-within:outline-gold-soft">
+      <span className="sr-only">Type de vente</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value as SaleTypeValue | "")}
+        className="h-full w-full min-w-0 cursor-pointer appearance-none text-ellipsis bg-transparent py-0 pl-3 pr-9 text-sm font-bold text-brand-navy outline-none"
+      >
+        <option value="">Toutes les ventes</option>
+        {visibleSaleTypeOptions().map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-2.5 h-4 w-4 text-ink-soft" />
+    </label>
   );
 }

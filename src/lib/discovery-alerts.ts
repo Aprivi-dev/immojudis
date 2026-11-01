@@ -23,17 +23,25 @@ export function isDiscoveryAlertCompatible(alert: UserAlert): boolean {
 /** Page où l'on confirme une alerte demandée depuis un secteur (département, tribunaux). */
 export const ALERT_CREATION_PATH = "/alertes/creer";
 
+/** Longueur maximale du tribunal gardé par une alerte (le nom d'un tribunal reste bien en deçà). */
+const MAX_ALERT_TRIBUNAL_LENGTH = 80;
+
 /**
- * Les critères publics qu'une alerte gratuite accepte : zone, type de vente, type de bien (un
- * seul), mise à prix maximale, surface minimale et « Seulement les pépites ». Tout le reste d'une adresse saisie à la main
- * (texte libre, DPE, rendement…) est ignoré : la page de confirmation ne crée que ce qu'elle
- * affiche, quelle que soit l'adresse reçue.
+ * Les critères publics qu'une alerte gratuite accepte : zone, tribunal, type de vente, type de bien
+ * (un seul), mise à prix maximale, surface minimale et « Seulement les pépites ». Tout le reste d'une
+ * adresse saisie à la main (texte libre, DPE, rendement…) est ignoré : la page de confirmation ne
+ * crée que ce qu'elle affiche, quelle que soit l'adresse reçue.
  */
 export function publicAlertCriteria(record: Record<string, unknown>): SalesSearchParams {
   const search = validateSalesSearch(record);
   return {
     department: search.department,
     city: search.city,
+    // Le tribunal d'une page `/tribunaux/<code>` (même texte que le filtre du catalogue), borné.
+    tribunal:
+      search.tribunal && search.tribunal.length <= MAX_ALERT_TRIBUNAL_LENGTH
+        ? search.tribunal
+        : undefined,
     saleType: search.saleType,
     homeTypes: search.homeTypes?.length === 1 ? search.homeTypes : undefined,
     maxPrice: search.maxPrice,

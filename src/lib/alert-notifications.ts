@@ -1,8 +1,14 @@
 import "server-only";
+import { z } from "zod";
+import { PublicApiError } from "@/lib/api-errors";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
-import { dispatchQueuedEmailAlertNotifications } from "@/lib/email-alerts";
+import {
+  dispatchQueuedEmailAlertNotifications,
+  resolveEmailAlertDeliveryConfig,
+} from "@/lib/email-alerts";
+import { alertNotificationsMode, type EmailFeatureMode } from "@/lib/email-feature-mode";
 import { emailAlertConsentEnabled } from "@/lib/notification-preferences";
 import { assertFeatureEntitlement } from "@/lib/property-reports";
 import { cleanSaleTitle } from "@/lib/sale-title";
@@ -74,6 +80,10 @@ export type AlertNotificationDispatchResult = {
   emailProviderConfigured: boolean;
   /** Variables d'environnement manquantes quand l'envoi d'e-mails n'est pas configuré. */
   emailMissingConfig: string[];
+  /** Interrupteur `ALERT_NOTIFICATIONS_MODE` appliqué à ce passage. */
+  emailMode: EmailFeatureMode;
+  /** E-mails dus laissés en file par l'interrupteur (`off` : tous, `internal` : ceux des non-administrateurs). */
+  emailHeldBackCount: number;
 };
 
 /** Part d'e-mails dus en échec à partir de laquelle le passage est déclaré en échec. */
@@ -234,6 +244,15 @@ export async function suppressAlertNotificationsForMatches({
   return { suppressedCount: data?.length ?? 0 };
 }
 
+export const ALERT_NOTIFICATION_ACTIONS = ["read", "unread", "dismiss", "restore"] as const;
+export type AlertNotificationAction = (typeof ALERT_NOTIFICATION_ACTIONS)[number];
+
+/** Corps de `PATCH /api/alerts/notifications` : une action hors de la liste est refusée, jamais devinée. */
+export const alertNotificationUpdateSchema = z.object({
+  notificationId: z.string().uuid(),
+  action: z.enum(ALERT_NOTIFICATION_ACTIONS),
+});
+
 export async function updateAlertNotificationState({
   auth,
   notificationId,
@@ -241,7 +260,7 @@ export async function updateAlertNotificationState({
 }: {
   auth: SupabaseAuthContext;
   notificationId: string;
-  action: "read" | "unread" | "dismiss" | "restore";
+  action: AlertNotificationAction;
 }): Promise<{ notification: AlertNotificationSummary }> {
   await assertFeatureEntitlement(
     auth,
@@ -250,14 +269,24 @@ export async function updateAlertNotificationState({
   );
 
   const now = new Date().toISOString();
-  const patch =
-    action === "read"
-      ? { read_at: now }
-      : action === "unread"
-        ? { read_at: null }
-        : action === "dismiss"
-          ? { dismissed_at: now }
-          : { dismissed_at: null };
+  let patch: { read_at: string | null } | { dismissed_at: string | null };
+  switch (action) {
+    case "read":
+      patch = { read_at: now };
+      break;
+    case "unread":
+      patch = { read_at: null };
+      break;
+    case "dismiss":
+      patch = { dismissed_at: now };
+      break;
+    case "restore":
+      patch = { dismissed_at: null };
+      break;
+    default:
+      // Défense en profondeur : l'appelant valide déjà l'action ; une valeur inconnue ne touche à rien.
+      throw new PublicApiError("Action de notification invalide.", 400);
+  }
 
   const { data, error } = await auth.supabase
     .from("user_alert_notifications")
@@ -268,27 +297,98 @@ export async function updateAlertNotificationState({
     .eq("id", notificationId)
     .eq("user_id", auth.userId)
     .select("*")
-    .single();
+    .maybeSingle();
 
   if (error) throw error;
+  // Notification inconnue ou d'un autre compte : 404, pas une erreur du serveur.
+  if (!data) throw new PublicApiError("Notification introuvable.", 404);
   return { notification: notificationRowToSummary(data) };
+}
+
+async function readAdminUserIds(userIds: string[]): Promise<Set<string>> {
+  const admins = new Set<string>();
+  for (let from = 0; from < userIds.length; from += 200) {
+    const { data, error } = await supabaseAdmin
+      .from("user_profiles")
+      .select("user_id")
+      .eq("user_role", "admin")
+      .in("user_id", userIds.slice(from, from + 200));
+    if (error) throw error;
+    for (const row of data ?? []) admins.add(row.user_id);
+  }
+  return admins;
+}
+
+/** Les administrateurs (peu nombreux) : borne de lecture pour la file d'emails du mode `internal`. */
+const MAX_INTERNAL_ADMIN_USER_IDS = 200;
+
+async function readAllAdminUserIds(): Promise<string[]> {
+  const { data, error } = await supabaseAdmin
+    .from("user_profiles")
+    .select("user_id")
+    .eq("user_role", "admin")
+    .limit(MAX_INTERNAL_ADMIN_USER_IDS);
+  if (error) throw error;
+  return (data ?? []).map((row) => row.user_id);
+}
+
+/**
+ * Applique l'interrupteur `ALERT_NOTIFICATIONS_MODE` aux e-mails dus : `on` les laisse tous partir,
+ * `internal` ne garde que ceux des administrateurs, `off` n'en garde aucun. Les e-mails écartés
+ * restent en file (`queued`), ni envoyés ni annulés.
+ */
+export async function filterEmailNotificationsByMode({
+  mode,
+  notifications,
+  loadAdminUserIds = readAdminUserIds,
+}: {
+  mode: EmailFeatureMode;
+  notifications: NotificationRow[];
+  loadAdminUserIds?: (userIds: string[]) => Promise<Set<string>>;
+}): Promise<{ allowed: NotificationRow[]; heldBackCount: number }> {
+  if (mode === "on") return { allowed: notifications, heldBackCount: 0 };
+  if (mode === "off" || !notifications.length) {
+    return { allowed: [], heldBackCount: notifications.length };
+  }
+  const admins = await loadAdminUserIds([
+    ...new Set(notifications.map((notification) => notification.user_id)),
+  ]);
+  const allowed = notifications.filter((notification) => admins.has(notification.user_id));
+  return { allowed, heldBackCount: notifications.length - allowed.length };
 }
 
 export async function dispatchDueAlertNotifications({
   now = new Date(),
   limit = DEFAULT_ALERT_NOTIFICATION_DISPATCH_LIMIT,
+  emailMode = alertNotificationsMode(),
 }: {
   now?: Date;
   limit?: number;
+  emailMode?: EmailFeatureMode;
 } = {}): Promise<AlertNotificationDispatchResult> {
   const startedAt = new Date().toISOString();
   const dueAt = now.toISOString();
   const dispatchLimit = clampLimit(limit, MAX_ALERT_NOTIFICATION_DISPATCH_LIMIT);
-  const { data: candidates, error: selectError } = await supabaseAdmin
+  let candidateQuery = supabaseAdmin
     .from("user_alert_notifications")
     .select("*")
     .eq("delivery_status", "queued")
-    .lte("scheduled_for", dueAt)
+    .lte("scheduled_for", dueAt);
+  // Emails coupés : leur file ne doit pas occuper la fenêtre de lecture au détriment des
+  // notifications dans l'application.
+  if (emailMode === "off") candidateQuery = candidateQuery.eq("delivery_channel", "in_app");
+  if (emailMode === "internal") {
+    // Seuls les emails des administrateurs peuvent partir : on ne lit qu'eux (avec les notifications
+    // dans l'application, pour tous), sinon les emails écartés, restés `queued`, bloqueraient la
+    // fenêtre de lecture.
+    const adminUserIds = await readAllAdminUserIds();
+    candidateQuery = adminUserIds.length
+      ? candidateQuery.or(
+          `delivery_channel.eq.in_app,and(delivery_channel.eq.email,user_id.in.(${adminUserIds.join(",")}))`,
+        )
+      : candidateQuery.eq("delivery_channel", "in_app");
+  }
+  const { data: candidates, error: selectError } = await candidateQuery
     .order("scheduled_for", { ascending: true })
     .limit(dispatchLimit);
 
@@ -325,10 +425,15 @@ export async function dispatchDueAlertNotifications({
     dispatchedRows = data ?? [];
   }
 
-  const emailDispatch = await dispatchQueuedEmailAlertNotifications({
+  const { allowed: emailsToSend, heldBackCount } = await filterEmailNotificationsByMode({
+    mode: emailMode,
     notifications: emailCandidates,
-    now,
   });
+  // Mode `off` : rien n'est envoyé et la configuration d'envoi n'est pas exigée (le passage reste vert).
+  const emailDispatch =
+    emailMode === "off"
+      ? { candidateCount: 0, sentCount: 0, failedCount: 0, skippedCount: 0, ...emailConfigStatus() }
+      : await dispatchQueuedEmailAlertNotifications({ notifications: emailsToSend, now });
   const notifications = (dispatchedRows ?? []).map(notificationRowToSummary);
   return {
     ok: true,
@@ -343,7 +448,14 @@ export async function dispatchDueAlertNotifications({
     emailSkippedCount: emailDispatch.skippedCount,
     emailProviderConfigured: emailDispatch.configured,
     emailMissingConfig: emailDispatch.missing,
+    emailMode,
+    emailHeldBackCount: heldBackCount,
   };
+}
+
+function emailConfigStatus() {
+  const config = resolveEmailAlertDeliveryConfig();
+  return { configured: config.configured, missing: config.missing };
 }
 
 export function buildAlertNotificationRows({
@@ -482,19 +594,31 @@ export function notificationKindForFrequency(
   return "daily_digest";
 }
 
+/** Heure d'envoi des récapitulatifs d'alertes (UTC) : le passage `alert-notifications` de 07:30 les trouve échus. */
+const ALERT_DIGEST_HOUR_UTC = 7;
+
+/**
+ * Moment où une notification d'alerte devient échue : 07:00 UTC. Une correspondance détectée avant
+ * 07:00 UTC (passage `smart-alerts` de 06:15, dont l'heure réelle est celle passée par
+ * `alert-matches.ts`) est programmée le jour même, donc envoyée à 07:30 ; une détectée après
+ * (rattrapage de 08:15) l'est le lendemain. Avant, tout partait le lendemain : une vente détectée à
+ * 06:15 n'était annoncée que 25 heures plus tard. Le récapitulatif hebdomadaire suit la même règle
+ * sur le lundi.
+ */
 export function scheduledForFrequency(
   frequency: UserAlert["alert_frequency"],
   now = new Date(),
 ): string {
   const scheduled = new Date(now);
+  const beforeDigestHour = scheduled.getUTCHours() < ALERT_DIGEST_HOUR_UTC;
   if (frequency === "weekly") {
     const day = scheduled.getUTCDay();
-    const daysUntilMonday = (8 - day) % 7 || 7;
+    const daysUntilMonday = beforeDigestHour && day === 1 ? 0 : (8 - day) % 7 || 7;
     scheduled.setUTCDate(scheduled.getUTCDate() + daysUntilMonday);
-  } else {
+  } else if (!beforeDigestHour) {
     scheduled.setUTCDate(scheduled.getUTCDate() + 1);
   }
-  scheduled.setUTCHours(7, 0, 0, 0);
+  scheduled.setUTCHours(ALERT_DIGEST_HOUR_UTC, 0, 0, 0);
   return scheduled.toISOString();
 }
 

@@ -69,6 +69,16 @@ describe("MobileMapToggle", () => {
   });
 });
 
+describe("MobileMapToggle : pas de décalage à l'arrivée du bandeau de cookies", () => {
+  it("se remonte par transform, jamais par bottom (une barre fixe qui change de bottom décale la page)", () => {
+    render(<MobileMapToggle activeFiltersCount={0} onOpenFilters={vi.fn()} onOpenMap={vi.fn()} />);
+    const bar = screen.getByRole("button", { name: "Carte" }).parentElement!;
+    expect(bar.className).toContain("bottom-0");
+    expect(bar.className).not.toContain("cookie-banner-height");
+    expect(bar.style.transform).toBe("translateY(calc(var(--cookie-banner-height, 0px) * -1))");
+  });
+});
+
 describe("MapPanelSkeleton", () => {
   it("annonce « Chargement de la carte » aux lecteurs d'écran", () => {
     render(<MapPanelSkeleton />);

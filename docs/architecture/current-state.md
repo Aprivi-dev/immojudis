@@ -1,6 +1,6 @@
 # Outcome Graph — état actuel
 
-_Audit du dépôt au 30 juillet 2026. Ce document décrit le socle existant avant la généralisation d’Outcome Graph. Le statut exact de la tranche verticale livrée dans le worktree est suivi dans [`IMPLEMENTATION_STATUS.md`](../archive/IMPLEMENTATION_STATUS.md)._
+> **Instantané daté du 30 juillet 2026, pas l’état d’aujourd’hui (31/10/2026).** Il décrit le socle d’avant la généralisation d’Outcome Graph et n’a pas été réécrit depuis, hormis quelques mises à jour ponctuelles signalées dans le texte (par exemple l’essai, le 28/10/2026). Pour l’état réel, voir le [README](../../README.md), [`supabase/migrations/`](../../supabase/migrations/) (la source de vérité du schéma) et [`docs/README.md`](../README.md). Le statut de la tranche verticale d’Outcome Graph est suivi dans [`IMPLEMENTATION_STATUS.md`](../archive/IMPLEMENTATION_STATUS.md) (archive du 17/08/2026).
 
 ## Synthèse
 

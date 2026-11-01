@@ -48,6 +48,7 @@ import {
 } from "@/lib/sale-procedure";
 import { saleDisplayTitle } from "@/lib/sale-title";
 import { saleKeyFacts } from "@/lib/sale-key-facts";
+import { nonBreakingUnits } from "@/lib/non-breaking-units";
 import { saleHeadingSubtitle, saleShortHeading } from "@/lib/seo";
 import { stateListingStatus } from "@/lib/property-characteristics";
 import { saleSession, saleWindow } from "@/lib/sale-window";
@@ -447,7 +448,7 @@ export function SaleDetailHeading({
     ? cityBlocked || !sale.city
       ? "Type de bien à confirmer"
       : `Type de bien à confirmer à ${sale.city}`
-    : saleShortHeading(shown);
+    : nonBreakingUnits(saleShortHeading(shown));
   const subtitle = saleHeadingSubtitle(shown, { withDate: !review("sale.sale_date") });
   return (
     <header className={styles.pageHeading}>
@@ -772,6 +773,23 @@ export function ListingDescription({
   );
 }
 
+/**
+ * Ce que dit la position du bien sur la carte : un point au centre de la commune (précision
+ * `municipality`) ne désigne pas le bien ; un point que le pipeline n'a pas pu recouper avec la source
+ * (`unverified_source_coordinates`) est à vérifier. Rien à dire pour une position à l'adresse.
+ */
+export function locationPositionNotes(
+  sale: Pick<AuctionSale, "location_precision" | "quality_flags">,
+): string[] {
+  const notes: string[] = [];
+  const precision =
+    typeof sale.location_precision === "string" ? sale.location_precision.trim().toLowerCase() : "";
+  if (precision === "municipality") notes.push("Centre de la commune");
+  const flags = Array.isArray(sale.quality_flags) ? sale.quality_flags : [];
+  if (flags.includes("unverified_source_coordinates")) notes.push("Position à vérifier");
+  return notes;
+}
+
 export function ListingLocation({
   sale,
   aiReviewProjections = null,
@@ -784,6 +802,7 @@ export function ListingLocation({
   const coordinates = listingCoordinates(sale);
   const cityReview = getAiReviewFieldResult(aiReviewProjections, "property.city", aiReviewStatus);
   const address = cityReview.blocked ? null : listingAddress(sale);
+  const positionNotes = coordinates && !cityReview.blocked ? locationPositionNotes(sale) : [];
   const price = positiveListingNumber(sale.starting_price_eur);
   const priceReview = getAiReviewFieldResult(
     aiReviewProjections,
@@ -825,6 +844,11 @@ export function ListingLocation({
             {address || "Adresse non renseignée"}
           </AiReviewField>
         </p>
+        {positionNotes.length ? (
+          <p className={`${styles.muted} font-semibold`} data-testid="location-position-note">
+            {positionNotes.join(" · ")}
+          </p>
+        ) : null}
         <p className={styles.muted}>
           Localisation indicative. À vérifier dans les pièces du dossier.
         </p>

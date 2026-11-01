@@ -7,7 +7,14 @@ vi.mock("@/hooks/use-launch-offer", () => ({
 }));
 
 import { HomeHero, catalogueSummaryLine } from "./HomeHero";
-import { HomeBenefits, HomeClosing, HomeGuides, HomeStats, homeFaqItems } from "./HomeSections";
+import {
+  HomeBenefits,
+  HomeClosing,
+  HomeFaq,
+  HomeGuides,
+  HomeStats,
+  homeFaqItems,
+} from "./HomeSections";
 
 // Text outside the tags, read character by character (no tag-stripping regex).
 function visibleText(markup: string): string {
@@ -73,12 +80,12 @@ describe("home hero", () => {
     expect(text).toMatch(/Mise à prix 95.000.€/);
     // L'estimation et sa fourchette, à côté de l'enchère à ne pas dépasser.
     expect(text).toMatch(/Estimation 230.000.€ ?Fourchette : 215.000 – 247.000.€/);
-    expect(text).toMatch(/Enchère à ne pas dépasser 135.000.€/);
+    expect(text).toMatch(/Enchère à ne pas dépasser 136.000.€/);
     expect(text).toMatch(/Même immeuble, 2024 226.000.€/);
     expect(text).toContain("Occupation À confirmer");
     // Premier rendu : la situation de /annonce-exemple, et son verdict.
     expect(text).toContain("Pour y habiter, occupé, rafraîchissement");
-    expect(text).toMatch(/135.000.€/);
+    expect(text).toMatch(/136.000.€/);
     expect(text).toContain("On enchérit");
     expect(markup).toContain("dossier-apartment.webp");
     // Les trois situations, dont celle qui fait passer son tour.
@@ -116,9 +123,9 @@ describe("home texts", () => {
 
   it("prépare l'annonce de la valeur finale, sans la lire pendant la démonstration, et masque le montant animé", () => {
     const markup = renderToStaticMarkup(<HomeHero />);
-    expect(markup).toMatch(/<p class="sr-only">Enchère à ne pas dépasser : 135.000.€/);
+    expect(markup).toMatch(/<p class="sr-only">Enchère à ne pas dépasser : 136.000.€/);
     expect(markup).not.toContain('role="status"');
-    expect(markup).toMatch(/<p[^>]*aria-hidden="true"[^>]*>135.000.€<\/p>/);
+    expect(markup).toMatch(/<p[^>]*aria-hidden="true"[^>]*>136.000.€<\/p>/);
     expect(markup).not.toContain("aria-live");
   });
 
@@ -230,6 +237,43 @@ describe("home closing and questions", () => {
     expect(items.length).toBeGreaterThanOrEqual(6);
     const all = items.map((item) => `${item.question} ${item.answer}`).join(" ");
     expect(all).toContain("Rien n’est prélevé");
-    expect(all).not.toMatch(/€|59/);
+    // Aucun prix d'offre : les montants de la garantie (3 000 €) et des frais sont des règles de vente.
+    expect(all).not.toMatch(/\b59\b|\b249\b|TTC|€ ?\/ ?mois/);
+  });
+
+  it("répond à quatre questions de débutant : garantie, frais, prêt, surenchère, chacune avec son guide", () => {
+    const items = homeFaqItems();
+    const expected = [
+      ["Faut-il verser une garantie", "10 % de la mise à prix", "3 000 €", "garantie-10-pourcent"],
+      ["Les frais s’ajoutent-ils", "en plus du prix", "droits de mutation", "frais-vente-encheres"],
+      ["Y a-t-il une condition suspensive de prêt", "refus de prêt", "deux mois", "financer-achat"],
+      ["Qu’est-ce que la surenchère du dixième", "dix jours", "un dixième", "apres-adjudication"],
+    ] as const;
+    for (const [question, ...fragments] of expected) {
+      const item = items.find((entry) => entry.question.startsWith(question));
+      expect(item, question).toBeDefined();
+      const guide = fragments.pop()!;
+      for (const fragment of fragments) expect(item!.answer, question).toContain(fragment);
+      expect(item!.guide?.href, question).toContain(`/ressources/`);
+      expect(item!.guide?.href, question).toContain(guide);
+      // Réponse de 2 à 3 phrases (« art. R. » ne termine pas une phrase).
+      const sentences = item!.answer.replace(/\bart\.\s/g, "art ").replace(/\b[A-Z]\.\s/g, "X ");
+      expect(
+        sentences.split(/(?<=[.!?])\s+(?=[A-ZÀÂÉÈÊÎÔÛÇ])/).length,
+        question,
+      ).toBeGreaterThanOrEqual(2);
+      expect(
+        sentences.split(/(?<=[.!?])\s+(?=[A-ZÀÂÉÈÊÎÔÛÇ])/).length,
+        question,
+      ).toBeLessThanOrEqual(3);
+    }
+  });
+
+  it("affiche le lien vers le guide sous la réponse, hors balisage de réponse", () => {
+    const markup = renderToStaticMarkup(<HomeFaq />);
+    expect(markup).toContain(
+      'href="/ressources/garantie-10-pourcent-cheque-banque-caution-encheres"',
+    );
+    expect(markup).toContain("Lire le guide des frais");
   });
 });

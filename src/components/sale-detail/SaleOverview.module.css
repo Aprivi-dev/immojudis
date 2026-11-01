@@ -369,7 +369,8 @@
   cursor: pointer;
 }
 
-/* Barre d'action mobile, quand les boutons du haut de page sont sortis de l'écran. */
+/* Barre d'action sous 960 px (au-delà, le rappel est dans la barre d'onglets), quand les boutons du
+   haut de page sont sortis de l'écran. */
 .mobileBar {
   position: fixed;
   right: 0;
@@ -387,6 +388,14 @@
   box-shadow: 0 -8px 24px -16px rgb(19 34 56 / 35%);
 }
 
+.mobileBarPrices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 16px;
+  min-width: 0;
+  margin: 0;
+}
+
 .mobileBarPrice {
   display: grid;
   color: var(--ink-soft);
@@ -398,6 +407,10 @@
   color: var(--brand-navy);
   font-size: 17px;
   font-variant-numeric: tabular-nums;
+}
+
+.mobileBarCeiling {
+  color: var(--gold-text);
 }
 
 .mobileBarAction {
@@ -420,7 +433,7 @@
   outline-offset: 2px;
 }
 
-@media (min-width: 768px) {
+@media (min-width: 960px) {
   .mobileBar {
     display: none;
   }

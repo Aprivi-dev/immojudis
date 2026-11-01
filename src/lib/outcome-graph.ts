@@ -243,6 +243,45 @@ export function withOutcomeGraphCeiling(
   };
 }
 
+/**
+ * Ce que la distribution permet d'affirmer d'un plafond (n° 25). Seuls trois repères sont estimés :
+ * P10, P50 et P90. Entre P10 et P90, la probabilité est lue sur la courbe qui les relie ; au-delà,
+ * `cumulativeProbability` prolonge la courbe avec des queues fabriquées (0,5 x P10, 1,5 x P90) que
+ * rien ne mesure. Hors de [P10, P90], on n'affirme donc qu'une borne : « au plus 10 % » sous P10,
+ * « au moins 90 % » au-dessus de P90.
+ */
+export type CeilingProbabilityReading =
+  | { kind: "estimate"; probability: number }
+  | { kind: "at_most"; probability: number }
+  | { kind: "at_least"; probability: number };
+
+export function ceilingProbabilityReading(
+  quantiles: OutcomeGraphQuantiles,
+  ceilingCents: number,
+): CeilingProbabilityReading {
+  if (ceilingCents < quantiles.p10Cents) return { kind: "at_most", probability: 0.1 };
+  if (ceilingCents > quantiles.p90Cents) return { kind: "at_least", probability: 0.9 };
+  return { kind: "estimate", probability: cumulativeProbability(quantiles, ceilingCents) };
+}
+
+/**
+ * Une probabilité arrondie au multiple de 5 % le plus proche (0 à 1). Les bornes sont arrondies dans
+ * le sens prudent : une borne haute vers le haut, une borne basse vers le bas.
+ */
+export function roundProbabilityToFivePercent(
+  value: number,
+  direction: "nearest" | "up" | "down" = "nearest",
+): number {
+  const scaled = clamp(value, 0, 1) * 20;
+  const rounded =
+    direction === "up"
+      ? Math.ceil(scaled - 1e-9)
+      : direction === "down"
+        ? Math.floor(scaled + 1e-9)
+        : Math.round(scaled);
+  return clamp(rounded / 20, 0, 1);
+}
+
 export function cumulativeProbability(
   quantiles: OutcomeGraphQuantiles,
   ceilingCents: number,

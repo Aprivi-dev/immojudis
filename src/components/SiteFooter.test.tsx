@@ -5,6 +5,23 @@ import { SiteFooter, showsSiteFooter } from "./SiteFooter";
 
 const pathname = vi.hoisted(() => ({ current: "/sales" }));
 vi.mock("next/navigation", () => ({ usePathname: () => pathname.current }));
+// Lien réduit à une ancre qui expose `prefetch` : le vrai `<Link>` ne l'écrit pas dans le HTML.
+vi.mock("next/link", () => ({
+  default: ({
+    href,
+    prefetch,
+    children,
+    ...rest
+  }: {
+    href: string;
+    prefetch?: boolean;
+    children: React.ReactNode;
+  }) => (
+    <a href={href} data-prefetch={String(prefetch)} {...rest}>
+      {children}
+    </a>
+  ),
+}));
 
 beforeEach(() => {
   pathname.current = "/sales";
@@ -22,6 +39,14 @@ it("gives every public page access to the legal documents", () => {
     "/privacy",
   );
   expect(legal.getByRole("link", { name: "Mes droits" }).getAttribute("href")).toBe("/mes-droits");
+});
+
+it("renvoie, depuis toutes les pages, vers la déclaration d'accessibilité (état non évalué)", () => {
+  render(<SiteFooter />);
+  const legal = within(screen.getByRole("navigation", { name: "Informations légales" }));
+  expect(legal.getByRole("link", { name: "Accessibilité : non évalué" }).getAttribute("href")).toBe(
+    "/accessibilite",
+  );
 });
 
 it("renvoie, depuis toutes les pages, vers l'explication du classement des annonces", () => {
@@ -70,6 +95,24 @@ it("reprend le pictogramme du favicon (le temple) et l'accroche unique", () => {
   expect(container.textContent).toContain("Les enchères immobilières, en toute clarté.");
   expect(container.querySelector("svg path.stroke-gold")).not.toBeNull();
   expect(container.querySelector(".lucide")).toBeNull();
+});
+
+it("ne précharge aucun de ses liens : présents sur chaque page, ils lanceraient une dizaine d'appels serveur par visite", () => {
+  const { container } = render(<SiteFooter />);
+  const links = [...container.querySelectorAll("footer a")];
+  expect(links.length).toBeGreaterThan(15);
+  for (const link of links) {
+    expect(link.getAttribute("data-prefetch"), link.getAttribute("href") ?? "").toBe("false");
+  }
+});
+
+it("donne à chaque lien du pied de page une cible tactile d'au moins 44 px", () => {
+  render(<SiteFooter />);
+  const links = within(screen.getByRole("contentinfo")).getAllByRole("link");
+  expect(links.length).toBeGreaterThan(15);
+  for (const link of links) {
+    expect(link.className, link.textContent ?? "").toContain("min-h-11");
+  }
 });
 
 it("stays out of the admin console", () => {

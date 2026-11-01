@@ -355,6 +355,68 @@ describe("guide des ventes immobilières judiciaires", () => {
     });
   });
 
+  describe("parcours : actions, définitions en bref et maillage", () => {
+    it("propose « Voir une vente analysée » et « Explorer les ventes » après l'en-tête, puis après la section Immojudis", () => {
+      const { container } = render(<ResourcesPage />);
+      const blocks = Array.from(container.querySelectorAll("[data-guide-actions]"));
+      expect(blocks.map((block) => block.id)).toEqual(["actions-debut", "actions-immojudis"]);
+      for (const block of blocks) {
+        const links = Array.from(block.querySelectorAll("a")).map((link) => [
+          link.textContent,
+          link.getAttribute("href"),
+        ]);
+        expect(links).toEqual([
+          ["Voir une vente analysée", "/annonce-exemple"],
+          ["Explorer les ventes", "/sales"],
+        ]);
+      }
+      // Le premier suit l'en-tête de la page ; le second est dans la section #immojudis.
+      const header = container.querySelector("article > header")!;
+      expect(
+        header.compareDocumentPosition(blocks[0]) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(container.querySelector("#immojudis")!.contains(blocks[1])).toBe(true);
+    });
+
+    it("reprend mot pour mot cinq définitions du lexique, chacune avec un lien vers son ancre", () => {
+      const { container } = render(<ResourcesPage />);
+      const brief = container.querySelector("#definitions-en-bref")!.closest("section")!;
+      const terms = Array.from(brief.querySelectorAll("dt"));
+      expect(terms.map((term) => term.textContent)).toEqual([
+        "Adjudication",
+        "Mise à prix",
+        "Surenchère",
+        "Cahier des conditions de vente",
+        "Enchère plafond",
+      ]);
+      for (const term of terms) {
+        const anchor = term.querySelector("a")!.getAttribute("href")!;
+        expect(anchor).toBe(`#${lexiqueAnchor(term.textContent ?? "")}`);
+        // La définition du lexique, à l'identique.
+        const original = container.querySelector(anchor)!;
+        expect(original.tagName).toBe("DT");
+        expect(original.closest("#lexique")).not.toBeNull();
+        expect(term.nextElementSibling!.textContent).toBe(original.nextElementSibling!.textContent);
+      }
+      // Les définitions en bref ne créent aucune ancre en double.
+      expect(brief.querySelectorAll("[id^='lexique-']")).toHaveLength(0);
+    });
+
+    it("renvoie vers le hub des départements, les tribunaux et une sélection de départements", () => {
+      const { container } = render(<ResourcesPage />);
+      for (const id of ["recherche", "differences"]) {
+        const section = container.querySelector(`#${id}`)!;
+        const hrefs = Array.from(section.querySelectorAll("a")).map((link) =>
+          link.getAttribute("href"),
+        );
+        expect(hrefs).toContain("/ventes-encheres-immobilieres");
+        expect(hrefs).toContain("/tribunaux");
+        expect(hrefs).toContain("/ventes-encheres-immobilieres/gironde");
+        expect(hrefs).toContain("/ventes-encheres-immobilieres/paris");
+      }
+    });
+  });
+
   describe("temps de lecture", () => {
     it("correspond au nombre de mots du guide à 230 mots par minute (à une minute près)", () => {
       const { container } = render(<ResourcesPage />);

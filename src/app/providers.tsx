@@ -14,6 +14,47 @@ import { retryUnlessRefused } from "@/lib/query-retry";
 import { getWithdrawnSources, loadWithdrawnSourcesOncePerSession } from "@/lib/withdrawn-sources";
 import { createWithdrawnSourcesClient } from "@/lib/withdrawn-sources-client";
 
+/** Délai au bout duquel la lecture part même si le navigateur reste occupé. */
+export const WITHDRAWN_SOURCES_IDLE_TIMEOUT_MS = 3_000;
+
+/**
+ * Exécute `callback` au premier repos du navigateur (`requestIdleCallback`, repli `setTimeout` pour
+ * Safari), et au plus tard après `timeoutMs`. Renvoie la fonction qui l'annule.
+ */
+export function runWhenBrowserIsIdle(callback: () => void, timeoutMs: number): () => void {
+  if (typeof window.requestIdleCallback === "function") {
+    const handle = window.requestIdleCallback(callback, { timeout: timeoutMs });
+    return () => window.cancelIdleCallback(handle);
+  }
+  const timer = window.setTimeout(callback, Math.min(timeoutMs, 1_000));
+  return () => window.clearTimeout(timer);
+}
+
+/**
+ * Sources retirées du catalogue (aucune à ce jour) : la liste vient de la base (interrupteur unique).
+ * Lue une fois par session de navigation, sans charger supabase-js (appel REST anonyme), et
+ * seulement quand le navigateur est au repos : l'appel ne concurrence ni le premier affichage ni
+ * l'hydratation. Le serveur masque déjà les ventes dont toutes les sources sont retirées ; cette
+ * liste ne sert qu'à retirer les liens, photos et pièces d'une source retirée sur une vente fusionnée.
+ * Si elle diffère de celle déjà appliquée, les données déjà affichées sont relues.
+ */
+export function useDeferredWithdrawnSources(queryClient: QueryClient) {
+  useEffect(() => {
+    let cancelled = false;
+    const cancelIdle = runWhenBrowserIsIdle(() => {
+      const before = [...getWithdrawnSources()].sort().join(",");
+      void loadWithdrawnSourcesOncePerSession(createWithdrawnSourcesClient()).then((names) => {
+        if (!cancelled && [...names].sort().join(",") !== before)
+          void queryClient.invalidateQueries();
+      });
+    }, WITHDRAWN_SOURCES_IDLE_TIMEOUT_MS);
+    return () => {
+      cancelled = true;
+      cancelIdle();
+    };
+  }, [queryClient]);
+}
+
 export function AppProviders({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
     () =>
@@ -23,20 +64,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
       }),
   );
 
-  useEffect(() => {
-    // Sources retirées du catalogue (aucune à ce jour) : la liste vient de la base (interrupteur unique).
-    // Lue une fois par session de navigation, sans charger supabase-js (appel REST anonyme).
-    // Si elle diffère de celle déjà appliquée, les données déjà affichées sont relues.
-    let cancelled = false;
-    const before = [...getWithdrawnSources()].sort().join(",");
-    void loadWithdrawnSourcesOncePerSession(createWithdrawnSourcesClient()).then((names) => {
-      if (!cancelled && [...names].sort().join(",") !== before)
-        void queryClient.invalidateQueries();
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [queryClient]);
+  useDeferredWithdrawnSources(queryClient);
 
   return (
     <QueryClientProvider client={queryClient}>

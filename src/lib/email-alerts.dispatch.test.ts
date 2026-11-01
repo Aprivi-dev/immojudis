@@ -54,7 +54,7 @@ vi.mock("@/integrations/supabase/client.server", () => {
   };
   return { supabaseAdmin: client };
 });
-vi.mock("@/lib/property-reports", () => ({ resolvePlanEntitlements: async () => db.plan }));
+vi.mock("@/lib/entitlements.server", () => ({ resolvePlanEntitlements: async () => db.plan }));
 vi.mock("@/lib/system-auth", () => ({
   systemAuthForUser: async (userId: string) => ({ userId, supabase: {}, claims: {} }),
 }));
@@ -210,6 +210,27 @@ describe("dispatch des emails d'alerte", () => {
       fetchImpl: fetchMock as unknown as typeof fetch,
     });
     expect(summary).toMatchObject({ configured: true, missing: [] });
+  });
+
+  it("annule sans l'envoyer un email en file depuis plus de 48 h, et envoie le récent", async () => {
+    const now = new Date("2026-11-10T09:30:00.000Z");
+    const old = { ...(notification(1) as object), scheduled_for: "2026-11-07T09:00:00.000Z" };
+    const recent = { ...(notification(2) as object), scheduled_for: "2026-11-09T09:00:00.000Z" };
+    const fetchMock = vi.fn(async () => Response.json({ id: "email_1" }));
+
+    const summary = await dispatchQueuedEmailAlertNotifications({
+      notifications: [old, recent] as never,
+      now,
+      env,
+      fetchImpl: fetchMock as unknown as typeof fetch,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(summary.sentCount).toBe(1);
+    expect(summary.skippedCount).toBe(1);
+    expect(
+      db.updates.filter((update) => update.patch.delivery_status === "cancelled"),
+    ).toHaveLength(1);
   });
 
   it("ne notifie pas pour une alerte supprimée ou en pause", async () => {

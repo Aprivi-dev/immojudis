@@ -77,6 +77,7 @@ describe("createPlanCheckoutSession customer reservation", () => {
       type: "recurring",
       currency: "eur",
       unit_amount: 5_900,
+      tax_behavior: "inclusive",
       recurring: { interval: "month", interval_count: 1 },
     });
     mocks.subscriptionsList.mockResolvedValue({ data: [], has_more: false });
@@ -327,6 +328,32 @@ describe("createPlanCheckoutSession customer reservation", () => {
     ).rejects.toThrow(/59 € \/ mois/);
     expect(mocks.adminRpc).not.toHaveBeenCalled();
   });
+
+  // n° 45 : le tarif de 59 € est TTC ; un Price « exclusive » ou sans comportement fiscal est refusé.
+  it.each(["exclusive", "unspecified", undefined])(
+    "refuse un Price Stripe dont le comportement fiscal est %s (le prix doit être TTC)",
+    async (taxBehavior) => {
+      mocks.pricesRetrieve.mockResolvedValue({
+        active: true,
+        type: "recurring",
+        currency: "eur",
+        unit_amount: 5_900,
+        tax_behavior: taxBehavior,
+        recurring: { interval: "month", interval_count: 1 },
+      });
+
+      await expect(
+        createPlanCheckoutSession({
+          auth: buildAuthContext(),
+          origin: "https://immojudis.test",
+          plan: "analyse",
+          consent,
+        }),
+      ).rejects.toThrow(/inclusive/);
+      expect(mocks.adminRpc).not.toHaveBeenCalled();
+      expect(mocks.checkoutCreate).not.toHaveBeenCalled();
+    },
+  );
 });
 
 function buildAuthContext(customerId: string | null = null): SupabaseAuthContext {

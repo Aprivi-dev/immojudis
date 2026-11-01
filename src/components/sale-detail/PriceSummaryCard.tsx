@@ -69,7 +69,7 @@ export function PriceSummaryCard({
                   <span className={styles.tileValue}>
                     {formatPrice(value.low)} – {formatPrice(value.high)}
                   </span>
-                  <span className={styles.tileNote}>fourchette, ventes comparables</span>
+                  <span className={styles.tileNote}>fourchette indicative, ventes comparables</span>
                 </>
               ) : value.kind === "signup" ? (
                 <span className={styles.tileNote}>

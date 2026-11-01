@@ -181,6 +181,7 @@ describe("loginReason", () => {
     expect(loginReason("fiche")).toBe("fiche");
     expect(loginReason("mes-favoris")).toBe("mes-favoris");
     expect(loginReason("mes-alertes")).toBe("mes-alertes");
+    expect(loginReason("simulateur")).toBe("simulateur");
     expect(loginReason("<script>")).toBeUndefined();
     expect(loginReason(undefined)).toBeUndefined();
   });

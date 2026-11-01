@@ -242,7 +242,7 @@ select ok(
 
 select ok(
   (
-    select reloptions @> array['security_invoker=true']::text[]
+    select reloptions @> array['security_invoker=false','security_barrier=true']::text[]
       from pg_catalog.pg_class
      where oid = 'public.v_auction_sales_app'::regclass
   )
@@ -251,7 +251,7 @@ select ok(
       from pg_catalog.pg_class
      where oid = 'public.v_auction_sales_discovery'::regclass
   ),
-  'the view security options remain unchanged'
+  'the view security options remain unchanged (the catalogue view is a guarded definer view since 20261110120000)'
 );
 
 select ok(

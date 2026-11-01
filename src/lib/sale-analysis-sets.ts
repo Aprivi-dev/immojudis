@@ -5,7 +5,7 @@ import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { featureIncluded } from "@/lib/plans";
-import { resolvePlanEntitlements } from "@/lib/property-reports";
+import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import { getPublicationVisibleSaleIds, publicationVisibleRows } from "@/lib/sale-publication-guard";
 import {
@@ -140,6 +140,8 @@ export type SaleComparisonShareResponse = {
 export type PublicSharedSaleComparison = {
   name: string;
   items: ComparedSale[];
+  /** Ventes de l'instantané retirées du catalogue depuis le partage (absentes de `items`). */
+  withdrawnCount: number;
   sharedAt: string;
   expiresAt: string;
   updatedAt: string;
@@ -381,14 +383,18 @@ export async function getSharedSaleComparison(token: string): Promise<PublicShar
     throw new Error("Comparaison partagée introuvable ou expirée.");
   }
 
+  // Une vente retirée du catalogue ne fait plus échouer tout le lien : elle quitte la comparaison, qui
+  // le dit (`withdrawnCount`). Le lien n'échoue que s'il ne reste aucune vente à montrer.
   const visibleSaleIds = await getPublicationVisibleSaleIds(items.map((item) => item.id));
-  if (items.some((item) => !visibleSaleIds.has(item.id))) {
+  const visibleItems = items.filter((item) => visibleSaleIds.has(item.id));
+  if (!visibleItems.length) {
     throw new Error("Comparaison partagée introuvable ou expirée.");
   }
 
   return {
     name: data.name,
-    items,
+    items: visibleItems,
+    withdrawnCount: items.length - visibleItems.length,
     sharedAt,
     expiresAt,
     updatedAt: data.updated_at,

@@ -99,9 +99,16 @@ $$;
 reset role;
 do $$
 begin
+  -- 20261110120000 (n° 1) : la vue est volontairement une vue definer gardée, car authenticated ne lit plus les
+  -- colonnes brutes de auction_sales. Le filtre d'accès doit donc être dans la vue elle-même, avec security_barrier.
   if not exists (
-    select 1 from pg_class where oid = 'public.v_auction_sales_app'::regclass and 'security_invoker=true' = any(reloptions)
-  ) then raise exception 'Analysis view must retain RLS through security_invoker'; end if;
+    select 1 from pg_class
+    where oid = 'public.v_auction_sales_app'::regclass
+      and reloptions @> array['security_invoker=false', 'security_barrier=true']::text[]
+  ) then raise exception 'Analysis view must be a guarded definer view (security_barrier)'; end if;
+  if pg_get_viewdef('public.v_auction_sales_app'::regclass) !~ 'has_analysis_access\(\)' then
+    raise exception 'Analysis view must keep its access predicate';
+  end if;
 end;
 $$;
 

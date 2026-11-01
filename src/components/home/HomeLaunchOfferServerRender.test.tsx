@@ -81,7 +81,7 @@ describe("accueil : questions et données structurées (FAQPage) suivent l'état
       const all = homeFaqItems({ trialOpen })
         .map((item) => `${item.question} ${item.answer}`)
         .join(" ");
-      expect(all).not.toMatch(/€|59/);
+      expect(all).not.toMatch(/\b59\b|\b249\b|TTC|€ ?\/ ?mois/);
     }
   });
 });

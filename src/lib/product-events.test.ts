@@ -87,6 +87,51 @@ describe("product events", () => {
       ]);
     });
 
+    it("sends the funnel events without any identifier", () => {
+      trackProductEvent("sale_unlock_confirmed");
+      trackProductEvent("ceiling_viewed");
+      // @ts-expect-error The sale is never named: only the aggregate step is measured.
+      trackProductEvent("sale_unlock_confirmed", { sale_id: "sale-1" });
+      expect(track.mock.calls).toEqual([
+        ["sale_unlock_confirmed"],
+        ["ceiling_viewed"],
+        ["sale_unlock_confirmed"],
+      ]);
+    });
+
+    it("sends the target of a home click and the surface of an alert, from the closed lists only", () => {
+      trackProductEvent("home_cta_clicked", { target: "signup" });
+      trackProductEvent("home_cta_clicked", { target: "browse" });
+      // @ts-expect-error Only `signup` or `browse` are targets, never an address.
+      trackProductEvent("home_cta_clicked", { target: "/sales?q=Bordeaux" });
+      trackProductEvent("alert_created", { email_consent: true, surface: "department" });
+      trackProductEvent("alert_created", { email_consent: false, surface: "hearings" });
+      // @ts-expect-error The surface is a category, never the address of the page.
+      trackProductEvent("alert_created", { email_consent: false, surface: "/tribunaux/paris" });
+      expect(track.mock.calls).toEqual([
+        ["home_cta_clicked", { target: "signup" }],
+        ["home_cta_clicked", { target: "browse" }],
+        ["home_cta_clicked"],
+        ["alert_created", { email_consent: true, surface: "department" }],
+        ["alert_created", { email_consent: false, surface: "hearings" }],
+        ["alert_created", { email_consent: false }],
+      ]);
+    });
+
+    it("sends the state of a shared report page and the sign-up origin it creates", () => {
+      trackProductEvent("shared_report_viewed", { state: "open" });
+      trackProductEvent("shared_report_viewed", { state: "unavailable" });
+      // @ts-expect-error The token of the link is never an allowed value.
+      trackProductEvent("shared_report_viewed", { state: "aB3dE6gH9jK2mN5pQ8sT1vX4zC7fL0o" });
+      trackProductEvent("signup_submitted", { entry: "rapport" });
+      expect(track.mock.calls).toEqual([
+        ["shared_report_viewed", { state: "open" }],
+        ["shared_report_viewed", { state: "unavailable" }],
+        ["shared_report_viewed"],
+        ["signup_submitted", { entry: "rapport" }],
+      ]);
+    });
+
     it("tells apart the alerts created from the pepite filter", () => {
       trackProductEvent("alert_created", { email_consent: false, pepite_only: true });
       expect(track.mock.calls).toEqual([
@@ -194,6 +239,10 @@ describe("product events", () => {
       "home_example_used",
       "pepite_block_viewed",
       "pepite_filter_used",
+      "sale_unlock_confirmed",
+      "home_cta_clicked",
+      "ceiling_viewed",
+      "shared_report_viewed",
     ]);
     expect(sanitizeProductEventProperties("alert_created", null)).toBeUndefined();
   });

@@ -8,6 +8,7 @@ import {
   createAlertNotificationsForMatches,
   suppressAlertNotificationsForMatches,
 } from "@/lib/alert-notifications";
+import { departmentCode } from "@/lib/department-code";
 import { extractDpe } from "@/lib/dpe";
 import { serverEnv, type EnvSource } from "@/lib/env";
 import { errorDetails, errorSummary } from "@/lib/error-details";
@@ -18,7 +19,7 @@ import { createRentLookupSession, type RentLookupSession } from "@/lib/rent-refe
 import { marketGapWithheldReason } from "@/lib/market-gap-band";
 import { listPepiteSaleIds, type PepiteIdsClient } from "@/lib/pepite-sale-ids";
 import { featureIncluded } from "@/lib/plans";
-import { resolvePlanEntitlements } from "@/lib/property-reports";
+import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import { getSaleAlertDetails, getSalesForAlertEvaluation } from "@/lib/queries";
 import { systemAuthForUser } from "@/lib/system-auth";
 import { getPrecomputedMarketEstimate } from "@/lib/sale-market-estimates";
@@ -116,6 +117,26 @@ export type SmartAlertBatchRunResult = {
   totalNotificationCount: number;
   results: SmartAlertBatchUserResult[];
 };
+
+/**
+ * Statuts des ventes que les alertes évaluent : ceux de la recherche du catalogue
+ * (`statusValuesForSearch`, src/lib/search/search-filters.ts). Une vente reportée ou au statut encore
+ * inconnu que la recherche affiche doit aussi alerter.
+ */
+const ALERT_SALE_STATUSES = ["upcoming", "unknown", "postponed"];
+
+/**
+ * Pré-filtre SQL d'une alerte gratuite sur son département : le code et le nom (« 33 » et « Gironde »),
+ * comme la recherche (`departmentSearchValues`), puisque la colonne contient parfois le nom. Un texte
+ * qui n'est pas un département connu garde l'égalité stricte d'avant.
+ */
+function departmentPrefilter(
+  department: string | null,
+): Pick<SaleFilters, "department" | "departments"> {
+  if (!department) return {};
+  const code = departmentCode(department);
+  return code ? { departments: [code] } : { department };
+}
 
 /** Sales read per request while paging through the inventory to evaluate. */
 const ALERT_EVALUATION_PAGE_SIZE = 400;
@@ -646,7 +667,7 @@ async function loadSalesToEvaluate({
   );
   const neverEvaluated = evaluatedAt.some((time) => !Number.isFinite(time));
   const filters: SaleFilters = {
-    status_in: ["active", "upcoming"],
+    status_in: [...ALERT_SALE_STATUSES],
     ...(neverEvaluated
       ? {}
       : {
@@ -655,7 +676,7 @@ async function loadSalesToEvaluate({
           ).toISOString(),
         }),
     ...(discovery && alerts.length === 1
-      ? { city: alerts[0].city ?? undefined, department: alerts[0].department ?? undefined }
+      ? { city: alerts[0].city ?? undefined, ...departmentPrefilter(alerts[0].department) }
       : {}),
   };
 
@@ -695,7 +716,7 @@ async function loadSalesByIds({
     const chunk = ids.slice(offset, offset + 100);
     sales.push(
       ...(await getSalesForAlertEvaluation(
-        { status_in: ["active", "upcoming"], ids: chunk },
+        { status_in: [...ALERT_SALE_STATUSES], ids: chunk },
         chunk.length,
         0,
         { client: auth.supabase, discovery },
@@ -960,7 +981,8 @@ export function buildAlertMatchSnapshot({
       },
     };
   }
-  const surface = getSaleSurface(sale).value;
+  const saleSurface = getSaleSurface(sale);
+  const surface = saleSurface.value;
   const dpe = extractDpe(sale).class;
   const yieldPct = estimateSaleGrossYieldPct(sale, surface, rents?.(sale));
   const documents = documentSignatureParts(sale);
@@ -1007,7 +1029,7 @@ export function buildAlertMatchSnapshot({
       saleDate: sale.sale_date,
       status: sale.status,
       surfaceM2: surface,
-      pricePerM2: roundNumber(pricePerM2(sale.starting_price_eur, surface)),
+      pricePerM2: roundNumber(pricePerM2(sale.starting_price_eur, surface, saleSurface.kind)),
       investmentScore: sale.investment_score,
       documentCount: documents.count,
       documentSignature: documents.signature,

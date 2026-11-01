@@ -119,6 +119,60 @@ describe("rapprochement Stripe / base (lecture seule)", () => {
     ).toEqual([]);
   });
 
+  it("ne reconnaît aucun Price quand aucun n'est configuré ou que l'abonnement n'en porte pas (n° 47)", () => {
+    expect(compare([stripeSub()], [row()], [])).toEqual([
+      expect.objectContaining({ kind: "unknown_price" }),
+    ]);
+    expect(compare([stripeSub({ priceId: null })], [row()])).toEqual([
+      expect.objectContaining({ kind: "unknown_price" }),
+    ]);
+  });
+
+  it("signale un Price courant au mauvais montant comme Price inconnu, pas un ancien Price déclaré", () => {
+    const wrong = stripeSub({ priceAmountCents: 3_000 });
+    expect(
+      compareStripeWithDatabase({
+        stripeSubscriptions: [wrong],
+        rows: [row()] as never,
+        acceptedPriceIds: ["price_a"],
+        currentPriceId: "price_a",
+        now: NOW,
+      }),
+    ).toEqual([expect.objectContaining({ kind: "unknown_price" })]);
+    expect(
+      compareStripeWithDatabase({
+        stripeSubscriptions: [stripeSub({ priceAmountCents: 5_900 })],
+        rows: [row()] as never,
+        acceptedPriceIds: ["price_a"],
+        currentPriceId: "price_a",
+        now: NOW,
+      }),
+    ).toEqual([]);
+    // Ancien Price déclaré : accepté quel que soit son montant.
+    expect(
+      compareStripeWithDatabase({
+        stripeSubscriptions: [stripeSub({ priceId: "price_old", priceAmountCents: 4_900 })],
+        rows: [row()] as never,
+        acceptedPriceIds: ["price_a", "price_old"],
+        currentPriceId: "price_a",
+        now: NOW,
+      }),
+    ).toEqual([]);
+  });
+
+  it("n'émet pas database_access_stripe_missing quand la liste Stripe est tronquée", () => {
+    const args = {
+      stripeSubscriptions: [] as StripeSubscriptionView[],
+      rows: [row()] as never,
+      acceptedPriceIds: ["price_a"],
+      now: NOW,
+    };
+    expect(compareStripeWithDatabase({ ...args, listComplete: false })).toEqual([]);
+    expect(compareStripeWithDatabase(args)).toEqual([
+      expect.objectContaining({ kind: "database_access_stripe_missing" }),
+    ]);
+  });
+
   it("signale un compte qui ne correspond pas", () => {
     expect(compare([stripeSub({ userId: "user-2" })], [row()])).toEqual([
       expect.objectContaining({ kind: "user_mismatch", userId: "user-1" }),

@@ -4,7 +4,7 @@ import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { featureIncluded, type PlanCode } from "@/lib/plans";
-import { resolvePlanEntitlements } from "@/lib/property-reports";
+import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import { RateLimitError } from "@/lib/api-errors";
 import { enforceIpRateLimit, enforceUserRateLimit, secondsUntilWindowEnds } from "@/lib/rate-limit";
 import {

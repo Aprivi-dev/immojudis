@@ -97,6 +97,7 @@ from src.pdf_page_analysis import (
 from src.pdf_page_analysis import (
     is_decorative_edge_only_page as _is_decorative_edge_only_page,  # noqa: F401
 )
+from src.pdf_permanent_failure import PermanentDocumentFailure, ensure_pdf_is_readable, open_pdf_or_fail
 from src.pdf_word_documents import extract_docx_document, extract_legacy_word_document
 from src.source_withdrawal import is_withdrawn_source_url
 from src.sources.cloud_transport import configured_transport
@@ -129,14 +130,6 @@ class PdfEnrichmentStats:
     documents_processed: int = 0
     blocked_document_urls: list[str] = field(default_factory=list)
     permanent_document_failures: list[dict[str, str]] = field(default_factory=list)
-
-
-class PermanentDocumentFailure(ValueError):
-    """A document URL is known not to be usable by the PDF extractor."""
-
-    def __init__(self, reason: str, message: str | None = None) -> None:
-        super().__init__(message or reason)
-        self.reason = reason
 
 
 @contextmanager
@@ -251,6 +244,12 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
             )
             checkpoint_partial_pdf_progress(file_path, document, error=exc, total_pages=exc.total_pages, cache_root=PDF_DOCUMENT_TEXTS_DIR, manifest_path=PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json", current_texts=pdf_texts, sale=sale, analysis=sale.raw_payload.get("document_analysis"), documents=sale.documents, downloaded_documents=downloaded_documents, ocr_enabled=bool(load_settings()["pdf_ocr_enabled"]), ocr_language=str(load_settings()["pdf_ocr_language"]), merge_cache=merge_pdf_cache, write_cache=_write_pdf_text_cache, store_status=_store_document_analysis_status)
             raise
+        except PermanentDocumentFailure as exc:
+            # Unreadable for good (pages, weight, password, corruption): settled like a 404, the job succeeds.
+            _log_pdf_document_transition(document, status="permanent_failure", started_at=document_started_at, error_type=exc.reason)
+            LOGGER.info("Skipping permanently unusable document %s: %s", file_path, exc.reason)
+            stats.permanent_document_failures.append({"url": str(document.get("url") or ""), "reason": exc.reason})
+            continue
         except Exception as exc:
             _log_pdf_document_transition(
                 document,
@@ -839,7 +838,7 @@ def extract_pdf_document(file: str | Path, document: dict[str, str] | None = Non
     settings = load_settings()
     max_bytes = int(settings["pdf_max_download_mb"]) * 1024 * 1024
     if path.stat().st_size > max_bytes:
-        raise ValueError(f"document exceeds the {max_bytes}-byte extraction limit")
+        raise PermanentDocumentFailure("document_too_large", f"document exceeds the {max_bytes}-byte extraction limit")
     pages = extract_pdf_pages(path)
     page_text = clean_text("\n".join(str(page["text"]) for page in pages if page.get("text"))) or ""
     text = page_text
@@ -1075,9 +1074,9 @@ def extract_pdf_pages(file: str | Path) -> list[dict[str, object]]:
     settings = load_settings()
     max_pages = int(settings["pdf_max_extract_pages"])
     hard_limit = int(settings.get("pdf_max_total_pages", 300))
-    with pdf_document_ocr_budget_scope(_pdf_ocr_document_budget_seconds(settings)), fitz.open(file) as document:
-        if document.page_count > hard_limit:
-            raise ValueError(f"PDF exceeds the {hard_limit}-page safety limit")
+    opened = open_pdf_or_fail(file)
+    with pdf_document_ocr_budget_scope(_pdf_ocr_document_budget_seconds(settings)), opened as document:
+        ensure_pdf_is_readable(document, hard_limit=hard_limit)
         # Long text PDFs are inexpensive. Only OCR consumes the per-pass budget.
         cache_key = hashlib.sha256(Path(file).read_bytes() + str((settings["pdf_ocr_enabled"], settings["pdf_ocr_language"], PDF_TEXT_CACHE_VERSION)).encode()).hexdigest()
         cache_dir = PDF_DOCUMENT_TEXTS_DIR / "pages" / cache_key

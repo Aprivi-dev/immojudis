@@ -15,6 +15,7 @@ import type { SalesSearchUrlRecord } from "@/lib/search/search-url-state";
 // partagé : `SectorAlertFormLazy`).
 
 export const SECTOR_ALERT_LABEL = "Recevoir les nouvelles ventes de ce secteur";
+const DEFAULT_TITLE = "Être prévenu des nouvelles ventes";
 
 /**
  * « Recevoir les nouvelles ventes de ce secteur » : alerte en un clic depuis une page publique
@@ -25,21 +26,27 @@ export const SECTOR_ALERT_LABEL = "Recevoir les nouvelles ventes de ce secteur";
 export function SectorAlertCta({
   criteria,
   intro,
+  title,
+  label = SECTOR_ALERT_LABEL,
 }: {
   criteria: SalesSearchUrlRecord;
   intro?: string;
+  /** Titre du bloc, quand l'alerte ne porte pas sur un secteur (par exemple un tribunal). */
+  title?: string;
+  /** Libellé du bouton qui crée l'alerte. */
+  label?: string;
 }) {
   const { user, loading } = useAuth();
   // L'essai n'est annoncé qu'une fois son ouverture lue (comme sur le reste du site).
   const launchOffer = useLaunchOffer().active;
   if (user && !loading) {
-    return <SectorAlertForm criteria={criteria} intro={intro} actionLabel={SECTOR_ALERT_LABEL} />;
+    return <SectorAlertForm criteria={criteria} intro={intro} title={title} actionLabel={label} />;
   }
   return (
-    <Card as="section" aria-label="Être prévenu des nouvelles ventes" className="grid gap-3">
+    <Card as="section" aria-label={title ?? DEFAULT_TITLE} className="grid gap-3">
       <h2 className="flex items-center gap-2 font-display text-2xl font-semibold">
         <Bell className="size-5 text-gold-text" aria-hidden />
-        Être prévenu des nouvelles ventes
+        {title ?? DEFAULT_TITLE}
       </h2>
       {intro ? <p className="text-sm text-ink-soft">{intro}</p> : null}
       <div>
@@ -47,7 +54,7 @@ export function SectorAlertCta({
           href={alertCreationLoginPath(criteria)}
           className={buttonClasses({ variant: "primary" })}
         >
-          {SECTOR_ALERT_LABEL}
+          {label}
         </Link>
       </div>
       {launchOffer ? (

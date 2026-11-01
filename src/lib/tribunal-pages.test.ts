@@ -8,6 +8,7 @@ import {
 } from "@/lib/public-tribunal-activity";
 import {
   TRIBUNAL_PAGE_LISTED_SALES,
+  ambiguousTribunalCodes,
   atTribunalPhrase,
   hasReadableTribunalName,
   indexableTribunalPages,
@@ -27,6 +28,8 @@ import {
   tribunalPages,
   tribunalPageTitle,
   tribunalPlaceName,
+  tribunalReadableSlug,
+  tribunalSlug,
   tribunalSlugBase,
 } from "./tribunal-pages";
 
@@ -80,18 +83,22 @@ describe("tribunalSlugBase", () => {
 });
 
 describe("tribunalPages", () => {
-  it("donne à chaque tribunal une adresse /tribunaux/<code>", () => {
+  it("donne à chaque tribunal une adresse lisible /tribunaux/tribunal-judiciaire-<ville>", () => {
     const pages = tribunalPages([
       court("TJ Bobigny", { code: "justice_tj_1_93" }),
       court("TJ Tribunal judiciaire du Puy-en-Velay", { code: "justice_tj_1_113" }),
+      court("TJ Grasse", { code: "justice_tj_1_38" }),
+      court("Tribunal de première instance de Papeete", { code: "justice_tpi_1_1" }),
     ]);
     expect(pages.map((page) => page.path)).toEqual([
-      "/tribunaux/justice-tj-1-93",
-      "/tribunaux/justice-tj-1-113",
+      "/tribunaux/tribunal-judiciaire-bobigny",
+      "/tribunaux/tribunal-judiciaire-le-puy-en-velay",
+      "/tribunaux/tribunal-judiciaire-grasse",
+      "/tribunaux/tribunal-de-premiere-instance-papeete",
     ]);
   });
 
-  it("ne dépend que du code : ni l'ordre, ni les autres tribunaux, ni le nom, ni les ventes", () => {
+  it("ne dépend ni de l'ordre, ni des autres tribunaux, ni du nombre de ventes", () => {
     const bobigny = court("TJ Bobigny", { code: "justice_tj_1_93" });
     const nantes = court("TJ Nantes", { code: "justice_tj_1_114" });
     const alone = tribunalPages([bobigny])[0].path;
@@ -99,12 +106,8 @@ describe("tribunalPages", () => {
       alone,
     );
     expect(tribunalPages([bobigny, nantes])[0].path).toBe(alone);
-    // Le nom corrigé, ou le nombre de ventes, ne déplace pas l'adresse.
-    const renamed = court("TJ Bobigny (Seine-Saint-Denis)", {
-      code: "justice_tj_1_93",
-      upcomingCount: 1,
-    });
-    expect(tribunalPages([renamed])[0].path).toBe(alone);
+    expect(tribunalPages([{ ...bobigny, upcomingCount: 1 }])[0].path).toBe(alone);
+    expect(tribunalPagePath("justice_tj_1_93", bobigny)).toBe(alone);
   });
 
   it("n'attribue jamais la même adresse à deux tribunaux de même nom", () => {
@@ -113,12 +116,22 @@ describe("tribunalPages", () => {
       code: "justice_tj_1_50",
       department: "50",
     });
+    // Les deux gardent leur adresse par code : aucune adresse lisible n'est partagée.
     expect(tribunalPages([first, second]).map((page) => page.slug)).toEqual([
       "justice-tj-1-97",
       "justice-tj-1-50",
     ]);
-    // Le tribunal qui n'a plus de vente ne change pas l'adresse de l'autre.
-    expect(tribunalPages([second])[0].slug).toBe("justice-tj-1-50");
+    // Le référentiel complet révèle l'homonyme d'un tribunal qui n'a plus de vente.
+    const directory = [first, second].map(({ code, name, searchName }) => ({
+      code,
+      name,
+      searchName,
+    }));
+    const ambiguous = ambiguousTribunalCodes(directory);
+    expect([...ambiguous].sort()).toEqual(["justice_tj_1_50", "justice_tj_1_97"]);
+    expect(tribunalPages([second], ambiguous)[0].slug).toBe("justice-tj-1-50");
+    // Un nom qui n'est partagé par personne reste lisible.
+    expect(ambiguousTribunalCodes([first, court("TJ Bobigny", { code: "b" })]).size).toBe(0);
   });
 
   it("ramène le code à des minuscules, chiffres et tirets", () => {
@@ -126,14 +139,35 @@ describe("tribunalPages", () => {
       expect(tribunalCodeSlug(code)).toMatch(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
     }
     expect(tribunalCodeSlug("justice_tj_1_93")).toBe("justice-tj-1-93");
+    // Sans nom, le chemin reste celui du code (il redirige vers l'adresse lisible).
     expect(tribunalPagePath("justice_tj_1_93")).toBe("/tribunaux/justice-tj-1-93");
+  });
+
+  it("tire l'adresse lisible du nom : sans accent, sans article, sans code brut", () => {
+    const slug = (searchName: string, code = "x") =>
+      tribunalReadableSlug({ code, name: searchName, searchName });
+    expect(slug("TJ Grasse")).toBe("tribunal-judiciaire-grasse");
+    expect(slug("Tribunal judiciaire de Châteauroux")).toBe("tribunal-judiciaire-chateauroux");
+    expect(slug("TJ Les Sables-d'Olonne")).toBe("tribunal-judiciaire-les-sables-d-olonne");
+    expect(slug("TJ Évry-Courcouronnes")).toBe("tribunal-judiciaire-evry-courcouronnes");
+    expect(slug("Tribunal de première instance de Papeete")).toBe(
+      "tribunal-de-premiere-instance-papeete",
+    );
+    // Un code brut à la place du nom : pas d'adresse lisible, l'adresse par code reste.
+    expect(slug("justice_tj_1_210", "justice_tj_1_210")).toBeNull();
+    expect(
+      tribunalSlug({ code: "justice_tj_1_210", name: "", searchName: "justice_tj_1_210" }),
+    ).toBe("justice-tj-1-210");
   });
 
   it("retrouve un tribunal par son adresse exacte seulement", () => {
     const items = [court("TJ Bobigny", { code: "justice_tj_1_93" })];
-    expect(tribunalPageFromSlug(items, "justice-tj-1-93")?.activity.searchName).toBe("TJ Bobigny");
-    expect(tribunalPageFromSlug(items, "Justice-tj-1-93")).toBeNull();
-    expect(tribunalPageFromSlug(items, "justice-tj-1-93/")).toBeNull();
+    const found = tribunalPageFromSlug(items, "tribunal-judiciaire-bobigny");
+    expect(found?.activity.searchName).toBe("TJ Bobigny");
+    expect(tribunalPageFromSlug(items, "Tribunal-judiciaire-bobigny")).toBeNull();
+    expect(tribunalPageFromSlug(items, "tribunal-judiciaire-bobigny/")).toBeNull();
+    // L'ancienne adresse par code, ou par nom, ne désigne plus la page : elle redirige.
+    expect(tribunalPageFromSlug(items, "justice-tj-1-93")).toBeNull();
     expect(tribunalPageFromSlug(items, "bobigny")).toBeNull();
   });
 
@@ -144,7 +178,10 @@ describe("tribunalPages", () => {
       court("TJ Brest", { code: "r", upcomingCount: 2 }),
       court("TJ Foix", { code: "f", upcomingCount: 0 }),
     ];
-    expect(indexableTribunalPages(items).map((page) => page.slug)).toEqual(["b", "n"]);
+    expect(indexableTribunalPages(items).map((page) => page.slug)).toEqual([
+      "tribunal-judiciaire-bobigny",
+      "tribunal-judiciaire-nantes",
+    ]);
     expect(isTribunalPageIndexable(2)).toBe(false);
     expect(isTribunalPageIndexable(3)).toBe(true);
   });
@@ -178,16 +215,46 @@ describe("anciennes adresses et tribunaux sans vente", () => {
     ]);
   });
 
-  it("redirige l'ancienne adresse d'un tribunal à ventes vers son adresse par code", () => {
+  it("redirige l'ancienne adresse par nom d'un tribunal à ventes vers son adresse lisible", () => {
     const items = [court("TJ Bobigny", { code: "justice_tj_1_93" })];
     expect(legacyTribunalRedirectPath(items, directory, "bobigny")).toBe(
-      "/tribunaux/justice-tj-1-93",
+      "/tribunaux/tribunal-judiciaire-bobigny",
     );
+  });
+
+  it("redirige l'ancienne adresse par code vers l'adresse lisible, avec ou sans vente à venir", () => {
+    const items = [court("TJ Bobigny", { code: "justice_tj_1_93" })];
+    expect(legacyTribunalRedirectPath(items, directory, "justice-tj-1-93")).toBe(
+      "/tribunaux/tribunal-judiciaire-bobigny",
+    );
+    // Un tribunal du référentiel qui n'a plus de vente, et un référentiel en panne (liste vide).
+    expect(legacyTribunalRedirectPath([], directory, "justice-tj-1-113")).toBe(
+      "/tribunaux/tribunal-judiciaire-le-puy-en-velay",
+    );
+    expect(legacyTribunalRedirectPath(items, [], "justice-tj-1-93")).toBe(
+      "/tribunaux/tribunal-judiciaire-bobigny",
+    );
+    expect(legacyTribunalRedirectPath(items, directory, "justice-tj-9-9")).toBeNull();
+  });
+
+  it("ne redirige pas l'adresse par code d'un tribunal dont c'est l'adresse (nom partagé ou illisible)", () => {
+    // Deux « Saint-Pierre » : chacun garde son adresse par code, qui ne redirige donc pas.
+    expect(legacyTribunalRedirectPath([], directory, "justice-tj-1-97")).toBeNull();
+    const unnamed = [
+      {
+        code: "justice_tj_1_210",
+        name: "",
+        searchName: "justice_tj_1_210",
+        city: null,
+        department: null,
+      },
+    ];
+    expect(legacyTribunalRedirectPath([], unnamed, "justice-tj-1-210")).toBeNull();
   });
 
   it("redirige aussi l'ancienne adresse d'un tribunal sans vente, si le nom est sans ambiguïté", () => {
     expect(legacyTribunalRedirectPath([], directory, "le-puy-en-velay")).toBe(
-      "/tribunaux/justice-tj-1-113",
+      "/tribunaux/tribunal-judiciaire-le-puy-en-velay",
     );
     // Deux tribunaux de même nom : aucune redirection devinée.
     expect(legacyTribunalRedirectPath([], directory, "saint-pierre")).toBeNull();
@@ -195,9 +262,15 @@ describe("anciennes adresses et tribunaux sans vente", () => {
   });
 
   it("reconnaît un tribunal du référentiel par son adresse, et seulement elle", () => {
-    expect(knownTribunalFromSlug(directory, "justice-tj-1-93")?.searchName).toBe("TJ Bobigny");
+    expect(knownTribunalFromSlug(directory, "tribunal-judiciaire-bobigny")?.searchName).toBe(
+      "TJ Bobigny",
+    );
+    expect(knownTribunalFromSlug(directory, "justice-tj-1-93")).toBeNull();
     expect(knownTribunalFromSlug(directory, "bobigny")).toBeNull();
     expect(knownTribunalFromSlug(directory, "justice-tj-9-9")).toBeNull();
+    // Les deux « Saint-Pierre » ne se trouvent que par leur code.
+    expect(knownTribunalFromSlug(directory, "tribunal-judiciaire-saint-pierre")).toBeNull();
+    expect(knownTribunalFromSlug(directory, "justice-tj-1-97")?.department).toBe("974");
   });
 
   it("présente un tribunal sans vente avec des chiffres à zéro et une description honnête", () => {
@@ -412,7 +485,7 @@ describe("adresses : normalisation et unicité sur le référentiel", () => {
     const slugs = codes.map((code) => tribunalCodeSlug(code));
     expect(new Set(slugs).size).toBe(codes.length);
     for (const slug of slugs) expect(slug).toMatch(/^justice-tj-\d+-\d+$/);
-    // Chaque adresse retrouve son tribunal, et lui seul.
+    // Sans nom, chaque adresse par code retrouve son tribunal, et lui seul.
     const directory = codes.map((code) => ({
       code,
       name: code,
@@ -423,6 +496,31 @@ describe("adresses : normalisation et unicité sur le référentiel", () => {
     for (const code of codes) {
       expect(knownTribunalFromSlug(directory, tribunalCodeSlug(code))?.code).toBe(code);
     }
+  });
+
+  it("donne à chaque tribunal nommé des migrations une adresse lisible unique", () => {
+    // Couples (code, nom canonique) tels que la migration du catalogue les enregistre.
+    const migration = join(
+      process.cwd(),
+      "supabase",
+      "migrations",
+      "20260824163134_catalogue_court_label_and_judicial_regions.sql",
+    );
+    const rows = [
+      ...readFileSync(migration, "utf8").matchAll(
+        /\('(justice_tj_\d+_\d+)',\s*'[^']*',\s*'[^']*',\s*'(?:[^']|'')*',\s*'((?:[^']|'')+)'/g,
+      ),
+    ].map(([, code, canonical]) => ({
+      code,
+      name: canonical.replaceAll("''", "'"),
+      searchName: canonical.replaceAll("''", "'"),
+    }));
+    expect(rows.length).toBeGreaterThan(100);
+    expect(ambiguousTribunalCodes(rows).size).toBe(0);
+    const slugs = rows.map((row) => tribunalReadableSlug(row));
+    expect(slugs.every(Boolean)).toBe(true);
+    expect(new Set(slugs).size).toBe(rows.length);
+    for (const slug of slugs) expect(slug).toMatch(/^tribunal-[a-z0-9]+(?:-[a-z0-9]+)*$/);
   });
 
   it("ramène une adresse mal écrite à l'adresse publiée", () => {

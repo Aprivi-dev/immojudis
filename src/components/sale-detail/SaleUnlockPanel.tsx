@@ -10,6 +10,8 @@ import { UNLOCK_PANEL_ID } from "@/components/sale-detail/UnlockCallToAction";
 import { useAnalysisCheckoutOpen } from "@/hooks/use-analysis-checkout-open";
 import { SaleUnlockQuotaReachedError, unlockSaleRequest } from "@/lib/client-api";
 import { resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
+import { nonBreakingUnits } from "@/lib/non-breaking-units";
+import { trackProductEvent } from "@/lib/product-events";
 import { ceilingTermText, ceilingTermWithArticleText } from "@/lib/fee-regime-labels";
 import {
   MONTHLY_SALE_UNLOCKS,
@@ -169,6 +171,7 @@ export function SaleUnlockPanel({
   const exhausted = (current.remaining ?? 0) <= 0;
 
   async function confirmUnlock() {
+    trackProductEvent("sale_unlock_confirmed");
     setStep("pending");
     setError(null);
     setLive("Déblocage en cours…");
@@ -305,7 +308,7 @@ function ExhaustedNotice({ status }: { status: SaleUnlockStatus }) {
       <p className="mt-2 text-sm leading-relaxed text-ink-soft">
         {unlockQuotaReachedText(status)}{" "}
         {checkoutOpen === true
-          ? `Analyse ouvre toutes les ventes sans limite : ${resolveAnalysisOfferLabel()}, résiliable à tout moment.`
+          ? `Analyse ouvre toutes les ventes sans limite : ${nonBreakingUnits(resolveAnalysisOfferLabel())}, résiliable à tout moment.`
           : checkoutOpen === false
             ? "L’offre Analyse n’est pas encore ouverte à la souscription."
             : null}

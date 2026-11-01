@@ -24,6 +24,7 @@ import type {
   OfferOpeningSendResult,
   OfferOpeningTestResult,
 } from "@/lib/admin-offer-opening-notifier";
+import type { OfferOpeningInterviewees } from "@/lib/admin-offer-opening-survey";
 import type { AdminPilotageResponse } from "@/lib/admin-pilotage";
 import type { LawyerStatement } from "@/lib/lawyer-statement";
 import type {
@@ -218,6 +219,20 @@ export async function fetchAdminPilotage(): Promise<AdminPilotageResponse> {
   });
 
   return readJson<AdminPilotageResponse>(response);
+}
+
+/**
+ * Personnes qui ont accepté un entretien (questionnaire de la liste d'attente), administrateur
+ * seulement. Chargée à la demande : elle porte des adresses email, la réponse de « Pilotage » non.
+ */
+export async function fetchAdminOfferOpeningInterviewees(): Promise<OfferOpeningInterviewees> {
+  const response = await fetch("/api/admin/offer-opening-interviewees", {
+    signal: AbortSignal.timeout(30_000),
+    headers: await authHeaders(),
+    cache: "no-store",
+  });
+
+  return readJson<OfferOpeningInterviewees>(response);
 }
 
 /** Relevé mensuel des avocats référencés (`month` : AAAA-MM), administrateur seulement. */

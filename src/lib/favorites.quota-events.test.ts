@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({ record: vi.fn(), plan: vi.fn(), insertResult: 
 vi.mock("@/lib/account-product-events.server", () => ({
   recordAccountProductEvent: mocks.record,
 }));
-vi.mock("@/lib/property-reports", () => ({ resolvePlanEntitlements: mocks.plan }));
+vi.mock("@/lib/entitlements.server", () => ({ resolvePlanEntitlements: mocks.plan }));
 vi.mock("@/lib/usage", () => ({ recordFeatureUsageEvent: vi.fn() }));
 
 import { addFavoriteSale, isFavoriteQuotaError } from "./favorites";

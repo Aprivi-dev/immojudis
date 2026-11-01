@@ -3,12 +3,14 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FollowedSaleSnapshot } from "@/lib/followed-sale-snapshots-shared";
-import { PastFollowedSales, resultText } from "./PastFollowedSales";
+import { PastFollowedSales, averageGapText, gapText, resultText } from "./PastFollowedSales";
 
 const mocks = vi.hoisted(() => ({
   auth: { user: { id: "user-1" } as { id: string } | null, loading: false },
   fetchSnapshots: vi.fn(),
   deleteSnapshot: vi.fn(),
+  updateSnapshot: vi.fn(),
+  downloadDeadlines: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
 }));
@@ -17,6 +19,8 @@ vi.mock("@/hooks/use-auth", () => ({ useAuth: () => mocks.auth }));
 vi.mock("@/lib/client-api", () => ({
   fetchFollowedSaleSnapshots: mocks.fetchSnapshots,
   deleteFollowedSaleSnapshot: mocks.deleteSnapshot,
+  updateFollowedSaleSnapshot: mocks.updateSnapshot,
+  downloadSnapshotDeadlines: mocks.downloadDeadlines,
 }));
 vi.mock("@/lib/toast", () => ({ toast: { success: mocks.toastSuccess, error: mocks.toastError } }));
 
@@ -38,6 +42,9 @@ function snapshot(overrides: Partial<FollowedSaleSnapshot> = {}): FollowedSaleSn
     result: { status: "unknown", priceEur: null, priceSource: null, priceWithheld: false },
     personalStatus: null,
     bidCeilingEur: null,
+    finalPriceEur: null,
+    saleVenueType: "tribunal",
+    saleLegalFramework: "judicial_seizure",
     surenchere: {
       kind: "window",
       hearingDay: "2026-10-14",
@@ -173,7 +180,7 @@ describe("PastFollowedSales (ventes passées)", () => {
 
     await screen.findByRole("heading", { name: "Maison de ville" });
     expect(screen.getByTestId("snapshot-result").textContent).toMatch(/Adjugé à 250\s000\s€/);
-    expect(screen.getByText("Je prépare mon enchère")).toBeTruthy();
+    expect((screen.getByLabelText("Mon résultat") as HTMLSelectElement).value).toBe("bidding");
     expect(screen.getByText(/180\s000\s€/)).toBeTruthy();
     const surenchere = screen.getByTestId("snapshot-surenchere").textContent ?? "";
     expect(surenchere).toContain(
@@ -284,5 +291,201 @@ describe("PastFollowedSales (ventes passées)", () => {
 
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain("indisponibles");
+  });
+});
+
+describe("gapText", () => {
+  it("dit l'écart avec le plafond sans le présenter comme une consigne", () => {
+    expect(gapText({ eur: 12_000, pct: 7 })).toMatch(
+      /12\s000\s€ de plus que votre plafond \(\+7 %\)/,
+    );
+    expect(gapText({ eur: -5_000, pct: -3 })).toMatch(
+      /5\s000\s€ de moins que votre plafond \(−3 %\)/,
+    );
+    expect(gapText({ eur: 0, pct: 0 })).toBe("égal à votre plafond");
+  });
+});
+
+describe("averageGapText", () => {
+  it("dit le sens de l'écart moyen en pourcentage", () => {
+    expect(averageGapText(7)).toBe("7 % au-dessus de votre plafond");
+    expect(averageGapText(-3)).toBe("3 % en dessous de votre plafond");
+    expect(averageGapText(0)).toBe("égal à votre plafond");
+  });
+});
+
+describe("PastFollowedSales : bilan après adjudication", () => {
+  it("enregistre le statut puis le prix final, facultatif, quand la vente est remportée", async () => {
+    mocks.fetchSnapshots.mockResolvedValue({
+      snapshots: [snapshot({ personalStatus: "won", bidCeilingEur: 180_000 })],
+    });
+    mocks.updateSnapshot.mockResolvedValue({ snapshot: snapshot() });
+    renderSection();
+
+    const price = await screen.findByLabelText("Prix final de l’adjudication (facultatif)");
+    fireEvent.change(price, { target: { value: "172 500" } });
+    fireEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
+
+    await waitFor(() =>
+      expect(mocks.updateSnapshot).toHaveBeenCalledWith({
+        data: { id: "snap-1", finalPriceEur: 172_500 },
+      }),
+    );
+    expect(mocks.toastSuccess).toHaveBeenCalled();
+  });
+
+  it("refuse un montant illisible sans rien envoyer", async () => {
+    mocks.fetchSnapshots.mockResolvedValue({ snapshots: [snapshot({ personalStatus: "lost" })] });
+    renderSection();
+
+    fireEvent.change(await screen.findByLabelText("Prix final de l’adjudication (facultatif)"), {
+      target: { value: "185.000" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain("chiffres seulement");
+    expect(mocks.updateSnapshot).not.toHaveBeenCalled();
+  });
+
+  it("ne propose pas de prix final sans statut remporté ou non remporté", async () => {
+    mocks.fetchSnapshots.mockResolvedValue({
+      snapshots: [snapshot({ personalStatus: "watching" })],
+    });
+    renderSection();
+
+    await screen.findByRole("heading", { name: "Maison de ville" });
+    expect(screen.queryByLabelText("Prix final de l’adjudication (facultatif)")).toBeNull();
+    expect(screen.queryByTestId("snapshot-gap")).toBeNull();
+    expect(screen.queryByTestId("snapshot-balance")).toBeNull();
+  });
+
+  it("change le statut depuis la liste « Mon résultat »", async () => {
+    mocks.fetchSnapshots.mockResolvedValue({ snapshots: [snapshot()] });
+    mocks.updateSnapshot.mockResolvedValue({ snapshot: snapshot() });
+    renderSection();
+
+    fireEvent.change(await screen.findByLabelText("Mon résultat"), { target: { value: "won" } });
+
+    await waitFor(() =>
+      expect(mocks.updateSnapshot).toHaveBeenCalledWith({
+        data: { id: "snap-1", personalStatus: "won" },
+      }),
+    );
+  });
+
+  it("montre l'écart avec le plafond seulement si le prix final et le plafond sont notés", async () => {
+    mocks.fetchSnapshots.mockResolvedValue({
+      snapshots: [
+        snapshot({
+          id: "a",
+          title: "Avec écart",
+          personalStatus: "won",
+          bidCeilingEur: 180_000,
+          finalPriceEur: 171_000,
+        }),
+        snapshot({
+          id: "b",
+          title: "Sans plafond",
+          personalStatus: "lost",
+          bidCeilingEur: null,
+          finalPriceEur: 250_000,
+        }),
+      ],
+    });
+    renderSection();
+
+    await screen.findByRole("heading", { name: "Avec écart" });
+    const gaps = screen.getAllByTestId("snapshot-gap").map((node) => node.textContent ?? "");
+    expect(gaps[0]).toMatch(/9\s000\s€ de moins que votre plafond \(−5 %\)/);
+    expect(gaps[1]).toContain("aucun plafond n’était enregistré");
+  });
+
+  it("résume les ventes remportées et non remportées sans prévision", async () => {
+    mocks.fetchSnapshots.mockResolvedValue({
+      snapshots: [
+        snapshot({
+          id: "a",
+          title: "A",
+          personalStatus: "won",
+          bidCeilingEur: 100_000,
+          finalPriceEur: 90_000,
+        }),
+        snapshot({
+          id: "b",
+          title: "B",
+          personalStatus: "won",
+          bidCeilingEur: 200_000,
+          finalPriceEur: 220_000,
+        }),
+        snapshot({ id: "c", title: "C", personalStatus: "lost" }),
+      ],
+    });
+    renderSection();
+
+    const balance = await screen.findByTestId("snapshot-balance");
+    const text = balance.textContent ?? "";
+    expect(text).toContain("Ventes remportées : 2");
+    expect(text).toContain("prix final en moyenne égal à votre plafond, sur 2 ventes");
+    expect(text).toContain("1 au-dessus de votre plafond");
+    expect(text).toContain("Ventes non remportées : 1");
+    expect(text).toContain("aucun prix final noté avec un plafond");
+    expect(text).toContain("Ce n’est pas une prévision");
+  });
+
+  it("affiche l'échéancier indicatif d'une saisie remportée, avec sources et mention avocat", async () => {
+    mocks.fetchSnapshots.mockResolvedValue({ snapshots: [snapshot({ personalStatus: "won" })] });
+    renderSection();
+
+    const block = await screen.findByTestId("snapshot-deadlines");
+    const text = block.textContent ?? "";
+    // Audience le 14 octobre 2026 : surenchère au plus tôt le 24 octobre, paiement le 24 décembre.
+    expect(text).toContain("Fin du délai de surenchère, au plus tôt : 24 octobre 2026");
+    expect(text).toContain("art. R. 322-50 du CPCE");
+    expect(text).toContain("Paiement du prix, au plus tôt : 24 décembre 2026");
+    expect(text).toContain("art. R. 322-56 du CPCE");
+    expect(text).toContain("À confirmer avec votre avocat.");
+    expect(text).not.toMatch(/Il reste|dernier jour|échue/);
+  });
+
+  it("n'annonce pas d'échéancier pour une autre procédure qu'une saisie immobilière", async () => {
+    mocks.fetchSnapshots.mockResolvedValue({
+      snapshots: [snapshot({ personalStatus: "won", saleLegalFramework: "insolvency" })],
+    });
+    renderSection();
+
+    const text = (await screen.findByTestId("snapshot-deadlines")).textContent ?? "";
+    expect(text).toContain("Nous ne calculons pas d’échéancier pour cette vente");
+    expect(screen.queryByRole("button", { name: /Ajouter l’échéancier/ })).toBeNull();
+  });
+
+  it("n'affiche aucun échéancier tant que la vente n'est pas marquée remportée", async () => {
+    mocks.fetchSnapshots.mockResolvedValue({ snapshots: [snapshot({ personalStatus: "lost" })] });
+    renderSection();
+
+    await screen.findByRole("heading", { name: "Maison de ville" });
+    expect(screen.queryByTestId("snapshot-deadlines")).toBeNull();
+  });
+
+  it("télécharge l'échéancier en .ics", async () => {
+    mocks.fetchSnapshots.mockResolvedValue({ snapshots: [snapshot({ personalStatus: "won" })] });
+    mocks.downloadDeadlines.mockResolvedValue({
+      blob: new Blob(["BEGIN:VCALENDAR"]),
+      filename: "immojudis-echeancier-snap.ics",
+    });
+    URL.createObjectURL = vi.fn(() => "blob:test");
+    URL.revokeObjectURL = vi.fn();
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => undefined);
+    renderSection();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Ajouter l’échéancier à mon agenda (.ics)" }),
+    );
+
+    await waitFor(() =>
+      expect(mocks.downloadDeadlines).toHaveBeenCalledWith({ snapshotId: "snap-1" }),
+    );
+    await waitFor(() => expect(click).toHaveBeenCalled());
   });
 });

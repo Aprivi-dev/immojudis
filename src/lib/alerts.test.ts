@@ -112,6 +112,42 @@ function makeWatchedZone(overrides: Partial<UserWatchedZone> = {}): UserWatchedZ
   };
 }
 
+describe("alert price per m² criterion", () => {
+  const alert = makeAlert({
+    city: null,
+    department: null,
+    property_type: null,
+    max_price_eur: null,
+    min_surface_m2: null,
+    occupancy_status: null,
+    min_investment_score: null,
+    min_yield_pct: null,
+    min_market_discount_pct: null,
+    dpe_classes: [],
+    require_house_with_land: false,
+    max_price_per_m2: 6_000,
+  });
+  const studio = makeSale({
+    property_type: "studio",
+    title: "Studio",
+    starting_price_eur: 100_000,
+    app_surface_m2: null,
+    habitable_surface_m2: null,
+    carrez_surface_m2: null,
+    rooms_count: null,
+  });
+
+  it("ne rapproche pas un studio sans surface publiée : 20 m² présumés ne font pas un prix au m²", () => {
+    // 100 000 € / 20 m² = 5 000 €/m², sous le plafond de 6 000 €/m².
+    expect(alertMatchesSale(alert, studio).matches).toBe(false);
+  });
+
+  it("rapproche un studio dont la surface est publiée", () => {
+    const measured = makeSale({ ...studio, app_surface_m2: 25, app_surface_kind: "habitable" });
+    expect(alertMatchesSale(alert, measured).matches).toBe(true);
+  });
+});
+
 describe("alert yield criterion", () => {
   const sale = makeSale({
     department: "23",
@@ -170,6 +206,41 @@ describe("alert yield criterion", () => {
     // Department 23 has no department rent: no yield, so no match.
     expect(alertMatchesSale(alert, sale).matches).toBe(false);
     expect(alertMatchesSale(alert, sale, { rents: () => null }).matches).toBe(false);
+  });
+});
+
+describe("département de l'alerte", () => {
+  const match = (alertDepartment: string | null, saleDepartment: string | null) =>
+    alertMatchesSale(
+      // Sans critère de rendement : le loyer de référence dépend du département et masquerait le test.
+      makeAlert({ department: alertDepartment, min_yield_pct: null }),
+      makeSale({ department: saleDepartment }),
+      { marketDiscountPct: 30 },
+    );
+
+  it("compare les codes des deux côtés : le catalogue contient parfois le nom du département", () => {
+    expect(match("33", "Gironde").matches).toBe(true);
+    expect(match("Gironde", "33").matches).toBe(true);
+    expect(match("33", "33").matches).toBe(true);
+    expect(match("2A", "Corse-du-Sud").matches).toBe(true);
+    expect(match("31", "Haute-Garonne").matches).toBe(true);
+  });
+
+  it("ne confond pas deux départements", () => {
+    const result = match("33", "Landes");
+    expect(result).toMatchObject({ matches: false, reasons: ["département différent"] });
+    expect(match("33", "40").matches).toBe(false);
+    expect(match("33", "Dordogne").matches).toBe(false);
+  });
+
+  it("ne retient pas une vente sans département quand l'alerte en demande un", () => {
+    expect(match("33", null).matches).toBe(false);
+    expect(match("33", "").matches).toBe(false);
+  });
+
+  it("ne compare tel quel (sans casse ni accents) qu'un texte qui n'est pas un département connu", () => {
+    expect(match("Zone Test", "zone test").matches).toBe(true);
+    expect(match("Zone Test", "33").matches).toBe(false);
   });
 });
 
@@ -383,5 +454,54 @@ describe("alerte « Seulement les pépites »", () => {
     expect(
       alertMatchesSale(pepiteAlert({ city: "Lyon" }), makeSale(), { pepiteSaleIds }).matches,
     ).toBe(false);
+  });
+});
+
+describe("alerte par tribunal (advanced_criteria.tribunal)", () => {
+  const tribunalAlert = (tribunal: unknown) =>
+    makeAlert({
+      city: null,
+      department: null,
+      property_type: null,
+      max_price_eur: null,
+      min_surface_m2: null,
+      occupancy_status: null,
+      min_investment_score: null,
+      max_price_per_m2: null,
+      min_yield_pct: null,
+      min_market_discount_pct: null,
+      dpe_classes: [],
+      require_house_with_land: false,
+      advanced_criteria: { tribunal },
+    });
+  const bobigny = makeSale({
+    tribunal: "TJ Bobigny",
+    tribunal_name: "Tribunal judiciaire de Bobigny",
+    tribunal_city: "Bobigny",
+    tribunal_code: "justice_tj_1_93",
+  });
+
+  it("retient les ventes du tribunal, sans tenir compte de la casse ni des accents", () => {
+    const hit = alertMatchesSale(tribunalAlert("TJ Bobigny"), bobigny);
+    expect(hit.matches).toBe(true);
+    // Un mot, jamais un montant.
+    expect(hit.reasons).toContain("tribunal");
+    expect(alertMatchesSale(tribunalAlert("bóbigny"), bobigny).matches).toBe(true);
+    expect(alertMatchesSale(tribunalAlert("BOBIGNY"), bobigny).matches).toBe(true);
+  });
+
+  it("écarte les ventes d'un autre tribunal et celles sans tribunal renseigné", () => {
+    const other = makeSale({ tribunal: "TJ Nanterre", tribunal_name: null, tribunal_code: null });
+    expect(alertMatchesSale(tribunalAlert("TJ Bobigny"), other).matches).toBe(false);
+    const unknown = makeSale({ tribunal: null, tribunal_name: null, tribunal_city: null });
+    expect(alertMatchesSale(tribunalAlert("TJ Bobigny"), unknown).matches).toBe(false);
+  });
+
+  it("ignore un critère vide ou qui n'est pas du texte", () => {
+    for (const value of [undefined, null, "", "  ", 42, { nom: "Bobigny" }]) {
+      const result = alertMatchesSale(tribunalAlert(value), makeSale({ tribunal: "TJ Nanterre" }));
+      expect(result.matches).toBe(true);
+      expect(result.reasons).not.toContain("tribunal");
+    }
   });
 });

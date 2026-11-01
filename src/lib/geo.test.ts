@@ -5,7 +5,9 @@ import {
   estimateSaleGrossYieldPct,
   estimateSaleGrossYieldRange,
   geocodeAdministrativeArea,
+  pricePerM2,
 } from "./geo";
+import { getSaleSurface } from "./surface";
 import { defaultRentPerM2, rentReferenceFromAnilRow } from "./rent-reference";
 vi.mock("@/lib/mapbox", () => ({ getMapboxAccessToken: () => "public-test-token" }));
 afterEach(() => vi.unstubAllGlobals());
@@ -139,5 +141,29 @@ describe("estimateSaleGrossYieldRange", () => {
     expect(estimateSaleGrossYieldRange({ ...sale, property_type: "land" }, 50, anil)).toBeNull();
     expect(estimateSaleGrossYieldRange(sale, null, anil)).toBeNull();
     expect(estimateSaleGrossYieldRange({ ...sale, starting_price_eur: 0 }, 50, anil)).toBeNull();
+  });
+});
+
+describe("pricePerM2", () => {
+  it("divise le prix par une surface mesurée", () => {
+    expect(pricePerM2(100_000, 50)).toBe(2_000);
+    expect(pricePerM2(100_000, 50, "recorded")).toBe(2_000);
+  });
+
+  it("refuse une surface estimée : un studio sans surface publiée n'a pas de prix au m²", () => {
+    // 20 m² présumés (STUDIO_ESTIMATED_SURFACE_M2) : 100 000 / 20 = 5 000 €/m² serait inventé.
+    const studio = { property_type: "studio", title: "Studio", starting_price_eur: 100_000 };
+    const surface = getSaleSurface(studio);
+
+    expect(surface).toMatchObject({ value: 20, kind: "estimated" });
+    expect(pricePerM2(studio.starting_price_eur, surface.value, surface.kind)).toBeNull();
+    // La signature à deux arguments garde son comportement (appelants qui ne connaissent pas la nature).
+    expect(pricePerM2(studio.starting_price_eur, surface.value)).toBe(5_000);
+  });
+
+  it("renvoie null sans prix, sans surface ou avec une surface nulle", () => {
+    expect(pricePerM2(null, 50)).toBeNull();
+    expect(pricePerM2(100_000, null)).toBeNull();
+    expect(pricePerM2(100_000, 0, "recorded")).toBeNull();
   });
 });

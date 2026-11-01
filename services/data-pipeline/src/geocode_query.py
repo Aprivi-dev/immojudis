@@ -9,7 +9,11 @@ chercher la BAN au mauvais endroit :
 * la date et l'heure de l'audience collées à l'adresse (« 56100 LORIENT LE LUNDI 23 NOVEMBRE 2026 à 14 H 00 56440
   LANGUIDIC ») : tout ce qui suit le premier repère d'audience est écarté ;
 * un « France » final ;
-* des mentions de bâtiment, d'escalier, d'étage ou de lot, séparées de l'adresse par une virgule ou un tiret.
+* des mentions de bâtiment, d'escalier, d'étage ou de lot, séparées de l'adresse par une virgule ou un tiret ;
+* « CEDEX nn », « BP 123 », « CS 60001 », « TSA 12345 » : un adressage de distribution du courrier, pas un lieu. Un
+  code postal de Cedex (« 69421 LYON CEDEX 03 ») n'existe pas dans la BAN : il est retiré de la requête et ne sert
+  jamais de filtre ``postcode``. Un code postal générique (« 69000 », « 13000 », « 33000 », fini par 000) non plus :
+  la BAN ne renvoie alors aucun résultat, puis le cache négatif de 14 jours fige l'échec.
 
 Une adresse sans texte parasite est envoyée telle quelle : la requête ne change que quand il y a quelque chose à
 retirer (le cache négatif de ``src.geocode`` compare la requête construite à celle de la tentative précédente).
@@ -22,6 +26,7 @@ import re
 from src.models import AuctionSale
 from src.normalize import clean_text
 from src.position_quality import street_name_tokens
+from src.reference_data.names import has_cedex
 
 _POSTAL_CODE = re.compile(r"(?<!\d)\d{5}(?!\d)")
 _MONTHS = (
@@ -46,6 +51,20 @@ _UNIT_SEGMENT = re.compile(
 _TRAILING_FRANCE = re.compile(r"(?:\s+|(?<=[,;]))france\s*$", re.IGNORECASE)
 _BEFORE_FRANCE_PREPOSITION = re.compile(r"\b(?:de|du|des|la|le|l'|d')\s*$", re.IGNORECASE)
 _SEPARATOR_AT_END = re.compile(r"[\s,;\-–—]+$")
+# « 69421 LYON CEDEX 03 » : le code postal qui précède la ville est celui du Cedex, il disparaît avec le mot. Un code
+# d'arrondissement (75008, 13016, 69003) est un vrai code postal, jamais un code de Cedex : il reste.
+_ARRONDISSEMENT_POSTAL_CODE = re.compile(r"750(?:0[1-9]|1\d|20)|130(?:0[1-9]|1[0-6])|6900[1-9]")
+_CEDEX_POSTAL_CODE = re.compile(
+    r"(?<!\d)(?!750(?:0[1-9]|1\d|20)(?!\d))(?!130(?:0[1-9]|1[0-6])(?!\d))(?!6900[1-9](?!\d))\d{5}(?!\d)[ \t]+"
+    r"(?=[^\d,;]{0,40}?\bc\.?e\.?d\.?e\.?x\b)",
+    re.IGNORECASE,
+)
+_CEDEX_PHRASE = re.compile(
+    r"[ \t]*\bc\.?e\.?d\.?e\.?x\b\.?(?:[ \t]*\d{1,2}(?:[ \t]*(?:er|e|[èe]me))?\b)?", re.IGNORECASE
+)
+_POSTAL_BOX = re.compile(
+    r"[ \t]*\b(?:(?:b\.?p\.?|bo[îi]te\s+postale)[ \t]*\d{1,6}|(?:cs|tsa)[ \t]*\d{3,6})\b", re.IGNORECASE
+)
 _PLACE_SEGMENT = re.compile(
     r"^\s*(?:(?:n[°o]\s*)?\d+\s*(?:bis|ter|quater)?[\s,]+)?(?:lieu[\s-]*dit|hameau|lotissement|domaine|ferme)\b",
     re.IGNORECASE,
@@ -66,10 +85,28 @@ def clean_address_for_geocoding(address: str | None) -> str:
     if marker is not None:
         text = text[: marker.start()]
     text = _drop_unit_segments(text)
+    text = _drop_mail_distribution(text)
     text = _SEPARATOR_AT_END.sub("", text)
     text = _drop_trailing_france(text)
     text = _drop_second_postal_code(text)
     return _SEPARATOR_AT_END.sub("", text).strip()
+
+
+def address_has_cedex(address: str | None) -> bool:
+    """L'adresse est donnée avec un « CEDEX » : son code postal est celui du Cedex, pas d'une commune."""
+    return _CEDEX_PHRASE.search(clean_text(address) or "") is not None
+
+
+def is_filterable_postcode(code: str | None) -> bool:
+    """Code postal à 5 chiffres que la BAN reconnaît comme filtre : ni « 69000 » ni « 13000 » (finis par 000)."""
+    return bool(code) and re.fullmatch(r"\d{5}", code or "") is not None and not (code or "").endswith("000")
+
+
+def _drop_mail_distribution(text: str) -> str:
+    text = _CEDEX_POSTAL_CODE.sub("", text)
+    text = _CEDEX_PHRASE.sub("", text)
+    text = _POSTAL_BOX.sub("", text)
+    return re.sub(r"[ \t]{2,}", " ", text)
 
 
 def _drop_unit_segments(text: str) -> str:
@@ -123,14 +160,40 @@ def build_geocode_query(sale: AuctionSale) -> str | None:
     """Adresse nettoyée, complétée du code postal de la vente (si l'adresse n'en a aucun) et de sa ville."""
     address = clean_address_for_geocoding(sale.address)
     parts = [address]
-    if sale.postal_code and not address_postal_codes(address):
+    if sale.postal_code and not address_postal_codes(address) and not _is_cedex_code_of_sale(sale):
         parts.append(sale.postal_code)
-    if sale.city and sale.city.lower() not in address.lower():
-        parts.append(sale.city)
+    city = _CEDEX_PHRASE.sub("", sale.city or "").strip()
+    if city and city.lower() not in address.lower():
+        parts.append(city)
     return clean_text(" ".join(part for part in parts if part))
 
 
+def _is_cedex_code_of_sale(sale: AuctionSale) -> bool:
+    """Le code postal de la vente est celui d'un Cedex (adresse ou ville donnée avec « CEDEX »)."""
+    if not sale.postal_code or _ARRONDISSEMENT_POSTAL_CODE.fullmatch(sale.postal_code):
+        return False
+    if has_cedex(sale.city):
+        return True
+    return address_has_cedex(sale.address) and sale.postal_code in address_postal_codes(clean_text(sale.address))
+
+
 def geocode_postcode(sale: AuctionSale) -> str | None:
-    """Filtre ``postcode`` de la BAN : le code postal de l'adresse s'il y en a un, sinon celui de la vente."""
+    """Filtre ``postcode`` de la BAN : le code postal de l'adresse s'il y en a un, sinon celui de la vente.
+
+    Aucun filtre pour un Cedex ou un code générique (fini par 000) : la BAN ne trouverait rien.
+    """
     codes = address_postal_codes(clean_address_for_geocoding(sale.address))
-    return codes[0] if codes else sale.postal_code
+    if codes:
+        code = codes[0]
+    elif _is_cedex_code_of_sale(sale):
+        return None
+    else:
+        code = sale.postal_code
+    return code if is_filterable_postcode(code) else None
+
+
+def municipality_postcode(sale: AuctionSale) -> str | None:
+    """Filtre ``postcode`` du repli sur la commune : celui de la vente, sauf Cedex ou code générique."""
+    if _is_cedex_code_of_sale(sale):
+        return None
+    return sale.postal_code if is_filterable_postcode(sale.postal_code) else None

@@ -1,8 +1,11 @@
 import "server-only";
+import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { errorDetailForLog } from "@/lib/api-errors";
-import { apiJson, createApiRequestContext } from "@/lib/api-observability";
+import { errorDetailForLog, RateLimitError } from "@/lib/api-errors";
+import { apiJson, createApiRequestContext, rateLimitResponse } from "@/lib/api-observability";
 import { asRecord } from "@/lib/guards";
+import { enforceIpRateLimit } from "@/lib/rate-limit";
+import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import {
   HEALTH_CACHE_SECONDS,
   buildHealthReport,
@@ -17,20 +20,36 @@ export const dynamic = "force-dynamic";
  * Supervision indépendante, en deux niveaux. Disponibilité : 200 tant que le site et la base répondent
  * (`available: true`), 503 seulement quand la base ne répond pas. Fraîcheur : `status` vaut `ok` ou
  * `degraded` dans le corps, avec l'âge du dernier succès de `operational-health` (dégradé au-delà de
- * 45 min) et l'état de la collecte des sources ACTIVÉES (dégradé quand l'une d'elles n'a pas de
+ * 65 min) et l'état de la collecte des sources ACTIVÉES (dégradé quand l'une d'elles n'a pas de
  * publication complète depuis plus de 36 h, ou n'en a jamais eu) : un retard de collecte ne rend plus la
  * route 503 en permanence. `scheduledJobs` donne le nombre de tâches planifiées en retard (alerte `cron.stale`),
  * sans nom : il distingue la panne d'une tâche du retard ancien d'une source. Publique et sans détail sensible (voir `src/lib/health-status.ts`). Voir
  * docs/operations/supervision-externe.md.
  *
  * La route est publique : le CDN garde la réponse 30 s (`s-maxage`), ce qui borne les lectures de la
- * base quel que soit le nombre d'appelants (un appelant qui ajoute un paramètre d'adresse contourne le
- * cache, au prix de deux lectures indexées). Une erreur n'est jamais mise en cache, et l'identifiant de
+ * base quel que soit le nombre d'appelants. La clé de cache est fixe : une adresse avec paramètre
+ * (`/api/health?x=1`), qui contournerait le cache du CDN, est redirigée vers `/api/health` sans rien lire
+ * en base. Les appels qui atteignent la fonction sont en plus limités par adresse (60 par minute).
+ * Une erreur n'est jamais mise en cache, et l'identifiant de
  * requête n'est pas répercuté (la réponse gardée serait servie à d'autres appelants avec celui du
  * premier ; il reste dans le journal).
  */
 export async function GET(request: Request) {
   const context = createApiRequestContext(request, "api.health");
+  const url = new URL(request.url);
+  if (url.search) {
+    url.search = "";
+    return NextResponse.redirect(url, {
+      status: 308,
+      headers: { "cache-control": `public, s-maxage=${HEALTH_CACHE_SECONDS}` },
+    });
+  }
+  try {
+    await enforceIpRateLimit({ request, bucketKey: "health", ...RATE_LIMIT_POLICIES.publicIp });
+  } catch (error) {
+    if (error instanceof RateLimitError) return rateLimitResponse(error);
+    throw error;
+  }
   const now = new Date();
   try {
     const [health, sources, staleJobs] = await Promise.all([

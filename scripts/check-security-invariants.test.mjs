@@ -255,6 +255,58 @@ grant execute on function app_private.zz_alias_helper(integer, double precision,
   });
 });
 
+describe("invariants de sécurité : colonnes brutes de auction_sales fermées à authenticated", () => {
+  it("refuse que la migration d'application disparaisse (les colonnes resteraient lisibles)", () => {
+    const result = runInvariants({}, ["20261110120000_hide_catalogue_raw_columns.sql"]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "20261110120000_hide_catalogue_raw_columns.sql must execute app_private.set_catalogue_raw_columns_hidden(true)",
+    );
+  });
+
+  it("refuse une migration ultérieure qui rend les colonnes à authenticated", () => {
+    const result = runInvariants({
+      "99990101000000_regrant.sql":
+        "grant select (raw_payload, observations) on table public.auction_sales to authenticated;\n",
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "99990101000000_regrant.sql grants raw_payload/observations/lawyer_contact back to authenticated",
+    );
+  });
+
+  it("refuse une migration ultérieure qui remet la vue du catalogue en security_invoker", () => {
+    const result = runInvariants({
+      "99990101000000_invoker_view.sql":
+        "do $$ begin execute 'create or replace view public.v_auction_sales_app with (security_invoker = true) as select 1'; end $$;\n",
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "99990101000000_invoker_view.sql redefines v_auction_sales_app as an invoker view",
+    );
+  });
+
+  it("n'écarte pas la vue de recherche, qui reste une vue invoker", () => {
+    const result = runInvariants({
+      "99990101000000_search_view.sql":
+        "create or replace view public.v_auction_sales_app_search with (security_invoker = true) as select 1;\n",
+    });
+    expect(result.stderr).toBe("");
+    expect(result.status).toBe(0);
+  });
+
+  it("refuse une révocation sans vue definer gardée par la politique de lecture", () => {
+    const result = runInvariants({
+      "99990101000000_revoke.sql":
+        "revoke select (raw_payload) on table public.auction_sales from authenticated;\n",
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "99990101000000_revoke.sql revokes raw_payload/observations/lawyer_contact from authenticated without making v_auction_sales_app a definer view guarded by the read policy predicate",
+    );
+  });
+});
+
 describe("invariants de sécurité : indépendance de la règle des pépites", () => {
   const reasons = (extra) => ({
     "src/lib/pepite-reasons.ts": `${extra}\nexport const placeholder = 1;\n`,

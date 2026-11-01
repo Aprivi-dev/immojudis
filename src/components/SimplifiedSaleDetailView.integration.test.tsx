@@ -4,6 +4,7 @@ import * as React from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fetchInvestorProfile } from "@/lib/client-api";
 import { EXAMPLE_SALE_RECORDS } from "@/lib/example-sale";
 import { buildCeilingHypotheses } from "@/lib/bid-ceiling-defaults";
 import { computeAcquisitionCosts } from "@/lib/profitability";
@@ -21,6 +22,7 @@ vi.mock("@/hooks/use-auth", () => ({
 }));
 
 vi.mock("@/lib/client-api", () => ({
+  fetchInvestorProfile: vi.fn(),
   fetchPrecomputedMarketEstimate: vi.fn(),
   fetchSaleAiReviewProjections: vi.fn(),
   fetchSaleFactReliabilities: vi.fn(),
@@ -157,6 +159,7 @@ beforeEach(() => {
   installLocalStorage();
   window.localStorage.clear();
   window.history.replaceState(null, "", "/");
+  vi.mocked(fetchInvestorProfile).mockResolvedValue({ profile: null });
 });
 
 afterEach(() => {
@@ -369,5 +372,70 @@ describe("integrated scenario workspace", () => {
 
     await openTab("Travaux");
     await waitFor(() => expect(screen.queryByDisplayValue("4321")).toBeNull());
+  });
+
+  describe("profil d'investisseur du compte", () => {
+    const profile = {
+      downPaymentEur: 45_000,
+      targetMarginPct: null,
+      worksPerM2Eur: null,
+      strategy: null,
+    };
+
+    it("préremplit l'apport du simulateur même si le profil arrive après l'ouverture de l'onglet", async () => {
+      let resolveProfile!: (value: { profile: typeof profile }) => void;
+      vi.mocked(fetchInvestorProfile).mockReturnValue(
+        new Promise((resolve) => {
+          resolveProfile = resolve;
+        }),
+      );
+      // Module déjà chargé : sans la correction, le simulateur se monterait avant le profil.
+      await import("@/components/sale-detail/FinancingSimulator");
+      renderDetail();
+
+      await openTab("Financement");
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      // Le profil n'est pas encore là : le simulateur n'est pas monté (il ne lit son brouillon
+      // de départ qu'au montage).
+      expect(screen.queryByLabelText(/Apport personnel/)).toBeNull();
+
+      resolveProfile({ profile });
+      await waitFor(() =>
+        expect((screen.getByLabelText(/Apport personnel/) as HTMLInputElement).value).toBe("45000"),
+      );
+    });
+
+    const worksProfile = { ...profile, downPaymentEur: null, worksPerM2Eur: 1_000 };
+    const studio: AuctionSale = {
+      ...sale,
+      title: "Studio à Bordeaux",
+      property_type: "apartment",
+      rooms_count: 1,
+      app_surface_m2: null,
+      habitable_surface_m2: null,
+      carrez_surface_m2: null,
+    };
+
+    it("chiffre les travaux au m² du profil sur la surface publiée de la vente", async () => {
+      vi.mocked(fetchInvestorProfile).mockResolvedValue({ profile: worksProfile });
+      renderDetail("analysis", { ...studio, app_surface_m2: 30 });
+      await openTab("Prix et plafond");
+      await waitFor(() => {
+        const row = screen.getByText("Travaux (votre montant)").parentElement!.parentElement!;
+        expect(row.textContent?.replace(/\s/g, "")).toContain("30000€");
+      });
+    });
+
+    it("ne chiffre jamais les travaux du profil sur la surface estimée d'un studio sans surface publiée", async () => {
+      vi.mocked(fetchInvestorProfile).mockResolvedValue({ profile: worksProfile });
+      renderDetail("analysis", studio);
+      await openTab("Prix et plafond");
+      await waitFor(() => expect(fetchInvestorProfile).toHaveBeenCalled());
+      await waitFor(() => expect(screen.getByText(/Travaux inclus/)).toBeTruthy());
+      // Laisse au profil le temps d'être appliqué : aucun montant de travaux ne doit apparaître.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(screen.queryByText("Travaux (votre montant)")).toBeNull();
+      expect(screen.getByText(/Travaux inclus : aucun/)).toBeTruthy();
+    });
   });
 });

@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   plan: vi.fn(),
   overview: vi.fn(),
   checkoutOpen: true as boolean | null,
+  accessPlan: undefined as Record<string, unknown> | undefined,
 }));
 vi.mock("@/hooks/use-launch-offer", () => ({ useLaunchOffer: () => mocks.launch }));
 vi.mock("@/hooks/use-auth", () => ({ useAuth: () => ({ user: mocks.user, loading: false }) }));
@@ -51,6 +52,7 @@ vi.mock("@/lib/client-api", () => ({
 }));
 // /bienvenue crée l'alerte par ce crochet (chantier W5) : simulé, il est testé à part.
 vi.mock("@/hooks/use-has-analysis-access", () => ({ useHasAnalysisAccess: () => false }));
+vi.mock("@/hooks/use-access-plan", () => ({ useAccessPlan: () => mocks.accessPlan }));
 vi.mock("@/hooks/use-create-alert", () => ({
   useCreateAlert: () => ({ createAlertFromSearch: vi.fn(), saving: false }),
 }));
@@ -67,6 +69,7 @@ beforeEach(() => {
   mocks.launch = { active: false, pending: false };
   mocks.user = null;
   mocks.checkoutOpen = true;
+  mocks.accessPlan = undefined;
   mocks.plan.mockReset();
   mocks.overview.mockReset();
 });
@@ -193,14 +196,20 @@ describe("onboarding /bienvenue", () => {
     );
   });
 
-  it("ne promet plus « 3 déblocages par mois » comme acquis au dernier pas pendant l'offre", () => {
+  it("ne promet plus « 3 déblocages par mois » comme acquis au dernier pas pendant l'essai du compte", () => {
     mocks.launch = { active: true, pending: false };
+    mocks.accessPlan = {
+      plan: "analyse",
+      hasAnalysisAccess: true,
+      launchOffer: true,
+      trialEndsAt: new Date(Date.now() + 86_400_000).toISOString(),
+    };
     render(<InvestorOnboarding />);
     fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
     fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
     const text = document.body.textContent ?? "";
     expect(text).toContain(
-      "Pendant votre essai gratuit de 7 jours, votre compte ouvre les outils de l’offre Analyse sur toutes les ventes (contenu selon la vente). Ensuite, vous aurez 3 déblocages par mois.",
+      "votre compte ouvre les outils de l’offre Analyse sur toutes les ventes (contenu selon la vente). Ensuite, vous aurez 3 déblocages par mois.",
     );
     expect(text).not.toContain("Avec 3 déblocages par mois");
   });

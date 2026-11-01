@@ -29,7 +29,11 @@ export type HybridValuationResult = {
   p50PricePerM2: number;
   p90PricePerM2: number;
   modelWeight: number;
-  coverageTarget: number;
+  /**
+   * Pas de couverture annoncée (`coverageTarget` du modèle seul : 0,8) : la fourchette servie mélange le
+   * modèle et les comparables, et la couverture de ce mélange n'est pas mesurée (n° 21). Elle est donc
+   * présentée comme une « fourchette indicative » à l'écran, jamais comme un intervalle à 80 %.
+   */
   calibrationMethod: string;
   rawModelPrediction: {
     p10PricePerM2: number;
@@ -70,7 +74,6 @@ export async function applyActiveHybridModel(
     p50PricePerM2: Math.round(p50),
     p90PricePerM2: Math.round(p90),
     modelWeight: round(modelWeight, 2),
-    coverageTarget: prediction.coverageTarget,
     calibrationMethod: prediction.calibrationMethod,
     rawModelPrediction: {
       p10PricePerM2: prediction.p10PricePerM2,

@@ -1,8 +1,22 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { apiError, apiJson, createApiRequestContext } from "./api-observability";
+import { API_ERROR_CODES, apiError, apiJson, createApiRequestContext } from "./api-observability";
 
 describe("API observability", () => {
   afterEach(() => vi.restoreAllMocks());
+
+  it("lists in openapi.yaml exactly the error codes the API can return", () => {
+    const contract = readFileSync(join(process.cwd(), "openapi.yaml"), "utf8");
+    const schema = contract.slice(contract.indexOf("\n    ApiError:"));
+    const enumBlock = /\n {8}code:\s*\n {10}type: string\s*\n {10}enum:\n((?: {12}- .+\n)+)/.exec(
+      schema,
+    );
+    const documented = [...(enumBlock?.[1] ?? "").matchAll(/- (\S+)/g)].map((match) => match[1]);
+
+    expect(documented.length).toBeGreaterThan(0);
+    expect([...documented].sort()).toEqual([...API_ERROR_CODES].sort());
+  });
 
   it("preserves a safe caller request id", () => {
     const context = createApiRequestContext(

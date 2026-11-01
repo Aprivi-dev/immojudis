@@ -107,7 +107,7 @@ export default function Page() {
         <ResourcesNextStep />
         <footer className={styles.footer}>
           <Link href="/">Immojudis</Link>
-          <span>Les enchères immobilières en toute clarté.</span>
+          <span>Les enchères immobilières, en toute clarté.</span>
           <Link href="/contact">Nous contacter</Link>
         </footer>
       </div>

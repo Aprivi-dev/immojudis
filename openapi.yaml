@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: ImmoJudis Premium Analytics API
-  version: 1.6.0
+  version: 1.7.0
   description: >-
     Contrats de lecture pour l'activité publique des ventes judiciaires, Outcome
     Graph et les statistiques descriptives expérimentales par tribunal. Les
@@ -18,6 +18,80 @@ info:
     Limites : chaque route limite les appels par compte; au-delà, la réponse est
     un 429 avec l'en-tête `Retry-After` (secondes). Une vente inconnue ou retirée
     de la publication renvoie un 404.
+
+
+    ## Paliers de débit
+
+
+    Les compteurs sont tenus par compte et par route, sur une fenêtre fixe d'une
+    minute. Chaque réponse porte `RateLimit-Limit` et `RateLimit-Remaining`; un 429
+    ajoute `Retry-After`.
+
+
+    | Route | Limite par compte | Plafonds supplémentaires |
+
+    | --- | --- | --- |
+
+    | `/sales/{saleId}/outcome-graph` | 30 appels par minute | aucun |
+
+    | `/sales/{saleId}/adjudication-statistics` | 30 appels par minute | aucun |
+
+    | `/sales/{saleId}/urbanisme-cadastre` | 30 appels par minute | aucun |
+
+    | `/sales/{saleId}/land-report` | 12 appels par minute | plafonds journaliers (jour UTC) : 60 appels par compte, 150 par adresse, 1 500 pour tout le site |
+
+    | `/tribunals/judicial-activity` | 30 appels par minute | aucun |
+
+    | `/tribunals/judicial-activity/directory` | 30 appels par minute | aucun |
+
+    | `/tribunals/statistics` | 30 appels par minute | aucun |
+
+    | `/tribunals/listing-statistics` | 30 appels par minute | aucun |
+
+    | `/tribunals/adjudication-statistics` | 30 appels par minute | aucun |
+
+    | `/tribunals/auction-summaries` | 30 appels par minute | aucun |
+
+
+    Un plafond journalier atteint renvoie un 429 dont le message l'indique et dont
+    `Retry-After` annonce l'attente jusqu'au prochain jour UTC. Ces paliers peuvent
+    être relevés sans préavis; une baisse suit la politique de versionnement
+    ci-dessous.
+
+
+    ## Politique de versionnement
+
+
+    Le numéro de version de ce contrat (`info.version`) suit le principe
+    `majeur.mineur.correctif`. Le préfixe `/api/v1` ne change qu'avec une version
+    majeure.
+
+
+    - **Changements compatibles**, sans préavis : ajout d'une route, d'un champ de
+      réponse, d'une valeur d'énumération documentée comme extensible, d'un paramètre
+      de requête facultatif; relèvement d'un palier de débit. Un client doit
+      ignorer les champs qu'il ne connaît pas.
+
+    - **Changements non compatibles**, avec un préavis d'au moins 90 jours :
+      retrait ou renommage d'un champ, d'une route ou d'un paramètre, changement du
+      sens d'un champ (comme la couche TRI du rapport foncier en `land-report-v1.1`),
+      durcissement d'une validation, baisse d'un palier de débit, nouvelle condition
+      d'accès. Le changement est annoncé dans ce contrat (description de la route
+      concernée) avant son entrée en vigueur.
+
+    - **En-têtes de dépréciation** : dès l'annonce, la route concernée ajoute à ses
+      réponses `Deprecation` (date de début de la dépréciation, RFC 9745) et
+      `Sunset` (date de retrait, RFC 8594), et l'ancien comportement reste servi
+      jusqu'à la date `Sunset`. Un client peut surveiller ces deux en-têtes pour
+      être prévenu sans lire ce contrat.
+
+    - **Corrections urgentes** : une correction de sécurité ou de donnée fausse peut
+      s'appliquer sans préavis; elle est alors consignée dans la description de la
+      route.
+
+    - Les routes marquées expérimentales (statistiques par tribunal, prix
+      d'adjudication) peuvent changer de méthode de calcul : leur `methodologyVersion`
+      ou leur `builtAt` change alors, sans changer la structure de la réponse.
 servers:
   - url: /api/v1
 paths:
@@ -56,6 +130,51 @@ paths:
                 type: string
           content:
             application/json:
+              examples:
+                exemple:
+                  summary: Réponse type
+                  value:
+                    forecast:
+                      saleId: 3b1f6c2a-5d4e-4f8a-9b7c-1a2b3c4d5e6f
+                      roundId: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                      predictionId: 0b8f2f84-0e53-4ab0-8c4e-1d2f3a4b5c6d
+                      snapshotId: a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d
+                      status: ready
+                      generatedAt: 2026-10-30T22:15:00.000Z
+                      horizon: T-14
+                      modelVersion: outcome-graph-v1
+                      cohort:
+                        id: 9d3f1c2b-6a7e-4b8c-a1d2-3e4f5a6b7c8d
+                        label: Tribunal de Lyon, saisie immobilière, bien libre
+                        level: tribunal_procedure_type
+                        periodStart: 2023-10-31T00:00:00.000Z
+                        periodEnd: 2026-10-30T00:00:00.000Z
+                      marketValueCents: 21000000
+                      startingPriceCents: 9000000
+                      effectiveStartingPriceCents: 9000000
+                      flow:
+                        heldProbability: 0.72
+                        postponedProbability: 0.21
+                        cancelledOrNotRequestedProbability: 0.07
+                        adjudicatedIfHeldProbability: 0.88
+                        noBidIfHeldProbability: 0.12
+                      initialPrice:
+                        p10Cents: 9000000
+                        p50Cents: 12600000
+                        p90Cents: 19800000
+                      surenchereProbability: 0.08
+                      finalPrice:
+                        p10Cents: 9300000
+                        p50Cents: 13100000
+                        p90Cents: 20400000
+                      ceiling: null
+                      pressure: null
+                      confidence: null
+                      delays: null
+                      explanationFactors: []
+                      limitations:
+                        - Prévision statistique fondée sur des ventes passées comparables; elle ne garantit aucun résultat.
+                      refusalReason: null
               schema:
                 type: object
                 required: [forecast]
@@ -144,6 +263,94 @@ paths:
                 type: string
           content:
             application/json:
+              examples:
+                exemple:
+                  summary: Réponse type
+                  value:
+                    court:
+                      code: tj-lyon
+                      name: Tribunal judiciaire de Lyon
+                      judicialRegion: Auvergne-Rhône-Alpes
+                    period:
+                      historyMonths: 36
+                      historyStart: 2023-10-31T00:00:00.000Z
+                      asOf: 2026-10-31T09:00:00.000Z
+                      upcomingEnd: 2027-10-31T00:00:00.000Z
+                    activity:
+                      observedPastSales: 214
+                      upcomingSales: 37
+                      upcomingSales90Days: 22
+                      upcomingHearingDays: 9
+                      nextSaleAt: 2026-11-19T13:30:00.000Z
+                      medianStartingPriceEur:
+                        status: published
+                        value: 85000
+                        sampleSize: 214
+                      startingPriceRangeEur:
+                        status: published
+                        p25: 48000
+                        p50: 85000
+                        p75: 140000
+                        sampleSize: 214
+                      visitCoverage:
+                        status: published
+                        value: 0.64
+                        sampleSize: 214
+                      medianDiscoveryLeadDays:
+                        status: published
+                        value: 41
+                        sampleSize: 190
+                      discoveryLeadRangeDays:
+                        status: published
+                        p25: 28
+                        p50: 41
+                        p75: 55
+                        sampleSize: 190
+                      medianLotsPerHearingDay:
+                        status: published
+                        value: 6
+                        sampleSize: 31
+                      medianDaysBetweenHearingDays:
+                        status: published
+                        value: 14
+                        sampleSize: 31
+                      topPropertyTypes:
+                        - propertyType: apartment
+                          count: 118
+                          share: 0.55
+                        - propertyType: house
+                          count: 64
+                          share: 0.3
+                      propertyTypeBenchmarks:
+                        - propertyType: apartment
+                          observedSales: 118
+                          startingPriceRangeEur:
+                            status: published
+                            p25: 42000
+                            p50: 70000
+                            p75: 110000
+                            sampleSize: 118
+                          discoveryLeadRangeDays:
+                            status: published
+                            p25: 27
+                            p50: 40
+                            p75: 53
+                            sampleSize: 104
+                    reliability:
+                      level: strong
+                      label: Échantillon solide
+                      currentSampleSize: 214
+                      exactCourtMatch: true
+                      limitations:
+                        - Cet agrégat mesure la couverture Immojudis et ne prétend pas être un registre exhaustif de l'activité du greffe.
+                    provenance:
+                      builderVersion: tribunal_judicial_activity_v1
+                      generatedAt: 2026-10-31T09:00:00.000Z
+                      courtReferenceSource: justice_open_data
+                      includedVerificationStatuses:
+                        - verified
+                        - cross_checked
+                      excludedPendingOrConflictingSales: true
               schema:
                 $ref: "#/components/schemas/TribunalJudicialActivityResponse"
         "400":
@@ -206,6 +413,159 @@ paths:
                 type: string
           content:
             application/json:
+              examples:
+                exemple:
+                  summary: Réponse type
+                  value:
+                    period:
+                      historyMonths: 36
+                      historyStart: 2023-10-31T00:00:00.000Z
+                      asOf: 2026-10-31T09:00:00.000Z
+                      upcomingEnd: 2027-10-31T00:00:00.000Z
+                    totals:
+                      trackedCourts: 148
+                      observedPastSales: 5420
+                      upcomingSales: 903
+                      upcomingSales90Days: 540
+                    national:
+                      observedPastSales: 5420
+                      upcomingSales: 903
+                      upcomingSales90Days: 540
+                      startingPriceRangeEur:
+                        status: published
+                        p25: 39000
+                        p50: 72000
+                        p75: 125000
+                        sampleSize: 5420
+                      discoveryLeadRangeDays:
+                        status: published
+                        p25: 25
+                        p50: 38
+                        p75: 52
+                        sampleSize: 4800
+                      visitCoverage:
+                        status: published
+                        value: 0.59
+                        sampleSize: 5420
+                      coverage:
+                        trackedCourts: 148
+                        publishableCourtProfiles: 61
+                        rate: 0.41
+                    regions:
+                      - name: Auvergne-Rhône-Alpes
+                        observedPastSales: 612
+                        upcomingSales: 104
+                        upcomingSales90Days: 63
+                        startingPriceRangeEur:
+                          status: published
+                          p25: 41000
+                          p50: 76000
+                          p75: 130000
+                          sampleSize: 612
+                        discoveryLeadRangeDays:
+                          status: published
+                          p25: 26
+                          p50: 39
+                          p75: 53
+                          sampleSize: 540
+                        visitCoverage:
+                          status: published
+                          value: 0.62
+                          sampleSize: 612
+                        coverage:
+                          trackedCourts: 11
+                          publishableCourtProfiles: 6
+                          rate: 0.55
+                    tribunals:
+                      - court:
+                          code: tj-lyon
+                          name: Tribunal judiciaire de Lyon
+                          judicialRegion: Auvergne-Rhône-Alpes
+                        period:
+                          historyMonths: 36
+                          historyStart: 2023-10-31T00:00:00.000Z
+                          asOf: 2026-10-31T09:00:00.000Z
+                          upcomingEnd: 2027-10-31T00:00:00.000Z
+                        activity:
+                          observedPastSales: 214
+                          upcomingSales: 37
+                          upcomingSales90Days: 22
+                          upcomingHearingDays: 9
+                          nextSaleAt: 2026-11-19T13:30:00.000Z
+                          medianStartingPriceEur:
+                            status: published
+                            value: 85000
+                            sampleSize: 214
+                          startingPriceRangeEur:
+                            status: published
+                            p25: 48000
+                            p50: 85000
+                            p75: 140000
+                            sampleSize: 214
+                          visitCoverage:
+                            status: published
+                            value: 0.64
+                            sampleSize: 214
+                          medianDiscoveryLeadDays:
+                            status: published
+                            value: 41
+                            sampleSize: 190
+                          discoveryLeadRangeDays:
+                            status: published
+                            p25: 28
+                            p50: 41
+                            p75: 55
+                            sampleSize: 190
+                          medianLotsPerHearingDay:
+                            status: published
+                            value: 6
+                            sampleSize: 31
+                          medianDaysBetweenHearingDays:
+                            status: published
+                            value: 14
+                            sampleSize: 31
+                          topPropertyTypes:
+                            - propertyType: apartment
+                              count: 118
+                              share: 0.55
+                            - propertyType: house
+                              count: 64
+                              share: 0.3
+                          propertyTypeBenchmarks:
+                            - propertyType: apartment
+                              observedSales: 118
+                              startingPriceRangeEur:
+                                status: published
+                                p25: 42000
+                                p50: 70000
+                                p75: 110000
+                                sampleSize: 118
+                              discoveryLeadRangeDays:
+                                status: published
+                                p25: 27
+                                p50: 40
+                                p75: 53
+                                sampleSize: 104
+                        reliability:
+                          level: strong
+                          label: Échantillon solide
+                          currentSampleSize: 214
+                          exactCourtMatch: true
+                          limitations:
+                            - Cet agrégat mesure la couverture Immojudis et ne prétend pas être un registre exhaustif de l'activité du greffe.
+                        provenance:
+                          builderVersion: tribunal_judicial_activity_v1
+                          generatedAt: 2026-10-31T09:00:00.000Z
+                          courtReferenceSource: justice_open_data
+                          includedVerificationStatuses:
+                            - verified
+                            - cross_checked
+                          excludedPendingOrConflictingSales: true
+                    provenance:
+                      generatedAt: 2026-10-31T09:00:00.000Z
+                      directoryVersion: tribunal_judicial_activity_directory_v2
+                      includesOnlyExactActiveCourts: true
+                      aggregationOrder: national_region_tribunal
               schema:
                 $ref: "#/components/schemas/TribunalJudicialActivityDirectoryResponse"
         "400":
@@ -279,6 +639,449 @@ paths:
                 type: string
           content:
             application/json:
+              examples:
+                exemple:
+                  summary: Réponse type
+                  value:
+                    national:
+                      scope: national
+                      tribunal: null
+                      roundKind: initial
+                      period:
+                        start: 2023-10-31
+                        end: 2026-10-30
+                        windowMonths: 36
+                        knowledgeCutoffAt: 2026-10-30T22:00:00.000Z
+                      reliability:
+                        level: robust
+                        label: "Qualité globale : robuste"
+                        qualityGatePassed: true
+                        coverage: 0.86
+                        warnings: []
+                      samples:
+                        eligibleRounds: 1840
+                        status: 1831
+                        initialPrice: 1825
+                        effectivePrice: 1825
+                        marketPrice: 1282
+                        surenchere: 1819
+                        resultDelay: 1465
+                        postponementDelay: null
+                        doubleReviewed: 916
+                      flow:
+                        held:
+                          rawValue: 0.74
+                          adjustedValue: 0.74
+                          numerator: 1355
+                          knownDenominator: 1831
+                          eligibleUniverse: 1840
+                          unknownCount: 4
+                          excludedCount: 5
+                          exclusionReasons:
+                            no_terminal_outcome_at_cutoff: 5
+                          confidenceInterval:
+                            low: 0.72
+                            high: 0.76
+                          method: raw
+                        postponed:
+                          rawValue: 0.19
+                          adjustedValue: 0.19
+                          numerator: 348
+                          knownDenominator: 1831
+                          eligibleUniverse: 1840
+                          unknownCount: 4
+                          excludedCount: 5
+                          exclusionReasons:
+                            no_terminal_outcome_at_cutoff: 5
+                          confidenceInterval:
+                            low: 0.172
+                            high: 0.208
+                          method: raw
+                        cancelled:
+                          rawValue: 0.04
+                          adjustedValue: 0.04
+                          numerator: 73
+                          knownDenominator: 1831
+                          eligibleUniverse: 1840
+                          unknownCount: 4
+                          excludedCount: 5
+                          exclusionReasons:
+                            no_terminal_outcome_at_cutoff: 5
+                          confidenceInterval:
+                            low: 0.031
+                            high: 0.049
+                          method: raw
+                        notRequested:
+                          rawValue: 0.03
+                          adjustedValue: 0.03
+                          numerator: 55
+                          knownDenominator: 1831
+                          eligibleUniverse: 1840
+                          unknownCount: 4
+                          excludedCount: 5
+                          exclusionReasons:
+                            no_terminal_outcome_at_cutoff: 5
+                          confidenceInterval:
+                            low: 0.022
+                            high: 0.038
+                          method: raw
+                        noBidIfHeld:
+                          rawValue: 0.09
+                          adjustedValue: 0.09
+                          numerator: 165
+                          knownDenominator: 1831
+                          eligibleUniverse: 1840
+                          unknownCount: 4
+                          excludedCount: 5
+                          exclusionReasons:
+                            no_terminal_outcome_at_cutoff: 5
+                          confidenceInterval:
+                            low: 0.077
+                            high: 0.103
+                          method: raw
+                        adjudicatedIfHeld:
+                          rawValue: 0.65
+                          adjustedValue: 0.65
+                          numerator: 1190
+                          knownDenominator: 1831
+                          eligibleUniverse: 1840
+                          unknownCount: 4
+                          excludedCount: 5
+                          exclusionReasons:
+                            no_terminal_outcome_at_cutoff: 5
+                          confidenceInterval:
+                            low: 0.628
+                            high: 0.672
+                          method: raw
+                      surenchere:
+                        filed:
+                          rawValue: 0.06
+                          adjustedValue: 0.06
+                          numerator: 110
+                          knownDenominator: 1831
+                          eligibleUniverse: 1840
+                          unknownCount: 4
+                          excludedCount: 5
+                          exclusionReasons:
+                            no_terminal_outcome_at_cutoff: 5
+                          confidenceInterval:
+                            low: 0.049
+                            high: 0.071
+                          method: raw
+                      priceRatios:
+                        finalToInitial:
+                          sampleSize: 1811
+                          eligibleUniverse: 1831
+                          unknownCount: 6
+                          raw:
+                            p10: 1
+                            p50: 1.45
+                            p90: 3.2
+                          adjusted:
+                            p10: 1
+                            p50: 1.45
+                            p90: 3.2
+                          method: raw
+                          parentSampleSize: 0
+                          excludedCount: 14
+                          exclusionReasons:
+                            no_terminal_outcome_at_cutoff: 14
+                        finalToEffective:
+                          sampleSize: 1811
+                          eligibleUniverse: 1831
+                          unknownCount: 6
+                          raw:
+                            p10: 1
+                            p50: 1.45
+                            p90: 3.2
+                          adjusted:
+                            p10: 1
+                            p50: 1.45
+                            p90: 3.2
+                          method: raw
+                          parentSampleSize: 0
+                          excludedCount: 14
+                          exclusionReasons:
+                            no_terminal_outcome_at_cutoff: 14
+                        finalToMarket:
+                          sampleSize: 1282
+                          eligibleUniverse: 1836
+                          unknownCount: 20
+                          raw:
+                            p10: 0.38
+                            p50: 0.62
+                            p90: 0.95
+                          adjusted:
+                            p10: 0.38
+                            p50: 0.62
+                            p90: 0.95
+                          method: raw
+                          parentSampleSize: 0
+                          excludedCount: 534
+                          exclusionReasons:
+                            no_terminal_outcome_at_cutoff: 534
+                      delays:
+                        hearingToKnownResult:
+                          sampleSize: 1465
+                          eligibleUniverse: 1495
+                          unknownCount: 10
+                          raw:
+                            p10: 0
+                            p50: 1
+                            p90: 6
+                          adjusted:
+                            p10: 0
+                            p50: 1
+                            p90: 6
+                          method: raw
+                          parentSampleSize: 0
+                          excludedCount: 20
+                          exclusionReasons:
+                            no_terminal_outcome_at_cutoff: 20
+                        postponementToNextHearing:
+                          sampleSize: null
+                          eligibleUniverse: null
+                          unknownCount: null
+                          raw: null
+                          adjusted: null
+                          method: suppressed
+                          parentSampleSize: null
+                          excludedCount: null
+                          exclusionReasons: {}
+                      fallback:
+                        scope: none
+                        parentLabel: null
+                        localWeight: 1
+                      methodology:
+                        builderVersion: tribunal_statistics_builder_v1
+                        eligibilityRuleVersion: claim_ab_reviewed_frozen_round_as_of_v1
+                        smoothingRuleVersion: jeffreys_beta_log_shrinkage_v1
+                      limitations:
+                        - "Statistiques descriptives expérimentales : elles ne prédisent pas le résultat d'une vente."
+                    tribunals:
+                      - scope: tribunal
+                        tribunal:
+                          code: tj-lyon
+                          name: Tribunal judiciaire de Lyon
+                          judicialRegion: Auvergne-Rhône-Alpes
+                        roundKind: initial
+                        period:
+                          start: 2023-10-31
+                          end: 2026-10-30
+                          windowMonths: 36
+                          knowledgeCutoffAt: 2026-10-30T22:00:00.000Z
+                        reliability:
+                          level: smoothed
+                          label: "Qualité globale : échantillon local limité, lissé sur la référence nationale"
+                          qualityGatePassed: true
+                          coverage: 0.74
+                          warnings: []
+                        samples:
+                          eligibleRounds: 96
+                          status: 87
+                          initialPrice: 81
+                          effectivePrice: 81
+                          marketPrice: 61
+                          surenchere: 75
+                          resultDelay: 70
+                          postponementDelay: null
+                          doubleReviewed: 44
+                        flow:
+                          held:
+                            rawValue: 0.736
+                            adjustedValue: 0.736
+                            numerator: 64
+                            knownDenominator: 87
+                            eligibleUniverse: 96
+                            unknownCount: 4
+                            excludedCount: 5
+                            exclusionReasons:
+                              no_terminal_outcome_at_cutoff: 5
+                            confidenceInterval:
+                              low: 0.643
+                              high: 0.829
+                            method: raw
+                          postponed:
+                            rawValue: 0.195
+                            adjustedValue: 0.195
+                            numerator: 17
+                            knownDenominator: 87
+                            eligibleUniverse: 96
+                            unknownCount: 4
+                            excludedCount: 5
+                            exclusionReasons:
+                              no_terminal_outcome_at_cutoff: 5
+                            confidenceInterval:
+                              low: 0.112
+                              high: 0.278
+                            method: raw
+                          cancelled:
+                            rawValue: 0.034
+                            adjustedValue: 0.034
+                            numerator: 3
+                            knownDenominator: 87
+                            eligibleUniverse: 96
+                            unknownCount: 4
+                            excludedCount: 5
+                            exclusionReasons:
+                              no_terminal_outcome_at_cutoff: 5
+                            confidenceInterval:
+                              low: 0
+                              high: 0.072
+                            method: raw
+                          notRequested:
+                            rawValue: 0.034
+                            adjustedValue: 0.034
+                            numerator: 3
+                            knownDenominator: 87
+                            eligibleUniverse: 96
+                            unknownCount: 4
+                            excludedCount: 5
+                            exclusionReasons:
+                              no_terminal_outcome_at_cutoff: 5
+                            confidenceInterval:
+                              low: 0
+                              high: 0.072
+                            method: raw
+                          noBidIfHeld:
+                            rawValue: 0.092
+                            adjustedValue: 0.092
+                            numerator: 8
+                            knownDenominator: 87
+                            eligibleUniverse: 96
+                            unknownCount: 4
+                            excludedCount: 5
+                            exclusionReasons:
+                              no_terminal_outcome_at_cutoff: 5
+                            confidenceInterval:
+                              low: 0.031
+                              high: 0.153
+                            method: raw
+                          adjudicatedIfHeld:
+                            rawValue: 0.655
+                            adjustedValue: 0.655
+                            numerator: 57
+                            knownDenominator: 87
+                            eligibleUniverse: 96
+                            unknownCount: 4
+                            excludedCount: 5
+                            exclusionReasons:
+                              no_terminal_outcome_at_cutoff: 5
+                            confidenceInterval:
+                              low: 0.555
+                              high: 0.755
+                            method: raw
+                        surenchere:
+                          filed:
+                            rawValue: 0.057
+                            adjustedValue: 0.057
+                            numerator: 5
+                            knownDenominator: 87
+                            eligibleUniverse: 96
+                            unknownCount: 4
+                            excludedCount: 5
+                            exclusionReasons:
+                              no_terminal_outcome_at_cutoff: 5
+                            confidenceInterval:
+                              low: 0.008
+                              high: 0.106
+                            method: raw
+                        priceRatios:
+                          finalToInitial:
+                            sampleSize: 67
+                            eligibleUniverse: 87
+                            unknownCount: 6
+                            raw:
+                              p10: 1
+                              p50: 1.45
+                              p90: 3.2
+                            adjusted:
+                              p10: 1
+                              p50: 1.45
+                              p90: 3.2
+                            method: raw
+                            parentSampleSize: 0
+                            excludedCount: 14
+                            exclusionReasons:
+                              no_terminal_outcome_at_cutoff: 14
+                          finalToEffective:
+                            sampleSize: 67
+                            eligibleUniverse: 87
+                            unknownCount: 6
+                            raw:
+                              p10: 1
+                              p50: 1.45
+                              p90: 3.2
+                            adjusted:
+                              p10: 1
+                              p50: 1.45
+                              p90: 3.2
+                            method: raw
+                            parentSampleSize: 0
+                            excludedCount: 14
+                            exclusionReasons:
+                              no_terminal_outcome_at_cutoff: 14
+                          finalToMarket:
+                            sampleSize: 61
+                            eligibleUniverse: 92
+                            unknownCount: 20
+                            raw:
+                              p10: 0.38
+                              p50: 0.62
+                              p90: 0.95
+                            adjusted:
+                              p10: 0.38
+                              p50: 0.62
+                              p90: 0.95
+                            method: raw
+                            parentSampleSize: 0
+                            excludedCount: 11
+                            exclusionReasons:
+                              no_terminal_outcome_at_cutoff: 11
+                        delays:
+                          hearingToKnownResult:
+                            sampleSize: 70
+                            eligibleUniverse: 100
+                            unknownCount: 10
+                            raw:
+                              p10: 0
+                              p50: 1
+                              p90: 6
+                            adjusted:
+                              p10: 0
+                              p50: 1
+                              p90: 6
+                            method: raw
+                            parentSampleSize: 0
+                            excludedCount: 20
+                            exclusionReasons:
+                              no_terminal_outcome_at_cutoff: 20
+                          postponementToNextHearing:
+                            sampleSize: null
+                            eligibleUniverse: null
+                            unknownCount: null
+                            raw: null
+                            adjusted: null
+                            method: suppressed
+                            parentSampleSize: null
+                            excludedCount: null
+                            exclusionReasons: {}
+                        fallback:
+                          scope: national
+                          parentLabel: France entière
+                          localWeight: 0.62
+                        methodology:
+                          builderVersion: tribunal_statistics_builder_v1
+                          eligibilityRuleVersion: claim_ab_reviewed_frozen_round_as_of_v1
+                          smoothingRuleVersion: jeffreys_beta_log_shrinkage_v1
+                        limitations:
+                          - "Statistiques descriptives expérimentales : elles ne prédisent pas le résultat d'une vente."
+                    meta:
+                      generatedAt: 2026-10-31T09:00:00.000Z
+                      experimental: true
+                      windowMonths: 36
+                      roundKind: initial
+                      warnings: []
               schema:
                 $ref: "#/components/schemas/TribunalStatisticsResponse"
         "400":
@@ -323,9 +1126,146 @@ paths:
                 type: string
           content:
             application/json:
+              examples:
+                exemple:
+                  summary: Réponse type
+                  value:
+                    national:
+                      scopeType: national
+                      label: France entière
+                      courtCode: null
+                      judicialRegion: null
+                      periodStart: 2023-10-31
+                      periodEnd: 2026-10-30
+                      sampleSize: 1200
+                      reliability: extended
+                      distribution:
+                        sampleSize: 1200
+                        hammerPriceMiddle50Eur:
+                          p25: 62000
+                          p75: 165000
+                        ratioMiddle50:
+                          p25: 1.15
+                          p75: 2.1
+                        summary:
+                          medianHammerPriceEur: 98000
+                          medianStartingPriceEur: 55000
+                          medianHammerToStartingRatio: 1.6
+                          meanHammerToStartingRatio: 1.85
+                        detailedBidDistribution:
+                          - band: below_starting
+                            count: 60
+                            share: 0.05
+                          - band: at_starting
+                            count: 180
+                            share: 0.15
+                          - band: above_1_below_1_5
+                            count: 420
+                            share: 0.35
+                          - band: from_1_5_below_2
+                            count: 240
+                            share: 0.2
+                          - band: from_2_below_3
+                            count: 210
+                            share: 0.175
+                          - band: at_least_3
+                            count: 90
+                            share: 0.075
+                        bidDistribution:
+                          - band: below_starting
+                            count: 60
+                            share: 0.05
+                          - band: at_starting
+                            count: 180
+                            share: 0.15
+                          - band: above_1_below_1_5
+                            count: 420
+                            share: 0.35
+                          - band: from_1_5_below_2
+                            count: 240
+                            share: 0.2
+                          - band: at_least_2
+                            count: 300
+                            share: 0.25
+                      metrics:
+                        medianHammerToStartingRatio: 1.6
+                        aboveStartingRate: 0.95
+                        atLeastDoubleRate: 0.25
+                        medianHammerPriceEur: 98000
+                        medianStartingPriceEur: 55000
+                    tribunal:
+                      scopeType: tribunal
+                      label: Tribunal judiciaire de Lyon
+                      courtCode: tj-lyon
+                      judicialRegion: Auvergne-Rhône-Alpes
+                      periodStart: 2023-10-31
+                      periodEnd: 2026-10-30
+                      sampleSize: 96
+                      reliability: descriptive
+                      distribution:
+                        sampleSize: 96
+                        hammerPriceMiddle50Eur:
+                          p25: 58000
+                          p75: 150000
+                        ratioMiddle50:
+                          p25: 1.1
+                          p75: 2
+                        summary:
+                          medianHammerPriceEur: 88000
+                          medianStartingPriceEur: 52000
+                          medianHammerToStartingRatio: 1.55
+                          meanHammerToStartingRatio: 1.75
+                        detailedBidDistribution:
+                          - band: below_starting
+                            count: 6
+                            share: 0.0625
+                          - band: at_starting
+                            count: 14
+                            share: 0.145833
+                          - band: above_1_below_1_5
+                            count: 34
+                            share: 0.354167
+                          - band: from_1_5_below_2
+                            count: 20
+                            share: 0.208333
+                          - band: from_2_below_3
+                            count: 16
+                            share: 0.166667
+                          - band: at_least_3
+                            count: 6
+                            share: 0.0625
+                        bidDistribution:
+                          - band: below_starting
+                            count: 6
+                            share: 0.0625
+                          - band: at_starting
+                            count: 14
+                            share: 0.145833
+                          - band: above_1_below_1_5
+                            count: 34
+                            share: 0.354167
+                          - band: from_1_5_below_2
+                            count: 20
+                            share: 0.208333
+                          - band: at_least_2
+                            count: 22
+                            share: 0.229167
+                      metrics:
+                        medianHammerToStartingRatio: 1.55
+                        aboveStartingRate: 0.9375
+                        atLeastDoubleRate: 0.229167
+                        medianHammerPriceEur: 88000
+                        medianStartingPriceEur: 52000
+                    meta:
+                      sourceName: licitor
+                      sourceLabel: Résultats d’adjudication publiés par Licitor
+                      methodologyVersion: licitor_canonical_price_statistics_v1
+                      builtAt: 2026-10-30T22:00:00.000Z
+                      reviewedAt: 2026-10-31T08:00:00.000Z
+                      experimental: true
+                      warning: "Source tierce non officielle : prix publiés par Licitor, non vérifiés auprès du greffe et non présentés comme définitifs. Agrégats descriptifs uniquement, sans valeur prédictive ni estimation du bien."
               schema:
-                type: object
-                additionalProperties: true
+                $ref: "#/components/schemas/AdjudicationPriceStatisticsResponse"
         "400":
           $ref: "#/components/responses/InvalidRequest"
         "401":
@@ -387,9 +1327,119 @@ paths:
                 type: string
           content:
             application/json:
+              examples:
+                exemple:
+                  summary: Réponse type
+                  value:
+                    report:
+                      version: land-report-v1.1
+                      generatedAt: 2026-10-31T09:00:00.000Z
+                      planning:
+                        locationStatus: references_matched
+                        coordinates:
+                          longitude: 4.8359
+                          latitude: 45.7641
+                        codeInsee: "69383"
+                        parcels:
+                          - id: 69383000AB0123
+                            codeInsee: "69383"
+                            section: AB
+                            number: "0123"
+                            prefix: "000"
+                            city: Lyon 3e Arrondissement
+                            surfaceM2: 412
+                            geometry:
+                              type: Polygon
+                              coordinates:
+                                - - - 4.8357
+                                    - 45.764
+                                  - - 4.8361
+                                    - 45.764
+                                  - - 4.8361
+                                    - 45.7643
+                                  - - 4.8357
+                                    - 45.7643
+                                  - - 4.8357
+                                    - 45.764
+                            match: listing_reference
+                            sourceUrl: https://apicarto.ign.fr/api/cadastre/parcelle
+                        zones:
+                          - id: zone-uam
+                            label: UAm
+                            description: Zone urbaine à dominante d'habitat collectif
+                            type: U
+                            documentId: plu-h-metropole-lyon
+                            documentName: PLU-H de la Métropole de Lyon
+                            parcelIds:
+                              - 69383000AB0123
+                            regulationUrl: null
+                            regulationFile: null
+                            startPage: 42
+                        documents:
+                          - id: plu-h-metropole-lyon
+                            name: PLU-H de la Métropole de Lyon
+                            type: PLUi
+                            title: Plan local d'urbanisme et de l'habitat
+                            legalStatus: approuvé
+                            effectiveStatus: opposable
+                            publicationDate: 2019-05-13
+                            updatedAt: 2026-06-30
+                            sourceUrl: https://www.geoportail-urbanisme.gouv.fr/
+                            files:
+                              - name: Règlement écrit
+                                url: https://www.geoportail-urbanisme.gouv.fr/exemple/reglement.pdf
+                            downloadable: true
+                        constraints:
+                          - id: servitude-ac1
+                            kind: servitude
+                            label: Abords d'un monument historique
+                            typeCode: AC1
+                            layer: servitude
+                            parcelIds:
+                              - 69383000AB0123
+                            documentId: null
+                            isEnvelope: false
+                        checks:
+                          - key: gpu-zone
+                            label: Zonage du plan local d'urbanisme
+                            status: available
+                            scope: parcel
+                            sourceUrl: https://apicarto.ign.fr/api/gpu/zone-urba
+                            checkedAt: 2026-10-31T09:00:00.000Z
+                        warnings: []
+                        completeCoverage: true
+                      risks:
+                        findings:
+                          - id: risque-argiles-69383
+                            category: clay
+                            label: Retrait-gonflement des argiles
+                            scope: commune
+                            status: communal
+                            level: faible
+                            description: Exposition faible à la commune.
+                            consequences:
+                              - Une étude de sol peut être demandée pour une construction neuve.
+                            regulatory: null
+                            sourceUrl: https://www.georisques.gouv.fr/
+                            sourceLabel: Géorisques
+                            checkedAt: 2026-10-31T09:00:00.000Z
+                        checks:
+                          - key: georisques-argiles
+                            label: Retrait-gonflement des argiles
+                            status: available
+                            scope: commune
+                            sourceUrl: https://www.georisques.gouv.fr/api/v1/argiles
+                            checkedAt: 2026-10-31T09:00:00.000Z
+                        warnings: []
+                      rules:
+                        rules: []
+                        checks: []
+                        warnings:
+                          - Aucune règle extraite du règlement pour cette zone.
+                        completeCoverage: false
+                      projects: []
               schema:
-                type: object
-                additionalProperties: true
+                $ref: "#/components/schemas/LandReportResponse"
             application/pdf:
               schema:
                 type: string
@@ -438,9 +1488,42 @@ paths:
                 type: string
           content:
             application/json:
+              examples:
+                exemple:
+                  summary: Réponse type
+                  value:
+                    cadastralParcels:
+                      - parcelKey: 69383-AB-0123
+                        parcelId: 69383000AB0123
+                        codeInsee: "69383"
+                        department: "69"
+                        city: Lyon 3e Arrondissement
+                        section: AB
+                        parcelNumber: "0123"
+                        surfaceM2: 412
+                        centroidLat: 45.7641
+                        centroidLng: 4.8359
+                        matchKind: listing_reference
+                        confidence: 0.9
+                        sourceApi: apicarto_cadastre
+                    urbanPlanningSignals:
+                      - signalKey: zoning-uam
+                        signalKind: zoning
+                        label: Zone UAm au plan local d'urbanisme
+                        status: documented
+                        priority: medium
+                        sourceName: Géoportail de l'urbanisme
+                        sourceKind: official
+                        documentUrl: https://www.geoportail-urbanisme.gouv.fr/
+                        documentLabel: PLU-H de la Métropole de Lyon
+                        documentType: plu
+                        pageNumber: 42
+                        excerpt: null
+                        action: Vérifier le règlement de la zone avant tout projet de travaux.
+                        confidence: 0.85
+                        updatedAt: 2026-10-30T22:00:00.000Z
               schema:
-                type: object
-                additionalProperties: true
+                $ref: "#/components/schemas/UrbanismeCadastreResponse"
         "400":
           $ref: "#/components/responses/InvalidRequest"
         "401":
@@ -510,6 +1593,134 @@ paths:
                 type: string
           content:
             application/json:
+              examples:
+                exemple:
+                  summary: Réponse type
+                  value:
+                    schemaVersion: tribunal_listing_statistics_v2
+                    court:
+                      code: tj-lyon
+                      name: Tribunal judiciaire de Lyon
+                      judicialRegion: Auvergne-Rhône-Alpes
+                    period:
+                      historyMonths: 12
+                      historyStart: 2025-10-31T00:00:00.000Z
+                      historyEnd: 2026-10-31T09:00:00.000Z
+                      asOf: 2026-10-31T09:00:00.000Z
+                    activity:
+                      observedAnnouncements: 96
+                      publicationDatesKnown: 88
+                      discoveryDatesUsed: 71
+                      upcomingSales: 12
+                      nextSaleAt: 2026-11-19T13:30:00.000Z
+                      startingPriceEur:
+                        status: published
+                        value: 82000
+                        sampleSize: 96
+                        interval: null
+                      startingPriceToDvfRatio:
+                        status: published
+                        value: 0.47
+                        sampleSize: 61
+                        interval: null
+                      visitCoverage:
+                        status: published
+                        value: 0.66
+                        sampleSize: 96
+                        interval:
+                          low: 0.56
+                          high: 0.75
+                      overbidCoverage:
+                        status: published
+                        value: 0.7
+                        sampleSize: 96
+                        interval:
+                          low: 0.6
+                          high: 0.78
+                      overbidsKnown: 67
+                      overbidsUnknown: 29
+                      publishedToHearingDays:
+                        status: published
+                        value: 44
+                        sampleSize: 88
+                        interval: null
+                      discoveryToHearingDays:
+                        status: published
+                        value: 39
+                        sampleSize: 71
+                        interval: null
+                      propertyTypes:
+                        - propertyType: apartment
+                          count: 52
+                          share: 0.54
+                          shareLow: 0.44
+                          shareHigh: 0.64
+                        - propertyType: house
+                          count: 31
+                          share: 0.32
+                          shareLow: 0.23
+                          shareHigh: 0.42
+                        - propertyType: other
+                          count: 13
+                          share: 0.14
+                          shareLow: 0.08
+                          shareHigh: 0.22
+                      occupation:
+                        knownSales: 74
+                        unknownSales: 22
+                        distribution:
+                          - status: vacant
+                            count: 41
+                            share: 0.55
+                            shareLow: 0.44
+                            shareHigh: 0.66
+                          - status: occupied
+                            count: 33
+                            share: 0.45
+                            shareLow: 0.34
+                            shareHigh: 0.56
+                      hearingCalendar:
+                        - date: 2026-11-19
+                          sales: 6
+                      communes:
+                        - city: Lyon
+                          count: 38
+                          share: 0.4
+                          shareLow: 0.3
+                          shareHigh: 0.5
+                      lawyers:
+                        - name: Cabinet d'avocats (exemple)
+                          count: 10
+                          share: 0.1
+                          shareLow: 0.05
+                          shareHigh: 0.18
+                      upcomingListings:
+                        - id: 9d3f1c2b-6a7e-4b8c-a1d2-3e4f5a6b7c8d
+                          title: Appartement de 62 m², Lyon 3e
+                          city: Lyon
+                          saleAt: 2026-11-19T13:30:00.000Z
+                          startingPriceEur: 90000
+                          occupationStatus: vacant
+                          hasVisit: true
+                          sourceNames:
+                            - licitor
+                    meta:
+                      generatedAt: 2026-10-31T09:00:00.000Z
+                      minSampleSize: 10
+                      minSubgroupSampleSize: 20
+                      minRangeSampleSize: 5
+                      minOverbidCoverage: 0.5
+                      sources:
+                        - licitor
+                      publicationDateBasis: source_publication_date_or_first_seen_at
+                      deduplication: canonical_id_source_url_strong_address
+                      rawAnnouncements: 104
+                      deduplicatedAnnouncements: 96
+                      unresolvedStrongAddressDuplicates: 0
+                      archivedAnnouncements: 84
+                      outcomeGateApplied: false
+                      limitations:
+                        - "Annonces observées par Immojudis : ce n'est pas un registre exhaustif."
               schema:
                 $ref: "#/components/schemas/TribunalListingStatisticsResponse"
         "400":
@@ -549,9 +1760,146 @@ paths:
                 type: string
           content:
             application/json:
+              examples:
+                exemple:
+                  summary: Réponse type
+                  value:
+                    national:
+                      scopeType: national
+                      label: France entière
+                      courtCode: null
+                      judicialRegion: null
+                      periodStart: 2023-10-31
+                      periodEnd: 2026-10-30
+                      sampleSize: 1200
+                      reliability: extended
+                      distribution:
+                        sampleSize: 1200
+                        hammerPriceMiddle50Eur:
+                          p25: 62000
+                          p75: 165000
+                        ratioMiddle50:
+                          p25: 1.15
+                          p75: 2.1
+                        summary:
+                          medianHammerPriceEur: 98000
+                          medianStartingPriceEur: 55000
+                          medianHammerToStartingRatio: 1.6
+                          meanHammerToStartingRatio: 1.85
+                        detailedBidDistribution:
+                          - band: below_starting
+                            count: 60
+                            share: 0.05
+                          - band: at_starting
+                            count: 180
+                            share: 0.15
+                          - band: above_1_below_1_5
+                            count: 420
+                            share: 0.35
+                          - band: from_1_5_below_2
+                            count: 240
+                            share: 0.2
+                          - band: from_2_below_3
+                            count: 210
+                            share: 0.175
+                          - band: at_least_3
+                            count: 90
+                            share: 0.075
+                        bidDistribution:
+                          - band: below_starting
+                            count: 60
+                            share: 0.05
+                          - band: at_starting
+                            count: 180
+                            share: 0.15
+                          - band: above_1_below_1_5
+                            count: 420
+                            share: 0.35
+                          - band: from_1_5_below_2
+                            count: 240
+                            share: 0.2
+                          - band: at_least_2
+                            count: 300
+                            share: 0.25
+                      metrics:
+                        medianHammerToStartingRatio: 1.6
+                        aboveStartingRate: 0.95
+                        atLeastDoubleRate: 0.25
+                        medianHammerPriceEur: 98000
+                        medianStartingPriceEur: 55000
+                    tribunals:
+                      - scopeType: tribunal
+                        label: Tribunal judiciaire de Lyon
+                        courtCode: tj-lyon
+                        judicialRegion: Auvergne-Rhône-Alpes
+                        periodStart: 2023-10-31
+                        periodEnd: 2026-10-30
+                        sampleSize: 96
+                        reliability: descriptive
+                        distribution:
+                          sampleSize: 96
+                          hammerPriceMiddle50Eur:
+                            p25: 58000
+                            p75: 150000
+                          ratioMiddle50:
+                            p25: 1.1
+                            p75: 2
+                          summary:
+                            medianHammerPriceEur: 88000
+                            medianStartingPriceEur: 52000
+                            medianHammerToStartingRatio: 1.55
+                            meanHammerToStartingRatio: 1.75
+                          detailedBidDistribution:
+                            - band: below_starting
+                              count: 6
+                              share: 0.0625
+                            - band: at_starting
+                              count: 14
+                              share: 0.145833
+                            - band: above_1_below_1_5
+                              count: 34
+                              share: 0.354167
+                            - band: from_1_5_below_2
+                              count: 20
+                              share: 0.208333
+                            - band: from_2_below_3
+                              count: 16
+                              share: 0.166667
+                            - band: at_least_3
+                              count: 6
+                              share: 0.0625
+                          bidDistribution:
+                            - band: below_starting
+                              count: 6
+                              share: 0.0625
+                            - band: at_starting
+                              count: 14
+                              share: 0.145833
+                            - band: above_1_below_1_5
+                              count: 34
+                              share: 0.354167
+                            - band: from_1_5_below_2
+                              count: 20
+                              share: 0.208333
+                            - band: at_least_2
+                              count: 22
+                              share: 0.229167
+                        metrics:
+                          medianHammerToStartingRatio: 1.55
+                          aboveStartingRate: 0.9375
+                          atLeastDoubleRate: 0.229167
+                          medianHammerPriceEur: 88000
+                          medianStartingPriceEur: 52000
+                    meta:
+                      sourceName: licitor
+                      sourceLabel: Résultats d’adjudication publiés par Licitor
+                      methodologyVersion: licitor_canonical_price_statistics_v1
+                      builtAt: 2026-10-30T22:00:00.000Z
+                      reviewedAt: 2026-10-31T08:00:00.000Z
+                      experimental: true
+                      warning: "Source tierce non officielle : prix publiés par Licitor, non vérifiés auprès du greffe et non présentés comme définitifs. Agrégats descriptifs uniquement, sans valeur prédictive ni estimation du bien."
               schema:
-                type: object
-                additionalProperties: true
+                $ref: "#/components/schemas/AdjudicationPriceStatisticsDirectoryResponse"
         "401":
           $ref: "#/components/responses/AuthRequired"
         "403":
@@ -585,21 +1933,27 @@ paths:
                 type: string
           content:
             application/json:
+              examples:
+                exemple:
+                  summary: Réponse type
+                  value:
+                    generatedAt: 2026-10-31T09:00:00.000Z
+                    courts:
+                      - courtCode: tj-lyon
+                        courtName: Tribunal judiciaire de Lyon
+                        licitor:
+                          sample: 96
+                          meanStartingPrice: 64000
+                          meanHammerPrice: 108000
+                          medianStartingPrice: 52000
+                          medianHammerPrice: 88000
+                          medianRatio: 1.55
+                          atLeastDoubleRate: 0.23
+                        dvf:
+                          sample: 412
+                          medianPrice: 214000
               schema:
-                type: object
-                required: [generatedAt, courts]
-                properties:
-                  generatedAt:
-                    type: string
-                    format: date-time
-                    description: >-
-                      Instant où la réponse a été calculée côté serveur (la route
-                      ne sert pas de copie figée).
-                  courts:
-                    type: array
-                    items:
-                      type: object
-                      additionalProperties: true
+                $ref: "#/components/schemas/CourtAuctionSummariesResponse"
         "401":
           $ref: "#/components/responses/AuthRequired"
         "403":
@@ -673,16 +2027,25 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ApiError"
+          example:
+            ok: false
+            error: Trop de demandes. Réessayez dans une minute.
+            code: RATE_LIMITED
+            requestId: 6f1d6a0e-3c1b-4f7e-9d0a-2b8f4c5a7e10
     InternalError:
-      description: Registre temporairement indisponible
+      description: >-
+        Erreur interne du serveur (`INTERNAL_ERROR`). Réessayer plus tard; si l'erreur persiste,
+        communiquer le `requestId` de la réponse au support.
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/ApiError"
     StatisticsUnavailable:
       description: >-
-        Fonctionnalité désactivée, snapshot national absent ou snapshot refusé
-        par les contrôles de publication.
+        Service temporairement indisponible. Selon la route : fonctionnalité désactivée, donnée
+        source absente (par exemple le snapshot national des statistiques) ou refusée par les
+        contrôles de publication, ou service externe injoignable (rapport foncier). Réessayer plus
+        tard; le corps est une erreur de type `ApiError`.
       content:
         application/json:
           schema:
@@ -702,6 +2065,7 @@ components:
             - AUTH_REQUIRED
             - FORBIDDEN
             - NOT_FOUND
+            - CONFLICT
             - INVALID_REQUEST
             - COURT_UNRESOLVED
             - RATE_LIMITED
@@ -709,6 +2073,11 @@ components:
             - INTERNAL_ERROR
         requestId:
           type: string
+      examples:
+        - ok: false
+          error: Trop de demandes. Réessayez dans une minute.
+          code: RATE_LIMITED
+          requestId: 6f1d6a0e-3c1b-4f7e-9d0a-2b8f4c5a7e10
     NullableProbability:
       oneOf:
         - type: number
@@ -2316,3 +3685,819 @@ components:
               items:
                 type: string
                 minLength: 1
+    AdjudicationQuartileRange:
+      type: object
+      required: [p25, p75]
+      properties:
+        p25:
+          type: number
+          exclusiveMinimum: 0
+        p75:
+          type: number
+          exclusiveMinimum: 0
+      description: Quartiles inférieur et supérieur (P25 ≤ P75).
+    AdjudicationBidBand:
+      type: object
+      required: [band, count, share]
+      properties:
+        band:
+          type: string
+          enum:
+            - below_starting
+            - at_starting
+            - above_1_below_1_5
+            - from_1_5_below_2
+            - from_2_below_3
+            - at_least_2
+            - at_least_3
+          description: >-
+            Tranche du rapport prix final / mise à prix. La répartition en cinq tranches
+            (`bidDistribution`) utilise `at_least_2`; la répartition détaillée en six tranches
+            (`detailedBidDistribution`) la scinde en `from_2_below_3` et `at_least_3`.
+        count:
+          type: integer
+          minimum: 0
+        share:
+          type: number
+          minimum: 0
+          maximum: 1
+    AdjudicationDistribution:
+      type: object
+      required: [sampleSize, hammerPriceMiddle50Eur, ratioMiddle50, bidDistribution]
+      description: >-
+        Répartition des adjudications d'un échantillon d'au moins dix ventes. Les comptes de
+        `bidDistribution` somment à `sampleSize`.
+      properties:
+        sampleSize:
+          type: integer
+          minimum: 10
+        hammerPriceMiddle50Eur:
+          $ref: "#/components/schemas/AdjudicationQuartileRange"
+        ratioMiddle50:
+          $ref: "#/components/schemas/AdjudicationQuartileRange"
+        summary:
+          type: object
+          required:
+            - medianHammerPriceEur
+            - medianStartingPriceEur
+            - medianHammerToStartingRatio
+            - meanHammerToStartingRatio
+          properties:
+            medianHammerPriceEur:
+              type: number
+              exclusiveMinimum: 0
+            medianStartingPriceEur:
+              type: number
+              exclusiveMinimum: 0
+            medianHammerToStartingRatio:
+              type: number
+              exclusiveMinimum: 0
+            meanHammerToStartingRatio:
+              type: number
+              exclusiveMinimum: 0
+        detailedBidDistribution:
+          type: array
+          minItems: 6
+          maxItems: 6
+          items:
+            $ref: "#/components/schemas/AdjudicationBidBand"
+        bidDistribution:
+          type: array
+          minItems: 5
+          maxItems: 5
+          items:
+            $ref: "#/components/schemas/AdjudicationBidBand"
+    AdjudicationPriceStatisticsScope:
+      type: object
+      required:
+        - scopeType
+        - label
+        - courtCode
+        - judicialRegion
+        - periodStart
+        - periodEnd
+        - sampleSize
+        - reliability
+        - metrics
+      description: >-
+        Statistiques d'un périmètre (national ou d'un tribunal), sur les adjudications publiées par
+        Licitor. Expérimentales et descriptives : elles ne prédisent pas le prix d'une vente.
+      properties:
+        scopeType:
+          type: string
+          enum: [national, tribunal]
+        label:
+          type: string
+          minLength: 1
+        courtCode:
+          type: [string, "null"]
+          minLength: 1
+        judicialRegion:
+          type: [string, "null"]
+          minLength: 1
+        periodStart:
+          type: string
+          format: date
+        periodEnd:
+          type: string
+          format: date
+        sampleSize:
+          type: integer
+          minimum: 10
+        reliability:
+          type: string
+          enum: [limited, descriptive, extended]
+        distribution:
+          oneOf:
+            - $ref: "#/components/schemas/AdjudicationDistribution"
+            - type: "null"
+        propertyTypes:
+          type: array
+          maxItems: 7
+          items:
+            type: object
+            required: [propertyType, distribution]
+            properties:
+              propertyType:
+                type: string
+                enum: [apartment, house, commercial, building, land, parking, mixed]
+              distribution:
+                $ref: "#/components/schemas/AdjudicationDistribution"
+        metrics:
+          type: object
+          required:
+            - medianHammerToStartingRatio
+            - aboveStartingRate
+            - atLeastDoubleRate
+            - medianHammerPriceEur
+            - medianStartingPriceEur
+          properties:
+            medianHammerToStartingRatio:
+              type: number
+              exclusiveMinimum: 0
+            aboveStartingRate:
+              type: number
+              minimum: 0
+              maximum: 1
+            atLeastDoubleRate:
+              type: number
+              minimum: 0
+              maximum: 1
+            medianHammerPriceEur:
+              type: number
+              exclusiveMinimum: 0
+            medianStartingPriceEur:
+              type: number
+              exclusiveMinimum: 0
+    AdjudicationPriceStatisticsMeta:
+      type: object
+      required:
+        - sourceName
+        - sourceLabel
+        - methodologyVersion
+        - builtAt
+        - reviewedAt
+        - experimental
+        - warning
+      properties:
+        sourceName:
+          type: string
+          const: licitor
+        sourceLabel:
+          type: string
+          const: Résultats d’adjudication publiés par Licitor
+        methodologyVersion:
+          type: string
+          const: licitor_canonical_price_statistics_v1
+        builtAt:
+          type: string
+          format: date-time
+        reviewedAt:
+          type: string
+          format: date-time
+        experimental:
+          type: boolean
+          const: true
+        warning:
+          type: string
+          description: >-
+            Mise en garde fixe : source tierce non officielle, agrégats descriptifs sans valeur
+            prédictive.
+    AdjudicationPriceStatisticsResponse:
+      type: object
+      required: [national, tribunal, meta]
+      properties:
+        national:
+          $ref: "#/components/schemas/AdjudicationPriceStatisticsScope"
+        tribunal:
+          description: Absent (`null`) quand le tribunal de la vente n'a pas assez d'adjudications publiables.
+          oneOf:
+            - $ref: "#/components/schemas/AdjudicationPriceStatisticsScope"
+            - type: "null"
+        meta:
+          $ref: "#/components/schemas/AdjudicationPriceStatisticsMeta"
+    AdjudicationPriceStatisticsDirectoryResponse:
+      type: object
+      required: [national, tribunals, meta]
+      properties:
+        national:
+          $ref: "#/components/schemas/AdjudicationPriceStatisticsScope"
+        tribunals:
+          type: array
+          maxItems: 250
+          description: Tribunaux dont l'effectif est publiable (au moins dix adjudications).
+          items:
+            $ref: "#/components/schemas/AdjudicationPriceStatisticsScope"
+        meta:
+          $ref: "#/components/schemas/AdjudicationPriceStatisticsMeta"
+    CourtAuctionSummary:
+      type: object
+      required: [courtCode, courtName, licitor, dvf]
+      properties:
+        courtCode:
+          type: string
+        courtName:
+          type: string
+        licitor:
+          description: Ventes adjugées publiées par Licitor; `null` sans échantillon suffisant.
+          oneOf:
+            - type: object
+              required:
+                - sample
+                - meanStartingPrice
+                - meanHammerPrice
+                - medianStartingPrice
+                - medianHammerPrice
+                - medianRatio
+                - atLeastDoubleRate
+              properties:
+                sample:
+                  type: integer
+                  minimum: 10
+                meanStartingPrice:
+                  type: [number, "null"]
+                meanHammerPrice:
+                  type: [number, "null"]
+                medianStartingPrice:
+                  type: [number, "null"]
+                medianHammerPrice:
+                  type: [number, "null"]
+                medianRatio:
+                  type: [number, "null"]
+                atLeastDoubleRate:
+                  type: [number, "null"]
+                  minimum: 0
+                  maximum: 1
+            - type: "null"
+        dvf:
+          description: Adjudications retrouvées dans les demandes de valeurs foncières (DVF) du ressort.
+          oneOf:
+            - type: object
+              required: [sample, medianPrice]
+              properties:
+                sample:
+                  type: integer
+                  minimum: 0
+                medianPrice:
+                  type: [number, "null"]
+            - type: "null"
+    LandSourceCheck:
+      type: object
+      required: [key, label, status, scope, sourceUrl, checkedAt]
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        status:
+          type: string
+          enum: [available, empty, partial, unavailable, not_configured, not_checked]
+        scope:
+          type: string
+          enum: [parcel, point, commune, radius, document]
+        sourceUrl:
+          type: string
+        checkedAt:
+          type: string
+          format: date-time
+        message:
+          type: string
+        httpStatus:
+          type: integer
+        version:
+          type: string
+        sourceUpdatedAt:
+          type: string
+        parcelIds:
+          type: array
+          items:
+            type: string
+    LandGeometry:
+      type: object
+      required: [type, coordinates]
+      properties:
+        type:
+          type: string
+          enum: [Polygon, MultiPolygon]
+        coordinates:
+          type: array
+          description: Coordonnées GeoJSON (longitude, latitude), imbriquées selon le type.
+          items:
+            type: array
+    LandParcel:
+      type: object
+      required: [id, codeInsee, section, number, prefix, surfaceM2, geometry, match, sourceUrl]
+      properties:
+        id:
+          type: string
+        codeInsee:
+          type: string
+        section:
+          type: string
+        number:
+          type: string
+        prefix:
+          type: string
+        city:
+          type: string
+        surfaceM2:
+          type: [number, "null"]
+        geometry:
+          $ref: "#/components/schemas/LandGeometry"
+        match:
+          type: string
+          enum: [document_reference, listing_reference, stored_reference, address_point]
+        sourceUrl:
+          type: string
+    LandRiskFinding:
+      type: object
+      required:
+        - id
+        - category
+        - label
+        - scope
+        - status
+        - description
+        - consequences
+        - regulatory
+        - sourceUrl
+        - sourceLabel
+        - checkedAt
+      properties:
+        id:
+          type: string
+        category:
+          type: string
+          enum:
+            - flood
+            - fire
+            - ground_movement
+            - clay
+            - cavity_mining
+            - pollution
+            - technological
+            - earthquake
+            - radon
+            - coastal
+            - other
+        label:
+          type: string
+        scope:
+          type: string
+          enum: [parcel, point, commune, radius, document]
+        status:
+          type: string
+          enum: [mapped, nearby, communal, history]
+        level:
+          type: [string, "null"]
+        description:
+          type: string
+        consequences:
+          type: array
+          items:
+            type: string
+        regulatory:
+          type: [boolean, "null"]
+        sourceUrl:
+          type: string
+        sourceLabel:
+          type: string
+        checkedAt:
+          type: string
+          format: date-time
+        sourceUpdatedAt:
+          type: [string, "null"]
+        vintage:
+          type: [string, "null"]
+        parcelIds:
+          type: array
+          items:
+            type: string
+        distanceM:
+          type: [number, "null"]
+        precision:
+          type: [string, "null"]
+        documentUrls:
+          type: array
+          items:
+            type: object
+            required: [label, url]
+            properties:
+              label:
+                type: string
+              url:
+                type: string
+    LandRuleEvidence:
+      type: object
+      required:
+        [id, topic, title, text, zoneLabels, documentId, sourceUrl, page, conditions, confidence]
+      properties:
+        id:
+          type: string
+        topic:
+          type: string
+          enum:
+            - destination
+            - footprint
+            - height
+            - setbacks
+            - green_space
+            - parking
+            - access_networks
+            - appearance
+            - other
+        title:
+          type: string
+        text:
+          type: string
+        zoneLabels:
+          type: array
+          items:
+            type: string
+        documentId:
+          type: string
+        sourceUrl:
+          type: string
+        page:
+          type: integer
+        article:
+          type: [string, "null"]
+        conditions:
+          type: array
+          items:
+            type: string
+        confidence:
+          type: string
+          enum: [extracted, reviewed]
+    LandReport:
+      type: object
+      required: [version, generatedAt, planning, risks, rules, projects]
+      description: >-
+        Dossier du terrain (version `land-report-v1.1`) : urbanisme, risques, règles extraites et
+        analyses de projet. Chaque source interrogée figure dans `checks` avec son état; une
+        source indisponible n'est jamais lue comme « aucun risque ».
+      properties:
+        version:
+          type: string
+          const: land-report-v1.1
+        generatedAt:
+          type: string
+          format: date-time
+        planning:
+          type: object
+          required:
+            - locationStatus
+            - coordinates
+            - codeInsee
+            - parcels
+            - zones
+            - documents
+            - constraints
+            - checks
+            - warnings
+            - completeCoverage
+          properties:
+            locationStatus:
+              type: string
+              enum: [references_matched, point_candidate, ambiguous, unresolved]
+            coordinates:
+              oneOf:
+                - type: object
+                  required: [longitude, latitude]
+                  properties:
+                    longitude:
+                      type: number
+                    latitude:
+                      type: number
+                - type: "null"
+            codeInsee:
+              type: [string, "null"]
+            parcels:
+              type: array
+              items:
+                $ref: "#/components/schemas/LandParcel"
+            zones:
+              type: array
+              description: Zones du plan local d'urbanisme (`id`, `label`, `type`, `documentId`, `parcelIds`).
+              items:
+                type: object
+                required: [id, label, description, type, documentId, documentName, parcelIds]
+                properties:
+                  id:
+                    type: string
+                  label:
+                    type: string
+                  description:
+                    type: string
+                  type:
+                    type: string
+                  documentId:
+                    type: string
+                  documentName:
+                    type: string
+                  parcelIds:
+                    type: array
+                    items:
+                      type: string
+                  regulationUrl:
+                    type: [string, "null"]
+                  regulationFile:
+                    type: [string, "null"]
+                  startPage:
+                    type: [integer, "null"]
+                  geometry:
+                    $ref: "#/components/schemas/LandGeometry"
+            documents:
+              type: array
+              description: Documents d'urbanisme publiés (règlement, zonage, annexes).
+              items:
+                type: object
+                required: [id, name, type, title, sourceUrl, files, downloadable]
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  type:
+                    type: string
+                  title:
+                    type: string
+                  legalStatus:
+                    type: [string, "null"]
+                  effectiveStatus:
+                    type: [string, "null"]
+                  publicationDate:
+                    type: [string, "null"]
+                  updatedAt:
+                    type: [string, "null"]
+                  sourceUrl:
+                    type: string
+                  files:
+                    type: array
+                    items:
+                      type: object
+                      required: [name, url]
+                      properties:
+                        name:
+                          type: string
+                        url:
+                          type: string
+                  downloadable:
+                    type: boolean
+            constraints:
+              type: array
+              description: Prescriptions, informations et servitudes qui touchent les parcelles.
+              items:
+                type: object
+                required: [id, kind, label, typeCode, layer, parcelIds, documentId]
+                properties:
+                  id:
+                    type: string
+                  kind:
+                    type: string
+                    enum: [prescription, information, servitude]
+                  label:
+                    type: string
+                  typeCode:
+                    type: [string, "null"]
+                  layer:
+                    type: string
+                  parcelIds:
+                    type: array
+                    items:
+                      type: string
+                  documentId:
+                    type: [string, "null"]
+                  documentUrl:
+                    type: [string, "null"]
+                  detail:
+                    type: string
+                  isEnvelope:
+                    type: boolean
+                    description: Une enveloppe n'est pas une classe réglementaire propre à une parcelle.
+                  geometry:
+                    $ref: "#/components/schemas/LandGeometry"
+            checks:
+              type: array
+              items:
+                $ref: "#/components/schemas/LandSourceCheck"
+            warnings:
+              type: array
+              items:
+                type: string
+            completeCoverage:
+              type: boolean
+        risks:
+          type: object
+          required: [findings, checks, warnings]
+          properties:
+            findings:
+              type: array
+              items:
+                $ref: "#/components/schemas/LandRiskFinding"
+            checks:
+              type: array
+              items:
+                $ref: "#/components/schemas/LandSourceCheck"
+            warnings:
+              type: array
+              items:
+                type: string
+        rules:
+          type: object
+          required: [rules, checks, warnings, completeCoverage]
+          properties:
+            rules:
+              type: array
+              items:
+                $ref: "#/components/schemas/LandRuleEvidence"
+            checks:
+              type: array
+              items:
+                $ref: "#/components/schemas/LandSourceCheck"
+            warnings:
+              type: array
+              items:
+                type: string
+            completeCoverage:
+              type: boolean
+        projects:
+          type: array
+          description: Analyses de projet (extension, hauteur, construction, division, changement de destination).
+          items:
+            type: object
+            required: [kind, title, status, summary, rules, checks, missingInformation]
+            properties:
+              kind:
+                type: string
+                enum: [extension, height, construction, division, destination]
+              title:
+                type: string
+              status:
+                type: string
+                enum: [conditions_to_review, insufficient_information]
+              summary:
+                type: string
+              rules:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LandRuleEvidence"
+              checks:
+                type: array
+                items:
+                  type: string
+              missingInformation:
+                type: array
+                items:
+                  type: string
+    LandReportResponse:
+      type: object
+      required: [report]
+      properties:
+        report:
+          $ref: "#/components/schemas/LandReport"
+    CadastralParcel:
+      type: object
+      required:
+        - parcelKey
+        - parcelId
+        - codeInsee
+        - department
+        - city
+        - section
+        - parcelNumber
+        - surfaceM2
+        - centroidLat
+        - centroidLng
+        - matchKind
+        - confidence
+        - sourceApi
+      description: Parcelle cadastrale rattachée à la vente; tout champ inconnu vaut `null`.
+      properties:
+        parcelKey:
+          type: [string, "null"]
+        parcelId:
+          type: [string, "null"]
+        codeInsee:
+          type: [string, "null"]
+        department:
+          type: [string, "null"]
+        city:
+          type: [string, "null"]
+        section:
+          type: [string, "null"]
+        parcelNumber:
+          type: [string, "null"]
+        surfaceM2:
+          type: [number, "null"]
+        centroidLat:
+          type: [number, "null"]
+        centroidLng:
+          type: [number, "null"]
+        matchKind:
+          type: [string, "null"]
+        confidence:
+          type: [number, "null"]
+        sourceApi:
+          type: [string, "null"]
+    UrbanPlanningSignal:
+      type: object
+      required:
+        - signalKey
+        - signalKind
+        - label
+        - status
+        - priority
+        - sourceName
+        - sourceKind
+        - documentUrl
+        - documentLabel
+        - documentType
+        - pageNumber
+        - excerpt
+        - action
+        - confidence
+      description: >-
+        Signal d'urbanisme relevé dans les pièces ou les sources publiques. Un signal « à vérifier »
+        n'est pas une conclusion réglementaire.
+      properties:
+        signalKey:
+          type: string
+        signalKind:
+          type: string
+          enum: [zoning, permit, servitude, coownership, usage, public_record]
+        label:
+          type: [string, "null"]
+        status:
+          type: string
+          enum: [documented, to_verify]
+        priority:
+          type: [string, "null"]
+          enum: [high, medium, low, null]
+        sourceName:
+          type: [string, "null"]
+        sourceKind:
+          type: [string, "null"]
+        documentUrl:
+          type: [string, "null"]
+        documentLabel:
+          type: [string, "null"]
+        documentType:
+          type: [string, "null"]
+        pageNumber:
+          type: [integer, "null"]
+        excerpt:
+          type: [string, "null"]
+        action:
+          type: [string, "null"]
+        confidence:
+          type: [number, "null"]
+        updatedAt:
+          type: [string, "null"]
+    UrbanismeCadastreResponse:
+      type: object
+      required: [cadastralParcels, urbanPlanningSignals]
+      properties:
+        cadastralParcels:
+          type: array
+          maxItems: 8
+          items:
+            $ref: "#/components/schemas/CadastralParcel"
+        urbanPlanningSignals:
+          type: array
+          maxItems: 16
+          items:
+            $ref: "#/components/schemas/UrbanPlanningSignal"
+    CourtAuctionSummariesResponse:
+      type: object
+      required: [generatedAt, courts]
+      properties:
+        generatedAt:
+          type: string
+          format: date-time
+          description: >-
+            Instant où la réponse a été calculée côté serveur (la route ne sert pas de copie figée).
+        courts:
+          type: array
+          items:
+            $ref: "#/components/schemas/CourtAuctionSummary"

@@ -16,3 +16,9 @@ To validate local bundles without publishing them:
 ```bash
 node scripts/publish-valuation-models.mjs --force --validate-only
 ```
+
+Each bundle `<segment>-<version>.json` must sit next to its activation-gate report
+`<segment>-<version>.report.json` (both are uploaded by the training workflow). The
+script refuses a bundle without a report that declares the gate passed; see
+`scripts/lib/valuation-promotion-gate.mjs` and
+`docs/runbooks/modeles-valorisation-retour-arriere.md`.

@@ -48,7 +48,10 @@ export const PEPITE_GLYPH_OFFSET: ExpressionSpecification = [
     return [zoom, ["literal", [offset, -offset]]];
   }),
 ];
-/** Même règle pour un regroupement, dont le rayon dépend du nombre de ventes (18, 24 ou 30 px). */
+/**
+ * Même règle pour un regroupement, dont le rayon dépend du nombre de ventes : 18 px sous 10 ventes,
+ * 24 px jusqu'à 29, 30 px jusqu'à 99, 36 px à partir de 100 (un grand regroupement se lit au premier coup d'œil).
+ */
 export const CLUSTER_RADIUS: ExpressionSpecification = [
   "step",
   ["get", "point_count"],
@@ -57,6 +60,8 @@ export const CLUSTER_RADIUS: ExpressionSpecification = [
   24,
   30,
   30,
+  100,
+  36,
 ];
 export const CLUSTER_GLYPH_OFFSET: ExpressionSpecification = [
   "step",
@@ -66,6 +71,8 @@ export const CLUSTER_GLYPH_OFFSET: ExpressionSpecification = [
   ["literal", [17, -17]],
   30,
   ["literal", [21, -21]],
+  100,
+  ["literal", [26, -26]],
 ];
 
 /**

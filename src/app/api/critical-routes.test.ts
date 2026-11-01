@@ -24,6 +24,7 @@ vi.mock("@/integrations/supabase/auth-middleware", () => ({
   requireSupabaseAuthContext: mocks.requireAuth,
 }));
 vi.mock("@/lib/api-keys", () => ({ apiKeyAuthContextFromRequest: mocks.apiKeyAuth }));
+vi.mock("@/lib/rate-limit", () => ({ enforceUserRateLimit: vi.fn(async () => 1) }));
 vi.mock("@/lib/sale-exports", () => ({
   exportSalesCsv: mocks.exportCsv,
   exportSalesApiFeed: mocks.exportFeed,
@@ -114,7 +115,11 @@ describe("critical API route contracts", () => {
     mocks.webhook.mockRejectedValue(new Error("STRIPE_WEBHOOK_SECRET configuration missing"));
 
     const response = await stripeWebhook(
-      new Request("https://example.test/api/stripe/webhook", { method: "POST", body: "{}" }),
+      new Request("https://example.test/api/stripe/webhook", {
+        method: "POST",
+        headers: { "stripe-signature": "t=1,v1=abc" },
+        body: "{}",
+      }),
     );
     const body = await response.json();
 

@@ -112,7 +112,9 @@ from unnest(array[
   'sale-pepites',
   'sale-flood-risk',
   'cnb-lawyer-directory',
-  'sale-reminders'
+  'sale-reminders',
+  'sale-results',
+  'weekly-digest'
 ]) as job_name;
 
 -- The inbound worker is checked with a ten-minute freshness window. Keep a

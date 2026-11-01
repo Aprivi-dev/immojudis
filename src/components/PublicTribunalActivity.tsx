@@ -154,8 +154,11 @@ function Table({
 export function PublicTribunalActivitySection({
   items,
   adjudicationStatisticsEnabled = false,
+  ambiguousCodes,
 }: {
   items: PublicTribunalActivity[];
+  /** Tribunaux sans adresse lisible (homonymes du référentiel complet) : `loadAmbiguousTribunalCodes`. */
+  ambiguousCodes?: ReadonlySet<string>;
   /** Only mentions the Analyse adjudication results once they are open. */
   adjudicationStatisticsEnabled?: boolean;
 }) {
@@ -164,7 +167,9 @@ export function PublicTribunalActivitySection({
   const heading = `${formatCount(totals.upcoming)} ${
     totals.upcoming > 1 ? "ventes judiciaires" : "vente judiciaire"
   } à venir dans ${formatCount(totals.tribunals)} ${totals.tribunals > 1 ? "tribunaux" : "tribunal"}`;
-  const pagePaths = new Map(tribunalPages(items).map((page) => [page.activity.code, page.path]));
+  const pagePaths = new Map(
+    tribunalPages(items, ambiguousCodes).map((page) => [page.activity.code, page.path]),
+  );
   const first = items.slice(0, FIRST_ROWS);
   const rest = items.slice(FIRST_ROWS);
   return (

@@ -2,6 +2,7 @@
 
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { CeilingUserChoices } from "@/lib/bid-ceiling-defaults";
 import type { WorksBreakdownItem } from "@/lib/works-breakdown";
 import {
   ceilingStorageKey,
@@ -156,5 +157,73 @@ describe("useCeilingChoices with defaults", () => {
     );
     const { result } = renderHook(() => useCeilingChoices("guest-demo", "sale-1", defaults));
     expect(result.current.choices.works).toEqual({ key: "aucun", amount: 0, months: null });
+  });
+});
+
+describe("useCeilingChoices with an investor profile", () => {
+  const profile: CeilingUserChoices = { project: "revendre", customMarginPct: 18 };
+  const key = ceilingStorageKey("account-a", "sale-1");
+
+  it("starts from the profile when the visitor has chosen nothing on this sale", () => {
+    const { result } = renderHook(() => useCeilingChoices("account-a", "sale-1", {}, profile));
+    expect(result.current.choices).toEqual(profile);
+  });
+
+  it("keeps the choices made on this sale over the profile, and lets the profile fill the gaps", () => {
+    window.localStorage.setItem(key, JSON.stringify({ project: "louer" }));
+    const { result } = renderHook(() => useCeilingChoices("account-a", "sale-1", {}, profile));
+    expect(result.current.choices).toEqual({ project: "louer", customMarginPct: 18 });
+  });
+
+  it("ranks the profile under the page defaults", () => {
+    const defaults = { customMarginPct: 9 };
+    const { result } = renderHook(() =>
+      useCeilingChoices("guest-demo", "sale-1", defaults, profile),
+    );
+    expect(result.current.choices).toEqual({ project: "revendre", customMarginPct: 9 });
+  });
+
+  it("applies a profile that arrives after the first render while nothing was touched", () => {
+    const { result, rerender } = renderHook(
+      ({ current }) => useCeilingChoices("account-a", "sale-1", {}, current),
+      { initialProps: { current: {} as typeof profile | Record<string, never> } },
+    );
+    expect(result.current.choices).toEqual({});
+    rerender({ current: profile });
+    expect(result.current.choices).toEqual(profile);
+  });
+
+  it("does not write the profile to the browser just because the sale was looked at", () => {
+    renderHook(() => useCeilingChoices("account-a", "sale-1", {}, profile));
+    expect(window.localStorage.getItem(key)).toBeNull();
+  });
+
+  it("does not overwrite what the visitor changed when the profile changes later", () => {
+    const { result, rerender } = renderHook(
+      ({ current }: { current: CeilingUserChoices }) =>
+        useCeilingChoices("account-a", "sale-1", {}, current),
+      { initialProps: { current: profile } },
+    );
+    act(() => result.current.update((choices) => ({ ...choices, customMarginPct: 25 })));
+    rerender({ current: { project: "louer", customMarginPct: 5 } });
+    expect(result.current.choices).toEqual({ project: "revendre", customMarginPct: 25 });
+    expect(JSON.parse(window.localStorage.getItem(key) ?? "null")).toEqual({
+      project: "revendre",
+      customMarginPct: 25,
+    });
+  });
+
+  it("goes back to the profile when the hypotheses are reset, keeping the works budget", () => {
+    const { result } = renderHook(() => useCeilingChoices("account-a", "sale-1", {}, profile));
+    act(() =>
+      result.current.update((choices) => ({
+        ...choices,
+        project: "habiter",
+        customMarginPct: 3,
+        works: { key: "devis", amount: 8_900 },
+      })),
+    );
+    act(() => result.current.reset());
+    expect(result.current.choices).toEqual({ ...profile, works: { key: "devis", amount: 8_900 } });
   });
 });

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   buildBaselineOutcomeGraph,
+  ceilingProbabilityReading,
   cumulativeProbability,
+  roundProbabilityToFivePercent,
   withOutcomeGraphCeiling,
   type OutcomeGraphCohort,
   type OutcomeGraphSaleContext,
@@ -227,6 +229,35 @@ describe("buildBaselineOutcomeGraph", () => {
       (price) => cumulativeProbability(distribution, price),
     );
     expect(curve).toEqual([...curve].sort((left, right) => left - right));
+  });
+
+  it("n'affirme qu'une borne hors de la plage P10-P90, là où les queues sont fabriquées (n° 25)", () => {
+    const distribution = { p10Cents: 12_600_000, p50Cents: 15_100_000, p90Cents: 18_800_000 };
+    expect(ceilingProbabilityReading(distribution, 5_000_000)).toEqual({
+      kind: "at_most",
+      probability: 0.1,
+    });
+    expect(ceilingProbabilityReading(distribution, 25_000_000)).toEqual({
+      kind: "at_least",
+      probability: 0.9,
+    });
+    const inside = ceilingProbabilityReading(distribution, 15_100_000);
+    expect(inside.kind).toBe("estimate");
+    expect(inside.probability).toBeCloseTo(0.5, 6);
+    // Aux bornes mêmes, c'est encore une estimation (les ancrages P10 et P90 sont mesurés).
+    expect(ceilingProbabilityReading(distribution, 12_600_000).kind).toBe("estimate");
+    expect(ceilingProbabilityReading(distribution, 18_800_000).kind).toBe("estimate");
+  });
+
+  it("arrondit une probabilité à 5 %, dans le sens prudent pour une borne", () => {
+    expect(roundProbabilityToFivePercent(0.73)).toBe(0.75);
+    expect(roundProbabilityToFivePercent(0.72)).toBe(0.7);
+    expect(roundProbabilityToFivePercent(0.1, "up")).toBe(0.1);
+    expect(roundProbabilityToFivePercent(0.11, "up")).toBe(0.15);
+    expect(roundProbabilityToFivePercent(0.9, "down")).toBe(0.9);
+    expect(roundProbabilityToFivePercent(0.89, "down")).toBe(0.85);
+    expect(roundProbabilityToFivePercent(-0.2)).toBe(0);
+    expect(roundProbabilityToFivePercent(1.4)).toBe(1);
   });
 
   it("refuse une cohorte conflictuelle ou non éligible", () => {

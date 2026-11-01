@@ -97,7 +97,7 @@ describe("public sale page", () => {
   it("builds per-sale metadata without repeating the site name", async () => {
     mocks.lookup.mockResolvedValue({ status: "found", sale });
     const metadata = await generateMetadata({ params });
-    expect(metadata.title).toBe("Appartement 50 m² à Romainville (93) – tribunal");
+    expect(metadata.title).toBe("Appartement à Romainville – vente au tribunal");
     expect(String(metadata.title)).not.toMatch(/immojudis/i);
     expect(metadata.description).toMatch(
       /^Appartement 50 m² à Romainville \(93\), vente au tribunal/,
@@ -139,6 +139,9 @@ describe("public sale page", () => {
     const json = /<script type="application\/ld\+json">(.*?)<\/script>/.exec(html)![1];
     expect(json).toContain(`https://immojudis.com/sales/${ID}`);
     expect(json).not.toContain(ID.toUpperCase());
+    // La fiche reçoit l'identifiant en minuscules, pas celui de l'adresse saisie.
+    expect(html).toMatch(new RegExp(`data-testid="detail"[^>]*>${ID}</div>`));
+    expect(html).not.toContain(`>${ID.toUpperCase()}<`);
   });
 
   it("renders the sale with its structured data, in absolute URLs", async () => {

@@ -38,13 +38,24 @@ vi.mock("@/integrations/supabase/client.server", () => ({
     },
   },
 }));
-vi.mock("@/lib/property-reports", () => ({ resolvePlanEntitlements: mocks.plan }));
+vi.mock("@/lib/entitlements.server", () => ({ resolvePlanEntitlements: mocks.plan }));
 vi.mock("@/lib/rate-limit", () => ({ enforceDailyOperationLimits: mocks.daily }));
 
 import { createUserApiKey } from "@/lib/api-keys";
 
 const request = new Request("https://immojudis.com/api/api-keys", { method: "POST" });
-const auth = { userId: "user-1", claims: {} } as unknown as SupabaseAuthContext;
+// Les clés d'API sont réservées à l'administration (n° 97) : une clé n'a pas `isAdmin`, le rôle du titulaire compte.
+const auth = {
+  userId: "user-1",
+  claims: {},
+  userRole: "admin",
+  isAdmin: true,
+} as unknown as SupabaseAuthContext;
+const subscriber = {
+  userId: "user-2",
+  claims: {},
+  userRole: "user",
+} as unknown as SupabaseAuthContext;
 const input = { name: "ma clé" };
 const analyse = { plan: "analyse", limits: { apiKeys: 3 } };
 
@@ -58,7 +69,14 @@ describe("plafond journalier de la création de clés d'API", () => {
 
   it("n'use aucun compteur sans droit d'accès, ni au-delà du nombre de clés du plan", async () => {
     mocks.plan.mockResolvedValue({ plan: "decouverte", limits: { apiKeys: 0 } });
-    await expect(createUserApiKey({ auth, input, request })).rejects.toThrow("Clés API réservées");
+    await expect(createUserApiKey({ auth: subscriber, input, request })).rejects.toThrow(
+      "Clés API réservées",
+    );
+    // Même un abonné Analyse n'a plus de clés d'API (n° 97).
+    mocks.plan.mockResolvedValue({ plan: "analyse", limits: { apiKeys: 0 } });
+    await expect(createUserApiKey({ auth: subscriber, input, request })).rejects.toThrow(
+      "Clés API réservées à l’administration",
+    );
 
     mocks.plan.mockResolvedValue(analyse);
     mocks.count.mockResolvedValue({ count: 3, error: null });

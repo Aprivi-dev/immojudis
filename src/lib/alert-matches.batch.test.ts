@@ -26,6 +26,8 @@ const state = vi.hoisted(() => ({
   pepiteError: null as unknown,
   rpcCalls: [] as string[],
   tablesRead: [] as string[],
+  /** Compte sans accès Analyse : alertes gratuites (pré-filtre SQL sur la zone). */
+  discovery: false,
 }));
 
 function fakeClient() {
@@ -148,8 +150,8 @@ vi.mock("@/lib/system-auth", () => ({
     isAdmin: false,
   }),
 }));
-vi.mock("@/lib/property-reports", () => ({
-  resolvePlanEntitlements: async () => ({ plan: "analyse", hasAnalysisAccess: true }),
+vi.mock("@/lib/entitlements.server", () => ({
+  resolvePlanEntitlements: async () => ({ plan: "analyse", hasAnalysisAccess: !state.discovery }),
 }));
 vi.mock("@/lib/queries", () => ({
   getSalesForAlertEvaluation: async (
@@ -250,6 +252,7 @@ describe("smart alert batch", () => {
     state.pepiteError = null;
     state.rpcCalls = [];
     state.tablesRead = [];
+    state.discovery = false;
     rents.calls = [];
     rents.sessions = 0;
     rents.references = {};
@@ -281,7 +284,56 @@ describe("smart alert batch", () => {
 
     expect(state.getSalesCalls.map((call) => call.offset)).toEqual([0, 400, 800]);
     expect(state.getSalesCalls[0].filters.updated_since).toBeUndefined();
-    expect(state.getSalesCalls[0].filters.status_in).toEqual(["active", "upcoming"]);
+    // Les statuts de la recherche du catalogue : une vente reportée ou au statut inconnu alerte aussi.
+    expect(state.getSalesCalls[0].filters.status_in).toEqual(["upcoming", "unknown", "postponed"]);
+  });
+
+  it("filtre une alerte gratuite par le code ET le nom du département, comme la recherche", async () => {
+    state.discovery = true;
+    state.userAlerts = [
+      alertRow(1, {
+        department: "33",
+        alert_frequency: "weekly",
+        city: null,
+        advanced_criteria: {},
+      }),
+    ];
+    state.salesPool = [];
+
+    await runSmartAlertEvaluationBatch();
+
+    expect(state.getSalesCalls[0].filters.departments).toEqual(["33"]);
+    expect(state.getSalesCalls[0].filters.department).toBeUndefined();
+  });
+
+  it("garde l'égalité stricte pour un département que le catalogue ne connaît pas", async () => {
+    state.discovery = true;
+    state.userAlerts = [
+      alertRow(1, { department: "Atlantide", alert_frequency: "weekly", advanced_criteria: {} }),
+    ];
+
+    await runSmartAlertEvaluationBatch();
+
+    expect(state.getSalesCalls[0].filters.department).toBe("Atlantide");
+    expect(state.getSalesCalls[0].filters.departments).toBeUndefined();
+  });
+
+  it("retient une vente dont la colonne département contient le nom au lieu du code", async () => {
+    state.userAlerts = [alertRow(1, { department: "33" })];
+    state.salesPool = [
+      { id: "sale-nom", department: "Gironde" },
+      { id: "sale-code", department: "33" },
+      { id: "sale-autre", department: "Landes" },
+    ];
+
+    await runSmartAlertEvaluationBatch();
+
+    expect(
+      state.upserts
+        .flat()
+        .map((row) => row.sale_id)
+        .sort(),
+    ).toEqual(["sale-code", "sale-nom"]);
   });
 
   it("ne relit que les ventes modifiées depuis la dernière évaluation", async () => {

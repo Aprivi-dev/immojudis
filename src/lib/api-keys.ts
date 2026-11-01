@@ -4,8 +4,9 @@ import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
-import { featureIncluded } from "@/lib/plans";
-import { resolvePlanEntitlements } from "@/lib/property-reports";
+import { PublicApiError } from "@/lib/api-errors";
+import { apiAccessAllowed } from "@/lib/plans";
+import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import { enforceDailyOperationLimits } from "@/lib/rate-limit";
 
 type ApiKeyRow = Database["public"]["Tables"]["user_api_keys"]["Row"];
@@ -111,8 +112,8 @@ export async function listUserApiKeys({
   auth: SupabaseAuthContext;
 }): Promise<ApiKeyListResponse> {
   const plan = await resolvePlanEntitlements(auth);
-  if (!featureIncluded(plan.plan, "sales.apiAccess")) {
-    throw new Error("Clés API réservées à l’offre Analyse.");
+  if (!apiAccessAllowed(auth, plan.plan)) {
+    throw new Error("Clés API réservées à l’administration.");
   }
   const { data, error } = await supabaseAdmin
     .from("user_api_keys")
@@ -139,8 +140,8 @@ export async function createUserApiKey({
   request: Request;
 }): Promise<ApiKeyCreateResponse> {
   const plan = await resolvePlanEntitlements(auth);
-  if (!featureIncluded(plan.plan, "sales.apiAccess")) {
-    throw new Error("Clés API réservées à l’offre Analyse.");
+  if (!apiAccessAllowed(auth, plan.plan)) {
+    throw new Error("Clés API réservées à l’administration.");
   }
 
   await assertApiKeyLimit(auth, plan.limits.apiKeys);
@@ -182,8 +183,14 @@ export async function revokeUserApiKey({
   auth: SupabaseAuthContext;
   keyId: string;
 }): Promise<{ key: ApiKeySummary }> {
+  // Un identifiant mal formé est une erreur de l'appelant (400), pas une panne de la base.
+  if (!z.string().uuid().safeParse(keyId).success) {
+    throw new PublicApiError("Identifiant de clé invalide.", 400);
+  }
+
   const revokedAt = new Date().toISOString();
-  const { data, error } = await supabaseAdmin
+  // Seule une clé du compte, pas encore révoquée : la date de révocation d'origine est conservée.
+  const { data: revoked, error } = await supabaseAdmin
     .from("user_api_keys")
     .update({
       revoked_at: revokedAt,
@@ -191,11 +198,21 @@ export async function revokeUserApiKey({
     })
     .eq("id", keyId)
     .eq("user_id", auth.userId)
+    .is("revoked_at", null)
     .select("*")
-    .single();
-
+    .maybeSingle();
   if (error) throw error;
-  return { key: apiKeyRowToSummary(data) };
+  if (revoked) return { key: apiKeyRowToSummary(revoked) };
+
+  const { data: existing, error: readError } = await supabaseAdmin
+    .from("user_api_keys")
+    .select("*")
+    .eq("id", keyId)
+    .eq("user_id", auth.userId)
+    .maybeSingle();
+  if (readError) throw readError;
+  if (!existing) throw new PublicApiError("Clé API introuvable.", 404);
+  return { key: apiKeyRowToSummary(existing) };
 }
 
 export async function apiKeyAuthContextFromRequest(

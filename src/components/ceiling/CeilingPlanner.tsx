@@ -15,6 +15,8 @@ import {
   estimatedFeeItems,
   evaluateBid,
   feeSensitivity,
+  PROPERTY_TAX_NOT_COUNTED,
+  propertyTaxMissing,
   targetYieldPct,
   type CeilingHypotheses,
   type CeilingPlan,
@@ -34,6 +36,7 @@ import { CeilingHypothesesPanel } from "@/components/ceiling/CeilingHypothesesPa
 import { EstimatedFeesBadge } from "@/components/ceiling/EstimatedFeesBadge";
 import { onRadioGroupKeyDown } from "@/components/ceiling/radio-group-keys";
 import { Terme, type TermeKey } from "@/components/ceiling/Terme";
+import { useCeilingViewEvent } from "@/components/sale-detail/use-ceiling-view-event";
 
 type ChoicesUpdate = (change: (choices: CeilingUserChoices) => CeilingUserChoices) => void;
 
@@ -60,6 +63,7 @@ export function CeilingPlanner({
   dpeClass?: string | null;
 }) {
   const [hypothesesOpen, setHypothesesOpen] = useState(false);
+  useCeilingViewEvent(plan.available);
   const hypothesesPanelId = useId();
   const confidence = ceilingConfidence(hypotheses);
   // Textes du régime de frais de la vente (ceux du tribunal sans régime).
@@ -128,6 +132,14 @@ export function CeilingPlanner({
                     : `À compléter : ${gap.reason}`}
                 </div>
               )}
+              {gap == null && plan.available && propertyTaxMissing(hypotheses) ? (
+                <p
+                  data-testid="property-tax-missing"
+                  className="mt-2 text-xs font-semibold text-ink-soft"
+                >
+                  {PROPERTY_TAX_NOT_COUNTED}
+                </p>
+              ) : null}
               <Verdict hypotheses={hypotheses} plan={plan} labels={regimeLabels} />
             </div>
             <ProfilePicker
@@ -155,30 +167,15 @@ export function CeilingPlanner({
           ) : null}
         </div>
 
-        {plan.available ? (
-          <>
-            <CeilingSteps steps={plan.steps} />
-            <WorksCeilings hypotheses={hypotheses} onEditWorks={onEditWorks} />
-            {/* Le point de départ du simulateur suit le passage du plafond sous la mise à prix. */}
-            <BidSimulator
-              key={startGap?.kind === "below" ? "ceiling-below-start" : "ceiling-above-start"}
-              hypotheses={hypotheses}
-              plan={plan}
-            />
-            {/* Sans prix qui tienne, pas de calendrier de trésorerie à la mise à prix. */}
-            {plan.reachable ? <CashPlan hypotheses={hypotheses} plan={plan} /> : null}
-          </>
-        ) : null}
-
-        {/* Sans plan, les hypothèses restent ouvertes (il faut les compléter) : un bouton « Masquer »
-            n'aurait aucun effet, il n'est donc pas rendu. */}
+        {/* Juste sous le résultat du plafond. Sans plan, les hypothèses restent ouvertes (il faut les
+            compléter) : un bouton « Masquer » n'aurait aucun effet, il n'est donc pas rendu. */}
         {plan.available ? (
           <button
             type="button"
             aria-expanded={hypothesesOpen}
             aria-controls={hypothesesPanelId}
             onClick={() => setHypothesesOpen((open) => !open)}
-            className="mt-6 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-gold-text"
+            className="mt-4 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-gold-text"
           >
             <ChevronDown
               aria-hidden
@@ -194,6 +191,21 @@ export function CeilingPlanner({
             choices={choices}
             onChoicesChange={onChoicesChange}
           />
+        ) : null}
+
+        {plan.available ? (
+          <>
+            <CeilingSteps steps={plan.steps} />
+            <WorksCeilings hypotheses={hypotheses} onEditWorks={onEditWorks} />
+            {/* Le point de départ du simulateur suit le passage du plafond sous la mise à prix. */}
+            <BidSimulator
+              key={startGap?.kind === "below" ? "ceiling-below-start" : "ceiling-above-start"}
+              hypotheses={hypotheses}
+              plan={plan}
+            />
+            {/* Sans prix qui tienne, pas de calendrier de trésorerie à la mise à prix. */}
+            {plan.reachable ? <CashPlan hypotheses={hypotheses} plan={plan} /> : null}
+          </>
         ) : null}
 
         <Checklist hypotheses={hypotheses} dpeClass={dpeClass} />

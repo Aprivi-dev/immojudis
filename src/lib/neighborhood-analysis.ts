@@ -390,7 +390,7 @@ function collectTextCandidates(sale: AuctionSale): TextCandidate[] {
   const candidates: TextCandidate[] = [];
   addCandidate(candidates, sale.description, "Description annonce");
   addCandidate(candidates, sale.source_description, "Description source");
-  addCandidate(candidates, sale.risk_notes, "Notes de risques");
+  // `risk_notes` is the pipeline's own output (model text read back): not independent evidence.
 
   // Generated scores and summaries are not independent evidence about the property.
 

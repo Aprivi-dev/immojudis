@@ -66,7 +66,6 @@ export type DvfComparableAnalysis = {
   lowValueEur: number | null;
   medianValueEur: number | null;
   highValueEur: number | null;
-  apparentDiscountPct: number | null;
   comparables: ScoredDvfComparable[];
   warnings: string[];
   summary: string;
@@ -167,8 +166,10 @@ export function buildDvfComparableAnalysis({
         surfaceTolerancePct,
       }),
     )
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit);
+    .sort((a, b) => b.score - a.score);
+  // Médiane, quartiles et confiance portent sur TOUT l'échantillon retenu : `limit` ne borne que la
+  // liste affichée (n° 23). Avant, la médiane changeait avec le nombre de lignes demandées.
+  const displayed = scored.slice(0, limit);
   const sortedPrices = scored.map((candidate) => candidate.pricePerM2).sort((a, b) => a - b);
   const p25 = percentileRounded(sortedPrices, 0.25);
   const median = percentileRounded(sortedPrices, 0.5);
@@ -189,7 +190,6 @@ export function buildDvfComparableAnalysis({
     p25,
     median,
     p75,
-    startingPriceEur: subject.startingPriceEur,
   });
   const status = resolveStatus(scored.length, confidence.score);
   const warnings = buildWarnings({
@@ -219,7 +219,7 @@ export function buildDvfComparableAnalysis({
     p25PricePerM2: p25,
     p75PricePerM2: p75,
     ...valueRange,
-    comparables: scored,
+    comparables: displayed,
     warnings,
     summary: summary({
       sampleSize: scored.length,
@@ -487,25 +487,17 @@ function buildValueRange({
   p25,
   median,
   p75,
-  startingPriceEur,
 }: {
   surfaceM2: number | null;
   p25: number | null;
   median: number | null;
   p75: number | null;
-  startingPriceEur?: number | null;
-}): Pick<
-  DvfComparableAnalysis,
-  "lowValueEur" | "medianValueEur" | "highValueEur" | "apparentDiscountPct"
-> {
+}): Pick<DvfComparableAnalysis, "lowValueEur" | "medianValueEur" | "highValueEur"> {
   const surface = positiveNumber(surfaceM2);
   const lowValueEur = surface && p25 ? Math.round(surface * p25) : null;
   const medianValueEur = surface && median ? Math.round(surface * median) : null;
   const highValueEur = surface && p75 ? Math.round(surface * p75) : null;
-  const starting = positiveNumber(startingPriceEur);
-  const apparentDiscountPct =
-    starting && medianValueEur ? Math.round((1 - starting / medianValueEur) * 1000) / 10 : null;
-  return { lowValueEur, medianValueEur, highValueEur, apparentDiscountPct };
+  return { lowValueEur, medianValueEur, highValueEur };
 }
 
 function weightedAveragePrice(comparables: ScoredDvfComparable[]): number | null {
@@ -647,7 +639,6 @@ function missingAnalysis({
     lowValueEur: null,
     medianValueEur: null,
     highValueEur: null,
-    apparentDiscountPct: null,
     comparables: [],
     warnings,
     summary: "Aucun comparable DVF exploitable n'a été retenu.",

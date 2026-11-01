@@ -9,42 +9,29 @@ import {
   type DvfComparableAnalysis,
   type DvfComparableCandidate,
 } from "@/lib/dvf-comparable-engine";
-import { haversineKm } from "@/lib/geo";
+import { resolveMarketPropertySegment } from "@/lib/market-estimation-engine";
 import { featureIncluded } from "@/lib/plans";
-import { resolvePlanEntitlements } from "@/lib/property-reports";
+import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import { getSaleSurface } from "@/lib/surface";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 
 type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
-type DvfTransactionRow = Database["public"]["Tables"]["dvf_transactions"]["Row"];
-type DvfComparableRow = Pick<
-  DvfTransactionRow,
-  | "id"
-  | "source_mutation_id"
-  | "sale_date"
-  | "mutation_nature"
-  | "total_price_eur"
-  | "built_surface_m2"
-  | "land_surface_m2"
-  | "price_per_m2"
-  | "property_type"
-  | "dvf_property_type_code"
-  | "address"
-  | "city"
-  | "postal_code"
-  | "parcel_id"
-  | "department"
-  | "latitude"
-  | "longitude"
-  | "source"
+type DvfComparableRow =
+  Database["public"]["Functions"]["search_dvf_market_comparables"]["Returns"][number];
+type DvfDisplayRow = Pick<
+  Database["public"]["Tables"]["dvf_transactions"]["Row"],
+  "id" | "address" | "city" | "postal_code" | "source"
 >;
+
+/** Lignes lues dans la base pour un bien : le même plafond que le moteur d'estimation de marché. */
+const DVF_SAMPLE_LIMIT = 2_500;
 
 const REFERENCE_SALE_COLUMNS =
   "id,title,city,department,postal_code,address,property_type,starting_price_eur,app_surface_m2,habitable_surface_m2,carrez_surface_m2,land_surface_m2,rooms_count,latitude,longitude";
 
-const DVF_COLUMNS =
-  "id,source_mutation_id,sale_date,mutation_nature,total_price_eur,built_surface_m2,land_surface_m2,price_per_m2,property_type,dvf_property_type_code,address,city,postal_code,parcel_id,department,latitude,longitude,source";
+/** Colonnes d'affichage que la recherche par segment et distance ne renvoie pas. */
+const DVF_DISPLAY_COLUMNS = "id,address,city,postal_code,source";
 
 const optionalText = (max = 140) =>
   z.preprocess(
@@ -109,18 +96,22 @@ export async function getDvfComparables({
   }
 
   const surface = getSaleSurface(sale);
-  const candidates = await fetchDvfCandidates({
-    sale,
+  // Même découpage par segment (appartement, maison, immeuble, local, terrain) et même distance
+  // exacte que le moteur d'estimation de marché : un appartement n'est plus comparé à des maisons.
+  const segment = resolveMarketPropertySegment({ propertyType: sale.property_type });
+  const { candidates, rowIdByCandidateId } = await fetchDvfCandidates({
+    segment,
     latitude,
     longitude,
     radiusM: input.radiusM,
     months: input.months,
-    limit: input.limit,
     now,
   });
-  const analysis = buildDvfComparableAnalysis({
+  const subjectSurfaceM2 =
+    segment === "land" ? (finiteNumber(sale.land_surface_m2) ?? surface.value) : surface.value;
+  const rawAnalysis = buildDvfComparableAnalysis({
     subject: {
-      surfaceM2: surface.value,
+      surfaceM2: subjectSurfaceM2,
       landSurfaceM2: sale.land_surface_m2,
       propertyType: sale.property_type,
       startingPriceEur: sale.starting_price_eur,
@@ -130,9 +121,11 @@ export async function getDvfComparables({
       now,
       maxAgeMonths: input.months,
       maxRadiusM: input.radiusM,
+      // N'affecte que la liste affichée : la médiane et les quartiles portent sur tout l'échantillon.
       limit: input.limit,
     },
   });
+  const analysis = await withDisplayDetails(rawAnalysis, rowIdByCandidateId);
 
   await recordFeatureUsageEvent({
     auth,
@@ -191,92 +184,102 @@ async function getReferenceSale(
 }
 
 async function fetchDvfCandidates({
-  sale,
+  segment,
   latitude,
   longitude,
   radiusM,
   months,
-  limit,
   now,
 }: {
-  sale: AppSaleRow;
+  segment: ReturnType<typeof resolveMarketPropertySegment>;
   latitude: number;
   longitude: number;
   radiusM: number;
   months: number;
-  limit: number;
   now: Date;
-}): Promise<DvfComparableCandidate[]> {
-  const bbox = bboxAround(latitude, longitude, radiusM);
-  const minSaleDate = addMonths(now, -months);
-  let query = supabaseAdmin
-    .from("dvf_transactions")
-    .select(DVF_COLUMNS)
-    .eq("mutation_nature", "Vente")
-    .gte("sale_date", minSaleDate)
-    .gte("latitude", bbox.latMin)
-    .lte("latitude", bbox.latMax)
-    .gte("longitude", bbox.lngMin)
-    .lte("longitude", bbox.lngMax)
-    .not("built_surface_m2", "is", null)
-    .gte("built_surface_m2", 9)
-    .order("sale_date", { ascending: false })
-    .limit(Math.min(2_000, Math.max(limit * 40, 120)));
-
-  if (sale.department) query = query.eq("department", sale.department);
-
-  const { data, error } = await query;
+}): Promise<{ candidates: DvfComparableCandidate[]; rowIdByCandidateId: Map<string, string> }> {
+  // Un type de bien que DVF ne sait pas ranger dans un segment n'a pas de comparables fiables.
+  if (segment === "unsupported") return { candidates: [], rowIdByCandidateId: new Map() };
+  const { data, error } = await supabaseAdmin.rpc("search_dvf_market_comparables", {
+    p_latitude: latitude,
+    p_longitude: longitude,
+    p_radius_m: radiusM,
+    p_minimum_date: addMonths(now, -months),
+    p_segment: segment,
+    p_limit: DVF_SAMPLE_LIMIT,
+  });
   if (error) {
     throw new Error(`Comparables DVF indisponibles : ${error.message}`);
   }
 
-  return (data ?? [])
-    .map((row) => rowToComparableCandidate(row, { latitude, longitude }))
+  const rowIdByCandidateId = new Map<string, string>();
+  const candidates = (data ?? [])
+    .filter((row) => row.mutation_nature === "Vente")
+    .map((row) => {
+      const candidate = rowToComparableCandidate(row, segment);
+      rowIdByCandidateId.set(candidate.id, row.id);
+      return candidate;
+    })
     .filter((candidate) => candidate.distanceM == null || candidate.distanceM <= radiusM);
+  return { candidates, rowIdByCandidateId };
 }
 
 function rowToComparableCandidate(
   row: DvfComparableRow,
-  reference: { latitude: number; longitude: number },
+  segment: Exclude<ReturnType<typeof resolveMarketPropertySegment>, "unsupported">,
 ): DvfComparableCandidate {
-  const rowLat = finiteNumber(row.latitude);
-  const rowLng = finiteNumber(row.longitude);
-  const distanceM =
-    rowLat != null && rowLng != null
-      ? Math.round(
-          haversineKm(
-            { lat: reference.latitude, lng: reference.longitude },
-            { lat: rowLat, lng: rowLng },
-          ) * 1_000,
-        )
-      : null;
-
   return {
     id: row.source_mutation_id || row.id,
     saleDate: row.sale_date,
     totalPriceEur: row.total_price_eur,
-    surfaceM2: row.built_surface_m2,
+    // Un terrain se compare à la surface du terrain, les autres biens à la surface bâtie.
+    surfaceM2: segment === "land" ? row.land_surface_m2 : row.built_surface_m2,
     landSurfaceM2: row.land_surface_m2,
     pricePerM2: row.price_per_m2,
     propertyType: row.property_type ?? row.dvf_property_type_code,
-    distanceM,
-    address: row.address,
-    city: row.city,
-    postalCode: row.postal_code,
+    distanceM: finiteNumber(row.distance_m),
     parcelId: row.parcel_id,
-    source: row.source,
     sourceUrl: DVF_PUBLIC_SOURCE_URL,
   };
 }
 
-function bboxAround(lat: number, lng: number, radiusM: number) {
-  const dLat = radiusM / 111_000;
-  const dLng = radiusM / (111_000 * Math.max(0.2, Math.cos((lat * Math.PI) / 180)));
+/**
+ * Adresse, commune, code postal et source ne servent qu'aux lignes affichées : la recherche par
+ * segment et distance ne les renvoie pas, on les lit pour les seules lignes de la liste.
+ */
+async function withDisplayDetails(
+  analysis: DvfComparableAnalysis,
+  rowIdByCandidateId: Map<string, string>,
+): Promise<DvfComparableAnalysis> {
+  const ids = [
+    ...new Set(
+      analysis.comparables
+        .map((comparable) => rowIdByCandidateId.get(comparable.id))
+        .filter((id): id is string => id != null),
+    ),
+  ];
+  if (!ids.length) return analysis;
+  const { data, error } = await supabaseAdmin
+    .from("dvf_transactions")
+    .select(DVF_DISPLAY_COLUMNS)
+    .in("id", ids);
+  // Les détails d'affichage manquants n'empêchent pas l'analyse : les statistiques sont déjà calculées.
+  if (error || !data) return analysis;
+  const detailsByRowId = new Map((data as DvfDisplayRow[]).map((row) => [row.id, row]));
   return {
-    latMin: lat - dLat,
-    latMax: lat + dLat,
-    lngMin: lng - dLng,
-    lngMax: lng + dLng,
+    ...analysis,
+    comparables: analysis.comparables.map((comparable) => {
+      const details = detailsByRowId.get(rowIdByCandidateId.get(comparable.id) ?? "");
+      return details
+        ? {
+            ...comparable,
+            address: details.address,
+            city: details.city,
+            postalCode: details.postal_code,
+            source: details.source,
+          }
+        : comparable;
+    }),
   };
 }
 

@@ -83,8 +83,28 @@ describe("canonicalSalesQuery", () => {
     expect(canonical("min_price=50000")).toBe("minPrice=50000");
   });
 
+  it("échange les bornes inversées de la mise à prix et de la surface", () => {
+    expect(canonical("minPrice=500000&maxPrice=100000")).toBe("minPrice=100000&maxPrice=500000");
+    expect(canonical("city=Pau&minSqft=120&maxSqft=40")).toBe("city=Pau&minSqft=40&maxSqft=120");
+    expect(canonical("min_price=900&maxPrice=100")).toBe("minPrice=100&maxPrice=900");
+  });
+
+  it("laisse des bornes égales ou une seule borne", () => {
+    expect(canonicalSalesQuery(new URLSearchParams("minPrice=100000&maxPrice=100000"))).toBeNull();
+    expect(canonicalSalesQuery(new URLSearchParams("minSqft=120"))).toBeNull();
+  });
+
+  it("garde les bornes inversées telles quelles quand on le demande (saisie en cours)", () => {
+    const params = new URLSearchParams("minPrice=500000&maxPrice=100000");
+    expect(canonicalSalesQuery(params, { swapInvertedRanges: false })).toBeNull();
+  });
+
   it("une fois canonique, l'adresse ne change plus (pas de boucle de réécriture)", () => {
-    for (const query of ["minPrice=-5&maxPrice=1e30&page=1&city=Pau", "min_price=1&page=02"]) {
+    for (const query of [
+      "minPrice=-5&maxPrice=1e30&page=1&city=Pau",
+      "min_price=1&page=02",
+      "minPrice=500000&maxPrice=100000&minSqft=90&maxSqft=30",
+    ]) {
       const first = canonicalSalesQuery(new URLSearchParams(query));
       expect(first).not.toBeNull();
       expect(canonicalSalesQuery(first!)).toBeNull();

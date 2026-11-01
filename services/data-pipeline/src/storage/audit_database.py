@@ -6,6 +6,7 @@ from typing import Any
 import psycopg
 
 from src.config import load_settings
+from src.storage.connection_guards import postgres_ssl_options
 
 QUERIES = {
     "tables": """
@@ -240,7 +241,7 @@ def run_audit() -> dict[str, list[dict[str, Any]]]:
     if not db_url:
         raise RuntimeError("SUPABASE_DB_URL is missing")
     output: dict[str, list[dict[str, Any]]] = {}
-    with psycopg.connect(str(db_url)) as connection:
+    with psycopg.connect(str(db_url), **postgres_ssl_options(str(db_url))) as connection:
         with connection.cursor() as cursor:
             for name, query in QUERIES.items():
                 cursor.execute(query)

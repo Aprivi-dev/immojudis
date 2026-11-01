@@ -25,7 +25,7 @@ export async function generateMetadata(): Promise<Metadata> {
       path: PUBLIC_ADJUDICATION_PRICES_PATH,
       title: "Prix réels des adjudications immobilières",
       description:
-        "Prix final médian rapporté à la mise à prix, part des ventes adjugées au-dessus de la mise et ventilation par type de bien, avec période, effectif et méthode.",
+        "Prix adjugé publié médian rapporté à la mise à prix, part des ventes adjugées au-dessus de la mise et type de bien, avec période, effectif et méthode.",
     }),
     robots: { index: true, follow: true },
   };

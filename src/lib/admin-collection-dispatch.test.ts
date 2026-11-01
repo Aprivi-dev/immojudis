@@ -83,7 +83,7 @@ describe("manual collection includes cloud sources in the existing workflow", ()
     vi.clearAllMocks();
   });
 
-  it.each(["all", "petites_affiches", "cessions_etat"])(
+  it.each(["all", "licitor", "cessions_etat"])(
     "dispatches %s once with the tracked run id",
     async (source) => {
       const result = await startAdminScroll("admin-token", { source, mode: "collect" });
@@ -196,7 +196,7 @@ describe("manual collection includes cloud sources in the existing workflow", ()
     vi.stubEnv("SCROLL_WEBHOOK_SECRET", "webhook-secret");
 
     const result = await startAdminScroll("admin-token", {
-      source: "petites_affiches",
+      source: "licitor",
       mode: "collect",
     });
 
@@ -208,7 +208,7 @@ describe("manual collection includes cloud sources in the existing workflow", ()
           "Content-Type": "application/json",
           "X-Immojudis-Secret": "webhook-secret",
         },
-        body: expect.stringContaining('"source":"petites_affiches"'),
+        body: expect.stringContaining('"source":"licitor"'),
       }),
     );
   });

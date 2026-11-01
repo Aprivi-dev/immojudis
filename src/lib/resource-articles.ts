@@ -20,7 +20,26 @@ import marketGapArticle from "@/content/resources/mise-a-prix-valeur-de-marche-d
 import planningArticle from "@/content/resources/lire-plu-bien-vendu-encheres.json";
 import risksArticle from "@/content/resources/risques-georisques-avant-encherir.json";
 import cadastreArticle from "@/content/resources/adresse-parcelle-cadastre-encheres.json";
+import taxationArticle from "@/content/resources/fiscalite-achat-encheres-occuper-louer-revendre.json";
+import glossaryArticle from "@/content/resources/glossaire-encheres-immobilieres.json";
+import energyArticle from "@/content/resources/dpe-diagnostics-travaux-bien-energivore-plafond.json";
 import { GUIDE_READING_MINUTES } from "@/lib/guide-dates";
+
+/** Un terme défini dans un glossaire : une phrase, un renvoi vers l'article détaillé et la source. */
+export interface ResourceGlossaryEntry {
+  term: string;
+  definition: string;
+  /** Page du site qui détaille le terme (article, guide, simulateur). */
+  href?: string;
+  /** Texte officiel qui fonde la définition (article de loi, service-public.fr…). */
+  source?: string;
+}
+
+/** Une question de la FAQ visible d'un article, reprise à l'identique dans le balisage FAQPage. */
+export interface ResourceFaqItem {
+  question: string;
+  answer: string;
+}
 
 export interface ResourceSection {
   id: string;
@@ -29,6 +48,10 @@ export interface ResourceSection {
   bullets?: string[];
   table?: { headers: string[]; rows: string[][] };
   callout?: { title: string; text: string };
+  /** Liens vers d'autres pages du site (simulateur, guide…), affichés sous le texte de la section. */
+  links?: { label: string; href: string }[];
+  /** Définitions d'un glossaire (une entrée par terme). */
+  glossary?: ResourceGlossaryEntry[];
 }
 
 interface ResourceContent {
@@ -50,8 +73,14 @@ interface ResourceContent {
    */
   seoDescription?: string;
   intro: string[];
+  /**
+   * Réponse directe à la question de l'article, en 2 ou 3 phrases, affichée en tête (articles clés).
+   */
+  directAnswer?: string;
   takeaways: string[];
   sections: ResourceSection[];
+  /** FAQ visible de 3 à 5 questions ; le balisage FAQPage de la page reprend ce texte à l'identique. */
+  faq?: ResourceFaqItem[];
   sources: { label: string; url: string }[];
 }
 
@@ -71,6 +100,7 @@ export type ResourceArticle = ResourceContent & ResourceSummary;
 function defineArticle(content: ResourceContent, image: string): ResourceArticle {
   const text = [
     content.title,
+    content.directAnswer ?? "",
     ...content.intro,
     ...content.takeaways,
     ...content.sections.flatMap((section) => [
@@ -81,7 +111,9 @@ function defineArticle(content: ResourceContent, image: string): ResourceArticle
       ...(section.table?.rows.flat() ?? []),
       section.callout?.title ?? "",
       section.callout?.text ?? "",
+      ...(section.glossary ?? []).flatMap((entry) => [entry.term, entry.definition]),
     ]),
+    ...(content.faq ?? []).flatMap((item) => [item.question, item.answer]),
   ].join(" ");
 
   return {
@@ -115,6 +147,9 @@ export const RESOURCE_ARTICLES: ResourceArticle[] = [
   defineArticle(planningArticle, "/media/landing/gallery-land.webp"),
   defineArticle(risksArticle, "/media/landing/auction-lyon.webp"),
   defineArticle(cadastreArticle, "/media/landing/dossier-apartment.webp"),
+  defineArticle(taxationArticle, "/media/landing/home-favorites.webp"),
+  defineArticle(glossaryArticle, "/media/landing/judicial-candle.webp"),
+  defineArticle(energyArticle, "/media/landing/home-bordeaux-twilight.webp"),
 ];
 
 export const EXISTING_GUIDE: ResourceSummary = {

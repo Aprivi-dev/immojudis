@@ -1,7 +1,7 @@
 {
   "slug": "avocat-obligatoire-encherir-tribunal-choisir-mandat-cout",
   "publishedAt": "2026-10-15",
-  "updatedAt": "2026-10-15",
+  "updatedAt": "2026-10-31",
   "title": "Enchérir au tribunal : l’avocat obligatoire, comment le choisir, quel mandat lui donner",
   "seoTitle": "Avocat pour enchérir au tribunal : choix et coût",
   "category": "Les fondamentaux",
@@ -91,26 +91,12 @@
       "title": "Ce que coûte son intervention",
       "paragraphs": [
         "Le coût de l’intervention de l’avocat comporte trois éléments, d’après Service-Public : les honoraires, les émoluments et les débours (ces derniers sont des sommes avancées pour votre compte, non une rémunération).",
-        "Les émoluments sont tarifés par le Code de commerce. En saisie immobilière et en licitation, l’émolument proportionnel au prix est réparti entre l’avocat poursuivant, qui en perçoit les trois quarts, et l’avocat de l’adjudicataire, qui perçoit le quart restant (art. A. 444-191). Il se calcule par tranches dégressives (art. A. 444-102). À titre d’illustration, pour un prix de 150 000 €, le barème en vigueur pour les procédures ouvertes depuis le 1er janvier 2021 donne environ 2 990 € hors taxe d’émolument total (environ 3 590 € avec 20 % de TVA). Les trois quarts reviennent à l’avocat poursuivant, environ 2 240 € hors taxe, le dernier quart à l’avocat de l’adjudicataire, soit environ 750 € hors taxe. L’adjudicataire supporte en principe l’ensemble de cet émolument en plus du prix, comme le détaille l’article « Frais d’une vente aux enchères judiciaire ». Ces chiffres sont un repère, à confirmer avec l’avocat.",
+        "Les émoluments sont tarifés par le Code de commerce. En saisie immobilière et en licitation, l’émolument proportionnel au prix est réparti entre l’avocat poursuivant, qui en perçoit les trois quarts, et l’avocat de l’adjudicataire, qui perçoit le quart restant (art. A. 444-191). Il se calcule par tranches dégressives (art. A. 444-102). À titre d’illustration, pour un prix de 150 000 €, le barème en vigueur le 31 octobre 2026 (Légifrance) donne environ 2 990 € hors taxe d’émolument total (environ 3 590 € avec 20 % de TVA). Les trois quarts reviennent à l’avocat poursuivant, environ 2 240 € hors taxe, le dernier quart à l’avocat de l’adjudicataire, soit environ 750 € hors taxe. L’adjudicataire supporte en principe l’ensemble de cet émolument en plus du prix, comme le détaille l’article « Frais d’une vente aux enchères judiciaire ». Ces chiffres sont un repère, à confirmer avec l’avocat.",
         "Les honoraires correspondent aux prestations de l’avocat qui ne sont pas couvertes par le tarif réglementé (par exemple l’étude du cahier des conditions de vente et le conseil). Ils sont fixés avec l’avocat, dans le respect de la déontologie. Service-Public précise que, dans certaines matières dont la saisie immobilière et la licitation, la rémunération est tarifée : demandez donc à votre avocat ce qui relève de l’émolument et ce qui relève des honoraires. Les pages officielles consultées ne donnent pas de montant type d’honoraires : comparez deux ou trois devis et demandez ce qui est inclus (étude du cahier, présence à l’audience, formalités après la vente). Les débours sont les sommes que l’avocat avance pour votre compte et vous refacture au réel. Il peut aussi demander une provision à l’avance. Si vous n’êtes pas adjudicataire, demandez avant l’audience ce qui resterait dû."
       ],
       "bullets": [
         "À demander par écrit : le montant ou le mode de calcul des honoraires, les débours prévisibles, la provision éventuelle, ce qui est dû si vous n’emportez pas la vente.",
         "À rapprocher du reste du budget : l’article « Frais d’une vente aux enchères judiciaire » détaille les frais de poursuite, les droits de mutation et le simulateur."
-      ]
-    },
-    {
-      "id": "questions",
-      "title": "Questions fréquentes",
-      "paragraphs": [
-        "En saisie immobilière au tribunal : quelques réponses courtes, à confronter à votre dossier."
-      ],
-      "bullets": [
-        "Puis-je enchérir moi-même ? Non, pas en vente forcée au tribunal (art. R. 322-40).",
-        "Mon avocat peut-il représenter deux enchérisseurs ? Non : il ne peut être porteur que d’un seul mandat (art. R. 322-40).",
-        "Puis-je acheter pour une personne que je désignerai plus tard ? Non : l’adjudication ne peut pas donner lieu à déclaration de command (art. L. 322-8).",
-        "Que devient ma garantie si je perds ? Elle est restituée dès l’issue de l’audience à l’enchérisseur qui n’est pas déclaré adjudicataire (art. R. 322-41).",
-        "Mon avocat peut-il compléter mon identité après la vente ? Oui, si elle était incomplète : il remet une déclaration écrite au greffe au plus tard le troisième jour ouvrable suivant l’audience (art. R. 322-61)."
       ]
     }
   ],
@@ -194,6 +180,29 @@
     {
       "label": "Immojudis — Guide des ventes immobilières judiciaires : lexique (adjudication)",
       "url": "/ventes-immobilieres-judiciaires#lexique-adjudication"
+    }
+  ],
+  "directAnswer": "Oui : pour une vente forcée au tribunal (saisie immobilière), les enchères sont portées par un avocat inscrit au barreau du tribunal judiciaire où la vente est poursuivie : vous ne pouvez pas enchérir seul (art. R. 322-40 du Code des procédures civiles d’exécution). Avant l’audience, il se fait remettre une garantie de 10 % de la mise à prix, avec un minimum de 3 000 €. Son intervention coûte des émoluments tarifés, des honoraires convenus avec lui et des débours.",
+  "faq": [
+    {
+      "question": "Puis-je enchérir moi-même ?",
+      "answer": "Non, pas en vente forcée au tribunal : les enchères sont portées par un avocat du barreau du tribunal concerné (art. R. 322-40)."
+    },
+    {
+      "question": "Mon avocat peut-il représenter deux enchérisseurs ?",
+      "answer": "Non : il ne peut être porteur que d’un seul mandat (art. R. 322-40). Il faut donc le solliciter assez tôt."
+    },
+    {
+      "question": "Puis-je acheter pour une personne que je désignerai plus tard ?",
+      "answer": "Non : l’adjudication ne peut pas donner lieu à déclaration de command, c’est-à-dire à la désignation d’un acquéreur après coup (art. L. 322-8)."
+    },
+    {
+      "question": "Que devient ma garantie si je perds ?",
+      "answer": "Elle est restituée dès l’issue de l’audience à l’enchérisseur qui n’est pas déclaré adjudicataire (art. R. 322-41)."
+    },
+    {
+      "question": "Mon avocat peut-il compléter mon identité après la vente ?",
+      "answer": "Oui, si elle était incomplète : il remet une déclaration écrite au greffe au plus tard le troisième jour ouvrable suivant l’audience (art. R. 322-61)."
     }
   ]
 }

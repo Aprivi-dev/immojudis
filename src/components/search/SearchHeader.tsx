@@ -19,6 +19,7 @@ import {
   SORT_OPTIONS,
 } from "@/lib/search/search-filters";
 import { departmentFromCode } from "@/lib/department-pages";
+import { PLAN_LIMITS } from "@/lib/plans";
 import { resolveFrenchGeoSearch } from "@/lib/search/french-geo-search";
 import type { ResultsView } from "@/lib/search/results-view";
 import type { SalesSearchParams, SearchSortKey } from "@/lib/search/search-url-state";
@@ -51,6 +52,9 @@ export function SearchHeader({
   dailyAlertsAllowed = false,
   emailRecapEnabled = false,
   pepitesActive = false,
+  signupLinks,
+  freeAlertUsage = null,
+  onAlertDialogOpen,
   wideMap,
   isDesktop = false,
   onFiltersOpenChange,
@@ -71,6 +75,12 @@ export function SearchHeader({
   emailRecapEnabled?: boolean;
   /** Les pépites sont ouvertes au public : la pastille « Pépites seulement » est proposée. */
   pepitesActive?: boolean;
+  /** Adresses d'inscription des pastilles réservées aux comptes (visiteur sans compte). */
+  signupLinks?: { belowRange: string; noPointsToVerify: string };
+  /** Alerte gratuite : alertes actives du compte (`used`) sur `limit`, quand c'est connu. */
+  freeAlertUsage?: FreeAlertUsage | null;
+  /** La fenêtre de création d'alerte s'ouvre (compte connecté) : de quoi lire l'usage de l'alerte gratuite. */
+  onAlertDialogOpen?: () => void;
   wideMap: boolean;
   isDesktop?: boolean;
   onFiltersOpenChange: (open: boolean) => void;
@@ -114,6 +124,8 @@ export function SearchHeader({
                 signedIn={signedIn}
                 dailyAllowed={dailyAlertsAllowed}
                 emailRecapEnabled={emailRecapEnabled}
+                freeAlertUsage={dailyAlertsAllowed ? null : freeAlertUsage}
+                onOpen={onAlertDialogOpen}
                 onClick={onSaveSearch}
               />
             ) : null}
@@ -122,6 +134,7 @@ export function SearchHeader({
               setDraft={setDraft}
               preview={!signedIn}
               pepitesActive={pepitesActive}
+              signupLinks={signupLinks}
             />
             <div className="hidden lg:flex flex-wrap items-center gap-2">
               <HomeTypeFilter draft={draft} setDraft={setDraft} />
@@ -157,6 +170,8 @@ export function SearchHeader({
                 signedIn={signedIn}
                 dailyAllowed={dailyAlertsAllowed}
                 emailRecapEnabled={emailRecapEnabled}
+                freeAlertUsage={dailyAlertsAllowed ? null : freeAlertUsage}
+                onOpen={onAlertDialogOpen}
                 onClick={onSaveSearch}
               />
               <LayoutToggle wideMap={wideMap} onToggle={onToggleLayout} />
@@ -212,7 +227,7 @@ export function GeographicSearch({
         event.preventDefault();
         apply();
       }}
-      className="relative flex min-w-0 basis-0 flex-1 items-center gap-1 rounded-md border border-line bg-white focus-within:outline-2 focus-within:outline-gold-soft sm:basis-auto sm:flex-1"
+      className="relative flex min-w-0 basis-0 flex-1 items-center gap-1 rounded-md border border-field-border bg-white focus-within:outline-2 focus-within:outline-gold-soft sm:basis-auto sm:flex-1"
     >
       <SearchIcon className="ml-3 h-5 w-5 shrink-0" />
       <input
@@ -446,6 +461,7 @@ export function SortDropdown({
   investmentScore = false,
   sort,
   onChange,
+  bare = false,
 }: {
   preview?: boolean;
   hasCenter?: boolean;
@@ -453,15 +469,25 @@ export function SortDropdown({
   investmentScore?: boolean;
   sort: SearchSortKey;
   onChange: (sort: SearchSortKey) => void;
+  /** Sans cadre ni icône : le tri est un segment d'un contrôle joint (voir `SortAndSaleTypeControl`). */
+  bare?: boolean;
 }) {
   return (
-    <label className="relative inline-flex min-h-11 min-w-0 max-w-full items-center rounded-md border border-line bg-white shadow-sm">
-      <ArrowUpDown className="ml-3 h-4 w-4 shrink-0 text-ink-soft" />
+    <label
+      className={`relative inline-flex min-h-11 min-w-0 items-center ${
+        bare
+          ? "flex-[3] focus-within:outline-2 focus-within:-outline-offset-2 focus-within:outline-gold-soft"
+          : "max-w-full rounded-md border border-line bg-white shadow-sm"
+      }`}
+    >
+      {bare ? null : <ArrowUpDown className="ml-3 h-4 w-4 shrink-0 text-ink-soft" />}
       <span className="sr-only">Tri</span>
       <select
         value={sort}
         onChange={(event) => onChange(event.target.value as SearchSortKey)}
-        className="h-full w-full min-w-0 cursor-pointer appearance-none text-ellipsis bg-transparent py-0 pl-2 pr-9 text-sm font-bold text-brand-navy outline-none"
+        className={`h-full w-full min-w-0 cursor-pointer appearance-none text-ellipsis bg-transparent py-0 pr-9 text-sm font-bold text-brand-navy outline-none ${
+          bare ? "pl-3" : "pl-2"
+        }`}
       >
         {SORT_OPTIONS.filter(
           (option) =>
@@ -479,6 +505,23 @@ export function SortDropdown({
       </select>
       <ChevronDown className="pointer-events-none absolute right-2.5 h-4 w-4 text-ink-soft" />
     </label>
+  );
+}
+
+/**
+ * Tri et type de vente en UN seul contrôle (deux listes déroulantes jointes, 44 px de haut) : avant,
+ * le tri, puis une rangée de pastilles de type de vente, prenaient chacun une ligne avant la première
+ * annonce. Chaque liste garde son nom accessible (« Tri », « Type de vente »).
+ */
+export function SortAndSaleTypeControl({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      role="group"
+      aria-label="Tri et type de vente"
+      className="inline-flex min-w-0 max-w-full flex-1 items-stretch divide-x divide-line rounded-md border border-line bg-white shadow-sm sm:flex-none"
+    >
+      {children}
+    </div>
   );
 }
 
@@ -527,6 +570,20 @@ export function ResultsViewToggle({
 
 export type AlertFrequencyChoice = "daily" | "weekly";
 
+/**
+ * Alertes actives d'un compte gratuit : celles de l'offre Découverte (`PLAN_LIMITS`, une seule ; la
+ * base refuse la suivante, voir `20260909121656_discovery_geographic_alerts.sql`). Le repli `1` ne
+ * sert qu'au typage (`null` voudrait dire « sans limite ») ; un test garde les deux d'accord.
+ */
+export const FREE_ALERT_LIMIT = PLAN_LIMITS.decouverte.watchedZones ?? 1;
+
+export type FreeAlertUsage = { used: number; limit: number };
+
+/** « 1 alerte gratuite (0/1 utilisée) » : ce que le compte gratuit permet, dit avant de créer. */
+function freeAlertUsageText({ used, limit }: FreeAlertUsage): string {
+  return `${limit} alerte${limit > 1 ? "s" : ""} gratuite${limit > 1 ? "s" : ""} (${Math.min(used, limit)}/${limit} utilisée${limit > 1 ? "s" : ""})`;
+}
+
 export type SaveSearchOptions = {
   frequency: AlertFrequencyChoice;
   /** Case « email récapitulatif » cochée : le consentement est donné à la création de l'alerte. */
@@ -539,10 +596,13 @@ export function SaveSearchButton({
   signedIn = false,
   dailyAllowed = false,
   emailRecapEnabled = false,
+  freeAlertUsage = null,
+  onOpen,
   label = "Créer une alerte",
   onClick,
 }: {
   saving: boolean;
+  /** Version mobile : l'icône et le mot « Alerte » (le nom accessible reste « Créer une alerte »). */
   compact?: boolean;
   /** Texte du bouton (hors version compacte). */
   label?: string;
@@ -550,6 +610,10 @@ export function SaveSearchButton({
   signedIn?: boolean;
   dailyAllowed?: boolean;
   emailRecapEnabled?: boolean;
+  /** Compte gratuit : l'usage de l'alerte gratuite, rappelé dans la fenêtre de création. */
+  freeAlertUsage?: FreeAlertUsage | null;
+  /** Appelé à l'ouverture de la fenêtre de création (compte connecté). */
+  onOpen?: () => void;
   onClick: (options?: SaveSearchOptions) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -567,16 +631,22 @@ export function SaveSearchButton({
       title="Créer une alerte à partir de cette recherche"
       onClick={signedIn ? undefined : () => onClick()}
       className={`inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md bg-brand-navy text-sm font-semibold text-white shadow-sm transition-colors hover:bg-brand-navy-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft disabled:cursor-not-allowed disabled:bg-surface-tint disabled:text-ink-soft ${
-        compact ? "size-11" : "h-10 px-3"
+        compact ? "h-11 px-3" : "h-10 px-3"
       }`}
     >
       {saving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Bell className="h-4 w-4" />}
-      {compact ? null : label}
+      {compact ? "Alerte" : label}
     </button>
   );
   if (!signedIn) return button;
   return (
-    <PopoverPrimitive.Root open={open} onOpenChange={setOpen}>
+    <PopoverPrimitive.Root
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) onOpen?.();
+      }}
+    >
       <PopoverPrimitive.Trigger asChild>{button}</PopoverPrimitive.Trigger>
       <PopoverPrimitive.Portal>
         <PopoverPrimitive.Content
@@ -589,6 +659,18 @@ export function SaveSearchButton({
             Les nouvelles ventes qui correspondent à cette recherche apparaissent dans vos alertes.
             Vous pouvez aussi les recevoir dans un seul email récapitulatif.
           </p>
+          {freeAlertUsage ? (
+            <p className="mt-2 font-semibold text-brand-navy" data-testid="free-alert-usage">
+              {freeAlertUsageText(freeAlertUsage)}
+              {freeAlertUsage.used >= freeAlertUsage.limit ? (
+                <span className="mt-0.5 block text-xs font-normal text-ink-soft">
+                  Pour en créer une autre, modifiez ou supprimez votre alerte depuis « Mes alertes
+                  ».
+                </span>
+              ) : null}
+            </p>
+          ) : null}
+
           <fieldset className="mt-3">
             <legend className="mb-1 font-semibold">Fréquence</legend>
             <label

@@ -4,7 +4,8 @@ import { resolve } from "node:path";
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_ANALYSIS_OFFER_LABEL, ANALYSIS_TRIAL_DAYS } from "@/lib/analysis-offer";
-import { LEGAL_DOCUMENTS, PREVIOUS_LEGAL_DOCUMENTS } from "@/lib/legal-documents";
+import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
+import { PREVIOUS_LEGAL_DOCUMENTS } from "@/lib/legal-documents-previous";
 import { PAST_DUE_GRACE_DAYS, PLAN_LIMITS } from "@/lib/plans";
 import { TermsPage } from "./conditions-generales";
 import { LegalPage } from "./legal";
@@ -62,9 +63,15 @@ describe("conditions générales", () => {
       `Prix de l’abonnement Analyse : ${DEFAULT_ANALYSIS_OFFER_LABEL}. La souscription n’est pas encore ouverte.`,
     );
     cleanup();
-    // Only a label stating the billed price passes the build (scripts/verify-required-env.mjs).
+    // Only a label stating the billed price (scripts/verify-required-env.mjs) and « TTC »
+    // (resolveAnalysisOfferLabel) is shown; one without « TTC » gives way to the approved label.
+    vi.stubEnv("NEXT_PUBLIC_ANALYSIS_OFFER_LABEL", "59 € TTC par mois");
+    expect(pageText(<TermsPage />)).toContain("Prix de l’abonnement Analyse : 59 € TTC par mois");
+    cleanup();
     vi.stubEnv("NEXT_PUBLIC_ANALYSIS_OFFER_LABEL", "59 € / mois");
-    expect(pageText(<TermsPage />)).toContain("Prix de l’abonnement Analyse : 59 € / mois");
+    expect(pageText(<TermsPage />)).toContain(
+      `Prix de l’abonnement Analyse : ${DEFAULT_ANALYSIS_OFFER_LABEL}`,
+    );
   });
 
   it("décrivent un seul chemin de résiliation, aligné sur le bouton réel du compte", () => {
@@ -192,10 +199,11 @@ describe("conditions générales : classement, référencement et mise en avant"
     for (const link of links) expect(link.getAttribute("href")).toBe("/methode-pepites");
   });
 
-  it("la politique de confidentialité est en version 2026-10-26.1 (contrôle du risque d'inondation) ; la 2026-10-25.1 est archivée", () => {
-    expect(LEGAL_DOCUMENTS.privacy.version).toBe("2026-10-26.1");
-    expect(LEGAL_DOCUMENTS.privacy.effectiveDate).toBe("26 octobre 2026");
-    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.version).toBe("2026-10-25.1");
+  it("la politique de confidentialité est en version 2026-10-31.1 (traitements complétés) ; les 2026-10-26.1 et 2026-10-25.1 sont archivées", () => {
+    expect(LEGAL_DOCUMENTS.privacy.version).toBe("2026-10-31.1");
+    expect(LEGAL_DOCUMENTS.privacy.effectiveDate).toBe("31 octobre 2026");
+    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.version).toBe("2026-10-26.1");
+    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.earlier[0].version).toBe("2026-10-25.1");
   });
 });
 
@@ -440,11 +448,16 @@ describe("politique de confidentialité", () => {
     expect(text).toContain(
       "journal des fonctions utilisées (compte, vente ou tribunal concerné, date), par exemple pour l’historique ou la valeur d’une vente débloquée",
     );
-    expect(text).toContain("le journal d’usage est conservé 24 mois au plus");
+    expect(text).toContain(
+      "le journal d’usage (quotas et fonctions utilisées) est conservé 24 mois au plus",
+    );
+    expect(text).toContain("distinct des événements de parcours par compte, conservés 90 jours");
     // Les mesures agrégées ne sont plus décrites comme « d'usage » sans personne.
-    expect(text).toContain("Événements de parcours agrégés, sans identifiant de personne");
+    expect(text).toContain(
+      "Événements de parcours du navigateur, agrégés et à valeurs fermées, sans identifiant de personne ni de compte",
+    );
     expect(text).not.toContain("Événements d’usage et de parcours agrégés");
-    expect(text).toContain("Événements d’usage et journaux applicatifs : 24 mois au plus");
+    expect(text).toContain("Journaux applicatifs et données techniques : 24 mois au plus");
   });
 
   it("décrit les rappels d'audience : consentement, retrait en un clic, journal, Resend, durée du journal", () => {
@@ -497,7 +510,9 @@ describe("politique de confidentialité", () => {
   it("décrit le traitement des annonces publiques et la cartographie", () => {
     const text = pageText(<PrivacyPage />);
     expect(text).toContain("Annonces de ventes et pièces publiques");
-    expect(text).toContain("noms remplacés par leur rôle");
+    expect(text).toContain("noms remplacés par leur rôle autant que possible");
+    expect(text).toContain("en cas d’oubli, écrivez-nous pour demander le retrait");
+    expect(text).toContain("ce remplacement est automatique et peut laisser passer un nom");
     expect(text).toContain("Intérêt légitime à informer le public");
     expect(text).toContain("opposition et demande de retrait par email, sans compte");
     expect(text).toContain("Cartographie et géocodage (Mapbox, IGN)");
@@ -545,7 +560,7 @@ describe("politique de confidentialité", () => {
 
   it("permet à une personne citée de demander retrait ou rectification sans compte", () => {
     expect(pageText(<PrivacyPage />)).toContain(
-      "Si vous êtes cité dans une annonce, vous pouvez demander la rectification ou le retrait à contact@immojudis.example, sans créer de compte.",
+      "Si vous êtes cité dans une annonce, en cas d’oubli notamment, écrivez à contact@immojudis.example pour demander la rectification ou le retrait, sans créer de compte.",
     );
   });
 
@@ -555,6 +570,42 @@ describe("politique de confidentialité", () => {
     expect(text).toContain("le prestataire d’IA utilisé pour lire les annonces et les pièces");
     expect(text).toContain("Replicate");
     expect(text).toContain("le service de rapport d’erreurs lorsqu’il est configuré");
+  });
+
+  it("décrit les événements rattachés au compte, les clics des emails, les retours sur les signaux et les instantanés d'estimation", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).toContain("Mesure du parcours des personnes connectées");
+    expect(text).toContain("clic sur un lien d’un email d’alerte ou de rappel");
+    expect(text).toContain("90 jours après l’événement");
+    expect(text).toContain("Retours « Utile » ou « Pas pertinent » sur les signaux d’une vente");
+    expect(text).toContain("90 jours après le retour");
+    expect(text).toContain("Instantanés d’estimation de marché avant l’audience");
+    expect(text).toContain("36 mois après la date d’audience");
+    expect(text).toContain("Aucun texte libre, aucune adresse IP");
+  });
+
+  it("dit que l'interrupteur de mesure d'audience ne couvre pas les événements par compte, et que l'opposition se fait par écrit", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).toContain(
+      "ne couvre pas ces événements : vous pouvez vous y opposer depuis /mes-droits (demande d’opposition) ou par écrit",
+    );
+    expect(text).toContain(
+      "L’interrupteur ci-dessous ne couvre pas les événements liés à votre compte",
+    );
+    expect(text).toContain("(demande d’opposition) ou écrivez à contact@immojudis.example");
+    expect(text).toContain("indiquez le lien de l’annonce dans votre demande");
+    expect(text).toContain(
+      "arrêter un repère dont la précision se dégrade. Vous pouvez vous y opposer depuis /mes-droits (demande d’opposition) ou par écrit",
+    );
+    expect(text).toContain("Elles sont traitées comme des données personnelles");
+    expect(text).not.toContain("Ces informations ne désignent pas une personne");
+  });
+
+  it("n'affirme aucun réglage Google Analytics non vérifié (paramètre de recherche, 14 mois)", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).not.toContain("paramètre de recherche");
+    expect(text).not.toContain("14 mois");
+    expect(text).toContain("selon la durée réglée dans notre compte Google Analytics");
   });
 
   it("décrit la mesure d'audience, son opposition et une conservation de 25 mois au plus", () => {

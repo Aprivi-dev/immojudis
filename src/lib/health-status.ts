@@ -5,8 +5,9 @@
  *
  * La réponse ne dit que trois choses, sans rien de sensible (ni nom d'alerte, ni nom de source, ni
  * nom de tâche, ni message d'erreur, ni identifiant) :
- * - l'âge du dernier succès de la tâche `operational-health` (Supabase `pg_cron`, toutes les 15 min) :
- *   c'est elle qui évalue toutes les alertes, donc si elle ne passe plus personne n'est averti ;
+ * - l'âge du dernier succès de la tâche `operational-health` (Supabase `pg_cron`, tick de 15 min, passage effectif
+ *   toutes les 30 min depuis `20261110100713`) : c'est elle qui évalue toutes les alertes, donc si elle ne passe
+ *   plus personne n'est averti ;
  * - l'état de la collecte des sources ACTIVÉES (`auction_source_state.enabled`) : l'âge de la plus
  *   ancienne dernière publication complète (`last_publication_complete_at`), et le nombre de sources en
  *   retard. Le verdict ne se calcule pas sur la source la plus récente : une source figée n'est pas
@@ -16,7 +17,11 @@
  *   (pépites, inondation, alertes…) du retard ancien d'une source de collecte, qui rend `collection` rouge en
  *   permanence tant qu'il n'est pas résolu. Il ne change pas `status`.
  */
-export const HEALTH_OPERATIONAL_MAX_AGE_MINUTES = 45;
+/**
+ * Seuil de `operational-health` : 2 x la cadence réelle (30 min) + la durée d'un passage (jusqu'à 5 min). Même valeur
+ * que dans `cron.stale` (`evaluate_operational_health`, migration `20261110120100`) : changer l'un change l'autre.
+ */
+export const HEALTH_OPERATIONAL_MAX_AGE_MINUTES = 65;
 /**
  * Au-delà, une source activée est en retard. Plus large que l'alerte `pipeline.source.<source>.missed`
  * (18 h) : la sonde publique ne doit pas osciller sur un cycle de collecte un peu long.

@@ -7,6 +7,8 @@ import type { AuctionSale } from "@/lib/types";
 const mocks = vi.hoisted(() => ({
   token: "test-token",
   throws: false,
+  importFails: false,
+  fitBounds: vi.fn(),
   handlers: new Map<string, (event?: unknown) => void>(),
   remove: vi.fn(),
   addTo: vi.fn(),
@@ -31,8 +33,8 @@ vi.mock("@/lib/mapbox", () => ({
     "NavigationControl.ZoomIn": "Zoomer",
   }),
 }));
-vi.mock("mapbox-gl", () => ({
-  default: {
+vi.mock("mapbox-gl", () => {
+  const runtime = {
     Map: class {
       canvas = document.createElement("canvas");
       constructor(options: Record<string, unknown>) {
@@ -66,7 +68,9 @@ vi.mock("mapbox-gl", () => ({
       zoomOut() {
         mocks.zoomOut();
       }
-      fitBounds() {}
+      fitBounds(...args: unknown[]) {
+        mocks.fitBounds(...args);
+      }
       easeTo() {
         mocks.easeTo();
       }
@@ -95,12 +99,20 @@ vi.mock("mapbox-gl", () => ({
         return mocks.popupOpen;
       }
     },
-  },
-}));
+  };
+  return {
+    // Un téléchargement qui échoue (réseau coupé) : la lecture de `default` lève, comme `import()` rejeté.
+    get default() {
+      if (mocks.importFails) throw new Error("Loading chunk failed");
+      return runtime;
+    },
+  };
+});
 beforeEach(() => {
   vi.useFakeTimers();
   mocks.token = "test-token";
   mocks.throws = false;
+  mocks.importFails = false;
   mocks.handlers.clear();
   mocks.popupOpen = true;
   mocks.mapOptions.length = 0;
@@ -356,8 +368,9 @@ describe("public map resilience", () => {
     await showMap({ sales: [sale], preview: false });
     act(() => mocks.handlers.get("load")?.());
     const legend = screen.getByRole("list", { name: "Légende de la carte" });
-    expect(legend.textContent).toContain("Une vente (mise à prix)");
+    expect(legend.textContent).toContain("Vente · mise à prix en euros");
     expect(legend.textContent).toContain("Plusieurs ventes, zoomez");
+    expect(legend.textContent).toContain("Position approximative (centre de commune)");
     expect(mocks.mapOptions[0].attributionControl).toBe(true);
     expect(screen.queryByRole("link", { name: /Mapbox/ })).toBeNull();
   });
@@ -720,5 +733,160 @@ describe("public map resilience", () => {
     expect(mocks.setHtml.mock.calls.length).toBe(setHtmlCallsBeforeLateResponse);
     expect(mocks.addTo.mock.calls.length).toBe(addCallsBeforeLateResponse);
     expect(mocks.easeTo.mock.calls.length).toBe(easeCallsBeforeLateResponse);
+  });
+});
+
+describe("démarrage de la carte : échec, délai et nouvel essai", () => {
+  it("arme le délai dès le démarrage de l'effet, avant même la fin du téléchargement de Mapbox", async () => {
+    render(mapElement());
+    // Aucune promesse résolue encore : le minuteur court déjà.
+    expect(vi.getTimerCount()).toBe(1);
+    act(() => {
+      vi.advanceTimersByTime(12_000);
+    });
+    expect(screen.getByText(/La carte n’a pas pu charger/)).toBeTruthy();
+  });
+
+  it("dit que le téléchargement a échoué, sans roue qui tourne, et propose « Réessayer »", async () => {
+    mocks.importFails = true;
+    await showMap();
+    expect(screen.getByText(/La carte n’a pas pu charger/)).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Carte indisponible" })).toBeTruthy();
+    expect(screen.queryByText("Chargement de la carte")).toBeNull();
+    expect(screen.getByRole("button", { name: "Réessayer" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Voir la liste" })).toBeTruthy();
+    // Le délai de 12 s est arrêté : il n'écrase pas le message.
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("« Réessayer » relance le téléchargement et démarre la carte quand le réseau est revenu", async () => {
+    mocks.importFails = true;
+    await showMap();
+    expect(mocks.mapOptions).toHaveLength(0);
+
+    mocks.importFails = false;
+    fireEvent.click(screen.getByRole("button", { name: "Réessayer" }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(mocks.mapOptions).toHaveLength(1);
+    expect(screen.queryByText(/La carte n’a pas pu charger/)).toBeNull();
+    act(() => mocks.handlers.get("load")?.());
+    expect(screen.queryByRole("heading", { name: "Carte indisponible" })).toBeNull();
+  });
+
+  it("propose « Réessayer » aussi quand le chargement dépasse 12 s, mais pas sans jeton", async () => {
+    await showMap();
+    act(() => {
+      vi.advanceTimersByTime(12_000);
+    });
+    expect(screen.getByRole("button", { name: "Réessayer" })).toBeTruthy();
+    cleanup();
+
+    mocks.token = "";
+    await showMap();
+    expect(screen.queryByRole("button", { name: "Réessayer" })).toBeNull();
+  });
+});
+
+describe("cadrage de départ : la zone de l'adresse l'emporte sur la France", () => {
+  const viewport = { north: 45.9, south: 45.6, east: 5.1, west: 4.6 };
+
+  it("cadre la carte sur la zone de l'adresse, sans animation, au premier chargement", async () => {
+    await showMap({ initialViewport: viewport });
+    act(() => mocks.handlers.get("load")?.());
+    expect(mocks.fitBounds).toHaveBeenCalledTimes(1);
+    expect(mocks.fitBounds).toHaveBeenCalledWith(
+      [
+        [4.6, 45.6],
+        [5.1, 45.9],
+      ],
+      expect.objectContaining({ duration: 0, padding: 0 }),
+    );
+  });
+
+  it("sans zone dans l'adresse, cadre la France comme avant", async () => {
+    await showMap();
+    act(() => mocks.handlers.get("load")?.());
+    expect(mocks.fitBounds).toHaveBeenCalledWith(
+      [
+        [-5.6, 41],
+        [9.7, 51.5],
+      ],
+      expect.objectContaining({ duration: 0 }),
+    );
+  });
+
+  it("ne recadre pas sur la France ni sur le centre du lieu une fois la zone restaurée", async () => {
+    const view = await showMap({ initialViewport: viewport, geographicLabel: "Lyon" });
+    act(() => mocks.handlers.get("load")?.());
+    mocks.fitBounds.mockClear();
+    mocks.easeTo.mockClear();
+    act(() => {
+      view.rerender(
+        mapElement({
+          initialViewport: viewport,
+          geographicLabel: "Lyon",
+          locationCenter: { lat: 45.76, lng: 4.83, zoom: 10 },
+        }),
+      );
+    });
+    expect(mocks.fitBounds).not.toHaveBeenCalled();
+    expect(mocks.easeTo).not.toHaveBeenCalled();
+  });
+
+  it("recadre sur un nouveau lieu quand la personne en choisit un autre", async () => {
+    const view = await showMap({ initialViewport: viewport, geographicLabel: "Lyon" });
+    act(() => mocks.handlers.get("load")?.());
+    mocks.easeTo.mockClear();
+    act(() => {
+      view.rerender(
+        mapElement({
+          initialViewport: viewport,
+          geographicLabel: "Pau",
+          locationCenter: { lat: 43.3, lng: -0.37, zoom: 10 },
+        }),
+      );
+    });
+    expect(mocks.easeTo).toHaveBeenCalledTimes(1);
+  });
+
+  it("n'annonce pas le cadrage de départ comme un déplacement (l'adresse n'est pas réécrite)", async () => {
+    const onViewportChange = vi.fn();
+    await showMap({ initialViewport: viewport, onViewportChange, searchAsMove: true });
+    // Redimensionnement avant le chargement : la carte est encore à son cadrage par défaut.
+    act(() => mocks.handlers.get("moveend")?.());
+    act(() => mocks.handlers.get("load")?.());
+    expect(onViewportChange).toHaveBeenCalled();
+    for (const [change] of onViewportChange.mock.calls) {
+      expect(change.initial).toBe(true);
+    }
+
+    onViewportChange.mockClear();
+    act(() => mocks.handlers.get("moveend")?.());
+    expect(onViewportChange).toHaveBeenCalledTimes(1);
+    expect(onViewportChange.mock.calls[0][0].initial).toBe(false);
+  });
+});
+
+describe("regroupements et légende", () => {
+  it("replie la légende derrière un bouton « Légende » de 44 px, fermée par défaut", async () => {
+    await showMap();
+    const button = screen.getByRole("button", { name: /Légende/ });
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    expect(button.className).toContain("min-h-11");
+    const list = screen.getByRole("list", { name: "Légende de la carte" });
+    expect(button.getAttribute("aria-controls")).toBe(list.id);
+    // Fermée sur mobile (masquée par `hidden`), toujours visible dès `sm`.
+    expect(list.className).toContain("hidden");
+    expect(list.className).toContain("sm:block");
+    expect(button.className).toContain("sm:hidden");
+
+    fireEvent.click(button);
+    expect(button.getAttribute("aria-expanded")).toBe("true");
+    expect(list.className).not.toMatch(/(^|\s)hidden(\s|$)/);
+    fireEvent.click(button);
+    expect(button.getAttribute("aria-expanded")).toBe("false");
   });
 });
