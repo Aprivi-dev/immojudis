@@ -67,6 +67,22 @@ tant que ces parcours n'existent pas.
 Pas de désinscription ni de `List-Unsubscribe` sur ces messages : ce sont des messages de sécurité liés à une
 action de la personne, sans contenu commercial.
 
+## Sécurité du lien `/auth/confirmer`
+
+- **`{{ .RedirectTo }}` est inséré brut** dans les gabarits : le dépôt n'a pas de preuve que les gabarits
+  de Supabase acceptent un filtre d'échappement (`urlquery`, `html`), donc aucun n'est utilisé. La page
+  compense : `redirect_to` est le dernier paramètre (tout ce qui suit lui appartient, encodé ou non) et
+  n'est suivi que s'il est une page du site, une fois normalisé (`sameSitePath` : pas de `//`, de `/\`,
+  d'autre origine ni de retour vers la page elle-même). Tout le reste mène à `/bienvenue`.
+- **Liste d'URL autorisées de Supabase** (Authentication > URL Configuration) : la garder stricte, soit
+  `https://immojudis.com/**` seulement, comme dans `supabase/config.toml` (test
+  `supabase-auth-config.test.ts`). Aucune URL de préversion ni `localhost` en production : c'est elle qui
+  décide quel `redirect_to` Supabase accepte d'écrire dans l'email.
+- **Le jeton est dans l'adresse** : `/auth/confirmer?token_hash=…`. Le jeton est à usage unique, mais
+  **ne pas exporter ni partager les journaux Vercel (requêtes, `Request Logs`, drains) sans masquer
+  `token_hash`**. La page est hors mesure d'audience (Google Analytics, Vercel Analytics, Speed Insights),
+  `noindex` et sans référent (`no-referrer`) ; l'adresse est effacée de la barre du navigateur au clic.
+
 ## Expéditeur conseillé
 
 « Immojudis <compte@immojudis.com> » : le nom d'affichage est « Immojudis » (jamais « ImmoJudis »), l'adresse

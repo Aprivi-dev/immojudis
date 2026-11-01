@@ -200,10 +200,26 @@ function FailedLink({ link }: { link: AuthLink }) {
             </p>
           ) : null}
         </form>
-      ) : (
-        <Link href="/mot-de-passe-oublie" className="mt-5 block text-sm underline">
-          Demander un nouveau lien
+      ) : link.type === "magiclink" ? (
+        <Link href="/login" className="mt-5 block text-sm underline">
+          Vous connecter pour recevoir un nouveau lien
         </Link>
+      ) : link.type === "invite" ? (
+        <p className="mt-5 text-sm leading-relaxed">
+          Pour recevoir une nouvelle invitation, contactez la personne qui vous l’a envoyée ou{" "}
+          <Link href="/contact" className="underline">
+            écrivez-nous
+          </Link>
+          .
+        </p>
+      ) : (
+        <p className="mt-5 text-sm leading-relaxed">
+          Pour confirmer votre nouvelle adresse, reprenez le changement depuis{" "}
+          <Link href="/compte" className="underline">
+            votre compte
+          </Link>
+          .
+        </p>
       )}
     </>
   );

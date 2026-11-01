@@ -148,6 +148,43 @@ describe("page de confirmation des liens d'email", () => {
   });
 
   it.each([
+    ["magiclink", "Me connecter", "/login", /Vous connecter/],
+    ["invite", "Accepter l’invitation", "/contact", /contactez la personne/],
+    ["email_change", "Confirmer le changement", "/compte", /reprenez le changement/],
+  ])(
+    "propose, pour un lien %s échoué, la suite qui lui convient",
+    async (type, button, href, text) => {
+      mocks.verifyOtp.mockResolvedValue({ data: {}, error: { code: "otp_expired" } });
+      open(`?token_hash=${HASH}&type=${type}`);
+      render(<AuthLinkConfirmation />);
+      fireEvent.click(await screen.findByRole("button", { name: button }));
+      await screen.findByRole("alert");
+      expect(document.body.textContent).toMatch(text);
+      expect(screen.getAllByRole("link").some((link) => link.getAttribute("href") === href)).toBe(
+        true,
+      );
+      expect(document.body.textContent).not.toContain("mot de passe oublié");
+    },
+  );
+
+  it("n'envoie pas l'email de renvoi vers un autre site", async () => {
+    mocks.verifyOtp.mockResolvedValue({ data: {}, error: { code: "otp_expired" } });
+    open(
+      `?token_hash=${HASH}&type=signup&redirect_to=${encodeURIComponent("https://immojudis.com//evil.example")}`,
+    );
+    render(<AuthLinkConfirmation />);
+    fireEvent.click(await screen.findByRole("button", { name: "Confirmer mon adresse" }));
+    fireEvent.change(await screen.findByLabelText("Adresse email du compte"), {
+      target: { value: "claire@example.test" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Renvoyer l’email" }));
+    await waitFor(() => expect(mocks.resend).toHaveBeenCalled());
+    const target = mocks.resend.mock.calls[0][0].options.emailRedirectTo as string;
+    expect(new URL(target).origin).toBe(window.location.origin);
+    expect(target).not.toContain("evil.example");
+  });
+
+  it.each([
     ["sans jeton", "?type=signup"],
     ["sans type", `?token_hash=${HASH}`],
     ["avec un type inconnu", `?token_hash=${HASH}&type=admin`],

@@ -342,7 +342,7 @@ describe("AdminInformationAgentMissionsPanel", () => {
     mocks.preview.mockResolvedValue(
       previewResponse({
         addressOrigin: {
-          text: "Adresse de contact publique de votre juridiction, issue du référentiel des tribunaux tenu par Immojudis ; l’annonce ne donne aucune adresse d’avocat.",
+          text: "adresse de contact de votre juridiction, issue du référentiel des tribunaux tenu par Immojudis ; l’annonce ne donne aucune adresse d’avocat.",
           url: null,
           automated: false,
           courtRegistry: true,

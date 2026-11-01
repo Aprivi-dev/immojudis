@@ -8,7 +8,7 @@
  * - la « mise en avant », le partenariat, la mise en relation, la clientèle, la gratuité ;
  * - les prix et tarifs d'Immojudis ;
  * - tout lien, sauf le site d'Immojudis sur ses pages utiles au destinataire (politique de
- *   confidentialité, dépôt privé, opposition), son logo (image), la plainte CNIL et la page source de
+ *   confidentialité, dépôt privé, opposition), son logo (image, en `src` d'un `<img>` seulement), la plainte CNIL et la page source de
  *   l'adresse ;
  *   les liens sont contrôlés sur le texte entier, y compris dans les textes repris de l'annonce, et
  *   un nom de domaine écrit sans « http » (`exemple.fr/offres`) est traité comme un lien ;
@@ -81,10 +81,18 @@ const ALLOWED_APP_PATHS: RegExp[] = [
 
 /**
  * Logos de la charte des emails (`public/brand/email/`, `email-layout.ts`) : des images chargées par le
- * message, pas des liens. Admis seulement sur le site d'Immojudis lui-même, quelle que soit l'origine
- * de l'environnement (un aperçu de préproduction charge le logo de production).
+ * message, pas des liens. Admis UNIQUEMENT comme valeur de l'attribut `src` d'une balise `<img>`
+ * (`withoutBrandLogoImages` les retire avant la recherche des liens) : le même fichier dans un `href`,
+ * dans un texte ou sous une autre forme reste un lien refusé. Seulement sur le site d'Immojudis
+ * lui-même, quelle que soit l'origine de l'environnement (un aperçu de préproduction charge le logo de
+ * production).
  */
-const BRAND_LOGO_URL = /^immojudis\.com\/brand\/email\/immojudis-logo-email(?:-dark)?-v\d+\.png$/;
+const BRAND_LOGO_IMG_SRC =
+  /(<img\b[^>]*?\bsrc\s*=\s*")https:\/\/immojudis\.com\/brand\/email\/immojudis-logo-email(?:-dark)?-v\d+\.png(")/gi;
+
+function withoutBrandLogoImages(text: string): string {
+  return text.replace(BRAND_LOGO_IMG_SRC, "$1$2");
+}
 
 /** Hôtes tiers admis (sans « www. ») : la plainte CNIL. */
 const ALLOWED_EXTERNAL_HOSTS = new Set(["cnil.fr"]);
@@ -233,17 +241,10 @@ function linkMentions(
       host === appHost &&
       ALLOWED_APP_PATHS.some((pattern) => pattern.test(url.pathname));
     const isAllowedExternal = ALLOWED_EXTERNAL_HOSTS.has(host);
-    const isBrandLogo = !bare && !url.search && BRAND_LOGO_URL.test(`${host}${url.pathname}`);
     // Nommer le site (« sur immojudis.com », « sur Licitor ») sans page précise n'est pas un lien.
     const isBareHostName =
       bare && url.pathname === "/" && !url.search && (host === appHost || allowedHosts.has(host));
-    if (
-      !isAllowedSource &&
-      !isAllowedApp &&
-      !isAllowedExternal &&
-      !isBareHostName &&
-      !isBrandLogo
-    ) {
+    if (!isAllowedSource && !isAllowedApp && !isAllowedExternal && !isBareHostName) {
       found.push({ rule: "link", excerpt: candidate });
     }
   }
@@ -262,7 +263,7 @@ export function findInformationAgentCommercialMentions(
   const normalized = normalizeInformationAgentGuardText(text);
   // Les liens sont contrôlés sur le texte entier (attributs et textes de l'annonce compris), les
   // mots sur le texte visible, une fois les textes de l'annonce écartés.
-  const links = linkMentions(normalized, options);
+  const links = linkMentions(withoutBrandLogoImages(normalized), options);
   const visible = ALLOWED_PHRASES.reduce(
     (current, pattern) => current.replace(pattern, " "),
     withoutIgnoredTexts(normalized, options.ignore ?? []).replace(/<[^>]+>/g, " "),

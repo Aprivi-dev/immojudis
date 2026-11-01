@@ -75,22 +75,31 @@ export function parseAuthLink(search: string): AuthLink | null {
 export function postConfirmationPath(link: AuthLink, origin: string): string {
   if (link.type === "recovery") return PASSWORD_RESET_PATH;
   if (!link.redirectTo) return DEFAULT_AFTER_CONFIRMATION_PATH;
-  // Une adresse relative « // » ou « \ » serait lue comme une adresse d'un autre site.
-  if (/^[/\\]{2}/.test(link.redirectTo) || /^\/[\\]/.test(link.redirectTo)) {
-    return DEFAULT_AFTER_CONFIRMATION_PATH;
-  }
+  return sameSitePath(link.redirectTo, origin) ?? DEFAULT_AFTER_CONFIRMATION_PATH;
+}
+
+/**
+ * Chemin (`pathname + search + hash`) d'une adresse du site, ou `null`. Les contrôles portent sur le
+ * résultat NORMALISÉ par `URL` (`/.//evil`, `/a/..//evil`, `/%2e//evil`, `/./\evil` deviennent
+ * `//evil`, que `router.replace` lirait comme un autre site), jamais sur la chaîne brute : le chemin
+ * doit commencer par UN seul `/`, et résolu contre l'origine il doit y rester. La page de
+ * confirmation elle-même est refusée (boucle), sans tenir compte de la casse ni des `/` multiples.
+ */
+export function sameSitePath(candidate: string, origin: string): string | null {
   try {
-    const target = new URL(link.redirectTo, origin);
-    if (target.origin !== new URL(origin).origin) return DEFAULT_AFTER_CONFIRMATION_PATH;
-    if (
-      target.pathname === AUTH_CONFIRMATION_PATH ||
-      target.pathname.startsWith(`${AUTH_CONFIRMATION_PATH}/`)
-    ) {
-      return DEFAULT_AFTER_CONFIRMATION_PATH;
+    const base = new URL(origin).origin;
+    const target = new URL(candidate, base);
+    if (target.origin !== base) return null;
+    const path = `${target.pathname}${target.search}${target.hash}`;
+    if (!/^\/(?![/\\])/.test(path)) return null;
+    if (new URL(path, base).origin !== base) return null;
+    const flat = target.pathname.toLowerCase().replace(/\/{2,}/g, "/");
+    if (flat === AUTH_CONFIRMATION_PATH || flat.startsWith(`${AUTH_CONFIRMATION_PATH}/`)) {
+      return null;
     }
-    return `${target.pathname}${target.search}${target.hash}`;
+    return path;
   } catch {
-    return DEFAULT_AFTER_CONFIRMATION_PATH;
+    return null;
   }
 }
 

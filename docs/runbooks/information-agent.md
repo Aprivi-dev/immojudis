@@ -82,7 +82,7 @@ pas d'adresse, ou dont l'adresse est refusée (opposition, rebond), n'a pas de b
 - **Origine distincte** : `source_kind = court_registry_fallback` au registre des contacts ; `metadata.address_origin`,
   `metadata.court_registry_fallback` (`court_code`, `court_name`) et `metadata.contact_discovery.method` de la mission ;
   `address_origin`, `court_code` et `court_name` dans `information_agent_messages.metadata` ; `recipientOrigin` dans les
-  missions de l'API d'administration. L'aperçu cite l'origine : « Adresse de contact publique de votre juridiction, issue du référentiel
+  missions de l'API d'administration. L'aperçu cite l'origine : « adresse de contact de votre juridiction, issue du référentiel
   des tribunaux tenu par Immojudis… » et porte un repère « Greffe » (`addressOrigin.courtRegistry`). Ce n'est ni une recherche
   automatique ni une page consultée : l'interrupteur de recherche n'est pas concerné.
 - **L'exclusion `court` reste en vigueur** pour toute autre adresse de juridiction (lue dans l'annonce, saisie à la main,
