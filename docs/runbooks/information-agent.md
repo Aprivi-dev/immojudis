@@ -69,6 +69,37 @@ Réseau : le contrôle d'adresse repose sur la **résolution DNS locale** du ser
 
 Limites connues : seule la colonne `lawyer_contact` des autres annonces est lue pour la source 1 (pas leurs blocs source) ; pas de journal de consultation distinct (la trace par mission en tient lieu) ; le user-agent pointe vers `/contact` et **doit pointer vers `/agent-information`** quand cette page sera publiée (`docs/agent-information-brouillon.md`) : c'est une condition d'activation ; la politique de confidentialité et l'analyse de seuil d'AIPD restent à faire valider par un avocat.
 
+### Greffe de secours (vente au tribunal sans avocat)
+
+Ajout du 01/11/2026, décision du propriétaire. Pour une vente au tribunal (saisie immobilière ou autre vente judiciaire
+confirmée par l'annonce, jamais notaires, cessions de l'État ni AGRASC) qui n'a **aucun** destinataire avocat ou cabinet
+exploitable (ni dans l'annonce ou le registre, ni retrouvé par la recherche, aucune adresse saisie, aucun professionnel opposé
+par identité), le brouillon est adressé au greffe de SON tribunal, avec l'adresse du référentiel `court_registry_contacts`
+(fichier `docs/reference/tribunaux-judiciaires-emails-2026-11-01.md`). Une vente sans tribunal reconnu, ou dont le tribunal n'a
+pas d'adresse, ou dont l'adresse est refusée (opposition, rebond), n'a pas de brouillon au greffe.
+
+- **Origine distincte** : `source_kind = court_registry_fallback` au registre des contacts ; `metadata.address_origin`,
+  `metadata.court_registry_fallback` (`court_code`, `court_name`) et `metadata.contact_discovery.method` de la mission ;
+  `address_origin`, `court_code` et `court_name` dans `information_agent_messages.metadata` ; `recipientOrigin` dans les
+  missions de l'API d'administration. L'aperçu cite l'origine : « adresse de contact de votre juridiction… reprise du référentiel
+  des tribunaux d'Immojudis ». Ce n'est ni une recherche automatique ni une page consultée : l'interrupteur de recherche
+  n'est pas concerné.
+- **L'exclusion `court` reste en vigueur** pour toute autre adresse de juridiction (lue dans l'annonce, saisie à la main,
+  adresse du référentiel modifiée) ; RPVA, Ordre, CARPA et adresses techniques restent exclus. L'adresse est revérifiée dans le
+  référentiel à l'aperçu et à l'envoi.
+- **Message adapté** (`src/lib/information-agent/court-registry-template.ts`) : « Madame, Monsieur, », une seule question :
+  « Pouvez-vous nous indiquer l'avocat poursuivant de cette vente, ou nous transmettre les pièces publiques du dossier… ».
+  Aucune des questions posées à un avocat, aucun nom de personne. Le modèle n'est pas éditable dans l'administration.
+- **Gardes ordinaires conservées** : envoi désactivé et canari, opposition, rebond permanent, aperçu obligatoire, une validation
+  humaine par message, un seul message par adresse et par vente, délai de 30 jours par adresse. **Le délai de 30 jours par
+  adresse s'applique au greffe** : une adresse de greffe ne reçoit donc qu'un message par période de 30 jours, toutes ventes
+  confondues, et le plafond quotidien ci-dessous ne peut pas être atteint tant que ce délai tient (Cayenne a deux adresses).
+  Pour écrire plus souvent à un même greffe, il faut lever ce délai pour les greffes ET adapter le pied RGPD (« au plus une
+  fois par période de 30 jours »), décision à faire relire par le juridique.
+- **Limites propres aux greffes** : une sollicitation par tribunal et par vente, et un plafond par tribunal et par jour (heure
+  de Paris), `INFORMATION_AGENT_COURT_REGISTRY_DAILY_CAP` (défaut 3, `0` : aucune demande aux greffes). Contrôlées à la création
+  du brouillon, à l'aperçu, avant l'envoi et après l'approbation (la plus ancienne approbation passe).
+
 ### Source des adresses, conservation et opposition par identité
 
 - **Source typée.** Chaque adresse retenue porte dans `information_agent_contacts` : `source_kind` (annonce de la vente, autre annonce du professionnel, site du cabinet, annuaire officiel avec son nom dans `source_directory_name`, saisie d'administrateur), l'URL exacte, `observed_at` (date de relevé) et l'auteur (`observed_by` : agent ou administrateur). Une adresse saisie à la main est enregistrée à l'envoi avec la page publique indiquée et la date de création du brouillon.
@@ -107,6 +138,7 @@ Limites connues : seule la colonne `lawyer_contact` des autres annonces est lue 
 | `INFORMATION_AGENT_EMAIL_FROM`, `RESEND_API_KEY`, `INFORMATION_AGENT_INBOUND_DOMAIN`                   | Expéditeur (sous-domaine dédié recommandé), clé, domaine de réception.                                                                                                                                                                                                                                                                                                                                                                  |
 | `INFORMATION_AGENT_ADDRESS_SEARCH_ENABLED`                                                             | `true` autorise la recherche automatique d’adresse (autre annonce, site du cabinet). Absente ou différente de `true` : recherche coupée. Ne passer à `true` qu’après les conditions de la section « Recherche automatique de l'adresse (niveau 1) ».                                                                                                                                                                                    |
 | `INFORMATION_AGENT_SIGNATURE_NAME`                                                                     | Personne qui signe les demandes (« Prénom Nom, fonction »). Vide : « L’équipe Immojudis ».                                                                                                                                                                                                                                                                                                                                              |
+| `INFORMATION_AGENT_COURT_REGISTRY_DAILY_CAP`                                                           | Plafond de demandes aux greffes par tribunal et par jour (greffe de secours). Entier de 0 à 100 ; `0` : aucune demande aux greffes ; absente ou illisible : 3.                                                                                                                                                                                                                                                                          |
 | `NEXT_PUBLIC_INFORMATION_AGENT_PRO_INVITATION`                                                         | `true` affiche l’invitation au dépôt direct de l’écran de fin de dépôt (`/contribuer`) ; absente ou toute autre valeur : désactivée.                                                                                                                                                                                                                                                                                                    |
 | `RESEND_WEBHOOK_SECRET`                                                                                | Secret de signature (`whsec_…`) du webhook Resend `email.received`, appelé sur `/api/webhooks/resend/information-agent` : la signature est vérifiée avant tout enregistrement, et la réception échoue sans lui. Variable sensible de Vercel Production. En production, le build s'arrête si `INFORMATION_AGENT_INBOUND_DOMAIN` est renseigné et que ce secret manque ou n'a pas la forme `whsec_…` (`scripts/verify-required-env.mjs`). |
 | `INFORMATION_AGENT_PORTAL_SECRET`                                                                      | ≥ 32 octets ; signe le lien de dépôt, le lien d’opposition et l’empreinte d’aperçu.                                                                                                                                                                                                                                                                                                                                                     |

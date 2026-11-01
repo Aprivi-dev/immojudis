@@ -10,6 +10,7 @@ import { normalizedEmail } from "@/lib/information-agent/email-address";
 import { findEmailsInText, replaceEmailsInText } from "@/lib/information-agent/email-in-text";
 import {
   INFORMATION_AGENT_EXCLUDED_ADDRESS_MESSAGE,
+  informationAgentExcludedAddressReason,
   isInformationAgentExcludedAddress,
 } from "@/lib/information-agent/excluded-addresses";
 
@@ -29,7 +30,7 @@ export type InformationAgentRecipientKind =
 export type InformationAgentContactRole = "lawyer" | "notary" | "organizer" | "source_contact";
 
 export type InformationAgentContactProvenance = {
-  kind: "sale_field" | "source_block" | "source_text" | "agent_search";
+  kind: "sale_field" | "source_block" | "source_text" | "agent_search" | "court_registry";
   field: string;
   sourceName: string | null;
   sourceUrl: string | null;
@@ -431,13 +432,21 @@ export async function assertInformationAgentContactAllowed({
   email,
   saleId,
   identityKeys = [],
+  courtRegistryAddress = false,
 }: {
   email: string;
   saleId?: string | null;
   /** Clés d'identité du professionnel : une opposition vaut sous toute autre adresse. */
   identityKeys?: readonly string[];
+  /**
+   * L'adresse est celle du greffe du référentiel des tribunaux, vérifiée par l'appelant
+   * (`assertCourtRegistryFallbackAddress`) : seule l'exclusion `court` est levée, pour cette adresse.
+   * RPVA, Ordre, CARPA, adresses techniques, opposition et rebond restent contrôlés.
+   */
+  courtRegistryAddress?: boolean;
 }): Promise<void> {
-  if (isInformationAgentExcludedAddress(email)) {
+  const excludedReason = informationAgentExcludedAddressReason(email);
+  if (excludedReason !== null && !(courtRegistryAddress && excludedReason === "court")) {
     throw new Error(INFORMATION_AGENT_EXCLUDED_ADDRESS_MESSAGE);
   }
   const rows = await loadInformationAgentContactRegistry(email, saleId);

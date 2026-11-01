@@ -58,7 +58,9 @@ export function informationAgentControllerIdentity(
  * - `other_listing` : une autre annonce du même professionnel ;
  * - `firm_website` : le site du cabinet ou de l'étude ;
  * - `official_directory` : un annuaire officiel, désigné par son nom ;
- * - `admin_entry` : saisie d'un administrateur, d'après une page publique.
+ * - `admin_entry` : saisie d'un administrateur, d'après une page publique ;
+ * - `court_registry_fallback` : adresse du greffe de la juridiction, reprise du référentiel des
+ *   tribunaux d'Immojudis, quand l'annonce ne donne aucune adresse d'avocat ou de cabinet.
  */
 export const INFORMATION_AGENT_ADDRESS_SOURCE_KINDS = [
   "sale_listing",
@@ -66,6 +68,7 @@ export const INFORMATION_AGENT_ADDRESS_SOURCE_KINDS = [
   "firm_website",
   "official_directory",
   "admin_entry",
+  "court_registry_fallback",
 ] as const;
 
 export type InformationAgentAddressSourceKind =
@@ -172,7 +175,12 @@ function originForKind({
   const link = url ? ` (${url})` : "";
   const consulted = (feminine: boolean) =>
     observedOn ? `, ${feminine ? "consultée" : "consulté"} le ${observedOn}` : "";
-  const automated = observedBy === "agent" && kind !== "sale_listing" && kind !== "admin_entry";
+  // Le greffe est repris du référentiel des tribunaux : ni page consultée, ni recherche automatique.
+  const automated =
+    observedBy === "agent" &&
+    kind !== "sale_listing" &&
+    kind !== "admin_entry" &&
+    kind !== "court_registry_fallback";
 
   switch (kind) {
     case "sale_listing":
@@ -212,6 +220,14 @@ function originForKind({
         url,
         automated,
       };
+    case "court_registry_fallback": {
+      const court = sourceName?.trim();
+      return {
+        text: `Il s’agit de l’adresse de contact de votre juridiction${court ? ` (${court})` : ""}, reprise du référentiel des tribunaux d’Immojudis${observedOn ? ` le ${observedOn}` : ""} : l’annonce de cette vente ne donne aucune adresse de l’avocat poursuivant.`,
+        url: null,
+        automated,
+      };
+    }
     case "admin_entry":
       return {
         text: `Votre adresse professionnelle a été relevée par un membre de l’équipe Immojudis sur une page publique${
