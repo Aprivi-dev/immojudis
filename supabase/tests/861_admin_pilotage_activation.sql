@@ -119,8 +119,11 @@ values
 insert into public.user_favorites (user_id, sale_id, created_at)
 values ('c8610000-0000-4000-8000-000000000002', 'c8610000-1000-4000-8000-000000000001', '2026-11-09T09:00:00Z');
 
-insert into public.user_alerts (user_id, name, department, created_at)
-values ('c8610000-0000-4000-8000-000000000003', 'Activation alert', '33', '2026-11-09T09:00:00Z');
+-- Compte Découverte : l'alerte gratuite est hebdomadaire et sans critère réservé à Analyse.
+insert into public.user_alerts (user_id, name, department, alert_frequency, created_at)
+values (
+  'c8610000-0000-4000-8000-000000000003', 'Activation alert', '33', 'weekly', '2026-11-09T09:00:00Z'
+);
 
 insert into pgtap_861_summary
 select 'after',
