@@ -323,6 +323,77 @@ export async function runAdminInformationAgentMessageAction({
   return { ok: true, opposedEmails };
 }
 
+export const adminInformationAgentUnroutedQuerySchema = z.object(adminPageQueryShape);
+
+export const adminInformationAgentUnroutedActionSchema = z.object({
+  action: z.literal("mark_handled"),
+  messageId: z.string().guid(),
+});
+
+export type AdminInformationAgentUnroutedAction = z.output<
+  typeof adminInformationAgentUnroutedActionSchema
+>;
+
+/**
+ * Messages reçus à l'adresse de réponse sans dossier ouvert (`information_agent_unrouted_messages`),
+ * ceux qui restent à traiter, du plus récent au plus ancien. L'extrait est un contenu NON FIABLE,
+ * affiché tel quel comme texte (jamais interprété). Rien n'est extrait ni répondu : l'administrateur lit,
+ * puis marque le message comme traité.
+ */
+export async function listAdminInformationAgentUnrouted(
+  authToken: string,
+  options: AdminInformationAgentReviewListOptions = {},
+) {
+  await requireAdmin(authToken);
+  const offset = options.offset ?? 0;
+  const limit = options.limit ?? ADMIN_PAGE_SIZE;
+  const { data, count, error } = await supabaseAdmin
+    .from("information_agent_unrouted_messages")
+    .select(
+      "id,provider_email_id,sender,sender_email,subject,received_at,excerpt,reason,sender_known,sender_authentication,attachment_count,opposition_recorded,created_at",
+      { count: "exact" },
+    )
+    .eq("status", "pending")
+    .order("received_at", { ascending: false })
+    .order("id", { ascending: false })
+    .range(offset, offset + limit - 1);
+  if (error) throw error;
+  const messages = data ?? [];
+  return {
+    messages,
+    ...adminPageMeta({ offset, limit, total: count ?? offset + messages.length }),
+  };
+}
+
+export type AdminInformationAgentUnroutedResponse = Awaited<
+  ReturnType<typeof listAdminInformationAgentUnrouted>
+>;
+
+/** « Marquer comme traité » : le message quitte la liste et le résumé quotidien. Idempotent. */
+export async function runAdminInformationAgentUnroutedAction({
+  authToken,
+  input,
+}: {
+  authToken: string;
+  input: AdminInformationAgentUnroutedAction;
+}): Promise<{ ok: true }> {
+  const auth = await requireAdmin(authToken);
+  const { data: message, error } = await supabaseAdmin
+    .from("information_agent_unrouted_messages")
+    .select("id")
+    .eq("id", input.messageId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!message) throw new Error("Message introuvable.");
+  const { error: updateError } = await supabaseAdmin
+    .from("information_agent_unrouted_messages")
+    .update({ status: "handled", handled_at: new Date().toISOString(), handled_by: auth.userId })
+    .eq("id", message.id)
+    .eq("status", "pending");
+  if (updateError) throw updateError;
+  return { ok: true };
+}
+
 export type AdminInformationAgentReviewResponse = Awaited<
   ReturnType<typeof listAdminInformationAgentReview>
 >;

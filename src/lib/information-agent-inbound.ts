@@ -57,6 +57,10 @@ import {
 } from "@/lib/information-agent-inbound/job-queue";
 import { processDeliveryEvent } from "@/lib/information-agent-inbound/delivery-events";
 import {
+  storeUnroutedInboundMessage,
+  type UnroutedInboundReason,
+} from "@/lib/information-agent-inbound/unrouted-messages";
+import {
   finalizeInboundContactOptOut,
   ignoreIfCaseClosed,
   insertOrLoadInboundMessage,
@@ -200,8 +204,6 @@ type ReceivedInboundEmail = NonNullable<
   Awaited<ReturnType<Resend["emails"]["receiving"]["get"]>>["data"]
 >;
 
-type UnroutedInboundReason = "no_token" | "unknown_case" | "case_not_open" | "token_mismatch";
-
 /**
  * Plafond des lectures Resend pour des emails sans dossier ouvert : un envoi massif vers le domaine de
  * réponse (spam) ne doit pas épuiser le quota de l'API (429) qui sert aux vraies réponses. Au-delà,
@@ -232,9 +234,11 @@ async function isKnownInboundSender(senderEmail: string): Promise<boolean> {
 
 /**
  * A message that reaches the inbound domain without an open case to file it under. It is never
- * dropped silently: the reason is logged (no address, no content), and an explicit request to
- * stop contact from an authenticated sender is recorded on that sender's address, since
- * opposing is harmless for the person and must hold on every channel (art. 21 GDPR).
+ * dropped silently: it is kept for an administrator (`information_agent_unrouted_messages`: sender,
+ * subject, date, a bounded text excerpt, the reason; no fact extraction, no reply), the reason is
+ * logged (no address, no content), and an explicit request to stop contact from an authenticated
+ * sender is recorded on that sender's address, since opposing is harmless for the person and must
+ * hold on every channel (art. 21 GDPR).
  */
 async function settleUnroutedInboundEmail({
   event,
@@ -248,11 +252,28 @@ async function settleUnroutedInboundEmail({
   received?: ReceivedInboundEmail;
 }): Promise<InformationAgentInboundResult> {
   let email = received;
+  // Renseigné quand l'expéditeur de l'événement a déjà été cherché dans nos données.
+  let senderKnown: boolean | null = null;
   if (!email) {
     // L'événement signé porte déjà l'expéditeur : lire le message chez Resend n'est utile que pour un
     // expéditeur connu. Un inconnu (le plus souvent du spam) ne coûte plus un appel d'API.
     const eventSender = normalizeEmail(typeof event.data.from === "string" ? event.data.from : "");
     if (eventSender && !(await isKnownInboundSender(eventSender))) {
+      // Sans lecture chez Resend : expéditeur, objet, date et nombre de pièces viennent de l'événement
+      // signé, pas d'extrait. Conservé 21 jours seulement (expéditeur inconnu).
+      await storeUnroutedInboundMessage({
+        providerEmailId: event.data.email_id,
+        from: typeof event.data.from === "string" ? event.data.from : "",
+        senderEmail: eventSender,
+        subject: event.data.subject,
+        receivedAt: event.data.created_at || event.created_at,
+        reason,
+        senderKnown: false,
+        bodyText: null,
+        authentication: null,
+        attachmentCount: Array.isArray(event.data.attachments) ? event.data.attachments.length : 0,
+        oppositionRecorded: false,
+      });
       console.warn("[Information agent] Inbound email without an open case", {
         reason,
         providerEmailId: event.data.email_id,
@@ -261,6 +282,7 @@ async function settleUnroutedInboundEmail({
       });
       return { accepted: true, ignored: true, ignoredReason: reason, oppositionRecorded: false };
     }
+    senderKnown = eventSender ? true : null;
     await enforceGlobalRateLimit({
       bucketKey: "information-agent.unrouted-inbound-fetch",
       ...UNROUTED_FETCH_LIMIT,
@@ -276,14 +298,29 @@ async function settleUnroutedInboundEmail({
   const authentication = normalizeInboundSenderAuthentication(
     parseReceivedEmailExtras(email).authentication,
   );
+  const unroutedBody = cleanInboundBody(email.text, email.html);
   const oppositionRecorded = Boolean(
     senderEmail &&
     authentication.status === "pass" &&
-    detectInformationAgentContactOptOut(cleanInboundBody(email.text, email.html)),
+    detectInformationAgentContactOptOut(unroutedBody),
   );
+  // L'opposition d'abord : elle prime sur la conservation du message et se rejoue sans effet de bord.
   if (oppositionRecorded && senderEmail) {
     await recordInboundContactOptOut(senderEmail, email.created_at || event.created_at);
   }
+  await storeUnroutedInboundMessage({
+    providerEmailId: event.data.email_id,
+    from: email.from,
+    senderEmail,
+    subject: email.subject || event.data.subject,
+    receivedAt: email.created_at || event.created_at,
+    reason,
+    senderKnown: senderKnown ?? (senderEmail ? await isKnownInboundSender(senderEmail) : false),
+    bodyText: unroutedBody,
+    authentication,
+    attachmentCount: Array.isArray(event.data.attachments) ? event.data.attachments.length : 0,
+    oppositionRecorded,
+  });
   console.warn("[Information agent] Inbound email without an open case", {
     reason,
     providerEmailId: event.data.email_id,

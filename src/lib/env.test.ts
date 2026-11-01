@@ -226,6 +226,16 @@ describe("serverEnv pipeline, alerts and email", () => {
     expect(serverEnv({}).saleResults.mode).toBeUndefined();
   });
 
+  it("reads REPLIES_REVIEW_DIGEST_MODE through the shared configuration, trimmed and blank as unset", () => {
+    expect(serverEnv({ REPLIES_REVIEW_DIGEST_MODE: " preview " }).repliesReviewDigest.mode).toBe(
+      "preview",
+    );
+    expect(
+      serverEnv({ REPLIES_REVIEW_DIGEST_MODE: "  " }).repliesReviewDigest.mode,
+    ).toBeUndefined();
+    expect(serverEnv({}).repliesReviewDigest.mode).toBeUndefined();
+  });
+
   it("reads TRIAL_END_EMAIL_MODE through the shared configuration, trimmed and blank as unset", () => {
     expect(serverEnv({ TRIAL_END_EMAIL_MODE: " internal " }).trialEndEmail.mode).toBe("internal");
     expect(serverEnv({ TRIAL_END_EMAIL_MODE: "  " }).trialEndEmail.mode).toBeUndefined();
