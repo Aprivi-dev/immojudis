@@ -36,6 +36,18 @@ export default async function SharedSaleComparisonPage({
           </p>
         </header>
 
+        {comparison.withdrawnCount > 0 ? (
+          <p
+            role="status"
+            data-testid="withdrawn-sales-notice"
+            className="border-b border-line-soft bg-surface-muted px-4 py-3 text-sm text-ink-soft sm:px-6"
+          >
+            {comparison.withdrawnCount === 1
+              ? "1 vente retirée du catalogue depuis le partage de cette comparaison."
+              : `${comparison.withdrawnCount} ventes retirées du catalogue depuis le partage de cette comparaison.`}
+          </p>
+        ) : null}
+
         <SaleComparisonTable items={comparison.items} returnTo="/sales" />
 
         <footer className="space-y-2 border-t border-line-soft bg-white px-4 py-4 text-xs leading-relaxed text-ink-soft sm:px-6">

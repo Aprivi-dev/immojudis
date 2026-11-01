@@ -139,6 +139,9 @@ describe("public sale page", () => {
     const json = /<script type="application\/ld\+json">(.*?)<\/script>/.exec(html)![1];
     expect(json).toContain(`https://immojudis.com/sales/${ID}`);
     expect(json).not.toContain(ID.toUpperCase());
+    // La fiche reçoit l'identifiant en minuscules, pas celui de l'adresse saisie.
+    expect(html).toMatch(new RegExp(`data-testid="detail"[^>]*>${ID}</div>`));
+    expect(html).not.toContain(`>${ID.toUpperCase()}<`);
   });
 
   it("renders the sale with its structured data, in absolute URLs", async () => {

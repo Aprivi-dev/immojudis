@@ -3,6 +3,8 @@ const mocks = vi.hoisted(() => ({ getClaims: vi.fn(), from: vi.fn() }));
 vi.mock("@supabase/supabase-js", () => ({
   createClient: () => ({ auth: { getClaims: mocks.getClaims }, from: mocks.from }),
 }));
+import { PublicApiError } from "@/lib/api-errors";
+import { classifyApiError } from "@/lib/api-observability";
 import { requireSupabaseAuthContext } from "./auth-middleware";
 beforeEach(() => {
   vi.resetAllMocks();
@@ -57,10 +59,40 @@ it("does not leak the database detail when the access profile cannot be read", a
   });
   mocks.from.mockReturnValue({ select: vi.fn().mockReturnValue({ eq }) });
   const failure = await requireSupabaseAuthContext("valid-fixture").catch((error: Error) => error);
-  expect(failure).toBeInstanceOf(Error);
-  expect((failure as Error).message).toBe("Unauthorized: User access profile unavailable");
+  // Un jeton valide dont le profil est illisible est une panne (503), pas une session expirée (401).
+  expect(failure).toBeInstanceOf(PublicApiError);
+  expect((failure as PublicApiError).status).toBe(503);
+  expect((failure as Error).message).not.toMatch(/^Unauthorized/);
+  expect((failure as Error).message).not.toContain("user_profiles");
   expect(String(errorLog.mock.calls[0]?.[0])).toContain("user_profiles");
   errorLog.mockRestore();
+});
+it("answers a profile read outage with a 503 through the API error mapping, not a 401", async () => {
+  vi.spyOn(console, "error").mockImplementation(() => undefined);
+  vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  mocks.getClaims.mockResolvedValue({ data: { claims: { sub: "verified-user" } }, error: null });
+  const eq = vi.fn().mockReturnValue({
+    maybeSingle: vi.fn().mockResolvedValue({ data: null, error: { message: "timeout" } }),
+  });
+  mocks.from.mockReturnValue({ select: vi.fn().mockReturnValue({ eq }) });
+  const failure = await requireSupabaseAuthContext("valid-fixture").catch((error: Error) => error);
+
+  const classified = classifyApiError(failure, { fallbackMessage: "Action impossible." });
+
+  expect(classified).toMatchObject({ status: 503, code: "INTERNAL_ERROR" });
+  expect(classified.message).toBe(
+    "Service temporairement indisponible. Réessayez dans un instant.",
+  );
+});
+it("still answers 401 for an invalid token", async () => {
+  mocks.getClaims.mockResolvedValue({ data: null, error: new Error("Invalid JWT") });
+  const failure = await requireSupabaseAuthContext("invalid-fixture").catch(
+    (error: Error) => error,
+  );
+  expect(classifyApiError(failure, { fallbackMessage: "x" })).toMatchObject({
+    status: 401,
+    code: "AUTH_REQUIRED",
+  });
 });
 
 function adminClaimsFixture(aal?: string) {

@@ -4,7 +4,11 @@ import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
-import { listAlertNotifications, updateAlertNotificationState } from "@/lib/alert-notifications";
+import {
+  alertNotificationUpdateSchema as notificationUpdateSchema,
+  listAlertNotifications,
+  updateAlertNotificationState,
+} from "@/lib/alert-notifications";
 
 export async function GET(request: Request) {
   try {
@@ -33,18 +37,8 @@ export async function GET(request: Request) {
 export async function PATCH(request: Request) {
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
-    const body = (await request.json()) as {
-      notificationId?: string;
-      action?: "read" | "unread" | "dismiss" | "restore";
-    };
-
-    if (!body.notificationId || !body.action) {
-      return NextResponse.json(
-        { ok: false, error: "notificationId et action sont requis" },
-        { status: 400 },
-      );
-    }
-
+    // Une action inconnue est refusée (400) : elle ne doit jamais retomber sur une action par défaut.
+    const body = notificationUpdateSchema.parse(await request.json());
     const response = await updateAlertNotificationState({
       auth,
       notificationId: body.notificationId,

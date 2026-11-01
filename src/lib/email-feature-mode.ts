@@ -34,6 +34,23 @@ export function saleResultsMode(env: Env = process.env): EmailFeatureMode {
   return parseMode(serverEnv(env as EnvSource).saleResults.mode);
 }
 
+/**
+ * Interrupteur d'envoi des alertes par email (`ALERT_NOTIFICATIONS_MODE`), ajouté à une fonction
+ * déjà en service : contrairement aux autres modes, la variable ABSENTE (ou vide) vaut `on`, pour
+ * ne rien changer à l'existant. Une valeur présente mais inconnue (faute de frappe) vaut `off` :
+ * le doute ferme l'envoi.
+ *
+ * - `off` : aucun email d'alerte ne part, les emails restent en file (les notifications dans
+ *   l'application continuent) ;
+ * - `internal` : seuls les administrateurs reçoivent les emails d'alerte ;
+ * - `on` : toutes les personnes qui ont consenti.
+ */
+export function alertNotificationsMode(env: Env = process.env): EmailFeatureMode {
+  const value = serverEnv(env as EnvSource).alertNotifications.mode?.toLowerCase();
+  if (value === undefined) return "on";
+  return value === "internal" || value === "on" ? value : "off";
+}
+
 function offeredTo(mode: EmailFeatureMode, isAdmin: boolean): boolean {
   return mode === "on" || (mode === "internal" && isAdmin);
 }
