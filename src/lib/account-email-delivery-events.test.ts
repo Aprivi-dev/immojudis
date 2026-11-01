@@ -121,6 +121,7 @@ describe("processAccountEmailDeliveryWebhook", () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     findAccount.mockResolvedValue("user-1");
     revoke.mockResolvedValue(undefined);
+    mocks.rpc.mockResolvedValue({ data: null, error: null });
   });
 
   it("retire les consentements du compte après un rebond définitif signé", async () => {
@@ -230,6 +231,87 @@ describe("processAccountEmailDeliveryWebhook", () => {
         revoke,
       }),
     ).rejects.toThrow("connection refused");
+  });
+
+  it.each(["email.delivered", "email.delivery_delayed", "email.failed"])(
+    "accepte %s sans erreur, l'écrit au journal des envois et ne touche à aucun consentement",
+    async (type) => {
+      const recordDelivery = vi.fn().mockResolvedValue(undefined);
+      const event = {
+        type,
+        created_at: "2026-10-31T10:00:00.000Z",
+        data: { email_id: "e3", from: "x@example.test", to: ["alice@example.test"], subject: "x" },
+      };
+      const result = await processAccountEmailDeliveryWebhook({
+        request: signedRequest(event),
+        env,
+        findAccount,
+        revoke,
+        recordDelivery,
+      });
+      expect(result).toEqual({ accepted: true, ignored: true });
+      expect(recordDelivery).toHaveBeenCalledWith(expect.objectContaining({ type }));
+      expect(findAccount).not.toHaveBeenCalled();
+      expect(revoke).not.toHaveBeenCalled();
+    },
+  );
+
+  it("écrit un rebond au journal AVANT de retirer les consentements", async () => {
+    const order: string[] = [];
+    const recordDelivery = vi.fn(async () => void order.push("journal"));
+    revoke.mockImplementation(async () => void order.push("consentements"));
+    await processAccountEmailDeliveryWebhook({
+      request: signedRequest(bounce("Permanent")),
+      env,
+      findAccount,
+      revoke,
+      recordDelivery,
+    });
+    expect(order).toEqual(["journal", "consentements"]);
+  });
+
+  it("retire les consentements même si le journal est en panne, puis fait rejouer l'évènement", async () => {
+    const recordDelivery = vi.fn().mockRejectedValue(new Error("journal indisponible"));
+    await expect(
+      processAccountEmailDeliveryWebhook({
+        request: signedRequest(complaint()),
+        env,
+        findAccount,
+        revoke,
+        recordDelivery,
+      }),
+    ).rejects.toThrow("journal indisponible");
+    expect(revoke).toHaveBeenCalledWith("user-1");
+  });
+
+  it("n'abonne ni n'écrit les ouvertures et les clics", async () => {
+    for (const type of ["email.opened", "email.clicked"]) {
+      const result = await processAccountEmailDeliveryWebhook({
+        request: signedRequest({
+          type,
+          created_at: "2026-10-31T10:00:00.000Z",
+          data: { email_id: "e4", from: "x@example.test", to: ["a@example.test"], subject: "x" },
+        }),
+        env,
+        findAccount,
+        revoke,
+      });
+      expect(result).toEqual({ accepted: true, ignored: true });
+    }
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it("ne lit jamais le journal des envois pour décider d'un retrait de consentement", async () => {
+    // La seule table ou RPC du journal touchée est l'écriture ; la décision vient de l'évènement.
+    await processAccountEmailDeliveryWebhook({
+      request: signedRequest(bounce("Permanent")),
+      env,
+      findAccount,
+      revoke,
+    });
+    const names = mocks.rpc.mock.calls.map((call) => call[0]);
+    expect(names).toEqual(["record_email_delivery_event"]);
+    expect(revoke).toHaveBeenCalledWith("user-1");
   });
 
   it("cherche le compte par la fonction SQL réservée au rôle de service", async () => {

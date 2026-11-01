@@ -12,11 +12,17 @@ const db = vi.hoisted(() => ({
   pepiteIds: [] as string[],
   pepiteError: null as unknown,
   rpcCalls: [] as string[],
+  /** Écritures du journal des envois (`record_email_send`), comptées à part des lectures de pépites. */
+  sendLogCalls: [] as Array<Record<string, unknown>>,
 }));
 
 vi.mock("@/integrations/supabase/client.server", () => {
   const client = {
-    async rpc(fn: string) {
+    async rpc(fn: string, args?: Record<string, unknown>) {
+      if (fn === "record_email_send") {
+        db.sendLogCalls.push(args ?? {});
+        return { data: "log-1", error: null };
+      }
       db.rpcCalls.push(fn);
       return db.pepiteError
         ? { data: null, error: db.pepiteError }
@@ -97,6 +103,7 @@ describe("dispatch des emails d'alerte", () => {
     db.pepiteIds = [];
     db.pepiteError = null;
     db.rpcCalls = [];
+    db.sendLogCalls = [];
   });
 
   it("n'écrit pas à une adresse non confirmée : rien n'est envoyé, les envois sont marqués en échec", async () => {
@@ -286,6 +293,7 @@ describe("mention « pépite » au moment de l'envoi", () => {
     db.pepiteIds = [];
     db.pepiteError = null;
     db.rpcCalls = [];
+    db.sendLogCalls = [];
   });
 
   async function send(notifications: unknown[]) {
@@ -303,6 +311,14 @@ describe("mention « pépite » au moment de l'envoi", () => {
     const body = await send([pepiteNotification(1)]);
     expect(body.text).toContain("Pépite : Repère calculé automatiquement");
     expect(db.rpcCalls).toEqual(["list_public_pepite_sale_ids"]);
+    // L'envoi est journalisé au gabarit « alert », rattaché au compte, sans corps.
+    expect(db.sendLogCalls).toHaveLength(1);
+    expect(db.sendLogCalls[0]).toMatchObject({
+      p_template_key: "alert",
+      p_category: "alert",
+      p_mode: "on",
+    });
+    expect(JSON.stringify(db.sendLogCalls[0])).not.toContain("Pépite : Repère");
   });
 
   it("retire la mention quand la vente n'est plus une pépite (arrêt d'urgence, mode shadow)", async () => {
