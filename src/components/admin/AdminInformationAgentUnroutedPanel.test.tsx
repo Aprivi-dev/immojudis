@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -35,7 +37,7 @@ function message(overrides: Record<string, unknown> = {}) {
 
 function renderPanel() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(
+  return render(
     <QueryClientProvider client={client}>
       <AdminInformationAgentUnroutedPanel />
     </QueryClientProvider>,
@@ -77,6 +79,46 @@ describe("AdminInformationAgentUnroutedPanel", () => {
 
     expect(await screen.findByText("<img src=x onerror=alert(1)> cliquez ici")).toBeTruthy();
     expect(document.querySelector("img")).toBeNull();
+  });
+
+  it("affiche l'objet, l'expéditeur et l'extrait en texte, jamais en HTML", async () => {
+    const subject = "Urgent <script>window.__pwned = true</script> <b>vente</b>";
+    mocks.fetchUnrouted.mockResolvedValue({
+      messages: [
+        message({
+          subject,
+          sender: '"><svg onload=alert(1)> <x@example.test>',
+          excerpt:
+            "<script>window.__pwned = true</script>\n<a href='https://evil.test'>cliquez</a>",
+        }),
+      ],
+      offset: 0,
+      limit: 50,
+      total: 1,
+      hasMore: false,
+    });
+    const { container } = renderPanel();
+
+    expect(await screen.findByText(subject)).toBeTruthy();
+    expect(
+      screen.getByText(
+        "<script>window.__pwned = true</script> <a href='https://evil.test'>cliquez</a>",
+        { normalizer: (text) => text.replace(/\s+/g, " ").trim() },
+      ),
+    ).toBeTruthy();
+    // Aucun élément n'a été créé à partir du contenu du message.
+    expect(
+      container.querySelector("article script, article b, article a, article [onload]"),
+    ).toBeNull();
+    expect((window as unknown as { __pwned?: boolean }).__pwned).toBeUndefined();
+  });
+
+  it("n'utilise dangerouslySetInnerHTML nulle part dans le composant", () => {
+    const source = readFileSync(
+      resolve(process.cwd(), "src/components/admin/AdminInformationAgentUnroutedPanel.tsx"),
+      "utf8",
+    );
+    expect(source).not.toMatch(/dangerouslySetInnerHTML|innerHTML/);
   });
 
   it("indique qu'un expéditeur inconnu n'a pas été lu et renvoie vers Resend", async () => {
