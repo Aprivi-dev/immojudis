@@ -216,6 +216,20 @@ export function stripInvisibleCharacters(value: string): string {
   return value.replace(INVISIBLE_CHARACTERS, "");
 }
 
+/**
+ * Remplace par une espace les caractères de contrôle (dont NUL, que Postgres refuse dans un texte) ; le
+ * retour à la ligne et la tabulation sont gardés si `keepLineBreaks`.
+ */
+export function replaceControlCharacters(value: string, keepLineBreaks = false): string {
+  let result = "";
+  for (const char of value) {
+    const code = char.codePointAt(0) ?? 0;
+    const control = code < 0x20 || code === 0x7f;
+    result += control && !(keepLineBreaks && (code === 0x09 || code === 0x0a)) ? " " : char;
+  }
+  return result;
+}
+
 export function cleanInboundBody(text: string | null, html: string | null) {
   const plainText = stripInvisibleCharacters(text?.replace(/\r\n?/g, "\n") ?? "").trim();
   const htmlText = stripInvisibleCharacters(htmlToPlainText(html || ""));
