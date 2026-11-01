@@ -8,8 +8,8 @@ import {
   VALUATION_MODEL_MIN_COVERAGE_PCT,
 } from "@/lib/market-comparable-minimums";
 
-const pythonTraining = readFileSync(
-  join(process.cwd(), "services/data-pipeline/src/valuation_training.py"),
+const pythonGate = readFileSync(
+  join(process.cwd(), "services/data-pipeline/src/valuation_activation_gate.py"),
   "utf8",
 );
 
@@ -20,13 +20,13 @@ describe("seuils partagés entre le moteur, la porte publique et l'entraînement
   });
 
   it("le seuil de couverture de la page méthode est celui de la promotion d'un modèle (Python)", () => {
-    const match = pythonTraining.match(/^MIN_PROMOTION_COVERAGE_PCT = ([0-9.]+)$/m);
+    const match = pythonGate.match(/^MIN_PROMOTION_COVERAGE_PCT = ([0-9.]+)$/m);
     expect(match).not.toBeNull();
     expect(Number(match![1])).toBe(VALUATION_MODEL_MIN_COVERAGE_PCT);
   });
 
   it("le niveau nominal visé reste de 80 %, au-dessus du seuil de promotion", () => {
-    expect(pythonTraining).toMatch(/^CONFIDENCE_LEVEL = 0\.8$/m);
+    expect(pythonGate).toMatch(/^CONFIDENCE_LEVEL = 0\.8$/m);
     expect(VALUATION_MODEL_MIN_COVERAGE_PCT).toBeLessThan(80);
   });
 });
