@@ -12,6 +12,8 @@ import type {
   AdminInformationAgentMessageAction,
   AdminInformationAgentReviewInput,
   AdminInformationAgentReviewResponse,
+  AdminInformationAgentUnroutedAction,
+  AdminInformationAgentUnroutedResponse,
 } from "@/lib/admin-information-agent";
 import type {
   AdminSourceRefreshRequestInput,
@@ -214,6 +216,33 @@ export async function runAdminInformationAgentMessageActionClient(
     body: JSON.stringify(data),
   });
   return readJson<{ ok: true; opposedEmails: string[] }>(response);
+}
+
+/** Messages reçus sans dossier ouvert, encore à traiter. */
+export async function fetchAdminInformationAgentUnrouted(
+  pageParam: AdminInformationAgentReviewPageParam = {},
+): Promise<AdminInformationAgentUnroutedResponse> {
+  const search = new URLSearchParams();
+  search.set("offset", String(pageParam.offset ?? 0));
+  search.set("limit", String(pageParam.limit ?? ADMIN_PAGE_SIZE));
+  const response = await fetch(`/api/admin/information-agent/unrouted?${search.toString()}`, {
+    signal: AbortSignal.timeout(30_000),
+    headers: await authHeaders(),
+    cache: "no-store",
+  });
+  return readJson<AdminInformationAgentUnroutedResponse>(response);
+}
+
+/** « Marquer comme traité » un message reçu sans dossier ouvert. */
+export async function markAdminInformationAgentUnroutedHandledClient(
+  data: AdminInformationAgentUnroutedAction,
+): Promise<{ ok: true }> {
+  const response = await fetch("/api/admin/information-agent/unrouted", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(data),
+  });
+  return readJson<{ ok: true }>(response);
 }
 
 export type AdminInformationAgentEvidenceRightsStatus = "authorized" | "restricted";

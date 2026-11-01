@@ -21,6 +21,8 @@ export {
   fetchAdminInformationAgentReview,
   reviewAdminInformationAgentFactClient,
   runAdminInformationAgentMessageActionClient,
+  fetchAdminInformationAgentUnrouted,
+  markAdminInformationAgentUnroutedHandledClient,
   fetchAdminInformationAgentEvidenceUrlClient,
   updateAdminInformationAgentEvidenceRightsClient,
   previewAdminInformationAgentEmailTemplate,
