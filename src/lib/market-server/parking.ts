@@ -6,6 +6,7 @@ import { haversineMeters } from "@/lib/market-server/geometry";
 import { quantile, roundTo } from "@/lib/market-server/numbers";
 import { fetchCommune, officialDvfCommuneCode } from "@/lib/market-server/sources";
 import { recentEnough } from "@/lib/market-server/radius-analysis";
+import { salesSamplePeriod } from "@/lib/market-server/sample-period";
 
 export async function buildParkingEstimate(input: BuildEstimateInput): Promise<MarketEstimate> {
   const commune = await fetchCommune(input.lat, input.lng);
@@ -99,6 +100,7 @@ export async function buildParkingEstimate(input: BuildEstimateInput): Promise<M
     areaKind,
     commune: commune.nom,
     sampleSize: selected.length,
+    samplePeriod: salesSamplePeriod(selected.map((sale) => sale.date)),
     effectiveSampleSize: selected.length,
     parcelSampleSize: nearby.length,
     totalNearbySampleSize: datedSales.length,

@@ -5,6 +5,11 @@ import { DEFAULTS } from "@/lib/profitability";
 import { FEES_SIMULATOR_DEPARTMENTS } from "./departments";
 import { AmountField, Field, FIELD_CLASSES, euro } from "./fields";
 
+// Texte figé, pour ne pas embarquer côté client le calcul d'un libellé à partir du tableau DMTO ;
+// FeesSimulator.test.tsx vérifie qu'il reste aligné sur `DMTO_RATE_BY_DEPARTMENT` (profitability.ts).
+const DEPARTMENT_HINT =
+  "Taux de 6,32 % par défaut. 11 départements (05, 06, 07, 16, 26, 48, 60, 65, 71, 971 et 976) restent à 5,81 %, et l’Indre est à 5,09 % (tableau DGFiP au 01/06/2026). La hausse à 5 % de la part départementale est temporaire (actes passés jusqu’au 31/03/2028) et ne s’applique pas aux primo-accédants d’une résidence principale : vérifiez le taux avec votre avocat.";
+
 /** Hypothèses de frais communes aux deux sens du calcul (valeurs saisies, telles quelles). */
 export type Hypotheses = {
   department: string;
@@ -42,7 +47,7 @@ export function HypothesesFields({
         label="Département du bien"
         htmlFor={departmentId}
         hintId={`${departmentId}-hint`}
-        hint="Taux de 6,32 % appliqué sauf dans l’Indre ; certains départements sont à 5,81 % : vérifiez avec votre avocat."
+        hint={DEPARTMENT_HINT}
       >
         <select
           id={departmentId}

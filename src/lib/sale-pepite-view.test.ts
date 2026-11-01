@@ -53,7 +53,7 @@ describe("libellés des critères : le langage de l'investisseur", () => {
   it("reprend les libellés demandés pour les deux tests et pour les vérifications", () => {
     const pass = (id: (typeof PEPITE_CRITERIA)[number]) => PEPITE_CRITERION_LABELS[id].pass;
     expect(pass("test_b_chance")).toBe(
-      "Chances de l'emporter : au moins 7 ventes comparables sur 10 adjugées sous l'enchère plafond",
+      "Part des ventes comparables adjugées au tribunal sous l'enchère plafond (hors lots non adjugés) : au moins 7 sur 10",
     );
     expect(pass("test_c_cost")).toBe(
       "Coût d'achat estimé nettement sous la valeur : coût total, frais compris, d'au plus 75 % de la valeur estimée (65 % en vente notariale)",
@@ -62,7 +62,7 @@ describe("libellés des critères : le langage de l'investisseur", () => {
       "Enchère plafond calculée sur une estimation prudente de la valeur",
     );
     expect(pass("scenarios_reliable")).toBe(
-      "Assez de ventes passées comparables pour juger les chances",
+      "Assez de ventes passées comparables pour mesurer la part adjugée sous l'enchère plafond",
     );
     expect(pass("estimate_sample")).toBe("Au moins 8 ventes comparables derrière l'estimation");
     expect(pass("public_gap_gate")).toBe("Estimation assez précise pour être affichée");
@@ -115,9 +115,10 @@ describe("critères d'une pépite", () => {
     const b = views.find((view) => view.id === "test_b_chance")!;
     expect(b.state).toBe("confirm");
     expect(b.label).toBe(
-      "Chances de l'emporter toujours au-dessus du seuil de maintien (65 % des ventes comparables adjugées sous l'enchère plafond), à confirmer à la prochaine mise à jour",
+      "Part des ventes comparables adjugées sous l'enchère plafond (hors lots non adjugés) toujours au-dessus du seuil de maintien (65 %), à confirmer à la prochaine mise à jour",
     );
     expect(b.label).not.toContain("70");
+    expect(b.label).not.toMatch(/chances? de l'emporter/i);
     const c = pepiteCriteriaViews(["fail:test_c_cost"], [], "tribunal")[0];
     expect(c.label).toContain("seuil de maintien");
     expect(c.label).toContain("80 %");

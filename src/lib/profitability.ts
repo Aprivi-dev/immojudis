@@ -35,16 +35,41 @@ export const TRIBUNAL_EMOLUMENT_BRACKETS: readonly EmolumentBracket[] = [
 const VAT = 0.2;
 
 // ─── Droits de mutation à titre onéreux (DMTO) ───────────────────────────
-// Taux global (part départementale + communale + frais d'assiette) pour une
-// vente d'immeuble ancien. La loi de finances 2025 a permis aux départements de
-// relever leur part à 5 % jusqu'au 31/03/2028 : environ 88 départements
-// appliquent 6,32 % au 01/06/2026, une dizaine 5,81 % et l'Indre 5,09 %.
-// Sans liste officielle exhaustive à portée, le taux plein (le plus prudent)
-// sert de défaut ; l'utilisateur peut le corriger dans le simulateur.
+// Taux global (part départementale + part communale de 1,20 % + frais d'assiette de
+// 2,37 % de la part départementale) pour une vente d'immeuble ancien.
+//
+// Source : fiche DGFiP des taux de droits de mutation (impots.gouv.fr), dont la date de mise à
+// jour indiquée est le 01/06/2026 ; consultée le 31/10/2026.
+//   - 5,00 % de part départementale (taux plein) : 6,32 % au total. C'est le défaut.
+//   - 4,50 % (le taux d'avant la hausse) : 5,81 % au total, pour 11 départements :
+//     05, 06, 07, 16, 26, 48, 60, 65, 71, 971 et 976 (Mayotte).
+//   - 3,80 % : 5,09 % au total, pour l'Indre (36) seule (3,80 + 1,20 + 3,80 x 2,37 %).
+// La hausse à 5 % de la part départementale est TEMPORAIRE (loi de finances 2025, art. 116 :
+// actes passés du 01/04/2025 au 31/03/2028) et ne vaut pas pour les primo-accédants d'une
+// résidence principale. Pour une vente judiciaire, le taux s'applique au prix d'adjudication.
+// En cas de doute le taux plein (le plus prudent) sert de défaut ; l'utilisateur peut le
+// corriger dans le simulateur.
 export const DMTO_TABLE_DATE = "01/06/2026";
+/** Dernier jour des actes soumis à la hausse temporaire à 5 % (loi de finances 2025, art. 116). */
+export const DMTO_TEMPORARY_INCREASE_END = "31/03/2028";
 export const DMTO_DEFAULT_RATE = 0.0632;
+/** Taux global des départements restés à 4,50 % de part départementale. */
+export const DMTO_RATE_UNCHANGED_DEPARTMENT = 0.0581;
+/** Taux global des départements à 3,80 % de part départementale (l'Indre seule). */
+export const DMTO_RATE_REDUCED_DEPARTMENT = 0.0509;
 export const DMTO_RATE_BY_DEPARTMENT: Readonly<Record<string, number>> = {
-  "36": 0.0509,
+  "05": DMTO_RATE_UNCHANGED_DEPARTMENT,
+  "06": DMTO_RATE_UNCHANGED_DEPARTMENT,
+  "07": DMTO_RATE_UNCHANGED_DEPARTMENT,
+  "16": DMTO_RATE_UNCHANGED_DEPARTMENT,
+  "26": DMTO_RATE_UNCHANGED_DEPARTMENT,
+  "36": DMTO_RATE_REDUCED_DEPARTMENT,
+  "48": DMTO_RATE_UNCHANGED_DEPARTMENT,
+  "60": DMTO_RATE_UNCHANGED_DEPARTMENT,
+  "65": DMTO_RATE_UNCHANGED_DEPARTMENT,
+  "71": DMTO_RATE_UNCHANGED_DEPARTMENT,
+  "971": DMTO_RATE_UNCHANGED_DEPARTMENT,
+  "976": DMTO_RATE_UNCHANGED_DEPARTMENT,
 };
 /** Contribution de sécurité immobilière : 0,10 % de la base taxable. */
 export const CSI_RATE = 0.001;

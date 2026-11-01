@@ -92,6 +92,8 @@ export type MarketEstimate = {
   areaKind: "urban" | "rural";
   commune: string | null;
   sampleSize: number; // nombre de parcelles comparables retenues
+  /** Dates (ISO) de la vente la plus ancienne et de la plus récente de tout l'échantillon retenu. */
+  samplePeriod?: { from: string; to: string } | null;
   effectiveSampleSize?: number;
   parcelSampleSize: number;
   totalNearbySampleSize: number;
@@ -126,7 +128,8 @@ export type MarketEstimate = {
   annualMarketTrendPct?: number;
   marketCell?: string | null;
   predictionInterval?: {
-    coverageTarget: number;
+    /** Absent pour l'estimation hybride : la couverture du mélange modèle + comparables n'est pas mesurée. */
+    coverageTarget?: number;
     method: string;
     p10PricePerM2: number;
     p50PricePerM2: number;

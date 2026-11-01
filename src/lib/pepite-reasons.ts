@@ -79,8 +79,8 @@ export const PEPITE_CRITERION_LABELS: Record<PepiteCriterionId, { pass: string; 
     fail: "Enchère plafond non calculable (valeur ou surface manquante)",
   },
   scenarios_reliable: {
-    pass: "Assez de ventes passées comparables pour juger les chances",
-    fail: "Pas assez de ventes passées comparables pour juger les chances de l'emporter",
+    pass: "Assez de ventes passées comparables pour mesurer la part adjugée sous l'enchère plafond",
+    fail: "Pas assez de ventes passées comparables pour mesurer la part adjugée sous l'enchère plafond",
   },
   estimate_reliability: {
     pass: "Estimation de fiabilité forte ou correcte",
@@ -167,8 +167,8 @@ export const PEPITE_CRITERION_LABELS: Record<PepiteCriterionId, { pass: string; 
     fail: "Copropriété en difficulté mentionnée dans une pièce lue (administrateur provisoire, plan de sauvegarde, mandataire ad hoc ou carence)",
   },
   test_b_chance: {
-    pass: `Chances de l'emporter : au moins ${tenths(PEPITE_CHANCE_MIN_SHARE)} ventes comparables sur 10 adjugées sous l'enchère plafond`,
-    fail: `Chances de l'emporter insuffisantes : moins de ${tenths(PEPITE_CHANCE_MIN_SHARE)} ventes comparables sur 10 adjugées sous l'enchère plafond (ou plafond sous la mise à prix)`,
+    pass: `Part des ventes comparables adjugées au tribunal sous l'enchère plafond (hors lots non adjugés) : au moins ${tenths(PEPITE_CHANCE_MIN_SHARE)} sur 10`,
+    fail: `Part des ventes comparables adjugées au tribunal sous l'enchère plafond (hors lots non adjugés) insuffisante : moins de ${tenths(PEPITE_CHANCE_MIN_SHARE)} sur 10 (ou plafond sous la mise à prix)`,
   },
   test_c_cost: {
     pass: `Coût d'achat estimé nettement sous la valeur : coût total, frais compris, d'au plus ${percent(PEPITE_COST_MAX_SHARE_COURT)} de la valeur estimée (${percent(PEPITE_COST_MAX_SHARE_NOTARY)} en vente notariale)`,
@@ -199,7 +199,7 @@ export function pepitePassLabel(id: PepiteCriterionId, regime?: PepiteRegimeKey 
 export function pepiteConfirmLabel(id: PepiteCriterionId, regime?: PepiteRegimeKey | null): string {
   const later = "à confirmer à la prochaine mise à jour";
   if (id === "test_b_chance") {
-    return `Chances de l'emporter toujours au-dessus du seuil de maintien (${percent(PEPITE_CHANCE_EXIT_SHARE)} des ventes comparables adjugées sous l'${regime === "notary_online" ? "offre" : "enchère"} plafond), ${later}`;
+    return `Part des ventes comparables adjugées sous l'${regime === "notary_online" ? "offre" : "enchère"} plafond (hors lots non adjugés) toujours au-dessus du seuil de maintien (${percent(PEPITE_CHANCE_EXIT_SHARE)}), ${later}`;
   }
   if (id === "test_c_cost") {
     const exit =

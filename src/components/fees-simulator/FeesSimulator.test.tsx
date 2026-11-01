@@ -5,7 +5,16 @@ const mocks = vi.hoisted(() => ({ track: vi.fn() }));
 vi.mock("@/lib/product-events", () => ({ trackProductEvent: mocks.track }));
 
 import { departmentCode } from "@/lib/department-code";
-import { computeAcquisitionCosts, DEFAULTS } from "@/lib/profitability";
+import {
+  computeAcquisitionCosts,
+  DEFAULTS,
+  DMTO_DEFAULT_RATE,
+  DMTO_RATE_BY_DEPARTMENT,
+  DMTO_RATE_REDUCED_DEPARTMENT,
+  DMTO_RATE_UNCHANGED_DEPARTMENT,
+  DMTO_TABLE_DATE,
+  DMTO_TEMPORARY_INCREASE_END,
+} from "@/lib/profitability";
 import { FEES_SIMULATOR_DEPARTMENTS } from "./departments";
 import { DEFAULT_SIMULATOR_PRICE, FeesSimulator } from "./FeesSimulator";
 import { formatScaleDate } from "./scale-date";
@@ -31,6 +40,35 @@ function field(name: string) {
 }
 
 describe("FeesSimulator", () => {
+  it("dit que la hausse à 5 % est temporaire, hors primo-accédants, et liste les départements à 5,81 %", () => {
+    render(<FeesSimulator />);
+    const hint = (screen.getByLabelText("Département du bien") as HTMLSelectElement).getAttribute(
+      "aria-describedby",
+    )!;
+    const text = (document.getElementById(hint)?.textContent ?? "").replace(/[\u00a0\u202f]/g, " ");
+    expect(text).toContain("Taux de 6,32 % par défaut");
+    expect(text).toContain("11 départements (05, 06, 07, 16, 26, 48, 60, 65, 71, 971 et 976)");
+    expect(text).toContain("restent à 5,81 %");
+    expect(text).toContain("l’Indre est à 5,09 %");
+    expect(text).toContain("tableau DGFiP au 01/06/2026");
+    expect(text).toContain("temporaire (actes passés jusqu’au 31/03/2028)");
+    expect(text).toContain("ne s’applique pas aux primo-accédants");
+    expect(text).not.toMatch(/garanti|certain/i);
+    // Le texte figé de hypotheses.tsx reste aligné sur le tableau de profitability.ts.
+    const codes = (/\(([\d, ]+) et (\d+)\)/.exec(text) ?? []).slice(1);
+    const listed = [...codes[0].split(", "), codes[1]].sort();
+    const fromTable = Object.entries(DMTO_RATE_BY_DEPARTMENT)
+      .filter(([, rate]) => rate === DMTO_RATE_UNCHANGED_DEPARTMENT)
+      .map(([code]) => code)
+      .sort();
+    expect(listed).toEqual(fromTable);
+    expect(DMTO_DEFAULT_RATE).toBe(0.0632);
+    expect(DMTO_RATE_UNCHANGED_DEPARTMENT).toBe(0.0581);
+    expect(DMTO_RATE_REDUCED_DEPARTMENT).toBe(0.0509);
+    expect(DMTO_TABLE_DATE).toBe("01/06/2026");
+    expect(DMTO_TEMPORARY_INCREASE_END).toBe("31/03/2028");
+  });
+
   it("mesure l'usage une seule fois, au premier changement d'un champ", () => {
     render(<FeesSimulator />);
     expect(mocks.track).not.toHaveBeenCalled();

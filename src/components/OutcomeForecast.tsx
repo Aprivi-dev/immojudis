@@ -14,8 +14,11 @@ import Users from "lucide-react/dist/esm/icons/users.js";
 import type { OutcomeGraphForecastQuery } from "@/hooks/use-outcome-graph-forecast";
 import { formatPrice } from "@/lib/format";
 import {
+  ceilingProbabilityReading,
   cumulativeProbability,
+  roundProbabilityToFivePercent,
   withOutcomeGraphCeiling,
+  type CeilingProbabilityReading,
   type OutcomeGraphForecast,
   type OutcomeGraphQuantiles,
 } from "@/lib/outcome-graph";
@@ -59,6 +62,15 @@ function OutcomeForecastReady({
     [ceilingCents, forecast],
   );
   const ceiling = displayedForecast.ceiling!;
+  const ceilingReading = ceilingProbabilityReading(
+    displayedForecast.finalPrice!,
+    ceiling.amountCents,
+  );
+  const combinedReading = scaleReading(
+    ceilingReading,
+    (displayedForecast.flow.heldProbability ?? 0) *
+      (displayedForecast.flow.adjudicatedIfHeldProbability ?? 0),
+  );
 
   const flowSteps = [
     {
@@ -135,7 +147,14 @@ function OutcomeForecastReady({
             <p className="mt-6 text-base font-medium text-brand-navy sm:text-lg">
               Probabilité de surenchère{" "}
               <strong className="ml-1 font-display text-2xl font-semibold text-gold-text">
-                {formatProbability(displayedForecast.surenchereProbability)}
+                <ApproximateProbability
+                  inline
+                  reading={
+                    displayedForecast.surenchereProbability == null
+                      ? null
+                      : estimateReading(displayedForecast.surenchereProbability)
+                  }
+                />
               </strong>
             </p>
           </div>
@@ -177,15 +196,20 @@ function OutcomeForecastReady({
 
               <div className="mt-7 border-t border-brand-navy/12 pt-6">
                 <p className="font-display text-6xl font-medium leading-none text-gold-text sm:text-7xl">
-                  {formatProbability(ceiling.finalPriceBelowOrEqualIfAdjudicatedProbability)}
+                  <ApproximateProbability reading={ceilingReading} />
                 </p>
                 <p className="mt-3 max-w-sm text-sm font-medium leading-relaxed text-brand-navy sm:text-base">
-                  Probabilité que le prix final reste inférieur ou égal à votre plafond
+                  Probabilité que le prix final reste inférieur ou égal à votre plafond, si le lot
+                  est adjugé
+                </p>
+                <p className="mt-2 max-w-sm text-xs leading-relaxed text-brand-navy/65">
+                  Arrondie à 5 % près. Elle se lit sur trois repères estimés (10 %, 50 % et 90 %) et
+                  ne tient pas compte de la concurrence le jour de la vente.
                 </p>
                 <p className="mt-4 text-xs leading-relaxed text-brand-navy/65">
                   Probabilité combinée avec une adjudication :{" "}
                   <strong className="text-brand-navy">
-                    {formatProbability(ceiling.adjudicationAndFinalPriceBelowOrEqualProbability)}
+                    <ApproximateProbability inline reading={combinedReading} />
                   </strong>
                 </p>
               </div>
@@ -195,7 +219,7 @@ function OutcomeForecastReady({
               <CeilingCurve
                 quantiles={displayedForecast.finalPrice!}
                 ceilingCents={ceiling.amountCents}
-                probability={ceiling.finalPriceBelowOrEqualIfAdjudicatedProbability}
+                reading={ceilingReading}
               />
             </div>
           </div>
@@ -260,7 +284,7 @@ function FlowStep({
         <p
           className={`mt-1 font-display text-4xl font-medium leading-none ${tone === "gold" ? "text-gold-text" : "text-brand-navy"}`}
         >
-          {formatProbability(value)}
+          <ApproximateProbability reading={value == null ? null : estimateReading(value)} />
         </p>
       </div>
     </div>
@@ -276,6 +300,12 @@ function PriceDistribution({
   quantiles: OutcomeGraphQuantiles;
   className?: string;
 }) {
+  // Une échelle en euros : chaque repère est placé à sa vraie position, pas à une place fixe.
+  const span = Math.max(1, quantiles.p90Cents - quantiles.p10Cents);
+  const lowCents = Math.max(0, quantiles.p10Cents - span * 0.25);
+  const highCents = quantiles.p90Cents + span * 0.25;
+  const position = (cents: number) =>
+    `${(Math.min(1, Math.max(0, (cents - lowCents) / (highCents - lowCents))) * 100).toFixed(1)}%`;
   return (
     <div className={className}>
       <p className="text-base font-medium text-brand-navy sm:text-lg">{label}</p>
@@ -289,24 +319,49 @@ function PriceDistribution({
         </strong>
       </p>
       <div className="mt-7">
-        <div className="grid grid-cols-3 text-xs text-brand-navy/66">
-          <span>10 %</span>
-          <span className="text-center">Médiane</span>
-          <span className="text-right">90 %</span>
+        <p className="text-xs text-brand-navy/66">
+          Repères sur une échelle en euros : 10 %, médiane et 90 %.
+        </p>
+        <div className="relative mt-3 h-1 rounded-full bg-brand-navy/12" aria-hidden>
+          <span
+            className="absolute inset-y-0 bg-gold"
+            style={{
+              left: position(quantiles.p10Cents),
+              right: `calc(100% - ${position(quantiles.p90Cents)})`,
+            }}
+          />
+          <span
+            className="absolute -top-1 h-3 w-px bg-brand-navy/65"
+            style={{ left: position(quantiles.p10Cents) }}
+          />
+          <span
+            className="absolute -top-1 h-3 w-px bg-brand-navy"
+            style={{ left: position(quantiles.p50Cents) }}
+          />
+          <span
+            className="absolute -top-1 h-3 w-px bg-brand-navy/65"
+            style={{ left: position(quantiles.p90Cents) }}
+          />
         </div>
-        <div className="relative mt-2 h-1 rounded-full bg-brand-navy/12" aria-hidden>
-          <span className="absolute inset-y-0 left-[28%] right-[28%] bg-gold" />
-          <span className="absolute -top-1 left-[5%] h-3 w-px bg-brand-navy/65" />
-          <span className="absolute -top-1 left-1/2 h-3 w-px bg-brand-navy" />
-          <span className="absolute -top-1 right-[5%] h-3 w-px bg-brand-navy/65" />
+        <div className="mt-1 flex justify-between text-xs tabular-nums text-brand-navy/55">
+          <span>{compactPrice(lowCents)}</span>
+          <span>Prix, en euros</span>
+          <span>{compactPrice(highCents)}</span>
         </div>
-        <div className="mt-2 grid grid-cols-3 font-display text-base font-semibold text-brand-navy/72 sm:text-lg">
-          <span>{formatPrice(euros(quantiles.p10Cents))}</span>
-          <span className="text-center text-gold-text">
-            {formatPrice(euros(quantiles.p50Cents))}
-          </span>
-          <span className="text-right">{formatPrice(euros(quantiles.p90Cents))}</span>
-        </div>
+        <dl className="mt-3 grid grid-cols-3 font-display text-base font-semibold text-brand-navy/72 sm:text-lg">
+          <div>
+            <dt className="font-sans text-xs font-normal text-brand-navy/66">10 %</dt>
+            <dd>{formatPrice(euros(quantiles.p10Cents))}</dd>
+          </div>
+          <div className="text-center">
+            <dt className="font-sans text-xs font-normal text-brand-navy/66">Médiane</dt>
+            <dd className="text-gold-text">{formatPrice(euros(quantiles.p50Cents))}</dd>
+          </div>
+          <div className="text-right">
+            <dt className="font-sans text-xs font-normal text-brand-navy/66">90 %</dt>
+            <dd>{formatPrice(euros(quantiles.p90Cents))}</dd>
+          </div>
+        </dl>
       </div>
     </div>
   );
@@ -315,47 +370,51 @@ function PriceDistribution({
 function CeilingCurve({
   quantiles,
   ceilingCents,
-  probability,
+  reading,
 }: {
   quantiles: OutcomeGraphQuantiles;
   ceilingCents: number;
-  probability: number;
+  reading: CeilingProbabilityReading;
 }) {
-  const width = 720;
-  const height = 260;
-  const padding = { left: 58, right: 22, top: 18, bottom: 42 };
-  const minPrice = Math.max(0, Math.round(quantiles.p10Cents * 0.6));
-  const maxPrice = Math.max(minPrice + 1, Math.round(quantiles.p90Cents * 1.25));
+  // Un graphique étroit, qui se réduit avec l'écran au lieu de défiler : les textes restent lisibles.
+  const width = 480;
+  const height = 320;
+  const padding = { left: 62, right: 16, top: 16, bottom: 74 };
+  const span = Math.max(1, quantiles.p90Cents - quantiles.p10Cents);
+  const minPrice = Math.max(0, quantiles.p10Cents - span * 0.2);
+  const maxPrice = quantiles.p90Cents + span * 0.2;
   const x = (price: number) =>
     padding.left +
     ((Math.min(maxPrice, Math.max(minPrice, price)) - minPrice) / (maxPrice - minPrice)) *
       (width - padding.left - padding.right);
   const y = (value: number) => padding.top + (1 - value) * (height - padding.top - padding.bottom);
+  // La courbe n'est tracée en plein qu'entre P10 et P90, les seuls repères estimés.
   const points = Array.from({ length: 41 }, (_, index) => {
-    const price = minPrice + ((maxPrice - minPrice) * index) / 40;
+    const price = quantiles.p10Cents + (span * index) / 40;
     return `${x(price).toFixed(1)},${y(cumulativeProbability(quantiles, price)).toFixed(1)}`;
   }).join(" ");
+  const insideCurve = reading.kind === "estimate";
   const markerX = x(ceilingCents);
-  const markerY = y(probability);
-  const ticks = [minPrice, quantiles.p10Cents, quantiles.p50Cents, quantiles.p90Cents, maxPrice];
+  const markerY = y(reading.probability);
+  const ticks = [quantiles.p10Cents, quantiles.p50Cents, quantiles.p90Cents];
+  const axisBottom = height - padding.bottom;
+  const readingText = describeReading(reading);
 
   return (
     <div>
       <h3 className="font-display text-2xl font-semibold text-brand-navy">
         Distribution du prix définitif
       </h3>
-      <p className="mt-1 text-sm text-brand-navy/70">Lecture conditionnelle à une adjudication.</p>
-      <div
-        className="mt-5 overflow-x-auto"
-        role="region"
-        aria-label="Graphique cumulatif du prix définitif"
-        tabIndex={0}
-      >
+      <p className="mt-1 text-sm text-brand-navy/70">
+        Lecture conditionnelle à une adjudication. La courbe est tracée de 10 % à 90 % seulement :
+        au delà, la distribution n’est pas estimée.
+      </p>
+      <div className="mt-5" role="region" aria-label="Graphique cumulatif du prix définitif">
         <svg
           viewBox={`0 0 ${width} ${height}`}
-          className="h-auto min-w-[540px]"
+          className="h-auto w-full"
           role="img"
-          aria-label={`Courbe cumulative : ${formatProbability(probability)} de probabilité sous ${formatPrice(euros(ceilingCents))}`}
+          aria-label={`Courbe cumulative du prix définitif, tracée entre ${formatPrice(euros(quantiles.p10Cents))} et ${formatPrice(euros(quantiles.p90Cents))} : ${readingText} pour un plafond de ${formatPrice(euros(ceilingCents))}`}
         >
           {[0, 0.25, 0.5, 0.75, 1].map((tick) => (
             <g key={tick}>
@@ -368,56 +427,91 @@ function CeilingCurve({
                 strokeDasharray={tick === 0 ? undefined : "5 5"}
               />
               <text
-                x={padding.left - 10}
+                x={padding.left - 8}
                 y={y(tick) + 4}
                 textAnchor="end"
-                className="fill-brand-navy/60 text-[12px]"
+                className="fill-brand-navy/70 text-[13px]"
               >
                 {Math.round(tick * 100)} %
               </text>
             </g>
           ))}
+          <text
+            transform={`translate(14 ${(padding.top + axisBottom) / 2}) rotate(-90)`}
+            textAnchor="middle"
+            className="fill-brand-navy/70 text-[12px]"
+          >
+            Probabilité cumulée
+          </text>
           <polyline points={points} fill="none" stroke="var(--brand-navy)" strokeWidth="3" />
-          <line
-            x1={padding.left}
-            x2={markerX}
-            y1={markerY}
-            y2={markerY}
-            stroke="var(--gold)"
-            strokeWidth="1.5"
-            strokeDasharray="6 5"
-          />
-          <line
-            x1={markerX}
-            x2={markerX}
-            y1={markerY}
-            y2={height - padding.bottom}
-            stroke="var(--gold)"
-            strokeWidth="1.5"
-            strokeDasharray="6 5"
-          />
-          <circle cx={markerX} cy={markerY} r="7" fill="var(--gold)" />
+          {insideCurve ? (
+            <>
+              <line
+                x1={padding.left}
+                x2={markerX}
+                y1={markerY}
+                y2={markerY}
+                stroke="var(--gold)"
+                strokeWidth="1.5"
+                strokeDasharray="6 5"
+              />
+              <line
+                x1={markerX}
+                x2={markerX}
+                y1={markerY}
+                y2={axisBottom}
+                stroke="var(--gold)"
+                strokeWidth="1.5"
+                strokeDasharray="6 5"
+              />
+              <circle cx={markerX} cy={markerY} r="6" fill="var(--gold)" />
+            </>
+          ) : (
+            <line
+              x1={markerX}
+              x2={markerX}
+              y1={padding.top}
+              y2={axisBottom}
+              stroke="var(--gold)"
+              strokeWidth="1.5"
+              strokeDasharray="6 5"
+            />
+          )}
           {ticks.map((tick, index) => (
             <text
               key={`${tick}-${index}`}
               x={x(tick)}
-              y={height - 12}
+              y={axisBottom + 16}
               textAnchor={index === 0 ? "start" : index === ticks.length - 1 ? "end" : "middle"}
-              className={`text-[12px] ${tick === ceilingCents ? "fill-gold-soft" : "fill-brand-navy/60"}`}
+              className="fill-brand-navy/70 text-[12px]"
             >
               {compactPrice(tick)}
             </text>
           ))}
           <text
-            x={Math.min(width - 58, Math.max(58, markerX))}
-            y={height - padding.bottom + 25}
+            x={Math.min(width - 50, Math.max(50, markerX))}
+            y={axisBottom + 34}
             textAnchor="middle"
-            className="fill-gold-soft text-[13px] font-semibold"
+            className="fill-gold-text text-[13px] font-semibold"
           >
-            {compactPrice(ceilingCents)}
+            Plafond {compactPrice(ceilingCents)}
+          </text>
+          <text
+            x={(padding.left + width - padding.right) / 2}
+            y={height - 8}
+            textAnchor="middle"
+            className="fill-brand-navy/70 text-[12px]"
+          >
+            Prix définitif, en euros
           </text>
         </svg>
       </div>
+      {insideCurve ? null : (
+        <p className="mt-2 text-xs text-brand-navy/70">
+          Votre plafond est hors de la plage estimée (10 % à 90 %) : seule une borne peut être
+          affirmée, pas une valeur.
+        </p>
+      )}
     </div>
   );
 }
@@ -471,8 +565,65 @@ function ForecastMeta({ forecast }: { forecast: OutcomeGraphForecast }) {
   );
 }
 
-function formatProbability(value: number | null): string {
-  return value == null ? "Inconnu" : `${Math.round(value * 100)} %`;
+function estimateReading(probability: number): CeilingProbabilityReading {
+  return { kind: "estimate", probability };
+}
+
+/** Applique un facteur (adjudication) à une lecture : une borne reste une borne. */
+function scaleReading(
+  reading: CeilingProbabilityReading,
+  factor: number,
+): CeilingProbabilityReading {
+  return { ...reading, probability: reading.probability * factor };
+}
+
+type ApproximateParts = { prefix: string | null; value: string };
+
+/**
+ * Une probabilité telle qu'on peut l'affirmer : arrondie à 5 %, précédée de « environ » (ou de la
+ * nature de la borne). Jamais un pourcentage entier qui laisserait croire à une précision absente.
+ */
+function approximateProbability(reading: CeilingProbabilityReading | null): ApproximateParts {
+  if (reading == null) return { prefix: null, value: "Inconnu" };
+  const { kind, probability } = reading;
+  const rounded = roundProbabilityToFivePercent(
+    probability,
+    kind === "at_most" ? "up" : kind === "at_least" ? "down" : "nearest",
+  );
+  const value = `${Math.round(rounded * 100)} %`;
+  if (kind === "at_most") return { prefix: "au plus environ", value };
+  if (kind === "at_least") return { prefix: "au moins environ", value };
+  if (probability > 0 && rounded === 0) return { prefix: "moins de", value: "5 %" };
+  if (probability < 1 && rounded === 1) return { prefix: "plus de", value: "95 %" };
+  return { prefix: "environ", value };
+}
+
+function describeReading(reading: CeilingProbabilityReading | null): string {
+  const { prefix, value } = approximateProbability(reading);
+  return prefix ? `${prefix} ${value}` : value;
+}
+
+function ApproximateProbability({
+  reading,
+  inline = false,
+}: {
+  reading: CeilingProbabilityReading | null;
+  inline?: boolean;
+}) {
+  const { prefix, value } = approximateProbability(reading);
+  if (!prefix) return <>{value}</>;
+  return inline ? (
+    <>
+      {prefix} {value}
+    </>
+  ) : (
+    <>
+      <span className="block font-sans text-sm font-medium leading-tight text-brand-navy/70 sm:text-base">
+        {prefix}
+      </span>{" "}
+      {value}
+    </>
+  );
 }
 
 function compactPrice(valueCents: number): string {
