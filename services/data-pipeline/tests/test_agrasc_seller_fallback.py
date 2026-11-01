@@ -487,6 +487,8 @@ def _run_pipeline_with_fallback(monkeypatch, result: ScrapeResult) -> dict[str, 
     seen: dict[str, Any] = {"calls": [], "finish": []}
     calls = seen["calls"]
 
+    # En GitHub Actions, GITHUB_ENV est défini et register_run exigerait un vrai UUID (comme test_main.py).
+    monkeypatch.delenv("GITHUB_ENV", raising=False)
     monkeypatch.setattr(main, "load_settings", lambda: {**_settings(), "enable_agrasc_benchmark": True})
     monkeypatch.setattr(main, "create_run_in_supabase", lambda *args, **kwargs: "run-1")
     monkeypatch.setattr(main, "finish_run_in_supabase",
